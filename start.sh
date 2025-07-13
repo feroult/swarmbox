@@ -3,8 +3,7 @@
 # Configuration
 IMAGE_NAME="claude-flow"
 CONTAINER_NAME="claude-flow-session"
-CLAUDE_CONFIG_DIR="$HOME/.claude-flow-docker"
-WORKSPACE_DIR="$(pwd)/workspace"
+WORK_DIR="$(pwd)/.work"
 PORTS=""
 RESET=false
 
@@ -45,8 +44,7 @@ if [ -n "$PORTS" ]; then
 fi
 
 # Create directories if they don't exist
-mkdir -p "$CLAUDE_CONFIG_DIR"
-mkdir -p "$WORKSPACE_DIR"
+mkdir -p "$WORK_DIR"
 
 # Build image if it doesn't exist
 if [[ "$(docker images -q $IMAGE_NAME 2> /dev/null)" == "" ]]; then
@@ -77,10 +75,7 @@ else
     # Create and start container
     docker run -d \
         --name $CONTAINER_NAME \
-        -v "$WORKSPACE_DIR:/home/claude-user/workspace" \
-        -v "$CLAUDE_CONFIG_DIR:/home/claude-user/.claude" \
-        -v "$CLAUDE_CONFIG_DIR/.npm:/home/claude-user/.npm" \
-        -v "$CLAUDE_CONFIG_DIR/.config:/home/claude-user/.config" \
+        -v "$WORK_DIR:/home/agent" \
         $DOCKER_PORTS \
         $IMAGE_NAME
     
