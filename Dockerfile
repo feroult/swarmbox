@@ -41,13 +41,6 @@ RUN apt-get update && apt-get install -y \
     bash-completion \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Deno globally
-# RUN curl -fsSL https://deno.land/x/install/install.sh | sh && \
-#     mv /root/.deno /usr/local/deno && \
-#     chmod -R 755 /usr/local/deno
-# ENV DENO_INSTALL="/usr/local/deno"
-# ENV PATH="$DENO_INSTALL/bin:$PATH"
-
 # Create app directory
 WORKDIR /app
 
