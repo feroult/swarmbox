@@ -75,10 +75,10 @@ RUN if id -u ${USER_UID} >/dev/null 2>&1; then \
 ENV NPM_CONFIG_CACHE=/home/agent/.npm
 
 # Install Claude Code globally as root
-RUN npm install -g @anthropic-ai/claude-code@latest && \
-    # Make global npm binaries accessible to all users
-    chmod -R 755 /usr/local/lib/node_modules && \
-    chmod -R 755 /usr/local/bin
+RUN curl -fsSL http://claude.ai/install.sh | bash && \
+    # Copy Claude from the expected location to system path
+    cp /root/.local/bin/claude /usr/local/bin/claude && \
+    chmod +x /usr/local/bin/claude
 
 # Create directories with proper permissions
 RUN mkdir -p /home/agent && \
