@@ -41,9 +41,11 @@ RUN apt-get update && apt-get install -y \
     bash-completion \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Deno
-RUN curl -fsSL https://deno.land/x/install/install.sh | sh
-ENV DENO_INSTALL="/root/.deno"
+# Install Deno globally
+RUN curl -fsSL https://deno.land/x/install/install.sh | sh && \
+    mv /root/.deno /usr/local/deno && \
+    chmod -R 755 /usr/local/deno
+ENV DENO_INSTALL="/usr/local/deno"
 ENV PATH="$DENO_INSTALL/bin:$PATH"
 
 # Create app directory
@@ -72,9 +74,8 @@ RUN if id -u ${USER_UID} >/dev/null 2>&1; then \
 # Set npm cache directory
 ENV NPM_CONFIG_CACHE=/home/agent/.npm
 
-# Install Claude Code and Claude Flow globally as root
+# Install Claude Code globally as root
 RUN npm install -g @anthropic-ai/claude-code@latest && \
-    npm install -g claude-flow@alpha && \
     # Make global npm binaries accessible to all users
     chmod -R 755 /usr/local/lib/node_modules && \
     chmod -R 755 /usr/local/bin
