@@ -42,11 +42,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Deno globally
-RUN curl -fsSL https://deno.land/x/install/install.sh | sh && \
-    mv /root/.deno /usr/local/deno && \
-    chmod -R 755 /usr/local/deno
-ENV DENO_INSTALL="/usr/local/deno"
-ENV PATH="$DENO_INSTALL/bin:$PATH"
+# RUN curl -fsSL https://deno.land/x/install/install.sh | sh && \
+#     mv /root/.deno /usr/local/deno && \
+#     chmod -R 755 /usr/local/deno
+# ENV DENO_INSTALL="/usr/local/deno"
+# ENV PATH="$DENO_INSTALL/bin:$PATH"
 
 # Create app directory
 WORKDIR /app
@@ -74,11 +74,24 @@ RUN if id -u ${USER_UID} >/dev/null 2>&1; then \
 # Set npm cache directory
 ENV NPM_CONFIG_CACHE=/home/agent/.npm
 
-# Install Claude Code globally as root
+# Set Anthropic model
+ENV ANTHROPIC_MODEL=sonnet
+
+# Install Claude Code globally as root (latest version)
 RUN curl -fsSL http://claude.ai/install.sh | bash && \
     # Copy Claude from the expected location to system path
     cp /root/.local/bin/claude /usr/local/bin/claude && \
     chmod +x /usr/local/bin/claude
+
+# Install claude-flow globally with @alpha version
+RUN npm install -g claude-flow@alpha
+
+# Add global aliases for all users
+RUN echo "# Alias for claude-flow to always use the latest alpha build via npx" >> /etc/bash.bashrc && \
+    echo "alias flow='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc && \
+    echo "" >> /etc/bash.bashrc && \
+    echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc && \
+    echo "alias yolo='claude --dangerously-skip-permissions'" >> /etc/bash.bashrc
 
 # Create directories with proper permissions
 RUN mkdir -p /home/agent && \
@@ -90,12 +103,6 @@ USER agent
 # Set working directory to user home
 WORKDIR /home/agent
 
-# Copy entrypoint script
-COPY --chown=root:root entrypoint.sh /entrypoint.sh
-RUN sudo chmod +x /entrypoint.sh
-
-# Set entrypoint
-ENTRYPOINT ["/entrypoint.sh"]
 
 # Keep container running
 CMD ["tail", "-f", "/dev/null"]
