@@ -38,8 +38,7 @@ RUN apt-get update && apt-get install -y \
     file \
     less \
     man-db \
-    bash-completion \
-    && rm -rf /var/lib/apt/lists/*
+    bash-completion     sqlite3     && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
 WORKDIR /app
@@ -80,11 +79,7 @@ RUN curl -fsSL http://claude.ai/install.sh | bash && \
 RUN npm install -g claude-flow@alpha
 
 # Add global aliases for all users
-RUN echo "# Alias for claude-flow to always use the latest alpha build via npx" >> /etc/bash.bashrc && \
-    echo "alias flow='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc && \
-    echo "" >> /etc/bash.bashrc && \
-    echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc && \
-    echo "alias yolo='claude --dangerously-skip-permissions'" >> /etc/bash.bashrc
+RUN echo "# Alias for claude-flow to initialize a project" >> /etc/bash.bashrc &&     echo "alias flow_init='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias for claude-flow to run commands" >> /etc/bash.bashrc &&     echo "alias flow='npx --y claude-flow@alpha'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc &&     echo "alias yolo='claude --dangerously-skip-permissions'" >> /etc/bash.bashrc
 
 # Create directories with proper permissions
 RUN mkdir -p /home/agent && \
