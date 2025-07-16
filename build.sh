@@ -4,6 +4,7 @@
 IMAGE_NAME="claude-flow"
 CONTAINER_NAME="claude-flow-session"
 RESET=false
+NO_CACHE=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -12,10 +13,15 @@ while [[ $# -gt 0 ]]; do
             RESET=true
             shift
             ;;
+        --no-cache)
+            NO_CACHE=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--reset]"
+            echo "Usage: $0 [--reset] [--no-cache]"
             echo "  --reset: Remove container, image, and .work directory for fresh installation"
+            echo "  --no-cache: Build the Docker image without using cache"
             exit 1
             ;;
     esac
@@ -44,8 +50,14 @@ fi
 
 # Build the Docker image
 echo "Building Claude Flow Docker image..."
+
+DOCKER_BUILD_COMMAND="docker build"
+if [ "$NO_CACHE" = true ]; then
+    DOCKER_BUILD_COMMAND="$DOCKER_BUILD_COMMAND --no-cache"
+fi
+
 # Pass the host user's UID and GID as build arguments
-docker build -t $IMAGE_NAME \
+$DOCKER_BUILD_COMMAND -t $IMAGE_NAME \
     --build-arg USER_UID=$(id -u) \
     --build-arg USER_GID=$(id -g) \
     .
