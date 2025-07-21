@@ -97,11 +97,10 @@ if [ "$RESET" = true ]; then
         $RUNTIME stop $CONTAINER_NAME 2>/dev/null || true
         $RUNTIME rm $CONTAINER_NAME 2>/dev/null || true
         echo "Container reset complete."
-    else
-        echo "No existing container found to reset."
+        # Exit after reset, don't try to connect
+        exit 0
     fi
-    # Exit after reset, don't try to connect
-    exit 0
+    # If no container exists, just continue normally (ignore reset)
 fi
 
 # Check if container already exists
