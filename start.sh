@@ -83,19 +83,19 @@ fi
 mkdir -p "$WORK_DIR"
 
 # Build image if it doesn't exist
-if [[ "$($RUNTIME images -q $IMAGE_NAME 2> /dev/null)" == "" ]]; then
+if [[ "$("$RUNTIME" images -q "$IMAGE_NAME" 2> /dev/null)" == "" ]]; then
     echo "Building container image..."
     BUILD_COMMAND="$(get_build_command)"
-    $BUILD_COMMAND -t $IMAGE_NAME .
+    "$BUILD_COMMAND" -t "$IMAGE_NAME" .
 fi
 
 # Handle reset option
 if [ "$RESET" = true ]; then
-    if [ "$($RUNTIME ps -a -q -f name=$CONTAINER_NAME)" ]; then
+    if [ "$("$RUNTIME" ps -a -q -f name="$CONTAINER_NAME")" ]; then
         echo "Resetting container (keeping persistent folders)..."
         echo "Stopping container and killing all connected shells..."
-        $RUNTIME stop $CONTAINER_NAME 2>/dev/null || true
-        $RUNTIME rm $CONTAINER_NAME 2>/dev/null || true
+        "$RUNTIME" stop "$CONTAINER_NAME" 2>/dev/null || true
+        "$RUNTIME" rm "$CONTAINER_NAME" 2>/dev/null || true
         echo "Container reset complete."
     fi
     # After reset, force creation of new container
@@ -103,19 +103,20 @@ if [ "$RESET" = true ]; then
     
     # Create and start container
     RUN_COMMAND="$(get_run_command)"
-    $RUN_COMMAND -d \
-        --name $CONTAINER_NAME \
+    "$RUN_COMMAND" -d \
+        --privileged \
+        --name "$CONTAINER_NAME" \
         -v "$WORK_DIR:/home/agent" \
-        $CONTAINER_PORTS \
-        $IMAGE_NAME
+        "$CONTAINER_PORTS" \
+        "$IMAGE_NAME"
     
     # Fix ownership issues in Podman
     if [ "$RUNTIME" = "podman" ]; then
-        $RUNTIME exec $CONTAINER_NAME sudo chown -R agent:agent /home/agent 2>/dev/null || true
+        "$RUNTIME" exec "$CONTAINER_NAME" sudo chown -R agent:agent /home/agent 2>/dev/null || true
     fi
     
     # Connect to the container
-    $RUNTIME exec -it $CONTAINER_NAME bash -c "
+    "$RUNTIME" exec -it "$CONTAINER_NAME" bash -c "
         echo 'Welcome to Swarm Box Container Environment!'
         echo '==========================================='
         echo ''
@@ -131,27 +132,28 @@ if [ "$RESET" = true ]; then
     "
 else
     # Normal operation: check if container already exists
-    if [ "$($RUNTIME ps -a -q -f name=$CONTAINER_NAME)" ]; then
+    if [ "$("$RUNTIME" ps -a -q -f name="$CONTAINER_NAME")" ]; then
         echo "Container already exists. Connecting to it..."
-        $RUNTIME start $CONTAINER_NAME 2>/dev/null || true
-        $RUNTIME exec -it $CONTAINER_NAME bash
+        "$RUNTIME" start "$CONTAINER_NAME" 2>/dev/null || true
+        "$RUNTIME" exec -it "$CONTAINER_NAME" bash
     else
         echo "Creating new container..."
         # Create and start container
         RUN_COMMAND="$(get_run_command)"
-        $RUN_COMMAND -d \
-            --name $CONTAINER_NAME \
+        "$RUN_COMMAND" -d \
+            --privileged \
+            --name "$CONTAINER_NAME" \
             -v "$WORK_DIR:/home/agent" \
-            $CONTAINER_PORTS \
-            $IMAGE_NAME
+            "$CONTAINER_PORTS" \
+            "$IMAGE_NAME"
         
         # Fix ownership issues in Podman
         if [ "$RUNTIME" = "podman" ]; then
-            $RUNTIME exec $CONTAINER_NAME sudo chown -R agent:agent /home/agent 2>/dev/null || true
+            "$RUNTIME" exec "$CONTAINER_NAME" sudo chown -R agent:agent /home/agent 2>/dev/null || true
         fi
         
         # Connect to the container
-        $RUNTIME exec -it $CONTAINER_NAME bash -c "
+        "$RUNTIME" exec -it "$CONTAINER_NAME" bash -c "
             echo 'Welcome to Swarm Box Container Environment!'
             echo '==========================================='
             echo ''

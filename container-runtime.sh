@@ -65,8 +65,8 @@ get_build_command() {
 get_run_command() {
     case "$RUNTIME" in
         podman)
-            # Podman-specific run options - use keep-id for better user mapping
-            echo "podman run --userns=keep-id"
+            # Podman-specific run options
+            echo "podman run"
             ;;
         docker)
             echo "docker run"

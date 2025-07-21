@@ -91,14 +91,14 @@ RUN if id -u ${USER_UID} >/dev/null 2>&1; then \
         echo "agent ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers; \
     fi
 
-# Set npm cache directory
-ENV NPM_CONFIG_CACHE=/home/agent/.npm
+# Set npm cache directory to a non-mounted location
+ENV NPM_CONFIG_CACHE=/opt/npm-cache
 
 # Set Anthropic model
 ENV ANTHROPIC_MODEL=sonnet
 
-# Set Playwright environment variables
-ENV PLAYWRIGHT_BROWSERS_PATH=/home/agent/.cache/ms-playwright
+# Set Playwright environment variables to a non-mounted location
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-cache
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
 
 # Disable browser auto-opening for Vite and other dev servers
@@ -122,9 +122,7 @@ RUN npm install -g @playwright/test @playwright/mcp@latest
 # Add global aliases for all users
 RUN echo "# Alias for claude-flow to initialize a project" >> /etc/bash.bashrc &&     echo "alias flow_init='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias for claude-flow to run commands" >> /etc/bash.bashrc &&     echo "alias flow='npx --y claude-flow@alpha'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc &&     echo "alias yolo='claude --dangerously-skip-permissions'" >> /etc/bash.bashrc
 
-# Create directories with proper permissions
-RUN mkdir -p /home/agent && \
-    chown -R agent:agent /home/agent
+
 
 # Create global MCP configuration file
 RUN mkdir -p /etc/claude && \
@@ -150,14 +148,14 @@ RUN sed -i 's|alias yolo=.*|alias yolo="/usr/local/bin/claude --dangerously-skip
 # Add claude alias that includes MCP config
 RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-servers.json"' >> /etc/bash.bashrc
 
+# Install only Chromium browsers (including headless-shell) as root
+RUN npx playwright install chromium chromium-headless-shell --with-deps
+
 # Switch to non-root user
 USER agent
 
 # Set working directory to user home
 WORKDIR /home/agent
-
-# Install only Chromium browsers (including headless-shell) as the agent user
-RUN npx playwright install chromium chromium-headless-shell --with-deps
 
 # Keep container running
 CMD ["tail", "-f", "/dev/null"]
