@@ -16,16 +16,16 @@ A containerized development environment for AI-powered coding with Claude, suppo
 ### 1. Build the Image
 
 ```bash
-./build.sh                    # Uses Docker by default
-./build.sh --runtime podman   # Use Podman instead
+./build.sh                    # Uses Podman by default, falls back to Docker
+./build.sh --runtime docker   # Force Docker instead
 ```
 
 ### 2. Start Container
 
 ```bash
-./start.sh                    # Default container name (swarm-box)
+./start.sh                    # Uses Podman by default, falls back to Docker
 ./start.sh --name my-project  # Custom container name
-./start.sh --runtime podman   # Use Podman
+./start.sh --runtime docker   # Force Docker instead
 ```
 
 ### 3. Setup Claude (Inside Container)
@@ -43,7 +43,7 @@ flow_init  # Alias for: npx claude-flow@alpha init --force
 ### Build Script
 ```bash
 ./build.sh [OPTIONS]
-  --runtime docker|podman    # Container runtime (default: docker)
+  --runtime docker|podman    # Container runtime (default: podman)
   --name IMAGE_NAME          # Custom image name (default: swarm-box)
   --no-cache                 # Build without cache
   --reset                    # Remove existing containers/images first
@@ -52,7 +52,7 @@ flow_init  # Alias for: npx claude-flow@alpha init --force
 ### Start Script
 ```bash
 ./start.sh [OPTIONS]
-  --runtime docker|podman    # Container runtime (default: docker)
+  --runtime docker|podman    # Container runtime (default: podman)
   --name CONTAINER_NAME      # Custom container name (default: swarm-box)
   --image IMAGE_NAME         # Custom image name (default: swarm-box)
   --ports PORT_LIST          # Port mappings (e.g., --ports 3000,8080:80)

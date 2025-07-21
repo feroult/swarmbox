@@ -3,8 +3,8 @@
 # Container runtime configuration script
 # This script detects and sets up the container runtime (Docker or Podman)
 
-# Default to Docker
-RUNTIME="docker"
+# Default to Podman
+RUNTIME="podman"
 
 # Function to check if a command exists
 command_exists() {
@@ -32,13 +32,13 @@ detect_runtime() {
                 ;;
         esac
     else
-        # Auto-detect runtime
-        if command_exists docker; then
-            RUNTIME="docker"
-        elif command_exists podman; then
+        # Auto-detect runtime (prefer Podman, fallback to Docker)
+        if command_exists podman; then
             RUNTIME="podman"
+        elif command_exists docker; then
+            RUNTIME="docker"
         else
-            echo "Error: Neither Docker nor Podman is installed"
+            echo "Error: Neither Podman nor Docker is installed"
             exit 1
         fi
     fi
