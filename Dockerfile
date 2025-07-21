@@ -101,6 +101,9 @@ ENV ANTHROPIC_MODEL=sonnet
 ENV PLAYWRIGHT_BROWSERS_PATH=/home/agent/.cache/ms-playwright
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
 
+# Disable browser auto-opening for Vite and other dev servers
+ENV BROWSER=none
+
 # Install Claude Code globally as root (latest version)
 RUN curl -fsSL http://claude.ai/install.sh | bash && \
     # Copy Claude from the expected location to system path
