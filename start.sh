@@ -97,19 +97,10 @@ if [ "$RESET" = true ]; then
         $RUNTIME stop $CONTAINER_NAME 2>/dev/null || true
         $RUNTIME rm $CONTAINER_NAME 2>/dev/null || true
         echo "Container reset complete."
-        # Exit after reset, don't try to connect
-        exit 0
     fi
-    # If no container exists, just continue normally (ignore reset)
-fi
-
-# Check if container already exists
-if [ "$($RUNTIME ps -a -q -f name=$CONTAINER_NAME)" ]; then
-    echo "Container already exists. Connecting to it..."
-    $RUNTIME start $CONTAINER_NAME 2>/dev/null || true
-    $RUNTIME exec -it $CONTAINER_NAME bash
-else
+    # After reset, force creation of new container
     echo "Creating new container..."
+    
     # Create and start container
     RUN_COMMAND="$(get_run_command)"
     $RUN_COMMAND -d \
@@ -117,6 +108,11 @@ else
         -v "$WORK_DIR:/home/agent" \
         $CONTAINER_PORTS \
         $IMAGE_NAME
+    
+    # Fix ownership issues in Podman
+    if [ "$RUNTIME" = "podman" ]; then
+        $RUNTIME exec $CONTAINER_NAME sudo chown -R agent:agent /home/agent 2>/dev/null || true
+    fi
     
     # Connect to the container
     $RUNTIME exec -it $CONTAINER_NAME bash -c "
@@ -133,4 +129,41 @@ else
         echo ''
         exec bash
     "
+else
+    # Normal operation: check if container already exists
+    if [ "$($RUNTIME ps -a -q -f name=$CONTAINER_NAME)" ]; then
+        echo "Container already exists. Connecting to it..."
+        $RUNTIME start $CONTAINER_NAME 2>/dev/null || true
+        $RUNTIME exec -it $CONTAINER_NAME bash
+    else
+        echo "Creating new container..."
+        # Create and start container
+        RUN_COMMAND="$(get_run_command)"
+        $RUN_COMMAND -d \
+            --name $CONTAINER_NAME \
+            -v "$WORK_DIR:/home/agent" \
+            $CONTAINER_PORTS \
+            $IMAGE_NAME
+        
+        # Fix ownership issues in Podman
+        if [ "$RUNTIME" = "podman" ]; then
+            $RUNTIME exec $CONTAINER_NAME sudo chown -R agent:agent /home/agent 2>/dev/null || true
+        fi
+        
+        # Connect to the container
+        $RUNTIME exec -it $CONTAINER_NAME bash -c "
+            echo 'Welcome to Swarm Box Container Environment!'
+            echo '==========================================='
+            echo ''
+            echo 'First time setup:'
+            echo '1. Run: claude --dangerously-skip-permissions'
+            echo '2. Follow the authentication link'
+            echo '3. Your auth will be saved in the persistent volume'
+            echo ''
+            echo 'Initialize Claude Flow:'
+            echo 'npx claude-flow@alpha init --force'
+            echo ''
+            exec bash
+        "
+    fi
 fi
