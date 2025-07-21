@@ -1,130 +1,79 @@
-# Claude Flow Docker Environment
+# Swarm Box
 
-A Docker setup for running claude-flow CLI in an isolated, persistent environment.
+A containerized development environment for AI-powered coding with Claude, supporting both Docker and Podman.
 
 ## Features
 
-- 🔒 Isolated environment for safe CLI execution
-- 💾 Persistent authentication across container restarts and reboots
-- 🛠️ Full Linux toolkit (ps, vim, nano, htop, tree, jq, etc.)
-- 📁 Shared workspace directory between host and container
-- 🔄 Long-lived container that survives exits
+- 🐳 **Multi-runtime**: Supports Docker and Podman with automatic detection
+- 🔒 **Isolated environment** for safe AI development 
+- 💾 **Persistent workspace** that survives container restarts
+- 🤖 **Claude integration** with MCP (Model Context Protocol) support
+- 🎭 **Playwright automation** for browser testing and interaction
+- 🛠️ **Complete toolchain**: Git, Node.js, Python, and essential development tools
 
 ## Quick Start
 
-### 1. Build the Docker Image
+### 1. Build the Image
 
 ```bash
-./build.sh
+./build.sh                    # Uses Docker by default
+./build.sh --runtime podman   # Use Podman instead
 ```
 
-### 2. Start/Resume Container
+### 2. Start Container
 
 ```bash
-./start.sh
-# or
-./resume.sh
+./start.sh                    # Default container name (swarm-box)
+./start.sh --name my-project  # Custom container name
+./start.sh --runtime podman   # Use Podman
 ```
 
-Both commands will:
-- Create a new container if none exists
-- Connect to existing container if already running
-- Show welcome message with setup instructions on first run
-
-### 3. First Time Setup (Inside Container)
+### 3. Setup Claude (Inside Container)
 
 ```bash
-# 1. Authenticate with Claude (one-time setup)
+# Authenticate with Claude
 claude --dangerously-skip-permissions
 
-# 2. Follow the authentication link in your browser
-# 3. Enter the verification code when prompted
-
-# 4. Initialize Claude Flow
-npx claude-flow@alpha init --force
-
-# 5. Start using Claude Flow!
-npx claude-flow@alpha --help
+# Initialize your project
+flow_init  # Alias for: npx claude-flow@alpha init --force
 ```
 
-## Directory Structure
+## Configuration Options
 
-- `~/.claude-flow-docker/` - Persistent storage on host for:
-  - `.claude/` - Claude authentication and configuration
-  - `.npm/` - NPM cache
-  - `.config/` - Application configs
-- `./workspace/` - Shared workspace between host and container
+### Build Script
+```bash
+./build.sh [OPTIONS]
+  --runtime docker|podman    # Container runtime (default: docker)
+  --name IMAGE_NAME          # Custom image name (default: swarm-box)
+  --no-cache                 # Build without cache
+  --reset                    # Remove existing containers/images first
+```
 
-## Common Commands
+### Start Script
+```bash
+./start.sh [OPTIONS]
+  --runtime docker|podman    # Container runtime (default: docker)
+  --name CONTAINER_NAME      # Custom container name (default: swarm-box)
+  --image IMAGE_NAME         # Custom image name (default: swarm-box)
+  --ports PORT_LIST          # Port mappings (e.g., --ports 3000,8080:80)
+  --reset                    # Reset container before starting
+```
 
-### Claude Flow Examples
+## Built-in Tools
+
+- **AI Development**: Claude CLI, claude-flow, MCP servers
+- **Browser Automation**: Playwright, Chromium
+- **Development**: Git, Node.js, Python, build tools
+- **System**: vim, htop, jq, curl, and essential Linux utilities
+
+## Testing
+
+Run the test suite to verify both Docker and Podman work correctly:
 
 ```bash
-# Interactive hive-mind wizard
-npx claude-flow@alpha hive-mind wizard
-
-# Build something with AI coordination
-npx claude-flow@alpha hive-mind spawn "build me something amazing" --claude
-
-# Explore capabilities
-npx claude-flow@alpha --help
+./test.sh
 ```
 
-### Container Management
+## Workspace
 
-```bash
-# Stop the container
-docker stop claude-flow-session
-
-# Remove the container (preserves data)
-docker rm claude-flow-session
-
-# View container logs
-docker logs claude-flow-session
-
-# Execute commands without entering container
-docker exec claude-flow-session <command>
-```
-
-## Available Tools
-
-The container includes a comprehensive Linux environment:
-
-- **Editors**: vim, nano
-- **System**: ps, htop, tree, file
-- **Network**: ping, dig, nslookup, netstat, curl, wget
-- **Development**: git, python3, pip, build-essential
-- **Utilities**: jq, zip, tar, rsync, ssh client
-- **And more**: bash-completion, man pages
-
-## Troubleshooting
-
-### Permission Issues
-If you encounter permission errors, the container user has sudo access:
-```bash
-sudo chown -R claude-user:claude-user /home/claude-user/.claude
-```
-
-### Container Won't Start
-```bash
-# Check if container exists
-docker ps -a | grep claude-flow
-
-# Remove and recreate if needed
-docker rm claude-flow-session
-./start.sh
-```
-
-### Lost Authentication
-Your authentication is stored in `~/.claude-flow-docker/.claude/` on the host. If lost, simply re-authenticate inside the container.
-
-## Security Notes
-
-- The container runs with a non-root user (`claude-user`) by default
-- Sudo access is available without password for system tasks
-- All data persists in your home directory (`~/.claude-flow-docker/`)
-- The `--dangerously-skip-permissions` flag is required for Claude Code in containers
-
-## License
-
-This Docker setup is provided as-is for running claude-flow safely in isolation.
+Your work directory (`./.work/`) is mounted inside the container at `/home/agent`, ensuring files persist between container restarts.
