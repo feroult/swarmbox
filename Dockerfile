@@ -104,6 +104,9 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
 # Disable browser auto-opening for Vite and other dev servers
 ENV BROWSER=none
 
+# Disable browser sandboxing for container environments (especially Podman)
+ENV PLAYWRIGHT_CHROMIUM_ARGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
+
 # Install Claude Code globally as root (latest version)
 RUN curl -fsSL http://claude.ai/install.sh | bash && \
     # Copy Claude from the expected location to system path
@@ -113,16 +116,8 @@ RUN curl -fsSL http://claude.ai/install.sh | bash && \
 # Install claude-flow globally with @alpha version
 RUN npm install -g claude-flow@alpha
 
-# Install Playwright and browsers
-RUN npm install -g @playwright/test && \
-    npx playwright install chromium --with-deps && \
-    npx playwright install-deps chromium
-
-# Install Playwright MCP server globally
-RUN npm install -g @playwright/mcp@latest
-
-# Install Google Chrome for Playwright MCP (separate from Chromium)
-RUN npx playwright install chrome --with-deps
+# Install Playwright and MCP server globally
+RUN npm install -g @playwright/test @playwright/mcp@latest
 
 # Add global aliases for all users
 RUN echo "# Alias for claude-flow to initialize a project" >> /etc/bash.bashrc &&     echo "alias flow_init='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias for claude-flow to run commands" >> /etc/bash.bashrc &&     echo "alias flow='npx --y claude-flow@alpha'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc &&     echo "alias yolo='claude --dangerously-skip-permissions'" >> /etc/bash.bashrc
@@ -160,6 +155,9 @@ USER agent
 
 # Set working directory to user home
 WORKDIR /home/agent
+
+# Install only Chromium browsers (including headless-shell) as the agent user
+RUN npx playwright install chromium chromium-headless-shell --with-deps
 
 # Keep container running
 CMD ["tail", "-f", "/dev/null"]
