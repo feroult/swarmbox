@@ -1,11 +1,18 @@
 #!/bin/bash
 
+# Source the container runtime configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/container-runtime.sh"
+
 # Configuration
-IMAGE_NAME="claude-flow"
-CONTAINER_NAME="claude-flow-session"
+IMAGE_NAME="swarm-box"
+CONTAINER_NAME="swarm-box"
 WORK_DIR="$(pwd)/.work"
 PORTS=""
 RESET=false
+RUNTIME_ARG=""
+CUSTOM_NAME=""
+CUSTOM_IMAGE=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -18,27 +25,56 @@ while [[ $# -gt 0 ]]; do
             RESET=true
             shift
             ;;
+        --runtime)
+            RUNTIME_ARG="$2"
+            shift 2
+            ;;
+        --name)
+            CUSTOM_NAME="$2"
+            shift 2
+            ;;
+        --image)
+            CUSTOM_IMAGE="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--reset]"
+            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--reset] [--runtime docker|podman] [--name container-name] [--image image-name]"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
             echo "  --reset: Stop and remove existing container, keeping persistent folders"
+            echo "  --runtime: Specify container runtime (docker or podman). Default: docker"
+            echo "  --name: Custom container name (default: swarm-box)"
+            echo "  --image: Custom image name (default: swarm-box)"
             exit 1
             ;;
     esac
 done
 
+# Detect and set runtime
+detect_runtime "$RUNTIME_ARG"
+echo "Using container runtime: $RUNTIME"
+
+# Set container and image names
+if [ -n "$CUSTOM_IMAGE" ]; then
+    IMAGE_NAME="$CUSTOM_IMAGE"
+fi
+if [ -n "$CUSTOM_NAME" ]; then
+    CONTAINER_NAME="$CUSTOM_NAME"
+fi
+echo "Image name: $IMAGE_NAME"
+echo "Container name: $CONTAINER_NAME"
+
 # Parse port mappings
-DOCKER_PORTS=""
+CONTAINER_PORTS=""
 if [ -n "$PORTS" ]; then
     IFS=',' read -ra PORT_ARRAY <<< "$PORTS"
     for port_mapping in "${PORT_ARRAY[@]}"; do
         if [[ $port_mapping == *":"* ]]; then
             # Format: port:inner_port
-            DOCKER_PORTS="$DOCKER_PORTS -p $port_mapping"
+            CONTAINER_PORTS="$CONTAINER_PORTS -p $port_mapping"
         else
             # Format: port (port == inner_port)
-            DOCKER_PORTS="$DOCKER_PORTS -p $port_mapping:$port_mapping"
+            CONTAINER_PORTS="$CONTAINER_PORTS -p $port_mapping:$port_mapping"
         fi
     done
 fi
@@ -47,41 +83,45 @@ fi
 mkdir -p "$WORK_DIR"
 
 # Build image if it doesn't exist
-if [[ "$(docker images -q $IMAGE_NAME 2> /dev/null)" == "" ]]; then
-    echo "Building Docker image..."
-    docker build -t $IMAGE_NAME .
+if [[ "$($RUNTIME images -q $IMAGE_NAME 2> /dev/null)" == "" ]]; then
+    echo "Building container image..."
+    BUILD_COMMAND="$(get_build_command)"
+    $BUILD_COMMAND -t $IMAGE_NAME .
 fi
 
 # Handle reset option
 if [ "$RESET" = true ]; then
-    if [ "$(docker ps -a -q -f name=$CONTAINER_NAME)" ]; then
+    if [ "$($RUNTIME ps -a -q -f name=$CONTAINER_NAME)" ]; then
         echo "Resetting container (keeping persistent folders)..."
         echo "Stopping container and killing all connected shells..."
-        docker stop $CONTAINER_NAME 2>/dev/null || true
-        docker rm $CONTAINER_NAME 2>/dev/null || true
+        $RUNTIME stop $CONTAINER_NAME 2>/dev/null || true
+        $RUNTIME rm $CONTAINER_NAME 2>/dev/null || true
         echo "Container reset complete."
     else
         echo "No existing container found to reset."
     fi
+    # Exit after reset, don't try to connect
+    exit 0
 fi
 
 # Check if container already exists
-if [ "$(docker ps -a -q -f name=$CONTAINER_NAME)" ]; then
+if [ "$($RUNTIME ps -a -q -f name=$CONTAINER_NAME)" ]; then
     echo "Container already exists. Connecting to it..."
-    docker start $CONTAINER_NAME 2>/dev/null || true
-    docker exec -it $CONTAINER_NAME bash
+    $RUNTIME start $CONTAINER_NAME 2>/dev/null || true
+    $RUNTIME exec -it $CONTAINER_NAME bash
 else
     echo "Creating new container..."
     # Create and start container
-    docker run -d \
+    RUN_COMMAND="$(get_run_command)"
+    $RUN_COMMAND -d \
         --name $CONTAINER_NAME \
         -v "$WORK_DIR:/home/agent" \
-        $DOCKER_PORTS \
+        $CONTAINER_PORTS \
         $IMAGE_NAME
     
     # Connect to the container
-    docker exec -it $CONTAINER_NAME bash -c "
-        echo 'Welcome to Claude Flow Docker Environment!'
+    $RUNTIME exec -it $CONTAINER_NAME bash -c "
+        echo 'Welcome to Swarm Box Container Environment!'
         echo '==========================================='
         echo ''
         echo 'First time setup:'

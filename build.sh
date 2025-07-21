@@ -1,10 +1,16 @@
 #!/bin/bash
 
+# Source the container runtime configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/container-runtime.sh"
+
 # Configuration
-IMAGE_NAME="claude-flow"
-CONTAINER_NAME="claude-flow-session"
+IMAGE_NAME="swarm-box"
+CONTAINER_NAME="swarm-box"
 RESET=false
 NO_CACHE=false
+RUNTIME_ARG=""
+CUSTOM_NAME=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -17,47 +23,68 @@ while [[ $# -gt 0 ]]; do
             NO_CACHE=true
             shift
             ;;
+        --runtime)
+            RUNTIME_ARG="$2"
+            shift 2
+            ;;
+        --name)
+            CUSTOM_NAME="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--reset] [--no-cache]"
+            echo "Usage: $0 [--reset] [--no-cache] [--runtime docker|podman] [--name image-name]"
             echo "  --reset: Remove container, image, and .work directory for fresh installation"
-            echo "  --no-cache: Build the Docker image without using cache"
+            echo "  --no-cache: Build the container image without using cache"
+            echo "  --runtime: Specify container runtime (docker or podman). Default: docker"
+            echo "  --name: Custom image name (default: swarm-box)"
             exit 1
             ;;
     esac
 done
+
+# Detect and set runtime
+detect_runtime "$RUNTIME_ARG"
+echo "Using container runtime: $RUNTIME"
+
+# Set image name
+if [ -n "$CUSTOM_NAME" ]; then
+    IMAGE_NAME="$CUSTOM_NAME"
+    CONTAINER_NAME="$CUSTOM_NAME"
+fi
+echo "Image name: $IMAGE_NAME"
 
 # Handle reset option
 if [ "$RESET" = true ]; then
     echo "Performing complete reset..."
     
     # Stop and remove container if exists
-    if [ "$(docker ps -a -q -f name=$CONTAINER_NAME)" ]; then
+    if [ "$($RUNTIME ps -a -q -f name=$CONTAINER_NAME)" ]; then
         echo "Stopping and removing container..."
-        docker stop $CONTAINER_NAME 2>/dev/null || true
-        docker rm $CONTAINER_NAME 2>/dev/null || true
+        $RUNTIME stop $CONTAINER_NAME 2>/dev/null || true
+        $RUNTIME rm $CONTAINER_NAME 2>/dev/null || true
     fi
     
     # Remove image if exists
-    if [[ "$(docker images -q $IMAGE_NAME 2> /dev/null)" != "" ]]; then
-        echo "Removing Docker image..."
-        docker rmi $IMAGE_NAME:latest
+    if [[ "$($RUNTIME images -q $IMAGE_NAME 2> /dev/null)" != "" ]]; then
+        echo "Removing container image..."
+        $RUNTIME rmi $IMAGE_NAME:latest
     fi
     
     echo "Reset complete!"
     echo ""
 fi
 
-# Build the Docker image
-echo "Building Claude Flow Docker image..."
+# Build the container image
+echo "Building Swarm Box container image..."
 
-DOCKER_BUILD_COMMAND="docker build"
+BUILD_COMMAND="$(get_build_command)"
 if [ "$NO_CACHE" = true ]; then
-    DOCKER_BUILD_COMMAND="$DOCKER_BUILD_COMMAND --no-cache"
+    BUILD_COMMAND="$BUILD_COMMAND --no-cache"
 fi
 
 # Pass the host user's UID and GID as build arguments
-$DOCKER_BUILD_COMMAND -t $IMAGE_NAME \
+$BUILD_COMMAND -t $IMAGE_NAME \
     --build-arg USER_UID=$(id -u) \
     --build-arg USER_GID=$(id -g) \
     .
