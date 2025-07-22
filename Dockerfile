@@ -152,13 +152,18 @@ RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-serve
 # Install only Chromium browsers (including headless-shell) as root
 RUN npx playwright install chromium chromium-headless-shell --with-deps
 
-# Create cache directories and set ownership
-# On macOS, Docker Desktop handles permissions differently, so we skip chown
-RUN mkdir -p /opt/npm-cache /opt/playwright-cache && \
-    if [ "${HOST_OS}" != "darwin" ]; then \
-        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/playwright-cache || true; \
-    fi && \
-    chmod -R 755 /opt/npm-cache /opt/playwright-cache
+# Create cache directories with different approach for macOS
+RUN if [ "${HOST_OS}" = "darwin" ]; then \
+        # On macOS, just create directories without ownership changes
+        # Docker Desktop will handle UID/GID mapping automatically
+        mkdir -p /opt/npm-cache /opt/playwright-cache && \
+        chmod -R 777 /opt/npm-cache /opt/playwright-cache; \
+    else \
+        # On Linux, use traditional approach
+        mkdir -p /opt/npm-cache /opt/playwright-cache && \
+        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/playwright-cache && \
+        chmod -R 755 /opt/npm-cache /opt/playwright-cache; \
+    fi
 
 # Switch to non-root user
 USER agent
