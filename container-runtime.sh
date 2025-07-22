@@ -53,11 +53,19 @@ get_runtime_command() {
 get_build_command() {
     case "$RUNTIME" in
         podman)
-            # Podman-specific build options can be added here
-            echo "podman build"
+            # Podman-specific build options - pass current user UID/GID on macOS
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                echo "podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)"
+            else
+                echo "podman build"
+            fi
             ;;
         docker)
-            echo "docker build"
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                echo "docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)"
+            else
+                echo "docker build"
+            fi
             ;;
     esac
 }
@@ -65,8 +73,12 @@ get_build_command() {
 get_run_command() {
     case "$RUNTIME" in
         podman)
-            # Podman-specific run options
-            echo "podman run"
+            # Podman-specific run options - disable some features that might cause issues on macOS
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                echo "podman run --security-opt label=disable --userns=keep-id:uid=$(id -u),gid=$(id -g)"
+            else
+                echo "podman run"
+            fi
             ;;
         docker)
             echo "docker run"

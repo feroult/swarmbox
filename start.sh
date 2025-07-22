@@ -86,7 +86,7 @@ mkdir -p "$WORK_DIR"
 if [[ "$("$RUNTIME" images -q "$IMAGE_NAME" 2> /dev/null)" == "" ]]; then
     echo "Building container image..."
     BUILD_COMMAND="$(get_build_command)"
-    "$BUILD_COMMAND" -t "$IMAGE_NAME" .
+    eval "$BUILD_COMMAND" -t "$IMAGE_NAME" .
 fi
 
 # Handle reset option
@@ -103,16 +103,27 @@ if [ "$RESET" = true ]; then
     
     # Create and start container
     RUN_COMMAND="$(get_run_command)"
-    "$RUN_COMMAND" -d \
-        --privileged \
-        --name "$CONTAINER_NAME" \
-        -v "$WORK_DIR:/home/agent" \
-        "$CONTAINER_PORTS" \
-        "$IMAGE_NAME"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS - run without privileged mode which causes issues
+        eval "$RUN_COMMAND" -d \
+            --name "$CONTAINER_NAME" \
+            -v "$WORK_DIR:/home/agent" \
+            $CONTAINER_PORTS \
+            "$IMAGE_NAME"
+    else
+        # Linux - use privileged mode
+        eval "$RUN_COMMAND" -d \
+            --privileged \
+            --name "$CONTAINER_NAME" \
+            -v "$WORK_DIR:/home/agent" \
+            $CONTAINER_PORTS \
+            "$IMAGE_NAME"
+    fi
     
-    # Fix ownership issues in Podman
+    # Fix ownership issues in Podman and cache directories
     if [ "$RUNTIME" = "podman" ]; then
         "$RUNTIME" exec "$CONTAINER_NAME" sudo chown -R agent:agent /home/agent 2>/dev/null || true
+        "$RUNTIME" exec "$CONTAINER_NAME" sudo chown -R agent:agent /opt/npm-cache /opt/playwright-cache 2>/dev/null || true
     fi
     
     # Connect to the container
@@ -140,16 +151,27 @@ else
         echo "Creating new container..."
         # Create and start container
         RUN_COMMAND="$(get_run_command)"
-        "$RUN_COMMAND" -d \
-            --privileged \
-            --name "$CONTAINER_NAME" \
-            -v "$WORK_DIR:/home/agent" \
-            "$CONTAINER_PORTS" \
-            "$IMAGE_NAME"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS - run without privileged mode which causes issues
+            eval "$RUN_COMMAND" -d \
+                --name "$CONTAINER_NAME" \
+                -v "$WORK_DIR:/home/agent" \
+                $CONTAINER_PORTS \
+                "$IMAGE_NAME"
+        else
+            # Linux - use privileged mode
+            eval "$RUN_COMMAND" -d \
+                --privileged \
+                --name "$CONTAINER_NAME" \
+                -v "$WORK_DIR:/home/agent" \
+                $CONTAINER_PORTS \
+                "$IMAGE_NAME"
+        fi
         
-        # Fix ownership issues in Podman
+        # Fix ownership issues in Podman and cache directories
         if [ "$RUNTIME" = "podman" ]; then
             "$RUNTIME" exec "$CONTAINER_NAME" sudo chown -R agent:agent /home/agent 2>/dev/null || true
+            "$RUNTIME" exec "$CONTAINER_NAME" sudo chown -R agent:agent /opt/npm-cache /opt/playwright-cache 2>/dev/null || true
         fi
         
         # Connect to the container
