@@ -84,10 +84,8 @@ if [ "$NO_CACHE" = true ]; then
 fi
 
 # Pass the host user's UID and GID as build arguments
-$BUILD_COMMAND -t $IMAGE_NAME \
-    --build-arg USER_UID=$(id -u) \
-    --build-arg USER_GID=$(id -g) \
-    .
+# The get_build_command function already includes HOST_OS
+eval "$BUILD_COMMAND" -t $IMAGE_NAME .
 
 if [ $? -eq 0 ]; then
     echo "Build successful!"

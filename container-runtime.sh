@@ -54,11 +54,19 @@ get_build_command() {
     case "$RUNTIME" in
         podman)
             # Always pass current user UID/GID for proper ownership
-            echo "podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)"
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                echo "podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=darwin"
+            else
+                echo "podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=linux"
+            fi
             ;;
         docker)
             # Always pass current user UID/GID for proper ownership
-            echo "docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)"
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                echo "docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=darwin"
+            else
+                echo "docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=linux"
+            fi
             ;;
     esac
 }
