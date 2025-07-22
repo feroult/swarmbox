@@ -53,19 +53,12 @@ get_runtime_command() {
 get_build_command() {
     case "$RUNTIME" in
         podman)
-            # Podman-specific build options - pass current user UID/GID on macOS
-            if [[ "$OSTYPE" == "darwin"* ]]; then
-                echo "podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)"
-            else
-                echo "podman build"
-            fi
+            # Always pass current user UID/GID for proper ownership
+            echo "podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)"
             ;;
         docker)
-            if [[ "$OSTYPE" == "darwin"* ]]; then
-                echo "docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)"
-            else
-                echo "docker build"
-            fi
+            # Always pass current user UID/GID for proper ownership
+            echo "docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)"
             ;;
     esac
 }
@@ -73,11 +66,12 @@ get_build_command() {
 get_run_command() {
     case "$RUNTIME" in
         podman)
-            # Podman-specific run options - disable some features that might cause issues on macOS
+            # Podman-specific run options with user namespace mapping
             if [[ "$OSTYPE" == "darwin"* ]]; then
                 echo "podman run --security-opt label=disable --userns=keep-id:uid=$(id -u),gid=$(id -g)"
             else
-                echo "podman run"
+                # Linux - use user namespace mapping to preserve ownership
+                echo "podman run --userns=keep-id"
             fi
             ;;
         docker)
