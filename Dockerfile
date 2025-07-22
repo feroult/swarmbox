@@ -3,6 +3,7 @@ FROM node:20-slim
 # Accept build arguments for user UID/GID
 ARG USER_UID=1000
 ARG USER_GID=1000
+ARG HOST_OS=linux
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -152,8 +153,11 @@ RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-serve
 RUN npx playwright install chromium chromium-headless-shell --with-deps
 
 # Create cache directories and set ownership
+# On macOS, Docker Desktop handles permissions differently, so we skip chown
 RUN mkdir -p /opt/npm-cache /opt/playwright-cache && \
-    chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/playwright-cache && \
+    if [ "${HOST_OS}" != "darwin" ]; then \
+        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/playwright-cache || true; \
+    fi && \
     chmod -R 755 /opt/npm-cache /opt/playwright-cache
 
 # Switch to non-root user

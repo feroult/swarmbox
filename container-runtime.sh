@@ -55,16 +55,16 @@ get_build_command() {
         podman)
             # Podman-specific build options - pass current user UID/GID on macOS
             if [[ "$OSTYPE" == "darwin"* ]]; then
-                echo "podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)"
+                echo "podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=darwin"
             else
-                echo "podman build"
+                echo "podman build --build-arg HOST_OS=linux"
             fi
             ;;
         docker)
             if [[ "$OSTYPE" == "darwin"* ]]; then
-                echo "docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g)"
+                echo "docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=darwin"
             else
-                echo "docker build"
+                echo "docker build --build-arg HOST_OS=linux"
             fi
             ;;
     esac

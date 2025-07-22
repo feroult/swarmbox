@@ -163,11 +163,7 @@ else
                 "$IMAGE_NAME"
         fi
         
-        # Fix ownership issues in Podman and cache directories
-        if [ "$RUNTIME" = "podman" ]; then
-            "$RUNTIME" exec "$CONTAINER_NAME" sudo chown -R agent:agent /home/agent 2>/dev/null || true
-            "$RUNTIME" exec "$CONTAINER_NAME" sudo chown -R agent:agent /opt/npm-cache /opt/playwright-cache 2>/dev/null || true
-        fi
+        # No runtime ownership adjustments - handled at build time
         
         # Connect to the container
         "$RUNTIME" exec -it "$CONTAINER_NAME" bash -c "
