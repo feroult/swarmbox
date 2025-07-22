@@ -151,6 +151,11 @@ RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-serve
 # Install only Chromium browsers (including headless-shell) as root
 RUN npx playwright install chromium chromium-headless-shell --with-deps
 
+# Create cache directories and set ownership
+RUN mkdir -p /opt/npm-cache /opt/playwright-cache && \
+    chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/playwright-cache && \
+    chmod -R 755 /opt/npm-cache /opt/playwright-cache
+
 # Switch to non-root user
 USER agent
 

@@ -120,11 +120,6 @@ if [ "$RESET" = true ]; then
             "$IMAGE_NAME"
     fi
     
-    # Fix ownership issues in Podman and cache directories
-    if [ "$RUNTIME" = "podman" ]; then
-        "$RUNTIME" exec "$CONTAINER_NAME" sudo chown -R agent:agent /home/agent 2>/dev/null || true
-        "$RUNTIME" exec "$CONTAINER_NAME" sudo chown -R agent:agent /opt/npm-cache /opt/playwright-cache 2>/dev/null || true
-    fi
     
     # Connect to the container
     "$RUNTIME" exec -it "$CONTAINER_NAME" bash -c "
@@ -137,7 +132,7 @@ if [ "$RESET" = true ]; then
         echo '3. Your auth will be saved in the persistent volume'
         echo ''
         echo 'Initialize Claude Flow:'
-        echo 'npx claude-flow@alpha init --force'
+        echo 'claude-flow init --force'
         echo ''
         exec bash
     "
