@@ -118,7 +118,7 @@ RUN curl -fsSL http://claude.ai/install.sh | bash && \
 RUN npm install -g claude-flow@alpha
 
 # Install Playwright and MCP server globally
-RUN npm install -g @playwright/test @playwright/mcp@latest
+RUN npm install -g playwright @playwright/test @playwright/mcp@latest
 
 # Add global aliases for all users
 RUN echo "# Alias for claude-flow to initialize a project" >> /etc/bash.bashrc &&     echo "alias flow_init='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias for claude-flow to run commands" >> /etc/bash.bashrc &&     echo "alias flow='npx --y claude-flow@alpha'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc &&     echo "alias yolo='claude --dangerously-skip-permissions'" >> /etc/bash.bashrc
@@ -132,7 +132,7 @@ RUN mkdir -p /etc/claude && \
     "playwright": {\n\
       "type": "stdio",\n\
       "command": "npx",\n\
-      "args": ["@playwright/mcp@latest"],\n\
+      "args": ["@playwright/mcp@latest", "--executable-path", "/opt/playwright-cache/chromium-1181/chrome-linux/chrome"],\n\
       "env": {}\n\
     }\n\
   }\n\
@@ -149,9 +149,6 @@ RUN sed -i 's|alias yolo=.*|alias yolo="/usr/local/bin/claude --dangerously-skip
 # Add claude alias that includes MCP config
 RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-servers.json"' >> /etc/bash.bashrc
 
-# Install only Chromium browsers (including headless-shell) as root
-RUN npx playwright install chromium chromium-headless-shell --with-deps
-
 # Create cache directories with different approach for macOS
 RUN if [ "${HOST_OS}" = "darwin" ]; then \
         # On macOS, just create directories without ownership changes
@@ -164,6 +161,9 @@ RUN if [ "${HOST_OS}" = "darwin" ]; then \
         chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/playwright-cache && \
         chmod -R 755 /opt/npm-cache /opt/playwright-cache; \
     fi
+
+# Install only Chromium browsers (including headless-shell) after cache setup
+RUN npx playwright install chromium chromium-headless-shell --with-deps
 
 # Switch to non-root user
 USER agent
