@@ -9,6 +9,7 @@ IMAGE_NAME="swarm-box"
 CONTAINER_NAME="swarm-box"
 WORK_DIR="$(pwd)/.work"
 PORTS=""
+IPORTS=""
 RESET=false
 RUNTIME_ARG=""
 CUSTOM_NAME=""
@@ -19,6 +20,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --ports)
             PORTS="$2"
+            shift 2
+            ;;
+        --iports)
+            IPORTS="$2"
             shift 2
             ;;
         --reset)
@@ -39,8 +44,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--reset] [--runtime docker|podman] [--name container-name] [--image image-name]"
+            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--iports port:host_port,port:host_port,...] [--reset] [--runtime docker|podman] [--name container-name] [--image image-name]"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
+            echo "  --iports: Comma-separated list of inverse port mappings to host.docker.internal (e.g., 3000,8080:80)"
             echo "  --reset: Stop and remove existing container, keeping persistent folders"
             echo "  --runtime: Specify container runtime (docker or podman). Default: docker"
             echo "  --name: Custom container name (default: swarm-box)"
@@ -79,6 +85,26 @@ if [ -n "$PORTS" ]; then
     done
 fi
 
+# Parse inverse port mappings (container can connect to host services)
+CONTAINER_EXTRA_HOSTS=""
+if [ -n "$IPORTS" ]; then
+    IFS=',' read -ra IPORT_ARRAY <<< "$IPORTS"
+    for port_mapping in "${IPORT_ARRAY[@]}"; do
+        if [[ $port_mapping == *":"* ]]; then
+            # Format: container_port:host_port
+            IFS=':' read -ra PORT_SPLIT <<< "$port_mapping"
+            container_port="${PORT_SPLIT[0]}"
+            host_port="${PORT_SPLIT[1]}"
+            CONTAINER_EXTRA_HOSTS="$CONTAINER_EXTRA_HOSTS --add-host=host.docker.internal:host-gateway"
+        else
+            # Format: port (container_port == host_port)
+            CONTAINER_EXTRA_HOSTS="$CONTAINER_EXTRA_HOSTS --add-host=host.docker.internal:host-gateway"
+        fi
+    done
+    # Remove duplicates by only adding once
+    CONTAINER_EXTRA_HOSTS="--add-host=host.docker.internal:host-gateway"
+fi
+
 # Create directories if they don't exist
 mkdir -p "$WORK_DIR"
 
@@ -109,6 +135,7 @@ if [ "$RESET" = true ]; then
             --name "$CONTAINER_NAME" \
             -v "$WORK_DIR:/home/agent" \
             $CONTAINER_PORTS \
+            $CONTAINER_EXTRA_HOSTS \
             "$IMAGE_NAME"
     else
         # Linux - use privileged mode
@@ -117,6 +144,7 @@ if [ "$RESET" = true ]; then
             --name "$CONTAINER_NAME" \
             -v "$WORK_DIR:/home/agent" \
             $CONTAINER_PORTS \
+            $CONTAINER_EXTRA_HOSTS \
             "$IMAGE_NAME"
     fi
     
@@ -152,6 +180,7 @@ else
                 --name "$CONTAINER_NAME" \
                 -v "$WORK_DIR:/home/agent" \
                 $CONTAINER_PORTS \
+                $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME"
         else
             # Linux - use privileged mode
@@ -160,6 +189,7 @@ else
                 --name "$CONTAINER_NAME" \
                 -v "$WORK_DIR:/home/agent" \
                 $CONTAINER_PORTS \
+                $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME"
         fi
         

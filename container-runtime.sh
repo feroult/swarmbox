@@ -78,8 +78,8 @@ get_run_command() {
             if [[ "$OSTYPE" == "darwin"* ]]; then
                 echo "podman run --security-opt label=disable --userns=keep-id:uid=$(id -u),gid=$(id -g)"
             else
-                # Linux - use user namespace mapping to preserve ownership
-                echo "podman run --userns=keep-id"
+                # Linux - use user namespace mapping and map Docker socket to Podman socket
+                echo "podman run --userns=keep-id -v \$XDG_RUNTIME_DIR/podman/podman.sock:/var/run/docker.sock"
             fi
             ;;
         docker)
