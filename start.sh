@@ -138,9 +138,8 @@ if [ "$RESET" = true ]; then
             $CONTAINER_EXTRA_HOSTS \
             "$IMAGE_NAME"
     else
-        # Linux - use privileged mode
+        # Linux - run without privileged mode
         eval "$RUN_COMMAND" -d \
-            --privileged \
             --name "$CONTAINER_NAME" \
             -v "$WORK_DIR:/home/agent" \
             $CONTAINER_PORTS \
@@ -183,9 +182,8 @@ else
                 $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME"
         else
-            # Linux - use privileged mode
+            # Linux - run without privileged mode
             eval "$RUN_COMMAND" -d \
-                --privileged \
                 --name "$CONTAINER_NAME" \
                 -v "$WORK_DIR:/home/agent" \
                 $CONTAINER_PORTS \
