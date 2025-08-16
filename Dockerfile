@@ -139,7 +139,7 @@ RUN mkdir -p /etc/claude && \
     "playwright": {\n\
       "type": "stdio",\n\
       "command": "npx",\n\
-      "args": ["@playwright/mcp@latest", "--executable-path", "/opt/playwright-cache/chromium-1181/chrome-linux/chrome"],\n\
+      "args": ["@playwright/mcp@latest", "--executable-path", "/opt/playwright-cache/chromium-1181/chrome-linux/chrome", "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"],\n\
       "env": {}\n\
     }\n\
   }\n\
