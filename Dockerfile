@@ -129,7 +129,7 @@ RUN npm install -g claude-flow@alpha
 RUN npm install -g playwright @playwright/test @playwright/mcp@latest
 
 # Add global aliases for all users
-RUN echo "# Alias for claude-flow to initialize a project" >> /etc/bash.bashrc &&     echo "alias flow_init='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias for claude-flow to run commands" >> /etc/bash.bashrc &&     echo "alias flow='npx --y claude-flow@alpha'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc &&     echo "alias yolo='claude --dangerously-skip-permissions'" >> /etc/bash.bashrc
+RUN echo "# Alias for claude-flow to initialize a project" >> /etc/bash.bashrc &&     echo "alias flow_init='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias for claude-flow to run commands" >> /etc/bash.bashrc &&     echo "alias flow='npx --y claude-flow@alpha'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc &&     echo "alias yolo='claude --dangerously-skip-permissions'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# UUID function" >> /etc/bash.bashrc &&     echo 'uuid() { python3 -c "import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_DNS, sys.argv[1]))" "$1"; }' >> /etc/bash.bashrc
 
 
 
