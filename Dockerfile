@@ -157,7 +157,7 @@ RUN mkdir -p /etc/claude && \
     "playwright": {\n\
       "type": "stdio",\n\
       "command": "npx",\n\
-      "args": ["@playwright/mcp@latest", "--executable-path", "/opt/playwright-cache/chromium-1181/chrome-linux/chrome", "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"],\n\
+      "args": ["@playwright/mcp@latest", "--executable-path", "/opt/playwright-cache/chromium-latest/chrome-linux/chrome", "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"],\n\
       "env": {}\n\
     }\n\
   }\n\
@@ -194,6 +194,13 @@ RUN if [ "${HOST_OS}" = "darwin" ]; then \
 
 # Install only Chromium browsers (including headless-shell) after cache setup
 RUN npx playwright install chromium chromium-headless-shell --with-deps
+
+# Create version-agnostic symlinks for browsers
+RUN cd /opt/playwright-cache && \
+    CHROMIUM_DIR=$(find . -maxdepth 1 -name "chromium-[0-9]*" -type d | head -1) && \
+    CHROMIUM_HEADLESS_DIR=$(find . -maxdepth 1 -name "chromium_headless_shell-[0-9]*" -type d | head -1) && \
+    if [ -n "$CHROMIUM_DIR" ]; then ln -sf "$CHROMIUM_DIR" chromium-latest; fi && \
+    if [ -n "$CHROMIUM_HEADLESS_DIR" ]; then ln -sf "$CHROMIUM_HEADLESS_DIR" chromium-headless-latest; fi
 
 # Switch to non-root user
 USER agent
