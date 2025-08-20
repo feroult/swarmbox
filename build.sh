@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/container-runtime.sh"
 
 # Configuration
-IMAGE_NAME="swarm-box"
-CONTAINER_NAME="swarm-box"
+IMAGE_NAME="swarmbox"
+CONTAINER_NAME="swarmbox"
 RESET=false
 NO_CACHE=false
 RUNTIME_ARG=""
@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --reset: Remove container, image, and .work directory for fresh installation"
             echo "  --no-cache: Build the container image without using cache"
             echo "  --runtime: Specify container runtime (docker or podman). Default: docker"
-            echo "  --name: Custom image name (default: swarm-box)"
+            echo "  --name: Custom image name (default: swarmbox)"
             exit 1
             ;;
     esac

@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/container-runtime.sh"
 
 # Configuration
-IMAGE_NAME="swarm-box"
-CONTAINER_NAME="swarm-box"
+IMAGE_NAME="swarmbox"
+CONTAINER_NAME="swarmbox"
 WORK_DIR="$(pwd)/.work"
 PORTS=""
 IPORTS=""
@@ -49,8 +49,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --iports: Comma-separated list of inverse port mappings to host.docker.internal (e.g., 3000,8080:80)"
             echo "  --reset: Stop and remove existing container, keeping persistent folders"
             echo "  --runtime: Specify container runtime (docker or podman). Default: docker"
-            echo "  --name: Custom container name (default: swarm-box)"
-            echo "  --image: Custom image name (default: swarm-box)"
+            echo "  --name: Custom container name (default: swarmbox)"
+            echo "  --image: Custom image name (default: swarmbox)"
             exit 1
             ;;
     esac

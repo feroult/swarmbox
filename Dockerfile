@@ -73,9 +73,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a system-wide Python virtual environment
-RUN python3 -m venv /opt/python-venv && \
-    /opt/python-venv/bin/pip install --upgrade pip && \
-    /opt/python-venv/bin/pip install python-docx
+RUN python3 -m venv /opt/swarmbox && \
+    /opt/swarmbox/bin/pip install --upgrade pip && \
+    /opt/swarmbox/bin/pip install python-docx
 
 # Install Docker CLI
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
@@ -130,13 +130,23 @@ RUN curl -fsSL http://claude.ai/install.sh | bash && \
     chmod +x /usr/local/bin/claude
 
 # Install claude-flow globally with @alpha version
-# RUN npm install -g claude-flow@alpha
+RUN npm install -g claude-flow@alpha
 
 # Install Playwright and MCP server globally
 RUN npm install -g playwright @playwright/test @playwright/mcp@latest
 
 # Add global aliases for all users
-# RUN echo "# Alias for claude-flow to initialize a project" >> /etc/bash.bashrc &&     echo "alias flow_init='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias for claude-flow to run commands" >> /etc/bash.bashrc &&     echo "alias flow='npx --y claude-flow@alpha'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc &&     echo "alias yolo='claude --dangerously-skip-permissions'" >> /etc/bash.bashrc &&     echo "" >> /etc/bash.bashrc &&     echo "# UUID function" >> /etc/bash.bashrc &&     echo 'uuid() { python3 -c "import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_DNS, sys.argv[1]))" "$1"; }' >> /etc/bash.bashrc
+RUN echo "# Alias for claude-flow to initialize a project" >> /etc/bash.bashrc && \
+    echo "alias flow_init='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc && \
+    echo "" >> /etc/bash.bashrc && \
+    echo "# Alias for claude-flow to run commands" >> /etc/bash.bashrc && \
+    echo "alias flow='npx --y claude-flow@alpha'" >> /etc/bash.bashrc && \
+    echo "" >> /etc/bash.bashrc && \
+    echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc && \
+    echo "alias yolo='claude --dangerously-skip-permissions --mcp-config /etc/claude/mcp-servers.json'" >> /etc/bash.bashrc && \
+    echo "" >> /etc/bash.bashrc && \
+    echo "# UUID function" >> /etc/bash.bashrc && \
+    echo 'uuid() { python3 -c "import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_DNS, sys.argv[1]))" "$1"; }' >> /etc/bash.bashrc
 
 
 
@@ -158,8 +168,8 @@ RUN echo '#!/bin/bash\n\
 /usr/local/bin/claude --mcp-config /etc/claude/mcp-servers.json "$@"' > /usr/local/bin/claude-mcp && \
     chmod +x /usr/local/bin/claude-mcp
 
-# Update the yolo alias to include MCP config
-RUN sed -i 's|alias yolo=.*|alias yolo="/usr/local/bin/claude --dangerously-skip-permissions --mcp-config /etc/claude/mcp-servers.json"|' /etc/bash.bashrc
+# Update the yolo alias to include MCP config (done in global aliases section above)
+# RUN sed -i 's|alias yolo=.*|alias yolo="/usr/local/bin/claude --dangerously-skip-permissions --mcp-config /etc/claude/mcp-servers.json"|' /etc/bash.bashrc
 
 # Add claude alias that includes MCP config
 RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-servers.json"' >> /etc/bash.bashrc
@@ -167,7 +177,7 @@ RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-serve
 # Activate Python virtual environment by default for all users
 RUN echo "" >> /etc/bash.bashrc && \
     echo "# Activate Python virtual environment" >> /etc/bash.bashrc && \
-    echo "source /opt/python-venv/bin/activate" >> /etc/bash.bashrc
+    echo "source /opt/swarmbox/bin/activate" >> /etc/bash.bashrc
 
 # Create cache directories with different approach for macOS
 RUN if [ "${HOST_OS}" = "darwin" ]; then \

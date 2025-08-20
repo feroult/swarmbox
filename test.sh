@@ -13,8 +13,8 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Test configuration
-TEST_IMAGE_NAME="swarm-box-test"
-TEST_CONTAINER_NAME="swarm-box-test-container"
+TEST_IMAGE_NAME="swarmbox-test"
+TEST_CONTAINER_NAME="swarmbox-test-container"
 TEST_FAILED=0
 
 # Function to print test status

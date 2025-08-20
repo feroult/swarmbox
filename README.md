@@ -44,7 +44,7 @@ flow_init  # Alias for: npx claude-flow@alpha init --force
 ```bash
 ./build.sh [OPTIONS]
   --runtime docker|podman    # Container runtime (default: podman)
-  --name IMAGE_NAME          # Custom image name (default: swarm-box)
+  --name IMAGE_NAME          # Custom image name (default: swarmbox)
   --no-cache                 # Build without cache
   --reset                    # Remove existing containers/images first
 ```
@@ -53,8 +53,8 @@ flow_init  # Alias for: npx claude-flow@alpha init --force
 ```bash
 ./start.sh [OPTIONS]
   --runtime docker|podman    # Container runtime (default: podman)
-  --name CONTAINER_NAME      # Custom container name (default: swarm-box)
-  --image IMAGE_NAME         # Custom image name (default: swarm-box)
+  --name CONTAINER_NAME      # Custom container name (default: swarmbox)
+  --image IMAGE_NAME         # Custom image name (default: swarmbox)
   --ports PORT_LIST          # Port mappings (e.g., --ports 3000,8080:80)
   --reset                    # Reset container before starting
 ```
