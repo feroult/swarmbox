@@ -73,9 +73,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a system-wide Python virtual environment
-RUN python3 -m venv /opt/swarmbox && \
-    /opt/swarmbox/bin/pip install --upgrade pip && \
-    /opt/swarmbox/bin/pip install python-docx
+RUN python3 -m venv /opt/flow && \
+    /opt/flow/bin/pip install --upgrade pip && \
+    /opt/flow/bin/pip install python-docx
 
 # Install Docker CLI
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
@@ -177,7 +177,7 @@ RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-serve
 # Activate Python virtual environment by default for all users
 RUN echo "" >> /etc/bash.bashrc && \
     echo "# Activate Python virtual environment" >> /etc/bash.bashrc && \
-    echo "source /opt/swarmbox/bin/activate" >> /etc/bash.bashrc
+    echo "source /opt/flow/bin/activate" >> /etc/bash.bashrc
 
 # Create cache directories with different approach for macOS
 RUN if [ "${HOST_OS}" = "darwin" ]; then \

@@ -14,6 +14,7 @@ RESET=false
 RUNTIME_ARG=""
 CUSTOM_NAME=""
 CUSTOM_IMAGE=""
+CUSTOM_HOSTNAME="swarmbox"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -42,15 +43,20 @@ while [[ $# -gt 0 ]]; do
             CUSTOM_IMAGE="$2"
             shift 2
             ;;
+        --hostname)
+            CUSTOM_HOSTNAME="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--iports port:host_port,port:host_port,...] [--reset] [--runtime docker|podman] [--name container-name] [--image image-name]"
+            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--iports port:host_port,port:host_port,...] [--reset] [--runtime docker|podman] [--name container-name] [--image image-name] [--hostname hostname]"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
             echo "  --iports: Comma-separated list of inverse port mappings to host.docker.internal (e.g., 3000,8080:80)"
             echo "  --reset: Stop and remove existing container, keeping persistent folders"
             echo "  --runtime: Specify container runtime (docker or podman). Default: docker"
             echo "  --name: Custom container name (default: swarmbox)"
             echo "  --image: Custom image name (default: swarmbox)"
+            echo "  --hostname: Custom hostname (default: swarmbox)"
             exit 1
             ;;
     esac
@@ -133,6 +139,7 @@ if [ "$RESET" = true ]; then
         # macOS - run without privileged mode which causes issues
         eval "$RUN_COMMAND" -d \
             --name "$CONTAINER_NAME" \
+            --hostname "$CUSTOM_HOSTNAME" \
             -v "$WORK_DIR:/home/agent" \
             $CONTAINER_PORTS \
             $CONTAINER_EXTRA_HOSTS \
@@ -141,6 +148,7 @@ if [ "$RESET" = true ]; then
         # Linux - run without privileged mode
         eval "$RUN_COMMAND" -d \
             --name "$CONTAINER_NAME" \
+            --hostname "$CUSTOM_HOSTNAME" \
             -v "$WORK_DIR:/home/agent" \
             $CONTAINER_PORTS \
             $CONTAINER_EXTRA_HOSTS \
@@ -191,6 +199,7 @@ else
             # macOS - run without privileged mode which causes issues
             eval "$RUN_COMMAND" -d \
                 --name "$CONTAINER_NAME" \
+                --hostname "$CUSTOM_HOSTNAME" \
                 -v "$WORK_DIR:/home/agent" \
                 $CONTAINER_PORTS \
                 $CONTAINER_EXTRA_HOSTS \
@@ -199,6 +208,7 @@ else
             # Linux - run without privileged mode
             eval "$RUN_COMMAND" -d \
                 --name "$CONTAINER_NAME" \
+                --hostname "$CUSTOM_HOSTNAME" \
                 -v "$WORK_DIR:/home/agent" \
                 $CONTAINER_PORTS \
                 $CONTAINER_EXTRA_HOSTS \
