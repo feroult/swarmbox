@@ -72,6 +72,12 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Poetry system-wide
+ENV POETRY_HOME=/opt/poetry
+RUN curl -sSL https://install.python-poetry.org | python3 - && \
+    ln -s /opt/poetry/bin/poetry /usr/local/bin/poetry && \
+    chmod -R a+rx /opt/poetry
+
 # Create a system-wide Python virtual environment
 RUN python3 -m venv /opt/flow && \
     /opt/flow/bin/pip install --upgrade pip && \
@@ -189,17 +195,17 @@ RUN echo "" >> /etc/bash.bashrc && \
     echo "# Activate Python virtual environment" >> /etc/bash.bashrc && \
     echo "source /opt/flow/bin/activate" >> /etc/bash.bashrc
 
-# Create cache directories with different approach for macOS
+# Create cache directories and set permissions for agent user
 RUN if [ "${HOST_OS}" = "darwin" ]; then \
         # On macOS, just create directories without ownership changes
         # Docker Desktop will handle UID/GID mapping automatically
         mkdir -p /opt/npm-cache /opt/playwright-cache && \
-        chmod -R 777 /opt/npm-cache /opt/playwright-cache; \
+        chmod -R 777 /opt/npm-cache /opt/playwright-cache /opt/flow; \
     else \
         # On Linux, use traditional approach
         mkdir -p /opt/npm-cache /opt/playwright-cache && \
-        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/playwright-cache && \
-        chmod -R 755 /opt/npm-cache /opt/playwright-cache; \
+        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/playwright-cache /opt/flow && \
+        chmod -R 755 /opt/npm-cache /opt/playwright-cache /opt/flow; \
     fi
 
 # Install only Chromium browsers (including headless-shell) after cache setup
