@@ -44,32 +44,6 @@ RUN apt-get update && apt-get install -y \
     bash-completion \
     sqlite3 \
     pandoc \
-    # Playwright browser dependencies
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libatspi2.0-0 \
-    libx11-6 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libxcb1 \
-    libxkbcommon0 \
-    libgtk-3-0 \
-    libpango-1.0-0 \
-    libcairo2 \
-    libgdk-pixbuf2.0-0 \
-    libasound2 \
-    libdrm2 \
-    libxss1 \
-    libxtst6 \
-    fonts-liberation \
-    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry system-wide
@@ -79,15 +53,22 @@ RUN curl -sSL https://install.python-poetry.org | python3 - && \
     chmod -R a+rx /opt/poetry
 
 # Create a system-wide Python virtual environment
-RUN python3 -m venv /opt/flow && \
-    /opt/flow/bin/pip install --upgrade pip && \
-    /opt/flow/bin/pip install python-docx
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install python-docx
 
 # Install Docker CLI
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     apt-get update && \
     apt-get install -y docker-ce-cli && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Google Chrome
+RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/google-chrome-keyring.gpg] https://dl.google.com/linux/chrome/deb/ stable main" | tee /etc/apt/sources.list.d/google-chrome.list > /dev/null && \
+    apt-get update && \
+    apt-get install -y google-chrome-stable && \
     rm -rf /var/lib/apt/lists/*
 
 # Create app directory
@@ -119,27 +100,19 @@ ENV NPM_CONFIG_CACHE=/opt/npm-cache
 # Set Anthropic model
 ENV ANTHROPIC_MODEL=sonnet
 
-# Set Playwright environment variables to a non-mounted location
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-cache
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
-
 # Disable browser auto-opening for Vite and other dev servers
 ENV BROWSER=none
 
-# Disable browser sandboxing for container environments (especially Podman)
-ENV PLAYWRIGHT_CHROMIUM_ARGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
+# Chrome/Puppeteer environment variables for Docker
+ENV CHROME_BIN=/usr/bin/google-chrome-stable
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 # Install Claude Code globally as root (latest version)
 RUN curl -fsSL http://claude.ai/install.sh | bash && \
     # Copy Claude from the expected location to system path
     cp /root/.local/bin/claude /usr/local/bin/claude && \
     chmod +x /usr/local/bin/claude
-
-# Install claude-flow globally with @alpha version
-RUN npm install -g claude-flow@alpha
-
-# Install Playwright and MCP server globally
-RUN npm install -g playwright @playwright/test @playwright/mcp@latest
 
 # Enable colors for ls and other commands
 RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
@@ -151,12 +124,6 @@ RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
     echo "alias grep='grep --color=auto'" >> /etc/bash.bashrc && \
     echo "alias fgrep='fgrep --color=auto'" >> /etc/bash.bashrc && \
     echo "alias egrep='egrep --color=auto'" >> /etc/bash.bashrc && \
-    echo "" >> /etc/bash.bashrc && \
-    echo "# Alias for claude-flow to initialize a project" >> /etc/bash.bashrc && \
-    echo "alias flow_init='npx --y claude-flow@alpha init --force'" >> /etc/bash.bashrc && \
-    echo "" >> /etc/bash.bashrc && \
-    echo "# Alias for claude-flow to run commands" >> /etc/bash.bashrc && \
-    echo "alias flow='npx --y claude-flow@alpha'" >> /etc/bash.bashrc && \
     echo "" >> /etc/bash.bashrc && \
     echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc && \
     echo "alias yolo='claude --dangerously-skip-permissions --mcp-config /etc/claude/mcp-servers.json'" >> /etc/bash.bashrc && \
@@ -170,11 +137,17 @@ RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
 RUN mkdir -p /etc/claude && \
     echo '{\n\
   "mcpServers": {\n\
-    "playwright": {\n\
-      "type": "stdio",\n\
+    "chrome-devtools": {\n\
       "command": "npx",\n\
-      "args": ["@playwright/mcp@latest", "--executable-path", "/opt/playwright-cache/chromium-latest/chrome-linux/chrome", "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"],\n\
-      "env": {}\n\
+      "args": [\n\
+        "-y",\n\
+        "chrome-devtools-mcp@latest",\n\
+        "--headless",\n\
+        "--chromeArg=--no-sandbox",\n\
+        "--chromeArg=--disable-setuid-sandbox",\n\
+        "--chromeArg=--disable-dev-shm-usage",\n\
+        "--chromeArg=--disable-gpu"\n\
+      ]\n\
     }\n\
   }\n\
 }' > /etc/claude/mcp-servers.json
@@ -193,30 +166,20 @@ RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-serve
 # Activate Python virtual environment by default for all users
 RUN echo "" >> /etc/bash.bashrc && \
     echo "# Activate Python virtual environment" >> /etc/bash.bashrc && \
-    echo "source /opt/flow/bin/activate" >> /etc/bash.bashrc
+    echo "source /opt/venv/bin/activate" >> /etc/bash.bashrc
 
 # Create cache directories and set permissions for agent user
 RUN if [ "${HOST_OS}" = "darwin" ]; then \
         # On macOS, just create directories without ownership changes
         # Docker Desktop will handle UID/GID mapping automatically
-        mkdir -p /opt/npm-cache /opt/playwright-cache && \
-        chmod -R 777 /opt/npm-cache /opt/playwright-cache /opt/flow; \
+        mkdir -p /opt/npm-cache && \
+        chmod -R 777 /opt/npm-cache /opt/venv; \
     else \
         # On Linux, use traditional approach
-        mkdir -p /opt/npm-cache /opt/playwright-cache && \
-        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/playwright-cache /opt/flow && \
-        chmod -R 755 /opt/npm-cache /opt/playwright-cache /opt/flow; \
+        mkdir -p /opt/npm-cache && \
+        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/venv && \
+        chmod -R 755 /opt/npm-cache /opt/venv; \
     fi
-
-# Install only Chromium browsers (including headless-shell) after cache setup
-RUN npx playwright install chromium chromium-headless-shell --with-deps
-
-# Create version-agnostic symlinks for browsers
-RUN cd /opt/playwright-cache && \
-    CHROMIUM_DIR=$(find . -maxdepth 1 -name "chromium-[0-9]*" -type d | head -1) && \
-    CHROMIUM_HEADLESS_DIR=$(find . -maxdepth 1 -name "chromium_headless_shell-[0-9]*" -type d | head -1) && \
-    if [ -n "$CHROMIUM_DIR" ]; then ln -sf "$CHROMIUM_DIR" chromium-latest; fi && \
-    if [ -n "$CHROMIUM_HEADLESS_DIR" ]; then ln -sf "$CHROMIUM_HEADLESS_DIR" chromium-headless-latest; fi
 
 # Switch to non-root user
 USER agent
