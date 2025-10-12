@@ -168,6 +168,31 @@ RUN echo "" >> /etc/bash.bashrc && \
     echo "# Activate Python virtual environment" >> /etc/bash.bashrc && \
     echo "source /opt/flow/bin/activate" >> /etc/bash.bashrc
 
+# Add welcome banner for interactive shells
+RUN echo "" >> /etc/bash.bashrc && \
+    echo "# Display welcome banner for interactive shells" >> /etc/bash.bashrc && \
+    echo "if [[ \$- == *i* ]]; then" >> /etc/bash.bashrc && \
+    echo "  echo '  ███████╗██╗    ██╗ █████╗ ██████╗ ███╗   ███╗██████╗  ██████╗ ██╗  ██╗'" >> /etc/bash.bashrc && \
+    echo "  echo '  ██╔════╝██║    ██║██╔══██╗██╔══██╗████╗ ████║██╔══██╗██╔═══██╗╚██╗██╔╝'" >> /etc/bash.bashrc && \
+    echo "  echo '  ███████╗██║ █╗ ██║███████║██████╔╝██╔████╔██║██████╔╝██║   ██║ ╚███╔╝ '" >> /etc/bash.bashrc && \
+    echo "  echo '  ╚════██║██║███╗██║██╔══██║██╔══██╗██║╚██╔╝██║██╔══██╗██║   ██║ ██╔██╗ '" >> /etc/bash.bashrc && \
+    echo "  echo '  ███████║╚███╔███╔╝██║  ██║██║  ██║██║ ╚═╝ ██║██████╔╝╚██████╔╝██╔╝ ██╗'" >> /etc/bash.bashrc && \
+    echo "  echo '  ╚══════╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝'" >> /etc/bash.bashrc && \
+    echo "  echo ''" >> /etc/bash.bashrc && \
+    echo "  echo '  🚀 AI-Powered Development Environment with Claude'" >> /etc/bash.bashrc && \
+    echo "  echo '  ================================================='" >> /etc/bash.bashrc && \
+    echo "  echo ''" >> /etc/bash.bashrc && \
+    echo "  echo '  📋 First time setup:'" >> /etc/bash.bashrc && \
+    echo "  echo '     1️⃣  Run: yolo'" >> /etc/bash.bashrc && \
+    echo "  echo '     2️⃣  Follow the authentication link'" >> /etc/bash.bashrc && \
+    echo "  echo '     3️⃣  Your auth will be saved in the persistent volume'" >> /etc/bash.bashrc && \
+    echo "  echo ''" >> /etc/bash.bashrc && \
+    echo "  echo '  ⚡ Quick commands:'" >> /etc/bash.bashrc && \
+    echo "  echo '     • yolo          - Claude with skip permissions + MCP'" >> /etc/bash.bashrc && \
+    echo "  echo '     • uuid <name>   - Generate UUID for project'" >> /etc/bash.bashrc && \
+    echo "  echo ''" >> /etc/bash.bashrc && \
+    echo "fi" >> /etc/bash.bashrc
+
 # Create cache directories and set permissions for agent user
 RUN if [ "${HOST_OS}" = "darwin" ]; then \
         # On macOS, just create directories without ownership changes
