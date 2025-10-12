@@ -53,9 +53,9 @@ RUN curl -sSL https://install.python-poetry.org | python3 - && \
     chmod -R a+rx /opt/poetry
 
 # Create a system-wide Python virtual environment
-RUN python3 -m venv /opt/venv && \
-    /opt/venv/bin/pip install --upgrade pip && \
-    /opt/venv/bin/pip install python-docx
+RUN python3 -m venv /opt/flow && \
+    /opt/flow/bin/pip install --upgrade pip && \
+    /opt/flow/bin/pip install python-docx
 
 # Install Docker CLI
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
@@ -166,19 +166,19 @@ RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-serve
 # Activate Python virtual environment by default for all users
 RUN echo "" >> /etc/bash.bashrc && \
     echo "# Activate Python virtual environment" >> /etc/bash.bashrc && \
-    echo "source /opt/venv/bin/activate" >> /etc/bash.bashrc
+    echo "source /opt/flow/bin/activate" >> /etc/bash.bashrc
 
 # Create cache directories and set permissions for agent user
 RUN if [ "${HOST_OS}" = "darwin" ]; then \
         # On macOS, just create directories without ownership changes
         # Docker Desktop will handle UID/GID mapping automatically
         mkdir -p /opt/npm-cache && \
-        chmod -R 777 /opt/npm-cache /opt/venv; \
+        chmod -R 777 /opt/npm-cache /opt/flow; \
     else \
         # On Linux, use traditional approach
         mkdir -p /opt/npm-cache && \
-        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/venv && \
-        chmod -R 755 /opt/npm-cache /opt/venv; \
+        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/flow && \
+        chmod -R 755 /opt/npm-cache /opt/flow; \
     fi
 
 # Switch to non-root user
