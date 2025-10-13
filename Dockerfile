@@ -74,6 +74,10 @@ RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor
 # Create app directory
 WORKDIR /app
 
+# Copy banner script
+COPY banner.sh /usr/local/bin/banner.sh
+RUN chmod +x /usr/local/bin/banner.sh
+
 # Create a non-root user with sudo privileges using dynamic UID/GID
 # First check if the UID already exists
 RUN if id -u ${USER_UID} >/dev/null 2>&1; then \
@@ -168,29 +172,11 @@ RUN echo "" >> /etc/bash.bashrc && \
     echo "# Activate Python virtual environment" >> /etc/bash.bashrc && \
     echo "source /opt/flow/bin/activate" >> /etc/bash.bashrc
 
-# Add welcome banner for interactive shells
+# Add welcome banner for interactive shells with BBS-style ANSI art
 RUN echo "" >> /etc/bash.bashrc && \
     echo "# Display welcome banner for interactive shells" >> /etc/bash.bashrc && \
     echo "if [[ \$- == *i* ]]; then" >> /etc/bash.bashrc && \
-    echo "  echo '  ███████╗██╗    ██╗ █████╗ ██████╗ ███╗   ███╗██████╗  ██████╗ ██╗  ██╗'" >> /etc/bash.bashrc && \
-    echo "  echo '  ██╔════╝██║    ██║██╔══██╗██╔══██╗████╗ ████║██╔══██╗██╔═══██╗╚██╗██╔╝'" >> /etc/bash.bashrc && \
-    echo "  echo '  ███████╗██║ █╗ ██║███████║██████╔╝██╔████╔██║██████╔╝██║   ██║ ╚███╔╝ '" >> /etc/bash.bashrc && \
-    echo "  echo '  ╚════██║██║███╗██║██╔══██║██╔══██╗██║╚██╔╝██║██╔══██╗██║   ██║ ██╔██╗ '" >> /etc/bash.bashrc && \
-    echo "  echo '  ███████║╚███╔███╔╝██║  ██║██║  ██║██║ ╚═╝ ██║██████╔╝╚██████╔╝██╔╝ ██╗'" >> /etc/bash.bashrc && \
-    echo "  echo '  ╚══════╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝'" >> /etc/bash.bashrc && \
-    echo "  echo ''" >> /etc/bash.bashrc && \
-    echo "  echo '  🚀 AI-Powered Development Environment with Claude'" >> /etc/bash.bashrc && \
-    echo "  echo '  ================================================='" >> /etc/bash.bashrc && \
-    echo "  echo ''" >> /etc/bash.bashrc && \
-    echo "  echo '  📋 First time setup:'" >> /etc/bash.bashrc && \
-    echo "  echo '     1️⃣  Run: yolo'" >> /etc/bash.bashrc && \
-    echo "  echo '     2️⃣  Follow the authentication link'" >> /etc/bash.bashrc && \
-    echo "  echo '     3️⃣  Your auth will be saved in the persistent volume'" >> /etc/bash.bashrc && \
-    echo "  echo ''" >> /etc/bash.bashrc && \
-    echo "  echo '  ⚡ Quick commands:'" >> /etc/bash.bashrc && \
-    echo "  echo '     • yolo          - Claude with skip permissions + MCP'" >> /etc/bash.bashrc && \
-    echo "  echo '     • uuid <name>   - Generate UUID for project'" >> /etc/bash.bashrc && \
-    echo "  echo ''" >> /etc/bash.bashrc && \
+    echo "  /usr/local/bin/banner.sh" >> /etc/bash.bashrc && \
     echo "fi" >> /etc/bash.bashrc
 
 # Create cache directories and set permissions for agent user
