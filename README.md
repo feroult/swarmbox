@@ -7,7 +7,7 @@ Containerized development environment with Claude CLI. Supports Docker and Podma
 ```bash
 ./build.sh              # Build image
 ./start.sh              # Start container
-claude                  # Inside container: authenticate and use Claude
+yolo                    # Inside container: authenticate and use Claude
 ```
 
 ## Build Options
