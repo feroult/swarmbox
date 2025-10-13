@@ -74,10 +74,6 @@ RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor
 # Create app directory
 WORKDIR /app
 
-# Copy banner script
-COPY banner.sh /usr/local/bin/banner.sh
-RUN chmod +x /usr/local/bin/banner.sh
-
 # Create a non-root user with sudo privileges using dynamic UID/GID
 # First check if the UID already exists
 RUN if id -u ${USER_UID} >/dev/null 2>&1; then \
@@ -191,6 +187,10 @@ RUN if [ "${HOST_OS}" = "darwin" ]; then \
         chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/flow && \
         chmod -R 755 /opt/npm-cache /opt/flow; \
     fi
+
+# Copy banner script (at the end to optimize build cache)
+COPY banner.sh /usr/local/bin/banner.sh
+RUN chmod +x /usr/local/bin/banner.sh
 
 # Switch to non-root user
 USER agent
