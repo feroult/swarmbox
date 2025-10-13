@@ -114,6 +114,11 @@ RUN curl -fsSL http://claude.ai/install.sh | bash && \
     cp /root/.local/bin/claude /usr/local/bin/claude && \
     chmod +x /usr/local/bin/claude
 
+# Add ~/.local/bin to PATH for all users (prevents Claude warning)
+RUN echo "" >> /etc/bash.bashrc && \
+    echo "# Add ~/.local/bin to PATH" >> /etc/bash.bashrc && \
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> /etc/bash.bashrc
+
 # Enable colors for ls and other commands
 RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
     echo "export LS_COLORS='rs=0:di=1;34:ln=1;36:mh=00:pi=40;33:so=1;35:do=1;35:bd=40;33;1:cd=40;33;1:or=40;31;1:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=1;32:'" >> /etc/bash.bashrc && \
