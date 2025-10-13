@@ -107,7 +107,7 @@ test_runtime() {
     echo ""
     echo "Test 3: Testing reset functionality"
     # Reset should complete without needing interactive mode
-    if ./start.sh --runtime "$runtime" --image "$TEST_IMAGE_NAME" --name "$TEST_CONTAINER_NAME" --reset >/dev/null 2>&1; then
+    if ./start.sh --runtime "$runtime" --image "$TEST_IMAGE_NAME" --name "$TEST_CONTAINER_NAME" --reset --no-shell >/dev/null 2>&1; then
         print_test "Reset functionality works" "PASS"
     else
         print_test "Reset functionality works" "FAIL"

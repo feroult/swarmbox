@@ -15,6 +15,7 @@ RUNTIME_ARG=""
 CUSTOM_NAME=""
 CUSTOM_IMAGE=""
 CUSTOM_HOSTNAME="swarmbox"
+NO_SHELL=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -47,9 +48,13 @@ while [[ $# -gt 0 ]]; do
             CUSTOM_HOSTNAME="$2"
             shift 2
             ;;
+        --no-shell)
+            NO_SHELL=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--iports port:host_port,port:host_port,...] [--reset] [--runtime docker|podman] [--name container-name] [--image image-name] [--hostname hostname]"
+            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--iports port:host_port,port:host_port,...] [--reset] [--runtime docker|podman] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell]"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
             echo "  --iports: Comma-separated list of inverse port mappings to host.docker.internal (e.g., 3000,8080:80)"
             echo "  --reset: Stop and remove existing container, keeping persistent folders"
@@ -57,6 +62,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --name: Custom container name (default: swarmbox)"
             echo "  --image: Custom image name (default: swarmbox)"
             echo "  --hostname: Custom hostname (default: swarmbox)"
+            echo "  --no-shell: Don't attach to container shell (useful for testing/automation)"
             exit 1
             ;;
     esac
@@ -154,16 +160,20 @@ if [ "$RESET" = true ]; then
             $CONTAINER_EXTRA_HOSTS \
             "$IMAGE_NAME"
     fi
-    
 
-    # Connect to the container
-    "$RUNTIME" exec -it "$CONTAINER_NAME" bash
+
+    # Connect to the container (unless --no-shell is set)
+    if [ "$NO_SHELL" = false ]; then
+        "$RUNTIME" exec -it "$CONTAINER_NAME" bash
+    fi
 else
     # Normal operation: check if container already exists
     if [ "$("$RUNTIME" ps -a -q -f name="$CONTAINER_NAME")" ]; then
         echo "Container already exists. Connecting to it..."
         "$RUNTIME" start "$CONTAINER_NAME" 2>/dev/null || true
-        "$RUNTIME" exec -it "$CONTAINER_NAME" bash
+        if [ "$NO_SHELL" = false ]; then
+            "$RUNTIME" exec -it "$CONTAINER_NAME" bash
+        fi
     else
         echo "Creating new container..."
         # Create and start container
@@ -187,10 +197,12 @@ else
                 $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME"
         fi
-        
+
         # No runtime ownership adjustments - handled at build time
 
-        # Connect to the container
-        "$RUNTIME" exec -it "$CONTAINER_NAME" bash
+        # Connect to the container (unless --no-shell is set)
+        if [ "$NO_SHELL" = false ]; then
+            "$RUNTIME" exec -it "$CONTAINER_NAME" bash
+        fi
     fi
 fi
