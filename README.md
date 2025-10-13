@@ -1,79 +1,52 @@
 # Swarm Box
 
-A containerized development environment for AI-powered coding with Claude, supporting both Docker and Podman.
-
-## Features
-
-- 🐳 **Multi-runtime**: Supports Docker and Podman with automatic detection
-- 🔒 **Isolated environment** for safe AI development 
-- 💾 **Persistent workspace** that survives container restarts
-- 🤖 **Claude integration** with MCP (Model Context Protocol) support
-- 🎭 **Playwright automation** for browser testing and interaction
-- 🛠️ **Complete toolchain**: Git, Node.js, Python, and essential development tools
+Containerized development environment with Claude CLI. Supports Docker and Podman.
 
 ## Quick Start
 
-### 1. Build the Image
-
 ```bash
-./build.sh                    # Uses Podman by default, falls back to Docker
-./build.sh --runtime docker   # Force Docker instead
+./build.sh              # Build image
+./start.sh              # Start container
+claude                  # Inside container: authenticate and use Claude
 ```
 
-### 2. Start Container
+## Build Options
 
-```bash
-./start.sh                    # Uses Podman by default, falls back to Docker
-./start.sh --name my-project  # Custom container name
-./start.sh --runtime docker   # Force Docker instead
-```
-
-### 3. Setup Claude (Inside Container)
-
-```bash
-# Authenticate with Claude
-claude --dangerously-skip-permissions
-
-# Initialize your project
-flow_init  # Alias for: npx claude-flow@alpha init --force
-```
-
-## Configuration Options
-
-### Build Script
 ```bash
 ./build.sh [OPTIONS]
-  --runtime docker|podman    # Container runtime (default: podman)
-  --name IMAGE_NAME          # Custom image name (default: swarmbox)
+  --runtime docker|podman    # Default: podman, falls back to docker
+  --name IMAGE_NAME          # Default: swarmbox
   --no-cache                 # Build without cache
   --reset                    # Remove existing containers/images first
 ```
 
-### Start Script
+## Start Options
+
 ```bash
 ./start.sh [OPTIONS]
-  --runtime docker|podman    # Container runtime (default: podman)
-  --name CONTAINER_NAME      # Custom container name (default: swarmbox)
-  --image IMAGE_NAME         # Custom image name (default: swarmbox)
-  --ports PORT_LIST          # Port mappings (e.g., --ports 3000,8080:80)
-  --reset                    # Reset container before starting
+  --runtime docker|podman    # Default: podman, falls back to docker
+  --name CONTAINER_NAME      # Default: swarmbox
+  --image IMAGE_NAME         # Default: swarmbox
+  --hostname HOSTNAME        # Default: swarmbox
+  --ports PORT_LIST          # e.g., --ports 3000,8080:80
+  --iports PORT_LIST         # Inverse mappings to host.docker.internal
+  --reset                    # Reset container, keep persistent data
+  --no-shell                 # Don't attach to shell (automation/testing)
 ```
 
-## Built-in Tools
-
-- **AI Development**: Claude CLI, claude-flow, MCP servers
-- **Browser Automation**: Playwright, Chromium
-- **Development**: Git, Node.js, Python, build tools
-- **System**: vim, htop, jq, curl, and essential Linux utilities
-
 ## Testing
-
-Run the test suite to verify both Docker and Podman work correctly:
 
 ```bash
 ./test.sh
 ```
 
+## What's Included
+
+- Claude CLI with chrome-devtools MCP server
+- Node.js 20, Python 3, Poetry
+- Git, Docker CLI, Chrome
+- Standard development tools
+
 ## Workspace
 
-Your work directory (`./.work/`) is mounted inside the container at `/home/agent`, ensuring files persist between container restarts.
+`./.work/` is mounted at `/home/agent` inside the container.
