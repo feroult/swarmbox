@@ -109,7 +109,9 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 # Install Claude Code globally as root (latest version)
-RUN curl -fsSL http://claude.ai/install.sh | bash && \
+# Set PATH before install to prevent warning
+RUN export PATH="$HOME/.local/bin:$PATH" && \
+    curl -fsSL http://claude.ai/install.sh | bash && \
     # Copy Claude from the expected location to system path
     cp /root/.local/bin/claude /usr/local/bin/claude && \
     chmod +x /usr/local/bin/claude
