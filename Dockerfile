@@ -57,18 +57,9 @@ RUN python3 -m venv /opt/flow && \
     /opt/flow/bin/pip install --upgrade pip && \
     /opt/flow/bin/pip install python-docx
 
-# Install Docker CLI
-RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    apt-get update && \
-    apt-get install -y docker-ce-cli && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install Google Chrome
-RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/google-chrome-keyring.gpg] https://dl.google.com/linux/chrome/deb/ stable main" | tee /etc/apt/sources.list.d/google-chrome.list > /dev/null && \
-    apt-get update && \
-    apt-get install -y google-chrome-stable && \
+# Install Chromium
+RUN apt-get update && \
+    apt-get install -y chromium && \
     rm -rf /var/lib/apt/lists/*
 
 # Create app directory
@@ -103,18 +94,13 @@ ENV ANTHROPIC_MODEL=sonnet
 # Disable browser auto-opening for Vite and other dev servers
 ENV BROWSER=none
 
-# Chrome/Puppeteer environment variables for Docker
-ENV CHROME_BIN=/usr/bin/google-chrome-stable
+# Chromium/Puppeteer environment variables for Docker
+ENV CHROME_BIN=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Install Claude Code globally as root (latest version)
-# Set PATH before install to prevent warning
-RUN export PATH="$HOME/.local/bin:$PATH" && \
-    curl -fsSL http://claude.ai/install.sh | bash && \
-    # Copy Claude from the expected location to system path
-    cp /root/.local/bin/claude /usr/local/bin/claude && \
-    chmod +x /usr/local/bin/claude
+# Install Claude Code globally via npm (avoids native binary warnings)
+RUN npm install -g @anthropic-ai/claude-code
 
 # Add ~/.local/bin to PATH for all users (prevents Claude warning)
 RUN echo "" >> /etc/bash.bashrc && \
@@ -149,6 +135,7 @@ RUN mkdir -p /etc/claude && \
       "args": [\n\
         "-y",\n\
         "chrome-devtools-mcp@latest",\n\
+        "--executablePath=/usr/bin/chromium",\n\
         "--headless",\n\
         "--chromeArg=--no-sandbox",\n\
         "--chromeArg=--disable-setuid-sandbox",\n\
