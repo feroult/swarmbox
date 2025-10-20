@@ -17,6 +17,7 @@ CUSTOM_IMAGE=""
 CUSTOM_HOSTNAME="swarmbox"
 NO_SHELL=false
 WITH_UNSAFE_DOCKER=false
+ENV_KEYS=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -57,9 +58,13 @@ while [[ $# -gt 0 ]]; do
             WITH_UNSAFE_DOCKER=true
             shift
             ;;
+        --env-keys)
+            ENV_KEYS="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--iports port:host_port,port:host_port,...] [--reset] [--runtime docker|podman] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--with-unsafe-docker]"
+            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--iports port:host_port,port:host_port,...] [--reset] [--runtime docker|podman] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--with-unsafe-docker] [--env-keys KEY1,KEY2,...]"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
             echo "  --iports: Comma-separated list of inverse port mappings to host.docker.internal (e.g., 3000,8080:80)"
             echo "  --reset: Stop and remove existing container, keeping persistent folders"
@@ -69,6 +74,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --hostname: Custom hostname (default: swarmbox)"
             echo "  --no-shell: Don't attach to container shell (useful for testing/automation)"
             echo "  --with-unsafe-docker: Mount host container socket (UNSAFE - gives container access to host daemon)"
+            echo "  --env-keys: Comma-separated list of environment variable keys to pass from host to container (e.g., KEY1,KEY2,KEY3)"
             exit 1
             ;;
     esac
@@ -164,6 +170,23 @@ if [ -n "$IPORTS" ]; then
     CONTAINER_EXTRA_HOSTS="--add-host=host.docker.internal:host-gateway"
 fi
 
+# Parse environment keys and build environment variable flags
+CONTAINER_ENV_VARS=""
+if [ -n "$ENV_KEYS" ]; then
+    IFS=',' read -ra ENV_KEY_ARRAY <<< "$ENV_KEYS"
+    for key in "${ENV_KEY_ARRAY[@]}"; do
+        # Trim whitespace from key
+        key=$(echo "$key" | xargs)
+        if [ -n "${!key+x}" ]; then
+            # Variable exists in host environment
+            CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e $key=${!key}"
+            echo "Passing environment variable: $key"
+        else
+            echo "Warning: Environment variable '$key' not found in host environment, skipping."
+        fi
+    done
+fi
+
 # Create directories if they don't exist
 mkdir -p "$WORK_DIR"
 
@@ -196,6 +219,7 @@ if [ "$RESET" = true ]; then
             -v "$WORK_DIR:/home/agent" \
             $DOCKER_SOCKET_MOUNT \
             $DOCKER_HOST_ENV \
+            $CONTAINER_ENV_VARS \
             $CONTAINER_PORTS \
             $CONTAINER_EXTRA_HOSTS \
             "$IMAGE_NAME"
@@ -207,6 +231,7 @@ if [ "$RESET" = true ]; then
             -v "$WORK_DIR:/home/agent" \
             $DOCKER_SOCKET_MOUNT \
             $DOCKER_HOST_ENV \
+            $CONTAINER_ENV_VARS \
             $CONTAINER_PORTS \
             $CONTAINER_EXTRA_HOSTS \
             "$IMAGE_NAME"
@@ -237,6 +262,7 @@ else
                 -v "$WORK_DIR:/home/agent" \
                 $DOCKER_SOCKET_MOUNT \
                 $DOCKER_HOST_ENV \
+                $CONTAINER_ENV_VARS \
                 $CONTAINER_PORTS \
                 $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME"
@@ -248,6 +274,7 @@ else
                 -v "$WORK_DIR:/home/agent" \
                 $DOCKER_SOCKET_MOUNT \
                 $DOCKER_HOST_ENV \
+                $CONTAINER_ENV_VARS \
                 $CONTAINER_PORTS \
                 $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME"
