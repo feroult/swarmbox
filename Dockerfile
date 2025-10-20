@@ -114,7 +114,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 RUN npm install -g @anthropic-ai/claude-code
 
 # Disable Claude Code auto-updates (Docker containers should be rebuilt for updates)
-ENV CLAUDE_AUTO_UPDATE=false
+ENV DISABLE_AUTOUPDATER=true
 
 # Add ~/.local/bin to PATH for all users (prevents Claude warning)
 RUN echo "" >> /etc/bash.bashrc && \
