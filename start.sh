@@ -96,22 +96,45 @@ if [ "$WITH_UNSAFE_DOCKER" = true ]; then
 
     # Detect socket path based on runtime
     if [ "$RUNTIME" = "podman" ]; then
-        # Try rootless Podman socket first
-        PODMAN_SOCKET="/run/user/$(id -u)/podman/podman.sock"
-        if [ ! -S "$PODMAN_SOCKET" ]; then
-            # Fall back to rootful socket
-            PODMAN_SOCKET="/run/podman/podman.sock"
-            if [ ! -S "$PODMAN_SOCKET" ]; then
-                echo "ERROR: Podman socket not found. Start Podman socket service:"
-                echo "  systemctl --user enable --now podman.socket  (rootless)"
-                echo "  or"
-                echo "  sudo systemctl enable --now podman.socket     (rootful)"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS - Podman runs in a VM with socket forwarding via podman-mac-helper
+            # For nested container builds, use rootful Podman connection:
+            #   podman system connection default podman-machine-default-root
+            # Check for Docker-compatible socket created by podman-mac-helper
+            if [ -S "/var/run/docker.sock" ]; then
+                PODMAN_SOCKET="/var/run/docker.sock"
+            elif [ -S "$HOME/.docker/run/docker.sock" ]; then
+                PODMAN_SOCKET="$HOME/.docker/run/docker.sock"
+            else
+                echo "ERROR: Podman socket not found on macOS."
+                echo "Please ensure podman-mac-helper is running:"
+                echo "  sudo podman-mac-helper install"
+                echo "  podman machine start"
+                echo ""
+                echo "The socket should be available at /var/run/docker.sock or ~/.docker/run/docker.sock"
                 exit 1
             fi
+            DOCKER_SOCKET_MOUNT="-v $PODMAN_SOCKET:/var/run/docker.sock"
+            DOCKER_HOST_ENV="-e DOCKER_HOST=unix:///var/run/docker.sock"
+            echo "Mounting Podman socket: $PODMAN_SOCKET -> /var/run/docker.sock"
+        else
+            # Linux - Try rootless Podman socket first
+            PODMAN_SOCKET="/run/user/$(id -u)/podman/podman.sock"
+            if [ ! -S "$PODMAN_SOCKET" ]; then
+                # Fall back to rootful socket
+                PODMAN_SOCKET="/run/podman/podman.sock"
+                if [ ! -S "$PODMAN_SOCKET" ]; then
+                    echo "ERROR: Podman socket not found. Start Podman socket service:"
+                    echo "  systemctl --user enable --now podman.socket  (rootless)"
+                    echo "  or"
+                    echo "  sudo systemctl enable --now podman.socket     (rootful)"
+                    exit 1
+                fi
+            fi
+            DOCKER_SOCKET_MOUNT="-v $PODMAN_SOCKET:/var/run/docker.sock"
+            DOCKER_HOST_ENV="-e DOCKER_HOST=unix:///var/run/docker.sock"
+            echo "Mounting Podman socket: $PODMAN_SOCKET -> /var/run/docker.sock"
         fi
-        DOCKER_SOCKET_MOUNT="-v $PODMAN_SOCKET:/var/run/docker.sock"
-        DOCKER_HOST_ENV="-e DOCKER_HOST=unix:///var/run/docker.sock"
-        echo "Mounting Podman socket: $PODMAN_SOCKET -> /var/run/docker.sock"
     elif [ "$RUNTIME" = "docker" ]; then
         DOCKER_SOCKET="/var/run/docker.sock"
         if [ ! -S "$DOCKER_SOCKET" ]; then
@@ -237,7 +260,6 @@ if [ "$RESET" = true ]; then
             "$IMAGE_NAME"
     fi
 
-
     # Connect to the container (unless --no-shell is set)
     if [ "$NO_SHELL" = false ]; then
         "$RUNTIME" exec -it "$CONTAINER_NAME" bash
@@ -279,8 +301,6 @@ else
                 $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME"
         fi
-
-        # No runtime ownership adjustments - handled at build time
 
         # Connect to the container (unless --no-shell is set)
         if [ "$NO_SHELL" = false ]; then
