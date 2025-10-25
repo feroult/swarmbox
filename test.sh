@@ -1,10 +1,7 @@
 #!/bin/bash
 
 # Test script for container build and start scripts
-# Tests both Docker and Podman (if available)
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/container-runtime.sh"
+# Tests Podman-only (Docker support removed)
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -34,92 +31,89 @@ print_test() {
 
 # Function to cleanup test resources
 cleanup() {
-    local runtime="$1"
-    echo "  Cleaning up test resources for $runtime..."
-    
+    echo "  Cleaning up test resources..."
+
     # Stop and remove test container
-    $runtime stop $TEST_CONTAINER_NAME 2>/dev/null || true
-    $runtime rm $TEST_CONTAINER_NAME 2>/dev/null || true
-    
+    podman stop $TEST_CONTAINER_NAME 2>/dev/null || true
+    podman rm $TEST_CONTAINER_NAME 2>/dev/null || true
+
     # Remove test image
-    $runtime rmi $TEST_IMAGE_NAME:latest 2>/dev/null || true
+    podman rmi $TEST_IMAGE_NAME:latest 2>/dev/null || true
 }
 
-# Function to test runtime
-test_runtime() {
-    local runtime="$1"
-    
+# Function to test Podman
+test_podman() {
     echo ""
-    echo "Testing with $runtime..."
-    echo "========================"
-    
-    # Check if runtime is available
-    if ! command_exists "$runtime"; then
-        print_test "$runtime is installed" "SKIP"
-        echo "  $runtime is not installed, skipping tests"
-        return
+    echo "Testing with Podman..."
+    echo "======================"
+
+    # Check if Podman is available
+    if ! command -v podman &> /dev/null; then
+        print_test "Podman is installed" "FAIL"
+        echo "  ERROR: Podman is not installed"
+        return 1
     fi
-    
-    print_test "$runtime is installed" "PASS"
-    
+
+    print_test "Podman is installed" "PASS"
+
     # Clean up any existing test resources
-    cleanup "$runtime"
-    
-    # Test 1: Build with runtime
+    cleanup
+
+    # Test 1: Build with Podman
     echo ""
-    echo "Test 1: Building image with $runtime (this may take a few minutes...)"
+    echo "Test 1: Building image with Podman (this may take a few minutes...)"
     # Don't use --reset to avoid full rebuild, just build if image doesn't exist
-    if ./build.sh --runtime "$runtime" --name "$TEST_IMAGE_NAME"; then
-        print_test "Build with $runtime" "PASS"
+    if ./build.sh --name "$TEST_IMAGE_NAME"; then
+        print_test "Build with Podman" "PASS"
     else
-        print_test "Build with $runtime" "FAIL"
+        print_test "Build with Podman" "FAIL"
         echo "  Error: Build failed"
         return
     fi
-    
+
     # Test 2: Check if image exists
-    if [ "$($runtime images -q $TEST_IMAGE_NAME 2>/dev/null)" != "" ]; then
+    if [ "$(podman images -q $TEST_IMAGE_NAME 2>/dev/null)" != "" ]; then
         print_test "Image created successfully" "PASS"
     else
         print_test "Image created successfully" "FAIL"
         return
     fi
-    
+
     # Test 3: Start container with custom name
     echo ""
     echo "Test 2: Starting container with custom name"
     # Create container directly without using start.sh to avoid interactive shell issues
-    if $runtime run -d --name $TEST_CONTAINER_NAME $TEST_IMAGE_NAME tail -f /dev/null >/dev/null 2>&1; then
+    if podman run -d --name $TEST_CONTAINER_NAME $TEST_IMAGE_NAME tail -f /dev/null >/dev/null 2>&1; then
         print_test "Container started with custom name" "PASS"
     else
         print_test "Container started with custom name" "FAIL"
         return
     fi
-    
+
     # Test 4: Container is running
-    if [ "$($runtime ps -q -f name=$TEST_CONTAINER_NAME)" ]; then
+    if [ "$(podman ps -q -f name=$TEST_CONTAINER_NAME)" ]; then
         print_test "Container is running" "PASS"
     else
         print_test "Container is running" "FAIL"
     fi
-    
+
     # Test 5: Test reset functionality
     echo ""
     echo "Test 3: Testing reset functionality"
     # Reset should complete without needing interactive mode
-    if ./start.sh --runtime "$runtime" --image "$TEST_IMAGE_NAME" --name "$TEST_CONTAINER_NAME" --reset --no-shell >/dev/null 2>&1; then
+    if ./start.sh --image "$TEST_IMAGE_NAME" --name "$TEST_CONTAINER_NAME" --reset --no-shell >/dev/null 2>&1; then
         print_test "Reset functionality works" "PASS"
     else
         print_test "Reset functionality works" "FAIL"
     fi
-    
+
     # Clean up after tests
     echo ""
-    cleanup "$runtime"
-    
+    cleanup
+
     # Verify cleanup
-    if [ "$($runtime ps -a -q -f name=$TEST_CONTAINER_NAME)" = "" ] && \
-       [ "$($runtime images -q $TEST_IMAGE_NAME 2>/dev/null)" = "" ]; then
+    if [ "$(podman ps -a -q -f name=$TEST_CONTAINER_NAME)" = "" ] && \
+       [ "$(podman images -q $TEST_IMAGE_NAME 2>/dev/null)" = "" ]; then
         print_test "Cleanup successful" "PASS"
     else
         print_test "Cleanup successful" "FAIL"
@@ -127,18 +121,15 @@ test_runtime() {
 }
 
 # Main test execution
-echo "Container Runtime Test Suite"
-echo "============================"
-
-# Test Docker
-test_runtime "docker"
+echo "Podman Container Test Suite"
+echo "==========================="
 
 # Test Podman
-test_runtime "podman"
+test_podman
 
 # Final report
 echo ""
-echo "============================"
+echo "==========================="
 if [ $TEST_FAILED -eq 0 ]; then
     echo -e "${GREEN}All tests passed!${NC}"
     exit 0
