@@ -1,8 +1,7 @@
 #!/bin/bash
 
-# Source the container runtime configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/container-runtime.sh"
+# Podman-only runtime (Docker support removed)
+RUNTIME="podman"
 
 # Configuration
 IMAGE_NAME="swarmbox"
@@ -11,12 +10,11 @@ WORK_DIR="$(pwd)/.work"
 PORTS=""
 IPORTS=""
 RESET=false
-RUNTIME_ARG=""
 CUSTOM_NAME=""
 CUSTOM_IMAGE=""
 CUSTOM_HOSTNAME="swarmbox"
 NO_SHELL=false
-WITH_UNSAFE_DOCKER=false
+WITH_UNSAFE_PODMAN=false
 ENV_KEYS=""
 
 # Parse command line arguments
@@ -34,10 +32,6 @@ while [[ $# -gt 0 ]]; do
             RESET=true
             shift
             ;;
-        --runtime)
-            RUNTIME_ARG="$2"
-            shift 2
-            ;;
         --name)
             CUSTOM_NAME="$2"
             shift 2
@@ -54,8 +48,8 @@ while [[ $# -gt 0 ]]; do
             NO_SHELL=true
             shift
             ;;
-        --with-unsafe-docker)
-            WITH_UNSAFE_DOCKER=true
+        --with-unsafe-podman)
+            WITH_UNSAFE_PODMAN=true
             shift
             ;;
         --env-keys)
@@ -64,86 +58,82 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,port:inner_port,...] [--iports port:host_port,port:host_port,...] [--reset] [--runtime docker|podman] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--with-unsafe-docker] [--env-keys KEY1,KEY2,...]"
+            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--with-unsafe-podman] [--env-keys KEY1,KEY2,...]"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
-            echo "  --iports: Comma-separated list of inverse port mappings to host.docker.internal (e.g., 3000,8080:80)"
+            echo "  --iports: Comma-separated list of inverse port mappings to host.podman.internal (e.g., 3000,8080:80)"
             echo "  --reset: Stop and remove existing container, keeping persistent folders"
-            echo "  --runtime: Specify container runtime (docker or podman). Default: docker"
             echo "  --name: Custom container name (default: swarmbox)"
             echo "  --image: Custom image name (default: swarmbox)"
             echo "  --hostname: Custom hostname (default: swarmbox)"
             echo "  --no-shell: Don't attach to container shell (useful for testing/automation)"
-            echo "  --with-unsafe-docker: Mount host container socket (UNSAFE - gives container access to host daemon)"
+            echo "  --with-unsafe-podman: Mount host Podman socket (UNSAFE - gives container access to host Podman)"
             echo "  --env-keys: Comma-separated list of environment variable keys to pass from host to container (e.g., KEY1,KEY2,KEY3)"
             exit 1
             ;;
     esac
 done
 
-# Detect and set runtime
-detect_runtime "$RUNTIME_ARG"
-echo "Using container runtime: $RUNTIME"
+# Check that Podman is installed
+if ! command -v podman &> /dev/null; then
+    echo "ERROR: Podman is not installed."
+    echo "Please install Podman:"
+    echo "  - Linux: sudo apt install podman (Debian/Ubuntu) or sudo dnf install podman (Fedora/RHEL)"
+    echo "  - macOS: brew install podman"
+    exit 1
+fi
 
-# Handle Docker socket mounting (if --with-unsafe-docker is set)
-DOCKER_SOCKET_MOUNT=""
-DOCKER_HOST_ENV=""
-if [ "$WITH_UNSAFE_DOCKER" = true ]; then
+echo "Using Podman container runtime"
+
+# Handle Podman socket mounting (if --with-unsafe-podman is set)
+PODMAN_SOCKET_MOUNT=""
+PODMAN_HOST_ENV=""
+if [ "$WITH_UNSAFE_PODMAN" = true ]; then
     echo ""
-    echo "WARNING: --with-unsafe-docker enabled!"
-    echo "This gives the container access to the host container daemon."
+    echo "WARNING: --with-unsafe-podman enabled!"
+    echo "This gives the container access to the host Podman daemon."
     echo "The container can create/destroy containers and images on the host."
     echo ""
 
-    # Detect socket path based on runtime
-    if [ "$RUNTIME" = "podman" ]; then
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS - Podman runs in a VM with socket forwarding via podman-mac-helper
-            # For nested container builds, use rootful Podman connection:
-            #   podman system connection default podman-machine-default-root
-            # Check for Docker-compatible socket created by podman-mac-helper
-            if [ -S "/var/run/docker.sock" ]; then
-                PODMAN_SOCKET="/var/run/docker.sock"
-            elif [ -S "$HOME/.docker/run/docker.sock" ]; then
-                PODMAN_SOCKET="$HOME/.docker/run/docker.sock"
-            else
-                echo "ERROR: Podman socket not found on macOS."
-                echo "Please ensure podman-mac-helper is running:"
-                echo "  sudo podman-mac-helper install"
-                echo "  podman machine start"
-                echo ""
-                echo "The socket should be available at /var/run/docker.sock or ~/.docker/run/docker.sock"
-                exit 1
-            fi
-            DOCKER_SOCKET_MOUNT="-v $PODMAN_SOCKET:/var/run/docker.sock"
-            DOCKER_HOST_ENV="-e DOCKER_HOST=unix:///var/run/docker.sock"
-            echo "Mounting Podman socket: $PODMAN_SOCKET -> /var/run/docker.sock"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS - Podman runs in a VM with socket forwarding via podman-mac-helper
+        # For nested container builds, use rootful Podman connection:
+        #   podman system connection default podman-machine-default-root
+        # Check for Docker-compatible socket created by podman-mac-helper
+        if [ -S "/var/run/docker.sock" ]; then
+            PODMAN_SOCKET="/var/run/docker.sock"
+        elif [ -S "$HOME/.docker/run/docker.sock" ]; then
+            PODMAN_SOCKET="$HOME/.docker/run/docker.sock"
         else
-            # Linux - Try rootless Podman socket first
-            PODMAN_SOCKET="/run/user/$(id -u)/podman/podman.sock"
-            if [ ! -S "$PODMAN_SOCKET" ]; then
-                # Fall back to rootful socket
-                PODMAN_SOCKET="/run/podman/podman.sock"
-                if [ ! -S "$PODMAN_SOCKET" ]; then
-                    echo "ERROR: Podman socket not found. Start Podman socket service:"
-                    echo "  systemctl --user enable --now podman.socket  (rootless)"
-                    echo "  or"
-                    echo "  sudo systemctl enable --now podman.socket     (rootful)"
-                    exit 1
-                fi
-            fi
-            DOCKER_SOCKET_MOUNT="-v $PODMAN_SOCKET:/var/run/docker.sock"
-            DOCKER_HOST_ENV="-e DOCKER_HOST=unix:///var/run/docker.sock"
-            echo "Mounting Podman socket: $PODMAN_SOCKET -> /var/run/docker.sock"
-        fi
-    elif [ "$RUNTIME" = "docker" ]; then
-        DOCKER_SOCKET="/var/run/docker.sock"
-        if [ ! -S "$DOCKER_SOCKET" ]; then
-            echo "ERROR: Docker socket not found at $DOCKER_SOCKET"
+            echo "ERROR: Podman socket not found on macOS."
+            echo "Please ensure podman-mac-helper is running:"
+            echo "  sudo podman-mac-helper install"
+            echo "  podman machine start"
+            echo ""
+            echo "The socket should be available at /var/run/docker.sock or ~/.docker/run/docker.sock"
             exit 1
         fi
-        DOCKER_SOCKET_MOUNT="-v $DOCKER_SOCKET:/var/run/docker.sock"
-        DOCKER_HOST_ENV="-e DOCKER_HOST=unix:///var/run/docker.sock"
-        echo "Mounting Docker socket: $DOCKER_SOCKET -> /var/run/docker.sock"
+        # Mount to Podman-specific path inside container
+        PODMAN_SOCKET_MOUNT="-v $PODMAN_SOCKET:/run/podman/podman.sock"
+        PODMAN_HOST_ENV="-e CONTAINER_HOST=unix:///run/podman/podman.sock"
+        echo "Mounting Podman socket: $PODMAN_SOCKET -> /run/podman/podman.sock"
+    else
+        # Linux - Try rootless Podman socket first
+        PODMAN_SOCKET="/run/user/$(id -u)/podman/podman.sock"
+        if [ ! -S "$PODMAN_SOCKET" ]; then
+            # Fall back to rootful socket
+            PODMAN_SOCKET="/run/podman/podman.sock"
+            if [ ! -S "$PODMAN_SOCKET" ]; then
+                echo "ERROR: Podman socket not found. Start Podman socket service:"
+                echo "  systemctl --user enable --now podman.socket  (rootless)"
+                echo "  or"
+                echo "  sudo systemctl enable --now podman.socket     (rootful)"
+                exit 1
+            fi
+        fi
+        # Mount to Podman-specific path inside container
+        PODMAN_SOCKET_MOUNT="-v $PODMAN_SOCKET:/run/podman/podman.sock"
+        PODMAN_HOST_ENV="-e CONTAINER_HOST=unix:///run/podman/podman.sock"
+        echo "Mounting Podman socket: $PODMAN_SOCKET -> /run/podman/podman.sock"
     fi
     echo ""
 fi
@@ -183,14 +173,14 @@ if [ -n "$IPORTS" ]; then
             IFS=':' read -ra PORT_SPLIT <<< "$port_mapping"
             container_port="${PORT_SPLIT[0]}"
             host_port="${PORT_SPLIT[1]}"
-            CONTAINER_EXTRA_HOSTS="$CONTAINER_EXTRA_HOSTS --add-host=host.docker.internal:host-gateway"
+            CONTAINER_EXTRA_HOSTS="$CONTAINER_EXTRA_HOSTS --add-host=host.containers.internal:host-gateway"
         else
             # Format: port (container_port == host_port)
-            CONTAINER_EXTRA_HOSTS="$CONTAINER_EXTRA_HOSTS --add-host=host.docker.internal:host-gateway"
+            CONTAINER_EXTRA_HOSTS="$CONTAINER_EXTRA_HOSTS --add-host=host.containers.internal:host-gateway"
         fi
     done
     # Remove duplicates by only adding once
-    CONTAINER_EXTRA_HOSTS="--add-host=host.docker.internal:host-gateway"
+    CONTAINER_EXTRA_HOSTS="--add-host=host.containers.internal:host-gateway"
 fi
 
 # Parse environment keys and build environment variable flags
@@ -214,46 +204,48 @@ fi
 mkdir -p "$WORK_DIR"
 
 # Build image if it doesn't exist
-if [[ "$("$RUNTIME" images -q "$IMAGE_NAME" 2> /dev/null)" == "" ]]; then
+if [[ "$(podman images -q "$IMAGE_NAME" 2> /dev/null)" == "" ]]; then
     echo "Building container image..."
-    BUILD_COMMAND="$(get_build_command)"
-    eval "$BUILD_COMMAND" -t "$IMAGE_NAME" .
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=darwin -t "$IMAGE_NAME" .
+    else
+        podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=linux -t "$IMAGE_NAME" .
+    fi
 fi
 
 # Handle reset option
 if [ "$RESET" = true ]; then
-    if [ "$("$RUNTIME" ps -a -q -f name="$CONTAINER_NAME")" ]; then
+    if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
         echo "Resetting container (keeping persistent folders)..."
         echo "Stopping container and killing all connected shells..."
-        "$RUNTIME" stop "$CONTAINER_NAME" 2>/dev/null || true
-        "$RUNTIME" rm "$CONTAINER_NAME" 2>/dev/null || true
+        podman stop "$CONTAINER_NAME" 2>/dev/null || true
+        podman rm "$CONTAINER_NAME" 2>/dev/null || true
         echo "Container reset complete."
     fi
     # After reset, force creation of new container
     echo "Creating new container..."
-    
+
     # Create and start container
-    RUN_COMMAND="$(get_run_command)"
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS - run without privileged mode which causes issues
-        eval "$RUN_COMMAND" -d \
+        # macOS - run with security-opt and userns options
+        podman run --security-opt label=disable --userns=keep-id:uid=$(id -u),gid=$(id -g) -d \
             --name "$CONTAINER_NAME" \
             --hostname "$CUSTOM_HOSTNAME" \
             -v "$WORK_DIR:/home/agent" \
-            $DOCKER_SOCKET_MOUNT \
-            $DOCKER_HOST_ENV \
+            $PODMAN_SOCKET_MOUNT \
+            $PODMAN_HOST_ENV \
             $CONTAINER_ENV_VARS \
             $CONTAINER_PORTS \
             $CONTAINER_EXTRA_HOSTS \
             "$IMAGE_NAME"
     else
-        # Linux - run without privileged mode
-        eval "$RUN_COMMAND" -d \
+        # Linux - run with userns option
+        podman run --userns=keep-id -d \
             --name "$CONTAINER_NAME" \
             --hostname "$CUSTOM_HOSTNAME" \
             -v "$WORK_DIR:/home/agent" \
-            $DOCKER_SOCKET_MOUNT \
-            $DOCKER_HOST_ENV \
+            $PODMAN_SOCKET_MOUNT \
+            $PODMAN_HOST_ENV \
             $CONTAINER_ENV_VARS \
             $CONTAINER_PORTS \
             $CONTAINER_EXTRA_HOSTS \
@@ -262,40 +254,39 @@ if [ "$RESET" = true ]; then
 
     # Connect to the container (unless --no-shell is set)
     if [ "$NO_SHELL" = false ]; then
-        "$RUNTIME" exec -it "$CONTAINER_NAME" bash
+        podman exec -it "$CONTAINER_NAME" bash
     fi
 else
     # Normal operation: check if container already exists
-    if [ "$("$RUNTIME" ps -a -q -f name="$CONTAINER_NAME")" ]; then
+    if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
         echo "Container already exists. Connecting to it..."
-        "$RUNTIME" start "$CONTAINER_NAME" 2>/dev/null || true
+        podman start "$CONTAINER_NAME" 2>/dev/null || true
         if [ "$NO_SHELL" = false ]; then
-            "$RUNTIME" exec -it "$CONTAINER_NAME" bash
+            podman exec -it "$CONTAINER_NAME" bash
         fi
     else
         echo "Creating new container..."
         # Create and start container
-        RUN_COMMAND="$(get_run_command)"
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS - run without privileged mode which causes issues
-            eval "$RUN_COMMAND" -d \
+            # macOS - run with security-opt and userns options
+            podman run --security-opt label=disable --userns=keep-id:uid=$(id -u),gid=$(id -g) -d \
                 --name "$CONTAINER_NAME" \
                 --hostname "$CUSTOM_HOSTNAME" \
                 -v "$WORK_DIR:/home/agent" \
-                $DOCKER_SOCKET_MOUNT \
-                $DOCKER_HOST_ENV \
+                $PODMAN_SOCKET_MOUNT \
+                $PODMAN_HOST_ENV \
                 $CONTAINER_ENV_VARS \
                 $CONTAINER_PORTS \
                 $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME"
         else
-            # Linux - run without privileged mode
-            eval "$RUN_COMMAND" -d \
+            # Linux - run with userns option
+            podman run --userns=keep-id -d \
                 --name "$CONTAINER_NAME" \
                 --hostname "$CUSTOM_HOSTNAME" \
                 -v "$WORK_DIR:/home/agent" \
-                $DOCKER_SOCKET_MOUNT \
-                $DOCKER_HOST_ENV \
+                $PODMAN_SOCKET_MOUNT \
+                $PODMAN_HOST_ENV \
                 $CONTAINER_ENV_VARS \
                 $CONTAINER_PORTS \
                 $CONTAINER_EXTRA_HOSTS \
@@ -304,7 +295,7 @@ else
 
         # Connect to the container (unless --no-shell is set)
         if [ "$NO_SHELL" = false ]; then
-            "$RUNTIME" exec -it "$CONTAINER_NAME" bash
+            podman exec -it "$CONTAINER_NAME" bash
         fi
     fi
 fi
