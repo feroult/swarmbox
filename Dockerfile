@@ -46,16 +46,19 @@ RUN apt-get update && apt-get install -y \
     pandoc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Docker CLI (for accessing host daemon via socket)
-RUN install -m 0755 -d /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
-    chmod a+r /etc/apt/keyrings/docker.asc && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
-    $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-    tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    apt-get update && \
-    apt-get install -y docker-ce-cli docker-buildx-plugin docker-compose-plugin && \
+# Install Podman CLI (for accessing host Podman daemon via socket)
+# Podman is available in default Debian 12 repositories
+RUN apt-get update && \
+    apt-get install -y podman && \
     rm -rf /var/lib/apt/lists/*
+
+# Create directory for Podman socket
+RUN mkdir -p /run/podman && chmod 755 /run/podman
+
+# Configure Podman to use proper Podman socket path
+# CONTAINER_HOST tells Podman CLI where to find the socket
+# This will be set by start.sh when --with-unsafe-podman is used
+ENV CONTAINER_HOST=unix:///run/podman/podman.sock
 
 # Install Poetry system-wide
 ENV POETRY_HOME=/opt/poetry
