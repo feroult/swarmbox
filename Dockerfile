@@ -99,6 +99,9 @@ RUN if id -u ${USER_UID} >/dev/null 2>&1; then \
         echo "agent ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers; \
     fi
 
+# Add agent to root group for Podman socket access (socket is owned by root:root in rootful mode)
+RUN usermod -aG root agent
+
 # Set npm cache directory to a non-mounted location
 ENV NPM_CONFIG_CACHE=/opt/npm-cache
 

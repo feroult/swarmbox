@@ -95,22 +95,33 @@ if [ "$WITH_UNSAFE_PODMAN" = true ]; then
     echo ""
 
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS - Podman runs in a VM with socket forwarding via podman-mac-helper
-        # For nested container builds, use rootful Podman connection:
-        #   podman system connection default podman-machine-default-root
-        # Check for Docker-compatible socket created by podman-mac-helper
+        # macOS - Podman runs in a VM with socket forwarding
+        # Try multiple socket locations in order of preference:
+        # 1. Docker-compatible socket from podman-mac-helper
+        # 2. Podman machine API socket (direct, no helper needed)
         if [ -S "/var/run/docker.sock" ]; then
             PODMAN_SOCKET="/var/run/docker.sock"
         elif [ -S "$HOME/.docker/run/docker.sock" ]; then
             PODMAN_SOCKET="$HOME/.docker/run/docker.sock"
         else
-            echo "ERROR: Podman socket not found on macOS."
-            echo "Please ensure podman-mac-helper is running:"
-            echo "  sudo podman-mac-helper install"
-            echo "  podman machine start"
-            echo ""
-            echo "The socket should be available at /var/run/docker.sock or ~/.docker/run/docker.sock"
-            exit 1
+            # Try to find the Podman machine API socket directly
+            MACHINE_NAME=$(podman machine list --format "{{.Name}}" --noheading | head -n1)
+            if [ -n "$MACHINE_NAME" ]; then
+                # Get socket path from podman machine inspect
+                PODMAN_SOCKET=$(podman machine inspect "$MACHINE_NAME" --format "{{.ConnectionInfo.PodmanSocket.Path}}")
+                if [ ! -S "$PODMAN_SOCKET" ]; then
+                    echo "ERROR: Podman socket not found at: $PODMAN_SOCKET"
+                    echo "Please ensure Podman machine is running:"
+                    echo "  podman machine start"
+                    exit 1
+                fi
+            else
+                echo "ERROR: No Podman machine found."
+                echo "Please create and start a Podman machine:"
+                echo "  podman machine init"
+                echo "  podman machine start"
+                exit 1
+            fi
         fi
         # Mount to Podman-specific path inside container
         PODMAN_SOCKET_MOUNT="-v $PODMAN_SOCKET:/run/podman/podman.sock"
