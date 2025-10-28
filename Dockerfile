@@ -119,6 +119,9 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 # Install Claude Code globally via npm (avoids native binary warnings)
 RUN npm install -g @anthropic-ai/claude-code
 
+# Install Gemini CLI globally via npm
+RUN npm install -g @google/gemini-cli
+
 # Disable Claude Code auto-updates (Docker containers should be rebuilt for updates)
 ENV DISABLE_AUTOUPDATER=true
 
@@ -138,8 +141,14 @@ RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
     echo "alias fgrep='fgrep --color=auto'" >> /etc/bash.bashrc && \
     echo "alias egrep='egrep --color=auto'" >> /etc/bash.bashrc && \
     echo "" >> /etc/bash.bashrc && \
-    echo "# Alias to run claude CLI and dangerously skip permissions" >> /etc/bash.bashrc && \
+    echo "# Alias to run claude CLI and dangerously skip permissions (hidden, backward compatibility)" >> /etc/bash.bashrc && \
     echo "alias yolo='claude --dangerously-skip-permissions --mcp-config /etc/claude/mcp-servers.json'" >> /etc/bash.bashrc && \
+    echo "" >> /etc/bash.bashrc && \
+    echo "# Main claude alias with auto-approve (same as yolo)" >> /etc/bash.bashrc && \
+    echo "alias claude='claude --dangerously-skip-permissions --mcp-config /etc/claude/mcp-servers.json'" >> /etc/bash.bashrc && \
+    echo "" >> /etc/bash.bashrc && \
+    echo "# Alias to run gemini CLI with yolo mode (bypass all approvals)" >> /etc/bash.bashrc && \
+    echo "alias gemini='/usr/local/bin/gemini --yolo'" >> /etc/bash.bashrc && \
     echo "" >> /etc/bash.bashrc && \
     echo "# UUID function" >> /etc/bash.bashrc && \
     echo 'uuid() { python3 -c "import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_DNS, sys.argv[1]))" "$1"; }' >> /etc/bash.bashrc
@@ -173,9 +182,6 @@ RUN echo '#!/bin/bash\n\
 
 # Update the yolo alias to include MCP config (done in global aliases section above)
 # RUN sed -i 's|alias yolo=.*|alias yolo="/usr/local/bin/claude --dangerously-skip-permissions --mcp-config /etc/claude/mcp-servers.json"|' /etc/bash.bashrc
-
-# Add claude alias that includes MCP config
-RUN echo 'alias claude="/usr/local/bin/claude --mcp-config /etc/claude/mcp-servers.json"' >> /etc/bash.bashrc
 
 # Activate Python virtual environment by default for all users
 RUN echo "" >> /etc/bash.bashrc && \
