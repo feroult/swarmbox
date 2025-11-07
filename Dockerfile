@@ -199,13 +199,13 @@ RUN echo "" >> /etc/bash.bashrc && \
 RUN if [ "${HOST_OS}" = "darwin" ]; then \
         # On macOS, just create directories without ownership changes
         # Docker Desktop will handle UID/GID mapping automatically
-        mkdir -p /opt/npm-cache && \
-        chmod -R 777 /opt/npm-cache /opt/flow; \
+        mkdir -p /opt/npm-cache /workspace && \
+        chmod -R 777 /opt/npm-cache /opt/flow /workspace; \
     else \
         # On Linux, use traditional approach
-        mkdir -p /opt/npm-cache && \
-        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/flow && \
-        chmod -R 755 /opt/npm-cache /opt/flow; \
+        mkdir -p /opt/npm-cache /workspace && \
+        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/flow /workspace && \
+        chmod -R 755 /opt/npm-cache /opt/flow /workspace; \
     fi
 
 # Copy banner script (at the end to optimize build cache)
