@@ -15,6 +15,7 @@ CUSTOM_IMAGE=""
 CUSTOM_HOSTNAME="swarmbox"
 NO_SHELL=false
 WITH_UNSAFE_PODMAN=false
+HOST_NETWORK=false
 ENV_KEYS=""
 
 # Parse command line arguments
@@ -52,13 +53,17 @@ while [[ $# -gt 0 ]]; do
             WITH_UNSAFE_PODMAN=true
             shift
             ;;
+        --host-network)
+            HOST_NETWORK=true
+            shift
+            ;;
         --env-keys)
             ENV_KEYS="$2"
             shift 2
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--with-unsafe-podman] [--env-keys KEY1,KEY2,...]"
+            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--with-unsafe-podman] [--env-keys KEY1,KEY2,...]"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
             echo "  --iports: Comma-separated list of inverse port mappings to host.podman.internal (e.g., 3000,8080:80)"
             echo "  --reset: Stop and remove existing container, keeping persistent folders"
@@ -66,6 +71,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --image: Custom image name (default: swarmbox)"
             echo "  --hostname: Custom hostname (default: swarmbox)"
             echo "  --no-shell: Don't attach to container shell (useful for testing/automation)"
+            echo "  --host-network: Use host network namespace (container shares host network, ignores --ports)"
             echo "  --with-unsafe-podman: Mount host Podman socket (UNSAFE - gives container access to host Podman)"
             echo "  --env-keys: Comma-separated list of environment variable keys to pass from host to container (e.g., KEY1,KEY2,KEY3)"
             exit 1
@@ -211,6 +217,16 @@ if [ -n "$ENV_KEYS" ]; then
     done
 fi
 
+# Set network mode
+NETWORK_FLAG=""
+if [ "$HOST_NETWORK" = true ]; then
+    NETWORK_FLAG="--net=host"
+    echo "Using host network namespace"
+    if [ -n "$PORTS" ] || [ -n "$IPORTS" ]; then
+        echo "Warning: --ports and --iports are ignored when using --host-network"
+    fi
+fi
+
 # Create directories if they don't exist
 mkdir -p "$WORK_DIR"
 
@@ -246,6 +262,7 @@ if [ "$RESET" = true ]; then
             $PODMAN_SOCKET_MOUNT \
             $PODMAN_HOST_ENV \
             $CONTAINER_ENV_VARS \
+            $NETWORK_FLAG \
             $CONTAINER_PORTS \
             $CONTAINER_EXTRA_HOSTS \
             "$IMAGE_NAME"
@@ -258,6 +275,7 @@ if [ "$RESET" = true ]; then
             $PODMAN_SOCKET_MOUNT \
             $PODMAN_HOST_ENV \
             $CONTAINER_ENV_VARS \
+            $NETWORK_FLAG \
             $CONTAINER_PORTS \
             $CONTAINER_EXTRA_HOSTS \
             "$IMAGE_NAME"
@@ -287,6 +305,7 @@ else
                 $PODMAN_SOCKET_MOUNT \
                 $PODMAN_HOST_ENV \
                 $CONTAINER_ENV_VARS \
+                $NETWORK_FLAG \
                 $CONTAINER_PORTS \
                 $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME"
@@ -299,6 +318,7 @@ else
                 $PODMAN_SOCKET_MOUNT \
                 $PODMAN_HOST_ENV \
                 $CONTAINER_ENV_VARS \
+                $NETWORK_FLAG \
                 $CONTAINER_PORTS \
                 $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME"
