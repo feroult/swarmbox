@@ -66,6 +66,9 @@ RUN curl -sSL https://install.python-poetry.org | python3 - && \
     ln -s /opt/poetry/bin/poetry /usr/local/bin/poetry && \
     chmod -R a+rx /opt/poetry
 
+# Install uv (fast Python package installer and manager) system-wide
+RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh
+
 # Create a system-wide Python virtual environment
 RUN python3 -m venv /opt/flow && \
     /opt/flow/bin/pip install --upgrade pip && \
