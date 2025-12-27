@@ -72,7 +72,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin s
 # Create a system-wide Python virtual environment
 RUN python3 -m venv /opt/flow && \
     /opt/flow/bin/pip install --upgrade pip && \
-    /opt/flow/bin/pip install python-docx
+    /opt/flow/bin/pip install python-docx mcp-memory-service
 
 # Install Chromium
 RUN apt-get update && \
@@ -174,6 +174,15 @@ RUN mkdir -p /etc/claude && \
         "--chromeArg=--disable-dev-shm-usage",\n\
         "--chromeArg=--disable-gpu"\n\
       ]\n\
+    },\n\
+    "memory": {\n\
+      "command": "/opt/flow/bin/python",\n\
+      "args": ["-m", "mcp_memory_service.server"],\n\
+      "env": {\n\
+        "MCP_MEMORY_STORAGE_BACKEND": "sqlite_vec",\n\
+        "MCP_MEMORY_SQLITE_PATH": "/home/agent/.swarmbox/memory/personal.db",\n\
+        "MCP_MEMORY_SQLITE_PRAGMAS": "busy_timeout=15000,cache_size=20000"\n\
+      }\n\
     }\n\
   }\n\
 }' > /etc/claude/mcp-servers.json
@@ -198,14 +207,150 @@ RUN echo "" >> /etc/bash.bashrc && \
     echo "  /usr/local/bin/banner.sh" >> /etc/bash.bashrc && \
     echo "fi" >> /etc/bash.bashrc
 
+# Create /etc/swarmbox/ structure with hook templates (won't be overwritten by volume mount)
+RUN mkdir -p /etc/swarmbox/hooks && \
+    echo '#!/usr/bin/env python3\n\
+import json\n\
+import sys\n\
+\n\
+# SessionStart hook: Automatically inject memory awareness at session start\n\
+try:\n\
+    input_data = json.load(sys.stdin)\n\
+except json.JSONDecodeError:\n\
+    sys.exit(0)\n\
+\n\
+# Create context message to inject memory awareness\n\
+context = """\n\
+Memory system active. Your memories are automatically loaded.\n\
+\n\
+Available memory tools:\n\
+- mcp__memory__store_memory: Save important context, decisions, and learnings\n\
+- mcp__memory__recall_memory: Search and retrieve relevant past memories\n\
+- Use memories to maintain continuity across sessions\n\
+\n\
+Remember to consolidate key findings at the end of this session.\n\
+"""\n\
+\n\
+output = {\n\
+    "hookSpecificOutput": {\n\
+        "hookEventName": "SessionStart",\n\
+        "additionalContext": context\n\
+    }\n\
+}\n\
+\n\
+print(json.dumps(output))\n\
+sys.exit(0)' > /etc/swarmbox/hooks/session-start.py && \
+    chmod +x /etc/swarmbox/hooks/session-start.py && \
+    echo '#!/usr/bin/env python3\n\
+import json\n\
+import sys\n\
+import os\n\
+from datetime import datetime\n\
+\n\
+# SessionEnd hook: Log session end\n\
+try:\n\
+    input_data = json.load(sys.stdin)\n\
+except json.JSONDecodeError:\n\
+    sys.exit(0)\n\
+\n\
+# Log session end\n\
+log_file = os.path.expanduser("~/.swarmbox/session-history.log")\n\
+os.makedirs(os.path.dirname(log_file), exist_ok=True)\n\
+\n\
+with open(log_file, "a") as f:\n\
+    timestamp = datetime.now().isoformat()\n\
+    f.write(f"{timestamp} - Session ended\\n")\n\
+\n\
+output = {\n\
+    "hookSpecificOutput": {\n\
+        "hookEventName": "SessionEnd"\n\
+    }\n\
+}\n\
+\n\
+print(json.dumps(output))\n\
+sys.exit(0)' > /etc/swarmbox/hooks/session-end.py && \
+    chmod +x /etc/swarmbox/hooks/session-end.py && \
+    echo '{\n\
+  "hooks": {\n\
+    "SessionStart": [\n\
+      {\n\
+        "hooks": [\n\
+          {\n\
+            "type": "command",\n\
+            "command": "/home/agent/.swarmbox/hooks/session-start.py",\n\
+            "timeout": 5000\n\
+          }\n\
+        ]\n\
+      }\n\
+    ],\n\
+    "SessionEnd": [\n\
+      {\n\
+        "hooks": [\n\
+          {\n\
+            "type": "command",\n\
+            "command": "/home/agent/.swarmbox/hooks/session-end.py",\n\
+            "timeout": 5000\n\
+          }\n\
+        ]\n\
+      }\n\
+    ],\n\
+    "PreToolUse": [\n\
+      {\n\
+        "matcher": "mcp__memory__.*",\n\
+        "hooks": [\n\
+          {\n\
+            "type": "command",\n\
+            "command": "bash",\n\
+            "args": ["-c", "echo \\\"[$(date +%Y-%m-%d\\\\ %H:%M:%S)] Memory operation: $TOOL_NAME\\\" >> ~/.swarmbox/memory-ops.log"],\n\
+            "timeout": 1000\n\
+          }\n\
+        ]\n\
+      }\n\
+    ]\n\
+  }\n\
+}' > /etc/swarmbox/settings.json.template
+
+# Create initialization script for .swarmbox setup (runs at container start)
+RUN echo '#!/bin/bash\n\
+# Initialize .swarmbox directory structure at runtime\n\
+SWARMBOX_DIR="$HOME/.swarmbox"\n\
+\n\
+# Create directory structure\n\
+mkdir -p "$SWARMBOX_DIR"/{hooks,memory}\n\
+\n\
+# Copy hook scripts if they don'"'"'t exist\n\
+if [ ! -f "$SWARMBOX_DIR/hooks/session-start.py" ]; then\n\
+    cp /etc/swarmbox/hooks/session-start.py "$SWARMBOX_DIR/hooks/"\n\
+    chmod +x "$SWARMBOX_DIR/hooks/session-start.py"\n\
+fi\n\
+\n\
+if [ ! -f "$SWARMBOX_DIR/hooks/session-end.py" ]; then\n\
+    cp /etc/swarmbox/hooks/session-end.py "$SWARMBOX_DIR/hooks/"\n\
+    chmod +x "$SWARMBOX_DIR/hooks/session-end.py"\n\
+fi\n\
+\n\
+# Copy settings.json template if it doesn'"'"'t exist\n\
+if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then\n\
+    cp /etc/swarmbox/settings.json.template "$SWARMBOX_DIR/settings.json"\n\
+fi\n\
+\n\
+# Create symlink for Claude Code to find settings\n\
+mkdir -p "$HOME/.claude"\n\
+if [ ! -L "$HOME/.claude/settings.json" ]; then\n\
+    ln -sf "$SWARMBOX_DIR/settings.json" "$HOME/.claude/settings.json"\n\
+fi' > /usr/local/bin/init-swarmbox.sh && \
+    chmod +x /usr/local/bin/init-swarmbox.sh
+
+# Add initialization to bashrc (runs for interactive shells)
+RUN echo "" >> /etc/bash.bashrc && \
+    echo "# Initialize .swarmbox directory structure" >> /etc/bash.bashrc && \
+    echo "/usr/local/bin/init-swarmbox.sh 2>/dev/null" >> /etc/bash.bashrc
+
 # Create cache directories and set permissions for agent user
 RUN if [ "${HOST_OS}" = "darwin" ]; then \
-        # On macOS, just create directories without ownership changes
-        # Docker Desktop will handle UID/GID mapping automatically
         mkdir -p /opt/npm-cache /workspace && \
         chmod -R 777 /opt/npm-cache /opt/flow /workspace; \
     else \
-        # On Linux, use traditional approach
         mkdir -p /opt/npm-cache /workspace && \
         chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/flow /workspace && \
         chmod -R 755 /opt/npm-cache /opt/flow /workspace; \
