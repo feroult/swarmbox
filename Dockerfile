@@ -71,8 +71,13 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin s
 
 # Create a system-wide Python virtual environment
 RUN python3 -m venv /opt/flow && \
-    /opt/flow/bin/pip install --upgrade pip && \
-    /opt/flow/bin/pip install python-docx mcp-memory-service
+    /opt/flow/bin/pip install --upgrade pip
+
+# Clone and install mcp-memory-service from fork with fix
+RUN git clone https://github.com/feroult/mcp-memory-service.git /tmp/mcp-memory-service && \
+    cd /tmp/mcp-memory-service && \
+    /opt/flow/bin/pip install python-docx . && \
+    rm -rf /tmp/mcp-memory-service
 
 # Install Chromium
 RUN apt-get update && \
@@ -145,10 +150,10 @@ RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
     echo "alias egrep='egrep --color=auto'" >> /etc/bash.bashrc && \
     echo "" >> /etc/bash.bashrc && \
     echo "# Alias to run claude CLI and dangerously skip permissions (hidden, backward compatibility)" >> /etc/bash.bashrc && \
-    echo "alias yolo='claude --dangerously-skip-permissions --mcp-config /etc/claude/mcp-servers.json'" >> /etc/bash.bashrc && \
+    echo "alias yolo='claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp-servers.json'" >> /etc/bash.bashrc && \
     echo "" >> /etc/bash.bashrc && \
     echo "# Main claude alias with auto-approve (same as yolo)" >> /etc/bash.bashrc && \
-    echo "alias claude='claude --dangerously-skip-permissions --mcp-config /etc/claude/mcp-servers.json'" >> /etc/bash.bashrc && \
+    echo "alias claude='claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp-servers.json'" >> /etc/bash.bashrc && \
     echo "" >> /etc/bash.bashrc && \
     echo "# Alias to run gemini CLI with yolo mode (bypass all approvals)" >> /etc/bash.bashrc && \
     echo "alias gemini='/usr/local/bin/gemini --yolo'" >> /etc/bash.bashrc && \
@@ -158,7 +163,7 @@ RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
 
 
 
-# Create global MCP configuration file
+# Create global MCP configuration file (base config without memory)
 RUN mkdir -p /etc/claude && \
     echo '{\n\
   "mcpServers": {\n\
@@ -174,22 +179,13 @@ RUN mkdir -p /etc/claude && \
         "--chromeArg=--disable-dev-shm-usage",\n\
         "--chromeArg=--disable-gpu"\n\
       ]\n\
-    },\n\
-    "memory": {\n\
-      "command": "/opt/flow/bin/python",\n\
-      "args": ["-m", "mcp_memory_service.server"],\n\
-      "env": {\n\
-        "MCP_MEMORY_STORAGE_BACKEND": "sqlite_vec",\n\
-        "MCP_MEMORY_SQLITE_PATH": "/home/agent/.swarmbox/memory/personal.db",\n\
-        "MCP_MEMORY_SQLITE_PRAGMAS": "busy_timeout=15000,cache_size=20000"\n\
-      }\n\
     }\n\
   }\n\
-}' > /etc/claude/mcp-servers.json
+}' > /etc/claude/mcp-servers-base.json
 
 # Add Claude wrapper to always use MCP config
 RUN echo '#!/bin/bash\n\
-/usr/local/bin/claude --mcp-config /etc/claude/mcp-servers.json "$@"' > /usr/local/bin/claude-mcp && \
+/usr/local/bin/claude --mcp-config ~/.claude/mcp-servers.json "$@"' > /usr/local/bin/claude-mcp && \
     chmod +x /usr/local/bin/claude-mcp
 
 # Update the yolo alias to include MCP config (done in global aliases section above)
@@ -269,46 +265,8 @@ output = {\n\
 \n\
 print(json.dumps(output))\n\
 sys.exit(0)' > /etc/swarmbox/hooks/session-end.py && \
-    chmod +x /etc/swarmbox/hooks/session-end.py && \
-    echo '{\n\
-  "hooks": {\n\
-    "SessionStart": [\n\
-      {\n\
-        "hooks": [\n\
-          {\n\
-            "type": "command",\n\
-            "command": "/home/agent/.swarmbox/hooks/session-start.py",\n\
-            "timeout": 5000\n\
-          }\n\
-        ]\n\
-      }\n\
-    ],\n\
-    "SessionEnd": [\n\
-      {\n\
-        "hooks": [\n\
-          {\n\
-            "type": "command",\n\
-            "command": "/home/agent/.swarmbox/hooks/session-end.py",\n\
-            "timeout": 5000\n\
-          }\n\
-        ]\n\
-      }\n\
-    ],\n\
-    "PreToolUse": [\n\
-      {\n\
-        "matcher": "mcp__memory__.*",\n\
-        "hooks": [\n\
-          {\n\
-            "type": "command",\n\
-            "command": "bash",\n\
-            "args": ["-c", "echo \\\"[$(date +%Y-%m-%d\\\\ %H:%M:%S)] Memory operation: $TOOL_NAME\\\" >> ~/.swarmbox/memory-ops.log"],\n\
-            "timeout": 1000\n\
-          }\n\
-        ]\n\
-      }\n\
-    ]\n\
-  }\n\
-}' > /etc/swarmbox/settings.json.template
+    chmod +x /etc/swarmbox/hooks/session-end.py
+
 
 # Create initialization script for .swarmbox setup (runs at container start)
 RUN echo '#!/bin/bash\n\
@@ -329,15 +287,104 @@ if [ ! -f "$SWARMBOX_DIR/hooks/session-end.py" ]; then\n\
     chmod +x "$SWARMBOX_DIR/hooks/session-end.py"\n\
 fi\n\
 \n\
-# Copy settings.json template if it doesn'"'"'t exist\n\
+# Create settings.json if it doesn'"'"'t exist\n\
 if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then\n\
-    cp /etc/swarmbox/settings.json.template "$SWARMBOX_DIR/settings.json"\n\
+    # Only configure hooks if MEMORY is set\n\
+    if [ -n "$MEMORY" ]; then\n\
+        # Create settings.json with memory hooks\n\
+        cat > "$SWARMBOX_DIR/settings.json" << 'EOF'\n\
+{\n\
+  "hooks": {\n\
+    "SessionStart": [\n\
+      {\n\
+        "hooks": [\n\
+          {\n\
+            "type": "command",\n\
+            "command": "/usr/bin/python3",\n\
+            "args": ["/home/agent/.swarmbox/hooks/session-start.py"]\n\
+          }\n\
+        ]\n\
+      }\n\
+    ],\n\
+    "SessionEnd": [\n\
+      {\n\
+        "hooks": [\n\
+          {\n\
+            "type": "command",\n\
+            "command": "/usr/bin/python3",\n\
+            "args": ["/home/agent/.swarmbox/hooks/session-end.py"]\n\
+          }\n\
+        ]\n\
+      }\n\
+    ]\n\
+  }\n\
+}\n\
+EOF\n\
+    else\n\
+        # Create empty settings.json when MEMORY is not set\n\
+        echo '{}' > "$SWARMBOX_DIR/settings.json"\n\
+    fi\n\
 fi\n\
 \n\
 # Create symlink for Claude Code to find settings\n\
 mkdir -p "$HOME/.claude"\n\
 if [ ! -L "$HOME/.claude/settings.json" ]; then\n\
     ln -sf "$SWARMBOX_DIR/settings.json" "$HOME/.claude/settings.json"\n\
+fi\n\
+\n\
+# Configure MCP servers based on MEMORY environment variable\n\
+if [ -n "$MEMORY" ]; then\n\
+    # MEMORY is set - create MCP config with memory service\n\
+    DB_NAME="${MEMORY}.db"\n\
+    cat > "$HOME/.claude/mcp-servers.json" <<EOF\n\
+{\n\
+  "mcpServers": {\n\
+    "chrome-devtools": {\n\
+      "command": "npx",\n\
+      "args": [\n\
+        "-y",\n\
+        "chrome-devtools-mcp@latest",\n\
+        "--executablePath=/usr/bin/chromium",\n\
+        "--headless",\n\
+        "--chromeArg=--no-sandbox",\n\
+        "--chromeArg=--disable-setuid-sandbox",\n\
+        "--chromeArg=--disable-dev-shm-usage",\n\
+        "--chromeArg=--disable-gpu"\n\
+      ]\n\
+    },\n\
+    "memory": {\n\
+      "command": "/opt/flow/bin/python",\n\
+      "args": ["-m", "mcp_memory_service.server"],\n\
+      "env": {\n\
+        "MCP_MEMORY_STORAGE_BACKEND": "sqlite_vec",\n\
+        "MCP_MEMORY_SQLITE_PATH": "/home/agent/.swarmbox/memory/$DB_NAME",\n\
+        "MCP_MEMORY_SQLITE_PRAGMAS": "busy_timeout=15000,cache_size=20000",\n\
+        "MCP_MEMORY_HTTP_AUTO_START": "true",\n\
+        "MCP_HTTP_PORT": "8338",\n\
+        "MCP_HTTP_HOST": "0.0.0.0",\n\
+        "MCP_OAUTH_ENABLED": "false"\n\
+      }\n\
+    }\n\
+  }\n\
+}\n\
+EOF\n\
+    echo "Memory enabled: Using database $DB_NAME"\n\
+    \n\
+    # Start HTTP server for web dashboard if not already running\n\
+    if ! pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then\n\
+        echo "Starting memory web dashboard on port 8338..."\n\
+        cd /opt/flow && MCP_OAUTH_ENABLED=false MCP_MEMORY_STORAGE_BACKEND=sqlite_vec MCP_MEMORY_SQLITE_PATH="/home/agent/.swarmbox/memory/$DB_NAME" nohup /opt/flow/bin/uvicorn mcp_memory_service.web.app:app --host 0.0.0.0 --port 8338 > /tmp/mcp-http-server.log 2>&1 &\n\
+        # Wait a moment to ensure it starts\n\
+        sleep 2\n\
+        if pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then\n\
+            echo "Web dashboard started at http://localhost:8338"\n\
+        else\n\
+            echo "Warning: Web dashboard failed to start. Check /tmp/mcp-http-server.log"\n\
+        fi\n\
+    fi\n\
+else\n\
+    # MEMORY is not set - create MCP config without memory service\n\
+    cp /etc/claude/mcp-servers-base.json "$HOME/.claude/mcp-servers.json"\n\
 fi' > /usr/local/bin/init-swarmbox.sh && \
     chmod +x /usr/local/bin/init-swarmbox.sh
 
@@ -359,6 +406,9 @@ RUN if [ "${HOST_OS}" = "darwin" ]; then \
 # Copy banner script (at the end to optimize build cache)
 COPY banner.sh /usr/local/bin/banner.sh
 RUN chmod +x /usr/local/bin/banner.sh
+
+# Expose HTTP port for MCP memory service web dashboard
+EXPOSE 8338
 
 # Switch to non-root user
 USER agent
