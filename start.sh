@@ -64,6 +64,8 @@ while [[ $# -gt 0 ]]; do
         *)
             echo "Unknown option: $1"
             echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--with-unsafe-podman] [--env-keys KEY1,KEY2,...]"
+            echo ""
+            echo "Options:"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
             echo "  --iports: Comma-separated list of inverse port mappings to host.podman.internal (e.g., 3000,8080:80)"
             echo "  --reset: Stop and remove existing container, keeping persistent folders"
@@ -74,6 +76,11 @@ while [[ $# -gt 0 ]]; do
             echo "  --host-network: Use host network namespace (container shares host network, ignores --ports)"
             echo "  --with-unsafe-podman: Mount host Podman socket (UNSAFE - gives container access to host Podman)"
             echo "  --env-keys: Comma-separated list of environment variable keys to pass from host to container (e.g., KEY1,KEY2,KEY3)"
+            echo ""
+            echo "Environment Variables:"
+            echo "  MEMORY=<db_name>: Enable MCP memory service with specified database name (automatically passed if set)"
+            echo "    Example: MEMORY=personal ./start.sh"
+            echo "    Example: MEMORY=project1 ./start.sh"
             exit 1
             ;;
     esac
@@ -165,6 +172,18 @@ fi
 echo "Image name: $IMAGE_NAME"
 echo "Container name: $CONTAINER_NAME"
 
+# Automatically expose port 8338 for memory web dashboard when MEMORY is set
+if [ -n "${MEMORY+x}" ]; then
+    if [[ ! "$PORTS" =~ (^|,)8338(:|,|$) ]] && [ "$HOST_NETWORK" = false ]; then
+        if [ -z "$PORTS" ]; then
+            PORTS="8338"
+        else
+            PORTS="$PORTS,8338"
+        fi
+        echo "Memory enabled with auto-exposed port 8338 for web dashboard"
+    fi
+fi
+
 # Parse port mappings
 CONTAINER_PORTS=""
 if [ -n "$PORTS" ]; then
@@ -202,11 +221,22 @@ fi
 
 # Parse environment keys and build environment variable flags
 CONTAINER_ENV_VARS=""
+
+# Automatically pass MEMORY environment variable if it's set
+if [ -n "${MEMORY+x}" ]; then
+    CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e MEMORY=${MEMORY}"
+    echo "Memory database: ${MEMORY}"
+fi
+
 if [ -n "$ENV_KEYS" ]; then
     IFS=',' read -ra ENV_KEY_ARRAY <<< "$ENV_KEYS"
     for key in "${ENV_KEY_ARRAY[@]}"; do
         # Trim whitespace from key
         key=$(echo "$key" | xargs)
+        # Skip MEMORY if already added
+        if [ "$key" = "MEMORY" ]; then
+            continue
+        fi
         if [ -n "${!key+x}" ]; then
             # Variable exists in host environment
             CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e $key=${!key}"
