@@ -300,8 +300,7 @@ if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then\n\
         "hooks": [\n\
           {\n\
             "type": "command",\n\
-            "command": "/usr/bin/python3",\n\
-            "args": ["/home/agent/.swarmbox/hooks/session-start.py"]\n\
+            "command": "/usr/bin/python3 /home/agent/.swarmbox/hooks/session-start.py"\n\
           }\n\
         ]\n\
       }\n\
@@ -311,8 +310,7 @@ if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then\n\
         "hooks": [\n\
           {\n\
             "type": "command",\n\
-            "command": "/usr/bin/python3",\n\
-            "args": ["/home/agent/.swarmbox/hooks/session-end.py"]\n\
+            "command": "/usr/bin/python3 /home/agent/.swarmbox/hooks/session-end.py"\n\
           }\n\
         ]\n\
       }\n\
