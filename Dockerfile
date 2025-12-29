@@ -74,9 +74,12 @@ RUN python3 -m venv /opt/flow && \
     /opt/flow/bin/pip install --upgrade pip
 
 # Clone and install mcp-memory-service from fork with fix
+# Also extract the framework hooks for later use
 RUN git clone https://github.com/feroult/mcp-memory-service.git /tmp/mcp-memory-service && \
     cd /tmp/mcp-memory-service && \
     /opt/flow/bin/pip install python-docx . && \
+    mkdir -p /etc/swarmbox && \
+    cp -r claude-hooks /etc/swarmbox/claude-hooks && \
     rm -rf /tmp/mcp-memory-service
 
 # Install Chromium
@@ -203,96 +206,69 @@ RUN echo "" >> /etc/bash.bashrc && \
     echo "  /usr/local/bin/banner.sh" >> /etc/bash.bashrc && \
     echo "fi" >> /etc/bash.bashrc
 
-# Create /etc/swarmbox/ structure with hook templates (won't be overwritten by volume mount)
-RUN mkdir -p /etc/swarmbox/hooks && \
-    echo '#!/usr/bin/env python3\n\
-import json\n\
-import sys\n\
-\n\
-# SessionStart hook: Automatically inject memory awareness at session start\n\
-try:\n\
-    input_data = json.load(sys.stdin)\n\
-except json.JSONDecodeError:\n\
-    sys.exit(0)\n\
-\n\
-# Create context message to inject memory awareness\n\
-context = """\n\
-Memory system active. Your memories are automatically loaded.\n\
-\n\
-Available memory tools:\n\
-- mcp__memory__store_memory: Save important context, decisions, and learnings\n\
-- mcp__memory__recall_memory: Search and retrieve relevant past memories\n\
-- Use memories to maintain continuity across sessions\n\
-\n\
-Remember to consolidate key findings at the end of this session.\n\
-"""\n\
-\n\
-output = {\n\
-    "hookSpecificOutput": {\n\
-        "hookEventName": "SessionStart",\n\
-        "additionalContext": context\n\
-    }\n\
-}\n\
-\n\
-print(json.dumps(output))\n\
-sys.exit(0)' > /etc/swarmbox/hooks/session-start.py && \
-    chmod +x /etc/swarmbox/hooks/session-start.py && \
-    echo '#!/usr/bin/env python3\n\
-import json\n\
-import sys\n\
-import os\n\
-from datetime import datetime\n\
-\n\
-# SessionEnd hook: Log session end\n\
-try:\n\
-    input_data = json.load(sys.stdin)\n\
-except json.JSONDecodeError:\n\
-    sys.exit(0)\n\
-\n\
-# Log session end\n\
-log_file = os.path.expanduser("~/.swarmbox/session-history.log")\n\
-os.makedirs(os.path.dirname(log_file), exist_ok=True)\n\
-\n\
-with open(log_file, "a") as f:\n\
-    timestamp = datetime.now().isoformat()\n\
-    f.write(f"{timestamp} - Session ended\\n")\n\
-\n\
-output = {\n\
-    "hookSpecificOutput": {\n\
-        "hookEventName": "SessionEnd"\n\
-    }\n\
-}\n\
-\n\
-print(json.dumps(output))\n\
-sys.exit(0)' > /etc/swarmbox/hooks/session-end.py && \
-    chmod +x /etc/swarmbox/hooks/session-end.py
-
-
 # Create initialization script for .swarmbox setup (runs at container start)
 RUN echo '#!/bin/bash\n\
 # Initialize .swarmbox directory structure at runtime\n\
 SWARMBOX_DIR="$HOME/.swarmbox"\n\
 \n\
 # Create directory structure\n\
-mkdir -p "$SWARMBOX_DIR"/{hooks,memory}\n\
+mkdir -p "$SWARMBOX_DIR"/memory\n\
+mkdir -p "$HOME/.claude/hooks"\n\
 \n\
-# Copy hook scripts if they don'"'"'t exist\n\
-if [ ! -f "$SWARMBOX_DIR/hooks/session-start.py" ]; then\n\
-    cp /etc/swarmbox/hooks/session-start.py "$SWARMBOX_DIR/hooks/"\n\
-    chmod +x "$SWARMBOX_DIR/hooks/session-start.py"\n\
+# Copy framework hooks to .claude/hooks if they don'"'"'t exist\n\
+if [ ! -d "$HOME/.claude/hooks/core" ]; then\n\
+    cp -r /etc/swarmbox/claude-hooks/* "$HOME/.claude/hooks/"\n\
+    chmod +x "$HOME/.claude/hooks"/*.sh 2>/dev/null || true\n\
+    echo "Installed mcp-memory-service framework hooks"\n\
 fi\n\
 \n\
-if [ ! -f "$SWARMBOX_DIR/hooks/session-end.py" ]; then\n\
-    cp /etc/swarmbox/hooks/session-end.py "$SWARMBOX_DIR/hooks/"\n\
-    chmod +x "$SWARMBOX_DIR/hooks/session-end.py"\n\
-fi\n\
+# Always create our custom hooks config.json with correct endpoint\n\
+cat > "$HOME/.claude/hooks/config.json" << '"'"'HOOKCONFIG'"'"'\n\
+{\n\
+  "memoryService": {\n\
+    "protocol": "http",\n\
+    "preferredProtocol": "http",\n\
+    "fallbackEnabled": false,\n\
+    "http": {\n\
+      "endpoint": "http://127.0.0.1:8338",\n\
+      "apiKey": "",\n\
+      "healthCheckTimeout": 3000,\n\
+      "useDetailedHealthCheck": true\n\
+    },\n\
+    "maxMemoriesPerSession": 8,\n\
+    "recentTimeWindow": "last-month",\n\
+    "fallbackTimeWindow": "last-3-months"\n\
+  },\n\
+  "memoryScoring": {\n\
+    "weights": {\n\
+      "timeDecay": 0.40,\n\
+      "tagRelevance": 0.25,\n\
+      "contentRelevance": 0.15,\n\
+      "contentQuality": 0.20,\n\
+      "conversationRelevance": 0.25\n\
+    },\n\
+    "minRelevanceScore": 0.4,\n\
+    "timeDecayRate": 0.05,\n\
+    "enableConversationContext": true\n\
+  },\n\
+  "gitAnalysis": {\n\
+    "enabled": false\n\
+  },\n\
+  "output": {\n\
+    "verbose": true,\n\
+    "showMemoryDetails": false,\n\
+    "showProjectDetails": true,\n\
+    "cleanMode": false\n\
+  }\n\
+}\n\
+HOOKCONFIG\n\
 \n\
 # Create settings.json if it doesn'"'"'t exist\n\
 if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then\n\
     # Only configure hooks if MEMORY is set\n\
     if [ -n "$MEMORY" ]; then\n\
-        # Create settings.json with memory hooks\n\
-        cat > "$SWARMBOX_DIR/settings.json" << 'EOF'\n\
+        # Create settings.json with framework memory hooks\n\
+        cat > "$SWARMBOX_DIR/settings.json" << '"'"'EOF'"'"'\n\
 {\n\
   "hooks": {\n\
     "SessionStart": [\n\
@@ -300,7 +276,19 @@ if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then\n\
         "hooks": [\n\
           {\n\
             "type": "command",\n\
-            "command": "/usr/bin/python3 /home/agent/.swarmbox/hooks/session-start.py"\n\
+            "command": "node /home/agent/.claude/hooks/core/session-start.js 2>> /home/agent/.claude/hooks/session-start.log",\n\
+            "timeout": 30\n\
+          }\n\
+        ]\n\
+      }\n\
+    ],\n\
+    "UserPromptSubmit": [\n\
+      {\n\
+        "hooks": [\n\
+          {\n\
+            "type": "command",\n\
+            "command": "node /home/agent/.claude/hooks/core/mid-conversation.js 2>> /home/agent/.claude/hooks/mid-conversation.log",\n\
+            "timeout": 8\n\
           }\n\
         ]\n\
       }\n\
@@ -310,7 +298,8 @@ if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then\n\
         "hooks": [\n\
           {\n\
             "type": "command",\n\
-            "command": "/usr/bin/python3 /home/agent/.swarmbox/hooks/session-end.py"\n\
+            "command": "node /home/agent/.claude/hooks/core/session-end.js 2>> /home/agent/.claude/hooks/session-end.log",\n\
+            "timeout": 20\n\
           }\n\
         ]\n\
       }\n\
@@ -320,7 +309,7 @@ if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then\n\
 EOF\n\
     else\n\
         # Create empty settings.json when MEMORY is not set\n\
-        echo '{}' > "$SWARMBOX_DIR/settings.json"\n\
+        echo '"'"'{}'"'"' > "$SWARMBOX_DIR/settings.json"\n\
     fi\n\
 fi\n\
 \n\
@@ -356,7 +345,7 @@ if [ -n "$MEMORY" ]; then\n\
       "env": {\n\
         "MCP_MEMORY_STORAGE_BACKEND": "sqlite_vec",\n\
         "MCP_MEMORY_SQLITE_PATH": "/home/agent/.swarmbox/memory/$DB_NAME",\n\
-        "MCP_MEMORY_SQLITE_PRAGMAS": "busy_timeout=15000,cache_size=20000",\n\
+        "MCP_MEMORY_SQLITE_PRAGMAS": "journal_mode=WAL,busy_timeout=15000,cache_size=20000",\n\
         "MCP_MEMORY_HTTP_AUTO_START": "true",\n\
         "MCP_HTTP_PORT": "8338",\n\
         "MCP_HTTP_HOST": "0.0.0.0",\n\
