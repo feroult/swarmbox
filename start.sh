@@ -172,15 +172,15 @@ fi
 echo "Image name: $IMAGE_NAME"
 echo "Container name: $CONTAINER_NAME"
 
-# Automatically expose port 8338 for memory web dashboard when MEMORY is set
+# Automatically expose port 8889 for memory web dashboard when MEMORY is set
 if [ -n "${MEMORY+x}" ]; then
-    if [[ ! "$PORTS" =~ (^|,)8338(:|,|$) ]] && [ "$HOST_NETWORK" = false ]; then
+    if [[ ! "$PORTS" =~ (^|,)8889(:|,|$) ]] && [ "$HOST_NETWORK" = false ]; then
         if [ -z "$PORTS" ]; then
-            PORTS="8338"
+            PORTS="8889"
         else
-            PORTS="$PORTS,8338"
+            PORTS="$PORTS,8889"
         fi
-        echo "Memory enabled with auto-exposed port 8338 for web dashboard"
+        echo "Memory enabled with auto-exposed port 8889 for web dashboard"
     fi
 fi
 

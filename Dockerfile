@@ -230,7 +230,7 @@ cat > "$HOME/.claude/hooks/config.json" << '"'"'HOOKCONFIG'"'"'\n\
     "preferredProtocol": "http",\n\
     "fallbackEnabled": false,\n\
     "http": {\n\
-      "endpoint": "http://127.0.0.1:8338",\n\
+      "endpoint": "http://127.0.0.1:8889",\n\
       "apiKey": "",\n\
       "healthCheckTimeout": 3000,\n\
       "useDetailedHealthCheck": true\n\
@@ -347,7 +347,7 @@ if [ -n "$MEMORY" ]; then\n\
         "MCP_MEMORY_SQLITE_PATH": "/home/agent/.swarmbox/memory/$DB_NAME",\n\
         "MCP_MEMORY_SQLITE_PRAGMAS": "journal_mode=WAL,busy_timeout=15000,cache_size=20000",\n\
         "MCP_MEMORY_HTTP_AUTO_START": "true",\n\
-        "MCP_HTTP_PORT": "8338",\n\
+        "MCP_HTTP_PORT": "8889",\n\
         "MCP_HTTP_HOST": "0.0.0.0",\n\
         "MCP_OAUTH_ENABLED": "false"\n\
       }\n\
@@ -359,12 +359,12 @@ EOF\n\
     \n\
     # Start HTTP server for web dashboard if not already running\n\
     if ! pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then\n\
-        echo "Starting memory web dashboard on port 8338..."\n\
-        cd /opt/flow && MCP_OAUTH_ENABLED=false MCP_MEMORY_STORAGE_BACKEND=sqlite_vec MCP_MEMORY_SQLITE_PATH="/home/agent/.swarmbox/memory/$DB_NAME" nohup /opt/flow/bin/uvicorn mcp_memory_service.web.app:app --host 0.0.0.0 --port 8338 > /tmp/mcp-http-server.log 2>&1 &\n\
+        echo "Starting memory web dashboard on port 8889..."\n\
+        cd /opt/flow && MCP_OAUTH_ENABLED=false MCP_MEMORY_STORAGE_BACKEND=sqlite_vec MCP_MEMORY_SQLITE_PATH="/home/agent/.swarmbox/memory/$DB_NAME" nohup /opt/flow/bin/uvicorn mcp_memory_service.web.app:app --host 0.0.0.0 --port 8889 > /tmp/mcp-http-server.log 2>&1 &\n\
         # Wait a moment to ensure it starts\n\
         sleep 2\n\
         if pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then\n\
-            echo "Web dashboard started at http://localhost:8338"\n\
+            echo "Web dashboard started at http://localhost:8889"\n\
         else\n\
             echo "Warning: Web dashboard failed to start. Check /tmp/mcp-http-server.log"\n\
         fi\n\
@@ -395,7 +395,7 @@ COPY banner.sh /usr/local/bin/banner.sh
 RUN chmod +x /usr/local/bin/banner.sh
 
 # Expose HTTP port for MCP memory service web dashboard
-EXPOSE 8338
+EXPOSE 8889
 
 # Switch to non-root user
 USER agent
