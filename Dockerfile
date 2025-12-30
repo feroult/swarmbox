@@ -216,9 +216,11 @@ RUN if [ "${HOST_OS}" = "darwin" ]; then \
         chmod -R 755 /opt/npm-cache /opt/flow /workspace; \
     fi
 
-# Copy banner script (at the end to optimize build cache)
+# Copy banner and messaging scripts (at the end to optimize build cache)
 COPY container/scripts/banner.sh /usr/local/bin/banner.sh
-RUN chmod +x /usr/local/bin/banner.sh
+RUN mkdir -p /etc/swarmbox/scripts && chmod +x /usr/local/bin/banner.sh
+COPY container/scripts/messages.sh /etc/swarmbox/scripts/messages.sh
+RUN chmod 644 /etc/swarmbox/scripts/messages.sh
 
 # Expose HTTP port for MCP memory service web dashboard
 EXPOSE 8889
