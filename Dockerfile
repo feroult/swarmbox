@@ -166,25 +166,16 @@ RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
 
 
 
+# Copy MCP configurations and scripts to container
+COPY container/mcp/ /etc/swarmbox/mcp/
+RUN chmod -R 755 /etc/swarmbox/mcp && \
+    chmod +x /etc/swarmbox/mcp/memory/init.sh
+
 # Create global MCP configuration file (base config without memory)
 RUN mkdir -p /etc/claude && \
-    echo '{\n\
-  "mcpServers": {\n\
-    "chrome-devtools": {\n\
-      "command": "npx",\n\
-      "args": [\n\
-        "-y",\n\
-        "chrome-devtools-mcp@latest",\n\
-        "--executablePath=/usr/bin/chromium",\n\
-        "--headless",\n\
-        "--chromeArg=--no-sandbox",\n\
-        "--chromeArg=--disable-setuid-sandbox",\n\
-        "--chromeArg=--disable-dev-shm-usage",\n\
-        "--chromeArg=--disable-gpu"\n\
-      ]\n\
-    }\n\
-  }\n\
-}' > /etc/claude/mcp-servers-base.json
+    jq -n --slurpfile chrome /etc/swarmbox/mcp/chrome-devtools/config.json \
+      '{mcpServers: {"chrome-devtools": $chrome[0]}}' \
+      > /etc/claude/mcp-servers-base.json
 
 # Add Claude wrapper to always use MCP config
 RUN echo '#!/bin/bash\n\
@@ -206,177 +197,9 @@ RUN echo "" >> /etc/bash.bashrc && \
     echo "  /usr/local/bin/banner.sh" >> /etc/bash.bashrc && \
     echo "fi" >> /etc/bash.bashrc
 
-# Create initialization script for .swarmbox setup (runs at container start)
-RUN echo '#!/bin/bash\n\
-# Initialize .swarmbox directory structure at runtime\n\
-SWARMBOX_DIR="$HOME/.swarmbox"\n\
-\n\
-# Create directory structure\n\
-mkdir -p "$SWARMBOX_DIR"/memory\n\
-mkdir -p "$HOME/.claude/hooks"\n\
-\n\
-# Copy framework hooks to .claude/hooks if they don'"'"'t exist\n\
-if [ ! -d "$HOME/.claude/hooks/core" ]; then\n\
-    cp -r /etc/swarmbox/claude-hooks/* "$HOME/.claude/hooks/"\n\
-    chmod +x "$HOME/.claude/hooks"/*.sh 2>/dev/null || true\n\
-    echo "Installed mcp-memory-service framework hooks"\n\
-fi\n\
-\n\
-# Always create our custom hooks config.json with correct endpoint\n\
-cat > "$HOME/.claude/hooks/config.json" << '"'"'HOOKCONFIG'"'"'\n\
-{\n\
-  "memoryService": {\n\
-    "protocol": "http",\n\
-    "preferredProtocol": "http",\n\
-    "fallbackEnabled": false,\n\
-    "http": {\n\
-      "endpoint": "http://127.0.0.1:8889",\n\
-      "apiKey": "",\n\
-      "healthCheckTimeout": 3000,\n\
-      "useDetailedHealthCheck": true\n\
-    },\n\
-    "maxMemoriesPerSession": 8,\n\
-    "recentTimeWindow": "last-month",\n\
-    "fallbackTimeWindow": "last-3-months"\n\
-  },\n\
-  "memoryScoring": {\n\
-    "weights": {\n\
-      "timeDecay": 0.40,\n\
-      "tagRelevance": 0.25,\n\
-      "contentRelevance": 0.15,\n\
-      "contentQuality": 0.20,\n\
-      "conversationRelevance": 0.25\n\
-    },\n\
-    "minRelevanceScore": 0.4,\n\
-    "timeDecayRate": 0.05,\n\
-    "enableConversationContext": true\n\
-  },\n\
-  "gitAnalysis": {\n\
-    "enabled": false\n\
-  },\n\
-  "codeExecution": {\n\
-    "enabled": false\n\
-  },\n\
-  "output": {\n\
-    "verbose": true,\n\
-    "showMemoryDetails": false,\n\
-    "showProjectDetails": true,\n\
-    "cleanMode": false\n\
-  }\n\
-}\n\
-HOOKCONFIG\n\
-\n\
-# Create settings.json if it doesn'"'"'t exist\n\
-if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then\n\
-    # Only configure hooks if MEMORY is set\n\
-    if [ -n "$MEMORY" ]; then\n\
-        # Create settings.json with framework memory hooks\n\
-        cat > "$SWARMBOX_DIR/settings.json" << '"'"'EOF'"'"'\n\
-{\n\
-  "hooks": {\n\
-    "SessionStart": [\n\
-      {\n\
-        "hooks": [\n\
-          {\n\
-            "type": "command",\n\
-            "command": "node /home/agent/.claude/hooks/core/session-start.js 2>> /home/agent/.claude/hooks/session-start.log",\n\
-            "timeout": 30\n\
-          }\n\
-        ]\n\
-      }\n\
-    ],\n\
-    "UserPromptSubmit": [\n\
-      {\n\
-        "hooks": [\n\
-          {\n\
-            "type": "command",\n\
-            "command": "node /home/agent/.claude/hooks/core/mid-conversation.js 2>> /home/agent/.claude/hooks/mid-conversation.log",\n\
-            "timeout": 8\n\
-          }\n\
-        ]\n\
-      }\n\
-    ],\n\
-    "SessionEnd": [\n\
-      {\n\
-        "hooks": [\n\
-          {\n\
-            "type": "command",\n\
-            "command": "node /home/agent/.claude/hooks/core/session-end.js 2>> /home/agent/.claude/hooks/session-end.log",\n\
-            "timeout": 20\n\
-          }\n\
-        ]\n\
-      }\n\
-    ]\n\
-  }\n\
-}\n\
-EOF\n\
-    else\n\
-        # Create empty settings.json when MEMORY is not set\n\
-        echo '"'"'{}'"'"' > "$SWARMBOX_DIR/settings.json"\n\
-    fi\n\
-fi\n\
-\n\
-# Create symlink for Claude Code to find settings\n\
-mkdir -p "$HOME/.claude"\n\
-if [ ! -L "$HOME/.claude/settings.json" ]; then\n\
-    ln -sf "$SWARMBOX_DIR/settings.json" "$HOME/.claude/settings.json"\n\
-fi\n\
-\n\
-# Configure MCP servers based on MEMORY environment variable\n\
-if [ -n "$MEMORY" ]; then\n\
-    # MEMORY is set - create MCP config with memory service\n\
-    DB_NAME="${MEMORY}.db"\n\
-    cat > "$HOME/.claude/mcp-servers.json" <<EOF\n\
-{\n\
-  "mcpServers": {\n\
-    "chrome-devtools": {\n\
-      "command": "npx",\n\
-      "args": [\n\
-        "-y",\n\
-        "chrome-devtools-mcp@latest",\n\
-        "--executablePath=/usr/bin/chromium",\n\
-        "--headless",\n\
-        "--chromeArg=--no-sandbox",\n\
-        "--chromeArg=--disable-setuid-sandbox",\n\
-        "--chromeArg=--disable-dev-shm-usage",\n\
-        "--chromeArg=--disable-gpu"\n\
-      ]\n\
-    },\n\
-    "memory": {\n\
-      "command": "/opt/flow/bin/python",\n\
-      "args": ["-m", "mcp_memory_service.server"],\n\
-      "env": {\n\
-        "MCP_MEMORY_STORAGE_BACKEND": "sqlite_vec",\n\
-        "MCP_MEMORY_SQLITE_PATH": "/home/agent/.swarmbox/memory/$DB_NAME",\n\
-        "MCP_MEMORY_SQLITE_PRAGMAS": "journal_mode=WAL,busy_timeout=30000,cache_size=20000,synchronous=NORMAL",\n\
-        "MCP_MEMORY_HTTP_AUTO_START": "true",\n\
-        "MCP_HTTP_PORT": "8889",\n\
-        "MCP_HTTP_HOST": "0.0.0.0",\n\
-        "MCP_OAUTH_ENABLED": "false"\n\
-      }\n\
-    }\n\
-  }\n\
-}\n\
-EOF\n\
-    echo "Memory enabled: Using database $DB_NAME"\n\
-    \n\
-    # Start HTTP server for web dashboard if not already running\n\
-    if ! pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then\n\
-        echo "Starting memory web dashboard on port 8889..."\n\
-        cd /opt/flow && MCP_OAUTH_ENABLED=false MCP_MEMORY_STORAGE_BACKEND=sqlite_vec MCP_MEMORY_SQLITE_PATH="/home/agent/.swarmbox/memory/$DB_NAME" MCP_MEMORY_SQLITE_PRAGMAS="journal_mode=WAL,busy_timeout=30000,cache_size=20000,synchronous=NORMAL" nohup /opt/flow/bin/uvicorn mcp_memory_service.web.app:app --host 0.0.0.0 --port 8889 > /tmp/mcp-http-server.log 2>&1 &\n\
-        # Wait a moment to ensure it starts\n\
-        sleep 2\n\
-        if pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then\n\
-            echo "Web dashboard started at http://localhost:8889"\n\
-        else\n\
-            echo "Warning: Web dashboard failed to start. Check /tmp/mcp-http-server.log"\n\
-        fi\n\
-    fi\n\
-else\n\
-    # MEMORY is not set - create MCP config without memory service\n\
-    cp /etc/claude/mcp-servers-base.json "$HOME/.claude/mcp-servers.json"\n\
-fi' > /usr/local/bin/init-swarmbox.sh && \
-    chmod +x /usr/local/bin/init-swarmbox.sh
+# Copy initialization script for .swarmbox setup (runs at container start)
+COPY container/scripts/init.sh /usr/local/bin/init-swarmbox.sh
+RUN chmod 755 /usr/local/bin/init-swarmbox.sh
 
 # Add initialization to bashrc (runs for interactive shells)
 RUN echo "" >> /etc/bash.bashrc && \
@@ -394,7 +217,7 @@ RUN if [ "${HOST_OS}" = "darwin" ]; then \
     fi
 
 # Copy banner script (at the end to optimize build cache)
-COPY banner.sh /usr/local/bin/banner.sh
+COPY container/scripts/banner.sh /usr/local/bin/banner.sh
 RUN chmod +x /usr/local/bin/banner.sh
 
 # Expose HTTP port for MCP memory service web dashboard

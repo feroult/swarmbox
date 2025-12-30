@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/agent/.claude/hooks/core/session-start.js 2>> /home/agent/.claude/hooks/session-start.log",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/agent/.claude/hooks/core/mid-conversation.js 2>> /home/agent/.claude/hooks/mid-conversation.log",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/agent/.claude/hooks/core/session-end.js 2>> /home/agent/.claude/hooks/session-end.log",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}

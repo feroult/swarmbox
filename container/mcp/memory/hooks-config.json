@@ -1,0 +1,40 @@
+{
+  "memoryService": {
+    "protocol": "http",
+    "preferredProtocol": "http",
+    "fallbackEnabled": false,
+    "http": {
+      "endpoint": "http://127.0.0.1:8889",
+      "apiKey": "",
+      "healthCheckTimeout": 3000,
+      "useDetailedHealthCheck": true
+    },
+    "maxMemoriesPerSession": 8,
+    "recentTimeWindow": "last-month",
+    "fallbackTimeWindow": "last-3-months"
+  },
+  "memoryScoring": {
+    "weights": {
+      "timeDecay": 0.40,
+      "tagRelevance": 0.25,
+      "contentRelevance": 0.15,
+      "contentQuality": 0.20,
+      "conversationRelevance": 0.25
+    },
+    "minRelevanceScore": 0.4,
+    "timeDecayRate": 0.05,
+    "enableConversationContext": true
+  },
+  "gitAnalysis": {
+    "enabled": false
+  },
+  "codeExecution": {
+    "enabled": false
+  },
+  "output": {
+    "verbose": true,
+    "showMemoryDetails": false,
+    "showProjectDetails": true,
+    "cleanMode": false
+  }
+}
