@@ -1,8 +1,16 @@
-# Swarm Box
+# SwarmBox
 
-**Containerized AI development environment with Claude Code, Gemini CLI, and persistent memory.**
+**A safe, isolated environment to run AI agents with full tool access and auto-approve mode.**
 
-Built on Podman with a modular MCP architecture designed for extensibility.
+SwarmBox is a containerized workspace where AI assistants can execute freely without breaking your host system. Built on Podman with an opinionated set of MCP servers and tools that work out of the box—no configuration needed.
+
+**Key Features:**
+- 🔒 **Safe Isolation**: AI agents run in a container, protecting your host machine
+- ⚡ **YOLO Mode**: Auto-approve workflows (dangerously-skip-permissions) for uninterrupted AI execution
+- 🧰 **Batteries Included**: Chrome DevTools MCP, persistent memory service, and dev tools pre-configured
+- 🚀 **Seamless DevEx**: Single mount point (`.work/`) with host user permissions—no permission headaches
+- 🧠 **Persistent Memory**: Optional semantic memory that remembers context across sessions
+- 🔌 **Extensible**: Modular MCP architecture—drop in new servers with zero code changes
 
 ---
 
