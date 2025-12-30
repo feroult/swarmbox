@@ -254,6 +254,9 @@ cat > "$HOME/.claude/hooks/config.json" << '"'"'HOOKCONFIG'"'"'\n\
   "gitAnalysis": {\n\
     "enabled": false\n\
   },\n\
+  "codeExecution": {\n\
+    "enabled": false\n\
+  },\n\
   "output": {\n\
     "verbose": true,\n\
     "showMemoryDetails": false,\n\
