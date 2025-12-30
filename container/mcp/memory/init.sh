@@ -5,6 +5,10 @@
 DB_NAME="${1}.db"
 SQLITE_PATH="/home/agent/.swarmbox/memory/$DB_NAME"
 MCP_DIR="/etc/swarmbox/mcp/memory"
+source /etc/swarmbox/scripts/messages.sh
+
+msg_blank
+msg "Configuring memory service..."
 
 # 1. Setup hooks configuration
 cp "$MCP_DIR/hooks-config.json" "$HOME/.claude/hooks/config.json"
@@ -27,11 +31,10 @@ jq -n \
    }}' \
    > "$HOME/.claude/mcp-servers.json"
 
-echo "Memory enabled: Using database $DB_NAME"
+msg_detail "Database: $DB_NAME"
 
 # 4. Start HTTP server for web dashboard if not already running
 if ! pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then
-    echo "Starting memory web dashboard on port 8889..."
     cd /opt/flow && \
     MCP_OAUTH_ENABLED=false \
     MCP_MEMORY_STORAGE_BACKEND=sqlite_vec \
@@ -43,8 +46,10 @@ if ! pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then
     # Wait a moment to ensure it starts
     sleep 2
     if pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then
-        echo "Web dashboard started at http://localhost:8889"
+        msg_detail "Dashboard: http://localhost:8889"
     else
-        echo "Warning: Web dashboard failed to start. Check /tmp/mcp-http-server.log"
+        msg_detail "Dashboard failed to start (check /tmp/mcp-http-server.log)"
     fi
 fi
+
+msg_blank

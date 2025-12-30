@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# Messaging utilities - sober design
+GRAY='\033[0;90m'
+WHITE='\033[0;37m'
+RESET='\033[0m'
+
+msg() { echo -e "${WHITE}${1}${RESET}"; }
+msg_detail() { echo -e "${GRAY}  ${1}${RESET}"; }
+msg_warn() { echo -e "${GRAY}${1}${RESET}"; }
+
 # Podman-only runtime (Docker support removed)
 RUNTIME="podman"
 
@@ -95,16 +104,13 @@ if ! command -v podman &> /dev/null; then
     exit 1
 fi
 
-echo "Using Podman container runtime"
-
 # Handle Podman socket mounting (if --with-unsafe-podman is set)
 PODMAN_SOCKET_MOUNT=""
 PODMAN_HOST_ENV=""
 if [ "$WITH_UNSAFE_PODMAN" = true ]; then
     echo ""
-    echo "WARNING: --with-unsafe-podman enabled!"
-    echo "This gives the container access to the host Podman daemon."
-    echo "The container can create/destroy containers and images on the host."
+    msg_warn "WARNING: --with-unsafe-podman enabled"
+    msg_warn "Container will have access to host Podman daemon"
     echo ""
 
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -139,7 +145,7 @@ if [ "$WITH_UNSAFE_PODMAN" = true ]; then
         # Mount to Podman-specific path inside container
         PODMAN_SOCKET_MOUNT="-v $PODMAN_SOCKET:/run/podman/podman.sock"
         PODMAN_HOST_ENV="-e CONTAINER_HOST=unix:///run/podman/podman.sock"
-        echo "Mounting Podman socket: $PODMAN_SOCKET -> /run/podman/podman.sock"
+        msg_detail "Podman socket: $PODMAN_SOCKET"
     else
         # Linux - Try rootless Podman socket first
         PODMAN_SOCKET="/run/user/$(id -u)/podman/podman.sock"
@@ -157,7 +163,7 @@ if [ "$WITH_UNSAFE_PODMAN" = true ]; then
         # Mount to Podman-specific path inside container
         PODMAN_SOCKET_MOUNT="-v $PODMAN_SOCKET:/run/podman/podman.sock"
         PODMAN_HOST_ENV="-e CONTAINER_HOST=unix:///run/podman/podman.sock"
-        echo "Mounting Podman socket: $PODMAN_SOCKET -> /run/podman/podman.sock"
+        msg_detail "Podman socket: $PODMAN_SOCKET"
     fi
     echo ""
 fi
@@ -169,8 +175,10 @@ fi
 if [ -n "$CUSTOM_NAME" ]; then
     CONTAINER_NAME="$CUSTOM_NAME"
 fi
-echo "Image name: $IMAGE_NAME"
-echo "Container name: $CONTAINER_NAME"
+
+msg "Starting swarmbox..."
+msg_detail "Image: $IMAGE_NAME"
+msg_detail "Container: $CONTAINER_NAME"
 
 # Automatically expose port 8889 for memory web dashboard when MEMORY is set
 if [ -n "${MEMORY+x}" ]; then
@@ -180,8 +188,8 @@ if [ -n "${MEMORY+x}" ]; then
         else
             PORTS="$PORTS,8889"
         fi
-        echo "Memory enabled with auto-exposed port 8889 for web dashboard"
     fi
+    msg_detail "Memory: ${MEMORY} (dashboard on :8889)"
 fi
 
 # Parse port mappings
@@ -225,7 +233,6 @@ CONTAINER_ENV_VARS=""
 # Automatically pass MEMORY environment variable if it's set
 if [ -n "${MEMORY+x}" ]; then
     CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e MEMORY=${MEMORY}"
-    echo "Memory database: ${MEMORY}"
 fi
 
 if [ -n "$ENV_KEYS" ]; then
@@ -240,9 +247,8 @@ if [ -n "$ENV_KEYS" ]; then
         if [ -n "${!key+x}" ]; then
             # Variable exists in host environment
             CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e $key=${!key}"
-            echo "Passing environment variable: $key"
         else
-            echo "Warning: Environment variable '$key' not found in host environment, skipping."
+            msg_warn "Environment variable '$key' not found, skipping"
         fi
     done
 fi
@@ -251,9 +257,9 @@ fi
 NETWORK_FLAG=""
 if [ "$HOST_NETWORK" = true ]; then
     NETWORK_FLAG="--net=host"
-    echo "Using host network namespace"
+    msg_detail "Using host network"
     if [ -n "$PORTS" ] || [ -n "$IPORTS" ]; then
-        echo "Warning: --ports and --iports are ignored when using --host-network"
+        msg_warn "Port mappings ignored with host network"
     fi
 fi
 
@@ -262,25 +268,25 @@ mkdir -p "$WORK_DIR"
 
 # Build image if it doesn't exist
 if [[ "$(podman images -q "$IMAGE_NAME" 2> /dev/null)" == "" ]]; then
-    echo "Building container image..."
+    echo ""
+    msg "Building image..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
         podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=darwin -t "$IMAGE_NAME" .
     else
         podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=linux -t "$IMAGE_NAME" .
     fi
+    echo ""
 fi
 
 # Handle reset option
 if [ "$RESET" = true ]; then
     if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
-        echo "Resetting container (keeping persistent folders)..."
-        echo "Stopping container and killing all connected shells..."
+        msg_detail "Resetting container..."
         podman stop "$CONTAINER_NAME" 2>/dev/null || true
         podman rm "$CONTAINER_NAME" 2>/dev/null || true
-        echo "Container reset complete."
     fi
     # After reset, force creation of new container
-    echo "Creating new container..."
+    echo ""
 
     # Create and start container
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -318,13 +324,13 @@ if [ "$RESET" = true ]; then
 else
     # Normal operation: check if container already exists
     if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
-        echo "Container already exists. Connecting to it..."
+        echo ""
         podman start "$CONTAINER_NAME" 2>/dev/null || true
         if [ "$NO_SHELL" = false ]; then
             podman exec -it "$CONTAINER_NAME" bash
         fi
     else
-        echo "Creating new container..."
+        echo ""
         # Create and start container
         if [[ "$OSTYPE" == "darwin"* ]]; then
             # macOS - run with security-opt and userns options
