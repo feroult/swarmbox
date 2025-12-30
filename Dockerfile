@@ -363,7 +363,7 @@ EOF\n\
     # Start HTTP server for web dashboard if not already running\n\
     if ! pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then\n\
         echo "Starting memory web dashboard on port 8889..."\n\
-        cd /opt/flow && MCP_OAUTH_ENABLED=false MCP_MEMORY_STORAGE_BACKEND=sqlite_vec MCP_MEMORY_SQLITE_PATH="/home/agent/.swarmbox/memory/$DB_NAME" nohup /opt/flow/bin/uvicorn mcp_memory_service.web.app:app --host 0.0.0.0 --port 8889 > /tmp/mcp-http-server.log 2>&1 &\n\
+        cd /opt/flow && MCP_OAUTH_ENABLED=false MCP_MEMORY_STORAGE_BACKEND=sqlite_vec MCP_MEMORY_SQLITE_PATH="/home/agent/.swarmbox/memory/$DB_NAME" MCP_MEMORY_SQLITE_PRAGMAS="journal_mode=WAL,busy_timeout=15000,cache_size=20000" nohup /opt/flow/bin/uvicorn mcp_memory_service.web.app:app --host 0.0.0.0 --port 8889 > /tmp/mcp-http-server.log 2>&1 &\n\
         # Wait a moment to ensure it starts\n\
         sleep 2\n\
         if pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then\n\
