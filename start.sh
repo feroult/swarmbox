@@ -5,9 +5,9 @@ GRAY='\033[0;90m'
 WHITE='\033[0;37m'
 RESET='\033[0m'
 
-msg() { printf "${WHITE}%s${RESET}\n" "$1"; }
-msg_detail() { printf "${GRAY}  %s${RESET}\n" "$1"; }
-msg_warn() { printf "${GRAY}%s${RESET}\n" "$1"; }
+msg() { command printf "${WHITE}%s${RESET}\n" "$1" >/dev/stdout ; }
+msg_detail() { command printf "${GRAY}  %s${RESET}\n" "$1" >/dev/stdout ; }
+msg_warn() { command printf "${GRAY}%s${RESET}\n" "$1" >/dev/stdout ; }
 
 # Podman-only runtime (Docker support removed)
 RUNTIME="podman"
@@ -111,7 +111,6 @@ if [ "$WITH_UNSAFE_PODMAN" = "true" ]; then
     echo ""
     msg_warn "WARNING: --with-unsafe-podman enabled"
     msg_warn "Container will have access to host Podman daemon"
-    echo ""
 
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS - Podman runs in a VM with socket forwarding
@@ -176,7 +175,7 @@ if [ -n "$CUSTOM_NAME" ]; then
     CONTAINER_NAME="$CUSTOM_NAME"
 fi
 
-msg "Starting swarmbox..."
+msg "Starting SwarmBox..."
 msg_detail "Image: $IMAGE_NAME"
 msg_detail "Container: $CONTAINER_NAME"
 
@@ -301,7 +300,7 @@ if [ "$RESET" = "true" ]; then
             $NETWORK_FLAG \
             $CONTAINER_PORTS \
             $CONTAINER_EXTRA_HOSTS \
-            "$IMAGE_NAME"
+            "$IMAGE_NAME" >/dev/null
     else
         # Linux - run with userns option
         podman run --userns=keep-id -d \
@@ -314,7 +313,7 @@ if [ "$RESET" = "true" ]; then
             $NETWORK_FLAG \
             $CONTAINER_PORTS \
             $CONTAINER_EXTRA_HOSTS \
-            "$IMAGE_NAME"
+            "$IMAGE_NAME" >/dev/null
     fi
 
     # Connect to the container (unless --no-shell is set)
@@ -344,7 +343,7 @@ else
                 $NETWORK_FLAG \
                 $CONTAINER_PORTS \
                 $CONTAINER_EXTRA_HOSTS \
-                "$IMAGE_NAME"
+                "$IMAGE_NAME" >/dev/null
         else
             # Linux - run with userns option
             podman run --userns=keep-id -d \
@@ -357,7 +356,7 @@ else
                 $NETWORK_FLAG \
                 $CONTAINER_PORTS \
                 $CONTAINER_EXTRA_HOSTS \
-                "$IMAGE_NAME"
+                "$IMAGE_NAME" >/dev/null
         fi
 
         # Connect to the container (unless --no-shell is set)
