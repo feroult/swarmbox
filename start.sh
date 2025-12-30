@@ -1,13 +1,9 @@
 #!/bin/bash
 
 # Messaging utilities - sober design
-GRAY='\033[0;90m'
-WHITE='\033[0;37m'
-RESET='\033[0m'
-
-msg() { command printf "${WHITE}%s${RESET}\n" "$1" >/dev/stdout ; }
-msg_detail() { command printf "${GRAY}  %s${RESET}\n" "$1" >/dev/stdout ; }
-msg_warn() { command printf "${GRAY}%s${RESET}\n" "$1" >/dev/stdout ; }
+msg() { echo -e "\033[0;37m${1}\033[0m"; }
+msg_detail() { echo -e "\033[0;90m  ${1}\033[0m"; }
+msg_warn() { echo -e "\033[0;90m${1}\033[0m"; }
 
 # Podman-only runtime (Docker support removed)
 RUNTIME="podman"
