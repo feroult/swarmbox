@@ -5,9 +5,9 @@ GRAY='\033[0;90m'
 WHITE='\033[0;37m'
 RESET='\033[0m'
 
-msg() { echo -e "${WHITE}${1}${RESET}"; }
-msg_detail() { echo -e "${GRAY}  ${1}${RESET}"; }
-msg_warn() { echo -e "${GRAY}${1}${RESET}"; }
+msg() { printf "${WHITE}%s${RESET}\n" "$1"; }
+msg_detail() { printf "${GRAY}  %s${RESET}\n" "$1"; }
+msg_warn() { printf "${GRAY}%s${RESET}\n" "$1"; }
 
 # Podman-only runtime (Docker support removed)
 RUNTIME="podman"
@@ -107,7 +107,7 @@ fi
 # Handle Podman socket mounting (if --with-unsafe-podman is set)
 PODMAN_SOCKET_MOUNT=""
 PODMAN_HOST_ENV=""
-if [ "$WITH_UNSAFE_PODMAN" = true ]; then
+if [ "$WITH_UNSAFE_PODMAN" = "true" ]; then
     echo ""
     msg_warn "WARNING: --with-unsafe-podman enabled"
     msg_warn "Container will have access to host Podman daemon"
@@ -182,7 +182,7 @@ msg_detail "Container: $CONTAINER_NAME"
 
 # Automatically expose port 8889 for memory web dashboard when MEMORY is set
 if [ -n "${MEMORY+x}" ]; then
-    if [[ ! "$PORTS" =~ (^|,)8889(:|,|$) ]] && [ "$HOST_NETWORK" = false ]; then
+    if [[ ! "$PORTS" =~ (^|,)8889(:|,|$) ]] && [ "$HOST_NETWORK" = "false" ]; then
         if [ -z "$PORTS" ]; then
             PORTS="8889"
         else
@@ -255,7 +255,7 @@ fi
 
 # Set network mode
 NETWORK_FLAG=""
-if [ "$HOST_NETWORK" = true ]; then
+if [ "$HOST_NETWORK" = "true" ]; then
     NETWORK_FLAG="--net=host"
     msg_detail "Using host network"
     if [ -n "$PORTS" ] || [ -n "$IPORTS" ]; then
@@ -279,11 +279,11 @@ if [[ "$(podman images -q "$IMAGE_NAME" 2> /dev/null)" == "" ]]; then
 fi
 
 # Handle reset option
-if [ "$RESET" = true ]; then
+if [ "$RESET" = "true" ]; then
     if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
         msg_detail "Resetting container..."
-        podman stop "$CONTAINER_NAME" 2>/dev/null || true
-        podman rm "$CONTAINER_NAME" 2>/dev/null || true
+        podman stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
+        podman rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
     fi
     # After reset, force creation of new container
     echo ""
@@ -318,7 +318,7 @@ if [ "$RESET" = true ]; then
     fi
 
     # Connect to the container (unless --no-shell is set)
-    if [ "$NO_SHELL" = false ]; then
+    if [ "$NO_SHELL" = "false" ]; then
         podman exec -it "$CONTAINER_NAME" bash
     fi
 else
@@ -326,7 +326,7 @@ else
     if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
         echo ""
         podman start "$CONTAINER_NAME" 2>/dev/null || true
-        if [ "$NO_SHELL" = false ]; then
+        if [ "$NO_SHELL" = "false" ]; then
             podman exec -it "$CONTAINER_NAME" bash
         fi
     else
@@ -361,7 +361,7 @@ else
         fi
 
         # Connect to the container (unless --no-shell is set)
-        if [ "$NO_SHELL" = false ]; then
+        if [ "$NO_SHELL" = "false" ]; then
             podman exec -it "$CONTAINER_NAME" bash
         fi
     fi
