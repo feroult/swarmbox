@@ -13,14 +13,28 @@ msg "Configuring memory service..."
 # 1. Setup hooks configuration
 cp "$MCP_DIR/hooks-config.json" "$HOME/.claude/hooks/config.json"
 
-# 2. Setup Claude settings if not exists
+# 2. Install memory sub-agent
+mkdir -p "$HOME/.claude/agents"
+cp "$MCP_DIR/agent.md" "$HOME/.claude/agents/memory.md"
+msg_detail "Memory sub-agent installed"
+
+# 3. Setup Claude settings with hidden MCP tools
+# This hides direct memory MCP tools from main agent while keeping them for sub-agent
 if [ ! -f "$HOME/.swarmbox/settings.json" ]; then
     cp "$MCP_DIR/settings.json" "$HOME/.swarmbox/settings.json"
 else
     echo '{}' > "$HOME/.swarmbox/settings.json"
 fi
 
-# 3. Build and merge memory MCP config into existing mcp-servers.json
+# Add hidden tools configuration to settings
+jq '. + {
+  "tools": {
+    "hidden": ["mcp__memory__*"]
+  }
+}' "$HOME/.swarmbox/settings.json" > "$HOME/.swarmbox/settings.json.tmp" && \
+mv "$HOME/.swarmbox/settings.json.tmp" "$HOME/.swarmbox/settings.json"
+
+# 4. Build and merge memory MCP config into existing mcp-servers.json
 jq -n \
    --slurpfile chrome /etc/swarmbox/mcp/chrome-devtools/config.json \
    --slurpfile memory "$MCP_DIR/config.json" \
@@ -33,7 +47,7 @@ jq -n \
 
 msg_detail "Database: $DB_NAME"
 
-# 4. Start HTTP server for web dashboard if not already running
+# 5. Start HTTP server for web dashboard if not already running
 if ! pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then
     cd /opt/flow && \
     MCP_OAUTH_ENABLED=false \
