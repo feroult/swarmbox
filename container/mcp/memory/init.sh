@@ -13,12 +13,10 @@ msg "Configuring memory service..."
 # 1. Setup hooks configuration
 cp "$MCP_DIR/hooks-config.json" "$HOME/.claude/hooks/config.json"
 
-# 2. Setup Claude settings if not exists
-if [ ! -f "$HOME/.swarmbox/settings.json" ]; then
-    cp "$MCP_DIR/settings.json" "$HOME/.swarmbox/settings.json"
-else
-    echo '{}' > "$HOME/.swarmbox/settings.json"
-fi
+# 2. Install memory sub-agent
+mkdir -p "$HOME/.claude/agents"
+cp "$MCP_DIR/agent.md" "$HOME/.claude/agents/memory.md"
+msg_detail "Memory sub-agent installed"
 
 # 3. Build and merge memory MCP config into existing mcp-servers.json
 jq -n \
