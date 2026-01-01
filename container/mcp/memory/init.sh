@@ -13,9 +13,9 @@ msg "Configuring memory service..."
 # 1. Setup hooks configuration
 cp "$MCP_DIR/hooks-config.json" "$HOME/.claude/hooks/config.json"
 
-# 2. Install SwarmBox base agent configuration
-mkdir -p /etc/claude-code
-cp /etc/swarmbox/agents/CLAUDE.md /etc/claude-code/CLAUDE.md
+# 2. Install SwarmBox base agent configuration (user scope)
+mkdir -p "$HOME/.claude"
+cp /etc/swarmbox/agents/CLAUDE.md "$HOME/.claude/CLAUDE.md"
 msg_detail "Base agent configured"
 
 # 3. Install memory sub-agent
