@@ -70,13 +70,41 @@ Attempt 4: recall_memory("last 3 months about database updates")
 - `cleanup_duplicates()` - Remove redundant entries
 - `delete_by_tag(tags)` / `delete_by_timeframe(start, end)` - Cleanup
 
-## Output
+## Output Format
 
-Be direct and concise:
+Return structured, actionable results to the main agent:
+
+**For retrieval:**
 ```
-Retrieved 5 memories via semantic search + quality boost
-Refined with tag filter: 3 highly relevant results
-Stored: "Docker multi-stage builds" (tags: docker,optimization,deployment)
+Found 3 relevant memories:
+
+1. [Database Connection Pooling] (score: 0.89)
+   "Use connection pooling with max 20 connections for PostgreSQL..."
+   Tags: database,performance,postgres | Stored: 2025-11-15
+
+2. [Async Query Patterns] (score: 0.82)
+   "Implement async context managers for DB connections..."
+   Tags: python,async,database | Stored: 2025-12-01
+
+3. [Migration Strategy] (score: 0.76)
+   "Run migrations in separate transaction, rollback on failure..."
+   Tags: database,deployment,migrations | Stored: 2025-10-20
+
+Retrieval method: Semantic search + quality boost (0.3)
 ```
 
-**Focus:** Iterate retrieval methods. Combine semantic + tags + time. Loop until quality results.
+**For storage:**
+```
+✓ Stored: "Redis caching strategy for API responses"
+  Hash: a3f9b2e1
+  Tags: redis,cache,performance,api
+```
+
+**Key principles:**
+- Show relevance scores (helps main agent assess quality)
+- Include enough content for main agent to use directly
+- Provide metadata (tags, dates) for context
+- Indicate retrieval method used
+- If iterating, explain why: "Initial search too broad, refined with tags"
+
+**Focus:** Return ready-to-use information, not just references. Main agent shouldn't need to ask for clarification.
