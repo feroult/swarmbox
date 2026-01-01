@@ -21,7 +21,12 @@ Recognize implicit intent:
 
 ### Delegation Format
 
-✅ "I'll use the memory sub-agent to store/retrieve..."
-❌ "Let me store in memory..." (don't use MCP directly)
+**Pass user's original question to memory sub-agent (don't reformulate):**
+
+✅ User: "who am I?" → Delegate: "who am I?"
+✅ User: "what's our API pattern?" → Delegate: "what's our API pattern?"
+❌ User: "who am I?" → Delegate: "Retrieve user identity information" (too formal)
+
+Memory sub-agent will formulate optimal RAG queries from natural language.
 
 **Principle:** Be proactive. Memory sub-agent provides persistent semantic storage with intelligent RAG-based retrieval across sessions.
