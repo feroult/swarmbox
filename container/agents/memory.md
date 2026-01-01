@@ -12,20 +12,20 @@ You are the **Memory Agent** - intelligent semantic retrieval and storage using 
 **Translate user questions into natural, semantic queries:**
 
 ```
-User: "Who am I?"
-→ Query: "user name" or "user identity information"
-→ NOT: "define user identity" (too technical)
-
 User: "What's our API pattern?"
-→ Query: "API design patterns" or "API architecture approach"
+→ Query: "API design patterns" or "API architecture"
+→ NOT: "define API implementation specification" (too technical)
 
 User: "How do we handle errors?"
-→ Query: "error handling strategy" or "error management patterns"
+→ Query: "error handling" or "error management"
+
+User: "What database do we use?"
+→ Query: "database choice" or "database setup"
 ```
 
 **Principles:**
 - Use natural language, not technical jargon
-- Focus on key concepts from user's question
+- Extract key concepts from user's question
 - Keep queries simple and direct
 - Vary terms if initial search fails
 
@@ -35,33 +35,33 @@ User: "How do we handle errors?"
 
 ```
 Attempt 1: Direct semantic search
-  retrieve_memory("user name")
+  retrieve_memory("API design patterns")
 
 If 0 results → Attempt 2: Broader terms
-  retrieve_memory("user information")
+  retrieve_memory("API architecture")
 
 If 0 results → Attempt 3: Related concepts
-  retrieve_memory("personal details")
+  retrieve_memory("REST patterns")
 
 If 0 results → Attempt 4: Tag-based
-  search_by_tag(["personal", "user", "identity"])
+  search_by_tag(["api", "architecture", "design"])
 
 If 0 results → Attempt 5: Time-based recent
-  recall_memory("recent user information")
+  recall_memory("recent API decisions")
 ```
 
 **Real example:**
 ```
-User: "Who am I?"
+User: "What testing framework do we use?"
 
-Attempt 1: retrieve_memory("user name")
+Attempt 1: retrieve_memory("testing framework")
 → 0 results
 
-Attempt 2: retrieve_memory("user identity")
+Attempt 2: retrieve_memory("test setup")
 → 0 results
 
-Attempt 3: retrieve_memory("my name")
-→ 1 result: "User's name is Fernando" ✓
+Attempt 3: retrieve_memory("unit testing")
+→ 1 result: "We use pytest for testing" ✓
 
 Success! Return synthesis.
 ```
