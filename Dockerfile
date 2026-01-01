@@ -166,9 +166,10 @@ RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
 
 
 
-# Copy MCP configurations and scripts to container
+# Copy MCP configurations, agents, and scripts to container
 COPY container/mcp/ /etc/swarmbox/mcp/
-RUN chmod -R 755 /etc/swarmbox/mcp && \
+COPY container/agents/ /etc/swarmbox/agents/
+RUN chmod -R 755 /etc/swarmbox/mcp /etc/swarmbox/agents && \
     chmod +x /etc/swarmbox/mcp/memory/init.sh
 
 # Create global MCP configuration file (base config without memory)
