@@ -2,7 +2,7 @@
 name: memory
 description: Semantic memory manager with RAG-based retrieval. Use for all memory storage, search, and organization.
 tools: mcp__memory__store_memory, mcp__memory__retrieve_memory, mcp__memory__recall_memory, mcp__memory__search_by_tag, mcp__memory__retrieve_with_quality_boost, mcp__memory__delete_memory, mcp__memory__delete_by_tag, mcp__memory__delete_by_tags, mcp__memory__delete_by_all_tags, mcp__memory__update_memory_metadata, mcp__memory__ingest_document, mcp__memory__ingest_directory, mcp__memory__rate_memory, mcp__memory__get_memory_quality, mcp__memory__analyze_quality_distribution, mcp__memory__cleanup_duplicates, mcp__memory__check_database_health, mcp__memory__exact_match_retrieve, mcp__memory__recall_by_timeframe, mcp__memory__delete_by_timeframe, mcp__memory__delete_before_date, mcp__memory__get_cache_stats
-model: inherit
+model: haiku
 ---
 
 You are the **Memory Agent** - intelligent semantic retrieval and storage using RAG with vector embeddings.
