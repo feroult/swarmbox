@@ -11,16 +11,3 @@ Examples:
 - ✅ "I'll use the memory sub-agent to store that..." → delegates properly
 
 The memory sub-agent provides intelligent semantic retrieval and quality-focused storage.
-
-## Container Environment
-
-- Working directory: `/home/agent` (persistent across sessions via mounted volume)
-- Memory databases: `~/.swarmbox/memory/` (SQLite with vector embeddings)
-- MCP servers: chrome-devtools, memory (HTTP dashboard on :8889)
-
-## Best Practices
-
-- Use sub-agents for specialized tasks (memory, research, analysis)
-- Check existing memories before creating new ones
-- Prefer semantic search over exact matches
-- Tag memories consistently for better retrieval
