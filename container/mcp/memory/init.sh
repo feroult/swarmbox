@@ -13,12 +13,17 @@ msg "Configuring memory service..."
 # 1. Setup hooks configuration
 cp "$MCP_DIR/hooks-config.json" "$HOME/.claude/hooks/config.json"
 
-# 2. Install memory sub-agent
+# 2. Install SwarmBox base agent configuration
+mkdir -p /etc/claude-code
+cp /etc/swarmbox/agents/CLAUDE.md /etc/claude-code/CLAUDE.md
+msg_detail "Base agent configured"
+
+# 3. Install memory sub-agent
 mkdir -p "$HOME/.claude/agents"
-cp "$MCP_DIR/agent.md" "$HOME/.claude/agents/memory.md"
+cp /etc/swarmbox/agents/memory.md "$HOME/.claude/agents/memory.md"
 msg_detail "Memory sub-agent installed"
 
-# 3. Build and merge memory MCP config into existing mcp-servers.json
+# 4. Build and merge memory MCP config into existing mcp-servers.json
 jq -n \
    --slurpfile chrome /etc/swarmbox/mcp/chrome-devtools/config.json \
    --slurpfile memory "$MCP_DIR/config.json" \
@@ -31,7 +36,7 @@ jq -n \
 
 msg_detail "Database: $DB_NAME"
 
-# 4. Start HTTP server for web dashboard if not already running
+# 5. Start HTTP server for web dashboard if not already running
 if ! pgrep -f "uvicorn.*mcp_memory_service.web.app" > /dev/null 2>&1; then
     cd /opt/flow && \
     MCP_OAUTH_ENABLED=false \
