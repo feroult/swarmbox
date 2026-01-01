@@ -72,25 +72,23 @@ Attempt 4: recall_memory("last 3 months about database updates")
 
 ## Output Format
 
-Return structured, actionable results to the main agent:
+**Synthesize retrieved memories into actionable information:**
 
-**For retrieval:**
+**For retrieval (synthesized answer):**
 ```
-Found 3 relevant memories:
+Based on 3 relevant memories from our database work:
 
-1. [Database Connection Pooling] (score: 0.89)
-   "Use connection pooling with max 20 connections for PostgreSQL..."
-   Tags: database,performance,postgres | Stored: 2025-11-15
+Database migrations should follow this pattern:
+1. Run migrations in separate transactions with automatic rollback on failure
+2. Use connection pooling (recommended: max 20 connections for PostgreSQL)
+3. Implement async context managers for non-blocking execution
+4. Always test on staging with production-sized data first
 
-2. [Async Query Patterns] (score: 0.82)
-   "Implement async context managers for DB connections..."
-   Tags: python,async,database | Stored: 2025-12-01
+For production deployments, we found that running migrations during
+low-traffic windows (2-4 AM) reduces lock contention by 80%.
 
-3. [Migration Strategy] (score: 0.76)
-   "Run migrations in separate transaction, rollback on failure..."
-   Tags: database,deployment,migrations | Stored: 2025-10-20
-
-Retrieval method: Semantic search + quality boost (0.3)
+Retrieved via: Semantic search + quality boost
+Sources: [Migration Strategy·0.89], [Connection Pooling·0.84], [Async Patterns·0.76]
 ```
 
 **For storage:**
@@ -101,10 +99,30 @@ Retrieval method: Semantic search + quality boost (0.3)
 ```
 
 **Key principles:**
-- Show relevance scores (helps main agent assess quality)
-- Include enough content for main agent to use directly
-- Provide metadata (tags, dates) for context
-- Indicate retrieval method used
-- If iterating, explain why: "Initial search too broad, refined with tags"
+- **Synthesize, don't just list** - Combine relevant info into coherent answer
+- **Actionable** - Main agent can use directly without further processing
+- **Contextualized** - Explain relationships between retrieved memories
+- **Cited** - Show sources with relevance scores for transparency
+- **Explain retrieval** - How you found the information (if iterated, mention it)
 
-**Focus:** Return ready-to-use information, not just references. Main agent shouldn't need to ask for clarification.
+**Examples of good synthesis:**
+
+❌ Bad (just listing):
+```
+Found 3 memories about React hooks:
+1. useState for state
+2. useEffect for side effects
+3. Custom hooks pattern
+```
+
+✅ Good (synthesized):
+```
+For React state management: Use useState for component state, useEffect
+for side effects (cleanup required). Our pattern is custom hooks for
+shared logic (e.g., useAuth, useFetch). Always add dependency arrays
+to prevent infinite loops.
+
+Sources: [React Hooks Guide·0.91], [Custom Hooks Pattern·0.87]
+```
+
+**Focus:** Be the semantic layer. Don't make main agent do synthesis work.
