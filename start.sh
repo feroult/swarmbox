@@ -22,6 +22,7 @@ NO_SHELL=false
 WITH_UNSAFE_PODMAN=false
 HOST_NETWORK=false
 ENV_KEYS=""
+BROWSER_URL=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -66,9 +67,18 @@ while [[ $# -gt 0 ]]; do
             ENV_KEYS="$2"
             shift 2
             ;;
+        --remote-browser)
+            if [[ -n "$2" && "$2" != --* ]]; then
+                BROWSER_URL="$2"
+                shift 2
+            else
+                BROWSER_URL="9222"
+                shift
+            fi
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--with-unsafe-podman] [--env-keys KEY1,KEY2,...]"
+            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--with-unsafe-podman] [--env-keys KEY1,KEY2,...] [--remote-browser PORT]"
             echo ""
             echo "Options:"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
@@ -81,6 +91,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --host-network: Use host network namespace (container shares host network, ignores --ports)"
             echo "  --with-unsafe-podman: Mount host Podman socket (UNSAFE - gives container access to host Podman)"
             echo "  --env-keys: Comma-separated list of environment variable keys to pass from host to container (e.g., KEY1,KEY2,KEY3)"
+            echo "  --remote-browser: Connect chrome-devtools MCP to an existing Chrome instance (default port: 9222, e.g., --remote-browser, --remote-browser 1234, --remote-browser 192.168.1.100:9222)"
             echo ""
             echo "Environment Variables:"
             echo "  MEMORY=<db_name>: Enable MCP memory service with specified database name (automatically passed if set)"
@@ -228,6 +239,19 @@ CONTAINER_ENV_VARS=""
 # Automatically pass MEMORY environment variable if it's set
 if [ -n "${MEMORY+x}" ]; then
     CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e MEMORY=${MEMORY}"
+fi
+
+# Pass BROWSER_URL if set, normalizing to a full URL
+if [ -n "$BROWSER_URL" ]; then
+    if [[ "$BROWSER_URL" =~ ^[0-9]+$ ]]; then
+        # bare port → use host.containers.internal
+        BROWSER_URL="http://host.containers.internal:${BROWSER_URL}"
+    elif [[ "$BROWSER_URL" != http://* && "$BROWSER_URL" != https://* ]]; then
+        # host:port with no scheme → add http://
+        BROWSER_URL="http://${BROWSER_URL}"
+    fi
+    CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e BROWSER_URL=${BROWSER_URL}"
+    msg_detail "Browser URL: ${BROWSER_URL}"
 fi
 
 if [ -n "$ENV_KEYS" ]; then

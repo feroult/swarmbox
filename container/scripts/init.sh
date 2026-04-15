@@ -7,10 +7,16 @@ source /etc/swarmbox/scripts/messages.sh
 
 # Helper: Build base MCP config (chrome-devtools only)
 build_base_mcp_config() {
-    jq -n \
-      --slurpfile chrome /etc/swarmbox/mcp/chrome-devtools/config.json \
-      '{mcpServers: {"chrome-devtools": $chrome[0]}}' \
-      > "$HOME/.claude/mcp-servers.json"
+    if [ -n "$BROWSER_URL" ]; then
+        jq -n --arg url "$BROWSER_URL" \
+          '{mcpServers: {"chrome-devtools": {command: "npx", args: ["-y", "chrome-devtools-mcp@latest", ("--browserUrl=" + $url)]}}}' \
+          > "$HOME/.claude/mcp-servers.json"
+    else
+        jq -n \
+          --slurpfile chrome /etc/swarmbox/mcp/chrome-devtools/config.json \
+          '{mcpServers: {"chrome-devtools": $chrome[0]}}' \
+          > "$HOME/.claude/mcp-servers.json"
+    fi
 }
 
 msg_blank
