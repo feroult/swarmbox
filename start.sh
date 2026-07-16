@@ -23,6 +23,7 @@ WITH_UNSAFE_PODMAN=false
 HOST_NETWORK=false
 ENV_KEYS=""
 BROWSER_URL=""
+CLASP=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -76,6 +77,10 @@ while [[ $# -gt 0 ]]; do
                 shift
             fi
             ;;
+        --clasp)
+            CLASP=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
             echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--with-unsafe-podman] [--env-keys KEY1,KEY2,...] [--remote-browser PORT]"
@@ -92,6 +97,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --with-unsafe-podman: Mount host Podman socket (UNSAFE - gives container access to host Podman)"
             echo "  --env-keys: Comma-separated list of environment variable keys to pass from host to container (e.g., KEY1,KEY2,KEY3)"
             echo "  --remote-browser: Connect chrome-devtools MCP to an existing Chrome instance (default port: 9222, e.g., --remote-browser, --remote-browser 1234, --remote-browser 192.168.1.100:9222)"
+            echo "  --clasp: Expose port 43323 for clasp (Google Apps Script CLI) OAuth login callback"
             echo ""
             echo "Environment Variables:"
             echo "  MEMORY=<db_name>: Enable MCP memory service with specified database name (automatically passed if set)"
@@ -185,6 +191,18 @@ fi
 msg "Starting SwarmBox..."
 msg_detail "Image: $IMAGE_NAME"
 msg_detail "Container: $CONTAINER_NAME"
+
+# Automatically expose port 43323 for clasp OAuth login callback when --clasp is set
+if [ "$CLASP" = "true" ]; then
+    if [[ ! "$PORTS" =~ (^|,)43323(:|,|$) ]] && [ "$HOST_NETWORK" = "false" ]; then
+        if [ -z "$PORTS" ]; then
+            PORTS="43323"
+        else
+            PORTS="$PORTS,43323"
+        fi
+    fi
+    msg_detail "clasp: OAuth port 43323 exposed"
+fi
 
 # Automatically expose port 8889 for memory web dashboard when MEMORY is set
 if [ -n "${MEMORY+x}" ]; then
