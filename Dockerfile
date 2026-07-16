@@ -133,6 +133,9 @@ RUN npm install -g @anthropic-ai/claude-code
 # Install Gemini CLI globally via npm
 RUN npm install -g @google/gemini-cli
 
+# Install clasp (Google Apps Script CLI) globally via npm
+RUN npm install -g @google/clasp
+
 # Disable Claude Code auto-updates (Docker containers should be rebuilt for updates)
 ENV DISABLE_AUTOUPDATER=true
 
@@ -162,7 +165,10 @@ RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
     echo "alias gemini='/usr/local/bin/gemini --yolo'" >> /etc/bash.bashrc && \
     echo "" >> /etc/bash.bashrc && \
     echo "# UUID function" >> /etc/bash.bashrc && \
-    echo 'uuid() { python3 -c "import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_DNS, sys.argv[1]))" "$1"; }' >> /etc/bash.bashrc
+    echo 'uuid() { python3 -c "import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_DNS, sys.argv[1]))" "$1"; }' >> /etc/bash.bashrc && \
+    echo "" >> /etc/bash.bashrc && \
+    echo "# clasp wrapper: inject --redirect-port 43323 for login" >> /etc/bash.bashrc && \
+    echo 'clasp() { if [[ "$1" == "login" ]]; then command clasp login --redirect-port 43323 "${@:2}"; else command clasp "$@"; fi; }' >> /etc/bash.bashrc
 
 
 
