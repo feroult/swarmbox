@@ -8,6 +8,7 @@ IMAGE_NAME="swarmbox"
 CONTAINER_NAME="swarmbox"
 RESET=false
 NO_CACHE=false
+UPDATE_CLAUDE=false
 CUSTOM_NAME=""
 
 # Parse command line arguments
@@ -21,15 +22,20 @@ while [[ $# -gt 0 ]]; do
             NO_CACHE=true
             shift
             ;;
+        --update-claude)
+            UPDATE_CLAUDE=true
+            shift
+            ;;
         --name)
             CUSTOM_NAME="$2"
             shift 2
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--reset] [--no-cache] [--name image-name]"
+            echo "Usage: $0 [--reset] [--no-cache] [--update-claude] [--name image-name]"
             echo "  --reset: Remove container, image, and .work directory for fresh installation"
             echo "  --no-cache: Build the container image without using cache"
+            echo "  --update-claude: Rebuild using cache, but force-reinstall the latest Claude Code"
             echo "  --name: Custom image name (default: swarmbox)"
             exit 1
             ;;
@@ -87,6 +93,11 @@ fi
 
 if [ "$NO_CACHE" = true ]; then
     BUILD_COMMAND="$BUILD_COMMAND --no-cache"
+fi
+
+if [ "$UPDATE_CLAUDE" = true ]; then
+    echo "Forcing latest Claude Code install (cache preserved for earlier layers)..."
+    BUILD_COMMAND="$BUILD_COMMAND --build-arg CLAUDE_CODE_VERSION=latest --build-arg CLAUDE_CODE_CACHEBUST=$(date +%s)"
 fi
 
 eval "$BUILD_COMMAND" -t $IMAGE_NAME .
