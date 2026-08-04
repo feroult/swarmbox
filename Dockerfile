@@ -127,9 +127,6 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Install Claude Code globally via npm (avoids native binary warnings)
-RUN npm install -g @anthropic-ai/claude-code
-
 # Install Gemini CLI globally via npm
 RUN npm install -g @google/gemini-cli
 
@@ -231,6 +228,14 @@ RUN chmod 644 /etc/swarmbox/scripts/messages.sh
 # Copy agents (LAST - changes frequently, should invalidate minimal cache)
 COPY container/agents/ /etc/swarmbox/agents/
 RUN chmod -R 755 /etc/swarmbox/agents
+
+# Install Claude Code globally via npm (avoids native binary warnings)
+# Kept as the LAST installed thing so `--update-claude` only re-runs this single
+# layer, not everything after it. CLAUDE_CODE_CACHEBUST defaults to a fixed value
+# so normal builds stay cached; pass a timestamp via --build-arg to force a reinstall.
+ARG CLAUDE_CODE_VERSION=latest
+ARG CLAUDE_CODE_CACHEBUST=0
+RUN echo "cachebust=${CLAUDE_CODE_CACHEBUST}" && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # Expose HTTP port for MCP memory service web dashboard
 EXPOSE 8889
