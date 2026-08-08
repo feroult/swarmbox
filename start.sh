@@ -328,7 +328,7 @@ if [ "$RESET" = "true" ]; then
     # Create and start container
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS - run with security-opt and userns options
-        podman run --security-opt label=disable --userns=keep-id:uid=$(id -u),gid=$(id -g) -d \
+        podman run --security-opt label=disable --userns=keep-id:uid=$(id -u),gid=$(id -g) --pids-limit=16384 -d \
             --name "$CONTAINER_NAME" \
             --hostname "$CUSTOM_HOSTNAME" \
             -v "$WORK_DIR:/home/agent" \
@@ -341,7 +341,7 @@ if [ "$RESET" = "true" ]; then
             "$IMAGE_NAME" >/dev/null
     else
         # Linux - run with userns option
-        podman run --userns=keep-id -d \
+        podman run --userns=keep-id --pids-limit=16384 -d \
             --name "$CONTAINER_NAME" \
             --hostname "$CUSTOM_HOSTNAME" \
             -v "$WORK_DIR:/home/agent" \
@@ -371,7 +371,7 @@ else
         # Create and start container
         if [[ "$OSTYPE" == "darwin"* ]]; then
             # macOS - run with security-opt and userns options
-            podman run --security-opt label=disable --userns=keep-id:uid=$(id -u),gid=$(id -g) -d \
+            podman run --security-opt label=disable --userns=keep-id:uid=$(id -u),gid=$(id -g) --pids-limit=16384 -d \
                 --name "$CONTAINER_NAME" \
                 --hostname "$CUSTOM_HOSTNAME" \
                 -v "$WORK_DIR:/home/agent" \
@@ -384,7 +384,7 @@ else
                 "$IMAGE_NAME" >/dev/null
         else
             # Linux - run with userns option
-            podman run --userns=keep-id -d \
+            podman run --userns=keep-id --pids-limit=16384 -d \
                 --name "$CONTAINER_NAME" \
                 --hostname "$CUSTOM_HOSTNAME" \
                 -v "$WORK_DIR:/home/agent" \
