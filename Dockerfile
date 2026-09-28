@@ -69,6 +69,26 @@ RUN curl -sSL https://install.python-poetry.org | python3 - && \
 # Install uv (fast Python package installer and manager) system-wide
 RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh
 
+# Install latest Go SDK system-wide (under /usr/local, never under /home/agent)
+RUN ARCH=$(dpkg --print-architecture) && \
+    GO_VERSION=$(curl -fsSL https://go.dev/VERSION?m=text | head -n1) && \
+    curl -fsSL "https://go.dev/dl/${GO_VERSION}.linux-${ARCH}.tar.gz" -o /tmp/go.tar.gz && \
+    tar -C /usr/local -xzf /tmp/go.tar.gz && \
+    rm /tmp/go.tar.gz
+
+# Keep GOPATH/GOCACHE off /home/agent so nothing gets installed into the user's home
+ENV PATH=/usr/local/go/bin:/opt/go/bin:$PATH
+ENV GOPATH=/opt/go
+ENV GOCACHE=/opt/go-cache
+
+# Install Google Cloud CLI (gcloud) system-wide via the official apt repo,
+# which always tracks the latest release
+RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud-sdk.list && \
+    apt-get update && \
+    apt-get install -y google-cloud-cli && \
+    rm -rf /var/lib/apt/lists/*
+
 # Create a system-wide Python virtual environment
 RUN python3 -m venv /opt/flow && \
     /opt/flow/bin/pip install --upgrade pip
@@ -211,12 +231,12 @@ RUN echo "" >> /etc/bash.bashrc && \
 
 # Create cache directories and set permissions for agent user
 RUN if [ "${HOST_OS}" = "darwin" ]; then \
-        mkdir -p /opt/npm-cache /workspace && \
-        chmod -R 777 /opt/npm-cache /opt/flow /workspace; \
+        mkdir -p /opt/npm-cache /opt/go /opt/go-cache /workspace && \
+        chmod -R 777 /opt/npm-cache /opt/flow /opt/go /opt/go-cache /workspace; \
     else \
-        mkdir -p /opt/npm-cache /workspace && \
-        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/flow /workspace && \
-        chmod -R 755 /opt/npm-cache /opt/flow /workspace; \
+        mkdir -p /opt/npm-cache /opt/go /opt/go-cache /workspace && \
+        chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/flow /opt/go /opt/go-cache /workspace && \
+        chmod -R 755 /opt/npm-cache /opt/flow /opt/go /opt/go-cache /workspace; \
     fi
 
 # Copy banner and messaging scripts (at the end to optimize build cache)
