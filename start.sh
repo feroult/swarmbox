@@ -272,6 +272,13 @@ if [ -n "$BROWSER_URL" ]; then
     msg_detail "Browser URL: ${BROWSER_URL}"
 fi
 
+# Pass local LLM settings (OpenCode) if set in the host environment
+for key in LOCAL_LLM_URL LOCAL_LLM_KEY LOCAL_LLM_MODEL LOCAL_LLM_CONTEXT LOCAL_LLM_OUTPUT; do
+    if [ -n "${!key}" ]; then
+        CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e $key=${!key}"
+    fi
+done
+
 if [ -n "$ENV_KEYS" ]; then
     IFS=',' read -ra ENV_KEY_ARRAY <<< "$ENV_KEYS"
     for key in "${ENV_KEY_ARRAY[@]}"; do
@@ -356,7 +363,7 @@ if [ "$RESET" = "true" ]; then
 
     # Connect to the container (unless --no-shell is set)
     if [ "$NO_SHELL" = "false" ]; then
-        podman exec -it "$CONTAINER_NAME" bash
+        podman exec -it -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}" "$CONTAINER_NAME" bash
     fi
 else
     # Normal operation: check if container already exists
@@ -364,7 +371,7 @@ else
         echo ""
         podman start "$CONTAINER_NAME" 2>/dev/null || true
         if [ "$NO_SHELL" = "false" ]; then
-            podman exec -it "$CONTAINER_NAME" bash
+            podman exec -it -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}" "$CONTAINER_NAME" bash
         fi
     else
         echo ""
@@ -399,7 +406,7 @@ else
 
         # Connect to the container (unless --no-shell is set)
         if [ "$NO_SHELL" = "false" ]; then
-            podman exec -it "$CONTAINER_NAME" bash
+            podman exec -it -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}" "$CONTAINER_NAME" bash
         fi
     fi
 fi
