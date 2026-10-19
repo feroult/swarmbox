@@ -194,6 +194,14 @@ COPY container/mcp/ /etc/swarmbox/mcp/
 RUN chmod -R 755 /etc/swarmbox/mcp && \
     chmod +x /etc/swarmbox/mcp/memory/init.sh
 
+# Copy OpenCode local-LLM config template (rendered at container start by init.sh)
+COPY container/opencode/ /etc/swarmbox/opencode/
+RUN chmod -R 755 /etc/swarmbox/opencode
+
+# OpenCode loads this (merged with, never replacing, the user's own opencode.json).
+# init.sh renders it at every start; lives under $HOME/.swarmbox so it survives the home mount.
+ENV OPENCODE_CONFIG=/home/agent/.swarmbox/opencode-local.json
+
 # Create global MCP configuration file (base config without memory)
 RUN mkdir -p /etc/claude && \
     jq -n --slurpfile chrome /etc/swarmbox/mcp/chrome-devtools/config.json \
@@ -249,13 +257,14 @@ RUN chmod 644 /etc/swarmbox/scripts/messages.sh
 COPY container/agents/ /etc/swarmbox/agents/
 RUN chmod -R 755 /etc/swarmbox/agents
 
-# Install Claude Code globally via npm (avoids native binary warnings)
-# Kept as the LAST installed thing so `--update-claude` only re-runs this single
+# Install Claude Code and OpenCode globally via npm (avoids native binary warnings)
+# Kept as the LAST installed thing so `--update-harness` only re-runs this single
 # layer, not everything after it. CLAUDE_CODE_CACHEBUST defaults to a fixed value
 # so normal builds stay cached; pass a timestamp via --build-arg to force a reinstall.
 ARG CLAUDE_CODE_VERSION=latest
 ARG CLAUDE_CODE_CACHEBUST=0
-RUN echo "cachebust=${CLAUDE_CODE_CACHEBUST}" && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+ARG OPENCODE_VERSION=latest
+RUN echo "cachebust=${CLAUDE_CODE_CACHEBUST}" && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} opencode-ai@${OPENCODE_VERSION}
 
 # Expose HTTP port for MCP memory service web dashboard
 EXPOSE 8889
