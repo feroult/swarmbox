@@ -29,16 +29,31 @@ build_opencode_config() {
         echo '{}' > "$out"
         return
     fi
-    local model="${LOCAL_LLM_MODEL:-qwen3.8-27b}"
+    local model="${LOCAL_LLM_MODEL:-qwen3.6-35b-a3b-64k}"
     jq --arg m "$model" \
        --arg url "$url" \
        --arg key "${LOCAL_LLM_KEY:-sk-local}" \
-       --argjson ctx "${LOCAL_LLM_CONTEXT:-24576}" \
-       --argjson out "${LOCAL_LLM_OUTPUT:-6144}" \
+       --argjson ctx "${LOCAL_LLM_CONTEXT:-65536}" \
+       --argjson out "${LOCAL_LLM_OUTPUT:-8192}" \
        '.provider.local.options = {baseURL: $url, apiKey: $key}
         | .provider.local.models = {($m): {name: $m, limit: {context: $ctx, output: $out}}}
         | .model = ("local/" + $m)' \
        /etc/swarmbox/opencode/local-llm.json > "$out"
+}
+
+# Helper: Mirror the Claude Code MCP servers (~/.claude/mcp-servers.json) into the OpenCode config.
+# Must run after every step that writes mcp-servers.json (base config and memory init).
+sync_opencode_mcp() {
+    local out="$SWARMBOX_DIR/opencode-local.json"
+    local src="$HOME/.claude/mcp-servers.json"
+    [ -f "$src" ] || return
+    jq --slurpfile src "$src" \
+       '.mcp = ($src[0].mcpServers | with_entries(.value = ({
+            type: "local",
+            command: ([.value.command] + (.value.args // [])),
+            enabled: true
+        } + (if .value.env then {environment: .value.env} else {} end))))' \
+       "$out" > "$out.tmp" && mv "$out.tmp" "$out"
 }
 
 msg_blank
@@ -79,6 +94,9 @@ else
     fi
     msg_blank
 fi
+
+# 6. Mirror MCP servers into OpenCode (after memory init so the memory server is included)
+sync_opencode_mcp
 
 msg "Type 'claude' for Claude Code or 'gemini' for Gemini CLI"
 msg_blank

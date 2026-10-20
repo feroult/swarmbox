@@ -264,7 +264,7 @@ RUN chmod -R 755 /etc/swarmbox/agents
 ARG CLAUDE_CODE_VERSION=latest
 ARG CLAUDE_CODE_CACHEBUST=0
 ARG OPENCODE_VERSION=latest
-RUN echo "cachebust=${CLAUDE_CODE_CACHEBUST}" && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} opencode-ai@${OPENCODE_VERSION}
+RUN echo "cachebust=${CLAUDE_CODE_CACHEBUST}" && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @opencode/cli@${OPENCODE_VERSION}
 
 # Expose HTTP port for MCP memory service web dashboard
 EXPOSE 8889
