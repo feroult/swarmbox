@@ -46,19 +46,21 @@ RUN apt-get update && apt-get install -y \
     pandoc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Podman CLI (for accessing host Podman daemon via socket)
-# Podman is available in default Debian 12 repositories
+# Install Podman. Used either as a CLI for the host daemon (--with-unsafe-podman)
+# or as a nested rootless engine inside this container (--nested-podman).
+# netavark + aardvark-dns give nested networks DNS by container name (netavark needs
+# iptables for its firewall driver, but Debian only lists it as a hidden requirement);
+# uidmap provides newuidmap/newgidmap; libcap2-bin provides setcap.
 RUN apt-get update && \
-    apt-get install -y podman && \
+    apt-get install -y podman netavark aardvark-dns iptables uidmap libcap2-bin && \
     rm -rf /var/lib/apt/lists/*
 
 # Create directory for Podman socket
 RUN mkdir -p /run/podman && chmod 755 /run/podman
 
-# Configure Podman to use proper Podman socket path
-# CONTAINER_HOST tells Podman CLI where to find the socket
-# This will be set by start.sh when --with-unsafe-podman is used
-ENV CONTAINER_HOST=unix:///run/podman/podman.sock
+# NOTE: CONTAINER_HOST is intentionally NOT set here. start.sh sets it only when
+# --with-unsafe-podman mounts the host socket; otherwise podman must run locally
+# (nested mode) instead of trying to reach a socket that does not exist.
 
 # Install Poetry system-wide
 ENV POETRY_HOME=/opt/poetry
@@ -132,6 +134,27 @@ RUN if id -u ${USER_UID} >/dev/null 2>&1; then \
 
 # Add agent to root group for Podman socket access (socket is owned by root:root in rootful mode)
 RUN usermod -aG root agent
+
+# --- Nested rootless Podman (used with start.sh --nested-podman) ---
+# 1. newuidmap/newgidmap: a setuid-root binary does not work in an unprivileged
+#    container (write to uid_map fails with EPERM). File capabilities do; this is
+#    what the official quay.io/podman/stable image does too.
+RUN chmod u-s /usr/bin/newuidmap /usr/bin/newgidmap && \
+    setcap cap_setuid+ep /usr/bin/newuidmap && \
+    setcap cap_setgid+ep /usr/bin/newgidmap
+# 2. subuid/subgid: the base image's user was renamed node -> agent, which leaves
+#    a stale 'node' range. 1001..65535 exists both with --userns=keep-id and with
+#    the default userns.
+RUN echo "agent:1001:64535" > /etc/subuid && \
+    echo "agent:1001:64535" > /etc/subgid
+# 3. System-wide defaults (HOME is a bind mount, so nothing can live under it):
+#    - storage: native overlay (the bind-mounted home is a real ext4; overlay on
+#      the container's own overlay rootfs would not work, vfs is the slow fallback)
+#    - utsns=host: the nested crun cannot sethostname without CAP_SYS_ADMIN
+#    - netavark backend: needed for DNS between nested containers
+RUN mkdir -p /etc/containers && \
+    printf '[storage]\ndriver = "overlay"\n' > /etc/containers/storage.conf && \
+    printf '[containers]\nutsns = "host"\n[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n[network]\nnetwork_backend = "netavark"\n' > /etc/containers/containers.conf
 
 # Set npm cache directory to a non-mounted location
 ENV NPM_CONFIG_CACHE=/opt/npm-cache
