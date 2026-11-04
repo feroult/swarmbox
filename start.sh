@@ -20,6 +20,7 @@ CUSTOM_IMAGE=""
 CUSTOM_HOSTNAME="swarmbox"
 NO_SHELL=false
 WITH_UNSAFE_PODMAN=false
+NESTED_PODMAN=false
 HOST_NETWORK=false
 ENV_KEYS=""
 BROWSER_URL=""
@@ -60,6 +61,10 @@ while [[ $# -gt 0 ]]; do
             WITH_UNSAFE_PODMAN=true
             shift
             ;;
+        --nested-podman)
+            NESTED_PODMAN=true
+            shift
+            ;;
         --host-network)
             HOST_NETWORK=true
             shift
@@ -83,7 +88,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--with-unsafe-podman] [--env-keys KEY1,KEY2,...] [--remote-browser PORT]"
+            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--with-unsafe-podman] [--nested-podman] [--env-keys KEY1,KEY2,...] [--remote-browser PORT]"
             echo ""
             echo "Options:"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
@@ -95,6 +100,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-shell: Don't attach to container shell (useful for testing/automation)"
             echo "  --host-network: Use host network namespace (container shares host network, ignores --ports)"
             echo "  --with-unsafe-podman: Mount host Podman socket (UNSAFE - gives container access to host Podman)"
+            echo "  --nested-podman: Run Podman inside the container (rootless, isolated; no host socket). Mutually exclusive with --with-unsafe-podman"
             echo "  --env-keys: Comma-separated list of environment variable keys to pass from host to container (e.g., KEY1,KEY2,KEY3)"
             echo "  --remote-browser: Connect chrome-devtools MCP to an existing Chrome instance (default port: 9222, e.g., --remote-browser, --remote-browser 1234, --remote-browser 192.168.1.100:9222)"
             echo "  --clasp: Expose port 43323 for clasp (Google Apps Script CLI) OAuth login callback"
@@ -251,6 +257,21 @@ if [ -n "$IPORTS" ]; then
     CONTAINER_EXTRA_HOSTS="--add-host=host.containers.internal:host-gateway"
 fi
 
+# Nested Podman: needs a tun device (slirp4netns) and a writable /proc/sys (crun).
+# No host socket is mounted, so the agent cannot reach the host Podman.
+NESTED_PODMAN_OPTS=""
+if [ "$NESTED_PODMAN" = "true" ]; then
+    if [ "$WITH_UNSAFE_PODMAN" = "true" ]; then
+        msg_warn "--nested-podman and --with-unsafe-podman are mutually exclusive"
+        exit 1
+    fi
+    # The nested image/layer store goes in a named volume, not in the bind-mounted
+    # $WORK_DIR: its files are owned by subuid-mapped IDs the host user cannot delete,
+    # and it grows large. Everything else under /home/agent stays in $WORK_DIR.
+    NESTED_PODMAN_OPTS="--device /dev/net/tun --security-opt unmask=/proc/* -v ${CONTAINER_NAME}-containers:/home/agent/.local/share/containers"
+    msg_detail "Nested Podman enabled (isolated from host Podman)"
+fi
+
 # Parse environment keys and build environment variable flags
 CONTAINER_ENV_VARS=""
 
@@ -341,6 +362,7 @@ if [ "$RESET" = "true" ]; then
             -v "$WORK_DIR:/home/agent" \
             $PODMAN_SOCKET_MOUNT \
             $PODMAN_HOST_ENV \
+            $NESTED_PODMAN_OPTS \
             $CONTAINER_ENV_VARS \
             $NETWORK_FLAG \
             $CONTAINER_PORTS \
@@ -354,6 +376,7 @@ if [ "$RESET" = "true" ]; then
             -v "$WORK_DIR:/home/agent" \
             $PODMAN_SOCKET_MOUNT \
             $PODMAN_HOST_ENV \
+            $NESTED_PODMAN_OPTS \
             $CONTAINER_ENV_VARS \
             $NETWORK_FLAG \
             $CONTAINER_PORTS \
@@ -384,6 +407,7 @@ else
                 -v "$WORK_DIR:/home/agent" \
                 $PODMAN_SOCKET_MOUNT \
                 $PODMAN_HOST_ENV \
+                $NESTED_PODMAN_OPTS \
                 $CONTAINER_ENV_VARS \
                 $NETWORK_FLAG \
                 $CONTAINER_PORTS \
@@ -397,6 +421,7 @@ else
                 -v "$WORK_DIR:/home/agent" \
                 $PODMAN_SOCKET_MOUNT \
                 $PODMAN_HOST_ENV \
+                $NESTED_PODMAN_OPTS \
                 $CONTAINER_ENV_VARS \
                 $NETWORK_FLAG \
                 $CONTAINER_PORTS \
