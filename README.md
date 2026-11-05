@@ -279,7 +279,13 @@ export SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN='...'     # e.g. in ~/.zshrc or ~/.bashr
 ./start.sh --web
 ```
 
-Every `./start.sh --web` then makes sure the tunnel is up, with no API token:
+`--web` is only needed to *create* the container (together with `--reset`). Once it exists, both `./start.sh`
+and `./start.sh --web` recognise it as a web container (it carries `SWARMBOX_WEB=1` and publishes the
+terminal port), accept the flag, use the port it really publishes, and make sure the terminal and the tunnel
+are up, for instance after the machine restarted. A container created *without* `--web` still refuses it
+(the port could not be added), and its connector is never looked at.
+
+Every time, the tunnel is brought up with no API token:
 a missing `swarmbox-cloudflared` container is **created**, a stopped one is **started**, and one holding a
 different token (after you rotate it) is **recreated**. Without the variable, an existing connector is just
 started if it is stopped. The connector is a Podman container on your host (not inside SwarmBox); the token
