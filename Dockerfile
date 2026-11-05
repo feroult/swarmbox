@@ -306,6 +306,27 @@ RUN chmod 755 /usr/local/bin/swarmbox-podman-service
 COPY container/scripts/messages.sh /etc/swarmbox/scripts/messages.sh
 RUN chmod 644 /etc/swarmbox/scripts/messages.sh
 
+# Starship prompt for interactive bash: a pinned release with its published SHA-256 verified (static musl
+# binaries for amd64 and arm64), the SwarmBox config (its own cool palette), and a script that turns it on.
+# The bashrc line comes last on purpose: Starship redefines PS1, so it must run after the venv activation.
+ARG STARSHIP_VERSION=1.27.0
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) T=starship-x86_64-unknown-linux-musl.tar.gz ;; \
+        arm64) T=starship-aarch64-unknown-linux-musl.tar.gz ;; \
+        *) echo "starship: unsupported architecture $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac && \
+    BASE="https://github.com/starship/starship/releases/download/v${STARSHIP_VERSION}" && \
+    cd /tmp && curl -fsSL -O "$BASE/$T" && curl -fsSL -O "$BASE/$T.sha256" && \
+    echo "$(tr -d '[:space:]' < "$T.sha256")  $T" | sha256sum -c - && \
+    tar -xzf "$T" -C /usr/local/bin starship && chmod 755 /usr/local/bin/starship && \
+    rm -f "/tmp/$T" "/tmp/$T.sha256"
+COPY container/starship.toml /etc/swarmbox/starship.toml
+COPY container/scripts/starship-init.sh /etc/swarmbox/scripts/starship-init.sh
+RUN chmod 644 /etc/swarmbox/starship.toml /etc/swarmbox/scripts/starship-init.sh && \
+    echo "" >> /etc/bash.bashrc && \
+    echo "# Starship prompt (opt out with SWARMBOX_STARSHIP=0)" >> /etc/bash.bashrc && \
+    echo ". /etc/swarmbox/scripts/starship-init.sh" >> /etc/bash.bashrc
+
 # Copy agents (LAST - changes frequently, should invalidate minimal cache)
 COPY container/agents/ /etc/swarmbox/agents/
 RUN chmod -R 755 /etc/swarmbox/agents
