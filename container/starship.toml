@@ -1,0 +1,207 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+
+# SwarmBox prompt (Starship), installed as /etc/swarmbox/starship.toml.
+#
+# The layout is Starship's "Gruvbox Rainbow" preset. The colors are a deliberately COOL palette (violet, teal,
+# indigo, pastel blue, slate), unlike the warm Gruvbox one, so a SwarmBox shell is never mistaken for your own.
+# Every color lives in [palettes.swarmbox] below, named by ROLE (color_user, color_path, ...): recolor the
+# prompt there, nowhere else. The text color (color_fg0) is checked for legibility on every segment.
+#
+# Your own ~/.config/starship.toml, if it exists, is used instead of this file.
+
+format = """
+[](color_user)\
+$os\
+$username\
+[](bg:color_path fg:color_user)\
+$directory\
+[](fg:color_path bg:color_vcs)\
+$git_branch\
+$git_status\
+[](fg:color_vcs bg:color_lang)\
+$c\
+$cpp\
+$rust\
+$golang\
+$nodejs\
+$bun\
+$php\
+$java\
+$kotlin\
+$haskell\
+$python\
+[](fg:color_lang bg:color_ctx)\
+$docker_context\
+$conda\
+$pixi\
+[](fg:color_ctx bg:color_clock)\
+$time\
+[ ](fg:color_clock)"""
+
+palette = 'swarmbox'
+
+[palettes.swarmbox]
+color_fg0 = '#f8fafc'
+color_user = '#6d28d9'
+color_path = '#0f766e'
+color_vcs = '#4f46e5'
+color_lang = '#93c5fd'
+color_lang_fg = '#1e293b'
+color_ctx = '#475569'
+color_ctx_fg = '#7dd3fc'
+color_clock = '#1e293b'
+color_ok = '#4ade80'
+color_err = '#f87171'
+color_alt = '#c084fc'
+color_warn = '#fbbf24'
+
+[os]
+disabled = false
+style = "bg:color_user fg:color_fg0"
+
+[os.symbols]
+Windows = "󰍲 "
+Ubuntu = "󰕈 "
+SUSE = " "
+Raspbian = "󰐿 "
+Mint = "󰣭 "
+Macos = "󰀵 "
+Manjaro = " "
+Linux = "󰌽 "
+Gentoo = "󰣨 "
+Fedora = "󰣛 "
+Alpine = " "
+Amazon = " "
+Android = " "
+AOSC = " "
+Arch = "󰣇 "
+Artix = "󰣇 "
+EndeavourOS = " "
+CentOS = " "
+Debian = "󰣚 "
+Redhat = "󱄛 "
+RedHatEnterprise = "󱄛 "
+Pop = " "
+
+[username]
+show_always = true
+style_user = "bg:color_user fg:color_fg0"
+style_root = "bg:color_user fg:color_fg0"
+format = '[$user ]($style)'
+
+[directory]
+style = "fg:color_fg0 bg:color_path"
+format = "[ $path ]($style)"
+truncation_length = 3
+truncation_symbol = "…/"
+
+[directory.substitutions]
+"Documents" = "󰈙 "
+"Downloads" = " "
+"Music" = "󰝚 "
+"Pictures" = " "
+"Developer" = "󰲋 "
+
+[git_branch]
+symbol = ""
+style = "bg:color_vcs"
+format = '[[ $symbol $branch ](fg:color_fg0 bg:color_vcs)]($style)'
+
+[git_status]
+style = "bg:color_vcs"
+format = '[[($all_status$ahead_behind )](fg:color_fg0 bg:color_vcs)]($style)'
+
+[nodejs]
+symbol = ""
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[bun]
+symbol = ""
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[c]
+symbol = " "
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[cpp]
+symbol = " "
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[rust]
+symbol = ""
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[golang]
+symbol = ""
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[php]
+symbol = ""
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[java]
+symbol = ""
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[jj_bookmark]
+symbol = ""
+style = "bg:color_vcs"
+format = '[[ $symbol $bookmark(@$remote)$diverged( \\(+$overflow_count others\\)) ](fg:color_fg0 bg:color_vcs)]($style)'
+
+[jj_status]
+style = "bg:color_vcs"
+format = '[[($all )](fg:color_fg0 bg:color_vcs)]($style)'
+
+[kotlin]
+symbol = ""
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[haskell]
+symbol = ""
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[python]
+symbol = ""
+style = "bg:color_lang"
+format = '[[ $symbol( $version) ](fg:color_lang_fg bg:color_lang)]($style)'
+
+[docker_context]
+symbol = ""
+style = "bg:color_ctx"
+format = '[[ $symbol( $context) ](fg:color_ctx_fg bg:color_ctx)]($style)'
+
+[conda]
+style = "bg:color_ctx"
+format = '[[ $symbol( $environment) ](fg:color_ctx_fg bg:color_ctx)]($style)'
+
+[pixi]
+style = "bg:color_ctx"
+format = '[[ $symbol( $version)( $environment) ](fg:color_fg0 bg:color_ctx)]($style)'
+
+[time]
+disabled = false
+time_format = "%R"
+style = "bg:color_clock"
+format = '[[  $time ](fg:color_fg0 bg:color_clock)]($style)'
+
+[line_break]
+disabled = false
+
+[character]
+disabled = false
+success_symbol = '[❯](bold fg:color_ok)'
+error_symbol = '[❯](bold fg:color_err)'
+vimcmd_symbol = '[❮](bold fg:color_ok)'
+vimcmd_replace_one_symbol = '[❮](bold fg:color_alt)'
+vimcmd_replace_symbol = '[❮](bold fg:color_alt)'
+vimcmd_visual_symbol = '[❮](bold fg:color_warn)'

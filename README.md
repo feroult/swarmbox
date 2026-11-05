@@ -336,6 +336,25 @@ Tests (a fake Cloudflare API and a fake podman, no network):
 
 ---
 
+## Prompt (Starship)
+
+Interactive bash shells in SwarmBox use [Starship](https://starship.rs): a pinned release (`STARSHIP_VERSION` in the
+Dockerfile; static binaries for amd64 and arm64) whose published SHA-256 is verified during the build, with the
+config in `container/starship.toml` (installed as `/etc/swarmbox/starship.toml`).
+
+- **Layout:** Starship's "Gruvbox Rainbow" powerline preset, on a single line closed by an arrow (no separate
+  prompt symbol: add `$line_break$character` to `format` if you want one and the red/green exit-status color).
+- **Colors:** a deliberately *cool* palette (violet, teal, indigo, pastel blue, slate) unlike the warm Gruvbox one, so a
+  SwarmBox shell is never mistaken for your own. Every color is a role name (`color_user`, `color_path`,
+  `color_vcs`, ...) defined once in `[palettes.swarmbox]`: recolor there. The tests check that the text stays
+  legible on every segment and that no color is hard-coded outside the palette.
+- **Icons:** the prompt uses powerline arrows and Nerd Font glyphs, so the terminal needs a Nerd Font (in the
+  browser terminal it is the browser's font, see above).
+- **Your own prompt:** a `~/.config/starship.toml` (`.work/.config/starship.toml` on the host) is used *instead* of
+  ours, and so is an `STARSHIP_CONFIG` you set. `SWARMBOX_STARSHIP=0` turns Starship off (plain bash prompt).
+
+---
+
 ## Workspace
 
 `./work/` is mounted at `/home/agent` inside the container.
