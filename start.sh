@@ -8,6 +8,9 @@ msg_warn() { echo -e "\033[0;90m${1}\033[0m"; }
 # Podman-only runtime (Docker support removed)
 RUNTIME="podman"
 
+# Directory of this script (the build context), regardless of the current directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Configuration
 IMAGE_NAME="swarmbox"
 CONTAINER_NAME="swarmbox"
@@ -18,6 +21,7 @@ RESET=false
 CUSTOM_NAME=""
 CUSTOM_IMAGE=""
 CUSTOM_HOSTNAME="swarmbox"
+HOSTNAME_GIVEN=false
 NO_SHELL=false
 HOST_NETWORK=false
 ENV_KEYS=""
@@ -49,6 +53,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --hostname)
             CUSTOM_HOSTNAME="$2"
+            HOSTNAME_GIVEN=true
             shift 2
             ;;
         --no-shell)
@@ -81,7 +86,8 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--env-keys KEY1,KEY2,...] [--remote-browser PORT]"
             echo ""
             echo "Options:"
-            echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
+            echo "  --ports: Comma-separated list of port mappings, published on 127.0.0.1 only (e.g., 3000,8080:80,9000:3000)"
+            echo "           Use a full ip:host:container form to choose the bind address (e.g., 0.0.0.0:3000:3000 exposes it on the network)"
             echo "  --iports: Comma-separated list of inverse port mappings to host.podman.internal (e.g., 3000,8080:80)"
             echo "  --reset: Stop and remove existing container, keeping persistent folders"
             echo "  --name: Custom container name (default: swarmbox)"
@@ -101,6 +107,9 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Ports the user asked for (PORTS is later extended automatically for --clasp / MEMORY)
+USER_PORTS="$PORTS"
 
 # Check that Podman is installed
 if ! command -v podman &> /dev/null; then
@@ -122,6 +131,7 @@ fi
 msg "Starting SwarmBox..."
 msg_detail "Image: $IMAGE_NAME"
 msg_detail "Container: $CONTAINER_NAME"
+msg_detail "Workspace: $WORK_DIR -> /home/agent"
 
 # Automatically expose port 43323 for clasp OAuth login callback when --clasp is set
 if [ "$CLASP" = "true" ]; then
@@ -147,18 +157,25 @@ if [ -n "${MEMORY+x}" ]; then
     msg_detail "Memory: ${MEMORY} (dashboard on :8889)"
 fi
 
-# Parse port mappings
+# Parse port mappings. Published on 127.0.0.1 unless a bind address is given:
+#   3000            -> 127.0.0.1:3000:3000
+#   8080:80         -> 127.0.0.1:8080:80
+#   0.0.0.0:3000:3000 (ip:host:container) -> used as is
 CONTAINER_PORTS=""
 if [ -n "$PORTS" ]; then
     IFS=',' read -ra PORT_ARRAY <<< "$PORTS"
     for port_mapping in "${PORT_ARRAY[@]}"; do
-        if [[ $port_mapping == *":"* ]]; then
-            # Format: port:inner_port
-            CONTAINER_PORTS="$CONTAINER_PORTS -p $port_mapping"
-        else
-            # Format: port (port == inner_port)
-            CONTAINER_PORTS="$CONTAINER_PORTS -p $port_mapping:$port_mapping"
-        fi
+        colons="${port_mapping//[^:]/}"
+        case ${#colons} in
+            0) mapping="127.0.0.1:$port_mapping:$port_mapping" ;;
+            1) mapping="127.0.0.1:$port_mapping" ;;
+            *) mapping="$port_mapping" ;;
+        esac
+        CONTAINER_PORTS="$CONTAINER_PORTS -p $mapping"
+        case "$mapping" in
+            0.0.0.0:*|:*|\[::\]:*) msg_warn "Port $mapping is exposed on all network interfaces" ;;
+            *) msg_detail "Port: $mapping" ;;
+        esac
     done
 fi
 
@@ -247,6 +264,10 @@ if [ "$HOST_NETWORK" = "true" ]; then
 fi
 
 # Create directories if they don't exist
+if [ ! -d "$WORK_DIR" ]; then
+    msg_warn "Workspace $WORK_DIR does not exist: creating a new, empty one."
+    msg_warn "To reuse an existing workspace, run this from the directory that contains your .work"
+fi
 mkdir -p "$WORK_DIR"
 
 # Build image if it doesn't exist
@@ -254,9 +275,9 @@ if [[ "$(podman images -q "$IMAGE_NAME" 2> /dev/null)" == "" ]]; then
     echo ""
     msg "Building image..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=darwin -t "$IMAGE_NAME" .
+        podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=darwin -t "$IMAGE_NAME" "$SCRIPT_DIR"
     else
-        podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=linux -t "$IMAGE_NAME" .
+        podman build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) --build-arg HOST_OS=linux -t "$IMAGE_NAME" "$SCRIPT_DIR"
     fi
     echo ""
 fi
@@ -295,6 +316,38 @@ post_start() {
             sleep 0.5
         done
         msg_warn "Nested Podman service did not start (is the image up to date? run ./build.sh and --reset)"
+    fi
+}
+
+# Reattaching to an existing container applies none of the creation-time options, and the
+# container may predate a rebuild or mount a different workspace. Say so instead of
+# silently doing something other than what was asked.
+check_existing_container() {
+    local ignored=""
+    [ -n "$USER_PORTS" ] && ignored="$ignored --ports"
+    [ -n "$IPORTS" ] && ignored="$ignored --iports"
+    [ "$HOST_NETWORK" = "true" ] && ignored="$ignored --host-network"
+    [ "$HOSTNAME_GIVEN" = "true" ] && ignored="$ignored --hostname"
+    [ -n "$CUSTOM_IMAGE" ] && ignored="$ignored --image"
+    [ -n "$ENV_KEYS" ] && ignored="$ignored --env-keys"
+    [ -n "$BROWSER_URL" ] && ignored="$ignored --remote-browser"
+    [ "$CLASP" = "true" ] && ignored="$ignored --clasp"
+    if [ -n "$ignored" ]; then
+        msg_warn "Container '$CONTAINER_NAME' already exists, so these options would be ignored:$ignored"
+        msg_warn "They only apply when the container is created. Re-run with --reset to apply them"
+        msg_warn "(the workspace is kept), or drop them to just reattach."
+        exit 1
+    fi
+
+    local ct_image cur_image ct_mount
+    ct_image=$(podman inspect -f '{{.Image}}' "$CONTAINER_NAME" 2>/dev/null)
+    cur_image=$(podman image inspect -f '{{.Id}}' "$IMAGE_NAME" 2>/dev/null)
+    if [ -n "$ct_image" ] && [ -n "$cur_image" ] && [ "$ct_image" != "$cur_image" ]; then
+        msg_warn "This container was created from an older '$IMAGE_NAME' image (rebuilt since). Use --reset to recreate it."
+    fi
+    ct_mount=$(podman inspect -f '{{range .Mounts}}{{if eq .Destination "/home/agent"}}{{.Source}}{{end}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
+    if [ -n "$ct_mount" ] && [ "$ct_mount" != "$WORK_DIR" ]; then
+        msg_warn "This container's workspace is $ct_mount (not $WORK_DIR, from the current directory)."
     fi
 }
 
@@ -344,6 +397,7 @@ if [ "$RESET" = "true" ]; then
 else
     # Normal operation: check if container already exists
     if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
+        check_existing_container
         echo ""
         podman start "$CONTAINER_NAME" 2>/dev/null || true
         post_start
