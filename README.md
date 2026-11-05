@@ -130,7 +130,8 @@ export ANTHROPIC_MODEL="claude-sonnet-4-5"
   --name CONTAINER_NAME              # Custom container name
   --image IMAGE_NAME                 # Custom image name
   --hostname HOSTNAME                # Custom hostname
-  --ports PORT_LIST                  # e.g., 3000,8080:80
+  --ports PORT_LIST                  # e.g., 3000,8080:80 (published on 127.0.0.1 only;
+                                     #  use ip:host:container, e.g. 0.0.0.0:3000:3000, to expose)
   --iports PORT_LIST                 # Inverse port mappings
   --env-keys KEY1,KEY2,...           # Pass environment variables
   --reset                            # Recreate container
@@ -159,7 +160,9 @@ podman run -d --name mongo --network dev -p 27017:27017 mongo:7   # inside Swarm
   (Linux/WSL2 only; unix sockets do not cross the macOS VM.)
 - **Publish ports to the host in two hops**: declare the port when starting
   (`./start.sh --ports 27017`) and publish it inside (`-p 27017:27017`; do not bind it to
-  `127.0.0.1` inside, or the outer forwarder cannot reach it).
+  `127.0.0.1` inside, or the outer forwarder cannot reach it). `--ports` publishes on the
+  host's `127.0.0.1` only; to expose a port on the network, give the full form
+  (`--ports 0.0.0.0:27017:27017`).
 - **Container-to-container**: create a network (`podman network create dev`) and use the
   container name as hostname.
 - **Storage** lives in a named volume (`<container-name>-containers`), not in `.work/`
