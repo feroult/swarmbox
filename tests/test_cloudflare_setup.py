@@ -278,6 +278,7 @@ class TestApply(T):
     def test_default_hostname_hint_uses_the_domain(self):
         code, out, err = self.apply()
         self.assertIn("SWARMBOX_WEB_DOMAIN=talkr.run ./start.sh --reset --web 7681", out)
+        self.assertIn("delete the API token", out)
 
     def test_second_run_changes_nothing(self):
         self.apply()
@@ -478,6 +479,48 @@ class TestSafetyAndErrors(T):
         self.assertTrue(os.path.exists(path))
         with open(path) as f:
             self.assertNotIn(GOOD_TOKEN, f.read())
+
+
+class TestTokenCommand(T):
+    def test_prints_only_the_tunnel_token_on_stdout_and_never_writes(self):
+        self.apply()
+        tunnel_id = FAKE.tunnels[0]["id"]
+        FAKE.log.clear()
+        code, out, err = self.run_cli("token", "--domain", "talkr.run")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out, "tok." + tunnel_id + "\n", "stdout must be exactly the token, usable in $(...)")
+        self.assertIn("can only connect a connector", err)  # the explanation goes to stderr
+        self.assertEqual(FAKE.mutations(), [])
+
+    def test_needs_neither_an_email_nor_the_other_settings(self):
+        self.apply()
+        code, out, _ = self.run_cli("token", "--domain", "talkr.run", "--tunnel", "swarmbox")
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith("tok."))
+
+    def test_unknown_tunnel_is_a_clear_error_with_empty_stdout(self):
+        code, out, err = self.run_cli("token", "--domain", "talkr.run")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(out, "")
+        self.assertIn("does not exist in this account yet", err)
+        self.assertEqual(FAKE.mutations(), [])
+
+    def test_a_subdomain_given_as_the_zone_is_explained_with_empty_stdout(self):
+        code, out, err = self.run_cli("token", "--domain", "tty.talkr.run")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(out, "")
+        self.assertIn("is a subdomain, not a Cloudflare zone", err)
+
+    def test_a_bad_api_token_explains_and_prints_nothing(self):
+        code, out, err = self.run_cli("token", "--domain", "talkr.run", env={"CLOUDFLARE_API_TOKEN": "invalid9109"})
+        self.assertNotEqual(code, 0)
+        self.assertEqual(out, "")
+        self.assertIn("does not recognize this token", err)
+
+    def test_the_final_message_of_apply_tells_how_to_get_it_before_deleting_the_api_token(self):
+        _, out, _ = self.apply()
+        self.assertIn('export SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN="$(./', out)
+        self.assertIn("then delete the API token", out)
 
 
 class TestRemove(T):
