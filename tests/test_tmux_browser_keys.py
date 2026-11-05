@@ -3,6 +3,7 @@
 
 Run:  python3 tests/test_tmux_browser_keys.py
 To check YOUR config instead of the file alone:  TMUX_CONF=~/.tmux.conf python3 tests/test_tmux_browser_keys.py
+The DefaultConfig class repeats everything with container/tmux.conf alone (the SwarmBox default config).
 
 A private tmux server (own socket) is started and a client is attached through a pty. The keys are sent
 as the bytes xterm.js produces (Alt+letter = ESC+letter, Alt+arrows = ESC[1;3x, ...) and a click as an
@@ -27,12 +28,14 @@ ROWS, COLS = 20, 100
 @unittest.skipUnless(shutil.which("tmux"), "tmux is not installed")
 class BrowserKeys(unittest.TestCase):
     counter = 0
+    default_conf = None   # None: a small base config that sources only tmux-browser-keys.conf
+    honour_env = True     # TMUX_CONF=... points the tests at your own config
 
     def setUp(self):
         BrowserKeys.counter += 1
         self.sock = "swbk%d_%d" % (os.getpid(), BrowserKeys.counter)  # one private server per test
         self.tmp = tempfile.mkdtemp()
-        conf = os.environ.get("TMUX_CONF")
+        conf = (os.environ.get("TMUX_CONF") if self.honour_env else None) or self.default_conf
         if conf:
             self.conf = os.path.expanduser(conf)
         else:
@@ -157,6 +160,56 @@ class BrowserKeys(unittest.TestCase):
             before = len(self.windows())
             self.click(col)
             self.assertEqual(len(self.windows()), before, "column %d must not create a window" % col)
+
+
+DEFAULT_CONF = os.path.abspath(os.path.join(HERE, "..", "container", "tmux.conf"))
+
+
+class DefaultConfig(BrowserKeys):
+    """The same behaviour from container/tmux.conf alone: nothing from the user's workspace is needed."""
+    default_conf = DEFAULT_CONF
+    honour_env = False
+
+    def test_the_default_config_sets_the_swarmbox_options(self):
+        expected = {"prefix": "C-a", "base-index": "1", "mouse": "on", "history-limit": "50000",
+                    "escape-time": "0", "status": "2", "extended-keys": "on", "renumber-windows": "on"}
+        for option, value in expected.items():
+            flag = "-sgv" if option in ("escape-time", "extended-keys") else "-gv"
+            self.assertEqual(self.out("show", flag, option), value, option)
+        self.assertIn("+", self.out("show", "-gv", "status-left"), "the [+] button comes with it")
+
+    def test_the_prefix_bindings_of_the_default_config_work(self):
+        self.press(b"\x01c")  # Ctrl+A c
+        self.assertEqual(self.windows(), [1, 2])
+        self.press(b"\x01|")  # Ctrl+A |
+        self.assertEqual(self.panes(), 2)
+        self.press(b"\x01-")  # Ctrl+A -
+        self.assertEqual(self.panes(), 3)
+
+    def alone(self, with_keys):
+        """Copy tmux.conf (and optionally its sibling) to an empty directory and load it from there."""
+        directory = os.path.join(self.tmp, "etc" if with_keys else "etc-alone")
+        os.makedirs(directory)
+        shutil.copy(DEFAULT_CONF, directory)
+        if with_keys:
+            shutil.copy(KEYS, directory)
+        sock = self.sock + ("k" if with_keys else "n")
+        self.addCleanup(lambda: subprocess.run(["tmux", "-L", sock, "kill-server"], capture_output=True))
+        r = subprocess.run(["tmux", "-L", sock, "-f", os.path.join(directory, "tmux.conf"), "new-session", "-d",
+                            "-s", "t", "-x", "100", "-y", "20", "bash --norc"], capture_output=True, text=True)
+        self.assertEqual((r.returncode, r.stderr.strip()), (0, ""), r.stderr)
+        time.sleep(0.6)
+        keys = subprocess.run(["tmux", "-L", sock, "list-keys", "-T", "root"], capture_output=True, text=True).stdout
+        return keys
+
+    def test_it_finds_the_keys_file_next_to_itself_from_any_directory(self):
+        keys = self.alone(with_keys=True)
+        self.assertIn(" M-n ", keys)
+        self.assertIn("MouseDown1StatusLeft", keys)
+
+    def test_it_loads_cleanly_when_the_keys_file_is_absent(self):
+        keys = self.alone(with_keys=False)
+        self.assertNotIn(" M-n ", keys)
 
 
 if __name__ == "__main__":
