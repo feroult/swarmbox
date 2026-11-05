@@ -19,8 +19,6 @@ CUSTOM_NAME=""
 CUSTOM_IMAGE=""
 CUSTOM_HOSTNAME="swarmbox"
 NO_SHELL=false
-WITH_UNSAFE_PODMAN=false
-NESTED_PODMAN=false
 HOST_NETWORK=false
 ENV_KEYS=""
 BROWSER_URL=""
@@ -57,14 +55,6 @@ while [[ $# -gt 0 ]]; do
             NO_SHELL=true
             shift
             ;;
-        --with-unsafe-podman)
-            WITH_UNSAFE_PODMAN=true
-            shift
-            ;;
-        --nested-podman)
-            NESTED_PODMAN=true
-            shift
-            ;;
         --host-network)
             HOST_NETWORK=true
             shift
@@ -88,7 +78,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--with-unsafe-podman] [--nested-podman] [--env-keys KEY1,KEY2,...] [--remote-browser PORT]"
+            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--env-keys KEY1,KEY2,...] [--remote-browser PORT]"
             echo ""
             echo "Options:"
             echo "  --ports: Comma-separated list of port mappings (e.g., 3000,8080:80,9000:3000)"
@@ -99,8 +89,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --hostname: Custom hostname (default: swarmbox)"
             echo "  --no-shell: Don't attach to container shell (useful for testing/automation)"
             echo "  --host-network: Use host network namespace (container shares host network, ignores --ports)"
-            echo "  --with-unsafe-podman: Mount host Podman socket (UNSAFE - gives container access to host Podman)"
-            echo "  --nested-podman: Run Podman inside the container (rootless, isolated; no host socket). Mutually exclusive with --with-unsafe-podman"
             echo "  --env-keys: Comma-separated list of environment variable keys to pass from host to container (e.g., KEY1,KEY2,KEY3)"
             echo "  --remote-browser: Connect chrome-devtools MCP to an existing Chrome instance (default port: 9222, e.g., --remote-browser, --remote-browser 1234, --remote-browser 192.168.1.100:9222)"
             echo "  --clasp: Expose port 43323 for clasp (Google Apps Script CLI) OAuth login callback"
@@ -121,69 +109,6 @@ if ! command -v podman &> /dev/null; then
     echo "  - Linux: sudo apt install podman (Debian/Ubuntu) or sudo dnf install podman (Fedora/RHEL)"
     echo "  - macOS: brew install podman"
     exit 1
-fi
-
-# Handle Podman socket mounting (if --with-unsafe-podman is set)
-PODMAN_SOCKET_MOUNT=""
-PODMAN_HOST_ENV=""
-if [ "$WITH_UNSAFE_PODMAN" = "true" ]; then
-    echo ""
-    msg_warn "WARNING: --with-unsafe-podman enabled"
-    msg_warn "Container will have access to host Podman daemon"
-
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS - Podman runs in a VM with socket forwarding
-        # Try multiple socket locations in order of preference:
-        # 1. Docker-compatible socket from podman-mac-helper
-        # 2. Podman machine API socket (direct, no helper needed)
-        if [ -S "/var/run/docker.sock" ]; then
-            PODMAN_SOCKET="/var/run/docker.sock"
-        elif [ -S "$HOME/.docker/run/docker.sock" ]; then
-            PODMAN_SOCKET="$HOME/.docker/run/docker.sock"
-        else
-            # Try to find the Podman machine API socket directly
-            MACHINE_NAME=$(podman machine list --format "{{.Name}}" --noheading | head -n1)
-            if [ -n "$MACHINE_NAME" ]; then
-                # Get socket path from podman machine inspect
-                PODMAN_SOCKET=$(podman machine inspect "$MACHINE_NAME" --format "{{.ConnectionInfo.PodmanSocket.Path}}")
-                if [ ! -S "$PODMAN_SOCKET" ]; then
-                    echo "ERROR: Podman socket not found at: $PODMAN_SOCKET"
-                    echo "Please ensure Podman machine is running:"
-                    echo "  podman machine start"
-                    exit 1
-                fi
-            else
-                echo "ERROR: No Podman machine found."
-                echo "Please create and start a Podman machine:"
-                echo "  podman machine init"
-                echo "  podman machine start"
-                exit 1
-            fi
-        fi
-        # Mount to Podman-specific path inside container
-        PODMAN_SOCKET_MOUNT="-v $PODMAN_SOCKET:/run/podman/podman.sock"
-        PODMAN_HOST_ENV="-e CONTAINER_HOST=unix:///run/podman/podman.sock"
-        msg_detail "Podman socket: $PODMAN_SOCKET"
-    else
-        # Linux - Try rootless Podman socket first
-        PODMAN_SOCKET="/run/user/$(id -u)/podman/podman.sock"
-        if [ ! -S "$PODMAN_SOCKET" ]; then
-            # Fall back to rootful socket
-            PODMAN_SOCKET="/run/podman/podman.sock"
-            if [ ! -S "$PODMAN_SOCKET" ]; then
-                echo "ERROR: Podman socket not found. Start Podman socket service:"
-                echo "  systemctl --user enable --now podman.socket  (rootless)"
-                echo "  or"
-                echo "  sudo systemctl enable --now podman.socket     (rootful)"
-                exit 1
-            fi
-        fi
-        # Mount to Podman-specific path inside container
-        PODMAN_SOCKET_MOUNT="-v $PODMAN_SOCKET:/run/podman/podman.sock"
-        PODMAN_HOST_ENV="-e CONTAINER_HOST=unix:///run/podman/podman.sock"
-        msg_detail "Podman socket: $PODMAN_SOCKET"
-    fi
-    echo ""
 fi
 
 # Set container and image names
@@ -257,20 +182,13 @@ if [ -n "$IPORTS" ]; then
     CONTAINER_EXTRA_HOSTS="--add-host=host.containers.internal:host-gateway"
 fi
 
-# Nested Podman: needs a tun device (slirp4netns) and a writable /proc/sys (crun).
-# No host socket is mounted, so the agent cannot reach the host Podman.
-NESTED_PODMAN_OPTS=""
-if [ "$NESTED_PODMAN" = "true" ]; then
-    if [ "$WITH_UNSAFE_PODMAN" = "true" ]; then
-        msg_warn "--nested-podman and --with-unsafe-podman are mutually exclusive"
-        exit 1
-    fi
-    # The nested image/layer store goes in a named volume, not in the bind-mounted
-    # $WORK_DIR: its files are owned by subuid-mapped IDs the host user cannot delete,
-    # and it grows large. Everything else under /home/agent stays in $WORK_DIR.
-    NESTED_PODMAN_OPTS="--device /dev/net/tun --security-opt unmask=/proc/* -v ${CONTAINER_NAME}-containers:/home/agent/.local/share/containers"
-    msg_detail "Nested Podman enabled (isolated from host Podman)"
-fi
+# Nested Podman (always on): Podman runs rootless inside the container, with no host
+# socket mounted, so the agent has no path to the host Podman.
+# Needs a tun device (slirp4netns) and a writable /proc/sys (crun).
+# The nested image/layer store goes in a named volume, not in the bind-mounted
+# $WORK_DIR: its files are owned by subuid-mapped IDs the host user cannot delete,
+# and it grows large. Everything else under /home/agent stays in $WORK_DIR.
+NESTED_PODMAN_OPTS="--device /dev/net/tun --security-opt unmask=/proc/* -v ${CONTAINER_NAME}-containers:/home/agent/.local/share/containers"
 
 # Parse environment keys and build environment variable flags
 CONTAINER_ENV_VARS=""
@@ -343,6 +261,43 @@ if [[ "$(podman images -q "$IMAGE_NAME" 2> /dev/null)" == "" ]]; then
     echo ""
 fi
 
+# Start the nested Podman API service and make sure the host has a connection to it,
+# so `podman -c <container-name> ps` works from the host shell.
+register_podman_connection() {
+    # Unix sockets do not cross the macOS VM boundary
+    [[ "$OSTYPE" == "darwin"* ]] && return
+    local uri="unix://$WORK_DIR/.swarmbox/podman.sock"
+    local current
+    current=$(podman system connection list --format '{{.Name}} {{.URI}}' 2>/dev/null \
+        | awk -v n="$CONTAINER_NAME" '$1==n {print $2}')
+    if [ "$current" = "$uri" ]; then
+        return
+    fi
+    if [ -n "$current" ]; then
+        podman system connection remove "$CONTAINER_NAME" >/dev/null 2>&1 || true
+    fi
+    if podman system connection add "$CONTAINER_NAME" "$uri" >/dev/null 2>&1; then
+        msg_detail "Podman connection registered: podman -c $CONTAINER_NAME ps"
+    else
+        msg_warn "Could not register podman connection '$CONTAINER_NAME'"
+    fi
+}
+
+post_start() {
+    podman exec -d "$CONTAINER_NAME" /usr/local/bin/swarmbox-podman-service >/dev/null 2>&1 || true
+    register_podman_connection
+    # Surface a missing service (e.g. image not rebuilt) instead of failing silently later
+    if [[ "$OSTYPE" != "darwin"* ]]; then
+        local sock="$WORK_DIR/.swarmbox/podman.sock" i
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+            # A stale socket file can survive a container restart, so check it answers
+            [ -S "$sock" ] && podman --url "unix://$sock" version >/dev/null 2>&1 && return
+            sleep 0.5
+        done
+        msg_warn "Nested Podman service did not start (is the image up to date? run ./build.sh and --reset)"
+    fi
+}
+
 # Handle reset option
 if [ "$RESET" = "true" ]; then
     if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
@@ -360,8 +315,6 @@ if [ "$RESET" = "true" ]; then
             --name "$CONTAINER_NAME" \
             --hostname "$CUSTOM_HOSTNAME" \
             -v "$WORK_DIR:/home/agent" \
-            $PODMAN_SOCKET_MOUNT \
-            $PODMAN_HOST_ENV \
             $NESTED_PODMAN_OPTS \
             $CONTAINER_ENV_VARS \
             $NETWORK_FLAG \
@@ -374,8 +327,6 @@ if [ "$RESET" = "true" ]; then
             --name "$CONTAINER_NAME" \
             --hostname "$CUSTOM_HOSTNAME" \
             -v "$WORK_DIR:/home/agent" \
-            $PODMAN_SOCKET_MOUNT \
-            $PODMAN_HOST_ENV \
             $NESTED_PODMAN_OPTS \
             $CONTAINER_ENV_VARS \
             $NETWORK_FLAG \
@@ -383,6 +334,8 @@ if [ "$RESET" = "true" ]; then
             $CONTAINER_EXTRA_HOSTS \
             "$IMAGE_NAME" >/dev/null
     fi
+
+    post_start
 
     # Connect to the container (unless --no-shell is set)
     if [ "$NO_SHELL" = "false" ]; then
@@ -393,6 +346,7 @@ else
     if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
         echo ""
         podman start "$CONTAINER_NAME" 2>/dev/null || true
+        post_start
         if [ "$NO_SHELL" = "false" ]; then
             podman exec -it -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}" "$CONTAINER_NAME" bash
         fi
@@ -405,8 +359,6 @@ else
                 --name "$CONTAINER_NAME" \
                 --hostname "$CUSTOM_HOSTNAME" \
                 -v "$WORK_DIR:/home/agent" \
-                $PODMAN_SOCKET_MOUNT \
-                $PODMAN_HOST_ENV \
                 $NESTED_PODMAN_OPTS \
                 $CONTAINER_ENV_VARS \
                 $NETWORK_FLAG \
@@ -419,8 +371,6 @@ else
                 --name "$CONTAINER_NAME" \
                 --hostname "$CUSTOM_HOSTNAME" \
                 -v "$WORK_DIR:/home/agent" \
-                $PODMAN_SOCKET_MOUNT \
-                $PODMAN_HOST_ENV \
                 $NESTED_PODMAN_OPTS \
                 $CONTAINER_ENV_VARS \
                 $NETWORK_FLAG \
@@ -428,6 +378,8 @@ else
                 $CONTAINER_EXTRA_HOSTS \
                 "$IMAGE_NAME" >/dev/null
         fi
+
+        post_start
 
         # Connect to the container (unless --no-shell is set)
         if [ "$NO_SHELL" = "false" ]; then
