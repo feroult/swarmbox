@@ -120,6 +120,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# The tunnel token must stay on the host: passing it to the container would hand it to the agent
+case ",${ENV_KEYS// /}," in
+    *,SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN,*)
+        echo "ERROR: SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN must not be passed to the container with --env-keys:"
+        echo "it is read by this script on the host to run the Cloudflare connector, and nothing inside needs it."
+        exit 1
+        ;;
+esac
+
 # Ports the user asked for (PORTS is later extended automatically for --clasp / MEMORY)
 USER_PORTS="$PORTS"
 
@@ -327,10 +336,65 @@ register_podman_connection() {
     fi
 }
 
+# Make sure the Cloudflare tunnel is up for --web. The connector is a Podman container on THIS host (never
+# inside SwarmBox, so the tunnel token stays out of the agent's reach). Keep the name and flags in sync
+# with cloudflare-setup.py (CONNECTOR_NAME, step_connector).
+#   - SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN set (the tunnel's own token, from the Cloudflare dashboard): that
+#     is the source of truth. A missing connector is created, a stopped one started, and one that holds a
+#     different token (e.g. after rotating it) is recreated.
+#   - not set: an existing connector is only started if stopped (e.g. one that cloudflare-setup.py made).
+# No API token is ever needed here. The token travels in the environment, never on a command line, and is
+# never printed.
+ensure_web_connector() {
+    local name="swarmbox-cloudflared" image="${SWARMBOX_CLOUDFLARED_IMAGE:-docker.io/cloudflare/cloudflared:latest}"
+    local token="$SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN" state have_token
+    state=$(podman inspect -f '{{.State.Status}}' "$name" 2>/dev/null) || state=""
+
+    if [ -n "$state" ] && [ -n "$token" ]; then
+        have_token=$(podman inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$name" 2>/dev/null \
+            | grep -x -F "TUNNEL_TOKEN=$token" || true)
+        if [ -z "$have_token" ]; then
+            msg_detail "Cloudflare connector holds a different token: recreating it"
+            podman rm -f "$name" >/dev/null 2>&1 || true
+            state=""
+        fi
+    fi
+
+    case "$state" in
+        running)
+            msg_detail "Cloudflare connector: running"
+            ;;
+        "")
+            if [ -n "$token" ]; then
+                local out
+                if out=$(TUNNEL_TOKEN="$token" podman run -d --name "$name" --restart=always --network=host \
+                        --user root -e TUNNEL_TOKEN "$image" tunnel --no-autoupdate run 2>&1); then
+                    msg_detail "Cloudflare connector: created and started ($name)"
+                else
+                    msg_warn "Could not create the Cloudflare connector '$name':"
+                    printf '%s\n' "$out" | tail -n 3 | sed 's/^/    /' >&2
+                fi
+            elif [ -n "$SWARMBOX_WEB_HOSTNAME$SWARMBOX_WEB_DOMAIN" ]; then
+                # only mention it to people who seem to be using remote access
+                msg_detail "No Cloudflare connector '$name' on this host: set SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN"
+                msg_detail "(the tunnel's token, from the Cloudflare dashboard) or run ./cloudflare-setup.py once"
+            fi
+            ;;
+        *)
+            if podman start "$name" >/dev/null 2>&1; then
+                msg_detail "Cloudflare connector: started ($name)"
+            else
+                msg_warn "Could not start the Cloudflare connector '$name' (podman logs $name)"
+            fi
+            ;;
+    esac
+}
+
 # Start the web terminal (when requested) and wait until it answers on the published port.
 start_web_terminal() {
     [ "$WEB" = "true" ] || return 0
     podman exec -d "$CONTAINER_NAME" /usr/local/bin/swarmbox-web-terminal >/dev/null 2>&1 || true
+    ensure_web_connector
     local i
     for i in 1 2 3 4 5 6 7 8 9 10; do
         if (exec 3<>"/dev/tcp/127.0.0.1/$WEB_PORT") 2>/dev/null; then
