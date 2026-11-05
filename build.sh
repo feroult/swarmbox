@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# The build context is this directory, whatever the current one is
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
+
 # Podman-only runtime (Docker support removed)
 RUNTIME="podman"
 
