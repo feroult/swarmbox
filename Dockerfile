@@ -284,7 +284,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux && \
     (cd /tmp && grep " $T\$" ttyd.SHA256SUMS | sha256sum -c -) && \
     install -m 755 "/tmp/$T" /usr/local/bin/ttyd && \
     rm -f "/tmp/$T" /tmp/ttyd.SHA256SUMS
+# The default tmux config (/etc/tmux.conf) loads tmux-browser-keys.conf from its own directory
 COPY container/tmux.conf /etc/tmux.conf
+COPY container/tmux-browser-keys.conf /etc/tmux-browser-keys.conf
 # ttyd's own page (kept as is) plus the clipboard bridge that swarmbox-web-terminal injects into it
 COPY container/ttyd-clipboard.js /usr/local/share/swarmbox/ttyd-clipboard.js
 RUN chmod 644 /usr/local/share/swarmbox/ttyd-clipboard.js && \
@@ -294,7 +296,7 @@ RUN chmod 644 /usr/local/share/swarmbox/ttyd-clipboard.js && \
      done; kill $TTYD_PID) && \
     test -s /usr/local/share/swarmbox/ttyd-stock.html && grep -q '</body>' /usr/local/share/swarmbox/ttyd-stock.html
 COPY container/scripts/web-terminal.sh /usr/local/bin/swarmbox-web-terminal
-RUN chmod 755 /usr/local/bin/swarmbox-web-terminal && chmod 644 /etc/tmux.conf
+RUN chmod 755 /usr/local/bin/swarmbox-web-terminal && chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf
 
 # Copy banner and messaging scripts (at the end to optimize build cache)
 COPY container/scripts/banner.sh /usr/local/bin/banner.sh
