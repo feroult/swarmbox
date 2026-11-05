@@ -42,6 +42,7 @@ class WebTerminal(unittest.TestCase):
                "SWARMBOX_WEB_PORT": "17999"}
         if web:
             env["SWARMBOX_WEB"] = web
+        env.update({"SWARMBOX_TTYD_STOCK": "/nonexistent/stock.html", "SWARMBOX_TTYD_BRIDGE": "/nonexistent/bridge.js"})
         env.update(extra or {})
         subprocess.run(["bash", SCRIPT], env=env, check=True, timeout=10)
         for _ in range(30):
@@ -130,6 +131,75 @@ this line has no equals sign
     def test_lc_all_decides_over_lang(self):
         seen = self.locale_seen_by_ttyd({"LANG": "pt_BR.UTF-8", "LC_ALL": "C"})
         self.assertEqual(seen, {"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"})
+
+    # ---- clipboard bridge: ttyd's page with a script injected ---------------------------------------
+    def bridge_env(self, page="<html><body><p>ttyd</p></body></html>", js="/* bridge */ var x = 1;"):
+        stock = os.path.join(self.home, "stock.html")
+        bridge = os.path.join(self.home, "bridge.js")
+        with open(stock, "w") as f:
+            f.write(page)
+        with open(bridge, "w") as f:
+            f.write(js)
+        return {"SWARMBOX_TTYD_STOCK": stock, "SWARMBOX_TTYD_BRIDGE": bridge}
+
+    def index_path(self):
+        return os.path.join(self.home, ".swarmbox", "ttyd-index.html")
+
+    def read_index(self):
+        with open(self.index_path()) as f:
+            return f.read()
+
+    def test_ttyd_serves_its_page_with_the_bridge_injected_before_the_body_ends(self):
+        args, _ = self.run_script(extra=self.bridge_env())
+        self.assertEqual(args[args.index("--index") + 1], self.index_path())
+        page = self.read_index()
+        self.assertIn('window.__swarmboxClipboard={"ctrlVPaste": true, "ctrlCCopy": true}', page)
+        self.assertIn("/* bridge */ var x = 1;", page)
+        self.assertTrue(page.startswith("<html><body><p>ttyd</p><script>"))
+        self.assertTrue(page.endswith("</script></body></html>"))
+        self.assertEqual(page.count("</body>"), 1)
+
+    def test_without_the_page_or_the_bridge_ttyd_serves_its_own_page(self):
+        args, _ = self.run_script()
+        self.assertNotIn("--index", args)
+        env = self.bridge_env()
+        os.remove(env["SWARMBOX_TTYD_BRIDGE"])
+        args, _ = self.run_script(extra=env)
+        self.assertNotIn("--index", args)
+
+    def test_an_unexpected_page_falls_back_to_the_original(self):
+        args, _ = self.run_script(extra=self.bridge_env(page="<html>no body end</html>"))
+        self.assertNotIn("--index", args)
+        self.assertFalse(os.path.exists(self.index_path()))
+
+    def test_clipboard_options_are_consumed_not_passed_to_ttyd(self):
+        self.conf("ctrlVPaste=false\nctrlCCopy=false\nfontSize=17\n")
+        args, opts = self.run_script(extra=self.bridge_env())
+        self.assertNotIn("ctrlVPaste", opts)
+        self.assertNotIn("ctrlCCopy", opts)
+        self.assertEqual(opts["fontSize"], "17")
+        self.assertIn('{"ctrlVPaste": false, "ctrlCCopy": false}', self.read_index())
+
+    def test_the_page_is_rebuilt_only_when_something_changed(self):
+        env = self.bridge_env()
+        self.run_script(extra=env)
+        first = os.stat(self.index_path()).st_mtime_ns
+        time.sleep(0.05)
+        self.run_script(extra=env)
+        self.assertEqual(os.stat(self.index_path()).st_mtime_ns, first, "same inputs: not rebuilt")
+        with open(env["SWARMBOX_TTYD_BRIDGE"], "w") as f:
+            f.write("var changed = true;")
+        self.run_script(extra=env)
+        self.assertIn("var changed = true;", self.read_index())
+        self.conf("ctrlVPaste=false\n")
+        self.run_script(extra=env)
+        self.assertIn('"ctrlVPaste": false', self.read_index())
+
+    def test_a_script_tag_inside_the_bridge_cannot_end_the_injected_script(self):
+        self.run_script(extra=self.bridge_env(js="var s = '</script><b>';"))
+        page = self.read_index()
+        self.assertEqual(page.count("</script>"), 2, "only our own two closing tags")
+        self.assertNotIn("</script><b>", page)
 
     def test_value_may_contain_equals_signs(self):
         self.conf("customGlyphs=a=b\n")

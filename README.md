@@ -196,6 +196,23 @@ other Ctrl combinations), so the optional `container/tmux-browser-keys.conf` bin
 `Alt+Shift+arrows` resize, `Alt+Z` zoom, `Alt+X` close (asks); and a green **+** button in the status bar creates a
 window. Add `source-file /path/to/tmux-browser-keys.conf` to your `~/.tmux.conf` (use the left Alt: the right one is
 AltGr on an international layout). It needs `set -g base-index 1` so `Alt+1..9` match the status bar.
+**Copy and paste.** With the mouse on, tmux owns the mouse: a selection is copied into tmux's own buffer and
+sent to the terminal as OSC 52, but ttyd 1.7.7 ignores OSC 52, so nothing reached the browser clipboard, and
+xterm.js sends Ctrl+V to the shell as `^V` instead of pasting. `swarmbox-web-terminal` therefore serves ttyd's
+own page with a small script injected (`container/ttyd-clipboard.js`, built from `ttyd-stock.html` in the image):
+- a selection (or `tmux set-buffer -w`) **reaches the browser clipboard**. Only *writes* are honoured: a
+  clipboard *read* request (`OSC 52 ; ... ; ?`) is never answered, so nothing in the terminal can read what you
+  copied elsewhere;
+- **`Ctrl+V` pastes** (as `Ctrl+Shift+V` already did), with bracketed paste when the program asked for it;
+- **`Ctrl+C` copies while text is selected in the terminal** (`Shift`+drag selects when tmux has the mouse) and
+  does not interrupt; with no selection it is still `^C`.
+- **Right click** opens only tmux's menu while tmux captures the mouse (the browser's menu used to open on top of
+  it). `Shift`+right-click still opens the browser's, and in a plain shell (no mouse capture) the right click keeps
+  the browser's menu, so copy and paste stay there.
+Set `ctrlVPaste=false` and/or `ctrlCCopy=false` in `web-terminal.conf` to keep `^V` (vim block mode, readline
+quoted-insert) or to let `Ctrl+C` always interrupt, then `pkill ttyd; swarmbox-web-terminal`. Tested in Chromium; a
+browser that only allows clipboard writes from a user gesture (Firefox) may need the click to be recent.
+
 The image sets `LANG=C.UTF-8` (and `swarmbox-web-terminal` enforces a UTF-8 locale): without one, bash
 drops an accented character typed on its own (a dead key + letter) instead of inserting it.
 
