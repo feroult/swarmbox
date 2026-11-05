@@ -194,6 +194,13 @@ podman run -d --name mongo --network dev -p 27017:27017 mongo:7   # inside Swarm
 sessions survive closing the tab) on `http://127.0.0.1:7681` of your machine. Use
 `--web 7682` for a second container.
 
+**Same tabs in the browser and in your terminal**: the shell `start.sh` opens in your host terminal is a new
+window of the same tmux session (`main`) the browser shows, through a grouped session, so each host tab is also a
+tab in the browser and the other way round; each side keeps its own current window, and the grouped session goes
+away when you close the host tab (the window stays until its shell exits). Nested tmux: if your host terminal also
+runs tmux, give it another prefix (SwarmBox uses `C-a`) or press `C-a a` to send the prefix inside.
+`SWARMBOX_ATTACH=shell ./start.sh` gives the plain bash instead.
+
 **Font, size, theme**: put `key=value` lines (xterm.js options) in `.work/.swarmbox/web-terminal.conf`
 (`~/.swarmbox/web-terminal.conf` inside), e.g. `fontFamily='JetBrainsMono Nerd Font', Consolas, monospace`.
 No rebuild: run `pkill ttyd; swarmbox-web-terminal` inside to apply (tmux sessions survive). The font is
