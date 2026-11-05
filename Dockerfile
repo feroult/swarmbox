@@ -139,11 +139,14 @@ RUN echo "agent:1001:64535" > /etc/subuid && \
     echo "agent:1001:64535" > /etc/subgid
 # 3. System-wide defaults (HOME is a bind mount, so nothing can live under it):
 #    - storage: native overlay (the bind-mounted home is a real ext4; overlay on
-#      the container's own overlay rootfs would not work, vfs is the slow fallback)
+#      the container's own overlay rootfs would not work, vfs is the slow fallback).
+#      ignore_chown_errors: this container only has ~64k user IDs, so layers owning
+#      files by a higher ID (65534 "nobody", 65532 distroless "nonroot": busybox,
+#      cloudflared, ...) cannot be extracted otherwise; those files become root-owned.
 #    - utsns=host: the nested crun cannot sethostname without CAP_SYS_ADMIN
 #    - netavark backend: needed for DNS between nested containers
 RUN mkdir -p /etc/containers && \
-    printf '[storage]\ndriver = "overlay"\n' > /etc/containers/storage.conf && \
+    printf '[storage]\ndriver = "overlay"\n\n[storage.options.overlay]\nignore_chown_errors = "true"\n' > /etc/containers/storage.conf && \
     printf '[containers]\nutsns = "host"\n[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n[network]\nnetwork_backend = "netavark"\n' > /etc/containers/containers.conf
 
 # Set npm cache directory to a non-mounted location
@@ -259,6 +262,27 @@ RUN if [ "${HOST_OS}" = "darwin" ]; then \
         chown -R ${USER_UID}:${USER_GID} /opt/npm-cache /opt/flow /opt/go /opt/go-cache /workspace && \
         chmod -R 755 /opt/npm-cache /opt/flow /opt/go /opt/go-cache /workspace; \
     fi
+
+# Web terminal (start.sh --web): ttyd serving tmux. ttyd is not in Debian 12, so fetch the
+# pinned release and verify its published checksum. Placed late so a version bump does not
+# invalidate the expensive layers above.
+ARG TTYD_VERSION=1.7.7
+RUN apt-get update && apt-get install -y --no-install-recommends tmux && \
+    rm -rf /var/lib/apt/lists/* && \
+    case "$(dpkg --print-architecture)" in \
+        amd64) T=ttyd.x86_64 ;; \
+        arm64) T=ttyd.aarch64 ;; \
+        *) echo "ttyd: unsupported architecture $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac && \
+    BASE="https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}" && \
+    curl -fsSL -o "/tmp/$T" "$BASE/$T" && \
+    curl -fsSL -o /tmp/ttyd.SHA256SUMS "$BASE/SHA256SUMS" && \
+    (cd /tmp && grep " $T\$" ttyd.SHA256SUMS | sha256sum -c -) && \
+    install -m 755 "/tmp/$T" /usr/local/bin/ttyd && \
+    rm -f "/tmp/$T" /tmp/ttyd.SHA256SUMS
+COPY container/tmux.conf /etc/tmux.conf
+COPY container/scripts/web-terminal.sh /usr/local/bin/swarmbox-web-terminal
+RUN chmod 755 /usr/local/bin/swarmbox-web-terminal && chmod 644 /etc/tmux.conf
 
 # Copy banner and messaging scripts (at the end to optimize build cache)
 COPY container/scripts/banner.sh /usr/local/bin/banner.sh

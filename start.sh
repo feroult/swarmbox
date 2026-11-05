@@ -27,6 +27,8 @@ HOST_NETWORK=false
 ENV_KEYS=""
 BROWSER_URL=""
 CLASP=false
+WEB=false
+WEB_PORT=7681
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -81,9 +83,18 @@ while [[ $# -gt 0 ]]; do
             CLASP=true
             shift
             ;;
+        --web)
+            WEB=true
+            if [[ "$2" =~ ^[0-9]+$ ]]; then
+                WEB_PORT="$2"
+                shift 2
+            else
+                shift
+            fi
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--env-keys KEY1,KEY2,...] [--remote-browser PORT]"
+            echo "Usage: $0 [--ports port:inner_port,...] [--iports port:host_port,...] [--reset] [--name container-name] [--image image-name] [--hostname hostname] [--no-shell] [--host-network] [--env-keys KEY1,KEY2,...] [--remote-browser PORT] [--web [PORT]]"
             echo ""
             echo "Options:"
             echo "  --ports: Comma-separated list of port mappings, published on 127.0.0.1 only (e.g., 3000,8080:80,9000:3000)"
@@ -97,6 +108,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --host-network: Use host network namespace (container shares host network, ignores --ports)"
             echo "  --env-keys: Comma-separated list of environment variable keys to pass from host to container (e.g., KEY1,KEY2,KEY3)"
             echo "  --remote-browser: Connect chrome-devtools MCP to an existing Chrome instance (default port: 9222, e.g., --remote-browser, --remote-browser 1234, --remote-browser 192.168.1.100:9222)"
+            echo "  --web: Serve a web terminal (ttyd + tmux) on 127.0.0.1:PORT of the host (default 7681); put Cloudflare Access/a tunnel in front to reach it remotely (see README)"
             echo "  --clasp: Expose port 43323 for clasp (Google Apps Script CLI) OAuth login callback"
             echo ""
             echo "Environment Variables:"
@@ -253,6 +265,17 @@ if [ -n "$ENV_KEYS" ]; then
     done
 fi
 
+# Web terminal: ttyd inside the container, published on the host's 127.0.0.1 only.
+# It gives a shell with no login of its own, so it must never end up on a public interface.
+if [ "$WEB" = "true" ]; then
+    if [ "$HOST_NETWORK" = "true" ]; then
+        msg_warn "--web cannot be combined with --host-network (the terminal would listen on every host interface)"
+        exit 1
+    fi
+    CONTAINER_PORTS="$CONTAINER_PORTS -p 127.0.0.1:${WEB_PORT}:7681"
+    CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e SWARMBOX_WEB=1"
+fi
+
 # Set network mode
 NETWORK_FLAG=""
 if [ "$HOST_NETWORK" = "true" ]; then
@@ -304,9 +327,28 @@ register_podman_connection() {
     fi
 }
 
+# Start the web terminal (when requested) and wait until it answers on the published port.
+start_web_terminal() {
+    [ "$WEB" = "true" ] || return 0
+    podman exec -d "$CONTAINER_NAME" /usr/local/bin/swarmbox-web-terminal >/dev/null 2>&1 || true
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        if (exec 3<>"/dev/tcp/127.0.0.1/$WEB_PORT") 2>/dev/null; then
+            msg_detail "Web terminal: http://127.0.0.1:$WEB_PORT (no login here; reach it remotely only through Cloudflare Access)"
+            # The URL cloudflare-setup.py provisioned: an explicit hostname, or <container>.<domain>
+            local public_host="${SWARMBOX_WEB_HOSTNAME:-${SWARMBOX_WEB_DOMAIN:+$CONTAINER_NAME.$SWARMBOX_WEB_DOMAIN}}"
+            [ -n "$public_host" ] && msg_detail "Public URL: https://$public_host (once the tunnel routes it to localhost:$WEB_PORT)"
+            return 0
+        fi
+        sleep 0.5
+    done
+    msg_warn "Web terminal did not start (is the image up to date? run ./build.sh and --reset)"
+}
+
 post_start() {
     podman exec -d "$CONTAINER_NAME" /usr/local/bin/swarmbox-podman-service >/dev/null 2>&1 || true
     register_podman_connection
+    start_web_terminal
     # Surface a missing service (e.g. image not rebuilt) instead of failing silently later
     if [[ "$OSTYPE" != "darwin"* ]]; then
         local sock="$WORK_DIR/.swarmbox/podman.sock" i
@@ -332,6 +374,7 @@ check_existing_container() {
     [ -n "$ENV_KEYS" ] && ignored="$ignored --env-keys"
     [ -n "$BROWSER_URL" ] && ignored="$ignored --remote-browser"
     [ "$CLASP" = "true" ] && ignored="$ignored --clasp"
+    [ "$WEB" = "true" ] && ignored="$ignored --web"
     if [ -n "$ignored" ]; then
         msg_warn "Container '$CONTAINER_NAME' already exists, so these options would be ignored:$ignored"
         msg_warn "They only apply when the container is created. Re-run with --reset to apply them"
