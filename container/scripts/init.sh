@@ -101,5 +101,8 @@ sync_opencode_mcp
 # 7. Nested Podman API service (host reaches it via `podman -c <container-name>`)
 /usr/local/bin/swarmbox-podman-service
 
+# 8. Web terminal (only when the container was created with --web)
+/usr/local/bin/swarmbox-web-terminal
+
 msg "Type 'claude' for Claude Code or 'gemini' for Gemini CLI"
 msg_blank
