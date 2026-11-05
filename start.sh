@@ -411,6 +411,23 @@ start_web_terminal() {
     msg_warn "Web terminal did not start (is the image up to date? run ./build.sh and --reset)"
 }
 
+# What a terminal opened by start.sh runs inside the container. By default it is a new window of the
+# tmux session "main" -- the one the web terminal shows -- through a grouped session, so every tab of your
+# host terminal is also a tab in the browser (and the browser's tabs can be reached from here), while each
+# side keeps choosing its own current window. The grouped session goes away when you detach.
+# SWARMBOX_ATTACH=shell gives the plain bash it used to be.
+ATTACH_SCRIPT='command -v tmux >/dev/null 2>&1 || exec bash
+if tmux has-session -t main 2>/dev/null; then
+    exec tmux new-session -t main \; set-option destroy-unattached on \; new-window
+fi
+exec tmux new-session -s main'
+
+enter_shell() {
+    local cmd=(bash)
+    [ "${SWARMBOX_ATTACH:-tmux}" = "shell" ] || cmd=(bash -c "$ATTACH_SCRIPT")
+    podman exec -it -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}" "$CONTAINER_NAME" "${cmd[@]}"
+}
+
 post_start() {
     podman exec -d "$CONTAINER_NAME" /usr/local/bin/swarmbox-podman-service >/dev/null 2>&1 || true
     register_podman_connection
@@ -571,7 +588,7 @@ if [ "$RESET" = "true" ]; then
 
     # Connect to the container (unless --no-shell is set)
     if [ "$NO_SHELL" = "false" ]; then
-        podman exec -it -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}" "$CONTAINER_NAME" bash
+        enter_shell
     fi
 else
     # Normal operation: check if container already exists
@@ -582,7 +599,7 @@ else
         podman start "$CONTAINER_NAME" 2>/dev/null || true
         post_start
         if [ "$NO_SHELL" = "false" ]; then
-            podman exec -it -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}" "$CONTAINER_NAME" bash
+            enter_shell
         fi
     else
         echo ""
@@ -622,7 +639,7 @@ else
 
         # Connect to the container (unless --no-shell is set)
         if [ "$NO_SHELL" = "false" ]; then
-            podman exec -it -e TERM="${TERM:-xterm-256color}" -e COLORTERM="${COLORTERM:-truecolor}" "$CONTAINER_NAME" bash
+            enter_shell
         fi
     fi
 fi
