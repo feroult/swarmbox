@@ -5,7 +5,8 @@
 SwarmBox is a containerized workspace where AI assistants can execute freely without breaking your host system. Built on Podman with an opinionated set of MCP servers and tools that work out of the box—no configuration needed.
 
 **Key Features:**
-- 🔒 **Safe Isolation**: AI agents run in a container, protecting your host machine
+- 🔒 **Safe Isolation**: AI agents run in a container, protecting your host machine (no host Podman socket is ever mounted)
+- 📦 **Nested Podman**: Agents can build and run their own containers inside SwarmBox, isolated from the host
 - ⚡ **YOLO Mode**: Auto-approve workflows (dangerously-skip-permissions) for uninterrupted AI execution
 - 🧰 **Batteries Included**: Chrome DevTools MCP, persistent memory service, and dev tools pre-configured
 - 🚀 **Seamless DevEx**: Single mount point (`.work/`) with host user permissions—no permission headaches
@@ -106,7 +107,7 @@ export ANTHROPIC_MODEL="claude-sonnet-4-5"
 - **AI Assistants**: Claude Code, Gemini CLI (both auto-approve)
 - **Memory Service**: mcp-memory-service with sqlite-vec
 - **Development Stack**: Node.js 20, Python 3.11 (venv), Poetry, uv
-- **Tools**: Git, Podman CLI, Chromium, jq, standard dev tools
+- **Tools**: Git, Podman (nested, rootless), Chromium, jq, standard dev tools
 - **MCP Framework**: Modular, extensible architecture
 
 ---
@@ -135,8 +136,38 @@ export ANTHROPIC_MODEL="claude-sonnet-4-5"
   --reset                            # Recreate container
   --no-shell                         # Don't attach (automation)
   --host-network                     # Use host networking
-  --with-unsafe-podman               # Mount host Podman socket ⚠️
 ```
+
+---
+
+## Containers inside SwarmBox (nested Podman)
+
+Agents have `sudo` and a full rootless Podman **inside** the container, so they can
+provision databases, APIs, etc. without any path to the host's Podman. There is no flag
+for it: it is always on.
+
+```bash
+podman run -d --name mongo --network dev -p 27017:27017 mongo:7   # inside SwarmBox
+```
+
+- **Reach them from the host**: `start.sh` registers a Podman connection named after the
+  container (default `swarmbox`) and starts the API service inside. From your host shell:
+  ```bash
+  podman -c swarmbox ps
+  podman -c swarmbox logs mongo
+  ```
+  (Linux/WSL2 only; unix sockets do not cross the macOS VM.)
+- **Publish ports to the host in two hops**: declare the port when starting
+  (`./start.sh --ports 27017`) and publish it inside (`-p 27017:27017`; do not bind it to
+  `127.0.0.1` inside, or the outer forwarder cannot reach it).
+- **Container-to-container**: create a network (`podman network create dev`) and use the
+  container name as hostname.
+- **Storage** lives in a named volume (`<container-name>-containers`), not in `.work/`
+  (its files are owned by sub-UIDs your user cannot delete). To wipe it:
+  `podman volume rm swarmbox-containers`.
+- **Limits**: nested containers share SwarmBox's hostname (`utsns=host`), and `start.sh`
+  needs `/dev/net/tun` and an unmasked `/proc` to create the container. Flags such as
+  `--ports` only apply when the container is created, so use `--reset` to change them.
 
 ---
 

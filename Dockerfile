@@ -46,21 +46,14 @@ RUN apt-get update && apt-get install -y \
     pandoc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Podman. Used either as a CLI for the host daemon (--with-unsafe-podman)
-# or as a nested rootless engine inside this container (--nested-podman).
+# Install Podman, used as a nested rootless engine inside this container
+# (no host socket is ever mounted).
 # netavark + aardvark-dns give nested networks DNS by container name (netavark needs
 # iptables for its firewall driver, but Debian only lists it as a hidden requirement);
 # uidmap provides newuidmap/newgidmap; libcap2-bin provides setcap.
 RUN apt-get update && \
     apt-get install -y podman netavark aardvark-dns iptables uidmap libcap2-bin && \
     rm -rf /var/lib/apt/lists/*
-
-# Create directory for Podman socket
-RUN mkdir -p /run/podman && chmod 755 /run/podman
-
-# NOTE: CONTAINER_HOST is intentionally NOT set here. start.sh sets it only when
-# --with-unsafe-podman mounts the host socket; otherwise podman must run locally
-# (nested mode) instead of trying to reach a socket that does not exist.
 
 # Install Poetry system-wide
 ENV POETRY_HOME=/opt/poetry
@@ -132,10 +125,7 @@ RUN if id -u ${USER_UID} >/dev/null 2>&1; then \
         echo "agent ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers; \
     fi
 
-# Add agent to root group for Podman socket access (socket is owned by root:root in rootful mode)
-RUN usermod -aG root agent
-
-# --- Nested rootless Podman (used with start.sh --nested-podman) ---
+# --- Nested rootless Podman (start.sh always runs the container with the flags it needs) ---
 # 1. newuidmap/newgidmap: a setuid-root binary does not work in an unprivileged
 #    container (write to uid_map fails with EPERM). File capabilities do; this is
 #    what the official quay.io/podman/stable image does too.
@@ -273,6 +263,8 @@ RUN if [ "${HOST_OS}" = "darwin" ]; then \
 # Copy banner and messaging scripts (at the end to optimize build cache)
 COPY container/scripts/banner.sh /usr/local/bin/banner.sh
 RUN mkdir -p /etc/swarmbox/scripts && chmod +x /usr/local/bin/banner.sh
+COPY container/scripts/podman-service.sh /usr/local/bin/swarmbox-podman-service
+RUN chmod 755 /usr/local/bin/swarmbox-podman-service
 COPY container/scripts/messages.sh /etc/swarmbox/scripts/messages.sh
 RUN chmod 644 /etc/swarmbox/scripts/messages.sh
 

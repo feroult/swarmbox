@@ -98,5 +98,8 @@ fi
 # 6. Mirror MCP servers into OpenCode (after memory init so the memory server is included)
 sync_opencode_mcp
 
+# 7. Nested Podman API service (host reaches it via `podman -c <container-name>`)
+/usr/local/bin/swarmbox-podman-service
+
 msg "Type 'claude' for Claude Code or 'gemini' for Gemini CLI"
 msg_blank
