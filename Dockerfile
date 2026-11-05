@@ -155,6 +155,10 @@ ENV NPM_CONFIG_CACHE=/opt/npm-cache
 # Set Anthropic model
 ENV ANTHROPIC_MODEL=sonnet
 
+# UTF-8 locale for every process. Without it bash/readline drops an accented character typed on its
+# own (a dead key + letter) instead of inserting it, and tmux/ttyd inherit the same environment.
+ENV LANG=C.UTF-8
+
 # Disable browser auto-opening for Vite and other dev servers
 ENV BROWSER=none
 
