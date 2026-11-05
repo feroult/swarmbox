@@ -189,7 +189,13 @@ sessions survive closing the tab) on `http://127.0.0.1:7681` of your machine. Us
 No rebuild: run `pkill ttyd; swarmbox-web-terminal` inside to apply (tmux sessions survive). The font is
 the *browser's*, so it must be installed on the machine that opens the page. Your `~/.tmux.conf`
 (copy it to `.work/.tmux.conf`) is read after the defaults in `/etc/tmux.conf`. Ctrl+T/N/W and
-Ctrl+Shift+T belong to the browser, so use the tmux prefix (or Alt-based bindings) for new windows.
+Ctrl+Shift+T belong to the browser (and xterm.js sends nothing, or only the plain control character, for most
+other Ctrl combinations), so the optional `container/tmux-browser-keys.conf` binds **Alt** instead, without the prefix:
+`Alt+N` new window, `Alt+W` close (asks), `Alt+H`/`Alt+L` previous/next, `Alt+1..9`/`Alt+0` jump/last,
+`Alt+Shift+H`/`Alt+Shift+L` move, `Alt+R` rename, `Alt+G` list; panes: `Alt+\` and `Alt+-` split, `Alt+arrows` focus,
+`Alt+Shift+arrows` resize, `Alt+Z` zoom, `Alt+X` close (asks); and a green **+** button in the status bar creates a
+window. Add `source-file /path/to/tmux-browser-keys.conf` to your `~/.tmux.conf` (use the left Alt: the right one is
+AltGr on an international layout). It needs `set -g base-index 1` so `Alt+1..9` match the status bar.
 The image sets `LANG=C.UTF-8` (and `swarmbox-web-terminal` enforces a UTF-8 locale): without one, bash
 drops an accented character typed on its own (a dead key + letter) instead of inserting it.
 
