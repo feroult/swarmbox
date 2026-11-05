@@ -85,7 +85,8 @@ RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dea
     rm -rf /var/lib/apt/lists/*
 
 # Create a system-wide Python virtual environment
-RUN python3 -m venv /opt/flow && \
+# --prompt: the shell prompt shows (swarmbox), not the directory name (flow); the path stays /opt/flow
+RUN python3 -m venv --prompt swarmbox /opt/flow && \
     /opt/flow/bin/pip install --upgrade pip
 
 # Clone and install mcp-memory-service from fork with fix
@@ -192,8 +193,8 @@ RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
     echo "alias fgrep='fgrep --color=auto'" >> /etc/bash.bashrc && \
     echo "alias egrep='egrep --color=auto'" >> /etc/bash.bashrc && \
     echo "" >> /etc/bash.bashrc && \
-    echo "# Alias to run claude CLI and dangerously skip permissions (hidden, backward compatibility)" >> /etc/bash.bashrc && \
-    echo "alias yolo='claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp-servers.json'" >> /etc/bash.bashrc && \
+    echo "# yolo is just another name for claude (the claude alias below carries the flags; repeating them passed every option twice)" >> /etc/bash.bashrc && \
+    echo "alias yolo='claude'" >> /etc/bash.bashrc && \
     echo "" >> /etc/bash.bashrc && \
     echo "# Main claude alias with auto-approve (same as yolo)" >> /etc/bash.bashrc && \
     echo "alias claude='claude --dangerously-skip-permissions --mcp-config ~/.claude/mcp-servers.json'" >> /etc/bash.bashrc && \
