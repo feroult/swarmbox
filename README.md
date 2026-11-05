@@ -184,6 +184,15 @@ podman run -d --name mongo --network dev -p 27017:27017 mongo:7   # inside Swarm
 sessions survive closing the tab) on `http://127.0.0.1:7681` of your machine. Use
 `--web 7682` for a second container.
 
+**Font, size, theme**: put `key=value` lines (xterm.js options) in `.work/.swarmbox/web-terminal.conf`
+(`~/.swarmbox/web-terminal.conf` inside), e.g. `fontFamily='JetBrainsMono Nerd Font', Consolas, monospace`.
+No rebuild: run `pkill ttyd; swarmbox-web-terminal` inside to apply (tmux sessions survive). The font is
+the *browser's*, so it must be installed on the machine that opens the page. Your `~/.tmux.conf`
+(copy it to `.work/.tmux.conf`) is read after the defaults in `/etc/tmux.conf`. Ctrl+T/N/W and
+Ctrl+Shift+T belong to the browser, so use the tmux prefix (or Alt-based bindings) for new windows.
+The image sets `LANG=C.UTF-8` (and `swarmbox-web-terminal` enforces a UTF-8 locale): without one, bash
+drops an accented character typed on its own (a dead key + letter) instead of inserting it.
+
 **That local port has no login.** It is published on `127.0.0.1` only (and ttyd refuses
 cross-origin websockets), but anything running on your machine can open it, and the shell
 has `sudo`. To reach it from elsewhere, put Cloudflare Access in front of it. Do not use
