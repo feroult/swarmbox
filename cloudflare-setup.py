@@ -215,7 +215,8 @@ def ask(label, default=None):
 
 
 # --------------------------------------------------------------------------- steps
-def step_zone(api, domain):
+def find_zone(api, domain):
+    """Return (zone_id, account_id) for a Cloudflare zone, or explain what to use instead. Prints nothing."""
     zones = api.call("GET", "/zones", params={"name": domain})
     if not zones:
         labels = domain.split(".")
@@ -228,9 +229,13 @@ def step_zone(api, domain):
                     % (domain, parent, parent, parent, domain, parent, domain))
         die("domain '%s' was not found in this account/token. Use the zone name (e.g. example.com), "
             "make sure it is added to Cloudflare, and that the token's zone resources include it." % domain)
-    zone = zones[0]
+    return zones[0]["id"], zones[0]["account"]["id"]
+
+
+def step_zone(api, domain):
+    zone, account = find_zone(api, domain)
     ok("domain %s" % domain)
-    return zone["id"], zone["account"]["id"]
+    return zone, account
 
 
 def step_org(api, account):
@@ -560,7 +565,10 @@ def cmd_apply(args):
         say("\nDone. Start the terminal and open the URL:")
         var = ("SWARMBOX_WEB_HOSTNAME=%s" % host) if args.hostname else ("SWARMBOX_WEB_DOMAIN=%s" % domain)
         say("  %s ./start.sh --reset --web %d" % (var, args.port))
-        say("  https://%s   (log in with the e-mail code)\n" % host)
+        say("  https://%s   (log in with the e-mail code)" % host)
+        say("\nTo have `./start.sh --web` bring the tunnel up from now on without any API token, get the tunnel's "
+            "own token now (this still needs the API token), export it on the host, and then delete the API token:\n"
+            '  export SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN="$(./%s token)"\n' % os.path.basename(sys.argv[0]))
     return exit_code
 
 
@@ -618,6 +626,30 @@ def resolve_settings_for_remove(args):
     return domain.strip().lower().rstrip("."), [], saved
 
 
+def cmd_token(args):
+    """Print ONLY the tunnel's own token on stdout (everything else goes to stderr), for
+    export SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN="$(./cloudflare-setup.py token)"."""
+    domain, _emails, _ = resolve_settings_for_remove(args)
+    api = Api(get_token())
+    try:
+        _zone, account = find_zone(api, domain)
+        tunnels = [t for t in api.call("GET", "/accounts/%s/cfd_tunnel" % account,
+                                       params={"name": args.tunnel, "is_deleted": "false"}) or []
+                   if t.get("name") == args.tunnel]
+        if not tunnels:
+            die("tunnel '%s' does not exist in this account yet: run this script once without a command "
+                "to create it." % args.tunnel)
+        token = api.call("GET", "/accounts/%s/cfd_tunnel/%s/token" % (account, tunnels[0]["id"]))
+    except CFError as e:
+        die(explain(e, api.token))
+    if not isinstance(token, str) or not token:
+        die("could not fetch the tunnel token")
+    print(token)
+    print("(That is the tunnel's own token: it can only connect a connector to this tunnel, it cannot change "
+          "anything in your Cloudflare account. The API token you just used can be deleted now.)", file=sys.stderr)
+    return 0
+
+
 def build_parser():
     p = argparse.ArgumentParser(
         prog=os.path.basename(sys.argv[0]),
@@ -628,10 +660,11 @@ def build_parser():
                "  %(prog)s --domain example.com --email you@example.com\n"
                "  %(prog)s --dry-run                # show what would change (read-only)\n"
                "  %(prog)s status                   # read-only report + login check\n"
+               "  %(prog)s token                    # print ONLY the tunnel token (for SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN)\n"
                "  %(prog)s remove --name swarmbox --yes",
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", nargs="?", default="apply", choices=["apply", "status", "remove"],
-                   help="apply (default), status (read-only), remove")
+    p.add_argument("command", nargs="?", default="apply", choices=["apply", "status", "remove", "token"],
+                   help="apply (default), status (read-only), remove, token (print only the tunnel token)")
     p.add_argument("--domain", help="the Cloudflare zone, e.g. example.com, not a subdomain (env SWARMBOX_WEB_DOMAIN; remembered)")
     p.add_argument("--email", help="comma-separated e-mails allowed to log in (env SWARMBOX_WEB_EMAIL; remembered)")
     p.add_argument("--name", default="swarmbox", help="container name; hostname is <name>.<domain> (default: swarmbox)")
@@ -655,6 +688,8 @@ def main(argv=None):
         die("--port must be 1-65535")
     if args.command == "remove":
         return cmd_remove(args)
+    if args.command == "token":
+        return cmd_token(args)
     return cmd_apply(args)
 
 

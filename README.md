@@ -264,7 +264,37 @@ serve a specific name such as `tty.example.com`, add `--hostname tty.example.com
 one level below the zone: Cloudflare's free certificate does not cover `a.b.example.com`. To run `cloudflared` yourself (e.g. as a
 systemd service), use `--no-connector --print-token`.
 
-Tests (a fake Cloudflare API, no network): `python3 tests/test_cloudflare_setup.py`.
+**Two different credentials.** The *API token* above is powerful and only needed to provision: delete it
+once the script finishes. The connector needs only the tunnel's own, much narrower *tunnel token*.
+
+**Bring the tunnel up with `--web`, using only the tunnel token.** Put the tunnel's token in an environment
+variable **on the host** (the Cloudflare dashboard shows it: Networking -> Tunnels -> your tunnel; in older
+UIs Zero Trust -> Networks -> Tunnels. Or
+`./cloudflare-setup.py token`, which prints **only** that token, so it can be used in `$(...)`; it still needs the
+API token once, so run it *before* deleting the API token):
+
+```bash
+export SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN='...'     # e.g. in ~/.zshrc or ~/.bashrc
+# or: export SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN="$(./cloudflare-setup.py token --domain example.com)"
+./start.sh --web
+```
+
+Every `./start.sh --web` then makes sure the tunnel is up, with no API token:
+a missing `swarmbox-cloudflared` container is **created**, a stopped one is **started**, and one holding a
+different token (after you rotate it) is **recreated**. Without the variable, an existing connector is just
+started if it is stopped. The connector is a Podman container on your host (not inside SwarmBox); the token
+goes to Podman through the environment (never a command line), is never printed, and is **never passed to
+SwarmBox**: `--env-keys SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN` is refused, because the token lets whoever holds
+it join your tunnel and receive requests that already passed the login. `SWARMBOX_CLOUDFLARED_IMAGE`
+overrides the `cloudflared` image.
+
+**Rotating the tunnel token.** On the tunnel's page in the dashboard, the refresh-token button invalidates the
+current token and generates a new one (every connector must then use the new token). Put the new value in
+`SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN` and run `./start.sh --web`: it notices that the connector holds a different
+token and recreates it. Rotate if the token may have been exposed, e.g. if it ever ran inside SwarmBox.
+
+Tests (a fake Cloudflare API and a fake podman, no network):
+`python3 tests/test_cloudflare_setup.py`, `python3 tests/test_start_web_connector.py`.
 
 ---
 
