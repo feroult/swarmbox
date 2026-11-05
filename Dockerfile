@@ -285,6 +285,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux && \
     install -m 755 "/tmp/$T" /usr/local/bin/ttyd && \
     rm -f "/tmp/$T" /tmp/ttyd.SHA256SUMS
 COPY container/tmux.conf /etc/tmux.conf
+# ttyd's own page (kept as is) plus the clipboard bridge that swarmbox-web-terminal injects into it
+COPY container/ttyd-clipboard.js /usr/local/share/swarmbox/ttyd-clipboard.js
+RUN chmod 644 /usr/local/share/swarmbox/ttyd-clipboard.js && \
+    (ttyd -p 17681 -i lo true >/dev/null 2>&1 & TTYD_PID=$!; \
+     for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do \
+         curl -fsS -o /usr/local/share/swarmbox/ttyd-stock.html http://127.0.0.1:17681/ && break; sleep 0.3; \
+     done; kill $TTYD_PID) && \
+    test -s /usr/local/share/swarmbox/ttyd-stock.html && grep -q '</body>' /usr/local/share/swarmbox/ttyd-stock.html
 COPY container/scripts/web-terminal.sh /usr/local/bin/swarmbox-web-terminal
 RUN chmod 755 /usr/local/bin/swarmbox-web-terminal && chmod 644 /etc/tmux.conf
 
