@@ -487,6 +487,44 @@ check_existing_container() {
     fi
 }
 
+# Time zone. The image has none of its own (it runs in UTC), so the container's clock (the prompt's time, date,
+# logs) would be hours off from yours. By default the container follows this machine's zone (--tz=local, which
+# needs /etc/localtime). SWARMBOX_TZ=<Area/City> picks another zone and SWARMBOX_TZ=off keeps the image's UTC.
+# (With a podman machine on macOS "local" is the VM's zone: set SWARMBOX_TZ there.)
+TZ_FLAG=""
+case "${SWARMBOX_TZ:-}" in
+    "")
+        [ -e "${SWARMBOX_LOCALTIME_FILE:-/etc/localtime}" ] && TZ_FLAG="--tz=local"
+        ;;
+    off|OFF|none|NONE)
+        ;;
+    *)
+        if [[ "$SWARMBOX_TZ" =~ ^[A-Za-z0-9_+/-]+$ ]]; then
+            TZ_FLAG="--tz=$SWARMBOX_TZ"
+        else
+            msg_warn "Ignoring SWARMBOX_TZ: '$SWARMBOX_TZ' is not a time zone name (e.g. America/Sao_Paulo)"
+        fi
+        ;;
+esac
+
+# PID 1 of the container is `tail -f /dev/null`, which never reaps children that exit (a browser launched in
+# a test, nested containers, ...): they pile up as zombies. --init puts a tiny init (catatonit) in front.
+# SWARMBOX_INIT=1 forces it and SWARMBOX_INIT=0 turns it off; by default it is used when this podman can run
+# it (a throwaway `podman run --init` of the image answers that, without assuming where catatonit lives).
+# Only needed when a container is created: an existing one keeps what it was created with (use --reset).
+INIT_FLAG=""
+detect_init() {
+    case "${SWARMBOX_INIT:-auto}" in
+        0|false|no) return 0 ;;
+        1|true|yes) INIT_FLAG="--init"; return 0 ;;
+    esac
+    if podman run --rm --init "$IMAGE_NAME" true >/dev/null 2>&1; then
+        INIT_FLAG="--init"
+    else
+        msg_detail "podman cannot run --init here (is catatonit installed?): exited processes will not be reaped"
+    fi
+}
+
 # Handle reset option
 if [ "$RESET" = "true" ]; then
     if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
@@ -497,6 +535,7 @@ if [ "$RESET" = "true" ]; then
     # After reset, force creation of new container
     echo ""
 
+    detect_init
     # Create and start container
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS - run with security-opt and userns options
@@ -505,6 +544,8 @@ if [ "$RESET" = "true" ]; then
             --hostname "$CUSTOM_HOSTNAME" \
             -v "$WORK_DIR:/home/agent" \
             $NESTED_PODMAN_OPTS \
+            $INIT_FLAG \
+            $TZ_FLAG \
             $CONTAINER_ENV_VARS \
             $NETWORK_FLAG \
             $CONTAINER_PORTS \
@@ -517,6 +558,8 @@ if [ "$RESET" = "true" ]; then
             --hostname "$CUSTOM_HOSTNAME" \
             -v "$WORK_DIR:/home/agent" \
             $NESTED_PODMAN_OPTS \
+            $INIT_FLAG \
+            $TZ_FLAG \
             $CONTAINER_ENV_VARS \
             $NETWORK_FLAG \
             $CONTAINER_PORTS \
@@ -543,6 +586,7 @@ else
         fi
     else
         echo ""
+        detect_init
         # Create and start container
         if [[ "$OSTYPE" == "darwin"* ]]; then
             # macOS - run with security-opt and userns options
@@ -551,6 +595,8 @@ else
                 --hostname "$CUSTOM_HOSTNAME" \
                 -v "$WORK_DIR:/home/agent" \
                 $NESTED_PODMAN_OPTS \
+                $INIT_FLAG \
+                $TZ_FLAG \
                 $CONTAINER_ENV_VARS \
                 $NETWORK_FLAG \
                 $CONTAINER_PORTS \
@@ -563,6 +609,8 @@ else
                 --hostname "$CUSTOM_HOSTNAME" \
                 -v "$WORK_DIR:/home/agent" \
                 $NESTED_PODMAN_OPTS \
+                $INIT_FLAG \
+                $TZ_FLAG \
                 $CONTAINER_ENV_VARS \
                 $NETWORK_FLAG \
                 $CONTAINER_PORTS \

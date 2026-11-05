@@ -140,6 +140,16 @@ export ANTHROPIC_MODEL="claude-sonnet-4-5"
   --web [PORT]                       # Web terminal (ttyd + tmux) on 127.0.0.1:PORT (default 7681)
 ```
 
+Environment: `SWARMBOX_INIT=0` turns off, and `SWARMBOX_INIT=1` forces, the `--init` that `start.sh` gives new
+containers (a tiny init as PID 1 that reaps exited processes, so they do not pile up as zombies). By default it
+is used when your podman can run it. It only applies when a container is created, so use `--reset` to get it.
+
+Time zone: the image itself runs in UTC, so a new container follows your machine's zone (`--tz=local`, which needs
+`/etc/localtime`): the clock in the prompt and `date` match yours. `SWARMBOX_TZ=America/Sao_Paulo` picks another zone
+and `SWARMBOX_TZ=off` keeps UTC (with a podman machine on macOS "local" is the VM's zone, so set `SWARMBOX_TZ`).
+Like `--init`, it applies when a container is created. To fix a running container without recreating it:
+`sudo ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime`.
+
 ---
 
 ## Containers inside SwarmBox (nested Podman)
