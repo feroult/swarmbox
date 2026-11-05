@@ -24,7 +24,7 @@ STUB = """#!/bin/sh
 echo "$*" >> "$STUB_LOG"
 case "$1" in
   images) echo img1 ;;
-  ps) ;;
+  ps) [ -n "$STUB_EXISTS" ] && echo cid1 ;;
   run)
     case "$*" in
       *--name\\ swarmbox-cloudflared*)
@@ -40,6 +40,8 @@ case "$1" in
           *Config.Env*) [ -n "$STUB_CONNECTOR_TOKEN" ] && echo "TUNNEL_TOKEN=$STUB_CONNECTOR_TOKEN" ;;
           *) echo "$STUB_CONNECTOR" ;;
         esac ;;
+      *Config.Env*) printf '%s\\n' "$STUB_CT_ENV" | tr ',' '\\n' ;;
+      *PortBindings*) echo "$STUB_CT_PORT" ;;
       *) exit 1 ;;
     esac ;;
   start) [ -n "$STUB_START_FAILS" ] && exit 1 ;;
@@ -75,9 +77,12 @@ class StartWeb(unittest.TestCase):
         self.port = self.listener.getsockname()[1]
 
     def start(self, *args, connector="", connector_token="", token="", start_fails=False, run_fails=False,
-              extra_env=None, expect_ok=True):
+              extra_env=None, expect_ok=True, existing=False, ct_env="", ct_port=""):
         env = {"PATH": self.bin + os.pathsep + os.environ["PATH"], "HOME": self.work,
-               "STUB_LOG": self.log, "STUB_CONNECTOR": connector, "STUB_CONNECTOR_TOKEN": connector_token}
+               "STUB_LOG": self.log, "STUB_CONNECTOR": connector, "STUB_CONNECTOR_TOKEN": connector_token,
+               "STUB_CT_ENV": ct_env, "STUB_CT_PORT": ct_port}
+        if existing:
+            env["STUB_EXISTS"] = "1"
         if token:
             env["SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN"] = token
         if start_fails:
@@ -187,6 +192,50 @@ class StartWeb(unittest.TestCase):
         self.assertIn("SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN", out)
         self.assertIn("cloudflare-setup.py", out)
         self.assertEqual(self.connector_runs(calls), [])
+
+    # ---- a container that already exists (the everyday case after the first --reset) ----------------
+    def existing(self, *args, **kw):
+        kw.setdefault("ct_env", "SWARMBOX_WEB=1,PATH=/usr/bin")
+        kw.setdefault("ct_port", str(self.port))
+        return self.start(*args, existing=True, **kw)
+
+    def test_existing_web_container_accepts_web_and_brings_up_the_tunnel(self):
+        out, calls, envs, _ = self.existing(*self.web(), token=TOKEN)
+        self.assertNotIn("would be ignored", out)
+        self.assertIn("start swarmbox", calls)
+        self.assertEqual(len(self.connector_runs(calls)), 1)
+        self.assertEqual(envs, ["TUNNEL_TOKEN=" + TOKEN])
+        self.assertIn("Web terminal:", out)
+
+    def test_existing_web_container_brings_up_the_tunnel_even_without_the_flag(self):
+        # reattaching with a plain ./start.sh after a reboot must not leave the terminal unreachable
+        out, calls, envs, _ = self.existing(token=TOKEN)
+        self.assertEqual(len(self.connector_runs(calls)), 1)
+        self.assertEqual(envs, ["TUNNEL_TOKEN=" + TOKEN])
+        self.assertIn("Web terminal:", out)
+
+    def test_existing_web_container_starts_a_stopped_connector_without_a_token(self):
+        _, calls, _, _ = self.existing(connector="exited")
+        self.assertIn("start swarmbox-cloudflared", calls)
+
+    def test_the_port_the_container_really_publishes_wins_over_the_flag(self):
+        out, calls, _, _ = self.existing("--web", "1", token=TOKEN)
+        self.assertIn("already publishes the web terminal on port %d" % self.port, out)
+        self.assertIn("Web terminal: http://127.0.0.1:%d" % self.port, out)
+        self.assertEqual(len(self.connector_runs(calls)), 1)
+
+    def test_an_existing_container_without_the_web_terminal_still_refuses_web(self):
+        out, calls, _, code = self.existing(*self.web(), ct_env="PATH=/usr/bin", ct_port="", token=TOKEN, expect_ok=False)
+        self.assertNotEqual(code, 0)
+        self.assertIn("would be ignored", out)
+        self.assertIn("--web", out)
+        self.assertEqual(self.connector_runs(calls), [])
+        self.assertNotIn("start swarmbox", calls)
+
+    def test_an_existing_container_without_the_web_terminal_never_touches_the_connector(self):
+        out, calls, _, _ = self.existing(ct_env="PATH=/usr/bin", ct_port="", token=TOKEN, connector="exited")
+        self.assertFalse([c for c in calls if "swarmbox-cloudflared" in c], calls)
+        self.assertNotIn("Cloudflare connector", out)
 
     # ---- scope and safety ----------------------------------------------------------------------------
     def test_without_web_the_connector_is_not_even_looked_at(self):

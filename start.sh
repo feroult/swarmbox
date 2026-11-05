@@ -29,6 +29,7 @@ BROWSER_URL=""
 CLASP=false
 WEB=false
 WEB_PORT=7681
+WEB_PORT_GIVEN=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -87,6 +88,7 @@ while [[ $# -gt 0 ]]; do
             WEB=true
             if [[ "$2" =~ ^[0-9]+$ ]]; then
                 WEB_PORT="$2"
+                WEB_PORT_GIVEN=true
                 shift 2
             else
                 shift
@@ -425,6 +427,33 @@ post_start() {
     fi
 }
 
+# Was the existing container created with --web? (it carries SWARMBOX_WEB=1 and publishes 7681)
+container_has_web() {
+    podman inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONTAINER_NAME" 2>/dev/null | grep -qx 'SWARMBOX_WEB=1'
+}
+
+# Host port the existing container publishes the web terminal on (empty if none)
+container_web_port() {
+    podman inspect -f '{{with index .HostConfig.PortBindings "7681/tcp"}}{{(index . 0).HostPort}}{{end}}' \
+        "$CONTAINER_NAME" 2>/dev/null
+}
+
+# For an existing container that has the web terminal, --web is not an "ignored creation option": it is
+# what the container already is. Treat the container as a web one even without the flag, so reattaching
+# also makes sure the terminal and the Cloudflare tunnel are up (e.g. after the machine restarted), and
+# use the port it really publishes.
+adopt_existing_web() {
+    container_has_web || return 0
+    local port
+    port=$(container_web_port)
+    if [ "$WEB_PORT_GIVEN" = "true" ] && [ -n "$port" ] && [ "$port" != "$WEB_PORT" ]; then
+        msg_warn "This container already publishes the web terminal on port $port (not $WEB_PORT); using $port."
+        msg_warn "To change it, re-run with --reset."
+    fi
+    [ -n "$port" ] && WEB_PORT="$port"
+    WEB=true
+}
+
 # Reattaching to an existing container applies none of the creation-time options, and the
 # container may predate a rebuild or mount a different workspace. Say so instead of
 # silently doing something other than what was asked.
@@ -438,7 +467,7 @@ check_existing_container() {
     [ -n "$ENV_KEYS" ] && ignored="$ignored --env-keys"
     [ -n "$BROWSER_URL" ] && ignored="$ignored --remote-browser"
     [ "$CLASP" = "true" ] && ignored="$ignored --clasp"
-    [ "$WEB" = "true" ] && ignored="$ignored --web"
+    [ "$WEB" = "true" ] && ! container_has_web && ignored="$ignored --web"
     if [ -n "$ignored" ]; then
         msg_warn "Container '$CONTAINER_NAME' already exists, so these options would be ignored:$ignored"
         msg_warn "They only apply when the container is created. Re-run with --reset to apply them"
@@ -505,6 +534,7 @@ else
     # Normal operation: check if container already exists
     if [ "$(podman ps -a -q -f name="$CONTAINER_NAME")" ]; then
         check_existing_container
+        adopt_existing_web
         echo ""
         podman start "$CONTAINER_NAME" 2>/dev/null || true
         post_start
