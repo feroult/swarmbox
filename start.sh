@@ -411,16 +411,9 @@ start_web_terminal() {
     msg_warn "Web terminal did not start (is the image up to date? run ./build.sh and --reset)"
 }
 
-# What a terminal opened by start.sh runs inside the container. By default it is a new window of the
-# tmux session "main" -- the one the web terminal shows -- through a grouped session, so every tab of your
-# host terminal is also a tab in the browser (and the browser's tabs can be reached from here), while each
-# side keeps choosing its own current window. The grouped session goes away when you detach.
-# The grouped session has its status bar off (a session option, so the browser keeps its bar): no tabs-in-tabs
-# inside your own terminal. SWARMBOX_ATTACH=shell gives the plain bash it used to be.
-ATTACH_SCRIPT='command -v tmux >/dev/null 2>&1 || exec bash
-nw="new-window"
-tmux has-session -t main 2>/dev/null || { tmux new-session -d -s main; nw="refresh-client"; }
-exec tmux new-session -t main \; set-option destroy-unattached on \; set-option status off \; $nw'
+# What a terminal opened by start.sh runs inside the container: lib/attach-session.sh (see there).
+# SWARMBOX_ATTACH=shell gives the plain bash it used to be.
+ATTACH_SCRIPT="$(cat "$SCRIPT_DIR/lib/attach-session.sh")"
 
 enter_shell() {
     local cmd=(bash)
