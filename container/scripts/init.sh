@@ -70,22 +70,25 @@ if [ ! -L "$HOME/.claude/settings.json" ]; then
     ln -sf "$SWARMBOX_DIR/settings.json" "$HOME/.claude/settings.json"
 fi
 
-# 3. Build base MCP config (chrome-devtools only)
+# 3. SSH key for git (created once, kept in the workspace; `swarmbox-pubkey` shows it)
+/usr/local/bin/swarmbox-pubkey --ensure
+
+# 4. Build base MCP config (chrome-devtools only)
 build_base_mcp_config
 msg_detail "MCP servers configured"
 
-# 3b. Render OpenCode config (local LLM by default)
+# 4b. Render OpenCode config (local LLM by default)
 build_opencode_config
 msg_detail "OpenCode local LLM: $(jq -r '.model // "disabled"' "$SWARMBOX_DIR/opencode-local.json")"
 
-# 4. Mirror MCP servers into OpenCode
+# 5. Mirror MCP servers into OpenCode
 sync_opencode_mcp
 msg_blank
 
-# 5. Nested Podman API service (host reaches it via `podman -c <container-name>`)
+# 6. Nested Podman API service (host reaches it via `podman -c <container-name>`)
 /usr/local/bin/swarmbox-podman-service
 
-# 6. Web terminal (only when the container was created with --web)
+# 7. Web terminal (only when the container was created with --web)
 /usr/local/bin/swarmbox-web-terminal
 
 msg "Type 'claude' for Claude Code or 'gemini' for Gemini CLI"

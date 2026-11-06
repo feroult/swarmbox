@@ -296,6 +296,10 @@ COPY container/scripts/podman-service.sh /usr/local/bin/swarmbox-podman-service
 RUN chmod 755 /usr/local/bin/swarmbox-podman-service
 COPY container/scripts/messages.sh /etc/swarmbox/scripts/messages.sh
 RUN chmod 644 /etc/swarmbox/scripts/messages.sh
+# Git over SSH: the key is created on first start (init.sh) in ~/.ssh, i.e. in the workspace
+COPY container/scripts/ssh-key.sh /usr/local/bin/swarmbox-pubkey
+COPY container/config/ssh-swarmbox.conf /etc/ssh/ssh_config.d/swarmbox.conf
+RUN chmod 755 /usr/local/bin/swarmbox-pubkey && chmod 644 /etc/ssh/ssh_config.d/swarmbox.conf
 
 # Starship prompt for interactive bash: a pinned release with its published SHA-256 verified (static musl
 # binaries for amd64 and arm64), the SwarmBox config (its own cool palette), and a script that turns it on.
