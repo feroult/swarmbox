@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for container/tmux-browser-keys.conf against a real tmux server and a real tmux client.
+"""Tests for container/config/tmux-browser-keys.conf against a real tmux server and a real tmux client.
 
 Run:  python3 tests/test_tmux_browser_keys.py
 To check YOUR config instead of the file alone:  TMUX_CONF=~/.tmux.conf python3 tests/test_tmux_browser_keys.py
-The DefaultConfig class repeats everything with container/tmux.conf alone (the SwarmBox default config).
+The DefaultConfig class repeats everything with container/config/tmux.conf alone (the SwarmBox default config).
 
 A private tmux server (own socket) is started and a client is attached through a pty. The keys are sent
 as the bytes xterm.js produces (Alt+letter = ESC+letter, Alt+arrows = ESC[1;3x, ...) and a click as an
@@ -22,7 +22,7 @@ import unittest
 
 from helpers import ROOT
 
-KEYS = os.path.join(ROOT, "container", "tmux-browser-keys.conf")
+KEYS = os.path.join(ROOT, "container", "config", "tmux-browser-keys.conf")
 ROWS, COLS = 20, 100
 
 
@@ -163,11 +163,11 @@ class BrowserKeys(unittest.TestCase):
             self.assertEqual(len(self.windows()), before, "column %d must not create a window" % col)
 
 
-DEFAULT_CONF = os.path.abspath(os.path.join(ROOT, "container", "tmux.conf"))
+DEFAULT_CONF = os.path.abspath(os.path.join(ROOT, "container", "config", "tmux.conf"))
 
 
 class DefaultConfig(BrowserKeys):
-    """The same behaviour from container/tmux.conf alone: nothing from the user's workspace is needed."""
+    """The same behaviour from container/config/tmux.conf alone: nothing from the user's workspace is needed."""
     default_conf = DEFAULT_CONF
     honour_env = False
 

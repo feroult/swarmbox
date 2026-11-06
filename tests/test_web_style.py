@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Browser tests for the look of the web terminal (container/ttyd-style.css): the padding around the terminal
+"""Browser tests for the look of the web terminal (container/web/ttyd-style.css): the padding around the terminal
 and the minimal scrollbar. Same setup as test_clipboard_bridge.py: the real web-terminal.sh builds the page, a
 real ttyd serves it, headless Chromium measures it.
 

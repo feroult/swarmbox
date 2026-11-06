@@ -286,18 +286,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends tmux && \
     install -m 755 "/tmp/$T" /usr/local/bin/ttyd && \
     rm -f "/tmp/$T" /tmp/ttyd.SHA256SUMS
 # The default tmux config (/etc/tmux.conf) loads tmux-browser-keys.conf from its own directory
-COPY container/tmux.conf /etc/tmux.conf
-COPY container/tmux-browser-keys.conf /etc/tmux-browser-keys.conf
+COPY container/config/tmux.conf /etc/tmux.conf
+COPY container/config/tmux-browser-keys.conf /etc/tmux-browser-keys.conf
 # ttyd's own page (kept as is) plus the clipboard bridge that swarmbox-web-terminal injects into it
-COPY container/ttyd-clipboard.js /usr/local/share/swarmbox/ttyd-clipboard.js
-COPY container/ttyd-style.css /usr/local/share/swarmbox/ttyd-style.css
+COPY container/web/ttyd-clipboard.js /usr/local/share/swarmbox/ttyd-clipboard.js
+COPY container/web/ttyd-style.css /usr/local/share/swarmbox/ttyd-style.css
 RUN chmod 644 /usr/local/share/swarmbox/ttyd-clipboard.js /usr/local/share/swarmbox/ttyd-style.css && \
     (ttyd -p 17681 -i lo true >/dev/null 2>&1 & TTYD_PID=$!; \
      for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do \
          curl -fsS -o /usr/local/share/swarmbox/ttyd-stock.html http://127.0.0.1:17681/ && break; sleep 0.3; \
      done; kill $TTYD_PID) && \
     test -s /usr/local/share/swarmbox/ttyd-stock.html && grep -q '</body>' /usr/local/share/swarmbox/ttyd-stock.html
-COPY container/scripts/web-terminal.sh /usr/local/bin/swarmbox-web-terminal
+COPY container/web/web-terminal.sh /usr/local/bin/swarmbox-web-terminal
 RUN chmod 755 /usr/local/bin/swarmbox-web-terminal && chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf
 
 # Copy banner and messaging scripts (at the end to optimize build cache)
@@ -322,7 +322,7 @@ RUN case "$(dpkg --print-architecture)" in \
     echo "$(tr -d '[:space:]' < "$T.sha256")  $T" | sha256sum -c - && \
     tar -xzf "$T" -C /usr/local/bin starship && chmod 755 /usr/local/bin/starship && \
     rm -f "/tmp/$T" "/tmp/$T.sha256"
-COPY container/starship.toml /etc/swarmbox/starship.toml
+COPY container/config/starship.toml /etc/swarmbox/starship.toml
 COPY container/scripts/starship-init.sh /etc/swarmbox/scripts/starship-init.sh
 RUN chmod 644 /etc/swarmbox/starship.toml /etc/swarmbox/scripts/starship-init.sh && \
     echo "" >> /etc/bash.bashrc && \
