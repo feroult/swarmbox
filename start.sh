@@ -415,12 +415,12 @@ start_web_terminal() {
 # tmux session "main" -- the one the web terminal shows -- through a grouped session, so every tab of your
 # host terminal is also a tab in the browser (and the browser's tabs can be reached from here), while each
 # side keeps choosing its own current window. The grouped session goes away when you detach.
-# SWARMBOX_ATTACH=shell gives the plain bash it used to be.
+# The grouped session has its status bar off (a session option, so the browser keeps its bar): no tabs-in-tabs
+# inside your own terminal. SWARMBOX_ATTACH=shell gives the plain bash it used to be.
 ATTACH_SCRIPT='command -v tmux >/dev/null 2>&1 || exec bash
-if tmux has-session -t main 2>/dev/null; then
-    exec tmux new-session -t main \; set-option destroy-unattached on \; new-window
-fi
-exec tmux new-session -s main'
+nw="new-window"
+tmux has-session -t main 2>/dev/null || { tmux new-session -d -s main; nw="refresh-client"; }
+exec tmux new-session -t main \; set-option destroy-unattached on \; set-option status off \; $nw'
 
 enter_shell() {
     local cmd=(bash)
