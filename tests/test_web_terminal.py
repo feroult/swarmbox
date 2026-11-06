@@ -13,8 +13,9 @@ import tempfile
 import time
 import unittest
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SCRIPT = os.path.join(HERE, "..", "container", "scripts", "web-terminal.sh")
+from helpers import ROOT
+
+SCRIPT = os.path.join(ROOT, "container", "scripts", "web-terminal.sh")
 SHIM = """#!/bin/sh
 for a in "$@"; do printf '%s\\n' "$a"; done > "$OUT"
 env | grep -E '^(LANG|LC_ALL)=' > "$OUT.env"

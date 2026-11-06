@@ -16,8 +16,8 @@ import tempfile
 import tomllib
 import unittest
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.join(HERE, "..")
+from helpers import ROOT
+
 CONFIG = os.path.join(ROOT, "container", "starship.toml")
 INIT = os.path.join(ROOT, "container", "scripts", "starship-init.sh")
 DOCKERFILE = os.path.join(ROOT, "Dockerfile")

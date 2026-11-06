@@ -22,8 +22,8 @@ import time
 import unittest
 import urllib.request
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.join(HERE, "..")
+from helpers import ROOT
+
 SCRIPT = os.path.join(ROOT, "container", "scripts", "web-terminal.sh")
 BRIDGE = os.path.join(ROOT, "container", "ttyd-clipboard.js")
 STYLE = os.path.join(ROOT, "container", "ttyd-style.css")

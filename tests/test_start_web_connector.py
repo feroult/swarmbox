@@ -16,8 +16,9 @@ import subprocess
 import tempfile
 import unittest
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-START = os.path.join(HERE, "..", "start.sh")
+from helpers import ROOT
+
+START = os.path.join(ROOT, "start.sh")
 TOKEN = "eyJ-tunnel-token-for-tests"
 OTHER = "eyJ-a-different-token"
 STUB = """#!/bin/sh
