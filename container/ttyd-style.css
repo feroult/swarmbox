@@ -4,8 +4,8 @@
 /* Space between the terminal and the window edges. ttyd's own rule is padding:5px with a 10px smaller
    height; keep the pair in step so the terminal still fits the window exactly. */
 #terminal-container .terminal {
-  padding: var(--swarmbox-padding, 5px);
-  height: calc(100% - 2 * var(--swarmbox-padding, 5px));
+  padding: var(--swarmbox-padding, 10px);
+  height: calc(100% - 2 * var(--swarmbox-padding, 10px));
 }
 
 /* Minimal scrollbar: a thin, rounded, translucent thumb on a transparent track. */
