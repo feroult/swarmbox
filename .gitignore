@@ -1,2 +1,4 @@
 .claude
 .work/
+__pycache__/
+*.pyc
