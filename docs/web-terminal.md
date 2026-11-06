@@ -15,17 +15,17 @@ runs tmux, give it another prefix (SwarmBox uses `C-a`) or press `C-a a` to send
 Nerd Font list (JetBrainsMono, Cascadia). To change any of it, put `key=value` lines (xterm.js options) in `.work/.swarmbox/web-terminal.conf`
 (`~/.swarmbox/web-terminal.conf` inside), e.g. `fontFamily='JetBrainsMono Nerd Font', Consolas, monospace`.
 `padding=10` is the space (px) around the terminal, and the scrollbar is a thin translucent one (both are CSS in
-`container/ttyd-style.css`, injected into ttyd's page). A `theme` line replaces the whole default theme. No rebuild: run `pkill ttyd; swarmbox-web-terminal` inside to apply (tmux sessions survive). The font is
+`container/web/ttyd-style.css`, injected into ttyd's page). A `theme` line replaces the whole default theme. No rebuild: run `pkill ttyd; swarmbox-web-terminal` inside to apply (tmux sessions survive). The font is
 the *browser's*, so it must be installed on the machine that opens the page.
 
-**tmux.** The image ships a complete default config, `container/tmux.conf` (installed as `/etc/tmux.conf`): prefix
+**tmux.** The image ships a complete default config, `container/config/tmux.conf` (installed as `/etc/tmux.conf`): prefix
 `Ctrl+A`, windows and panes numbered from 1, mouse, 50,000 lines of history, true color, a dark status bar, splits
 and new windows in the current directory, and the browser shortcuts below. It stands alone: nothing in your
 workspace is needed. Your own `~/.tmux.conf` (`.work/.tmux.conf` on the host) is read *after* it, so add to it or
 override anything there (`unbind -n M-n`, `set -g prefix C-b`, another theme).
 
 Ctrl+T/N/W and Ctrl+Shift+T belong to the browser (and xterm.js sends nothing, or only the plain control
-character, for most other Ctrl combinations), so `container/tmux-browser-keys.conf` (loaded by the default config)
+character, for most other Ctrl combinations), so `container/config/tmux-browser-keys.conf` (loaded by the default config)
 binds **Alt** instead, without the prefix:
 `Alt+N` new window, `Alt+W` close (asks), `Alt+H`/`Alt+L` previous/next, `Alt+1..9`/`Alt+0` jump/last,
 `Alt+Shift+H`/`Alt+Shift+L` move, `Alt+R` rename, `Alt+G` list; panes: `Alt+\` and `Alt+-` split, `Alt+arrows` focus,
@@ -37,7 +37,7 @@ without ours, add `source-file /path/to/tmux-browser-keys.conf` to it (it needs 
 **Copy and paste.** With the mouse on, tmux owns the mouse: a selection is copied into tmux's own buffer and
 sent to the terminal as OSC 52, but ttyd 1.7.7 ignores OSC 52, so nothing reached the browser clipboard, and
 xterm.js sends Ctrl+V to the shell as `^V` instead of pasting. `swarmbox-web-terminal` therefore serves ttyd's
-own page with a small script injected (`container/ttyd-clipboard.js`, built from `ttyd-stock.html` in the image):
+own page with a small script injected (`container/web/ttyd-clipboard.js`, built from `ttyd-stock.html` in the image):
 - a selection (or `tmux set-buffer -w`) **reaches the browser clipboard**. Only *writes* are honoured: a
   clipboard *read* request (`OSC 52 ; ... ; ?`) is never answered, so nothing in the terminal can read what you
   copied elsewhere;

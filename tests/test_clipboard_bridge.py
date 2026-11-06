@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""End-to-end tests for the browser bridge (container/ttyd-clipboard.js: clipboard, right click) in a real browser.
+"""End-to-end tests for the browser bridge (container/web/ttyd-clipboard.js: clipboard, right click) in a real browser.
 
 Run:  python3 tests/test_clipboard_bridge.py        (needs chromium, ttyd and tmux; skipped otherwise)
 
-The page is built by the real container/scripts/web-terminal.sh (a fake ttyd only records the --index it
+The page is built by the real container/web/web-terminal.sh (a fake ttyd only records the --index it
 was given), then served by a REAL ttyd running a real tmux, and driven in headless Chromium over the
 DevTools protocol. Selections are made with the SGR mouse sequences xterm.js sends, the keys with real
 key events, and the clipboard is read back with navigator.clipboard.
@@ -24,9 +24,9 @@ import urllib.request
 
 from helpers import ROOT
 
-SCRIPT = os.path.join(ROOT, "container", "scripts", "web-terminal.sh")
-BRIDGE = os.path.join(ROOT, "container", "ttyd-clipboard.js")
-STYLE = os.path.join(ROOT, "container", "ttyd-style.css")
+SCRIPT = os.path.join(ROOT, "container", "web", "web-terminal.sh")
+BRIDGE = os.path.join(ROOT, "container", "web", "ttyd-clipboard.js")
+STYLE = os.path.join(ROOT, "container", "web", "ttyd-style.css")
 NEEDED = ("chromium", "ttyd", "tmux")
 
 HOOK = """(() => { window.__tx = [];
