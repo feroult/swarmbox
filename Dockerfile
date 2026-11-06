@@ -343,8 +343,13 @@ ARG OPENCODE_VERSION=latest
 # This runs as root, AFTER the chown of /opt/npm-cache above, so the cache entries it writes would be
 # root-owned and `npx` as agent (e.g. the chrome-devtools MCP) would fail with EACCES. Drop the cache
 # (it is not needed at runtime, and it shrinks the layer) and give the directory back to the user.
+# OpenCode also ships four platform builds (~240 MB each) under node_modules/@opencode; its postinstall
+# hard-links the right one into bin/, so the others can go. It must happen in this same RUN: a later
+# `rm` would not shrink the image, and `opencode --version` fails the build if the binary is missing.
 RUN echo "cachebust=${CLAUDE_CODE_CACHEBUST}" && \
     npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @opencode/cli@${OPENCODE_VERSION} && \
+    rm -rf /usr/local/lib/node_modules/@opencode/cli/node_modules/@opencode && \
+    opencode --version >/dev/null && \
     npm cache clean --force && \
     mkdir -p /opt/npm-cache && \
     if [ "${HOST_OS}" = "darwin" ]; then chmod -R 777 /opt/npm-cache; else chown -R ${USER_UID}:${USER_GID} /opt/npm-cache; fi
