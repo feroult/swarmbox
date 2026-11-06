@@ -44,7 +44,7 @@ declare -A OPT=(
     [fontSize]=21
     [fontWeight]=400
     [fontWeightBold]=700
-    [padding]=5
+    [padding]=10
     [cursorBlink]=true
     [titleFixed]=SwarmBox
     [fontFamily]="'JetBrainsMono Nerd Font', 'JetBrainsMono NF', 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace"
@@ -68,8 +68,8 @@ CTRL_V=true; CTRL_C=true
 [ "${OPT[ctrlVPaste]:-}" = "false" ] && CTRL_V=false
 [ "${OPT[ctrlCCopy]:-}" = "false" ] && CTRL_C=false
 # Space (px) around the terminal: consumed here too, it is CSS (container/ttyd-style.css), not a ttyd option.
-PAD="${OPT[padding]:-5}"
-[[ "$PAD" =~ ^[0-9]{1,2}$ ]] || PAD=5
+PAD="${OPT[padding]:-10}"
+[[ "$PAD" =~ ^[0-9]{1,2}$ ]] || PAD=10
 unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]' 'OPT[padding]'
 
 # Clipboard bridge. ttyd 1.7.7 ignores OSC 52 (what tmux uses to copy to the clipboard) and xterm.js sends

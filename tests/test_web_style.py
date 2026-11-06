@@ -38,19 +38,19 @@ class WebStyle(base.ClipboardBridge):
 
     def test_the_terminal_is_5px_from_every_edge_by_default(self):
         m = self.measure()
-        self.assertEqual((m["left"], m["top"]), (5, 5))
+        self.assertEqual((m["left"], m["top"]), (10, 10))
         # the grid is a whole number of cells, so the right/bottom gap is at least the padding
-        self.assertGreaterEqual(m["right"], 5)
-        self.assertGreaterEqual(m["bottom"], 5)
+        self.assertGreaterEqual(m["right"], 10)
+        self.assertGreaterEqual(m["bottom"], 10)
 
     def test_the_padding_can_be_changed_in_the_config_file(self):
         m = self.measure("padding=12\n")
         self.assertEqual((m["left"], m["top"]), (12, 12))
         self.assertGreaterEqual(m["bottom"], 12)
 
-    def test_a_bad_padding_falls_back_to_5(self):
+    def test_a_bad_padding_falls_back_to_the_default(self):
         m = self.measure("padding=lots\n")
-        self.assertEqual((m["left"], m["top"]), (5, 5))
+        self.assertEqual((m["left"], m["top"]), (10, 10))
 
     def test_the_scrollbar_is_thin_translucent_and_has_no_track(self):
         m = self.measure()
@@ -67,8 +67,8 @@ class WebStyle(base.ClipboardBridge):
         # no cell of slack beyond what rounding to whole cells leaves
         cw = self.page.js("document.querySelector('.xterm-screen').offsetWidth / term.cols")
         ch = self.page.js("document.querySelector('.xterm-screen').offsetHeight / term.rows")
-        self.assertLess(m["right"] - 5, cw + 6 + 1)
-        self.assertLess(m["bottom"] - 5, ch + 1)
+        self.assertLess(m["right"] - 10, cw + 6 + 1)
+        self.assertLess(m["bottom"] - 10, ch + 1)
 
 
 if __name__ == "__main__":
