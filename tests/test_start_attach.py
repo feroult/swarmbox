@@ -9,7 +9,6 @@ The tmux part runs the real script start.sh sends to the container, on a private
 import fcntl
 import os
 import pty
-import re
 import shutil
 import signal
 import stat
@@ -34,10 +33,8 @@ exit 0
 
 
 def attach_script():
-    with open(START) as f:
-        m = re.search(r"ATTACH_SCRIPT='(.*?)'\n\nenter_shell", f.read(), re.S)
-    assert m, "ATTACH_SCRIPT not found"
-    return m.group(1)
+    with open(os.path.join(ROOT, "lib", "attach-session.sh")) as f:
+        return f.read()
 
 
 class Calls(unittest.TestCase):
