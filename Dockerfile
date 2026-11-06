@@ -290,7 +290,8 @@ COPY container/tmux.conf /etc/tmux.conf
 COPY container/tmux-browser-keys.conf /etc/tmux-browser-keys.conf
 # ttyd's own page (kept as is) plus the clipboard bridge that swarmbox-web-terminal injects into it
 COPY container/ttyd-clipboard.js /usr/local/share/swarmbox/ttyd-clipboard.js
-RUN chmod 644 /usr/local/share/swarmbox/ttyd-clipboard.js && \
+COPY container/ttyd-style.css /usr/local/share/swarmbox/ttyd-style.css
+RUN chmod 644 /usr/local/share/swarmbox/ttyd-clipboard.js /usr/local/share/swarmbox/ttyd-style.css && \
     (ttyd -p 17681 -i lo true >/dev/null 2>&1 & TTYD_PID=$!; \
      for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do \
          curl -fsS -o /usr/local/share/swarmbox/ttyd-stock.html http://127.0.0.1:17681/ && break; sleep 0.3; \

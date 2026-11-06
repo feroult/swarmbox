@@ -179,8 +179,9 @@ this line has no equals sign
         self.assertFalse(os.path.exists(self.index_path()))
 
     def test_clipboard_options_are_consumed_not_passed_to_ttyd(self):
-        self.conf("ctrlVPaste=false\nctrlCCopy=false\nfontSize=17\n")
+        self.conf("ctrlVPaste=false\nctrlCCopy=false\npadding=9\nfontSize=17\n")
         args, opts = self.run_script(extra=self.bridge_env())
+        self.assertNotIn("padding", opts, "padding is CSS, not a ttyd option")
         self.assertNotIn("ctrlVPaste", opts)
         self.assertNotIn("ctrlCCopy", opts)
         self.assertEqual(opts["fontSize"], "17")

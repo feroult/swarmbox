@@ -44,6 +44,7 @@ declare -A OPT=(
     [fontSize]=21
     [fontWeight]=400
     [fontWeightBold]=700
+    [padding]=5
     [cursorBlink]=true
     [titleFixed]=SwarmBox
     [fontFamily]="'JetBrainsMono Nerd Font', 'JetBrainsMono NF', 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace"
@@ -66,7 +67,10 @@ fi
 CTRL_V=true; CTRL_C=true
 [ "${OPT[ctrlVPaste]:-}" = "false" ] && CTRL_V=false
 [ "${OPT[ctrlCCopy]:-}" = "false" ] && CTRL_C=false
-unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]'
+# Space (px) around the terminal: consumed here too, it is CSS (container/ttyd-style.css), not a ttyd option.
+PAD="${OPT[padding]:-5}"
+[[ "$PAD" =~ ^[0-9]{1,2}$ ]] || PAD=5
+unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]' 'OPT[padding]'
 
 # Clipboard bridge. ttyd 1.7.7 ignores OSC 52 (what tmux uses to copy to the clipboard) and xterm.js sends
 # Ctrl+V to the shell as ^V, so the page is served with a small script injected: copies made in tmux reach
@@ -75,14 +79,16 @@ unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]'
 # ttyd simply serves its own page.
 STOCK="${SWARMBOX_TTYD_STOCK:-/usr/local/share/swarmbox/ttyd-stock.html}"
 BRIDGE="${SWARMBOX_TTYD_BRIDGE:-/usr/local/share/swarmbox/ttyd-clipboard.js}"
+STYLE="${SWARMBOX_TTYD_STYLE:-/usr/local/share/swarmbox/ttyd-style.css}"
 INDEX="$SWARMBOX_DIR/ttyd-index.html"
 INDEX_ARGS=()
 if [ -r "$STOCK" ] && [ -r "$BRIDGE" ] && command -v python3 >/dev/null 2>&1; then
-    stamp="$(sha256sum "$STOCK" "$BRIDGE" | awk '{print $1}' | tr '\n' ' ')$CTRL_V $CTRL_C"
+    [ -r "$STYLE" ] || STYLE=/dev/null
+    stamp="$(sha256sum "$STOCK" "$BRIDGE" "$STYLE" | awk '{print $1}' | tr '\n' ' ')$CTRL_V $CTRL_C $PAD"
     if [ ! -s "$INDEX" ] || [ "$(cat "$INDEX.stamp" 2>/dev/null)" != "$stamp" ]; then
-        if python3 - "$STOCK" "$BRIDGE" "$INDEX.tmp" "$CTRL_V" "$CTRL_C" <<'PY'
+        if python3 - "$STOCK" "$BRIDGE" "$INDEX.tmp" "$CTRL_V" "$CTRL_C" "$STYLE" "$PAD" <<'PY'
 import json, sys
-stock_path, bridge_path, out_path, ctrl_v, ctrl_c = sys.argv[1:6]
+stock_path, bridge_path, out_path, ctrl_v, ctrl_c, style_path, pad = sys.argv[1:8]
 with open(stock_path) as f:
     page = f.read()
 with open(bridge_path) as f:
@@ -91,8 +97,14 @@ if page.count("</body>") != 1:
     sys.exit(1)
 cfg = json.dumps({"ctrlVPaste": ctrl_v == "true", "ctrlCCopy": ctrl_c == "true"})
 snippet = "<script>window.__swarmboxClipboard=%s;</script><script>%s</script></body>" % (cfg, bridge)
+page = page.replace("</body>", snippet, 1)
+# the style goes in <head>, so it is there before the terminal is built (and measured)
+with open(style_path) as f:
+    css = f.read().replace("</style", "<\\/style")
+if css.strip() and page.count("</head>") == 1:
+    page = page.replace("</head>", "<style>:root{--swarmbox-padding:%spx}\n%s</style></head>" % (pad, css), 1)
 with open(out_path, "w") as f:
-    f.write(page.replace("</body>", snippet, 1))
+    f.write(page)
 PY
         then
             mv "$INDEX.tmp" "$INDEX" && printf '%s' "$stamp" > "$INDEX.stamp"

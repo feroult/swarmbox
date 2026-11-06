@@ -26,6 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 SCRIPT = os.path.join(ROOT, "container", "scripts", "web-terminal.sh")
 BRIDGE = os.path.join(ROOT, "container", "ttyd-clipboard.js")
+STYLE = os.path.join(ROOT, "container", "ttyd-style.css")
 NEEDED = ("chromium", "ttyd", "tmux")
 
 HOOK = """(() => { window.__tx = [];
@@ -160,7 +161,8 @@ class ClipboardBridge(unittest.TestCase):
         os.chmod(shim, os.stat(shim).st_mode | stat.S_IXUSR)
         out = os.path.join(self.tmp, "args.txt")
         env = {"HOME": home, "PATH": shim_dir + os.pathsep + os.environ["PATH"], "OUT": out, "SWARMBOX_WEB": "1",
-               "SWARMBOX_WEB_PORT": str(free_port()), "SWARMBOX_TTYD_STOCK": stock, "SWARMBOX_TTYD_BRIDGE": BRIDGE}
+               "SWARMBOX_WEB_PORT": str(free_port()), "SWARMBOX_TTYD_STOCK": stock, "SWARMBOX_TTYD_BRIDGE": BRIDGE,
+               "SWARMBOX_TTYD_STYLE": STYLE}
         subprocess.run(["bash", SCRIPT], env=env, check=True, timeout=20)
         for _ in range(40):
             if os.path.exists(out):
