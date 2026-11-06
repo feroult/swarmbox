@@ -204,7 +204,7 @@ runs tmux, give it another prefix (SwarmBox uses `C-a`) or press `C-a a` to send
 **Font, size, theme**: out of the box the terminal is dark (Windows Terminal's Campbell colors), size 21, with a
 Nerd Font list (JetBrainsMono, Cascadia). To change any of it, put `key=value` lines (xterm.js options) in `.work/.swarmbox/web-terminal.conf`
 (`~/.swarmbox/web-terminal.conf` inside), e.g. `fontFamily='JetBrainsMono Nerd Font', Consolas, monospace`.
-`padding=5` is the space (px) around the terminal, and the scrollbar is a thin translucent one (both are CSS in
+`padding=10` is the space (px) around the terminal, and the scrollbar is a thin translucent one (both are CSS in
 `container/ttyd-style.css`, injected into ttyd's page). A `theme` line replaces the whole default theme. No rebuild: run `pkill ttyd; swarmbox-web-terminal` inside to apply (tmux sessions survive). The font is
 the *browser's*, so it must be installed on the machine that opens the page.
 
