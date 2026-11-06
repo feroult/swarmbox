@@ -201,9 +201,10 @@ away when you close the host tab (the window stays until its shell exits). Neste
 runs tmux, give it another prefix (SwarmBox uses `C-a`) or press `C-a a` to send the prefix inside.
 `SWARMBOX_ATTACH=shell ./start.sh` gives the plain bash instead.
 
-**Font, size, theme**: put `key=value` lines (xterm.js options) in `.work/.swarmbox/web-terminal.conf`
+**Font, size, theme**: out of the box the terminal is dark (Windows Terminal's Campbell colors), size 21, with a
+Nerd Font list (JetBrainsMono, Cascadia). To change any of it, put `key=value` lines (xterm.js options) in `.work/.swarmbox/web-terminal.conf`
 (`~/.swarmbox/web-terminal.conf` inside), e.g. `fontFamily='JetBrainsMono Nerd Font', Consolas, monospace`.
-No rebuild: run `pkill ttyd; swarmbox-web-terminal` inside to apply (tmux sessions survive). The font is
+A `theme` line replaces the whole default theme. No rebuild: run `pkill ttyd; swarmbox-web-terminal` inside to apply (tmux sessions survive). The font is
 the *browser's*, so it must be installed on the machine that opens the page.
 
 **tmux.** The image ships a complete default config, `container/tmux.conf` (installed as `/etc/tmux.conf`): prefix
