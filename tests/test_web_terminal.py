@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for container/scripts/web-terminal.sh (how it builds the ttyd command line).
+"""Tests for container/web/web-terminal.sh (how it builds the ttyd command line).
 
 Run:  python3 tests/test_web_terminal.py
 
@@ -15,7 +15,7 @@ import unittest
 
 from helpers import ROOT
 
-SCRIPT = os.path.join(ROOT, "container", "scripts", "web-terminal.sh")
+SCRIPT = os.path.join(ROOT, "container", "web", "web-terminal.sh")
 SHIM = """#!/bin/sh
 for a in "$@"; do printf '%s\\n' "$a"; done > "$OUT"
 env | grep -E '^(LANG|LC_ALL)=' > "$OUT.env"

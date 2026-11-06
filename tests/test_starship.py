@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the Starship prompt: container/starship.toml, container/scripts/starship-init.sh and their
+"""Tests for the Starship prompt: container/config/starship.toml, container/scripts/starship-init.sh and their
 wiring in the Dockerfile.
 
 Run:  python3 tests/test_starship.py
@@ -18,7 +18,7 @@ import unittest
 
 from helpers import ROOT
 
-CONFIG = os.path.join(ROOT, "container", "starship.toml")
+CONFIG = os.path.join(ROOT, "container", "config", "starship.toml")
 INIT = os.path.join(ROOT, "container", "scripts", "starship-init.sh")
 DOCKERFILE = os.path.join(ROOT, "Dockerfile")
 
@@ -209,7 +209,7 @@ class DockerfileWiring(unittest.TestCase):
     def test_the_release_is_pinned_and_its_checksum_verified(self):
         self.assertRegex(self.d, r"ARG STARSHIP_VERSION=\d+\.\d+\.\d+")
         block = self.d[self.d.index("ARG STARSHIP_VERSION"):]
-        block = block[:block.index("COPY container/starship.toml")]
+        block = block[:block.index("COPY container/config/starship.toml")]
         self.assertIn("sha256sum -c -", block)
         self.assertIn("starship-x86_64-unknown-linux-musl", block)
         self.assertIn("starship-aarch64-unknown-linux-musl", block)
@@ -221,7 +221,7 @@ class DockerfileWiring(unittest.TestCase):
             self.assertGreater(init, self.d.index(earlier), earlier)
 
     def test_the_config_and_the_script_are_installed(self):
-        self.assertIn("COPY container/starship.toml /etc/swarmbox/starship.toml", self.d)
+        self.assertIn("COPY container/config/starship.toml /etc/swarmbox/starship.toml", self.d)
         self.assertIn("COPY container/scripts/starship-init.sh /etc/swarmbox/scripts/starship-init.sh", self.d)
 
 

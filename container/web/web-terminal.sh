@@ -63,11 +63,11 @@ if [ -f "$CONF" ]; then
         OPT["$(trim "${line%%=*}")"]="$(trim "${line#*=}")"
     done < "$CONF"
 fi
-# Options for the clipboard bridge (container/ttyd-clipboard.js) are consumed here, not passed to ttyd.
+# Options for the clipboard bridge (container/web/ttyd-clipboard.js) are consumed here, not passed to ttyd.
 CTRL_V=true; CTRL_C=true
 [ "${OPT[ctrlVPaste]:-}" = "false" ] && CTRL_V=false
 [ "${OPT[ctrlCCopy]:-}" = "false" ] && CTRL_C=false
-# Space (px) around the terminal: consumed here too, it is CSS (container/ttyd-style.css), not a ttyd option.
+# Space (px) around the terminal: consumed here too, it is CSS (container/web/ttyd-style.css), not a ttyd option.
 PAD="${OPT[padding]:-10}"
 [[ "$PAD" =~ ^[0-9]{1,2}$ ]] || PAD=10
 unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]' 'OPT[padding]'

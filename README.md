@@ -52,10 +52,15 @@ Each database is isolated and persists in `.work/.swarmbox/memory/`.
 ### Container Structure
 
 ```
+start.sh  build.sh  Dockerfile       # host entry points (start.sh sources lib/)
+cloudflare-setup.py                  # remote-access provisioning (host)
+lib/                                 # start.sh helpers: ui, podman connection, web terminal, attach-session
+docs/                                # nested Podman, web terminal, Cloudflare
 container/
-├── scripts/
-│   ├── init.sh              # Orchestrator
-│   └── banner.sh
+├── scripts/                         # init.sh (orchestrator), banner, messages, podman-service, starship-init
+├── config/                          # tmux.conf, tmux-browser-keys.conf, starship.toml
+├── web/                             # web-terminal.sh, ttyd-clipboard.js, ttyd-style.css
+├── agents/  opencode/
 └── mcp/
     ├── chrome-devtools/     # Browser automation MCP
     │   └── config.json
@@ -172,7 +177,7 @@ to reach it from elsewhere use Cloudflare Tunnel + Access (e-mail one-time code)
 
 Interactive bash shells in SwarmBox use [Starship](https://starship.rs): a pinned release (`STARSHIP_VERSION` in the
 Dockerfile; static binaries for amd64 and arm64) whose published SHA-256 is verified during the build, with the
-config in `container/starship.toml` (installed as `/etc/swarmbox/starship.toml`).
+config in `container/config/starship.toml` (installed as `/etc/swarmbox/starship.toml`).
 
 - **Layout:** Starship's "Gruvbox Rainbow" powerline preset, on a single line closed by an arrow (no separate
   prompt symbol: add `$line_break$character` to `format` if you want one and the red/green exit-status color).
