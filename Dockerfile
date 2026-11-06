@@ -43,7 +43,6 @@ RUN apt-get update && apt-get install -y \
     man-db \
     bash-completion \
     sqlite3 \
-    pandoc \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Podman, used as a nested rootless engine inside this container
