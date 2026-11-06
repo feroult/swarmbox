@@ -88,15 +88,6 @@ RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dea
 RUN python3 -m venv --prompt swarmbox /opt/flow && \
     /opt/flow/bin/pip install --upgrade pip
 
-# Clone and install mcp-memory-service from fork with fix
-# Also extract the framework hooks for later use
-RUN git clone https://github.com/feroult/mcp-memory-service.git /tmp/mcp-memory-service && \
-    cd /tmp/mcp-memory-service && \
-    /opt/flow/bin/pip install python-docx . && \
-    mkdir -p /etc/swarmbox && \
-    cp -r claude-hooks /etc/swarmbox/claude-hooks && \
-    rm -rf /tmp/mcp-memory-service
-
 # Install Chromium
 RUN apt-get update && \
     apt-get install -y chromium && \
@@ -211,8 +202,7 @@ RUN echo "# Enable colors for common commands" >> /etc/bash.bashrc && \
 
 # Copy MCP configurations to container (needed for next step)
 COPY container/mcp/ /etc/swarmbox/mcp/
-RUN chmod -R 755 /etc/swarmbox/mcp && \
-    chmod +x /etc/swarmbox/mcp/memory/init.sh
+RUN chmod -R 755 /etc/swarmbox/mcp
 
 # Copy OpenCode local-LLM config template (rendered at container start by init.sh)
 COPY container/opencode/ /etc/swarmbox/opencode/
@@ -222,7 +212,7 @@ RUN chmod -R 755 /etc/swarmbox/opencode
 # init.sh renders it at every start; lives under $HOME/.swarmbox so it survives the home mount.
 ENV OPENCODE_CONFIG=/home/agent/.swarmbox/opencode-local.json
 
-# Create global MCP configuration file (base config without memory)
+# Create global MCP configuration file (base config)
 RUN mkdir -p /etc/claude && \
     jq -n --slurpfile chrome /etc/swarmbox/mcp/chrome-devtools/config.json \
       '{mcpServers: {"chrome-devtools": $chrome[0]}}' \
@@ -328,10 +318,6 @@ RUN chmod 644 /etc/swarmbox/starship.toml /etc/swarmbox/scripts/starship-init.sh
     echo "# Starship prompt (opt out with SWARMBOX_STARSHIP=0)" >> /etc/bash.bashrc && \
     echo ". /etc/swarmbox/scripts/starship-init.sh" >> /etc/bash.bashrc
 
-# Copy agents (LAST - changes frequently, should invalidate minimal cache)
-COPY container/agents/ /etc/swarmbox/agents/
-RUN chmod -R 755 /etc/swarmbox/agents
-
 # Install Claude Code and OpenCode globally via npm (avoids native binary warnings)
 # Kept as the LAST installed thing so `--update-harness` only re-runs this single
 # layer, not everything after it. CLAUDE_CODE_CACHEBUST defaults to a fixed value
@@ -352,9 +338,6 @@ RUN echo "cachebust=${CLAUDE_CODE_CACHEBUST}" && \
     npm cache clean --force && \
     mkdir -p /opt/npm-cache && \
     if [ "${HOST_OS}" = "darwin" ]; then chmod -R 777 /opt/npm-cache; else chown -R ${USER_UID}:${USER_GID} /opt/npm-cache; fi
-
-# Expose HTTP port for MCP memory service web dashboard
-EXPOSE 8889
 
 # Switch to non-root user
 USER agent

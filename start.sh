@@ -115,9 +115,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --clasp: Expose port 43323 for clasp (Google Apps Script CLI) OAuth login callback"
             echo ""
             echo "Environment Variables:"
-            echo "  MEMORY=<db_name>: Enable MCP memory service with specified database name (automatically passed if set)"
-            echo "    Example: MEMORY=personal ./start.sh"
-            echo "    Example: MEMORY=project1 ./start.sh"
             exit 1
             ;;
     esac
@@ -132,7 +129,7 @@ case ",${ENV_KEYS// /}," in
         ;;
 esac
 
-# Ports the user asked for (PORTS is later extended automatically for --clasp / MEMORY)
+# Ports the user asked for (PORTS is later extended automatically for --clasp)
 USER_PORTS="$PORTS"
 
 # Check that Podman is installed
@@ -167,18 +164,6 @@ if [ "$CLASP" = "true" ]; then
         fi
     fi
     msg_detail "clasp: OAuth port 43323 exposed"
-fi
-
-# Automatically expose port 8889 for memory web dashboard when MEMORY is set
-if [ -n "${MEMORY+x}" ]; then
-    if [[ ! "$PORTS" =~ (^|,)8889(:|,|$) ]] && [ "$HOST_NETWORK" = "false" ]; then
-        if [ -z "$PORTS" ]; then
-            PORTS="8889"
-        else
-            PORTS="$PORTS,8889"
-        fi
-    fi
-    msg_detail "Memory: ${MEMORY} (dashboard on :8889)"
 fi
 
 # Parse port mappings. Published on 127.0.0.1 unless a bind address is given:
@@ -234,11 +219,6 @@ NESTED_PODMAN_OPTS="--device /dev/net/tun --security-opt unmask=/proc/* -v ${CON
 # Parse environment keys and build environment variable flags
 CONTAINER_ENV_VARS=""
 
-# Automatically pass MEMORY environment variable if it's set
-if [ -n "${MEMORY+x}" ]; then
-    CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e MEMORY=${MEMORY}"
-fi
-
 # Pass BROWSER_URL if set, normalizing to a full URL
 if [ -n "$BROWSER_URL" ]; then
     if [[ "$BROWSER_URL" =~ ^[0-9]+$ ]]; then
@@ -264,10 +244,6 @@ if [ -n "$ENV_KEYS" ]; then
     for key in "${ENV_KEY_ARRAY[@]}"; do
         # Trim whitespace from key
         key=$(echo "$key" | xargs)
-        # Skip MEMORY if already added
-        if [ "$key" = "MEMORY" ]; then
-            continue
-        fi
         if [ -n "${!key+x}" ]; then
             # Variable exists in host environment
             CONTAINER_ENV_VARS="$CONTAINER_ENV_VARS -e $key=${!key}"
