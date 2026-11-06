@@ -20,8 +20,9 @@ import termios
 import time
 import unittest
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-START = os.path.join(HERE, "..", "start.sh")
+from helpers import ROOT
+
+START = os.path.join(ROOT, "start.sh")
 STUB = """#!/bin/sh
 echo "$*" >> "$STUB_LOG"
 case "$1" in

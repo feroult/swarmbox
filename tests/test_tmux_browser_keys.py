@@ -20,8 +20,9 @@ import termios
 import time
 import unittest
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-KEYS = os.path.join(HERE, "..", "container", "tmux-browser-keys.conf")
+from helpers import ROOT
+
+KEYS = os.path.join(ROOT, "container", "tmux-browser-keys.conf")
 ROWS, COLS = 20, 100
 
 
@@ -162,7 +163,7 @@ class BrowserKeys(unittest.TestCase):
             self.assertEqual(len(self.windows()), before, "column %d must not create a window" % col)
 
 
-DEFAULT_CONF = os.path.abspath(os.path.join(HERE, "..", "container", "tmux.conf"))
+DEFAULT_CONF = os.path.abspath(os.path.join(ROOT, "container", "tmux.conf"))
 
 
 class DefaultConfig(BrowserKeys):

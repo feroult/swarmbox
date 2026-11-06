@@ -23,8 +23,9 @@ import threading
 import unittest
 import urllib.parse
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SCRIPT = os.path.join(HERE, "..", "cloudflare-setup.py")
+from helpers import ROOT
+
+SCRIPT = os.path.join(ROOT, "cloudflare-setup.py")
 GOOD_TOKEN = "good-token"
 
 
