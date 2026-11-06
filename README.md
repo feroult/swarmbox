@@ -5,7 +5,7 @@
 - **Isolated:** agents run in a rootless Podman container; no host Podman socket is mounted.
 - **Auto-approve:** `claude` and `gemini` are aliased to their skip-permissions / `--yolo` modes. OpenCode is installed too.
 - **Nested Podman:** agents can build and run their own containers inside the box.
-- **MCP built in:** headless Chromium via chrome-devtools MCP, plus an optional persistent memory service.
+- **MCP built in:** headless Chromium via the chrome-devtools MCP.
 - **One workspace:** `.work/` is your agents' home directory, owned by your host user, kept between sessions.
 - **Web terminal:** optional browser shell (ttyd + tmux), with a Cloudflare Tunnel setup for remote access.
 
@@ -63,14 +63,6 @@ Environment variables (read on the host; they apply when a container is created,
 | `SWARMBOX_ATTACH=shell` | Open plain bash instead of a tmux session |
 | `SWARMBOX_STARSHIP=0` | Inside the container: plain bash prompt instead of [Starship](https://starship.rs) |
 
-## Memory service (optional)
-
-```bash
-MEMORY=myproject ./start.sh
-```
-
-Starts the [mcp-memory-service](https://github.com/feroult/mcp-memory-service) MCP (semantic search on sqlite-vec) and a `memory` sub-agent for Claude Code. Each name is a separate database in `.work/.swarmbox/memory/`. The dashboard is at http://localhost:8889.
-
 ## Web terminal and remote access
 
 `./start.sh --reset --web` serves the shell at `http://127.0.0.1:7681`. Sessions survive closing the tab. **This local port has no login.** To reach it remotely, use Cloudflare Tunnel + Access, set up by `cloudflare-setup.py`.
@@ -101,15 +93,10 @@ container/
 ├── scripts/                         # init.sh (orchestrator), banner, messages, podman-service, starship-init
 ├── config/                          # tmux.conf, tmux-browser-keys.conf, starship.toml
 ├── web/                             # web-terminal.sh, ttyd-clipboard.js, ttyd-style.css
-├── agents/  opencode/
+├── opencode/                        # local-LLM config template for OpenCode
 └── mcp/
-    ├── chrome-devtools/     # Browser automation MCP
-    │   └── config.json
-    └── memory/              # Persistent memory MCP
-        ├── config.json
-        ├── init.sh          # Memory-specific setup
-        ├── hooks-config.json
-        └── settings.json
+    └── chrome-devtools/     # Browser automation MCP
+        └── config.json
 ```
 
 ## Adding an MCP
@@ -118,4 +105,4 @@ container/
 2. Optional: add an `init.sh` for setup.
 3. Rebuild with `./build.sh`.
 
-Note: `container/scripts/init.sh` currently wires in only chrome-devtools and memory by name, so a new MCP also needs a hook there.
+Note: `container/scripts/init.sh` currently wires in only chrome-devtools by name, so a new MCP also needs a hook there.

@@ -60,48 +60,32 @@ msg_blank
 msg "Initializing swarmbox..."
 
 # 1. Create base directories
-mkdir -p "$SWARMBOX_DIR/memory"
-mkdir -p "$HOME/.claude/hooks"
+mkdir -p "$SWARMBOX_DIR" "$HOME/.claude"
 
-# 2. Copy framework hooks to .claude/hooks if they don't exist
-if [ ! -d "$HOME/.claude/hooks/core" ]; then
-    cp -r /etc/swarmbox/claude-hooks/* "$HOME/.claude/hooks/"
-    chmod +x "$HOME/.claude/hooks"/*.sh 2>/dev/null || true
-    msg_detail "Framework hooks installed"
+# 2. Settings live under .swarmbox (the home is a bind mount); Claude Code finds them through a symlink
+if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then
+    echo '{}' > "$SWARMBOX_DIR/settings.json"
 fi
-
-# 3. Create symlink for Claude Code to find settings
-mkdir -p "$HOME/.claude"
 if [ ! -L "$HOME/.claude/settings.json" ]; then
     ln -sf "$SWARMBOX_DIR/settings.json" "$HOME/.claude/settings.json"
 fi
 
-# 4. Build base MCP config (chrome-devtools only)
+# 3. Build base MCP config (chrome-devtools only)
 build_base_mcp_config
 msg_detail "MCP servers configured"
 
-# 4b. Render OpenCode config (local LLM by default)
+# 3b. Render OpenCode config (local LLM by default)
 build_opencode_config
 msg_detail "OpenCode local LLM: $(jq -r '.model // "disabled"' "$SWARMBOX_DIR/opencode-local.json")"
 
-# 5. Initialize memory MCP if MEMORY environment variable is set
-if [ -n "$MEMORY" ]; then
-    /etc/swarmbox/mcp/memory/init.sh "$MEMORY"
-else
-    # Create empty settings.json when MEMORY is not set
-    if [ ! -f "$SWARMBOX_DIR/settings.json" ]; then
-        echo '{}' > "$SWARMBOX_DIR/settings.json"
-    fi
-    msg_blank
-fi
-
-# 6. Mirror MCP servers into OpenCode (after memory init so the memory server is included)
+# 4. Mirror MCP servers into OpenCode
 sync_opencode_mcp
+msg_blank
 
-# 7. Nested Podman API service (host reaches it via `podman -c <container-name>`)
+# 5. Nested Podman API service (host reaches it via `podman -c <container-name>`)
 /usr/local/bin/swarmbox-podman-service
 
-# 8. Web terminal (only when the container was created with --web)
+# 6. Web terminal (only when the container was created with --web)
 /usr/local/bin/swarmbox-web-terminal
 
 msg "Type 'claude' for Claude Code or 'gemini' for Gemini CLI"
