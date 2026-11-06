@@ -41,10 +41,14 @@ esac
 # Restart the terminal to apply (tmux sessions survive): pkill ttyd; swarmbox-web-terminal
 # The font is the *browser's*: it must be installed on the machine that opens the page.
 declare -A OPT=(
-    [fontSize]=14
+    [fontSize]=21
+    [fontWeight]=400
+    [fontWeightBold]=700
     [cursorBlink]=true
     [titleFixed]=SwarmBox
-    [fontFamily]="'JetBrainsMono Nerd Font', 'JetBrains Mono', Consolas, Menlo, 'Liberation Mono', monospace"
+    [fontFamily]="'JetBrainsMono Nerd Font', 'JetBrainsMono NF', 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace"
+    # Dark like Windows Terminal's Campbell scheme (ttyd's own default is a lighter #2b2b2b)
+    [theme]='{"background":"#0c0c0c","foreground":"#c2c2c2","cursor":"#ffffff","selectionBackground":"#264f78","black":"#0c0c0c","red":"#e74856","green":"#16c60c","yellow":"#f9f1a5","blue":"#3b78ff","magenta":"#b4009e","cyan":"#61d6d6","white":"#cccccc","brightBlack":"#767676","brightRed":"#ff6b78","brightGreen":"#3ee05f","brightYellow":"#f9f1a5","brightBlue":"#6ea0ff","brightMagenta":"#e04fc4","brightCyan":"#8ee6e6","brightWhite":"#f2f2f2"}'
 )
 CONF="$SWARMBOX_DIR/web-terminal.conf"
 if [ -f "$CONF" ]; then

@@ -71,10 +71,16 @@ class WebTerminal(unittest.TestCase):
         self.assertIn("-O", args)
         self.assertEqual(args[-5:], ["tmux", "new", "-A", "-s", "main"])
         # values reach ttyd as JSON: numbers/booleans bare, strings quoted
-        self.assertEqual((opts["fontSize"], opts["cursorBlink"], opts["titleFixed"]), ("14", "true", '"SwarmBox"'))
+        self.assertEqual((opts["fontSize"], opts["cursorBlink"], opts["titleFixed"]), ("21", "true", '"SwarmBox"'))
+        self.assertEqual((opts["fontWeight"], opts["fontWeightBold"]), ("400", "700"))
+        theme = json.loads(opts["theme"])
+        self.assertEqual((theme["background"], theme["foreground"]), ("#0c0c0c", "#c2c2c2"), "dark out of the box")
+        self.assertEqual(len(theme), 20, "background, foreground, cursor, selection and the 16 ANSI colors")
         families = json.loads(opts["fontFamily"])
         self.assertTrue(families.startswith("'JetBrainsMono Nerd Font'"))
         self.assertTrue(families.endswith("monospace"))
+        for nf in ("JetBrainsMono NF", "JetBrainsMono NFM", "CaskaydiaCove Nerd Font"):
+            self.assertIn(nf, families, "Windows installs Nerd Fonts under these names")
 
     def test_config_file_overrides_and_adds(self):
         self.conf("""# my terminal
