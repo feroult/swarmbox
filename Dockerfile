@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:24-slim
 
 # Accept build arguments for user UID/GID
 ARG USER_UID=1000
@@ -340,7 +340,14 @@ RUN chmod -R 755 /etc/swarmbox/agents
 ARG CLAUDE_CODE_VERSION=latest
 ARG CLAUDE_CODE_CACHEBUST=0
 ARG OPENCODE_VERSION=latest
-RUN echo "cachebust=${CLAUDE_CODE_CACHEBUST}" && npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @opencode/cli@${OPENCODE_VERSION}
+# This runs as root, AFTER the chown of /opt/npm-cache above, so the cache entries it writes would be
+# root-owned and `npx` as agent (e.g. the chrome-devtools MCP) would fail with EACCES. Drop the cache
+# (it is not needed at runtime, and it shrinks the layer) and give the directory back to the user.
+RUN echo "cachebust=${CLAUDE_CODE_CACHEBUST}" && \
+    npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @opencode/cli@${OPENCODE_VERSION} && \
+    npm cache clean --force && \
+    mkdir -p /opt/npm-cache && \
+    if [ "${HOST_OS}" = "darwin" ]; then chmod -R 777 /opt/npm-cache; else chown -R ${USER_UID}:${USER_GID} /opt/npm-cache; fi
 
 # Expose HTTP port for MCP memory service web dashboard
 EXPOSE 8889
