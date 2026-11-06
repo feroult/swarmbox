@@ -135,8 +135,16 @@ class RealTmux(unittest.TestCase):
     def test_without_a_session_it_creates_main_with_a_single_window(self):
         self.attach()
         self.wait(lambda: self.tmux("list-sessions"), "session")
-        self.assertEqual([s.split(":")[0] for s in self.tmux("list-sessions")], ["main"])
+        self.wait(lambda: len(self.tmux("list-sessions")) == 2, "grouped session")
         self.assertEqual(len(self.tmux("list-windows", "-t", "main")), 1)
+
+    def test_the_host_tab_has_no_status_bar_but_the_web_session_keeps_it(self):
+        self.tmux("new-session", "-d", "-s", "main")
+        self.attach()
+        self.wait(lambda: len(self.tmux("list-sessions")) == 2, "grouped session")
+        grouped = [s.split(":")[0] for s in self.tmux("list-sessions") if not s.startswith("main:")][0]
+        self.assertEqual(self.tmux("show-options", "-v", "-t", grouped, "status"), ["off"])
+        self.assertNotEqual(self.tmux("show-options", "-v", "-t", "main", "status"), ["off"])
 
 
 if __name__ == "__main__":
