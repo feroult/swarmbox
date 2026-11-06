@@ -110,7 +110,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --host-network: Use host network namespace (container shares host network, ignores --ports)"
             echo "  --env-keys: Comma-separated list of environment variable keys to pass from host to container (e.g., KEY1,KEY2,KEY3)"
             echo "  --remote-browser: Connect chrome-devtools MCP to an existing Chrome instance (default port: 9222, e.g., --remote-browser, --remote-browser 1234, --remote-browser 192.168.1.100:9222)"
-            echo "  --web: Serve a web terminal (ttyd + tmux) on 127.0.0.1:PORT of the host (default 7681); put Cloudflare Access/a tunnel in front to reach it remotely (see README)"
+            echo "  --web: Serve a web terminal (ttyd + tmux) on 127.0.0.1:PORT of the host (default 7681); put Cloudflare Access/a tunnel in front to reach it remotely (see docs/cloudflare.md)"
             echo "  --clasp: Expose port 43323 for clasp (Google Apps Script CLI) OAuth login callback"
             echo ""
             echo "Environment Variables:"
