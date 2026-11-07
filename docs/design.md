@@ -99,25 +99,49 @@ Per-project defaults: a `.swarmbox.env` file in the project folder, passed with 
 
 - A **tool** is a program SwarmBox can install on demand (gcloud, clasp, Go, Poetry...).
 - An **agent** is a tool with `KIND=agent`: it also has auto-approve flags and may use the MCP configuration.
-- A **shim** is a tiny executable on `PATH` named after a command a tool provides. It exists in the image from the start;
-  the real program does not. When called it makes sure the tool is installed, then replaces itself with the real program.
+- A **shim** is a symbolic link on `PATH`, named after a command a tool provides, that points to **one shared dispatcher**
+  (`swarmbox-shim`). It exists from the start; the real program does not. The dispatcher learns which command was called
+  from the name it was invoked with (`basename "$0"`), looks it up in an index (`command -> tool`), makes sure the tool is
+  installed, then replaces itself (`exec`) with the real program. There is no per-tool shim code: **adding a shim means
+  creating a link and one index line**, both generated from the manifests.
+- A **manifest level** is where manifests are read from (image, user, project; section 4.2). Higher levels win.
 
 ### 4.2 Layout
 
-In the repository:
+In the repository (versioned; this is where a tool is defined):
 
 ```
-container/tools/<name>/
-├── tool.conf        # manifest (below)
-└── install.sh       # how to install it
+container/
+├── tools/<name>/
+│   ├── tool.conf        # manifest (4.3)
+│   ├── install.sh       # how to install it (4.4)
+│   └── shell.sh         # optional: aliases/functions sourced by the interactive shell (4.6)
+└── scripts/
+    ├── swarmbox-tool.sh # list | install | update | remove | run | link | validate | new
+    └── swarmbox-shim.sh # the single dispatcher every shim links to
 ```
 
-In the image (built by `swarmbox-tool link`):
+Shims and the index are **not** in git: `swarmbox-tool link` generates them.
+
+Manifest levels, from highest precedence to lowest:
+
+| Level | Manifests | Generated shims and index | Who uses it |
+|---|---|---|---|
+| Project | `.swarmbox/tools/<name>/` in the project folder | `~/.local/share/swarmbox/shims/`, `.../index` | whoever clones the project (see 4.10) |
+| User | `~/.config/swarmbox/tools/<name>/` (the volume) | the same directory | the user, no rebuild |
+| Image | `/usr/local/lib/swarmbox/tools/<name>/` (copied from `container/tools/`, read-only) | `/usr/local/lib/swarmbox/shims/`, `.../index` | everyone |
+
+`swarmbox-tool link --system` runs at image build for the image level. `swarmbox-tool link --user` runs at every container
+start (from the entrypoint), is idempotent, and rebuilds the user-level shims from the user and project manifests.
+
+In the image:
 
 ```
-/usr/local/lib/swarmbox/tools/<name>/...    # the manifests and install scripts, read-only
-/usr/local/lib/swarmbox/shims/<command>     # one shim per command, first on PATH
-/usr/local/bin/swarmbox-tool                # list | install | update | remove | run | link
+/usr/local/bin/swarmbox-tool                # the manager
+/usr/local/bin/swarmbox-shim                # the dispatcher
+/usr/local/lib/swarmbox/tools/<name>/...    # image-level manifests and install scripts, read-only
+/usr/local/lib/swarmbox/shims/<command>     # symlink -> /usr/local/bin/swarmbox-shim
+/usr/local/lib/swarmbox/index               # "command tool" per line
 ```
 
 In the volume (persistent, per workspace):
@@ -126,10 +150,13 @@ In the volume (persistent, per workspace):
 ~/.local/share/swarmbox/tools/<name>/<version>/   # the installed program ($TOOL_PREFIX)
 ~/.local/share/swarmbox/tools/<name>/current      # symlink to the active version
 ~/.local/share/swarmbox/tools/.lock               # flock, so two shells do not install at once
+~/.local/share/swarmbox/shims/, .../index         # user- and project-level shims
+~/.config/swarmbox/tools/<name>/                  # user-level manifests
 ```
 
-`PATH` order: shims first, then `~/.local/share/swarmbox/tools/*/current/bin`. After install the real binary is found
-before the shim, so there is no per-call overhead.
+`PATH` order: user-level shims, image-level shims, then `~/.local/share/swarmbox/tools/*/current/bin`. After install the real
+binary is found before the shim, so there is no per-call overhead. (Checked: a symlink invoked as `gcloud` or `clasp` into
+one script gets its own name in `$0` and its own arguments.)
 
 ### 4.3 Manifest: `tool.conf`
 
@@ -137,6 +164,7 @@ A shell-sourceable `KEY=VALUE` file: no parser dependency (the image has no TOML
 
 ```sh
 # container/tools/claude/tool.conf
+SCHEMA=1
 NAME=claude
 KIND=agent                                   # agent | tool
 PROVIDES="claude"                            # commands that get a shim
@@ -146,7 +174,17 @@ MCP_FLAGS="--mcp-config $HOME/.claude/mcp-servers.json"
 ```
 
 ```sh
+# container/tools/clasp/tool.conf
+SCHEMA=1
+NAME=clasp
+KIND=tool
+PROVIDES="clasp"
+VERSION=latest
+```
+
+```sh
 # container/tools/gcloud/tool.conf
+SCHEMA=1
 NAME=gcloud
 KIND=tool
 PROVIDES="gcloud gsutil bq"
@@ -156,9 +194,13 @@ SHA256_arm64=<checksum>
 ```
 
 Fields
+- `SCHEMA`: manifest format version (currently `1`). Unknown keys are ignored, so later versions can add fields without
+  breaking older manifests.
 - `NAME`: directory name and volume folder. `PROVIDES`: shim names. `KIND`: `agent` tools also get the aliases in 4.6.
 - `VERSION`: `latest` resolves at first install and is then recorded; anything else is installed as written.
 - `SHA256_<arch>`: verified before use when present. Required for tools with a published hash.
+- Conflicts: two manifests that provide the same command are resolved by level (project, then user, then image); two at the
+  same level are an error reported by `link` and `validate`.
 
 ### 4.4 Install contract: `install.sh`
 
@@ -174,9 +216,23 @@ Rules: idempotent; writes only under `$TOOL_PREFIX` (and its own temp dir); prin
 belongs to the tool being run); exits non-zero on any failure and leaves no half-installed `current` link. npm-based tools
 use `npm install -g --prefix "$TOOL_PREFIX"` and **clean the npm cache in the same step**.
 
+Examples
+
+```bash
+#!/bin/bash
+# container/tools/clasp/install.sh (and claude: same shape, with its package name)
+set -euo pipefail
+npm install -g --prefix "$TOOL_PREFIX" "@google/clasp@${TOOL_VERSION}" >&2
+npm cache clean --force >&2
+```
+
+`container/tools/gcloud/install.sh` would download Google's tarball for `$TOOL_ARCH`, verify the manifest's `SHA256_<arch>`,
+extract it into `$TOOL_PREFIX` and link the binaries into `$TOOL_PREFIX/bin`. The exact download URL and where the checksum
+comes from are **not verified yet** (open question 4).
+
 ### 4.5 Lifecycle of a shim call
 
-1. The shim runs `swarmbox-tool run <name> <command> -- "$@"`.
+1. The shim (a link to `swarmbox-shim`) finds its tool in the index and runs `swarmbox-tool run <name> <command> -- "$@"`.
 2. If `current` exists, `exec` the real command. Done.
 3. Otherwise take the lock, print `Installing <name> (first use)...` to stderr, run `install.sh`, move `current`.
 4. `exec` the real command. If the install fails, print the reason, exit non-zero, and the next call retries.
@@ -194,6 +250,12 @@ sandbox. The flags live only in the manifest: when a release changes one, there 
   `SWARMBOX_WITH`.
 - `command claude` bypasses the alias (normal prompts). `SWARMBOX_YOLO=0` disables all the aliases.
 - An agent without a verified auto-approve flag gets no alias. (OpenCode's flag is **unverified**; confirm in its docs first.)
+
+`shell.sh` is the optional place for anything else a tool needs in the interactive shell. It is sourced from the shell
+configuration for every installed or declared tool. Today's example is the `clasp` function that adds
+`--redirect-port 43323` to `clasp login`: it moves from the image's `bashrc` into `container/tools/clasp/shell.sh`, next to the
+tool that needs it. The generated aliases from the manifest (above) are produced before `shell.sh` runs, so `shell.sh` can
+extend or override them.
 
 ### 4.7 Pinning and updating
 
@@ -213,6 +275,30 @@ podman build --build-arg WITH_TOOLS=claude,gcloud .
 The Dockerfile runs `swarmbox-tool install` for each name into `/opt/swarmbox/tools` instead of the home volume. One
 installer, two triggers.
 
+### 4.9 Adding a tool, and keeping the model extensible
+
+To add a tool to the repository:
+
+1. Create `container/tools/<name>/` with `tool.conf` and `install.sh` (and `shell.sh` if it needs shell setup). Or run
+   `swarmbox-tool new <name>` to create the skeleton.
+2. Run `swarmbox-tool validate` (CI runs it): required fields, a known `KIND`, unique command names across levels, an
+   executable `install.sh`, a checksum for every architecture when one is declared.
+3. Rebuild. **No file of the core changes**: the Dockerfile copies the whole directory and `link --system` generates the shims.
+
+Without a rebuild, put the same directory under `~/.config/swarmbox/tools/<name>/` (user level) or `.swarmbox/tools/<name>/`
+(project level); the next container start links it.
+
+Rules that keep this extensible: manifests are data (`SCHEMA` versioned, unknown keys ignored); the core never names a
+specific tool; shims are links to one dispatcher; every manifest is covered by `validate` and by installer tests that use a
+fake installer (the same approach the existing tests take for Podman and Cloudflare).
+
+### 4.10 Project-level tools and trust
+
+A `.swarmbox/tools/` directory that arrives with a cloned repository contains an `install.sh`, which runs code in the sandbox
+with network access and any keys that were passed in. The sandbox limits the damage to the host, not to those keys. So a
+project-level tool is **never installed automatically**: the first time one appears, SwarmBox lists it and asks the user to
+accept it, and records the accepted manifest's hash; a changed manifest asks again. (Proposal; not designed in detail yet.)
+
 ## 5. Repository structure
 
 Existing paths are kept where they work. **New** marks proposed additions.
@@ -230,11 +316,12 @@ Existing paths are kept where they work. **New** marks proposed additions.
 ├── container/                       # everything copied into the image
 │   ├── entrypoint.sh                # new: init, install SWARMBOX_WITH, then exec "$@"
 │   ├── scripts/                     # init.sh, banner.sh, messages.sh, podman-service.sh, ssh-key.sh (swarmbox-pubkey),
-│   │                                #   swarmbox-init (new: prints the shell snippet), swarmbox-tool (new)
+│   │                                #   swarmbox-init (new: prints the shell snippet),
+│   │                                #   swarmbox-tool.sh and swarmbox-shim.sh (new: manager and dispatcher, section 4)
 │   ├── config/                      # static configuration files: tmux, starship, ssh_config.d, bashrc fragment
 │   ├── web/                         # web terminal assets: web-terminal.sh, ttyd-clipboard.js, ttyd-style.css
 │   ├── mcp/<name>/config.json       # MCP servers wired into agents (chrome-devtools today)
-│   └── tools/<name>/                # new: tool.conf + install.sh (section 4)
+│   └── tools/<name>/                # new: tool.conf + install.sh + optional shell.sh (section 4)
 ├── docs/                            # design.md (this file), web-terminal.md, cloudflare.md, nested-podman.md
 ├── tests/                           # helpers.py + one test file per behavior; fakes for podman, Cloudflare, installers
 └── .github/workflows/               # new: ci.yml (tests), release.yml (build, scan, sign, publish)
@@ -246,10 +333,13 @@ File types
 |---|---|---|---|
 | Dockerfile | root | the builder | image build |
 | Entrypoint, scripts | `container/entrypoint.sh`, `container/scripts/` | the container | container start |
+| Dispatcher and manager | `container/scripts/swarmbox-shim.sh`, `swarmbox-tool.sh` | every shim, `swarmbox-tool` | every tool call |
 | Static config | `container/config/` | tmux, starship, ssh, bash | shell start |
 | Web assets | `container/web/` | `swarmbox-web-terminal` | `--web` |
 | MCP definition | `container/mcp/<name>/config.json` | `init.sh` | container start |
-| Tool manifest and installer | `container/tools/<name>/` | `swarmbox-tool` | first use, or build with `WITH_TOOLS` |
+| Tool manifest and installer | `container/tools/<name>/{tool.conf,install.sh}` | `swarmbox-tool` | first use, or build with `WITH_TOOLS` |
+| Tool shell setup | `container/tools/<name>/shell.sh` | the interactive shell | shell start |
+| Generated shims and index | image `/usr/local/lib/swarmbox/{shims,index}`; volume `~/.local/share/swarmbox/{shims,index}` | the dispatcher | every command call (not in git) |
 | Host scripts | `start.sh`, `build.sh`, `lib/`, `cloudflare-setup.py` | the user's shell | on the host |
 | Tests | `tests/` | CI and contributors | every change |
 | Docs | `README.md`, `docs/` | people | always |
@@ -263,7 +353,8 @@ What the image contains
 - Base `node:24-slim` (Node is needed by agent installers; the base is still Debian 12). Node version is an `ARG`.
 - System packages: git, openssh-client, python3 + venv, build tools, curl, jq, tmux, vim, podman and its network deps.
 - Pinned, checksum-verified downloads: ttyd, starship (as today).
-- The tool infrastructure: `swarmbox-tool`, `swarmbox-init`, the shims, the manifests.
+- The tool infrastructure: `swarmbox-tool`, `swarmbox-shim`, `swarmbox-init`, the manifests, and the shims and index that
+  `swarmbox-tool link --system` generates.
 - Config files and scripts from `container/`.
 
 What it does **not** contain: any agent (Claude Code, Gemini CLI, OpenCode), gcloud, clasp, Go, Poetry. They arrive on demand
@@ -278,6 +369,19 @@ Behavior
   command run through it.
 - **Layer order:** stable first (system packages, Podman, pinned downloads), volatile last (scripts, manifests). A change
   to a manifest never invalidates the system layers.
+- **Wiring the tools** (near the end, with the other volatile layers):
+
+  ```dockerfile
+  COPY container/scripts/swarmbox-tool.sh /usr/local/bin/swarmbox-tool
+  COPY container/scripts/swarmbox-shim.sh /usr/local/bin/swarmbox-shim
+  COPY container/tools/                   /usr/local/lib/swarmbox/tools/
+  RUN chmod 755 /usr/local/bin/swarmbox-tool /usr/local/bin/swarmbox-shim && swarmbox-tool link --system
+  ENV PATH=/usr/local/lib/swarmbox/shims:$PATH
+  ```
+
+  `link --system` reads every manifest, creates one symlink per command in `/usr/local/lib/swarmbox/shims/` pointing at
+  `swarmbox-shim`, and writes the index. At container start the entrypoint runs `swarmbox-tool link --user` for the user
+  and project levels.
 - **Layer hygiene:** every `RUN` that downloads cleans up in the same `RUN` (apt lists, npm cache, temp files), because a
   later `rm` does not shrink an image. Files that must be user-writable are created with the right owner, not `chown -R`
   afterwards, which duplicates them in a new layer.
@@ -345,6 +449,7 @@ runs outside the container), `cloudflare-setup.py` never stores the API token.
 6. OpenCode's auto-approve flag (not verified).
 7. License (MIT or Apache-2.0), and the project name's availability.
 8. Keep the full git history when going public, or start clean? The history must first be audited for secrets and personal data.
+9. Project-level tools (4.10): how the acceptance prompt works non-interactively (CI, `swarmbox claude` from a script).
 
 ## 12. Roadmap
 
