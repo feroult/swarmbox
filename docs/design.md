@@ -86,6 +86,9 @@ swarmbox stop            # stop the box; nothing is deleted
 swarmbox reset           # recreate the box; the workspace is kept, running sessions end
 swarmbox update          # pull the newest image, then reset when you say so
 swarmbox pubkey          # SSH public key for git (deploy keys)
+swarmbox env add NAME    # pass the host variable NAME into the box (applies when the box is created; section 3.7)
+swarmbox env rm NAME     # stop passing it
+swarmbox env list        # the names being passed (never the values)
 swarmbox --once          # throwaway container for the current folder, removed on exit (no session sharing)
 ```
 
@@ -125,7 +128,7 @@ swarmbox() {
     --userns=keep-id:uid=1000,gid=1000 \
     -v "${SWARMBOX_WORKSPACE:-$HOME/swarmbox}":/home/agent \
     -p 127.0.0.1:"${SWARMBOX_WEB_PORT:-7681}":7681 \
-    -e SWARMBOX_WITH=claude "$img" serve
+    -e SWARMBOX_WITH=claude $(swarmbox-env-flags) "$img" serve   # one -e NAME per listed name (3.7)
   podman start "$name" >/dev/null
   podman exec -it "$name" swarmbox-attach "$@"
 }
@@ -143,6 +146,41 @@ swarmbox() {
 
 Host-side settings live in `~/.config/swarmbox/config` (`KEY=VALUE`), written by `init` and `remote setup`. Environment
 variables override it. Nothing about Cloudflare is ever passed into the box.
+
+### 3.7 Environment variables and keys (proposed; same behavior as `start.sh --env-keys` today)
+
+Keys and settings the box needs (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, a model name...) are passed **when the box is created**,
+and only then. The first `swarmbox` takes the values from the host environment at that moment; a box that already exists
+keeps what it was created with. To pick up a change, recreate it: `swarmbox reset`.
+
+What is new is only where the list lives:
+- The **names** are stored on the host, in `~/.config/swarmbox/config` (`ENV_KEYS=ANTHROPIC_API_KEY,GEMINI_API_KEY`), not
+  typed on every command. At creation the function turns each name into `-e NAME`, so Podman reads the value from the
+  host environment, as `--env-keys` does today. Values are never written to this file.
+- `swarmbox env add NAME`, `env rm NAME` and `env list` edit and show the list. `list` prints names only.
+- A name must look like an environment variable. Names that belong to the host side are refused: anything starting with
+  `SWARMBOX_CLOUDFLARE_` (the tunnel token must never enter the box, as `start.sh` already enforces today).
+- On creation the function stores a hash of the passed values as a label on the container (`swarmbox.env-hash`). On every
+  entry it recomputes the hash from the host and, if it differs, prints one line: "the variables changed on the host; run
+  `swarmbox reset` to apply them". The values themselves are never stored for this; only the hash is.
+
+What stays as it is today, stated so nobody assumes more:
+- The values live in the container's configuration (`podman inspect` shows them) and in the environment of every process in
+  the box. The agent can read them. Scoped, minimal tokens are the user's protection, not the sandbox.
+- A tool does not get its own subset: every process sees every listed name.
+- The browser terminal and the host tabs should see the same values: all windows are created by the tmux server that started
+  inside the box with the environment it was created with. (Expected from how process environments are inherited; not
+  measured, see the tmux note below.)
+
+Alternatives considered, and why they are not the default:
+- *Pass the host value on every entry* (`podman exec -e NAME`): works for host tabs (checked: the value follows a change on
+  the host, and does not appear in `podman inspect`), but browser windows and remote access come from the tmux server, not from
+  the entering command, so they would not follow it. How tmux inherits the environment for new windows was **not** measured
+  (an attempt was run against the wrong tmux server and is void).
+- *A secrets file mounted from the host* and *Podman secrets*: keep values out of `podman inspect`, but add machinery for
+  a property the model above already gives up on purpose (the agent reads the keys either way).
+- *A credential proxy on the host* that adds authentication to requests so the box never holds the key: the only option that
+  protects the key from the agent; it is a larger piece of work and is listed in the roadmap as optional.
 
 ## 4. Web terminal and remote access (proposed packaging of what exists)
 
@@ -576,7 +614,7 @@ Precedence, highest first: environment variable, `~/.config/swarmbox/config` (ho
 | `SWARMBOX_UPDATE_CHECK` | `0` turns off the once-a-day "newer version" notice for managed tools | `1` |
 | `SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN` | The tunnel's own token (*host*, never passed into the box) | unset |
 | `SWARMBOX_WEB_DOMAIN`, `SWARMBOX_WEB_HOSTNAME` | Used to print the public URL (*host*) | from `cloudflare.json` |
-| `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, ... | Passed through only when set | unset |
+| `ENV_KEYS` (in the host config file) | Names of host variables passed into the box at creation (3.7) | empty |
 
 Defaults must be neutral: no personal hosts or model names (the current local-LLM default for OpenCode is removed or off).
 
@@ -595,6 +633,8 @@ never mounted).
 
 What it does not protect, and must say so:
 - The agent can change or delete everything in the workspace, which holds all the projects, the login and the SSH key.
+- Variables passed in (3.7) are stored in the container's configuration and visible to every process in the box, including
+  to `podman inspect` on the host.
 - The container has `sudo`, open outbound network, and can read its environment: API keys passed in are visible to the agent.
 - The box is persistent: an agent keeps running (and keeps those keys) while you are away, until you stop the box.
 - The SSH key lives in the workspace: anything running in the box can use it. Use per-repository deploy keys.
@@ -618,6 +658,7 @@ into the box.
 | `./start.sh --web` plus `cloudflare-setup.py` plus token variables | Web terminal on by default; `swarmbox remote setup/status/off` |
 | `.work/` in the current directory | `SWARMBOX_WORKSPACE`, default `~/swarmbox` |
 | Agents baked into the image | Installed on demand (`SWARMBOX_WITH`) |
+| `./start.sh --env-keys A,B` on every creation | The names live in the host config; `swarmbox env add/rm/list`; same creation-time behavior |
 | `./build.sh --update-harness`; `DISABLE_AUTOUPDATER=true` | Claude Code updates itself (`UPDATE=self`); other agents: `swarmbox-tool update <agent>` |
 | Image built locally with the host UID | One public image, `keep-id` at run time |
 | `claude` alias in `bashrc` | Generated from the agent manifest |
@@ -653,5 +694,5 @@ An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPA
 2. `container/tools/`, `swarmbox-tool`, shims; move gcloud and clasp first, then the agents.
 3. `entrypoint.sh` with `serve` and `attach`, fixed UID, `swarmbox-init`; image published to the registry.
 4. `swarmbox remote` (setup, status, off) over the existing Cloudflare script, with the login length preserved on rerun.
-5. Module flags at install (`--nested`, `--web-port`), host config file, `swarmbox --once`.
-6. Optional: egress allowlist for the box's network.
+5. Module flags at install (`--nested`, `--web-port`), host config file with `swarmbox env`, `swarmbox --once`.
+6. Optional: egress allowlist for the box's network, and a host-side credential proxy so the box never holds API keys.
