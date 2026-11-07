@@ -202,7 +202,7 @@ container/
 │   ├── install.sh       # how to install it (5.4)
 │   └── shell.sh         # optional: aliases/functions sourced by the interactive shell (5.6)
 └── scripts/
-    ├── swarmbox-tool.sh # list | install | update | remove | run | link | validate | new
+    ├── swarmbox-tool.sh # list | install | update | use | remove | run | link | validate | doctor | new
     └── swarmbox-shim.sh # the single dispatcher every shim links to
 ```
 
@@ -308,6 +308,11 @@ Rules: idempotent; writes only under `$TOOL_PREFIX` (and its own temp dir); prin
 belongs to the tool being run); exits non-zero on any failure and leaves no half-installed `current` link. npm-based tools
 use `npm install -g --prefix "$TOOL_PREFIX"` and **clean the npm cache in the same step**.
 
+Hard rules, because a box can be recreated (section 5.11): an installer **never** uses `apt` or `sudo`, never writes outside
+`$TOOL_PREFIX` (not in `/usr`, `/etc`, `/opt`, and not in the user's shell startup files such as `~/.bashrc`), and never needs
+a system package that the image does not already have. A tool that needs one belongs in the image, or in the build-time
+preinstall (5.8), not in an on-demand install. Anything an installer is allowed to leave behind (a cache) must be safe to lose.
+
 Examples
 
 ```bash
@@ -330,7 +335,8 @@ comes from are **not verified yet** (open question 4).
 4. `exec` the real command. If the install fails, print the reason, exit non-zero, and the next call retries.
 
 Failure modes: offline (clear message, nothing installed), checksum mismatch (install aborted, files removed),
-concurrent shells (second waits on the lock, then finds it installed).
+concurrent shells (second waits on the lock, then finds it installed), and an installed tool whose recorded environment no
+longer matches the image (section 5.11).
 
 ### 5.6 Agents: aliases and `yolo`
 
@@ -411,12 +417,47 @@ Rules that keep this extensible: manifests are data (`SCHEMA` versioned, unknown
 specific tool; shims are links to one dispatcher; every manifest is covered by `validate` and by installer tests that use a
 fake installer (the same approach the existing tests take for Podman and Cloudflare).
 
+CI also runs, for every tool in `container/tools/` (these use the real installer and the network, so they run on a schedule or
+before a release, not on every push):
+- **No side effects:** install in a clean container and check that nothing changed outside `$TOOL_PREFIX` except an allowed
+  cache directory. This enforces the hard rules of 5.4.
+- **Survives a reset:** install, recreate the box on the same workspace, and run the tool.
+
 ### 5.10 Project-level tools and trust
 
 A `.swarmbox/tools/` directory that arrives with a cloned repository contains an `install.sh`, which runs code in the sandbox
 with network access and any keys that were passed in. The sandbox limits the damage to the host, not to those keys. So a
 project-level tool is **never installed automatically**: the first time one appears, SwarmBox lists it and asks the user to
 accept it, and records the accepted manifest's hash; a changed manifest asks again. (Proposal; not designed in detail yet.)
+
+### 5.11 Surviving a reset and an image update
+
+What lives where decides what a `reset` (or `swarmbox update`) can break.
+
+| Lives in | Survives `reset` | Survives an image update | Examples |
+|---|---|---|---|
+| Workspace (`/home/agent`) | yes | yes | projects, login, SSH key, `~/.claude`, installed tools, user manifests |
+| The container's own filesystem | **no** | no | anything installed with `apt`, files in `/usr`, `/etc`, `/opt`, caches outside the home, running processes, tmux sessions |
+| The image | recreated | replaced | system packages, Node, shims and index of the image level, image manifests |
+
+Measured, for Claude Code installed with `npm install -g --prefix <dir in the home>` in a throwaway container: the install wrote
+only the prefix (325 MB, all in the home) and the npm cache (157 MB), and nothing in `/usr`, `/etc` or `/opt`. A reset
+therefore does not touch it. (The vendor's native installer was not tested.)
+
+What can still break a tool after a reset or an image update, and what the design does about it:
+
+1. **The installer wrote outside the prefix.** Forbidden by the hard rules in 5.4 and caught by the "no side effects" CI test.
+2. **The tool needs a system package.** Not allowed on demand; such a tool goes in the image or in `WITH_TOOLS`.
+3. **The environment under the tool changed.** A tool installed under one Node major, CPU architecture or libc can fail under
+   another (native Node modules; a workspace moved from amd64 to arm64). Each install records a fingerprint,
+   `NODE_MAJOR`, `ARCH` and `LIBC`, in a small file next to it (`<prefix>/.swarmbox-env`). At every entry `link --user` compares it
+   with the running image:
+   - different `ARCH`: the shim refuses to run it and says to reinstall, because it cannot work;
+   - different `NODE_MAJOR` or `LIBC`: it warns once per entry and runs the tool anyway, since it may still work;
+   - `swarmbox-tool install <name> --force` reinstalls; `swarmbox-tool doctor` lists every tool as `ok`, `needs reinstall`
+     or `missing`, and `swarmbox-tool doctor --fix` reinstalls the ones that need it.
+4. **An `UPDATE=self` tool moved on by itself.** Its fingerprint is checked the same way; the tool's own updater keeps its files
+   current inside the prefix.
 
 ## 6. Repository structure
 
@@ -603,6 +644,8 @@ An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPA
 12. Running the Cloudflare helper extracted from the image on the host (4.3): acceptable trust, or ship it as a separately
     signed release asset?
 13. `swarmbox update` while sessions are running: ask before recreating, or keep the old box until the user resets it?
+14. Does the vendor's native installer for Claude Code leave anything outside the home (it was not tested), and is its updater
+    happier with it than with an npm install under `--prefix`? Answer together with question 3.
 
 ## 13. Roadmap
 
