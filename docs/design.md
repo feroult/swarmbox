@@ -19,7 +19,8 @@ Goals
 - Remote access (browser, from anywhere) is part of the product, through Cloudflare, with one setup command.
 - The user can read everything that will run on their host before it runs.
 - Every optional capability (nested Podman, remote access, cloud CLIs) is a module they turn on.
-- Versions are pinned and reproducible; updating is a choice.
+- Versions are pinned and reproducible; updating is a choice. The exception is a tool that updates itself by design
+  (Claude Code): that is explicit in its manifest (`UPDATE=self`, section 5.7).
 
 Non-goals
 - It does not make an agent trustworthy. It reduces the blast radius (section 10); it does not remove it.
@@ -48,7 +49,8 @@ Non-goals
 9. **Honest security.** The threat model is written down (section 10) and defaults are conservative: nothing published
    beyond `127.0.0.1`, no remote login without Cloudflare Access in front.
 10. **Pinned and reproducible.** Every download has a version, and a checksum where the publisher provides one. "latest"
-    is an explicit choice, never an accident of layer caching.
+    is an explicit choice, never an accident of layer caching. A tool may opt out by declaring `UPDATE=self`; that is
+    written in its manifest and listed in the security model.
 11. **Progressive disclosure.** Default: one function, `swarmbox`. More: flags chosen at install (`--nested`, `--web-port`).
     Extra: a throwaway mode (`swarmbox --once`) and `start.sh` for people who want the raw script.
 
@@ -232,7 +234,8 @@ In the workspace (persistent, mounted as `/home/agent`):
 
 ```
 ~/.local/share/swarmbox/tools/<name>/<version>/   # the installed program ($TOOL_PREFIX)
-~/.local/share/swarmbox/tools/<name>/current      # symlink to the active version
+~/.local/share/swarmbox/tools/<name>/current      # symlink to the active version (UPDATE=managed)
+~/.local/share/swarmbox/tools/<name>/self/        # the single install of an UPDATE=self tool, updated by the tool
 ~/.local/share/swarmbox/tools/.lock               # flock, so two shells do not install at once
 ~/.local/share/swarmbox/shims/, .../index         # user- and project-level shims
 ~/.config/swarmbox/tools/<name>/                  # user-level manifests
@@ -253,6 +256,8 @@ NAME=claude
 KIND=agent                                   # agent | tool
 PROVIDES="claude"                            # commands that get a shim
 VERSION=latest                               # or a pinned version; see 5.7
+UPDATE=self                                  # the tool updates itself (auto-update stays ON); default is "managed"
+UPDATE_CMD="claude update"                   # what `swarmbox-tool update claude` runs for an UPDATE=self tool
 YOLO_FLAGS="--dangerously-skip-permissions"  # agents only
 MCP_FLAGS="--mcp-config $HOME/.claude/mcp-servers.json"
 ```
@@ -283,6 +288,8 @@ Fields
   are ignored, so a newer manifest with extra fields still works on a slightly older SwarmBox.
 - `NAME`: directory name and install folder. `PROVIDES`: shim names. `KIND`: `agent` tools also get the aliases in 5.6.
 - `VERSION`: `latest` resolves at first install and is then recorded; anything else is installed as written.
+- `UPDATE`: `managed` (default, SwarmBox keeps versions side by side) or `self` (the tool updates itself). `UPDATE_CMD`:
+  required for `self`; the command that updates it now. See 5.7.
 - `SHA256_<arch>`: verified before use when present. Required for tools with a published hash.
 - Conflicts: two manifests that provide the same command are resolved by level (project, then user, then image); two at the
   same level are an error reported by `link` and `validate`.
@@ -318,7 +325,7 @@ comes from are **not verified yet** (open question 4).
 ### 5.5 Lifecycle of a shim call
 
 1. The shim (a link to `swarmbox-shim`) finds its tool in the index and runs `swarmbox-tool run <name> <command> -- "$@"`.
-2. If `current` exists, `exec` the real command. Done.
+2. If the tool is installed (a `current` link, or the `self` directory), `exec` the real command. Done.
 3. Otherwise take the lock, print `Installing <name> (first use)...` to stderr, run `install.sh`, move `current`.
 4. `exec` the real command. If the install fails, print the reason, exit non-zero, and the next call retries.
 
@@ -344,12 +351,36 @@ override them.
 
 ### 5.7 Pinning and updating
 
-- Manifests pin versions; `SWARMBOX_WITH` and `tool install` honor them.
-- `swarmbox-tool update <name>` re-resolves `latest` (or the manifest's newer pin) and installs side by side, then moves
-  `current`. Old versions are removed with `swarmbox-tool remove <name> --old`.
-- The Claude Code auto-updater stays disabled (`DISABLE_AUTOUPDATER=true`); updating is `tool update`. Open question 3.
-- Updating *tools* never needs a new image or a new box. Updating the *image* (`swarmbox update`) does, and recreating the box
-  ends the running tmux sessions, so `update` asks before it does that.
+Each tool says how it is updated, with `UPDATE` in its manifest.
+
+**`UPDATE=managed` (the default): SwarmBox owns the versions.**
+- Manifests pin a version (or say `latest`); `SWARMBOX_WITH` and `tool install` honor them.
+- `swarmbox-tool update <name>` re-resolves the version, installs it side by side, then moves `current`. Old versions stay
+  until `swarmbox-tool remove <name> --old`.
+- `swarmbox-tool use <name> <version>` moves `current` to an installed version. Rolling back is one instant command, because
+  `current` is only a link.
+- On entry, at most once a day and only when online, a one-line notice if a newer version exists ("gcloud 4xx installed, 4yy
+  available: swarmbox-tool update gcloud"). `SWARMBOX_UPDATE_CHECK=0` turns it off.
+- If a manifest pins a version different from the installed one (typically after an image update), the entry says so:
+  "manifest wants X, installed Y".
+- Running processes keep the version they started with; the next launch uses the new one.
+
+**`UPDATE=self`: the tool updates itself. Claude Code is the first.**
+- SwarmBox installs it once, into `tools/<name>/self/`, and then leaves it alone: no side-by-side versions, no `current` link,
+  no pin, no outdated notice (the tool has its own). `VERSION` must be `latest`; `validate` rejects anything else.
+- The tool's auto-update stays **on**: `DISABLE_AUTOUPDATER` is not set. This changes `v0.1.0`, which disabled it because
+  rebuilding the image was the update path.
+- `swarmbox-tool update <name>` runs the manifest's `UPDATE_CMD` (`claude update`), for anyone who does not want to wait for
+  the background update.
+- There is no `use`: to go back, reinstall the version wanted (`swarmbox-tool install <name> --version X`), knowing the tool
+  will update itself again unless its updater is turned off by hand.
+- The cost is reproducibility. Two workspaces can run different Claude Code versions, and a new vendor release runs inside the
+  box with no SwarmBox pin or checksum (section 10).
+- **Not verified:** that Claude Code's updater works for the install method `install.sh` uses (open question 3). It decides
+  between an npm install under `--prefix` and the vendor's native installer into the home; test it before writing the script.
+
+Updating *tools* never needs a new image or a new box. Updating the *image* (`swarmbox update`) does, and recreating the box
+ends the running tmux sessions, so `update` asks before it does that.
 
 ### 5.8 Build-time preinstall
 
@@ -369,7 +400,8 @@ To add a tool to the repository:
 1. Create `container/tools/<name>/` with `tool.conf` and `install.sh` (and `shell.sh` if it needs shell setup). Or run
    `swarmbox-tool new <name>` to create the skeleton.
 2. Run `swarmbox-tool validate` (CI runs it): required fields, a known `KIND`, unique command names across levels, an
-   executable `install.sh`, a checksum for every architecture when one is declared.
+   executable `install.sh`, a checksum for every architecture when one is declared, and for `UPDATE=self` a `VERSION=latest`
+   and an `UPDATE_CMD`.
 3. Rebuild. **No file of the core changes**: the Dockerfile copies the whole directory and `link --system` generates the shims.
 
 Without a rebuild, put the same directory under `~/.config/swarmbox/tools/<name>/` (user level) or `.swarmbox/tools/<name>/`
@@ -500,6 +532,7 @@ Precedence, highest first: environment variable, `~/.config/swarmbox/config` (ho
 | `SWARMBOX_WEB` | `0` turns the web terminal off | `1` |
 | `SWARMBOX_WEB_PORT` | Host port of the web terminal, on `127.0.0.1` (*host*) | `7681` |
 | `SWARMBOX_TOOLS_DIR` | Where tools install | `~/.local/share/swarmbox/tools` |
+| `SWARMBOX_UPDATE_CHECK` | `0` turns off the once-a-day "newer version" notice for managed tools | `1` |
 | `SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN` | The tunnel's own token (*host*, never passed into the box) | unset |
 | `SWARMBOX_WEB_DOMAIN`, `SWARMBOX_WEB_HOSTNAME` | Used to print the public URL (*host*) | from `cloudflare.json` |
 | `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, ... | Passed through only when set | unset |
@@ -529,6 +562,8 @@ What it does not protect, and must say so:
   stolen or forgotten browser session: 4 hours by default today; a week is a deliberate choice. Cloudflare lets an
   administrator revoke sessions (where in the dashboard has not been checked).
 - Installing tools on demand means the agent triggers downloads. Versions are pinned and checksums verified where published.
+- A tool with `UPDATE=self` (Claude Code) updates itself in the background: new vendor code runs inside the box without a
+  SwarmBox pin or checksum, and two workspaces can differ. It is limited to the box, but it has the same keys the agent has.
 
 Defaults: no published ports beyond `127.0.0.1`, no host networking with the web terminal, tunnel credentials stay on the host
 (the connector runs outside the box), `cloudflare-setup.py` never stores the API token, and the tunnel token is never passed
@@ -542,7 +577,7 @@ into the box.
 | `./start.sh --web` plus `cloudflare-setup.py` plus token variables | Web terminal on by default; `swarmbox remote setup/status/off` |
 | `.work/` in the current directory | `SWARMBOX_WORKSPACE`, default `~/swarmbox` |
 | Agents baked into the image | Installed on demand (`SWARMBOX_WITH`) |
-| `./build.sh --update-harness` | `swarmbox-tool update <agent>` |
+| `./build.sh --update-harness`; `DISABLE_AUTOUPDATER=true` | Claude Code updates itself (`UPDATE=self`); other agents: `swarmbox-tool update <agent>` |
 | Image built locally with the host UID | One public image, `keep-id` at run time |
 | `claude` alias in `bashrc` | Generated from the agent manifest |
 | `cloudflare-setup.py` resets the login length to 4h on rerun | Keeps the configured value |
@@ -554,7 +589,8 @@ An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPA
 
 1. Agents on first install: always latest, or a version pinned in the manifest? (Latest is simpler; two users may then differ.)
 2. Name of the option that lists tools: `--with` or `--agents`?
-3. Claude Code's own auto-updater: keep it disabled and use `tool update`, or enable it now that the home persists?
+3. Claude Code's self-update is decided (on, `UPDATE=self`). Open: which install method does its updater support, an npm
+   install under `--prefix` or the vendor's native installer into the home? Not verified; test before writing `install.sh`.
 4. How to obtain a checksum for gcloud reliably and programmatically (not yet checked).
 5. Chromium: keep in the image, or make it optional? (There is no Chrome-for-Testing build for Linux arm64.)
 6. OpenCode's auto-approve flag (not verified).
