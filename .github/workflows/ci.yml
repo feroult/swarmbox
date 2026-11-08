@@ -124,6 +124,9 @@ jobs:
           python3 tests/test_tool_opencode.py
           python3 tests/test_tool_gemini_clasp_poetry.py
           python3 tests/test_tool_go_gcloud.py
+          python3 tests/test_tool_use_remove.py
+          python3 tests/test_tool_new.py
+          python3 tests/test_tool_doctor.py
           python3 tests/test_record_checksums.py
           python3 tests/test_tool_link.py
           python3 tests/test_tool_manifest.py

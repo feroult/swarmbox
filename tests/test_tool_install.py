@@ -571,13 +571,12 @@ class ListAndLater(Base):
         r = self.tool("list")
         self.assertEqual(r.returncode, 0, r.stderr)
 
-    def test_other_managed_subcommands_say_later_phase_with_70(self):
+    def test_use_remove_new_doctor_are_real_since_4b5(self):
+        # they answered 'later phase', exit 70 until slice 4b.5; their tests are test_tool_use_remove.py, test_tool_new.py and
+        # test_tool_doctor.py. A managed tool's `update` is still for a later phase.
         for args in (("use", "demo", "1.0"), ("remove", "demo"), ("doctor",), ("new", "x")):
             with self.subTest(args=args):
-                r = self.tool(*args)
-                self.assertEqual(r.returncode, 70)
-                self.assertIn("later phase", r.stderr)
-                self.assertEqual(r.stdout, "")
+                self.assertNotEqual(self.tool(*args).returncode, 70)
 
     def test_unknown_subcommand_still_exits_70(self):
         self.assertEqual(self.tool("bogus").returncode, 70)

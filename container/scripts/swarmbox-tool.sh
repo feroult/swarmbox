@@ -9,7 +9,10 @@
 #   run NAME COMMAND [-- ARGS...]          REAL (slice 4a.3): install when needed, then exec the real program
 #   list                                   REAL (slice 4a.3): every tool of both levels and its state
 #   update NAME                            REAL for UPDATE=self (runs UPDATE_CMD); a managed tool answers 'later phase', exit 70
-#   use, remove, doctor, new               'later phase', exit 70
+#   use NAME VERSION                       REAL (slice 4b.5): switches the active version of a managed tool (see "use, remove, new, doctor")
+#   remove NAME [--purge]                  REAL (4b.5): deletes the install of NAME in the workspace (--purge also its user-level manifest)
+#   new NAME [--repo | --dir DIR]          REAL (4b.5): writes a skeleton that passes validate (user level by default)
+#   doctor [--fix]                         REAL (4b.5): ok / needs reinstall / missing for every tool; --fix reinstalls the ones that need it
 #   prepare         REAL (slice 4b.2): runs the prepare.sh of every installed or WITH-declared tool (see "prepare" below)
 #   anything else   exit 70 (EX_SOFTWARE) with a message that names Phase 4a
 #
@@ -23,7 +26,9 @@
 # replaces the user level ($SB_CONFIG_DIR/tools), SWARMBOX_TEST_LIB is the folder with dirs.sh; decision log [4a.2]:
 # SWARMBOX_TEST_IMAGE_SHIMS replaces /usr/local/lib/swarmbox/shims (its index is the sibling `index`) and
 # SWARMBOX_TEST_USER_SHIMS replaces $SB_SHIMS_DIR (index: sibling `index`); decision log [4a.3]: SWARMBOX_TEST_LOCK replaces the lock
-# file /tmp/swarmbox/tools.lock and SWARMBOX_TEST_ARCH forces TOOL_ARCH (amd64 or arm64) instead of reading `uname -m`. The tools
+# file /tmp/swarmbox/tools.lock and SWARMBOX_TEST_ARCH forces TOOL_ARCH (amd64 or arm64) instead of reading `uname -m`; decision log
+# [4b.5]: SWARMBOX_TEST_NODE_MAJOR (may be empty) and SWARMBOX_TEST_LIBC (glibc or musl) replace the Node major and the libc that
+# the fingerprint (6.11) reads from the running image. The tools
 # folder itself follows dirs.sh (HOME and the XDG variables), so tests move it by moving HOME.
 
 HOST_DIR=${SWARMBOX_TEST_HOST_DIR:-/usr/local/share/swarmbox/host}
@@ -557,11 +562,29 @@ is_installed() {
     done
 }
 
+# current_node_major, current_libc: the running image's side of the fingerprint (6.11); test overrides in the header.
+current_node_major() {
+    if [ "${SWARMBOX_TEST_NODE_MAJOR+set}" = set ]; then
+        printf '%s' "$SWARMBOX_TEST_NODE_MAJOR"
+        return 0
+    fi
+    node -v 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p' | head -n 1 || true
+}
+current_libc() {
+    if [ -n "${SWARMBOX_TEST_LIBC:-}" ]; then
+        printf '%s' "$SWARMBOX_TEST_LIBC"
+    elif ldd --version 2>&1 | grep -qi musl; then
+        printf musl
+    else
+        printf glibc
+    fi
+}
+
 # write_fingerprint FILE ARCH VERSION: the environment record of 6.11.
 write_fingerprint() {
     local node libc
-    node=$(node -v 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p' | head -n 1 || true)
-    if ldd --version 2>&1 | grep -qi musl; then libc=musl; else libc=glibc; fi
+    node=$(current_node_major)
+    libc=$(current_libc)
     printf 'ARCH=%s\nNODE_MAJOR=%s\nLIBC=%s\nVERSION=%s\n' "$2" "$node" "$libc" "$3" >"$1"
 }
 
@@ -798,6 +821,7 @@ cmd_run() {
         exit 64
     fi
     ensure_installed "$name" "$cmd" "Installing $name (first use)..." || exit 69
+    fp_gate "$name" || exit 69
     status=0
     real=$(real_command "$name" "$cmd") || status=$?
     if [ "$status" -ne 0 ]; then
@@ -960,8 +984,403 @@ cmd_prepare() {
     return "$failed"
 }
 
+# ---- fingerprint, use, remove, new, doctor (slice 4b.5; design 6.11, 6.9, 6.7) -------------------------------------------------
+# The fingerprint of an install is <prefix>/.swarmbox-env (ARCH, NODE_MAJOR, LIBC, VERSION). fp_check compares it with the running
+# image. An empty value on either side (no Node in the image, an old record) is "unknown" and never a difference.
+
+# load_dirs: sources dirs.sh into THIS shell (the SB_* variables); returns 1 when it cannot be found.
+load_dirs() {
+    local lib
+    for lib in "$SB_LIB/dirs.sh" "$(dirname "$0")/dirs.sh"; do
+        if [ -r "$lib" ]; then
+            # shellcheck disable=SC1090  # chosen at run time
+            . "$lib"
+            return 0
+        fi
+    done
+    return 1
+}
+
+fp_read() { sed -n "s/^$2=//p" "$1" | head -n 1; }
+
+# fp_record NAME: prints the path of the fingerprint file of an installed NAME (M must hold its manifest).
+fp_record() {
+    if [ "${M[UPDATE]:-managed}" = self ]; then printf '%s' "$TDIR/$1/self/.swarmbox-env"; else printf '%s' "$TDIR/$1/current/.swarmbox-env"; fi
+}
+
+# fp_check NAME: sets FP_ARCH (non-empty: "ARCH a -> b", the tool cannot run here) and FP_WARN (non-empty: NODE_MAJOR or LIBC
+# differs, the tool may still work). Returns 1 when there is no record.
+FP_ARCH=
+FP_WARN=
+fp_check() {
+    local rec ra rn rl arch node libc
+    FP_ARCH=
+    FP_WARN=
+    rec=$(fp_record "$1")
+    [ -f "$rec" ] || return 1
+    ra=$(fp_read "$rec" ARCH)
+    rn=$(fp_read "$rec" NODE_MAJOR)
+    rl=$(fp_read "$rec" LIBC)
+    arch=$(tool_arch) || arch=
+    node=$(current_node_major)
+    libc=$(current_libc)
+    if [ -n "$ra" ] && [ -n "$arch" ] && [ "$ra" != "$arch" ]; then FP_ARCH="ARCH $ra -> $arch"; fi
+    if [ -n "$rn" ] && [ -n "$node" ] && [ "$rn" != "$node" ]; then FP_WARN="NODE_MAJOR $rn -> $node"; fi
+    if [ -n "$rl" ] && [ -n "$libc" ] && [ "$rl" != "$libc" ]; then FP_WARN="${FP_WARN:+$FP_WARN, }LIBC $rl -> $libc"; fi
+    return 0
+}
+
+# warned_dir: the per-entry markers, <state dir>/tool-warned (link --user clears it at every entry).
+warned_dir() {
+    load_dirs || return 1
+    printf '%s' "$SB_STATE_DIR/tool-warned"
+}
+
+# fp_warn_once NAME: prints the NODE_MAJOR/LIBC warning of FP_WARN unless this entry already printed it for NAME.
+fp_warn_once() {
+    local wd marker
+    wd=$(warned_dir) || wd=""
+    marker=$wd/$1
+    if [ -n "$wd" ] && [ -e "$marker" ]; then return 0; fi
+    echo "swarmbox-tool: warning: $1 was installed in a different environment ($FP_WARN); it may still work. To rebuild it: swarmbox-tool install $1 --force (shown once per entry)" >&2
+    if [ -n "$wd" ]; then
+        if mkdir -p "$wd" 2>/dev/null; then : >"$marker" 2>/dev/null || true; fi
+    fi
+    return 0
+}
+
+# fp_gate NAME: at a shim call (run). ARCH differs: refuse (returns 1). NODE_MAJOR or LIBC differs: warn once per entry, return 0.
+fp_gate() {
+    fp_check "$1" || return 0
+    if [ -n "$FP_ARCH" ]; then
+        echo "swarmbox-tool: $1 was installed for another CPU architecture ($FP_ARCH) and cannot run here. Reinstall it: swarmbox-tool install $1 --force (or swarmbox-tool doctor --fix)" >&2
+        return 1
+    fi
+    [ -z "$FP_WARN" ] || fp_warn_once "$1"
+    return 0
+}
+
+# fp_scan_entry: at link --user (once per entry): clears the markers, then reports every installed tool whose fingerprint
+# differs. Only reports; never fails the link.
+fp_scan_entry() {
+    local d name wd
+    TDIR=$(tools_state_dir) || return 0
+    wd=$(warned_dir) && rm -rf "$wd"
+    [ -d "$TDIR" ] || return 0
+    for d in "$TDIR"/*/; do
+        [ -d "$d" ] || continue
+        d=${d%/}
+        name=${d##*/}
+        [[ "$name" =~ $NAME_RE ]] || continue
+        find_manifest "$name" 2>/dev/null || continue
+        fp_check "$name" || continue
+        if [ -n "$FP_ARCH" ]; then
+            echo "swarmbox-tool: $name was installed for another CPU architecture ($FP_ARCH) and cannot run here, reinstall it: swarmbox-tool install $name --force (or swarmbox-tool doctor --fix)" >&2
+        elif [ -n "$FP_WARN" ]; then
+            fp_warn_once "$name"
+        fi
+    done
+    return 0
+}
+
+# use NAME VERSION: moves `current` of a managed tool to an installed, complete version (atomic rename, under the lock).
+cmd_use() {
+    local name version tmp
+    [ $# -eq 2 ] || usage
+    name=$1
+    version=$2
+    check_tool_name "$name"
+    if [[ ! "$version" =~ $VERSION_RE ]]; then
+        echo "swarmbox-tool: '$version' is not a version name" >&2
+        exit 64
+    fi
+    TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
+    find_manifest "$name" || { echo "swarmbox-tool: $FIND_ERR" >&2; exit 1; }
+    if [ "${M[UPDATE]:-managed}" = self ]; then
+        echo "swarmbox-tool: $name updates itself (UPDATE=self), so it has no versions to switch between (6.7)" >&2
+        exit 1
+    fi
+    take_lock || exit 69
+    if [ ! -d "$TDIR/$name/$version" ] || [ ! -f "$TDIR/$name/$version/.swarmbox-env" ] || ! version_dir_complete "$TDIR/$name/$version"; then
+        drop_lock
+        echo "swarmbox-tool: $name $version is not installed (swarmbox-tool install $name --version $version)" >&2
+        exit 1
+    fi
+    if [ "$(readlink "$TDIR/$name/current" 2>/dev/null)" = "$version" ]; then
+        drop_lock
+        echo "swarmbox-tool: $name $version is already the active version" >&2
+        exit 0
+    fi
+    tmp=$TDIR/$name/.current.$$
+    rm -f "$tmp"
+    if ln -s "$version" "$tmp" && mv -T "$tmp" "$TDIR/$name/current"; then
+        drop_lock
+        echo "swarmbox-tool: $name now uses $version" >&2
+        exit 0
+    fi
+    rm -f "$tmp"
+    drop_lock
+    echo "swarmbox-tool: cannot move the current link of $name" >&2
+    exit 1
+}
+
+# safe_rm PATH: rm -rf of one of an UPDATE=self tool's own paths, unless it is (or contains) a SwarmBox folder.
+safe_rm() {
+    local p r q
+    p=$1
+    [ -e "$p" ] || [ -L "$p" ] || return 0
+    r=$(realpath -m -- "$p")
+    for q in "$SB_DATA_DIR" "$SB_STATE_DIR" "$SB_CONFIG_DIR" "$TDIR" "$HOME"; do
+        q=$(realpath -m -- "$q")
+        case "$q/" in
+            "$r"/*)
+                echo "swarmbox-tool: not deleting $p: it holds SwarmBox's own folders" >&2
+                return 0
+                ;;
+        esac
+    done
+    rm -rf -- "$p"
+}
+
+# remove NAME [--purge]: deletes the install of NAME in the workspace. Without --purge the manifests and shims stay, so the next
+# call of the command installs it again (6.5). --purge also deletes a USER-level manifest and relinks; an image-level one is refused.
+cmd_remove() {
+    local name purge=0 have=0 c ushims udir
+    [ $# -ge 1 ] || usage
+    name=$1
+    shift
+    check_tool_name "$name"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --purge) purge=1; shift ;;
+            *) usage ;;
+        esac
+    done
+    load_dirs || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
+    TDIR=$SB_TOOLS_DIR
+    find_manifest "$name" && have=1
+    if [ "$have" -eq 0 ] && [ ! -e "$TDIR/$name" ]; then
+        echo "swarmbox-tool: $FIND_ERR" >&2
+        exit 1
+    fi
+    if [ "$purge" -eq 1 ] && [ "$have" -eq 1 ] && [ "$MDIR" = "$IMAGE_TOOLS/$name" ]; then
+        echo "swarmbox-tool: the manifest of $name is part of the image and cannot be purged (remove it without --purge to delete only the install)" >&2
+        exit 1
+    fi
+    take_lock || exit 69
+    if [ "$have" -eq 1 ] && [ "${M[UPDATE]:-managed}" = self ]; then
+        for c in ${M[PROVIDES]}; do
+            if [ -f "$HOME/.local/bin/$c" ] || [ -L "$HOME/.local/bin/$c" ]; then rm -f -- "$HOME/.local/bin/$c"; fi
+        done
+        safe_rm "$HOME/.local/share/$name"
+        safe_rm "$HOME/.local/state/$name"
+        safe_rm "$HOME/.cache/$name"
+    fi
+    if [ -e "$TDIR/$name" ]; then
+        rm -rf -- "${TDIR:?}/$name"
+        echo "swarmbox-tool: removed the install of $name" >&2
+    else
+        echo "swarmbox-tool: $name is not installed: nothing to remove" >&2
+    fi
+    if [ "$purge" -eq 1 ] && [ "$have" -eq 1 ]; then
+        rm -rf -- "${MDIR:?}"
+        udir=$(user_tools_dir) && ushims=$(user_shims_dir) && link_level user "$udir" "$ushims" "" >/dev/null
+        echo "swarmbox-tool: purged the user-level manifest of $name and relinked" >&2
+    fi
+    drop_lock
+    exit 0
+}
+
+# provider_of COMMAND: prints the name of the tool that PROVIDES COMMAND at either level (first found); returns 1 when none.
+provider_of() {
+    local root d c udir
+    udir=$(user_tools_dir) || udir=""
+    for root in "$udir" "$IMAGE_TOOLS"; do
+        if [ -z "$root" ] || [ ! -d "$root" ]; then continue; fi
+        for d in "$root"/*/; do
+            [ -f "${d}tool.conf" ] || continue
+            load_manifest "${d%/}" || continue
+            for c in ${M[PROVIDES]:-}; do
+                if [ "$c" = "$1" ]; then
+                    basename "${d%/}"
+                    return 0
+                fi
+            done
+        done
+    done
+    return 1
+}
+
+# new NAME [--repo | --dir DIR]: writes tool.conf and an executable install.sh that passes validate and stops with a message.
+cmd_new() {
+    local name base="" mode=user prov top udir
+    [ $# -ge 1 ] || usage
+    name=$1
+    shift
+    check_tool_name "$name"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --repo) [ "$mode" = user ] || usage; mode=repo; shift ;;
+            --dir)
+                if [ $# -lt 2 ] || [ "$mode" != user ]; then usage; fi
+                mode=dir
+                base=$2
+                shift 2 ;;
+            *) usage ;;
+        esac
+    done
+    case "$mode" in
+        user) base=$(user_tools_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; } ;;
+        repo)
+            top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+            if [ -z "$top" ] || [ ! -d "$top/container/tools" ]; then
+                echo "swarmbox-tool: --repo needs the current folder to be inside a SwarmBox checkout (a git repository with container/tools)" >&2
+                exit 1
+            fi
+            base=$top/container/tools ;;
+    esac
+    udir=$(user_tools_dir 2>/dev/null) || udir=""
+    if [ -e "$base/$name" ] || [ -e "$IMAGE_TOOLS/$name" ] || { [ -n "$udir" ] && [ -e "$udir/$name" ]; }; then
+        echo "swarmbox-tool: a tool named '$name' already exists (swarmbox-tool list)" >&2
+        exit 1
+    fi
+    if prov=$(provider_of "$name"); then
+        echo "swarmbox-tool: the command '$name' is already provided by '$prov': pick another name" >&2
+        exit 1
+    fi
+    if ! mkdir -p "$base" || ! mkdir "$base/$name"; then
+        echo "swarmbox-tool: cannot create $base/$name" >&2
+        exit 1
+    fi
+    cat >"$base/$name/tool.conf" <<EOF
+# Manifest of $name (design 6.3). KIND is agent (VERSION=latest) or tool (a pinned VERSION).
+SCHEMA=1
+NAME=$name
+KIND=tool
+PROVIDES="$name"
+VERSION=0.0.1
+EOF
+    cat >"$base/$name/install.sh" <<'EOF'
+#!/bin/bash
+# Installer (design 6.4). It runs with TOOL_PREFIX, TOOL_VERSION and TOOL_ARCH (amd64 or arm64) set, in the home, with
+# stdin closed. Write only below $TOOL_PREFIX; put each command of PROVIDES in $TOOL_PREFIX/bin; never use the system package
+# manager or root; verify a download against TOOL_SHA256 when the manifest has SHA256_amd64 and SHA256_arm64.
+set -euo pipefail
+echo "swarmbox-tool: this installer is the skeleton written by 'swarmbox-tool new': edit $0 first" >&2
+exit 1
+EOF
+    chmod 755 "$base/$name/install.sh"
+    echo "swarmbox-tool: wrote $base/$name (tool.conf, install.sh): edit both, then run swarmbox-tool validate" >&2
+    echo "$base/$name"
+}
+
+# doctor_classify NAME: with M loaded, sets DS (ok, needs reinstall, missing) and DD (the reason), and DCUR (the version that is
+# active, for a managed tool).
+DS=
+DD=
+DCUR=
+doctor_classify() {
+    local name=$1 rec
+    DS=ok
+    DD=
+    DCUR=
+    rec=$(fp_record "$name")
+    if [ "${M[UPDATE]:-managed}" = self ]; then
+        if [ ! -f "$rec" ]; then
+            DS=missing
+            return 0
+        elif ! is_installed "$name"; then
+            DS="needs reinstall"
+            DD="the command is missing"
+            return 0
+        fi
+    else
+        DCUR=$(readlink "$TDIR/$name/current" 2>/dev/null || true)
+        if [ -z "$DCUR" ]; then
+            DS=missing
+            return 0
+        elif ! is_installed "$name"; then
+            DS="needs reinstall"
+            DD="$DCUR is incomplete"
+            return 0
+        fi
+    fi
+    fp_check "$name" || return 0
+    if [ -n "$FP_ARCH" ] || [ -n "$FP_WARN" ]; then
+        DS="needs reinstall"
+        DD="${FP_ARCH}${FP_ARCH:+${FP_WARN:+, }}${FP_WARN}"
+    fi
+}
+
+# doctor [--fix]: one line per tool: ok, needs reinstall, missing (never installed: normal, it installs on first use) or broken
+# (the manifest does not load). Exit 1 when any tool needs a reinstall or is broken. --fix reinstalls those that need it, under
+# one lock, with the version that was active. A NODE_MAJOR or LIBC difference is listed as "needs reinstall" here although the shim
+# only warns and runs (decision log [4b.5]).
+cmd_doctor() {
+    local fix=0 lvl root d name seen=" " needfix=0 broken=0 failed=0 fixed=0 i
+    local -a rows=() todo=() todover=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --fix) [ "$fix" -eq 0 ] || usage; fix=1; shift ;;
+            *) usage ;;
+        esac
+    done
+    TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
+    for lvl in user image; do
+        if [ "$lvl" = user ]; then root=$(user_tools_dir) || continue; else root=$IMAGE_TOOLS; fi
+        [ -d "$root" ] || continue
+        for d in "$root"/*/; do
+            [ -d "$d" ] || continue
+            d=${d%/}
+            name=${d##*/}
+            case "$seen" in *" $name "*) continue ;; esac
+            seen="$seen$name "
+            if ! load_manifest "$d"; then
+                DS=broken
+                DD=$LOAD_ERR
+                DCUR=
+                needfix=1
+                broken=1
+            else
+                doctor_classify "$name"
+                if [ "$DS" = "needs reinstall" ]; then
+                    needfix=1
+                    todo+=("$name")
+                    todover+=("$DCUR")
+                fi
+            fi
+            rows+=("$(printf '%-16s %-16s %s' "$name" "$DS" "$DD")")
+        done
+    done
+    printf '%-16s %-16s %s\n' NAME STATE DETAIL
+    [ "${#rows[@]}" -eq 0 ] || printf '%s\n' "${rows[@]}" | LC_ALL=C sort
+    if [ "$fix" -eq 1 ] && [ "${#todo[@]}" -gt 0 ]; then
+        take_lock || exit 1
+        for i in "${!todo[@]}"; do
+            name=${todo[$i]}
+            if ! find_manifest "$name"; then
+                echo "swarmbox-tool: cannot reinstall $name: $FIND_ERR" >&2
+                failed=1
+                continue
+            fi
+            if install_locked "$name" "${todover[$i]}" 1 "Reinstalling $name..."; then
+                fixed=$((fixed + 1))
+                prepare_after_install "$name"
+            else
+                echo "swarmbox-tool: doctor --fix: $name could not be reinstalled" >&2
+                failed=1
+            fi
+        done
+        drop_lock
+        echo "swarmbox-tool: doctor --fix: reinstalled $fixed of ${#todo[@]} tool(s)" >&2
+        [ "$failed" -eq 0 ] || exit 1
+        exit "$broken"
+    fi
+    exit "$needfix"
+}
+
 usage() {
-    echo "usage: swarmbox-tool validate [DIR] | link --system|--user | install NAME [--version X] [--force] | run NAME COMMAND [-- ARGS...] | list | update NAME | prepare   (use, remove, doctor, new: later phase)" >&2
+    echo "usage: swarmbox-tool validate [DIR] | link --system|--user | install NAME [--version X] [--force] | run NAME COMMAND [-- ARGS...] | list | update NAME | use NAME VERSION | remove NAME [--purge] | new NAME [--repo | --dir DIR] | doctor [--fix] | prepare" >&2
     exit 64
 }
 
@@ -986,6 +1405,7 @@ case "$cmd" in
                 fi
                 link_level user "$udir" "$ushims" "" || exit 1
                 echo "swarmbox-tool link --user: linked the user level (shims in $ushims)"
+                fp_scan_entry
                 ;;
             *) usage ;;
         esac
@@ -994,10 +1414,10 @@ case "$cmd" in
     run) cmd_run "$@" ;;
     list) cmd_list "$@" ;;
     update) cmd_update "$@" ;;
-    use|remove|doctor|new)
-        echo "swarmbox-tool: '$cmd' is for a later phase of the SwarmBox 2.0 build (Phase 4a has install, run, list and update for UPDATE=self): not implemented yet" >&2
-        exit 70
-        ;;
+    use) cmd_use "$@" ;;
+    remove) cmd_remove "$@" ;;
+    new) cmd_new "$@" ;;
+    doctor) cmd_doctor "$@" ;;
     prepare) cmd_prepare "$@"; exit $? ;;
     *)
         echo "swarmbox-tool: unknown command '$cmd' (later phases add more; see usage)" >&2
