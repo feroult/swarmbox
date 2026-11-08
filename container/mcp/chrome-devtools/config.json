@@ -1,13 +1,13 @@
 {
-  "command": "npx",
+  "command": "chrome-devtools-mcp",
   "args": [
-    "-y",
-    "chrome-devtools-mcp@latest",
     "--executablePath=/usr/bin/chromium",
     "--headless",
     "--chromeArg=--no-sandbox",
     "--chromeArg=--disable-setuid-sandbox",
     "--chromeArg=--disable-dev-shm-usage",
     "--chromeArg=--disable-gpu"
-  ]
+  ],
+  "env": {},
+  "browserUrlArgs": ["--browserUrl=${BROWSER_URL}"]
 }

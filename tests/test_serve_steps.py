@@ -118,7 +118,7 @@ def wait_for(fn, seconds=10.0, step=0.02):
 
 
 class ServeCase(unittest.TestCase):
-    PROGRAMS = ("swarmbox-pubkey", "swarmbox-migrate", "swarmbox-tool")
+    PROGRAMS = ("swarmbox-pubkey", "swarmbox-migrate", "swarmbox-tool", "swarmbox-mcp")
 
     def setUp(self):
         self.base = tempfile.mkdtemp(prefix="serve-test-")
@@ -389,6 +389,32 @@ class WarnSteps(ServeCase):
         p = self.run_ready()
         self.stop(p)
         self.assertIn("mine", read(f))
+
+    def test_step_7_calls_the_generator_before_prepare(self):
+        p = self.run_ready()
+        self.stop(p)
+        c = self.calls()
+        self.assertIn("swarmbox-mcp generate", c)
+        self.assertLess(c.index("swarmbox-mcp generate"), c.index("swarmbox-tool prepare"))
+
+    def test_step_7_a_failing_generator_is_one_w_line_and_an_empty_valid_file_is_left(self):
+        put(os.path.join(self.fake, "swarmbox-mcp.exit"), "2")
+        p = self.run_ready()
+        self.stop(p)
+        lines = [l for l in read(self.health).splitlines() if "MCP" in l]
+        self.assertEqual(len(lines), 1, read(self.health))
+        self.assertIn("swarmbox-mcp exit 2", lines[0])
+        self.assertEqual(json.loads(read(os.path.join(self.home, ".claude", "mcp-servers.json"))), {"mcpServers": {}})
+
+    def test_step_7_a_generator_that_exits_1_keeps_the_file_it_wrote(self):
+        put(os.path.join(self.fake, "swarmbox-mcp.exit"), "1")
+        f = os.path.join(self.home, ".claude", "mcp-servers.json")
+        os.mkdir(os.path.dirname(f))
+        put(f, '{"mcpServers": {"kept": {"command": "x"}}}')
+        p = self.run_ready()
+        self.stop(p)
+        self.assertIn("kept", read(f))
+        self.assertTrue(any("MCP" in l for l in read(self.health).splitlines()))
 
     def test_web_off_starts_no_supervisor(self):
         p = self.run_ready(SWARMBOX_WEB="0")

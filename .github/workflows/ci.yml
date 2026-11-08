@@ -103,6 +103,7 @@ jobs:
           python3 tests/test_history_audit.py
           python3 tests/test_init_output.py
           python3 tests/test_image_build.py
+          python3 tests/test_mcp_registry.py
           python3 tests/test_migration.py
           python3 tests/test_pubkey_ensure.py
           python3 tests/test_repo_files.py

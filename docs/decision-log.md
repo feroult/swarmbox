@@ -1239,3 +1239,18 @@ Impact on the design: the two lines. How to reverse: n/a.
 - The arm64 job, the macOS bash 3.2 step and the dash/busybox step have never run; their only checks are `tests/test_ci_workflow.py` (28 tests) and actionlint 1.7.12 (downloaded into a mktemp directory, checksum verified, run once, deleted; clean).
 - Not testable here and written down in the gate row: arm64; macOS bash 3.2, `sh`, `stat` and `sort`; a real WSL path and a Windows-drive workspace on a real WSL; a host UID other than 1000; Podman older than 4.3; the real registry; the third nesting level.
 - The Phase 3 gate is `partial`, not `done`: the exit criterion "the function and helper tests pass in CI" is true only locally.
+
+## [4b.1] The MCP generator is a jq script, swarmbox-mcp, with exit 1 for "written but incomplete"
+Context: the slice asked for a generator script and left jq versus python3 open; the image has both, and v0.1.0 used jq.
+Options: jq; python3; keep the code inside entrypoint.sh.
+Chosen: `container/scripts/swarmbox-mcp.sh` in bash with jq, installed as `swarmbox-mcp` (a separate program so prepare.sh can call it). Merge is shallow (`add`): a user `args` replaces the image `args`, a user `env` replaces the whole `env`; this is predictable and what "fields override" says. Exit 0 = clean, 1 = file written but some server file was bad (one stderr line each), 2 = nothing written. serve turns any non-zero into one W health line and, if no file exists, leaves the empty valid file. Test-only variable SWARMBOX_TEST_MCP_DIR (image registry path), next to SWARMBOX_TEST_LIB.
+Impact on the design: "4b.1 state" paragraph in 4.4; 4.1 wording about the no-op removed.
+How to reverse: delete the script, its Dockerfile lines and restore the placeholder block of step 7.
+
+## [4b.1] Server names with spaces and a user-level entry without command
+Context: not settled by the design.
+Chosen: a user-only entry needs a string `command`, otherwise it is skipped with a warning (an MCP client would reject it). Server folder names are iterated word by word, so a folder name containing whitespace is not supported (not tested, not guarded). The fallback empty file, "enabled: true" in a user file (accepted, field removed) and the OpenCode mirror (left for the opencode slice) are as in the design.
+Impact on the design: none. How to reverse: n/a.
+
+## [4b.1] What did not work
+Running the serve tests through a pipe (`python3 ... | tail`) hung for the whole tool timeout because fake background processes kept the pipe open; with output to a file the 41 tests take 10 s. The generator was not run inside a built image (no container used in this slice).
