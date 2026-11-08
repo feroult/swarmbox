@@ -347,6 +347,17 @@ class AlwaysAppliedTest(Base):
         out = self.flags(env=env)
         self.assertIn(("--label", "swarmbox.fingerprint=" + self.fp(env=env)), pairs_of(out))
 
+    def test_the_tests_only_no_nested_switch_drops_what_a_third_level_cannot_honour(self):
+        # slice 3.3: the real throwaway-box smoke test runs inside the development box (a nested level), where /dev/net/tun,
+        # the unmasked /proc and a private UTS namespace (--hostname) are refused; the switch removes exactly those three
+        # and adds the variable the box's serve reads for the same purpose. Without the switch nothing changes (the goldens).
+        base = pairs_of(self.flags())
+        low = pairs_of(self.flags(env={"SWARMBOX_TEST_NO_NESTED": "1"}))
+        self.assertEqual(sorted(set(base) - set(low)),
+                         sorted([("--device", "/dev/net/tun"), ("--security-opt", "unmask=/proc/*"), ("--hostname", "swarmbox")]))
+        self.assertEqual(sorted(set(low) - set(base)), [("-e", "SWARMBOX_TEST_NO_NESTED=1")])
+        self.assertEqual(len(low), len(base) - 3 + 1)
+
     def test_macos_extras_only_with_the_override(self):
         self.assertNotIn(("--security-opt", "label=disable"), pairs_of(self.flags()))
         self.assertIn(("--security-opt", "label=disable"), pairs_of(self.flags(env={"SWARMBOX_TEST_OS": "Darwin"})))
@@ -1063,9 +1074,12 @@ class SourceRulesTest(unittest.TestCase):
         import re
         self.assertIsNone(re.search(r"(^|[;{(&|]\s*)local\s+[A-Za-z_]", text, re.M), "local")
 
-    def test_the_helper_calls_no_podman_in_this_slice(self):
+    def test_create_flags_and_fingerprint_call_no_podman(self):
+        # slice 3.3 added up, reset, stop (which call Podman) in their own block; nothing before that block may
         with open(HELPER_SRC) as f:
-            lines = [l for l in f.read().split("\n") if not l.lstrip().startswith("#")]
+            src = f.read()
+        before = src.split("# ---------------------------------------------------------------- up, reset, stop, url", 1)[0]
+        lines = [l for l in before.split("\n") if not l.lstrip().startswith("#")]
         self.assertFalse([l for l in lines if l.strip().startswith("podman ") or "podman run" in l])
 
 

@@ -3,7 +3,7 @@
 
 Builds (or reuses) the image and checks it in throwaway containers: `serve` reaches readiness, `box:/tmp/swarmbox` is empty
 after a stop and a start, the ttyd page is built, `swarmbox-tool validate` passes on the shipped manifests, the claude shim, index and tool-ports are there, two `attach` calls share one session, the
-image holds no agent, and (full mode only) a nested Podman runs a container.
+image holds no agent, the host helper's up, reset and stop work against a real throwaway box (slice 3.3), and (full mode only) a nested Podman runs a container.
 
 Two modes:
   reduced (default once opted in)  for the development box, which is itself a container: the throwaway box starts with the
@@ -13,6 +13,7 @@ Two modes:
       `ok`, and the nested steps run. Results are tagged [full]. The full result stays [unverified] until CI runs it.
 
 Opt-in: nothing runs unless SWARMBOX_IMAGE_BUILD=1 or SWARMBOX_SMOKE_FULL=1 is set; every step is then reported SKIP.
+SWARMBOX_SMOKE_ONLY=id,id runs only those steps (a development convenience).
 SWARMBOX_IMAGE_TAG=<swarmbox-test-...> reuses an image (and does not remove it); otherwise dev/dev-build.sh builds one,
 removed at the end. Containers and volumes are swarmbox-test-smoke-<random>, removed by exact name; workspaces are mktemp
 directories. No port is published. Output: one line per step, "STEP <id> PASS|FAIL|SKIP <title> <tag or reason>", then a
@@ -25,6 +26,7 @@ Run: SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py            (reduced)
 import os
 import random
 import shutil
+import socket
 import string
 import subprocess
 import sys
@@ -137,6 +139,8 @@ class Ctx:
             vol_rm_exact(v)
         for d in self.dirs:
             shutil.rmtree(d, ignore_errors=True)
+            if os.path.exists(d):   # a failed creation can leave folders that Podman made with other owners
+                subprocess.run(["podman", "unshare", "rm", "-rf", d], capture_output=True)
         self.containers, self.volumes, self.dirs = [], [], []
 
     def expected_marker_ok(self, marker):
@@ -275,6 +279,166 @@ def step_nested_cgroup(ctx):
     print("    B28 systemd manager: exit %d %s" % (alt.returncode, (alt.stderr.strip().splitlines() or [""])[-1][:200]))
 
 
+def free_port():
+    """A random high port that is free on 127.0.0.1 now (never a well-known one)."""
+    for _ in range(100):
+        port = random.randrange(20000, 40000)
+        s = socket.socket()
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError:
+            continue
+        finally:
+            s.close()
+        return port
+    raise AssertionError("no free port found")
+
+
+class HostSide:
+    """The host helper (container/host/swarmbox-host) run against the real Podman, for one throwaway box.
+
+    Everything is in a mktemp folder: the helper copy with an empty tool-ports, HOME (so the config, the state folder and
+    the lock are there, never the real ones), the workspace, and a `podman` wrapper that only records the arguments of each
+    call and then runs the real Podman (so the number of calls of a command is measured, not assumed)."""
+
+    def __init__(self, ctx, name=None, port=None):
+        self.ctx = ctx
+        self.root = tempfile.mkdtemp(prefix="smoke-up-")
+        ctx.dirs.append(self.root)
+        hdir = os.path.join(self.root, "helper")
+        os.makedirs(hdir)
+        for f in ("swarmbox-host", "VERSION"):
+            shutil.copy(os.path.join(ROOT, "container", "host", f), os.path.join(hdir, f))
+        open(os.path.join(hdir, "tool-ports"), "w").close()
+        os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)
+        self.helper = os.path.join(hdir, "swarmbox-host")
+        self.home = os.path.join(self.root, "home")
+        self.ws = os.path.join(self.root, "ws")
+        os.makedirs(self.home)
+        os.makedirs(self.ws)
+        self.bindir = os.path.join(self.root, "bin")
+        os.makedirs(self.bindir)
+        self.log = os.path.join(self.root, "podman-calls.log")
+        open(self.log, "w").close()
+        real = shutil.which("podman")
+        with open(os.path.join(self.bindir, "podman"), "w") as f:
+            f.write("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> '%s'\nexec '%s' \"$@\"\n" % (self.log, real))
+        os.chmod(os.path.join(self.bindir, "podman"), 0o755)
+        self.name = exact_name(name or "swarmbox-test-3-" + rnd())
+        self.port = port or free_port()
+        ctx.containers.append(self.name)
+        ctx.volumes.append(exact_name(self.name + "-containers"))
+
+    def env(self, **extra):
+        e = {k: v for k, v in os.environ.items() if not k.startswith(("SWARMBOX_", "XDG_"))}
+        e["PATH"] = self.bindir + os.pathsep + e.get("PATH", "")
+        # HOME and the XDG state and config folders are scratch ones (the helper's config, lock and state go there), but Podman's
+        # own image store stays where it is: a store in a scratch folder would sit on overlayfs inside this box and fail
+        e["XDG_DATA_HOME"] = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+        e.update({"HOME": self.home, "SWARMBOX_NAME": self.name, "SWARMBOX_WORKSPACE": self.ws,
+                  "SWARMBOX_WEB_PORT": str(self.port), "SWARMBOX_IMAGE": self.ctx.tag, "SWARMBOX_INIT": "auto"})
+        if not self.ctx.full:
+            e["SWARMBOX_TEST_NO_NESTED"] = "1"   # no /dev/net/tun and no unmask flags: a third nesting level cannot honour them
+        e.update(extra)
+        return e
+
+    def run(self, *args, timeout=240, **extra):
+        return subprocess.run([self.helper, *args], env=self.env(**extra), capture_output=True, text=True, timeout=timeout,
+                              input="")
+
+    def calls(self):
+        with open(self.log) as f:
+            return [l.rstrip("\n") for l in f if l.strip()]
+
+    def cid(self, name=None):
+        return podman("container", "inspect", "--format", "{{.ID}}", name or self.name).stdout.strip()
+
+    def fmt(self, template, name=None):
+        return podman("container", "inspect", "--format", template, name or self.name).stdout.strip()
+
+
+def step_up_lifecycle(ctx):
+    """Slice 3.3 (design 3.7.2, 13.3 layers 2 and 5): the host helper's up, reset and stop against a real throwaway box."""
+    hs = HostSide(ctx)
+    marker = os.path.join(hs.ws, "survives-reset")
+    # up creates the box and returns after readiness
+    r = hs.run("up")
+    assert r.returncode == 0, "up exited %d: %s" % (r.returncode, r.stderr[-800:])
+    assert r.stdout == "", "up wrote to standard output: %r" % r.stdout
+    assert hs.fmt("{{.State.Status}}") == "running", "box is not running"
+    assert hs.fmt('{{index .Config.Labels "swarmbox.managed"}}') == "2", "swarmbox.managed label missing"
+    ready = ctx.sh(hs.name, "cat /tmp/swarmbox/ready")
+    assert ready == "ok" or ready.startswith("warnings="), "marker %r" % ready
+    cid1 = hs.cid()
+    assert cid1
+    with open(marker, "w") as f:
+        f.write("x")
+    # a second up takes the fast path: the calls are recorded by the wrapper (B35)
+    before = len(hs.calls())
+    t0 = time.time()
+    r = hs.run("up")
+    fast = time.time() - t0
+    assert r.returncode == 0, "second up exited %d: %s" % (r.returncode, r.stderr[-800:])
+    made = hs.calls()[before:]
+    assert len(made) <= 2, "the fast path made %d podman calls: %r" % (len(made), made)
+    assert not any(c.startswith(("run ", "start ", "rm ")) for c in made), made
+    assert hs.cid() == cid1, "the second up replaced the box"
+    t0 = time.time()
+    podman("exec", hs.name, "true")
+    base = time.time() - t0
+    print("UP fast path: %d podman call(s) %r, %.2f s; one `podman exec ... true` takes %.2f s [measured here, reduced: development box]"
+          % (len(made), [c.split(" ")[0] + " " + c.split(" ")[1] for c in made], fast, base))
+    # url never touches podman
+    before = len(hs.calls())
+    r = hs.run("url")
+    assert r.returncode == 0 and r.stdout.strip() == "http://127.0.0.1:%d" % hs.port, r.stdout
+    assert len(hs.calls()) == before, "url called podman"
+    # reset replaces the box, keeps the volume and the workspace
+    r = hs.run("reset")
+    assert r.returncode == 0, "reset exited %d: %s" % (r.returncode, r.stderr[-800:])
+    cid2 = hs.cid()
+    assert cid2 and cid2 != cid1, "reset did not replace the container"
+    assert podman("volume", "inspect", hs.name + "-containers").returncode == 0, "the volume is gone after reset"
+    assert os.path.exists(marker), "the workspace changed"
+    assert ctx.sh(hs.name, "cat /tmp/swarmbox/ready"), "reset returned before the marker"
+    # stop stops it; the next up starts the same container again and waits for the new marker
+    r = hs.run("stop")
+    assert r.returncode == 0, "stop exited %d: %s" % (r.returncode, r.stderr[-800:])
+    assert hs.fmt("{{.State.Status}}") in ("exited", "stopped"), hs.fmt("{{.State.Status}}")
+    r = hs.run("up")
+    assert r.returncode == 0, "up after stop exited %d: %s" % (r.returncode, r.stderr[-800:])
+    assert hs.fmt("{{.State.Status}}") == "running"
+    assert hs.cid() == cid2, "up after stop made a new container"
+
+
+def step_up_busy_port_and_foreign(ctx):
+    """B33 and B18 with the real Podman: a creation that fails on a busy port leaves nothing of its own and exits 7; a
+    container that already has the box's name (not made by SwarmBox 2.0) is refused with exit 5 and is still there."""
+    hs = HostSide(ctx)
+    busy = socket.socket()
+    busy.bind(("127.0.0.1", hs.port))   # the box's WEB_PORT is taken by the test
+    busy.listen(1)
+    try:
+        r = hs.run("up")
+    finally:
+        busy.close()
+    assert r.returncode == 7, "up with a busy port exited %d: %s" % (r.returncode, r.stderr[-800:])
+    assert "could not create the box" in r.stderr and "already in use" in r.stderr, r.stderr[-800:]
+    assert podman("container", "exists", hs.name).returncode != 0, "the partly created container was left behind"
+    assert os.listdir(os.path.join(hs.home, ".local", "state", "swarmbox")) == [], "state files or the lock were left"
+    # a foreign container with the box's name
+    other = HostSide(ctx)
+    c = podman("create", "--name", other.name, ctx.tag)
+    assert c.returncode == 0, c.stderr
+    r = other.run("up")
+    assert r.returncode == 5, "up over a container without the managed label exited %d: %s" % (r.returncode, r.stderr[-800:])
+    assert "made by SwarmBox v0.1.0" in r.stderr, r.stderr[-800:]
+    assert podman("container", "exists", other.name).returncode == 0, "the foreign container was removed"
+    r = other.run("reset")
+    assert r.returncode == 5, "reset exited %d" % r.returncode
+    assert podman("container", "exists", other.name).returncode == 0, "reset removed the foreign container"
+
+
 STEPS = [
     Step("ready", "serve reaches readiness (marker, PID 1, session main, user agent, ttyd)", False, step_ready),
     Step("tmpfs-restart", "stop is prompt (exit 143), start empties box:/tmp/swarmbox, workspace survives (B17, B3)", False, step_tmpfs_restart),
@@ -284,6 +448,8 @@ STEPS = [
     Step("tool-index-ports", "the generated index lists 'claude claude' and tool-ports exists and is empty (6.2, 9.3)", False, step_tool_index_ports),
     Step("attach-session", "two attach calls share one session, the idle window is gone, exit codes (D1, B36, B13)", False, step_attach_session),
     Step("no-agent", "the image holds no agent, gcloud, clasp, Go or Poetry (D2)", False, step_no_agent),
+    Step("up-lifecycle", "the host helper: up creates, a second up takes the fast path, reset replaces, stop and up again (3.7.2)", False, step_up_lifecycle),
+    Step("up-busy-port", "up on a busy port exits 7 and leaves nothing; a foreign container with the name is refused with exit 5 (B33)", False, step_up_busy_port_and_foreign),
     Step("nested-podman", "a nested Podman runs a container inside the box (D5)", True, step_nested_podman),
     Step("nested-cgroup", "the nested engine settings cgroupfs and file logger work (B28)", True, step_nested_cgroup),
 ]
@@ -343,8 +509,10 @@ def main(argv):
             print("SMOKE image build failed")
             return 1
     ctx = Ctx(tag, full)
+    only = [x for x in os.environ.get("SWARMBOX_SMOKE_ONLY", "").split(",") if x]
+    steps = [st for st in STEPS if not only or st.id in only]
     try:
-        return run_steps(STEPS, full, ctx)
+        return run_steps(steps, full, ctx)
     finally:
         ctx.cleanup()
         if own:

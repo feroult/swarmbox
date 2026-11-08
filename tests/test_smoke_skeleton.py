@@ -22,7 +22,7 @@ SMOKE = os.path.join(ROOT, "tests", "smoke_image.py")
 TAG = "[reduced: development box, no nested Podman in the box]"
 # The five steps named by the plan (section 4) plus the ones the exit criteria add.
 PLAN_STEPS = ["ready", "tmpfs-restart", "page-built", "tool-validate", "nested-podman"]
-EXTRA_STEPS = ["attach-session", "no-agent", "nested-cgroup", "tool-shim", "tool-index-ports"]
+EXTRA_STEPS = ["attach-session", "no-agent", "nested-cgroup", "tool-shim", "tool-index-ports", "up-lifecycle", "up-busy-port"]
 
 
 def load():
@@ -132,10 +132,27 @@ class Skeleton(unittest.TestCase):
             code = re.sub(r'"""[\s\S]*?"""', "", code, count=1)
             self.assertIsNone(re.search(pat, code), "forbidden pattern %r in smoke_image.py" % pat)
 
-    def test_full_mode_creates_only_prefixed_volumes_and_publishes_no_port(self):
+    def test_full_mode_creates_only_prefixed_volumes_and_the_smoke_code_publishes_no_port_itself(self):
+        # the box of the older steps publishes nothing; the up steps (slice 3.3) go through the host helper, which publishes
+        # the web port on 127.0.0.1 only, at a random high port (see test_the_up_steps_*)
         self.assertNotRegex(self.src, r'"-p"|"--publish"|"-P"')
         self.assertIn("swarmbox-test-", self.src)
         self.assertRegex(self.src, r"volume\", \"rm\"|vol_rm_exact")
+
+    def test_the_up_steps_use_prefixed_names_a_random_high_loopback_port_and_a_scratch_home(self):
+        a = self.src.index("def free_port")
+        b = self.src.index("def run_steps")
+        code = self.src[a:b]
+        self.assertIn("random.randrange(20000, 40000)", code)
+        self.assertIn('("127.0.0.1", port)', code)
+        self.assertIn('"swarmbox-test-3-"', code)
+        self.assertIn("tempfile.mkdtemp", code)
+        self.assertIn('"HOME": self.home', code)
+        self.assertIn('e["XDG_DATA_HOME"]', code)   # only Podman's image store is the real one; see HostSide.env
+        by_id = {s.id: s for s in self.mod.STEPS}
+        for sid in ("up-lifecycle", "up-busy-port"):
+            self.assertFalse(by_id[sid].needs_full, sid)
+        self.assertIn("SWARMBOX_SMOKE_ONLY", self.src)
 
     def test_tool_steps_check_the_real_machinery_and_never_install(self):
         """Slice 4a.5: validate is the real one, the shim, the index and tool-ports are checked, nothing is downloaded."""

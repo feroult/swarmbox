@@ -970,3 +970,84 @@ Impact on the design: none beyond 3.7.2 "3.2 state". How to reverse: drop the ca
 Context: D7 says `--network=host` can never be emitted.
 Chosen: no code path builds such a line (every user value is validated and sits behind its own flag), and, as a last look, `guard_flags` stops with exit 70 and prints nothing if any line starts with `--network`, `--net=`, `--privileged`, `--pid=`, `--ipc=`, `--uts=`, `--cap-add` or `--userns=host`. The loop test runs 120 random combinations of ten keys (seeded) and every value of the hostile-value test; the guard itself is only reached by reading the source, not by a test input (no input can trigger it, which is the point) [unverified by execution]. Failed first: the new test file was run against the 3.1 helper (create-flags and fingerprint exit 70) and all 100 tests failed or errored for that reason before the code was written. Not done: macOS and bash 3.2 runs, a real WSL run, a host UID other than 1000, `up` reading the labels, the `shasum -a 256` branch on a real Mac (here it is a shim around the real `shasum` with `sha256sum` hidden).
 Impact on the design: none. How to reverse: n/a.
+
+## [3.3] The fast path makes two Podman calls; the version and tun checks run only when a box is created or started
+Context: 3.8 lists the prerequisite checks for `up`; 3.7.2 gives the fast path a budget of at most two Podman calls (B35). `podman version` is a call.
+Options: (a) check the version on every entry (3 calls with the image comparison); (b) check only on the create and start paths; (c) cache the result in the state folder.
+Chosen: (b). A box that exists was made when the version and the tun device were fine, so the checks add nothing on entry; the two calls of the fast path are the inspect and one `podman image inspect` for the stale-image warning. (c) adds state that can go stale.
+Impact on the design: 3.7.2 "3.3 state". How to reverse: call check_podman_version and check_tun before the lookup in up_main (and give up one call of the budget).
+
+## [3.3] The format of the lookup, and what "no box" means
+Context: the design asks for one `container inspect --format` that gives state, name and labels, with an exact-name comparison; it does not fix the format.
+Chosen: `state|name|image ID|HostConfig.Init|managed|image|ports|env-hash|fingerprint|workspace`, pipe separated, the workspace last because a path may contain `|`. Labels are read with `index .Config.Labels "..."`, which gives an empty string for a missing label (also for v0.1.0 containers, which have none). Not a JSON dump: parsing it in POSIX sh is fragile. "No box" is a failed call whose message contains `no such container` (Podman 4.3.1 prints `Error: inspecting object: no such container X`), or a call that prints another container's name (an ID prefix); any other failure of the call is exit 3 with Podman's lines, so a broken Podman is not mistaken for an empty host. `HostConfig.Init` and the image ID were added to the format: the first gives the value `INIT=auto` must take in the fingerprint at entry (3.2 left this to `up`), the second is the stale-image comparison.
+Impact on the design: 3.7.2 "3.3 state". How to reverse: change LOOKUP_FORMAT and find_box together; the tests build the line with one function (`line()` in tests/test_host_up.py).
+
+## [3.3] The stale lock is renamed and re-read before it is deleted (the sketch of 3.6 can delete a live lock)
+Context: the sketch in 3.6 removes a lock with `rm -rf` as soon as the pid it read is dead. With two waiters that both read the dead pid, the second `rm -rf` can delete the lock that the first one has just made, and then both proceed. B33 asks that the stale rule never remove a live lock.
+Options: (a) the sketch as written; (b) a second `mkdir` lock around the removal (a lock for the lock, which can itself go stale); (c) rename the folder (atomic), read the pid file in the renamed folder, delete it only if it is still the dead pid (or still absent), else put it back.
+Chosen: (c). It shrinks the window to a `mkdir` by a third call between the rename and the put-back, which is not closed and is written down as [unverified]; a pid that another process reused is not detected either. Tunables for tests: SWARMBOX_TEST_LOCK_TRIES (default 90 polls), SWARMBOX_TEST_LOCK_PIDWAIT (default 5 polls), SWARMBOX_TEST_NAP (default 1 s), counted in loops rather than read from a clock so the code stays POSIX.
+Impact on the design: 3.6 and 3.7.2 "3.3 state". How to reverse: replace reap_stale by `rm -rf "$UP_LOCK"`.
+
+## [3.3] Signals end `up` at once: children and pauses run in the background and are waited for
+Context: a POSIX shell runs the trap of a signal only after the foreground child has finished, so a `kill -TERM` on the helper during a slow `create-flags` or a `sleep 1` would leave the lock until the child ended; the test asked for "no lock folder after SIGTERM".
+Chosen: `create-flags` runs in the background and `wait`s, every pause is `sleep N &` and `wait`; the EXIT trap kills the child and removes the lock (only if this call made it) and its own temporary files; the exits are 129, 130, 143. `podman run` and the other short Podman calls stay in the foreground (a Ctrl-C reaches them through the terminal's process group; a `kill` of the helper alone waits for them). A call killed with SIGKILL leaves `flags.<pid>`, `cid.<pid>`, `err.<pid>`; the next call sweeps them under the lock when the pid is dead (a pid in use, or one that is this call's, is left alone).
+Impact on the design: 3.7.2 "3.3 state". How to reverse: run create-flags in the foreground.
+
+## [3.3] create-flags is run as a program, and SWARMBOX_TEST_CREATE_FLAGS can replace it
+Context: the tests need a create-flags that is slow (to hold the lock deterministically) or fails after printing flags; the design says `up` captures the output and checks the status.
+Chosen: `up` runs `<helper folder>/swarmbox-host create-flags` as a separate process (a function call would not let a signal or a slow step be tested the same way). The test-only variable SWARMBOX_TEST_CREATE_FLAGS names a program that is called in its place; the tests wait on marker files, not on sleeps. The variable executes whatever the environment names, like the other SWARMBOX_TEST_ switches; it is documented there and only the owner's own environment can set it.
+Impact on the design: none. How to reverse: call cmd_create_flags in a subshell.
+
+## [3.3] reset captures and checks the new box before it removes the old one
+Context: 3.7.2 says `reset` removes the container (step 2) and then runs the steps of `up` (step 3), so a workspace problem or an old Podman found in step 3 would leave the user with no box and no way to enter.
+Options: (a) follow the order; (b) run every check and `create-flags` first, then `podman rm -f`, then `podman run`.
+Chosen: (b). For a good configuration the result is the same; for a bad one the old box stays. The removal still happens before the creation, so the name is free. The cost is that a problem that only `podman run` can find (a busy port) is found after the removal, as in (a); the message then tells the user to fix it and run `swarmbox` again, which creates the box.
+Impact on the design: 3.7.2 "3.3 state". How to reverse: move prepare_create after the removal in up_main.
+
+## [3.3] A start that fails is exit 7; a paused box counts as alive while waiting; an unreadable state counts as gone
+Context: 3.7.2 gives 7 only for "creation failed" and says nothing about `podman start` failing, a paused box or an inspect that fails during the wait.
+Chosen: a failed `podman start` of a stopped box is exit 7 (the same family: a port in use at start), removes nothing and says the box is still there; while waiting, `running`, `created`, `configured`, `initialized` and `paused` keep waiting and every other state, or a failed read, is "gone" (exit 6 at once with `podman logs --tail 20`).
+Impact on the design: 3.7.2 "3.3 state". How to reverse: change the case in wait_ready.
+
+## [3.3] stop: exact lookup first; no box is exit 0; a container that is not ours is exit 5
+Context: the table says exit 0 or 1. `podman stop ab` also stops a container whose ID starts with `ab`.
+Chosen: the helper looks the box up by exact name (one call) before it stops anything. No box: a line and exit 0 (stopping what is not running is not a failure). A container with the box's name and no `swarmbox.managed` label (v0.1.0): the v0.1.0 message and exit 5, nothing stopped; "a container that was not created by this design is never touched" is the safer reading. These two outcomes are additions to the table.
+Impact on the design: 3.7.2 table (the stop row). How to reverse: drop the lookup and call `podman stop <name>`.
+
+## [3.3] url: exit 1 with WEB=0; the public name; no Podman, no config validation beyond WEB and WEB_PORT
+Context: the table says exit 0 and "the public one when configured". `cloudflare.json` holds `domain`, `emails` and `tunnel`, no host name; v0.1.0 printed `<container>.<domain>` or `SWARMBOX_WEB_HOSTNAME`.
+Chosen: two lines: `http://127.0.0.1:<WEB_PORT>` and `https://<host>`, the host being SWARMBOX_WEB_HOSTNAME or `<box name>.<domain>` (domain from SWARMBOX_WEB_DOMAIN, else the `"domain"` line of `~/.config/swarmbox/cloudflare.json`, read with sed, because the helper has no JSON parser and python3 is needed only for `remote`). A value with other than letters, digits, `.` and `-` is ignored with a line. With `WEB=0` there is no URL: exit 1 and a message (the table says 0; a script that reads the output would otherwise get an empty answer and a success). Only WEB and WEB_PORT are read and validated; no Podman call exists on the path.
+Impact on the design: 3.7.2 table (the url row). How to reverse: print nothing and exit 0 for WEB=0.
+
+## [3.3] Image check on the create path: `image exists`, else `pull -q`; INIT probe name; conflict check by label
+Context: 3.8 says a missing image is pulled and that `up` checks it; today's code lets `podman run` pull implicitly, where a network failure would look like a creation failure (exit 7) and the probe of `INIT=auto` would also try to pull.
+Chosen: `podman image exists <image>`, else `podman pull -q <image>` after one line; a failure is exit 3 with the last line of Podman's error and the advice of 3.8. The `--init` probe is `podman run --rm --init --name <box>-init-probe-<pid> --entrypoint true <image>` (v0.1.0 ran `true` through the entrypoint; the explicit entrypoint does not depend on what the image's entrypoint does with an unknown word); the name starts with the box's name so a test box keeps its `swarmbox-test-` prefix. The other-box check is `podman ps -a --filter label=swarmbox.workspace=<path> --format {{.Names}}`; a failure of that call is ignored (the creation then finds its own errors). The messages are one line each; the creation failure is two (the lines of Podman's error between them).
+Impact on the design: 3.7.2 "3.3 state". How to reverse: drop ensure_image and let `podman run` pull.
+
+## [3.3] The mount point of the nested volume is made by the helper (found by the real smoke test)
+Context: the first real throwaway box (reduced mode) stopped at serve step 3: "cannot create the SwarmBox folders". A manual run with the same flags showed `.local` and `.local/share` created by Podman as the container's root (not mapped to the user), mode 1755; `containers` itself was the volume. With the old layout (`.swarmbox/`) the folder was never a child of a missing folder. The live box works only because its home already had `.local`.
+Chosen: before `podman run`, the helper runs `mkdir -p <workspace>/.local/share/containers` with umask 022, as the user; an error is exit 4. It is not part of create-flags (a pure function that touches only the workspace folder itself). This means every first `up` creates `.local/share/containers` in the workspace; the design already shows it as an empty folder there.
+Impact on the design: 3.7.2 "3.3 state"; 3.5 mentions the folder. How to reverse: do not; without it a fresh workspace does not start. A real fix in the image (serve running as root for one step) would be a larger change.
+
+## [3.3] Reduced real smoke: SWARMBOX_TEST_NO_NESTED drops --hostname too; XDG_DATA_HOME stays real; the podman wrapper only records
+Context: the development box's nested level has `utsns=host` in /etc/containers/containers.conf, so `--hostname` is refused ("cannot set hostname when running in the host UTS namespace"); a private UTS namespace is refused too (`sethostname: Operation not permitted`); a scratch HOME also moves Podman's image store to a scratch folder on overlayfs, which fails ("'overlay' is not supported over overlayfs").
+Chosen: the test-only switch SWARMBOX_TEST_NO_NESTED=1 removes `--device /dev/net/tun`, `--security-opt unmask=/proc/*` and `--hostname` from create-flags and adds `-e SWARMBOX_TEST_NO_NESTED=1` (what the older smoke steps already do); every result is tagged reduced. HOME, the XDG config and state folders, the workspace and the lock are scratch folders; only XDG_DATA_HOME is the real one, so that Podman's own store is found (the helper writes nothing under it). A `podman` wrapper first in PATH writes each call's arguments to a log in the scratch folder and runs the real Podman, so the call count of the fast path is measured. The full flags (tun, unmask, hostname) have not run for real here: CI or the owner's host (SWARMBOX_SMOKE_FULL=1) must.
+Impact on the design: 3.7.2 "3.3 state" lists the switch; 13.3 layer 2 lists the steps. How to reverse: n/a, it is test-only.
+
+## [3.3] Smoke bookkeeping: SWARMBOX_SMOKE_ONLY, `podman unshare rm` for scratch folders, the old "no port" test
+Context: the new steps publish the web port (through the helper) on 127.0.0.1 at a random port from 20000 to 39999 (never 7681, 8889 or 43323; the file does not contain those numbers), which the older test "publishes no port" forbade; a failed first run left scratch folders with sub-UID owners that shutil cannot remove.
+Chosen: the old test now says the smoke code itself passes no `-p` and a new test checks the random loopback port, the prefixed names, the scratch HOME and the real XDG_DATA_HOME in the new steps; the cleanup falls back to `podman unshare rm -rf <dir>` for a scratch folder that is still there; SWARMBOX_SMOKE_ONLY=id,id runs chosen steps (a development convenience, not used by CI). Two such folders from my own failed runs were removed by exact path.
+Impact on the design: none. How to reverse: n/a.
+
+## [3.3] Fake podman: rules by arguments and answers in sequence
+Context: `podman container inspect` is called with three different formats in one run, and "the box does not exist the first time and runs afterwards" must work for two concurrent processes.
+Chosen: an entry of FakePodman may be {"rules": [...], "default": {...}}, a rule has "match" (strings that must all occur in the joined arguments), and any rule or entry may have "seq", answered one per call that the rule answered, counted from the call log up to the process's own line (so it is the same for concurrent callers). Backward compatible (the old keys work unchanged); three tests added to tests/test_helpers.py.
+Impact on the design: 13.1 describes the fake in general terms. How to reverse: n/a.
+
+## [3.3] What was not done or did not work
+- The host connection (`podman -c <name>`, the short-symlink fallback, step 6 of "What up does") is not in this slice: the slice goal did not list it. It stays in the Phase 3 scope for a later slice.
+- Only the busy port was run for real as a creation failure; "a rejected option leaves a cidfile" shares the code path but was not run (B18 stays as it was for other causes).
+- macOS (`mkdir`, `kill -0`, `sleep 0.02`, `stat`) and arm64 were not run; bash 3.2 not here. The CI macOS job runs tests/test_host_up.py for the first time on the owner's push.
+- The full-mode flags (tun, unmask, hostname) were not started for real.
+- The first three smoke runs failed (storage on overlayfs under a scratch HOME; `--hostname` in the host UTS namespace; the mount point owned by the container's root); each cause is above.
+- The first draft of one test asserted the text "did not become ready in 60 s" against the source, which does not hold (the number comes from the tuned variable); it now runs with 3 polls of 1 s.
