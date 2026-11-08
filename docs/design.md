@@ -18,14 +18,15 @@ Goals
 - The image is **neutral**: it ships no agent. Claude Code, Gemini CLI, OpenCode and others are installed on demand.
 - Remote access (browser, from anywhere) is part of the product, through Cloudflare, with one setup command.
 - The user can read everything that will run on their host before it runs.
-- Every optional capability (nested Podman, remote access, cloud CLIs) is a module they turn on.
+- Every optional capability (remote access, remote browser, cloud CLIs) is a module they turn on. Nested Podman is not optional: it is always on, as today.
 - Versions are pinned and reproducible; updating is a choice. The exception is a tool that updates itself by design
   (Claude Code): that is explicit in its manifest (`UPDATE=self`, section 5.7).
 
 Non-goals
 - It does not make an agent trustworthy. It reduces the blast radius (section 10); it does not remove it.
 - It is not a multi-user server: one box belongs to one person.
-- Windows without WSL2, and macOS without a Podman machine, are not supported targets at first.
+- Windows without WSL2 is not a target. macOS (through a Podman machine) is in scope for the first release; its support is written
+  from the code and has not been run on a Mac yet.
 - Docker is not supported (the nested-Podman and user-namespace features are Podman's).
 - There is no host-network mode (dropped on purpose; section 3.9).
 
@@ -72,7 +73,7 @@ podman run --rm ghcr.io/<org>/swarmbox:1.2.0 init --with claude >> ~/.bashrc
 ```
 
 - `init --with a,b` records `SWARMBOX_WITH=a,b`: tools to have ready. They are installed the first time the box starts.
-- `init --shell zsh|fish` prints the right syntax. `init --nested` adds the Podman-in-Podman flags at creation.
+- `init --shell zsh|fish` prints the right syntax.
 - The function sits between markers (`# >>> swarmbox 1.2.0 >>>` ... `# <<< swarmbox 1.2.0 <<<`), so a later `init` replaces
   it instead of duplicating it.
 
@@ -117,7 +118,7 @@ swarmbox --once          # throwaway container for the current folder, removed o
   (`~/swarmbox/my-project`), together with the login, the SSH key, the installed tools and the config.
 - Today this is `.work/` in the current directory. Proposed: `SWARMBOX_WORKSPACE`, default `~/swarmbox` (open question 9), so
   where you run `swarmbox` no longer matters.
-- Creation-time options (workspace, ports, nested Podman) apply when the box is created; to change them, `swarmbox reset`.
+- Creation-time options (workspace, ports, hostname, time zone, variables...) apply when the box is created; to change them, `swarmbox reset`.
 - A second box is possible with `SWARMBOX_NAME=other SWARMBOX_WORKSPACE=...`, with its own web port.
 
 ### 3.5 The generated function
@@ -142,9 +143,9 @@ swarmbox() {
 ```
 
 - `swarmbox-create-flags` prints one flag per creation-time setting (3.8): the workspace mount, `--hostname`, `--tz`, `--init`,
-  `--pids-limit=16384`, a `-p` per published port, the nested-Podman flags, `-e NAME` per listed variable (3.7), the fingerprint
+  `--pids-limit=16384`, a `-p` per published port, the nested-Podman flags (always), `-e NAME` per listed variable (3.7), the fingerprint
   labels, and the user namespace. On macOS it adds `--security-opt label=disable` and an explicit
-  `keep-id:uid=<host>,gid=<host>` (a platform adapter; untested). Among them, `--userns=keep-id:uid=1000,gid=1000` maps the host user to the image's fixed user (UID 1000), so one image serves every host
+  `keep-id:uid=<host>,gid=<host>` (a platform adapter, in scope for the first release; to be tested on a Mac). Among them, `--userns=keep-id:uid=1000,gid=1000` maps the host user to the image's fixed user (UID 1000), so one image serves every host
   UID. The agent user must not be root: Claude Code refuses auto-approve as root. (Accepted by Podman 4.3 here; a host UID other
   than 1000 has not been tested.)
 - `serve` is the container's main process (section 7); `swarmbox-attach` is what joins the tmux session (3.3). Anything typed
@@ -223,7 +224,7 @@ Alternatives considered, and why they are not the default:
 Every capability is classified once and configured one way. The rules:
 
 1. **Three layers.** *Image*: what is installed. *Creation*: what the box is created with (mounts, ports, hostname, time zone,
-   environment, nested Podman...). *Runtime*: what changes inside without recreating the box (tools, in-box config files). A
+   environment...). *Runtime*: what changes inside without recreating the box (tools, in-box config files). A
    feature lives in exactly one layer; a creation-layer feature changes with `swarmbox reset`, a runtime one does not.
 2. **One configuration surface.** The host file `~/.config/swarmbox/config` (keys below). `init` flags only write keys;
    `swarmbox config set|get|list` edit them; an environment variable `SWARMBOX_<KEY>` overrides a key. No feature has a flag
@@ -251,15 +252,17 @@ Creation-time keys (host config), with what each replaces:
 | `INIT` | `auto` (or `0`, `1`) | `SWARMBOX_INIT` (the `--init` that reaps zombies) |
 | `PORTS` | empty | `--ports`: bound to `127.0.0.1` unless an address is given, with a warning for `0.0.0.0` |
 | `HOST_ACCESS` | `0` | `--iports` (today the port numbers are ignored: it only adds `host.containers.internal:host-gateway`) |
-| `NESTED` | open question 16 | always on today: `/dev/net/tun`, `unmask=/proc/*`, the volume `<name>-containers`, and the host connection `podman -c <name>` (Linux and WSL only) |
 | `WEB`, `WEB_PORT` | `1`, `7681` | `--web [PORT]` |
 | `BROWSER_URL` | empty | `--remote-browser [PORT\|HOST:PORT]` (a bare number means `host.containers.internal:PORT`) |
 | `ENV_KEYS` | empty | `--env-keys` (3.7) |
 | `WITH` | empty | tools to have ready (5) |
 | `PORTS` from manifests | none | `--clasp` (the clasp manifest declares `PORTS=43323`) |
-| `LOCAL_LLM_URL`, `_MODEL`, `_KEY`, `_CONTEXT`, `_OUTPUT` | unset | the same variables today; OpenCode only (open question 17) |
+| `LOCAL_LLM_URL`, `_MODEL`, `_KEY`, `_CONTEXT`, `_OUTPUT` | unset | the same variables today; read by the `opencode` tool's `shell.sh` (5.6) |
 
-Always applied, not configurable: the user namespace (`keep-id`), `--pids-limit=16384`, `-e TERM -e COLORTERM` on every entry.
+Always applied, not configurable: the user namespace (`keep-id`), `--pids-limit=16384`, `-e TERM -e COLORTERM` on every entry, and
+nested Podman: `--device /dev/net/tun`, `--security-opt unmask=/proc/*`, the volume `<name>-containers` for its storage, and the host
+connection `podman -c <name>` that the function registers (Linux and WSL only; unix sockets do not cross the macOS VM). If the host has
+no `/dev/net/tun`, creation stops with a clear message, as `start.sh` does today.
 Runtime: `SWARMBOX_STARSHIP=0` (plain prompt) and `swarmbox --plain` (plain bash instead of tmux).
 
 Feature catalog: what each capability is, and where it lives.
@@ -276,11 +279,10 @@ Feature catalog: what each capability is, and where it lives.
 | Git | SSH key, `swarmbox pubkey`, trust on first use for GitHub, GitLab, Bitbucket | core | runtime |
 | Web | Web terminal (ttyd), on by default on `127.0.0.1` | module | creation |
 | Web | Remote access through Cloudflare (`swarmbox remote ...`), host side | module | host |
-| Containers | Nested Podman, with the host connection | module | creation |
+| Containers | Nested Podman (always on), with the host connection | core | creation |
 | Browser | chrome-devtools MCP: local headless Chromium, or a remote Chrome (`BROWSER_URL`) | module | creation |
 | Network | Published ports, host access | module | creation |
-| LLM | OpenCode with a local OpenAI-compatible LLM | module (a tool hook) | creation (env), runtime (config) |
-| Tools | claude (self-updating), gemini, opencode, gcloud, clasp, Go, Poetry | tool | runtime |
+| Tools | claude (self-updating), gemini, opencode (with its local-LLM hook), gcloud, clasp, Go, Poetry | tool | runtime |
 
 ### 3.9 Proposed removals (to validate together)
 
@@ -435,6 +437,16 @@ MCP_FLAGS="--mcp-config $HOME/.claude/mcp-servers.json"
 ```
 
 ```sh
+# container/tools/opencode/tool.conf
+SCHEMA=1
+NAME=opencode
+KIND=agent
+PROVIDES="opencode"
+VERSION=latest
+MCP_FORMAT=opencode                          # gets its own copy of the MCP server list; no YOLO_FLAGS until the flag is verified
+```
+
+```sh
 # container/tools/clasp/tool.conf
 SCHEMA=1
 NAME=clasp
@@ -499,6 +511,11 @@ npm install -g --prefix "$TOOL_PREFIX" "@google/clasp@${TOOL_VERSION}" >&2
 npm cache clean --force >&2
 ```
 
+`container/tools/opencode/install.sh` has the same shape plus one step: OpenCode ships four platform builds of about 240 MB each and hard-links
+the right one into its `bin/`, so the installer removes the other builds (`rm -rf <prefix>/lib/node_modules/@opencode/cli/node_modules/@opencode`)
+and checks that `opencode --version` still runs. That saves about 720 MB per workspace; it was measured in the v0.1.0 image, and the same layout is
+expected under `--prefix` but has not been measured there.
+
 `container/tools/gcloud/install.sh` would download Google's tarball for `$TOOL_ARCH`, verify the manifest's `SHA256_<arch>`,
 extract it into `$TOOL_PREFIX` and link the binaries into `$TOOL_PREFIX/bin`. The exact download URL and where the checksum
 comes from are **not verified yet** (open question 4).
@@ -525,6 +542,9 @@ sandbox. The flags live only in the manifest: when a release changes one, there 
   `SWARMBOX_WITH`.
 - `command claude` bypasses the alias (normal prompts). `SWARMBOX_YOLO=0` disables all the aliases.
 - An agent without a verified auto-approve flag gets no alias. (OpenCode's flag is **unverified**; confirm in its docs first.)
+- OpenCode is a shim like Claude Code: an on-demand agent with its own manifest. Its local-LLM support moves from `init.sh` into
+  `container/tools/opencode/shell.sh`: `build_opencode_config` renders the config from `LOCAL_LLM_*` (off unless set), `sync_opencode_mcp`
+  mirrors the MCP list (`MCP_FORMAT=opencode`), and `OPENCODE_CONFIG` is exported there instead of being an `ENV` in the Dockerfile.
 
 `shell.sh` is the optional place for anything else a tool needs in the interactive shell. It is sourced from the shell
 configuration for every installed or declared tool. Today's example is the `clasp` function that adds
@@ -780,7 +800,8 @@ What it does not protect, and must say so:
 - Variables passed in (3.7) are stored in the container's configuration and visible to every process in the box, including
   to `podman inspect` on the host.
 - The container has `sudo`, open outbound network, and can read its environment: API keys passed in are visible to the agent.
-- Nested Podman (`NESTED=1`) needs `/dev/net/tun` and an unmasked `/proc`, which weakens the box's isolation. It is a module you turn on.
+- Nested Podman is always on and needs `/dev/net/tun` and an unmasked `/proc`, which weakens the box's isolation compared with a plain
+  container. It is a deliberate trade-off: agents can build and run their own containers without any path to the host's Podman.
 - The box is persistent: an agent keeps running (and keeps those keys) while you are away, until you stop the box.
 - The SSH key lives in the workspace: anything running in the box can use it. Use per-repository deploy keys.
 - The web terminal has no login on its own port. It is bound to `127.0.0.1`; remote access goes only through Cloudflare Access.
@@ -814,7 +835,7 @@ into the box.
 | `--hostname`, `SWARMBOX_TZ`, `SWARMBOX_INIT` | `HOSTNAME`, `TZ`, `INIT` |
 | `--clasp` | The clasp manifest's `PORTS` |
 | `--no-shell`, `SWARMBOX_ATTACH=shell` | `swarmbox up`, `swarmbox --plain` |
-| Nested Podman always on | `NESTED` (default: open question 16) |
+| Nested Podman always on | Unchanged: always on |
 | `~/.swarmbox/` | The XDG layout (3.8) |
 
 An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPACE` at it.
@@ -842,14 +863,13 @@ An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPA
 15. Fallback source for keys (3.7): store values in a `600` file on the host (`env set`), or leave the source entirely to the user's
     own shell/password manager? Related: the same question for the Cloudflare tunnel token, which is only needed to create or
     recreate the connector.
-16. Nested Podman default: on (as today) or off? Today the box cannot be created without `/dev/net/tun`, and it needs an unmasked
-    `/proc`. Suggestion: off in the public image, on for whoever sets `NESTED=1` (or `init --nested`).
-17. OpenCode: keep it as an on-demand agent with its local-LLM hook (`LOCAL_LLM_*`, off by default), or drop it?
+16. *Decided:* nested Podman stays always on, as today. It is no longer a configuration key.
+17. *Decided:* OpenCode is an on-demand agent, a shim like Claude Code (5.6), with its local-LLM hook in its own `shell.sh`.
 18. XDG layout inside the box: move `~/.swarmbox/` on the first start (with a compatibility link for `settings.json`), or leave it?
 19. `init.sh` runs today from `bashrc` in every interactive shell, not when the container starts. Keep a cheap per-shell hook
     (aliases, `PATH`, environment) and move the heavy part (MCP generation, tool linking) to `serve` and `swarmbox-attach`?
-20. macOS: keep the platform adapter (`label=disable`, explicit `keep-id`) in `swarmbox-create-flags`, untested, or leave macOS
-    out of scope for the first release?
+20. *Decided:* macOS is in scope for the first release, through the platform adapter in `swarmbox-create-flags` (`label=disable`,
+    explicit `keep-id`). It has not been run on a Mac; it will be tested there, and anything that fails becomes a documented limit.
 
 ## 13. Roadmap
 
