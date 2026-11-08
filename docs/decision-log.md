@@ -1089,3 +1089,44 @@ Impact on the design: none. How to reverse: n/a.
 - macOS (skipped by the step, tagged [unverified]), arm64, bash 3.2 and a real nested Podman service behind the socket were not run; the reduced check uses a Python stand-in server in a throwaway container (swarmbox-test-3-4-<random>, removed by exact name).
 - Whether `podman system connection add` makes the first connection the default for plain `podman` on a host is [unverified]; v0.1.0 had the same behaviour, and the helper does not pass `--default` either way.
 - A real `up` on a real long workspace with the nested service was not run; only the connection step with the real Podman CLI in an isolated config.
+
+## [3.5] swarmbox-init is POSIX sh, filled from template files with awk
+Context: the slice left "POSIX sh or the image's bash" open.
+Options: bash (arrays, easy quoting); POSIX sh.
+Chosen: POSIX sh (`container/scripts/swarmbox-init.sh`) because it is testable under dash and bash --posix like the helper, and needs no bashism. Templates carry `@VERSION@`, `@IMAGE@`, `@SEED_WITH@`, `@SEED_WORKSPACE@`, `@SEED_IMAGE@`; values are quoted per shell (`'\''` for bash and zsh, `\'` and `\\` for fish) and substituted by one awk pass that reads them from its environment, so a value is never parsed as a pattern or substituted twice. A newline in a seed is exit 2.
+Impact on the design: 3.7.5 (nothing contradicted), 9.3 unchanged. How to reverse: rewrite the script in bash; tests do not depend on the language.
+
+## [3.5] The seed block always defines the three seed variables; the call to `config seed` is made only when one is non-empty
+Context: the sketch called `config seed` on every call.
+Chosen: skip the call with no seeds (one process less per call; the helper has nothing to record or compare). Order of arguments: with, workspace, image. `--image` is both the extraction image and a seed; without it the extraction image is `ghcr.io/<org>/swarmbox:<VERSION>` and IMAGE is not seeded (the helper's default is the same string).
+Impact on the design: 3.6 "3.5 state". How to reverse: call it unconditionally.
+
+## [3.5] `-t` only when stdin and stdout are both terminals (deviation from 3.3, which said stdout)
+Context: `podman exec -t` fails when stdin is not a terminal.
+Chosen: both ends; tested with ptys for all four combinations. Design 3.3 and 3.6 updated.
+How to reverse: test `[ -t 1 ]` only.
+
+## [3.5] zsh gets `emulate -L zsh`; fish is its own text
+Context: the zsh template would otherwise equal the bash one, and zsh options (KSH_ARRAYS, SH_WORD_SPLIT, NO_UNSET) can change a function.
+Chosen: one extra first line in the zsh template; tests also run it with those options set by the caller.
+How to reverse: delete the line.
+
+## [3.5] Version probe is strict; `sort -V` failure keeps the helper silently; XDG_DATA_HOME honored
+Context: the sketch compared raw text, would claim "newer" when sort failed, and used only HOME.
+Chosen: a helper whose `version` is not one first line of the shape X.Y.Z counts as having no version (re-extract); an empty answer from `sort -V` means no comparison, so keep and say nothing; the helper folder is under `${XDG_DATA_HOME:-$HOME/.local/share}` (a relative XDG value ignored), which is what lets the tests isolate it. `~` and `~/...` seeds pass unchanged (the helper expands them; the sketch would have broken them).
+How to reverse: n/a, each is a few lines of the templates.
+
+## [3.5] Host words also include `fingerprint` and `version`
+Context: the slice names them; 3.3 listed eight words. `connection` is not routed (it is `up`'s step 6).
+Impact on the design: the 3.3 table.
+
+## [3.5] Tests: shared case table, a two-word key and env log in the fake helper, a stdout_file in the fake podman
+Context: the bootstrap needs a real tar archive on the fake `podman run` output, and `config get NAME` must answer differently from `config seed`.
+Chosen: FakePodman got `stdout_file`; FakeHostHelper got two-word command keys ("config get") and logs each call's SWARMBOX_* variables. Every function call makes one `version` probe, which the tests drop from the call lists. I mutated the templates by hand (removed the `-x` check, the `-t 0` and `-t 1` tests, `sort -V`, the cleanup) to confirm the table notices; two mutations were first not caught (a stdin-only terminal case, and a comment that held the text I replaced) and a test was added for the first.
+How to reverse: n/a.
+
+## [3.5] What was not done or did not work
+- bash 3.2 and macOS were not run: only `bash --posix` and a lint of known bash 4 constructs, which cannot find a construct it does not list.
+- A real attach (`podman exec -it` into a running box through the function) was not run; the pty tests prove the arguments. The real function did extract the helper from the real image under bash, zsh and fish (isolated XDG_DATA_HOME with a symlink to the real container storage, because Podman keeps its storage under XDG_DATA_HOME; the first attempts failed with the overlay error, which also showed the 3.8 failure message with the real Podman).
+- B19 for the CI images (ubuntu, macOS) was not run; only Debian 12.
+- A leftover empty ~/.local/share/fish (made by my own `fish -c` probes under the real HOME) was removed with rmdir; nothing else outside temp folders was written. The test image swarmbox-test-35-img was removed by name.

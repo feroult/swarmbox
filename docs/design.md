@@ -310,7 +310,7 @@ reserved.
 
 | Word | Where | Behavior | Exit code |
 |---|---|---|---|
-| `stop`, `reset`, `up`, `url`, `update`, `config`, `env`, `remote` | host only (the host helper, 3.7) | as in 3.2; none of them needs the box to be running, except that `url` and `remote status` read its labels | 0 ok; helper codes of 3.7.2 |
+| `stop`, `reset`, `up`, `url`, `update`, `config`, `env`, `remote`, `fingerprint`, `version` | host only (the host helper, 3.7) | as in 3.2; `fingerprint` and `version` are the helper's own subcommands (3.7.2); none of them needs the box to be running, except that `url` and `remote status` read its labels | 0 ok; helper codes of 3.7.2 |
 | `--plain` (option) | host, then forwarded | the function parses it and forwards `attach --plain` | as `attach` |
 | *(nothing)* or `attach` | forwarded: `swarmbox-entrypoint attach` | open a new window of tmux session `main` through a grouped session (3.4); wait for the readiness marker first (4.2) | the shell's: 0 normally; 6 if not ready after 60 s (the box exiting while waiting is detected by `up` only, 4.2) |
 | `pubkey` | forwarded: `swarmbox-entrypoint pubkey`, run without `-t` when standard output is not a terminal | print the public key | 0 |
@@ -327,7 +327,7 @@ reserved.
   (4) reads the status file, deletes it and exits with that status. `swarmbox false` fails and `swarmbox true` succeeds. A command killed by a signal gives `128 + signal` (the shell's own status).
   A window killed from elsewhere gives 129 (the trap); a missing status file (the tmux server died, or the wrapper was killed with SIGKILL) gives exit 1 and a message.
 - **Quoting.** The function passes each argument separately to `podman exec` (`"$@"`). `attach` builds one string for the window's shell command, with each argument quoted by `printf %q`, so spaces, quotes and `$` reach the command unchanged.
-- **No terminal.** When standard output is not a terminal (`swarmbox pubkey > file`, `swarmbox cmd | less`), the function runs `podman exec` **without** `-t` (only `-i`), so the output has no CR/LF translation (measured: `a\nb\n` arrives byte for byte). A tmux client needs a terminal, so
+- **No terminal.** When standard output is not a terminal (`swarmbox pubkey > file`, `swarmbox cmd | less`), the function runs `podman exec` **without** `-t` (only `-i`; the same when only standard input is not a terminal, because `podman exec -t` needs both, 3.6 "3.5 state"), so the output has no CR/LF translation (measured: `a\nb\n` arrives byte for byte). A tmux client needs a terminal, so
   in that case `attach` runs the command directly (as `--plain` does) and its output and status are the command's own. **It does not use `bash -ic` for this**: an interactive bash without a terminal prints
   `bash: cannot set terminal process group (-1): Inappropriate ioctl for device` and `bash: no job control in this shell` on standard error (measured; its status is right). It runs
   `SWARMBOX_CMD=1 bash -c 'shopt -s expand_aliases; . <the fragment>; eval "$1"' bash '<quoted command>'` instead, sourcing the fragment file `container/config/bashrc.sh` as installed in the image **directly, not through `/etc/bash.bashrc`** (Debian's `/etc/bash.bashrc` begins with `[ -z "$PS1" ] && return`, so a non-interactive shell leaves it at once: checked by reading the file in the image `[verified: head of /etc/bash.bashrc; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); node:24-slim]`), and the fragment `container/config/bashrc.sh` opens with
@@ -436,53 +436,123 @@ Two things to watch with this layout:
 
 ### 3.6 The generated function
 
-A simplified sketch of what `init` prints for bash (the zsh and fish variants have the same shape). It stays thin: anything with more than a
-few lines is in the host helper (3.7). Status: `[new]`.
+What `init` prints for bash, shown as shipped (`container/host/templates/bash` with the placeholders filled in for `init --with claude`; the zsh and fish variants have the same shape and are
+described after it). It stays thin: anything with more than a few lines is in the host helper (3.7). Status: `[new]`.
 
 ```bash
 # >>> swarmbox 2.0.0 >>>
 swarmbox() {
-  local dir="$HOME/.local/share/swarmbox/host" host name tmp hv="" tty=-i
-  local image="ghcr.io/<org>/swarmbox:2.0.0" version="2.0.0"   # seed values written by init (3.7.5); the marker version is the second
-  local seed_with="claude" seed_ws=""                          # more seeds, one per init flag that was given (--workspace, --image, 3.7.5)
-  host="$dir/swarmbox-host"
-  [ -x "$host" ] && hv=$("$host" version 2>/dev/null)          # the helper's version; empty when it cannot be read
-  # bootstrap (D33, 3.7.1): extract only when the helper is missing, not executable, or older than the marker (sort -V); a newer helper is kept
-  if [ ! -x "$host" ] || { [ "$hv" != "$version" ] && [ "$(printf '%s\n%s\n' "$hv" "$version" | sort -V | head -n 1)" = "$hv" ]; }; then
-    command -v podman >/dev/null || { echo "swarmbox: Podman is not installed." >&2; return 3; }   # full text: 3.8
-    mkdir -p "${dir%/*}" && tmp=$(mktemp -d "$dir.new.XXXXXX") || return 3
-    # not a pipe: a pipe's status is tar's, and pipefail is not available in bash 3.2, zsh or fish; so write the archive to a file, unpack it, then test the result
-    if ! { podman run --rm "$image" host-helper > "$tmp/helper.tar" && tar -x -C "$tmp" -f "$tmp/helper.tar" && [ -x "$tmp/swarmbox-host" ]; }; then
-      rm -rf "$tmp"; echo "swarmbox: cannot pull $image ..." >&2; return 3   # exit 3, previous helper untouched; full text: 3.8
-    fi
-    rm -f "$tmp/helper.tar"
-    rm -rf "$dir.old"; { [ ! -e "$dir" ] || mv "$dir" "$dir.old"; } && mv "$tmp" "$dir" || { rm -rf "$tmp"; return 3; }
-    rm -rf "$dir.old"                               # a failure before this line leaves the previous helper in place
-  elif [ "$hv" != "$version" ]; then                # the helper is newer than this block, typically after `swarmbox update`: keep it, say so
-    echo "swarmbox: the helper ($hv) is newer than this function ($version); kept" >&2   # one line, 3.8 (update flow, step 5)
+  local dir host name tmp hv="" lowest="" msg="" last="" prc=0 need=0 skew=0
+  local -a sa pe
+  local version='2.0.0'
+  local image='ghcr.io/<org>/swarmbox:2.0.0'
+  local seed_with='claude' seed_ws='' seed_image=''   # seed values of `swarmbox init` (design 3.7.5)
+  dir=${XDG_DATA_HOME:-$HOME/.local/share}
+  case $dir in /*) ;; *) dir=$HOME/.local/share ;; esac
+  dir=$dir/swarmbox/host
+  host=$dir/swarmbox-host
+  # the helper's version; empty when it is missing, not executable, or prints something that is not a version
+  if [ -x "$host" ]; then
+    hv=$("$host" version 2>/dev/null | head -n 1)
+    case $hv in
+      *[!0-9A-Za-z.+-]*) hv="" ;;
+      [0-9]*.[0-9]*.[0-9]*) ;;
+      *) hv="" ;;
+    esac
   fi
-  # seeds (D20, 3.7.5): a relative --workspace is made absolute here, on the host, against the directory of this call; the helper writes the seeds into the config only if it does not exist yet
-  case "$seed_ws" in ""|/*) ;; *) seed_ws="$(pwd)/${seed_ws#./}" ;; esac
-  "$host" config seed ${seed_with:+--with "$seed_with"} ${seed_ws:+--workspace "$seed_ws"} || return   # flags, not SWARMBOX_* variables: those would override the file
+  # bootstrap (D33): extract only when there is no usable helper or it is older than this block (sort -V: 2.0.10 is newer than
+  # 2.0.9); a newer helper is kept with a one-line notice; when sort has no -V there is no answer and the helper is kept
+  if [ -z "$hv" ]; then
+    need=1
+  elif [ "$hv" != "$version" ]; then
+    lowest=$(printf '%s\n%s\n' "$hv" "$version" | sort -V 2>/dev/null | head -n 1)
+    if [ -n "$lowest" ]; then
+      if [ "$lowest" = "$hv" ]; then need=1; else skew=1; fi
+    fi
+  fi
+  if [ "$need" = 1 ]; then
+    if ! command -v podman >/dev/null 2>&1; then
+      echo "swarmbox: Podman is not installed." >&2
+      echo "Linux: sudo apt install podman (Debian/Ubuntu) or sudo dnf install podman (Fedora/RHEL)" >&2
+      echo "macOS: brew install podman" >&2
+      return 3
+    fi
+    mkdir -p "${dir%/*}" 2>/dev/null && tmp=$(mktemp -d "$dir.new.XXXXXX" 2>/dev/null) && [ -d "$tmp" ] || {
+      echo "swarmbox: cannot make a temporary folder next to $dir." >&2
+      return 3
+    }
+    # no pipe: a pipe's status is the last command's, and pipefail is not in bash 3.2, zsh or fish. The archive goes to a file, is
+    # unpacked, and the result is tested.
+    if command podman run --rm "$image" host-helper > "$tmp/helper.tar" 2> "$tmp/podman.err"; then
+      if tar -x -C "$tmp" -f "$tmp/helper.tar" >/dev/null 2>&1 && [ -x "$tmp/swarmbox-host" ]; then
+        msg=""
+      else
+        msg="the image has no usable host helper"
+      fi
+    else
+      prc=$?
+      last=$(tail -n 1 "$tmp/podman.err" 2>/dev/null)
+      msg=${last:-"podman exited with status $prc"}
+    fi
+    if [ -n "$msg" ]; then
+      rm -rf "$tmp"
+      echo "swarmbox: cannot pull $image: $msg. Check the network, or set SWARMBOX_IMAGE to an image you already have." >&2
+      return 3
+    fi
+    rm -f "$tmp/helper.tar" "$tmp/podman.err"
+    rm -rf "$dir.old"
+    if [ -e "$dir" ] || [ -L "$dir" ]; then
+      mv "$dir" "$dir.old" || { rm -rf "$tmp"; echo "swarmbox: cannot replace the helper in $dir." >&2; return 3; }
+    fi
+    if ! mv "$tmp" "$dir"; then
+      mv "$dir.old" "$dir" 2>/dev/null
+      rm -rf "$tmp"
+      echo "swarmbox: cannot replace the helper in $dir." >&2
+      return 3
+    fi
+    rm -rf "$dir.old"
+  elif [ "$skew" = 1 ]; then
+    echo "swarmbox: the helper ($hv) is newer than this function ($version); kept" >&2
+  fi
+  # seeds (D20, 3.7.5): given as arguments, never as SWARMBOX_* variables (those would override the file on every call); a relative
+  # workspace is made absolute here, on the host, against the folder of this call
+  case $seed_ws in ""|/*|"~"|"~/"*) ;; *) seed_ws=$(pwd)/${seed_ws#./} ;; esac
+  sa=(config seed)
+  [ -n "$seed_with" ] && sa=("${sa[@]}" --with "$seed_with")
+  [ -n "$seed_ws" ] && sa=("${sa[@]}" --workspace "$seed_ws")
+  [ -n "$seed_image" ] && sa=("${sa[@]}" --image "$seed_image")
+  if [ "${#sa[@]}" -gt 2 ]; then
+    "$host" "${sa[@]}" || return $?
+  fi
   case "${1-}" in                                   # words handled on the host (3.3)
-    stop|reset|up|url|update|config|env|remote) "$host" "$@"; return ;;
+    stop|reset|up|url|update|config|env|remote|fingerprint|version) "$host" "$@"; return $? ;;
   esac
-  "$host" up || return                              # create if needed, start, check, wait until ready
-  name=$("$host" config get NAME) || return         # NAME comes from SWARMBOX_NAME or the default; it is not a key of the file (8.2)
-  [ -t 1 ] && tty=-it                               # no -t when standard output is not a terminal: `swarmbox pubkey > file` must have no CRLF (3.3)
+  "$host" up || return $?                           # create if needed, start, check, wait until ready
+  name=$("$host" config get NAME) || return $?
+  pe=(exec -i)
+  if [ -t 0 ] && [ -t 1 ]; then pe=(exec -it); fi   # -t only with a terminal on both ends (3.3, "No terminal")
+  pe=("${pe[@]}" -e TERM -e COLORTERM "$name" swarmbox-entrypoint)
   case "${1-}" in                                   # words forwarded as they are (3.3)
-    pubkey|tool) podman exec $tty -e TERM -e COLORTERM "$name" swarmbox-entrypoint "$@"; return ;;
+    pubkey|tool) command podman "${pe[@]}" "$@"; return $? ;;
     attach) shift ;;                                # a leading "attach" is a prefix, not an argument
   esac
-  podman exec $tty -e TERM -e COLORTERM "$name" swarmbox-entrypoint attach "$@"   # nothing, --plain, or any other command; the exit status is the command's (3.3)
+  command podman "${pe[@]}" attach "$@"             # nothing, --plain, or any other command; the status is the command's
+  return $?
 }
 # <<< swarmbox 2.0.0 <<<
 ```
 
-The sketch is abbreviated (no zsh or fish variants, no `--shell` handling, simplified error text) but follows the command contract of 3.3, which is
-normative. The bootstrap block runs before the helper exists, so it can use only `podman`, `tar`, `mktemp`, `mv`, `rm`, `printf`, `sort` and `head`; the image reference
+**3.5 state (what the shipped function does and where it differs from the earlier sketch; decision log `[3.5]`).** The text above is the real template. The bootstrap block runs before the helper exists, so it can use only `podman`, `tar`, `mktemp`, `mv`, `rm`, `printf`, `sort`, `head` and `tail`; the image reference
 it uses is the seed value embedded in the block, because the configuration file does not exist yet (it never reads `IMAGE`; the helper's `up` does, D17). `<org>` stands for the registry organization,
 a placeholder until the name and license are settled (D32, 10.4). The helper's `version` subcommand (3.7.2) prints the version of the image it was extracted from.
+- **zsh** (`templates/zsh`) is the bash text with one more line, `emulate -L zsh`, as the first line of the function: the user's `KSH_ARRAYS`, `SH_WORD_SPLIT` and `NO_UNSET` cannot change what it does. **fish** (`templates/fish`) is written in fish: `set -l` variables, lists instead of arrays, `test -t`, `string match` for the version shape, and `$status` returned explicitly; it keeps the same order of steps and the same messages. A case table (`tests/function_cases.py`) drives all three, plus `bash --posix`, with the same expectations.
+- **Where the helper lives.** `${XDG_DATA_HOME:-$HOME/.local/share}/swarmbox/host`; a relative `XDG_DATA_HOME` is ignored, as everywhere else in the host side.
+- **The version probe.** The function runs `<helper> version` once per call and keeps only a first line made of `[0-9A-Za-z.+-]` that has the shape `X.Y.Z`; anything else counts as "no version" and re-extracts. If `sort -V` gives no answer (an old `sort`), the helper is kept and nothing is printed: it never claims "newer" without having compared.
+- **`config seed` only with seeds.** The call is made only when the block holds at least one seed (`--with`, `--workspace` or `--image` was given to `init`), in the order with, workspace, image. A relative workspace is made absolute against `$(pwd)`; `~` and `~/...` pass unchanged (the helper expands them against `HOME`; the first sketch would have turned `~/x` into `<cwd>/~/x`).
+- **Terminal.** `-t` is added only when standard input **and** standard output are terminals (`podman exec -t` fails with "the input device is not a TTY" when stdin is a pipe, and `swarmbox pubkey > file` typed at a prompt must have no CR/LF translation: 3.3). 3.3 said "output only"; the stricter rule is the one that works for every combination.
+- **Errors.** The function never uses `set -e`, a pipe status or an option of the user's shell. A failed extraction prints ``swarmbox: cannot pull <image>: <last line of Podman's message, or "podman exited with status N", or "the image has no usable host helper">. Check the network, or set SWARMBOX_IMAGE to an image you already have.`` and returns 3; the temporary folder is removed and the previous helper is left; if the last `mv` fails the previous folder is moved back.
+- Host words in the function are `stop reset up url update config env remote fingerprint version` (the table of 3.3 plus `fingerprint` and `version`); `connection` is not routed (it is the helper's own step 6, run by `up`).
+- Not checked here: macOS `/bin/bash` 3.2 (the template passes `bash --posix` and a lint that rejects bash 4 constructs, which is only a guard), arm64, and a real `podman exec -t` attach to a box (the pty tests prove the arguments, not the terminal).
 
 **The bootstrap condition (D33).** The function extracts the helper only when it is missing, not executable, or older than the marker `version`, the comparison being made with `sort -V`
 (so `2.0.10` is newer than `2.0.9`). When the helper is **newer** than the marker (after `swarmbox update` the helper comes from a newer image while the block keeps its old marker), the function keeps it
@@ -1527,7 +1597,7 @@ All `[new]` except `swarmbox-pubkey`, which is today's `ssh-key.sh` installed un
 | `swarmbox` (function) | printed by `swarmbox-init` from `container/host/` templates | the user's shell startup file | the user |
 
 **The helper archive.** The entrypoint's `host-helper` subcommand writes, as a tar archive on stdout, the contents of `box:/usr/local/share/swarmbox/host/`: `swarmbox-host`, `VERSION`, `cloudflare-setup.py`, `templates/` (bash, zsh, fish) and `tool-ports`
-(generated at image build, 6.3). The function unpacks it into a temporary folder and checks that `swarmbox-host` is executable before renaming the folder into place (3.7.1). **2.5 state:** `host-helper` tars the folder with owner 0 and the file modes kept and writes nothing else on stdout; the folder holds `cloudflare-setup.py` and `tool-ports` (empty, written by `swarmbox-tool link --system` at image build) until Phase 3 adds `swarmbox-host`, `VERSION` and `templates/` (3.1 wrote `container/host/swarmbox-host` and `VERSION`; the Dockerfile copy of `container/host/` is a later slice of Phase 3), so the archive is incomplete in that sense and the function's check would fail on it; nothing calls it yet. `swarmbox-tool` is the real program since Phase 4a (6.2; the `tool` subcommand forwards to it by `exec`): `tool-ports` is written by `link --system` at image build and stays empty until a manifest declares `PORTS` (the shipped `claude` declares none); `use`, `remove`, `doctor` and `new` exit 70 until Phase 4b.
+(generated at image build, 6.3). The function unpacks it into a temporary folder and checks that `swarmbox-host` is executable before renaming the folder into place (3.7.1). **3.5 state:** the Dockerfile copies `container/host/` (`swarmbox-host`, executable; `VERSION`; `templates/` with bash, zsh and fish) into the folder, next to `cloudflare-setup.py` and the generated `tool-ports`, and installs `swarmbox-init` as `box:/usr/local/bin/swarmbox-init`; `host-helper` tars the folder with owner 0 and the file modes kept and writes nothing else on stdout. The archive of the real image unpacks with plain `tar`, `swarmbox-host version` equals the image's `VERSION`, and `init` prints the same text from the unpacked templates as from the image's own `[verified: tests/test_entrypoint.py HostHelper, tests/test_dockerfile.py HostHelperArchive and the real image run by hand, see Part B 3.5; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); swarmbox-test-35-img (dev build of the 2.0 Dockerfile)]`. `swarmbox-tool` is the real program since Phase 4a (6.2; the `tool` subcommand forwards to it by `exec`): `tool-ports` is written by `link --system` at image build and stays empty until a manifest declares `PORTS` (the shipped `claude` declares none); `use`, `remove`, `doctor` and `new` exit 70 until Phase 4b.
 
 ## 10. Dockerfile and image
 
@@ -1890,9 +1960,9 @@ Each test below is run in a throwaway container or with fakes, never on the box 
 | B16 | **Partly checked in 0.4 (4.2 carries the result): the unit exists and covers `always` only on 4.3.1; the reboot itself is `[unverified]`.** Restarting a container created with `--restart` (the box would be one; the Cloudflare connector already is, `--restart=always`) after a host reboot works for rootless Podman and under what service (`podman-restart.service` for the user, which must be enabled) | Read Podman's documentation; test `podman-restart.service` for the user | 4.2 |
 | B17 | **Closed in 0.1 (4.1 step 0 carries the result).** A `--tmpfs /tmp/swarmbox` mount is empty after `podman stop` and `podman start`, is writable by the `agent` user (with the `keep-id` mapping), and its default options (Podman may add `noexec`) do not break `serve` or the shells | Throwaway box with the flag: write a file, stop, start, list the folder, write as `agent` | 3.6, 4.1, 4.2 |
 | B18 | **Closed in 0.1 (3.5 carries the result).** When `podman run -d` fails because a published port is in use, whether a container is left behind (state `Created`) and what exit status and message Podman gives | Throwaway box on a port that the test binds first; run `podman ps -a`, read the status and stderr | 3.5, 3.8 |
-| B19 | `sort -V` exists and orders versions as the bootstrap needs (`2.0.9` before `2.0.10`) in macOS's `sort`, in the `sort` of the Linux distributions used, and when called from bash 3.2 and zsh (D33) | On a Mac and on each CI image run `printf '2.0.10\n2.0.9\n2.0.0\n' \| sort -V` and compare with the expected order; run the function test of 13.3 on the macOS runner | 3.6, 13.3 |
+| B19 | **Linux part closed in 3.5 (3.6 "3.5 state" carries the result); macOS's `sort`, bash 3.2 and the CI images stay open for Phase 6.** `sort -V` exists and orders versions as the bootstrap needs (`2.0.9` before `2.0.10`) in macOS's `sort`, in the `sort` of the Linux distributions used, and when called from bash 3.2 and zsh (D33) | On a Mac and on each CI image run `printf '2.0.10\n2.0.9\n2.0.0\n' \| sort -V` and compare with the expected order; run the function test of 13.3 on the macOS runner | 3.6, 13.3 |
 | B20 | Pulling the moving `X.Y` tag and reading the version from the extracted helper gives the exact `X.Y.Z` to record as `IMAGE`; `podman tag <repo>:X.Y <repo>:X.Y.Z` makes a local tag that a later `reset` uses with no network; `update --to TAG` pulls a given tag (D17, D33, D35) | In a test registry publish `2.0.0`, `2.0.1` and `X.Y`; run `swarmbox update` and `update --to 2.0.0`; read the config and the helper's `version`; disconnect the network and run `swarmbox reset` | 3.8 |
-| B21 | The install line's `podman run --rm -e SHELL <image> init` delivers the host's `SHELL` to `init` (so `init` prints the right syntax by its basename, D20), including on macOS through the Podman machine, and a value that is not bash, zsh or fish gives bash | On a Mac (zsh) and a Linux host (bash, and with `SHELL=/usr/bin/fish` if fish is installed) run the install line without `--shell` and read the printed syntax; run it with `SHELL` unset | 3.1, 3.7.5 |
+| B21 | **Linux part closed in 3.5 (3.1 and 3.7.5 carry the result); macOS through the Podman machine stays open for Phase 6.** The install line's `podman run --rm -e SHELL <image> init` delivers the host's `SHELL` to `init` (so `init` prints the right syntax by its basename, D20), including on macOS through the Podman machine, and a value that is not bash, zsh or fish gives bash | On a Mac (zsh) and a Linux host (bash, and with `SHELL=/usr/bin/fish` if fish is installed) run the install line without `--shell` and read the printed syntax; run it with `SHELL` unset | 3.1, 3.7.5 |
 | B22 | **Linux part checked in 3.1 (3.7.3 carries the result); macOS and a WSL home stay open for Phase 6.** The helper keeps the config file at mode 600 whenever it holds the tunnel token, and refuses a looser mode, on Linux, macOS and a WSL home on a Windows drive (D28) | Fake helper test with `stat`; then on each platform: `config set CLOUDFLARE_TUNNEL_TOKEN`, read the mode, `chmod 644`, run `remote status`, check the warning and that the token is ignored | 3.7.3 |
 | B23 | **Linux part checked in 3.1 (3.7.1 carries the result): dash, `bash --posix`, busybox, zsh in `sh` emulation and `/bin/sh`; macOS `/bin/sh` and bash 3.2 stay open for Phase 6.** The POSIX `sh` helper runs unchanged under macOS `/bin/sh`, dash and busybox `sh` (D16) | Run the helper's unit tests with each shell as the interpreter | 3.7.1 |
 | B24 | **Closed in 2.1 (4.4, 10.1 carry the result).** The package `chrome-devtools-mcp`, installed with `npm install -g` at build, provides a program of that name that accepts today's options without `npx` (D23) | In a throwaway container install the pinned version, run `chrome-devtools-mcp --help`, start it with the registry's arguments and list its tools from an MCP client | 4.4, 10.1 |
@@ -2026,6 +2096,14 @@ Also not doable here, rechecked later: the macOS parts of B19, B21, B22, B23 and
 | 3.3 B35 | Closed. Fast path: two Podman calls (`container inspect`, `image inspect`), 0.09 s, against 0.11 s for one `podman exec <box> true`. | [verified: tests/test_host_up.py FastPathTest, tests/smoke_image.py up-lifecycle; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); swarmbox-test-3-img (dev build of the 2.0 Dockerfile); reduced: development box, no nested Podman in the box] |
 | 3.3 B18 | Reused for the cleanup. A rejected option other than a busy port was not run for real. | `[unverified]` for the other causes |
 | 3.3 finding | The nested-storage mount point must be made by the helper: Podman made `.local` and `.local/share` owned by the container's root and `serve` stopped with "cannot create the SwarmBox folders". With the helper making `<workspace>/.local/share/containers` first, the real box reached readiness. | [verified: tests/smoke_image.py up-lifecycle (failed before the fix, passed after) and a manual `podman run` with the same flags; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); swarmbox-test-3-img; reduced: nested level of the development box] |
+
+#### Results of Phase 3 (slice 3.5: swarmbox-init, the templates and the function)
+
+| Fact | Result | Evidence |
+|---|---|---|
+| 3.5 B21 | Linux part closed. `podman run --rm -e SHELL <image> init` printed the fish text with `SHELL=/usr/bin/fish`, the zsh text with `/bin/zsh`, and the bash text with `/bin/dash`, with an empty `SHELL` and with `SHELL` unset (`-e SHELL` of an unset variable passes nothing); an explicit unknown `--shell tcsh` exited 2 with the text of 3.8. macOS through the Podman machine is not here. | [verified: `podman run --rm -e SHELL swarmbox-test-35-img init` by hand and tests/test_init_output.py (Shell); 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); swarmbox-test-35-img (dev build of the 2.0 Dockerfile); reduced: Linux host only] |
+| 3.5 B19 | Linux part closed. `printf '2.0.10\n2.0.9\n2.0.0\n' \| sort -V` gives `2.0.0 2.0.9 2.0.10` with GNU coreutils 9.1 on the development box and inside the image. The function keeps the helper, with no notice and no error output, when `sort` has no `-V` (a shim that rejects it), under bash, `bash --posix`, zsh and fish. Not run: macOS `sort`, the `ubuntu-latest` and `macos` CI images, bash 3.2 (only `bash --posix` and a lint). | [verified: tests/function_cases.py (sort cases), the image run above; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); swarmbox-test-35-img; reduced: no macOS, no CI image] |
+| 3.5 bootstrap | The real function (bash, `bash --posix`, zsh, fish) extracted the helper from the real image on a first call with an empty data folder (a `podman run --rm <image> host-helper` through a temporary folder), then `swarmbox version` printed the image's `2.0.0` and the second call made no extraction. The fake-Podman table covers missing, non-executable, no-version, old, equal, newer (2.0.10 against 2.0.9), a failing `tar`, an empty, corrupt, truncated and helper-less archive, offline, podman absent, update-then-next-call and rollback. | [verified: tests/test_function_bash.py, test_function_zsh.py, test_function_fish.py (130, 65 and 64 tests) and the by-hand run on swarmbox-test-35-img; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm), bash 5.2.15, zsh 5.9, fish 3.6.0; reduced: bash 3.2 and macOS not run] |
 
 ## 15. Roadmap
 
