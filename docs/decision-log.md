@@ -432,3 +432,54 @@ Context: B27's 2.5 GB is a budget.
 Chosen: `tests/test_image_build.py` always prints the size and per-layer history and fails over 2.5 GB, so a regression is visible; today it is 1.75 GB. The image test is skipped unless `SWARMBOX_IMAGE_BUILD=1`; it is listed in ci.yml (linux and macos lists, where it skips) because a test above requires every test file to be listed. The CI job will not build the image yet (plan section 3: the image job is added with the smoke test in a later slice), so the image test has so far only run here, in the development box.
 Impact on the design: B24, B26, B27 closed with evidence tags (Part B, "Results of Phase 2"). B24 shows the MCP server answering `tools/list`; it did not open a page in Chromium.
 How to reverse: n/a.
+
+## [2.2] Test-only switches (SWARMBOX_TEST_*) kept out of the configuration table
+Context: `serve` must be tested in the development box with no `/dev/net/tun`, no nested Podman, a run folder that is not `/tmp/swarmbox`, and a ttyd backoff of 0 s. The slice asks for one switch, `SWARMBOX_TEST_NO_NESTED=1`.
+Options: (a) no switches, test only inside real containers (slow, and the nested service cannot run here at all); (b) one switch per need, named `SWARMBOX_TEST_*`, read only by `container/entrypoint.sh`; (c) a general `SWARMBOX_TEST=1` gate.
+Chosen: (b). `SWARMBOX_TEST_NO_NESTED` (step 2 becomes a warning instead of a failure, step 8 starts no service and is a warning), `SWARMBOX_TEST_LIB` (where `dirs.sh` is), `SWARMBOX_TEST_RUN_DIR` (replaces `/tmp/swarmbox`), `SWARMBOX_TEST_TUN` (replaces `/dev/net/tun`), `SWARMBOX_TEST_BACKOFF_SCALE` (integer multiplier of the ttyd backoff), `SWARMBOX_TEST_SERVICE_WAIT` (seconds to wait for the nested socket). They are listed only in the header comment of `container/entrypoint.sh` and here; `tests/test_serve_steps.py` checks that design section 8 (the configuration reference) never names them. Never put in `swarmbox config`, the host helper's `create-flags` or the docs for users.
+Impact on the design: none visible to users. The risk is that someone sets NO_NESTED on a real box and gets a box with no nested Podman and a warning in the banner; that is the safe failure direction.
+How to reverse: delete the variables from `container/entrypoint.sh`; the tests would need a different way to fake the environment (for example a chroot-like layout).
+
+## [2.2] serve calls hook programs for the steps that belong to later slices
+Context: steps 4 (layout migration), 6 (`swarmbox-tool link --user`), 7 (MCP file, `prepare.sh`) and 12 (`WITH` installs) need code written later in Phase 2 and Phases 4a, 4b. The slice says those steps call stubs and are no-ops with logging.
+Options: ship stub programs (`swarmbox-migrate`, `swarmbox-tool`) in this slice; or make `serve` tolerate their absence.
+Chosen: `serve` tolerates absence. A program not on `PATH` makes the step a logged no-op in `serve.log` (the word "skipped"), no health line, not counted in `warnings=`. A program that exists and exits non-zero is a W with one health line per step. Interfaces fixed now so the later slices can match them: `swarmbox-migrate` (no arguments), `swarmbox-tool link --user`, `swarmbox-tool prepare` (prepare.sh of every installed or declared tool; the tool reads `SWARMBOX_WITH` itself) and `swarmbox-tool install <tool>`. The MCP generation of step 7 is a plain logged no-op in `serve` until 4.4. No stub program is shipped: a stub `swarmbox-tool` that exits 0 would hide a missing tool machinery in the smoke test, and the stub list of the plan (empty `tool-ports`, `swarmbox-tool` entry point) is left to the slice that builds the helper archive.
+Impact on the design: 4.1 gets a paragraph that names these interfaces. If the later slices choose other names, they change `container/entrypoint.sh` and `tests/test_serve_steps.py` together.
+How to reverse: replace the `have <program>` guards with plain calls once the programs exist.
+
+## [2.2] The web terminal interface between serve and swarmbox-web
+Context: `swarmbox-web` (container/scripts/swarmbox-web.sh) is not written yet, but the supervisor must start ttyd and `swarmbox-web restart` must reach the supervisor.
+Chosen: the supervisor runs `swarmbox-web run` when that command exists (a foreground command that prepares the page and the options and `exec`s ttyd), else `ttyd -W -p 7681 tmux attach -t main` (so the 2.2 box already serves ttyd's stock page). The supervisor's PID is written by serve to `box:/tmp/swarmbox/web-supervisor.pid` and `swarmbox-web restart` sends it `USR1`; `TERM` stops it. Output of ttyd goes to `<state>/web-terminal.log`. Step 10 is a W when neither `swarmbox-web` nor `ttyd` exists.
+Impact on the design: 4.1 and 5.1 name the interface. The fallback ttyd command has no `--index`, no theme and no clipboard bridge: it is a placeholder until the `swarmbox-web` slice.
+How to reverse: the later slice may rename `run`; change `ttyd_command` in the entrypoint.
+
+## [2.2] serve starts the nested Podman service itself and checks that it answers
+Context: v0.1.0 starts the service with `container/scripts/podman-service.sh` (detached with `setsid`, paths under `~/.swarmbox`), which `Dockerfile.v0.1.0` also copies, so it cannot change in this phase. A detached service would also survive `serve`'s signal handler.
+Options: call the old script; write a new script; start `podman system service` directly as a child of serve.
+Chosen: the child, `env -u CONTAINER_HOST podman system service --time=0 unix://$SB_PODMAN_SOCK` with output in `<state>/podman-service.log`, which serve stops on SIGTERM and SIGINT. After starting it, serve waits up to 10 s for the socket and runs `podman --url unix://<socket> version` (5 s limit). No socket (or the process died) or no answer is one W line. The check happens once, at step 8; the later "does the socket answer" check from the host is the helper's `up` (Phase 3, design 4.2). Tested with a fake `podman` only: the real service cannot run in the development box (reduced).
+Impact on the design: 4.1 describes it. `container/scripts/podman-service.sh` stays for the v0.1.0 image and is not copied for 2.0 use by serve (the 2.1 Dockerfile still copies it as `swarmbox-podman-service`; Phase 6 removes it).
+How to reverse: n/a.
+
+## [2.2] The marker's warning count, health file clearing and the log
+Context: design 4.2 says the marker holds `ok` or `warnings=<n>` and the health file is cleared at every start, but not what is counted nor when the file is cleared, and the health file lives in a folder that does not exist before step 3.
+Chosen: `<n>` counts the W failures recorded by serve before step 11 (plus the step 2 warning under the test switch). Health lines written afterwards (ttyd giving up; a failed `WITH` install) are in the file but not in the marker, because the marker is written once. The health file is truncated in step 3, right after the folders exist (so a fatal step 1 or 2 leaves the old file alone); log lines of steps 0 to 2 are held in memory and written to `serve.log` at step 3; `serve.log` is appended to, never truncated (a size cap is not implemented). The supervisor removes only its own line from the health file (a rewrite, `grep -vxF`); a concurrent append by the installer job at that moment could be lost, which I accepted for 2.0 (a lock would be the fix).
+Impact on the design: 4.1 states the counting rule.
+How to reverse: n/a.
+
+## [2.2] Bug found by the tests: a signal lost between starting a sleep and storing its PID
+Context: `tests/test_serve_steps.py::test_sigterm_during_a_crash_loop_backoff` hung in about 1 run of 3: the spike's supervisor (and my first copy of it) killed the PID of the running sleep from the trap, but a SIGTERM that arrives after `sleep N &` and before `sp=$!` finds `sp=0`, so nothing is killed and the supervisor sleeps the whole backoff; serve's `wait` on it then blocks `podman stop` until the kill timeout.
+Chosen: one helper `nap` that stores the PID and then checks the stop and restart flags, killing the sleep if either is set. 25 consecutive runs of the whole test file afterwards had no failure. The same race exists for the first `ttyd` start and is handled the same way.
+Impact on the design: 4.1 notes it. The spike's prototype had the same race (it did not show because its backoff is 1 s).
+How to reverse: n/a.
+
+## [2.2] Tests: fakes on PATH, no real tmux or podman
+Context: the hard rules forbid touching the live tmux server; `serve` runs `tmux` and `podman`.
+Chosen: `tests/test_serve_steps.py` puts a scratch folder with fake `tmux`, `ttyd`, `podman`, `swarmbox-pubkey`, `swarmbox-tool` and `swarmbox-migrate` first on a minimal `PATH` (`/usr/bin:/bin` after it) and asserts that `tmux` and `podman` resolve to the fakes before every run. The signal tests start `serve` themselves and only signal that PID (own process group) and children recorded in the fakes' pid files. The tests are Linux-only (they use `sleep infinity` and `/proc`), so `tests/test_ci_workflow.py` lists `test_serve_steps.py` and `test_serve_container.py` among the files that are not run on macOS, and `ci.yml` shellchecks `container/entrypoint.sh` as bash (it was in the `sh` list while it was a placeholder).
+Impact on the design: none.
+How to reverse: n/a.
+
+## [2.2] Container checks are reduced and idle-window check (B36) is not done here
+Context: the exit criteria want a reduced container check and say B36's idle window is recorded once 2.3 is done.
+Chosen: `tests/test_serve_container.py` (needs `SWARMBOX_IMAGE_BUILD=1`) runs serve in a throwaway `swarmbox-test-serve-<random>` container from the 2.1 image with `SWARMBOX_TEST_NO_NESTED=1`, a mktemp workspace and `--tmpfs /tmp/swarmbox`. Tagged `[reduced: development box, no nested Podman in the box]`; the nested service, step 8 and `/dev/net/tun` are NOT exercised for real. B36 stays open: serve only runs `tmux new-session -d -s main`, so the session has one default window; recognizing and closing it is `attach`'s job.
+Impact on the design: Part B has a "Results of Phase 2 (slice 2.2)" table.
+How to reverse: n/a.
