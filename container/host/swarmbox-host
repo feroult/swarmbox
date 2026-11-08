@@ -1384,7 +1384,7 @@ $u_o
 CEOF
 }
 
-# INIT=auto becomes 0 or 1 by a throwaway `podman run --rm --init` of the image (the probe of start.sh, kept; B9). INIT_RESOLVED.
+# INIT=auto becomes 0 or 1 by a throwaway `podman run --rm --init` of the image (the probe v0.1.0 used, kept; B9). INIT_RESOLVED.
 resolve_init() {
     case $C_INIT in
         0|1) INIT_RESOLVED=$C_INIT; return 0 ;;
