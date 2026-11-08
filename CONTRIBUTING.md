@@ -31,11 +31,13 @@ python3 tests/test_docs_consistency.py
 | `test_design_partb.py` | the shape of Part B of the design |
 | `test_dirs.py` | `container/scripts/dirs.sh`, the XDG-aware path file (sh, dash, bash) |
 | `test_docs_consistency.py` | cross-references, D and B numbers and code fences of the design and the plan |
+| `test_helpers.py` | the fake `podman` of `tests/helpers.py` |
 | `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md` and this file |
 | `test_spikes_common.py` | the safety helpers of the spike scripts |
 | `test_ssh_key.py` | the SSH key handling in `start.sh` |
 | `test_starship.py` | the Starship prompt setup |
 | `test_start_attach.py` | attaching to the box |
+| `test_start_fake_podman.py` | `start.sh` against the shared fake `podman` |
 | `test_start_init.py` | `container/scripts/init.sh` |
 | `test_start_timezone.py` | the timezone handling |
 | `test_start_web_connector.py` | the web terminal connector in `start.sh` |
@@ -43,8 +45,8 @@ python3 tests/test_docs_consistency.py
 | `test_web_style.py` | the web terminal style (needs a browser) |
 | `test_web_terminal.py` | the web terminal wrapper |
 
-Run them all with `for f in tests/test_*.py; do python3 "$f" || break; done`. Shared helpers (the repository root, and later the
-fake `podman` and fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use a real container only for a smoke
+Run them all with `for f in tests/test_*.py; do python3 "$f" || break; done`. Shared helpers (the repository root, the fake `podman`, and later the
+fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use a real container only for a smoke
 test, with a `swarmbox-test-` name. The spike scripts in `tests/spikes/` are experiments, not part of the normal run (see `tests/spikes/README.md`).
 
 ## Building the image locally
