@@ -1,4 +1,4 @@
-// Clipboard bridge for the ttyd page (injected by swarmbox-web-terminal; see web-terminal.sh).
+// Clipboard bridge for the ttyd page (injected into the page by build-index.sh at image build).
 //
 // ttyd 1.7.7 does not handle OSC 52, so a copy made inside tmux (a mouse selection, or `set-buffer -w`)
 // never reaches the browser clipboard, and xterm.js sends Ctrl+V to the shell as ^V instead of pasting.

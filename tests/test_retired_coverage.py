@@ -8,8 +8,8 @@ purpose (decision log [6.2]). It fails when:
   - a named 2.0 test does not exist (a rename or a deletion would silently lose coverage);
   - a deleted file comes back;
   - a tests/ file other than the allow-list mentions start.sh, build.sh, lib/{attach-session,podman-connection,ui,web}.sh,
-    container/scripts/init.sh, container/web/web-terminal.sh or container/opencode (the scripts stay on disk until slice 6.3,
-    which deletes them and adds its own deletion-assertion test).
+    container/scripts/init.sh, container/web/web-terminal.sh or container/opencode (slice 6.3 deleted the
+    scripts; tests/test_retired.py asserts they are gone).
 Run: python3 tests/test_retired_coverage.py
 """
 import os
@@ -117,6 +117,7 @@ ALLOW = {
     "test_tool_opencode.py": "compares the 2.0 mirror and template with `git show v0.1.0:container/scripts/init.sh` and `...container/opencode/local-llm.json`",
     "test_dockerfile.py": "asserts the 2.0 Dockerfile does NOT use init.sh (an absence check)",
     "test_docs_consistency.py": "the docs rule that start.sh may be named only in a historic or migration context",
+    "test_retired.py": "the absence test of slice 6.3 (names the deleted files to assert they are gone)",
     SELF: "this file (names the retired files to guard against them)",
 }
 FORBIDDEN = re.compile(
