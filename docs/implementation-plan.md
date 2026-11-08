@@ -86,6 +86,8 @@ Phase 4b starts as soon as 4a is done, runs in parallel with Phase 3 and may con
 
 **Results so far:** slice 0.1 ran B3, B13, B9, B17 and B18 (`tests/spikes/`); the results are in design Part B ("Results of the Phase 0 spikes") and `docs/decision-log.md`. B9, B17 and B18 are closed; B3 and B13 are spiked and stay open until the Phase 2 product tests, which must include the two corrections the spikes found. Slice 0.4 (documentation reads) closed B4, B11 and B25, checked B14 (documentation only, still `[unverified]`) and partly checked B16: gcloud's published checksum belongs to the unversioned URL only (so the maintainer script of D29 computes the pinned file's checksum), and on Podman 4.3.1 `podman-restart.service` restarts `--restart=always` containers only, not `unless-stopped`.
 
+**Phase 0 outcome (slice 0.5):** every spike above has a tagged result in Part B. Closed: B1, B2, B4, B5, B9, B10, B11, B17, B18, B25. Reduced (stand-in or partial), closed by the phase that owns the real code: B3, B13 (Phase 2), B12 (image size, with B27 in Phase 2). Open with an owner: B14 (documentation only, owner with a Cloudflare dashboard) and B16 (the reboot, a host with systemd). Not doable here: B6, B7, B8 and B15, closed in Phase 6. The table "Phase 0 outcome" in design Part B has the detail and `tests/spikes/README.md` lists the scripts and how each becomes a test. `tests/test_docs_consistency.py` guards the cross-references.
+
 **Exit criteria:** every spike above has a recorded result; every result that contradicts the design has a design change committed; Part B shows which facts remain open and who closes them.
 
 ---
@@ -359,20 +361,20 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 |---|---|---|---|
 | B1 | Claude Code install method that keeps its updater (closed in 0.3: native installer) | 0 | feeds 4a |
 | B2 | OpenCode auto-approve flag (closed in 0.3: `--auto`, no alias, `YOLO_ALIAS=0`) | 0 | feeds 4b |
-| B3 | `serve` as main process; signals; ttyd restart | 2 | fed by the Phase 0 spike |
-| B4 | ttyd serves one file | 0 | |
+| B3 | `serve` as main process; signals; ttyd restart | 2 | fed by the Phase 0 spike (spiked in 0.1, reduced) |
+| B4 | ttyd serves one file | 0 | closed in 0.4 |
 | B5 | Unix socket path limit and the fallback | 3 | closed in 0.2: limit 107 characters, fallback above 100 (3.5); the Phase 3 tests carry it |
-| B6 | The design on macOS | 6 | |
-| B7 | A host UID other than 1000 | 6 | |
-| B8 | Lowest working Podman version | 6 | |
-| B9 | tmux environment for new windows | 0 | |
+| B6 | The design on macOS | 6 | not doable in Phase 0 (hardware) |
+| B7 | A host UID other than 1000 | 6 | not doable in Phase 0 (hardware) |
+| B8 | Lowest working Podman version | 6 | not doable in Phase 0 (older Podman versions) |
+| B9 | tmux environment for new windows | 0 | closed in 0.1 |
 | B10 | OpenCode size saving under `--prefix` (closed in 0.3: 745 MB) | 0 | feeds 4b |
-| B11 | gcloud URL and checksum | 0 | feeds 4b |
-| B12 | Re-record unrecorded checks | 0 | |
-| B13 | `swarmbox <command>` mechanism and exit code | 2 | fed by the Phase 0 spike |
-| B14 | Where Access sessions are revoked | 0 | |
-| B15 | `python3` on a clean macOS | 6 | |
-| B16 | Restart after a host reboot | 0 | |
+| B11 | gcloud URL and checksum | 0 | feeds 4b; closed in 0.4 (checksum of the pinned file is computed, D29) |
+| B12 | Re-record unrecorded checks | 0 | re-recorded in 0.2; the 4.2 GB size stays `[unverified]` until B27 in 2 |
+| B13 | `swarmbox <command>` mechanism and exit code | 2 | fed by the Phase 0 spike (spiked in 0.1, reduced) |
+| B14 | Where Access sessions are revoked | 0 | documentation read in 0.4, stays `[unverified]`; owner tries it in a dashboard |
+| B15 | `python3` on a clean macOS | 6 | not doable in Phase 0 (hardware) |
+| B16 | Restart after a host reboot | 0 | partly checked in 0.4; the reboot is `[unverified]` (needs systemd) |
 | B17 | tmpfs empty after stop and start | 0 | rechecked by the Phase 2 smoke test |
 | B18 | Container left behind by a failed `run` | 0 | used by B33 in 3 |
 | B19 | `sort -V` | 3 | macOS part rechecked in 6 |
@@ -381,7 +383,7 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B22 | Tunnel token file mode | 3 | macOS and WSL home rechecked in 6 |
 | B23 | Helper under several `sh` | 3 | macOS part rechecked in 6 |
 | B24 | `chrome-devtools-mcp` installed program | 2 | used by 4b |
-| B25 | Go checksum source | 0 | feeds 4b |
+| B25 | Go checksum source | 0 | feeds 4b; closed in 0.4 |
 | B26 | UID of the base image's `node` user | 2 | |
 | B27 | 2.5 GB size target | 2 | |
 | B28 | cgroup manager settings | 2 | |

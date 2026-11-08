@@ -1769,7 +1769,7 @@ messages of 3.8, `serve` step failures (4.1), `swarmbox-tool` and the installers
 
 ## 14. Open questions
 
-No design decision is open: all are taken and listed in the table "Decisions already taken" in the Overview (D1 to D39). Part B lists facts nobody has checked, each with the test that closes it. The body cites them as B1, B2... and the decisions as D1 to D37.
+No design decision is open: all are taken and listed in the table "Decisions already taken" in the Overview (D1 to D39). Part B lists facts nobody has checked, each with the test that closes it. The body cites them as B1, B2... and the decisions as D1 to D39.
 
 ### Part B. Facts to verify
 
@@ -1814,7 +1814,7 @@ Each test below is run in a throwaway container or with fakes, never on the box 
 | B35 | The fast path of `up` (box exists and runs) needs at most two Podman calls before attaching, and costs little | Run `swarmbox` with a fake `podman` that counts calls (at most two before `attach`), then time it on a real box against `podman exec` alone | 3.7.2 |
 | B36 | `serve` creates `main` with one idle window that `attach` can recognize and close when it is the only other window, without closing a window a user created | Real tmux in a throwaway container: start `main` with the idle window, attach twice, list windows; type in a window before the second attach | 3.4, 4.1 |
 
-#### Results of the Phase 0 spikes (slices 0.1 to 0.4)
+#### Results of the Phase 0 spikes (slices 0.1 to 0.4; the state of each fact is in the outcome table after it)
 
 Scripts are in `tests/spikes/` (not run in CI); each prints one `RESULT` line with its evidence tag and exits 1 if a claim of this design is contradicted. The shared image `swarmbox-test-spikes-img` is `node:24-slim` plus tmux 3.3a, procps and the box's pinned ttyd 1.7.7 binary (copied from the live box's `/usr/local/bin/ttyd`, a static executable of the same release).
 
@@ -1838,6 +1838,34 @@ Scripts are in `tests/spikes/` (not run in CI); each prints one `RESULT` line wi
 | B25 | Closed. go.dev's JSON listing `https://go.dev/dl/?mode=json` gives a sha256 per file; go1.27.3 linux-amd64 and linux-arm64 matched the computed values. See 6.4 and 6.12. | `[verified: spike_b11_b25_checksums.py; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); HTTPS reads and downloads, no container; go1.27.3; reduced: no container]` |
 | B14 | Checked in documentation only: Zero Trust > Access controls > Applications > the application > Edit > "Revoke existing tokens" (one application), or Zero Trust > Team & Resources > Users > the user > Action > Revoke (one user). Not tried in a dashboard. See 11. | `[unverified]` (documentation read 2026-11-08, `developers.cloudflare.com/cloudflare-one/identity/users/session-management/`) |
 | B16 | Partly checked. `--restart` alone does not survive a reboot (4.3.1 documentation); a user unit `podman-restart.service` exists (`WantedBy=default.target`) and selects `restart-policy=always` only: `unless-stopped` is **not** matched on 4.3.1 although documented as identical. The reboot itself and lingering are not tried (no systemd). See 4.2. | `[verified: spike_b16_restart_policy.py; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); debian:bookworm-slim; reduced: no systemd here, so no reboot and no `systemctl --user enable` was tried]` |
+
+#### Phase 0 outcome (slice 0.5)
+
+State of every Phase 0 fact, who closes what is left, and what could not be done here. "Closed" means a tagged result above and nothing left to check in Phase 0. "Reduced" means checked with a stand-in or in part. "Open" names the phase or person that closes it. The Part B table above is the authority for the wording of each fact.
+
+| Fact | State | Owner | Note |
+|---|---|---|---|
+| B1 | Closed | none | Native installer for `UPDATE=self` (6.7). One update only; the npm route works only with `NPM_CONFIG_PREFIX`. |
+| B2 | Closed | none | `--auto`, no alias, `YOLO_FLAGS` and `YOLO_ALIAS=0` (6.6). The package choice (`@opencode/cli` or `opencode-ai`) is the owner's, plan section 12. |
+| B3 | Reduced | Phase 2 | Spiked with a bash prototype of `serve`; the real `serve` closes it. |
+| B4 | Closed | none | 5.1. |
+| B5 | Closed | Phase 3 carries it | Limit 107 characters; the container half used a stand-in service, no macOS (the macOS part is B6). |
+| B9 | Closed | none | 7.3. |
+| B10 | Closed | none | 745 MB saved for `@opencode/cli`. |
+| B11 | Closed | none | Correction: Google's checksum covers the unversioned URL only, D29 computes the pinned one. |
+| B12 | Reduced | Phase 2 (image size, B27) | The 4.2 GB image size was not measured (no image here, never rebuild the box's); keep-id with host UID 1000 only (B7); fish not tested for `$0`. |
+| B13 | Reduced | Phase 2 | Spiked with a stand-in for `swarmbox-attach`; the real one closes it. |
+| B14 | Open | owner | Documentation only, `[unverified]` until tried in a real Cloudflare dashboard (needs an account; not touched here). |
+| B16 | Reduced | owner, on a host with systemd | Unit and policy checked on 4.3.1; the reboot itself is `[unverified]` (no systemd here). |
+| B17 | Closed | Phase 2 rechecks it in the smoke test | 4.1 step 0. |
+| B18 | Closed | Phase 3 uses it (B33) | 3.5. |
+| B25 | Closed | none | 6.12. |
+| B6 | Open, not doable here | owner, on a Mac, before M3 (Phase 6) | Needs macOS and a Podman machine. |
+| B7 | Open, not doable here | owner or a CI matrix (Phase 6) | Needs a host UID other than 1000; this box is UID 1000 only. |
+| B8 | Open, not doable here | owner or a CI matrix (Phase 6) | Needs older Podman versions (4.0, 4.9, latest); only 4.3.1 is installed and no registry change is allowed. |
+| B15 | Open, not doable here | owner, on a clean Mac (Phase 6) | Needs a clean macOS. |
+
+Also not doable here, rechecked later: the macOS parts of B19, B21, B22, B23 and B34 (Phase 6, after their Linux parts close in Phase 3) and the real-registry run of B20 (Phase 7). The spike scripts and how they become tests are listed in `tests/spikes/README.md`.
 
 ## 15. Roadmap
 
