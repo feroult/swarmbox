@@ -85,6 +85,7 @@ jobs:
           python3 tests/test_start_init.py
           python3 tests/test_start_timezone.py
           python3 tests/test_start_web_connector.py
+          python3 tests/test_tool_link.py
           python3 tests/test_tool_manifest.py
           python3 tests/test_tool_stub.py
           python3 tests/test_web_build.py

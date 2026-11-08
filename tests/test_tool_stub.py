@@ -26,7 +26,8 @@ class ToolStub(unittest.TestCase):
         self.host = os.path.join(self.base, "host")
 
     def run_tool(self, *args, host=True):
-        env = {"PATH": "/usr/bin:/bin", "HOME": self.base, "SWARMBOX_TEST_IMAGE_TOOLS": os.path.join(self.base, "none")}
+        env = {"PATH": "/usr/bin:/bin", "HOME": self.base, "SWARMBOX_TEST_IMAGE_TOOLS": os.path.join(self.base, "none"),
+               "SWARMBOX_TEST_IMAGE_SHIMS": os.path.join(self.base, "out", "shims")}
         if host:
             env["SWARMBOX_TEST_HOST_DIR"] = self.host
         return subprocess.run(["bash", TOOL, *args], env=env, capture_output=True, text=True, timeout=20)
@@ -58,12 +59,14 @@ class ToolStub(unittest.TestCase):
         self.run_tool("link", "--system")
         self.assertEqual(sorted(os.listdir(self.host)), ["keep.txt", "tool-ports"])
 
-    def test_link_user_and_prepare_succeed_and_write_nothing(self):
+    def test_link_user_with_no_manifests_and_prepare_succeed_and_write_no_tool_ports(self):
+        # link is real since slice 4a.2 (tests/test_tool_link.py): with no manifests it leaves an empty user level in the
+        # workspace dirs (here under HOME) and never writes tool-ports; prepare is still a no-op (4b owns prepare.sh)
         for args in (("link", "--user"), ("prepare",)):
             r = self.run_tool(*args)
             self.assertEqual(r.returncode, 0, r.stderr)
         self.assertFalse(os.path.exists(self.host))
-        self.assertEqual(os.listdir(self.base), [])
+        self.assertEqual(os.listdir(os.path.join(self.base, ".local", "share", "swarmbox", "shims")), [])
 
     def test_link_needs_a_known_flag(self):
         for args in (("link",), ("link", "--bogus")):

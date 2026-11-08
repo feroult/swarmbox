@@ -56,8 +56,9 @@ python3 tests/test_docs_consistency.py
 | `test_start_init.py` | `container/scripts/init.sh` |
 | `test_start_timezone.py` | the timezone handling |
 | `test_start_web_connector.py` | the web terminal connector in `start.sh` |
+| `test_tool_link.py` | `swarmbox-tool link --system` and `--user`: shims, the `command tool` index, `tool-ports`, idempotence, stale shims, same-level conflicts, no project level |
 | `test_tool_manifest.py` | `swarmbox-tool` manifest loading and `validate` (every rule of design 6.9, the install.sh lint, no project level) and the `claude` manifest and installer (fake `curl`) |
-| `test_tool_stub.py` | the parts of `container/scripts/swarmbox-tool.sh` that are still stubs (`link`, `prepare`, the exit 70) and the empty `tool-ports` file |
+| `test_tool_stub.py` | the parts of `container/scripts/swarmbox-tool.sh` that are still stubs (`prepare`, the exit 70), `link` with no manifests, and the empty `tool-ports` file |
 | `test_tmux_browser_keys.py` | the browser key bindings of tmux (real tmux on a private socket; about 60 s) |
 | `test_web_build.py` | `container/scripts/swarmbox-web.sh` against a fake ttyd, with `serve`, and the browser tests rerun on the page it renders (needs a browser for those) |
 | `test_smoke_skeleton.py` | the structure of `tests/smoke_image.py` (steps, tags, names, forbidden verbs); starts no container |

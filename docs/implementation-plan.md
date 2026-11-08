@@ -148,6 +148,8 @@ Scope: **`swarmbox-tool`** (manifest parsing and `validate`, `link --system`, `i
 
 Tests first: manifest parsing and `validate` rules (6.9) including `UPDATE=self` needing `VERSION=latest`; `link --system` is idempotent and writes the shims, the index and `tool-ports`; the shim installs with a fake installer on the first call and runs the real command after; a manifest under a project folder is **not** read (D18, the absence test).
 
+**4a.2 done:** `link --system` and `--user` generate shims, the `command tool` index and `tool-ports` (design 6.2, 4a.2 state); the dispatcher and `install`/`run` are the next slices.
+
 **Exit criteria:** in a throwaway box the first `claude` call installs (with a fake installer in CI, the real one in a throwaway container) and runs it; `validate` passes for the `claude` manifest.
 
 ---

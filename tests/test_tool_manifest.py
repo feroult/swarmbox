@@ -62,7 +62,9 @@ class Base(unittest.TestCase):
     def run_tool(self, *args, cwd=None, env=None):
         e = {"PATH": "/usr/bin:/bin", "HOME": self.base, "SWARMBOX_TEST_LIB": LIB,
              "SWARMBOX_TEST_IMAGE_TOOLS": self.image, "SWARMBOX_TEST_USER_TOOLS": self.user,
-             "SWARMBOX_TEST_HOST_DIR": os.path.join(self.base, "host")}
+             "SWARMBOX_TEST_HOST_DIR": os.path.join(self.base, "host"),
+             "SWARMBOX_TEST_IMAGE_SHIMS": os.path.join(self.base, "out", "shims"),
+             "SWARMBOX_TEST_USER_SHIMS": os.path.join(self.base, "out", "ushims")}
         e.update(env or {})
         return subprocess.run(["bash", TOOL, *args], env=e, capture_output=True, text=True, timeout=30,
                               cwd=cwd or self.cwd)

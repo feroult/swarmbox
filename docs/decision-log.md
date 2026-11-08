@@ -704,3 +704,29 @@ Also: the smoke test step `tool-validate` and test_web_container now expect the 
 Impact on the design: 6.9 (4a.1 state).
 How to reverse: remove the rule lines in `check_manifest`.
 
+
+## [4a.2] Index format, where the files live, and the test-only shim folders
+Context: design 6.2 gives the paths (`/usr/local/lib/swarmbox/shims`, `.../index`; user level `.../shims/`, `.../index`) and says "command tool" per line, but not the order, the separator, or what an empty level looks like.
+Options: (a) unsorted, in manifest order; (b) sorted by command; the index as a sibling file of the shim folder; (c) index inside the shim folder.
+Chosen: (b). One line `<command> <tool>` separated by a single space, sorted bytewise (`LC_ALL=C`) so that the output does not depend on glob order or locale and a rerun is byte-identical; the file always exists, empty when there is nothing. The index is `dirname(shims)/index`, matching the layout in 6.2 (a file inside the shim folder would be on `PATH` and look like a command). Test-only variables SWARMBOX_TEST_IMAGE_SHIMS and SWARMBOX_TEST_USER_SHIMS (index = sibling `index`), in the style of [4a.1]; user level without the override comes from dirs.sh and honors XDG.
+Impact on the design: 6.2 (4a.2 state).
+How to reverse: change the `sort` and the `index=` line in `link_level`.
+
+## [4a.2] Stale-shim removal and conflict handling
+Context: `link` must be idempotent, follow manifest removal, and never harm things it did not make; the shim folder at image level is root's, at user level the user's.
+Options: (a) wipe and recreate the folder; (b) remove only what link generated; (c) never remove.
+Chosen: (b), with a precise definition of "generated": a symlink whose target is exactly `/usr/local/bin/swarmbox-shim` and whose name does not start with a dot (dot names are the temporary links of a concurrent `link`). Wiping (a) would give a reader a moment with no shim, which is the race named in the slice. A command name occupied by a regular file or a link elsewhere is reported on stderr and skipped (exit 0, no index line), because refusing to link everything over one stray file would break the box start (serve step 6 is a W failure at most). A same-level duplicate command exits 1, writes nothing at that level and keeps the previous good state (decided before any write). A manifest that does not source, has a bad SCHEMA, or a PROVIDES entry that is not a plain name (so no `../x`, which would write outside the folder) is skipped with a warning; `validate` reports them as failures. Removing a manifest also removes its shims at the next link; a user manifest that breaks therefore loses its shims until fixed.
+Impact on the design: 6.2 and 6.3 (conflicts) 4a.2 state.
+How to reverse: remove the stale loop at the end of `link_level` to keep old shims.
+
+## [4a.2] Atomicity and write order of link
+Context: serve step 6 and an interactive attach may run `link --user` at the same time.
+Chosen: new links are created as `.link.<pid>.<cmd>` and renamed over with `mv -T` (atomic, so a correct existing link is never missing; links already correct are not touched at all, so inode and mtime stay), the index and tool-ports through `<file>.tmp.<pid>` and `mv -f`, stale links removed last. `tool-ports` is written first, before the shims, so a failure there stops with exit 1 before anything else changes. Two concurrent runs produce the same bytes, so the last rename wins harmlessly. Not tested with a real race, only by construction and idempotence tests [unverified under real concurrency]. The user level is entirely in the workspace; the image level is made by root at build and read-only for the agent, so no ownership problem arises (a user-level shim folder created by the agent user is agent-owned).
+Impact on the design: 6.2 (4a.2 state).
+How to reverse: n/a.
+
+## [4a.2] Test updates and what was not run
+Context: link now creates folders, so tests that call `link` need the shim folder overrides.
+Chosen: tests/test_tool_stub.py and tests/test_tool_manifest.py pass the two new override variables; the stub test for `link --user` now expects an empty user level under HOME instead of "writes nothing". test_tool_link.py is added to the CI list and to the macOS exclusions (bash 4 features, like the other tool tests). The container tests (test_web_container, test_serve_container, smoke) skip without a built image and were not run; the image still does not copy `container/tools` (a later 4a slice), so the real image tree here is only tested through a copy of `container/tools` in a temp folder (claude is linked, tool-ports empty).
+Impact on the design: none.
+How to reverse: n/a.
