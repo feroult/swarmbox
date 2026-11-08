@@ -730,3 +730,49 @@ Context: link now creates folders, so tests that call `link` need the shim folde
 Chosen: tests/test_tool_stub.py and tests/test_tool_manifest.py pass the two new override variables; the stub test for `link --user` now expects an empty user level under HOME instead of "writes nothing". test_tool_link.py is added to the CI list and to the macOS exclusions (bash 4 features, like the other tool tests). The container tests (test_web_container, test_serve_container, smoke) skip without a built image and were not run; the image still does not copy `container/tools` (a later 4a slice), so the real image tree here is only tested through a copy of `container/tools` in a temp folder (claude is linked, tool-ports empty).
 Impact on the design: none.
 How to reverse: n/a.
+
+## [4a.3] Where the lock lives and how tests move it
+Context: design 6.5 says "take the lock" and the slice names /tmp/swarmbox/tools.lock; tests must not touch the real /tmp/swarmbox.
+Options: (a) lock the tool folder itself; (b) one global lock file in /tmp/swarmbox; (c) a lock per tool.
+Chosen: (b), path /tmp/swarmbox/tools.lock (the tmpfs run dir of dirs.sh), test-only override SWARMBOX_TEST_LOCK, with flock on descriptor 9, a non-blocking try first (then "another install is running, waiting for it..."), then a wait of 900 s (test-only override SWARMBOX_TEST_LOCK_WAIT). One global lock because installs are rare and a second install of another tool waiting is harmless; per-tool locks would need a lock directory. The lock is outside the workspace on purpose: a reset starts with no stale lock. The installer child gets the descriptor closed (9>&-) and `run` closes it before exec, so a daemon started by an installer or the tool cannot hold the lock (tested with a leftover background sleep). flock is util-linux, an Essential package of Debian, so it is in the node:24-slim based image; I did not add it to the Dockerfile list. [unverified in the built image: not rebuilt in this slice; present on this box.]
+Impact on the design: 6.5 (4a.3 state).
+How to reverse: change LOCK_FILE; for per-tool locks, derive the file name from the tool.
+
+## [4a.3] Architecture mapping and override
+Context: TOOL_ARCH must be amd64 or arm64 from `uname -m`.
+Chosen: x86_64 and amd64 give amd64; aarch64 and arm64 give arm64 (macOS hosts report arm64); anything else is refused before the installer runs with a message that names the value. Override for tests: SWARMBOX_TEST_ARCH (the mapping itself is tested with a fake `uname` first on PATH, without the override).
+Impact on the design: 6.4 (4a.3 state).
+How to reverse: edit tool_arch.
+
+## [4a.3] TOOL_SHA256: how an installer gets the manifest checksum
+Context: 6.4 says an installer verifies the manifest's SHA256_<arch>, and 6.4's contract table lists only TOOL_PREFIX, TOOL_VERSION, TOOL_ARCH, so an installer had no way to read it.
+Options: (a) the installer sources tool.conf itself; (b) swarmbox-tool passes it.
+Chosen: (b), a fourth variable TOOL_SHA256 = SHA256_<TOOL_ARCH> when declared, unset otherwise (an inherited TOOL_SHA256 is removed, so an installer cannot be fooled by the caller's environment). swarmbox-tool does not verify anything itself: the installer does, and when it exits non-zero swarmbox-tool removes the whole prefix. Tested with a fixture archive and sha256sum -c, both a mismatch (tree byte-identical afterwards) and a match; claude declares no checksum.
+Impact on the design: 6.4 table row added.
+How to reverse: drop the export in run_installer and the row.
+
+## [4a.3] Layout, in-place install and what "complete" and "installed" mean
+Context: 6.7 gives tools/<name>/<version>/ plus current for managed and tools/<name>/self/ for UPDATE=self; 6.11 gives the fingerprint file `.swarmbox-env`.
+Options for managed: (a) install into a staging folder and rename it to <version>; (b) install in place into <version>/ and delete it on failure.
+Chosen: (b). npm and gcloud installs may write absolute prefix paths into scripts, which a rename would break. The price is that a crash (kill -9 of swarmbox-tool) can leave a version directory without `.swarmbox-env`; that is treated as incomplete and redone on the next call, and `current` is never moved before the marker and every PROVIDES command exist, so there is never a half-installed current link. For UPDATE=self the prefix is only a record, so a staging folder (tools/<name>/.staging.<pid>) is used and renamed to self/ after success; a failed reinstall therefore keeps the previous record. Where the self record lives: tools/<name>/self/ under the dirs.sh tools dir (the workspace, survives reset). Installed for UPDATE=self: record present AND command resolvable at $HOME/.local/bin/<command> AND not the shim (risk named in the slice); a stale record with a deleted binary, or a binary with no record, reinstalls (tested both ways). For managed: current -> a complete version directory. The vendor's files in ~/.local are outside swarmbox-tool's undo: on a failed self install only SwarmBox's own tree is restored (the fake installer in the test leaves partial files in ~/.local on purpose; they are the installer's).
+Failure cleanup also removes the empty folders the call itself created (tools/, tools/<name>/), so the tree is byte-identical, not just free of links.
+Impact on the design: 6.5 and 6.7 (4a.3 state).
+How to reverse: n/a.
+
+## [4a.3] Exit codes of a failed install, and `latest` for managed tools
+Context: `run` passes the tool's own exit status through exec, so an install failure with exit 1 could be mistaken for the tool's.
+Chosen: install failure (and a refused or missing real command) exits 69 (EX_UNAVAILABLE) from both `run` and `install`; usage errors 64 (as elsewhere); later-phase commands 70 (as the slice says). `latest` for a MANAGED tool has no resolver yet (no network call is made by swarmbox-tool, and design 6.7 does not say how to resolve): the literal name `latest` is used as the version directory and passed as TOOL_VERSION; real resolution (opencode is the first managed agent, Phase 4b) is left open [unverified]. For UPDATE=self, `latest` is passed to the installer as is, which is what the claude installer expects.
+Impact on the design: 6.5 (4a.3 state).
+How to reverse: change the exit numbers in cmd_install and cmd_run.
+
+## [4a.3] Surface of `list`, `update`, `--force`, and what is not done
+Context: the slice asks for a coherent surface: list and update for UPDATE=self, the rest "later phase" with exit 70.
+Chosen: `list` prints a header and one sorted row per tool (user level wins over the image of the same name): name, kind, update, level, state. `update` for UPDATE=self resolves the first word of UPDATE_CMD to the real program when the tool provides it (so it does not go through the shim), runs it with stdout to stderr and passes its exit code; not installed gives exit 1 "not installed"; a managed tool gives 70. `install --force` is implemented (it is in 6.11) because it is a few lines: it removes and reinstalls the version directory (or record). `use`, `remove`, `doctor`, `new` exit 70 with "later phase". The environment fingerprint is written (ARCH, NODE_MAJOR from `node -v` or empty, LIBC, VERSION) but nothing reads it yet (the check at `link --user` is a later phase). The swarmbox-shim dispatcher and shipping container/tools in the image are not part of this slice. Not run: the real claude installer against claude.ai (B1 is already verified by the Phase 0 spike); the claude installer is exercised here only through a fake curl and the real manifest.
+Impact on the design: 6.5, 6.7 (4a.3 state).
+How to reverse: n/a.
+
+## [4a.3] Test registration
+Context: new test file and a changed stub test.
+Chosen: tests/test_tool_install.py is in ci.yml and in the macOS exclusions of test_ci_workflow.py (bash 4 features, like the other tool tests) and described in CONTRIBUTING.md; test_tool_stub.py now checks the later-phase commands (use, remove, doctor, new) instead of install/run/update/list.
+Impact on the design: none.
+How to reverse: n/a.
