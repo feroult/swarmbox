@@ -975,7 +975,7 @@ class PhaseSixCloseTest(unittest.TestCase):
 
     def test_13_1_lists_every_test_file_on_disk(self):
         sec = DESIGN[DESIGN.index("### 13.1 "):DESIGN.index("### 13.2 ")]
-        final = sec[sec.index("**Final file list (slice 7.2)"):].split("\n\n")[0]
+        final = sec[sec.index("**Final file list (slice 7.3)"):].split("\n\n")[0]
         listed = set(re.findall(r"`(test_[a-z0-9_]+\.py)`", final))
         disk = {f for f in os.listdir(os.path.join(ROOT, "tests")) if re.match(r"test_.*\.py$", f)}
         self.assertEqual(sorted(disk - listed), [], "on disk but not listed")
