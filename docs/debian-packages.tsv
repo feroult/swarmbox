@@ -1,0 +1,595 @@
+package	version	licenses	source	flags
+aardvark-dns	1.4.0-3	Apache-2.0	https://sources.debian.org/src/aardvark-dns/	
+adduser	3.134	GPL-2+	https://sources.debian.org/src/adduser/	
+adwaita-icon-theme	43-1	CC-BY-3.0-US, CC-BY-SA-2.0-IT, CC-BY-SA-3.0 or LGPL-3, CC-BY-SA-3.0-US, CC-BY-SA-3.0-US or LGPL-3, CC-BY-SA-3.0-Unported, CC-BY-SA-4.0, GFDL-1.2+, GFDL-1.2+ or CC-BY-SA-3.0-Unported or CC-BY-SA-2.0-IT, and CC-BY-3.0-US, GPL-unspecified	https://sources.debian.org/src/adwaita-icon-theme/	
+alsa-topology-conf	1.2.5.1-2	BSD-3-clause	https://sources.debian.org/src/alsa-topology-conf/	
+alsa-ucm-conf	1.2.8-1	BSD-3-clause	https://sources.debian.org/src/alsa-ucm-conf/	
+apt	2.6.2	BSD-3-clause, Expat, GPL-2, GPL-2+	https://sources.debian.org/src/apt/	
+at-spi2-common	2.46.0-5	AFL-2.1, AFL-2.1 or GPL-2+, GPL-2, GPL-2+, LGPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/at-spi2-core/	
+at-spi2-core	2.46.0-5	AFL-2.1, AFL-2.1 or GPL-2+, GPL-2, GPL-2+, LGPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/at-spi2-core/	
+avahi-daemon	0.8-10+deb12u1	see copyright file (mentions: GPL, GPL-2, LGPL-2.1)	https://sources.debian.org/src/avahi/	NO-LICENSE-FIELD
+avahi-utils	0.8-10+deb12u1	see copyright file (mentions: GPL, GPL-2, LGPL-2.1)	https://sources.debian.org/src/avahi/	NO-LICENSE-FIELD
+base-files	12.4+deb12u15	see copyright file (mentions: GPL)	https://sources.debian.org/src/base-files/	NO-LICENSE-FIELD
+base-passwd	3.6.1	GPL-2, public-domain	https://sources.debian.org/src/base-passwd/	
+bash	5.2.15-2+b13	BSD-4-clause-UC, BSD-4-clause-UC and MIT-like, GFDL-NIV-1.3, GPL-2+, GPL-3+, GPL-3+ with Bison exception, Latex2e, MIT-like, permissive	https://sources.debian.org/src/bash/	
+bash-completion	1:2.11-6	GPL-2+	https://sources.debian.org/src/bash-completion/	
+bind9-dnsutils	1:9.18.49-1~deb12u3	BSD-2-clause, BSD-3-clause, CC0-1.0, ISC, ISC or MPL-2.0, MPL-2.0, MPL-2.0 and BSD-3-clause, MPL-2.0 and CC0-1.0, MPL-2.0 and ISC, MPL-2.0 and ISC and BSD-2-clause and BSD-3-clause, MPL-2.0 and public-domain	https://sources.debian.org/src/bind9/	
+bind9-host	1:9.18.49-1~deb12u3	BSD-2-clause, BSD-3-clause, CC0-1.0, ISC, ISC or MPL-2.0, MPL-2.0, MPL-2.0 and BSD-3-clause, MPL-2.0 and CC0-1.0, MPL-2.0 and ISC, MPL-2.0 and ISC and BSD-2-clause and BSD-3-clause, MPL-2.0 and public-domain	https://sources.debian.org/src/bind9/	
+bind9-libs	1:9.18.49-1~deb12u3	BSD-2-clause, BSD-3-clause, CC0-1.0, ISC, ISC or MPL-2.0, MPL-2.0, MPL-2.0 and BSD-3-clause, MPL-2.0 and CC0-1.0, MPL-2.0 and ISC, MPL-2.0 and ISC and BSD-2-clause and BSD-3-clause, MPL-2.0 and public-domain	https://sources.debian.org/src/bind9/	
+binutils	2.40-2	see copyright file (mentions: GFDL, GPL, LGPL)	https://sources.debian.org/src/binutils/	NO-LICENSE-FIELD
+binutils-common	2.40-2	see copyright file (mentions: GFDL, GPL, LGPL)	https://sources.debian.org/src/binutils/	NO-LICENSE-FIELD
+binutils-x86-64-linux-gnu	2.40-2	see copyright file (mentions: GFDL, GPL, LGPL)	https://sources.debian.org/src/binutils/	NO-LICENSE-FIELD
+bsdextrautils	2.38.1-5+deb12u3	BSD-3-clause, BSD-4-clause, BSLA, GPL-2, GPL-2+, GPL-3+, LGPL, LGPL-2+, LGPL-2.1+, LGPL-3+, MIT, public-domain	https://sources.debian.org/src/util-linux/	
+bsdutils	1:2.38.1-5+deb12u3	BSD-3-clause, BSD-4-clause, BSLA, GPL-2, GPL-2+, GPL-3+, LGPL, LGPL-2+, LGPL-2.1+, LGPL-3+, MIT, public-domain	https://sources.debian.org/src/util-linux/	
+build-essential	12.9	see copyright file (mentions: GPL)	https://sources.debian.org/src/build-essential/	NO-LICENSE-FIELD
+buildah	1.28.2+ds1-3+deb12u1+b3	Apache-2.0	https://sources.debian.org/src/golang-github-containers-buildah/	
+bzip2	1.0.8-5+b1	BSD-variant, GPL-2	https://sources.debian.org/src/bzip2/	
+ca-certificates	20250419~deb12u2	GPL-2+, MPL-2.0	https://sources.debian.org/src/ca-certificates/	
+catatonit	0.1.7-1+b2	GPL-3+, MPL-2.0	https://sources.debian.org/src/catatonit/	
+chromium	156.0.8078.79-1~deb12u1	Apache-2.0, Apple-license, BSD-2-clause, BSD-3-clause, BSL-1, GPL-2+, GPL-2.0, GPL-3+, ICU, ISC, LGPL-2, LGPL-2+, LGPL-2.0+, LGPL-2.1, LGPL-2.1+, MIT, MPL-1.1, MPL-1.1 or GPL-2+ or LGPL-2.1+, MPL-1.1 or GPL-2.0 or LGPL-2.1, MPL-2.0, Ms-PL, Public-domain, Unicode, zlib	https://sources.debian.org/src/chromium/	
+chromium-common	156.0.8078.79-1~deb12u1	Apache-2.0, Apple-license, BSD-2-clause, BSD-3-clause, BSL-1, GPL-2+, GPL-2.0, GPL-3+, ICU, ISC, LGPL-2, LGPL-2+, LGPL-2.0+, LGPL-2.1, LGPL-2.1+, MIT, MPL-1.1, MPL-1.1 or GPL-2+ or LGPL-2.1+, MPL-1.1 or GPL-2.0 or LGPL-2.1, MPL-2.0, Ms-PL, Public-domain, Unicode, zlib	https://sources.debian.org/src/chromium/	
+conmon	2.1.6+ds1-1	Apache-2.0	https://sources.debian.org/src/conmon/	
+coreutils	9.1-1	BSD-4-clause-UC, FSFULLR, GFDL-NIV-1.3, GPL-3+, GPL-3+ and BSD-4-clause-UC, GPL-3+ and ISC, ISC	https://sources.debian.org/src/coreutils/	
+cpp	4:12.2.0-3	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/gcc-defaults/	NO-LICENSE-FIELD
+cpp-12	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+crun	1.8.1-1+deb12u1	Apache-2.0, Apache-2.0 or LGPL-2.1+, Expat, Expat or GPL-3+, FSFULLR, GPL-2+, GPL-2+ with Autoconf exception, GPL-2+ with Libtool exception, GPL-3+, GPL-3+ with Autoconf exception, GPL-3+ with libocispec exception, ISC, LGPL-2.1+, MIT-X11	https://sources.debian.org/src/crun/	
+cups-pk-helper	0.2.6-1+b1	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/cups-pk-helper/	NO-LICENSE-FIELD
+curl	7.88.1-10+deb12u15	BSD-3-Clause, BSD-3-clause, BSD-4-Clause-UC, FSFULLR, GPL-2+ with Autoconf-data exception, GPL-2+ with Libtool exception, GPL-3+ with Autoconf-data exception, ISC, OLDAP-2.8, X11, curl	https://sources.debian.org/src/curl/	
+dash	0.5.12-2	BSD-3-Clause, BSD-3-clause, GPL-2+, public-domain	https://sources.debian.org/src/dash/	
+dbus	1.14.10-1~deb12u1	AFL-2.1, BSD-3-clause, BSD-3-clause and BSD-3-clause-generic, BSD-3-clause-generic, Expat, FSF-unlimited-permission, GPL-2+, GPL-2+ or AFL-2.1, and Expat and Tcl-BSDish, GPL-2+ with Autoconf exception, LGPL-2.1+, Tcl-BSDish, autoconf-archive-permissive, g10-permissive	https://sources.debian.org/src/dbus/	
+dbus-bin	1.14.10-1~deb12u1	AFL-2.1, BSD-3-clause, BSD-3-clause and BSD-3-clause-generic, BSD-3-clause-generic, Expat, FSF-unlimited-permission, GPL-2+, GPL-2+ or AFL-2.1, and Expat and Tcl-BSDish, GPL-2+ with Autoconf exception, LGPL-2.1+, Tcl-BSDish, autoconf-archive-permissive, g10-permissive	https://sources.debian.org/src/dbus/	
+dbus-daemon	1.14.10-1~deb12u1	AFL-2.1, BSD-3-clause, BSD-3-clause and BSD-3-clause-generic, BSD-3-clause-generic, Expat, FSF-unlimited-permission, GPL-2+, GPL-2+ or AFL-2.1, and Expat and Tcl-BSDish, GPL-2+ with Autoconf exception, LGPL-2.1+, Tcl-BSDish, autoconf-archive-permissive, g10-permissive	https://sources.debian.org/src/dbus/	
+dbus-session-bus-common	1.14.10-1~deb12u1	AFL-2.1, BSD-3-clause, BSD-3-clause and BSD-3-clause-generic, BSD-3-clause-generic, Expat, FSF-unlimited-permission, GPL-2+, GPL-2+ or AFL-2.1, and Expat and Tcl-BSDish, GPL-2+ with Autoconf exception, LGPL-2.1+, Tcl-BSDish, autoconf-archive-permissive, g10-permissive	https://sources.debian.org/src/dbus/	
+dbus-system-bus-common	1.14.10-1~deb12u1	AFL-2.1, BSD-3-clause, BSD-3-clause and BSD-3-clause-generic, BSD-3-clause-generic, Expat, FSF-unlimited-permission, GPL-2+, GPL-2+ or AFL-2.1, and Expat and Tcl-BSDish, GPL-2+ with Autoconf exception, LGPL-2.1+, Tcl-BSDish, autoconf-archive-permissive, g10-permissive	https://sources.debian.org/src/dbus/	
+dbus-user-session	1.14.10-1~deb12u1	AFL-2.1, BSD-3-clause, BSD-3-clause and BSD-3-clause-generic, BSD-3-clause-generic, Expat, FSF-unlimited-permission, GPL-2+, GPL-2+ or AFL-2.1, and Expat and Tcl-BSDish, GPL-2+ with Autoconf exception, LGPL-2.1+, Tcl-BSDish, autoconf-archive-permissive, g10-permissive	https://sources.debian.org/src/dbus/	
+dconf-gsettings-backend	0.40.0-4	GPL-3, LGPL-2+	https://sources.debian.org/src/dconf/	
+dconf-service	0.40.0-4	GPL-3, LGPL-2+	https://sources.debian.org/src/dconf/	
+debconf	1.5.82	BSD-2-clause	https://sources.debian.org/src/debconf/	
+debian-archive-keyring	2023.3+deb12u2	see copyright file (mentions: GPL)	https://sources.debian.org/src/debian-archive-keyring/	NO-LICENSE-FIELD
+debianutils	5.7-0.5~deb12u1	GPL-2+, SMAIL-GPL, public-domain	https://sources.debian.org/src/debianutils/	
+diffutils	1:3.8-4	FSFAP, FSFULLR, GFDL-NIV-1.3, GPL-2+, GPL-3+, GPL-3+ and FSFULLR, GPL-3+ with autoconf exception, GPL-3+ with texinfo exception, LGPL-2.0+, LGPL-2.1+, LGPL-3.0+, LGPL-3.0+ or GPL-2+, X11, public-domain	https://sources.debian.org/src/diffutils/	
+dirmngr	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+dmsetup	2:1.02.185-2	BSD-2-Clause, GPL-2.0, GPL-2.0+, LGPL-2.1	https://sources.debian.org/src/lvm2/	
+dnsutils	1:9.18.49-1~deb12u3	BSD-2-clause, BSD-3-clause, CC0-1.0, ISC, ISC or MPL-2.0, MPL-2.0, MPL-2.0 and BSD-3-clause, MPL-2.0 and CC0-1.0, MPL-2.0 and ISC, MPL-2.0 and ISC and BSD-2-clause and BSD-3-clause, MPL-2.0 and public-domain	https://sources.debian.org/src/bind9/	
+dpkg	1.21.23	BSD-2-clause, GPL-2, GPL-2+, public-domain-s-s-d	https://sources.debian.org/src/dpkg/	
+dpkg-dev	1.21.23	BSD-2-clause, GPL-2, GPL-2+, public-domain-s-s-d	https://sources.debian.org/src/dpkg/	
+e2fsprogs	1.47.0-2+b2	Apache-2, BSD-3-Clause, GPL or MIT-US-export, GPL-2, GPL-2+ with Texinfo exception, ISC, Kazlib, LGPL-2, Latex2e	https://sources.debian.org/src/e2fsprogs/	
+fakeroot	1.31-1.2	see copyright file (mentions: Artistic, GPL-3)	https://sources.debian.org/src/fakeroot/	NO-LICENSE-FIELD
+file	1:5.44-3	BSD-2-Clause-alike, BSD-2-Clause-netbsd, BSD-2-Clause-regents, MIT-Old-Style-with-legal-disclaimer-2, public-domain	https://sources.debian.org/src/file/	
+findutils	4.9.0-4	BSD-3-clause, BSD-3-clause and/or GPL-3+, FSFAP, FSFULLR, GFDL-NIV-1.3+, GPL with automake exception, GPL-2+, GPL-2+ with Autoconf-data exception, GPL-3+, GPL-3+ with Autoconf-data exception, GPL-3+ with Bison-2.2 exception, ISC, ISC and/or LGPL-2.1+, LGPL-2+, LGPL-2.1+, LGPL-3, LGPL-3+, X11, public-domain	https://sources.debian.org/src/findutils/	
+fontconfig	2.14.1-4	see copyright file	https://sources.debian.org/src/fontconfig/	NO-LICENSE-FIELD
+fontconfig-config	2.14.1-4	see copyright file	https://sources.debian.org/src/fontconfig/	NO-LICENSE-FIELD
+fonts-dejavu-core	2.37-6	GPL-2+, bitstream-vera	https://sources.debian.org/src/fonts-dejavu/	
+fonts-liberation	1:1.07.4-11	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/fonts-liberation/	NO-LICENSE-FIELD
+fuse-overlayfs	1.10-1	FSFULLR, GPL-3+, GPL-3+ and exception-GPL-Autoconf, exception-GPL-Autoconf	https://sources.debian.org/src/fuse-overlayfs/	
+fuse3	3.14.0-4	GPL-2, GPL-2+, LGPL-2.1	https://sources.debian.org/src/fuse3/	
+g++	4:12.2.0-3	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/gcc-defaults/	NO-LICENSE-FIELD
+g++-12	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+gcc	4:12.2.0-3	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/gcc-defaults/	NO-LICENSE-FIELD
+gcc-12	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+gcc-12-base	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+gir1.2-atk-1.0	2.46.0-5	AFL-2.1, AFL-2.1 or GPL-2+, GPL-2, GPL-2+, LGPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/at-spi2-core/	
+gir1.2-freedesktop	1.74.0-3	AFL-2.0, AFL-2.0 or LGPL-2.1+, Apache-2.0 with LLVM exception, BSD-2-clause, BSD-3-clause-pcre, CC-BY-SA-3.0, CC0-1.0, Expat, Expat and GPL-2+, FSFAP, FSFAP and FSFULLR, FSFULLR, GPL-2+, GPL-2+ with Autoconf exception, Kuchling-PD, LGPL-2, LGPL-2 or MPL-1.1, LGPL-2+, LGPL-2+ and LGPL-2.1+ and FSFULLR and CC0-1.0, LGPL-2.1+, LGPL-2.1+ and BSD-3-clause-pcre, LGPL-2.1+ and Kuchling-PD and Plumb-PD, LGPL-3+, MPL-1.1, Plumb-PD, Unicode-DFS-2016, bzip2-1.0.6	https://sources.debian.org/src/gobject-introspection/	
+gir1.2-gdkpixbuf-2.0	2.42.10+dfsg-1+deb12u4	CC0-1.0, GPL-2+, LGPL-2+, LGPL-2+ and LGPL-2.1+ and CC0-1.0, LGPL-2.1+	https://sources.debian.org/src/gdk-pixbuf/	
+gir1.2-glib-2.0	1.74.0-3	AFL-2.0, AFL-2.0 or LGPL-2.1+, Apache-2.0 with LLVM exception, BSD-2-clause, BSD-3-clause-pcre, CC-BY-SA-3.0, CC0-1.0, Expat, Expat and GPL-2+, FSFAP, FSFAP and FSFULLR, FSFULLR, GPL-2+, GPL-2+ with Autoconf exception, Kuchling-PD, LGPL-2, LGPL-2 or MPL-1.1, LGPL-2+, LGPL-2+ and LGPL-2.1+ and FSFULLR and CC0-1.0, LGPL-2.1+, LGPL-2.1+ and BSD-3-clause-pcre, LGPL-2.1+ and Kuchling-PD and Plumb-PD, LGPL-3+, MPL-1.1, Plumb-PD, Unicode-DFS-2016, bzip2-1.0.6	https://sources.debian.org/src/gobject-introspection/	
+gir1.2-gtk-3.0	3.24.38-2~deb12u3	Apache-2.0, CC-BY-SA-4.0, Expat, GPL-3+, LGPL-2+, LGPL-2+ and LGPL-2.1+ and Expat, LGPL-2+ and ZPL-2.1, LGPL-2+ or SWL, LGPL-2.1+, SWL, X11R5-permissive, ZPL-2.1, check-gdk-cairo-permissive, other, unencumbered	https://sources.debian.org/src/gtk+3.0/	
+gir1.2-handy-1	1.8.1-1	LGPL-2.1+	https://sources.debian.org/src/libhandy-1/	
+gir1.2-harfbuzz-0.0	6.0.0+dfsg-3	Apache-2.0, CC0-1.0, Expat, FSFAP, FSFUL, FSFULLR, GPL-2+ with AutoConf exception, GPL-2+ with Font exception, GPL-2+ with LibTool exception, GPL-3+, GPL-3+ with AutoConf exception, ISC, LGPL-2.1+, MIT, Monotype, OFL-1.1, UFL-1.0, Unicode	https://sources.debian.org/src/harfbuzz/	
+gir1.2-notify-0.7	0.8.1-1	see copyright file (mentions: LGPL-2.1)	https://sources.debian.org/src/libnotify/	NO-LICENSE-FIELD
+gir1.2-packagekitglib-1.0	1.2.6-5+deb12u1	GPL-2+, GPL-2+ and LGPL-2.1+, LGPL-2.1+	https://sources.debian.org/src/packagekit/	
+gir1.2-pango-1.0	1.50.12+ds-1	Apache-2, Apache-2 and Bitstream-Vera and OFL-1.1, Bitstream-Vera, CC0-1.0, Chromium-BSD-style, Example, GPL-2+, ICU, LGPL-2+, LGPL-2+ and ICU, LGPL-2+ and LGPL-2.1+, LGPL-2+ and TCL, LGPL-2.1+, OFL-1.1, TCL, Unicode	https://sources.debian.org/src/pango1.0/	
+gir1.2-polkit-1.0	122-3	Apache-2.0, Expat, LGPL-2.0+, LGPL-2.0+ and Expat	https://sources.debian.org/src/policykit-1/	
+gir1.2-secret-1	0.20.5-3	Apache-2.0, BSD-3-clause, GPL-2+, LGPL-2.1+	https://sources.debian.org/src/libsecret/	
+git	1:2.39.5-0+deb12u3	Apache-2.0, BSD-3-clause, Boost, EDL-1.0, Expat, GPL-1+ or Artistic-1, GPL-2, GPL-2+, ISC, LGPL-2+, LGPL-2.1+, Zlib, dlmalloc, mingw-runtime	https://sources.debian.org/src/git/	
+git-man	1:2.39.5-0+deb12u3	Apache-2.0, BSD-3-clause, Boost, EDL-1.0, Expat, GPL-1+ or Artistic-1, GPL-2, GPL-2+, ISC, LGPL-2+, LGPL-2.1+, Zlib, dlmalloc, mingw-runtime	https://sources.debian.org/src/git/	
+gnupg	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+gnupg-l10n	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+gnupg-utils	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+golang-github-containers-common	0.50.1+ds1-4	Apache-2.0, Apache-2.0 or Expat, Expat	https://sources.debian.org/src/golang-github-containers-common/	
+golang-github-containers-image	5.23.1-4	Apache-2.0	https://sources.debian.org/src/golang-github-containers-image/	
+gpg	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+gpg-agent	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+gpg-wks-client	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+gpg-wks-server	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+gpgconf	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+gpgsm	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+gpgv	2.2.40-1.1+deb12u2	BSD-3-clause, CC0-1.0, Expat, GPL-3+, GPL-3+ or BSD-3-clause, LGPL-2.1+, LGPL-3+, RFC-Reference, TinySCHEME, permissive	https://sources.debian.org/src/gnupg2/	
+grep	3.8-5	GPL-3+	https://sources.debian.org/src/grep/	
+groff-base	1.22.4-10	see copyright file (mentions: , GFDL-1.3, GPL-3)	https://sources.debian.org/src/groff/	NO-LICENSE-FIELD
+gsettings-desktop-schemas	43.0-1	LGPL-2.1+	https://sources.debian.org/src/gsettings-desktop-schemas/	
+gtk-update-icon-cache	3.24.38-2~deb12u3	Apache-2.0, CC-BY-SA-4.0, Expat, GPL-3+, LGPL-2+, LGPL-2+ and LGPL-2.1+ and Expat, LGPL-2+ and ZPL-2.1, LGPL-2+ or SWL, LGPL-2.1+, SWL, X11R5-permissive, ZPL-2.1, check-gdk-cairo-permissive, other, unencumbered	https://sources.debian.org/src/gtk+3.0/	
+gzip	1.12-1	FSF-manpages, GFDL-1.3+-no-invariant, GPL-3+	https://sources.debian.org/src/gzip/	
+hicolor-icon-theme	0.17-2	GPL-2+	https://sources.debian.org/src/hicolor-icon-theme/	
+hostname	3.23+nmu1	GPL-2	https://sources.debian.org/src/hostname/	
+htop	3.2.2-2	GPL-2+	https://sources.debian.org/src/htop/	
+init-system-helpers	1.65.2+deb12u1	BSD-3-clause, GPL-2+	https://sources.debian.org/src/init-system-helpers/	
+iptables	1.8.9-2	Artistic, GPL-2, GPL-2+, custom	https://sources.debian.org/src/iptables/	
+iputils-ping	3:20221126-1+deb12u1	BSD-3-clause, GPL-2+, public-domain	https://sources.debian.org/src/iputils/	
+javascript-common	11+nmu1	GPL-2+	https://sources.debian.org/src/javascript-common/	
+jq	1.6-2.1+deb12u3	CC-BY-3.0, Expat, GPL-2.0+, MIT	https://sources.debian.org/src/jq/	
+krb5-locales	1.20.1-2+deb12u5	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/krb5/	NO-LICENSE-FIELD
+less	590-2.1~deb12u2	GPL-3+, GPL-3+ or Less, GPL-3+ or Less, and X11, Less, Spencer-86, X11, public-domain	https://sources.debian.org/src/less/	
+libabsl20220623	20220623.1-1+deb12u2	Apache-2.0	https://sources.debian.org/src/abseil/	
+libacl1	2.3.1-3	GPL-2+, LGPL-2+	https://sources.debian.org/src/acl/	
+libalgorithm-diff-perl	1.201-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libalgorithm-diff-perl/	
+libalgorithm-diff-xs-perl	0.04-8+b1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libalgorithm-diff-xs-perl/	
+libalgorithm-merge-perl	0.08-5	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libalgorithm-merge-perl/	
+libaom3	3.6.0-1+deb12u3	BSD-2-Clause, BSD-2-clause, BSD-3-clause, Expat, ISC, public-domain-md5	https://sources.debian.org/src/aom/	
+libapparmor1	3.0.8-3	BSD-3-clause, BSD-3-clause or GPL-2+, GPL-2, GPL-2+, LGPL-2.1+	https://sources.debian.org/src/apparmor/	
+libapt-pkg6.0	2.6.2	BSD-3-clause, Expat, GPL-2, GPL-2+	https://sources.debian.org/src/apt/	
+libargon2-1	0~20171227-0.3+deb12u1	Apache-2.0, CC0, CC0 or Apache-2.0	https://sources.debian.org/src/argon2/	
+libasan8	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libasound2	1.2.8-1+b1	LPGL-2.1+	https://sources.debian.org/src/alsa-lib/	
+libasound2-data	1.2.8-1	LPGL-2.1+	https://sources.debian.org/src/alsa-lib/	
+libassuan0	2.5.5-5	GAP, GAP~FSF, GPL-2+, GPL-2+ with libtool exception, GPL-3+, LGPL-2.1+, LGPL-3+	https://sources.debian.org/src/libassuan/	
+libasyncns0	0.8-6+b3	LGPL-2.1+	https://sources.debian.org/src/libasyncns/	
+libatk-bridge2.0-0	2.46.0-5	AFL-2.1, AFL-2.1 or GPL-2+, GPL-2, GPL-2+, LGPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/at-spi2-core/	
+libatk1.0-0	2.46.0-5	AFL-2.1, AFL-2.1 or GPL-2+, GPL-2, GPL-2+, LGPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/at-spi2-core/	
+libatomic1	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libatspi2.0-0	2.46.0-5	AFL-2.1, AFL-2.1 or GPL-2+, GPL-2, GPL-2+, LGPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/at-spi2-core/	
+libattr1	1:2.5.1-4	GPL-2+, LGPL-2+	https://sources.debian.org/src/attr/	
+libaudit-common	1:3.0.9-1	GPL-2, LGPL-2.1	https://sources.debian.org/src/audit/	
+libaudit1	1:3.0.9-1	GPL-2, LGPL-2.1	https://sources.debian.org/src/audit/	
+libauthen-sasl-perl	2.1600-3	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libauthen-sasl-perl/	
+libavahi-client3	0.8-10+deb12u1	see copyright file (mentions: GPL, GPL-2, LGPL-2.1)	https://sources.debian.org/src/avahi/	NO-LICENSE-FIELD
+libavahi-common-data	0.8-10+deb12u1	see copyright file (mentions: GPL, GPL-2, LGPL-2.1)	https://sources.debian.org/src/avahi/	NO-LICENSE-FIELD
+libavahi-common3	0.8-10+deb12u1	see copyright file (mentions: GPL, GPL-2, LGPL-2.1)	https://sources.debian.org/src/avahi/	NO-LICENSE-FIELD
+libavahi-core7	0.8-10+deb12u1	see copyright file (mentions: GPL, GPL-2, LGPL-2.1)	https://sources.debian.org/src/avahi/	NO-LICENSE-FIELD
+libavif15	0.11.1-1+deb12u1	Apache-2.0, BSD-2-Clause, BSD-3-Clause, CC0-1.0, custom-1	https://sources.debian.org/src/libavif/	
+libbinutils	2.40-2	see copyright file (mentions: GFDL, GPL, LGPL)	https://sources.debian.org/src/binutils/	NO-LICENSE-FIELD
+libblkid1	2.38.1-5+deb12u3	BSD-3-clause, BSD-4-clause, BSLA, GPL-2, GPL-2+, GPL-3+, LGPL, LGPL-2+, LGPL-2.1+, LGPL-3+, MIT, public-domain	https://sources.debian.org/src/util-linux/	
+libbrotli1	1.0.9-2+deb12u1	MIT	https://sources.debian.org/src/brotli/	
+libbsd0	0.11.7-2	BSD-2-clause, BSD-2-clause-NetBSD, BSD-2-clause-author, BSD-2-clause-verbatim, BSD-3-clause, BSD-3-clause-John-Birrell, BSD-3-clause-Regents, BSD-3-clause-Regents and BSD-2-clause-NetBSD, BSD-3-clause-author, BSD-4-clause-Niels-Provos, Beerware, Expat, ISC, ISC-Original, libutil-David-Nugent, public-domain	https://sources.debian.org/src/libbsd/	
+libbz2-1.0	1.0.8-5+b1	BSD-variant, GPL-2	https://sources.debian.org/src/bzip2/	
+libc-bin	2.36-9+deb12u14	see copyright file (mentions: GPL-2, LGPL-2.1)	https://sources.debian.org/src/glibc/	NO-LICENSE-FIELD
+libc-dev-bin	2.36-9+deb12u14	see copyright file (mentions: GPL-2, LGPL-2.1)	https://sources.debian.org/src/glibc/	NO-LICENSE-FIELD
+libc-devtools	2.36-9+deb12u14	see copyright file (mentions: GPL-2, LGPL-2.1)	https://sources.debian.org/src/glibc/	NO-LICENSE-FIELD
+libc6	2.36-9+deb12u14	see copyright file (mentions: GPL-2, LGPL-2.1)	https://sources.debian.org/src/glibc/	NO-LICENSE-FIELD
+libc6-dev	2.36-9+deb12u14	see copyright file (mentions: GPL-2, LGPL-2.1)	https://sources.debian.org/src/glibc/	NO-LICENSE-FIELD
+libcairo-gobject2	1.16.0-7	see copyright file (mentions: LGPL-2.1)	https://sources.debian.org/src/cairo/	NO-LICENSE-FIELD
+libcairo2	1.16.0-7	see copyright file (mentions: LGPL-2.1)	https://sources.debian.org/src/cairo/	NO-LICENSE-FIELD
+libcap-ng0	0.8.3-1+b3	GPL-2+, GPL-3, LGPL-2.1+	https://sources.debian.org/src/libcap-ng/	
+libcap2	1:2.66-4+deb12u3+b1	BSD-3-clause, BSD-3-clause or GPL-2, BSD-3-clause or GPL-2+, GPL-2, GPL-2+	https://sources.debian.org/src/libcap2/	
+libcap2-bin	1:2.66-4+deb12u3+b1	BSD-3-clause, BSD-3-clause or GPL-2, BSD-3-clause or GPL-2+, GPL-2, GPL-2+	https://sources.debian.org/src/libcap2/	
+libcbor0.8	0.8.0-2+b1	Expat	https://sources.debian.org/src/libcbor/	
+libcc1-0	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libclone-perl	0.46-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libclone-perl/	
+libcolord2	1.4.6-2.2	CC0-1.0, CC0-1.0 and NPES, GFDL-NIV, GPL-2+, LGPL-2.1+, NPES	https://sources.debian.org/src/colord/	
+libcom-err2	1.47.0-2+b2	Apache-2, BSD-3-Clause, GPL or MIT-US-export, GPL-2, GPL-2+ with Texinfo exception, ISC, Kazlib, LGPL-2, Latex2e	https://sources.debian.org/src/e2fsprogs/	
+libcrypt-dev	1:4.4.33-2	see copyright file (mentions: BSD, GPL, LGPL, Public domain)	https://sources.debian.org/src/libxcrypt/	NO-LICENSE-FIELD
+libcrypt1	1:4.4.33-2	see copyright file (mentions: BSD, GPL, LGPL, Public domain)	https://sources.debian.org/src/libxcrypt/	NO-LICENSE-FIELD
+libcryptsetup12	2:2.6.1-4~deb12u2	Apache-2.0, CC0, CC0 or Apache-2.0, GPL-2+, GPL-2+ with OpenSSL exception, GPL-3+, LGPL-2.1+, LGPL-2.1+ with OpenSSL exception, public-domain	https://sources.debian.org/src/cryptsetup/	
+libctf-nobfd0	2.40-2	see copyright file (mentions: GFDL, GPL, LGPL)	https://sources.debian.org/src/binutils/	NO-LICENSE-FIELD
+libctf0	2.40-2	see copyright file (mentions: GFDL, GPL, LGPL)	https://sources.debian.org/src/binutils/	NO-LICENSE-FIELD
+libcups2	2.4.2-3+deb12u9	Apache-2.0, Apache-2.0-with-GPL2-LGPL2-Exception, Apache-2.0-with-GPL2-LGPL2-Exception or BSD-2-clause, BSD-2-Clause, FSFUL, Zlib	https://sources.debian.org/src/cups/	
+libcurl3-gnutls	7.88.1-10+deb12u15	BSD-3-Clause, BSD-3-clause, BSD-4-Clause-UC, FSFULLR, GPL-2+ with Autoconf-data exception, GPL-2+ with Libtool exception, GPL-3+ with Autoconf-data exception, ISC, OLDAP-2.8, X11, curl	https://sources.debian.org/src/curl/	
+libcurl4	7.88.1-10+deb12u15	BSD-3-Clause, BSD-3-clause, BSD-4-Clause-UC, FSFULLR, GPL-2+ with Autoconf-data exception, GPL-2+ with Libtool exception, GPL-3+ with Autoconf-data exception, ISC, OLDAP-2.8, X11, curl	https://sources.debian.org/src/curl/	
+libdaemon0	0.14-7.1	see copyright file (mentions: GPL-2, LGPL)	https://sources.debian.org/src/libdaemon/	NO-LICENSE-FIELD
+libdata-dump-perl	1.25-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libdata-dump-perl/	
+libdatrie1	0.2.13-2+b1	GPL-2+, LGPL-2.1+	https://sources.debian.org/src/libdatrie/	
+libdav1d6	1.0.0-2+deb12u1	BSD-2-clause, ISC, ISC and BSD-2-clause, public-domain	https://sources.debian.org/src/dav1d/	
+libdb5.3	5.3.28+dfsg2-1	Artistic or BSD-3-clause, BSD-3-clause, BSD-3-clause-fjord, GPL, GPL or Artistic, GPL-3, MIT-old, Ms-PL, Sleepycat, Sleepycat and BSD-3-clause, TCL-like, X11, zlib	https://sources.debian.org/src/db5.3/	
+libdbus-1-3	1.14.10-1~deb12u1	AFL-2.1, BSD-3-clause, BSD-3-clause and BSD-3-clause-generic, BSD-3-clause-generic, Expat, FSF-unlimited-permission, GPL-2+, GPL-2+ or AFL-2.1, and Expat and Tcl-BSDish, GPL-2+ with Autoconf exception, LGPL-2.1+, Tcl-BSDish, autoconf-archive-permissive, g10-permissive	https://sources.debian.org/src/dbus/	
+libdconf1	0.40.0-4	GPL-3, LGPL-2+	https://sources.debian.org/src/dconf/	
+libde265-0	1.0.11-1+deb12u3	BSD-4-clause, GPL-3+, LGPL-3+, other-1, public-domain-1	https://sources.debian.org/src/libde265/	
+libdebconfclient0	0.270	BSD-2-Clause, BSD-2-clause, GPL-2+	https://sources.debian.org/src/cdebconf/	
+libdeflate0	1.14-1	Expat	https://sources.debian.org/src/libdeflate/	
+libdevmapper1.02.1	2:1.02.185-2	BSD-2-Clause, GPL-2.0, GPL-2.0+, LGPL-2.1	https://sources.debian.org/src/lvm2/	
+libdouble-conversion3	3.2.1-1	BSD-3-clause	https://sources.debian.org/src/double-conversion/	
+libdpkg-perl	1.21.23	BSD-2-clause, GPL-2, GPL-2+, public-domain-s-s-d	https://sources.debian.org/src/dpkg/	
+libdrm-amdgpu1	2.4.114-1+b1	see copyright file	https://sources.debian.org/src/libdrm/	NO-LICENSE-FIELD
+libdrm-common	2.4.114-1	see copyright file	https://sources.debian.org/src/libdrm/	NO-LICENSE-FIELD
+libdrm-intel1	2.4.114-1+b1	see copyright file	https://sources.debian.org/src/libdrm/	NO-LICENSE-FIELD
+libdrm-nouveau2	2.4.114-1+b1	see copyright file	https://sources.debian.org/src/libdrm/	NO-LICENSE-FIELD
+libdrm-radeon1	2.4.114-1+b1	see copyright file	https://sources.debian.org/src/libdrm/	NO-LICENSE-FIELD
+libdrm2	2.4.114-1+b1	see copyright file	https://sources.debian.org/src/libdrm/	NO-LICENSE-FIELD
+libduktape207	2.7.0-2	CC0, expat, unicode	https://sources.debian.org/src/duktape/	
+libedit2	3.1-20221030-2	BSD-3-clause	https://sources.debian.org/src/libedit/	
+libegl-mesa0	22.3.6-1+deb12u2	Apache-2.0, BSD-2-clause, BSD-3-google, BSL, GPL, Khronos, MIT, MLAA, SGI	https://sources.debian.org/src/mesa/	
+libegl1	1.6.0-1	Apache-2.0, BSD-1-clause, GPL, GPL-3+, MIT, public-domain	https://sources.debian.org/src/libglvnd/	
+libelf1	0.188-2.1	BSD-2-clause, GFDL-NIV-1.3, GPL-3+, GPL-3+ with Bison exception, LGPL-2.1+, LGPL-3+ or GPL-2+	https://sources.debian.org/src/elfutils/	
+libencode-locale-perl	1.05-3	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libencode-locale-perl/	
+libepoxy0	1.5.10-1	Expat	https://sources.debian.org/src/libepoxy/	
+liberror-perl	0.17029-2	Artistic, Artistic or GPL-1+, GPL-1+, MIT/X11	https://sources.debian.org/src/liberror-perl/	
+libevent-core-2.1-7	2.1.12-stable-8+deb12u1	BSD-2-clause, BSD-3-clause, BSL, Expat, FSFUL, FSFULLR, FSFULLR-No-Warranty, GPL-2+, GPL-3+, ISC, curl	https://sources.debian.org/src/libevent/	
+libexpat1	2.5.0-1+deb12u5	MIT	https://sources.debian.org/src/expat/	
+libexpat1-dev	2.5.0-1+deb12u5	MIT	https://sources.debian.org/src/expat/	
+libext2fs2	1.47.0-2+b2	Apache-2, BSD-3-Clause, GPL or MIT-US-export, GPL-2, GPL-2+ with Texinfo exception, ISC, Kazlib, LGPL-2, Latex2e	https://sources.debian.org/src/e2fsprogs/	
+libfakeroot	1.31-1.2	see copyright file (mentions: Artistic, GPL-3)	https://sources.debian.org/src/fakeroot/	NO-LICENSE-FIELD
+libfdisk1	2.38.1-5+deb12u3	BSD-3-clause, BSD-4-clause, BSLA, GPL-2, GPL-2+, GPL-3+, LGPL, LGPL-2+, LGPL-2.1+, LGPL-3+, MIT, public-domain	https://sources.debian.org/src/util-linux/	
+libffi8	3.4.4-1	Expat, GPL, GPL-2+, GPL-3+, MPL-1.1 or GPL-2+ or LGPL-2.1+, X11, public-domain	https://sources.debian.org/src/libffi/	
+libfido2-1	1.12.0-2+b1	BSD-2-clause, ISC, ISC and BSD-2-clause, public-domain	https://sources.debian.org/src/libfido2/	
+libfile-basedir-perl	0.09-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libfile-basedir-perl/	
+libfile-desktopentry-perl	0.22-3	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libfile-desktopentry-perl/	
+libfile-fcntllock-perl	0.22-4+b1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libfile-fcntllock-perl/	
+libfile-listing-perl	6.15-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libfile-listing-perl/	
+libfile-mimeinfo-perl	0.33-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libfile-mimeinfo-perl/	
+libflac12	1.4.2+ds-2	BSD-3-clause, GFDL-1.1+, GPL-2+, GPL-2+ or LGPL-2.1+, ISC, LGPL-2+, LGPL-2.1+, Public-domain	https://sources.debian.org/src/flac/	
+libfont-afm-perl	1.20-4	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libfont-afm-perl/	
+libfontconfig1	2.14.1-4	see copyright file	https://sources.debian.org/src/fontconfig/	NO-LICENSE-FIELD
+libfontenc1	1:1.1.4-1	see copyright file	https://sources.debian.org/src/libfontenc/	NO-LICENSE-FIELD
+libfreetype6	2.12.1+dfsg-5+deb12u4	BSD-3-Clause, BSL-1.0, FSFAP, FTL, FTL and MIT, GPL-2+, GPL-3+, MIT, OpenGroup-BSD-like, Public-Domain, Zlib	https://sources.debian.org/src/freetype/	
+libfribidi0	1.0.8-2.1	LGPL-2.1+	https://sources.debian.org/src/fribidi/	
+libfstrm0	0.6.1-1	Gray-Watson, MIT	https://sources.debian.org/src/fstrm/	
+libfuse3-3	3.14.0-4	GPL-2, GPL-2+, LGPL-2.1	https://sources.debian.org/src/fuse3/	
+libgav1-1	0.18.0-1+b1	Apache-2.0, BSD-3-clause	https://sources.debian.org/src/libgav1/	
+libgbm1	22.3.6-1+deb12u2	Apache-2.0, BSD-2-clause, BSD-3-google, BSL, GPL, Khronos, MIT, MLAA, SGI	https://sources.debian.org/src/mesa/	
+libgcc-12-dev	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libgcc-s1	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libgcrypt20	1.10.1-3+deb12u1	see copyright file (mentions: GPL-2, LGPL)	https://sources.debian.org/src/libgcrypt20/	NO-LICENSE-FIELD
+libgd3	2.3.3-9+deb12u1	BSD-3-clause, GAP~Makefile.in, GAP~configure, GD, GPL-2+, GPL-2+ with Autoconf exception, HPND, MIT, WEBP, XFIG	https://sources.debian.org/src/libgd2/	
+libgdbm-compat4	1.23-3	GFDL-NIV-1.3+, GPL-2+, GPL-3+	https://sources.debian.org/src/gdbm/	
+libgdbm6	1.23-3	GFDL-NIV-1.3+, GPL-2+, GPL-3+	https://sources.debian.org/src/gdbm/	
+libgdk-pixbuf-2.0-0	2.42.10+dfsg-1+deb12u4	CC0-1.0, GPL-2+, LGPL-2+, LGPL-2+ and LGPL-2.1+ and CC0-1.0, LGPL-2.1+	https://sources.debian.org/src/gdk-pixbuf/	
+libgdk-pixbuf2.0-bin	2.42.10+dfsg-1+deb12u4	CC0-1.0, GPL-2+, LGPL-2+, LGPL-2+ and LGPL-2.1+ and CC0-1.0, LGPL-2.1+	https://sources.debian.org/src/gdk-pixbuf/	
+libgdk-pixbuf2.0-common	2.42.10+dfsg-1+deb12u4	CC0-1.0, GPL-2+, LGPL-2+, LGPL-2+ and LGPL-2.1+ and CC0-1.0, LGPL-2.1+	https://sources.debian.org/src/gdk-pixbuf/	
+libgirepository-1.0-1	1.74.0-3	AFL-2.0, AFL-2.0 or LGPL-2.1+, Apache-2.0 with LLVM exception, BSD-2-clause, BSD-3-clause-pcre, CC-BY-SA-3.0, CC0-1.0, Expat, Expat and GPL-2+, FSFAP, FSFAP and FSFULLR, FSFULLR, GPL-2+, GPL-2+ with Autoconf exception, Kuchling-PD, LGPL-2, LGPL-2 or MPL-1.1, LGPL-2+, LGPL-2+ and LGPL-2.1+ and FSFULLR and CC0-1.0, LGPL-2.1+, LGPL-2.1+ and BSD-3-clause-pcre, LGPL-2.1+ and Kuchling-PD and Plumb-PD, LGPL-3+, MPL-1.1, Plumb-PD, Unicode-DFS-2016, bzip2-1.0.6	https://sources.debian.org/src/gobject-introspection/	
+libgl1	1.6.0-1	Apache-2.0, BSD-1-clause, GPL, GPL-3+, MIT, public-domain	https://sources.debian.org/src/libglvnd/	
+libgl1-mesa-dri	22.3.6-1+deb12u2	Apache-2.0, BSD-2-clause, BSD-3-google, BSL, GPL, Khronos, MIT, MLAA, SGI	https://sources.debian.org/src/mesa/	
+libglapi-mesa	22.3.6-1+deb12u2	Apache-2.0, BSD-2-clause, BSD-3-google, BSL, GPL, Khronos, MIT, MLAA, SGI	https://sources.debian.org/src/mesa/	
+libgles2	1.6.0-1	Apache-2.0, BSD-1-clause, GPL, GPL-3+, MIT, public-domain	https://sources.debian.org/src/libglvnd/	
+libglib2.0-0	2.74.6-2+deb12u9	AFL-2.0, AFL-2.0 or LGPL-2.1+, Apache-2.0 with LLVM exception, BSD-3-clause-pcre, CC-BY-SA-3.0, CC0-1.0, Expat, FSFULLR, GPL-2+, GPL-2+ with Autoconf exception, Iconv-PD, Janik-permissive, Kuchling-PD, LGPL-2+, LGPL-2+ and LGPL-2.1+ and FSFULLR and CC0-1.0 and Janik-permissive and Iconv-PD and Mingw-PD and Old-GLib-Tests-permissive, LGPL-2.1+, LGPL-2.1+ and BSD-3-clause-pcre, LGPL-2.1+ and Expat, LGPL-2.1+ and Kuchling-PD and Plumb-PD, LGPL-3+, Mingw-PD, Old-GLib-Tests-permissive, Plumb-PD, Unicode-DFS-2016, bzip2-1.0.6	https://sources.debian.org/src/glib2.0/	
+libglib2.0-data	2.74.6-2+deb12u9	AFL-2.0, AFL-2.0 or LGPL-2.1+, Apache-2.0 with LLVM exception, BSD-3-clause-pcre, CC-BY-SA-3.0, CC0-1.0, Expat, FSFULLR, GPL-2+, GPL-2+ with Autoconf exception, Iconv-PD, Janik-permissive, Kuchling-PD, LGPL-2+, LGPL-2+ and LGPL-2.1+ and FSFULLR and CC0-1.0 and Janik-permissive and Iconv-PD and Mingw-PD and Old-GLib-Tests-permissive, LGPL-2.1+, LGPL-2.1+ and BSD-3-clause-pcre, LGPL-2.1+ and Expat, LGPL-2.1+ and Kuchling-PD and Plumb-PD, LGPL-3+, Mingw-PD, Old-GLib-Tests-permissive, Plumb-PD, Unicode-DFS-2016, bzip2-1.0.6	https://sources.debian.org/src/glib2.0/	
+libglvnd0	1.6.0-1	Apache-2.0, BSD-1-clause, GPL, GPL-3+, MIT, public-domain	https://sources.debian.org/src/libglvnd/	
+libglx-mesa0	22.3.6-1+deb12u2	Apache-2.0, BSD-2-clause, BSD-3-google, BSL, GPL, Khronos, MIT, MLAA, SGI	https://sources.debian.org/src/mesa/	
+libglx0	1.6.0-1	Apache-2.0, BSD-1-clause, GPL, GPL-3+, MIT, public-domain	https://sources.debian.org/src/libglvnd/	
+libgmp10	2:6.2.1+dfsg1-1.1	GPL-2+, GPL-2+ or LGPL-3+, GPL-3+, GPL-3+ with Bison exception, LGPL-3+	https://sources.debian.org/src/gmp/	
+libgnutls30	3.7.9-2+deb12u7	Apache-2.0, BSD-3-Clause, CC0 license, Expat, GPLv3+, LGPLv2.1+, LGPLv3+_or_GPLv2+, The main library is licensed under GNU Lesser	https://sources.debian.org/src/gnutls28/	
+libgomp1	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libgpg-error0	1.46-1	BSD-3-clause, GPL-3+, LGPL-2.1+, LGPL-2.1+ or BSD-3-clause, g10-permissive	https://sources.debian.org/src/libgpg-error/	
+libgpgme11	1.18.0-3+b1	GPL-2+, GPL-3+, LGPL-2+, LGPL-2.1+, LGPL-3+, LGPL-3+ or GPL-2+	https://sources.debian.org/src/gpgme1.0/	
+libgpm2	1.20.7-10+b1	GPL-2.0+, GPL-3.0+	https://sources.debian.org/src/gpm/	
+libgprofng0	2.40-2	see copyright file (mentions: GFDL, GPL, LGPL)	https://sources.debian.org/src/binutils/	NO-LICENSE-FIELD
+libgraphite2-3	1.3.14-1+deb12u1	Artistic, Artistic or GPL-1+, GPL-1+, GPL-2+, LGPL-2.1+, LGPL-2.1+ or GPL-2+ or MPL-1.1, LGPL-2.1+ or MPL-1.1 or GPL-2+, MPL-1.1, custom-sil-open-font-license, public-domain	https://sources.debian.org/src/graphite2/	
+libgssapi-krb5-2	1.20.1-2+deb12u5	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/krb5/	NO-LICENSE-FIELD
+libgtk-3-0	3.24.38-2~deb12u3	Apache-2.0, CC-BY-SA-4.0, Expat, GPL-3+, LGPL-2+, LGPL-2+ and LGPL-2.1+ and Expat, LGPL-2+ and ZPL-2.1, LGPL-2+ or SWL, LGPL-2.1+, SWL, X11R5-permissive, ZPL-2.1, check-gdk-cairo-permissive, other, unencumbered	https://sources.debian.org/src/gtk+3.0/	
+libgtk-3-bin	3.24.38-2~deb12u3	Apache-2.0, CC-BY-SA-4.0, Expat, GPL-3+, LGPL-2+, LGPL-2+ and LGPL-2.1+ and Expat, LGPL-2+ and ZPL-2.1, LGPL-2+ or SWL, LGPL-2.1+, SWL, X11R5-permissive, ZPL-2.1, check-gdk-cairo-permissive, other, unencumbered	https://sources.debian.org/src/gtk+3.0/	
+libgtk-3-common	3.24.38-2~deb12u3	Apache-2.0, CC-BY-SA-4.0, Expat, GPL-3+, LGPL-2+, LGPL-2+ and LGPL-2.1+ and Expat, LGPL-2+ and ZPL-2.1, LGPL-2+ or SWL, LGPL-2.1+, SWL, X11R5-permissive, ZPL-2.1, check-gdk-cairo-permissive, other, unencumbered	https://sources.debian.org/src/gtk+3.0/	
+libgudev-1.0-0	237-2	LGPL-2+	https://sources.debian.org/src/libgudev/	
+libhandy-1-0	1.8.1-1	LGPL-2.1+	https://sources.debian.org/src/libhandy-1/	
+libharfbuzz-subset0	6.0.0+dfsg-3	Apache-2.0, CC0-1.0, Expat, FSFAP, FSFUL, FSFULLR, GPL-2+ with AutoConf exception, GPL-2+ with Font exception, GPL-2+ with LibTool exception, GPL-3+, GPL-3+ with AutoConf exception, ISC, LGPL-2.1+, MIT, Monotype, OFL-1.1, UFL-1.0, Unicode	https://sources.debian.org/src/harfbuzz/	
+libharfbuzz0b	6.0.0+dfsg-3	Apache-2.0, CC0-1.0, Expat, FSFAP, FSFUL, FSFULLR, GPL-2+ with AutoConf exception, GPL-2+ with Font exception, GPL-2+ with LibTool exception, GPL-3+, GPL-3+ with AutoConf exception, ISC, LGPL-2.1+, MIT, Monotype, OFL-1.1, UFL-1.0, Unicode	https://sources.debian.org/src/harfbuzz/	
+libheif1	1.15.1-1+deb12u1	BOOST-1.0, BSD-3-clause, BSD-4-clause, GPL-3+, LGPL-3+, MIT	https://sources.debian.org/src/libheif/	
+libhogweed6	3.8.1-2	Expat, GAP, GPL-2, GPL-2+, GPL-3+, GPL-3+ with Autoconf exception, LGPL-2+, LGPL-3+, LGPL-3+ or GPL-2+, public-domain	https://sources.debian.org/src/nettle/	
+libhtml-form-perl	6.11-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libhtml-form-perl/	
+libhtml-format-perl	2.16-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libhtml-format-perl/	
+libhtml-parser-perl	3.81-1+deb12u1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libhtml-parser-perl/	
+libhtml-tagset-perl	3.20-6	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libhtml-tagset-perl/	
+libhtml-tree-perl	5.07-3	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libhtml-tree-perl/	
+libhttp-cookies-perl	6.10-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libhttp-cookies-perl/	
+libhttp-daemon-perl	6.16-1+deb13u1~deb12u1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libhttp-daemon-perl/	
+libhttp-date-perl	6.05-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libhttp-date-perl/	
+libhttp-message-perl	6.44-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libhttp-message-perl/	
+libhttp-negotiate-perl	6.01-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libhttp-negotiate-perl/	
+libice6	2:1.0.10-1	see copyright file	https://sources.debian.org/src/libice/	NO-LICENSE-FIELD
+libicu72	72.1-3+deb12u1	GPL-3, MIT	https://sources.debian.org/src/icu/	
+libidn2-0	2.3.3-1+b1	GPL-2+, GPL-3+, LGPL-3+, LGPL-3+ or GPL-2+, Unicode	https://sources.debian.org/src/libidn2/	
+libio-html-perl	1.004-3	Artistic, Artistic or GPL-1+, GPL-1+, GPL-3+	https://sources.debian.org/src/libio-html-perl/	
+libio-socket-ssl-perl	2.081-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libio-socket-ssl-perl/	
+libio-stringy-perl	2.111-3	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/io-stringy/	
+libip4tc2	1.8.9-2	Artistic, GPL-2, GPL-2+, custom	https://sources.debian.org/src/iptables/	
+libip6tc2	1.8.9-2	Artistic, GPL-2, GPL-2+, custom	https://sources.debian.org/src/iptables/	
+libipc-system-simple-perl	1.30-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libipc-system-simple-perl/	
+libisl23	0.25-1.1	BSD-2-clause, LGPL-2.1+, MIT	https://sources.debian.org/src/isl/	
+libitm1	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libjansson4	2.14-2	Expat	https://sources.debian.org/src/jansson/	
+libjbig0	2.1-6.1	GPL-2+	https://sources.debian.org/src/jbigkit/	
+libjemalloc2	5.3.0-1	BSD-2-Clause, BSD-2-Clause-Chemeris, BSD-3-Clause, BSD-3-Clause-Google, BSD-3-Clause-Hiroshima-University, Expat	https://sources.debian.org/src/jemalloc/	
+libjpeg62-turbo	1:2.1.5-2	BSD-3-clause, BSD-BY-LC-NE, Expat, NTP, Zlib, zlib	https://sources.debian.org/src/libjpeg-turbo/	
+libjq1	1.6-2.1+deb12u3	CC-BY-3.0, Expat, GPL-2.0+, MIT	https://sources.debian.org/src/jq/	
+libjs-jquery	3.6.1+dfsg+~3.5.14-1	Expat	https://sources.debian.org/src/node-jquery/	
+libjs-sphinxdoc	5.3.0-4	BSD-2-clause, BSD-3-clause, Expat	https://sources.debian.org/src/sphinx/	
+libjs-underscore	1.13.4~dfsg+~1.11.4-3	BSD-3-clause, Expat, GPL-3+	https://sources.debian.org/src/underscore/	
+libjson-c5	0.16-2	Expat	https://sources.debian.org/src/json-c/	
+libk5crypto3	1.20.1-2+deb12u5	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/krb5/	NO-LICENSE-FIELD
+libkeyutils1	1.6.3-2	GPL-2+, LGPL-2+	https://sources.debian.org/src/keyutils/	
+libkmod2	30+20221128-1	GPL-2+, LGPL-2.1+	https://sources.debian.org/src/kmod/	
+libkrb5-3	1.20.1-2+deb12u5	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/krb5/	NO-LICENSE-FIELD
+libkrb5support0	1.20.1-2+deb12u5	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/krb5/	NO-LICENSE-FIELD
+libksba8	1.6.3-2	FSFUL, LGPL-2.1-or-later	https://sources.debian.org/src/libksba/	
+liblcms2-2	2.14-2+deb12u1	GPL-2+, GPL-3, IJG, MIT	https://sources.debian.org/src/lcms2/	
+libldap-2.5-0	2.5.13+dfsg-5	BSD-3-clause, BSD-3-clause-California, BSD-3-clause-variant, BSD-4-clause-California, Beerware, Expat, Expat-ISC, Expat-UNM, F5, FSF-unlimited, FSF-unlimited and GPL-2+ with Autoconf exception, FSF-unlimited and GPL-2+ with Libtool exception, FSF-unlimited and OpenLDAP-2.8, GPL-2+, GPL-2+ with Autoconf exception, GPL-2+ with Libtool exception, GPL-2+ with Libtool exception and GPL-3+ with Libtool exception and GPL-3+, GPL-3+, GPL-3+ with Autoconf exception, GPL-3+ with Libtool exception, JCG, MIT-XC, NeoSoft-permissive, OpenLDAP-2.8, OpenLDAP-2.8 and BSD-3-clause, OpenLDAP-2.8 and BSD-3-clause-variant, OpenLDAP-2.8 and BSD-4-clause-California, OpenLDAP-2.8 and Beerware, OpenLDAP-2.8 and Expat, OpenLDAP-2.8 and Expat-ISC, OpenLDAP-2.8 and Expat-UNM, OpenLDAP-2.8 and FSF-unlimited and GPL-2+ with Libtool exception, OpenLDAP-2.8 and JCG and UMich, OpenLDAP-2.8 and UMich, OpenLDAP-2.8 and UMich and F5, UMich, public-domain	https://sources.debian.org/src/openldap/	
+libldap-common	2.5.13+dfsg-5	BSD-3-clause, BSD-3-clause-California, BSD-3-clause-variant, BSD-4-clause-California, Beerware, Expat, Expat-ISC, Expat-UNM, F5, FSF-unlimited, FSF-unlimited and GPL-2+ with Autoconf exception, FSF-unlimited and GPL-2+ with Libtool exception, FSF-unlimited and OpenLDAP-2.8, GPL-2+, GPL-2+ with Autoconf exception, GPL-2+ with Libtool exception, GPL-2+ with Libtool exception and GPL-3+ with Libtool exception and GPL-3+, GPL-3+, GPL-3+ with Autoconf exception, GPL-3+ with Libtool exception, JCG, MIT-XC, NeoSoft-permissive, OpenLDAP-2.8, OpenLDAP-2.8 and BSD-3-clause, OpenLDAP-2.8 and BSD-3-clause-variant, OpenLDAP-2.8 and BSD-4-clause-California, OpenLDAP-2.8 and Beerware, OpenLDAP-2.8 and Expat, OpenLDAP-2.8 and Expat-ISC, OpenLDAP-2.8 and Expat-UNM, OpenLDAP-2.8 and FSF-unlimited and GPL-2+ with Libtool exception, OpenLDAP-2.8 and JCG and UMich, OpenLDAP-2.8 and UMich, OpenLDAP-2.8 and UMich and F5, UMich, public-domain	https://sources.debian.org/src/openldap/	
+libldb2	2:2.6.2+samba4.17.12+dfsg-0+deb12u4	BSD-3, GPL-3, GPL-3.0+, ISC, LGPL-3.0+, MS-ADSL, PostgreSQL	https://sources.debian.org/src/samba/	
+liblerc4	4.0.0+ds-2	Apache-2.0	https://sources.debian.org/src/lerc/	
+libllvm15	1:15.0.6-4+b1	APACHE-2-LLVM-EXCEPTIONS, BSD-3-Clause, BSD-3-clause, MIT, Python, solar-public-domain	https://sources.debian.org/src/llvm-toolchain-15/	
+liblmdb0	0.9.24-1	OpenLDAP-2.8	https://sources.debian.org/src/lmdb/	
+liblocale-gettext-perl	1.07-5	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/liblocale-gettext-perl/	
+liblsan0	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+liblwp-mediatypes-perl	6.04-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/liblwp-mediatypes-perl/	
+liblwp-protocol-https-perl	6.10-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/liblwp-protocol-https-perl/	
+liblz4-1	1.9.4-1	BSD-2-clause, GPL-2+, GPL-2+ or BSD-2-clause	https://sources.debian.org/src/lz4/	
+liblzma5	5.4.1-1+deb12u2	Autoconf, GPL-2, GPL-2+, LGPL-2.1+, PD, PD-debian, config-h, noderivs, none, permissive-fsf, permissive-nowarranty, probably-PD	https://sources.debian.org/src/xz-utils/	
+libmagic-mgc	1:5.44-3	BSD-2-Clause-alike, BSD-2-Clause-netbsd, BSD-2-Clause-regents, MIT-Old-Style-with-legal-disclaimer-2, public-domain	https://sources.debian.org/src/file/	
+libmagic1	1:5.44-3	BSD-2-Clause-alike, BSD-2-Clause-netbsd, BSD-2-Clause-regents, MIT-Old-Style-with-legal-disclaimer-2, public-domain	https://sources.debian.org/src/file/	
+libmailtools-perl	2.21-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libmailtools-perl/	
+libmaxminddb0	1.7.1-1	Apache-2.0, BSD-2-clause and BSD-3-clause and BSD-4-clause, CC-BY-SA-3.0, GPL-2+	https://sources.debian.org/src/libmaxminddb/	
+libmd0	1.0.4-2	BSD-2-clause, BSD-2-clause-NetBSD, BSD-3-clause, BSD-3-clause-Aaron-D-Gifford, Beerware, ISC, public-domain-md4, public-domain-md5, public-domain-sha1	https://sources.debian.org/src/libmd/	
+libminizip1	1.1-8+deb12u1	zlib	https://sources.debian.org/src/minizip/	
+libmnl0	1.0.4-3	GPL-2+, LGPL-2.1	https://sources.debian.org/src/libmnl/	
+libmount1	2.38.1-5+deb12u3	BSD-3-clause, BSD-4-clause, BSLA, GPL-2, GPL-2+, GPL-3+, LGPL, LGPL-2+, LGPL-2.1+, LGPL-3+, MIT, public-domain	https://sources.debian.org/src/util-linux/	
+libmp3lame0	3.100-6	BSD-3-clause, GPL-1+, LGPL-2+, LGPL-2.1+, zlib/libpng	https://sources.debian.org/src/lame/	
+libmpc3	1.3.1-1	see copyright file (mentions: LGPL-3.)	https://sources.debian.org/src/mpclib3/	NO-LICENSE-FIELD
+libmpfr6	4.2.0-1	see copyright file (mentions: GFDL-1.2., LGPL-3)	https://sources.debian.org/src/mpfr4/	NO-LICENSE-FIELD
+libmpg123-0	1.31.2-1+deb12u1	LGPL-2.1	https://sources.debian.org/src/mpg123/	
+libncursesw6	6.4-4	BSD-3-clause, MIT/X11, X11	https://sources.debian.org/src/ncurses/	
+libnet-dbus-perl	1.2.0-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libnet-dbus-perl/	
+libnet-http-perl	6.22-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libnet-http-perl/	
+libnet-smtp-ssl-perl	1.04-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libnet-smtp-ssl-perl/	
+libnet-ssleay-perl	1.92-2+b1	Artistic, Artistic or GPL-1+, Artistic-2.0, GPL-1+	https://sources.debian.org/src/libnet-ssleay-perl/	
+libnetfilter-conntrack3	1.0.9-3	GPL-2+	https://sources.debian.org/src/libnetfilter-conntrack/	
+libnettle8	3.8.1-2	Expat, GAP, GPL-2, GPL-2+, GPL-3+, GPL-3+ with Autoconf exception, LGPL-2+, LGPL-3+, LGPL-3+ or GPL-2+, public-domain	https://sources.debian.org/src/nettle/	
+libnfnetlink0	1.0.2-2	GPL-2.0+	https://sources.debian.org/src/libnfnetlink/	
+libnftables1	1.0.6-2+deb12u2	CC-BY-SA-4.0, GPL-2, GPL-2+	https://sources.debian.org/src/nftables/	
+libnftnl11	1.2.4-2	GPL-2, GPL-2+	https://sources.debian.org/src/libnftnl/	
+libnghttp2-14	1.52.0-1+deb12u3	BSD-2-clause, Expat, GPL-3+ with autoconf exception, MIT, all-permissive	https://sources.debian.org/src/nghttp2/	
+libnl-3-200	3.7.0-0.2+b1	see copyright file (mentions: GPL-2, LGPL-2.1)	https://sources.debian.org/src/libnl3/	NO-LICENSE-FIELD
+libnl-genl-3-200	3.7.0-0.2+b1	see copyright file (mentions: GPL-2, LGPL-2.1)	https://sources.debian.org/src/libnl3/	NO-LICENSE-FIELD
+libnotify4	0.8.1-1	see copyright file (mentions: LGPL-2.1)	https://sources.debian.org/src/libnotify/	NO-LICENSE-FIELD
+libnpth0	1.6-3	LGPL-2.1+	https://sources.debian.org/src/npth/	
+libnsl-dev	1.3.0-2	BSD-3-clause, GPL-2+-autoconf-exception, GPL-2+-libtool-exception, GPL-3+-autoconf-exception, LGPL-2.1, LGPL-2.1+, MIT, permissive-autoconf-m4, permissive-autoconf-m4-no-warranty, permissive-configure, permissive-fsf, permissive-makefile-in	https://sources.debian.org/src/libnsl/	
+libnsl2	1.3.0-2	BSD-3-clause, GPL-2+-autoconf-exception, GPL-2+-libtool-exception, GPL-3+-autoconf-exception, LGPL-2.1, LGPL-2.1+, MIT, permissive-autoconf-m4, permissive-autoconf-m4-no-warranty, permissive-configure, permissive-fsf, permissive-makefile-in	https://sources.debian.org/src/libnsl/	
+libnspr4	2:4.35-1	MPL-2.0	https://sources.debian.org/src/nspr/	
+libnss-mdns	0.15.1-3	LGPL-2+	https://sources.debian.org/src/nss-mdns/	
+libnss-systemd	252.39-1~deb12u2	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	
+libnss3	2:3.87.1-1+deb12u4	BSD-3, MPL-2.0, Zlib, public-domain	https://sources.debian.org/src/nss/	
+libnuma1	2.0.16-1	see copyright file (mentions: GPL., LGPL.)	https://sources.debian.org/src/numactl/	NO-LICENSE-FIELD
+libogg0	1.3.5-3	BSD-3-clause, rfc3533-license, rfc5334-license	https://sources.debian.org/src/libogg/	
+libonig5	6.9.8-1	BSD-2-clause, GPL-2+	https://sources.debian.org/src/libonig/	
+libopenh264-7	2.3.1+dfsg-3+deb12u2	Apache-2.0, BSD-2-clause, Expat, MPL-2.0	https://sources.debian.org/src/openh264/	
+libopenjp2-7	2.5.0-2+deb12u3	BSD-2, BSD-3, LIBPNG, LIBTIFF, LIBTIFF-GLARSON, LIBTIFF-PIXAR, MIT, ZLIB, public-domain	https://sources.debian.org/src/openjpeg2/	
+libopus0	1.3.1-3	BSD-2-clause, BSD-3-clause	https://sources.debian.org/src/opus/	
+libp11-kit0	0.24.1-2	Apache-2.0, BSD-3-Clause, ISC, ISC+IBM, LGPL-2.1+, permissive-like-automake-output, same-as-rest-of-p11kit	https://sources.debian.org/src/p11-kit/	
+libpackagekit-glib2-18	1.2.6-5+deb12u1	GPL-2+, GPL-2+ and LGPL-2.1+, LGPL-2.1+	https://sources.debian.org/src/packagekit/	
+libpam-cap	1:2.66-4+deb12u3+b1	BSD-3-clause, BSD-3-clause or GPL-2, BSD-3-clause or GPL-2+, GPL-2, GPL-2+	https://sources.debian.org/src/libcap2/	
+libpam-modules	1.5.2-6+deb12u2	BSD-3-clause or GPL, BSD-tcp_wrappers, Beerware, GPL-2, GPL-2+, GPL-3, GPL-3+ with Bison exception, LGPL-2+, public-domain	https://sources.debian.org/src/pam/	
+libpam-modules-bin	1.5.2-6+deb12u2	BSD-3-clause or GPL, BSD-tcp_wrappers, Beerware, GPL-2, GPL-2+, GPL-3, GPL-3+ with Bison exception, LGPL-2+, public-domain	https://sources.debian.org/src/pam/	
+libpam-runtime	1.5.2-6+deb12u2	BSD-3-clause or GPL, BSD-tcp_wrappers, Beerware, GPL-2, GPL-2+, GPL-3, GPL-3+ with Bison exception, LGPL-2+, public-domain	https://sources.debian.org/src/pam/	
+libpam-systemd	252.39-1~deb12u2	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	
+libpam0g	1.5.2-6+deb12u2	BSD-3-clause or GPL, BSD-tcp_wrappers, Beerware, GPL-2, GPL-2+, GPL-3, GPL-3+ with Bison exception, LGPL-2+, public-domain	https://sources.debian.org/src/pam/	
+libpango-1.0-0	1.50.12+ds-1	Apache-2, Apache-2 and Bitstream-Vera and OFL-1.1, Bitstream-Vera, CC0-1.0, Chromium-BSD-style, Example, GPL-2+, ICU, LGPL-2+, LGPL-2+ and ICU, LGPL-2+ and LGPL-2.1+, LGPL-2+ and TCL, LGPL-2.1+, OFL-1.1, TCL, Unicode	https://sources.debian.org/src/pango1.0/	
+libpangocairo-1.0-0	1.50.12+ds-1	Apache-2, Apache-2 and Bitstream-Vera and OFL-1.1, Bitstream-Vera, CC0-1.0, Chromium-BSD-style, Example, GPL-2+, ICU, LGPL-2+, LGPL-2+ and ICU, LGPL-2+ and LGPL-2.1+, LGPL-2+ and TCL, LGPL-2.1+, OFL-1.1, TCL, Unicode	https://sources.debian.org/src/pango1.0/	
+libpangoft2-1.0-0	1.50.12+ds-1	Apache-2, Apache-2 and Bitstream-Vera and OFL-1.1, Bitstream-Vera, CC0-1.0, Chromium-BSD-style, Example, GPL-2+, ICU, LGPL-2+, LGPL-2+ and ICU, LGPL-2+ and LGPL-2.1+, LGPL-2+ and TCL, LGPL-2.1+, OFL-1.1, TCL, Unicode	https://sources.debian.org/src/pango1.0/	
+libpangoxft-1.0-0	1.50.12+ds-1	Apache-2, Apache-2 and Bitstream-Vera and OFL-1.1, Bitstream-Vera, CC0-1.0, Chromium-BSD-style, Example, GPL-2+, ICU, LGPL-2+, LGPL-2+ and ICU, LGPL-2+ and LGPL-2.1+, LGPL-2+ and TCL, LGPL-2.1+, OFL-1.1, TCL, Unicode	https://sources.debian.org/src/pango1.0/	
+libpciaccess0	0.17-2	see copyright file (mentions: GPL)	https://sources.debian.org/src/libpciaccess/	NO-LICENSE-FIELD
+libpcre2-8-0	10.42-1+deb12u2	BSD-2-clause, BSD-3-clause, BSD-3-clause-Cambridge with BINARY LIBRARY-LIKE PACKAGES exception, X11, public-domain	https://sources.debian.org/src/pcre2/	
+libperl5.36	5.36.0-7+deb12u4	Artistic, Artistic or GPL-1+ or Artistic-dist, Artistic-2, Artistic-dist, BSD-3-clause, BSD-3-clause-GENERIC, BSD-3-clause-with-weird-numbering, BSD-4-clause-POWERDOG, BZIP, CC0-1.0, DONT-CHANGE-THE-GPL, Expat, Expat or GPL-1+ or Artistic, GPL-1+, GPL-1+ or Artistic, GPL-1+ or Artistic or Artistic-dist, GPL-1+ or Artistic, and BSD-3-clause-GENERIC, GPL-1+ or Artistic, and BSD-4-clause-POWERDOG, GPL-1+ or Artistic, and Expat, GPL-1+ or Artistic, and Unicode, GPL-2+, GPL-2+ or Artistic, GPL-3+-WITH-BISON-EXCEPTION, HSIEH-BSD, HSIEH-DERIVATIVE, LGPL-2.1, REGCOMP, REGCOMP, and GPL-1+ or Artistic, RRA-KEEP-THIS-NOTICE, SDBM-PUBLIC-DOMAIN, TEXT-TABS, Unicode, ZLIB	https://sources.debian.org/src/perl/	
+libpipeline1	1.5.7-1	GPL-2+, GPL-3+	https://sources.debian.org/src/libpipeline/	
+libpixman-1-0	0.42.2-1	see copyright file (mentions: MIT)	https://sources.debian.org/src/pixman/	NO-LICENSE-FIELD
+libpng16-16	1.6.39-2+deb12u6	Apache-2.0, BSD-3-clause, BSD-like-with-advertising-clause, GPL-2+, GPL-2+ or BSD-like-with-advertising-clause, expat, libpng, libpng OR Apache-2.0 OR BSD-3-clause	https://sources.debian.org/src/libpng1.6/	
+libpolkit-agent-1-0	122-3	Apache-2.0, Expat, LGPL-2.0+, LGPL-2.0+ and Expat	https://sources.debian.org/src/policykit-1/	
+libpolkit-gobject-1-0	122-3	Apache-2.0, Expat, LGPL-2.0+, LGPL-2.0+ and Expat	https://sources.debian.org/src/policykit-1/	
+libpopt0	1.19+dfsg-1	GPL-2+, expat	https://sources.debian.org/src/popt/	
+libproc2-0	2:4.0.2-3	GPL-2.0+, LGPL-2.0+, LGPL-2.1+	https://sources.debian.org/src/procps/	
+libprotobuf-c1	1.4.1-1+b1	BSD-2-Clause, BSD-3-Clause, permissive	https://sources.debian.org/src/protobuf-c/	
+libpsl5	0.21.2-1	Chromium, MIT, gnulib	https://sources.debian.org/src/libpsl/	
+libpulse0	16.1+dfsg1-2+b1	GPL-2+, LGPL-2+, LGPL-2.1+, other	https://sources.debian.org/src/pulseaudio/	
+libpython3-dev	3.11.2-1+b1	see copyright file (mentions: GPL)	https://sources.debian.org/src/python3-defaults/	NO-LICENSE-FIELD
+libpython3-stdlib	3.11.2-1+b1	see copyright file (mentions: GPL)	https://sources.debian.org/src/python3-defaults/	NO-LICENSE-FIELD
+libpython3.11	3.11.2-6+deb12u9	* Permission to use this software in any way is granted without, By obtaining, using, and/or copying this software and/or its, Permission  is  hereby granted,  free  of charge,  to  any person, Permission is hereby granted, free of charge, to any person obtaining, Permission to use, copy, modify, and distribute this software and, Permission to use, copy, modify, and distribute this software and its, Permission to use, copy, modify, and distribute this software for any, Redistribution and use in source and binary forms, with or without, This software is provided 'as-is', without any express or implied, This software is provided as-is, without express or implied	https://sources.debian.org/src/python3.11/	
+libpython3.11-dev	3.11.2-6+deb12u9	* Permission to use this software in any way is granted without, By obtaining, using, and/or copying this software and/or its, Permission  is  hereby granted,  free  of charge,  to  any person, Permission is hereby granted, free of charge, to any person obtaining, Permission to use, copy, modify, and distribute this software and, Permission to use, copy, modify, and distribute this software and its, Permission to use, copy, modify, and distribute this software for any, Redistribution and use in source and binary forms, with or without, This software is provided 'as-is', without any express or implied, This software is provided as-is, without express or implied	https://sources.debian.org/src/python3.11/	
+libpython3.11-minimal	3.11.2-6+deb12u9	* Permission to use this software in any way is granted without, By obtaining, using, and/or copying this software and/or its, Permission  is  hereby granted,  free  of charge,  to  any person, Permission is hereby granted, free of charge, to any person obtaining, Permission to use, copy, modify, and distribute this software and, Permission to use, copy, modify, and distribute this software and its, Permission to use, copy, modify, and distribute this software for any, Redistribution and use in source and binary forms, with or without, This software is provided 'as-is', without any express or implied, This software is provided as-is, without express or implied	https://sources.debian.org/src/python3.11/	
+libpython3.11-stdlib	3.11.2-6+deb12u9	* Permission to use this software in any way is granted without, By obtaining, using, and/or copying this software and/or its, Permission  is  hereby granted,  free  of charge,  to  any person, Permission is hereby granted, free of charge, to any person obtaining, Permission to use, copy, modify, and distribute this software and, Permission to use, copy, modify, and distribute this software and its, Permission to use, copy, modify, and distribute this software for any, Redistribution and use in source and binary forms, with or without, This software is provided 'as-is', without any express or implied, This software is provided as-is, without express or implied	https://sources.debian.org/src/python3.11/	
+libquadmath0	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+librav1e0	0.5.1-6	BSD-2-Clause, BSD-2-clause, ISC	https://sources.debian.org/src/rust-rav1e/	
+libreadline8	8.2-1.3	GFDL-NIV-1.3+, GPL-2+, GPL-3, GPL-3+, ISC-no-attribution	https://sources.debian.org/src/readline/	
+libregexp-ipv6-perl	0.03-3	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libregexp-ipv6-perl/	
+librsvg2-2	2.54.7+dfsg-1~deb12u1	0BSD, Apache-2.0, Apache-2.0, and BSD-2-clause, and BSD-3-clause, and Expat, and Apache-2.0 or Expat or 0BSD, and Apache-2.0 or Boost-1.0, and Apache-2.0 or Expat, and Expat or Unlicense, and MPL-2.0, and Sun-permissive, and zlib, BSD-2-clause, BSD-3-clause, Boost-1.0, CC-BY-3.0, CC-zero-waive-1.0-us, Expat, FSFAP, LGPL-2+, MPL-2.0, OFL-1.1, Sun-permissive, Unlicense, zlib	https://sources.debian.org/src/librsvg/	
+librsvg2-common	2.54.7+dfsg-1~deb12u1	0BSD, Apache-2.0, Apache-2.0, and BSD-2-clause, and BSD-3-clause, and Expat, and Apache-2.0 or Expat or 0BSD, and Apache-2.0 or Boost-1.0, and Apache-2.0 or Expat, and Expat or Unlicense, and MPL-2.0, and Sun-permissive, and zlib, BSD-2-clause, BSD-3-clause, Boost-1.0, CC-BY-3.0, CC-zero-waive-1.0-us, Expat, FSFAP, LGPL-2+, MPL-2.0, OFL-1.1, Sun-permissive, Unlicense, zlib	https://sources.debian.org/src/librsvg/	
+librtmp1	2.4+20151223.gitfa8646d.1-2+b2	see copyright file (mentions: GPL-2, LGPL-2.1)	https://sources.debian.org/src/rtmpdump/	NO-LICENSE-FIELD
+libsasl2-2	2.1.28+dfsg-10+deb12u1	BSD-2-clause, BSD-2-clause and MIT-CMU, BSD-2.2-clause, BSD-3-clause, BSD-3-clause-JANET, BSD-3-clause-JANET and BSD-4-clause, BSD-3-clause-PADL, BSD-3-clause-PADL and MIT-OpenVision, BSD-4-clause, BSD-4-clause and BSD-4-clause-KTH, BSD-4-clause and IBM-as-is, BSD-4-clause and MIT-Export, BSD-4-clause-KTH, BSD-4-clause-UC, FSFULLR, FSFULLR and MIT-CMU, GPL-3, GPL-3+, IBM-as-is, MIT-CMU, MIT-Export, MIT-OpenVision, OpenLDAP, OpenSSL, OpenSSL and SSLeay, RSA-MD, SSLeay	https://sources.debian.org/src/cyrus-sasl2/	
+libsasl2-modules	2.1.28+dfsg-10+deb12u1	BSD-2-clause, BSD-2-clause and MIT-CMU, BSD-2.2-clause, BSD-3-clause, BSD-3-clause-JANET, BSD-3-clause-JANET and BSD-4-clause, BSD-3-clause-PADL, BSD-3-clause-PADL and MIT-OpenVision, BSD-4-clause, BSD-4-clause and BSD-4-clause-KTH, BSD-4-clause and IBM-as-is, BSD-4-clause and MIT-Export, BSD-4-clause-KTH, BSD-4-clause-UC, FSFULLR, FSFULLR and MIT-CMU, GPL-3, GPL-3+, IBM-as-is, MIT-CMU, MIT-Export, MIT-OpenVision, OpenLDAP, OpenSSL, OpenSSL and SSLeay, RSA-MD, SSLeay	https://sources.debian.org/src/cyrus-sasl2/	
+libsasl2-modules-db	2.1.28+dfsg-10+deb12u1	BSD-2-clause, BSD-2-clause and MIT-CMU, BSD-2.2-clause, BSD-3-clause, BSD-3-clause-JANET, BSD-3-clause-JANET and BSD-4-clause, BSD-3-clause-PADL, BSD-3-clause-PADL and MIT-OpenVision, BSD-4-clause, BSD-4-clause and BSD-4-clause-KTH, BSD-4-clause and IBM-as-is, BSD-4-clause and MIT-Export, BSD-4-clause-KTH, BSD-4-clause-UC, FSFULLR, FSFULLR and MIT-CMU, GPL-3, GPL-3+, IBM-as-is, MIT-CMU, MIT-Export, MIT-OpenVision, OpenLDAP, OpenSSL, OpenSSL and SSLeay, RSA-MD, SSLeay	https://sources.debian.org/src/cyrus-sasl2/	
+libseccomp2	2.5.4-1+deb12u1	LGPL-2.1	https://sources.debian.org/src/libseccomp/	
+libsecret-1-0	0.20.5-3	Apache-2.0, BSD-3-clause, GPL-2+, LGPL-2.1+	https://sources.debian.org/src/libsecret/	
+libsecret-common	0.20.5-3	Apache-2.0, BSD-3-clause, GPL-2+, LGPL-2.1+	https://sources.debian.org/src/libsecret/	
+libselinux1	3.4-1+b6	see copyright file (mentions: GPL-2, LGPL-2.1)	https://sources.debian.org/src/libselinux/	NO-LICENSE-FIELD
+libsemanage-common	3.4-1	see copyright file (mentions: GPL, LGPL)	https://sources.debian.org/src/libsemanage/	NO-LICENSE-FIELD
+libsemanage2	3.4-1+b5	see copyright file (mentions: GPL, LGPL)	https://sources.debian.org/src/libsemanage/	NO-LICENSE-FIELD
+libsensors-config	1:3.6.0-7.1	see copyright file (mentions: GPL-2., LGPL-2.1.)	https://sources.debian.org/src/lm-sensors/	NO-LICENSE-FIELD
+libsensors5	1:3.6.0-7.1	see copyright file (mentions: GPL-2., LGPL-2.1.)	https://sources.debian.org/src/lm-sensors/	NO-LICENSE-FIELD
+libsepol2	3.4-2.1	GPL-2, GPL-2+, LGPL-2.1+, Zlib	https://sources.debian.org/src/libsepol/	
+libslirp0	4.7.0-1	BSD-3-clause, Expat	https://sources.debian.org/src/libslirp/	
+libsm6	2:1.2.3-1	see copyright file	https://sources.debian.org/src/libsm/	NO-LICENSE-FIELD
+libsmartcols1	2.38.1-5+deb12u3	BSD-3-clause, BSD-4-clause, BSLA, GPL-2, GPL-2+, GPL-3+, LGPL, LGPL-2+, LGPL-2.1+, LGPL-3+, MIT, public-domain	https://sources.debian.org/src/util-linux/	
+libsmbclient	2:4.17.12+dfsg-0+deb12u4	BSD-3, GPL-3, GPL-3.0+, ISC, LGPL-3.0+, MS-ADSL, PostgreSQL	https://sources.debian.org/src/samba/	
+libsndfile1	1.2.0-1+deb12u1	Apache-2.0, BSD-2-clause, BSD-3-clause, BSD-3-clause and LGPL-2.1+, FSFAP, GPL-2+, GPL-3+, LGPL-2+, LGPL-2.1+, NTP, gsm, sun	https://sources.debian.org/src/libsndfile/	
+libsodium23	1.0.18-1+deb12u1	BSD-2-clause, CC0, GPL-2+, ISC, MIT, public-domain	https://sources.debian.org/src/libsodium/	
+libsqlite3-0	3.40.1-2+deb12u2	GPL-2+, public-domain	https://sources.debian.org/src/sqlite3/	
+libss2	1.47.0-2+b2	Apache-2, BSD-3-Clause, GPL or MIT-US-export, GPL-2, GPL-2+ with Texinfo exception, ISC, Kazlib, LGPL-2, Latex2e	https://sources.debian.org/src/e2fsprogs/	
+libssh2-1	1.10.0-3+deb12u1	BSD3	https://sources.debian.org/src/libssh2/	
+libssl3	3.0.22-1~deb12u2	Apache-2.0, Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/openssl/	
+libstdc++-12-dev	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libstdc++6	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libsubid4	1:4.13+dfsg1-1+deb12u2	BSD-3-clause, GPL-1, GPL-2+, public-domain	https://sources.debian.org/src/shadow/	
+libsvtav1enc1	1.4.1+dfsg-1	BSD-2-clause, BSD-3-Clause-Clear, BSD-3-clause, Expat, ISC, LGPL-2.1+	https://sources.debian.org/src/svt-av1/	
+libsystemd-shared	252.39-1~deb12u2	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	
+libsystemd0	252.39-1~deb12u2	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	
+libtalloc2	2.4.0-f2	BSD-3, GPL-3.0+, ISC, LGPL-3.0+, PostgreSQL	https://sources.debian.org/src/talloc/	
+libtasn1-6	4.19.0-2+deb12u1	see copyright file (mentions: GFDL-1.3., GPL-3., LGPL, LGPL-2.1)	https://sources.debian.org/src/libtasn1-6/	NO-LICENSE-FIELD
+libtdb1	1.4.8-2	BSD-3, GPL-3.0+, ISC, LGPL-3.0+, PostgreSQL	https://sources.debian.org/src/tdb/	
+libtevent0	0.14.1-1	BSD-3, GPL-3.0+, ISC, LGPL-3.0+, PostgreSQL	https://sources.debian.org/src/tevent/	
+libtext-iconv-perl	1.7-8	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libtext-iconv-perl/	
+libthai-data	0.1.29-1	GPL-2+, LGPL-2.1+	https://sources.debian.org/src/libthai/	
+libthai0	0.1.29-1	GPL-2+, LGPL-2.1+	https://sources.debian.org/src/libthai/	
+libtie-ixhash-perl	1.23-4	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libtie-ixhash-perl/	
+libtiff6	4.5.0-6+deb12u4	Hylafax	https://sources.debian.org/src/tiff/	
+libtimedate-perl	2.3300-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libtimedate-perl/	
+libtinfo6	6.4-4	BSD-3-clause, MIT/X11, X11	https://sources.debian.org/src/ncurses/	
+libtirpc-common	1.3.3+ds-1	BSD-2-Clause, BSD-3-Clause, BSD-4-Clause, GPL-2, LGPL-2.1+, PERMISSIVE, __AUTO_PERMISSIVE__	https://sources.debian.org/src/libtirpc/	
+libtirpc-dev	1.3.3+ds-1	BSD-2-Clause, BSD-3-Clause, BSD-4-Clause, GPL-2, LGPL-2.1+, PERMISSIVE, __AUTO_PERMISSIVE__	https://sources.debian.org/src/libtirpc/	
+libtirpc3	1.3.3+ds-1	BSD-2-Clause, BSD-3-Clause, BSD-4-Clause, GPL-2, LGPL-2.1+, PERMISSIVE, __AUTO_PERMISSIVE__	https://sources.debian.org/src/libtirpc/	
+libtry-tiny-perl	0.31-2	Expat	https://sources.debian.org/src/libtry-tiny-perl/	
+libtsan2	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libubsan1	12.2.0-14+deb12u1	see copyright file (mentions: Artistic, GFDL-1.2, GPL, GPL-2, GPL-3, GPL., LGPL.)	https://sources.debian.org/src/gcc-12/	NO-LICENSE-FIELD
+libuchardet0	0.0.7-1	GPL-2+, LGPL-2.1+, MPL-1.1, MPL-1.1 or GPL-2+ or LGPL-2.1+	https://sources.debian.org/src/uchardet/	
+libudev1	252.39-1~deb12u2	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	
+libunistring2	1.0-2	FreeSoftware, GFDL-1.2+, GPL-2+, GPL-2+ with distribution exception, GPL-3+, GPL-3+ or GFDL-1.2+, LGPL-3+, LGPL-3+ or GPL-2+, MIT	https://sources.debian.org/src/libunistring/	
+libupower-glib3	0.99.20-2	GFDL-1.1+, GPL-2+	https://sources.debian.org/src/upower/	
+liburi-perl	5.17-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/liburi-perl/	
+libusb-1.0-0	2:1.0.26-1	see copyright file (mentions: GPL-2, LGPL-2.1)	https://sources.debian.org/src/libusb-1.0/	NO-LICENSE-FIELD
+libutempter0	1.2.1-3	BSD-2-Clause, LGPL-2.1	https://sources.debian.org/src/libutempter/	
+libuuid1	2.38.1-5+deb12u3	BSD-3-clause, BSD-4-clause, BSLA, GPL-2, GPL-2+, GPL-3+, LGPL, LGPL-2+, LGPL-2.1+, LGPL-3+, MIT, public-domain	https://sources.debian.org/src/util-linux/	
+libuv1	1.44.2-1+deb12u1	Apache-2.0, BSD-2-clause, BSD-3-clause, CC-BY-4.0, Expat, GPL3+ with autoconf exception, ISC	https://sources.debian.org/src/libuv1/	
+libvorbis0a	1.3.7-1	BSD-3-Clause, RFC-special	https://sources.debian.org/src/libvorbis/	
+libvorbisenc2	1.3.7-1	BSD-3-Clause, RFC-special	https://sources.debian.org/src/libvorbis/	
+libwayland-client0	1.21.0-1	X11	https://sources.debian.org/src/wayland/	
+libwayland-cursor0	1.21.0-1	X11	https://sources.debian.org/src/wayland/	
+libwayland-egl1	1.21.0-1	X11	https://sources.debian.org/src/wayland/	
+libwayland-server0	1.21.0-1	X11	https://sources.debian.org/src/wayland/	
+libwbclient0	2:4.17.12+dfsg-0+deb12u4	BSD-3, GPL-3, GPL-3.0+, ISC, LGPL-3.0+, MS-ADSL, PostgreSQL	https://sources.debian.org/src/samba/	
+libwebp7	1.2.4-0.2+deb12u1	see copyright file (mentions: Apache-2.0)	https://sources.debian.org/src/libwebp/	NO-LICENSE-FIELD
+libwww-perl	6.68-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libwww-perl/	
+libwww-robotrules-perl	6.02-1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libwww-robotrules-perl/	
+libx11-6	2:1.8.4-2+deb12u2	see copyright file (mentions: MIT, mit)	https://sources.debian.org/src/libx11/	NO-LICENSE-FIELD
+libx11-data	2:1.8.4-2+deb12u2	see copyright file (mentions: MIT, mit)	https://sources.debian.org/src/libx11/	NO-LICENSE-FIELD
+libx11-protocol-perl	0.56-9	Artistic, Artistic or GPL-1+, Expat, GPL-1+	https://sources.debian.org/src/libx11-protocol-perl/	
+libx11-xcb1	2:1.8.4-2+deb12u2	see copyright file (mentions: MIT, mit)	https://sources.debian.org/src/libx11/	NO-LICENSE-FIELD
+libx265-199	3.5-2+b1	Expat, GPL-2+, ISC, LGPL-2.1+	https://sources.debian.org/src/x265/	
+libxau6	1:1.0.9-1	see copyright file	https://sources.debian.org/src/libxau/	NO-LICENSE-FIELD
+libxaw7	2:1.0.14-1	see copyright file	https://sources.debian.org/src/libxaw/	NO-LICENSE-FIELD
+libxcb-dri2-0	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcb-dri3-0	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcb-glx0	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcb-present0	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcb-randr0	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcb-render0	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcb-shape0	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcb-shm0	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcb-sync1	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcb-xfixes0	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcb1	1.15-1	see copyright file	https://sources.debian.org/src/libxcb/	NO-LICENSE-FIELD
+libxcomposite1	1:0.4.5-1	see copyright file	https://sources.debian.org/src/libxcomposite/	NO-LICENSE-FIELD
+libxcursor1	1:1.2.1-1	see copyright file	https://sources.debian.org/src/libxcursor/	NO-LICENSE-FIELD
+libxdamage1	1:1.1.6-1	see copyright file	https://sources.debian.org/src/libxdamage/	NO-LICENSE-FIELD
+libxdmcp6	1:1.1.2-3	see copyright file (mentions: MIT)	https://sources.debian.org/src/libxdmcp/	NO-LICENSE-FIELD
+libxext6	2:1.3.4-1+b1	see copyright file	https://sources.debian.org/src/libxext/	NO-LICENSE-FIELD
+libxfixes3	1:6.0.0-2	see copyright file	https://sources.debian.org/src/libxfixes/	NO-LICENSE-FIELD
+libxft2	2.3.6-1	see copyright file	https://sources.debian.org/src/xft/	NO-LICENSE-FIELD
+libxi6	2:1.8-1+b1	see copyright file	https://sources.debian.org/src/libxi/	NO-LICENSE-FIELD
+libxinerama1	2:1.1.4-3	see copyright file	https://sources.debian.org/src/libxinerama/	NO-LICENSE-FIELD
+libxkbcommon0	1.5.0-1	see copyright file	https://sources.debian.org/src/libxkbcommon/	NO-LICENSE-FIELD
+libxkbfile1	1:1.1.0-1	see copyright file	https://sources.debian.org/src/libxkbfile/	NO-LICENSE-FIELD
+libxml-parser-perl	2.46-4+deb12u1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libxml-parser-perl/	
+libxml-twig-perl	1:3.52-2	Artistic, Artistic or GPL-1+, Artistic or GPL-2+, GPL-1+, GPL-2, GPL-2+	https://sources.debian.org/src/libxml-twig-perl/	
+libxml-xpathengine-perl	0.14-2	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/libxml-xpathengine-perl/	
+libxml2	2.9.14+dfsg-1.3~deb12u6	ISC, MIT-1	https://sources.debian.org/src/libxml2/	
+libxmu6	2:1.1.3-3	see copyright file	https://sources.debian.org/src/libxmu/	NO-LICENSE-FIELD
+libxmuu1	2:1.1.3-3	see copyright file	https://sources.debian.org/src/libxmu/	NO-LICENSE-FIELD
+libxnvctrl0	525.85.05-3~deb12u1	Expat, Expat-Precision, Expat-RedHat, GPL-2, other-MetroLink, other-MetroLink and other-XFree, other-XFree	https://sources.debian.org/src/libxnvctrl/	
+libxpm4	1:3.5.12-1.1+deb12u1	see copyright file	https://sources.debian.org/src/libxpm/	NO-LICENSE-FIELD
+libxrandr2	2:1.5.2-2+b1	see copyright file	https://sources.debian.org/src/libxrandr/	NO-LICENSE-FIELD
+libxrender1	1:0.9.10-1.1	see copyright file	https://sources.debian.org/src/libxrender/	NO-LICENSE-FIELD
+libxshmfence1	1.3-1	see copyright file	https://sources.debian.org/src/libxshmfence/	NO-LICENSE-FIELD
+libxt6	1:1.2.1-1.1	see copyright file	https://sources.debian.org/src/libxt/	NO-LICENSE-FIELD
+libxtables12	1.8.9-2	Artistic, GPL-2, GPL-2+, custom	https://sources.debian.org/src/iptables/	
+libxtst6	2:1.2.3-1.1	see copyright file	https://sources.debian.org/src/libxtst/	NO-LICENSE-FIELD
+libxv1	2:1.0.11-1.1	see copyright file (mentions: MIT)	https://sources.debian.org/src/libxv/	NO-LICENSE-FIELD
+libxxf86dga1	2:1.1.5-1	see copyright file	https://sources.debian.org/src/libxxf86dga/	NO-LICENSE-FIELD
+libxxf86vm1	1:1.1.4-1+b2	see copyright file	https://sources.debian.org/src/libxxf86vm/	NO-LICENSE-FIELD
+libxxhash0	0.8.1-1	BSD-2-clause, GPL-2	https://sources.debian.org/src/xxhash/	
+libyajl2	2.1.0-3+deb12u2	ISC	https://sources.debian.org/src/yajl/	
+libyuv0	0.0~git20230123.b2528b0-1	BSD-3-Clause, public-domain	https://sources.debian.org/src/libyuv/	
+libz3-4	4.8.12-3.1	Expat, GPL-2+	https://sources.debian.org/src/z3/	
+libzstd1	1.5.4+dfsg2-5	BSD-3-clause, BSD-3-clause or GPL-2, Expat, GPL-2, zlib	https://sources.debian.org/src/libzstd/	
+linux-libc-dev	6.1.190-1	BSD-2-clause, CRYPTOGAMS, GPL-2, GPL-2 or BSD-2-clause, GPL-2+-or-X11, LGPL-2.1, LGPL-2.1 or BSD-2-clause, Unicode-data, Xen-interface	https://sources.debian.org/src/linux/	
+login	1:4.13+dfsg1-1+deb12u2	BSD-3-clause, GPL-1, GPL-2+, public-domain	https://sources.debian.org/src/shadow/	
+logsave	1.47.0-2+b2	Apache-2, BSD-3-Clause, GPL or MIT-US-export, GPL-2, GPL-2+ with Texinfo exception, ISC, Kazlib, LGPL-2, Latex2e	https://sources.debian.org/src/e2fsprogs/	
+make	4.3-4.1	GPL-3+	https://sources.debian.org/src/make-dfsg/	
+man-db	2.11.2-2	GPL-2+, GPL-3+	https://sources.debian.org/src/man-db/	
+manpages	6.03-2	BSD-2-clause, BSD-3-clause, BSD-4-clause, BSD-4-clause and Linux-man-pages-copyleft, Expat, GPL-1+, GPL-2, GPL-2+, GPL-2+ and Linux-man-pages-copyleft, Linux-man-pages-copyleft	https://sources.debian.org/src/manpages/	
+manpages-dev	6.03-2	BSD-2-clause, BSD-3-clause, BSD-4-clause, BSD-4-clause and Linux-man-pages-copyleft, Expat, GPL-1+, GPL-2, GPL-2+, GPL-2+ and Linux-man-pages-copyleft, Linux-man-pages-copyleft	https://sources.debian.org/src/manpages/	
+mawk	1.3.4.20200120-3.1	CC-BY-3.0, GPL-2, X11	https://sources.debian.org/src/mawk/	
+media-types	10.0.0	ad-hoc	https://sources.debian.org/src/media-types/	
+mount	2.38.1-5+deb12u3	BSD-3-clause, BSD-4-clause, BSLA, GPL-2, GPL-2+, GPL-3+, LGPL, LGPL-2+, LGPL-2.1+, LGPL-3+, MIT, public-domain	https://sources.debian.org/src/util-linux/	
+nano	7.2-1+deb12u1	GFDL-NIV+, GFDL-NIV+ or GPL-3+, GPL-3+	https://sources.debian.org/src/nano/	
+ncurses-base	6.4-4	BSD-3-clause, MIT/X11, X11	https://sources.debian.org/src/ncurses/	
+ncurses-bin	6.4-4	BSD-3-clause, MIT/X11, X11	https://sources.debian.org/src/ncurses/	
+net-tools	2.10-0.1+deb12u2	GPL-2+	https://sources.debian.org/src/net-tools/	
+netavark	1.4.0-3	Apache-2.0	https://sources.debian.org/src/netavark/	
+netbase	6.4	GPL-2	https://sources.debian.org/src/netbase/	
+netcat-openbsd	1.219-1	BSD-2-Clause, BSD-3-Clause	https://sources.debian.org/src/netcat-openbsd/	
+nftables	1.0.6-2+deb12u2	CC-BY-SA-4.0, GPL-2, GPL-2+	https://sources.debian.org/src/nftables/	
+notification-daemon	3.20.0-4+b1	GPL-2+	https://sources.debian.org/src/notification-daemon/	
+openssh-client	1:9.2p1-2+deb12u10	BSD-2-clause, BSD-3-clause, Expat-with-advertising-restriction, Mazieres-BSD-style, OpenSSH, Powell-BSD-style, public-domain	https://sources.debian.org/src/openssh/	
+openssl	3.0.22-1~deb12u2	Apache-2.0, Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/openssl/	
+passwd	1:4.13+dfsg1-1+deb12u2	BSD-3-clause, GPL-1, GPL-2+, public-domain	https://sources.debian.org/src/shadow/	
+patch	2.7.6-7	see copyright file (mentions: GPL)	https://sources.debian.org/src/patch/	NO-LICENSE-FIELD
+perl	5.36.0-7+deb12u4	Artistic, Artistic or GPL-1+ or Artistic-dist, Artistic-2, Artistic-dist, BSD-3-clause, BSD-3-clause-GENERIC, BSD-3-clause-with-weird-numbering, BSD-4-clause-POWERDOG, BZIP, CC0-1.0, DONT-CHANGE-THE-GPL, Expat, Expat or GPL-1+ or Artistic, GPL-1+, GPL-1+ or Artistic, GPL-1+ or Artistic or Artistic-dist, GPL-1+ or Artistic, and BSD-3-clause-GENERIC, GPL-1+ or Artistic, and BSD-4-clause-POWERDOG, GPL-1+ or Artistic, and Expat, GPL-1+ or Artistic, and Unicode, GPL-2+, GPL-2+ or Artistic, GPL-3+-WITH-BISON-EXCEPTION, HSIEH-BSD, HSIEH-DERIVATIVE, LGPL-2.1, REGCOMP, REGCOMP, and GPL-1+ or Artistic, RRA-KEEP-THIS-NOTICE, SDBM-PUBLIC-DOMAIN, TEXT-TABS, Unicode, ZLIB	https://sources.debian.org/src/perl/	
+perl-base	5.36.0-7+deb12u4	Artistic, Artistic or GPL-1+ or Artistic-dist, Artistic-2, Artistic-dist, BSD-3-clause, BSD-3-clause-GENERIC, BSD-3-clause-with-weird-numbering, BSD-4-clause-POWERDOG, BZIP, CC0-1.0, DONT-CHANGE-THE-GPL, Expat, Expat or GPL-1+ or Artistic, GPL-1+, GPL-1+ or Artistic, GPL-1+ or Artistic or Artistic-dist, GPL-1+ or Artistic, and BSD-3-clause-GENERIC, GPL-1+ or Artistic, and BSD-4-clause-POWERDOG, GPL-1+ or Artistic, and Expat, GPL-1+ or Artistic, and Unicode, GPL-2+, GPL-2+ or Artistic, GPL-3+-WITH-BISON-EXCEPTION, HSIEH-BSD, HSIEH-DERIVATIVE, LGPL-2.1, REGCOMP, REGCOMP, and GPL-1+ or Artistic, RRA-KEEP-THIS-NOTICE, SDBM-PUBLIC-DOMAIN, TEXT-TABS, Unicode, ZLIB	https://sources.debian.org/src/perl/	
+perl-modules-5.36	5.36.0-7+deb12u4	Artistic, Artistic or GPL-1+ or Artistic-dist, Artistic-2, Artistic-dist, BSD-3-clause, BSD-3-clause-GENERIC, BSD-3-clause-with-weird-numbering, BSD-4-clause-POWERDOG, BZIP, CC0-1.0, DONT-CHANGE-THE-GPL, Expat, Expat or GPL-1+ or Artistic, GPL-1+, GPL-1+ or Artistic, GPL-1+ or Artistic or Artistic-dist, GPL-1+ or Artistic, and BSD-3-clause-GENERIC, GPL-1+ or Artistic, and BSD-4-clause-POWERDOG, GPL-1+ or Artistic, and Expat, GPL-1+ or Artistic, and Unicode, GPL-2+, GPL-2+ or Artistic, GPL-3+-WITH-BISON-EXCEPTION, HSIEH-BSD, HSIEH-DERIVATIVE, LGPL-2.1, REGCOMP, REGCOMP, and GPL-1+ or Artistic, RRA-KEEP-THIS-NOTICE, SDBM-PUBLIC-DOMAIN, TEXT-TABS, Unicode, ZLIB	https://sources.debian.org/src/perl/	
+perl-openssl-defaults	7+b1	Artistic, Artistic or GPL-1+, GPL-1+	https://sources.debian.org/src/perl-openssl-defaults/	
+pinentry-curses	1.2.1-1	GPL-2, GPL-2+, LGPL-3+, LGPL-3+ or GPL-2+, X11	https://sources.debian.org/src/pinentry/	
+podman	4.3.1+ds1-8+deb12u1+b3	Apache-2.0, BSD-3-clause, Expat, ISC	https://sources.debian.org/src/libpod/	
+polkitd	122-3	Apache-2.0, Expat, LGPL-2.0+, LGPL-2.0+ and Expat	https://sources.debian.org/src/policykit-1/	
+procps	2:4.0.2-3	GPL-2.0+, LGPL-2.0+, LGPL-2.1+	https://sources.debian.org/src/procps/	
+psmisc	23.6-1	GPL-2+	https://sources.debian.org/src/psmisc/	
+publicsuffix	20230209.2326-1	CC0, MPL-2.0	https://sources.debian.org/src/publicsuffix/	
+python3	3.11.2-1+b1	see copyright file (mentions: GPL)	https://sources.debian.org/src/python3-defaults/	NO-LICENSE-FIELD
+python3-cairo	1.20.1-5+b1	see copyright file (mentions: LGPL-2.1)	https://sources.debian.org/src/pycairo/	NO-LICENSE-FIELD
+python3-cups	2.0.1-5+b4	GPL-2+	https://sources.debian.org/src/python-cups/	
+python3-cupshelpers	1.5.18-1	GPL-2+	https://sources.debian.org/src/system-config-printer/	
+python3-dbus	1.3.2-4+b1	AFL-2.1, Expat, GPL-2+, GPL-2+ or AFL-2.1, and Expat	https://sources.debian.org/src/dbus-python/	
+python3-dev	3.11.2-1+b1	see copyright file (mentions: GPL)	https://sources.debian.org/src/python3-defaults/	NO-LICENSE-FIELD
+python3-distutils	3.11.2-3	see copyright file (mentions: GPL)	https://sources.debian.org/src/python3-stdlib-extensions/	NO-LICENSE-FIELD
+python3-gi	3.42.2-3+b1	Expat, LGPL-2.1+	https://sources.debian.org/src/pygobject/	
+python3-lib2to3	3.11.2-3	see copyright file (mentions: GPL)	https://sources.debian.org/src/python3-stdlib-extensions/	NO-LICENSE-FIELD
+python3-minimal	3.11.2-1+b1	see copyright file (mentions: GPL)	https://sources.debian.org/src/python3-defaults/	NO-LICENSE-FIELD
+python3-pip	23.0.1+dfsg-1	Apache-2.0, Apache-2.0 OR BSD-2, BSD-2, BSD-3, Expat, ISC, LGPL-2.1+, MPL-2, Python	https://sources.debian.org/src/python-pip/	
+python3-pip-whl	23.0.1+dfsg-1	Apache-2.0, Apache-2.0 OR BSD-2, BSD-2, BSD-3, Expat, ISC, LGPL-2.1+, MPL-2, Python	https://sources.debian.org/src/python-pip/	
+python3-pkg-resources	66.1.1-1+deb12u2	Apache-2.0, BSD-3-clause	https://sources.debian.org/src/setuptools/	
+python3-setuptools	66.1.1-1+deb12u2	Apache-2.0, BSD-3-clause	https://sources.debian.org/src/setuptools/	
+python3-setuptools-whl	66.1.1-1+deb12u2	Apache-2.0, BSD-3-clause	https://sources.debian.org/src/setuptools/	
+python3-smbc	1.0.23-2+b4	GPL-2+	https://sources.debian.org/src/pysmbc/	
+python3-venv	3.11.2-1+b1	see copyright file (mentions: GPL)	https://sources.debian.org/src/python3-defaults/	NO-LICENSE-FIELD
+python3-wheel	0.38.4-2	Expat, GPL-3	https://sources.debian.org/src/wheel/	
+python3.11	3.11.2-6+deb12u9	* Permission to use this software in any way is granted without, By obtaining, using, and/or copying this software and/or its, Permission  is  hereby granted,  free  of charge,  to  any person, Permission is hereby granted, free of charge, to any person obtaining, Permission to use, copy, modify, and distribute this software and, Permission to use, copy, modify, and distribute this software and its, Permission to use, copy, modify, and distribute this software for any, Redistribution and use in source and binary forms, with or without, This software is provided 'as-is', without any express or implied, This software is provided as-is, without express or implied	https://sources.debian.org/src/python3.11/	
+python3.11-dev	3.11.2-6+deb12u9	* Permission to use this software in any way is granted without, By obtaining, using, and/or copying this software and/or its, Permission  is  hereby granted,  free  of charge,  to  any person, Permission is hereby granted, free of charge, to any person obtaining, Permission to use, copy, modify, and distribute this software and, Permission to use, copy, modify, and distribute this software and its, Permission to use, copy, modify, and distribute this software for any, Redistribution and use in source and binary forms, with or without, This software is provided 'as-is', without any express or implied, This software is provided as-is, without express or implied	https://sources.debian.org/src/python3.11/	
+python3.11-minimal	3.11.2-6+deb12u9	* Permission to use this software in any way is granted without, By obtaining, using, and/or copying this software and/or its, Permission  is  hereby granted,  free  of charge,  to  any person, Permission is hereby granted, free of charge, to any person obtaining, Permission to use, copy, modify, and distribute this software and, Permission to use, copy, modify, and distribute this software and its, Permission to use, copy, modify, and distribute this software for any, Redistribution and use in source and binary forms, with or without, This software is provided 'as-is', without any express or implied, This software is provided as-is, without express or implied	https://sources.debian.org/src/python3.11/	
+python3.11-venv	3.11.2-6+deb12u9	* Permission to use this software in any way is granted without, By obtaining, using, and/or copying this software and/or its, Permission  is  hereby granted,  free  of charge,  to  any person, Permission is hereby granted, free of charge, to any person obtaining, Permission to use, copy, modify, and distribute this software and, Permission to use, copy, modify, and distribute this software and its, Permission to use, copy, modify, and distribute this software for any, Redistribution and use in source and binary forms, with or without, This software is provided 'as-is', without any express or implied, This software is provided as-is, without express or implied	https://sources.debian.org/src/python3.11/	
+readline-common	8.2-1.3	GFDL-NIV-1.3+, GPL-2+, GPL-3, GPL-3+, ISC-no-attribution	https://sources.debian.org/src/readline/	
+rpcsvc-proto	1.4.3-1	BSD-3-clause, GPL-2+-autoconf-exception, GPL-3+-autoconf-exception, MIT, permissive-autoconf-m4, permissive-autoconf-m4-no-warranty, permissive-configure, permissive-fsf, permissive-makefile-in	https://sources.debian.org/src/rpcsvc-proto/	
+rsync	3.2.7-1+deb12u6	see copyright file (mentions: GPL-3)	https://sources.debian.org/src/rsync/	NO-LICENSE-FIELD
+samba-libs	2:4.17.12+dfsg-0+deb12u4	BSD-3, GPL-3, GPL-3.0+, ISC, LGPL-3.0+, MS-ADSL, PostgreSQL	https://sources.debian.org/src/samba/	
+sed	4.9-1+deb12u1	BSD-4-clause-UC, BSL-1, GFDL-NIV-1.3+, GPL-3+, GPL-3+ and ISC, ISC, X11, pcre	https://sources.debian.org/src/sed/	
+sgml-base	1.31	GPL-2+	https://sources.debian.org/src/sgml-base/	
+shared-mime-info	2.2-1	see copyright file (mentions: GPL)	https://sources.debian.org/src/shared-mime-info/	NO-LICENSE-FIELD
+slirp4netns	1.2.0-1	Expat, Expat or MIT, GPL-2, GPL-2+, LGPL-2.1, MIT	https://sources.debian.org/src/slirp4netns/	
+sqlite3	3.40.1-2+deb12u2	GPL-2+, public-domain	https://sources.debian.org/src/sqlite3/	
+sudo	1.9.13p3-1+deb12u4	BSD-2-Clause, BSD-3-Clause, ISC, Zlib, other, public-domain	https://sources.debian.org/src/sudo/	
+system-config-printer	1.5.18-1	GPL-2+	https://sources.debian.org/src/system-config-printer/	
+system-config-printer-common	1.5.18-1	GPL-2+	https://sources.debian.org/src/system-config-printer/	
+system-config-printer-udev	1.5.18-1	GPL-2+	https://sources.debian.org/src/system-config-printer/	
+systemd	252.39-1~deb12u2	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	
+systemd-sysv	252.39-1~deb12u2	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	
+systemd-timesyncd	252.39-1~deb12u2	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	
+sysvinit-utils	3.06-4	GPL-2.0, GPL-2.0+, GPL-3.0	https://sources.debian.org/src/sysvinit/	
+tar	1.34+dfsg-1.2+deb12u1	GPL-2+, GPL-3+, GPL-3+ with Bison exception, LGPL-3+	https://sources.debian.org/src/tar/	
+tmux	3.3a-3	BSD-2-clause, BSD-2-clause or ISC, BSD-2-clause-NetBSD, BSD-3-clause, Expat, FSFUL, FSFULLR, ISC	https://sources.debian.org/src/tmux/	
+tree	2.1.0-1	GPL-2+, LGPL-2.1+	https://sources.debian.org/src/tree/	
+tzdata	2026f-0+deb12u1	public-domain	https://sources.debian.org/src/tzdata/	
+udev	252.39-1~deb12u2	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	
+uidmap	1:4.13+dfsg1-1+deb12u2	BSD-3-clause, GPL-1, GPL-2+, public-domain	https://sources.debian.org/src/shadow/	
+unzip	6.0-28+deb12u1	see copyright file	https://sources.debian.org/src/unzip/	NO-LICENSE-FIELD
+upower	0.99.20-2	GFDL-1.1+, GPL-2+	https://sources.debian.org/src/upower/	
+usr-is-merged	37~deb12u1	GPL-2+	https://sources.debian.org/src/usrmerge/	
+util-linux	2.38.1-5+deb12u3	BSD-3-clause, BSD-4-clause, BSLA, GPL-2, GPL-2+, GPL-3+, LGPL, LGPL-2+, LGPL-2.1+, LGPL-3+, MIT, public-domain	https://sources.debian.org/src/util-linux/	
+util-linux-extra	2.38.1-5+deb12u3	BSD-3-clause, BSD-4-clause, BSLA, GPL-2, GPL-2+, GPL-3+, LGPL, LGPL-2+, LGPL-2.1+, LGPL-3+, MIT, public-domain	https://sources.debian.org/src/util-linux/	
+vim	2:9.0.1378-2+deb12u2	Apache, Apache or Expat, Artistic-1, BSD-2-clause, BSD-3-clause, Compaq, EDL-1, Expat, Expat or GPL-2, Expat or Vim, GPL-1+, GPL-1+ or Artistic-1, GPL-2, GPL-2+, GPL-3+, LGPL-2.1+, OPL-1+, UC, Vim, Vim-Regexp, X11, XPM, public-domain	https://sources.debian.org/src/vim/	
+vim-common	2:9.0.1378-2+deb12u2	Apache, Apache or Expat, Artistic-1, BSD-2-clause, BSD-3-clause, Compaq, EDL-1, Expat, Expat or GPL-2, Expat or Vim, GPL-1+, GPL-1+ or Artistic-1, GPL-2, GPL-2+, GPL-3+, LGPL-2.1+, OPL-1+, UC, Vim, Vim-Regexp, X11, XPM, public-domain	https://sources.debian.org/src/vim/	
+vim-runtime	2:9.0.1378-2+deb12u2	Apache, Apache or Expat, Artistic-1, BSD-2-clause, BSD-3-clause, Compaq, EDL-1, Expat, Expat or GPL-2, Expat or Vim, GPL-1+, GPL-1+ or Artistic-1, GPL-2, GPL-2+, GPL-3+, LGPL-2.1+, OPL-1+, UC, Vim, Vim-Regexp, X11, XPM, public-domain	https://sources.debian.org/src/vim/	
+wget	1.21.3-1+deb12u1	see copyright file (mentions: GFDL-1.2, GPL-3.)	https://sources.debian.org/src/wget/	NO-LICENSE-FIELD
+x11-common	1:7.7+23	see copyright file (mentions: GPL)	https://sources.debian.org/src/xorg/	NO-LICENSE-FIELD
+x11-utils	7.7+5	see copyright file	https://sources.debian.org/src/x11-utils/	NO-LICENSE-FIELD
+x11-xserver-utils	7.7+9+b1	see copyright file	https://sources.debian.org/src/x11-xserver-utils/	NO-LICENSE-FIELD
+xauth	1:1.1.2-1	see copyright file (mentions: MIT)	https://sources.debian.org/src/xauth/	NO-LICENSE-FIELD
+xdg-user-dirs	0.18-1	see copyright file (mentions: GPL-2)	https://sources.debian.org/src/xdg-user-dirs/	NO-LICENSE-FIELD
+xdg-utils	1.1.3-4.1	Expat	https://sources.debian.org/src/xdg-utils/	
+xkb-data	2.35.1-1	see copyright file	https://sources.debian.org/src/xkeyboard-config/	NO-LICENSE-FIELD
+xml-core	0.18+nmu1	GPL-2+	https://sources.debian.org/src/xml-core/	
+xxd	2:9.0.1378-2+deb12u2	Apache, Apache or Expat, Artistic-1, BSD-2-clause, BSD-3-clause, Compaq, EDL-1, Expat, Expat or GPL-2, Expat or Vim, GPL-1+, GPL-1+ or Artistic-1, GPL-2, GPL-2+, GPL-3+, LGPL-2.1+, OPL-1+, UC, Vim, Vim-Regexp, X11, XPM, public-domain	https://sources.debian.org/src/vim/	
+xz-utils	5.4.1-1+deb12u2	Autoconf, GPL-2, GPL-2+, LGPL-2.1+, PD, PD-debian, config-h, noderivs, none, permissive-fsf, permissive-nowarranty, probably-PD	https://sources.debian.org/src/xz-utils/	
+zip	3.0-13+deb12u1	see copyright file	https://sources.debian.org/src/zip/	NO-LICENSE-FIELD
+zlib1g	1:1.2.13.dfsg-1	Zlib	https://sources.debian.org/src/zlib/	
+zlib1g-dev	1:1.2.13.dfsg-1	Zlib	https://sources.debian.org/src/zlib/	
+zutty	0.14.0.20230218+dfsg1-1	BSD-3-clause, GPL-3+	https://sources.debian.org/src/zutty/	
