@@ -20,7 +20,8 @@ from helpers import ROOT
 
 CONFIG = os.path.join(ROOT, "container", "config", "starship.toml")
 INIT = os.path.join(ROOT, "container", "scripts", "starship-init.sh")
-DOCKERFILE = os.path.join(ROOT, "Dockerfile.v0.1.0")  # the 2.0 Dockerfile gets the bashrc fragment in a later slice
+DOCKERFILE = os.path.join(ROOT, "Dockerfile")  # the 2.0 image (slice 2.4: the bashrc fragment sources the init script)
+FRAGMENT = os.path.join(ROOT, "container", "config", "bashrc.sh")
 
 # The warm Gruvbox colors of the preset this layout comes from: the SwarmBox palette must not reuse any
 # of them, so a SwarmBox shell is never mistaken for a personal one.
@@ -214,11 +215,20 @@ class DockerfileWiring(unittest.TestCase):
         self.assertIn("starship-x86_64-unknown-linux-musl", block)
         self.assertIn("starship-aarch64-unknown-linux-musl", block)
 
-    def test_starship_is_initialised_after_everything_else_in_bashrc(self):
-        # Starship redefines PS1, so it has to come after the venv activation, the banner and the init script
-        init = self.d.index(". /etc/swarmbox/scripts/starship-init.sh")
-        for earlier in ("source /opt/flow/bin/activate", "/usr/local/bin/banner.sh", "/usr/local/bin/init-swarmbox.sh 2>/dev/null"):
-            self.assertGreater(init, self.d.index(earlier), earlier)
+    def test_starship_is_initialised_after_everything_else_by_the_fragment(self):
+        # Starship redefines PS1, so the fragment sources the init script after the venv, the PATH, the aliases,
+        # the tools' shell.sh and the banner (v0.1.0 did the same from /etc/bash.bashrc)
+        with open(FRAGMENT) as f:
+            frag = f.read()
+        init = frag.index("${SWARMBOX_STARSHIP_INIT:-")
+        for earlier in (". \"$_sb_venv/bin/activate\"", "shell.sh", "_sb_banner\"", "alias ll="):
+            self.assertGreater(init, frag.index(earlier), earlier)
+        self.assertIn("/etc/swarmbox/scripts/starship-init.sh", frag)
+
+    def test_the_image_bashrc_sources_the_fragment(self):
+        self.assertIn("COPY container/config/bashrc.sh /etc/swarmbox/bashrc.sh", self.d)
+        self.assertRegex(self.d, r">> /etc/bash\.bashrc")
+        self.assertIn(". /etc/swarmbox/bashrc.sh", self.d)
 
     def test_the_config_and_the_script_are_installed(self):
         self.assertIn("COPY container/config/starship.toml /etc/swarmbox/starship.toml", self.d)

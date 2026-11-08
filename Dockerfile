@@ -145,6 +145,7 @@ RUN chmod 644 /usr/local/share/swarmbox/ttyd-clipboard.js /usr/local/share/swarm
 COPY container/config/tmux.conf /etc/tmux.conf
 COPY container/config/tmux-browser-keys.conf /etc/tmux-browser-keys.conf
 COPY container/config/starship.toml /etc/swarmbox/starship.toml
+COPY container/config/bashrc.sh /etc/swarmbox/bashrc.sh
 COPY container/config/ssh-swarmbox.conf /etc/ssh/ssh_config.d/swarmbox.conf
 COPY container/scripts/dirs.sh /usr/local/lib/swarmbox/dirs.sh
 COPY container/scripts/starship-init.sh /etc/swarmbox/scripts/starship-init.sh
@@ -155,11 +156,16 @@ COPY container/scripts/ssh-key.sh /usr/local/bin/swarmbox-pubkey
 COPY container/mcp/ /etc/swarmbox/mcp/
 COPY container/scripts/swarmbox-attach.sh /usr/local/bin/swarmbox-attach
 COPY container/entrypoint.sh /usr/local/bin/swarmbox-entrypoint
-RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.toml /etc/ssh/ssh_config.d/swarmbox.conf \
+RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.toml /etc/swarmbox/bashrc.sh /etc/ssh/ssh_config.d/swarmbox.conf \
         /usr/local/lib/swarmbox/dirs.sh /etc/swarmbox/scripts/starship-init.sh /etc/swarmbox/scripts/messages.sh && \
     chmod 755 /usr/local/bin/banner.sh /usr/local/bin/swarmbox-podman-service /usr/local/bin/swarmbox-pubkey \
         /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-entrypoint && \
     chmod -R a+rX /etc/swarmbox/mcp
+
+# The shell fragment (design 6.6, 10.3) replaces the v0.1.0 echo lines: Debian's /etc/bash.bashrc leaves at once in a
+# non-interactive shell, so the line below runs for interactive shells only; swarmbox-attach sources the fragment
+# directly for a command run without a terminal (3.3).
+RUN printf '\n# SwarmBox shell fragment\n[ -r /etc/swarmbox/bashrc.sh ] && . /etc/swarmbox/bashrc.sh\n' >> /etc/bash.bashrc
 
 USER agent
 WORKDIR /home/agent
