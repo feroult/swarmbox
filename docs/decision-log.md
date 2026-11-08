@@ -365,3 +365,24 @@ Impact on the design: B30 row and 13.4 note say so. How to reverse: n/a.
 Context: YAML mistakes cannot be proven without a runner.
 Chosen: test_ci_workflow.py parses with PyYAML (not installed system-wide; the test pip-installs it into a venv under the temp dir, fallback to a text-marker class that always runs); actionlint 1.7.12 downloaded to a mktemp dir with its checksum verified, run with shellcheck integration (clean), then deleted; the test runs it only when ACTIONLINT or PATH points at it, otherwise it is skipped, so a plain run reports a skip. Every command was also run locally once.
 Impact on the design: none. How to reverse: n/a.
+
+## [1.7] Phase 1 gate status is partial, not done
+Context: the plan's Phase 1 exit criteria require CI green on Podman of at least 4.3 and a result for B30. Neither can happen here: the workflow cannot run on a runner and nothing may be pushed.
+Options: mark the gate done because all files and local checks exist; mark it partial and list the open items.
+Chosen: partial because claiming CI green or closing B30 without a real run would be dishonest (rule: never invent behavior).
+Impact on the design: none; B30 stays `[unverified]` as written in slice 1.6.
+How to reverse: after the first real CI run, record its result in Part B (B30) with an evidence tag and change the 1.gate row to done.
+
+## [1.7] Home-path guard in the docs consistency test is a heuristic grep
+Context: the slice asks for a repo-wide check that no test writes to real home paths.
+Options: ban every mention; flag only lines that look like writes (open, write, mkdir) and are not assertions or mktemp use.
+Chosen: the second, because mentions as string data (for example the layout fed to the socket-length spike) are legitimate; the one existing mention was reviewed by hand and is data only.
+Impact on the design: none.
+How to reverse: tighten the regex in PhaseOneCloseTest.test_tests_do_not_touch_real_home in tests/test_docs_consistency.py.
+
+## [1.7] Plan text left unchanged
+Context: the plan's Phase 1 exit criteria were checked one by one (see the 1.gate status row). The design and plan cross-references, D1 to D39 and B1 to B36 numbering and code fences were already enforced by test_docs_consistency and pass.
+Options: add a Phase 1 outcome section to the plan; keep the outcome only in the status file.
+Chosen: status file only because the plan states intent and the status file records results (same split as Phase 0 apart from the design's outcome table, which exists because Part B needed it).
+Impact on the design: none.
+How to reverse: copy the 1.gate row into a "Phase 1 outcome" paragraph in the plan.
