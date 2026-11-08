@@ -8,6 +8,7 @@ The test-only variables SWARMBOX_TEST_* are the ones decided in docs/decision-lo
 
 Run with: python3 tests/test_serve_steps.py   (needs bash; python3 is the fake podman)
 """
+import json
 import os
 import re
 import shutil
@@ -328,7 +329,7 @@ class WarnSteps(ServeCase):
         self.assertIn("-d", new.split())
         self.assertIn("main", new.split())
 
-    def test_later_phase_steps_are_logged_noops_when_programs_are_missing(self):
+    def test_steps_are_logged_noops_when_programs_are_missing(self):
         os.unlink(os.path.join(self.fake, "swarmbox-migrate"))
         os.unlink(os.path.join(self.fake, "swarmbox-tool"))
         p = self.run_ready(SWARMBOX_WITH="claude")
@@ -337,6 +338,7 @@ class WarnSteps(ServeCase):
         log = self.serve_log()
         for word in ("step 4", "step 6", "step 7", "step 12"):
             self.assertRegex(log, word + r".*skipped")
+            self.assertNotRegex(log, word + r".*later phase")
 
     def test_with_installs_run_after_the_marker_in_order(self):
         p = self.run_ready(SWARMBOX_WITH="claude, opencode")
@@ -352,6 +354,39 @@ class WarnSteps(ServeCase):
         self.assertTrue(wait_for(lambda: any("claude" in l for l in self.health_lines()), 5), self.health_lines())
         self.assertTrue(self.marker().startswith("warnings="))
         self.stop(p)
+
+    def test_tool_steps_run_link_prepare_install_in_order_with_the_real_names(self):
+        p = self.run_ready(SWARMBOX_WITH="claude")
+        self.assertTrue(wait_for(lambda: "install claude saw-ready" in self.calls()), self.calls())
+        self.stop(p)
+        calls = self.calls()
+        order = [calls.index(c) for c in ("swarmbox-tool link --user", "swarmbox-tool prepare", "swarmbox-tool install claude")]
+        self.assertEqual(order, sorted(order), calls)
+        log = self.serve_log()
+        for word in ("step 6: swarmbox-tool link --user", "step 7: swarmbox-tool prepare", "step 12: installing claude in the background"):
+            self.assertIn(word, log)
+        self.assertNotIn("later phase", log)
+
+    def test_a_failed_with_install_names_the_tool_and_says_the_next_call_retries(self):
+        put(os.path.join(self.fake, "swarmbox-tool.exit"), "69")
+        p = self.run_ready(SWARMBOX_WITH="claude")
+        self.assertTrue(wait_for(lambda: any("installing claude failed" in l for l in self.health_lines()), 5), self.health_lines())
+        line = [l for l in self.health_lines() if "installing claude failed" in l][0]
+        self.assertIn("next call", line)
+        self.stop(p)
+
+    def test_step_7_writes_an_empty_mcp_file_only_when_there_is_none(self):
+        # Decision [4a.5]: the claude alias passes --mcp-config <workspace>/.claude/mcp-servers.json and claude refuses a
+        # missing file; the registry (4.4, Phase 4b) will write the real one. Until then serve leaves an empty list.
+        f = os.path.join(self.home, ".claude", "mcp-servers.json")
+        p = self.run_ready()
+        self.stop(p)
+        self.assertEqual(json.loads(read(f)), {"mcpServers": {}})
+        put(f, '{"mcpServers": {"mine": {"command": "x"}}}')
+        os.unlink(os.path.join(self.run_dir, "ready"))
+        p = self.run_ready()
+        self.stop(p)
+        self.assertIn("mine", read(f))
 
     def test_web_off_starts_no_supervisor(self):
         p = self.run_ready(SWARMBOX_WEB="0")

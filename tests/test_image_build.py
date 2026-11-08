@@ -83,8 +83,14 @@ class ImageTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, "%s: %s" % (cmd[0], r.stderr))
 
     def test_what_must_not_be_there(self):
-        r = in_image("sh", "-c", "for c in claude opencode gemini gcloud clasp go poetry; do command -v $c && echo FOUND $c; done; true")
-        self.assertNotIn("FOUND", r.stdout)
+        # Since slice 4a.5 the image holds the claude SHIM (a link to swarmbox-shim, found on PATH); it is not the program.
+        r = in_image("sh", "-c", "for c in claude opencode gemini gcloud clasp go poetry; do p=$(command -v $c) && echo \"FOUND $c $p\"; done; true")
+        found = [l.split()[1:] for l in r.stdout.splitlines() if l.startswith("FOUND")]
+        self.assertEqual(found, [["claude", "/usr/local/lib/swarmbox/shims/claude"]], r.stdout)
+        r = in_image("sh", "-c", "readlink /usr/local/lib/swarmbox/shims/claude; "
+                     "find / -xdev \\( -name claude -o -name .claude \\) -not -path '/usr/local/lib/swarmbox/*' -not -path '/proc/*' 2>/dev/null; "
+                     "test ! -e /home/agent/.local && echo no-local")
+        self.assertEqual(r.stdout.split(), ["/usr/local/bin/swarmbox-shim", "no-local"], r.stdout)
 
     def test_chrome_devtools_mcp_version_matches_pin(self):
         with open(os.path.join(ROOT, "Dockerfile")) as f:

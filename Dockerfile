@@ -158,7 +158,10 @@ COPY container/scripts/swarmbox-attach.sh /usr/local/bin/swarmbox-attach
 COPY container/scripts/swarmbox-web.sh /usr/local/bin/swarmbox-web
 COPY container/scripts/swarmbox-tool.sh /usr/local/bin/swarmbox-tool
 COPY container/scripts/swarmbox-shim.sh /usr/local/bin/swarmbox-shim
+COPY container/tools/ /usr/local/lib/swarmbox/tools/
 COPY container/scripts/swarmbox-migrate.sh /usr/local/bin/swarmbox-migrate
+# The tool manifests (design 6.3) are read-only data of the image; `swarmbox-tool link --system` below generates the shims,
+# the index and tool-ports from them. No agent is installed here (D2): the first call of a shim installs it.
 # The helper archive (3.7.1, 9.3): what `swarmbox-entrypoint host-helper` writes. Phase 3 adds swarmbox-host and templates/
 # (container/host/); tool-ports is written by `swarmbox-tool link --system` below, always, empty when no manifest has ports.
 COPY cloudflare-setup.py /usr/local/share/swarmbox/host/cloudflare-setup.py
@@ -168,13 +171,18 @@ RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.
     chmod 755 /usr/local/bin/banner.sh /usr/local/bin/swarmbox-podman-service /usr/local/bin/swarmbox-pubkey \
         /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-tool /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-migrate /usr/local/bin/swarmbox-entrypoint && \
     chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py && \
-    chmod -R a+rX /etc/swarmbox/mcp && \
+    chmod -R a+rX /etc/swarmbox/mcp /usr/local/lib/swarmbox/tools && \
+    find /usr/local/lib/swarmbox/tools -name '*.sh' -exec chmod 755 {} + && \
     swarmbox-tool link --system
 
 # The shell fragment (design 6.6, 10.3) replaces the v0.1.0 echo lines: Debian's /etc/bash.bashrc leaves at once in a
 # non-interactive shell, so the line below runs for interactive shells only; swarmbox-attach sources the fragment
 # directly for a command run without a terminal (3.3).
 RUN printf '\n# SwarmBox shell fragment\n[ -r /etc/swarmbox/bashrc.sh ] && . /etc/swarmbox/bashrc.sh\n' >> /etc/bash.bashrc
+
+# The image-level shims are on the PATH of every process of the box, also outside a shell (design 10.2); the shell fragment puts the
+# user-level shims before them (6.2).
+ENV PATH=/usr/local/lib/swarmbox/shims:$PATH
 
 USER agent
 WORKDIR /home/agent

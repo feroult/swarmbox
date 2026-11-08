@@ -6,7 +6,7 @@
 #   attach    forwards to swarmbox-attach (slice 2.3: the grouped session, the idle window, `swarmbox <command>`)
 #   init      forwards to swarmbox-init (Phase 3 writes it; until then 127, named)
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
-#   tool      forwards to swarmbox-tool (the stub of slice 2.5 until Phase 4a)
+#   tool      forwards to swarmbox-tool (the real program since Phase 4a)
 #   host-helper
 #             writes the helper archive (box:/usr/local/share/swarmbox/host/) as a tar archive on stdout
 #   (none)    exit 64
@@ -254,23 +254,34 @@ serve() {
         warn "could not create the Git SSH key: swarmbox-pubkey not found"
     fi
 
-    # step 6 [W]: link the user-level tools (6.2; swarmbox-tool is a later phase)
+    # step 6 [W]: link the user-level tools (6.2): shims and index in the workspace
     if have swarmbox-tool; then
         log "step 6: swarmbox-tool link --user"
         run_logged swarmbox-tool link --user; rc=$?
         [ "$rc" = 0 ] || warn "linking the user tools failed (swarmbox-tool link exit $rc); see serve.log"
     else
-        log "step 6: swarmbox-tool is not installed yet (later phase), skipped"
+        log "step 6: swarmbox-tool not found, skipped"
     fi
 
-    # step 7 [W]: the MCP configuration (4.4, later slice), then prepare.sh of every tool (6.3, later phase)
-    log "step 7: the MCP registry is not implemented yet (design 4.4), skipped"
+    # step 7 [W]: the MCP configuration (4.4, later slice), then prepare.sh of every tool (6.3)
+    # The registry (4.4) is Phase 4b. The claude alias passes --mcp-config <workspace>/.claude/mcp-servers.json and claude refuses a
+    # missing file, so until the registry writes the real list, an empty one is left where there is none (decision [4a.5]).
+    log "step 7: the MCP registry is not implemented yet (design 4.4); an empty mcp-servers.json is left where there is none"
+    if [ ! -e "$HOME/.claude/mcp-servers.json" ]; then
+        if mkdir -p "$HOME/.claude" 2>/dev/null && printf '{"mcpServers": {}}\n' > "$HOME/.claude/mcp-servers.json.tmp" \
+            && mv -f "$HOME/.claude/mcp-servers.json.tmp" "$HOME/.claude/mcp-servers.json"; then
+            :
+        else
+            rm -f "$HOME/.claude/mcp-servers.json.tmp"
+            warn "could not write $HOME/.claude/mcp-servers.json; the claude alias may refuse to start"
+        fi
+    fi
     if have swarmbox-tool; then
         log "step 7: swarmbox-tool prepare"
         run_logged swarmbox-tool prepare; rc=$?
         [ "$rc" = 0 ] || warn "preparing the tools failed (swarmbox-tool prepare exit $rc); see serve.log"
     else
-        log "step 7: swarmbox-tool is not installed yet, tool preparation skipped"
+        log "step 7: swarmbox-tool not found, tool preparation skipped"
     fi
 
     # step 8 [W]: start the nested Podman service and check that it answers
@@ -328,7 +339,7 @@ serve() {
     if [ "${#with[@]}" -eq 0 ]; then
         log "step 12: WITH is empty, nothing to install, skipped"
     elif ! have swarmbox-tool; then
-        log "step 12: swarmbox-tool is not installed yet (later phase), the WITH tools (${with[*]}) skipped"
+        log "step 12: swarmbox-tool not found, the WITH tools (${with[*]}) skipped"
     else
         log "step 12: installing ${with[*]} in the background"
         (

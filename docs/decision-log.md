@@ -795,3 +795,29 @@ Context: new test file and a changed stub test.
 Chosen: tests/test_tool_install.py is in ci.yml and in the macOS exclusions of test_ci_workflow.py (bash 4 features, like the other tool tests) and described in CONTRIBUTING.md; test_tool_stub.py now checks the later-phase commands (use, remove, doctor, new) instead of install/run/update/list.
 Impact on the design: none.
 How to reverse: n/a.
+
+## [4a.5] The image ships the claude manifest and puts the image shims on PATH
+Context: the Dockerfile already copied swarmbox-tool and swarmbox-shim and ran `link --system`, but not `container/tools/`, so the image had 0 manifests, no shim, an empty index. The design 10.2 snippet also lists `ENV PATH=/usr/local/lib/swarmbox/shims:$PATH`, which the slice text does not mention.
+Options: (a) only copy the manifests; (b) also set the ENV PATH as the design says; (c) rely on bashrc.sh alone.
+Chosen: (b). `COPY container/tools/`, `chmod -R a+rX` on the tree and `chmod 755` on every `*.sh` in it (the installer must be executable whatever the checkout's modes are), all in the RUN that ends with `link --system`. ENV PATH so that non-shell processes (tmux commands, `podman exec`, `swarmbox-entrypoint <command>`) find the shim too; bashrc.sh still puts the user shims first. curl and flock were already in the image (checked in the built image), so nothing was added to the package list.
+Impact on the design: 6.2 (4a.5 state), 10.2 (snippet now shows the chmod and find). Image size delta against the 2.1 build: +343,292 bytes (1,751,732,768 against 1,751,389,476); with the ENV line 1,751,735,020.
+How to reverse: remove the COPY, the ENV line and the added chmod/find; the tests in test_dockerfile.py (ToolMachinery) name each one.
+
+## [4a.5] serve step 7 leaves an empty mcp-servers.json when there is none (not in the design)
+Context: with the claude manifest in the image, the generated alias is `claude --dangerously-skip-permissions --mcp-config $HOME/.claude/mcp-servers.json`. In a real throwaway box (first call really installed Claude Code 2.1.319) `claude` died with `Error: Invalid MCP configuration: MCP config file not found`, because the MCP registry that writes the file (4.4) is Phase 4b. So the alias, the design's own default, was unusable on a fresh workspace.
+Options: (a) leave it and document; (b) drop MCP_FLAGS from the claude manifest until 4b; (c) step 7 writes `{"mcpServers": {}}` only when the file does not exist.
+Chosen: (c), because it keeps the manifest as designed, never overwrites a user's or the future registry's file, and is a few lines in the entrypoint. Verified in a real box that `claude ... --mcp-config <empty file> -p hi` passes the MCP check and stops at `Not logged in`. Test: test_serve_steps (written when missing, kept when present).
+Impact on the design: 6.2 (4a.5 state) says it; 4.4 stays as written (the registry will write the real file at every start, replacing this one).
+How to reverse: delete the block under "step 7" in container/entrypoint.sh and its test; or take (b).
+
+## [4a.5] Container tests that assumed an image without tools or with the stub were changed
+Context: three existing checks broke for the right reason. test_web_container ran `tool install claude` expecting the stub's exit 70, which would now start a real download; test_bashrc_container expected no claude alias and ran `yolo` (default agent is the first manifest, claude, so it would install it: it did, once, in a throwaway box, before I saw it); test_image_build and the smoke `no-agent` step ran `command -v claude`, which now finds the shim.
+Chosen: `tool list` (shows claude "not installed") and `tool use` (still 70) replace the install; the bashrc test checks the real claude alias and runs yolo only with SWARMBOX_AGENT set to a fake or unknown agent; the no-agent checks accept exactly the shim path for claude, require `readlink` to be swarmbox-shim, and require no `claude` or `.claude` file outside /usr/local/lib/swarmbox and no ~/.local. No default test performs a real install.
+Impact on the design: none.
+How to reverse: n/a.
+
+## [4a.5] Smoke steps, B1 evidence, and what was not run
+Context: the slice asks for validate (real), shim-exists and index-contains-claude checks.
+Chosen: smoke_image.py has `tool-validate` (also fails on "0 manifest"), `tool-shim` (readlink, executable, `command -v claude` after sourcing bashrc.sh, no tools/claude directory) and `tool-index-ports` (index has the line `claude claude`, tool-ports exists and is 0 bytes); all reduced-capable. Reduced run on swarmbox-test-4a5-img: 8 passed, 0 failed, 2 skipped (the two nested steps). The real first-call install ran once by hand in a throwaway box (swarmbox-test-4a5-real, removed): 2.1.319, about 13 s, second call instant. Not run: the full smoke mode, the CI job (never ran), zsh/fish, arm64. No new test file was added, so ci.yml and test_ci_workflow.py needed no change. One serve-steps test failed once during development and passed in every later run (12 repeats of it alone, 4 full runs); I could not reproduce it and have no explanation, the same kind of unexplained flake as the SIGINT one in 2.7.
+Impact on the design: 6.2 (4a.5 state) carries the evidence.
+How to reverse: n/a.

@@ -183,6 +183,44 @@ class Contents(unittest.TestCase):
                 self.assertIn("rm -rf /var/lib/apt/lists/*", i)
 
 
+class ToolMachinery(unittest.TestCase):
+    """Slice 4a.5 (design 6.2, 10.2, D2): the image ships the real tool program, the manifests and the generated shims."""
+
+    def test_manifests_and_scripts_are_copied_to_their_places(self):
+        self.assertIn("COPY container/tools/ /usr/local/lib/swarmbox/tools/", INS)
+        self.assertIn("COPY container/scripts/swarmbox-tool.sh /usr/local/bin/swarmbox-tool", INS)
+        self.assertIn("COPY container/scripts/swarmbox-shim.sh /usr/local/bin/swarmbox-shim", INS)
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, "container", "tools", "claude", "tool.conf")))
+
+    def test_both_scripts_and_the_installers_are_executable(self):
+        chmod = [i for i in INS if i.startswith("RUN ") and "chmod 755" in i and "swarmbox-tool" in i]
+        self.assertEqual(len(chmod), 1)
+        self.assertIn("/usr/local/bin/swarmbox-tool", chmod[0])
+        self.assertIn("/usr/local/bin/swarmbox-shim", chmod[0])
+        # the installers and prepare scripts are run by the program: they must be executable and the tree readable
+        self.assertRegex(chmod[0], r"/usr/local/lib/swarmbox/tools")
+
+    def test_link_system_runs_after_every_copy_and_chmod_it_needs(self):
+        idx = [n for n, i in enumerate(INS) if "swarmbox-tool link --system" in i]
+        self.assertEqual(len(idx), 1)
+        for needle in ("COPY container/tools/", "COPY container/scripts/swarmbox-tool.sh", "COPY container/scripts/swarmbox-shim.sh",
+                       "COPY container/scripts/dirs.sh"):
+            first = [n for n, i in enumerate(INS) if i.startswith(needle)]
+            self.assertEqual(len(first), 1, needle)
+            self.assertLess(first[0], idx[0], needle)
+        self.assertIn("chmod 755", INS[idx[0]])  # same RUN as the chmod, so the link sees executable scripts
+        self.assertTrue(INS[idx[0]].startswith("RUN "))
+
+    def test_image_shims_are_on_the_path_of_every_process(self):
+        self.assertIn("ENV PATH=/usr/local/lib/swarmbox/shims:$PATH", INS)
+
+    def test_no_agent_is_installed_and_no_tool_state_is_baked(self):
+        self.assertNotIn("swarmbox-tool install", CODE)
+        self.assertNotIn("swarmbox-tool run", CODE)
+        self.assertNotIn(".local/share/swarmbox", CODE)
+        self.assertNotRegex(CODE, r"tools/claude")
+
+
 class OldDockerfile(unittest.TestCase):
     def test_v010_dockerfile_is_kept_for_build_sh(self):
         old = read("Dockerfile.v0.1.0")

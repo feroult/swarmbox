@@ -317,6 +317,41 @@ class PathAndEnvironment(Base):
         self.assertLess(out.index("BANNER-ART"), out.index("STARSHIP-INIT-RAN"))
 
 
+class RealClaudeManifest(Base):
+    """Slice 4a.5: the fragment reads the manifest the image ships (container/tools/claude), not a made-up one."""
+
+    def setUp(self):
+        super().setUp()
+        shutil.copytree(os.path.join(ROOT, "container", "tools"), self.imgtools, dirs_exist_ok=True)
+
+    def test_the_claude_alias_is_generated_with_the_yolo_flag_and_the_mcp_config(self):
+        r = self.interactive("alias claude")
+        self.assertIn("alias claude='claude --dangerously-skip-permissions --mcp-config %s/.claude/mcp-servers.json'" % self.home,
+                      r.stdout, r.stdout + r.stderr)
+
+    def test_the_alias_also_exists_in_command_mode(self):
+        r = self.command_mode("alias claude")
+        self.assertIn("--dangerously-skip-permissions --mcp-config", r.stdout, r.stdout + r.stderr)
+
+    def test_swarmbox_yolo_zero_generates_no_alias(self):
+        r = self.interactive("alias claude", SWARMBOX_YOLO="0")
+        self.assertNotRegex(r.stdout, r"alias claude=")
+
+    def test_yolo_calls_the_program_with_the_flags_once(self):
+        self.fake_agent("claude")
+        r = self.interactive("yolo --print hi", SWARMBOX_WITH="claude")
+        self.assertIn("RAN claude --dangerously-skip-permissions --mcp-config %s/.claude/mcp-servers.json --print hi" % self.home, r.stdout)
+        self.assertEqual(r.stdout.count("--dangerously-skip-permissions"), 1)
+
+    def test_the_path_has_the_user_shims_first_then_the_image_shims(self):
+        out = self.interactive('echo "P=$PATH"').stdout
+        path = [l for l in out.splitlines() if l.startswith("P=")][0][2:].split(":")
+        user_shims = os.path.join(self.data, "swarmbox", "shims")
+        self.assertEqual(path[0], user_shims)
+        self.assertLess(path.index(user_shims), path.index(self.imgshims))
+        self.assertLess(path.index(self.imgshims), path.index(os.path.join(self.home, ".local", "bin")))
+
+
 @unittest.skipUnless(shutil.which("shellcheck"), "shellcheck not installed")
 class Lint(unittest.TestCase):
     def test_shellcheck_bash_is_clean(self):
