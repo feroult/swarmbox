@@ -731,10 +731,23 @@ def build_parser():
     return p
 
 
+IMAGE_REF_RE = re.compile(r"^[A-Za-z0-9._/:@][A-Za-z0-9._/:@-]*$")
+
+
+def check_connector_image(args):
+    """The image is a bare argument of `podman run`: a leading '-' would be read as an option (security review SR-01)."""
+    image = args.connector_image or os.environ.get("SWARMBOX_CLOUDFLARED_IMAGE")
+    if image and not IMAGE_REF_RE.match(image):
+        die("the connector image '%s' is not an image reference (letters, digits and . _ / : @ - only, "
+            "not starting with '-')" % image)
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     if not 1 <= args.port <= 65535:
         die("--port must be 1-65535")
+    if args.command != "token":
+        check_connector_image(args)
     if args.command == "remove":
         return cmd_remove(args)
     if args.command == "token":

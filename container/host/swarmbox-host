@@ -392,6 +392,15 @@ valid_list() {
     return 0
 }
 
+# An image reference: the characters Podman accepts in one, and never a leading '-' (a reference is passed to Podman as a bare
+# argument, so a leading '-' would be read as an option: security review SR-01).
+valid_image_ref() {
+    case $1 in
+        -*|*[!A-Za-z0-9._/:@-]*) return 1 ;;
+    esac
+    return 0
+}
+
 # validate_value KEY VALUE: sets V_OUT (the value to store) or prints the rule and returns 1.
 validate_value() {
     _k=$1
@@ -482,9 +491,7 @@ validate_value() {
             valid_list valid_passable_env_name "$V_OUT" || { _bad "it must be a comma list, without spaces, of environment variable names (letters, digits, '_', not starting with a digit, not SWARMBOX_CLOUDFLARE_*)."; return 1; }
             ;;
         IMAGE)
-            case $V_OUT in
-                *[!A-Za-z0-9._/:@-]*) _bad "it must be an image reference: letters, digits and '.', '_', '/', ':', '@', '-' only."; return 1 ;;
-            esac
+            valid_image_ref "$V_OUT" || { _bad "it must be an image reference: letters, digits and '.', '_', '/', ':', '@', '-' only, not starting with '-' (Podman would read it as an option)."; return 1; }
             ;;
         CLOUDFLARE_TUNNEL_TOKEN)
             case $V_OUT in
@@ -1738,6 +1745,10 @@ connector_ensure() {
     [ "$C_WEB" = 1 ] || return 0
     resolve_tunnel_token || return 0
     cn_img=${SWARMBOX_CLOUDFLARED_IMAGE:-$CONNECTOR_IMAGE_DEFAULT}
+    if ! valid_image_ref "$cn_img"; then
+        warn "SWARMBOX_CLOUDFLARED_IMAGE is not an image reference (letters, digits and '.', '_', '/', ':', '@', '-' only, not starting with '-'); the connector was not started."
+        return 0
+    fi
     cn_state=missing
     if cn_o=$(podman container inspect --format '{{.Name}}|{{.State.Running}}|{{range .Config.Env}}{{println .}}{{end}}' "$CONNECTOR_NAME" 2> "$UP_ERRF"); then
         cn_n=${cn_o%%|*}
