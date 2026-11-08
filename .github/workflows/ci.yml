@@ -1,0 +1,119 @@
+# SwarmBox CI (design 13.4, plan section 3).
+#
+# This workflow only runs commands that already exist in the repository today: the python3 unit and function tests,
+# and shellcheck over the new shell files. Later phases of the plan add the image build, the smoke test, the
+# swarmbox-tool validate step, the zsh and fish function tests and the arm64 job (B31); they are not here on purpose.
+# It uses no secrets, publishes nothing and binds no ports on the runner outside 127.0.0.1.
+#
+# Open facts this file prepares (see docs/design.md Part B):
+#   B30  the macOS runner exists and what it provides. The "probe" step of the macos job prints
+#        /bin/bash --version and command -v podman. B30 stays [unverified] until the first real run of this job.
+#   B19  the macos job also prints sort -V behavior as a probe only (no assertion).
+name: ci
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1" # weekly, Monday 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: linux (ubuntu-24.04, podman >= 4.3)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Podman version guard (needs 4.3 or newer; ubuntu-24.04 ships 4.9)
+        run: |
+          podman --version
+          python3 - <<'PY'
+          import re, subprocess, sys
+          out = subprocess.run(["podman", "--version"], capture_output=True, text=True, check=True).stdout
+          v = tuple(int(x) for x in re.search(r"(\d+)\.(\d+)", out).groups())
+          if v < (4, 3):
+              sys.exit("podman %s is older than 4.3: pick a newer runner image or install Podman" % (v,))
+          PY
+      - name: Install test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tmux zsh fish shellcheck
+      - name: Shellcheck the new shell files
+        run: shellcheck -s sh container/scripts/dirs.sh
+      - name: Unit and function tests
+        run: |
+          python3 tests/test_ci_workflow.py
+          python3 tests/test_cloudflare_setup.py
+          python3 tests/test_design_partb.py
+          python3 tests/test_dirs.py
+          python3 tests/test_docs_consistency.py
+          python3 tests/test_helpers.py
+          python3 tests/test_history_audit.py
+          python3 tests/test_repo_files.py
+          python3 tests/test_spikes_common.py
+          python3 tests/test_ssh_key.py
+          python3 tests/test_starship.py
+          python3 tests/test_start_attach.py
+          python3 tests/test_start_fake_podman.py
+          python3 tests/test_start_init.py
+          python3 tests/test_start_timezone.py
+          python3 tests/test_start_web_connector.py
+          python3 tests/test_web_terminal.py
+
+  macos:
+    name: macos (bash 3.2, fake podman)
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe for B30 (what the macOS runner provides)
+        run: |
+          /bin/bash --version
+          command -v podman || echo "podman: not found (the function tests use a fake podman)"
+          python3 --version
+          sw_vers
+          printf '2.0.10\n2.0.9\n' | sort -V
+      - name: Function tests under bash 3.2 with a fake podman
+        run: |
+          python3 tests/test_dirs.py
+          python3 tests/test_helpers.py
+          python3 tests/test_start_fake_podman.py
+          python3 tests/test_start_init.py
+          python3 tests/test_start_timezone.py
+          python3 tests/test_ssh_key.py
+          python3 tests/test_starship.py
+          python3 tests/test_start_web_connector.py
+          python3 tests/test_cloudflare_setup.py
+          python3 tests/test_ci_workflow.py
+          python3 tests/test_design_partb.py
+          python3 tests/test_docs_consistency.py
+          python3 tests/test_repo_files.py
+
+  # Browser tests are slow and need chromium and ttyd: they run on the weekly schedule (and by hand), in a Debian
+  # container so that "chromium" is a real binary (on Ubuntu it is a snap stub).
+  browser:
+    name: browser tests (scheduled)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: debian:bookworm
+    steps:
+      - name: Install browser test tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git python3 tmux chromium ttyd
+      - uses: actions/checkout@v4
+      - name: Browser tests
+        run: |
+          python3 tests/test_clipboard_bridge.py
+          python3 tests/test_web_style.py
+          python3 tests/test_tmux_browser_keys.py

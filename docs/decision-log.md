@@ -348,3 +348,20 @@ Impact on the design: none (D37 and plan Phase 7 already allow either). How to r
 Context: for-each-ref output was first split on the wrong field, so ref names came out as "commit"; the tag-message scan therefore did not run in the first real run.
 Chosen: fixed (field 3) and re-ran; the 16 tests pass. The unit tests did not catch it because tag content was also reached through git log, so the report's numbers come from the fixed version only.
 Impact on the design: none. How to reverse: n/a.
+
+## [1.6] ci.yml: runner image, Podman guard, pinned versions, browser job split
+Context: plan section 3 asks for CI on a runner with Podman 4.3 or newer, browser tests kept out of the push path, a macOS job with a fake Podman, a weekly schedule, read-only permissions.
+Options: ubuntu-22.04 plus a Podman install; ubuntu-24.04 (Podman 4.9) with a guard; a container job.
+Chosen: ubuntu-24.04 with an explicit guard step that fails if podman is older than 4.3, because it needs no install and fails loudly if the image changes. Actions pinned to the major tag actions/checkout@v4 (not a SHA: SHAs cannot be looked up reliably offline; tags are enough for a repository with contents: read and no secrets; the owner may pin SHAs later). macOS job on macos-14 (arm64, bash 3.2 at /bin/bash). The three browser tests (clipboard_bridge, web_style, tmux_browser_keys) run only on the weekly schedule or workflow_dispatch, in a debian:bookworm job container because chromium on Ubuntu is a snap stub; this container and apt package set (chromium, ttyd from bookworm) are [unverified] on a real runner. The macOS job runs every test file except the browser ones and those needing tmux or GNU tools (test_web_terminal, test_start_attach, test_spikes_common, test_history_audit); tests/test_ci_workflow.py enforces that the Linux job runs exactly the tests/test_*.py on disk minus the scheduled ones, and that macOS runs the rest of the allowed set, so a new test file cannot be forgotten. The macOS subset is a guess: some tests may fail on bash 3.2 or BSD tools on the first run, which is the purpose of the job. Concurrency group per ref with cancel-in-progress; timeouts on every job; workflow_dispatch added.
+Impact on the design: 13.4 and Part B B30 text updated; the image build, smoke test, validate, migration test, zsh and fish function tests and arm64 job are left to later phases (stated as a comment in the file).
+How to reverse: edit .github/workflows/ci.yml and the constants at the top of tests/test_ci_workflow.py.
+
+## [1.6] B30 reduced: probe prepared, not closed
+Context: B30 asks what a real macOS runner provides; that cannot be observed here.
+Chosen: record B30 as prepared with the exact probe step ("Probe for B30": /bin/bash --version, command -v podman, python3 --version, sw_vers, sort -V as an extra B19 probe) and keep it [unverified]; no evidence tag. The first real CI run closes it. Whether the owner's CI already ran is not checkable here.
+Impact on the design: B30 row and 13.4 note say so. How to reverse: n/a.
+
+## [1.6] Validation method for ci.yml
+Context: YAML mistakes cannot be proven without a runner.
+Chosen: test_ci_workflow.py parses with PyYAML (not installed system-wide; the test pip-installs it into a venv under the temp dir, fallback to a text-marker class that always runs); actionlint 1.7.12 downloaded to a mktemp dir with its checksum verified, run with shellcheck integration (clean), then deleted; the test runs it only when ACTIONLINT or PATH points at it, otherwise it is skipped, so a plain run reports a skip. Every command was also run locally once.
+Impact on the design: none. How to reverse: n/a.

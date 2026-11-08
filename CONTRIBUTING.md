@@ -26,6 +26,7 @@ python3 tests/test_docs_consistency.py
 
 | File | What it covers |
 |------|----------------|
+| `test_ci_workflow.py` | static checks of `.github/workflows/ci.yml` (parsed with PyYAML; runs actionlint when `ACTIONLINT` or PATH has it) |
 | `test_clipboard_bridge.py` | the clipboard bridge page script (needs a browser; about 40 s) |
 | `test_cloudflare_setup.py` | `cloudflare-setup.py` against a fake Cloudflare API |
 | `test_design_partb.py` | the shape of Part B of the design |
