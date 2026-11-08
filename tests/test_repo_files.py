@@ -78,7 +78,7 @@ class NoticesTest(unittest.TestCase):
 
     def test_unverified_is_tagged_not_guessed(self):
         t = read("THIRD_PARTY_NOTICES.md")
-        self.assertIn("[unverified]", t)
+        self.assertIn("[owner-check:", t)
         self.assertIn("[verified:", t)
 
 
