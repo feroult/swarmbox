@@ -169,5 +169,55 @@ class PhaseOneCloseTest(unittest.TestCase):
             self.assertTrue(ok, "%s may write to a real home path: %s" % (h, line.strip()))
 
 
+PHASE2_SLICES = ["2.1-image", "2.2-serve", "2.3-attach", "2.4-shell", "2.5-entrypoint-web", "2.6-migration", "2.7-smoke-closeout"]
+
+
+class PhaseTwoCloseTest(unittest.TestCase):
+    """Phase 2 close-out (slice 2.7)."""
+
+    def test_status_row_per_slice(self):
+        status = read("docs", "implementation-status.md")
+        for sl in PHASE2_SLICES:
+            r = [l for l in status.splitlines() if l.startswith("| %s |" % sl)]
+            self.assertEqual(len(r), 1, sl)
+            cells = [c.strip() for c in r[0].strip().strip("|").split("|")]
+            self.assertIn(cells[2], ("done", "partial", "blocked"), sl)
+
+    def test_gate_row_is_partial_until_the_smoke_test_runs_in_ci(self):
+        status = read("docs", "implementation-status.md")
+        r = [l for l in status.splitlines() if l.startswith("| 2.gate |")]
+        self.assertEqual(len(r), 1)
+        cells = [c.strip() for c in r[0].strip().strip("|").split("|")]
+        self.assertEqual(cells[2], "partial")
+        for word in ("CI", "B28", "M1", "reduced"):
+            self.assertIn(word, r[0], word)
+
+    def test_decision_log_has_a_2_7_entry(self):
+        self.assertRegex(read("docs", "decision-log.md"), r"(?m)^## \[2\.7\] ")
+
+    def test_partb_rows_for_phase2_facts_carry_a_tag_or_unverified(self):
+        design = read("docs", "design.md")
+        sec = design[design.index("#### Results of Phase 2 (slice 2.7"):design.index("## 15. Roadmap")]
+        for fact in ("B3", "B17", "B13, B36", "B28"):
+            rows = [l for l in sec.splitlines() if l.startswith("| 2.7 %s |" % fact)]
+            self.assertEqual(len(rows), 1, fact)
+            self.assertRegex(rows[0], r"\[verified: [^\]]+\]|\[unverified\]", fact)
+        b28 = [l for l in sec.splitlines() if l.startswith("| 2.7 B28 |")][0]
+        self.assertIn("[unverified]", b28)
+        self.assertIn("Open", b28)
+        for l in sec.splitlines():
+            if l.startswith("| 2.7 B3 |") or l.startswith("| 2.7 B17 |") or l.startswith("| 2.7 B13"):
+                self.assertIn("reduced: development box, no nested Podman in the box", l)
+
+    def test_plan_says_m1_is_reduced_only(self):
+        plan = read("docs", "implementation-plan.md")
+        self.assertRegex(plan, r"Slice 2\.7 wrote `tests/smoke_image\.py`")
+        self.assertIn("M1 is reached as reduced only", plan)
+
+    def test_smoke_files_exist(self):
+        for f in ("tests/smoke_image.py", "tests/test_smoke_skeleton.py"):
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, f)), f)
+
+
 if __name__ == "__main__":
     unittest.main()

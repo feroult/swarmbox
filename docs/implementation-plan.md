@@ -132,6 +132,8 @@ Tests first
 
 **Where the smoke test runs.** The image smoke test needs a third level of nesting: the development box (level 1, itself a container) runs the image under test as a throwaway box (level 2), whose nested Podman runs a container (level 3). That is not available in the development box, so the full smoke test runs **in CI (or on the owner's host)**. In the development box only **reduced checks** run (the image as a level-2 container without the nested-Podman step: readiness with warnings, the tmpfs, the page, `attach`, the exit codes), and each result is tagged `[reduced: development box, no nested Podman in the box]` and is never recorded as the full result.
 
+  Slice 2.7 wrote `tests/smoke_image.py` (eight steps; reduced run passed 6 and skipped 2 in the development box, each result tagged), the `smoke` job of `ci.yml` (never run) and closed Phase 2 as **partial**: the smoke test has not passed in CI, so **M1 is reached as reduced only**; B28 stays open until the first CI run (decisions [2.7]).
+
 Closes: B3, B13 (the product tests; the spikes fed them), B24, B26 (`id node` in the base image), B27 (image size), B28 (the cgroup settings; needs the third level, so in CI), B29 (the migration), B36 (the idle window).
 
 **Exit criteria:** the smoke test passes in CI; in a throwaway box two `attach` calls land in the same session as two windows and the idle window is gone; `swarmbox-entrypoint attach false` fails and `attach true` succeeds; the web terminal serves the built page with the user's three settings substituted; the migration test passes; the reduced checks pass in the development box and are tagged as such. **M1.**
@@ -391,7 +393,7 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B25 | Go checksum source | 0 | feeds 4b; closed in 0.4 |
 | B26 | UID of the base image's `node` user | 2 | |
 | B27 | 2.5 GB size target | 2 | |
-| B28 | cgroup manager settings | 2 | |
+| B28 | cgroup manager settings | 2 | check written in 2.7, open until CI |
 | B29 | Layout migration | 2 | closed on a fixture in 2.6; the run on a real workspace copy is Phase 6 |
 | B30 | macOS CI runner | 1 | |
 | B31 | arm64 build and run | 3 | |

@@ -651,3 +651,34 @@ Impact on the design: 12.4 says so. How to reverse: add a marker file under the 
 Context: B29 asks for a run on a copy of a real v0.1.0 workspace; this build must not touch the owner's workspace.
 Chosen: the fixture lists the files written by the v0.1.0 scripts (settings.json and its link, web-terminal.conf, .lock and .log files, podman.sock, ttyd-index.html, opencode-local.json) plus `memory/`, whose producer (the removed memory service) is not in v0.1.0's tree, so its content is a placeholder. podman.sock is a plain file in most tests and a real Unix socket in one. B29 is closed with the tag "fixture, not a real v0.1.0 workspace"; the owner runs it on a copy in Phase 6.
 Impact on the design: Part B row and 12.4 say so. How to reverse: n/a.
+
+## [2.7] The smoke test is one script with steps, not a unittest class; two modes and an opt-in
+Context: the plan asks for the layer 2 smoke test with a reduced run in the development box and a full run in CI. The other container tests are unittest classes that skip unless `SWARMBOX_IMAGE_BUILD=1`.
+Options: another unittest file; a standalone script with its own step list and report.
+Chosen: standalone `tests/smoke_image.py` (not named `test_*.py`, so the CI test-set equality checks stay as they are) with a `Step` list, a `run_steps` runner and one output line per step (`STEP <id> PASS|FAIL|SKIP ...`). A step that needs the third nesting level is reported SKIP in the reduced run, never PASS. Reduced results carry the tag `[reduced: development box, no nested Podman in the box]`; full results carry `[full]`. Without `SWARMBOX_IMAGE_BUILD=1` or `SWARMBOX_SMOKE_FULL=1` nothing runs and every step is SKIP (exit 0). A failed step does not stop later steps; exit 1 if any failed. `tests/test_smoke_skeleton.py` checks the structure without a container.
+Impact on the design: 13.3 layer 2 names the file and the two modes.
+How to reverse: wrap the step functions in a unittest class.
+
+## [2.7] Steps beyond the five named by the plan, and what was left out
+Context: the plan lists readiness, tmpfs emptied on restart, page built, `swarmbox-tool validate`, nested Podman. Its exit criteria also name attach and the neutral image, and B28 needs a nested step.
+Chosen: eight steps: ready, tmpfs-restart (includes `podman stop` time and exit 143, B3), page-built, tool-validate, attach-session (two windows of one session, the idle window gone, exit codes), no-agent (D2), and the two full-only steps nested-podman and nested-cgroup (B28: the image's engine settings must read cgroupfs and file; the result of the systemd manager is printed for the record and does not fail the run). Left out for Phase 3, because they need the host helper that does not exist yet: `up` waiting for the new marker, `up` exit 6 and 7, `reset`, the held-back `serve`, attach's 60 s not-ready exit (13.3 layer 2 text keeps them as the target). The nested container image is `docker.io/library/debian:bookworm-slim`, pulled in CI [unverified, never run].
+Impact on the design: 13.3 says which host-side checks arrive with Phase 3.
+How to reverse: edit the STEPS list.
+
+## [2.7] The throwaway box in the smoke test uses a random high port inside its own network namespace
+Context: the box's ttyd listens on 7681, and 7681 is the port of the live web terminal in the development box's network namespace. The box under test has its own namespace, so it would not collide, but a test file that names 7681 is one typo away from a collision.
+Chosen: like the 2.5 tests, the smoke test passes the test-only variables SWARMBOX_TEST_WEB_PORT (random 20000 to 40000) and SWARMBOX_TEST_WEB_IFACE=lo, so ttyd is on the container's loopback; nothing is published; a static test forbids 7681, 8889 and 43323 in the file. The real default port 7681 and the real bind interface are therefore not exercised by this test (they are covered only by the swarmbox-web tests with a fake ttyd). In full mode the same switches are used.
+Impact on the design: none; the switches are test-only (see 5.1 and decision [2.5]).
+How to reverse: drop the two `-e` flags and use 7681 in the box's own namespace.
+
+## [2.7] The CI `smoke` job
+Context: the plan wants the smoke job in ci.yml, not run here.
+Chosen: job `smoke` on ubuntu-24.04: `podman build` of the real Dockerfile (tag swarmbox-test-img-ci), the full smoke test (the job fails if any step was skipped), the container tests on the same image (they keep their reduced switch inside), image removed by exact name with `if: always()`. The `test_smoke_skeleton.py` test runs in the `linux` and `macos` jobs (it starts no container). The job runs on push and pull request. Actionlint was not available in this run (see the 1.6 row), so the YAML was checked by `tests/test_ci_workflow.py` only. Risks never observed: the ubuntu runner's rootless Podman may need `--device /dev/net/tun` permissions or a different `unmask` behavior; the first CI run decides, and the failure would be recorded as the B28 result.
+Impact on the design: 13.4 describes the job.
+How to reverse: delete the job and the two list entries.
+
+## [2.gate] Phase 2 is partial, M1 is reached as reduced only
+Context: the exit criterion "the smoke test passes in CI" cannot be met here (no repository push, no third nesting level).
+Chosen: the gate row is `partial`; every other exit criterion is met in the reduced form (see the status file). B28 is recorded as open and `[unverified]`; B3, B17, B13, B36 are rechecked with the reduced tag. Nothing in the design was contradicted by the smoke test.
+Impact on the design: Part B results table of slice 2.7; plan Phase 2 paragraph.
+How to reverse: when the first CI run passes the full smoke test, change the 2.gate row to done and close B28 with its tag.
