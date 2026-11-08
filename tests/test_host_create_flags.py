@@ -474,7 +474,7 @@ class ToolPortsTest(Base):
         p = self.cf(env={"SWARMBOX_WITH": "clasp"})
         self.assertEqual(p.returncode, 0)
         self.assertIn("127.0.0.1:43323:43323", p.stdout)
-        self.assertNotIn("abc", p.stdout)
+        self.assertEqual([v for v in values(p.stdout.split("\n")[:-1], "-p") if not v.endswith(":7681")], ["127.0.0.1:43323:43323"])
         self.assertIn("tool-ports", p.stderr)
 
 
