@@ -133,6 +133,7 @@ jobs:
           python3 tests/test_tool_link.py
           python3 tests/test_tool_manifest.py
           python3 tests/test_tool_claude_real.py
+          python3 tests/test_tool_real.py
           python3 tests/test_tool_shim.py
           python3 tests/test_tool_stub.py
           python3 tests/test_web_build.py
@@ -269,3 +270,31 @@ jobs:
           python3 tests/test_clipboard_bridge.py
           python3 tests/test_web_style.py
           python3 tests/test_tmux_browser_keys.py
+
+  # The real-installer tests (design 6.9, 13.4): every tool of container/tools is installed for real in a throwaway container
+  # ("no side effects", "survives a reset"). They download several hundred MB, so they run on the weekly schedule and by hand,
+  # never on push. Nothing is pushed and no port is published. [unverified] that this job ever ran on a runner.
+  real-tools:
+    name: real installers (scheduled)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      SWARMBOX_IMAGE_TAG: swarmbox-test-img-ci-real
+      SWARMBOX_TEST_NETWORK: "1"
+      SWARMBOX_IMAGE_BUILD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Podman version
+        run: podman --version
+      - name: Build the image (not pushed)
+        run: podman build -t "$SWARMBOX_IMAGE_TAG" .
+      - name: Real installers, one table row per tool
+        run: |
+          python3 tests/test_tool_real.py 2>&1 | tee real.out
+          if grep -q 'skipped' real.out; then echo "real tests were skipped"; exit 1; fi
+      - name: Real first call of Claude Code
+        run: python3 tests/test_tool_claude_real.py
+      - name: Remove the image
+        if: always()
+        run: podman rmi "$SWARMBOX_IMAGE_TAG" || true

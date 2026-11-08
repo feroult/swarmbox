@@ -26,7 +26,7 @@ NOT_ON_MACOS = SCHEDULED_ONLY | {"test_web_terminal.py", "test_start_attach.py",
                                  "test_history_audit.py", "test_serve_steps.py", "test_serve_container.py",
                                  "test_attach_command.py", "test_attach_container.py",
                                  "test_bashrc_fragment.py", "test_bashrc_container.py", "test_entrypoint.py",
-                                 "test_pubkey_ensure.py", "test_migration.py", "test_mcp_registry.py", "test_tool_stub.py", "test_tool_manifest.py", "test_tool_link.py", "test_tool_install.py", "test_tool_prepare.py", "test_tool_opencode.py", "test_tool_gemini_clasp_poetry.py", "test_tool_go_gcloud.py", "test_tool_use_remove.py", "test_tool_new.py", "test_tool_doctor.py", "test_tool_image_level.py", "test_image_with_tools.py", "test_record_checksums.py", "test_tool_shim.py", "test_tool_claude_real.py", "test_web_build.py", "test_web_container.py"}
+                                 "test_pubkey_ensure.py", "test_migration.py", "test_mcp_registry.py", "test_tool_stub.py", "test_tool_manifest.py", "test_tool_link.py", "test_tool_install.py", "test_tool_prepare.py", "test_tool_opencode.py", "test_tool_gemini_clasp_poetry.py", "test_tool_go_gcloud.py", "test_tool_use_remove.py", "test_tool_new.py", "test_tool_doctor.py", "test_tool_image_level.py", "test_image_with_tools.py", "test_record_checksums.py", "test_tool_shim.py", "test_tool_claude_real.py", "test_tool_real.py", "test_web_build.py", "test_web_container.py"}
 PARSER = "none"
 
 
@@ -163,6 +163,23 @@ class Structure(unittest.TestCase):
         self.assertIn("/bin/bash --version", text)
         self.assertIn("command -v podman", text)
         self.assertIn("B30", TEXT)
+
+    def test_real_tools_job_is_scheduled_and_runs_the_real_installer_tests(self):
+        job = DOC["jobs"]["real-tools"]
+        self.assertIn("schedule", job["if"])
+        self.assertNotIn("push", job["if"])
+        self.assertEqual(job["env"]["SWARMBOX_TEST_NETWORK"], "1")
+        self.assertEqual(job["env"]["SWARMBOX_IMAGE_BUILD"], "1")
+        self.assertTrue(job["env"]["SWARMBOX_IMAGE_TAG"].startswith("swarmbox-test-"))
+        text = "\n".join(l for _, l in run_lines(DOC, "real-tools"))
+        self.assertIn("python3 tests/test_tool_real.py", text)
+        self.assertIn("python3 tests/test_tool_claude_real.py", text)
+        self.assertIn("skipped", text)  # a skipped real test fails the job
+        last = [s for s in job["steps"] if s.get("if") == "always()"]
+        self.assertEqual(len(last), 1)
+        self.assertIn('podman rmi "$SWARMBOX_IMAGE_TAG"', last[0]["run"])
+        # the harness part runs on every push in the linux job
+        self.assertIn("test_tool_real.py", tests_run(DOC, "linux"))
 
     def test_browser_job_is_scheduled_only(self):
         job = DOC["jobs"]["browser"]
