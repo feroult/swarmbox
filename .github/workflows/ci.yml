@@ -99,6 +99,7 @@ jobs:
           python3 tests/test_host_shells.py
           python3 tests/test_host_socket.py
           python3 tests/test_host_remote.py
+          python3 tests/test_host_remote_e2e_fake.py
           python3 tests/test_host_up.py
           python3 tests/test_host_update.py
           python3 tests/test_registry_e2e.py
@@ -235,6 +236,7 @@ jobs:
           python3 tests/test_host_shells.py
           python3 tests/test_host_socket.py
           python3 tests/test_host_remote.py
+          python3 tests/test_host_remote_e2e_fake.py
           python3 tests/test_host_up.py
           python3 tests/test_host_update.py
           python3 tests/test_registry_e2e.py
