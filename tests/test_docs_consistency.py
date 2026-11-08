@@ -567,6 +567,20 @@ class PhaseFiveDocsTest(unittest.TestCase):
         self.assertTrue(any(l.startswith("| 5.owner-checklist") for l in status.splitlines()))
         self.assertRegex(read("docs", "decision-log.md"), r"(?m)^## \[5\.6\] ")
 
+    def test_phase_5_rows_and_gate_are_in_the_status_file(self):
+        status = read("docs", "implementation-status.md")
+        for n in range(1, 8):
+            self.assertEqual(len([l for l in status.splitlines() if l.startswith("| 5.%d-" % n)]), 1, n)
+        g = [l for l in status.splitlines() if l.startswith("| 5.gate")]
+        self.assertEqual(len(g), 1)
+        self.assertIn("| partial |", g[0])
+        for word in ("real Cloudflare account", "reboot", "unverified", "cloudflared"):
+            self.assertIn(word, g[0])
+        plan = read("docs", "implementation-plan.md")
+        sec = plan[plan.index("## 8. Phase 5"):plan.index("**Exit criteria:**", plan.index("## 8. Phase 5"))]
+        self.assertIn("5.7 state", sec)
+        self.assertRegex(read("docs", "decision-log.md"), r"(?m)^## \[5\.7\] ")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -279,6 +279,8 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 
 **5.6 state:** `docs/cloudflare.md` was rewritten and carries the owner checklist in Phase 5 (not Phase 6), so Phase 6 only re-reads it for the final README links; the end-to-end checklist is the status row `5.owner-checklist`. Design 5.2 ("5.6 state"), D14, D16, D28, D39.
 
+**5.7 state:** closed as partial. Reduced: the end-to-end run is `tests/test_host_remote_e2e_fake.py` (real wrapper and script, fake Cloudflare API on loopback, fake podman). Not run: the owner's account run, the pull of the pinned cloudflared tag, the Access login from the internet, the connector after a reboot, macOS. Status rows `5.7-closeout`, `5.gate`, `5.owner-checklist`.
+
 **Exit criteria:** the tests pass; the owner runs one end-to-end setup against their own Cloudflare account and reaches the box from outside.
 
 ---
