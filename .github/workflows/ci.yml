@@ -114,6 +114,7 @@ jobs:
           python3 tests/test_final_audit.py
           python3 tests/test_parity.py
           python3 tests/test_pubkey_ensure.py
+          python3 tests/test_release_docs.py
           python3 tests/test_repo_files.py
           python3 tests/test_retired_coverage.py
           python3 tests/test_retired.py
@@ -251,6 +252,7 @@ jobs:
           python3 tests/test_ci_workflow.py
           python3 tests/test_design_partb.py
           python3 tests/test_docs_consistency.py
+          python3 tests/test_release_docs.py
           python3 tests/test_repo_files.py
           python3 tests/test_retired_coverage.py
           python3 tests/test_retired.py
