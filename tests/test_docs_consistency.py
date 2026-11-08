@@ -937,5 +937,84 @@ class OwnerChecksSixSixTest(unittest.TestCase):
         self.assertIn("docs/owner-checks.md", PLAN)
 
 
+class PhaseSixCloseTest(unittest.TestCase):
+    """Slice 6.7: the Phase 6 close-out. The design tree matches the repository, every reference resolves, M3 is reduced."""
+
+    STATUS = read("docs", "implementation-status.md")
+    LOG = read("docs", "decision-log.md")
+    RETIRED = ("start.sh", "build.sh", "Dockerfile.v0.1.0", "lib", "container/scripts/init.sh", "container/opencode",
+               "container/web/web-terminal.sh")
+
+    def test_retired_files_are_absent_from_the_tree(self):
+        for p in self.RETIRED:
+            self.assertFalse(os.path.exists(os.path.join(ROOT, p)), p)
+
+    def _table_13_1(self):
+        sec = DESIGN[DESIGN.index("### 13.1 "):DESIGN.index("### 13.2 ")]
+        return [l for l in sec.splitlines() if l.startswith("| `") and "test_" in l.split("|")[1] or l.startswith("| `helpers.py`")]
+
+    def test_13_1_names_only_existing_files_or_marks_them_retired(self):
+        rows = self._table_13_1()
+        self.assertEqual(len(rows), 12)  # helpers.py and the 11 files of v0.1.0
+        for row in rows:
+            cells = [c.strip() for c in row.strip("|").split("|")]
+            name = cells[0].strip("`")
+            exists = os.path.isfile(os.path.join(ROOT, "tests", name))
+            self.assertTrue(exists or "deleted" in cells[2], "%s: neither on disk nor marked deleted" % name)
+            if not exists:
+                # the replacement named in the row must exist
+                for m in re.findall(r"`(test_[a-z0-9_]+\.py)`", cells[2]):
+                    self.assertTrue(os.path.isfile(os.path.join(ROOT, "tests", m)), "%s -> %s" % (name, m))
+
+    def test_13_1_lists_every_test_file_on_disk(self):
+        sec = DESIGN[DESIGN.index("### 13.1 "):DESIGN.index("### 13.2 ")]
+        final = sec[sec.index("**Final file list (slice 6.7)"):].split("\n\n")[0]
+        listed = set(re.findall(r"`(test_[a-z0-9_]+\.py)`", final))
+        disk = {f for f in os.listdir(os.path.join(ROOT, "tests")) if re.match(r"test_.*\.py$", f)}
+        self.assertEqual(sorted(disk - listed), [], "on disk but not listed")
+        self.assertEqual(sorted(listed - disk), [], "listed but not on disk")
+
+    def test_plan_cites_only_known_decisions_and_facts(self):
+        ds = set(re.findall(r"(?m)^\| (D\d+) \|", DESIGN))
+        self.assertEqual(len(ds), 39)
+        for d in set(re.findall(r"\bD(\d+)\b", PLAN)):
+            self.assertIn("D" + d, ds, "plan cites D" + d)
+        for b in set(re.findall(r"\bB(\d+)\b", PLAN)):
+            self.assertTrue(1 <= int(b) <= 36, "plan cites B" + b)
+
+    def test_code_fences_are_balanced_in_every_doc(self):
+        for path in glob.glob(os.path.join(ROOT, "docs", "*.md")) + [os.path.join(ROOT, n) for n in ("README.md", "CONTRIBUTING.md")]:
+            with open(path, encoding="utf-8") as f:
+                n = sum(1 for l in f if l.lstrip().startswith("```"))
+            self.assertEqual(n % 2, 0, path)
+
+    def test_design_and_plan_carry_the_6_7_state(self):
+        sec = DESIGN[DESIGN.index("## 12. Comparison"):DESIGN.index("## 13. Tests and CI")]
+        self.assertIn("6.7 state", sec)
+        self.assertIn("**6.7 state", PLAN)
+        for text in (sec, PLAN):
+            self.assertIn("M3", text)
+        self.assertIn("reduced", PLAN[PLAN.index("**6.7 state"):])
+
+    def test_status_has_every_phase_6_row_and_a_partial_gate(self):
+        for sid in ("6.1-parity", "6.2-port-old-tests", "6.3-retire-scripts", "6.4-migration-e2e", "6.5-docs-rewrite",
+                    "6.6-owner-checks", "6.7-closeout"):
+            self.assertRegex(self.STATUS, r"(?m)^\| %s \| " % re.escape(sid))
+        gate = re.search(r"(?m)^\| 6\.gate \|.*$", self.STATUS)
+        self.assertIsNotNone(gate)
+        row = gate.group(0)
+        self.assertIn("| partial |", row)
+        for needle in ("push", "owner-check.sh", "macOS", "WSL", "backup", "decision log", "M3"):
+            self.assertIn(needle, row, needle)
+
+    def test_every_phase_6_slice_has_a_decision_log_entry(self):
+        for n in range(1, 8):
+            self.assertRegex(self.LOG, r"(?m)^## \[6\.%d\] " % n)
+
+    def test_audit_script_is_documented(self):
+        self.assertIn("dev/final-audit.sh", read("CONTRIBUTING.md"))
+        self.assertIn("final-audit", PLAN)
+
+
 if __name__ == "__main__":
     unittest.main()

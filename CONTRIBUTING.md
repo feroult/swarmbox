@@ -40,6 +40,7 @@ python3 tests/test_docs_consistency.py
 | `test_dockerfile.py` | static checks of the 2.0 `Dockerfile` (no build) |
 | `test_docs_consistency.py` | cross-references, D and B numbers and code fences of the design and the plan |
 | `test_entrypoint.py` | the subcommands of `container/entrypoint.sh` (serve aside): dispatch with arguments kept, `host-helper` archive, any other command, fake programs on `PATH` |
+| `test_final_audit.py` | `dev/final-audit.sh`, the read-only end-of-phase audit (clean tree, no retired path tracked, branch `opensource`, only the tag `v0.1.0`, no `swarmbox-test-` leftovers), on throwaway git repositories with a fake `podman` |
 | `test_function_bash.py` | the generated function in bash (the shared case table of `tests/function_cases.py`: word routing, quoting, exit codes, the bootstrap, seeds) with fake `podman` and fake helper; the same table under `bash --posix`; a lint for bash 4 constructs (bash 3.2 itself is not run here) |
 | `test_function_fish.py` | the same case table in fish |
 | `test_function_zsh.py` | the same case table in zsh |
