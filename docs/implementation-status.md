@@ -5,6 +5,7 @@ Progress of the build, one row per slice. Status is done, partial or blocked.
 | Slice | Title | Status | Commits | Tests | Notes |
 |-------|-------|--------|---------|-------|-------|
 | 0.preflight | Environment check and baseline | done | see git log | 11 test files run, all pass | Baseline below |
+| 0.1-harness-container-spikes | Spike harness and the tmux/PID 1/container-lifecycle spikes (B3, B13, B9, B17, B18) | done | see git log | tests/test_spikes_common.py 7 tests OK; the five spikes run to completion (b17, b18, b9, b13, b3 each print RESULT CONFIRMED); the 11 older test files still pass | B9, B17, B18 closed; B3 and B13 spiked and left open for Phase 2 (reduced: bash stand-ins). Design corrected in 3.3 (wrapper trap, no-terminal form), 4.2 (supervisor stays alive), Part B results table. ttyd is the box's own 1.7.7 binary. Scratch image swarmbox-test-spikes-img:1 removed at the end. |
 
 ## Environment limits
 
