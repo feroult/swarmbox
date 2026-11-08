@@ -386,3 +386,49 @@ Options: add a Phase 1 outcome section to the plan; keep the outcome only in the
 Chosen: status file only because the plan states intent and the status file records results (same split as Phase 0 apart from the design's outcome table, which exists because Part B needed it).
 Impact on the design: none.
 How to reverse: copy the 1.gate row into a "Phase 1 outcome" paragraph in the plan.
+
+## [2.1] The new Dockerfile takes the root path; the old one is renamed Dockerfile.v0.1.0 and build.sh gets one flag
+Context: the design puts the 2.0 image at the root `Dockerfile` (9.1), but `build.sh` runs `podman build .` and so builds whatever the root file is. The task said v0.1.0 `build.sh`, `start.sh` and `lib/` stay, and asked for a decision on how the two Dockerfiles coexist.
+Options: (a) new file elsewhere (for example `container/Dockerfile`), root untouched; (b) rename the old file to `Dockerfile.v0.1.0`, put the new one at the root and add `-f Dockerfile.v0.1.0` to the one `podman build` line of `build.sh`; (c) replace the root file and leave `build.sh` to build the slim image under the old name.
+Chosen: (b) because it matches the design's tree, keeps `./build.sh` producing exactly the v0.1.0 image (agents included) so the owner's workflow keeps working until Phase 6, and the build.sh change is one line plus a comment. Option (c) would silently give `start.sh` an image without agents.
+Impact on the design: 9.1 tree lists `Dockerfile.v0.1.0` and `dev/dev-build.sh`. `tests/test_repo_files.py` (notices) now reads both Dockerfiles; `tests/test_starship.py` reads `Dockerfile.v0.1.0` because its bashrc wiring checks describe the old image (the 2.0 image gets `bashrc.sh` in a later slice). Both old Dockerfile COPY sources (`container/scripts/init.sh`, `container/opencode/`, `container/web/web-terminal.sh`) must stay until Phase 6. `tests/test_dockerfile.py` asserts the `-f` flag in `build.sh`.
+How to reverse: `git mv Dockerfile.v0.1.0 Dockerfile` after restoring the old file contents and remove the `-f` flag. Phase 6 deletes `Dockerfile.v0.1.0` together with `build.sh`. The v0.1.0 file is also reachable with `git show v0.1.0:Dockerfile`. Not verified: I did not run `./build.sh` (it would tag the owner's image name `swarmbox`); the `-f` edit was checked by reading and by `tests/test_dockerfile.py`, and `Dockerfile.v0.1.0` is a pure rename (`git mv`), so its content is unchanged [unverified: a real `./build.sh` run].
+
+## [2.1] Dev build script: dev/dev-build.sh, scratch copy with the apt override
+Context: apt in a nested build fails with a setgroups error unless `APT::Sandbox::User "root";` is set, which must never be in the product Dockerfile.
+Options: a build argument that writes the file; a wrapper that edits the Dockerfile in place and restores it; a wrapper that writes a scratch copy outside the repository and builds from it with the repository as context.
+Chosen: the scratch copy, in `mktemp -d`, with the override as a `RUN` right after the first `FROM` (a conf file `/etc/apt/apt.conf.d/99swarmbox-dev-sandbox`). The script refuses any tag not starting with `swarmbox-test-` (plain name only: no registry, no `:tag`), defaults to `swarmbox-test-img-<random>`, removes the scratch directory on exit (`--keep-scratch` and `--dry-run` exist for tests), and only ever calls `podman build`. Location `dev/` is new; POSIX sh.
+Impact on the design: 9.1 lists `dev/dev-build.sh`. The first RUN of every scratch build adds a small layer (8.7 kB), so a scratch build differs from a CI build by that one layer and the conf file in the image.
+How to reverse: delete `dev/`, `tests/test_dev_build.py` and the CONTRIBUTING lines. CI builds will not need the override.
+
+## [2.1] Placeholder entrypoint so the image builds and runs
+Context: the Dockerfile needs `ENTRYPOINT swarmbox-entrypoint` and `CMD ["serve"]` (design 10.2), but the entrypoint and `serve` are later slices of Phase 2.
+Options: leave `container/entrypoint.sh` out and make the Dockerfile fail to build; ship a no-op that exits 0 for `serve`; ship a placeholder that fails loudly for the subcommands not written yet and already runs "any other command" as given.
+Chosen: the third. `serve`, `attach`, `init`, `pubkey`, `tool`, `host-helper` exit 70 with a message that names the placeholder; no command exits 64; anything else is `exec`ed (this is already the final behavior, design 10.2). A no-op exit 0 would let a later test pass against nothing.
+Impact on the design: none. Until the real entrypoint lands, a container started from this image with the default `CMD` exits at once with 70.
+How to reverse: the next slice overwrites `container/entrypoint.sh`.
+
+## [2.1] What the 2.1 Dockerfile copies and what it leaves out
+Context: slice 2.1 is the image only; the later slices add `swarmbox-tool`, `swarmbox-shim`, the host helper, `swarmbox-web`, `swarmbox-attach`, `swarmbox-init`, `bashrc.sh` and the MCP registry.
+Chosen: copy only files that exist and are needed by design 10.1 (dirs.sh, ssh-key.sh as swarmbox-pubkey, banner.sh, messages.sh, podman-service.sh, starship-init.sh, tmux and starship and ssh config, the web assets plus the new build-index.sh, `container/mcp/` as is, `cloudflare-setup.py` NOT yet). Left out until their slices: the `RUN ... swarmbox-tool link --system` wiring, the helper archive (`cloudflare-setup.py`, `tool-ports`), `swarmbox-web`, the `bashrc` fragment (so interactive shells in this image have no banner, aliases or Starship yet), the OpenCode template, the `COPY container/tools/`. `container/mcp/chrome-devtools/config.json` still says `npx -y chrome-devtools-mcp@latest`: switching `command` to the installed program is the registry work of the `serve` slice (design 4.4). `tests/test_dockerfile.py::test_every_copy_source_exists` makes a missing source a test failure, not a build failure.
+Impact on the design: none; the image in 2.1 is a stable base for the later slices, not a complete 2.0 image.
+How to reverse: n/a.
+
+## [2.1] Pinned versions and package choices
+Context: design 10.2 says every version is an ARG with a default.
+Chosen: `CHROME_DEVTOOLS_MCP_VERSION=1.12.0` (latest on npm on 2026-11-08, modified 2026-10-22, Apache-2.0, Node `^20.19 || ^22.12 || >=23` which fits Node 24), `UV_VERSION=0.9.5` (v0.1.0 installed uv unpinned: now pinned through the versioned installer URL `astral.sh/uv/<version>/install.sh`; the installer script's own checksum is not verified, and neither does the install check the binary's published sha256 [unverified: the checksum of uv; Phase 7 can add it]), `TTYD_VERSION=1.7.7` and `STARSHIP_VERSION=1.27.0` unchanged with their checksum checks, `NODE_VERSION=24` as a global ARG before FROM. Package lists are v0.1.0's minus the ones only gcloud needed (gnupg, lsb-release, software-properties-common, apt-transport-https) plus tmux; `apt-get install` keeps v0.1.0's flags (recommended packages are installed) because dropping them for Podman or Chromium could break the nested setup and the 2.5 GB budget was met anyway (1.75 GB).
+Impact on the design: 10.1 package list matches. `THIRD_PARTY_NOTICES.md` now lists chrome-devtools-mcp (license read with `npm view`).
+How to reverse: change the ARG defaults; a Dependabot-style bump is Phase 7.
+
+## [2.1] npm cache: separate build cache instead of npm cache clean
+Context: design 10.2 requires `/opt/npm-cache` owned by `agent`. My first build ran `npm install -g ...; npm cache clean --force; install -d -o agent ...`. The image test (npm cache entries not owned by agent) failed: `npm cache clean` left a root-owned `_logs` folder and `_update-notifier-last-checked` in `/opt/npm-cache`, which is the EACCES trap the design describes.
+Options: `chown -R` afterwards (rejected by design: duplicates a layer); run the install as agent (cannot write /usr/local/lib); give root's install its own cache and delete it.
+Chosen: `npm install -g --cache /tmp/npm-build-cache ... && rm -rf /tmp/npm-build-cache` in one RUN, with `/opt/npm-cache` created empty and owned by agent in its own earlier RUN. Verified: the rebuilt image has no entry in `/opt/npm-cache` that is not owned by agent.
+Impact on the design: 10.2 npm cache bullet carries the finding.
+How to reverse: n/a.
+
+## [2.1] The size test fails when the budget is exceeded
+Context: B27's 2.5 GB is a budget.
+Chosen: `tests/test_image_build.py` always prints the size and per-layer history and fails over 2.5 GB, so a regression is visible; today it is 1.75 GB. The image test is skipped unless `SWARMBOX_IMAGE_BUILD=1`; it is listed in ci.yml (linux and macos lists, where it skips) because a test above requires every test file to be listed. The CI job will not build the image yet (plan section 3: the image job is added with the smoke test in a later slice), so the image test has so far only run here, in the development box.
+Impact on the design: B24, B26, B27 closed with evidence tags (Part B, "Results of Phase 2"). B24 shows the MCP server answering `tools/list`; it did not open a page in Chromium.
+How to reverse: n/a.

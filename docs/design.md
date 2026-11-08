@@ -793,7 +793,7 @@ An MCP server is a tool that an agent can call (here: a browser controller).
 ```
 
 - `command`, `args`, `env`: as an MCP client expects (`env` optional). The browser options in `args` are today's file; what changes (D23) is that `npx -y` and `@latest` are gone and `command` is the program installed
-  in the image at build (see "Version of the MCP server" below). That the installed package provides a program named `chrome-devtools-mcp` that accepts these same options is `[unverified]` (B24).
+  in the image at build (see "Version of the MCP server" below). That the installed package provides a program named `chrome-devtools-mcp` that accepts these same options holds for the pinned 1.12.0: `--version` prints 1.12.0, `--help` lists `--executablePath`, `--headless`, `--chromeArg` and `--browserUrl`, and started with the registry's arguments the server answered `initialize` and `tools/list` over stdio (32 tools; no page was opened) [verified: container run of the built image swarmbox-test-img-<rand> (tests/test_image_build.py and an MCP stdio client on tools/list); 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); swarmbox-test-img-ba9849 built from the 2.1 Dockerfile] (B24).
 - `browserUrlArgs` (optional): when `BROWSER_URL` is non-empty, these `args` replace the server's `args`, with `${BROWSER_URL}` replaced by the value. This is how chrome-devtools
   switches from a local headless Chromium to a remote Chrome: today `build_base_mcp_config` does the same in code, with `args = ["-y","chrome-devtools-mcp@latest","--browserUrl=<url>"]` `[today]`.
 - **All entries are enabled by default.** The per-server off switch is a file `<workspace>/.config/swarmbox/mcp/<name>/config.json` containing `{"enabled": false}`; user-level files with the same
@@ -1375,6 +1375,8 @@ Existing paths are kept where they work. **New** marks proposed additions.
 ```
 .
 ├── Dockerfile                       # the image (section 10)
+├── Dockerfile.v0.1.0                # new: today's image, kept for build.sh until Phase 6 (decision [2.1])
+├── dev/dev-build.sh                 # new: builds the image in the development box (apt override in a scratch copy)
 ├── README.md                        # 15-second pitch, install, first use
 ├── LICENSE                          # new: Apache-2.0 (D25)
 ├── SECURITY.md                      # new: threat model, how to report
@@ -1469,7 +1471,7 @@ image either: it runs from its own image, on the host.
 
 - **User:** fixed `agent`, UID/GID 1000. No `USER_UID`/`HOST_OS` build arguments; the host user is mapped at run time
   (`keep-id`, 3.6). `sudo` without a password is intentional: the box is the sandbox. **How the user is made.** The base image `node:24-slim` already has a user `node` with UID and GID 1000
-  (expected from Node's official images; not checked for this tag here `[unverified]`, B26, to be confirmed by the image build test). The Dockerfile renames it instead of adding a second user:
+  (`podman run --rm node:24-slim id node` prints `uid=1000(node) gid=1000(node)`; the built image has `id agent` = 1000 and no user `node` [verified: tests/test_image_build.py; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); node:24-slim and swarmbox-test-img-ba9849], B26). The Dockerfile renames it instead of adding a second user:
   `usermod -l agent node`, `groupmod -n agent node`, `usermod -d /home/agent -m agent`, `usermod -s /bin/bash agent`, and `agent ALL=(ALL) NOPASSWD: ALL` appended to `/etc/sudoers`.
   v0.1.0 does the same when the requested UID already exists (its `USER_UID` defaults to 1000) and otherwise creates the user with `groupadd` and `useradd` `[today]`; 2.0 keeps only the rename branch.
 - **Directories:** `WORKDIR /home/agent`, which is the workspace mounted from the host.
@@ -1499,11 +1501,10 @@ image either: it runs from its own image, on the host.
   afterwards, which duplicates them in a new layer.
 - **Pinning:** every version is an `ARG` with a default; checksums are verified when published.
 - **Size budget:** the neutral image should stay under about 2.5 GB. Today's image is about 4.2 GB, of which agents, gcloud,
-  clasp, Go and Poetry are roughly 2 GB `[verified: layer sizes of the v0.1.0 image on the maintainer's machine; command, date, Podman version and OS not recorded]`. B12 could not re-record this: no SwarmBox image exists in the build box, and rebuilding the owner's image was out of bounds; only parts were measured (the `node:24-slim` base is 225 MB and Claude Code under `--prefix` is 325 MB plus a 156 MB cache), so the 4.2 GB figure stays as recorded `[unverified]` (B12). The 2.5 GB figure is a budget, not a
-  measurement of the proposed build `[unverified]` (B27).
+  clasp, Go and Poetry are roughly 2 GB `[verified: layer sizes of the v0.1.0 image on the maintainer's machine; command, date, Podman version and OS not recorded]`. B12 could not re-record this: no SwarmBox image exists in the build box, and rebuilding the owner's image was out of bounds; only parts were measured (the `node:24-slim` base is 225 MB and Claude Code under `--prefix` is 325 MB plus a 156 MB cache), so the 4.2 GB figure stays as recorded `[unverified]` (B12). The 2.5 GB figure is a budget. The 2.1 build measured **1.75 GB** (`podman image inspect` size 1751389476 bytes); per layer: base `node:24-slim` about 232 MB, system packages 617 MB, Podman and its network packages 102 MB, Chromium 689 MB, uv 53 MB, the Python venv 16 MB, `chrome-devtools-mcp` 13 MB, ttyd 1.4 MB, the rest (configuration, scripts, the page, Starship) under 25 MB. Chromium is the biggest single item (D24) [verified: podman image inspect and podman history; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); swarmbox-test-img-ba9849 built from the 2.1 Dockerfile, which has no tool preinstalled and a placeholder entrypoint] (B27).
 - **Flavors (optional):** CI may also publish `-claude`-style tags built with `WITH_TOOLS`, for users who want zero first-run wait.
 - **npm cache:** the image creates `box:/opt/npm-cache` owned by `agent` (created with the right owner, not `chown -R` afterwards) and sets `NPM_CONFIG_CACHE=/opt/npm-cache`. It must be owned by `agent`, because an `npm` run as root at build leaves root-owned entries
-  that make a later `npm` as `agent` fail with `EACCES` (v0.1.0's `Dockerfile` comment around lines 332 to 334 `[today]`). Installers clean or redirect it (6.4).
+  that make a later `npm` as `agent` fail with `EACCES` (v0.1.0's `Dockerfile` comment around lines 332 to 334 `[today]`). Installers clean or redirect it (6.4). Found by the 2.1 image test: `npm cache clean --force` is not enough, it leaves a root-owned `_logs` folder and a stamp file in the cache, so the build's own `npm install -g` as root uses a separate cache (`--cache /tmp/npm-build-cache`) that it removes in the same `RUN`.
 - **Environment:** `LANG=C.UTF-8`, `NPM_CONFIG_CACHE` outside the home, `BROWSER=none`, `CHROME_BIN` and `PUPPETEER_*` (kept: the
   chrome-devtools MCP needs them with the local Chromium). `ANTHROPIC_MODEL` is no longer set in the image. Chromium stays in the image
   in 2.0 for the chrome-devtools MCP (D24); that is revisited when its size is measured. `chrome-devtools-mcp` is installed at build at a pinned version (D23, 4.4).
@@ -1801,10 +1802,10 @@ Each test below is run in a throwaway container or with fakes, never on the box 
 | B21 | The install line's `podman run --rm -e SHELL <image> init` delivers the host's `SHELL` to `init` (so `init` prints the right syntax by its basename, D20), including on macOS through the Podman machine, and a value that is not bash, zsh or fish gives bash | On a Mac (zsh) and a Linux host (bash, and with `SHELL=/usr/bin/fish` if fish is installed) run the install line without `--shell` and read the printed syntax; run it with `SHELL` unset | 3.1, 3.7.5 |
 | B22 | The helper keeps the config file at mode 600 whenever it holds the tunnel token, and refuses a looser mode, on Linux, macOS and a WSL home on a Windows drive (D28) | Fake helper test with `stat`; then on each platform: `config set CLOUDFLARE_TUNNEL_TOKEN`, read the mode, `chmod 644`, run `remote status`, check the warning and that the token is ignored | 3.7.3 |
 | B23 | The POSIX `sh` helper runs unchanged under macOS `/bin/sh`, dash and busybox `sh` (D16) | Run the helper's unit tests with each shell as the interpreter | 3.7.1 |
-| B24 | The package `chrome-devtools-mcp`, installed with `npm install -g` at build, provides a program of that name that accepts today's options without `npx` (D23) | In a throwaway container install the pinned version, run `chrome-devtools-mcp --help`, start it with the registry's arguments and list its tools from an MCP client | 4.4, 10.1 |
+| B24 | **Closed in 2.1 (4.4, 10.1 carry the result).** The package `chrome-devtools-mcp`, installed with `npm install -g` at build, provides a program of that name that accepts today's options without `npx` (D23) | In a throwaway container install the pinned version, run `chrome-devtools-mcp --help`, start it with the registry's arguments and list its tools from an MCP client | 4.4, 10.1 |
 | B25 | **Closed in 0.4 (6.12 carries the result).** Go's official tarball has a publisher checksum that the same maintainer script as gcloud's (D29) can record | Read go.dev's download page and its JSON listing; download both architectures; compare with the computed checksum | 6.12 |
-| B26 | The base image `node:24-slim` has a user `node` with UID and GID 1000 that the Dockerfile can rename to `agent` | `podman run --rm node:24-slim id node`; build the image and run `id agent` | 10.2 |
-| B27 | The neutral image stays under about 2.5 GB | Build the image; `podman images` and `podman history`; record the size per layer | 10.2 |
+| B26 | **Closed in 2.1 (10.2 carries the result).** The base image `node:24-slim` has a user `node` with UID and GID 1000 that the Dockerfile can rename to `agent` | `podman run --rm node:24-slim id node`; build the image and run `id agent` | 10.2 |
+| B27 | **Closed in 2.1 (10.2 carries the result; the size is 1.75 GB).** The neutral image stays under about 2.5 GB | Build the image; `podman images` and `podman history`; record the size per layer | 10.2 |
 | B28 | The cgroup manager `cgroupfs` and the file event logger are the right settings for Podman inside the box (the reason is not written in v0.1.0's Dockerfile) | In a throwaway box run a nested container with the settings, then with the systemd manager, and read the errors | 10.5 |
 | B29 | The layout migration (`.swarmbox/` to the XDG layout, every file of the table in 12.4) works and never overwrites an existing destination | The migration test of 13.3 layer 3 on a fixture workspace, then once on a copy of a real v0.1.0 workspace | 12.4, 13.3 |
 | B30 | **Prepared in 1.6, still `[unverified]` until the first real run of `ci.yml`: the probe step of its `macos` job prints `/bin/bash --version` and `command -v podman`; no evidence tag is claimed.** The CI provider's macOS runner exists for the function tests (bash 3.2) and whether it provides Podman | Run a trivial workflow on the macOS runner: `/bin/bash --version`, `command -v podman` | 13.4 |
@@ -1854,7 +1855,7 @@ State of every Phase 0 fact, who closes what is left, and what could not be done
 | B9 | Closed | none | 7.3. |
 | B10 | Closed | none | 745 MB saved for `@opencode/cli`. |
 | B11 | Closed | none | Correction: Google's checksum covers the unversioned URL only, D29 computes the pinned one. |
-| B12 | Reduced | Phase 2 (image size, B27) | The 4.2 GB image size was not measured (no image here, never rebuild the box's); keep-id with host UID 1000 only (B7); fish not tested for `$0`. |
+| B12 | Reduced | none left in Phase 2 (B27 closed in 2.1: the new image is 1.75 GB) | The 4.2 GB size of the v0.1.0 image stays unmeasured and `[unverified]` (never rebuild the box's); keep-id with host UID 1000 only (B7); fish not tested for `$0`. |
 | B13 | Reduced | Phase 2 | Spiked with a stand-in for `swarmbox-attach`; the real one closes it. |
 | B14 | Open | owner | Documentation only, `[unverified]` until tried in a real Cloudflare dashboard (needs an account; not touched here). |
 | B16 | Reduced | owner, on a host with systemd | Unit and policy checked on 4.3.1; the reboot itself is `[unverified]` (no systemd here). |
@@ -1867,6 +1868,14 @@ State of every Phase 0 fact, who closes what is left, and what could not be done
 | B15 | Open, not doable here | owner, on a clean Mac (Phase 6) | Needs a clean macOS. |
 
 Also not doable here, rechecked later: the macOS parts of B19, B21, B22, B23 and B34 (Phase 6, after their Linux parts close in Phase 3) and the real-registry run of B20 (Phase 7). The spike scripts and how they become tests are listed in `tests/spikes/README.md`.
+
+#### Results of Phase 2 (slice 2.1: the image)
+
+| Fact | Result | Evidence |
+|---|---|---|
+| B24 | Closed. `chrome-devtools-mcp` 1.12.0 installed with `npm install -g` provides the program of that name; `--help` lists the registry's options; started with the registry's arguments it answered `initialize` and `tools/list` over stdio with 32 tools. Not tested: opening a page in Chromium (needs the box's run-time flags; Phase 5 or the smoke test). | [verified: tests/test_image_build.py plus an MCP stdio client; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); swarmbox-test-img-ba9849] |
+| B26 | Closed. `node:24-slim` (Debian 12, Node 24.22.2) has `uid=1000(node) gid=1000(node)`; the rename gives `agent` UID and GID 1000 and no `node`. | [verified: tests/test_image_build.py; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); node:24-slim and swarmbox-test-img-ba9849] |
+| B27 | Closed. 1.75 GB against the 2.5 GB budget (layers in 10.2). Chromium 689 MB and the base packages 617 MB dominate. | [verified: podman image inspect and history; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); swarmbox-test-img-ba9849] |
 
 ## 15. Roadmap
 
