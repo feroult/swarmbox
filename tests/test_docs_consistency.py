@@ -582,5 +582,44 @@ class PhaseFiveDocsTest(unittest.TestCase):
         self.assertRegex(read("docs", "decision-log.md"), r"(?m)^## \[5\.7\] ")
 
 
+class ParityTableTest(unittest.TestCase):
+    """Slice 6.1: design 13.2 maps every row of the feature catalog (8.4) to tests of tests/test_parity.py that exist."""
+
+    @classmethod
+    def setUpClass(cls):
+        s = DESIGN.index("### 8.4 Feature catalog")
+        e = DESIGN.index("## 9. Repository layout")
+        cls.catalog = [l for l in DESIGN[s:e].splitlines()
+                       if l.startswith("|") and not l.startswith("|---") and not l.startswith("| Area")]
+        s = DESIGN.index("### 13.2 Parity")
+        cls.section = DESIGN[s:DESIGN.index("### 13.3 Test layers")]
+        cls.defined = set(re.findall(r"(?m)^    def (test_\w+)\(", read("tests", "test_parity.py")))
+
+    def test_the_catalog_has_14_rows(self):
+        self.assertEqual(len(self.catalog), 14)
+
+    def test_every_catalog_row_is_in_the_table_with_existing_tests(self):
+        for n, row in enumerate(self.catalog, 1):
+            area, feature = [c.strip() for c in row.strip().strip("|").split("|")[:2]]
+            line = [l for l in self.section.splitlines() if l.startswith("| %02d |" % n)]
+            self.assertEqual(len(line), 1, "row %02d (%s) is not in the table of 13.2" % (n, feature[:40]))
+            self.assertIn(feature.replace("|", "/"), line[0], "row %02d names another feature than 8.4" % n)
+            names = re.findall(r"`(test_row%02d_\w+)`" % n, line[0])
+            self.assertTrue(names, "row %02d has no test" % n)
+            for t in names:
+                self.assertIn(t, self.defined, "row %02d names %s, which does not exist" % (n, t))
+
+    def test_every_named_test_exists_and_the_12_sections_are_covered(self):
+        for t in re.findall(r"`(test_(?:row\d\d|removed|kept|map)_\w+)`", self.section):
+            self.assertIn(t, self.defined, t)
+        for word in ("test_removed_host_network", "test_removed_uuid", "test_map_ports", "test_map_no_shell",
+                     "test_kept_remote_browser"):
+            self.assertRegex(self.section, word)
+
+    def test_the_reduced_tag_is_explained(self):
+        self.assertIn("[reduced:", self.section)
+        self.assertIn("[unverified]", self.section)
+
+
 if __name__ == "__main__":
     unittest.main()

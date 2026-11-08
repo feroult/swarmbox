@@ -304,10 +304,12 @@ class PathAndEnvironment(Base):
         self.manifest("zeta", 'KIND=tool\nPROVIDES="zeta"', shell_sh="export ZETA=1\n")
         self.assertIn("1", self.interactive("echo $ZETA").stdout)
 
-    def test_ls_colors_and_uuid_of_v0_1_0_are_kept(self):
-        r = self.interactive("alias ll; type uuid | head -1")
+    def test_ls_colors_of_v0_1_0_are_kept_and_uuid_is_gone(self):
+        # design 12.2 removes the personal `uuid()` function (decision [6.1])
+        r = self.interactive("alias ll; type uuid 2>&1 | head -1")
         self.assertIn("ls -alF --color=auto", r.stdout)
-        self.assertIn("uuid is a function", r.stdout)
+        self.assertNotIn("uuid is a function", r.stdout)
+        self.assertNotIn("uuid()", open(FRAGMENT).read())
 
     def test_starship_is_initialised_last_when_present(self):
         init = os.path.join(self.tmp, "starship-init-fake.sh")

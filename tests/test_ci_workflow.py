@@ -26,7 +26,7 @@ NOT_ON_MACOS = SCHEDULED_ONLY | {"test_web_terminal.py", "test_start_attach.py",
                                  "test_history_audit.py", "test_serve_steps.py", "test_serve_container.py",
                                  "test_attach_command.py", "test_attach_container.py",
                                  "test_bashrc_fragment.py", "test_bashrc_container.py", "test_entrypoint.py",
-                                 "test_pubkey_ensure.py", "test_migration.py", "test_mcp_registry.py", "test_tool_stub.py", "test_tool_manifest.py", "test_tool_link.py", "test_tool_install.py", "test_tool_prepare.py", "test_tool_opencode.py", "test_tool_gemini_clasp_poetry.py", "test_tool_go_gcloud.py", "test_tool_use_remove.py", "test_tool_new.py", "test_tool_doctor.py", "test_tool_image_level.py", "test_image_with_tools.py", "test_record_checksums.py", "test_tool_shim.py", "test_tool_claude_real.py", "test_tool_real.py", "test_web_build.py", "test_web_container.py"}
+                                 "test_pubkey_ensure.py", "test_migration.py", "test_mcp_registry.py", "test_tool_stub.py", "test_tool_manifest.py", "test_tool_link.py", "test_tool_install.py", "test_tool_prepare.py", "test_tool_opencode.py", "test_tool_gemini_clasp_poetry.py", "test_tool_go_gcloud.py", "test_tool_use_remove.py", "test_tool_new.py", "test_tool_doctor.py", "test_tool_image_level.py", "test_image_with_tools.py", "test_record_checksums.py", "test_tool_shim.py", "test_tool_claude_real.py", "test_tool_real.py", "test_web_build.py", "test_web_container.py", "test_parity.py"}
 PARSER = "none"
 
 
