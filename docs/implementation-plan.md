@@ -322,6 +322,8 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 
 **7.3 state:** `docs/security-review.md` is written from a reading of the helper, the three function templates, `swarmbox-init.sh` and `cloudflare-setup.py`: 15 findings, none open (five fixed with a regression test each, ten documented, reasons in decision log `[7.3]`). `tests/test_security_review.py` (adversarial tests on the real helper with the fake Podman) also checks the document. shellcheck 0.9.0 on the helper and `swarmbox-init.sh`: clean. Not covered, `[unverified]`: macOS, a real WSL, Podman older than 4.3.
 
+**7.4 state:** `.github/dependabot.yml` (Dependabot, weekly: `github-actions`, `docker`) and `.github/pull_request_template.md` exist. Dependabot cannot read `tool.conf`, the Dockerfile `ARG` pins or the pinned cloudflared image: `CONTRIBUTING.md` "Bumping pinned versions" lists each as a manual bump, with the `dev/record-checksums.sh` step for go and gcloud. `tests/test_update_bot_config.py` checks the config and that every pin is covered or listed. Actions stay pinned by version tag. Regex behavior of a Renovate manager was not added (untestable here). `release.yml` is not part of this slice.
+
 - **Logging policy:** no telemetry; logs stay local under `<workspace>/.local/state/swarmbox/` and `host:~/.local/state/swarmbox/` (design 12.5); stated in `SECURITY.md` and the README.
 - The Renovate or Dependabot configuration that bumps the pinned versions and the base image (10.4).
 - `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md` complete; the README is the 15-second pitch.
