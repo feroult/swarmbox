@@ -682,3 +682,25 @@ Context: the exit criterion "the smoke test passes in CI" cannot be met here (no
 Chosen: the gate row is `partial`; every other exit criterion is met in the reduced form (see the status file). B28 is recorded as open and `[unverified]`; B3, B17, B13, B36 are rechecked with the reduced tag. Nothing in the design was contradicted by the smoke test.
 Impact on the design: Part B results table of slice 2.7; plan Phase 2 paragraph.
 How to reverse: when the first CI run passes the full smoke test, change the 2.gate row to done and close B28 with its tag.
+
+## [4a.1] Test-only environment overrides for the image and user manifest levels
+Context: `swarmbox-tool` reads the image level from `/usr/local/lib/swarmbox/tools` and the user level from `$SB_CONFIG_DIR/tools`; tests need fixture folders, and the dev box must not read its own real configuration.
+Options: (a) a command-line flag for every level; (b) test-only environment variables in the style of SWARMBOX_TEST_HOST_DIR; (c) always derive everything from HOME and XDG variables.
+Chosen: (b). SWARMBOX_TEST_IMAGE_TOOLS (image level), SWARMBOX_TEST_USER_TOOLS (user level; empty counts as unset, so the real path through dirs.sh and XDG can also be tested) and the existing SWARMBOX_TEST_LIB (folder with dirs.sh; the script also falls back to the dirs.sh next to it, so a source checkout works). Not in the configuration table of design 8. In addition `validate DIR` takes a folder argument as a product feature, because CI must check `container/tools` in the repository.
+Impact on the design: 6.9 describes `validate [DIR]`; the variables are listed in the header of the script only.
+How to reverse: delete the three lines that read the variables and run the tests under HOME and XDG instead.
+
+## [4a.1] Manifests are loaded by sourcing them in a subshell; the install.sh lint is only a lint
+Context: design 6.3 says `tool.conf` is a shell-sourceable file. Sourcing executes whatever the file contains.
+Options: (a) source in a subshell; (b) write a restricted KEY=VALUE parser in bash; (c) python3 (not in the image).
+Chosen: (a), as the design says, with three guards: only the image and user levels are ever read (D18, there is an absence test that runs with the working directory inside a fake project and checks that a manifest there is never sourced); the subshell runs with cwd in the manifest folder, stdout and stdin discarded, and the known keys unset first so that the environment cannot supply a missing field; a manifest that calls `exit` or does not parse counts as not sourced. The user level is the user's own workspace, so the trust boundary is the same as for any shell startup file the user owns. A restricted parser (b) would be safer but would change the manifest format the design settled (`MCP_FLAGS="--mcp-config $HOME/..."` relies on expansion). The `install.sh` lint (apt, sudo, writes outside the prefix) is explicitly documented as a lint: it skips full-line comments, does not understand quoting or variables, and a hostile script passes it. The real protection for user-level tools is that the user wrote them.
+Impact on the design: 6.9 now says so (4a.1 state).
+How to reverse: replace `load_manifest` with a parser; the tests only use the file format.
+
+## [4a.1] Extra validate rules and the shape of the claude installer
+Context: the slice list names the rules of 6.9; a few gaps would make the loader unsafe or confusing.
+Chosen: also enforced: NAME equals the folder name and matches `^[a-z0-9][a-z0-9_-]*$`; PROVIDES entries match a plain command-name pattern (no slash); UPDATE is managed or self; SHA256 values are 64 hex digits; both SHA256_amd64 and SHA256_arm64 or neither. Folders whose name starts with a dot are not scanned (shell glob). `container/tools/claude/install.sh` downloads the vendor script into a variable first (so a failed download stops before anything runs) and then pipes it to `bash -s` with no argument for `latest` or the version as the one argument, instead of the design's literal `curl | bash -s`; the behavior is the same, the failure handling is stricter. It writes a small record `$TOOL_PREFIX/installed` (requested and reported version, arch), which the design's 6.7 describes as "SwarmBox's record of the install". The test runs the installer against a fake `curl`; the real vendor installer was not run in this slice (first-call install under `--prefix` and the B1 re-check belong to the shim slice) [unverified: that the vendor script accepts `-s` with no argument and with a version through `bash -s`; B1 recorded the version form only].
+Also: the smoke test step `tool-validate` and test_web_container now expect the real validate output ("manifest(s) checked") instead of the word "placeholder"; the image still has no tool manifests until the Dockerfile copies `container/tools` (a later 4a slice), so there it reports 0 manifests. test_tool_manifest.py is excluded from the macOS job like test_tool_stub.py: the tool uses bash 4 features (associative arrays, namerefs) and runs in the box's bash 5.
+Impact on the design: 6.9 (4a.1 state).
+How to reverse: remove the rule lines in `check_manifest`.
+
