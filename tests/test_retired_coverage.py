@@ -114,6 +114,7 @@ ALLOW = {
     "test_parity.py": "compares 2.0 with fixtures recorded from `git archive v0.1.0` (names the old files as history)",
     "record_v010_flags.py": "the recorder of those fixtures: runs the OLD start.sh out of `git archive v0.1.0`, never the files on disk",
     "test_migration.py": "fixtures built from v0.1.0 content (`git show v0.1.0:...`) for the layout migration",
+    "test_migration_e2e.py": "the end-to-end migration sequence; names the v0.1.0 scripts that wrote the fixture files (checked against `git show v0.1.0:...`)",
     "test_tool_opencode.py": "compares the 2.0 mirror and template with `git show v0.1.0:container/scripts/init.sh` and `...container/opencode/local-llm.json`",
     "test_dockerfile.py": "asserts the 2.0 Dockerfile does NOT use init.sh (an absence check)",
     "test_docs_consistency.py": "the docs rule that start.sh may be named only in a historic or migration context",
