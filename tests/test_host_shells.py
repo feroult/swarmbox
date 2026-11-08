@@ -150,7 +150,7 @@ class ShellMatrix(unittest.TestCase):
             lines = [l.split("#")[0] if not l.lstrip().startswith("#") else "" for l in f.read().splitlines()]
         code = "\n".join(lines)
         import re
-        for pat, why in ((r"(^|[\s;{(])local\s", "local"), (r"\becho\s+-e\b", "echo -e"), (r"\bread\s+-[a-qs-z]*s", "read -s"),
+        for pat, why in ((r"(^|[;{(&|]\s*)local\s+[A-Za-z_]", "local"), (r"\becho\s+-e\b", "echo -e"), (r"\bread\s+-[a-qs-z]*s", "read -s"),
                          (r"\[\[(?!:)", "[[ ]]"), (r"\bfunction\s+\w+", "function keyword"), (r"<<<", "here-string"),
                          (r"\$\{[A-Za-z_]+\[", "array"), (r"\bsource\s", "source"), (r"\bdeclare\b|\btypeset\b", "declare"),
                          (r"\$'", "ANSI-C quoting"), (r"&>", "&>")):

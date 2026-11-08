@@ -913,3 +913,60 @@ Impact on the design: 3.7.1, 3.7.3 and Part B. How to reverse: remove the tags a
 ## [3.1] What failed or was left
 Context/Chosen: I wrote the helper before the tests in this session, then moved it away to show the tests fail (62 errors and 3 failures in test_host_config.py, 1 test passing vacuously; the shell matrix test file 9 failures and 1 error). Not done here: arm64 and macOS runs, the Dockerfile copy of container/host/, bash 3.2 itself, a test of two helper calls writing the config at the same moment (the helper does not lock; the later `up` lock covers `up` only, so two parallel `config set` calls can lose one write [unverified, not tested]).
 Impact on the design: none. How to reverse: n/a.
+
+## [3.2] The order of the flags, and a flag with its value on two lines
+Context: 3.6 and 8.3 list the flags but not an order, and "one argument per line" does not say whether `-p 127.0.0.1:1:1` is one line or two.
+Options: (a) `--flag=value` everywhere; (b) the flag and its value on two lines, `=` only for flags written that way today (`--userns=...`, `--pids-limit=...`, `--tz=...`, `--init`); (c) one line `-p 127.0.0.1:1:1` (needs word splitting on the reading side, which 3.6 forbids).
+Chosen: (b), because Podman accepts both and the read loop of 3.6 then needs no parsing. The order is fixed by the golden files (`tests/fixtures/create-flags.default.golden`, `create-flags.full.golden`): namespace and limits, hostname, workspace mount, `--init`, `--tz`, tmpfs, tun device, unmask, nested volume, `--add-host`, the `-p` flags (user, tool, web), `-e NAME` for the listed variables, the `-e SWARMBOX_*` flags, the six labels. The listed variables come before the `SWARMBOX_*` ones, so when Podman sees a name twice the last one (ours) wins.
+Impact on the design: 3.7.2 "3.2 state" lists the order. How to reverse: edit cmd_create_flags and regenerate the golden files.
+
+## [3.2] How `-e NAME` is passed, and which keys the box gets as SWARMBOX_*
+Context: 7.1 says `-e NAME` without a value; 8.1 says the non-secret creation keys the box reads are passed as `-e SWARMBOX_<KEY>=value` but only the table's "passed" marks tell which.
+Chosen: `-e` on one line and the bare name on the next, only for names that are set in the terminal of the helper (an unset name passes nothing and gives the warning of 7.1 on standard error). The value is never in the output (a canary test checks create-flags, fingerprint and `--explain`, stdout and stderr). Passed as SWARMBOX_*: `WEB` and `YOLO` always (their defaults are 1, so the box need not know them), `WITH`, `AGENT` and `BROWSER_URL` when not empty, plus `SWARMBOX_NAME` (not in the table: `swarmbox-attach` already reads it for its messages, and a second box would otherwise print the wrong name). `SWARMBOX_WEB_PORT`, `HOSTNAME`, `TZ`, `INIT`, `PORTS`, `HOST_ACCESS`, `IMAGE`, `WORKSPACE` are host-only and not passed.
+Impact on the design: 3.7.2 "3.2 state". The box side still reads the old `BROWSER_URL` in `container/scripts/init.sh` (v0.1.0 leftover, 4b rewrites it with the MCP registry): until then `SWARMBOX_BROWSER_URL` is passed and not read. How to reverse: change the emit lines.
+
+## [3.2] Tests-only switches in the helper: SWARMBOX_TEST_OS, SWARMBOX_TEST_PROC_VERSION, SWARMBOX_LOCALTIME_FILE
+Context: the slice needs a macOS branch and a WSL probe that tests can drive, and the machine this runs on is itself WSL2.
+Chosen: `SWARMBOX_TEST_OS` (value `Darwin` turns the macOS extras on; default `uname -s`), `SWARMBOX_TEST_PROC_VERSION` (a file read instead of `/proc/version`), and `SWARMBOX_LOCALTIME_FILE` (the name `start.sh` already uses for the local time file). They are ordinary environment variables read in production code, as 3.1's other overrides are; setting one by hand only changes what the helper believes about the host. A missing or unreadable probe file means "not WSL".
+Impact on the design: 3.6 names the macOS switch. How to reverse: remove the three reads.
+
+## [3.2] macOS: `label=disable` only, the keep-id line stays 1000/1000
+Context: 3.6 said macOS adds `--security-opt label=disable` and "an explicit `keep-id:uid=<host>,gid=<host>`". With the fixed image user (uid 1000) the right line is already `keep-id:uid=1000,gid=1000`; `<host>` would map the host user to a different container user and break the fixed home.
+Chosen: only `label=disable` is added; the sentence in 3.6 is corrected. Nothing about macOS was run here ([unverified], Phase 6).
+Impact on the design: 3.6. How to reverse: add the second flag behind the same switch.
+
+## [3.2] Fingerprint: which keys, how INIT and TZ are taken, and the per-key explanation
+Context: 3.7.4 says "every creation-time key of 8.2" and D30 wants one line per differing key, but only four labels (image, workspace, ports, env-hash) carry a value; the fingerprint label is a hash.
+Options: (a) add one label per key (more than the six labels of 3.7.4); (b) keep six labels, name the differences that have a label, and one generic line for the rest; (c) store the whole input in a label.
+Chosen: (b), because the slice fixes the six labels. `--explain` names image, workspace, `PORTS` and the variables in the wording of 3.5, 3.7.4, 3.8 and 7.1, and says "another creation setting changed (the fingerprint differs); run `swarmbox reset` to apply" otherwise. This is weaker than "one line per differing key" for HOSTNAME, TZ, WITH and so on. Keys in the hash: NAME, WORKSPACE, HOSTNAME, TZ, INIT, PORTS, HOST_ACCESS, BROWSER_URL, WEB, WEB_PORT, WITH, AGENT, YOLO, ENV_KEYS (names), IMAGE. TZ is the resolved value, so `local` without a local time file equals `off`. INIT is the configured value (`auto` stays `auto`), because resolving it needs a throwaway container and the entry path may not start one (B35): `up` has to feed the value the box was created with (the inspect output has it). The workspace is the absolute path and the fingerprint never creates it. The ports line is the normalized list (a user entry `3000` becomes `127.0.0.1:3000:3000`), so the D30 example in 3.7.4 changed to that form. Empty values are written `KEY=`. SHA-256 comes from `sha256sum`, else `shasum -a 256`, else exit 3.
+Impact on the design: 3.7.2 and 3.7.4. How to reverse: add labels per key.
+
+## [3.2] fingerprint's interface until `up` exists: --label NAME=VALUE
+Context: 3.7.2 says `fingerprint` compares with the box's labels and exits 5 when there is no box; reading them needs Podman, which is `up`'s slice.
+Chosen: the labels are given as `--label NAME=VALUE` (or `--label=NAME=VALUE`), repeated. No labels: print the hash, exit 0; `--explain` then exits 5 "no box". Labels without `swarmbox.fingerprint`: exit 5. The later `up` calls the same functions after one `podman container inspect`.
+Impact on the design: 3.7.2 "3.2 state". How to reverse: n/a, extend with a Podman read.
+
+## [3.2] `--browser-url` and the "empty argument means 9222" parity
+Context: the slice asks for the remote-browser parity where an empty argument means 9222, but 2.0 has no `--remote-browser` flag and an empty `BROWSER_URL` in the config means "none".
+Chosen: `create-flags --browser-url VALUE` overrides the key for one call, and an empty VALUE means `http://host.containers.internal:9222`. Nothing in the function calls it; it exists so the parity table is testable. Bare number N is `http://host.containers.internal:N`, `host:port` gets `http://`, `http(s)://` is kept, anything else is exit 2 (the grammar of `config set`).
+Impact on the design: 3.7.2 "3.2 state". How to reverse: delete the option and its tests.
+
+## [3.2] Ports: a stricter address rule, the 0.0.0.0 warning, and which host ports count as duplicates
+Context: 3.1 accepted any digits and dots as an address (`1.2.3`, `999.1.1.1`); 6.3 says a tool port is skipped when `PORTS` "already lists an entry starting with that number".
+Chosen: the address must be four decimal numbers from 0 to 255 (also for `config set`); the warning ("port 0.0.0.0:80:80 is exposed on all network interfaces") is printed by `create-flags` only, not by `fingerprint`. A tool port is skipped when any user entry already publishes the same host port, whatever its address (so `0.0.0.0:43323:80` also stops the tool's `127.0.0.1:43323:43323`, which Podman would refuse as a clash anyway), which is a slightly wider rule than "starting with that number". Duplicate user entries are not removed. `[::]` forms stay refused by the grammar of 3.1.
+Impact on the design: 3.7.2 "3.2 state". How to reverse: loosen valid_ipv4; narrow the duplicate test.
+
+## [3.2] Workspace checks: made absolute, created with umask 022, WSL by three looks
+Context: 3.5 asks for creation with one message, a not-writable exit 4 and the D34 refusal; "relative workspace refused or made absolute" was left to this slice.
+Chosen: a relative or `~/` workspace is made absolute (against the current directory of the helper call), as `config set` already does; the folder (and its parents) is created with umask 022 (the helper's own umask is 077, which would make the home unreadable to other tools) and `swarmbox: created the workspace folder X` is printed once; a path that is a file, cannot be created or is not writable and searchable gives exit 4 with its own message. WSL is decided by `/proc/version` containing `microsoft` (any case), and then the path is refused if the written path, any symlink target on the way (`readlink` without options), or `pwd -P` of an existing folder is `/mnt/<one letter>` or below it. The `mnt` letter match includes upper case (Windows drive letters are case-insensitive). The refusal comes before any creation, so nothing is made under `/mnt`. The macOS "folder not shared with the Podman machine" check needs a throwaway container and is left to `up`.
+Impact on the design: 3.5 WSL row. How to reverse: edit check_workspace.
+
+## [3.2] TZ spellings of v0.1.0 kept, and a missing local time file only warns
+Context: `start.sh` took `off`, `OFF`, `none` and `NONE` as "no zone"; the grammar of 3.1 accepts `OFF` as a zone name.
+Chosen: `off`, `OFF`, `none` and `NONE` mean off (parity, D8); `local` without `/etc/localtime` gives no `--tz` and one warning (v0.1.0 was silent), and counts as `off` in the fingerprint.
+Impact on the design: none beyond 3.7.2 "3.2 state". How to reverse: drop the case.
+
+## [3.2] A guard on the output, and what the tests could and could not show
+Context: D7 says `--network=host` can never be emitted.
+Chosen: no code path builds such a line (every user value is validated and sits behind its own flag), and, as a last look, `guard_flags` stops with exit 70 and prints nothing if any line starts with `--network`, `--net=`, `--privileged`, `--pid=`, `--ipc=`, `--uts=`, `--cap-add` or `--userns=host`. The loop test runs 120 random combinations of ten keys (seeded) and every value of the hostile-value test; the guard itself is only reached by reading the source, not by a test input (no input can trigger it, which is the point) [unverified by execution]. Failed first: the new test file was run against the 3.1 helper (create-flags and fingerprint exit 70) and all 100 tests failed or errored for that reason before the code was written. Not done: macOS and bash 3.2 runs, a real WSL run, a host UID other than 1000, `up` reading the labels, the `shasum -a 256` branch on a real Mac (here it is a shim around the real `shasum` with `sha256sum` hidden).
+Impact on the design: none. How to reverse: n/a.

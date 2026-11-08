@@ -164,7 +164,7 @@ class VersionTest(Base):
         self.assertEqual(self.run_h("config", "frob").returncode, 2)
 
     def test_later_subcommands_say_so_and_do_nothing(self):
-        for c in ("create-flags", "up", "reset", "stop", "update", "url", "fingerprint", "remote"):
+        for c in ("up", "reset", "stop", "update", "url", "remote"):   # create-flags and fingerprint arrived in slice 3.2
             p = self.run_h(c)
             self.assertEqual(p.returncode, 70, c)
             self.assertIn("not implemented", p.stderr)

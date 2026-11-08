@@ -186,6 +186,8 @@ Tests first
 
 **3.1 state (done):** `container/host/swarmbox-host` (POSIX sh) with `version`, `config get|set|list|seed` and `env add|rm|list`, `container/host/VERSION`, `tests/test_host_config.py` and `tests/test_host_shells.py`; the B22, B23 and B34 Linux parts are checked (design Part B, "Results of Phase 3"). The other subcommands answer exit 70 until their slices.
 
+**3.2 state (done):** `create-flags` (the flag set of 3.6 and 8.3, the six labels, tool ports, ports and `BROWSER_URL` parity, the macOS extras behind `SWARMBOX_TEST_OS`, the guard that no line can be `--network=host`), `fingerprint [--explain] [--label ...]`, the workspace checks (created once, not writable, not a folder, the WSL refusal of D34), `tests/test_host_create_flags.py` and two golden files under `tests/fixtures/`. B32 is closed-reduced (a fake `/proc/version`; a real WSL run is Phase 6). Reading the labels from the box, `INIT=auto` resolution, `up`, `reset`, `stop`, `url`, `update` and `remote` are later slices.
+
 Closes: B5 (with the fallback; the spike fed it), B19 (`sort -V`, Linux and CI images), B20 (against the local registry), B21 (`-e SHELL`, Linux), B22 (tunnel token mode, Linux; WSL home rechecked in Phase 6), B23 (the helper under different `sh` implementations), B31 (arm64 build and run), B32 (the WSL refusal), B33 (the `up` lock and cleanup), B34 (the mode check), B35 (the fast path budget).
 
 **Exit criteria:** with a local registry and a placeholder `<org>`, on a clean Linux machine, the documented install line followed by `swarmbox` creates the box; a second terminal joins it; two terminals started at once create one box; `stop`, `reset` (offline after `update`) and `update` behave as specified; the function and helper tests pass in CI.
@@ -409,7 +411,7 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B29 | Layout migration | 2 | closed on a fixture in 2.6; the run on a real workspace copy is Phase 6 |
 | B30 | macOS CI runner | 1 | |
 | B31 | arm64 build and run | 3 | |
-| B32 | WSL workspace refusal | 3 | |
+| B32 | WSL workspace refusal | 3 | logic closed-reduced in 3.2 (fake `/proc/version`); the real WSL run is Phase 6 |
 | B33 | `up` lock and cleanup | 3 | |
 | B34 | Portable mode check | 3 | macOS part rechecked in 6; Linux part checked in 3.1 (macOS and others in 6) |
 | B35 | Fast path of `up` | 3 | |
