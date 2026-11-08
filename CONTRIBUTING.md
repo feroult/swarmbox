@@ -76,6 +76,7 @@ python3 tests/test_docs_consistency.py
 | `test_ssh_key.py` | the SSH key handling of `container/scripts/ssh-key.sh` (`swarmbox-pubkey`) |
 | `test_starship.py` | the Starship prompt setup |
 | `test_run_all.py` | `tests/run_all.sh`, the full-regression runner (`--werror`, `--repeat N`, `--only`, `--list`), on small files only |
+| `test_update_bot_config.py` | `.github/dependabot.yml` (github-actions and docker, weekly), the inventory of every pinned version (each covered by the config or in the manual-bump table here), the checksum step for go and gcloud in this file and in the pull request template (slice 7.4) |
 | `test_third_party_notices.py` | `THIRD_PARTY_NOTICES.md` and `dev/gen-notices.sh` (slice 7.2): no `[unverified` left, owner-check items explained, every apt package and tool manifest with a license and a source URL, the copyleft source offer, the committed `docs/debian-packages.tsv` and its counts, and the script against a fake `dpkg-query` and a fixture doc tree (sorted, flags, read-only) |
 | `test_tool_claude_real.py` | the first call of Claude Code through the shim: fake-curl argument tests always; the real download in throwaway containers only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` (slow, about 330 MB) |
 | `test_tool_gemini_clasp_poetry.py` | the `gemini`, `clasp` and `poetry` tools: installers with a fake npm and a fake curl serving a fake Poetry installer (stay in the prefix, versions from the manifest, no cache outside it), validate on the real tools folder (agents latest, others pinned, unique PROVIDES), `tool-ports` listing 43323 and the host helper publishing it, the `clasp login` function in bash and zsh, the gemini alias and `yolo` |
@@ -126,6 +127,38 @@ Caveats when building inside a SwarmBox (nested rootless Podman 4.3.1):
 - Builds take minutes and the image is several GB; run them in the background and give them a long timeout.
 
 See `docs/nested-podman.md` for the nested engine in detail.
+
+## Bumping pinned versions
+
+Every version the repository pins, who bumps it, and how. `.github/dependabot.yml` (Dependabot, weekly) bumps what its
+managers can read: the `uses:` lines of the workflows and a literal `FROM` line. It cannot read the shell-style
+`tool.conf` files or the `ARG` pins of the Dockerfile, so those are bumped by hand. `tests/test_update_bot_config.py` scans the
+repository and fails if a pin is neither covered by the config nor listed in this table.
+
+| Pin | Bumped by | How |
+|---|---|---|
+| `NODE_VERSION` | by hand | the base image is `FROM node:${NODE_VERSION}-slim`, which Dependabot does not read; change the `ARG` (and `ARG NODE_VERSION` in the test) and rebuild |
+| `node:${NODE_VERSION}-slim` | by hand | the same line as `NODE_VERSION` (a FROM built from an ARG is not read by Dependabot) |
+| `TTYD_VERSION` | by hand | change the `ARG`; the build checks the release's `SHA256SUMS` |
+| `STARSHIP_VERSION` | by hand | change the `ARG`; the build checks the release's `.sha256` file |
+| `UV_VERSION` | by hand | change the `ARG` |
+| `CHROME_DEVTOOLS_MCP_VERSION` | by hand | change the `ARG` and check its Node range against the base image |
+| `cloudflared image` | by hand | change the default in `container/host/swarmbox-host` AND `cloudflare-setup.py` together (the tests compare them) |
+| `container/tools/go/tool.conf` | by hand, then the checksum script | change `VERSION`, then run `sh dev/record-checksums.sh go` (it writes `SHA256_amd64` and `SHA256_arm64` from go.dev's listing and refuses a mismatch), commit both |
+| `container/tools/gcloud/tool.conf` | by hand, then the checksum script | change `VERSION`, then run `sh dev/record-checksums.sh gcloud` (it downloads the pinned archive for each architecture and records the computed `SHA256_amd64` and `SHA256_arm64`), commit both |
+| `container/tools/clasp/tool.conf` | by hand | change `VERSION` |
+| `container/tools/poetry/tool.conf` | by hand | change `VERSION` |
+| `container/tools/claude/tool.conf` | floating (nothing to bump) | `VERSION=latest`; the tool updates itself |
+| `container/tools/gemini/tool.conf` | floating (nothing to bump) | `VERSION=latest` |
+| `container/tools/opencode/tool.conf` | floating (nothing to bump) | `VERSION=latest` |
+
+A go or gcloud bump without the checksum step leaves the old checksums in the file and the installer refuses the new
+archive; the pull request template reminds you.
+
+GitHub Actions are pinned by version tag (`actions/checkout@v4`), not by commit SHA. A SHA would be stronger against a moved
+tag, but this build had no network and cannot look SHAs up, and inventing one is worse than a tag. Dependabot bumps the tags
+and can also update SHA-pinned actions, so the choice can be reversed later by the owner (decision log `[7.4]`). Whether the
+Dependabot entries open pull requests as described is `[unverified]` until the repository is on GitHub.
 
 ## Branches and commits
 

@@ -1,0 +1,35 @@
+# Dependency update bot: Dependabot (design 10.4, decision log [7.4]).
+#
+# What it bumps:
+#   - github-actions: every `uses:` in .github/workflows (kept as version tags, see CONTRIBUTING.md).
+#   - docker: a literal `FROM image:tag` line of the root Dockerfile. The Dockerfile builds its base image from
+#     `FROM node:${NODE_VERSION}-slim`; Dependabot does not read a FROM that uses a build argument, so today this entry
+#     finds nothing to bump in the Dockerfile [unverified: it can only be seen on GitHub]. It stays so that a literal FROM
+#     added later is covered.
+#
+# What it CANNOT bump (a human does, by the table in CONTRIBUTING.md "Bumping pinned versions"):
+#   - VERSION in container/tools/*/tool.conf (a shell-style file, no Dependabot manager reads it);
+#   - the ARG *_VERSION pins of the Dockerfile (ttyd, starship, uv, chrome-devtools-mcp, Node);
+#   - the pinned cloudflared image in container/host/swarmbox-host and cloudflare-setup.py.
+#   A Renovate regex manager could read these; it was not added because it cannot be tested here (decision [7.4]).
+#
+# A bump of go or gcloud is NOT complete without the checksum step: after changing VERSION in
+# container/tools/go/tool.conf or container/tools/gcloud/tool.conf run
+#   sh dev/record-checksums.sh go     (or: sh dev/record-checksums.sh gcloud)
+# so that SHA256_amd64 and SHA256_arm64 match the new version (D29). Dependabot cannot do that; see CONTRIBUTING.md.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
