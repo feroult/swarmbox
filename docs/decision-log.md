@@ -272,3 +272,24 @@ Impact on the design: none. How to reverse: n/a.
 Context: the build command must match build.sh as it is today.
 Chosen: ./build.sh (read: podman build with USER_UID, USER_GID, HOST_OS, tag from --name, default swarmbox). The text tells contributors to pass --name swarmbox-test-<id> so a build never replaces the live box's image. A full build was NOT run (several GB, minutes, and the default name would replace the owner's image), so the sentence is tagged [unverified]; --name is verified by reading build.sh lines 60-62 and 106. build.sh --name also renames CONTAINER_NAME, which was not exercised.
 Impact on the design: none. How to reverse: n/a.
+
+## [1.2] dirs.sh variable names
+Context: design 4.3 fixes the folders but not variable names; Phase 2 will source the file from every script.
+Options: SWARMBOX_* (collides with the SWARMBOX_<KEY> config overrides of 4.3 item 2); no prefix; SB_*.
+Chosen: SB_CONFIG_DIR, SB_DATA_DIR, SB_TOOLS_DIR, SB_SHIMS_DIR, SB_STATE_DIR, SB_LOG_DIR, SB_HEALTH_FILE, SB_PODMAN_SOCK, SB_RUN_DIR (=/tmp/swarmbox) because SB_ cannot be mistaken for a config key. Variables are plain shell variables, not exported. SB_RUN_DIR is fixed (no override). Documented in the header of container/scripts/dirs.sh and named in design 4.3 item 4.
+Impact on the design: 4.3 item 4 now lists the names. How to reverse: rename in dirs.sh, tests/test_dirs.py and design 4.3 (nothing else uses them yet).
+
+## [1.2] Empty and relative XDG values; trailing slash
+Context: the slice asked for a documented rule.
+Chosen: the XDG Base Directory rule: empty counts as unset, a relative value (including ~/x, which a quoted env var never expands) is ignored and the default under $HOME applies; one trailing slash is stripped. No error is raised, so sourcing stays safe under set -eu.
+Impact on the design: sentence added to 4.3. How to reverse: edit _sb_xdg_root in dirs.sh and the test_relative_is_ignored test.
+
+## [1.2] Rewiring existing scripts deferred; B29 only fed
+Context: the slice says dirs.sh only has to be correct and covered.
+Chosen: no existing script sources dirs.sh (Phase 2 does). The v0.1.0 .swarmbox/ layout is untouched; B29 (migration) stays open and unverified.
+Impact on the design: none. How to reverse: n/a.
+
+## [1.2] Test scope and limits
+Context: bash 3.2 and zsh were not available as separate binaries in a test.
+Chosen: tests/test_dirs.py runs sh, dash and bash (the installed bash version, not 3.2); 3.2 compatibility is enforced by a static check (no [[, arrays, local, process substitution) and shellcheck -s sh. zsh was checked by hand with "emulate sh" (it printed the expected path) but is not in the test. unset -f is used to remove the helper function; it works in dash and bash but is not strictly POSIX, so a shell lacking it only keeps one harmless function (the error is ignored).
+Impact on the design: none. How to reverse: n/a.

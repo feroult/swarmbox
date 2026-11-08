@@ -45,3 +45,4 @@ Checked 2026-11-08 on the live box.
 | test_web_terminal.py | 15 tests OK |
 
 Total 158 tests, 0 failures.
+| 1.2-dirs-sh | container/scripts/dirs.sh, XDG-aware, with its test | done | see git log | tests/test_dirs.py 13 tests OK (failed first: file missing); shellcheck -s sh clean; test_repo_files, test_docs_consistency, test_design_partb OK | Variables SB_* (decision [1.2]); empty/relative XDG ignored; no script rewired (Phase 2); bash 3.2 covered statically only; zsh checked by hand. |

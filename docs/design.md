@@ -772,7 +772,8 @@ Installing `WITH` tools happens **after** the readiness marker, so a slow downlo
    - Regenerated at every start, so it does not need to survive: `box:/tmp/swarmbox/`, a tmpfs (the assembled web page, the OpenCode config, locks, `ready`).
 
    There is no `.cache/swarmbox`. The layout replaces `<workspace>/.swarmbox/` (12.4). Every script reads these paths from one file, `container/scripts/dirs.sh`, which honors `XDG_CONFIG_HOME`,
-   `XDG_DATA_HOME` and `XDG_STATE_HOME`; tests point those at temporary folders.
+   `XDG_DATA_HOME` and `XDG_STATE_HOME`; tests point those at temporary folders. It defines `SB_CONFIG_DIR`, `SB_DATA_DIR`, `SB_TOOLS_DIR`, `SB_SHIMS_DIR`, `SB_STATE_DIR`, `SB_LOG_DIR`, `SB_HEALTH_FILE`,
+   `SB_PODMAN_SOCK` and `SB_RUN_DIR` (`/tmp/swarmbox`); an empty or relative XDG value is ignored, as the XDG specification says; sourcing creates nothing (`tests/test_dirs.py`).
 
 ### 4.4 MCP servers
 
