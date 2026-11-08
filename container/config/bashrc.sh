@@ -57,7 +57,6 @@ alias l='ls -CF --color=auto'
 alias grep='grep --color=auto'
 alias fgrep='fgrep --color=auto'
 alias egrep='egrep --color=auto'
-uuid() { python3 -c "import sys, uuid; print(uuid.uuid5(uuid.NAMESPACE_DNS, sys.argv[1]))" "$1"; }
 
 # --- Agents from the manifests (6.3, 6.6) ---
 # _sb_scan prints one record per tool, fields separated by the character 0x1f:

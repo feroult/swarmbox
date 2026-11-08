@@ -295,6 +295,8 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 - **Dogfooding:** the owner first runs a second box (`SWARMBOX_NAME=dev`, another workspace) from M2 on; after parity the main workspace is migrated with the layout migration (12.4), after a backup.
 - **Owner's real-hardware checks, closing:** B6 (macOS), B7 (UID other than 1000), B8 (older Podman), B15 (`python3` on a clean macOS). **Rechecks** (not closing): the macOS parts of B19, B21, B22, B23 and B34, and the WSL home of B22.
 
+**6.1 state:** the parity suite is `tests/test_parity.py` (102 tests; one or more per catalog row, the 12.2 removals, the kept items and the 12.3 mapping against a recorded v0.1.0 fixture), with the table in design 13.2 and a consistency test. Reduced rows are tagged and listed in the decision log `[6.1]`. `uuid()` was removed from the shell fragment to match 12.2. Deleting the old scripts is the next slice.
+
 **Exit criteria:** the parity suite is green; the scripts are deleted; the owner's main box runs on 2.0; the checks that need real hardware have a result or an explicit, documented limit. **M3.**
 
 ---
