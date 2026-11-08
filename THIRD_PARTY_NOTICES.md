@@ -108,7 +108,14 @@ of the `Dockerfile` keep their Debian licenses (`/usr/share/doc/<package>/copyri
   The package is not redistributed by SwarmBox: the image build downloads it from npm.
 - [verified: LICENSE.md of the installed package, "(c) Anthropic PBC. All rights reserved. Use is subject to the Legal Agreements ..."; 2026-11-08]
 
+### Chrome DevTools MCP (`chrome-devtools-mcp`)
+
+- License: Apache-2.0
+- Source: https://github.com/ChromeDevTools/chrome-devtools-mcp
+- Installed at build by the 2.0 Dockerfile at a pinned version (`CHROME_DEVTOOLS_MCP_VERSION`); the v0.1.0 image fetches it with `npx` at run time.
+- [verified: "license" and "repository" fields of the npm registry entry for 1.12.0 (`npm view`); 2026-11-08]
+
 ## Not installed by the Dockerfile but pulled at run time
 
-The Chrome DevTools MCP server (`chrome-devtools-mcp`) is fetched by `npx` when an agent starts it.
-[unverified: its license]. Phase 7 reviews every run-time download.
+In the v0.1.0 image the Chrome DevTools MCP server is fetched by `npx` when an agent starts it; the 2.0 image installs it at build (above).
+Phase 7 reviews every run-time download.

@@ -52,24 +52,32 @@ class NoticesTest(unittest.TestCase):
             self.assertRegex(s, r"https://\S+", "%s has no URL" % tool)
 
     def test_every_dockerfile_tool_is_listed(self):
+        """Both images: the 2.0 Dockerfile and Dockerfile.v0.1.0 (kept for build.sh until Phase 6, decision [2.1])."""
         t = read("THIRD_PARTY_NOTICES.md").lower()
-        with open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8") as f:
-            d = f.read()
         tools = set()
-        for arg in re.findall(r"^ARG (\w+)_VERSION=", d, re.M):
-            if arg not in ("CLAUDE_CODE", "OPENCODE"):
-                tools.add(arg.lower())
-        tools.update(re.findall(r"npm install -g (@[\w-]+/[\w-]+)(?:@\$\{\w+\})?", d))
-        for pkg in ("podman", "chromium", "google-cloud-cli", "tmux"):
-            self.assertIn(pkg, d)
-            tools.add(pkg)
+        for name in ("Dockerfile", "Dockerfile.v0.1.0"):
+            with open(os.path.join(ROOT, name), encoding="utf-8") as f:
+                d = f.read()
+            for arg in re.findall(r"^ARG (\w+)_VERSION=", d, re.M):
+                if arg not in ("CLAUDE_CODE", "OPENCODE"):
+                    tools.add(arg.lower().replace("_", "-"))
+            tools.update(re.findall(r"npm install -g (@[\w-]+/[\w-]+)(?:@\$\{\w+\})?", d))
+            for pkg in ("podman", "chromium", "tmux"):
+                self.assertIn(pkg, d)
+                tools.add(pkg)
+        with open(os.path.join(ROOT, "Dockerfile.v0.1.0"), encoding="utf-8") as f:
+            d = f.read()
+        self.assertIn("google-cloud-cli", d)
+        tools.add("google-cloud-cli")
         for marker, name in (("install.python-poetry.org", "poetry"), ("astral.sh/uv", "uv"), ("go.dev/dl", "go")):
             self.assertIn(marker, d)
             tools.add(name)
+        tools.discard("node")  # the base image tag, not a download
         self.assertIn("ttyd", tools)
         self.assertIn("starship", tools)
+        self.assertIn("chrome-devtools-mcp", tools)
         for tool in sorted(tools):
-            self.assertIn(tool.lower(), t, "%s is installed by the Dockerfile but not in the notices" % tool)
+            self.assertIn(tool.lower(), t, "%s is installed by a Dockerfile but not in the notices" % tool)
 
     def test_unverified_is_tagged_not_guessed(self):
         t = read("THIRD_PARTY_NOTICES.md")

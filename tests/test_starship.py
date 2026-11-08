@@ -20,7 +20,7 @@ from helpers import ROOT
 
 CONFIG = os.path.join(ROOT, "container", "config", "starship.toml")
 INIT = os.path.join(ROOT, "container", "scripts", "starship-init.sh")
-DOCKERFILE = os.path.join(ROOT, "Dockerfile")
+DOCKERFILE = os.path.join(ROOT, "Dockerfile.v0.1.0")  # the 2.0 Dockerfile gets the bashrc fragment in a later slice
 
 # The warm Gruvbox colors of the preset this layout comes from: the SwarmBox palette must not reuse any
 # of them, so a SwarmBox shell is never mistaken for a personal one.

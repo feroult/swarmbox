@@ -103,7 +103,8 @@ if [ "$UPDATE_HARNESS" = true ]; then
     BUILD_COMMAND="$BUILD_COMMAND --build-arg CLAUDE_CODE_VERSION=latest --build-arg OPENCODE_VERSION=latest --build-arg CLAUDE_CODE_CACHEBUST=$(date +%s)"
 fi
 
-eval "$BUILD_COMMAND" -t $IMAGE_NAME .
+# The v0.1.0 image is Dockerfile.v0.1.0; the root Dockerfile is the 2.0 image (built by dev/dev-build.sh) until Phase 6
+eval "$BUILD_COMMAND" -f Dockerfile.v0.1.0 -t $IMAGE_NAME .
 
 if [ $? -eq 0 ]; then
     echo "Build successful!"
