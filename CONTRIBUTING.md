@@ -29,6 +29,7 @@ python3 tests/test_docs_consistency.py
 | `test_clipboard_bridge.py` | the clipboard bridge page script (needs a browser; about 40 s) |
 | `test_cloudflare_setup.py` | `cloudflare-setup.py` against a fake Cloudflare API |
 | `test_design_partb.py` | the shape of Part B of the design |
+| `test_dirs.py` | `container/scripts/dirs.sh`, the XDG-aware path file (sh, dash, bash) |
 | `test_docs_consistency.py` | cross-references, D and B numbers and code fences of the design and the plan |
 | `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md` and this file |
 | `test_spikes_common.py` | the safety helpers of the spike scripts |
