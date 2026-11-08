@@ -250,6 +250,7 @@ Scope
 - **`prepare.sh`** run by `serve` at step 7 and after a `tool install`.
   **4b.2 state:** `swarmbox-tool prepare` and the opencode tool (installer with prune, `prepare.sh`, `shell.sh`) are done with fakes (`tests/test_tool_prepare.py`, `tests/test_tool_opencode.py`); the real nested-container install of opencode is 4b.7. See design 6.3 and 6.6 and decision log `[4b.2]`.
   **4b.3 state:** the `gemini`, `clasp` (`PORTS=43323`, `shell.sh`) and `poetry` manifests and installers are done with fakes (`tests/test_tool_gemini_clasp_poetry.py`); `tool-ports` of the image level lists 43323; real installs are 4b.7. See design 6.3 and decision log `[4b.3]`.
+  **4b.4 state:** the `go` and `gcloud` manifests (checksums recorded by the real run of `dev/record-checksums.sh`) and installers that verify before extracting are done with fakes (`tests/test_tool_go_gcloud.py`, `tests/test_record_checksums.py`); `validate` requires both checksums where `install.sh` uses `TOOL_SHA256`; real installs are 4b.7. See design 6.3 and decision log `[4b.4]`.
 - **Environment fingerprint** per install, `doctor` and `doctor --fix` (6.11).
 - **MCP registry** (4.4; generator done in 4b.1, `tests/test_mcp_registry.py`; the OpenCode mirror is done in 4b.2, `tests/test_tool_opencode.py`): generated `mcp-servers.json`, the registry entry that runs the installed `chrome-devtools-mcp` (no `npx`), the OpenCode mirror.
 - **The `WITH_TOOLS` build argument** (6.8): the Dockerfile installs the named tools into `/opt/swarmbox/tools`.
