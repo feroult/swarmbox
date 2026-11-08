@@ -70,6 +70,11 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# an image reference is a bare argument of `podman run` in the function: a leading '-' would be read as an option (security review SR-01)
+case $SEED_IMAGE in
+    -*) die 2 "the value of --image must be an image reference, not an option ('$SEED_IMAGE')." ;;
+esac
+
 # the shell: explicit (and then strict), else from SHELL (and then silent)
 if [ -n "${SHELL_GIVEN:-}" ]; then
     case $SHELL_NAME in
