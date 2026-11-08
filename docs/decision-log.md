@@ -838,3 +838,29 @@ Impact on the design: none. How to reverse: remove the two list entries.
 ## [4a.6] Results of the real run and what was not measured
 Context/Chosen: image swarmbox-test-4a6-img built with dev/dev-build.sh (about 8 min), tests run with SWARMBOX_IMAGE_TAG; 14 tests OK in about 36 s (Claude Code 2.1.319, real download). Snapshot of /usr /etc /opt /var /root: only /opt/npm-cache differs (none observed in this run's filter either way). Offline run (--network=none) fails with exit non-zero and no leftovers; online run afterwards on the same volume installs. Not measured: a second update that finds a newer version (only the Phase 0 spike), disk size of the install in this image, arm64, the same through a nested Podman box.
 Impact on the design: 6.7 4a.6 state. How to reverse: n/a.
+
+## [4a.7] swarmbox-tool validate is a CI step of the linux job; wording of the leftover stub messages
+Context: the CI header said the real `swarmbox-tool validate` would come in a later phase; `swarmbox-tool.sh` still said "prepare: stub" and "this is a placeholder, tools arrive in Phase 4a" although 4a is done.
+Options: leave the messages (harmless); reword them; remove `prepare` (it belongs to 4b).
+Chosen: add one step `container/scripts/swarmbox-tool.sh validate container/tools` to the linux job (no container, no network) and reword both messages: `prepare` says it has nothing to prepare until the tools that ship a `prepare.sh` arrive in Phase 4b (still exit 0, `serve` step 7 depends on it); an unknown command says "unknown command" (still exit 70, the existing tests keep passing). `prepare` itself stays as a no-op.
+Impact on the design: none (6.2 already describes the 4a state).
+How to reverse: remove the CI step; restore the two echo lines from the previous commit.
+
+## [4a.7] A flake in test_serve_steps fixed in the test, not hidden
+Context: in the first full regression `WarnSteps.test_steps_are_logged_noops_when_programs_are_missing` failed once (step 12 line not in the log) and then passed in 4 reruns. Cause: step 12 logs after the readiness marker and the test stopped `serve` right after the marker, so SIGTERM could arrive first. This is a test race, not a product bug (the step runs in the background by design). It is not the earlier unexplained SIGINT flake of 2.7, which did not show in this run.
+Options: leave it and report; wait for the line in the test.
+Chosen: the test waits (up to 10 s) for the `step 12 ... skipped` line before stopping `serve`.
+Impact on the design: none.
+How to reverse: revert the `wait_for` line in tests/test_serve_steps.py.
+
+## [4a.7] Docs gate checks and the D18 test in the shim tests
+Context: the slice asked for meta tests of the consistency of design, plan, status and CI.
+Chosen: `PhaseFourACloseTest` in tests/test_docs_consistency.py (no stub or placeholder wording in the Dockerfile, entrypoint, tool and shim scripts; in the design and plan any line about a `swarmbox-tool` stub must name 4a; the 4a test files are listed in the plan, exist and run in CI; D18 tests exist in the manifest, link and shim tests; status rows and gate; decision-log entries for 4a.1 to 4a.7; Appendix A rows D2, D3, D18, D21, B1) and `test_tools_validate_is_a_ci_step_without_a_container` in tests/test_ci_workflow.py. The shim tests had no D18 test (only the manifest and link tests did), so `test_a_project_level_tools_folder_is_not_consulted_by_the_shim` was added (a tools folder in the working directory adds no command and changes none). The plan now lists the 4a test files and a 4a.7 paragraph, and Phase 3 states what it relies on from 4a (a fixture `tool-ports` for `create-flags` tests); the B1 row of A.3 notes the 4a.6 re-verification.
+Impact on the design: none; plan wording only.
+How to reverse: delete the new test class and the plan paragraphs.
+
+## [4a.7] Gate reading: 4a.gate is partial
+Context: the exit criteria ask for the first `claude` call to install and run in a throwaway box, with `validate` passing.
+Chosen: partial, because what stays unproven is the same as in Phases 1 and 2: CI has never run (the new `validate` step, the full smoke test B28, the fake-installer tests on the runner). Locally: the fake installer lifecycle (test_tool_shim), the real installer in a throwaway container (test_tool_claude_real with SWARMBOX_TEST_NETWORK=1, 14 tests OK on a fresh image swarmbox-test-4a7-img, removed by name) and `validate` on container/tools (exit 0) all pass. B1 stays closed (evidence in 6.7 and Part B, re-verified in 4a.6). Not run: a third nesting level (the full smoke test).
+Impact on the design: none.
+How to reverse: set the row to done after the owner reads the first CI run.

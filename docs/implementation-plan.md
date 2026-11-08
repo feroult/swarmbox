@@ -121,7 +121,7 @@ Scope
 - **Web terminal**: `build-index.sh` at image build, `swarmbox-web` at start with the three-value substitution (5.1).
 - **Shell**: `container/config/bashrc.sh` (banner, aliases, Starship, `PATH`) replacing the `bashrc` echo lines; `shell.sh` sourcing for tools; the aliases and `yolo` generated from manifests, `SWARMBOX_AGENT` and `SWARMBOX_YOLO` (6.6), with no manifest yet the aliases are empty and `yolo` says no agent is installed.
   Slice 2.4 built the fragment (decisions [2.4]); the image's `/etc/bash.bashrc` sources it, `test_starship.py` follows it to the new place, and the banner skips itself for `bash -c`. The one-line SSH fingerprint is left out.
-  Slice 2.5 completed the entrypoint (`init`, `pubkey`, `tool` forward by exec, `host-helper` writes the archive), added `swarmbox-web` (`run`, `render`, `restart`) and the stub `swarmbox-tool` (with the empty `tool-ports` written by `link --system` at build), and reran the browser tests on the page it renders (decisions [2.5]). `swarmbox-init` is not built yet (Phase 3).
+  Slice 2.5 completed the entrypoint (`init`, `pubkey`, `tool` forward by exec, `host-helper` writes the archive), added `swarmbox-web` (`run`, `render`, `restart`) and the stub `swarmbox-tool` (replaced by the real program in 4a.5; with the empty `tool-ports` written by `link --system` at build), and reran the browser tests on the page it renders (decisions [2.5]). `swarmbox-init` is not built yet (Phase 3).
   Slice 2.6 built the layout migration (`container/scripts/swarmbox-migrate.sh`, installed as `swarmbox-migrate`, `serve` step 4) with `tests/test_migration.py` on a fixture derived from the v0.1.0 code; B29 is closed on the fixture and the run on a copy of a real workspace stays in Phase 6 (decisions [2.6]).
 - **The stale-image warning** (3.8, 4.2): Phase 2 builds the part inside the box (the banner and the health file); the comparison of image IDs is the helper's `up` in Phase 3.
 
@@ -144,13 +144,17 @@ Closes: B3, B13 (the product tests; the spikes fed them), B24, B26 (`id node` in
 
 **Goal:** the smallest tool machinery that lets `claude` install on first call, so Phase 3 can be tested with a real `WITH`. Design: 6.1 to 6.5.
 
-Scope: **`swarmbox-tool`** (manifest parsing and `validate`, `link --system`, `install`, `run`), the dispatcher **`swarmbox-shim`**, the `claude` manifest and installer (`UPDATE=self`, installed with the vendor's native installer: B1 closed in 0.3, design 6.7; the manifest's installer is not the npm shape and needs `curl`) and the real, still empty, `tool-ports`. It replaces the Phase 2 stubs.
+Scope: **`swarmbox-tool`** (manifest parsing and `validate`, `link --system`, `install`, `run`), the dispatcher **`swarmbox-shim`**, the `claude` manifest and installer (`UPDATE=self`, installed with the vendor's native installer: B1 closed in 0.3, design 6.7; the manifest's installer is not the npm shape and needs `curl`) and the real, still empty, `tool-ports`. It replaces the Phase 2 stubs (slice 4a.5 wired the replacement).
 
 Tests first: manifest parsing and `validate` rules (6.9) including `UPDATE=self` needing `VERSION=latest`; `link --system` is idempotent and writes the shims, the index and `tool-ports`; the shim installs with a fake installer on the first call and runs the real command after; a manifest under a project folder is **not** read (D18, the absence test).
 
 **4a.2 done:** `link --system` and `--user` generate shims, the `command tool` index and `tool-ports` (design 6.2, 4a.2 state); the dispatcher and `install`/`run` are the next slices.
 
 **4a.5 done:** the image copies `container/tools/`, runs `link --system` and puts the image shims on `PATH`; the smoke test checks the real `validate`, the `claude` shim, the index and `tool-ports` (reduced mode, no install); `serve` leaves an empty `mcp-servers.json` until the registry of Phase 4b (design 6.2, 4a.5 state; decisions [4a.5]).
+
+Test files of the phase: `tests/test_tool_manifest.py` (manifest loading, `validate`, the D18 absence test), `tests/test_tool_link.py` (`link`, index, `tool-ports`), `tests/test_tool_install.py` (`install`, `run`, lock, layout), `tests/test_tool_shim.py` (the dispatcher and the fake-installer lifecycle), `tests/test_tool_claude_real.py` (the real first call, skipped unless `SWARMBOX_TEST_NETWORK=1`) and `tests/test_tool_stub.py` (the entry point and the commands that answer 70 until a later phase). CI also runs `swarmbox-tool validate container/tools` (no container).
+
+**4a.7 done:** every test file was run; `validate` passes for the `claude` manifest and the CI runs it; the first `claude` call installs with a fake installer in the tests and with the real installer in a throwaway container (4a.6); the Phase 2 stub wording is gone from the code. For Phase 3: `tool-ports` is written by `link --system` at image build and is empty while no manifest declares `PORTS` (the `claude` manifest declares none), and the shims of the image tools are on `PATH`, so `create-flags` tests need a fixture `tool-ports`, not a real tool. The gate row of `docs/implementation-status.md` is `partial` only for what CI has never run.
 
 **Exit criteria:** in a throwaway box the first `claude` call installs (with a fake installer in CI, the real one in a throwaway container) and runs it; `validate` passes for the `claude` manifest.
 
@@ -159,6 +163,8 @@ Tests first: manifest parsing and `validate` rules (6.9) including `UPDATE=self`
 ## 6. Phase 3: the host half
 
 **Goal:** one install line, then `swarmbox` creates or joins the box. Design: 3.1 to 3.8, 7, 8.
+
+**Depends on Phase 4a (done):** `swarmbox-tool` and the shims are real, `claude` installs on first call, and `tool-ports` is a generated file (empty while no manifest declares `PORTS`). Tests of `create-flags` that need tool ports use a fixture `tool-ports`; `swarmbox-tool link --system` writes the real one (design 6.2).
 
 Scope
 - **Host helper in POSIX `sh`** (D16): `version`, `config get|set|list|seed`, `create-flags`, the fingerprint and labels, `up` (the lock, the flags captured before `podman run`, cleanup by `--cidfile`, the fast path with one `podman container inspect`, the exact-name match), `reset`, `stop`, `url`, `update`, and the `host-helper` archive the image serves. `swarmbox url` belongs to this phase only.
@@ -370,7 +376,7 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 
 | B | Fact (short) | Closed in | Feeds or rechecked |
 |---|---|---|---|
-| B1 | Claude Code install method that keeps its updater (closed in 0.3: native installer) | 0 | feeds 4a |
+| B1 | Claude Code install method that keeps its updater (closed in 0.3: native installer) | 0 | feeds 4a; re-verified through the shim in 4a.6 |
 | B2 | OpenCode auto-approve flag (closed in 0.3: `--auto`, no alias, `YOLO_ALIAS=0`) | 0 | feeds 4b |
 | B3 | `serve` as main process; signals; ttyd restart | 2 | fed by the Phase 0 spike (spiked in 0.1, reduced) |
 | B4 | ttyd serves one file | 0 | closed in 0.4 |

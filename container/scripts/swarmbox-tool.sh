@@ -915,10 +915,10 @@ case "$cmd" in
         exit 70
         ;;
     prepare)
-        echo "swarmbox-tool prepare: stub, no tools to prepare yet (Phase 4a)"
+        echo "swarmbox-tool prepare: nothing to prepare (the tools that ship a prepare.sh arrive in Phase 4b)"
         ;;
     *)
-        echo "swarmbox-tool: '$cmd' is not available yet: this is a placeholder, tools arrive in Phase 4a of the SwarmBox 2.0 build" >&2
+        echo "swarmbox-tool: unknown command '$cmd' (later phases add more; see usage)" >&2
         exit 70
         ;;
 esac
