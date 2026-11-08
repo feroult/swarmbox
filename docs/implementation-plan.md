@@ -163,6 +163,7 @@ Tests first
 - Function tests in bash, zsh and fish, and macOS bash 3.2 where a runner exists, with a fake helper and a fake `podman` (13.3 layer 4), including the bootstrap and the update-then-next-call cases.
 - The **`up` lock and cleanup tests** (13.3 layer 5): two terminals at once create one box; a failed create removes only its own container; a stale lock is removed; `create-flags` failing never reaches `podman run`.
 - The portable mode check on a file with extended attributes where possible; the WSL refusal with fake paths; the fast path call count.
+- The **socket-path fallback** (3.5, B5 measured in 0.2): a workspace whose socket path is 100 characters uses it directly, 101 gets the short symlink, a symlink path over 100 exits 4; no symlink is made for the default workspace.
 
 Closes: B5 (with the fallback; the spike fed it), B19 (`sort -V`, Linux and CI images), B20 (against the local registry), B21 (`-e SHELL`, Linux), B22 (tunnel token mode, Linux; WSL home rechecked in Phase 6), B23 (the helper under different `sh` implementations), B31 (arm64 build and run), B32 (the WSL refusal), B33 (the `up` lock and cleanup), B34 (the mode check), B35 (the fast path budget).
 
@@ -360,7 +361,7 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B2 | OpenCode auto-approve flag | 0 | feeds 4b |
 | B3 | `serve` as main process; signals; ttyd restart | 2 | fed by the Phase 0 spike |
 | B4 | ttyd serves one file | 0 | |
-| B5 | Unix socket path limit and the fallback | 3 | fed by the Phase 0 spike |
+| B5 | Unix socket path limit and the fallback | 3 | closed in 0.2: limit 107 characters, fallback above 100 (3.5); the Phase 3 tests carry it |
 | B6 | The design on macOS | 6 | |
 | B7 | A host UID other than 1000 | 6 | |
 | B8 | Lowest working Podman version | 6 | |
