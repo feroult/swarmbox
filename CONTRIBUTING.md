@@ -26,14 +26,18 @@ python3 tests/test_docs_consistency.py
 
 | File | What it covers |
 |------|----------------|
+| `test_build_index.py` | `container/web/build-index.sh`, the web page assembled at image build |
 | `test_ci_workflow.py` | static checks of `.github/workflows/ci.yml` (parsed with PyYAML; runs actionlint when `ACTIONLINT` or PATH has it) |
 | `test_clipboard_bridge.py` | the clipboard bridge page script (needs a browser; about 40 s) |
 | `test_cloudflare_setup.py` | `cloudflare-setup.py` against a fake Cloudflare API |
 | `test_design_partb.py` | the shape of Part B of the design |
+| `test_dev_build.py` | `dev/dev-build.sh`, the dev image build with the apt override in a scratch copy (fake `podman`) |
 | `test_dirs.py` | `container/scripts/dirs.sh`, the XDG-aware path file (sh, dash, bash) |
+| `test_dockerfile.py` | static checks of the 2.0 `Dockerfile` (no build) |
 | `test_docs_consistency.py` | cross-references, D and B numbers and code fences of the design and the plan |
 | `test_helpers.py` | the fake `podman` of `tests/helpers.py` |
 | `test_history_audit.py` | the history scanner `tests/audit_history.py` and the shape of `docs/history-audit.md` |
+| `test_image_build.py` | the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; builds `swarmbox-test-img-<rand>` and removes it) |
 | `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md` and this file |
 | `test_spikes_common.py` | the safety helpers of the spike scripts |
 | `test_ssh_key.py` | the SSH key handling in `start.sh` |
@@ -52,6 +56,16 @@ fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use
 test, with a `swarmbox-test-` name. The spike scripts in `tests/spikes/` are experiments, not part of the normal run (see `tests/spikes/README.md`).
 
 ## Building the image locally
+
+The 2.0 image is the root `Dockerfile`. In a development box (nested Podman) build it with
+
+```
+sh dev/dev-build.sh            # tag swarmbox-test-img-<random>; then: podman rmi <that exact tag>
+```
+
+which builds from a scratch copy of the `Dockerfile` that carries the apt override (see below); the product file is never changed.
+`SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. `build.sh` still builds the v0.1.0 image from
+`Dockerfile.v0.1.0` until Phase 6:
 
 ```
 ./build.sh

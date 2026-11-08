@@ -47,16 +47,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends tmux zsh fish shellcheck
       - name: Shellcheck the new shell files
-        run: shellcheck -s sh container/scripts/dirs.sh
+        run: shellcheck -s sh container/scripts/dirs.sh container/entrypoint.sh container/web/build-index.sh dev/dev-build.sh
       - name: Unit and function tests
         run: |
+          python3 tests/test_build_index.py
           python3 tests/test_ci_workflow.py
           python3 tests/test_cloudflare_setup.py
           python3 tests/test_design_partb.py
+          python3 tests/test_dev_build.py
           python3 tests/test_dirs.py
+          python3 tests/test_dockerfile.py
           python3 tests/test_docs_consistency.py
           python3 tests/test_helpers.py
           python3 tests/test_history_audit.py
+          python3 tests/test_image_build.py
           python3 tests/test_repo_files.py
           python3 tests/test_spikes_common.py
           python3 tests/test_ssh_key.py
@@ -83,8 +87,12 @@ jobs:
           printf '2.0.10\n2.0.9\n' | sort -V
       - name: Function tests under bash 3.2 with a fake podman
         run: |
+          python3 tests/test_build_index.py
+          python3 tests/test_dev_build.py
           python3 tests/test_dirs.py
+          python3 tests/test_dockerfile.py
           python3 tests/test_helpers.py
+          python3 tests/test_image_build.py
           python3 tests/test_start_fake_podman.py
           python3 tests/test_start_init.py
           python3 tests/test_start_timezone.py
