@@ -853,6 +853,7 @@ browser ─ https://swarmbox.example.com ─► Cloudflare Access (e-mail code) 
   `box:/tmp/swarmbox/index.html` substituting those three values from `web-terminal.conf` (a plain text substitution: no Python at runtime
   and no hash). Today the whole assembly runs at every start (`web-terminal.sh`, with Python) `[today]`. Building it at image build means the
   page, however sophisticated it becomes, is versioned, tested in CI and covered by the image's signature.
+- **What the 2.5 implementation does** (`container/scripts/swarmbox-web.sh`, installed as `swarmbox-web`; tests `tests/test_web_build.py`, `tests/test_web_container.py`; decisions under [2.5]). `swarmbox-web run` (what the supervisor of 4.2 runs) renders `box:/tmp/swarmbox/index.html` from the built page with `sed` (padding 0 to 99 else 10 with a message; only the word `false` turns `ctrlVPaste` or `ctrlCCopy` off; a page that lacks a placeholder is refused), turns every other key of `web-terminal.conf` into a `-t key=value` option, and `exec`s `ttyd -p 7681 -W -O --index ... swarmbox-attach` (or `tmux attach -t main` when `swarmbox-attach` is missing), on every interface inside the box. `swarmbox-web render` only renders; `swarmbox-web restart` sends `USR1` to the PID in `web-supervisor.pid` and refuses a missing, non-numeric, dead or pid-1-or-lower PID. The page is built at image build and holds exactly the three placeholders. [verified: tests/test_web_container.py; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); swarmbox-test-img-s25a; reduced: development box, no nested Podman in the box] In a throwaway container the built page was in the image, `/tmp/swarmbox/index.html` had the user's padding and switch, ttyd (random port, `-i lo`, inside the container's own namespace) served that page, the other options reached ttyd as `-t` arguments, and `swarmbox-web restart` gave a new ttyd and a new page with the box up.
 - Font, theme and size do not live in the HTML: ttyd passes them to the page through its `-t key=value` options, built from
   `web-terminal.conf` at start.
 - `web-terminal.conf` is `<workspace>/.config/swarmbox/web-terminal.conf` (`<workspace>/.swarmbox/web-terminal.conf` today). Logs go to
@@ -1472,7 +1473,7 @@ All `[new]` except `swarmbox-pubkey`, which is today's `ssh-key.sh` installed un
 | `swarmbox` (function) | printed by `swarmbox-init` from `container/host/` templates | the user's shell startup file | the user |
 
 **The helper archive.** The entrypoint's `host-helper` subcommand writes, as a tar archive on stdout, the contents of `box:/usr/local/share/swarmbox/host/`: `swarmbox-host`, `cloudflare-setup.py`, `templates/` (bash, zsh, fish) and `tool-ports`
-(generated at image build, 6.3). The function unpacks it into a temporary folder and checks that `swarmbox-host` is executable before renaming the folder into place (3.7.1).
+(generated at image build, 6.3). The function unpacks it into a temporary folder and checks that `swarmbox-host` is executable before renaming the folder into place (3.7.1). **2.5 state:** `host-helper` tars the folder with owner 0 and the file modes kept and writes nothing else on stdout; the folder holds `cloudflare-setup.py` and `tool-ports` (empty, written by the stub `swarmbox-tool link --system` at image build) until Phase 3 adds `swarmbox-host` and `templates/`, so the archive is incomplete in that sense and the function's check would fail on it; nothing calls it yet. `swarmbox-tool` is a stub until Phase 4a: `validate`, `link` and `prepare` succeed with a message, anything else exits 70 and names Phase 4a.
 
 ## 10. Dockerfile and image
 
@@ -1504,7 +1505,7 @@ image either: it runs from its own image, on the host.
 - **Startup:** `ENTRYPOINT ["/usr/local/bin/swarmbox-entrypoint"]`, `CMD ["serve"]`. Subcommands:
   `serve` (the box's main process; the ordered steps and their failure behavior are in 4.1),
   `attach` (join the tmux session; what the host function runs on every entry, after linking the user tools),
-  `init` (print the host function), `host-helper` (write the host helper archive on stdout), `pubkey`, `tool ...`, and any other command, which is run as given. There is no `init.sh`: 10.3 says
+  `init` (print the host function), `host-helper` (write the host helper archive on stdout), `pubkey`, `tool ...`, and any other command, which is run as given. `attach`, `init`, `pubkey` and `tool` replace the entrypoint by `exec` with the program's own exit status; a missing program is 127 (`init` until Phase 3 writes `swarmbox-init`) `[verified: tests/test_entrypoint.py; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); fake programs on PATH]`. There is no `init.sh`: 10.3 says
   where its duties go.
 - **Layer order:** stable first (system packages, Podman, pinned downloads), volatile last (scripts, manifests). A change
   to a manifest never invalidates the system layers.
