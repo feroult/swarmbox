@@ -389,7 +389,7 @@ What is **not** in the workspace folder:
 - **The nested Podman storage**: the volume `<name>-containers`, mounted at `<workspace>/.local/share/containers`. It appears as an empty
   folder in the workspace; its contents live in the Podman volume, because they are owned by subuid-mapped IDs that the host user could
   not delete and they grow large. `[today]` (`start.sh` mounts `${CONTAINER_NAME}-containers`).
-- **Host-side state of the helper**: `host:~/.local/state/swarmbox/` holds the `up` lock folders (3.7.2) and the file `notices` (3.7.5). They are small and safe to delete when no `swarmbox` command is running.
+- **Host-side state of the helper**: `host:~/.local/state/swarmbox/` holds the `up` lock folders (3.7.2), the file `notices` (3.7.5) and, only when the workspace path is long, the symlink `<name>.sock-dir` to the workspace's state folder (the short-path fallback of the socket, 3.5 and 3.7.2; B5). They are small and safe to delete when no `swarmbox` command is running.
 - **Files regenerated at every start**: `box:/tmp/swarmbox/` (the assembled web page, the OpenCode config, locks, the readiness marker). It is a memory-backed
   folder (`--tmpfs`, 3.6) that is empty at every start. These files are not in the workspace so they do not clutter it or a backup; a reset or a stop discards them and the next start recreates them.
 - **The container's own filesystem**: anything installed with `apt` or written to `box:/usr`, `box:/etc`, `box:/opt`, plus running
@@ -568,7 +568,7 @@ The host half is: the shell function (3.6), one host helper, the host configurat
 | `env list` | none | `NAME<TAB>set` or `NAME<TAB>not set`, never a value | 0 |
 | `fingerprint` | the resolved configuration | the hash, and with `--explain` the lines that differ from the box's labels | 0 same; 1 different; 5 no box |
 | `url` | none | the local URL, and the public one when configured | 0 |
-| `up` | none | nothing | 0 ready; 3 prerequisite or network; 4 workspace (not writable, not shared with the Podman machine, or on a Windows drive under WSL, D34); 5 conflict with another box or a v0.1.0 container (3.8); 6 not ready after 60 s, or the box exited while waiting (`up` only: it also reads the container state and prints `podman logs --tail`, 4.2), or another `up` held the lock for more than 90 s; 7 creation failed (3.8) |
+| `up` | none | nothing | 0 ready; 3 prerequisite or network; 4 workspace (not writable, not shared with the Podman machine, on a Windows drive under WSL (D34), or a workspace path so long that no short socket path can be made, 3.5); 5 conflict with another box or a v0.1.0 container (3.8); 6 not ready after 60 s, or the box exited while waiting (`up` only: it also reads the container state and prints `podman logs --tail`, 4.2), or another `up` held the lock for more than 90 s; 7 creation failed (3.8) |
 | `update [--to TAG]` | none | nothing | 0; 2 invalid tag; 3 pull failed or the local tag could not be created (nothing changed) (3.8) |
 | `reset` | none | nothing | the codes of `up`: 0 ready; 3, 4, 5, 6, 7 as in `up`; 1 if removing the old container failed. Exit 5 also when the container exists without the label `swarmbox.managed` (see below) |
 | `stop` | none | nothing | 0; 1 podman failed |
@@ -584,7 +584,8 @@ The host half is: the shell function (3.6), one host helper, the host configurat
    readiness marker inside the box (4.2). The budget is at most two Podman calls before the function attaches (the inspect, plus at most one more, for example the connection check); this has not been measured `[unverified]` (B35).
 5. A stopped box is started (`podman start`) and waited for. A missing box is created: `INIT=auto` is resolved to 0 or 1 here (today's `start.sh` detects `--init` support by running a throwaway container, around line 386 `[today]`), the flags are captured and
    checked (3.6), `podman run -d --cidfile` creates it, and `up` waits for the marker (4.2). A v0.1.0 container or a box of another workspace stops `up` with exit 5 (3.5, 3.8).
-6. The lock is released on exit, whatever the exit.
+6. **The connection (Linux and WSL).** The helper measures the host-side socket path. At most 100 characters: it registers `podman -c <name>` with that path. Longer: it creates or refreshes the symlink `host:~/.local/state/swarmbox/<name>.sock-dir` to `<workspace>/.local/state/swarmbox/` and registers `<that link>/podman.sock`; if that path is still over 100 characters, it exits 4 with the message of 3.8 (3.5, B5). The same comparison and re-registration as in 12.4 applies when the address changes. Not measured as to where in the sequence it is cheapest (B35) `[unverified]`.
+7. The lock is released on exit, whatever the exit.
 
 **What `reset` does** `[new]`, in order:
 1. Look for a container with the box's name. If one exists **without** the label `swarmbox.managed` (a v0.1.0 container), do nothing to it: print the v0.1.0 message of 3.8 and exit 5. A container that was not created by this design is never removed.
@@ -657,6 +658,7 @@ the exit code shown and one message, and changes nothing. **First-run sequence**
 |---|---|---|
 | Known shell (only for an explicit `--shell`; a `SHELL` value that is not bash, zsh or fish silently gives bash, D20) | `swarmbox init: unknown shell 'X'. Use --shell bash, zsh or fish.` | 2 |
 | Workspace not on a Windows drive (WSL, D34) | `swarmbox: workspace X is on a Windows drive; WSL2 is supported only with the workspace on the Linux filesystem (for example ~/swarmbox).` | 4 |
+| Short path to the Podman socket (Linux and WSL; 3.5, B5): the host-side socket path `<workspace>/.local/state/swarmbox/podman.sock` is at most 100 characters, or the helper makes the symlink `host:~/.local/state/swarmbox/<name>.sock-dir` and that path is at most 100 | `swarmbox: cannot make a short path to the Podman socket (workspace X is too deep). Choose a shorter workspace path with `swarmbox config set WORKSPACE`.` (the text is a proposal) | 4 |
 | Podman installed (also checked by the function's bootstrap) `[today]` text, reworded | `swarmbox: Podman is not installed.` then `Linux: sudo apt install podman (Debian/Ubuntu) or sudo dnf install podman (Fedora/RHEL)` and `macOS: brew install podman` | 3 |
 | Podman version at least 4.3 (the version where the `keep-id` form was observed; the true minimum is B8) | `swarmbox: Podman X.Y found, 4.3 or newer is required. Upgrade Podman and try again.` | 3 |
 | `python3` present, checked only by `swarmbox remote` (the helper is POSIX `sh`, D16) | `swarmbox: python3 is needed for 'swarmbox remote' and was not found.` | 3 |
