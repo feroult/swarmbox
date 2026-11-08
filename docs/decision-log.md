@@ -1051,3 +1051,41 @@ Impact on the design: 13.1 describes the fake in general terms. How to reverse: 
 - The full-mode flags (tun, unmask, hostname) were not started for real.
 - The first three smoke runs failed (storage on overlayfs under a scratch HOME; `--hostname` in the host UTS namespace; the mount point owned by the container's root); each cause is above.
 - The first draft of one test asserted the text "did not become ready in 60 s" against the source, which does not hold (the number comes from the tuned variable); it now runs with 3 polls of 1 s.
+
+## [3.4] The 100-character limit is counted in bytes
+Context: the design says "100 characters"; the kernel limit is 108 bytes (107 usable) and a workspace name may hold multibyte characters (an accented folder name is two bytes per letter).
+Options: count characters (what a shell `${#var}` does in a UTF-8 locale, and varies with the locale); count bytes (`printf %s | wc -c`).
+Chosen: bytes, because the kernel compares bytes and `wc -c` gives the same number in every locale (tested under C, POSIX and C.UTF-8). A path of 100 bytes is direct, 101 bytes gets the link, even when it has fewer than 100 characters.
+Impact on the design: 3.7.2 "3.4 state" says bytes; 3.5 still says characters, which is the same for ASCII paths. How to reverse: replace `byte_len` by `${#1}`.
+
+## [3.4] The rule is by length only; the default workspace gets no link because it is short
+Context: the slice says "no symlink is ever made for the default workspace". With a very long HOME the default workspace could exceed 66 bytes.
+Options: special-case the default workspace (never a link, so the connection would fail to connect); measure every workspace the same way.
+Chosen: measure every workspace the same way. The default `~/swarmbox` is far below the limit for any normal HOME (tested), so the requirement holds in practice; an enormous HOME would get a link rather than a connection that cannot work.
+Impact on the design: 3.7.2 "3.4 state". How to reverse: skip `sock_plan` when the workspace equals the default.
+
+## [3.4] Step 6 runs last, under the lock, on every successful `up` including the fast path; a failed registration is a warning
+Context: the design puts the connection in step 6 but also says the fast path calls nothing else (B35).
+Options: skip the step on the fast path (a box started elsewhere would never get its connection; a changed address never re-registered, which 12.4 requires "on every up"); run it everywhere.
+Chosen: run it everywhere, after readiness, and let it cost one `podman system connection list` on the fast path (an add and a remove only when the address differs). B35's two-call budget now counts the non-`system` calls; tests/test_host_up.py and tests/smoke_image.py were changed that way. Registration failures (list, add) print one warning and keep the exit code, as v0.1.0 did, because the box is usable without the connection. Only "too deep" and "not a symlink at the link path" exit 4; for a box that is about to be created that happens before `podman run`, so nothing is created.
+Impact on the design: 3.7.2 step 6, B35 row, 3.8 `connection` row. How to reverse: remove the `host_connection` calls in cmd_up and cmd_reset.
+
+## [3.4] A new subcommand, `swarmbox-host connection`
+Context: the slice asks for "its supporting subcommand"; the design lists none for step 6.
+Chosen: `connection` runs the step alone (no lock, no box) and prints the registered URI, which makes it testable without a box and gives the function or the owner a way to repair the registration. Added to the 3.8 command table.
+Impact on the design: the table row. How to reverse: delete cmd_connection and its dispatch line.
+
+## [3.4] A link made once is not removed when the path becomes short again; only the connection named like the box is touched
+Context: the link is a small state file that the next long workspace reuses.
+Chosen: never delete an old link (the helper only creates or refreshes); a connection name that merely starts with the box name is not the box's (matched exactly, by `awk index`, so a URI with spaces is read whole).
+Impact on the design: 3.7.2 "3.4 state". How to reverse: remove the link when the plan has no link.
+
+## [3.4] Test isolation, and the stateful fake
+Context: registering a connection edits Podman's configuration when isolation fails.
+Chosen: every test sets HOME, XDG_CONFIG_HOME and CONTAINERS_CONF (an empty file, Podman refuses a missing one) in a mktemp folder; most tests use a small stateful fake `podman` (only `system connection list|add|remove`, it exits 99 for anything else); one class uses the real `podman system connection` (no service is contacted) in the isolated config; `tearDownModule` compares snapshots of the real ~/.config/containers, ~/.local/state/swarmbox and the real `podman system connection ls` taken in `setUpModule` (they were identical). tests/smoke_image.py got the same isolation for its throwaway box. The first smoke run with an empty CONTAINERS_CONF failed (exit 7, `sethostname: Operation not permitted`): CONTAINERS_CONF replaces /etc/containers/containers.conf, where the development box keeps `utsns = "host"`. The scratch file now starts as a copy of that file; the rerun passed (up-lifecycle and up-busy-port, reduced), and the fast path measured 3 calls (inspect, image inspect, `system connection list`), 0.10 s.
+Impact on the design: none. How to reverse: n/a.
+
+## [3.4] What was not done or did not work
+- macOS (skipped by the step, tagged [unverified]), arm64, bash 3.2 and a real nested Podman service behind the socket were not run; the reduced check uses a Python stand-in server in a throwaway container (swarmbox-test-3-4-<random>, removed by exact name).
+- Whether `podman system connection add` makes the first connection the default for plain `podman` on a host is [unverified]; v0.1.0 had the same behaviour, and the helper does not pass `--default` either way.
+- A real `up` on a real long workspace with the nested service was not run; only the connection step with the real Podman CLI in an isolated config.
