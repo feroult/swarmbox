@@ -244,3 +244,31 @@ Impact on the design: one sentence. How to reverse: n/a.
 Context: the plan says they later become real tests.
 Chosen: tests/spikes/README.md lists each script with its B number, command and prerequisites and a promotion table (which phase turns it into a test); test_docs_consistency.py checks the list against the directory. The spikes are not wired to CI because they download packages, need Podman and take minutes.
 Impact on the design: none. How to reverse: n/a.
+
+## [1.1] LICENSE text source and copyright holder line
+Context: D25 fixes Apache-2.0 but not where the text comes from or whose name goes in the copyright line.
+Options: copy the text from apache.org; copy it from the Debian package; add a "Copyright [yyyy] [name]" line to the LICENSE.
+Chosen: the unmodified text of /usr/share/common-licenses/Apache-2.0 (Debian base-files, same text as apache.org, 202 lines, with the appendix left as the standard template) because it was available offline and verified by test (title, appendix, boilerplate, end marker). No copyright line was added to LICENSE, which is the Apache recommendation for the unmodified text. The recommended holder name "SwarmBox contributors" is not yet written anywhere because there are no source headers or NOTICE file to carry it; when one is added, use "Copyright <year> SwarmBox contributors". The owner may prefer a personal or company name.
+Impact on the design: none (D25 stands; the name-availability check stays a Phase 7 task).
+How to reverse: replace LICENSE; no other file depends on its text.
+
+## [1.1] Repository visibility stays a manual owner action
+Context: D37 and the plan keep the GitHub repository private until M4.
+Chosen: nothing was changed or configured; this slice only adds the files. Making the repository public is for the owner after Phase 7 acts on the history audit.
+Impact on the design: none. How to reverse: n/a.
+
+## [1.1] Third-party notices: scope and honesty
+Context: the Dockerfile installs more than ttyd, starship and tmux (Debian packages, Poetry, uv, Go, gcloud, npm tools, Claude Code, OpenCode).
+Chosen: list every tool the Dockerfile names, with a license read from the upstream LICENSE file or the installed package where possible (tag [verified: ...; 2026-11-08]) and [unverified] otherwise: the licenses of Podman's helper packages, the components bundled in Chromium, google-cloud-cli (no copyright file found), the individual base packages, the OpenCode repository URL and chrome-devtools-mcp. uv is dual Apache-2.0/MIT: only the MIT file was re-read. Claude Code is listed as proprietary (not redistributed, downloaded at build). tests/test_repo_files.py checks that each ARG *_VERSION tool, each npm -g package and the named installers appear in the file.
+Impact on the design: none. Phase 7 completes the list from the package database.
+How to reverse: n/a.
+
+## [1.1] New test file tests/test_repo_files.py instead of extending test_docs_consistency.py
+Context: the slice allowed either.
+Chosen: a separate file, because test_docs_consistency.py is about design and plan cross-references and this one is about repository files; CONTRIBUTING.md lists every tests/test_*.py, so a new test file must be added to its table (the test enforces that).
+Impact on the design: none. How to reverse: n/a.
+
+## [1.1] Build command in CONTRIBUTING.md
+Context: the build command must match build.sh as it is today.
+Chosen: ./build.sh (read: podman build with USER_UID, USER_GID, HOST_OS, tag from --name, default swarmbox). The text tells contributors to pass --name swarmbox-test-<id> so a build never replaces the live box's image. A full build was NOT run (several GB, minutes, and the default name would replace the owner's image), so the sentence is tagged [unverified]; --name is verified by reading build.sh lines 60-62 and 106. build.sh --name also renames CONTAINER_NAME, which was not exercised.
+Impact on the design: none. How to reverse: n/a.
