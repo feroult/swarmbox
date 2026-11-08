@@ -13,7 +13,7 @@ Please report a vulnerability privately, not in a public issue.
   version of the supported series and named in `CHANGELOG.md`.
 
 Reports about the host helper (`swarmbox-host`, which runs on your machine with your privileges) are the most valuable ones.
-The written review of the helper is in `docs/security-review.md` once it is published.
+The written review of the helper is in `docs/security-review.md`.
 
 ## Supported versions
 
