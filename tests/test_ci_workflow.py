@@ -176,8 +176,29 @@ class Structure(unittest.TestCase):
                     "podman login", "api.cloudflare.com", "cloudflared"):
             self.assertNotIn(bad, TEXT.lower())
 
-    def test_comment_says_later_phases_add_image_build(self):
-        self.assertRegex(TEXT, r"(?i)later phases.*image build.*smoke test")
+    def test_smoke_job_builds_the_image_and_runs_the_full_smoke_test(self):
+        job = DOC["jobs"]["smoke"]
+        self.assertIn("ubuntu-24.04", str(job["runs-on"]))
+        self.assertEqual(job["env"]["SWARMBOX_IMAGE_TAG"], "swarmbox-test-img-ci")
+        text = "\n".join(l for _, l in run_lines(DOC, "smoke"))
+        self.assertIn("podman build", text)
+        self.assertRegex(text, r"SWARMBOX_SMOKE_FULL=1 python3 tests/smoke_image\.py")
+        self.assertIn("SKIP", text)  # a skipped step in the full run fails the job
+        # cleanup removes the image by its exact name, even after a failure
+        last = [s for s in job["steps"] if s.get("if") == "always()"]
+        self.assertEqual(len(last), 1)
+        self.assertIn('podman rmi "$SWARMBOX_IMAGE_TAG"', last[0]["run"])
+        # the smoke job is not scheduled-only: it runs on push and pull request
+        self.assertNotIn("if", job)
+
+    def test_smoke_job_uses_no_forbidden_podman_verb(self):
+        for bad in ("system prune", "system reset", "volume prune", "image prune", "rmi -a", "rm -a", "stop -a", "kill -a",
+                    "--all", "podman push"):
+            self.assertNotIn(bad, TEXT)
+
+    def test_comment_documents_smoke_job_and_b28(self):
+        self.assertRegex(TEXT, r"(?i)smoke.*SWARMBOX_SMOKE_FULL=1")
+        self.assertIn("B28", TEXT)
 
 
 class FallbackTextCheck(unittest.TestCase):
