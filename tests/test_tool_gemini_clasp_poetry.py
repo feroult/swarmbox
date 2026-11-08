@@ -26,6 +26,10 @@ echo "npm $*" >> "$FAKE_CALLS"
 [ "$1" = cache ] && exit "${FAKE_CACHE_EXIT:-0}"
 [ "$1" = install ] || exit 2
 [ -z "${FAKE_NPM_FAIL:-}" ] || { echo "npm ERR! network" >&2; exit 1; }
+# like node-gyp compiling a native dependency (measured on gemini in 4b.7): it unpacks Node headers into its devdir
+echo "devdir=${npm_config_devdir:-unset}" >> "$FAKE_CALLS"
+echo "xdg=${XDG_DATA_HOME:-unset}|${XDG_STATE_HOME:-unset}|${XDG_CONFIG_HOME:-unset}|${XDG_CACHE_HOME:-unset}" >> "$FAKE_CALLS"
+[ -z "${npm_config_devdir:-}" ] || { mkdir -p "$npm_config_devdir/24.0.0"; echo hdr > "$npm_config_devdir/24.0.0/node.h"; }
 shift
 while [ $# -gt 0 ]; do case "$1" in --prefix) prefix=$2; shift 2 ;; -g) shift ;; *) pkg=$1; shift ;; esac; done
 [ -z "${FAKE_NO_BIN:-}" ] || exit 0
@@ -139,6 +143,25 @@ class NpmToolInstallTest(InstallBase):
             with self.subTest(tool=tool):
                 self.assertEqual(self.install(tool, "1.2.3").returncode, 0)
                 self.assertEqual(self.outside(), [])
+
+    def test_node_gyp_headers_go_to_a_scratch_dir_that_is_removed(self):
+        """Measured in 4b.7: gemini's native dependency makes node-gyp download Node headers into ~/.cache/node-gyp (2811 files)."""
+        for tool in NPM_TOOLS:
+            with self.subTest(tool=tool):
+                self.assertEqual(self.install(tool, "1.2.3").returncode, 0)
+                lines = [l for l in read(self.calls).splitlines() if l.startswith("devdir=")]
+                self.assertEqual(len(lines), 1, lines)
+                devdir = lines[0][len("devdir="):]
+                self.assertNotEqual(devdir, "unset")
+                self.assertFalse(devdir.startswith(self.home), devdir)  # not in the home
+                self.assertFalse(os.path.exists(devdir), "the scratch devdir was left behind")
+                xdg = [l for l in read(self.calls).splitlines() if l.startswith("xdg=")][0][4:].split("|")
+                for d in xdg:  # a postinstall that runs the program writes its data and logs here, not in the home
+                    self.assertNotEqual(d, "unset")
+                    self.assertFalse(d.startswith(self.home), d)
+                    self.assertFalse(os.path.exists(d))
+                self.assertEqual(self.outside(), [])
+                os.remove(self.calls)
 
     def test_a_failing_npm_fails_the_install(self):
         for tool in NPM_TOOLS:

@@ -27,6 +27,8 @@ REAL_TOOLS = os.path.join(ROOT, "container", "tools")
 FAKE_NPM = r"""#!/bin/bash
 echo "npm $*" >> "$FAKE_CALLS"
 echo "cwd=$PWD" >> "$FAKE_CALLS"
+echo "scratch=${npm_config_devdir:-unset}|${XDG_DATA_HOME:-unset}" >> "$FAKE_CALLS"
+[ -z "${XDG_DATA_HOME:-}" ] || { mkdir -p "$XDG_DATA_HOME/opencode/log"; echo l > "$XDG_DATA_HOME/opencode/log/opencode.log"; }
 if [ "$1" = cache ]; then exit "${FAKE_CACHE_EXIT:-0}"; fi
 [ "$1" = install ] || exit 2
 [ -z "${FAKE_NPM_FAIL:-}" ] || { echo "npm ERR! network" >&2; exit 1; }
@@ -102,6 +104,18 @@ class InstallTest(unittest.TestCase):
         self.assertIn("npm cache clean --force", calls)
         self.assertLess(calls.index("npm cache clean --force"), len(calls))
         self.assertEqual(r.stdout, "")   # stdout belongs to the tool (6.4)
+
+    def test_the_install_runs_in_a_scratch_environment_that_is_removed(self):
+        """Measured in 4b.7: the package's postinstall ran the program, which wrote ~/.local/share/opencode/log/opencode.log."""
+        r = self.install()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        line = [l for l in read(self.calls).splitlines() if l.startswith("scratch=")][0][len("scratch="):]
+        gyp, data = line.split("|")
+        for d in (gyp, data):
+            self.assertNotEqual(d, "unset")
+            self.assertFalse(d.startswith(self.home), d)
+            self.assertFalse(os.path.exists(d), "left behind: " + d)
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".local")))
 
     def test_a_pinned_version_is_passed_to_npm(self):
         self.install(version="2.2.6")
