@@ -69,6 +69,7 @@ python3 tests/test_docs_consistency.py
 | `test_retired_coverage.py` | the inventory of the six deleted v0.1.0 test files (each old test mapped to the 2.0 test that pins it, or dropped with a reason in the decision log) and the guard that no other test names the retired v0.1.0 scripts (an allow-list holds the history uses) |
 | `test_release_docs.py` | `SECURITY.md`, `CODE_OF_CONDUCT.md` and `CHANGELOG.md` (slice 7.1): the reporting section and the one marked owner placeholder each, the no-telemetry statement equal to the README's, both log paths, the changelog's 2.0.0 entry and links, and a grep of the product code for analytics hosts |
 | `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md`, this file and the three policy files being present and linked |
+| `test_security_review.py` | the security review of the host helper (slice 7.3): hostile values, planted symlinks at the temporary names and the lock, the tunnel token never in argv or output, `update --to` and archive checks, modes under umask 000, and `docs/security-review.md` (no open row, every row names an existing test) |
 | `test_serve_container.py` | `serve` in a throwaway container from the image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
 | `test_serve_steps.py` | `container/entrypoint.sh serve`: steps, failures, readiness marker, signals and the ttyd supervisor, with fakes on `PATH` |
 | `test_spikes_common.py` | the safety helpers of the spike scripts |
