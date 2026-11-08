@@ -178,3 +178,41 @@ How to reverse: change the package name in the opencode installer and remove the
 Context: B10 asserted at least 300 MB saved for both packages (opencode-ai only has one removable build: 204 MB); B1 counted /opt/npm-cache entries as writes outside the home (the image deliberately puts the npm cache there).
 Chosen: thresholds per package (600 MB and 150 MB); the /opt/npm-cache path is excluded from the outside-the-home check and reported in the text. I wrote the spikes after exploring by hand, so "tests first" here means the assertions were written before the final runs, not before the experiment.
 Impact on the design: none. How to reverse: n/a.
+
+## [0.4] B11: the gcloud checksum is computed for the pinned URL, not copied from Google's page
+Context: Google's install page (docs.cloud.google.com/sdk/docs/install-sdk) publishes sha256 for the Linux x86_64 and arm archives, and both matched my downloads. But it publishes them only for the unversioned names (`google-cloud-cli-linux-x86_64.tar.gz`), which always mean the newest release. The version-pinned archives (`google-cloud-cli-592.0.0-linux-x86_64.tar.gz`) exist but are different bytes (other size by 8 bytes on arm, other sha256) with identical content (every file hashed and compared). The design had assumed a publisher checksum could be compared with the script's result.
+Options: (a) pin the unversioned URL and copy Google's checksum (breaks at the next Google release); (b) pin the versioned URL and compute the checksum at release time (trust on first use), cross-checking content with the unversioned archive when the pinned version is still the newest; (c) verify extracted content only.
+Chosen: (b), because it is what D29 already said and it is the only option that stays stable; the page's checksum is only a cross-check that applies for a short window. Arm64 uses Google's name `arm`.
+Impact on the design: 6.4 (gcloud paragraph rewritten with URLs and values), 6.12 row, Part B rows B11 and results. D29 stands. Values recorded are those of 592.0.0 and will be stale; the maintainer script must recompute them.
+How to reverse: (a) with a manifest that pins the unversioned URL and updates the checksum on every bump.
+
+## [0.4] B25: Go's checksum is copied from go.dev's JSON listing
+Context: `https://go.dev/dl/?mode=json` lists a sha256 per file; go1.27.3 linux-amd64 and linux-arm64 matched the computed values. The listing covers versioned files, so no computing is needed.
+Options: compute like gcloud; copy the publisher value.
+Chosen: copy the publisher value (a stronger check than computing). The same maintainer script handles both: gcloud computes, Go copies. `&include=all` for older releases was not tried.
+Impact on the design: 6.4 (new Go paragraph), 6.12 row, Part B.
+How to reverse: compute the value instead.
+
+## [0.4] B4: ttyd's single-file limit is confirmed by measurement
+Context: the box's ttyd 1.7.7-40e79c7 with `--index` serves only that file; `/style.css`, `/app.js`, `/other.txt` and `/index.html` return 404. Run with the host's ttyd binary on a random 127.0.0.1 port (not in a container; never on 7681); the spike kills only the PID it started. Documentation of ttyd was not separately fetched: `--help` only says "Custom index.html path".
+Options: none needed; the design (inline into one file) is confirmed.
+Chosen: record the measurement; reduced tag (no container).
+Impact on the design: 5.1 limit sentence now states the measurement. How to reverse: n/a.
+
+## [0.4] B14: Cloudflare session revocation recorded from documentation only
+Context: Cloudflare's session-management page names Zero Trust > Access controls > Applications > app > Edit > "Revoke existing tokens", and Zero Trust > Team & Resources > Users > user > Action > Revoke. No real account may be contacted, so the screens were not seen.
+Options: mark verified from the documentation; keep `[unverified]`.
+Chosen: keep `[unverified]` with the documented path stated, because menu names change and nothing was tried. Fact B14 stays open.
+Impact on the design: section 11 now gives the path; the plan's "say it is not documented" intent is superseded because it is documented.
+How to reverse: n/a.
+
+## [0.4] B16: podman-restart.service on 4.3.1 covers `--restart=always` only; the reboot is untested
+Context: Podman 4.3.1 documentation: "restart will not restart containers after a system reboot" (without systemd). The package ships the USER unit /usr/lib/systemd/user/podman-restart.service (WantedBy=default.target) running `podman start --all --filter restart-policy=always`. Throwaway containers: the filter lists `--restart=always` but NOT `--restart=unless-stopped` (documented as "identical to always") and not `no`. The sandbox has no systemd, so enable, reboot and lingering were not tried.
+Options: claim it works for rootless; leave everything unverified; record what was measured.
+Chosen: record what was measured, mark the reboot and lingering `[unverified]`, and add the rule "if a box ever gets --restart on 4.3.x use always". The box still has no --restart in 2.0 (unchanged).
+Impact on the design: 4.2 restart-policy bullet; Part B B16 stays partly open. The later-Podman claim (unit covers unless-stopped) comes from upstream main's unit text, not tested, so marked `[unverified]`.
+How to reverse: n/a.
+
+## [0.4] Spike scripts: the first run of B11 and B16 contradicted my assumptions; assertions changed into recorded findings
+Context: B11 first asserted that pinned and unversioned archives had the same sha256 (they do not); B16 first asserted unless-stopped is matched by the unit's filter (it is not). Both assertions were my assumptions, not design claims, and both are now findings recorded in the design. The docs consistency test (tests/test_design_partb.py) was written before the design edits and failed first; it also needed two tolerance fixes (the format-description tag and a legacy tag marked "not recorded" are skipped).
+Impact on the design: as above. How to reverse: n/a.
