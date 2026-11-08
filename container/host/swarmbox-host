@@ -1883,6 +1883,27 @@ series_of() {
     SERIES=$_x.$_y
 }
 
+# archive_safe FILE: refuses a helper archive that has an absolute member name, a '..' component, or a member that is not a plain
+# file or folder (a symlink, a hard link, a device): extraction then cannot write outside the temporary folder and cannot leave a
+# link behind, whatever the local tar does by default (security review SR-05). Member names are listed twice (names, then types).
+archive_safe() {
+    _an=$(tar -tf "$1" 2> /dev/null) || return 1
+    case "$NL$_an$NL" in
+        *"$NL/"*|*"$NL../"*|*"/../"*|*"/.."$NL*|*"$NL.."$NL*) return 1 ;;
+    esac
+    _av=$(tar -tvf "$1" 2> /dev/null) || return 1
+    while IFS= read -r _al; do
+        case $_al in
+            *' link to '*) return 1 ;;   # a hard link as bsdtar lists it
+            -*|d*|'') ;;
+            *) return 1 ;;
+        esac
+    done <<AEOF
+$_av
+AEOF
+    return 0
+}
+
 # update [--to TAG]. The order differs from the design text in one way (decision [3.6]): the helper is extracted and its version
 # read into a temporary folder, the local tag is made, and only then the folder is renamed over the old helper and the config
 # written, so a failing `podman tag` leaves the helper as it was as well as the config.
@@ -1941,7 +1962,7 @@ cmd_update() {
     trap 'up_update_cleanup' EXIT
     up_msg=
     if podman run --rm "$up_ref" host-helper > "$up_tmp/helper.tar" 2> "$UP_ERRF"; then
-        if tar -x -C "$up_tmp" -f "$up_tmp/helper.tar" > /dev/null 2>&1 && [ -x "$up_tmp/swarmbox-host" ]; then
+        if archive_safe "$up_tmp/helper.tar" && tar -x -C "$up_tmp" -f "$up_tmp/helper.tar" > /dev/null 2>&1 && [ -x "$up_tmp/swarmbox-host" ]; then
             up_msg=
         else
             up_msg="the image has no usable host helper"
