@@ -105,17 +105,9 @@ sh dev/dev-build.sh            # tag swarmbox-test-img-<random>; then: podman rm
 ```
 
 which builds from a scratch copy of the `Dockerfile` that carries the apt override (see below); the product file is never changed.
-`SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. `build.sh` still builds the v0.1.0 image from
-`Dockerfile.v0.1.0` until Phase 6:
-
-```
-./build.sh
-```
-
-`build.sh` runs `podman build` with `--build-arg USER_UID`, `USER_GID` and `HOST_OS`, and tags the image `swarmbox`. [unverified: a
-full `./build.sh` was not run for this file; the command was read from `build.sh`.] Do not run it on a machine where the live
-box uses the image name `swarmbox` unless you mean to replace that image: pass `--name swarmbox-test-<id>` to build under a test name,
-and remove that image by its exact name afterwards.
+`SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. To build by hand: `podman build -t swarmbox:dev .`
+(then `SWARMBOX_IMAGE=swarmbox:dev swarmbox`). The v0.1.0 build and start scripts and the v0.1.0 image file are retired; they
+stay readable in the tag v0.1.0 (`git show v0.1.0:<path>`).
 
 Caveats when building inside a SwarmBox (nested rootless Podman 4.3.1):
 
