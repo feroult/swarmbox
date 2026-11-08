@@ -282,8 +282,8 @@ def step_attach_session(ctx):
 
 
 def step_no_agent(ctx):
-    """A default build holds no tool: every command resolves to its shim and /opt/swarmbox/tools is empty (D2, 6.8)."""
-    r = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
+    """A default build holds no tool (bash, because dash has no `type -P`; the step used sh and found nothing until 6.7): every command resolves to its shim and /opt/swarmbox/tools is empty (D2, 6.8)."""
+    r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
                "for c in claude opencode gemini codex clasp gcloud gsutil bq go gofmt poetry; do p=$(type -P $c) && echo \"FOUND:$c:$p\"; done; "
                "ls -A /opt/swarmbox/tools | wc -l; true")
     found = [l for l in r.stdout.splitlines() if l.startswith("FOUND:")]
