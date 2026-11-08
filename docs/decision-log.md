@@ -628,3 +628,26 @@ Context: found by the container test: `/proc/<pid>/cmdline` of the running ttyd 
 Chosen: the test matches the rewritten form and says why. Not a product problem.
 Impact on the design: none.
 How to reverse: n/a.
+
+## [2.6] The migration is a separate program, `swarmbox-migrate`, with the interface fixed in [2.2]
+Context: slice 2.2 made `serve` step 4 call `swarmbox-migrate` (no arguments) and fixed its exit rule (non-zero is one health line).
+Chosen: `container/scripts/swarmbox-migrate.sh`, bash, installed as `/usr/local/bin/swarmbox-migrate` (Dockerfile COPY and chmod 755). It sources `dirs.sh` (test-only `SWARMBOX_TEST_LIB`, as the other scripts). The step 4 code in `serve` only changed its "not installed" log text. The 2.2 style failure test already existed (a fake program); 2.6 adds the same test with the real script.
+Impact on the design: 12.4 describes the behavior; 4.1 notes the program exists.
+How to reverse: remove the Dockerfile lines; `serve` goes back to a logged no-op.
+
+## [2.6] Conflict rules the table in 12.4 did not settle
+Context: the table says "never overwrites an existing destination" but not what happens to the source then, nor what to do with links and look-alike files.
+Options: delete the source anyway (loses data); keep the source and say so; stop with an error.
+Chosen: keep the source, print one line, exit 0 (a conflict is not a failure, `.swarmbox/` simply stays). Details: a real `.claude/settings.json` with identical content lets the old copy go (otherwise `.swarmbox/` could never disappear); a link pointing elsewhere is left; a dangling link into `.swarmbox/` is removed (otherwise Claude Code writes through it back into the old folder). "web-terminal.conf (and any copies)": only the exact name is moved; files with other names are unknown to the table, so they are listed and left. Deleted classes are the exact names plus `*.log` and `*.lock`; I derived these from v0.1.0 (`init.sh`, `podman-service.sh`, `web-terminal.sh`).
+Impact on the design: 12.4 now states these rules.
+How to reverse: change the case branches in swarmbox-migrate.sh; the tests name each rule.
+
+## [2.6] `memory/` is mentioned at every start, not once in the life of the workspace
+Context: "serve mentions it once". A "once ever" rule needs a state file, which the migration otherwise does not have, and the second run must be a no-op.
+Chosen: one line per run while `memory/` exists (it goes to serve.log, not to the health file and not to the banner). So "once" means once per start, never twice in one run.
+Impact on the design: 12.4 says so. How to reverse: add a marker file under the state folder and skip the line when it exists.
+
+## [2.6] The fixture is built from v0.1.0 code and may be incomplete; no real workspace was touched
+Context: B29 asks for a run on a copy of a real v0.1.0 workspace; this build must not touch the owner's workspace.
+Chosen: the fixture lists the files written by the v0.1.0 scripts (settings.json and its link, web-terminal.conf, .lock and .log files, podman.sock, ttyd-index.html, opencode-local.json) plus `memory/`, whose producer (the removed memory service) is not in v0.1.0's tree, so its content is a placeholder. podman.sock is a plain file in most tests and a real Unix socket in one. B29 is closed with the tag "fixture, not a real v0.1.0 workspace"; the owner runs it on a copy in Phase 6.
+Impact on the design: Part B row and 12.4 say so. How to reverse: n/a.
