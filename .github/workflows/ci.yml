@@ -88,6 +88,7 @@ jobs:
           python3 tests/test_tool_install.py
           python3 tests/test_tool_link.py
           python3 tests/test_tool_manifest.py
+          python3 tests/test_tool_claude_real.py
           python3 tests/test_tool_shim.py
           python3 tests/test_tool_stub.py
           python3 tests/test_web_build.py
