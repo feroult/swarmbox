@@ -178,6 +178,53 @@ class HostHelper(Base):
         for m in tf.getmembers():
             self.assertEqual((m.uid, m.gid), (0, 0))
 
+    def test_the_archive_of_the_repository_folder_has_the_files_of_3_7_1_and_the_templates_are_what_init_prints(self):
+        # the image's folder as the Dockerfile builds it: container/host/ (swarmbox-host, VERSION, templates/), the cloudflare
+        # script and an empty tool-ports
+        d = os.path.join(self.base, "image-host")
+        shutil.copytree(os.path.join(ROOT, "container", "host"), d)
+        shutil.copy(os.path.join(ROOT, "cloudflare-setup.py"), d)
+        open(os.path.join(d, "tool-ports"), "w").close()
+        r = self.run_ep("host-helper", env=self.env(SWARMBOX_TEST_HOST_DIR=d))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        tf = tarfile.open(fileobj=io.BytesIO(r.stdout))
+        names = sorted(n[2:] if n.startswith("./") else n for n in tf.getnames())
+        for want in ("swarmbox-host", "cloudflare-setup.py", "VERSION", "tool-ports", "templates", "templates/bash",
+                     "templates/zsh", "templates/fish"):
+            self.assertIn(want, names)
+        self.assertEqual(tf.getmember("./swarmbox-host").mode & 0o111, 0o111)
+        out = os.path.join(self.base, "unpacked")
+        os.mkdir(out)
+        t = subprocess.run(["tar", "-x", "-C", out, "-f", "-"], input=r.stdout, capture_output=True)
+        self.assertEqual(t.returncode, 0, t.stderr)
+        version = open(os.path.join(ROOT, "container", "host", "VERSION")).read().strip()
+        v = subprocess.run([os.path.join(out, "swarmbox-host"), "version"], capture_output=True, text=True,
+                           env={"PATH": "/usr/bin:/bin", "HOME": self.base})
+        self.assertEqual((v.returncode, v.stdout.strip()), (0, version))
+        # what init prints from the unpacked archive equals what it prints from the repository's templates
+        init = os.path.join(ROOT, "container", "scripts", "swarmbox-init.sh")
+        for shell in ("bash", "zsh", "fish"):
+            a = subprocess.run(["sh", init, "--shell", shell], capture_output=True, text=True,
+                               env={"PATH": "/usr/bin:/bin", "SWARMBOX_TEST_HOST_DIR": out})
+            b = subprocess.run(["sh", init, "--shell", shell], capture_output=True, text=True,
+                               env={"PATH": "/usr/bin:/bin", "SWARMBOX_TEST_HOST_DIR": os.path.join(ROOT, "container", "host")})
+            self.assertEqual(a.returncode, 0, a.stderr)
+            self.assertEqual(a.stdout, b.stdout)
+            with open(os.path.join(out, "templates", shell), "rb") as f1, \
+                    open(os.path.join(ROOT, "container", "host", "templates", shell), "rb") as f2:
+                self.assertEqual(f1.read(), f2.read())
+
+    def test_the_entrypoint_init_runs_the_real_program_with_the_shell_variable(self):
+        init = os.path.join(ROOT, "container", "scripts", "swarmbox-init.sh")
+        bindir = os.path.join(self.base, "realbin")
+        os.mkdir(bindir)
+        os.symlink(init, os.path.join(bindir, "swarmbox-init"))
+        env = self.env(path=bindir, SWARMBOX_TEST_HOST_DIR=os.path.join(ROOT, "container", "host"), SHELL="/usr/bin/fish")
+        r = self.run_ep("init", "--with", "claude", env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(b"function swarmbox", r.stdout)
+        self.assertEqual(r.stderr, b"")
+
     def test_the_archive_unpacks_with_plain_tar(self):
         d = self.make_dir()
         r = self.run_ep("host-helper", env=self.env(SWARMBOX_TEST_HOST_DIR=d))

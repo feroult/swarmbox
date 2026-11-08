@@ -141,6 +141,38 @@ class StartupAndLayout(unittest.TestCase):
         self.assertLess(CODE.index("chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}"), CODE.index("COPY container/entrypoint.sh"))
 
 
+class HostHelperArchive(unittest.TestCase):
+    """Slice 3.5: container/host/ is the helper archive's folder, and swarmbox-init is the entrypoint's `init`."""
+
+    def test_the_host_folder_is_copied_into_the_archive_folder(self):
+        self.assertIn("COPY container/host/ /usr/local/share/swarmbox/host/", INS)
+        self.assertIn("COPY cloudflare-setup.py /usr/local/share/swarmbox/host/cloudflare-setup.py", INS)
+
+    def test_the_host_copy_comes_before_the_tool_link_that_writes_tool_ports(self):
+        self.assertLess(CODE.index("COPY container/host/"), CODE.index("swarmbox-tool link --system"))
+
+    def test_swarmbox_host_is_executable_and_the_folder_readable(self):
+        chmod = [i for i in INS if i.startswith("RUN chmod") and "swarmbox-entrypoint" in i]
+        self.assertEqual(len(chmod), 1)
+        self.assertRegex(chmod[0], r"chmod 755 /usr/local/share/swarmbox/host/swarmbox-host")
+        self.assertRegex(chmod[0], r"chmod -R a\+rX /usr/local/share/swarmbox/host")
+
+    def test_swarmbox_init_is_installed_and_executable(self):
+        self.assertIn("COPY container/scripts/swarmbox-init.sh /usr/local/bin/swarmbox-init", INS)
+        chmod = [i for i in INS if i.startswith("RUN chmod") and "swarmbox-entrypoint" in i][0]
+        self.assertIn("/usr/local/bin/swarmbox-init", chmod.split("chmod 755")[1].split("&&")[0])
+
+    def test_the_sources_exist_and_the_templates_are_the_three_shells(self):
+        for f in ("container/host/swarmbox-host", "container/host/VERSION", "container/scripts/swarmbox-init.sh"):
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, f)), f)
+        self.assertEqual(sorted(os.listdir(os.path.join(ROOT, "container", "host", "templates"))), ["bash", "fish", "zsh"])
+
+    def test_the_dev_build_copies_the_same_dockerfile(self):
+        # dev/dev-build.sh builds a scratch copy of ./Dockerfile with the repository as the context, so the COPY lines above apply
+        self.assertIn("$ROOT/$DOCKERFILE", read("dev/dev-build.sh"))
+        self.assertIn('podman build $EXTRA -f "$SCRATCH/Dockerfile" -t "$TAG" "$ROOT"', read("dev/dev-build.sh"))
+
+
 class NestedPodman(unittest.TestCase):
     """Design 10.5: every row of the table is still in the Dockerfile."""
 

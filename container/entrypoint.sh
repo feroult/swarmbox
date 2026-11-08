@@ -4,7 +4,7 @@
 #   serve     the box's main process: the ordered startup of design 4.1, the readiness marker and health file of 4.2,
 #             PID 1 signal handling, and the ttyd supervisor of 5.1 (slice 2.2, this file)
 #   attach    forwards to swarmbox-attach (slice 2.3: the grouped session, the idle window, `swarmbox <command>`)
-#   init      forwards to swarmbox-init (Phase 3 writes it; until then 127, named)
+#   init      forwards to swarmbox-init (container/scripts/swarmbox-init.sh, slice 3.5)
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
 #   tool      forwards to swarmbox-tool (the real program since Phase 4a)
 #   host-helper
