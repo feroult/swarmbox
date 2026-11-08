@@ -40,7 +40,7 @@ usage: swarmbox-host <subcommand> [args]
   env add NAME | env rm NAME | env list
   create-flags [--browser-url VALUE]
   fingerprint [--explain] [--label NAME=VALUE]...
-  up | reset | stop | url
+  up | reset | stop | url | connection
 USAGE
     exit 2
 }
@@ -1584,6 +1584,84 @@ sweep_state() {
     done
 }
 
+# ---------------------------------------------------------------- the host connection `podman -c <name>` (3.5, 3.7.2 step 6, 12.4)
+
+SOCK_LIMIT=100   # characters of path counted in bytes: the AF_UNIX limit is 107, minus a margin for macOS and the BSDs (104) (B5)
+
+byte_len() { printf '%s' "$1" | wc -c | tr -d ' \t'; }   # wc -c counts bytes, whatever the locale
+
+# The path the connection will use for the workspace $1: SOCK_PATH (what is registered), SOCK_TARGET (the workspace state
+# folder) and SOCK_LINK (the symlink, empty when the direct path is short enough). No side effect.
+# shellcheck disable=SC2016  # the backticks in the message are literal
+sock_plan() {
+    SOCK_TARGET=$1/.local/state/swarmbox
+    SOCK_PATH=$SOCK_TARGET/podman.sock
+    SOCK_LINK=
+    [ "$(byte_len "$SOCK_PATH")" -gt "$SOCK_LIMIT" ] || return 0
+    SOCK_LINK=$STATE_DIR/$BOX.sock-dir
+    SOCK_PATH=$SOCK_LINK/podman.sock
+    [ "$(byte_len "$SOCK_PATH")" -le "$SOCK_LIMIT" ] || die 4 "cannot make a short path to the Podman socket (workspace $1 is too deep). Choose a shorter workspace path with \`swarmbox config set WORKSPACE\`."
+}
+
+# Create or refresh the symlink: a correct link stays, a wrong target is relinked, anything that is not a symlink is refused
+# (exit 4) and left in place.
+sock_link() {
+    [ -n "$SOCK_LINK" ] || return 0
+    if [ -L "$SOCK_LINK" ]; then
+        [ "$(readlink "$SOCK_LINK")" != "$SOCK_TARGET" ] || return 0
+        rm -f "$SOCK_LINK" || die 4 "cannot replace the symlink $SOCK_LINK."
+    elif [ -e "$SOCK_LINK" ]; then
+        die 4 "cannot make a short path to the Podman socket: $SOCK_LINK exists and is not a symlink. Move it away."
+    fi
+    ln -s "$SOCK_TARGET" "$SOCK_LINK" || die 4 "cannot make the symlink $SOCK_LINK."
+}
+
+# Register the connection named like the box (only that name is ever read, replaced or removed). Idempotent: one `list`, and
+# `remove` + `add` only when the address differs (this also moves the v0.1.0 address <workspace>/.swarmbox/podman.sock). A
+# failure to register is a warning, never an exit: the box works without the host connection.
+sock_register() {
+    sr_uri=unix://$SOCK_PATH
+    if ! sr_out=$(podman system connection list --format '{{.Name}} {{.URI}}' 2> /dev/null); then
+        warn "could not list the Podman connections; 'podman -c $BOX' was not registered."
+        return 0
+    fi
+    sr_cur=$(printf '%s\n' "$sr_out" | awk -v n="$BOX" 'index($0, n " ") == 1 { print substr($0, length(n) + 2); exit }')
+    [ "$sr_cur" != "$sr_uri" ] || return 0
+    if [ -n "$sr_cur" ]; then
+        podman system connection remove "$BOX" > /dev/null 2>&1 || true
+    fi
+    podman system connection add "$BOX" "$sr_uri" > /dev/null 2>&1 || warn "could not register the Podman connection '$BOX'."
+    return 0
+}
+
+# Linux and WSL only: unix sockets do not cross the macOS VM [unverified: no macOS here].
+host_connection_wanted() { [ "${SWARMBOX_TEST_OS:-$(uname -s)}" != Darwin ]; }
+
+# Before a box is created: the exit 4 for a workspace too deep comes before anything is made.
+host_connection_prepare() {
+    host_connection_wanted || return 0
+    sock_plan "$1"
+    sock_link
+}
+
+host_connection() {
+    host_connection_wanted || return 0
+    sock_plan "$1"
+    sock_link
+    sock_register
+}
+
+# `swarmbox-host connection`: the same step on its own (no lock, no box); prints the registered URI.
+cmd_connection() {
+    [ $# -eq 0 ] || usage
+    need_podman
+    load_creation 0
+    host_connection_wanted || return 0
+    mkdir -p "$STATE_DIR" || die 4 "cannot create $STATE_DIR."
+    host_connection "$C_WORKSPACE"
+    printf 'unix://%s\n' "$SOCK_PATH"
+}
+
 # up (RESET=0) and reset (RESET=1), 3.7.2 "What up does" and "What reset does".
 up_main() {
     RESET=$1
@@ -1599,6 +1677,7 @@ up_main() {
     if [ "$BX_FOUND" = 1 ]; then
         [ -n "$BX_MANAGED" ] || refuse_v010
         if [ "$RESET" = 1 ]; then
+            host_connection_prepare "$C_WORKSPACE"
             prepare_create
             podman rm -f "$BOX" > /dev/null 2> "$UP_ERRF" || {
                 warn "could not remove the box '$BOX':"
@@ -1617,19 +1696,23 @@ up_main() {
         wait_ready
         return 0
     fi
+    host_connection_prepare "$C_WORKSPACE"
     prepare_create
     create_box
     wait_ready
 }
 
+# Step 6 runs under the lock, after the box is ready (up_main exits on every failure before it); the workspace is the box's own.
 cmd_up() {
     [ $# -eq 0 ] || usage
     up_main 0
+    host_connection "${BX_WS:-$C_WORKSPACE}"
 }
 
 cmd_reset() {
     [ $# -eq 0 ] || usage
     up_main 1
+    host_connection "$C_WORKSPACE"
 }
 
 # shellcheck disable=SC2016  # the backticks in the message are literal
@@ -1724,6 +1807,7 @@ case $sub in
     reset) cmd_reset "$@" ;;
     stop) cmd_stop "$@" ;;
     url) cmd_url "$@" ;;
+    connection) cmd_connection "$@" ;;
     update|remote)
         die 70 "'$sub' is not implemented in this build of the host helper."
         ;;

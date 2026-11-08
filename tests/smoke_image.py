@@ -335,6 +335,16 @@ class HostSide:
         # HOME and the XDG state and config folders are scratch ones (the helper's config, lock and state go there), but Podman's
         # own image store stays where it is: a store in a scratch folder would sit on overlayfs inside this box and fail
         e["XDG_DATA_HOME"] = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+        # the host connection of `up` (slice 3.4) is registered in this scratch folder, never in the real Podman configuration
+        # CONTAINERS_CONF replaces /etc/containers/containers.conf (the development box's utsns=host lives there), so the scratch file
+        # starts as a copy of it
+        conf = os.path.join(self.root, "containers.conf")
+        system = "/etc/containers/containers.conf"
+        if os.path.exists(system) and not os.path.exists(conf):
+            shutil.copy(system, conf)
+        open(conf, "a").close()
+        e["CONTAINERS_CONF"] = conf
+        e["XDG_CONFIG_HOME"] = os.path.join(self.home, ".config")
         e.update({"HOME": self.home, "SWARMBOX_NAME": self.name, "SWARMBOX_WORKSPACE": self.ws,
                   "SWARMBOX_WEB_PORT": str(self.port), "SWARMBOX_IMAGE": self.ctx.tag, "SWARMBOX_INIT": "auto"})
         if not self.ctx.full:
@@ -380,7 +390,9 @@ def step_up_lifecycle(ctx):
     fast = time.time() - t0
     assert r.returncode == 0, "second up exited %d: %s" % (r.returncode, r.stderr[-800:])
     made = hs.calls()[before:]
-    assert len(made) <= 2, "the fast path made %d podman calls: %r" % (len(made), made)
+    plain = [c for c in made if not c.startswith("system connection ")]
+    assert len(plain) <= 2, "the fast path made %d podman calls before the connection step: %r" % (len(plain), made)
+    assert len(made) - len(plain) == 1, "the connection step of a registered box is one `list`: %r" % (made,)
     assert not any(c.startswith(("run ", "start ", "rm ")) for c in made), made
     assert hs.cid() == cid1, "the second up replaced the box"
     t0 = time.time()
