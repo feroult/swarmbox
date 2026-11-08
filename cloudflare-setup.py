@@ -26,6 +26,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -199,21 +200,34 @@ def load_saved():
 
 
 def save_config(domain, emails, tunnel, session=None, hostname=None, name=None):
+    """Writes cloudflare.json (mode 600) through a new file made by mkstemp and renamed over the old one: a symlink at the
+    final name is replaced, never written through, and the file is not readable by other accounts (security review SR-04)."""
     path = config_path()
+    tmp = None
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            data = {"domain": domain, "emails": emails, "tunnel": tunnel}
-            if session:
-                data["session"] = session
-            # additive keys: `swarmbox url` (POSIX sed) reads the same name the script serves, per box name
-            if hostname:
-                data["hostname"] = hostname
-            if name:
-                data["name"] = name
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        data = {"domain": domain, "emails": emails, "tunnel": tunnel}
+        if session:
+            data["session"] = session
+        # additive keys: `swarmbox url` (POSIX sed) reads the same name the script serves, per box name
+        if hostname:
+            data["hostname"] = hostname
+        if name:
+            data["name"] = name
+        fd, tmp = tempfile.mkstemp(prefix="cloudflare.json.", dir=os.path.dirname(path))
+        with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=2)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+        tmp = None
     except OSError as e:
         warn("could not save %s (%s)" % (path, e))
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 def ask(label, default=None):

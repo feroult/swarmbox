@@ -360,7 +360,7 @@ class TestApply(T):
         self.apply()
         self.assertEqual(FAKE.apps[0]["session_duration"], "168h")
 
-    def test_session_saved_in_cloudflare_json_and_file_mode_unchanged(self):
+    def test_session_saved_in_cloudflare_json_and_file_mode_is_600(self):
         path = os.path.join(self.tmp, "swarmbox", "cloudflare.json")
         self.apply("--session", "168h")
         with open(path) as f:
@@ -370,11 +370,8 @@ class TestApply(T):
         self.apply()
         with open(path) as f:
             self.assertEqual(json.load(f)["session"], "168h")
-        # the mode is whatever the umask gives, as before (no chmod added)
-        probe = os.path.join(self.tmp, "m")
-        with open(probe, "w"):
-            pass
-        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), stat.S_IMODE(os.stat(probe).st_mode))
+        # security review SR-04: the file is private (mode 600) whatever the umask
+        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
 
     def test_dry_run_does_not_save_the_session(self):
         self.apply("--dry-run", "--session", "168h")
