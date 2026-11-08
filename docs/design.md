@@ -70,9 +70,12 @@ image, and keeps every feature that section 3.9 does not list as a proposed remo
 ```bash
 podman run --rm ghcr.io/<org>/swarmbox:1.2.0 init --with claude          # prints the function; read it first
 podman run --rm ghcr.io/<org>/swarmbox:1.2.0 init --with claude >> ~/.bashrc
+podman run --rm ghcr.io/<org>/swarmbox:1.2.0 init --with claude --workspace ~/code/box >> ~/.bashrc   # choosing the workspace folder
 ```
 
 - `init --with a,b` records `SWARMBOX_WITH=a,b`: tools to have ready. They are installed the first time the box starts.
+- `init --workspace DIR` chooses the workspace folder (3.4). Without it, the workspace is `~/swarmbox`. The path is made absolute and
+  written to the host config as `WORKSPACE`; the folder is created on the first start.
 - `init --shell zsh|fish` prints the right syntax.
 - The function sits between markers (`# >>> swarmbox 1.2.0 >>>` ... `# <<< swarmbox 1.2.0 <<<`), so a later `init` replaces
   it instead of duplicating it.
@@ -114,12 +117,44 @@ swarmbox --once          # throwaway container for the current folder, removed o
 
 ### 3.4 The workspace
 
-- One box has one workspace: a folder on the host, mounted as `/home/agent`. Projects live inside it
-  (`~/swarmbox/my-project`), together with the login, the SSH key, the installed tools and the config.
-- Today this is `.work/` in the current directory. Proposed: `SWARMBOX_WORKSPACE`, default `~/swarmbox` (open question 9), so
-  where you run `swarmbox` no longer matters.
-- Creation-time options (workspace, ports, hostname, time zone, variables...) apply when the box is created; to change them, `swarmbox reset`.
+- One box has one workspace: a folder on the host, mounted as `/home/agent` (called the *home* when seen from inside the box).
+- It is chosen once, at install, with `init --workspace DIR`; without it, `~/swarmbox`. The path is stored in the host config
+  (`WORKSPACE`), so where you run `swarmbox` no longer matters. (Today it is `.work/` in the current directory.)
+- Creation-time options (workspace, ports, hostname, time zone, variables...) apply when the box is created; to change them,
+  `swarmbox reset`.
 - A second box is possible with `SWARMBOX_NAME=other SWARMBOX_WORKSPACE=...`, with its own web port.
+
+What is inside the workspace. Everything the box must keep lives there, because it is the home. This is the layout with the XDG
+proposal (3.8, open question 18); the tool and agent dotfiles are whatever those programs create:
+
+```
+~/swarmbox/                            # the workspace on the host = /home/agent in the box
+├── my-project/                        # your projects
+├── .ssh/                              # the SSH key (id_ed25519, id_ed25519.pub)
+├── .claude/, .claude.json             # Claude Code: login, settings, history
+├── .gitconfig                         # if you set a git identity inside the box
+├── .config/swarmbox/                  # in-box config: web-terminal.conf, user-level tool manifests
+├── .local/share/swarmbox/             # tools/ (claude, gcloud...), shims/, the host helper
+├── .local/state/swarmbox/             # locks, logs, podman.sock
+└── .local/share/containers/           # empty here: see "not in the workspace" below
+```
+
+What is **not** in the workspace folder:
+- **The host configuration**: `~/.config/swarmbox/config` and `cloudflare.json` on your machine, outside the workspace. The names look
+  alike on purpose of the XDG convention, but they are two different places: the host one is read before the box exists (it holds
+  `WORKSPACE` itself), the in-box one is inside the workspace.
+- **The nested Podman storage**: the volume `<name>-containers`, mounted at `/home/agent/.local/share/containers`. It appears as an empty
+  folder in the workspace; its contents live in the Podman volume, because they are owned by subuid-mapped IDs that the host user could
+  not delete and they grow large.
+- **The container's own filesystem**: anything installed with `apt` or written to `/usr`, `/etc`, `/opt`, plus running processes and tmux
+  sessions. A `reset` discards them (5.11).
+
+Two things to watch with this layout:
+- Cache directories under `~/.cache` (for example pip's) also live in the workspace and keep growing; they are safe to delete.
+- The host reaches nested Podman through a unix socket (`podman -c <name>`). Today it is `<workspace>/.swarmbox/podman.sock`; with the XDG
+  layout it would be `<workspace>/.local/state/swarmbox/podman.sock`, about 14 characters longer. Unix socket paths are limited to roughly
+  108 bytes, so a very deep workspace path could break the connection. The default `~/swarmbox` is far from that limit; the function
+  should check the length and fall back to a short symlink if needed. (Not measured.)
 
 ### 3.5 The generated function
 
@@ -235,7 +270,7 @@ Every capability is classified once and configured one way. The rules:
    different workspace mount) and the env hash of 3.7.
 4. **One layout inside the box (XDG).** Config in `~/.config/swarmbox/` (`web-terminal.conf`, user tool manifests), data in
    `~/.local/share/swarmbox/` (tools, host helper), state in `~/.local/state/swarmbox/` (locks, logs, `podman.sock`). It replaces
-   `~/.swarmbox/`; the first start moves the old files (open question 18).
+   `~/.swarmbox/`; the first start moves the old files (open question 18). All of it sits inside the workspace (3.4).
 5. **One registry for MCP servers.** `container/mcp/<name>/config.json`. `init.sh` generates `~/.claude/mcp-servers.json` from every
    enabled server (today it names chrome-devtools in code). `BROWSER_URL` swaps chrome-devtools from a local headless Chromium to
    a remote Chrome. An agent manifest can ask for a mirrored copy in its own format (`MCP_FORMAT=opencode` replaces today's
@@ -246,7 +281,7 @@ Creation-time keys (host config), with what each replaces:
 | Key | Default | Replaces today |
 |---|---|---|
 | `NAME` | `swarmbox` | `--name` |
-| `WORKSPACE` | `~/swarmbox` | `.work/` in the current directory |
+| `WORKSPACE` | `~/swarmbox` (set with `init --workspace DIR`) | `.work/` in the current directory |
 | `HOSTNAME` | `swarmbox` | `--hostname` |
 | `TZ` | `local` (or `off`, or `Area/City`) | `SWARMBOX_TZ` |
 | `INIT` | `auto` (or `0`, `1`) | `SWARMBOX_INIT` (the `--init` that reaps zombies) |
@@ -851,7 +886,7 @@ An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPA
 6. OpenCode's auto-approve flag (not verified).
 7. License (MIT or Apache-2.0), and the project name's availability.
 8. Keep the full git history when going public, or start clean? The history must first be audited for secrets and personal data.
-9. Default workspace path: `~/swarmbox`, or keep today's `.work/` in the current directory?
+9. *Decided:* the workspace is chosen at install with `init --workspace DIR`, and defaults to `~/swarmbox`.
 10. Project-level tools (5.10): how the acceptance prompt works non-interactively, and which directory counts as "the project"
     in a box with many projects.
 11. `serve` as the main process (4.1) and `swarmbox-attach` replacing `lib/attach-session.sh`: untested.
