@@ -1,5 +1,5 @@
 # SwarmBox 2.0 image (design 10). Slim: no agent, gcloud, clasp, Go or Poetry; tools arrive on demand (design 6).
-# The v0.1.0 image is Dockerfile.v0.1.0 (build.sh still builds that one until Phase 6).
+# The v0.1.0 image file is retired (git show v0.1.0:Dockerfile).
 # Layer order: stable first (packages, Podman, pinned downloads), volatile last (scripts, configuration).
 ARG NODE_VERSION=24
 FROM node:${NODE_VERSION}-slim
