@@ -821,3 +821,20 @@ Context: the slice asks for validate (real), shim-exists and index-contains-clau
 Chosen: smoke_image.py has `tool-validate` (also fails on "0 manifest"), `tool-shim` (readlink, executable, `command -v claude` after sourcing bashrc.sh, no tools/claude directory) and `tool-index-ports` (index has the line `claude claude`, tool-ports exists and is 0 bytes); all reduced-capable. Reduced run on swarmbox-test-4a5-img: 8 passed, 0 failed, 2 skipped (the two nested steps). The real first-call install ran once by hand in a throwaway box (swarmbox-test-4a5-real, removed): 2.1.319, about 13 s, second call instant. Not run: the full smoke mode, the CI job (never ran), zsh/fish, arm64. No new test file was added, so ci.yml and test_ci_workflow.py needed no change. One serve-steps test failed once during development and passed in every later run (12 repeats of it alone, 4 full runs); I could not reproduce it and have no explanation, the same kind of unexplained flake as the SIGINT one in 2.7.
 Impact on the design: 6.2 (4a.5 state) carries the evidence.
 How to reverse: n/a.
+
+## [4a.6] The vendor installer creates ~/.claude and ~/.claude.json: the design said "never"
+Context: the slice test "~/.claude.json is not created by the install itself" failed in the real run. Running the vendor script alone (curl | bash, no claude call before) in a fresh volume already leaves `~/.claude/` and `~/.claude.json` (installMethod native, ids, `autoUpdates: false`, `autoUpdatesProtectedForNative: true`, no login data). The Phase 0 spike had recorded the file but 6.7 still said the login paths were never touched.
+Options: (a) delete the files after the install (would break `claude update`'s method detection, and fights the vendor); (b) keep the test and mark it expected-fail; (c) correct the design and the test: install.sh does not write them, the vendor does.
+Chosen: (c), because the files are the tool's own state in the workspace and harmless. The test now asserts they exist, say native and hold no token.
+Impact on the design: 6.7 consequences text and a new "4a.6 state" bullet; B1 evidence line; install.sh header comment.
+How to reverse: n/a (a measurement).
+Note: `autoUpdates: false` sits next to 6.7's statement that the background update stays on. I did not observe a background update either way [unverified]; `swarmbox-tool update claude` is the sure path.
+
+## [4a.6] The real test lives in the default test list but skips itself; it was run once by hand
+Context: "optional slow test file, excluded from default CI", while test_ci_workflow requires every tests/test_*.py to be listed in ci.yml (and in NOT_ON_MACOS or the macOS list).
+Chosen: listed in the Linux unit step and in NOT_ON_MACOS; the real classes skip unless SWARMBOX_TEST_NETWORK=1, SWARMBOX_IMAGE_BUILD=1 and podman work (CI sets only the second, so they skip there). The three fake-curl tests (version passed as one argument only when not latest; failed download runs nothing and leaves no record) always run. Alternative of a separate exclusion list rejected as more machinery.
+Impact on the design: none. How to reverse: remove the two list entries.
+
+## [4a.6] Results of the real run and what was not measured
+Context/Chosen: image swarmbox-test-4a6-img built with dev/dev-build.sh (about 8 min), tests run with SWARMBOX_IMAGE_TAG; 14 tests OK in about 36 s (Claude Code 2.1.319, real download). Snapshot of /usr /etc /opt /var /root: only /opt/npm-cache differs (none observed in this run's filter either way). Offline run (--network=none) fails with exit non-zero and no leftovers; online run afterwards on the same volume installs. Not measured: a second update that finds a newer version (only the Phase 0 spike), disk size of the install in this image, arm64, the same through a nested Podman box.
+Impact on the design: 6.7 4a.6 state. How to reverse: n/a.

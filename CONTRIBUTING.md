@@ -56,6 +56,7 @@ python3 tests/test_docs_consistency.py
 | `test_start_init.py` | `container/scripts/init.sh` |
 | `test_start_timezone.py` | the timezone handling |
 | `test_start_web_connector.py` | the web terminal connector in `start.sh` |
+| `test_tool_claude_real.py` | the first call of Claude Code through the shim: fake-curl argument tests always; the real download in throwaway containers only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` (slow, about 330 MB) |
 | `test_tool_shim.py` | `swarmbox-shim`: symlink and PATH calls under the shebang shell, dash, bash and busybox sh; first-use install then no installer; failure and retry; unknown command 127; user index wins; no manifest read on the hot path; loop guards; shellcheck |
 | `test_tool_install.py` | `swarmbox-tool install`, `run`, `list`, `update`: fake installers, the lock (two processes at once), the managed and `UPDATE=self` layouts, failure leaves nothing, checksum mismatch, exit codes, stdout purity |
 | `test_tool_link.py` | `swarmbox-tool link --system` and `--user`: shims, the `command tool` index, `tool-ports`, idempotence, stale shims, same-level conflicts, no project level |
