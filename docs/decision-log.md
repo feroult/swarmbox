@@ -534,3 +534,47 @@ Context: the slice asks for tests first.
 Chosen: tests/test_attach_command.py was written before swarmbox-attach.sh; the first full run began before the script was saved, so its output is not a clean "fails for the right reason" record. After the script existed, 5 of 48 tests failed once, all for reasons in the tests or the script found by them (the fake tmux did not accept a window without a wrapper; two quoting tests counted the output file name as an argument; `eval` rejected a command starting with `-`). Afterwards four consecutive full runs passed. The container test is a full result for this part (level 2) with the nested Podman service off by the test switch; the terminal is a pty made by the test, not a host terminal or ttyd, and the shell fragment is a test file.
 Impact on the design: Part B tags carry "reduced: pty as terminal, test fragment".
 How to reverse: n/a.
+
+## [2.4] Fragment test-only variables and the paths the design fixes
+Context: the design fixes the paths (/usr/local/lib/swarmbox/tools, .../shims, /usr/local/bin/banner.sh, /etc/swarmbox/scripts/starship-init.sh, /opt/flow), but the tests need fixtures in mktemp and the live box has a real /opt/flow.
+Options: hard-code the paths and test only in containers; or accept overrides.
+Chosen: overrides with the design's path as default: SWARMBOX_DIRS_SH, SWARMBOX_IMAGE_TOOLS_DIR, SWARMBOX_IMAGE_SHIMS_DIR, SWARMBOX_BANNER_SCRIPT, SWARMBOX_STARSHIP_INIT, SWARMBOX_VENV. They are listed in the fragment's header, not in the settings table of design 8.2 (like the 2.2 and 2.3 test variables).
+Impact on the design: 6.6 describes the fragment; the variables are not user settings.
+How to reverse: delete the `${VAR:-default}` forms; the unit tests would then need a container.
+
+## [2.4] Manifest format assumed by the fragment
+Context: the tool slice (4a) does not exist; 6.3 gives the format of tool.conf.
+Chosen: tool.conf at <config>/tools/<name>/ (user) and /usr/local/lib/swarmbox/tools/<name>/ (image), the name is the directory name, the file is sourced in a subshell and only KIND, PROVIDES, YOLO_FLAGS, YOLO_ALIAS and MCP_FLAGS are read. A manifest that fails to load, or one with a syntax error, is skipped silently. Alias = first word of PROVIDES (the name if empty). Flags are split on blanks, so a flag value with a space is unsupported. `swarmbox-tool` (Phase 4a) must keep these keys; a later parser can replace the scan without changing the fragment's behavior.
+Impact on the design: 6.6 states it.
+How to reverse: n/a.
+
+## [2.4] yolo default: a third fallback, and yolo ignores SWARMBOX_YOLO=0
+Context: 6.6 says the default is SWARMBOX_AGENT, else the first agent of SWARMBOX_WITH; it does not say what happens with neither, nor what SWARMBOX_YOLO=0 does to `yolo`. v0.1.0's yolo was claude.
+Options: fail with a message; or take the first agent manifest.
+Chosen: the first agent manifest by name (with the image manifests this gives claude, as v0.1.0), and "no agent installed" (exit 1) only when no agent manifest exists. `yolo` keeps working with SWARMBOX_YOLO=0, because the variable is documented as disabling the aliases and typing `yolo` is explicit. A SWARMBOX_AGENT with no manifest also fails with a message, exit 1.
+Impact on the design: 6.6 gains the fallback and the last sentence.
+How to reverse: remove the fallback line in `yolo`, or make it return 1 when SWARMBOX_YOLO=0.
+
+## [2.4] No alias or yolo flag for "installed": every manifest counts
+Context: 6.6 says "installed or declared agent". The image-level manifests exist for agents that are not installed yet, and their shim installs them on first use.
+Chosen: aliases and yolo follow the manifests (image or user level), not the presence of the program. The command found through the alias is the shim, which installs the tool, so the alias is right either way.
+Impact on the design: none.
+How to reverse: check for the program (or `current`) before defining the alias.
+
+## [2.4] The banner shows every health line; the SSH fingerprint line is not built
+Context: 4.2 says the banner shows the startup-health lines and the stale-image line; 10.3 also says the shell prints the one-line SSH fingerprint.
+Chosen: the banner prints each non-empty line of the health file (control characters dropped, so a line cannot repaint the terminal) after the art; the stale-image and fingerprint lines are shown if something writes them there (Phase 3's helper). The SSH fingerprint line is left out: it needs `swarmbox-pubkey --ensure` in every shell, which creates a key, and `serve` already ensures it (step 5). Recorded as not done in the status row.
+Impact on the design: 6.6 says so in "Not done here".
+How to reverse: call `swarmbox-pubkey --ensure` in the banner block.
+
+## [2.4] Banner skipped for `bash -c`, and the hermetic interactive test
+Context: the 2.3 requirement: the command window runs `bash -ic`, which must not print the banner.
+Chosen: the banner and Starship are guarded by `BASH_EXECUTION_STRING` empty and SWARMBOX_CMD unset; aliases and PATH apply anyway. Found while writing the tests: `bash --rcfile X -i` still sources Debian's /etc/bash.bashrc (on the live box that ran the old init and created a key under the test's HOME), so the interactive tests use `bash --noprofile --norc -i` with the fragment sourced from standard input. The stray test directory it made was in /tmp and was removed.
+Impact on the design: none.
+How to reverse: n/a.
+
+## [2.4] clasp's shell.sh and the SSH fingerprint stay for later; Starship moves into the fragment
+Context: the image's bashrc used to source starship-init.sh last; 6.6 moves the clasp function to container/tools/clasp/shell.sh (Phase 4).
+Chosen: the fragment sources starship-init.sh itself, last, so the order is kept and the Dockerfile has one line instead of echoes. tests/test_starship.py now reads the 2.0 Dockerfile and the fragment (the order test became a text-order check of the fragment). The clasp function is not in the 2.0 image (clasp is not installed there) and has no shell.sh yet. The fragment is not tested under bash 3.2 and is excluded from the macOS job (it runs only in the Debian image).
+Impact on the design: none.
+How to reverse: n/a.
