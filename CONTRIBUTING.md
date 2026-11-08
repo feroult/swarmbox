@@ -2,7 +2,7 @@
 
 SwarmBox is a Podman-based sandbox for running AI coding agents in auto-approve mode. The design is in `docs/design.md`
 and the build order in `docs/implementation-plan.md`. Progress is in `docs/implementation-status.md` and the reasons for
-choices in `docs/decision-log.md`. Contributions are accepted under the Apache License 2.0 (`LICENSE`).
+choices in `docs/decision-log.md`. Contributions are accepted under the Apache License 2.0 (`LICENSE`). Please follow `CODE_OF_CONDUCT.md`; report security problems as `SECURITY.md` says, not in a public issue; user-visible changes go in `CHANGELOG.md`.
 
 ## Safety first: never touch a live box
 
@@ -67,7 +67,8 @@ python3 tests/test_docs_consistency.py
 | `test_pubkey_ensure.py` | `swarmbox-pubkey --ensure` (`container/scripts/ssh-key.sh`): once, idempotent, never overwrites, only under the test `HOME` |
 | `test_retired.py` | the absence test of slice 6.3: the v0.1.0 scripts (the start and build scripts, the old library folder, the old init script, the old OpenCode folder, the old web terminal script) and the v0.1.0 image file do not exist, no 2.0 source names them except as history, their counterparts exist, and the tag v0.1.0 still holds them |
 | `test_retired_coverage.py` | the inventory of the six deleted v0.1.0 test files (each old test mapped to the 2.0 test that pins it, or dropped with a reason in the decision log) and the guard that no other test names the retired v0.1.0 scripts (an allow-list holds the history uses) |
-| `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md` and this file |
+| `test_release_docs.py` | `SECURITY.md`, `CODE_OF_CONDUCT.md` and `CHANGELOG.md` (slice 7.1): the reporting section and the one marked owner placeholder each, the no-telemetry statement equal to the README's, both log paths, the changelog's 2.0.0 entry and links, and a grep of the product code for analytics hosts |
+| `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md`, this file and the three policy files being present and linked |
 | `test_serve_container.py` | `serve` in a throwaway container from the image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
 | `test_serve_steps.py` | `container/entrypoint.sh serve`: steps, failures, readiness marker, signals and the ttyd supervisor, with fakes on `PATH` |
 | `test_spikes_common.py` | the safety helpers of the spike scripts |

@@ -109,5 +109,25 @@ class ContributingTest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(ROOT, p)), "CONTRIBUTING.md mentions %s, which does not exist" % p)
 
 
+class PolicyFilesTest(unittest.TestCase):
+    """Slice 7.1: the policy files exist and CONTRIBUTING.md and the README point at them."""
+
+    def test_present_and_linked(self):
+        contributing = read("CONTRIBUTING.md")
+        readme = read("README.md")
+        for name in ("SECURITY.md", "CODE_OF_CONDUCT.md", "CHANGELOG.md"):
+            self.assertTrue(read(name).strip(), name)
+            self.assertIn(name, contributing, name)
+            self.assertIn("(%s)" % name, readme, name)
+
+    def test_new_files_have_balanced_fences_and_resolving_links(self):
+        for name in ("SECURITY.md", "CODE_OF_CONDUCT.md", "CHANGELOG.md"):
+            t = read(name)
+            self.assertEqual(sum(1 for l in t.splitlines() if l.lstrip().startswith("```")) % 2, 0, name)
+            for target in re.findall(r"\]\(([^)\s]+)\)", t):
+                if not re.match(r"[a-z]+:", target):
+                    self.assertTrue(os.path.exists(os.path.join(ROOT, target.split("#")[0])), "%s -> %s" % (name, target))
+
+
 if __name__ == "__main__":
     unittest.main()

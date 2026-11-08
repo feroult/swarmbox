@@ -756,7 +756,7 @@ class ReadmeSixFiveTest(unittest.TestCase):
         self.assertGreater(seen, 8)
 
     def test_every_relative_link_resolves(self):
-        files = [os.path.join(ROOT, "README.md")] + sorted(glob.glob(os.path.join(ROOT, "docs", "*.md")))
+        files = [os.path.join(ROOT, n) for n in ("README.md", "SECURITY.md", "CHANGELOG.md")] + sorted(glob.glob(os.path.join(ROOT, "docs", "*.md")))
         bad = []
         for f in files:
             text = outside_fences(open(f, encoding="utf-8").read())
@@ -783,6 +783,13 @@ class ReadmeSixFiveTest(unittest.TestCase):
             self.assertIn(p.replace("host:", ""), sec, p)
         for name in ("serve.log", "health", "web-terminal.log"):
             self.assertIn(name, sec)
+
+    def test_security_md_states_the_same_policy_as_design_12_5(self):
+        sec = read("SECURITY.md")
+        d = DESIGN[DESIGN.index("### 12.5 Uninstall"):DESIGN.index("## 13. Tests and CI")]
+        self.assertIn("no telemetry", sec.lower())
+        for p in re.findall(r"`([^`]*\.local/state/swarmbox/?)`", d):
+            self.assertIn(p, sec, p)
 
     def test_uninstall_paths_are_the_ones_dirs_sh_produces(self):
         home = "/home/fake"
@@ -983,7 +990,7 @@ class PhaseSixCloseTest(unittest.TestCase):
             self.assertTrue(1 <= int(b) <= 36, "plan cites B" + b)
 
     def test_code_fences_are_balanced_in_every_doc(self):
-        for path in glob.glob(os.path.join(ROOT, "docs", "*.md")) + [os.path.join(ROOT, n) for n in ("README.md", "CONTRIBUTING.md")]:
+        for path in glob.glob(os.path.join(ROOT, "docs", "*.md")) + [os.path.join(ROOT, n) for n in ("README.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "CHANGELOG.md")]:
             with open(path, encoding="utf-8") as f:
                 n = sum(1 for l in f if l.lstrip().startswith("```"))
             self.assertEqual(n % 2, 0, path)

@@ -91,4 +91,4 @@ to check for a tool update, and, with `swarmbox remote`, to reach Cloudflare. Lo
 ## More
 
 [docs/design.md](docs/design.md) (what it is and why), [docs/implementation-plan.md](docs/implementation-plan.md),
-[docs/decision-log.md](docs/decision-log.md), [CONTRIBUTING.md](CONTRIBUTING.md), [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[docs/decision-log.md](docs/decision-log.md), [CONTRIBUTING.md](CONTRIBUTING.md), [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [CHANGELOG.md](CHANGELOG.md).
