@@ -122,6 +122,7 @@ jobs:
           python3 tests/test_tool_install.py
           python3 tests/test_tool_prepare.py
           python3 tests/test_tool_opencode.py
+          python3 tests/test_tool_gemini_clasp_poetry.py
           python3 tests/test_tool_link.py
           python3 tests/test_tool_manifest.py
           python3 tests/test_tool_claude_real.py

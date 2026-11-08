@@ -306,7 +306,7 @@ class Absence(Base):
 
 
 class RealImageTree(Base):
-    def test_real_tools_tree_links_claude_and_tool_ports_is_empty(self):
+    def test_real_tools_tree_links_claude_and_tool_ports_lists_only_clasp(self):
         shutil.rmtree(self.image)
         shutil.copytree(REAL_TOOLS, self.image)
         r = self.link("--system")
@@ -315,8 +315,8 @@ class RealImageTree(Base):
         self.assertIn("claude claude\n", self.read(self.base, "lib", "index"))
         p = os.path.join(self.host, "tool-ports")
         self.assertTrue(os.path.isfile(p))
-        self.assertNotIn("claude", self.read(p))
-        self.assertEqual(os.path.getsize(p), 0)
+        # 4b.3: clasp is the one shipped tool with a port (design 6.12); no other real tool declares PORTS
+        self.assertEqual(self.read(p), "clasp\t43323\n")
 
 
 class Stubs(Base):

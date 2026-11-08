@@ -1298,3 +1298,28 @@ Impact on the design: 6.3 "4b.2 state". How to reverse: restore the one-line `wa
 - The mirror now accepts a file without `mcpServers` (empty `mcp`), where v0.1.0 would have failed. The mapping is otherwise the v0.1.0 one, compared on four fixtures by running the old function extracted from the tag (skipped when the tag is not in the clone).
 - The two new test files are on the Linux CI job only (NOT_ON_MACOS), like the other container-program tests.
 - Real install of opencode (npm, the real package, the 745 MB figure again under the new installer) is not done here: reduced, to 4b.7.
+
+## [4b.3] Pinned versions: clasp 3.4.1, poetry 2.5.1, looked up on 2026-11-08
+Context: D21 pins every non-agent tool; the slice said versions must be real.
+Options: pin what the registries say today; copy v0.1.0's versions (not recoverable without building).
+Chosen: today's values. clasp: `npm view @google/clasp dist-tags` returned `{"latest": "3.4.1"}`. poetry: `https://pypi.org/pypi/poetry/json` `info.version` was 2.5.1 and `https://install.python-poetry.org` answered HTTP 200. Neither version was installed for real in this slice (fakes only), so that the installer accepts `--version 2.5.1` and that clasp 3.4.1 runs on the image's Node is [unverified] until 4b.7. gemini is `latest` (agent); the current npm latest was 0.67.0, not recorded in the manifest.
+Impact on the design: 6.12 table unchanged; "4b.3 state" paragraph in 6.3 records the versions. How to reverse: edit VERSION in the two tool.conf files.
+
+## [4b.3] Poetry installer: private cache, config and temp folder, run through stdin
+Context: 6.4 forbids writes outside TOOL_PREFIX. The official installer uses pip (cache in ~/.cache/pip) and Poetry itself uses ~/.config/pypoetry and ~/.cache/pypoetry.
+Options: let it write and clean up afterwards; redirect all of it to a mktemp folder and delete that.
+Chosen: redirect: `XDG_CACHE_HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `POETRY_CONFIG_DIR`, `POETRY_CACHE_DIR` point into a private folder, `PIP_NO_CACHE_DIR=1`, and an EXIT trap removes it. The script is downloaded fully first (as claude's installer does) and piped to `python3 -`. The post-install `poetry --version` also runs inside that redirect. The 4b.7 no-side-effects test with the real installer decides whether this is enough.
+Impact on the design: none. How to reverse: remove the exports.
+
+## [4b.3] clasp login function: pass-through rules
+Context: 6.12 says the function adds `--redirect-port 43323` to `login`.
+Options: add it to any call containing `login`; only when `login` is the first argument; also add it when the user gave their own port.
+Chosen: only when the first argument is `login` and no argument is `--redirect-port` or `--redirect-port=...` (the user's own port wins; the box then does not publish it, which is the user's choice). `clasp run login` is untouched. The function is written without arrays or bash-only syntax so it works in bash and zsh (tested in both). The option name was taken from the design text, not from clasp 3.4.1's `--help` [unverified].
+Impact on the design: 6.12 "4b.3 state". How to reverse: edit clasp/shell.sh.
+
+## [4b.3] Other small decisions
+- gemini has no MCP_FLAGS and no MCP_FORMAT: the design gives no Gemini MCP wiring, so "MCP_FLAGS absent unless declared" holds. A Gemini MCP mirror, if wanted, is a later slice.
+- gemini's installer checks only that bin/gemini exists, not that it runs: `gemini --version` of a real install was not measured here and could contact the network; 4b.7 checks it.
+- tests/test_tool_link.py `test_real_tools_tree_links_claude_and_tool_ports_is_empty` asserted an empty tool-ports for the real tools; it is renamed and now asserts exactly `clasp\t43323`.
+- Found while writing the fragment test: tests/test_tool_opencode.py `test_bashrc_fragment_makes_no_opencode_alias_but_yolo_works` uses environment variable names the fragment does not read (SWARMBOX_TEST_IMAGE_TOOLS instead of SWARMBOX_IMAGE_TOOLS_DIR), so it passes without exercising the real manifest. Not fixed here; the new test uses the correct names. Left for the owner or the 4b close-out.
+- The new test file is listed in ci.yml (Linux job) and in the NOT_ON_MACOS set of test_ci_workflow.py, like the other container-program tests.
