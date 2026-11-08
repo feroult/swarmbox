@@ -191,6 +191,15 @@ class Structure(unittest.TestCase):
         # the smoke job is not scheduled-only: it runs on push and pull request
         self.assertNotIn("if", job)
 
+    def test_tools_validate_is_a_ci_step_without_a_container(self):
+        """Phase 4a: the real `swarmbox-tool validate` runs on container/tools in the linux job (no container needed)."""
+        lines = [l for _, l in run_lines(DOC, "linux")]
+        hit = [l for l in "\n".join(lines).splitlines()
+               if re.search(r"container/scripts/swarmbox-tool\.sh validate container/tools\b", l)]
+        self.assertEqual(len(hit), 1, hit)
+        self.assertNotIn("podman", hit[0])
+        self.assertTrue(os.path.isdir(os.path.join(ROOT, "container", "tools")))
+
     def test_smoke_job_uses_no_forbidden_podman_verb(self):
         for bad in ("system prune", "system reset", "volume prune", "image prune", "rmi -a", "rm -a", "stop -a", "kill -a",
                     "--all", "podman push"):

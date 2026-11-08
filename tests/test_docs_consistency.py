@@ -218,6 +218,77 @@ class PhaseTwoCloseTest(unittest.TestCase):
         for f in ("tests/smoke_image.py", "tests/test_smoke_skeleton.py"):
             self.assertTrue(os.path.isfile(os.path.join(ROOT, f)), f)
 
+PHASE4A_SLICES = ["4a.1-manifest-validate", "4a.2-link-index-ports", "4a.3-install-run-lock", "4a.4-shim-dispatcher",
+                  "4a.5-image-wiring", "4a.6-real-claude-first-call", "4a.7-closeout"]
+PHASE4A_TESTS = ["test_tool_manifest.py", "test_tool_link.py", "test_tool_install.py", "test_tool_shim.py",
+                 "test_tool_claude_real.py", "test_tool_stub.py"]
+
+
+class PhaseFourACloseTest(unittest.TestCase):
+    """Phase 4a close-out (slice 4a.7)."""
+
+    def test_no_stub_wording_for_swarmbox_tool_remains(self):
+        # the live files never call the real program a stub or placeholder
+        for rel in (("Dockerfile",), ("container", "entrypoint.sh"), ("container", "scripts", "swarmbox-tool.sh"),
+                    ("container", "scripts", "swarmbox-shim.sh")):
+            for n, line in enumerate(read(*rel).splitlines(), 1):
+                self.assertNotRegex(line, r"(?i)\b(stub|placeholder)\b", "%s:%d" % ("/".join(rel), n))
+        # the design and the plan may tell the history of the Phase 2 stub only with the phase that replaced it
+        for name, text in (("design", DESIGN), ("plan", PLAN)):
+            for n, line in enumerate(text.splitlines(), 1):
+                if re.search(r"(?i)\bstubs?\b", line) and "swarmbox-tool" in line:
+                    self.assertRegex(line, r"4a", "%s:%d" % (name, n))
+
+    def test_plan_lists_the_4a_test_files_and_each_exists_and_runs_in_ci(self):
+        sec = PLAN[PLAN.index("## 5. Phase 4a"):PLAN.index("## 6. Phase 3")]
+        ci = read(".github", "workflows", "ci.yml")
+        for t in PHASE4A_TESTS:
+            self.assertIn("tests/" + t, sec, t)
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, "tests", t)), t)
+            self.assertIn("python3 tests/" + t, ci, t)
+
+    def test_d18_absence_tests_exist_in_manifest_link_and_shim_tests(self):
+        for f in ("test_tool_manifest.py", "test_tool_link.py", "test_tool_shim.py"):
+            src = read("tests", f)
+            self.assertRegex(src, r"def test_\w*project\w*", f)
+            self.assertIn("D18", src, f)
+
+    def test_status_rows_and_gate(self):
+        status = read("docs", "implementation-status.md")
+        for sl in PHASE4A_SLICES:
+            r = [l for l in status.splitlines() if l.startswith("| %s |" % sl)]
+            self.assertEqual(len(r), 1, sl)
+            self.assertIn([c.strip() for c in r[0].strip().strip("|").split("|")][2], ("done", "partial", "blocked"), sl)
+        g = [l for l in status.splitlines() if l.startswith("| 4a.gate |")]
+        self.assertEqual(len(g), 1)
+        self.assertIn([c.strip() for c in g[0].strip().strip("|").split("|")][2], ("done", "partial"))
+        for word in ("B1", "CI"):
+            self.assertIn(word, g[0], word)
+
+    def test_decision_log_has_entries_for_every_4a_slice(self):
+        log = read("docs", "decision-log.md")
+        for n in range(1, 8):
+            self.assertRegex(log, r"(?m)^## \[4a\.%d\] " % n)
+
+    def test_appendix_a_rows_for_4a_decisions_and_b1(self):
+        for d in ("D2", "D3", "D18", "D21"):
+            r = rows(PLAN, d)
+            self.assertEqual(len(r), 1, d)
+            self.assertIn("4a", r[0], d)
+        self.assertRegex(rows(PLAN, "B1")[-1], r"closed in 0\.3")
+        self.assertIn("4a.6", rows(PLAN, "B1")[-1])
+
+    def test_plan_marks_4a_done_with_the_gate_reading(self):
+        sec = PLAN[PLAN.index("## 5. Phase 4a"):PLAN.index("## 6. Phase 3")]
+        self.assertIn("**4a.7 done:**", sec)
+        self.assertIn("fake installer", sec)
+        self.assertIn("tool-ports", sec)
+
+    def test_phase3_notes_that_depend_on_tool_ports_and_shims_point_at_4a(self):
+        sec = PLAN[PLAN.index("## 6. Phase 3"):PLAN.index("## 7. ")]
+        self.assertIn("tool-ports", sec)
+        self.assertRegex(sec, r"4a")
+
 
 if __name__ == "__main__":
     unittest.main()

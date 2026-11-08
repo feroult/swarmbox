@@ -334,6 +334,8 @@ class WarnSteps(ServeCase):
         os.unlink(os.path.join(self.fake, "swarmbox-tool"))
         p = self.run_ready(SWARMBOX_WITH="claude")
         self.assertEqual(self.marker(), "ok")
+        # step 12 logs after the readiness marker: wait for it, or a quick stop races it (a flake seen in 4a.7)
+        self.assertTrue(wait_for(lambda: re.search(r"step 12.*skipped", self.serve_log())), self.serve_log())
         self.stop(p)
         log = self.serve_log()
         for word in ("step 4", "step 6", "step 7", "step 12"):

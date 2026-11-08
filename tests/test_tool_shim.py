@@ -217,6 +217,23 @@ class Index(ShimBase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertFalse(os.path.exists(marker))
 
+    def test_a_project_level_tools_folder_is_not_consulted_by_the_shim(self):
+        """D18 (absence): a tools folder in the working directory (a project) neither adds a command nor changes one."""
+        mgr = self.fake_mgr()
+        proj = os.path.join(self.base, "project")
+        make_tool(os.path.join(proj, ".swarmbox", "tools"), "evil", PROVIDES='"evil"')
+        make_tool(os.path.join(proj, "tools"), "demo", PROVIDES='"demo"')
+        self.index(self.ishims, "demo demo")
+        self.link("image", self.ishims, "demo")
+        os.symlink(SHIM, os.path.join(self.ishims, "evil"))
+        env = self.env(SWARMBOX_TEST_TOOL=mgr)
+        r = subprocess.run([os.path.join(self.ishims, "evil")], env=env, capture_output=True, text=True, timeout=60, cwd=proj)
+        self.assertEqual(r.returncode, 127, r.stderr)
+        r = subprocess.run([os.path.join(self.ishims, "demo"), "x"], env=env, capture_output=True, text=True, timeout=60, cwd=proj)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(self.args) as f:
+            self.assertEqual(f.read().split("\n")[:3], ["run", "demo", "demo"])
+
     def test_manager_arguments_survive_odd_characters(self):
         mgr = self.fake_mgr()
         self.index(self.ishims, "demo demo")

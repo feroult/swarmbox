@@ -3,8 +3,8 @@
 # This workflow only runs commands that already exist in the repository today: the python3 unit and function tests,
 # shellcheck over the new shell files, and (job "smoke", slice 2.7) the image build and the full image smoke test
 # (tests/smoke_image.py with SWARMBOX_SMOKE_FULL=1: it needs the nested Podman that the development box cannot give, so
-# this job is its only full run, never run before the owner's first push). Later phases of the plan add the real
-# swarmbox-tool validate, the zsh and fish function tests and the arm64 job (B31); they are not here on purpose.
+# this job is its only full run, never run before the owner's first push). Phase 4a added the real swarmbox-tool validate
+# step (linux job). Later phases of the plan add the zsh and fish function tests and the arm64 job (B31); they are not here on purpose.
 # It uses no secrets, publishes nothing and binds no ports on the runner outside 127.0.0.1.
 #
 # Open facts this file prepares (see docs/design.md Part B):
@@ -53,6 +53,8 @@ jobs:
         run: |
           shellcheck -s sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh
           shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-tool.sh container/config/bashrc.sh
+      - name: Validate the tool manifests (swarmbox-tool validate, no container)
+        run: container/scripts/swarmbox-tool.sh validate container/tools
       - name: Unit and function tests
         run: |
           python3 tests/test_attach_command.py
