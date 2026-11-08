@@ -578,3 +578,53 @@ Context: the image's bashrc used to source starship-init.sh last; 6.6 moves the 
 Chosen: the fragment sources starship-init.sh itself, last, so the order is kept and the Dockerfile has one line instead of echoes. tests/test_starship.py now reads the 2.0 Dockerfile and the fragment (the order test became a text-order check of the fragment). The clasp function is not in the 2.0 image (clasp is not installed there) and has no shell.sh yet. The fragment is not tested under bash 3.2 and is excluded from the macOS job (it runs only in the Debian image).
 Impact on the design: none.
 How to reverse: n/a.
+
+## [2.5] The "three-value substitution" is padding, ctrlVPaste and ctrlCCopy; font, theme, size and scrollback are ttyd options
+Context: the slice text speaks of rendering "font size, theme, scrollback or the three-value set in 5.1" into the page. Design 5.1 is explicit: the page has three placeholders (the padding and the switches `ctrlVPaste` and `ctrlCCopy`), while font, theme and size are NOT in the HTML but travel as ttyd `-t key=value` options. build-index.sh (slice 2.1) already builds exactly those three placeholders.
+Options: (a) follow 5.1 and test both paths separately; (b) put font, size and theme into the page as placeholders too.
+Chosen: (a). `swarmbox-web` substitutes the three placeholders with sed and turns every other key of `web-terminal.conf` into a `-t` option (so a `scrollback=5000` line reaches ttyd with no code change). The tests assert both: the page for the three values, the ttyd argument list for the rest.
+Impact on the design: none; 5.1 gets a paragraph that says what 2.5 does.
+How to reverse: n/a (the alternative would change build-index.sh and its test).
+
+## [2.5] swarmbox-web: interface, validation, and what ttyd runs
+Context: 4.1 fixed the interface for the slice (`swarmbox-web run`, `restart` through USR1 to `/tmp/swarmbox/web-supervisor.pid`). It left open: validation of the three values, which command ttyd runs, the listening address, and a `render` mode.
+Chosen: (1) padding must be 0 to 99 digits, otherwise 10 with a message on stderr (the v0.1.0 rule); only the word `false` turns a switch off. The values are validated before they reach sed, so no escaping is needed and a value cannot inject into the page (tested). (2) A page with a missing placeholder is refused (exit 1): a stale page would otherwise ignore the user's settings silently. (3) ttyd runs `swarmbox-attach` when it exists (so the browser is one more window of the shared session, 3.4), else `tmux attach -t main` (the 2.2 stand-in). v0.1.0's `tmux new -A -s main` is not used, because it would bypass the grouped session. (4) ttyd listens on every interface inside the box, port 7681 (the published port is what limits exposure to the host's 127.0.0.1, as 5.1 says); the test-only variables SWARMBOX_TEST_WEB_PORT and SWARMBOX_TEST_WEB_IFACE (not in the table of design 8) replace the port and add `-i`. (5) `swarmbox-web render` renders without starting ttyd (used by the browser tests). (6) `restart` refuses a missing, non-numeric, stale or pid-1-or-lower PID file; it cannot verify that the PID is really the supervisor (the supervisor is a subshell of `serve` and has the same command line), which is [unverified] hardening left out.
+Impact on the design: 5.1 describes the 2.5 implementation.
+How to reverse: change the command line at the end of container/scripts/swarmbox-web.sh.
+
+## [2.5] swarmbox-tool is a stub with a working `link --system`, and `link --user` and `prepare` succeed
+Context: the slice asks for a stub with `validate` as a placeholder and an exit message pointing to Phase 4a. `serve` (2.2) calls `swarmbox-tool link --user` (step 6) and `prepare` (step 7) whenever the program exists, and treats a failure as a warning in the readiness marker.
+Options: every subcommand but `validate` exits 70; or the three that `serve` calls succeed as no-ops.
+Chosen: the second: `validate`, `link --user` and `prepare` exit 0 with a one-line message naming the stub; `link --system` writes the empty `tool-ports` (the Dockerfile runs it at build, as 10.2's wiring does, so the file always exists); `install`, `run`, anything else exits 70 with a message that names Phase 4a. Effect worth knowing: with a non-empty `WITH`, step 12 now runs `swarmbox-tool install <tool>`, gets 70, and writes the health line "installing <tool> failed" at every start. That is honest (nothing is installed), and goes away in Phase 4a.
+Impact on the design: none (the plan already says "stubs").
+How to reverse: make the three subcommands exit 70; `serve` then counts two warnings.
+
+## [2.5] The helper archive holds only cloudflare-setup.py and tool-ports until Phase 3
+Context: 3.7.1 and 9.3 list `swarmbox-host`, `cloudflare-setup.py`, `templates/` and `tool-ports`. `container/host/` (the helper and the templates) is Phase 3 work and does not exist.
+Chosen: the Dockerfile copies `cloudflare-setup.py` into `/usr/local/share/swarmbox/host/` and `swarmbox-tool link --system` writes `tool-ports`; `host-helper` tars whatever that folder holds (`tar --owner=0 --group=0 --numeric-owner -C <dir> -cf - .`, only the archive on stdout). It does not check for `swarmbox-host`: the function checks that after unpacking (3.7.1, exit 3). The test-only variable SWARMBOX_TEST_HOST_DIR replaces the folder.
+Impact on the design: 9.3 notes that the archive is partial until Phase 3.
+How to reverse: n/a.
+
+## [2.5] Entrypoint subcommands forward by exec; a missing program is 127; `init` has no program yet
+Context: 10.2 lists the subcommands. The 2.1 placeholder exited 70 for four of them.
+Chosen: `attach`, `init`, `pubkey` and `tool` replace the process (`exec`) with `swarmbox-attach`, `swarmbox-init`, `swarmbox-pubkey` and `swarmbox-tool`, with every argument unchanged (empty strings, spaces and globs tested) and the program's exit status and signals as the entrypoint's own. A missing program is exit 127 and a message that names it (one rule for all four). `swarmbox-init` is a Phase 3 program, so `init` gives 127 "swarmbox-init not found" for now (a stricter reading of the slice would not have built anything for it). `host-helper` with extra arguments is 64, a missing folder is 1. Any other command is `exec "$@"` unchanged (already so since 2.1); a command that does not exist is 127 from bash.
+Impact on the design: none.
+How to reverse: n/a.
+
+## [2.5] swarmbox-pubkey --ensure is used as it is
+Context: the slice says "SSH key from container/scripts/ssh-key.sh as serve step 5". The script already has `--ensure`, is already installed as swarmbox-pubkey (2.1) and serve step 5 (2.2) already calls it.
+Chosen: no change to the script; tests/test_pubkey_ensure.py states the 2.0 contract (created once, idempotent, never overwritten, only under the test HOME, short output with no private material, entrypoint path) next to the older tests/test_ssh_key.py, which stays. The real container check shows the key made by serve and no SSH health line.
+Impact on the design: none. The banner's one-line fingerprint remains unbuilt (decision [2.4]).
+How to reverse: n/a.
+
+## [2.5] Test files in CI lists; browser tests rerun on the new page
+Context: tests/test_ci_workflow.py requires every test file to be in ci.yml (Linux job) and, unless listed, in the macOS job; CONTRIBUTING.md must describe every file.
+Chosen: the five new files run in the Linux job and are listed as not-for-macOS (GNU tar flags, fake programs, containers); the two new shell programs are shellchecked there. test_web_build.py subclasses the existing browser test classes (clipboard bridge and style) so the same 16 browser tests run against the page that build-index.sh built and swarmbox-web rendered; they skip without chromium, ttyd and tmux, as before. The v0.1.0 tests test_web_terminal.py, test_web_style.py and test_clipboard_bridge.py are unchanged (v0.1.0's web-terminal.sh stays until Phase 6), which is why "adapt" was done by subclassing instead of editing them.
+Impact on the design: none.
+How to reverse: n/a.
+
+## [2.5] ttyd rewrites its own argv; the container test reads `-t key value`
+Context: found by the container test: `/proc/<pid>/cmdline` of the running ttyd shows `-t fontSize 19`, not `-t fontSize=19` (ttyd splits the option at the "=" in place).
+Chosen: the test matches the rewritten form and says why. Not a product problem.
+Impact on the design: none.
+How to reverse: n/a.

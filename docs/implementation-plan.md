@@ -121,6 +121,7 @@ Scope
 - **Web terminal**: `build-index.sh` at image build, `swarmbox-web` at start with the three-value substitution (5.1).
 - **Shell**: `container/config/bashrc.sh` (banner, aliases, Starship, `PATH`) replacing the `bashrc` echo lines; `shell.sh` sourcing for tools; the aliases and `yolo` generated from manifests, `SWARMBOX_AGENT` and `SWARMBOX_YOLO` (6.6), with no manifest yet the aliases are empty and `yolo` says no agent is installed.
   Slice 2.4 built the fragment (decisions [2.4]); the image's `/etc/bash.bashrc` sources it, `test_starship.py` follows it to the new place, and the banner skips itself for `bash -c`. The one-line SSH fingerprint is left out.
+  Slice 2.5 completed the entrypoint (`init`, `pubkey`, `tool` forward by exec, `host-helper` writes the archive), added `swarmbox-web` (`run`, `render`, `restart`) and the stub `swarmbox-tool` (with the empty `tool-ports` written by `link --system` at build), and reran the browser tests on the page it renders (decisions [2.5]). `swarmbox-init` and the layout migration (`swarmbox-migrate`) are not built yet.
 - **The stale-image warning** (3.8, 4.2): Phase 2 builds the part inside the box (the banner and the health file); the comparison of image IDs is the helper's `up` in Phase 3.
 
 Tests first
