@@ -286,7 +286,7 @@ Status is relative to v0.1.0: `[today]` means the same capability exists there (
 | `swarmbox url` | Print the local, and the remote when configured, address of the web terminal | `[new]` | `start.sh --web` prints both at start |
 | `swarmbox remote setup` | One-time Cloudflare setup (5.2) | `[new]` front end for `[today]` script | `./cloudflare-setup.py apply` |
 | `swarmbox remote status` | Tunnel up, URL, login length | `[new]` front end | `./cloudflare-setup.py status` |
-| `swarmbox remote off` | Stop exposing the box | `[new]` front end | `./cloudflare-setup.py remove` (leaves the connector) |
+| `swarmbox remote off` | Stop exposing the box | `[new]` front end | `./cloudflare-setup.py remove` (leaves the connector) `[today]`; also stops it when no other hostname uses the tunnel `[new]` |
 | `swarmbox remote token` | Print the tunnel token, for people who run `cloudflared` themselves | `[new]` front end | `./cloudflare-setup.py token` / `--print-token` |
 | `swarmbox remote setup --dry-run` | Read from Cloudflare and show what would change | `[new]` front end | `./cloudflare-setup.py apply --dry-run` |
 | `swarmbox stop` | Stop the box; nothing is deleted | `[new]` | `podman stop swarmbox` by hand |
@@ -985,16 +985,15 @@ browser ─ https://swarmbox.example.com ─► Cloudflare Access (e-mail code) 
   `--hostname`, `--port`. It is the existing `cloudflare-setup.py` `[today]`, which stays idempotent and dependency-free; `swarmbox remote setup` is the `apply` command.
 - `remote status` reports the connector, the hostname, the login check and the session length. `remote off` removes what
   `cloudflare-setup.py remove` removes today (the DNS record, the tunnel route, the Access application and its policy) and also stops
-  the connector when no other hostname uses the tunnel. Today `remove` leaves the connector running `[today]`, so this is a change. `swarmbox url` prints the local and the remote URL.
+  the connector when no other hostname uses the tunnel. v0.1.0's `remove` left the connector running `[today]`; the script now stops and removes it when the tunnel's remaining ingress rules, read after the route is removed, name no other hostname, and with `--dry-run` only reports it `[new]` (done in 5.1 of the plan; tested with a fake Cloudflare API and a fake `podman`; no real account was used `[unverified]`). If no `swarmbox-cloudflared` container exists, nothing is called. The tunnel itself is left in the account. `swarmbox url` prints the local and the remote URL.
 - After setup, every `swarmbox` entry makes sure the connector is up (created, started or recreated with the tunnel token),
   as `start.sh --web` does today `[today]`. **The tunnel token is read on the host only**, never from the box: from the host environment (`SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN`) or, as the key `CLOUDFLARE_TUNNEL_TOKEN`, from the host config,
   which is accepted only with mode 600 (D28; how the helper enforces it: 3.7.3). The environment wins (precedence, 3.7.3). It is the only secret the host config may hold.
 - The login length defaults to a conservative value and is changed with `--session` (for example `168h`). Rerunning the
-  setup without `--session` must keep the value already configured instead of resetting it to the default. (Today the script
-  resets it to 4h `[today]`; this is a change to make.)
+  setup without `--session` keeps the value already configured instead of resetting it to the default (v0.1.0 reset it to 4h `[today]`; changed in 5.1 of the plan). The order is: an explicit `--session`, else the value on the existing Access application, else the `session` key that `cloudflare.json` now records (written by every non-dry run), else `4h` (a first setup only).
 - The script's other options stay reachable and are not part of the main flow: `swarmbox remote setup --dry-run`, `--tunnel`,
   `--no-connector`, `--no-verify`, and `swarmbox remote token` (prints the tunnel token for people who run `cloudflared` themselves; today `token` and `--print-token`).
-- The connector image is `docker.io/cloudflare/cloudflared:latest` today (`cloudflare-setup.py`, `DEFAULT_CONNECTOR_IMAGE`; `lib/web.sh` honors `SWARMBOX_CLOUDFLARED_IMAGE`). Pinning a version is a change (12.3).
+- The connector image is `docker.io/cloudflare/cloudflared:latest` in v0.1.0 `[today]` (`lib/web.sh` honors `SWARMBOX_CLOUDFLARED_IMAGE`). `cloudflare-setup.py` now pins `docker.io/cloudflare/cloudflared:2026.10.7` (`DEFAULT_CONNECTOR_IMAGE`; the tag was in Docker Hub's tag list on 2026-11-08, the image was not pulled or run here `[unverified]`). The order is `--connector-image`, then `SWARMBOX_CLOUDFLARED_IMAGE`, then the pinned default. The helper's connector logic in `up` (3.7.2) must use the same pin (Phase 5, later slices).
 
 ## 6. Tools, agents and shims
 
@@ -1808,7 +1807,7 @@ into the box.
 | `<workspace>/.claude/settings.json` symlink into `<workspace>/.swarmbox/` | Remove after migration | The home is already the workspace, so `<workspace>/.claude` persists by itself. The first start of the new image replaces the link with a copy of the file (12.4). |
 | `<workspace>/.swarmbox/` | Replace with the XDG layout (4.3; D10) | One predictable layout, consistent with the tool folders. |
 | `container/scripts/init.sh` | Remove; its duties are split (10.3; D9) | The new model has no init script. |
-| `cloudflare-setup.py`: `--connector-image` | Replace | The connector image is pinned in the helper; `SWARMBOX_CLOUDFLARED_IMAGE` stays for overrides. |
+| `cloudflare-setup.py`: `--connector-image` | Replace | The connector image is pinned (`2026.10.7`, done in the script in 5.1); `SWARMBOX_CLOUDFLARED_IMAGE` stays for overrides. |
 | Image packages `software-properties-common`, `lsb-release`, `apt-transport-https` | Remove after a build test | Candidates only; nothing checked depends on them. `procps` stays (`pgrep` is used by the web-terminal and Podman-service scripts). |
 
 Kept on purpose, so nobody reads them as removals: `--remote-browser` (as `BROWSER_URL`; today `--remote-browser` with no argument means port 9222, `start.sh` lines 75 to 80 `[today]`, and a bare number or `host:port` is accepted, 7.2), `--ports`, `--hostname`, the time zone, `--init`,

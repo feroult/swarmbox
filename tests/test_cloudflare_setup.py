@@ -318,6 +318,45 @@ class TestApply(T):
         self.assertEqual([(m, "access/apps" in p) for m, p in muts], [("PUT", True)])
         self.assertEqual(FAKE.apps[0]["session_duration"], "30m")
 
+    def test_rerun_without_session_keeps_the_configured_session(self):
+        self.apply()
+        self.assertEqual(FAKE.apps[0]["session_duration"], "4h", "first run uses the default")
+        self.apply("--session", "168h")
+        self.assertEqual(FAKE.apps[0]["session_duration"], "168h", "an explicit --session changes it")
+        FAKE.log.clear()
+        code, _, err = self.apply()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(FAKE.apps[0]["session_duration"], "168h")
+        self.assertEqual(FAKE.mutations(), [], "no PUT to the app (or anything else)")
+        self.apply("--session", "30m")
+        self.assertEqual(FAKE.apps[0]["session_duration"], "30m", "explicit still wins afterwards")
+
+    def test_rerun_keeps_the_session_from_cloudflare_json_when_the_app_is_gone(self):
+        self.apply("--session", "168h")
+        FAKE.apps.clear()
+        self.apply()
+        self.assertEqual(FAKE.apps[0]["session_duration"], "168h")
+
+    def test_session_saved_in_cloudflare_json_and_file_mode_unchanged(self):
+        path = os.path.join(self.tmp, "swarmbox", "cloudflare.json")
+        self.apply("--session", "168h")
+        with open(path) as f:
+            saved = json.load(f)
+        self.assertEqual(saved["session"], "168h")
+        self.assertEqual({"domain", "emails", "tunnel", "session"}, set(saved))
+        self.apply()
+        with open(path) as f:
+            self.assertEqual(json.load(f)["session"], "168h")
+        # the mode is whatever the umask gives, as before (no chmod added)
+        probe = os.path.join(self.tmp, "m")
+        with open(probe, "w"):
+            pass
+        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), stat.S_IMODE(os.stat(probe).st_mode))
+
+    def test_dry_run_does_not_save_the_session(self):
+        self.apply("--dry-run", "--session", "168h")
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "swarmbox", "cloudflare.json")))
+
     def test_drifted_app_is_repaired(self):
         self.apply()
         FAKE.apps[0]["policies"] = [{"id": "someone-elses-policy", "precedence": 1}]  # e.g. a bypass
@@ -641,6 +680,83 @@ esac
         self.run_cli(*self.conn)
         self.assertEqual(len([c for c in self.calls() if c.startswith("run ")]), 1)
         self.assertTrue([c for c in self.calls() if c.startswith("start ")])
+
+
+    # ---- remove stops the connector only when nothing else uses the tunnel; image pinning
+    def remove(self, *extra):
+        return self.run_cli("remove", "--domain", "talkr.run", "--yes", *extra)
+
+    def test_remove_stops_connector_when_no_other_hostname_uses_the_tunnel(self):
+        self.run_cli(*self.conn)
+        self.assertTrue(os.path.exists(os.path.join(self.shim, "state")))
+        code, out, err = self.remove()
+        self.assertEqual(code, 0, err)
+        self.assertIn("rm -f swarmbox-cloudflared", self.calls())
+        self.assertFalse(os.path.exists(os.path.join(self.shim, "state")), "connector gone")
+        self.assertNotIn("were left in place", out)
+
+    def test_remove_keeps_connector_when_another_hostname_remains(self):
+        self.run_cli(*self.conn)
+        self.run_cli(*self.conn, "--name", "second", "--port", "7682")
+        before = len(self.calls())
+        code, out, err = self.remove("--name", "second")
+        self.assertEqual(code, 0, err)
+        self.assertEqual([c for c in self.calls()[before:] if c.startswith(("rm", "stop"))], [])
+        self.assertTrue(os.path.exists(os.path.join(self.shim, "state")), "connector still runs")
+        self.assertIn("still used", out)
+
+    def test_remove_without_a_connector_container_calls_no_rm(self):
+        self.apply()
+        code, _, err = self.remove()
+        self.assertEqual(code, 0, err)
+        self.assertEqual([c for c in self.calls() if c.startswith(("rm", "stop"))], [])
+
+    def test_remove_dry_run_does_not_touch_the_connector(self):
+        self.run_cli(*self.conn)
+        FAKE.log.clear()
+        before = len(self.calls())
+        code, out, err = self.remove("--dry-run")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(FAKE.mutations(), [])
+        self.assertEqual([c for c in self.calls()[before:] if c.startswith(("rm", "stop", "start", "run"))], [])
+        self.assertTrue(os.path.exists(os.path.join(self.shim, "state")))
+        self.assertIn("would stop and remove connector", out + err)
+
+    def test_remove_dry_run_with_another_hostname_reports_no_stop(self):
+        self.run_cli(*self.conn)
+        self.run_cli(*self.conn, "--name", "second", "--port", "7682")
+        code, out, err = self.remove("--name", "second", "--dry-run")
+        self.assertNotIn("would stop", out + err)
+
+    def test_default_connector_image_is_pinned(self):
+        self.assertNotIn(":latest", cs.DEFAULT_CONNECTOR_IMAGE)
+        self.assertRegex(cs.DEFAULT_CONNECTOR_IMAGE, r"^docker\.io/cloudflare/cloudflared:\d{4}\.\d+\.\d+$")
+        with open(SCRIPT) as f:
+            self.assertNotIn("cloudflared:latest", f.read())
+        self.run_cli(*self.conn)
+        run = [c for c in self.calls() if c.startswith("run ")][0]
+        self.assertIn(cs.DEFAULT_CONNECTOR_IMAGE, run)
+
+    def test_env_override_of_the_connector_image(self):
+        code, _, err = self.run_cli(*self.conn, env={"SWARMBOX_CLOUDFLARED_IMAGE": "example.test/cf:1.2.3"})
+        self.assertEqual(code, 0, err)
+        run = [c for c in self.calls() if c.startswith("run ")][0]
+        self.assertIn("example.test/cf:1.2.3", run)
+        self.assertNotIn(cs.DEFAULT_CONNECTOR_IMAGE, run)
+
+    def test_flag_beats_the_env_override(self):
+        self.run_cli(*self.conn, "--connector-image", "example.test/flag:9",
+                     env={"SWARMBOX_CLOUDFLARED_IMAGE": "example.test/cf:1.2.3"})
+        run = [c for c in self.calls() if c.startswith("run ")][0]
+        self.assertIn("example.test/flag:9", run)
+
+    def test_token_never_appears_in_podman_argv_after_the_changes(self):
+        self.run_cli(*self.conn, "--session", "168h")
+        self.run_cli(*self.conn)
+        self.remove()
+        self.assertTrue(self.calls())
+        for c in self.calls():
+            self.assertNotIn("tok.", c)
 
 
 class TestVerify(unittest.TestCase):
