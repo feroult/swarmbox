@@ -2,7 +2,7 @@
 """Provision remote access to a SwarmBox web terminal through Cloudflare.
 
 Creates (or updates, or leaves alone) everything needed to reach
-`./start.sh --web` from anywhere behind an email one-time-code login:
+the SwarmBox web terminal (`swarmbox url`) from anywhere behind an email one-time-code login:
 
   1. an Access policy that allows only the e-mail addresses you give
   2. an Access application for <name>.<domain> using only the One-time PIN login
@@ -602,12 +602,10 @@ def cmd_apply(args):
             "not running, so the page will not load yet. Fix the problem above and run this command "
             "again (it only retries what is missing), or use --no-connector to run cloudflared yourself.\n")
     elif exit_code == 0 and not api.dry_run:
-        say("\nDone. Start the terminal and open the URL:")
-        var = ("SWARMBOX_WEB_HOSTNAME=%s" % host) if args.hostname else ("SWARMBOX_WEB_DOMAIN=%s" % domain)
-        say("  %s ./start.sh --reset --web %d" % (var, args.port))
-        say("  https://%s   (log in with the e-mail code)" % host)
-        say("\nTo have `./start.sh --web` bring the tunnel up from now on without any API token, get the tunnel's "
-            "own token now (this still needs the API token), export it on the host, and then delete the API token:\n"
+        say("\nDone. Open the URL:")
+        say("  https://%s   (log in with the e-mail code; `swarmbox url` prints it again)" % host)
+        say("\nTo have `swarmbox` bring the tunnel up on every entry without any API token, get the tunnel's "
+            "own token now (this still needs the API token), keep it on the host, and then delete the API token:\n"
             '  export SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN="$(./%s token)"\n' % os.path.basename(sys.argv[0]))
     return exit_code
 
@@ -718,7 +716,7 @@ def build_parser():
     p.add_argument("--email", help="comma-separated e-mails allowed to log in (env SWARMBOX_WEB_EMAIL; remembered)")
     p.add_argument("--name", default="swarmbox", help="container name; hostname is <name>.<domain> (default: swarmbox)")
     p.add_argument("--hostname", help="serve exactly this hostname instead of <name>.<domain> (e.g. tty.example.com)")
-    p.add_argument("--port", type=int, default=7681, help="host port given to ./start.sh --web (default: 7681)")
+    p.add_argument("--port", type=int, default=7681, help="host port of the web terminal (default: 7681)")
     p.add_argument("--session", default=None,
                    help="login session length, e.g. 30m, 4h. Default: keep the configured value; 4h on a first setup")
     p.add_argument("--tunnel", default="swarmbox", help="tunnel name, shared by all hostnames (default: swarmbox)")

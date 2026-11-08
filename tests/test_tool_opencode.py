@@ -370,12 +370,12 @@ class PrepareRenderTest(unittest.TestCase):
         self.assertEqual(m["command"][0], "chrome-devtools-mcp")
         self.assertTrue(m["enabled"])
 
-    def test_the_template_is_valid_and_both_copies_agree(self):
+    def test_the_template_is_valid_and_matches_the_v0_1_0_one(self):
         t = json.loads(read(os.path.join(TOOLDIR, "local-llm.json")))
         self.assertIs(t["autoupdate"], False)
-        old = os.path.join(ROOT, "container", "opencode", "local-llm.json")   # kept for Dockerfile.v0.1.0 until Phase 6
-        if os.path.exists(old):
-            self.assertEqual(read(old), read(os.path.join(TOOLDIR, "local-llm.json")))
+        old = subprocess.run(["git", "-C", ROOT, "show", "v0.1.0:container/opencode/local-llm.json"], capture_output=True, text=True)
+        if old.returncode == 0:   # the tag is absent in a shallow clone: then only the shape above is checked
+            self.assertEqual(old.stdout, read(os.path.join(TOOLDIR, "local-llm.json")))
 
     def test_an_unwritable_run_folder_exits_2(self):
         os.makedirs(os.path.dirname(self.run_dir))

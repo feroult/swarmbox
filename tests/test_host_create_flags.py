@@ -489,7 +489,7 @@ class ToolPortsTest(Base):
         self.assertIn("tool-ports", p.stderr)
 
 
-# ============================================================================ ports and BROWSER_URL parity (design 7.2, 8.2, start.sh today)
+# ============================================================================ ports and BROWSER_URL parity (design 7.2, 8.2, v0.1.0 flags)
 
 class PortsParityTest(Base):
     def user_ports(self, spec):

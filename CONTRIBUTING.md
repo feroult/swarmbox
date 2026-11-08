@@ -32,7 +32,7 @@ python3 tests/test_docs_consistency.py
 | `test_bashrc_fragment.py` | `container/config/bashrc.sh`: aliases and `yolo` from fake manifests, banner and health lines, `PATH`, `SWARMBOX_CMD=1` (bash, fixture trees in mktemp) |
 | `test_build_index.py` | `container/web/build-index.sh`, the web page assembled at image build |
 | `test_ci_workflow.py` | static checks of `.github/workflows/ci.yml` (parsed with PyYAML; runs actionlint when `ACTIONLINT` or PATH has it) |
-| `test_clipboard_bridge.py` | the clipboard bridge page script (needs a browser; about 40 s) |
+| `test_clipboard_bridge.py` | the clipboard bridge page script, in a browser, on the page built by `container/web/build-index.sh` and rendered by `swarmbox-web` (needs a browser; about 40 s) |
 | `test_cloudflare_setup.py` | `cloudflare-setup.py` against a fake Cloudflare API |
 | `test_design_partb.py` | the shape of Part B of the design |
 | `test_dev_build.py` | `dev/dev-build.sh`, the dev image build with the apt override in a scratch copy (fake `podman`) |
@@ -62,17 +62,13 @@ python3 tests/test_docs_consistency.py
 | `test_migration.py` | `container/scripts/swarmbox-migrate.sh` (the layout migration, serve step 4) on a fixture workspace built from the v0.1.0 code in mktemp, and `serve` running it |
 | `test_parity.py` | The parity suite (design 8.4, 12.2, 12.3, 13.2): one or more tests per row of the feature catalog against the function, the real helper, `serve`, `swarmbox-attach` (private tmux socket), `swarmbox-web`, the tool manifests and the Cloudflare wrapper; the removed items; the old flags compared with the recorded v0.1.0 run flags (`tests/fixtures/v0.1.0-run-flags.json`, made by `tests/record_v010_flags.py`). Rows that could only be checked reduced are tagged `[reduced]` and listed at the end of the run |
 | `test_pubkey_ensure.py` | `swarmbox-pubkey --ensure` (`container/scripts/ssh-key.sh`): once, idempotent, never overwrites, only under the test `HOME` |
+| `test_retired_coverage.py` | the inventory of the six deleted v0.1.0 test files (each old test mapped to the 2.0 test that pins it, or dropped with a reason in the decision log) and the guard that no other test names the retired v0.1.0 scripts (an allow-list holds the history uses) |
 | `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md` and this file |
 | `test_serve_container.py` | `serve` in a throwaway container from the image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
 | `test_serve_steps.py` | `container/entrypoint.sh serve`: steps, failures, readiness marker, signals and the ttyd supervisor, with fakes on `PATH` |
 | `test_spikes_common.py` | the safety helpers of the spike scripts |
-| `test_ssh_key.py` | the SSH key handling in `start.sh` |
+| `test_ssh_key.py` | the SSH key handling of `container/scripts/ssh-key.sh` (`swarmbox-pubkey`) |
 | `test_starship.py` | the Starship prompt setup |
-| `test_start_attach.py` | attaching to the box |
-| `test_start_fake_podman.py` | `start.sh` against the shared fake `podman` |
-| `test_start_init.py` | `container/scripts/init.sh` |
-| `test_start_timezone.py` | the timezone handling |
-| `test_start_web_connector.py` | the web terminal connector in `start.sh` |
 | `test_run_all.py` | `tests/run_all.sh`, the full-regression runner (`--werror`, `--repeat N`, `--only`, `--list`), on small files only |
 | `test_tool_claude_real.py` | the first call of Claude Code through the shim: fake-curl argument tests always; the real download in throwaway containers only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` (slow, about 330 MB) |
 | `test_tool_gemini_clasp_poetry.py` | the `gemini`, `clasp` and `poetry` tools: installers with a fake npm and a fake curl serving a fake Poetry installer (stay in the prefix, versions from the manifest, no cache outside it), validate on the real tools folder (agents latest, others pinned, unique PROVIDES), `tool-ports` listing 43323 and the host helper publishing it, the `clasp login` function in bash and zsh, the gemini alias and `yolo` |
@@ -91,11 +87,10 @@ python3 tests/test_docs_consistency.py
 | `test_tool_manifest.py` | `swarmbox-tool` manifest loading and `validate` (every rule of design 6.9, the install.sh lint, no project level) and the `claude` manifest and installer (fake `curl`) |
 | `test_tool_stub.py` | the parts of `container/scripts/swarmbox-tool.sh` that are still stubs (the later-phase exit 70 of `use`, `remove`, `doctor`, `new`), `link` with no manifests, and the empty `tool-ports` file |
 | `test_tmux_browser_keys.py` | the browser key bindings of tmux (real tmux on a private socket; about 60 s) |
-| `test_web_build.py` | `container/scripts/swarmbox-web.sh` against a fake ttyd, with `serve`, and the browser tests rerun on the page it renders (needs a browser for those) |
+| `test_web_build.py` | `container/scripts/swarmbox-web.sh` against a fake ttyd (the cases of v0.1.0's `test_web_terminal.py` live here now), and with `serve` |
 | `test_smoke_skeleton.py` | the structure of `tests/smoke_image.py` (steps, tags, names, forbidden verbs); starts no container |
 | `test_web_container.py` | the web terminal, `pubkey`, `tool validate` and `host-helper` in a throwaway container (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
-| `test_web_style.py` | the web terminal style (needs a browser) |
-| `test_web_terminal.py` | the web terminal wrapper |
+| `test_web_style.py` | the web terminal style, on the same page (needs a browser) |
 
 Run them all with `sh tests/run_all.sh` (one line per file with its test count; `--werror` runs each with `python3 -W error`, `--repeat 3` runs each file three times, `--only a.py,b.py` picks files). Shared helpers (the repository root, the fake `podman`, and later the
 fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use a real container only for a smoke

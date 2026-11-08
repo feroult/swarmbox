@@ -278,7 +278,8 @@ class TestApply(T):
 
     def test_default_hostname_hint_uses_the_domain(self):
         code, out, err = self.apply()
-        self.assertIn("SWARMBOX_WEB_DOMAIN=talkr.run ./start.sh --reset --web 7681", out)
+        self.assertIn("https://swarmbox.talkr.run", out)
+        self.assertNotIn("--reset --web", out)
         self.assertIn("delete the API token", out)
 
     def test_second_run_changes_nothing(self):
@@ -496,7 +497,8 @@ class TestSafetyAndErrors(T):
     def test_serving_exactly_a_chosen_hostname(self):
         code, out, err = self.apply("--hostname", "tty.talkr.run")
         self.assertEqual(code, 0, err)
-        self.assertIn("SWARMBOX_WEB_HOSTNAME=tty.talkr.run ./start.sh --reset --web 7681", out)
+        self.assertIn("https://tty.talkr.run", out)
+        self.assertNotIn("--reset --web", out)
         self.assertNotIn("SWARMBOX_WEB_DOMAIN", out)
         self.assertEqual(FAKE.apps[0]["domain"], "tty.talkr.run")
         self.assertEqual(FAKE.dns[0]["name"], "tty.talkr.run")
@@ -673,7 +675,7 @@ esac
         self.assertIn("run it from your host shell", err)
         self.assertNotIn("Trying to pull", err)
         self.assertIn("hostname is protected by the login", out)
-        self.assertNotIn("Done. Start the terminal", out)
+        self.assertNotIn("Done. Open the URL", out)
         self.assertTrue(os.path.exists(os.path.join(self.tmp, "swarmbox", "cloudflare.json")),
                         "answers are saved before the connector step")
         FAKE.log.clear()
