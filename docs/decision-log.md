@@ -103,3 +103,45 @@ Options: do all of Phase 0 in one slice; split.
 Chosen: split, as the workflow assigned; B4, B5, B1, B2, B10, B11, B12, B14, B16 and B25 are left to later slices and stay [unverified] in Part B.
 Impact on the design: none.
 How to reverse: n/a.
+
+## [0.2] B5: the socket limit is 107 characters and the fallback starts above 100
+Context: 3.5 said "roughly 108 bytes" and "fall back to a short symlink if needed" without a number or a mechanism.
+Options: threshold at 107 (the exact limit); threshold with a margin; no fallback, only an error.
+Chosen: fall back when the host-side socket path is longer than 100 characters, because macOS and BSD sockets hold 104 bytes (103 characters) and B6 cannot be run here; 100 leaves a margin for both. Mechanism chosen: a symlink to the state FOLDER (not to the socket), measured to work: the service binds its short container path and the host connects through the symlink path. If the symlink path is still over 100, `up` exits 4 (my choice of the exit code, the config/usage class; the plan's exit-code table was not consulted for a better fit).
+Impact on the design: 3.5 rewritten with the rule; plan Phase 3 tests gained a boundary test (100, 101, symlink too long); B5 closed. The symlink location (host:~/.local/state/swarmbox/) and its name are proposals for Phase 3 [unverified as to macOS, where the socket does not cross the VM anyway].
+How to reverse: change the threshold constant in the helper and the sentence in 3.5.
+
+## [0.2] B5 reduced: a Python stand-in for the nested Podman service
+Context: a real `podman system service` inside a throwaway container needs a third nesting level.
+Options: skip the container half; use a stand-in that binds the socket.
+Chosen: the stand-in (Python bind/listen in a python:3.11-slim container with the deep folder mounted at /home/agent), tagged reduced. `podman --url unix://<too long>` was run for real and fails with `connect: invalid argument`; the symlink case could not be run through Podman end to end because the stand-in does not speak HTTP (it answered connection refused once it was past its listen).
+Impact on the design: the 3.5 tag says reduced. The kernel limit is the same for any process, so the rule does not depend on the stand-in.
+How to reverse: rerun with a real service once a runner with a third level exists.
+
+## [0.2] B12 keep-id: podman inspect says "private", so tests read uid_map
+Context: my first test asserted that `podman inspect` shows keep-id; it shows `private` on Podman 4.3.1 although the mapping is a keep-id one.
+Options: keep the assertion (fails); assert the uid map.
+Chosen: assert /proc/self/uid_map (container 1000 to the invoking user, length 1) plus file ownership on the host, because that is the behavior the design relies on. A host UID other than 1000 is still B7 (the host here is 1000).
+Impact on the design: 3.6 tag re-recorded with this note.
+How to reverse: n/a.
+
+## [0.2] B12 sizes: 325 MB and 156 MB re-confirmed; the 4.2 GB image figure stays unverified
+Context: re-record the install sizes and the image size.
+Options: rebuild the v0.1.0 image (hours, large, touches nothing of the owner but is outside the cheap scope); read an existing image (none exists: podman images shows no swarmbox image); measure components.
+Chosen: components only: Claude Code 2.1.319 under --prefix 325 MB, cache 156 MB (the old figure said 157 MB), node:24-slim base 225 MB. The 4.2 GB figure is marked [unverified] with the reason, in the 10.2 size-budget bullet. The npm measurement used the registry's current release, so it moves with versions.
+Impact on the design: persistence table (3.6) retagged with date, Podman, OS, image; 10.2 size bullet notes the gap.
+How to reverse: build v0.1.0 in a scratch dir and run `podman image inspect`.
+
+## [0.2] B12 `$0`: sourcing differs per shell, so the function never uses $0
+Context: the design only claimed that a symlink keeps its name in $0 (shim, 6.2). The host function is sourced, which is a different case.
+Options: record only the shim claim; also record the sourced case.
+Chosen: both, per shell. Shebang scripts through a symlink give the symlink path in dash, bash, zsh and busybox sh (also through PATH). In a sourced file, $0 in a function is /usr/bin/dash, /usr/bin/bash, the function name (zsh) or `sh` (busybox). fish was not tested (not POSIX); the function must call the helper at its fixed location (3.6 already says it is fixed). The check ran on the box's own shells rather than in a throwaway container (no container is needed for a shell experiment), tagged reduced.
+Impact on the design: 6.2 text and tag; Part B table.
+How to reverse: n/a.
+
+## [0.2] B12 `exec -e`: confirmed, extended
+Context: the claim was verified without date or version.
+Options: n/a (observation).
+Chosen: re-ran with three entries (value A, value B, unset): each entry saw the current host value, unset gave empty, nothing in inspect or PID 1's environment. No design change.
+Impact on the design: 7.3 tag only.
+How to reverse: n/a.
