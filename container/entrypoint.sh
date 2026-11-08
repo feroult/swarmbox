@@ -3,7 +3,8 @@
 #
 #   serve     the box's main process: the ordered startup of design 4.1, the readiness marker and health file of 4.2,
 #             PID 1 signal handling, and the ttyd supervisor of 5.1 (slice 2.2, this file)
-#   attach, init, pubkey, tool, host-helper
+#   attach    forwards to swarmbox-attach (slice 2.3: the grouped session, the idle window, `swarmbox <command>`)
+#   init, pubkey, tool, host-helper
 #             written by the next slices of Phase 2; until then they fail loudly (exit 70, EX_SOFTWARE) instead of
 #             pretending to work
 #   (none)    exit 64
@@ -292,7 +293,7 @@ serve() {
     # step 9 [W]: the tmux server with the session main and one idle window
     log "step 9: starting tmux, session main"
     if have tmux; then
-        run_logged env -u TMUX tmux new-session -d -s main; rc=$?
+        run_logged env -u TMUX tmux new-session -d -s main -n idle; rc=$?
         [ "$rc" = 0 ] || warn "tmux did not start the session main (exit $rc); see serve.log"
     else
         warn "tmux not found; the session main was not created"
@@ -355,7 +356,15 @@ case "${1:-}" in
     serve)
         serve
         ;;
-    attach|init|pubkey|tool|host-helper)
+    attach)
+        shift
+        if ! command -v swarmbox-attach > /dev/null 2>&1; then
+            echo "swarmbox-entrypoint: swarmbox-attach not found on PATH" >&2
+            exit 127
+        fi
+        exec swarmbox-attach "$@"
+        ;;
+    init|pubkey|tool|host-helper)
         echo "swarmbox-entrypoint: '$1' is not implemented in this build yet (Phase 2, slice 2.1 placeholder)" >&2
         exit 70
         ;;

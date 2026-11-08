@@ -116,6 +116,7 @@ Scope
 - **Entrypoint** `swarmbox-entrypoint` with the subcommands `serve`, `attach`, `init`, `pubkey`, `tool`, `host-helper` and "any other command". `tool` forwards to the stub `swarmbox-tool` until Phase 4a; the empty `tool-ports` is shipped in the helper archive.
 - **`serve`**: the ordered steps of 4.1 (PID 1 with SIGTERM and SIGINT handlers, what it blocks on with `WEB=0`), readiness and health (4.2) including the nested-service health check, a ttyd supervisor that stays alive after it gives up so that `swarmbox-web restart` can reach it (spike 0.1, design 4.2), the SSH key, the layout migration (12.4), the session `main` with one idle window.
   Slice 2.2 built `serve` in `container/entrypoint.sh` (decisions [2.2]): steps 4, 6, 7 and 12 are logged no-ops until the programs they call (`swarmbox-migrate`, `swarmbox-tool`) exist; B3 is closed-reduced; B36 is left to the `attach` slice.
+  Slice 2.3 built `swarmbox-attach` (`container/scripts/swarmbox-attach.sh`, installed as `/usr/local/bin/swarmbox-attach`) and the entrypoint's `attach` forwarding (decisions [2.3]); `serve` now names the idle window `idle`; B13 and B36 are closed.
 - **`swarmbox-attach`**: replaces `lib/attach-session.sh`; joins the session `main` through a grouped session, no status bar on host tabs, closes the idle window; the **`swarmbox <command>` mechanism** (3.3): no `exec` of tmux, a detached command window with a `wait-for` channel and a status file, the interactive shell so aliases and `PATH` apply, the exit code handling (`128 + signal`; a killed window gives 129 through a HUP/TERM trap in the wrapper, a missing file gives 1), the wrapper's fallback poll of its window id for a SIGKILLed wrapper, and the no-terminal case (no `-t`, no CRLF, and a non-interactive `bash -c` that sources the fragment with `SWARMBOX_CMD=1` instead of `bash -ic`, which prints job-control errors; spike 0.1, design 3.3).
 - **Web terminal**: `build-index.sh` at image build, `swarmbox-web` at start with the three-value substitution (5.1).
 - **Shell**: `container/config/bashrc.sh` (banner, aliases, Starship, `PATH`) replacing the `bashrc` echo lines; `shell.sh` sourcing for tools; the aliases and `yolo` generated from manifests, `SWARMBOX_AGENT` and `SWARMBOX_YOLO` (6.6), with no manifest yet the aliases are empty and `yolo` says no agent is installed.
@@ -372,7 +373,7 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B10 | OpenCode size saving under `--prefix` (closed in 0.3: 745 MB) | 0 | feeds 4b |
 | B11 | gcloud URL and checksum | 0 | feeds 4b; closed in 0.4 (checksum of the pinned file is computed, D29) |
 | B12 | Re-record unrecorded checks | 0 | re-recorded in 0.2; the 4.2 GB size stays `[unverified]` until B27 in 2 |
-| B13 | `swarmbox <command>` mechanism and exit code | 2 | fed by the Phase 0 spike (spiked in 0.1, reduced) |
+| B13 | `swarmbox <command>` mechanism and exit code | 2 | fed by the Phase 0 spike (spiked in 0.1, reduced); closed in 2.3 |
 | B14 | Where Access sessions are revoked | 0 | documentation read in 0.4, stays `[unverified]`; owner tries it in a dashboard |
 | B15 | `python3` on a clean macOS | 6 | not doable in Phase 0 (hardware) |
 | B16 | Restart after a host reboot | 0 | partly checked in 0.4; the reboot is `[unverified]` (needs systemd) |
@@ -395,4 +396,4 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B33 | `up` lock and cleanup | 3 | |
 | B34 | Portable mode check | 3 | macOS part rechecked in 6 |
 | B35 | Fast path of `up` | 3 | |
-| B36 | Idle window of `main` | 2 | |
+| B36 | Idle window of `main` | 2 | closed in 2.3 |
