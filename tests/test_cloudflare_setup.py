@@ -331,6 +331,28 @@ class TestApply(T):
         self.apply("--session", "30m")
         self.assertEqual(FAKE.apps[0]["session_duration"], "30m", "explicit still wins afterwards")
 
+    def test_saved_config_contains_hostname_and_session(self):
+        path = os.path.join(self.tmp, "swarmbox", "cloudflare.json")
+        self.apply("--session", "168h", "--hostname", "tty.talkr.run")
+        with open(path) as f:
+            saved = json.load(f)
+        self.assertEqual(saved["hostname"], "tty.talkr.run")
+        self.assertEqual(saved["name"], "swarmbox")
+        self.assertEqual(saved["session"], "168h")
+
+    def test_rerun_without_hostname_serves_the_saved_hostname_for_the_same_name(self):
+        self.apply("--hostname", "tty.talkr.run")
+        FAKE.log.clear()
+        code, out, err = self.apply()
+        self.assertEqual(code, 0, err)
+        self.assertIn("tty.talkr.run", out)
+        self.assertNotIn("swarmbox.talkr.run", out)
+
+    def test_saved_hostname_is_ignored_for_another_name(self):
+        self.apply("--hostname", "tty.talkr.run")
+        code, out, err = self.apply("--name", "other")
+        self.assertIn("other.talkr.run", out)
+
     def test_rerun_keeps_the_session_from_cloudflare_json_when_the_app_is_gone(self):
         self.apply("--session", "168h")
         FAKE.apps.clear()
@@ -343,7 +365,7 @@ class TestApply(T):
         with open(path) as f:
             saved = json.load(f)
         self.assertEqual(saved["session"], "168h")
-        self.assertEqual({"domain", "emails", "tunnel", "session"}, set(saved))
+        self.assertEqual({"domain", "emails", "tunnel", "session", "hostname", "name"}, set(saved))
         self.apply()
         with open(path) as f:
             self.assertEqual(json.load(f)["session"], "168h")

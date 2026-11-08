@@ -233,6 +233,79 @@ class PrerequisiteAndCodesTest(Base):
             self.assertEqual(fp.calls(), [])
 
 
+class StatusHostLinesTest(Base):
+    CN = "swarmbox-cloudflared"
+
+    def cfg(self, **data):
+        d = os.path.join(self.home, ".config", "swarmbox")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "cloudflare.json"), "w") as f:
+            json.dump({"domain": "example.org", "emails": ["a@example.org"], "tunnel": "swarmbox", **data}, f, indent=2)
+
+    def run_with_podman(self, rules, *args):
+        from helpers import FakePodman
+        with FakePodman({"container": {"rules": rules}}) as fp:
+            e = fp.env()
+            e.update({"HOME": self.home, "STUB_OUT": self.out})
+            r = self.run_h(*args, env=e)
+            return r, fp.calls()
+
+    def test_status_adds_the_connector_line_from_the_fake_podman(self):
+        self.cfg(session="168h")
+        r, calls = self.run_with_podman([{"match": ["inspect", self.CN], "stdout": self.CN + "|true\n"}], "status")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("connector: running", r.stdout)
+        self.assertIn("login session: 168h", r.stdout)
+        self.assertEqual(self.rec()["argv"][0], "status")
+        self.assertEqual(len(calls), 1, calls)
+        self.assertEqual(calls[0][:2], ["container", "inspect"])
+        self.assertEqual(calls[0][-1], self.CN)
+
+    def test_status_says_stopped_and_missing_connectors(self):
+        r, _ = self.run_with_podman([{"match": ["inspect", self.CN], "stdout": self.CN + "|false\n"}], "status")
+        self.assertIn("connector: not running", r.stdout)
+        self.assertIn("login session: not recorded", r.stdout)
+        r, _ = self.run_with_podman([{"match": ["inspect", self.CN], "exit": 125,
+                                      "stderr": "Error: no such container %s\n" % self.CN}], "status")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("connector: not running (no container %s" % self.CN, r.stdout)
+
+    def test_status_with_a_podman_error_is_unknown_and_exit_0(self):
+        r, _ = self.run_with_podman([{"match": ["inspect", self.CN], "exit": 125, "stderr": "Error: cannot connect\n"}], "status")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("connector: unknown", r.stdout)
+
+    def test_status_without_podman_prints_that_the_connector_state_is_unknown_exit_0(self):
+        bindir = os.path.join(self.tmp, "bin")
+        os.mkdir(bindir)
+        for t in HELPER_TOOLS + ["python3"]:
+            p = shutil.which(t)
+            if p:
+                os.symlink(p, os.path.join(bindir, t))
+        r = self.run_h("status", env=self.env(PATH=bindir))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("connector: unknown (podman was not found)", r.stdout)
+
+    def test_status_keeps_the_exit_code_of_the_script_and_off_never_calls_podman(self):
+        r, calls = self.run_with_podman([{"match": ["inspect", self.CN], "stdout": self.CN + "|true\n"}], "status", "--bogus-flag-ok")
+        self.assertEqual(r.returncode, 0)
+        r, calls = self.run_with_podman([], "off", "--dry-run")
+        self.assertEqual(calls, [])
+        self.assertNotIn("connector:", r.stdout)
+        e = self.env(STUB_EXIT="4")
+        from helpers import FakePodman
+        with FakePodman({"container": {"rules": [{"match": ["inspect", self.CN], "stdout": self.CN + "|true\n"}]}}) as fp:
+            e = fp.env(HOME=self.home, STUB_OUT=self.out, STUB_EXIT="4")
+            r = self.run_h("status", env=e)
+        self.assertEqual(r.returncode, 4)
+        self.assertIn("connector: running", r.stdout)
+
+    def test_status_prints_the_hostname_urls_are_built_from(self):
+        self.cfg(hostname="tty.example.org", name="swarmbox", session="4h")
+        r, _ = self.run_with_podman([{"match": ["inspect", self.CN], "stdout": self.CN + "|true\n"}], "status")
+        self.assertIn("https://tty.example.org", r.stdout)
+
+
 class SecretsTest(Base):
     def test_no_secret_in_argv(self):
         d = os.path.join(self.home, ".config", "swarmbox")

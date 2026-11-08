@@ -198,7 +198,7 @@ def load_saved():
         return {}
 
 
-def save_config(domain, emails, tunnel, session=None):
+def save_config(domain, emails, tunnel, session=None, hostname=None, name=None):
     path = config_path()
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -206,6 +206,11 @@ def save_config(domain, emails, tunnel, session=None):
             data = {"domain": domain, "emails": emails, "tunnel": tunnel}
             if session:
                 data["session"] = session
+            # additive keys: `swarmbox url` (POSIX sed) reads the same name the script serves, per box name
+            if hostname:
+                data["hostname"] = hostname
+            if name:
+                data["name"] = name
             json.dump(data, f, indent=2)
     except OSError as e:
         warn("could not save %s (%s)" % (path, e))
@@ -529,8 +534,14 @@ def resolve_settings(args):
     return domain.strip().lower().rstrip("."), parse_emails(emails), saved
 
 
-def hostname_for(args, domain):
-    host = (args.hostname or "%s.%s" % (args.name, domain)).strip().lower()
+def hostname_for(args, domain, saved=None):
+    saved = saved or {}
+    host = args.hostname
+    if not host and saved.get("hostname") and saved.get("name") == args.name:
+        cand = str(saved["hostname"]).strip().lower()
+        if cand == domain or cand.endswith("." + domain):
+            host = cand  # the name this box was set up with; it is what `swarmbox url` prints
+    host = (host or "%s.%s" % (args.name, domain)).strip().lower()
     if host != domain and not host.endswith("." + domain):
         die("hostname '%s' is not inside '%s'" % (host, domain))
     if host.count(".") > domain.count(".") + 1:
@@ -543,7 +554,7 @@ def cmd_apply(args):
     domain, emails, saved = resolve_settings(args)
     if not emails:
         die("--email is required: the address(es) allowed to log in")
-    host = hostname_for(args, domain)
+    host = hostname_for(args, domain, saved)
     if args.session is not None and not re.match(r"^\d+[mh]$", args.session):
         die("--session must look like 30m or 4h")
     global DRY
@@ -563,7 +574,7 @@ def cmd_apply(args):
         step_route(api, account, tunnel_id, host, args.port, team, aud)
         step_dns(api, zone, host, tunnel_id)
         if not api.dry_run:
-            save_config(domain, emails, args.tunnel, session)  # before the connector, so a retry needs no flags
+            save_config(domain, emails, args.tunnel, session, host, args.name)  # before the connector, so a retry needs no flags
         if args.print_token and not tunnel_id.startswith("<new"):
             say(api.call("GET", "/accounts/%s/cfd_tunnel/%s/token" % (account, tunnel_id)))
         connector_ok = True
@@ -603,7 +614,7 @@ def cmd_apply(args):
 
 def cmd_remove(args):
     domain, _emails, saved = resolve_settings_for_remove(args)
-    host = hostname_for(args, domain)
+    host = hostname_for(args, domain, saved)
     if not args.yes:
         answer = ask("Remove the SwarmBox web access for https://%s? [y/N]" % host)
         if not answer or answer.lower() not in ("y", "yes"):

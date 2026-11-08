@@ -1973,6 +1973,51 @@ valid_public_host() {
     return 0
 }
 
+# One string value of the script's cloudflare.json (indented JSON, one key per line), read with sed; first match, no JSON parser.
+url_json_key() {
+    sed -n 's/^[[:space:]]*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CFG_ROOT/cloudflare.json" 2> /dev/null | head -n 1
+}
+
+# The public host name `url` and `remote status` print (empty: none configured): SWARMBOX_WEB_HOSTNAME, else the host name the
+# script saved for this box, else <name>.<domain>. Sets u_host. No Podman.
+public_host() {
+    u_host=${SWARMBOX_WEB_HOSTNAME:-}
+    if [ -z "$u_host" ]; then
+        u_dom=${SWARMBOX_WEB_DOMAIN:-}
+        u_saved=
+        u_sname=
+        u_sdom=
+        if [ -r "$CFG_ROOT/cloudflare.json" ]; then
+            u_sdom=$(url_json_key domain)
+            u_saved=$(url_json_key hostname)
+            u_sname=$(url_json_key name)
+        fi
+        [ -n "$u_dom" ] || u_dom=$u_sdom
+        u_dom=${u_dom%.}
+        if [ -n "$u_dom" ]; then
+            if valid_public_host "$u_dom"; then
+                u_host=$BOX.$u_dom
+                # the name the script saved for this box (--hostname) wins over <name>.<domain>, inside the same domain only
+                if [ -n "$u_saved" ] && [ "$u_sname" = "$BOX" ]; then
+                    if ! valid_public_host "$u_saved"; then
+                        warn "ignoring the saved host name '$u_saved' (not a host name)."
+                    else
+                        case $u_saved in
+                            "$u_dom"|*."$u_dom") u_host=$u_saved ;;
+                        esac
+                    fi
+                fi
+            else
+                warn "ignoring the domain '$u_dom' (not a host name)."
+            fi
+        fi
+    elif ! valid_public_host "$u_host"; then
+        warn "ignoring the host name '$u_host' (not a host name)."
+        u_host=
+    fi
+    return 0
+}
+
 # url: the local URL, and the public one when remote access is configured. It never calls Podman (5.2).
 cmd_url() {
     [ $# -eq 0 ] || usage
@@ -1989,24 +2034,7 @@ cmd_url() {
     done
     [ "$U_WEB" = 1 ] || die 1 "the web terminal is off (WEB=0), so there is no URL. Run \`swarmbox config set WEB 1\` and \`swarmbox reset\` to turn it on."
     printf 'http://127.0.0.1:%s\n' "$U_WEB_PORT"
-    u_host=${SWARMBOX_WEB_HOSTNAME:-}
-    if [ -z "$u_host" ]; then
-        u_dom=${SWARMBOX_WEB_DOMAIN:-}
-        if [ -z "$u_dom" ] && [ -r "$CFG_ROOT/cloudflare.json" ]; then
-            u_dom=$(sed -n 's/^[[:space:]]*"domain"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CFG_ROOT/cloudflare.json" 2> /dev/null | head -n 1)
-        fi
-        u_dom=${u_dom%.}
-        if [ -n "$u_dom" ]; then
-            if valid_public_host "$u_dom"; then
-                u_host=$BOX.$u_dom
-            else
-                warn "ignoring the domain '$u_dom' (not a host name)."
-            fi
-        fi
-    elif ! valid_public_host "$u_host"; then
-        warn "ignoring the host name '$u_host' (not a host name)."
-        u_host=
-    fi
+    public_host
     [ -z "$u_host" ] || printf 'https://%s\n' "$u_host"
     return 0
 }
@@ -2046,6 +2074,12 @@ cmd_remote() {
     ! resolve_tunnel_token || r_have=1
     TUNNEL_TOKEN=
     unset SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN
+    if [ "$r_sub" = status ]; then
+        r_rc=0
+        python3 "$r_script" status --name "$BOX" --port "$r_port" "$@" || r_rc=$?
+        [ "$r_rc" -eq 2 ] || remote_host_lines
+        exit "$r_rc"
+    fi
     if [ "$r_sub" != setup ]; then
         exec python3 "$r_script" "$r_cmd" --name "$BOX" --port "$r_port" "$@"
     fi
@@ -2059,6 +2093,40 @@ cmd_remote() {
         remote_token_epilogue "$r_script" "$r_port" "$@"
     fi
     exit "$r_rc"
+}
+
+# The host side of `remote status` (5.2): the public name, the connector and the login length. The script's status is read-only and
+# needs the API token; these lines need neither. The connector is asked with one inspect of the exact name; a missing podman or any
+# answer that is not "no such container" is "unknown", never an error (the exit code is the script's).
+remote_host_lines() {
+    public_host 2> /dev/null
+    printf '\nOn this host:\n'
+    if [ -n "$u_host" ]; then
+        printf '  public address: https://%s\n' "$u_host"
+    else
+        printf '  public address: none configured\n'
+    fi
+    if command -v podman > /dev/null 2>&1; then
+        h_rc=0
+        h_o=$(podman container inspect --format '{{.Name}}|{{.State.Running}}' "$CONNECTOR_NAME" 2>&1) || h_rc=$?
+        if [ "$h_rc" -eq 0 ]; then
+            case $h_o in
+                "$CONNECTOR_NAME|true") printf '  connector: running (container %s)\n' "$CONNECTOR_NAME" ;;
+                "$CONNECTOR_NAME|false") printf '  connector: not running (container %s is stopped; run swarmbox up)\n' "$CONNECTOR_NAME" ;;
+                *) printf '  connector: unknown (unexpected answer from podman)\n' ;;
+            esac
+        else
+            case $h_o in
+                *[Nn]o\ such\ container*) printf '  connector: not running (no container %s; run swarmbox up with the tunnel token set)\n' "$CONNECTOR_NAME" ;;
+                *) printf '  connector: unknown (podman could not be asked)\n' ;;
+            esac
+        fi
+    else
+        printf '  connector: unknown (podman was not found)\n'
+    fi
+    h_s=
+    [ ! -r "$CFG_ROOT/cloudflare.json" ] || h_s=$(url_json_key session)
+    printf '  login session: %s\n' "${h_s:-not recorded (the default is applied at the next setup)}"
 }
 
 # After a successful `remote setup` on a terminal (and never with --dry-run): when no tunnel token is stored yet, say how to
