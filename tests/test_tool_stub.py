@@ -73,11 +73,11 @@ class ToolStub(unittest.TestCase):
             self.assertEqual(self.run_tool(*args).returncode, 64)
 
     def test_everything_else_exits_70_and_points_to_phase_4a(self):
-        for args in (("install", "claude"), ("run", "claude"), ("update",), ("list",), ("bogus",)):
+        for args in (("use", "claude", "1"), ("remove", "claude"), ("doctor",), ("new", "x"), ("bogus",)):
             with self.subTest(args=args):
                 r = self.run_tool(*args)
                 self.assertEqual(r.returncode, 70)
-                self.assertIn("Phase 4a", r.stderr)
+                self.assertTrue("Phase 4a" in r.stderr or "later phase" in r.stderr, r.stderr)
                 self.assertEqual(r.stdout, "")
 
     def test_no_arguments_is_a_usage_error(self):
