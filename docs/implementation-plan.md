@@ -100,7 +100,7 @@ Phase 4b starts as soon as 4a is done, runs in parallel with Phase 3 and may con
 - **History audit (D37):** scan the whole git history for secrets and personal data (a scanner such as gitleaks, plus a read of the author and host names); write down the findings. The GitHub repository stays private until M4; Phase 7 acts on the findings.
 - `.github/workflows/ci.yml` running the tests that exist today (design 13.4). Browser tests and anything slow go to the scheduled run. **Runner details:** use a runner image whose Podman is at least 4.3 (the Ubuntu 22.04 image ships Podman 3.4, which is too old), or install Podman in the job; on macOS run the function tests with a fake Podman, which needs no Podman there. Closes B30 (does the macOS runner exist, and what does it provide).
 - `container/scripts/dirs.sh`: every path, XDG-aware (honors `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`), with its test.
-- `tests/helpers.py` today holds only `ROOT` (4 lines); each test writes its stubs inline. Phase 1 **creates** the shared fakes there: a fake `podman` that records its calls and a fake host helper (design 13.1).
+- `tests/helpers.py` today holds only `ROOT` (4 lines); each test writes its stubs inline. Phase 1 **creates** the shared fakes there: a fake `podman` that records its calls (slice 1.3, `FakePodman`, done) and a fake host helper (design 13.1; not yet built, to be added when Phase 2 needs it).
 - A short `CONTRIBUTING.md` with how to run the tests and how to build the image locally.
 
 **Exit criteria:** CI is green on the current tests, on a Podman of at least 4.3; `dirs.sh` is covered; the fakes exist and are used by at least one new test; the history audit report exists; B30 has a result.

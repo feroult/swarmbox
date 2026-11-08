@@ -293,3 +293,19 @@ Impact on the design: none. How to reverse: n/a.
 Context: bash 3.2 and zsh were not available as separate binaries in a test.
 Chosen: tests/test_dirs.py runs sh, dash and bash (the installed bash version, not 3.2); 3.2 compatibility is enforced by a static check (no [[, arrays, local, process substitution) and shellcheck -s sh. zsh was checked by hand with "emulate sh" (it printed the expected path) but is not in the test. unset -f is used to remove the helper function; it works in dash and bash but is not strictly POSIX, so a shell lacking it only keeps one harmless function (the error is ignored).
 Impact on the design: none. How to reverse: n/a.
+
+## [1.3] Fake podman is a Python script driven by a JSON script file
+Context: the slice needs a recording fake with per-subcommand behavior, safe quoting and atomic concurrent logging; the v0.1.0 stubs were inline sh.
+Options: sh stub with env vars (as STUB in test_start_attach.py); Python script reading a JSON script file.
+Chosen: Python (sys.executable shebang) because argv with newlines and quotes needs JSON to be unambiguous, and one os.write on an O_APPEND descriptor keeps concurrent records whole. Behavior lives in script.json in the fake's temp dir (reconfigurable between calls). Python startup makes each call a few tens of ms.
+Impact on the design: 13.1 helpers.py row now describes FakePodman. How to reverse: replace _FAKE_SCRIPT; the FakePodman API can stay.
+
+## [1.3] Scope: fake host helper not built; PATH keeps the original entries
+Context: the plan bullet names a fake podman and a fake host helper; the slice asks only for the fake podman.
+Chosen: only FakePodman now; the fake host helper waits for Phase 2 when its interface exists (design and plan say so). PATH is the fake folder first then the original PATH (sh, bash must still resolve), so "real podman unreachable" is enforced by shadowing: the fake never executes anything (checked by a test that greps its source), and assert_no_leak() raises if podman does not resolve to the fake. An absolute /usr/bin/podman call in code under test could not be blocked; none exists in start.sh.
+Impact on the design: none. How to reverse: n/a.
+
+## [1.3] First user: start.sh through test_start_fake_podman.py; nothing migrated
+Context: exit criteria want one new test against repository code.
+Chosen: tests/test_start_fake_podman.py covers create, build-when-image-missing, and start-existing paths of start.sh with --no-shell (3 tests, ~15 s because start.sh waits for the socket). Existing tests keep their inline stubs (migration is for when each is rewritten, per the plan). CONTRIBUTING.md gained both new test files (test_repo_files.py requires it).
+Impact on the design: none. How to reverse: delete the file.
