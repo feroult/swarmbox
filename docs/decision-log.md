@@ -771,6 +771,25 @@ Chosen: `list` prints a header and one sorted row per tool (user level wins over
 Impact on the design: 6.5, 6.7 (4a.3 state).
 How to reverse: n/a.
 
+## [4a.4] The shim is POSIX sh, not bash
+Context: the slice risk says "use bash"; the test list says "dash for #!/bin/sh variant if chosen".
+Options: (a) #!/bin/bash; (b) #!/bin/sh with POSIX-only code.
+Chosen: (b). The shim is the only SwarmBox script on a per-command path for tools that are not yet installed or are UPDATE=self (the shim stays reachable); dash starts in about a third of the time of bash, and the logic needs no bash feature (one read loop, one exec). It still runs under bash and busybox sh, and the tests run it under each (shebang shell, dash, bash, busybox sh). Costs nothing else: swarmbox-tool stays bash.
+Impact on the design: 6.5 (4a.4 state).
+How to reverse: change the shebang and the CI shellcheck dialect; the code is already valid bash.
+
+## [4a.4] Index lookup, loop guard and test-only variables
+Context: the design says "looks up in an index"; the guard needed a mechanism; the tests need to move the paths.
+Chosen: user index located through dirs.sh (so XDG is honored, D10); image index at /usr/local/lib/swarmbox/index. Exact-name first match per file, user file first. Loop guard has two layers: swarmbox-tool's existing refusal (now also recognizing the repository name swarmbox-shim.sh, a small change to real_command in swarmbox-tool.sh so tests that link to the repository file see the same refusal as the image) and a depth counter SWARMBOX_SHIM_DEPTH (limit 16, exit 70). A flag "already inside the shim for this command" was rejected because it breaks legitimate nesting (an agent that starts agent). Test-only variables: SWARMBOX_TEST_TOOL (manager path), plus the existing SWARMBOX_TEST_USER_SHIMS, SWARMBOX_TEST_IMAGE_SHIMS and SWARMBOX_TEST_LIB; none is in design 8.
+Impact on the design: 6.5 (4a.4 state).
+How to reverse: n/a.
+
+## [4a.4] Registration, image and what was not run
+Context: the shim must be in the image for the links to stop dangling.
+Chosen: Dockerfile copies it to /usr/local/bin/swarmbox-shim (chmod 755, before `link --system`); ci.yml runs test_tool_shim.py and shellchecks the shim with -s sh; test_ci_workflow.py lists the test in the non-macOS set; CONTRIBUTING.md has a row. Not run: an image build (the Dockerfile change is a one-line COPY plus chmod, checked by a text test), zsh as the interpreter (the shim runs by shebang, and the zsh case of B12 is about `$0`, already verified), a real Claude Code download (B1 was closed by Phase 0).
+Impact on the design: none.
+How to reverse: n/a.
+
 ## [4a.3] Test registration
 Context: new test file and a changed stub test.
 Chosen: tests/test_tool_install.py is in ci.yml and in the macOS exclusions of test_ci_workflow.py (bash 4 features, like the other tool tests) and described in CONTRIBUTING.md; test_tool_stub.py now checks the later-phase commands (use, remove, doctor, new) instead of install/run/update/list.

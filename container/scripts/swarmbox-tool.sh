@@ -526,9 +526,8 @@ real_command() {
     fi
     [ -f "$path" ] && [ -x "$path" ] || return 1
     real=$(realpath -e -- "$path" 2>/dev/null) || return 1
-    if [ "$(basename "$real")" = swarmbox-shim ] || [ "$real" = "$(realpath -m -- "$SHIM_PATH")" ]; then
-        return 2
-    fi
+    case $(basename "$real") in swarmbox-shim | swarmbox-shim.sh) return 2 ;; esac   # .sh: the name in the repository
+    [ "$real" != "$(realpath -m -- "$SHIM_PATH")" ] || return 2
     printf '%s' "$path"
 }
 

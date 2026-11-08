@@ -26,7 +26,7 @@ NOT_ON_MACOS = SCHEDULED_ONLY | {"test_web_terminal.py", "test_start_attach.py",
                                  "test_history_audit.py", "test_serve_steps.py", "test_serve_container.py",
                                  "test_attach_command.py", "test_attach_container.py",
                                  "test_bashrc_fragment.py", "test_bashrc_container.py", "test_entrypoint.py",
-                                 "test_pubkey_ensure.py", "test_migration.py", "test_tool_stub.py", "test_tool_manifest.py", "test_tool_link.py", "test_tool_install.py", "test_web_build.py", "test_web_container.py"}
+                                 "test_pubkey_ensure.py", "test_migration.py", "test_tool_stub.py", "test_tool_manifest.py", "test_tool_link.py", "test_tool_install.py", "test_tool_shim.py", "test_web_build.py", "test_web_container.py"}
 PARSER = "none"
 
 
