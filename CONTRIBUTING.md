@@ -59,13 +59,14 @@ python3 tests/test_docs_consistency.py
 | `test_tool_stub.py` | the stub `container/scripts/swarmbox-tool.sh` and the empty `tool-ports` file |
 | `test_tmux_browser_keys.py` | the browser key bindings of tmux (real tmux on a private socket; about 60 s) |
 | `test_web_build.py` | `container/scripts/swarmbox-web.sh` against a fake ttyd, with `serve`, and the browser tests rerun on the page it renders (needs a browser for those) |
+| `test_smoke_skeleton.py` | the structure of `tests/smoke_image.py` (steps, tags, names, forbidden verbs); starts no container |
 | `test_web_container.py` | the web terminal, `pubkey`, `tool validate` and `host-helper` in a throwaway container (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
 | `test_web_style.py` | the web terminal style (needs a browser) |
 | `test_web_terminal.py` | the web terminal wrapper |
 
 Run them all with `for f in tests/test_*.py; do python3 "$f" || break; done`. Shared helpers (the repository root, the fake `podman`, and later the
 fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use a real container only for a smoke
-test, with a `swarmbox-test-` name. The spike scripts in `tests/spikes/` are experiments, not part of the normal run (see `tests/spikes/README.md`).
+test, with a `swarmbox-test-` name. The image smoke test is `tests/smoke_image.py` (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box (every result tagged `[reduced: development box, no nested Podman in the box]`, the nested steps skipped), `SWARMBOX_SMOKE_FULL=1` the full run for CI or your own host. The spike scripts in `tests/spikes/` are experiments, not part of the normal run (see `tests/spikes/README.md`).
 
 ## Building the image locally
 

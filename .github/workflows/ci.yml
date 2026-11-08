@@ -1,13 +1,16 @@
 # SwarmBox CI (design 13.4, plan section 3).
 #
 # This workflow only runs commands that already exist in the repository today: the python3 unit and function tests,
-# and shellcheck over the new shell files. Later phases of the plan add the image build, the smoke test, the
-# swarmbox-tool validate step, the zsh and fish function tests and the arm64 job (B31); they are not here on purpose.
+# shellcheck over the new shell files, and (job "smoke", slice 2.7) the image build and the full image smoke test
+# (tests/smoke_image.py with SWARMBOX_SMOKE_FULL=1: it needs the nested Podman that the development box cannot give, so
+# this job is its only full run, never run before the owner's first push). Later phases of the plan add the real
+# swarmbox-tool validate, the zsh and fish function tests and the arm64 job (B31); they are not here on purpose.
 # It uses no secrets, publishes nothing and binds no ports on the runner outside 127.0.0.1.
 #
 # Open facts this file prepares (see docs/design.md Part B):
 #   B30  the macOS runner exists and what it provides. The "probe" step of the macos job prints
 #        /bin/bash --version and command -v podman. B30 stays [unverified] until the first real run of this job.
+#   B28  the smoke job's step "nested-cgroup" (cgroupfs and file logger inside the box) is its first real check.
 #   B19  the macos job also prints sort -V behavior as a probe only (no assertion).
 name: ci
 
@@ -73,6 +76,7 @@ jobs:
           python3 tests/test_repo_files.py
           python3 tests/test_serve_container.py
           python3 tests/test_serve_steps.py
+          python3 tests/test_smoke_skeleton.py
           python3 tests/test_spikes_common.py
           python3 tests/test_ssh_key.py
           python3 tests/test_starship.py
@@ -85,6 +89,37 @@ jobs:
           python3 tests/test_web_build.py
           python3 tests/test_web_container.py
           python3 tests/test_web_terminal.py
+
+  # The image smoke test (design 13.3 layer 2) in full mode: the runner is level 1, the throwaway box level 2 and the
+  # nested Podman inside it level 3, which is why the development box cannot run this. Image, containers and volumes are
+  # named swarmbox-test-*; cleanup removes the image by its exact name. Nothing is pushed and no port is published.
+  smoke:
+    name: image smoke test (full, ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SWARMBOX_IMAGE_TAG: swarmbox-test-img-ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Podman version
+        run: podman --version
+      - name: Build the image (not pushed)
+        run: podman build -t "$SWARMBOX_IMAGE_TAG" .
+      - name: Smoke test, full (nested Podman, B28)
+        run: |
+          SWARMBOX_SMOKE_FULL=1 python3 tests/smoke_image.py | tee smoke.out
+          if grep -q ' SKIP ' smoke.out; then echo "a step was skipped in the full run"; exit 1; fi
+      - name: Container tests on the same image (reduced switch inside)
+        run: |
+          export SWARMBOX_IMAGE_BUILD=1
+          python3 tests/test_serve_container.py
+          python3 tests/test_attach_container.py
+          python3 tests/test_bashrc_container.py
+          python3 tests/test_web_container.py
+          python3 tests/test_image_build.py
+      - name: Remove the image
+        if: always()
+        run: podman rmi "$SWARMBOX_IMAGE_TAG" || true
 
   macos:
     name: macos (bash 3.2, fake podman)
@@ -107,6 +142,7 @@ jobs:
           python3 tests/test_dockerfile.py
           python3 tests/test_helpers.py
           python3 tests/test_image_build.py
+          python3 tests/test_smoke_skeleton.py
           python3 tests/test_start_fake_podman.py
           python3 tests/test_start_init.py
           python3 tests/test_start_timezone.py
