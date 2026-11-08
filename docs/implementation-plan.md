@@ -135,7 +135,7 @@ Closes: B3, B13 (the product tests; the spikes fed them), B24, B26 (`id node` in
 
 **Goal:** the smallest tool machinery that lets `claude` install on first call, so Phase 3 can be tested with a real `WITH`. Design: 6.1 to 6.5.
 
-Scope: **`swarmbox-tool`** (manifest parsing and `validate`, `link --system`, `install`, `run`), the dispatcher **`swarmbox-shim`**, the `claude` manifest and installer (`UPDATE=self`, the method chosen by B1) and the real, still empty, `tool-ports`. It replaces the Phase 2 stubs.
+Scope: **`swarmbox-tool`** (manifest parsing and `validate`, `link --system`, `install`, `run`), the dispatcher **`swarmbox-shim`**, the `claude` manifest and installer (`UPDATE=self`, installed with the vendor's native installer: B1 closed in 0.3, design 6.7; the manifest's installer is not the npm shape and needs `curl`) and the real, still empty, `tool-ports`. It replaces the Phase 2 stubs.
 
 Tests first: manifest parsing and `validate` rules (6.9) including `UPDATE=self` needing `VERSION=latest`; `link --system` is idempotent and writes the shims, the index and `tool-ports`; the shim installs with a fake installer on the first call and runs the real command after; a manifest under a project folder is **not** read (D18, the absence test).
 
@@ -357,8 +357,8 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 
 | B | Fact (short) | Closed in | Feeds or rechecked |
 |---|---|---|---|
-| B1 | Claude Code install method that keeps its updater | 0 | feeds 4a |
-| B2 | OpenCode auto-approve flag | 0 | feeds 4b |
+| B1 | Claude Code install method that keeps its updater (closed in 0.3: native installer) | 0 | feeds 4a |
+| B2 | OpenCode auto-approve flag (closed in 0.3: `--auto`, no alias, `YOLO_ALIAS=0`) | 0 | feeds 4b |
 | B3 | `serve` as main process; signals; ttyd restart | 2 | fed by the Phase 0 spike |
 | B4 | ttyd serves one file | 0 | |
 | B5 | Unix socket path limit and the fallback | 3 | closed in 0.2: limit 107 characters, fallback above 100 (3.5); the Phase 3 tests carry it |
@@ -366,7 +366,7 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B7 | A host UID other than 1000 | 6 | |
 | B8 | Lowest working Podman version | 6 | |
 | B9 | tmux environment for new windows | 0 | |
-| B10 | OpenCode size saving under `--prefix` | 0 | feeds 4b |
+| B10 | OpenCode size saving under `--prefix` (closed in 0.3: 745 MB) | 0 | feeds 4b |
 | B11 | gcloud URL and checksum | 0 | feeds 4b |
 | B12 | Re-record unrecorded checks | 0 | |
 | B13 | `swarmbox <command>` mechanism and exit code | 2 | fed by the Phase 0 spike |
