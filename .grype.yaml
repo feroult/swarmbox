@@ -1,0 +1,17 @@
+# Grype configuration for the release scan (design 13.4; used by anchore/scan-action in .github/workflows/release.yml).
+#
+# The release fails on any HIGH or CRITICAL finding that has a fix available (workflow: severity-cutoff high, only-fixed true).
+# Findings without a fix upstream are not counted: the base image is Debian and many of its findings have none; they are
+# still shown in the scan table [unverified: never run on the real image].
+#
+# To ignore one finding, add an entry below. Every entry must say, in a comment, which vulnerability, why it does not
+# apply or cannot be fixed, who decided, the date, and when to look again. Prefer a fix (a newer base image or pin) over an
+# entry. A review of this file belongs in every release.
+#
+#   ignore:
+#     - vulnerability: CVE-0000-00000
+#       package:
+#         name: example
+#
+# No finding is ignored today.
+ignore: []

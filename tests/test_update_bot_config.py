@@ -47,7 +47,7 @@ def inventory():
     for wf in sorted(glob.glob(os.path.join(ROOT, ".github", "workflows", "*.y*ml"))):
         for n, line in enumerate(read(wf).splitlines(), 1):
             m = re.match(r"\s*(?:-\s*)?uses:\s*([^\s#]+)", line)
-            if m:
+            if m and not m.group(1).startswith("./"):   # a local reusable workflow has no version to pin
                 pins.append(("uses", m.group(1), "%s:%d" % (os.path.relpath(wf, ROOT), n), m.group(1)))
     for n, line in enumerate(read(os.path.join(ROOT, "Dockerfile")).splitlines(), 1):
         m = re.match(r"FROM\s+(\S+)", line)
