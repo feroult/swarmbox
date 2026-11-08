@@ -210,6 +210,89 @@ class Structure(unittest.TestCase):
         self.assertIn("B28", TEXT)
 
 
+@unittest.skipUnless(DOC, "no YAML parser available (fallback class below still runs)")
+class Phase3Jobs(unittest.TestCase):
+    """Slice 3.7: the arm64 job (B31), the function tests in three shells, bash 3.2 on macOS, dash and busybox.
+
+    None of these jobs can run in the development box (no arm64 runner, no macOS, a container as the host), so they are
+    only validated here, by their shape. B31 stays [unverified] until the first real run of the arm64 job.
+    """
+
+    def text(self, job):
+        return "\n".join(l for _, l in run_lines(DOC, job))
+
+    def test_arm64_job_builds_natively_and_runs_the_full_smoke_test(self):
+        job = DOC["jobs"]["arm64"]
+        self.assertEqual(job["runs-on"], "ubuntu-24.04-arm")
+        self.assertNotIn("if", job)                       # runs on push and pull request like the smoke job
+        self.assertEqual(job["env"]["SWARMBOX_IMAGE_TAG"], "swarmbox-test-img-ci-arm64")
+        text = self.text("arm64")
+        self.assertRegex(text, r"uname -m")
+        self.assertIn("aarch64", text)                    # the job fails when the runner is not arm64
+        self.assertRegex(text, r'dev/dev-build\.sh --tag "\$SWARMBOX_IMAGE_TAG"')
+        self.assertRegex(text, r"SWARMBOX_SMOKE_FULL=1 python3 tests/smoke_image\.py")
+        self.assertIn("SKIP", text)
+        self.assertRegex(text, r"podman --version")
+        last = [s for s in job["steps"] if s.get("if") == "always()"]
+        self.assertEqual(len(last), 1)
+        self.assertIn('podman rmi "$SWARMBOX_IMAGE_TAG"', last[0]["run"])
+
+    def test_arm64_job_uses_no_emulation_no_registry_no_secret(self):
+        job_text = str(DOC["jobs"]["arm64"]).lower()
+        for bad in ("qemu", "binfmt", "--platform", "login", "podman push", "docker push", "secrets.", "registry", "-p ", "--publish", "0.0.0.0"):
+            self.assertNotIn(bad, job_text)
+
+    def test_arm64_is_unverified_until_it_runs(self):
+        self.assertRegex(TEXT, r"(?s)arm64.*B31.*\[unverified\]|B31.*\[unverified\].*arm64")
+
+    def test_the_linux_job_runs_the_function_tests_in_the_three_shells(self):
+        job = DOC["jobs"]["linux"]
+        text = self.text("linux")
+        for shell in ("zsh", "fish"):
+            self.assertRegex(text, r"apt-get install .*\b%s\b" % shell)
+        for t in ("test_function_bash.py", "test_function_zsh.py", "test_function_fish.py"):
+            self.assertIn("python3 tests/" + t, text)
+        names = [s.get("name", "") for s in job["steps"]]
+        probe = [s for s in job["steps"] if "command -v" in str(s.get("run", "")) and "zsh" in str(s.get("run", ""))
+                 and "fish" in str(s.get("run", ""))]
+        self.assertEqual(len(probe), 1, names)             # a missing shell fails the job instead of skipping tests
+
+    def test_the_linux_job_runs_the_host_helper_under_dash_and_busybox(self):
+        job = DOC["jobs"]["linux"]
+        hit = [s for s in job["steps"] if "dash" in str(s.get("run", "")) and "busybox" in str(s.get("run", ""))
+               and "test_host_shells.py" in str(s.get("run", ""))]
+        self.assertEqual(len(hit), 1)
+        run = hit[0]["run"]
+        self.assertRegex(run, r"command -v dash")
+        self.assertRegex(run, r"command -v busybox")
+        self.assertIn("python3 tests/test_host_create_flags.py", run)   # compares the helper's output across the shells
+        self.assertRegex(self.text("linux"), r"apt-get install .*\bbusybox\b")
+
+    def test_macos_runs_the_function_test_in_bin_bash_3_2(self):
+        job = DOC["jobs"]["macos"]
+        self.assertIn("macos", str(job["runs-on"]))
+        step = [s for s in job["steps"] if "test_function_bash.py" in str(s.get("run", ""))]
+        self.assertEqual(len(step), 1)
+        self.assertEqual(step[0].get("env", {}).get("SWARMBOX_TEST_BASH"), "/bin/bash")
+        guard = [s for s in job["steps"] if "BASH_VERSINFO" in str(s.get("run", ""))]
+        self.assertEqual(len(guard), 1)                   # the probe fails when /bin/bash is not a 3.x
+        self.assertIn("/bin/bash", guard[0]["run"])
+        order = [s.get("name", "") for s in job["steps"]]
+        self.assertLess(job["steps"].index(guard[0]), job["steps"].index(step[0]), order)
+
+    def test_the_bash_test_honors_swarmbox_test_bash(self):
+        with open(os.path.join(ROOT, "tests", "test_function_bash.py"), encoding="utf-8") as f:
+            self.assertIn('os.environ.get("SWARMBOX_TEST_BASH")', f.read())
+
+    def test_no_job_publishes_a_port(self):
+        for bad in ("--publish", " -p ", "ports:", "0.0.0.0"):
+            self.assertNotIn(bad, TEXT)
+
+    def test_the_regression_runner_is_a_ci_test(self):
+        self.assertIn("python3 tests/test_run_all.py", self.text("linux"))
+        self.assertIn("python3 tests/test_run_all.py", self.text("macos"))
+
+
 class FallbackTextCheck(unittest.TestCase):
     """Documented minimal check that needs no YAML parser: runs always, so a missing parser cannot hide a hole."""
 

@@ -4,7 +4,8 @@
 # shellcheck over the new shell files, and (job "smoke", slice 2.7) the image build and the full image smoke test
 # (tests/smoke_image.py with SWARMBOX_SMOKE_FULL=1: it needs the nested Podman that the development box cannot give, so
 # this job is its only full run, never run before the owner's first push). Phase 4a added the real swarmbox-tool validate
-# step (linux job). The zsh and fish function tests arrived in slice 3.5; the arm64 job (B31) is a later phase and is not here on purpose.
+# step (linux job). The zsh and fish function tests arrived in slice 3.5. Slice 3.7 added the arm64 job (B31), the
+# dash and busybox step of the linux job, and bash 3.2 (/bin/bash) for the function test of the macos job.
 # It uses no secrets, publishes nothing and binds no ports on the runner outside 127.0.0.1.
 #
 # Open facts this file prepares (see docs/design.md Part B):
@@ -12,6 +13,11 @@
 #        /bin/bash --version and command -v podman. B30 stays [unverified] until the first real run of this job.
 #   B28  the smoke job's step "nested-cgroup" (cgroupfs and file logger inside the box) is its first real check.
 #   B19  the macos job also prints sort -V behavior as a probe only (no assertion).
+#   B31  the arm64 job builds the image natively on an arm64 runner (no emulation) and runs the full smoke test. It has
+#        never run: B31 is [unverified] until its first real run. The runner label ubuntu-24.04-arm is the one GitHub
+#        documents for its arm64 hosted runners; if the account cannot use it the job stays queued or fails, and the
+#        owner decides (record in docs/decision-log.md, slice 3.7). The jobs of this file were only validated by
+#        tests/test_ci_workflow.py (and actionlint when present) in the development box: none of them ever ran.
 name: ci
 
 on:
@@ -48,13 +54,26 @@ jobs:
       - name: Install test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends tmux zsh fish shellcheck
+          sudo apt-get install -y --no-install-recommends tmux zsh fish busybox-static dash shellcheck
+      - name: The shells the function and helper tests need must exist (a missing shell fails the job, it is not skipped)
+        run: |
+          command -v bash zsh fish dash busybox
+          bash --version | head -n 1
+          zsh --version
+          fish --version
       - name: Shellcheck the new shell files
         run: |
           shellcheck -s sh container/host/swarmbox-host container/scripts/swarmbox-init.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh
           shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-tool.sh container/config/bashrc.sh
       - name: Validate the tool manifests (swarmbox-tool validate, no container)
         run: container/scripts/swarmbox-tool.sh validate container/tools
+      - name: Host helper under dash and busybox sh (B23), then the output comparison across the shells
+        run: |
+          command -v dash
+          command -v busybox
+          busybox sh -c 'echo busybox sh works'
+          python3 tests/test_host_shells.py
+          python3 tests/test_host_create_flags.py
       - name: Unit and function tests
         run: |
           python3 tests/test_attach_command.py
@@ -87,6 +106,7 @@ jobs:
           python3 tests/test_migration.py
           python3 tests/test_pubkey_ensure.py
           python3 tests/test_repo_files.py
+          python3 tests/test_run_all.py
           python3 tests/test_serve_container.py
           python3 tests/test_serve_steps.py
           python3 tests/test_smoke_skeleton.py
@@ -139,6 +159,32 @@ jobs:
         if: always()
         run: podman rmi "$SWARMBOX_IMAGE_TAG" || true
 
+  # The arm64 job (design 13.4, B31): a native build on an arm64 hosted runner (no QEMU), the dev build script (it only adds
+  # the APT sandbox line to a scratch copy of the Dockerfile, harmless on a runner), and the full smoke test. Nothing is
+  # pushed, no registry login, no port. [unverified] that this job ever ran (B31).
+  arm64:
+    name: arm64 (native build and full smoke test, ubuntu-24.04-arm)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      SWARMBOX_IMAGE_TAG: swarmbox-test-img-ci-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner architecture and Podman version (must be aarch64)
+        run: |
+          uname -m
+          [ "$(uname -m)" = aarch64 ] || { echo "not an arm64 runner"; exit 1; }
+          podman --version
+      - name: Build the image for arm64 (not pushed)
+        run: dev/dev-build.sh --tag "$SWARMBOX_IMAGE_TAG"
+      - name: Smoke test, full (nested Podman, keep-id, Chromium, B31)
+        run: |
+          SWARMBOX_SMOKE_FULL=1 python3 tests/smoke_image.py | tee smoke.out
+          if grep -q ' SKIP ' smoke.out; then echo "a step was skipped in the full run"; exit 1; fi
+      - name: Remove the image
+        if: always()
+        run: podman rmi "$SWARMBOX_IMAGE_TAG" || true
+
   macos:
     name: macos (bash 3.2, fake podman)
     runs-on: macos-14
@@ -152,6 +198,13 @@ jobs:
           python3 --version
           sw_vers
           printf '2.0.10\n2.0.9\n' | sort -V
+      - name: /bin/bash must be a bash 3.x (the macOS system bash), or this job proves nothing about bash 3.2
+        run: |
+          /bin/bash -c 'echo "/bin/bash $BASH_VERSION"; [ "${BASH_VERSINFO[0]}" = 3 ]'
+      - name: The function test in /bin/bash (3.2) with a fake podman
+        env:
+          SWARMBOX_TEST_BASH: /bin/bash
+        run: python3 tests/test_function_bash.py
       - name: Function tests under bash 3.2 with a fake podman
         run: |
           python3 tests/test_build_index.py
@@ -159,7 +212,6 @@ jobs:
           python3 tests/test_dirs.py
           python3 tests/test_dockerfile.py
           python3 tests/test_helpers.py
-          python3 tests/test_function_bash.py
           python3 tests/test_function_fish.py
           python3 tests/test_function_zsh.py
           python3 tests/test_host_config.py
@@ -183,6 +235,7 @@ jobs:
           python3 tests/test_design_partb.py
           python3 tests/test_docs_consistency.py
           python3 tests/test_repo_files.py
+          python3 tests/test_run_all.py
 
   # Browser tests are slow and need chromium and ttyd: they run on the weekly schedule (and by hand), in a Debian
   # container so that "chromium" is a real binary (on Ubuntu it is a snap stub).

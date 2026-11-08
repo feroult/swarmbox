@@ -17,7 +17,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from function_cases import ROOT, FunctionCases  # noqa: E402
 
-BASH = shutil.which("bash")
+# SWARMBOX_TEST_BASH picks the interpreter (the macOS CI job sets /bin/bash, which is bash 3.2 there)
+BASH = os.environ.get("SWARMBOX_TEST_BASH") or shutil.which("bash")
 TEMPLATE = os.path.join(ROOT, "container", "host", "templates", "bash")
 
 BASH4 = [
