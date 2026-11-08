@@ -309,3 +309,20 @@ Impact on the design: none. How to reverse: n/a.
 Context: exit criteria want one new test against repository code.
 Chosen: tests/test_start_fake_podman.py covers create, build-when-image-missing, and start-existing paths of start.sh with --no-shell (3 tests, ~15 s because start.sh waits for the socket). Existing tests keep their inline stubs (migration is for when each is rewritten, per the plan). CONTRIBUTING.md gained both new test files (test_repo_files.py requires it).
 Impact on the design: none. How to reverse: delete the file.
+
+## [1.4] FakeHostHelper design: Python script, unknown command exits 64, no PATH change
+Context: the slice asks for a fake swarmbox-host with a test-set version, call recording and per-command routing.
+Options: sh script; Python script like FakePodman; modify PATH.
+Chosen: a Python script sharing FakePodman's JSON-lines log and script.json scheme, because argument quoting must be exact. PATH is not touched, because the function calls the helper by absolute path ($dir/swarmbox-host). `version` prints the version option (None prints nothing, exit 0) unless commands has its own version entry. A command with no entry and no "*" exits 64 (EX_USAGE), silent, so an unexpected word fails visibly (FakePodman, by contrast, defaults to exit 0). Builder options executable=False and present=False cover the non-executable and missing cases.
+Impact on the design: 13.1 helpers.py row and plan Phase 1 bullet updated. The API may change in Phase 3; accepted.
+How to reverse: delete FakeHostHelper and its tests.
+
+## [1.4] The bootstrap condition is tested through a labeled sh prototype
+Context: the real function does not exist until Phase 2; D33 scenarios are the first consumer of the pair of fakes.
+Chosen: a 6-line sh STUB in tests/test_helpers.py copies only the condition from design 3.6 (missing, non-exec, or older by sort -V: podman run ... host-helper; newer: skew notice). It is labeled as a prototype, not product code, and has no extraction, lock or config logic. The cases: missing, non-executable, no version, 1.9.0 re-extract; 2.0.0 kept silently; 2.0.10 vs marker 2.0.9 kept with notice, and 2.0.9 vs 2.0.10 extracted. Runs under the system sh only (dash here); bash 3.2, zsh, fish are Phase 3. The design needed no correction.
+Impact on the design: none beyond the 13.1 row. How to reverse: delete the class; Phase 3 supersedes it.
+
+## [1.4] Red run skipped
+Context: rules say see tests fail first.
+Chosen: honestly, tests and fakes were written in one pass and run green; no separate failing run was recorded (the ImportError was the only possible red). Noted for the owner.
+Impact on the design: none. How to reverse: n/a.

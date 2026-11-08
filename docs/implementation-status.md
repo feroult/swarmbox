@@ -47,3 +47,4 @@ Checked 2026-11-08 on the live box.
 | test_web_terminal.py | 15 tests OK |
 
 Total 158 tests, 0 failures.
+| 1.4-fake-host-helper | Shared fake host helper (fake swarmbox-host) in tests/helpers.py | done | see git log | tests/test_helpers.py 27 tests OK (13 FakePodman, 8 FakeHostHelper, 6 bootstrap-condition prototype); regression: all other test files run, see below | FakeHostHelper: version set by the test or silent, missing or non-executable option, JSON-lines call log, per-command exit/stdout/stderr, unknown command exits 64. The D33 scenario (missing, non-exec, no version, 1.9.0 re-extract; 2.0.0 kept; 2.0.10 vs 2.0.9 by sort -V) runs through a labeled sh stub, a prototype only. The real function test arrives in Phase 3. Tests and implementation were written in one pass (no separate red run). |
