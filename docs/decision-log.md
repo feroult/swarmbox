@@ -1259,3 +1259,42 @@ Running the serve tests through a pipe (`python3 ... | tail`) hung for the whole
 Context: test_ci_workflow requires every test file on the macOS job unless excluded. The generator is a container program (bash and jq in the image), like swarmbox-migrate.
 Chosen: added to NOT_ON_MACOS in tests/test_ci_workflow.py, listed in the linux job only. Found because the first commit forgot it.
 Impact on the design: none. How to reverse: remove it from the set and add the line to the macOS list.
+
+## [4b.2] Package name: keep @opencode/cli, in one variable of install.sh
+Context: the open question of the gate (`@opencode/cli` 2.x or `opencode-ai` 1.x). The design default and the 0.3 spike chose `@opencode/cli`, which v0.1.0 installs; the two are different release lines and a home written by one fails under the other.
+Options: `@opencode/cli`; `opencode-ai`; support both with a switch.
+Chosen: `@opencode/cli`, as `PACKAGE="@opencode/cli"` at the top of `install.sh`, tested to be the only place that names it. The slice asked for "one manifest variable"; the manifest keys are fixed and the installer does not see the manifest, so it is an installer variable, not a manifest key (a new key would need a SCHEMA decision and a validate rule for one tool).
+Impact on the design: 6.6 "4b.2 state". Still [unverified]: which package upstream means as the main one. The owner may want to decide.
+How to reverse: change the line (and, if the 1.x line is chosen, expect the builds folder to be `node_modules` directly; install.sh already falls back to that layout, untested against the real package).
+
+## [4b.2] The 2.x shared background server is not investigated in this slice
+Context: 0.3 noted that 2.x starts a shared background service per user account (`--standalone` avoids it). The slice must "note" it.
+Chosen: noted in install.sh, 6.6 and here as [unverified]; nothing in the box starts or stops it, and `prepare.sh` does not pass `--standalone` (it renders a file; it does not run the program). The behaviour under `serve` (a process the supervisor does not know) and across `reset` needs the real program, which 4b.7 runs in a throwaway container.
+Impact on the design: a sentence in 6.6. How to reverse: n/a.
+
+## [4b.2] Prune rule: keep what bin/opencode.exe is linked to, and never the current architecture
+Context: B10 said "never delete the current-arch build" and "prune by what is there, not by a list".
+Options: (a) keep only the hard-linked build; (b) keep the linked build plus every build of the current architecture (including musl and baseline variants); (c) (a) plus a guard for the plain `-linux-<arch>` name.
+Chosen: (c). The linked build is kept; the build named exactly `*-linux-x64` (amd64) or `*-linux-arm64` (arm64) is also kept even if the link points elsewhere; with no linked build nothing is removed. (b) would keep a 250 MB musl build on a glibc box for no reason. A musl box links to the musl build, which is kept, and the plain build then stays as well (about 250 MB more, tested).
+Impact on the design: 6.4 says what is kept; the 745 MB figure holds for the glibc case. How to reverse: edit the `case` in install.sh.
+
+## [4b.2] Local LLM off unless LOCAL_LLM_URL is set; the provider is removed, not left empty
+Context: design 6.6 says "off unless set" (v0.1.0 had a default URL and model). The template has an empty `provider.local`. The slice says "unset gives a config without the local provider models".
+Options: keep the empty provider; remove `provider.local` (and `provider` when it is empty).
+Chosen: remove it: an OpenAI-compatible provider with no base URL and no models is noise in OpenCode's model list. A URL without a model is an error (exit 1, one health line) and renders the file without the provider: with no default model there is nothing safe to guess (design 7.2 removes the default).
+Impact on the design: 6.6. How to reverse: change the `off` filter in prepare.sh.
+
+## [4b.2] Failure reporting of prepare: a line protocol and one health line per tool
+Context: 6.3 wants one health line per failing tool; `serve` step 7 until now made one generic W line for the whole command.
+Options: prepare writes the health file itself; prepare prints `prepare-failed: <tool>: <reason>` lines and `serve` turns each into a W line.
+Chosen: the second. The health file and the marker's `warnings=` count are owned by `serve` (marker count equals health lines is tested); a second writer would break that. A failure with no such line (the command itself broke) is still one generic W line. The output of prepare goes into serve.log as before.
+Impact on the design: 6.3 "4b.2 state". How to reverse: restore the one-line `warn`.
+
+## [4b.2] Other small decisions
+- prepare.sh is run with `bash <file>`, not by its executable bit, so a lost bit cannot hide a tool; the timeout is 60 s (not in the design; a test-only environment variable shortens it). The timeout kills the whole process group.
+- prepare also runs after the first-use install through the shim (design says "after a tool install"); a failing prepare never fails an install.
+- `validate` gained the MCP_FORMAT rule (claude, opencode or empty); the design listed the key but no rule.
+- `container/opencode/local-llm.json` is kept next to the new `container/tools/opencode/local-llm.json` because `Dockerfile.v0.1.0` still copies it; the 6.6 text said the folder is removed, now "in Phase 6". A test checks the two files are equal. v0.1.0's init.sh also still reads the old path.
+- The mirror now accepts a file without `mcpServers` (empty `mcp`), where v0.1.0 would have failed. The mapping is otherwise the v0.1.0 one, compared on four fixtures by running the old function extracted from the tag (skipped when the tag is not in the clone).
+- The two new test files are on the Linux CI job only (NOT_ON_MACOS), like the other container-program tests.
+- Real install of opencode (npm, the real package, the 745 MB figure again under the new installer) is not done here: reduced, to 4b.7.

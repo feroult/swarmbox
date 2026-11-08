@@ -10,7 +10,7 @@
 #   list                                   REAL (slice 4a.3): every tool of both levels and its state
 #   update NAME                            REAL for UPDATE=self (runs UPDATE_CMD); a managed tool answers 'later phase', exit 70
 #   use, remove, doctor, new               'later phase', exit 70
-#   prepare         nothing to do, succeeds
+#   prepare         REAL (slice 4b.2): runs the prepare.sh of every installed or WITH-declared tool (see "prepare" below)
 #   anything else   exit 70 (EX_SOFTWARE) with a message that names Phase 4a
 #
 # Manifests (6.3) are shell-sourceable KEY=VALUE files. Loading one SOURCES it in a subshell, so it executes arbitrary shell:
@@ -238,6 +238,10 @@ check_manifest() {
             err "KIND=tool must have a pinned VERSION (D21): latest is only for agents"
         fi
     fi
+    case "${M[MCP_FORMAT]:-}" in
+        ""|claude|opencode) ;;
+        *) err "MCP_FORMAT must be claude or opencode, found '${M[MCP_FORMAT]}'" ;;
+    esac
     for a in amd64 arm64; do
         h=${M[SHA256_$a]:-}
         if [ -n "$h" ] && [[ ! "$h" =~ ^[0-9a-fA-F]{64}$ ]]; then
@@ -732,6 +736,7 @@ ensure_installed() {
     fi
     install_locked "$name" "" 0 "$announce" || rc=1
     drop_lock
+    [ "$rc" -ne 0 ] || prepare_after_install "$name"
     return "$rc"
 }
 
@@ -767,6 +772,7 @@ cmd_install() {
     take_lock || exit 69
     install_locked "$name" "$version" "$force" "Installing $name..." || { drop_lock; exit 69; }
     drop_lock
+    prepare_after_install "$name"
 }
 
 cmd_run() {
@@ -876,6 +882,80 @@ cmd_list() {
     [ "${#rows[@]}" -eq 0 ] || printf '%s\n' "${rows[@]}" | LC_ALL=C sort
 }
 
+# ---- prepare (design 6.3, 4.1 step 7) ----------------------------------------------------------------------------------------
+# prepare_tool NAME: runs <manifest dir>/prepare.sh of NAME when it has one (find_manifest has set MDIR). Run with bash (no
+# executable bit needed), in $HOME, stdin closed, stdout sent to stderr (stdout belongs to the caller), under `timeout`
+# (SWARMBOX_PREPARE_TIMEOUT seconds, default 60; a hang is a failure, never a stop). Exports SWARMBOX_TOOL_NAME and
+# SWARMBOX_TOOL_DIR. A failure prints ONE line on stderr, "prepare-failed: <name>: <reason>", which `serve` turns into one health
+# line (4.1 step 7), and returns 1. No prepare.sh: returns 0 and prints nothing.
+PREPARE_TIMEOUT=${SWARMBOX_PREPARE_TIMEOUT:-60}
+prepare_tool() {
+    local name=$1 dir=$MDIR status=0
+    [ -f "$dir/prepare.sh" ] || return 0
+    (
+        cd "$HOME" || exit 1
+        export SWARMBOX_TOOL_NAME=$name SWARMBOX_TOOL_DIR=$dir
+        exec timeout -k 2 "$PREPARE_TIMEOUT" bash "$dir/prepare.sh"
+    ) </dev/null >&2 9>&- || status=$?
+    [ "$status" -eq 0 ] && return 0
+    if [ "$status" -eq 124 ]; then
+        echo "prepare-failed: $name: prepare.sh timed out after ${PREPARE_TIMEOUT}s" >&2
+    else
+        echo "prepare-failed: $name: prepare.sh failed (exit $status)" >&2
+    fi
+    return 1
+}
+
+# declared_with NAME: true when NAME is in SWARMBOX_WITH (separated by commas or blanks).
+declared_with() {
+    local w
+    for w in ${SWARMBOX_WITH//,/ }; do
+        [ "$w" != "$1" ] || return 0
+    done
+    return 1
+}
+
+# prepare_after_install NAME: after a successful install; a failure is reported, never fatal (the tool is installed).
+prepare_after_install() {
+    find_manifest "$1" 2>/dev/null || return 0
+    prepare_tool "$1" || true
+}
+
+cmd_prepare() {
+    [ $# -eq 0 ] || usage
+    TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; return 1; }
+    local udir="" root d name failed=0 ldir
+    udir=$(user_tools_dir) || udir=""
+    local -a names
+    mapfile -t names < <(
+        for root in "$udir" "$IMAGE_TOOLS"; do
+            [ -d "$root" ] || continue
+            for d in "$root"/*/; do
+                [ -f "${d}prepare.sh" ] || [ -f "${d}tool.conf" ] || continue
+                d=${d%/}
+                printf '%s\n' "${d##*/}"
+            done
+        done | LC_ALL=C sort -u
+    )
+    for name in "${names[@]}"; do
+        if ! find_manifest "$name" 2>/dev/null; then
+            # a broken manifest: only a tool that ships a prepare.sh is a failure
+            ldir=$IMAGE_TOOLS/$name
+            [ -n "$udir" ] && [ -f "$udir/$name/tool.conf" ] && ldir=$udir/$name
+            if [ -f "$ldir/prepare.sh" ]; then
+                echo "prepare-failed: $name: its manifest is broken (run swarmbox-tool validate)" >&2
+                failed=1
+            fi
+            continue
+        fi
+        [ -f "$MDIR/prepare.sh" ] || continue
+        if declared_with "$name" || is_installed "$name"; then
+            prepare_tool "$name" || failed=1
+        fi
+    done
+    return "$failed"
+}
+
 usage() {
     echo "usage: swarmbox-tool validate [DIR] | link --system|--user | install NAME [--version X] [--force] | run NAME COMMAND [-- ARGS...] | list | update NAME | prepare   (use, remove, doctor, new: later phase)" >&2
     exit 64
@@ -914,9 +994,7 @@ case "$cmd" in
         echo "swarmbox-tool: '$cmd' is for a later phase of the SwarmBox 2.0 build (Phase 4a has install, run, list and update for UPDATE=self): not implemented yet" >&2
         exit 70
         ;;
-    prepare)
-        echo "swarmbox-tool prepare: nothing to prepare (the tools that ship a prepare.sh arrive in Phase 4b)"
-        ;;
+    prepare) cmd_prepare "$@"; exit $? ;;
     *)
         echo "swarmbox-tool: unknown command '$cmd' (later phases add more; see usage)" >&2
         exit 70

@@ -248,8 +248,9 @@ Closes: B5 (with the fallback; the spike fed it), B19 (`sort -V`, Linux and CI i
 Scope
 - **Manifests and installers** in `container/tools/`: opencode (with `prepare.sh` and the local-LLM hook), gemini, clasp (with its port, now visible in `tool-ports`), gcloud (checksum in the manifest), go, poetry. Order: opencode first (with claude it exercises both update modes), then the rest. `swarmbox-tool` gains `list`, `update`, `use`, `remove`, `link --user`, `new`.
 - **`prepare.sh`** run by `serve` at step 7 and after a `tool install`.
+  **4b.2 state:** `swarmbox-tool prepare` and the opencode tool (installer with prune, `prepare.sh`, `shell.sh`) are done with fakes (`tests/test_tool_prepare.py`, `tests/test_tool_opencode.py`); the real nested-container install of opencode is 4b.7. See design 6.3 and 6.6 and decision log `[4b.2]`.
 - **Environment fingerprint** per install, `doctor` and `doctor --fix` (6.11).
-- **MCP registry** (4.4; generator done in 4b.1, `tests/test_mcp_registry.py`; the OpenCode mirror is still open): generated `mcp-servers.json`, the registry entry that runs the installed `chrome-devtools-mcp` (no `npx`), the OpenCode mirror.
+- **MCP registry** (4.4; generator done in 4b.1, `tests/test_mcp_registry.py`; the OpenCode mirror is done in 4b.2, `tests/test_tool_opencode.py`): generated `mcp-servers.json`, the registry entry that runs the installed `chrome-devtools-mcp` (no `npx`), the OpenCode mirror.
 - **The `WITH_TOOLS` build argument** (6.8): the Dockerfile installs the named tools into `/opt/swarmbox/tools`.
 - **The D29 maintainer script** that records gcloud's (and Go's) `SHA256_amd64` and `SHA256_arm64` in the manifest.
 
