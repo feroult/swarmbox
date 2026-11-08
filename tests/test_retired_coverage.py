@@ -119,6 +119,7 @@ ALLOW = {
     "test_dockerfile.py": "asserts the 2.0 Dockerfile does NOT use init.sh (an absence check)",
     "test_docs_consistency.py": "the docs rule that start.sh may be named only in a historic or migration context",
     "test_retired.py": "the absence test of slice 6.3 (names the deleted files to assert they are gone)",
+    "test_final_audit.py": "the audit script test: tracks a retired path in a throwaway repository to prove the audit fails on it",
     SELF: "this file (names the retired files to guard against them)",
 }
 FORBIDDEN = re.compile(
