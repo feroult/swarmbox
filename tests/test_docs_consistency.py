@@ -117,5 +117,57 @@ class SpikeReadmeTest(unittest.TestCase):
         self.assertIn("spikes_common.py", readme)
 
 
+PHASE1_SLICES = ["1.1-license-notices", "1.2-dirs-sh", "1.3-fake-podman", "1.4-fake-host-helper", "1.5-history-audit",
+                 "1.6-ci-workflow", "1.7-phase-close"]
+PHASE1_FILES = ["LICENSE", "THIRD_PARTY_NOTICES.md", "CONTRIBUTING.md", ".github/workflows/ci.yml",
+                "container/scripts/dirs.sh", "docs/history-audit.md"]
+
+
+class PhaseOneCloseTest(unittest.TestCase):
+    """Phase 1 close-out (slice 1.7)."""
+
+    def test_status_row_per_slice(self):
+        status = read("docs", "implementation-status.md")
+        for sl in PHASE1_SLICES:
+            r = [l for l in status.splitlines() if l.startswith("| %s |" % sl)]
+            self.assertEqual(len(r), 1, sl)
+            cells = [c.strip() for c in r[0].strip().strip("|").split("|")]
+            self.assertIn(cells[2], ("done", "partial", "blocked"), sl)
+
+    def test_status_has_phase1_gate_row(self):
+        status = read("docs", "implementation-status.md")
+        r = [l for l in status.splitlines() if l.startswith("| 1.gate |")]
+        self.assertEqual(len(r), 1)
+        for word in ("B30", "visib", "copyright"):
+            self.assertIn(word, r[0], word)
+
+    def test_decision_log_entry_per_slice(self):
+        log = read("docs", "decision-log.md")
+        for n in range(1, 8):
+            self.assertRegex(log, r"(?m)^## \[1\.%d\] " % n, "decision-log entry [1.%d]" % n)
+
+    def test_promised_files_exist(self):
+        for f in PHASE1_FILES:
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, f)), f)
+
+    def test_tests_do_not_touch_real_home(self):
+        bad = re.compile(r"~/\.config/swarmbox|~/\.ssh|~/swarmbox|~/\.claude|~/\.local/share/swarmbox|~/\.swarmbox")
+        hits = []
+        for path in sorted(glob.glob(os.path.join(ROOT, "tests", "**", "*.py"), recursive=True)):
+            if os.path.basename(path) == "test_docs_consistency.py":
+                continue
+            for i, line in enumerate(open(path, encoding="utf-8"), 1):
+                if bad.search(line):
+                    hits.append("%s:%d" % (os.path.relpath(path, ROOT), i))
+        print("home-path mentions to review:", hits)
+        for h in hits:
+            f, n = h.rsplit(":", 1)
+            line = open(os.path.join(ROOT, f), encoding="utf-8").read().splitlines()[int(n) - 1]
+            code = line.split("#")[0]
+            ok = re.search(r"assert|expanduser|host:|mktemp|TemporaryDirectory|Not |not |never|NOT", line) or \
+                not ("open(" in code or "write" in code or "makedirs" in code or "mkdir" in code)
+            self.assertTrue(ok, "%s may write to a real home path: %s" % (h, line.strip()))
+
+
 if __name__ == "__main__":
     unittest.main()
