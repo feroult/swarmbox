@@ -203,6 +203,34 @@ class Table(unittest.TestCase):
             if npm:
                 self.assertIn("npm cache clean", text, name)
 
+    def _run_with_fake_podman(self, fake_body):
+        """Run this file in a subprocess with the switches on and a fake podman that records its calls."""
+        d = tempfile.mkdtemp(prefix="swarmbox-test-fakepodman-")
+        self.addCleanup(shutil.rmtree, d, True)
+        log = os.path.join(d, "calls")
+        with open(os.path.join(d, "podman"), "w") as f:
+            f.write("#!/bin/sh\necho \"$*\" >> %s\n%s\n" % (log, fake_body))
+        os.chmod(os.path.join(d, "podman"), 0o755)
+        env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], SWARMBOX_TEST_NETWORK="1", SWARMBOX_IMAGE_BUILD="1",
+                   SWARMBOX_IMAGE_TAG="swarmbox-test-fake-img", SWARMBOX_REAL_TOOLS="go")
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), "Real_go"], env=env, capture_output=True, text=True)
+        with open(log) as f:
+            return r, f.read().splitlines()
+
+    def test_a_failing_setup_still_removes_the_volume_and_the_box(self):
+        # image exists, volume create works, the container cannot start: nothing may be left behind
+        r, calls = self._run_with_fake_podman('case "$1" in run) echo boom >&2; exit 1;; esac; exit 0')
+        self.assertNotEqual(r.returncode, 0)
+        created = [c.split()[-1] for c in calls if c.startswith("volume create")]
+        self.assertEqual(len(created), 1, calls)
+        self.assertIn("volume rm -f " + created[0], calls)
+        self.assertTrue(any(c.startswith("rm -f -t 0 swarmbox-test-4b7-run-") for c in calls), calls)
+
+    def test_a_missing_image_fails_once_before_any_volume_exists(self):
+        r, calls = self._run_with_fake_podman('case "$1 $2" in "image exists") exit 1;; esac; exit 0')
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual([c for c in calls if c.startswith("volume")], [], calls)
+
     def test_the_real_tests_are_off_by_default(self):
         # a developer running the file without the switches must not download anything
         if os.environ.get("SWARMBOX_TEST_NETWORK") != "1":
@@ -232,6 +260,9 @@ def setUpModule():
     TAG = os.environ.get("SWARMBOX_IMAGE_TAG")
     if TAG:
         assert TAG.startswith("swarmbox-test-"), TAG
+        # fail once, here, before any volume or container exists (a missing image would otherwise fail every class)
+        if podman("image", "exists", TAG).returncode != 0:
+            raise AssertionError("SWARMBOX_IMAGE_TAG names an image that does not exist: " + TAG)
         return
     TAG = "swarmbox-test-4b7-img-" + rnd()
     OWN = True
@@ -254,8 +285,10 @@ class Box:
         assert vol.startswith("swarmbox-test-4b7-vol-")
         r = podman("run", "-d", "--name", self.name, "-v", vol + ":/home/agent", "--tmpfs", "/tmp/swarmbox",
                    "--entrypoint", "sleep", TAG, "5400")
-        assert r.returncode == 0, r.stderr
         self.removed = False
+        if r.returncode != 0:
+            self.remove()  # a half-created container must not stay behind
+            raise AssertionError(r.stderr)
 
     def sh(self, cmd, user="agent", timeout=1800):
         return podman("exec", "--user", user, self.name, "bash", "-c", cmd, timeout=timeout)
@@ -295,6 +328,10 @@ def make_real_class(name):
         def setUpClass(cls):
             cls.vol = "swarmbox-test-4b7-vol-" + rnd()
             cls.boxes = []
+            # Class cleanups run even when setUpClass raises (tearDownClass would not): registered before anything can fail.
+            # LIFO: the boxes are removed first, then the volume.
+            cls.addClassCleanup(cls._remove_volume, cls.vol)
+            cls.addClassCleanup(cls._remove_boxes, cls.boxes)
             assert podman("volume", "create", cls.vol).returncode == 0
             cls.box = Box(cls.vol)
             cls.boxes.append(cls.box)
@@ -323,12 +360,15 @@ def make_real_class(name):
             sys.stderr.write("\n[4b.7] %s: first call %.0fs, exit %d, retried=%s, output: %s\n"
                              % (name, cls.seconds, cls.first.returncode, cls.retried, out(cls.first)[:200]))
 
-        @classmethod
-        def tearDownClass(cls):
-            for b in cls.boxes:
+        @staticmethod
+        def _remove_boxes(boxes):
+            for b in boxes:
                 b.remove()
-            assert cls.vol.startswith("swarmbox-test-4b7-vol-")
-            podman("volume", "rm", "-f", cls.vol)
+
+        @staticmethod
+        def _remove_volume(vol):
+            assert vol.startswith("swarmbox-test-4b7-vol-")
+            podman("volume", "rm", "-f", vol)
 
         def test_01_the_home_starts_without_the_tool(self):
             self.assertNotIn("/home/agent/.local/share/swarmbox/tools/" + name, self.home_before)
