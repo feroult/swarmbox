@@ -40,6 +40,9 @@ python3 tests/test_docs_consistency.py
 | `test_dockerfile.py` | static checks of the 2.0 `Dockerfile` (no build) |
 | `test_docs_consistency.py` | cross-references, D and B numbers and code fences of the design and the plan |
 | `test_entrypoint.py` | the subcommands of `container/entrypoint.sh` (serve aside): dispatch with arguments kept, `host-helper` archive, any other command, fake programs on `PATH` |
+| `test_function_bash.py` | the generated function in bash (the shared case table of `tests/function_cases.py`: word routing, quoting, exit codes, the bootstrap, seeds) with fake `podman` and fake helper; the same table under `bash --posix`; a lint for bash 4 constructs (bash 3.2 itself is not run here) |
+| `test_function_fish.py` | the same case table in fish |
+| `test_function_zsh.py` | the same case table in zsh |
 | `test_helpers.py` | the fake `podman` of `tests/helpers.py` |
 | `test_history_audit.py` | the history scanner `tests/audit_history.py` and the shape of `docs/history-audit.md` |
 | `test_host_config.py` | `container/host/swarmbox-host`: `version`, `config get\|set\|list\|seed`, `env add\|rm\|list`, the token and the portable mode check (stat shims, a fake `ls`), all in mktemp homes with a pty for the token |
@@ -48,6 +51,7 @@ python3 tests/test_docs_consistency.py
 | `test_host_socket.py` | the host connection `podman -c <name>` of `container/host/swarmbox-host` (`connection`, step 6 of `up`): the 100/101 byte boundary, the short symlink and its refusals, idempotent registration with a stateful fake `podman`, the real `podman system connection` in an isolated config, a stand-in socket server in a throwaway container, and a guard on the real Podman files |
 | `test_host_up.py` | `up`, `reset`, `stop` and `url` of the helper against the shared fake `podman` (rules and answers in sequence): the exact-name lookup, the fast path call budget, warnings, prerequisites, creation and cleanup by `--cidfile`, readiness, conflicts, the lock with real processes (two at once, SIGTERM, SIGKILL, stale, live holder), reset, stop, url |
 | `test_image_build.py` | the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; builds `swarmbox-test-img-<rand>` and removes it) |
+| `test_init_output.py` | `container/scripts/swarmbox-init.sh` and the templates: one marker pair per shell, seeds only for flags given, quoting, `--shell` and `SHELL`, idempotent output, nothing written, the hint on a terminal, `bash -n`, `zsh -n`, `fish --no-execute` |
 | `test_migration.py` | `container/scripts/swarmbox-migrate.sh` (the layout migration, serve step 4) on a fixture workspace built from the v0.1.0 code in mktemp, and `serve` running it |
 | `test_pubkey_ensure.py` | `swarmbox-pubkey --ensure` (`container/scripts/ssh-key.sh`): once, idempotent, never overwrites, only under the test `HOME` |
 | `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md` and this file |

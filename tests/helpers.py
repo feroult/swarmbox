@@ -18,6 +18,7 @@ Behavior per subcommand (the first argument that is not an option; the global op
   exit    exit code (default 0)
   stdout  text, or a list of lines (one per line, trailing newline); the shape of `create-flags` output
   stderr  text, written to standard error
+  stdout_file  path of a file whose bytes are written to standard output after "stdout" (a tar archive for `run ... host-helper`)
   cidfile text written to the file named by --cidfile (or --cidfile=FILE), only when this key is present
 A subcommand entry may instead be {"rules": [...], "default": {...}}: the first rule whose "match" (a list of strings, all of
 which must occur in the call's arguments joined by spaces) fits answers, with the same keys; "default" answers when none fits.
@@ -40,7 +41,8 @@ FakeHostHelper is a fake `swarmbox-host` (design 13.1, 13.3 layer 4). It lives i
 Options: version (text printed by `version`, with a newline; None prints nothing and exits 0 - "a helper that prints
 no version"), executable (False leaves the file without the x bit), present (False creates the folder but no file),
 commands (per command, the same keys as FakePodman: exit, stdout, stderr; "*" is the fallback). The command is the
-first argument. `version` is answered from the `version` option unless `commands` has its own "version" entry.
+first argument; a key of two words ("config get") is looked at first, so `config get NAME` and `config seed` can answer
+differently. envs() returns the SWARMBOX_* variables of each call. `version` is answered from the `version` option unless `commands` has its own "version" entry.
 A command that is not configured exits with UNKNOWN_COMMAND_EXIT (64, EX_USAGE), silent, so a test that routes a word
 the fake was not told about fails visibly instead of passing by accident. Use set_version(), set_executable() and
 configure() to change it between calls (for example the "update" case: the helper becomes 2.0.1 after a call).
@@ -134,6 +136,10 @@ if isinstance(out, list):
     out = "".join(line + "\n" for line in out)
 sys.stdout.write(out)
 sys.stdout.flush()
+if "stdout_file" in conf:
+    with open(conf["stdout_file"], "rb") as f:
+        sys.stdout.buffer.write(f.read())
+    sys.stdout.buffer.flush()
 sys.stderr.write(conf.get("stderr", ""))
 sys.exit(int(conf.get("exit", 0)))
 '''
@@ -197,7 +203,8 @@ import json, os, sys
 d = os.path.dirname(os.path.abspath(__file__))
 argv = sys.argv[1:]
 fd = os.open(os.path.join(d, "calls.jsonl"), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-os.write(fd, (json.dumps({"argv": argv, "pid": os.getpid()}) + "\n").encode())
+os.write(fd, (json.dumps({"argv": argv, "pid": os.getpid(),
+                          "env": {k: v for k, v in os.environ.items() if k.startswith("SWARMBOX_")}}) + "\n").encode())
 os.close(fd)
 with open(os.path.join(d, "script.json")) as f:
     script = json.load(f)
@@ -207,7 +214,8 @@ if cmd == "version" and "version" not in script["commands"]:
     if v is not None:
         sys.stdout.write(v + "\n")
     sys.exit(0)
-conf = script["commands"].get(cmd, script["commands"].get("*"))
+two = " ".join(argv[:2])
+conf = script["commands"].get(two, script["commands"].get(cmd, script["commands"].get("*")))
 if conf is None:
     sys.exit(%(unknown)d)
 out = conf.get("stdout", "")
@@ -270,3 +278,8 @@ class FakeHostHelper:
     def calls(self):
         with open(self.log_path) as f:
             return [json.loads(line)["argv"] for line in f if line.strip()]
+
+    def envs(self):
+        """The SWARMBOX_* variables each call saw, one dict per call (slice 3.5: seeds are never passed that way)."""
+        with open(self.log_path) as f:
+            return [json.loads(line).get("env", {}) for line in f if line.strip()]
