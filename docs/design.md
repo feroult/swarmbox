@@ -1700,7 +1700,7 @@ v0.1.0 has 12 files under `tests/`: `helpers.py` and 11 `test_*.py` files.
 
 | File | What it covers today `[today]` | 2.0 target `[new]` |
 |---|---|---|
-| `helpers.py` | only `ROOT`, the repository root (4 lines); there are no shared fakes: each test writes its stubs inline (for example `STUB`, a fake `podman`, in `test_start_attach.py`) | **created** as the shared home of the fakes: a fake `podman` that records its calls and `create-flags` output, and a fake host helper (a target, not an extension of something that exists) |
+| `helpers.py` | only `ROOT`, the repository root (4 lines); there are no shared fakes: each test writes its stubs inline (for example `STUB`, a fake `podman`, in `test_start_attach.py`) | **created** as the shared home of the fakes: `FakePodman` (built in Phase 1.3: a context manager that puts a fake `podman` first on `PATH`, records every call as a JSON line, and answers per subcommand with an exit code, stdout such as `create-flags` lines, stderr and an optional `--cidfile` write; unconfigured subcommands exit 0 silently; tested by `test_helpers.py`) and a fake host helper (a target, not yet built) |
 | `test_clipboard_bridge.py` | the clipboard bridge in a real browser, page built by `web-terminal.sh` | kept; the page now comes from `build-index.sh` |
 | `test_cloudflare_setup.py` | `cloudflare-setup.py` against a fake Cloudflare API | kept; adds `--session` preserved on rerun and `remote` wrappers |
 | `test_ssh_key.py` | `swarmbox-pubkey` (`ssh-key.sh`) | kept |
