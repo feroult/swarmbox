@@ -67,6 +67,7 @@ python3 tests/test_docs_consistency.py
 | `test_start_init.py` | `container/scripts/init.sh` |
 | `test_start_timezone.py` | the timezone handling |
 | `test_start_web_connector.py` | the web terminal connector in `start.sh` |
+| `test_run_all.py` | `tests/run_all.sh`, the full-regression runner (`--werror`, `--repeat N`, `--only`, `--list`), on small files only |
 | `test_tool_claude_real.py` | the first call of Claude Code through the shim: fake-curl argument tests always; the real download in throwaway containers only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` (slow, about 330 MB) |
 | `test_tool_shim.py` | `swarmbox-shim`: symlink and PATH calls under the shebang shell, dash, bash and busybox sh; first-use install then no installer; failure and retry; unknown command 127; user index wins; no manifest read on the hot path; loop guards; shellcheck |
 | `test_tool_install.py` | `swarmbox-tool install`, `run`, `list`, `update`: fake installers, the lock (two processes at once), the managed and `UPDATE=self` layouts, failure leaves nothing, checksum mismatch, exit codes, stdout purity |
@@ -80,7 +81,7 @@ python3 tests/test_docs_consistency.py
 | `test_web_style.py` | the web terminal style (needs a browser) |
 | `test_web_terminal.py` | the web terminal wrapper |
 
-Run them all with `for f in tests/test_*.py; do python3 "$f" || break; done`. Shared helpers (the repository root, the fake `podman`, and later the
+Run them all with `sh tests/run_all.sh` (one line per file with its test count; `--werror` runs each with `python3 -W error`, `--repeat 3` runs each file three times, `--only a.py,b.py` picks files). Shared helpers (the repository root, the fake `podman`, and later the
 fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use a real container only for a smoke
 test, with a `swarmbox-test-` name. The image smoke test is `tests/smoke_image.py` (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box (every result tagged `[reduced: development box, no nested Podman in the box]`, the nested steps skipped), `SWARMBOX_SMOKE_FULL=1` the full run for CI or your own host. The spike scripts in `tests/spikes/` are experiments, not part of the normal run (see `tests/spikes/README.md`).
 

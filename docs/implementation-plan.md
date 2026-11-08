@@ -194,6 +194,47 @@ Tests first
 
 **3.6 state (done, with the reduced parts below):** `swarmbox-host update [--to TAG]` (series from the tag of `IMAGE`, exact tag, pull, extraction into a temporary folder, the version from the new helper, the local `X.Y.Z` tag, the rename, `IMAGE` written, the exact message; exit 2, 3 and 1 as in 3.7.2), `tests/test_host_update.py` (34 tests, fake Podman and a fake image archive) and the opt-in end-to-end run `tests/e2e_registry.py` with its wrapper `tests/test_registry_e2e.py`: `registry:2` in a throwaway container on 127.0.0.1, three published versions, then in bash, zsh and fish the documented install line, the first call, a second call, two terminals at once, two real terminals, stop, `update`, the next call, `update` and `reset` with the registry stopped, and `update --to` (lower, higher, invalid, absent): 40 steps PASS. B20 is closed against the local registry; B35 re-measured through the function. How to run it by hand is `docs/local-registry.md`. Reduced: the boxes have no nested Podman (the development box is a container), no real registry, no macOS, no arm64 (the arm64 CI job is not built in this slice). `remote` is the one subcommand still answering 70.
 
+**3.7 state (done for what can run here; the rest waits for CI):** `.github/workflows/ci.yml` gained the `arm64` job (`ubuntu-24.04-arm`, native build by `dev/dev-build.sh`, the full smoke test, no push, no login, no port), a linux step that fails when zsh, fish, dash or busybox is missing and one that runs the host helper tests under dash and busybox, and, in the `macos` job, a probe that fails unless `/bin/bash` is a bash 3.x and the function test run with `SWARMBOX_TEST_BASH=/bin/bash` (bash 3.2). `tests/run_all.sh` (with `tests/test_run_all.py`) is the full-regression runner: one line per test file with its count, `--werror`, `--repeat N`, `--only`. The stale wording that spoke of Phase 3 as still to come (the entrypoint `init` note in design 3.3 and the 13.4 paragraph) is gone, and `tests/test_docs_consistency.py` (`PhaseThreeCloseTest`) checks the slice rows, the gate row, the decision entries, the built commands of A.2, this table and the Part B evidence tags. None of the three new CI jobs or steps has run: they are validated by `tests/test_ci_workflow.py` and actionlint only. B31 stays `[unverified]`.
+
+Phase 3 as it stands, for every decision (A.1) and fact (A.3) that points here:
+
+| Fact or decision | State | What is left |
+|---|---|---|
+| D5 | reduced | `create-flags` always carries the nested flags (3.2 tests); the nested container itself runs only in the CI smoke job (third level) |
+| D6 | reduced | adapter and fake-Podman tests (the macOS extras behind `SWARMBOX_TEST_OS`); the owner on a Mac is Phase 6 (B6) |
+| D7 | closed | `tests/test_host_create_flags.py`: no key makes a `--network=host` line |
+| D11 | closed | `init --workspace`, a relative path made absolute, in the three function tests |
+| D12 | closed | `env add|rm|list` tests in `tests/test_host_config.py`, the `-e NAME` form and the hash label in `tests/test_host_create_flags.py` |
+| D15 | closed | `tests/test_init_output.py` |
+| D16 | reduced | the helper under dash, `bash --posix`, busybox, zsh `sh` and `/bin/sh` (B23); macOS `/bin/sh` is Phase 6; `remote` is Phase 5 |
+| D17 | closed | `tests/test_host_update.py` and the local registry run |
+| D19 | closed | 3.7: `test_once_and_uninstall_are_no_host_words_and_create_nothing_of_their_own` in the three shells; the helper answers exit 2 to `--once`; a second box by `SWARMBOX_NAME` is in `tests/test_host_config.py` |
+| D20 | reduced | seed and `init` tests; `-e SHELL` on Linux (B21); macOS is Phase 6 |
+| D22 | closed | `init --with` records `WITH`; the function tests use it |
+| D27 | closed | `tests/test_host_update.py`: only `pull`, the helper's `run --rm` and `tag` are called |
+| D28 | reduced | mode tests (B22, B34) on Linux; macOS and a WSL home are Phase 6 |
+| D30 | closed | `tests/test_host_up.py`: the fingerprint line and exit 0 |
+| D31 | closed | `SWARMBOX_NAME` reads `<name>/config` (`tests/test_host_config.py`) |
+| D32 | closed | the placeholder organization works with the local registry; the real owner is set in Phase 7 |
+| D33 | reduced | the bootstrap-condition and update-then-next-call cases in bash, zsh and fish; bash 3.2 only in the `macos` job (never run) |
+| D34 | reduced | the refusal with a fake `/proc/version` (B32); a real WSL run is Phase 6 |
+| D35 | closed | `podman tag` recorded, `reset` offline after `update` (`tests/e2e_registry.py`) |
+| D36 | closed | 3.7: `uninstall` is no host word and is routed as a command (function cases); the manual steps in the README are Phase 6 |
+| D38 | closed | the local registry with a placeholder; the publish under `ghcr.io/feroult` and the package visibility are Phase 7 |
+| B5 | closed | 3.4 |
+| B19 | reduced | Linux closed in 3.5; macOS `sort` and bash 3.2 are Phase 6 (the `macos` job runs `/bin/bash`) |
+| B20 | closed | 3.6 against the local registry; the real registry is Phase 7 |
+| B21 | reduced | Linux closed in 3.5; macOS is Phase 6 |
+| B22 | reduced | Linux closed in 3.1 and 3.7 (`TokenJourneyTest`); macOS and a WSL home are Phase 6 |
+| B23 | reduced | Linux closed in 3.1; macOS `/bin/sh` and bash 3.2 are Phase 6 |
+| B31 | open | the `arm64` job exists in `ci.yml` and has never run; `[unverified]` until the first CI run |
+| B32 | reduced | logic closed in 3.2; a real WSL run is Phase 6 |
+| B33 | reduced | closed-reduced in 3.3; fake Podman and boxes without nested Podman |
+| B34 | reduced | Linux closed in 3.1; macOS and a WSL home are Phase 6 |
+| B35 | closed | 3.3, re-measured in 3.6 |
+
+**Could not be tested here:** arm64 (B31); macOS bash 3.2 and macOS `sh`, `stat` and `sort` (B19, B23, B34); a real WSL path and a Windows-drive workspace on a real WSL (B32, B22); a host UID other than 1000 (B7); Podman older than 4.3 (B8); the real registry (B20); the third nesting level (the nested container and B28). **Owner actions:** push; read the first CI runs, the `arm64` and `macos` jobs included, and close B30 and B31 with their evidence tags; run on a real WSL and a real macOS (Phase 6).
+
 Closes: B5 (with the fallback; the spike fed it), B19 (`sort -V`, Linux and CI images), B20 (against the local registry), B21 (`-e SHELL`, Linux), B22 (tunnel token mode, Linux; WSL home rechecked in Phase 6), B23 (the helper under different `sh` implementations), B31 (arm64 build and run), B32 (the WSL refusal), B33 (the `up` lock and cleanup), B34 (the mode check), B35 (the fast path budget).
 
 **Exit criteria:** with a local registry and a placeholder `<org>`, on a clean Linux machine, the documented install line followed by `swarmbox` creates the box; a second terminal joins it; two terminals started at once create one box; `stop`, `reset` (offline after `update`) and `update` behave as specified; the function and helper tests pass in CI.
@@ -416,7 +457,7 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B28 | cgroup manager settings | 2 | check written in 2.7, open until CI |
 | B29 | Layout migration | 2 | closed on a fixture in 2.6; the run on a real workspace copy is Phase 6 |
 | B30 | macOS CI runner | 1 | |
-| B31 | arm64 build and run | 3 | |
+| B31 | arm64 build and run | 3 | job written in 3.7 (`arm64` in `ci.yml`) and never ran: `[unverified]` until the first CI run |
 | B32 | WSL workspace refusal | 3 | logic closed-reduced in 3.2 (fake `/proc/version`); the real WSL run is Phase 6 |
 | B33 | `up` lock and cleanup | 3 | |
 | B34 | Portable mode check | 3 | macOS part rechecked in 6; Linux part checked in 3.1 (macOS and others in 6) |

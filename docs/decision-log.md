@@ -1190,3 +1190,52 @@ How to reverse: n/a.
 - Two terminals at once before the helper exists (first install) worked in one trial per shell; no lock protects the function's extraction, so it is not guaranteed. Not asserted.
 - The README does not yet carry the install line (Phase 7).
 
+
+## [3.7] The arm64 job: a native `ubuntu-24.04-arm` runner, not QEMU
+Context: the plan says "an arm64 CI job, if the CI provider allows"; design 13.4 and B31 name both an arm64 runner and `podman build --platform linux/arm64` under emulation as ways to check it. The job cannot run here (no arm64 host, no runner).
+Options: (a) emulation with QEMU on the amd64 runner; (b) a native arm64 hosted runner; (c) no job, only a note.
+Chosen: (b), `runs-on: ubuntu-24.04-arm`, because B31 asks that the nested Podman, `keep-id` and Chromium work on arm64, which an emulated build cannot show for the nested Podman and runs very slowly for the Chromium step. The job fails at once if `uname -m` is not `aarch64`. It builds with `dev/dev-build.sh --tag swarmbox-test-img-ci-arm64` (the slice asked for the dev build script; on a runner its only effect is the harmless APT sandbox line in a scratch copy) and runs `SWARMBOX_SMOKE_FULL=1 tests/smoke_image.py`, where a skipped step fails the job; it removes the image by its exact name; no push, no login, no port, no secret. I did not use `podman build --platform` anywhere (a test forbids it, so emulation cannot slip in).
+Impact on the design: 13.4 now describes the job as built; B31 is open (`[unverified]`) in Part B, A.3 and the 3.7 results table. Nothing in the product changed.
+How to reverse: delete the `arm64` job and its tests in `tests/test_ci_workflow.py`; or change `runs-on` if the account has no access to the label (the label is the one GitHub documents for hosted arm64 runners; I could not check that this account may use it: if it cannot, the job stays queued and the owner should decide between a self-hosted runner and emulation).
+
+## [3.7] bash 3.2 on macOS: `SWARMBOX_TEST_BASH` and a guard step
+Context: the macOS job ran `tests/test_function_bash.py`, but the test used the first `bash` in `PATH`, which on a macOS runner may be a Homebrew bash 5 and so would not prove anything about bash 3.2.
+Options: (a) leave it; (b) a test-only environment variable that picks the interpreter, plus a step that fails unless `/bin/bash` is a 3.x.
+Chosen: (b). `tests/test_function_bash.py` reads `SWARMBOX_TEST_BASH` (default: `which bash`); the macOS job sets it to `/bin/bash` for a dedicated step and a guard step before it fails the job unless `${BASH_VERSINFO[0]}` is 3. The same file no longer appears in the general macOS list (a test checks that every non-excluded file still runs there once). The guard is a hard failure rather than a probe on purpose: if the runner's `/bin/bash` is not 3.x, the job would say nothing about bash 3.2 and the owner should know.
+Impact on the design: 13.4 describes it; B19 and B30 stay `[unverified]` for macOS until the first run.
+How to reverse: remove the env line and the guard step; the test falls back to `which bash`.
+
+## [3.7] Shell presence is a CI failure, and dash and busybox get their own step
+Context: `tests/test_host_shells.py` skips the busybox cases when busybox is absent, and the zsh and fish tests skip when the shell is missing; on a runner that would turn B23 and the three-shell function test into silent skips.
+Chosen: the linux job installs `zsh fish busybox-static dash`, one step runs `command -v bash zsh fish dash busybox` (a missing one fails the job), and a second step runs `tests/test_host_shells.py` and `tests/test_host_create_flags.py` (the file that compares the helper's output across the shells) with `command -v dash` and `command -v busybox` first. The tests themselves keep their skips so that a developer without busybox can still run them; only CI is strict. I used the package `busybox-static` (Ubuntu's `busybox` package is a transitional name for it; `busybox-static` is certain to provide `/bin/busybox`).
+Impact on the design: 13.4; B23. How to reverse: drop the two steps.
+
+## [3.7] tests/run_all.sh is a POSIX sh runner, and it is a CI test of its own
+Context: the slice asked for a full-regression runner "tests/run_all.sh reduced if absent": no such file existed and every earlier phase ran its files by hand.
+Chosen: `tests/run_all.sh` (POSIX sh, shellcheck clean), options `--werror`, `--repeat N`, `--only a.py,b.py`, `--browser`, `--list`; it counts tests from the unittest summary, prints one line per file and a TOTAL line, and exits 1 if any run fails. The browser files are skipped unless `--browser` (they need chromium and ttyd and run in the scheduled job). `tests/test_run_all.py` tests it on small files only (and on two throwaway test files for the failing case), never the whole suite from inside the suite. It is added to the linux and macOS lists of `ci.yml`.
+Impact on the design: none (plan 3.7 state and CONTRIBUTING). How to reverse: delete the two files and the two CI lines.
+
+## [3.7] B22 is closed on Linux with a journey test; the real WSL home and macOS stay open
+Context: B22 had a Linux part closed in 3.1 by many single-purpose tests (pty set, mode refusal, environment value). The slice asked that the whole path be exercised end to end.
+Chosen: one `TokenJourneyTest` in `tests/test_host_config.py`: `config set` on a pseudo-terminal -> mode 600 -> `get` and `list` -> the environment value wins -> `chmod 644` -> every reader ignores the file's token with one line naming the mode and `chmod 600 <file>` and the rest of the file still works -> typing the token again repairs the mode -> an explicit `chmod 600` is accepted. It passed on its first run (no bug found; it adds coverage, not a fix), so I cannot claim it failed first. B22's evidence tag now names both test classes; macOS and a WSL home on a Windows drive stay `[unverified]` with a Phase 6 pointer.
+Impact on the design: the 3.7 results table. How to reverse: delete the class.
+
+## [3.7] Two absences that A.1 claimed were proven had no test: D19 and D36
+Context: A.1 says D19 (`swarmbox --once` creates no container) and D36 (`uninstall` is no host word, routed as a command) are proven in Phase 3, but no test mentioned `--once` or `uninstall`. Found while writing the close-out table.
+Chosen: one shared case in `tests/function_cases.py` (so it runs in bash, `bash --posix`, zsh and fish): `--once` and `uninstall` (alone and with arguments) are no host words; the function makes only the helper's `up` and `config get NAME` and one `podman exec ... attach <words>`, never a `rm`, `stop`, `kill` or `run`. The helper answers exit 2 "unknown subcommand" to both (checked by hand, not by a test, because the dispatcher test for unknown words already exists). It passed at once: the behavior was already right, the proof was missing.
+Impact on the design: none. How to reverse: delete the case.
+
+## [3.7] The close table: states are closed, reduced or open, and B33 is called reduced
+Context: A.1 and A.3 rows that point at Phase 3 had no common statement of how far they got. Part B uses "closed-reduced" for several.
+Chosen: a table in plan section 6 ("3.7 state") with one row for every D and B whose A.1 or A.3 phase includes 3, state `closed` (nothing left for Phase 3), `reduced` (the Linux or fake part is done, a named part is left for CI or Phase 6 or 7) or `open` (B31 only). I was conservative: D5, D6, D16, D20, D28, D33 and D34 are `reduced` although their Phase 3 work is done, because the proof still has a named part that did not run (nested container, macOS, bash 3.2, a real WSL). `tests/test_docs_consistency.py` checks the table against A.1 and A.3 so that a new Phase 3 row cannot be forgotten, and checks that each Part B fact has an evidence tag naming existing test files, or `[unverified]` with a Phase 6 or 7 pointer (B31: the CI job and the first CI run).
+Impact on the design: a 3.7 results table in Part B. How to reverse: delete the table and `PhaseThreeCloseTest`.
+
+## [3.7] Stale wording removed; what was found
+Context: grep for "Phase 3 writes", "Phase 3 adds", "until Phase 3" and for stub wording in code and docs.
+Chosen: the only stale wording left was in design 3.3 (the entrypoint's `init` was "127 until Phase 3 writes swarmbox-init") and in 13.4 ("the zsh and fish function tests and the arm64 job are added by later phases"); both corrected. The Dockerfile comment and the entrypoint comments were already correct (slice 3.5). CONTRIBUTING.md still says `test_tool_stub.py` covers "parts that are still stubs": that is true (`prepare`, `remove`, `doctor`, `new` are Phase 4b) and I left it. A test (`test_no_stale_phase3_wording_in_code_or_docs`) now fails on these phrases outside the history files.
+Impact on the design: the two lines. How to reverse: n/a.
+
+## [3.7] What was not done or did not work
+- The arm64 job, the macOS bash 3.2 step and the dash/busybox step have never run; their only checks are `tests/test_ci_workflow.py` (28 tests) and actionlint 1.7.12 (downloaded into a mktemp directory, checksum verified, run once, deleted; clean).
+- Not testable here and written down in the gate row: arm64; macOS bash 3.2, `sh`, `stat` and `sort`; a real WSL path and a Windows-drive workspace on a real WSL; a host UID other than 1000; Podman older than 4.3; the real registry; the third nesting level.
+- The Phase 3 gate is `partial`, not `done`: the exit criterion "the function and helper tests pass in CI" is true only locally.
