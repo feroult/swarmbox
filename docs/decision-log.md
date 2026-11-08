@@ -1130,3 +1130,63 @@ How to reverse: n/a.
 - A real attach (`podman exec -it` into a running box through the function) was not run; the pty tests prove the arguments. The real function did extract the helper from the real image under bash, zsh and fish (isolated XDG_DATA_HOME with a symlink to the real container storage, because Podman keeps its storage under XDG_DATA_HOME; the first attempts failed with the overlay error, which also showed the 3.8 failure message with the real Podman).
 - B19 for the CI images (ubuntu, macOS) was not run; only Debian 12.
 - A leftover empty ~/.local/share/fish (made by my own `fish -c` probes under the real HOME) was removed with rmdir; nothing else outside temp folders was written. The test image swarmbox-test-35-img was removed by name.
+
+## [3.6] update changes things in the order: pull, extract to a temp folder, tag, rename the helper, write the config
+Context: design 3.8 listed the helper rename (step 3) before `podman tag` and the config write (step 4), and promised "if `podman tag` fails, nothing is written (exit 3)". With that order a failing tag would leave a new helper next to an old `IMAGE`.
+Options: (a) keep the design's order; (b) read the version from the temporary folder, tag, then rename and write the config.
+Chosen: (b), because every failure before the rename (pull, run, tar, executable, version, tag) then leaves the helper, the config and the box exactly as they were, which is what 3.8 says. The one failure after the rename is the config write itself (exit 1, new helper, old `IMAGE`; the next `update` or `config set IMAGE` repairs it).
+Impact on the design: 3.8 "Update flow" steps 3 and 4 reworded; 3.7.2 table row for `update`.
+How to reverse: move the `podman tag` block below the rename in `cmd_update`.
+
+## [3.6] The series comes from the tag of IMAGE; digest, tag-less and non-numeric images are refused for a plain update
+Context: the design says "the same X.Y series as the current IMAGE" but not what to do with `IMAGE=swarmbox:dev`, `...@sha256:...` or no tag (the task also asked to log "digests refused or handled").
+Options: guess a series; pull `latest`; refuse.
+Chosen: refuse with exit 2 and the hint to use `--to TAG`, before any Podman call; a tag is a series when it starts with two numbers followed by the end, `.` or `-` (`2.0.1`, `2.0`, `3.4.5-rc1`; `2` and `main-2.0` are not). `--to TAG` works for all of them: the repository is everything before the tag and before `@digest`, so a digest-pinned image can be moved to a tag, which drops the digest. A registry port is never taken for a tag (only a `:` in the last path component is).
+Impact on the design: 3.8 step 1 says so.
+How to reverse: n/a (a more lenient rule would make `update` surprising).
+
+## [3.6] --to accepts a tag only, and an exact X.Y.Z tag must hold that version
+Context: `--to TAG` could mean a tag or a whole reference.
+Chosen: a tag (letters, digits, `_`, `.`, `-`, at most 128, not starting with `.` or `-`; `--to=TAG` also works); the repository is always the current one. If the tag looks like `X.Y.Z` and the extracted helper reports another version, exit 3: tagging it as that other version would make `IMAGE` lie about what the box runs. A moving tag (`2.1`, `latest`) gets the local tag of the version it holds; when the tag already is the version, no `podman tag` call is made.
+Impact on the design: 3.8 steps 1, 3 and 4.
+How to reverse: delete the check in `cmd_update`.
+
+## [3.6] update replaces the helper in the standard data folder, not the folder the running script is in
+Context: the function extracts into `${XDG_DATA_HOME:-$HOME/.local/share}/swarmbox/host`. A helper run from a repository checkout (tests, development) would otherwise overwrite `container/host/`.
+Chosen: `update` always writes the standard folder (created when missing), the same one the function uses. The running script keeps working because the rename leaves its open file alone (the old folder is unlinked after the rename).
+Impact on the design: none beyond 3.7.1, which already names that folder.
+How to reverse: use the folder of `$0`.
+
+## [3.6] The success line goes to standard output, "pulling ..." to standard error; SWARMBOX_IMAGE is reported, not obeyed
+Context: 3.7.2 says standard output is data only, but `update` has no other data; a pull can take minutes with no sign of life.
+Chosen: the one result line on standard output (so a script can capture it); a progress line on standard error, as `up` does for its pull. A set `SWARMBOX_IMAGE` is used to find the repository and series (it is the effective `IMAGE`), the file is written anyway, and a warning says that the variable overrides it.
+How to reverse: n/a.
+
+## [3.6] The e2e derives 2.0.1 and 2.1.0 from one build with a one-line Containerfile
+Context: the goal said "two throwaway builds"; a full build of the image takes minutes and the versions differ only in the helper's `VERSION` file (what `update` reads).
+Chosen: one `dev/dev-build.sh` build (`SWARMBOX_E2E_IMAGE` reuses it), and `FROM <base>` layers that rewrite `VERSION` for the other versions. The registry gets different image IDs per version, which is all `update` tells apart. A real second release would differ in more files; that is a Phase 7 check against the real registry.
+How to reverse: build each version from a Dockerfile with a different `container/host/VERSION`.
+
+## [3.6] The install line needs --image when the registry is not ghcr.io/<org>
+Context: `init` knows only its own default repository, so the printed function would extract the helper from `ghcr.io/<org>/swarmbox:2.0.0`, which does not exist.
+Options: let the entrypoint learn the image it runs from (no reliable way inside a container); document `--image`.
+Chosen: the e2e runs the line of design 3.1 with the registry substituted and `--image <ref>` appended; 3.1 now says an install from another registry needs `--image`. No code change. README has no install line yet (Phase 7 rewrites it), so "design 3.1 and README match" holds for design 3.1 and is open for the README.
+How to reverse: n/a.
+
+## [3.6] Podman store, registries and the scratch XDG folders in the e2e
+Context: the function writes the helper under XDG_DATA_HOME, which must be scratch, but rootless Podman's image store defaults to XDG_DATA_HOME too (a store on this box's overlayfs fails). `registries.conf` in a scratch XDG_CONFIG_HOME and `CONTAINERS_STORAGE_CONF` were both ignored by Podman 4.3.1.
+Chosen: a `containers/storage.conf` in the scratch XDG_CONFIG_HOME pointing at the real graphroot and runroot (read from `podman info`), a copy of `/etc/containers/containers.conf`, and `CONTAINERS_REGISTRIES_CONF` for the insecure `localhost:<port>`. Documented in docs/local-registry.md. The first, wrong, attempt (a registries.conf file in the XDG folder) failed with "server gave HTTP response to HTTPS client".
+How to reverse: n/a.
+
+## [3.6] registry:2 cleanup and what was left
+Context: `registry:2` is not a swarmbox-test- image and was absent before this slice.
+Chosen: the e2e pulls it once, and removes it at the end only when it pulled it (`SWARMBOX_E2E_KEEP_REGISTRY_IMAGE=1` keeps it). My own probe of the registry before the test left an anonymous volume (a registry container removed without `-v`); I removed it by its ID. The e2e uses a named volume `swarmbox-test-3-registry-<rand>-data` and removes it by name.
+How to reverse: n/a.
+
+## [3.6] What was not done or did not work
+- Reduced everywhere: no nested Podman in the boxes (`SWARMBOX_TEST_NO_NESTED=1`; boxes are ready "with 2 warnings"), no real registry (Phase 7), no macOS, bash 3.2 or arm64 (the arm64 CI job was not built in this slice; it needs a runner).
+- The fake-registry fallback the task described was not needed: `registry:2` pulled and ran. If it cannot, `tests/e2e_registry.py` reports the failure and the fake-Podman tests of `tests/test_host_update.py` are the reduced run.
+- The e2e's first run failed for three shells' worth of reasons that were the test's: the "image is already local" pre-check ran for the second shell after the first had pulled it (now each world untags first), and the teardown called the function when the install had failed. Both fixed; the product code passed on the first real run.
+- Two terminals at once before the helper exists (first install) worked in one trial per shell; no lock protects the function's extraction, so it is not guaranteed. Not asserted.
+- The README does not yet carry the install line (Phase 7).
+
