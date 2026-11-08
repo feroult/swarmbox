@@ -170,7 +170,7 @@ class WebInContainer(unittest.TestCase):
         for args in (["swarmbox-tool", "validate"], ["swarmbox-entrypoint", "tool", "validate"]):
             r = podman("run", "--rm", "--entrypoint", args[0], TAG, *args[1:], text=True)
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("placeholder", r.stdout)
+            self.assertIn("manifest(s) checked", r.stdout)
         r = podman("run", "--rm", TAG, "tool", "install", "claude", text=True)
         self.assertEqual(r.returncode, 70)
         self.assertIn("Phase 4a", r.stderr)

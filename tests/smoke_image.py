@@ -197,7 +197,7 @@ def step_tool_validate(ctx):
     r = podman("run", "--rm", "--entrypoint", "swarmbox-entrypoint", ctx.tag, "tool", "validate")
     out = r.stdout + r.stderr
     assert r.returncode == 0, "tool validate exited %d: %s" % (r.returncode, out)
-    assert "placeholder" in out.lower(), "validate is no longer the placeholder: update this step with Phase 4a: " + out
+    assert "manifest(s) checked" in out, "validate did not report what it checked (the real validate, slice 4a.1): " + out
 
 
 def step_attach_session(ctx):
@@ -255,7 +255,7 @@ STEPS = [
     Step("ready", "serve reaches readiness (marker, PID 1, session main, user agent, ttyd)", False, step_ready),
     Step("tmpfs-restart", "stop is prompt (exit 143), start empties box:/tmp/swarmbox, workspace survives (B17, B3)", False, step_tmpfs_restart),
     Step("page-built", "the ttyd page is built into the image and served with the three settings (D13)", False, step_page_built),
-    Step("tool-validate", "swarmbox-tool validate passes (placeholder until Phase 4a)", False, step_tool_validate),
+    Step("tool-validate", "swarmbox-tool validate passes (the real validate; the image has no tool manifests until a later 4a slice)", False, step_tool_validate),
     Step("attach-session", "two attach calls share one session, the idle window is gone, exit codes (D1, B36, B13)", False, step_attach_session),
     Step("no-agent", "the image holds no agent, gcloud, clasp, Go or Poetry (D2)", False, step_no_agent),
     Step("nested-podman", "a nested Podman runs a container inside the box (D5)", True, step_nested_podman),

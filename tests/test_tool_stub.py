@@ -1,5 +1,5 @@
 """Slice 2.5: the stub swarmbox-tool (container/scripts/swarmbox-tool.sh) and the empty tool-ports file (design 6.2, 6.3,
-10.2). The real tool program arrives in Phase 4a; until then `validate` is a placeholder that passes, `link` and `prepare`
+10.2). The real tool program arrives in Phase 4a in slices; `validate` is real since 4a.1, and `link` and `prepare`
 do nothing (so `serve` does not warn at every start), and anything else exits 70 and says where it comes from.
 
 Test-only variable (decision log [2.5]): SWARMBOX_TEST_HOST_DIR replaces /usr/local/share/swarmbox/host.
@@ -26,17 +26,16 @@ class ToolStub(unittest.TestCase):
         self.host = os.path.join(self.base, "host")
 
     def run_tool(self, *args, host=True):
-        env = {"PATH": "/usr/bin:/bin", "HOME": self.base}
+        env = {"PATH": "/usr/bin:/bin", "HOME": self.base, "SWARMBOX_TEST_IMAGE_TOOLS": os.path.join(self.base, "none")}
         if host:
             env["SWARMBOX_TEST_HOST_DIR"] = self.host
         return subprocess.run(["bash", TOOL, *args], env=env, capture_output=True, text=True, timeout=20)
 
-    def test_validate_is_a_placeholder_that_passes_and_says_so(self):
+    def test_validate_with_no_manifests_passes_and_says_how_many_it_checked(self):
+        # the real validate arrived in slice 4a.1 (tests/test_tool_manifest.py); with no manifest folders it checks nothing
         r = self.run_tool("validate")
         self.assertEqual(r.returncode, 0, r.stderr)
-        out = (r.stdout + r.stderr).lower()
-        self.assertIn("placeholder", out)
-        self.assertIn("phase 4a", out)
+        self.assertIn("0 manifest(s) checked", r.stdout)
 
     def test_link_system_writes_an_empty_tool_ports_file_and_is_idempotent(self):
         for _ in range(2):
