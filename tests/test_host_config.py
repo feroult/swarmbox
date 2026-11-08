@@ -163,12 +163,12 @@ class VersionTest(Base):
         self.assertEqual(self.run_h("config").returncode, 2)
         self.assertEqual(self.run_h("config", "frob").returncode, 2)
 
-    def test_later_subcommands_say_so_and_do_nothing(self):
-        for c in ("remote",):   # create-flags and fingerprint arrived in slice 3.2, up, reset, stop and url in 3.3, update in 3.6
-            p = self.run_h(c)
-            self.assertEqual(p.returncode, 70, c)
-            self.assertIn("not implemented", p.stderr)
-            self.assertEqual(p.stdout, "")
+    def test_remote_without_a_subcommand_is_usage_and_does_nothing(self):
+        # `remote` was "not implemented" (exit 70) until slice 5.2; every subcommand of the table is built now
+        p = self.run_h("remote")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("remote setup|status|off|token", p.stderr)
+        self.assertEqual(p.stdout, "")
         self.assertFalse(os.path.exists(os.path.join(self.home, ".config")))
 
 

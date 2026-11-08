@@ -63,6 +63,11 @@ class ShellMatrix(unittest.TestCase):
                 self.assertEqual(p.stdout, out, name)
 
         ok(run("version"), "2.0.0\n")
+        # remote: no cloudflare-setup.py sits next to the helper in the repository (exit 3); an unknown subcommand is exit 2
+        ok(run("remote", "nope"), "", 2)
+        p = run("remote", "status")
+        ok(p, "", 3)
+        self.assertIn("cloudflare-setup.py was not found", p.stderr)
         ok(run("config", "get", "WEB_PORT"), "7681\n")
         ok(run("config", "get", "WITH"), "", 1)
         ok(run("config", "get", "NOPE"), "", 2)

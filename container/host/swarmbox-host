@@ -12,7 +12,9 @@
 #   create-flags, fingerprint   the flags and the box fingerprint (slice 3.2)
 #   up, reset, stop, url         the lock, the lookup, creation, readiness, the warnings (slice 3.3; they call Podman, `url` does not)
 #   update [--to TAG]            pull, extract the helper, tag X.Y.Z locally, write IMAGE (slice 3.6)
-# remote arrives in a later slice.
+#   remote setup|status|off|token [options]
+#                                a thin wrapper over cloudflare-setup.py next to this program (slice 5.2): setup is `apply`,
+#                                off is `remove`; the options go through unchanged; exit 3 without python3
 #
 # Data goes to standard output, messages to standard error. Exit codes (3.7.2, 3.8): 0 ok; 1 unset key or a write that
 # failed; 2 usage, unknown key, invalid value or name; 3 prerequisite missing (here: a missing or unreadable VERSION).
@@ -43,6 +45,7 @@ usage: swarmbox-host <subcommand> [args]
   fingerprint [--explain] [--label NAME=VALUE]...
   up | reset | stop | url | connection
   update [--to TAG]
+  remote setup|status|off|token [options]   (options of cloudflare-setup.py: --dry-run --session --hostname --port ...)
 USAGE
     exit 2
 }
@@ -1935,6 +1938,40 @@ cmd_url() {
     return 0
 }
 
+# remote setup|status|off|token [options]: runs cloudflare-setup.py, which sits next to this program (the folder the shell
+# function extracts the image's helper to, 3.7.1). setup is its `apply`, off is its `remove`. The user's options come last,
+# so they win over the two defaults added here (--name from SWARMBOX_NAME, --port from WEB_PORT). XDG_CONFIG_HOME is set to
+# the folder CFG_ROOT lives in, so the script's cloudflare.json is the file `url` reads. No secret travels on argv: the API token
+# stays in the environment the script inherits; no command of the script reads the tunnel token (it asks the API for it), so
+# SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN is removed from the script's environment (decision [5.2]).
+cmd_remote() {
+    [ $# -ge 1 ] || usage
+    r_sub=$1
+    shift
+    case $r_sub in
+        setup) r_cmd=apply ;;
+        status) r_cmd=status ;;
+        off) r_cmd=remove ;;
+        token) r_cmd=token ;;
+        *) usage ;;
+    esac
+    command -v python3 > /dev/null 2>&1 || die 3 "python3 is needed for 'swarmbox remote' and was not found."
+    init_paths
+    cfg_prepare
+    r_script=$(dirname "$0")/cloudflare-setup.py
+    [ -r "$r_script" ] || die 3 "cloudflare-setup.py was not found next to the host helper ($r_script); run \`swarmbox update\` to extract it again."
+    resolve WEB_PORT
+    r_port=$R_VAL
+    if [ "$R_SRC" != default ]; then
+        validate_value WEB_PORT "$r_port" || exit 2
+        r_port=$V_OUT
+    fi
+    XDG_CONFIG_HOME=${CFG_ROOT%/swarmbox}
+    export XDG_CONFIG_HOME
+    unset SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN
+    exec python3 "$r_script" "$r_cmd" --name "$BOX" --port "$r_port" "$@"
+}
+
 cmd_config() {
     [ $# -ge 1 ] || usage
     _sub=$1
@@ -1963,9 +2000,7 @@ case $sub in
     url) cmd_url "$@" ;;
     connection) cmd_connection "$@" ;;
     update) cmd_update "$@" ;;
-    remote)
-        die 70 "'$sub' is not implemented in this build of the host helper."
-        ;;
+    remote) cmd_remote "$@" ;;
     -h|--help|help)
         usage
         ;;
