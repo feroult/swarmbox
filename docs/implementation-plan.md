@@ -190,6 +190,8 @@ Tests first
 
 **3.3 state (done):** `up`, `reset`, `stop` and `url` in `container/host/swarmbox-host`: the exact-name lookup (one `container inspect`, two calls on the fast path, B35 closed), the prerequisite checks in the order of 3.8 (Podman, version, tun, image, workspace), the mkdir lock with the pid file, the stale rule by rename and re-read, the traps (143, 130, 129), the flags captured to a file before `podman run`, cleanup by the `--cidfile` ID (exit 7), the readiness poll (exit 6 at once for an exited box, with the log), the conflicts (a v0.1.0 container, another box on the workspace: exit 5), the warnings (fingerprint per key, image label, stale image ID), `INIT=auto` by a throwaway probe, and the mount point of the nested volume made as the user. `tests/test_host_up.py` (fake `podman` with rules and answers in sequence added to `tests/helpers.py`) and the smoke steps `up-lifecycle` and `up-busy-port` (real Podman, `swarmbox-test-3-` names, a recording `podman` wrapper). B33 closed-reduced and B35 closed (design Part B, "Results of Phase 3"). Not built in this slice: the host connection `podman -c <name>` and the short-symlink fallback (the rest of "What `up` does", step 6), `update`, `remote`, `swarmbox-init` and the function.
 
+**3.5 state (done):** `container/scripts/swarmbox-init.sh` (POSIX sh) and `container/host/templates/{bash,zsh,fish}`; the function with the D33 bootstrap (extraction through a file, `sort -V` order, a newer helper kept with a one-line notice, seeds as arguments, relative `--workspace` made absolute, `-t` only with a terminal on both ends); the Dockerfile copies `container/host/` into the archive folder and installs `swarmbox-init`; tests `tests/test_init_output.py`, `tests/function_cases.py` (the shared case table) with `test_function_bash.py` (also under `bash --posix`, plus a bash 4 lint), `test_function_zsh.py` and `test_function_fish.py`, and the archive checks in `test_entrypoint.py` and `test_dockerfile.py`. B21 and B19 are closed for Linux; macOS, bash 3.2 and the CI images are Phase 6. `update`, `remote`, the local registry test and the arm64 job are later slices.
+
 Closes: B5 (with the fallback; the spike fed it), B19 (`sort -V`, Linux and CI images), B20 (against the local registry), B21 (`-e SHELL`, Linux), B22 (tunnel token mode, Linux; WSL home rechecked in Phase 6), B23 (the helper under different `sh` implementations), B31 (arm64 build and run), B32 (the WSL refusal), B33 (the `up` lock and cleanup), B34 (the mode check), B35 (the fast path budget).
 
 **Exit criteria:** with a local registry and a placeholder `<org>`, on a clean Linux machine, the documented install line followed by `swarmbox` creates the box; a second terminal joins it; two terminals started at once create one box; `stop`, `reset` (offline after `update`) and `update` behave as specified; the function and helper tests pass in CI.
@@ -400,9 +402,9 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B16 | Restart after a host reboot | 0 | partly checked in 0.4; the reboot is `[unverified]` (needs systemd) |
 | B17 | tmpfs empty after stop and start | 0 | rechecked by the Phase 2 smoke test |
 | B18 | Container left behind by a failed `run` | 0 | used by B33 in 3 |
-| B19 | `sort -V` | 3 | macOS part rechecked in 6 |
+| B19 | `sort -V` | 3 | Linux part closed in 3.5; macOS part rechecked in 6 |
 | B20 | `update` and the exact tag | 3 | real registry rechecked in 7 |
-| B21 | `-e SHELL` reaches `init` | 3 | macOS part rechecked in 6 |
+| B21 | `-e SHELL` reaches `init` | 3 | Linux part closed in 3.5; macOS part rechecked in 6 |
 | B22 | Tunnel token file mode | 3 | macOS and WSL home rechecked in 6; Linux part checked in 3.1 (macOS and others in 6) |
 | B23 | Helper under several `sh` | 3 | macOS part rechecked in 6; Linux part checked in 3.1 (macOS and others in 6) |
 | B24 | `chrome-devtools-mcp` installed program | 2 | used by 4b |
