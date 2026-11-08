@@ -36,6 +36,8 @@ usage: swarmbox-host <subcommand> [args]
   config get KEY | config set KEY [VALUE] | config list
   config seed [--with L] [--workspace DIR] [--image REF]
   env add NAME | env rm NAME | env list
+  create-flags [--browser-url VALUE]
+  fingerprint [--explain] [--label NAME=VALUE]...
 USAGE
     exit 2
 }
@@ -296,6 +298,25 @@ valid_port() {
     [ "${#1}" -le 5 ] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
 }
 
+# Four decimal numbers from 0 to 255 separated by dots.
+valid_ipv4() {
+    case $1 in
+        ''|*[!0-9.]*|.*|*.|*..*) return 1 ;;
+    esac
+    _oldifs=$IFS
+    IFS=.
+    set -f
+    # shellcheck disable=SC2086
+    set -- $1
+    set +f
+    IFS=$_oldifs
+    [ $# -eq 4 ] || return 1
+    for _x in "$@"; do
+        [ "${#_x}" -le 3 ] && [ "$_x" -le 255 ] || return 1
+    done
+    return 0
+}
+
 valid_port_entry() {
     _pe=$1
     case $_pe in
@@ -303,9 +324,7 @@ valid_port_entry() {
         *:*:*)
             _pa=${_pe%%:*}
             _pr=${_pe#*:}
-            case $_pa in
-                ''|*[!0-9.]*) return 1 ;;
-            esac
+            valid_ipv4 "$_pa" || return 1
             valid_port "${_pr%%:*}" && valid_port "${_pr#*:}"
             ;;
         *:*) valid_port "${_pe%%:*}" && valid_port "${_pe#*:}" ;;
@@ -731,6 +750,469 @@ cmd_env() {
     esac
 }
 
+# ---------------------------------------------------------------- create-flags and fingerprint (3.6, 3.7.2, 3.7.4, 8.2, 8.3)
+# Slice 3.2. Nothing here calls Podman. The flags are collected in OUT, one argument per line, and printed only when every
+# check has passed, so a failure never leaves half a list on standard output (3.6: `up` captures the output first).
+
+TAB=$(printf '\t')
+
+# The first of sha256sum and `shasum -a 256` that exists (Linux has the first, macOS the second); exit 3 when neither does.
+need_sha256() {
+    if command -v sha256sum > /dev/null 2>&1; then
+        SHA=sha256sum
+    elif command -v shasum > /dev/null 2>&1; then
+        SHA=shasum
+    else
+        die 3 "neither sha256sum nor shasum was found; one of them is needed to compute the box fingerprint."
+    fi
+}
+
+# Hash of standard input, hex only.
+sha256_stdin() {
+    if [ "$SHA" = sha256sum ]; then
+        _so=$(sha256sum)
+    else
+        _so=$(shasum -a 256)
+    fi
+    printf '%s' "${_so%% *}"
+}
+
+# Reads tool-ports from the folder of the helper into TP_DATA: one "tool<TAB>port" line each, malformed lines skipped with a
+# warning. The file always exists in a good archive (3.7.1, 6.3); a missing one is a corrupted helper: exit 3.
+load_tool_ports() {
+    _dir=$(self_dir) || die 3 "cannot find the folder of the host helper."
+    [ -r "$_dir/tool-ports" ] || die 3 "the host helper has no tool-ports file ($_dir/tool-ports); the helper archive is incomplete. Run \`swarmbox update\` or remove $_dir so the next call extracts the helper again."
+    TP_DATA=
+    while IFS= read -r _l || [ -n "$_l" ]; do
+        [ -n "$_l" ] || continue
+        case $_l in
+            *"$TAB"*)
+                _tn=${_l%%"$TAB"*}
+                _tp=${_l#*"$TAB"}
+                if valid_tool_name "$_tn" && valid_port "$_tp"; then
+                    TP_DATA=$TP_DATA$_tn$TAB$_tp$NL
+                    continue
+                fi
+                ;;
+        esac
+        warn "ignoring a malformed line in $_dir/tool-ports: $_l"
+    done < "$_dir/tool-ports"
+}
+
+# norm_port ENTRY: N_OUT = ADDRESS:HOST:CONTAINER; loopback unless an address was given (8.2, PORTS).
+norm_port() {
+    case $1 in
+        *:*:*) N_OUT=$1 ;;
+        *:*) N_OUT=127.0.0.1:$1 ;;
+        *) N_OUT=127.0.0.1:$1:$1 ;;
+    esac
+}
+
+# The published ports of the box: the user's PORTS (normalized), then the ports of the tools in WITH from tool-ports,
+# skipping a host port that is already published. Sets PORT_LIST (comma list) and PORT_ARGS (one mapping per line).
+# $1 = 1 to warn about all-interface binds.
+build_ports() {
+    PORT_LIST=
+    PORT_ARGS=
+    _hosts=,
+    _oldifs=$IFS
+    IFS=,
+    set -f
+    # shellcheck disable=SC2086  # splitting on commas is the point
+    set -- $C_PORTS
+    set +f
+    IFS=$_oldifs
+    _warn=${WARN_PORTS:-0}
+    for _e in "$@"; do
+        [ -n "$_e" ] || continue
+        norm_port "$_e"
+        _m=$N_OUT
+        _rest=${_m#*:}
+        _hosts=$_hosts${_rest%%:*},
+        PORT_LIST=${PORT_LIST:+$PORT_LIST,}$_m
+        PORT_ARGS=$PORT_ARGS$_m$NL
+        case $_m in
+            0.0.0.0:*) [ "$_warn" = 0 ] || warn "port $_m is exposed on all network interfaces" ;;
+        esac
+    done
+    [ -n "$C_WITH" ] || return 0
+    _oldifs=$IFS
+    IFS=,
+    set -f
+    # shellcheck disable=SC2086
+    set -- $C_WITH
+    set +f
+    IFS=$_oldifs
+    for _t in "$@"; do
+        while IFS= read -r _l; do
+            [ -n "$_l" ] || continue
+            [ "${_l%%"$TAB"*}" = "$_t" ] || continue
+            _p=${_l#*"$TAB"}
+            case $_hosts in
+                *",$_p,"*) continue ;;
+            esac
+            _hosts=$_hosts$_p,
+            _m=127.0.0.1:$_p:$_p
+            PORT_LIST=${PORT_LIST:+$PORT_LIST,}$_m
+            PORT_ARGS=$PORT_ARGS$_m$NL
+        done <<TPEOF
+$TP_DATA
+TPEOF
+    done
+}
+
+# BROWSER_URL as the box gets it: a bare number N is http://host.containers.internal:N, host:port gets http://, a URL stays.
+# The empty string, when asked for explicitly with --browser-url, is the port 9222 (`--remote-browser` without a value today).
+normalize_browser_url() {
+    case $1 in
+        '') B_OUT=http://host.containers.internal:9222 ;;
+        http://*|https://*) B_OUT=$1 ;;
+        *[!0-9]*) B_OUT=http://$1 ;;
+        *) B_OUT=http://host.containers.internal:$1 ;;
+    esac
+}
+
+# Reads and validates every creation-time key into C_<KEY> (environment, file, default; the environment is not validated by
+# `config get`, so it is here). $1 = 1 when INIT must already be 0 or 1. BROWSER_OVERRIDE_SET/BROWSER_OVERRIDE: --browser-url.
+load_creation() {
+    init_paths
+    cfg_prepare
+    for _key in WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE; do
+        resolve "$_key"
+        _v=$R_VAL
+        if [ "$_key" = BROWSER_URL ] && [ "${BROWSER_OVERRIDE_SET:-0}" = 1 ]; then
+            _v=$BROWSER_OVERRIDE
+            R_SRC='env'
+        fi
+        if [ "$_key" = TZ ]; then
+            case $_v in
+                OFF|none|NONE) _v=off ;;   # the spellings v0.1.0 accepted for "keep the image's UTC"
+            esac
+        fi
+        if [ "$R_SRC" != default ]; then   # a default is the helper's own value (the image default holds the <org> placeholder)
+            validate_value "$_key" "$_v" || exit 2
+            _v=$V_OUT
+        fi
+        eval "C_$_key=\$_v"
+    done
+    C_NAME=$BOX
+    if [ "$1" = 1 ]; then
+        case $C_INIT in
+            0|1) ;;
+            *) die 2 "INIT is '$C_INIT': 'swarmbox up' resolves auto to 0 or 1 before it asks for the flags (set SWARMBOX_INIT to 0 or 1 when calling create-flags directly)." ;;
+        esac
+    fi
+    if [ -n "$C_BROWSER_URL" ] || [ "${BROWSER_OVERRIDE_SET:-0}" = 1 ]; then
+        normalize_browser_url "$C_BROWSER_URL"
+        C_BROWSER_URL=$B_OUT
+    fi
+    # TZ as it will be passed: local needs the host's local time file
+    TZ_R=$C_TZ
+    if [ "$C_TZ" = local ] && [ ! -e "${SWARMBOX_LOCALTIME_FILE:-/etc/localtime}" ]; then
+        TZ_R=off
+        [ "${WARN_PORTS:-0}" = 0 ] || warn "$([ -n "${SWARMBOX_LOCALTIME_FILE:-}" ] && printf '%s' "$SWARMBOX_LOCALTIME_FILE" || printf '/etc/localtime') not found; the box will use UTC. Set TZ to a zone name such as Europe/Lisbon with \`swarmbox config set TZ\`."
+    fi
+    build_ports
+}
+
+# env-hash (7.1): NAME=value for each listed name that is set, NAME for each that is not; sorted; SHA-256. The values only go
+# through a pipe, never through an argument, and only the hash leaves this function.
+compute_env_hash() {
+    _lines=
+    _oldifs=$IFS
+    IFS=,
+    set -f
+    # shellcheck disable=SC2086
+    set -- $C_ENV_KEYS
+    set +f
+    IFS=$_oldifs
+    for _n in "$@"; do
+        [ -n "$_n" ] || continue
+        eval "_isset=\${$_n+x}"
+        if [ "$_isset" = x ]; then
+            eval "_val=\${$_n}"
+            _lines=$_lines$_n=$_val$NL
+        else
+            _lines=$_lines$_n$NL
+        fi
+    done
+    ENV_HASH=$(printf '%s' "$_lines" | sort | sha256_stdin)
+    _val=
+}
+
+# FP: SHA-256 over the sorted KEY=value lines of every creation-time key (3.7.4) plus env-hash=<hash>.
+compute_fingerprint() {
+    compute_env_hash
+    [ -n "$ENV_HASH" ] || die 3 "could not compute a SHA-256 hash with $SHA."
+    _l="AGENT=$C_AGENT${NL}BROWSER_URL=$C_BROWSER_URL${NL}ENV_KEYS=$C_ENV_KEYS${NL}HOSTNAME=$C_HOSTNAME${NL}HOST_ACCESS=$C_HOST_ACCESS${NL}IMAGE=$C_IMAGE${NL}INIT=$C_INIT${NL}NAME=$C_NAME${NL}PORTS=$PORT_LIST${NL}TZ=$TZ_R${NL}WEB=$C_WEB${NL}WEB_PORT=$C_WEB_PORT${NL}WITH=$C_WITH${NL}WORKSPACE=$C_WORKSPACE${NL}YOLO=$C_YOLO${NL}env-hash=$ENV_HASH$NL"
+    FP=$(printf '%s' "$_l" | sort | sha256_stdin)
+    [ -n "$FP" ] || die 3 "could not compute a SHA-256 hash with $SHA."
+}
+
+# True when the kernel says it is WSL; the probe file is overridable for tests (B32).
+is_wsl() {
+    _pv=${SWARMBOX_TEST_PROC_VERSION:-/proc/version}
+    [ -r "$_pv" ] || return 1
+    grep -qi microsoft "$_pv" 2> /dev/null
+}
+
+# A path under /mnt/<one letter>/ (a Windows drive on WSL, D34).
+win_drive_path() {
+    case $1 in
+        /mnt/[A-Za-z]|/mnt/[A-Za-z]/*) return 0 ;;
+    esac
+    return 1
+}
+
+# D34: refuse a workspace on a Windows drive, by the written path, by each symlink on the way (readlink without options is
+# on Linux and macOS) and by the real path of an existing folder.
+check_not_windows_drive() {
+    is_wsl || return 0
+    _p=$1
+    _n=0
+    while :; do
+        if win_drive_path "$_p"; then
+            die 4 "workspace $1 is on a Windows drive; WSL2 is supported only with the workspace on the Linux filesystem (for example ~/swarmbox)."
+        fi
+        [ -L "$_p" ] || break
+        [ "$_n" -lt 10 ] || break
+        _t=$(readlink "$_p") || break
+        case $_t in
+            /*) _p=$_t ;;
+            *) _p=${_p%/*}/$_t ;;
+        esac
+        _n=$((_n + 1))
+    done
+    if [ -d "$1" ]; then
+        _real=$(cd "$1" 2> /dev/null && pwd -P) || _real=
+        if [ -n "$_real" ] && win_drive_path "$_real"; then
+            die 4 "workspace $1 is on a Windows drive; WSL2 is supported only with the workspace on the Linux filesystem (for example ~/swarmbox)."
+        fi
+    fi
+}
+
+# 3.5 edge cases: the folder is created when missing (one message, parents too), must be a folder, and must be writable.
+check_workspace() {
+    check_not_windows_drive "$C_WORKSPACE"
+    if [ ! -e "$C_WORKSPACE" ] && [ ! -L "$C_WORKSPACE" ]; then
+        (umask 022 && mkdir -p "$C_WORKSPACE") 2> /dev/null || die 4 "cannot create the workspace folder $C_WORKSPACE."
+        warn "created the workspace folder $C_WORKSPACE"
+    fi
+    [ -d "$C_WORKSPACE" ] || die 4 "workspace $C_WORKSPACE is not a folder."
+    if [ ! -w "$C_WORKSPACE" ] || [ ! -x "$C_WORKSPACE" ]; then
+        die 4 "workspace $C_WORKSPACE is not writable by this user"
+    fi
+}
+
+OUT=
+emit() { OUT=$OUT$1$NL; }
+
+# D7: no output may ask for the host network or more privilege. Nothing builds such a line; this is the last look before printing.
+guard_flags() {
+    while IFS= read -r _g; do
+        case $_g in
+            --network*|--net=*|--privileged*|--pid=*|--ipc=*|--uts=*|--cap-add*|--userns=host*)
+                die 70 "internal error: refusing to emit '$_g' (no host network or extra privilege, D7)."
+                ;;
+        esac
+    done <<GEOF
+$OUT
+GEOF
+}
+
+cmd_create_flags() {
+    BROWSER_OVERRIDE_SET=0
+    BROWSER_OVERRIDE=
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --browser-url)
+                [ $# -ge 2 ] || die 2 "--browser-url needs a value (an empty value means port 9222)."
+                BROWSER_OVERRIDE_SET=1
+                BROWSER_OVERRIDE=$2
+                shift 2
+                ;;
+            --browser-url=*)
+                BROWSER_OVERRIDE_SET=1
+                BROWSER_OVERRIDE=${1#--browser-url=}
+                shift
+                ;;
+            *) die 2 "create-flags: unknown argument '$1'." ;;
+        esac
+    done
+    need_sha256
+    load_tool_ports
+    WARN_PORTS=1
+    load_creation 1
+    check_workspace
+    compute_fingerprint
+    case $C_ENV_KEYS in
+        '') ;;
+        *)
+            _oldifs=$IFS
+            IFS=,
+            set -f
+            # shellcheck disable=SC2086
+            set -- $C_ENV_KEYS
+            set +f
+            IFS=$_oldifs
+            for _n in "$@"; do
+                eval "_isset=\${$_n+x}"
+                [ "$_isset" = x ] || warn "$_n is listed but not set in this terminal; the box will start without it"
+            done
+            ;;
+    esac
+    _os=${SWARMBOX_TEST_OS:-$(uname -s)}
+    OUT=
+    emit --userns=keep-id:uid=1000,gid=1000
+    emit --pids-limit=16384
+    if [ "$_os" = Darwin ]; then
+        emit --security-opt
+        emit label=disable
+    fi
+    emit --hostname
+    emit "$C_HOSTNAME"
+    emit -v
+    emit "$C_WORKSPACE:/home/agent"
+    [ "$C_INIT" != 1 ] || emit --init
+    [ "$TZ_R" = off ] || emit "--tz=$TZ_R"
+    emit --tmpfs
+    emit /tmp/swarmbox
+    emit --device
+    emit /dev/net/tun
+    emit --security-opt
+    emit 'unmask=/proc/*'
+    emit -v
+    emit "$C_NAME-containers:/home/agent/.local/share/containers"
+    if [ "$C_HOST_ACCESS" = 1 ]; then
+        emit --add-host
+        emit host.containers.internal:host-gateway
+    fi
+    while IFS= read -r _m; do
+        [ -n "$_m" ] || continue
+        emit -p
+        emit "$_m"
+    done <<PEOF
+$PORT_ARGS
+PEOF
+    if [ "$C_WEB" = 1 ]; then
+        emit -p
+        emit "127.0.0.1:$C_WEB_PORT:7681"
+    fi
+    # the listed variables by name: Podman reads the value from its own environment, so it is never in argv (7.1)
+    if [ -n "$C_ENV_KEYS" ]; then
+        _oldifs=$IFS
+        IFS=,
+        set -f
+        # shellcheck disable=SC2086
+        set -- $C_ENV_KEYS
+        set +f
+        IFS=$_oldifs
+        for _n in "$@"; do
+            eval "_isset=\${$_n+x}"
+            [ "$_isset" = x ] || continue
+            emit -e
+            emit "$_n"
+        done
+    fi
+    emit -e
+    emit "SWARMBOX_NAME=$C_NAME"
+    emit -e
+    emit "SWARMBOX_WEB=$C_WEB"
+    emit -e
+    emit "SWARMBOX_YOLO=$C_YOLO"
+    if [ -n "$C_WITH" ]; then emit -e; emit "SWARMBOX_WITH=$C_WITH"; fi
+    if [ -n "$C_AGENT" ]; then emit -e; emit "SWARMBOX_AGENT=$C_AGENT"; fi
+    if [ -n "$C_BROWSER_URL" ]; then emit -e; emit "SWARMBOX_BROWSER_URL=$C_BROWSER_URL"; fi
+    emit --label
+    emit swarmbox.managed=2
+    emit --label
+    emit "swarmbox.image=$C_IMAGE"
+    emit --label
+    emit "swarmbox.workspace=$C_WORKSPACE"
+    emit --label
+    emit "swarmbox.ports=$PORT_LIST"
+    emit --label
+    emit "swarmbox.env-hash=$ENV_HASH"
+    emit --label
+    emit "swarmbox.fingerprint=$FP"
+    guard_flags
+    printf '%s' "$OUT"
+}
+
+# label_get NAME: the value of a --label NAME=VALUE that was given; returns 1 when there is none.
+label_get() {
+    while IFS= read -r _ll; do
+        case $_ll in
+            "$1="*) printf '%s' "${_ll#*=}"; return 0 ;;
+        esac
+    done <<LEOF
+$LABELS
+LEOF
+    return 1
+}
+
+# fingerprint [--explain] [--label NAME=VALUE]...: the hash of the current configuration; with labels it compares (exit 0 same,
+# 1 different), with --explain it also prints one line per difference it can name (D30). Without labels there is no box to
+# compare with: exit 5 for --explain. Reading the labels from Podman is `up`'s job (a later slice).
+# shellcheck disable=SC2016  # the backticks in the messages are literal (they quote `swarmbox reset` for the reader)
+cmd_fingerprint() {
+    EXPLAIN=0
+    LABELS=
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --explain) EXPLAIN=1; shift ;;
+            --label)
+                [ $# -ge 2 ] || die 2 "--label needs NAME=VALUE."
+                _lv=$2
+                shift 2
+                ;;
+            --label=*) _lv=${1#--label=}; shift ;;
+            *) die 2 "fingerprint: unknown argument '$1'." ;;
+        esac
+        case $_lv in
+            ?*=*) LABELS=$LABELS$_lv$NL; _lv= ;;
+            '') ;;
+            *) die 2 "a label must be NAME=VALUE: '$_lv'." ;;
+        esac
+    done
+    need_sha256
+    load_tool_ports
+    WARN_PORTS=0
+    load_creation 0
+    compute_fingerprint
+    if [ -z "$LABELS" ]; then
+        [ "$EXPLAIN" = 0 ] || die 5 "no box: no labels were given to compare with."
+        printf '%s\n' "$FP"
+        return 0
+    fi
+    _have=$(label_get swarmbox.fingerprint) || die 5 "the box has no swarmbox.fingerprint label (it was not made by this version of SwarmBox)."
+    printf '%s\n' "$FP"
+    [ "$_have" != "$FP" ] || return 0
+    if [ "$EXPLAIN" = 1 ]; then
+        _said=0
+        if _b=$(label_get swarmbox.image) && [ "$_b" != "$C_IMAGE" ]; then
+            printf 'this box was created from %s; the config asks for %s; run `swarmbox reset`\n' "$_b" "$C_IMAGE"
+            _said=1
+        fi
+        if _b=$(label_get swarmbox.workspace) && [ "$_b" != "$C_WORKSPACE" ]; then
+            printf 'the workspace in the config is %s, this box uses %s; run `swarmbox reset` to switch\n' "$C_WORKSPACE" "$_b"
+            _said=1
+        fi
+        if _b=$(label_get swarmbox.ports) && [ "$_b" != "$PORT_LIST" ]; then
+            printf '`PORTS` changed: box has %s, config has %s; run `swarmbox reset` to apply\n' "${_b:-(none)}" "${PORT_LIST:-(none)}"
+            _said=1
+        fi
+        if _b=$(label_get swarmbox.env-hash) && [ "$_b" != "$ENV_HASH" ]; then
+            printf 'the variables changed on the host; run `swarmbox reset` to apply them\n'
+            _said=1
+        fi
+        if [ "$_said" = 0 ]; then
+            printf 'another creation setting changed (the fingerprint differs); run `swarmbox reset` to apply\n'
+        fi
+    fi
+    return 1
+}
+
 cmd_config() {
     [ $# -ge 1 ] || usage
     _sub=$1
@@ -751,7 +1233,9 @@ case $sub in
     version) cmd_version "$@" ;;
     config) cmd_config "$@" ;;
     env) cmd_env "$@" ;;
-    create-flags|fingerprint|url|up|update|reset|stop|remote)
+    create-flags) cmd_create_flags "$@" ;;
+    fingerprint) cmd_fingerprint "$@" ;;
+    url|up|update|reset|stop|remote)
         die 70 "'$sub' is not implemented in this build of the host helper."
         ;;
     -h|--help|help)

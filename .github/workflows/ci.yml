@@ -72,6 +72,7 @@ jobs:
           python3 tests/test_entrypoint.py
           python3 tests/test_helpers.py
           python3 tests/test_host_config.py
+          python3 tests/test_host_create_flags.py
           python3 tests/test_host_shells.py
           python3 tests/test_history_audit.py
           python3 tests/test_image_build.py
@@ -151,6 +152,7 @@ jobs:
           python3 tests/test_dockerfile.py
           python3 tests/test_helpers.py
           python3 tests/test_host_config.py
+          python3 tests/test_host_create_flags.py
           python3 tests/test_host_shells.py
           python3 tests/test_image_build.py
           python3 tests/test_smoke_skeleton.py
