@@ -1102,11 +1102,11 @@ class StopUrlTest(Base):
         r = self.run_h("url", env=self.url_env(SWARMBOX_WEB_PORT="7700"))
         self.assertEqual(r.stdout, "http://127.0.0.1:7700\n")
 
-    def cloudflare_json(self, domain):
+    def cloudflare_json(self, domain, **more):
         d = os.path.join(self.home, ".config", "swarmbox")
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "cloudflare.json"), "w") as f:
-            json.dump({"domain": domain, "emails": ["a@b.c"], "tunnel": "t"}, f, indent=2)
+            json.dump({"domain": domain, "emails": ["a@b.c"], "tunnel": "t", **more}, f, indent=2)
 
     def test_url_adds_the_public_url_from_cloudflare_json(self):
         self.podman()
@@ -1114,6 +1114,52 @@ class StopUrlTest(Base):
         r = self.run_h("url", env=self.url_env())
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://swarmbox.example.com\n")
+        self.assertEqual(self.calls(), [])
+
+    def test_url_prints_remote_from_cloudflare_json_with_name_prefix(self):
+        self.podman()
+        self.cloudflare_json("example.com", name="swarmbox", session="4h")
+        r = self.run_h("url", env=self.url_env())
+        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://swarmbox.example.com\n")
+
+    def test_url_uses_saved_hostname_over_name_dot_domain(self):
+        self.podman()
+        self.cloudflare_json("example.com", hostname="tty.example.com", name="swarmbox")
+        r = self.run_h("url", env=self.url_env())
+        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://tty.example.com\n")
+        self.assertEqual(self.calls(), [])
+
+    def test_url_saved_hostname_belongs_to_its_box_name_only(self):
+        self.podman()
+        self.cloudflare_json("example.com", hostname="tty.example.com", name="swarmbox")
+        r = self.run_h("url", env=self.url_env(SWARMBOX_NAME="other"))
+        self.assertEqual(r.stdout.splitlines()[1], "https://other.example.com")
+
+    def test_url_saved_hostname_outside_the_environment_domain_is_ignored(self):
+        self.podman()
+        self.cloudflare_json("example.com", hostname="tty.example.com", name="swarmbox")
+        r = self.run_h("url", env=self.url_env(SWARMBOX_WEB_DOMAIN="example.net"))
+        self.assertEqual(r.stdout.splitlines()[1], "https://swarmbox.example.net")
+
+    def test_url_ignores_a_bad_saved_hostname_and_falls_back_with_a_warning(self):
+        self.podman()
+        self.cloudflare_json("example.com", hostname="a b;x", name="swarmbox")
+        r = self.run_h("url", env=self.url_env())
+        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://swarmbox.example.com\n")
+        self.assertIn("ignoring", r.stderr)
+
+    def test_url_ignores_a_bad_host_name_with_a_warning(self):
+        self.podman()
+        r = self.run_h("url", env=self.url_env(SWARMBOX_WEB_HOSTNAME="bad host;x"))
+        self.assertEqual(r.stdout, "http://127.0.0.1:7681\n")
+        self.assertIn("ignoring the host name", r.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_url_makes_no_podman_call(self):
+        self.podman()
+        self.cloudflare_json("example.com", hostname="tty.example.com", name="swarmbox")
+        self.run_h("url", env=self.url_env())
+        self.run_h("url", env=self.url_env(SWARMBOX_WEB_HOSTNAME="x.example.org"))
         self.assertEqual(self.calls(), [])
 
     def test_url_public_name_is_per_box(self):
