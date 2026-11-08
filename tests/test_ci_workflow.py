@@ -23,7 +23,7 @@ CI = os.path.join(ROOT, ".github", "workflows", "ci.yml")
 SCHEDULED_ONLY = {"test_clipboard_bridge.py", "test_web_style.py", "test_tmux_browser_keys.py"}
 # Test files that are not meant to run in the macOS job (they need tmux, a browser or GNU tools).
 NOT_ON_MACOS = SCHEDULED_ONLY | {"test_web_terminal.py", "test_start_attach.py", "test_spikes_common.py",
-                                 "test_history_audit.py"}
+                                 "test_history_audit.py", "test_serve_steps.py", "test_serve_container.py"}
 PARSER = "none"
 
 
