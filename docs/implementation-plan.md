@@ -386,7 +386,7 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B2 | OpenCode auto-approve flag (closed in 0.3: `--auto`, no alias, `YOLO_ALIAS=0`) | 0 | feeds 4b |
 | B3 | `serve` as main process; signals; ttyd restart | 2 | fed by the Phase 0 spike (spiked in 0.1, reduced) |
 | B4 | ttyd serves one file | 0 | closed in 0.4 |
-| B5 | Unix socket path limit and the fallback | 3 | closed in 0.2: limit 107 characters, fallback above 100 (3.5); the Phase 3 tests carry it |
+| B5 | Unix socket path limit and the fallback | 3 | closed in 3.4: limit 107 characters measured in 0.2, fallback above 100 (3.5); the helper's boundary tests (`tests/test_host_socket.py`) carry it |
 | B6 | The design on macOS | 6 | not doable in Phase 0 (hardware) |
 | B7 | A host UID other than 1000 | 6 | not doable in Phase 0 (hardware) |
 | B8 | Lowest working Podman version | 6 | not doable in Phase 0 (older Podman versions) |
