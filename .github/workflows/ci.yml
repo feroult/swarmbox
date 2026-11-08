@@ -103,6 +103,7 @@ jobs:
           python3 tests/test_history_audit.py
           python3 tests/test_init_output.py
           python3 tests/test_image_build.py
+          python3 tests/test_image_with_tools.py
           python3 tests/test_mcp_registry.py
           python3 tests/test_migration.py
           python3 tests/test_pubkey_ensure.py
@@ -127,6 +128,7 @@ jobs:
           python3 tests/test_tool_use_remove.py
           python3 tests/test_tool_new.py
           python3 tests/test_tool_doctor.py
+          python3 tests/test_tool_image_level.py
           python3 tests/test_record_checksums.py
           python3 tests/test_tool_link.py
           python3 tests/test_tool_manifest.py
@@ -164,6 +166,7 @@ jobs:
           python3 tests/test_bashrc_container.py
           python3 tests/test_web_container.py
           python3 tests/test_image_build.py
+          python3 tests/test_image_with_tools.py
       - name: Remove the image
         if: always()
         run: podman rmi "$SWARMBOX_IMAGE_TAG" || true

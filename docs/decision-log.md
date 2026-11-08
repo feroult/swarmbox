@@ -1386,3 +1386,41 @@ Impact on the design: 6.9 "4b.5 state". How to reverse: delete safe_rm calls.
 - `doctor` takes the manifest's level by the same rule as `list` (the user level wins).
 - The old stub tests that asserted exit 70 for use, remove, doctor and new were rewritten (test_tool_stub.py, test_tool_install.py); the three new test files are in ci.yml, NOT_ON_MACOS and CONTRIBUTING.
 - test_tool_shim.py failed once in one run right after the first implementation edit, and passed in the next five runs without a change to that test (3 consecutive runs after the last edit, and the earlier ones); not reproduced, cause unknown. Recorded rather than hidden.
+
+## [4b.6] The image-level install is a flag of install (`--image`), not a separate command or an environment variable
+Context: the design says the Dockerfile runs `swarmbox-tool install` "into /opt/swarmbox/tools instead of the workspace" but gives no switch, and nothing in the program could read an install outside the workspace.
+Options: an environment variable (invisible in the Dockerfile and easy to leave set); a new subcommand; a flag on install.
+Chosen: `install NAME --image`, because it is visible in the Dockerfile and in the usage line, and it reuses the one installer path (one installer, two triggers).
+Impact on the design: 6.8 "4b.6 state", 10.2. How to reverse: drop the flag and read an environment variable in cmd_install.
+
+## [4b.6] Run-time lookup: workspace install if complete, else image install, else first-use install into the workspace
+Context: the exit criterion asks that an image install is "not shadowed wrongly by a user-level one". The program only knew the workspace folder.
+Options: the workspace always wins when it has a record; the image always wins; the workspace wins only when it is complete.
+Chosen: workspace-if-complete, because a user who installs a newer version wants it, while a half-removed workspace install (a deleted binary) must not hide a working image copy. Implemented in `root_for` and used by `run`, `list`, `doctor`, the fingerprint gate and `prepare`.
+Impact on the design: 6.8. How to reverse: make root_for print the workspace folder.
+
+## [4b.6] UPDATE=self tools at the image level run their installer with HOME=/opt/swarmbox/tools/<name>/home
+Context: Claude Code's vendor installer writes ~/.local/bin and ~/.local/share under HOME. At build the home is /home/agent, which is replaced by the bind-mounted workspace at run time, so an install there would vanish.
+Options: leave HOME alone (the install is lost); copy the files out afterwards; give the installer its own HOME inside /opt/swarmbox/tools.
+Chosen: its own HOME, set only for the installer. Measured: claude 2.1.319 installs, `claude --version` runs with the real HOME and no network. The vendor installer also writes ~/.claude and ~/.claude.json into that private home (harmless, never read at run time).
+Not checked [unverified]: `claude update` of this install (the vendor updater may look at the real HOME) and its auto-update; the first one is the owner's to decide: an image-level claude is updated by rebuilding.
+Impact on the design: 6.8. How to reverse: remove the ihome lines of run_installer.
+
+## [4b.6] `prepare.sh` does not run at build
+Context: prepare.sh renders files (the opencode config, the local-LLM hook) into the workspace home; at build the home is not the workspace.
+Chosen: skipped with `--image`; `serve` step 7 (`swarmbox-tool prepare`) runs it for every installed tool and now sees image installs. Test: `test_image_install_does_not_run_prepare`.
+How to reverse: call prepare_after_install in image mode.
+
+## [4b.6] `install NAME` without --force is "already installed" when the image has the tool
+Context: install_locked uses is_installed, which now looks at both levels.
+Chosen: accepted: the user gets what they asked for (the tool is there); `--force` makes a workspace copy that then wins. Not changed to keep first-use and install consistent.
+
+## [4b.6] The smoke test and the old tests had stale expectations that this slice corrects
+Context: tests/smoke_image.py still expected one shim (claude), an empty tool-ports and "no command found but the claude shim", which stopped being true in 4b.3 (more tools, clasp's PORTS). The smoke test is opt-in, so nothing failed. The first run on the new image found one more: clasp's shell.sh defines a shell function named clasp, so `command -v clasp` prints `clasp`, not the shim path.
+Chosen: the steps list all seven tools and eleven commands, use `type -P` (ignores functions), expect tool-ports to be exactly `clasp 43323`, add a `mcp-generated` step (chrome-devtools, no npx), and `no-agent` also requires /opt/swarmbox/tools to be empty in a default build. The rule that smoke code never names 43323 is narrowed to never binding or publishing it.
+How to reverse: git revert.
+
+## [4b.6] Real build, recorded
+`dev/dev-build.sh --build-arg WITH_TOOLS=claude`: 117 s with warm layers (the full cold build was not repeated), image 2,092,380,207 bytes, 325 MB in /opt/swarmbox/tools, 0 entries not owned by agent. A default build of the same Dockerfile passes the reduced smoke steps ready, tmpfs-restart, page-built, tool-validate, tool-shim, tool-index-ports, mcp-generated, attach-session, no-agent, up-lifecycle, up-busy-port (nested-podman and nested-cgroup skipped: third nesting level). `WITH_TOOLS=nonesuch` fails the build at the RUN with exit 1. Images swarmbox-test-4b6-img, -def and the failed build's dangling intermediate were removed by name or ID; nothing else was created.
+A tool at the image level is not read by `swarmbox-tool link --user`'s fingerprint scan (that scans the workspace); the shim's gate reads the right record for the tool it runs. Same image on both sides makes this a non-issue except for ARCH, which a baked image cannot have wrong.
+

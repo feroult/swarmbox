@@ -28,12 +28,15 @@
 # SWARMBOX_TEST_USER_SHIMS replaces $SB_SHIMS_DIR (index: sibling `index`); decision log [4a.3]: SWARMBOX_TEST_LOCK replaces the lock
 # file /tmp/swarmbox/tools.lock and SWARMBOX_TEST_ARCH forces TOOL_ARCH (amd64 or arm64) instead of reading `uname -m`; decision log
 # [4b.5]: SWARMBOX_TEST_NODE_MAJOR (may be empty) and SWARMBOX_TEST_LIBC (glibc or musl) replace the Node major and the libc that
-# the fingerprint (6.11) reads from the running image. The tools
+# the fingerprint (6.11) reads from the running image; decision log [4b.6]: SWARMBOX_TEST_IMAGE_STATE replaces /opt/swarmbox/tools. The tools
 # folder itself follows dirs.sh (HOME and the XDG variables), so tests move it by moving HOME.
 
 HOST_DIR=${SWARMBOX_TEST_HOST_DIR:-/usr/local/share/swarmbox/host}
 IMAGE_TOOLS=${SWARMBOX_TEST_IMAGE_TOOLS:-/usr/local/lib/swarmbox/tools}
 IMAGE_SHIMS=${SWARMBOX_TEST_IMAGE_SHIMS:-/usr/local/lib/swarmbox/shims}
+# The image-level INSTALLS (design 6.8, 10.2): what `install NAME --image` writes at build (WITH_TOOLS). Not the manifests (IMAGE_TOOLS).
+IMAGE_STATE=${SWARMBOX_TEST_IMAGE_STATE:-/opt/swarmbox/tools}
+IMAGE_MODE=0
 SB_LIB=${SWARMBOX_TEST_LIB:-/usr/local/lib/swarmbox}
 SCHEMA_KNOWN=1
 KNOWN_KEYS=(SCHEMA NAME KIND PROVIDES VERSION UPDATE UPDATE_CMD YOLO_FLAGS YOLO_ALIAS MCP_FORMAT MCP_FLAGS PORTS SHA256_amd64 SHA256_arm64)
@@ -528,14 +531,20 @@ find_manifest() {
     return 1
 }
 
-# real_command NAME COMMAND: prints the path of the real program, for the manifest in M. Returns 1 when there is none, 2 when it
-# resolves to the shim (a loop if exec'd).
-real_command() {
-    local name=$1 cmd=$2 path real
+# home_at ROOT NAME: the HOME an UPDATE=self installer ran with for the install in ROOT: the workspace home, or for the image state
+# the tool's own folder <image state>/<name>/home (the workspace home is a bind mount at run time, so it cannot hold an image install).
+home_at() {
+    if [ "$1" = "$IMAGE_STATE" ]; then printf '%s' "$IMAGE_STATE/$2/home"; else printf '%s' "$HOME"; fi
+}
+
+# real_command_at ROOT NAME COMMAND: prints the path of the real program of the install in ROOT, for the manifest in M. Returns 1 when
+# there is none, 2 when it resolves to the shim (a loop if exec'd).
+real_command_at() {
+    local root=$1 name=$2 cmd=$3 path real
     if [ "${M[UPDATE]:-managed}" = self ]; then
-        path=$HOME/.local/bin/$cmd
+        path=$(home_at "$root" "$name")/.local/bin/$cmd
     else
-        path=$TDIR/$name/current/bin/$cmd
+        path=$root/$name/current/bin/$cmd
     fi
     [ -f "$path" ] && [ -x "$path" ] || return 1
     real=$(realpath -e -- "$path" 2>/dev/null) || return 1
@@ -544,23 +553,34 @@ real_command() {
     printf '%s' "$path"
 }
 
-# is_installed NAME [COMMAND]: with COMMAND only that command has to resolve, else every PROVIDES entry.
-is_installed() {
-    local name=$1 only=${2:-} c rec
+# is_installed_at ROOT NAME [COMMAND]: with COMMAND only that command has to resolve, else every PROVIDES entry.
+is_installed_at() {
+    local root=$1 name=$2 only=${3:-} c rec
     if [ "${M[UPDATE]:-managed}" = self ]; then
-        rec=$TDIR/$name/self/.swarmbox-env
+        rec=$root/$name/self/.swarmbox-env
     else
-        rec=$TDIR/$name/current/.swarmbox-env
+        rec=$root/$name/current/.swarmbox-env
     fi
     [ -f "$rec" ] || return 1
     if [ -n "$only" ]; then
-        real_command "$name" "$only" >/dev/null
+        real_command_at "$root" "$name" "$only" >/dev/null
         return
     fi
     for c in ${M[PROVIDES]}; do
-        real_command "$name" "$c" >/dev/null || return 1
+        real_command_at "$root" "$name" "$c" >/dev/null || return 1
     done
 }
+
+# root_for NAME: the state folder whose install of NAME is used (design 6.8): in image mode the image state; otherwise the workspace
+# install when it is complete, else the image install when that is complete, else the workspace (where an install goes). A broken
+# workspace install therefore never shadows a good image one.
+root_for() {
+    if [ "$IMAGE_MODE" -eq 1 ]; then printf '%s' "$TDIR"; return 0; fi
+    if is_installed_at "$TDIR" "$1" || ! is_installed_at "$IMAGE_STATE" "$1"; then printf '%s' "$TDIR"; else printf '%s' "$IMAGE_STATE"; fi
+}
+
+real_command() { real_command_at "$(root_for "$1")" "$1" "$2"; }
+is_installed() { is_installed_at "$(root_for "$1")" "$1" "${2:-}"; }
 
 # current_node_major, current_libc: the running image's side of the fingerprint (6.11); test overrides in the header.
 current_node_major() {
@@ -591,15 +611,19 @@ write_fingerprint() {
 # run_installer NAME PREFIX VERSION ARCH: runs install.sh in HOME with the contract variables, its stdout sent to stderr, stdin
 # closed, the lock descriptor closed, a private TMPDIR. Returns the installer's status.
 run_installer() {
-    local name=$1 prefix=$2 version=$3 arch=$4 sha="" t="$WORK/tmp"
+    local name=$1 prefix=$2 version=$3 arch=$4 sha="" t="$WORK/tmp" ihome=""
     mkdir -p "$t"
     sha=${M[SHA256_$arch]:-}
+    if [ "$IMAGE_MODE" -eq 1 ]; then
+        ihome=$(home_at "$IMAGE_STATE" "$name")
+        mkdir -p "$ihome" || return 1
+    fi
     (
-        cd "$HOME" || exit 1
+        cd "${ihome:-$HOME}" || exit 1
         unset TOOL_SHA256
         [ -z "$sha" ] || export TOOL_SHA256=$sha
         export TOOL_PREFIX=$prefix TOOL_VERSION=$version TOOL_ARCH=$arch TMPDIR=$t
-        exec "$MDIR/install.sh"
+        exec env ${ihome:+"HOME=$ihome"} "$MDIR/install.sh"
     ) </dev/null >&2 9>&-
 }
 
@@ -654,6 +678,7 @@ install_locked() {
         run_installer "$name" "$tmp" "$version" "$arch" || status=$?
         if [ "$status" -ne 0 ]; then
             rm -rf "$tmp"
+            [ "$IMAGE_MODE" -eq 0 ] || rm -rf "${ndir:?}/home"
             undo_dirs
             echo "swarmbox-tool: the install of $name failed (installer exit $status). Nothing was recorded; the next call retries." >&2
             return 1
@@ -661,14 +686,15 @@ install_locked() {
         write_fingerprint "$tmp/.swarmbox-env" "$arch" "$version"
         for c in ${M[PROVIDES]}; do
             status=0
-            real_command "$name" "$c" >/dev/null || status=$?
+            real_command_at "$TDIR" "$name" "$c" >/dev/null || status=$?
             if [ "$status" -ne 0 ]; then
                 rm -rf "$tmp"
+                [ "$IMAGE_MODE" -eq 0 ] || rm -rf "${ndir:?}/home"
                 undo_dirs
                 if [ "$status" -eq 2 ]; then
-                    echo "swarmbox-tool: after the install of $name, $HOME/.local/bin/$c resolves to swarmbox-shim: refusing to record it (it would call itself forever)" >&2
+                    echo "swarmbox-tool: after the install of $name, $(home_at "$TDIR" "$name")/.local/bin/$c resolves to swarmbox-shim: refusing to record it (it would call itself forever)" >&2
                 else
-                    echo "swarmbox-tool: the installer of $name finished but $HOME/.local/bin/$c is missing or not executable. Nothing was recorded; the next call retries." >&2
+                    echo "swarmbox-tool: the installer of $name finished but $(home_at "$TDIR" "$name")/.local/bin/$c is missing or not executable. Nothing was recorded; the next call retries." >&2
                 fi
                 return 1
             fi
@@ -791,19 +817,22 @@ cmd_install() {
                 fi
                 shift 2 ;;
             --force) force=1; shift ;;
+            --image) IMAGE_MODE=1; shift ;;
             *) usage ;;
         esac
     done
     TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
+    [ "$IMAGE_MODE" -eq 0 ] || TDIR=$IMAGE_STATE
     find_manifest "$name" || { echo "swarmbox-tool: $FIND_ERR" >&2; exit 1; }
     take_lock || exit 69
     install_locked "$name" "$version" "$force" "Installing $name..." || { drop_lock; exit 69; }
     drop_lock
-    prepare_after_install "$name"
+    # at build (--image) prepare.sh does not run: it renders files in the workspace home, which serve step 7 does at start (4.1)
+    [ "$IMAGE_MODE" -eq 1 ] || prepare_after_install "$name"
 }
 
 cmd_run() {
-    local name cmd real status c found=0
+    local name cmd real status c found=0 root
     [ $# -ge 2 ] || usage
     name=$1
     cmd=$2
@@ -832,7 +861,10 @@ cmd_run() {
         fi
         exit 69
     fi
-    [ "${M[UPDATE]:-managed}" = self ] || export PATH="$TDIR/$name/current/bin:$PATH"
+    if [ "${M[UPDATE]:-managed}" != self ]; then
+        root=$(root_for "$name")
+        export PATH="$root/$name/current/bin:$PATH"
+    fi
     cleanup
     WORK=
     exec 9>&-
@@ -889,13 +921,13 @@ cmd_list() {
             elif [ "${M[UPDATE]:-managed}" = self ]; then
                 if is_installed "$name"; then
                     state="installed (self)"
-                elif [ -f "$TDIR/$name/self/.swarmbox-env" ]; then
+                elif [ -f "$(root_for "$name")/$name/self/.swarmbox-env" ]; then
                     state="needs reinstall (the command is missing)"
                 else
                     state="not installed"
                 fi
             else
-                cur=$(readlink "$TDIR/$name/current" 2>/dev/null || true)
+                cur=$(readlink "$(root_for "$name")/$name/current" 2>/dev/null || true)
                 if [ -z "$cur" ]; then
                     state="not installed"
                 elif is_installed "$name"; then
@@ -1005,7 +1037,9 @@ fp_read() { sed -n "s/^$2=//p" "$1" | head -n 1; }
 
 # fp_record NAME: prints the path of the fingerprint file of an installed NAME (M must hold its manifest).
 fp_record() {
-    if [ "${M[UPDATE]:-managed}" = self ]; then printf '%s' "$TDIR/$1/self/.swarmbox-env"; else printf '%s' "$TDIR/$1/current/.swarmbox-env"; fi
+    local r
+    r=$(root_for "$1")
+    if [ "${M[UPDATE]:-managed}" = self ]; then printf '%s' "$r/$1/self/.swarmbox-env"; else printf '%s' "$r/$1/current/.swarmbox-env"; fi
 }
 
 # fp_check NAME: sets FP_ARCH (non-empty: "ARCH a -> b", the tool cannot run here) and FP_WARN (non-empty: NODE_MAJOR or LIBC
@@ -1295,7 +1329,7 @@ doctor_classify() {
             return 0
         fi
     else
-        DCUR=$(readlink "$TDIR/$name/current" 2>/dev/null || true)
+        DCUR=$(readlink "$(root_for "$name")/$name/current" 2>/dev/null || true)
         if [ -z "$DCUR" ]; then
             DS=missing
             return 0
@@ -1380,7 +1414,7 @@ cmd_doctor() {
 }
 
 usage() {
-    echo "usage: swarmbox-tool validate [DIR] | link --system|--user | install NAME [--version X] [--force] | run NAME COMMAND [-- ARGS...] | list | update NAME | use NAME VERSION | remove NAME [--purge] | new NAME [--repo | --dir DIR] | doctor [--fix] | prepare" >&2
+    echo "usage: swarmbox-tool validate [DIR] | link --system|--user | install NAME [--version X] [--force] [--image] | run NAME COMMAND [-- ARGS...] | list | update NAME | use NAME VERSION | remove NAME [--purge] | new NAME [--repo | --dir DIR] | doctor [--fix] | prepare" >&2
     exit 64
 }
 
