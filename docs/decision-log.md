@@ -1470,3 +1470,10 @@ Options: `shell: bash` (runs `-e -o pipefail`); `set -o pipefail` in the script;
 Chosen: both `shell: bash` and `set -o pipefail` as the first line, because the explicit line stays correct if the shell setting is changed, and a test now asserts both (tests/test_ci_workflow.py).
 Impact on the design: none.
 How to reverse: remove the `shell:` key and the `set -o pipefail` line, and the assertions.
+
+## [4b.7] The real test cleans up even when its setup fails (review fix, round 2)
+Context: `Real.setUpClass` created the volume and a container, but unittest does not call `tearDownClass` when `setUpClass` raises. A missing `SWARMBOX_IMAGE_TAG` image left one `swarmbox-test-4b7-vol-*` volume per tool (6 reproduced by the reviewer).
+Options: wrap setUpClass in try/except and clean up; `addClassCleanup` registered before anything can fail.
+Chosen: `addClassCleanup` (volume first, then the box list, so boxes go first) replaces `tearDownClass`; `Box.__init__` removes its own half-created container before raising; `setUpModule` checks `podman image exists` for a given tag and fails once before any volume is created. Two default-mode tests with a fake podman assert both (a failing `run` still gets `volume rm -f` and `rm -f -t 0`; a missing image creates no volume).
+Impact on the design: none.
+How to reverse: restore `tearDownClass` and drop the image check and the two tests.
