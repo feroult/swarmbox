@@ -1,0 +1,127 @@
+# >>> swarmbox @VERSION@ >>>
+function swarmbox
+    set -l marker '@VERSION@'
+    set -l image @IMAGE@
+    set -l seed_with @SEED_WITH@
+    set -l seed_ws @SEED_WORKSPACE@
+    set -l seed_image @SEED_IMAGE@   # seed values of `swarmbox init` (design 3.7.5)
+    set -l data "$XDG_DATA_HOME"
+    if test -z "$data"; or not string match -q -r '^/' -- "$data"
+        set data "$HOME/.local/share"
+    end
+    set -l dir "$data/swarmbox/host"
+    set -l host "$dir/swarmbox-host"
+    set -l hv ''
+    set -l need 0
+    set -l skew 0
+    set -l first ''
+    set -q argv[1]; and set first "$argv[1]"
+    # the helper's version; empty when it is missing, not executable, or prints something that is not a version
+    if test -x "$host"
+        set hv ("$host" version 2>/dev/null | head -n 1)
+        if not string match -q -r '^[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*$' -- "$hv"
+            set hv ''
+        end
+    end
+    # bootstrap (D33): extract only when there is no usable helper or it is older than this block (sort -V: 2.0.10 is newer than
+    # 2.0.9); a newer helper is kept with a one-line notice; when sort has no -V there is no answer and the helper is kept
+    if test -z "$hv"
+        set need 1
+    else if test "$hv" != "$marker"
+        set -l lowest (printf '%s\n%s\n' "$hv" "$marker" | sort -V 2>/dev/null | head -n 1)
+        if test -n "$lowest"
+            if test "$lowest" = "$hv"
+                set need 1
+            else
+                set skew 1
+            end
+        end
+    end
+    if test "$need" = 1
+        if not command -q podman
+            echo "swarmbox: Podman is not installed." >&2
+            echo "Linux: sudo apt install podman (Debian/Ubuntu) or sudo dnf install podman (Fedora/RHEL)" >&2
+            echo "macOS: brew install podman" >&2
+            return 3
+        end
+        set -l tmp ''
+        mkdir -p (dirname "$dir") 2>/dev/null
+        and set tmp (mktemp -d "$dir.new.XXXXXX" 2>/dev/null)
+        if test -z "$tmp"; or not test -d "$tmp"
+            echo "swarmbox: cannot make a temporary folder next to $dir." >&2
+            return 3
+        end
+        # no pipe: a pipe's status is the last command's. The archive goes to a file, is unpacked, and the result is tested.
+        set -l msg ''
+        command podman run --rm "$image" host-helper >"$tmp/helper.tar" 2>"$tmp/podman.err"
+        set -l prc $status
+        if test "$prc" -ne 0
+            set msg (tail -n 1 "$tmp/podman.err" 2>/dev/null)
+            if test -z "$msg"
+                set msg "podman exited with status $prc"
+            end
+        else if not tar -x -C "$tmp" -f "$tmp/helper.tar" >/dev/null 2>&1; or not test -x "$tmp/swarmbox-host"
+            set msg 'the image has no usable host helper'
+        end
+        if test -n "$msg"
+            rm -rf "$tmp"
+            echo "swarmbox: cannot pull $image: $msg. Check the network, or set SWARMBOX_IMAGE to an image you already have." >&2
+            return 3
+        end
+        rm -f "$tmp/helper.tar" "$tmp/podman.err"
+        rm -rf "$dir.old"
+        if test -e "$dir"; or test -L "$dir"
+            if not mv "$dir" "$dir.old"
+                rm -rf "$tmp"
+                echo "swarmbox: cannot replace the helper in $dir." >&2
+                return 3
+            end
+        end
+        if not mv "$tmp" "$dir"
+            mv "$dir.old" "$dir" 2>/dev/null
+            rm -rf "$tmp"
+            echo "swarmbox: cannot replace the helper in $dir." >&2
+            return 3
+        end
+        rm -rf "$dir.old"
+    else if test "$skew" = 1
+        echo "swarmbox: the helper ($hv) is newer than this function ($marker); kept" >&2
+    end
+    # seeds (D20, 3.7.5): given as arguments, never as SWARMBOX_* variables (those would override the file on every call); a relative
+    # workspace is made absolute here, on the host, against the folder of this call
+    if test -n "$seed_ws"; and not string match -q -r '^(/|~$|~/)' -- "$seed_ws"
+        set seed_ws (pwd)"/"(string replace -r '^\./' '' -- "$seed_ws")
+    end
+    set -l sa config seed
+    test -n "$seed_with"; and set sa $sa --with "$seed_with"
+    test -n "$seed_ws"; and set sa $sa --workspace "$seed_ws"
+    test -n "$seed_image"; and set sa $sa --image "$seed_image"
+    if test (count $sa) -gt 2
+        "$host" $sa
+        or return $status
+    end
+    switch "$first"                                 # words handled on the host (3.3)
+        case stop reset up url update config env remote fingerprint version
+            "$host" $argv
+            return $status
+    end
+    "$host" up
+    or return $status
+    set -l name ("$host" config get NAME)
+    or return $status
+    set -l pe exec -i
+    if test -t 0; and test -t 1                     # -t only with a terminal on both ends (3.3, "No terminal")
+        set pe exec -it
+    end
+    set pe $pe -e TERM -e COLORTERM "$name" swarmbox-entrypoint
+    switch "$first"                                 # words forwarded as they are (3.3)
+        case pubkey tool
+            command podman $pe $argv
+            return $status
+        case attach
+            set -e argv[1]                          # a leading "attach" is a prefix, not an argument
+    end
+    command podman $pe attach $argv                 # nothing, --plain, or any other command; the status is the command's
+    return $status
+end
+# <<< swarmbox @VERSION@ <<<
