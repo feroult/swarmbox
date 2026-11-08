@@ -175,7 +175,10 @@ class FastPathTest(Base):
         self.podman(lookup=self.running())
         r = self.up()
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertLessEqual(len(self.calls()), 2, self.calls())
+        # slice 3.4: step 6 adds `system connection list` (and an add only when the connection is not registered yet)
+        plain = [c for c in self.calls() if c[:1] != ["system"]]
+        self.assertLessEqual(len(plain), 2, self.calls())
+        self.assertLessEqual(len(self.calls()) - len(plain), 2, self.calls())
 
     def test_the_fast_path_does_not_need_the_version_or_the_tun_file(self):
         self.podman(lookup=self.running())
