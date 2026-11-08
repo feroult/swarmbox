@@ -621,5 +621,257 @@ class ParityTableTest(unittest.TestCase):
         self.assertIn("[unverified]", self.section)
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Slice 6.5: README and docs/*.md rewritten for 2.0 (design 12.5, 3.8, D36; plan section 9).
+import json  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+from helpers import FakePodman  # noqa: E402
+
+README = read("README.md")
+INIT_SH = os.path.join(ROOT, "container", "scripts", "swarmbox-init.sh")
+HOST = os.path.join(ROOT, "container", "host", "swarmbox-host")
+OLD_NAMES = re.compile(r"(?<![\w/-])start\.sh|(?<![\w/-])build\.sh|(?<![/\w])lib/|\.work\b|~/\.swarmbox|--web\b|--reset\b|pkill ttyd|swarmbox-web-terminal|--env-keys")
+INIT_ENV = {"PATH": os.environ["PATH"], "SWARMBOX_TEST_HOST_DIR": os.path.join(ROOT, "container", "host")}
+HOST_WORDS_ROUTED = ["stop", "reset", "up", "url", "update", "config", "env", "remote", "fingerprint", "version"]
+FORWARDED_WORDS = ["attach", "pubkey", "tool", "--plain", "claude", "gemini", "yolo", "bash"]
+
+
+def section(text, heading):
+    """The text of a '## heading' section up to the next '## ' heading."""
+    m = re.search(r"^## %s[^\n]*$" % re.escape(heading), text, re.M)
+    assert m, "no section '## %s'" % heading
+    n = re.search(r"^## ", text[m.end():], re.M)
+    return text[m.end():m.end() + n.start()] if n else text[m.end():]
+
+
+def outside_fences(text):
+    return re.sub(r"^```.*?^```", "", text, flags=re.M | re.S)
+
+
+def slug(h):
+    h = re.sub(r"`", "", h.strip().lower())
+    h = re.sub(r"[^\w\- ]", "", h)
+    return h.replace(" ", "-")
+
+
+def anchors(text):
+    return {slug(m.group(1)) for m in re.finditer(r"^#{1,6} +(.+?)\s*$", outside_fences(text), re.M)}
+
+
+def uninstall_steps():
+    sec = section(README, "Uninstall")
+    parts = re.split(r"^(\d+)\. ", sec, flags=re.M)
+    return {int(parts[i]): parts[i + 1] for i in range(1, len(parts) - 1, 2)}
+
+
+def ticks(step):
+    return re.findall(r"`([^`]+)`", step)
+
+
+class ReadmeSixFiveTest(unittest.TestCase):
+    def test_readme_is_short_and_has_the_sections(self):
+        self.assertLess(len(README.splitlines()), 200)
+        for h in ("Install", "First use", "Uninstall", "Privacy"):
+            section(README, h)
+        self.assertRegex(README, r"(?m)^## Migrating from v0\.1\.0")
+        self.assertEqual(README.count("```") % 2, 0)
+
+    def test_install_line_uses_the_placeholder_org_and_says_so(self):
+        self.assertIn("podman run --rm -e SHELL ghcr.io/<org>/swarmbox:2.0.0 init --with claude", README)
+        self.assertIn("placeholder", section(README, "Install").lower())
+        self.assertNotRegex(README, r"ghcr\.io/(?!<org>)")
+
+    def test_first_use_covers_the_topics(self):
+        for needle in ("init --with claude", "swarmbox config", "swarmbox env add", "swarmbox url", "swarmbox update",
+                       "update --to", "SWARMBOX_NAME=", "WITH", "docs/cloudflare.md", "docs/web-terminal.md",
+                       "docs/nested-podman.md", "swarmbox remote setup", "swarmbox reset"):
+            self.assertIn(needle, README, needle)
+
+    def test_seven_uninstall_steps_in_order(self):
+        steps = uninstall_steps()
+        self.assertEqual(sorted(steps), [1, 2, 3, 4, 5, 6, 7])
+        needles = {1: ["# >>> swarmbox 2.0.0 >>>", "# <<< swarmbox 2.0.0 <<<"], 2: ["podman rm -f swarmbox", "SWARMBOX_NAME"],
+                   3: ["~/.local/share/swarmbox/host", "~/.local/state/swarmbox"], 4: ["~/.config/swarmbox"],
+                   5: ["swarmbox remote off", "swarmbox-cloudflared"], 6: ["swarmbox-containers", "~/swarmbox"],
+                   7: ["podman rmi", "ghcr.io/<org>/swarmbox:<tag>"]}
+        for n, items in needles.items():
+            for it in items:
+                self.assertIn(it, steps[n], "step %d lacks %s" % (n, it))
+        self.assertIn("before step 1", steps[5])
+
+    def test_step_one_marker_text_is_the_functions(self):
+        r = subprocess.run(["sh", INIT_SH, "--shell", "bash"], capture_output=True, text=True, stdin=subprocess.DEVNULL, env=INIT_ENV)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        lines = r.stdout.splitlines()
+        with open(os.path.join(ROOT, "container", "host", "VERSION")) as f:
+            version = f.read().strip()
+        first = [l for l in lines if l.startswith("# >>> swarmbox ")][0]
+        last = [l for l in lines if l.startswith("# <<< swarmbox ")][0]
+        self.assertEqual(first, "# >>> swarmbox %s >>>" % version)
+        self.assertEqual(last, "# <<< swarmbox %s <<<" % version)
+        self.assertIn(first, uninstall_steps()[1])
+        self.assertIn(last, uninstall_steps()[1])
+
+    def test_no_old_scripts_outside_the_migration_section(self):
+        body = README.replace(section(README, "Migrating from v0.1.0"), "")
+        for ln in body.splitlines():
+            m = OLD_NAMES.search(ln)
+            self.assertFalse(m and "v0.1.0" not in ln, "stale v0.1.0 text in the README: %r" % ln)
+
+    def test_other_docs_name_no_old_instruction(self):
+        for name in ("web-terminal.md", "nested-podman.md", "local-registry.md", "cloudflare.md"):
+            text = read("docs", name)
+            for ln in text.splitlines():
+                m = OLD_NAMES.search(ln)
+                self.assertFalse(m and "v0.1.0" not in ln and "history" not in ln,
+                                 "docs/%s names the old way without marking it: %r" % (name, ln))
+
+    def test_every_swarmbox_command_in_code_blocks_is_a_real_word(self):
+        usage = subprocess.run(["sh", HOST], capture_output=True, text=True).stderr
+        tool_words = set(re.findall(r"^    ([a-z]+)\) cmd_", read("container", "scripts", "swarmbox-tool.sh"), re.M))
+        tool_words |= {"validate", "link"}
+        subs = {"config": ["get", "set", "list", "seed"], "env": ["add", "rm", "list"], "remote": ["setup", "status", "off", "token"]}
+        for w, words in subs.items():     # the helper's own usage must list each of them
+            for x in words:
+                self.assertRegex(usage, r"\b%s\b.*\b%s\b" % (w, x))
+        seen = 0
+        for block in re.findall(r"^```[a-z]*\n(.*?)^```", README, re.M | re.S):
+            for ln in block.splitlines():
+                words = ln.split("  #")[0].strip().split()
+                while words and re.match(r"^[A-Z_]+=", words[0]):
+                    words = words[1:]
+                if not words or words[0] != "swarmbox":
+                    continue
+                seen += 1
+                w = words[1] if len(words) > 1 else "attach"
+                self.assertIn(w, HOST_WORDS_ROUTED + FORWARDED_WORDS, ln)
+                if w in subs and len(words) > 2:
+                    self.assertIn(words[2], subs[w], ln)
+                if w == "tool" and len(words) > 2:
+                    self.assertIn(words[2], tool_words, ln)
+                if w in HOST_WORDS_ROUTED:
+                    self.assertIn(w, usage, ln)
+        self.assertGreater(seen, 8)
+
+    def test_every_relative_link_resolves(self):
+        files = [os.path.join(ROOT, "README.md")] + sorted(glob.glob(os.path.join(ROOT, "docs", "*.md")))
+        bad = []
+        for f in files:
+            text = outside_fences(open(f, encoding="utf-8").read())
+            text = re.sub(r"`[^`\n]*`", "", text)
+            for m in re.finditer(r"\]\(([^)\s]+)\)", text):
+                target = m.group(1)
+                if re.match(r"[a-z]+:", target):
+                    continue
+                path, _, frag = target.partition("#")
+                dest = os.path.normpath(os.path.join(os.path.dirname(f), path)) if path else f
+                if not os.path.exists(dest):
+                    bad.append("%s -> %s" % (os.path.relpath(f, ROOT), target))
+                elif frag and dest.endswith(".md") and frag not in anchors(open(dest, encoding="utf-8").read()):
+                    bad.append("%s -> %s (no such heading)" % (os.path.relpath(f, ROOT), target))
+        self.assertEqual(bad, [])
+
+    def test_telemetry_and_logs_statement_matches_design_12_5(self):
+        sec = section(README, "Privacy")
+        self.assertRegex(sec.lower(), r"no telemetry")
+        d = DESIGN[DESIGN.index("### 12.5 Uninstall"):DESIGN.index("## 13. Tests and CI")]
+        design_paths = re.findall(r"`([^`]*\.local/state/swarmbox/?)`", d)
+        self.assertGreaterEqual(len(design_paths), 2)
+        for p in design_paths:
+            self.assertIn(p.replace("host:", ""), sec, p)
+        for name in ("serve.log", "health", "web-terminal.log"):
+            self.assertIn(name, sec)
+
+    def test_uninstall_paths_are_the_ones_dirs_sh_produces(self):
+        home = "/home/fake"
+        r = subprocess.run(["sh", "-c", '. "$1"; printf "%s\\n%s\\n%s\\n" "$SB_CONFIG_DIR" "$SB_DATA_DIR" "$SB_STATE_DIR"', "sh",
+                            os.path.join(ROOT, "container", "scripts", "dirs.sh")],
+                           capture_output=True, text=True, env={"HOME": home, "PATH": os.environ["PATH"]})
+        cfg, data, state = [x.replace(home, "~") for x in r.stdout.split()]
+        steps = uninstall_steps()
+        self.assertIn(data + "/host", steps[3])
+        self.assertIn(state, steps[3])
+        self.assertIn(cfg, steps[4])
+        self.assertIn("/swarmbox/host", read("container", "host", "templates", "bash"))
+        self.assertNotIn("~/.swarmbox", README.replace(section(README, "Migrating from v0.1.0"), ""))
+
+    def test_steps_one_to_four_on_a_fake_home(self):
+        steps = uninstall_steps()
+        home = tempfile.mkdtemp(prefix="swarmbox-test-65-")
+        try:
+            def w(rel, text="x\n"):
+                p = os.path.join(home, rel)
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                with open(p, "w") as f:
+                    f.write(text)
+            fn = subprocess.run(["sh", INIT_SH, "--shell", "bash", "--with", "claude"], capture_output=True, text=True, env=INIT_ENV).stdout
+            self.assertIn("# >>> swarmbox", fn)
+            rc = "export A=1\n" + fn + "alias k=ls\n" + fn + "export B=2\n"     # a second init run leaves a second block
+            w(".bashrc", rc)
+            w(".local/share/swarmbox/host/swarmbox-host")
+            w(".local/share/swarmbox/host/VERSION", "2.0.0\n")
+            w(".local/state/swarmbox/notices")
+            w(".local/state/swarmbox/locks/up.lock")
+            w(".config/swarmbox/config", "WITH=claude\n")
+            w(".config/swarmbox/cloudflare.json", "{}\n")
+            w(".config/swarmbox/second/config", "WITH=\n")
+            w(".local/share/other/keep")
+            w(".config/other/keep")
+            w("swarmbox/proj/file.txt")
+            keep = {".local/share/other/keep", ".config/other/keep", "swarmbox/proj/file.txt"}
+            with FakePodman() as fp:
+                env = {"HOME": home, "PATH": fp.env()["PATH"]}
+                for n in (1, 2, 3, 4):
+                    cmds = [c for c in ticks(steps[n]) if re.match(r"(sed|podman|rm) ", c)]
+                    self.assertTrue(cmds, "step %d has no command" % n)
+                    for c in cmds:
+                        if n == 1 and ".bashrc" not in c:
+                            continue    # the zsh and fish lines are the same command on another file
+                        r = subprocess.run(["sh", "-c", c], env=env, capture_output=True, text=True, cwd=home)
+                        self.assertEqual(r.returncode, 0, "%s: %s" % (c, r.stderr))
+                calls = fp.calls()
+            self.assertIn(["rm", "-f", "swarmbox"], calls)
+            self.assertIn(["system", "connection", "rm", "swarmbox"], calls)
+            left = set()
+            for d, _, names in os.walk(home):
+                for n in names:
+                    left.add(os.path.relpath(os.path.join(d, n), home))
+            with open(os.path.join(home, ".bashrc")) as f:
+                self.assertEqual(f.read(), "export A=1\nalias k=ls\nexport B=2\n")
+            with open(os.path.join(home, ".bashrc.bak")) as f:
+                self.assertEqual(f.read(), rc)
+            self.assertEqual(left, keep | {".bashrc", ".bashrc.bak"})
+        finally:
+            shutil.rmtree(home, ignore_errors=True)
+
+
+class DocsSixFiveTest(unittest.TestCase):
+    def test_web_terminal_doc_is_2_0(self):
+        t = read("docs", "web-terminal.md")
+        for needle in ("swarmbox-web restart", "build-index.sh", "WEB_PORT", ".config/swarmbox/web-terminal.conf",
+                       "swarmbox url", "swarmbox --plain", "web-terminal.log"):
+            self.assertIn(needle, t, needle)
+        self.assertEqual(t.count("```") % 2, 0)
+
+    def test_nested_podman_doc_is_2_0(self):
+        t = read("docs", "nested-podman.md")
+        for needle in ("podman -c swarmbox", "swarmbox-containers", "swarmbox config set PORTS", "swarmbox reset",
+                       "always on", "SWARMBOX_NAME", "/dev/net/tun"):
+            self.assertIn(needle, t, needle)
+        self.assertIn("[unverified", t)
+
+    def test_design_and_plan_carry_the_6_5_state(self):
+        self.assertIn("**6.5 state", PLAN)
+        self.assertIn("**6.5 state", DESIGN)
+        self.assertNotIn("their rewrite is the rest of Phase 6", DESIGN)
+        self.assertNotIn("The documentation rewrite (README, `docs/web-terminal.md`, `docs/nested-podman.md`) remains", PLAN)
+
+    def test_status_row_and_decision_log_entry(self):
+        self.assertRegex(read("docs", "implementation-status.md"), r"(?m)^\| 6\.5-")
+        self.assertRegex(read("docs", "decision-log.md"), r"(?m)^## \[6\.5\] ")
+
+
 if __name__ == "__main__":
     unittest.main()
