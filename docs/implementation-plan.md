@@ -184,6 +184,8 @@ Tests first
 - The portable mode check on a file with extended attributes where possible; the WSL refusal with fake paths; the fast path call count.
 - The **socket-path fallback** (3.5, B5 measured in 0.2): a workspace whose socket path is 100 characters uses it directly, 101 gets the short symlink, a symlink path over 100 exits 4; no symlink is made for the default workspace.
 
+**3.1 state (done):** `container/host/swarmbox-host` (POSIX sh) with `version`, `config get|set|list|seed` and `env add|rm|list`, `container/host/VERSION`, `tests/test_host_config.py` and `tests/test_host_shells.py`; the B22, B23 and B34 Linux parts are checked (design Part B, "Results of Phase 3"). The other subcommands answer exit 70 until their slices.
+
 Closes: B5 (with the fallback; the spike fed it), B19 (`sort -V`, Linux and CI images), B20 (against the local registry), B21 (`-e SHELL`, Linux), B22 (tunnel token mode, Linux; WSL home rechecked in Phase 6), B23 (the helper under different `sh` implementations), B31 (arm64 build and run), B32 (the WSL refusal), B33 (the `up` lock and cleanup), B34 (the mode check), B35 (the fast path budget).
 
 **Exit criteria:** with a local registry and a placeholder `<org>`, on a clean Linux machine, the documented install line followed by `swarmbox` creates the box; a second terminal joins it; two terminals started at once create one box; `stop`, `reset` (offline after `update`) and `update` behave as specified; the function and helper tests pass in CI.
@@ -397,8 +399,8 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B19 | `sort -V` | 3 | macOS part rechecked in 6 |
 | B20 | `update` and the exact tag | 3 | real registry rechecked in 7 |
 | B21 | `-e SHELL` reaches `init` | 3 | macOS part rechecked in 6 |
-| B22 | Tunnel token file mode | 3 | macOS and WSL home rechecked in 6 |
-| B23 | Helper under several `sh` | 3 | macOS part rechecked in 6 |
+| B22 | Tunnel token file mode | 3 | macOS and WSL home rechecked in 6; Linux part checked in 3.1 (macOS and others in 6) |
+| B23 | Helper under several `sh` | 3 | macOS part rechecked in 6; Linux part checked in 3.1 (macOS and others in 6) |
 | B24 | `chrome-devtools-mcp` installed program | 2 | used by 4b |
 | B25 | Go checksum source | 0 | feeds 4b; closed in 0.4 |
 | B26 | UID of the base image's `node` user | 2 | |
@@ -409,6 +411,6 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B31 | arm64 build and run | 3 | |
 | B32 | WSL workspace refusal | 3 | |
 | B33 | `up` lock and cleanup | 3 | |
-| B34 | Portable mode check | 3 | macOS part rechecked in 6 |
+| B34 | Portable mode check | 3 | macOS part rechecked in 6; Linux part checked in 3.1 (macOS and others in 6) |
 | B35 | Fast path of `up` | 3 | |
 | B36 | Idle window of `main` | 2 | closed in 2.3 |

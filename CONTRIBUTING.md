@@ -42,6 +42,8 @@ python3 tests/test_docs_consistency.py
 | `test_entrypoint.py` | the subcommands of `container/entrypoint.sh` (serve aside): dispatch with arguments kept, `host-helper` archive, any other command, fake programs on `PATH` |
 | `test_helpers.py` | the fake `podman` of `tests/helpers.py` |
 | `test_history_audit.py` | the history scanner `tests/audit_history.py` and the shape of `docs/history-audit.md` |
+| `test_host_config.py` | `container/host/swarmbox-host`: `version`, `config get\|set\|list\|seed`, `env add\|rm\|list`, the token and the portable mode check (stat shims, a fake `ls`), all in mktemp homes with a pty for the token |
+| `test_host_shells.py` | the same helper under dash, `bash --posix`, busybox sh, zsh in sh emulation and bash named `sh`; no bashisms; `shellcheck -s sh` |
 | `test_image_build.py` | the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; builds `swarmbox-test-img-<rand>` and removes it) |
 | `test_migration.py` | `container/scripts/swarmbox-migrate.sh` (the layout migration, serve step 4) on a fixture workspace built from the v0.1.0 code in mktemp, and `serve` running it |
 | `test_pubkey_ensure.py` | `swarmbox-pubkey --ensure` (`container/scripts/ssh-key.sh`): once, idempotent, never overwrites, only under the test `HOME` |

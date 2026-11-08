@@ -1,0 +1,764 @@
+#!/bin/sh
+# swarmbox-host: the SwarmBox host helper (design 3.7.1, 3.7.2). POSIX sh, no bashisms (no `local`, no `echo -e`, no
+# `read -s`, no arrays, no `[[ ]]`); it must run under dash, busybox sh, bash in POSIX mode and macOS /bin/sh (D16, B23).
+#
+# Slice 3.1 builds the configuration surface only; nothing here calls Podman:
+#   version                      the version in the file VERSION next to this program
+#   config get KEY               resolved value (environment, then file, then default); 2 unknown key, 1 unset
+#   config set KEY [VALUE]       validate and write one key (the tunnel token is read from the terminal, never argv)
+#   config list                  KEY=VALUE<TAB>source, the token only as set or unset
+#   config seed [--with L] [--workspace DIR] [--image REF]
+#   env add|rm NAME, env list    the names of host variables passed to the box at creation (ENV_KEYS)
+# create-flags, fingerprint, url, up, update, reset, stop and remote arrive in later slices of Phase 3.
+#
+# Data goes to standard output, messages to standard error. Exit codes (3.7.2, 3.8): 0 ok; 1 unset key or a write that
+# failed; 2 usage, unknown key, invalid value or name; 3 prerequisite missing (here: a missing or unreadable VERSION).
+# Paths honor HOME, XDG_CONFIG_HOME and XDG_STATE_HOME (an empty or relative XDG value is ignored, as in dirs.sh).
+# The file mode is read as an octal number (stat -c %a, then stat -f %Lp, then find -perm); `ls` output is never parsed.
+
+# shellcheck disable=SC2154  # some variables are assigned through eval (keys are validated names, never user text)
+LC_ALL=C
+export LC_ALL
+umask 077
+
+NL='
+'
+CR=$(printf '\r')
+REGISTRY_REPO='ghcr.io/<org>/swarmbox'   # <org> is the documented placeholder until the name is settled (D32)
+
+warn() { printf 'swarmbox: %s\n' "$*" >&2; }
+die() { _rc=$1; shift; warn "$*"; exit "$_rc"; }
+
+usage() {
+    cat >&2 <<'USAGE'
+usage: swarmbox-host <subcommand> [args]
+  version
+  config get KEY | config set KEY [VALUE] | config list
+  config seed [--with L] [--workspace DIR] [--image REF]
+  env add NAME | env rm NAME | env list
+USAGE
+    exit 2
+}
+
+# ---------------------------------------------------------------- the key table (design 8.2)
+
+# Keys of the config file. NAME is not one of them: it selects the folder, so it comes from SWARMBOX_NAME only.
+is_file_key() {
+    case $1 in
+        WORKSPACE|HOSTNAME|TZ|INIT|PORTS|HOST_ACCESS|BROWSER_URL|WEB|WEB_PORT|WITH|AGENT|YOLO|ENV_KEYS|IMAGE|CLOUDFLARE_TUNNEL_TOKEN) return 0 ;;
+    esac
+    return 1
+}
+
+is_key() { [ "$1" = NAME ] || is_file_key "$1"; }
+
+ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN'
+
+# Built-in default; empty means "no default" (the key is unset). AGENT has none here: the box picks the first agent of WITH.
+default_of() {
+    case $1 in
+        NAME|HOSTNAME) printf 'swarmbox' ;;
+        WORKSPACE) printf '%s/swarmbox' "$HOME" ;;
+        TZ) printf 'local' ;;
+        INIT) printf 'auto' ;;
+        HOST_ACCESS) printf '0' ;;
+        WEB|YOLO) printf '1' ;;
+        WEB_PORT) printf '7681' ;;
+        IMAGE) printf '%s:%s' "$REGISTRY_REPO" "$VERSION_STR" ;;
+    esac
+}
+
+# ---------------------------------------------------------------- version
+
+self_dir() {
+    case $0 in
+        */*) _d=${0%/*} ;;
+        *) _d=. ;;
+    esac
+    (cd "$_d" 2>/dev/null && pwd -P)
+}
+
+# Prints the version from the VERSION file next to the helper, or exits 3 (a corrupted helper archive, 3.7.1).
+read_version() {
+    _dir=$(self_dir) || die 3 "cannot find the folder of the host helper."
+    [ -r "$_dir/VERSION" ] || die 3 "the host helper has no VERSION file ($_dir/VERSION); the helper archive is incomplete."
+    _v=
+    IFS= read -r _v < "$_dir/VERSION" || true
+    trim "$_v"
+    _v=$_t
+    case $_v in
+        [0-9]*.[0-9]*.[0-9]*) ;;
+        *) die 3 "the VERSION file of the host helper does not hold a version (X.Y.Z): '$_v'." ;;
+    esac
+    case $_v in
+        *[!0-9A-Za-z.+-]*) die 3 "the VERSION file of the host helper does not hold a version (X.Y.Z): '$_v'." ;;
+    esac
+    printf '%s' "$_v"
+}
+
+# ---------------------------------------------------------------- paths
+
+trim() {
+    _t=$1
+    _t=${_t#"${_t%%[![:space:]]*}"}
+    _t=${_t%"${_t##*[![:space:]]}"}
+}
+
+xdg_root() {
+    # $1 = value of the XDG variable, $2 = default
+    case $1 in
+        /*) _r=$1 ;;
+        *) _r=$2 ;;
+    esac
+    printf '%s' "${_r%/}"
+}
+
+# Valid box name: becomes a folder name and a container name. `config` is reserved: the default box keeps its file at
+# <config>/config, so a folder with that name would collide with it.
+valid_box_name() {
+    case $1 in
+        ''|[!A-Za-z0-9]*|*[!A-Za-z0-9_.-]*) return 1 ;;
+        config) return 1 ;;
+    esac
+    return 0
+}
+
+init_paths() {
+    case ${HOME:-} in
+        /*) ;;
+        *) die 1 "HOME is not set to an absolute path." ;;
+    esac
+    VERSION_STR=$(read_version) || exit 3   # the exit must happen outside the command substitution
+    BOX=${SWARMBOX_NAME:-swarmbox}
+    valid_box_name "$BOX" || die 2 "invalid SWARMBOX_NAME '$BOX': it must start with a letter or digit, use only letters, digits, '.', '_' and '-', and not be 'config'."
+    CFG_ROOT=$(xdg_root "${XDG_CONFIG_HOME:-}" "$HOME/.config")/swarmbox
+    STATE_DIR=$(xdg_root "${XDG_STATE_HOME:-}" "$HOME/.local/state")/swarmbox
+    if [ "$BOX" = swarmbox ]; then
+        CFG_DIR=$CFG_ROOT
+    else
+        CFG_DIR=$CFG_ROOT/$BOX
+    fi
+    CFG_FILE=$CFG_DIR/config
+    NOTICES=$STATE_DIR/notices
+}
+
+# ---------------------------------------------------------------- the octal mode of a file (B22, B34)
+
+mode_ok() {
+    case $1 in
+        [0-7][0-7][0-7]|[0-7][0-7][0-7][0-7]) return 0 ;;
+    esac
+    return 1
+}
+
+# find -perm reports only "has these bits"; build the number bit by bit.
+mode_by_find() {
+    [ -n "$(find "$1" -perm -000 -print 2>/dev/null)" ] || return 1
+    _has() { [ -n "$(find "$1" -perm -"$2" -print 2>/dev/null)" ]; }
+    _sp=0 _ow=0 _gr=0 _ot=0
+    _has "$1" 4000 && _sp=$((_sp + 4))
+    _has "$1" 2000 && _sp=$((_sp + 2))
+    _has "$1" 1000 && _sp=$((_sp + 1))
+    _has "$1" 400 && _ow=$((_ow + 4))
+    _has "$1" 200 && _ow=$((_ow + 2))
+    _has "$1" 100 && _ow=$((_ow + 1))
+    _has "$1" 40 && _gr=$((_gr + 4))
+    _has "$1" 20 && _gr=$((_gr + 2))
+    _has "$1" 10 && _gr=$((_gr + 1))
+    _has "$1" 4 && _ot=$((_ot + 4))
+    _has "$1" 2 && _ot=$((_ot + 2))
+    _has "$1" 1 && _ot=$((_ot + 1))
+    if [ "$_sp" -ne 0 ]; then
+        printf '%s%s%s%s' "$_sp" "$_ow" "$_gr" "$_ot"
+    else
+        printf '%s%s%s' "$_ow" "$_gr" "$_ot"
+    fi
+}
+
+# Prints the mode as octal (600, 644, 4755...), or nothing and returns 1 when no form works.
+file_mode() {
+    _m=$(stat -c %a "$1" 2>/dev/null) || _m=
+    if ! mode_ok "$_m"; then
+        _m=$(stat -f %Lp "$1" 2>/dev/null) || _m=
+    fi
+    if ! mode_ok "$_m"; then
+        _m=$(mode_by_find "$1") || _m=
+    fi
+    mode_ok "$_m" || return 1
+    case $_m in
+        0[0-7][0-7][0-7]) _m=${_m#0} ;;
+    esac
+    printf '%s' "$_m"
+}
+
+# ---------------------------------------------------------------- reading the config file (3.7.3)
+
+# Parses one line into P_KEY and P_VAL; returns 1 for a blank line or a comment.
+parse_line() {
+    trim "$1"
+    _l=$_t
+    case $_l in
+        ''|'#'*) return 1 ;;
+    esac
+    case $_l in
+        *=*)
+            trim "${_l%%=*}"
+            P_KEY=$_t
+            trim "${_l#*=}"
+            P_VAL=$_t
+            ;;
+        *)
+            P_KEY=$_l
+            P_VAL=
+            ;;
+    esac
+    return 0
+}
+
+# Prints the value of the last line for KEY; returns 1 when the file has no line for it.
+cfg_raw() {
+    [ -f "$CFG_FILE" ] || return 1
+    _found=1
+    _val=
+    while IFS= read -r _line || [ -n "$_line" ]; do
+        parse_line "$_line" || continue
+        if [ "$P_KEY" = "$1" ]; then
+            _val=$P_VAL
+            _found=0
+        fi
+    done < "$CFG_FILE"
+    printf '%s' "$_val"
+    return "$_found"
+}
+
+TOKEN_IGNORED=0
+
+# One pass over the file per call of the helper: one warning for unknown keys, and the tunnel-token mode rule.
+cfg_prepare() {
+    TOKEN_IGNORED=0
+    [ -f "$CFG_FILE" ] || return 0
+    [ -r "$CFG_FILE" ] || die 1 "cannot read the config file $CFG_FILE."
+    _unk=
+    _hastoken=0
+    while IFS= read -r _line || [ -n "$_line" ]; do
+        parse_line "$_line" || continue
+        if is_file_key "$P_KEY"; then
+            if [ "$P_KEY" = CLOUDFLARE_TUNNEL_TOKEN ] && [ -n "$P_VAL" ]; then
+                _hastoken=1
+            fi
+        else
+            case " $_unk " in
+                *" $P_KEY "*) ;;
+                *) _unk="$_unk $P_KEY" ;;
+            esac
+        fi
+    done < "$CFG_FILE"
+    [ -z "$_unk" ] || warn "ignoring unknown key(s) in $CFG_FILE:$_unk"
+    if [ "$_hastoken" = 1 ]; then
+        _mode=$(file_mode "$CFG_FILE") || _mode=
+        if [ "$_mode" != 600 ]; then
+            TOKEN_IGNORED=1
+            if [ -n "$_mode" ]; then
+                warn "the config file holds the tunnel token but its mode is $_mode; run \`chmod 600 $CFG_FILE\`"
+            else
+                warn "the config file holds the tunnel token but its mode could not be read; run \`chmod 600 $CFG_FILE\`"
+            fi
+        fi
+    fi
+}
+
+# Sets R_VAL and R_SRC (env, file or default) for KEY.
+resolve() {
+    R_SRC=default
+    R_VAL=
+    eval "_e=\${SWARMBOX_$1:-}"
+    if [ -n "$_e" ]; then
+        R_VAL=$_e
+        R_SRC='env'
+        return 0
+    fi
+    if is_file_key "$1" && { [ "$1" != CLOUDFLARE_TUNNEL_TOKEN ] || [ "$TOKEN_IGNORED" = 0 ]; }; then
+        if _fv=$(cfg_raw "$1") && [ -n "$_fv" ]; then
+            R_VAL=$_fv
+            R_SRC='file'
+            return 0
+        fi
+    fi
+    R_VAL=$(default_of "$1")
+}
+
+# ---------------------------------------------------------------- validation (3.7.3, 8.2); messages name the rule
+
+valid_port() {
+    case $1 in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "${#1}" -le 5 ] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+valid_port_entry() {
+    _pe=$1
+    case $_pe in
+        *:*:*:*) return 1 ;;
+        *:*:*)
+            _pa=${_pe%%:*}
+            _pr=${_pe#*:}
+            case $_pa in
+                ''|*[!0-9.]*) return 1 ;;
+            esac
+            valid_port "${_pr%%:*}" && valid_port "${_pr#*:}"
+            ;;
+        *:*) valid_port "${_pe%%:*}" && valid_port "${_pe#*:}" ;;
+        *) valid_port "$_pe" ;;
+    esac
+}
+
+valid_tool_name() {
+    case $1 in
+        ''|[!a-z0-9]*|*[!a-z0-9_-]*) return 1 ;;
+    esac
+    return 0
+}
+
+valid_env_name() {
+    case $1 in
+        ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*) return 1 ;;
+    esac
+    return 0
+}
+
+# A name that may be passed to the box: an environment variable name, not one of the host-side SWARMBOX_CLOUDFLARE_ names (7.2).
+valid_passable_env_name() {
+    valid_env_name "$1" || return 1
+    case $1 in
+        SWARMBOX_CLOUDFLARE_*) return 1 ;;
+    esac
+    return 0
+}
+
+# valid_list FUNCTION VALUE: a comma list, no spaces, no empty item, each item accepted by FUNCTION.
+valid_list() {
+    _fn=$1
+    case $2 in
+        ,*|*,|*,,*|*[[:space:]]*) return 1 ;;
+    esac
+    _oldifs=$IFS
+    IFS=,
+    set -f
+    # shellcheck disable=SC2086  # splitting on commas is the point
+    set -- $2
+    set +f
+    IFS=$_oldifs
+    for _item in "$@"; do
+        "$_fn" "$_item" || return 1
+    done
+    return 0
+}
+
+# validate_value KEY VALUE: sets V_OUT (the value to store) or prints the rule and returns 1.
+validate_value() {
+    _k=$1
+    V_OUT=$2
+    _bad() { warn "invalid value for $_k: $*"; return 1; }
+    case $V_OUT in
+        *"$NL"*|*"$CR"*) _bad "a value cannot contain a newline (3.7.3)."; return 1 ;;
+    esac
+    trim "$V_OUT"
+    V_OUT=$_t
+    [ -n "$V_OUT" ] || return 0   # empty means "use the default"
+    case $_k in
+        WORKSPACE)
+            case $V_OUT in
+                *:*) _bad "the path must not contain ':' (Podman reads it as a separator)."; return 1 ;;
+            esac
+            # shellcheck disable=SC2088  # a literal tilde is what is matched; the shell did not expand it
+            case $V_OUT in
+                '~') V_OUT=$HOME ;;
+                '~/'*) V_OUT=$HOME/${V_OUT#'~/'} ;;
+                /*) ;;
+                ./*) V_OUT=$PWD/${V_OUT#./} ;;
+                .) V_OUT=$PWD ;;
+                *) V_OUT=$PWD/$V_OUT ;;
+            esac
+            while :; do
+                case $V_OUT in
+                    ?*/) V_OUT=${V_OUT%/} ;;
+                    *) break ;;
+                esac
+            done
+            ;;
+        HOSTNAME)
+            case $V_OUT in
+                [!A-Za-z0-9]*|*[!A-Za-z0-9.-]*) _bad "it must start with a letter or digit and use only letters, digits, '.' and '-'."; return 1 ;;
+            esac
+            [ "${#V_OUT}" -le 63 ] || { _bad "it must be at most 63 characters."; return 1; }
+            ;;
+        TZ)
+            case $V_OUT in
+                [!A-Za-z]*|*[!A-Za-z0-9_+/-]*|*//*|*/|*..*) _bad "it must be 'local', 'off' or a zone name such as Europe/Lisbon (letters, digits, '_', '+', '-', '/')."; return 1 ;;
+            esac
+            ;;
+        INIT)
+            case $V_OUT in
+                auto|0|1) ;;
+                *) _bad "it must be auto, 0 or 1."; return 1 ;;
+            esac
+            ;;
+        HOST_ACCESS|WEB|YOLO)
+            case $V_OUT in
+                0|1) ;;
+                *) _bad "it must be 0 or 1."; return 1 ;;
+            esac
+            ;;
+        PORTS)
+            valid_list valid_port_entry "$V_OUT" || { _bad "it must be a comma list, without spaces, of PORT, HOST:CONTAINER or ADDRESS:HOST:CONTAINER with ports from 1 to 65535."; return 1; }
+            ;;
+        BROWSER_URL)
+            case $V_OUT in
+                *[[:space:]]*) _bad "it must not contain blanks."; return 1 ;;
+                http://?*|https://?*) ;;
+                *[!0-9]*)
+                    case $V_OUT in
+                        *:*)
+                            if [ -z "${V_OUT%:*}" ] || ! valid_port "${V_OUT##*:}"; then
+                                _bad "it must be a port number, HOST:PORT or an http(s) URL."
+                                return 1
+                            fi
+                            ;;
+                        *) _bad "it must be a port number, HOST:PORT or an http(s) URL."; return 1 ;;
+                    esac
+                    ;;
+                *) valid_port "$V_OUT" || { _bad "a bare number must be a port from 1 to 65535."; return 1; } ;;
+            esac
+            ;;
+        WEB_PORT)
+            valid_port "$V_OUT" || { _bad "it must be a port number from 1 to 65535."; return 1; }
+            ;;
+        WITH|AGENT)
+            if [ "$_k" = AGENT ]; then
+                valid_tool_name "$V_OUT" || { _bad "it must be one tool name: lower-case letters, digits, '_' and '-'."; return 1; }
+            else
+                valid_list valid_tool_name "$V_OUT" || { _bad "it must be a comma list, without spaces, of tool names (lower-case letters, digits, '_' and '-')."; return 1; }
+            fi
+            ;;
+        ENV_KEYS)
+            valid_list valid_passable_env_name "$V_OUT" || { _bad "it must be a comma list, without spaces, of environment variable names (letters, digits, '_', not starting with a digit, not SWARMBOX_CLOUDFLARE_*)."; return 1; }
+            ;;
+        IMAGE)
+            case $V_OUT in
+                *[!A-Za-z0-9._/:@-]*) _bad "it must be an image reference: letters, digits and '.', '_', '/', ':', '@', '-' only."; return 1 ;;
+            esac
+            ;;
+        CLOUDFLARE_TUNNEL_TOKEN)
+            case $V_OUT in
+                *[!A-Za-z0-9+/=_.-]*) _bad "the token must use only letters, digits and '+', '/', '=', '_', '.', '-'."; return 1 ;;
+            esac
+            ;;
+    esac
+    return 0
+}
+
+# ---------------------------------------------------------------- writing the config file (3.7.3)
+
+# cfg_write_keys KEY VALUE [KEY VALUE ...]: replaces (or appends) the keys, keeps every other line, writes under umask 077
+# into a temporary file in the same folder, runs chmod 600 on it and renames it over the config. Refuses to write the
+# tunnel token (exit 1) if the chmod fails; for other keys it also writes nothing (exit 1).
+cfg_write_keys() {
+    _tok=0
+    _ks=
+    _i=1
+    while [ "$_i" -le "$#" ]; do
+        eval "_wk=\${$_i}"
+        _ks="$_ks $_wk "
+        [ "$_wk" = CLOUDFLARE_TUNNEL_TOKEN ] && _tok=1
+        _i=$((_i + 2))
+    done
+    mkdir -p "$CFG_DIR" || die 1 "cannot create $CFG_DIR."
+    [ ! -f "$CFG_FILE" ] || [ -r "$CFG_FILE" ] || die 1 "cannot read the config file $CFG_FILE."
+    _tmp=$CFG_FILE.tmp.$$
+    {
+        if [ -f "$CFG_FILE" ]; then
+            while IFS= read -r _line || [ -n "$_line" ]; do
+                if parse_line "$_line"; then
+                    case $_ks in
+                        *" $P_KEY "*) continue ;;
+                    esac
+                fi
+                printf '%s\n' "$_line"
+            done < "$CFG_FILE"
+        else
+            printf '%s\n' '# SwarmBox host configuration: one KEY=VALUE per line, values literal (see docs/design.md 3.7.3).'
+        fi
+        while [ "$#" -ge 2 ]; do
+            printf '%s=%s\n' "$1" "$2"
+            shift 2
+        done
+    } > "$_tmp" || { rm -f "$_tmp"; die 1 "cannot write $_tmp."; }
+    if ! chmod 600 "$_tmp"; then
+        rm -f "$_tmp"
+        if [ "$_tok" = 1 ]; then
+            die 1 "could not set mode 600 on the config file; the tunnel token was not written."
+        fi
+        die 1 "could not set mode 600 on the config file; nothing was written."
+    fi
+    mv -f "$_tmp" "$CFG_FILE" || { rm -f "$_tmp"; die 1 "cannot replace $CFG_FILE."; }
+}
+
+# Notices state (3.7.5): one line <box>:<KEY> per announced key.
+notice_seen() { [ -f "$NOTICES" ] && grep -qxF -- "$BOX:$1" "$NOTICES"; }
+notice_mark() {
+    mkdir -p "$STATE_DIR" || return 1
+    printf '%s:%s\n' "$BOX" "$1" >> "$NOTICES"
+}
+notice_clear() {
+    [ -f "$NOTICES" ] || return 0
+    grep -vxF -- "$BOX:$1" "$NOTICES" > "$NOTICES.tmp.$$"
+    mv -f "$NOTICES.tmp.$$" "$NOTICES"
+}
+
+# ---------------------------------------------------------------- reading a secret without echo
+
+# Reads one line from the terminal into SECRET with echo off. Restores the terminal on every exit path (stty -g, trap).
+read_secret() {
+    SECRET=
+    if [ ! -t 0 ]; then
+        die 2 "the tunnel token must be typed on a terminal (never as an argument and never piped)."
+    fi
+    _stty=$(stty -g 2>/dev/null) || die 2 "the tunnel token must be typed on a terminal."
+    trap 'stty "$_stty" 2>/dev/null; exit 1' INT TERM HUP
+    printf 'Cloudflare tunnel token (input is hidden): ' >&2
+    stty -echo 2>/dev/null
+    _rc=0
+    IFS= read -r SECRET || _rc=$?
+    stty "$_stty" 2>/dev/null
+    trap - INT TERM HUP
+    printf '\n' >&2
+    [ "$_rc" -eq 0 ] || [ -n "$SECRET" ] || die 2 "no token was read."
+}
+
+# ---------------------------------------------------------------- commands
+
+cmd_version() {
+    [ $# -eq 0 ] || usage
+    read_version
+    printf '\n'
+}
+
+cmd_config_get() {
+    [ $# -eq 1 ] || usage
+    is_key "$1" || die 2 "unknown key '$1'."
+    init_paths
+    cfg_prepare
+    resolve "$1"
+    [ -n "$R_VAL" ] || return 1
+    printf '%s\n' "$R_VAL"
+}
+
+cmd_config_set() {
+    if [ $# -lt 1 ] || [ $# -gt 2 ]; then usage; fi
+    _key=$1
+    [ "$_key" != NAME ] || die 2 "NAME is not a key of the config file: it selects the config folder, so set SWARMBOX_NAME in the environment."
+    is_file_key "$_key" || die 2 "unknown key '$_key'."
+    init_paths
+    if [ "$_key" = CLOUDFLARE_TUNNEL_TOKEN ]; then
+        [ $# -eq 1 ] || die 2 "the tunnel token is never given on the command line; run 'swarmbox config set CLOUDFLARE_TUNNEL_TOKEN' and type it."
+        read_secret
+        [ -n "$SECRET" ] || die 2 "invalid value for CLOUDFLARE_TUNNEL_TOKEN: it must not be empty."
+        validate_value "$_key" "$SECRET" || exit 2
+        _stored=$V_OUT
+        SECRET=
+    else
+        [ $# -eq 2 ] || usage
+        validate_value "$_key" "$2" || exit 2
+        _stored=$V_OUT
+    fi
+    cfg_write_keys "$_key" "$_stored" || exit 1
+    notice_clear "$_key"
+}
+
+cmd_config_list() {
+    [ $# -eq 0 ] || usage
+    init_paths
+    cfg_prepare
+    for _key in $ALL_KEYS; do
+        resolve "$_key"
+        if [ "$_key" = CLOUDFLARE_TUNNEL_TOKEN ]; then
+            if [ -n "$R_VAL" ]; then
+                printf '%s=set\t%s\n' "$_key" "$R_SRC"
+            else
+                printf '%s=unset\t%s\n' "$_key" "$R_SRC"
+            fi
+        else
+            printf '%s=%s\t%s\n' "$_key" "$R_VAL" "$R_SRC"
+        fi
+    done
+}
+
+cmd_config_seed() {
+    _sw=
+    _sws=
+    _sim=
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --with|--workspace|--image)
+                [ $# -ge 2 ] || die 2 "$1 needs a value."
+                _a=$1
+                _v=$2
+                shift 2
+                ;;
+            --with=*|--workspace=*|--image=*)
+                _a=${1%%=*}
+                _v=${1#*=}
+                shift
+                ;;
+            *) die 2 "config seed: unknown argument '$1'." ;;
+        esac
+        case $_a in
+            --with) _sw=$_v ;;
+            --workspace) _sws=$_v ;;
+            --image) _sim=$_v ;;
+        esac
+    done
+    init_paths
+    # validate everything first: an invalid seed changes nothing
+    _pairs=
+    _sk=
+    for _key in WITH WORKSPACE IMAGE; do
+        case $_key in
+            WITH) _v=$_sw ;;
+            WORKSPACE) _v=$_sws ;;
+            IMAGE) _v=$_sim ;;
+        esac
+        validate_value "$_key" "$_v" || exit 2
+        [ -n "$V_OUT" ] || continue
+        eval "SEED_$_key=\$V_OUT"
+        _sk="$_sk $_key"
+    done
+    if [ ! -f "$CFG_FILE" ]; then
+        set --
+        for _key in $_sk; do
+            eval "set -- \"\$@\" \"\$_key\" \"\$SEED_$_key\""
+        done
+        cfg_write_keys "$@" || exit 1
+        eval "_ws=\${SEED_WORKSPACE:-}"
+        [ -z "$_ws" ] || warn "WORKSPACE recorded as $_ws"
+        return 0
+    fi
+    cfg_prepare
+    for _key in $_sk; do
+        eval "_want=\$SEED_$_key"
+        # compare with what the file (or the default) says, ignoring the environment
+        if _have=$(cfg_raw "$_key") && [ -n "$_have" ]; then :; else _have=$(default_of "$_key"); fi
+        [ "$_want" != "$_have" ] || continue
+        if notice_seen "$_key"; then continue; fi
+        warn "init asked for $_key=$_want, the config says $_key=$_have; run \`swarmbox config set $_key $_want\` to change it"
+        notice_mark "$_key" || warn "cannot write $NOTICES; the notice may repeat."
+    done
+    return 0
+}
+
+# ENV_KEYS as stored in the file (the list the commands edit).
+env_file_list() { _el=$(cfg_raw ENV_KEYS) || _el=; printf '%s' "$_el"; }
+
+cmd_env() {
+    [ $# -ge 1 ] || usage
+    _sub=$1
+    shift
+    case $_sub in
+        add|rm)
+            [ $# -eq 1 ] || usage
+            _n=$1
+            valid_env_name "$_n" || die 2 "invalid variable name '$_n': use letters, digits and '_', not starting with a digit."
+            valid_passable_env_name "$_n" || die 2 "'$_n' is refused: names starting with SWARMBOX_CLOUDFLARE_ belong to the host side and never enter the box."
+            init_paths
+            cfg_prepare
+            _cur=$(env_file_list)
+            _new=
+            _present=0
+            _oldifs=$IFS
+            IFS=,
+            set -f
+            # shellcheck disable=SC2086
+            for _item in $_cur; do
+                [ -n "$_item" ] || continue
+                if [ "$_item" = "$_n" ]; then
+                    _present=1
+                    [ "$_sub" = rm ] && continue
+                fi
+                _new=${_new:+$_new,}$_item
+            done
+            set +f
+            IFS=$_oldifs
+            if [ "$_sub" = add ]; then
+                [ "$_present" = 0 ] || return 0
+                _new=${_new:+$_new,}$_n
+            else
+                [ "$_present" = 1 ] || return 0
+            fi
+            cfg_write_keys ENV_KEYS "$_new" || exit 1
+            notice_clear ENV_KEYS
+            if [ -n "${SWARMBOX_ENV_KEYS:-}" ]; then
+                warn "SWARMBOX_ENV_KEYS is set in the environment and overrides the file; the change shows only when it is unset."
+            fi
+            ;;
+        list)
+            [ $# -eq 0 ] || usage
+            init_paths
+            cfg_prepare
+            resolve ENV_KEYS
+            _oldifs=$IFS
+            IFS=,
+            set -f
+            # shellcheck disable=SC2086
+            set -- $R_VAL
+            set +f
+            IFS=$_oldifs
+            for _item in "$@"; do
+                [ -n "$_item" ] || continue
+                if ! valid_passable_env_name "$_item"; then
+                    warn "ignoring the invalid name '$_item' in ENV_KEYS."
+                    continue
+                fi
+                eval "_isset=\${$_item+x}"
+                if [ "$_isset" = x ]; then
+                    printf '%s\tset\n' "$_item"
+                else
+                    printf '%s\tnot set\n' "$_item"
+                fi
+            done
+            ;;
+        *) usage ;;
+    esac
+}
+
+cmd_config() {
+    [ $# -ge 1 ] || usage
+    _sub=$1
+    shift
+    case $_sub in
+        get) cmd_config_get "$@" ;;
+        set) cmd_config_set "$@" ;;
+        list) cmd_config_list "$@" ;;
+        seed) cmd_config_seed "$@" ;;
+        *) usage ;;
+    esac
+}
+
+[ $# -ge 1 ] || usage
+sub=$1
+shift
+case $sub in
+    version) cmd_version "$@" ;;
+    config) cmd_config "$@" ;;
+    env) cmd_env "$@" ;;
+    create-flags|fingerprint|url|up|update|reset|stop|remote)
+        die 70 "'$sub' is not implemented in this build of the host helper."
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        warn "unknown subcommand '$sub'."
+        usage
+        ;;
+esac
