@@ -162,15 +162,20 @@ COPY container/tools/ /usr/local/lib/swarmbox/tools/
 COPY container/scripts/swarmbox-migrate.sh /usr/local/bin/swarmbox-migrate
 # The tool manifests (design 6.3) are read-only data of the image; `swarmbox-tool link --system` below generates the shims,
 # the index and tool-ports from them. No agent is installed here (D2): the first call of a shim installs it.
-# The helper archive (3.7.1, 9.3): what `swarmbox-entrypoint host-helper` writes. Phase 3 adds swarmbox-host and templates/
-# (container/host/); tool-ports is written by `swarmbox-tool link --system` below, always, empty when no manifest has ports.
+COPY container/scripts/swarmbox-init.sh /usr/local/bin/swarmbox-init
+# The helper archive (3.7.1, 9.3): what `swarmbox-entrypoint host-helper` writes. container/host/ holds swarmbox-host, VERSION and
+# templates/ (the files `swarmbox-init` prints from); tool-ports is written by `swarmbox-tool link --system` below, always, empty
+# when no manifest has ports.
+COPY container/host/ /usr/local/share/swarmbox/host/
 COPY cloudflare-setup.py /usr/local/share/swarmbox/host/cloudflare-setup.py
 COPY container/entrypoint.sh /usr/local/bin/swarmbox-entrypoint
 RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.toml /etc/swarmbox/bashrc.sh /etc/ssh/ssh_config.d/swarmbox.conf \
         /usr/local/lib/swarmbox/dirs.sh /etc/swarmbox/scripts/starship-init.sh /etc/swarmbox/scripts/messages.sh && \
     chmod 755 /usr/local/bin/banner.sh /usr/local/bin/swarmbox-podman-service /usr/local/bin/swarmbox-pubkey \
-        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-tool /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-migrate /usr/local/bin/swarmbox-entrypoint && \
-    chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py && \
+        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-tool /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-migrate /usr/local/bin/swarmbox-init /usr/local/bin/swarmbox-entrypoint && \
+    chmod 755 /usr/local/share/swarmbox/host/swarmbox-host && \
+    chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py /usr/local/share/swarmbox/host/VERSION && \
+    chmod -R a+rX /usr/local/share/swarmbox/host && \
     chmod -R a+rX /etc/swarmbox/mcp /usr/local/lib/swarmbox/tools && \
     find /usr/local/lib/swarmbox/tools -name '*.sh' -exec chmod 755 {} + && \
     swarmbox-tool link --system

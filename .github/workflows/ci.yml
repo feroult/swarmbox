@@ -4,7 +4,7 @@
 # shellcheck over the new shell files, and (job "smoke", slice 2.7) the image build and the full image smoke test
 # (tests/smoke_image.py with SWARMBOX_SMOKE_FULL=1: it needs the nested Podman that the development box cannot give, so
 # this job is its only full run, never run before the owner's first push). Phase 4a added the real swarmbox-tool validate
-# step (linux job). Later phases of the plan add the zsh and fish function tests and the arm64 job (B31); they are not here on purpose.
+# step (linux job). The zsh and fish function tests arrived in slice 3.5; the arm64 job (B31) is a later phase and is not here on purpose.
 # It uses no secrets, publishes nothing and binds no ports on the runner outside 127.0.0.1.
 #
 # Open facts this file prepares (see docs/design.md Part B):
@@ -51,7 +51,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends tmux zsh fish shellcheck
       - name: Shellcheck the new shell files
         run: |
-          shellcheck -s sh container/host/swarmbox-host container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh
+          shellcheck -s sh container/host/swarmbox-host container/scripts/swarmbox-init.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh
           shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-tool.sh container/config/bashrc.sh
       - name: Validate the tool manifests (swarmbox-tool validate, no container)
         run: container/scripts/swarmbox-tool.sh validate container/tools
@@ -71,12 +71,16 @@ jobs:
           python3 tests/test_docs_consistency.py
           python3 tests/test_entrypoint.py
           python3 tests/test_helpers.py
+          python3 tests/test_function_bash.py
+          python3 tests/test_function_fish.py
+          python3 tests/test_function_zsh.py
           python3 tests/test_host_config.py
           python3 tests/test_host_create_flags.py
           python3 tests/test_host_shells.py
           python3 tests/test_host_socket.py
           python3 tests/test_host_up.py
           python3 tests/test_history_audit.py
+          python3 tests/test_init_output.py
           python3 tests/test_image_build.py
           python3 tests/test_migration.py
           python3 tests/test_pubkey_ensure.py
@@ -153,12 +157,16 @@ jobs:
           python3 tests/test_dirs.py
           python3 tests/test_dockerfile.py
           python3 tests/test_helpers.py
+          python3 tests/test_function_bash.py
+          python3 tests/test_function_fish.py
+          python3 tests/test_function_zsh.py
           python3 tests/test_host_config.py
           python3 tests/test_host_create_flags.py
           python3 tests/test_host_shells.py
           python3 tests/test_host_socket.py
           python3 tests/test_host_up.py
           python3 tests/test_image_build.py
+          python3 tests/test_init_output.py
           python3 tests/test_smoke_skeleton.py
           python3 tests/test_start_fake_podman.py
           python3 tests/test_start_init.py
