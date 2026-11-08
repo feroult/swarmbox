@@ -1463,3 +1463,10 @@ All six tools pass both real checks here (install as uid 1000, no side effects, 
 Context: slice 2.7 recorded an unexplained SIGINT flake in test_serve_steps; in this slice the full regression, started with `( ... &)` from a non-interactive shell, failed test_serve_steps and test_host_up (the SIGINT tests: `test_sigint_leaves_no_lock`, serve's SIGINT) twice, while both files passed alone and in a foreground run of `run_all.sh --only`.
 Observed: started in the background the same way, `run_all.sh --only test_serve_steps.py` fails again; in the foreground it passes. A non-interactive shell starts background jobs with SIGINT ignored and the children inherit that, so a test that sends SIGINT to its child cannot work. This is the likeliest cause of the 2.7 flake too [unverified for 2.7: the cause was not examined then].
 Chosen: no code change. The full-regression numbers below combine the background run (61 files OK) with the foreground run of the two files. To run the whole regression in the background, start it with `setsid` or from an interactive shell. Not fixed in the tests (they could reset the disposition with `trap - INT` in a wrapper): left for the owner.
+
+## [4b.7] The real-tools CI step must not swallow the test's exit status (review fix, round 1)
+Context: the step ran `python3 tests/test_tool_real.py 2>&1 | tee real.out` in GitHub's default `bash -e {0}`, which has no pipefail, so the pipeline status was tee's and a failing real-installer test would not fail the scheduled job; only the "skipped" grep could. Read from the YAML; the job has never run on a runner [unverified].
+Options: `shell: bash` (runs `-e -o pipefail`); `set -o pipefail` in the script; redirect to a file and check `$?`.
+Chosen: both `shell: bash` and `set -o pipefail` as the first line, because the explicit line stays correct if the shell setting is changed, and a test now asserts both (tests/test_ci_workflow.py).
+Impact on the design: none.
+How to reverse: remove the `shell:` key and the `set -o pipefail` line, and the assertions.
