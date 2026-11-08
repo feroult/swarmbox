@@ -191,12 +191,29 @@ class Spike:
         return d
 
     # podman
-    def podman(self, *args, check=False, timeout=300, input=None):
+    def podman(self, *args, check=False, timeout=300, input=None, env=None):
         a = check_podman_args(args)
-        r = subprocess.run(["podman"] + a, capture_output=True, text=True, timeout=timeout, input=input)
+        r = subprocess.run(["podman"] + a, capture_output=True, text=True, timeout=timeout, input=input, env=env)
         if check and r.returncode != 0:
             raise RuntimeError("podman %s failed (%d): %s" % (" ".join(a), r.returncode, r.stderr.strip()))
         return r
+
+    def podman_readonly(self, *args, timeout=60):
+        """Read-only podman calls that name no container (images, image inspect, --url ... info)."""
+        a = [str(x) for x in args]
+        if a[:1] == ["--url"]:
+            a = a[2:]
+        if a[:1] not in (["images"], ["info"], ["version"]) and a[:2] != ["image", "inspect"]:
+            raise Refused("podman_readonly allows only images, info, version and image inspect: %r" % (a,))
+        r = subprocess.run(["podman"] + [str(x) for x in args], capture_output=True, text=True, timeout=timeout)
+        return r
+
+    def popen_exec(self, name, *cmd, user=None):
+        """Start `podman exec` in the background (tracked, terminated by cleanup)."""
+        args = check_podman_args(["exec"] + (["-u", user] if user else []) + [check_name(name)] + list(cmd))
+        proc = subprocess.Popen(["podman"] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.pids.append(proc.pid)
+        return proc
 
     def track_container(self, name):
         self.containers.append(check_name(name))
