@@ -1,6 +1,6 @@
 """Slice 2.5: the stub swarmbox-tool (container/scripts/swarmbox-tool.sh) and the empty tool-ports file (design 6.2, 6.3,
 10.2). The real tool program arrives in Phase 4a in slices; `validate` is real since 4a.1, and `link` and `prepare`
-do nothing (so `serve` does not warn at every start), and anything else exits 70 and says where it comes from.
+do nothing (so `serve` does not warn at every start), and an unknown command exits 70 (use, remove, new and doctor became real in 4b.5).
 
 Test-only variable (decision log [2.5]): SWARMBOX_TEST_HOST_DIR replaces /usr/local/share/swarmbox/host.
 Run with: python3 tests/test_tool_stub.py
@@ -72,13 +72,18 @@ class ToolStub(unittest.TestCase):
         for args in (("link",), ("link", "--bogus")):
             self.assertEqual(self.run_tool(*args).returncode, 64)
 
-    def test_everything_else_exits_70_and_points_to_phase_4a(self):
-        for args in (("use", "claude", "1"), ("remove", "claude"), ("doctor",), ("new", "x"), ("bogus",)):
+    def test_unknown_commands_exit_70(self):
+        # use, remove, new and doctor are real since slice 4b.5 (test_tool_use_remove.py, test_tool_new.py, test_tool_doctor.py)
+        r = self.run_tool("bogus")
+        self.assertEqual(r.returncode, 70)
+        self.assertIn("unknown command", r.stderr)
+        self.assertEqual(r.stdout, "")
+
+    def test_the_former_stubs_answer_real_usage_errors_not_70(self):
+        for args in (("use", "claude"), ("remove",), ("new",), ("doctor", "--bogus")):
             with self.subTest(args=args):
-                r = self.run_tool(*args)
-                self.assertEqual(r.returncode, 70)
-                self.assertTrue("Phase 4a" in r.stderr or "later phase" in r.stderr, r.stderr)
-                self.assertEqual(r.stdout, "")
+                self.assertEqual(self.run_tool(*args).returncode, 64)
+        self.assertEqual(self.run_tool("doctor").returncode, 0)
 
     def test_no_arguments_is_a_usage_error(self):
         r = self.run_tool()

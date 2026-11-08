@@ -1354,3 +1354,35 @@ Impact on the design: none beyond 6.4 state. How to reverse: assign unconditiona
 - The two new test files are in ci.yml (Linux job) and in NOT_ON_MACOS (they use sha256sum, GNU chmod and bash 4 associative arrays), like the other container-program tests.
 - The shim test asserts the five shims exist and that the index maps gofmt to go and gsutil and bq to gcloud; the call lifecycle is covered by test_tool_shim.
 
+
+## [4b.5] NODE_MAJOR and LIBC differences: the shim warns and runs, doctor says "needs reinstall"
+Context: design 6.11 says the shim warns once per entry and runs for a different NODE_MAJOR or LIBC, and also that `doctor` lists `ok`, `needs reinstall` or `missing`. It does not say which state a NODE_MAJOR difference gets in `doctor`; the slice asked to record the warn-vs-reinstall choice.
+Options: doctor lists it as ok with a note; doctor lists it as `needs reinstall` (and `--fix` rebuilds it); an extra state `warn`.
+Chosen: `needs reinstall` in `doctor` (the audit view should show every divergence and `--fix` should be able to clear the warning), while the shim keeps the design's behavior (warn once, run) because the tool may still work. Only ARCH refuses.
+Impact on the design: 6.11 "4b.5 state". How to reverse: in `doctor_classify` set the state to `ok` when only FP_WARN is set.
+
+## [4b.5] Exit code 69 for the ARCH refusal, "once per entry" is a marker per tool cleared by link --user
+Context: the design says "refuses" and "once per entry" without a code or a mechanism.
+Options: a new exit code; reuse 69 (the code of a failed install in `run`); marker in /tmp/swarmbox (per container start) or in the state dir.
+Chosen: 69, because from the caller's side the tool is unavailable here, as after a failed install. Markers in `<state dir>/tool-warned/<name>`, as the slice text suggested; `link --user` (run at every entry) clears them and writes the markers of the tools it warns about, so shim calls of the same entry stay quiet. Without any `link --user` (for example a shell that never ran it) the first shim call warns once and the marker stays until the next `link --user`.
+Impact on the design: 6.11 "4b.5 state". How to reverse: change fp_gate (exit code) or warned_dir (location).
+
+## [4b.5] remove: an image-level tool IS removable; only --purge of an image manifest is refused
+Context: the slice text says "remove of an image-level tool is refused" and, in the same list, "remove then run triggers a fresh first-use install", and the design says `remove claude` deletes Claude Code's paths while claude's manifest is image-level. The two cannot both hold if "remove" means the workspace install.
+Options: refuse removal of anything whose manifest is image-level (then no shipped tool could be removed); remove the install for every tool and refuse only what cannot be changed, the image manifest.
+Chosen: the install is workspace state for every tool, so `remove NAME` deletes it and manifests and shims stay (the next call reinstalls, 6.5). `remove NAME --purge` additionally deletes a USER-level manifest and relinks (this is where "its shim entries" go); with an image-level manifest `--purge` is refused ("part of the image"). Tests: test_tool_use_remove.py.
+Impact on the design: 6.9 "4b.5 state". How to reverse: refuse in cmd_remove when MDIR is under IMAGE_TOOLS.
+
+## [4b.5] remove of an UPDATE=self tool: own paths only, with a guard
+Context: design 6.7 lists the four paths of Claude Code; the tool model is generic.
+Options: hard-code the claude paths; derive them from the tool name; derive and guard.
+Chosen: derive `~/.local/bin/<command>` for each PROVIDES entry plus `~/.local/share/<name>`, `~/.local/state/<name>`, `~/.cache/<name>`, and skip (with a message) any path that is or contains SwarmBox's data, state and config folders, the tools folder or the home, so a tool called `swarmbox` cannot delete the tools folder (tested). `~/.claude` and `~/.claude.json` are never touched. The release tests for the real vendor installer layout are 4b.7.
+Impact on the design: 6.9 "4b.5 state". How to reverse: delete safe_rm calls.
+
+## [4b.5] Small decisions
+- `use` of the version that is already active succeeds and says so; `use` takes no new install (it never runs an installer) and does not run prepare.sh (a config rendered for another version is re-rendered at the next start).
+- `new` takes `--repo` (git top level + container/tools) or `--dir DIR`; both together are a usage error. The skeleton installer exits 1 with "edit install.sh first" so an unedited skeleton can never be mistaken for a working tool.
+- `doctor --fix` does not install `missing` tools (they install on first use) and uses `install_locked` with force, so a failed forced reinstall leaves that version folder removed (documented in 6.11).
+- `doctor` takes the manifest's level by the same rule as `list` (the user level wins).
+- The old stub tests that asserted exit 70 for use, remove, doctor and new were rewritten (test_tool_stub.py, test_tool_install.py); the three new test files are in ci.yml, NOT_ON_MACOS and CONTRIBUTING.
+- test_tool_shim.py failed once in one run right after the first implementation edit, and passed in the next five runs without a change to that test (3 consecutive runs after the last edit, and the earlier ones); not reproduced, cause unknown. Recorded rather than hidden.
