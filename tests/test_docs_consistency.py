@@ -873,5 +873,69 @@ class DocsSixFiveTest(unittest.TestCase):
         self.assertRegex(read("docs", "decision-log.md"), r"(?m)^## \[6\.5\] ")
 
 
+class OwnerChecksSixSixTest(unittest.TestCase):
+    """Slice 6.6: the hardware checks are runnable checklists and every fact keeps an honest state."""
+    FACTS = ("B6", "B7", "B8", "B15", "B19", "B21", "B22", "B23", "B32", "B34")
+    DOC = read("docs", "owner-checks.md")
+    STATUS = read("docs", "implementation-status.md")
+
+    def state_rows(self):
+        t = section(self.DOC, "State of each fact")
+        return {m.group(1): m.group(0) for m in re.finditer(r"(?m)^\| (B\d+)[^|]*\|.*$", t)}
+
+    def test_every_fact_is_in_the_state_table_open_with_the_owner(self):
+        rows = self.state_rows()
+        for b in self.FACTS:
+            self.assertIn(b, rows, b)
+            self.assertIn("open with the owner", rows[b], b)
+            self.assertNotIn("closed", rows[b].replace("closed-reduced", "").replace("(Linux closed)", "").replace("closed-reduced)", ""), b)
+
+    def test_every_fact_has_a_section_with_a_command(self):
+        for b in self.FACTS:
+            self.assertRegex(self.DOC, r"(?m)^(## .*|- \*\*)%s\b" % b, b) if b in ("B6", "B7", "B8", "B15") else self.assertIn("**%s**" % b, self.DOC)
+        self.assertGreaterEqual(self.DOC.count("dev/owner-check.sh"), 10)
+        self.assertEqual(self.DOC.count("```") % 2, 0)
+
+    def test_every_script_id_and_option_in_the_doc_exists(self):
+        ids = subprocess.run(["sh", os.path.join(ROOT, "dev", "owner-check.sh"), "--list"], capture_output=True, text=True).stdout.split()
+        for i in ids:
+            if i.startswith(("B", "box.")):
+                self.assertIn(i.split(".")[0] if i.startswith("B") else i, self.DOC, i)
+        with open(os.path.join(ROOT, "dev", "owner-check.sh")) as f:
+            script = f.read()
+        for opt in set(re.findall(r"`(--[a-z-]+)", self.DOC)):
+            self.assertIn(opt, script, opt)
+
+    def test_part_b_rows_stay_unverified_and_cite_the_doc(self):
+        for b in ("B6", "B7", "B8", "B15"):
+            row = rows(PART_B, b)[0]
+            self.assertIn("Open with the owner after 6.6", row, b)
+            self.assertIn("[unverified]", row, b)
+            self.assertNotIn("[verified:", row, b)
+        self.assertIn("docs/owner-checks.md", rows(PART_B, "B6")[0])
+        self.assertIn("#### Results of Phase 6 (slice 6.6", DESIGN)
+
+    def test_no_closed_claim_without_a_tag(self):
+        res = DESIGN[DESIGN.index("#### Results of Phase 6 (slice 6.6"):DESIGN.index("## 15. Roadmap")]
+        for line in res.splitlines():
+            if line.startswith("| 6.6 "):
+                self.assertIn("open with the owner", line)
+                self.assertNotRegex(line.split("|")[2], r"(?i)\bclosed\b")
+
+    def test_status_rows_are_blocked_needing_hardware_with_steps(self):
+        self.assertRegex(self.STATUS, r"(?m)^\| 6\.6-owner-checks \|")
+        for key in ("6.6-owner-b6-macos", "6.6-owner-b7-uid", "6.6-owner-b8-podman", "6.6-owner-b15-python", "6.6-owner-rechecks", "6.6-owner-dogfood"):
+            m = re.search(r"(?m)^\| %s \|.*$" % re.escape(key), self.STATUS)
+            self.assertTrue(m, key)
+            self.assertIn("| blocked |", m.group(0), key)
+            self.assertIn("needs real hardware", m.group(0), key)
+            self.assertIn("docs/owner-checks.md", m.group(0), key)
+
+    def test_plan_and_decision_log(self):
+        self.assertIn("**6.6 state", PLAN)
+        self.assertRegex(read("docs", "decision-log.md"), r"(?m)^## \[6\.6\] ")
+        self.assertIn("docs/owner-checks.md", PLAN)
+
+
 if __name__ == "__main__":
     unittest.main()
