@@ -80,6 +80,7 @@ jobs:
           python3 tests/test_host_socket.py
           python3 tests/test_host_up.py
           python3 tests/test_host_update.py
+          python3 tests/test_registry_e2e.py
           python3 tests/test_history_audit.py
           python3 tests/test_init_output.py
           python3 tests/test_image_build.py
@@ -167,6 +168,7 @@ jobs:
           python3 tests/test_host_socket.py
           python3 tests/test_host_up.py
           python3 tests/test_host_update.py
+          python3 tests/test_registry_e2e.py
           python3 tests/test_image_build.py
           python3 tests/test_init_output.py
           python3 tests/test_smoke_skeleton.py
