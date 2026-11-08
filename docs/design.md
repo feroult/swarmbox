@@ -88,7 +88,8 @@ swarmbox update          # pull the newest image, then reset when you say so
 swarmbox pubkey          # SSH public key for git (deploy keys)
 swarmbox env add NAME    # pass the host variable NAME into the box (applies when the box is created; section 3.7)
 swarmbox env rm NAME     # stop passing it
-swarmbox env list        # the names being passed (never the values)
+swarmbox env list        # the names being passed, and whether each is set in this terminal (never the values)
+swarmbox env set NAME    # optional: store a value on the host as a fallback for creation (section 3.7)
 swarmbox --once          # throwaway container for the current folder, removed on exit (no session sharing)
 ```
 
@@ -150,19 +151,43 @@ variables override it. Nothing about Cloudflare is ever passed into the box.
 ### 3.7 Environment variables and keys (proposed; same behavior as `start.sh --env-keys` today)
 
 Keys and settings the box needs (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, a model name...) are passed **when the box is created**,
-and only then. The first `swarmbox` takes the values from the host environment at that moment; a box that already exists
-keeps what it was created with. To pick up a change, recreate it: `swarmbox reset`.
+and only then. The first `swarmbox`, the one that creates the box, takes the values from its own environment at that moment;
+a box that already exists keeps what it was created with, and other terminals that enter it pass nothing. To pick up a change,
+recreate it: `swarmbox reset`.
 
-What is new is only where the list lives:
-- The **names** are stored on the host, in `~/.config/swarmbox/config` (`ENV_KEYS=ANTHROPIC_API_KEY,GEMINI_API_KEY`), not
-  typed on every command. At creation the function turns each name into `-e NAME`, so Podman reads the value from the
-  host environment, as `--env-keys` does today. Values are never written to this file.
-- `swarmbox env add NAME`, `env rm NAME` and `env list` edit and show the list. `list` prints names only.
+How it works
+- The **names** are stored on the host, in `~/.config/swarmbox/config` (`ENV_KEYS=ANTHROPIC_API_KEY,GEMINI_API_KEY`), not typed
+  on every command. At creation the function turns each name into `-e NAME` without a value, so Podman reads it from the
+  environment of the terminal that runs `swarmbox`, as `--env-keys` does today. This file holds no values.
+- `swarmbox env add NAME`, `env rm NAME` and `env list` edit and show the list. `list` prints each name and whether it is
+  `set` or `not set` in the current terminal; never the value.
+- **Names listed but not set:** if a listed name is not set in the terminal that creates the box, the function warns before
+  creating it ("ANTHROPIC_API_KEY is listed but not set in this terminal; the box will start without it"). Podman would pass
+  nothing and say nothing.
 - A name must look like an environment variable. Names that belong to the host side are refused: anything starting with
   `SWARMBOX_CLOUDFLARE_` (the tunnel token must never enter the box, as `start.sh` already enforces today).
 - On creation the function stores a hash of the passed values as a label on the container (`swarmbox.env-hash`). On every
   entry it recomputes the hash from the host and, if it differs, prints one line: "the variables changed on the host; run
   `swarmbox reset` to apply them". The values themselves are never stored for this; only the hash is.
+
+Where the values come from, and the gap
+- By default the source is the host environment, so it is up to the user to keep the variables exported (a shell startup file,
+  a password manager, a tool such as direnv). SwarmBox stores nothing.
+- The gap: `swarmbox reset` re-reads the host environment. If a variable is no longer exported in that terminal, the new box starts
+  without it. Claude Code's own login is not affected: it lives in `~/.claude` in the workspace and survives a reset.
+- **Optional fallback (proposed, undecided: open question 15):** `swarmbox env set NAME` asks for the value without echoing it and
+  writes it to `~/.config/swarmbox/secrets/env`, a plain `NAME=value` file, one per line, no `export`, no quotes, mode `600`:
+
+  ```
+  ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxx
+  GEMINI_API_KEY=AIzaxxxxxxxxxxxx
+  ```
+
+  At creation, for each listed name the value is the host environment's if set, otherwise this file's. The function hands it to
+  Podman through the environment of the `podman` process, not on the command line, so it does not show in `ps`. The file is
+  read only at creation; it is not mounted into the box. It keeps the keys in plain text on the host, readable by the user,
+  and must never be shared or committed. Unlike exporting keys from a shell startup file, it does not put them in the environment
+  of every terminal the user opens.
 
 What stays as it is today, stated so nobody assumes more:
 - The values live in the container's configuration (`podman inspect` shows them) and in the environment of every process in
@@ -177,7 +202,7 @@ Alternatives considered, and why they are not the default:
   the host, and does not appear in `podman inspect`), but browser windows and remote access come from the tmux server, not from
   the entering command, so they would not follow it. How tmux inherits the environment for new windows was **not** measured
   (an attempt was run against the wrong tmux server and is void).
-- *A secrets file mounted from the host* and *Podman secrets*: keep values out of `podman inspect`, but add machinery for
+- *A secrets file mounted into the box* and *Podman secrets*: keep values out of `podman inspect`, but add machinery for
   a property the model above already gives up on purpose (the agent reads the keys either way).
 - *A credential proxy on the host* that adds authentication to requests so the box never holds the key: the only option that
   protects the key from the agent; it is a larger piece of work and is listed in the roadmap as optional.
@@ -542,6 +567,7 @@ File types
 | Host scripts | `start.sh`, `build.sh`, `lib/`, `cloudflare-setup.py` | the user's shell | on the host |
 | Generated host function | the user's `~/.bashrc` (between markers) | the user's shell | every terminal |
 | Host config | `~/.config/swarmbox/config`, `~/.config/swarmbox/cloudflare.json` | the host function and helper | every entry, `remote` |
+| Host secrets (optional, mode 600) | `~/.config/swarmbox/secrets/env` | the host function, at creation only | box creation |
 | Tests | `tests/` | CI and contributors | every change |
 | Docs | `README.md`, `docs/` | people | always |
 
@@ -687,6 +713,9 @@ An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPA
 13. `swarmbox update` while sessions are running: ask before recreating, or keep the old box until the user resets it?
 14. Does the vendor's native installer for Claude Code leave anything outside the home (it was not tested), and is its updater
     happier with it than with an npm install under `--prefix`? Answer together with question 3.
+15. Fallback source for keys (3.7): store values in a `600` file on the host (`env set`), or leave the source entirely to the user's
+    own shell/password manager? Related: the same question for the Cloudflare tunnel token, which is only needed to create or
+    recreate the connector.
 
 ## 13. Roadmap
 
