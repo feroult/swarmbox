@@ -175,6 +175,12 @@ class Structure(unittest.TestCase):
         self.assertIn("python3 tests/test_tool_real.py", text)
         self.assertIn("python3 tests/test_tool_claude_real.py", text)
         self.assertIn("skipped", text)  # a skipped real test fails the job
+        # the pipe into tee must not swallow the exit status of the test
+        step = [s for s in job["steps"] if "test_tool_real.py" in s.get("run", "")][0]
+        self.assertEqual(step.get("shell"), "bash")
+        self.assertIn("set -o pipefail", step["run"])
+        self.assertLess(step["run"].index("set -o pipefail"),
+                        step["run"].index("test_tool_real.py"))
         last = [s for s in job["steps"] if s.get("if") == "always()"]
         self.assertEqual(len(last), 1)
         self.assertIn('podman rmi "$SWARMBOX_IMAGE_TAG"', last[0]["run"])
