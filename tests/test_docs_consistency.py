@@ -492,5 +492,81 @@ class PhaseFourBCloseTest(unittest.TestCase):
             self.assertIn([c.strip() for c in r[0].strip().strip("|").split("|")][2], ("done", "partial", "blocked"), sl)
 
 
+CF_DOC = read("docs", "cloudflare.md")
+
+
+class PhaseFiveDocsTest(unittest.TestCase):
+    """Slice 5.6: docs/cloudflare.md matches the wrapper and carries the owner checklist."""
+
+    def test_doc_names_every_remote_subcommand(self):
+        helper = read("container", "host", "swarmbox-host")
+        usage = re.search(r"remote ((?:[a-z]+\|)+[a-z]+) \[options\]", helper)
+        self.assertTrue(usage)
+        subs = usage.group(1).split("|")
+        self.assertEqual(set(subs), {"setup", "status", "off", "token"})
+        for sub in subs:
+            self.assertIn("swarmbox remote %s" % sub, CF_DOC)
+        dispatch = re.search(r"cmd_remote\(\) \{.*?\n\}\n", helper, re.S).group(0)
+        self.assertEqual(set(re.findall(r"^        ([a-z]+)\) r_cmd=", dispatch, re.M)), set(subs))
+
+    def test_doc_names_every_option_of_the_script(self):
+        script = read("cloudflare-setup.py")
+        opts = set(re.findall(r'add_argument\("(--[a-z-]+)"', script))
+        opts -= {"--verify-timeout"}  # help=SUPPRESS: internal
+        self.assertTrue(opts)
+        for o in sorted(opts):
+            self.assertIn("`%s`" % o, CF_DOC, o)
+        self.assertIn("`-y`", CF_DOC)
+
+    def test_help_and_doc_list_the_same_subcommands(self):
+        helper = read("container", "host", "swarmbox-host")
+        m = re.search(r"^  remote ((?:[a-z]+\|)+[a-z]+) \[options\]", helper, re.M)
+        self.assertTrue(m)
+        listed = set(m.group(1).split("|"))
+        in_doc = set(re.findall(r"swarmbox remote ([a-z]+)", CF_DOC))
+        self.assertEqual(listed, in_doc)
+
+    def test_checklist_and_section_headings(self):
+        self.assertRegex(CF_DOC, r"(?m)^## Owner checklist")
+        sec = CF_DOC[CF_DOC.index("## Owner checklist"):]
+        for step in ("remote setup --dry-run", "remote status", "from outside", "one-time code",
+                     "podman-restart.service", "remote off"):
+            self.assertIn(step, sec, step)
+        for h in ("## What it provisions", "## Options", "## Tunnel token", "## Remote off", "## Rerun keeps the session",
+                  "## The connector image", "## Running outside a box"):
+            self.assertIn("\n" + h, CF_DOC, h)
+
+    def test_connector_image_is_pinned_and_never_latest(self):
+        self.assertNotRegex(CF_DOC, r"cloudflared:latest")
+        script = read("cloudflare-setup.py")
+        pin = re.search(r'DEFAULT_CONNECTOR_IMAGE = "([^"]+)"', script).group(1)
+        self.assertIn(pin, CF_DOC)
+        self.assertIn("SWARMBOX_CLOUDFLARED_IMAGE", CF_DOC)
+
+    def test_code_fences_are_balanced_and_no_real_looking_token(self):
+        self.assertEqual(len(re.findall(r"(?m)^```", CF_DOC)) % 2, 0)
+        self.assertNotRegex(CF_DOC, r"eyJ[A-Za-z0-9_-]{10,}")
+        self.assertNotRegex(CF_DOC, r"\b[A-Za-z0-9_-]{37,}\b(?<![a-z/.-]{37})")
+
+    def test_cross_references_and_v010_only_as_history(self):
+        for d in ("D14", "D16", "D28", "D39"):
+            self.assertIn(d, CF_DOC)
+        self.assertIn("5.2", CF_DOC)
+        for line in CF_DOC.splitlines():
+            if "start.sh" in line or "cloudflare-setup.py --" in line and "swarmbox" not in line:
+                self.assertTrue("v0.1.0" in line or "history" in line.lower(), line)
+
+    def test_design_plan_status_and_log_carry_5_6(self):
+        sec = DESIGN[DESIGN.index("### 5.2 Remote"):DESIGN.index("## 6. Tools")]
+        self.assertIn("docs/cloudflare.md", sec)
+        self.assertIn("5.6 state", sec)
+        status = read("docs", "implementation-status.md")
+        r = [l for l in status.splitlines() if l.startswith("| 5.6-")]
+        self.assertEqual(len(r), 1)
+        self.assertIn("checklist", r[0])
+        self.assertTrue(any(l.startswith("| 5.owner-checklist") for l in status.splitlines()))
+        self.assertRegex(read("docs", "decision-log.md"), r"(?m)^## \[5\.6\] ")
+
+
 if __name__ == "__main__":
     unittest.main()

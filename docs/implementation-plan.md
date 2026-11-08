@@ -277,6 +277,8 @@ Tests first: the existing `test_cloudflare_setup.py` (kept), plus the rerun-keep
 
 Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in Phase 3).
 
+**5.6 state:** `docs/cloudflare.md` was rewritten and carries the owner checklist in Phase 5 (not Phase 6), so Phase 6 only re-reads it for the final README links; the end-to-end checklist is the status row `5.owner-checklist`. Design 5.2 ("5.6 state"), D14, D16, D28, D39.
+
 **Exit criteria:** the tests pass; the owner runs one end-to-end setup against their own Cloudflare account and reaches the box from outside.
 
 ---
@@ -287,7 +289,7 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 
 - **Parity test:** one test per row of the feature catalog (8.4) against the function (D8).
 - **Delete** `start.sh`, `build.sh` and `lib/` (including `lib/attach-session.sh`, replaced by `swarmbox-attach`), `container/scripts/init.sh` (D9), `container/opencode/` (its template moved to `container/tools/opencode/`) and `container/web/web-terminal.sh` (replaced by `swarmbox-web` and `build-index.sh`); a test asserts that none of them exists and that the Dockerfile names none of them.
-- **Documentation:** rewrite `README.md` around the new install and first use, including the **manual uninstall steps** (D36, design 12.5) and the no-telemetry, local-logs statement; update `docs/web-terminal.md`, `docs/cloudflare.md`, `docs/nested-podman.md`; keep `design.md` and this plan in sync.
+- **Documentation:** rewrite `README.md` around the new install and first use, including the **manual uninstall steps** (D36, design 12.5) and the no-telemetry, local-logs statement; update `docs/web-terminal.md`, `docs/nested-podman.md` (`docs/cloudflare.md` was rewritten in 5.6); keep `design.md` and this plan in sync.
 - **Dogfooding:** the owner first runs a second box (`SWARMBOX_NAME=dev`, another workspace) from M2 on; after parity the main workspace is migrated with the layout migration (12.4), after a backup.
 - **Owner's real-hardware checks, closing:** B6 (macOS), B7 (UID other than 1000), B8 (older Podman), B15 (`python3` on a clean macOS). **Rechecks** (not closing): the macOS parts of B19, B21, B22, B23 and B34, and the WSL home of B22.
 
