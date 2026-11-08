@@ -28,6 +28,8 @@ python3 tests/test_docs_consistency.py
 |------|----------------|
 | `test_attach_command.py` | `container/scripts/swarmbox-attach.sh`: fake tmux, then real tmux isolated with `-L swarmbox-test-<random>`, ptys as terminals |
 | `test_attach_container.py` | `attach` in a throwaway container from the image (skipped unless `SWARMBOX_IMAGE_BUILD=1`) |
+| `test_bashrc_container.py` | the shell fragment in a throwaway container from the image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
+| `test_bashrc_fragment.py` | `container/config/bashrc.sh`: aliases and `yolo` from fake manifests, banner and health lines, `PATH`, `SWARMBOX_CMD=1` (bash, fixture trees in mktemp) |
 | `test_build_index.py` | `container/web/build-index.sh`, the web page assembled at image build |
 | `test_ci_workflow.py` | static checks of `.github/workflows/ci.yml` (parsed with PyYAML; runs actionlint when `ACTIONLINT` or PATH has it) |
 | `test_clipboard_bridge.py` | the clipboard bridge page script (needs a browser; about 40 s) |
