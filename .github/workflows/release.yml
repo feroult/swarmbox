@@ -1,0 +1,282 @@
+# SwarmBox release pipeline (design 10.4 and 13.4, decisions D32 and D38, plan section 10, decision log [7.5]).
+#
+# Trigger: a pushed tag vX.Y.Z, or a manual run (workflow_dispatch). A manual run is a DRY RUN unless it is started on a tag
+# with the input dry-run set to false: everything is built, checked and scanned, nothing is pushed, signed or released.
+# The rule is the single step "pub" of the job "version"; every step that pushes, logs in, signs or releases is skipped
+# unless that step said publish=true.
+#
+# Pipeline: version -> tests (the whole ci.yml, called as a reusable workflow) -> build (one native job per architecture:
+# amd64 on ubuntu-24.04, arm64 on ubuntu-24.04-arm; build, helper-version check, grype scan, push) -> manifest (the
+# multi-arch list with the tags X.Y.Z, X.Y and latest) -> sign (cosign keyless on the digest, SBOM with syft, SBOM
+# attestation, a verify of both) -> notes (GitHub release with the digest and the SBOM file).
+#
+# It pushes only to ghcr.io/feroult/swarmbox (D38) with the workflow's own token, contacts no other registry, and uses no
+# stored credential: the signature is keyless (a short-lived certificate from the OIDC token of the run).
+#
+# NONE OF THIS HAS EVER RUN. It was validated in the development box only by tests/test_release_workflow.py (YAML shape,
+# gating, permissions, pins), tests/test_release_version.py (tag to image tags) and actionlint when present. Everything
+# below that depends on GitHub or on an action is [unverified] until the first real run; the checklist is in
+# docs/design.md 13.4 ("First run of release.yml"). In short:
+#   - [unverified] the runner label ubuntu-24.04-arm is available to the account (same open fact as B31 for ci.yml);
+#   - [unverified] the package ghcr.io/feroult/swarmbox can be created by the workflow token (packages: write) and, for a
+#     repository that publishes it, is made public once in the package settings;
+#   - [unverified] anchore/scan-action accepts "docker-archive:image.tar" as its image input and grype's HIGH threshold
+#     passes on the real image (the Debian base may carry findings: see .grype.yaml for the rule about ignoring);
+#   - [unverified] "docker buildx imagetools" is present on the runner, and "inspect --format" prints the digest as used here;
+#   - [unverified] cosign keyless signing and the verify identity below match the certificate GitHub issues;
+#   - [unverified] anchore/sbom-action reads a registry image through the docker login of the previous step.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Build, test and scan only; never push, sign or release (a real release needs a tag ref and false here)"
+        type: boolean
+        default: true
+      tag:
+        description: "Tag to compute versions for when this is run from a branch (for example v2.0.0); ignored on a tag ref"
+        type: string
+        default: "v2.0.0"
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY_IMAGE: ghcr.io/feroult/swarmbox
+
+jobs:
+  version:
+    name: version and publish decision
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      version: ${{ steps.ver.outputs.version }}
+      minor: ${{ steps.ver.outputs.minor }}
+      tags: ${{ steps.ver.outputs.tags }}
+      publish: ${{ steps.pub.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - name: Map the tag to the image tags (a malformed or prerelease tag fails the run here)
+        id: ver
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="$INPUT_TAG"
+          if [ "$REF_TYPE" = tag ]; then tag="$REF_NAME"; fi
+          sh dev/release-version.sh "$tag" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Decide whether this run publishes (only on a tag ref, and never when dry-run is true)
+        id: pub
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          publish=false
+          if [ "$REF_TYPE" = tag ]; then
+            if [ "$EVENT" = push ]; then publish=true; fi
+            if [ "$EVENT" = workflow_dispatch ] && [ "$DRY_RUN" = false ]; then publish=true; fi
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish"
+
+  tests:
+    name: tests (all jobs of ci.yml)
+    needs: [version]
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    name: build, check and scan (${{ matrix.arch }})
+    needs: [version, tests]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      LOCAL_IMAGE: swarmbox-test-img-release-${{ matrix.arch }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - name: Runner architecture and Podman version
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          uname -m
+          podman --version
+          case "$ARCH" in
+            amd64) [ "$(uname -m)" = x86_64 ] ;;
+            arm64) [ "$(uname -m)" = aarch64 ] ;;
+          esac
+      - name: Build the image natively (no emulation)
+        run: podman build -t "$LOCAL_IMAGE" .
+      - name: The helper extracted from the image reports the version of the tag
+        run: |
+          dir=$(mktemp -d)
+          podman run --rm "$LOCAL_IMAGE" swarmbox-entrypoint host-helper > "$dir/helper.tar"
+          tar -x -C "$dir" -f "$dir/helper.tar"
+          helper_version=$("$dir/swarmbox-host" version)
+          echo "helper version: $helper_version, tag version: $VERSION"
+          [ "$helper_version" = "$VERSION" ] || { echo "the helper in the image says $helper_version but the tag is v$VERSION: bump container/host/VERSION"; exit 1; }
+      - name: Save the image for the scanner
+        run: podman save --format docker-archive -o image.tar "$LOCAL_IMAGE"
+      - name: Vulnerability scan with grype (fails on HIGH or CRITICAL, rules in .grype.yaml)
+        uses: anchore/scan-action@v6.0.0
+        with:
+          image: docker-archive:image.tar
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+      - name: Log in to ghcr.io with the workflow token
+        if: needs.version.outputs.publish == 'true'
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | podman login ghcr.io -u "$GH_ACTOR" --password-stdin
+      - name: Push the per-architecture image (tag X.Y.Z-arch, joined into the multi-arch list by the next job)
+        if: needs.version.outputs.publish == 'true'
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          podman push --digestfile digest.txt "$LOCAL_IMAGE" "docker://$REGISTRY_IMAGE:$VERSION-$ARCH"
+          echo "pushed $REGISTRY_IMAGE:$VERSION-$ARCH $(cat digest.txt)"
+      - name: Remove the image
+        if: always()
+        run: podman rmi "$LOCAL_IMAGE" || true
+
+  manifest:
+    name: multi-arch manifest list
+    needs: [version, build]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.list.outputs.digest }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAGS: ${{ needs.version.outputs.tags }}
+    steps:
+      - name: Log in to ghcr.io with the workflow token
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+      - name: Create the manifest list with every tag and read its digest
+        id: list
+        run: |
+          amd=$(docker buildx imagetools inspect "$REGISTRY_IMAGE:$VERSION-amd64" --format '{{json .Manifest}}' | jq -r .digest)
+          arm=$(docker buildx imagetools inspect "$REGISTRY_IMAGE:$VERSION-arm64" --format '{{json .Manifest}}' | jq -r .digest)
+          echo "amd64 $amd, arm64 $arm"
+          case "$amd$arm" in *sha256:*sha256:*) ;; *) echo "a per-architecture digest is missing"; exit 1 ;; esac
+          args=()
+          for t in $TAGS; do args+=(-t "$REGISTRY_IMAGE:$t"); done
+          docker buildx imagetools create "${args[@]}" "$REGISTRY_IMAGE@$amd" "$REGISTRY_IMAGE@$arm"
+          digest=$(docker buildx imagetools inspect "$REGISTRY_IMAGE:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)
+          case "$digest" in sha256:*) ;; *) echo "no digest for the manifest list"; exit 1 ;; esac
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "manifest list $REGISTRY_IMAGE:$VERSION is $digest"
+
+  sign:
+    name: sign, SBOM and attestation
+    needs: [version, manifest]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      DIGEST: ${{ needs.manifest.outputs.digest }}
+    steps:
+      - uses: sigstore/cosign-installer@v3.7.0
+      - name: Log in to ghcr.io with the workflow token
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+      - name: Sign the digest (keyless)
+        run: cosign sign --yes "$REGISTRY_IMAGE@$DIGEST"
+      - name: SBOM with syft (SPDX JSON)
+        uses: anchore/sbom-action@v0.17.9
+        with:
+          image: ${{ env.REGISTRY_IMAGE }}@${{ needs.manifest.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest the SBOM to the digest (keyless)
+        run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$REGISTRY_IMAGE@$DIGEST"
+      - name: Verify the signature and the attestation as a user would
+        env:
+          IDENTITY: ^https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/v
+        run: |
+          cosign verify --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$REGISTRY_IMAGE@$DIGEST" > /dev/null
+          cosign verify-attestation --type spdxjson --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$REGISTRY_IMAGE@$DIGEST" > /dev/null
+      - uses: actions/upload-artifact@v4.6.0
+        with:
+          name: sbom
+          path: sbom.spdx.json
+          if-no-files-found: error
+
+  notes:
+    name: GitHub release with the digest and the SBOM
+    needs: [version, manifest, sign]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      VERSION: ${{ needs.version.outputs.version }}
+      DIGEST: ${{ needs.manifest.outputs.digest }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4.1.8
+        with:
+          name: sbom
+      - name: Create the release (the tag must already exist) with the digest in the notes and the SBOM attached
+        run: |
+          {
+            echo "SwarmBox $VERSION"
+            echo
+            echo "Image: $REGISTRY_IMAGE:$VERSION"
+            echo "Digest: $DIGEST"
+            echo
+            echo "Pull by digest: podman pull $REGISTRY_IMAGE@$DIGEST"
+            echo
+            echo "Verify the signature:"
+            echo
+            echo "    cosign verify --certificate-identity-regexp '^https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com $REGISTRY_IMAGE@$DIGEST"
+            echo
+            echo "The SBOM (SPDX JSON, made with syft) is attached as sbom.spdx.json and attested to the digest."
+          } > notes.md
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "SwarmBox $VERSION" --notes-file notes.md sbom.spdx.json
