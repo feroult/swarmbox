@@ -1254,3 +1254,8 @@ Impact on the design: none. How to reverse: n/a.
 
 ## [4b.1] What did not work
 Running the serve tests through a pipe (`python3 ... | tail`) hung for the whole tool timeout because fake background processes kept the pipe open; with output to a file the 41 tests take 10 s. The generator was not run inside a built image (no container used in this slice).
+
+## [4b.1] test_mcp_registry.py runs on Linux CI only
+Context: test_ci_workflow requires every test file on the macOS job unless excluded. The generator is a container program (bash and jq in the image), like swarmbox-migrate.
+Chosen: added to NOT_ON_MACOS in tests/test_ci_workflow.py, listed in the linux job only. Found because the first commit forgot it.
+Impact on the design: none. How to reverse: remove it from the set and add the line to the macOS list.
