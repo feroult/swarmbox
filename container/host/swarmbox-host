@@ -152,6 +152,14 @@ init_paths() {
     NOTICES=$STATE_DIR/notices
 }
 
+# private_dir DIR: makes DIR (and its parents) and removes the group and other permissions of DIR itself (never adds any), so that no other account can plant a file or a
+# symlink in it (a folder that already existed with a looser mode is tightened; one that is not ours cannot be and is left as it
+# is). Never recursive. Security review SR-03.
+private_dir() {
+    mkdir -p "$1" || return 1
+    chmod go-rwx "$1" 2> /dev/null || true
+}
+
 # ---------------------------------------------------------------- the octal mode of a file (B22, B34)
 
 mode_ok() {
@@ -517,9 +525,13 @@ cfg_write_keys() {
         [ "$_wk" = CLOUDFLARE_TUNNEL_TOKEN ] && _tok=1
         _i=$((_i + 2))
     done
-    mkdir -p "$CFG_DIR" || die 1 "cannot create $CFG_DIR."
+    private_dir "$CFG_DIR" || die 1 "cannot create $CFG_DIR."
     [ ! -f "$CFG_FILE" ] || [ -r "$CFG_FILE" ] || die 1 "cannot read the config file $CFG_FILE."
+    # the temporary name is predictable: it is removed first (a symlink planted there is deleted, not followed) and then created
+    # with noclobber, which fails instead of writing through anything that appears in between (security review SR-02)
     _tmp=$CFG_FILE.tmp.$$
+    rm -f "$_tmp"
+    set -C
     {
         if [ -f "$CFG_FILE" ]; then
             while IFS= read -r _line || [ -n "$_line" ]; do
@@ -537,7 +549,8 @@ cfg_write_keys() {
             printf '%s=%s\n' "$1" "$2"
             shift 2
         done
-    } > "$_tmp" || { rm -f "$_tmp"; die 1 "cannot write $_tmp."; }
+    } > "$_tmp" || { set +C; rm -f "$_tmp"; die 1 "cannot write $_tmp."; }
+    set +C
     if ! chmod 600 "$_tmp"; then
         rm -f "$_tmp"
         if [ "$_tok" = 1 ]; then
@@ -551,12 +564,14 @@ cfg_write_keys() {
 # Notices state (3.7.5): one line <box>:<KEY> per announced key.
 notice_seen() { [ -f "$NOTICES" ] && grep -qxF -- "$BOX:$1" "$NOTICES"; }
 notice_mark() {
-    mkdir -p "$STATE_DIR" || return 1
+    private_dir "$STATE_DIR" || return 1
     printf '%s:%s\n' "$BOX" "$1" >> "$NOTICES"
 }
 notice_clear() {
     [ -f "$NOTICES" ] || return 0
-    grep -vxF -- "$BOX:$1" "$NOTICES" > "$NOTICES.tmp.$$"
+    rm -f "$NOTICES.tmp.$$"   # SR-02: a planted symlink is deleted, and noclobber refuses anything that appears after
+    ( set -C; grep -vxF -- "$BOX:$1" "$NOTICES" > "$NOTICES.tmp.$$" ) || :   # grep exits 1 when no line is left
+    [ -f "$NOTICES.tmp.$$" ] && [ ! -L "$NOTICES.tmp.$$" ] || return 0
     mv -f "$NOTICES.tmp.$$" "$NOTICES"
 }
 
@@ -1291,8 +1306,9 @@ nap() {
 }
 
 ensure_state_dir() {
-    mkdir -p "$STATE_DIR" || die 4 "cannot create $STATE_DIR."
+    private_dir "$STATE_DIR" || die 4 "cannot create $STATE_DIR."
     UP_ERRF=$STATE_DIR/err.$$
+    rm -f "$UP_ERRF"   # SR-02: a symlink planted at the predictable name is deleted, never written through
 }
 
 need_podman() {
@@ -1409,6 +1425,7 @@ resolve_init() {
 # signal ends this call at once. SWARMBOX_TEST_CREATE_FLAGS replaces the program, for tests.
 capture_flags() {
     UP_FLAGS=$STATE_DIR/flags.$$
+    rm -f "$UP_FLAGS"   # SR-02
     u_prog=${SWARMBOX_TEST_CREATE_FLAGS:-}
     if [ -z "$u_prog" ]; then
         u_sd=$(self_dir) || die 3 "cannot find the folder of the host helper."
@@ -1684,7 +1701,7 @@ cmd_connection() {
     need_podman
     load_creation 0
     host_connection_wanted || return 0
-    mkdir -p "$STATE_DIR" || die 4 "cannot create $STATE_DIR."
+    private_dir "$STATE_DIR" || die 4 "cannot create $STATE_DIR."
     host_connection "$C_WORKSPACE"
     printf 'unix://%s\n' "$SOCK_PATH"
 }
@@ -1917,7 +1934,7 @@ cmd_update() {
     fi
     up_data=$(xdg_root "${XDG_DATA_HOME:-}" "$HOME/.local/share")/swarmbox
     up_dir=$up_data/host
-    mkdir -p "$up_data" || die 3 "cannot make $up_data."
+    private_dir "$up_data" || die 3 "cannot make $up_data."
     up_tmp=$(mktemp -d "$up_dir.new.XXXXXX" 2> /dev/null) || up_tmp=
     if [ -z "$up_tmp" ] || [ ! -d "$up_tmp" ]; then die 3 "cannot make a temporary folder next to $up_dir."; fi
     UP_TMPDIR=$up_tmp
