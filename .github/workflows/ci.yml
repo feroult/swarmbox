@@ -94,9 +94,11 @@ jobs:
           python3 tests/test_function_fish.py
           python3 tests/test_function_zsh.py
           python3 tests/test_host_config.py
+          python3 tests/test_host_connector.py
           python3 tests/test_host_create_flags.py
           python3 tests/test_host_shells.py
           python3 tests/test_host_socket.py
+          python3 tests/test_host_remote.py
           python3 tests/test_host_up.py
           python3 tests/test_host_update.py
           python3 tests/test_registry_e2e.py
@@ -228,9 +230,11 @@ jobs:
           python3 tests/test_function_fish.py
           python3 tests/test_function_zsh.py
           python3 tests/test_host_config.py
+          python3 tests/test_host_connector.py
           python3 tests/test_host_create_flags.py
           python3 tests/test_host_shells.py
           python3 tests/test_host_socket.py
+          python3 tests/test_host_remote.py
           python3 tests/test_host_up.py
           python3 tests/test_host_update.py
           python3 tests/test_registry_e2e.py
