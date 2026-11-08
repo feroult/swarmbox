@@ -64,7 +64,8 @@ import json, os, sys
 d = os.path.dirname(os.path.abspath(__file__))
 argv = sys.argv[1:]
 fd = os.open(os.path.join(d, "calls.jsonl"), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-os.write(fd, (json.dumps({"argv": argv, "pid": os.getpid()}) + "\n").encode())
+os.write(fd, (json.dumps({"argv": argv, "pid": os.getpid(),
+                          "env": {k: v for k, v in os.environ.items() if k.startswith("TUNNEL_")}}) + "\n").encode())
 os.close(fd)
 with open(os.path.join(d, "script.json")) as f:
     subs = json.load(f)
@@ -191,6 +192,11 @@ class FakePodman:
         """Every recorded call as a list of argv lists (without "podman"), in log order."""
         with open(self.log_path) as f:
             return [json.loads(line)["argv"] for line in f if line.strip()]
+
+    def envs(self):
+        """The TUNNEL_* variables of each call's environment (a test can see that a secret went through the environment)."""
+        with open(self.log_path) as f:
+            return [json.loads(line).get("env", {}) for line in f if line.strip()]
 
     def assert_no_leak(self):
         found = shutil.which("podman", path=os.environ.get("PATH", ""))
