@@ -326,3 +326,25 @@ Impact on the design: none beyond the 13.1 row. How to reverse: delete the class
 Context: rules say see tests fail first.
 Chosen: honestly, tests and fakes were written in one pass and run green; no separate failing run was recorded (the ImportError was the only possible red). Noted for the owner.
 Impact on the design: none. How to reverse: n/a.
+
+## [1.5] Tool choice: gitleaks 8.30.1 plus a supplementary Python scanner
+Context: D37 wants a history scan; the network is open, so gitleaks could be downloaded.
+Options: gitleaks only; own script only; both.
+Chosen: both. gitleaks 8.30.1 (linux x64 release, sha256 checked against the release checksums.txt, run from a mktemp directory and deleted afterwards, never installed). tests/audit_history.py (read-only, tested in tests/test_history_audit.py) adds what gitleaks does not give: identities, hosts, home paths, IPs, e-mails, sensitive file names, a blob pass. It is also the documented fallback if gitleaks is unavailable. The checksum comes from the same release page, so it is not an authenticity proof (recorded as [unverified] in the report).
+Impact on the design: none. How to reverse: delete tests/audit_history.py and its test.
+
+## [1.5] Triage: no credential in the history; two false positives
+Context: gitleaks reported 2 hits (same line, two commits), the script 1 high-entropy hit.
+Chosen: all false positives. The gitleaks hit is a counting-sequence test fixture for a Cloudflare Global API Key shape check; the script hit is the README placeholder for an OAuth token. Nothing is to be rotated. gitleaks scanned 222 of 227 commits because it skips the 5 merge commits; the script's blob pass covers merge content. Values are redacted everywhere (first 4 characters and the length; the report holds no secret-shaped string, and a test enforces it).
+Impact on the design: none. How to reverse: n/a.
+
+## [1.5] Recommended Phase 7 action: publish whole for secrets, owner decides on identities, push selected refs only
+Context: the history holds 4 identities: the owner (feroult@gmail.com), a second personal address (6 commits), an employer address (fer@ciandt.com, 1 commit on main) and a placeholder (User Name, 43 commits). Branches backup/before-author-rewrite and origin/memory and three refs/original/* refs also exist.
+Options: publish whole; rewrite authors with git filter-repo --mailmap; start from a clean history.
+Chosen: recommend publishing whole (nothing secret), pushing only main or opensource and the tag v0.1.0 (never --all or --mirror); if the owner does not want the employer address or the placeholder public, Phase 7 rewrites authors on a fresh clone and recreates the tag. I did not decide the identity question for the owner: it is listed for review tomorrow. No history was rewritten, no ref changed, and the repository visibility was not touched (a manual owner action).
+Impact on the design: none (D37 and plan Phase 7 already allow either). How to reverse: n/a.
+
+## [1.5] Bug found while testing the scanner
+Context: for-each-ref output was first split on the wrong field, so ref names came out as "commit"; the tag-message scan therefore did not run in the first real run.
+Chosen: fixed (field 3) and re-ran; the 16 tests pass. The unit tests did not catch it because tag content was also reached through git log, so the report's numbers come from the fixed version only.
+Impact on the design: none. How to reverse: n/a.

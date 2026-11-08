@@ -32,6 +32,7 @@ python3 tests/test_docs_consistency.py
 | `test_dirs.py` | `container/scripts/dirs.sh`, the XDG-aware path file (sh, dash, bash) |
 | `test_docs_consistency.py` | cross-references, D and B numbers and code fences of the design and the plan |
 | `test_helpers.py` | the fake `podman` of `tests/helpers.py` |
+| `test_history_audit.py` | the history scanner `tests/audit_history.py` and the shape of `docs/history-audit.md` |
 | `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md` and this file |
 | `test_spikes_common.py` | the safety helpers of the spike scripts |
 | `test_ssh_key.py` | the SSH key handling in `start.sh` |
