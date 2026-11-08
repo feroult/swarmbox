@@ -297,6 +297,8 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 
 **6.1 state:** the parity suite is `tests/test_parity.py` (102 tests; one or more per catalog row, the 12.2 removals, the kept items and the 12.3 mapping against a recorded v0.1.0 fixture), with the table in design 13.2 and a consistency test. Reduced rows are tagged and listed in the decision log `[6.1]`. `uuid()` was removed from the shell fragment to match 12.2. **6.2 state:** the v0.1.0-only tests are ported or retired (`tests/test_retired_coverage.py`). **6.3 state:** `start.sh`, `build.sh`, `lib/`, `Dockerfile.v0.1.0`, `container/scripts/init.sh`, `container/opencode/` and `container/web/web-terminal.sh` are deleted; `tests/test_retired.py` is the absence test; the old files stay in the tag `v0.1.0`. The documentation rewrite (README, `docs/web-terminal.md`, `docs/nested-podman.md`) remains.
 
+**6.4 state:** `tests/test_migration_e2e.py` runs the 12.4 sequence end to end on a larger generated fixture copy with the generated function, the real host helper and a fake Podman (old container refused, removed, connection re-registered at the new address, volume `swarmbox-containers` never removed), then the real `swarmbox-migrate.sh` twice; results are tagged `[reduced: fixture]`. `docs/migration.md` is the owner checklist for the run on a copy of the real workspace (B29 stays an owner action). Decision log `[6.4]`.
+
 **Exit criteria:** the parity suite is green; the scripts are deleted; the owner's main box runs on 2.0; the checks that need real hardware have a result or an explicit, documented limit. **M3.**
 
 ---
@@ -467,7 +469,7 @@ Each fact is **closed** by one phase. "Feeds" and "rechecks" are shown separatel
 | B26 | UID of the base image's `node` user | 2 | |
 | B27 | 2.5 GB size target | 2 | |
 | B28 | cgroup manager settings | 2 | check written in 2.7, open until CI |
-| B29 | Layout migration | 2 | closed on a fixture in 2.6; the run on a real workspace copy is Phase 6 |
+| B29 | Layout migration | 2 | closed on a fixture in 2.6 and 6.4 (end to end, reduced); the run on a real workspace copy is an owner action (docs/migration.md) |
 | B30 | macOS CI runner | 1 | |
 | B31 | arm64 build and run | 3 | job written in 3.7 (`arm64` in `ci.yml`) and never ran: `[unverified]` until the first CI run |
 | B32 | WSL workspace refusal | 3 | logic closed-reduced in 3.2 (fake `/proc/version`); the real WSL run is Phase 6 |

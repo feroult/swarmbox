@@ -9,6 +9,12 @@
 - **One workspace:** `.work/` is your agents' home directory, owned by your host user, kept between sessions.
 - **Web terminal:** optional browser shell (ttyd + tmux), with a Cloudflare Tunnel setup for remote access.
 
+## Upgrading from v0.1.0
+
+SwarmBox 2.0 changes the install, the layout inside `.work/` and how the box is started. **Back up your workspace first** (`cp -a .work .work.backup`,
+with the old container stopped), then follow [docs/migration.md](docs/migration.md): it has the exact order, the commands, and a way to try the
+migration on a copy of your workspace before the real one. The rest of this README is being rewritten for 2.0 and still shows v0.1.0 usage.
+
 ## Quick Start
 
 ```bash
