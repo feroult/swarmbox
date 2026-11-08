@@ -1323,3 +1323,34 @@ Impact on the design: 6.12 "4b.3 state". How to reverse: edit clasp/shell.sh.
 - tests/test_tool_link.py `test_real_tools_tree_links_claude_and_tool_ports_is_empty` asserted an empty tool-ports for the real tools; it is renamed and now asserts exactly `clasp\t43323`.
 - Found while writing the fragment test: tests/test_tool_opencode.py `test_bashrc_fragment_makes_no_opencode_alias_but_yolo_works` uses environment variable names the fragment does not read (SWARMBOX_TEST_IMAGE_TOOLS instead of SWARMBOX_IMAGE_TOOLS_DIR), so it passes without exercising the real manifest. Not fixed here; the new test uses the correct names. Left for the owner or the 4b close-out.
 - The new test file is listed in ci.yml (Linux job) and in the NOT_ON_MACOS set of test_ci_workflow.py, like the other container-program tests.
+
+## [4b.4] Checksums recorded by really running the maintainer script
+Context: the slice allowed deferring the real run if the network failed.
+Options: leave checksums pending; run dev/record-checksums.sh for both tools.
+Chosen: run it (the network worked, about 4 s for go and 8 s for gcloud). Results: go1.27.3 amd64 `65efbc80...79b40`, arm64 `a06e9930...65f49` (the listing and the computed value agreed, the script refuses otherwise); gcloud 592.0.0 x86_64 `2d841a23...3d50b`, arm `ba588759...e44f4d`, trust on first use (B11). Both equal the values the 0.4 spike recorded, which is the only cross-check available for gcloud. The B11 and B25 evidence tags are unchanged; the new tag is in the 4b.4 paragraph of 6.4.
+Impact on the design: 6.4 "4b.4 state". How to reverse: delete the two SHA256_ lines (validate then fails until recorded again).
+
+## [4b.4] The installers require TOOL_SHA256 and verify before extracting; validate gained a rule
+Context: the design says a checksum is "required for tools with a published hash" but validate only checked both-or-neither and the hex form.
+Options: leave it to the installer; add a validate rule.
+Chosen: both. install.sh of go and gcloud exits 1 before downloading if TOOL_SHA256 is not 64 hex digits, downloads into a private temp folder, compares, and only then extracts, so a mismatch leaves the prefix empty. validate fails a manifest whose install.sh mentions TOOL_SHA256 (comments ignored) while the manifest has no SHA256_*; this is a text match, a lint like the rest of validate. Uppercase hex is accepted in the manifest and compared in lower case.
+Impact on the design: 6.4 and the validate paragraph. How to reverse: remove the grep block in validate.
+
+## [4b.4] gcloud: the SDK's install.sh is not run, no CLOUDSDK_CONFIG, no shell.sh
+Context: Google's tarball ships an install.sh that edits shell startup files and may write config; the slice asked to decide where gcloud's config may live (6.4).
+Options: run it with quiet flags; extract only and use bin/ in place; also set CLOUDSDK_CONFIG under a SwarmBox path.
+Chosen: extract only, leave gcloud's default `~/.config/gcloud` (created by the user's own `gcloud auth login`, which is the user's data, in the workspace home, and survives a reset like the rest of the home). Setting CLOUDSDK_CONFIG would move users' credentials to a non-standard place for no gain. Whether the extracted bin/gcloud runs without the SDK's own install.sh (bundled Python) was not measured here [unverified]; 4b.7 runs it for real and, if it fails, the installer will run install.sh with `--quiet --path-update=false --command-completion=false --usage-reporting=false --rc-path=/dev/null`.
+Impact on the design: 6.4 "4b.4 state". How to reverse: add the install.sh call.
+
+## [4b.4] go: GOPATH and GOCACHE keep a value the user exported; the install is the plain tarball
+Context: 6.12 says `GOPATH=$HOME/go`, `GOCACHE=$HOME/.cache/go-build`.
+Options: assign unconditionally; default only (`${GOPATH:-$HOME/go}`).
+Chosen: default only, so a user's own export (or a project tool) is not silently overridden; `$GOPATH/bin` is appended once to PATH (after the existing entries, so system tools win over a stray binary in ~/go/bin). The tarball is extracted with its top directory stripped, so GOROOT is the tool prefix and the tool needs no GOROOT variable (Go finds its root from the executable's location, which `current` links resolve) [unverified: real run in 4b.7].
+Impact on the design: none beyond 6.4 state. How to reverse: assign unconditionally in go/shell.sh.
+
+## [4b.4] Small decisions
+- The maintainer script is `dev/record-checksums.sh <go|gcloud> [TOOL_CONF]`; it falls back to go.dev's `include=all` listing when the version is not in the current one (the fallback was only tested with a fake, the real `include=all` was not read [unverified]); versions `latest` or with odd characters are refused; writes are atomic (temp file then mv) and only after both downloads succeed.
+- Versions pinned: go 1.27.3 (the release B25 measured) and gcloud 592.0.0 (B11). Newer releases may exist; bumping is the maintainer script's job.
+- The two new test files are in ci.yml (Linux job) and in NOT_ON_MACOS (they use sha256sum, GNU chmod and bash 4 associative arrays), like the other container-program tests.
+- The shim test asserts the five shims exist and that the index maps gofmt to go and gsutil and bq to gcloud; the call lifecycle is covered by test_tool_shim.
+

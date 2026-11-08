@@ -250,6 +250,10 @@ check_manifest() {
     done
     [ -z "${M[SHA256_amd64]:-}" ] || [ -n "${M[SHA256_arm64]:-}" ] || err "SHA256_arm64 is missing: SHA256_amd64 is declared and both architectures are required"
     [ -z "${M[SHA256_arm64]:-}" ] || [ -n "${M[SHA256_amd64]:-}" ] || err "SHA256_amd64 is missing: SHA256_arm64 is declared and both architectures are required"
+    if [ -f "$dir/install.sh" ] && [ -z "${M[SHA256_amd64]:-}" ] && [ -z "${M[SHA256_arm64]:-}" ] \
+        && grep -v '^[[:space:]]*#' "$dir/install.sh" | grep -q 'TOOL_SHA256'; then
+        err "install.sh verifies TOOL_SHA256 but the manifest declares no SHA256_amd64 and SHA256_arm64 (record them with dev/record-checksums.sh)"
+    fi
     if [ ! -f "$dir/install.sh" ]; then
         err "install.sh is missing"
     elif [ ! -x "$dir/install.sh" ]; then
