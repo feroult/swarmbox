@@ -958,6 +958,16 @@ class ResetTest(Base):
         self.assertEqual(self.subs("start"), [])
         self.assertTrue(self.subs("exec"), "reset waits for readiness")
 
+    def test_reset_also_creates_the_box_with_init_and_the_time_zone(self):
+        """Ported from v0.1.0's test_reset_also_creates_the_container_with_init and test_reset_also_passes_the_time_zone."""
+        self.podman(lookup={"stdout": self.matching_line()}, run={"rules": [{"match": ["--rm", "--init"], "exit": 0}]})
+        r = self.run_h("reset", env=self.env(SWARMBOX_INIT="auto", SWARMBOX_TZ="Europe/Lisbon"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        created = self.real_runs()
+        self.assertEqual(len(created), 1, self.calls())
+        self.assertIn("--init", created[0])
+        self.assertIn("--tz=Europe/Lisbon", created[0])
+
     def test_reset_returns_the_code_of_up(self):
         self.podman(lookup={"stdout": self.matching_line()},
                     run={"rules": [{"match": ["--cidfile"], "exit": 126, "stderr": BUSY + "\n", "cidfile": "c" * 64}]})

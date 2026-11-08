@@ -3,8 +3,8 @@
 
 Run:  python3 tests/test_clipboard_bridge.py        (needs chromium, ttyd and tmux; skipped otherwise)
 
-The page is built by the real container/web/web-terminal.sh (a fake ttyd only records the --index it
-was given), then served by a REAL ttyd running a real tmux, and driven in headless Chromium over the
+The page is built by the real container/web/build-index.sh (at image build) and rendered by the real
+container/scripts/swarmbox-web.sh (a fake ttyd only records the --index it was given), then served by a REAL ttyd running a real tmux, and driven in headless Chromium over the
 DevTools protocol. Selections are made with the SGR mouse sequences xterm.js sends, the keys with real
 key events, and the clipboard is read back with navigator.clipboard.
 """
@@ -24,7 +24,9 @@ import urllib.request
 
 from helpers import ROOT
 
-SCRIPT = os.path.join(ROOT, "container", "web", "web-terminal.sh")
+BUILD = os.path.join(ROOT, "container", "web", "build-index.sh")
+WEB = os.path.join(ROOT, "container", "scripts", "swarmbox-web.sh")
+DIRS_SH = os.path.join(ROOT, "container", "scripts", "dirs.sh")
 BRIDGE = os.path.join(ROOT, "container", "web", "ttyd-clipboard.js")
 STYLE = os.path.join(ROOT, "container", "web", "ttyd-style.css")
 NEEDED = ("chromium", "ttyd", "tmux")
@@ -135,7 +137,7 @@ class ClipboardBridge(unittest.TestCase):
         return p
 
     def build_index(self, conf=""):
-        """Run the real web-terminal.sh against ttyd's own page and return the page it builds."""
+        """Build the page with the real build-index.sh from ttyd's own page, render it with the real swarmbox-web and return it."""
         port = free_port()
         stock = os.path.join(self.tmp, "stock.html")
         ttyd = self.spawn(["ttyd", "-p", str(port), "-i", "lo", "true"])
@@ -148,30 +150,24 @@ class ClipboardBridge(unittest.TestCase):
                 time.sleep(0.2)
         os.killpg(ttyd.pid, signal.SIGKILL)
         ttyd.wait(timeout=5)
+        built = os.path.join(self.tmp, "built", "index.html")
+        r = subprocess.run(["sh", BUILD, stock, BRIDGE, STYLE, built], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
         home = os.path.join(self.tmp, "home")
-        os.makedirs(os.path.join(home, ".swarmbox"), exist_ok=True)
+        os.makedirs(os.path.join(home, ".config", "swarmbox"), exist_ok=True)
         if conf:
-            with open(os.path.join(home, ".swarmbox", "web-terminal.conf"), "w") as f:
+            with open(os.path.join(home, ".config", "swarmbox", "web-terminal.conf"), "w") as f:
                 f.write(conf)
-        shim_dir = os.path.join(self.tmp, "shim")
-        os.makedirs(shim_dir, exist_ok=True)
-        shim = os.path.join(shim_dir, "ttyd")
-        with open(shim, "w") as f:
-            f.write('#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done > "$OUT"\nsleep 1\n')
-        os.chmod(shim, os.stat(shim).st_mode | stat.S_IXUSR)
-        out = os.path.join(self.tmp, "args.txt")
-        env = {"HOME": home, "PATH": shim_dir + os.pathsep + os.environ["PATH"], "OUT": out, "SWARMBOX_WEB": "1",
-               "SWARMBOX_WEB_PORT": str(free_port()), "SWARMBOX_TTYD_STOCK": stock, "SWARMBOX_TTYD_BRIDGE": BRIDGE,
-               "SWARMBOX_TTYD_STYLE": STYLE}
-        subprocess.run(["bash", SCRIPT], env=env, check=True, timeout=20)
-        for _ in range(40):
-            if os.path.exists(out):
-                break
-            time.sleep(0.1)
-        time.sleep(0.2)
-        with open(out) as f:
-            args = f.read().splitlines()
-        return args[args.index("--index") + 1]
+        lib = os.path.join(self.tmp, "lib")
+        os.makedirs(lib, exist_ok=True)
+        if not os.path.exists(os.path.join(lib, "dirs.sh")):
+            os.symlink(DIRS_SH, os.path.join(lib, "dirs.sh"))
+        run = os.path.join(self.tmp, "run")
+        env = {"PATH": "/usr/bin:/bin", "HOME": home, "SWARMBOX_TEST_LIB": lib, "SWARMBOX_TEST_RUN_DIR": run,
+               "SWARMBOX_TEST_WEB_PAGE": built}
+        r = subprocess.run(["bash", WEB, "render"], env=env, capture_output=True, text=True, timeout=20)
+        assert r.returncode == 0, r.stderr
+        return os.path.join(run, "index.html")
 
     def open_terminal(self, conf=""):
         index = self.build_index(conf)
