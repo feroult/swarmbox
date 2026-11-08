@@ -255,6 +255,7 @@ Scope
   **4b.5 state:** `use`, `remove` (`--purge`), `new`, `doctor` and `doctor --fix`, and the fingerprint checks at `link --user` and in the shim (ARCH refuses with exit 69, NODE_MAJOR and LIBC warn once per entry) are done with fakes (`tests/test_tool_use_remove.py`, `tests/test_tool_new.py`, `tests/test_tool_doctor.py`). See design 6.9 and 6.11 and decision log `[4b.5]`.
 - **MCP registry** (4.4; generator done in 4b.1, `tests/test_mcp_registry.py`; the OpenCode mirror is done in 4b.2, `tests/test_tool_opencode.py`): generated `mcp-servers.json`, the registry entry that runs the installed `chrome-devtools-mcp` (no `npx`), the OpenCode mirror.
 - **The `WITH_TOOLS` build argument** (6.8): the Dockerfile installs the named tools into `/opt/swarmbox/tools`.
+  **4b.6 state:** `ARG WITH_TOOLS` and the `install --image` mechanism, the run-time lookup (workspace first, image second), the dev build pass-through and the smoke steps for all seven tools, tool-ports with 43323 and `mcp-servers.json` are done (`tests/test_tool_image_level.py`, `tests/test_dockerfile.py`, `tests/test_dev_build.py`, `tests/test_smoke_skeleton.py`, opt-in `tests/test_image_with_tools.py`); the real build with `WITH_TOOLS=claude` ran (2.09 GB, 117 s warm). See design 6.8 and decision log `[4b.6]`.
 - **The D29 maintainer script** that records gcloud's (and Go's) `SHA256_amd64` and `SHA256_arm64` in the manifest.
 
 Tests first

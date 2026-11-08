@@ -197,33 +197,61 @@ def step_page_built(ctx):
     assert "--swarmbox-padding:" in page and "window.__swarmboxClipboard=" in page, "the served page is not the built page"
 
 
+# The seven tools of the repository and the commands they provide (slice 4b.6; the order of the index is the sort of `link`).
+TOOL_COMMANDS = {"claude": ["claude"], "gemini": ["gemini"], "opencode": ["opencode"], "gcloud": ["gcloud", "gsutil", "bq"],
+                 "clasp": ["clasp"], "go": ["go", "gofmt"], "poetry": ["poetry"]}
+ALL_COMMANDS = [c for cmds in TOOL_COMMANDS.values() for c in cmds]
+
+
 def step_tool_validate(ctx):
     r = podman("run", "--rm", "--entrypoint", "swarmbox-entrypoint", ctx.tag, "tool", "validate")
     out = r.stdout + r.stderr
     assert r.returncode == 0, "tool validate exited %d: %s" % (r.returncode, out)
     assert "manifest(s) checked" in out, "validate did not report what it checked (the real validate, slice 4a.1): " + out
     assert " 0 manifest" not in out, "validate checked no manifest: the image does not ship container/tools: " + out
+    assert "%d manifest(s) checked" % len(TOOL_COMMANDS) in out, "validate did not check all %d manifests: %s" % (len(TOOL_COMMANDS), out)
 
 
 def step_tool_shim(ctx):
-    """The generated shim is a link to swarmbox-shim, the shim directory is on PATH, and nothing was installed (D2)."""
+    """Every command of the seven tools is a shim (a link to swarmbox-shim) found on PATH, and nothing is installed (D2)."""
     r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
-               "readlink /usr/local/lib/swarmbox/shims/claude; test -x /usr/local/bin/swarmbox-shim && echo SHIM-EXEC; "
-               "SWARMBOX_CMD=1 . /etc/swarmbox/bashrc.sh; command -v claude; ls -d ~/.local/share/swarmbox/tools/claude 2>&1; true")
-    out = r.stdout
-    assert out.splitlines()[:2] == ["/usr/local/bin/swarmbox-shim", "SHIM-EXEC"], "the shim is not a link to swarmbox-shim: " + out + r.stderr
-    assert "/usr/local/lib/swarmbox/shims/claude" in out.splitlines()[2:3], "command -v claude does not find the shim: " + out
-    assert "No such file" in out, "a claude tool directory exists before any call: " + out
+               "test -x /usr/local/bin/swarmbox-shim && echo SHIM-EXEC; SWARMBOX_CMD=1 . /etc/swarmbox/bashrc.sh; "
+               "for c in %s; do echo \"$c|$(readlink /usr/local/lib/swarmbox/shims/$c)|$(type -P $c)\"; done; "
+               "ls -d ~/.local/share/swarmbox/tools/claude 2>&1; ls -A /opt/swarmbox/tools 2>&1 | wc -l; true" % " ".join(ALL_COMMANDS))
+    lines = r.stdout.splitlines()
+    assert lines[:1] == ["SHIM-EXEC"], "swarmbox-shim is not executable: " + r.stdout + r.stderr
+    for c, line in zip(ALL_COMMANDS, lines[1:]):
+        assert line == "%s|/usr/local/bin/swarmbox-shim|/usr/local/lib/swarmbox/shims/%s" % (c, c), "the shim of %s is wrong: %s" % (c, line)
+    assert len(lines) == len(ALL_COMMANDS) + 3, "unexpected output: " + r.stdout
+    assert "No such file" in lines[-2], "a claude tool directory exists before any call: " + r.stdout
+    assert lines[-1].strip() == "0", "/opt/swarmbox/tools is not empty in a default build (WITH_TOOLS is empty): " + r.stdout
 
 
 def step_tool_index_ports(ctx):
     r = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
-               "cat /usr/local/lib/swarmbox/index; echo ---; ls -l /usr/local/share/swarmbox/host/tool-ports; "
-               "echo ---; wc -c < /usr/local/share/swarmbox/host/tool-ports")
-    index, ports, size = r.stdout.split("---\n")
-    assert "claude claude" in index.splitlines(), "the index lacks the line 'claude claude': " + r.stdout + r.stderr
-    assert "tool-ports" in ports, "tool-ports is missing: " + r.stdout + r.stderr
-    assert size.strip() == "0", "tool-ports is not empty (claude declares no PORTS): " + size
+               "cat /usr/local/lib/swarmbox/index; echo ---; cat /usr/local/share/swarmbox/host/tool-ports; echo ---; "
+               "ls -l /usr/local/share/swarmbox/host/tool-ports")
+    index, ports, listing = r.stdout.split("---\n")
+    rows = [tuple(l.split()[:2]) for l in index.splitlines() if l.strip()]
+    for tool, cmds in TOOL_COMMANDS.items():
+        for c in cmds:
+            assert (c, tool) in rows, "the index lacks the line '%s %s': %s %s" % (c, tool, r.stdout, r.stderr)
+    assert sorted(c for c, _ in rows) == sorted(ALL_COMMANDS), "the index lists other commands: " + index
+    assert "tool-ports" in listing, "tool-ports is missing: " + r.stdout + r.stderr
+    assert ports.split() == ["clasp", "43323"], "tool-ports is not exactly 'clasp<TAB>43323' (design 9.3): %r" % ports
+
+
+def step_mcp_generated(ctx):
+    """serve step 7 writes mcp-servers.json from the registry: chrome-devtools runs the installed program, never npx (D23)."""
+    r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
+               "export HOME=$(mktemp -d); swarmbox-mcp generate && cat \"$HOME/.claude/mcp-servers.json\"")
+    assert r.returncode == 0, "swarmbox-mcp exited %d: %s" % (r.returncode, r.stdout + r.stderr)
+    import json
+    doc = json.loads(r.stdout)
+    servers = doc.get("mcpServers", doc)
+    assert "chrome-devtools" in servers, "mcp-servers.json lacks chrome-devtools: " + r.stdout
+    assert "npx" not in r.stdout, "mcp-servers.json runs npx: " + r.stdout
+    assert servers["chrome-devtools"]["command"] == "chrome-devtools-mcp", "unexpected command: " + r.stdout
 
 
 def step_attach_session(ctx):
@@ -254,11 +282,16 @@ def step_attach_session(ctx):
 
 
 def step_no_agent(ctx):
+    """A default build holds no tool: every command resolves to its shim and /opt/swarmbox/tools is empty (D2, 6.8)."""
     r = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
-               "for c in claude opencode gemini codex clasp gcloud go poetry; do p=$(command -v $c) && echo \"FOUND:$c:$p\"; done; true")
-    # the claude SHIM is on PATH since slice 4a.5 (a link to swarmbox-shim); it is not the program
+               "for c in claude opencode gemini codex clasp gcloud gsutil bq go gofmt poetry; do p=$(type -P $c) && echo \"FOUND:$c:$p\"; done; "
+               "ls -A /opt/swarmbox/tools | wc -l; true")
     found = [l for l in r.stdout.splitlines() if l.startswith("FOUND:")]
-    assert found == ["FOUND:claude:/usr/local/lib/swarmbox/shims/claude"], "the neutral image holds a program it should not: " + r.stdout
+    # the shims are on PATH (a link to swarmbox-shim each); codex has no tool; none is a program
+    bad = [l for l in found if not l.split(":", 2)[2] == "/usr/local/lib/swarmbox/shims/" + l.split(":")[1]]
+    assert not bad, "the neutral image holds a program it should not: " + r.stdout
+    assert len(found) == len(ALL_COMMANDS), "a shim is missing: " + r.stdout
+    assert r.stdout.splitlines()[-1].strip() == "0", "/opt/swarmbox/tools is not empty: " + r.stdout
 
 
 def step_nested_podman(ctx):
@@ -456,10 +489,11 @@ STEPS = [
     Step("tmpfs-restart", "stop is prompt (exit 143), start empties box:/tmp/swarmbox, workspace survives (B17, B3)", False, step_tmpfs_restart),
     Step("page-built", "the ttyd page is built into the image and served with the three settings (D13)", False, step_page_built),
     Step("tool-validate", "swarmbox-tool validate passes on the shipped manifests (the real validate, 6.9)", False, step_tool_validate),
-    Step("tool-shim", "the claude shim is a link to swarmbox-shim and is found on PATH; nothing is installed (6.2, D2)", False, step_tool_shim),
-    Step("tool-index-ports", "the generated index lists 'claude claude' and tool-ports exists and is empty (6.2, 9.3)", False, step_tool_index_ports),
+    Step("tool-shim", "the shims of all seven tools are links to swarmbox-shim found on PATH; nothing is installed (6.2, D2)", False, step_tool_shim),
+    Step("tool-index-ports", "the index lists the commands of all seven tools and tool-ports is exactly clasp 43323 (6.2, 9.3)", False, step_tool_index_ports),
+    Step("mcp-generated", "swarmbox-mcp generates mcp-servers.json with chrome-devtools and no npx (4.4, D23)", False, step_mcp_generated),
     Step("attach-session", "two attach calls share one session, the idle window is gone, exit codes (D1, B36, B13)", False, step_attach_session),
-    Step("no-agent", "the image holds no agent, gcloud, clasp, Go or Poetry (D2)", False, step_no_agent),
+    Step("no-agent", "a default build holds no agent, gcloud, clasp, Go or Poetry and /opt/swarmbox/tools is empty (D2, 6.8)", False, step_no_agent),
     Step("up-lifecycle", "the host helper: up creates, a second up takes the fast path, reset replaces, stop and up again (3.7.2)", False, step_up_lifecycle),
     Step("up-busy-port", "up on a busy port exits 7 and leaves nothing; a foreign container with the name is refused with exit 5 (B33)", False, step_up_busy_port_and_foreign),
     Step("nested-podman", "a nested Podman runs a container inside the box (D5)", True, step_nested_podman),

@@ -247,10 +247,95 @@ class ToolMachinery(unittest.TestCase):
         self.assertIn("ENV PATH=/usr/local/lib/swarmbox/shims:$PATH", INS)
 
     def test_no_agent_is_installed_and_no_tool_state_is_baked(self):
-        self.assertNotIn("swarmbox-tool install", CODE)
+        # slice 4b.6: the only install is the WITH_TOOLS loop (class WithTools); nothing named, nothing by default
+        installs = [i for i in INS if "swarmbox-tool install" in i]
+        self.assertEqual(len(installs), 1)
+        self.assertIn('"$t"', installs[0])
         self.assertNotIn("swarmbox-tool run", CODE)
         self.assertNotIn(".local/share/swarmbox", CODE)
         self.assertNotRegex(CODE, r"tools/claude")
+
+
+def tool_names():
+    return sorted(os.listdir(os.path.join(ROOT, "container", "tools")))
+
+
+class WithTools(unittest.TestCase):
+    """Slice 4b.6 (design 6.8, 10.2, D2, D23): the WITH_TOOLS build argument."""
+
+    def run_idx(self):
+        idx = [n for n, i in enumerate(INS) if "swarmbox-tool install" in i]
+        self.assertEqual(len(idx), 1)
+        return idx[0]
+
+    def test_arg_exists_and_defaults_to_empty(self):
+        args = [i for i in INS if i.startswith("ARG WITH_TOOLS")]
+        self.assertEqual(len(args), 1)
+        self.assertIn(args[0], ("ARG WITH_TOOLS=", 'ARG WITH_TOOLS=""', "ARG WITH_TOOLS=''"))
+
+    def test_the_arg_is_declared_after_the_stable_layers(self):
+        arg = [n for n, i in enumerate(INS) if i.startswith("ARG WITH_TOOLS")][0]
+        for needle in ("RUN apt-get update", "RUN npm install -g",
+                       "ARG TTYD_VERSION", "ARG STARSHIP_VERSION"):
+            first = [n for n, i in enumerate(INS) if i.startswith(needle)]
+            self.assertTrue(first, needle)
+            self.assertLess(first[0], arg, needle)
+
+    def test_the_run_loops_over_the_comma_list_and_installs_into_the_image_state(self):
+        i = INS[self.run_idx()]
+        self.assertTrue(i.startswith("RUN "))
+        self.assertIn("$WITH_TOOLS", i)
+        self.assertIn("tr ',' ' '", i)
+        self.assertIn('swarmbox-tool install "$t" --image', i)
+        self.assertIn("set -eu", i)  # an unknown name or a failed installer fails the build
+        self.assertIn("set -f", i)   # no globbing of a name
+
+    def test_the_run_is_a_noop_when_the_list_is_empty(self):
+        i = INS[self.run_idx()]
+        self.assertRegex(i, r"for t in \$\(printf '%s' \"\$WITH_TOOLS\" \| tr ',' ' '\); do")
+        self.assertNotRegex(i, r"swarmbox-tool install [^\"]")  # never an install outside the loop
+        import subprocess
+        r = subprocess.run(["sh", "-c", "WITH_TOOLS=''; " + i[len("RUN "):].replace("swarmbox-tool", "echo CALLED")], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, "")
+        r = subprocess.run(["sh", "-c", "WITH_TOOLS='a, b,c'; " + i[len("RUN "):].replace("swarmbox-tool", "echo CALLED")], capture_output=True, text=True)
+        self.assertEqual(r.stdout.split("\n")[:3], ["CALLED install a --image", "CALLED install b --image", "CALLED install c --image"])
+
+    def test_the_install_runs_as_agent_and_the_state_folder_is_created_with_that_owner(self):
+        n = self.run_idx()
+        # the folder is created owned by agent (no chown -R) before the install, which runs as agent: no root-owned entries
+        mk = [k for k, i in enumerate(INS) if "install -d -o agent -g agent" in i and "/opt/swarmbox/tools" in i]
+        self.assertEqual(len(mk), 1)
+        self.assertLess(mk[0], n)
+        self.assertNotIn("chown -R", CODE)
+        between = INS[mk[0]:n]
+        self.assertIn("USER agent", between)
+        self.assertEqual(INS[n + 1], "USER root", "the next instruction restores root for the layers that follow")
+
+    def test_the_npm_cache_rule_is_respected(self):
+        n = self.run_idx()
+        env = [k for k, i in enumerate(INS) if i == "ENV NPM_CONFIG_CACHE=/opt/npm-cache"]
+        self.assertEqual(len(env), 1)
+        self.assertLess(env[0], n)
+        self.assertNotIn("/opt/npm-cache", INS[n])
+        self.assertNotIn("npm", INS[n])
+
+    def test_it_comes_after_the_tool_machinery_it_needs(self):
+        n = self.run_idx()
+        link = [k for k, i in enumerate(INS) if "swarmbox-tool link --system" in i][0]
+        self.assertLess(link, n)
+
+    def test_the_core_never_names_a_tool(self):
+        names = tool_names()
+        self.assertGreaterEqual(len(names), 7)
+        for name in names:
+            self.assertNotRegex(CODE, r"(?<![\w./-])%s(?![\w-])" % re.escape(name), "the Dockerfile names the tool " + name)
+        # and the argument carries no default list
+        self.assertNotRegex(D, r"WITH_TOOLS=\"?[a-z]")
+
+    def test_the_built_image_ships_no_tool_install_by_default(self):
+        # the loop is the only writer of /opt/swarmbox/tools, and its default input is empty
+        self.assertEqual(len([i for i in INS if "/opt/swarmbox/tools" in i and "install -d" not in i]), 0)
 
 
 class OldDockerfile(unittest.TestCase):

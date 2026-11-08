@@ -181,6 +181,20 @@ RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.
     find /usr/local/lib/swarmbox/tools -name '*.sh' -exec chmod 755 {} + && \
     swarmbox-tool link --system
 
+# Build-time preinstall (design 6.8, D23): WITH_TOOLS is a comma list of tool names (default empty: no tool is baked, D2). Each one is
+# installed by the same installer that an on-demand install runs, as agent (the owner of /opt/swarmbox/tools, so no chown -R and no
+# root-owned entries; the npm cache rule of 10.2: NPM_CONFIG_CACHE is /opt/npm-cache, owned by agent), into /opt/swarmbox/tools instead
+# of the workspace. The fingerprint (6.11) is recorded at that moment. An unknown name or a failed installer fails the build; with an
+# empty list the loop does nothing. The core never names a tool: the names come from the argument and the manifests.
+ARG WITH_TOOLS=""
+RUN install -d -o agent -g agent -m 755 /opt/swarmbox /opt/swarmbox/tools
+USER agent
+RUN set -eu; set -f; \
+    for t in $(printf '%s' "$WITH_TOOLS" | tr ',' ' '); do \
+        swarmbox-tool install "$t" --image; \
+    done
+USER root
+
 # The shell fragment (design 6.6, 10.3) replaces the v0.1.0 echo lines: Debian's /etc/bash.bashrc leaves at once in a
 # non-interactive shell, so the line below runs for interactive shells only; swarmbox-attach sources the fragment
 # directly for a command run without a terminal (3.3).

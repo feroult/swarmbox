@@ -22,7 +22,7 @@ SMOKE = os.path.join(ROOT, "tests", "smoke_image.py")
 TAG = "[reduced: development box, no nested Podman in the box]"
 # The five steps named by the plan (section 4) plus the ones the exit criteria add.
 PLAN_STEPS = ["ready", "tmpfs-restart", "page-built", "tool-validate", "nested-podman"]
-EXTRA_STEPS = ["attach-session", "no-agent", "nested-cgroup", "tool-shim", "tool-index-ports", "up-lifecycle", "up-busy-port"]
+EXTRA_STEPS = ["attach-session", "no-agent", "nested-cgroup", "tool-shim", "tool-index-ports", "mcp-generated", "up-lifecycle", "up-busy-port"]
 
 
 def load():
@@ -125,7 +125,7 @@ class Skeleton(unittest.TestCase):
     def test_no_forbidden_podman_verb_in_the_file(self):
         bad = [r"system\s+(prune|reset)", r"volume\s+prune", r"image\s+prune", r"container\s+prune", r"rmi\s+-a",
                r"rm\s+-a\b", r"stop\s+-a\b", r"kill\s+-a\b", r'"--all"', r'"-a"', r"kill-server", r"pkill", r"killall",
-               r"\b7681\b", r"\b8889\b", r"\b43323\b", r"0\.0\.0\.0", r"tmux\s+kill", r"send-keys"]
+               r"\b7681\b", r"\b8889\b", r"(\"-p\"|--publish|\bbind\b|\blisten\b)[^\n]*\b43323\b", r"0\.0\.0\.0", r"tmux\s+kill", r"send-keys"]
         for pat in bad:
             # the module docstring may name the rules in prose; only code lines count
             code = "\n".join(l for l in self.src.splitlines() if not l.lstrip().startswith("#"))
@@ -157,18 +157,31 @@ class Skeleton(unittest.TestCase):
     def test_tool_steps_check_the_real_machinery_and_never_install(self):
         """Slice 4a.5: validate is the real one, the shim, the index and tool-ports are checked, nothing is downloaded."""
         src = self.src
-        for needle in ("swarmbox-shim", "/usr/local/lib/swarmbox/shims/claude", "claude claude", "tool-ports", "command -v claude",
-                       "manifest(s) checked"):
+        for needle in ("swarmbox-shim", "/usr/local/lib/swarmbox/shims/", "tool-ports", "type -P $c", "manifest(s) checked"):
             self.assertIn(needle, src)
         self.assertNotRegex(src, r"validate placeholder|the placeholder validate")
         self.assertNotRegex(src, r'"tool",\s*"(install|run)"')
         self.assertNotRegex(src, r"swarmbox-tool (install|run)")
         by_id = {s.id: s for s in self.mod.STEPS}
-        for sid in ("tool-validate", "tool-shim", "tool-index-ports"):
+        for sid in ("tool-validate", "tool-shim", "tool-index-ports", "mcp-generated"):
             self.assertFalse(by_id[sid].needs_full, sid)
         self.assertNotIn("placeholder", by_id["tool-validate"].title)
         ids = [s.id for s in self.mod.STEPS]
         self.assertLess(ids.index("tool-validate"), ids.index("tool-shim"))
+
+    def test_slice_4b6_the_tool_steps_cover_all_seven_tools_ports_and_mcp(self):
+        """The smoke data matches the manifests of the repository: the seven tools and their commands, 43323, chrome-devtools."""
+        import glob
+        names = sorted(os.path.basename(os.path.dirname(p)) for p in glob.glob(os.path.join(ROOT, "container", "tools", "*", "tool.conf")))
+        self.assertEqual(sorted(self.mod.TOOL_COMMANDS), names)
+        self.assertEqual(sorted(self.mod.ALL_COMMANDS), sorted("claude gemini opencode gcloud gsutil bq clasp go gofmt poetry".split()))
+        for name, cmds in self.mod.TOOL_COMMANDS.items():
+            with open(os.path.join(ROOT, "container", "tools", name, "tool.conf"), encoding="utf-8") as f:
+                m = re.search(r'^PROVIDES="?([^"\n]*)"?', f.read(), re.M)
+            self.assertEqual(m.group(1).split(), cmds, name)
+        for needle in ("43323", "chrome-devtools", "npx", "swarmbox-mcp generate", "/opt/swarmbox/tools"):
+            self.assertIn(needle, self.src)
+        self.assertNotIn("claude claude", self.src)
 
     def test_reduced_switch_is_the_only_test_only_variable_used(self):
         self.assertIn("SWARMBOX_TEST_NO_NESTED", self.src)
