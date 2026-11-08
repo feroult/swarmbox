@@ -9,10 +9,14 @@ Run: python3 tests/test_host_remote.py
 """
 import json
 import os
+import pty
+import select
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -38,6 +42,9 @@ if os.environ.get("STUB_WRITE_CFG"):
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "cloudflare.json"), "w") as f:
         json.dump({"domain": "example.org", "emails": ["a@example.org"], "tunnel": "swarmbox"}, f, indent=2)
+if sys.argv[1:2] == ["token"] and os.environ.get("STUB_TOKEN"):
+    print(os.environ["STUB_TOKEN"])
+    print("(info line: the tunnel's own token)", file=sys.stderr)
 sys.exit(int(os.environ.get("STUB_EXIT", "0")))
 '''
 
@@ -251,6 +258,230 @@ class SecretsTest(Base):
                 r = self.run_h(sub, env=self.env(SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN=TUNNEL_SECRET))
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertNotIn("SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN", self.rec()["env_names"])
+
+
+def pty_run(argv, env, answer=None, cwd=None, timeout=30):
+    """Run argv on a pseudo-terminal; after the prompt "[y/N]" type `answer` (a line). Returns (exit code, terminal output)."""
+    pid, fd = pty.fork()
+    if pid == 0:
+        if cwd:
+            os.chdir(cwd)
+        os.execve(argv[0], argv, env)
+    out = b""
+    sent = answer is None
+    end = time.time() + timeout
+    while time.time() < end:
+        r, _, _ = select.select([fd], [], [], 0.2)
+        if r:
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            out += chunk
+        if not sent and b"[y/N]" in out:
+            time.sleep(0.2)
+            os.write(fd, answer.encode() + b"\n")
+            sent = True
+    _, status = os.waitpid(pid, 0)
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+    return os.waitstatus_to_exitcode(status), out.decode(errors="replace")
+
+
+class TunnelTokenTest(Base):
+    """Slice 5.3: where the tunnel token comes from, how `remote token` prints it, and the terminal-only setup epilogue."""
+
+    def cfgdir(self):
+        d = os.path.join(self.home, ".config", "swarmbox")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def write_cfg(self, text, mode=0o600):
+        f = os.path.join(self.cfgdir(), "config")
+        if os.path.exists(f):
+            os.chmod(f, 0o600)
+        with open(f, "w") as fh:
+            fh.write(text)
+        os.chmod(f, mode)
+        return f
+
+    def get(self, env=None, path=None):
+        e = self.env(**(env or {}))
+        if path:
+            e["PATH"] = path
+        p = subprocess.run([self.helper, "config", "get", "CLOUDFLARE_TUNNEL_TOKEN"], env=e, capture_output=True, text=True,
+                           input="", cwd=self.tmp, timeout=60)
+        return p.returncode, p.stdout, p.stderr
+
+    def test_token_from_environment_wins_over_the_file(self):
+        f = self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % "file-token-1")
+        self.assertEqual(self.get()[:2], (0, "file-token-1\n"))
+        self.assertEqual(self.get({"SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": "env-token-2"})[:2], (0, "env-token-2\n"))
+        # also when the file is too open: the environment needs no file
+        os.chmod(f, 0o644)
+        rc, out, err = self.get({"SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": "env-token-2"})
+        self.assertEqual((rc, out), (0, "env-token-2\n"))
+
+    def test_token_from_file_accepted_only_with_mode_600(self):
+        f = self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TUNNEL_SECRET, mode=0o644)
+        rc, out, err = self.get()
+        self.assertEqual((rc, out), (1, ""))
+        self.assertIn("chmod 600 " + f, err)
+        self.assertIn("mode is 644", err)
+        self.assertNotIn(TUNNEL_SECRET, err)
+        os.chmod(f, 0o600)
+        self.assertEqual(self.get(), (0, TUNNEL_SECRET + "\n", ""))
+
+    def shims(self, variant):
+        d = os.path.join(self.tmp, "shims-" + variant)
+        os.mkdir(d)
+        real = shutil.which("stat")
+        if variant == "bsd":   # BSD stat: no -c, and -f %Lp answers (translated to GNU stat on this host)
+            body = ('if [ "$1" = -f ] && [ "$2" = %%Lp ]; then exec %s -c %%a "$3"; fi\n'
+                    'echo "stat: illegal option" >&2\nexit 1\n' % real)
+        else:                  # no stat at all: the find -perm form must answer
+            body = 'echo "stat: not available" >&2\nexit 1\n'
+        with open(os.path.join(d, "stat"), "w") as fh:
+            fh.write("#!/bin/sh\n" + body)
+        os.chmod(os.path.join(d, "stat"), 0o755)
+        return d + os.pathsep + os.environ["PATH"]
+
+    def test_mode_check_under_gnu_bsd_and_find_variants(self):
+        for variant in ("gnu", "bsd", "find"):
+            path = None if variant == "gnu" else self.shims(variant)
+            for m, ok in ((0o600, True), (0o644, False), (0o640, False), (0o666, False), (0o400, False)):
+                with self.subTest(variant=variant, mode=oct(m)):
+                    self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TUNNEL_SECRET, mode=m)
+                    rc, out, err = self.get(path=path)
+                    if ok:
+                        self.assertEqual((rc, out, err), (0, TUNNEL_SECRET + "\n", ""))
+                    else:
+                        self.assertEqual((rc, out), (1, ""))
+                        self.assertIn("mode is %o;" % m, err)
+                        self.assertIn("chmod 600", err)
+
+    def test_remote_token_prints_only_the_token_on_stdout_and_info_on_stderr(self):
+        r = self.run_h("token", env=self.env(STUB_TOKEN=TUNNEL_SECRET))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, TUNNEL_SECRET + "\n")
+        self.assertIn("info line", r.stderr)
+        self.assertNotIn(TUNNEL_SECRET, r.stderr)
+        self.assertEqual(self.rec()["argv"][0], "token")
+        self.assertNotIn(TUNNEL_SECRET, json.dumps(self.rec()["argv"]))
+
+    def test_token_not_in_config_list_nor_in_up_env_nor_in_create_flags(self):
+        from helpers import FakePodman
+        f = self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\nENV_KEYS=FOO\n" % TUNNEL_SECRET)
+        self.assertEqual(stat.S_IMODE(os.stat(f).st_mode), 0o600)
+        ws = os.path.join(self.tmp, "ws")
+        os.mkdir(ws)
+        with open(os.path.join(self.hdir, "tool-ports"), "w") as fh:
+            fh.write("")
+        for n, c in (("localtime", ""), ("tun", ""), ("proc-version", "Linux version 6.1.0 (debian)\n")):
+            with open(os.path.join(self.tmp, n), "w") as fh:
+                fh.write(c)
+        conf = {"container": {"rules": [{"match": ["inspect"], "exit": 125, "stderr": "Error: no such container\n"}]},
+                "image": {"rules": [{"match": ["exists"]}, {"match": ["inspect"], "stdout": "sha256:aaa\n"}]},
+                "version": {"stdout": "4.3.1\n"}}
+        with FakePodman(conf) as fp:
+            base = fp.env()
+            for k in list(base):
+                if k.startswith(("SWARMBOX_", "XDG_")):
+                    del base[k]
+            base.update({"HOME": self.home, "SWARMBOX_WORKSPACE": ws, "SWARMBOX_INIT": "0",
+                         "SWARMBOX_LOCALTIME_FILE": os.path.join(self.tmp, "localtime"),
+                         "SWARMBOX_TEST_PROC_VERSION": os.path.join(self.tmp, "proc-version"),
+                         "SWARMBOX_TEST_OS": "Linux", "SWARMBOX_TEST_TUN": os.path.join(self.tmp, "tun"),
+                         "SWARMBOX_TEST_NAP": "0.02", "SWARMBOX_TEST_READY_TRIES": "5", "FOO": "bar",
+                         "SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": TUNNEL_SECRET, "SWARMBOX_ENV_KEYS": "FOO"})
+            seen = []
+            for args in (("config", "list"), ("env", "list"), ("create-flags",), ("fingerprint", "--explain"), ("url",), ("up",)):
+                p = subprocess.run([self.helper, *args], env=base, capture_output=True, text=True, input="", cwd=self.tmp,
+                                   timeout=120)
+                seen.append(p.stdout + p.stderr)
+            calls = fp.calls()
+            self.assertTrue(calls, "up should have called the fake podman")
+            blob = json.dumps(calls)
+            self.assertNotIn(TUNNEL_SECRET, blob)
+            self.assertNotIn("CLOUDFLARE", blob)
+            for text in seen:
+                self.assertNotIn(TUNNEL_SECRET, text)
+            self.assertIn("CLOUDFLARE_TUNNEL_TOKEN=set\tenv\n", seen[0])
+
+    def test_setup_epilogue_does_not_store_the_token_without_a_terminal(self):
+        r = subprocess.run([self.helper, "remote", "setup"], env=self.env(STUB_TOKEN=TUNNEL_SECRET), capture_output=True,
+                           text=True, input="y\n", cwd=self.tmp, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.cfgdir(), "config")))
+        self.assertNotIn("[y/N]", r.stdout + r.stderr)
+        self.assertEqual(self.rec()["argv"][0], "apply")
+
+    def run_pty_setup(self, answer, *args, **env):
+        e = self.env(STUB_TOKEN=TUNNEL_SECRET, **env)
+        return pty_run([self.helper, "remote", "setup", *args], e, answer=answer, cwd=self.tmp)
+
+    def test_setup_epilogue_on_a_terminal_offers_and_default_is_no(self):
+        for answer in ("", "n", "maybe"):
+            with self.subTest(answer=answer):
+                rc, shown = self.run_pty_setup(answer)
+                self.assertEqual(rc, 0, shown)
+                self.assertIn("swarmbox remote token", shown)
+                self.assertIn("swarmbox config set CLOUDFLARE_TUNNEL_TOKEN", shown)
+                self.assertIn("[y/N]", shown)
+                self.assertNotIn(TUNNEL_SECRET, shown)
+                self.assertFalse(os.path.exists(os.path.join(self.cfgdir(), "config")))
+                self.assertEqual(self.rec()["argv"][0], "apply")     # `token` was not asked for
+
+    def test_setup_epilogue_yes_stores_the_token_at_mode_600_without_showing_it(self):
+        old = os.umask(0o022)
+        try:
+            rc, shown = self.run_pty_setup("y")
+        finally:
+            os.umask(old)
+        self.assertEqual(rc, 0, shown)
+        self.assertNotIn(TUNNEL_SECRET, shown)
+        f = os.path.join(self.cfgdir(), "config")
+        with open(f) as fh:
+            self.assertIn("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TUNNEL_SECRET, fh.read())
+        self.assertEqual(stat.S_IMODE(os.stat(f).st_mode), 0o600)
+        self.assertEqual(self.rec()["argv"][0], "token")
+        self.assertNotIn(TUNNEL_SECRET, json.dumps(self.rec()["argv"]))
+        self.assertEqual(self.get()[:2], (0, TUNNEL_SECRET + "\n"))
+
+    def test_setup_epilogue_failed_fetch_stores_nothing_and_keeps_exit_0(self):
+        # the script's second call (token) prints nothing: nothing is stored, setup itself had succeeded
+        rc, shown = pty_run([self.helper, "remote", "setup"], self.env(), answer="y", cwd=self.tmp)
+        self.assertEqual(rc, 0, shown)
+        self.assertFalse(os.path.exists(os.path.join(self.cfgdir(), "config")))
+        self.assertIn("nothing was stored", shown)
+
+    def test_setup_epilogue_is_skipped_for_dry_run_failure_and_an_existing_token(self):
+        cases = (("dry-run", ("--dry-run",), {}, 0), ("failure", (), {"STUB_EXIT": "3"}, 3),
+                 ("env token", (), {"SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": "already-set"}, 0))
+        for label, args, env, want in cases:
+            with self.subTest(label=label):
+                rc, shown = self.run_pty_setup(None, *args, **env)
+                self.assertEqual(rc, want, shown)
+                self.assertNotIn("[y/N]", shown)
+                self.assertFalse(os.path.exists(os.path.join(self.cfgdir(), "config")))
+
+    def test_setup_epilogue_is_skipped_when_the_file_already_holds_a_good_token(self):
+        self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=stored-before\n")
+        rc, shown = self.run_pty_setup(None)
+        self.assertEqual(rc, 0, shown)
+        self.assertNotIn("[y/N]", shown)
+
+    def test_no_token_value_in_any_recorded_argv(self):
+        self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TUNNEL_SECRET)
+        for sub in ("setup", "status", "off", "token"):
+            r = self.run_h(sub, env=self.env(STUB_TOKEN=TUNNEL_SECRET, SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN=TUNNEL_SECRET))
+            self.assertNotIn(TUNNEL_SECRET, json.dumps(self.rec()["argv"]), sub)
+            if sub != "token":
+                self.assertNotIn(TUNNEL_SECRET, r.stdout + r.stderr, sub)
 
 
 class RealScriptTest(Base):

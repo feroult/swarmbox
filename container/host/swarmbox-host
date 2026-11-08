@@ -297,6 +297,16 @@ resolve() {
     R_VAL=$(default_of "$1")
 }
 
+# resolve_tunnel_token: sets TUNNEL_TOKEN (empty when there is none) and returns 1 when there is none. The order is the
+# environment (SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN), then the config key, accepted only with file mode 600 (D28; cfg_prepare
+# has already warned once, naming `chmod 600`, and set TOKEN_IGNORED otherwise). Needs cfg_prepare first. The value is
+# never printed here, never put on an argv and never exported.
+resolve_tunnel_token() {
+    resolve CLOUDFLARE_TUNNEL_TOKEN
+    TUNNEL_TOKEN=$R_VAL
+    [ -n "$TUNNEL_TOKEN" ]
+}
+
 # ---------------------------------------------------------------- validation (3.7.3, 8.2); messages name the rule
 
 valid_port() {
@@ -576,6 +586,11 @@ cmd_config_get() {
     is_key "$1" || die 2 "unknown key '$1'."
     init_paths
     cfg_prepare
+    if [ "$1" = CLOUDFLARE_TUNNEL_TOKEN ]; then
+        resolve_tunnel_token || return 1
+        printf '%s\n' "$TUNNEL_TOKEN"
+        return 0
+    fi
     resolve "$1"
     [ -n "$R_VAL" ] || return 1
     printf '%s\n' "$R_VAL"
@@ -1968,8 +1983,61 @@ cmd_remote() {
     fi
     XDG_CONFIG_HOME=${CFG_ROOT%/swarmbox}
     export XDG_CONFIG_HOME
+    # asked before the variable is removed from the script's environment (setup only offers to store a token when none exists)
+    r_have=0
+    ! resolve_tunnel_token || r_have=1
+    TUNNEL_TOKEN=
     unset SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN
-    exec python3 "$r_script" "$r_cmd" --name "$BOX" --port "$r_port" "$@"
+    if [ "$r_sub" != setup ]; then
+        exec python3 "$r_script" "$r_cmd" --name "$BOX" --port "$r_port" "$@"
+    fi
+    r_dry=0
+    for r_a in "$@"; do
+        [ "$r_a" != --dry-run ] || r_dry=1
+    done
+    r_rc=0
+    python3 "$r_script" "$r_cmd" --name "$BOX" --port "$r_port" "$@" || r_rc=$?
+    if [ "$r_rc" -eq 0 ] && [ "$r_dry" = 0 ] && [ "$r_have" = 0 ] && [ -t 0 ] && [ -t 2 ]; then
+        remote_token_epilogue "$r_script" "$r_port" "$@"
+    fi
+    exit "$r_rc"
+}
+
+# After a successful `remote setup` on a terminal (and never with --dry-run): when no tunnel token is stored yet, say how to
+# keep it on the host and OFFER to do it. Never automatic: the default answer is no (decision [5.3]). The token is fetched by
+# the script's `token` command into a shell variable (stdout captured, the info line on stderr stays visible) and written
+# by cfg_write_keys at mode 600; it is never on an argv, never echoed. Any failure here only prints a line: setup succeeded.
+remote_token_epilogue() {
+    e_script=$1
+    e_port=$2
+    shift 2
+    {
+        printf '\nTo let swarmbox bring the connector up on every entry without the Cloudflare API token, keep the tunnel token on this host:\n'
+        printf '  swarmbox remote token                          (prints only the tunnel token)\n'
+        printf '  swarmbox config set CLOUDFLARE_TUNNEL_TOKEN    (type or paste it; it is stored with mode 600)\n'
+        printf 'Fetch it now and store it in %s? [y/N] ' "$CFG_FILE"
+    } >&2
+    e_ans=
+    IFS= read -r e_ans || e_ans=
+    case $e_ans in
+        y|Y|yes|YES|Yes) ;;
+        *) return 0 ;;
+    esac
+    e_tok=$(python3 "$e_script" token --name "$BOX" --port "$e_port" "$@") || e_tok=
+    case $e_tok in
+        '') warn "could not read the tunnel token; nothing was stored. Run the two commands above when you are ready."; return 0 ;;
+    esac
+    if validate_value CLOUDFLARE_TUNNEL_TOKEN "$e_tok"; then
+        e_stored=$V_OUT
+        e_tok=
+        ( cfg_write_keys CLOUDFLARE_TUNNEL_TOKEN "$e_stored" ) || { e_stored=; return 0; }
+        e_stored=
+        warn "the tunnel token is stored in $CFG_FILE (mode 600); \`swarmbox config list\` shows it only as set."
+    else
+        e_tok=
+        warn "the tunnel token has an unexpected form; nothing was stored."
+    fi
+    return 0
 }
 
 cmd_config() {
