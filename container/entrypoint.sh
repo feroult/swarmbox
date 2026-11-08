@@ -263,14 +263,20 @@ serve() {
         log "step 6: swarmbox-tool not found, skipped"
     fi
 
-    # step 7 [W]: the MCP configuration (4.4, later slice), then prepare.sh of every tool (6.3)
-    # The registry (4.4) is Phase 4b. The claude alias passes --mcp-config <workspace>/.claude/mcp-servers.json and claude refuses a
-    # missing file, so until the registry writes the real list, an empty one is left where there is none (decision [4a.5]).
-    log "step 7: the MCP registry is not implemented yet (design 4.4); an empty mcp-servers.json is left where there is none"
+    # step 7 [W]: the MCP configuration (4.4: swarmbox-mcp), then prepare.sh of every tool (6.3)
+    # The claude alias passes --mcp-config <workspace>/.claude/mcp-servers.json and claude refuses a missing file, so when the
+    # generator is missing or fails before it wrote anything, an empty valid list is left where there is none (decisions [4a.5], [4b.1]).
+    if have swarmbox-mcp; then
+        log "step 7: swarmbox-mcp generate"
+        run_logged swarmbox-mcp generate; rc=$?
+        [ "$rc" = 0 ] || warn "generating the MCP configuration failed or was incomplete (swarmbox-mcp exit $rc); see serve.log"
+    else
+        log "step 7: swarmbox-mcp not found, skipped"
+    fi
     if [ ! -e "$HOME/.claude/mcp-servers.json" ]; then
         if mkdir -p "$HOME/.claude" 2>/dev/null && printf '{"mcpServers": {}}\n' > "$HOME/.claude/mcp-servers.json.tmp" \
             && mv -f "$HOME/.claude/mcp-servers.json.tmp" "$HOME/.claude/mcp-servers.json"; then
-            :
+            log "step 7: left an empty mcp-servers.json"
         else
             rm -f "$HOME/.claude/mcp-servers.json.tmp"
             warn "could not write $HOME/.claude/mcp-servers.json; the claude alias may refuse to start"

@@ -54,6 +54,7 @@ python3 tests/test_docs_consistency.py
 | `test_registry_e2e.py` | opt-in (`SWARMBOX_E2E=1`, skipped otherwise): runs `tests/e2e_registry.py`, the install line, first call, joining, two terminals at once, `update` and `reset` offline and `update --to` against a `registry:2` throwaway container, in bash, zsh and fish (`docs/local-registry.md`) |
 | `test_image_build.py` | the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; builds `swarmbox-test-img-<rand>` and removes it) |
 | `test_init_output.py` | `container/scripts/swarmbox-init.sh` and the templates: one marker pair per shell, seeds only for flags given, quoting, `--shell` and `SHELL`, idempotent output, nothing written, the hint on a terminal, `bash -n`, `zsh -n`, `fish --no-execute` |
+| `test_mcp_registry.py` | `container/scripts/swarmbox-mcp.sh` (the MCP registry generator, serve step 7) on a temp HOME and a copy of `container/mcp`: shape, `BROWSER_URL`, off switch, user override, bad files, no `npx`, atomic write |
 | `test_migration.py` | `container/scripts/swarmbox-migrate.sh` (the layout migration, serve step 4) on a fixture workspace built from the v0.1.0 code in mktemp, and `serve` running it |
 | `test_pubkey_ensure.py` | `swarmbox-pubkey --ensure` (`container/scripts/ssh-key.sh`): once, idempotent, never overwrites, only under the test `HOME` |
 | `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md` and this file |
