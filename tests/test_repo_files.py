@@ -52,26 +52,23 @@ class NoticesTest(unittest.TestCase):
             self.assertRegex(s, r"https://\S+", "%s has no URL" % tool)
 
     def test_every_dockerfile_tool_is_listed(self):
-        """Both images: the 2.0 Dockerfile and Dockerfile.v0.1.0 (kept for build.sh until Phase 6, decision [2.1])."""
+        """The 2.0 Dockerfile and the manifests of container/tools/ (the v0.1.0 Dockerfile is retired, slice 6.2)."""
         t = read("THIRD_PARTY_NOTICES.md").lower()
         tools = set()
-        for name in ("Dockerfile", "Dockerfile.v0.1.0"):
-            with open(os.path.join(ROOT, name), encoding="utf-8") as f:
-                d = f.read()
-            for arg in re.findall(r"^ARG (\w+)_VERSION=", d, re.M):
-                if arg not in ("CLAUDE_CODE", "OPENCODE"):
-                    tools.add(arg.lower().replace("_", "-"))
-            tools.update(re.findall(r"npm install -g (@[\w-]+/[\w-]+)(?:@\$\{\w+\})?", d))
-            for pkg in ("podman", "chromium", "tmux"):
-                self.assertIn(pkg, d)
-                tools.add(pkg)
-        with open(os.path.join(ROOT, "Dockerfile.v0.1.0"), encoding="utf-8") as f:
+        with open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8") as f:
             d = f.read()
-        self.assertIn("google-cloud-cli", d)
-        tools.add("google-cloud-cli")
-        for marker, name in (("install.python-poetry.org", "poetry"), ("astral.sh/uv", "uv"), ("go.dev/dl", "go")):
-            self.assertIn(marker, d)
-            tools.add(name)
+        for arg in re.findall(r"^ARG (\w+)_VERSION=", d, re.M):
+            if arg not in ("CLAUDE_CODE", "OPENCODE"):
+                tools.add(arg.lower().replace("_", "-"))
+        tools.update(re.findall(r"npm install -g (@[\w-]+/[\w-]+)(?:@\$\{\w+\})?", d))
+        for pkg in ("podman", "chromium", "tmux"):
+            self.assertIn(pkg, d)
+            tools.add(pkg)
+        # the tools v0.1.0 baked into its image are manifests now (name in container/tools -> name in the notices)
+        notice_name = {"gcloud": "google-cloud-cli"}
+        for name in sorted(os.listdir(os.path.join(ROOT, "container", "tools"))):
+            tools.add(notice_name.get(name, name))
+        self.assertTrue({"google-cloud-cli", "poetry", "go", "clasp", "gemini"} <= tools, tools)
         tools.discard("node")  # the base image tag, not a download
         self.assertIn("ttyd", tools)
         self.assertIn("starship", tools)
@@ -90,7 +87,7 @@ class ContributingTest(unittest.TestCase):
         t = read("CONTRIBUTING.md")
         self.assertIn("python3 tests/test_", t)
         self.assertIn("podman build", t)
-        self.assertIn("build.sh", t)
+        self.assertIn("dev/dev-build.sh", t)
         self.assertIn("swarmbox-test-", t)
         self.assertRegex(t, r"(?i)never .*(live|running) (box|swarmbox)|(live|running) (box|swarmbox).* never|never touch")
         for prefix in ("feat:", "fix:", "test:", "docs:"):

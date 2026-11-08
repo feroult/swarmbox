@@ -1,6 +1,6 @@
 """Slice 2.1: the product Dockerfile (design 10.1, 10.2, 10.5, D9, D23), checked statically (no build).
 
-The old image is Dockerfile.v0.1.0 (decision [2.1]); build.sh builds that one until Phase 6.
+The v0.1.0 Dockerfile is retired (decisions [2.1] and [6.2]); nothing here reads it.
 Run: python3 tests/test_dockerfile.py
 """
 import os
@@ -336,14 +336,6 @@ class WithTools(unittest.TestCase):
     def test_the_built_image_ships_no_tool_install_by_default(self):
         # the loop is the only writer of /opt/swarmbox/tools, and its default input is empty
         self.assertEqual(len([i for i in INS if "/opt/swarmbox/tools" in i and "install -d" not in i]), 0)
-
-
-class OldDockerfile(unittest.TestCase):
-    def test_v010_dockerfile_is_kept_for_build_sh(self):
-        old = read("Dockerfile.v0.1.0")
-        self.assertIn("USER_UID", old)
-        self.assertIn("@anthropic-ai/claude-code", old)
-        self.assertIn("-f Dockerfile.v0.1.0", read("build.sh"))
 
 
 if __name__ == "__main__":

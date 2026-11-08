@@ -15,7 +15,8 @@ def run(fp, *args, **kw):
 
 class Helpers(unittest.TestCase):
     def test_root_is_the_repository(self):
-        self.assertTrue(os.path.isfile(os.path.join(ROOT, "start.sh")))
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, "Dockerfile")))
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, "container", "host", "swarmbox-host")))
 
     def test_records_exact_argv(self):
         odd = ["a b", 'q"uote\'s', "$HOME `x`", "line1\nline2", "", "--flag=x y"]

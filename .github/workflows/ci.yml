@@ -112,6 +112,7 @@ jobs:
           python3 tests/test_parity.py
           python3 tests/test_pubkey_ensure.py
           python3 tests/test_repo_files.py
+          python3 tests/test_retired_coverage.py
           python3 tests/test_run_all.py
           python3 tests/test_serve_container.py
           python3 tests/test_serve_steps.py
@@ -119,11 +120,6 @@ jobs:
           python3 tests/test_spikes_common.py
           python3 tests/test_ssh_key.py
           python3 tests/test_starship.py
-          python3 tests/test_start_attach.py
-          python3 tests/test_start_fake_podman.py
-          python3 tests/test_start_init.py
-          python3 tests/test_start_timezone.py
-          python3 tests/test_start_web_connector.py
           python3 tests/test_tool_install.py
           python3 tests/test_tool_prepare.py
           python3 tests/test_tool_opencode.py
@@ -142,7 +138,6 @@ jobs:
           python3 tests/test_tool_stub.py
           python3 tests/test_web_build.py
           python3 tests/test_web_container.py
-          python3 tests/test_web_terminal.py
 
   # The image smoke test (design 13.3 layer 2) in full mode: the runner is level 1, the throwaway box level 2 and the
   # nested Podman inside it level 3, which is why the development box cannot run this. Image, containers and volumes are
@@ -244,17 +239,14 @@ jobs:
           python3 tests/test_image_build.py
           python3 tests/test_init_output.py
           python3 tests/test_smoke_skeleton.py
-          python3 tests/test_start_fake_podman.py
-          python3 tests/test_start_init.py
-          python3 tests/test_start_timezone.py
           python3 tests/test_ssh_key.py
           python3 tests/test_starship.py
-          python3 tests/test_start_web_connector.py
           python3 tests/test_cloudflare_setup.py
           python3 tests/test_ci_workflow.py
           python3 tests/test_design_partb.py
           python3 tests/test_docs_consistency.py
           python3 tests/test_repo_files.py
+          python3 tests/test_retired_coverage.py
           python3 tests/test_run_all.py
 
   # Browser tests are slow and need chromium and ttyd: they run on the weekly schedule (and by hand), in a Debian

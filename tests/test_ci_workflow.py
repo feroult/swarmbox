@@ -22,7 +22,7 @@ CI = os.path.join(ROOT, ".github", "workflows", "ci.yml")
 # Test files that the push/pull_request jobs do not run; they run in the scheduled browser job only.
 SCHEDULED_ONLY = {"test_clipboard_bridge.py", "test_web_style.py", "test_tmux_browser_keys.py"}
 # Test files that are not meant to run in the macOS job (they need tmux, a browser or GNU tools).
-NOT_ON_MACOS = SCHEDULED_ONLY | {"test_web_terminal.py", "test_start_attach.py", "test_spikes_common.py",
+NOT_ON_MACOS = SCHEDULED_ONLY | {"test_spikes_common.py",
                                  "test_history_audit.py", "test_serve_steps.py", "test_serve_container.py",
                                  "test_attach_command.py", "test_attach_container.py",
                                  "test_bashrc_fragment.py", "test_bashrc_container.py", "test_entrypoint.py",
@@ -144,7 +144,7 @@ class Structure(unittest.TestCase):
         disk = {os.path.basename(p) for p in glob.glob(os.path.join(ROOT, "tests", "test_*.py"))}
         self.assertTrue(mac)
         self.assertEqual(mac & NOT_ON_MACOS, set())
-        for core in ("test_dirs.py", "test_helpers.py", "test_start_fake_podman.py"):
+        for core in ("test_dirs.py", "test_helpers.py", "test_host_up.py"):
             self.assertIn(core, mac)
         # every non-excluded test is on macOS: a new test file cannot be forgotten there either
         self.assertEqual(mac, disk - NOT_ON_MACOS)
