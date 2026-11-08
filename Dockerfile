@@ -153,11 +153,12 @@ COPY container/scripts/banner.sh /usr/local/bin/banner.sh
 COPY container/scripts/podman-service.sh /usr/local/bin/swarmbox-podman-service
 COPY container/scripts/ssh-key.sh /usr/local/bin/swarmbox-pubkey
 COPY container/mcp/ /etc/swarmbox/mcp/
+COPY container/scripts/swarmbox-attach.sh /usr/local/bin/swarmbox-attach
 COPY container/entrypoint.sh /usr/local/bin/swarmbox-entrypoint
 RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.toml /etc/ssh/ssh_config.d/swarmbox.conf \
         /usr/local/lib/swarmbox/dirs.sh /etc/swarmbox/scripts/starship-init.sh /etc/swarmbox/scripts/messages.sh && \
     chmod 755 /usr/local/bin/banner.sh /usr/local/bin/swarmbox-podman-service /usr/local/bin/swarmbox-pubkey \
-        /usr/local/bin/swarmbox-entrypoint && \
+        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-entrypoint && \
     chmod -R a+rX /etc/swarmbox/mcp
 
 USER agent

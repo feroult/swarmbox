@@ -483,3 +483,54 @@ Context: the exit criteria want a reduced container check and say B36's idle win
 Chosen: `tests/test_serve_container.py` (needs `SWARMBOX_IMAGE_BUILD=1`) runs serve in a throwaway `swarmbox-test-serve-<random>` container from the 2.1 image with `SWARMBOX_TEST_NO_NESTED=1`, a mktemp workspace and `--tmpfs /tmp/swarmbox`. Tagged `[reduced: development box, no nested Podman in the box]`; the nested service, step 8 and `/dev/net/tun` are NOT exercised for real. B36 stays open: serve only runs `tmux new-session -d -s main`, so the session has one default window; recognizing and closing it is `attach`'s job.
 Impact on the design: Part B has a "Results of Phase 2 (slice 2.2)" table.
 How to reverse: n/a.
+
+## [2.3] How the idle window is recognized (B36)
+Context: design 3.4 says `attach` closes the idle window when it is the only other one, and left open how to recognize it. A window the user typed into must never be closed.
+Options: (a) by name only; (b) a tmux user option set by `serve`; (c) name, one pane, and the pane's current command being a shell; (d) also look at the cursor position or history.
+Chosen: (c). `serve` creates the session with `-n idle` (which also stops automatic renaming); `attach` closes it only when it is the only window of `main`, still named `idle`, has one pane and `pane_current_command` is bash, zsh, sh, dash or fish. Option (d) was rejected because the banner and the prompt make cursor and history values unreliable. Known weakness: text typed without Enter, or a command that already finished, is not detected and the window is then closed. A renamed, split or busy window is kept, which is the safe direction.
+Impact on the design: 3.4 and 4.1 step 9 say it; B36 is closed with this limit written down.
+How to reverse: change `idle_window` in container/scripts/swarmbox-attach.sh and the `-n idle` in the entrypoint together (a test checks that both say `idle`).
+
+## [2.3] A command call does not close the idle window
+Context: design 3.3 says `attach` adds a window and closes the idle one when it is the only other. For `swarmbox <command>` the new window ends with the command; with the idle window already gone `main` would have no window, tmux would end the session and the server, and the browser's `tmux attach -t main` would fail until the next attach.
+Options: close it for commands too; never close it for commands; close it and recreate `main` afterwards.
+Chosen: only the interactive path (no command) closes the idle window. A command leaves it alone, so `swarmbox true` changes nothing in `main`.
+Impact on the design: 3.3 states it. Consequence: after `swarmbox claude` (a command) the browser shows `idle` plus the command window; the next interactive attach does not close `idle` while the command window exists, because then it is not the only window.
+How to reverse: call `idle_window` and `kill-window` in `run_command` too, and make the end of the call recreate the session.
+
+## [2.3] Test-only variables of swarmbox-attach and how tmux is isolated in the tests
+Context: the tests need a short readiness timeout, a short poll interval, a test fragment and a run folder, and they must never address the live tmux server.
+Chosen: four test-only variables, deliberately NOT in the configuration table of design 8: SWARMBOX_TEST_READY_TIMEOUT (seconds, default 60), SWARMBOX_TEST_POLL_INTERVAL (seconds, default 1), SWARMBOX_TEST_FRAGMENT (default /etc/swarmbox/bashrc.sh), plus the two of serve (SWARMBOX_TEST_LIB, SWARMBOX_TEST_RUN_DIR). tmux itself needs no switch: the tests put a `tmux` first on PATH, either a recording fake or a shim that does `unset TMUX; exec tmux -L swarmbox-test-<random> -f /dev/null "$@"` with a private TMUX_TMPDIR. Every real-tmux call of the test file goes through `IsoTmux.run` -> `checked_tmux_argv`, which refuses a call without `-L swarmbox-test-<name> -f /dev/null` (it has its own test), and the server is stopped only with that exact -L name. The live server was checked before and after (tmux ls: main and main-1, attached).
+Impact on the design: none; 3.3 lists nothing test-only.
+How to reverse: n/a.
+
+## [2.3] Terminal means standard input and standard output; no command and no terminal gives a plain shell
+Context: design 3.3 decides the path by "standard output is a terminal", but the tmux client needs both a terminal in and out, and the design does not say what `swarmbox` with no command and no terminal does.
+Chosen: the tmux paths need `[ -t 0 ] && [ -t 1 ]`; otherwise the direct forms run. No command and no terminal runs a plain `bash` (which reads standard input); with `--plain` and a terminal it is `bash -i`. The host function, which decides about `-t` on `podman exec`, stays the first line of defense.
+Impact on the design: 3.3 (bullet "What the 2.3 implementation does").
+How to reverse: n/a.
+
+## [2.3] Choices inside the wrapper and the waiter
+Context: the spike's wrapper ran `bash -ic` in the foreground and was never tried with typed input; the design asks for a trap and a poll fallback but not for their details.
+Chosen: (1) `bash -ic` runs in the background with stdin passed explicitly (`exec 3<&0 ... <&3`), because a shell trap does not run while a foreground child runs and a background job of a non-interactive shell gets /dev/null as stdin; typed input reaching a `read` was tested with real tmux. (2) The poll interval is 1 s by default and the loop wakes every 0.1 s, so the call returns as soon as `wait-for` does. (3) A window that disappeared with no status gets a 1 s grace for a status on its way before exit 1. (4) A grouped client that ended while the window is still listed means the user detached: message and exit 0; the command keeps running and its status file is removed by the caller (the wrapper may still write one later: a few bytes in the tmpfs, gone at the next start, and `serve` deletes `exit.*` at step 0). (5) SIGHUP or SIGTERM to the call ends the client and leaves the window running (129 and 143). (6) `eval --` in the no-terminal form, found by a failing test (a command starting with `-`).
+Impact on the design: 3.3 describes each point.
+How to reverse: n/a.
+
+## [2.3] Requirement handed to the shell fragment slice: no banner for `bash -c`
+Context: the command window runs `bash -ic '<command>'`, an interactive shell, so it reads /etc/bash.bashrc and the future fragment. The banner (design 10.3) would print before the output of every `swarmbox <command>` and could corrupt a piped result.
+Chosen: not built here (the fragment does not exist yet); recorded as a requirement: the fragment must return early from banner and prompt setup when `${BASH_EXECUTION_STRING:-}` is not empty, while still defining aliases and PATH. The test fragment in tests/test_attach_command.py defines only aliases and PATH.
+Impact on the design: 3.3 repeats it so the fragment slice finds it.
+How to reverse: n/a.
+
+## [2.3] Finding, not fixed: a killed host `podman exec -it` leaves the in-box tmux client alive
+Context: while writing the container test, closing the test's pty (SIGHUP to the host-side `podman exec -it`) left the tmux client and its grouped session running inside the box; only the detach key (C-a d) ended them cleanly.
+Options: add a reaper to `serve`; use a different client lifetime; leave it.
+Chosen: left as is and recorded. The mechanism (`podman exec` of tmux) is the same as v0.1.0's, but v0.1.0 was not run to compare, so "same as today" is [unverified]. A stale grouped session costs a few kilobytes and a `main-N` name; the windows are shared, so nothing is lost. The container test leaves its tabs with the detach key.
+Impact on the design: 3.3 notes it.
+How to reverse: n/a; a reaper (kill grouped sessions with no client activity) could be a later improvement for the owner to decide.
+
+## [2.3] Tests, honesty about the order and reductions
+Context: the slice asks for tests first.
+Chosen: tests/test_attach_command.py was written before swarmbox-attach.sh; the first full run began before the script was saved, so its output is not a clean "fails for the right reason" record. After the script existed, 5 of 48 tests failed once, all for reasons in the tests or the script found by them (the fake tmux did not accept a window without a wrapper; two quoting tests counted the output file name as an argument; `eval` rejected a command starting with `-`). Afterwards four consecutive full runs passed. The container test is a full result for this part (level 2) with the nested Podman service off by the test switch; the terminal is a pty made by the test, not a host terminal or ttyd, and the shell fragment is a test file.
+Impact on the design: Part B tags carry "reduced: pty as terminal, test fragment".
+How to reverse: n/a.
