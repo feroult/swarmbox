@@ -1,7 +1,7 @@
 # SwarmBox 2.0 design
 
 Status: **proposal** for the open-source version, SwarmBox 2.0. Nothing described as `[new]` is implemented yet. Every design decision is
-taken (the Overview lists them as D1 to D37). This file is meant to be read alone: it defines its own terms (Overview), describes the code
+taken (the Overview lists them as D1 to D39). This file is meant to be read alone: it defines its own terms (Overview), describes the code
 that exists today (Today in brief), and ends with the facts that still have to be verified, each with the test that closes it (section 14).
 
 ---
@@ -157,6 +157,8 @@ These were decided by the project owner. No decision is open.
 | D35 | `swarmbox update` pulls the moving `X.Y` tag, reads the exact `X.Y.Z`, creates a local tag `<repo>:<X.Y.Z>` with `podman tag`, and writes `IMAGE=<repo>:<X.Y.Z>`, so a later `reset` works offline. | 3.8 |
 | D36 | There is no `swarmbox uninstall` command in 2.0. The manual steps are documented in section 12.5 (and in the README, Phase 6 of the plan). | 12.5 |
 | D37 | The audit of the git history for secrets and personal data (a scan such as gitleaks) happens in Phase 1 of the plan, and the GitHub repository stays private until the release milestone M4. | 15, implementation plan |
+| D38 | The image owner is the project owner's account `feroult` on `ghcr.io`, so the image is `ghcr.io/feroult/swarmbox`. Examples keep `<org>` until the name check of D25 passes, because a different name would change the path. | 10.4 |
+| D39 | The scope of 2.0.0 is the whole feature catalog (8.4), including Cloudflare remote access (`swarmbox remote`): no capability of v0.1.0 is dropped except those listed as removed in section 12. | 5.2, 8.4, 12 |
 
 ---
 
@@ -1720,7 +1722,7 @@ messages of 3.8, `serve` step failures (4.1), `swarmbox-tool` and the installers
 
 ## 14. Open questions
 
-No design decision is open: all are taken and listed in the table "Decisions already taken" in the Overview (D1 to D37). Part B lists facts nobody has checked, each with the test that closes it. The body cites them as B1, B2... and the decisions as D1 to D37.
+No design decision is open: all are taken and listed in the table "Decisions already taken" in the Overview (D1 to D39). Part B lists facts nobody has checked, each with the test that closes it. The body cites them as B1, B2... and the decisions as D1 to D37.
 
 ### Part B. Facts to verify
 

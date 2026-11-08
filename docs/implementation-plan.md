@@ -220,7 +220,7 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 
 **Goal:** a public, signed `v2.0.0`. Design: 10.4, 11, 13.4, D25, D26.
 
-- `release.yml`: multi-arch build (amd64 and arm64), tests, vulnerability scan, signing, SBOM, publish to `ghcr.io/<org>/swarmbox` (D32). One run of `update` against the real registry rechecks B20.
+- `release.yml`: multi-arch build (amd64 and arm64), tests, vulnerability scan, signing, SBOM, publish to `ghcr.io/feroult/swarmbox` (D32, D38). One run of `update` against the real registry rechecks B20.
 - Settle the registry owner and **check that the name SwarmBox is available** (D25).
 - **Act on the history audit** of Phase 1 (D37): publish the history whole, or start from a clean history; only then make the repository public.
 - **Security review of the host helper** before release: it runs on the host with the user's privileges (D26, 11). Review the lock and temporary files, quoting, the extraction, the token handling and `up`'s cleanup; fix or document each finding.
@@ -245,7 +245,7 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 | A change in the live box breaks work in progress | The safety rule (1.2); the owner's box moves last, after a backup, and a second box is used first |
 | The Cloudflare end-to-end needs the owner's account | Fakes cover the logic; one end-to-end run by the owner closes Phase 5 |
 | Secrets or personal data in the git history | The audit is in Phase 1 and the repository stays private until M4 (D37) |
-| Scope creep from detailed specification | Anything in the design not needed for parity or for a decision in D1 to D37 can be deferred to 2.1 and listed in the changelog |
+| Scope creep from detailed specification | Anything in the design not needed for parity or for a decision in D1 to D39 can be deferred to 2.1 and listed in the changelog |
 
 ---
 
@@ -254,11 +254,11 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 Status: **applied** (done in the documents), **assumed default** (the plan proceeds on this answer until you change it), **open** (needs your answer).
 
 1. **Phase order.** *Applied.* The box (Phase 2) is built before the tools and the host half; the minimal tool slice (4a) precedes Phase 3, and the design's roadmap (section 15) now follows this plan.
-2. **Spikes.** *Assumed default:* run Phase 0 now in nested throwaway containers here, with the limits above. **Who runs the hardware checks** (B6, B7, B8, B15, and the macOS rechecks), and when? *Open.*
+2. **Spikes.** *Assumed default:* run Phase 0 now in nested throwaway containers here, with the limits above. **Hardware checks:** the owner runs the macOS ones (B6, B15 and the macOS parts of B19, B21, B22, B23) later, on a Mac, before M3 (*decided*). *Open:* who runs B7 (a host UID other than 1000) and B8 (older Podman versions), or whether a CI matrix covers them.
 3. **Dogfooding.** *Assumed default:* a second box (`SWARMBOX_NAME=dev`) from M2, and the main workspace moves only after parity (M3).
 4. **CI provider.** *Assumed default:* GitHub Actions (the remote host alias points at GitHub). Whether a macOS runner is available is checked in Phase 1 (B30).
-5. **Registry owner.** `ghcr.io/<org>`: a personal account or an organization? Needed in Phase 7; examples keep the placeholder until then. *Open.*
-6. **Scope of 2.0.0.** All of the catalog, including `remote` (Cloudflare), ships in 2.0.0, as D14 and the catalog say. Should anything move to 2.1 to reach M2 and M4 sooner? *Open.*
+5. **Registry owner.** *Decided (D38):* the owner's account `feroult`, so `ghcr.io/feroult/swarmbox`. Examples keep `<org>` until the name check (D25) passes.
+6. **Scope of 2.0.0.** *Decided (D39):* the whole catalog ships in 2.0.0, Cloudflare remote access included. No feature of v0.1.0 is dropped, except what section 12 of the design lists as removed.
 7. **Review cadence.** *Assumed default:* review at each milestone (M1 to M4).
 8. **Who builds what.** *Assumed default:* the work is done by the agent with parallel sub-agents where phases allow it (4b in parallel with 3; 5 after 3), under the rules in section 1.
 
@@ -268,7 +268,7 @@ Status: **applied** (done in the documents), **assumed default** (the plan proce
 
 Built from the design. "Phase" is where the decision is implemented (or where its absence is proven); a second phase is shown when the work is split.
 
-### A.1 Decisions D1 to D37
+### A.1 Decisions D1 to D39
 
 | D | Decision (short) | Phase | How it is proven |
 |---|---|---|---|
@@ -309,6 +309,8 @@ Built from the design. "Phase" is where the decision is implemented (or where it
 | D35 | `update` tags the exact `X.Y.Z` locally | 3 | `podman tag` recorded; `reset` offline after `update`; B20 |
 | D36 | No `uninstall` command (absence) | 3, 6 | `swarmbox uninstall` is no host word, routed as a command (3); the manual steps in the README (6) |
 | D37 | History audit early; repository private until M4 | 1, 7 | the audit report (1); the repository is made public only at the release (7) |
+| D38 | Image owner `feroult`: `ghcr.io/feroult/swarmbox` | 3, 7 | local registry with a placeholder (3); the first publish under `ghcr.io/feroult` and the package visibility set to public at release (7) |
+| D39 | 2.0.0 includes the whole catalog, Cloudflare remote access too | 5, 6 | the parity suite has a row for `remote` (6); the end-to-end run of Phase 5 |
 
 ### A.2 Feature catalog (8.4) and command contract (3.2, 3.3)
 
