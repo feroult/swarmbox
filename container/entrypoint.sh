@@ -4,9 +4,11 @@
 #   serve     the box's main process: the ordered startup of design 4.1, the readiness marker and health file of 4.2,
 #             PID 1 signal handling, and the ttyd supervisor of 5.1 (slice 2.2, this file)
 #   attach    forwards to swarmbox-attach (slice 2.3: the grouped session, the idle window, `swarmbox <command>`)
-#   init, pubkey, tool, host-helper
-#             written by the next slices of Phase 2; until then they fail loudly (exit 70, EX_SOFTWARE) instead of
-#             pretending to work
+#   init      forwards to swarmbox-init (Phase 3 writes it; until then 127, named)
+#   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
+#   tool      forwards to swarmbox-tool (the stub of slice 2.5 until Phase 4a)
+#   host-helper
+#             writes the helper archive (box:/usr/local/share/swarmbox/host/) as a tar archive on stdout
 #   (none)    exit 64
 #   anything else is run as given (already the final behavior, design 10.2)
 #
@@ -103,8 +105,8 @@ run_logged() {
     "$@" >> "$SERVE_LOG" 2>&1
 }
 
-# ttyd_command: the program line the supervisor runs. `swarmbox-web run` (a later slice) assembles the page and the
-# options and execs ttyd in the foreground; until it exists the supervisor runs ttyd directly (port 7681 inside the box).
+# ttyd_command: the program line the supervisor runs. `swarmbox-web run` (slice 2.5) assembles the page and the
+# options and execs ttyd in the foreground; without it the supervisor runs ttyd directly (port 7681 inside the box).
 ttyd_command() {
     if have swarmbox-web; then
         TTYD_CMD=(swarmbox-web run)
@@ -352,21 +354,50 @@ serve() {
 
 # ---------------------------------------------------------------------------------------------------------------------
 
+# forward <program> [args...]: replace this process with a program of the image (an exec: the exit status and the signals are
+# the program's own). A missing program is 127, named, so a build that lacks it fails loudly.
+forward() {
+    local prog=$1
+    shift
+    if ! command -v "$prog" > /dev/null 2>&1; then
+        echo "swarmbox-entrypoint: $prog not found on PATH" >&2
+        exit 127
+    fi
+    exec "$prog" "$@"
+}
+
+# host-helper: the helper archive (design 3.7.1, 9.3) as a tar archive on stdout, nothing else on stdout. The function saves it
+# to a file and unpacks it on the host; owner 0 and the file modes are kept, so `swarmbox-host` stays executable.
+host_helper() {
+    local dir=${SWARMBOX_TEST_HOST_DIR:-/usr/local/share/swarmbox/host}
+    if [ $# -ne 0 ]; then
+        echo "usage: swarmbox-entrypoint host-helper" >&2
+        exit 64
+    fi
+    if [ ! -d "$dir" ]; then
+        echo "swarmbox-entrypoint host-helper: the helper folder $dir does not exist in this image" >&2
+        exit 1
+    fi
+    exec tar --owner=0 --group=0 --numeric-owner -C "$dir" -cf - .
+}
+
 case "${1:-}" in
     serve)
         serve
         ;;
-    attach)
+    attach|init|pubkey|tool)
+        sub=$1
         shift
-        if ! command -v swarmbox-attach > /dev/null 2>&1; then
-            echo "swarmbox-entrypoint: swarmbox-attach not found on PATH" >&2
-            exit 127
-        fi
-        exec swarmbox-attach "$@"
+        case "$sub" in
+            attach) forward swarmbox-attach "$@" ;;
+            init) forward swarmbox-init "$@" ;;
+            pubkey) forward swarmbox-pubkey "$@" ;;
+            tool) forward swarmbox-tool "$@" ;;
+        esac
         ;;
-    init|pubkey|tool|host-helper)
-        echo "swarmbox-entrypoint: '$1' is not implemented in this build yet (Phase 2, slice 2.1 placeholder)" >&2
-        exit 70
+    host-helper)
+        shift
+        host_helper "$@"
         ;;
     "")
         echo "swarmbox-entrypoint: no command given" >&2
