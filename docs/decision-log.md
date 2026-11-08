@@ -216,3 +216,31 @@ How to reverse: n/a.
 ## [0.4] Spike scripts: the first run of B11 and B16 contradicted my assumptions; assertions changed into recorded findings
 Context: B11 first asserted that pinned and unversioned archives had the same sha256 (they do not); B16 first asserted unless-stopped is matched by the unit's filter (it is not). Both assertions were my assumptions, not design claims, and both are now findings recorded in the design. The docs consistency test (tests/test_design_partb.py) was written before the design edits and failed first; it also needed two tolerance fixes (the format-description tag and a legacy tag marked "not recorded" are skipped).
 Impact on the design: as above. How to reverse: n/a.
+
+## [0.5] Phase 0 outcome table in the design, not a new Part B column
+Context: the exit criteria want every Phase 0 fact shown as closed, reduced or open with an owner. The Part B table already has a long free-text Fact column per row that earlier slices edited.
+Options: add a Status column to the Part B table; add a separate outcome table under the results; only edit Appendix A.3 of the plan.
+Chosen: a separate "Phase 0 outcome" table after the results table (state, owner, note), plus short notes in plan A.3, because it avoids reflowing 36 long rows and keeps one row per fact for the test.
+Impact on the design: new subsection at the end of Part B; "Part B lists" text unchanged.
+How to reverse: delete the subsection and the plan paragraph "Phase 0 outcome"; update tests/test_docs_consistency.py.
+
+## [0.5] Ownership of B12 (image size), B14 and B16 left open
+Context: B12's 4.2 GB size needs a built image (the box's own must not be rebuilt); B14 needs a Cloudflare dashboard (no real account may be touched); B16's reboot needs systemd.
+Options: close them with documentation; mark them reduced or open with an owner.
+Chosen: B12 reduced, owner Phase 2 (with B27); B14 open, owner the project owner; B16 reduced, owner the project owner on a host with systemd. All stay `[unverified]` for the unchecked part.
+Impact on the design: outcome table only. How to reverse: n/a.
+
+## [0.5] B6, B7, B8 and B15 skipped as hardware or version dependent
+Context: they need a Mac, a host UID other than 1000, older Podman versions (4.0, 4.9, latest) and a clean macOS. Pulling other Podman versions is not possible here.
+Chosen: skip, list as "not doable here" with owner (the owner or a CI matrix in Phase 6). Nothing was tested or guessed.
+Impact on the design: none beyond the outcome table. How to reverse: run them in Phase 6.
+
+## [0.5] Design text said "D1 to D37" while D38 and D39 exist
+Context: section 14 cited the decisions as D1 to D37; the table has D1 to D39.
+Chosen: fix the text to D39 and add a test that guards the range.
+Impact on the design: one sentence. How to reverse: n/a.
+
+## [0.5] Spike scripts stay under tests/spikes/, documented, not run in CI
+Context: the plan says they later become real tests.
+Chosen: tests/spikes/README.md lists each script with its B number, command and prerequisites and a promotion table (which phase turns it into a test); test_docs_consistency.py checks the list against the directory. The spikes are not wired to CI because they download packages, need Podman and take minutes.
+Impact on the design: none. How to reverse: n/a.
