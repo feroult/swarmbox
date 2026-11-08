@@ -8,6 +8,10 @@ machine. It is one long-lived rootless Podman container with a workspace folder 
 terminal tab or from a browser, and every entry lands in the same session. The agent gets full tool access inside the box;
 your host only sees the workspace folder.
 
+**Paths in this document.** `host:~/...` is a path on your machine. `<workspace>/...` is a path inside the workspace folder; inside the
+box the workspace is `/home/agent`, so `<workspace>/.config/swarmbox/` is seen there as `~/.config/swarmbox/`. `box:/...` is a path in the
+container's own filesystem, which does not survive a `reset`. A bare `~` is not used for documented paths.
+
 ---
 
 ## 1. Goals and non-goals
@@ -47,7 +51,7 @@ Non-goals
    the host.
 7. **Persist in one place.** Everything inside the box that must survive (projects, login, SSH key, installed tools, in-box
    config) lives in the workspace folder, mounted as `/home/agent`. The container is replaceable; the workspace is not.
-   Settings that belong to the host (the creation-time configuration, optional secrets) live in `~/.config/swarmbox/` there.
+   Settings that belong to the host (the creation-time configuration, optional secrets) live in `host:~/.config/swarmbox/`.
 8. **Credentials that reach the internet stay on the host.** The Cloudflare tunnel connector and its credentials run outside
    the box, so an agent in the box cannot read them.
 9. **Honest security.** The threat model is written down (section 10) and defaults are conservative: nothing published
@@ -74,7 +78,7 @@ podman run --rm ghcr.io/<org>/swarmbox:1.2.0 init --with claude --workspace ~/co
 ```
 
 - `init --with a,b` records `SWARMBOX_WITH=a,b`: tools to have ready. They are installed the first time the box starts.
-- `init --workspace DIR` chooses the workspace folder (3.4). Without it, the workspace is `~/swarmbox`. The path is made absolute and
+- `init --workspace DIR` chooses the workspace folder (3.4). Without it, the workspace is `host:~/swarmbox`. The path is made absolute and
   written to the host config as `WORKSPACE`; the folder is created on the first start.
 - `init --shell zsh|fish` prints the right syntax.
 - The function sits between markers (`# >>> swarmbox 1.2.0 >>>` ... `# <<< swarmbox 1.2.0 <<<`), so a later `init` replaces
@@ -118,42 +122,46 @@ swarmbox --once          # throwaway container for the current folder, removed o
 ### 3.4 The workspace
 
 - One box has one workspace: a folder on the host, mounted as `/home/agent` (called the *home* when seen from inside the box).
-- It is chosen once, at install, with `init --workspace DIR`; without it, `~/swarmbox`. The path is stored in the host config
+- It is chosen once, at install, with `init --workspace DIR`; without it, `host:~/swarmbox`. The path is stored in the host config
   (`WORKSPACE`), so where you run `swarmbox` no longer matters. (Today it is `.work/` in the current directory.)
 - Creation-time options (workspace, ports, hostname, time zone, variables...) apply when the box is created; to change them,
   `swarmbox reset`.
 - A second box is possible with `SWARMBOX_NAME=other SWARMBOX_WORKSPACE=...`, with its own web port.
 
-What is inside the workspace. Everything the box must keep lives there, because it is the home. This is the layout with the XDG
-proposal (3.8, open question 18); the tool and agent dotfiles are whatever those programs create:
+What is inside the workspace. Everything the box must keep lives there, because it is the home. The tool and agent dotfiles are whatever
+those programs create; the `swarmbox` folders follow the XDG layout (3.8):
 
 ```
-~/swarmbox/                            # the workspace on the host = /home/agent in the box
+host:~/swarmbox/                       # the workspace = /home/agent in the box
 ├── my-project/                        # your projects
 ├── .ssh/                              # the SSH key (id_ed25519, id_ed25519.pub)
 ├── .claude/, .claude.json             # Claude Code: login, settings, history
 ├── .gitconfig                         # if you set a git identity inside the box
-├── .config/swarmbox/                  # in-box config: web-terminal.conf, user-level tool manifests
-├── .local/share/swarmbox/             # tools/ (claude, gcloud...), shims/, the host helper
-├── .local/state/swarmbox/             # locks, logs, podman.sock
-└── .local/share/containers/           # empty here: see "not in the workspace" below
+├── .config/swarmbox/                  # config you edit: web-terminal.conf, user-level tool manifests
+├── .local/share/swarmbox/             # data: tools/ (claude, gcloud...), shims/
+├── .local/state/swarmbox/             # state: logs, podman.sock
+└── .local/share/containers/           # empty here: the nested Podman storage is a volume (below)
 ```
 
 What is **not** in the workspace folder:
-- **The host configuration**: `~/.config/swarmbox/config` and `cloudflare.json` on your machine, outside the workspace. The names look
-  alike on purpose of the XDG convention, but they are two different places: the host one is read before the box exists (it holds
-  `WORKSPACE` itself), the in-box one is inside the workspace.
-- **The nested Podman storage**: the volume `<name>-containers`, mounted at `/home/agent/.local/share/containers`. It appears as an empty
+- **The host configuration**, on your machine: `host:~/.config/swarmbox/config`, `host:~/.config/swarmbox/cloudflare.json` and the optional
+  `host:~/.config/swarmbox/secrets/env`, plus the host helper in `host:~/.local/share/swarmbox/host/`. They share names with
+  `<workspace>/.config/swarmbox/` because both follow XDG, but they are different places: the host one is read before the box exists (it
+  holds `WORKSPACE` itself), the other lives inside the workspace.
+- **The nested Podman storage**: the volume `<name>-containers`, mounted at `<workspace>/.local/share/containers`. It appears as an empty
   folder in the workspace; its contents live in the Podman volume, because they are owned by subuid-mapped IDs that the host user could
   not delete and they grow large.
-- **The container's own filesystem**: anything installed with `apt` or written to `/usr`, `/etc`, `/opt`, plus running processes and tmux
-  sessions. A `reset` discards them (5.11).
+- **Files regenerated at every start**: `box:/tmp/swarmbox/` (the assembled web page, the OpenCode config, locks). They are not in the
+  workspace so they do not clutter it or a backup; a reset discards them and the next start recreates them.
+- **The container's own filesystem**: anything installed with `apt` or written to `box:/usr`, `box:/etc`, `box:/opt`, plus running
+  processes and tmux sessions. A `reset` discards them (5.11).
 
 Two things to watch with this layout:
-- Cache directories under `~/.cache` (for example pip's) also live in the workspace and keep growing; they are safe to delete.
+- Cache directories of other programs under `<workspace>/.cache` (for example pip's) also live in the workspace and keep growing; they
+  are safe to delete. SwarmBox itself keeps nothing there.
 - The host reaches nested Podman through a unix socket (`podman -c <name>`). Today it is `<workspace>/.swarmbox/podman.sock`; with the XDG
-  layout it would be `<workspace>/.local/state/swarmbox/podman.sock`, about 14 characters longer. Unix socket paths are limited to roughly
-  108 bytes, so a very deep workspace path could break the connection. The default `~/swarmbox` is far from that limit; the function
+  layout it is `<workspace>/.local/state/swarmbox/podman.sock`, about 14 characters longer. Unix socket paths are limited to roughly
+  108 bytes, so a very deep workspace path could break the connection. The default `host:~/swarmbox` is far from that limit; the function
   should check the length and fall back to a short symlink if needed. (Not measured.)
 
 ### 3.5 The generated function
@@ -189,7 +197,7 @@ swarmbox() {
 
 ### 3.6 Host-side configuration
 
-Host-side settings live in `~/.config/swarmbox/config` (`KEY=VALUE`), written by `init` and `remote setup`. Environment
+Host-side settings live in `host:~/.config/swarmbox/config` (`KEY=VALUE`), written by `init` and `remote setup`. Environment
 variables override it. Nothing about Cloudflare is ever passed into the box.
 
 ### 3.7 Environment variables and keys (proposed; same behavior as `start.sh --env-keys` today)
@@ -200,7 +208,7 @@ a box that already exists keeps what it was created with, and other terminals th
 recreate it: `swarmbox reset`.
 
 How it works
-- The **names** are stored on the host, in `~/.config/swarmbox/config` (`ENV_KEYS=ANTHROPIC_API_KEY,GEMINI_API_KEY`), not typed
+- The **names** are stored on the host, in `host:~/.config/swarmbox/config` (`ENV_KEYS=ANTHROPIC_API_KEY,GEMINI_API_KEY`), not typed
   on every command. At creation the function turns each name into `-e NAME` without a value, so Podman reads it from the
   environment of the terminal that runs `swarmbox`. Today `start.sh` puts `-e NAME=value` on the command line (the value shows
   in `ps`, and a value with spaces breaks the unquoted expansion); `-e NAME` keeps the value off the command line. This file
@@ -221,9 +229,9 @@ Where the values come from, and the gap
 - By default the source is the host environment, so it is up to the user to keep the variables exported (a shell startup file,
   a password manager, a tool such as direnv). SwarmBox stores nothing.
 - The gap: `swarmbox reset` re-reads the host environment. If a variable is no longer exported in that terminal, the new box starts
-  without it. Claude Code's own login is not affected: it lives in `~/.claude` in the workspace and survives a reset.
+  without it. Claude Code's own login is not affected: it lives in `<workspace>/.claude` in the workspace and survives a reset.
 - **Optional fallback (proposed, undecided: open question 15):** `swarmbox env set NAME` asks for the value without echoing it and
-  writes it to `~/.config/swarmbox/secrets/env`, a plain `NAME=value` file, one per line, no `export`, no quotes, mode `600`:
+  writes it to `host:~/.config/swarmbox/secrets/env`, a plain `NAME=value` file, one per line, no `export`, no quotes, mode `600`:
 
   ```
   ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxx
@@ -261,17 +269,22 @@ Every capability is classified once and configured one way. The rules:
 1. **Three layers.** *Image*: what is installed. *Creation*: what the box is created with (mounts, ports, hostname, time zone,
    environment...). *Runtime*: what changes inside without recreating the box (tools, in-box config files). A
    feature lives in exactly one layer; a creation-layer feature changes with `swarmbox reset`, a runtime one does not.
-2. **One configuration surface.** The host file `~/.config/swarmbox/config` (keys below). `init` flags only write keys;
+2. **One configuration surface.** The host file `host:~/.config/swarmbox/config` (keys below). `init` flags only write keys;
    `swarmbox config set|get|list` edit them; an environment variable `SWARMBOX_<KEY>` overrides a key. No feature has a flag
    syntax of its own.
 3. **One creation fingerprint.** At creation the function stores the creation-layer settings as labels on the container
    (`swarmbox.fingerprint`, plus readable labels for the image, workspace and ports). Every entry compares the current config with
    them and says what differs. This replaces today's separate warnings (creation flags ignored on an existing box, stale image,
    different workspace mount) and the env hash of 3.7.
-4. **One layout inside the box (XDG).** Config in `~/.config/swarmbox/` (`web-terminal.conf`, user tool manifests), data in
-   `~/.local/share/swarmbox/` (tools, host helper), state in `~/.local/state/swarmbox/` (locks, logs, `podman.sock`). It replaces
-   `~/.swarmbox/`; the first start moves the old files (open question 18). All of it sits inside the workspace (3.4).
-5. **One registry for MCP servers.** `container/mcp/<name>/config.json`. `init.sh` generates `~/.claude/mcp-servers.json` from every
+4. **One layout (XDG), and one question per file: must it survive a reset, and must the host reach it?**
+   - Survives, and you edit it: `<workspace>/.config/swarmbox/` (`web-terminal.conf`, user-level tool manifests).
+   - Survives, and was installed: `<workspace>/.local/share/swarmbox/` (`tools/`, `shims/`).
+   - Survives, or the host must reach it: `<workspace>/.local/state/swarmbox/` (logs, and `podman.sock`, the one file the host has to reach).
+   - Regenerated at every start, so it does not need to survive: `box:/tmp/swarmbox/` (the assembled web page, the OpenCode config, locks).
+   There is no `.cache/swarmbox`. The layout replaces `<workspace>/.swarmbox/`; the first start of the new image migrates the old files
+   (section 11). Every script reads these paths from one file, `container/scripts/dirs.sh`, which honors `XDG_CONFIG_HOME`,
+   `XDG_DATA_HOME` and `XDG_STATE_HOME`; tests point those at temporary folders. All the `<workspace>` paths sit inside the workspace (3.4).
+5. **One registry for MCP servers.** `container/mcp/<name>/config.json`. `serve` generates `<workspace>/.claude/mcp-servers.json` from every
    enabled server (today it names chrome-devtools in code). `BROWSER_URL` swaps chrome-devtools from a local headless Chromium to
    a remote Chrome. An agent manifest can ask for a mirrored copy in its own format (`MCP_FORMAT=opencode` replaces today's
    `sync_opencode_mcp`).
@@ -281,7 +294,7 @@ Creation-time keys (host config), with what each replaces:
 | Key | Default | Replaces today |
 |---|---|---|
 | `NAME` | `swarmbox` | `--name` |
-| `WORKSPACE` | `~/swarmbox` (set with `init --workspace DIR`) | `.work/` in the current directory |
+| `WORKSPACE` | `host:~/swarmbox` (set with `init --workspace DIR`) | `.work/` in the current directory |
 | `HOSTNAME` | `swarmbox` | `--hostname` |
 | `TZ` | `local` (or `off`, or `Area/City`) | `SWARMBOX_TZ` |
 | `INIT` | `auto` (or `0`, `1`) | `SWARMBOX_INIT` (the `--init` that reaps zombies) |
@@ -309,7 +322,7 @@ Feature catalog: what each capability is, and where it lives.
 | Box | Workspace mount, fixed user with `sudo`, `--init`, pids limit, hostname, time zone, UTF-8 locale | core | creation |
 | Box | Creation fingerprint, stale-image and startup-health warnings | core | creation |
 | Box | Environment variables and keys (3.7) | core | creation |
-| Shell | Starship, banner, aliases (`ls`, `ll`, `la`, `l`, `grep`), `~/.local/bin` on `PATH`, `/opt/flow` venv with the `(swarmbox)` prompt, `uv` | core | image |
+| Shell | Starship, banner, aliases (`ls`, `ll`, `la`, `l`, `grep`), `<workspace>/.local/bin` on `PATH`, `/opt/flow` venv with the `(swarmbox)` prompt, `uv` | core | image |
 | Shell | tmux configuration and the Alt shortcuts, clipboard bridge | core | image |
 | Git | SSH key, `swarmbox pubkey`, trust on first use for GitHub, GitLab, Bitbucket | core | runtime |
 | Web | Web terminal (ttyd), on by default on `127.0.0.1` | module | creation |
@@ -336,8 +349,9 @@ Nothing here is applied until it is agreed. Each row says what goes, what replac
 | `uuid()` shell function | Remove | A personal convenience, not part of a neutral image. |
 | `ANTHROPIC_MODEL=sonnet` in the image | Remove | A personal default; users set a model through `ENV_KEYS`. |
 | OpenCode's local-LLM defaults (the model name and `host.containers.internal:8000`) | Remove the defaults, keep `LOCAL_LLM_*` | Neutral defaults; the feature stays opt-in. |
-| `~/.claude/settings.json` symlink into `~/.swarmbox/` | Remove after migration | The home is already the workspace, so `~/.claude` persists by itself. A compatibility link stays until the first start has moved the file. |
-| `~/.swarmbox/` | Replace with the XDG layout (3.8) | One predictable layout. |
+| `<workspace>/.claude/settings.json` symlink into `<workspace>/.swarmbox/` | Remove after migration | The home is already the workspace, so `<workspace>/.claude` persists by itself. The first start of the new image replaces the link with a copy of the file (section 11). |
+| `<workspace>/.swarmbox/` | Replace with the XDG layout (3.8); decided | One predictable layout, consistent with the tool folders. |
+| `container/scripts/init.sh` | Remove; its duties are split (7.1) | The new model has no init script. |
 | `cloudflare-setup.py`: `--connector-image` | Replace | The connector image is pinned in the helper; `SWARMBOX_CLOUDFLARED_IMAGE` stays for overrides. |
 | Image packages `software-properties-common`, `lsb-release`, `apt-transport-https` | Remove after a build test | Candidates only; nothing checked depends on them. `procps` stays (`pgrep` is used by the web-terminal and Podman-service scripts). |
 
@@ -354,14 +368,25 @@ browser ─ https://swarmbox.example.com ─► Cloudflare Access (e-mail code) 
 
 ### 4.1 Inside the box
 - ttyd (pinned and checksummed), tmux (from the distribution) and the clipboard bridge are part of the image (a few MB).
-- `serve` starts the web terminal (ttyd running tmux) in the foreground as the container's main process, so the box lives as
-  long as it. Today `init.sh` starts it in the background when the container was created with `SWARMBOX_WEB=1`. Making it the
-  main process has not been tested.
+- `serve` runs the web terminal (ttyd running tmux) and is the container's main process, so the box lives as long as it. Today the web
+  terminal is started in the background by `init.sh` when the container was created with `SWARMBOX_WEB=1`. Making `serve` the main process
+  has not been tested.
 - It is on by default and listens only on `127.0.0.1:<WEB_PORT>` of the host (inside the box it is always port 7681). `WEB=0` turns it off.
 - `serve` supervises ttyd instead of being it, so restarting the web terminal after editing `web-terminal.conf` is
   `swarmbox-web restart` inside the box, and does not end the box. Today the documented way is `pkill ttyd; swarmbox-web-terminal`,
   which would stop a box whose main process was ttyd. (Untested.)
-- Appearance and behavior (font, theme, padding, Ctrl+C/V) come from `web-terminal.conf` in the workspace (`~/.config/swarmbox/` with the XDG layout; `~/.swarmbox/` today).
+- **The page is built into the image.** `container/web/build-index.sh`, run at image build, assembles ttyd's own page (`ttyd-stock.html`,
+  saved at build), `ttyd-clipboard.js` and `ttyd-style.css` into `box:/usr/local/share/swarmbox/web/index.html`, with placeholders for
+  the three user settings: the padding and the two switches `ctrlVPaste` and `ctrlCCopy`. At every start `swarmbox-web` copies it to
+  `box:/tmp/swarmbox/index.html` substituting those three values from `web-terminal.conf` (a plain text substitution: no Python at runtime
+  and no hash). Today the whole assembly runs at every start (`web-terminal.sh`, with Python). Building it at image build means the
+  page, however sophisticated it becomes, is versioned, tested in CI and covered by the image's signature.
+- Font, theme and size do not live in the HTML: ttyd passes them to the page through its `-t key=value` options, built from
+  `web-terminal.conf` at start.
+- `web-terminal.conf` is `<workspace>/.config/swarmbox/web-terminal.conf` (`<workspace>/.swarmbox/web-terminal.conf` today). Logs go to
+  `<workspace>/.local/state/swarmbox/`.
+- Limit: ttyd serves a **single file** as the page (`--index`), as far as this repository uses it. A page that grows into several files would have
+  to be inlined into that one file, or a small server put in front. This was not checked against ttyd's documentation (open question 21).
 
 ### 4.2 Remote access: `swarmbox remote`
 - `remote setup` asks for a Cloudflare domain, an e-mail and an API token (hidden input, never stored), then provisions:
@@ -383,7 +408,7 @@ browser ─ https://swarmbox.example.com ─► Cloudflare Access (e-mail code) 
 
 ### 4.3 Host helper
 The host-side Cloudflare logic is Python, too long for the shell function. `init` and `update` extract it from the image into
-`~/.local/share/swarmbox/host/` (version-matched), and the function calls it only when remote access is configured. The image
+`host:~/.local/share/swarmbox/host/` (version-matched), and the function calls it only when remote access is configured. The image
 stays the single trust anchor, and the script runs on the host with the user's privileges, which is why it is small, has no
 dependencies, and is readable there.
 
@@ -421,8 +446,8 @@ Manifest levels, from highest precedence to lowest:
 
 | Level | Manifests | Generated shims and index | Who uses it |
 |---|---|---|---|
-| Project | `.swarmbox/tools/<name>/` in the directory where `swarmbox-tool link` runs (the one `swarmbox` is entered from) | `~/.local/share/swarmbox/shims/`, `.../index` | whoever clones the project (see 5.10) |
-| User | `~/.config/swarmbox/tools/<name>/` (in the workspace) | the same directory | the user, no rebuild |
+| Project | `.swarmbox/tools/<name>/` in the directory where `swarmbox-tool link` runs (the one `swarmbox` is entered from) | `<workspace>/.local/share/swarmbox/shims/`, `.../index` | whoever clones the project (see 5.10) |
+| User | `<workspace>/.config/swarmbox/tools/<name>/` (in the workspace) | the same directory | the user, no rebuild |
 | Image | `/usr/local/lib/swarmbox/tools/<name>/` (copied from `container/tools/`, read-only) | `/usr/local/lib/swarmbox/shims/`, `.../index` | everyone |
 
 `swarmbox-tool link --system` runs at image build for the image level. `swarmbox-tool link --user` runs at every container
@@ -442,15 +467,16 @@ In the image:
 In the workspace (persistent, mounted as `/home/agent`):
 
 ```
-~/.local/share/swarmbox/tools/<name>/<version>/   # the installed program ($TOOL_PREFIX)
-~/.local/share/swarmbox/tools/<name>/current      # symlink to the active version (UPDATE=managed)
-~/.local/share/swarmbox/tools/<name>/self/        # the single install of an UPDATE=self tool, updated by the tool
-~/.local/share/swarmbox/tools/.lock               # flock, so two shells do not install at once
-~/.local/share/swarmbox/shims/, .../index         # user- and project-level shims
-~/.config/swarmbox/tools/<name>/                  # user-level manifests
+<workspace>/.local/share/swarmbox/tools/<name>/<version>/   # the installed program ($TOOL_PREFIX)
+<workspace>/.local/share/swarmbox/tools/<name>/current      # symlink to the active version (UPDATE=managed)
+<workspace>/.local/share/swarmbox/tools/<name>/self/        # the single install of an UPDATE=self tool, updated by the tool
+<workspace>/.local/share/swarmbox/shims/, .../index         # user- and project-level shims
+<workspace>/.config/swarmbox/tools/<name>/                  # user-level manifests
 ```
 
-`PATH` order: user-level shims, image-level shims, then `~/.local/share/swarmbox/tools/*/current/bin`. After install the real
+The install lock is `box:/tmp/swarmbox/tools.lock` (an `flock`, so two shells do not install at once).
+
+`PATH` order: user-level shims, image-level shims, then `<workspace>/.local/share/swarmbox/tools/*/current/bin`. After install the real
 binary is found before the shim, so there is no per-call overhead. (Checked: a symlink invoked as `gcloud` or `clasp` into
 one script gets its own name in `$0` and its own arguments.)
 
@@ -512,7 +538,7 @@ Fields
 - `SHA256_<arch>`: verified before use when present. Required for tools with a published hash.
 - `PORTS`: optional; ports the tool needs published on `127.0.0.1` (clasp's `login` callback uses `43323`). Creation-time: they are added to
   the box's `PORTS` when the tool is in `WITH` at creation. For a tool installed later, add it to `WITH` and `swarmbox reset`.
-- `MCP_FORMAT`: agents only; how the MCP server list reaches the agent. `claude` reads the generated `~/.claude/mcp-servers.json`
+- `MCP_FORMAT`: agents only; how the MCP server list reaches the agent. `claude` reads the generated `<workspace>/.claude/mcp-servers.json`
   directly; `opencode` gets a mirrored copy in its own format.
 - Conflicts: two manifests that provide the same command are resolved by level (project, then user, then image); two at the
   same level are an error reported by `link` and `validate`.
@@ -532,7 +558,7 @@ belongs to the tool being run); exits non-zero on any failure and leaves no half
 use `npm install -g --prefix "$TOOL_PREFIX"` and **clean the npm cache in the same step**.
 
 Hard rules, because a box can be recreated (section 5.11): an installer **never** uses `apt` or `sudo`, never writes outside
-`$TOOL_PREFIX` (not in `/usr`, `/etc`, `/opt`, and not in the user's shell startup files such as `~/.bashrc`), and never needs
+`$TOOL_PREFIX` (not in `/usr`, `/etc`, `/opt`, and not in the user's shell startup files such as `<workspace>/.bashrc`), and never needs
 a system package that the image does not already have. A tool that needs one belongs in the image, or in the build-time
 preinstall (5.8), not in an on-demand install. Anything an installer is allowed to leave behind (a cache) must be safe to lose.
 
@@ -571,7 +597,7 @@ longer matches the image (section 5.11).
 For every installed or declared agent, the shell gets an alias built from the manifest, e.g.
 `alias claude='claude --dangerously-skip-permissions --mcp-config ...'`, so `claude` is auto-approve by default inside the
 sandbox. The flags live only in the manifest: when a release changes one, there is one place to fix. The file named by
-`MCP_FLAGS` is generated by `init.sh` from the MCP registry (3.8), not written by hand.
+`MCP_FLAGS` is generated by `serve` from the MCP registry (3.8), not written by hand.
 
 - `yolo` runs the **default agent** in auto-approve mode. The default is `SWARMBOX_AGENT`, else the first agent in
   `SWARMBOX_WITH`.
@@ -642,7 +668,7 @@ To add a tool to the repository:
    and an `UPDATE_CMD`.
 3. Rebuild. **No file of the core changes**: the Dockerfile copies the whole directory and `link --system` generates the shims.
 
-Without a rebuild, put the same directory under `~/.config/swarmbox/tools/<name>/` (user level) or `.swarmbox/tools/<name>/`
+Without a rebuild, put the same directory under `<workspace>/.config/swarmbox/tools/<name>/` (user level) or `.swarmbox/tools/<name>/`
 (project level); the next entry links it.
 
 Rules that keep this extensible: manifests are data (`SCHEMA` versioned, unknown keys ignored); the core never names a
@@ -668,7 +694,7 @@ What lives where decides what a `reset` (or `swarmbox update`) can break.
 
 | Lives in | Survives `reset` | Survives an image update | Examples |
 |---|---|---|---|
-| Workspace (`/home/agent`) | yes | yes | projects, login, SSH key, `~/.claude`, installed tools, user manifests |
+| Workspace (`/home/agent`) | yes | yes | projects, login, SSH key, `<workspace>/.claude`, installed tools, user manifests |
 | The container's own filesystem | **no** | no | anything installed with `apt`, files in `/usr`, `/etc`, `/opt`, caches outside the home, running processes, tmux sessions |
 | The image | recreated | replaced | system packages, Node, shims and index of the image level, image manifests |
 
@@ -707,12 +733,14 @@ Existing paths are kept where they work. **New** marks proposed additions.
 ├── cloudflare-setup.py              # host side: remote access; also shipped inside the image for `swarmbox remote`
 ├── container/                       # everything copied into the image
 │   ├── entrypoint.sh                # new: subcommands serve | attach | init | pubkey | tool | <any command>
-│   ├── scripts/                     # init.sh, banner.sh, messages.sh, podman-service.sh, ssh-key.sh (swarmbox-pubkey),
+│   ├── scripts/                     # banner.sh, messages.sh, podman-service.sh, ssh-key.sh (swarmbox-pubkey),
+│   │                                #   dirs.sh (new: every path, XDG-aware; sourced by the others),
 │   │                                #   swarmbox-init (new: prints the shell function),
+│   │                                #   swarmbox-web (new: starts and restarts the web terminal; replaces web-terminal.sh),
 │   │                                #   swarmbox-attach (new: joins the tmux session; today lib/attach-session.sh),
 │   │                                #   swarmbox-tool.sh and swarmbox-shim.sh (new: manager and dispatcher, section 5)
 │   ├── config/                      # static configuration files: tmux, starship, ssh_config.d, bashrc fragment
-│   ├── web/                         # web terminal assets: web-terminal.sh, ttyd-clipboard.js, ttyd-style.css
+│   ├── web/                         # web terminal: ttyd-clipboard.js, ttyd-style.css, build-index.sh (new, runs at image build)
 │   ├── mcp/<name>/config.json       # MCP servers wired into agents (chrome-devtools today)
 │   └── tools/<name>/                # new: tool.conf + install.sh + optional shell.sh (section 5)
 ├── docs/                            # design.md (this file), web-terminal.md, cloudflare.md, nested-podman.md
@@ -728,15 +756,16 @@ File types
 | Entrypoint, scripts | `container/entrypoint.sh`, `container/scripts/` | the container | container start and every entry |
 | Dispatcher and manager | `container/scripts/swarmbox-shim.sh`, `swarmbox-tool.sh` | every shim, `swarmbox-tool` | every tool call |
 | Static config | `container/config/` | tmux, starship, ssh, bash | shell start |
-| Web assets | `container/web/` | `serve` (the web terminal) | container start |
-| MCP definition | `container/mcp/<name>/config.json` | `init.sh` | container start |
+| Web assets | `container/web/` | `build-index.sh` at image build; `swarmbox-web` at start | image build, container start |
+| MCP definition | `container/mcp/<name>/config.json` | `serve` | container start |
+| Paths | `container/scripts/dirs.sh` | every script | always |
 | Tool manifest and installer | `container/tools/<name>/{tool.conf,install.sh}` | `swarmbox-tool` | first use, or build with `WITH_TOOLS` |
 | Tool shell setup | `container/tools/<name>/shell.sh` | the interactive shell | shell start |
-| Generated shims and index | image `/usr/local/lib/swarmbox/{shims,index}`; workspace `~/.local/share/swarmbox/{shims,index}` | the dispatcher | every command call (not in git) |
+| Generated shims and index | image `/usr/local/lib/swarmbox/{shims,index}`; workspace `<workspace>/.local/share/swarmbox/{shims,index}` | the dispatcher | every command call (not in git) |
 | Host script | `cloudflare-setup.py` (and, until retired, `start.sh`, `build.sh`, `lib/`) | the user's shell | on the host |
-| Generated host function | the user's `~/.bashrc` (between markers) | the user's shell | every terminal |
-| Host config | `~/.config/swarmbox/config`, `~/.config/swarmbox/cloudflare.json` | the host function and helper | every entry, `remote` |
-| Host secrets (optional, mode 600) | `~/.config/swarmbox/secrets/env` | the host function, at creation only | box creation |
+| Generated host function | the user's `host:~/.bashrc` (between markers) | the user's shell | every terminal |
+| Host config | `host:~/.config/swarmbox/config`, `host:~/.config/swarmbox/cloudflare.json` | the host function and helper | every entry, `remote` |
+| Host secrets (optional, mode 600) | `host:~/.config/swarmbox/secrets/env` | the host function, at creation only | box creation |
 | Tests | `tests/` | CI and contributors | every change |
 | Docs | `README.md`, `docs/` | people | always |
 
@@ -753,7 +782,7 @@ What the image contains
 - The tool infrastructure: `swarmbox-tool`, `swarmbox-shim`, `swarmbox-init`, `swarmbox-attach`, the manifests, and the shims
   and index that `swarmbox-tool link --system` generates.
 - Config files and scripts from `container/`, and `cloudflare-setup.py` for the host helper.
-- Kept from today's image: the Python venv at `/opt/flow` (the `(swarmbox)` prompt) and `uv`, the shell aliases, `~/.local/bin` on
+- Kept from today's image: the Python venv at `/opt/flow` (the `(swarmbox)` prompt) and `uv`, the shell aliases, `<workspace>/.local/bin` on
   `PATH`, Starship (opt-out `SWARMBOX_STARSHIP=0`), the banner, and Chromium with its environment.
 
 What it does **not** contain: any agent (Claude Code, Gemini CLI, OpenCode), gcloud, clasp, Go, Poetry. They arrive on demand
@@ -765,9 +794,11 @@ Behavior
   (`keep-id`). `sudo` without a password is intentional: the box is the sandbox.
 - **Directories:** `WORKDIR /home/agent`, which is the workspace mounted from the host.
 - **Startup:** `ENTRYPOINT ["/usr/local/bin/swarmbox-entrypoint"]`, `CMD ["serve"]`. Subcommands:
-  `serve` (the box's main process: run `init.sh`, install the missing tools in `SWARMBOX_WITH`, start the web terminal),
-  `attach` (join the tmux session; what the host function runs on every entry), `init` (print the host function),
-  `pubkey`, `tool ...`, and any other command, which is run as given.
+  `serve` (the box's main process: create the folders of `dirs.sh`, migrate an old layout, ensure the SSH key, link the tools, generate the
+  MCP configuration, start the nested Podman service, install the tools listed in `SWARMBOX_WITH`, and supervise the web terminal),
+  `attach` (join the tmux session; what the host function runs on every entry, after linking the user and project tools),
+  `init` (print the host function), `pubkey`, `tool ...`, and any other command, which is run as given. There is no `init.sh`: 7.1 says
+  where its duties go.
 - **Layer order:** stable first (system packages, Podman, pinned downloads), volatile last (scripts, manifests). A change
   to a manifest never invalidates the system layers.
 - **Wiring the tools** (near the end, with the other volatile layers):
@@ -794,22 +825,37 @@ Behavior
   chrome-devtools MCP needs them with the local Chromium). `ANTHROPIC_MODEL` is no longer set in the image. Chromium is still installed for the
   chrome-devtools MCP; making it optional is open question 5.
 
+### 7.1 What `init.sh` does today, and where it goes
+
+| Today (`container/scripts/init.sh`, run from `bashrc` in every interactive shell) | New home |
+|---|---|
+| Creates `<workspace>/.claude`, `settings.json` and its link | Gone: Claude Code's own `<workspace>/.claude/settings.json` is used directly (migrated, section 11) |
+| Creates `<workspace>/.swarmbox/` | `serve`, from `dirs.sh` (the XDG folders) |
+| Ensures the SSH key | `serve` runs `swarmbox-pubkey --ensure`; the shell prints the one-line fingerprint |
+| Generates `mcp-servers.json` (chrome-devtools by name) | `serve`, from the MCP registry (3.8) |
+| Renders the OpenCode config and mirrors the MCP list | `container/tools/opencode/shell.sh` |
+| Starts the nested Podman service and the web terminal | `serve` |
+| Prints the banner and messages in every shell | A light fragment sourced from `box:/etc/bash.bashrc` (`container/config/bashrc.sh`): banner, aliases, `PATH`, Starship, and each tool's `shell.sh` |
+| Re-links the tool shims | `swarmbox-attach` (`swarmbox-tool link --user`) |
+
+The heavy work leaves the per-shell path: a new shell no longer runs a script that regenerates files; `serve` does it once per start.
+
 ## 8. Configuration model (proposed)
 
-Precedence, highest first: environment variable, `~/.config/swarmbox/config` (host), built-in default. Variables marked
+Precedence, highest first: environment variable, `host:~/.config/swarmbox/config` (host), built-in default. Variables marked
 *host* are read by the host function and helper only and are never passed into the box. The creation-time keys are listed in 3.8
 and are not repeated here.
 
 | Variable | Meaning | Default |
 |---|---|---|
 | `SWARMBOX_NAME` | Name of the box (container) | `swarmbox` |
-| `SWARMBOX_WORKSPACE` | Host folder mounted as `/home/agent` (*host*) | `~/swarmbox` |
+| `SWARMBOX_WORKSPACE` | Host folder mounted as `/home/agent` (*host*) | `host:~/swarmbox` |
 | `SWARMBOX_WITH` | Tools to have ready (comma list) | empty |
 | `SWARMBOX_AGENT` | Agent started by `yolo` | first agent in `SWARMBOX_WITH` |
 | `SWARMBOX_YOLO` | `0` disables the auto-approve aliases | `1` |
 | `SWARMBOX_WEB` | `0` turns the web terminal off | `1` |
 | `SWARMBOX_WEB_PORT` | Host port of the web terminal, on `127.0.0.1` (*host*) | `7681` |
-| `SWARMBOX_TOOLS_DIR` | Where tools install | `~/.local/share/swarmbox/tools` |
+| `SWARMBOX_TOOLS_DIR` | Where tools install | `<workspace>/.local/share/swarmbox/tools` |
 | `SWARMBOX_UPDATE_CHECK` | `0` turns off the once-a-day "newer version" notice for managed tools | `1` |
 | `SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN` | The tunnel's own token (*host*, never passed into the box) | unset |
 | `SWARMBOX_WEB_DOMAIN`, `SWARMBOX_WEB_HOSTNAME` | Used to print the public URL (*host*) | from `cloudflare.json` |
@@ -857,7 +903,7 @@ into the box.
 |---|---|
 | `start.sh` creates/enters the persistent container | The `swarmbox` function does the same, from a public image |
 | `./start.sh --web` plus `cloudflare-setup.py` plus token variables | Web terminal on by default; `swarmbox remote setup/status/off` |
-| `.work/` in the current directory | `SWARMBOX_WORKSPACE`, default `~/swarmbox` |
+| `.work/` in the current directory | `SWARMBOX_WORKSPACE`, default `host:~/swarmbox` |
 | Agents baked into the image | Installed on demand (`SWARMBOX_WITH`) |
 | `./start.sh --env-keys A,B` on every creation | The names live in the host config; `swarmbox env add/rm/list`; same creation-time behavior |
 | `./build.sh --update-harness`; `DISABLE_AUTOUPDATER=true` | Claude Code updates itself (`UPDATE=self`); other agents: `swarmbox-tool update <agent>` |
@@ -871,9 +917,22 @@ into the box.
 | `--clasp` | The clasp manifest's `PORTS` |
 | `--no-shell`, `SWARMBOX_ATTACH=shell` | `swarmbox up`, `swarmbox --plain` |
 | Nested Podman always on | Unchanged: always on |
-| `~/.swarmbox/` | The XDG layout (3.8) |
+| `<workspace>/.swarmbox/` | The XDG layout (3.8); migrated at the first start |
+| `container/scripts/init.sh` | Split across `serve`, `swarmbox-attach`, the tools' `shell.sh` and a light bash fragment (7.1) |
 
-An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPACE` at it.
+An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPACE` at it (`init --workspace <path to .work>`).
+
+Layout migration. At the first start of the new image, `serve` moves files that exist, and only when the destination does not:
+- `<workspace>/.swarmbox/web-terminal.conf` (and any copies of it) to `<workspace>/.config/swarmbox/web-terminal.conf`.
+- `<workspace>/.claude/settings.json`, when it is a link to `<workspace>/.swarmbox/settings.json`: the link is replaced by a copy of the file.
+- Logs and `podman.sock` are recreated under `<workspace>/.local/state/swarmbox/` and the old ones removed. The host function registers the
+  new socket address with `podman system connection` (the current code already replaces a connection whose address changed).
+- Generated files (`ttyd-index.html`, `opencode-local.json`) and locks are deleted; they are regenerated in `box:/tmp/swarmbox/`.
+- `<workspace>/.swarmbox/memory/`, left by the removed memory service, is not touched; `swarmbox` mentions it once and the user can delete it.
+- `<workspace>/.swarmbox/` itself is removed when it is empty.
+
+This is a one-way change: an older image looks for `<workspace>/.swarmbox/`, so back up the workspace first. The migration has not been written or
+tested.
 
 ## 12. Open questions
 
@@ -886,7 +945,7 @@ An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPA
 6. OpenCode's auto-approve flag (not verified).
 7. License (MIT or Apache-2.0), and the project name's availability.
 8. Keep the full git history when going public, or start clean? The history must first be audited for secrets and personal data.
-9. *Decided:* the workspace is chosen at install with `init --workspace DIR`, and defaults to `~/swarmbox`.
+9. *Decided:* the workspace is chosen at install with `init --workspace DIR`, and defaults to `host:~/swarmbox`.
 10. Project-level tools (5.10): how the acceptance prompt works non-interactively, and which directory counts as "the project"
     in a box with many projects.
 11. `serve` as the main process (4.1) and `swarmbox-attach` replacing `lib/attach-session.sh`: untested.
@@ -900,18 +959,18 @@ An existing `.work/` can be used as the workspace as is: point `SWARMBOX_WORKSPA
     recreate the connector.
 16. *Decided:* nested Podman stays always on, as today. It is no longer a configuration key.
 17. *Decided:* OpenCode is an on-demand agent, a shim like Claude Code (5.6), with its local-LLM hook in its own `shell.sh`.
-18. XDG layout inside the box: move `~/.swarmbox/` on the first start (with a compatibility link for `settings.json`), or leave it?
-19. `init.sh` runs today from `bashrc` in every interactive shell, not when the container starts. Keep a cheap per-shell hook
-    (aliases, `PATH`, environment) and move the heavy part (MCP generation, tool linking) to `serve` and `swarmbox-attach`?
+18. *Decided:* the XDG layout (3.8), with a migration at the first start (section 11). There is no cache folder in the workspace.
+19. *Decided:* there is no `init.sh`. Its duties are split (7.1); the per-shell part is a light bash fragment, and the heavy part runs once per start in `serve`.
 20. *Decided:* macOS is in scope for the first release, through the platform adapter in `swarmbox-create-flags` (`label=disable`,
     explicit `keep-id`). It has not been run on a Mac; it will be tested there, and anything that fails becomes a documented limit.
+21. ttyd serves a single file as the page (4.1): check this against ttyd's documentation before planning a page of several files.
 
 ## 13. Roadmap
 
 1. Pre-launch cleanup: license, remove personal defaults, audit history, CI with the existing tests.
 2. `container/tools/`, `swarmbox-tool`, shims; move gcloud and clasp first, then the agents.
-3. `entrypoint.sh` with `serve` and `attach`, fixed UID, `swarmbox-init`, `swarmbox-create-flags` and the host config; image published
-   to the registry.
+3. `entrypoint.sh` with `serve` and `attach`, `dirs.sh` and the layout migration, the page built at image build, fixed UID, `swarmbox-init`,
+   `swarmbox-create-flags` and the host config; image published to the registry.
 4. Feature parity: one test per row of the catalog (3.8) against the function; then retire `start.sh`, `build.sh` and `lib/`.
 5. `swarmbox remote` (setup, status, off) over the existing Cloudflare script, with the login length preserved on rerun.
 6. `swarmbox env`, `swarmbox config`, the creation fingerprint, `swarmbox --once`.
