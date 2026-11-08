@@ -1,7 +1,7 @@
 #!/bin/bash
 # Starts the nested Podman API service on a unix socket inside the (bind-mounted) home,
 # so the host can drive it with `podman -c <container-name> ...`.
-# Idempotent and safe to call concurrently (init.sh and start.sh both call it).
+# Idempotent and safe to call concurrently (serve and the tools' hooks may call it).
 
 SWARMBOX_DIR="$HOME/.swarmbox"
 SOCK="$SWARMBOX_DIR/podman.sock"
