@@ -3,9 +3,8 @@
 #
 #   validate [DIR]  REAL (slice 4a.1): reads the manifests of both levels (or only the folder DIR) and checks the rules of 6.9.
 #                   Exit 0 all good, 1 a manifest failed, 64 usage.
-#   link --system   writes an EMPTY box:/usr/local/share/swarmbox/host/tool-ports (shims, index and ports come in a later slice);
-#                   already reads the image-level manifests and says on stderr which ones it skips
-#   link --user     the same for the user level; writes nothing yet
+#   link --system  REAL (slice 4a.2): shims, index and tool-ports of the image level (see link_level below)
+#   link --user     REAL (slice 4a.2): shims and index of the user level, in the workspace dirs of dirs.sh; no tool-ports
 #   prepare         nothing to do, succeeds
 #   anything else   exit 70 (EX_SOFTWARE) with a message that names Phase 4a (install, run, list, update... come in later slices)
 #
@@ -16,10 +15,13 @@
 #
 # Test-only variables (decision log [2.5] and [4a.1]; not in the configuration table of design 8): SWARMBOX_TEST_HOST_DIR replaces
 # /usr/local/share/swarmbox/host, SWARMBOX_TEST_IMAGE_TOOLS replaces /usr/local/lib/swarmbox/tools, SWARMBOX_TEST_USER_TOOLS
-# replaces the user level ($SB_CONFIG_DIR/tools), SWARMBOX_TEST_LIB is the folder with dirs.sh.
+# replaces the user level ($SB_CONFIG_DIR/tools), SWARMBOX_TEST_LIB is the folder with dirs.sh; decision log [4a.2]:
+# SWARMBOX_TEST_IMAGE_SHIMS replaces /usr/local/lib/swarmbox/shims (its index is the sibling `index`) and
+# SWARMBOX_TEST_USER_SHIMS replaces $SB_SHIMS_DIR (index: sibling `index`).
 
 HOST_DIR=${SWARMBOX_TEST_HOST_DIR:-/usr/local/share/swarmbox/host}
 IMAGE_TOOLS=${SWARMBOX_TEST_IMAGE_TOOLS:-/usr/local/lib/swarmbox/tools}
+IMAGE_SHIMS=${SWARMBOX_TEST_IMAGE_SHIMS:-/usr/local/lib/swarmbox/shims}
 SB_LIB=${SWARMBOX_TEST_LIB:-/usr/local/lib/swarmbox}
 SCHEMA_KNOWN=1
 KNOWN_KEYS=(SCHEMA NAME KIND PROVIDES VERSION UPDATE UPDATE_CMD YOLO_FLAGS YOLO_ALIAS MCP_FORMAT MCP_FLAGS PORTS SHA256_amd64 SHA256_arm64)
@@ -317,16 +319,118 @@ cmd_validate() {
     [ "$FAILED" -eq 0 ]
 }
 
-# link_report LEVEL DIR: reads the manifests of one level and says on stderr which ones it skips (slice 4a.1: no shims yet).
-link_report() {
-    local level=$1 root=$2 d name
-    [ -d "$root" ] || return 0
-    for d in "$root"/*/; do
-        [ -d "$d" ] || continue
-        d=${d%/}
-        name=$(basename "$d")
-        load_manifest "$d" || echo "swarmbox-tool: skipping the $level manifest '$name': $LOAD_ERR" >&2
+# ---- link (design 6.2) ----------------------------------------------------------------------------------------------------
+# link_level LEVEL ROOT SHIMS_DIR PORTS_FILE: makes the shims, the index and (PORTS_FILE not empty) tool-ports of one level.
+#   shims   <SHIMS_DIR>/<command>, a symlink to $SHIM_PATH, one per PROVIDES entry
+#   index   <dirname SHIMS_DIR>/index, one line "command tool", sorted by command (bytewise)
+#   ports   PORTS_FILE, one line "tool<TAB>port" per PORTS entry (image level only), sorted by tool then in manifest order
+# Everything is decided first and written after: a same-level duplicate command is reported on stderr and the function returns 1
+# with nothing written. The write order never leaves a reader without a shim it needs: new links first (each made under a
+# temporary name and renamed over, so an existing link is replaced atomically), then the index (temporary file and rename),
+# then the stale links. A stale link is a symlink whose target is exactly $SHIM_PATH and whose command is no longer provided;
+# anything else in the folder is left alone, and a command name taken by a file that is not such a link is reported and skipped.
+SHIM_PATH=/usr/local/bin/swarmbox-shim
+link_level() {
+    local level=$1 root=$2 shims=$3 ports_file=$4 d name c p schema dup=0 rc=0
+    local -A owner=()
+    local -a lines=() plines=()
+    if [ -d "$root" ]; then
+        for d in "$root"/*/; do
+            [ -d "$d" ] || continue
+            d=${d%/}
+            name=$(basename "$d")
+            if ! load_manifest "$d"; then
+                echo "swarmbox-tool: skipping the $level manifest '$name': $LOAD_ERR" >&2
+                continue
+            fi
+            schema=${M[SCHEMA]:-}
+            if [[ ! "$schema" =~ ^[0-9]+$ ]] || [ "$schema" -lt 1 ] || [ "$schema" -gt "$SCHEMA_KNOWN" ]; then
+                echo "swarmbox-tool: skipping the $level manifest '$name': SCHEMA '$schema' is not one this SwarmBox reads (run validate)" >&2
+                continue
+            fi
+            for c in ${M[PROVIDES]:-}; do
+                if [[ ! "$c" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
+                    echo "swarmbox-tool: the $level manifest '$name' lists '$c' in PROVIDES, which is not a plain command name: skipped" >&2
+                    continue
+                fi
+                if [ -n "${owner[$c]:-}" ] && [ "${owner[$c]}" != "$name" ]; then
+                    echo "swarmbox-tool: command '$c' is provided by both '${owner[$c]}' and '$name' at the $level level: nothing was linked (fix one manifest)" >&2
+                    dup=1
+                    continue
+                fi
+                owner[$c]=$name
+            done
+            for p in ${M[PORTS]:-}; do
+                if [[ "$p" =~ ^[0-9]+$ ]]; then
+                    plines+=("$name"$'\t'"$p")
+                else
+                    echo "swarmbox-tool: the $level manifest '$name' lists '$p' in PORTS, which is not a port number: skipped" >&2
+                fi
+            done
+        done
+    fi
+    [ "$dup" -eq 0 ] || return 1
+    local index tmp
+    index=$(dirname "$shims")/index
+
+    if [ -n "$ports_file" ]; then
+        mkdir -p "$(dirname "$ports_file")" || { echo "swarmbox-tool: cannot write $ports_file" >&2; return 1; }
+        tmp="$ports_file.tmp.$$"
+        # shellcheck disable=SC2015  # the || branch is the cleanup, the intent
+        { [ "${#plines[@]}" -eq 0 ] || printf '%s\n' "${plines[@]}"; } >"$tmp" && mv -f "$tmp" "$ports_file" \
+            || { rm -f "$tmp"; echo "swarmbox-tool: cannot write $ports_file" >&2; return 1; }
+    fi
+    mkdir -p "$shims" || { echo "swarmbox-tool: cannot create $shims" >&2; return 1; }
+    for c in "${!owner[@]}"; do
+        if [ -L "$shims/$c" ] && [ "$(readlink "$shims/$c")" = "$SHIM_PATH" ]; then
+            :
+        elif [ -e "$shims/$c" ] || [ -L "$shims/$c" ]; then
+            echo "swarmbox-tool: $shims/$c exists and is not a SwarmBox shim: left alone, '$c' is not linked at the $level level" >&2
+            unset 'owner[$c]'
+        else
+            tmp="$shims/.link.$$.$c"
+            if ln -s "$SHIM_PATH" "$tmp" && mv -T "$tmp" "$shims/$c"; then
+                :
+            else
+                rm -f "$tmp"
+                echo "swarmbox-tool: cannot create $shims/$c" >&2
+                rc=1
+            fi
+        fi
     done
+    lines=()
+    for c in "${!owner[@]}"; do lines+=("$c ${owner[$c]}"); done
+    mkdir -p "$(dirname "$index")" || return 1
+    tmp="$index.tmp.$$"
+    # shellcheck disable=SC2015
+    { [ "${#lines[@]}" -eq 0 ] || printf '%s\n' "${lines[@]}" | LC_ALL=C sort; } >"$tmp" && mv -f "$tmp" "$index" \
+        || { rm -f "$tmp"; echo "swarmbox-tool: cannot write $index" >&2; return 1; }
+    local f
+    for f in "$shims"/*; do
+        [ -L "$f" ] || continue
+        c=$(basename "$f")
+        [ -z "${owner[$c]:-}" ] || continue
+        [ "$(readlink "$f")" = "$SHIM_PATH" ] && rm -f "$f"
+    done
+    return "$rc"
+}
+
+# user_shims_dir: <workspace>/.local/share/swarmbox/shims (from dirs.sh), or the test override.
+user_shims_dir() {
+    if [ -n "${SWARMBOX_TEST_USER_SHIMS:-}" ]; then
+        printf '%s' "$SWARMBOX_TEST_USER_SHIMS"
+        return 0
+    fi
+    local lib
+    for lib in "$SB_LIB/dirs.sh" "$(dirname "$0")/dirs.sh"; do
+        if [ -r "$lib" ]; then
+            # shellcheck disable=SC1090  # chosen at run time
+            . "$lib"
+            printf '%s' "$SB_SHIMS_DIR"
+            return 0
+        fi
+    done
+    return 1
 }
 
 usage() {
@@ -345,16 +449,16 @@ case "$cmd" in
         [ $# -eq 1 ] || usage
         case "$1" in
             --system)
-                link_report image "$IMAGE_TOOLS"
-                if ! mkdir -p "$HOST_DIR" || ! : > "$HOST_DIR/tool-ports"; then
-                    echo "swarmbox-tool: cannot write $HOST_DIR/tool-ports" >&2
-                    exit 1
-                fi
-                echo "swarmbox-tool link --system: stub, wrote an empty $HOST_DIR/tool-ports"
+                link_level image "$IMAGE_TOOLS" "$IMAGE_SHIMS" "$HOST_DIR/tool-ports" || exit 1
+                echo "swarmbox-tool link --system: linked the image level (shims in $IMAGE_SHIMS, tool-ports in $HOST_DIR)"
                 ;;
             --user)
-                if udir=$(user_tools_dir); then link_report user "$udir"; fi
-                echo "swarmbox-tool link --user: stub, no tools to link yet (Phase 4a)"
+                if ! udir=$(user_tools_dir) || ! ushims=$(user_shims_dir); then
+                    echo "swarmbox-tool link --user: cannot find dirs.sh, nothing was linked" >&2
+                    exit 1
+                fi
+                link_level user "$udir" "$ushims" "" || exit 1
+                echo "swarmbox-tool link --user: linked the user level (shims in $ushims)"
                 ;;
             *) usage ;;
         esac
