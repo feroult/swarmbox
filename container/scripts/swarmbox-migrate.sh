@@ -69,7 +69,7 @@ if [ -f "$SET_OLD" ] && [ ! -L "$SET_OLD" ]; then
         fi
     fi
 elif [ -L "$SET_NEW" ] && [ ! -e "$SET_NEW" ] && ours "$(readlink "$SET_NEW")"; then
-    # the old file is gone and the link init.sh made dangles: Claude Code would write through it into .swarmbox/
+    # the old file is gone and the link v0.1.0's init.sh made dangles: Claude Code would write through it into .swarmbox/
     if rm -f -- "$SET_NEW" 2>/dev/null; then
         note "removed the dangling link $SET_NEW"
     else

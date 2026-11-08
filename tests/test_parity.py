@@ -854,14 +854,12 @@ class Row14OpenCode(unittest.TestCase):
 # ====================================================================================================================
 
 def image_sources():
-    """The text of every 2.0 image source: Dockerfile, container/ (without the v0.1.0 files that stay until slice 6.2)."""
-    v010 = {os.path.join(ROOT, "container", "scripts", "init.sh"), os.path.join(ROOT, "container", "web", "web-terminal.sh"),
-            os.path.join(ROOT, "container", "opencode", "local-llm.json")}
+    """The text of every 2.0 image source: Dockerfile and container/ (the v0.1.0 files are retired, slice 6.3)."""
     out = {"Dockerfile": read(ROOT, "Dockerfile")}
     for root, _, files in os.walk(os.path.join(ROOT, "container")):
         for f in files:
             p = os.path.join(root, f)
-            if p in v010 or f.endswith((".png", ".ico")):
+            if f.endswith((".png", ".ico")):
                 continue
             try:
                 out[os.path.relpath(p, ROOT)] = read(p)

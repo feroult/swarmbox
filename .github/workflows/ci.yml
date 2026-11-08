@@ -113,6 +113,7 @@ jobs:
           python3 tests/test_pubkey_ensure.py
           python3 tests/test_repo_files.py
           python3 tests/test_retired_coverage.py
+          python3 tests/test_retired.py
           python3 tests/test_run_all.py
           python3 tests/test_serve_container.py
           python3 tests/test_serve_steps.py
@@ -247,6 +248,7 @@ jobs:
           python3 tests/test_docs_consistency.py
           python3 tests/test_repo_files.py
           python3 tests/test_retired_coverage.py
+          python3 tests/test_retired.py
           python3 tests/test_run_all.py
 
   # Browser tests are slow and need chromium and ttyd: they run on the weekly schedule (and by hand), in a Debian

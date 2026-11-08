@@ -2,7 +2,7 @@
 # swarmbox-pubkey: the SSH key SwarmBox uses for git over SSH.
 #
 #   swarmbox-pubkey            create the key if it does not exist, then show the public key and how to authorize it
-#   swarmbox-pubkey --ensure   create it if missing and print one short line (what init.sh runs in every shell)
+#   swarmbox-pubkey --ensure   create it if missing and print one short line (what the shell fragment runs in every shell)
 #
 # The key is ~/.ssh/id_ed25519. The home directory is the .work/ workspace on the host, so the key survives
 # rebuilds and --reset; it is generated once and never overwritten.
