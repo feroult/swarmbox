@@ -290,5 +290,165 @@ class PhaseFourACloseTest(unittest.TestCase):
         self.assertRegex(sec, r"4a")
 
 
+PHASE3_SLICES = ["3.1-host-helper-core", "3.2-create-flags-fingerprint", "3.3-up-reset-stop-url",
+                 "3.4-host-connection-socket", "3.5-init-function-bootstrap", "3.6-update-registry", "3.7-host-closeout"]
+PHASE3_FACTS = ["B5", "B19", "B20", "B21", "B22", "B23", "B31", "B32", "B33", "B34", "B35"]
+PHASE3_CLOSE = DESIGN[DESIGN.index("#### Results of Phase 3 (slice 3.7") if "#### Results of Phase 3 (slice 3.7" in DESIGN else 0:
+                      DESIGN.index("## 15. Roadmap")]
+
+
+def phase3_close_rows(text):
+    """Rows of a close-out table: first cell (an id, with the prefix "3.7 " in the design), then the other cells."""
+    out = {}
+    for l in text.splitlines():
+        m = re.match(r"\| (?:3\.7 )?((?:B|D)\d+) \|(.*)\|\s*$", l)
+        if m:
+            out[m.group(1)] = [c.strip() for c in m.group(2).split("|")]
+    return out
+
+
+class PhaseThreeCloseTest(unittest.TestCase):
+    """Phase 3 close-out (slice 3.7)."""
+
+    def test_status_row_per_slice(self):
+        status = read("docs", "implementation-status.md")
+        for sl in PHASE3_SLICES:
+            r = [l for l in status.splitlines() if l.startswith("| %s |" % sl)]
+            self.assertEqual(len(r), 1, sl)
+            cells = [c.strip() for c in r[0].strip().strip("|").split("|")]
+            self.assertIn(cells[2], ("done", "partial", "blocked"), sl)
+
+    def test_gate_row_is_partial_with_the_owner_actions_and_the_untestable_list(self):
+        status = read("docs", "implementation-status.md")
+        r = [l for l in status.splitlines() if l.startswith("| 3.gate |")]
+        self.assertEqual(len(r), 1)
+        cells = [c.strip() for c in r[0].strip().strip("|").split("|")]
+        self.assertEqual(cells[2], "partial")
+        for word in ("push", "CI", "arm64", "macOS", "WSL", "B31", "bash 3.2", "UID", "Podman older than 4.3",
+                     "real registry", "Windows-drive", "sh/stat/sort"):
+            self.assertIn(word, r[0], word)
+
+    def test_row_3_7_records_the_regression_counts(self):
+        status = read("docs", "implementation-status.md")
+        r = [l for l in status.splitlines() if l.startswith("| 3.7-host-closeout |")][0]
+        self.assertIn("run_all.sh", r)
+        self.assertRegex(r, r"TOTAL \d+ files, \d+ tests, 0 failed files")
+
+    def test_decision_log_has_a_3_7_entry_and_one_per_earlier_slice(self):
+        log = read("docs", "decision-log.md")
+        for n in range(1, 8):
+            self.assertRegex(log, r"(?m)^## \[3\.%d\] " % n, "decision-log entry [3.%d]" % n)
+
+    def test_every_phase3_command_row_of_a2_names_a_built_command(self):
+        a2 = PLAN[PLAN.index("### A.2"):PLAN.index("### A.3")]
+        helper = read("container", "host", "swarmbox-host")
+        built = set(re.findall(r"^    ([a-z-]+)\) cmd_", helper, re.M))
+        function = read("container", "host", "templates", "bash")
+        rows3 = [l for l in a2.splitlines() if l.startswith("| `swarmbox") and re.search(r"\| [^|]*\b3\b[^|]*\|\s*$", l)]
+        self.assertGreaterEqual(len(rows3), 6)
+        for l in rows3:
+            if "remote" in l:
+                continue
+            words = re.findall(r"`(?:swarmbox )?([a-z][a-z-]*)", l.split("|")[1])
+            self.assertTrue(words, l)
+            for w in words:
+                if w in ("claude", "yolo", "tool", "pubkey", "attach", "command"):
+                    continue
+                self.assertTrue(w in built or w in function or w == "swarmbox", "%s is not built: %s" % (w, l))
+        self.assertIn("--plain", function)
+        self.assertNotIn("remote", built - {"remote"})
+
+    def test_close_table_covers_every_phase3_decision_and_fact(self):
+        sec = PLAN[PLAN.index("## 6. Phase 3"):PLAN.index("## 7. ")]
+        self.assertIn("**3.7 state", sec)
+        table = phase3_close_rows(sec)
+        a1 = PLAN[PLAN.index("### A.1"):PLAN.index("### A.2")]
+        want = []
+        for l in a1.splitlines():
+            m = re.match(r"\| (D\d+) \|.*\| ([^|]*) \| [^|]*\|\s*$", l)
+            if m and re.search(r"\b3\b", m.group(2)):
+                want.append(m.group(1))
+        a3 = PLAN[PLAN.index("### A.3"):]
+        for l in a3.splitlines():
+            m = re.match(r"\| (B\d+) \|.*\| (\d+) \|", l)
+            if m and m.group(2) == "3":
+                want.append(m.group(1))
+        self.assertGreaterEqual(len(want), 30)
+        for k in want:
+            self.assertIn(k, table, "%s has no row in the Phase 3 close table" % k)
+            self.assertIn(table[k][0].split()[0].rstrip(",;."), ("closed", "reduced", "open"), k)
+            self.assertTrue(table[k][1], k)
+        for k in ("B31",):
+            self.assertTrue(table[k][0].startswith("open"), k)
+
+    def test_part_b_facts_of_phase3_carry_a_tag_or_unverified_with_a_pointer(self):
+        self.assertIn("#### Results of Phase 3 (slice 3.7", DESIGN)
+        table = phase3_close_rows(PHASE3_CLOSE)
+        for b in PHASE3_FACTS:
+            self.assertIn(b, table, b)
+            state, where, tag = table[b][0], table[b][1], table[b][2]
+            if b == "B31":
+                self.assertIn("[unverified]", tag)
+                self.assertIn("ci.yml", where)
+                self.assertIn("arm64", where)
+                self.assertIn("first CI run", where)
+                continue
+            self.assertRegex(tag, r"\[verified: [^\]]+\]|\[unverified[^\]]*\]", b)
+            if "[unverified" in tag:
+                self.assertRegex(tag, r"Phase [67]", b)
+            for f in re.findall(r"tests/[A-Za-z0-9_]+\.py", tag):
+                self.assertTrue(os.path.isfile(os.path.join(ROOT, f)), "%s names %s" % (b, f))
+
+    def test_part_b_main_table_rows_are_marked_by_state(self):
+        for b in PHASE3_FACTS:
+            row = [l for l in PART_B.splitlines() if l.startswith("| %s |" % b)][0]
+            if b == "B31":
+                self.assertNotIn("**Closed", row)
+                self.assertIn("ci.yml", row)
+            else:
+                self.assertRegex(row, r"\*\*(Closed|Linux part|Refusal logic)", b)
+
+    def test_a_row_of_a3_for_b31_says_the_job_exists_but_never_ran(self):
+        r = rows(PLAN[PLAN.index("### A.3"):], "B31")[0]
+        self.assertIn("3.7", r)
+        self.assertIn("never ran", r)
+
+    def test_no_stale_phase3_wording_in_code_or_docs(self):
+        pats = [r"Phase 3 writes", r"Phase 3 adds", r"until Phase 3", r"Phase 3 will", r"is a later phase and is not here",
+                r"added by later phases"]
+        files = [os.path.join(ROOT, f) for f in ("README.md", "Dockerfile", "CONTRIBUTING.md")]
+        for base in ("container", "docs", "dev", ".github"):
+            for d, _, names in os.walk(os.path.join(ROOT, base)):
+                files += [os.path.join(d, n) for n in names if n.endswith((".md", ".sh", ".py", ".yml", "")) and "." in n or n in ("swarmbox-host", "bash", "zsh", "fish")]
+        hits = []
+        for f in files:
+            if f.endswith("decision-log.md") or f.endswith("implementation-status.md"):
+                continue    # history files may quote the old wording
+            try:
+                text = open(f, encoding="utf-8").read()
+            except (OSError, UnicodeDecodeError):
+                continue
+            for pat in pats:
+                for m in re.finditer(pat, text):
+                    hits.append("%s: %s" % (os.path.relpath(f, ROOT), pat))
+        self.assertEqual(hits, [])
+
+    def test_the_plan_marks_3_7_and_the_arm64_job(self):
+        sec = PLAN[PLAN.index("## 6. Phase 3"):PLAN.index("## 7. ")]
+        for word in ("arm64", "tests/run_all.sh", "B31", "bash 3.2", "dash", "busybox"):
+            self.assertIn(word, sec, word)
+
+    def test_design_13_4_describes_the_jobs_as_built(self):
+        sec = DESIGN[DESIGN.index("### 13.4"):DESIGN.index("## 14. Open questions")]
+        self.assertIn("`arm64` job", sec)
+        self.assertIn("ubuntu-24.04-arm", sec)
+        self.assertIn("SWARMBOX_TEST_BASH", sec)
+        self.assertNotIn("are added by later phases", sec)
+
+    def test_ci_files_named_in_the_docs_exist(self):
+        for f in ("tests/run_all.sh", "tests/test_run_all.py", "tests/e2e_registry.py", "docs/local-registry.md"):
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, f)), f)
+
+
 if __name__ == "__main__":
     unittest.main()
