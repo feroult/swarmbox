@@ -115,3 +115,6 @@ For personal data the call belongs to the owner, because every item below is an 
 - Binary files are skipped by the script; the path list holds no image, archive, PDF or font file.
 - The scan is a snapshot of HEAD `8a169403`; this report is committed after it, so the published HEAD will differ.
 - Only the local clone was scanned; the remote may hold refs that were never fetched.
+- A later scan will flag two test fixtures as false positives: `tests/test_cloudflare_setup.py` (the counting-sequence key above)
+  and `tests/test_history_audit.py` (an `api_key = "%s"` format string whose value is assembled at run time). Both were
+  checked after this audit. Phase 7 should allowlist them or expect them.
