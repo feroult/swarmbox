@@ -70,11 +70,13 @@ python3 tests/test_docs_consistency.py
 | `test_start_web_connector.py` | the web terminal connector in `start.sh` |
 | `test_run_all.py` | `tests/run_all.sh`, the full-regression runner (`--werror`, `--repeat N`, `--only`, `--list`), on small files only |
 | `test_tool_claude_real.py` | the first call of Claude Code through the shim: fake-curl argument tests always; the real download in throwaway containers only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` (slow, about 330 MB) |
+| `test_tool_opencode.py` | the `opencode` tool: the installer with a fake npm and a fake package tree (stays in the prefix, prunes other platform builds and keeps the current one, amd64 and arm64), the rendering by the tool's prepare script (`LOCAL_LLM_*`, mode 600, idempotence, the MCP mirror compared with the v0.1.0 function), the manifest, `MCP_FORMAT`, the shim and no alias |
+| `test_tool_prepare.py` | `swarmbox-tool prepare` and the prepare after an install: fake tools whose prepare script succeeds, fails, hangs or is absent, WITH-declared and user-level tools, order, one failure line per tool |
 | `test_tool_shim.py` | `swarmbox-shim`: symlink and PATH calls under the shebang shell, dash, bash and busybox sh; first-use install then no installer; failure and retry; unknown command 127; user index wins; no manifest read on the hot path; loop guards; shellcheck |
 | `test_tool_install.py` | `swarmbox-tool install`, `run`, `list`, `update`: fake installers, the lock (two processes at once), the managed and `UPDATE=self` layouts, failure leaves nothing, checksum mismatch, exit codes, stdout purity |
 | `test_tool_link.py` | `swarmbox-tool link --system` and `--user`: shims, the `command tool` index, `tool-ports`, idempotence, stale shims, same-level conflicts, no project level |
 | `test_tool_manifest.py` | `swarmbox-tool` manifest loading and `validate` (every rule of design 6.9, the install.sh lint, no project level) and the `claude` manifest and installer (fake `curl`) |
-| `test_tool_stub.py` | the parts of `container/scripts/swarmbox-tool.sh` that are still stubs (`prepare`, the later-phase exit 70 of `use`, `remove`, `doctor`, `new`), `link` with no manifests, and the empty `tool-ports` file |
+| `test_tool_stub.py` | the parts of `container/scripts/swarmbox-tool.sh` that are still stubs (the later-phase exit 70 of `use`, `remove`, `doctor`, `new`), `link` with no manifests, and the empty `tool-ports` file |
 | `test_tmux_browser_keys.py` | the browser key bindings of tmux (real tmux on a private socket; about 60 s) |
 | `test_web_build.py` | `container/scripts/swarmbox-web.sh` against a fake ttyd, with `serve`, and the browser tests rerun on the page it renders (needs a browser for those) |
 | `test_smoke_skeleton.py` | the structure of `tests/smoke_image.py` (steps, tags, names, forbidden verbs); starts no container |

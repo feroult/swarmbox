@@ -284,8 +284,25 @@ serve() {
     fi
     if have swarmbox-tool; then
         log "step 7: swarmbox-tool prepare"
-        run_logged swarmbox-tool prepare; rc=$?
-        [ "$rc" = 0 ] || warn "preparing the tools failed (swarmbox-tool prepare exit $rc); see serve.log"
+        # prepare prints one "prepare-failed: <tool>: <reason>" line per failing tool (6.3); each becomes one W line (health line),
+        # and a failure with no such line (the command itself failed) is one generic W line.
+        prep_out=$(mktemp "${TMPDIR:-/tmp}/swarmbox-prepare.XXXXXX" 2>/dev/null) || prep_out=/dev/null
+        swarmbox-tool prepare > "$prep_out" 2>&1; rc=$?
+        [ "$prep_out" = /dev/null ] || cat "$prep_out" >> "$SERVE_LOG" 2>/dev/null
+        nfail=0
+        if [ "$prep_out" != /dev/null ]; then
+            while IFS= read -r pline; do
+                case "$pline" in
+                    "prepare-failed: "*)
+                        nfail=$((nfail + 1))
+                        warn "preparing ${pline#prepare-failed: } (see serve.log)" ;;
+                esac
+            done < "$prep_out"
+            rm -f "$prep_out"
+        fi
+        if [ "$rc" != 0 ] && [ "$nfail" = 0 ]; then
+            warn "preparing the tools failed (swarmbox-tool prepare exit $rc); see serve.log"
+        fi
     else
         log "step 7: swarmbox-tool not found, tool preparation skipped"
     fi

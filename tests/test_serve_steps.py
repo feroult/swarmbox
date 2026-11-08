@@ -71,6 +71,7 @@ echo "$n $*" >> "$FAKE_DIR/calls.log"
 if [ "$n" = swarmbox-tool ] && [ "$1" = install ]; then
     if [ -f "$SWARMBOX_TEST_RUN_DIR/ready" ]; then echo "install $2 saw-ready" >> "$FAKE_DIR/calls.log"; else echo "install $2 no-ready" >> "$FAKE_DIR/calls.log"; fi
 fi
+if [ -f "$FAKE_DIR/$n.$1.out" ]; then cat "$FAKE_DIR/$n.$1.out"; fi
 [ -f "$FAKE_DIR/$n.exit" ] && exit "$(cat "$FAKE_DIR/$n.exit")"
 exit 0
 """
@@ -302,6 +303,20 @@ class WarnSteps(ServeCase):
         self.assertEqual(self.marker(), "warnings=2")
         self.assertEqual(len(self.health_lines()), 2)
         self.stop(p)
+
+    def test_prepare_failures_are_one_health_line_per_tool(self):
+        # swarmbox-tool prepare names two failing tools: two W lines, each naming its tool, and the marker counts two
+        put(os.path.join(self.fake, "swarmbox-tool.prepare.out"),
+            "noise\nprepare-failed: opencode: prepare.sh failed (exit 3)\nprepare-failed: other: prepare.sh timed out after 60s\n")
+        put(os.path.join(self.fake, "swarmbox-tool.exit"), "1")
+        p = self.run_ready()
+        self.stop(p)
+        lines = [l for l in self.health_lines() if "preparing" in l]
+        self.assertEqual(len(lines), 2, self.health_lines())
+        self.assertIn("opencode: prepare.sh failed (exit 3)", lines[0])
+        self.assertIn("other: prepare.sh timed out", lines[1])
+        self.assertFalse(any("swarmbox-tool prepare exit" in l for l in lines))
+        self.assertIn("noise", self.serve_log())
 
     def test_marker_count_equals_health_lines(self):
         put(os.path.join(self.fake, "swarmbox-pubkey.exit"), "1")
