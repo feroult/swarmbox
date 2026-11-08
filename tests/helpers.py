@@ -19,6 +19,10 @@ Behavior per subcommand (the first argument that is not an option; the global op
   stdout  text, or a list of lines (one per line, trailing newline); the shape of `create-flags` output
   stderr  text, written to standard error
   cidfile text written to the file named by --cidfile (or --cidfile=FILE), only when this key is present
+A subcommand entry may instead be {"rules": [...], "default": {...}}: the first rule whose "match" (a list of strings, all of
+which must occur in the call's arguments joined by spaces) fits answers, with the same keys; "default" answers when none fits.
+A rule (or the entry) may carry "seq": a list of such answers, used one per call that this rule answered (the last one
+repeats), so "the box does not exist the first time and runs afterwards" is {"match": ["inspect"], "seq": [{"exit": 125}, {...}]}.
 A subcommand that is not configured defaults to: exit 0, no output, nothing written. The key "*" in `subcommands`
 is a fallback for every subcommand without its own entry.
 
@@ -76,6 +80,46 @@ while i < len(argv):
     sub = a
     break
 conf = subs.get(sub, subs.get("*", {}))
+
+
+def matches(rule, args):
+    joined = " ".join(args)
+    return all(tok in joined for tok in rule.get("match", []))
+
+
+rules = conf.get("rules", [])
+chosen = conf
+if rules:
+    chosen = conf.get("default", {})
+    for rule in rules:
+        if matches(rule, argv):
+            chosen = rule
+            break
+if True:
+    if "seq" in chosen:
+        # the n-th call that this rule answers gets the n-th entry (the last one repeats); n is counted in the log,
+        # up to this process's own line, so it is the same for concurrent callers as for sequential ones
+        with open(os.path.join(d, "calls.jsonl")) as f:
+            entries = [json.loads(line) for line in f if line.strip()]
+        mine = max(i for i, e in enumerate(entries) if e["pid"] == os.getpid())
+        n = 0
+        for e in entries[:mine]:
+            e_sub = None
+            k = 0
+            while k < len(e["argv"]):
+                if e["argv"][k] in WITH_VALUE:
+                    k += 2
+                    continue
+                if e["argv"][k].startswith("-"):
+                    k += 1
+                    continue
+                e_sub = e["argv"][k]
+                break
+            if e_sub == sub and matches(chosen, e["argv"]) and all(
+                    not matches(r, e["argv"]) for r in (rules[:rules.index(chosen)] if chosen in rules else rules)):
+                n += 1
+        chosen = chosen["seq"][min(n, len(chosen["seq"]) - 1)]
+    conf = chosen
 for j, a in enumerate(argv):
     path = None
     if a == "--cidfile" and j + 1 < len(argv):

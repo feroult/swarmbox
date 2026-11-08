@@ -132,6 +132,70 @@ def host(fh, *args):
     return subprocess.run([fh.path, *args], capture_output=True, text=True)
 
 
+class FakePodmanRules(unittest.TestCase):
+    """Slice 3.3: rules by arguments and answers in sequence."""
+
+    def test_rules_pick_the_first_match_and_default_answers_the_rest(self):
+        conf = {"container": {"rules": [{"match": ["inspect", "State.ExitCode"], "stdout": "exited 1\n"},
+                                        {"match": ["inspect"], "stdout": "line\n"}],
+                              "default": {"exit": 9}}}
+        with FakePodman(conf) as fp:
+            self.assertEqual(run(fp, "container", "inspect", "--format", "{{.State.ExitCode}}", "x").stdout, "exited 1\n")
+            self.assertEqual(run(fp, "container", "inspect", "--format", "{{.Name}}", "x").stdout, "line\n")
+            self.assertEqual(run(fp, "container", "exists", "x").returncode, 9)
+
+    def test_seq_answers_one_entry_per_call_of_its_rule_and_the_last_repeats(self):
+        conf = {"container": {"rules": [{"match": ["inspect"], "seq": [{"exit": 125, "stderr": "no such\n"}, {"stdout": "a\n"},
+                                                                     {"stdout": "b\n"}]},
+                                        {"match": ["exists"], "stdout": "other\n"}]}}
+        with FakePodman(conf) as fp:
+            self.assertEqual(run(fp, "container", "inspect", "x").returncode, 125)
+            run(fp, "container", "exists", "x")  # another rule: does not advance the sequence
+            self.assertEqual(run(fp, "container", "inspect", "x").stdout, "a\n")
+            self.assertEqual(run(fp, "container", "inspect", "x").stdout, "b\n")
+            self.assertEqual(run(fp, "container", "inspect", "x").stdout, "b\n")
+
+    def test_seq_with_a_cidfile(self):
+        conf = {"run": {"seq": [{"exit": 126, "cidfile": "abc"}]}}
+        with FakePodman(conf) as fp:
+            cid = os.path.join(fp.dir, "cid")
+            self.assertEqual(run(fp, "run", "--cidfile", cid, "img").returncode, 126)
+            with open(cid) as f:
+                self.assertEqual(f.read(), "abc")
+
+
+class FakePodmanRules(unittest.TestCase):
+    """Slice 3.3: rules by arguments and answers in sequence."""
+
+    def test_rules_pick_the_first_match_and_default_answers_the_rest(self):
+        conf = {"container": {"rules": [{"match": ["inspect", "State.ExitCode"], "stdout": "exited 1\n"},
+                                        {"match": ["inspect"], "stdout": "line\n"}],
+                              "default": {"exit": 9}}}
+        with FakePodman(conf) as fp:
+            self.assertEqual(run(fp, "container", "inspect", "--format", "{{.State.ExitCode}}", "x").stdout, "exited 1\n")
+            self.assertEqual(run(fp, "container", "inspect", "--format", "{{.Name}}", "x").stdout, "line\n")
+            self.assertEqual(run(fp, "container", "exists", "x").returncode, 9)
+
+    def test_seq_answers_one_entry_per_call_of_its_rule_and_the_last_repeats(self):
+        conf = {"container": {"rules": [{"match": ["inspect"], "seq": [{"exit": 125, "stderr": "no such\n"}, {"stdout": "a\n"},
+                                                                     {"stdout": "b\n"}]},
+                                        {"match": ["exists"], "stdout": "other\n"}]}}
+        with FakePodman(conf) as fp:
+            self.assertEqual(run(fp, "container", "inspect", "x").returncode, 125)
+            run(fp, "container", "exists", "x")  # another rule: does not advance the sequence
+            self.assertEqual(run(fp, "container", "inspect", "x").stdout, "a\n")
+            self.assertEqual(run(fp, "container", "inspect", "x").stdout, "b\n")
+            self.assertEqual(run(fp, "container", "inspect", "x").stdout, "b\n")
+
+    def test_seq_with_a_cidfile(self):
+        conf = {"run": {"seq": [{"exit": 126, "cidfile": "abc"}]}}
+        with FakePodman(conf) as fp:
+            cid = os.path.join(fp.dir, "cid")
+            self.assertEqual(run(fp, "run", "--cidfile", cid, "img").returncode, 126)
+            with open(cid) as f:
+                self.assertEqual(f.read(), "abc")
+
+
 class FakeHost(unittest.TestCase):
     def test_version_is_set_by_the_test(self):
         with FakeHostHelper(version="2.0.10") as fh:

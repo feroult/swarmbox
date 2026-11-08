@@ -2,14 +2,16 @@
 # swarmbox-host: the SwarmBox host helper (design 3.7.1, 3.7.2). POSIX sh, no bashisms (no `local`, no `echo -e`, no
 # `read -s`, no arrays, no `[[ ]]`); it must run under dash, busybox sh, bash in POSIX mode and macOS /bin/sh (D16, B23).
 #
-# Slice 3.1 builds the configuration surface only; nothing here calls Podman:
+# Slice 3.1 built the configuration surface:
 #   version                      the version in the file VERSION next to this program
 #   config get KEY               resolved value (environment, then file, then default); 2 unknown key, 1 unset
 #   config set KEY [VALUE]       validate and write one key (the tunnel token is read from the terminal, never argv)
 #   config list                  KEY=VALUE<TAB>source, the token only as set or unset
 #   config seed [--with L] [--workspace DIR] [--image REF]
 #   env add|rm NAME, env list    the names of host variables passed to the box at creation (ENV_KEYS)
-# create-flags, fingerprint, url, up, update, reset, stop and remote arrive in later slices of Phase 3.
+#   create-flags, fingerprint   the flags and the box fingerprint (slice 3.2)
+#   up, reset, stop, url         the lock, the lookup, creation, readiness, the warnings (slice 3.3; they call Podman, `url` does not)
+# update and remote arrive in later slices of Phase 3.
 #
 # Data goes to standard output, messages to standard error. Exit codes (3.7.2, 3.8): 0 ok; 1 unset key or a write that
 # failed; 2 usage, unknown key, invalid value or name; 3 prerequisite missing (here: a missing or unreadable VERSION).
@@ -38,6 +40,7 @@ usage: swarmbox-host <subcommand> [args]
   env add NAME | env rm NAME | env list
   create-flags [--browser-url VALUE]
   fingerprint [--explain] [--label NAME=VALUE]...
+  up | reset | stop | url
 USAGE
     exit 2
 }
@@ -1069,18 +1072,22 @@ cmd_create_flags() {
         emit --security-opt
         emit label=disable
     fi
-    emit --hostname
-    emit "$C_HOSTNAME"
+    if [ "${SWARMBOX_TEST_NO_NESTED:-}" != 1 ]; then   # tests only: the nested level of the development box has utsns=host, where --hostname is refused
+        emit --hostname
+        emit "$C_HOSTNAME"
+    fi
     emit -v
     emit "$C_WORKSPACE:/home/agent"
     [ "$C_INIT" != 1 ] || emit --init
     [ "$TZ_R" = off ] || emit "--tz=$TZ_R"
     emit --tmpfs
     emit /tmp/swarmbox
-    emit --device
-    emit /dev/net/tun
-    emit --security-opt
-    emit 'unmask=/proc/*'
+    if [ "${SWARMBOX_TEST_NO_NESTED:-}" != 1 ]; then   # tests only: a throwaway box in a container that cannot offer the third level (3.3, 13.3)
+        emit --device
+        emit /dev/net/tun
+        emit --security-opt
+        emit 'unmask=/proc/*'
+    fi
     emit -v
     emit "$C_NAME-containers:/home/agent/.local/share/containers"
     if [ "$C_HOST_ACCESS" = 1 ]; then
@@ -1120,6 +1127,7 @@ PEOF
     emit "SWARMBOX_WEB=$C_WEB"
     emit -e
     emit "SWARMBOX_YOLO=$C_YOLO"
+    if [ "${SWARMBOX_TEST_NO_NESTED:-}" = 1 ]; then emit -e; emit SWARMBOX_TEST_NO_NESTED=1; fi
     if [ -n "$C_WITH" ]; then emit -e; emit "SWARMBOX_WITH=$C_WITH"; fi
     if [ -n "$C_AGENT" ]; then emit -e; emit "SWARMBOX_AGENT=$C_AGENT"; fi
     if [ -n "$C_BROWSER_URL" ]; then emit -e; emit "SWARMBOX_BROWSER_URL=$C_BROWSER_URL"; fi
@@ -1149,6 +1157,32 @@ label_get() {
 $LABELS
 LEOF
     return 1
+}
+
+# Prints one line per difference between the current configuration (C_*, PORT_LIST, ENV_HASH) and the box's labels in LABELS,
+# in the wording of D30. Used by `fingerprint --explain` and by `up` (which prefixes each line and prints it on stderr).
+# shellcheck disable=SC2016  # the backticks in the messages are literal (they quote `swarmbox reset` for the reader)
+fp_explain() {
+    _said=0
+    if _b=$(label_get swarmbox.image) && [ "$_b" != "$C_IMAGE" ]; then
+        printf 'this box was created from %s; the config asks for %s; run `swarmbox reset`\n' "$_b" "$C_IMAGE"
+        _said=1
+    fi
+    if _b=$(label_get swarmbox.workspace) && [ "$_b" != "$C_WORKSPACE" ]; then
+        printf 'the workspace in the config is %s, this box uses %s; run `swarmbox reset` to switch\n' "$C_WORKSPACE" "$_b"
+        _said=1
+    fi
+    if _b=$(label_get swarmbox.ports) && [ "$_b" != "$PORT_LIST" ]; then
+        printf '`PORTS` changed: box has %s, config has %s; run `swarmbox reset` to apply\n' "${_b:-(none)}" "${PORT_LIST:-(none)}"
+        _said=1
+    fi
+    if _b=$(label_get swarmbox.env-hash) && [ "$_b" != "$ENV_HASH" ]; then
+        printf 'the variables changed on the host; run `swarmbox reset` to apply them\n'
+        _said=1
+    fi
+    if [ "$_said" = 0 ]; then
+        printf 'another creation setting changed (the fingerprint differs); run `swarmbox reset` to apply\n'
+    fi
 }
 
 # fingerprint [--explain] [--label NAME=VALUE]...: the hash of the current configuration; with labels it compares (exit 0 same,
@@ -1188,29 +1222,480 @@ cmd_fingerprint() {
     _have=$(label_get swarmbox.fingerprint) || die 5 "the box has no swarmbox.fingerprint label (it was not made by this version of SwarmBox)."
     printf '%s\n' "$FP"
     [ "$_have" != "$FP" ] || return 0
-    if [ "$EXPLAIN" = 1 ]; then
-        _said=0
-        if _b=$(label_get swarmbox.image) && [ "$_b" != "$C_IMAGE" ]; then
-            printf 'this box was created from %s; the config asks for %s; run `swarmbox reset`\n' "$_b" "$C_IMAGE"
-            _said=1
+    [ "$EXPLAIN" = 0 ] || fp_explain
+    return 1
+}
+
+# ---------------------------------------------------------------- up, reset, stop, url (3.5, 3.6, 3.7.2, 3.8, 4.2)
+# Slice 3.3. Variables of this block start with u_ or UP_ so that they do not collide with the loops above. Standard output
+# stays empty (data only); every message goes to standard error.
+
+UP_LOCK=
+UP_LOCK_HELD=0
+UP_BG=
+UP_ERRF=
+UP_FLAGS=
+UP_CIDF=
+
+# Runs on every way out of up, reset and stop (EXIT trap): ends a background child, removes this call's temporary files and the
+# lock, but only a lock this call made (UP_LOCK_HELD) and never one that it merely waited for.
+up_cleanup() {
+    if [ -n "$UP_BG" ]; then kill "$UP_BG" 2> /dev/null; fi
+    [ -z "$UP_ERRF" ] || rm -f "$UP_ERRF"
+    [ -z "$UP_FLAGS" ] || rm -f "$UP_FLAGS"
+    [ -z "$UP_CIDF" ] || rm -f "$UP_CIDF"
+    if [ "$UP_LOCK_HELD" = 1 ] && [ -n "$UP_LOCK" ]; then rm -rf "$UP_LOCK"; fi
+}
+
+# The exit is explicit so the EXIT trap runs and the status says which signal ended the call (128 + n).
+up_traps() {
+    trap up_cleanup EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+}
+
+# A pause that a trapped signal interrupts at once (a foreground `sleep` would delay the trap until it ends).
+nap() {
+    sleep "${SWARMBOX_TEST_NAP:-1}" &
+    UP_BG=$!
+    wait "$UP_BG" 2> /dev/null
+    UP_BG=
+}
+
+ensure_state_dir() {
+    mkdir -p "$STATE_DIR" || die 4 "cannot create $STATE_DIR."
+    UP_ERRF=$STATE_DIR/err.$$
+}
+
+need_podman() {
+    command -v podman > /dev/null 2>&1 && return 0
+    warn "Podman is not installed."
+    printf '%s\n' "  Linux: sudo apt install podman (Debian/Ubuntu) or sudo dnf install podman (Fedora/RHEL)" "  macOS: brew install podman" >&2
+    exit 3
+}
+
+# Podman 4.3 or newer (3.8). Compared as numbers, so 4.10 is newer than 4.3. An unreadable version is a warning: the box may work.
+check_podman_version() {
+    u_v=$(podman version --format '{{.Client.Version}}' 2> /dev/null) || u_v=
+    case $u_v in
+        [0-9]*.[0-9]*) ;;
+        *) warn "could not read the Podman version ('$u_v'); continuing."; return 0 ;;
+    esac
+    u_maj=${u_v%%.*}
+    u_min=${u_v#*.}
+    u_min=${u_min%%[!0-9]*}
+    case $u_maj$u_min in
+        *[!0-9]*|'') warn "could not read the Podman version ('$u_v'); continuing."; return 0 ;;
+    esac
+    if [ "$u_maj" -lt 4 ] || { [ "$u_maj" -eq 4 ] && [ "$u_min" -lt 3 ]; }; then
+        die 3 "Podman $u_maj.$u_min found, 4.3 or newer is required. Upgrade Podman and try again."
+    fi
+}
+
+# /dev/net/tun on Linux and WSL (on macOS `serve` checks inside the Podman machine). SWARMBOX_TEST_TUN names the file that stands
+# for it in tests; SWARMBOX_TEST_NO_NESTED=1 skips the check together with the flags that need it.
+check_tun() {
+    u_os=${SWARMBOX_TEST_OS:-$(uname -s)}
+    [ "$u_os" != Darwin ] || return 0
+    [ "${SWARMBOX_TEST_NO_NESTED:-}" != 1 ] || return 0
+    [ -e "${SWARMBOX_TEST_TUN:-/dev/net/tun}" ] && return 0
+    die 3 "/dev/net/tun is missing on this host. Nested Podman needs it. On Linux try: sudo modprobe tun"
+}
+
+# The last lines of Podman's error, indented, on standard error.
+show_err() { tail -n "${2:-3}" "$1" 2> /dev/null | sed 's/^/    /' >&2; }
+
+# A missing image is pulled, never built (3.8).
+ensure_image() {
+    podman image exists "$C_IMAGE" > /dev/null 2>&1 && return 0
+    warn "pulling $C_IMAGE (this can take a while)..."
+    if ! podman pull -q "$C_IMAGE" > /dev/null 2> "$UP_ERRF"; then
+        u_m=$(tail -n 1 "$UP_ERRF" 2> /dev/null)
+        die 3 "cannot pull $C_IMAGE: $u_m. Check the network, or set SWARMBOX_IMAGE to an image you already have."
+    fi
+}
+
+# What `podman container inspect --format` is asked for: state|name|image id|--init|managed|image|ports|env-hash|fingerprint|workspace.
+# The workspace is last because a path may contain '|'. Labels come through `index`, which gives "" for a missing one.
+LOOKUP_FORMAT='{{.State.Status}}|{{.Name}}|{{.Image}}|{{.HostConfig.Init}}|{{index .Config.Labels "swarmbox.managed"}}|{{index .Config.Labels "swarmbox.image"}}|{{index .Config.Labels "swarmbox.ports"}}|{{index .Config.Labels "swarmbox.env-hash"}}|{{index .Config.Labels "swarmbox.fingerprint"}}|{{index .Config.Labels "swarmbox.workspace"}}'
+
+# One Podman call. Sets BX_FOUND (1 only when the printed name is exactly the box's: Podman also resolves ID prefixes) and BX_*.
+find_box() {
+    BX_FOUND=0
+    if ! u_o=$(podman container inspect --format "$LOOKUP_FORMAT" "$BOX" 2> "$UP_ERRF"); then
+        if grep -qi 'no such container' "$UP_ERRF" 2> /dev/null; then return 0; fi
+        warn "podman could not look for the box '$BOX':"
+        show_err "$UP_ERRF"
+        exit 3
+    fi
+    u_r=$u_o
+    BX_STATE=${u_r%%|*}; u_r=${u_r#*|}
+    BX_NAME=${u_r%%|*}; u_r=${u_r#*|}
+    BX_IMGID=${u_r%%|*}; u_r=${u_r#*|}
+    BX_INIT=${u_r%%|*}; u_r=${u_r#*|}
+    BX_MANAGED=${u_r%%|*}; u_r=${u_r#*|}
+    BX_IMGREF=${u_r%%|*}; u_r=${u_r#*|}
+    BX_PUBPORTS=${u_r%%|*}; u_r=${u_r#*|}
+    BX_ENVHASH=${u_r%%|*}; u_r=${u_r#*|}
+    BX_FP=${u_r%%|*}; u_r=${u_r#*|}
+    BX_WS=$u_r
+    [ "$BX_NAME" = "$BOX" ] || return 0
+    BX_FOUND=1
+}
+
+# A container with the box's name and no swarmbox.managed label is v0.1.0's: never adopted, started or removed (3.8).
+# shellcheck disable=SC2016  # the backticks in the message are literal
+refuse_v010() {
+    u_w=$(podman container inspect --format '{{range .Mounts}}{{if eq .Destination "/home/agent"}}{{.Source}}{{end}}{{end}}' "$BOX" 2> /dev/null) || u_w=
+    [ -n "$u_w" ] || u_w=unknown
+    warn "A container named '$BOX' made by SwarmBox v0.1.0 exists (workspace: $u_w). Stop and remove it with \`podman rm -f $BOX\`; your files stay in that folder. Then run \`swarmbox config set WORKSPACE $u_w\` (or, on a fresh install before the first \`swarmbox\` call, \`init --workspace $u_w\`) to keep using it."
+    exit 5
+}
+
+# Another box with the label swarmbox.workspace equal to this path (3.5). The label filter matches the whole value.
+check_workspace_conflict() {
+    u_o=$(podman ps -a --filter "label=swarmbox.workspace=$C_WORKSPACE" --format '{{.Names}}' 2> /dev/null) || u_o=
+    while IFS= read -r u_n; do
+        [ -n "$u_n" ] || continue
+        [ "$u_n" = "$BOX" ] || die 5 "workspace $C_WORKSPACE is already used by box '$u_n'."
+    done <<CEOF
+$u_o
+CEOF
+}
+
+# INIT=auto becomes 0 or 1 by a throwaway `podman run --rm --init` of the image (the probe of start.sh, kept; B9). INIT_RESOLVED.
+resolve_init() {
+    case $C_INIT in
+        0|1) INIT_RESOLVED=$C_INIT; return 0 ;;
+    esac
+    if podman run --rm --init --name "$BOX-init-probe-$$" --entrypoint true "$C_IMAGE" > /dev/null 2>&1; then
+        INIT_RESOLVED=1
+    else
+        INIT_RESOLVED=0
+        warn "podman cannot run --init here (is catatonit installed?): exited processes will not be reaped."
+    fi
+}
+
+# The flags of the new box, captured into a file BEFORE `podman run` and the status of create-flags checked (3.6): a helper
+# failure (4 workspace, 3 missing tool-ports) never reaches Podman. create-flags runs in the background and is waited for, so a
+# signal ends this call at once. SWARMBOX_TEST_CREATE_FLAGS replaces the program, for tests.
+capture_flags() {
+    UP_FLAGS=$STATE_DIR/flags.$$
+    u_prog=${SWARMBOX_TEST_CREATE_FLAGS:-}
+    if [ -z "$u_prog" ]; then
+        u_sd=$(self_dir) || die 3 "cannot find the folder of the host helper."
+        u_prog=$u_sd/${0##*/}
+    fi
+    SWARMBOX_INIT=$INIT_RESOLVED "$u_prog" create-flags > "$UP_FLAGS" &
+    UP_BG=$!
+    u_rc=0
+    wait "$UP_BG" || u_rc=$?
+    UP_BG=
+    [ "$u_rc" -eq 0 ] || exit "$u_rc"
+}
+
+# Everything that can fail before the box is touched: Podman version, tun, the image, the workspace conflict, INIT, the flags.
+prepare_create() {
+    check_podman_version
+    check_tun
+    ensure_image
+    check_workspace_conflict
+    resolve_init
+    capture_flags
+}
+
+# `podman run -d --name --cidfile <fresh path> <flags> <image> serve`. On failure only the container named by the cidfile is
+# removed, by its ID; a container that merely has the name is never removed (B18; podman exits 125 with no cidfile then).
+# shellcheck disable=SC2016  # the backticks in the message are literal
+create_box() {
+    set --
+    while IFS= read -r u_l; do set -- "$@" "$u_l"; done < "$UP_FLAGS"
+    rm -f "$UP_FLAGS"
+    UP_FLAGS=
+    # The mount point of the nested-Podman volume (<workspace>/.local/share/containers) is made here, as the user. If Podman made
+    # it, it would also make .local and .local/share, owned by the container's root (not by the user), and `serve` could not
+    # create its folders under them (found by the real smoke test of slice 3.3).
+    (umask 022 && mkdir -p "$C_WORKSPACE/.local/share/containers") 2> /dev/null ||
+        die 4 "cannot create $C_WORKSPACE/.local/share/containers (the mount point of the nested Podman storage)."
+    UP_CIDF=$STATE_DIR/cid.$$
+    rm -f "$UP_CIDF"
+    if podman run -d --name "$BOX" --cidfile "$UP_CIDF" "$@" "$C_IMAGE" serve > /dev/null 2> "$UP_ERRF"; then
+        rm -f "$UP_CIDF"
+        UP_CIDF=
+        return 0
+    fi
+    u_id=
+    if [ -s "$UP_CIDF" ]; then IFS= read -r u_id < "$UP_CIDF" || true; fi
+    case $u_id in
+        ''|*[!0-9a-f]*) ;;
+        *) podman rm -f "$u_id" > /dev/null 2>&1 || true ;;
+    esac
+    rm -f "$UP_CIDF"
+    UP_CIDF=
+    warn "could not create the box:"
+    show_err "$UP_ERRF"
+    die 7 "If a port is in use, change WEB_PORT or PORTS with \`swarmbox config set\`."
+}
+
+start_box() {
+    if ! podman start "$BOX" > /dev/null 2> "$UP_ERRF"; then
+        warn "could not start the box:"
+        show_err "$UP_ERRF"
+        die 7 "Nothing was changed; the box '$BOX' is still there. If a port is in use, change WEB_PORT or PORTS and run \`swarmbox reset\`."
+    fi
+}
+
+# Polls the marker with `podman exec` and, only when that fails, the container state: a box that has exited stops the wait at
+# once (exit 6, with the log), instead of hiding the cause behind the timeout (4.2).
+# shellcheck disable=SC2016  # the backticks in the messages are literal
+wait_ready() {
+    u_tries=${SWARMBOX_TEST_READY_TRIES:-60}
+    u_nap=${SWARMBOX_TEST_NAP:-1}
+    u_i=0
+    while :; do
+        u_i=$((u_i + 1))
+        if u_m=$(podman exec "$BOX" cat /tmp/swarmbox/ready 2> /dev/null); then
+            case $u_m in
+                warnings=*) warn "the box is ready, with ${u_m#warnings=} warning(s); the banner shows them." ;;
+            esac
+            return 0
         fi
-        if _b=$(label_get swarmbox.workspace) && [ "$_b" != "$C_WORKSPACE" ]; then
-            printf 'the workspace in the config is %s, this box uses %s; run `swarmbox reset` to switch\n' "$C_WORKSPACE" "$_b"
-            _said=1
+        u_st=$(podman container inspect --format '{{.State.Status}}' "$BOX" 2> /dev/null) || u_st=gone
+        case $u_st in
+            running|created|configured|initialized|paused) ;;
+            *)
+                warn "the box exited while starting (state: $u_st); the last lines of its log:"
+                podman logs --tail 20 "$BOX" 2>&1 | sed 's/^/    /' >&2
+                exit 6
+                ;;
+        esac
+        if [ "$u_i" -ge "$u_tries" ]; then
+            if [ "$u_nap" = 1 ]; then
+                die 6 "the box did not become ready in $u_tries s; see \`podman logs $BOX\`"
+            fi
+            die 6 "the box did not become ready in $u_tries polls of $u_nap s; see \`podman logs $BOX\`"
         fi
-        if _b=$(label_get swarmbox.ports) && [ "$_b" != "$PORT_LIST" ]; then
-            printf '`PORTS` changed: box has %s, config has %s; run `swarmbox reset` to apply\n' "${_b:-(none)}" "${PORT_LIST:-(none)}"
-            _said=1
+        nap
+    done
+}
+
+# The warnings of an entry (D30): the fingerprint differences, named per key where a label allows it, and a local image that was
+# replaced since the box was created. They never block. The box's INIT is what it was created with when the config says auto.
+entry_warnings() {
+    if [ -n "$BX_FP" ]; then
+        if [ "$C_INIT" = auto ]; then
+            case $BX_INIT in
+                true) C_INIT=1 ;;
+                *) C_INIT=0 ;;
+            esac
         fi
-        if _b=$(label_get swarmbox.env-hash) && [ "$_b" != "$ENV_HASH" ]; then
-            printf 'the variables changed on the host; run `swarmbox reset` to apply them\n'
-            _said=1
-        fi
-        if [ "$_said" = 0 ]; then
-            printf 'another creation setting changed (the fingerprint differs); run `swarmbox reset` to apply\n'
+        compute_fingerprint
+        if [ "$BX_FP" != "$FP" ]; then
+            LABELS="swarmbox.image=$BX_IMGREF${NL}swarmbox.workspace=$BX_WS${NL}swarmbox.ports=$BX_PUBPORTS${NL}swarmbox.env-hash=$BX_ENVHASH${NL}"
+            u_ex=$(fp_explain)
+            while IFS= read -r u_x; do
+                [ -z "$u_x" ] || warn "$u_x"
+            done <<WEOF
+$u_ex
+WEOF
         fi
     fi
-    return 1
+    u_ref=${BX_IMGREF:-$C_IMAGE}
+    u_cur=$(podman image inspect --format '{{.Id}}' "$u_ref" 2> /dev/null) || u_cur=
+    u_cur=${u_cur#sha256:}
+    u_old=${BX_IMGID#sha256:}
+    if [ -n "$u_cur" ] && [ -n "$u_old" ] && [ "$u_cur" != "$u_old" ]; then
+        warn "the image $u_ref is newer than the one this box runs; run \`swarmbox reset\` to use it (running sessions end)."
+    fi
+}
+
+# A stale lock is removed only after the folder has been moved away (an atomic rename) and its pid file, read again, is still the
+# one that was seen dead (or still absent): a live lock that another call made in between is put back.
+reap_stale() {
+    u_rs=$UP_LOCK.stale.$$
+    mv "$UP_LOCK" "$u_rs" 2> /dev/null || return 0
+    u_q=
+    if [ -r "$u_rs/pid" ]; then IFS= read -r u_q < "$u_rs/pid" || true; fi
+    if [ "$u_q" = "$1" ]; then
+        rm -rf "$u_rs"
+    else
+        mv "$u_rs" "$UP_LOCK" 2> /dev/null || true
+    fi
+}
+
+# The host lock of 3.6: an atomic mkdir, with the pid of the holder in a file. Stale when that pid does not answer `kill -0`, or
+# when no pid file appeared within LOCK_PIDWAIT polls (5 s); a live holder is waited for up to LOCK_TRIES polls (90 s), then exit 6.
+acquire_lock() {
+    UP_LOCK=$STATE_DIR/up-$BOX.lock
+    u_tries=${SWARMBOX_TEST_LOCK_TRIES:-90}
+    u_pidwait=${SWARMBOX_TEST_LOCK_PIDWAIT:-5}
+    u_n=0
+    u_nopid=0
+    u_fail=0
+    until mkdir "$UP_LOCK" 2> /dev/null; do
+        if [ ! -d "$UP_LOCK" ]; then   # not there and not creatable: a permission problem (or the holder just left)
+            u_fail=$((u_fail + 1))
+            [ "$u_fail" -le 5 ] || die 4 "cannot create the lock $UP_LOCK."
+            continue
+        fi
+        u_p=
+        if [ -r "$UP_LOCK/pid" ]; then IFS= read -r u_p < "$UP_LOCK/pid" || true; fi
+        case $u_p in
+            *[!0-9]*) u_p= ;;
+        esac
+        if [ -n "$u_p" ]; then
+            u_nopid=0
+            if ! kill -0 "$u_p" 2> /dev/null; then
+                reap_stale "$u_p"
+                continue
+            fi
+        else
+            u_nopid=$((u_nopid + 1))
+            if [ "$u_nopid" -gt "$u_pidwait" ]; then
+                reap_stale ""
+                u_nopid=0
+                continue
+            fi
+        fi
+        u_n=$((u_n + 1))
+        if [ "$u_n" -gt "$u_tries" ]; then
+            die 6 "another 'up' holds $UP_LOCK (pid ${u_p:-unknown}); if no swarmbox command is running, remove that folder."
+        fi
+        nap
+    done
+    UP_LOCK_HELD=1
+    printf '%s\n' "$$" > "$UP_LOCK/pid"
+    sweep_state
+}
+
+# Temporary files (flags.<pid>, cid.<pid>, err.<pid>) that a call killed with SIGKILL left behind: removed when the pid in the
+# name is gone. Only done under the lock, so a live call of this box is never disturbed (another box's files are not touched
+# either: a pid that answers is left alone).
+sweep_state() {
+    for u_f in "$STATE_DIR"/flags.* "$STATE_DIR"/cid.* "$STATE_DIR"/err.* "$STATE_DIR"/up-"$BOX".lock.stale.*; do
+        [ -e "$u_f" ] || continue
+        u_pid=${u_f##*.}
+        case $u_pid in
+            ''|*[!0-9]*) continue ;;
+        esac
+        [ "$u_pid" != "$$" ] || continue
+        kill -0 "$u_pid" 2> /dev/null || rm -rf "$u_f"
+    done
+}
+
+# up (RESET=0) and reset (RESET=1), 3.7.2 "What up does" and "What reset does".
+up_main() {
+    RESET=$1
+    need_podman
+    need_sha256
+    load_tool_ports
+    WARN_PORTS=0
+    load_creation 0
+    ensure_state_dir
+    up_traps
+    acquire_lock
+    find_box
+    if [ "$BX_FOUND" = 1 ]; then
+        [ -n "$BX_MANAGED" ] || refuse_v010
+        if [ "$RESET" = 1 ]; then
+            prepare_create
+            podman rm -f "$BOX" > /dev/null 2> "$UP_ERRF" || {
+                warn "could not remove the box '$BOX':"
+                show_err "$UP_ERRF"
+                exit 1
+            }
+            create_box
+            wait_ready
+            return 0
+        fi
+        entry_warnings
+        [ "$BX_STATE" != running ] || return 0   # the fast path: one inspect, and at most one image inspect
+        check_podman_version
+        check_tun
+        start_box
+        wait_ready
+        return 0
+    fi
+    prepare_create
+    create_box
+    wait_ready
+}
+
+cmd_up() {
+    [ $# -eq 0 ] || usage
+    up_main 0
+}
+
+cmd_reset() {
+    [ $# -eq 0 ] || usage
+    up_main 1
+}
+
+# shellcheck disable=SC2016  # the backticks in the message are literal
+cmd_stop() {
+    [ $# -eq 0 ] || usage
+    need_podman
+    init_paths
+    ensure_state_dir
+    up_traps
+    find_box
+    if [ "$BX_FOUND" = 0 ]; then
+        warn "no box named '$BOX'; nothing to stop."
+        return 0
+    fi
+    [ -n "$BX_MANAGED" ] || refuse_v010
+    if ! podman stop "$BOX" > /dev/null 2> "$UP_ERRF"; then
+        warn "could not stop the box '$BOX':"
+        show_err "$UP_ERRF"
+        exit 1
+    fi
+}
+
+# A hostname for the public URL: letters, digits, dots and hyphens only (it ends up in a URL that is printed).
+valid_public_host() {
+    case $1 in
+        ''|[!A-Za-z0-9]*|*[!A-Za-z0-9.-]*) return 1 ;;
+    esac
+    return 0
+}
+
+# url: the local URL, and the public one when remote access is configured. It never calls Podman (5.2).
+cmd_url() {
+    [ $# -eq 0 ] || usage
+    init_paths
+    cfg_prepare
+    for u_k in WEB WEB_PORT; do
+        resolve "$u_k"
+        u_val=$R_VAL
+        if [ "$R_SRC" != default ]; then
+            validate_value "$u_k" "$u_val" || exit 2
+            u_val=$V_OUT
+        fi
+        eval "U_$u_k=\$u_val"
+    done
+    [ "$U_WEB" = 1 ] || die 1 "the web terminal is off (WEB=0), so there is no URL. Run \`swarmbox config set WEB 1\` and \`swarmbox reset\` to turn it on."
+    printf 'http://127.0.0.1:%s\n' "$U_WEB_PORT"
+    u_host=${SWARMBOX_WEB_HOSTNAME:-}
+    if [ -z "$u_host" ]; then
+        u_dom=${SWARMBOX_WEB_DOMAIN:-}
+        if [ -z "$u_dom" ] && [ -r "$CFG_ROOT/cloudflare.json" ]; then
+            u_dom=$(sed -n 's/^[[:space:]]*"domain"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CFG_ROOT/cloudflare.json" 2> /dev/null | head -n 1)
+        fi
+        u_dom=${u_dom%.}
+        if [ -n "$u_dom" ]; then
+            if valid_public_host "$u_dom"; then
+                u_host=$BOX.$u_dom
+            else
+                warn "ignoring the domain '$u_dom' (not a host name)."
+            fi
+        fi
+    elif ! valid_public_host "$u_host"; then
+        warn "ignoring the host name '$u_host' (not a host name)."
+        u_host=
+    fi
+    [ -z "$u_host" ] || printf 'https://%s\n' "$u_host"
+    return 0
 }
 
 cmd_config() {
@@ -1235,7 +1720,11 @@ case $sub in
     env) cmd_env "$@" ;;
     create-flags) cmd_create_flags "$@" ;;
     fingerprint) cmd_fingerprint "$@" ;;
-    url|up|update|reset|stop|remote)
+    up) cmd_up "$@" ;;
+    reset) cmd_reset "$@" ;;
+    stop) cmd_stop "$@" ;;
+    url) cmd_url "$@" ;;
+    update|remote)
         die 70 "'$sub' is not implemented in this build of the host helper."
         ;;
     -h|--help|help)

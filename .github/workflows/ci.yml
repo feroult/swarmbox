@@ -74,6 +74,7 @@ jobs:
           python3 tests/test_host_config.py
           python3 tests/test_host_create_flags.py
           python3 tests/test_host_shells.py
+          python3 tests/test_host_up.py
           python3 tests/test_history_audit.py
           python3 tests/test_image_build.py
           python3 tests/test_migration.py
@@ -154,6 +155,7 @@ jobs:
           python3 tests/test_host_config.py
           python3 tests/test_host_create_flags.py
           python3 tests/test_host_shells.py
+          python3 tests/test_host_up.py
           python3 tests/test_image_build.py
           python3 tests/test_smoke_skeleton.py
           python3 tests/test_start_fake_podman.py
