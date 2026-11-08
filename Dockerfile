@@ -157,6 +157,7 @@ COPY container/mcp/ /etc/swarmbox/mcp/
 COPY container/scripts/swarmbox-attach.sh /usr/local/bin/swarmbox-attach
 COPY container/scripts/swarmbox-web.sh /usr/local/bin/swarmbox-web
 COPY container/scripts/swarmbox-tool.sh /usr/local/bin/swarmbox-tool
+COPY container/scripts/swarmbox-shim.sh /usr/local/bin/swarmbox-shim
 COPY container/scripts/swarmbox-migrate.sh /usr/local/bin/swarmbox-migrate
 # The helper archive (3.7.1, 9.3): what `swarmbox-entrypoint host-helper` writes. Phase 3 adds swarmbox-host and templates/
 # (container/host/); tool-ports is written by `swarmbox-tool link --system` below, always, empty when no manifest has ports.
@@ -165,7 +166,7 @@ COPY container/entrypoint.sh /usr/local/bin/swarmbox-entrypoint
 RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.toml /etc/swarmbox/bashrc.sh /etc/ssh/ssh_config.d/swarmbox.conf \
         /usr/local/lib/swarmbox/dirs.sh /etc/swarmbox/scripts/starship-init.sh /etc/swarmbox/scripts/messages.sh && \
     chmod 755 /usr/local/bin/banner.sh /usr/local/bin/swarmbox-podman-service /usr/local/bin/swarmbox-pubkey \
-        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-tool /usr/local/bin/swarmbox-migrate /usr/local/bin/swarmbox-entrypoint && \
+        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-tool /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-migrate /usr/local/bin/swarmbox-entrypoint && \
     chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py && \
     chmod -R a+rX /etc/swarmbox/mcp && \
     swarmbox-tool link --system
