@@ -202,6 +202,43 @@ class ConnectorTest(ConnectorBase):
         self.assertEqual(len(self.run_calls()), 1)
         self.assert_token_never_in_argv()
 
+    def test_a_running_box_still_brings_the_connector_up_on_every_entry(self):
+        """Ported from v0.1.0's test_existing_web_container_brings_up_the_tunnel_even_without_the_flag (slice 6.2)."""
+        running = {"stdout": self.matching_line()}
+        self.podman(lookup=running)
+        c = self.conf(lookup=running)
+        c["container"]["rules"].insert(0, {"match": ["inspect", CN], "exit": 125, "stderr": "Error: no such container %s\n" % CN})
+        self.fp.configure(c)
+        r = self.up(**self.tok_env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([c for c in self.subs("run") if CN not in c], [], "the box itself was running: no box run")
+        self.assertEqual(len(self.run_calls()), 1, self.calls())
+        self.assertEqual(self.fp.envs()[self.calls().index(self.run_calls()[0])].get("TUNNEL_TOKEN"), TOK)
+        self.assert_token_never_in_argv()
+
+    def test_a_stopped_box_is_started_and_the_connector_is_still_ensured(self):
+        self.with_connector({"stdout": cn_line(False)})
+        r = self.up(**self.tok_env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.subs("start"), [["start", CN]])
+
+    def test_no_cloudflare_api_token_is_needed_or_used(self):
+        """Ported from v0.1.0's test_no_api_token_is_needed_or_used: only the tunnel token matters to up."""
+        self.with_connector()
+        r = self.up(**self.tok_env(CLOUDFLARE_API_TOKEN=""))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("CLOUDFLARE_API_TOKEN", r.stdout + r.stderr)
+        self.assertEqual(len(self.run_calls()), 1)
+
+    def test_the_tunnel_token_never_reaches_the_box_container(self):
+        """Ported from v0.1.0's test_the_token_is_not_passed_to_the_swarmbox_container: the box run has no TUNNEL and no token."""
+        self.with_connector()
+        self.up(**self.tok_env())
+        box = [c for c in self.subs("run") if CN not in c]
+        self.assertEqual(len(box), 1, self.calls())
+        self.assertFalse(any("TUNNEL" in a or TOK in a for a in box[0]), box[0])
+        self.assertNotIn("TUNNEL_TOKEN", self.fp.envs()[self.calls().index(box[0])])
+
     def test_reset_and_stop_do_not_touch_the_connector(self):
         self.with_connector({"stdout": cn_line(True)})
         self.run_h("stop", env=self.env(**self.tok_env()))

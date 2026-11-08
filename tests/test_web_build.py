@@ -8,8 +8,8 @@ Layers:
   1. swarmbox-web against a FAKE ttyd (records its arguments). Nothing is served. The test asserts that no port it hands
      out is 7681, 8889 or 43323, the ports of this very network namespace.
   2. serve (the real entrypoint, fake tmux/podman/ttyd) with the real swarmbox-web: `swarmbox-web restart` restarts ttyd.
-  3. Browser: the 2.1 browser tests (clipboard bridge and style) run again against the page built by build-index.sh and
-     rendered by swarmbox-web (skipped without chromium, ttyd and tmux).
+  3. Browser: tests/test_clipboard_bridge.py and tests/test_web_style.py build the page with build-index.sh and render it with
+     swarmbox-web (slice 6.2 moved that setup there; skipped without chromium, ttyd and tmux).
 
 Test-only variables (decision log [2.5], not in the configuration table of design 8): SWARMBOX_TEST_LIB, SWARMBOX_TEST_RUN_DIR,
 SWARMBOX_TEST_WEB_PAGE (the built page, default /usr/local/share/swarmbox/web/index.html), SWARMBOX_TEST_WEB_PORT (default
@@ -30,7 +30,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT  # noqa: E402
 import test_clipboard_bridge as base  # noqa: E402
 import test_serve_steps as serve_steps  # noqa: E402
-import test_web_style as web_style  # noqa: E402
 
 WEB = os.path.join(ROOT, "container", "scripts", "swarmbox-web.sh")
 BUILD = os.path.join(ROOT, "container", "web", "build-index.sh")
@@ -293,6 +292,88 @@ class Run(WebCase):
         self.assertIn("ttyd", r.stderr)
 
 
+class PortedFromWebTerminal(WebCase):
+    """Slice 6.2: the cases of v0.1.0's tests/test_web_terminal.py (the v0.1.0 web wrapper), run against swarmbox-web."""
+
+    def run_web(self, **extra):
+        r = self.web("run", **extra)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return self.ttyd_call()
+
+    def test_defaults_of_the_ttyd_command_line(self):
+        argv = self.run_web()["argv"]
+        o = self.opts(argv)
+        for flag in ("-W", "-O"):
+            self.assertIn(flag, argv)
+        self.assertEqual((o["fontSize"], o["cursorBlink"], o["titleFixed"]), ("21", "true", '"SwarmBox"'))
+        self.assertEqual((o["fontWeight"], o["fontWeightBold"]), ("400", "700"))
+        theme = json.loads(o["theme"])
+        self.assertEqual((theme["background"], theme["foreground"]), ("#0c0c0c", "#c2c2c2"))
+        self.assertEqual(len(theme), 20, "background, foreground, cursor, selection and the 16 ANSI colors")
+        families = json.loads(o["fontFamily"])
+        self.assertTrue(families.startswith("'JetBrainsMono Nerd Font'"))
+        self.assertTrue(families.endswith("monospace"))
+        for nf in ("JetBrainsMono NF", "JetBrainsMono NFM", "CaskaydiaCove Nerd Font"):
+            self.assertIn(nf, families, "Windows installs Nerd Fonts under these names")
+
+    def test_the_config_file_overrides_and_adds_options(self):
+        self.conf("# my terminal\n"
+                  "fontFamily='JetBrainsMono Nerd Font', 'JetBrainsMono NFM', Consolas, monospace\n"
+                  "  fontSize = 16   # trailing comment\n\nlineHeight=1.1\n"
+                  'theme={"background":"#1e1e2e","foreground":"#cdd6f4"}\n'
+                  "this line has no equals sign\n")
+        argv = self.run_web()["argv"]
+        o = self.opts(argv)
+        self.assertEqual(json.loads(o["fontFamily"]), "'JetBrainsMono Nerd Font', 'JetBrainsMono NFM', Consolas, monospace")
+        self.assertEqual(o["fontSize"], "16", "spaces around = and a trailing comment are ignored")
+        self.assertEqual(o["lineHeight"], "1.1")
+        self.assertEqual(json.loads(o["theme"]), {"background": "#1e1e2e", "foreground": "#cdd6f4"})
+        self.assertEqual(o["cursorBlink"], "true", "defaults the file does not mention are kept")
+        self.assertNotIn("this line has no equals sign", " ".join(argv))
+
+    def test_values_are_handed_over_as_valid_json(self):
+        self.conf("fontFamily=3270 Nerd Font, monospace\n"
+                  'title=say "hi" \\ there\n'
+                  "lineHeight=1.25\nbold=true\n"
+                  'theme={"background":"#1e1e2e"}\n'
+                  'quoted="already a string"\n')
+        o = self.opts(self.run_web()["argv"])
+        self.assertEqual(json.loads(o["fontFamily"]), "3270 Nerd Font, monospace")   # digits first, still a string
+        self.assertEqual(json.loads(o["title"]), 'say "hi" \\ there')
+        self.assertEqual(json.loads(o["lineHeight"]), 1.25)
+        self.assertIs(json.loads(o["bold"]), True)
+        self.assertEqual(json.loads(o["theme"]), {"background": "#1e1e2e"})
+        self.assertEqual(json.loads(o["quoted"]), "already a string")
+
+    def test_a_value_may_contain_equals_signs(self):
+        self.conf("customGlyphs=a=b\n")
+        self.assertEqual(json.loads(self.opts(self.run_web()["argv"])["customGlyphs"]), "a=b")
+
+    def test_the_clipboard_switches_reach_the_page_and_not_ttyd(self):
+        self.conf("ctrlVPaste=false\nctrlCCopy=false\npadding=9\nfontSize=17\n")
+        o = self.opts(self.run_web()["argv"])
+        for k in ("padding", "ctrlVPaste", "ctrlCCopy"):
+            self.assertNotIn(k, o)
+        self.assertEqual(o["fontSize"], "17")
+        self.assertIn('window.__swarmboxClipboard={"ctrlVPaste":false,"ctrlCCopy":false};', self.index())
+
+    def test_an_existing_utf8_locale_is_kept(self):
+        for v in ("pt_BR.UTF-8", "en_US.utf8"):
+            self.assertEqual(self.run_web(LANG=v)["lang"], v)
+
+    def test_a_non_utf8_locale_is_replaced(self):
+        for v in ("C", "POSIX"):
+            self.assertEqual(self.run_web(LANG=v)["lang"], "C.UTF-8", v)
+
+    def test_a_missing_locale_is_provided(self):
+        self.assertEqual(self.run_web(LANG=None)["lang"], "C.UTF-8")
+
+    def test_lc_all_decides_over_lang(self):
+        r = self.web("run", LANG="pt_BR.UTF-8", LC_ALL="C")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.ttyd_call()["lang"], "C.UTF-8")
+
+
 class Restart(WebCase):
     def start_listener(self):
         """A process of this test that records USR1; the only PID this test ever signals."""
@@ -382,50 +463,6 @@ class WithServe(serve_steps.ServeCase):
         self.assertIn("--swarmbox-padding:19px", serve_steps.read(os.path.join(self.run_dir, "index.html")))
         self.assertIsNone(p.poll())
         self.stop(p)
-
-
-class NewPageMixin:
-    """The 2.1 browser tests, run against the page that build-index.sh built and swarmbox-web rendered."""
-
-    def build_index(self, conf=""):
-        port = base.free_port()
-        stock = os.path.join(self.tmp, "stock.html")
-        ttyd = self.spawn(["ttyd", "-p", str(port), "-i", "lo", "true"])
-        for _ in range(40):
-            try:
-                with base.urllib.request.urlopen("http://127.0.0.1:%d/" % port, timeout=1) as r, open(stock, "wb") as f:
-                    f.write(r.read())
-                break
-            except OSError:
-                time.sleep(0.2)
-        os.killpg(ttyd.pid, signal.SIGKILL)
-        ttyd.wait(timeout=5)
-        built = os.path.join(self.tmp, "built", "index.html")
-        r = subprocess.run(["sh", BUILD, stock, base.BRIDGE, base.STYLE, built], capture_output=True, text=True)
-        assert r.returncode == 0, r.stderr
-        home = os.path.join(self.tmp, "home")
-        os.makedirs(os.path.join(home, ".config", "swarmbox"), exist_ok=True)
-        if conf:
-            with open(os.path.join(home, ".config", "swarmbox", "web-terminal.conf"), "w") as f:
-                f.write(conf)
-        lib = os.path.join(self.tmp, "lib")
-        os.makedirs(lib, exist_ok=True)
-        if not os.path.exists(os.path.join(lib, "dirs.sh")):
-            os.symlink(DIRS_SH, os.path.join(lib, "dirs.sh"))
-        run = os.path.join(self.tmp, "run")
-        env = {"PATH": "/usr/bin:/bin", "HOME": home, "SWARMBOX_TEST_LIB": lib, "SWARMBOX_TEST_RUN_DIR": run,
-               "SWARMBOX_TEST_WEB_PAGE": built}
-        r = subprocess.run(["bash", WEB, "render"], env=env, capture_output=True, text=True, timeout=20)
-        assert r.returncode == 0, r.stderr
-        return os.path.join(run, "index.html")
-
-
-class ClipboardWithNewPage(NewPageMixin, base.ClipboardBridge):
-    pass
-
-
-class StyleWithNewPage(NewPageMixin, web_style.WebStyle):
-    pass
 
 
 class Static(unittest.TestCase):
