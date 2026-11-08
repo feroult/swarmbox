@@ -450,5 +450,47 @@ class PhaseThreeCloseTest(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(ROOT, f)), f)
 
 
+class PhaseFourBCloseTest(unittest.TestCase):
+    """Phase 4b close-out (slice 4b.7): the appendix rows of the phase point at closed or explicitly open evidence."""
+
+    APPENDIX_IDS = ("D3", "D4", "D21", "D23", "D29", "B2", "B10", "B11", "B24", "B25")
+
+    def test_appendix_a_has_one_row_per_id_naming_a_phase(self):
+        app = PLAN[PLAN.index("## Appendix A. Where"):]
+        for i in self.APPENDIX_IDS:
+            r = rows(app, i)
+            self.assertGreaterEqual(len(r), 1, i)
+            self.assertRegex(r[0], r"\| (\d[ab]?|4a, 4b|2, 4b|0)\b", i)
+
+    def test_partb_says_closed_or_names_what_is_open_for_each_id(self):
+        for i in ("B2", "B10", "B11", "B24", "B25"):
+            hits = re.findall(r"^\| %s \| \**(Closed|Reduced|Open|Unverified)\b(.*)$" % i, PART_B, re.M)
+            self.assertGreaterEqual(len(hits), 1, i)
+            for state, rest in hits:
+                if state != "Closed":
+                    self.assertTrue(rest.strip(" |"), i)  # an open fact says what is missing
+
+    def test_design_6_9_and_the_plan_carry_the_4b_7_state_and_the_tests_exist(self):
+        sec = DESIGN[DESIGN.index("### 6.9"):DESIGN.index("### 6.10")]
+        self.assertIn("4b.7 state", sec)
+        self.assertIn("tests/test_tool_real.py", sec)
+        self.assertIn("4b.7 state", PLAN[PLAN.index("## 7. Phase 4b"):PLAN.index("## 8.")])
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, "tests", "test_tool_real.py")))
+
+    def test_every_tool_has_a_per_tool_result_line_with_an_evidence_tag_or_reduced(self):
+        sec = DESIGN[DESIGN.index("### 6.9"):DESIGN.index("### 6.10")]
+        for tool in sorted(os.listdir(os.path.join(ROOT, "container", "tools"))):
+            lines = [l for l in sec.splitlines() if re.match(r"\s*- \*\*%s\*\*" % re.escape(tool), l)]
+            self.assertEqual(len(lines), 1, tool)
+            self.assertRegex(lines[0], r"\[verified: [^\]]+; 2026-\d\d-\d\d; [^\]]*\]|(?i:reduced|blocked)", tool)
+
+    def test_status_rows_for_4b_7_and_the_gate(self):
+        status = read("docs", "implementation-status.md")
+        for sl in ("4b.7-real-installers-closeout", "4b.gate"):
+            r = [l for l in status.splitlines() if l.startswith("| %s |" % sl)]
+            self.assertEqual(len(r), 1, sl)
+            self.assertIn([c.strip() for c in r[0].strip().strip("|").split("|")][2], ("done", "partial", "blocked"), sl)
+
+
 if __name__ == "__main__":
     unittest.main()

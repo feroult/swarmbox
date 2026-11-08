@@ -256,6 +256,7 @@ Scope
 - **MCP registry** (4.4; generator done in 4b.1, `tests/test_mcp_registry.py`; the OpenCode mirror is done in 4b.2, `tests/test_tool_opencode.py`): generated `mcp-servers.json`, the registry entry that runs the installed `chrome-devtools-mcp` (no `npx`), the OpenCode mirror.
 - **The `WITH_TOOLS` build argument** (6.8): the Dockerfile installs the named tools into `/opt/swarmbox/tools`.
   **4b.6 state:** `ARG WITH_TOOLS` and the `install --image` mechanism, the run-time lookup (workspace first, image second), the dev build pass-through and the smoke steps for all seven tools, tool-ports with 43323 and `mcp-servers.json` are done (`tests/test_tool_image_level.py`, `tests/test_dockerfile.py`, `tests/test_dev_build.py`, `tests/test_smoke_skeleton.py`, opt-in `tests/test_image_with_tools.py`); the real build with `WITH_TOOLS=claude` ran (2.09 GB, 117 s warm). See design 6.8 and decision log `[4b.6]`.
+  **4b.7 state:** the real-installer tests exist and ran here for opencode, gemini, clasp, poetry, go and gcloud (`tests/test_tool_real.py`, 57 tests OK; claude is `tests/test_tool_claude_real.py`): no side effects outside the prefix, the npm cache rule, survives a reset. They found and fixed two violations (gemini's node-gyp headers, opencode's postinstall log). The scheduled `real-tools` job of `ci.yml` runs them; it has never run on a runner. See design 6.9 ("4b.7 state") and decision log `[4b.7]`.
 - **The D29 maintainer script** that records gcloud's (and Go's) `SHA256_amd64` and `SHA256_arm64` in the manifest.
 
 Tests first

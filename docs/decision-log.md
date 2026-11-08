@@ -1424,3 +1424,42 @@ How to reverse: git revert.
 `dev/dev-build.sh --build-arg WITH_TOOLS=claude`: 117 s with warm layers (the full cold build was not repeated), image 2,092,380,207 bytes, 325 MB in /opt/swarmbox/tools, 0 entries not owned by agent. A default build of the same Dockerfile passes the reduced smoke steps ready, tmpfs-restart, page-built, tool-validate, tool-shim, tool-index-ports, mcp-generated, attach-session, no-agent, up-lifecycle, up-busy-port (nested-podman and nested-cgroup skipped: third nesting level). `WITH_TOOLS=nonesuch` fails the build at the RUN with exit 1. Images swarmbox-test-4b6-img, -def and the failed build's dangling intermediate were removed by name or ID; nothing else was created.
 A tool at the image level is not read by `swarmbox-tool link --user`'s fingerprint scan (that scans the workspace); the shim's gate reads the right record for the tool it runs. Same image on both sides makes this a non-issue except for ARCH, which a baked image cannot have wrong.
 
+
+## [4b.7] The side-effects check separates the installer from the first run of the program
+Context: the first real run (clasp, go) failed the "no side effects" check for Go: `go version` itself wrote `~/.config/go/telemetry`. That is the program's own state, not the installer's doing, and the design rule (6.4, 6.9) is about the installer.
+Options: allow a per-tool list of run-time paths; scan after the first call through the shim; run `swarmbox-tool install <tool>` alone, scan, then run the program.
+Chosen: install alone, scan strictly (only the tool's folder, SwarmBox's state and the npm cache are allowed), then run the program and only REPORT what it wrote outside the prefix. No per-tool allow list exists, so a new installer cannot hide behind one. Cost: the real test no longer exercises the first-call-through-the-shim path for the six tools (4a.4 covers it with fakes for every shell and 4a.6 with the real installer for Claude Code). [unverified] for the six tools through the real shim.
+Impact on the design: 6.9 "4b.7 state". How to reverse: make setUpClass call the command directly and add allow lists.
+
+## [4b.7] Two installers broke the hard rules of 6.4 and were fixed
+Context: with the strict scan, `gemini` wrote 2811 files to `~/.cache/node-gyp` (a native dependency; node-gyp unpacks the Node headers into its devdir) and `opencode` wrote `~/.local/share/opencode/log/opencode.log` (the postinstall of `@opencode/cli` runs the program). The fake-installer tests of 4b.2 and 4b.3 could not see either.
+Options: allow those paths in the test; delete them at the end of the installer; run npm in a scratch environment.
+Chosen: scratch environment for `gemini`, `clasp` and `opencode` (all three are npm installers; clasp had no problem but shares the shape): `mktemp -d`, removed by a trap, `npm_config_devdir` and `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` pointing into it for the `npm install` and the `npm cache clean`. `NPM_CONFIG_CACHE` is explicit in the image, so the npm cache is unaffected. Fake-npm tests were written first and failed (the variables were unset). Risk: a postinstall that must keep state in the real XDG folders would lose it; none does today (the log is regenerated at the first run). `poetry`, `go` and `gcloud` are not npm and showed no violation.
+Impact on the design: 6.4 rules hold; 6.9 "4b.7 state". How to reverse: remove the `scratch` block from the three installers (the real test then fails again).
+
+## [4b.7] npm cache residue: two files are accepted
+Context: `npm cache clean --force` leaves `_logs/` and, as measured, an empty `_update-notifier-last-checked` marker in `/opt/npm-cache`.
+Chosen: the cache rule is "no file except those two"; the test names them (`CACHE_RESIDUE`). Anything else (blobs, indexes) fails.
+How to reverse: empty the tuple and have the installers remove the folder.
+
+## [4b.7] A named volume stands in for the "temp bind mount"
+Context: the slice text says a second container on the same temp bind mount. In this nested rootless Podman the container's uid 1000 maps to a sub-uid, so a bind-mounted mktemp folder owned by the host's uid 1000 is not writable by `agent`.
+Chosen: a fresh named volume `swarmbox-test-4b7-vol-<rand>` (what 4a.6 did; it takes the image's ownership of `/home/agent`), removed by exact name. The reset is `podman rm` of the container and a new container on the same volume. Same guarantee, different mount kind. The real `swarmbox` start path (host helper, `--userns=keep-id`) was not used: reduced, like the Phase 2 and 3 container tests (the entrypoint does not run; `sleep` is the command).
+How to reverse: none needed.
+
+## [4b.7] The real tests are a scheduled job plus a harness that runs on every push
+Context: design 13.4 puts the real-installer tests on a schedule.
+Chosen: a `real-tools` job in `ci.yml` with `if: schedule or workflow_dispatch`, which builds the image and fails when any real test is skipped; `tests/test_tool_real.py` is also in the linux job (its real classes skip there, its harness classes run) and in the macOS exclusion list. The job has never run on a runner [unverified], same as every other job.
+How to reverse: delete the job and the entry in the linux job.
+
+## [4b.7] OpenCode 2.x shared background server: observed only
+Context: the risk note says never start it on a fixed port and record what is seen.
+Observed: `opencode --version` (2.2.6) exits at once and no TCP socket was listening afterwards (`/proc/net/tcp*` state 0A, empty). Other subcommands (which may start the server) were NOT run, so the open item of 4b.2 stays open.
+
+## [4b.7] Per-tool outcome and the gate are `partial`
+All six tools pass both real checks here (install as uid 1000, no side effects, cache rule, second call, survives a reset): nothing is recorded as reduced or blocked for size or network. They are reduced in these ways, all stated in 6.9: no real `swarmbox` start (no host helper, no `serve`), amd64 only, no CI runner. The 4b.gate row is `partial` because CI never ran (the same reason as every earlier gate) and the first-call-through-the-real-shim of the six tools is unverified.
+
+## [4b.7] The SIGINT "flake" of test_serve_steps and test_host_up is explained: it is a background launch
+Context: slice 2.7 recorded an unexplained SIGINT flake in test_serve_steps; in this slice the full regression, started with `( ... &)` from a non-interactive shell, failed test_serve_steps and test_host_up (the SIGINT tests: `test_sigint_leaves_no_lock`, serve's SIGINT) twice, while both files passed alone and in a foreground run of `run_all.sh --only`.
+Observed: started in the background the same way, `run_all.sh --only test_serve_steps.py` fails again; in the foreground it passes. A non-interactive shell starts background jobs with SIGINT ignored and the children inherit that, so a test that sends SIGINT to its child cannot work. This is the likeliest cause of the 2.7 flake too [unverified for 2.7: the cause was not examined then].
+Chosen: no code change. The full-regression numbers below combine the background run (61 files OK) with the foreground run of the two files. To run the whole regression in the background, start it with `setsid` or from an interactive shell. Not fixed in the tests (they could reset the disposition with `trap - INT` in a wrapper): left for the owner.
