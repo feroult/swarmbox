@@ -22,7 +22,7 @@ SMOKE = os.path.join(ROOT, "tests", "smoke_image.py")
 TAG = "[reduced: development box, no nested Podman in the box]"
 # The five steps named by the plan (section 4) plus the ones the exit criteria add.
 PLAN_STEPS = ["ready", "tmpfs-restart", "page-built", "tool-validate", "nested-podman"]
-EXTRA_STEPS = ["attach-session", "no-agent", "nested-cgroup"]
+EXTRA_STEPS = ["attach-session", "no-agent", "nested-cgroup", "tool-shim", "tool-index-ports"]
 
 
 def load():
@@ -136,6 +136,22 @@ class Skeleton(unittest.TestCase):
         self.assertNotRegex(self.src, r'"-p"|"--publish"|"-P"')
         self.assertIn("swarmbox-test-", self.src)
         self.assertRegex(self.src, r"volume\", \"rm\"|vol_rm_exact")
+
+    def test_tool_steps_check_the_real_machinery_and_never_install(self):
+        """Slice 4a.5: validate is the real one, the shim, the index and tool-ports are checked, nothing is downloaded."""
+        src = self.src
+        for needle in ("swarmbox-shim", "/usr/local/lib/swarmbox/shims/claude", "claude claude", "tool-ports", "command -v claude",
+                       "manifest(s) checked"):
+            self.assertIn(needle, src)
+        self.assertNotRegex(src, r"validate placeholder|the placeholder validate")
+        self.assertNotRegex(src, r'"tool",\s*"(install|run)"')
+        self.assertNotRegex(src, r"swarmbox-tool (install|run)")
+        by_id = {s.id: s for s in self.mod.STEPS}
+        for sid in ("tool-validate", "tool-shim", "tool-index-ports"):
+            self.assertFalse(by_id[sid].needs_full, sid)
+        self.assertNotIn("placeholder", by_id["tool-validate"].title)
+        ids = [s.id for s in self.mod.STEPS]
+        self.assertLess(ids.index("tool-validate"), ids.index("tool-shim"))
 
     def test_reduced_switch_is_the_only_test_only_variable_used(self):
         self.assertIn("SWARMBOX_TEST_NO_NESTED", self.src)

@@ -69,10 +69,13 @@ class FragmentInContainer(unittest.TestCase):
         self.assertIn("web terminal keeps crashing", out)
         self.assertIn("the local image has been replaced", out)
 
-    def test_no_manifest_means_no_agent_alias_and_yolo_reports_it(self):
-        out = self.interactive("alias claude opencode gemini 2>&1; yolo 2>&1; echo status=$?")
-        self.assertNotIn("alias claude=", out)
-        self.assertIn("no agent installed", out)
+    def test_the_shipped_claude_manifest_gives_the_alias_and_an_unknown_agent_is_reported(self):
+        # Slice 4a.5: the image ships the claude manifest (and no program). `yolo` is never run for claude here: it would
+        # trigger the first-use install, a real download.
+        out = self.interactive("alias claude; alias opencode gemini 2>&1; SWARMBOX_AGENT=nonesuch yolo 2>&1; echo status=$?")
+        self.assertIn("alias claude='claude --dangerously-skip-permissions --mcp-config /home/agent/.claude/mcp-servers.json'", out)
+        self.assertNotIn("alias opencode=", out)
+        self.assertIn("'nonesuch' is not installed", out)
         self.assertIn("status=1", out)
 
     def test_a_user_manifest_gives_an_alias_and_yolo_runs_it(self):
@@ -85,7 +88,7 @@ class FragmentInContainer(unittest.TestCase):
         with open(prog, "w") as f:
             f.write('#!/bin/sh\necho "RAN fakeagent $*"\n')
         os.chmod(prog, 0o755)
-        out = self.interactive("alias fakeagent; yolo extra")
+        out = self.interactive("alias fakeagent; SWARMBOX_AGENT=fakeagent yolo extra")
         self.assertIn("alias fakeagent='fakeagent --auto-approve'", out)
         self.assertIn("RAN fakeagent --auto-approve extra", out)
 

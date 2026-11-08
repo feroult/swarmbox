@@ -2,7 +2,7 @@
 """Image smoke test (design 13.3 layer 2; plan section 4, slice 2.7).
 
 Builds (or reuses) the image and checks it in throwaway containers: `serve` reaches readiness, `box:/tmp/swarmbox` is empty
-after a stop and a start, the ttyd page is built, `swarmbox-tool validate` passes, two `attach` calls share one session, the
+after a stop and a start, the ttyd page is built, `swarmbox-tool validate` passes on the shipped manifests, the claude shim, index and tool-ports are there, two `attach` calls share one session, the
 image holds no agent, and (full mode only) a nested Podman runs a container.
 
 Two modes:
@@ -198,6 +198,28 @@ def step_tool_validate(ctx):
     out = r.stdout + r.stderr
     assert r.returncode == 0, "tool validate exited %d: %s" % (r.returncode, out)
     assert "manifest(s) checked" in out, "validate did not report what it checked (the real validate, slice 4a.1): " + out
+    assert " 0 manifest" not in out, "validate checked no manifest: the image does not ship container/tools: " + out
+
+
+def step_tool_shim(ctx):
+    """The generated shim is a link to swarmbox-shim, the shim directory is on PATH, and nothing was installed (D2)."""
+    r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
+               "readlink /usr/local/lib/swarmbox/shims/claude; test -x /usr/local/bin/swarmbox-shim && echo SHIM-EXEC; "
+               "SWARMBOX_CMD=1 . /etc/swarmbox/bashrc.sh; command -v claude; ls -d ~/.local/share/swarmbox/tools/claude 2>&1; true")
+    out = r.stdout
+    assert out.splitlines()[:2] == ["/usr/local/bin/swarmbox-shim", "SHIM-EXEC"], "the shim is not a link to swarmbox-shim: " + out + r.stderr
+    assert "/usr/local/lib/swarmbox/shims/claude" in out.splitlines()[2:3], "command -v claude does not find the shim: " + out
+    assert "No such file" in out, "a claude tool directory exists before any call: " + out
+
+
+def step_tool_index_ports(ctx):
+    r = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
+               "cat /usr/local/lib/swarmbox/index; echo ---; ls -l /usr/local/share/swarmbox/host/tool-ports; "
+               "echo ---; wc -c < /usr/local/share/swarmbox/host/tool-ports")
+    index, ports, size = r.stdout.split("---\n")
+    assert "claude claude" in index.splitlines(), "the index lacks the line 'claude claude': " + r.stdout + r.stderr
+    assert "tool-ports" in ports, "tool-ports is missing: " + r.stdout + r.stderr
+    assert size.strip() == "0", "tool-ports is not empty (claude declares no PORTS): " + size
 
 
 def step_attach_session(ctx):
@@ -229,8 +251,10 @@ def step_attach_session(ctx):
 
 def step_no_agent(ctx):
     r = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
-               "for c in claude opencode gemini codex clasp gcloud go poetry; do command -v $c && echo FOUND:$c; done; true")
-    assert "FOUND:" not in r.stdout, "the neutral image holds a program it should not: " + r.stdout
+               "for c in claude opencode gemini codex clasp gcloud go poetry; do p=$(command -v $c) && echo \"FOUND:$c:$p\"; done; true")
+    # the claude SHIM is on PATH since slice 4a.5 (a link to swarmbox-shim); it is not the program
+    found = [l for l in r.stdout.splitlines() if l.startswith("FOUND:")]
+    assert found == ["FOUND:claude:/usr/local/lib/swarmbox/shims/claude"], "the neutral image holds a program it should not: " + r.stdout
 
 
 def step_nested_podman(ctx):
@@ -255,7 +279,9 @@ STEPS = [
     Step("ready", "serve reaches readiness (marker, PID 1, session main, user agent, ttyd)", False, step_ready),
     Step("tmpfs-restart", "stop is prompt (exit 143), start empties box:/tmp/swarmbox, workspace survives (B17, B3)", False, step_tmpfs_restart),
     Step("page-built", "the ttyd page is built into the image and served with the three settings (D13)", False, step_page_built),
-    Step("tool-validate", "swarmbox-tool validate passes (the real validate; the image has no tool manifests until a later 4a slice)", False, step_tool_validate),
+    Step("tool-validate", "swarmbox-tool validate passes on the shipped manifests (the real validate, 6.9)", False, step_tool_validate),
+    Step("tool-shim", "the claude shim is a link to swarmbox-shim and is found on PATH; nothing is installed (6.2, D2)", False, step_tool_shim),
+    Step("tool-index-ports", "the generated index lists 'claude claude' and tool-ports exists and is empty (6.2, 9.3)", False, step_tool_index_ports),
     Step("attach-session", "two attach calls share one session, the idle window is gone, exit codes (D1, B36, B13)", False, step_attach_session),
     Step("no-agent", "the image holds no agent, gcloud, clasp, Go or Poetry (D2)", False, step_no_agent),
     Step("nested-podman", "a nested Podman runs a container inside the box (D5)", True, step_nested_podman),

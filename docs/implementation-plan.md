@@ -56,7 +56,7 @@ Phase 1 ──┘                        │            │            ├─►
                                    └─► Phase 4b ┴────────────┘
 ```
 
-Phase 4b starts as soon as 4a is done, runs in parallel with Phase 3 and may continue after it; Phase 6 needs 3, 4b and 5. Phase 2 ships stubs where a later phase fills them in: an empty `tool-ports` file and the `swarmbox-tool` entry point (so the `tool` subcommand of the entrypoint already exists and the helper archive is complete).
+Phase 4b starts as soon as 4a is done, runs in parallel with Phase 3 and may continue after it; Phase 6 needs 3, 4b and 5. Phase 2 shipped stubs where a later phase fills them in: an empty `tool-ports` file and the `swarmbox-tool` entry point (so the `tool` subcommand of the entrypoint already existed and the helper archive was complete); Phase 4a replaced them with the real program (slice 4a.5).
 
 ---
 
@@ -113,7 +113,7 @@ Phase 4b starts as soon as 4a is done, runs in parallel with Phase 3 and may con
 
 Scope
 - **Image** (10.1, 10.2): slim `Dockerfile` (`node:24-slim`, fixed user `agent` with UID 1000, no `USER_UID` or `HOST_OS`, no agents, no gcloud, clasp, Go or Poetry), the nested-Podman settings kept from today (10.5), `/opt/npm-cache` owned by `agent`, the pinned `chrome-devtools-mcp` installed at build (D23, closes B24), `CMD ["serve"]`. Slice 2.1 built it: the root `Dockerfile` is the 2.0 image, today's image is `Dockerfile.v0.1.0` (used by `build.sh` until Phase 6), and `dev/dev-build.sh` builds it in the development box (decision [2.1]).
-- **Entrypoint** `swarmbox-entrypoint` with the subcommands `serve`, `attach`, `init`, `pubkey`, `tool`, `host-helper` and "any other command". `tool` forwards to the stub `swarmbox-tool` until Phase 4a; the empty `tool-ports` is shipped in the helper archive.
+- **Entrypoint** `swarmbox-entrypoint` with the subcommands `serve`, `attach`, `init`, `pubkey`, `tool`, `host-helper` and "any other command". `tool` forwarded to the stub `swarmbox-tool` until Phase 4a (now the real program, slice 4a.5); the empty `tool-ports` is shipped in the helper archive.
 - **`serve`**: the ordered steps of 4.1 (PID 1 with SIGTERM and SIGINT handlers, what it blocks on with `WEB=0`), readiness and health (4.2) including the nested-service health check, a ttyd supervisor that stays alive after it gives up so that `swarmbox-web restart` can reach it (spike 0.1, design 4.2), the SSH key, the layout migration (12.4), the session `main` with one idle window.
   Slice 2.2 built `serve` in `container/entrypoint.sh` (decisions [2.2]): steps 4, 6, 7 and 12 are logged no-ops until the programs they call (`swarmbox-migrate`, `swarmbox-tool`) exist; B3 is closed-reduced; B36 is left to the `attach` slice.
   Slice 2.3 built `swarmbox-attach` (`container/scripts/swarmbox-attach.sh`, installed as `/usr/local/bin/swarmbox-attach`) and the entrypoint's `attach` forwarding (decisions [2.3]); `serve` now names the idle window `idle`; B13 and B36 are closed.
@@ -128,7 +128,7 @@ Scope
 Tests first
 - Migration test on a fixture workspace with a `v0.1.0` `.swarmbox/` (13.3 layer 3).
 - `serve` step failures (13.1) with a fake environment; `swarmbox <command>` tests (13.3 layer 6).
-- The image smoke test skeleton (13.3 layer 2): readiness, `box:/tmp/swarmbox` emptied on restart, the page built, `swarmbox-tool validate` placeholder, nested Podman running a container.
+- The image smoke test skeleton (13.3 layer 2): readiness, `box:/tmp/swarmbox` emptied on restart, the page built, `swarmbox-tool validate` (a placeholder until 4a.1, the real one since; 4a.5 added the shim, index and `tool-ports` checks), nested Podman running a container.
 
 **Where the smoke test runs.** The image smoke test needs a third level of nesting: the development box (level 1, itself a container) runs the image under test as a throwaway box (level 2), whose nested Podman runs a container (level 3). That is not available in the development box, so the full smoke test runs **in CI (or on the owner's host)**. In the development box only **reduced checks** run (the image as a level-2 container without the nested-Podman step: readiness with warnings, the tmpfs, the page, `attach`, the exit codes), and each result is tagged `[reduced: development box, no nested Podman in the box]` and is never recorded as the full result.
 
@@ -149,6 +149,8 @@ Scope: **`swarmbox-tool`** (manifest parsing and `validate`, `link --system`, `i
 Tests first: manifest parsing and `validate` rules (6.9) including `UPDATE=self` needing `VERSION=latest`; `link --system` is idempotent and writes the shims, the index and `tool-ports`; the shim installs with a fake installer on the first call and runs the real command after; a manifest under a project folder is **not** read (D18, the absence test).
 
 **4a.2 done:** `link --system` and `--user` generate shims, the `command tool` index and `tool-ports` (design 6.2, 4a.2 state); the dispatcher and `install`/`run` are the next slices.
+
+**4a.5 done:** the image copies `container/tools/`, runs `link --system` and puts the image shims on `PATH`; the smoke test checks the real `validate`, the `claude` shim, the index and `tool-ports` (reduced mode, no install); `serve` leaves an empty `mcp-servers.json` until the registry of Phase 4b (design 6.2, 4a.5 state; decisions [4a.5]).
 
 **Exit criteria:** in a throwaway box the first `claude` call installs (with a fake installer in CI, the real one in a throwaway container) and runs it; `validate` passes for the `claude` manifest.
 
@@ -356,7 +358,7 @@ Commands, in the order of 3.2 and 3.3 (the phase where the command is built; the
 | `swarmbox <command>` (for example `swarmbox claude`) | 2 (the mechanism and its exit code), 3 (routing) |
 | `swarmbox --plain` | 2 (`attach --plain`), 3 (function parsing) |
 | `swarmbox pubkey` | 2 |
-| `swarmbox tool ...` | 4a (the stub is shipped in 2) |
+| `swarmbox tool ...` | 4a (a stub was shipped in 2; the real program is wired into the image in 4a.5) |
 | `swarmbox up`, `stop`, `reset`, `update [--to TAG]` | 3 |
 | `swarmbox url` | 3 (only) |
 | `swarmbox config set\|get\|list`, `env add\|rm\|list` | 3 |

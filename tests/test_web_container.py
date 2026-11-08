@@ -166,14 +166,19 @@ class WebInContainer(unittest.TestCase):
         # the box has no SSH-key warning
         self.assertNotIn("SSH key", self.sh(name, "cat $HOME/.local/state/swarmbox/health"))
 
-    def test_tool_validate_placeholder_and_tool_ports_and_host_helper(self):
+    def test_tool_validate_list_later_phase_and_tool_ports_and_host_helper(self):
         for args in (["swarmbox-tool", "validate"], ["swarmbox-entrypoint", "tool", "validate"]):
             r = podman("run", "--rm", "--entrypoint", args[0], TAG, *args[1:], text=True)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("manifest(s) checked", r.stdout)
-        r = podman("run", "--rm", TAG, "tool", "install", "claude", text=True)
+        # slice 4a.5: `tool` is the real program. `list` shows the shipped claude without installing it (an `install claude` would
+        # download Claude Code), and a command of a later phase still answers 70
+        r = podman("run", "--rm", TAG, "tool", "list", text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertRegex(r.stdout, r"claude\s+agent\s+self\s+image\s+not installed")
+        r = podman("run", "--rm", TAG, "tool", "use", "claude", text=True)
         self.assertEqual(r.returncode, 70)
-        self.assertIn("Phase 4a", r.stderr)
+        self.assertIn("later phase", r.stderr)
         # the archive written by `podman run --rm <image> host-helper` is a clean tar with an empty tool-ports
         r = podman("run", "--rm", TAG, "host-helper")
         self.assertEqual(r.returncode, 0, r.stderr)
