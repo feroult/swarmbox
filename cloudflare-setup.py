@@ -33,7 +33,9 @@ import urllib.request
 
 API_BASE = os.environ.get("CLOUDFLARE_API_BASE", "https://api.cloudflare.com/client/v4")
 CONNECTOR_NAME = "swarmbox-cloudflared"
-DEFAULT_CONNECTOR_IMAGE = "docker.io/cloudflare/cloudflared:latest"
+# Pinned (design 12.3). Override with --connector-image or SWARMBOX_CLOUDFLARED_IMAGE.
+DEFAULT_CONNECTOR_IMAGE = "docker.io/cloudflare/cloudflared:2026.10.7"
+DEFAULT_SESSION = "4h"  # applies to a first setup only; a rerun keeps what is configured
 ACCESS_HOST_MARK = "cloudflareaccess.com"
 
 TOKEN_HELP = """\
@@ -196,12 +198,15 @@ def load_saved():
         return {}
 
 
-def save_config(domain, emails, tunnel):
+def save_config(domain, emails, tunnel, session=None):
     path = config_path()
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
-            json.dump({"domain": domain, "emails": emails, "tunnel": tunnel}, f, indent=2)
+            data = {"domain": domain, "emails": emails, "tunnel": tunnel}
+            if session:
+                data["session"] = session
+            json.dump(data, f, indent=2)
     except OSError as e:
         warn("could not save %s (%s)" % (path, e))
 
@@ -293,7 +298,13 @@ def step_policy(api, account, host, emails):
     return existing["id"]
 
 
-def step_app(api, account, host, name, session, idp_id, policy_id):
+def step_app(api, account, host, name, session, idp_id, policy_id, saved_session=None):
+    """Returns (aud, session). session=None means "not given": keep the value on the existing
+    Access app, else the one saved in cloudflare.json, else the default (first setup)."""
+    existing = next((a for a in api.paged("/accounts/%s/access/apps" % account, {"domain": host})
+                     if a.get("domain") == host), None)
+    if not session:
+        session = (existing or {}).get("session_duration") or saved_session or DEFAULT_SESSION
     desired = {
         "type": "self_hosted",
         "name": "SwarmBox %s" % name,
@@ -304,12 +315,10 @@ def step_app(api, account, host, name, session, idp_id, policy_id):
         "app_launcher_visible": False,
         "policies": [{"id": policy_id, "precedence": 1}],
     }
-    existing = next((a for a in api.paged("/accounts/%s/access/apps" % account, {"domain": host})
-                     if a.get("domain") == host), None)
     if existing is None:
         created = api.call("POST", "/accounts/%s/access/apps" % account, desired) or {}
         changed("Access application for %s (session %s)" % (host, session), "created")
-        return created.get("aud", "<new-aud>")
+        return created.get("aud", "<new-aud>"), session
     same = (existing.get("type") == "self_hosted"
             and existing.get("session_duration") == session
             and existing.get("allowed_idps") == [idp_id]
@@ -320,7 +329,7 @@ def step_app(api, account, host, name, session, idp_id, policy_id):
     else:
         api.call("PUT", "/accounts/%s/access/apps/%s" % (account, existing["id"]), desired)
         changed("Access application for %s" % host, "updated")
-    return existing["aud"]
+    return existing["aud"], session
 
 
 def step_tunnel(api, account, tunnel_name):
@@ -393,6 +402,24 @@ def inside_container():
 
 def run_podman(args, env=None):
     return subprocess.run(["podman"] + args, capture_output=True, text=True, env=env)
+
+
+def step_connector_off(dry_run):
+    """Stop and remove the connector container (only called when no hostname uses the tunnel)."""
+    if not shutil.which("podman"):
+        info("podman not found: if you run cloudflared yourself, stop it yourself.")
+        return
+    if run_podman(["inspect", "-f", "{{.State.Running}}", CONNECTOR_NAME]).returncode != 0:
+        ok("no connector '%s' on this host" % CONNECTOR_NAME)
+        return
+    if dry_run:
+        info("[dry-run] would stop and remove connector '%s'" % CONNECTOR_NAME)
+        return
+    r = run_podman(["rm", "-f", CONNECTOR_NAME])
+    if r.returncode != 0:
+        warn("could not remove the connector '%s': %s" % (CONNECTOR_NAME, (r.stderr or r.stdout).strip()[:300]))
+        return
+    changed("connector '%s'" % CONNECTOR_NAME, "stopped and removed")
 
 
 def step_connector(api, account, tunnel_id, image, dry_run):
@@ -513,11 +540,11 @@ def hostname_for(args, domain):
 
 
 def cmd_apply(args):
-    domain, emails, _ = resolve_settings(args)
+    domain, emails, saved = resolve_settings(args)
     if not emails:
         die("--email is required: the address(es) allowed to log in")
     host = hostname_for(args, domain)
-    if not re.match(r"^\d+[mh]$", args.session):
+    if args.session is not None and not re.match(r"^\d+[mh]$", args.session):
         die("--session must look like 30m or 4h")
     global DRY
     DRY = args.dry_run or args.command == "status"
@@ -530,17 +557,19 @@ def cmd_apply(args):
         # Access first: the hostname must never be routable without a login in front of it.
         idp_id = step_idp(api, account)
         policy_id = step_policy(api, account, host, emails)
-        aud = step_app(api, account, host, args.name, args.session, idp_id, policy_id)
+        aud, session = step_app(api, account, host, args.name, args.session, idp_id, policy_id,
+                                saved.get("session"))
         tunnel_id, _created = step_tunnel(api, account, args.tunnel)
         step_route(api, account, tunnel_id, host, args.port, team, aud)
         step_dns(api, zone, host, tunnel_id)
         if not api.dry_run:
-            save_config(domain, emails, args.tunnel)  # before the connector, so a retry needs no flags
+            save_config(domain, emails, args.tunnel, session)  # before the connector, so a retry needs no flags
         if args.print_token and not tunnel_id.startswith("<new"):
             say(api.call("GET", "/accounts/%s/cfd_tunnel/%s/token" % (account, tunnel_id)))
         connector_ok = True
         if not args.no_connector:
-            connector_ok = step_connector(api, account, tunnel_id, args.connector_image, api.dry_run)
+            image = args.connector_image or os.environ.get("SWARMBOX_CLOUDFLARED_IMAGE") or DEFAULT_CONNECTOR_IMAGE
+            connector_ok = step_connector(api, account, tunnel_id, image, api.dry_run)
     except CFError as e:
         die(explain(e, api.token))
 
@@ -583,6 +612,7 @@ def cmd_remove(args):
     DRY = args.dry_run
     api = Api(get_token(), dry_run=DRY)
     say("\nRemoving https://%s\n" % host)
+    tunnel_seen, remaining = False, []
     try:
         zone, account = step_zone(api, domain)
         # Reverse order of apply: take the route away first, the login last.
@@ -598,6 +628,8 @@ def cmd_remove(args):
             path = "/accounts/%s/cfd_tunnel/%s/configurations" % (account, t["id"])
             config = (api.call("GET", path) or {}).get("config") or {}
             rest = [r for r in config.get("ingress") or [] if r.get("hostname") != host]
+            tunnel_seen = True
+            remaining += [r["hostname"] for r in rest if r.get("hostname")]
             if len(rest) != len(config.get("ingress") or []):
                 config["ingress"] = rest if any(r.get("hostname") for r in rest) \
                     else [{"service": "http_status:404"}]
@@ -613,7 +645,13 @@ def cmd_remove(args):
                 changed("policy for %s" % host, "removed")
     except CFError as e:
         die(explain(e, api.token))
-    say("\nDone. The tunnel and the '%s' connector were left in place (other hostnames may use them)." % CONNECTOR_NAME)
+    if tunnel_seen and not remaining:
+        step_connector_off(DRY)
+        say("\nDone. The tunnel itself was left in place (delete it in the Cloudflare dashboard if you want).")
+    elif tunnel_seen:
+        say("\nDone. The tunnel and the '%s' connector are still used by: %s." % (CONNECTOR_NAME, ", ".join(remaining)))
+    else:
+        say("\nDone. The tunnel and the '%s' connector were left in place (the tunnel was not found here)." % CONNECTOR_NAME)
     return 0
 
 
@@ -670,11 +708,13 @@ def build_parser():
     p.add_argument("--name", default="swarmbox", help="container name; hostname is <name>.<domain> (default: swarmbox)")
     p.add_argument("--hostname", help="serve exactly this hostname instead of <name>.<domain> (e.g. tty.example.com)")
     p.add_argument("--port", type=int, default=7681, help="host port given to ./start.sh --web (default: 7681)")
-    p.add_argument("--session", default="4h", help="login session length, e.g. 30m, 4h (default: 4h)")
+    p.add_argument("--session", default=None,
+                   help="login session length, e.g. 30m, 4h. Default: keep the configured value; 4h on a first setup")
     p.add_argument("--tunnel", default="swarmbox", help="tunnel name, shared by all hostnames (default: swarmbox)")
     p.add_argument("--dry-run", action="store_true", help="only read from Cloudflare; show what would change")
     p.add_argument("--no-connector", action="store_true", help="do not run cloudflared with Podman")
-    p.add_argument("--connector-image", default=DEFAULT_CONNECTOR_IMAGE, help="cloudflared image")
+    p.add_argument("--connector-image", default=None,
+                   help="cloudflared image (default: env SWARMBOX_CLOUDFLARED_IMAGE, else %s)" % DEFAULT_CONNECTOR_IMAGE)
     p.add_argument("--print-token", action="store_true", help="print the tunnel token (to run cloudflared yourself)")
     p.add_argument("--no-verify", action="store_true", help="skip the final login check")
     p.add_argument("--verify-timeout", type=int, default=60, help=argparse.SUPPRESS)
