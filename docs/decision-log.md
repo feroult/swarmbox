@@ -864,3 +864,52 @@ Context: the exit criteria ask for the first `claude` call to install and run in
 Chosen: partial, because what stays unproven is the same as in Phases 1 and 2: CI has never run (the new `validate` step, the full smoke test B28, the fake-installer tests on the runner). Locally: the fake installer lifecycle (test_tool_shim), the real installer in a throwaway container (test_tool_claude_real with SWARMBOX_TEST_NETWORK=1, 14 tests OK on a fresh image swarmbox-test-4a7-img, removed by name) and `validate` on container/tools (exit 0) all pass. B1 stays closed (evidence in 6.7 and Part B, re-verified in 4a.6). Not run: a third nesting level (the full smoke test).
 Impact on the design: none.
 How to reverse: set the row to done after the owner reads the first CI run.
+
+## [3.1] Where the helper lives, and how its version is found (VERSION file next to the helper)
+Context: the slice says `version` is taken from a VERSION file next to the helper; the repository had no container/host/ yet and the Dockerfile still copies only cloudflare-setup.py into the helper archive folder.
+Options: (a) container/host/swarmbox-host with container/host/VERSION beside it, both going to box:/usr/local/share/swarmbox/host/; (b) a version constant inside the script; (c) version passed by the function.
+Chosen: (a), as design 9.1 and 9.3 already place the helper in container/host/. VERSION holds one line `X.Y.Z` (2.0.0 for now, the first public version, 10.4); a release would write it from the tag (Phase 7). The helper reads it from the folder of `$0`; a missing or malformed file exits 3 for every command that needs paths (a corrupted archive, 3.7.1). The Dockerfile COPY of container/host/ and the host-helper archive test are left to a later slice of Phase 3 (nothing in this slice builds an image).
+Impact on the design: 3.7.1 archive table gets a VERSION row; 9.3 lists it; the "2.5 state" paragraph says what 3.1 wrote.
+How to reverse: delete container/host/VERSION and read the version from a constant in the script.
+
+## [3.1] Helper shape: one script, helpers prefixed with underscore variables, umask 077 for the whole process
+Context: POSIX sh has no `local`, so functions share one variable namespace.
+Chosen: one file, functions take arguments and return values in a few globals (P_KEY, P_VAL, V_OUT, R_VAL, R_SRC) or by printing; temporary variables start with an underscore. `umask 077` is set once at the top, so every file and folder the helper creates is private (the config folder is 700); later slices that need a different mode must set it themselves. `LC_ALL=C` is set so that character ranges in `case` patterns mean ASCII. A `die` inside a command substitution only ends the substitution, so the VERSION is read once with `|| exit 3` outside it.
+Impact on the design: none. How to reverse: n/a.
+
+## [3.1] Exit code 70 for subcommands that are not built yet
+Context: the table of 3.7.2 lists create-flags, fingerprint, url, up, update, reset, stop and remote, which later slices implement; the table has no code for "not implemented".
+Options: exit 2 (usage); exit 64 as the fake helper does for an unknown word; exit 70 (EX_SOFTWARE), the code swarmbox-tool uses for its unbuilt subcommands.
+Chosen: 70 with the message "'<cmd>' is not implemented in this build of the host helper." because 2 would say the user made a mistake, and 70 matches 4a. Temporary: each later slice removes its word from the list.
+Impact on the design: 3.7.2 "3.1 state" paragraph. How to reverse: change the code in the final `case`.
+
+## [3.1] config list, config get and the empty value
+Context: the table says `config list` prints KEY=VALUE with the source as a third tab-separated field and `config get` exits 1 when a key is unset and has no default; it does not say how keys without a default appear in `list`, what an empty environment value does, or whether `get` shows the token.
+Chosen: `list` prints every key of 8.2 that has a host-config name, plus NAME first, in the table order (16 lines); a key with no default prints `KEY=<TAB>default`; the token prints `set` or `unset` and its source. An empty `SWARMBOX_<KEY>` counts as unset (the same idiom as the file, where an empty value means the default). `get` prints the token (the Cloudflare script will need it and `get` is the contract's resolved value) only from the environment or from a mode-600 file; it is the one place a secret is printed on purpose, on request. AGENT has no default in the helper (the box picks the first agent of WITH); IMAGE's default is `ghcr.io/<org>/swarmbox:<VERSION>` with the placeholder `<org>` (D32).
+Impact on the design: 3.7.2 "3.1 state". How to reverse: change resolve() and cmd_config_list().
+
+## [3.1] Validation rules per key (the "grammar rule" in the messages)
+Context: 3.7.3 asks `config set` to refuse invalid values naming the rule but defines no per-key grammar.
+Chosen: WORKSPACE absolute after `~/` and relative expansion, no ':'; HOSTNAME letters, digits, '.' and '-' starting with a letter or digit, at most 63; TZ `local`, `off` or a zone name (letters, digits, `_+-/`, no `//`, no `..`, starts with a letter); INIT auto|0|1; HOST_ACCESS, WEB, YOLO 0|1; PORTS a comma list of PORT, HOST:CONTAINER or ADDRESS:HOST:CONTAINER with ports 1 to 65535 (what v0.1.0's `--ports` accepted, minus the ADDRESS check beyond digits and dots); BROWSER_URL a port, HOST:PORT or an http(s) URL; WEB_PORT 1 to 65535; WITH a comma list and AGENT one name of lower-case letters, digits, `_` and `-` (the tool manifests are not consulted yet); ENV_KEYS a comma list of variable names, not SWARMBOX_CLOUDFLARE_*; IMAGE letters, digits and `._/:@-`; token letters, digits and `+/=_.-`. An empty value is always valid and means the default. Leading and trailing blanks are trimmed at set, as they are at read. Values from the environment are not validated by the helper (the use sites will).
+Impact on the design: none beyond the 3.1 paragraph. How to reverse: edit validate_value().
+
+## [3.1] The tunnel token: terminal only, chmod failure refuses every write, reserved box name `config`
+Context: 3.7.3 says the token is read from the terminal without echo and the write is refused if chmod fails.
+Options for a hidden read under dash: `read -s` (not POSIX, absent in dash); `stty -echo` with a trap that restores; reading /dev/tty.
+Chosen: `stty -g` to save the terminal, `stty -echo`, `read -r`, restore, and a trap on INT, TERM and HUP that restores and exits 1; standard input must be a terminal, so a piped token is refused with exit 2 (a script that needs it can use SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN). The same chmod rule applies to every key: the write happens in a temporary file in the config folder, chmod 600 is run on it, and only then does `mv` replace the config; if chmod fails nothing is written and the exit is 1. The cost is that a symlinked config file is replaced by a regular file. A box named `config` is refused because <config>/config is the default box's file and a folder of that name could not exist beside it. A CRLF line ending counts as a trailing blank.
+Impact on the design: 3.7.3 and the 3.1 paragraph of 3.7.2. How to reverse: use /dev/tty for the read, or write in place with `>`.
+
+## [3.1] Notices go to standard error; seed announces the recorded workspace
+Context: 3.7.2 says `config seed` prints nothing on stdout, while 3.7.5 says the helper prints the absolute path it recorded and the once-per-key notice.
+Chosen: both on standard error (messages are not data). `config seed` also creates the config file when no seed value is given, so that a later call counts as "the file exists". The comparison for the notice uses the value in the file, or the default if the file has no line, and ignores the environment.
+Impact on the design: 3.7.2 "3.1 state". How to reverse: print to stdout instead.
+
+## [3.1] B22, B23 and B34: Linux parts closed-reduced, evidence in Part B
+Context: the Linux checks ran here; macOS, bash 3.2 and a WSL home are not available.
+Chosen: Part B rows B22, B23 and B34 start with "Linux part checked in 3.1" and a new results table has the evidence tags with `reduced:` notes. `stat -f %Lp` is simulated by a shim that answers like BSD stat. bash started under the name `sh` stands in for macOS /bin/sh only as POSIX mode, not as version 3.2. zsh in `sh` emulation also passes; it is in the matrix as an extra, not a requirement.
+New tests are in the macOS job of ci.yml too (the first macOS run will show whether they hold there; the BSD-stat branches of the test shims are untested [unverified]).
+Impact on the design: 3.7.1, 3.7.3 and Part B. How to reverse: remove the tags and put `[unverified]` back.
+
+## [3.1] What failed or was left
+Context/Chosen: I wrote the helper before the tests in this session, then moved it away to show the tests fail (62 errors and 3 failures in test_host_config.py, 1 test passing vacuously; the shell matrix test file 9 failures and 1 error). Not done here: arm64 and macOS runs, the Dockerfile copy of container/host/, bash 3.2 itself, a test of two helper calls writing the config at the same moment (the helper does not lock; the later `up` lock covers `up` only, so two parallel `config set` calls can lose one write [unverified, not tested]).
+Impact on the design: none. How to reverse: n/a.
