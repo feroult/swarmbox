@@ -246,6 +246,26 @@ class FunctionCases:
                     self.assertEqual(self.hcalls(fh), [[word, *rest]])
                     self.assertEqual(self.podman_calls(), [])
 
+    def test_once_and_uninstall_are_no_host_words_and_create_nothing_of_their_own(self):
+        """D19 (no throwaway mode, no --once) and D36 (no uninstall command): both are ordinary words of the box.
+
+        The function creates or joins the box with `up`, then hands the words to `attach` as given: no host word, no
+        podman call of its own, and in particular no rm, stop, kill or run of a second container.
+        """
+        for args in (["--once"], ["--once", "claude"], ["uninstall"], ["uninstall", "--all"]):
+            with self.subTest(args=args):
+                self.fp.configure({"exec": {}})
+                open(self.fp.log_path, "w").close()
+                fh = self.fake_helper()
+                r = self.call(*args)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(self.hcalls(fh), [["up"], ["config", "get", "NAME"]])
+                self.assertEqual(self.podman_calls(), [self.exec_call("attach", *args)])
+                for c in self.podman_calls():
+                    self.assertEqual(c[0], "exec")
+        for word in ("once", "--once", "uninstall"):
+            self.assertNotIn(word, HOST_WORDS)
+
     def test_a_host_word_only_counts_as_the_first_word(self):
         fh = self.fake_helper()
         self.call("run", "stop")

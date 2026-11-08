@@ -717,6 +717,57 @@ class TokenTest(Base):
         self.assertEqual(self.get("WITH")[2], "")
 
 
+class TokenJourneyTest(Base):
+    """B22 end to end (slice 3.7): one story through the real entry points, in the order a user meets them.
+
+    `config set` on a pseudo-terminal writes the token at mode 600 -> `config get` and `config list` accept it -> the
+    environment value SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN wins -> `chmod 644` makes every reader refuse the file's token with
+    one line that names the mode and the `chmod 600` fix, while the rest of the file is still read -> typing the token
+    again on a pseudo-terminal repairs the mode to 600 -> an explicit `chmod 600` is accepted too. The token never shows up
+    in the terminal, argv, stdout or stderr of any call. Linux only; macOS and a WSL home on a Windows drive stay Phase 6.
+    """
+
+    def test_journey(self):
+        tok = TOKEN
+        rc, shown = pty_run([HELPER, "config", "set", "CLOUDFLARE_TUNNEL_TOKEN"], self.env(), typed=tok)
+        self.assertEqual(rc, 0, shown)
+        self.assertNotIn(tok, shown)
+        self.assertEqual(self.mode(), 0o600)
+        self.assertEqual(self.get("CLOUDFLARE_TUNNEL_TOKEN"), (0, tok + "\n", ""))
+        listing = self.run_h("config", "list")
+        self.assertIn("CLOUDFLARE_TUNNEL_TOKEN=set\tfile\n", listing.stdout)
+        # the environment wins over the file, in get and in list
+        rc, out, err = self.get("CLOUDFLARE_TUNNEL_TOKEN", env={"SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": "envtok"})
+        self.assertEqual((rc, out, err), (0, "envtok\n", ""))
+        self.assertIn("CLOUDFLARE_TUNNEL_TOKEN=set\tenv\n",
+                      self.run_h("config", "list", env={"SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": "envtok"}).stdout)
+        # a loose mode: the file's token is refused everywhere with one line, the rest of the file still works
+        self.run_h("config", "set", "WITH", "claude")
+        self.assertEqual(self.mode(), 0o600)             # a plain set keeps the mode
+        os.chmod(self.cfg_file, 0o644)
+        rc, out, err = self.get("CLOUDFLARE_TUNNEL_TOKEN")
+        self.assertEqual((rc, out), (1, ""))
+        self.assertIn("mode is 644", err)
+        self.assertIn("chmod 600 " + self.cfg_file, err)
+        self.assertEqual(self.get("WITH")[1], "claude\n")
+        listing = self.run_h("config", "list")
+        self.assertIn("CLOUDFLARE_TUNNEL_TOKEN=unset\tdefault\n", listing.stdout)
+        for text in (err, listing.stdout, listing.stderr):
+            self.assertNotIn(tok, text)
+        # the environment value still works on a loose file (it never came from the file)
+        self.assertEqual(self.get("CLOUDFLARE_TUNNEL_TOKEN", env={"SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": "e2"})[1], "e2\n")
+        # typing the token again repairs the mode
+        rc, shown = pty_run([HELPER, "config", "set", "CLOUDFLARE_TUNNEL_TOKEN"], self.env(), typed=tok)
+        self.assertEqual(rc, 0, shown)
+        self.assertEqual(self.mode(), 0o600)
+        self.assertEqual(self.get("CLOUDFLARE_TUNNEL_TOKEN"), (0, tok + "\n", ""))
+        # and the explicit fix the message names is accepted
+        os.chmod(self.cfg_file, 0o640)
+        self.assertEqual(self.get("CLOUDFLARE_TUNNEL_TOKEN")[0], 1)
+        os.chmod(self.cfg_file, 0o600)
+        self.assertEqual(self.get("CLOUDFLARE_TUNNEL_TOKEN"), (0, tok + "\n", ""))
+
+
 class ModeCheckTest(Base):
     """The portable octal mode check (B22, B34): stat -c %a, then stat -f %Lp, then find -perm; never the text of ls.
 
