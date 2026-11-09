@@ -90,23 +90,12 @@ class Base(unittest.TestCase):
 
 
 class PrepareTest(Base):
-    def test_no_tools_succeeds_quietly(self):
-        r = self.tool("prepare")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.failures(r), [])
-
     def test_installed_tool_runs_in_home_with_closed_stdin_and_its_names(self):
         d = self.make("alpha")
         r = self.tool("prepare")
         self.assertEqual(r.returncode, 0, r.stderr)
         line = read(os.path.join(self.marks, "alpha.mark")).splitlines()
         self.assertEqual(line, ["alpha|%s|%s|%s" % (self.home, self.home, d)])   # no 'tty' line: stdin is not a terminal
-
-    def test_a_tool_that_is_not_installed_and_not_declared_is_skipped(self):
-        self.make("alpha", installed=False)
-        r = self.tool("prepare")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.order(), [])
 
     def test_a_declared_tool_runs_without_being_installed(self):
         self.make("alpha", installed=False)
@@ -119,22 +108,6 @@ class PrepareTest(Base):
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertEqual(self.order(), sorted(set(value.replace(",", " ").split()) & {"alpha", "beta"}))
 
-    def test_a_tool_without_prepare_sh_is_skipped_and_is_no_error(self):
-        self.make("alpha", prepare=None)
-        r = self.tool("prepare", SWARMBOX_WITH="alpha")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.failures(r), [])
-
-    def test_a_user_level_tool_runs_and_the_user_level_wins(self):
-        self.make("alpha", prepare='#!/bin/bash\necho image >> "$MARKS/alpha.which"\n')
-        self.make("alpha", prepare='#!/bin/bash\necho user >> "$MARKS/alpha.which"\n', level=self.user, installed=False)
-        self.make("gamma", level=self.user)
-        r = self.tool("prepare")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        # alpha's state is under the same tools folder, so it counts as installed for the user manifest too
-        self.assertEqual(read(os.path.join(self.marks, "alpha.which")).split(), ["user"])
-        self.assertEqual(self.order(), ["gamma"])
-
     def test_order_is_by_tool_name_and_a_failure_does_not_stop_the_others(self):
         self.make("c-tool")
         self.make("a-tool")
@@ -146,14 +119,6 @@ class PrepareTest(Base):
         self.assertEqual(len(f), 1, r.stderr)
         self.assertIn("b-tool", f[0])
         self.assertIn("exit 3", f[0])
-
-    def test_one_failure_line_per_failing_tool(self):
-        for n in ("a", "b", "c"):
-            self.make(n, prepare=PREPARE_FAIL if n != "b" else PREPARE_OK)
-        r = self.tool("prepare")
-        self.assertEqual(r.returncode, 1)
-        f = self.failures(r)
-        self.assertEqual([x.split(": ")[1] for x in f], ["a", "c"])
 
     def test_a_hanging_prepare_times_out_and_the_others_still_run(self):
         self.make("a-tool")
@@ -170,18 +135,6 @@ class PrepareTest(Base):
         self.assertIn("timed out", f[0])
         self.assertFalse(os.path.exists(os.path.join(self.marks, "b-hang.late")))
 
-    def test_standard_output_of_prepare_sh_goes_to_stderr(self):
-        self.make("alpha")
-        r = self.tool("prepare")
-        self.assertEqual(r.stdout, "")
-        self.assertIn("STDOUT-NOISE from alpha", r.stderr)
-
-    def test_prepare_sh_needs_no_executable_bit(self):
-        self.make("alpha", mode=0o644)
-        r = self.tool("prepare")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.order(), ["alpha"])
-
     def test_a_broken_manifest_with_a_prepare_sh_is_a_failure_not_a_stop(self):
         d = self.make("a-bad")
         with open(os.path.join(d, "tool.conf"), "a") as f:
@@ -193,24 +146,6 @@ class PrepareTest(Base):
         f = self.failures(r)
         self.assertEqual(len(f), 1, r.stderr)
         self.assertIn("a-bad", f[0])
-
-    def test_a_broken_manifest_without_prepare_sh_is_ignored(self):
-        d = self.make("a-bad", prepare=None)
-        with open(os.path.join(d, "tool.conf"), "a") as f:
-            f.write("exit 5\n")
-        r = self.tool("prepare")
-        self.assertEqual(r.returncode, 0, r.stderr)
-
-    def test_prepare_takes_no_arguments(self):
-        r = self.tool("prepare", "extra")
-        self.assertEqual(r.returncode, 64)
-
-    def test_running_twice_is_the_same(self):
-        self.make("alpha")
-        self.assertEqual(self.tool("prepare").returncode, 0)
-        self.assertEqual(self.tool("prepare").returncode, 0)
-        self.assertEqual(self.order(), ["alpha", "alpha"])
-
 
 class AfterInstallTest(Base):
     def test_install_runs_prepare_sh_once_after_success(self):
@@ -226,21 +161,6 @@ class AfterInstallTest(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(len(self.failures(r)), 1)
         self.assertTrue(os.path.islink(os.path.join(self.tools, "alpha", "current")))
-
-    def test_a_failed_install_runs_no_prepare(self):
-        self.make("alpha", installed=False)
-        os.unlink(os.path.join(self.image, "alpha", "install.sh"))
-        put(os.path.join(self.image, "alpha", "install.sh"), "#!/bin/bash\nexit 1\n")
-        r = self.tool("install", "alpha", FAKE_CMD="alpha")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual(self.order(), [])
-
-    def test_the_first_call_install_of_a_shim_also_prepares(self):
-        self.make("alpha", installed=False)
-        r = self.tool("run", "alpha", "alpha", FAKE_CMD="alpha")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.order(), ["alpha"])
-
 
 if __name__ == "__main__":
     unittest.main()

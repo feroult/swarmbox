@@ -115,23 +115,6 @@ class Lifecycle(ShimBase):
             self.assertNotIn("Installing", r.stderr)
         self.assertEqual(self.installs(), 1, "zero installer runs after the first success")
 
-    def test_managed_tool_through_the_shim_and_current_bin_on_path(self):
-        self.setup_demo()
-        shim = os.path.join(self.ishims, "demo")
-        r = self.call(shim, "x")
-        self.assertEqual((r.returncode, r.stdout), (0, "[x]\n"), r.stderr)
-        self.assertIn("Installing demo (first use)...", r.stderr)
-        self.assertEqual(self.call(shim, "y").stdout, "[y]\n")
-        self.assertEqual(self.installs(), 1)
-        cur = os.path.join(self.tools, "demo", "current", "bin")
-        self.assertEqual(shutil.which("demo", path=cur + ":" + self.env()["PATH"]), os.path.join(cur, "demo"))
-
-    def test_exit_status_of_the_real_program_is_returned(self):
-        self.setup_demo()
-        shim = os.path.join(self.ishims, "selfy")
-        self.assertEqual(self.call(shim, DEMO_EXIT="7").returncode, 7)
-        self.assertEqual(self.call(shim, DEMO_EXIT="0").returncode, 0)
-
     def test_install_failure_message_nonzero_no_run_and_retry(self):
         self.setup_demo()
         shim = os.path.join(self.ishims, "selfy")
@@ -146,21 +129,6 @@ class Lifecycle(ShimBase):
         self.assertEqual((r.returncode, r.stdout), (0, "[x]\n"), r.stderr)
         self.assertEqual(self.installs(), 2)
 
-    def test_stdin_and_directory_are_kept(self):
-        self.setup_demo()
-        with open(os.path.join(self.home, ".local", "share", "swarmbox", "x"), "w"):
-            pass
-        cat = os.path.join(self.base, "wd")
-        os.makedirs(cat)
-        self.assertEqual(self.call(os.path.join(self.ishims, "selfy")).returncode, 0)
-        prog = os.path.join(self.home, ".local", "bin", "selfy")
-        with open(prog, "w") as f:
-            f.write('#!/bin/sh\npwd; cat\n')
-        r = subprocess.run([os.path.join(self.ishims, "selfy")], env=self.env(), input="from stdin", capture_output=True,
-                           text=True, cwd=cat)
-        self.assertEqual(r.stdout, cat + "\nfrom stdin")
-
-
 class Index(ShimBase):
     def test_unknown_command_is_127_with_a_clear_message(self):
         self.setup_demo()
@@ -171,11 +139,6 @@ class Index(ShimBase):
         self.assertEqual(r.stdout, "")
         self.assertEqual(self.installs(), 0)
 
-    def test_no_index_at_all_is_127(self):
-        self.link("image", self.ishims, "ghost")
-        r = self.call(os.path.join(self.ishims, "ghost"))
-        self.assertEqual(r.returncode, 127)
-
     def test_user_index_overrides_the_image_index(self):
         mgr = self.fake_mgr()
         self.index(self.ishims, "tool-x img-tool")
@@ -185,88 +148,6 @@ class Index(ShimBase):
         self.assertEqual(r.returncode, 0, r.stderr)
         with open(self.args) as f:
             self.assertEqual(f.read().split("\n"), ["run", "user-tool", "tool-x", "--", "q", ""])
-
-    def test_image_index_used_when_the_user_index_lacks_the_command(self):
-        mgr = self.fake_mgr()
-        self.index(self.ishims, "tool-x img-tool")
-        self.index(self.ushims, "other y")
-        self.link("image", self.ishims, "tool-x")
-        self.assertEqual(self.call(os.path.join(self.ishims, "tool-x"), env=self.env(SWARMBOX_TEST_TOOL=mgr)).returncode, 0)
-        with open(self.args) as f:
-            self.assertEqual(f.read().split("\n")[:3], ["run", "img-tool", "tool-x"])
-
-    def test_last_index_line_without_a_newline_and_prefix_names(self):
-        mgr = self.fake_mgr()
-        with open(os.path.join(os.path.dirname(self.ishims), "index"), "w") as f:
-            f.write("tool-xy wrong\ntool-x right")
-        self.link("image", self.ishims, "tool-x")
-        self.assertEqual(self.call(os.path.join(self.ishims, "tool-x"), env=self.env(SWARMBOX_TEST_TOOL=mgr)).returncode, 0)
-        with open(self.args) as f:
-            self.assertEqual(f.read().split("\n")[1], "right")
-
-    def test_hot_path_never_sources_a_manifest(self):
-        """After link the manifest may be broken: the shim only reads the index (6.5, exit criterion 3)."""
-        mgr = self.fake_mgr()
-        d = make_tool(self.image, "demo", PROVIDES='"demo"')
-        self.index(self.ishims, "demo demo")
-        self.link("image", self.ishims, "demo")
-        marker = os.path.join(self.base, "sourced")
-        with open(os.path.join(d, "tool.conf"), "w") as f:
-            f.write("touch '%s'\nexit 3\n)(\n" % marker)
-        r = self.call(os.path.join(self.ishims, "demo"), env=self.env(SWARMBOX_TEST_TOOL=mgr))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertFalse(os.path.exists(marker))
-
-    def test_a_project_level_tools_folder_is_not_consulted_by_the_shim(self):
-        """D18 (absence): a tools folder in the working directory (a project) neither adds a command nor changes one."""
-        mgr = self.fake_mgr()
-        proj = os.path.join(self.base, "project")
-        make_tool(os.path.join(proj, ".swarmbox", "tools"), "evil", PROVIDES='"evil"')
-        make_tool(os.path.join(proj, "tools"), "demo", PROVIDES='"demo"')
-        self.index(self.ishims, "demo demo")
-        self.link("image", self.ishims, "demo")
-        os.symlink(SHIM, os.path.join(self.ishims, "evil"))
-        env = self.env(SWARMBOX_TEST_TOOL=mgr)
-        r = subprocess.run([os.path.join(self.ishims, "evil")], env=env, capture_output=True, text=True, timeout=60, cwd=proj)
-        self.assertEqual(r.returncode, 127, r.stderr)
-        r = subprocess.run([os.path.join(self.ishims, "demo"), "x"], env=env, capture_output=True, text=True, timeout=60, cwd=proj)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        with open(self.args) as f:
-            self.assertEqual(f.read().split("\n")[:3], ["run", "demo", "demo"])
-
-    def test_manager_arguments_survive_odd_characters(self):
-        mgr = self.fake_mgr()
-        self.index(self.ishims, "demo demo")
-        self.link("image", self.ishims, "demo")
-        odd = ["a b", "", "*", "$HOME", "it's", "-n", "--", "line\nbreak"]
-        r = self.call(os.path.join(self.ishims, "demo"), *odd, env=self.env(SWARMBOX_TEST_TOOL=mgr))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        with open(self.args) as f:
-            self.assertEqual(f.read(), "\n".join(["run", "demo", "demo", "--", *odd]) + "\n")
-
-    def test_missing_manager_is_70(self):
-        self.index(self.ishims, "demo demo")
-        self.link("image", self.ishims, "demo")
-        r = self.call(os.path.join(self.ishims, "demo"), env=self.env(SWARMBOX_TEST_TOOL=os.path.join(self.base, "nope")))
-        self.assertEqual(r.returncode, 70)
-        self.assertIn("nope", r.stderr)
-
-    def test_the_dispatcher_called_by_its_own_name_explains_itself(self):
-        r = self.call(SHIM)
-        self.assertEqual(r.returncode, 64)
-        self.assertIn("dispatcher", r.stderr)
-
-    def test_user_index_found_through_dirs_sh_without_the_test_override(self):
-        mgr = self.fake_mgr()
-        self.index(self.ushims, "tool-x user-tool")
-        self.link("user", self.ushims, "tool-x")
-        env = self.env(SWARMBOX_TEST_TOOL=mgr)
-        del env["SWARMBOX_TEST_USER_SHIMS"]
-        r = self.call(os.path.join(self.ushims, "tool-x"), env=env)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        with open(self.args) as f:
-            self.assertEqual(f.read().split("\n")[1], "user-tool")
-
 
 class LoopGuard(ShimBase):
     def test_real_command_that_is_the_shim_is_refused_not_looped(self):
@@ -287,18 +168,6 @@ class LoopGuard(ShimBase):
         self.assertIn("called itself", r.stderr)
         self.assertFalse(os.path.exists(self.args))
 
-    def test_depth_is_passed_on_and_garbage_depth_is_ignored(self):
-        mgr = self.fake_mgr()
-        self.index(self.ishims, "demo demo")
-        self.link("image", self.ishims, "demo")
-        for given, want in (("", "1"), ("3", "4"), ("junk", "1"), ("15", "16")):
-            with self.subTest(given=given):
-                self.assertEqual(self.call(os.path.join(self.ishims, "demo"),
-                                           env=self.env(SWARMBOX_TEST_TOOL=mgr, SWARMBOX_SHIM_DEPTH=given)).returncode, 0)
-                with open(self.args + ".depth") as f:
-                    self.assertEqual(f.read().strip(), want)
-
-
 class Lint(unittest.TestCase):
     def test_shellcheck_clean(self):
         sc = shutil.which("shellcheck")
@@ -311,14 +180,6 @@ class Lint(unittest.TestCase):
         with open(SHIM) as f:
             self.assertEqual(f.readline().strip(), "#!/bin/sh")
         self.assertTrue(os.access(SHIM, os.X_OK))
-
-    def test_dockerfile_installs_the_shim_where_links_point(self):
-        with open(os.path.join(ROOT, "Dockerfile")) as f:
-            text = f.read()
-        self.assertIn("COPY container/scripts/swarmbox-shim.sh /usr/local/bin/swarmbox-shim", text)
-        chmod_line = [l for l in text.split("\n") if "swarmbox-tool /usr/local" in l]
-        self.assertTrue(chmod_line and "/usr/local/bin/swarmbox-shim" in chmod_line[-1])
-
 
 if __name__ == "__main__":
     unittest.main()

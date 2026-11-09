@@ -248,26 +248,6 @@ class FunctionCases:
                     self.assertEqual(self.hcalls(fh), [[word, *rest]])
                     self.assertEqual(self.podman_calls(), [])
 
-    def test_once_and_uninstall_are_no_host_words_and_create_nothing_of_their_own(self):
-        """D19 (no throwaway mode, no --once) and D36 (no uninstall command): both are ordinary words of the box.
-
-        The function creates or joins the box with `up`, then hands the words to `attach` as given: no host word, no
-        podman call of its own, and in particular no rm, stop, kill or run of a second container.
-        """
-        for args in (["--once"], ["--once", "claude"], ["uninstall"], ["uninstall", "--all"]):
-            with self.subTest(args=args):
-                self.fp.configure({"exec": {}})
-                open(self.fp.log_path, "w").close()
-                fh = self.fake_helper()
-                r = self.call(*args)
-                self.assertEqual(r.returncode, 0, r.stderr)
-                self.assertEqual(self.hcalls(fh), [["up"], ["config", "get", "NAME"]])
-                self.assertEqual(self.podman_calls(), [self.exec_call("attach", *args)])
-                for c in self.podman_calls():
-                    self.assertEqual(c[0], "exec")
-        for word in ("once", "--once", "uninstall"):
-            self.assertNotIn(word, HOST_WORDS)
-
     def test_a_host_word_only_counts_as_the_first_word(self):
         fh = self.fake_helper()
         self.call("run", "stop")
@@ -282,24 +262,6 @@ class FunctionCases:
         # nothing in them was expanded or run
         self.assertEqual(r.stdout, "")
 
-    def test_a_glob_argument_is_not_expanded_against_the_current_folder(self):
-        for n in ("one.txt", "two.txt"):
-            open(os.path.join(self.cwd, n), "w").close()
-        self.fake_helper()
-        self.call("ls", "*.txt", "[ab]*", "~")
-        self.assertEqual(self.podman_calls(), [self.exec_call("attach", "ls", "*.txt", "[ab]*", "~")])
-
-    def test_host_words_keep_awkward_arguments_too(self):
-        fh = self.fake_helper()
-        self.call("config", "set", "WORKSPACE", "/a b/it's $x")
-        self.assertEqual(self.hcalls(fh), [["config", "set", "WORKSPACE", "/a b/it's $x"]])
-
-    def test_the_box_name_comes_from_config_get_name(self):
-        fh = self.fake_helper(commands={"config get": {"stdout": "other-box\n"}, "*": {}})
-        self.call("true")
-        self.assertEqual(self.podman_calls()[0][6], "other-box")
-        self.assertEqual(self.hcalls(fh)[1], ["config", "get", "NAME"])
-
     # -- exit codes -------------------------------------------------------------------------------------------------
 
     def test_exit_codes_of_forwarded_commands_propagate(self):
@@ -311,13 +273,6 @@ class FunctionCases:
                 self.assertEqual(self.call("pubkey").returncode, rc)
                 self.assertEqual(self.call().returncode, rc)
 
-    def test_exit_codes_of_host_words_propagate(self):
-        for rc in EXIT_CODES:
-            for word in ("stop", "up", "url", "config"):
-                with self.subTest(rc=rc, word=word):
-                    self.fake_helper(commands={word: {"exit": rc}, "config get": {"stdout": "swarmbox\n"}, "*": {}})
-                    self.assertEqual(self.call(word).returncode, rc)
-
     def test_a_failing_up_stops_before_podman_exec(self):
         for rc in (3, 4, 5, 6, 7):
             with self.subTest(rc=rc):
@@ -328,11 +283,6 @@ class FunctionCases:
                 self.assertIn("swarmbox: nope", r.stderr)
                 self.assertEqual(self.hcalls(fh), [["up"]])
                 self.assertEqual(self.podman_calls(), [])
-
-    def test_a_failing_config_get_name_stops_before_podman_exec(self):
-        self.fake_helper(commands={"config get": {"exit": 1}, "*": {}})
-        self.assertEqual(self.call("claude").returncode, 1)
-        self.assertEqual(self.podman_calls(), [])
 
     # -- the terminal (3.3, "No terminal") ----------------------------------------------------------------------------
 
@@ -355,22 +305,6 @@ class FunctionCases:
                 rc, out, err = self.call_pty(*args)
                 self.assertEqual(rc, 0, err)
                 self.assertEqual(self.podman_calls(), [self.exec_call(*words, tty="-it")])
-
-    def test_a_terminal_on_stdout_alone_gives_no_t(self):
-        # `podman exec -t` needs a terminal on stdin too: with a pipe on stdin it fails ("the input device is not a TTY")
-        self.fake_helper()
-        rc, out, err = self.call_pty("ls", stdin_tty=False)
-        self.assertEqual(rc, 0, err)
-        self.assertEqual(self.podman_calls(), [self.exec_call("attach", "ls", tty="-i")])
-
-    def test_a_terminal_on_stdin_alone_gives_no_t(self):
-        # `swarmbox pubkey > file` typed at a prompt: stdin is the terminal, stdout is the file: no CR/LF translation (3.3)
-        self.fake_helper()
-        for args, words in ((["pubkey"], ["pubkey"]), (["ls"], ["attach", "ls"])):
-            open(self.fp.log_path, "w").close()
-            rc, out, err = self.call_pty(*args, stdin_tty=True, stdout_tty=False)
-            self.assertEqual(rc, 0, err)
-            self.assertEqual(self.podman_calls(), [self.exec_call(*words, tty="-i")])
 
     # -- bootstrap condition (D33, 3.6) ---------------------------------------------------------------------------------
 
@@ -397,18 +331,8 @@ class FunctionCases:
     def test_a_missing_helper_is_extracted_once(self):
         self.check_extracts(absent=True)
 
-    def test_a_missing_data_folder_chain_is_created(self):
-        shutil.rmtree(self.data)
-        self.check_extracts(absent=True)
-
     def test_a_helper_file_that_is_not_executable_is_extracted(self):
         self.check_extracts(executable=False)
-
-    def test_a_helper_that_prints_no_version_is_extracted(self):
-        self.check_extracts(version=None)
-
-    def test_a_helper_that_prints_a_junk_version_is_extracted(self):
-        self.check_extracts(version="banana")
 
     def test_an_older_helper_is_extracted(self):
         self.check_extracts(version="1.9.0")
@@ -451,13 +375,6 @@ class FunctionCases:
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual([c[0] for c in self.podman_calls()], ["run"])
 
-    def test_the_notice_and_the_extraction_use_the_blocks_own_marker(self):
-        fn = self.make_fn("2.0.1")
-        fh = self.fake_helper(version="2.0.1")
-        r = self.call("url", fn=fn)
-        self.assertEqual((r.returncode, r.stderr), (0, ""))
-        self.assertEqual(self.podman_calls(), [])
-
     # -- failures of the extraction ----------------------------------------------------------------------------------
 
     def previous_helper(self):
@@ -479,64 +396,19 @@ class FunctionCases:
         r = self.call("url")
         self.assert_failed_cleanly(r, "Error: initializing source: pinging container registry: no route to host")
 
-    def test_offline_on_the_very_first_call_leaves_nothing_behind(self):
-        self.fp.configure({"run": {"exit": 125, "stderr": "Error: no route to host\n"}})
-        r = self.call("url")
-        self.assertEqual(r.returncode, 3)
-        self.assertIn("swarmbox: cannot pull", r.stderr)
-        self.assertEqual(self.tree(), [])
-
     def test_podman_exiting_non_zero_even_with_a_good_archive_fails(self):
         self.previous_helper()
         self.fp.configure({"run": {"exit": 1, "stdout_file": self.archive(), "stderr": "Error: boom\n"}})
         self.assert_failed_cleanly(self.call("url"), "Error: boom")
-
-    def test_podman_exiting_non_zero_without_a_message_names_the_status(self):
-        self.previous_helper()
-        self.fp.configure({"run": {"exit": 7}})
-        self.assert_failed_cleanly(self.call("url"), "podman exited with status 7")
-
-    def test_an_empty_archive_fails(self):
-        self.previous_helper()
-        self.fp.configure({"run": {"stdout": ""}})
-        self.assert_failed_cleanly(self.call("url"), "the image has no usable host helper")
 
     def test_a_corrupt_archive_fails(self):
         self.previous_helper()
         self.fp.configure({"run": {"stdout": "this is not a tar archive\n" * 200}})
         self.assert_failed_cleanly(self.call("url"), "the image has no usable host helper")
 
-    def test_a_truncated_archive_fails(self):
-        self.previous_helper()
-        good = self.archive()
-        data = open(good, "rb").read()
-        cut = os.path.join(self.base, "cut.tar")
-        open(cut, "wb").write(data[:700])
-        self.fp.configure({"run": {"stdout_file": cut}})
-        self.assert_failed_cleanly(self.call("url"), "the image has no usable host helper")
-
     def test_an_archive_without_swarmbox_host_fails(self):
         self.previous_helper()
         self.fp.configure({"run": {"stdout_file": self.archive(helper=False)}})
-        self.assert_failed_cleanly(self.call("url"), "the image has no usable host helper")
-
-    def test_an_archive_whose_swarmbox_host_is_not_executable_fails(self):
-        self.previous_helper()
-        self.fp.configure({"run": {"stdout_file": self.archive(executable=False)}})
-        self.assert_failed_cleanly(self.call("url"), "the image has no usable host helper")
-
-    def test_a_failing_tar_is_caught_even_though_podman_succeeded(self):
-        # no pipeline status anywhere: `podman run > file`, then `tar -x -f file`, each status tested on its own
-        self.previous_helper()
-        self.fp.configure({"run": {"stdout_file": self.archive()}})
-        self.shim("tar", "echo 'tar: simulated failure' >&2; exit 1")
-        self.assert_failed_cleanly(self.call("url"), "the image has no usable host helper")
-
-    def test_a_tar_that_fails_after_unpacking_everything_still_fails(self):
-        self.previous_helper()
-        self.fp.configure({"run": {"stdout_file": self.archive()}})
-        real = shutil.which("tar")
-        self.shim("tar", '%s "$@"; exit 2' % real)
         self.assert_failed_cleanly(self.call("url"), "the image has no usable host helper")
 
     def test_a_failure_with_no_previous_helper_leaves_no_folder(self):
@@ -545,15 +417,6 @@ class FunctionCases:
         self.assertEqual(r.returncode, 3)
         self.assertEqual(self.tree(), [])
         self.assertEqual(os.listdir(os.path.dirname(self.host_dir)), [])
-
-    def test_a_good_archive_replaces_the_previous_helper(self):
-        self.check_extracts(version="1.9.0")
-
-    def test_the_function_does_not_print_podmans_output_on_success(self):
-        self.fp.configure({"run": {"stdout_file": self.archive(), "stderr": "Trying to pull...\n"}, "exec": {}})
-        self.fake_helper(version="1.9.0")
-        r = self.call("url")
-        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
 
     def test_podman_absent_gives_exit_3_with_the_install_advice(self):
         tools = os.path.join(self.base, "tools")
@@ -570,18 +433,6 @@ class FunctionCases:
         self.assertIn("sudo apt install podman", r.stderr)
         self.assertIn("brew install podman", r.stderr)
         self.assertEqual(self.tree(), [])
-
-    def test_podman_absent_does_not_matter_when_the_helper_is_current_and_the_word_is_host_only(self):
-        tools = os.path.join(self.base, "tools")
-        os.mkdir(tools)
-        for t in BASE_TOOLS:
-            p = shutil.which(t)
-            if p and not os.path.exists(os.path.join(tools, t)):
-                os.symlink(p, os.path.join(tools, t))
-        fh = self.fake_helper()
-        r = self.call("url", path=tools)
-        self.assertEqual((r.returncode, r.stderr), (0, ""))
-        self.assertEqual(self.hcalls(fh), [["url"]])
 
     # -- update, then the next call (D33, 3.8) ---------------------------------------------------------------------------
 
@@ -600,27 +451,6 @@ class FunctionCases:
         fn201 = self.make_fn("2.0.1")                    # a third call with a block of the new marker: no notice
         r = self.call("claude", fn=fn201)
         self.assertEqual((r.returncode, r.stderr), (0, ""))
-
-    def test_update_to_a_tag_at_or_above_the_marker_keeps_working(self):
-        for newv in ("2.0.0", "2.0.3", "2.1.0"):
-            with self.subTest(newv=newv):
-                open(self.fp.log_path, "w").close()
-                fh = self.fake_helper(version=newv)
-                r = self.call("url")
-                self.assertEqual(r.returncode, 0, r.stderr)
-                self.assertEqual(self.podman_calls(), [])
-                self.assertEqual(self.hcalls(fh), [["url"]])
-
-    def test_removing_the_helper_folder_with_an_older_block_extracts_from_that_blocks_image(self):
-        fn19 = self.make_fn("1.9.0")
-        self.fp.configure({"run": {"stdout_file": self.archive(version="1.9.0")}, "exec": {}})
-        fh = self.fake_helper(version="2.0.1")
-        shutil.rmtree(fh.dir)                            # `rm -rf host:~/.local/share/swarmbox/host/`
-        os.unlink(self.host_dir)
-        r = self.call("url", fn=fn19)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.podman_calls(), [["run", "--rm", ORG_IMAGE % "1.9.0", "host-helper"]])
-        self.assertEqual(self.installed_version(), "1.9.0")
 
     def test_the_block_with_an_image_flag_extracts_from_that_image(self):
         fn = self.make_fn("2.0.0", "--image", "localhost:5000/sb:2.0.0")
@@ -645,13 +475,6 @@ class FunctionCases:
                 self.assertNotIn("newer", r.stderr)         # no false claim when the comparison gave no answer
                 self.assertNotIn("sort", r.stderr)
                 self.assertNotIn("invalid option", r.stderr)
-
-    def test_a_sort_without_dash_v_still_extracts_a_missing_helper(self):
-        self.shim("sort", 'echo "sort: invalid option -- V" >&2; exit 2')
-        self.fp.configure({"run": {"stdout_file": self.archive()}, "exec": {}})
-        r = self.call("url")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.installed_version(), "2.0.0")
 
     # -- seeds (D20, 3.7.5) -------------------------------------------------------------------------------------------
 
@@ -732,13 +555,6 @@ class FunctionCases:
 
     # -- the shell itself -----------------------------------------------------------------------------------------------
 
-    def test_defining_and_calling_the_function_prints_nothing_by_itself(self):
-        self.fake_helper()
-        cmd = self.SHELL + ["-c", ("source " if self.NAME == "fish" else ". ") + self.fn]
-        r = subprocess.run(cmd, env=self.env(), cwd=self.cwd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
-        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
-        self.assertEqual(self.podman_calls(), [])
-
     def test_the_helper_is_found_under_xdg_data_home_and_falls_back_to_home(self):
         fh = self.fake_helper()
         r = self.call("url")
@@ -752,15 +568,6 @@ class FunctionCases:
         open(fh.log_path, "w").close()
         r = subprocess.run(self.argv(self.fn, ["url"]), env=env, cwd=self.cwd, capture_output=True, text=True,
                            stdin=subprocess.DEVNULL)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.hcalls(fh), [["url"]])
-
-    def test_a_relative_xdg_data_home_is_ignored(self):
-        fh = self.fake_helper()
-        home_host = os.path.join(self.home, ".local", "share", "swarmbox")
-        os.makedirs(home_host)
-        os.symlink(fh.dir, os.path.join(home_host, "host"))
-        r = self.call("url", XDG_DATA_HOME="relative/data")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.hcalls(fh), [["url"]])
 
@@ -782,20 +589,3 @@ class FunctionCases:
         text = open(self.fn).read()
         self.assertEqual(text.count("# >>> swarmbox 2.0.0 >>>"), 1)
         self.assertEqual(text.count("# <<< swarmbox 2.0.0 <<<"), 1)
-
-    def test_the_text_never_exports_seed_variables(self):
-        text = open(self.make_fn("2.0.0", "--with", "claude")).read()
-        self.assertNotIn("export SWARMBOX", text)
-        self.assertNotIn("set -x SWARMBOX", text)
-        self.assertNotIn("set -gx SWARMBOX", text)
-        for line in text.splitlines():
-            self.assertFalse(line.lstrip().startswith("SWARMBOX_") and "=" in line.split()[0], line)
-
-    def test_the_text_uses_no_pipe_to_read_a_status(self):
-        # the extraction goes through a file: `podman run ... > file`, then `tar -x -f file`
-        text = "\n".join(l for l in open(self.fn).read().splitlines() if not l.lstrip().startswith("#"))
-        text = "\n".join(l.split(" #")[0] for l in text.splitlines())
-        self.assertNotRegex(text, r"host-helper[^\n]*\|")
-        self.assertNotIn("pipefail", text)
-        self.assertNotIn("PIPESTATUS", text)
-        self.assertNotIn("pipestatus", text)

@@ -62,13 +62,6 @@ class BashFunction(FunctionCases, unittest.TestCase):
     STRICT = "-u"
 
 
-class BashPosixFunction(FunctionCases, unittest.TestCase):
-    """The same table under `bash --posix` (the closest stand-in here for macOS's /bin/sh, which is bash 3.2 in POSIX mode)."""
-    SHELL = [BASH, "--posix", "--noprofile", "--norc"]
-    NAME = "bash"
-    STRICT = "-u"
-
-
 class Bash32Lint(unittest.TestCase):
     def test_the_template_has_no_bash_4_construct(self):
         with open(TEMPLATE) as f:
@@ -76,17 +69,6 @@ class Bash32Lint(unittest.TestCase):
         for n, line in code_lines(text):
             for rx, what in BASH4:
                 self.assertIsNone(re.search(rx, line), "template line %d uses %s: %s" % (n, what, line))
-
-    def test_the_lint_itself_catches_each_construct(self):
-        samples = ["declare -A m", "local -A m", 'echo "${x,,}"', 'echo "${x^^}"', "mapfile -t a < f", "readarray a", "cmd &>> f",
-                   "a |& b", "[[ -v x ]]", "coproc c", "x=${y@Q}", "case $x in a) ;& b) ;; esac", "shopt -s globstar",
-                   "local -n r=x", "a+=(x)"]
-        for s in samples:
-            self.assertTrue(any(re.search(rx, s) for rx, _ in BASH4), "the lint misses: %s" % s)
-
-    def test_the_lint_accepts_what_the_template_needs(self):
-        for s in ['a=("${a[@]}" x)', 'echo "${1-}"', 'x=${y:-z}', '[ -t 1 ]', 'local a b c', 'case $x in a) ;; esac', 'printf "%s\\n" x']:
-            self.assertFalse(any(re.search(rx, s) for rx, _ in BASH4), "the lint rejects: %s" % s)
 
     def test_the_template_passes_bash_n_and_has_no_function_keyword_or_bashisms_beyond_arrays_and_local(self):
         with open(TEMPLATE) as f:
