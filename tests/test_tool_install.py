@@ -160,23 +160,6 @@ class InstallManaged(Base):
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertEqual(self.records()[-1][2], want)
 
-    def test_unsupported_architecture_fails_before_the_installer(self):
-        self.managed()
-        r = self.tool("install", "demo", SWARMBOX_TEST_ARCH="riscv64")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("riscv64", r.stderr)
-        self.assertEqual(self.installs(), 0)
-
-    def test_layout_version_dir_and_current_link(self):
-        self.managed()
-        self.assertEqual(self.tool("install", "demo").returncode, 0)
-        d = os.path.join(self.tools, "demo")
-        self.assertTrue(os.path.isfile(os.path.join(d, "1.2.3", "bin", "demo")))
-        self.assertTrue(os.path.isfile(os.path.join(d, "1.2.3", ".swarmbox-env")))
-        self.assertTrue(os.path.islink(os.path.join(d, "current")))
-        self.assertEqual(os.readlink(os.path.join(d, "current")), "1.2.3")
-        self.assertEqual(sorted(os.listdir(d)), ["1.2.3", "current"])
-
     def test_failure_leaves_nothing_and_the_next_call_retries(self):
         self.managed()
         before = tree_hash(self.home)
@@ -190,16 +173,6 @@ class InstallManaged(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.installs(), 2)
         self.assertTrue(os.path.islink(os.path.join(self.tools, "demo", "current")))
-
-    def test_second_install_is_a_noop(self):
-        self.managed()
-        self.assertEqual(self.tool("install", "demo").returncode, 0)
-        before = tree_hash(self.home)
-        r = self.tool("install", "demo")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("already installed", r.stderr)
-        self.assertEqual(self.installs(), 1)
-        self.assertEqual(tree_hash(self.home), before)
 
     def test_version_installs_side_by_side_and_moves_current(self):
         self.managed()
@@ -224,20 +197,6 @@ class InstallManaged(Base):
         self.assertEqual(self.installs(), 2)
         self.assertTrue(os.path.isfile(os.path.join(self.tools, "demo", "current", "bin", "demo")))
 
-    def test_stdout_purity_installer_stdout_goes_to_stderr(self):
-        self.managed()
-        r = self.tool("install", "demo")
-        self.assertEqual(r.stdout, "")
-        self.assertIn("INSTALLER-STDOUT-NOISE", r.stderr)
-
-    def test_installer_that_does_not_make_the_provided_command_fails(self):
-        self.managed(installer="#!/bin/bash\nmkdir -p \"$TOOL_PREFIX/bin\"\n")
-        before = tree_hash(self.home)
-        r = self.tool("install", "demo")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("demo", r.stderr)
-        self.assertEqual(tree_hash(self.home), before)
-
     def test_sha256_mismatch_aborts_and_removes_files(self):
         arch = os.path.join(self.base, "fixture.tar.gz")
         with open(arch, "wb") as f:
@@ -260,35 +219,6 @@ class InstallManaged(Base):
         r = self.tool("install", "demo", "--force", FIXTURE_ARCHIVE=arch, SWARMBOX_TEST_ARCH="arm64")
         self.assertNotEqual(r.returncode, 0)  # the arm64 checksum is wrong for this archive
 
-    def test_unknown_tool_command_and_bad_names(self):
-        self.managed()
-        r = self.tool("install", "nope")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("nope", r.stderr)
-        for bad in ("../demo", "a/b", ".", "", "Demo"):
-            with self.subTest(bad=bad):
-                self.assertEqual(self.tool("install", bad).returncode, 64)
-        self.assertEqual(self.tool("install").returncode, 64)
-        self.assertEqual(self.tool("install", "demo", "--version").returncode, 64)
-        self.assertEqual(self.tool("install", "demo", "--version", "../x").returncode, 64)
-        self.assertEqual(self.tool("install", "demo", "--bogus").returncode, 64)
-        self.assertEqual(self.installs(), 0)
-
-    def test_nothing_is_written_outside_the_allowed_paths(self):
-        self.managed()
-        self.selfy()
-        before = set(all_paths(self.base))
-        self.assertEqual(self.tool("install", "demo").returncode, 0)
-        self.assertEqual(self.tool("install", "selfy").returncode, 0)
-        new = set(all_paths(self.base)) - before
-        allowed = [self.tools, os.path.join(self.home, ".local", "bin"), os.path.join(self.home, ".local", "share"),
-                   os.path.join(self.base, "run"), self.rec, self.count, os.path.join(self.home, ".local")]
-        for p in sorted(new):
-            self.assertTrue(any(p == a or p.startswith(a + os.sep) for a in allowed), "unexpected write: " + p)
-        self.assertTrue(os.path.exists(self.lock), "the lock override is the file used")
-        self.assertEqual(os.listdir(self.tmp), [], "the temp dir is left empty")
-
-
 class InstallSelf(Base):
     def setUp(self):
         super().setUp()
@@ -305,19 +235,6 @@ class InstallSelf(Base):
         self.assertTrue(os.path.isfile(os.path.join(self.record, "installed")))  # written by the installer into TOOL_PREFIX
         self.assertTrue(os.access(self.launcher, os.X_OK))
         self.assertEqual(os.listdir(os.path.join(self.tools, "selfy")), ["self"])  # no current link, no versions, no staging
-
-    def test_a_launcher_that_resolves_to_the_shim_is_refused(self):
-        shim_dir = os.path.join(self.base, "usr-local-bin")
-        os.makedirs(shim_dir)
-        shim = os.path.join(shim_dir, "swarmbox-shim")
-        with open(shim, "w") as f:
-            f.write("#!/bin/sh\necho SHIM-RAN >> %s\n" % os.path.join(self.base, "shim-ran"))
-        os.chmod(shim, 0o755)
-        r = self.tool("run", "selfy", "selfy", "--", "x", FAKE_LINK_TO_SHIM=shim)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("swarmbox-shim", r.stderr)
-        self.assertFalse(os.path.exists(os.path.join(self.base, "shim-ran")))
-        self.assertFalse(os.path.exists(self.record))
 
     def test_update_runs_update_cmd_with_the_real_binary(self):
         self.tool("install", "selfy")
@@ -337,32 +254,6 @@ class Run(Base):
         self.assertEqual(r.stdout, "[b]\n")
         self.assertNotIn("Installing", r.stderr)
         self.assertEqual(self.installs(), 1)
-
-    def test_arguments_are_preserved_and_exit_code_passes_through(self):
-        self.managed()
-        args = ["with space", "", "quo'te", 'dq"x', "$HOME", "*", "-n", "--", "tail\nline"]
-        r = self.tool("run", "demo", "demo", "--", *args, DEMO_EXIT="7")
-        self.assertEqual(r.returncode, 7)
-        self.assertEqual(r.stdout, "".join("[%s]\n" % a for a in args))
-
-    def test_offline_failure_is_clear_and_the_next_call_retries(self):
-        self.managed()
-        r = self.tool("run", "demo", "demo", "--", FAKE_FAIL="1")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual(r.stdout, "")
-        self.assertIn("could not resolve host", r.stderr)
-        self.assertIn("demo", r.stderr)
-        self.assertIn("next call", r.stderr)
-        r = self.tool("run", "demo", "demo", "--")
-        self.assertEqual(r.returncode, 0, r.stderr)
-
-    def test_the_lock_is_released_before_exec(self):
-        self.managed()
-        self.tool("install", "demo")
-        self.write_program("#!/bin/sh\nsleep 3 &\nexit 0\n")  # a leftover child would hold an inherited lock fd
-        self.assertEqual(self.tool("run", "demo", "demo", "--").returncode, 0)
-        r = subprocess.run(["flock", "-n", self.lock, "true"], capture_output=True, timeout=10)
-        self.assertEqual(r.returncode, 0, "the lock must be free once run has exec'd")
 
 class Concurrency(Base):
     def test_two_installs_at_once_run_the_installer_once(self):

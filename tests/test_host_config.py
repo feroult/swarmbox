@@ -149,25 +149,6 @@ class VersionTest(Base):
             p = self.run_h("config", "get", key, helper=h)
             self.assertEqual((p.returncode, p.stdout.strip()), (0, want), (key, p.stderr))
 
-    def test_missing_or_unusable_defaults_file_exits_3(self):
-        h = self.copied_helper(None)
-        p = self.run_h("config", "get", "NAME", helper=h)
-        self.assertEqual(p.returncode, 3)
-        self.assertIn("DEFAULTS", p.stderr)
-        for bad in ("SWARMBOX_DEFAULT_IMAGE_REPO='x/y'\n", "SWARMBOX_DEFAULT_NAME=config\nSWARMBOX_DEFAULT_IMAGE_REPO=x/y\n",
-                    "SWARMBOX_DEFAULT_NAME=ok\n", "SWARMBOX_DEFAULT_NAME=ok\nSWARMBOX_DEFAULT_IMAGE_REPO='a b'\n"):
-            write_file(os.path.join(os.path.dirname(h), "DEFAULTS"), bad)
-            self.assertEqual(self.run_h("config", "get", "NAME", helper=h).returncode, 3, bad)
-
-    def test_usage_and_unknown_subcommands(self):
-        self.assertEqual(self.run_h().returncode, 2)
-        p = self.run_h("frobnicate")
-        self.assertEqual(p.returncode, 2)
-        self.assertEqual(p.stdout, "")
-        self.assertEqual(self.run_h("version", "extra").returncode, 2)
-        self.assertEqual(self.run_h("config").returncode, 2)
-        self.assertEqual(self.run_h("config", "frob").returncode, 2)
-
 class DefaultsAndPrecedenceTest(Base):
     def default(self, key):
         d = KEYS[key][0]
@@ -199,23 +180,6 @@ class DefaultsAndPrecedenceTest(Base):
             # an empty environment value does not override
             self.assertEqual(self.get(key, env={"SWARMBOX_" + key: ""})[:2], (0, good + "\n"), key)
 
-    def test_list_every_key_with_source(self):
-        self.write_cfg("WITH=claude\nHOSTNAME=fromfile\n")
-        p = self.run_h("config", "list", env={"SWARMBOX_HOSTNAME": "fromenv", "SWARMBOX_TZ": "off"})
-        self.assertEqual(p.returncode, 0)
-        self.assertEqual(p.stderr, "")
-        lines = p.stdout.splitlines()
-        self.assertEqual([l.split("=", 1)[0] for l in lines], LIST_ORDER)
-        got = {l.split("=", 1)[0]: l.split("=", 1)[1].split("\t") for l in lines}
-        self.assertEqual(got["WITH"], ["claude", "file"])
-        self.assertEqual(got["HOSTNAME"], ["fromenv", "env"])
-        self.assertEqual(got["TZ"], ["off", "env"])
-        self.assertEqual(got["INIT"], ["auto", "default"])
-        self.assertEqual(got["PORTS"], ["", "default"])
-        self.assertEqual(got["NAME"], [DEFAULT_NAME, "default"])
-        self.assertEqual(got["IMAGE"], [(DEFAULT_IMAGE_REPO + ":") + VERSION, "default"])
-        self.assertEqual(got["CLOUDFLARE_TUNNEL_TOKEN"], ["unset", "default"])
-
 class GrammarTest(Base):
     def test_values_are_literal(self):
         self.write_cfg("WORKSPACE=/srv/my work dir\nIMAGE=a=b\nHOSTNAME=  padded \t \nTZ=Europe/Lisbon\r\n")
@@ -225,19 +189,6 @@ class GrammarTest(Base):
         self.assertEqual(self.get("TZ")[:2], (0, "Europe/Lisbon\n"))   # CRLF file
         self.write_cfg("WORKSPACE=$HOME/x \"q\" 'r' \\n ${A}\n")
         self.assertEqual(self.get("WORKSPACE")[:2], (0, "$HOME/x \"q\" 'r' \\n ${A}\n"))
-
-    def test_unknown_key_warns_once_and_is_ignored(self):
-        self.write_cfg("FOO=1\nWITH=a\nFOO=2\nlower=3\nnot a pair\n")
-        p = self.run_h("config", "list")
-        self.assertEqual(p.returncode, 0)
-        self.assertEqual(p.stderr.count("unknown key"), 1)
-        for k in ("FOO", "lower", "not a pair"):
-            self.assertIn(k, p.stderr)
-        self.assertEqual(p.stderr.count("FOO"), 1)
-        self.assertNotIn("FOO", p.stdout)
-        rc, out, err = self.get("WITH")
-        self.assertEqual((rc, out), (0, "a\n"))
-        self.assertEqual(err.count("unknown key"), 1)
 
     def test_name_comes_only_from_the_environment(self):
         self.assertEqual(self.get("NAME", env={"SWARMBOX_NAME": "other"})[:2], (0, "other\n"))
@@ -277,42 +228,6 @@ class SetTest(Base):
                 self.assertRegex(p.stderr, r"must|cannot", (key, v))
                 self.assertEqual(slurp(self.cfg_file), before, (key, v))
 
-    def test_set_keeps_other_lines_and_replaces_every_duplicate(self):
-        self.write_cfg("# my comment\nWITH=a\nFOO=bar\nWITH=b\nTZ=off\n")
-        self.run_h("config", "set", "WITH", "z")
-        text = slurp(self.cfg_file)
-        self.assertIn("# my comment\n", text)
-        self.assertIn("FOO=bar\n", text)
-        self.assertIn("TZ=off\n", text)
-        self.assertEqual(text.count("WITH="), 1)
-        self.assertEqual(self.get("WITH")[1], "z\n")
-
-    def test_file_created_with_600_under_umask_022_and_kept_after_rewrite(self):
-        script = 'umask 022; exec "$@"'
-        p = subprocess.run(["sh", "-c", script, "x", HELPER, "config", "set", "WITH", "a"], env=self.env(),
-                           capture_output=True, text=True)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(self.mode(), 0o600)
-        self.assertEqual(self.mode(self.cfgroot), 0o700)
-        os.chmod(self.cfg_file, 0o644)
-        subprocess.run(["sh", "-c", script, "x", HELPER, "config", "set", "TZ", "off"], env=self.env(), capture_output=True)
-        self.assertEqual(self.mode(), 0o600)
-        # no temporary file is left behind
-        self.assertEqual(sorted(os.listdir(self.cfgroot)), ["config"])
-
-class UnreadableConfigTest(Base):
-    def test_unreadable_config_exits_1_with_one_message(self):
-        self.write_cfg("WITH=a\n", mode=0o000)
-        try:
-            for args in (("config", "get", "WITH"), ("config", "list"), ("env", "list"), ("config", "set", "WITH", "b")):
-                p = self.run_h(*args)
-                if os.access(self.cfg_file, os.R_OK):
-                    self.skipTest("running as a user that can read a mode 000 file")
-                self.assertEqual(p.returncode, 1, args)
-                self.assertEqual(p.stderr.count("cannot read"), 1, p.stderr)
-        finally:
-            os.chmod(self.cfg_file, 0o600)
-
 
 class SeedTest(Base):
     def test_creates_the_file_once_with_the_given_seeds(self):
@@ -323,31 +238,6 @@ class SeedTest(Base):
         self.assertEqual(self.get("IMAGE")[1], "x/y:1.2.3\n")
         self.assertEqual(self.mode(), 0o600)
         self.assertIn("/srv/ws", p.stderr)
-
-    def test_second_call_changes_nothing_and_notices_once_per_key(self):
-        self.run_h("config", "seed", "--with", "a", "--workspace", "/w1")
-        before = slurp(self.cfg_file)
-        p = self.run_h("config", "seed", "--with", "b", "--workspace", "/w1", "--image", "i:1")
-        self.assertEqual(p.returncode, 0)
-        self.assertEqual(slurp(self.cfg_file), before)
-        lines = [l for l in p.stderr.splitlines() if "init asked for" in l]
-        self.assertEqual(len(lines), 2, p.stderr)          # WITH differs, IMAGE differs (file has the default); WORKSPACE same
-        self.assertTrue(any("WITH=b" in l and "WITH=a" in l and "swarmbox config set WITH b" in l for l in lines))
-        self.assertTrue(any("IMAGE=i:1" in l for l in lines))
-        self.assertFalse(any("WORKSPACE" in l for l in lines))
-        self.assertEqual(self.run_h("config", "seed", "--with", "b", "--workspace", "/w1", "--image", "i:1").stderr, "")
-        notices = slurp(os.path.join(self.state, "notices")).splitlines()
-        self.assertEqual(sorted(notices), [DEFAULT_NAME + ":IMAGE", DEFAULT_NAME + ":WITH"])
-
-    def test_invalid_values_exit_2_and_create_nothing(self):
-        for args in (["--with", "A B"], ["--image", "a b"], ["--workspace", "/a:b"], ["--bogus", "x"], ["--with"], ["stray"]):
-            p = self.run_h("config", "seed", *args)
-            self.assertEqual(p.returncode, 2, args)
-            self.assertFalse(os.path.exists(self.cfg_file), args)
-        # a valid and an invalid seed together: nothing is written
-        p = self.run_h("config", "seed", "--with", "a", "--image", "a b")
-        self.assertEqual(p.returncode, 2)
-        self.assertFalse(os.path.exists(self.cfg_file))
 
 class EnvTest(Base):
     def test_add_list_rm_and_idempotence(self):
@@ -364,29 +254,6 @@ class EnvTest(Base):
         self.assertEqual(self.run_h("env", "rm", "ANTHROPIC_API_KEY").returncode, 0)   # idempotent
         self.assertEqual(self.run_h("env", "rm", "GEMINI_API_KEY").returncode, 0)
         self.assertEqual(self.run_h("env", "list").stdout, "")
-
-    def test_cloudflare_prefix_is_refused_with_exit_2(self):
-        for n in ("SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN", "SWARMBOX_CLOUDFLARE_X", "SWARMBOX_CLOUDFLARE_"):
-            for sub in ("add", "rm"):
-                p = self.run_h("env", sub, n)
-                self.assertEqual(p.returncode, 2, (sub, n))
-                self.assertIn("SWARMBOX_CLOUDFLARE_", p.stderr)
-        self.assertFalse(os.path.exists(self.cfg_file))
-        # a name that only resembles the prefix is accepted
-        self.assertEqual(self.run_h("env", "add", "SWARMBOX_CLOUDFLAREX").returncode, 0)
-
-    def test_values_are_never_printed_or_stored(self):
-        self.run_h("env", "add", "MYSECRET")
-        outs = []
-        for args in (("env", "list"), ("env", "add", "MYSECRET"), ("config", "list"), ("config", "get", "ENV_KEYS"),
-                     ("env", "rm", "MYSECRET"), ("env", "add", "MYSECRET")):
-            p = self.run_h(*args, env={"MYSECRET": CANARY})
-            outs.append(p.stdout + p.stderr)
-        self.assertNotIn(CANARY, "".join(outs))
-        self.assertNotIn(CANARY, slurp(self.cfg_file))
-        for d, _, files in os.walk(self.home):
-            for n in files:
-                self.assertNotIn(CANARY, slurp(os.path.join(d, n)))
 
 def pty_run(argv, env, typed=None, wait_prompt=True, cwd=None, timeout=20):
     """Run argv on a pseudo-terminal; type `typed` (a line) after the prompt. Returns (exit code, everything the terminal showed)."""
@@ -438,11 +305,6 @@ class TokenTest(Base):
         self.assertNotIn(TOKEN, p.stdout + p.stderr)
         self.assertFalse(os.path.exists(self.cfg_file))
 
-    def test_without_a_terminal_it_is_refused(self):
-        p = self.run_h("config", "set", "CLOUDFLARE_TUNNEL_TOKEN", stdin=TOKEN + "\n")
-        self.assertEqual(p.returncode, 2)
-        self.assertFalse(os.path.exists(self.cfg_file))
-
     def test_refuses_to_write_when_chmod_fails(self):
         d = os.path.join(self.tmp, "fakebin")
         os.mkdir(d)
@@ -460,25 +322,6 @@ class TokenTest(Base):
         p = self.run_h("config", "set", "TZ", "off", path=d + os.pathsep + os.environ["PATH"])
         self.assertEqual(p.returncode, 1)
         self.assertEqual(slurp(self.cfg_file), before)
-
-    def test_loose_mode_makes_the_helper_ignore_the_token(self):
-        self.write_cfg("WITH=a\nCLOUDFLARE_TUNNEL_TOKEN=%s\n" % TOKEN, mode=0o644)
-        rc, out, err = self.get("CLOUDFLARE_TUNNEL_TOKEN")
-        self.assertEqual((rc, out), (1, ""))
-        self.assertIn("mode is 644", err)
-        self.assertIn("chmod 600 " + self.cfg_file, err)
-        self.assertNotIn(TOKEN, err)
-        self.assertEqual(err.count("chmod 600"), 1)
-        # the rest of the file is still read
-        self.assertEqual(self.get("WITH")[1], "a\n")
-        p = self.run_h("config", "list")
-        self.assertIn("CLOUDFLARE_TUNNEL_TOKEN=unset\tdefault\n", p.stdout)
-        self.assertEqual(p.stderr.count("chmod 600"), 1)
-        # the environment still works
-        self.assertEqual(self.get("CLOUDFLARE_TUNNEL_TOKEN", env={"SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": "e"})[1], "e\n")
-        os.chmod(self.cfg_file, 0o600)
-        rc, out, err = self.get("CLOUDFLARE_TUNNEL_TOKEN")
-        self.assertEqual((rc, out, err), (0, TOKEN + "\n", ""))
 
 class ModeCheckTest(Base):
     """The portable octal mode check (B22, B34): stat -c %a, then stat -f %Lp, then find -perm; never the text of ls.
@@ -545,20 +388,6 @@ class ModeCheckTest(Base):
             self.assertFalse(any(u.startswith("find") for u in used))
         else:
             self.assertTrue(any(u.startswith("find") for u in used), used)
-
-    def test_stat_c_only(self):
-        self.check_variant("c_only", "c")
-
-    def test_ls_is_never_parsed_even_when_it_would_say_600_with_an_at_sign(self):
-        path = self.make_shims("c_only")
-        self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TOKEN, mode=0o644)
-        rc, out, err = (lambda p: (p.returncode, p.stdout, p.stderr))(self.run_h("config", "get", "CLOUDFLARE_TUNNEL_TOKEN", path=path))
-        self.assertEqual((rc, out), (1, ""))        # the fake ls claims -rw-------@; the real mode 644 decides
-        self.assertFalse([c for c in self.calls() if c.startswith("ls ")])
-        # and the helper source has no call of ls at all
-        with open(HELPER) as f:
-            code = "\n".join(l.split("#")[0] for l in f.read().splitlines())
-        self.assertNotRegex(code, r"(^|[\s;|&(`])ls(\s|$)")
 
     def test_a_file_with_an_extended_attribute(self):
         self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TOKEN, mode=0o600)

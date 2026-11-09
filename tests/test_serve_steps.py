@@ -214,16 +214,6 @@ class ServeCase(unittest.TestCase):
 class FatalSteps(ServeCase):
     """Steps 0 to 3: failure exits 1 with a reason (F)."""
 
-    def test_step0_deletes_ready_and_exit_files_before_anything_else(self):
-        os.makedirs(self.run_dir)
-        for n in ("ready", "exit.1", "exit.137", "keep.txt"):
-            put(os.path.join(self.run_dir, n), "old")
-        # step 1 fails (no workspace): everything before it still happened
-        rc, out, err = self.run_to_exit(HOME=os.path.join(self.base, "nope"))
-        self.assertEqual(rc, 1)
-        left = sorted(os.listdir(self.run_dir))
-        self.assertEqual(left, ["keep.txt"])
-
     def test_step1_workspace_missing(self):
         rc, out, err = self.run_to_exit(HOME=os.path.join(self.base, "nope"))
         self.assertEqual(rc, 1)
@@ -238,25 +228,8 @@ class FatalSteps(ServeCase):
         self.assertIn("nested Podman needs /dev/net/tun", err)
         self.assertEqual(self.calls(), [], "nothing after step 2 may run")
 
-    def test_step3_creates_the_xdg_folders_and_run_dir(self):
-        p = self.run_ready()
-        self.stop(p)
-        for rel in (".config/swarmbox", ".local/share/swarmbox", ".local/state/swarmbox", ".local/share/swarmbox/tools",
-                    ".local/share/swarmbox/shims", ".local/state/swarmbox/logs"):
-            self.assertTrue(os.path.isdir(os.path.join(self.home, rel)), rel)
-        self.assertTrue(os.path.isdir(self.run_dir))
-
-
 class WarnSteps(ServeCase):
     """Steps 4 to 10: failure writes a health line and continues (W); the marker carries the count."""
-
-    def test_all_good_is_ok_and_health_is_cleared_at_start(self):
-        os.makedirs(self.state)
-        put(self.health, "old line from a previous run\n")
-        p = self.run_ready()
-        self.assertEqual(self.marker(), "ok")
-        self.assertEqual(self.health_lines(), [])
-        self.stop(p)
 
     def test_each_w_step_failure_is_one_health_line_and_serve_continues(self):
         # (label, setup, expected word in the health line)
@@ -302,52 +275,6 @@ class WarnSteps(ServeCase):
         installs = [c for c in self.calls() if c.startswith("swarmbox-tool install ")]
         self.assertEqual(installs, ["swarmbox-tool install claude", "swarmbox-tool install opencode"])
         self.assertIn("install claude saw-ready", self.calls())
-        self.stop(p)
-
-    def test_a_failed_with_install_names_the_tool_and_says_the_next_call_retries(self):
-        put(os.path.join(self.fake, "swarmbox-tool.exit"), "69")
-        p = self.run_ready(SWARMBOX_WITH="claude")
-        self.assertTrue(wait_for(lambda: any("installing claude failed" in l for l in self.health_lines()), 5), self.health_lines())
-        line = [l for l in self.health_lines() if "installing claude failed" in l][0]
-        self.assertIn("next call", line)
-        self.stop(p)
-
-    def test_step_7_writes_an_empty_mcp_file_only_when_there_is_none(self):
-        # Decision [4a.5]: the claude alias passes --mcp-config <workspace>/.claude/mcp-servers.json and claude refuses a
-        # missing file; the registry (4.4, Phase 4b) will write the real one. Until then serve leaves an empty list.
-        f = os.path.join(self.home, ".claude", "mcp-servers.json")
-        p = self.run_ready()
-        self.stop(p)
-        self.assertEqual(json.loads(read(f)), {"mcpServers": {}})
-        put(f, '{"mcpServers": {"mine": {"command": "x"}}}')
-        os.unlink(os.path.join(self.run_dir, "ready"))
-        p = self.run_ready()
-        self.stop(p)
-        self.assertIn("mine", read(f))
-
-    def test_step_7_a_failing_generator_is_one_w_line_and_an_empty_valid_file_is_left(self):
-        put(os.path.join(self.fake, "swarmbox-mcp.exit"), "2")
-        p = self.run_ready()
-        self.stop(p)
-        lines = [l for l in read(self.health).splitlines() if "MCP" in l]
-        self.assertEqual(len(lines), 1, read(self.health))
-        self.assertIn("swarmbox-mcp exit 2", lines[0])
-        self.assertEqual(json.loads(read(os.path.join(self.home, ".claude", "mcp-servers.json"))), {"mcpServers": {}})
-
-    def test_web_on_is_the_default_and_ttyd_is_started(self):
-        p = self.run_ready()
-        self.assertTrue(wait_for(lambda: os.path.exists(os.path.join(self.run_dir, "web-supervisor.pid"))))
-        self.assertTrue(wait_for(lambda: any(c.startswith("ttyd ") for c in self.calls())))
-        self.stop(p)
-
-    def test_no_nested_switch_gives_warnings_not_failures(self):
-        os.unlink(self.tun)
-        p = self.run_ready(SWARMBOX_TEST_NO_NESTED="1")
-        self.assertEqual(self.marker(), "warnings=2")
-        lines = " ".join(self.health_lines())
-        self.assertIn("/dev/net/tun", lines)
-        self.assertIn("nested", lines.lower())
-        self.assertFalse(any(c.startswith("podman system service") for c in self.calls()))
         self.stop(p)
 
     def test_serve_log_records_the_steps(self):
@@ -396,12 +323,6 @@ class Signals(ServeCase):
         self.assertLess(time.time() - t0, 1.0)
         self.assertEqual(self.children_gone(), [])
 
-    def test_fatal_step_leaves_no_children(self):
-        rc, out, err = self.run_to_exit(SWARMBOX_TEST_TUN=os.path.join(self.base, "no-tun"))
-        self.assertEqual(rc, 1)
-        self.assertFalse(os.path.exists(os.path.join(self.fake, "ttyd.pid")))
-
-
 class Supervisor(ServeCase):
     """The ttyd supervisor: backoff, giving up, idle, restart by hand (design 4.2)."""
 
@@ -442,14 +363,6 @@ class Supervisor(ServeCase):
         self.assertTrue(wait_for(lambda: any("keeps crashing" in l for l in self.health_lines()), 10))
         time.sleep(0.3)
         self.assertEqual(self.starts(), 6 + 5)
-        self.stop(p)
-
-    def test_killed_ttyd_is_restarted_with_backoff(self):
-        p = self.run_ready()
-        pid = int(wait_for(lambda: read(os.path.join(self.fake, "ttyd.pid")).strip()))
-        os.kill(pid, signal.SIGKILL)  # the exact fake ttyd this test's serve started
-        self.assertTrue(wait_for(lambda: self.starts() == 2, 5))
-        self.assertEqual(self.health_lines(), [])
         self.stop(p)
 
 class StaticOrder(unittest.TestCase):

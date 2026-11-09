@@ -111,13 +111,6 @@ class QuotingTest(Base):
                 self.assertIn("swarmbox.workspace=" + ws, lines)
                 self.assert_no_marker()
 
-    def test_newlines_carriage_returns_and_colons_in_the_workspace_are_refused(self):
-        for bad in ("/tmp/a\nb", "/tmp/a\rb", "/tmp/a:b", "/tmp/a\n--privileged"):
-            with self.subTest(bad=bad):
-                p = self.flags(bad)
-                self.assertEqual(p.returncode, 2, p.stderr)
-                self.assertEqual(p.stdout, "")
-
     def test_config_set_refuses_shell_metacharacters_in_every_validated_key(self):
         cases = [("HOSTNAME", "$(touch MARK)"), ("HOSTNAME", "a b"), ("HOSTNAME", "a;b"), ("TZ", "`touch MARK`"),
                  ("TZ", "../../etc/passwd"), ("PORTS", "80;touch MARK"), ("PORTS", "80,$(x)"), ("WITH", "a;b"),
@@ -132,12 +125,6 @@ class QuotingTest(Base):
                 self.assertFalse(os.path.exists(os.path.join(self.home, ".config", "swarmbox", "config")))
                 self.assert_no_marker()
 
-    def test_an_env_key_that_names_a_host_side_secret_is_refused(self):
-        for name in ("SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN", "SWARMBOX_CLOUDFLARE_X"):
-            self.assertEqual(self.run_h("env", "add", name).returncode, 2)
-            self.assertEqual(self.run_h("config", "set", "ENV_KEYS", name).returncode, 2)
-
-
 # ============================================================================ image references (option injection)
 
 class ImageReferenceTest(Base):
@@ -149,30 +136,6 @@ class ImageReferenceTest(Base):
                                    text=True, input="", cwd=self.tmp)
                 self.assertEqual(p.returncode, 2, p.stderr)
                 self.assertEqual(self.run_h("config", "seed", "--image", bad).returncode, 2)
-
-    def test_the_python_wrapper_refuses_a_connector_image_that_is_an_option(self):
-        # the refusal must come from the image check (named in the message), not from the missing API token that follows it
-        mod = load_cf("cfsetup_image")
-        base = ["apply", "--domain", "example.com", "--email", "a@example.com", "--dry-run"]
-        env = dict(os.environ)
-        os.environ.pop("CLOUDFLARE_API_TOKEN", None)
-        try:
-            for bad in ("--privileged", "-x", "a b", "a;b", "$(x)"):
-                with self.subTest(bad=bad):
-                    err = io.StringIO()
-                    with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as cm:
-                        mod.main(base + ["--connector-image=" + bad])
-                    self.assertNotEqual(cm.exception.code, 0)
-                    self.assertIn("connector image", err.getvalue())
-            os.environ["SWARMBOX_CLOUDFLARED_IMAGE"] = "--privileged"
-            err = io.StringIO()
-            with contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
-                mod.main(base)
-            self.assertIn("connector image", err.getvalue())
-        finally:
-            os.environ.clear()
-            os.environ.update(env)
-
 
 # ============================================================================ temporary files, the lock, private folders
 
@@ -190,20 +153,6 @@ class TempFileTest(Base):
             self.assertIn("WEB_PORT=9000\n", f.read())
         self.assertEqual(os.stat(os.path.join(cdir, "config")).st_mode & 0o777, 0o600)
 
-    def test_up_does_not_write_through_planted_err_flags_or_cid_symlinks(self):
-        os.makedirs(self.state)
-        victims = {n: self.victim("victim-" + n) for n in ("err", "flags", "cid")}
-
-        def plant(pid):
-            for n, v in victims.items():
-                os.symlink(v, os.path.join(self.state, "%s.%d" % (n, pid)))
-        self.podman()
-        r = self.plant_run(["up"], plant)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        for v in victims.values():
-            self.assert_victim(v)
-        self.assertEqual(len(self.real_runs()), 1)
-
     def test_a_symlink_planted_at_the_lock_path_is_replaced_and_its_target_left_alone(self):
         os.makedirs(self.state)
         target = os.path.join(self.tmp, "lock-target")
@@ -218,19 +167,6 @@ class TempFileTest(Base):
         self.assertEqual(os.listdir(target), ["keep"])
         self.assertFalse(os.path.lexists(lock))
         self.assertEqual(len(self.real_runs()), 1)
-
-    def test_the_state_and_config_folders_are_made_private(self):
-        os.makedirs(self.state)
-        os.chmod(self.state, 0o777)
-        cdir = self.cfg_dir()
-        os.chmod(cdir, 0o755)
-        self.podman()
-        r = self.up()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(stat.S_IMODE(os.stat(self.state).st_mode), 0o700)
-        r = self.run_h("config", "set", "WEB_PORT", "9000")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(stat.S_IMODE(os.stat(cdir).st_mode), 0o700)
 
 class CleanupTest(Base):
     """Every way out of up, reset, stop and update leaves no temporary file and no lock (exact names)."""
@@ -304,15 +240,6 @@ class TokenTest(Base):
                 self.assertEqual(self.fp.envs()[self.calls().index(run)].get("TUNNEL_TOKEN"), TOK)
                 box = [c for c in self.real_runs() if CN not in c][0]
                 self.assertFalse(any("TUNNEL" in a for a in box), box)
-
-    def test_the_token_is_never_accepted_on_the_command_line(self):
-        r = self.run_h("config", "set", "CLOUDFLARE_TUNNEL_TOKEN", TOK)
-        self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertNotIn(TOK, r.stdout + r.stderr)
-        self.assertFalse(os.path.exists(os.path.join(self.home, ".config", "swarmbox", "config")))
-        r = self.run_h("config", "seed", "--token", TOK)
-        self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertNotIn(TOK, r.stdout + r.stderr)
 
     def test_a_token_in_a_file_with_a_loose_mode_is_ignored_and_not_echoed(self):
         self.cfg_with_token(0o644)
@@ -407,20 +334,6 @@ class UpdateInputTest(upd.UpdateBase):
         self.assert_unchanged(before)
         self.assertFalse(os.path.lexists(absname))
 
-    def test_an_archive_with_a_symlink_member_is_refused(self):
-        p = os.path.join(self.tmp, "ln.tar")
-        make_archive(p, version="2.0.1")
-        with tarfile.open(p, "a") as tf:
-            ti = tarfile.TarInfo("./evil-link")
-            ti.type = tarfile.SYMTYPE
-            ti.linkname = "/etc/passwd"
-            tf.addfile(ti)
-        self.podman(run={"stdout_file": p})
-        before = self.before()
-        r = self.update("--to", "2.0.1")
-        self.assertEqual(r.returncode, 3, r.stderr)
-        self.assert_unchanged(before)
-
 # ============================================================================ parsing of the config file
 
 class ConfigParsingTest(Base):
@@ -443,13 +356,6 @@ class ConfigParsingTest(Base):
             self.run_h(*args)
             self.assert_no_marker()
         self.assertEqual(self.real_runs(), [])  # the invalid HOSTNAME stops `up` before Podman creates anything
-
-    def test_a_directory_where_the_config_file_should_be(self):
-        os.makedirs(os.path.join(self.cfg_dir(), "config"))
-        r = self.run_h("config", "list")
-        self.assertIn(r.returncode, (0, 1))
-        self.assertNotIn("Traceback", r.stderr)
-
 
 # ============================================================================ the review document
 

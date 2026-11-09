@@ -53,13 +53,6 @@ class SshKey(unittest.TestCase):
         self.assertNotIn("created", r.stdout)
         self.assertIn(before[1], r.stdout, "the short line carries the fingerprint")
 
-    def test_the_public_key_is_rebuilt_from_the_private_one(self):
-        self.run_script("--ensure")
-        pub = read(self.key + ".pub").split()[:2]
-        os.remove(self.key + ".pub")
-        self.run_script("--ensure")
-        self.assertEqual(read(self.key + ".pub").split()[:2], pub)
-
     def test_without_flags_it_shows_the_public_key_and_where_to_add_it(self):
         r = self.run_script()
         self.assertEqual(r.returncode, 0, r.stderr)

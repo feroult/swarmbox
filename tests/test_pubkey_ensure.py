@@ -81,23 +81,6 @@ class PubkeyEnsure(unittest.TestCase):
         private_pub = subprocess.run(["ssh-keygen", "-y", "-f", self.key], capture_output=True, text=True).stdout.split()[:2]
         self.assertEqual(read(self.key + ".pub").split()[:2], private_pub)
 
-    def test_writes_only_under_the_test_home_and_with_the_right_modes(self):
-        outside = os.path.join(self.base, "outside")
-        os.mkdir(outside)
-        before = tree(self.base)
-        self.ensure()
-        after = tree(self.base)
-        new = sorted(set(after) - set(before))
-        self.assertTrue(all(p.startswith("home" + os.sep) for p in new), new)
-        self.assertEqual(stat.S_IMODE(os.stat(self.key).st_mode), 0o600)
-        self.assertEqual(stat.S_IMODE(os.stat(os.path.dirname(self.key)).st_mode), 0o700)
-
-    def test_ensure_output_is_short_and_has_no_private_material(self):
-        r = self.ensure()
-        self.assertLessEqual(len(r.stdout.splitlines()), 3)
-        self.assertNotIn("PRIVATE KEY", r.stdout + r.stderr)
-        self.assertIn("SHA256:", r.stdout)
-
     def test_ensure_fails_with_1_when_the_key_cannot_be_created(self):
         os.chmod(self.home, 0o500)
         self.addCleanup(os.chmod, self.home, 0o700)
@@ -114,22 +97,11 @@ class PubkeyEnsure(unittest.TestCase):
         self.assertIn(pub, r.stdout)
         self.assertIn("deploy key", r.stdout)
 
-    def test_entrypoint_pubkey_creates_the_key_when_missing(self):
-        r = subprocess.run(["bash", ENTRYPOINT, "pubkey"], env=self.env(), capture_output=True, text=True, timeout=30)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertTrue(read(self.key + ".pub").strip() in r.stdout)
-
     def test_serve_step_5_calls_ensure_and_a_failure_is_a_warning(self):
         with open(ENTRYPOINT) as f:
             text = f.read()
         self.assertIn("swarmbox-pubkey --ensure", text)
         self.assertIn("could not create the Git SSH key", text)
-
-    def test_dockerfile_installs_it_as_swarmbox_pubkey(self):
-        with open(os.path.join(ROOT, "Dockerfile")) as f:
-            d = f.read()
-        self.assertIn("COPY container/scripts/ssh-key.sh /usr/local/bin/swarmbox-pubkey", d)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

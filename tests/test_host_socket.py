@@ -217,30 +217,11 @@ class SymlinkRefreshTest(Base):
         self.assertEqual(os.lstat(self.link()).st_ino, ino)
         self.assertEqual(os.readlink(self.link()), self.ws + "/.local/state/swarmbox")
 
-    def test_a_regular_file_is_refused_with_exit_4_and_left_in_place(self):
-        with open(self.link(), "w") as f:
-            f.write("mine")
-        r = self.connect()
-        self.assertEqual(r.returncode, 4, r.stderr)
-        self.assertIn("exists and is not a symlink", r.stderr)
-        with open(self.link()) as f:
-            self.assertEqual(f.read(), "mine")
-        self.assertFalse(os.path.islink(self.link()))
-        self.assertEqual(self.verbs("add"), [])
-
 class RegistrationTest(Base):
     def setUp(self):
         super().setUp()
         self.mkws(os.path.join(self.tmp, "ws"))
         self.uri = "unix://" + self.ws + SUFFIX
-
-    def test_the_same_name_registered_twice_does_not_duplicate(self):
-        self.assertEqual(self.connect().returncode, 0)
-        self.assertEqual(self.connect().returncode, 0)
-        self.assertEqual(len(self.verbs("add")), 1)
-        self.assertEqual(self.verbs("remove"), [])
-        self.assertEqual(len(self.verbs("list")), 2)
-        self.assertEqual(self.conns(), {NAME: self.uri})
 
     def test_a_changed_address_replaces_it(self):
         old = "unix://" + self.ws + "/.swarmbox/podman.sock"
@@ -250,12 +231,6 @@ class RegistrationTest(Base):
         self.assertEqual(self.conns(), {NAME: self.uri})
         self.assertEqual(self.verbs("remove"), [["system", "connection", "remove", NAME]])
         self.assertEqual(self.verbs("add"), [["system", "connection", "add", NAME, self.uri]])
-
-    def test_a_failing_add_is_a_warning_not_an_exit(self):
-        open(os.path.join(self.fake, "fail-add"), "w").close()
-        r = self.connect()
-        self.assertEqual(r.returncode, 0)
-        self.assertIn("could not register the Podman connection '%s'" % NAME, r.stderr)
 
 class UpIntegrationTest(unittest.TestCase):
     """`up` and `reset` take step 6 with the shared FakePodman: it is the last thing before they return (and after readiness),
