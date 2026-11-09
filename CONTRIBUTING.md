@@ -46,6 +46,14 @@ What each group covers (a file name tells the rest):
 Shared helpers (the fake `podman`, the fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use a real
 container only for a smoke test, with a `swarmbox-test-` name.
 
+## Smoke test on a host
+
+`dev/host-smoke.sh` builds the image and checks the product end to end on a real host (not inside a box): `up`, labels, `config`,
+`env`, `pubkey`, the user and workspace, tmux, the web terminal, nested Podman, `stop`, `reset`, `url` and `help`. It prints one
+`OK`, `FAIL` or `SKIP` line per step and `RESULT: N ok, M fail, K skip`; paste that when you report a failure. It uses only
+`swarmbox-test-*` names, a temporary workspace, a private config folder and a random port on `127.0.0.1`, and removes them on exit
+(`--keep` leaves them, `--with-tools` also installs Go, `--no-cache` builds from scratch, `--dry-run` prints the commands only).
+
 ## Building the image locally
 
 The 2.0 image is the root `Dockerfile`. In a development box (nested Podman) build it with

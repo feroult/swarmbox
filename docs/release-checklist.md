@@ -10,7 +10,7 @@ Use a second box (`SWARMBOX_NAME=dev`, its own workspace and web port) so a real
 
 | Check | What to do | Expected |
 |---|---|---|
-| A real Linux host | `swarmbox`, a second tab, `swarmbox claude`, `swarmbox url`, `reset`, `stop`; `podman run alpine echo ok` inside the box; `podman -c dev ps` on the host | all work; the nested run needs a normal 65536 subuid range |
+| A real Linux host | `dev/host-smoke.sh` first (builds the image, makes a throw-away box with its own names, prints OK/FAIL lines; paste them), then `swarmbox`, a second tab, `swarmbox claude`, `swarmbox url`, `reset`, `stop`; `podman run alpine echo ok` inside the box; `podman -c dev ps` on the host | all work; the nested run needs a normal 65536 subuid range |
 | macOS (Podman machine) | `brew install podman; podman machine init; podman machine start`, then the same commands with the workspace under your home | each exits 0; a file written in the box shows on the Mac; the web terminal opens. An unshared folder is exit 4. `podman -c` may fail across the VM: write down what you see |
 | Host UID other than 1000 | as another user (a Mac user is 501), start a box and write a file | `ls -ln` shows that UID as the owner |
 | Lowest Podman | Podman 4.0, 4.3, 4.9 and the latest: `swarmbox` and `SWARMBOX_SMOKE_FULL=1 python3 tests/smoke_image.py` | 4.3 and newer work; older ones are refused with exit 3. If 4.0 to 4.2 pass, lowering the limit in `check_podman_version` is your choice |

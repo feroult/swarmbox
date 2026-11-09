@@ -192,3 +192,9 @@ Undo any item with `git revert` of the commit titled "docs: ..." that holds it (
 
 - Removed pointers to the old `docs/design.md` numbering, decision ids (`D12`), fact ids (`B28`), slice and phase numbers, `plan section`, `Part B` and `decision log [x.y]` from comments, usage and error text, workflows, Dockerfile and tests (about 95 files, comments and messages only; no behaviour change). Where a comment depended on the pointer it now states the reason, or names a section title of `docs/design.md`. Error text lost its `(6.7)`-style suffixes; no test asserted them. CI step names `Probe for B30` and `Smoke test ... B31` lost the id. The test constant `D34` became `WINDOWS_DRIVE_MSG`.
 - Left on purpose: `docs/design.md` (its own decision table D1 to D40 is current), `docs/history/`, and two paths to `docs/history/decision-log.md` in `ci.yml` and `test_serve_steps.py`.
+
+## host-smoke
+
+- New `dev/host-smoke.sh` (POSIX sh): the owner runs it on the real host to check the product end to end; it prints OK/FAIL/SKIP lines and `RESULT: N ok, M fail, K skip`. It uses only `swarmbox-test-*` names, a mktemp workspace, private `XDG_CONFIG_HOME`/`XDG_STATE_HOME` and `SWARMBOX_NAME`, and removes what it made by exact name on exit. Options: `--keep`, `--no-cache`, `--with-tools`, `--force`, `--dry-run`.
+- It runs the host helper extracted from the image (`host-helper`, as the shell function does) instead of the function itself, because the function looks for the helper under `XDG_DATA_HOME`, which is also where Podman keeps its images; moving it would hide the image. The printed function is checked and sourced in bash.
+- Verified here only with `sh -n`, `--help`, `--dry-run`, and one real `--force` run: the plain `podman build` fails in this box at `apt-get` (known nested limit), later steps SKIP, and cleanup removed everything. The box steps were not run against a real box.
