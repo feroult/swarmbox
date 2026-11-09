@@ -20,7 +20,7 @@ The entry stays "Unreleased" until the tag `v2.0.0` is created by the owner.
   OpenCode, Gemini CLI, clasp, Poetry, Go and gcloud (pinned versions, checksums where published). `use`, `remove`, `new` and `doctor` subcommands.
 - A generated MCP server registry (`mcp-servers.json`) with Chrome DevTools MCP, mirrored into OpenCode.
 - Remote access with `swarmbox remote setup|status|off|token` (Cloudflare tunnel and Access), the connector started on every `up`.
-- XDG-aware paths on the host and in the box; a layout migration from v0.1.0 (`.swarmbox/`) that runs at `serve` step 4.
+- XDG-aware paths on the host and in the box.
 - A feature-parity test suite (one test per catalog row), a CI workflow (`ci.yml`) and a release workflow (`release.yml`), owner
   checklists for hardware checks ([docs/owner-checks.md](docs/owner-checks.md)).
 - `LICENSE` (Apache-2.0), `THIRD_PARTY_NOTICES.md`, `CONTRIBUTING.md`, `SECURITY.md` and `CODE_OF_CONDUCT.md`.
@@ -40,12 +40,5 @@ The entry stays "Unreleased" until the tag `v2.0.0` is created by the owner.
 - Items the design marks as not needed for parity or a decision: see the risk table of [docs/implementation-plan.md](docs/implementation-plan.md)
   and [docs/decision-log.md](docs/decision-log.md). Known open points: the OpenCode package choice (`@opencode/cli` 2.x versus `opencode-ai`
   1.x), a separately signed host helper asset (only if users ask, D26), and the facts of Part B that need real hardware (macOS, a real WSL, a host UID other than 1000, Podman older than 4.3).
-
-### Migrating from v0.1.0
-
-v0.1.0 is the git tag of the scripts before the redesign (`start.sh`, `build.sh`). To move a box: install the 2.0 function with
-`init` (printed by the image, see the README), remove the old container (the helper refuses to run beside it and tells you how), and start the new box on the same
-workspace. The first `serve` moves the old `.swarmbox/` folder to the new layout and keeps a copy. The steps are in the README
-section "Migrating from v0.1.0", in [docs/migration.md](docs/migration.md) and in design 12.4.
 
 [2.0.0]: https://github.com/feroult/swarmbox/compare/v0.1.0...HEAD

@@ -98,10 +98,6 @@ Version 2.0 is a design and an implementation built and tested in a development 
 and it is not published. macOS and Podman older than 4.3 are unverified.
 See [docs/design.md](docs/design.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 
-## Migrating from v0.1.0
-
-v0.1.0 used `start.sh` and `build.sh`, which are gone. **Back up your workspace first**, then follow [docs/migration.md](docs/migration.md).
-
 ## Privacy
 
 SwarmBox sends **no telemetry**. It makes no network call of its own except to pull the image, to install a tool you asked for,

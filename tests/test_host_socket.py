@@ -322,7 +322,7 @@ class RegistrationTest(Base):
         self.assertEqual(len(self.verbs("list")), 2)
         self.assertEqual(self.conns(), {NAME: self.uri})
 
-    def test_a_changed_address_replaces_it_the_v010_migration_case(self):
+    def test_a_changed_address_replaces_it(self):
         old = "unix://" + self.ws + "/.swarmbox/podman.sock"
         self.seed({NAME: old})
         r = self.connect()

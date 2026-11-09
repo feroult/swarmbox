@@ -236,15 +236,6 @@ serve() {
         warn "nested Podman needs /dev/net/tun ($tun is missing; SWARMBOX_TEST_NO_NESTED=1)"
     fi
 
-    # step 4 [W]: migrate an old .swarmbox/ layout (12.4, swarmbox-migrate)
-    if have swarmbox-migrate; then
-        log "step 4: migrating an old layout"
-        run_logged swarmbox-migrate; rc=$?
-        [ "$rc" = 0 ] || warn "layout migration failed (swarmbox-migrate exit $rc); see serve.log"
-    else
-        log "step 4: swarmbox-migrate is not installed, skipped"
-    fi
-
     # step 5 [W]: ensure the SSH key
     log "step 5: ensuring the SSH key"
     if have swarmbox-pubkey; then

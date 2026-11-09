@@ -89,3 +89,16 @@ tests/ had 28254 lines in 85 files. Seconds per file, one run in the foreground:
 Sum: about 194 s (test_parity was stopped by me after 45 s because it is deleted anyway, so the real before-total is a little higher).
 Skipped: test_clipboard_bridge, test_web_style, test_tmux_browser_keys (browser tests). No other file needed the network; the real-image tests skip themselves when no image exists.
 Note: the run left 36 orphan `sleep infinity` processes (serve tests); killed only those with PPID 1.
+
+## Decisions
+
+All entries: undo with `git revert` of the commit that holds the change (see `git log -- <path>`).
+
+- Step 2, migration removed: `swarmbox-migrate.sh`, its call (serve step 4, the number stays unused so health messages and tests keep their numbers), its Dockerfile lines, `docs/migration.md`, the README and CHANGELOG sections, the migration tests. Why: owner said no v0.1.0 compatibility. The README keeps no v0.1.0 section.
+- Step 2, deleted v1/process tests: test_parity, record_v010_flags and the v1 flag fixture, test_retired, test_retired_coverage, audit_history, test_history_audit, test_final_audit, dev/final-audit.sh, docs/history-audit.md, tests/spikes and test_spikes_common, test_design_partb, test_release_docs, test_smoke_skeleton (tests/smoke_image.py stays, CI runs it), test_registry_e2e + e2e_registry + docs/local-registry.md (needs a registry), test_update_bot_config. Why: they only guard the overnight process or v1.
+- Step 2, kept `dev/record-checksums.sh`: CONTRIBUTING, the PR template, dependabot.yml and the go/gcloud tool.conf files tell maintainers to run it. Its test stays (test_record_checksums).
+- Step 2, kept test_build_index: 5 fast tests of a real build script (`container/web/build-index.sh`), not a process artifact.
+- Step 2, `dev/owner-check.sh` and test_owner_check deleted; `docs/owner-checks.md` rewritten as a plain checklist table (the B6..B34 facts, B20 and the clean-machine walk-through kept, the script ids dropped). Undo: revert the commit and restore the old doc.
+- Step 2, test_docs_consistency (1100 lines of phase-close and wording audits) replaced by 6 guards: README commands exist, relative links of the user docs resolve, no `<org>`, topics, quick start, security wording.
+- Step 2, test_ci_workflow rewritten as 10 text checks without PyYAML (it used to pip-install PyYAML into a venv). ci.yml now runs `sh tests/run_all.sh` in the linux job instead of listing 80 files by hand.
+- The historical docs (design.md, decision-log.md, implementation-plan.md, implementation-status.md, overnight-report.md) still mention deleted files and the migration. I left them as history; no test reads them any more. A later step may prune or delete them.
