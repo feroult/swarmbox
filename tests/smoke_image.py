@@ -477,7 +477,7 @@ def step_up_busy_port_and_foreign(ctx):
     assert c.returncode == 0, c.stderr
     r = other.run("up")
     assert r.returncode == 5, "up over a container without the managed label exited %d: %s" % (r.returncode, r.stderr[-800:])
-    assert "made by SwarmBox v0.1.0" in r.stderr, r.stderr[-800:]
+    assert "SwarmBox 2 did not make" in r.stderr, r.stderr[-800:]
     assert podman("container", "exists", other.name).returncode == 0, "the foreign container was removed"
     r = other.run("reset")
     assert r.returncode == 5, "reset exited %d" % r.returncode

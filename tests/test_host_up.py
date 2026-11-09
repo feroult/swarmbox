@@ -341,13 +341,13 @@ class CreateTest(Base):
 class ConflictTest(Base):
     V010 = line(managed="", image="swarmbox:latest")
 
-    def test_a_v0_1_0_container_is_exit_5_for_up_and_is_never_removed(self):
+    def test_a_container_without_the_managed_label_is_exit_5_for_up_and_is_never_removed(self):
         self.podman(lookup={"stdout": self.V010}, mounts="/home/me/work\n")
         r = self.up()
         self.assertEqual(r.returncode, 5, r.stderr)
-        self.assertIn("A container named '%s' made by SwarmBox v0.1.0 exists (workspace: /home/me/work)." % NAME, r.stderr)
+        self.assertIn("a container named '%s' exists that SwarmBox 2 did not make." % NAME, r.stderr)
         self.assertIn("podman rm -f swarmbox", r.stderr)
-        self.assertIn("swarmbox config set WORKSPACE /home/me/work", r.stderr)
+        self.assertNotIn("WORKSPACE", r.stderr)
         self.assert_no_run()
         self.assertEqual(self.subs("rm"), [])
         self.assertEqual(self.subs("start"), [])

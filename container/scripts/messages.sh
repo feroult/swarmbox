@@ -6,6 +6,8 @@
 GRAY='\033[0;90m'
 WHITE='\033[0;37m'
 RESET='\033[0m'
+# no colour codes when the output is not a terminal (swarmbox pubkey > file)
+if [ ! -t 1 ]; then GRAY=''; WHITE=''; RESET=''; fi
 
 # Simple message functions - no fancy icons
 msg() {

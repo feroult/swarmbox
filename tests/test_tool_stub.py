@@ -38,10 +38,10 @@ class ToolStub(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("0 manifest(s) checked", r.stdout)
 
-    def test_unknown_commands_exit_70(self):
-        # use, remove, new and doctor are real since slice 4b.5 (test_tool_use_remove.py, test_tool_new.py, test_tool_doctor.py)
+    def test_unknown_commands_print_the_usage_and_exit_64(self):
         r = self.run_tool("bogus")
-        self.assertEqual(r.returncode, 70)
+        self.assertEqual(r.returncode, 64)
+        self.assertIn("usage: swarmbox tool", r.stderr)
         self.assertIn("unknown command", r.stderr)
         self.assertEqual(r.stdout, "")
 
