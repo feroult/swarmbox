@@ -1,5 +1,5 @@
 # The default names of the product. The ONE place that holds them: every default name is read from
-# here (the host helper, swarmbox-init, swarmbox-attach inside the box, cloudflare-setup.py, the release workflow, dev/name-check.sh).
+# here (the swarmbox script, swarmbox-install, swarmbox-attach inside the box, cloudflare-setup.py, the release workflow, dev/name-check.sh).
 # KEY=VALUE lines only, shell-sourceable; a value with characters special to the shell is in single quotes. Do not add keys:
 # the volume (<name>-containers), the Podman connection, the locks, the connector (<name>-cloudflared), the tunnel and the
 # hostname key all derive from the box name. To flip the names for the real release, change these two lines.
