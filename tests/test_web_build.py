@@ -176,8 +176,7 @@ class Run(WebCase):
         self.assertEqual(argv[-4:], ["tmux", "attach", "-t", "main"])
         write_exec(os.path.join(self.fake, "swarmbox-attach"), FAKE_ATTACH)
         argv = self.run_web()["argv"]
-        self.assertEqual(argv[-1], "swarmbox-attach")
-        self.assertNotIn("tmux", argv[-2:])
+        self.assertEqual(argv[-2:], ["swarmbox-attach", "--web"])   # --web keeps tmux's status bar (the tabs) in the browser
 
     def test_a_failed_render_does_not_start_ttyd(self):
         r = self.web("run", SWARMBOX_TEST_WEB_PAGE=os.path.join(self.tmp, "nope.html"))

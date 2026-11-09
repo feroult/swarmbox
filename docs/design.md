@@ -181,7 +181,7 @@ and must be your choice. It also warns when the box's image is not the one the c
 - `serve` creates tmux session `main` with one idle window named `idle`, so the session exists before the first tab.
 - Entering (`swarmbox-attach`, run through `podman exec`) adds a window through a *grouped* session: each tab and the browser keeps its own
   current window; the grouped session ends when a tab closes, the windows stay until their shells exit. When the only other window is the
-  untouched idle one (named `idle`, one pane, a shell), it is closed. A host tab has no tmux status bar; the browser keeps it.
+  untouched idle one (named `idle`, one pane, a shell), it is closed. A host tab has no tmux status bar. The browser (`swarmbox-attach --web`, what ttyd runs) attaches to `main` itself and keeps the bar, so it lists every window, the ones opened from host tabs too.
 - Closing every tab or the browser stops nothing; `swarmbox stop` does.
 - `attach` waits for the readiness marker (60 s, then exit 6 and a message naming `podman logs`).
 - **`swarmbox <command>`** with a terminal: the command runs in a new window through `bash -ic` (so the agent aliases and `PATH` apply) as a

@@ -358,6 +358,18 @@ class InteractiveAttachFakeTests(FakeTmuxCase):
         self.assertIn("select-window -t @7", flat)
         self.assertEqual(ns.count(";"), 3)  # three chained commands
 
+    def test_web_attaches_to_the_session_itself_so_the_status_bar_stays(self):
+        self.put("windows.txt", "@0|idle|bash|1\n")
+        p = self.run_term(self.fake, ["--web"])
+        self.assertEqual(p.wait(), 0)
+        self.assertEqual(self.subs("new-window"), [])
+        att = self.subs("attach-session")[0]
+        self.assertIn("=main", att)
+        flat = " ".join(" ".join(c) for c in self.calls())
+        self.assertNotIn("status off", flat)
+        self.assertNotIn("destroy-unattached", flat)
+
+
 class CommandFakeTests(FakeTmuxCase):
     def setUp(self):
         super().setUp()

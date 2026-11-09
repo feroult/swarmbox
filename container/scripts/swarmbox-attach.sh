@@ -1,8 +1,10 @@
 #!/bin/bash
 # swarmbox-attach (installed as /usr/local/bin/swarmbox-attach, called by `swarmbox-entrypoint attach`).
 #
-#   swarmbox-attach [--plain] [--] [command [args...]]
+#   swarmbox-attach [--plain | --web] [--] [command [args...]]
 #
+#   --web                   what the web terminal (ttyd) runs: attaches to tmux session "main" itself, with its status bar,
+#                           so the browser shows every window (tab) of the session, the ones opened from host terminals too
 #   no command, terminal    a new window of tmux session "main" through a grouped session (no status bar, ends with the
 #                           tab); when the only other window is the idle one `serve` made, that one is closed
 #   command, terminal       the `swarmbox <command>` mechanism: a detached window runs the command through an
@@ -43,7 +45,8 @@ fi
 unset TMUX
 
 PLAIN=0
-if [ "${1:-}" = "--plain" ]; then PLAIN=1; shift; fi
+WEB=0
+if [ "${1:-}" = "--plain" ]; then PLAIN=1; shift; elif [ "${1:-}" = "--web" ]; then WEB=1; shift; fi
 if [ "${1:-}" = "--" ]; then shift; fi
 
 die() { echo "swarmbox: $*" >&2; exit "${2:-1}"; }
@@ -104,6 +107,13 @@ interactive() {
     [ -n "$w" ] || die "tmux could not open a window"
     [ -z "$idle" ] || tmux kill-window -t "$idle" 2>/dev/null
     exec tmux new-session -t "=$SESSION" \; set-option destroy-unattached on \; set-option status off \; select-window -t "$w"
+}
+
+# web: the browser attaches to the session itself (not a grouped one), so it keeps the status bar with the tabs; the host
+# terminals are the ones that go through a grouped session without a bar.
+web() {
+    ensure_session || die "tmux could not start the session $SESSION"
+    exec tmux attach-session -t "=$SESSION"
 }
 
 # The wrapper runs as the window's command. $1 the quoted command, $2 the status file, $3 the channel.
@@ -217,7 +227,9 @@ wait_ready
 if [ "$PLAIN" = 1 ] || ! have_terminal || ! command -v tmux > /dev/null 2>&1; then
     direct
 fi
-if [ -z "$q" ]; then
+if [ "$WEB" = 1 ]; then
+    web
+elif [ -z "$q" ]; then
     interactive
 else
     run_command

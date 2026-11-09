@@ -143,7 +143,7 @@ for key in "${!OPT[@]}"; do
     TTYD_ARGS+=(-t "$key=$(json_value "${OPT[$key]}")")
 done
 if command -v swarmbox-attach > /dev/null 2>&1; then
-    TTYD_ARGS+=(swarmbox-attach)
+    TTYD_ARGS+=(swarmbox-attach --web)
 else
     TTYD_ARGS+=(tmux attach -t main)
 fi
