@@ -231,7 +231,7 @@ jobs:
       DIGEST: ${{ needs.manifest.outputs.digest }}
       REGISTRY_IMAGE: ${{ needs.version.outputs.image }}
     steps:
-      - uses: sigstore/cosign-installer@v3.7.0
+      - uses: sigstore/cosign-installer@v4.1.3
       - name: Log in to ghcr.io with the workflow token
         env:
           GH_ACTOR: ${{ github.actor }}
