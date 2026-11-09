@@ -176,7 +176,7 @@ class HostHelper(Base):
         os.symlink(inst, os.path.join(bindir, "swarmbox-install"))
         env = self.env(path=bindir, SWARMBOX_TEST_HOST_DIR=os.path.join(ROOT, "container", "host"),
                        SWARMBOX_TEST_CONTAINERENV=os.path.join(self.base, "none"))
-        r = self.run_ep("install", "--with", "claude", env=env)
+        r = self.run_ep("install", "--with", "claude", "--image", "x/y:1", env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertTrue(r.stdout.startswith(b"#!/bin/sh\n"))
         self.assertIn(b"WITH='claude'", r.stdout)
