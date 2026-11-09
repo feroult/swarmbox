@@ -3,7 +3,7 @@
 
 Builds (or reuses) the image and checks it in throwaway containers: `serve` reaches readiness, `box:/tmp/swarmbox` is empty
 after a stop and a start, the ttyd page is built, `swarmbox-tool validate` passes on the shipped manifests, the claude shim, index and tool-ports are there, two `attach` calls share one session, the
-image holds no agent, the host helper's up, reset and stop work against a real throwaway box, and (full mode only) a nested Podman runs a container.
+image holds no agent, the `swarmbox` script installs from the image (twice) and its up, reset and stop work against a real throwaway box, and (full mode only) a nested Podman runs a container.
 
 Two modes:
   reduced (default once opted in)  for the development box, which is itself a container: the throwaway box starts with the
@@ -328,23 +328,16 @@ def free_port():
 
 
 class HostSide:
-    """The host helper (container/host/swarmbox-host) run against the real Podman, for one throwaway box.
+    """The `swarmbox` script, installed from the image by its own installer, run against the real Podman for one throwaway box.
 
-    Everything is in a mktemp folder: the helper copy with an empty tool-ports, HOME (so the config, the state folder and
-    the lock are there, never the real ones), the workspace, and a `podman` wrapper that only records the arguments of each
-    call and then runs the real Podman (so the number of calls of a command is measured, not assumed)."""
+    Everything is in a mktemp folder: the script (SWARMBOX_BIN_DIR) and its support files (SWARMBOX_TEST_SUPPORT_DIR), HOME (so the
+    config, the state folder and the lock are there, never the real ones), the workspace, and a `podman` wrapper that only records
+    the arguments of each call and then runs the real Podman (so the number of calls of a command is measured, not assumed)."""
 
     def __init__(self, ctx, name=None, port=None):
         self.ctx = ctx
         self.root = tempfile.mkdtemp(prefix="smoke-up-")
         ctx.dirs.append(self.root)
-        hdir = os.path.join(self.root, "helper")
-        os.makedirs(hdir)
-        for f in ("swarmbox-host", "VERSION", "DEFAULTS"):
-            shutil.copy(os.path.join(ROOT, "container", "host", f), os.path.join(hdir, f))
-        open(os.path.join(hdir, "tool-ports"), "w").close()
-        os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)
-        self.helper = os.path.join(hdir, "swarmbox-host")
         self.home = os.path.join(self.root, "home")
         self.ws = os.path.join(self.root, "ws")
         os.makedirs(self.home)
@@ -361,6 +354,16 @@ class HostSide:
         self.port = port or free_port()
         ctx.containers.append(self.name)
         ctx.volumes.append(exact_name(self.name + "-containers"))
+        self.helper = os.path.join(self.bindir, "swarmbox")
+        r = self.install()
+        assert r.returncode == 0, "the installer exited %d: %s" % (r.returncode, r.stderr[-800:])
+
+    def install(self):
+        """`podman run --rm IMAGE install --image IMAGE | sh`, the way a user runs it, into this host side's scratch folders."""
+        text = subprocess.run([os.path.join(self.bindir, "podman"), "run", "--rm", self.ctx.tag, "install", "--image", self.ctx.tag],
+                              env=self.env(), capture_output=True, text=True, timeout=240)
+        assert text.returncode == 0 and text.stdout.startswith("#!/bin/sh"), "install printed no installer: %s" % text.stderr[-800:]
+        return subprocess.run(["sh"], input=text.stdout, env=self.env(), capture_output=True, text=True, timeout=240)
 
     def env(self, **extra):
         e = {k: v for k, v in os.environ.items() if not k.startswith(("SWARMBOX_", "XDG_"))}
@@ -378,6 +381,8 @@ class HostSide:
         open(conf, "a").close()
         e["CONTAINERS_CONF"] = conf
         e["XDG_CONFIG_HOME"] = os.path.join(self.home, ".config")
+        e["SWARMBOX_BIN_DIR"] = self.bindir
+        e["SWARMBOX_TEST_SUPPORT_DIR"] = os.path.join(self.root, "support")
         e.update({"HOME": self.home, "SWARMBOX_NAME": self.name, "SWARMBOX_WORKSPACE": self.ws,
                   "SWARMBOX_WEB_PORT": str(self.port), "SWARMBOX_IMAGE": self.ctx.tag, "SWARMBOX_INIT": "auto"})
         if not self.ctx.full:
@@ -400,8 +405,31 @@ class HostSide:
         return podman("container", "inspect", "--format", template, name or self.name).stdout.strip()
 
 
+def step_install_script(ctx):
+    """The installer of the image, twice: one executable file, the config, the PATH advice, the warning for an old function block,
+    and the installed script answers `version`, `--help` and `config list` without touching a box."""
+    hs = HostSide(ctx)   # installed once already
+    first = open(hs.helper, "rb").read()
+    assert os.stat(hs.helper).st_mode & 0o777 == 0o755, "mode of the installed script"
+    assert sorted(os.listdir(hs.bindir)) == ["podman", "swarmbox"], os.listdir(hs.bindir)
+    with open(os.path.join(hs.home, ".bashrc"), "w") as f:
+        f.write("# >>> swarmbox 2.0.0 >>>\nswarmbox() { :; }\n# <<< swarmbox 2.0.0 <<<\n")
+    rc_before = open(os.path.join(hs.home, ".bashrc"), "rb").read()
+    r = hs.install()
+    assert r.returncode == 0, "the second install exited %d: %s" % (r.returncode, r.stderr[-800:])
+    assert open(hs.helper, "rb").read() == first, "the second install changed the script"
+    assert "old swarmbox shell function is still in:" in r.stderr and ".bashrc" in r.stderr, r.stderr
+    assert open(os.path.join(hs.home, ".bashrc"), "rb").read() == rc_before, "an rc file was changed"
+    for args, want in ((["version"], None), (["--help"], "usage: swarmbox"), (["config", "list"], "IMAGE=%s\t" % ctx.tag)):
+        p = hs.run(*args)
+        assert p.returncode == 0, "%s exited %d: %s" % (args, p.returncode, p.stderr[-400:])
+        assert (p.stdout.strip() if want is None else want in p.stdout), (args, p.stdout[:200])
+    assert not any(c.startswith(("start ", "rm ", "exec ")) for c in hs.calls()), "an install or a help touched a box: %r" % hs.calls()
+    assert podman("container", "exists", hs.name).returncode != 0, "a box was created"
+
+
 def step_up_lifecycle(ctx):
-    """The host helper's up, reset and stop against a real throwaway box."""
+    """The script's up, reset and stop against a real throwaway box."""
     hs = HostSide(ctx)
     marker = os.path.join(hs.ws, "survives-reset")
     # up creates the box and returns after readiness
@@ -494,7 +522,8 @@ STEPS = [
     Step("mcp-generated", "swarmbox-mcp generates mcp-servers.json with chrome-devtools and no npx", False, step_mcp_generated),
     Step("attach-session", "two attach calls share one session, the idle window is gone, exit codes", False, step_attach_session),
     Step("no-agent", "a default build holds no agent, gcloud, clasp, Go or Poetry and /opt/swarmbox/tools is empty", False, step_no_agent),
-    Step("up-lifecycle", "the host helper: up creates, a second up takes the fast path, reset replaces, stop and up again (3.7.2)", False, step_up_lifecycle),
+    Step("install-script", "the image's installer writes one script and the config, twice, warns about an old function, edits no rc file", False, step_install_script),
+    Step("up-lifecycle", "the script: up creates, a second up takes the fast path, reset replaces, stop and up again (3.7.2)", False, step_up_lifecycle),
     Step("up-busy-port", "up on a busy port exits 7 and leaves nothing; a foreign container with the name is refused with exit 5", False, step_up_busy_port_and_foreign),
     Step("nested-podman", "a nested Podman runs a container inside the box", True, step_nested_podman),
     Step("nested-cgroup", "the nested engine settings cgroupfs and file logger work", True, step_nested_cgroup),
