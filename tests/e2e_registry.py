@@ -44,6 +44,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 ROOT = os.path.dirname(HERE)
+from helpers import DEFAULT_IMAGE_REPO  # noqa: E402
 from smoke_image import exact_name, free_port, rnd, wait_for  # noqa: E402
 
 REGISTRY_IMAGE = "docker.io/library/registry:2"
@@ -426,8 +427,8 @@ def scenario(run, shell):
         line = design_install_line()
         run.untag_local("2.0", "2.0.0", "2.0.1", "2.1.0")   # an earlier shell's world pulled them; this one must pull again
         assert podman("image", "exists", ref("2.0.0")).returncode != 0, "the image is already local: the first call would not pull"
-        assert "ghcr.io/<org>/swarmbox:2.0.0" in line
-        cmd = line.replace("ghcr.io/<org>/swarmbox", repo).replace(">> ~/.bashrc", "--image %s >> %s" % (ref("2.0.0"), shlex.quote(w.rc)))
+        assert (DEFAULT_IMAGE_REPO + ":2.0.0") in line
+        cmd = line.replace(DEFAULT_IMAGE_REPO, repo).replace(">> ~/.bashrc", "--image %s >> %s" % (ref("2.0.0"), shlex.quote(w.rc)))
         r = subprocess.run(["sh", "-c", cmd], env=w.env(), capture_output=True, text=True, timeout=600)
         ok(r, "the install line")
         with open(w.rc) as f:

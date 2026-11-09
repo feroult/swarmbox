@@ -1,7 +1,7 @@
 --userns=keep-id:uid=1000,gid=1000
 --pids-limit=16384
 --hostname
-swarmbox
+@NAME@
 -v
 @WS@:/home/agent
 --tz=local
@@ -12,11 +12,11 @@ swarmbox
 --security-opt
 unmask=/proc/*
 -v
-swarmbox-containers:/home/agent/.local/share/containers
+@NAME@-containers:/home/agent/.local/share/containers
 -p
 127.0.0.1:7681:7681
 -e
-SWARMBOX_NAME=swarmbox
+SWARMBOX_NAME=@NAME@
 -e
 SWARMBOX_WEB=1
 -e
@@ -24,7 +24,7 @@ SWARMBOX_YOLO=1
 --label
 swarmbox.managed=2
 --label
-swarmbox.image=ghcr.io/<org>/swarmbox:@VERSION@
+swarmbox.image=@IMAGE_REPO@:@VERSION@
 --label
 swarmbox.workspace=@WS@
 --label

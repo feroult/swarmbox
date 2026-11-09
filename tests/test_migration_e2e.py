@@ -8,7 +8,7 @@ What runs, in the order of 12.4, all against mktemp folders and never against a 
   3. `podman rm -f swarmbox` (the fake records it), then the generated bash function with `init --workspace <copy>`, then
      `swarmbox env add` for the former --env-keys, `swarmbox config set` for PORTS and BROWSER_URL (12.4 steps 2 to 4);
   4. the first `swarmbox up` creates the box (fake podman) and re-registers the host connection that pointed at the old
-     `<workspace>/.swarmbox/podman.sock` (3.4); it never touches the volume `swarmbox-containers`;
+     `<workspace>/.swarmbox/podman.sock` (3.4); it never touches the box volume `<name>-containers`;
   5. the real container/scripts/swarmbox-migrate.sh (what `serve` step 4 runs) runs on the copy; every row of the 12.4 table is
      asserted, a second run changes nothing, and `.swarmbox/` stays because `memory/` exists.
 Every result here is tagged [reduced: fixture]: the fixture is derived from what the v0.1.0 scripts write (see FIXTURE_NOTES), not
@@ -26,7 +26,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT, FakePodman  # noqa: E402
+from helpers import ROOT, FakePodman, DEFAULT_VOLUME, DEFAULT_NAME, OLD_NAME  # noqa: E402
 
 MIGRATE = os.path.join(ROOT, "container", "scripts", "swarmbox-migrate.sh")
 DIRS_SH = os.path.join(ROOT, "container", "scripts", "dirs.sh")
@@ -34,7 +34,7 @@ INIT = os.path.join(ROOT, "container", "scripts", "swarmbox-init.sh")
 HOST_DIR = os.path.join(ROOT, "container", "host")
 with open(os.path.join(HOST_DIR, "VERSION")) as _f:
     VERSION = _f.read().strip()
-NAME = "swarmbox"
+NAME = DEFAULT_NAME
 SETTINGS = '{"permissions": {"allow": ["Bash(ls)"]}, "theme": "dark"}\n'
 FIXTURE_NOTES = ("derived from init.sh, podman-service.sh, web-terminal.sh and the Dockerfile of v0.1.0; a file those scripts did "
                  "not write is not covered; sizes and the exact log text are invented")
@@ -240,7 +240,7 @@ class Sequence(Base):
         self.stt = os.path.join(self.home, "state")
         hd = os.path.join(self.data, "swarmbox", "host")
         os.makedirs(hd)
-        for n in ("swarmbox-host", "VERSION"):
+        for n in ("swarmbox-host", "VERSION", "DEFAULTS"):
             shutil.copy(os.path.join(HOST_DIR, n), hd)
         os.chmod(os.path.join(hd, "swarmbox-host"), 0o755)
         put(os.path.join(hd, "tool-ports"), "")
@@ -253,8 +253,8 @@ class Sequence(Base):
         self.fn = self.make_function("--workspace", self.ws)
 
     def script(self, old_box):
-        look = ({"stdout": "running|swarmbox|sha256:aaa|false||old:latest|||\n"} if old_box
-                else {"exit": 125, "stderr": "Error: no such container swarmbox\n"})
+        look = ({"stdout": "running|%s|sha256:aaa|false||old:latest|||\n" % NAME} if old_box
+                else {"exit": 125, "stderr": "Error: no such container %s\n" % NAME})
         return {
             "container": {"rules": [
                 {"match": ["inspect", ".Mounts"], "stdout": self.ws if old_box else ""},
@@ -263,8 +263,8 @@ class Sequence(Base):
             "image": {"rules": [{"match": ["exists"]}, {"match": ["inspect"], "stdout": "sha256:aaa\n"}]},
             "version": {"stdout": "4.3.1\n"}, "exec": {"stdout": "ok\n"}, "run": {"cidfile": "abc\n"}, "ps": {}, "rm": {},
             "system": {"rules": [{"match": ["connection", "list"], "seq": [
-                {"stdout": "swarmbox %s\nother unix:///x/other.sock\n" % self.old_sock},
-                {"stdout": "swarmbox %s\nother unix:///x/other.sock\n" % self.new_sock}]}]},
+                {"stdout": "%s %s\nother unix:///x/other.sock\n" % (NAME, self.old_sock)},
+                {"stdout": "%s %s\nother unix:///x/other.sock\n" % (NAME, self.new_sock)}]}]},
         }
 
     def make_function(self, *flags):
@@ -345,7 +345,7 @@ class Sequence(Base):
         self.assertTrue(any(self.ws in a for a in runc), runc)
         for c in calls:
             self.assertFalse(c[:2] == ["volume", "rm"] or c[:3] == ["volume", "prune"], c)
-            self.assertFalse(c[0] == "rm" and "swarmbox-containers" in c, c)
+            self.assertFalse(c[0] == "rm" and DEFAULT_VOLUME in c, c)
             self.assertFalse(c[:2] == ["system", "reset"] or c[:2] == ["system", "prune"], c)
         self.assertEqual(len([c for c in calls if c[0] == "rm"]), 1, "only the old container was removed")
         # the connection step on its own now finds the new address: no second remove and add
@@ -420,7 +420,7 @@ class DocsText(unittest.TestCase):
         first_cmd = min(i for i in (t.find("podman rm -f"), t.find("init --workspace"), t.find("swarmbox env add")) if i >= 0)
         self.assertLess(low.find("back up"), first_cmd)
         for needle in ("podman rm -f swarmbox", "init --workspace", "swarmbox env add", "swarmbox config set PORTS",
-                       "swarmbox config set BROWSER_URL", "swarmbox remote status", "swarmbox-containers", "memory/",
+                       "swarmbox config set BROWSER_URL", "swarmbox remote status", OLD_NAME + "-containers", "memory/",
                        "copy", "sha256sum"):
             self.assertIn(needle, t)
         real = t[t.index("## The real migration"):]

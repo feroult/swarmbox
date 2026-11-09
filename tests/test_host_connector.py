@@ -10,10 +10,10 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_CONNECTOR  # noqa: E402
 from test_host_up import Base, HELPER_SRC  # noqa: E402
 
-CN = "swarmbox-cloudflared"
+CN = DEFAULT_CONNECTOR
 TOK = "eyJhIjoiYWNjdCIsInQiOiJ0dW4ifQ=="
 OTHER = "eyJhIjoib3RoZXIifQ=="
 PINNED = "docker.io/cloudflare/cloudflared:2026.10.7"
@@ -167,7 +167,7 @@ class ConnectorTest(ConnectorBase):
             self.assertFalse(any(a.startswith("name=") for a in c), c)
         with open(HELPER_SRC) as f:
             src = f.read()
-        self.assertNotIn("grep -q swarmbox-cloudflared", src)
+        self.assertNotIn(("grep -q " + DEFAULT_CONNECTOR), src)
 
     def test_web_off_skips_the_connector(self):
         self.with_connector()
@@ -181,7 +181,7 @@ class ConnectorTest(ConnectorBase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.run_calls(), [])
         for c in self.cn_calls():
-            self.assertNotIn("swarmbox-cloudflared-other", " ".join(c))
+            self.assertNotIn((DEFAULT_CONNECTOR + "-other"), " ".join(c))
         self.assertTrue(all(CN == c[-1] for c in self.cn_calls()))
 
     def test_the_token_of_the_config_file_is_used_only_with_mode_600(self):

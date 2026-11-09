@@ -32,7 +32,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_NAME  # noqa: E402
 
 ATTACH = os.path.join(ROOT, "container", "scripts", "swarmbox-attach.sh")
 ENTRYPOINT = os.path.join(ROOT, "container", "entrypoint.sh")
@@ -337,6 +337,27 @@ class ReadinessTests(FakeTmuxCase):
         self.assertIn(b"not ready", r.stderr)
         self.assertIn(b"podman logs", r.stderr)
         self.assertEqual(self.calls(), [])
+
+    def test_the_box_name_in_the_message_is_swarmbox_name_else_the_defaults_file(self):
+        """D40: no literal name in the script: the helper's SWARMBOX_NAME, else the DEFAULTS file next to the helper copy."""
+        self.not_ready()
+        r = self.run_noterm(self.fake, ["true"], SWARMBOX_TEST_READY_TIMEOUT="1", SWARMBOX_NAME="other-box")
+        self.assertIn(b"podman logs other-box` on the host", r.stderr)
+        hd = os.path.join(self.base, "hostdir")
+        os.makedirs(hd)
+        for text, want in (("SWARMBOX_DEFAULT_NAME=flipped\n", b"podman logs flipped` on"),
+                           ("SWARMBOX_DEFAULT_NAME='quoted'\n", b"podman logs quoted` on")):
+            with open(os.path.join(hd, "DEFAULTS"), "w") as f:
+                f.write(text)
+            r = self.run_noterm(self.fake, ["true"], SWARMBOX_TEST_READY_TIMEOUT="1", SWARMBOX_TEST_HOST_DIR=hd)
+            self.assertIn(want, r.stderr)
+        shutil_rm = os.path.join(hd, "DEFAULTS")
+        os.unlink(shutil_rm)
+        r = self.run_noterm(self.fake, ["true"], SWARMBOX_TEST_READY_TIMEOUT="1", SWARMBOX_TEST_HOST_DIR=hd)
+        self.assertIn(b"podman logs <box>` on", r.stderr)
+        self.assertNotIn(b"No such file", r.stderr)
+        with open(os.path.join(ROOT, "container", "host", "DEFAULTS")) as f:
+            self.assertIn("SWARMBOX_DEFAULT_NAME=" + DEFAULT_NAME, f.read())
 
     def test_not_ready_with_a_terminal_also_exits_6(self):
         self.not_ready()

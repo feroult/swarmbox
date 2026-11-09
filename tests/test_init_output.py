@@ -17,13 +17,13 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_IMAGE_REPO  # noqa: E402
 
 INIT = os.path.join(ROOT, "container", "scripts", "swarmbox-init.sh")
 HOST_DIR = os.path.join(ROOT, "container", "host")
 with open(os.path.join(HOST_DIR, "VERSION")) as _f:
     VERSION = _f.read().strip()
-DEFAULT_IMAGE = "ghcr.io/<org>/swarmbox:%s" % VERSION
+DEFAULT_IMAGE = (DEFAULT_IMAGE_REPO + ":%s") % VERSION
 UNKNOWN = "swarmbox init: unknown shell '%s'. Use --shell bash, zsh or fish."
 
 
@@ -143,9 +143,10 @@ class Output(Base):
         os.symlink(os.path.join(HOST_DIR, "templates"), os.path.join(d, "templates"))
         with open(os.path.join(d, "VERSION"), "w") as f:
             f.write("2.0.10\n")
+        shutil.copy(os.path.join(HOST_DIR, "DEFAULTS"), d)
         r = self.init("--shell", "bash", host_dir=d)
         self.assertIn("# >>> swarmbox 2.0.10 >>>", r.stdout)
-        self.assertIn("ghcr.io/<org>/swarmbox:2.0.10", r.stdout)
+        self.assertIn((DEFAULT_IMAGE_REPO + ":2.0.10"), r.stdout)
 
     def test_a_missing_or_malformed_version_file_exits_3(self):
         d = os.path.join(self.base, "hd")
@@ -164,9 +165,24 @@ class Output(Base):
         d = os.path.join(self.base, "hd")
         os.makedirs(os.path.join(d, "templates"))
         shutil.copy(os.path.join(HOST_DIR, "VERSION"), d)
+        shutil.copy(os.path.join(HOST_DIR, "DEFAULTS"), d)
         r = self.init("--shell", "bash", host_dir=d)
         self.assertEqual(r.returncode, 3)
         self.assertEqual(r.stdout, "")
+
+    def test_a_missing_defaults_file_exits_3_and_the_file_sets_the_image(self):
+        d = os.path.join(self.base, "hd")
+        os.makedirs(d)
+        os.symlink(os.path.join(HOST_DIR, "templates"), os.path.join(d, "templates"))
+        shutil.copy(os.path.join(HOST_DIR, "VERSION"), d)
+        r = self.init("--shell", "bash", host_dir=d)
+        self.assertEqual((r.returncode, r.stdout), (3, ""))
+        self.assertIn("DEFAULTS", r.stderr)
+        with open(os.path.join(d, "DEFAULTS"), "w") as f:
+            f.write("SWARMBOX_DEFAULT_NAME=flipped\nSWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/<org>/flipped'\n")
+        r = self.init("--shell", "bash", host_dir=d)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("ghcr.io/<org>/flipped:" + VERSION, r.stdout)
 
 
 class Shell(Base):

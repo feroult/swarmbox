@@ -23,7 +23,7 @@ import threading
 import unittest
 import urllib.parse
 
-from helpers import ROOT
+from helpers import ROOT, DEFAULT_CONNECTOR, DEFAULT_NAME, DEFAULTS_FILE
 
 SCRIPT = os.path.join(ROOT, "cloudflare-setup.py")
 GOOD_TOKEN = "good-token"
@@ -232,7 +232,7 @@ class T(unittest.TestCase):
     def apply(self, *extra, **kw):
         return self.run_cli(*(BASE + list(extra)), **kw)
 
-    def host_rule(self, host="swarmbox.talkr.run"):
+    def host_rule(self, host=DEFAULT_NAME + ".talkr.run"):
         cfg = FAKE.configs[FAKE.tunnels[0]["id"]]
         return next(r for r in cfg["ingress"] if r.get("hostname") == host)
 
@@ -260,7 +260,7 @@ class TestApply(T):
         app = FAKE.apps[0]
         pol = FAKE.policies[0]
         self.assertEqual(app["type"], "self_hosted")
-        self.assertEqual(app["domain"], "swarmbox.talkr.run")
+        self.assertEqual(app["domain"], DEFAULT_NAME + ".talkr.run")
         self.assertEqual(app["allowed_idps"], [FAKE.idps[0]["id"]])
         self.assertEqual(FAKE.idps[0]["type"], "onetimepin")
         self.assertEqual(app["policies"], [{"id": pol["id"], "precedence": 1}])
@@ -278,7 +278,7 @@ class TestApply(T):
 
     def test_default_hostname_hint_uses_the_domain(self):
         code, out, err = self.apply()
-        self.assertIn("https://swarmbox.talkr.run", out)
+        self.assertIn("https://" + DEFAULT_NAME + ".talkr.run", out)
         self.assertNotIn("--reset --web", out)
         self.assertIn("delete the API token", out)
 
@@ -338,7 +338,7 @@ class TestApply(T):
         with open(path) as f:
             saved = json.load(f)
         self.assertEqual(saved["hostname"], "tty.talkr.run")
-        self.assertEqual(saved["name"], "swarmbox")
+        self.assertEqual(saved["name"], DEFAULT_NAME)
         self.assertEqual(saved["session"], "168h")
 
     def test_rerun_without_hostname_serves_the_saved_hostname_for_the_same_name(self):
@@ -347,7 +347,7 @@ class TestApply(T):
         code, out, err = self.apply()
         self.assertEqual(code, 0, err)
         self.assertIn("tty.talkr.run", out)
-        self.assertNotIn("swarmbox.talkr.run", out)
+        self.assertNotIn(DEFAULT_NAME + ".talkr.run", out)
 
     def test_saved_hostname_is_ignored_for_another_name(self):
         self.apply("--hostname", "tty.talkr.run")
@@ -397,13 +397,13 @@ class TestApply(T):
         self.apply("--name", "second", "--port", "7682")
         self.assertEqual(len(FAKE.tunnels), 1)
         hosts = [r.get("hostname") for r in FAKE.configs[FAKE.tunnels[0]["id"]]["ingress"]]
-        self.assertEqual(hosts, ["swarmbox.talkr.run", "second.talkr.run", None])
+        self.assertEqual(hosts, [DEFAULT_NAME + ".talkr.run", "second.talkr.run", None])
         self.assertEqual(self.host_rule("second.talkr.run")["service"], "http://localhost:7682")
         self.assertEqual(len(FAKE.apps), 2)
         self.assertEqual(len(FAKE.dns), 2)
 
     def test_existing_unrelated_ingress_rules_are_preserved(self):
-        FAKE.tunnels.append({"id": "tunX", "name": "swarmbox", "config_src": "cloudflare"})
+        FAKE.tunnels.append({"id": "tunX", "name": DEFAULT_NAME, "config_src": "cloudflare"})
         FAKE.configs["tunX"] = {"ingress": [{"hostname": "other.talkr.run", "service": "http://localhost:9"},
                                             {"service": "http_status:404"}],
                                 "warp-routing": {"enabled": False}}
@@ -420,7 +420,7 @@ class TestApply(T):
         self.assertFalse([1 for m, p in FAKE.mutations() if "identity_providers" in p])
 
     def test_wrong_dns_target_is_fixed(self):
-        FAKE.dns.append({"id": "d0", "type": "CNAME", "name": "swarmbox.talkr.run",
+        FAKE.dns.append({"id": "d0", "type": "CNAME", "name": DEFAULT_NAME + ".talkr.run",
                          "content": "old.example.net", "proxied": False})
         self.apply()
         self.assertEqual(len(FAKE.dns), 1)
@@ -428,14 +428,14 @@ class TestApply(T):
         self.assertTrue(FAKE.dns[0]["proxied"])
 
     def test_refuses_to_replace_a_non_cname_record(self):
-        FAKE.dns.append({"id": "d0", "type": "A", "name": "swarmbox.talkr.run", "content": "1.2.3.4"})
+        FAKE.dns.append({"id": "d0", "type": "A", "name": DEFAULT_NAME + ".talkr.run", "content": "1.2.3.4"})
         code, _, err = self.apply()
         self.assertNotEqual(code, 0)
         self.assertIn("already has a A record", err)
         self.assertEqual([r["id"] for r in FAKE.dns], ["d0"])
 
     def test_locally_managed_tunnel_is_refused(self):
-        FAKE.tunnels.append({"id": "tunL", "name": "swarmbox", "config_src": "local"})
+        FAKE.tunnels.append({"id": "tunL", "name": DEFAULT_NAME, "config_src": "local"})
         code, _, err = self.apply()
         self.assertNotEqual(code, 0)
         self.assertIn("configured locally", err)
@@ -555,7 +555,7 @@ class TestTokenCommand(T):
 
     def test_needs_neither_an_email_nor_the_other_settings(self):
         self.apply()
-        code, out, _ = self.run_cli("token", "--domain", "talkr.run", "--tunnel", "swarmbox")
+        code, out, _ = self.run_cli("token", "--domain", "talkr.run", "--tunnel", DEFAULT_NAME)
         self.assertEqual(code, 0)
         self.assertTrue(out.startswith("tok."))
 
@@ -597,8 +597,8 @@ class TestRemove(T):
                          else "app" if "access/apps" in p else "policy" if "access/policies" in p else "?")
         self.assertEqual(order, ["dns", "route", "app", "policy"], "route is taken away before the login")
         hosts = [r.get("hostname") for r in FAKE.configs[FAKE.tunnels[0]["id"]]["ingress"]]
-        self.assertEqual(hosts, ["swarmbox.talkr.run", None])
-        self.assertEqual([a["domain"] for a in FAKE.apps], ["swarmbox.talkr.run"])
+        self.assertEqual(hosts, [DEFAULT_NAME + ".talkr.run", None])
+        self.assertEqual([a["domain"] for a in FAKE.apps], [DEFAULT_NAME + ".talkr.run"])
         self.assertEqual(len(FAKE.dns), 1)
 
     def test_remove_last_route_leaves_a_valid_catch_all(self):
@@ -712,7 +712,7 @@ esac
         self.assertTrue(os.path.exists(os.path.join(self.shim, "state")))
         code, out, err = self.remove()
         self.assertEqual(code, 0, err)
-        self.assertIn("rm -f swarmbox-cloudflared", self.calls())
+        self.assertIn(("rm -f " + DEFAULT_CONNECTOR), self.calls())
         self.assertFalse(os.path.exists(os.path.join(self.shim, "state")), "connector gone")
         self.assertNotIn("were left in place", out)
 
@@ -808,6 +808,36 @@ class TestVerify(unittest.TestCase):
     def test_redirect_elsewhere_is_not_protection(self):
         url = self.serve(302, "https://example.com/")
         self.assertEqual(cs.check_protected(url, timeout=1)[0], "unknown")
+
+
+class TestDefaultNames(unittest.TestCase):
+    """D40: the default name, the tunnel and the connector come from container/host/DEFAULTS, read next to the script."""
+
+    def test_defaults_of_the_parser_and_the_connector(self):
+        a = cs.build_parser().parse_args([])
+        self.assertEqual((a.name, a.tunnel), (DEFAULT_NAME, DEFAULT_NAME))
+        self.assertEqual(cs.CONNECTOR_NAME, DEFAULT_CONNECTOR)
+        self.assertEqual(cs.DEFAULT_NAME, DEFAULT_NAME)
+
+    def test_the_script_reads_the_defaults_file_next_to_it_and_refuses_without_one(self):
+        import shutil
+        import subprocess
+        d = tempfile.mkdtemp(prefix="swarmbox-test-cfdefaults-")
+        try:
+            shutil.copy(SCRIPT, d)
+            r = subprocess.run([sys.executable, "-I", os.path.join(d, "cloudflare-setup.py"), "--help"],
+                               capture_output=True, text=True, cwd=d, env=dict(os.environ, COLUMNS="80"))
+            self.assertNotEqual(r.returncode, 0)          # no DEFAULTS here, and no container/host/ below it
+            self.assertIn("DEFAULTS", r.stderr)
+            with open(os.path.join(d, "DEFAULTS"), "w") as f:
+                f.write("SWARMBOX_DEFAULT_NAME=flipped\nSWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/<org>/flipped'\n")
+            r = subprocess.run([sys.executable, "-I", os.path.join(d, "cloudflare-setup.py"), "--help"],
+                               capture_output=True, text=True, cwd=d, env=dict(os.environ, COLUMNS="80"))
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("(default:\n                        flipped)", r.stdout)   # argparse wraps the help text
+            self.assertIn("remove --name flipped --yes", r.stdout)
+        finally:
+            shutil.rmtree(d)
 
 
 if __name__ == "__main__":

@@ -59,6 +59,32 @@ UNKNOWN_COMMAND_EXIT = 64
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
+DEFAULTS_FILE = os.path.join(ROOT, "container", "host", "DEFAULTS")
+
+
+def read_defaults():
+    """The KEY=VALUE pairs of container/host/DEFAULTS (D40), one pair of single quotes removed from a value."""
+    out = {}
+    with open(DEFAULTS_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                if len(v) >= 2 and v[0] == v[-1] == "'":
+                    v = v[1:-1]
+                out[k] = v
+    return out
+
+
+_DEFAULTS = read_defaults()
+# The default names of the product. Tests read them here, never as a literal (tests/test_default_names_lint.py enforces it).
+DEFAULT_NAME = _DEFAULTS["SWARMBOX_DEFAULT_NAME"]
+DEFAULT_IMAGE_REPO = _DEFAULTS["SWARMBOX_DEFAULT_IMAGE_REPO"]
+DEFAULT_VOLUME = DEFAULT_NAME + "-containers"
+DEFAULT_CONNECTOR = DEFAULT_NAME + "-cloudflared"
+# The v0.1.0 name: only for tests that look at migration or the old fixtures, never a default of 2.0.
+OLD_NAME = "swarmbox"
+
 _FAKE_SCRIPT = r'''#!%(python)s
 import json, os, sys
 d = os.path.dirname(os.path.abspath(__file__))

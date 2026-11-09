@@ -14,7 +14,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_IMAGE_REPO  # noqa: E402
 
 SCRIPT = os.path.join(ROOT, "dev", "release-check.sh")
 
@@ -218,7 +218,7 @@ class ReleaseCheckTest(unittest.TestCase):
         self.assertFails(r, "owner-todo")
         self.assertIn("SECURITY.md", r.stdout)
         repo = self.fresh()
-        write(repo, "README.md", "podman run ghcr.io/<org>/swarmbox:2.0.0 init\n")
+        write(repo, "README.md", ("podman run " + DEFAULT_IMAGE_REPO + ":2.0.0 init\n"))
         self.commit(repo)
         r = run(repo)
         self.assertEqual(r.returncode, 0, r.stdout)

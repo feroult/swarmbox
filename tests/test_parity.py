@@ -39,7 +39,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT, FakePodman, FakeHostHelper  # noqa: E402
+from helpers import ROOT, FakePodman, FakeHostHelper, DEFAULT_VOLUME, DEFAULT_NAME, OLD_NAME  # noqa: E402
 import function_cases as fcs  # noqa: E402
 import test_attach_command as ta  # noqa: E402
 import test_bashrc_fragment as tb  # noqa: E402
@@ -127,6 +127,7 @@ class FnBase(tu.Base):
         os.makedirs(hd)
         os.symlink(os.path.join(fcs.REAL_HOST_DIR, "templates"), os.path.join(hd, "templates"))
         shutil.copy(tu.VERSION_SRC, os.path.join(hd, "VERSION"))
+        shutil.copy(os.path.join(os.path.dirname(tu.VERSION_SRC), "DEFAULTS"), os.path.join(hd, "DEFAULTS"))
         r = subprocess.run(["sh", fcs.INIT, "--shell", "bash"], capture_output=True, text=True,
                            env={"PATH": os.environ["PATH"], "SWARMBOX_TEST_HOST_DIR": hd})
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -177,10 +178,10 @@ class Row01Box(FnBase):
         self.assertEqual(r.returncode, 0, r.stderr)
         runs = self.real_runs()
         self.assertEqual(len(runs), 1)
-        self.assertEqual(runs[0][:4], ["run", "-d", "--name", "swarmbox"])
+        self.assertEqual(runs[0][:4], ["run", "-d", "--name", DEFAULT_NAME])
         self.assertEqual(runs[0][-2:], [tu.IMAGE, "serve"])
         last = self.calls()[-1]
-        self.assertEqual(last, ["exec", "-i", "-e", "TERM", "-e", "COLORTERM", "swarmbox", "swarmbox-entrypoint", "attach"])
+        self.assertEqual(last, ["exec", "-i", "-e", "TERM", "-e", "COLORTERM", DEFAULT_NAME, "swarmbox-entrypoint", "attach"])
         self.assertEqual(self.subs("rm"), [])
 
     def test_row01_the_second_entry_reuses_the_running_box(self):
@@ -196,7 +197,7 @@ class Row01Box(FnBase):
         self.podman(lookup={"stdout": self.matching_line(state="exited")})
         r = self.swarmbox()
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.subs("start"), [["start", "swarmbox"]])
+        self.assertEqual(self.subs("start"), [["start", DEFAULT_NAME]])
         self.assert_no_run()
 
     def test_row01_up_creates_without_attaching(self):
@@ -210,7 +211,7 @@ class Row01Box(FnBase):
         self.podman(lookup={"stdout": self.matching_line()})
         r = self.swarmbox("stop")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.subs("stop"), [["stop", "swarmbox"]])
+        self.assertEqual(self.subs("stop"), [["stop", DEFAULT_NAME]])
         self.assertEqual(self.subs("rm"), [])
         self.assert_no_run()
 
@@ -218,7 +219,7 @@ class Row01Box(FnBase):
         self.podman(lookup={"stdout": self.matching_line()})
         r = self.swarmbox("reset")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.subs("rm"), [["rm", "-f", "swarmbox"]])
+        self.assertEqual(self.subs("rm"), [["rm", "-f", DEFAULT_NAME]])
         self.assertEqual(len(self.real_runs()), 1)
         self.assertFalse([c for c in self.calls() if c[:1] == ["volume"]])
 
@@ -302,7 +303,7 @@ class Row03Flags(FlagsBase):
         self.assertIn(("--pids-limit", "16384"), self.pairs())
 
     def test_row03_hostname(self):
-        self.assertIn(("--hostname", "swarmbox"), self.pairs())
+        self.assertIn(("--hostname", DEFAULT_NAME), self.pairs())
         self.assertIn(("--hostname", "devbox"), self.pairs(env={"SWARMBOX_HOSTNAME": "devbox"}))
 
     def test_row03_time_zone(self):
@@ -532,7 +533,7 @@ class Row08Git(unittest.TestCase):
         f.podman(lookup={"stdout": f.matching_line()})
         r = f.swarmbox("pubkey")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(f.calls()[-1], ["exec", "-i", "-e", "TERM", "-e", "COLORTERM", "swarmbox", "swarmbox-entrypoint", "pubkey"])
+        self.assertEqual(f.calls()[-1], ["exec", "-i", "-e", "TERM", "-e", "COLORTERM", DEFAULT_NAME, "swarmbox-entrypoint", "pubkey"])
 
     def test_row08_trust_on_first_use_for_the_three_hosts(self):
         conf = read(CONFIG, "ssh-swarmbox.conf")
@@ -605,8 +606,8 @@ class Row10Remote(unittest.TestCase):
         r = e.remote(*self.SETUP, "--session", "24h")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual((len(e2e.FAKE.apps), len(e2e.FAKE.dns), len(e2e.FAKE.tunnels)), (1, 1, 1))
-        self.assertIn("swarmbox.talkr.run", e.remote("status", "--domain", "talkr.run").stdout)
-        self.assertIn("https://swarmbox.talkr.run", e.helper_run("url").stdout)
+        self.assertIn(DEFAULT_NAME + ".talkr.run", e.remote("status", "--domain", "talkr.run").stdout)
+        self.assertIn("https://" + DEFAULT_NAME + ".talkr.run", e.helper_run("url").stdout)
         t = e.remote("token", "--domain", "talkr.run")
         self.assertEqual(t.stdout, "tok." + e2e.FAKE.tunnels[0]["id"] + "\n")
         self.assertEqual(e.remote("off", "--domain", "talkr.run", "--yes").returncode, 0)
@@ -647,7 +648,7 @@ class Row11Nested(FlagsBase):
         p = self.pairs()
         self.assertIn(("--device", "/dev/net/tun"), p)
         self.assertIn(("--security-opt", "unmask=/proc/*"), p)
-        self.assertIn(("-v", "swarmbox-containers:/home/agent/.local/share/containers"), p)
+        self.assertIn(("-v", (DEFAULT_VOLUME + ":/home/agent/.local/share/containers")), p)
 
     def test_row11_the_volume_follows_the_box_name(self):
         p = self.pairs(env={"SWARMBOX_NAME": "second"})
@@ -660,7 +661,7 @@ class Row11Connection(tu.Base):
         r = self.up()
         self.assertEqual(r.returncode, 0, r.stderr)
         sysc = [c for c in self.calls() if c[:1] == ["system"]]
-        self.assertTrue(any(c[:3] == ["system", "connection", "add"] and c[3] == "swarmbox" for c in sysc), sysc)
+        self.assertTrue(any(c[:3] == ["system", "connection", "add"] and c[3] == DEFAULT_NAME for c in sysc), sysc)
 
     def test_row11_up_refuses_to_create_without_dev_net_tun(self):
         self.podman()
@@ -932,7 +933,7 @@ class Kept(FlagsBase):
 
     def test_kept_the_ssh_key_and_the_nested_volume(self):
         self.assertTrue(os.path.exists(os.path.join(SCRIPTS, "ssh-key.sh")))
-        self.assertIn(("-v", "swarmbox-containers:/home/agent/.local/share/containers"), self.pairs())
+        self.assertIn(("-v", (DEFAULT_VOLUME + ":/home/agent/.local/share/containers")), self.pairs())
 
     def test_kept_the_cloudflare_options_pass_through(self):
         usage = read(HELPER_SRC)
@@ -992,9 +993,16 @@ class Mapping(FlagsBase):
     def test_map_the_default_run_keeps_every_flag_of_v0_1_0_except_the_user_namespace_spelling(self):
         old = [a.replace("@WS@", self.ws) for a in V010.case("default")["flags"]]
         new = self.pairs()
+        def renamed(v):
+            # D40: the names v0.1.0 used as defaults are the 2.0 defaults now, spelled with the name of DEFAULTS
+            if v is None:
+                return v
+            v = v.replace(OLD_NAME + "-containers", DEFAULT_VOLUME)
+            return DEFAULT_NAME if v == OLD_NAME else v.replace("SWARMBOX_NAME=" + OLD_NAME, "SWARMBOX_NAME=" + DEFAULT_NAME)
         for p in pairs(old):
-            if p[0] in ("-d", "--name", "--userns", "swarmbox"):
+            if p[0] in ("-d", "--name", "--userns", OLD_NAME):     # OLD_NAME alone is v0.1.0's image argument
                 continue
+            p = (p[0], renamed(p[1]))
             self.assertIn(p, new, p)
         self.assertEqual([v for f, v in pairs(old) if f == "--userns"], ["keep-id"])
         self.assertIn(("--userns", "keep-id:uid=1000,gid=1000"), new)   # [new] fixed UID, 8.4 row 3

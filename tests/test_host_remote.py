@@ -20,7 +20,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_CONNECTOR, DEFAULT_NAME  # noqa: E402
 
 HELPER_SRC = os.path.join(ROOT, "container", "host", "swarmbox-host")
 VERSION_SRC = os.path.join(ROOT, "container", "host", "VERSION")
@@ -41,7 +41,7 @@ if os.environ.get("STUB_WRITE_CFG"):
     d = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "swarmbox")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "cloudflare.json"), "w") as f:
-        json.dump({"domain": "example.org", "emails": ["a@example.org"], "tunnel": "swarmbox"}, f, indent=2)
+        json.dump({"domain": "example.org", "emails": ["a@example.org"], "tunnel": "t"}, f, indent=2)
 if sys.argv[1:2] == ["token"] and os.environ.get("STUB_TOKEN"):
     print(os.environ["STUB_TOKEN"])
     print("(info line: the tunnel's own token)", file=sys.stderr)
@@ -61,6 +61,7 @@ class Base(unittest.TestCase):
         shutil.copy(HELPER_SRC, self.helper)
         os.chmod(self.helper, 0o755)
         shutil.copy(VERSION_SRC, os.path.join(self.hdir, "VERSION"))
+        shutil.copy(os.path.join(ROOT, "container", "host", "DEFAULTS"), os.path.join(self.hdir, "DEFAULTS"))
         self.stub = os.path.join(self.hdir, "cloudflare-setup.py")
         with open(self.stub, "w") as f:
             f.write(STUB)
@@ -127,7 +128,7 @@ class DefaultsTest(Base):
     def test_name_and_web_port_defaults_follow_config(self):
         self.run_h("status")
         argv = self.rec()["argv"]
-        self.assertEqual(argv[argv.index("--name") + 1], "swarmbox")
+        self.assertEqual(argv[argv.index("--name") + 1], DEFAULT_NAME)
         self.assertEqual(argv[argv.index("--port") + 1], "7681")
         self.run_h("status", env=self.env(SWARMBOX_NAME="dev", SWARMBOX_WEB_PORT="8888"))
         argv = self.rec()["argv"]
@@ -163,7 +164,7 @@ class DefaultsTest(Base):
                 u = subprocess.run([self.helper, "url"], env=self.env(**extra), capture_output=True, text=True, input="",
                                    cwd=self.tmp, timeout=60)
                 self.assertEqual(u.returncode, 0, u.stderr)
-                self.assertIn("https://swarmbox.example.org\n", u.stdout)
+                self.assertIn("https://" + DEFAULT_NAME + ".example.org\n", u.stdout)
 
 
 class PrerequisiteAndCodesTest(Base):
@@ -234,13 +235,13 @@ class PrerequisiteAndCodesTest(Base):
 
 
 class StatusHostLinesTest(Base):
-    CN = "swarmbox-cloudflared"
+    CN = DEFAULT_CONNECTOR
 
     def cfg(self, **data):
         d = os.path.join(self.home, ".config", "swarmbox")
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "cloudflare.json"), "w") as f:
-            json.dump({"domain": "example.org", "emails": ["a@example.org"], "tunnel": "swarmbox", **data}, f, indent=2)
+            json.dump({"domain": "example.org", "emails": ["a@example.org"], "tunnel": DEFAULT_NAME, **data}, f, indent=2)
 
     def run_with_podman(self, rules, *args):
         from helpers import FakePodman
@@ -301,7 +302,7 @@ class StatusHostLinesTest(Base):
         self.assertIn("connector: running", r.stdout)
 
     def test_status_prints_the_hostname_urls_are_built_from(self):
-        self.cfg(hostname="tty.example.org", name="swarmbox", session="4h")
+        self.cfg(hostname="tty.example.org", name=DEFAULT_NAME, session="4h")
         r, _ = self.run_with_podman([{"match": ["inspect", self.CN], "stdout": self.CN + "|true\n"}], "status")
         self.assertIn("https://tty.example.org", r.stdout)
 
