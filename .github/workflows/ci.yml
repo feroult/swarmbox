@@ -64,7 +64,7 @@ jobs:
           fish --version
       - name: Shellcheck the new shell files
         run: |
-          shellcheck -s sh container/host/swarmbox-host container/scripts/swarmbox-init.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh dev/owner-check.sh dev/gen-notices.sh dev/release-version.sh
+          shellcheck -s sh container/host/swarmbox-host container/scripts/swarmbox-init.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh dev/owner-check.sh dev/gen-notices.sh dev/release-version.sh dev/release-check.sh dev/name-check.sh
           shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-tool.sh container/config/bashrc.sh
       - name: Validate the tool manifests (swarmbox-tool validate, no container)
         run: container/scripts/swarmbox-tool.sh validate container/tools
@@ -115,6 +115,9 @@ jobs:
           python3 tests/test_final_audit.py
           python3 tests/test_parity.py
           python3 tests/test_pubkey_ensure.py
+          python3 tests/test_name_check.py
+          python3 tests/test_release_check.py
+          python3 tests/test_release_checklist.py
           python3 tests/test_release_docs.py
           python3 tests/test_release_version.py
           python3 tests/test_release_workflow.py
@@ -258,6 +261,9 @@ jobs:
           python3 tests/test_ci_workflow.py
           python3 tests/test_design_partb.py
           python3 tests/test_docs_consistency.py
+          python3 tests/test_name_check.py
+          python3 tests/test_release_check.py
+          python3 tests/test_release_checklist.py
           python3 tests/test_release_docs.py
           python3 tests/test_release_version.py
           python3 tests/test_release_workflow.py

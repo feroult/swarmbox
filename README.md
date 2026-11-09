@@ -2,6 +2,12 @@
 
 **Run AI coding agents with full tool access and auto-approve ("YOLO") mode inside a Podman container, so your host stays safe.**
 
+```bash
+podman run --rm -e SHELL ghcr.io/<org>/swarmbox:2.0.0 init --with claude >> ~/.bashrc    # then open a new terminal and run: swarmbox
+```
+
+Read what it prints first (leave out the `>> ~/.bashrc`). `<org>` is a placeholder until the first release; details are under [Install](#install) and in [docs/design.md](docs/design.md).
+
 - **Isolated:** the agent runs in a rootless Podman container; no host Podman socket is mounted.
 - **One command:** `swarmbox` creates the box on first use and joins it afterwards. Every terminal shares one tmux session.
 - **Agents on demand:** `claude` is installed on first use, into your workspace, not into the image. Gemini, OpenCode, `clasp`, Go, gcloud and Poetry are tools you choose.
