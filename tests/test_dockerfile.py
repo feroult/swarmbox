@@ -81,7 +81,7 @@ class StartupAndLayout(unittest.TestCase):
                     self.assertTrue(os.path.exists(os.path.join(ROOT, src)), "COPY source missing: %s" % src)
 
 class HostHelperArchive(unittest.TestCase):
-    """Container/host/ is the helper archive's folder, and swarmbox-init is the entrypoint's `init`."""
+    """Container/host/ is the helper archive's folder, and swarmbox-install is the entrypoint's `install`."""
 
     def test_the_host_folder_is_copied_into_the_archive_folder(self):
         self.assertIn("COPY container/host/ /usr/local/share/swarmbox/host/", INS)

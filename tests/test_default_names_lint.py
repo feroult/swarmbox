@@ -5,7 +5,7 @@ box name or the default image repository as a literal, or one of the retired spe
 CONTRIBUTING.md, THIRD_PARTY_NOTICES.md, CHANGELOG.md) describes the defaults in prose and is checked by tests/test_docs_consistency.py.
 The allowed exceptions are listed in ALLOWED, each with its reason. The scanner is also tried on a small tree made here, so a lint
 that stopped finding anything would fail too. Also here: the flip test (change the two lines of a copy of DEFAULTS and the products
-follow) lives in tests/test_host_config.py and tests/test_init_output.py.
+follow) lives in tests/test_host_config.py.
 """
 import os
 import re

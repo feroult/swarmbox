@@ -48,10 +48,10 @@ container only for a smoke test, with a `swarmbox-test-` name.
 
 ## Smoke test on a host
 
-`dev/host-smoke.sh` builds the image and checks the product end to end on a real host (not inside a box): `up`, labels, `config`,
+`dev/host-smoke.sh` builds the image and checks the product end to end on a real host (not inside a box): it installs the `swarmbox` script of its own image into a temporary folder (twice) and puts it on `PATH` for the run, then checks `up`, labels, `config`,
 `env`, `pubkey`, the user and workspace, tmux, the web terminal, nested Podman, `stop`, `reset`, `url` and `help`. It prints one
 `OK`, `FAIL` or `SKIP` line per step and `RESULT: N ok, M fail, K skip`; paste that when you report a failure. It uses only
-`swarmbox-test-*` names, a temporary workspace, a private config folder and a random port on `127.0.0.1`, and removes them on exit
+`swarmbox-test-*` names, a temporary workspace, a private config folder, a private install folder and a random port on `127.0.0.1`, and removes them on exit
 (`--keep` leaves them, `--with-tools` also installs Go, `--no-cache` builds from scratch, `--dry-run` prints the commands only).
 
 ## Building the image locally
@@ -64,7 +64,7 @@ sh dev/dev-build.sh            # tag swarmbox-test-img-<random>; then: podman rm
 
 which builds from a scratch copy of the `Dockerfile` that carries the apt override (see below); the product file is never changed.
 `SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. To build by hand: `podman build -t localhost/swarmbox-dev:local .`
-(then install it as the README Quick start shows, or run `SWARMBOX_IMAGE=localhost/swarmbox-dev:local swarmbox`).
+(then install it as the README Quick start shows: `podman run --rm localhost/swarmbox-dev:local install --with claude | sh`; `SWARMBOX_BIN_DIR=DIR` installs somewhere else). Tests-only variables: `SWARMBOX_TEST_SUPPORT_DIR` (where the script keeps its support files), `SWARMBOX_TEST_HOST_DIR` and `SWARMBOX_TEST_CONTAINERENV` (what `install` reads).
 
 Caveats when building inside a SwarmBox (nested rootless Podman 4.3.1):
 

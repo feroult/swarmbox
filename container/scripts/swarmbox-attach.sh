@@ -29,7 +29,7 @@ POLL=${SWARMBOX_TEST_POLL_INTERVAL:-1}
 SESSION=main
 IDLE_NAME=idle          # the name `serve` gives the idle window (step 9); keep in step with container/entrypoint.sh
 # The box name (only used in messages): SWARMBOX_NAME, which the helper passes to every box; else the default name of the DEFAULTS file
-# that the image keeps next to the helper. SWARMBOX_TEST_HOST_DIR replaces that folder in tests, as for swarmbox-init.
+# that the image keeps next to the script. SWARMBOX_TEST_HOST_DIR replaces that folder in tests, as for swarmbox-install.
 BOX_NAME=${SWARMBOX_NAME:-}
 if [ -z "$BOX_NAME" ]; then
     while IFS= read -r _l || [ -n "$_l" ]; do
