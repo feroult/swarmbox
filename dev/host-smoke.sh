@@ -4,7 +4,9 @@
 # Run it on your machine (WSL2, Linux; rootless Podman 4.3 or newer), not inside a box. It never touches your own SwarmBox:
 # every container, volume and image it makes is named swarmbox-test-*, the config and state folders are private temp folders
 # (XDG_CONFIG_HOME, XDG_STATE_HOME, SWARMBOX_NAME point there), the workspace is a mktemp folder and the web terminal is on a
-# random high port of 127.0.0.1. On exit it removes what it created, by exact name, and prints the list.
+# random high port of 127.0.0.1. It installs the `swarmbox` script of its own image into a temp folder (SWARMBOX_BIN_DIR) that it puts
+# on PATH for this run only, the way a user does, and uses that script for everything. On exit it removes what it created, by exact
+# name, and prints the list.
 #
 #   dev/host-smoke.sh                 build the image, create a throw-away box, check it, remove everything
 #   dev/host-smoke.sh --no-cache      build without the layer cache (slow)
@@ -46,24 +48,26 @@ VOL=$BOX-containers
 IMG=localhost/${PREFIX}img:$RND
 PORT=$((20000 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 30000))
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}host.XXXXXX") || exit 1
-WS=$WORK/workspace HOSTDIR=$WORK/host
-mkdir -p "$WS" "$HOSTDIR" "$WORK/config" "$WORK/state" || exit 1
+WS=$WORK/workspace BINDIR=$WORK/bin
+mkdir -p "$WS" "$BINDIR" "$WORK/config" "$WORK/state" || exit 1
 
-# Private paths: the helper reads its config under XDG_CONFIG_HOME and keeps locks and the connection under XDG_STATE_HOME.
-# HOME and XDG_DATA_HOME stay, because Podman keeps its images there. Settings of yours in the environment are dropped.
+# Private paths: the script reads its config under XDG_CONFIG_HOME and keeps locks and the connection under XDG_STATE_HOME; its
+# own file and its support files go to SWARMBOX_BIN_DIR and SWARMBOX_TEST_SUPPORT_DIR. HOME and XDG_DATA_HOME stay, because Podman
+# keeps its images there. Settings of yours in the environment are dropped.
 for v in $(env | sed -n 's/^\(SWARMBOX_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 unset CONTAINER_HOST CONTAINER_CONNECTION
 REAL_CONF=${XDG_CONFIG_HOME:-$HOME/.config}/containers
 XDG_CONFIG_HOME=$WORK/config XDG_STATE_HOME=$WORK/state SWARMBOX_NAME=$BOX
-export XDG_CONFIG_HOME XDG_STATE_HOME SWARMBOX_NAME
+SWARMBOX_BIN_DIR=$BINDIR SWARMBOX_TEST_SUPPORT_DIR=$WORK/support
+export XDG_CONFIG_HOME XDG_STATE_HOME SWARMBOX_NAME SWARMBOX_BIN_DIR SWARMBOX_TEST_SUPPORT_DIR
+PATH=$BINDIR:$PATH; export PATH
 for f in storage.conf containers.conf registries.conf; do   # Podman settings, read only, so images are still found
   if [ -f "$REAL_CONF/$f" ]; then mkdir -p "$XDG_CONFIG_HOME/containers"; ln -s "$REAL_CONF/$f" "$XDG_CONFIG_HOME/containers/$f"; fi
 done
 
 P() { if [ "$DRY" = 1 ]; then say "+ podman $*" >&2; else command podman "$@"; fi; }
-SB() { if [ "$DRY" = 1 ]; then say "+ swarmbox-host $*" >&2; else "$HOSTDIR/swarmbox-host" "$@"; fi; }
+SB() { if [ "$DRY" = 1 ]; then say "+ swarmbox $*" >&2; else "$BINDIR/swarmbox" "$@"; fi; }
 IN() { P exec "$BOX" "$@"; }                      # a command in the box
-EP() { P exec -e TERM -e COLORTERM "$BOX" swarmbox-entrypoint "$@"; }   # what the shell function runs for pubkey and tool
 fail() { [ "$DRY" = 1 ] || say "$*" >&2; return 1; }
 inspect() { P inspect -f "$1" "$BOX"; }
 
@@ -97,7 +101,7 @@ cleanup() {
   if [ "$KEEP" = 1 ]; then
     say; say "KEPT (remove them yourself):"
     say "  container $BOX   volume $VOL   image $IMG   web http://127.0.0.1:$PORT/"
-    say "  files $WORK (config and state of the throw-away box; use XDG_CONFIG_HOME=$WORK/config XDG_STATE_HOME=$WORK/state SWARMBOX_NAME=$BOX $HOSTDIR/swarmbox-host ...)"
+    say "  files $WORK (config and state of the throw-away box; use XDG_CONFIG_HOME=$WORK/config XDG_STATE_HOME=$WORK/state SWARMBOX_NAME=$BOX SWARMBOX_TEST_SUPPORT_DIR=$WORK/support $BINDIR/swarmbox ...)"
     say "  remove: podman rm -f -t 0 $BOX; podman volume rm $VOL; podman rmi $IMG; podman system connection rm $BOX"
     return 0
   fi
@@ -142,13 +146,17 @@ s_build() {
   HAVE_IMG=1
   printf ' [image %s]' "$(P image inspect -f '{{.Size}}' "$IMG" | awk '{ printf "%.0f MB", $1 / 1048576 }')" >"$WORK/info"
 }
-s_init() {   # the function of the README: `init` prints it; the helper it extracts is the one this script runs
-  P run --rm -e SHELL=/bin/bash "$IMG" init --image "$IMG" --workspace "$WS" >"$WORK/function.sh" || return 1
+s_install() {   # the README: the image prints an installer, sh runs it; the script it writes is the one this run uses
+  P run --rm "$IMG" install --image "$IMG" >"$WORK/installer.sh" || return 1
   [ "$DRY" = 1 ] && return 0
-  grep -q '^swarmbox()' "$WORK/function.sh" && grep -q "$IMG" "$WORK/function.sh" || fail "the printed function lacks swarmbox() or the image"
-  bash -c ". '$WORK/function.sh' && type swarmbox >/dev/null" || fail "bash cannot source the printed function"
-  P run --rm "$IMG" host-helper | tar -x -C "$HOSTDIR" || fail "cannot extract the host helper"
-  [ -x "$HOSTDIR/swarmbox-host" ] && SB config seed --image "$IMG" --workspace "$WS"
+  head -n 1 "$WORK/installer.sh" | grep -qx '#!/bin/sh' && grep -q "IMAGE='$IMG'" "$WORK/installer.sh" || fail "the printed installer lacks #!/bin/sh or the image"
+  sh "$WORK/installer.sh" >"$WORK/install1.out" 2>&1 || { tail -n 5 "$WORK/install1.out" >&2; return 1; }
+  [ -x "$BINDIR/swarmbox" ] && [ "$(command -v swarmbox)" = "$BINDIR/swarmbox" ] || fail "swarmbox is not on PATH after the install"
+  cp "$BINDIR/swarmbox" "$WORK/swarmbox.first"
+  sh "$WORK/installer.sh" >"$WORK/install2.out" 2>&1 || fail "the second install failed"
+  cmp -s "$BINDIR/swarmbox" "$WORK/swarmbox.first" || fail "the second install changed the script"
+  [ "$(ls -A "$BINDIR")" = swarmbox ] || fail "the install left other files in the bin folder: $(ls -A "$BINDIR")"
+  SB config set WORKSPACE "$WS"
 }
 s_up() {
   SB config set WEB_PORT "$PORT" && SB config set HOSTNAME "$BOX" || return 1
@@ -172,7 +180,7 @@ s_env() {
   SB env rm SMOKE_TEST_VAR && ! SB env list | grep -qx SMOKE_TEST_VAR || fail "env rm left SMOKE_TEST_VAR"
 }
 s_pubkey() {
-  KEY=$(EP pubkey | grep -o 'ssh-[a-z0-9]* [A-Za-z0-9+/=]*' | head -n 1)
+  KEY=$(SB pubkey | grep -o 'ssh-[a-z0-9]* [A-Za-z0-9+/=]*' | head -n 1)
   [ -n "$KEY" ] || fail "no ssh public key in the output of pubkey"
 }
 s_user() { [ "$(IN id -un):$(IN id -u)" = agent:1000 ] || fail "user is $(IN id -un):$(IN id -u), expected agent:1000"; }
@@ -196,10 +204,10 @@ s_nested() {
   [ "$(IN podman run --rm docker.io/library/alpine:3.20 echo nested-ok)" = nested-ok ] || fail "nested podman run did not print nested-ok"
 }
 s_tun() { IN test -c /dev/net/tun || fail "/dev/net/tun is missing in the box"; }
-s_toollist() { EP tool list; }
+s_toollist() { SB tool list; }
 s_toolgo() {
   [ "$TOOLS" = 1 ] || { say "needs the network and is slow; use --with-tools" >&2; return 77; }
-  EP tool install go && IN sh -lc 'go version' || fail "go is not usable after tool install"
+  SB tool install go && IN sh -lc 'go version' || fail "go is not usable after tool install"
 }
 s_up2() {
   id1=$(inspect '{{.Id}}'); SB up || return 1
@@ -211,7 +219,7 @@ s_reset() {
   id1=$(inspect '{{.Id}}'); SB reset || return 1
   [ "$(inspect '{{.Id}}')" != "$id1" ] || fail "reset did not make a new container"
   [ -e "$WS/host-marker" ] && [ -e "$WS/box-marker" ] || fail "reset lost workspace files"
-  [ "$(EP pubkey | grep -o 'ssh-[a-z0-9]* [A-Za-z0-9+/=]*' | head -n 1)" = "$KEY" ] || fail "the SSH key changed across reset"
+  [ "$(SB pubkey | grep -o 'ssh-[a-z0-9]* [A-Za-z0-9+/=]*' | head -n 1)" = "$KEY" ] || fail "the SSH key changed across reset"
 }
 s_url() {
   u=$(SB url) || return 1
@@ -221,16 +229,23 @@ s_url() {
 s_help() {
   h=$(SB help 2>&1)
   for w in up stop reset url config env pubkey tool remote; do say "$h" | grep -q "$w" || fail "help does not list $w"; done
+  [ "$(SB --help 2>&1)" = "$h" ] && [ "$(SB -h 2>&1)" = "$h" ] || fail "--help and -h differ from help"
+  [ -n "$(SB version)" ] || fail "version printed nothing"
+}
+s_run() {   # any other word runs in the box: up, then podman exec ... swarmbox-entrypoint attach <command>
+  SB echo host-smoke-ok >"$WORK/run.out" 2>&1; rc=$?
+  [ $rc = 0 ] && grep -q host-smoke-ok "$WORK/run.out" || fail "swarmbox echo exited $rc: $(tail -n 2 "$WORK/run.out" | tr '\n' ' ')"
+  SB sh -c 'exit 7' >/dev/null 2>&1; [ $? = 7 ] || fail "the exit status of the command was not passed on"
 }
 
 onimg() { need_img || return 77; "$@"; }
 onbox() { need_box || return 77; "$@"; }
 step "podman version, rootless" s_podman
 step "build image" s_build
-step "init function, helper extracted" onimg s_init
+step "install script from the image, twice" onimg s_install
 step "up creates the box" onimg s_up
 for t in "box running, name, labels:s_labels" "config get/set:s_config" "env add/list/rm:s_env" "pubkey prints a key:s_pubkey" \
-  "user is agent uid 1000:s_user" "workspace is home:s_home" "tmux session main:s_tmux" "ttyd answers 200:s_web" "git installed:s_git" \
+  "user is agent uid 1000:s_user" "workspace is home:s_home" "tmux session main:s_tmux" "ttyd answers 200:s_web" "git installed:s_git" "swarmbox <command> runs in the box:s_run" \
   "nested podman run:s_nested" "/dev/net/tun:s_tun" "tool list:s_toollist" "tool install go:s_toolgo" "second up is harmless:s_up2" \
   "stop:s_stop" "up again, web answers:s_restart" "reset keeps workspace and key:s_reset" "url local only:s_url" "help lists commands:s_help"; do
   step "${t%:*}" onbox "${t##*:}"

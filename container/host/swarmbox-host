@@ -122,13 +122,14 @@ support_dir() {
     fi
 }
 
-# data_host_dir: sets DATA_HOST, where the installers and `update` write the support folder.
+# data_host_dir: sets DATA_HOST, where the installers and `update` write the support folder. SWARMBOX_TEST_SUPPORT_DIR replaces it in
+# tests and in dev/host-smoke.sh (XDG_DATA_HOME cannot move: it is also where Podman keeps its images).
 data_host_dir() {
     case ${HOME:-} in
         /*) ;;
         *) die 1 "HOME is not set to an absolute path." ;;
     esac
-    DATA_HOST=$(xdg_root "${XDG_DATA_HOME:-}" "$HOME/.local/share")/swarmbox/host
+    DATA_HOST=${SWARMBOX_TEST_SUPPORT_DIR:-$(xdg_root "${XDG_DATA_HOME:-}" "$HOME/.local/share")/swarmbox/host}
 }
 
 # needs_support FILE: exits 3 with the way out when the support folder has no such file.
