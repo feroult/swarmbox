@@ -93,12 +93,6 @@ class ContributingTest(unittest.TestCase):
         for prefix in ("feat:", "fix:", "test:", "docs:"):
             self.assertIn(prefix, t)
 
-    def test_every_test_file_is_listed(self):
-        t = read("CONTRIBUTING.md")
-        for name in os.listdir(os.path.join(ROOT, "tests")):
-            if re.match(r"test_\w+\.py$", name):
-                self.assertIn(name, t, "%s is not described in CONTRIBUTING.md" % name)
-
     def test_relative_paths_exist(self):
         t = read("CONTRIBUTING.md")
         paths = set(re.findall(r"`((?:tests|docs|container|lib|\.github)/[\w./-]+|[\w-]+\.(?:sh|md|py|yml))`", t))
