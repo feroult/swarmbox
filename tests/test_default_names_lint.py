@@ -1,4 +1,4 @@
-"""D40: the default names live in container/host/DEFAULTS and nowhere else.
+"""The default names live in container/host/DEFAULTS and nowhere else.
 
 The lint fails when a product file (the Dockerfile, cloudflare-setup.py, container/, dev/, .github/) or a test holds the default
 box name or the default image repository as a literal, or one of the retired spellings of them. Documentation (README.md, docs/,
@@ -81,7 +81,7 @@ class DefaultNamesLint(unittest.TestCase):
         d = read_defaults()
         self.assertEqual(sorted(d), ["SWARMBOX_DEFAULT_IMAGE_REPO", "SWARMBOX_DEFAULT_NAME"])
         self.assertTrue(d["SWARMBOX_DEFAULT_IMAGE_REPO"].endswith("/" + d["SWARMBOX_DEFAULT_NAME"]), d)
-        self.assertIn("<org>", d["SWARMBOX_DEFAULT_IMAGE_REPO"])   # D32/D38: the placeholder stays
+        self.assertIn("<org>", d["SWARMBOX_DEFAULT_IMAGE_REPO"])   # the placeholder stays
 
     def test_no_product_file_holds_a_default_name(self):
         self.assertEqual(scan(ROOT, PRODUCT_ROOTS, DEFAULT_NAME, DEFAULT_IMAGE_REPO), [])

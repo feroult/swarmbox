@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Slice 2.4: the shell fragment container/config/bashrc.sh (design 6.6, 3.3, 4.2, 10.3, D9).
+"""The shell fragment container/config/bashrc.sh.
 
 Run: python3 tests/test_bashrc_fragment.py
 
@@ -192,7 +192,7 @@ class PathAndEnvironment(Base):
 
 
 class RealClaudeManifest(Base):
-    """Slice 4a.5: the fragment reads the manifest the image ships (container/tools/claude), not a made-up one."""
+    """The fragment reads the manifest the image ships (container/tools/claude), not a made-up one."""
 
     def setUp(self):
         super().setUp()

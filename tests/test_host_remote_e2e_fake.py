@@ -1,4 +1,4 @@
-"""Slice 5.7: `swarmbox-host remote ...` end to end against the fake Cloudflare API and a fake podman (design 5.2, 13; D14, D16, D28).
+"""`swarmbox-host remote ...` end to end against the fake Cloudflare API and a fake podman.
 
 The REAL wrapper and the REAL cloudflare-setup.py run as subprocesses. The API base URL is redirected with the script's existing
 CLOUDFLARE_API_BASE variable (the mechanism of tests/test_cloudflare_setup.py, whose in-process fake server is reused and which

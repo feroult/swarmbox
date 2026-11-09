@@ -1,5 +1,5 @@
 #!/bin/sh
-# release-version.sh TAG: maps a release tag to the image tags (design 10.4, D32; used by .github/workflows/release.yml).
+# release-version.sh TAG: maps a release tag to the image tags (used by .github/workflows/release.yml).
 #
 #   dev/release-version.sh v2.0.0
 #   version=2.0.0
@@ -7,7 +7,7 @@
 #   tags=2.0.0 2.0 latest
 #
 # Only vX.Y.Z is accepted: numbers without leading zeros, a lowercase v, nothing after the patch number. A prerelease
-# (v2.0.0-rc.1) or build suffix is refused, because the design defines no tag scheme for one (decision log [7.5]).
+# (v2.0.0-rc.1) or build suffix is refused, because the design defines no tag scheme for one.
 # Output is key=value lines on stdout (safe to append to $GITHUB_OUTPUT); errors go to stderr. Exit: 0 ok, 1 refused,
 # 64 usage. It reads no file, runs no other program and uses no network.
 set -eu

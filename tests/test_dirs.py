@@ -1,4 +1,4 @@
-"""Slice 1.2: container/scripts/dirs.sh, the one file that defines every path (design 4.3 item 4, D10).
+"""The file container/scripts/dirs.sh, the one file that defines every path.
 
 Each case runs a real shell (sh, dash, bash when present) with the environment cleared except PATH, HOME and the XDG
 variables the case sets, all inside mktemp directories. Nothing here touches the real HOME.
@@ -17,7 +17,7 @@ from helpers import ROOT  # noqa: E402
 
 DIRS = os.path.join(ROOT, "container", "scripts", "dirs.sh")
 
-# name -> (path under home, XDG variable, tail) ; the table the design text is cross-checked against.
+# name -> (path under home, XDG variable, tail) ; the table docs/design.md is cross-checked against.
 EXPECTED = {
     "SB_CONFIG_DIR": ("config", ".config", "swarmbox"),
     "SB_DATA_DIR": ("data", ".local/share", "swarmbox"),

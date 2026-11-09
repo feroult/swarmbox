@@ -1,4 +1,4 @@
-"""Slice 7.6: dev/release-check.sh, the read-only check the owner runs before tagging v2.0.0 (design 10.4, plan section 10).
+"""Dev/release-check.sh, the read-only check the owner runs before tagging v2.0.0.
 
 A fixture repository (a mktemp folder, its own git repository on branch opensource) satisfies every condition; the script
 passes on it. Each violated condition is then made in a fresh copy and the script must exit 1 with a FAIL line that names

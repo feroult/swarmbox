@@ -1,4 +1,4 @@
-# SwarmBox release pipeline (design 10.4 and 13.4, decisions D32 and D38, plan section 10, decision log [7.5]).
+# SwarmBox release pipeline.
 #
 # Trigger: a pushed tag vX.Y.Z, or a manual run (workflow_dispatch). A manual run is a DRY RUN unless it is started on a tag
 # with the input dry-run set to false: everything is built, checked and scanned, nothing is pushed, signed or released.
@@ -10,14 +10,14 @@
 # multi-arch list with the tags X.Y.Z, X.Y and latest) -> sign (cosign keyless on the digest, SBOM with syft, SBOM
 # attestation, a verify of both) -> notes (GitHub release with the digest and the SBOM file).
 #
-# It pushes only to the image of container/host/DEFAULTS under the owner feroult, ghcr.io/feroult/<default name> (D38, D40) with the workflow's own token, contacts no other registry, and uses no
+# It pushes only to the image of container/host/DEFAULTS under the owner feroult, ghcr.io/feroult/<default name> with the workflow's own token, contacts no other registry, and uses no
 # stored credential: the signature is keyless (a short-lived certificate from the OIDC token of the run).
 #
 # NONE OF THIS HAS EVER RUN. It was validated in the development box only by tests/test_release_workflow.py (YAML shape,
 # gating, permissions, pins), tests/test_release_version.py (tag to image tags) and actionlint when present. Everything
 # below that depends on GitHub or on an action is [unverified] until the first real run; the checklist is in
-# docs/design.md 13.4 ("First run of release.yml"). In short:
-#   - [unverified] the runner label ubuntu-24.04-arm is available to the account (same open fact as B31 for ci.yml);
+# docs/design.md (sections "Image and updates" and "Not done, and open questions"). In short:
+#   - [unverified] the runner label ubuntu-24.04-arm is available to the account (same open fact as for ci.yml);
 #   - [unverified] the package ghcr.io/feroult/<default name> can be created by the workflow token (packages: write) and, for a
 #     repository that publishes it, is made public once in the package settings;
 #   - [unverified] anchore/scan-action accepts "docker-archive:image.tar" as its image input and grype's HIGH threshold
@@ -46,7 +46,7 @@ permissions:
   contents: read
 
 env:
-  # D38: the image owner. The repository name is not here: the version job reads it from container/host/DEFAULTS (D40) and the
+  # The image owner. The repository name is not here: the version job reads it from container/host/DEFAULTS and the
   # jobs that push or sign get it as REGISTRY_IMAGE from the output `image`.
   REGISTRY_OWNER: feroult
 
@@ -68,7 +68,7 @@ jobs:
       - uses: actions/checkout@v4.2.2
         with:
           persist-credentials: false
-      - name: Read the image repository from container/host/DEFAULTS (D40) and put the owner in place of <org> (D38)
+      - name: Read the image repository from container/host/DEFAULTS and put the owner in place of <org>
         id: img
         run: |
           repo=$(sed -n "s/^SWARMBOX_DEFAULT_IMAGE_REPO=['\"]*\([^'\"]*\)['\"]*$/\1/p" container/host/DEFAULTS)

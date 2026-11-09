@@ -1,8 +1,8 @@
 #!/bin/bash
-# swarmbox-entrypoint (design 10.2): the image's entry point.
+# swarmbox-entrypoint: the image's entry point.
 #
-#   serve     the box's main process: the ordered startup of design 4.1, the readiness marker and health file of 4.2,
-#             PID 1 signal handling, and the ttyd supervisor of 5.1
+#   serve     the box's main process: the ordered startup, the readiness marker and health file,
+#             PID 1 signal handling, and the ttyd supervisor
 #   attach    forwards to swarmbox-attach (the grouped session, the idle window, `swarmbox <command>`)
 #   init      forwards to swarmbox-init
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
@@ -10,9 +10,9 @@
 #   host-helper
 #             writes the helper archive (box:/usr/local/share/swarmbox/host/) as a tar archive on stdout
 #   (none)    exit 64
-#   anything else is run as given (already the final behavior, design 10.2)
+#   anything else is run as given (already the final behavior)
 #
-# Test-only variables (not in the configuration table of design 8 and not read by anything else): SWARMBOX_TEST_LIB (folder holding dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces
+# Test-only variables (not in the configuration table and not read by anything else): SWARMBOX_TEST_LIB (folder holding dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces
 # /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
 # instead of a failure for step 2 and no service at step 8), SWARMBOX_TEST_BACKOFF_SCALE (integer multiplier of the
 # ttyd backoff, 0 for none), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10).
@@ -62,7 +62,7 @@ warn() {
 }
 
 # stop_children: the ttyd supervisor (which stops ttyd), the installer job, the nested Podman service. The tmux server is
-# left to end with the container (design 4.1).
+# left to end with the container.
 stop_children() {
     local p
     for p in "$SUP" "$INST"; do
@@ -104,7 +104,7 @@ run_logged() {
     "$@" >> "$SERVE_LOG" 2>&1
 }
 
-# supervise: design 4.2 "ttyd restart policy". Runs in a subshell. Restarts ttyd after 1, 2, 4 ... 30 s; after 5 exits
+# supervise: the ttyd restart policy. Runs in a subshell. Restarts ttyd after 1, 2, 4 ... 30 s; after 5 exits
 # within 60 s it records a health line and idles (alive) until `swarmbox-web restart` sends USR1; TERM stops it.
 supervise() {
     local tp=0 sp=0 stop=0 restart=0 delay=1 i
@@ -184,7 +184,7 @@ serve() {
     local no_nested=${SWARMBOX_TEST_NO_NESTED:-0}
     local rc probe
 
-    # PID 1: handlers first, so that `podman stop` ends the box promptly at any point (design 4.1)
+    # PID 1: handlers first, so that `podman stop` ends the box promptly at any point
     trap 'on_signal TERM 143' TERM
     trap 'on_signal INT 130' INT
 
@@ -216,7 +216,7 @@ serve() {
     if ! mkdir -p "$SB_CONFIG_DIR" "$SB_DATA_DIR" "$SB_STATE_DIR" "$SB_TOOLS_DIR" "$SB_SHIMS_DIR" "$SB_LOG_DIR" "$SB_RUN_DIR" 2>/dev/null; then
         fatal "cannot create the SwarmBox folders under $HOME and $SB_RUN_DIR"
     fi
-    : > "$SB_HEALTH_FILE" 2>/dev/null || fatal "cannot create $SB_HEALTH_FILE"   # cleared at every start (design 4.2)
+    : > "$SB_HEALTH_FILE" 2>/dev/null || fatal "cannot create $SB_HEALTH_FILE"   # cleared at every start
     printf '%s' "$EARLY_LOG" >> "$SERVE_LOG" 2>/dev/null
     EARLY_LOG=""
     log "step 3: folders created; health file cleared"
@@ -229,14 +229,14 @@ serve() {
     run_logged swarmbox-pubkey --ensure; rc=$?
     [ "$rc" = 0 ] || warn "could not create the Git SSH key (swarmbox-pubkey exit $rc); see serve.log"
 
-    # step 6 [W]: link the user-level tools (6.2): shims and index in the workspace
+    # step 6 [W]: link the user-level tools: shims and index in the workspace
     log "step 6: swarmbox-tool link --user"
     run_logged swarmbox-tool link --user; rc=$?
     [ "$rc" = 0 ] || warn "linking the user tools failed (swarmbox-tool link exit $rc); see serve.log"
 
-    # step 7 [W]: the MCP configuration (4.4: swarmbox-mcp), then prepare.sh of every tool (6.3)
+    # step 7 [W]: the MCP configuration (swarmbox-mcp), then prepare.sh of every tool
     # The claude alias passes --mcp-config <workspace>/.claude/mcp-servers.json and claude refuses a missing file, so when the
-    # generator is missing or fails before it wrote anything, an empty valid list is left where there is none (decisions [4a.5], [4b.1]).
+    # generator is missing or fails before it wrote anything, an empty valid list is left where there is none.
     log "step 7: swarmbox-mcp generate"
     run_logged swarmbox-mcp generate; rc=$?
     [ "$rc" = 0 ] || warn "generating the MCP configuration failed or was incomplete (swarmbox-mcp exit $rc); see serve.log"
@@ -250,7 +250,7 @@ serve() {
         fi
     fi
     log "step 7: swarmbox-tool prepare"
-    # prepare prints one "prepare-failed: <tool>: <reason>" line per failing tool (6.3); each becomes one W line (health line),
+    # prepare prints one "prepare-failed: <tool>: <reason>" line per failing tool; each becomes one W line (health line),
     # and a failure with no such line (the command itself failed) is one generic W line.
     prep_out=$(mktemp "${TMPDIR:-/tmp}/swarmbox-prepare.XXXXXX" 2>/dev/null) || prep_out=/dev/null
     swarmbox-tool prepare > "$prep_out" 2>&1; rc=$?
@@ -338,7 +338,7 @@ serve() {
         INST=$!
     fi
 
-    # Block on a background sleep, so that a signal handler runs at once (a foreground sleep would delay it, B3).
+    # Block on a background sleep, so that a signal handler runs at once (a foreground sleep would delay it).
     while :; do
         sleep infinity &
         wait $!
@@ -359,7 +359,7 @@ forward() {
     exec "$prog" "$@"
 }
 
-# host-helper: the helper archive (design 3.7.1, 9.3) as a tar archive on stdout, nothing else on stdout. The function saves it
+# host-helper: the helper archive as a tar archive on stdout, nothing else on stdout. The function saves it
 # to a file and unpacks it on the host; owner 0 and the file modes are kept, so `swarmbox-host` stays executable.
 host_helper() {
     local dir=${SWARMBOX_TEST_HOST_DIR:-/usr/local/share/swarmbox/host}

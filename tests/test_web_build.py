@@ -1,17 +1,17 @@
-"""Slice 2.5: the web terminal of design 5.1. build-index.sh builds the page at image build (tests/test_build_index.py
+"""The web terminal. build-index.sh builds the page at image build (tests/test_build_index.py
 covers the script itself); `swarmbox-web` (container/scripts/swarmbox-web.sh) turns it into box:/tmp/swarmbox/index.html at
 every start with a plain text substitution of three values (padding, ctrlVPaste, ctrlCCopy), builds ttyd's `-t key=value`
 options (font, theme, size, scrollback, anything else) from web-terminal.conf, and execs ttyd; `swarmbox-web restart`
-signals the supervisor of slice 2.2.
+signals the supervisor.
 
 Layers:
   1. swarmbox-web against a FAKE ttyd (records its arguments). Nothing is served. The test asserts that no port it hands
      out is 7681, 8889 or 43323, the ports of this very network namespace.
   2. serve (the real entrypoint, fake tmux/podman/ttyd) with the real swarmbox-web: `swarmbox-web restart` restarts ttyd.
   3. Browser: tests/test_clipboard_bridge.py and tests/test_web_style.py build the page with build-index.sh and render it with
-     swarmbox-web (slice 6.2 moved that setup there; skipped without chromium, ttyd and tmux).
+     swarmbox-web (skipped without chromium, ttyd and tmux).
 
-Test-only variables (decision log [2.5], not in the configuration table of design 8): SWARMBOX_TEST_LIB, SWARMBOX_TEST_RUN_DIR,
+Test-only variables (not in the configuration table): SWARMBOX_TEST_LIB, SWARMBOX_TEST_RUN_DIR,
 SWARMBOX_TEST_WEB_PAGE (the built page, default /usr/local/share/swarmbox/web/index.html), SWARMBOX_TEST_WEB_PORT (default
 7681), SWARMBOX_TEST_WEB_IFACE (ttyd -i value, default none = all interfaces inside the box).
 Run with: python3 tests/test_web_build.py

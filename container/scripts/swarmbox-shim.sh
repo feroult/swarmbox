@@ -1,19 +1,19 @@
 #!/bin/sh
-# swarmbox-shim (design 6.1, 6.5; installed as /usr/local/bin/swarmbox-shim). The one dispatcher every shim links to.
+# swarmbox-shim (installed as /usr/local/bin/swarmbox-shim). The one dispatcher every shim links to.
 #
 # A shim is a symlink named after a command a tool provides. This script learns the command from the name it was called with
-# (basename "$0", evidence B12: dash, bash, zsh and busybox sh all give $0 as invoked), finds the tool in the index (the user
+# (basename "$0", dash, bash, zsh and busybox sh all give $0 as invoked), finds the tool in the index (the user
 # index first, then the image index: the user wins), and replaces itself with `swarmbox-tool run <tool> <command> -- "$@"`,
-# which installs on first use and execs the real program (6.5).
+# which installs on first use and execs the real program.
 #
 # Hot path rule: one pass over at most two small index files. It never sources a manifest and never starts anything but
-# `swarmbox-tool` (the manifests are read by `run`, not here). POSIX sh on purpose (decision log [4a.4]): dash starts
+# `swarmbox-tool` (the manifests are read by `run`, not here). POSIX sh on purpose: dash starts
 # faster than bash and the same text runs under bash and busybox sh.
 #
 # Exit codes: 127 unknown command (the shell's own "command not found"), 64 called as swarmbox-shim itself, 70 the manager is
 # missing or the call chain loops, otherwise whatever `swarmbox-tool run` gives (69 failed install, the program's own status).
 #
-# Test-only variables (decision log [4a.4]): SWARMBOX_TEST_USER_SHIMS and SWARMBOX_TEST_IMAGE_SHIMS (as in swarmbox-tool; the
+# Test-only variables: SWARMBOX_TEST_USER_SHIMS and SWARMBOX_TEST_IMAGE_SHIMS (as in swarmbox-tool; the
 # index is the sibling file `index` of the shim folder), SWARMBOX_TEST_TOOL replaces /usr/local/bin/swarmbox-tool,
 # SWARMBOX_TEST_LIB is the folder with dirs.sh.
 

@@ -1,4 +1,4 @@
-"""Slice 3.5: the generated function in zsh (design 3.6, 13.3 layer 4). The cases are in tests/function_cases.py.
+"""The generated function in zsh. The cases are in tests/function_cases.py.
 
 Run: python3 tests/test_function_zsh.py
 zsh runs with -f (no startup files). zsh splits no unquoted expansion, numbers arrays from 1 and treats an unmatched glob as an

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Image smoke test (design 13.3 layer 2; plan section 4, slice 2.7).
+"""Image smoke test.
 
 Builds (or reuses) the image and checks it in throwaway containers: `serve` reaches readiness, `box:/tmp/swarmbox` is empty
 after a stop and a start, the ttyd page is built, `swarmbox-tool validate` passes on the shipped manifests, the claude shim, index and tool-ports are there, two `attach` calls share one session, the
-image holds no agent, the host helper's up, reset and stop work against a real throwaway box (slice 3.3), and (full mode only) a nested Podman runs a container.
+image holds no agent, the host helper's up, reset and stop work against a real throwaway box, and (full mode only) a nested Podman runs a container.
 
 Two modes:
   reduced (default once opted in)  for the development box, which is itself a container: the throwaway box starts with the
@@ -178,7 +178,7 @@ def step_tmpfs_restart(ctx):
     assert ctx.state(name) == "exited 143", "state after stop: " + ctx.state(name)
     assert podman("start", name).returncode == 0
     assert ctx.ready(name), "no readiness marker after start\n" + ctx.logs(name)
-    assert ctx.sh(name, "test -e /tmp/swarmbox/stale && echo STALE || echo gone") == "gone", "tmpfs was not emptied (B17)"
+    assert ctx.sh(name, "test -e /tmp/swarmbox/stale && echo STALE || echo gone") == "gone", "tmpfs was not emptied"
     assert ctx.sh(name, "cat /home/agent/keep.txt") == "y", "the workspace file did not survive"
     log = ctx.sh(name, "cat /home/agent/.local/state/swarmbox/serve.log")
     assert "received SIGTERM" in log, "serve.log has no SIGTERM line"
@@ -197,7 +197,7 @@ def step_page_built(ctx):
     assert "--swarmbox-padding:" in page and "window.__swarmboxClipboard=" in page, "the served page is not the built page"
 
 
-# The seven tools of the repository and the commands they provide (slice 4b.6; the order of the index is the sort of `link`).
+# The seven tools of the repository and the commands they provide (the order of the index is the sort of `link`).
 TOOL_COMMANDS = {"claude": ["claude"], "gemini": ["gemini"], "opencode": ["opencode"], "gcloud": ["gcloud", "gsutil", "bq"],
                  "clasp": ["clasp"], "go": ["go", "gofmt"], "poetry": ["poetry"]}
 ALL_COMMANDS = [c for cmds in TOOL_COMMANDS.values() for c in cmds]
@@ -207,13 +207,13 @@ def step_tool_validate(ctx):
     r = podman("run", "--rm", "--entrypoint", "swarmbox-entrypoint", ctx.tag, "tool", "validate")
     out = r.stdout + r.stderr
     assert r.returncode == 0, "tool validate exited %d: %s" % (r.returncode, out)
-    assert "manifest(s) checked" in out, "validate did not report what it checked (the real validate, slice 4a.1): " + out
+    assert "manifest(s) checked" in out, "validate did not report what it checked (the real validate): " + out
     assert " 0 manifest" not in out, "validate checked no manifest: the image does not ship container/tools: " + out
     assert "%d manifest(s) checked" % len(TOOL_COMMANDS) in out, "validate did not check all %d manifests: %s" % (len(TOOL_COMMANDS), out)
 
 
 def step_tool_shim(ctx):
-    """Every command of the seven tools is a shim (a link to swarmbox-shim) found on PATH, and nothing is installed (D2)."""
+    """Every command of the seven tools is a shim (a link to swarmbox-shim) found on PATH, and nothing is installed."""
     r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
                "test -x /usr/local/bin/swarmbox-shim && echo SHIM-EXEC; SWARMBOX_CMD=1 . /etc/swarmbox/bashrc.sh; "
                "for c in %s; do echo \"$c|$(readlink /usr/local/lib/swarmbox/shims/$c)|$(type -P $c)\"; done; "
@@ -238,11 +238,11 @@ def step_tool_index_ports(ctx):
             assert (c, tool) in rows, "the index lacks the line '%s %s': %s %s" % (c, tool, r.stdout, r.stderr)
     assert sorted(c for c, _ in rows) == sorted(ALL_COMMANDS), "the index lists other commands: " + index
     assert "tool-ports" in listing, "tool-ports is missing: " + r.stdout + r.stderr
-    assert ports.split() == ["clasp", "43323"], "tool-ports is not exactly 'clasp<TAB>43323' (design 9.3): %r" % ports
+    assert ports.split() == ["clasp", "43323"], "tool-ports is not exactly 'clasp<TAB>43323': %r" % ports
 
 
 def step_mcp_generated(ctx):
-    """serve step 7 writes mcp-servers.json from the registry: chrome-devtools runs the installed program, never npx (D23)."""
+    """serve step 7 writes mcp-servers.json from the registry: chrome-devtools runs the installed program, never npx."""
     r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
                "export HOME=$(mktemp -d); swarmbox-mcp generate && cat \"$HOME/.claude/mcp-servers.json\"")
     assert r.returncode == 0, "swarmbox-mcp exited %d: %s" % (r.returncode, r.stdout + r.stderr)
@@ -282,7 +282,7 @@ def step_attach_session(ctx):
 
 
 def step_no_agent(ctx):
-    """A default build holds no tool (bash, because dash has no `type -P`; the step used sh and found nothing until 6.7): every command resolves to its shim and /opt/swarmbox/tools is empty (D2, 6.8)."""
+    """A default build holds no tool (bash, because dash has no `type -P`; the step used sh and found nothing at first): every command resolves to its shim and /opt/swarmbox/tools is empty."""
     r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
                "for c in claude opencode gemini codex clasp gcloud gsutil bq go gofmt poetry; do p=$(type -P $c) && echo \"FOUND:$c:$p\"; done; "
                "ls -A /opt/swarmbox/tools | wc -l; true")
@@ -302,14 +302,14 @@ def step_nested_podman(ctx):
 
 
 def step_nested_cgroup(ctx):
-    """B28: informational. The image's settings (cgroupfs, file logger) run a nested container; the systemd manager does not.
+    """Informational. The image's settings (cgroupfs, file logger) run a nested container; the systemd manager does not.
     Fails only when the image's own settings fail; the systemd result is printed for the record."""
     name = ctx.box()
     assert ctx.ready(name) == "ok", ctx.logs(name)
     own = podman("exec", name, "podman", "info", "--format", "{{.Host.CgroupManager}} {{.Host.EventLogger}}")
     assert own.stdout.split() == ["cgroupfs", "file"], "the image's engine settings are %r" % own.stdout
     alt = podman("exec", name, "podman", "--cgroup-manager=systemd", "run", "--rm", NESTED_IMAGE, "true", timeout=600)
-    print("    B28 systemd manager: exit %d %s" % (alt.returncode, (alt.stderr.strip().splitlines() or [""])[-1][:200]))
+    print("    systemd manager: exit %d %s" % (alt.returncode, (alt.stderr.strip().splitlines() or [""])[-1][:200]))
 
 
 def free_port():
@@ -368,7 +368,7 @@ class HostSide:
         # HOME and the XDG state and config folders are scratch ones (the helper's config, lock and state go there), but Podman's
         # own image store stays where it is: a store in a scratch folder would sit on overlayfs inside this box and fail
         e["XDG_DATA_HOME"] = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
-        # the host connection of `up` (slice 3.4) is registered in this scratch folder, never in the real Podman configuration
+        # the host connection of `up` is registered in this scratch folder, never in the real Podman configuration
         # CONTAINERS_CONF replaces /etc/containers/containers.conf (the development box's utsns=host lives there), so the scratch file
         # starts as a copy of it
         conf = os.path.join(self.root, "containers.conf")
@@ -401,7 +401,7 @@ class HostSide:
 
 
 def step_up_lifecycle(ctx):
-    """Slice 3.3 (design 3.7.2, 13.3 layers 2 and 5): the host helper's up, reset and stop against a real throwaway box."""
+    """The host helper's up, reset and stop against a real throwaway box."""
     hs = HostSide(ctx)
     marker = os.path.join(hs.ws, "survives-reset")
     # up creates the box and returns after readiness
@@ -416,7 +416,7 @@ def step_up_lifecycle(ctx):
     assert cid1
     with open(marker, "w") as f:
         f.write("x")
-    # a second up takes the fast path: the calls are recorded by the wrapper (B35)
+    # a second up takes the fast path: the calls are recorded by the wrapper
     before = len(hs.calls())
     t0 = time.time()
     r = hs.run("up")
@@ -457,7 +457,7 @@ def step_up_lifecycle(ctx):
 
 
 def step_up_busy_port_and_foreign(ctx):
-    """B33 and B18 with the real Podman: a creation that fails on a busy port leaves nothing of its own and exits 7; a
+    """With the real Podman: a creation that fails on a busy port leaves nothing of its own and exits 7; a
     container that already has the box's name (not made by SwarmBox 2.0) is refused with exit 5 and is still there."""
     hs = HostSide(ctx)
     busy = socket.socket()
@@ -486,18 +486,18 @@ def step_up_busy_port_and_foreign(ctx):
 
 STEPS = [
     Step("ready", "serve reaches readiness (marker, PID 1, session main, user agent, ttyd)", False, step_ready),
-    Step("tmpfs-restart", "stop is prompt (exit 143), start empties box:/tmp/swarmbox, workspace survives (B17, B3)", False, step_tmpfs_restart),
-    Step("page-built", "the ttyd page is built into the image and served with the three settings (D13)", False, step_page_built),
-    Step("tool-validate", "swarmbox-tool validate passes on the shipped manifests (the real validate, 6.9)", False, step_tool_validate),
-    Step("tool-shim", "the shims of all seven tools are links to swarmbox-shim found on PATH; nothing is installed (6.2, D2)", False, step_tool_shim),
-    Step("tool-index-ports", "the index lists the commands of all seven tools and tool-ports is exactly clasp 43323 (6.2, 9.3)", False, step_tool_index_ports),
-    Step("mcp-generated", "swarmbox-mcp generates mcp-servers.json with chrome-devtools and no npx (4.4, D23)", False, step_mcp_generated),
-    Step("attach-session", "two attach calls share one session, the idle window is gone, exit codes (D1, B36, B13)", False, step_attach_session),
-    Step("no-agent", "a default build holds no agent, gcloud, clasp, Go or Poetry and /opt/swarmbox/tools is empty (D2, 6.8)", False, step_no_agent),
+    Step("tmpfs-restart", "stop is prompt (exit 143), start empties box:/tmp/swarmbox, workspace survives", False, step_tmpfs_restart),
+    Step("page-built", "the ttyd page is built into the image and served with the three settings", False, step_page_built),
+    Step("tool-validate", "swarmbox-tool validate passes on the shipped manifests (the real validate)", False, step_tool_validate),
+    Step("tool-shim", "the shims of all seven tools are links to swarmbox-shim found on PATH; nothing is installed", False, step_tool_shim),
+    Step("tool-index-ports", "the index lists the commands of all seven tools and tool-ports is exactly clasp 43323", False, step_tool_index_ports),
+    Step("mcp-generated", "swarmbox-mcp generates mcp-servers.json with chrome-devtools and no npx", False, step_mcp_generated),
+    Step("attach-session", "two attach calls share one session, the idle window is gone, exit codes", False, step_attach_session),
+    Step("no-agent", "a default build holds no agent, gcloud, clasp, Go or Poetry and /opt/swarmbox/tools is empty", False, step_no_agent),
     Step("up-lifecycle", "the host helper: up creates, a second up takes the fast path, reset replaces, stop and up again (3.7.2)", False, step_up_lifecycle),
-    Step("up-busy-port", "up on a busy port exits 7 and leaves nothing; a foreign container with the name is refused with exit 5 (B33)", False, step_up_busy_port_and_foreign),
-    Step("nested-podman", "a nested Podman runs a container inside the box (D5)", True, step_nested_podman),
-    Step("nested-cgroup", "the nested engine settings cgroupfs and file logger work (B28)", True, step_nested_cgroup),
+    Step("up-busy-port", "up on a busy port exits 7 and leaves nothing; a foreign container with the name is refused with exit 5", False, step_up_busy_port_and_foreign),
+    Step("nested-podman", "a nested Podman runs a container inside the box", True, step_nested_podman),
+    Step("nested-cgroup", "the nested engine settings cgroupfs and file logger work", True, step_nested_cgroup),
 ]
 
 
@@ -524,7 +524,7 @@ def run_steps(steps, full, ctx, out=sys.stdout):
     print("SMOKE %s: passed=%d failed=%d skipped=%d" % ("full" if full else "reduced", passed, failed, skipped), file=out)
     if not full:
         print("SMOKE the full result (every step, nested Podman) is [unverified] until CI runs this with SWARMBOX_SMOKE_FULL=1; "
-              "B28 stays open until then", file=out)
+              "the nested-container check stays open until then", file=out)
     return 1 if failed else 0
 
 

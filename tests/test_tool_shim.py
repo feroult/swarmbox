@@ -1,9 +1,9 @@
-"""Slice 4a.4: the dispatcher `swarmbox-shim` and the whole shim call lifecycle (design 6.1, 6.2, 6.5; decisions D2, D18).
+"""The dispatcher `swarmbox-shim` and the whole shim call lifecycle.
 
 Chain under test: symlink -> swarmbox-shim -> swarmbox-tool run -> fake installer -> fake program, all in a temp tree
 (HOME, the two manifest levels, both shim folders and both indexes are temp folders; the real /usr/local is never read).
 The shim is run by every shell that exists here (its shebang /bin/sh, dash, bash, busybox sh), by its absolute symlink path and
-through a PATH lookup (evidence B12: $0 is the path as invoked). Run with: python3 tests/test_tool_shim.py
+through a PATH lookup ($0 is the path as invoked). Run with: python3 tests/test_tool_shim.py
 """
 import os
 import shutil

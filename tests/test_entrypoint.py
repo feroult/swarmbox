@@ -1,7 +1,7 @@
-"""Slice 2.5: the subcommands of swarmbox-entrypoint (design 10.2): serve, attach, init, pubkey, tool, host-helper and
+"""The subcommands of swarmbox-entrypoint: serve, attach, init, pubkey, tool, host-helper and
 "any other command, run as given". Everything runs against container/entrypoint.sh with FAKE programs first on PATH.
 
-Test-only variable (decision log [2.5]): SWARMBOX_TEST_HOST_DIR replaces /usr/local/share/swarmbox/host.
+Test-only variable: SWARMBOX_TEST_HOST_DIR replaces /usr/local/share/swarmbox/host.
 Run with: python3 tests/test_entrypoint.py
 """
 import io
@@ -141,7 +141,7 @@ class HostHelper(Base):
         tf = tarfile.open(fileobj=io.BytesIO(r.stdout))
         names = sorted(n[2:] if n.startswith("./") else n for n in tf.getnames())
         self.assertEqual(names, [".", "cloudflare-setup.py", "swarmbox-host", "templates", "templates/bash", "tool-ports"])
-        self.assertEqual(tf.getmember("./swarmbox-host").mode & 0o100, 0o100)   # the executable bit survives (3.7.1)
+        self.assertEqual(tf.getmember("./swarmbox-host").mode & 0o100, 0o100)   # the executable bit survives
         self.assertEqual(tf.extractfile("./tool-ports").read(), b"")
         for m in tf.getmembers():
             self.assertEqual((m.uid, m.gid), (0, 0))

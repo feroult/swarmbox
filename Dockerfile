@@ -1,4 +1,4 @@
-# SwarmBox 2.0 image (design 10). Slim: no agent, gcloud, clasp, Go or Poetry; tools arrive on demand (design 6).
+# SwarmBox 2.0 image. Slim: no agent, gcloud, clasp, Go or Poetry; tools arrive on demand.
 # Layer order: stable first (packages, Podman, pinned downloads), volatile last (scripts, configuration).
 ARG NODE_VERSION=24
 FROM node:${NODE_VERSION}-slim
@@ -40,19 +40,19 @@ RUN apt-get update && apt-get install -y \
     tmux \
     && rm -rf /var/lib/apt/lists/*
 
-# Nested rootless Podman (design 10.5): no host socket is ever mounted.
+# Nested rootless Podman: no host socket is ever mounted.
 # netavark + aardvark-dns give nested networks DNS by container name (netavark needs iptables for its firewall
 # driver, which Debian only lists as a hidden requirement); uidmap provides newuidmap/newgidmap; libcap2-bin setcap.
 RUN apt-get update && \
     apt-get install -y podman netavark aardvark-dns iptables uidmap libcap2-bin && \
     rm -rf /var/lib/apt/lists/*
 
-# Chromium, for the chrome-devtools MCP (design D24)
+# Chromium, for the chrome-devtools MCP
 RUN apt-get update && \
     apt-get install -y chromium && \
     rm -rf /var/lib/apt/lists/*
 
-# The fixed user (design 10.2). The base image already has user and group "node" with UID and GID 1000 (B26):
+# The fixed user. The base image already has user and group "node" with UID and GID 1000:
 # rename it instead of adding a second user. sudo without a password is intentional: the box is the sandbox.
 RUN usermod -l agent node && \
     groupmod -n agent node && \
@@ -60,7 +60,7 @@ RUN usermod -l agent node && \
     usermod -s /bin/bash agent && \
     echo "agent ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-# --- Nested rootless Podman settings, (design 10.5 lists the reason for each) ---
+# --- Nested rootless Podman settings (the reason for each is under "Nested Podman and its isolation cost" in docs/design.md) ---
 # 1. File capabilities instead of the setuid bit: a setuid-root binary does not work in an unprivileged container.
 RUN chmod u-s /usr/bin/newuidmap /usr/bin/newgidmap && \
     setcap cap_setuid+ep /usr/bin/newuidmap && \
@@ -81,7 +81,7 @@ RUN mkdir -p /etc/containers && \
 ENV NPM_CONFIG_CACHE=/opt/npm-cache
 RUN install -d -o agent -g agent -m 755 /opt/npm-cache
 
-# Pinned chrome-devtools-mcp (D23, closes B24): the registry runs the installed program, never npx.
+# Pinned chrome-devtools-mcp: the registry runs the installed program, never npx.
 ARG CHROME_DEVTOOLS_MCP_VERSION=1.12.0
 RUN npm install -g --cache /tmp/npm-build-cache chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION} && chrome-devtools-mcp --version && rm -rf /tmp/npm-build-cache
 
@@ -130,7 +130,7 @@ RUN python3 -m venv --prompt swarmbox /opt/flow && /opt/flow/bin/pip install --n
 USER root
 
 # --- Volatile layers: scripts, configuration, the web page ---
-# ttyd's own page, the clipboard bridge and the style: build-index.sh assembles the page at image build (D13, 5.1)
+# ttyd's own page, the clipboard bridge and the style: build-index.sh assembles the page at image build
 COPY container/web/ttyd-clipboard.js container/web/ttyd-style.css container/web/build-index.sh /usr/local/share/swarmbox/
 RUN chmod 644 /usr/local/share/swarmbox/ttyd-clipboard.js /usr/local/share/swarmbox/ttyd-style.css && \
     chmod 755 /usr/local/share/swarmbox/build-index.sh && \
@@ -158,10 +158,10 @@ COPY container/scripts/swarmbox-tool.sh /usr/local/bin/swarmbox-tool
 COPY container/scripts/swarmbox-shim.sh /usr/local/bin/swarmbox-shim
 COPY container/tools/ /usr/local/lib/swarmbox/tools/
 COPY container/scripts/swarmbox-mcp.sh /usr/local/bin/swarmbox-mcp
-# The tool manifests (design 6.3) are read-only data of the image; `swarmbox-tool link --system` below generates the shims,
-# the index and tool-ports from them. No agent is installed here (D2): the first call of a shim installs it.
+# The tool manifests are read-only data of the image; `swarmbox-tool link --system` below generates the shims,
+# the index and tool-ports from them. No agent is installed here: the first call of a shim installs it.
 COPY container/scripts/swarmbox-init.sh /usr/local/bin/swarmbox-init
-# The helper archive (3.7.1, 9.3): what `swarmbox-entrypoint host-helper` writes. container/host/ holds swarmbox-host, VERSION and
+# The helper archive: what `swarmbox-entrypoint host-helper` writes. container/host/ holds swarmbox-host, VERSION and
 # templates/ (the files `swarmbox-init` prints from); tool-ports is written by `swarmbox-tool link --system` below, always, empty
 # when no manifest has ports.
 COPY container/host/ /usr/local/share/swarmbox/host/
@@ -178,10 +178,10 @@ RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.
     find /usr/local/lib/swarmbox/tools -name '*.sh' -exec chmod 755 {} + && \
     swarmbox-tool link --system
 
-# Build-time preinstall (design 6.8, D23): WITH_TOOLS is a comma list of tool names (default empty: no tool is baked, D2). Each one is
+# Build-time preinstall: WITH_TOOLS is a comma list of tool names (default empty: no tool is baked). Each one is
 # installed by the same installer that an on-demand install runs, as agent (the owner of /opt/swarmbox/tools, so no chown -R and no
-# root-owned entries; the npm cache rule of 10.2: NPM_CONFIG_CACHE is /opt/npm-cache, owned by agent), into /opt/swarmbox/tools instead
-# of the workspace. The fingerprint (6.11) is recorded at that moment. An unknown name or a failed installer fails the build; with an
+# root-owned entries; the npm cache rule: NPM_CONFIG_CACHE is /opt/npm-cache, owned by agent), into /opt/swarmbox/tools instead
+# of the workspace. The fingerprint is recorded at that moment. An unknown name or a failed installer fails the build; with an
 # empty list the loop does nothing. The core never names a tool: the names come from the argument and the manifests.
 ARG WITH_TOOLS=""
 RUN install -d -o agent -g agent -m 755 /opt/swarmbox /opt/swarmbox/tools
@@ -192,13 +192,13 @@ RUN set -eu; set -f; \
     done
 USER root
 
-# The shell fragment (design 6.6, 10.3) runs from Debian's /etc/bash.bashrc leaves at once in a
+# The shell fragment runs from Debian's /etc/bash.bashrc leaves at once in a
 # non-interactive shell, so the line below runs for interactive shells only; swarmbox-attach sources the fragment
-# directly for a command run without a terminal (3.3).
+# directly for a command run without a terminal.
 RUN printf '\n# SwarmBox shell fragment\n[ -r /etc/swarmbox/bashrc.sh ] && . /etc/swarmbox/bashrc.sh\n' >> /etc/bash.bashrc
 
-# The image-level shims are on the PATH of every process of the box, also outside a shell (design 10.2); the shell fragment puts the
-# user-level shims before them (6.2).
+# The image-level shims are on the PATH of every process of the box, also outside a shell; the shell fragment puts the
+# user-level shims before them.
 ENV PATH=/usr/local/lib/swarmbox/shims:$PATH
 
 USER agent

@@ -1,4 +1,4 @@
-"""Slice 3.1: the host helper's configuration surface (design 3.7.2, 3.7.3, 3.7.5, 7, 8.2).
+"""The host helper's configuration surface.
 
 container/host/swarmbox-host runs here as a real program with a cleared environment: PATH, a mktemp HOME and the XDG
 variables the case sets, nothing else (so a SWARMBOX_* variable of the live box can never leak in). Nothing touches the
@@ -143,7 +143,7 @@ class VersionTest(Base):
         return os.path.join(d, "swarmbox-host")
 
     def test_the_default_names_come_from_the_defaults_file(self):
-        """D40: flipping the two lines of DEFAULTS flips the box name, the hostname key and the image of a copied helper."""
+        """Flipping the two lines of DEFAULTS flips the box name, the hostname key and the image of a copied helper."""
         h = self.copied_helper("SWARMBOX_DEFAULT_NAME=flipped\nSWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/<org>/flipped'\n")
         for key, want in (("NAME", "flipped"), ("HOSTNAME", "flipped"), ("IMAGE", "ghcr.io/<org>/flipped:9.8.7")):
             p = self.run_h("config", "get", key, helper=h)
@@ -332,7 +332,7 @@ class TokenTest(Base):
         self.assertEqual(slurp(self.cfg_file), before)
 
 class ModeCheckTest(Base):
-    """The portable octal mode check (B22, B34): stat -c %a, then stat -f %Lp, then find -perm; never the text of ls.
+    """The portable octal mode check: stat -c %a, then stat -f %Lp, then find -perm; never the text of ls.
 
     Each variant puts shims first in PATH. A shim logs its call, so the test also proves which form answered. The
     macOS form (`stat -f %Lp`) is simulated: the shim translates it to GNU stat, so that variant is tagged reduced.
@@ -400,11 +400,11 @@ class ModeCheckTest(Base):
     def test_a_file_with_an_extended_attribute(self):
         self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TOKEN, mode=0o600)
         if not hasattr(os, "setxattr"):
-            self.skipTest("[skipped: os.setxattr missing; the macOS '@' case stays unverified (B34)]")
+            self.skipTest("[skipped: os.setxattr missing; the macOS '@' case stays unverified]")
         try:
             os.setxattr(self.cfg_file, "user.swarmbox-test", b"1")
         except OSError as e:
-            self.skipTest("[skipped: this filesystem refuses user extended attributes: %s; B34 xattr case unverified here]" % e)
+            self.skipTest("[skipped: this filesystem refuses user extended attributes: %s; xattr case unverified here]" % e)
         for variant, via in (("c_only", "c"), ("f_only", "f"), ("neither", "find")):
             path = self.make_shims(variant) if not os.path.exists(os.path.join(self.tmp, "shims-" + variant)) else \
                 os.path.join(self.tmp, "shims-" + variant) + os.pathsep + os.environ["PATH"]

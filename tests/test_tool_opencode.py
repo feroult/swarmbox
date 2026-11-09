@@ -1,8 +1,8 @@
-"""Slice 4b.2: the opencode tool (design 6.3, 6.4, 6.6, 6.12, 4.4; D3, D4, B2, B10).
+"""The opencode tool.
 
-install.sh runs against a FAKE npm that builds a fake package tree (the layout measured for @opencode/cli 2.2.6 in spike B10:
+install.sh runs against a FAKE npm that builds a fake package tree (the layout measured for @opencode/cli 2.2.6 in spike:
 several platform builds, bin/opencode.exe hard-linked to one of them). prepare.sh runs in a mktemp tree. The real npm and the
-real package are NOT used here (that is slice 4b.7, reduced). Run with: python3 -W error tests/test_tool_opencode.py   (needs bash, jq)
+real package are NOT used here (that is tests/test_tool_real.py). Run with: python3 -W error tests/test_tool_opencode.py   (needs bash, jq)
 """
 import json
 import os
@@ -103,7 +103,7 @@ class InstallTest(unittest.TestCase):
         self.assertIn("npm install -g --prefix %s @opencode/cli@latest" % self.prefix, calls)
         self.assertIn("npm cache clean --force", calls)
         self.assertLess(calls.index("npm cache clean --force"), len(calls))
-        self.assertEqual(r.stdout, "")   # stdout belongs to the tool (6.4)
+        self.assertEqual(r.stdout, "")   # stdout belongs to the tool
 
     def test_amd64_prunes_the_other_builds_and_keeps_the_linked_one(self):
         r = self.install(arch="amd64")

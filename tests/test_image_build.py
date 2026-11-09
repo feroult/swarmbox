@@ -1,4 +1,4 @@
-"""Slice 2.1: checks on the built image (tag: image build). Skipped unless SWARMBOX_IMAGE_BUILD=1 and podman works.
+"""Checks on the built image (tag: image build). Skipped unless SWARMBOX_IMAGE_BUILD=1 and podman works.
 
 It builds swarmbox-test-img-<rand> with dev/dev-build.sh (slow, minutes), inspects it in throwaway containers
 (swarmbox-test-img-run-<rand>), records the size, and removes the container and the image by their exact names.
@@ -85,7 +85,7 @@ class ImageTest(unittest.TestCase):
         h = podman("history", "--no-trunc=false", "--format", "{{.Size}}\t{{.CreatedBy}}", TAG)
         sys.stderr.write("\nIMAGE SIZE %d bytes (%.2f GB); budget %.1f GB\n%s\n" % (size, size / 1e9, TARGET_BYTES / 1e9, h.stdout))
         self.assertGreater(size, 100 * 1000 ** 2)
-        # B27 is a budget: report, and fail only when it is exceeded so the owner sees it
+        # the image size is a budget: report, and fail only when it is exceeded so the owner sees it
         self.assertLess(size, TARGET_BYTES, "image is over the 2.5 GB budget")
 
 

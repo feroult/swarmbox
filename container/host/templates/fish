@@ -4,7 +4,7 @@ function swarmbox
     set -l image @IMAGE@
     set -l seed_with @SEED_WITH@
     set -l seed_ws @SEED_WORKSPACE@
-    set -l seed_image @SEED_IMAGE@   # seed values of `swarmbox init` (design 3.7.5)
+    set -l seed_image @SEED_IMAGE@   # seed values of `swarmbox init`
     set -l data "$XDG_DATA_HOME"
     if test -z "$data"; or not string match -q -r '^/' -- "$data"
         set data "$HOME/.local/share"
@@ -23,7 +23,7 @@ function swarmbox
             set hv ''
         end
     end
-    # bootstrap (D33): extract only when there is no usable helper or it is older than this block (sort -V: 2.0.10 is newer than
+    # bootstrap: extract only when there is no usable helper or it is older than this block (sort -V: 2.0.10 is newer than
     # 2.0.9); a newer helper is kept with a one-line notice; when sort has no -V there is no answer and the helper is kept
     if test -z "$hv"
         set need 1
@@ -87,7 +87,7 @@ function swarmbox
     else if test "$skew" = 1
         echo "swarmbox: the helper ($hv) is newer than this function ($marker); kept" >&2
     end
-    # seeds (D20, 3.7.5): given as arguments, never as SWARMBOX_* variables (those would override the file on every call); a relative
+    # seeds: given as arguments, never as SWARMBOX_* variables (those would override the file on every call); a relative
     # workspace is made absolute here, on the host, against the folder of this call
     if test -n "$seed_ws"; and not string match -q -r '^(/|~$|~/)' -- "$seed_ws"
         set seed_ws (pwd)"/"(string replace -r '^\./' '' -- "$seed_ws")
@@ -100,7 +100,7 @@ function swarmbox
         "$host" $sa
         or return $status
     end
-    switch "$first"                                 # words handled on the host (3.3)
+    switch "$first"                                 # words handled on the host
         case stop reset up url update config env remote fingerprint version help --help -h
             "$host" $argv
             return $status
@@ -110,11 +110,11 @@ function swarmbox
     set -l name ("$host" config get NAME)
     or return $status
     set -l pe exec -i
-    if test -t 0; and test -t 1                     # -t only with a terminal on both ends (3.3, "No terminal")
+    if test -t 0; and test -t 1                     # -t only with a terminal on both ends
         set pe exec -it
     end
     set pe $pe -e TERM -e COLORTERM "$name" swarmbox-entrypoint
-    switch "$first"                                 # words forwarded as they are (3.3)
+    switch "$first"                                 # words forwarded as they are
         case pubkey tool
             command podman $pe $argv
             return $status

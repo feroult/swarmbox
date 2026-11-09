@@ -1,5 +1,5 @@
 #!/bin/bash
-# swarmbox-mcp: generate <workspace>/.claude/mcp-servers.json from the MCP registry (design 4.4), run by `serve` at step 7.
+# swarmbox-mcp: generate <workspace>/.claude/mcp-servers.json from the MCP registry, run by `serve` at step 7.
 #
 #   swarmbox-mcp [generate] [--output FILE]     default FILE: $HOME/.claude/mcp-servers.json (the workspace is $HOME in the box)
 #
@@ -13,7 +13,7 @@
 # written, and the exit status is 1 so that `serve` records one health line. The file is written atomically (a temporary file in
 # the same folder, then mv): on failure (exit 2) the old file is untouched and no temporary file is left. Needs jq.
 #
-# Test-only variables (decision log [4b.1]): SWARMBOX_TEST_LIB (folder with dirs.sh), SWARMBOX_TEST_MCP_DIR (the image registry).
+# Test-only variables: SWARMBOX_TEST_LIB (folder with dirs.sh), SWARMBOX_TEST_MCP_DIR (the image registry).
 SB_LIB=${SWARMBOX_TEST_LIB:-/usr/local/lib/swarmbox}
 # shellcheck source=/dev/null
 . "$SB_LIB/dirs.sh" || { echo "swarmbox-mcp: cannot read $SB_LIB/dirs.sh" >&2; exit 2; }

@@ -1,4 +1,4 @@
-"""Slice 2.1: container/web/build-index.sh assembles the page with three placeholders (design 5.1, D13).
+"""Container/web/build-index.sh assembles the page with three placeholders.
 Run: python3 tests/test_build_index.py
 """
 import os

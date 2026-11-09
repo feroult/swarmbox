@@ -1,6 +1,6 @@
-"""Slice 4b.4: the go and gcloud tools (design 6.3, 6.4, 6.9, 6.12; D21, D29, B11, B25).
+"""The go and gcloud tools.
 
-install.sh runs against a FAKE curl serving tiny tarballs; the real downloads (about 75 MB and 95 MB) are slice 4b.7.
+install.sh runs against a FAKE curl serving tiny tarballs; the real downloads (about 75 MB and 95 MB) are in tests/test_tool_real.py.
 Run with: python3 -W error tests/test_tool_go_gcloud.py   (needs bash, tar; zsh is optional)
 """
 import hashlib

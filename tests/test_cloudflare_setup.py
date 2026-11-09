@@ -404,7 +404,7 @@ class TestVerify(unittest.TestCase):
         self.assertEqual(cs.check_protected(url, timeout=5)[0], "protected")
 
 class TestDefaultNames(unittest.TestCase):
-    """D40: the default name, the tunnel and the connector come from container/host/DEFAULTS, read next to the script."""
+    """The default name, the tunnel and the connector come from container/host/DEFAULTS, read next to the script."""
 
     def test_defaults_of_the_parser_and_the_connector(self):
         a = cs.build_parser().parse_args([])

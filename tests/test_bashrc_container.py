@@ -1,4 +1,4 @@
-"""Slice 2.4: the shell fragment inside a real throwaway container from the 2.1 image.
+"""The shell fragment inside a real throwaway container from the 2.1 image.
 
 Checks that the image's /etc/bash.bashrc sources /etc/swarmbox/bashrc.sh (banner, health lines, alias from a user-level
 manifest, yolo message, Starship) and that `swarmbox-entrypoint attach <command>` without a terminal gets the aliases and
@@ -70,7 +70,7 @@ class FragmentInContainer(unittest.TestCase):
         self.assertIn("the local image has been replaced", out)
 
     def test_the_shipped_claude_manifest_gives_the_alias_and_an_unknown_agent_is_reported(self):
-        # Slice 4a.5: the image ships the claude manifest (and no program). `yolo` is never run for claude here: it would
+        # the image ships the claude manifest (and no program). `yolo` is never run for claude here: it would
         # trigger the first-use install, a real download.
         out = self.interactive("alias claude; alias opencode gemini 2>&1; SWARMBOX_AGENT=nonesuch yolo 2>&1; echo status=$?")
         self.assertIn("alias claude='claude --dangerously-skip-permissions --mcp-config /home/agent/.claude/mcp-servers.json'", out)

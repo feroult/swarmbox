@@ -1,4 +1,4 @@
-"""Slice 7.5: dev/release-version.sh maps a release tag to the image tags (design 10.4, D32).
+"""Dev/release-version.sh maps a release tag to the image tags.
 
 v2.0.0 gives version 2.0.0, minor 2.0 and the tags "2.0.0 2.0 latest". Anything else is refused with exit 1: no leading v,
 a prerelease or build suffix, leading zeros, a missing or extra component, an empty value, option-like input. No network.

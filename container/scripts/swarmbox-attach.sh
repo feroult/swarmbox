@@ -1,11 +1,11 @@
 #!/bin/bash
-# swarmbox-attach (design 3.3, 3.4, 4.2; installed as /usr/local/bin/swarmbox-attach, called by `swarmbox-entrypoint attach`).
+# swarmbox-attach (installed as /usr/local/bin/swarmbox-attach, called by `swarmbox-entrypoint attach`).
 #
 #   swarmbox-attach [--plain] [--] [command [args...]]
 #
 #   no command, terminal    a new window of tmux session "main" through a grouped session (no status bar, ends with the
-#                           tab); when the only other window is the idle one `serve` made, that one is closed (B36)
-#   command, terminal       the `swarmbox <command>` mechanism (3.3): a detached window runs the command through an
+#                           tab); when the only other window is the idle one `serve` made, that one is closed
+#   command, terminal       the `swarmbox <command>` mechanism: a detached window runs the command through an
 #                           interactive shell; this program waits on a tmux wait-for channel, with a poll of the window id
 #                           as the fallback, and exits with the command's status (128+signal; 129 when the window was
 #                           killed; 1 when the status is lost)
@@ -13,9 +13,9 @@
 #                           NON-interactive bash that sources the shell fragment (SWARMBOX_CMD=1), because `bash -ic`
 #                           without a terminal prints job-control errors
 #
-# First it waits up to 60 s for the readiness marker of `serve` (4.2) and exits 6 when it does not appear.
+# First it waits up to 60 s for the readiness marker of `serve` and exits 6 when it does not appear.
 #
-# Test-only variables (decision log [2.3]; not in the configuration table of design 8): SWARMBOX_TEST_LIB (folder with
+# Test-only variables (not in the configuration table): SWARMBOX_TEST_LIB (folder with
 # dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces /tmp/swarmbox), SWARMBOX_TEST_READY_TIMEOUT (seconds, default 60),
 # SWARMBOX_TEST_POLL_INTERVAL (seconds between window-id polls, default 1), SWARMBOX_TEST_FRAGMENT (the shell fragment file).
 
@@ -29,7 +29,7 @@ POLL=${SWARMBOX_TEST_POLL_INTERVAL:-1}
 SESSION=main
 IDLE_NAME=idle          # the name `serve` gives the idle window (step 9); keep in step with container/entrypoint.sh
 # The box name (only used in messages): SWARMBOX_NAME, which the helper passes to every box; else the default name of the DEFAULTS file
-# that the image keeps next to the helper (D40). SWARMBOX_TEST_HOST_DIR replaces that folder in tests, as for swarmbox-init.
+# that the image keeps next to the helper. SWARMBOX_TEST_HOST_DIR replaces that folder in tests, as for swarmbox-init.
 BOX_NAME=${SWARMBOX_NAME:-}
 if [ -z "$BOX_NAME" ]; then
     while IFS= read -r _l || [ -n "$_l" ]; do
@@ -106,7 +106,7 @@ interactive() {
     exec tmux new-session -t "=$SESSION" \; set-option destroy-unattached on \; set-option status off \; select-window -t "$w"
 }
 
-# The wrapper runs as the window's command (design 3.3). $1 the quoted command, $2 the status file, $3 the channel.
+# The wrapper runs as the window's command. $1 the quoted command, $2 the status file, $3 the channel.
 # bash -ic runs in the background and the wrapper waits, so that the trap can run when tmux hangs the window up
 # (kill-window); stdin is passed on explicitly because a background job of a non-interactive shell would get /dev/null.
 read -r -d '' WRAPPER <<'EOF'

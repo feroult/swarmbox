@@ -1,6 +1,6 @@
-"""Slice 4a.2: `swarmbox-tool link --system` and `link --user` (design 6.2, 6.3, 3.7.1; decisions D2, D18).
+"""`swarmbox-tool link --system` and `link --user`.
 
-Fixture manifests in mktemp directories, passed through the test-only variables of decision log [4a.1] and [4a.2]:
+Fixture manifests in mktemp directories, passed through the test-only variables:
 SWARMBOX_TEST_IMAGE_TOOLS, SWARMBOX_TEST_IMAGE_SHIMS (image shim folder; the index is its sibling `index`),
 SWARMBOX_TEST_HOST_DIR, SWARMBOX_TEST_USER_TOOLS (manifests) and SWARMBOX_TEST_USER_SHIMS (user shim folder; index sibling).
 Without the user overrides, link --user uses dirs.sh with HOME and the XDG variables (tested too).
@@ -147,7 +147,7 @@ class LinkUser(Base):
         self.assertEqual(sorted(os.listdir(self.ushims)), ["mine", "mine2"])
         self.assertEqual(os.readlink(os.path.join(self.ushims, "mine")), SHIM)
         self.assertEqual(self.read(self.base, "share", "index"), "mine mine\nmine2 mine\n")
-        self.assertFalse(os.path.exists(self.host))  # user-level PORTS never reach tool-ports (6.3)
+        self.assertFalse(os.path.exists(self.host))  # user-level PORTS never reach tool-ports
 
     def test_the_same_command_in_both_levels_is_allowed_and_user_wins_on_path(self):
         make_tool(self.image, "img", PROVIDES='"both"')
@@ -156,7 +156,7 @@ class LinkUser(Base):
         self.assertEqual(self.link("--user").returncode, 0)
         self.assertEqual(self.read(self.base, "lib", "index"), "both img\n")
         self.assertEqual(self.read(self.base, "share", "index"), "both mine\n")
-        # the PATH order of 6.2: the user shim folder comes first, so `both` resolves to the user-level link
+        # the PATH order: the user shim folder comes first, so `both` resolves to the user-level link
         # (the links are dangling here, the dispatcher is not installed on the test machine, so look them up by hand)
         path = [self.ushims, self.ishims]
         first = next(os.path.join(d, "both") for d in path if os.path.lexists(os.path.join(d, "both")))
@@ -188,7 +188,7 @@ class RealImageTree(Base):
         self.assertIn("claude claude\n", self.read(self.base, "lib", "index"))
         p = os.path.join(self.host, "tool-ports")
         self.assertTrue(os.path.isfile(p))
-        # 4b.3: clasp is the one shipped tool with a port (design 6.12); no other real tool declares PORTS
+        # 4b.3: clasp is the one shipped tool with a port; no other real tool declares PORTS
         self.assertEqual(self.read(p), "clasp\t43323\n")
 
 

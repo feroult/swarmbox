@@ -1,21 +1,21 @@
-# SwarmBox CI (design 13.4, plan section 3).
+# SwarmBox CI.
 #
 # This workflow only runs commands that already exist in the repository today: the python3 unit and function tests,
-# shellcheck over the new shell files, and (job "smoke", slice 2.7) the image build and the full image smoke test
+# shellcheck over the new shell files, and (job "smoke") the image build and the full image smoke test
 # (tests/smoke_image.py with SWARMBOX_SMOKE_FULL=1: it needs the nested Podman that the development box cannot give, so
-# this job is its only full run, never run before the owner's first push). The zsh and fish function tests arrived in slice 3.5. Slice 3.7 added the arm64 job (B31), the
+# this job is its only full run, never run before the owner's first push). The zsh and fish function tests are included, and so are the arm64 job, the
 # dash and busybox step of the linux job, and bash 3.2 (/bin/bash) for the function test of the macos job.
 # It uses no secrets, publishes nothing and binds no ports on the runner outside 127.0.0.1.
 #
-# Open facts this file prepares (see docs/design.md Part B):
-#   B30  the macOS runner exists and what it provides. The "probe" step of the macos job prints
-#        /bin/bash --version and command -v podman. B30 stays [unverified] until the first real run of this job.
-#   B28  the smoke job's step "nested-cgroup" (cgroupfs and file logger inside the box) is its first real check.
-#   B19  the macos job also prints sort -V behavior as a probe only (no assertion).
-#   B31  the arm64 job builds the image natively on an arm64 runner (no emulation) and runs the full smoke test. It has
-#        never run: B31 is [unverified] until its first real run. The runner label ubuntu-24.04-arm is the one GitHub
+# Open facts this file prepares (see "Not done, and open questions" in docs/design.md):
+#   - the macOS runner exists and what it provides. The "probe" step of the macos job prints
+#        /bin/bash --version and command -v podman. This stays [unverified] until the first real run of this job.
+#   - the smoke job's step "nested-cgroup" (cgroupfs and file logger inside the box) is its first real check.
+#   - the macos job also prints sort -V behavior as a probe only (no assertion).
+#   - the arm64 job builds the image natively on an arm64 runner (no emulation) and runs the full smoke test. It has
+#        never run: it is [unverified] until its first real run. The runner label ubuntu-24.04-arm is the one GitHub
 #        documents for its arm64 hosted runners; if the account cannot use it the job stays queued or fails, and the
-#        owner decides (record in docs/history/decision-log.md, slice 3.7). The jobs of this file were only validated by
+#        owner decides (record it in docs/history/decision-log.md). The jobs of this file were only validated by
 #        tests/test_ci_workflow.py (and actionlint when present) in the development box: none of them ever ran.
 name: ci
 
@@ -25,7 +25,7 @@ on:
   schedule:
     - cron: "17 4 * * 1" # weekly, Monday 04:17 UTC
   workflow_dispatch:
-  workflow_call: # called by release.yml as its test gate (slice 7.5)
+  workflow_call: # called by release.yml as its test gate
 
 permissions:
   contents: read
@@ -67,7 +67,7 @@ jobs:
           shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-tool.sh container/config/bashrc.sh
       - name: Validate the tool manifests (swarmbox-tool validate, no container)
         run: container/scripts/swarmbox-tool.sh validate container/tools
-      - name: Host helper under dash and busybox sh (B23), then the output comparison across the shells
+      - name: Host helper under dash and busybox sh, then the output comparison across the shells
         run: |
           command -v dash
           command -v busybox
@@ -77,7 +77,7 @@ jobs:
       - name: Unit and function tests (tests/run_all.sh; the browser and real-installer tests run in their own jobs)
         run: sh tests/run_all.sh
 
-  # The image smoke test (design 13.3 layer 2) in full mode: the runner is level 1, the throwaway box level 2 and the
+  # The image smoke test in full mode: the runner is level 1, the throwaway box level 2 and the
   # nested Podman inside it level 3, which is why the development box cannot run this. Image, containers and volumes are
   # named swarmbox-test-*; cleanup removes the image by its exact name. Nothing is pushed and no port is published.
   smoke:
@@ -92,7 +92,7 @@ jobs:
         run: podman --version
       - name: Build the image (not pushed)
         run: podman build -t "$SWARMBOX_IMAGE_TAG" .
-      - name: Smoke test, full (nested Podman, B28)
+      - name: Smoke test, full (nested Podman)
         run: |
           SWARMBOX_SMOKE_FULL=1 python3 tests/smoke_image.py | tee smoke.out
           if grep -q ' SKIP ' smoke.out; then echo "a step was skipped in the full run"; exit 1; fi
@@ -106,9 +106,9 @@ jobs:
         if: always()
         run: podman rmi "$SWARMBOX_IMAGE_TAG" || true
 
-  # The arm64 job (design 13.4, B31): a native build on an arm64 hosted runner (no QEMU), the dev build script (it only adds
+  # The arm64 job: a native build on an arm64 hosted runner (no QEMU), the dev build script (it only adds
   # the APT sandbox line to a scratch copy of the Dockerfile, harmless on a runner), and the full smoke test. Nothing is
-  # pushed, no registry login, no port. [unverified] that this job ever ran (B31).
+  # pushed, no registry login, no port. [unverified] that this job ever ran.
   arm64:
     name: arm64 (native build and full smoke test, ubuntu-24.04-arm)
     runs-on: ubuntu-24.04-arm
@@ -124,7 +124,7 @@ jobs:
           podman --version
       - name: Build the image for arm64 (not pushed)
         run: dev/dev-build.sh --tag "$SWARMBOX_IMAGE_TAG"
-      - name: Smoke test, full (nested Podman, keep-id, Chromium, B31)
+      - name: Smoke test, full (nested Podman, keep-id, Chromium)
         run: |
           SWARMBOX_SMOKE_FULL=1 python3 tests/smoke_image.py | tee smoke.out
           if grep -q ' SKIP ' smoke.out; then echo "a step was skipped in the full run"; exit 1; fi
@@ -138,7 +138,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Probe for B30 (what the macOS runner provides)
+      - name: Probe what the macOS runner provides
         run: |
           /bin/bash --version
           command -v podman || echo "podman: not found (the function tests use a fake podman)"
@@ -148,7 +148,7 @@ jobs:
       - name: /bin/bash must be a bash 3.x (the macOS system bash), or this job proves nothing about bash 3.2
         run: |
           /bin/bash -c 'echo "/bin/bash $BASH_VERSION"; [ "${BASH_VERSINFO[0]}" = 3 ]'
-      - name: The function test in /bin/bash (3.2) with a fake podman
+      - name: The function test in /bin/bash 3.2 with a fake podman
         env:
           SWARMBOX_TEST_BASH: /bin/bash
         run: python3 tests/test_function_bash.py
@@ -208,7 +208,7 @@ jobs:
           python3 tests/test_web_style.py
           python3 tests/test_tmux_browser_keys.py
 
-  # The real-installer tests (design 6.9, 13.4): every tool of container/tools is installed for real in a throwaway container
+  # The real-installer tests: every tool of container/tools is installed for real in a throwaway container
   # ("no side effects", "survives a reset"). They download several hundred MB, so they run on the weekly schedule and by hand,
   # never on push. Nothing is pushed and no port is published. [unverified] that this job ever ran on a runner.
   real-tools:

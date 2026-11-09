@@ -6,12 +6,12 @@ browser ── https://swarmbox.example.com ──> Cloudflare Access (email cod
                                           cloudflared (Podman, this host) ┘──> 127.0.0.1:7681
 ```
 
-`cloudflared` runs **on the host, not in the box**, so the tunnel credentials never reach the agent (decision D14).
+`cloudflared` runs **on the host, not in the box**, so the tunnel credentials never reach the agent.
 It only makes outbound connections: no router port, no public IP. Free plan (Zero Trust, up to 50 users); a card may
 be requested to activate it. Design: section 7 of [design.md](design.md).
 
 `swarmbox remote` is a thin wrapper over `cloudflare-setup.py`, which sits next to the host helper. It is the only part
-of the host side that needs `python3` (3.8+, no other dependency; the helper itself is POSIX `sh`, D16). If `python3` or
+of the host side that needs `python3` (3.8+, no other dependency; the helper itself is POSIX `sh`). If `python3` or
 the script is missing, the command exits with status 3 and says so.
 
 | Command | Runs the script's | What it does |
@@ -89,13 +89,13 @@ A second box on the same domain: `swarmbox remote setup --name second --port 768
 
 Two different credentials. The *API token* is powerful and only needed to provision. The connector needs only the
 tunnel's own, much narrower *tunnel token*, which lets whoever holds it join your tunnel. It is read on the host only
-and is **never passed into the box**: `env add` refuses `SWARMBOX_CLOUDFLARE_*` names (D14).
+and is **never passed into the box**: `env add` refuses `SWARMBOX_CLOUDFLARE_*` names.
 
 Where `swarmbox up` finds it, in this order:
 
 1. the host environment variable `SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN`;
 2. the key `CLOUDFLARE_TUNNEL_TOKEN` in the host config file, **only when that file has mode 600**. This is the one
-   secret the config may hold (D28). A looser mode is refused with a warning naming `chmod 600 <file>`. The mode check
+   secret the config may hold. A looser mode is refused with a warning naming `chmod 600 <file>`. The mode check
    is portable (`stat -c %a`, `stat -f %Lp`, then `find -perm`). `swarmbox config list` shows the key only as set.
 
 After a successful `remote setup` on a terminal (not with `--dry-run`), when no token is stored yet, the command
@@ -144,7 +144,7 @@ options, for a host where the helper is not installed. To run `cloudflared` your
 Rootless Podman does not restart a `--restart=always` container after a reboot unless `podman-restart.service` is
 enabled for your user (and, on systemd, lingering lets it start without a login). `swarmbox up` brings the connector
 back on the next entry in any case. The reboot behavior was not tried (no systemd in the build sandbox) and is
-`[unverified]` (B16); the checklist below covers it.
+`[unverified]`; the checklist below covers it.
 
 ## Owner checklist: the one end-to-end run no fake can replace
 
@@ -160,7 +160,7 @@ and a fake `podman` only. Run this once, on a real host with a real domain, and 
 4. Open the URL from outside your network (a phone on mobile data): Cloudflare asks for your e-mail, mails a
    one-time code, and the terminal opens after you enter it. A different e-mail must be refused.
 5. Run `swarmbox remote setup` again without `--session`: the session length stays as it was.
-6. Reboot behavior of the connector (B16): reboot the host, do not run `swarmbox`, wait a minute, run
+6. Reboot behavior of the connector: reboot the host, do not run `swarmbox`, wait a minute, run
    `podman ps --filter name=swarmbox-dev-cloudflared` and `swarmbox remote status`. Note whether it came back by itself
    (needs `podman-restart.service` enabled for your user; `systemctl --user enable --now podman-restart.service`) or
    only after `swarmbox up`.

@@ -1,6 +1,6 @@
 #!/bin/sh
-# build-index.sh: assemble the web terminal page at image build (design 5.1, D13).
-# Joins ttyd's own page, the clipboard bridge and the style into one file (ttyd serves a single file, B4), leaving three
+# build-index.sh: assemble the web terminal page at image build.
+# Joins ttyd's own page, the clipboard bridge and the style into one file (ttyd serves a single file), leaving three
 # placeholders for the user's settings, which swarmbox-web replaces at every start with a plain text substitution:
 #   __SWARMBOX_PADDING__   a number of pixels (the CSS variable --swarmbox-padding)
 #   __SWARMBOX_CTRL_V__    true or false (ctrlVPaste)

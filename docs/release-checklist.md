@@ -40,7 +40,7 @@ Use a second box (`SWARMBOX_NAME=dev`, its own workspace and web port) so a real
 - Trademark databases (USPTO, EUIPO, WIPO Global Brand Database): **not searched**. Search "swarmbox" in software classes 9 and 42 for your country. This is a name lookup, not legal advice.
 
 Decide: keep the name and accept the overlap (then replace `<org>` with `feroult` everywhere and update the tests that expect it, for example `git grep -l '<org>'`), or rename (a large edit: image path, markers, docs; not prepared).
-The default names of the box and the image repository are in `container/host/DEFAULTS`; the development tree ships `swarmbox-dev`, which becomes `swarmbox` for the release (D40). Check the container registries too.
+The default names of the box and the image repository are in `container/host/DEFAULTS`; the development tree ships `swarmbox-dev`, which becomes `swarmbox` for the release. Check the container registries too.
 
 ## 4. Security review by a human
 

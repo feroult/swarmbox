@@ -1,4 +1,4 @@
-"""Slice 2.1: dev/dev-build.sh, the local image build for the development box (nested Podman).
+"""Dev/dev-build.sh, the local image build for the development box (nested Podman).
 
 The APT sandbox override exists only in a scratch copy of the Dockerfile in a mktemp directory; the product Dockerfile
 never contains it. Podman is a FakePodman here, so nothing is built. Run: python3 tests/test_dev_build.py

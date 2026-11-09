@@ -1,4 +1,4 @@
-"""Slice 2.2: `swarmbox-entrypoint serve` (design 4.1 and 4.2, 5.1): the ordered steps, failures, readiness marker, health file,
+"""`swarmbox-entrypoint serve`: the ordered steps, failures, readiness marker, health file,
 PID 1 signals and the ttyd supervisor, all against a fake environment.
 
 Nothing here touches the live box: tmux, ttyd, podman, swarmbox-pubkey and swarmbox-tool are fakes in a
@@ -298,7 +298,7 @@ class WarnSteps(ServeCase):
 
 
 class Signals(ServeCase):
-    """PID 1 behavior: handlers, exit codes, children stopped (design 4.1, B3)."""
+    """PID 1 behavior: handlers, exit codes, children stopped."""
 
     def children_gone(self):
         pids = []
@@ -328,7 +328,7 @@ class Signals(ServeCase):
         self.assertEqual(self.children_gone(), [])
 
 class Supervisor(ServeCase):
-    """The ttyd supervisor: backoff, giving up, idle, restart by hand (design 4.2)."""
+    """The ttyd supervisor: backoff, giving up, idle, restart by hand."""
 
     def starts(self):
         return len(read(os.path.join(self.fake, "ttyd.starts")).split())

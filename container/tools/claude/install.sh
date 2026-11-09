@@ -1,13 +1,13 @@
 #!/bin/bash
-# Claude Code installer (design 6.4, 6.7; decision B1: the vendor's native installer, not npm, so that `claude update` works).
+# Claude Code installer (the vendor's native installer, not npm, so that `claude update` works).
 # Called by `swarmbox-tool install claude` with TOOL_PREFIX, TOOL_VERSION and TOOL_ARCH; runs as the agent user with HOME the workspace.
 #
 # This is the one installer that writes outside $TOOL_PREFIX: an UPDATE=self tool may write the paths of its own installer inside the
 # workspace home (~/.local/bin/claude, ~/.local/share/claude, ~/.local/state/claude, ~/.cache/claude). This script itself never writes
-# ~/.claude or ~/.claude.json (the user's login and settings), but the vendor installer creates both (measured, slice 4a.6).
+# ~/.claude or ~/.claude.json (the user's login and settings), but the vendor installer creates both (measured).
 # $TOOL_PREFIX only holds SwarmBox's record of the install.
 # The vendor installer verifies its own download; SwarmBox records no checksum for it (design section 11).
-# Progress goes to stderr only: stdout belongs to the tool being run (6.4).
+# Progress goes to stderr only: stdout belongs to the tool being run.
 set -euo pipefail
 
 : "${TOOL_PREFIX:?TOOL_PREFIX is not set}"

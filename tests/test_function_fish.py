@@ -1,4 +1,4 @@
-"""Slice 3.5: the generated function in fish (design 3.6, 13.3 layer 4). The cases are in tests/function_cases.py.
+"""The generated function in fish. The cases are in tests/function_cases.py.
 
 Run: python3 tests/test_function_fish.py
 fish runs with --no-config. Its `set -l`, `$status`, list expansion and command substitution (split on newlines) differ from

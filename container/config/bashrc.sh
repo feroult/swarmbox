@@ -1,10 +1,10 @@
-# SwarmBox shell fragment (design 6.6, 3.3, 4.2, 10.3, D9). Installed as /etc/swarmbox/bashrc.sh and sourced from the
+# SwarmBox shell fragment. Installed as /etc/swarmbox/bashrc.sh and sourced from the
 # image's /etc/bash.bashrc; `swarmbox-attach` also sources it directly for a command run without a terminal.
 #
-# It gives every shell: the Python venv, the PATH additions of the tools (6.2), the colored ls and grep aliases, the
-# auto-approve alias of every agent manifest and the `yolo` function (6.6), the `shell.sh` of every tool, and, in an
-# interactive shell only, the banner with the startup-health lines (4.2) and the Starship prompt. Nothing here
-# regenerates a file: that is `serve`'s job (10.3).
+# It gives every shell: the Python venv, the PATH additions of the tools, the colored ls and grep aliases, the
+# auto-approve alias of every agent manifest and the `yolo` function, the `shell.sh` of every tool, and, in an
+# interactive shell only, the banner with the startup-health lines and the Starship prompt. Nothing here
+# regenerates a file: that is `serve`'s job.
 #
 # bash only (arrays and here-strings; bash 3.2 semantics are kept). Sourcing twice is harmless.
 # Test-only variables (the paths the design fixes): SWARMBOX_DIRS_SH, SWARMBOX_IMAGE_TOOLS_DIR, SWARMBOX_IMAGE_SHIMS_DIR,
@@ -34,7 +34,7 @@ if [ -z "${VIRTUAL_ENV:-}" ] && [ -r "$_sb_venv/bin/activate" ]; then
 fi
 unset _sb_venv
 
-# --- PATH: user shims, image shims, the tools' current/bin, ~/.local/bin, then what was there (6.2) ---
+# --- PATH: user shims, image shims, the tools' current/bin, ~/.local/bin, then what was there ---
 _sb_path_add() {
     case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH" ;; esac
 }
@@ -58,7 +58,7 @@ alias grep='grep --color=auto'
 alias fgrep='fgrep --color=auto'
 alias egrep='egrep --color=auto'
 
-# --- Agents from the manifests (6.3, 6.6) ---
+# --- Agents from the manifests ---
 # _sb_scan prints one record per tool, fields separated by the character 0x1f:
 #   name, KIND, PROVIDES, YOLO_FLAGS, YOLO_ALIAS, MCP_FLAGS, directory
 # The user level (<config>/tools) wins over the image level for the same name. Each manifest is read in a subshell,
@@ -96,7 +96,7 @@ if [ "${SWARMBOX_YOLO:-1}" != "0" ] && [ -n "$_sb_records" ]; then
 fi
 
 # yolo: the default agent in auto-approve mode. The default is SWARMBOX_AGENT, else the first agent of SWARMBOX_WITH,
-# else (not in the design, decision [2.4]) the first agent manifest by name. It calls the program, not the alias, so the
+# else (a choice of this script) the first agent manifest by name. It calls the program, not the alias, so the
 # flags are never given twice, and it works with SWARMBOX_YOLO=0 and for agents without an alias (YOLO_ALIAS=0).
 yolo() {
     local records agent=${SWARMBOX_AGENT:-} name kind provides flags mcp found="" first="" w
@@ -130,7 +130,7 @@ yolo() {
     command "${provides%% *}" "${argv[@]}" "$@"
 }
 
-# shell.sh of every tool (6.3, 6.6), after the generated aliases so it can extend or override them. A failing file
+# shell.sh of every tool, after the generated aliases so it can extend or override them. A failing file
 # does not stop the shell.
 while IFS=$'\037' read -r _sb_name _sb_kind _sb_provides _sb_flags _sb_alias _sb_mcp _sb_dir; do
     [ -r "$_sb_dir/shell.sh" ] || continue
@@ -139,8 +139,8 @@ while IFS=$'\037' read -r _sb_name _sb_kind _sb_provides _sb_flags _sb_alias _sb
 done <<< "$_sb_records"
 unset _sb_name _sb_kind _sb_provides _sb_flags _sb_alias _sb_mcp _sb_dir _sb_cmd _sb_records
 
-# --- Interactive only: the banner with the startup-health lines (4.2), then the prompt ---
-# Not for a shell started with -c (the command window of `swarmbox <command>` runs `bash -ic`, 3.3): the banner would
+# --- Interactive only: the banner with the startup-health lines, then the prompt ---
+# Not for a shell started with -c (the command window of `swarmbox <command>` runs `bash -ic`): the banner would
 # precede the command's own output. Once per shell: a second sourcing prints nothing.
 if [ -z "${SWARMBOX_CMD:-}" ] && [ -z "${BASH_EXECUTION_STRING:-}" ] && [ -z "${_sb_fragment_done:-}" ]; then
     _sb_fragment_done=1

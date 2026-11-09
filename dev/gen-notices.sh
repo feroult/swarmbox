@@ -1,5 +1,5 @@
 #!/bin/sh
-# gen-notices.sh: list the Debian packages of a root file system with their licenses (slice 7.2, design 11 last bullet).
+# gen-notices.sh: list the Debian packages of a root file system with their licenses.
 #
 # Read-only. For each installed package (dpkg-query -W) it reads /usr/share/doc/<package>/copyright, collects the
 # "License:" fields of a machine-readable (DEP-5) file, and prints a tab-separated table sorted by package name:

@@ -1,4 +1,4 @@
-"""Slice 3.3: `up`, `reset`, `stop` and `url` of the host helper (design 3.5, 3.6, 3.7.2, 3.8, 4.1, 4.2, 5.2).
+"""`up`, `reset`, `stop` and `url` of the host helper.
 
 The helper runs as a real program (copied with a fixture `tool-ports` into a mktemp folder) against the shared FakePodman,
 which records every call and answers from a script (rules by arguments, answers in sequence). Nothing here starts a real
@@ -176,7 +176,7 @@ class FastPathTest(Base):
         self.podman(lookup=self.running())
         r = self.up()
         self.assertEqual(r.returncode, 0, r.stderr)
-        # slice 3.4: step 6 adds `system connection list` (and an add only when the connection is not registered yet)
+        # step 6 adds `system connection list` (and an add only when the connection is not registered yet)
         plain = [c for c in self.calls() if c[:1] != ["system"]]
         self.assertLessEqual(len(plain), 2, self.calls())
         self.assertLessEqual(len(self.calls()) - len(plain), 2, self.calls())

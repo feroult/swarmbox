@@ -1,4 +1,4 @@
-"""Slice 3.5: the generated function in bash (design 3.6, 13.3 layer 4). The cases are in tests/function_cases.py.
+"""The generated function in bash. The cases are in tests/function_cases.py.
 
 Run: python3 tests/test_function_bash.py
 
@@ -6,7 +6,7 @@ bash 3.2 (macOS /bin/bash) cannot be run on this machine. What stands in for it,
 `bash --posix`, and a lint test rejects every bash 4+ construct in the template (associative arrays, ${var,,}, ${var^^}, mapfile,
 readarray, &>>, |&, [[ -v ]], coproc, `local -n`, `declare -g`, ${var@Q}, `;&`, `printf -v` with an array element). A construct that
 this list does not know about, or a bash 3.2 behavior that differs for another reason (for example `set -u` with an empty array),
-is not caught: macOS bash 3.2 stays [unverified] until a macOS runner exists (Phase 6).
+is not caught: macOS bash 3.2 stays [unverified] until a macOS runner exists.
 """
 import os
 import re

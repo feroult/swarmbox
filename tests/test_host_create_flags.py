@@ -1,4 +1,4 @@
-"""Slice 3.2: `create-flags`, `fingerprint` and the workspace checks of the host helper (design 3.5, 3.6, 3.7.2, 3.7.4, 7, 8.2, 8.3).
+"""`create-flags`, `fingerprint` and the workspace checks of the host helper.
 
 The helper runs as a real program, copied with a fixture `tool-ports` into a mktemp folder (the repository has none: the
 image build writes it), with a cleared environment: PATH, a mktemp HOME and the variables a case sets. Nothing calls
@@ -30,7 +30,7 @@ CANARY = "CANARY-VALUE-do-not-print-7f3a"
 TOKEN = "eyJhbGciOiJIUzI1NiJ9.canarytoken-0123456789"
 WSL_VERSION = "Linux version 5.15.153.1-microsoft-standard-WSL2 (root@x) (gcc 11.2.0) #1 SMP"
 PLAIN_VERSION = "Linux version 6.1.0-18-amd64 (debian-kernel@lists.debian.org) (gcc-12 (Debian 12.2.0-14)) #1 SMP"
-D34 = ("swarmbox: workspace %s is on a Windows drive; WSL2 is supported only with the workspace on the Linux "
+WINDOWS_DRIVE_MSG = ("swarmbox: workspace %s is on a Windows drive; WSL2 is supported only with the workspace on the Linux "
        "filesystem (for example ~/swarmbox).")
 
 
@@ -39,7 +39,7 @@ def sha256(text):
 
 
 def env_hash(pairs):
-    """pairs: list of (name, value or None). Design 7.1: NAME=value for a set name, NAME for an unset one, sorted."""
+    """pairs: list of (name, value or None). NAME=value for a set name, NAME for an unset one, sorted."""
     lines = sorted(n if v is None else "%s=%s" % (n, v) for n, v in pairs)
     return sha256("".join(l + "\n" for l in lines))
 
@@ -171,7 +171,7 @@ class GoldenTest(Base):
     def golden(self, name, subs):
         with open(os.path.join(FIXTURES, name)) as f:
             text = f.read()
-        subs = dict(subs, **{"@NAME@": DEFAULT_NAME, "@IMAGE_REPO@": DEFAULT_IMAGE_REPO})   # D40: from container/host/DEFAULTS
+        subs = dict(subs, **{"@NAME@": DEFAULT_NAME, "@IMAGE_REPO@": DEFAULT_IMAGE_REPO})   # from container/host/DEFAULTS
         for k, v in subs.items():
             text = text.replace(k, v)
         return text.split("\n")[:-1]
@@ -199,7 +199,7 @@ class GoldenTest(Base):
         want = self.golden("create-flags.full.golden", {"@WS@": self.ws, "@ENVHASH@": ehash, "@FP@": fpr})
         self.assertEqual(out, want)
 
-# ============================================================================ one test per key of 8.2
+# ============================================================================ one test per key of the config table
 
 class KeyTest(Base):
     def test_name_names_the_volume_and_the_label_not_a_flag(self):
@@ -252,7 +252,7 @@ class AlwaysAppliedTest(Base):
         self.assertIn(("-v", (DEFAULT_VOLUME + ":/home/agent/.local/share/containers")), pr)
 
     def test_the_tests_only_no_nested_switch_drops_what_a_third_level_cannot_honour(self):
-        # slice 3.3: the real throwaway-box smoke test runs inside the development box (a nested level), where /dev/net/tun,
+        # the real throwaway-box smoke test runs inside the development box (a nested level), where /dev/net/tun,
         # the unmasked /proc and a private UTS namespace (--hostname) are refused; the switch removes exactly those three
         # and adds the variable the box's serve reads for the same purpose. Without the switch nothing changes (the goldens).
         base = pairs_of(self.flags())
@@ -280,7 +280,7 @@ class FramingTest(Base):
         lines = p.stdout.split("\n")[:-1]
         self.assertIn(ws + ":/home/agent", lines)
         self.assertIn("swarmbox.workspace=" + ws, lines)
-        # the read loop of design 3.6, in a real sh: one line must become one argument, byte for byte
+        # the read loop of the generated function, in a real sh: one line must become one argument, byte for byte
         flags = os.path.join(self.tmp, "flags")
         with open(flags, "w") as f:
             f.write(p.stdout)
@@ -321,7 +321,7 @@ class ToolPortsTest(Base):
         self.assertIn("tool-ports", p.stderr)
         self.assertIn("swarmbox update", p.stderr)
 
-# ============================================================================ ports and BROWSER_URL parity (design 7.2, 8.2, v0.1.0 flags)
+# ============================================================================ ports and BROWSER_URL parity (v0.1.0 flags)
 
 class PortsParityTest(Base):
     def user_ports(self, spec):
@@ -501,7 +501,7 @@ class WorkspaceTest(Base):
         p = self.cf(env={"SWARMBOX_WORKSPACE": ws})
         self.assertNotIn("created", p.stderr)
 
-    # --- WSL (D34, B32), with a fake /proc/version; nothing under /mnt is ever created by these tests
+    # --- WSL, with a fake /proc/version; nothing under /mnt is ever created by these tests
     def set_wsl(self, on):
         with open(self.procversion, "w") as f:
             f.write((WSL_VERSION if on else PLAIN_VERSION) + "\n")
@@ -512,7 +512,7 @@ class WorkspaceTest(Base):
             p = self.cf(env={"SWARMBOX_WORKSPACE": ws})
             self.assertEqual(p.returncode, 4, ws)
             self.assertEqual(p.stdout, "", ws)
-            self.assertEqual(p.stderr.strip(), D34 % ws, ws)
+            self.assertEqual(p.stderr.strip(), WINDOWS_DRIVE_MSG % ws, ws)
         self.assertFalse(os.path.exists("/mnt/z"))
 
 # ============================================================================ the real helper under other shells

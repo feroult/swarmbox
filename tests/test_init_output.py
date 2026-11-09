@@ -1,4 +1,4 @@
-"""Slice 3.5: `swarmbox-init` and the shell templates (design 3.1, 3.7.5, 3.8, D20).
+"""`swarmbox-init` and the shell templates.
 
 `swarmbox-init` is a POSIX sh program (container/scripts/swarmbox-init.sh, installed as /usr/local/bin/swarmbox-init and run by
 `swarmbox-entrypoint init`). It prints on standard output, and only there, a comment line naming the version, then the marker

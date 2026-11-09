@@ -20,7 +20,7 @@ from helpers import ROOT
 
 CONFIG = os.path.join(ROOT, "container", "config", "starship.toml")
 INIT = os.path.join(ROOT, "container", "scripts", "starship-init.sh")
-DOCKERFILE = os.path.join(ROOT, "Dockerfile")  # the 2.0 image (slice 2.4: the bashrc fragment sources the init script)
+DOCKERFILE = os.path.join(ROOT, "Dockerfile")  # the 2.0 image (the bashrc fragment sources the init script)
 FRAGMENT = os.path.join(ROOT, "container", "config", "bashrc.sh")
 
 # The warm Gruvbox colors of the preset this layout comes from: the SwarmBox palette must not reuse any

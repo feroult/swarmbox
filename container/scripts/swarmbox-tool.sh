@@ -1,7 +1,7 @@
 #!/bin/bash
-# swarmbox-tool (design 6; installed as /usr/local/bin/swarmbox-tool). Subcommands:
+# swarmbox-tool (installed as /usr/local/bin/swarmbox-tool). Subcommands:
 #
-#   validate [DIR]                         read the manifests of both levels (or only DIR) and check the rules of 6.9; 0 good, 1 failed
+#   validate [DIR]                         read the manifests of both levels (or only DIR) and check the manifest rules; 0 good, 1 failed
 #   link --system | --user                 shims and index of a level (the image level also writes tool-ports)
 #   install NAME [--version X] [--force]   first-use install under the lock (--image: at image build, into /opt/swarmbox/tools)
 #   run NAME COMMAND [-- ARGS...]          install when needed, then exec the real program
@@ -14,25 +14,24 @@
 #   prepare                                run the prepare.sh of every installed or WITH-declared tool
 #   anything else                          usage, exit 64
 #
-# Manifests (6.3) are shell-sourceable KEY=VALUE files. Loading one SOURCES it in a subshell, so it executes arbitrary shell:
+# Manifests are shell-sourceable KEY=VALUE files. Loading one SOURCES it in a subshell, so it executes arbitrary shell:
 # that is why only two levels are ever read, the image (read-only, built from the repository) and the user level (the user's own
-# workspace), never a project folder (D18, 6.10). The `install.sh` lint of validate is a lint (design 6.4): it catches mistakes,
+# workspace), never a project folder (see "Tools and shims" in docs/design.md). The `install.sh` lint of validate is a lint: it catches mistakes,
 # it does not make an installer safe to run.
 #
-# Test-only variables (decision log [2.5] and [4a.1]; not in the configuration table of design 8): SWARMBOX_TEST_HOST_DIR replaces
+# Test-only variables (not in the configuration table): SWARMBOX_TEST_HOST_DIR replaces
 # /usr/local/share/swarmbox/host, SWARMBOX_TEST_IMAGE_TOOLS replaces /usr/local/lib/swarmbox/tools, SWARMBOX_TEST_USER_TOOLS
-# replaces the user level ($SB_CONFIG_DIR/tools), SWARMBOX_TEST_LIB is the folder with dirs.sh; decision log [4a.2]:
+# replaces the user level ($SB_CONFIG_DIR/tools), SWARMBOX_TEST_LIB is the folder with dirs.sh:
 # SWARMBOX_TEST_IMAGE_SHIMS replaces /usr/local/lib/swarmbox/shims (its index is the sibling `index`) and
-# SWARMBOX_TEST_USER_SHIMS replaces $SB_SHIMS_DIR (index: sibling `index`); decision log [4a.3]: SWARMBOX_TEST_LOCK replaces the lock
-# file /tmp/swarmbox/tools.lock and SWARMBOX_TEST_ARCH forces TOOL_ARCH (amd64 or arm64) instead of reading `uname -m`; decision log
-# [4b.5]: SWARMBOX_TEST_NODE_MAJOR (may be empty) and SWARMBOX_TEST_LIBC (glibc or musl) replace the Node major and the libc that
-# the fingerprint (6.11) reads from the running image; decision log [4b.6]: SWARMBOX_TEST_IMAGE_STATE replaces /opt/swarmbox/tools. The tools
+# SWARMBOX_TEST_USER_SHIMS replaces $SB_SHIMS_DIR (index: sibling `index`); SWARMBOX_TEST_LOCK replaces the lock
+# file /tmp/swarmbox/tools.lock and SWARMBOX_TEST_ARCH forces TOOL_ARCH (amd64 or arm64) instead of reading `uname -m`; SWARMBOX_TEST_NODE_MAJOR (may be empty) and SWARMBOX_TEST_LIBC (glibc or musl) replace the Node major and the libc that
+# the fingerprint reads from the running image; SWARMBOX_TEST_IMAGE_STATE replaces /opt/swarmbox/tools. The tools
 # folder itself follows dirs.sh (HOME and the XDG variables), so tests move it by moving HOME.
 
 HOST_DIR=${SWARMBOX_TEST_HOST_DIR:-/usr/local/share/swarmbox/host}
 IMAGE_TOOLS=${SWARMBOX_TEST_IMAGE_TOOLS:-/usr/local/lib/swarmbox/tools}
 IMAGE_SHIMS=${SWARMBOX_TEST_IMAGE_SHIMS:-/usr/local/lib/swarmbox/shims}
-# The image-level INSTALLS (design 6.8, 10.2): what `install NAME --image` writes at build (WITH_TOOLS). Not the manifests (IMAGE_TOOLS).
+# The image-level INSTALLS: what `install NAME --image` writes at build (WITH_TOOLS). Not the manifests (IMAGE_TOOLS).
 IMAGE_STATE=${SWARMBOX_TEST_IMAGE_STATE:-/opt/swarmbox/tools}
 IMAGE_MODE=0
 SB_LIB=${SWARMBOX_TEST_LIB:-/usr/local/lib/swarmbox}
@@ -105,12 +104,12 @@ load_manifest() {
     return 0
 }
 
-# ---- validate (design 6.9) ------------------------------------------------------------------------------------------------
+# ---- validate ------------------------------------------------------------------------------------------------
 
 ERRS=()
 err() { ERRS+=("$1"); }
 
-# lint_install FILE UPDATE NAME: the static checks of 6.4. A LINT, not a guarantee: full-line comments are skipped, quoting is
+# lint_install FILE UPDATE NAME: the static checks of an installer. A LINT, not a guarantee: full-line comments are skipped, quoting is
 # not understood, and a hostile script gets past it. Adds to ERRS.
 lint_install() {
     local file=$1 update=$2 name=$3 n=0 line seg rest target verb w words
@@ -128,7 +127,7 @@ lint_install() {
         esac
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         if [[ "$line" =~ (^|[^[:alnum:]_-])(apt-get|apt|sudo)([^[:alnum:]_-]|$) ]]; then
-            err "install.sh line $n uses ${BASH_REMATCH[2]} (lint): an installer never uses apt or sudo (6.4)"
+            err "install.sh line $n uses ${BASH_REMATCH[2]} (lint): an installer never uses apt or sudo"
         fi
         targets=()
         # redirections: the word after > or >> (not >&N)
@@ -239,9 +238,9 @@ check_manifest() {
     esac
     if [ -n "$version" ]; then
         if [ "$kind" = agent ] && [ "$version" != latest ]; then
-            err "KIND=agent must use VERSION=latest (D21), found '$version'"
+            err "KIND=agent must use VERSION=latest, found '$version'"
         elif [ "$kind" = tool ] && [ "$version" = latest ]; then
-            err "KIND=tool must have a pinned VERSION (D21): latest is only for agents"
+            err "KIND=tool must have a pinned VERSION: latest is only for agents"
         fi
     fi
     case "${M[MCP_FORMAT]:-}" in
@@ -340,7 +339,7 @@ cmd_validate() {
     [ "$FAILED" -eq 0 ]
 }
 
-# ---- link (design 6.2) ----------------------------------------------------------------------------------------------------
+# ---- link ----------------------------------------------------------------------------------------------------
 # link_level LEVEL ROOT SHIMS_DIR PORTS_FILE: makes the shims, the index and (PORTS_FILE not empty) tool-ports of one level.
 #   shims   <SHIMS_DIR>/<command>, a symlink to $SHIM_PATH, one per PROVIDES entry
 #   index   <dirname SHIMS_DIR>/index, one line "command tool", sorted by command (bytewise)
@@ -454,8 +453,8 @@ user_shims_dir() {
     return 1
 }
 
-# ---- install, run, list, update (design 6.4, 6.5, 6.7, 6.11) ---------------------------------------------------------------
-# Layout, under $SB_TOOLS_DIR/<name>/ (decision log [4a.3]):
+# ---- install, run, list, update ---------------------------------------------------------------
+# Layout, under $SB_TOOLS_DIR/<name>/:
 #   managed   <version>/   the install (TOOL_PREFIX); complete when <version>/.swarmbox-env exists and every PROVIDES command is in bin/
 #             current      relative symlink to <version>, moved with an atomic rename and only after a complete install
 #   self      self/        SwarmBox's record only (TOOL_PREFIX for the installer); the program lives in ~/.local/bin/<command>
@@ -569,7 +568,7 @@ is_installed_at() {
     done
 }
 
-# root_for NAME: the state folder whose install of NAME is used (design 6.8): in image mode the image state; otherwise the workspace
+# root_for NAME: the state folder whose install of NAME is used: in image mode the image state; otherwise the workspace
 # install when it is complete, else the image install when that is complete, else the workspace (where an install goes). A broken
 # workspace install therefore never shadows a good image one.
 root_for() {
@@ -580,7 +579,7 @@ root_for() {
 real_command() { real_command_at "$(root_for "$1")" "$1" "$2"; }
 is_installed() { is_installed_at "$(root_for "$1")" "$1" "${2:-}"; }
 
-# current_node_major, current_libc: the running image's side of the fingerprint (6.11); test overrides in the header.
+# current_node_major, current_libc: the running image's side of the fingerprint; test overrides in the header.
 current_node_major() {
     if [ "${SWARMBOX_TEST_NODE_MAJOR+set}" = set ]; then
         printf '%s' "$SWARMBOX_TEST_NODE_MAJOR"
@@ -598,7 +597,7 @@ current_libc() {
     fi
 }
 
-# write_fingerprint FILE ARCH VERSION: the environment record of 6.11.
+# write_fingerprint FILE ARCH VERSION: the environment record.
 write_fingerprint() {
     local node libc
     node=$(current_node_major)
@@ -631,7 +630,7 @@ install_locked() {
     local name=$1 version=$2 force=$3 announce=$4 arch update ndir c final tmp status first_new="" probe
     update=${M[UPDATE]:-managed}
     if ! arch=$(tool_arch); then
-        echo "swarmbox-tool: this machine's architecture (${SWARMBOX_TEST_ARCH:-$(uname -m)}) is not supported: only amd64 and arm64 (design 6.4)" >&2
+        echo "swarmbox-tool: this machine's architecture (${SWARMBOX_TEST_ARCH:-$(uname -m)}) is not supported: only amd64 and arm64" >&2
         return 1
     fi
     if [ "$update" = self ]; then
@@ -833,7 +832,7 @@ cmd_install() {
     take_lock || exit 69
     install_locked "$name" "$version" "$force" "Installing $name..." || { drop_lock; exit 69; }
     drop_lock
-    # at build (--image) prepare.sh does not run: it renders files in the workspace home, which serve step 7 does at start (4.1)
+    # at build (--image) prepare.sh does not run: it renders files in the workspace home, which serve step 7 does at start
     [ "$IMAGE_MODE" -eq 1 ] || prepare_after_install "$name"
 }
 
@@ -948,12 +947,12 @@ cmd_list() {
     [ "${#rows[@]}" -eq 0 ] || printf '%s\n' "${rows[@]}" | LC_ALL=C sort
 }
 
-# ---- prepare (design 6.3, 4.1 step 7) ----------------------------------------------------------------------------------------
+# ---- prepare ----------------------------------------------------------------------------------------
 # prepare_tool NAME: runs <manifest dir>/prepare.sh of NAME when it has one (find_manifest has set MDIR). Run with bash (no
 # executable bit needed), in $HOME, stdin closed, stdout sent to stderr (stdout belongs to the caller), under `timeout`
 # (SWARMBOX_PREPARE_TIMEOUT seconds, default 60; a hang is a failure, never a stop). Exports SWARMBOX_TOOL_NAME and
 # SWARMBOX_TOOL_DIR. A failure prints ONE line on stderr, "prepare-failed: <name>: <reason>", which `serve` turns into one health
-# line (4.1 step 7), and returns 1. No prepare.sh: returns 0 and prints nothing.
+# line, and returns 1. No prepare.sh: returns 0 and prints nothing.
 PREPARE_TIMEOUT=${SWARMBOX_PREPARE_TIMEOUT:-60}
 prepare_tool() {
     local name=$1 dir=$MDIR status=0
@@ -1022,7 +1021,7 @@ cmd_prepare() {
     return "$failed"
 }
 
-# ---- fingerprint, use, remove, new, doctor (slice 4b.5; design 6.11, 6.9, 6.7) -------------------------------------------------
+# ---- fingerprint, use, remove, new, doctor -------------------------------------------------
 # The fingerprint of an install is <prefix>/.swarmbox-env (ARCH, NODE_MAJOR, LIBC, VERSION). fp_check compares it with the running
 # image. An empty value on either side (no Node in the image, an old record) is "unknown" and never a difference.
 
@@ -1183,7 +1182,7 @@ safe_rm() {
 }
 
 # remove NAME [--purge]: deletes the install of NAME in the workspace. Without --purge the manifests and shims stay, so the next
-# call of the command installs it again (6.5). --purge also deletes a USER-level manifest and relinks; an image-level one is refused.
+# call of the command installs it again. --purge also deletes a USER-level manifest and relinks; an image-level one is refused.
 cmd_remove() {
     local name purge=0 have=0 c ushims udir
     [ $# -ge 1 ] || usage
@@ -1293,7 +1292,7 @@ cmd_new() {
         exit 1
     fi
     cat >"$base/$name/tool.conf" <<EOF
-# Manifest of $name (design 6.3). KIND is agent (VERSION=latest) or tool (a pinned VERSION).
+# Manifest of $name. KIND is agent (VERSION=latest) or tool (a pinned VERSION).
 SCHEMA=1
 NAME=$name
 KIND=tool
@@ -1302,7 +1301,7 @@ VERSION=0.0.1
 EOF
     cat >"$base/$name/install.sh" <<'EOF'
 #!/bin/bash
-# Installer (design 6.4). It runs with TOOL_PREFIX, TOOL_VERSION and TOOL_ARCH (amd64 or arm64) set, in the home, with
+# Installer. It runs with TOOL_PREFIX, TOOL_VERSION and TOOL_ARCH (amd64 or arm64) set, in the home, with
 # stdin closed. Write only below $TOOL_PREFIX; put each command of PROVIDES in $TOOL_PREFIX/bin; never use the system package
 # manager or root; verify a download against TOOL_SHA256 when the manifest has SHA256_amd64 and SHA256_arm64.
 set -euo pipefail
@@ -1355,7 +1354,7 @@ doctor_classify() {
 # doctor [--fix]: one line per tool: ok, needs reinstall, missing (never installed: normal, it installs on first use) or broken
 # (the manifest does not load). Exit 1 when any tool needs a reinstall or is broken. --fix reinstalls those that need it, under
 # one lock, with the version that was active. A NODE_MAJOR or LIBC difference is listed as "needs reinstall" here although the shim
-# only warns and runs (decision log [4b.5]).
+# only warns and runs.
 cmd_doctor() {
     local fix=0 lvl root d name seen=" " needfix=0 broken=0 failed=0 fixed=0 i
     local -a rows=() todo=() todover=()

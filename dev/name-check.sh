@@ -1,7 +1,7 @@
 #!/bin/sh
-# name-check.sh: the reduced name availability check of D25 (slice 7.6). NOT legal advice.
+# name-check.sh: the reduced name availability check. NOT legal advice.
 # Usage: sh dev/name-check.sh [name [github-owner]]      (defaults: the box name of
-# container/host/DEFAULTS (D40), feroult)
+# container/host/DEFAULTS, feroult)
 # It asks four public, unauthenticated endpoints with curl (GitHub repository search, the owner's repository, npm, PyPI) and
 # prints one line each: "TAKEN|FREE|UNKNOWN <source> <text>". It exits 0 always: it informs, the owner decides.
 # It writes nothing to disk. Unauthenticated GitHub search is rate limited (about 10 requests a minute): UNKNOWN then.

@@ -1,4 +1,4 @@
-"""Slice 3.7: tests/run_all.sh, the full-regression runner (design 13.4, plan 1.3).
+"""The full-regression runner tests/run_all.sh.
 
 The runner runs every tests/test_*.py as `python3 [-W error] tests/test_x.py`, reads the count of tests from the unittest
 summary and prints one line per file ("<file> <status> <ran> tests, <skipped> skipped") and a total. The browser tests

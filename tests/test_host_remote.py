@@ -1,4 +1,4 @@
-"""Slice 5.2: `swarmbox-host remote setup|status|off|token` (design 5.2, 3.7.2, 3.8, 7; D14, D16, D28, D39).
+"""`swarmbox-host remote setup|status|off|token`.
 
 The wrapper runs as a real program (copied into a mktemp folder next to a STUB cloudflare-setup.py that records its argv, the
 names (never the values) of the environment variables it sees, the XDG_CONFIG_HOME it got and its working directory into a JSON
@@ -154,7 +154,7 @@ class SecretsTest(Base):
                 self.assertNotIn(TUNNEL_SECRET, r.stdout + r.stderr)
 
     def test_the_tunnel_token_is_not_exported_to_any_command(self):
-        """No command of the script reads it (it fetches the tunnel token from the API), so none gets it (decision [5.2])."""
+        """No command of the script reads it (it fetches the tunnel token from the API), so none gets it."""
         for sub in ("setup", "status", "off", "token"):
             with self.subTest(sub=sub):
                 r = self.run_h(sub, env=self.env(SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN=TUNNEL_SECRET))
@@ -195,7 +195,7 @@ def pty_run(argv, env, answer=None, cwd=None, timeout=30):
 
 
 class TunnelTokenTest(Base):
-    """Slice 5.3: where the tunnel token comes from, how `remote token` prints it, and the terminal-only setup epilogue."""
+    """Where the tunnel token comes from, how `remote token` prints it, and the terminal-only setup epilogue."""
 
     def cfgdir(self):
         d = os.path.join(self.home, ".config", "swarmbox")
