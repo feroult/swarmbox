@@ -1,17 +1,16 @@
 # SwarmBox
 
-**A persistent, rootless Podman box where AI coding agents run in auto-approve mode and have room to work, with a mistake limited to one folder of your machine.**
+**A box where your AI agent works with freedom, and a shell you can reach from anywhere.**
 
-Give an agent a box of its own: it can install tools and build and run containers, and you keep your machine, your Podman and your credentials out of reach.
-Open any terminal tab or the browser and you are in the same box and the same session.
+Give your coding agent (Claude Code, Gemini CLI, OpenCode) a box of its own. Inside it the agent runs in auto-approve mode: it installs
+tools, builds and runs containers, and gets on with the job without asking at every step. A mistake stays inside one folder of your machine.
+The box keeps running, and you step in from any terminal tab or from a browser, on your machine or away from it, into the same shell and the same session.
 
-- **One box, shared.** Every terminal tab and the browser join the same box and the same tmux session. Entering never creates a second box.
-- **The workspace is one folder on your machine.** Projects, logins, the SSH key and installed tools live there. You can delete and recreate the box and lose nothing.
-- **Auto-approve, with a smaller blast radius.** The agent runs without approval prompts, and a mistake is limited to that folder (see [Security](#security)).
+- **Freedom to work.** No approval prompts. The agent can install tools, run its own containers (nested Podman) and drive a browser (Chrome DevTools MCP is built in).
+- **A shell you can reach from anywhere.** Every terminal tab and the browser join the same box and the same tmux session, and every tab you open shows up as a tab in the browser. Optional remote access goes through Cloudflare Tunnel and Access, with an e-mail code.
+- **Contained.** Rootless Podman, and the agent sees one workspace folder of your machine, not the rest (see [Security](#security)).
+- **Persistent.** The box stays up while you are away. Projects, logins, the SSH key and installed tools live in the workspace folder, so you can delete and recreate the box and lose nothing.
 - **A neutral image, tools on demand.** Claude Code, Gemini CLI, OpenCode, gcloud, clasp, Go and Poetry are installed the first time you use them.
-- **Containers inside the box.** Agents can build and run their own containers with nested Podman, with no path to your Podman.
-- **A browser inside the box.** Chrome DevTools MCP is built in.
-- **A web terminal.** It listens on your machine only. Optional remote access goes through Cloudflare Tunnel and Access, with an e-mail code.
 - **A git SSH key.** The box has one that you can hand out as a deploy key.
 
 ## How it feels
@@ -22,7 +21,7 @@ swarmbox        # creates the box the first time, joins it afterwards
 claude          # inside the box: installs Claude Code on first use, then runs it in auto-approve mode
 ```
 
-Open a second tab, run `swarmbox` again, and you are in the same session.
+Open a second tab, run `swarmbox` again, and you are in the same session. Open `http://127.0.0.1:7681` (`swarmbox url` prints it) and the same tabs are there.
 
 ## Security
 
