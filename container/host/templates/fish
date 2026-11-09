@@ -101,7 +101,7 @@ function swarmbox
         or return $status
     end
     switch "$first"                                 # words handled on the host (3.3)
-        case stop reset up url update config env remote fingerprint version
+        case stop reset up url update config env remote fingerprint version help --help -h
             "$host" $argv
             return $status
     end

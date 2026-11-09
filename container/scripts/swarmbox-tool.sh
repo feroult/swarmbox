@@ -8,13 +8,13 @@
 #   install NAME [--version X] [--force]  REAL (slice 4a.3): first-use install under the lock (see "install" below)
 #   run NAME COMMAND [-- ARGS...]          REAL (slice 4a.3): install when needed, then exec the real program
 #   list                                   REAL (slice 4a.3): every tool of both levels and its state
-#   update NAME                            REAL for UPDATE=self (runs UPDATE_CMD); a managed tool answers 'later phase', exit 70
+#   update NAME                            REAL for UPDATE=self (runs UPDATE_CMD); a managed tool answers with how to update it, exit 1
 #   use NAME VERSION                       REAL (slice 4b.5): switches the active version of a managed tool (see "use, remove, new, doctor")
 #   remove NAME [--purge]                  REAL (4b.5): deletes the install of NAME in the workspace (--purge also its user-level manifest)
 #   new NAME [--repo | --dir DIR]          REAL (4b.5): writes a skeleton that passes validate (user level by default)
 #   doctor [--fix]                         REAL (4b.5): ok / needs reinstall / missing for every tool; --fix reinstalls the ones that need it
 #   prepare         REAL (slice 4b.2): runs the prepare.sh of every installed or WITH-declared tool (see "prepare" below)
-#   anything else   exit 70 (EX_SOFTWARE) with a message that names Phase 4a
+#   anything else   usage, exit 64
 #
 # Manifests (6.3) are shell-sourceable KEY=VALUE files. Loading one SOURCES it in a subshell, so it executes arbitrary shell:
 # that is why only two levels are ever read, the image (read-only, built from the repository) and the user level (the user's own
@@ -824,6 +824,10 @@ cmd_install() {
     TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
     [ "$IMAGE_MODE" -eq 0 ] || TDIR=$IMAGE_STATE
     find_manifest "$name" || { echo "swarmbox-tool: $FIND_ERR" >&2; exit 1; }
+    if [ -n "$version" ] && [ -n "${M[SHA256_amd64]:-}" ] && [ "$version" != "${M[VERSION]:-}" ]; then
+        echo "swarmbox-tool: $name is pinned to ${M[VERSION]}: its checksum is recorded for that version only, so no other version can be installed" >&2
+        exit 1
+    fi
     take_lock || exit 69
     install_locked "$name" "$version" "$force" "Installing $name..." || { drop_lock; exit 69; }
     drop_lock
@@ -879,8 +883,8 @@ cmd_update() {
     TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
     find_manifest "$name" || { echo "swarmbox-tool: $FIND_ERR" >&2; exit 1; }
     if [ "${M[UPDATE]:-managed}" != self ]; then
-        echo "swarmbox-tool: update of a managed tool ($name) is for a later phase (6.7): not implemented yet" >&2
-        exit 70
+        echo "swarmbox-tool: $name is a managed tool: its version comes from the image. After \`swarmbox update\` and \`swarmbox reset\`, run \`swarmbox tool install $name --force\` to get the new one." >&2
+        exit 1
     fi
     if ! is_installed "$name"; then
         echo "swarmbox-tool: $name is not installed: nothing to update (swarmbox-tool install $name)" >&2
@@ -1414,7 +1418,17 @@ cmd_doctor() {
 }
 
 usage() {
-    echo "usage: swarmbox-tool validate [DIR] | link --system|--user | install NAME [--version X] [--force] [--image] | run NAME COMMAND [-- ARGS...] | list | update NAME | use NAME VERSION | remove NAME [--purge] | new NAME [--repo | --dir DIR] | doctor [--fix] | prepare" >&2
+    cat >&2 <<'USAGE'
+usage: swarmbox tool <command>       (inside the box: swarmbox-tool <command>)
+  list                          the tools and their state
+  install NAME [--force]        install a tool now (a tool also installs itself the first time you run it)
+  update NAME                   update a tool that updates itself (for example claude)
+  use NAME VERSION              switch to an installed version
+  remove NAME [--purge]         remove an install
+  doctor [--fix]                check the installs
+  new NAME [--repo | --dir DIR] start a tool of your own
+  validate [DIR]                check tool manifests
+USAGE
     exit 64
 }
 
@@ -1453,8 +1467,9 @@ case "$cmd" in
     new) cmd_new "$@" ;;
     doctor) cmd_doctor "$@" ;;
     prepare) cmd_prepare "$@"; exit $? ;;
+    -h|--help|help) usage ;;
     *)
-        echo "swarmbox-tool: unknown command '$cmd' (later phases add more; see usage)" >&2
-        exit 70
+        echo "swarmbox-tool: unknown command '$cmd'" >&2
+        usage
         ;;
 esac

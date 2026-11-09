@@ -121,6 +121,7 @@ sb_pid=$!
 wait "$sb_pid"
 sb_rc=$?
 trap - HUP TERM
+tmux capture-pane -p -J -t "$TMUX_PANE" > "$sb_status.out" 2>/dev/null
 sb_fin "$sb_rc"
 EOF
 
@@ -187,12 +188,14 @@ run_command() {
     trap - HUP TERM
 
     if [ "$detached" = 1 ]; then
-        rm -f "$status" "$status.tmp"
+        rm -f "$status" "$status.tmp" "$status.out"
         echo "swarmbox: detached; the command keeps running in window $w of the session $SESSION" >&2
         exit 0
     fi
     rc=$(cat "$status" 2>/dev/null)
-    rm -f "$status" "$status.tmp"
+    # the window is gone and with it the output: show the last screen of it, without the empty lines at the end
+    awk '{ l[NR] = $0 } END { n = NR; while (n > 0 && l[n] ~ /^[ \t]*$/) n--; for (i = 1; i <= n; i++) print l[i] }' "$status.out" 2>/dev/null
+    rm -f "$status" "$status.tmp" "$status.out"
     case "$rc" in
         ''|*[!0-9]*) die "the command's status is lost (its window was closed hard or tmux ended); exit status unknown" 1 ;;
     esac

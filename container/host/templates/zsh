@@ -84,7 +84,7 @@ swarmbox() {
     "$host" "${sa[@]}" || return $?
   fi
   case "${1-}" in                                   # words handled on the host (3.3)
-    stop|reset|up|url|update|config|env|remote|fingerprint|version) "$host" "$@"; return $? ;;
+    stop|reset|up|url|update|config|env|remote|fingerprint|version|help|--help|-h) "$host" "$@"; return $? ;;
   esac
   "$host" up || return $?                           # create if needed, start, check, wait until ready
   name=$("$host" config get NAME) || return $?

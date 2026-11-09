@@ -4,8 +4,8 @@
 #   swarmbox-pubkey            create the key if it does not exist, then show the public key and how to authorize it
 #   swarmbox-pubkey --ensure   create it if missing and print one short line (what the shell fragment runs in every shell)
 #
-# The key is ~/.ssh/id_ed25519. The home directory is the .work/ workspace on the host, so the key survives
-# rebuilds and --reset; it is generated once and never overwritten.
+# The key is ~/.ssh/id_ed25519. The home directory is the workspace folder on the host, so the key survives
+# `swarmbox reset`; it is generated once and never overwritten.
 SSH_DIR="${SWARMBOX_SSH_DIR:-$HOME/.ssh}"
 KEY="$SSH_DIR/id_ed25519"
 
@@ -43,5 +43,5 @@ msg_detail "  GitHub:    https://github.com/<owner>/<repo>/settings/keys/new"
 msg_detail "  GitLab:    <repo> > Settings > Repository > Deploy keys"
 msg_detail "  Bitbucket: <repo> > Repository settings > Access keys"
 msg_detail "A deploy key reaches one repository. Adding it to your account instead gives SwarmBox every repo you can access."
-msg_detail "The private key is $KEY (on the host: .work/.ssh/id_ed25519): anything running in SwarmBox can use it."
+msg_detail "The private key is $KEY (on your machine: .ssh/id_ed25519 in the workspace folder): anything running in SwarmBox can use it."
 msg_blank

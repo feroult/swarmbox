@@ -35,19 +35,24 @@ warn() { printf 'swarmbox: %s\n' "$*" >&2; }
 die() { _rc=$1; shift; warn "$*"; exit "$_rc"; }
 
 usage() {
-    cat >&2 <<'USAGE'
-usage: swarmbox-host <subcommand> [args]
-  version
-  config get KEY | config set KEY [VALUE] | config list
-  config seed [--with L] [--workspace DIR] [--image REF]
-  env add NAME | env rm NAME | env list
-  create-flags [--browser-url VALUE]
-  fingerprint [--explain] [--label NAME=VALUE]...
-  up | reset | stop | url | connection
-  update [--to TAG]
-  remote setup|status|off|token [options]   (options of cloudflare-setup.py: --dry-run --session --hostname --port ...)
-USAGE
+    help_text >&2
     exit 2
+}
+
+help_text() {
+    cat <<'USAGE'
+usage: swarmbox [--plain] [command [args...]]
+  (no command)          open a shell in the box; create and start the box first if needed
+  command [args...]     run a command in the box, for example: swarmbox claude
+  up | stop | reset     start the box without a shell | stop it | recreate it (the workspace is kept)
+  url                   print the address of the web terminal
+  update [--to TAG]     fetch a newer image, then run `swarmbox reset`
+  config get|set|list   the settings, for example: swarmbox config set WEB_PORT 7682
+  env add|rm NAME       pass a variable of yours into the box (env list shows them)
+  pubkey                the box's git SSH key
+  tool list|install|use|remove NAME   tools inside the box
+  remote setup|status|off|token       remote access through Cloudflare (--dry-run shows the changes)
+USAGE
 }
 
 # ---------------------------------------------------------------- the key table (design 8.2)
@@ -1252,7 +1257,7 @@ fp_explain() {
         _said=1
     fi
     if [ "$_said" = 0 ]; then
-        printf 'another creation setting changed (the fingerprint differs); run `swarmbox reset` to apply\n'
+        printf 'a setting changed since the box was created; run `swarmbox reset` to apply it\n'
     fi
 }
 
@@ -1416,12 +1421,11 @@ find_box() {
     BX_FOUND=1
 }
 
-# A container with the box's name and no swarmbox.managed label is v0.1.0's: never adopted, started or removed (3.8).
+# A container with the box's name and no swarmbox.managed label was not made by this version (an old SwarmBox or something
+# else): never adopted, started or removed (3.8).
 # shellcheck disable=SC2016  # the backticks in the message are literal
-refuse_v010() {
-    u_w=$(podman container inspect --format '{{range .Mounts}}{{if eq .Destination "/home/agent"}}{{.Source}}{{end}}{{end}}' "$BOX" 2> /dev/null) || u_w=
-    [ -n "$u_w" ] || u_w=unknown
-    warn "A container named '$BOX' made by SwarmBox v0.1.0 exists (workspace: $u_w). Stop and remove it with \`podman rm -f $BOX\`; your files stay in that folder. Then run \`swarmbox config set WORKSPACE $u_w\` (or, on a fresh install before the first \`swarmbox\` call, \`init --workspace $u_w\`) to keep using it."
+refuse_foreign() {
+    warn "a container named '$BOX' exists that SwarmBox 2 did not make. Remove it with \`podman rm -f $BOX\` (an old box keeps its files in its workspace folder), or use another name: SWARMBOX_NAME=<name> swarmbox."
     exit 5
 }
 
@@ -1508,13 +1512,23 @@ create_box() {
     UP_CIDF=
     warn "could not create the box:"
     show_err "$UP_ERRF"
+    port_hint
     die 7 "If a port is in use, change WEB_PORT or PORTS with \`swarmbox config set\`."
+}
+
+# When Podman says a port is busy and it is the web port, name the command that fixes it.
+# shellcheck disable=SC2016  # the backticks in the message are literal
+port_hint() {
+    grep -qi 'address already in use' "$UP_ERRF" 2> /dev/null || return 0
+    grep -q ":$C_WEB_PORT:" "$UP_ERRF" 2> /dev/null || return 0
+    warn "the web port $C_WEB_PORT is busy. Try another: \`swarmbox config set WEB_PORT $((C_WEB_PORT + 1))\`"
 }
 
 start_box() {
     if ! podman start "$BOX" > /dev/null 2> "$UP_ERRF"; then
         warn "could not start the box:"
         show_err "$UP_ERRF"
+        port_hint
         die 7 "Nothing was changed; the box '$BOX' is still there. If a port is in use, change WEB_PORT or PORTS and run \`swarmbox reset\`."
     fi
 }
@@ -1530,7 +1544,10 @@ wait_ready() {
         u_i=$((u_i + 1))
         if u_m=$(podman exec "$BOX" cat /tmp/swarmbox/ready 2> /dev/null); then
             case $u_m in
-                warnings=*) warn "the box is ready, with ${u_m#warnings=} warning(s); the banner shows them." ;;
+                warnings=*)
+                    warn "the box is ready, with ${u_m#warnings=} warning(s):"
+                    podman exec "$BOX" bash -c '. /usr/local/lib/swarmbox/dirs.sh && cat "$SB_HEALTH_FILE"' 2> /dev/null | sed 's/^/    /' >&2
+                    ;;
             esac
             return 0
         fi
@@ -1748,7 +1765,7 @@ up_main() {
     acquire_lock
     find_box
     if [ "$BX_FOUND" = 1 ]; then
-        [ -n "$BX_MANAGED" ] || refuse_v010
+        [ -n "$BX_MANAGED" ] || refuse_foreign
         if [ "$RESET" = 1 ]; then
             host_connection_prepare "$C_WORKSPACE"
             prepare_create
@@ -1862,7 +1879,7 @@ cmd_stop() {
         warn "no box named '$BOX'; nothing to stop."
         return 0
     fi
-    [ -n "$BX_MANAGED" ] || refuse_v010
+    [ -n "$BX_MANAGED" ] || refuse_foreign
     if ! podman stop "$BOX" > /dev/null 2> "$UP_ERRF"; then
         warn "could not stop the box '$BOX':"
         show_err "$UP_ERRF"
@@ -2274,7 +2291,7 @@ case $sub in
     update) cmd_update "$@" ;;
     remote) cmd_remote "$@" ;;
     -h|--help|help)
-        usage
+        help_text
         ;;
     *)
         warn "unknown subcommand '$sub'."
