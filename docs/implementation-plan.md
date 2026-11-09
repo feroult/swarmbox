@@ -326,6 +326,8 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 
 **7.5 state:** `.github/workflows/release.yml` (tag `v*.*.*` or a manual dry run; tests via `ci.yml` `workflow_call`, native amd64 and arm64 builds, helper-version check, grype scan, manifest list `X.Y.Z`/`X.Y`/`latest`, cosign keyless signing, syft SBOM attested and attached, digest in the release notes), `.grype.yaml` and `dev/release-version.sh` exist, pinned by exact action versions. Validated by `tests/test_release_workflow.py`, `tests/test_release_version.py` and actionlint 1.7.7 only; every step is `[unverified]` until a first real run (design 13.4 lists the checks). Nothing was pushed or tagged. Decision log `[7.5]`.
 
+**7.6 state:** `docs/release-checklist.md` (name check of 2026-11-08 by `dev/name-check.sh`, ten owner actions each with a command or place, history default and owner-run commands), `dev/release-check.sh` (read-only pre-tag check), the README install line in the first screen, and in `docs/owner-checks.md` the B20 recheck commands for the real registry and the clean-machine walkthrough. B20 stays `[unverified]` for the real registry. Nothing was pushed, tagged or rewritten. Decision log `[7.6]`.
+
 - **Logging policy:** no telemetry; logs stay local under `<workspace>/.local/state/swarmbox/` and `host:~/.local/state/swarmbox/` (design 12.5); stated in `SECURITY.md` and the README.
 - The Renovate or Dependabot configuration that bumps the pinned versions and the base image (10.4).
 - `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md` complete; the README is the 15-second pitch.
