@@ -157,3 +157,20 @@ Not fixed, for the owner:
 - `remote ...` stops at the missing API token with a long permission list; nothing else was tried (no Cloudflare account).
 - `swarmbox update` could not be run (no registry); `tool update` for managed tools does not exist.
 - tmux prints `[exited]` before the output of a `swarmbox <command>`.
+
+## Step 8: product code simplification
+
+Undo any item with `git revert` of the commit titled "simplify: ..." / "test: ..." that holds it (`git log --oneline`).
+
+- Removed v0.1.0 and "phase"/"slice" wording from the code, comments, Dockerfile, CI header and docs (README, CONTRIBUTING, cloudflare.md, web-terminal.md). The doc claim that the box moves `.swarmbox/web-terminal.conf` was false (no code does it) and is gone.
+- `swarmbox-host`: the TZ spellings `OFF`, `none`, `NONE` (v0.1.0 only) are no longer accepted; use `off`. The foreign-container refusal (no `swarmbox.managed` label, exit 5) stays as a generic safety guard, with a plain message ("SwarmBox did not make"); the label value 2 is unchanged.
+- `swarmbox-host`: one `opt_arg` helper replaces four copies of the `--x V` / `--x=V` parser (seed, create-flags, fingerprint, update); one `resolve_valid` replaces four copies of resolve-then-validate; the two env loops of create-flags are one. Header comment rewritten.
+- `swarmbox url` (and `remote status`) print the public address only when `cloudflare.json` was saved for this box (its `name` equals the box name) or `SWARMBOX_WEB_HOSTNAME`/`SWARMBOX_WEB_DOMAIN` is set. Side effect: `cloudflare.json` keeps one name, so after `remote setup` for a second box the first box prints no public address until its `remote setup` is run again. Test added; the existing url test now saves the name.
+- `[exited]` before the output of `swarmbox <command>`: accepted, not changed. It is tmux's own message when the grouped client ends; hiding it means moving the cursor up and erasing a line, which erases a real line (the prompt) whenever tmux printed something else (`[detached]`, nothing). Not safe for a small change.
+- `swarmbox-tool`: `need_tdir` and `need_manifest` replace ten copies of the same two lines. All subcommands stay (validate, link, install, run, list, update, use, remove, new, doctor, prepare): each is in the usage text and has tests; `prepare` is called by `serve`. `new --repo/--dir` and `doctor --fix` are the least used; I left them.
+- `cloudflare-setup.py`: `--print-token` removed (the `token` command does the same; the option had no test; its row in docs/cloudflare.md is gone); one `resolve_domain` instead of two copies; an unused return value of `step_tunnel` dropped.
+- `entrypoint.sh`: removed the "not found" branches for scripts the image always installs (swarmbox-pubkey, -tool, -mcp, -web) and the direct-`ttyd` fallback. test_serve_steps and test_web_build now install their fake ttyd as `swarmbox-web` (the fallback they exercised is gone).
+- Checked and left alone: no unused function in swarmbox-host, the scripts or cloudflare-setup.py (grep by name); every file under dev/ is referenced by CONTRIBUTING, a workflow or a test (kata-probe.sh is kept for the owner); no `__pycache__` is tracked and .gitignore covers it. The Dockerfile packages were kept (users may rely on pip, build-essential, wget); only comments changed.
+- Image check: `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` (reduced mode): 11 passed, 0 failed, 2 skipped (nested-podman, nested-cgroup need the third nesting level). The image was built by dev-build.sh inside the run and removed by it; no swarmbox-test- container, image or volume is left. The pids count stayed near 170 (limit 16384).
+- Lines before to after: swarmbox-host 2301 to 2244, swarmbox-tool.sh 1475 to 1477 (header and two helpers; a net saving was not found without removing subcommands), cloudflare-setup.py 796 to 790, entrypoint.sh 434 to 402, Dockerfile 208 to 207. Tests: 665 in 57 files, all green.
+- Owner review: (1) `url` after a second box's `remote setup`; (2) keep or drop `tool new --repo/--dir` and `doctor --fix`; (3) the TZ spelling change.

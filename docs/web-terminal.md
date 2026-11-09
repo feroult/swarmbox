@@ -62,6 +62,6 @@ has `sudo`. To reach it from elsewhere, put Cloudflare Access in front of it ([c
 
 **Crashes and logs.** `serve` supervises ttyd and restarts it after 1, 2, 4 ... 30 seconds; after five exits within a minute it stops
 trying, writes the line "web terminal keeps crashing; see web-terminal.log" to the `health` file and waits for `swarmbox-web restart`.
-The log is `<workspace>/.local/state/swarmbox/web-terminal.log`. [verified: tests/test_serve_steps.py and tests/test_web_container.py; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); reduced: development box] That a real browser keeps a session across a ttyd restart was not checked [unverified].
+The log is `<workspace>/.local/state/swarmbox/web-terminal.log`. [verified: tests/test_serve_steps.py and tests/smoke_image.py; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm); reduced: development box] That a real browser keeps a session across a ttyd restart was not checked [unverified].
 
 [← Back to the README](../README.md)
