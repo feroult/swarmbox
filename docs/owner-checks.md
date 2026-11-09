@@ -131,7 +131,7 @@ env -u SWARMBOX_NAME sh dev/owner-check.sh --only B19,B22,B23,B34
 - **B22** expects `PASS B22.token-mode`: mode 600 accepted, mode 644 ignored with a warning that names `644` and `chmod 600`.
 - **B23** expects `PASS B23.helper-sh` listing `[/bin/sh]=ok` (macOS `/bin/sh` is bash 3.2 in POSIX mode).
 - **B34** expects `PASS B34.mode-forms` with `600=ok 644=ok xattr-600=ok`. The `INFO B34` lines show what each form (`stat -c %a`, `stat -f %Lp`, `find -perm`) printed: on a Mac `stat -f %Lp` is the one that answers.
-- **B21** needs the image, in a shell where `SHELL` is zsh: `sh dev/owner-check.sh --only B21 --box-image ghcr.io/<org>/swarmbox:2.0.0` (use your local registry reference). Expected: `PASS B21.shell-env init printed the syntax of the SHELL it was given: real->zsh dash->bash zsh->zsh fish->fish unset->bash`.
+- **B21** needs the image, in a shell where `SHELL` is zsh: `sh dev/owner-check.sh --only B21 --box-image ghcr.io/<org>/swarmbox-dev:2.0.0` (use your local registry reference). Expected: `PASS B21.shell-env init printed the syntax of the SHELL it was given: real->zsh dash->bash zsh->zsh fish->fish unset->bash`.
 
 On WSL2, with a Linux-filesystem home:
 
@@ -179,20 +179,20 @@ tag of the form `[verified: dev/owner-check.sh; <date>; Podman <version>, <OS>; 
 ## B20: `swarmbox update` against the real registry (after the first publish)
 
 B20 is closed only against a local registry (`tests/e2e_registry.py`). The real registry stays `[unverified]` until you run this once, after the tag `v2.0.0`
-has produced the package `ghcr.io/feroult/swarmbox` and you have set the package public (docs/release-checklist.md). Use a second box so the real one is not touched,
+has produced the package `ghcr.io/feroult/swarmbox-dev` and you have set the package public (docs/release-checklist.md). Use a second box so the real one is not touched,
 and a throwaway home so nothing of your own configuration is read or written:
 
 ```sh
 export H=$(mktemp -d) && export XDG_CONFIG_HOME=$H/c XDG_DATA_HOME=$H/d XDG_STATE_HOME=$H/s     # throwaway state
-podman manifest inspect ghcr.io/feroult/swarmbox:2.0.0 | grep -c '"architecture"'               # 2 or more: amd64 and arm64
-podman manifest inspect ghcr.io/feroult/swarmbox:2.0 | grep -c '"architecture"'                 # the moving tag exists too
+podman manifest inspect ghcr.io/feroult/swarmbox-dev:2.0.0 | grep -c '"architecture"'               # 2 or more: amd64 and arm64
+podman manifest inspect ghcr.io/feroult/swarmbox-dev:2.0 | grep -c '"architecture"'                 # the moving tag exists too
 cosign verify --certificate-identity-regexp '^https://github.com/feroult/swarmbox/.github/workflows/release.yml@refs/tags/v' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/feroult/swarmbox:2.0.0 >/dev/null && echo SIGNED
-podman run --rm -e SHELL ghcr.io/feroult/swarmbox:2.0.0 init --with claude --workspace $H/ws > $H/function.sh   # prints only
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/feroult/swarmbox-dev:2.0.0 >/dev/null && echo SIGNED
+podman run --rm -e SHELL ghcr.io/feroult/swarmbox-dev:2.0.0 init --with claude --workspace $H/ws > $H/function.sh   # prints only
 export SWARMBOX_NAME=swarmbox-b20 && . $H/function.sh        # bash or zsh; for fish use `source` on a file printed with --shell fish
-swarmbox update                  # expect: pulls ghcr.io/feroult/swarmbox:2.0, reads the exact version, records IMAGE, says to run swarmbox reset
-swarmbox config get IMAGE        # expect: ghcr.io/feroult/swarmbox:2.0.Z, the exact tag
-swarmbox update --to 2.0.0       # expect: pulls that tag; IMAGE is ghcr.io/feroult/swarmbox:2.0.0
+swarmbox update                  # expect: pulls ghcr.io/feroult/swarmbox-dev:2.0, reads the exact version, records IMAGE, says to run swarmbox reset
+swarmbox config get IMAGE        # expect: ghcr.io/feroult/swarmbox-dev:2.0.Z, the exact tag
+swarmbox update --to 2.0.0       # expect: pulls that tag; IMAGE is ghcr.io/feroult/swarmbox-dev:2.0.0
 swarmbox reset                   # creates the box from the recorded tag (a throwaway workspace under $H/ws)
 swarmbox version                 # the helper version equals the image tag
 ```
@@ -201,7 +201,7 @@ Then the offline half: disconnect the network (airplane mode or `sudo ip link se
 with no pull. Clean up: `podman rm -f swarmbox-b20; podman volume rm swarmbox-b20-containers` (the exact names; a `podman volume ls` shows them), `rm -rf "$H"`, and
 `unset SWARMBOX_NAME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME`. With only `2.0.0` published, the `swarmbox update` line moves the series to `2.0.0` itself; the rollback
 half (`update --to` an older tag) needs a second published version, so it stays `[unverified]` until `2.0.1` exists. Record the evidence as
-`[verified: the commands above on the real registry; <date>; Podman <version>, <OS>; ghcr.io/feroult/swarmbox:<tag>]` in design Part B, row B20.
+`[verified: the commands above on the real registry; <date>; Podman <version>, <OS>; ghcr.io/feroult/swarmbox-dev:<tag>]` in design Part B, row B20.
 
 ## Clean machine: README only
 

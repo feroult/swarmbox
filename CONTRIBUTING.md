@@ -36,6 +36,7 @@ python3 tests/test_docs_consistency.py
 | `test_cloudflare_setup.py` | `cloudflare-setup.py` against a fake Cloudflare API |
 | `test_design_partb.py` | the shape of Part B of the design |
 | `test_dev_build.py` | `dev/dev-build.sh`, the dev image build with the apt override in a scratch copy (fake `podman`) |
+| `test_default_names_lint.py` | D40: fails when a product file or a test writes the default box name or image repository as a literal instead of reading `container/host/DEFAULTS` (retired spellings included; no allowances but the test itself) |
 | `test_dirs.py` | `container/scripts/dirs.sh`, the XDG-aware path file (sh, dash, bash) |
 | `test_dockerfile.py` | static checks of the 2.0 `Dockerfile` (no build) |
 | `test_docs_consistency.py` | cross-references, D and B numbers and code fences of the design and the plan |
@@ -72,7 +73,7 @@ python3 tests/test_docs_consistency.py
 | `test_release_checklist.py` | `docs/release-checklist.md` lists every owner action with a command or place, the README install line is in the first screen, the B20 recheck kit exists and B20 stays open. |
 | `test_release_docs.py` | `SECURITY.md`, `CODE_OF_CONDUCT.md` and `CHANGELOG.md` (slice 7.1): the reporting section and the one marked owner placeholder each, the no-telemetry statement equal to the README's, both log paths, the changelog's 2.0.0 entry and links, and a grep of the product code for analytics hosts |
 | `test_release_version.py` | `dev/release-version.sh` (slice 7.5): `v2.0.0` gives `2.0.0`, `2.0` and `latest`; a missing `v`, a prerelease or build suffix, leading zeros, a missing or extra part, option-like or multi-line input are refused with exit 1; dash and bash print the same |
-| `test_release_workflow.py` | `.github/workflows/release.yml` and `.grype.yaml` (slice 7.5), validated locally only: tag trigger and the dry-run default, the `publish` rule, every pushing step gated on it, only `ghcr.io/feroult/swarmbox`, permissions (the OIDC token only in `sign`, `contents: write` only in `notes`), both architectures native, the scan before the push, the helper-version check, signing of the digest, SBOM and notes, exact action versions; runs actionlint when present |
+| `test_release_workflow.py` | `.github/workflows/release.yml` and `.grype.yaml` (slice 7.5), validated locally only: tag trigger and the dry-run default, the `publish` rule, every pushing step gated on it, only `ghcr.io/feroult/swarmbox-dev`, permissions (the OIDC token only in `sign`, `contents: write` only in `notes`), both architectures native, the scan before the push, the helper-version check, signing of the digest, SBOM and notes, exact action versions; runs actionlint when present |
 | `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md`, this file and the three policy files being present and linked |
 | `test_security_review.py` | the security review of the host helper (slice 7.3): hostile values, planted symlinks at the temporary names and the lock, the tunnel token never in argv or output, `update --to` and archive checks, modes under umask 000, and `docs/security-review.md` (no open row, every row names an existing test) |
 | `test_serve_container.py` | `serve` in a throwaway container from the image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |

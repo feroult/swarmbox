@@ -1,7 +1,7 @@
 """Docs consistency of the plan and the design (Phase 0 close-out, slice 0.5).
 
 Checks: every B and D id the plan cites exists in the design; Part B has B1 to B36 once each and the decisions table
-has D1 to D39; code fences of design.md and implementation-plan.md are balanced; every spike of the plan's Phase 0 table
+has D1 to D40; code fences of design.md and implementation-plan.md are balanced; every spike of the plan's Phase 0 table
 has a result row in Part B with an evidence tag or `[unverified]`; the Phase 0 outcome table of the design lists every
 Phase 0 fact with a state and an owner and names B6, B7, B8 and B15 as not doable here; Appendix A.3 lists B1 to B36;
 tests/spikes/README.md lists every spike script with its B number and how to run it.
@@ -14,7 +14,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_CONNECTOR, DEFAULT_IMAGE_REPO, DEFAULT_NAME, DEFAULT_VOLUME  # noqa: E402
 
 
 def read(*p):
@@ -45,16 +45,16 @@ class IdsTest(unittest.TestCase):
         ids = re.findall(r"^\| (B\d+) \|", PART_B[:PART_B.index("#### Results")], re.M)
         self.assertEqual(ids, ["B%d" % n for n in range(1, 37)])
 
-    def test_decisions_d1_to_d39(self):
+    def test_decisions_d1_to_d40(self):
         ids = re.findall(r"^\| (D\d+) \|", DESIGN, re.M)
-        self.assertEqual(sorted(set(ids), key=lambda x: int(x[1:])), ["D%d" % n for n in range(1, 40)])
+        self.assertEqual(sorted(set(ids), key=lambda x: int(x[1:])), ["D%d" % n for n in range(1, 41)])
 
     def test_ids_cited_exist(self):
         for name, text in (("plan", PLAN), ("design", DESIGN)):
             for b in set(re.findall(r"\bB(\d+)\b", text)):
                 self.assertTrue(1 <= int(b) <= 36, "%s cites B%s" % (name, b))
             for d in set(re.findall(r"\bD(\d+)\b", text)):
-                self.assertTrue(1 <= int(d) <= 39, "%s cites D%s" % (name, d))
+                self.assertTrue(1 <= int(d) <= 40, "%s cites D%s" % (name, d))
 
     def test_design_range_statements_match(self):
         self.assertNotIn("D1 to D37", DESIGN)
@@ -67,7 +67,7 @@ class IdsTest(unittest.TestCase):
     def test_appendix_a1_lists_all_decisions(self):
         a1 = PLAN[PLAN.index("### A.1"):PLAN.index("### A.2")]
         ids = re.findall(r"^\| (D\d+) \|", a1, re.M)
-        self.assertEqual(ids, ["D%d" % n for n in range(1, 40)])
+        self.assertEqual(ids, ["D%d" % n for n in range(1, 41)])
 
     def test_fences_balanced(self):
         for name, text in (("design", DESIGN), ("plan", PLAN)):
@@ -679,7 +679,7 @@ class ReadmeSixFiveTest(unittest.TestCase):
         self.assertEqual(README.count("```") % 2, 0)
 
     def test_install_line_uses_the_placeholder_org_and_says_so(self):
-        self.assertIn("podman run --rm -e SHELL ghcr.io/<org>/swarmbox:2.0.0 init --with claude", README)
+        self.assertIn(("podman run --rm -e SHELL " + DEFAULT_IMAGE_REPO + ":2.0.0 init --with claude"), README)
         self.assertIn("placeholder", section(README, "Install").lower())
         self.assertNotRegex(README, r"ghcr\.io/(?!<org>)")
 
@@ -694,8 +694,8 @@ class ReadmeSixFiveTest(unittest.TestCase):
         self.assertEqual(sorted(steps), [1, 2, 3, 4, 5, 6, 7])
         needles = {1: ["# >>> swarmbox 2.0.0 >>>", "# <<< swarmbox 2.0.0 <<<"], 2: ["podman rm -f swarmbox", "SWARMBOX_NAME"],
                    3: ["~/.local/share/swarmbox/host", "~/.local/state/swarmbox"], 4: ["~/.config/swarmbox"],
-                   5: ["swarmbox remote off", "swarmbox-cloudflared"], 6: ["swarmbox-containers", "~/swarmbox"],
-                   7: ["podman rmi", "ghcr.io/<org>/swarmbox:<tag>"]}
+                   5: ["swarmbox remote off", DEFAULT_CONNECTOR], 6: [DEFAULT_VOLUME, "~/swarmbox"],
+                   7: ["podman rmi", (DEFAULT_IMAGE_REPO + ":<tag>")]}
         for n, items in needles.items():
             for it in items:
                 self.assertIn(it, steps[n], "step %d lacks %s" % (n, it))
@@ -864,7 +864,7 @@ class DocsSixFiveTest(unittest.TestCase):
 
     def test_nested_podman_doc_is_2_0(self):
         t = read("docs", "nested-podman.md")
-        for needle in ("podman -c swarmbox", "swarmbox-containers", "swarmbox config set PORTS", "swarmbox reset",
+        for needle in ("podman -c " + DEFAULT_NAME, DEFAULT_VOLUME, "swarmbox config set PORTS", "swarmbox reset",
                        "always on", "SWARMBOX_NAME", "/dev/net/tun"):
             self.assertIn(needle, t, needle)
         self.assertIn("[unverified", t)
@@ -983,7 +983,7 @@ class PhaseSixCloseTest(unittest.TestCase):
 
     def test_plan_cites_only_known_decisions_and_facts(self):
         ds = set(re.findall(r"(?m)^\| (D\d+) \|", DESIGN))
-        self.assertEqual(len(ds), 39)
+        self.assertEqual(len(ds), 40)
         for d in set(re.findall(r"\bD(\d+)\b", PLAN)):
             self.assertIn("D" + d, ds, "plan cites D" + d)
         for b in set(re.findall(r"\bB(\d+)\b", PLAN)):
