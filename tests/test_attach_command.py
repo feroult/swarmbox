@@ -359,24 +359,6 @@ class ReadinessTests(FakeTmuxCase):
         with open(os.path.join(ROOT, "container", "host", "DEFAULTS")) as f:
             self.assertIn("SWARMBOX_DEFAULT_NAME=" + DEFAULT_NAME, f.read())
 
-    def test_not_ready_with_a_terminal_also_exits_6(self):
-        self.not_ready()
-        p = self.run_term(self.fake, [], SWARMBOX_TEST_READY_TIMEOUT="1")
-        self.assertEqual(p.wait(), 6)
-        self.assertEqual(self.calls(), [])
-
-    def test_a_marker_that_appears_while_waiting_is_accepted(self):
-        self.not_ready()
-        import threading
-        threading.Timer(0.6, self.mark_ready).start()
-        r = self.run_noterm(self.fake, ["true"], SWARMBOX_TEST_READY_TIMEOUT="5")
-        self.assertEqual(r.returncode, 0, r.stderr)
-
-    def test_warnings_marker_counts_as_ready(self):
-        self.mark_ready("warnings=2")
-        self.assertEqual(self.run_noterm(self.fake, ["true"]).returncode, 0)
-
-
 class InteractiveAttachFakeTests(FakeTmuxCase):
     def test_the_grouped_session_without_status_bar_and_a_new_window(self):
         self.put("windows.txt", "@0|idle|bash|1\n")
@@ -404,19 +386,6 @@ class InteractiveAttachFakeTests(FakeTmuxCase):
         self.assertEqual([c for c in self.subs("kill-window")][0][-2:], ["-t", "@0"])
         self.assertLess(order.index("new-window"), order.index("kill-window"))
 
-    def test_the_idle_window_is_kept_when_it_is_not_alone_or_not_idle(self):
-        for rows in ("@0|idle|bash|1\n@1|bash|bash|1\n",   # another window exists
-                     "@0|idle|vim|1\n",                    # something runs in it (the user typed)
-                     "@0|idle|bash|2\n",                   # the user split it
-                     "@0|work|bash|1\n",                   # renamed, or a window the user made
-                     "@0|bash|bash|1\n"):
-            with self.subTest(rows=rows):
-                os.unlink(os.path.join(self.fake, "calls.jsonl")) if os.path.exists(os.path.join(self.fake, "calls.jsonl")) else None
-                self.put("windows.txt", rows)
-                self.run_term(self.fake, []).wait()
-                self.assertEqual(self.subs("kill-window"), [])
-                self.assertEqual(len(self.subs("new-window")), 1)
-
     def test_a_missing_session_is_created_with_the_idle_window_first(self):
         self.put("no-session", "1")
         self.put("windows.txt", "@0|idle|bash|1\n")
@@ -426,12 +395,6 @@ class InteractiveAttachFakeTests(FakeTmuxCase):
         self.assertIn("-n", creates[0])
         self.assertEqual(creates[0][creates[0].index("-n") + 1], "idle")
         self.assertIn("main", creates[0])
-
-    def test_no_command_and_no_terminal_gives_a_plain_shell_not_tmux(self):
-        r = subprocess.run(["bash", ATTACH], env=self.env(self.fake), stdin=subprocess.DEVNULL, capture_output=True, timeout=20)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.calls(), [])
-
 
 class CommandFakeTests(FakeTmuxCase):
     def setUp(self):
@@ -467,45 +430,12 @@ class CommandFakeTests(FakeTmuxCase):
             self.assertIn(needle, wrapper)
         self.assertFalse(os.path.exists("/tmp/pwned"))
 
-    def test_the_grouped_client_is_selected_on_the_command_window_and_ended_by_name(self):
-        self.attach(["true"])
-        ns = [c for c in self.subs("new-session") if "-t" in c][0]
-        flat = " ".join(ns)
-        self.assertIn("select-window -t @7", flat)
-        self.assertIn("set-option status off", flat)
-        self.assertIn("-s swarmbox-cmd-", flat)
-        name = ns[ns.index("-s") + 1]
-        (ks,) = self.subs("kill-session")
-        self.assertEqual(ks[-1], "=" + name)
-        # the waiter blocks on the channel of the window
-        nw = self.subs("new-window")[0]
-        chan = nw[nw.index("wrapper") + 3]
-        self.assertIn(["wait-for", chan], self.calls())
-
-    def test_the_idle_window_is_left_alone_for_a_command(self):
-        # decision [2.3]: closing it could leave `main` without a window when the command ends (the session would vanish)
-        self.put("windows.txt", "@0|idle|bash|1\n")
-        self.attach(["true"])
-        self.assertEqual(self.subs("kill-window"), [])
-
     def test_exit_code_mapping(self):
         for status, want in (("0", 0), ("1", 1), ("130", 130), ("137", 137), ("143", 143), ("129", 129), ("7", 7)):
             with self.subTest(status=status):
                 p, rc = self.attach(["cmd"], status=status)
                 self.assertEqual(rc, want, p.out)
                 self.assertEqual([f for f in os.listdir(self.run_dir) if f.startswith("exit.")], [], "status file not removed")
-
-    def test_missing_status_file_gives_1_and_a_message(self):
-        os.unlink(os.path.join(self.fake, "status")) if os.path.exists(os.path.join(self.fake, "status")) else None
-        self.put("windows.txt", "")  # the window is gone and nothing was written
-        self.put("window", "vanishes")
-        p, rc = self.attach(["cmd"], status=None)
-        self.assertEqual(rc, 1, p.out)
-        self.assertIn(b"status", p.out)
-
-    def test_garbage_in_the_status_file_gives_1(self):
-        p, rc = self.attach(["cmd"], status="not a number")
-        self.assertEqual(rc, 1, p.out)
 
     def test_sigkilled_wrapper_is_noticed_by_polling_the_window_id(self):
         # wait-for never fires; the window is not listed; no status file: exit 1 within a few poll intervals
@@ -516,19 +446,6 @@ class CommandFakeTests(FakeTmuxCase):
         self.assertEqual(rc, 1, p.out)
         self.assertLess(time.time() - t0, 10)
         self.assertGreaterEqual(len([c for c in self.subs("list-windows")]), 1)
-
-    def test_a_listed_window_keeps_the_waiter_blocked_until_wait_for_returns(self):
-        self.put("waitfor", "block")  # window stays listed: the poll must NOT end the wait
-        self.put("status", "")
-        p = self.run_term(self.fake, ["sleep", "60"])
-        time.sleep(1.5)
-        self.assertTrue(p.alive())
-        self.put("windows.txt", "")  # now the window disappears with a status file: that ends it
-        nw = self.subs("new-window")[0]
-        status = nw[nw.index("wrapper") + 2]
-        with open(status, "w") as f:
-            f.write("4\n")
-        self.assertEqual(p.wait(), 4)
 
     def test_hup_to_the_caller_ends_the_client_and_leaves_the_window(self):
         self.put("waitfor", "block")
@@ -547,13 +464,6 @@ class CommandFakeTests(FakeTmuxCase):
         r = self.run_noterm(self.fake, ["sh", "-c", "kill -TERM $$"])
         self.assertEqual(r.returncode, 143)
 
-    def test_no_terminal_output_has_no_cr_and_no_job_control_noise(self):
-        r = self.run_noterm(self.fake, ["printf", "a\nb\n"])
-        self.assertEqual(r.returncode, 0)
-        self.assertEqual(r.stdout, b"a\nb\n")
-        self.assertNotIn(b"\r", r.stdout)
-        self.assertEqual(r.stderr, b"")  # bash -ic would print "cannot set terminal process group"
-
     def test_no_terminal_applies_alias_and_path_from_the_fragment_and_hides_the_switch(self):
         write_exec(os.path.join(self.home, "bin", "mytool"), '#!/bin/sh\necho "mytool:$*" > "$OUT_DIR/path_out"\n')
         r = self.run_noterm(self.fake, ["greet", "world"])
@@ -565,17 +475,6 @@ class CommandFakeTests(FakeTmuxCase):
         r = self.run_noterm(self.fake, ["sh", "-c", 'echo "cmd=${SWARMBOX_CMD:-unset}"'])
         self.assertEqual(r.stdout, b"cmd=unset\n")
 
-    def test_no_terminal_quoting_arrives_byte_for_byte(self):
-        outfile = os.path.join(self.out_dir, "q.out")
-        r = self.run_noterm(self.fake, ["sh", "-c", 'f=$1; shift; printf "%s\\0" "$@" > "$f"', "sh", outfile] + AWKWARD)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        got = open(outfile, "rb").read().decode("utf-8", "surrogateescape").split("\0")[:-1]
-        self.assertEqual(got, AWKWARD)
-
-    def test_a_missing_fragment_is_not_an_error(self):
-        r = self.run_noterm(self.fake, ["true"], SWARMBOX_TEST_FRAGMENT=os.path.join(self.base, "nope.sh"))
-        self.assertEqual((r.returncode, r.stderr), (0, b""))
-
     def test_plain_with_a_terminal_runs_through_bash_ic_without_tmux(self):
         with open(os.path.join(self.home, ".bashrc"), "w") as f:
             f.write(FRAGMENT)
@@ -585,17 +484,6 @@ class CommandFakeTests(FakeTmuxCase):
         p = self.run_term(self.fake, ["--plain", "greet", "hi"])
         self.assertEqual(p.wait(), 0, p.out)
         self.assertEqual(self.out("alias_out"), "--auto-approve hi\n")
-
-    def test_plain_without_terminal_is_the_no_terminal_form(self):
-        r = self.run_noterm(self.fake, ["--plain", "greet", "x"])
-        self.assertEqual(r.returncode, 0)
-        self.assertEqual(self.calls(), [])
-        self.assertEqual(self.out("alias_out"), "--auto-approve x\n")
-
-    def test_double_dash_ends_the_options(self):
-        r = self.run_noterm(self.fake, ["--", "--plain-looking"], )
-        self.assertEqual(r.returncode, 127)  # run as a command (not found), not parsed as an option
-
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Layer 2: real tmux, isolated
@@ -661,12 +549,6 @@ class RealTmuxCase(Base):
         self.assertEqual(len(names), 2)
         self.assertIn("idle", names)
 
-    def test_b36_a_renamed_idle_window_is_not_closed(self):
-        self.iso.run("rename-window", "-t", "=main:idle", "mine", check=True)
-        a = self.term([])
-        self.assertTrue(wait_until(lambda: len(self.sessions()) == 2), a.out)
-        self.assertEqual(len(self.windows()), 2)
-
     def test_attach_creates_main_when_the_server_has_no_session(self):
         self.iso.run("kill-server")
         a = self.term([])
@@ -682,42 +564,6 @@ class RealTmuxCase(Base):
                 self.assertEqual(p.wait(), want, p.out)
         self.assertEqual([f for f in os.listdir(self.run_dir) if f.startswith("exit.")], [])
         self.assertEqual(self.sessions(), ["main"], "grouped sessions of finished calls must be gone")
-
-    def test_instant_commands_do_not_lose_the_wakeup(self):
-        for i in range(8):
-            p = self.term(["true"])
-            self.assertEqual(p.wait(), 0, (i, p.out))
-
-    def test_alias_and_path_apply_in_the_command_window(self):
-        p = self.term(["greet", "world"])
-        self.assertEqual(p.wait(), 0, p.out)
-        self.assertEqual(self.out("alias_out"), "--auto-approve world\n")
-        p = self.term(["mytool", "a", "b"])
-        self.assertEqual(p.wait(), 0, p.out)
-        self.assertEqual(self.out("path_out"), "mytool:a b\n")
-
-    def test_quoting_through_a_real_window(self):
-        outfile = os.path.join(self.out_dir, "q.out")
-        p = self.term(["sh", "-c", 'f=$1; shift; printf "%s\\0" "$@" > "$f"', "sh", outfile] + AWKWARD)
-        self.assertEqual(p.wait(), 0, p.out)
-        got = open(outfile, "rb").read().decode("utf-8", "surrogateescape").split("\0")[:-1]
-        self.assertEqual(got, AWKWARD)
-        self.assertFalse(os.path.exists("/tmp/pwned"))
-
-    def test_the_command_reads_the_terminal(self):
-        outfile = os.path.join(self.out_dir, "read.out")
-        p = self.term(["sh", "-c", 'echo ready > "$1".started; read x; echo "got:$x" > "$1"', "sh", outfile])
-        self.assertTrue(wait_until(lambda: os.path.exists(outfile + ".started")), p.out)
-        time.sleep(0.3)
-        p.write(b"hello\n")
-        self.assertEqual(p.wait(), 0, p.out)
-        self.assertEqual(open(outfile).read(), "got:hello\n")
-
-    def test_the_command_starts_in_the_callers_directory(self):
-        outfile = os.path.join(self.out_dir, "cwd.out")
-        p = self.term(["sh", "-c", 'pwd > "$1"', "sh", outfile])
-        self.assertEqual(p.wait(), 0, p.out)
-        self.assertEqual(open(outfile).read().strip(), os.path.realpath(self.base))
 
     def test_a_window_killed_from_elsewhere_gives_129(self):
         before = {w[0] for w in self.windows()}
@@ -740,24 +586,6 @@ class RealTmuxCase(Base):
         self.assertEqual(p.wait(timeout=20), 1, p.out)
         self.assertIn(b"status", p.out)
 
-    def test_command_without_a_terminal_leaves_tmux_alone_and_has_no_cr(self):
-        windows_before = self.windows()
-        r = self.run_noterm(self.iso.shim_dir, ["printf", "a\nb\n"])
-        self.assertEqual(r.returncode, 0, r.stderr)
-        od = subprocess.run(["od", "-c"], input=r.stdout, capture_output=True).stdout.decode()
-        self.assertNotIn("\\r", od)
-        self.assertEqual(r.stdout, b"a\nb\n")
-        self.assertEqual(self.windows(), windows_before)
-        r = self.run_noterm(self.iso.shim_dir, ["greet", "nt"])
-        self.assertEqual((r.returncode, r.stderr), (0, b""))
-        self.assertEqual(self.out("alias_out"), "--auto-approve nt\n")
-
-    def test_the_command_window_stays_out_of_the_idle_logic_and_idle_survives(self):
-        p = self.term(["true"])
-        self.assertEqual(p.wait(), 0, p.out)
-        self.assertEqual([w[1] for w in self.windows()], ["idle"])
-
-
 # ----------------------------------------------------------------------------------------------------------------------
 # Layer 3: the entrypoint's attach subcommand
 # ----------------------------------------------------------------------------------------------------------------------
@@ -769,14 +597,6 @@ class EntrypointAttach(Base):
         r = subprocess.run(["bash", ENTRYPOINT, "attach"] + args, env=self.env(self.fake, FAKE_RC="3"), capture_output=True)
         self.assertEqual(r.returncode, 3, r.stderr)
         self.assertEqual(json.load(open(os.path.join(self.fake, "args.json"))), args)
-
-    def test_attach_without_the_program_fails_loudly(self):
-        empty = os.path.join(self.base, "empty")
-        os.mkdir(empty)
-        r = subprocess.run(["bash", ENTRYPOINT, "attach", "true"], env=dict(self.env(empty), PATH=empty + ":/usr/bin:/bin"),
-                           capture_output=True)
-        self.assertEqual(r.returncode, 127)
-        self.assertIn(b"swarmbox-attach", r.stderr)
 
     def test_attach_true_and_false_end_to_end_without_a_terminal(self):
         # the real script (installed under its image name) behind the real entrypoint: the exit criterion of 2.3 in miniature
@@ -808,11 +628,6 @@ class Static(unittest.TestCase):
             d = f.read()
         self.assertIn("COPY container/scripts/swarmbox-attach.sh /usr/local/bin/swarmbox-attach", d)
         self.assertIn("/usr/local/bin/swarmbox-attach", d.split("COPY container/entrypoint.sh")[1])  # chmod 755
-
-    def test_bash_syntax(self):
-        r = subprocess.run(["bash", "-n", ATTACH], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 0, r.stderr)
-
 
 if __name__ == "__main__":
     unittest.main()

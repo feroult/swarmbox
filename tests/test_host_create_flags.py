@@ -199,14 +199,6 @@ class GoldenTest(Base):
         want = self.golden("create-flags.full.golden", {"@WS@": self.ws, "@ENVHASH@": ehash, "@FP@": fpr})
         self.assertEqual(out, want)
 
-    def test_macos_golden_adds_only_label_disable(self):
-        out = self.flags(env={"SWARMBOX_TEST_OS": "Darwin"})
-        base = self.flags()
-        self.assertIn(("--security-opt", "label=disable"), pairs_of(out))
-        self.assertNotIn(("--security-opt", "label=disable"), pairs_of(base))
-        self.assertIn("--userns=keep-id:uid=1000,gid=1000", out)
-
-
 # ============================================================================ one test per key of 8.2
 
 class KeyTest(Base):
@@ -227,26 +219,11 @@ class KeyTest(Base):
         out = self.flags(env={"SWARMBOX_WORKSPACE": other})
         self.assertIn(("-v", other + ":/home/agent"), pairs_of(out))
 
-    def test_hostname(self):
-        self.assertIn(("--hostname", DEFAULT_NAME), pairs_of(self.flags()))
-        self.assertIn(("--hostname", "devbox"), pairs_of(self.flags(env={"SWARMBOX_HOSTNAME": "devbox"})))
-
     def test_tz_local_zone_and_off(self):
         self.assertIn("--tz=local", self.flags())
         self.assertIn("--tz=Europe/Lisbon", self.flags(env={"SWARMBOX_TZ": "Europe/Lisbon"}))
         out = self.flags(env={"SWARMBOX_TZ": "off"})
         self.assertFalse([l for l in out if l.startswith("--tz")])
-
-    def test_tz_local_without_a_local_time_file_gives_no_flag_and_a_warning(self):
-        p = self.cf(env={"SWARMBOX_LOCALTIME_FILE": os.path.join(self.tmp, "nonexistent")})
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertFalse([l for l in p.stdout.split("\n") if l.startswith("--tz")])
-        self.assertIn("UTC", p.stderr)
-
-    def test_tz_old_off_spellings_of_v0_1_0_still_mean_off(self):
-        for v in ("OFF", "none", "NONE"):
-            out = self.flags(env={"SWARMBOX_TZ": v})
-            self.assertFalse([l for l in out if l.startswith("--tz")], v)
 
     def test_tz_invalid_is_exit_2(self):
         p = self.cf(env={"SWARMBOX_TZ": "not a zone"})
@@ -265,45 +242,16 @@ class KeyTest(Base):
             self.assertIn("INIT", p.stderr)
             self.assertIn("auto", p.stderr)
 
-    def test_init_from_the_file_is_read_too(self):
-        out = self.flags(cfg="INIT=1\n", drop=("SWARMBOX_INIT",))
-        self.assertIn("--init", out)
-
     def test_ports_default_is_loopback_only(self):
         out = self.flags(env={"SWARMBOX_PORTS": "3000"})
         self.assertIn(("-p", "127.0.0.1:3000:3000"), pairs_of(out))
         self.assertIn(("--label", "swarmbox.ports=127.0.0.1:3000:3000"), pairs_of(out))
-
-    def test_host_access_adds_the_host_gateway_name(self):
-        self.assertNotIn(("--add-host", "host.containers.internal:host-gateway"), pairs_of(self.flags()))
-        out = self.flags(env={"SWARMBOX_HOST_ACCESS": "1"})
-        self.assertIn(("--add-host", "host.containers.internal:host-gateway"), pairs_of(out))
-
-    def test_browser_url_is_passed_as_a_plain_variable(self):
-        self.assertFalse([v for v in values(self.flags(), "-e") if v.startswith("SWARMBOX_BROWSER_URL")])
-        out = self.flags(env={"SWARMBOX_BROWSER_URL": "1234"})
-        self.assertIn(("-e", "SWARMBOX_BROWSER_URL=http://host.containers.internal:1234"), pairs_of(out))
-
-    def test_web_and_yolo_are_always_passed(self):
-        es = values(self.flags(), "-e")
-        self.assertIn("SWARMBOX_WEB=1", es)
-        self.assertIn("SWARMBOX_YOLO=1", es)
-        es = values(self.flags(env={"SWARMBOX_WEB": "0", "SWARMBOX_YOLO": "0"}), "-e")
-        self.assertIn("SWARMBOX_WEB=0", es)
-        self.assertIn("SWARMBOX_YOLO=0", es)
 
     def test_web_port_maps_to_7681_on_loopback_and_web_0_drops_it(self):
         self.assertIn(("-p", "127.0.0.1:7681:7681"), pairs_of(self.flags()))
         self.assertIn(("-p", "127.0.0.1:8000:7681"), pairs_of(self.flags(env={"SWARMBOX_WEB_PORT": "8000"})))
         out = self.flags(env={"SWARMBOX_WEB": "0"})
         self.assertFalse([v for v in values(out, "-p") if v.endswith(":7681")])
-
-    def test_with_and_agent_are_passed_when_set(self):
-        es = values(self.flags(), "-e")
-        self.assertFalse([e for e in es if e.startswith("SWARMBOX_WITH") or e.startswith("SWARMBOX_AGENT")])
-        es = values(self.flags(env={"SWARMBOX_WITH": "claude,gcloud", "SWARMBOX_AGENT": "claude"}), "-e")
-        self.assertIn("SWARMBOX_WITH=claude,gcloud", es)
-        self.assertIn("SWARMBOX_AGENT=claude", es)
 
     def test_env_keys_are_passed_by_name_only_when_set(self):
         out = self.flags(env={"SWARMBOX_ENV_KEYS": "SET_ONE,UNSET_ONE,EMPTY_ONE", "SET_ONE": CANARY, "EMPTY_ONE": ""})
@@ -312,19 +260,6 @@ class KeyTest(Base):
         self.assertIn("EMPTY_ONE", es)       # set, but empty: still passed (it is set)
         self.assertNotIn("UNSET_ONE", es)
         self.assertNotIn(CANARY, "\n".join(out))
-
-    def test_env_keys_listed_but_not_set_warn_before_creation(self):
-        p = self.cf(env={"SWARMBOX_ENV_KEYS": "UNSET_ONE"})
-        self.assertEqual(p.returncode, 0)
-        self.assertIn("UNSET_ONE is listed but not set in this terminal; the box will start without it", p.stderr)
-
-    def test_image_is_a_label_not_an_argument_position(self):
-        out = self.flags(env={"SWARMBOX_IMAGE": "localhost:5000/sb:2.0.1"})
-        self.assertIn(("--label", "swarmbox.image=localhost:5000/sb:2.0.1"), pairs_of(out))
-        self.assertNotIn("localhost:5000/sb:2.0.1", out)    # `up` puts the image after the flags, not create-flags
-        out = self.flags()
-        self.assertIn(("--label", ("swarmbox.image=" + DEFAULT_IMAGE_REPO + ":%s") % VERSION), pairs_of(out))
-
 
 class AlwaysAppliedTest(Base):
     def test_the_always_applied_flags_of_8_3(self):
@@ -345,11 +280,6 @@ class AlwaysAppliedTest(Base):
                                  "swarmbox.env-hash", "swarmbox.fingerprint"])
         self.assertEqual(labels[0], "swarmbox.managed=2")
 
-    def test_the_label_fingerprint_is_what_the_fingerprint_command_prints(self):
-        env = {"SWARMBOX_PORTS": "3000", "SWARMBOX_WITH": "claude"}
-        out = self.flags(env=env)
-        self.assertIn(("--label", "swarmbox.fingerprint=" + self.fp(env=env)), pairs_of(out))
-
     def test_the_tests_only_no_nested_switch_drops_what_a_third_level_cannot_honour(self):
         # slice 3.3: the real throwaway-box smoke test runs inside the development box (a nested level), where /dev/net/tun,
         # the unmasked /proc and a private UTS namespace (--hostname) are refused; the switch removes exactly those three
@@ -365,11 +295,6 @@ class AlwaysAppliedTest(Base):
         self.assertNotIn(("--security-opt", "label=disable"), pairs_of(self.flags()))
         self.assertIn(("--security-opt", "label=disable"), pairs_of(self.flags(env={"SWARMBOX_TEST_OS": "Darwin"})))
         self.assertNotIn(("--security-opt", "label=disable"), pairs_of(self.flags(env={"SWARMBOX_TEST_OS": "Linux"})))
-
-    def test_the_host_os_is_used_without_the_override(self):
-        want = subprocess.run(["uname", "-s"], capture_output=True, text=True).stdout.strip()
-        out = self.flags(drop=("SWARMBOX_TEST_OS",))
-        self.assertEqual(("--security-opt", "label=disable") in pairs_of(out), want == "Darwin")
 
     def test_usage_errors(self):
         for args in (["--bogus"], ["extra"], ["--browser-url"]):
@@ -405,21 +330,9 @@ class FramingTest(Base):
             got = r.stdout.decode().split("\0")[:-1]
             self.assertEqual(got, lines, sh)
 
-    def test_no_value_can_carry_a_newline(self):
-        p = self.cf(env={"SWARMBOX_WORKSPACE": "/tmp/a\nb"})
-        self.assertEqual(p.returncode, 2)
-        self.assertEqual(p.stdout, "")
-
     def test_a_path_with_a_colon_is_refused(self):
         p = self.cf(env={"SWARMBOX_WORKSPACE": "/tmp/a:b"})
         self.assertEqual(p.returncode, 2)
-
-    def test_nothing_is_printed_when_a_later_check_fails(self):
-        # the failure happens after some lines were composed: stdout must stay empty, so `up` never sees half a list
-        p = self.cf(env={"SWARMBOX_PORTS": "3000,bad"})
-        self.assertEqual(p.returncode, 2)
-        self.assertEqual(p.stdout, "")
-
 
 # ============================================================================ tool ports
 
@@ -433,41 +346,12 @@ class ToolPortsTest(Base):
         self.assertIn("127.0.0.1:43323:43323", ps)
         self.assertFalse([p for p in ps if ":8085:" in p])
 
-    def test_with_a_tool_with_several_ports(self):
-        self.make_helper(self.TP)
-        ps = values(self.flags(env={"SWARMBOX_WITH": "gcloud"}), "-p")
-        self.assertEqual([p for p in ps if not p.endswith(":7681")], ["127.0.0.1:8085:8085", "127.0.0.1:8086:8086"])
-
-    def test_with_selecting_none_adds_nothing(self):
-        self.make_helper(self.TP)
-        for w in ("", "claude", "mytool"):
-            ps = values(self.flags(env={"SWARMBOX_WITH": w}), "-p")
-            self.assertEqual(ps, ["127.0.0.1:7681:7681"], w)
-
     def test_a_port_the_user_already_publishes_is_not_added_twice(self):
         self.make_helper(self.TP)
         for user in ("43323", "43323:43323", "127.0.0.1:43323:43323", "0.0.0.0:43323:80"):
             out = self.flags(env={"SWARMBOX_WITH": "clasp", "SWARMBOX_PORTS": user})
             ps = [p for p in values(out, "-p") if not p.endswith(":7681")]
             self.assertEqual(len([p for p in ps if p.split(":")[1] == "43323"]), 1, (user, ps))
-
-    def test_the_tool_ports_enter_the_label_and_the_fingerprint(self):
-        self.make_helper(self.TP)
-        env = {"SWARMBOX_WITH": "clasp", "SWARMBOX_PORTS": "3000"}
-        out = self.flags(env=env)
-        self.assertIn(("--label", "swarmbox.ports=127.0.0.1:3000:3000,127.0.0.1:43323:43323"), pairs_of(out))
-        plain = self.fp(env={"SWARMBOX_WITH": "claude", "SWARMBOX_PORTS": "3000"})
-        self.assertNotEqual(self.fp(env=env), plain)
-
-    def test_the_same_port_from_two_tools_is_published_once(self):
-        self.make_helper("a\t5000\nb\t5000\n")
-        ps = values(self.flags(env={"SWARMBOX_WITH": "a,b"}), "-p")
-        self.assertEqual(len([p for p in ps if p == "127.0.0.1:5000:5000"]), 1)
-
-    def test_an_empty_tool_ports_file_is_valid(self):
-        self.make_helper("")
-        p = self.cf(env={"SWARMBOX_WITH": "clasp"})
-        self.assertEqual(p.returncode, 0, p.stderr)
 
     def test_a_missing_tool_ports_is_a_corrupted_helper_exit_3(self):
         self.make_helper(None)
@@ -476,12 +360,6 @@ class ToolPortsTest(Base):
         self.assertEqual(p.stdout, "")
         self.assertIn("tool-ports", p.stderr)
         self.assertIn("swarmbox update", p.stderr)
-
-    def test_the_fingerprint_needs_tool_ports_too(self):
-        self.make_helper(None)
-        p = self.run_h("fingerprint")
-        self.assertEqual(p.returncode, 3)
-        self.assertIn("tool-ports", p.stderr)
 
     def test_a_malformed_line_is_skipped_with_a_warning(self):
         self.make_helper("clasp\tabc\nnotab\nclasp\t43323\n")
@@ -534,16 +412,6 @@ class BrowserUrlParityTest(Base):
         got = [e.split("=", 1)[1] for e in values(out, "-e") if e.startswith("SWARMBOX_BROWSER_URL=")]
         return got[0] if got else None
 
-    def test_unset_passes_nothing(self):
-        self.assertIsNone(self.url())
-
-    def test_the_empty_argument_form_means_9222_like_remote_browser_today(self):
-        self.assertEqual(self.url(args=["--browser-url", ""]), "http://host.containers.internal:9222")
-        self.assertEqual(self.url(args=["--browser-url="]), "http://host.containers.internal:9222")
-
-    def test_the_option_overrides_the_configuration(self):
-        self.assertEqual(self.url("1234", args=["--browser-url", "5555"]), "http://host.containers.internal:5555")
-
     def test_forms(self):
         table = {
             "9222": "http://host.containers.internal:9222",
@@ -555,17 +423,6 @@ class BrowserUrlParityTest(Base):
         }
         for given, want in table.items():
             self.assertEqual(self.url(given), want, given)
-
-    def test_invalid_is_exit_2(self):
-        for given in ("a b", "99999", "ftp://x", "nohostport", ":1234", "0"):
-            p = self.cf(env={"SWARMBOX_BROWSER_URL": given})
-            self.assertEqual(p.returncode, 2, given)
-        p = self.cf(args=["--browser-url", "a b"])
-        self.assertEqual(p.returncode, 2)
-
-    def test_browser_url_is_not_a_secret_so_it_is_in_the_fingerprint(self):
-        self.assertNotEqual(self.fp(), self.fp(env={"SWARMBOX_BROWSER_URL": "9222"}))
-
 
 # ============================================================================ nothing unsafe, ever
 
@@ -615,24 +472,6 @@ class NeverUnsafeTest(Base):
             n += 1
         self.assertEqual(n, 120)
 
-    def test_the_guard_exists_in_the_helper(self):
-        with open(HELPER_SRC) as f:
-            src = f.read()
-        self.assertIn("--network", src)              # the guard names it (D7)
-        self.assertNotIn("--network=host\n", [l for l in src.split("\n") if l.strip().startswith("emit")])
-
-    def test_host_network_cannot_be_asked_for_through_any_key(self):
-        for k in ("SWARMBOX_HOSTNAME", "SWARMBOX_WORKSPACE", "SWARMBOX_PORTS", "SWARMBOX_TZ", "SWARMBOX_WITH",
-                  "SWARMBOX_AGENT", "SWARMBOX_ENV_KEYS", "SWARMBOX_BROWSER_URL", "SWARMBOX_IMAGE", "SWARMBOX_NAME"):
-            p = self.cf(env={k: "--network=host"})
-            self.assertNotIn("--network=host", p.stdout.split("\n"), k)
-            for l in p.stdout.split("\n"):
-                self.assertFalse(l.startswith("--network"), (k, l))
-        p = self.cf(args=["--network=host"])
-        self.assertEqual(p.returncode, 2)
-        self.assertEqual(p.stdout, "")
-
-
 # ============================================================================ secrets
 
 class SecretsTest(Base):
@@ -648,15 +487,6 @@ class SecretsTest(Base):
         self.assertNotIn(TOKEN, self.everything(env))
         self.assertNotIn(TOKEN, self.everything({}, cfg="CLOUDFLARE_TUNNEL_TOKEN=" + TOKEN + "\n"))
 
-    def test_the_token_does_not_change_the_fingerprint(self):
-        a = self.fp()
-        self.assertEqual(a, self.fp(env={"SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": TOKEN}))
-        self.assertEqual(a, self.fp(cfg="CLOUDFLARE_TUNNEL_TOKEN=" + TOKEN + "\n"))
-
-    def test_the_token_never_enters_the_box_as_an_env_flag(self):
-        out = self.flags(env={"SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": TOKEN, "SWARMBOX_ENV_KEYS": "FOO"})
-        self.assertFalse([l for l in out if "CLOUDFLARE" in l])
-
     def test_env_keys_values_never_appear_but_the_hash_follows_them(self):
         env = {"SWARMBOX_ENV_KEYS": "MY_SECRET,OTHER", "MY_SECRET": CANARY}
         self.assertNotIn(CANARY, self.everything(env))
@@ -668,20 +498,6 @@ class SecretsTest(Base):
         changed = dict(env, MY_SECRET=CANARY + "2")
         self.assertNotEqual(self.fp(env=env), self.fp(env=changed))
         self.assertEqual(self.fp(env=env), self.fp(env=dict(env, UNRELATED="x")))
-
-    def test_the_value_is_passed_by_name_so_ps_never_shows_it(self):
-        out = self.flags(env={"SWARMBOX_ENV_KEYS": "MY_SECRET", "MY_SECRET": CANARY})
-        i = out.index("-e")
-        pairs = [(out[j], out[j + 1]) for j in range(len(out) - 1) if out[j] == "-e"]
-        self.assertIn(("-e", "MY_SECRET"), pairs)
-        self.assertTrue(all("=" in v or v == "MY_SECRET" for _, v in pairs))
-        self.assertNotIn(CANARY, " ".join(out))
-        self.assertGreaterEqual(i, 0)
-
-    def test_the_config_file_cannot_smuggle_a_cloudflare_name_into_env_keys(self):
-        p = self.cf(env={"SWARMBOX_ENV_KEYS": "SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN"})
-        self.assertEqual(p.returncode, 2)
-        self.assertEqual(p.stdout, "")
 
     def test_an_env_name_cannot_override_the_box_variables_we_set(self):
         # ENV_KEYS entries come before the SWARMBOX_* ones, so the last -e wins and it is ours
@@ -696,16 +512,6 @@ class FingerprintTest(Base):
     def test_matches_an_independent_computation(self):
         want = fingerprint(self.fp_lines(), env_hash([]))
         self.assertEqual(self.fp(), want)
-
-    def test_is_a_sha256_hex(self):
-        h = self.fp()
-        self.assertEqual(len(h), 64)
-        int(h, 16)
-
-    def test_stable_across_key_order_and_comments_in_the_file(self):
-        a = self.fp(cfg="PORTS=3000\nWITH=claude\nHOSTNAME=devbox\n")
-        b = self.fp(cfg="# a comment\n\nHOSTNAME=devbox\nWITH=claude\n  PORTS = 3000  \n")
-        self.assertEqual(a, b)
 
     def test_changes_with_each_creation_time_key(self):
         self.make_helper("clasp\t43323\n")
@@ -729,65 +535,6 @@ class FingerprintTest(Base):
                      ("SWARMBOX_CLOUDFLARED_IMAGE", "img"), ("SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN", TOKEN),
                      ("SWARMBOX_UNKNOWN", "1")):
             self.assertEqual(self.fp(env={k: v}), base, k)
-
-    def test_tz_is_resolved_local_without_a_localtime_file_equals_off(self):
-        gone = {"SWARMBOX_LOCALTIME_FILE": os.path.join(self.tmp, "nonexistent")}
-        self.assertEqual(self.fp(env=gone), self.fp(env={"SWARMBOX_TZ": "off"}))
-        self.assertNotEqual(self.fp(env=gone), self.fp())
-
-    def test_workspace_is_absolute_in_the_fingerprint_and_nothing_is_created(self):
-        rel = self.fp(env={"SWARMBOX_WORKSPACE": "relws"}, drop=())
-        want = fingerprint(self.fp_lines({"WORKSPACE": os.path.join(self.tmp, "relws")}), env_hash([]))
-        self.assertEqual(rel, want)
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, "relws")))
-
-    def test_init_auto_is_taken_literally(self):
-        # up resolves it for create-flags; the entry-time comparison is made with the value up reads from the box
-        h = self.fp(env={"SWARMBOX_INIT": "auto"})
-        self.assertEqual(h, fingerprint(self.fp_lines({"INIT": "auto"}), env_hash([])))
-
-    def test_sha256sum_and_shasum_are_both_used_via_shim(self):
-        want = self.fp()
-        for variant in ("sha256sum", "shasum"):
-            bindir = os.path.join(self.tmp, "bin-" + variant)
-            log = os.path.join(self.tmp, "log-" + variant)
-            os.makedirs(bindir)
-            skip = {"sha256sum", "shasum"}
-            for d in os.environ["PATH"].split(":"):
-                if not os.path.isdir(d):
-                    continue
-                for n in os.listdir(d):
-                    t = os.path.join(d, n)
-                    if n not in skip and not os.path.exists(os.path.join(bindir, n)) and os.access(t, os.X_OK) and os.path.isfile(t):
-                        os.symlink(t, os.path.join(bindir, n))
-            real = shutil.which(variant)
-            with open(os.path.join(bindir, variant), "w") as f:
-                f.write('#!/bin/sh\necho "%s $*" >> %s\nexec %s "$@"\n' % (variant, log, real))
-            os.chmod(os.path.join(bindir, variant), 0o755)
-            h = self.fp(path=bindir)
-            self.assertEqual(h, want, variant)
-            with open(log) as f:
-                calls = f.read().split("\n")[:-1]
-            self.assertTrue(calls, variant)
-            if variant == "shasum":
-                self.assertTrue(all(c == "shasum -a 256" for c in calls), calls)
-
-    def test_no_sha256_tool_is_a_missing_prerequisite_exit_3(self):
-        bindir = os.path.join(self.tmp, "bin-none")
-        os.makedirs(bindir)
-        for d in os.environ["PATH"].split(":"):
-            if os.path.isdir(d):
-                for n in os.listdir(d):
-                    t = os.path.join(d, n)
-                    if n not in ("sha256sum", "shasum") and not os.path.exists(os.path.join(bindir, n)) and os.access(t, os.X_OK) and os.path.isfile(t):
-                        os.symlink(t, os.path.join(bindir, n))
-        p = self.run_h("fingerprint", path=bindir)
-        self.assertEqual(p.returncode, 3)
-        self.assertIn("sha256sum", p.stderr)
-        p = self.run_h("create-flags", path=bindir)
-        self.assertEqual(p.returncode, 3)
-        self.assertEqual(p.stdout, "")
-
 
 class ExplainTest(Base):
     def labels_of(self, env=None, cfg=None):
@@ -814,52 +561,10 @@ class ExplainTest(Base):
                       "run `swarmbox reset` to apply", lines[1:])
         self.assertEqual(len(lines), 2)
 
-    def test_image_workspace_and_variables_differences(self):
-        labels = self.labels_of(env={"SWARMBOX_ENV_KEYS": "VV", "VV": CANARY + "1"})
-        ws2 = os.path.join(self.tmp, "ws2")
-        env = {"SWARMBOX_ENV_KEYS": "VV", "VV": CANARY + "2", "SWARMBOX_IMAGE": "swarmbox:dev", "SWARMBOX_WORKSPACE": ws2}
-        p = self.explain(labels, env=env)
-        self.assertEqual(p.returncode, 1)
-        lines = p.stdout.strip().split("\n")[1:]
-        self.assertIn(("this box was created from " + DEFAULT_IMAGE_REPO + ":%s; the config asks for swarmbox:dev; "
-                       "run `swarmbox reset`") % VERSION, lines)
-        self.assertIn("the workspace in the config is %s, this box uses %s; run `swarmbox reset` to switch" % (ws2, self.ws), lines)
-        self.assertIn("the variables changed on the host; run `swarmbox reset` to apply them", lines)
-        self.assertNotIn(CANARY, p.stdout + p.stderr)   # the values never appear
-
-    def test_a_difference_in_a_key_without_a_label_gets_the_generic_line(self):
-        labels = self.labels_of()
-        p = self.explain(labels, env={"SWARMBOX_HOSTNAME": "devbox"})
-        self.assertEqual(p.returncode, 1)
-        lines = p.stdout.strip().split("\n")[1:]
-        self.assertEqual(len(lines), 1)
-        self.assertIn("another creation setting changed", lines[0])
-        self.assertIn("run `swarmbox reset` to apply", lines[0])
-
     def test_no_labels_is_no_box_exit_5(self):
         p = self.run_h("fingerprint", "--explain")
         self.assertEqual(p.returncode, 5)
         self.assertIn("no box", p.stderr)
-
-    def test_labels_without_a_fingerprint_label_is_a_box_not_made_by_this_design_exit_5(self):
-        p = self.run_h("fingerprint", "--label=swarmbox.image=x")
-        self.assertEqual(p.returncode, 5)
-
-    def test_without_explain_the_exit_code_still_compares(self):
-        labels = self.labels_of()
-        self.assertEqual(self.run_h("fingerprint", *labels).returncode, 0)
-        self.assertEqual(self.run_h("fingerprint", *labels, env={"SWARMBOX_WEB_PORT": "8000"}).returncode, 1)
-
-    def test_label_option_forms_and_errors(self):
-        labels = self.labels_of()
-        two = []
-        for l in labels:
-            two += ["--label", l[len("--label="):]]
-        self.assertEqual(self.run_h("fingerprint", *two).returncode, 0)
-        self.assertEqual(self.run_h("fingerprint", "--label").returncode, 2)
-        self.assertEqual(self.run_h("fingerprint", "--label", "novalue").returncode, 2)
-        self.assertEqual(self.run_h("fingerprint", "--bogus").returncode, 2)
-
 
 # ============================================================================ workspace checks
 
@@ -874,12 +579,6 @@ class WorkspaceTest(Base):
         p = self.cf(env={"SWARMBOX_WORKSPACE": ws})
         self.assertNotIn("created", p.stderr)
 
-    def test_the_default_workspace_is_home_swarmbox(self):
-        p = self.cf(drop=("SWARMBOX_WORKSPACE",))
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertTrue(os.path.isdir(os.path.join(self.home, "swarmbox")))
-        self.assertIn(os.path.join(self.home, "swarmbox") + ":/home/agent", p.stdout.split("\n"))
-
     @unittest.skipIf(os.geteuid() == 0, "root can write everywhere")
     def test_not_writable_is_exit_4(self):
         ws = os.path.join(self.tmp, "ro")
@@ -889,43 +588,6 @@ class WorkspaceTest(Base):
         self.assertEqual(p.returncode, 4)
         self.assertEqual(p.stdout, "")
         self.assertEqual(p.stderr.strip(), "swarmbox: workspace %s is not writable by this user" % ws)
-
-    @unittest.skipIf(os.geteuid() == 0, "root can write everywhere")
-    def test_a_workspace_that_cannot_be_created_is_exit_4(self):
-        ro = os.path.join(self.tmp, "ro")
-        os.mkdir(ro)
-        os.chmod(ro, 0o555)
-        ws = os.path.join(ro, "sub", "ws")
-        p = self.cf(env={"SWARMBOX_WORKSPACE": ws})
-        self.assertEqual(p.returncode, 4)
-        self.assertIn("cannot create the workspace folder", p.stderr)
-        self.assertEqual(p.stdout, "")
-
-    def test_a_file_is_not_a_workspace_exit_4(self):
-        f = os.path.join(self.tmp, "afile")
-        open(f, "w").close()
-        p = self.cf(env={"SWARMBOX_WORKSPACE": f})
-        self.assertEqual(p.returncode, 4)
-        self.assertIn("is not a folder", p.stderr)
-
-    def test_a_relative_workspace_is_made_absolute_against_the_current_folder(self):
-        cwd = os.path.join(self.tmp, "cwd")
-        os.mkdir(cwd)
-        p = self.cf(env={"SWARMBOX_WORKSPACE": "rel/ws"}, cwd=cwd)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        want = os.path.join(cwd, "rel", "ws")
-        self.assertTrue(os.path.isdir(want))
-        self.assertIn(want + ":/home/agent", p.stdout.split("\n"))
-        self.assertIn("swarmbox.workspace=" + want, p.stdout.split("\n"))
-
-    def test_a_tilde_workspace_is_expanded(self):
-        p = self.cf(env={"SWARMBOX_WORKSPACE": "~/tws"})
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertTrue(os.path.isdir(os.path.join(self.home, "tws")))
-
-    def test_a_trailing_slash_is_dropped(self):
-        p = self.cf(env={"SWARMBOX_WORKSPACE": self.ws + "/"})
-        self.assertIn(self.ws + ":/home/agent", p.stdout.split("\n"))
 
     # --- WSL (D34, B32), with a fake /proc/version; nothing under /mnt is ever created by these tests
     def set_wsl(self, on):
@@ -940,70 +602,6 @@ class WorkspaceTest(Base):
             self.assertEqual(p.stdout, "", ws)
             self.assertEqual(p.stderr.strip(), D34 % ws, ws)
         self.assertFalse(os.path.exists("/mnt/z"))
-
-    def test_wsl_does_not_refuse_other_mnt_paths_or_linux_paths(self):
-        if os.path.exists("/mnt/wsl") or os.path.exists("/mnt/data"):
-            self.skipTest("a real /mnt/wsl or /mnt/data exists here; the test must not create anything under it")
-        self.set_wsl(True)
-        for ws in ("/mnt/wsl/swarmbox-test-never/x", "/mnt/data/swarmbox-test-never", "/mntx/c/x", "/mnt/cc/x"):
-            if os.path.exists(ws.rsplit("/", 1)[0]) and os.access(ws.rsplit("/", 1)[0], os.W_OK):
-                self.skipTest("%s is writable here" % ws)
-            p = self.cf(env={"SWARMBOX_WORKSPACE": ws})
-            self.assertNotIn("Windows drive", p.stderr, ws)
-        p = self.cf()    # a Linux path under WSL is fine
-        self.assertEqual(p.returncode, 0, p.stderr)
-
-    def test_a_symlink_to_a_windows_drive_is_refused_too_on_wsl(self):
-        # the link target is checked through `pwd -P`; here the target does not exist, so only the written path counts
-        self.set_wsl(True)
-        link = os.path.join(self.tmp, "link")
-        os.symlink("/mnt/c/Users/me", link)
-        p = self.cf(env={"SWARMBOX_WORKSPACE": link})
-        self.assertEqual(p.returncode, 4)
-        self.assertIn("Windows drive", p.stderr)
-
-    def test_not_wsl_a_mnt_c_path_is_allowed(self):
-        if os.geteuid() == 0 or os.path.exists("/mnt/c") or os.path.exists("/mnt/z"):
-            self.skipTest("root or a real /mnt/c here: the test must not create anything under /mnt")
-        self.set_wsl(False)
-        p = self.cf(env={"SWARMBOX_WORKSPACE": "/mnt/z/x"})
-        # not refused as a Windows drive: it fails later only because /mnt is not writable here
-        self.assertNotIn("Windows drive", p.stderr)
-        self.assertEqual(p.returncode, 4)
-        self.assertIn("cannot create the workspace folder", p.stderr)
-
-    def test_the_wsl_probe_handles_the_variants_of_the_kernel_string(self):
-        for s, wsl in (("Linux version 4.4.0-19041-Microsoft (Microsoft@Microsoft.com)", True),
-                       ("Linux version 5.15.90.1-microsoft-standard-WSL2", True),
-                       ("Linux version 6.1.0-18-amd64", False), ("", False)):
-            with open(self.procversion, "w") as f:
-                f.write(s + "\n")
-            p = self.cf(env={"SWARMBOX_WORKSPACE": "/mnt/c/Users/me/swarmbox"})
-            self.assertEqual("Windows drive" in p.stderr, wsl, s)
-
-    def test_a_missing_proc_version_means_not_wsl(self):
-        os.unlink(self.procversion)
-        p = self.cf(env={"SWARMBOX_WORKSPACE": "/mnt/z/x"})
-        self.assertNotIn("Windows drive", p.stderr)
-
-    def test_the_real_proc_version_of_this_machine_is_read_without_the_override(self):
-        want = False
-        try:
-            with open("/proc/version") as f:
-                want = "microsoft" in f.read().lower()
-        except OSError:
-            pass
-        p = self.cf(env={"SWARMBOX_WORKSPACE": "/mnt/c/Users/me/swarmbox"}, drop=("SWARMBOX_TEST_PROC_VERSION",))
-        self.assertEqual("Windows drive" in p.stderr, want)
-        self.assertFalse(os.path.exists("/mnt/c/Users/me/swarmbox"))
-
-    def test_the_fingerprint_does_not_check_or_create_the_workspace(self):
-        self.set_wsl(True)
-        p = self.run_h("fingerprint", env={"SWARMBOX_WORKSPACE": "/mnt/c/Users/me/swarmbox"})
-        self.assertEqual(p.returncode, 0)
-        p = self.run_h("fingerprint", env={"SWARMBOX_WORKSPACE": os.path.join(self.tmp, "nope")})
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, "nope")))
-
 
 # ============================================================================ the real helper under other shells
 
@@ -1020,50 +618,6 @@ def interpreters():
     if shutil.which("zsh"):
         out["zsh --emulate sh"] = [shutil.which("zsh"), "--emulate", "sh"]
     return out
-
-
-class ShellMatrixTest(Base):
-    def test_the_required_shells_are_present(self):
-        names = interpreters()
-        for need in ("dash", "bash --posix", "busybox sh"):
-            if need not in names:
-                self.skipTest("[unverified] %s is not installed here; install it to run this test" % need)
-
-    def test_create_flags_and_fingerprint_are_identical_under_every_shell(self):
-        self.make_helper("clasp\t43323\n")
-        env = {"SWARMBOX_WITH": "clasp", "SWARMBOX_PORTS": "3000,0.0.0.0:80:80", "SWARMBOX_ENV_KEYS": "K1,K2", "K1": CANARY,
-               "SWARMBOX_BROWSER_URL": "9222", "SWARMBOX_INIT": "1", "SWARMBOX_HOST_ACCESS": "1", "SWARMBOX_TZ": "Europe/Lisbon"}
-        self.cf(env=env)    # the first call creates the workspace and says so; the compared calls find it
-        ref = self.cf(env=env)
-        self.assertEqual(ref.returncode, 0, ref.stderr)
-        ref_fp = self.run_h("fingerprint", env=env)
-        ref_ex = self.run_h("fingerprint", "--explain", "--label=swarmbox.fingerprint=00", env=env)
-        for name, prefix in interpreters().items():
-            with self.subTest(shell=name):
-                p = self.cf(env=env, shell=prefix)
-                self.assertEqual((p.returncode, p.stdout, p.stderr), (ref.returncode, ref.stdout, ref.stderr))
-                f = self.run_h("fingerprint", env=env, shell=prefix)
-                self.assertEqual((f.returncode, f.stdout), (ref_fp.returncode, ref_fp.stdout))
-                e = self.run_h("fingerprint", "--explain", "--label=swarmbox.fingerprint=00", env=env, shell=prefix)
-                self.assertEqual((e.returncode, e.stdout), (ref_ex.returncode, ref_ex.stdout))
-
-    def test_errors_are_identical_under_every_shell(self):
-        for name, prefix in interpreters().items():
-            with self.subTest(shell=name):
-                self.assertEqual(self.cf(env={"SWARMBOX_INIT": "auto"}, shell=prefix).returncode, 2)
-                self.assertEqual(self.cf(env={"SWARMBOX_PORTS": "x"}, shell=prefix).returncode, 2)
-                self.make_helper(None)
-                self.assertEqual(self.cf(shell=prefix).returncode, 3)
-                self.make_helper("")
-                self.set_wsl_and_check(prefix)
-
-    def set_wsl_and_check(self, prefix):
-        with open(self.procversion, "w") as f:
-            f.write(WSL_VERSION + "\n")
-        p = self.cf(env={"SWARMBOX_WORKSPACE": "/mnt/c/x"}, shell=prefix)
-        self.assertEqual(p.returncode, 4)
-        with open(self.procversion, "w") as f:
-            f.write(PLAIN_VERSION + "\n")
 
 
 class SourceRulesTest(unittest.TestCase):

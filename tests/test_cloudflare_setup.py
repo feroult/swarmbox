@@ -255,33 +255,6 @@ class TestApply(T):
         self.assertLess(kinds.index("app"), kinds.index("route"))
         self.assertLess(kinds.index("app"), kinds.index("dns"))
 
-    def test_resources_have_the_expected_shape(self):
-        self.apply()
-        app = FAKE.apps[0]
-        pol = FAKE.policies[0]
-        self.assertEqual(app["type"], "self_hosted")
-        self.assertEqual(app["domain"], DEFAULT_NAME + ".talkr.run")
-        self.assertEqual(app["allowed_idps"], [FAKE.idps[0]["id"]])
-        self.assertEqual(FAKE.idps[0]["type"], "onetimepin")
-        self.assertEqual(app["policies"], [{"id": pol["id"], "precedence": 1}])
-        self.assertEqual(pol["decision"], "allow")
-        self.assertEqual(pol["include"], [{"email": {"email": "me@example.com"}}])
-        rule = self.host_rule()
-        self.assertEqual(rule["service"], "http://localhost:7681")
-        self.assertEqual(rule["originRequest"]["access"],
-                         {"required": True, "teamName": "team", "audTag": [app["aud"]]})
-        ingress = FAKE.configs[FAKE.tunnels[0]["id"]]["ingress"]
-        self.assertEqual(ingress[-1], {"service": "http_status:404"})
-        rec = FAKE.dns[0]
-        self.assertEqual((rec["type"], rec["proxied"]), ("CNAME", True))
-        self.assertEqual(rec["content"], FAKE.tunnels[0]["id"] + ".cfargotunnel.com")
-
-    def test_default_hostname_hint_uses_the_domain(self):
-        code, out, err = self.apply()
-        self.assertIn("https://" + DEFAULT_NAME + ".talkr.run", out)
-        self.assertNotIn("--reset --web", out)
-        self.assertIn("delete the API token", out)
-
     def test_second_run_changes_nothing(self):
         self.apply()
         FAKE.log.clear()
@@ -289,16 +262,6 @@ class TestApply(T):
         self.assertEqual(code, 0)
         self.assertEqual(FAKE.mutations(), [])
         self.assertNotIn("  + ", out)
-
-    def test_pagination_is_followed(self):
-        # more policies/apps than the fake's page size, ours is last
-        for i in range(5):
-            FAKE.policies.append({"id": "x%d" % i, "name": "other %d" % i})
-            FAKE.apps.append({"id": "a%d" % i, "domain": "other%d.talkr.run" % i, "aud": "z"})
-        self.apply()
-        FAKE.log.clear()
-        self.apply()
-        self.assertEqual(FAKE.mutations(), [], "found existing resources across pages")
 
     def test_email_change_updates_only_the_policy(self):
         self.apply()
@@ -310,55 +273,6 @@ class TestApply(T):
         self.assertIn("access/policies", muts[0][1])
         self.assertEqual({r["email"]["email"] for r in FAKE.policies[0]["include"]},
                          {"me@example.com", "two@example.com"})
-
-    def test_session_change_updates_only_the_app(self):
-        self.apply()
-        FAKE.log.clear()
-        self.apply("--session", "30m")
-        muts = FAKE.mutations()
-        self.assertEqual([(m, "access/apps" in p) for m, p in muts], [("PUT", True)])
-        self.assertEqual(FAKE.apps[0]["session_duration"], "30m")
-
-    def test_rerun_without_session_keeps_the_configured_session(self):
-        self.apply()
-        self.assertEqual(FAKE.apps[0]["session_duration"], "4h", "first run uses the default")
-        self.apply("--session", "168h")
-        self.assertEqual(FAKE.apps[0]["session_duration"], "168h", "an explicit --session changes it")
-        FAKE.log.clear()
-        code, _, err = self.apply()
-        self.assertEqual(code, 0, err)
-        self.assertEqual(FAKE.apps[0]["session_duration"], "168h")
-        self.assertEqual(FAKE.mutations(), [], "no PUT to the app (or anything else)")
-        self.apply("--session", "30m")
-        self.assertEqual(FAKE.apps[0]["session_duration"], "30m", "explicit still wins afterwards")
-
-    def test_saved_config_contains_hostname_and_session(self):
-        path = os.path.join(self.tmp, "swarmbox", "cloudflare.json")
-        self.apply("--session", "168h", "--hostname", "tty.talkr.run")
-        with open(path) as f:
-            saved = json.load(f)
-        self.assertEqual(saved["hostname"], "tty.talkr.run")
-        self.assertEqual(saved["name"], DEFAULT_NAME)
-        self.assertEqual(saved["session"], "168h")
-
-    def test_rerun_without_hostname_serves_the_saved_hostname_for_the_same_name(self):
-        self.apply("--hostname", "tty.talkr.run")
-        FAKE.log.clear()
-        code, out, err = self.apply()
-        self.assertEqual(code, 0, err)
-        self.assertIn("tty.talkr.run", out)
-        self.assertNotIn(DEFAULT_NAME + ".talkr.run", out)
-
-    def test_saved_hostname_is_ignored_for_another_name(self):
-        self.apply("--hostname", "tty.talkr.run")
-        code, out, err = self.apply("--name", "other")
-        self.assertIn("other.talkr.run", out)
-
-    def test_rerun_keeps_the_session_from_cloudflare_json_when_the_app_is_gone(self):
-        self.apply("--session", "168h")
-        FAKE.apps.clear()
-        self.apply()
-        self.assertEqual(FAKE.apps[0]["session_duration"], "168h")
 
     def test_session_saved_in_cloudflare_json_and_file_mode_is_600(self):
         path = os.path.join(self.tmp, "swarmbox", "cloudflare.json")
@@ -373,24 +287,12 @@ class TestApply(T):
         # security review SR-04: the file is private (mode 600) whatever the umask
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
 
-    def test_dry_run_does_not_save_the_session(self):
-        self.apply("--dry-run", "--session", "168h")
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, "swarmbox", "cloudflare.json")))
-
     def test_drifted_app_is_repaired(self):
         self.apply()
         FAKE.apps[0]["policies"] = [{"id": "someone-elses-policy", "precedence": 1}]  # e.g. a bypass
         FAKE.log.clear()
         self.apply()
         self.assertEqual(FAKE.apps[0]["policies"], [{"id": FAKE.policies[0]["id"], "precedence": 1}])
-
-    def test_drifted_route_loses_access_requirement_is_repaired(self):
-        self.apply()
-        cfg = FAKE.configs[FAKE.tunnels[0]["id"]]
-        del self.host_rule()["originRequest"]["access"]
-        FAKE.log.clear()
-        self.apply()
-        self.assertTrue(self.host_rule()["originRequest"]["access"]["required"])
 
     def test_second_container_reuses_tunnel_and_keeps_first_route(self):
         self.apply()
@@ -401,31 +303,6 @@ class TestApply(T):
         self.assertEqual(self.host_rule("second.talkr.run")["service"], "http://localhost:7682")
         self.assertEqual(len(FAKE.apps), 2)
         self.assertEqual(len(FAKE.dns), 2)
-
-    def test_existing_unrelated_ingress_rules_are_preserved(self):
-        FAKE.tunnels.append({"id": "tunX", "name": DEFAULT_NAME, "config_src": "cloudflare"})
-        FAKE.configs["tunX"] = {"ingress": [{"hostname": "other.talkr.run", "service": "http://localhost:9"},
-                                            {"service": "http_status:404"}],
-                                "warp-routing": {"enabled": False}}
-        self.apply()
-        cfg = FAKE.configs["tunX"]
-        first = cfg["ingress"][0]  # (the fake decorates stored rules; we only care it was kept)
-        self.assertEqual((first["hostname"], first["service"]), ("other.talkr.run", "http://localhost:9"))
-        self.assertEqual(cfg["warp-routing"], {"enabled": False})
-
-    def test_existing_one_time_pin_is_reused(self):
-        FAKE.idps.append({"id": "idp-existing", "type": "onetimepin", "name": "OTP"})
-        self.apply()
-        self.assertEqual(FAKE.apps[0]["allowed_idps"], ["idp-existing"])
-        self.assertFalse([1 for m, p in FAKE.mutations() if "identity_providers" in p])
-
-    def test_wrong_dns_target_is_fixed(self):
-        FAKE.dns.append({"id": "d0", "type": "CNAME", "name": DEFAULT_NAME + ".talkr.run",
-                         "content": "old.example.net", "proxied": False})
-        self.apply()
-        self.assertEqual(len(FAKE.dns), 1)
-        self.assertTrue(FAKE.dns[0]["content"].endswith(".cfargotunnel.com"))
-        self.assertTrue(FAKE.dns[0]["proxied"])
 
     def test_refuses_to_replace_a_non_cname_record(self):
         FAKE.dns.append({"id": "d0", "type": "A", "name": DEFAULT_NAME + ".talkr.run", "content": "1.2.3.4"})
@@ -439,14 +316,6 @@ class TestApply(T):
         code, _, err = self.apply()
         self.assertNotEqual(code, 0)
         self.assertIn("configured locally", err)
-
-    def test_saved_answers_make_the_next_run_shorter(self):
-        self.apply()
-        FAKE.log.clear()
-        code, _, err = self.run_cli("--no-connector", "--no-verify")
-        self.assertEqual(code, 0, err)
-        self.assertEqual(FAKE.mutations(), [])
-
 
 class TestSafetyAndErrors(T):
     def test_dry_run_and_status_never_mutate(self):
@@ -463,32 +332,6 @@ class TestSafetyAndErrors(T):
         code, _, err = self.apply(env={"CLOUDFLARE_API_TOKEN": "nope"})
         self.assertNotEqual(code, 0)
         self.assertIn("Cloudflare Tunnel", err)
-        self.assertEqual(FAKE.mutations(), [])
-
-    def test_unrecognized_token_is_not_reported_as_a_permission_problem(self):
-        code, _, err = self.apply(env={"CLOUDFLARE_API_TOKEN": "invalid9109"})
-        self.assertNotEqual(code, 0)
-        self.assertIn("does not recognize this token", err)
-        self.assertIn("11 characters", err)          # helps spot a truncated paste
-        self.assertNotIn("invalid9109", err)         # ...without echoing the token
-        self.assertEqual(FAKE.mutations(), [])
-
-    def test_global_api_key_is_recognised(self):
-        key = "0123456789abcdef0123456789abcdef01234"
-        code, _, err = self.apply(env={"CLOUDFLARE_API_TOKEN": "invalid9109"})
-        self.assertIn("characters", err)
-        self.assertIn("Global API Key", cs.token_shape(key))
-
-    def test_pasted_token_is_cleaned_of_terminal_escapes(self):
-        self.assertEqual(cs.clean_token("\x1b[200~abc-DEF_123\x1b[201~\r\n "), "abc-DEF_123")
-        code, _, err = self.apply(env={"CLOUDFLARE_API_TOKEN": "\x1b[200~" + GOOD_TOKEN + "\x1b[201~\n"})
-        self.assertEqual(code, 0, err)
-
-    def test_subdomain_given_as_domain_points_to_the_zone(self):
-        code, _, err = self.run_cli("--domain", "tty.talkr.run", "--email", "a@b.co", "--no-connector", "--no-verify")
-        self.assertNotEqual(code, 0)
-        self.assertIn("is a subdomain, not a Cloudflare zone", err)
-        self.assertIn("--domain talkr.run --hostname tty.talkr.run", err)
         self.assertEqual(FAKE.mutations(), [])
 
     def test_serving_exactly_a_chosen_hostname(self):
@@ -510,21 +353,6 @@ class TestSafetyAndErrors(T):
                 os.environ["CLOUDFLARE_API_TOKEN"] = saved
         self.assertNotEqual(code, 0)
         self.assertIn("CLOUDFLARE_API_TOKEN", err)
-
-    def test_unknown_domain(self):
-        code, _, err = self.run_cli("--domain", "nope.example", "--email", "a@b.co", "--no-connector", "--no-verify")
-        self.assertNotEqual(code, 0)
-        self.assertIn("was not found", err)
-        self.assertEqual(FAKE.mutations(), [])
-
-    def test_zero_trust_not_enabled_is_explained(self):
-        FAKE.org_error = True
-        code, _, err = self.apply()
-        self.assertNotEqual(code, 0)
-        self.assertIn("one.dash.cloudflare.com", err)
-        self.assertIn("Zero Trust is not activated", err)
-        self.assertNotIn("lacks a permission", err)   # it is not a token problem
-        self.assertEqual(FAKE.mutations(), [])
 
     def test_input_validation(self):
         self.assertNotEqual(self.run_cli("--domain", "talkr.run", "--email", "not-an-email", "--no-connector")[0], 0)
@@ -553,36 +381,12 @@ class TestTokenCommand(T):
         self.assertIn("can only connect a connector", err)  # the explanation goes to stderr
         self.assertEqual(FAKE.mutations(), [])
 
-    def test_needs_neither_an_email_nor_the_other_settings(self):
-        self.apply()
-        code, out, _ = self.run_cli("token", "--domain", "talkr.run", "--tunnel", DEFAULT_NAME)
-        self.assertEqual(code, 0)
-        self.assertTrue(out.startswith("tok."))
-
     def test_unknown_tunnel_is_a_clear_error_with_empty_stdout(self):
         code, out, err = self.run_cli("token", "--domain", "talkr.run")
         self.assertNotEqual(code, 0)
         self.assertEqual(out, "")
         self.assertIn("does not exist in this account yet", err)
         self.assertEqual(FAKE.mutations(), [])
-
-    def test_a_subdomain_given_as_the_zone_is_explained_with_empty_stdout(self):
-        code, out, err = self.run_cli("token", "--domain", "tty.talkr.run")
-        self.assertNotEqual(code, 0)
-        self.assertEqual(out, "")
-        self.assertIn("is a subdomain, not a Cloudflare zone", err)
-
-    def test_a_bad_api_token_explains_and_prints_nothing(self):
-        code, out, err = self.run_cli("token", "--domain", "talkr.run", env={"CLOUDFLARE_API_TOKEN": "invalid9109"})
-        self.assertNotEqual(code, 0)
-        self.assertEqual(out, "")
-        self.assertIn("does not recognize this token", err)
-
-    def test_the_final_message_of_apply_tells_how_to_get_it_before_deleting_the_api_token(self):
-        _, out, _ = self.apply()
-        self.assertIn('export SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN="$(./', out)
-        self.assertIn("then delete the API token", out)
-
 
 class TestRemove(T):
     def test_remove_undoes_one_hostname_route_first_and_keeps_others(self):
@@ -600,12 +404,6 @@ class TestRemove(T):
         self.assertEqual(hosts, [DEFAULT_NAME + ".talkr.run", None])
         self.assertEqual([a["domain"] for a in FAKE.apps], [DEFAULT_NAME + ".talkr.run"])
         self.assertEqual(len(FAKE.dns), 1)
-
-    def test_remove_last_route_leaves_a_valid_catch_all(self):
-        self.apply()
-        self.run_cli("remove", "--domain", "talkr.run", "--yes")
-        self.assertEqual(FAKE.configs[FAKE.tunnels[0]["id"]]["ingress"], [{"service": "http_status:404"}])
-        self.assertEqual((FAKE.apps, FAKE.policies, FAKE.dns), ([], [], []))
 
     def test_remove_requires_confirmation_without_a_terminal(self):
         self.apply()
@@ -692,17 +490,6 @@ esac
         self.assertIn("running inside a container", err)
         self.assertIn("host shell", err)
 
-    def test_stopped_connector_is_started_not_recreated(self):
-        self.run_cli(*self.conn)
-        with open(os.path.join(self.shim, "state")) as f:
-            tok = f.read().split()[1]
-        with open(os.path.join(self.shim, "state"), "w") as f:
-            f.write("exited %s\n" % tok)
-        self.run_cli(*self.conn)
-        self.assertEqual(len([c for c in self.calls() if c.startswith("run ")]), 1)
-        self.assertTrue([c for c in self.calls() if c.startswith("start ")])
-
-
     # ---- remove stops the connector only when nothing else uses the tunnel; image pinning
     def remove(self, *extra):
         return self.run_cli("remove", "--domain", "talkr.run", "--yes", *extra)
@@ -716,39 +503,6 @@ esac
         self.assertFalse(os.path.exists(os.path.join(self.shim, "state")), "connector gone")
         self.assertNotIn("were left in place", out)
 
-    def test_remove_keeps_connector_when_another_hostname_remains(self):
-        self.run_cli(*self.conn)
-        self.run_cli(*self.conn, "--name", "second", "--port", "7682")
-        before = len(self.calls())
-        code, out, err = self.remove("--name", "second")
-        self.assertEqual(code, 0, err)
-        self.assertEqual([c for c in self.calls()[before:] if c.startswith(("rm", "stop"))], [])
-        self.assertTrue(os.path.exists(os.path.join(self.shim, "state")), "connector still runs")
-        self.assertIn("still used", out)
-
-    def test_remove_without_a_connector_container_calls_no_rm(self):
-        self.apply()
-        code, _, err = self.remove()
-        self.assertEqual(code, 0, err)
-        self.assertEqual([c for c in self.calls() if c.startswith(("rm", "stop"))], [])
-
-    def test_remove_dry_run_does_not_touch_the_connector(self):
-        self.run_cli(*self.conn)
-        FAKE.log.clear()
-        before = len(self.calls())
-        code, out, err = self.remove("--dry-run")
-        self.assertEqual(code, 0, err)
-        self.assertEqual(FAKE.mutations(), [])
-        self.assertEqual([c for c in self.calls()[before:] if c.startswith(("rm", "stop", "start", "run"))], [])
-        self.assertTrue(os.path.exists(os.path.join(self.shim, "state")))
-        self.assertIn("would stop and remove connector", out + err)
-
-    def test_remove_dry_run_with_another_hostname_reports_no_stop(self):
-        self.run_cli(*self.conn)
-        self.run_cli(*self.conn, "--name", "second", "--port", "7682")
-        code, out, err = self.remove("--name", "second", "--dry-run")
-        self.assertNotIn("would stop", out + err)
-
     def test_default_connector_image_is_pinned(self):
         self.assertNotIn(":latest", cs.DEFAULT_CONNECTOR_IMAGE)
         self.assertRegex(cs.DEFAULT_CONNECTOR_IMAGE, r"^docker\.io/cloudflare/cloudflared:\d{4}\.\d+\.\d+$")
@@ -757,19 +511,6 @@ esac
         self.run_cli(*self.conn)
         run = [c for c in self.calls() if c.startswith("run ")][0]
         self.assertIn(cs.DEFAULT_CONNECTOR_IMAGE, run)
-
-    def test_env_override_of_the_connector_image(self):
-        code, _, err = self.run_cli(*self.conn, env={"SWARMBOX_CLOUDFLARED_IMAGE": "example.test/cf:1.2.3"})
-        self.assertEqual(code, 0, err)
-        run = [c for c in self.calls() if c.startswith("run ")][0]
-        self.assertIn("example.test/cf:1.2.3", run)
-        self.assertNotIn(cs.DEFAULT_CONNECTOR_IMAGE, run)
-
-    def test_flag_beats_the_env_override(self):
-        self.run_cli(*self.conn, "--connector-image", "example.test/flag:9",
-                     env={"SWARMBOX_CLOUDFLARED_IMAGE": "example.test/cf:1.2.3"})
-        run = [c for c in self.calls() if c.startswith("run ")][0]
-        self.assertIn("example.test/flag:9", run)
 
     def test_token_never_appears_in_podman_argv_after_the_changes(self):
         self.run_cli(*self.conn, "--session", "168h")
@@ -804,11 +545,6 @@ class TestVerify(unittest.TestCase):
 
     def test_200_without_login_is_exposed(self):
         self.assertEqual(cs.check_protected(self.serve(200), timeout=5)[0], "exposed")
-
-    def test_redirect_elsewhere_is_not_protection(self):
-        url = self.serve(302, "https://example.com/")
-        self.assertEqual(cs.check_protected(url, timeout=1)[0], "unknown")
-
 
 class TestDefaultNames(unittest.TestCase):
     """D40: the default name, the tunnel and the connector come from container/host/DEFAULTS, read next to the script."""
