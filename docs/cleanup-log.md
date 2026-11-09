@@ -132,3 +132,28 @@ Skipped in the final run (by design): the real-image tests (no SWARMBOX_IMAGE_BU
 Files deleted in total (git diff --diff-filter=D 3eaa045..HEAD): 47 files, listed by `git diff --diff-filter=D --name-only 3eaa045 HEAD`.
 
 Owner review: (1) the old design/plan/status/decision-log/overnight-report docs still name deleted files and the migration; (2) docs/security-review.md maps findings to test names, some now removed; (3) the image tests were not run here.
+
+## Step 7: first end-to-end run in nested containers
+
+Image built with `dev/dev-build.sh` (72 s with a warm base cache, 1.75 GB). Walked the journey with the generated bash function and a temp workspace (box `swarmbox-test-box`, random high web port). Everything below is undone with `git revert` of the commits titled "ux: ...".
+
+Worked on the first try: init output for bash, zsh and fish (zsh and fish only read), first `swarmbox up` (1.7 s with the image present), attach into tmux `main` (shared, idle window closed), `config`, `env`, `pubkey`, ssh key kept across `reset`, `url`, `stop` twice, `up` twice and in parallel, a busy port, a taken workspace, a missing /dev/net/tun (exit 3, clear), `tool list/install/use/remove` with the real go tool from go.dev, shims, `claude --version` after the background install, git, the web terminal (page, clipboard script, a foreign Origin refused), nested Podman (`podman run alpine` pulled and ran in the box).
+
+Rough edges found and fixed:
+- `swarmbox --help` (and `help`, `-h`) created the box and ran `bash --help`. Now the host prints the command list and exits 0; the three function templates route the words to the host. Regenerate the function with `init` to get it. The helper's own usage no longer says `swarmbox-host` and lists the user commands only.
+- `swarmbox <command>` (for example `swarmbox ls`) showed nothing: the tmux window closes and takes the output. The last screen of the window is now printed after it closes. Side effect: after `swarmbox claude` the last screen of Claude Code is printed too.
+- `up` and `reset` said "the banner shows them" about warnings but print no banner. They now print the warnings.
+- A busy web port: the message now names the command (`swarmbox config set WEB_PORT <port+1>`), once.
+- A container with the box name that SwarmBox did not make was reported as "made by SwarmBox v0.1.0" and told the user to set WORKSPACE to "unknown". Now one plain message (exit 5 as before).
+- `swarmbox pubkey` printed colour codes when piped and the path `.work/.ssh/...` (v0.1 leftover). Fixed both; same `.work` comment in tmux.conf.
+- `swarmbox tool`: usage said "phase", `--help` was an error (exit 70), `tool update <managed tool>` said "later phase". Now a real usage (exit 64), and `update` explains how to update a managed tool. `install go --version 1.2.3` failed with a checksum mismatch; it now says the tool is pinned.
+- "another creation setting changed (the fingerprint differs)" now reads "a setting changed since the box was created".
+- Removed the unused `swarmbox-podman-service` script (v0.1 leftover, nothing called it).
+
+Not fixed, for the owner:
+- Nested Podman did not start in the box here: `newuidmap` fails because the development box's own user namespace is 1000 ids narrower than the box's `/etc/subuid` range (agent:1001:64535). With `/etc/subuid` set to 63535 inside the box, `podman run` worked. A real host with a normal 65536 subuid range should be fine; I did not shrink the range in the Dockerfile because images that run as nobody (65534) would stop working. Verify on a real host.
+- The development box has utsns=host, so `--hostname` is refused; I ran with a `podman` wrapper that drops it (outside the repository).
+- `swarmbox url` prints the public address built from a saved Cloudflare domain even when this box was never exposed (by design of `public_host`); it can look wrong for a second box.
+- `remote ...` stops at the missing API token with a long permission list; nothing else was tried (no Cloudflare account).
+- `swarmbox update` could not be run (no registry); `tool update` for managed tools does not exist.
+- tmux prints `[exited]` before the output of a `swarmbox <command>`.

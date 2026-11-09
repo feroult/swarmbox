@@ -454,6 +454,11 @@ class RealTmuxCase(Base):
         self.assertTrue(wait_until(lambda: len(self.sessions()) == 2))
         self.assertEqual(len(self.windows()), 2)
 
+    def test_the_last_screen_of_a_command_is_printed_after_its_window_closes(self):
+        p = self.term(["echo", "output-of-the-command"])
+        self.assertEqual(p.wait(), 0, p.out)
+        self.assertIn(b"output-of-the-command", p.out.split(b"[exited]")[-1], p.out)
+
     def test_command_exit_codes_through_a_real_window(self):
         for args, want in ((["true"], 0), (["false"], 1), (["sh", "-c", "exit 130"], 130), (["sh", "-c", "exit 7"], 7),
                            (["sh", "-c", "kill -9 $$"], 137), (["sh", "-c", "kill -15 $$"], 143),

@@ -81,6 +81,7 @@ Open a new terminal. If port 7681 is busy, run `swarmbox config set WEB_PORT 768
 
 ```bash
 swarmbox                    # create the box if needed, then open a shell in it
+swarmbox help               # list the commands
 swarmbox claude             # run a command in the box from your machine
 swarmbox url                # print the address of the web terminal
 swarmbox stop               # stop the box; nothing is deleted
@@ -94,8 +95,8 @@ swarmbox remote setup       # set up remote access with Cloudflare
 
 ## Status
 
-Version 2.0 is a design and an implementation built and tested in a development box with fakes. It has not run on a real host yet,
-and it is not published. macOS and Podman older than 4.3 are unverified.
+Version 2.0 is built and tested in a development box. Its image was built and run end to end there (box, web terminal, tools,
+nested Podman), but it has not run on a real host yet, and it is not published. macOS and Podman older than 4.3 are unverified.
 See [docs/design.md](docs/design.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## Privacy

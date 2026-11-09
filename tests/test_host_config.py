@@ -197,6 +197,14 @@ class GrammarTest(Base):
         self.assertIn("SWARMBOX_NAME", p.stderr)
         self.assertFalse(os.path.exists(self.cfg_file))
 
+    def test_help_prints_the_user_commands_on_stdout_and_exits_0(self):
+        for word in ("help", "--help", "-h"):
+            p = self.run_h(word)
+            self.assertEqual(p.returncode, 0, word)
+            self.assertIn("usage: swarmbox [--plain]", p.stdout)
+            self.assertNotIn("swarmbox-host", p.stdout)
+        self.assertEqual(self.run_h("config").returncode, 2)
+
     def test_invalid_box_names_exit_2(self):
         for n in ("../x", "a/b", ".hidden", "a b", "config", "-x", "x;y"):
             p = self.run_h("config", "get", "WITH", env={"SWARMBOX_NAME": n})
