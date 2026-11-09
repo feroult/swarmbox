@@ -47,12 +47,18 @@ A command that is not configured exits with UNKNOWN_COMMAND_EXIT (64, EX_USAGE),
 the fake was not told about fails visibly instead of passing by accident. Use set_version(), set_executable() and
 configure() to change it between calls (for example the "update" case: the helper becomes 2.0.1 after a call).
 """
+import io
 import json
 import os
+import pty
+import select
 import shutil
 import stat
+import subprocess
 import sys
+import tarfile
 import tempfile
+import time
 
 UNKNOWN_COMMAND_EXIT = 64
 
@@ -314,3 +320,65 @@ class FakeHostHelper:
         """The SWARMBOX_* variables each call saw, one dict per call (seeds are never passed that way)."""
         with open(self.log_path) as f:
             return [json.loads(line).get("env", {}) for line in f if line.strip()]
+
+
+# ---- the helper archive of an image, and a command run on a pseudo terminal
+
+HELPER_SH = """#!/bin/sh
+d=$(dirname "$0")
+echo "$*" >> "$d/calls"
+case "$1" in
+    version) cat "$d/VERSION" ;;
+    config) [ "$2" = get ] && echo swarmbox ;;
+esac
+exit 0
+"""
+
+
+def make_archive(path, version="2.0.0", helper=True, executable=True, extra=None):
+    """A helper archive like the image's: swarmbox-host (a fake that records its calls), VERSION, DEFAULTS, cloudflare-setup.py, tool-ports."""
+    with tarfile.open(path, "w") as tf:
+        def add(name, data, mode):
+            ti = tarfile.TarInfo("./" + name)
+            ti.size = len(data)
+            ti.mode = mode
+            ti.mtime = int(time.time())
+            tf.addfile(ti, io.BytesIO(data))
+        if helper:
+            add("swarmbox-host", HELPER_SH.encode(), 0o755 if executable else 0o644)
+        add("VERSION", (version + "\n").encode(), 0o644)
+        with open(os.path.join(ROOT, "container", "host", "DEFAULTS"), "rb") as f:
+            add("DEFAULTS", f.read(), 0o644)
+        add("cloudflare-setup.py", b"# cf\n", 0o644)
+        add("tool-ports", b"", 0o644)
+        for name, data in (extra or {}).items():
+            add(name, data, 0o644)
+
+
+def pty_run(argv, env, cwd, stdin_tty, stdout_tty=True):
+    master, slave = pty.openpty()
+    p = subprocess.Popen(argv, env=env, cwd=cwd, stdin=slave if stdin_tty else subprocess.DEVNULL,
+                         stdout=slave if stdout_tty else subprocess.PIPE, stderr=subprocess.PIPE)
+    if not stdout_tty:
+        out, err = p.communicate()
+        os.close(slave)
+        os.close(master)
+        return p.returncode, out.decode(), err.decode()
+    os.close(slave)
+    out = b""
+    while True:
+        r, _, _ = select.select([master], [], [], 10)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+    err = p.stderr.read()
+    p.stderr.close()
+    p.wait()
+    os.close(master)
+    return p.returncode, out.decode(), err.decode()

@@ -8,7 +8,8 @@
 # Pipeline: version -> tests (the whole ci.yml, called as a reusable workflow) -> build (one native job per architecture:
 # amd64 on ubuntu-24.04, arm64 on ubuntu-24.04-arm; build, helper-version check, grype scan, push) -> manifest (the
 # multi-arch list with the tags X.Y.Z, X.Y and latest) -> sign (cosign keyless on the digest, SBOM with syft, SBOM
-# attestation, a verify of both) -> notes (GitHub release with the digest and the SBOM file).
+# attestation, a verify of both) -> notes (GitHub release with the digest, the SBOM file, and the files `swarmbox`,
+# `swarmbox.sha256` and `install.sh`: the release must attach them, install.sh downloads and verifies the first two).
 #
 # It pushes only to the image of container/host/DEFAULTS under the owner feroult, ghcr.io/feroult/<default name> with the workflow's own token, contacts no other registry, and uses no
 # stored credential: the signature is keyless (a short-lived certificate from the OIDC token of the run).
@@ -145,14 +146,14 @@ jobs:
           esac
       - name: Build the image natively (no emulation)
         run: podman build -t "$LOCAL_IMAGE" .
-      - name: The helper extracted from the image reports the version of the tag
+      - name: The script extracted from the image reports the version of the tag
         run: |
           dir=$(mktemp -d)
           podman run --rm "$LOCAL_IMAGE" swarmbox-entrypoint host-helper > "$dir/helper.tar"
           tar -x -C "$dir" -f "$dir/helper.tar"
           helper_version=$("$dir/swarmbox-host" version)
           echo "helper version: $helper_version, tag version: $VERSION"
-          [ "$helper_version" = "$VERSION" ] || { echo "the helper in the image says $helper_version but the tag is v$VERSION: bump container/host/VERSION"; exit 1; }
+          [ "$helper_version" = "$VERSION" ] || { echo "the script in the image says $helper_version but the tag is v$VERSION: bump SCRIPT_VERSION in container/host/swarmbox-host and container/host/VERSION"; exit 1; }
       - name: Save the image for the scanner
         run: podman save --format docker-archive -o image.tar "$LOCAL_IMAGE"
       - name: Vulnerability scan with grype (fails on HIGH or CRITICAL, rules in .grype.yaml)
@@ -275,10 +276,19 @@ jobs:
       REGISTRY_IMAGE: ${{ needs.version.outputs.image }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4.1.8
         with:
           name: sbom
-      - name: Create the release (the tag must already exist) with the digest in the notes and the SBOM attached
+      - name: The command of the release, `swarmbox`, and its checksum (what install.sh downloads and verifies)
+        run: |
+          [ "$(sh container/host/swarmbox-host version)" = "$VERSION" ] || { echo "the script of this tag says another version than v$VERSION"; exit 1; }
+          cp container/host/swarmbox-host swarmbox
+          sha256sum swarmbox > swarmbox.sha256
+          cat swarmbox.sha256
+      - name: Create the release (the tag must already exist) with the digest in the notes, the SBOM, swarmbox, swarmbox.sha256 and install.sh attached
         run: |
           {
             echo "SwarmBox $VERSION"
@@ -293,5 +303,9 @@ jobs:
             echo "    cosign verify --certificate-identity-regexp '^https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/v' --certificate-oidc-issuer https://token.actions.githubusercontent.com $REGISTRY_IMAGE@$DIGEST"
             echo
             echo "The SBOM (SPDX JSON, made with syft) is attached as sbom.spdx.json and attested to the digest."
+            echo
+            echo "The command is attached as swarmbox, with its checksum swarmbox.sha256, and install.sh installs it:"
+            echo
+            echo "    sh install.sh --version $VERSION"
           } > notes.md
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "SwarmBox $VERSION" --notes-file notes.md sbom.spdx.json
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "SwarmBox $VERSION" --notes-file notes.md sbom.spdx.json swarmbox swarmbox.sha256 install.sh

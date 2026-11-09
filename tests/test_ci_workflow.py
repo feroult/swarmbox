@@ -50,10 +50,12 @@ class Ci(unittest.TestCase):
     def test_linux_job_runs_the_whole_suite_through_run_all(self):
         self.assertIn("sh tests/run_all.sh", job("linux"))
 
-    def test_macos_runs_the_function_test_in_the_system_bash_3(self):
+    def test_macos_runs_the_script_and_installer_tests_in_the_system_sh(self):
         mac = job("macos")
-        self.assertIn("SWARMBOX_TEST_BASH: /bin/bash", mac)
+        self.assertIn("/bin/sh -c", mac)
         self.assertIn("BASH_VERSINFO[0]", mac)
+        self.assertIn("tests/test_swarmbox_command.py", mac)
+        self.assertIn("tests/test_install.py", mac)
 
     def test_slow_jobs_run_only_on_schedule_or_by_hand(self):
         for name in ("browser", "real-tools"):

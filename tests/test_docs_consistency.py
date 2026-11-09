@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT, DEFAULT_NAME  # noqa: E402
 
 HOST = os.path.join(ROOT, "container", "host", "swarmbox-host")
-HOST_WORDS_ROUTED = ["stop", "reset", "up", "url", "update", "config", "env", "remote", "fingerprint", "version", "help"]
+HOST_WORDS_ROUTED = ["stop", "reset", "up", "url", "update", "config", "env", "remote", "fingerprint", "version", "help"]   # the words the script handles itself
 FORWARDED_WORDS = ["attach", "pubkey", "tool", "--plain", "claude", "gemini", "yolo", "bash"]
 
 
@@ -61,7 +61,9 @@ class Readme(unittest.TestCase):
         local = "localhost/" + DEFAULT_NAME + ":local"
         qs = section(README, "Quick start")
         self.assertIn("podman build -t " + local + " .", qs)
-        self.assertIn("init --image " + local, qs)
+        self.assertIn("podman run --rm " + local + " install --with claude | sh", qs)
+        self.assertNotIn("init", qs)
+        self.assertNotIn(">> ~/", qs)   # no line appended to a startup file
 
     def test_security_section_states_the_kernel_limit_and_no_safe_claim(self):
         sec = section(README, "Security")
@@ -72,7 +74,7 @@ class Readme(unittest.TestCase):
         self.assertNotRegex(README, r"(?<![\w/-])(start|build)\.sh|Migrating from")
 
     def test_every_swarmbox_command_in_code_blocks_is_a_real_word(self):
-        usage = subprocess.run(["sh", HOST], capture_output=True, text=True).stderr
+        usage = subprocess.run(["sh", HOST, "help"], capture_output=True, text=True).stdout
         tool_words = set(re.findall(r"^    ([a-z]+)\) cmd_", read("container", "scripts", "swarmbox-tool.sh"), re.M))
         tool_words |= {"validate", "link"}
         subs = {"config": ["get", "set", "list", "seed"], "env": ["add", "rm", "list"],

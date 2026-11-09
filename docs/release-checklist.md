@@ -14,7 +14,7 @@ Use a second box (`SWARMBOX_NAME=dev`, its own workspace and web port) so a real
 | macOS (Podman machine) | `brew install podman; podman machine init; podman machine start`, then the same commands with the workspace under your home | each exits 0; a file written in the box shows on the Mac; the web terminal opens. An unshared folder is exit 4. `podman -c` may fail across the VM: write down what you see |
 | Host UID other than 1000 | as another user (a Mac user is 501), start a box and write a file | `ls -ln` shows that UID as the owner |
 | Lowest Podman | Podman 4.0, 4.3, 4.9 and the latest: `swarmbox` and `SWARMBOX_SMOKE_FULL=1 python3 tests/smoke_image.py` | 4.3 and newer work; older ones are refused with exit 3. If 4.0 to 4.2 pass, lowering the limit in `check_podman_version` is your choice |
-| macOS shell details | `printf '2.0.10\n2.0.9\n' \| sort -V` (2.0.9 first); `/bin/bash --version`; `stat -f %Lp` on a file with an xattr; `podman run --rm -e SHELL <image> init` in zsh; `swarmbox remote status` without Command Line Tools | the function and helper work under bash 3.2 and macOS `/bin/sh`; `init` prints zsh syntax; a missing `python3` exits 3 with a message |
+| macOS shell details | `printf '2.0.10\n2.0.9\n' \| sort -V` (2.0.9 first); `/bin/bash --version`; `stat -f %Lp` on a file with an xattr; `podman run --rm <image> install | sh` with `SWARMBOX_BIN_DIR` in a temp folder; `swarmbox remote status` without Command Line Tools | the script works under bash 3.2 and macOS `/bin/sh`; the installer writes one file and edits no rc file; a missing `python3` exits 3 with a message |
 | WSL2 | a workspace under `/mnt/c/...`, then one on the Linux filesystem; `swarmbox remote token` with the home on a Windows drive | the first is refused with exit 4; the second works; mode 600 accepted, 644 ignored with a warning |
 | Cloudflare end to end | the check list at the end of [cloudflare.md](cloudflare.md), with a real account | the URL asks for an e-mail code, a different e-mail is refused, `remote off` removes everything |
 | Clean machine, README only | on a fresh user with only Podman: build and install by the README Quick start; `swarmbox`; a second tab joins; `claude --version` installs it; `swarmbox url`; `swarmbox stop`; the [uninstall](uninstall.md) steps | every place you had to leave the README is a README defect |
@@ -44,7 +44,7 @@ The default names of the box and the image repository are in `container/host/DEF
 
 ## 4. Security review by a human
 
-[security-review.md](security-review.md) was written by the same AI agent that wrote the host helper. Have a person read `container/host/swarmbox-host`, `container/scripts/swarmbox-init.sh`, `cloudflare-setup.py`
+[security-review.md](security-review.md) was written by the same AI agent that wrote the host helper. Have a person read `container/host/swarmbox-host`, `container/scripts/swarmbox-install.sh`, `install.sh`, `cloudflare-setup.py`
 and the update path, and revise the review. Check `THIRD_PARTY_NOTICES.md` and its redistribution questions.
 
 ## 5. OpenCode package line
@@ -56,22 +56,24 @@ make `THIRD_PARTY_NOTICES.md` say which.
 
 1. Dry run the release workflow by hand from a branch (`gh workflow run release.yml --ref opensource`; nothing is published without a tag) and read the log: the cosign identity, grype on the real image, the arm64 build.
 2. Replace `Unreleased` in the `CHANGELOG.md` entry with the date in a commit. `sh dev/release-check.sh` must print `RELEASE CHECK OK` (the `<org>` warning is allowed only if you decided to keep it).
-3. Create the tag yourself: `git tag -a v2.0.0 -m 'SwarmBox 2.0.0'`, then `git push origin v2.0.0`, and watch `gh run watch`.
-4. The first publish creates the package as private. Set it public once (the repository's Packages, the package, Package settings, Change visibility) and check from a logged-out machine:
+3. The release must attach `swarmbox` and `swarmbox.sha256` (and `install.sh`): the `notes` job of `release.yml` does it from `container/host/swarmbox-host` at the tag. `SCRIPT_VERSION` in that file and `container/host/VERSION` must both say the new version (the workflow and `tests/test_host_config.py` check it). When you flip the names in `container/host/DEFAULTS`, flip `REPO` in `install.sh` too (a test compares them). After the run, `gh release view v2.0.0` must list the three files, and `sh install.sh --version 2.0.0` in a throwaway home must install.
+4. Create the tag yourself: `git tag -a v2.0.0 -m 'SwarmBox 2.0.0'`, then `git push origin v2.0.0`, and watch `gh run watch`.
+5. The first publish creates the package as private. Set it public once (the repository's Packages, the package, Package settings, Change visibility) and check from a logged-out machine:
    `podman logout ghcr.io; podman pull ghcr.io/feroult/swarmbox-dev:2.0.0`.
-5. Check the published image with a throwaway home:
+6. Check the published image with a throwaway home:
 
 ```sh
 export H=$(mktemp -d) && export XDG_CONFIG_HOME=$H/c XDG_DATA_HOME=$H/d XDG_STATE_HOME=$H/s
 podman manifest inspect ghcr.io/feroult/swarmbox-dev:2.0.0 | grep -c '"architecture"'     # 2 or more
 cosign verify --certificate-identity-regexp '^https://github.com/feroult/swarmbox/.github/workflows/release.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/feroult/swarmbox-dev:2.0.0 >/dev/null && echo SIGNED
-podman run --rm -e SHELL ghcr.io/feroult/swarmbox-dev:2.0.0 init --with claude --workspace $H/ws > $H/function.sh
-export SWARMBOX_NAME=swarmbox-b20 && . $H/function.sh
+export SWARMBOX_BIN_DIR=$H/bin PATH=$H/bin:$PATH SWARMBOX_NAME=swarmbox-b20
+podman run --rm ghcr.io/feroult/swarmbox-dev:2.0.0 install --with claude | sh
+sh install.sh --version 2.0.0 --with claude        # the other way, from the release assets; the result is the same
 swarmbox update; swarmbox config get IMAGE        # pulls the 2.0 series, records the exact tag
 swarmbox update --to 2.0.0; swarmbox reset && swarmbox version
 ```
 
 Then go offline and run `swarmbox reset` again: it must start from the local tag without a pull. Clean up by exact names
-(`podman rm -f swarmbox-b20; podman volume rm swarmbox-b20-containers; rm -rf "$H"; unset SWARMBOX_NAME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME`).
+(`podman rm -f swarmbox-b20; podman volume rm swarmbox-b20-containers; rm -rf "$H"; unset SWARMBOX_NAME SWARMBOX_BIN_DIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME`).
 The rollback half needs a second published version.

@@ -1,7 +1,8 @@
-"""`swarmbox-host update [--to TAG]` (the "Update flow" and "Rollback" of docs/design.md).
+"""`swarmbox update [--to TAG]` (the "Update flow" and "Rollback" of docs/design.md).
 
-The helper runs as a real program against the shared FakePodman, which records every call. The "image" is a tar archive built in
-Python (tests/function_cases.make_archive: swarmbox-host, VERSION, ...) that the fake `podman run ... host-helper` writes to
+The script runs as a real program, installed the way the installers do it (a lone file `bin/swarmbox`, the support files in the data
+folder), against the shared FakePodman, which records every call. The "image" is a tar archive built in
+Python (tests/helpers.make_archive: swarmbox-host, VERSION, ...) that the fake `podman run ... host-helper` writes to
 standard output. HOME is a mktemp folder, so the config file and the helper folder (`~/.local/share/swarmbox/host`) are the
 test's own. Nothing starts a real container; tests/test_registry_e2e.py runs the same flow against a real local registry.
 Reduced: the real Podman (pull, tag, run) is not involved here, only its recorded calls and the answers the fake gives.
@@ -16,9 +17,11 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_host_up as up_tests  # noqa: E402
-from function_cases import make_archive  # noqa: E402
-from helpers import ROOT, DEFAULT_IMAGE_REPO  # noqa: E402
+from helpers import make_archive  # noqa: E402
+from helpers import ROOT, DEFAULT_IMAGE_REPO, HELPER_SH  # noqa: E402
 
+with open(os.path.join(ROOT, "container", "host", "swarmbox-host")) as _f:
+    REAL_SCRIPT = _f.read()
 REPO = "localhost:34567/org/swarmbox"
 MSG = "updated to %s; run `swarmbox reset` to use it (running sessions end)\n"
 
@@ -49,6 +52,22 @@ class UpdateBase(up_tests.Base):
         self.write_config("IMAGE=%s:2.0.0\n" % REPO)
         self.install_old_helper("2.0.0")
         self.n = 0
+        self.bin = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bin)
+        self.helper = os.path.join(self.bin, "swarmbox")
+        self.install_script()
+
+    def install_script(self):
+        """The real script as the installers write it: alone in a folder, with no VERSION next to it."""
+        shutil.copy(up_tests.HELPER_SRC, self.helper)
+        os.chmod(self.helper, 0o755)
+
+    def script_text(self):
+        with open(self.helper) as f:
+            return f.read()
+
+    def bin_names(self):
+        return sorted(os.listdir(self.bin))
 
     def write_config(self, text):
         os.makedirs(self.cfg_dir, exist_ok=True)
@@ -58,11 +77,11 @@ class UpdateBase(up_tests.Base):
 
     def install_old_helper(self, version):
         os.makedirs(self.host_dir, exist_ok=True)
-        for n, c in (("swarmbox-host", "#!/bin/sh\necho old\n"), ("VERSION", version + "\n"), ("tool-ports", "")):
+        for n, c in (("VERSION", version + "\n"), ("DEFAULTS", open(os.path.join(ROOT, "container", "host", "DEFAULTS")).read()),
+                     ("tool-ports", "")):
             p = os.path.join(self.host_dir, n)
             with open(p, "w") as f:
                 f.write(c)
-        os.chmod(os.path.join(self.host_dir, "swarmbox-host"), 0o755)
 
     def config_text(self):
         with open(self.cfg) as f:
@@ -83,6 +102,7 @@ class UpdateBase(up_tests.Base):
         return self.podman(**conf)
 
     def update(self, *args, **extra):
+        self.install_script()
         return self.run_h("update", *args, env=self.env(**extra))
 
     def names(self):
@@ -90,6 +110,7 @@ class UpdateBase(up_tests.Base):
 
     def assert_unchanged(self, before, tag_calls=0):
         self.assertEqual(snap(self.host_dir), before["host"])
+        self.assertEqual(snap(self.bin), before["bin"])
         with open(self.cfg, "rb") as f:
             self.assertEqual(f.read(), before["cfg"])
         self.assertEqual(os.stat(self.cfg).st_mode, before["mode"])
@@ -97,7 +118,7 @@ class UpdateBase(up_tests.Base):
 
     def before(self):
         with open(self.cfg, "rb") as f:
-            return {"host": snap(self.host_dir), "cfg": f.read(), "mode": os.stat(self.cfg).st_mode}
+            return {"host": snap(self.host_dir), "bin": snap(self.bin), "cfg": f.read(), "mode": os.stat(self.cfg).st_mode}
 
 
 class PlainUpdateTest(UpdateBase):
@@ -113,7 +134,12 @@ class PlainUpdateTest(UpdateBase):
         self.assertEqual(self.image_line(), ["IMAGE=%s:2.0.1" % REPO])
         with open(os.path.join(self.host_dir, "VERSION")) as f:
             self.assertEqual(f.read().strip(), "2.0.1")
-        self.assertTrue(os.access(os.path.join(self.host_dir, "swarmbox-host"), os.X_OK))
+        # the script of the image is the new command, in place, and its copy is not left in the support folder
+        self.assertEqual(self.script_text(), HELPER_SH)
+        self.assertTrue(os.access(self.helper, os.X_OK))
+        self.assertEqual(self.bin_names(), ["swarmbox"])
+        self.assertEqual(sorted(set(os.listdir(self.host_dir)) - {"calls"}),   # calls: the fake script records its `version` call
+                         ["DEFAULTS", "VERSION", "cloudflare-setup.py", "tool-ports"])
 
     def test_the_series_comes_from_the_current_image_tag(self):
         for tag, series in (("2.0.0", "2.0"), ("2.1", "2.1"), ("10.12.3", "10.12"), ("3.4.5-rc1", "3.4")):
@@ -146,6 +172,61 @@ class PlainUpdateTest(UpdateBase):
         for c in self.subs("run"):
             self.assertEqual(c[:2], ["run", "--rm"])
             self.assertEqual(c[-1], "host-helper")
+
+class ScriptRefreshTest(UpdateBase):
+    def test_a_script_newer_than_the_image_is_kept_with_a_clear_message(self):
+        self.podman_for("1.9.2")
+        r = self.update("--to", "1.9.2")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("this script (2.0.0) is newer than the image (1.9.2); the script is kept.", r.stderr)
+        self.assertEqual(self.script_text(), REAL_SCRIPT)
+        self.assertEqual(self.bin_names(), ["swarmbox"])
+        self.assertEqual(self.image_line(), ["IMAGE=%s:1.9.2" % REPO])
+
+    def test_the_same_version_replaces_nothing_and_says_nothing(self):
+        self.podman_for("2.0.0")
+        r = self.update("--to", "2.0.0")
+        self.assertEqual((r.returncode, r.stdout), (0, MSG % "2.0.0"))
+        self.assertNotIn("newer", r.stderr)
+        self.assertEqual(self.script_text(), REAL_SCRIPT)
+
+    def test_two_digit_numbers_are_compared_as_numbers(self):
+        self.podman_for("2.0.10")
+        r = self.update("--to", "2.0.10")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.script_text(), HELPER_SH)
+
+    def test_a_folder_that_cannot_be_written_warns_and_still_updates_the_rest(self):
+        if os.geteuid() == 0:
+            self.skipTest("root ignores the mode")
+        self.podman_for("2.0.1")
+        self.install_script()
+        os.chmod(self.bin, 0o500)
+        self.addCleanup(os.chmod, self.bin, 0o700)
+        r = self.run_h("update", env=self.env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("cannot write next to this script", r.stderr)
+        self.assertEqual(self.script_text(), REAL_SCRIPT)
+        self.assertEqual(self.image_line(), ["IMAGE=%s:2.0.1" % REPO])
+
+    def test_the_script_is_replaced_by_a_rename_so_a_running_copy_is_never_cut(self):
+        self.podman_for("2.0.1")
+        self.install_script()
+        before = os.stat(self.helper).st_ino
+        r = self.run_h("update", env=self.env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotEqual(os.stat(self.helper).st_ino, before)
+
+    def test_a_checkout_is_never_replaced(self):
+        # run from the folder that holds VERSION (the repository, the image's own folder): the file is not an installed copy
+        self.podman_for("2.0.1")
+        with open(up_tests.HELPER_SRC) as f:
+            src = f.read()
+        r = subprocess.run([up_tests.HELPER_SRC, "update"], env=self.env(), capture_output=True, text=True, input="", cwd=self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(up_tests.HELPER_SRC) as f:
+            self.assertEqual(f.read(), src)
+
 
 class ToTest(UpdateBase):
     def test_to_an_exact_tag_pulls_exactly_that_tag(self):
@@ -243,7 +324,8 @@ class AfterUpdateTest(UpdateBase):
         open(self.fp.log_path, "w").close()
         env = self.env()
         env.pop("SWARMBOX_IMAGE", None)
-        # the helper that update installed is the one that runs
+        # the new script (a copy of the real one: the archive's script is a fake) runs on the support files that update wrote
+        self.install_script()
         r = subprocess.run([self.helper, "reset"], env=env, capture_output=True, text=True, input="", cwd=self.tmp, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.subs("pull"), [])

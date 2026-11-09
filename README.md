@@ -67,15 +67,20 @@ More detail is in [SECURITY.md](SECURITY.md) and in the security model of [docs/
 Requirements: Linux, macOS through a Podman machine, or WSL2 with the workspace on the Linux filesystem; Podman 4.3 or newer.
 Docker is not supported.
 
-The image is not published yet, so today you build it locally. In the repository (zsh; for bash use `~/.bashrc`):
+The image is not published yet, so today you build it locally. In the repository:
 
 ```bash
 podman build -t localhost/swarmbox-dev:local .
-podman run --rm -e SHELL localhost/swarmbox-dev:local init --image localhost/swarmbox-dev:local --with claude      # read what it prints
-podman run --rm -e SHELL localhost/swarmbox-dev:local init --image localhost/swarmbox-dev:local --with claude >> ~/.zshrc
+podman run --rm localhost/swarmbox-dev:local install --with claude        # read what it prints
+podman run --rm localhost/swarmbox-dev:local install --with claude | sh
 ```
 
-Open a new terminal. If port 7681 is busy, run `swarmbox config set WEB_PORT 7682`. Then run `swarmbox`.
+This writes one script, `swarmbox`, to `~/.local/bin` (set `SWARMBOX_BIN_DIR` to use another folder), and records the image and the tools in
+`~/.config/swarmbox/config`. It edits no startup file; if `~/.local/bin` is not in your `PATH` it says how to add it. Open a new terminal and
+run `swarmbox`. If port 7681 is busy, run `swarmbox config set WEB_PORT 7682` first.
+
+If you used an earlier version that put a `swarmbox` function in `~/.bashrc`, `~/.zshrc` or `~/.config/fish/config.fish`, delete that block (it starts with
+`# >>> swarmbox`): a shell function wins over the script, and the installer warns when it finds one.
 
 ## Everyday commands
 
@@ -86,7 +91,7 @@ swarmbox claude             # run a command in the box from your machine
 swarmbox url                # print the address of the web terminal
 swarmbox stop               # stop the box; nothing is deleted
 swarmbox reset              # recreate the box so a changed setting applies; the workspace is kept
-swarmbox update             # fetch a newer image
+swarmbox update             # fetch a newer image and refresh the swarmbox command from it
 swarmbox env add NAME       # pass one of your variables into the box
 swarmbox config list        # show the settings
 swarmbox tool list          # show the tools you can install

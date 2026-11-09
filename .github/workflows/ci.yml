@@ -3,8 +3,8 @@
 # This workflow only runs commands that already exist in the repository today: the python3 unit and function tests,
 # shellcheck over the new shell files, and (job "smoke") the image build and the full image smoke test
 # (tests/smoke_image.py with SWARMBOX_SMOKE_FULL=1: it needs the nested Podman that the development box cannot give, so
-# this job is its only full run, never run before the owner's first push). The zsh and fish function tests are included, and so are the arm64 job, the
-# dash and busybox step of the linux job, and bash 3.2 (/bin/bash) for the function test of the macos job.
+# this job is its only full run, never run before the owner's first push). The arm64 job, the dash and busybox step of the linux job, and the `swarmbox` script and installer tests under macOS's /bin/sh
+# (bash 3.2 in POSIX mode) in the macos job are included.
 # It uses no secrets, publishes nothing and binds no ports on the runner outside 127.0.0.1.
 #
 # Open facts this file prepares (see "Not done, and open questions" in docs/design.md):
@@ -54,27 +54,25 @@ jobs:
       - name: Install test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends tmux zsh fish busybox-static dash shellcheck
-      - name: The shells the function and helper tests need must exist (a missing shell fails the job, it is not skipped)
+          sudo apt-get install -y --no-install-recommends tmux busybox-static dash shellcheck
+      - name: The shells the script tests need must exist (a missing shell fails the job, it is not skipped)
         run: |
-          command -v bash zsh fish dash busybox
+          command -v bash dash busybox
           bash --version | head -n 1
-          zsh --version
-          fish --version
       - name: Shellcheck the new shell files
         run: |
-          shellcheck -s sh container/host/swarmbox-host container/scripts/swarmbox-init.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh dev/gen-notices.sh dev/release-version.sh dev/release-check.sh dev/name-check.sh
+          shellcheck -s sh install.sh container/host/swarmbox-host container/scripts/swarmbox-install.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh dev/gen-notices.sh dev/release-version.sh dev/release-check.sh dev/name-check.sh
           shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-tool.sh container/config/bashrc.sh
       - name: Validate the tool manifests (swarmbox-tool validate, no container)
         run: container/scripts/swarmbox-tool.sh validate container/tools
-      - name: Host helper under dash and busybox sh, then the output comparison across the shells
+      - name: The swarmbox script under dash and busybox sh
         run: |
           command -v dash
           command -v busybox
           busybox sh -c 'echo busybox sh works'
           python3 tests/test_host_shells.py
           python3 tests/test_host_create_flags.py
-      - name: Unit and function tests (tests/run_all.sh; the browser and real-installer tests run in their own jobs)
+      - name: Unit tests (tests/run_all.sh; the browser and real-installer tests run in their own jobs)
         run: sh tests/run_all.sh
 
   # The image smoke test in full mode: the runner is level 1, the throwaway box level 2 and the
@@ -133,7 +131,7 @@ jobs:
         run: podman rmi "$SWARMBOX_IMAGE_TAG" || true
 
   macos:
-    name: macos (bash 3.2, fake podman)
+    name: macos (/bin/sh is bash 3.2, fake podman)
     runs-on: macos-14
     timeout-minutes: 20
     steps:
@@ -141,18 +139,19 @@ jobs:
       - name: Probe what the macOS runner provides
         run: |
           /bin/bash --version
-          command -v podman || echo "podman: not found (the function tests use a fake podman)"
+          command -v podman || echo "podman: not found (the script tests use a fake podman)"
           python3 --version
           sw_vers
           printf '2.0.10\n2.0.9\n' | sort -V
-      - name: /bin/bash must be a bash 3.x (the macOS system bash), or this job proves nothing about bash 3.2
+      - name: /bin/sh must be a bash 3.x in POSIX mode (the macOS system shell), or this job proves nothing about it
         run: |
           /bin/bash -c 'echo "/bin/bash $BASH_VERSION"; [ "${BASH_VERSINFO[0]}" = 3 ]'
-      - name: The function test in /bin/bash 3.2 with a fake podman
-        env:
-          SWARMBOX_TEST_BASH: /bin/bash
-        run: python3 tests/test_function_bash.py
-      - name: Function tests under bash 3.2 with a fake podman
+          /bin/sh -c 'echo "/bin/sh $BASH_VERSION"; [ "${BASH_VERSINFO[0]}" = 3 ]'
+      - name: The swarmbox script and both installers under /bin/sh with a fake podman
+        run: |
+          python3 tests/test_swarmbox_command.py
+          python3 tests/test_install.py
+      - name: The other shell-level tests with a fake podman
         run: |
           python3 tests/test_build_index.py
           python3 tests/test_dev_build.py
@@ -160,8 +159,6 @@ jobs:
           python3 tests/test_dirs.py
           python3 tests/test_dockerfile.py
           python3 tests/test_helpers.py
-          python3 tests/test_function_fish.py
-          python3 tests/test_function_zsh.py
           python3 tests/test_host_config.py
           python3 tests/test_host_connector.py
           python3 tests/test_host_create_flags.py
@@ -172,7 +169,6 @@ jobs:
           python3 tests/test_host_up.py
           python3 tests/test_host_update.py
           python3 tests/test_image_build.py
-          python3 tests/test_init_output.py
           python3 tests/test_ssh_key.py
           python3 tests/test_starship.py
           python3 tests/test_cloudflare_setup.py

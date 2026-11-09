@@ -10,7 +10,7 @@ browser ── https://swarmbox.example.com ──> Cloudflare Access (email cod
 It only makes outbound connections: no router port, no public IP. Free plan (Zero Trust, up to 50 users); a card may
 be requested to activate it. Design: section 7 of [design.md](design.md).
 
-`swarmbox remote` is a thin wrapper over `cloudflare-setup.py`, which sits next to the host helper. It is the only part
+`swarmbox remote` is a thin wrapper over `cloudflare-setup.py`, which sits in the support folder of the script (`~/.local/share/swarmbox/host`). It is the only part
 of the host side that needs `python3` (3.8+, no other dependency; the helper itself is POSIX `sh`). If `python3` or
 the script is missing, the command exits with status 3 and says so.
 

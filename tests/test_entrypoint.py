@@ -1,4 +1,4 @@
-"""The subcommands of swarmbox-entrypoint: serve, attach, init, pubkey, tool, host-helper and
+"""The subcommands of swarmbox-entrypoint: serve, attach, install, pubkey, tool, host-helper and
 "any other command, run as given". Everything runs against container/entrypoint.sh with FAKE programs first on PATH.
 
 Test-only variable: SWARMBOX_TEST_HOST_DIR replaces /usr/local/share/swarmbox/host.
@@ -43,7 +43,7 @@ class Base(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
         self.fake = os.path.join(self.base, "fake")
         os.mkdir(self.fake)
-        for name in ("swarmbox-attach", "swarmbox-init", "swarmbox-pubkey", "swarmbox-tool"):
+        for name in ("swarmbox-attach", "swarmbox-install", "swarmbox-pubkey", "swarmbox-tool"):
             write_exec(os.path.join(self.fake, name), FAKE)
 
     def env(self, path=None, **extra):
@@ -65,7 +65,7 @@ class Base(unittest.TestCase):
 
 class Dispatch(Base):
     def test_each_subcommand_runs_its_program_with_every_argument_preserved(self):
-        for sub, prog in (("attach", "swarmbox-attach"), ("init", "swarmbox-init"), ("pubkey", "swarmbox-pubkey"),
+        for sub, prog in (("attach", "swarmbox-attach"), ("install", "swarmbox-install"), ("pubkey", "swarmbox-pubkey"),
                           ("tool", "swarmbox-tool")):
             with self.subTest(sub=sub):
                 os.path.exists(os.path.join(self.base, "calls.jsonl")) and os.unlink(os.path.join(self.base, "calls.jsonl"))
@@ -74,7 +74,7 @@ class Dispatch(Base):
                 self.assertEqual(self.calls(), [[prog] + AWKWARD])
 
     def test_exit_status_of_the_program_is_the_exit_status_of_the_entrypoint(self):
-        for sub in ("attach", "init", "pubkey", "tool"):
+        for sub in ("attach", "install", "pubkey", "tool"):
             for rc in (1, 3, 42, 130):
                 with self.subTest(sub=sub, rc=rc):
                     r = self.run_ep(sub, "x", env=self.env(FAKE_RC=str(rc)))
@@ -83,7 +83,7 @@ class Dispatch(Base):
     def test_a_missing_program_fails_with_127_and_names_it(self):
         empty = os.path.join(self.base, "empty")
         os.mkdir(empty)
-        for sub, prog in (("attach", "swarmbox-attach"), ("init", "swarmbox-init"), ("pubkey", "swarmbox-pubkey"),
+        for sub, prog in (("attach", "swarmbox-attach"), ("install", "swarmbox-install"), ("pubkey", "swarmbox-pubkey"),
                           ("tool", "swarmbox-tool")):
             with self.subTest(sub=sub):
                 r = self.run_ep(sub, env=self.env(empty))
@@ -126,11 +126,10 @@ class AttachAgainstFakeTmux(Base):
 class HostHelper(Base):
     def make_dir(self):
         d = os.path.join(self.base, "host")
-        os.makedirs(os.path.join(d, "templates"))
+        os.makedirs(d)
         write_exec(os.path.join(d, "swarmbox-host"), "#!/bin/sh\necho 2.0.0\n")
         open(os.path.join(d, "cloudflare-setup.py"), "w").write("# cf\n")
         open(os.path.join(d, "tool-ports"), "w").close()
-        open(os.path.join(d, "templates", "bash"), "w").write("f() { :; }\n")
         return d
 
     def test_it_writes_the_helper_folder_as_a_tar_archive_on_stdout_and_nothing_else(self):
@@ -140,14 +139,14 @@ class HostHelper(Base):
         self.assertEqual(r.stderr, b"")
         tf = tarfile.open(fileobj=io.BytesIO(r.stdout))
         names = sorted(n[2:] if n.startswith("./") else n for n in tf.getnames())
-        self.assertEqual(names, [".", "cloudflare-setup.py", "swarmbox-host", "templates", "templates/bash", "tool-ports"])
+        self.assertEqual(names, [".", "cloudflare-setup.py", "swarmbox-host", "tool-ports"])
         self.assertEqual(tf.getmember("./swarmbox-host").mode & 0o100, 0o100)   # the executable bit survives
         self.assertEqual(tf.extractfile("./tool-ports").read(), b"")
         for m in tf.getmembers():
             self.assertEqual((m.uid, m.gid), (0, 0))
 
-    def test_the_archive_of_the_repository_folder_has_the_files_of_3_7_1_and_the_templates_are_what_init_prints(self):
-        # the image's folder as the Dockerfile builds it: container/host/ (swarmbox-host, VERSION, templates/), the cloudflare
+    def test_the_archive_of_the_repository_folder_has_the_files_the_script_needs_and_its_script_is_the_command(self):
+        # the image's folder as the Dockerfile builds it: container/host/ (swarmbox-host, VERSION, DEFAULTS), the cloudflare
         # script and an empty tool-ports
         d = os.path.join(self.base, "image-host")
         shutil.copytree(os.path.join(ROOT, "container", "host"), d)
@@ -157,9 +156,9 @@ class HostHelper(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         tf = tarfile.open(fileobj=io.BytesIO(r.stdout))
         names = sorted(n[2:] if n.startswith("./") else n for n in tf.getnames())
-        for want in ("swarmbox-host", "cloudflare-setup.py", "VERSION", "tool-ports", "templates", "templates/bash",
-                     "templates/zsh", "templates/fish"):
+        for want in ("swarmbox-host", "cloudflare-setup.py", "VERSION", "DEFAULTS", "tool-ports"):
             self.assertIn(want, names)
+        self.assertNotIn("templates", names)
         self.assertEqual(tf.getmember("./swarmbox-host").mode & 0o111, 0o111)
         out = os.path.join(self.base, "unpacked")
         os.mkdir(out)
@@ -169,28 +168,18 @@ class HostHelper(Base):
         v = subprocess.run([os.path.join(out, "swarmbox-host"), "version"], capture_output=True, text=True,
                            env={"PATH": "/usr/bin:/bin", "HOME": self.base})
         self.assertEqual((v.returncode, v.stdout.strip()), (0, version))
-        # what init prints from the unpacked archive equals what it prints from the repository's templates
-        init = os.path.join(ROOT, "container", "scripts", "swarmbox-init.sh")
-        for shell in ("bash", "zsh", "fish"):
-            a = subprocess.run(["sh", init, "--shell", shell], capture_output=True, text=True,
-                               env={"PATH": "/usr/bin:/bin", "SWARMBOX_TEST_HOST_DIR": out})
-            b = subprocess.run(["sh", init, "--shell", shell], capture_output=True, text=True,
-                               env={"PATH": "/usr/bin:/bin", "SWARMBOX_TEST_HOST_DIR": os.path.join(ROOT, "container", "host")})
-            self.assertEqual(a.returncode, 0, a.stderr)
-            self.assertEqual(a.stdout, b.stdout)
-            with open(os.path.join(out, "templates", shell), "rb") as f1, \
-                    open(os.path.join(ROOT, "container", "host", "templates", shell), "rb") as f2:
-                self.assertEqual(f1.read(), f2.read())
 
-    def test_the_entrypoint_init_runs_the_real_program_with_the_shell_variable(self):
-        init = os.path.join(ROOT, "container", "scripts", "swarmbox-init.sh")
+    def test_the_entrypoint_install_runs_the_real_program_and_prints_an_installer(self):
+        inst = os.path.join(ROOT, "container", "scripts", "swarmbox-install.sh")
         bindir = os.path.join(self.base, "realbin")
         os.mkdir(bindir)
-        os.symlink(init, os.path.join(bindir, "swarmbox-init"))
-        env = self.env(path=bindir, SWARMBOX_TEST_HOST_DIR=os.path.join(ROOT, "container", "host"), SHELL="/usr/bin/fish")
-        r = self.run_ep("init", "--with", "claude", env=env)
+        os.symlink(inst, os.path.join(bindir, "swarmbox-install"))
+        env = self.env(path=bindir, SWARMBOX_TEST_HOST_DIR=os.path.join(ROOT, "container", "host"),
+                       SWARMBOX_TEST_CONTAINERENV=os.path.join(self.base, "none"))
+        r = self.run_ep("install", "--with", "claude", env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn(b"function swarmbox", r.stdout)
+        self.assertTrue(r.stdout.startswith(b"#!/bin/sh\n"))
+        self.assertIn(b"WITH='claude'", r.stdout)
         self.assertEqual(r.stderr, b"")
 
 class Static(unittest.TestCase):

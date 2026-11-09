@@ -1,4 +1,4 @@
-"""The host helper under several `sh` implementations and shellcheck.
+"""The `swarmbox` script under several `sh` implementations and shellcheck.
 
 The same scenario (version, config set/get/list/seed, env add/list/rm, the tunnel-token mode rule, a second box, an
 error exit) runs with each interpreter named explicitly: dash, `bash --posix`, busybox sh, bash started under the name
@@ -63,11 +63,11 @@ class ShellMatrix(unittest.TestCase):
                 self.assertEqual(p.stdout, out, name)
 
         ok(run("version"), "2.0.0\n")
-        # remote: no cloudflare-setup.py sits next to the helper in the repository (exit 3); an unknown subcommand is exit 2
+        # remote: no cloudflare-setup.py sits in the support folder (the repository folder here) (exit 3); an unknown subcommand is exit 2
         ok(run("remote", "nope"), "", 2)
         p = run("remote", "status")
         ok(p, "", 3)
-        self.assertIn("cloudflare-setup.py was not found", p.stderr)
+        self.assertIn("the support files are missing", p.stderr)
         ok(run("config", "get", "WEB_PORT"), "7681\n")
         ok(run("config", "get", "WITH"), "", 1)
         ok(run("config", "get", "NOPE"), "", 2)
@@ -101,7 +101,7 @@ class ShellMatrix(unittest.TestCase):
         # seed on an existing file: one notice
         p = run("config", "seed", "--with", "other")
         ok(p, "")
-        self.assertEqual(p.stderr.count("init asked for"), 1)
+        self.assertEqual(p.stderr.count("the installer asked for"), 1)
         ok(run("config", "seed", "--with", "other"), "")
         self.assertEqual(run("config", "seed", "--with", "other").stderr, "")
         # a second box in its own folder, and a fresh seed there

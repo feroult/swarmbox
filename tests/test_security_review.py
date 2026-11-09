@@ -26,7 +26,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_host_update as upd  # noqa: E402
 import test_host_up as up_tests  # noqa: E402
-from function_cases import make_archive  # noqa: E402
+from helpers import make_archive  # noqa: E402
 from helpers import ROOT, DEFAULT_CONNECTOR, DEFAULT_NAME  # noqa: E402
 
 TOK = "tunnelTOKEN0123456789abcdefSECRETvalue=="

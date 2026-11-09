@@ -12,8 +12,8 @@ Please report a vulnerability privately, not in a public issue.
 - This project is maintained by one person. Expect an answer within a few days, not hours; a fix is released as a patch
   version of the supported series and named in `CHANGELOG.md`.
 
-Reports about the host helper (`swarmbox-host`, which runs on your machine with your privileges) are the most valuable ones.
-The written review of the helper is in `docs/security-review.md`, written by the same AI agent that wrote the code; no human has reviewed it yet.
+Reports about the `swarmbox` script (`container/host/swarmbox-host`, which runs on your machine with your privileges) are the most valuable ones.
+The written review of the script is in `docs/security-review.md`, written by the same AI agent that wrote the code; no human has reviewed it yet.
 
 ## Supported versions
 
@@ -45,10 +45,15 @@ Defaults: no ports published beyond `127.0.0.1`, no host-network mode, tunnel cr
 
 ## Trust in the signed image
 
-The host helper is extracted from the image by `swarmbox init`, so it is versioned, signed and readable before you install
-it. SwarmBox accepts the helper as coming from the signed image you already trust: there is no separate signed
-helper asset. A separately signed asset will be published only if users ask. If you do not trust the image, do not install the
-helper from it. Verify the image signature and digest published with each release before you run `init`.
+The `swarmbox` script is carried by the image: `podman run --rm IMAGE install` prints an installer that holds it, so you can read the
+installer before `| sh`, and the script is versioned and signed with the image. SwarmBox accepts the script as coming from the signed
+image you already trust. If you do not trust the image, do not install the script from it. Verify the image signature and
+digest published with each release before you run `install`.
+
+`install.sh` is the other way: it downloads `swarmbox` and `swarmbox.sha256` from the same GitHub release and compares them. That
+catches a damaged download, not a tampered release (both files come from the same place, and the checksum is not signed). The
+script is not signed separately; prefer the image route when that matters. The installers write one file and the SwarmBox config,
+and edit no shell startup file.
 
 ## Logs and telemetry
 

@@ -1,21 +1,31 @@
 #!/bin/sh
-# swarmbox-host: the SwarmBox host helper. POSIX sh, no bashisms (no `local`, no `echo -e`, no
-# `read -s`, no arrays, no `[[ ]]`); it must run under dash, busybox sh, bash in POSIX mode and macOS /bin/sh.
+# swarmbox: the SwarmBox command, one POSIX sh script on the PATH (the repository file is container/host/swarmbox-host; the
+# installers write it as `swarmbox`). No bashisms (no `local`, no `echo -e`, no `read -s`, no arrays, no `[[ ]]`): it must run
+# under dash, busybox sh, bash in POSIX mode and macOS /bin/sh. No shell function and no startup file is involved.
 #
-#   version | help               the version in the file VERSION next to this program | the command list
-#   config get|set|list|seed     the settings (the tunnel token is read from the terminal, never argv)
-#   env add|rm NAME | env list   the names of host variables passed to the box (ENV_KEYS)
-#   create-flags, fingerprint    the flags of a new box and its fingerprint (no Podman call)
-#   up, reset, stop, url         the lock, the lookup, creation, readiness, the warnings (`url` does not call Podman)
-#   connection                   register `podman -c <name>` for the box
-#   update [--to TAG]            pull, extract the helper, tag X.Y.Z locally, write IMAGE
+#   (no command), attach, any other word   up, then run it in the box: `podman exec -it ... swarmbox-entrypoint attach ...`
+#   pubkey | tool                          forwarded into the box with `podman exec`
+#   version | help                         the version of this script | the command list
+#   config get|set|list|seed               the settings (the tunnel token is read from the terminal, never argv)
+#   env add|rm NAME | env list             the names of host variables passed to the box (ENV_KEYS)
+#   create-flags, fingerprint              the flags of a new box and its fingerprint (no Podman call)
+#   up, reset, stop, url                   the lock, the lookup, creation, readiness, the warnings (`url` does not call Podman)
+#   connection                             register `podman -c <name>` for the box
+#   update [--to TAG]                      pull, refresh this script and the support files, tag X.Y.Z locally, write IMAGE
 #   remote setup|status|off|token [options]
-#                                a wrapper over cloudflare-setup.py next to this program: setup is `apply`, off is `remove`
+#                                          a wrapper over cloudflare-setup.py in the support folder: setup is `apply`, off is `remove`
+#   setup --image REF [--with LIST]        what the installers run after they write this script (not for people)
+#
+# The words handled by the script itself are in the last case of the file; every other first word goes to the box.
+# SCRIPT_VERSION below is the version of this file (a test checks it equals container/host/VERSION). The support folder holds
+# what an image carries and one file cannot: VERSION, DEFAULTS, cloudflare-setup.py and tool-ports (see support_dir).
 #
 # Data goes to standard output, messages to standard error. Exit codes: 0 ok; 1 unset key or a failed write; 2 usage, unknown
 # key, invalid value or name; 3 prerequisite missing; 4 workspace or path problem; 5 conflict; 6 not ready; 7 Podman failed.
 # Paths honor HOME, XDG_CONFIG_HOME and XDG_STATE_HOME (an empty or relative XDG value is ignored, as in dirs.sh).
 # The file mode is read as an octal number (stat -c %a, then stat -f %Lp, then find -perm); `ls` output is never parsed.
+
+SCRIPT_VERSION=2.0.0
 
 # shellcheck disable=SC2154  # some variables are assigned through eval (keys are validated names, never user text)
 LC_ALL=C
@@ -25,7 +35,7 @@ umask 077
 NL='
 '
 CR=$(printf '\r')
-# DEFAULT_NAME and REGISTRY_REPO come from the DEFAULTS file next to this helper (load_defaults); nothing here holds them.
+# DEFAULT_NAME and REGISTRY_REPO come from the DEFAULTS file of the support folder (load_defaults); nothing here holds them.
 
 warn() { printf 'swarmbox: %s\n' "$*" >&2; }
 die() { _rc=$1; shift; warn "$*"; exit "$_rc"; }
@@ -50,7 +60,8 @@ usage: swarmbox [--plain] [command [args...]]
   command [args...]     run a command in the box, for example: swarmbox claude
   up | stop | reset     start the box without a shell | stop it | recreate it (the workspace is kept)
   url                   print the address of the web terminal
-  update [--to TAG]     fetch a newer image, then run `swarmbox reset`
+  update [--to TAG]     fetch a newer image and refresh this command from it, then run `swarmbox reset`
+  version               print the version
   config get|set|list   the settings, for example: swarmbox config set WEB_PORT 7682
   env add|rm NAME       pass a variable of yours into the box (env list shows them)
   pubkey                the box's git SSH key
@@ -88,7 +99,7 @@ default_of() {
     esac
 }
 
-# ---------------------------------------------------------------- version
+# ---------------------------------------------------------------- version and the support folder
 
 self_dir() {
     case $0 in
@@ -98,30 +109,53 @@ self_dir() {
     (cd "$_d" 2>/dev/null && pwd -P)
 }
 
-# Prints the version from the VERSION file next to the helper, or exits 3 (a corrupted helper archive).
-read_version() {
-    _dir=$(self_dir) || die 3 "cannot find the folder of the host helper."
-    [ -r "$_dir/VERSION" ] || die 3 "the host helper has no VERSION file ($_dir/VERSION); the helper archive is incomplete."
-    _v=
-    IFS= read -r _v < "$_dir/VERSION" || true
-    trim "$_v"
-    _v=$_t
-    case $_v in
-        [0-9]*.[0-9]*.[0-9]*) ;;
-        *) die 3 "the VERSION file of the host helper does not hold a version (X.Y.Z): '$_v'." ;;
-    esac
-    case $_v in
-        *[!0-9A-Za-z.+-]*) die 3 "the VERSION file of the host helper does not hold a version (X.Y.Z): '$_v'." ;;
-    esac
-    printf '%s' "$_v"
+# support_dir: sets SUPPORT to the folder of VERSION, DEFAULTS, cloudflare-setup.py and tool-ports. The installers and
+# `swarmbox update` put it at $XDG_DATA_HOME/swarmbox/host (default ~/.local/share/swarmbox/host), next to nothing else of the script.
+# When a VERSION file sits next to this program (the image's own folder, a checkout, the tests) that folder is the support folder.
+support_dir() {
+    _sd=$(self_dir) || die 3 "cannot find the folder of this script."
+    if [ -r "$_sd/VERSION" ]; then
+        SUPPORT=$_sd
+    else
+        data_host_dir
+        SUPPORT=$DATA_HOST
+    fi
 }
 
-# Reads the two keys of the DEFAULTS file next to the helper: DEFAULT_NAME and REGISTRY_REPO. The file is parsed, not sourced:
+# data_host_dir: sets DATA_HOST, where the installers and `update` write the support folder.
+data_host_dir() {
+    case ${HOME:-} in
+        /*) ;;
+        *) die 1 "HOME is not set to an absolute path." ;;
+    esac
+    DATA_HOST=$(xdg_root "${XDG_DATA_HOME:-}" "$HOME/.local/share")/swarmbox/host
+}
+
+# needs_support FILE: exits 3 with the way out when the support folder has no such file.
+needs_support() {
+    support_dir
+    [ -r "$SUPPORT/$1" ] || die 3 "the support files are missing ($SUPPORT/$1). Run \`swarmbox update\`, or the installer again."
+}
+
+# The version of the support files (empty when there is none or it is not a version).
+support_version() {
+    _sv=
+    [ -r "$SUPPORT/VERSION" ] && IFS= read -r _sv < "$SUPPORT/VERSION" || true
+    trim "$_sv"
+    _sv=$_t
+    case $_sv in
+        *[!0-9A-Za-z.+-]*) _sv= ;;
+        [0-9]*.[0-9]*.[0-9]*) ;;
+        *) _sv= ;;
+    esac
+}
+
+# Reads the two keys of the DEFAULTS file of the support folder: DEFAULT_NAME and REGISTRY_REPO. The file is parsed, not sourced:
 # only KEY=VALUE lines of these two keys count, one pair of single quotes around a value is removed, anything else is ignored.
 # Exits 3 when the file is missing or a value is not usable (a corrupted helper archive).
 load_defaults() {
-    _dir=$(self_dir) || die 3 "cannot find the folder of the host helper."
-    [ -r "$_dir/DEFAULTS" ] || die 3 "the host helper has no DEFAULTS file ($_dir/DEFAULTS); the helper archive is incomplete."
+    needs_support DEFAULTS
+    _dir=$SUPPORT
     DEFAULT_NAME=
     REGISTRY_REPO=
     while IFS= read -r _l || [ -n "$_l" ]; do
@@ -176,7 +210,7 @@ init_paths() {
         /*) ;;
         *) die 1 "HOME is not set to an absolute path." ;;
     esac
-    VERSION_STR=$(read_version) || exit 3   # the exit must happen outside the command substitution
+    VERSION_STR=$SCRIPT_VERSION
     load_defaults
     BOX=${SWARMBOX_NAME:-$DEFAULT_NAME}
     valid_box_name "$BOX" || die 2 "invalid SWARMBOX_NAME '$BOX': it must start with a letter or digit, use only letters, digits, '.', '_' and '-', and not be 'config'."
@@ -189,6 +223,19 @@ init_paths() {
     fi
     CFG_FILE=$CFG_DIR/config
     NOTICES=$STATE_DIR/notices
+    check_skew
+}
+
+# One short line, once, when the support files come from another version than this script (an image of another series, a script
+# installed by hand). `swarmbox update` makes them agree.
+# shellcheck disable=SC2016  # the backticks in the message are literal
+check_skew() {
+    support_version
+    [ -n "$_sv" ] || return 0
+    [ "$_sv" != "$SCRIPT_VERSION" ] || return 0
+    notice_seen "skew-$SCRIPT_VERSION-$_sv" && return 0
+    warn "this script is $SCRIPT_VERSION but the image files are $_sv; \`swarmbox update\` makes them agree."
+    notice_mark "skew-$SCRIPT_VERSION-$_sv" || :
 }
 
 # private_dir DIR: makes DIR (and its parents) and removes the group and other permissions of DIR itself (never adds any), so that no other account can plant a file or a
@@ -646,8 +693,7 @@ read_secret() {
 
 cmd_version() {
     [ $# -eq 0 ] || usage
-    read_version
-    printf '\n'
+    printf '%s\n' "$SCRIPT_VERSION"
 }
 
 cmd_config_get() {
@@ -750,7 +796,7 @@ cmd_config_seed() {
         if _have=$(cfg_raw "$_key") && [ -n "$_have" ]; then :; else _have=$(default_of "$_key"); fi
         [ "$_want" != "$_have" ] || continue
         if notice_seen "$_key"; then continue; fi
-        warn "init asked for $_key=$_want, the config says $_key=$_have; run \`swarmbox config set $_key $_want\` to change it"
+        warn "the installer asked for $_key=$_want, the config says $_key=$_have; run \`swarmbox config set $_key $_want\` to change it"
         notice_mark "$_key" || warn "cannot write $NOTICES; the notice may repeat."
     done
     return 0
@@ -857,11 +903,11 @@ sha256_stdin() {
     printf '%s' "${_so%% *}"
 }
 
-# Reads tool-ports from the folder of the helper into TP_DATA: one "tool<TAB>port" line each, malformed lines skipped with a
-# warning. The file always exists in a good archive; a missing one is a corrupted helper: exit 3.
+# Reads tool-ports from the support folder into TP_DATA: one "tool<TAB>port" line each, malformed lines skipped with a
+# warning. The file always exists in a good archive; a missing one is an incomplete install: exit 3.
 load_tool_ports() {
-    _dir=$(self_dir) || die 3 "cannot find the folder of the host helper."
-    [ -r "$_dir/tool-ports" ] || die 3 "the host helper has no tool-ports file ($_dir/tool-ports); the helper archive is incomplete. Run \`swarmbox update\` or remove $_dir so the next call extracts the helper again."
+    needs_support tool-ports
+    _dir=$SUPPORT
     TP_DATA=
     while IFS= read -r _l || [ -n "$_l" ]; do
         [ -n "$_l" ] || continue
@@ -1435,7 +1481,7 @@ capture_flags() {
     rm -f "$UP_FLAGS"   # SR-02
     u_prog=${SWARMBOX_TEST_CREATE_FLAGS:-}
     if [ -z "$u_prog" ]; then
-        u_sd=$(self_dir) || die 3 "cannot find the folder of the host helper."
+        u_sd=$(self_dir) || die 3 "cannot find the folder of this script."
         u_prog=$u_sd/${0##*/}
     fi
     SWARMBOX_INIT=$INIT_RESOLVED "$u_prog" create-flags > "$UP_FLAGS" &
@@ -1924,9 +1970,78 @@ AEOF
     return 0
 }
 
-# update [--to TAG]. The order matters: the helper is extracted and its version
-# read into a temporary folder, the local tag is made, and only then the folder is renamed over the old helper and the config
-# written, so a failing `podman tag` leaves the helper as it was as well as the config.
+# ver_newer A B: succeeds when version A is newer than version B. X.Y.Z as numbers (2.0.10 is newer than 2.0.9); anything after
+# the patch number is ignored.
+ver_newer() {
+    _va=${1%%[!0-9.]*}
+    _vb=${2%%[!0-9.]*}
+    _vi=0
+    while [ "$_vi" -lt 3 ]; do
+        _vx=${_va%%.*}
+        _vy=${_vb%%.*}
+        case $_va in *.*) _va=${_va#*.} ;; *) _va=0 ;; esac
+        case $_vb in *.*) _vb=${_vb#*.} ;; *) _vb=0 ;; esac
+        _vx=${_vx:-0}
+        _vy=${_vy:-0}
+        [ "$_vx" -gt "$_vy" ] && return 0
+        [ "$_vx" -lt "$_vy" ] && return 1
+        _vi=$((_vi + 1))
+    done
+    return 1
+}
+
+# fetch_helper REF: unpacks the helper archive of the image (`podman run --rm REF host-helper`: this script, VERSION, DEFAULTS,
+# cloudflare-setup.py, tool-ports) into a new folder next to the support folder. Sets FH_TMP (the folder, removed by the EXIT
+# trap up_update_cleanup unless it is moved) and FH_VER (the version the archive's script reports). The archive goes to a file,
+# is checked, unpacked, and the result is tested (no pipe: a pipe's status is the last command's). Exits 3, changing nothing.
+fetch_helper() {
+    fh_ref=$1
+    data_host_dir
+    private_dir "${DATA_HOST%/*}" || die 3 "cannot make ${DATA_HOST%/*}."
+    FH_TMP=$(mktemp -d "$DATA_HOST.new.XXXXXX" 2> /dev/null) || FH_TMP=
+    if [ -z "$FH_TMP" ] || [ ! -d "$FH_TMP" ]; then die 3 "cannot make a temporary folder next to $DATA_HOST."; fi
+    UP_TMPDIR=$FH_TMP
+    fh_msg=
+    if podman run --rm "$fh_ref" host-helper > "$FH_TMP/helper.tar" 2> "$FH_TMP/podman.err"; then
+        if archive_safe "$FH_TMP/helper.tar" && tar -x -C "$FH_TMP" -f "$FH_TMP/helper.tar" > /dev/null 2>&1 && [ -x "$FH_TMP/swarmbox-host" ]; then
+            fh_msg=
+        else
+            fh_msg="the image has no usable host helper"
+        fi
+    else
+        fh_msg=$(tail -n 1 "$FH_TMP/podman.err" 2> /dev/null)
+        fh_msg=${fh_msg:-"podman failed"}
+    fi
+    [ -z "$fh_msg" ] || die 3 "cannot read the host helper from $fh_ref: $fh_msg. Nothing was changed. Check the network, or the image name."
+    rm -f "$FH_TMP/helper.tar" "$FH_TMP/podman.err"
+    FH_VER=$("$FH_TMP/swarmbox-host" version 2> /dev/null | head -n 1)
+    case $FH_VER in
+        *[!0-9A-Za-z.+-]*) FH_VER= ;;
+        [0-9]*.[0-9]*.[0-9]*) ;;
+        *) FH_VER= ;;
+    esac
+    [ -n "$FH_VER" ] || die 3 "the host helper in $fh_ref does not report a version (X.Y.Z). Nothing was changed."
+}
+
+# swap_support: the folder of fetch_helper becomes the support folder (renamed over the old one, which is removed); this script's
+# own copy in it is deleted (the script is the file that runs, not a copy in the data folder).
+swap_support() {
+    rm -f "$FH_TMP/swarmbox-host"
+    rm -rf "$DATA_HOST.old"
+    if [ -e "$DATA_HOST" ] || [ -L "$DATA_HOST" ]; then
+        mv "$DATA_HOST" "$DATA_HOST.old" || die 3 "cannot replace the support files in $DATA_HOST."
+    fi
+    if ! mv "$FH_TMP" "$DATA_HOST"; then
+        mv "$DATA_HOST.old" "$DATA_HOST" 2> /dev/null
+        die 3 "cannot replace the support files in $DATA_HOST."
+    fi
+    UP_TMPDIR=
+    rm -rf "$DATA_HOST.old"
+}
+
+# update [--to TAG]. The order matters: the helper is extracted and its version read into a temporary folder, the local tag is
+# made, and only then the folder is renamed over the old support files, this script is replaced (atomically, never by an older
+# one) and the config written, so a failing `podman tag` leaves everything as it was.
 # shellcheck disable=SC2016  # the backticks in the messages are literal
 cmd_update() {
     up_to=
@@ -1961,38 +2076,14 @@ cmd_update() {
     need_podman
     ensure_state_dir
     up_traps
+    trap 'up_update_cleanup' EXIT
     warn "pulling $up_ref (this can take a while)..."
     if ! podman pull -q "$up_ref" > /dev/null 2> "$UP_ERRF"; then
         up_m=$(tail -n 1 "$UP_ERRF" 2> /dev/null)
         die 3 "cannot pull $up_ref: ${up_m:-podman failed}. Nothing was changed. Check the network and the tag."
     fi
-    up_data=$(xdg_root "${XDG_DATA_HOME:-}" "$HOME/.local/share")/swarmbox
-    up_dir=$up_data/host
-    private_dir "$up_data" || die 3 "cannot make $up_data."
-    up_tmp=$(mktemp -d "$up_dir.new.XXXXXX" 2> /dev/null) || up_tmp=
-    if [ -z "$up_tmp" ] || [ ! -d "$up_tmp" ]; then die 3 "cannot make a temporary folder next to $up_dir."; fi
-    UP_TMPDIR=$up_tmp
-    trap 'up_update_cleanup' EXIT
-    up_msg=
-    if podman run --rm "$up_ref" host-helper > "$up_tmp/helper.tar" 2> "$UP_ERRF"; then
-        if archive_safe "$up_tmp/helper.tar" && tar -x -C "$up_tmp" -f "$up_tmp/helper.tar" > /dev/null 2>&1 && [ -x "$up_tmp/swarmbox-host" ]; then
-            up_msg=
-        else
-            up_msg="the image has no usable host helper"
-        fi
-    else
-        up_msg=$(tail -n 1 "$UP_ERRF" 2> /dev/null)
-        up_msg=${up_msg:-"podman failed"}
-    fi
-    [ -z "$up_msg" ] || die 3 "cannot read the host helper from $up_ref: $up_msg. Nothing was changed."
-    rm -f "$up_tmp/helper.tar"
-    up_ver=$("$up_tmp/swarmbox-host" version 2> /dev/null | head -n 1)
-    case $up_ver in
-        *[!0-9A-Za-z.+-]*) up_ver= ;;
-        [0-9]*.[0-9]*.[0-9]*) ;;
-        *) up_ver= ;;
-    esac
-    [ -n "$up_ver" ] || die 3 "the host helper in $up_ref does not report a version (X.Y.Z). Nothing was changed."
+    fetch_helper "$up_ref"
+    up_ver=$FH_VER
     case $up_tag in
         [0-9]*.[0-9]*.[0-9]*)   # an exact tag must be the version it holds, or the local tag would lie
             [ "$up_ver" = "$up_tag" ] || die 3 "the image $up_ref holds version $up_ver, not $up_tag. Nothing was changed."
@@ -2004,16 +2095,9 @@ cmd_update() {
             die 3 "cannot tag $up_ref as $up_repo:$up_ver: ${up_m:-podman failed}. Nothing was changed."
         fi
     fi
-    rm -rf "$up_dir.old"
-    if [ -e "$up_dir" ] || [ -L "$up_dir" ]; then
-        mv "$up_dir" "$up_dir.old" || die 3 "cannot replace the helper in $up_dir."
-    fi
-    if ! mv "$up_tmp" "$up_dir"; then
-        mv "$up_dir.old" "$up_dir" 2> /dev/null
-        die 3 "cannot replace the helper in $up_dir."
-    fi
-    UP_TMPDIR=
-    rm -rf "$up_dir.old"
+    prepare_script_refresh "$FH_TMP/swarmbox-host" "$up_ver"
+    swap_support
+    refresh_script
     cfg_write_keys IMAGE "$up_repo:$up_ver"
     if [ "$up_src" = env ]; then
         warn "SWARMBOX_IMAGE is set ($up_cur) and overrides the IMAGE written to $CFG_FILE."
@@ -2021,9 +2105,45 @@ cmd_update() {
     printf 'updated to %s; run `swarmbox reset` to use it (running sessions end)\n' "$up_ver"
 }
 
+# prepare_script_refresh NEWFILE VERSION: copies the script of the image next to this script, ready to be renamed over it
+# (refresh_script). Nothing when this script runs from a folder that holds a VERSION file (a checkout, the tests: the file is not
+# an installed copy), when the image's script is not newer than this one (a newer script is never replaced by an older one, and
+# the same version has nothing to replace), or when the folder cannot be written (a warning).
+# shellcheck disable=SC2016  # the backticks in the messages are literal
+prepare_script_refresh() {
+    NEW_BIN=
+    _sd=$(self_dir) || return 0
+    [ ! -r "$_sd/VERSION" ] || return 0
+    if [ "$2" = "$SCRIPT_VERSION" ]; then return 0; fi
+    if ! ver_newer "$2" "$SCRIPT_VERSION"; then
+        warn "this script ($SCRIPT_VERSION) is newer than the image ($2); the script is kept."
+        return 0
+    fi
+    _nb=$_sd/.${0##*/}.new.$$
+    rm -f "$_nb"
+    if cp "$1" "$_nb" 2> /dev/null && chmod 755 "$_nb" 2> /dev/null; then
+        NEW_BIN=$_nb
+    else
+        rm -f "$_nb"
+        warn "cannot write next to this script ($_sd); it stays $SCRIPT_VERSION. Run the installer again to replace it."
+    fi
+}
+
+refresh_script() {
+    [ -n "$NEW_BIN" ] || return 0
+    if mv -f "$NEW_BIN" "$(self_dir)/${0##*/}" 2> /dev/null; then
+        NEW_BIN=
+    else
+        warn "cannot replace this script; it stays $SCRIPT_VERSION. Run the installer again."
+    fi
+}
+
+NEW_BIN=
+FH_TMP=
 UP_TMPDIR=
 up_update_cleanup() {
     [ -z "$UP_TMPDIR" ] || rm -rf "$UP_TMPDIR"
+    [ -z "$NEW_BIN" ] || rm -f "$NEW_BIN"
     up_cleanup
 }
 
@@ -2082,8 +2202,7 @@ cmd_url() {
     return 0
 }
 
-# remote setup|status|off|token [options]: runs cloudflare-setup.py, which sits next to this program (the folder the shell
-# function extracts the image's helper to). setup is its `apply`, off is its `remove`. The user's options come last,
+# remote setup|status|off|token [options]: runs cloudflare-setup.py of the support folder. setup is its `apply`, off is its `remove`. The user's options come last,
 # so they win over the two defaults added here (--name from SWARMBOX_NAME, --port from WEB_PORT). XDG_CONFIG_HOME is set to
 # the folder CFG_ROOT lives in, so the script's cloudflare.json is the file `url` reads. No secret travels on argv: the API token
 # stays in the environment the script inherits; no command of the script reads the tunnel token (it asks the API for it), so
@@ -2102,8 +2221,8 @@ cmd_remote() {
     command -v python3 > /dev/null 2>&1 || die 3 "python3 is needed for 'swarmbox remote' and was not found."
     init_paths
     cfg_prepare
-    r_script=$(dirname "$0")/cloudflare-setup.py
-    [ -r "$r_script" ] || die 3 "cloudflare-setup.py was not found next to the host helper ($r_script); run \`swarmbox update\` to extract it again."
+    needs_support cloudflare-setup.py
+    r_script=$SUPPORT/cloudflare-setup.py
     resolve_valid WEB_PORT
     r_port=$R_VAL
     XDG_CONFIG_HOME=${CFG_ROOT%/swarmbox}
@@ -2218,27 +2337,94 @@ cmd_config() {
     esac
 }
 
-[ $# -ge 1 ] || usage
-sub=$1
-shift
-case $sub in
-    version) cmd_version "$@" ;;
-    config) cmd_config "$@" ;;
-    env) cmd_env "$@" ;;
-    create-flags) cmd_create_flags "$@" ;;
-    fingerprint) cmd_fingerprint "$@" ;;
-    up) cmd_up "$@" ;;
-    reset) cmd_reset "$@" ;;
-    stop) cmd_stop "$@" ;;
-    url) cmd_url "$@" ;;
-    connection) cmd_connection "$@" ;;
-    update) cmd_update "$@" ;;
-    remote) cmd_remote "$@" ;;
-    -h|--help|help)
-        help_text
-        ;;
-    *)
-        warn "unknown subcommand '$sub'."
-        usage
-        ;;
+# ---------------------------------------------------------------- setup, run by the installers
+
+# setup --image REF [--with LIST]: what both installers run, once they have written this script. Checks Podman (present, 4.3 or
+# newer), puts the support files of the image in place, records IMAGE (and WITH) in the config file the way `config seed` does
+# (an existing value is never overwritten), then prints what is left to do: the PATH if the folder of this script is not in it,
+# a warning for an old shell-function block in a startup file (it would win over this script), and the next command.
+# It never writes a startup file. Running it again changes nothing that is already right.
+# shellcheck disable=SC2016  # the backticks in the messages are literal
+cmd_setup() {
+    s_image=
+    s_with=
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --image|--image=*) opt_arg --image "$@"; s_image=$OPT_V ;;
+            --with|--with=*) opt_arg --with "$@"; s_with=$OPT_V ;;
+            *) usage ;;
+        esac
+        shift "$OPT_N"
+    done
+    [ -n "$s_image" ] || usage
+    valid_image_ref "$s_image" || die 2 "setup: '$s_image' is not an image reference."
+    need_podman
+    check_podman_version
+    up_traps
+    trap 'up_update_cleanup' EXIT
+    warn "reading the support files from $s_image (a missing image is pulled; this can take a while)..."
+    fetch_helper "$s_image"
+    swap_support
+    support_dir
+    init_paths
+    set --
+    [ -z "$s_with" ] || set -- --with "$s_with"
+    cmd_config_seed --image "$s_image" "$@"
+    s_bin=$(self_dir) || s_bin=.
+    printf 'swarmbox %s is in %s\n' "$SCRIPT_VERSION" "$s_bin"
+    case ":$PATH:" in
+        *":$s_bin:"*) ;;
+        *)
+            printf '%s is not in your PATH. Add it for this and later terminals, for example:\n' "$s_bin"
+            printf '  bash or zsh: put this line in your startup file:  export PATH="%s:$PATH"\n' "$s_bin"
+            printf '  fish:        fish_add_path %s\n' "$s_bin"
+            ;;
+    esac
+    s_old=
+    for s_rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.config/fish/config.fish"; do
+        if [ -f "$s_rc" ] && grep -q '>>> swarmbox' "$s_rc" 2> /dev/null; then s_old="$s_old $s_rc"; fi
+    done
+    if [ -n "$s_old" ]; then
+        warn "an old swarmbox shell function is still in:$s_old"
+        warn "delete that block (it starts with a line holding '>>> swarmbox'); a shell function wins over this script. SwarmBox did not change those files."
+    fi
+    printf 'Next: open a new terminal and run `swarmbox` (the first start creates the box; `swarmbox --help` lists the commands).\n'
+}
+
+# ---------------------------------------------------------------- the box: run a command in it
+
+# attach_main WORDS...: for every first word that is not handled above. Start the box if needed (a separate shell: `up` holds the
+# lock until it ends, and the session below must not), then `podman exec` into it. -t only when standard input and output are
+# both terminals; TERM and COLORTERM are passed. pubkey and tool go to swarmbox-entrypoint as they are; a leading `attach` is a
+# prefix, not an argument; the exit status is the command's.
+attach_main() {
+    ( cmd_up ) || exit $?
+    a_name=$(cmd_config_get NAME) || exit $?
+    a_t=-i
+    if [ -t 0 ] && [ -t 1 ]; then a_t=-it; fi
+    case ${1-} in
+        pubkey|tool) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
+        attach) shift ;;
+    esac
+    exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint attach "$@"
+}
+
+# The words handled here. create-flags and connection are internal (the script calls itself with the first); any other first word
+# runs in the box. A command of the box with one of these names runs as `swarmbox attach NAME`.
+case ${1-} in
+    version) shift; cmd_version "$@" ;;
+    config) shift; cmd_config "$@" ;;
+    env) shift; cmd_env "$@" ;;
+    create-flags) shift; cmd_create_flags "$@" ;;
+    fingerprint) shift; cmd_fingerprint "$@" ;;
+    up) shift; cmd_up "$@" ;;
+    reset) shift; cmd_reset "$@" ;;
+    stop) shift; cmd_stop "$@" ;;
+    url) shift; cmd_url "$@" ;;
+    connection) shift; cmd_connection "$@" ;;
+    update) shift; cmd_update "$@" ;;
+    remote) shift; cmd_remote "$@" ;;
+    setup) shift; cmd_setup "$@" ;;
+    -h|--help|help) help_text ;;
+    *) attach_main "$@" ;;
 esac
