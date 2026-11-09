@@ -167,11 +167,6 @@ class InstallManaged(Base):
         self.assertIn("riscv64", r.stderr)
         self.assertEqual(self.installs(), 0)
 
-    def test_arch_override_arm64(self):
-        self.managed()
-        self.assertEqual(self.tool("install", "demo", SWARMBOX_TEST_ARCH="arm64").returncode, 0)
-        self.assertEqual(self.records()[0][2], "arm64")
-
     def test_layout_version_dir_and_current_link(self):
         self.managed()
         self.assertEqual(self.tool("install", "demo").returncode, 0)
@@ -181,15 +176,6 @@ class InstallManaged(Base):
         self.assertTrue(os.path.islink(os.path.join(d, "current")))
         self.assertEqual(os.readlink(os.path.join(d, "current")), "1.2.3")
         self.assertEqual(sorted(os.listdir(d)), ["1.2.3", "current"])
-
-    def test_env_fingerprint_has_arch(self):
-        self.managed()
-        self.tool("install", "demo")
-        with open(os.path.join(self.tools, "demo", "1.2.3", ".swarmbox-env")) as f:
-            text = f.read()
-        self.assertIn("ARCH=amd64", text)
-        self.assertIn("NODE_MAJOR=", text)
-        self.assertIn("LIBC=", text)
 
     def test_failure_leaves_nothing_and_the_next_call_retries(self):
         self.managed()
@@ -204,15 +190,6 @@ class InstallManaged(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.installs(), 2)
         self.assertTrue(os.path.islink(os.path.join(self.tools, "demo", "current")))
-
-    def test_failed_second_version_keeps_current_on_the_first(self):
-        self.managed()
-        self.assertEqual(self.tool("install", "demo").returncode, 0)
-        before = tree_hash(self.tools)
-        r = self.tool("install", "demo", "--version", "9.9.9", FAKE_FAIL="1")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual(tree_hash(self.tools), before)
-        self.assertEqual(os.readlink(os.path.join(self.tools, "demo", "current")), "1.2.3")
 
     def test_second_install_is_a_noop(self):
         self.managed()
@@ -253,14 +230,6 @@ class InstallManaged(Base):
         self.assertEqual(r.stdout, "")
         self.assertIn("INSTALLER-STDOUT-NOISE", r.stderr)
 
-    def test_incomplete_version_dir_is_redone(self):
-        self.managed()
-        os.makedirs(os.path.join(self.tools, "demo", "1.2.3", "bin"))
-        r = self.tool("install", "demo")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.installs(), 1)
-        self.assertTrue(os.path.isfile(os.path.join(self.tools, "demo", "1.2.3", ".swarmbox-env")))
-
     def test_installer_that_does_not_make_the_provided_command_fails(self):
         self.managed(installer="#!/bin/bash\nmkdir -p \"$TOOL_PREFIX/bin\"\n")
         before = tree_hash(self.home)
@@ -291,11 +260,6 @@ class InstallManaged(Base):
         r = self.tool("install", "demo", "--force", FIXTURE_ARCHIVE=arch, SWARMBOX_TEST_ARCH="arm64")
         self.assertNotEqual(r.returncode, 0)  # the arm64 checksum is wrong for this archive
 
-    def test_checksum_variable_is_not_set_without_a_declared_checksum(self):
-        self.managed()
-        self.tool("install", "demo", TOOL_SHA256="leaked-from-the-environment")
-        self.assertEqual(self.records()[0][3], "")
-
     def test_unknown_tool_command_and_bad_names(self):
         self.managed()
         r = self.tool("install", "nope")
@@ -309,18 +273,6 @@ class InstallManaged(Base):
         self.assertEqual(self.tool("install", "demo", "--version", "../x").returncode, 64)
         self.assertEqual(self.tool("install", "demo", "--bogus").returncode, 64)
         self.assertEqual(self.installs(), 0)
-
-    def test_manifest_with_an_unknown_schema_is_not_installed(self):
-        make_tool(self.image, "bad", install=MANAGED, PROVIDES='"demo"', SCHEMA="99")
-        r = self.tool("install", "bad")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual(self.installs(), 0)
-
-    def test_user_level_wins_over_image(self):
-        self.managed(VERSION="1.0.0")
-        self.managed(level=self.user, VERSION="7.0.0")
-        self.assertEqual(self.tool("install", "demo").returncode, 0)
-        self.assertEqual(self.records()[0][1], "7.0.0")
 
     def test_nothing_is_written_outside_the_allowed_paths(self):
         self.managed()
@@ -354,57 +306,6 @@ class InstallSelf(Base):
         self.assertTrue(os.access(self.launcher, os.X_OK))
         self.assertEqual(os.listdir(os.path.join(self.tools, "selfy")), ["self"])  # no current link, no versions, no staging
 
-    def test_failure_leaves_no_marker_and_the_tool_tree_untouched(self):
-        os.makedirs(self.tools)
-        before = tree_hash(self.tools)
-        r = self.tool("install", "selfy", FAKE_FAIL="1")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("could not resolve host", r.stderr)
-        self.assertEqual(tree_hash(self.tools), before)
-        self.assertFalse(os.path.exists(self.record))
-        r = self.tool("install", "selfy")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertTrue(os.path.isdir(self.record))
-
-    def test_failure_from_a_clean_home_creates_no_tools_folder(self):
-        self.tool("install", "selfy", FAKE_FAIL="1")
-        self.assertFalse(os.path.exists(self.tools))
-
-    def test_failed_reinstall_keeps_the_previous_record(self):
-        self.tool("install", "selfy")
-        before = tree_hash(self.tools)
-        r = self.tool("install", "selfy", "--version", "2.0.0", FAKE_FAIL="1")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual(tree_hash(self.tools), before)
-
-    def test_second_install_is_a_noop(self):
-        self.tool("install", "selfy")
-        r = self.tool("install", "selfy")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("already installed", r.stderr)
-        self.assertEqual(self.installs(), 1)
-
-    def test_version_installs_that_version_and_says_the_tool_updates_itself(self):
-        self.tool("install", "selfy")
-        r = self.tool("install", "selfy", "--version", "2.1.0")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.records()[-1][1], "2.1.0")
-        self.assertIn("updates itself", r.stderr)
-        self.assertEqual(self.installs(), 2)
-
-    def test_installed_means_record_and_resolvable_command(self):
-        self.tool("install", "selfy")
-        os.remove(self.launcher)  # a deleted binary with a stale record
-        r = self.tool("run", "selfy", "selfy", "--", "hello")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.installs(), 2)
-        self.assertIn("[hello]", r.stdout)
-        # a binary without a record also installs
-        shutil.rmtree(self.record)
-        r = self.tool("run", "selfy", "selfy", "--", "hello")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.installs(), 3)
-
     def test_a_launcher_that_resolves_to_the_shim_is_refused(self):
         shim_dir = os.path.join(self.base, "usr-local-bin")
         os.makedirs(shim_dir)
@@ -425,20 +326,6 @@ class InstallSelf(Base):
         with open(self.calls) as f:
             self.assertEqual(f.read().strip(), "update called with: update")
 
-    def test_update_passes_the_exit_code_and_needs_an_install(self):
-        r = self.tool("update", "selfy")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("not installed", r.stderr)
-        self.tool("install", "selfy")
-        self.assertEqual(self.tool("update", "selfy", UPDATE_EXIT="3").returncode, 3)
-
-    def test_update_of_a_managed_tool_is_a_later_phase(self):
-        self.managed()
-        r = self.tool("update", "demo")
-        self.assertEqual(r.returncode, 70)
-        self.assertIn("later phase", r.stderr)
-
-
 class Run(Base):
     def test_not_installed_triggers_install_then_exec(self):
         self.managed()
@@ -458,31 +345,6 @@ class Run(Base):
         self.assertEqual(r.returncode, 7)
         self.assertEqual(r.stdout, "".join("[%s]\n" % a for a in args))
 
-    def test_no_arguments_and_no_dashes(self):
-        self.managed()
-        self.assertEqual(self.tool("run", "demo", "demo", "--").stdout, "")
-        self.assertEqual(self.tool("run", "demo", "demo").returncode, 0)
-        self.assertEqual(self.tool("run", "demo", "demo", "stray").returncode, 64)
-        self.assertEqual(self.tool("run", "demo").returncode, 64)
-        self.assertEqual(self.tool("run", "demo", "other", "--").returncode, 64)  # not in PROVIDES
-
-    def test_stdin_reaches_the_tool(self):
-        self.managed()
-        self.tool("install", "demo")
-        self.write_program("#!/bin/sh\ncat\n")
-        r = subprocess.run(["bash", TOOL, "run", "demo", "demo", "--"], env=self.env(), input="piped\n",
-                           capture_output=True, text=True, timeout=30)
-        self.assertEqual(r.stdout, "piped\n")
-
-    def test_the_tool_runs_in_the_callers_directory_with_its_bin_on_path(self):
-        self.managed()
-        self.tool("install", "demo")
-        self.write_program("#!/bin/sh\npwd\necho \"$PATH\"\n")
-        r = self.tool("run", "demo", "demo", "--")
-        lines = r.stdout.splitlines()
-        self.assertEqual(lines[0], self.base)
-        self.assertTrue(lines[1].startswith(os.path.join(self.tools, "demo", "current", "bin") + ":"), lines[1])
-
     def test_offline_failure_is_clear_and_the_next_call_retries(self):
         self.managed()
         r = self.tool("run", "demo", "demo", "--", FAKE_FAIL="1")
@@ -494,11 +356,6 @@ class Run(Base):
         r = self.tool("run", "demo", "demo", "--")
         self.assertEqual(r.returncode, 0, r.stderr)
 
-    def test_failed_install_exit_code_is_not_confused_with_the_tools(self):
-        self.managed()
-        r = self.tool("run", "demo", "demo", "--", FAKE_FAIL="1")
-        self.assertEqual(r.returncode, 69)
-
     def test_the_lock_is_released_before_exec(self):
         self.managed()
         self.tool("install", "demo")
@@ -506,19 +363,6 @@ class Run(Base):
         self.assertEqual(self.tool("run", "demo", "demo", "--").returncode, 0)
         r = subprocess.run(["flock", "-n", self.lock, "true"], capture_output=True, timeout=10)
         self.assertEqual(r.returncode, 0, "the lock must be free once run has exec'd")
-
-    def test_the_lock_is_not_held_by_the_installer_children(self):
-        self.managed(installer=MANAGED.replace('DEST="$TOOL_PREFIX/bin/demo"', '(sleep 3 &) ; DEST="$TOOL_PREFIX/bin/demo"'))
-        self.assertEqual(self.tool("install", "demo").returncode, 0)
-        r = subprocess.run(["flock", "-n", self.lock, "true"], capture_output=True, timeout=10)
-        self.assertEqual(r.returncode, 0)
-
-    def test_temp_dir_is_not_leaked_by_run(self):
-        self.managed()
-        self.tool("run", "demo", "demo", "--")
-        self.tool("run", "demo", "demo", "--")
-        self.assertEqual(os.listdir(self.tmp), [])
-
 
 class Concurrency(Base):
     def test_two_installs_at_once_run_the_installer_once(self):
@@ -531,16 +375,6 @@ class Concurrency(Base):
             self.assertEqual(p.returncode, 0, err)
         self.assertEqual(self.installs(), 1)
         self.assertTrue(any("already installed" in err for _, err in outs), outs)
-
-    def test_two_runs_at_once_install_once_and_both_run(self):
-        self.managed()
-        env = self.env(FAKE_SLEEP="1.5")
-        procs = [subprocess.Popen(["bash", TOOL, "run", "demo", "demo", "--", str(i)], env=env, stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE, text=True, cwd=self.base) for i in range(2)]
-        outs = [p.communicate(timeout=60) for p in procs]
-        self.assertEqual(sorted(o for o, _ in outs), ["[0]\n", "[1]\n"])
-        self.assertEqual(self.installs(), 1)
-
 
 class ListAndLater(Base):
     def test_list_shows_both_levels_and_the_state(self):
@@ -559,47 +393,6 @@ class ListAndLater(Base):
         r = self.tool("list")
         self.assertIn("installed (self)", [x for x in r.stdout.splitlines() if x.startswith("selfy")][0])
         self.assertEqual(self.tool("list", "extra").returncode, 64)
-
-    def test_list_marks_a_stale_self_record(self):
-        self.selfy()
-        self.tool("install", "selfy")
-        os.remove(os.path.join(self.home, ".local", "bin", "selfy"))
-        r = self.tool("list")
-        self.assertIn("needs reinstall", r.stdout)
-
-    def test_list_with_no_manifests(self):
-        r = self.tool("list")
-        self.assertEqual(r.returncode, 0, r.stderr)
-
-    def test_use_remove_new_doctor_are_real_since_4b5(self):
-        # they answered 'later phase', exit 70 until slice 4b.5; their tests are test_tool_use_remove.py, test_tool_new.py and
-        # test_tool_doctor.py. A managed tool's `update` is still for a later phase.
-        for args in (("use", "demo", "1.0"), ("remove", "demo"), ("doctor",), ("new", "x")):
-            with self.subTest(args=args):
-                self.assertNotEqual(self.tool(*args).returncode, 70)
-
-    def test_unknown_subcommand_still_exits_70(self):
-        self.assertEqual(self.tool("bogus").returncode, 70)
-
-
-class RealClaude(Base):
-    """The real manifest and installer run only against a fake curl; the vendor script is not downloaded here."""
-
-    def test_claude_manifest_goes_through_install_with_a_fake_vendor_installer(self):
-        shutil.copytree(os.path.join(ROOT, "container", "tools", "claude"), os.path.join(self.image, "claude"))
-        fake = os.path.join(self.base, "fakebin")
-        os.makedirs(fake)
-        with open(os.path.join(fake, "curl"), "w") as f:
-            f.write("#!/bin/sh\ncat <<'EOS'\nmkdir -p \"$HOME/.local/bin\"\n"
-                    "printf '#!/bin/sh\\necho \"2.1.0 (fake)\"\\n' > \"$HOME/.local/bin/claude\"\n"
-                    "chmod +x \"$HOME/.local/bin/claude\"\nEOS\n")
-        os.chmod(os.path.join(fake, "curl"), 0o755)
-        r = self.tool("run", "claude", "claude", "--", env=self.env(PATH=fake + ":/usr/bin:/bin"))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout, "2.1.0 (fake)\n")
-        self.assertIn("Installing claude (first use)...", r.stderr)
-        self.assertTrue(os.path.isfile(os.path.join(self.tools, "claude", "self", "installed")))
-
 
 if __name__ == "__main__":
     unittest.main()

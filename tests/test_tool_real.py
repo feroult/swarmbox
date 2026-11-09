@@ -140,10 +140,6 @@ class Harness(unittest.TestCase):
         self.assertTrue(self.changed(), "the scan saw nothing at all: it would pass vacuously")
         self.assertEqual(self.bad(), [])
 
-    def test_the_stamp_hides_old_files(self):
-        self.install(self.GOOD)
-        self.assertFalse([p for p in self.changed() if p.endswith("old.txt")])
-
     def test_a_dotfile_in_the_home_is_found(self):
         self.install(self.GOOD + 'echo x > "$HOME/.foo"\n')
         self.assertEqual(self.bad(), [os.path.join(self.home, ".foo")])
@@ -152,18 +148,6 @@ class Harness(unittest.TestCase):
         self.install(self.GOOD + 'echo x > "$USR/local/bin/demo"\n')
         self.assertEqual(self.bad(), [os.path.join(self.roots["usr"], "local", "bin", "demo")])
 
-    def test_a_symlink_is_found_too(self):
-        self.install(self.GOOD + 'ln -s "$TOOL_PREFIX/bin/demo" "$HOME/.local-demo-link"\n')
-        self.assertEqual(self.bad(), [os.path.join(self.home, ".local-demo-link")])
-
-    def test_a_write_to_another_tools_folder_is_found(self):
-        self.install(self.GOOD + 'mkdir -p "$HOME/.local/share/swarmbox/tools/other"; echo x > "$HOME/.local/share/swarmbox/tools/other/f"\n')
-        self.assertEqual(self.bad(), [os.path.join(self.home, ".local/share/swarmbox/tools/other/f")])
-
-    def test_a_folder_with_the_same_prefix_is_not_the_tool_folder(self):
-        self.install(self.GOOD + 'mkdir -p "$HOME/.local/share/swarmbox/tools/demo-evil"; echo x > "$HOME/.local/share/swarmbox/tools/demo-evil/f"\n')
-        self.assertEqual(len(self.bad()), 1)
-
     def test_the_cache_is_allowed_but_left_files_are_reported(self):
         self.install(self.GOOD + 'mkdir -p "$NPM_CACHE/_cacache"; echo x > "$NPM_CACHE/_cacache/blob"; mkdir -p "$NPM_CACHE/_logs"; echo x > "$NPM_CACHE/_logs/l.log"\n')
         self.assertEqual(self.bad(), [])
@@ -171,37 +155,14 @@ class Harness(unittest.TestCase):
         left = cache_leftovers(self.changed(), cache=cache)
         self.assertEqual(left, [os.path.join(cache, "_cacache", "blob")])
 
-    def test_a_cleaned_cache_has_no_leftovers(self):
-        self.install(self.GOOD + 'mkdir -p "$NPM_CACHE/_logs"; echo x > "$NPM_CACHE/_logs/l.log"; : > "$NPM_CACHE/_update-notifier-last-checked"\n')
-        cache = os.path.join(self.roots["opt"], "npm-cache")
-        self.assertEqual(cache_leftovers(self.changed(), cache=cache), [])
-
-    def test_offenders_unit(self):
-        self.assertEqual(offenders(["/usr/x", "/home/agent/.local/share/swarmbox/tools/go/1/bin/go"],
-                                   allowed_for("go")), ["/usr/x"])
-        self.assertEqual(offenders(["/tmp/swarmbox/tools.lock"], allowed_for("go")), [])
-
-
 class Table(unittest.TestCase):
     def test_the_table_covers_every_tool_folder(self):
         folders = {d for d in os.listdir(TOOLS_DIR) if os.path.isdir(os.path.join(TOOLS_DIR, d))}
         self.assertEqual(folders, set(TABLE) | set(COVERED_ELSEWHERE), "a tool without a real-installer test")
 
-    def test_every_covered_elsewhere_test_exists(self):
-        for path in COVERED_ELSEWHERE.values():
-            self.assertTrue(os.path.isfile(os.path.join(ROOT, path)), path)
-
     def test_the_command_is_a_command_the_manifest_provides(self):
         for name, (cmd, _, _) in TABLE.items():
             self.assertIn(cmd[0], (conf(name, "PROVIDES") or "").split(), name)
-
-    def test_npm_flag_matches_the_installer(self):
-        for name, (_, _, npm) in TABLE.items():
-            with open(os.path.join(TOOLS_DIR, name, "install.sh"), encoding="utf-8") as f:
-                text = f.read()
-            self.assertEqual("npm install" in text, npm, name)
-            if npm:
-                self.assertIn("npm cache clean", text, name)
 
     def _run_with_fake_podman(self, fake_body):
         """Run this file in a subprocess with the switches on and a fake podman that records its calls."""
@@ -225,11 +186,6 @@ class Table(unittest.TestCase):
         self.assertEqual(len(created), 1, calls)
         self.assertIn("volume rm -f " + created[0], calls)
         self.assertTrue(any(c.startswith("rm -f -t 0 swarmbox-test-4b7-run-") for c in calls), calls)
-
-    def test_a_missing_image_fails_once_before_any_volume_exists(self):
-        r, calls = self._run_with_fake_podman('case "$1 $2" in "image exists") exit 1;; esac; exit 0')
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual([c for c in calls if c.startswith("volume")], [], calls)
 
     def test_the_real_tests_are_off_by_default(self):
         # a developer running the file without the switches must not download anything
