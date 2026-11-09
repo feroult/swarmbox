@@ -2,7 +2,7 @@
 # kata-probe.sh: does a microVM runtime work with rootless Podman on this host,
 # and what does it cost compared with the default crun?
 #
-# Run it on the HOST (not inside the box). It never touches the swarmbox-dev
+# Run it on the HOST (not inside the box). It never touches your SwarmBox
 # container or image. It uses a throw-away image (alpine) and --rm containers.
 #
 #   dev/kata-probe.sh                  check KVM, then benchmark every runtime found
