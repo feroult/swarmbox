@@ -338,13 +338,13 @@ class CreateTest(Base):
         self.assertEqual(os.listdir(self.state), [])
 
 class ConflictTest(Base):
-    V010 = line(managed="", image="swarmbox:latest")
+    FOREIGN = line(managed="", image="swarmbox:latest")
 
     def test_a_container_without_the_managed_label_is_exit_5_for_up_and_is_never_removed(self):
-        self.podman(lookup={"stdout": self.V010}, mounts="/home/me/work\n")
+        self.podman(lookup={"stdout": self.FOREIGN}, mounts="/home/me/work\n")
         r = self.up()
         self.assertEqual(r.returncode, 5, r.stderr)
-        self.assertIn("a container named '%s' exists that SwarmBox 2 did not make." % NAME, r.stderr)
+        self.assertIn("a container named '%s' exists that SwarmBox did not make." % NAME, r.stderr)
         self.assertIn("podman rm -f swarmbox", r.stderr)
         self.assertNotIn("WORKSPACE", r.stderr)
         self.assert_no_run()
@@ -593,11 +593,18 @@ class StopUrlTest(Base):
 
     def test_url_adds_the_public_url_from_cloudflare_json(self):
         self.podman()
-        self.cloudflare_json("example.com")
+        self.cloudflare_json("example.com", name=NAME)
         r = self.run_h("url", env=self.url_env())
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://" + NAME + ".example.com\n")
         self.assertEqual(self.calls(), [])
+
+    def test_url_prints_no_public_address_for_a_box_that_was_never_exposed(self):
+        self.podman()
+        self.cloudflare_json("example.com", name="other-box")
+        r = self.run_h("url", env=self.url_env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, "http://127.0.0.1:7681\n")
 
     def test_url_with_the_web_terminal_off_is_exit_1(self):
         self.podman()

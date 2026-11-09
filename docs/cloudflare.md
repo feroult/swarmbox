@@ -90,7 +90,7 @@ A second box on the same domain: `swarmbox remote setup --name second --port 768
 
 Two different credentials. The *API token* is powerful and only needed to provision. The connector needs only the
 tunnel's own, much narrower *tunnel token*, which lets whoever holds it join your tunnel. It is read on the host only
-and is **never passed into the box**: `env add` refuses `SWARMBOX_CLOUDFLARE_*` names (D14); v0.1.0's `--env-keys` flag is retired.
+and is **never passed into the box**: `env add` refuses `SWARMBOX_CLOUDFLARE_*` names (D14).
 
 Where `swarmbox up` finds it, in this order:
 
@@ -119,8 +119,7 @@ the connector holds a different token and recreates it. Rotate if the token may 
 
 ## Rerun keeps the session
 
-Running `remote setup` again without `--session` keeps the login length already configured (v0.1.0 reset it to 4h; that is
-history). The order is: an explicit `--session`, else the value on the existing Access application, else the `session`
+Running `remote setup` again without `--session` keeps the login length already configured. The order is: an explicit `--session`, else the value on the existing Access application, else the `session`
 key in `cloudflare.json`, else `4h` (a first setup only).
 
 ## Remote off
@@ -140,8 +139,7 @@ checked by a test that keeps the script and the helper equal.
 ## Running outside a box
 
 `cloudflare-setup.py` also runs on its own, with the same commands (`apply`, `status`, `remove`, `token`) and the same
-options, for a host where the helper is not installed. v0.1.0 users ran it as `./cloudflare-setup.py` together with
-v0.1.0's `start.sh --web`; that script is retired (it stays in the tag `v0.1.0`). To run `cloudflared` yourself
+options, for a host where the helper is not installed. To run `cloudflared` yourself
 (for example as a systemd service) use `--no-connector` with `swarmbox remote token`.
 
 Rootless Podman does not restart a `--restart=always` container after a reboot unless `podman-restart.service` is

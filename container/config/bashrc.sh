@@ -62,8 +62,7 @@ alias egrep='egrep --color=auto'
 # _sb_scan prints one record per tool, fields separated by the character 0x1f:
 #   name, KIND, PROVIDES, YOLO_FLAGS, YOLO_ALIAS, MCP_FLAGS, directory
 # The user level (<config>/tools) wins over the image level for the same name. Each manifest is read in a subshell,
-# so its variables never reach the shell; a manifest that fails to load gives no record. Assumption (the tool slice
-# is Phase 4a): tool.conf is a sourceable KEY=VALUE file, the tool name is its directory name.
+# so its variables never reach the shell; a manifest that fails to load gives no record. Assumption: tool.conf is a sourceable KEY=VALUE file, the tool name is its directory name.
 _sb_scan() {
     local base d name seen=" " us=$'\037'
     for base in "$SB_CONFIG_DIR/tools" "$_sb_image_tools"; do

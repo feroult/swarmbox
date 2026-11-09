@@ -3,8 +3,7 @@
 # This workflow only runs commands that already exist in the repository today: the python3 unit and function tests,
 # shellcheck over the new shell files, and (job "smoke", slice 2.7) the image build and the full image smoke test
 # (tests/smoke_image.py with SWARMBOX_SMOKE_FULL=1: it needs the nested Podman that the development box cannot give, so
-# this job is its only full run, never run before the owner's first push). Phase 4a added the real swarmbox-tool validate
-# step (linux job). The zsh and fish function tests arrived in slice 3.5. Slice 3.7 added the arm64 job (B31), the
+# this job is its only full run, never run before the owner's first push). The zsh and fish function tests arrived in slice 3.5. Slice 3.7 added the arm64 job (B31), the
 # dash and busybox step of the linux job, and bash 3.2 (/bin/bash) for the function test of the macos job.
 # It uses no secrets, publishes nothing and binds no ports on the runner outside 127.0.0.1.
 #
