@@ -328,6 +328,8 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 
 **7.6 state:** `docs/release-checklist.md` (name check of 2026-11-08 by `dev/name-check.sh`, ten owner actions each with a command or place, history default and owner-run commands), `dev/release-check.sh` (read-only pre-tag check), the README install line in the first screen, and in `docs/owner-checks.md` the B20 recheck commands for the real registry and the clean-machine walkthrough. B20 stays `[unverified]` for the real registry. Nothing was pushed, tagged or rewritten. Decision log `[7.6]`.
 
+**7.7 state:** the close-out ran the full regression (`sh tests/run_all.sh --werror`), the reduced image smoke (11 passed, 2 skipped), `dev/final-audit.sh` and `dev/release-check.sh` (only owner actions fail), and added `PhaseSevenCloseTest` in `tests/test_docs_consistency.py` (status rows 7.1 to 7.7 and the gate, the ordered owner actions, decision-log entries, links of the new files, Part B tags). **M4 is prepared, not reached:** the `7.gate` row stays `partial` until the owner pushes, reads the first CI and release runs and tags `v2.0.0`. The SIGINT flake of `test_serve_steps` is explained: SIGINT is ignored in a test run started with `&`. Decision log `[7.7]`.
+
 - **Logging policy:** no telemetry; logs stay local under `<workspace>/.local/state/swarmbox/` and `host:~/.local/state/swarmbox/` (design 12.5); stated in `SECURITY.md` and the README.
 - The Renovate or Dependabot configuration that bumps the pinned versions and the base image (10.4).
 - `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md` complete; the README is the 15-second pitch.
