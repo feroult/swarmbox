@@ -107,7 +107,7 @@ class E2E(unittest.TestCase):
         self.assertEqual(FAKE.apps[0]["session_duration"], "24h")
         self.assertEqual(len([c for c in self.calls() if c.startswith("run ")]), 1)
         self.assertNotIn("tok.", "\n".join(self.calls()), "the token is never on the podman command line")
-        st = self.remote("status", "--domain", "talkr.run")
+        st = self.remote("status", "--domain", "talkr.run", "--verify-timeout", "1")
         self.assertEqual(st.returncode, 0, st.stderr)
         self.assertIn(DEFAULT_NAME + ".talkr.run", st.stdout + st.stderr)
         u = self.helper_run("url")
