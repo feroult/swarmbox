@@ -419,7 +419,7 @@ class LockTest(Base):
         with open(prog, "w") as f:
             f.write("#!/bin/sh\n"
                     "echo $$ >> '%s'\n"
-                    "while [ ! -e '%s' ]; do sleep 0.02; done\n"
+                    "while [ ! -e '%s' ] && [ -e \"$0\" ]; do sleep 0.02; done\n"   # ends when the test folder is gone
                     "exec '%s' \"$@\"\n" % (self.entered, self.release, self.helper))
         os.chmod(prog, 0o755)
         return prog

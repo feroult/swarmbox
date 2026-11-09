@@ -185,7 +185,7 @@ class CleanupTest(Base):
                 gate = os.path.join(self.tmp, "gate-%d" % sig)
                 prog = os.path.join(self.tmp, "slow-flags-%d" % sig)
                 with open(prog, "w") as f:
-                    f.write('#!/bin/sh\n: > "%s.in"\nwhile [ ! -e "%s" ]; do sleep 0.02; done\nexec "%s" create-flags\n'
+                    f.write('#!/bin/sh\n: > "%s.in"\nwhile [ ! -e "%s" ] && [ -e "$0" ]; do sleep 0.02; done\nexec "%s" create-flags\n'
                             % (gate, gate, self.helper))
                 os.chmod(prog, 0o755)
                 p = subprocess.Popen([self.helper, "up"], env=self.env(SWARMBOX_TEST_CREATE_FLAGS=prog),
