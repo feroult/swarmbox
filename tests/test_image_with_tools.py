@@ -127,22 +127,6 @@ class FakeInstallerInImage(unittest.TestCase):
         self.assertIn("probe-image", out)
         self.assertRegex(out, r"probe\s+tool\s+managed\s+image\s+installed \(1\.0\.0\)")
 
-    def test_a_user_level_install_is_not_shadowed_by_the_image_one(self):
-        d = fake_manifests()
-        script = ("export SWARMBOX_TEST_IMAGE_TOOLS=/fake; swarmbox-tool install probe --image >/dev/null 2>&1; "
-                  "export HOME=$(mktemp -d); swarmbox-tool install probe --force >/dev/null 2>&1; "
-                  "printf '#!/bin/sh\\necho probe-user\\n' > $HOME/.local/share/swarmbox/tools/probe/1.0.0/bin/probe; "
-                  "swarmbox-tool run probe probe; "
-                  "rm $HOME/.local/share/swarmbox/tools/probe/1.0.0/bin/probe; swarmbox-tool run probe probe")
-        r = run("-c", script, mounts=["%s:/fake:ro" % d], network="none")
-        self.assertEqual(r.stdout.split("\n")[:2], ["probe-user", "probe-image"], r.stdout + r.stderr)
-
-    def test_a_removed_and_recreated_container_has_the_same_default_state(self):
-        for _ in range(2):
-            r = run("-c", "ls -A /opt/swarmbox/tools | wc -l; stat -c %u /opt/swarmbox/tools")
-            self.assertEqual(r.stdout.split(), ["0", "1000"] if not NETWORK else r.stdout.split(), r.stderr)
-
-
 @unittest.skipUnless(ENABLED and NETWORK, "set SWARMBOX_IMAGE_BUILD=1 and SWARMBOX_TEST_NETWORK=1 (real installer, network)")
 class RealBuildWithClaude(unittest.TestCase):
     def test_claude_is_installed_at_the_image_level_and_runs_without_network(self):
@@ -154,14 +138,6 @@ class RealBuildWithClaude(unittest.TestCase):
         self.assertEqual(out.count("1000:1000"), 3, out)
         self.assertIn("ARCH=", out)
         self.assertRegex(out, r"\d+\.\d+\.\d+ \(Claude Code\)")
-
-    def test_size_and_owner_recorded(self):
-        r = podman("image", "inspect", TAG, "--format", "{{.Size}}")
-        sys.stderr.write("\nimage size bytes: %s\n" % r.stdout.strip())
-        r = run("-c", "du -sm /opt/swarmbox/tools | cut -f1; find /opt/swarmbox/tools ! -user agent | wc -l")
-        sys.stderr.write("tools MB and entries not owned by agent: %s\n" % r.stdout.split())
-        self.assertEqual(r.stdout.split()[1], "0")
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

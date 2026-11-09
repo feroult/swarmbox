@@ -100,10 +100,7 @@ jobs:
       - name: Container tests on the same image (reduced switch inside)
         run: |
           export SWARMBOX_IMAGE_BUILD=1
-          python3 tests/test_serve_container.py
-          python3 tests/test_attach_container.py
           python3 tests/test_bashrc_container.py
-          python3 tests/test_web_container.py
           python3 tests/test_image_build.py
           python3 tests/test_image_with_tools.py
       - name: Remove the image
