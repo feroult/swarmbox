@@ -58,10 +58,17 @@ if [ "$install_kata" = 1 ]; then
     | grep -o 'https://[^"]*kata-static-[^"]*-amd64\.tar\.[a-z]*' | head -n 1)
   if [ -z "$url" ]; then
     say "could not find the Kata static release URL (network or API limit)."
+  elif case $url in *.zst) ! command -v zstd >/dev/null 2>&1 ;; *) false ;; esac; then
+    say "the Kata archive is .zst and 'zstd' is not installed. Run: sudo apt install zstd"
+    say "then run this script again (nothing was downloaded)."
   else
-    say "downloading: $url"
-    curl -fSL "$url" -o "$WORK/kata.tar" && tar -xf "$WORK/kata.tar" -C "$KATA_HOME" \
-      && say "unpacked under $KATA_HOME/opt/kata"
+    # The archive is kept in $KATA_HOME so a second run does not download it again.
+    pkg="$KATA_HOME/$(basename "$url")"
+    if [ ! -s "$pkg" ]; then
+      say "downloading: $url"
+      curl -fSL "$url" -o "$pkg.part" && mv "$pkg.part" "$pkg"
+    fi
+    [ -s "$pkg" ] && tar -xf "$pkg" -C "$KATA_HOME" && say "unpacked under $KATA_HOME/opt/kata"
   fi
 fi
 if [ -x "$KATA_HOME/opt/kata/bin/kata-runtime" ]; then
