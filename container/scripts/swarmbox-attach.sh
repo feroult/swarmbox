@@ -184,6 +184,13 @@ run_command() {
     done
     kill "$client" 2>/dev/null
     wait "$client" 2>/dev/null
+    # the grouped session can still be there: a client that started late creates it after the kill above, and the server
+    # notices a client's end after a moment. Remove it for sure, so that no session of a finished call outlives the call.
+    for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        tmux has-session -t "=$grp" 2>/dev/null || break
+        tmux kill-session -t "=$grp" 2>/dev/null
+        sleep 0.1
+    done
     trap - HUP TERM
 
     if [ "$detached" = 1 ]; then
