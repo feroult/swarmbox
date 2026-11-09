@@ -2,18 +2,17 @@
 # swarmbox-entrypoint (design 10.2): the image's entry point.
 #
 #   serve     the box's main process: the ordered startup of design 4.1, the readiness marker and health file of 4.2,
-#             PID 1 signal handling, and the ttyd supervisor of 5.1 (slice 2.2, this file)
-#   attach    forwards to swarmbox-attach (slice 2.3: the grouped session, the idle window, `swarmbox <command>`)
-#   init      forwards to swarmbox-init (container/scripts/swarmbox-init.sh, slice 3.5)
+#             PID 1 signal handling, and the ttyd supervisor of 5.1
+#   attach    forwards to swarmbox-attach (the grouped session, the idle window, `swarmbox <command>`)
+#   init      forwards to swarmbox-init
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
-#   tool      forwards to swarmbox-tool 
+#   tool      forwards to swarmbox-tool
 #   host-helper
 #             writes the helper archive (box:/usr/local/share/swarmbox/host/) as a tar archive on stdout
 #   (none)    exit 64
 #   anything else is run as given (already the final behavior, design 10.2)
 #
-# Test-only variables (decision log "[2.2] test-only switches"; deliberately NOT in the configuration table of
-# design 8 and not read by anything else): SWARMBOX_TEST_LIB (folder holding dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces
+# Test-only variables (not in the configuration table of design 8 and not read by anything else): SWARMBOX_TEST_LIB (folder holding dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces
 # /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
 # instead of a failure for step 2 and no service at step 8), SWARMBOX_TEST_BACKOFF_SCALE (integer multiplier of the
 # ttyd backoff, 0 for none), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10).
@@ -105,16 +104,6 @@ run_logged() {
     "$@" >> "$SERVE_LOG" 2>&1
 }
 
-# ttyd_command: the program line the supervisor runs. `swarmbox-web run` (slice 2.5) assembles the page and the
-# options and execs ttyd in the foreground; without it the supervisor runs ttyd directly (port 7681 inside the box).
-ttyd_command() {
-    if have swarmbox-web; then
-        TTYD_CMD=(swarmbox-web run)
-    else
-        TTYD_CMD=(ttyd -W -p 7681 tmux attach -t main)
-    fi
-}
-
 # supervise: design 4.2 "ttyd restart policy". Runs in a subshell. Restarts ttyd after 1, 2, 4 ... 30 s; after 5 exits
 # within 60 s it records a health line and idles (alive) until `swarmbox-web restart` sends USR1; TERM stops it.
 supervise() {
@@ -140,13 +129,12 @@ supervise() {
     }
     trap 'stop=1; kill_pids' TERM
     trap 'restart=1; kill_pids' USR1
-    ttyd_command
     while [ "$stop" = 0 ]; do
         if [ "$restart" = 1 ]; then
             restart=0; exits=(); delay=1; health_remove "$line"
             log "ttyd restarted by hand; crash count reset"
         fi
-        "${TTYD_CMD[@]}" >> "$wlog" 2>&1 < /dev/null &
+        swarmbox-web run >> "$wlog" 2>&1 < /dev/null &
         tp=$!
         # a signal that arrived before tp was known must still act on this ttyd
         if [ "$restart" = 1 ] || [ "$stop" = 1 ]; then kill "$tp" 2>/dev/null; fi
@@ -238,32 +226,20 @@ serve() {
 
     # step 5 [W]: ensure the SSH key
     log "step 5: ensuring the SSH key"
-    if have swarmbox-pubkey; then
-        run_logged swarmbox-pubkey --ensure; rc=$?
-        [ "$rc" = 0 ] || warn "could not create the Git SSH key (swarmbox-pubkey exit $rc); see serve.log"
-    else
-        warn "could not create the Git SSH key: swarmbox-pubkey not found"
-    fi
+    run_logged swarmbox-pubkey --ensure; rc=$?
+    [ "$rc" = 0 ] || warn "could not create the Git SSH key (swarmbox-pubkey exit $rc); see serve.log"
 
     # step 6 [W]: link the user-level tools (6.2): shims and index in the workspace
-    if have swarmbox-tool; then
-        log "step 6: swarmbox-tool link --user"
-        run_logged swarmbox-tool link --user; rc=$?
-        [ "$rc" = 0 ] || warn "linking the user tools failed (swarmbox-tool link exit $rc); see serve.log"
-    else
-        log "step 6: swarmbox-tool not found, skipped"
-    fi
+    log "step 6: swarmbox-tool link --user"
+    run_logged swarmbox-tool link --user; rc=$?
+    [ "$rc" = 0 ] || warn "linking the user tools failed (swarmbox-tool link exit $rc); see serve.log"
 
     # step 7 [W]: the MCP configuration (4.4: swarmbox-mcp), then prepare.sh of every tool (6.3)
     # The claude alias passes --mcp-config <workspace>/.claude/mcp-servers.json and claude refuses a missing file, so when the
     # generator is missing or fails before it wrote anything, an empty valid list is left where there is none (decisions [4a.5], [4b.1]).
-    if have swarmbox-mcp; then
-        log "step 7: swarmbox-mcp generate"
-        run_logged swarmbox-mcp generate; rc=$?
-        [ "$rc" = 0 ] || warn "generating the MCP configuration failed or was incomplete (swarmbox-mcp exit $rc); see serve.log"
-    else
-        log "step 7: swarmbox-mcp not found, skipped"
-    fi
+    log "step 7: swarmbox-mcp generate"
+    run_logged swarmbox-mcp generate; rc=$?
+    [ "$rc" = 0 ] || warn "generating the MCP configuration failed or was incomplete (swarmbox-mcp exit $rc); see serve.log"
     if [ ! -e "$HOME/.claude/mcp-servers.json" ]; then
         if mkdir -p "$HOME/.claude" 2>/dev/null && printf '{"mcpServers": {}}\n' > "$HOME/.claude/mcp-servers.json.tmp" \
             && mv -f "$HOME/.claude/mcp-servers.json.tmp" "$HOME/.claude/mcp-servers.json"; then
@@ -273,29 +249,25 @@ serve() {
             warn "could not write $HOME/.claude/mcp-servers.json; the claude alias may refuse to start"
         fi
     fi
-    if have swarmbox-tool; then
-        log "step 7: swarmbox-tool prepare"
-        # prepare prints one "prepare-failed: <tool>: <reason>" line per failing tool (6.3); each becomes one W line (health line),
-        # and a failure with no such line (the command itself failed) is one generic W line.
-        prep_out=$(mktemp "${TMPDIR:-/tmp}/swarmbox-prepare.XXXXXX" 2>/dev/null) || prep_out=/dev/null
-        swarmbox-tool prepare > "$prep_out" 2>&1; rc=$?
-        [ "$prep_out" = /dev/null ] || cat "$prep_out" >> "$SERVE_LOG" 2>/dev/null
-        nfail=0
-        if [ "$prep_out" != /dev/null ]; then
-            while IFS= read -r pline; do
-                case "$pline" in
-                    "prepare-failed: "*)
-                        nfail=$((nfail + 1))
-                        warn "preparing ${pline#prepare-failed: } (see serve.log)" ;;
-                esac
-            done < "$prep_out"
-            rm -f "$prep_out"
-        fi
-        if [ "$rc" != 0 ] && [ "$nfail" = 0 ]; then
-            warn "preparing the tools failed (swarmbox-tool prepare exit $rc); see serve.log"
-        fi
-    else
-        log "step 7: swarmbox-tool not found, tool preparation skipped"
+    log "step 7: swarmbox-tool prepare"
+    # prepare prints one "prepare-failed: <tool>: <reason>" line per failing tool (6.3); each becomes one W line (health line),
+    # and a failure with no such line (the command itself failed) is one generic W line.
+    prep_out=$(mktemp "${TMPDIR:-/tmp}/swarmbox-prepare.XXXXXX" 2>/dev/null) || prep_out=/dev/null
+    swarmbox-tool prepare > "$prep_out" 2>&1; rc=$?
+    [ "$prep_out" = /dev/null ] || cat "$prep_out" >> "$SERVE_LOG" 2>/dev/null
+    nfail=0
+    if [ "$prep_out" != /dev/null ]; then
+        while IFS= read -r pline; do
+            case "$pline" in
+                "prepare-failed: "*)
+                    nfail=$((nfail + 1))
+                    warn "preparing ${pline#prepare-failed: } (see serve.log)" ;;
+            esac
+        done < "$prep_out"
+        rm -f "$prep_out"
+    fi
+    if [ "$rc" != 0 ] && [ "$nfail" = 0 ]; then
+        warn "preparing the tools failed (swarmbox-tool prepare exit $rc); see serve.log"
     fi
 
     # step 8 [W]: start the nested Podman service and check that it answers
@@ -329,8 +301,6 @@ serve() {
     # step 10 [W]: start and supervise ttyd, when the web terminal is on
     if [ "${SWARMBOX_WEB:-1}" = 0 ]; then
         log "step 10: WEB=0, no web terminal and no supervisor"
-    elif ! have swarmbox-web && ! have ttyd; then
-        warn "web terminal not started: ttyd not found"
     else
         log "step 10: starting the ttyd supervisor"
         supervise &
@@ -352,8 +322,6 @@ serve() {
     IFS=', ' read -r -a with <<< "${SWARMBOX_WITH:-}"
     if [ "${#with[@]}" -eq 0 ]; then
         log "step 12: WITH is empty, nothing to install, skipped"
-    elif ! have swarmbox-tool; then
-        log "step 12: swarmbox-tool not found, the WITH tools (${with[*]}) skipped"
     else
         log "step 12: installing ${with[*]} in the background"
         (

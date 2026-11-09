@@ -134,7 +134,7 @@ class ServeCase(unittest.TestCase):
         os.symlink(DIRS_SH, os.path.join(self.lib, "dirs.sh"))
         open(self.tun, "w").close()
         write_exec(os.path.join(self.fake, "tmux"), FAKE_TMUX)
-        write_exec(os.path.join(self.fake, "ttyd"), FAKE_TTYD)
+        write_exec(os.path.join(self.fake, "swarmbox-web"), FAKE_TTYD)
         write_exec(os.path.join(self.fake, "podman"), FAKE_PODMAN)
         for p in self.PROGRAMS:
             write_exec(os.path.join(self.fake, p), FAKE_PROG)
