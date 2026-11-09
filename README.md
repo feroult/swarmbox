@@ -1,92 +1,106 @@
 # SwarmBox
 
-**Run AI coding agents with full tool access and auto-approve ("YOLO") mode inside a Podman container, so your host stays safe.**
+**A persistent Podman box where AI coding agents run in auto-approve mode, with the damage of a mistake limited to one folder of your machine.**
+
+- **One box, shared.** Every terminal tab and the browser join the same box and the same tmux session. Entering never creates a second box.
+- **The workspace is one folder on your machine.** Projects, logins, the SSH key and installed tools live there. You can delete and recreate the box and lose nothing.
+- **Auto-approve, with a smaller blast radius.** The agent runs without approval prompts, and a mistake is limited to that folder (see Security below for what that does and does not mean).
+- **A neutral image, tools on demand.** Claude Code, Gemini CLI, OpenCode, gcloud, clasp, Go and Poetry are installed the first time you use them.
+- **Containers inside the box.** Agents can build and run their own containers with nested Podman, with no path to your Podman.
+- **A browser inside the box.** Chrome DevTools MCP is built in.
+- **A web terminal.** It listens on your machine only. Optional remote access goes through Cloudflare Tunnel and Access, with an e-mail code.
+- **A git SSH key.** The box has one that you can hand out as a deploy key.
+
+## How it feels
 
 ```bash
-podman run --rm -e SHELL ghcr.io/<org>/swarmbox-dev:2.0.0 init --with claude >> ~/.bashrc    # then open a new terminal and run: swarmbox
+# install once (see Quick start), then, in any terminal:
+swarmbox        # creates the box the first time, joins it afterwards
+claude          # inside the box: installs Claude Code on first use, then runs it in auto-approve mode
 ```
 
-Read what it prints first (leave out the `>> ~/.bashrc`). `<org>` is a placeholder until the first release; details are under [Install](#install) and in [docs/design.md](docs/design.md).
+Open a second tab, run `swarmbox` again, and you are in the same session.
 
-- **Isolated:** the agent runs in a rootless Podman container; no host Podman socket is mounted.
-- **One command:** `swarmbox` creates the box on first use and joins it afterwards. Every terminal shares one tmux session.
-- **Agents on demand:** `claude` is installed on first use, into your workspace, not into the image. Gemini, OpenCode, `clasp`, Go, gcloud and Poetry are tools you choose.
-- **Nested Podman:** agents can build and run their own containers inside the box.
-- **MCP built in:** headless Chromium through the chrome-devtools MCP.
-- **Web terminal:** a browser shell on `127.0.0.1`, with an optional Cloudflare Tunnel for remote access.
+## Security: what you really get
 
-## Requirements
+SwarmBox reduces the damage of a mistake. It is not a virtual machine, and it does not make untrusted code safe to run.
 
-Linux, macOS (through a Podman machine) or WSL2 with the workspace on the Linux filesystem, and Podman 4.3 or newer (Docker is not supported):
-`sudo apt install podman`, `sudo dnf install podman` or `brew install podman`. macOS, WSL and Podman older than 4.3 are
-[unverified] here; the status is in [docs/design.md](docs/design.md), Part B.
+**The honest limit.** A container shares the kernel with your machine. Its isolation comes from user namespaces,
+cgroups and a seccomp profile, not from a hypervisor. A vulnerability in the kernel or in the container runtime, or a
+misconfiguration, can let code inside the box escape to your machine. Do not run code in SwarmBox that you would not run on
+your own machine with the same care, unless you put SwarmBox inside a virtual machine or on a dedicated machine.
 
-## Install
+**What protects you:**
 
-One line, once. It prints a shell function; read it first, then append it to your shell startup file (the example is bash; for zsh use `~/.zshrc`, for fish `~/.config/fish/config.fish`):
+- The box is a rootless Podman container. Even root inside it is an unprivileged user of your machine.
+- Your machine's Podman socket is never mounted into the box.
+- The agent sees only the workspace folder of your machine.
+- The web terminal listens only on `127.0.0.1`. Its own port has no login.
+- Cloudflare credentials and the Cloudflare connector run on your machine, outside the box.
+
+**What the agent can do inside the box:**
+
+- Change or delete everything in the workspace, which holds your projects, logins and SSH key.
+- Use `sudo` inside the box.
+- Reach the network.
+- Read every variable and token you pass in, and use the SSH key.
+- Keep running while you are away, until you stop the box.
+
+**What weakens isolation on purpose:**
+
+- Nested Podman is always on. It needs `/dev/net/tun` and an unmasked `/proc`, so the box is less isolated than a plain container.
+- With remote access on, a browser session is a shell with `sudo`. The login length you choose is the time a stolen or forgotten session stays usable.
+
+**Practical advice:**
+
+- For untrusted work, use a virtual machine or a dedicated machine.
+- Pass scoped tokens, not tokens that can do everything your account can.
+- Use a deploy key for each repository, not your account key.
+- Keep Podman and the kernel up to date.
+- Do not expose the web port yourself. Use `swarmbox remote setup` if you need access from outside.
+- Look at what the agent changes in the workspace, for example with `git diff`.
+
+More detail is in [SECURITY.md](SECURITY.md) and in the security model of [docs/design.md](docs/design.md).
+
+## Quick start
+
+Requirements: Linux, macOS through a Podman machine, or WSL2 with the workspace on the Linux filesystem; Podman 4.3 or newer.
+Docker is not supported.
+
+The image is not published yet, so today you build it locally. In the repository (zsh; for bash use `~/.bashrc`):
 
 ```bash
-podman run --rm -e SHELL ghcr.io/<org>/swarmbox-dev:2.0.0 init --with claude            # print the function
-podman run --rm -e SHELL ghcr.io/<org>/swarmbox-dev:2.0.0 init --with claude >> ~/.bashrc
+podman build -t localhost/swarmbox-dev:local .
+podman run --rm -e SHELL localhost/swarmbox-dev:local init --image localhost/swarmbox-dev:local --with claude      # read what it prints
+podman run --rm -e SHELL localhost/swarmbox-dev:local init --image localhost/swarmbox-dev:local --with claude >> ~/.zshrc
 ```
 
-`<org>` is a **placeholder**: the image is not published yet, so the line does not work until a release names the real registry.
-To try it today, use a local registry ([docs/local-registry.md](docs/local-registry.md)) and add `--image <ref>`.
-`init` only prints; it changes nothing on your machine. Add `--workspace ~/code/box` to choose the workspace folder (default `~/swarmbox`).
+Open a new terminal. If port 7681 is busy, run `swarmbox config set WEB_PORT 7682`. Then run `swarmbox`.
 
-## First use
-
-Open a new terminal, so the function exists, and run:
+## Everyday commands
 
 ```bash
-swarmbox            # the first call pulls the image, creates the box, and opens a shell in it
+swarmbox                    # create the box if needed, then open a shell in it
+swarmbox claude             # run a command in the box from your machine
+swarmbox url                # print the address of the web terminal
+swarmbox stop               # stop the box; nothing is deleted
+swarmbox reset              # recreate the box so a changed setting applies; the workspace is kept
+swarmbox update             # fetch a newer image
+swarmbox env add NAME       # pass one of your variables into the box
+swarmbox config list        # show the settings
+swarmbox tool list          # show the tools you can install
+swarmbox remote setup       # set up remote access with Cloudflare
 ```
 
-Inside, `claude` installs Claude Code on its first call and runs it with auto-approve (`yolo` starts your default agent the same way).
-`init --with claude` recorded `WITH=claude`, so the install starts when the box does. Tools: `swarmbox tool list`.
+## Status
 
-```bash
-swarmbox --plain                      # plain bash instead of the tmux session
-swarmbox claude                       # run a command in the box from the host; its exit status is yours
-swarmbox config list                  # the host configuration
-swarmbox config set WITH claude,gemini
-swarmbox env add CLAUDE_CODE_OAUTH_TOKEN   # pass a host variable into the box (names only are stored)
-swarmbox reset                        # recreate the box so a changed setting applies; the workspace is kept
-swarmbox stop                         # stop the box; nothing is deleted
-```
-
-- **Web terminal:** on by default. `swarmbox url` prints the address, `http://127.0.0.1:7681` unless you set `WEB_PORT`. That port has no login.
-  [docs/web-terminal.md](docs/web-terminal.md) has the style and the tmux shortcuts.
-- **Remote access:** `swarmbox remote setup` puts Cloudflare Tunnel and Access in front of it. See [docs/cloudflare.md](docs/cloudflare.md).
-- **Containers inside the box:** [docs/nested-podman.md](docs/nested-podman.md). From the host: `podman -c swarmbox-dev ps`.
-- **Update and roll back:** `swarmbox update` pulls the newest image of your `X.Y` series and tells you to run `swarmbox reset`;
-  `swarmbox update --to 2.0.0` goes to an exact tag, also an older one.
-- **A second box:** `SWARMBOX_NAME=dev` names it, and it has its own configuration. Give it its own folder and port:
-
-```bash
-SWARMBOX_NAME=dev swarmbox config set WORKSPACE ~/code/dev
-SWARMBOX_NAME=dev swarmbox config set WEB_PORT 7682
-SWARMBOX_NAME=dev swarmbox
-```
+Version 2.0 is a design and an implementation built and tested in a development box with fakes. It has not run on a real host yet,
+and it is not published. macOS and Podman older than 4.3 are unverified.
+See [docs/design.md](docs/design.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## Migrating from v0.1.0
 
-v0.1.0 started the box with `start.sh` and built it with `build.sh`; both are gone, and the layout inside `.work/` changed.
-**Back up your workspace first** (with the old container stopped, `cp -a .work .work.backup`), then follow
-[docs/migration.md](docs/migration.md): the exact order, the commands, and a way to try the migration on a copy of your workspace first.
-The old files stay in the git tag `v0.1.0`.
-
-## Uninstall
-
-There is no `swarmbox uninstall` command. Do these by hand, in this order (`sed -i.bak` keeps a copy of the file it edits):
-
-1. Remove the function block from your startup file: the one-line comment above it and every line from `# >>> swarmbox 2.0.0 >>>` to `# <<< swarmbox 2.0.0 <<<`. The version in the markers is the one you installed, and a second `init` run leaves a second block. For bash: `sed -i.bak -e '/^# swarmbox [0-9.]*: the shell function printed/d' -e '/^# >>> swarmbox /,/^# <<< swarmbox /d' ~/.bashrc` (use `~/.zshrc` for zsh, `~/.config/fish/config.fish` for fish).
-2. Stop and remove the box: `podman rm -f swarmbox`, and the host connection `podman system connection rm swarmbox` (an error that none exists can be ignored). For a second box give its `SWARMBOX_NAME` instead of `swarmbox`, one box at a time.
-3. Remove the host helper and its state: `rm -rf ~/.local/share/swarmbox/host`, and `rm -rf ~/.local/state/swarmbox` (locks and notices).
-4. Remove the host configuration: `rm -rf ~/.config/swarmbox` (the config, `cloudflare.json`, the folders of second boxes; it may hold the tunnel token).
-5. If you set up remote access, run `swarmbox remote off` **before step 1**: it removes the DNS record, the route and the Access application. Then remove the connector: `podman rm -f swarmbox-dev-cloudflared`.
-6. Optional: the workspace folder `~/swarmbox` (your projects, logins and tools; back up what you need) and the nested Podman volume, `podman volume rm swarmbox-dev-containers` (`<name>-containers` for a second box).
-7. Optional: the image, `podman rmi ghcr.io/<org>/swarmbox-dev:<tag>`.
+v0.1.0 used `start.sh` and `build.sh`, which are gone. **Back up your workspace first**, then follow [docs/migration.md](docs/migration.md).
 
 ## Privacy
 
@@ -96,5 +110,7 @@ to check for a tool update, and, with `swarmbox remote`, to reach Cloudflare. Lo
 
 ## More
 
-[docs/design.md](docs/design.md) (what it is and why), [docs/implementation-plan.md](docs/implementation-plan.md),
-[docs/decision-log.md](docs/decision-log.md), [CONTRIBUTING.md](CONTRIBUTING.md), [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [CHANGELOG.md](CHANGELOG.md).
+[docs/web-terminal.md](docs/web-terminal.md), [docs/cloudflare.md](docs/cloudflare.md), [docs/nested-podman.md](docs/nested-podman.md),
+[docs/uninstall.md](docs/uninstall.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [CHANGELOG.md](CHANGELOG.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
+and [LICENSE](LICENSE) (Apache-2.0).

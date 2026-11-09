@@ -661,7 +661,7 @@ def anchors(text):
 
 
 def uninstall_steps():
-    sec = section(README, "Uninstall")
+    sec = section(read("docs", "uninstall.md"), "Uninstall")
     parts = re.split(r"^(\d+)\. ", sec, flags=re.M)
     return {int(parts[i]): parts[i + 1] for i in range(1, len(parts) - 1, 2)}
 
@@ -673,21 +673,31 @@ def ticks(step):
 class ReadmeSixFiveTest(unittest.TestCase):
     def test_readme_is_short_and_has_the_sections(self):
         self.assertLess(len(README.splitlines()), 200)
-        for h in ("Install", "First use", "Uninstall", "Privacy"):
+        for h in ("Quick start", "Everyday commands", "Security", "Privacy"):
             section(README, h)
         self.assertRegex(README, r"(?m)^## Migrating from v0\.1\.0")
         self.assertEqual(README.count("```") % 2, 0)
 
-    def test_install_line_uses_the_placeholder_org_and_says_so(self):
-        self.assertIn(("podman run --rm -e SHELL " + DEFAULT_IMAGE_REPO + ":2.0.0 init --with claude"), README)
-        self.assertIn("placeholder", section(README, "Install").lower())
-        self.assertNotRegex(README, r"ghcr\.io/(?!<org>)")
+    def test_quick_start_builds_locally_and_has_no_org_placeholder(self):
+        self.assertNotIn("<org>", README)
+        self.assertNotRegex(README, r"ghcr\.io")
+        local = "localhost/" + DEFAULT_NAME + ":local"
+        for cmd in ("podman build -t " + local + " .",
+                    "podman run --rm -e SHELL " + local + " init --image " + local + " --with claude",
+                    ">> ~/.zshrc", "swarmbox config set WEB_PORT 7682"):
+            self.assertIn(cmd, section(README, "Quick start"), cmd)
 
-    def test_first_use_covers_the_topics(self):
-        for needle in ("init --with claude", "swarmbox config", "swarmbox env add", "swarmbox url", "swarmbox update",
-                       "update --to", "SWARMBOX_NAME=", "WITH", "docs/cloudflare.md", "docs/web-terminal.md",
-                       "docs/nested-podman.md", "swarmbox remote setup", "swarmbox reset"):
+    def test_readme_covers_the_topics(self):
+        for needle in ("swarmbox config", "swarmbox env add", "swarmbox url", "swarmbox update", "swarmbox tool list",
+                       "docs/cloudflare.md", "docs/web-terminal.md", "docs/nested-podman.md", "docs/uninstall.md",
+                       "swarmbox remote setup", "swarmbox reset"):
             self.assertIn(needle, README, needle)
+
+    def test_security_section_states_the_kernel_limit_and_no_safe_claim(self):
+        sec = section(README, "Security")
+        self.assertIn("shares the kernel", sec)
+        self.assertIn("not a virtual machine", sec)
+        self.assertNotRegex(sec.lower(), r"\b(is|are|completely|totally) (secure|safe)\b")
 
     def test_seven_uninstall_steps_in_order(self):
         steps = uninstall_steps()

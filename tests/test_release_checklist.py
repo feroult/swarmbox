@@ -79,23 +79,20 @@ class ChecklistTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(ROOT, "dev", "release-check.sh")))
 
     def test_no_org_replacement_before_the_name_decision(self):
-        self.assertIn("<org>", read("README.md"))
+        # The README no longer uses the placeholder (it gives local-build commands); the name decision stays open in the docs.
+        self.assertNotIn("<org>", read("README.md"))
+        self.assertIn("<org>", read("docs", "uninstall.md"))
 
 
 class ReadmePitchTest(unittest.TestCase):
-    def test_install_line_is_within_the_first_screen(self):
+    def test_pitch_names_podman_and_the_limit_is_stated(self):
         lines = read("README.md").splitlines()
-        idx = [i for i, ln in enumerate(lines) if ln.startswith("podman run --rm -e SHELL ")]
-        self.assertTrue(idx)
-        self.assertLessEqual(idx[0] + 1, 12, "the install line is on line %d" % (idx[0] + 1))
-        head = "\n".join(lines[:idx[0]])
         self.assertTrue(lines[0].startswith("# SwarmBox"))
-        self.assertIn("Podman", head)
+        self.assertIn("Podman", "\n".join(lines[:4]))
+        self.assertIn("shares the kernel", read("README.md"))
 
-    def test_pitch_links_to_the_details(self):
-        head = "\n".join(read("README.md").splitlines()[:14])
-        self.assertIn("(#install)", head)
-        self.assertIn("docs/design.md", head)
+    def test_quick_start_is_in_the_readme(self):
+        self.assertRegex(read("README.md"), r"(?m)^## Quick start")
 
 
 class B20KitTest(unittest.TestCase):
