@@ -18,83 +18,34 @@ Tests and experiments run on a machine where someone may have a real SwarmBox ru
 
 ## Running the tests
 
-Tests are Python `unittest` scripts that need only Python 3 and the standard library. Run one file at a time from anywhere:
+Tests are Python `unittest` scripts that need only Python 3 and the standard library. The suite is small on purpose: one test per
+behaviour or branch, no copies of the same case, no tests of wording in docs. Run one file, or all of them:
 
 ```
-python3 tests/test_docs_consistency.py
+python3 tests/test_host_up.py        # one file
+sh tests/run_all.sh                  # all files, one line each with the count and the seconds (about 1 minute)
 ```
 
-| File | What it covers |
-|------|----------------|
-| `test_attach_command.py` | `container/scripts/swarmbox-attach.sh`: fake tmux, then real tmux isolated with `-L swarmbox-test-<random>`, ptys as terminals |
-| `test_attach_container.py` | `attach` in a throwaway container from the image (skipped unless `SWARMBOX_IMAGE_BUILD=1`) |
-| `test_bashrc_container.py` | the shell fragment in a throwaway container from the image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
-| `test_bashrc_fragment.py` | `container/config/bashrc.sh`: aliases and `yolo` from fake manifests, banner and health lines, `PATH`, `SWARMBOX_CMD=1` (bash, fixture trees in mktemp) |
-| `test_build_index.py` | `container/web/build-index.sh`, the web page assembled at image build |
-| `test_ci_workflow.py` | static checks of `.github/workflows/ci.yml` (parsed with PyYAML; runs actionlint when `ACTIONLINT` or PATH has it) |
-| `test_clipboard_bridge.py` | the clipboard bridge page script, in a browser, on the page built by `container/web/build-index.sh` and rendered by `swarmbox-web` (needs a browser; about 40 s) |
-| `test_cloudflare_setup.py` | `cloudflare-setup.py` against a fake Cloudflare API |
-| `test_dev_build.py` | `dev/dev-build.sh`, the dev image build with the apt override in a scratch copy (fake `podman`) |
-| `test_default_names_lint.py` | D40: fails when a product file or a test writes the default box name or image repository as a literal instead of reading `container/host/DEFAULTS` (retired spellings included; no allowances but the test itself) |
-| `test_dirs.py` | `container/scripts/dirs.sh`, the XDG-aware path file (sh, dash, bash) |
-| `test_dockerfile.py` | static checks of the 2.0 `Dockerfile` (no build) |
-| `test_docs_consistency.py` | cross-references, D and B numbers and code fences of the design and the plan |
-| `test_entrypoint.py` | the subcommands of `container/entrypoint.sh` (serve aside): dispatch with arguments kept, `host-helper` archive, any other command, fake programs on `PATH` |
-| `test_function_bash.py` | the generated function in bash (the shared case table of `tests/function_cases.py`: word routing, quoting, exit codes, the bootstrap, seeds) with fake `podman` and fake helper; the same table under `bash --posix`; a lint for bash 4 constructs (bash 3.2 itself is not run here) |
-| `test_function_fish.py` | the same case table in fish |
-| `test_function_zsh.py` | the same case table in zsh |
-| `test_helpers.py` | the fake `podman` of `tests/helpers.py` |
-| `test_host_config.py` | `container/host/swarmbox-host`: `version`, `config get\|set\|list\|seed`, `env add\|rm\|list`, the token and the portable mode check (stat shims, a fake `ls`), all in mktemp homes with a pty for the token |
-| `test_host_connector.py` | the connector logic of `up` (`connector_ensure`): create, start, recreate on a changed token, the pinned image kept equal to `cloudflare-setup.py`, failures only warn, the token only in the environment of the fake `podman` |
-| `test_host_remote.py` | `remote setup\|status\|off\|token` of the helper over `cloudflare-setup.py` (a stub script and the real one for usage errors), `url` and `remote status` host lines, the tunnel token (precedence, mode 600, the terminal offer) |
-| `test_host_remote_e2e_fake.py` | `remote setup`, `status`, rerun, `token` and `off` end to end: the real wrapper and the real script against the fake Cloudflare API (loopback, random port) and a fake podman |
-| `test_host_create_flags.py` | `create-flags` (a golden file per configuration under `tests/fixtures/`, one test per key of 8.2, framing, tool ports, ports and `BROWSER_URL` parity, no `--network=host` in any combination), `fingerprint [--explain]` and the workspace checks (WSL refusal with a fake `/proc/version`, not writable, created once); the helper runs under dash, `bash --posix` and busybox sh |
-| `test_host_shells.py` | the same helper under dash, `bash --posix`, busybox sh, zsh in sh emulation and bash named `sh`; no bashisms; `shellcheck -s sh` |
-| `test_host_socket.py` | the host connection `podman -c <name>` of `container/host/swarmbox-host` (`connection`, step 6 of `up`): the 100/101 byte boundary, the short symlink and its refusals, idempotent registration with a stateful fake `podman`, the real `podman system connection` in an isolated config, a stand-in socket server in a throwaway container, and a guard on the real Podman files |
-| `test_host_up.py` | `up`, `reset`, `stop` and `url` of the helper against the shared fake `podman` (rules and answers in sequence): the exact-name lookup, the fast path call budget, warnings, prerequisites, creation and cleanup by `--cidfile`, readiness, conflicts, the lock with real processes (two at once, SIGTERM, SIGKILL, stale, live holder), reset, stop, url |
-| `test_host_update.py` | `update [--to TAG]` of the helper against the shared fake `podman` and a fake image archive: the series, `--to`, invalid tags and images with no series, every failure leaving the helper, the config and the box unchanged, the local `X.Y.Z` tag, `reset` offline after `update`, the next function call keeping the new helper |
-| `test_image_build.py` | the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; builds `swarmbox-test-img-<rand>` and removes it) |
-| `test_image_with_tools.py` | `WITH_TOOLS` on a real image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; the real claude install needs `SWARMBOX_TEST_NETWORK=1`; builds `swarmbox-test-4b6-img` and removes it) |
-| `test_init_output.py` | `container/scripts/swarmbox-init.sh` and the templates: one marker pair per shell, seeds only for flags given, quoting, `--shell` and `SHELL`, idempotent output, nothing written, the hint on a terminal, `bash -n`, `zsh -n`, `fish --no-execute` |
-| `test_mcp_registry.py` | `container/scripts/swarmbox-mcp.sh` (the MCP registry generator, serve step 7) on a temp HOME and a copy of `container/mcp`: shape, `BROWSER_URL`, off switch, user override, bad files, no `npx`, atomic write |
-| `test_name_check.py` | `dev/name-check.sh` (slice 7.6, D25) against a fake curl: TAKEN, FREE and UNKNOWN per source, arguments reach the URLs, nothing is written. |
-| `test_pubkey_ensure.py` | `swarmbox-pubkey --ensure` (`container/scripts/ssh-key.sh`): once, idempotent, never overwrites, only under the test `HOME` |
-| `test_release_check.py` | `dev/release-check.sh` (slice 7.6) on a fixture repository: passes when every condition holds, one named FAIL per violated condition, never modifies anything. |
-| `test_release_checklist.py` | `docs/release-checklist.md` lists every owner action with a command or place, the README install line is in the first screen, the B20 recheck kit exists and B20 stays open. |
-| `test_release_version.py` | `dev/release-version.sh` (slice 7.5): `v2.0.0` gives `2.0.0`, `2.0` and `latest`; a missing `v`, a prerelease or build suffix, leading zeros, a missing or extra part, option-like or multi-line input are refused with exit 1; dash and bash print the same |
-| `test_release_workflow.py` | `.github/workflows/release.yml` and `.grype.yaml` (slice 7.5), validated locally only: tag trigger and the dry-run default, the `publish` rule, every pushing step gated on it, only `ghcr.io/feroult/swarmbox-dev`, permissions (the OIDC token only in `sign`, `contents: write` only in `notes`), both architectures native, the scan before the push, the helper-version check, signing of the digest, SBOM and notes, exact action versions; runs actionlint when present |
-| `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md`, this file and the three policy files being present and linked |
-| `test_security_review.py` | the security review of the host helper (slice 7.3): hostile values, planted symlinks at the temporary names and the lock, the tunnel token never in argv or output, `update --to` and archive checks, modes under umask 000, and `docs/security-review.md` (no open row, every row names an existing test) |
-| `test_serve_container.py` | `serve` in a throwaway container from the image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
-| `test_serve_steps.py` | `container/entrypoint.sh serve`: steps, failures, readiness marker, signals and the ttyd supervisor, with fakes on `PATH` |
-| `test_ssh_key.py` | the SSH key handling of `container/scripts/ssh-key.sh` (`swarmbox-pubkey`) |
-| `test_starship.py` | the Starship prompt setup |
-| `test_run_all.py` | `tests/run_all.sh`, the full-regression runner (`--werror`, `--repeat N`, `--only`, `--list`), on small files only |
-| `test_third_party_notices.py` | `THIRD_PARTY_NOTICES.md` and `dev/gen-notices.sh` (slice 7.2): no `[unverified` left, owner-check items explained, every apt package and tool manifest with a license and a source URL, the copyleft source offer, the committed `docs/debian-packages.tsv` and its counts, and the script against a fake `dpkg-query` and a fixture doc tree (sorted, flags, read-only) |
-| `test_tool_claude_real.py` | the first call of Claude Code through the shim: fake-curl argument tests always; the real download in throwaway containers only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` (slow, about 330 MB) |
-| `test_tool_gemini_clasp_poetry.py` | the `gemini`, `clasp` and `poetry` tools: installers with a fake npm and a fake curl serving a fake Poetry installer (stay in the prefix, versions from the manifest, no cache outside it), validate on the real tools folder (agents latest, others pinned, unique PROVIDES), `tool-ports` listing 43323 and the host helper publishing it, the `clasp login` function in bash and zsh, the gemini alias and `yolo` |
-| `test_tool_go_gcloud.py` | the `go` and `gcloud` tools: installers with a fake curl and tiny tarballs (checksum verified before extracting, wrong checksum leaves the prefix empty, arch names, nothing outside the prefix), the manifest checksum reaching the installer for the host arch, `go/shell.sh` in bash and zsh, validate's checksum rules |
-| `test_tool_real.py` | the real-installer tests per tool (6.9): the scan harness against misbehaving fake installers always; real installs in throwaway containers (no side effects, npm cache rule, survives a reset) only with `SWARMBOX_TEST_NETWORK=1`, `SWARMBOX_IMAGE_BUILD=1` and Podman (`SWARMBOX_REAL_TOOLS=go,poetry` limits the table) |
-| `test_tool_use_remove.py` | `swarmbox-tool use` and `remove`: version switch, clean failures, `--purge`, locks, the guard that keeps SwarmBox's own folders |
-| `test_tool_new.py` | `swarmbox-tool new`: the skeleton passes `validate`, name rules, `--repo` and `--dir` |
-| `test_tool_doctor.py` | the environment fingerprint (6.11): `doctor`, `doctor --fix`, `link --user` and the shim (ARCH refuses, NODE_MAJOR and LIBC warn once per entry) |
-| `test_tool_image_level.py` | image-level installs (6.8): `install --image`, the run-time lookup (workspace first, a broken one never shadows a good image install), fingerprint at build |
-| `test_record_checksums.py` | `dev/record-checksums.sh` (the maintainer script of D29) with a fake curl and a fake go.dev listing: both checksums written, idempotent, a mismatching listing refused, no other line touched |
-| `test_tool_opencode.py` | the `opencode` tool: the installer with a fake npm and a fake package tree (stays in the prefix, prunes other platform builds and keeps the current one, amd64 and arm64), the rendering by the tool's prepare script (`LOCAL_LLM_*`, mode 600, idempotence, the MCP mirror compared with the v0.1.0 function), the manifest, `MCP_FORMAT`, the shim and no alias |
-| `test_tool_prepare.py` | `swarmbox-tool prepare` and the prepare after an install: fake tools whose prepare script succeeds, fails, hangs or is absent, WITH-declared and user-level tools, order, one failure line per tool |
-| `test_tool_shim.py` | `swarmbox-shim`: symlink and PATH calls under the shebang shell, dash, bash and busybox sh; first-use install then no installer; failure and retry; unknown command 127; user index wins; no manifest read on the hot path; loop guards; shellcheck |
-| `test_tool_install.py` | `swarmbox-tool install`, `run`, `list`, `update`: fake installers, the lock (two processes at once), the managed and `UPDATE=self` layouts, failure leaves nothing, checksum mismatch, exit codes, stdout purity |
-| `test_tool_link.py` | `swarmbox-tool link --system` and `--user`: shims, the `command tool` index, `tool-ports`, idempotence, stale shims, same-level conflicts, no project level |
-| `test_tool_manifest.py` | `swarmbox-tool` manifest loading and `validate` (every rule of design 6.9, the install.sh lint, no project level) and the `claude` manifest and installer (fake `curl`) |
-| `test_tool_stub.py` | the parts of `container/scripts/swarmbox-tool.sh` that are still stubs (the later-phase exit 70 of `use`, `remove`, `doctor`, `new`), `link` with no manifests, and the empty `tool-ports` file |
-| `test_tmux_browser_keys.py` | the browser key bindings of tmux (real tmux on a private socket; about 60 s) |
-| `test_web_build.py` | `container/scripts/swarmbox-web.sh` against a fake ttyd (the cases of v0.1.0's `test_web_terminal.py` live here now), and with `serve` |
-| `test_web_container.py` | the web terminal, `pubkey`, `tool validate` and `host-helper` in a throwaway container (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
-| `test_web_style.py` | the web terminal style, on the same page (needs a browser) |
+`tests/run_all.sh` options: `--werror` (each file under `python3 -W error`), `--repeat N`, `--only a.py,b.py`, `--browser` (adds the
+three browser tests, which need chromium and ttyd and run in the scheduled CI job), `--list`. It runs every file under
+`tests/reap_run.py`, which kills by PID whatever a file left behind and shows it as `reaped N`; a test that leaks a process is a bug
+to fix in that test (end children in `addCleanup`). Run files in the foreground.
 
-Run them all with `sh tests/run_all.sh` (one line per file with its test count; `--werror` runs each with `python3 -W error`, `--repeat 3` runs each file three times, `--only a.py,b.py` picks files). Shared helpers (the repository root, the fake `podman`, and later the
-fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use a real container only for a smoke
-test, with a `swarmbox-test-` name. The image smoke test is `tests/smoke_image.py` (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box (every result tagged `[reduced: development box, no nested Podman in the box]`, the nested steps skipped), `SWARMBOX_SMOKE_FULL=1` the full run for CI or your own host.
+What each group covers (a file name tells the rest):
+
+| Files | What they cover |
+|---|---|
+| `test_host_*.py`, `test_security_review.py`, `test_cloudflare_setup.py` | the host helper `container/host/swarmbox-host` against a fake `podman` (`tests/helpers.py`): `up`, `reset`, `stop`, `url`, `update`, `config`, `env`, `remote`, create flags with golden files in `tests/fixtures/`, the host connection, the connector, hostile input; `cloudflare-setup.py` against a fake Cloudflare API on loopback |
+| `test_function_{bash,zsh,fish}.py` (cases in `tests/function_cases.py`), `test_init_output.py`, `test_host_shells.py` | the generated shell function and `swarmbox-init`, in each shell; the helper under dash, bash and busybox |
+| `test_serve_steps.py`, `test_entrypoint.py`, `test_attach_command.py`, `test_web_build.py`, `test_bashrc_fragment.py`, `test_starship.py`, `test_pubkey_ensure.py`, `test_ssh_key.py`, `test_mcp_registry.py`, `test_dirs.py`, `test_build_index.py` | what runs inside the box: `serve` steps and signals with fakes on `PATH`, `swarmbox-attach` (fake tmux, then real tmux on a private `-L swarmbox-test-<random>` socket), `swarmbox-web`, the shell fragment, the key, the MCP registry, the XDG paths, the web page build |
+| `test_tool_*.py` | the tool machinery `swarmbox-tool` and `swarmbox-shim` (manifests, link, install, run, prepare, use, remove, doctor, image level, the per-tool installers); `test_tool_real.py` also installs for real in throwaway containers, only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` |
+| `test_dockerfile.py`, `test_dev_build.py`, `test_image_build.py`, `test_image_with_tools.py`, `test_bashrc_container.py` | the `Dockerfile` (static) and the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; the image comes from `dev/dev-build.sh` or `SWARMBOX_IMAGE_TAG`, shared by `tests/image_support.py`). `tests/smoke_image.py` is the image smoke test (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box, `SWARMBOX_SMOKE_FULL=1` the full run for CI |
+| `test_ci_workflow.py`, `test_release_workflow.py`, `test_release_check.py`, `test_release_version.py`, `test_third_party_notices.py`, `test_record_checksums.py`, `test_name_check.py` | the repository machinery: text checks of the two workflows, the release scripts under `dev/` on fixture repositories, the notices generator, the checksum recorder |
+| `test_default_names_lint.py`, `test_repo_files.py`, `test_docs_consistency.py`, `test_run_all.py`, `test_helpers.py` | guards: no default name or image repository written as a literal (read `container/host/DEFAULTS`), the policy files exist and link, the README commands exist and its links resolve, the runner itself, the fake `podman` |
+| `test_clipboard_bridge.py`, `test_web_style.py`, `test_tmux_browser_keys.py` | the web terminal in a real browser and tmux keys; they need chromium and ttyd and run in the scheduled CI job only |
+
+Shared helpers (the fake `podman`, the fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use a real
+container only for a smoke test, with a `swarmbox-test-` name.
 
 ## Building the image locally
 
@@ -105,8 +56,8 @@ sh dev/dev-build.sh            # tag swarmbox-test-img-<random>; then: podman rm
 ```
 
 which builds from a scratch copy of the `Dockerfile` that carries the apt override (see below); the product file is never changed.
-`SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. To build by hand: `podman build -t swarmbox:dev .`
-(then `SWARMBOX_IMAGE=swarmbox:dev swarmbox`). The v0.1.0 build and start scripts and the v0.1.0 image file are retired; they
+`SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. To build by hand: `podman build -t swarmbox-dev:local .`
+(then `SWARMBOX_IMAGE=swarmbox-dev:local swarmbox`). The v0.1.0 build and start scripts and the v0.1.0 image file are retired; they
 stay readable in the tag v0.1.0 (`git show v0.1.0:<path>`).
 
 Caveats when building inside a SwarmBox (nested rootless Podman 4.3.1):
