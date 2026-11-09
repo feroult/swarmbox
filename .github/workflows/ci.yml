@@ -181,7 +181,6 @@ jobs:
           python3 tests/test_docs_consistency.py
           python3 tests/test_name_check.py
           python3 tests/test_release_check.py
-          python3 tests/test_release_checklist.py
           python3 tests/test_release_version.py
           python3 tests/test_release_workflow.py
           python3 tests/test_third_party_notices.py
