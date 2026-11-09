@@ -36,7 +36,7 @@ API_BASE = os.environ.get("CLOUDFLARE_API_BASE", "https://api.cloudflare.com/cli
 
 
 def load_default_name():
-    """The default box name: SWARMBOX_DEFAULT_NAME of the DEFAULTS file (D40), next to this script in the helper folder, or in
+    """The default box name: SWARMBOX_DEFAULT_NAME of the DEFAULTS file, next to this script in the helper folder, or in
     container/host/ when run from a checkout. Read here, not passed by the helper, so the script also works on its own."""
     here = os.path.dirname(os.path.abspath(__file__))
     for folder in (here, os.path.join(here, "container", "host")):
@@ -53,8 +53,8 @@ def load_default_name():
 
 
 DEFAULT_NAME = load_default_name()
-CONNECTOR_NAME = DEFAULT_NAME + "-cloudflared"  # one connector per host, whatever the box name (design 5.2)
-# Pinned (design 12.3). Override with --connector-image or SWARMBOX_CLOUDFLARED_IMAGE.
+CONNECTOR_NAME = DEFAULT_NAME + "-cloudflared"  # one connector per host, whatever the box name
+# Pinned. Override with --connector-image or SWARMBOX_CLOUDFLARED_IMAGE.
 DEFAULT_CONNECTOR_IMAGE = "docker.io/cloudflare/cloudflared:2026.10.7"
 DEFAULT_SESSION = "4h"  # applies to a first setup only; a rerun keeps what is configured
 ACCESS_HOST_MARK = "cloudflareaccess.com"

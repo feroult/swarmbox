@@ -1,4 +1,4 @@
-"""Slice 2.5: `swarmbox-pubkey --ensure` as step 5 of `serve` and `swarmbox-entrypoint pubkey` (design 4.1, 3.7, 9.3).
+"""`swarmbox-pubkey --ensure` as step 5 of `serve` and `swarmbox-entrypoint pubkey`.
 The program is container/scripts/ssh-key.sh (v0.1.0's script, installed as swarmbox-pubkey). tests/test_ssh_key.py keeps
 covering its details; this file covers the 2.0 contract: created once, idempotent, never overwritten, writes only under
 the test HOME, output that fits serve.log, and the entrypoint path.

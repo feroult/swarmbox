@@ -1,5 +1,5 @@
 #!/bin/sh
-# release-check.sh: the check the owner runs before creating the tag v2.0.0 (slice 7.6, design 10.4, plan section 10).
+# release-check.sh: the check the owner runs before creating the tag v2.0.0.
 # READ-ONLY: it reads files and runs `git status`, `git rev-parse`, `git tag --list` (with GIT_OPTIONAL_LOCKS=0, so the index
 # is not even refreshed). It creates, changes, pushes and tags nothing, and uses no network.
 #
@@ -13,7 +13,7 @@
 # entry), changelog (an entry for that version), notices (no [unverified] left in THIRD_PARTY_NOTICES.md), security-review
 # (no row with status open), files (every release file exists), workflows (the YAML files parse), tag (v<version> does not
 # exist yet), owner-todo (no [OWNER-TODO: ...] placeholder left in a release file). WARN org-placeholder: the README still
-# has <org> (an owner decision, D32, D38; it does not fail the check).
+# has <org> (an owner decision; it does not fail the check).
 set -u
 REPO=${SWARMBOX_RELEASE_REPO:-$(cd "$(dirname "$0")/.." && pwd)}
 BRANCH_WANTED=${SWARMBOX_RELEASE_BRANCH:-opensource}

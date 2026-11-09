@@ -1,12 +1,12 @@
 #!/bin/bash
-# OpenCode installer (design 6.4, 6.12; B10): npm under --prefix, then the unused platform builds are removed.
+# OpenCode installer: npm under --prefix, then the unused platform builds are removed.
 # Called by `swarmbox-tool install opencode` with TOOL_PREFIX, TOOL_VERSION and TOOL_ARCH. Writes only below $TOOL_PREFIX (and npm's cache,
 # cleaned at the end). Progress goes to stderr only: stdout belongs to the tool being run.
 #
 # THE PACKAGE CHOICE IS THIS ONE VARIABLE. "@opencode/cli" is the 2.x line; "opencode-ai" is a 1.x line. They are
-# different release lines: a home written by one fails under the other ("Database is not empty and has no session table", B10), so do not
-# swap them silently. See decision log [0.3] and [4b.2]. 2.x starts a shared background server per user account (`--standalone`
-# avoids it) [unverified here: not exercised under the box's supervisor, see [4b.2]].
+# different release lines: a home written by one fails under the other ("Database is not empty and has no session table"), so do not
+# swap them silently. 2.x starts a shared background server per user account (`--standalone`
+# avoids it) [unverified here: not exercised under the box's supervisor].
 set -euo pipefail
 
 PACKAGE="@opencode/cli"
@@ -27,7 +27,7 @@ npm install -g --prefix "$TOOL_PREFIX" "$PACKAGE@$TOOL_VERSION" >&2
 npm cache clean --force >&2 || echo "opencode: warning: npm cache clean failed (the cache is safe to lose)" >&2
 
 # The package ships one build per platform and hard-links the right one to bin/opencode.exe. Keep the build(s) that file is linked to and
-# remove the others. Never a fixed list of names: the count and the names move with the version and the architecture (B10).
+# remove the others. Never a fixed list of names: the count and the names move with the version and the architecture.
 # If no build can be identified as the linked one, NOTHING is removed (safe: the cost is disk, not a broken tool).
 pkgdir="$TOOL_PREFIX/lib/node_modules/$PACKAGE"
 exe="$pkgdir/bin/opencode.exe"

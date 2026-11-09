@@ -1,4 +1,4 @@
-"""Slice 3.6: `swarmbox-host update [--to TAG]` (design 3.7.2, 3.8 "Update flow", "Rollback", D17, D27, D33, D35, B20).
+"""`swarmbox-host update [--to TAG]` (the "Update flow" and "Rollback" of docs/design.md).
 
 The helper runs as a real program against the shared FakePodman, which records every call. The "image" is a tar archive built in
 Python (tests/function_cases.make_archive: swarmbox-host, VERSION, ...) that the fake `podman run ... host-helper` writes to
@@ -138,7 +138,7 @@ class PlainUpdateTest(UpdateBase):
                 self.assert_unchanged(before)
 
     def test_update_never_recreates_the_box(self):
-        # D27: no rm, stop, start, create, a box run or an inspect of the box: pull, the helper's `run --rm` and tag only
+        # no rm, stop, start, create, a box run or an inspect of the box: pull, the helper's `run --rm` and tag only
         self.podman_for("2.0.1")
         r = self.update()
         self.assertEqual(r.returncode, 0, r.stderr)

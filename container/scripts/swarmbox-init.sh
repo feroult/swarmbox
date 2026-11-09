@@ -1,20 +1,20 @@
 #!/bin/sh
-# swarmbox-init (design 3.1, 3.7.5, 3.8, D20; installed as /usr/local/bin/swarmbox-init, run by `swarmbox-entrypoint init`).
+# swarmbox-init (installed as /usr/local/bin/swarmbox-init, run by `swarmbox-entrypoint init`).
 #
 #   swarmbox-init [--shell bash|zsh|fish] [--with LIST] [--workspace DIR] [--image REF]
 #
 # Prints, on standard output and only there: a comment line naming the version, then the marker block
 # `# >>> swarmbox X.Y.Z >>>` ... `# <<< swarmbox X.Y.Z <<<` with the function of the chosen shell and the seed values (the flags
 # that were given). It writes nothing to the machine, and the same arguments always print the same text (running it twice and
-# appending both leaves two identical blocks, 3.7.5).
+# appending both leaves two identical blocks).
 #
-# The shell is --shell, else the base name of the SHELL variable that `podman run -e SHELL` passes in (D20; B21), and anything
+# The shell is --shell, else the base name of the SHELL variable that `podman run -e SHELL` passes in, and anything
 # that is not zsh or fish silently gives bash. An explicit unknown --shell is exit 2.
 # Exit codes: 0 ok; 2 usage, unknown shell, a newline in a value; 3 the VERSION or DEFAULTS file or a template is missing or malformed (a
 # corrupted image).
 #
-# POSIX sh on purpose (decision [3.5]): it is tested under dash and bash --posix on the development machine. The templates are
-# files of the helper archive (3.7.1): container/host/templates/{bash,zsh,fish}, read from the folder of the helper
+# POSIX sh on purpose: it is tested under dash and bash --posix on the development machine. The templates are
+# files of the helper archive: container/host/templates/{bash,zsh,fish}, read from the folder of the helper
 # (SWARMBOX_TEST_HOST_DIR replaces /usr/local/share/swarmbox/host in tests). Placeholders in them: @VERSION@ (a validated version,
 # written as it is), @IMAGE@, @SEED_WITH@, @SEED_WORKSPACE@, @SEED_IMAGE@ (each already quoted for the shell).
 LC_ALL=C
@@ -98,7 +98,7 @@ case $VERSION_STR in
     *[!0-9A-Za-z.+-]*) die 3 "the VERSION file ($VERSION_FILE) holds characters that are not allowed in a version: '$VERSION_STR'." ;;
 esac
 
-# The default image repository comes from the DEFAULTS file of the helper folder (D40), read as the helper does: parsed, not sourced.
+# The default image repository comes from the DEFAULTS file of the helper folder, read as the helper does: parsed, not sourced.
 DEFAULTS_FILE=$HOST_DIR/DEFAULTS
 [ -r "$DEFAULTS_FILE" ] || die 3 "the host helper folder has no DEFAULTS file ($DEFAULTS_FILE); this image is corrupted."
 REGISTRY_REPO=

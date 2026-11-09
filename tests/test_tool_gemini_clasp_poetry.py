@@ -1,7 +1,7 @@
-"""Slice 4b.3: the gemini, clasp and poetry tools (design 6.3, 6.4, 6.6, 6.12; D3, D21).
+"""The gemini, clasp and poetry tools.
 
 install.sh runs against a FAKE npm and a FAKE curl serving a fake Poetry installer; the real npm, PyPI and network are NOT used here
-(real installs are slice 4b.7). Run with: python3 -W error tests/test_tool_gemini_clasp_poetry.py   (needs bash, jq; zsh is optional)
+(real installs are in tests/test_tool_real.py). Run with: python3 -W error tests/test_tool_gemini_clasp_poetry.py   (needs bash, jq; zsh is optional)
 """
 import os
 import re

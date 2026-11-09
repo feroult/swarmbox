@@ -1,4 +1,4 @@
-"""Slice 5.4: the Cloudflare connector that `up` keeps running (design 5.2, 3.7.2, 8.2, 12.3; D14, D28).
+"""The Cloudflare connector that `up` keeps running.
 
 Runs the real helper against the shared FakePodman (the Base of tests/test_host_up.py). The tunnel token must reach Podman only
 through its environment (`-e TUNNEL_TOKEN`), so the fake records TUNNEL_* variables and the tests read them with fp.envs().
@@ -108,7 +108,7 @@ class ConnectorTest(ConnectorBase):
         self.with_connector()
         self.up(**self.tok_env(SWARMBOX_CLOUDFLARED_IMAGE="example.invalid/cf:1"))
         self.assertEqual(self.run_calls()[0][-4], "example.invalid/cf:1")
-        # the config table (8.2) has no file key for it: a line in the file is an unknown key, never the image
+        # the config table has no file key for it: a line in the file is an unknown key, never the image
         self.podman()
         self.with_connector()
         cfg = os.path.join(self.home, ".config", "swarmbox")
@@ -147,7 +147,7 @@ class ConnectorTest(ConnectorBase):
                 self.assertNotIn(TOK, r.stderr)
 
     def test_a_running_box_still_brings_the_connector_up_on_every_entry(self):
-        """Ported from v0.1.0's test_existing_web_container_brings_up_the_tunnel_even_without_the_flag (slice 6.2)."""
+        """Ported from v0.1.0's test_existing_web_container_brings_up_the_tunnel_even_without_the_flag."""
         running = {"stdout": self.matching_line()}
         self.podman(lookup=running)
         c = self.conf(lookup=running)

@@ -1,4 +1,4 @@
-"""Slice 4b.5: `swarmbox-tool use` and `remove` (design 6.9, 6.11, 6.5; decision D3).
+"""`swarmbox-tool use` and `remove`.
 
 Fake installers only (the fixtures of test_tool_install.py); HOME, both manifest levels and the lock are temp paths.
 Run with: python3 -W error tests/test_tool_use_remove.py

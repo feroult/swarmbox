@@ -1,4 +1,4 @@
-"""Slice 4b.6: tools installed at the image level (design 6.8, 6.11, 10.2): `swarmbox-tool install --image` and the run-time lookup.
+"""Tools installed at the image level: `swarmbox-tool install --image` and the run-time lookup.
 
 `install NAME --image` (what the Dockerfile's WITH_TOOLS loop runs, as the owner of /opt/swarmbox/tools) installs into the image
 state folder (test override SWARMBOX_TEST_IMAGE_STATE) instead of the workspace, records the fingerprint, and for an UPDATE=self tool

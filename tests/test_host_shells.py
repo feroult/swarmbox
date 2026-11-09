@@ -1,10 +1,10 @@
-"""Slice 3.1: the host helper under several `sh` implementations (D16, B23) and shellcheck.
+"""The host helper under several `sh` implementations and shellcheck.
 
 The same scenario (version, config set/get/list/seed, env add/list/rm, the tunnel-token mode rule, a second box, an
 error exit) runs with each interpreter named explicitly: dash, `bash --posix`, busybox sh, bash started under the name
 `sh` (a symlink: POSIX mode, the closest thing to macOS /bin/sh available here), the system /bin/sh, and zsh in sh
 emulation. macOS /bin/sh itself and bash 3.2 are not here: those cases are reported as skipped with a tag and stay
-[unverified] (B23, Phase 6). shellcheck -s sh runs as a test and skips with a tag when it is missing.
+[unverified]. shellcheck -s sh runs as a test and skips with a tag when it is missing.
 Run: python3 tests/test_host_shells.py
 """
 import os
@@ -125,7 +125,7 @@ class ShellMatrix(unittest.TestCase):
 
     def test_busybox_runs_when_present(self):
         if not shutil.which("busybox"):
-            self.skipTest("[skipped: busybox missing; B23 busybox part unverified here]")
+            self.skipTest("[skipped: busybox missing; busybox part unverified here]")
         self.assertIn("busybox sh", interpreters())
 
     def test_bash_under_the_name_sh(self):
@@ -141,7 +141,7 @@ class ShellMatrix(unittest.TestCase):
     def test_shellcheck_sh_has_no_findings(self):
         sc = shutil.which("shellcheck")
         if not sc:
-            self.skipTest("[skipped: shellcheck missing; B23 static part unverified here]")
+            self.skipTest("[skipped: shellcheck missing; static part unverified here]")
         p = subprocess.run([sc, "-s", "sh", HELPER], capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 

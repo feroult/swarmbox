@@ -1,12 +1,12 @@
 #!/bin/bash
-# Poetry installer (design 6.4, 6.12): the official installer (https://install.python-poetry.org) with POETRY_HOME set to $TOOL_PREFIX.
+# Poetry installer: the official installer (https://install.python-poetry.org) with POETRY_HOME set to $TOOL_PREFIX.
 # Called by `swarmbox-tool install poetry` with TOOL_PREFIX, TOOL_VERSION and TOOL_ARCH. The pip cache and Poetry's own config and cache
-# go to a private temporary folder that is removed at the end, so nothing lands in ~/.cache or ~/.config (6.4).
+# go to a private temporary folder that is removed at the end, so nothing lands in ~/.cache or ~/.config.
 # Progress goes to stderr only: stdout belongs to the tool being run.
 set -euo pipefail
 
 : "${TOOL_PREFIX:?TOOL_PREFIX is not set}"
-: "${TOOL_VERSION:?TOOL_VERSION is not set (poetry is pinned, D21)}"
+: "${TOOL_VERSION:?TOOL_VERSION is not set (poetry is pinned)}"
 
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/poetry-install.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT

@@ -1,4 +1,4 @@
-"""Slice 7.3: the adversarial tests behind docs/security-review.md (design 11, D16, D26, D28, 3.3 "up lock", 3.7.1-3.7.3).
+"""The adversarial tests behind docs/security-review.md.
 
 One class per finding class of the review. Everything runs the REAL host helper (swarmbox-host, POSIX sh) and the real
 cloudflare-setup.py against the shared FakePodman; HOME, the XDG folders and the workspaces are mktemp folders and nothing

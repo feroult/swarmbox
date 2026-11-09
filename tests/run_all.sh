@@ -1,5 +1,5 @@
 #!/bin/sh
-# run_all.sh: the full regression, one line per test file (slice 3.7, design 13.4).
+# run_all.sh: the full regression, one line per test file.
 #
 # Usage: sh tests/run_all.sh [--werror] [--repeat N] [--only a.py,b.py] [--browser] [--list]
 #   --werror   run each file as `python3 -W error` (the earlier phases did this for their own files)

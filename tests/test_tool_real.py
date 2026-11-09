@@ -1,4 +1,4 @@
-"""Slice 4b.7: the real-installer tests of design 6.9 and 13.4, one table row per tool in container/tools.
+"""The real-installer tests, one table row per tool in container/tools.
 
 Two parts.
   1. Always runs (python3, bash, find): the HARNESS itself. The scan that finds "side effects" is run against fake installers, one clean
@@ -9,7 +9,7 @@ Two parts.
      home), from an image built by dev/dev-build.sh (SWARMBOX_IMAGE_TAG=<swarmbox-test-...> reuses one and does not remove it).
        - first call through the shim installs as uid 1000 and the tool prints its version;
        - NO SIDE EFFECTS: no file under /usr /etc /opt /var /root /home changed after a stamp, except below the tool's TOOL_PREFIX
-         and SwarmBox's own state (design 6.4, 6.9); for npm tools /opt/npm-cache holds no files afterwards (the cache rule);
+         and SwarmBox's own state; for npm tools /opt/npm-cache holds no files afterwards (the cache rule);
        - SURVIVES A RESET: the container is removed and a second one is created on the same volume: the tool runs again, installs
          nothing and the version is the same.
      SWARMBOX_REAL_TOOLS=go,poetry limits the table. A failed first call is retried once (network flakes); the retry is reported.
@@ -301,7 +301,7 @@ def make_real_class(name):
             cls.retried = False
             if cls.inst.returncode != 0:
                 cls.retried = True
-                sys.stderr.write("\n[4b.7] %s: install failed (%d), retrying once: %s\n"
+                sys.stderr.write("\nreal: %s: install failed (%d), retrying once: %s\n"
                                  % (name, cls.inst.returncode, err(cls.inst)[-400:]))
                 cls.inst = cls.box.sh("swarmbox-tool install " + name)
             cls.seconds = time.time() - cls.t0
@@ -312,8 +312,8 @@ def make_real_class(name):
             after = [l for l in out(cls.box.sh(scan_command(ROOTS, "/tmp/stamp-4b7"), user="root")).splitlines() if l]
             cls.runtime = sorted(set(offenders(after, allowed_for(name))) - set(cls.changed))
             if cls.runtime:
-                sys.stderr.write("\n[4b.7] %s: files the tool itself wrote when run: %s\n" % (name, cls.runtime[:6]))
-            sys.stderr.write("\n[4b.7] %s: first call %.0fs, exit %d, retried=%s, output: %s\n"
+                sys.stderr.write("\nreal: %s: files the tool itself wrote when run: %s\n" % (name, cls.runtime[:6]))
+            sys.stderr.write("\nreal: %s: first call %.0fs, exit %d, retried=%s, output: %s\n"
                              % (name, cls.seconds, cls.first.returncode, cls.retried, out(cls.first)[:200]))
 
         @staticmethod
@@ -347,7 +347,7 @@ def make_real_class(name):
         def test_04_the_npm_cache_rule(self):
             left = cache_leftovers(out(self.box.sh("find %s -type f 2>/dev/null" % CACHE, user="root")).splitlines())
             if npm:
-                self.assertEqual(left, [], "an npm installer left the cache full (design 6.4): %s" % left[:5])
+                self.assertEqual(left, [], "an npm installer left the cache full: %s" % left[:5])
             else:
                 self.assertEqual(left, [], "a non-npm installer touched the npm cache")
 
@@ -378,7 +378,7 @@ def make_real_class(name):
             if name == "opencode":
                 # observed only (the OpenCode 2.x shared background server must not be assumed): listening TCP sockets now
                 lis = new.sh("awk '$4==\"0A\"{print $2}' /proc/net/tcp /proc/net/tcp6 2>/dev/null")
-                sys.stderr.write("\n[4b.7] opencode: listening sockets after --version: %r\n" % out(lis))
+                sys.stderr.write("\nreal: opencode: listening sockets after --version: %r\n" % out(lis))
 
     Real.__name__ = "Real_" + name
     Real.__qualname__ = Real.__name__

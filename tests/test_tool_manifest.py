@@ -1,6 +1,6 @@
-"""Slice 4a.1: swarmbox-tool manifest loading and `validate` (design 6.1 to 6.4, 6.7, 6.9, 6.10; decisions D3, D18, D21).
+"""The swarmbox-tool manifest loading and `validate`.
 
-The manifests are built in mktemp directories and passed through the test-only variables of decision log [4a.1]:
+The manifests are built in mktemp directories and passed through the test-only variables:
 SWARMBOX_TEST_IMAGE_TOOLS (replaces /usr/local/lib/swarmbox/tools), SWARMBOX_TEST_USER_TOOLS (replaces the user level,
 $SB_CONFIG_DIR/tools) and SWARMBOX_TEST_LIB (the folder with dirs.sh). Nothing here touches the real home.
 Run with: python3 tests/test_tool_manifest.py
@@ -128,7 +128,7 @@ class Loader(Base):
         self.assertNotIn("fine: ", r.stderr)
 
 class Rules(Base):
-    """One failing-then-passing pair for every rule of design 6.9."""
+    """One failing-then-passing pair for every rule of validate."""
 
     def case(self, bad, good, *words, name="demo", **kw):
         d = make_tool(self.image, name=name, **bad, **kw)
@@ -184,7 +184,7 @@ class Rules(Base):
             self.assertIn(w, out)
 
 class NoProjectLevel(Base):
-    """D18: a tools folder inside a project is never read."""
+    """A tools folder inside a project is never read."""
 
     def test_nothing_in_the_project_is_read_by_validate_link_or_the_loader(self):
         marker = os.path.join(self.base, "SOURCED")

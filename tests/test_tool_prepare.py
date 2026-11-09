@@ -1,4 +1,4 @@
-"""Slice 4b.2: `swarmbox-tool prepare` and the prepare.sh run after an install (design 6.3, 4.1 step 7, D4).
+"""`swarmbox-tool prepare` and the prepare.sh run after an install.
 
 Fake tools whose prepare.sh succeeds, fails, hangs or is absent, in a mktemp tree (HOME, manifests, lock). Nothing touches the real
 home, tools folder or lock. Run with: python3 -W error tests/test_tool_prepare.py

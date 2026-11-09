@@ -1,10 +1,10 @@
 #!/bin/bash
-# OpenCode prepare.sh (design 6.6, 4.4): run by `swarmbox-tool prepare` (serve step 7, after the MCP file is written) and after an install.
+# OpenCode prepare.sh: run by `swarmbox-tool prepare` (serve step 7, after the MCP file is written) and after an install.
 # Renders box:/tmp/swarmbox/opencode.json: the local-LLM provider from LOCAL_LLM_* (off unless LOCAL_LLM_URL is set), then the MCP mirror
 # of <workspace>/.claude/mcp-servers.json. Writes only that file (mode 600: it can hold the key), atomically, and is idempotent.
 #
 #   LOCAL_LLM_URL      base URL of an OpenAI-compatible server (unset or empty: no local provider)
-#   LOCAL_LLM_MODEL    model name (required when the URL is set; there is no default any more, design 7.2)
+#   LOCAL_LLM_MODEL    model name (required when the URL is set; there is no default any more)
 #   LOCAL_LLM_KEY      API key (default sk-local, a dummy: the provider type wants one)
 #   LOCAL_LLM_CONTEXT  context window in tokens (default 65536)    LOCAL_LLM_OUTPUT  output limit (default 8192)
 #
@@ -52,7 +52,7 @@ build_opencode_config() {
         | .model = ("local/" + $m)' "$template" > "$tmp"
 }
 
-# sync_opencode_mcp: the mapping (design 4.4): each server s becomes
+# sync_opencode_mcp: the mapping: each server s becomes
 #   {type: "local", command: [s.command] + s.args, enabled: true} plus environment: s.env when s has env.
 sync_opencode_mcp() {
     local src="$HOME/.claude/mcp-servers.json"

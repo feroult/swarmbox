@@ -4,7 +4,7 @@ The box serves its shell in a browser (ttyd + tmux, so sessions survive closing 
 `127.0.0.1:<WEB_PORT>` of your machine, port 7681 unless you change it. `swarmbox url` prints the address (and the public one, when
 `swarmbox remote setup` has been run). A second box needs its own port: `SWARMBOX_NAME=dev swarmbox config set WEB_PORT 7682`, then
 `SWARMBOX_NAME=dev swarmbox reset`. `swarmbox config set WEB 0` turns it off (the port is a creation setting: `swarmbox reset` applies it).
-Inside the box ttyd always uses port 7681; `WEB_PORT` is only the host side of the mapping. There is no host-network mode in 2.0 (D7).
+Inside the box ttyd always uses port 7681; `WEB_PORT` is only the host side of the mapping. There is no host-network mode in 2.0.
 
 **Same tabs in the browser and in your terminal**: the shell `swarmbox` opens in your host terminal is a new
 window of the same tmux session (`main`) the browser shows, through a grouped session, so each host tab is also a

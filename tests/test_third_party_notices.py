@@ -1,4 +1,4 @@
-"""THIRD_PARTY_NOTICES.md and dev/gen-notices.sh (Phase 7, slice 7.2, design 11 last bullet, 10.4, D25, D29).
+"""THIRD_PARTY_NOTICES.md and dev/gen-notices.sh.
 
 Checks:
   - no "[unverified" is left in the notices; what could not be checked is tagged "[owner-check: ...]" and says why;

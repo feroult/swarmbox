@@ -1,4 +1,4 @@
-"""Slice 4b.1: container/scripts/swarmbox-mcp.sh, the generator of <workspace>/.claude/mcp-servers.json (design 4.4, D23, B24).
+"""Container/scripts/swarmbox-mcp.sh, the generator of <workspace>/.claude/mcp-servers.json.
 
 Everything runs in mktemp directories: HOME (the workspace), the XDG folders and a copy of the registry. Nothing touches the
 real configuration. Run with: python3 -W error tests/test_mcp_registry.py   (needs bash and jq)

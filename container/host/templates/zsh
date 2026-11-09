@@ -5,7 +5,7 @@ swarmbox() {
   local -a sa pe
   local version='@VERSION@'
   local image=@IMAGE@
-  local seed_with=@SEED_WITH@ seed_ws=@SEED_WORKSPACE@ seed_image=@SEED_IMAGE@   # seed values of `swarmbox init` (design 3.7.5)
+  local seed_with=@SEED_WITH@ seed_ws=@SEED_WORKSPACE@ seed_image=@SEED_IMAGE@   # seed values of `swarmbox init`
   dir=${XDG_DATA_HOME:-$HOME/.local/share}
   case $dir in /*) ;; *) dir=$HOME/.local/share ;; esac
   dir=$dir/swarmbox/host
@@ -19,7 +19,7 @@ swarmbox() {
       *) hv="" ;;
     esac
   fi
-  # bootstrap (D33): extract only when there is no usable helper or it is older than this block (sort -V: 2.0.10 is newer than
+  # bootstrap: extract only when there is no usable helper or it is older than this block (sort -V: 2.0.10 is newer than
   # 2.0.9); a newer helper is kept with a one-line notice; when sort has no -V there is no answer and the helper is kept
   if [ -z "$hv" ]; then
     need=1
@@ -73,7 +73,7 @@ swarmbox() {
   elif [ "$skew" = 1 ]; then
     echo "swarmbox: the helper ($hv) is newer than this function ($version); kept" >&2
   fi
-  # seeds (D20, 3.7.5): given as arguments, never as SWARMBOX_* variables (those would override the file on every call); a relative
+  # seeds: given as arguments, never as SWARMBOX_* variables (those would override the file on every call); a relative
   # workspace is made absolute here, on the host, against the folder of this call
   case $seed_ws in ""|/*|"~"|"~/"*) ;; *) seed_ws=$(pwd)/${seed_ws#./} ;; esac
   sa=(config seed)
@@ -83,15 +83,15 @@ swarmbox() {
   if [ "${#sa[@]}" -gt 2 ]; then
     "$host" "${sa[@]}" || return $?
   fi
-  case "${1-}" in                                   # words handled on the host (3.3)
+  case "${1-}" in                                   # words handled on the host
     stop|reset|up|url|update|config|env|remote|fingerprint|version|help|--help|-h) "$host" "$@"; return $? ;;
   esac
   "$host" up || return $?                           # create if needed, start, check, wait until ready
   name=$("$host" config get NAME) || return $?
   pe=(exec -i)
-  if [ -t 0 ] && [ -t 1 ]; then pe=(exec -it); fi   # -t only with a terminal on both ends (3.3, "No terminal")
+  if [ -t 0 ] && [ -t 1 ]; then pe=(exec -it); fi   # -t only with a terminal on both ends
   pe=("${pe[@]}" -e TERM -e COLORTERM "$name" swarmbox-entrypoint)
-  case "${1-}" in                                   # words forwarded as they are (3.3)
+  case "${1-}" in                                   # words forwarded as they are
     pubkey|tool) command podman "${pe[@]}" "$@"; return $? ;;
     attach) shift ;;                                # a leading "attach" is a prefix, not an argument
   esac

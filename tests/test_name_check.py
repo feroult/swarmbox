@@ -1,4 +1,4 @@
-"""Slice 7.6: dev/name-check.sh, the reduced name availability check (D25). It runs only against a fake curl here.
+"""Dev/name-check.sh, the reduced name availability check. It runs only against a fake curl here.
 
 The fake curl answers by URL from a folder of canned files, records its calls, and the script is run with PATH set so the
 fake wins. The script must: query GitHub search, GitHub repo, npm and PyPI; report TAKEN or FREE per source; exit 0 always

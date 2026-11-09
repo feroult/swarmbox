@@ -1,4 +1,4 @@
-"""Slice 4b.6: the WITH_TOOLS build argument on a real image (design 6.8, 10.2). Opt-in: SWARMBOX_IMAGE_BUILD=1 and podman.
+"""The WITH_TOOLS build argument on a real image. Opt-in: SWARMBOX_IMAGE_BUILD=1 and podman.
 
 Two parts, both in throwaway containers named swarmbox-test-4b6-run-<rand> and removed by exact name:
  - fake installer (no network at run time): a fake manifest is mounted read-only and installed with `install --image` into the image's

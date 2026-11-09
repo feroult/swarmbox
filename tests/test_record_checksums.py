@@ -1,4 +1,4 @@
-"""Slice 4b.4: the maintainer script dev/record-checksums.sh (design 6.4, 6.12; D29, B11, B25).
+"""The maintainer script dev/record-checksums.sh.
 
 It runs against a FAKE curl that serves small tarballs and a fake go.dev JSON listing; no network is used (the real run is a
 maintainer's act, once per version bump). Run with: python3 -W error tests/test_record_checksums.py   (needs bash, jq, sha256sum)

@@ -1,6 +1,6 @@
-"""Slice 4b.5: the environment fingerprint (design 6.11) at `doctor`, `doctor --fix`, `link --user` and in the shim.
+"""The environment fingerprint at `doctor`, `doctor --fix`, `link --user` and in the shim.
 
-Policy under test (decision log [4b.5]): ARCH differs: the shim refuses (exit 69), doctor says `needs reinstall`. NODE_MAJOR or LIBC
+Policy under test: ARCH differs: the shim refuses (exit 69), doctor says `needs reinstall`. NODE_MAJOR or LIBC
 differs: the shim warns once per entry and runs, doctor still lists `needs reinstall` (it is the audit view; the tool may work).
 The running environment is forced with SWARMBOX_TEST_ARCH, SWARMBOX_TEST_NODE_MAJOR and SWARMBOX_TEST_LIBC.
 Run with: python3 -W error tests/test_tool_doctor.py

@@ -1,4 +1,4 @@
-# Grype configuration for the release scan (design 13.4; used by anchore/scan-action in .github/workflows/release.yml).
+# Grype configuration for the release scan (used by anchore/scan-action in .github/workflows/release.yml).
 #
 # The release fails on any HIGH or CRITICAL finding that has a fix available (workflow: severity-cutoff high, only-fixed true).
 # Findings without a fix upstream are not counted: the base image is Debian and many of its findings have none; they are

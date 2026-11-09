@@ -1,11 +1,11 @@
 #!/bin/bash
-# Go installer (design 6.4, 6.12; B25): the official tarball from go.dev, verified against the manifest's checksum BEFORE it is extracted,
+# Go installer: the official tarball from go.dev, verified against the manifest's checksum BEFORE it is extracted,
 # then extracted into $TOOL_PREFIX with its top directory "go" stripped (so $TOOL_PREFIX/bin/go and gofmt, and GOROOT is $TOOL_PREFIX).
 # Called by `swarmbox-tool install go` with TOOL_PREFIX, TOOL_VERSION, TOOL_ARCH (amd64|arm64) and TOOL_SHA256. Progress goes to stderr only.
 set -euo pipefail
 
 : "${TOOL_PREFIX:?TOOL_PREFIX is not set}"
-: "${TOOL_VERSION:?TOOL_VERSION is not set (go is pinned, D21)}"
+: "${TOOL_VERSION:?TOOL_VERSION is not set (go is pinned)}"
 : "${TOOL_ARCH:?TOOL_ARCH is not set}"
 case "$TOOL_VERSION" in latest | "" | *[!0-9A-Za-z._-]*) echo "go: refusing the version '$TOOL_VERSION'" >&2; exit 1 ;; esac
 case "$TOOL_ARCH" in amd64 | arm64) ;; *) echo "go: unsupported architecture '$TOOL_ARCH'" >&2; exit 1 ;; esac

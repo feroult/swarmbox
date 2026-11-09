@@ -1,4 +1,4 @@
-"""Slice 4b.5: `swarmbox-tool new` (design 6.9). The skeleton must pass `validate` at once.
+"""`swarmbox-tool new`. The skeleton must pass `validate` at once.
 Run with: python3 -W error tests/test_tool_new.py
 """
 import os

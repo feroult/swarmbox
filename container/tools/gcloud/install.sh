@@ -1,5 +1,5 @@
 #!/bin/bash
-# gcloud installer (design 6.4, 6.12; D29, B11): Google's version-pinned tarball for the architecture, verified against the manifest's
+# gcloud installer: Google's version-pinned tarball for the architecture, verified against the manifest's
 # checksum BEFORE it is extracted, then extracted into $TOOL_PREFIX with its top directory "google-cloud-sdk" stripped (so
 # $TOOL_PREFIX/bin/gcloud, gsutil and bq). The SDK's own install script is NOT run: it only edits shell startup files and asks about
 # usage reporting, and the bin/ programs work in place with the bundled Python.
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 : "${TOOL_PREFIX:?TOOL_PREFIX is not set}"
-: "${TOOL_VERSION:?TOOL_VERSION is not set (gcloud is pinned, D21)}"
+: "${TOOL_VERSION:?TOOL_VERSION is not set (gcloud is pinned)}"
 : "${TOOL_ARCH:?TOOL_ARCH is not set}"
 case "$TOOL_VERSION" in latest | "" | *[!0-9A-Za-z._-]*) echo "gcloud: refusing the version '$TOOL_VERSION'" >&2; exit 1 ;; esac
 case "$TOOL_ARCH" in

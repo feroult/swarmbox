@@ -1,9 +1,9 @@
-"""Slice 4a.3: `swarmbox-tool install`, `run`, `list`, `update` (design 6.4, 6.5, 6.7, 6.11; decisions D2, D3, D21).
+"""`swarmbox-tool install`, `run`, `list`, `update`.
 
 All installers are fakes: scripts that record their environment and working directory, then write a fake program into
 $TOOL_PREFIX (managed tools) or into ~/.local/bin under a temp HOME (UPDATE=self tools, like the vendor installer of Claude Code).
 Nothing here touches the real home, the real tools folder or the real lock: the lock is moved with SWARMBOX_TEST_LOCK, the
-architecture can be forced with SWARMBOX_TEST_ARCH, and HOME, TMPDIR and the manifest folders are temp folders (decision log [4a.3]).
+architecture can be forced with SWARMBOX_TEST_ARCH, and HOME, TMPDIR and the manifest folders are temp folders.
 Run with: python3 tests/test_tool_install.py
 """
 import hashlib

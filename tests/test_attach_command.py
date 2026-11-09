@@ -1,5 +1,5 @@
-"""Slice 2.3: `swarmbox-attach` (design 3.3, 3.4, 4.2): the grouped session, the idle window (B36) and the
-`swarmbox <command>` mechanism (B13): detached window, wait-for channel, status file, exit codes, no-terminal path.
+"""`swarmbox-attach`: the grouped session, the idle window and the
+`swarmbox <command>` mechanism: detached window, wait-for channel, status file, exit codes, no-terminal path.
 
 Three layers, all against container/scripts/swarmbox-attach.sh:
   1. A FAKE tmux (python, recording) first on PATH: argument construction, quoting, exit-code mapping, fallback poll,
@@ -10,7 +10,7 @@ Three layers, all against container/scripts/swarmbox-attach.sh:
   3. The entrypoint's `attach` subcommand forwards to swarmbox-attach.
 
 A terminal is a pty made by the test (the grouped tmux client needs one). HOME, the run folder and the shell fragment are
-mktemp directories. Test-only variables (decision log [2.3]): SWARMBOX_TEST_LIB, SWARMBOX_TEST_RUN_DIR,
+mktemp directories. Test-only variables: SWARMBOX_TEST_LIB, SWARMBOX_TEST_RUN_DIR,
 SWARMBOX_TEST_READY_TIMEOUT (seconds, default 60), SWARMBOX_TEST_POLL_INTERVAL (seconds, default 1), SWARMBOX_TEST_FRAGMENT.
 
 Run with: python3 tests/test_attach_command.py   (needs bash and, for layer 2, tmux)
@@ -437,7 +437,7 @@ class RealTmuxCase(Base):
         self.assertTrue(wait_until(lambda: len(self.sessions()) == 2), a.out)
         w = self.windows()
         self.assertEqual(len(w), 1)
-        self.assertNotEqual(w[0][1], "idle")  # B36: the idle window is gone
+        self.assertNotEqual(w[0][1], "idle")  # the idle window is gone
         b = self.term([])
         self.assertTrue(wait_until(lambda: len(self.sessions()) == 3), b.out)
         self.assertEqual(len(self.windows()), 2)

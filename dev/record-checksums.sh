@@ -1,13 +1,13 @@
 #!/bin/bash
-# Maintainer script (design 6.4, 6.12; D29): records SHA256_amd64 and SHA256_arm64 of a tool's pinned download into its tool.conf.
+# Maintainer script: records SHA256_amd64 and SHA256_arm64 of a tool's pinned download into its tool.conf.
 # Run it by hand when the pinned VERSION of go or gcloud is bumped, then commit the changed tool.conf. It is NOT run by any test against
 # the network (the tests use a fake curl) and it is not part of the image.
 #
 #   dev/record-checksums.sh go|gcloud [TOOL_CONF]     (default: container/tools/<tool>/tool.conf of this repository)
 #
 #   go      copies the checksums of go.dev's JSON listing (https://go.dev/dl/?mode=json, then &include=all for an older release), after
-#           downloading both tarballs and checking that the computed checksum equals the listing's (B25). A mismatch refuses.
-#   gcloud  downloads the version-pinned tarball for x86_64 and arm and records the checksum it computes (trust on first use, B11:
+#           downloading both tarballs and checking that the computed checksum equals the listing's. A mismatch refuses.
+#   gcloud  downloads the version-pinned tarball for x86_64 and arm and records the checksum it computes (trust on first use:
 #           Google publishes a checksum only for the unversioned name, so there is nothing to compare with).
 #
 # Both checksums are written together, only after both downloads succeeded; the file is replaced atomically. Only the two SHA256_ lines
@@ -26,7 +26,7 @@ conf=${2:-$root/container/tools/$tool/tool.conf}
 
 version=$(sed -n 's/^VERSION=//p' "$conf" | head -n 1 | tr -d "\"'")
 [ -n "$version" ] || die "$conf has no VERSION"
-[ "$version" != latest ] || die "VERSION must be pinned (D21), found latest"
+[ "$version" != latest ] || die "VERSION must be pinned, found latest"
 case "$version" in *[!0-9A-Za-z._-]*) die "VERSION '$version' has unexpected characters" ;; esac
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/record-checksums.XXXXXX")

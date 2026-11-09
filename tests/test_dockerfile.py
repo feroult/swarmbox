@@ -1,6 +1,6 @@
-"""Slice 2.1: the product Dockerfile (design 10.1, 10.2, 10.5, D9, D23), checked statically (no build).
+"""The product Dockerfile, checked statically (no build).
 
-The v0.1.0 Dockerfile is retired (decisions [2.1] and [6.2]); nothing here reads it.
+The v0.1.0 Dockerfile is retired; nothing here reads it.
 Run: python3 tests/test_dockerfile.py
 """
 import os
@@ -81,7 +81,7 @@ class StartupAndLayout(unittest.TestCase):
                     self.assertTrue(os.path.exists(os.path.join(ROOT, src)), "COPY source missing: %s" % src)
 
 class HostHelperArchive(unittest.TestCase):
-    """Slice 3.5: container/host/ is the helper archive's folder, and swarmbox-init is the entrypoint's `init`."""
+    """Container/host/ is the helper archive's folder, and swarmbox-init is the entrypoint's `init`."""
 
     def test_the_host_folder_is_copied_into_the_archive_folder(self):
         self.assertIn("COPY container/host/ /usr/local/share/swarmbox/host/", INS)
@@ -94,7 +94,7 @@ class HostHelperArchive(unittest.TestCase):
         self.assertRegex(chmod[0], r"chmod -R a\+rX /usr/local/share/swarmbox/host")
 
 class NestedPodman(unittest.TestCase):
-    """Design 10.5: every row of the table is still in the Dockerfile."""
+    """Every row of the nested Podman settings table is still in the Dockerfile."""
 
     def test_file_capabilities_instead_of_setuid(self):
         self.assertIn("chmod u-s /usr/bin/newuidmap /usr/bin/newgidmap", CODE)
@@ -102,7 +102,7 @@ class NestedPodman(unittest.TestCase):
         self.assertIn("setcap cap_setgid+ep /usr/bin/newgidmap", CODE)
 
 class ToolMachinery(unittest.TestCase):
-    """Slice 4a.5 (design 6.2, 10.2, D2): the image ships the real tool program, the manifests and the generated shims."""
+    """The image ships the real tool program, the manifests and the generated shims."""
 
     def test_link_system_runs_after_every_copy_and_chmod_it_needs(self):
         idx = [n for n, i in enumerate(INS) if "swarmbox-tool link --system" in i]
@@ -116,7 +116,7 @@ class ToolMachinery(unittest.TestCase):
         self.assertTrue(INS[idx[0]].startswith("RUN "))
 
     def test_no_agent_is_installed_and_no_tool_state_is_baked(self):
-        # slice 4b.6: the only install is the WITH_TOOLS loop (class WithTools); nothing named, nothing by default
+        # the only install is the WITH_TOOLS loop (class WithTools); nothing named, nothing by default
         installs = [i for i in INS if "swarmbox-tool install" in i]
         self.assertEqual(len(installs), 1)
         self.assertIn('"$t"', installs[0])
@@ -130,7 +130,7 @@ def tool_names():
 
 
 class WithTools(unittest.TestCase):
-    """Slice 4b.6 (design 6.8, 10.2, D2, D23): the WITH_TOOLS build argument."""
+    """The WITH_TOOLS build argument."""
 
     def run_idx(self):
         idx = [n for n, i in enumerate(INS) if "swarmbox-tool install" in i]

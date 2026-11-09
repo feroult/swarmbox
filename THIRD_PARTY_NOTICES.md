@@ -11,7 +11,7 @@ files say, not a legal opinion.
 
 ## What the image ships, and what it does not
 
-The default image is slim: `ARG WITH_TOOLS=""` (design 6, D2), so **no agent and no tool is baked in**. What the image
+The default image is slim: `ARG WITH_TOOLS=""`, so **no agent and no tool is baked in**. What the image
 contains: Debian packages (the base `node:24-slim`, which is Debian 12, plus the packages of the `Dockerfile`), Node.js and
 Yarn from the base image, `chrome-devtools-mcp` (npm, pinned), `uv`, `ttyd` and `starship` (pinned release binaries), the
 Python virtual environment `/opt/flow` (pip and setuptools), and SwarmBox's own scripts. The licenses of all of them are
@@ -31,7 +31,7 @@ and its libraries, binutils and avahi): the cell then says "see copyright file" 
 hint, not as a finding. No package lacked a copyright file in this run (`NO-COPYRIGHT-FILE` is flagged when one does).
 The identifiers are Debian's own spellings, not strictly SPDX. The list is for the amd64 image. [owner-check: the arm64
 image has the same package names but was not built and listed here, because this box is amd64 only; the CI job on arm64
-(slice 3.7) builds it, and the release workflow can run the same script on it]
+ builds it, and the release workflow can run the same script on it]
 
 `NO-LICENSE-FIELD` is explained here: the package's copyright file has no `License:` field, so the script cannot read an
 identifier. The text of such a file has to be read by hand; the table below records the ones the Dockerfile names directly.
@@ -230,7 +230,7 @@ statements below are for people who bake them in or want to know the terms.
 
 ### Google Cloud CLI (`google-cloud-cli`, tool `gcloud`)
 
-- Version: 592.0.0 (pinned in `container/tools/gcloud/tool.conf`; SHA-256 per architecture recorded by `dev/record-checksums.sh`, D29)
+- Version: 592.0.0 (pinned in `container/tools/gcloud/tool.conf`; SHA-256 per architecture recorded by `dev/record-checksums.sh`)
 - License: Apache-2.0 for the CLI and its source "unless otherwise specified by an alternate license file"; use with Google Cloud
   products is additionally governed by the terms of service of those products. Some bundled components carry their own license files.
 - Source: https://github.com/twistedpair/google-cloud-sdk (a mirror) and https://cloud.google.com/sdk/docs/downloads-versioned-archives; the SDK's `LICENSE` is in the archive.

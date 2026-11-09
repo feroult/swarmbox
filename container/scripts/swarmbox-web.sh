@@ -1,12 +1,12 @@
 #!/bin/bash
-# swarmbox-web (design 5.1; installed as /usr/local/bin/swarmbox-web).
+# swarmbox-web (installed as /usr/local/bin/swarmbox-web).
 #
-#   swarmbox-web run       what the ttyd supervisor of `serve` runs (4.2): render the page, build ttyd's options, exec ttyd
+#   swarmbox-web run       what the ttyd supervisor of `serve` runs: render the page, build ttyd's options, exec ttyd
 #   swarmbox-web render    only the first part: box:/tmp/swarmbox/index.html from the page built at image build
 #   swarmbox-web restart   make the supervisor start ttyd again (SIGUSR1 to the PID in box:/tmp/swarmbox/web-supervisor.pid),
 #                          for example after editing web-terminal.conf; the box and its tmux sessions stay up
 #
-# The page is built into the image (build-index.sh, D13) with three placeholders. Every start replaces them with a plain text
+# The page is built into the image (build-index.sh) with three placeholders. Every start replaces them with a plain text
 # substitution (sed, no Python, no hash) from <config>/web-terminal.conf:
 #   padding      a number from 0 to 99 (pixels around the terminal), default 10
 #   ctrlVPaste   true (default) or false
@@ -14,11 +14,11 @@
 # Every other key of that file is a ttyd/xterm.js option (font, theme, size, scrollback ...) and goes to ttyd as `-t key=value`;
 # they are not in the page. One `key=value` per line, `#` starts a comment.
 #
-# ttyd listens on every interface INSIDE the box (the published port is what limits it to the host's 127.0.0.1, 5.1), port 7681,
-# and runs `swarmbox-attach`, so the browser is a window of the shared tmux session like every other entry (3.4); without
+# ttyd listens on every interface INSIDE the box (the published port is what limits it to the host's 127.0.0.1), port 7681,
+# and runs `swarmbox-attach`, so the browser is a window of the shared tmux session like every other entry; without
 # swarmbox-attach it attaches to the session main directly.
 #
-# Test-only variables (decision log [2.5]; not in the configuration table of design 8): SWARMBOX_TEST_LIB (folder with dirs.sh),
+# Test-only variables (not in the configuration table): SWARMBOX_TEST_LIB (folder with dirs.sh),
 # SWARMBOX_TEST_RUN_DIR (replaces /tmp/swarmbox), SWARMBOX_TEST_WEB_PAGE (the built page), SWARMBOX_TEST_WEB_PORT (replaces
 # 7681), SWARMBOX_TEST_WEB_IFACE (ttyd -i value).
 
@@ -89,7 +89,7 @@ if ! [[ "$PAD" =~ ^[0-9]{1,2}$ ]]; then
 fi
 unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]' 'OPT[padding]'
 
-# render: the three-value substitution (5.1). The values are validated above, so sed needs no escaping.
+# render: the three-value substitution. The values are validated above, so sed needs no escaping.
 render() {
     [ -r "$PAGE" ] || die "the built page $PAGE is missing (build-index.sh runs at image build; is this the right image?)"
     local ph
@@ -137,7 +137,7 @@ json_value() {
 TTYD_ARGS=(-p "${SWARMBOX_TEST_WEB_PORT:-7681}")
 [ -n "${SWARMBOX_TEST_WEB_IFACE:-}" ] && TTYD_ARGS+=(-i "$SWARMBOX_TEST_WEB_IFACE")
 # -W writable (ttyd is read-only by default); -O refuse websockets whose Origin differs from the Host, so a random web page
-# cannot drive the terminal through localhost. Authentication is not done here: Cloudflare Access sits in front (5.2).
+# cannot drive the terminal through localhost. Authentication is not done here: Cloudflare Access sits in front.
 TTYD_ARGS+=(-W -O --index "$SB_RUN_DIR/index.html")
 for key in "${!OPT[@]}"; do
     TTYD_ARGS+=(-t "$key=$(json_value "${OPT[$key]}")")

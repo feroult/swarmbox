@@ -1,4 +1,4 @@
-"""The shared case table for the generated function (slice 3.5; design 3.3, 3.6, 3.7.1, 3.8, 13.3 layer 4, D33).
+"""The shared case table for the generated function.
 
 One table, three shells. tests/test_function_bash.py, test_function_zsh.py and test_function_fish.py each subclass
 FunctionCases and say which shell runs it. Every case drives the shell as a subprocess with the tool's REAL function text
@@ -41,7 +41,7 @@ esac
 exit 0
 """
 
-# The word routing of design 3.3: (arguments, where it goes). "host" words are passed to the helper whole; "exec" words become
+# The word routing: (arguments, where it goes). "host" words are passed to the helper whole; "exec" words become
 # `podman exec ... swarmbox-entrypoint <words>`. The sequence before it is always: config get NAME and up (host words skip both).
 HOST_WORDS = ["stop", "reset", "up", "url", "update", "config", "env", "remote", "fingerprint", "version"]
 ROUTING = [
@@ -223,7 +223,7 @@ class FunctionCases:
         r = subprocess.run([os.path.join(self.host_dir, "swarmbox-host"), "version"], capture_output=True, text=True)
         return r.stdout.strip()
 
-    # -- word routing (3.3) -----------------------------------------------------------------------------------------
+    # -- word routing -----------------------------------------------------------------------------------------
 
     def test_word_routing_table(self):
         for args, words in ROUTING:
@@ -284,7 +284,7 @@ class FunctionCases:
                 self.assertEqual(self.hcalls(fh), [["up"]])
                 self.assertEqual(self.podman_calls(), [])
 
-    # -- the terminal (3.3, "No terminal") ----------------------------------------------------------------------------
+    # -- the terminal ("No terminal") ----------------------------------------------------------------------------
 
     def test_no_t_without_a_terminal(self):
         self.fake_helper()
@@ -306,7 +306,7 @@ class FunctionCases:
                 self.assertEqual(rc, 0, err)
                 self.assertEqual(self.podman_calls(), [self.exec_call(*words, tty="-it")])
 
-    # -- bootstrap condition (D33, 3.6) ---------------------------------------------------------------------------------
+    # -- bootstrap condition  ---------------------------------------------------------------------------------
 
     def check_extracts(self, **fh_kw):
         good = self.archive()
@@ -434,7 +434,7 @@ class FunctionCases:
         self.assertIn("brew install podman", r.stderr)
         self.assertEqual(self.tree(), [])
 
-    # -- update, then the next call (D33, 3.8) ---------------------------------------------------------------------------
+    # -- update, then the next call  ---------------------------------------------------------------------------
 
     def test_update_then_next_call_does_not_undo_the_update(self):
         fh = self.fake_helper(version="2.0.0")
@@ -476,7 +476,7 @@ class FunctionCases:
                 self.assertNotIn("sort", r.stderr)
                 self.assertNotIn("invalid option", r.stderr)
 
-    # -- seeds (D20, 3.7.5) -------------------------------------------------------------------------------------------
+    # -- seeds  -------------------------------------------------------------------------------------------
 
     def seed_call(self, fh):
         return [c for c in self.hcalls(fh) if c[:2] == ["config", "seed"]]

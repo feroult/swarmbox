@@ -1,10 +1,10 @@
 #!/bin/sh
 # shellcheck disable=SC2034  # the variables are used by the scripts that source this file
-# dirs.sh: the one file that defines every SwarmBox path (design 4.3 item 4, decision D10).
+# dirs.sh: the one file that defines every SwarmBox path.
 # Source it; do not run it:  . /usr/local/lib/swarmbox/dirs.sh
 #
 # POSIX sh (sh, dash, bash 3.2 and later). Sourcing has no side effects: it sets variables and creates nothing on disk
-# (the folders are made by `serve`, design 3.8 step 3). Sourcing twice gives the same values; every source recomputes from
+# (the folders are made by `serve`). Sourcing twice gives the same values; every source recomputes from
 # the environment. Safe under `set -eu`.
 #
 # XDG rule: XDG_CONFIG_HOME, XDG_DATA_HOME and XDG_STATE_HOME are honored, each for its own paths only. Per the XDG Base

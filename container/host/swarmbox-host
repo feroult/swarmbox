@@ -1,6 +1,6 @@
 #!/bin/sh
-# swarmbox-host: the SwarmBox host helper (design 3.7.1, 3.7.2). POSIX sh, no bashisms (no `local`, no `echo -e`, no
-# `read -s`, no arrays, no `[[ ]]`); it must run under dash, busybox sh, bash in POSIX mode and macOS /bin/sh (D16, B23).
+# swarmbox-host: the SwarmBox host helper. POSIX sh, no bashisms (no `local`, no `echo -e`, no
+# `read -s`, no arrays, no `[[ ]]`); it must run under dash, busybox sh, bash in POSIX mode and macOS /bin/sh.
 #
 #   version | help               the version in the file VERSION next to this program | the command list
 #   config get|set|list|seed     the settings (the tunnel token is read from the terminal, never argv)
@@ -25,7 +25,7 @@ umask 077
 NL='
 '
 CR=$(printf '\r')
-# DEFAULT_NAME and REGISTRY_REPO come from the DEFAULTS file next to this helper (load_defaults, D40); nothing here holds them.
+# DEFAULT_NAME and REGISTRY_REPO come from the DEFAULTS file next to this helper (load_defaults); nothing here holds them.
 
 warn() { printf 'swarmbox: %s\n' "$*" >&2; }
 die() { _rc=$1; shift; warn "$*"; exit "$_rc"; }
@@ -60,7 +60,7 @@ usage: swarmbox [--plain] [command [args...]]
 USAGE
 }
 
-# ---------------------------------------------------------------- the key table (design 8.2)
+# ---------------------------------------------------------------- the key table
 
 # Keys of the config file. NAME is not one of them: it selects the folder, so it comes from SWARMBOX_NAME only.
 is_file_key() {
@@ -98,7 +98,7 @@ self_dir() {
     (cd "$_d" 2>/dev/null && pwd -P)
 }
 
-# Prints the version from the VERSION file next to the helper, or exits 3 (a corrupted helper archive, 3.7.1).
+# Prints the version from the VERSION file next to the helper, or exits 3 (a corrupted helper archive).
 read_version() {
     _dir=$(self_dir) || die 3 "cannot find the folder of the host helper."
     [ -r "$_dir/VERSION" ] || die 3 "the host helper has no VERSION file ($_dir/VERSION); the helper archive is incomplete."
@@ -116,9 +116,9 @@ read_version() {
     printf '%s' "$_v"
 }
 
-# Reads the two keys of the DEFAULTS file next to the helper (D40): DEFAULT_NAME and REGISTRY_REPO. The file is parsed, not sourced:
+# Reads the two keys of the DEFAULTS file next to the helper: DEFAULT_NAME and REGISTRY_REPO. The file is parsed, not sourced:
 # only KEY=VALUE lines of these two keys count, one pair of single quotes around a value is removed, anything else is ignored.
-# Exits 3 when the file is missing or a value is not usable (a corrupted helper archive, 3.7.1).
+# Exits 3 when the file is missing or a value is not usable (a corrupted helper archive).
 load_defaults() {
     _dir=$(self_dir) || die 3 "cannot find the folder of the host helper."
     [ -r "$_dir/DEFAULTS" ] || die 3 "the host helper has no DEFAULTS file ($_dir/DEFAULTS); the helper archive is incomplete."
@@ -199,7 +199,7 @@ private_dir() {
     chmod go-rwx "$1" 2> /dev/null || true
 }
 
-# ---------------------------------------------------------------- the octal mode of a file (B22, B34)
+# ---------------------------------------------------------------- the octal mode of a file
 
 mode_ok() {
     case $1 in
@@ -248,7 +248,7 @@ file_mode() {
     printf '%s' "$_m"
 }
 
-# ---------------------------------------------------------------- reading the config file (3.7.3)
+# ---------------------------------------------------------------- reading the config file
 
 # Parses one line into P_KEY and P_VAL; returns 1 for a blank line or a comment.
 parse_line() {
@@ -345,7 +345,7 @@ resolve() {
 }
 
 # resolve_tunnel_token: sets TUNNEL_TOKEN (empty when there is none) and returns 1 when there is none. The order is the
-# environment (SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN), then the config key, accepted only with file mode 600 (D28; cfg_prepare
+# environment (SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN), then the config key, accepted only with file mode 600 (cfg_prepare
 # has already warned once, naming `chmod 600`, and set TOKEN_IGNORED otherwise). Needs cfg_prepare first. The value is
 # never printed here, never put on an argv and never exported.
 resolve_tunnel_token() {
@@ -354,7 +354,7 @@ resolve_tunnel_token() {
     [ -n "$TUNNEL_TOKEN" ]
 }
 
-# ---------------------------------------------------------------- validation (3.7.3, 8.2); messages name the rule
+# ---------------------------------------------------------------- validation; messages name the rule
 
 valid_port() {
     case $1 in
@@ -411,7 +411,7 @@ valid_env_name() {
     return 0
 }
 
-# A name that may be passed to the box: an environment variable name, not one of the host-side SWARMBOX_CLOUDFLARE_ names (7.2).
+# A name that may be passed to the box: an environment variable name, not one of the host-side SWARMBOX_CLOUDFLARE_ names.
 valid_passable_env_name() {
     valid_env_name "$1" || return 1
     case $1 in
@@ -454,7 +454,7 @@ validate_value() {
     V_OUT=$2
     _bad() { warn "invalid value for $_k: $*"; return 1; }
     case $V_OUT in
-        *"$NL"*|*"$CR"*) _bad "a value cannot contain a newline (3.7.3)."; return 1 ;;
+        *"$NL"*|*"$CR"*) _bad "a value cannot contain a newline."; return 1 ;;
     esac
     trim "$V_OUT"
     V_OUT=$_t
@@ -557,7 +557,7 @@ resolve_valid() {
     R_VAL=$V_OUT
 }
 
-# ---------------------------------------------------------------- writing the config file (3.7.3)
+# ---------------------------------------------------------------- writing the config file
 
 # cfg_write_keys KEY VALUE [KEY VALUE ...]: replaces (or appends) the keys, keeps every other line, writes under umask 077
 # into a temporary file in the same folder, runs chmod 600 on it and renames it over the config. Refuses to write the
@@ -590,7 +590,7 @@ cfg_write_keys() {
                 printf '%s\n' "$_line"
             done < "$CFG_FILE"
         else
-            printf '%s\n' '# SwarmBox host configuration: one KEY=VALUE per line, values literal (see docs/design.md 3.7.3).'
+            printf '%s\n' '# SwarmBox host configuration: one KEY=VALUE per line, values literal (see docs/design.md, "Configuration").'
         fi
         while [ "$#" -ge 2 ]; do
             printf '%s=%s\n' "$1" "$2"
@@ -608,7 +608,7 @@ cfg_write_keys() {
     mv -f "$_tmp" "$CFG_FILE" || { rm -f "$_tmp"; die 1 "cannot replace $CFG_FILE."; }
 }
 
-# Notices state (3.7.5): one line <box>:<KEY> per announced key.
+# Notices state: one line <box>:<KEY> per announced key.
 notice_seen() { [ -f "$NOTICES" ] && grep -qxF -- "$BOX:$1" "$NOTICES"; }
 notice_mark() {
     private_dir "$STATE_DIR" || return 1
@@ -830,9 +830,9 @@ cmd_env() {
     esac
 }
 
-# ---------------------------------------------------------------- create-flags and fingerprint (3.6, 3.7.2, 3.7.4, 8.2, 8.3)
+# ---------------------------------------------------------------- create-flags and fingerprint
 # Nothing here calls Podman. The flags are collected in OUT, one argument per line, and printed only when every
-# check has passed, so a failure never leaves half a list on standard output (3.6: `up` captures the output first).
+# check has passed, so a failure never leaves half a list on standard output (`up` captures the output first).
 
 TAB=$(printf '\t')
 
@@ -858,7 +858,7 @@ sha256_stdin() {
 }
 
 # Reads tool-ports from the folder of the helper into TP_DATA: one "tool<TAB>port" line each, malformed lines skipped with a
-# warning. The file always exists in a good archive (3.7.1, 6.3); a missing one is a corrupted helper: exit 3.
+# warning. The file always exists in a good archive; a missing one is a corrupted helper: exit 3.
 load_tool_ports() {
     _dir=$(self_dir) || die 3 "cannot find the folder of the host helper."
     [ -r "$_dir/tool-ports" ] || die 3 "the host helper has no tool-ports file ($_dir/tool-ports); the helper archive is incomplete. Run \`swarmbox update\` or remove $_dir so the next call extracts the helper again."
@@ -879,7 +879,7 @@ load_tool_ports() {
     done < "$_dir/tool-ports"
 }
 
-# norm_port ENTRY: N_OUT = ADDRESS:HOST:CONTAINER; loopback unless an address was given (8.2, PORTS).
+# norm_port ENTRY: N_OUT = ADDRESS:HOST:CONTAINER; loopback unless an address was given (PORTS).
 norm_port() {
     case $1 in
         *:*:*) N_OUT=$1 ;;
@@ -990,7 +990,7 @@ load_creation() {
     build_ports
 }
 
-# env-hash (7.1): NAME=value for each listed name that is set, NAME for each that is not; sorted; SHA-256. The values only go
+# env-hash: NAME=value for each listed name that is set, NAME for each that is not; sorted; SHA-256. The values only go
 # through a pipe, never through an argument, and only the hash leaves this function.
 compute_env_hash() {
     _lines=
@@ -1015,7 +1015,7 @@ compute_env_hash() {
     _val=
 }
 
-# FP: SHA-256 over the sorted KEY=value lines of every creation-time key (3.7.4) plus env-hash=<hash>.
+# FP: SHA-256 over the sorted KEY=value lines of every creation-time key plus env-hash=<hash>.
 compute_fingerprint() {
     compute_env_hash
     [ -n "$ENV_HASH" ] || die 3 "could not compute a SHA-256 hash with $SHA."
@@ -1024,14 +1024,14 @@ compute_fingerprint() {
     [ -n "$FP" ] || die 3 "could not compute a SHA-256 hash with $SHA."
 }
 
-# True when the kernel says it is WSL; the probe file is overridable for tests (B32).
+# True when the kernel says it is WSL; the probe file is overridable for tests.
 is_wsl() {
     _pv=${SWARMBOX_TEST_PROC_VERSION:-/proc/version}
     [ -r "$_pv" ] || return 1
     grep -qi microsoft "$_pv" 2> /dev/null
 }
 
-# A path under /mnt/<one letter>/ (a Windows drive on WSL, D34).
+# A path under /mnt/<one letter>/ (a Windows drive on WSL).
 win_drive_path() {
     case $1 in
         /mnt/[A-Za-z]|/mnt/[A-Za-z]/*) return 0 ;;
@@ -1039,7 +1039,7 @@ win_drive_path() {
     return 1
 }
 
-# D34: refuse a workspace on a Windows drive, by the written path, by each symlink on the way (readlink without options is
+# Refuse a workspace on a Windows drive, by the written path, by each symlink on the way (readlink without options is
 # on Linux and macOS) and by the real path of an existing folder.
 check_not_windows_drive() {
     is_wsl || return 0
@@ -1066,7 +1066,7 @@ check_not_windows_drive() {
     fi
 }
 
-# 3.5 edge cases: the folder is created when missing (one message, parents too), must be a folder, and must be writable.
+# Edge cases: the folder is created when missing (one message, parents too), must be a folder, and must be writable.
 check_workspace() {
     check_not_windows_drive "$C_WORKSPACE"
     if [ ! -e "$C_WORKSPACE" ] && [ ! -L "$C_WORKSPACE" ]; then
@@ -1082,12 +1082,12 @@ check_workspace() {
 OUT=
 emit() { OUT=$OUT$1$NL; }
 
-# D7: no output may ask for the host network or more privilege. Nothing builds such a line; this is the last look before printing.
+# No output may ask for the host network or more privilege. Nothing builds such a line; this is the last look before printing.
 guard_flags() {
     while IFS= read -r _g; do
         case $_g in
             --network*|--net=*|--privileged*|--pid=*|--ipc=*|--uts=*|--cap-add*|--userns=host*)
-                die 70 "internal error: refusing to emit '$_g' (no host network or extra privilege, D7)."
+                die 70 "internal error: refusing to emit '$_g' (no host network or extra privilege)."
                 ;;
         esac
     done <<GEOF
@@ -1133,7 +1133,7 @@ cmd_create_flags() {
     [ "$TZ_R" = off ] || emit "--tz=$TZ_R"
     emit --tmpfs
     emit /tmp/swarmbox
-    if [ "${SWARMBOX_TEST_NO_NESTED:-}" != 1 ]; then   # tests only: a throwaway box in a container that cannot offer the third level (3.3, 13.3)
+    if [ "${SWARMBOX_TEST_NO_NESTED:-}" != 1 ]; then   # tests only: a throwaway box in a container that cannot offer the third level
         emit --device
         emit /dev/net/tun
         emit --security-opt
@@ -1156,7 +1156,7 @@ PEOF
         emit -p
         emit "127.0.0.1:$C_WEB_PORT:7681"
     fi
-    # the listed variables by name: Podman reads the value from its own environment, so it is never in argv (7.1)
+    # the listed variables by name: Podman reads the value from its own environment, so it is never in argv
     if [ -n "$C_ENV_KEYS" ]; then
         _oldifs=$IFS
         IFS=,
@@ -1214,7 +1214,7 @@ LEOF
 }
 
 # Prints one line per difference between the current configuration (C_*, PORT_LIST, ENV_HASH) and the box's labels in LABELS,
-# in the wording of D30. Used by `fingerprint --explain` and by `up` (which prefixes each line and prints it on stderr).
+# in the wording of the fingerprint warnings. Used by `fingerprint --explain` and by `up` (which prefixes each line and prints it on stderr).
 # shellcheck disable=SC2016  # the backticks in the messages are literal (they quote `swarmbox reset` for the reader)
 fp_explain() {
     _said=0
@@ -1240,7 +1240,7 @@ fp_explain() {
 }
 
 # fingerprint [--explain] [--label NAME=VALUE]...: the hash of the current configuration; with labels it compares (exit 0 same,
-# 1 different), with --explain it also prints one line per difference it can name (D30). Without labels there is no box to
+# 1 different), with --explain it also prints one line per difference it can name. Without labels there is no box to
 # compare with: exit 5 for --explain. Reading the labels from Podman is `up`'s job.
 # shellcheck disable=SC2016  # the backticks in the messages are literal (they quote `swarmbox reset` for the reader)
 cmd_fingerprint() {
@@ -1277,7 +1277,7 @@ cmd_fingerprint() {
     return 1
 }
 
-# ---------------------------------------------------------------- up, reset, stop, url (3.5, 3.6, 3.7.2, 3.8, 4.2)
+# ---------------------------------------------------------------- up, reset, stop, url
 # Variables of this block start with u_ or UP_ so that they do not collide with the loops above. Standard output
 # stays empty (data only); every message goes to standard error.
 
@@ -1327,7 +1327,7 @@ need_podman() {
     exit 3
 }
 
-# Podman 4.3 or newer (3.8). Compared as numbers, so 4.10 is newer than 4.3. An unreadable version is a warning: the box may work.
+# Podman 4.3 or newer. Compared as numbers, so 4.10 is newer than 4.3. An unreadable version is a warning: the box may work.
 check_podman_version() {
     u_v=$(podman version --format '{{.Client.Version}}' 2> /dev/null) || u_v=
     case $u_v in
@@ -1358,7 +1358,7 @@ check_tun() {
 # The last lines of Podman's error, indented, on standard error.
 show_err() { tail -n "${2:-3}" "$1" 2> /dev/null | sed 's/^/    /' >&2; }
 
-# A missing image is pulled, never built (3.8).
+# A missing image is pulled, never built.
 ensure_image() {
     podman image exists "$C_IMAGE" > /dev/null 2>&1 && return 0
     warn "pulling $C_IMAGE (this can take a while)..."
@@ -1396,14 +1396,14 @@ find_box() {
     BX_FOUND=1
 }
 
-# A container with the box's name and no swarmbox.managed label was not made by SwarmBox: never adopted, started or removed (3.8).
+# A container with the box's name and no swarmbox.managed label was not made by SwarmBox: never adopted, started or removed.
 # shellcheck disable=SC2016  # the backticks in the message are literal
 refuse_foreign() {
     warn "a container named '$BOX' exists that SwarmBox did not make. Remove it with \`podman rm -f $BOX\`, or use another name: SWARMBOX_NAME=<name> swarmbox."
     exit 5
 }
 
-# Another box with the label swarmbox.workspace equal to this path (3.5). The label filter matches the whole value.
+# Another box with the label swarmbox.workspace equal to this path. The label filter matches the whole value.
 check_workspace_conflict() {
     u_o=$(podman ps -a --filter "label=swarmbox.workspace=$C_WORKSPACE" --format '{{.Names}}' 2> /dev/null) || u_o=
     while IFS= read -r u_n; do
@@ -1414,7 +1414,7 @@ $u_o
 CEOF
 }
 
-# INIT=auto becomes 0 or 1 by a throwaway `podman run --rm --init` of the image (B9). INIT_RESOLVED.
+# INIT=auto becomes 0 or 1 by a throwaway `podman run --rm --init` of the image. INIT_RESOLVED.
 resolve_init() {
     case $C_INIT in
         0|1) INIT_RESOLVED=$C_INIT; return 0 ;;
@@ -1427,7 +1427,7 @@ resolve_init() {
     fi
 }
 
-# The flags of the new box, captured into a file BEFORE `podman run` and the status of create-flags checked (3.6): a helper
+# The flags of the new box, captured into a file BEFORE `podman run` and the status of create-flags checked: a helper
 # failure (4 workspace, 3 missing tool-ports) never reaches Podman. create-flags runs in the background and is waited for, so a
 # signal ends this call at once. SWARMBOX_TEST_CREATE_FLAGS replaces the program, for tests.
 capture_flags() {
@@ -1457,7 +1457,7 @@ prepare_create() {
 }
 
 # `podman run -d --name --cidfile <fresh path> <flags> <image> serve`. On failure only the container named by the cidfile is
-# removed, by its ID; a container that merely has the name is never removed (B18; podman exits 125 with no cidfile then).
+# removed, by its ID; a container that merely has the name is never removed (podman exits 125 with no cidfile then).
 # shellcheck disable=SC2016  # the backticks in the message are literal
 create_box() {
     set --
@@ -1508,7 +1508,7 @@ start_box() {
 }
 
 # Polls the marker with `podman exec` and, only when that fails, the container state: a box that has exited stops the wait at
-# once (exit 6, with the log), instead of hiding the cause behind the timeout (4.2).
+# once (exit 6, with the log), instead of hiding the cause behind the timeout.
 # shellcheck disable=SC2016  # the backticks in the messages are literal
 wait_ready() {
     u_tries=${SWARMBOX_TEST_READY_TRIES:-60}
@@ -1544,7 +1544,7 @@ wait_ready() {
     done
 }
 
-# The warnings of an entry (D30): the fingerprint differences, named per key where a label allows it, and a local image that was
+# The warnings of an entry: the fingerprint differences, named per key where a label allows it, and a local image that was
 # replaced since the box was created. They never block. The box's INIT is what it was created with when the config says auto.
 entry_warnings() {
     if [ -n "$BX_FP" ]; then
@@ -1588,7 +1588,7 @@ reap_stale() {
     fi
 }
 
-# The host lock of 3.6: an atomic mkdir, with the pid of the holder in a file. Stale when that pid does not answer `kill -0`, or
+# The host lock: an atomic mkdir, with the pid of the holder in a file. Stale when that pid does not answer `kill -0`, or
 # when no pid file appeared within LOCK_PIDWAIT polls (5 s); a live holder is waited for up to LOCK_TRIES polls (90 s), then exit 6.
 acquire_lock() {
     UP_LOCK=$STATE_DIR/up-$BOX.lock
@@ -1648,9 +1648,9 @@ sweep_state() {
     done
 }
 
-# ---------------------------------------------------------------- the host connection `podman -c <name>` (3.5, 3.7.2 step 6, 12.4)
+# ---------------------------------------------------------------- the host connection `podman -c <name>`
 
-SOCK_LIMIT=100   # characters of path counted in bytes: the AF_UNIX limit is 107, minus a margin for macOS and the BSDs (104) (B5)
+SOCK_LIMIT=100   # characters of path counted in bytes: the AF_UNIX limit is 107, minus a margin for macOS and the BSDs (104)
 
 byte_len() { printf '%s' "$1" | wc -c | tr -d ' \t'; }   # wc -c counts bytes, whatever the locale
 
@@ -1726,7 +1726,7 @@ cmd_connection() {
     printf 'unix://%s\n' "$SOCK_PATH"
 }
 
-# up (RESET=0) and reset (RESET=1), 3.7.2 "What up does" and "What reset does".
+# up (RESET=0) and reset (RESET=1).
 up_main() {
     RESET=$1
     need_podman
@@ -1766,16 +1766,16 @@ up_main() {
     wait_ready
 }
 
-# ---------------------------------------------------------------- the Cloudflare connector on every entry (5.2)
+# ---------------------------------------------------------------- the Cloudflare connector on every entry
 
-# Pinned (12.3). The single source in the helper; tests/test_host_connector.py checks that it equals DEFAULT_CONNECTOR_IMAGE of
-# cloudflare-setup.py. SWARMBOX_CLOUDFLARED_IMAGE overrides it (environment only: the config table of 8.2 has no file key).
-# CONNECTOR_NAME is set by load_defaults: <default name>-cloudflared, one per host (D40).
+# Pinned. The single source in the helper; tests/test_host_connector.py checks that it equals DEFAULT_CONNECTOR_IMAGE of
+# cloudflare-setup.py. SWARMBOX_CLOUDFLARED_IMAGE overrides it (environment only: the config table has no file key).
+# CONNECTOR_NAME is set by load_defaults: <default name>-cloudflared, one per host.
 CONNECTOR_IMAGE_DEFAULT=docker.io/cloudflare/cloudflared:2026.10.7
 
 # After `up`, under the lock, when the box is ready. Does nothing (no Podman call at all) unless WEB is 1 and a tunnel token
 # resolves (environment, or the config key with mode 600). One connector per host: the name is fixed, whatever the box name
-# (a second box adds an ingress hostname to the same tunnel, 5.2). The token only goes through the environment of
+# (a second box adds an ingress hostname to the same tunnel). The token only goes through the environment of
 # `podman run` (`-e TUNNEL_TOKEN`), never an argument. Every failure is a warning: the box works without the connector and the
 # exit code of `up` stays what it was. Exact name: the printed name is compared, because Podman resolves ID prefixes.
 connector_ensure() {
@@ -1861,7 +1861,7 @@ cmd_stop() {
     fi
 }
 
-# ---------------------------------------------------------------- update (3.8 "Update flow", D17, D27, D33, D35)
+# ---------------------------------------------------------------- update
 
 # A tag as Podman reads it: letters, digits, '_', '.', '-', at most 128 characters, not starting with '.' or '-'.
 valid_tag() {
@@ -1924,7 +1924,7 @@ AEOF
     return 0
 }
 
-# update [--to TAG]. The order differs from the design text in one way (decision [3.6]): the helper is extracted and its version
+# update [--to TAG]. The order matters: the helper is extracted and its version
 # read into a temporary folder, the local tag is made, and only then the folder is renamed over the old helper and the config
 # written, so a failing `podman tag` leaves the helper as it was as well as the config.
 # shellcheck disable=SC2016  # the backticks in the messages are literal
@@ -2068,7 +2068,7 @@ public_host() {
     esac
 }
 
-# url: the local URL, and the public one when remote access is configured. It never calls Podman (5.2).
+# url: the local URL, and the public one when remote access is configured. It never calls Podman.
 cmd_url() {
     [ $# -eq 0 ] || usage
     init_paths
@@ -2083,11 +2083,11 @@ cmd_url() {
 }
 
 # remote setup|status|off|token [options]: runs cloudflare-setup.py, which sits next to this program (the folder the shell
-# function extracts the image's helper to, 3.7.1). setup is its `apply`, off is its `remove`. The user's options come last,
+# function extracts the image's helper to). setup is its `apply`, off is its `remove`. The user's options come last,
 # so they win over the two defaults added here (--name from SWARMBOX_NAME, --port from WEB_PORT). XDG_CONFIG_HOME is set to
 # the folder CFG_ROOT lives in, so the script's cloudflare.json is the file `url` reads. No secret travels on argv: the API token
 # stays in the environment the script inherits; no command of the script reads the tunnel token (it asks the API for it), so
-# SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN is removed from the script's environment (decision [5.2]).
+# SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN is removed from the script's environment.
 cmd_remote() {
     [ $# -ge 1 ] || usage
     r_sub=$1
@@ -2134,7 +2134,7 @@ cmd_remote() {
     exit "$r_rc"
 }
 
-# The host side of `remote status` (5.2): the public name, the connector and the login length. The script's status is read-only and
+# The host side of `remote status`: the public name, the connector and the login length. The script's status is read-only and
 # needs the API token; these lines need neither. The connector is asked with one inspect of the exact name; a missing podman or any
 # answer that is not "no such container" is "unknown", never an error (the exit code is the script's).
 remote_host_lines() {
@@ -2169,7 +2169,7 @@ remote_host_lines() {
 }
 
 # After a successful `remote setup` on a terminal (and never with --dry-run): when no tunnel token is stored yet, say how to
-# keep it on the host and OFFER to do it. Never automatic: the default answer is no (decision [5.3]). The token is fetched by
+# keep it on the host and OFFER to do it. Never automatic: the default answer is no. The token is fetched by
 # the script's `token` command into a shell variable (stdout captured, the info line on stderr stays visible) and written
 # by cfg_write_keys at mode 600; it is never on an argv, never echoed. Any failure here only prints a line: setup succeeded.
 remote_token_epilogue() {

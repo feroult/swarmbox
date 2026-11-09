@@ -46,7 +46,7 @@ Defaults: no ports published beyond `127.0.0.1`, no host-network mode, tunnel cr
 ## Trust in the signed image
 
 The host helper is extracted from the image by `swarmbox init`, so it is versioned, signed and readable before you install
-it. SwarmBox accepts the helper as coming from the signed image you already trust (decision D26): there is no separate signed
+it. SwarmBox accepts the helper as coming from the signed image you already trust: there is no separate signed
 helper asset. A separately signed asset will be published only if users ask. If you do not trust the image, do not install the
 helper from it. Verify the image signature and digest published with each release before you run `init`.
 

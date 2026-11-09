@@ -31,7 +31,7 @@ The fake never runs anything else (it only records and prints), so a real podman
 PATH is the fake's folder first, then the original PATH (so sh, bash and friends still resolve).
 assert_no_leak() fails loudly if "podman" does not resolve to the fake on the current PATH.
 
-FakeHostHelper is a fake `swarmbox-host` (design 13.1, 13.3 layer 4). It lives in its own folder, `fh.dir`, as
+FakeHostHelper is a fake `swarmbox-host`. It lives in its own folder, `fh.dir`, as
 `fh.path` (= <dir>/swarmbox-host); it does not touch PATH, because the function calls the helper by absolute path.
 
     with FakeHostHelper(version="2.0.0", commands={"up": {"exit": 6}}) as fh:
@@ -46,7 +46,6 @@ differently. envs() returns the SWARMBOX_* variables of each call. `version` is 
 A command that is not configured exits with UNKNOWN_COMMAND_EXIT (64, EX_USAGE), silent, so a test that routes a word
 the fake was not told about fails visibly instead of passing by accident. Use set_version(), set_executable() and
 configure() to change it between calls (for example the "update" case: the helper becomes 2.0.1 after a call).
-The API may change in Phase 3 when the real function tests arrive (decision [1.4]).
 """
 import json
 import os
@@ -63,7 +62,7 @@ DEFAULTS_FILE = os.path.join(ROOT, "container", "host", "DEFAULTS")
 
 
 def read_defaults():
-    """The KEY=VALUE pairs of container/host/DEFAULTS (D40), one pair of single quotes removed from a value."""
+    """The KEY=VALUE pairs of container/host/DEFAULTS, one pair of single quotes removed from a value."""
     out = {}
     with open(DEFAULTS_FILE) as f:
         for line in f:
@@ -312,6 +311,6 @@ class FakeHostHelper:
             return [json.loads(line)["argv"] for line in f if line.strip()]
 
     def envs(self):
-        """The SWARMBOX_* variables each call saw, one dict per call (slice 3.5: seeds are never passed that way)."""
+        """The SWARMBOX_* variables each call saw, one dict per call (seeds are never passed that way)."""
         with open(self.log_path) as f:
             return [json.loads(line).get("env", {}) for line in f if line.strip()]

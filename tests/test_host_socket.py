@@ -1,5 +1,4 @@
-"""Slice 3.4: the host Podman connection (`podman -c <name>`) and the short-symlink fallback of the host helper
-(design 3.5 socket paragraph, 3.7.2 `up` step 6, 3.8 short-path row, 12.1, 12.4, 8.3, B5, B12).
+"""The host Podman connection (`podman -c <name>`) and the short-symlink fallback of the host helper.
 
 The step is tested through `swarmbox-host connection` (the step on its own) and through `up` with the shared FakePodman. The
 connection list is kept by a small stateful fake `podman` (below) that only knows `system connection list|add|remove`, records
@@ -234,7 +233,7 @@ class RegistrationTest(Base):
 
 class UpIntegrationTest(unittest.TestCase):
     """`up` and `reset` take step 6 with the shared FakePodman: it is the last thing before they return (and after readiness),
-    and the fast path costs one `system connection list` more (design 3.7.2 step 4, B35)."""
+    and the fast path costs one `system connection list` more."""
 
     def setUp(self):
         self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-sockup."))

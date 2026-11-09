@@ -1,5 +1,5 @@
 #!/bin/bash
-# Gemini CLI installer (design 6.4, 6.12): npm under --prefix, then the npm cache is cleaned.
+# Gemini CLI installer: npm under --prefix, then the npm cache is cleaned.
 # Called by `swarmbox-tool install gemini` with TOOL_PREFIX, TOOL_VERSION and TOOL_ARCH. Writes only below $TOOL_PREFIX (and npm's cache,
 # cleaned at the end). Progress goes to stderr only: stdout belongs to the tool being run.
 set -euo pipefail

@@ -1,4 +1,4 @@
-"""Repository files of Phase 1, slice 1.1: LICENSE, THIRD_PARTY_NOTICES.md and CONTRIBUTING.md.
+"""Repository files: LICENSE, THIRD_PARTY_NOTICES.md and CONTRIBUTING.md.
 
 Checks: LICENSE is the Apache License 2.0 with its appendix; the notices name ttyd, starship and tmux (each with a license and
 a URL) and every tool the Dockerfile installs from a pinned download or a package manager; CONTRIBUTING.md names the test
@@ -52,7 +52,7 @@ class NoticesTest(unittest.TestCase):
             self.assertRegex(s, r"https://\S+", "%s has no URL" % tool)
 
     def test_every_dockerfile_tool_is_listed(self):
-        """The 2.0 Dockerfile and the manifests of container/tools/ (the v0.1.0 Dockerfile is retired, slice 6.2)."""
+        """The 2.0 Dockerfile and the manifests of container/tools/ (the v0.1.0 Dockerfile is retired)."""
         t = read("THIRD_PARTY_NOTICES.md").lower()
         tools = set()
         with open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8") as f:
@@ -104,7 +104,7 @@ class ContributingTest(unittest.TestCase):
 
 
 class PolicyFilesTest(unittest.TestCase):
-    """Slice 7.1: the policy files exist and CONTRIBUTING.md and the README point at them."""
+    """The policy files exist and CONTRIBUTING.md and the README point at them."""
 
     def test_present_and_linked(self):
         contributing = read("CONTRIBUTING.md")
