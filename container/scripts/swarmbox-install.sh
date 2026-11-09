@@ -80,6 +80,7 @@ if [ -z "$IMAGE" ]; then
     case $VERSION in [0-9]*.[0-9]*.[0-9]*) ;; *) die 3 "the VERSION file of this image does not hold a version: '$VERSION'." ;; esac
     [ -n "$REPO" ] || die 3 "the DEFAULTS file of this image has no SWARMBOX_DEFAULT_IMAGE_REPO."
     IMAGE=$REPO:$VERSION
+    err "note: Podman did not tell this container the image it was started from, so the default $IMAGE is recorded; add --image REF to record another."
 fi
 # an image reference is a bare argument of `podman run` in the script: a leading '-' would be read as an option
 case $IMAGE in
