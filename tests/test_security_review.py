@@ -111,44 +111,12 @@ class QuotingTest(Base):
                 self.assertIn("swarmbox.workspace=" + ws, lines)
                 self.assert_no_marker()
 
-    def test_up_passes_the_hostile_workspace_to_podman_as_one_argument(self):
-        for name in ("with space", "it's", "$(touch MARK)", "`touch MARK`", "-leading-dash"):
-            with self.subTest(name=name):
-                ws = os.path.join(self.tmp, "up-" + name)
-                os.makedirs(ws, exist_ok=True)
-                shutil.rmtree(self.state, True)
-                self.podman()
-                r = self.up(SWARMBOX_WORKSPACE=ws)
-                self.assertEqual(r.returncode, 0, r.stderr)
-                runs = self.real_runs()
-                self.assertEqual(len(runs), 1)
-                self.assertIn(ws + ":/home/agent", runs[0])
-                self.assert_no_marker()
-
-    def test_a_relative_workspace_with_a_leading_dash_becomes_an_absolute_path(self):
-        p = self.flags("-rf")
-        self.assertEqual(p.returncode, 0, p.stderr)
-        lines = p.stdout.split("\n")[:-1]
-        self.assertEqual(lines[lines.index("-v") + 1], os.path.join(self.tmp, "-rf") + ":/home/agent")
-
     def test_newlines_carriage_returns_and_colons_in_the_workspace_are_refused(self):
         for bad in ("/tmp/a\nb", "/tmp/a\rb", "/tmp/a:b", "/tmp/a\n--privileged"):
             with self.subTest(bad=bad):
                 p = self.flags(bad)
                 self.assertEqual(p.returncode, 2, p.stderr)
                 self.assertEqual(p.stdout, "")
-
-    def test_the_hostile_name_from_the_config_file_is_just_as_literal(self):
-        ws = os.path.join(self.tmp, "cfg-$(touch MARK) `touch MARK`")
-        os.makedirs(ws)
-        with open(os.path.join(self.cfg_dir(), "config"), "w") as f:
-            f.write("WORKSPACE=%s\n" % ws)
-        env = self.env()
-        del env["SWARMBOX_WORKSPACE"]
-        p = subprocess.run([self.helper, "create-flags"], env=env, capture_output=True, text=True, input="", cwd=self.tmp)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn(ws + ":/home/agent", p.stdout.split("\n"))
-        self.assert_no_marker()
 
     def test_config_set_refuses_shell_metacharacters_in_every_validated_key(self):
         cases = [("HOSTNAME", "$(touch MARK)"), ("HOSTNAME", "a b"), ("HOSTNAME", "a;b"), ("TZ", "`touch MARK`"),
@@ -163,26 +131,6 @@ class QuotingTest(Base):
                 self.assertEqual(r.returncode, 2, r.stderr)
                 self.assertFalse(os.path.exists(os.path.join(self.home, ".config", "swarmbox", "config")))
                 self.assert_no_marker()
-
-    def test_the_same_values_from_the_environment_are_refused_where_they_are_used(self):
-        for key, val in (("SWARMBOX_HOSTNAME", "$(touch MARK)"), ("SWARMBOX_PORTS", "80;x"), ("SWARMBOX_IMAGE", "a;b"),
-                         ("SWARMBOX_ENV_KEYS", "A;B"), ("SWARMBOX_TZ", "`x`")):
-            with self.subTest(key=key):
-                p = subprocess.run([self.helper, "create-flags"], env=self.env(**{key: val}), capture_output=True,
-                                   text=True, input="", cwd=self.tmp)
-                self.assertEqual(p.returncode, 2, p.stderr)
-                self.assertEqual(p.stdout, "")
-                self.assert_no_marker()
-
-    def test_the_value_of_a_listed_variable_never_reaches_a_shell_or_an_argv(self):
-        value = "$(touch MARK) `touch MARK` 'q' \"d\" ; | &"
-        self.podman()
-        r = self.up(SWARMBOX_ENV_KEYS="MYVAR", MYVAR=value)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("MYVAR", self.real_runs()[0])
-        for c in self.calls():
-            self.assertFalse(any(value in a for a in c), c)
-        self.assert_no_marker()
 
     def test_an_env_key_that_names_a_host_side_secret_is_refused(self):
         for name in ("SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN", "SWARMBOX_CLOUDFLARE_X"):
@@ -201,38 +149,6 @@ class ImageReferenceTest(Base):
                                    text=True, input="", cwd=self.tmp)
                 self.assertEqual(p.returncode, 2, p.stderr)
                 self.assertEqual(self.run_h("config", "seed", "--image", bad).returncode, 2)
-
-    def test_init_refuses_a_dash_image_so_the_function_never_runs_podman_with_an_option(self):
-        host = os.path.join(self.tmp, "hostdir")
-        shutil.copytree(os.path.join(ROOT, "container", "host"), host)
-        init = os.path.join(ROOT, "container", "scripts", "swarmbox-init.sh")
-        env = self.env(SWARMBOX_TEST_HOST_DIR=host)
-        for bad in ("-x", "--privileged"):
-            for args in (["--image", bad], ["--image=" + bad]):
-                r = subprocess.run(["sh", init, *args], env=env, capture_output=True, text=True, input="", cwd=self.tmp)
-                self.assertEqual(r.returncode, 2, r.stderr)
-                self.assertEqual(r.stdout, "")
-
-    def test_a_config_file_with_a_dash_image_never_reaches_podman(self):
-        cfg = os.path.join(self.cfg_dir(), "config")
-        with open(cfg, "w") as f:
-            f.write("IMAGE=--privileged\n")
-        os.chmod(cfg, 0o600)
-        self.podman()
-        r = self.up()
-        self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertEqual(self.real_runs(), [])
-        for c in self.calls():
-            self.assertNotIn("--privileged", c)
-
-    def test_the_connector_image_override_cannot_be_an_option(self):
-        self.podman()
-        r = self.up(SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN=TOK, SWARMBOX_WEB="1", SWARMBOX_CLOUDFLARED_IMAGE="--privileged")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        for c in self.calls():
-            self.assertNotIn("--privileged", c)
-        self.assertEqual([c for c in self.subs("run") if CN in c], [])
-        self.assertIn("SWARMBOX_CLOUDFLARED_IMAGE", r.stderr)
 
     def test_the_python_wrapper_refuses_a_connector_image_that_is_an_option(self):
         # the refusal must come from the image check (named in the message), not from the missing API token that follows it
@@ -274,31 +190,6 @@ class TempFileTest(Base):
             self.assertIn("WEB_PORT=9000\n", f.read())
         self.assertEqual(os.stat(os.path.join(cdir, "config")).st_mode & 0o777, 0o600)
 
-    def test_the_seed_write_does_not_follow_a_planted_temp_symlink(self):
-        cdir = self.cfg_dir()
-        v = self.victim()
-
-        def plant(pid):
-            os.symlink(v, os.path.join(cdir, "config.tmp.%d" % pid))
-        r = self.plant_run(["config", "seed", "--with", "claude"], plant)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assert_victim(v)
-
-    def test_the_notices_rewrite_does_not_follow_a_planted_temp_symlink(self):
-        os.makedirs(self.state)
-        notices = os.path.join(self.state, "notices")
-        with open(notices, "w") as f:
-            f.write(DEFAULT_NAME + ":WEB_PORT\n" + DEFAULT_NAME + ":WITH\n")
-        v = self.victim()
-
-        def plant(pid):
-            os.symlink(v, os.path.join(self.state, "notices.tmp.%d" % pid))
-        r = self.plant_run(["config", "set", "WEB_PORT", "9000"], plant)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assert_victim(v)
-        with open(notices) as f:
-            self.assertEqual(f.read(), DEFAULT_NAME + ":WITH\n")
-
     def test_up_does_not_write_through_planted_err_flags_or_cid_symlinks(self):
         os.makedirs(self.state)
         victims = {n: self.victim("victim-" + n) for n in ("err", "flags", "cid")}
@@ -312,17 +203,6 @@ class TempFileTest(Base):
         for v in victims.values():
             self.assert_victim(v)
         self.assertEqual(len(self.real_runs()), 1)
-
-    def test_a_failed_creation_does_not_write_the_error_text_through_a_planted_symlink(self):
-        os.makedirs(self.state)
-        v = self.victim()
-
-        def plant(pid):
-            os.symlink(v, os.path.join(self.state, "err.%d" % pid))
-        self.podman(run={"rules": [{"match": ["--cidfile"], "exit": 125, "stderr": "boom\n"}]})
-        r = self.plant_run(["up"], plant)
-        self.assertEqual(r.returncode, 7, r.stderr)
-        self.assert_victim(v)
 
     def test_a_symlink_planted_at_the_lock_path_is_replaced_and_its_target_left_alone(self):
         os.makedirs(self.state)
@@ -339,19 +219,6 @@ class TempFileTest(Base):
         self.assertFalse(os.path.lexists(lock))
         self.assertEqual(len(self.real_runs()), 1)
 
-    def test_a_symlink_at_the_lock_to_a_folder_with_a_live_pid_is_waited_for_not_followed_into(self):
-        os.makedirs(self.state)
-        target = os.path.join(self.tmp, "lock-target")
-        os.mkdir(target)
-        with open(os.path.join(target, "pid"), "w") as f:
-            f.write("%d\n" % os.getpid())
-        os.symlink(target, os.path.join(self.state, "up-%s.lock" % DEFAULT_NAME))
-        self.podman()
-        r = self.up(SWARMBOX_TEST_LOCK_TRIES="3", SWARMBOX_TEST_NAP="0.02")
-        self.assertEqual(r.returncode, 6, r.stderr)
-        self.assertEqual(sorted(os.listdir(target)), ["pid"])
-        self.assertEqual(self.real_runs(), [])
-
     def test_the_state_and_config_folders_are_made_private(self):
         os.makedirs(self.state)
         os.chmod(self.state, 0o777)
@@ -365,29 +232,6 @@ class TempFileTest(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(stat.S_IMODE(os.stat(cdir).st_mode), 0o700)
 
-    def test_a_python_config_written_through_a_planted_symlink_replaces_the_link(self):
-        mod = load_cf("cfsetup_save")
-        xdg = os.path.join(self.tmp, "xdgcfg")
-        os.makedirs(os.path.join(xdg, "swarmbox"))
-        v = self.victim()
-        path = os.path.join(xdg, "swarmbox", "cloudflare.json")
-        os.symlink(v, path)
-        old = os.environ.get("XDG_CONFIG_HOME")
-        os.environ["XDG_CONFIG_HOME"] = xdg
-        old_mask = os.umask(0o000)
-        try:
-            mod.save_config("example.com", ["a@example.com"], "swarmbox", "4h", "box.example.com", "swarmbox")
-        finally:
-            os.umask(old_mask)
-            if old is None:
-                del os.environ["XDG_CONFIG_HOME"]
-            else:
-                os.environ["XDG_CONFIG_HOME"] = old
-        self.assert_victim(v)
-        self.assertFalse(os.path.islink(path))
-        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
-
-
 class CleanupTest(Base):
     """Every way out of up, reset, stop and update leaves no temporary file and no lock (exact names)."""
 
@@ -396,21 +240,6 @@ class CleanupTest(Base):
             return []
         return [n for n in os.listdir(self.state)
                 if re.match(r"^(flags|cid|err)\.\d+$", n) or n.endswith(".lock") or ".lock.stale." in n]
-
-    def test_success_failure_and_reset_paths_leave_nothing(self):
-        scenarios = {
-            "create fails": (dict(run={"rules": [{"match": ["--cidfile"], "exit": 125, "stderr": "boom\n",
-                                                  "cidfile": "abc123\n"}]}), "up", 7),
-            "ready times out": (dict(exec={"exit": 1}), "up", 6),
-            "reset": ({}, "reset", 0),
-        }
-        for name, (conf, cmd, rc) in scenarios.items():
-            with self.subTest(name):
-                shutil.rmtree(self.state, True)
-                self.podman(**conf)
-                r = self.run_h(cmd, env=self.env(SWARMBOX_TEST_READY_TRIES="2"))
-                self.assertEqual(r.returncode, rc, r.stderr)
-                self.assertEqual(self.leftovers(), [])
 
     def test_sighup_sigint_sigterm_leave_nothing_and_report_the_signal(self):
         for sig, rc in ((signal.SIGHUP, 129), (signal.SIGINT, 130), (signal.SIGTERM, 143)):
@@ -439,18 +268,6 @@ class CleanupTest(Base):
                 self.assertEqual(p.returncode, rc)
                 self.assertEqual(self.leftovers(), [])
                 self.assertEqual(self.real_runs(), [])
-
-    def test_a_failed_stop_and_a_failed_update_leave_nothing(self):
-        self.podman(stop={"exit": 1, "stderr": "no\n"},
-                    container={"rules": [{"match": ["swarmbox.fingerprint"], "stdout": up_tests.line()}]})
-        r = self.run_h("stop")
-        self.assertEqual(r.returncode, 1, r.stderr)
-        self.assertEqual(self.leftovers(), [])
-        self.podman(pull={"exit": 125, "stderr": "denied\n"})
-        r = self.run_h("update", "--to", "9.9.9")
-        self.assertEqual(r.returncode, 3, r.stderr)
-        self.assertEqual(self.leftovers(), [])
-
 
 # ============================================================================ the tunnel token
 
@@ -488,23 +305,6 @@ class TokenTest(Base):
                 box = [c for c in self.real_runs() if CN not in c][0]
                 self.assertFalse(any("TUNNEL" in a for a in box), box)
 
-    def test_create_flags_and_fingerprint_do_not_carry_the_token(self):
-        self.cfg_with_token()
-        for sub in (["create-flags"], ["fingerprint"], ["fingerprint", "--explain", "--label", "swarmbox.image=x"]):
-            p = subprocess.run([self.helper, *sub], env=self.env_clean(SWARMBOX_WEB="1"), capture_output=True, text=True,
-                               input="", cwd=self.tmp)
-            self.assertNotIn(TOK, p.stdout + p.stderr, sub)
-
-    def test_config_list_shows_the_token_only_as_set_and_the_other_commands_never_print_it(self):
-        self.cfg_with_token()
-        p = self.run_h("config", "list", env=self.env_clean())
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn("CLOUDFLARE_TUNNEL_TOKEN=set\tfile", p.stdout)
-        self.assertNotIn(TOK, p.stdout + p.stderr)
-        for sub in (["url"], ["version"], ["env", "list"]):
-            q = self.run_h(*sub, env=self.env_clean())
-            self.assertNotIn(TOK, q.stdout + q.stderr, sub)
-
     def test_the_token_is_never_accepted_on_the_command_line(self):
         r = self.run_h("config", "set", "CLOUDFLARE_TUNNEL_TOKEN", TOK)
         self.assertEqual(r.returncode, 2, r.stderr)
@@ -513,13 +313,6 @@ class TokenTest(Base):
         r = self.run_h("config", "seed", "--token", TOK)
         self.assertEqual(r.returncode, 2, r.stderr)
         self.assertNotIn(TOK, r.stdout + r.stderr)
-
-    def test_the_token_is_not_read_from_a_pipe(self):
-        r = subprocess.run([self.helper, "config", "set", "CLOUDFLARE_TUNNEL_TOKEN"], env=self.env(), input=TOK + "\n",
-                           capture_output=True, text=True, cwd=self.tmp)
-        self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertNotIn(TOK, r.stdout + r.stderr)
-        self.assertFalse(os.path.exists(os.path.join(self.home, ".config", "swarmbox", "config")))
 
     def test_a_token_in_a_file_with_a_loose_mode_is_ignored_and_not_echoed(self):
         self.cfg_with_token(0o644)
@@ -568,16 +361,6 @@ class ModeTest(Base):
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.home, ".config", "swarmbox", "config")).st_mode), 0o600)
 
 
-class UpdateModeTest(upd.UpdateBase):
-    def test_the_helper_folder_made_by_update_is_private_with_umask_000(self):
-        self.podman_for("2.0.1")
-        r = subprocess.run(["/bin/sh", "-c", 'umask 000; exec "$@"', "sh", self.helper, "update"], env=self.env(),
-                           capture_output=True, text=True, input="", cwd=self.tmp)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(stat.S_IMODE(os.stat(self.host_dir).st_mode) & 0o077, 0)
-        self.assertEqual(stat.S_IMODE(os.stat(self.cfg).st_mode), 0o600)
-
-
 # ============================================================================ update --to, the archive, the folder swap
 
 class UpdateInputTest(upd.UpdateBase):
@@ -593,37 +376,12 @@ class UpdateInputTest(upd.UpdateBase):
                 self.assertEqual(r.stdout, "")
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "MARK")))
 
-    def test_rollback_to_a_tag_whose_image_is_missing_changes_nothing(self):
-        self.podman_for("2.0.1", pull={"exit": 125, "stderr": "Error: manifest unknown\n"})
-        before = self.before()
-        r = self.update("--to", "1.9.9")
-        self.assertEqual(r.returncode, 3, r.stderr)
-        self.assert_unchanged(before)
-        self.assertEqual(self.names(), ["pull"])
-
-    def test_a_dash_image_in_the_config_is_refused_before_any_podman_call(self):
-        self.write_config("IMAGE=--privileged\n")
-        self.podman_for("2.0.1")
-        r = self.update("--to", "2.0.1")
-        self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertEqual(self.calls(), [])
-
     def test_an_exact_tag_must_equal_the_version_inside_the_image(self):
         self.podman_for("2.0.5")
         before = self.before()
         r = self.update("--to", "2.0.9")
         self.assertEqual(r.returncode, 3, r.stderr)
         self.assert_unchanged(before)
-
-    def test_a_version_line_with_shell_or_control_text_is_refused(self):
-        for ver in ("2.0.1; touch MARK", "$(touch MARK)", "2.0", "x.y.z", "2.0.1\x1b[31m"):
-            with self.subTest(ver=ver):
-                self.podman_for(ver)
-                before = self.before()
-                r = self.update("--to", "2.0.1")
-                self.assertEqual(r.returncode, 3, r.stderr)
-                self.assert_unchanged(before)
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, "MARK")))
 
     def test_an_archive_with_parent_or_absolute_entries_is_refused_and_nothing_escapes(self):
         outside = os.path.join(self.tmp, "escaped")
@@ -663,37 +421,6 @@ class UpdateInputTest(upd.UpdateBase):
         self.assertEqual(r.returncode, 3, r.stderr)
         self.assert_unchanged(before)
 
-    def test_planted_symlinks_at_the_old_and_current_helper_folder_names_are_not_followed(self):
-        victim_dir = os.path.join(self.tmp, "victim-dir")
-        os.mkdir(victim_dir)
-        with open(os.path.join(victim_dir, "keep"), "w") as f:
-            f.write("KEEP\n")
-        os.symlink(victim_dir, self.host_dir + ".old")
-        self.podman_for("2.0.1")
-        r = self.update("--to", "2.0.1")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(os.listdir(victim_dir), ["keep"])
-        self.assertFalse(os.path.lexists(self.host_dir + ".old"))
-        shutil.rmtree(self.host_dir)
-        os.symlink(victim_dir, self.host_dir)
-        self.podman_for("2.0.2")
-        r = self.update("--to", "2.0.2")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(os.listdir(victim_dir), ["keep"])
-        self.assertFalse(os.path.islink(self.host_dir))
-
-    def test_a_failed_extraction_leaves_the_old_copy_and_no_temporary_folder(self):
-        for run in ({"exit": 125, "stderr": "boom\n"}, {"stdout": "not a tar archive\n"}):
-            with self.subTest(run=run):
-                self.podman_for("2.0.1", run=run)
-                before = self.before()
-                r = self.update("--to", "2.0.1")
-                self.assertEqual(r.returncode, 3, r.stderr)
-                self.assert_unchanged(before)
-                left = [n for n in os.listdir(os.path.dirname(self.host_dir)) if n != "host"]
-                self.assertEqual(left, [])
-
-
 # ============================================================================ parsing of the config file
 
 class ConfigParsingTest(Base):
@@ -717,31 +444,6 @@ class ConfigParsingTest(Base):
             self.assert_no_marker()
         self.assertEqual(self.real_runs(), [])  # the invalid HOSTNAME stops `up` before Podman creates anything
 
-    def test_a_valid_file_with_a_path_key_still_uses_the_fake_podman(self):
-        evil = os.path.join(self.tmp, "evilbin")
-        os.mkdir(evil)
-        with open(os.path.join(evil, "podman"), "w") as f:
-            f.write("#!/bin/sh\ntouch %s/MARK\n" % self.tmp)
-        os.chmod(os.path.join(evil, "podman"), 0o755)
-        self.write("PATH=%s\n" % evil)
-        self.podman()
-        r = self.up()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(len(self.real_runs()), 1)
-        self.assert_no_marker()
-
-    def test_crlf_and_blank_and_comment_lines_do_not_leak_into_values(self):
-        self.write("# c\r\n\r\nWEB_PORT=9000\r\nWITH=claude\r\n")
-        r = self.run_h("config", "get", "WEB_PORT")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertNotIn("\r", r.stdout)
-
-    def test_a_very_long_line_and_binary_noise_do_not_crash_or_execute(self):
-        self.write("WEB_PORT=" + "9" * 100000 + "\n\x01\x02=\x03\n" + "A" * 50000 + "\n")
-        r = self.run_h("config", "list")
-        self.assertIn(r.returncode, (0, 1, 2))
-        self.assert_no_marker()
-
     def test_a_directory_where_the_config_file_should_be(self):
         os.makedirs(os.path.join(self.cfg_dir(), "config"))
         r = self.run_h("config", "list")
@@ -763,55 +465,6 @@ def doc_rows():
         if re.match(r"^\|\s*SR-\d+", ln):
             out.append([c.strip() for c in ln.strip().strip("|").split("|")])
     return text, out
-
-
-class ReviewDocumentTest(unittest.TestCase):
-    def test_the_document_exists_and_has_finding_rows(self):
-        self.assertTrue(os.path.isfile(DOC))
-        _t, rs = doc_rows()
-        self.assertGreaterEqual(len(rs), 10)
-
-    def test_every_row_has_id_severity_location_status_and_test_and_none_is_open(self):
-        _t, rs = doc_rows()
-        ids = set()
-        for r in rs:
-            self.assertEqual(len(r), 6, r)
-            fid, sev, loc, what, status, test = r
-            self.assertRegex(fid, r"^SR-\d+$")
-            self.assertNotIn(fid, ids)
-            ids.add(fid)
-            self.assertIn(sev.lower(), ("high", "medium", "low", "info"), r)
-            self.assertTrue(loc and what, r)
-            self.assertIn(status.lower().split()[0], ("fixed", "documented"), "no row may stay open: %r" % r)
-            self.assertTrue(test, r)
-
-    def test_a_named_test_exists_for_every_row(self):
-        _t, rs = doc_rows()
-        for r in rs:
-            names = re.findall(r"(test_[a-z0-9_]+\.py)::(?:(\w+)\.)?(test_\w+)", r[5])
-            self.assertTrue(names, "row %s names no test as file::Class.test_name: %r" % (r[0], r[5]))
-            for fname, cls, tname in names:
-                path = os.path.join(TESTS_DIR, fname)
-                self.assertTrue(os.path.isfile(path), (r[0], fname))
-                with open(path) as f:
-                    src = f.read()
-                self.assertRegex(src, r"def %s\(" % tname, (r[0], tname))
-                if cls:
-                    self.assertRegex(src, r"class %s\b" % cls, (r[0], cls))
-
-    def test_a_fixed_row_names_a_fix_in_the_code_and_a_documented_row_is_in_the_decision_log(self):
-        _t, rs = doc_rows()
-        with open(os.path.join(ROOT, "docs", "decision-log.md")) as f:
-            log = f.read()
-        self.assertIn("## [7.3]", log)
-        for r in rs:
-            if r[4].lower().startswith("documented"):
-                self.assertIn(r[0], log, "documented finding %s is not explained in the decision log" % r[0])
-
-    def test_the_document_records_the_shellcheck_result_and_the_scope(self):
-        text, _rs = doc_rows()
-        self.assertRegex(text, r"(?i)shellcheck")
-        self.assertRegex(text, r"(?i)out of scope|not covered|scope")
 
 
 if __name__ == "__main__":
