@@ -240,7 +240,7 @@ jobs:
       - name: Sign the digest (keyless)
         run: cosign sign --yes "$REGISTRY_IMAGE@$DIGEST"
       - name: SBOM with syft (SPDX JSON)
-        uses: anchore/sbom-action@v0.17.9
+        uses: anchore/sbom-action@v0.24.3
         with:
           image: ${{ env.REGISTRY_IMAGE }}@${{ needs.manifest.outputs.digest }}
           format: spdx-json
