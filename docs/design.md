@@ -29,8 +29,8 @@ Podman 4.3 or newer.
 ```
  HOST (your machine)                                             IMAGE  ghcr.io/<org>/swarmbox-dev:X.Y.Z
  +-------------------------------------------+                   neutral: shell environment, tmux, ttyd,
- | shell function `swarmbox`  (your rc file) |   podman run/     Podman, Node, swarmbox-tool, tool manifests
- | host helper  host:~/.local/share/         |   exec            (no agent inside)
+ | script `swarmbox`  (a file on your PATH)  |   podman run/     Podman, Node, swarmbox-tool, tool manifests
+ | support files host:~/.local/share/        |   exec            (no agent inside)
  |              swarmbox/host/               | ------------------------+
  | config       host:~/.config/swarmbox/     |                         | the box is created from it
  | Cloudflare connector (a container, host)  |                         v
@@ -52,12 +52,12 @@ Podman 4.3 or newer.
   on first use (section 8).
 - **The workspace is the home and the only thing that must survive.** The box can be deleted and recreated (`swarmbox reset`);
   projects, logins, the SSH key and installed tools are in the workspace.
-- **A thin host half.** A shell function plus a POSIX `sh` host helper drive Podman. Cloudflare credentials and the connector
+- **A thin host half.** One POSIX `sh` script, `swarmbox`, on your `PATH` drives Podman: no shell function, no startup file. Cloudflare credentials and the connector
   stay on the host, outside the box.
 - **One configuration surface**, applied when the box is created and compared on every entry (section 9).
 
-Glossary: the **function** is the `swarmbox` shell function printed by `init`; the **helper** is `swarmbox-host`, extracted from
-the image; a **tool** is a program installed on demand; an **agent** is a tool with `KIND=agent`; a **shim** is a link on `PATH` named
+Glossary: the **script** is the `swarmbox` command (the file `container/host/swarmbox-host` in the repository), written to your `PATH` by an installer; the
+**support files** are `VERSION`, `DEFAULTS`, `cloudflare-setup.py` and `tool-ports`, which one file cannot hold and the image carries; a **tool** is a program installed on demand; an **agent** is a tool with `KIND=agent`; a **shim** is a link on `PATH` named
 after a command of a tool; a **manifest** is a tool's `tool.conf`; a **creation setting** is fixed when the box is created and
 changes with `swarmbox reset`, a **runtime** setting changes in the running box.
 
@@ -68,7 +68,7 @@ In documents: `host:~/...` is a path on your machine; `<workspace>/...` is insid
 which a `reset` discards.
 
 ```
-host:~/swarmbox/                       # the workspace = /home/agent in the box (default; init --workspace DIR)
+host:~/swarmbox/                       # the workspace = /home/agent in the box (default; `swarmbox config set WORKSPACE DIR`)
 ├── my-project/                        # your projects
 ├── .ssh/                              # the box's SSH key (id_ed25519, id_ed25519.pub)
 ├── .claude/, .claude.json             # Claude Code: login, settings, history
@@ -78,7 +78,8 @@ host:~/swarmbox/                       # the workspace = /home/agent in the box 
 └── .local/share/containers/           # empty here: the nested Podman storage is a volume
 
 host:~/.config/swarmbox/config                 # host configuration (second box: <name>/config); cloudflare.json
-host:~/.local/share/swarmbox/host/             # the helper, extracted from the image
+host:~/.local/bin/swarmbox                     # the script ($SWARMBOX_BIN_DIR to change the folder); mode 755
+host:~/.local/share/swarmbox/host/             # the support files, extracted from the image
 host:~/.local/state/swarmbox/                  # lock folders, `notices`, and <name>.sock-dir when the workspace path is long
 box:/tmp/swarmbox/                             # tmpfs, empty at every start: ready marker, rendered web page, locks, exit.<id>
 volume <name>-containers                       # nested Podman storage, mounted at <workspace>/.local/share/containers
@@ -99,13 +100,16 @@ machine is exit 4 (not verified). A workspace already used by another box (label
 `WORKSPACE` in the config moves nothing: the box keeps its mount and every entry warns until `reset`.
 
 The host reaches the nested Podman through a unix socket, `podman -c <name>` (Linux and WSL only; unix sockets do not cross the macOS VM).
-A socket path holds at most 107 characters. When `<workspace>/.local/state/swarmbox/podman.sock` is longer than 100 bytes the helper
+A socket path holds at most 107 characters. When `<workspace>/.local/state/swarmbox/podman.sock` is longer than 100 bytes the script
 registers the connection through a short symlink `host:~/.local/state/swarmbox/<name>.sock-dir`; if that is still too long `up` exits 4.
 Measured with a stand-in server, Podman 4.3.1.
 
 ## 4. Commands
 
-Every `swarmbox <word>` is handled on the host or forwarded into the box. Host words win and are reserved.
+Every `swarmbox <word>` is handled by the script or forwarded into the box. Its own words win and are reserved: `stop`, `reset`, `up`, `url`,
+`update`, `config`, `env`, `remote`, `fingerprint`, `version`, `help`, `--help`, `-h` (and `create-flags`, `connection` and `setup`, which are internal). `pubkey` and `tool` go
+to the box as they are; `attach` and any other first word run `up` and then `podman exec` into the box (`-t` only when stdin and stdout are
+terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a reserved name runs as `swarmbox attach <name>`.
 
 | Command | What it does |
 |---|---|
@@ -114,35 +118,41 @@ Every `swarmbox <word>` is handled on the host or forwarded into the box. Host w
 | `swarmbox --plain [command]` | the same without tmux: plain bash, or the command directly |
 | `up`, `stop`, `reset` | start without a shell; stop (nothing deleted); remove and recreate the box and wait until ready (workspace and volume kept, sessions end) |
 | `url` | the web terminal address, and the public one when this box was set up for remote access |
-| `update [--to TAG]` | pull a newer image, record it as `IMAGE`, refresh the helper, tell you to `reset` |
+| `update [--to TAG]` | pull a newer image, record it as `IMAGE`, refresh the support files and the script itself (never by an older one), tell you to `reset` |
 | `config get\|set\|list` | the host configuration (section 9) |
 | `env add\|rm NAME`, `env list` | variables of yours to pass into the box (section 10) |
 | `pubkey` | the box's git SSH public key |
 | `tool list\|install\|update\|use\|remove\|doctor\|new\|validate` | tools inside the box (section 8) |
 | `remote setup\|status\|off\|token` | remote access through Cloudflare (`--dry-run` shows changes) |
-| `version`, `fingerprint`, `help` | helper version; creation fingerprint (`--explain` lists differences); the command list |
+| `version`, `fingerprint`, `help` | script version; creation fingerprint (`--explain` lists differences); the command list |
 
 Inside the box: `claude`, `gemini`, ... (shims, auto-approve by default for agents), `yolo` (the default agent in auto-approve mode),
 `swarmbox-web restart`, `swarmbox-tool`, `swarmbox-pubkey`. There is no `swarmbox uninstall`; the manual steps are in [uninstall.md](uninstall.md).
 
-**Exit codes of the helper.** 0 ok; 1 failure of Podman or of a file operation; 2 usage or an invalid value; 3 a prerequisite
-(Podman missing or older than 4.3, no `/dev/net/tun`, image cannot be pulled, no usable helper or `python3` for `remote`);
+**Exit codes of the script.** 0 ok; 1 failure of Podman or of a file operation; 2 usage or an invalid value; 3 a prerequisite
+(Podman missing or older than 4.3, no `/dev/net/tun`, image cannot be pulled, no usable support files or `python3` for `remote`);
 4 workspace problem; 5 conflict (another box on the workspace, or a container with the box's name that SwarmBox did not make:
 it is never adopted or removed); 6 not ready after 60 s, or the box exited while waiting; 7 the box could not be created.
 Standard output carries data, messages go to standard error.
 
-**Install.** `init` runs in a container, prints on stdout and changes nothing on the machine:
+**Install.** Two ways, one result: a file `${SWARMBOX_BIN_DIR:-$HOME/.local/bin}/swarmbox` (mode 755, written through a temporary file and a rename), the support
+files in `~/.local/share/swarmbox/host/`, and the image and tools in the host config (`IMAGE`, `WITH`, only the keys that are not set yet).
 
 ```
-podman run --rm -e SHELL <image> init --with claude >> ~/.bashrc      # options: --workspace DIR, --image REF, --shell bash|zsh|fish
+podman run --rm <image> install [--with TOOLS] | sh        # from an image; run it without `| sh` to read it first
+sh install.sh [--version X.Y.Z] [--image REF] [--with TOOLS]  # from a release: downloads swarmbox, checks swarmbox.sha256
 ```
 
-It prints the function between markers (`# >>> swarmbox X.Y.Z >>>` ... `# <<< swarmbox X.Y.Z <<<`) for the shell named by the
-passed `SHELL` (bash, zsh or fish, else bash; `--shell` overrides). The option values are **seeds**: the first call of the function
-extracts the helper from the seed image (`podman run --rm <image> host-helper` writes a tar archive; the function unpacks it into a temporary
-folder and requires an executable `swarmbox-host` before renaming it into place), and the helper creates the host config from the seeds
-only when that file does not exist; later it prints once per key when a seed differs from the file. Running `init` twice leaves two
-equivalent blocks. A helper newer than the function's marker is kept with a one-line notice; an older or missing one is re-extracted.
+`install` runs in a container and prints a small POSIX `sh` installer that carries the script in a quoted here-doc; it writes nothing itself. The
+image it records is `--image`, else the name Podman recorded for the container (`/run/.containerenv`, so a local build is found under its own
+name), else the default repository at the image's version. The installer writes the script and runs `swarmbox setup --image REF [--with TOOLS]`, which both ways share:
+it checks that Podman exists and is 4.3 or newer, extracts the support files from the image (`podman run --rm <image> host-helper` writes a tar archive,
+checked for member names, unpacked into a temporary folder, and renamed into place), records `IMAGE` and `WITH` the way `config seed` does
+(a key that is already set is never overwritten; a different value is reported once), prints the `PATH` advice when the folder is not in `PATH`,
+and prints the next command. It never edits a startup file and is idempotent. An older release put a `swarmbox` function between
+`# >>> swarmbox` markers in `~/.bashrc`, `~/.zshrc` or `~/.config/fish/config.fish`; the installer only looks for that marker and prints one warning
+to delete the block, because a shell function wins over a script on the `PATH`. The script carries its own version (`SCRIPT_VERSION`, equal to
+`container/host/VERSION`); when the support files report another version the script prints one short line, once, and `swarmbox update` makes them agree.
 
 **What `up` does**, in order, under a lock (`host:~/.local/state/swarmbox/up-<name>.lock`, an atomic `mkdir`, stale locks reaped,
 removed on every exit path):
@@ -222,7 +232,7 @@ the clipboard bridge and the style into one file (ttyd serves a single file, mea
 `padding`, `ctrlVPaste`, `ctrlCCopy` from `<workspace>/.config/swarmbox/web-terminal.conf`; every other key goes to ttyd as `-t key=value`.
 `swarmbox-web restart` applies a change without ending the box. Details: [web-terminal.md](web-terminal.md).
 
-**Remote access.** `swarmbox remote` is a wrapper that runs `cloudflare-setup.py` (the only part that needs `python3`, stdlib only, next to the helper) with
+**Remote access.** `swarmbox remote` is a wrapper that runs `cloudflare-setup.py` (the only part that needs `python3`, stdlib only, in the support folder) with
 the box name and web port. `setup` asks for a domain, an e-mail and an API token (hidden input, never stored) and provisions the Access application with
 the one-time-code login, a tunnel, the DNS record and the connector, a Podman container **on the host** named `<default name>-cloudflared`, image pinned in the
 script (`DEFAULT_CONNECTOR_IMAGE`), restarted automatically. `status` reports it, `off` removes the record, route and application and stops the connector when no
@@ -300,7 +310,7 @@ when set. There is no host-network mode.
 
 ## 10. Environment variables
 
-Keys the agents need (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, ...) are passed **only when the box is created**. Their names are in `ENV_KEYS` (`swarmbox env add NAME`); at creation the helper emits
+Keys the agents need (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, ...) are passed **only when the box is created**. Their names are in `ENV_KEYS` (`swarmbox env add NAME`); at creation the script emits
 `-e NAME` without a value, so Podman reads it from the terminal that runs `swarmbox` and the value is not on any command line. A name listed but unset in that terminal produces a warning. The
 label `swarmbox.env-hash` holds a hash of `NAME=value` (or `NAME` when unset), so a later entry can say "the variables changed on the host; run `swarmbox reset`". Names starting with
 `SWARMBOX_CLOUDFLARE_` are refused. `LOCAL_LLM_URL`, `_MODEL`, `_KEY`, `_CONTEXT`, `_OUTPUT` are ordinary entries (OpenCode reads them).
@@ -342,7 +352,7 @@ listens only on `127.0.0.1` and has no login on its own port; the Cloudflare cre
 - With remote access on, whoever passes the Cloudflare login has the agent's control: a shell with `sudo`. The `--session` length is the time a stolen or forgotten session stays usable; an administrator can revoke
   sessions in the Zero Trust dashboard (read from Cloudflare's documentation, not tried).
 - Tools are downloaded on the agent's request, pinned and checksummed where the vendor publishes one; agents install `latest`, and Claude Code updates itself.
-- The helper runs on the host with your privileges and is accepted as coming from the signed image you already trust (D26); the review is [security-review.md](security-review.md), written by the same AI that built it,
+- The script runs on the host with your privileges and is accepted as coming from the signed image you already trust (D26); the review is [security-review.md](security-review.md), written by the same AI that built it,
   with no human or third-party review yet. The tunnel token may be in the host config, mode 600, and never enters the box.
 
 **No telemetry.** SwarmBox makes no network call of its own except to pull the image, to install a tool you asked for, to check for a tool update, and, with `remote`, to reach Cloudflare. Logs stay local:
@@ -352,27 +362,29 @@ listens only on `127.0.0.1` and has no login on its own port; the Cloudflare cre
 
 The image is the root `Dockerfile` (about 1.75 GB built; no agent inside): `node:24-slim` (Debian 12), user `agent` UID/GID 1000 (the base user renamed, passwordless `sudo` on purpose), git, curl, python3 and venv,
 build tools, jq, tmux, vim, openssh-client and similar, Podman and its network packages, Chromium, `chrome-devtools-mcp` (pinned), `uv`, ttyd and Starship (pinned, checksummed), a Python venv at `/opt/flow`,
-`container/` scripts and configuration, `cloudflare-setup.py`, and the tool manifests with their shims. `ENTRYPOINT swarmbox-entrypoint`, `CMD serve`. Subcommands of the entrypoint: `serve`, `attach`, `init`,
-`pubkey`, `tool`, `host-helper` (the helper archive on stdout), anything else is run as given. Layers: stable first, volatile last; every `RUN` that downloads cleans up in the same `RUN`; `NPM_CONFIG_CACHE` is
+`container/` scripts and configuration, `cloudflare-setup.py`, and the tool manifests with their shims. `ENTRYPOINT swarmbox-entrypoint`, `CMD serve`. Subcommands of the entrypoint: `serve`, `attach`, `install`,
+`pubkey`, `tool`, `host-helper` (the archive of the script and support files on stdout), anything else is run as given. Layers: stable first, volatile last; every `RUN` that downloads cleans up in the same `RUN`; `NPM_CONFIG_CACHE` is
 `/opt/npm-cache`, owned by `agent`. Every version is an `ARG` with a default; `CONTRIBUTING.md` says how they are bumped. A tool the image needs that is not in Debian is fetched with its published checksum verified.
 
 **Distribution.** Image `ghcr.io/<org>/swarmbox-dev`, multi-arch (amd64, arm64), tags `X.Y.Z` and `X.Y`; not published yet (section 16). `.github/workflows/release.yml` runs the tests, a native build per architecture, a check that the
-helper in the image reports the tag's version, a vulnerability scan (grype), the manifest list, keyless signing (cosign), and the SBOM (syft). Until then you build locally (README Quick start; `dev/dev-build.sh` inside a
+script in the image reports the tag's version, a vulnerability scan (grype), the manifest list, keyless signing (cosign), and the SBOM (syft). Until then you build locally (README Quick start; `dev/dev-build.sh` inside a
 development box). A missing image is pulled by `up`, never built.
 
-**`swarmbox update`.** Without options it pulls the moving `X.Y` tag of the series in `IMAGE` (`--to TAG` takes exactly that tag). It extracts the helper from the pulled image into a temporary folder (the
-archive's member names are checked: no absolute or `..` names, only files and folders), reads the exact `X.Y.Z` from it, creates a local tag `<repo>:X.Y.Z`, renames the folder over the old helper,
+**`swarmbox update`.** Without options it pulls the moving `X.Y` tag of the series in `IMAGE` (`--to TAG` takes exactly that tag). It extracts the archive of the pulled image into a temporary folder (the
+archive's member names are checked: no absolute or `..` names, only files and folders), reads the exact `X.Y.Z` from it, creates a local tag `<repo>:X.Y.Z`, renames the folder over the old support files,
+replaces the script itself (a copy next to it, then a rename, so a running copy is never cut) when the image's is newer, and keeps it with a message when it is newer than the image or its folder cannot be written,
 writes `IMAGE=<repo>:X.Y.Z`, and prints `updated to X.Y.Z; run swarmbox reset to use it`. Any failure before the rename changes nothing. It never recreates the box. The exact local tag makes a later
-`reset` work offline. Rollback: `swarmbox update --to <older tag>`, or replace the function block with the older tag's output of `init` and remove the helper folder. The workspace is kept either way.
+`reset` work offline. Rollback: `swarmbox update --to <older tag>` refreshes the support files and keeps the newer script (it still runs), or install the older tag again with its `install`. The workspace is kept either way.
 An `IMAGE` with no `X.Y` series (a digest, `latest`, `dev`) needs `--to`.
 
 ## 14. Repository layout
 
 ```
 Dockerfile                  the image
-container/entrypoint.sh     serve, attach, init, pubkey, tool, host-helper
-container/scripts/          dirs, banner, messages, ssh-key, starship-init, swarmbox-{attach,init,mcp,shim,tool,web}
-container/host/             swarmbox-host, VERSION, DEFAULTS, templates/{bash,zsh,fish}   (the helper archive)
+container/entrypoint.sh     serve, attach, install, pubkey, tool, host-helper
+container/scripts/          dirs, banner, messages, ssh-key, starship-init, swarmbox-{attach,install,mcp,shim,tool,web}
+container/host/             swarmbox-host (the `swarmbox` script), VERSION, DEFAULTS   (the archive of `host-helper`)
+install.sh                  the release installer (downloads swarmbox, checks its sha256)
 container/config/           tmux.conf, tmux-browser-keys.conf, starship.toml, bashrc.sh (the shell fragment), ssh-swarmbox.conf
 container/tools/<name>/     tool manifests and installers;  container/mcp/<name>/  MCP server descriptions
 container/web/              ttyd page parts and build-index.sh
@@ -397,41 +409,41 @@ Decisions that are still true. The full reasoning of D1 to D40 is in [history/de
 | D6 | macOS through a Podman machine | wide audience; not yet tested |
 | D7 | No host-network mode | keeps the network surface small |
 | D10 | XDG layout in the workspace; regenerated files in `box:/tmp/swarmbox` | one rule per file |
-| D11 | Workspace chosen at install (`init --workspace`), default `~/swarmbox` | where you run `swarmbox` does not matter |
+| D11 | Workspace chosen in the host config (`swarmbox config set WORKSPACE DIR`), default `~/swarmbox` | where you run `swarmbox` does not matter |
 | D12 | Variables are passed only at creation; names in config, values from the host environment | no value on disk or on a command line |
 | D13 | The ttyd page is built into the image | versioned, tested, signed |
 | D14 | Cloudflare credentials and connector stay on the host | the agent never sees the tunnel |
-| D15 | The installer prints a shell function, not an alias | needs arguments, routing and a bootstrap |
-| D16 | The helper is POSIX `sh`; only `remote` is Python | runs on a bare host |
+| D15 | One script on the `PATH`, not a shell function or an alias | works from any shell and from scripts; no startup file to edit |
+| D16 | The script is POSIX `sh`; only `remote` is Python | runs on a bare host |
 | D17 | `update` records `IMAGE` in the host config; no startup file is edited | rollback and reset stay simple |
 | D18 | No project-level tools | an `install.sh` from a clone would run with your keys |
 | D19 | No throwaway-container mode; a second box uses `SWARMBOX_NAME` | one concept of "box" |
-| D20 | `init` only prints seeds; the function extracts the helper and creates the config | no write to the machine at install |
+| D20 | `install` only prints an installer; the installer writes one file, the support files and the config keys that are unset | nothing is written until you run it with `sh`; no startup file |
 | D21 | Agents install `latest`; every other tool is pinned | agents change fast; the rest must be reproducible |
 | D23 | `chrome-devtools-mcp` pinned in the image, run directly, never `npx` | no download when the browser starts |
 | D25 | Apache-2.0 license; the name SwarmBox must be checked before the first release | see release checklist |
-| D26 | The helper is trusted as part of the signed image | no separate signed asset unless asked |
+| D26 | The script is trusted as part of the signed image; `install.sh` only compares a checksum from the same release | no separate signature unless asked |
 | D27 | `update` only pulls and tells you to `reset` | recreating ends sessions |
 | D28 | No file of variable values; the tunnel token may be in the host config only with mode 600 | the one unavoidable secret, guarded |
 | D30 | A fingerprint mismatch only warns | `reset` ends sessions |
 | D31 | A second box's config is `~/.config/swarmbox/<name>/config` | the name selects the folder |
-| D33 | The helper is re-extracted only when missing, not executable or older than the function; a newer one is kept | `update` must not be undone by the next call |
+| D33 | `update` replaces the script only by a newer one; the support files of another version give one warning, once | `update` must not be undone by the next call |
 | D34 | WSL2 only with the workspace on the Linux filesystem | permissions on `/mnt/<letter>` break `keep-id` |
 | D35 | `update` writes the exact `X.Y.Z` tag and tags it locally | `reset` works offline |
-| D36 | No `swarmbox uninstall`; manual steps documented | removing a function from a user's rc file is theirs to do |
+| D36 | No `swarmbox uninstall`; manual steps documented (delete the script and the config) | no rc file was edited, so there is none to undo |
 | D39 | Cloudflare remote access is in 2.0 | needed from a phone or another computer |
 | D40 | Default names (box, image repository) live only in `container/host/DEFAULTS`; development tree ships `swarmbox-dev` | no collision with an installation named `swarmbox`; one file to flip for release |
 
 ## 16. Not done, and open questions
 
 - Nothing has run on a real host: macOS, a real WSL with a Windows drive, a host UID other than 1000, Podman older than 4.3 (the 4.3 limit is where `keep-id:uid=,gid=` was observed; the true minimum is unknown),
-  `python3` on a clean macOS, bash 3.2 and BSD `stat` for the helper, `-e SHELL` through a Podman machine.
+  `python3` on a clean macOS, bash 3.2 and BSD `stat` for the script.
 - The image is not published; `release.yml` and `ci.yml` have not run on GitHub; cosign identity, grype on the real image and the arm64 runner are unverified. The image owner and name are placeholders (`<org>`).
 - Cloudflare was only tested against a fake API; the real end-to-end check is in [cloudflare.md](cloudflare.md). Whether the connector restarts after a reboot needs `podman-restart.service` enabled for the user (not tried).
 - Nested Podman has not been started on a real host with a normal subuid range; the third nesting level cannot run it.
 - The OpenCode package: `@opencode/cli` 2.x or `opencode-ai` 1.x; the installer has one variable `PACKAGE` (decision pending).
-- A human review of the host helper and the security review; the licence checks of `THIRD_PARTY_NOTICES.md`.
-- Stronger isolation (a microVM runtime): untested, see [microvm.md](microvm.md). A credential proxy on the host, a separately signed helper asset and restart of the box after a reboot are not built.
+- A human review of the host script and the security review; the licence checks of `THIRD_PARTY_NOTICES.md`.
+- Stronger isolation (a microVM runtime): untested, see [microvm.md](microvm.md). A credential proxy on the host, a separately signed script asset and restart of the box after a reboot are not built.
 - After `remote setup` for a second box, `cloudflare.json` keeps one name, so the first box prints no public address until its setup is run again.
 - `swarmbox <command>` prints tmux's own `[exited]` line before the command's output; accepted.
 - Code comments still cite section numbers of an earlier version of this file; the names of the functions and files they cite are right.

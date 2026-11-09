@@ -128,16 +128,40 @@ class Base(unittest.TestCase):
 
 
 class VersionTest(Base):
-    def test_version_prints_the_file_next_to_the_helper(self):
+    def test_version_prints_the_version_of_the_script_and_it_is_the_one_of_the_version_file(self):
         p = self.run_h("version")
         self.assertEqual((p.returncode, p.stdout, p.stderr), (0, VERSION + "\n", ""))
+        with open(HELPER) as f:
+            self.assertIn("\nSCRIPT_VERSION=%s\n" % VERSION, f.read())
 
-    def copied_helper(self, defaults_text):
+    def test_support_files_of_another_version_give_one_short_warning_once(self):
+        h = self.copied_helper(open(os.path.join(ROOT, "container", "host", "DEFAULTS")).read(), version="9.8.7")
+        p = self.run_h("config", "get", "WEB_PORT", helper=h)
+        self.assertEqual((p.returncode, p.stdout), (0, "7681\n"))
+        self.assertEqual(p.stderr.count("\n"), 1, p.stderr)
+        self.assertIn("this script is %s but the image files are 9.8.7" % VERSION, p.stderr)
+        self.assertIn("swarmbox update", p.stderr)
+        p = self.run_h("config", "get", "WEB_PORT", helper=h)
+        self.assertEqual((p.returncode, p.stderr), (0, ""))
+
+    def test_a_missing_support_file_is_exit_3_with_the_way_out(self):
+        d = os.path.join(self.tmp, "bin")
+        os.mkdir(d)
+        shutil.copy(HELPER, os.path.join(d, "swarmbox"))
+        os.chmod(os.path.join(d, "swarmbox"), 0o755)
+        p = self.run_h("config", "list", helper=os.path.join(d, "swarmbox"), env={"XDG_DATA_HOME": os.path.join(self.tmp, "nodata")})
+        self.assertEqual(p.returncode, 3)
+        self.assertIn("the support files are missing", p.stderr)
+        self.assertIn("swarmbox update", p.stderr)
+        p = self.run_h("version", helper=os.path.join(d, "swarmbox"), env={"XDG_DATA_HOME": os.path.join(self.tmp, "nodata")})
+        self.assertEqual((p.returncode, p.stdout), (0, VERSION + "\n"))
+
+    def copied_helper(self, defaults_text, version="9.8.7"):
         d = os.path.join(self.tmp, "copy")
         os.mkdir(d)
         shutil.copy(HELPER, d)
         os.chmod(os.path.join(d, "swarmbox-host"), 0o755)
-        write_file(os.path.join(d, "VERSION"), "9.8.7\n")
+        write_file(os.path.join(d, "VERSION"), version + "\n")
         if defaults_text is not None:
             write_file(os.path.join(d, "DEFAULTS"), defaults_text)
         return os.path.join(d, "swarmbox-host")
@@ -145,7 +169,7 @@ class VersionTest(Base):
     def test_the_default_names_come_from_the_defaults_file(self):
         """Flipping the two lines of DEFAULTS flips the box name, the hostname key and the image of a copied helper."""
         h = self.copied_helper("SWARMBOX_DEFAULT_NAME=flipped\nSWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/<org>/flipped'\n")
-        for key, want in (("NAME", "flipped"), ("HOSTNAME", "flipped"), ("IMAGE", "ghcr.io/<org>/flipped:9.8.7")):
+        for key, want in (("NAME", "flipped"), ("HOSTNAME", "flipped"), ("IMAGE", "ghcr.io/<org>/flipped:" + VERSION)):
             p = self.run_h("config", "get", key, helper=h)
             self.assertEqual((p.returncode, p.stdout.strip()), (0, want), (key, p.stderr))
 

@@ -4,7 +4,7 @@
 #   serve     the box's main process: the ordered startup, the readiness marker and health file,
 #             PID 1 signal handling, and the ttyd supervisor
 #   attach    forwards to swarmbox-attach (the grouped session, the idle window, `swarmbox <command>`)
-#   init      forwards to swarmbox-init
+#   install   forwards to swarmbox-install
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
 #   tool      forwards to swarmbox-tool
 #   host-helper
@@ -359,8 +359,8 @@ forward() {
     exec "$prog" "$@"
 }
 
-# host-helper: the helper archive as a tar archive on stdout, nothing else on stdout. The function saves it
-# to a file and unpacks it on the host; owner 0 and the file modes are kept, so `swarmbox-host` stays executable.
+# host-helper: the helper archive as a tar archive on stdout, nothing else on stdout. `swarmbox setup` and `swarmbox update`
+# save it to a file and unpack it on the host; owner 0 and the file modes are kept, so `swarmbox-host` stays executable.
 host_helper() {
     local dir=${SWARMBOX_TEST_HOST_DIR:-/usr/local/share/swarmbox/host}
     if [ $# -ne 0 ]; then
@@ -378,12 +378,12 @@ case "${1:-}" in
     serve)
         serve
         ;;
-    attach|init|pubkey|tool)
+    attach|install|pubkey|tool)
         sub=$1
         shift
         case "$sub" in
             attach) forward swarmbox-attach "$@" ;;
-            init) forward swarmbox-init "$@" ;;
+            install) forward swarmbox-install "$@" ;;
             pubkey) forward swarmbox-pubkey "$@" ;;
             tool) forward swarmbox-tool "$@" ;;
         esac

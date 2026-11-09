@@ -34,8 +34,8 @@ What each group covers (a file name tells the rest):
 
 | Files | What they cover |
 |---|---|
-| `test_host_*.py`, `test_security_review.py`, `test_cloudflare_setup.py` | the host helper `container/host/swarmbox-host` against a fake `podman` (`tests/helpers.py`): `up`, `reset`, `stop`, `url`, `update`, `config`, `env`, `remote`, create flags with golden files in `tests/fixtures/`, the host connection, the connector, hostile input; `cloudflare-setup.py` against a fake Cloudflare API on loopback |
-| `test_function_{bash,zsh,fish}.py` (cases in `tests/function_cases.py`), `test_init_output.py`, `test_host_shells.py` | the generated shell function and `swarmbox-init`, in each shell; the helper under dash, bash and busybox |
+| `test_host_*.py`, `test_security_review.py`, `test_cloudflare_setup.py` | the script `container/host/swarmbox-host` (installed as `swarmbox`) against a fake `podman` (`tests/helpers.py`): `up`, `reset`, `stop`, `url`, `update`, `config`, `env`, `remote`, create flags with golden files in `tests/fixtures/`, the host connection, the connector, hostile input; `cloudflare-setup.py` against a fake Cloudflare API on loopback |
+| `test_swarmbox_command.py`, `test_install.py`, `test_host_shells.py` | the `swarmbox` script as a program: which words it handles and which go to the box, `podman exec` forwarding and the `-t` rule; the two installers (`container/scripts/swarmbox-install.sh`, `install.sh`): idempotence, atomic write, PATH advice, old-function warning, the Podman version check; the script under dash, bash and busybox |
 | `test_serve_steps.py`, `test_entrypoint.py`, `test_attach_command.py`, `test_web_build.py`, `test_bashrc_fragment.py`, `test_starship.py`, `test_pubkey_ensure.py`, `test_ssh_key.py`, `test_mcp_registry.py`, `test_dirs.py`, `test_build_index.py` | what runs inside the box: `serve` steps and signals with fakes on `PATH`, `swarmbox-attach` (fake tmux, then real tmux on a private `-L swarmbox-test-<random>` socket), `swarmbox-web`, the shell fragment, the key, the MCP registry, the XDG paths, the web page build |
 | `test_tool_*.py` | the tool machinery `swarmbox-tool` and `swarmbox-shim` (manifests, link, install, run, prepare, use, remove, doctor, image level, the per-tool installers); `test_tool_real.py` also installs for real in throwaway containers, only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` |
 | `test_dockerfile.py`, `test_dev_build.py`, `test_image_build.py`, `test_image_with_tools.py`, `test_bashrc_container.py` | the `Dockerfile` (static) and the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; the image comes from `dev/dev-build.sh` or `SWARMBOX_IMAGE_TAG`, shared by `tests/image_support.py`). `tests/smoke_image.py` is the image smoke test (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box, `SWARMBOX_SMOKE_FULL=1` the full run for CI |
@@ -43,7 +43,7 @@ What each group covers (a file name tells the rest):
 | `test_default_names_lint.py`, `test_repo_files.py`, `test_docs_consistency.py`, `test_run_all.py`, `test_helpers.py` | guards: no default name or image repository written as a literal (read `container/host/DEFAULTS`), the policy files exist and link, the README commands exist and its links resolve, the runner itself, the fake `podman` |
 | `test_clipboard_bridge.py`, `test_web_style.py`, `test_tmux_browser_keys.py` | the web terminal in a real browser and tmux keys; they need chromium and ttyd and run in the scheduled CI job only |
 
-Shared helpers (the fake `podman`, the fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use a real
+Shared helpers (the fake `podman`, the helper archive of an image, a pseudo terminal) are in `tests/helpers.py`. Write a test first, with fakes; use a real
 container only for a smoke test, with a `swarmbox-test-` name.
 
 ## Smoke test on a host
