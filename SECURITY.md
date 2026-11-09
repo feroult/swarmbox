@@ -13,19 +13,19 @@ Please report a vulnerability privately, not in a public issue.
   version of the supported series and named in `CHANGELOG.md`.
 
 Reports about the host helper (`swarmbox-host`, which runs on your machine with your privileges) are the most valuable ones.
-The written review of the helper is in `docs/security-review.md`.
+The written review of the helper is in `docs/security-review.md`, written by the same AI agent that wrote the code; no human has reviewed it yet.
 
 ## Supported versions
 
 | Version | Supported |
 |---|---|
 | 2.0.x | yes: the newest patch release of the series |
-| 0.1.0 and older (`v0.1.0`, the scripts before the redesign) | no: migrate with the steps in the README |
+| 0.1.0 and older (`v0.1.0`, the scripts before the redesign) | no |
 
 ## What the sandbox protects, and what it does not
 
-The sandbox protects the host's files and processes outside the workspace folder, and the host's Podman socket (it is never
-mounted). It does not protect the following, and you should assume all of it when you start an agent (design 11):
+A container shares the kernel with your machine, so a kernel or runtime vulnerability can let code in the box escape; for untrusted work use a virtual machine or a dedicated machine (`docs/microvm.md`). The sandbox protects the host's files and processes outside the workspace folder, and the host's Podman socket (it is never
+mounted). It does not protect the following, and you should assume all of it when you start an agent (the model is in `docs/design.md`, section 12):
 
 - The agent can change or delete everything in the workspace: all projects, the logins and the SSH key.
 - Variables passed in with `swarmbox env` are stored in the container's configuration and are visible to every process in
@@ -55,8 +55,6 @@ helper from it. Verify the image signature and digest published with each releas
 SwarmBox sends **no telemetry**. It makes no network call of its own except to pull the image, to install a tool you asked for,
 to check for a tool update, and, with `swarmbox remote`, to reach Cloudflare. Logs stay on your machine:
 `<workspace>/.local/state/swarmbox/` holds `serve.log`, `health` and `web-terminal.log`; on the host only `~/.local/state/swarmbox/` exists (locks and `notices`).
-In the notation of design 12.5 the two places are `<workspace>/.local/state/swarmbox/` and `host:~/.local/state/swarmbox/`.
 
 The tools you install have their own policies (Go, for one, keeps local telemetry counters; the others were not checked for
-this). They are not part of SwarmBox; read their documentation. Design 12.5 is the reference
-for this section.
+this). They are not part of SwarmBox; read their documentation.

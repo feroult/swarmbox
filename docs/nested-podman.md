@@ -8,7 +8,7 @@ a volume for the storage). `swarmbox up` checks that the host has `/dev/net/tun`
 podman run -d --name mongo --network dev -p 27017:27017 mongo:7   # inside SwarmBox
 ```
 
-- **Reach them from the host**: `swarmbox up` registers a Podman connection named after the box (default `swarmbox`; the
+- **Reach them from the host**: `swarmbox up` registers a Podman connection named after the box (default `swarmbox-dev`; the
   name is `SWARMBOX_NAME`) and the box starts the Podman API service inside it. From your host shell:
   ```bash
   podman -c swarmbox-dev ps
@@ -26,7 +26,7 @@ podman run -d --name mongo --network dev -p 27017:27017 mongo:7   # inside Swarm
 - **Container-to-container**: create a network (`podman network create dev`) and use the container name as hostname.
 - **Storage** lives in a named volume (`<box-name>-containers`, `swarmbox-dev-containers` for the default box), not in the workspace
   (its files are owned by sub-UIDs your user cannot delete). `swarmbox reset` keeps it. To wipe it, remove the box first:
-  `podman rm -f swarmbox`, then `podman volume rm swarmbox-dev-containers`.
+  `podman rm -f swarmbox-dev`, then `podman volume rm swarmbox-dev-containers`.
 - **User IDs**: SwarmBox has ~64k user IDs, so an image whose default user has a higher ID (distroless `nonroot` 65532, some `nobody` 65534
   images) can be pulled but not run as that user: run it with `--user root` (inside SwarmBox that is your own user, not host root).
 - **Limits**: nested containers share the box's hostname (`utsns=host`). Settings such as `PORTS` only apply when the box is created,

@@ -4,7 +4,7 @@ PID 1 signals and the ttyd supervisor, all against a fake environment.
 Nothing here touches the live box: tmux, ttyd, podman, swarmbox-pubkey and swarmbox-tool are fakes in a
 scratch folder that comes first on PATH (the test refuses to run when tmux or podman would resolve elsewhere); HOME, the run
 folder and every XDG folder are mktemp directories; `serve` is started by the test and only that PID is ever signalled.
-The test-only variables SWARMBOX_TEST_* are the ones decided in docs/decision-log.md ([2.2] test-only switches).
+The test-only variables SWARMBOX_TEST_* are the ones decided in docs/history/decision-log.md ([2.2] test-only switches).
 
 Run with: python3 tests/test_serve_steps.py   (needs bash; python3 is the fake podman)
 """

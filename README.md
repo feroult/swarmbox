@@ -60,7 +60,7 @@ your own machine with the same care, unless you put SwarmBox inside a virtual ma
 - Do not expose the web port yourself. Use `swarmbox remote setup` if you need access from outside.
 - Look at what the agent changes in the workspace, for example with `git diff`.
 
-More detail is in [SECURITY.md](SECURITY.md) and in the security model of [docs/design.md](docs/design.md).
+More detail is in [SECURITY.md](SECURITY.md) and in the security model of [docs/design.md](docs/design.md). For a hypervisor boundary see [docs/microvm.md](docs/microvm.md).
 
 ## Quick start
 
@@ -95,9 +95,9 @@ swarmbox remote setup       # set up remote access with Cloudflare
 
 ## Status
 
-Version 2.0 is built and tested in a development box. Its image was built and run end to end there (box, web terminal, tools,
-nested Podman), but it has not run on a real host yet, and it is not published. macOS and Podman older than 4.3 are unverified.
-See [docs/design.md](docs/design.md) and [docs/implementation-plan.md](docs/implementation-plan.md).
+Version 2.0 is not released. Its image was built and run end to end in a development box (box, web terminal, tools), but it has
+not run on a real host yet and is not published. macOS, Podman older than 4.3 and the real Cloudflare setup are unverified.
+The architecture is in [docs/design.md](docs/design.md).
 
 ## Privacy
 
@@ -108,6 +108,7 @@ to check for a tool update, and, with `swarmbox remote`, to reach Cloudflare. Lo
 ## More
 
 [docs/web-terminal.md](docs/web-terminal.md), [docs/cloudflare.md](docs/cloudflare.md), [docs/nested-podman.md](docs/nested-podman.md),
-[docs/uninstall.md](docs/uninstall.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
+[docs/uninstall.md](docs/uninstall.md), [docs/microvm.md](docs/microvm.md), [docs/design.md](docs/design.md),
+[docs/security-review.md](docs/security-review.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [CHANGELOG.md](CHANGELOG.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
 and [LICENSE](LICENSE) (Apache-2.0).
