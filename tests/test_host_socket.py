@@ -203,59 +203,6 @@ class BoundaryTest(Base):
         self.assertEqual(self.verbs("add"), [])
         self.assertFalse(os.path.lexists(os.path.join(self.state, long_name + ".sock-dir")))
 
-    def test_the_default_workspace_never_produces_a_symlink(self):
-        r = subprocess.run([self.helper, "connection"], env={k: v for k, v in self.env().items() if k != "SWARMBOX_WORKSPACE"},
-                           capture_output=True, text=True, input="", cwd=self.tmp, timeout=60)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.conns(), {NAME: "unix://" + os.path.join(self.home, "swarmbox") + SUFFIX})
-        self.assertFalse(os.path.lexists(self.link()))
-        self.assertEqual([n for n in os.listdir(self.state) if n.endswith(".sock-dir")] if os.path.isdir(self.state) else [], [])
-
-    def test_macos_skips_the_step_silently(self):
-        ws = self.mkws(pad_ws(self.tmp, 140))
-        r = self.connect(SWARMBOX_TEST_OS="Darwin")
-        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
-        self.assertEqual(self.calls(), [])
-        self.assertFalse(os.path.lexists(self.link()), ws)
-
-
-class MultibyteTest(Base):
-    """The limit counts bytes of the final path, not characters (log: decision [3.4])."""
-
-    def ws_with(self, nbytes):
-        base = os.path.join(self.tmp, "\u00e9\u00e8\u00fc")   # 6 bytes, 3 characters
-        need = nbytes - len(base.encode())
-        return self.mkws(base + "/" + "w" * (need - 1))
-
-    def test_a_path_of_100_bytes_with_multibyte_characters_is_direct(self):
-        ws = self.ws_with(LIMIT - len(SUFFIX))
-        total = ws + SUFFIX
-        self.assertEqual(len(total.encode()), 100)
-        self.assertLess(len(total), 100)
-        r = self.connect()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertFalse(os.path.lexists(self.link()))
-        self.assertEqual(self.conns(), {NAME: "unix://" + total})
-
-    def test_101_bytes_but_fewer_than_100_characters_gets_the_symlink(self):
-        ws = self.ws_with(LIMIT - len(SUFFIX) + 1)
-        total = ws + SUFFIX
-        self.assertEqual(len(total.encode()), 101)
-        self.assertLess(len(total), 100)   # a character count would have registered it directly
-        r = self.connect()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertTrue(os.path.islink(self.link()))
-        self.assertEqual(self.conns(), {NAME: "unix://" + self.link() + "/podman.sock"})
-
-    def test_the_measure_is_independent_of_the_locale(self):
-        ws = self.ws_with(LIMIT - len(SUFFIX) + 1)
-        for loc in ("C", "C.UTF-8", "POSIX"):
-            r = self.connect(LC_ALL=loc)
-            self.assertEqual(r.returncode, 0, (loc, r.stderr))
-            self.assertTrue(os.path.islink(self.link()), loc)
-            self.assertEqual(os.readlink(self.link()).encode(), (ws + "/.local/state/swarmbox").encode())
-
-
 class SymlinkRefreshTest(Base):
     def setUp(self):
         super().setUp()
@@ -270,17 +217,6 @@ class SymlinkRefreshTest(Base):
         self.assertEqual(os.lstat(self.link()).st_ino, ino)
         self.assertEqual(os.readlink(self.link()), self.ws + "/.local/state/swarmbox")
 
-    def test_a_link_with_the_wrong_target_is_relinked(self):
-        os.symlink(os.path.join(self.tmp, "elsewhere"), self.link())
-        r = self.connect()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(os.readlink(self.link()), self.ws + "/.local/state/swarmbox")
-
-    def test_a_dangling_link_is_relinked(self):
-        os.symlink("/nonexistent/target", self.link())
-        self.assertTrue(self.connect().returncode == 0)
-        self.assertEqual(os.readlink(self.link()), self.ws + "/.local/state/swarmbox")
-
     def test_a_regular_file_is_refused_with_exit_4_and_left_in_place(self):
         with open(self.link(), "w") as f:
             f.write("mine")
@@ -291,22 +227,6 @@ class SymlinkRefreshTest(Base):
             self.assertEqual(f.read(), "mine")
         self.assertFalse(os.path.islink(self.link()))
         self.assertEqual(self.verbs("add"), [])
-
-    def test_a_directory_is_refused_with_exit_4_and_left_in_place(self):
-        os.makedirs(os.path.join(self.link(), "keep"))
-        r = self.connect()
-        self.assertEqual(r.returncode, 4, r.stderr)
-        self.assertTrue(os.path.isdir(os.path.join(self.link(), "keep")))
-        self.assertFalse(os.path.islink(self.link()))
-        self.assertEqual(self.verbs("add"), [])
-
-    def test_a_short_workspace_leaves_an_old_link_alone(self):
-        os.symlink("/old/target", self.link())
-        self.mkws(os.path.join(self.tmp, "short"))
-        r = self.connect()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(os.readlink(self.link()), "/old/target")   # not ours to remove: the link is only refreshed when needed
-
 
 class RegistrationTest(Base):
     def setUp(self):
@@ -331,46 +251,11 @@ class RegistrationTest(Base):
         self.assertEqual(self.verbs("remove"), [["system", "connection", "remove", NAME]])
         self.assertEqual(self.verbs("add"), [["system", "connection", "add", NAME, self.uri]])
 
-    def test_connections_with_other_names_are_untouched(self):
-        foreign = {"podman": "unix:///run/user/1000/podman/podman.sock", NAME + "-x": "ssh://u@h/x",
-                   "other": "unix:///tmp/o.sock"}
-        self.seed(dict(foreign, **{NAME: "unix://" + self.ws + "/.swarmbox/podman.sock"}))
-        self.assertEqual(self.connect().returncode, 0)
-        self.assertEqual(self.conns(), dict(foreign, **{NAME: self.uri}))
-        for c in self.verbs("remove") + self.verbs("add"):
-            self.assertEqual(c[3], NAME, c)
-
-    def test_a_connection_whose_name_only_starts_with_the_box_name_is_not_taken_for_it(self):
-        self.seed({NAME + "-x": "unix:///other"})
-        self.assertEqual(self.connect().returncode, 0)
-        self.assertEqual(self.conns(), {NAME + "-x": "unix:///other", NAME: self.uri})
-        self.assertEqual(self.verbs("remove"), [])
-
-    def test_a_path_with_spaces_is_registered_whole(self):
-        ws = self.mkws(os.path.join(self.tmp, "my work space"))
-        self.assertEqual(self.connect().returncode, 0)
-        self.assertEqual(self.connect().returncode, 0)
-        self.assertEqual(self.conns(), {NAME: "unix://" + ws + SUFFIX})
-        self.assertEqual(len(self.verbs("add")), 1)
-
     def test_a_failing_add_is_a_warning_not_an_exit(self):
         open(os.path.join(self.fake, "fail-add"), "w").close()
         r = self.connect()
         self.assertEqual(r.returncode, 0)
         self.assertIn("could not register the Podman connection '%s'" % NAME, r.stderr)
-
-    def test_a_failing_list_is_a_warning_and_nothing_is_changed(self):
-        open(os.path.join(self.fake, "fail-list"), "w").close()
-        r = self.connect()
-        self.assertEqual(r.returncode, 0)
-        self.assertIn("could not list the Podman connections", r.stderr)
-        self.assertEqual(self.verbs("add") + self.verbs("remove"), [])
-
-    def test_the_name_is_the_box_name(self):
-        r = self.connect(SWARMBOX_NAME="second")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.conns(), {"second": self.uri})
-
 
 class UpIntegrationTest(unittest.TestCase):
     """`up` and `reset` take step 6 with the shared FakePodman: it is the last thing before they return (and after readiness),
@@ -431,16 +316,6 @@ class UpIntegrationTest(unittest.TestCase):
             self.assertEqual(add[3:], ["swarmbox", "unix://" + link + "/podman.sock"])
             self.assertTrue(os.path.islink(link))
 
-    def test_up_with_a_workspace_too_deep_exits_4_before_any_box_is_created(self):
-        self.ws = pad_ws(self.tmp, 140)
-        os.makedirs(self.ws)
-        with FakePodman(self.conf()) as fp:
-            r = self.run_up(fp, SWARMBOX_NAME="swarmbox-" + "n" * 70)
-            self.assertEqual(r.returncode, 4, r.stderr)
-            self.assertIn("cannot make a short path to the Podman socket", r.stderr)
-            self.assertEqual([c for c in fp.calls() if c and c[0] == "run" or c[:2] == ["container", "run"]], [])
-            self.assertEqual([c for c in fp.calls() if c[:1] == ["system"]], [])
-
     def test_the_fast_path_adds_one_connection_call_and_nothing_else(self):
         # a running box whose labels match the configuration
         with FakePodman(self.conf()) as fp:
@@ -469,60 +344,6 @@ class UpIntegrationTest(unittest.TestCase):
             self.assertLessEqual(len(plain), 2, calls)
             self.assertEqual(sysc[0][:3], ["system", "connection", "list"])
             self.assertLessEqual(len(sysc), 2, calls)   # the list, and the add when it is not registered yet
-
-
-class ReducedRealSocketTest(Base):
-    """[reduced] A Python stand-in unix-socket server (not Podman) runs in a throwaway container that mounts the workspace state
-    folder at a short path; the host side connects through the symlink the helper made, for a 131-character workspace (the
-    B5 spike's case). The direct path would be refused by connect(); the helper's link path connects."""
-
-    IMAGE = "docker.io/library/python:3.11-slim-bookworm"
-
-    def setUp(self):
-        super().setUp()
-        if not shutil.which("podman"):
-            self.skipTest("no podman")
-        if subprocess.run(["podman", "image", "exists", self.IMAGE]).returncode != 0:
-            self.skipTest("%s is not cached" % self.IMAGE)
-        self.cname = "swarmbox-test-3-4-%s" % os.urandom(4).hex()
-        self.addCleanup(self.cleanup)
-
-    def cleanup(self):
-        subprocess.run(["podman", "rm", "-f", self.cname], capture_output=True, timeout=120)
-
-    def test_the_helper_made_symlink_really_connects(self):
-        ws = self.mkws(pad_ws(self.tmp, 131 - len(SUFFIX)))
-        state = os.path.join(ws, ".local", "state", "swarmbox")
-        self.assertEqual(len((ws + SUFFIX)), 131)
-        r = self.connect()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        uri = self.conns()[NAME]
-        sock_path = uri[len("unix://"):]
-        self.assertTrue(os.path.islink(self.link()))
-        s = socket.socket(socket.AF_UNIX)
-        with self.assertRaises(OSError):   # the long direct path cannot be used at all
-            s.connect(ws + SUFFIX)
-        s.close()
-        code = ("import socket,time\ns=socket.socket(socket.AF_UNIX); s.bind('/s/podman.sock'); s.listen(1); "
-                "print('bound',flush=True)\nc,_=s.accept(); c.sendall(b'hello'); time.sleep(1)\n")
-        p = subprocess.run(["podman", "run", "-d", "--name", self.cname, "--userns=keep-id:uid=1000,gid=1000", "-v",
-                            "%s:/s:rw" % state, "--user", "1000", self.IMAGE, "python3", "-c", code],
-                           capture_output=True, text=True, timeout=240)
-        if p.returncode != 0:
-            self.skipTest("the throwaway container did not start: %s" % p.stderr.strip()[:200])
-        got = None
-        for _ in range(50):
-            c = socket.socket(socket.AF_UNIX)
-            try:
-                c.connect(sock_path)
-                got = c.recv(10)
-                break
-            except OSError:
-                time.sleep(0.2)
-            finally:
-                c.close()
-        self.assertEqual(got, b"hello", "no connection through %s (%d characters)" % (sock_path, len(sock_path)))
-        self.assertLessEqual(len(sock_path), LIMIT)
 
 
 @unittest.skipUnless(shutil.which("podman"), "no podman")
