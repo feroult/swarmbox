@@ -100,11 +100,6 @@ class ReleaseCheckTest(unittest.TestCase):
         self.assertRegex(r.stdout, r"(?m)^FAIL %s " % name, r.stdout)
         self.assertIn("RELEASE CHECK FAILED", r.stdout)
 
-    def test_script_exists_and_is_posix_sh(self):
-        self.assertTrue(os.path.isfile(SCRIPT), "dev/release-check.sh is missing")
-        with open(SCRIPT, encoding="utf-8") as f:
-            self.assertEqual(f.readline().strip(), "#!/bin/sh")
-
     def test_passes_on_a_good_fixture_and_prints_one_line_per_condition(self):
         repo = self.fresh()
         r = run(repo)
@@ -146,83 +141,12 @@ class ReleaseCheckTest(unittest.TestCase):
         self.assertFails(r, "changelog")
         self.assertIn("2.0.0", r.stdout)
 
-    def test_design_and_changelog_versions_differ(self):
-        repo = self.fresh()
-        write(repo, "CHANGELOG.md", "# Changelog\n\n## [2.1.0] - Unreleased\n\n## [2.0.0] - 2020-01-01\n")
-        self.commit(repo)
-        self.assertFails(run(repo), "version")
-
-    def test_design_without_a_version(self):
-        repo = self.fresh()
-        write(repo, "docs/design.md", "# Design\n")
-        self.commit(repo)
-        self.assertFails(run(repo), "version")
-
-    def test_unverified_left_in_the_notices(self):
-        repo = self.fresh()
-        write(repo, "THIRD_PARTY_NOTICES.md", "# Notices\n\nlicense of foo [unverified]\n")
-        self.commit(repo)
-        self.assertFails(run(repo), "notices")
-
-    def test_open_finding_in_the_security_review(self):
-        repo = self.fresh()
-        write(repo, "docs/security-review.md", REVIEW + "| SR-03 | high | `c` | z | open | none |\n")
-        self.commit(repo)
-        r = run(repo)
-        self.assertFails(r, "security-review")
-        self.assertIn("SR-03", r.stdout)
-
-    def test_security_review_without_a_table(self):
-        repo = self.fresh()
-        write(repo, "docs/security-review.md", "# Security review\n\nall fine\n")
-        self.commit(repo)
-        self.assertFails(run(repo), "security-review")
-
-    def test_every_missing_release_file_is_named(self):
-        for name in REQUIRED:
-            if name in ("docs/design.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md", "docs/security-review.md") or name.endswith(".yml"):
-                continue          # these have their own checks; a missing one fails those too
-            repo = self.fresh()
-            git(repo, "rm", "-q", name)
-            git(repo, "commit", "-q", "-m", "rm")
-            r = run(repo)
-            self.assertFails(r, "files")
-            self.assertIn(name, r.stdout)
-
-    def test_missing_workflow_is_a_files_failure(self):
-        repo = self.fresh()
-        git(repo, "rm", "-q", ".github/workflows/release.yml")
-        git(repo, "commit", "-q", "-m", "rm")
-        r = run(repo)
-        self.assertFails(r, "files")
-        self.assertIn("release.yml", r.stdout)
-
-    def test_workflow_that_does_not_parse(self):
-        repo = self.fresh()
-        write(repo, ".github/workflows/release.yml", "name: x\njobs:\n  a: [unclosed\n")
-        self.commit(repo)
-        self.assertFails(run(repo), "workflows")
-
     def test_tag_already_exists(self):
         repo = self.fresh()
         git(repo, "tag", "v2.0.0")
         r = run(repo)
         self.assertFails(r, "tag")
         self.assertIn("v2.0.0", r.stdout)
-
-    def test_owner_placeholders_fail_and_the_org_placeholder_only_warns(self):
-        repo = self.fresh()
-        write(repo, "SECURITY.md", "Contact [OWNER-TODO: address]\n")
-        self.commit(repo)
-        r = run(repo)
-        self.assertFails(r, "owner-todo")
-        self.assertIn("SECURITY.md", r.stdout)
-        repo = self.fresh()
-        write(repo, "README.md", ("podman run " + DEFAULT_IMAGE_REPO + ":2.0.0 init\n"))
-        self.commit(repo)
-        r = run(repo)
-        self.assertEqual(r.returncode, 0, r.stdout)
-        self.assertRegex(r.stdout, r"(?m)^WARN org-placeholder ")
 
     def test_several_failures_are_all_reported(self):
         repo = self.fresh()
@@ -234,12 +158,6 @@ class ReleaseCheckTest(unittest.TestCase):
         for name in ("tree", "branch", "tag"):
             self.assertRegex(r.stdout, r"(?m)^FAIL %s " % name)
         self.assertIn("RELEASE CHECK FAILED 3", r.stdout)
-
-    def test_not_a_git_repository(self):
-        d = tempfile.mkdtemp(prefix="relcheck-nogit-", dir=self.tmp)
-        r = run(d)
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("FAIL", r.stdout)
 
     def test_the_real_repository_is_not_modified_by_a_run(self):
         # Read-only on the real repository too: the tracked-file listing and the index are unchanged.

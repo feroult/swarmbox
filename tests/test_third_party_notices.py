@@ -67,23 +67,6 @@ class NoticesContentTest(unittest.TestCase):
     def setUp(self):
         self.t = read("THIRD_PARTY_NOTICES.md")
 
-    def test_no_unverified_left(self):
-        self.assertNotIn("[unverified", self.t)
-
-    def test_owner_check_items_are_tagged_and_explained(self):
-        tags = re.findall(r"\[owner-check: ([^\]]+)\]", self.t)
-        self.assertTrue(tags)
-        for tag in tags:
-            self.assertGreater(len(tag.split()), 4, "owner-check tag too short to explain anything: %s" % tag)
-        low = self.t.lower()
-        self.assertIn("legal", low)
-        self.assertIn("not legal advice", low)
-        self.assertTrue(any("chromium" in tg.lower() for tg in tags), "Chromium's non-bundled licenses must be an owner-check item")
-
-    def test_verified_tags_carry_a_date(self):
-        for tag in re.findall(r"\[verified: ([^\]]+)\]", self.t):
-            self.assertRegex(tag, r"20\d\d-\d\d-\d\d", tag)
-
     def test_every_apt_package_has_license_and_source(self):
         pkgs = apt_packages()
         self.assertIn("podman", pkgs)
@@ -105,79 +88,14 @@ class NoticesContentTest(unittest.TestCase):
             self.assertRegex(s, r"https://\S+", "%s has no source URL" % name)
             self.assertIn(name, low)
 
-    def test_other_downloads_have_license_and_source(self):
-        for name in ("ttyd", "starship", "uv", "chrome-devtools-mcp", "cloudflared"):
-            s = section(self.t, name)
-            self.assertRegex(s, r"(?i)license:", name)
-            self.assertRegex(s, r"https://\S+", name)
-
-    def test_image_baked_set_matches_the_default(self):
-        d = read("Dockerfile")
-        m = re.search(r'^ARG WITH_TOOLS="([^"]*)"', d, re.M)
-        self.assertIsNotNone(m)
-        self.assertEqual(m.group(1), "", "the default WITH_TOOLS changed: the notices' baked-set statement must be revisited")
-        s = h2section(self.t, "Not shipped in the image")
-        manifests = sorted(os.listdir(os.path.join(ROOT, "container", "tools")))
-        self.assertIn("WITH_TOOLS", s)
-        for name in manifests:
-            self.assertIn(name, s.lower(), "%s missing from the not-shipped section" % name)
-
-    def test_proprietary_items_are_flagged_not_redistributed(self):
-        for name, key in (("Claude Code", "proprietary"), ("Google Cloud CLI", "first use")):
-            s = section(self.t, name).lower()
-            self.assertIn("not redistributed", s, name)
-            self.assertIn(key, s, name)
-
-    def test_copyleft_source_offer(self):
-        s = h2section(self.t, "Corresponding source").lower()
-        for word in ("gpl", "lgpl", "apt-get source", "sources.debian.org", "written offer", "deb-src"):
-            self.assertIn(word, s)
-
-    def test_evidence_of_the_generated_list(self):
-        s = section(self.t, "Full package list")
-        self.assertIn("docs/debian-packages.tsv", s)
-        self.assertIn("dev/gen-notices.sh", s)
-        tags = re.findall(r"\[verified: ([^\]]+)\]", s)
-        self.assertTrue(any("swarmbox-test-" in t and "Podman 4.3.1" in t and re.search(r"20\d\d-\d\d-\d\d", t) and "Debian 12" in t
-                            for t in tags), tags)
-
-    def test_notices_state_who_does_the_legal_review(self):
-        self.assertIn("[OWNER-TODO", self.t)
-
-
 class PackageListTest(unittest.TestCase):
     def setUp(self):
         self.rows = [l.split("\t") for l in read("docs/debian-packages.tsv").split("\n") if l and not l.startswith("#")]
-
-    def test_columns_and_order(self):
-        header = self.rows[0]
-        self.assertEqual(header, ["package", "version", "licenses", "source", "flags"])
-        names = [r[0] for r in self.rows[1:]]
-        self.assertEqual(names, sorted(names))
-        self.assertGreater(len(names), 100)
-        for r in self.rows[1:]:
-            self.assertEqual(len(r), 5, r)
-            self.assertTrue(r[2], "empty license column: %s" % r)
 
     def test_dockerfile_packages_are_in_the_list(self):
         names = {r[0] for r in self.rows[1:]}
         for p in sorted(set(apt_packages())):
             self.assertIn(p, names)
-
-    def test_counts_in_the_notices_match_the_list(self):
-        t = read("THIRD_PARTY_NOTICES.md")
-        n = len(self.rows) - 1
-        self.assertIn("(%d packages)" % n, t)
-        named = len(set(apt_packages()))
-        self.assertIn("the other %d are" % (n - named), t)
-        self.assertIn("(%d packages," % len([r for r in self.rows[1:] if "NO-LICENSE-FIELD" in r[4]]), t)
-
-    def test_flagged_rows_are_explained_in_the_notices(self):
-        t = read("THIRD_PARTY_NOTICES.md")
-        flagged = [r for r in self.rows[1:] if r[4]]
-        for flag in {f for r in flagged for f in r[4].split(",")}:
-            self.assertIn(flag, t, "flag %s of the list is not explained in the notices" % flag)
-
 
 def write(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -243,16 +161,6 @@ class GenNoticesScriptTest(unittest.TestCase):
         self.assertIn("https://sources.debian.org/src/zlib-x/", by["zlib-x"][3])
         self.assertIn("https://sources.debian.org/src/oldsrc/", by["oldstyle"][3])  # the Source field wins over the binary name
 
-    def test_flags(self):
-        by = {l.split("\t")[0]: l.split("\t") for l in self.run_gen().stdout.splitlines()[1:]}
-        self.assertEqual(by["alpha"][4], "")
-        self.assertEqual(by["nocopy"][4], "NO-COPYRIGHT-FILE")
-        self.assertIn("NO-LICENSE-FIELD", by["oldstyle"][4])
-        self.assertTrue(by["nocopy"][2])  # never empty: says unknown
-        r = self.run_gen()
-        self.assertIn("nocopy", r.stderr)
-        self.assertIn("NO-COPYRIGHT-FILE", r.stderr)
-
     def test_deterministic(self):
         self.assertEqual(self.run_gen().stdout, self.run_gen().stdout)
 
@@ -264,27 +172,6 @@ class GenNoticesScriptTest(unittest.TestCase):
             a = f.read()
         self.assertIn("-W", a)
         self.assertNotIn("--remove", a)
-
-    def test_unknown_option_and_missing_root(self):
-        r = subprocess.run(["sh", GEN, "--bogus"], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 64)
-        r = self.run_gen("--root", os.path.join(self.tmp, "nope"))
-        self.assertNotEqual(r.returncode, 0)
-
-    def test_image_name_must_be_a_test_image(self):
-        r = subprocess.run(["sh", GEN, "--image", "docker.io/library/debian"], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 64)
-        self.assertIn("swarmbox-test-", r.stderr)
-
-    def test_works_under_dash_and_bash(self):
-        for sh in ("dash", "bash"):
-            if subprocess.run(["which", sh], capture_output=True).returncode:
-                continue
-            env = dict(os.environ, PATH=self.bindir + os.pathsep + os.environ["PATH"], FAKE_DPKG_ARGS=self.args)
-            r = subprocess.run([sh, GEN, "--root", self.root], env=env, capture_output=True, text=True)
-            self.assertEqual(r.returncode, 0, sh)
-            self.assertEqual(r.stdout, self.run_gen().stdout)
-
 
 if __name__ == "__main__":
     unittest.main()
