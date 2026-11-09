@@ -226,12 +226,12 @@ class CommandMode(Base):
 
 class Banner(Base):
     def test_the_banner_and_the_health_lines_are_shown(self):
-        self.health("step 4 failed: migrate\nweb terminal keeps crashing; see web-terminal.log\n")
+        self.health("step 5 failed: ssh key\nweb terminal keeps crashing; see web-terminal.log\n")
         out = self.interactive("true").stdout
         self.assertIn("BANNER-ART", out)
-        self.assertIn("step 4 failed: migrate", out)
+        self.assertIn("step 5 failed: ssh key", out)
         self.assertIn("web terminal keeps crashing; see web-terminal.log", out)
-        self.assertLess(out.index("BANNER-ART"), out.index("step 4 failed"))
+        self.assertLess(out.index("BANNER-ART"), out.index("step 5 failed"))
 
     def test_an_empty_health_file_shows_nothing_after_the_banner(self):
         self.health("")

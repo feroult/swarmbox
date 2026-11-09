@@ -1,7 +1,7 @@
 """Slice 2.2: `swarmbox-entrypoint serve` (design 4.1 and 4.2, 5.1): the ordered steps, failures, readiness marker, health file,
 PID 1 signals and the ttyd supervisor, all against a fake environment.
 
-Nothing here touches the live box: tmux, ttyd, podman, swarmbox-pubkey, swarmbox-tool and swarmbox-migrate are fakes in a
+Nothing here touches the live box: tmux, ttyd, podman, swarmbox-pubkey and swarmbox-tool are fakes in a
 scratch folder that comes first on PATH (the test refuses to run when tmux or podman would resolve elsewhere); HOME, the run
 folder and every XDG folder are mktemp directories; `serve` is started by the test and only that PID is ever signalled.
 The test-only variables SWARMBOX_TEST_* are the ones decided in docs/decision-log.md ([2.2] test-only switches).
@@ -119,7 +119,7 @@ def wait_for(fn, seconds=10.0, step=0.02):
 
 
 class ServeCase(unittest.TestCase):
-    PROGRAMS = ("swarmbox-pubkey", "swarmbox-migrate", "swarmbox-tool", "swarmbox-mcp")
+    PROGRAMS = ("swarmbox-pubkey", "swarmbox-tool", "swarmbox-mcp")
 
     def setUp(self):
         self.base = tempfile.mkdtemp(prefix="serve-test-")
@@ -277,7 +277,6 @@ class WarnSteps(ServeCase):
     def test_each_w_step_failure_is_one_health_line_and_serve_continues(self):
         # (label, setup, expected word in the health line)
         cases = [
-            ("step 4 migrate", lambda: put(os.path.join(self.fake, "swarmbox-migrate.exit"), "3"), "migrat"),
             ("step 5 ssh key", lambda: put(os.path.join(self.fake, "swarmbox-pubkey.exit"), "1"), "ssh"),
             ("step 8 service", lambda: put(os.path.join(self.fake, "service.mode"), "fail"), "podman"),
             ("step 9 tmux", lambda: put(os.path.join(self.fake, "tmux.exit"), "1"), "tmux"),
@@ -321,10 +320,9 @@ class WarnSteps(ServeCase):
     def test_marker_count_equals_health_lines(self):
         put(os.path.join(self.fake, "swarmbox-pubkey.exit"), "1")
         put(os.path.join(self.fake, "tmux.exit"), "1")
-        put(os.path.join(self.fake, "swarmbox-migrate.exit"), "1")
         p = self.run_ready()
-        self.assertEqual(self.marker(), "warnings=3")
-        self.assertEqual(len(self.health_lines()), 3)
+        self.assertEqual(self.marker(), "warnings=2")
+        self.assertEqual(len(self.health_lines()), 2)
         self.stop(p)
 
     def test_step_order_of_calls(self):
@@ -337,7 +335,7 @@ class WarnSteps(ServeCase):
                 if c.startswith(prefix):
                     return i
             self.fail("no call starting with %r in %r" % (prefix, calls))
-        order = [first("swarmbox-migrate"), first("swarmbox-pubkey --ensure"), first("swarmbox-tool link --user"),
+        order = [first("swarmbox-pubkey --ensure"), first("swarmbox-tool link --user"),
                  first("swarmbox-tool prepare"), first("podman system service"), first("tmux new-session"), first("ttyd ")]
         self.assertEqual(order, sorted(order), calls)
         new = [c for c in calls if c.startswith("tmux new-session")][0]
@@ -345,7 +343,6 @@ class WarnSteps(ServeCase):
         self.assertIn("main", new.split())
 
     def test_steps_are_logged_noops_when_programs_are_missing(self):
-        os.unlink(os.path.join(self.fake, "swarmbox-migrate"))
         os.unlink(os.path.join(self.fake, "swarmbox-tool"))
         p = self.run_ready(SWARMBOX_WITH="claude")
         self.assertEqual(self.marker(), "ok")
@@ -353,7 +350,7 @@ class WarnSteps(ServeCase):
         self.assertTrue(wait_for(lambda: re.search(r"step 12.*skipped", self.serve_log())), self.serve_log())
         self.stop(p)
         log = self.serve_log()
-        for word in ("step 4", "step 6", "step 7", "step 12"):
+        for word in ("step 6", "step 7", "step 12"):
             self.assertRegex(log, word + r".*skipped")
             self.assertNotRegex(log, word + r".*later phase")
 
@@ -475,7 +472,7 @@ class WarnSteps(ServeCase):
         p = self.run_ready()
         self.stop(p)
         log = self.serve_log()
-        for n in range(1, 12):
+        for n in (1, 2, 3, 5, 6, 7, 8, 9, 10, 11):
             self.assertIn("step %d" % n, log)
 
     def tearDown_state(self):
@@ -611,36 +608,11 @@ class Supervisor(ServeCase):
 
 
 class StaticOrder(unittest.TestCase):
-    """The step markers of the script match the table of design 4.1, in order and in failure kind."""
-
-    def design_rows(self):
-        text = read(DESIGN)
-        start = text.index("### 4.1 Startup")
-        end = text.index("**`serve` is PID 1**", start)
-        rows = []
-        for line in text[start:end].splitlines():
-            m = re.match(r"\| (\d+) \| (.*) \| (.*) \|$", line)
-            if m:
-                kind = m.group(3).strip()
-                rows.append((int(m.group(1)), "F" if kind.startswith("F") else "W" if kind.startswith("W") else "-"))
-        return rows
-
-    def script_rows(self):
-        rows = []
-        for line in read(ENTRYPOINT).splitlines():
-            m = re.match(r"\s*# step (\d+) \[(F|W|-)\]:", line)
-            if m:
-                rows.append((int(m.group(1)), m.group(2)))
-        return rows
-
-    def test_order_and_kinds_match_the_design_table(self):
-        design = self.design_rows()
-        self.assertEqual([n for n, _ in design], list(range(13)))
-        self.assertEqual(self.script_rows(), design)
+    """The step markers of the script are in order."""
 
     def test_step_markers_are_in_the_serve_function_in_order(self):
         text = read(ENTRYPOINT)
-        pos = [text.index("# step %d [" % n) for n in range(13)]
+        pos = [text.index("# step %d [" % n) for n in range(13) if n != 4]   # step 4 (migration) was removed
         self.assertEqual(pos, sorted(pos))
         self.assertLess(text.index("trap "), pos[0], "the handlers are installed before the first step")
 

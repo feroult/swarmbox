@@ -64,7 +64,7 @@ jobs:
           fish --version
       - name: Shellcheck the new shell files
         run: |
-          shellcheck -s sh container/host/swarmbox-host container/scripts/swarmbox-init.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh dev/owner-check.sh dev/gen-notices.sh dev/release-version.sh dev/release-check.sh dev/name-check.sh
+          shellcheck -s sh container/host/swarmbox-host container/scripts/swarmbox-init.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh dev/gen-notices.sh dev/release-version.sh dev/release-check.sh dev/name-check.sh
           shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-tool.sh container/config/bashrc.sh
       - name: Validate the tool manifests (swarmbox-tool validate, no container)
         run: container/scripts/swarmbox-tool.sh validate container/tools
@@ -75,84 +75,8 @@ jobs:
           busybox sh -c 'echo busybox sh works'
           python3 tests/test_host_shells.py
           python3 tests/test_host_create_flags.py
-      - name: Unit and function tests
-        run: |
-          python3 tests/test_attach_command.py
-          python3 tests/test_attach_container.py
-          python3 tests/test_bashrc_container.py
-          python3 tests/test_bashrc_fragment.py
-          python3 tests/test_build_index.py
-          python3 tests/test_ci_workflow.py
-          python3 tests/test_cloudflare_setup.py
-          python3 tests/test_design_partb.py
-          python3 tests/test_dev_build.py
-          python3 tests/test_default_names_lint.py
-          python3 tests/test_dirs.py
-          python3 tests/test_dockerfile.py
-          python3 tests/test_docs_consistency.py
-          python3 tests/test_entrypoint.py
-          python3 tests/test_helpers.py
-          python3 tests/test_function_bash.py
-          python3 tests/test_function_fish.py
-          python3 tests/test_function_zsh.py
-          python3 tests/test_host_config.py
-          python3 tests/test_host_connector.py
-          python3 tests/test_host_create_flags.py
-          python3 tests/test_host_shells.py
-          python3 tests/test_host_socket.py
-          python3 tests/test_host_remote.py
-          python3 tests/test_host_remote_e2e_fake.py
-          python3 tests/test_host_up.py
-          python3 tests/test_host_update.py
-          python3 tests/test_registry_e2e.py
-          python3 tests/test_history_audit.py
-          python3 tests/test_init_output.py
-          python3 tests/test_image_build.py
-          python3 tests/test_image_with_tools.py
-          python3 tests/test_mcp_registry.py
-          python3 tests/test_migration.py
-          python3 tests/test_migration_e2e.py
-          python3 tests/test_owner_check.py
-          python3 tests/test_final_audit.py
-          python3 tests/test_parity.py
-          python3 tests/test_pubkey_ensure.py
-          python3 tests/test_name_check.py
-          python3 tests/test_release_check.py
-          python3 tests/test_release_checklist.py
-          python3 tests/test_release_docs.py
-          python3 tests/test_release_version.py
-          python3 tests/test_release_workflow.py
-          python3 tests/test_third_party_notices.py
-          python3 tests/test_security_review.py
-          python3 tests/test_update_bot_config.py
-          python3 tests/test_repo_files.py
-          python3 tests/test_retired_coverage.py
-          python3 tests/test_retired.py
-          python3 tests/test_run_all.py
-          python3 tests/test_serve_container.py
-          python3 tests/test_serve_steps.py
-          python3 tests/test_smoke_skeleton.py
-          python3 tests/test_spikes_common.py
-          python3 tests/test_ssh_key.py
-          python3 tests/test_starship.py
-          python3 tests/test_tool_install.py
-          python3 tests/test_tool_prepare.py
-          python3 tests/test_tool_opencode.py
-          python3 tests/test_tool_gemini_clasp_poetry.py
-          python3 tests/test_tool_go_gcloud.py
-          python3 tests/test_tool_use_remove.py
-          python3 tests/test_tool_new.py
-          python3 tests/test_tool_doctor.py
-          python3 tests/test_tool_image_level.py
-          python3 tests/test_record_checksums.py
-          python3 tests/test_tool_link.py
-          python3 tests/test_tool_manifest.py
-          python3 tests/test_tool_claude_real.py
-          python3 tests/test_tool_real.py
-          python3 tests/test_tool_shim.py
-          python3 tests/test_tool_stub.py
-          python3 tests/test_web_build.py
-          python3 tests/test_web_container.py
+      - name: Unit and function tests (tests/run_all.sh; the browser and real-installer tests run in their own jobs)
+        run: sh tests/run_all.sh
 
   # The image smoke test (design 13.3 layer 2) in full mode: the runner is level 1, the throwaway box level 2 and the
   # nested Podman inside it level 3, which is why the development box cannot run this. Image, containers and volumes are
@@ -251,30 +175,21 @@ jobs:
           python3 tests/test_host_remote_e2e_fake.py
           python3 tests/test_host_up.py
           python3 tests/test_host_update.py
-          python3 tests/test_registry_e2e.py
           python3 tests/test_image_build.py
           python3 tests/test_init_output.py
-          python3 tests/test_owner_check.py
-          python3 tests/test_final_audit.py
-          python3 tests/test_smoke_skeleton.py
           python3 tests/test_ssh_key.py
           python3 tests/test_starship.py
           python3 tests/test_cloudflare_setup.py
           python3 tests/test_ci_workflow.py
-          python3 tests/test_design_partb.py
           python3 tests/test_docs_consistency.py
           python3 tests/test_name_check.py
           python3 tests/test_release_check.py
           python3 tests/test_release_checklist.py
-          python3 tests/test_release_docs.py
           python3 tests/test_release_version.py
           python3 tests/test_release_workflow.py
           python3 tests/test_third_party_notices.py
           python3 tests/test_security_review.py
-          python3 tests/test_update_bot_config.py
           python3 tests/test_repo_files.py
-          python3 tests/test_retired_coverage.py
-          python3 tests/test_retired.py
           python3 tests/test_run_all.py
 
   # Browser tests are slow and need chromium and ttyd: they run on the weekly schedule (and by hand), in a Debian

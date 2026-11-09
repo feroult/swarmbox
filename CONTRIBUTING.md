@@ -34,19 +34,16 @@ python3 tests/test_docs_consistency.py
 | `test_ci_workflow.py` | static checks of `.github/workflows/ci.yml` (parsed with PyYAML; runs actionlint when `ACTIONLINT` or PATH has it) |
 | `test_clipboard_bridge.py` | the clipboard bridge page script, in a browser, on the page built by `container/web/build-index.sh` and rendered by `swarmbox-web` (needs a browser; about 40 s) |
 | `test_cloudflare_setup.py` | `cloudflare-setup.py` against a fake Cloudflare API |
-| `test_design_partb.py` | the shape of Part B of the design |
 | `test_dev_build.py` | `dev/dev-build.sh`, the dev image build with the apt override in a scratch copy (fake `podman`) |
 | `test_default_names_lint.py` | D40: fails when a product file or a test writes the default box name or image repository as a literal instead of reading `container/host/DEFAULTS` (retired spellings included; no allowances but the test itself) |
 | `test_dirs.py` | `container/scripts/dirs.sh`, the XDG-aware path file (sh, dash, bash) |
 | `test_dockerfile.py` | static checks of the 2.0 `Dockerfile` (no build) |
 | `test_docs_consistency.py` | cross-references, D and B numbers and code fences of the design and the plan |
 | `test_entrypoint.py` | the subcommands of `container/entrypoint.sh` (serve aside): dispatch with arguments kept, `host-helper` archive, any other command, fake programs on `PATH` |
-| `test_final_audit.py` | `dev/final-audit.sh`, the read-only end-of-phase audit (clean tree, no retired path tracked, branch `opensource`, only the tag `v0.1.0`, no `swarmbox-test-` leftovers), on throwaway git repositories with a fake `podman` |
 | `test_function_bash.py` | the generated function in bash (the shared case table of `tests/function_cases.py`: word routing, quoting, exit codes, the bootstrap, seeds) with fake `podman` and fake helper; the same table under `bash --posix`; a lint for bash 4 constructs (bash 3.2 itself is not run here) |
 | `test_function_fish.py` | the same case table in fish |
 | `test_function_zsh.py` | the same case table in zsh |
 | `test_helpers.py` | the fake `podman` of `tests/helpers.py` |
-| `test_history_audit.py` | the history scanner `tests/audit_history.py` and the shape of `docs/history-audit.md` |
 | `test_host_config.py` | `container/host/swarmbox-host`: `version`, `config get\|set\|list\|seed`, `env add\|rm\|list`, the token and the portable mode check (stat shims, a fake `ls`), all in mktemp homes with a pty for the token |
 | `test_host_connector.py` | the connector logic of `up` (`connector_ensure`): create, start, recreate on a changed token, the pinned image kept equal to `cloudflare-setup.py`, failures only warn, the token only in the environment of the fake `podman` |
 | `test_host_remote.py` | `remote setup\|status\|off\|token` of the helper over `cloudflare-setup.py` (a stub script and the real one for usage errors), `url` and `remote status` host lines, the tunnel token (precedence, mode 600, the terminal offer) |
@@ -56,33 +53,23 @@ python3 tests/test_docs_consistency.py
 | `test_host_socket.py` | the host connection `podman -c <name>` of `container/host/swarmbox-host` (`connection`, step 6 of `up`): the 100/101 byte boundary, the short symlink and its refusals, idempotent registration with a stateful fake `podman`, the real `podman system connection` in an isolated config, a stand-in socket server in a throwaway container, and a guard on the real Podman files |
 | `test_host_up.py` | `up`, `reset`, `stop` and `url` of the helper against the shared fake `podman` (rules and answers in sequence): the exact-name lookup, the fast path call budget, warnings, prerequisites, creation and cleanup by `--cidfile`, readiness, conflicts, the lock with real processes (two at once, SIGTERM, SIGKILL, stale, live holder), reset, stop, url |
 | `test_host_update.py` | `update [--to TAG]` of the helper against the shared fake `podman` and a fake image archive: the series, `--to`, invalid tags and images with no series, every failure leaving the helper, the config and the box unchanged, the local `X.Y.Z` tag, `reset` offline after `update`, the next function call keeping the new helper |
-| `test_registry_e2e.py` | opt-in (`SWARMBOX_E2E=1`, skipped otherwise): runs `tests/e2e_registry.py`, the install line, first call, joining, two terminals at once, `update` and `reset` offline and `update --to` against a `registry:2` throwaway container, in bash, zsh and fish (`docs/local-registry.md`) |
 | `test_image_build.py` | the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; builds `swarmbox-test-img-<rand>` and removes it) |
 | `test_image_with_tools.py` | `WITH_TOOLS` on a real image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; the real claude install needs `SWARMBOX_TEST_NETWORK=1`; builds `swarmbox-test-4b6-img` and removes it) |
 | `test_init_output.py` | `container/scripts/swarmbox-init.sh` and the templates: one marker pair per shell, seeds only for flags given, quoting, `--shell` and `SHELL`, idempotent output, nothing written, the hint on a terminal, `bash -n`, `zsh -n`, `fish --no-execute` |
 | `test_mcp_registry.py` | `container/scripts/swarmbox-mcp.sh` (the MCP registry generator, serve step 7) on a temp HOME and a copy of `container/mcp`: shape, `BROWSER_URL`, off switch, user override, bad files, no `npx`, atomic write |
-| `test_migration.py` | `container/scripts/swarmbox-migrate.sh` (the layout migration, serve step 4) on a fixture workspace built from the v0.1.0 code in mktemp, and `serve` running it |
-| `test_migration_e2e.py` | The whole 12.4 migration sequence on a larger fixture copy: the generated function, the real helper and a fake Podman (old container refused, removed, connection re-registered), then the real `container/scripts/swarmbox-migrate.sh` twice; the source fixture is hashed before and after. `[reduced: fixture]` |
 | `test_name_check.py` | `dev/name-check.sh` (slice 7.6, D25) against a fake curl: TAKEN, FREE and UNKNOWN per source, arguments reach the URLs, nothing is written. |
-| `test_owner_check.py` | `dev/owner-check.sh`, the hardware checks the owner runs on a Mac, WSL2, another UID or an older Podman (`docs/owner-checks.md`): fake `uname`, `/proc/version`, `xcode-select` and `podman`, dash, bash and sh, well-formed PASS/FAIL/SKIP lines, a FAIL gives exit 1, nothing outside its mktemp folder, only `swarmbox-test-` names, a box named `swarmbox` refused; the script as UID 65534 through `sudo -n -u` (reduced; skipped by name without sudo) |
-| `test_parity.py` | The parity suite (design 8.4, 12.2, 12.3, 13.2): one or more tests per row of the feature catalog against the function, the real helper, `serve`, `swarmbox-attach` (private tmux socket), `swarmbox-web`, the tool manifests and the Cloudflare wrapper; the removed items; the old flags compared with the recorded v0.1.0 run flags (`tests/fixtures/v0.1.0-run-flags.json`, made by `tests/record_v010_flags.py`). Rows that could only be checked reduced are tagged `[reduced]` and listed at the end of the run |
 | `test_pubkey_ensure.py` | `swarmbox-pubkey --ensure` (`container/scripts/ssh-key.sh`): once, idempotent, never overwrites, only under the test `HOME` |
-| `test_retired.py` | the absence test of slice 6.3: the v0.1.0 scripts (the start and build scripts, the old library folder, the old init script, the old OpenCode folder, the old web terminal script) and the v0.1.0 image file do not exist, no 2.0 source names them except as history, their counterparts exist, and the tag v0.1.0 still holds them |
-| `test_retired_coverage.py` | the inventory of the six deleted v0.1.0 test files (each old test mapped to the 2.0 test that pins it, or dropped with a reason in the decision log) and the guard that no other test names the retired v0.1.0 scripts (an allow-list holds the history uses) |
 | `test_release_check.py` | `dev/release-check.sh` (slice 7.6) on a fixture repository: passes when every condition holds, one named FAIL per violated condition, never modifies anything. |
 | `test_release_checklist.py` | `docs/release-checklist.md` lists every owner action with a command or place, the README install line is in the first screen, the B20 recheck kit exists and B20 stays open. |
-| `test_release_docs.py` | `SECURITY.md`, `CODE_OF_CONDUCT.md` and `CHANGELOG.md` (slice 7.1): the reporting section and the one marked owner placeholder each, the no-telemetry statement equal to the README's, both log paths, the changelog's 2.0.0 entry and links, and a grep of the product code for analytics hosts |
 | `test_release_version.py` | `dev/release-version.sh` (slice 7.5): `v2.0.0` gives `2.0.0`, `2.0` and `latest`; a missing `v`, a prerelease or build suffix, leading zeros, a missing or extra part, option-like or multi-line input are refused with exit 1; dash and bash print the same |
 | `test_release_workflow.py` | `.github/workflows/release.yml` and `.grype.yaml` (slice 7.5), validated locally only: tag trigger and the dry-run default, the `publish` rule, every pushing step gated on it, only `ghcr.io/feroult/swarmbox-dev`, permissions (the OIDC token only in `sign`, `contents: write` only in `notes`), both architectures native, the scan before the push, the helper-version check, signing of the digest, SBOM and notes, exact action versions; runs actionlint when present |
 | `test_repo_files.py` | `LICENSE`, `THIRD_PARTY_NOTICES.md`, this file and the three policy files being present and linked |
 | `test_security_review.py` | the security review of the host helper (slice 7.3): hostile values, planted symlinks at the temporary names and the lock, the tunnel token never in argv or output, `update --to` and archive checks, modes under umask 000, and `docs/security-review.md` (no open row, every row names an existing test) |
 | `test_serve_container.py` | `serve` in a throwaway container from the image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
 | `test_serve_steps.py` | `container/entrypoint.sh serve`: steps, failures, readiness marker, signals and the ttyd supervisor, with fakes on `PATH` |
-| `test_spikes_common.py` | the safety helpers of the spike scripts |
 | `test_ssh_key.py` | the SSH key handling of `container/scripts/ssh-key.sh` (`swarmbox-pubkey`) |
 | `test_starship.py` | the Starship prompt setup |
 | `test_run_all.py` | `tests/run_all.sh`, the full-regression runner (`--werror`, `--repeat N`, `--only`, `--list`), on small files only |
-| `test_update_bot_config.py` | `.github/dependabot.yml` (github-actions and docker, weekly), the inventory of every pinned version (each covered by the config or in the manual-bump table here), the checksum step for go and gcloud in this file and in the pull request template (slice 7.4) |
 | `test_third_party_notices.py` | `THIRD_PARTY_NOTICES.md` and `dev/gen-notices.sh` (slice 7.2): no `[unverified` left, owner-check items explained, every apt package and tool manifest with a license and a source URL, the copyleft source offer, the committed `docs/debian-packages.tsv` and its counts, and the script against a fake `dpkg-query` and a fixture doc tree (sorted, flags, read-only) |
 | `test_tool_claude_real.py` | the first call of Claude Code through the shim: fake-curl argument tests always; the real download in throwaway containers only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` (slow, about 330 MB) |
 | `test_tool_gemini_clasp_poetry.py` | the `gemini`, `clasp` and `poetry` tools: installers with a fake npm and a fake curl serving a fake Poetry installer (stay in the prefix, versions from the manifest, no cache outside it), validate on the real tools folder (agents latest, others pinned, unique PROVIDES), `tool-ports` listing 43323 and the host helper publishing it, the `clasp login` function in bash and zsh, the gemini alias and `yolo` |
@@ -102,13 +89,12 @@ python3 tests/test_docs_consistency.py
 | `test_tool_stub.py` | the parts of `container/scripts/swarmbox-tool.sh` that are still stubs (the later-phase exit 70 of `use`, `remove`, `doctor`, `new`), `link` with no manifests, and the empty `tool-ports` file |
 | `test_tmux_browser_keys.py` | the browser key bindings of tmux (real tmux on a private socket; about 60 s) |
 | `test_web_build.py` | `container/scripts/swarmbox-web.sh` against a fake ttyd (the cases of v0.1.0's `test_web_terminal.py` live here now), and with `serve` |
-| `test_smoke_skeleton.py` | the structure of `tests/smoke_image.py` (steps, tags, names, forbidden verbs); starts no container |
 | `test_web_container.py` | the web terminal, `pubkey`, `tool validate` and `host-helper` in a throwaway container (skipped unless `SWARMBOX_IMAGE_BUILD=1`; reduced: no nested Podman) |
 | `test_web_style.py` | the web terminal style, on the same page (needs a browser) |
 
 Run them all with `sh tests/run_all.sh` (one line per file with its test count; `--werror` runs each with `python3 -W error`, `--repeat 3` runs each file three times, `--only a.py,b.py` picks files). Shared helpers (the repository root, the fake `podman`, and later the
 fake host helper) are in `tests/helpers.py`. Write a test first, with fakes; use a real container only for a smoke
-test, with a `swarmbox-test-` name. The image smoke test is `tests/smoke_image.py` (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box (every result tagged `[reduced: development box, no nested Podman in the box]`, the nested steps skipped), `SWARMBOX_SMOKE_FULL=1` the full run for CI or your own host. The spike scripts in `tests/spikes/` are experiments, not part of the normal run (see `tests/spikes/README.md`).
+test, with a `swarmbox-test-` name. The image smoke test is `tests/smoke_image.py` (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box (every result tagged `[reduced: development box, no nested Podman in the box]`, the nested steps skipped), `SWARMBOX_SMOKE_FULL=1` the full run for CI or your own host.
 
 ## Building the image locally
 
@@ -138,8 +124,7 @@ See `docs/nested-podman.md` for the nested engine in detail.
 
 Every version the repository pins, who bumps it, and how. `.github/dependabot.yml` (Dependabot, weekly) bumps what its
 managers can read: the `uses:` lines of the workflows and a literal `FROM` line. It cannot read the shell-style
-`tool.conf` files or the `ARG` pins of the Dockerfile, so those are bumped by hand. `tests/test_update_bot_config.py` scans the
-repository and fails if a pin is neither covered by the config nor listed in this table.
+`tool.conf` files or the `ARG` pins of the Dockerfile, so those are bumped by hand. Keep this table in step with the pins.
 
 | Pin | Bumped by | How |
 |---|---|---|
