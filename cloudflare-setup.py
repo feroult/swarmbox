@@ -381,11 +381,11 @@ def step_tunnel(api, account, tunnel_name):
             die("tunnel '%s' is configured locally (config file), so its routes cannot be managed "
                 "through the API. Use another name with --tunnel." % tunnel_name)
         ok("tunnel '%s'" % tunnel_name)
-        return t["id"], False
+        return t["id"]
     created = api.call("POST", "/accounts/%s/cfd_tunnel" % account,
                        {"name": tunnel_name, "config_src": "cloudflare"}) or {}
     changed("tunnel '%s'" % tunnel_name, "created")
-    return created.get("id", "<new-tunnel>"), True
+    return created.get("id", "<new-tunnel>")
 
 
 def step_route(api, account, tunnel_id, host, port, team, aud):
@@ -474,7 +474,7 @@ def step_connector(api, account, tunnel_id, image, dry_run):
              "from your host shell.")
     if not shutil.which("podman"):
         warn("podman not found: run cloudflared yourself with this tunnel's token "
-             "(use --print-token), or install Podman.")
+             "(use the `token` command), or install Podman.")
         return False
     inspect = run_podman(["inspect", "-f",
                           "{{.State.Running}}|{{range .Config.Env}}{{println .}}{{end}}", CONNECTOR_NAME])
@@ -557,15 +557,21 @@ def get_token():
     return token
 
 
-def resolve_settings(args):
+def resolve_domain(args):
+    """(normalized domain, saved settings): --domain, else SWARMBOX_WEB_DOMAIN, else the saved one, else asked."""
     saved = load_saved()
     domain = args.domain or os.environ.get("SWARMBOX_WEB_DOMAIN") or saved.get("domain") \
         or ask("Domain (the Cloudflare zone, e.g. example.com; not a subdomain)")
     if not domain:
         die("--domain is required (e.g. --domain example.com)")
+    return domain.strip().lower().rstrip("."), saved
+
+
+def resolve_settings(args):
+    domain, saved = resolve_domain(args)
     emails = args.email or os.environ.get("SWARMBOX_WEB_EMAIL") or ",".join(saved.get("emails") or []) \
         or ask("E-mail(s) allowed to log in (comma separated)")
-    return domain.strip().lower().rstrip("."), parse_emails(emails), saved
+    return domain, parse_emails(emails), saved
 
 
 def hostname_for(args, domain, saved=None):
@@ -604,13 +610,11 @@ def cmd_apply(args):
         policy_id = step_policy(api, account, host, emails)
         aud, session = step_app(api, account, host, args.name, args.session, idp_id, policy_id,
                                 saved.get("session"))
-        tunnel_id, _created = step_tunnel(api, account, args.tunnel)
+        tunnel_id = step_tunnel(api, account, args.tunnel)
         step_route(api, account, tunnel_id, host, args.port, team, aud)
         step_dns(api, zone, host, tunnel_id)
         if not api.dry_run:
             save_config(domain, emails, args.tunnel, session, host, args.name)  # before the connector, so a retry needs no flags
-        if args.print_token and not tunnel_id.startswith("<new"):
-            say(api.call("GET", "/accounts/%s/cfd_tunnel/%s/token" % (account, tunnel_id)))
         connector_ok = True
         if not args.no_connector:
             image = args.connector_image or os.environ.get("SWARMBOX_CLOUDFLARED_IMAGE") or DEFAULT_CONNECTOR_IMAGE
@@ -645,7 +649,7 @@ def cmd_apply(args):
 
 
 def cmd_remove(args):
-    domain, _emails, saved = resolve_settings_for_remove(args)
+    domain, saved = resolve_domain(args)
     host = hostname_for(args, domain, saved)
     if not args.yes:
         answer = ask("Remove the SwarmBox web access for https://%s? [y/N]" % host)
@@ -698,19 +702,10 @@ def cmd_remove(args):
     return 0
 
 
-def resolve_settings_for_remove(args):
-    saved = load_saved()
-    domain = args.domain or os.environ.get("SWARMBOX_WEB_DOMAIN") or saved.get("domain") \
-        or ask("Domain (the Cloudflare zone, e.g. example.com; not a subdomain)")
-    if not domain:
-        die("--domain is required")
-    return domain.strip().lower().rstrip("."), [], saved
-
-
 def cmd_token(args):
     """Print ONLY the tunnel's own token on stdout (everything else goes to stderr), for
     export SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN="$(./cloudflare-setup.py token)"."""
-    domain, _emails, _ = resolve_settings_for_remove(args)
+    domain, _ = resolve_domain(args)
     api = Api(get_token())
     try:
         _zone, account = find_zone(api, domain)
@@ -758,7 +753,6 @@ def build_parser():
     p.add_argument("--no-connector", action="store_true", help="do not run cloudflared with Podman")
     p.add_argument("--connector-image", default=None,
                    help="cloudflared image (default: env SWARMBOX_CLOUDFLARED_IMAGE, else %s)" % DEFAULT_CONNECTOR_IMAGE)
-    p.add_argument("--print-token", action="store_true", help="print the tunnel token (to run cloudflared yourself)")
     p.add_argument("--no-verify", action="store_true", help="skip the final login check")
     p.add_argument("--verify-timeout", type=int, default=60, help=argparse.SUPPRESS)
     p.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation (remove)")

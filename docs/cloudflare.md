@@ -80,7 +80,6 @@ Options go after the subcommand and are passed to the script unchanged. The wrap
 | `--dry-run` | read-only: show what would change (also checks the API token); setup and off |
 | `--no-connector` | do not run `cloudflared` with Podman (run it yourself, with `swarmbox remote token`) |
 | `--connector-image` | the `cloudflared` image; see "The connector image" |
-| `--print-token` | print the tunnel token during setup (to run `cloudflared` yourself) |
 | `--no-verify` | skip the final login check |
 | `-y`, `--yes` | do not ask for confirmation (`remote off`) |
 

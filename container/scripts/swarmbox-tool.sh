@@ -1,20 +1,18 @@
 #!/bin/bash
 # swarmbox-tool (design 6; installed as /usr/local/bin/swarmbox-tool). Subcommands:
 #
-#   validate [DIR]  REAL (slice 4a.1): reads the manifests of both levels (or only the folder DIR) and checks the rules of 6.9.
-#                   Exit 0 all good, 1 a manifest failed, 64 usage.
-#   link --system  REAL (slice 4a.2): shims, index and tool-ports of the image level (see link_level below)
-#   link --user     REAL (slice 4a.2): shims and index of the user level, in the workspace dirs of dirs.sh; no tool-ports
-#   install NAME [--version X] [--force]  REAL (slice 4a.3): first-use install under the lock (see "install" below)
-#   run NAME COMMAND [-- ARGS...]          REAL (slice 4a.3): install when needed, then exec the real program
-#   list                                   REAL (slice 4a.3): every tool of both levels and its state
-#   update NAME                            REAL for UPDATE=self (runs UPDATE_CMD); a managed tool answers with how to update it, exit 1
-#   use NAME VERSION                       REAL (slice 4b.5): switches the active version of a managed tool (see "use, remove, new, doctor")
-#   remove NAME [--purge]                  REAL (4b.5): deletes the install of NAME in the workspace (--purge also its user-level manifest)
-#   new NAME [--repo | --dir DIR]          REAL (4b.5): writes a skeleton that passes validate (user level by default)
-#   doctor [--fix]                         REAL (4b.5): ok / needs reinstall / missing for every tool; --fix reinstalls the ones that need it
-#   prepare         REAL (slice 4b.2): runs the prepare.sh of every installed or WITH-declared tool (see "prepare" below)
-#   anything else   usage, exit 64
+#   validate [DIR]                         read the manifests of both levels (or only DIR) and check the rules of 6.9; 0 good, 1 failed
+#   link --system | --user                 shims and index of a level (the image level also writes tool-ports)
+#   install NAME [--version X] [--force]   first-use install under the lock (--image: at image build, into /opt/swarmbox/tools)
+#   run NAME COMMAND [-- ARGS...]          install when needed, then exec the real program
+#   list                                   every tool of both levels and its state
+#   update NAME                            runs UPDATE_CMD of a self-updating tool; a managed tool says how to update it, exit 1
+#   use NAME VERSION                       switch the active version of a managed tool
+#   remove NAME [--purge]                  delete the install of NAME (--purge also its user-level manifest)
+#   new NAME [--repo | --dir DIR]          write a skeleton that passes validate (user level by default)
+#   doctor [--fix]                         ok / needs reinstall / missing for every tool; --fix reinstalls the ones that need it
+#   prepare                                run the prepare.sh of every installed or WITH-declared tool
+#   anything else                          usage, exit 64
 #
 # Manifests (6.3) are shell-sourceable KEY=VALUE files. Loading one SOURCES it in a subshell, so it executes arbitrary shell:
 # that is why only two levels are ever read, the image (read-only, built from the repository) and the user level (the user's own
@@ -793,6 +791,10 @@ ensure_installed() {
     return "$rc"
 }
 
+# The state folder of the level in use, or exit 1; the manifest of NAME (sets M and MDIR), or exit 1.
+need_tdir() { TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }; }
+need_manifest() { find_manifest "$1" || { echo "swarmbox-tool: $FIND_ERR" >&2; exit 1; }; }
+
 check_tool_name() {
     if [[ ! "${1:-}" =~ $NAME_RE ]]; then
         echo "swarmbox-tool: '${1:-}' is not a tool name (lowercase letters, digits, - and _)" >&2
@@ -821,9 +823,9 @@ cmd_install() {
             *) usage ;;
         esac
     done
-    TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
+    need_tdir
     [ "$IMAGE_MODE" -eq 0 ] || TDIR=$IMAGE_STATE
-    find_manifest "$name" || { echo "swarmbox-tool: $FIND_ERR" >&2; exit 1; }
+    need_manifest "$name"
     if [ -n "$version" ] && [ -n "${M[SHA256_amd64]:-}" ] && [ "$version" != "${M[VERSION]:-}" ]; then
         echo "swarmbox-tool: $name is pinned to ${M[VERSION]}: its checksum is recorded for that version only, so no other version can be installed" >&2
         exit 1
@@ -846,8 +848,8 @@ cmd_run() {
         shift
     fi
     check_tool_name "$name"
-    TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
-    find_manifest "$name" || { echo "swarmbox-tool: $FIND_ERR" >&2; exit 1; }
+    need_tdir
+    need_manifest "$name"
     for c in ${M[PROVIDES]}; do [ "$c" != "$cmd" ] || found=1; done
     if [ "$found" -ne 1 ]; then
         echo "swarmbox-tool: '$name' does not provide the command '$cmd'" >&2
@@ -880,8 +882,8 @@ cmd_update() {
     [ $# -eq 1 ] || usage
     name=$1
     check_tool_name "$name"
-    TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
-    find_manifest "$name" || { echo "swarmbox-tool: $FIND_ERR" >&2; exit 1; }
+    need_tdir
+    need_manifest "$name"
     if [ "${M[UPDATE]:-managed}" != self ]; then
         echo "swarmbox-tool: $name is a managed tool: its version comes from the image. After \`swarmbox update\` and \`swarmbox reset\`, run \`swarmbox tool install $name --force\` to get the new one." >&2
         exit 1
@@ -906,7 +908,7 @@ cmd_update() {
 
 cmd_list() {
     [ $# -eq 0 ] || usage
-    TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
+    need_tdir
     local udir lvl root d name state cur seen=" " rows=()
     printf '%-16s %-6s %-8s %-8s %s\n' NAME KIND UPDATE LEVEL STATE
     for lvl in user image; do
@@ -987,7 +989,7 @@ prepare_after_install() {
 
 cmd_prepare() {
     [ $# -eq 0 ] || usage
-    TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; return 1; }
+    need_tdir
     local udir="" root d name failed=0 ldir
     udir=$(user_tools_dir) || udir=""
     local -a names
@@ -1132,8 +1134,8 @@ cmd_use() {
         echo "swarmbox-tool: '$version' is not a version name" >&2
         exit 64
     fi
-    TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
-    find_manifest "$name" || { echo "swarmbox-tool: $FIND_ERR" >&2; exit 1; }
+    need_tdir
+    need_manifest "$name"
     if [ "${M[UPDATE]:-managed}" = self ]; then
         echo "swarmbox-tool: $name updates itself (UPDATE=self), so it has no versions to switch between (6.7)" >&2
         exit 1
@@ -1363,7 +1365,7 @@ cmd_doctor() {
             *) usage ;;
         esac
     done
-    TDIR=$(tools_state_dir) || { echo "swarmbox-tool: cannot find dirs.sh" >&2; exit 1; }
+    need_tdir
     for lvl in user image; do
         if [ "$lvl" = user ]; then root=$(user_tools_dir) || continue; else root=$IMAGE_TOOLS; fi
         [ -d "$root" ] || continue
