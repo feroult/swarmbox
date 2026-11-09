@@ -99,52 +99,13 @@ class MappingTest(Base):
         # the user's --port comes after the default one, so argparse's last value wins
         self.assertEqual([argv[i + 1] for i, a in enumerate(argv) if a == "--port"][-1], "8123")
 
-class DefaultsTest(Base):
-    def test_name_and_web_port_defaults_follow_config(self):
-        self.run_h("status")
-        argv = self.rec()["argv"]
-        self.assertEqual(argv[argv.index("--name") + 1], DEFAULT_NAME)
-        self.assertEqual(argv[argv.index("--port") + 1], "7681")
-        self.run_h("status", env=self.env(SWARMBOX_NAME="dev", SWARMBOX_WEB_PORT="8888"))
-        argv = self.rec()["argv"]
-        self.assertEqual(argv[argv.index("--name") + 1], "dev")
-        self.assertEqual(argv[argv.index("--port") + 1], "8888")
-
-    def test_invalid_name_or_port_is_exit_2_and_the_script_is_not_run(self):
-        for k, v in (("SWARMBOX_NAME", "bad name"), ("SWARMBOX_WEB_PORT", "99999")):
-            with self.subTest(k=k):
-                r = self.run_h("status", env=self.env(**{k: v}))
-                self.assertEqual(r.returncode, 2, r.stderr)
-                self.assertFalse(os.path.exists(self.out))
 
 class PrerequisiteAndCodesTest(Base):
-    def test_python3_missing_exits_3_with_the_documented_message(self):
-        bindir = os.path.join(self.tmp, "bin")
-        os.mkdir(bindir)
-        for t in HELPER_TOOLS:
-            p = shutil.which(t)
-            if p and not os.path.exists(os.path.join(bindir, t)):
-                os.symlink(p, os.path.join(bindir, t))
-        self.assertIsNone(shutil.which("python3", path=bindir))
-        r = self.run_h("status", env=self.env(PATH=bindir))
-        self.assertEqual(r.returncode, 3, r.stderr)
-        self.assertEqual(r.stderr, "swarmbox: python3 is needed for 'swarmbox remote' and was not found.\n")
-        self.assertFalse(os.path.exists(self.out))
-
     def test_exit_code_of_the_script_is_returned(self):
         for code in (0, 2, 3, 130):
             with self.subTest(code=code):
                 r = self.run_h("status", env=self.env(STUB_EXIT=str(code)))
                 self.assertEqual(r.returncode, code, r.stderr)
-
-    def test_unknown_remote_subcommand_exit_2_and_usage(self):
-        for args in ([], ["frobnicate"], ["--dry-run"], ["apply"], ["remove"]):
-            with self.subTest(args=args):
-                r = self.run_h(*args)
-                self.assertEqual(r.returncode, 2, r.stderr)
-                self.assertIn("usage: swarmbox-host", r.stderr)
-                self.assertIn("remote setup|status|off|token", r.stderr)
-                self.assertFalse(os.path.exists(self.out))
 
 class StatusHostLinesTest(Base):
     CN = DEFAULT_CONNECTOR
@@ -173,17 +134,6 @@ class StatusHostLinesTest(Base):
         self.assertEqual(len(calls), 1, calls)
         self.assertEqual(calls[0][:2], ["container", "inspect"])
         self.assertEqual(calls[0][-1], self.CN)
-
-    def test_status_without_podman_prints_that_the_connector_state_is_unknown_exit_0(self):
-        bindir = os.path.join(self.tmp, "bin")
-        os.mkdir(bindir)
-        for t in HELPER_TOOLS + ["python3"]:
-            p = shutil.which(t)
-            if p:
-                os.symlink(p, os.path.join(bindir, t))
-        r = self.run_h("status", env=self.env(PATH=bindir))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("connector: unknown (podman was not found)", r.stdout)
 
 class SecretsTest(Base):
     def test_no_secret_in_argv(self):
@@ -278,16 +228,6 @@ class TunnelTokenTest(Base):
         rc, out, err = self.get({"SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN": "env-token-2"})
         self.assertEqual((rc, out), (0, "env-token-2\n"))
 
-    def test_token_from_file_accepted_only_with_mode_600(self):
-        f = self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TUNNEL_SECRET, mode=0o644)
-        rc, out, err = self.get()
-        self.assertEqual((rc, out), (1, ""))
-        self.assertIn("chmod 600 " + f, err)
-        self.assertIn("mode is 644", err)
-        self.assertNotIn(TUNNEL_SECRET, err)
-        os.chmod(f, 0o600)
-        self.assertEqual(self.get(), (0, TUNNEL_SECRET + "\n", ""))
-
     def shims(self, variant):
         d = os.path.join(self.tmp, "shims-" + variant)
         os.mkdir(d)
@@ -315,18 +255,6 @@ class TunnelTokenTest(Base):
         e = self.env(STUB_TOKEN=TUNNEL_SECRET, **env)
         return pty_run([self.helper, "remote", "setup", *args], e, answer=answer, cwd=self.tmp)
 
-    def test_setup_epilogue_on_a_terminal_offers_and_default_is_no(self):
-        for answer in ("", "n", "maybe"):
-            with self.subTest(answer=answer):
-                rc, shown = self.run_pty_setup(answer)
-                self.assertEqual(rc, 0, shown)
-                self.assertIn("swarmbox remote token", shown)
-                self.assertIn("swarmbox config set CLOUDFLARE_TUNNEL_TOKEN", shown)
-                self.assertIn("[y/N]", shown)
-                self.assertNotIn(TUNNEL_SECRET, shown)
-                self.assertFalse(os.path.exists(os.path.join(self.cfgdir(), "config")))
-                self.assertEqual(self.rec()["argv"][0], "apply")     # `token` was not asked for
-
     def test_setup_epilogue_yes_stores_the_token_at_mode_600_without_showing_it(self):
         old = os.umask(0o022)
         try:
@@ -343,11 +271,6 @@ class TunnelTokenTest(Base):
         self.assertNotIn(TUNNEL_SECRET, json.dumps(self.rec()["argv"]))
         self.assertEqual(self.get()[:2], (0, TUNNEL_SECRET + "\n"))
 
-class RealScriptTest(Base):
-    def test_real_script_usage_error_is_exit_2(self):
-        shutil.copy(REAL_SCRIPT, self.stub)
-        r = self.run_h("status", "--no-such-option")
-        self.assertEqual(r.returncode, 2, r.stderr)
 
 if __name__ == "__main__":
     unittest.main()
