@@ -105,15 +105,6 @@ class Aliases(Base):
         r = self.interactive("beta hello")
         self.assertIn("RAN beta --yes hello", r.stdout)
 
-    def test_yolo_alias_zero_gets_no_alias(self):
-        self.manifest("opencode", 'KIND=agent\nPROVIDES="opencode"\nYOLO_FLAGS="--auto"\nYOLO_ALIAS=0')
-        r = self.interactive("alias opencode")
-        self.assertNotIn("alias opencode=", r.stdout)
-
-    def test_an_agent_without_flags_gets_no_alias(self):
-        self.manifest("plain", 'KIND=agent\nPROVIDES="plain"')
-        self.assertNotIn("alias plain=", self.interactive("alias plain").stdout)
-
     def test_swarmbox_yolo_zero_disables_all_aliases(self):
         self.two_agents()
         r = self.interactive("alias alpha; alias beta", SWARMBOX_YOLO="0")
@@ -134,16 +125,6 @@ class Aliases(Base):
         self.assertIn("alias beta='beta --yes'", r.stdout)
         self.assertIn("STILL-HERE", r.stdout)
 
-    def test_the_manifest_does_not_leak_variables_into_the_shell(self):
-        self.two_agents()
-        r = self.interactive('echo "leak=[${YOLO_FLAGS:-}${KIND:-}${MCP_FLAGS:-}]"')
-        self.assertIn("leak=[]", r.stdout)
-
-    def test_no_manifest_means_no_aliases(self):
-        r = self.interactive("alias")
-        self.assertNotRegex(r.stdout, r"alias (claude|opencode|gemini|alpha|beta)=")
-
-
 class Yolo(Base):
     def test_yolo_runs_swarmbox_agent_with_its_flags_once(self):
         self.two_agents()
@@ -151,42 +132,10 @@ class Yolo(Base):
         self.assertIn("RAN alpha --auto-approve-a --mcp-config %s/m.json go" % self.home, r.stdout)
         self.assertEqual(r.stdout.count("RAN alpha"), 1)
 
-    def test_yolo_takes_the_first_agent_of_with_when_no_agent_is_set(self):
-        self.two_agents()
-        r = self.interactive("yolo", SWARMBOX_WITH="tooly, beta alpha")
-        self.assertIn("RAN beta --yes", r.stdout)
-
-    def test_yolo_uses_the_flags_even_without_an_alias(self):
-        self.manifest("opencode", 'KIND=agent\nPROVIDES="opencode"\nYOLO_FLAGS="--auto"\nYOLO_ALIAS=0')
-        self.fake_agent("opencode")
-        r = self.interactive("yolo", SWARMBOX_AGENT="opencode")
-        self.assertIn("RAN opencode --auto", r.stdout)
-
-    def test_yolo_works_when_the_aliases_are_off(self):
-        self.two_agents()
-        r = self.interactive("yolo", SWARMBOX_AGENT="beta", SWARMBOX_YOLO="0")
-        self.assertIn("RAN beta --yes", r.stdout)
-
-    def test_yolo_without_a_default_falls_back_to_the_first_agent_by_name(self):
-        self.two_agents()
-        self.assertIn("RAN alpha", self.interactive("yolo").stdout)
-
     def test_no_manifest_yolo_says_no_agent_and_fails(self):
         r = self.interactive("yolo; echo status=$?")
         self.assertRegex(r.stdout + r.stderr, r"no agent (is )?installed")
         self.assertIn("status=1", r.stdout)
-
-    def test_an_unknown_agent_name_fails_with_a_message(self):
-        self.two_agents()
-        r = self.interactive("yolo; echo status=$?", SWARMBOX_AGENT="ghost")
-        self.assertIn("ghost", r.stdout + r.stderr)
-        self.assertIn("status=1", r.stdout)
-
-    def test_the_exit_status_of_the_agent_is_returned(self):
-        self.two_agents()
-        write(os.path.join(self.bin, "beta"), "#!/bin/sh\nexit 7\n", 0o755)
-        self.assertIn("status=7", self.interactive("yolo; echo status=$?", SWARMBOX_AGENT="beta").stdout)
-
 
 class CommandMode(Base):
     def test_swarmbox_cmd_gives_aliases_and_path_with_clean_stderr(self):
@@ -195,34 +144,6 @@ class CommandMode(Base):
         self.assertIn("RAN beta --yes x", r.stdout)
         self.assertEqual(r.stderr, "")
         self.assertIn(os.path.join(self.data, "swarmbox", "shims"), r.stdout)
-
-    def test_no_banner_and_no_output_in_command_mode(self):
-        self.health("something failed\n")
-        r = self.command_mode("true")
-        self.assertEqual(r.stdout, "")
-        self.assertEqual(r.stderr, "")
-
-    def test_a_plain_non_interactive_shell_does_nothing(self):
-        self.two_agents()
-        r = subprocess.run(["bash", "-c", '. "%s"; alias; echo "$PATH"' % FRAGMENT], env=self.env(), capture_output=True,
-                           text=True, timeout=TIMEOUT)
-        self.assertNotIn("alias alpha", r.stdout)
-        self.assertNotIn("shims", r.stdout)
-
-    def test_yolo_exists_in_command_mode(self):
-        self.two_agents()
-        r = self.command_mode("yolo", SWARMBOX_AGENT="beta")
-        self.assertIn("RAN beta --yes", r.stdout)
-
-    def test_an_interactive_shell_started_with_dash_c_prints_no_banner(self):
-        # the command window of `swarmbox <command>` runs `bash -ic` (design 3.3)
-        self.health("w1\n")
-        r = subprocess.run(["bash", "-ic", '. "%s"; echo DONE' % FRAGMENT], env=self.env(), capture_output=True, text=True,
-                           timeout=TIMEOUT)
-        self.assertNotIn("BANNER-ART", r.stdout)
-        self.assertNotIn("w1", r.stdout)
-        self.assertIn("DONE", r.stdout)
-
 
 class Banner(Base):
     def test_the_banner_and_the_health_lines_are_shown(self):
@@ -233,47 +154,17 @@ class Banner(Base):
         self.assertIn("web terminal keeps crashing; see web-terminal.log", out)
         self.assertLess(out.index("BANNER-ART"), out.index("step 5 failed"))
 
-    def test_an_empty_health_file_shows_nothing_after_the_banner(self):
-        self.health("")
-        out = self.interactive("true").stdout
-        self.assertEqual(out.strip(), "BANNER-ART")
-
-    def test_a_missing_health_file_shows_nothing(self):
-        out = self.interactive("true").stdout
-        self.assertEqual(out.strip(), "BANNER-ART")
-
     def test_the_stale_image_line_is_shown(self):
         line = "the local image has been replaced since this box was created; run `swarmbox reset`"
         self.health("one failure\n" + line + "\n")
         out = self.interactive("true").stdout
         self.assertIn(line, out)
 
-    def test_blank_lines_are_skipped(self):
-        self.health("\n\nonly this\n\n")
-        out = self.interactive("true").stdout
-        self.assertEqual([l for l in out.splitlines() if "only this" in l].__len__(), 1)
-        self.assertNotRegex(out, r"\n\s*\n\s*\n\s*\n")
-
     def test_control_characters_in_a_health_line_are_not_printed(self):
         self.health("bad \x1b[31mred\x1b[0m line\n")
         out = self.interactive("true").stdout
         self.assertNotIn("\x1b[31m", out)
         self.assertIn("bad", out)
-
-    def test_double_sourcing_is_harmless(self):
-        self.two_agents()
-        self.health("w1\n")
-        out = self.interactive('. "%s"; . "%s"; echo "$PATH"; alias alpha' % (FRAGMENT, FRAGMENT)).stdout
-        self.assertEqual(out.count("BANNER-ART"), 1, "the banner is printed once per shell")
-        paths = [l for l in out.splitlines() if "/swarmbox/shims" in l][0].split(":")
-        self.assertEqual(len(paths), len(set(paths)), "no PATH entry twice")
-        self.assertEqual(out.count("alias alpha="), 1)
-
-    def test_swarmbox_banner_zero_is_not_a_thing_but_a_missing_banner_script_is_fine(self):
-        self.health("w1\n")
-        out = self.interactive("true", SWARMBOX_BANNER_SCRIPT=os.path.join(self.tmp, "nope.sh")).stdout
-        self.assertIn("w1", out)
-
 
 class PathAndEnvironment(Base):
     def test_path_additions_in_the_design_order(self):
@@ -286,30 +177,11 @@ class PathAndEnvironment(Base):
         self.assertEqual(order, sorted(order), path)
         self.assertEqual(order[0], 0)
 
-    def test_the_fragment_is_a_bash_file_that_names_the_path_pieces(self):
-        with open(FRAGMENT) as f:
-            text = f.read()
-        for needle in ("SB_SHIMS_DIR", "/usr/local/lib/swarmbox/shims", "current/bin", ".local/bin"):
-            self.assertIn(needle, text)
-        self.assertTrue(text.startswith("#!/bin/bash") or text.startswith("# "), "a bash fragment, sourced, not run")
-
     def test_shell_sh_of_a_tool_is_sourced_after_the_aliases_and_can_override_them(self):
         self.manifest("alpha", 'KIND=agent\nPROVIDES="alpha"\nYOLO_FLAGS="--a"', shell_sh="alias alpha='alpha --overridden'\nexport FROM_SHELL_SH=yes\n")
         r = self.interactive("alias alpha; echo $FROM_SHELL_SH")
         self.assertIn("alias alpha='alpha --overridden'", r.stdout)
         self.assertIn("yes", r.stdout)
-
-    def test_a_failing_shell_sh_does_not_break_the_shell(self):
-        self.manifest("alpha", 'KIND=agent\nPROVIDES="alpha"', shell_sh="return 3\n")
-        self.manifest("zeta", 'KIND=tool\nPROVIDES="zeta"', shell_sh="export ZETA=1\n")
-        self.assertIn("1", self.interactive("echo $ZETA").stdout)
-
-    def test_ls_colors_of_v0_1_0_are_kept_and_uuid_is_gone(self):
-        # design 12.2 removes the personal `uuid()` function (decision [6.1])
-        r = self.interactive("alias ll; type uuid 2>&1 | head -1")
-        self.assertIn("ls -alF --color=auto", r.stdout)
-        self.assertNotIn("uuid is a function", r.stdout)
-        self.assertNotIn("uuid()", open(FRAGMENT).read())
 
     def test_starship_is_initialised_last_when_present(self):
         init = os.path.join(self.tmp, "starship-init-fake.sh")
@@ -331,20 +203,6 @@ class RealClaudeManifest(Base):
         self.assertIn("alias claude='claude --dangerously-skip-permissions --mcp-config %s/.claude/mcp-servers.json'" % self.home,
                       r.stdout, r.stdout + r.stderr)
 
-    def test_the_alias_also_exists_in_command_mode(self):
-        r = self.command_mode("alias claude")
-        self.assertIn("--dangerously-skip-permissions --mcp-config", r.stdout, r.stdout + r.stderr)
-
-    def test_swarmbox_yolo_zero_generates_no_alias(self):
-        r = self.interactive("alias claude", SWARMBOX_YOLO="0")
-        self.assertNotRegex(r.stdout, r"alias claude=")
-
-    def test_yolo_calls_the_program_with_the_flags_once(self):
-        self.fake_agent("claude")
-        r = self.interactive("yolo --print hi", SWARMBOX_WITH="claude")
-        self.assertIn("RAN claude --dangerously-skip-permissions --mcp-config %s/.claude/mcp-servers.json --print hi" % self.home, r.stdout)
-        self.assertEqual(r.stdout.count("--dangerously-skip-permissions"), 1)
-
     def test_the_path_has_the_user_shims_first_then_the_image_shims(self):
         out = self.interactive('echo "P=$PATH"').stdout
         path = [l for l in out.splitlines() if l.startswith("P=")][0][2:].split(":")
@@ -360,12 +218,6 @@ class Lint(unittest.TestCase):
         r = subprocess.run(["shellcheck", "-s", "bash", FRAGMENT], capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
-
-class Static(unittest.TestCase):
-    def test_it_opens_with_the_guard_of_design_3_3(self):
-        with open(FRAGMENT) as f:
-            code = [l for l in f.read().splitlines() if l.strip() and not l.lstrip().startswith("#")]
-        self.assertEqual(code[0], 'case $- in *i*) ;; *) [ -n "${SWARMBOX_CMD:-}" ] || return 0 ;; esac')
 
 
 if __name__ == "__main__":

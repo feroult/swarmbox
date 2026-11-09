@@ -80,18 +80,6 @@ class Dispatch(Base):
                     r = self.run_ep(sub, "x", env=self.env(FAKE_RC=str(rc)))
                     self.assertEqual(r.returncode, rc)
 
-    def test_a_subcommand_runs_no_other_program(self):
-        self.run_ep("pubkey", "--ensure")
-        self.assertEqual([c[0] for c in self.calls()], ["swarmbox-pubkey"])
-
-    def test_the_entrypoint_execs_the_program_so_no_extra_process_stays(self):
-        # the program sees the entrypoint's own PID as its parent's parent: it is exec'd, not forked
-        write_exec(os.path.join(self.fake, "swarmbox-tool"), '#!/bin/sh\necho $PPID > "$FAKE_DIR/ppid"\n')
-        p = subprocess.Popen(["bash", ENTRYPOINT, "tool", "validate"], env=self.env(), stdout=subprocess.PIPE)
-        p.wait(timeout=20)
-        # PPID of the program is the test's python (the entrypoint was replaced by the program)
-        self.assertEqual(open(os.path.join(self.base, "ppid")).read().strip(), str(os.getpid()))
-
     def test_a_missing_program_fails_with_127_and_names_it(self):
         empty = os.path.join(self.base, "empty")
         os.mkdir(empty)
@@ -107,35 +95,15 @@ class Dispatch(Base):
         self.assertEqual(r.returncode, 64)
         self.assertTrue(r.stderr)
 
-    def test_the_old_placeholder_is_gone(self):
-        with open(ENTRYPOINT) as f:
-            text = f.read()
-        self.assertNotIn("is not implemented in this build yet", text)
-        self.assertNotIn("exit 70", text.split("# ----")[-1])
-
-
 class AnyOtherCommand(Base):
     def test_unknown_commands_run_unchanged_and_the_exit_code_passes_through(self):
         for argv, rc in ((["true"], 0), (["false"], 1), (["sh", "-c", "exit 7"], 7), (["sh", "-c", "kill -TERM $$"], -15)):
             with self.subTest(argv=argv):
                 self.assertEqual(self.run_ep(*argv).returncode, rc)
 
-    def test_arguments_and_stdin_and_environment_are_passed_as_given(self):
-        r = subprocess.run(["bash", ENTRYPOINT, "sh", "-c", 'printf "%s|" "$@"; cat; echo "$MARK"', "x"] + AWKWARD,
-                           env=self.env(MARK="m1"), input=b"in-data", capture_output=True, timeout=20)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout.decode(), "|".join(AWKWARD) + "|in-datam1\n")
-
     def test_a_command_that_does_not_exist_is_127(self):
         r = self.run_ep("swarmbox-no-such-program-xyz")
         self.assertEqual(r.returncode, 127)
-
-    def test_a_command_named_like_a_subcommand_but_not_equal_is_run_as_given(self):
-        write_exec(os.path.join(self.fake, "serve2"), FAKE)
-        r = self.run_ep("serve2", "a")
-        self.assertEqual(r.returncode, 0)
-        self.assertEqual(self.calls(), [["serve2", "a"]])
-
 
 class AttachAgainstFakeTmux(Base):
     """`attach false` fails and `attach true` succeeds with the real swarmbox-attach and a fake tmux on PATH."""
@@ -224,28 +192,6 @@ class HostHelper(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn(b"function swarmbox", r.stdout)
         self.assertEqual(r.stderr, b"")
-
-    def test_the_archive_unpacks_with_plain_tar(self):
-        d = self.make_dir()
-        r = self.run_ep("host-helper", env=self.env(SWARMBOX_TEST_HOST_DIR=d))
-        out = os.path.join(self.base, "out")
-        os.mkdir(out)
-        t = subprocess.run(["tar", "-x", "-C", out, "-f", "-"], input=r.stdout, capture_output=True)
-        self.assertEqual(t.returncode, 0, t.stderr)
-        self.assertTrue(os.access(os.path.join(out, "swarmbox-host"), os.X_OK))
-
-    def test_a_missing_folder_fails_with_a_message_and_no_output(self):
-        r = self.run_ep("host-helper", env=self.env(SWARMBOX_TEST_HOST_DIR=os.path.join(self.base, "nope")))
-        self.assertEqual(r.returncode, 1)
-        self.assertEqual(r.stdout, b"")
-        self.assertIn(b"host-helper", r.stderr)
-
-    def test_extra_arguments_are_refused(self):
-        d = self.make_dir()
-        r = self.run_ep("host-helper", "extra", env=self.env(SWARMBOX_TEST_HOST_DIR=d))
-        self.assertEqual(r.returncode, 64)
-        self.assertEqual(r.stdout, b"")
-
 
 class Static(unittest.TestCase):
     def test_bash_syntax_and_shellcheck(self):

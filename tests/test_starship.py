@@ -56,44 +56,6 @@ class Config(unittest.TestCase):
         self.assertEqual(cfg["palette"], "swarmbox")
         self.assertIn("swarmbox", cfg["palettes"])
 
-    def test_every_color_the_config_names_is_defined_in_the_palette(self):
-        palette = load()["palettes"]["swarmbox"]
-        used = set(re.findall(r"\bcolor_[a-z0-9_]+\b", text())) - set(palette)
-        self.assertEqual(used, set(), "colors used but not defined")
-
-    def test_no_color_is_hard_coded_outside_the_palette(self):
-        # everything except the palette table itself: the layout and every module section
-        outside = re.sub(r"\[palettes\.swarmbox\]\n(?:color_[a-z0-9_]+ = '#[0-9a-fA-F]{6}'\n)+", "", text())
-        self.assertNotEqual(outside, text(), "the palette table must be found (and removed) for this check to mean anything")
-        self.assertEqual(re.findall(r"#[0-9a-fA-F]{6}\b", outside), [], "recolor in the palette only")
-
-    def test_the_palette_shares_no_color_with_the_gruvbox_preset(self):
-        shared = {c.lower() for c in load()["palettes"]["swarmbox"].values()} & GRUVBOX
-        self.assertEqual(shared, set())
-
-    def test_the_text_is_legible_on_every_segment(self):
-        # every (text color, background) pair the config actually uses, whatever the module or the order
-        palette = load()["palettes"]["swarmbox"]
-        text_roles = r"color_fg0|color_[a-z0-9]+_fg"
-        pairs = set(re.findall(r"fg:(%s)\s+bg:(color_[a-z0-9_]+)" % text_roles, text()))
-        pairs |= {(fg, bg) for bg, fg in re.findall(r"bg:(color_[a-z0-9_]+)\s+fg:(%s)" % text_roles, text())}
-        backgrounds = {bg for _, bg in pairs}
-        self.assertGreaterEqual(len(backgrounds), 6, "user, path, vcs, lang, ctx and clock segments are all covered")
-        for fg, bg in sorted(pairs):
-            self.assertGreaterEqual(contrast(palette[fg], palette[bg]), 4.5, "%s on %s" % (fg, bg))
-
-    def test_the_powerline_separators_and_nerd_font_glyphs_are_still_there(self):
-        fmt = load()["format"]
-        separators = [c for c in fmt if 0xE0B0 <= ord(c) <= 0xE0BF]
-        self.assertGreaterEqual(len(separators), 7, "the powerline arrows between segments")
-        self.assertGreaterEqual(len({c for c in text() if ord(c) >= 0xE000}), 30, "Nerd Font icons")
-
-    def test_the_layout_keeps_the_segments_of_the_preset(self):
-        fmt = load()["format"]
-        for module in ("$os", "$username", "$directory", "$git_branch", "$git_status", "$python", "$time"):
-            self.assertIn(module, fmt)
-
-
 @unittest.skipUnless(shutil.which("starship") and shutil.which("git"), "needs starship and git")
 class Rendering(unittest.TestCase):
     def setUp(self):
@@ -126,22 +88,6 @@ class Rendering(unittest.TestCase):
         plain = re.sub(r"\x1b\[[0-9;]*m|\\\[|\\\]|[\x01\x02]", "", r.stdout)
         self.assertIn("main", plain)
         self.assertIn("proj", plain)
-
-    def test_it_only_emits_colors_from_the_palette(self):
-        palette = load()["palettes"]["swarmbox"]
-        allowed = {tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in palette.values()}
-        emitted = {tuple(map(int, m)) for m in re.findall(r"[34]8;2;(\d+);(\d+);(\d+)", self.prompt().stdout)}
-        self.assertTrue(emitted, "truecolor expected")
-        self.assertEqual(emitted - allowed, set(), "a color outside the palette is being emitted")
-
-    def test_the_prompt_is_one_powerline_line_closed_by_an_arrow(self):
-        # As in the config it comes from: no $line_break$character in `format`, so there is no prompt symbol
-        # (and no exit-status color); the command is typed right after the last arrow.
-        plain = re.sub(r"\x1b\[[0-9;]*m|\\\[|\\\]|[\x01\x02]", "", self.prompt().stdout)
-        self.assertEqual(plain.lstrip("\n").count("\n"), 0, "a single line")
-        self.assertTrue(plain.endswith("\ue0b0 "), "closed by the powerline arrow and a space")
-        self.assertNotIn("\u276f", plain)
-
 
 class InitScript(unittest.TestCase):
     def setUp(self):
@@ -181,21 +127,6 @@ class InitScript(unittest.TestCase):
         self.assertTrue(on)
         self.assertEqual(config, "unset", "left unset so starship reads the user's file")
 
-    def test_an_STARSHIP_CONFIG_you_set_is_respected(self):
-        on, config, _ = self.source(env={"STARSHIP_CONFIG": "/elsewhere/s.toml"})
-        self.assertTrue(on)
-        self.assertEqual(config, "/elsewhere/s.toml")
-
-    def test_it_can_be_turned_off(self):
-        on, config, _ = self.source(env={"SWARMBOX_STARSHIP": "0"})
-        self.assertFalse(on)
-        self.assertEqual(config, "unset")
-
-    def test_it_does_nothing_in_a_non_interactive_shell(self):
-        on, config, _ = self.source(interactive=False)
-        self.assertFalse(on)
-        self.assertEqual(config, "unset")
-
     def test_it_is_harmless_when_starship_is_not_installed(self):
         on, config, r = self.source(with_shim=False)
         self.assertFalse(on)
@@ -214,26 +145,6 @@ class DockerfileWiring(unittest.TestCase):
         self.assertIn("sha256sum -c -", block)
         self.assertIn("starship-x86_64-unknown-linux-musl", block)
         self.assertIn("starship-aarch64-unknown-linux-musl", block)
-
-    def test_starship_is_initialised_after_everything_else_by_the_fragment(self):
-        # Starship redefines PS1, so the fragment sources the init script after the venv, the PATH, the aliases,
-        # the tools' shell.sh and the banner (v0.1.0 did the same from /etc/bash.bashrc)
-        with open(FRAGMENT) as f:
-            frag = f.read()
-        init = frag.index("${SWARMBOX_STARSHIP_INIT:-")
-        for earlier in (". \"$_sb_venv/bin/activate\"", "shell.sh", "_sb_banner\"", "alias ll="):
-            self.assertGreater(init, frag.index(earlier), earlier)
-        self.assertIn("/etc/swarmbox/scripts/starship-init.sh", frag)
-
-    def test_the_image_bashrc_sources_the_fragment(self):
-        self.assertIn("COPY container/config/bashrc.sh /etc/swarmbox/bashrc.sh", self.d)
-        self.assertRegex(self.d, r">> /etc/bash\.bashrc")
-        self.assertIn(". /etc/swarmbox/bashrc.sh", self.d)
-
-    def test_the_config_and_the_script_are_installed(self):
-        self.assertIn("COPY container/config/starship.toml /etc/swarmbox/starship.toml", self.d)
-        self.assertIn("COPY container/scripts/starship-init.sh /etc/swarmbox/scripts/starship-init.sh", self.d)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

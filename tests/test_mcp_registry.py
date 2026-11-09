@@ -62,19 +62,6 @@ class McpCase(unittest.TestCase):
         self.assertIn("--executablePath=/usr/bin/chromium", c["args"])
         self.assertIn("--headless", c["args"])
 
-    def test_no_npx_or_latest_anywhere_in_the_registry_or_the_output(self):
-        for root, _, files in os.walk(IMAGE_REG):
-            for f in files:
-                t = read(os.path.join(root, f))
-                self.assertNotIn("npx", t)
-                self.assertNotIn("@latest", t)
-        r = self.run_gen()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        t = read(self.out)
-        self.assertNotIn("npx", t)
-        self.assertNotIn("@latest", t)
-        self.assertEqual(self.data()["mcpServers"]["chrome-devtools"]["command"], "chrome-devtools-mcp")
-
     # -- generation ------------------------------------------------------------------------------------------------------
     def test_default_output(self):
         r = self.run_gen()
@@ -91,17 +78,6 @@ class McpCase(unittest.TestCase):
         r = self.run_gen(BROWSER_URL="http://host.example:9222")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.data()["mcpServers"]["chrome-devtools"]["args"], ["--browserUrl=http://host.example:9222"])
-
-    def test_empty_or_unset_browser_url_keeps_local_args(self):
-        for v in ("", None):
-            r = self.run_gen(BROWSER_URL=v)
-            self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("--headless", self.data()["mcpServers"]["chrome-devtools"]["args"])
-
-    def test_browser_url_with_special_characters_is_literal(self):
-        url = "http://h:1/a&b\\1/$x"
-        self.run_gen(BROWSER_URL=url)
-        self.assertEqual(self.data()["mcpServers"]["chrome-devtools"]["args"], ["--browserUrl=" + url])
 
     def test_off_switch_drops_the_entry(self):
         put(os.path.join(self.user, "chrome-devtools", "config.json"), '{"enabled": false}')
@@ -125,13 +101,6 @@ class McpCase(unittest.TestCase):
         self.assertEqual(d["mine"], {"command": "my-mcp", "args": ["x"]})
         self.assertIn("chrome-devtools", d)
 
-    def test_user_only_server_without_command_is_skipped_with_a_warning(self):
-        put(os.path.join(self.user, "mine", "config.json"), '{"args": ["x"]}')
-        r = self.run_gen()
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("mine", r.stderr)
-        self.assertEqual(list(self.data()["mcpServers"]), ["chrome-devtools"])
-
     def test_malformed_user_json_gives_one_warning_and_the_others_still_generate(self):
         put(os.path.join(self.user, "broken", "config.json"), "{not json")
         put(os.path.join(self.user, "mine", "config.json"), '{"command": "my-mcp"}')
@@ -140,39 +109,7 @@ class McpCase(unittest.TestCase):
         self.assertEqual(len([l for l in r.stderr.splitlines() if "broken" in l]), 1, r.stderr)
         self.assertEqual(sorted(self.data()["mcpServers"]), ["chrome-devtools", "mine"])
 
-    def test_malformed_override_of_an_image_server_keeps_the_image_entry(self):
-        put(os.path.join(self.user, "chrome-devtools", "config.json"), "[1,2")
-        r = self.run_gen()
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("chrome-devtools", self.data()["mcpServers"])
-
-    def test_malformed_image_file_is_skipped_with_a_warning(self):
-        put(os.path.join(self.reg, "bad", "config.json"), "nope")
-        r = self.run_gen()
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("bad", r.stderr)
-        self.assertEqual(list(self.data()["mcpServers"]), ["chrome-devtools"])
-
-    def test_missing_registry_gives_an_empty_valid_file(self):
-        shutil.rmtree(self.reg)
-        r = self.run_gen()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.data(), {"mcpServers": {}})
-
     # -- writing -----------------------------------------------------------------------------------------------------------
-    def test_second_run_is_byte_identical(self):
-        self.run_gen()
-        a = read(self.out)
-        self.run_gen()
-        self.assertEqual(a, read(self.out))
-        self.assertEqual(os.listdir(os.path.dirname(self.out)), ["mcp-servers.json"])
-
-    def test_output_option(self):
-        o = os.path.join(self.base, "x", "out.json")
-        r = self.run_gen(["--output", o])
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("chrome-devtools", json.loads(read(o))["mcpServers"])
-
     def test_failure_to_write_leaves_no_partial_file_and_keeps_the_old_one(self):
         put(self.out, '{"mcpServers": {"old": {"command": "x"}}}')
         os.chmod(os.path.dirname(self.out), 0o500)

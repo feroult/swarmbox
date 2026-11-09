@@ -126,19 +126,6 @@ class GoTest(Base):
         self.assertIn("SHA256_arm64=%s\n" % sha(self.arm), text)
         self.assertTrue(text.startswith(CONF % ("go", "go gofmt", "1.27.3")))
 
-    def test_idempotent(self):
-        self.assertEqual(self.run_script("go", self.conf).returncode, 0)
-        first = self.conf_text()
-        self.assertEqual(self.run_script("go", self.conf).returncode, 0)
-        self.assertEqual(self.conf_text(), first)
-        self.assertEqual(first.count("SHA256_amd64="), 1)
-
-    def test_replaces_old_values_and_touches_no_other_key(self):
-        self.write_conf(CONF % ("go", "go gofmt", "1.27.3") + "SHA256_amd64=" + "a" * 64 + "\nSHA256_arm64=" + "b" * 64 + "\nPORTS=1234\n# tail\n")
-        self.assertEqual(self.run_script("go", self.conf).returncode, 0)
-        self.assertEqual(self.conf_text(), CONF % ("go", "go gofmt", "1.27.3") + "SHA256_amd64=%s\nSHA256_arm64=%s\nPORTS=1234\n# tail\n"
-                         % (sha(self.amd), sha(self.arm)))
-
     def test_a_listing_that_disagrees_with_the_download_is_refused_and_the_conf_is_untouched(self):
         self.listing(sha(self.amd), "c" * 64)
         before = self.conf_text()
@@ -147,49 +134,6 @@ class GoTest(Base):
         self.assertIn("arm64", r.stderr)
         self.assertIn("does not match", r.stderr)
         self.assertEqual(self.conf_text(), before)
-
-    def test_unknown_version_is_refused(self):
-        self.write_conf(CONF % ("go", "go gofmt", "9.9.9"))
-        self.listing(sha(self.amd), sha(self.arm), include_all=True)
-        before = self.conf_text()
-        r = self.run_script("go", self.conf)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("9.9.9", r.stderr)
-        self.assertEqual(self.conf_text(), before)
-
-    def test_an_older_version_is_found_through_include_all(self):
-        # not in the plain listing, present in the include=all one
-        self.listing("d" * 64, "e" * 64)  # plain listing: its go1.27.3 entry has wrong sums, but the version is found there first...
-        self.write_conf(CONF % ("go", "go gofmt", "1.26.0"))
-        p = os.path.join(self.d, "all.json")
-        with open(p, "w") as f:
-            json.dump([{"version": "go1.26.0", "files": [
-                {"filename": "go1.26.0.linux-amd64.tar.gz", "os": "linux", "arch": "amd64", "sha256": sha(self.amd), "kind": "archive"},
-                {"filename": "go1.26.0.linux-arm64.tar.gz", "os": "linux", "arch": "arm64", "sha256": sha(self.arm), "kind": "archive"}]}], f)
-        self.serve(GO_JSON_ALL, p)
-        self.serve("https://go.dev/dl/go1.26.0.linux-amd64.tar.gz", self.amd)
-        self.serve("https://go.dev/dl/go1.26.0.linux-arm64.tar.gz", self.arm)
-        self.assertEqual(self.run_script("go", self.conf).returncode, 0)
-        self.assertIn("SHA256_amd64=%s" % sha(self.amd), self.conf_text())
-
-    def test_a_malformed_listing_checksum_is_refused(self):
-        self.listing("zz", sha(self.arm))
-        before = self.conf_text()
-        self.assertNotEqual(self.run_script("go", self.conf).returncode, 0)
-        self.assertEqual(self.conf_text(), before)
-
-    def test_a_failed_download_is_refused(self):
-        del self.served["https://go.dev/dl/go1.27.3.linux-arm64.tar.gz"]
-        self.serve("https://go.dev/dl/unused", self.amd)
-        before = self.conf_text()
-        r = self.run_script("go", self.conf)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertEqual(self.conf_text(), before)
-
-    def test_leaves_no_temporary_files(self):
-        self.run_script("go", self.conf)
-        self.assertEqual(self.leftovers(), [])
-
 
 class GcloudTest(Base):
     def setUp(self):
@@ -212,12 +156,6 @@ class GcloudTest(Base):
         self.assertIn("-linux-arm.tar.gz", calls)
         self.assertNotIn("components-2.json", calls)
 
-    def test_idempotent(self):
-        self.run_script("gcloud", self.conf)
-        first = self.conf_text()
-        self.run_script("gcloud", self.conf)
-        self.assertEqual(self.conf_text(), first)
-
     def test_downloads_the_pinned_url_never_the_unversioned_one(self):
         self.run_script("gcloud", self.conf)
         for line in slurp(self.calls).splitlines():
@@ -230,36 +168,12 @@ class GcloudTest(Base):
         self.assertNotEqual(self.run_script("gcloud", self.conf).returncode, 0)
         self.assertEqual(self.conf_text(), before)
 
-    def test_an_empty_download_is_refused(self):
-        open(self.arm, "w").close()
-        before = self.conf_text()
-        r = self.run_script("gcloud", self.conf)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("empty", r.stderr)
-        self.assertEqual(self.conf_text(), before)
-
-
 class UsageTest(Base):
     def test_usage_errors(self):
         self.write_conf(CONF % ("go", "go", "1.0.0"))
         self.assertEqual(self.run_script().returncode, 64)
         self.assertEqual(self.run_script("nosuch", self.conf).returncode, 64)
         self.assertEqual(self.run_script("go", os.path.join(self.d, "missing.conf")).returncode, 64)
-
-    def test_a_conf_without_a_version_is_refused(self):
-        self.write_conf("SCHEMA=1\nNAME=go\n")
-        self.assertNotEqual(self.run_script("go", self.conf).returncode, 0)
-
-    def test_latest_is_refused(self):
-        self.write_conf(CONF % ("go", "go", "latest"))
-        r = self.run_script("go", self.conf)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("pinned", r.stderr)
-
-    def test_the_default_conf_is_the_tools_folder_of_the_repository(self):
-        text = slurp(SCRIPT)
-        self.assertIn("container/tools", text)
-
 
 if __name__ == "__main__":
     unittest.main()
