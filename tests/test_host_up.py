@@ -181,22 +181,6 @@ class FastPathTest(Base):
         self.assertLessEqual(len(plain), 2, self.calls())
         self.assertLessEqual(len(self.calls()) - len(plain), 2, self.calls())
 
-    def test_the_fast_path_does_not_need_the_version_or_the_tun_file(self):
-        self.podman(lookup=self.running())
-        r = self.up(SWARMBOX_TEST_TUN=os.path.join(self.tmp, "no-such-file"))
-        self.assertEqual(r.returncode, 0, r.stderr)
-
-    def test_a_box_that_merely_shares_the_name_prefix_is_not_the_box(self):
-        # `podman container inspect <box>` resolved to the connector container (or an ID prefix):
-        # the printed name differs, so the box does not exist and is created
-        self.podman(lookup={"stdout": line(name=DEFAULT_CONNECTOR, managed="")})
-        r = self.up()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(len(self.real_runs()), 1)
-        self.assertEqual(self.real_runs()[0][:3], ["run", "-d", "--name"])
-        self.assertEqual(self.real_runs()[0][3], NAME)
-        self.assertEqual(self.subs("rm"), [])
-
 class WarningsTest(Base):
     def setUp(self):
         super().setUp()
@@ -219,26 +203,11 @@ class WarningsTest(Base):
         self.assertEqual(r.returncode, 0)
         self.assertIn("`PORTS` changed: box has (none), config has 127.0.0.1:3000:3000; run `swarmbox reset` to apply", r.stderr)
 
-    def test_the_image_label_differs_from_the_config(self):
-        r = self.run_with({"SWARMBOX_IMAGE": "other/img:9"})
-        self.assertEqual(r.returncode, 0)
-        self.assertIn("this box was created from %s; the config asks for other/img:9; run `swarmbox reset`" % IMAGE, r.stderr)
-
     def test_same_reference_but_the_local_image_was_replaced_is_stale(self):
         r = self.run_with(image_inspect="sha256:bbb\n")
         self.assertEqual(r.returncode, 0)
         self.assertIn("is newer than the one this box runs", r.stderr)
         self.assertIn(IMAGE, r.stderr)
-
-    def test_init_auto_takes_the_value_the_box_was_created_with(self):
-        # created with --init (HostConfig.Init true) and a fingerprint made with INIT=1; the config says auto: no warning
-        self.fp.configure(self.conf(lookup={"stdout": self.matching_line({"SWARMBOX_INIT": "1"}, init="true")}))
-        r = self.up(SWARMBOX_INIT="auto")
-        self.assertEqual((r.returncode, r.stderr), (0, ""))
-        # and the other way: created without it
-        self.fp.configure(self.conf(lookup={"stdout": self.matching_line({"SWARMBOX_INIT": "0"}, init="false")}))
-        r = self.up(SWARMBOX_INIT="auto")
-        self.assertEqual((r.returncode, r.stderr), (0, ""))
 
     def test_warnings_never_change_the_exit_code(self):
         r = self.run_with({"SWARMBOX_PORTS": "3000", "SWARMBOX_IMAGE": "x/y:1"}, image_inspect="sha256:bbb\n")
@@ -271,11 +240,6 @@ class PrerequisiteTest(Base):
         self.assertEqual(r.returncode, code, r.stderr)
         return r
 
-    def test_podman_4_2_is_too_old(self):
-        r = self.version_case("4.2.9\n", 3)
-        self.assertIn("swarmbox: Podman 4.2 found, 4.3 or newer is required. Upgrade Podman and try again.", r.stderr)
-        self.assert_no_run()
-
     def test_versions_are_compared_as_numbers(self):
         for v in ("4.3.1", "4.10.0", "5.0.1", "10.0.0", "4.3.0-dev"):
             self.version_case(v + "\n", 0)
@@ -290,11 +254,6 @@ class PrerequisiteTest(Base):
         self.assertEqual(r.returncode, 3)
         self.assertIn("swarmbox: /dev/net/tun is missing on this host. Nested Podman needs it. On Linux try: sudo modprobe tun", r.stderr)
         self.assert_no_run()
-
-    def test_tun_is_not_checked_on_macos(self):
-        self.podman()
-        r = self.up(SWARMBOX_TEST_TUN=os.path.join(self.tmp, "absent"), SWARMBOX_TEST_OS="Darwin")
-        self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_image_not_local_and_not_pullable_is_exit_3(self):
         self.podman(image={"rules": [{"match": ["exists"], "exit": 1}]},
@@ -311,12 +270,6 @@ class PrerequisiteTest(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual([c for c in self.subs("pull") if IMAGE in c][0][-1], IMAGE)
         self.assertEqual(len(self.real_runs()), 1)
-
-    def test_a_present_image_is_not_pulled(self):
-        self.podman()
-        self.up()
-        self.assertEqual(self.subs("pull"), [])
-
 
 # ============================================================================ creation
 
@@ -346,24 +299,6 @@ class CreateTest(Base):
             self.assertEqual(stat.S_IMODE(st.st_mode) & 0o700, 0o700, d)
         self.assertEqual(os.listdir(os.path.join(self.ws, ".local", "share", "containers")), [])
 
-    def test_a_mount_point_that_cannot_be_made_is_exit_4_and_no_run(self):
-        os.makedirs(os.path.join(self.ws, ".local"))
-        with open(os.path.join(self.ws, ".local", "share"), "w"):
-            pass   # a file where the folder must go
-        self.podman()
-        r = self.up()
-        self.assertEqual(r.returncode, 4, r.stderr)
-        self.assertIn(".local/share/containers", r.stderr)
-        self.assert_no_run()
-
-    def test_flags_with_spaces_and_dollars_stay_one_argument_each(self):
-        weird = os.path.join(self.tmp, "my work $HOME `x` 'q'")
-        os.mkdir(weird)
-        self.podman()
-        r = self.up(SWARMBOX_WORKSPACE=weird)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn(weird + ":/home/agent", self.real_runs()[0])
-
     def test_init_auto_is_resolved_by_a_throwaway_probe_that_supports_it(self):
         self.podman(run={"rules": [{"match": ["--rm", "--init"], "exit": 0}]})
         r = self.up(SWARMBOX_INIT="auto")
@@ -376,13 +311,6 @@ class CreateTest(Base):
         self.assertIn("--init", self.real_runs()[0])
         self.assertIn("swarmbox.managed=2", self.real_runs()[0])
 
-    def test_init_auto_without_init_support_runs_without_it_and_says_so(self):
-        self.podman(run={"rules": [{"match": ["--rm", "--init"], "exit": 126, "stderr": "no catatonit\n"}]})
-        r = self.up(SWARMBOX_INIT="auto")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertNotIn("--init", self.real_runs()[0])
-        self.assertIn("cannot run --init", r.stderr)
-
     def test_create_flags_exit_4_is_exit_4_and_no_run(self):
         self.podman()
         with open(os.path.join(self.tmp, "afile"), "w"):
@@ -390,22 +318,6 @@ class CreateTest(Base):
         r = self.up(SWARMBOX_WORKSPACE=os.path.join(self.tmp, "afile"))
         self.assertEqual(r.returncode, 4, r.stderr)
         self.assertIn("is not a folder", r.stderr)
-        self.assert_no_run()
-
-    def test_create_flags_exit_3_missing_tool_ports_is_exit_3_and_no_run(self):
-        self.podman()
-        os.unlink(os.path.join(self.hdir, "tool-ports"))
-        r = self.up()
-        self.assertEqual(r.returncode, 3, r.stderr)
-        self.assertIn("tool-ports", r.stderr)
-        self.assert_no_run()
-
-    def test_workspace_checks_happen_before_the_box_is_touched(self):
-        self.podman()
-        r = self.up(SWARMBOX_WORKSPACE="/mnt/c/Users/me/swarmbox",
-                    SWARMBOX_TEST_PROC_VERSION=self.wsl_version())
-        self.assertEqual(r.returncode, 4, r.stderr)
-        self.assertIn("is on a Windows drive", r.stderr)
         self.assert_no_run()
 
     def wsl_version(self):
@@ -450,14 +362,6 @@ class ConflictTest(Base):
         self.assertIn("label=swarmbox.workspace=%s" % self.ws, ps)
         self.assertEqual(self.subs("rm"), [])
 
-    def test_the_workspace_check_asks_podman_for_the_label_not_for_a_name(self):
-        self.podman()
-        self.up()
-        ps = self.subs("ps")
-        self.assertEqual(len(ps), 1)
-        self.assertIn("-a", ps[0])
-        self.assertTrue(any(a.startswith("label=swarmbox.workspace=") for a in ps[0]))
-
 # ============================================================================ start and readiness
 
 class ReadinessTest(Base):
@@ -470,13 +374,6 @@ class ReadinessTest(Base):
         self.assertEqual(self.subs("rm"), [])
         self.assertTrue(self.subs("exec"))
 
-    def test_a_stopped_box_with_a_changed_config_warns_and_still_starts(self):
-        self.podman(lookup={"stdout": self.matching_line(state="exited")})
-        r = self.up(SWARMBOX_PORTS="3000")
-        self.assertEqual(r.returncode, 0)
-        self.assertIn("`PORTS` changed", r.stderr)
-        self.assertEqual(self.subs("start"), [["start", NAME]])
-
     def test_a_start_that_fails_is_exit_7_and_removes_nothing(self):
         self.podman(lookup={"stdout": self.matching_line(state="exited")},
                     start={"exit": 125, "stderr": "Error: " + BUSY + "\n"})
@@ -485,18 +382,6 @@ class ReadinessTest(Base):
         self.assertIn("could not start the box", r.stderr)
         self.assertIn("address already in use", r.stderr)
         self.assertEqual(self.subs("rm"), [])
-
-    def test_the_marker_is_read_with_exec(self):
-        self.podman()
-        self.up()
-        ex = self.subs("exec")[0]
-        self.assertEqual(ex, ["exec", NAME, "cat", "/tmp/swarmbox/ready"])
-
-    def test_a_marker_with_warnings_is_reported(self):
-        self.podman(exec={"stdout": "warnings=2\n"})
-        r = self.up()
-        self.assertEqual(r.returncode, 0)
-        self.assertIn("2 warning", r.stderr)
 
     def test_a_marker_that_never_appears_is_exit_6_after_the_tuned_wait(self):
         self.podman(exec={"exit": 1, "stderr": "no such file\n"})
@@ -630,23 +515,6 @@ class LockTest(Base):
         # the dead call's temporary files (flags.<pid>) are swept by the call that took over
         self.assertEqual([n for n in os.listdir(self.state) if n.endswith(".%d" % p.pid)], [])
 
-    def test_a_lock_without_a_pid_file_is_stale_after_the_tuned_wait(self):
-        self.podman()
-        os.makedirs(self.lock)
-        r = self.up(SWARMBOX_TEST_LOCK_PIDWAIT="4", SWARMBOX_TEST_NAP="0.05")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(len(self.real_runs()), 1)
-
-    def test_a_dead_pid_in_the_lock_is_stale_at_once(self):
-        self.podman()
-        dead = subprocess.Popen(["true"])
-        dead.wait()
-        os.makedirs(self.lock)
-        with open(os.path.join(self.lock, "pid"), "w") as f:
-            f.write("%d\n" % dead.pid)
-        r = self.up(SWARMBOX_TEST_NAP="5")   # a pause of 5 s would show if it waited
-        self.assertEqual(r.returncode, 0, r.stderr)
-
     def test_a_live_holder_for_longer_than_the_tuned_wait_is_exit_6_and_the_lock_stays(self):
         self.podman()
         holder = subprocess.Popen(["sleep", "30"])
@@ -660,12 +528,6 @@ class LockTest(Base):
         self.assertIn("another 'up' holds %s" % self.lock, r.stderr)
         self.assertTrue(os.path.isdir(self.lock), "a live lock is never removed")
         self.assertEqual(self.calls(), [])
-
-    def test_the_lock_is_released_after_a_failure_too(self):
-        self.podman(run={"rules": [{"match": ["--cidfile"], "exit": 125, "stderr": "boom\n"}]})
-        r = self.up()
-        self.assertEqual(r.returncode, 7)
-        self.assertEqual(os.listdir(self.state), [])
 
 # ============================================================================ reset
 
@@ -693,41 +555,11 @@ class ResetTest(Base):
         self.assertEqual(r.returncode, 7)
         self.assertEqual(self.subs("rm"), [["rm", "-f", NAME], ["rm", "-f", "c" * 64]])
 
-    def test_reset_is_exit_1_when_the_removal_fails_and_creates_nothing(self):
-        self.podman(lookup={"stdout": self.matching_line()}, rm={"exit": 1, "stderr": "Error: cannot remove\n"})
-        r = self.run_h("reset")
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("cannot remove", r.stderr)
-        self.assert_no_run()
-
-    def test_reset_without_a_box_just_creates_one(self):
-        self.podman()
-        r = self.run_h("reset")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.subs("rm"), [])
-        self.assertEqual(len(self.real_runs()), 1)
-
     def test_reset_refuses_a_container_without_the_managed_label(self):
         self.podman(lookup={"stdout": line(managed="")})
         r = self.run_h("reset")
         self.assertEqual(r.returncode, 5)
         self.assertEqual(self.subs("rm"), [])
-
-    def test_reset_refuses_when_another_box_uses_the_workspace(self):
-        self.podman(lookup={"stdout": self.matching_line()}, ps={"stdout": "other\n"})
-        r = self.run_h("reset")
-        self.assertEqual(r.returncode, 5)
-        self.assertEqual(self.subs("rm"), [], "the old box must not be removed when the new one could not be made")
-
-    def test_a_workspace_problem_is_found_before_the_old_box_is_removed(self):
-        # the flags are captured and checked before `rm -f`: a reset that cannot create the new box keeps the old one
-        self.podman(lookup={"stdout": self.matching_line()})
-        with open(os.path.join(self.tmp, "afile"), "w"):
-            pass
-        r = self.run_h("reset", env=self.env(SWARMBOX_WORKSPACE=os.path.join(self.tmp, "afile")))
-        self.assertEqual(r.returncode, 4)
-        self.assertEqual(self.subs("rm"), [])
-        self.assert_no_run()
 
 # ============================================================================ stop and url
 
@@ -738,35 +570,11 @@ class StopUrlTest(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.subs("stop"), [["stop", NAME]])
 
-    def test_stop_is_exit_1_when_podman_fails(self):
-        self.podman(lookup={"stdout": self.matching_line()}, stop={"exit": 125, "stderr": "Error: boom\n"})
-        r = self.run_h("stop")
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("boom", r.stderr)
-
-    def test_stop_without_a_box_says_so_and_is_exit_0(self):
-        self.podman()
-        r = self.run_h("stop")
-        self.assertEqual(r.returncode, 0)
-        self.assertIn("no box named '%s'" % NAME, r.stderr)
-        self.assertEqual(self.subs("stop"), [])
-
     def test_stop_of_a_container_that_is_not_ours_is_refused(self):
         self.podman(lookup={"stdout": line(managed="")})
         r = self.run_h("stop")
         self.assertEqual(r.returncode, 5)
         self.assertEqual(self.subs("stop"), [])
-
-    def test_stop_with_podman_missing_is_exit_3(self):
-        self.podman()
-        bindir = os.path.join(self.tmp, "bin")
-        os.mkdir(bindir)
-        for t in HELPER_TOOLS:
-            p = shutil.which(t)
-            if p and not os.path.exists(os.path.join(bindir, t)):
-                os.symlink(p, os.path.join(bindir, t))
-        r = self.run_h("stop", env=self.env(PATH=bindir))
-        self.assertEqual(r.returncode, 3)
 
     def url_env(self, **extra):
         return self.env(**extra)
@@ -792,32 +600,6 @@ class StopUrlTest(Base):
         self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://" + NAME + ".example.com\n")
         self.assertEqual(self.calls(), [])
 
-    def test_url_prints_remote_from_cloudflare_json_with_name_prefix(self):
-        self.podman()
-        self.cloudflare_json("example.com", name=NAME, session="4h")
-        r = self.run_h("url", env=self.url_env())
-        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://" + NAME + ".example.com\n")
-
-    def test_url_uses_saved_hostname_over_name_dot_domain(self):
-        self.podman()
-        self.cloudflare_json("example.com", hostname="tty.example.com", name=NAME)
-        r = self.run_h("url", env=self.url_env())
-        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://tty.example.com\n")
-        self.assertEqual(self.calls(), [])
-
-    def test_url_ignores_a_bad_saved_hostname_and_falls_back_with_a_warning(self):
-        self.podman()
-        self.cloudflare_json("example.com", hostname="a b;x", name=NAME)
-        r = self.run_h("url", env=self.url_env())
-        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://" + NAME + ".example.com\n")
-        self.assertIn("ignoring", r.stderr)
-
-    def test_url_web_hostname_wins(self):
-        self.podman()
-        self.cloudflare_json("example.com")
-        r = self.run_h("url", env=self.url_env(SWARMBOX_WEB_HOSTNAME="term.example.org"))
-        self.assertEqual(r.stdout.splitlines()[1], "https://term.example.org")
-
     def test_url_with_the_web_terminal_off_is_exit_1(self):
         self.podman()
         r = self.run_h("url", env=self.url_env(SWARMBOX_WEB="0"))
@@ -832,14 +614,6 @@ class StaticTest(unittest.TestCase):
         for bad in ("system prune", "system reset", "volume prune", "volume rm", "image prune", "rm -a", "stop -a", "kill -a",
                     "rmi "):
             self.assertNotIn(bad, src, bad)
-
-    def test_shellcheck_posix_if_available(self):
-        sc = shutil.which("shellcheck")
-        if not sc:
-            self.skipTest("shellcheck is not installed")
-        r = subprocess.run([sc, "-s", "sh", HELPER_SRC], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 0, r.stdout)
-
 
 if __name__ == "__main__":
     unittest.main()

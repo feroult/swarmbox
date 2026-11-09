@@ -15,8 +15,8 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_attach_container import ENABLED, rnd, podman, setUpModule as _setup, tearDownModule as _teardown  # noqa: E402
-import test_attach_container as base  # noqa: E402
+from image_support import ENABLED, rnd, podman, setUpModule as _setup, tearDownModule as _teardown  # noqa: E402
+import image_support as base  # noqa: E402
 from test_attach_command import wait_until  # noqa: E402
 
 
