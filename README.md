@@ -1,10 +1,13 @@
 # SwarmBox
 
-**A persistent Podman box where AI coding agents run in auto-approve mode, with the damage of a mistake limited to one folder of your machine.**
+**A persistent, rootless Podman box where AI coding agents run in auto-approve mode and have room to work, with a mistake limited to one folder of your machine.**
+
+Give an agent a box of its own: it can install tools and build and run containers, and you keep your machine, your Podman and your credentials out of reach.
+Open any terminal tab or the browser and you are in the same box and the same session.
 
 - **One box, shared.** Every terminal tab and the browser join the same box and the same tmux session. Entering never creates a second box.
 - **The workspace is one folder on your machine.** Projects, logins, the SSH key and installed tools live there. You can delete and recreate the box and lose nothing.
-- **Auto-approve, with a smaller blast radius.** The agent runs without approval prompts, and a mistake is limited to that folder (see Security below for what that does and does not mean).
+- **Auto-approve, with a smaller blast radius.** The agent runs without approval prompts, and a mistake is limited to that folder (see [Security](#security)).
 - **A neutral image, tools on demand.** Claude Code, Gemini CLI, OpenCode, gcloud, clasp, Go and Poetry are installed the first time you use them.
 - **Containers inside the box.** Agents can build and run their own containers with nested Podman, with no path to your Podman.
 - **A browser inside the box.** Chrome DevTools MCP is built in.
@@ -21,50 +24,40 @@ claude          # inside the box: installs Claude Code on first use, then runs i
 
 Open a second tab, run `swarmbox` again, and you are in the same session.
 
-## Security: what you really get
+## Security
 
-SwarmBox reduces the damage of a mistake. It is not a virtual machine, and it does not make untrusted code safe to run.
+SwarmBox is a persistent box for letting an agent work on its own: it can install tools, build and run containers (nested Podman) and
+create whatever it needs, while a mistake stays inside one workspace folder. It is rootless Podman, and it is **not complete isolation**: like any
+container it shares the kernel with your machine and has the known limits of that model. If you need a stronger boundary, run SwarmBox inside a
+virtual machine, a microVM or a dedicated machine (see [docs/microvm.md](docs/microvm.md)).
 
-**The honest limit.** A container shares the kernel with your machine. Its isolation comes from user namespaces,
-cgroups and a seccomp profile, not from a hypervisor. A vulnerability in the kernel or in the container runtime, or a
-misconfiguration, can let code inside the box escape to your machine. Do not run code in SwarmBox that you would not run on
-your own machine with the same care, unless you put SwarmBox inside a virtual machine or on a dedicated machine.
+**What the box gives you:**
 
-**What protects you:**
-
-- The box is a rootless Podman container. Even root inside it is an unprivileged user of your machine.
+- A rootless container: even root inside it is an unprivileged user of your machine.
+- The agent sees only the workspace folder, not the rest of your files.
 - Your machine's Podman socket is never mounted into the box.
-- The agent sees only the workspace folder of your machine.
-- The web terminal listens only on `127.0.0.1`. Its own port has no login.
-- Cloudflare credentials and the Cloudflare connector run on your machine, outside the box.
+- The web terminal listens only on `127.0.0.1`.
+- Cloudflare credentials and the connector stay on your machine, outside the box.
+- The box is disposable: delete and recreate it and the workspace stays.
 
-**What the agent can do inside the box:**
+**What the agent can do inside it:**
 
-- Change or delete everything in the workspace, which holds your projects, logins and SSH key.
-- Use `sudo` inside the box.
-- Reach the network.
-- Read every variable and token you pass in, and use the SSH key.
+- Change or delete everything in the workspace (projects, logins, SSH key).
+- Use `sudo` in the box and reach the network.
+- Read every token you pass in and use the SSH key.
 - Keep running while you are away, until you stop the box.
 
-**What weakens isolation on purpose:**
+Nested Podman and remote access trade some isolation for capability. Nested Podman is always on and needs `/dev/net/tun` and an unmasked `/proc`.
+With remote access on, whoever passes the Cloudflare login has the same control as the agent.
 
-- Nested Podman is always on. It needs `/dev/net/tun` and an unmasked `/proc`, so the box is less isolated than a plain container.
-- With remote access on, whoever passes the Cloudflare login has the same control as the agent: the workspace, the tokens and the SSH key. The login length you choose is the time a stolen or forgotten session stays usable.
+**Practical advice:** pass scoped tokens, use a deploy key per repository, review changes with `git diff`, do not expose the web port yourself
+(use `swarmbox remote setup` for access from outside), and keep Podman and the kernel up to date.
 
-**Practical advice:**
-
-- For untrusted work, use a virtual machine or a dedicated machine.
-- Pass scoped tokens, not tokens that can do everything your account can.
-- Use a deploy key for each repository, not your account key.
-- Keep Podman and the kernel up to date.
-- Do not expose the web port yourself. Use `swarmbox remote setup` if you need access from outside.
-- Look at what the agent changes in the workspace, for example with `git diff`.
-
-More detail is in [SECURITY.md](SECURITY.md) and in the security model of [docs/design.md](docs/design.md). For a hypervisor boundary see [docs/microvm.md](docs/microvm.md).
+More in [SECURITY.md](SECURITY.md) and the security model of [docs/design.md](docs/design.md).
 
 ## Quick start
 
-Requirements: Linux, macOS through a Podman machine, or WSL2 with the workspace on the Linux filesystem; Podman 4.3 or newer.
+Requirements: Podman 4.3 or newer on Linux, or WSL2 with the workspace on the Linux filesystem (macOS through a Podman machine is unverified).
 Docker is not supported.
 
 The image is not published yet, so today you build it locally. In the repository:
@@ -98,10 +91,16 @@ swarmbox tool list          # show the tools you can install
 swarmbox remote setup       # set up remote access with Cloudflare
 ```
 
-## Status
+## Tools
 
-Version 2.0 is not released. Its image was built and run end to end in a development box (box, web terminal, tools), but it has
-not run on a real host yet and is not published. macOS, Podman older than 4.3 and the real Cloudflare setup are unverified.
+Tools install on first use and live in the workspace: Claude Code, Gemini CLI, OpenCode, gcloud, clasp, Go and Poetry. Run `swarmbox tool list` to see them.
+The installer's `--with` option installs some up front.
+
+## Status and limits
+
+Version 2.0.0 is the first public version and is not tagged yet. Its image was built and run end to end in a development box (box, web terminal, tools),
+but it has not run on a real host yet and is not published. macOS, Podman older than 4.3, a host user other than UID 1000 and the real Cloudflare setup are unverified.
+Docker is not supported. `install.sh`, which installs from a release, works only once a release exists; until then use the Quick start.
 The architecture is in [docs/design.md](docs/design.md).
 
 ## Privacy
@@ -110,10 +109,17 @@ SwarmBox sends **no telemetry**. It makes no network call of its own except to p
 to check for a tool update, and, with `swarmbox remote`, to reach Cloudflare. Logs stay on your machine:
 `<workspace>/.local/state/swarmbox/` holds `serve.log`, `health` and `web-terminal.log`; on the host only `~/.local/state/swarmbox/` exists (locks and `notices`).
 
-## More
+## Documentation
 
-[docs/web-terminal.md](docs/web-terminal.md), [docs/cloudflare.md](docs/cloudflare.md), [docs/nested-podman.md](docs/nested-podman.md),
-[docs/uninstall.md](docs/uninstall.md), [docs/microvm.md](docs/microvm.md), [docs/design.md](docs/design.md),
-[docs/security-review.md](docs/security-review.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
-[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [CHANGELOG.md](CHANGELOG.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
-and [LICENSE](LICENSE) (Apache-2.0).
+- [docs/web-terminal.md](docs/web-terminal.md): the browser terminal
+- [docs/cloudflare.md](docs/cloudflare.md): remote access with Cloudflare Tunnel and Access (`swarmbox remote setup`)
+- [docs/nested-podman.md](docs/nested-podman.md): containers inside the box
+- [docs/uninstall.md](docs/uninstall.md): remove SwarmBox
+- [docs/microvm.md](docs/microvm.md): stronger isolation with a VM or microVM
+- [docs/design.md](docs/design.md) and [docs/security-review.md](docs/security-review.md): architecture and the review of the host script
+- [SECURITY.md](SECURITY.md), [CHANGELOG.md](CHANGELOG.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+
+## Contributing and license
+
+Contributions are welcome: read [CONTRIBUTING.md](CONTRIBUTING.md) and the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+SwarmBox is licensed under Apache-2.0, see [LICENSE](LICENSE).
