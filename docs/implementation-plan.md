@@ -299,7 +299,7 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 
 **6.5 state:** `README.md`, `docs/web-terminal.md` and `docs/nested-podman.md` are rewritten for 2.0 (README: install, first use, a labelled v0.1.0 migration section, the seven uninstall steps of design 12.5, the no-telemetry statement; `<org>` stays a placeholder until Phase 7). `tests/test_docs_consistency.py` has the doc tests (steps and markers, command words, links and anchors, statement, paths, a fake-home run of uninstall steps 1 to 4). Decision log `[6.5]`.
 
-**6.4 state:** `tests/test_migration_e2e.py` runs the 12.4 sequence end to end on a larger generated fixture copy with the generated function, the real host helper and a fake Podman (old container refused, removed, connection re-registered at the new address, volume `swarmbox-containers` never removed), then the real `swarmbox-migrate.sh` twice; results are tagged `[reduced: fixture]`. `docs/migration.md` is the owner checklist for the run on a copy of the real workspace (B29 stays an owner action). Decision log `[6.4]`.
+**6.4 state:** `tests/test_migration_e2e.py` runs the 12.4 sequence end to end on a larger generated fixture copy with the generated function, the real host helper and a fake Podman (old container refused, removed, connection re-registered at the new address, volume `swarmbox-dev-containers` never removed), then the real `swarmbox-migrate.sh` twice; results are tagged `[reduced: fixture]`. `docs/migration.md` is the owner checklist for the run on a copy of the real workspace (B29 stays an owner action). Decision log `[6.4]`.
 
 **6.6 state:** `dev/owner-check.sh` (POSIX sh; read-only apart from one mktemp folder and `swarmbox-test-` containers; refuses a box named `swarmbox`) and `docs/owner-checks.md` (exact commands, expected output and what to record for B6, B7, B8, B15, the macOS and WSL parts of B19, B21, B22, B23, B32 and B34, and the dogfooding and migration order for the real box) are the closing artifacts; `tests/test_owner_check.py` (32 tests, also in `ci.yml` on Linux and on the macOS runner) and `OwnerChecksSixSixTest` in `tests/test_docs_consistency.py` guard them. **No fact is closed:** B6, B7, B8 and B15 are "open with the owner" in Part B and in the status table (`blocked: needs real hardware`), with the reduced evidence tagged. A host UID other than 1000 was tried here with a real Podman and failed for want of a subuid range (decision log `[6.6]`). Phase 6 therefore ends with the owner actions pending, as its exit criteria allow ("a result or an explicit, documented limit").
 
@@ -313,7 +313,7 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 
 **Goal:** a public, signed `v2.0.0`. Design: 10.4, 11, 13.4, D25, D26.
 
-- `release.yml`: multi-arch build (amd64 and arm64), tests, vulnerability scan, signing, SBOM, publish to `ghcr.io/feroult/swarmbox` (D32, D38). One run of `update` against the real registry rechecks B20.
+- `release.yml`: multi-arch build (amd64 and arm64), tests, vulnerability scan, signing, SBOM, publish to `ghcr.io/feroult/swarmbox-dev` (D32, D38). One run of `update` against the real registry rechecks B20.
 - Settle the registry owner and **check that the name SwarmBox is available** (D25).
 - **Act on the history audit** of Phase 1 (D37): publish the history whole, or start from a clean history; only then make the repository public.
 - **Security review of the host helper** before release: it runs on the host with the user's privileges (D26, 11). Review the lock and temporary files, quoting, the extraction, the token handling and `up`'s cleanup; fix or document each finding.
@@ -350,7 +350,7 @@ Closes: no Part B fact (B14 is a documentation read in Phase 0, B22 is closed in
 | A change in the live box breaks work in progress | The safety rule (1.2); the owner's box moves last, after a backup, and a second box is used first |
 | The Cloudflare end-to-end needs the owner's account | Fakes cover the logic; one end-to-end run by the owner closes Phase 5 |
 | Secrets or personal data in the git history | The audit is in Phase 1 and the repository stays private until M4 (D37) |
-| Scope creep from detailed specification | Anything in the design not needed for parity or for a decision in D1 to D39 can be deferred to 2.1 and listed in the changelog |
+| Scope creep from detailed specification | Anything in the design not needed for parity or for a decision in D1 to D40 can be deferred to 2.1 and listed in the changelog |
 
 ---
 
@@ -362,7 +362,7 @@ Status: **applied** (done in the documents), **assumed default** (the plan proce
 2. **Spikes.** *Assumed default:* run Phase 0 now in nested throwaway containers here, with the limits above. **Hardware checks:** the owner runs the macOS ones (B6, B15 and the macOS parts of B19, B21, B22, B23) later, on a Mac, before M3 (*decided*). *Open:* who runs B7 (a host UID other than 1000) and B8 (older Podman versions), or whether a CI matrix covers them.
 3. **Dogfooding.** *Assumed default:* a second box (`SWARMBOX_NAME=dev`) from M2, and the main workspace moves only after parity (M3).
 4. **CI provider.** *Assumed default:* GitHub Actions (the remote host alias points at GitHub). Whether a macOS runner is available is checked in Phase 1 (B30).
-5. **Registry owner.** *Decided (D38):* the owner's account `feroult`, so `ghcr.io/feroult/swarmbox`. Examples keep `<org>` until the name check (D25) passes.
+5. **Registry owner.** *Decided (D38):* the owner's account `feroult`, so `ghcr.io/feroult/swarmbox-dev`. Examples keep `<org>` until the name check (D25) passes.
 6. **Scope of 2.0.0.** *Decided (D39):* the whole catalog ships in 2.0.0, Cloudflare remote access included. No feature of v0.1.0 is dropped, except what section 12 of the design lists as removed.
 7. **Review cadence.** *Assumed default:* review at each milestone (M1 to M4).
 8. **Who builds what.** *Assumed default:* the work is done by the agent with parallel sub-agents where phases allow it (4b in parallel with 3; 5 after 3), under the rules in section 1.
@@ -373,7 +373,7 @@ Status: **applied** (done in the documents), **assumed default** (the plan proce
 
 Built from the design. "Phase" is where the decision is implemented (or where its absence is proven); a second phase is shown when the work is split.
 
-### A.1 Decisions D1 to D39
+### A.1 Decisions D1 to D40
 
 | D | Decision (short) | Phase | How it is proven |
 |---|---|---|---|
@@ -414,8 +414,9 @@ Built from the design. "Phase" is where the decision is implemented (or where it
 | D35 | `update` tags the exact `X.Y.Z` locally | 3 | `podman tag` recorded; `reset` offline after `update`; B20 |
 | D36 | No `uninstall` command (absence) | 3, 6 | `swarmbox uninstall` is no host word, routed as a command (3); the manual steps in the README (6) |
 | D37 | History audit early; repository private until M4 | 1, 7 | the audit report (1); the repository is made public only at the release (7) |
-| D38 | Image owner `feroult`: `ghcr.io/feroult/swarmbox` | 3, 7 | local registry with a placeholder (3); the first publish under `ghcr.io/feroult` and the package visibility set to public at release (7) |
+| D38 | Image owner `feroult`: `ghcr.io/feroult/swarmbox-dev` | 3, 7 | local registry with a placeholder (3); the first publish under `ghcr.io/feroult` and the package visibility set to public at release (7) |
 | D39 | 2.0.0 includes the whole catalog, Cloudflare remote access too | 5, 6 | the parity suite has a row for `remote` (6); the end-to-end run of Phase 5 |
+| D40 | Default names in one file, `container/host/DEFAULTS`; the development tree ships `swarmbox-dev` | 7 | the lint test, the flip test of the helper and `swarmbox-init`; the release flips two lines |
 
 ### A.2 Feature catalog (8.4) and command contract (3.2, 3.3)
 

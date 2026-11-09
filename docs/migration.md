@@ -57,7 +57,7 @@ with the default workspace `~/swarmbox`.
    ```
 
 4. If remote access was set up, check it with `swarmbox remote status` (the Cloudflare files are read as before).
-5. Run `swarmbox`. The first call creates the box, registers the host connection `podman -c swarmbox` at the new socket address (replacing the
+5. Run `swarmbox`. The first call creates the box, registers the host connection `podman -c swarmbox-dev` at the new socket address (replacing the
    old `<workspace>/.swarmbox/podman.sock` one), and `serve` runs the layout migration. It prints one line about `memory/` (left by the removed
    memory service; delete it when you no longer need it) and nothing else when all goes well. A second start changes nothing.
 

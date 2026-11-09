@@ -3,7 +3,7 @@
 **Run AI coding agents with full tool access and auto-approve ("YOLO") mode inside a Podman container, so your host stays safe.**
 
 ```bash
-podman run --rm -e SHELL ghcr.io/<org>/swarmbox:2.0.0 init --with claude >> ~/.bashrc    # then open a new terminal and run: swarmbox
+podman run --rm -e SHELL ghcr.io/<org>/swarmbox-dev:2.0.0 init --with claude >> ~/.bashrc    # then open a new terminal and run: swarmbox
 ```
 
 Read what it prints first (leave out the `>> ~/.bashrc`). `<org>` is a placeholder until the first release; details are under [Install](#install) and in [docs/design.md](docs/design.md).
@@ -26,8 +26,8 @@ Linux, macOS (through a Podman machine) or WSL2 with the workspace on the Linux 
 One line, once. It prints a shell function; read it first, then append it to your shell startup file (the example is bash; for zsh use `~/.zshrc`, for fish `~/.config/fish/config.fish`):
 
 ```bash
-podman run --rm -e SHELL ghcr.io/<org>/swarmbox:2.0.0 init --with claude            # print the function
-podman run --rm -e SHELL ghcr.io/<org>/swarmbox:2.0.0 init --with claude >> ~/.bashrc
+podman run --rm -e SHELL ghcr.io/<org>/swarmbox-dev:2.0.0 init --with claude            # print the function
+podman run --rm -e SHELL ghcr.io/<org>/swarmbox-dev:2.0.0 init --with claude >> ~/.bashrc
 ```
 
 `<org>` is a **placeholder**: the image is not published yet, so the line does not work until a release names the real registry.
@@ -58,7 +58,7 @@ swarmbox stop                         # stop the box; nothing is deleted
 - **Web terminal:** on by default. `swarmbox url` prints the address, `http://127.0.0.1:7681` unless you set `WEB_PORT`. That port has no login.
   [docs/web-terminal.md](docs/web-terminal.md) has the style and the tmux shortcuts.
 - **Remote access:** `swarmbox remote setup` puts Cloudflare Tunnel and Access in front of it. See [docs/cloudflare.md](docs/cloudflare.md).
-- **Containers inside the box:** [docs/nested-podman.md](docs/nested-podman.md). From the host: `podman -c swarmbox ps`.
+- **Containers inside the box:** [docs/nested-podman.md](docs/nested-podman.md). From the host: `podman -c swarmbox-dev ps`.
 - **Update and roll back:** `swarmbox update` pulls the newest image of your `X.Y` series and tells you to run `swarmbox reset`;
   `swarmbox update --to 2.0.0` goes to an exact tag, also an older one.
 - **A second box:** `SWARMBOX_NAME=dev` names it, and it has its own configuration. Give it its own folder and port:
@@ -84,9 +84,9 @@ There is no `swarmbox uninstall` command. Do these by hand, in this order (`sed 
 2. Stop and remove the box: `podman rm -f swarmbox`, and the host connection `podman system connection rm swarmbox` (an error that none exists can be ignored). For a second box give its `SWARMBOX_NAME` instead of `swarmbox`, one box at a time.
 3. Remove the host helper and its state: `rm -rf ~/.local/share/swarmbox/host`, and `rm -rf ~/.local/state/swarmbox` (locks and notices).
 4. Remove the host configuration: `rm -rf ~/.config/swarmbox` (the config, `cloudflare.json`, the folders of second boxes; it may hold the tunnel token).
-5. If you set up remote access, run `swarmbox remote off` **before step 1**: it removes the DNS record, the route and the Access application. Then remove the connector: `podman rm -f swarmbox-cloudflared`.
-6. Optional: the workspace folder `~/swarmbox` (your projects, logins and tools; back up what you need) and the nested Podman volume, `podman volume rm swarmbox-containers` (`<name>-containers` for a second box).
-7. Optional: the image, `podman rmi ghcr.io/<org>/swarmbox:<tag>`.
+5. If you set up remote access, run `swarmbox remote off` **before step 1**: it removes the DNS record, the route and the Access application. Then remove the connector: `podman rm -f swarmbox-dev-cloudflared`.
+6. Optional: the workspace folder `~/swarmbox` (your projects, logins and tools; back up what you need) and the nested Podman volume, `podman volume rm swarmbox-dev-containers` (`<name>-containers` for a second box).
+7. Optional: the image, `podman rmi ghcr.io/<org>/swarmbox-dev:<tag>`.
 
 ## Privacy
 

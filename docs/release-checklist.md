@@ -18,7 +18,7 @@ placeholders of SECURITY.md, CODE_OF_CONDUCT.md and THIRD_PARTY_NOTICES.md until
 
 This is a name lookup, not a trademark search, and not legal advice. What it shows: the bare name is already used by projects in the same field (agent sandboxes) on npm and PyPI,
 so a user who types `npm i swarmbox` or `pip install swarmbox` gets someone else's tool. SwarmBox itself ships no npm or PyPI package, and its image path
-`ghcr.io/feroult/swarmbox` is under your account, so nothing collides technically. The risk is confusion and a possible trademark claim, not a build break.
+`ghcr.io/feroult/swarmbox-dev` is under your account, so nothing collides technically. The risk is confusion and a possible trademark claim, not a build break.
 Default taken by the build (decision log `[7.6]`): the name check does **not** pass cleanly, so the `<org>` placeholders in README.md and the design stay (D38 says to keep them until it passes). 
 
 ### Name decision
@@ -96,8 +96,8 @@ B28 (the image smoke test runs in CI). Where to look: the Actions tab, and docs/
 
 ### 7. Registry visibility
 
-The first publish creates the package `ghcr.io/feroult/swarmbox` as private. After the first run of `release.yml` set it public once: the repository page, Packages, the package, Package settings,
-"Change visibility". Check from a machine that is not logged in: `podman logout ghcr.io; podman pull ghcr.io/feroult/swarmbox:2.0.0`.
+The first publish creates the package `ghcr.io/feroult/swarmbox-dev` as private. After the first run of `release.yml` set it public once: the repository page, Packages, the package, Package settings,
+"Change visibility". Check from a machine that is not logged in: `podman logout ghcr.io; podman pull ghcr.io/feroult/swarmbox-dev:2.0.0`.
 
 ### 8. Dry run of release.yml, then the tag v2.0.0
 

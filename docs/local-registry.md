@@ -1,6 +1,6 @@
 # Running SwarmBox against a local registry
 
-This is how the install line, `swarmbox update` and `swarmbox update --to` are tried without the real registry (`ghcr.io/<org>/swarmbox`, which does not exist yet; `<org>` is a placeholder, decision D32). The automated version is `tests/e2e_registry.py`; this page is the same thing by hand.
+This is how the install line, `swarmbox update` and `swarmbox update --to` are tried without the real registry (`ghcr.io/<org>/swarmbox-dev`, which does not exist yet; `<org>` is a placeholder, decision D32). The automated version is `tests/e2e_registry.py`; this page is the same thing by hand.
 
 Everything below is for a throwaway test: the registry listens on `127.0.0.1` only, with plain HTTP, and holds throwaway images.
 
