@@ -26,6 +26,7 @@ from helpers import ROOT, FakePodman  # noqa: E402
 
 HELPER_SRC = os.path.join(ROOT, "container", "host", "swarmbox-host")
 VERSION_SRC = os.path.join(ROOT, "container", "host", "VERSION")
+DEFAULTS_SRC = os.path.join(ROOT, "container", "host", "DEFAULTS")
 NAME = "swarmbox-test-3-4"
 SUFFIX = "/.local/state/swarmbox/podman.sock"
 LIMIT = 100
@@ -115,6 +116,7 @@ class Base(unittest.TestCase):
         os.makedirs(hdir)
         shutil.copy(HELPER_SRC, hdir)
         shutil.copy(VERSION_SRC, hdir)
+        shutil.copy(DEFAULTS_SRC, hdir)
         open(os.path.join(hdir, "tool-ports"), "w").close()
         os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)
         self.helper = os.path.join(hdir, "swarmbox-host")
@@ -385,6 +387,7 @@ class UpIntegrationTest(unittest.TestCase):
         os.makedirs(hdir)
         shutil.copy(HELPER_SRC, hdir)
         shutil.copy(VERSION_SRC, hdir)
+        shutil.copy(DEFAULTS_SRC, hdir)
         open(os.path.join(hdir, "tool-ports"), "w").close()
         os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)
         self.helper = os.path.join(hdir, "swarmbox-host")

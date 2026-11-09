@@ -86,6 +86,7 @@ jobs:
           python3 tests/test_cloudflare_setup.py
           python3 tests/test_design_partb.py
           python3 tests/test_dev_build.py
+          python3 tests/test_default_names_lint.py
           python3 tests/test_dirs.py
           python3 tests/test_dockerfile.py
           python3 tests/test_docs_consistency.py
@@ -235,6 +236,7 @@ jobs:
         run: |
           python3 tests/test_build_index.py
           python3 tests/test_dev_build.py
+          python3 tests/test_default_names_lint.py
           python3 tests/test_dirs.py
           python3 tests/test_dockerfile.py
           python3 tests/test_helpers.py

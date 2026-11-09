@@ -340,7 +340,7 @@ class HostSide:
         ctx.dirs.append(self.root)
         hdir = os.path.join(self.root, "helper")
         os.makedirs(hdir)
-        for f in ("swarmbox-host", "VERSION"):
+        for f in ("swarmbox-host", "VERSION", "DEFAULTS"):
             shutil.copy(os.path.join(ROOT, "container", "host", f), os.path.join(hdir, f))
         open(os.path.join(hdir, "tool-ports"), "w").close()
         os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)

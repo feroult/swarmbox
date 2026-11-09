@@ -18,10 +18,11 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_NAME, DEFAULT_IMAGE_REPO, DEFAULT_VOLUME  # noqa: E402
 
 HELPER_SRC = os.path.join(ROOT, "container", "host", "swarmbox-host")
 VERSION_SRC = os.path.join(ROOT, "container", "host", "VERSION")
+DEFAULTS_SRC = os.path.join(ROOT, "container", "host", "DEFAULTS")
 FIXTURES = os.path.join(ROOT, "tests", "fixtures")
 with open(VERSION_SRC) as _f:
     VERSION = _f.read().strip()
@@ -105,6 +106,7 @@ class Base(unittest.TestCase):
         os.chmod(os.path.join(self.hdir, "swarmbox-host"), 0o755)
         if version:
             shutil.copy(VERSION_SRC, os.path.join(self.hdir, "VERSION"))
+            shutil.copy(DEFAULTS_SRC, os.path.join(self.hdir, "DEFAULTS"))
         if tool_ports is not None:
             with open(os.path.join(self.hdir, "tool-ports"), "w") as f:
                 f.write(tool_ports)
@@ -129,8 +131,8 @@ class Base(unittest.TestCase):
         if path is not None:
             e["PATH"] = path
         if cfg is not None:
-            name = (env or {}).get("SWARMBOX_NAME", "swarmbox")
-            folder = self.cfgroot if name == "swarmbox" else os.path.join(self.cfgroot, name)
+            name = (env or {}).get("SWARMBOX_NAME", DEFAULT_NAME)
+            folder = self.cfgroot if name == DEFAULT_NAME else os.path.join(self.cfgroot, name)
             os.makedirs(folder, exist_ok=True)
             f = os.path.join(folder, "config")
             with open(f, "w") as fh:
@@ -155,8 +157,8 @@ class Base(unittest.TestCase):
     # the expected fingerprint lines of the default configuration; `over` replaces some of them
     def fp_lines(self, over=None):
         d = {
-            "AGENT": "", "BROWSER_URL": "", "ENV_KEYS": "", "HOSTNAME": "swarmbox", "HOST_ACCESS": "0",
-            "IMAGE": "ghcr.io/<org>/swarmbox:%s" % VERSION, "INIT": "0", "NAME": "swarmbox", "PORTS": "",
+            "AGENT": "", "BROWSER_URL": "", "ENV_KEYS": "", "HOSTNAME": DEFAULT_NAME, "HOST_ACCESS": "0",
+            "IMAGE": (DEFAULT_IMAGE_REPO + ":%s") % VERSION, "INIT": "0", "NAME": DEFAULT_NAME, "PORTS": "",
             "TZ": "local", "WEB": "1", "WEB_PORT": "7681", "WITH": "", "WORKSPACE": self.ws, "YOLO": "1",
         }
         d.update(over or {})
@@ -169,6 +171,7 @@ class GoldenTest(Base):
     def golden(self, name, subs):
         with open(os.path.join(FIXTURES, name)) as f:
             text = f.read()
+        subs = dict(subs, **{"@NAME@": DEFAULT_NAME, "@IMAGE_REPO@": DEFAULT_IMAGE_REPO})   # D40: from container/host/DEFAULTS
         for k, v in subs.items():
             text = text.replace(k, v)
         return text.split("\n")[:-1]
@@ -209,8 +212,8 @@ class GoldenTest(Base):
 class KeyTest(Base):
     def test_name_names_the_volume_and_the_label_not_a_flag(self):
         out = self.flags()
-        self.assertIn(("-v", "swarmbox-containers:/home/agent/.local/share/containers"), pairs_of(out))
-        self.assertIn(("-e", "SWARMBOX_NAME=swarmbox"), pairs_of(out))
+        self.assertIn(("-v", (DEFAULT_VOLUME + ":/home/agent/.local/share/containers")), pairs_of(out))
+        self.assertIn(("-e", "SWARMBOX_NAME=" + DEFAULT_NAME), pairs_of(out))
         self.assertNotIn("--name", out)   # `up` adds --name itself
         out = self.flags(env={"SWARMBOX_NAME": "other"})
         self.assertIn(("-v", "other-containers:/home/agent/.local/share/containers"), pairs_of(out))
@@ -225,7 +228,7 @@ class KeyTest(Base):
         self.assertIn(("-v", other + ":/home/agent"), pairs_of(out))
 
     def test_hostname(self):
-        self.assertIn(("--hostname", "swarmbox"), pairs_of(self.flags()))
+        self.assertIn(("--hostname", DEFAULT_NAME), pairs_of(self.flags()))
         self.assertIn(("--hostname", "devbox"), pairs_of(self.flags(env={"SWARMBOX_HOSTNAME": "devbox"})))
 
     def test_tz_local_zone_and_off(self):
@@ -320,7 +323,7 @@ class KeyTest(Base):
         self.assertIn(("--label", "swarmbox.image=localhost:5000/sb:2.0.1"), pairs_of(out))
         self.assertNotIn("localhost:5000/sb:2.0.1", out)    # `up` puts the image after the flags, not create-flags
         out = self.flags()
-        self.assertIn(("--label", "swarmbox.image=ghcr.io/<org>/swarmbox:%s" % VERSION), pairs_of(out))
+        self.assertIn(("--label", ("swarmbox.image=" + DEFAULT_IMAGE_REPO + ":%s") % VERSION), pairs_of(out))
 
 
 class AlwaysAppliedTest(Base):
@@ -332,7 +335,7 @@ class AlwaysAppliedTest(Base):
         self.assertIn(("--tmpfs", "/tmp/swarmbox"), pr)
         self.assertIn(("--device", "/dev/net/tun"), pr)
         self.assertIn(("--security-opt", "unmask=/proc/*"), pr)
-        self.assertIn(("-v", "swarmbox-containers:/home/agent/.local/share/containers"), pr)
+        self.assertIn(("-v", (DEFAULT_VOLUME + ":/home/agent/.local/share/containers")), pr)
 
     def test_the_six_labels_of_3_7_4_and_no_other(self):
         out = self.flags()
@@ -354,7 +357,7 @@ class AlwaysAppliedTest(Base):
         base = pairs_of(self.flags())
         low = pairs_of(self.flags(env={"SWARMBOX_TEST_NO_NESTED": "1"}))
         self.assertEqual(sorted(set(base) - set(low)),
-                         sorted([("--device", "/dev/net/tun"), ("--security-opt", "unmask=/proc/*"), ("--hostname", "swarmbox")]))
+                         sorted([("--device", "/dev/net/tun"), ("--security-opt", "unmask=/proc/*"), ("--hostname", DEFAULT_NAME)]))
         self.assertEqual(sorted(set(low) - set(base)), [("-e", "SWARMBOX_TEST_NO_NESTED=1")])
         self.assertEqual(len(low), len(base) - 3 + 1)
 
@@ -598,7 +601,7 @@ class NeverUnsafeTest(Base):
             ("SWARMBOX_BROWSER_URL", ["", "9222", "h:1", "http://x:2"]),
             ("SWARMBOX_ENV_KEYS", ["", "A_ONE", "A_ONE,B_TWO"]),
             ("SWARMBOX_TEST_OS", ["Linux", "Darwin"]),
-            ("SWARMBOX_NAME", ["swarmbox", "second"]),
+            ("SWARMBOX_NAME", [DEFAULT_NAME, "second"]),
         ]
         combos = list(itertools.product(*[[(k, v) for v in vs] for k, vs in axes]))
         random.Random(32).shuffle(combos)
@@ -818,8 +821,8 @@ class ExplainTest(Base):
         p = self.explain(labels, env=env)
         self.assertEqual(p.returncode, 1)
         lines = p.stdout.strip().split("\n")[1:]
-        self.assertIn("this box was created from ghcr.io/<org>/swarmbox:%s; the config asks for swarmbox:dev; "
-                      "run `swarmbox reset`" % VERSION, lines)
+        self.assertIn(("this box was created from " + DEFAULT_IMAGE_REPO + ":%s; the config asks for swarmbox:dev; "
+                       "run `swarmbox reset`") % VERSION, lines)
         self.assertIn("the workspace in the config is %s, this box uses %s; run `swarmbox reset` to switch" % (ws2, self.ws), lines)
         self.assertIn("the variables changed on the host; run `swarmbox reset` to apply them", lines)
         self.assertNotIn(CANARY, p.stdout + p.stderr)   # the values never appear

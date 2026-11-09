@@ -33,7 +33,27 @@ import urllib.parse
 import urllib.request
 
 API_BASE = os.environ.get("CLOUDFLARE_API_BASE", "https://api.cloudflare.com/client/v4")
-CONNECTOR_NAME = "swarmbox-cloudflared"
+
+
+def load_default_name():
+    """The default box name: SWARMBOX_DEFAULT_NAME of the DEFAULTS file (D40), next to this script in the helper folder, or in
+    container/host/ when run from a checkout. Read here, not passed by the helper, so the script also works on its own."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for folder in (here, os.path.join(here, "container", "host")):
+        try:
+            with open(os.path.join(folder, "DEFAULTS")) as f:
+                for line in f:
+                    if line.startswith("SWARMBOX_DEFAULT_NAME="):
+                        value = line.split("=", 1)[1].strip().strip("'\"")
+                        if value:
+                            return value
+        except OSError:
+            continue
+    sys.exit("cloudflare-setup.py: no DEFAULTS file with SWARMBOX_DEFAULT_NAME next to the script (the helper archive is incomplete).")
+
+
+DEFAULT_NAME = load_default_name()
+CONNECTOR_NAME = DEFAULT_NAME + "-cloudflared"  # one connector per host, whatever the box name (design 5.2)
 # Pinned (design 12.3). Override with --connector-image or SWARMBOX_CLOUDFLARED_IMAGE.
 DEFAULT_CONNECTOR_IMAGE = "docker.io/cloudflare/cloudflared:2026.10.7"
 DEFAULT_SESSION = "4h"  # applies to a first setup only; a rerun keeps what is configured
@@ -722,18 +742,18 @@ def build_parser():
                "  %(prog)s --dry-run                # show what would change (read-only)\n"
                "  %(prog)s status                   # read-only report + login check\n"
                "  %(prog)s token                    # print ONLY the tunnel token (for SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN)\n"
-               "  %(prog)s remove --name swarmbox --yes",
+               "  %(prog)s remove --name " + DEFAULT_NAME + " --yes",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("command", nargs="?", default="apply", choices=["apply", "status", "remove", "token"],
                    help="apply (default), status (read-only), remove, token (print only the tunnel token)")
     p.add_argument("--domain", help="the Cloudflare zone, e.g. example.com, not a subdomain (env SWARMBOX_WEB_DOMAIN; remembered)")
     p.add_argument("--email", help="comma-separated e-mails allowed to log in (env SWARMBOX_WEB_EMAIL; remembered)")
-    p.add_argument("--name", default="swarmbox", help="container name; hostname is <name>.<domain> (default: swarmbox)")
+    p.add_argument("--name", default=DEFAULT_NAME, help="container name; hostname is <name>.<domain> (default: %s)" % DEFAULT_NAME)
     p.add_argument("--hostname", help="serve exactly this hostname instead of <name>.<domain> (e.g. tty.example.com)")
     p.add_argument("--port", type=int, default=7681, help="host port of the web terminal (default: 7681)")
     p.add_argument("--session", default=None,
                    help="login session length, e.g. 30m, 4h. Default: keep the configured value; 4h on a first setup")
-    p.add_argument("--tunnel", default="swarmbox", help="tunnel name, shared by all hostnames (default: swarmbox)")
+    p.add_argument("--tunnel", default=DEFAULT_NAME, help="tunnel name, shared by all hostnames (default: %s)" % DEFAULT_NAME)
     p.add_argument("--dry-run", action="store_true", help="only read from Cloudflare; show what would change")
     p.add_argument("--no-connector", action="store_true", help="do not run cloudflared with Podman")
     p.add_argument("--connector-image", default=None,

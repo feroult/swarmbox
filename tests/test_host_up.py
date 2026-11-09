@@ -21,14 +21,14 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT, FakePodman  # noqa: E402
+from helpers import ROOT, FakePodman, DEFAULT_NAME, DEFAULT_CONNECTOR, DEFAULT_IMAGE_REPO  # noqa: E402
 
 HELPER_SRC = os.path.join(ROOT, "container", "host", "swarmbox-host")
 VERSION_SRC = os.path.join(ROOT, "container", "host", "VERSION")
 with open(VERSION_SRC) as _f:
     VERSION = _f.read().strip()
-NAME = "swarmbox"
-IMAGE = "ghcr.io/<org>/swarmbox:%s" % VERSION
+NAME = DEFAULT_NAME
+IMAGE = (DEFAULT_IMAGE_REPO + ":%s") % VERSION
 BUSY = ("Error: rootlessport listen tcp 127.0.0.1:7681: bind: address already in use")
 NOSUCH = {"exit": 125, "stderr": "Error: inspecting object: no such container swarmbox\n"}
 HELPER_TOOLS = ["sh", "dash", "bash", "cat", "rm", "mkdir", "rmdir", "sleep", "kill", "sort", "tail", "head", "grep", "sed",
@@ -56,6 +56,7 @@ class Base(unittest.TestCase):
         shutil.copy(HELPER_SRC, os.path.join(self.hdir, "swarmbox-host"))
         os.chmod(os.path.join(self.hdir, "swarmbox-host"), 0o755)
         shutil.copy(VERSION_SRC, os.path.join(self.hdir, "VERSION"))
+        shutil.copy(os.path.join(ROOT, "container", "host", "DEFAULTS"), os.path.join(self.hdir, "DEFAULTS"))
         with open(os.path.join(self.hdir, "tool-ports"), "w") as f:
             f.write("")
         for n, c in (("localtime", ""), ("tun", ""), ("proc-version", "Linux version 6.1.0 (debian)\n")):
@@ -186,9 +187,9 @@ class FastPathTest(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_a_box_that_merely_shares_the_name_prefix_is_not_the_box(self):
-        # `podman container inspect swarmbox` resolved to a container named swarmbox-cloudflared (or an ID prefix):
+        # `podman container inspect <box>` resolved to the connector container (or an ID prefix):
         # the printed name differs, so the box does not exist and is created
-        self.podman(lookup={"stdout": line(name="swarmbox-cloudflared", managed="")})
+        self.podman(lookup={"stdout": line(name=DEFAULT_CONNECTOR, managed="")})
         r = self.up()
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(len(self.real_runs()), 1)
@@ -564,7 +565,7 @@ class ConflictTest(Base):
         self.podman(lookup={"stdout": self.V010}, mounts="/home/me/work\n")
         r = self.up()
         self.assertEqual(r.returncode, 5, r.stderr)
-        self.assertIn("A container named 'swarmbox' made by SwarmBox v0.1.0 exists (workspace: /home/me/work).", r.stderr)
+        self.assertIn("A container named '%s' made by SwarmBox v0.1.0 exists (workspace: /home/me/work)." % NAME, r.stderr)
         self.assertIn("podman rm -f swarmbox", r.stderr)
         self.assertIn("swarmbox config set WORKSPACE /home/me/work", r.stderr)
         self.assert_no_run()
@@ -679,7 +680,7 @@ class ReadinessTest(Base):
         self.podman(exec={"exit": 1})
         r = self.up(SWARMBOX_TEST_READY_TRIES="3", SWARMBOX_TEST_NAP="1")
         self.assertEqual(r.returncode, 6)
-        self.assertIn("did not become ready in 3 s; see `podman logs swarmbox`", r.stderr)
+        self.assertIn("did not become ready in 3 s; see `podman logs %s`" % NAME, r.stderr)
 
     def test_a_container_that_exits_while_waiting_is_exit_6_at_once_with_its_logs(self):
         self.podman(exec={"exit": 125, "stderr": "container is not running\n"},
@@ -1008,7 +1009,7 @@ class ResetTest(Base):
         self.assertEqual(self.subs("rm"), [])
 
     def test_reset_does_not_remove_a_container_that_only_shares_the_name_prefix(self):
-        self.podman(lookup={"stdout": line(name="swarmbox-cloudflared")})
+        self.podman(lookup={"stdout": line(name=DEFAULT_CONNECTOR)})
         r = self.run_h("reset")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.subs("rm"), [])
@@ -1060,7 +1061,7 @@ class StopUrlTest(Base):
         self.podman()
         r = self.run_h("stop")
         self.assertEqual(r.returncode, 0)
-        self.assertIn("no box named 'swarmbox'", r.stderr)
+        self.assertIn("no box named '%s'" % NAME, r.stderr)
         self.assertEqual(self.subs("stop"), [])
 
     def test_stop_of_a_container_that_is_not_ours_is_refused(self):
@@ -1123,39 +1124,39 @@ class StopUrlTest(Base):
         self.cloudflare_json("example.com")
         r = self.run_h("url", env=self.url_env())
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://swarmbox.example.com\n")
+        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://" + NAME + ".example.com\n")
         self.assertEqual(self.calls(), [])
 
     def test_url_prints_remote_from_cloudflare_json_with_name_prefix(self):
         self.podman()
-        self.cloudflare_json("example.com", name="swarmbox", session="4h")
+        self.cloudflare_json("example.com", name=NAME, session="4h")
         r = self.run_h("url", env=self.url_env())
-        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://swarmbox.example.com\n")
+        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://" + NAME + ".example.com\n")
 
     def test_url_uses_saved_hostname_over_name_dot_domain(self):
         self.podman()
-        self.cloudflare_json("example.com", hostname="tty.example.com", name="swarmbox")
+        self.cloudflare_json("example.com", hostname="tty.example.com", name=NAME)
         r = self.run_h("url", env=self.url_env())
         self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://tty.example.com\n")
         self.assertEqual(self.calls(), [])
 
     def test_url_saved_hostname_belongs_to_its_box_name_only(self):
         self.podman()
-        self.cloudflare_json("example.com", hostname="tty.example.com", name="swarmbox")
+        self.cloudflare_json("example.com", hostname="tty.example.com", name=NAME)
         r = self.run_h("url", env=self.url_env(SWARMBOX_NAME="other"))
         self.assertEqual(r.stdout.splitlines()[1], "https://other.example.com")
 
     def test_url_saved_hostname_outside_the_environment_domain_is_ignored(self):
         self.podman()
-        self.cloudflare_json("example.com", hostname="tty.example.com", name="swarmbox")
+        self.cloudflare_json("example.com", hostname="tty.example.com", name=NAME)
         r = self.run_h("url", env=self.url_env(SWARMBOX_WEB_DOMAIN="example.net"))
-        self.assertEqual(r.stdout.splitlines()[1], "https://swarmbox.example.net")
+        self.assertEqual(r.stdout.splitlines()[1], "https://" + NAME + ".example.net")
 
     def test_url_ignores_a_bad_saved_hostname_and_falls_back_with_a_warning(self):
         self.podman()
-        self.cloudflare_json("example.com", hostname="a b;x", name="swarmbox")
+        self.cloudflare_json("example.com", hostname="a b;x", name=NAME)
         r = self.run_h("url", env=self.url_env())
-        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://swarmbox.example.com\n")
+        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://" + NAME + ".example.com\n")
         self.assertIn("ignoring", r.stderr)
 
     def test_url_ignores_a_bad_host_name_with_a_warning(self):
@@ -1167,7 +1168,7 @@ class StopUrlTest(Base):
 
     def test_url_makes_no_podman_call(self):
         self.podman()
-        self.cloudflare_json("example.com", hostname="tty.example.com", name="swarmbox")
+        self.cloudflare_json("example.com", hostname="tty.example.com", name=NAME)
         self.run_h("url", env=self.url_env())
         self.run_h("url", env=self.url_env(SWARMBOX_WEB_HOSTNAME="x.example.org"))
         self.assertEqual(self.calls(), [])
@@ -1187,7 +1188,7 @@ class StopUrlTest(Base):
     def test_url_web_domain_from_the_environment(self):
         self.podman()
         r = self.run_h("url", env=self.url_env(SWARMBOX_WEB_DOMAIN="example.net"))
-        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://swarmbox.example.net\n")
+        self.assertEqual(r.stdout, "http://127.0.0.1:7681\nhttps://" + NAME + ".example.net\n")
 
     def test_url_ignores_a_broken_cloudflare_json_and_a_hostile_domain(self):
         self.podman()

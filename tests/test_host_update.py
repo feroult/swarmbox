@@ -17,7 +17,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_host_up as up_tests  # noqa: E402
 from function_cases import make_archive  # noqa: E402
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_IMAGE_REPO  # noqa: E402
 
 REPO = "localhost:34567/org/swarmbox"
 MSG = "updated to %s; run `swarmbox reset` to use it (running sessions end)\n"
@@ -161,8 +161,8 @@ class PlainUpdateTest(UpdateBase):
         self.podman_for("2.0.2")
         r = self.update()
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.calls()[0], ["pull", "-q", "ghcr.io/<org>/swarmbox:2.0"])
-        self.assertEqual(self.image_line(), ["IMAGE=ghcr.io/<org>/swarmbox:2.0.2"])
+        self.assertEqual(self.calls()[0], ["pull", "-q", (DEFAULT_IMAGE_REPO + ":2.0")])
+        self.assertEqual(self.image_line(), [("IMAGE=" + DEFAULT_IMAGE_REPO + ":2.0.2")])
         self.assertEqual(os.stat(self.cfg).st_mode & 0o777, 0o600)
 
     def test_an_environment_image_is_used_for_the_repo_and_the_override_is_reported(self):
@@ -441,6 +441,7 @@ class AfterUpdateTest(UpdateBase):
         os.symlink(os.path.join(ROOT, "container", "host", "templates"), os.path.join(hd, "templates"))
         with open(os.path.join(hd, "VERSION"), "w") as f:
             f.write("2.0.0\n")
+        shutil.copy(os.path.join(ROOT, "container", "host", "DEFAULTS"), hd)
         r = subprocess.run(["sh", init, "--shell", "bash", "--image", REPO + ":2.0.0"], capture_output=True, text=True,
                            env={"PATH": os.environ["PATH"], "SWARMBOX_TEST_HOST_DIR": hd})
         self.assertEqual(r.returncode, 0, r.stderr)

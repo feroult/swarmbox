@@ -12,13 +12,14 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_IMAGE_REPO  # noqa: E402
 import test_ci_workflow as ci  # noqa: E402  (its YAML loader and helpers are reused)
 
 REL = os.path.join(ROOT, ".github", "workflows", "release.yml")
 TEXT = open(REL, encoding="utf-8").read() if os.path.exists(REL) else ""
 DOC = ci.YAML.safe_load(TEXT) if ci.YAML and TEXT else None
-IMAGE = "ghcr.io/feroult/swarmbox"
+OWNER = "feroult"                                   # D38
+IMAGE = DEFAULT_IMAGE_REPO.replace("<org>", OWNER)   # D40: the repository name comes from container/host/DEFAULTS
 PUBLISH_RE = r"needs\.version\.outputs\.publish == 'true'"
 
 
@@ -109,12 +110,29 @@ class Publishing(unittest.TestCase):
         self.assertIn("publish=true", go("tag", "workflow_dispatch", "false"))
 
     def test_registry_is_exactly_the_owner_image(self):
-        self.assertEqual(DOC["env"]["REGISTRY_IMAGE"], IMAGE)
+        self.assertEqual(DOC["env"]["REGISTRY_OWNER"], OWNER)
+        self.assertNotIn("REGISTRY_IMAGE", DOC["env"])      # the name is not written in the workflow (D40)
+        step = [s for s in jobs()["version"]["steps"] if s.get("id") == "img"]
+        self.assertEqual(len(step), 1)
+        self.assertEqual(jobs()["version"]["outputs"]["image"], "${{ steps.img.outputs.image }}")
+        # the step is run: it reads container/host/DEFAULTS and puts the owner in place of <org>
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "out")
+            subprocess.run(["bash", "-c", step[0]["run"]], env={"PATH": os.environ["PATH"], "GITHUB_OUTPUT": out,
+                           "REGISTRY_OWNER": OWNER}, cwd=ROOT, check=True, capture_output=True)
+            with open(out) as fh:
+                self.assertEqual(fh.read(), "image=%s\n" % IMAGE)
+        users = [n for n, j in jobs().items() if "REGISTRY_IMAGE" in str(j.get("steps"))]
+        self.assertGreaterEqual(len(users), 4)
+        for n in users:
+            self.assertEqual(jobs()[n]["env"]["REGISTRY_IMAGE"], "${{ needs.version.outputs.image }}", n)
+            self.assertIn("version", jobs()[n]["needs"], n)
         hosts = set(re.findall(r"\b([a-z0-9.-]+\.(?:io|com|dev|org))/[\w./-]+", TEXT.replace("github.com/", "")))
         for h in hosts:
             self.assertIn(h, ("ghcr.io", "claude.com", "sigstore.dev", "docs.github.com", "githubusercontent.com"), h)
         for m in re.findall(r"ghcr\.io/[\w./-]+", TEXT):
-            self.assertTrue(m.startswith(IMAGE), m)
+            self.assertTrue(m.startswith("ghcr.io/%s/" % OWNER), m)
         for bad in ("docker.io", "quay.io", "index.docker", "registry.example", "docker/login-action", "secrets."):
             self.assertNotIn(bad, TEXT)
         self.assertNotIn("0.0.0.0", TEXT)
@@ -270,7 +288,7 @@ class Pins(unittest.TestCase):
 
 class FallbackTextCheck(unittest.TestCase):
     def test_text_markers(self):
-        for needle in ("v*.*.*", "workflow_dispatch", "dry-run", "ghcr.io/feroult/swarmbox", "id-token: write",
+        for needle in ("v*.*.*", "workflow_dispatch", "dry-run", "ghcr.io/%s/" % OWNER, "REGISTRY_OWNER: " + OWNER, "container/host/DEFAULTS", "id-token: write",
                        "cosign sign", "anchore/sbom-action", "anchore/scan-action", "ubuntu-24.04-arm", "contents: read"):
             self.assertIn(needle, TEXT)
         self.assertEqual(TEXT.count("id-token: write"), 1)

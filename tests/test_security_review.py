@@ -27,10 +27,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_host_update as upd  # noqa: E402
 import test_host_up as up_tests  # noqa: E402
 from function_cases import make_archive  # noqa: E402
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_CONNECTOR, DEFAULT_NAME  # noqa: E402
 
 TOK = "tunnelTOKEN0123456789abcdefSECRETvalue=="
-CN = "swarmbox-cloudflared"
+CN = DEFAULT_CONNECTOR
 
 
 def load_cf(name):
@@ -288,7 +288,7 @@ class TempFileTest(Base):
         os.makedirs(self.state)
         notices = os.path.join(self.state, "notices")
         with open(notices, "w") as f:
-            f.write("swarmbox:WEB_PORT\nswarmbox:WITH\n")
+            f.write(DEFAULT_NAME + ":WEB_PORT\n" + DEFAULT_NAME + ":WITH\n")
         v = self.victim()
 
         def plant(pid):
@@ -297,7 +297,7 @@ class TempFileTest(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assert_victim(v)
         with open(notices) as f:
-            self.assertEqual(f.read(), "swarmbox:WITH\n")
+            self.assertEqual(f.read(), DEFAULT_NAME + ":WITH\n")
 
     def test_up_does_not_write_through_planted_err_flags_or_cid_symlinks(self):
         os.makedirs(self.state)
@@ -330,7 +330,7 @@ class TempFileTest(Base):
         os.mkdir(target)
         with open(os.path.join(target, "keep"), "w") as f:
             f.write("KEEP\n")
-        lock = os.path.join(self.state, "up-swarmbox.lock")
+        lock = os.path.join(self.state, "up-%s.lock" % DEFAULT_NAME)
         os.symlink(target, lock)
         self.podman()
         r = self.up(SWARMBOX_TEST_LOCK_PIDWAIT="3", SWARMBOX_TEST_NAP="0.02")
@@ -345,7 +345,7 @@ class TempFileTest(Base):
         os.mkdir(target)
         with open(os.path.join(target, "pid"), "w") as f:
             f.write("%d\n" % os.getpid())
-        os.symlink(target, os.path.join(self.state, "up-swarmbox.lock"))
+        os.symlink(target, os.path.join(self.state, "up-%s.lock" % DEFAULT_NAME))
         self.podman()
         r = self.up(SWARMBOX_TEST_LOCK_TRIES="3", SWARMBOX_TEST_NAP="0.02")
         self.assertEqual(r.returncode, 6, r.stderr)
@@ -432,7 +432,7 @@ class CleanupTest(Base):
                 while not os.path.exists(gate + ".in"):
                     self.assertLess(time.time(), deadline)
                     time.sleep(0.02)
-                self.assertTrue(os.path.isdir(os.path.join(self.state, "up-swarmbox.lock")))
+                self.assertTrue(os.path.isdir(os.path.join(self.state, "up-%s.lock" % DEFAULT_NAME)))
                 p.send_signal(sig)
                 p.communicate(timeout=20)
                 open(gate, "w").close()

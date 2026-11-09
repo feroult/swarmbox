@@ -29,7 +29,7 @@ umask 077
 NL='
 '
 CR=$(printf '\r')
-REGISTRY_REPO='ghcr.io/<org>/swarmbox'   # <org> is the documented placeholder until the name is settled (D32)
+# DEFAULT_NAME and REGISTRY_REPO come from the DEFAULTS file next to this helper (load_defaults, D40); nothing here holds them.
 
 warn() { printf 'swarmbox: %s\n' "$*" >&2; }
 die() { _rc=$1; shift; warn "$*"; exit "$_rc"; }
@@ -67,7 +67,7 @@ ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_
 # Built-in default; empty means "no default" (the key is unset). AGENT has none here: the box picks the first agent of WITH.
 default_of() {
     case $1 in
-        NAME|HOSTNAME) printf 'swarmbox' ;;
+        NAME|HOSTNAME) printf '%s' "$DEFAULT_NAME" ;;
         WORKSPACE) printf '%s/swarmbox' "$HOME" ;;
         TZ) printf 'local' ;;
         INIT) printf 'auto' ;;
@@ -106,6 +106,34 @@ read_version() {
     printf '%s' "$_v"
 }
 
+# Reads the two keys of the DEFAULTS file next to the helper (D40): DEFAULT_NAME and REGISTRY_REPO. The file is parsed, not sourced:
+# only KEY=VALUE lines of these two keys count, one pair of single quotes around a value is removed, anything else is ignored.
+# Exits 3 when the file is missing or a value is not usable (a corrupted helper archive, 3.7.1).
+load_defaults() {
+    _dir=$(self_dir) || die 3 "cannot find the folder of the host helper."
+    [ -r "$_dir/DEFAULTS" ] || die 3 "the host helper has no DEFAULTS file ($_dir/DEFAULTS); the helper archive is incomplete."
+    DEFAULT_NAME=
+    REGISTRY_REPO=
+    while IFS= read -r _l || [ -n "$_l" ]; do
+        _l=${_l%"$CR"}
+        case $_l in
+            SWARMBOX_DEFAULT_NAME=*) _k=N ;;
+            SWARMBOX_DEFAULT_IMAGE_REPO=*) _k=R ;;
+            *) continue ;;
+        esac
+        _v=${_l#*=}
+        case $_v in
+            \'*\') _v=${_v#\'}; _v=${_v%\'} ;;
+        esac
+        if [ "$_k" = N ]; then DEFAULT_NAME=$_v; else REGISTRY_REPO=$_v; fi
+    done < "$_dir/DEFAULTS"
+    CONNECTOR_NAME=$DEFAULT_NAME-cloudflared
+    valid_box_name "$DEFAULT_NAME" || die 3 "the DEFAULTS file ($_dir/DEFAULTS) has no usable SWARMBOX_DEFAULT_NAME: '$DEFAULT_NAME'."
+    case $REGISTRY_REPO in
+        ''|*[[:space:]\'\"]*) die 3 "the DEFAULTS file ($_dir/DEFAULTS) has no usable SWARMBOX_DEFAULT_IMAGE_REPO: '$REGISTRY_REPO'." ;;
+    esac
+}
+
 # ---------------------------------------------------------------- paths
 
 trim() {
@@ -139,11 +167,12 @@ init_paths() {
         *) die 1 "HOME is not set to an absolute path." ;;
     esac
     VERSION_STR=$(read_version) || exit 3   # the exit must happen outside the command substitution
-    BOX=${SWARMBOX_NAME:-swarmbox}
+    load_defaults
+    BOX=${SWARMBOX_NAME:-$DEFAULT_NAME}
     valid_box_name "$BOX" || die 2 "invalid SWARMBOX_NAME '$BOX': it must start with a letter or digit, use only letters, digits, '.', '_' and '-', and not be 'config'."
     CFG_ROOT=$(xdg_root "${XDG_CONFIG_HOME:-}" "$HOME/.config")/swarmbox
     STATE_DIR=$(xdg_root "${XDG_STATE_HOME:-}" "$HOME/.local/state")/swarmbox
-    if [ "$BOX" = swarmbox ]; then
+    if [ "$BOX" = "$DEFAULT_NAME" ]; then
         CFG_DIR=$CFG_ROOT
     else
         CFG_DIR=$CFG_ROOT/$BOX
@@ -1750,7 +1779,7 @@ up_main() {
 
 # Pinned (12.3). The single source in the helper; tests/test_host_connector.py checks that it equals DEFAULT_CONNECTOR_IMAGE of
 # cloudflare-setup.py. SWARMBOX_CLOUDFLARED_IMAGE overrides it (environment only: the config table of 8.2 has no file key).
-CONNECTOR_NAME=swarmbox-cloudflared
+# CONNECTOR_NAME is set by load_defaults: <default name>-cloudflared, one per host (D40).
 CONNECTOR_IMAGE_DEFAULT=docker.io/cloudflare/cloudflared:2026.10.7
 
 # After `up`, under the lock, when the box is ready. Does nothing (no Podman call at all) unless WEB is 1 and a tunnel token

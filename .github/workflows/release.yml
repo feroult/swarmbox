@@ -10,7 +10,7 @@
 # multi-arch list with the tags X.Y.Z, X.Y and latest) -> sign (cosign keyless on the digest, SBOM with syft, SBOM
 # attestation, a verify of both) -> notes (GitHub release with the digest and the SBOM file).
 #
-# It pushes only to ghcr.io/feroult/swarmbox (D38) with the workflow's own token, contacts no other registry, and uses no
+# It pushes only to the image of container/host/DEFAULTS under the owner feroult, ghcr.io/feroult/<default name> (D38, D40) with the workflow's own token, contacts no other registry, and uses no
 # stored credential: the signature is keyless (a short-lived certificate from the OIDC token of the run).
 #
 # NONE OF THIS HAS EVER RUN. It was validated in the development box only by tests/test_release_workflow.py (YAML shape,
@@ -18,7 +18,7 @@
 # below that depends on GitHub or on an action is [unverified] until the first real run; the checklist is in
 # docs/design.md 13.4 ("First run of release.yml"). In short:
 #   - [unverified] the runner label ubuntu-24.04-arm is available to the account (same open fact as B31 for ci.yml);
-#   - [unverified] the package ghcr.io/feroult/swarmbox can be created by the workflow token (packages: write) and, for a
+#   - [unverified] the package ghcr.io/feroult/<default name> can be created by the workflow token (packages: write) and, for a
 #     repository that publishes it, is made public once in the package settings;
 #   - [unverified] anchore/scan-action accepts "docker-archive:image.tar" as its image input and grype's HIGH threshold
 #     passes on the real image (the Debian base may carry findings: see .grype.yaml for the rule about ignoring);
@@ -46,7 +46,9 @@ permissions:
   contents: read
 
 env:
-  REGISTRY_IMAGE: ghcr.io/feroult/swarmbox
+  # D38: the image owner. The repository name is not here: the version job reads it from container/host/DEFAULTS (D40) and the
+  # jobs that push or sign get it as REGISTRY_IMAGE from the output `image`.
+  REGISTRY_OWNER: feroult
 
 jobs:
   version:
@@ -61,10 +63,19 @@ jobs:
       minor: ${{ steps.ver.outputs.minor }}
       tags: ${{ steps.ver.outputs.tags }}
       publish: ${{ steps.pub.outputs.publish }}
+      image: ${{ steps.img.outputs.image }}
     steps:
       - uses: actions/checkout@v4.2.2
         with:
           persist-credentials: false
+      - name: Read the image repository from container/host/DEFAULTS (D40) and put the owner in place of <org> (D38)
+        id: img
+        run: |
+          repo=$(sed -n "s/^SWARMBOX_DEFAULT_IMAGE_REPO=['\"]*\([^'\"]*\)['\"]*$/\1/p" container/host/DEFAULTS)
+          [ -n "$repo" ] || { echo "no SWARMBOX_DEFAULT_IMAGE_REPO in container/host/DEFAULTS" >&2; exit 1; }
+          image=$(printf '%s' "$repo" | sed "s|<org>|$REGISTRY_OWNER|")
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "image=$image"
       - name: Map the tag to the image tags (a malformed or prerelease tag fails the run here)
         id: ver
         env:
@@ -116,6 +127,7 @@ jobs:
             runner: ubuntu-24.04-arm
     env:
       LOCAL_IMAGE: swarmbox-test-img-release-${{ matrix.arch }}
+      REGISTRY_IMAGE: ${{ needs.version.outputs.image }}
       VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4.2.2
@@ -182,6 +194,7 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       TAGS: ${{ needs.version.outputs.tags }}
+      REGISTRY_IMAGE: ${{ needs.version.outputs.image }}
     steps:
       - name: Log in to ghcr.io with the workflow token
         env:
@@ -215,6 +228,7 @@ jobs:
       id-token: write
     env:
       DIGEST: ${{ needs.manifest.outputs.digest }}
+      REGISTRY_IMAGE: ${{ needs.version.outputs.image }}
     steps:
       - uses: sigstore/cosign-installer@v3.7.0
       - name: Log in to ghcr.io with the workflow token
@@ -258,6 +272,7 @@ jobs:
       TAG: ${{ needs.version.outputs.tag }}
       VERSION: ${{ needs.version.outputs.version }}
       DIGEST: ${{ needs.manifest.outputs.digest }}
+      REGISTRY_IMAGE: ${{ needs.version.outputs.image }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/download-artifact@v4.1.8

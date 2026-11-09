@@ -175,7 +175,7 @@ RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.
     chmod 755 /usr/local/bin/banner.sh /usr/local/bin/swarmbox-podman-service /usr/local/bin/swarmbox-pubkey \
         /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-tool /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-migrate /usr/local/bin/swarmbox-mcp /usr/local/bin/swarmbox-init /usr/local/bin/swarmbox-entrypoint && \
     chmod 755 /usr/local/share/swarmbox/host/swarmbox-host && \
-    chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py /usr/local/share/swarmbox/host/VERSION && \
+    chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py /usr/local/share/swarmbox/host/VERSION /usr/local/share/swarmbox/host/DEFAULTS && \
     chmod -R a+rX /usr/local/share/swarmbox/host && \
     chmod -R a+rX /etc/swarmbox/mcp /usr/local/lib/swarmbox/tools && \
     find /usr/local/lib/swarmbox/tools -name '*.sh' -exec chmod 755 {} + && \

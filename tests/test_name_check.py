@@ -14,7 +14,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_NAME  # noqa: E402
 
 SCRIPT = os.path.join(ROOT, "dev", "name-check.sh")
 
@@ -63,6 +63,18 @@ class NameCheckTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(SCRIPT))
         with open(SCRIPT) as f:
             self.assertEqual(f.readline().strip(), "#!/bin/sh")
+
+    def test_default_name_is_the_one_of_the_defaults_file(self):
+        r = self.run_it()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(self.log) as f:
+            urls = f.read()
+        self.assertIn("q=%s+in:name" % DEFAULT_NAME, urls)
+        self.assertIn("/feroult/%s" % DEFAULT_NAME, urls)
+        self.assertIn("/%s" % DEFAULT_NAME, urls.split("registry.npmjs.org")[1].split("\n")[0])
+        r = self.run_it(args=["othername"])        # an argument still wins
+        with open(self.log) as f:
+            self.assertIn("othername", f.read())
 
     def test_taken_everywhere(self):
         r = self.run_it(search=21, repo=200, npm=200, pypi=200)

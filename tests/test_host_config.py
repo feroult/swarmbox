@@ -17,7 +17,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_NAME, DEFAULT_IMAGE_REPO  # noqa: E402
 
 HELPER = os.path.join(ROOT, "container", "host", "swarmbox-host")
 with open(os.path.join(ROOT, "container", "host", "VERSION")) as _f:
@@ -28,7 +28,7 @@ CANARY = "CANARY-VALUE-do-not-print-7f3a"
 # key -> (default or None for "unset", a good value, a different good value, [bad values])
 KEYS = {
     "WORKSPACE": (None, "/srv/work", "/srv/other", ["a:b", "a\nb"]),
-    "HOSTNAME": ("swarmbox", "devbox", "box2", ["-x", "a b", "a_b", "x" * 64]),
+    "HOSTNAME": (DEFAULT_NAME, "devbox", "box2", ["-x", "a b", "a_b", "x" * 64]),
     "TZ": ("local", "Europe/Lisbon", "off", ["a b", "Europe/", "../etc", "9am", "A//B"]),
     "INIT": ("auto", "1", "0", ["yes", "2"]),
     "PORTS": (None, "3000,8080:80", "127.0.0.1:9000:3000", ["abc", "3000,", "99999", "1:2:3:4", "0", ",1", "1,,2", "1 2"]),
@@ -138,8 +138,36 @@ class VersionTest(Base):
         shutil.copy(HELPER, d)
         os.chmod(os.path.join(d, "swarmbox-host"), 0o755)
         write_file(os.path.join(d, "VERSION"), "9.8.7\n")
+        shutil.copy(os.path.join(ROOT, "container", "host", "DEFAULTS"), d)
         p = self.run_h("version", helper=os.path.join(d, "swarmbox-host"))
         self.assertEqual((p.returncode, p.stdout), (0, "9.8.7\n"))
+
+    def copied_helper(self, defaults_text):
+        d = os.path.join(self.tmp, "copy")
+        os.mkdir(d)
+        shutil.copy(HELPER, d)
+        os.chmod(os.path.join(d, "swarmbox-host"), 0o755)
+        write_file(os.path.join(d, "VERSION"), "9.8.7\n")
+        if defaults_text is not None:
+            write_file(os.path.join(d, "DEFAULTS"), defaults_text)
+        return os.path.join(d, "swarmbox-host")
+
+    def test_the_default_names_come_from_the_defaults_file(self):
+        """D40: flipping the two lines of DEFAULTS flips the box name, the hostname key and the image of a copied helper."""
+        h = self.copied_helper("SWARMBOX_DEFAULT_NAME=flipped\nSWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/<org>/flipped'\n")
+        for key, want in (("NAME", "flipped"), ("HOSTNAME", "flipped"), ("IMAGE", "ghcr.io/<org>/flipped:9.8.7")):
+            p = self.run_h("config", "get", key, helper=h)
+            self.assertEqual((p.returncode, p.stdout.strip()), (0, want), (key, p.stderr))
+
+    def test_missing_or_unusable_defaults_file_exits_3(self):
+        h = self.copied_helper(None)
+        p = self.run_h("config", "get", "NAME", helper=h)
+        self.assertEqual(p.returncode, 3)
+        self.assertIn("DEFAULTS", p.stderr)
+        for bad in ("SWARMBOX_DEFAULT_IMAGE_REPO='x/y'\n", "SWARMBOX_DEFAULT_NAME=config\nSWARMBOX_DEFAULT_IMAGE_REPO=x/y\n",
+                    "SWARMBOX_DEFAULT_NAME=ok\n", "SWARMBOX_DEFAULT_NAME=ok\nSWARMBOX_DEFAULT_IMAGE_REPO='a b'\n"):
+            write_file(os.path.join(os.path.dirname(h), "DEFAULTS"), bad)
+            self.assertEqual(self.run_h("config", "get", "NAME", helper=h).returncode, 3, bad)
 
     def test_missing_or_bad_version_file_exits_3(self):
         d = os.path.join(self.tmp, "copy")
@@ -178,7 +206,7 @@ class DefaultsAndPrecedenceTest(Base):
         if key == "WORKSPACE":
             return os.path.join(self.home, "swarmbox")
         if key == "IMAGE":
-            return "ghcr.io/<org>/swarmbox:" + VERSION
+            return (DEFAULT_IMAGE_REPO + ":") + VERSION
         return d
 
     def test_every_key_default_get(self):
@@ -186,13 +214,13 @@ class DefaultsAndPrecedenceTest(Base):
             rc, out, err = self.get(key)
             want = self.default(key)
             if key == "IMAGE":
-                want = "ghcr.io/<org>/swarmbox:" + VERSION
+                want = (DEFAULT_IMAGE_REPO + ":") + VERSION
             if want is None:
                 self.assertEqual((rc, out), (1, ""), key)
             else:
                 self.assertEqual((rc, out), (0, want + "\n"), key)
             self.assertEqual(err, "", key)
-        self.assertEqual(self.get("NAME")[:2], (0, "swarmbox\n"))
+        self.assertEqual(self.get("NAME")[:2], (0, DEFAULT_NAME + "\n"))
         self.assertEqual(self.get("CLOUDFLARE_TUNNEL_TOKEN")[:2], (1, ""))
 
     def test_unknown_key_exits_2(self):
@@ -232,8 +260,8 @@ class DefaultsAndPrecedenceTest(Base):
         self.assertEqual(got["TZ"], ["off", "env"])
         self.assertEqual(got["INIT"], ["auto", "default"])
         self.assertEqual(got["PORTS"], ["", "default"])
-        self.assertEqual(got["NAME"], ["swarmbox", "default"])
-        self.assertEqual(got["IMAGE"], ["ghcr.io/<org>/swarmbox:" + VERSION, "default"])
+        self.assertEqual(got["NAME"], [DEFAULT_NAME, "default"])
+        self.assertEqual(got["IMAGE"], [(DEFAULT_IMAGE_REPO + ":") + VERSION, "default"])
         self.assertEqual(got["CLOUDFLARE_TUNNEL_TOKEN"], ["unset", "default"])
 
     def test_xdg_variables_are_honored_and_bad_ones_ignored(self):
@@ -269,7 +297,7 @@ class GrammarTest(Base):
     def test_comments_and_blank_lines(self):
         self.write_cfg("# a comment\n\n   # indented comment WITH=no\n\t\nWITH=yes\n   # HOSTNAME=no\n")
         self.assertEqual(self.get("WITH")[:3], (0, "yes\n", ""))
-        self.assertEqual(self.get("HOSTNAME")[:2], (0, "swarmbox\n"))
+        self.assertEqual(self.get("HOSTNAME")[:2], (0, DEFAULT_NAME + "\n"))
 
     def test_later_line_wins(self):
         self.write_cfg("WITH=a\nWITH=b\nTZ=off\nWITH=c\n")
@@ -295,7 +323,7 @@ class GrammarTest(Base):
     def test_name_line_is_an_unknown_key(self):
         self.write_cfg("NAME=hijack\nWITH=a\n")
         rc, out, err = self.get("NAME")
-        self.assertEqual((rc, out), (0, "swarmbox\n"))
+        self.assertEqual((rc, out), (0, DEFAULT_NAME + "\n"))
         self.assertIn("NAME", err)
         self.assertIn("unknown key", err)
         # and it did not move the folder: the default box still reads this file
@@ -319,7 +347,7 @@ class GrammarTest(Base):
         self.assertIn("WITH=third", slurp(second))
         self.assertEqual(self.get("WITH")[1], "first\n")
         # an explicit default name is the default box
-        self.assertEqual(self.get("WITH", env={"SWARMBOX_NAME": "swarmbox"})[1], "first\n")
+        self.assertEqual(self.get("WITH", env={"SWARMBOX_NAME": DEFAULT_NAME})[1], "first\n")
         self.assertEqual(self.mode(second), 0o600)
 
     def test_invalid_box_names_exit_2(self):
@@ -477,14 +505,14 @@ class SeedTest(Base):
         self.assertFalse(any("WORKSPACE" in l for l in lines))
         self.assertEqual(self.run_h("config", "seed", "--with", "b", "--workspace", "/w1", "--image", "i:1").stderr, "")
         notices = slurp(os.path.join(self.state, "notices")).splitlines()
-        self.assertEqual(sorted(notices), ["swarmbox:IMAGE", "swarmbox:WITH"])
+        self.assertEqual(sorted(notices), [DEFAULT_NAME + ":IMAGE", DEFAULT_NAME + ":WITH"])
 
     def test_notices_are_per_box(self):
         self.run_h("config", "seed", "--with", "a")
         self.run_h("config", "seed", "--with", "a", env={"SWARMBOX_NAME": "other"})
         self.assertIn("WITH", self.run_h("config", "seed", "--with", "b").stderr)
         self.assertIn("WITH", self.run_h("config", "seed", "--with", "b", env={"SWARMBOX_NAME": "other"}).stderr)
-        self.assertEqual(sorted(slurp(os.path.join(self.state, "notices")).splitlines()), ["other:WITH", "swarmbox:WITH"])
+        self.assertEqual(sorted(slurp(os.path.join(self.state, "notices")).splitlines()), ["other:WITH", DEFAULT_NAME + ":WITH"])
 
     def test_seeds_never_come_from_the_environment_and_env_does_not_leak_into_the_file(self):
         self.run_h("config", "seed", "--with", "a", env={"SWARMBOX_WITH": "fromenv", "SWARMBOX_TZ": "off"})

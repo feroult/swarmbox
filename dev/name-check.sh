@@ -1,11 +1,15 @@
 #!/bin/sh
 # name-check.sh: the reduced name availability check of D25 (slice 7.6). NOT legal advice.
-# Usage: sh dev/name-check.sh [name [github-owner]]      (defaults: swarmbox, feroult)
+# Usage: sh dev/name-check.sh [name [github-owner]]      (defaults: the box name of
+# container/host/DEFAULTS (D40), feroult)
 # It asks four public, unauthenticated endpoints with curl (GitHub repository search, the owner's repository, npm, PyPI) and
 # prints one line each: "TAKEN|FREE|UNKNOWN <source> <text>". It exits 0 always: it informs, the owner decides.
 # It writes nothing to disk. Unauthenticated GitHub search is rate limited (about 10 requests a minute): UNKNOWN then.
 # A trademark search (USPTO, EUIPO, WIPO Global Brand Database) is NOT done by this script; see docs/release-checklist.md.
-NAME=${1:-swarmbox}
+HERE=$(cd "$(dirname "$0")" && pwd)
+DEFAULT_NAME=$(sed -n "s/^SWARMBOX_DEFAULT_NAME=['\"]*\([^'\"]*\)['\"]*$/\1/p" "$HERE/../container/host/DEFAULTS" 2>/dev/null | head -n 1)
+NAME=${1:-$DEFAULT_NAME}
+[ -n "$NAME" ] || { echo "name-check: no name given and none in container/host/DEFAULTS" >&2; exit 2; }
 OWNER=${2:-feroult}
 UA="swarmbox-name-check"
 

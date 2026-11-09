@@ -10,7 +10,7 @@
 #
 # The shell is --shell, else the base name of the SHELL variable that `podman run -e SHELL` passes in (D20; B21), and anything
 # that is not zsh or fish silently gives bash. An explicit unknown --shell is exit 2.
-# Exit codes: 0 ok; 2 usage, unknown shell, a newline in a value; 3 the VERSION file or a template is missing or malformed (a
+# Exit codes: 0 ok; 2 usage, unknown shell, a newline in a value; 3 the VERSION or DEFAULTS file or a template is missing or malformed (a
 # corrupted image).
 #
 # POSIX sh on purpose (decision [3.5]): it is tested under dash and bash --posix on the development machine. The templates are
@@ -21,7 +21,6 @@ LC_ALL=C
 export LC_ALL
 
 HOST_DIR=${SWARMBOX_TEST_HOST_DIR:-/usr/local/share/swarmbox/host}
-REGISTRY_REPO='ghcr.io/<org>/swarmbox'   # <org> is the documented placeholder until the name is settled (D32)
 
 err() { printf 'swarmbox init: %s\n' "$*" >&2; }
 die() { _rc=$1; shift; err "$*"; exit "$_rc"; }
@@ -97,6 +96,24 @@ case $VERSION_STR in
 esac
 case $VERSION_STR in
     *[!0-9A-Za-z.+-]*) die 3 "the VERSION file ($VERSION_FILE) holds characters that are not allowed in a version: '$VERSION_STR'." ;;
+esac
+
+# The default image repository comes from the DEFAULTS file of the helper folder (D40), read as the helper does: parsed, not sourced.
+DEFAULTS_FILE=$HOST_DIR/DEFAULTS
+[ -r "$DEFAULTS_FILE" ] || die 3 "the host helper folder has no DEFAULTS file ($DEFAULTS_FILE); this image is corrupted."
+REGISTRY_REPO=
+while IFS= read -r _l || [ -n "$_l" ]; do
+    case $_l in
+        SWARMBOX_DEFAULT_IMAGE_REPO=*)
+            REGISTRY_REPO=${_l#*=}
+            case $REGISTRY_REPO in
+                \'*\') REGISTRY_REPO=${REGISTRY_REPO#\'}; REGISTRY_REPO=${REGISTRY_REPO%\'} ;;
+            esac
+            ;;
+    esac
+done < "$DEFAULTS_FILE"
+case $REGISTRY_REPO in
+    ''|*[[:space:]\'\"]*) die 3 "the DEFAULTS file ($DEFAULTS_FILE) has no usable SWARMBOX_DEFAULT_IMAGE_REPO: '$REGISTRY_REPO'." ;;
 esac
 TEMPLATE=$HOST_DIR/templates/$SHELL_NAME
 [ -r "$TEMPLATE" ] || die 3 "the template for $SHELL_NAME ($TEMPLATE) is missing from this image."

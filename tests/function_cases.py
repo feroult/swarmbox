@@ -23,11 +23,11 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT, FakeHostHelper, FakePodman  # noqa: E402
+from helpers import ROOT, FakeHostHelper, FakePodman, DEFAULT_IMAGE_REPO  # noqa: E402
 
 INIT = os.path.join(ROOT, "container", "scripts", "swarmbox-init.sh")
 REAL_HOST_DIR = os.path.join(ROOT, "container", "host")
-ORG_IMAGE = "ghcr.io/<org>/swarmbox:%s"
+ORG_IMAGE = (DEFAULT_IMAGE_REPO + ":%s")
 BASE_TOOLS = ["sh", "bash", "dash", "tar", "mktemp", "mv", "rm", "mkdir", "sort", "head", "tail", "cat", "dirname", "printf",
               "true", "false", "uname", "env", "sed", "tr", "grep", "ls", "pwd", "basename", "chmod", "rmdir", "wc", "cut"]
 
@@ -75,6 +75,7 @@ def make_archive(path, version="2.0.0", helper=True, executable=True, extra=None
         if helper:
             add("swarmbox-host", HELPER_SH.encode(), 0o755 if executable else 0o644)
         add("VERSION", (version + "\n").encode(), 0o644)
+        add("DEFAULTS", open(os.path.join(ROOT, "container", "host", "DEFAULTS"), "rb").read(), 0o644)
         add("cloudflare-setup.py", b"# cf\n", 0o644)
         add("tool-ports", b"", 0o644)
         add("templates/bash", b"x\n", 0o644)
@@ -143,6 +144,7 @@ class FunctionCases:
             os.symlink(os.path.join(REAL_HOST_DIR, "templates"), os.path.join(hd, "templates"))
             with open(os.path.join(hd, "VERSION"), "w") as f:
                 f.write(version + "\n")
+            shutil.copy(os.path.join(REAL_HOST_DIR, "DEFAULTS"), hd)
         r = subprocess.run(["sh", INIT, "--shell", self.NAME, *flags],
                            env={"PATH": os.environ["PATH"], "SWARMBOX_TEST_HOST_DIR": hd}, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)

@@ -16,10 +16,11 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_cloudflare_setup as tcs  # noqa: E402  (starts the fake server on 127.0.0.1, sets CLOUDFLARE_API_BASE)
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, DEFAULT_NAME  # noqa: E402
 
 HELPER_SRC = os.path.join(ROOT, "container", "host", "swarmbox-host")
 VERSION_SRC = os.path.join(ROOT, "container", "host", "VERSION")
+DEFAULTS_SRC = os.path.join(ROOT, "container", "host", "DEFAULTS")
 SCRIPT_SRC = os.path.join(ROOT, "cloudflare-setup.py")
 FAKE = tcs.FAKE
 API = os.environ["CLOUDFLARE_API_BASE"]
@@ -52,6 +53,7 @@ class E2E(unittest.TestCase):
         self.helper = os.path.join(hd, "swarmbox-host")
         shutil.copy(HELPER_SRC, self.helper)
         shutil.copy(VERSION_SRC, os.path.join(hd, "VERSION"))
+        shutil.copy(DEFAULTS_SRC, os.path.join(hd, "DEFAULTS"))
         shutil.copy(SCRIPT_SRC, os.path.join(hd, "cloudflare-setup.py"))
         os.chmod(self.helper, 0o755)
         self.shim = os.path.join(self.tmp, "shim")
@@ -107,9 +109,9 @@ class E2E(unittest.TestCase):
         self.assertNotIn("tok.", "\n".join(self.calls()), "the token is never on the podman command line")
         st = self.remote("status", "--domain", "talkr.run")
         self.assertEqual(st.returncode, 0, st.stderr)
-        self.assertIn("swarmbox.talkr.run", st.stdout + st.stderr)
+        self.assertIn(DEFAULT_NAME + ".talkr.run", st.stdout + st.stderr)
         u = self.helper_run("url")
-        self.assertIn("https://swarmbox.talkr.run", u.stdout)
+        self.assertIn("https://" + DEFAULT_NAME + ".talkr.run", u.stdout)
         # a rerun without --session keeps the session and adds no second connector
         r = self.remote(*self.SETUP)
         self.assertEqual(r.returncode, 0, r.stderr)

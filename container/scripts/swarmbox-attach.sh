@@ -29,7 +29,16 @@ READY_TIMEOUT=${SWARMBOX_TEST_READY_TIMEOUT:-60}
 POLL=${SWARMBOX_TEST_POLL_INTERVAL:-1}
 SESSION=main
 IDLE_NAME=idle          # the name `serve` gives the idle window (step 9); keep in step with container/entrypoint.sh
-BOX_NAME=${SWARMBOX_NAME:-swarmbox}
+# The box name (only used in messages): SWARMBOX_NAME, which the helper passes to every box; else the default name of the DEFAULTS file
+# that the image keeps next to the helper (D40). SWARMBOX_TEST_HOST_DIR replaces that folder in tests, as for swarmbox-init.
+BOX_NAME=${SWARMBOX_NAME:-}
+if [ -z "$BOX_NAME" ]; then
+    while IFS= read -r _l || [ -n "$_l" ]; do
+        case $_l in SWARMBOX_DEFAULT_NAME=*) BOX_NAME=${_l#*=} ;; esac
+    done 2> /dev/null < "${SWARMBOX_TEST_HOST_DIR:-/usr/local/share/swarmbox/host}/DEFAULTS"
+    BOX_NAME=${BOX_NAME//[\'\"]/}
+fi
+: "${BOX_NAME:=<box>}"
 
 # A tmux started from inside a tmux window would refuse to nest; the target is always the server of this box.
 unset TMUX
