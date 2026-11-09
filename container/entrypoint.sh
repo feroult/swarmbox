@@ -6,7 +6,7 @@
 #   attach    forwards to swarmbox-attach (slice 2.3: the grouped session, the idle window, `swarmbox <command>`)
 #   init      forwards to swarmbox-init (container/scripts/swarmbox-init.sh, slice 3.5)
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
-#   tool      forwards to swarmbox-tool (the real program since Phase 4a)
+#   tool      forwards to swarmbox-tool 
 #   host-helper
 #             writes the helper archive (box:/usr/local/share/swarmbox/host/) as a tar archive on stdout
 #   (none)    exit 64

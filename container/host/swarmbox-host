@@ -2,22 +2,18 @@
 # swarmbox-host: the SwarmBox host helper (design 3.7.1, 3.7.2). POSIX sh, no bashisms (no `local`, no `echo -e`, no
 # `read -s`, no arrays, no `[[ ]]`); it must run under dash, busybox sh, bash in POSIX mode and macOS /bin/sh (D16, B23).
 #
-# Slice 3.1 built the configuration surface:
-#   version                      the version in the file VERSION next to this program
-#   config get KEY               resolved value (environment, then file, then default); 2 unknown key, 1 unset
-#   config set KEY [VALUE]       validate and write one key (the tunnel token is read from the terminal, never argv)
-#   config list                  KEY=VALUE<TAB>source, the token only as set or unset
-#   config seed [--with L] [--workspace DIR] [--image REF]
-#   env add|rm NAME, env list    the names of host variables passed to the box at creation (ENV_KEYS)
-#   create-flags, fingerprint   the flags and the box fingerprint (slice 3.2)
-#   up, reset, stop, url         the lock, the lookup, creation, readiness, the warnings (slice 3.3; they call Podman, `url` does not)
-#   update [--to TAG]            pull, extract the helper, tag X.Y.Z locally, write IMAGE (slice 3.6)
+#   version | help               the version in the file VERSION next to this program | the command list
+#   config get|set|list|seed     the settings (the tunnel token is read from the terminal, never argv)
+#   env add|rm NAME | env list   the names of host variables passed to the box (ENV_KEYS)
+#   create-flags, fingerprint    the flags of a new box and its fingerprint (no Podman call)
+#   up, reset, stop, url         the lock, the lookup, creation, readiness, the warnings (`url` does not call Podman)
+#   connection                   register `podman -c <name>` for the box
+#   update [--to TAG]            pull, extract the helper, tag X.Y.Z locally, write IMAGE
 #   remote setup|status|off|token [options]
-#                                a thin wrapper over cloudflare-setup.py next to this program (slice 5.2): setup is `apply`,
-#                                off is `remove`; the options go through unchanged; exit 3 without python3
+#                                a wrapper over cloudflare-setup.py next to this program: setup is `apply`, off is `remove`
 #
-# Data goes to standard output, messages to standard error. Exit codes (3.7.2, 3.8): 0 ok; 1 unset key or a write that
-# failed; 2 usage, unknown key, invalid value or name; 3 prerequisite missing (here: a missing or unreadable VERSION).
+# Data goes to standard output, messages to standard error. Exit codes: 0 ok; 1 unset key or a failed write; 2 usage, unknown
+# key, invalid value or name; 3 prerequisite missing; 4 workspace or path problem; 5 conflict; 6 not ready; 7 Podman failed.
 # Paths honor HOME, XDG_CONFIG_HOME and XDG_STATE_HOME (an empty or relative XDG value is ignored, as in dirs.sh).
 # The file mode is read as an octal number (stat -c %a, then stat -f %Lp, then find -perm); `ls` output is never parsed.
 
@@ -37,6 +33,14 @@ die() { _rc=$1; shift; warn "$*"; exit "$_rc"; }
 usage() {
     help_text >&2
     exit 2
+}
+
+# opt_arg NAME "$@": $2 is --NAME=VALUE or --NAME followed by its value. Sets OPT_V and OPT_N, the number of arguments used.
+opt_arg() {
+    case $2 in
+        "$1"=*) OPT_V=${2#*=}; OPT_N=1 ;;
+        *) [ $# -ge 3 ] || die 2 "$1 needs a value."; OPT_V=$3; OPT_N=2 ;;
+    esac
 }
 
 help_text() {
@@ -545,6 +549,14 @@ validate_value() {
     return 0
 }
 
+# resolve_valid KEY: resolve, then validate a value that came from the environment or the file (a default is the helper's own).
+resolve_valid() {
+    resolve "$1"
+    [ "$R_SRC" = default ] && return 0
+    validate_value "$1" "$R_VAL" || exit 2
+    R_VAL=$V_OUT
+}
+
 # ---------------------------------------------------------------- writing the config file (3.7.3)
 
 # cfg_write_keys KEY VALUE [KEY VALUE ...]: replaces (or appends) the keys, keeps every other line, writes under umask 077
@@ -699,24 +711,12 @@ cmd_config_seed() {
     _sim=
     while [ $# -gt 0 ]; do
         case $1 in
-            --with|--workspace|--image)
-                [ $# -ge 2 ] || die 2 "$1 needs a value."
-                _a=$1
-                _v=$2
-                shift 2
-                ;;
-            --with=*|--workspace=*|--image=*)
-                _a=${1%%=*}
-                _v=${1#*=}
-                shift
-                ;;
+            --with|--with=*) opt_arg --with "$@"; _sw=$OPT_V ;;
+            --workspace|--workspace=*) opt_arg --workspace "$@"; _sws=$OPT_V ;;
+            --image|--image=*) opt_arg --image "$@"; _sim=$OPT_V ;;
             *) die 2 "config seed: unknown argument '$1'." ;;
         esac
-        case $_a in
-            --with) _sw=$_v ;;
-            --workspace) _sws=$_v ;;
-            --image) _sim=$_v ;;
-        esac
+        shift "$OPT_N"
     done
     init_paths
     # validate everything first: an invalid seed changes nothing
@@ -831,7 +831,7 @@ cmd_env() {
 }
 
 # ---------------------------------------------------------------- create-flags and fingerprint (3.6, 3.7.2, 3.7.4, 8.2, 8.3)
-# Slice 3.2. Nothing here calls Podman. The flags are collected in OUT, one argument per line, and printed only when every
+# Nothing here calls Podman. The flags are collected in OUT, one argument per line, and printed only when every
 # check has passed, so a failure never leaves half a list on standard output (3.6: `up` captures the output first).
 
 TAB=$(printf '\t')
@@ -963,11 +963,6 @@ load_creation() {
         if [ "$_key" = BROWSER_URL ] && [ "${BROWSER_OVERRIDE_SET:-0}" = 1 ]; then
             _v=$BROWSER_OVERRIDE
             R_SRC='env'
-        fi
-        if [ "$_key" = TZ ]; then
-            case $_v in
-                OFF|none|NONE) _v=off ;;   # the spellings v0.1.0 accepted for "keep the image's UTC"
-            esac
         fi
         if [ "$R_SRC" != default ]; then   # a default is the helper's own value (the image default holds the <org> placeholder)
             validate_value "$_key" "$_v" || exit 2
@@ -1105,16 +1100,11 @@ cmd_create_flags() {
     BROWSER_OVERRIDE=
     while [ $# -gt 0 ]; do
         case $1 in
-            --browser-url)
-                [ $# -ge 2 ] || die 2 "--browser-url needs a value (an empty value means port 9222)."
+            --browser-url|--browser-url=*)
+                opt_arg --browser-url "$@"
                 BROWSER_OVERRIDE_SET=1
-                BROWSER_OVERRIDE=$2
-                shift 2
-                ;;
-            --browser-url=*)
-                BROWSER_OVERRIDE_SET=1
-                BROWSER_OVERRIDE=${1#--browser-url=}
-                shift
+                BROWSER_OVERRIDE=$OPT_V
+                shift "$OPT_N"
                 ;;
             *) die 2 "create-flags: unknown argument '$1'." ;;
         esac
@@ -1125,22 +1115,6 @@ cmd_create_flags() {
     load_creation 1
     check_workspace
     compute_fingerprint
-    case $C_ENV_KEYS in
-        '') ;;
-        *)
-            _oldifs=$IFS
-            IFS=,
-            set -f
-            # shellcheck disable=SC2086
-            set -- $C_ENV_KEYS
-            set +f
-            IFS=$_oldifs
-            for _n in "$@"; do
-                eval "_isset=\${$_n+x}"
-                [ "$_isset" = x ] || warn "$_n is listed but not set in this terminal; the box will start without it"
-            done
-            ;;
-    esac
     _os=${SWARMBOX_TEST_OS:-$(uname -s)}
     OUT=
     emit --userns=keep-id:uid=1000,gid=1000
@@ -1193,7 +1167,10 @@ PEOF
         IFS=$_oldifs
         for _n in "$@"; do
             eval "_isset=\${$_n+x}"
-            [ "$_isset" = x ] || continue
+            if [ "$_isset" != x ]; then
+                warn "$_n is listed but not set in this terminal; the box will start without it"
+                continue
+            fi
             emit -e
             emit "$_n"
         done
@@ -1264,7 +1241,7 @@ fp_explain() {
 
 # fingerprint [--explain] [--label NAME=VALUE]...: the hash of the current configuration; with labels it compares (exit 0 same,
 # 1 different), with --explain it also prints one line per difference it can name (D30). Without labels there is no box to
-# compare with: exit 5 for --explain. Reading the labels from Podman is `up`'s job (a later slice).
+# compare with: exit 5 for --explain. Reading the labels from Podman is `up`'s job.
 # shellcheck disable=SC2016  # the backticks in the messages are literal (they quote `swarmbox reset` for the reader)
 cmd_fingerprint() {
     EXPLAIN=0
@@ -1272,18 +1249,15 @@ cmd_fingerprint() {
     while [ $# -gt 0 ]; do
         case $1 in
             --explain) EXPLAIN=1; shift ;;
-            --label)
-                [ $# -ge 2 ] || die 2 "--label needs NAME=VALUE."
-                _lv=$2
-                shift 2
+            --label|--label=*)
+                opt_arg --label "$@"
+                case $OPT_V in
+                    ?*=*) LABELS=$LABELS$OPT_V$NL ;;
+                    *) die 2 "a label must be NAME=VALUE: '$OPT_V'." ;;
+                esac
+                shift "$OPT_N"
                 ;;
-            --label=*) _lv=${1#--label=}; shift ;;
             *) die 2 "fingerprint: unknown argument '$1'." ;;
-        esac
-        case $_lv in
-            ?*=*) LABELS=$LABELS$_lv$NL; _lv= ;;
-            '') ;;
-            *) die 2 "a label must be NAME=VALUE: '$_lv'." ;;
         esac
     done
     need_sha256
@@ -1304,7 +1278,7 @@ cmd_fingerprint() {
 }
 
 # ---------------------------------------------------------------- up, reset, stop, url (3.5, 3.6, 3.7.2, 3.8, 4.2)
-# Slice 3.3. Variables of this block start with u_ or UP_ so that they do not collide with the loops above. Standard output
+# Variables of this block start with u_ or UP_ so that they do not collide with the loops above. Standard output
 # stays empty (data only); every message goes to standard error.
 
 UP_LOCK=
@@ -1422,11 +1396,10 @@ find_box() {
     BX_FOUND=1
 }
 
-# A container with the box's name and no swarmbox.managed label was not made by this version (an old SwarmBox or something
-# else): never adopted, started or removed (3.8).
+# A container with the box's name and no swarmbox.managed label was not made by SwarmBox: never adopted, started or removed (3.8).
 # shellcheck disable=SC2016  # the backticks in the message are literal
 refuse_foreign() {
-    warn "a container named '$BOX' exists that SwarmBox 2 did not make. Remove it with \`podman rm -f $BOX\` (an old box keeps its files in its workspace folder), or use another name: SWARMBOX_NAME=<name> swarmbox."
+    warn "a container named '$BOX' exists that SwarmBox did not make. Remove it with \`podman rm -f $BOX\`, or use another name: SWARMBOX_NAME=<name> swarmbox."
     exit 5
 }
 
@@ -1441,7 +1414,7 @@ $u_o
 CEOF
 }
 
-# INIT=auto becomes 0 or 1 by a throwaway `podman run --rm --init` of the image (the probe v0.1.0 used, kept; B9). INIT_RESOLVED.
+# INIT=auto becomes 0 or 1 by a throwaway `podman run --rm --init` of the image (B9). INIT_RESOLVED.
 resolve_init() {
     case $C_INIT in
         0|1) INIT_RESOLVED=$C_INIT; return 0 ;;
@@ -1493,7 +1466,7 @@ create_box() {
     UP_FLAGS=
     # The mount point of the nested-Podman volume (<workspace>/.local/share/containers) is made here, as the user. If Podman made
     # it, it would also make .local and .local/share, owned by the container's root (not by the user), and `serve` could not
-    # create its folders under them (found by the real smoke test of slice 3.3).
+    # create its folders under them.
     (umask 022 && mkdir -p "$C_WORKSPACE/.local/share/containers") 2> /dev/null ||
         die 4 "cannot create $C_WORKSPACE/.local/share/containers (the mount point of the nested Podman storage)."
     UP_CIDF=$STATE_DIR/cid.$$
@@ -1708,7 +1681,7 @@ sock_link() {
 }
 
 # Register the connection named like the box (only that name is ever read, replaced or removed). Idempotent: one `list`, and
-# `remove` + `add` only when the address differs (this also moves the v0.1.0 address <workspace>/.swarmbox/podman.sock). A
+# `remove` + `add` only when the address differs. A
 # failure to register is a warning, never an exit: the box works without the host connection.
 sock_register() {
     sr_uri=unix://$SOCK_PATH
@@ -1793,7 +1766,7 @@ up_main() {
     wait_ready
 }
 
-# ---------------------------------------------------------------- the Cloudflare connector on every entry (5.2, slice 5.4)
+# ---------------------------------------------------------------- the Cloudflare connector on every entry (5.2)
 
 # Pinned (12.3). The single source in the helper; tests/test_host_connector.py checks that it equals DEFAULT_CONNECTOR_IMAGE of
 # cloudflare-setup.py. SWARMBOX_CLOUDFLARED_IMAGE overrides it (environment only: the config table of 8.2 has no file key).
@@ -1960,13 +1933,10 @@ cmd_update() {
     up_to_set=0
     while [ $# -gt 0 ]; do
         case $1 in
-            --to)
-                [ $# -ge 2 ] || { warn "update: --to needs a tag."; usage; }
+            --to|--to=*)
                 [ "$up_to_set" = 0 ] || usage
-                up_to=$2; up_to_set=1; shift 2 ;;
-            --to=*)
-                [ "$up_to_set" = 0 ] || usage
-                up_to=${1#--to=}; up_to_set=1; shift ;;
+                opt_arg --to "$@"
+                up_to=$OPT_V; up_to_set=1; shift "$OPT_N" ;;
             *) usage ;;
         esac
     done
@@ -1975,13 +1945,9 @@ cmd_update() {
     fi
     init_paths
     cfg_prepare
-    resolve IMAGE
+    resolve_valid IMAGE
     up_cur=$R_VAL
     up_src=$R_SRC
-    if [ "$up_src" != default ]; then
-        validate_value IMAGE "$up_cur" || exit 2
-        up_cur=$V_OUT
-    fi
     split_image "$up_cur"
     up_repo=$IR_REPO
     if [ "$up_to_set" = 1 ]; then
@@ -2074,44 +2040,32 @@ url_json_key() {
     sed -n 's/^[[:space:]]*"'"$1"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CFG_ROOT/cloudflare.json" 2> /dev/null | head -n 1
 }
 
-# The public host name `url` and `remote status` print (empty: none configured): SWARMBOX_WEB_HOSTNAME, else the host name the
-# script saved for this box, else <name>.<domain>. Sets u_host. No Podman.
+# The public host name `url` and `remote status` print (empty: none): SWARMBOX_WEB_HOSTNAME, else <name>.<domain> with the domain
+# from SWARMBOX_WEB_DOMAIN or from the script's cloudflare.json. That file counts only when it was saved for this box (its "name"
+# is the box name), so a box that was never exposed prints nothing; its saved host name wins inside the same domain. Sets u_host.
 public_host() {
     u_host=${SWARMBOX_WEB_HOSTNAME:-}
-    if [ -z "$u_host" ]; then
-        u_dom=${SWARMBOX_WEB_DOMAIN:-}
-        u_saved=
-        u_sname=
-        u_sdom=
-        if [ -r "$CFG_ROOT/cloudflare.json" ]; then
-            u_sdom=$(url_json_key domain)
-            u_saved=$(url_json_key hostname)
-            u_sname=$(url_json_key name)
-        fi
-        [ -n "$u_dom" ] || u_dom=$u_sdom
-        u_dom=${u_dom%.}
-        if [ -n "$u_dom" ]; then
-            if valid_public_host "$u_dom"; then
-                u_host=$BOX.$u_dom
-                # the name the script saved for this box (--hostname) wins over <name>.<domain>, inside the same domain only
-                if [ -n "$u_saved" ] && [ "$u_sname" = "$BOX" ]; then
-                    if ! valid_public_host "$u_saved"; then
-                        warn "ignoring the saved host name '$u_saved' (not a host name)."
-                    else
-                        case $u_saved in
-                            "$u_dom"|*."$u_dom") u_host=$u_saved ;;
-                        esac
-                    fi
-                fi
-            else
-                warn "ignoring the domain '$u_dom' (not a host name)."
-            fi
-        fi
-    elif ! valid_public_host "$u_host"; then
+    if [ -n "$u_host" ]; then
+        valid_public_host "$u_host" && return 0
         warn "ignoring the host name '$u_host' (not a host name)."
         u_host=
+        return 0
     fi
-    return 0
+    u_dom=${SWARMBOX_WEB_DOMAIN:-}
+    u_saved=
+    if [ -r "$CFG_ROOT/cloudflare.json" ] && [ "$(url_json_key name)" = "$BOX" ]; then
+        [ -n "$u_dom" ] || u_dom=$(url_json_key domain)
+        u_saved=$(url_json_key hostname)
+    fi
+    u_dom=${u_dom%.}
+    [ -n "$u_dom" ] || return 0
+    valid_public_host "$u_dom" || { warn "ignoring the domain '$u_dom' (not a host name)."; return 0; }
+    u_host=$BOX.$u_dom
+    [ -n "$u_saved" ] || return 0
+    valid_public_host "$u_saved" || { warn "ignoring the saved host name '$u_saved' (not a host name)."; return 0; }
+    case $u_saved in
+        "$u_dom"|*."$u_dom") u_host=$u_saved ;;
+    esac
 }
 
 # url: the local URL, and the public one when remote access is configured. It never calls Podman (5.2).
@@ -2119,17 +2073,10 @@ cmd_url() {
     [ $# -eq 0 ] || usage
     init_paths
     cfg_prepare
-    for u_k in WEB WEB_PORT; do
-        resolve "$u_k"
-        u_val=$R_VAL
-        if [ "$R_SRC" != default ]; then
-            validate_value "$u_k" "$u_val" || exit 2
-            u_val=$V_OUT
-        fi
-        eval "U_$u_k=\$u_val"
-    done
-    [ "$U_WEB" = 1 ] || die 1 "the web terminal is off (WEB=0), so there is no URL. Run \`swarmbox config set WEB 1\` and \`swarmbox reset\` to turn it on."
-    printf 'http://127.0.0.1:%s\n' "$U_WEB_PORT"
+    resolve_valid WEB
+    [ "$R_VAL" = 1 ] || die 1 "the web terminal is off (WEB=0), so there is no URL. Run \`swarmbox config set WEB 1\` and \`swarmbox reset\` to turn it on."
+    resolve_valid WEB_PORT
+    printf 'http://127.0.0.1:%s\n' "$R_VAL"
     public_host
     [ -z "$u_host" ] || printf 'https://%s\n' "$u_host"
     return 0
@@ -2157,12 +2104,8 @@ cmd_remote() {
     cfg_prepare
     r_script=$(dirname "$0")/cloudflare-setup.py
     [ -r "$r_script" ] || die 3 "cloudflare-setup.py was not found next to the host helper ($r_script); run \`swarmbox update\` to extract it again."
-    resolve WEB_PORT
+    resolve_valid WEB_PORT
     r_port=$R_VAL
-    if [ "$R_SRC" != default ]; then
-        validate_value WEB_PORT "$r_port" || exit 2
-        r_port=$V_OUT
-    fi
     XDG_CONFIG_HOME=${CFG_ROOT%/swarmbox}
     export XDG_CONFIG_HOME
     # asked before the variable is removed from the script's environment (setup only offers to store a token when none exists)

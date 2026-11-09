@@ -3,7 +3,7 @@
 # Called by `swarmbox-tool install opencode` with TOOL_PREFIX, TOOL_VERSION and TOOL_ARCH. Writes only below $TOOL_PREFIX (and npm's cache,
 # cleaned at the end). Progress goes to stderr only: stdout belongs to the tool being run.
 #
-# THE PACKAGE CHOICE IS THIS ONE VARIABLE. "@opencode/cli" is the 2.x line that v0.1.0 installs; "opencode-ai" is a 1.x line. They are
+# THE PACKAGE CHOICE IS THIS ONE VARIABLE. "@opencode/cli" is the 2.x line; "opencode-ai" is a 1.x line. They are
 # different release lines: a home written by one fails under the other ("Database is not empty and has no session table", B10), so do not
 # swap them silently. See decision log [0.3] and [4b.2]. 2.x starts a shared background server per user account (`--standalone`
 # avoids it) [unverified here: not exercised under the box's supervisor, see [4b.2]].

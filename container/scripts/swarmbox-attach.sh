@@ -1,6 +1,5 @@
 #!/bin/bash
 # swarmbox-attach (design 3.3, 3.4, 4.2; installed as /usr/local/bin/swarmbox-attach, called by `swarmbox-entrypoint attach`).
-# Replaces v0.1.0's lib/attach-session.sh.
 #
 #   swarmbox-attach [--plain] [--] [command [args...]]
 #

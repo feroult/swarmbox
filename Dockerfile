@@ -1,5 +1,4 @@
 # SwarmBox 2.0 image (design 10). Slim: no agent, gcloud, clasp, Go or Poetry; tools arrive on demand (design 6).
-# The v0.1.0 image file is retired (git show v0.1.0:Dockerfile).
 # Layer order: stable first (packages, Podman, pinned downloads), volatile last (scripts, configuration).
 ARG NODE_VERSION=24
 FROM node:${NODE_VERSION}-slim
@@ -61,7 +60,7 @@ RUN usermod -l agent node && \
     usermod -s /bin/bash agent && \
     echo "agent ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-# --- Nested rootless Podman settings, kept unchanged from v0.1.0 (design 10.5 lists the reason for each) ---
+# --- Nested rootless Podman settings, (design 10.5 lists the reason for each) ---
 # 1. File capabilities instead of the setuid bit: a setuid-root binary does not work in an unprivileged container.
 RUN chmod u-s /usr/bin/newuidmap /usr/bin/newgidmap && \
     setcap cap_setuid+ep /usr/bin/newuidmap && \
@@ -193,7 +192,7 @@ RUN set -eu; set -f; \
     done
 USER root
 
-# The shell fragment (design 6.6, 10.3) replaces the v0.1.0 echo lines: Debian's /etc/bash.bashrc leaves at once in a
+# The shell fragment (design 6.6, 10.3) runs from Debian's /etc/bash.bashrc leaves at once in a
 # non-interactive shell, so the line below runs for interactive shells only; swarmbox-attach sources the fragment
 # directly for a command run without a terminal (3.3).
 RUN printf '\n# SwarmBox shell fragment\n[ -r /etc/swarmbox/bashrc.sh ] && . /etc/swarmbox/bashrc.sh\n' >> /etc/bash.bashrc

@@ -52,7 +52,7 @@ build_opencode_config() {
         | .model = ("local/" + $m)' "$template" > "$tmp"
 }
 
-# sync_opencode_mcp: the v0.1.0 mapping (design 4.4): each server s becomes
+# sync_opencode_mcp: the mapping (design 4.4): each server s becomes
 #   {type: "local", command: [s.command] + s.args, enabled: true} plus environment: s.env when s has env.
 sync_opencode_mcp() {
     local src="$HOME/.claude/mcp-servers.json"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# swarmbox-tool (design 6; installed as /usr/local/bin/swarmbox-tool). Phase 4a grows it in slices. State of this file:
+# swarmbox-tool (design 6; installed as /usr/local/bin/swarmbox-tool). Subcommands:
 #
 #   validate [DIR]  REAL (slice 4a.1): reads the manifests of both levels (or only the folder DIR) and checks the rules of 6.9.
 #                   Exit 0 all good, 1 a manifest failed, 64 usage.
