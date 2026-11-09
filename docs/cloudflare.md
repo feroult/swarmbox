@@ -21,7 +21,7 @@ the script is missing, the command exits with status 3 and says so.
 | `swarmbox remote off` | `remove` | removes the hostname, stops the connector when no other hostname uses the tunnel |
 | `swarmbox remote token` | `token` | prints **only** the tunnel token on stdout |
 
-`swarmbox url` prints the local address and, when remote access is configured, the public one. It never calls Podman.
+`swarmbox url` prints the local address and, when `remote setup` was run for this box, the public one. It never calls Podman.
 
 ```bash
 export CLOUDFLARE_API_TOKEN=...          # or run the command and paste it when asked (input hidden)
