@@ -52,6 +52,7 @@ usage: swarmbox [--plain] [command [args...]]
   pubkey                the box's git SSH key
   tool list|install|use|remove NAME   tools inside the box
   remote setup|status|off|token       remote access through Cloudflare (--dry-run shows the changes)
+  help                  this list
 USAGE
 }
 
