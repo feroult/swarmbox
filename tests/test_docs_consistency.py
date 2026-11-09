@@ -1023,5 +1023,74 @@ class PhaseSixCloseTest(unittest.TestCase):
         self.assertIn("final-audit", PLAN)
 
 
+class PhaseSevenCloseTest(unittest.TestCase):
+    """Slice 7.7: the Phase 7 close-out. M4 is prepared, not reached; the owner's ordered actions are in the gate row."""
+
+    STATUS = read("docs", "implementation-status.md")
+    LOG = read("docs", "decision-log.md")
+    SLICES = ("7.1-policy-files", "7.2-third-party-notices", "7.3-security-review", "7.4-update-bot",
+              "7.5-release-workflow", "7.6-release-readiness", "7.7-closeout")
+
+    def test_status_has_rows_7_1_to_7_7_with_all_columns(self):
+        for sid in self.SLICES:
+            rows = [l for l in self.STATUS.splitlines() if l.startswith("| %s |" % sid)]
+            self.assertEqual(len(rows), 1, sid)
+            cells = [c.strip() for c in rows[0].strip().strip("|").split("|")]
+            self.assertEqual(len(cells), 6, sid)
+            self.assertTrue(all(cells), sid)
+            self.assertIn(cells[2], ("done", "partial", "blocked"), sid)
+
+    def test_gate_row_says_prepared_not_reached_with_the_ordered_actions(self):
+        rows = [l for l in self.STATUS.splitlines() if l.startswith("| 7.gate |")]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertIn("| partial |", row)
+        self.assertIn("M4", row)
+        self.assertIn("prepared", row)
+        self.assertIn("not reached", row)
+        order = ["contacts", "copyright holder", "name", "history", "push", "B30", "B31", "B28", "B6", "B15",
+                 "v2.0.0", "release.yml", "B20"]
+        self.assertIn("Ordered owner actions", row)
+        row = row[row.index("Ordered owner actions"):]
+        pos = [row.find(w) for w in order]
+        self.assertNotIn(-1, pos, dict(zip(order, pos)))
+        self.assertEqual(pos, sorted(pos), "the owner actions are not in the documented order")
+
+    def test_every_phase_7_slice_has_a_decision_log_entry(self):
+        for n in range(1, 8):
+            self.assertRegex(self.LOG, r"(?m)^## \[7\.%d\] " % n)
+        for n in range(1, 8):
+            sec = self.LOG[self.LOG.index("## [7.%d] " % n):]
+            sec = re.split(r"(?m)^## ", sec[3:])[0]
+            for key in ("Context:", "Options:", "Chosen:", "Impact on the design:", "How to reverse:"):
+                self.assertIn(key, sec, "[7.%d] lacks %s" % (n, key))
+
+    def test_design_and_plan_carry_the_7_7_state(self):
+        self.assertIn("7.7 state", DESIGN)
+        self.assertIn("**7.7 state", PLAN)
+        for text in (DESIGN[DESIGN.index("7.7 state"):][:1500], PLAN[PLAN.index("**7.7 state"):][:1500]):
+            self.assertIn("M4", text)
+            self.assertIn("prepared", text)
+
+    def test_part_b_rows_touched_in_phase_7_keep_honest_tags(self):
+        for b in ("B20", "B28", "B30", "B31"):
+            row = [l for l in DESIGN.splitlines() if l.startswith("| %s |" % b)][0]
+            self.assertTrue("[unverified" in row or "[verified:" in row, b)
+
+    def test_new_files_are_documented_and_links_resolve(self):
+        for name in ("release-check.sh", "final-audit.sh"):
+            self.assertIn("dev/" + name, read("CONTRIBUTING.md"))
+        for path in ("docs/security-review.md", "docs/release-checklist.md", "SECURITY.md", "CODE_OF_CONDUCT.md",
+                     "CHANGELOG.md", "THIRD_PARTY_NOTICES.md", ".github/workflows/release.yml",
+                     ".github/dependabot.yml"):
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, path)), path)
+            if path.endswith(".md"):
+                with open(os.path.join(ROOT, path), encoding="utf-8") as f:
+                    text = f.read()
+                for target in re.findall(r"\]\(([^)#\s:]+)(?:#[^)]*)?\)", text):
+                    base = os.path.dirname(os.path.join(ROOT, path))
+                    self.assertTrue(os.path.exists(os.path.normpath(os.path.join(base, target))), "%s -> %s" % (path, target))
+
+
 if __name__ == "__main__":
     unittest.main()
