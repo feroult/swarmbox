@@ -63,8 +63,8 @@ sh dev/dev-build.sh            # tag swarmbox-test-img-<random>; then: podman rm
 ```
 
 which builds from a scratch copy of the `Dockerfile` that carries the apt override (see below); the product file is never changed.
-`SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. To build by hand: `podman build -t localhost/swarmbox-dev:local .`
-(then install it as the README Quick start shows: `podman run --rm localhost/swarmbox-dev:local install --with claude --image localhost/swarmbox-dev:local | sh`; `SWARMBOX_BIN_DIR=DIR` installs somewhere else). Tests-only variables: `SWARMBOX_TEST_SUPPORT_DIR` (where the script keeps its support files), `SWARMBOX_TEST_HOST_DIR` and `SWARMBOX_TEST_CONTAINERENV` (what `install` reads).
+`SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. To build by hand: `podman build -t localhost/swarmbox:local .`
+(then install it as the README Quick start shows: `podman run --rm localhost/swarmbox:local install --with claude --image localhost/swarmbox:local | sh`; `SWARMBOX_BIN_DIR=DIR` installs somewhere else). Tests-only variables: `SWARMBOX_TEST_SUPPORT_DIR` (where the script keeps its support files), `SWARMBOX_TEST_HOST_DIR` and `SWARMBOX_TEST_CONTAINERENV` (what `install` reads).
 
 Caveats when building inside a SwarmBox (nested rootless Podman 4.3.1):
 

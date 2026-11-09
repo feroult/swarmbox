@@ -57,7 +57,7 @@ In this order (the login always exists before anything is routable):
    `http://localhost:<port>`. The route makes `cloudflared` itself require the Access token, so a mistake in the
    Access policy cannot expose the shell;
 3. the proxied *DNS* record (it refuses to overwrite a non-CNAME record);
-4. the `cloudflared` connector as a Podman container on the host (`swarmbox-dev-cloudflared`, `--restart=always`);
+4. the `cloudflared` connector as a Podman container on the host (`swarmbox-cloudflared`, `--restart=always`);
 5. a check that the hostname redirects to the Cloudflare login (a loud error if it answers without one).
 
 Your domain, e-mails, hostname, box name and session length are remembered in `~/.config/swarmbox/cloudflare.json`
@@ -107,7 +107,7 @@ swarmbox config set CLOUDFLARE_TUNNEL_TOKEN    # type or paste it; stored with m
 ```
 
 `remote token` needs the API token once, so run it before deleting the API token. With a token available, every
-`swarmbox` entry (`up`) makes sure the connector is up: a missing `swarmbox-dev-cloudflared` container is created, a
+`swarmbox` entry (`up`) makes sure the connector is up: a missing `swarmbox-cloudflared` container is created, a
 stopped one is started, and one holding a different token is recreated. Without a token an existing connector is
 only started when stopped. The token goes to Podman through the environment, never a command line, and is never printed.
 `reset` and `stop` never touch the connector.
@@ -124,7 +124,7 @@ key in `cloudflare.json`, else `4h` (a first setup only).
 ## Remote off
 
 `swarmbox remote off` removes the DNS record, the tunnel route, the Access application and its policy (route first,
-login last). It then stops and removes the `swarmbox-dev-cloudflared` container, but only when the tunnel's remaining
+login last). It then stops and removes the `swarmbox-cloudflared` container, but only when the tunnel's remaining
 routes name no other hostname. The tunnel itself stays in your account. `--dry-run` only reports what it would do.
 It asks for confirmation unless `-y` is given.
 
@@ -161,7 +161,7 @@ and a fake `podman` only. Run this once, on a real host with a real domain, and 
    one-time code, and the terminal opens after you enter it. A different e-mail must be refused.
 5. Run `swarmbox remote setup` again without `--session`: the session length stays as it was.
 6. Reboot behavior of the connector: reboot the host, do not run `swarmbox`, wait a minute, run
-   `podman ps --filter name=swarmbox-dev-cloudflared` and `swarmbox remote status`. Note whether it came back by itself
+   `podman ps --filter name=swarmbox-cloudflared` and `swarmbox remote status`. Note whether it came back by itself
    (needs `podman-restart.service` enabled for your user; `systemctl --user enable --now podman-restart.service`) or
    only after `swarmbox up`.
 7. `swarmbox remote off --dry-run`, then `swarmbox remote off`: the URL stops answering, the connector container is

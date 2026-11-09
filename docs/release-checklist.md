@@ -40,7 +40,7 @@ Use a second box (`SWARMBOX_NAME=dev`, its own workspace and web port) so a real
 - Trademark databases (USPTO, EUIPO, WIPO Global Brand Database): **not searched**. Search "swarmbox" in software classes 9 and 42 for your country. This is a name lookup, not legal advice.
 
 Decide: keep the name and accept the overlap (then replace `<org>` with `feroult` everywhere and update the tests that expect it, for example `git grep -l '<org>'`), or rename (a large edit: image path, markers, docs; not prepared).
-The default names of the box and the image repository are in `container/host/DEFAULTS`; the development tree ships `swarmbox-dev`, which becomes `swarmbox` for the release. Check the container registries too.
+The default names of the box and the image repository are in `container/host/DEFAULTS`; the box name and the image repository are both `swarmbox` (the owner part of the repository is the `<org>` placeholder). Check the container registries too.
 
 ## 4. Security review by a human
 
@@ -59,16 +59,16 @@ make `THIRD_PARTY_NOTICES.md` say which.
 3. The release must attach `swarmbox` and `swarmbox.sha256` (and `install.sh`): the `notes` job of `release.yml` does it from `container/host/swarmbox-host` at the tag. `SCRIPT_VERSION` in that file and `container/host/VERSION` must both say the new version (the workflow and `tests/test_host_config.py` check it). When you flip the names in `container/host/DEFAULTS`, flip `REPO` in `install.sh` too (a test compares them). After the run, `gh release view v2.0.0` must list the three files, and `sh install.sh --version 2.0.0` in a throwaway home must install.
 4. Create the tag yourself: `git tag -a v2.0.0 -m 'SwarmBox 2.0.0'`, then `git push origin v2.0.0`, and watch `gh run watch`.
 5. The first publish creates the package as private. Set it public once (the repository's Packages, the package, Package settings, Change visibility) and check from a logged-out machine:
-   `podman logout ghcr.io; podman pull ghcr.io/feroult/swarmbox-dev:2.0.0`.
+   `podman logout ghcr.io; podman pull ghcr.io/feroult/swarmbox:2.0.0`.
 6. Check the published image with a throwaway home:
 
 ```sh
 export H=$(mktemp -d) && export XDG_CONFIG_HOME=$H/c XDG_DATA_HOME=$H/d XDG_STATE_HOME=$H/s
-podman manifest inspect ghcr.io/feroult/swarmbox-dev:2.0.0 | grep -c '"architecture"'     # 2 or more
+podman manifest inspect ghcr.io/feroult/swarmbox:2.0.0 | grep -c '"architecture"'     # 2 or more
 cosign verify --certificate-identity-regexp '^https://github.com/feroult/swarmbox/.github/workflows/release.yml@refs/tags/v' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/feroult/swarmbox-dev:2.0.0 >/dev/null && echo SIGNED
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com ghcr.io/feroult/swarmbox:2.0.0 >/dev/null && echo SIGNED
 export SWARMBOX_BIN_DIR=$H/bin PATH=$H/bin:$PATH SWARMBOX_NAME=swarmbox-b20
-podman run --rm ghcr.io/feroult/swarmbox-dev:2.0.0 install --with claude | sh
+podman run --rm ghcr.io/feroult/swarmbox:2.0.0 install --with claude | sh
 sh install.sh --version 2.0.0 --with claude        # the other way, from the release assets; the result is the same
 swarmbox update; swarmbox config get IMAGE        # pulls the 2.0 series, records the exact tag
 swarmbox update --to 2.0.0; swarmbox reset && swarmbox version

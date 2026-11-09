@@ -12,7 +12,7 @@
 set -eu
 
 # The image repository: the same value as SWARMBOX_DEFAULT_IMAGE_REPO in container/host/DEFAULTS (a test compares them).
-REPO='ghcr.io/<org>/swarmbox-dev'
+REPO='ghcr.io/<org>/swarmbox'
 VERSION=
 IMAGE=
 WITH=

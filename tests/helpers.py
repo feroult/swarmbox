@@ -70,7 +70,6 @@ DEFAULT_IMAGE_REPO = _DEFAULTS["SWARMBOX_DEFAULT_IMAGE_REPO"]
 DEFAULT_VOLUME = DEFAULT_NAME + "-containers"
 DEFAULT_CONNECTOR = DEFAULT_NAME + "-cloudflared"
 # The v0.1.0 name: only for tests that look at migration or the old fixtures, never a default of 2.0.
-OLD_NAME = "swarmbox"
 
 _FAKE_SCRIPT = r'''#!%(python)s
 import json, os, sys

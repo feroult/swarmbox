@@ -27,14 +27,14 @@ Podman 4.3 or newer.
 ## 2. The box model
 
 ```
- HOST (your machine)                                             IMAGE  ghcr.io/<org>/swarmbox-dev:X.Y.Z
+ HOST (your machine)                                             IMAGE  ghcr.io/<org>/swarmbox:X.Y.Z
  +-------------------------------------------+                   neutral: shell environment, tmux, ttyd,
  | script `swarmbox`  (a file on your PATH)  |   podman run/     Podman, Node, swarmbox-tool, tool manifests
  | support files host:~/.local/share/        |   exec            (no agent inside)
  |              swarmbox/host/               | ------------------------+
  | config       host:~/.config/swarmbox/     |                         | the box is created from it
  | Cloudflare connector (a container, host)  |                         v
- +----------+--------------------------------+          BOX  one container named `swarmbox-dev`
+ +----------+--------------------------------+          BOX  one container named `swarmbox`
             |  127.0.0.1:7681                           +----------------------------------------------+
             +------------------------------------------>| serve  (the box's main process, PID 1)       |
                                                         |  +- tmux server, session `main`  <- every tab |
@@ -366,7 +366,7 @@ build tools, jq, tmux, vim, openssh-client and similar, Podman and its network p
 `pubkey`, `tool`, `host-helper` (the archive of the script and support files on stdout), anything else is run as given. Layers: stable first, volatile last; every `RUN` that downloads cleans up in the same `RUN`; `NPM_CONFIG_CACHE` is
 `/opt/npm-cache`, owned by `agent`. Every version is an `ARG` with a default; `CONTRIBUTING.md` says how they are bumped. A tool the image needs that is not in Debian is fetched with its published checksum verified.
 
-**Distribution.** Image `ghcr.io/<org>/swarmbox-dev`, multi-arch (amd64, arm64), tags `X.Y.Z` and `X.Y`; not published yet (section 16). `.github/workflows/release.yml` runs the tests, a native build per architecture, a check that the
+**Distribution.** Image `ghcr.io/<org>/swarmbox`, multi-arch (amd64, arm64), tags `X.Y.Z` and `X.Y`; not published yet (section 16). `.github/workflows/release.yml` runs the tests, a native build per architecture, a check that the
 script in the image reports the tag's version, a vulnerability scan (grype), the manifest list, keyless signing (cosign), and the SBOM (syft). Until then you build locally (README Quick start; `dev/dev-build.sh` inside a
 development box). A missing image is pulled by `up`, never built.
 
@@ -432,7 +432,7 @@ Decisions that are still true. The full reasoning of D1 to D40 is in [history/de
 | D35 | `update` writes the exact `X.Y.Z` tag and tags it locally | `reset` works offline |
 | D36 | No `swarmbox uninstall`; manual steps documented (delete the script and the config) | no rc file was edited, so there is none to undo |
 | D39 | Cloudflare remote access is in 2.0 | needed from a phone or another computer |
-| D40 | Default names (box, image repository) live only in `container/host/DEFAULTS`; development tree ships `swarmbox-dev` | no collision with an installation named `swarmbox`; one file to flip for release |
+| D40 | Default names (box, image repository) live only in `container/host/DEFAULTS`; both are `swarmbox` | one file to flip for release |
 
 ## 16. Not done, and open questions
 

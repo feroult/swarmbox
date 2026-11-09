@@ -40,9 +40,11 @@ ALLOWED = [
 
 
 def pattern_for(name, repo):
-    """The patterns that count as the default being written down again: the current name as a whole word, the image path."""
-    return [r"(?<![\w.])%s(?![\w-])" % re.escape(name), re.escape(repo),
-                                                     r"(?<![\w.])%s-(?:containers|cloudflared)\b" % re.escape(name)] + RETIRED
+    """The patterns that count as the default being written down again: the name in a default position, the derived names, the image path."""
+    # The bare name is the product's own name ("swarmbox" is written everywhere), so it only counts in the places a default
+    # lives: a shell default (`:-NAME}`) and a `--name NAME` argument. The derived names and the image path count anywhere.
+    return [r":-%s\}" % re.escape(name), r"--name %s(?![\w-])" % re.escape(name), re.escape(repo) + r"(?![\w-])",
+            r"(?<![\w.])%s-(?:containers|cloudflared)\b" % re.escape(name)] + RETIRED
 
 
 def files_under(root, rels):
