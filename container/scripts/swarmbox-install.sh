@@ -79,6 +79,9 @@ if [ -z "$IMAGE" ]; then
     REPO=$(sed -n "s/^SWARMBOX_DEFAULT_IMAGE_REPO=['\"]*\\([^'\"]*\\)['\"]*\$/\\1/p" "$HOST_DIR/DEFAULTS" 2> /dev/null | head -n 1)
     case $VERSION in [0-9]*.[0-9]*.[0-9]*) ;; *) die 3 "the VERSION file of this image does not hold a version: '$VERSION'." ;; esac
     [ -n "$REPO" ] || die 3 "the DEFAULTS file of this image has no SWARMBOX_DEFAULT_IMAGE_REPO."
+    case $REPO in
+        *'<'*|*'>'*) die 2 "Podman did not tell this container the image it was started from, and the default repository ($REPO) is a placeholder until the image is published. Add --image REF, for a local build use the name you gave to podman build, with localhost/ in front" ;;
+    esac
     IMAGE=$REPO:$VERSION
     err "note: Podman did not tell this container the image it was started from, so the default $IMAGE is recorded; add --image REF to record another."
 fi

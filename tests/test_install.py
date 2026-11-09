@@ -117,9 +117,15 @@ class InstallerTextTest(Base):
 
     def test_without_either_it_is_the_default_repository_at_the_image_version(self):
         r = self.installer_text()
+        self.assertIn("did not tell this container the image", r.stderr)
+        if "<" in DEFAULT_IMAGE_REPO:
+            # the repository is still a placeholder: no installer is printed, the message asks for --image
+            self.assertEqual(r.returncode, 2, r.stderr)
+            self.assertEqual(r.stdout, "")
+            self.assertIn("--image", r.stderr)
+            return
         self.assertIn("IMAGE='%s:%s'" % (DEFAULT_IMAGE_REPO, VERSION), r.stdout)
         self.assertIn("WITH=''", r.stdout)
-        self.assertIn("did not tell this container the image", r.stderr)
 
     def test_values_are_quoted_for_sh(self):
         r = self.installer_text("--with", "a'b $(id) `x`", "--image", "r/i:1")
