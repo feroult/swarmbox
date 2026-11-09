@@ -157,7 +157,7 @@ jobs:
       - name: Save the image for the scanner
         run: podman save --format docker-archive -o image.tar "$LOCAL_IMAGE"
       - name: Vulnerability scan with grype (fails on HIGH or CRITICAL, rules in .grype.yaml)
-        uses: anchore/scan-action@v6.0.0
+        uses: anchore/scan-action@v7.4.2
         with:
           image: docker-archive:image.tar
           fail-build: true
