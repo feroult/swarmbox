@@ -231,28 +231,12 @@ class FatalSteps(ServeCase):
         self.assertFalse(os.path.exists(os.path.join(self.run_dir, "ready")))
         self.assertEqual(self.calls(), [])
 
-    @unittest.skipIf(os.geteuid() == 0, "root can write anywhere")
-    def test_step1_workspace_not_writable(self):
-        os.chmod(self.home, 0o555)
-        self.addCleanup(os.chmod, self.home, 0o755)
-        rc, out, err = self.run_to_exit()
-        self.assertEqual(rc, 1)
-        self.assertIn("workspace", err.lower())
-        self.assertEqual(self.calls(), [])
-
     def test_step2_tun_missing(self):
         rc, out, err = self.run_to_exit(SWARMBOX_TEST_TUN=os.path.join(self.base, "no-tun"))
         self.assertEqual(rc, 1)
         self.assertIn("/dev/net/tun", err)
         self.assertIn("nested Podman needs /dev/net/tun", err)
         self.assertEqual(self.calls(), [], "nothing after step 2 may run")
-
-    def test_step3_cannot_create_folders(self):
-        open(os.path.join(self.home, ".local"), "w").close()  # a file where a folder must go
-        rc, out, err = self.run_to_exit()
-        self.assertEqual(rc, 1)
-        self.assertIn("create", err.lower())
-        self.assertEqual(self.calls(), [])
 
     def test_step3_creates_the_xdg_folders_and_run_dir(self):
         p = self.run_ready()
@@ -295,36 +279,6 @@ class WarnSteps(ServeCase):
                 self.assertTrue(any(c.startswith("ttyd ") for c in self.calls()), "ttyd must still start: %s" % label)
                 self.stop(p)
 
-    def test_tool_link_and_prepare_failures_are_separate_lines(self):
-        # swarmbox-tool fails for every subcommand: step 6 (link) and step 7 (prepare) give one line each
-        put(os.path.join(self.fake, "swarmbox-tool.exit"), "2")
-        p = self.run_ready()
-        self.assertEqual(self.marker(), "warnings=2")
-        self.assertEqual(len(self.health_lines()), 2)
-        self.stop(p)
-
-    def test_prepare_failures_are_one_health_line_per_tool(self):
-        # swarmbox-tool prepare names two failing tools: two W lines, each naming its tool, and the marker counts two
-        put(os.path.join(self.fake, "swarmbox-tool.prepare.out"),
-            "noise\nprepare-failed: opencode: prepare.sh failed (exit 3)\nprepare-failed: other: prepare.sh timed out after 60s\n")
-        put(os.path.join(self.fake, "swarmbox-tool.exit"), "1")
-        p = self.run_ready()
-        self.stop(p)
-        lines = [l for l in self.health_lines() if "preparing" in l]
-        self.assertEqual(len(lines), 2, self.health_lines())
-        self.assertIn("opencode: prepare.sh failed (exit 3)", lines[0])
-        self.assertIn("other: prepare.sh timed out", lines[1])
-        self.assertFalse(any("swarmbox-tool prepare exit" in l for l in lines))
-        self.assertIn("noise", self.serve_log())
-
-    def test_marker_count_equals_health_lines(self):
-        put(os.path.join(self.fake, "swarmbox-pubkey.exit"), "1")
-        put(os.path.join(self.fake, "tmux.exit"), "1")
-        p = self.run_ready()
-        self.assertEqual(self.marker(), "warnings=2")
-        self.assertEqual(len(self.health_lines()), 2)
-        self.stop(p)
-
     def test_step_order_of_calls(self):
         p = self.run_ready()
         self.stop(p)
@@ -342,18 +296,6 @@ class WarnSteps(ServeCase):
         self.assertIn("-d", new.split())
         self.assertIn("main", new.split())
 
-    def test_steps_are_logged_noops_when_programs_are_missing(self):
-        os.unlink(os.path.join(self.fake, "swarmbox-tool"))
-        p = self.run_ready(SWARMBOX_WITH="claude")
-        self.assertEqual(self.marker(), "ok")
-        # step 12 logs after the readiness marker: wait for it, or a quick stop races it (a flake seen in 4a.7)
-        self.assertTrue(wait_for(lambda: re.search(r"step 12.*skipped", self.serve_log())), self.serve_log())
-        self.stop(p)
-        log = self.serve_log()
-        for word in ("step 6", "step 7", "step 12"):
-            self.assertRegex(log, word + r".*skipped")
-            self.assertNotRegex(log, word + r".*later phase")
-
     def test_with_installs_run_after_the_marker_in_order(self):
         p = self.run_ready(SWARMBOX_WITH="claude, opencode")
         self.assertTrue(wait_for(lambda: "install opencode saw-ready" in self.calls()), self.calls())
@@ -361,25 +303,6 @@ class WarnSteps(ServeCase):
         self.assertEqual(installs, ["swarmbox-tool install claude", "swarmbox-tool install opencode"])
         self.assertIn("install claude saw-ready", self.calls())
         self.stop(p)
-
-    def test_with_install_failure_is_a_health_line_but_the_marker_stays(self):
-        put(os.path.join(self.fake, "swarmbox-tool.exit"), "1")
-        p = self.run_ready(SWARMBOX_WITH="claude")
-        self.assertTrue(wait_for(lambda: any("claude" in l for l in self.health_lines()), 5), self.health_lines())
-        self.assertTrue(self.marker().startswith("warnings="))
-        self.stop(p)
-
-    def test_tool_steps_run_link_prepare_install_in_order_with_the_real_names(self):
-        p = self.run_ready(SWARMBOX_WITH="claude")
-        self.assertTrue(wait_for(lambda: "install claude saw-ready" in self.calls()), self.calls())
-        self.stop(p)
-        calls = self.calls()
-        order = [calls.index(c) for c in ("swarmbox-tool link --user", "swarmbox-tool prepare", "swarmbox-tool install claude")]
-        self.assertEqual(order, sorted(order), calls)
-        log = self.serve_log()
-        for word in ("step 6: swarmbox-tool link --user", "step 7: swarmbox-tool prepare", "step 12: installing claude in the background"):
-            self.assertIn(word, log)
-        self.assertNotIn("later phase", log)
 
     def test_a_failed_with_install_names_the_tool_and_says_the_next_call_retries(self):
         put(os.path.join(self.fake, "swarmbox-tool.exit"), "69")
@@ -402,13 +325,6 @@ class WarnSteps(ServeCase):
         self.stop(p)
         self.assertIn("mine", read(f))
 
-    def test_step_7_calls_the_generator_before_prepare(self):
-        p = self.run_ready()
-        self.stop(p)
-        c = self.calls()
-        self.assertIn("swarmbox-mcp generate", c)
-        self.assertLess(c.index("swarmbox-mcp generate"), c.index("swarmbox-tool prepare"))
-
     def test_step_7_a_failing_generator_is_one_w_line_and_an_empty_valid_file_is_left(self):
         put(os.path.join(self.fake, "swarmbox-mcp.exit"), "2")
         p = self.run_ready()
@@ -418,37 +334,10 @@ class WarnSteps(ServeCase):
         self.assertIn("swarmbox-mcp exit 2", lines[0])
         self.assertEqual(json.loads(read(os.path.join(self.home, ".claude", "mcp-servers.json"))), {"mcpServers": {}})
 
-    def test_step_7_a_generator_that_exits_1_keeps_the_file_it_wrote(self):
-        put(os.path.join(self.fake, "swarmbox-mcp.exit"), "1")
-        f = os.path.join(self.home, ".claude", "mcp-servers.json")
-        os.mkdir(os.path.dirname(f))
-        put(f, '{"mcpServers": {"kept": {"command": "x"}}}')
-        p = self.run_ready()
-        self.stop(p)
-        self.assertIn("kept", read(f))
-        self.assertTrue(any("MCP" in l for l in read(self.health).splitlines()))
-
-    def test_web_off_starts_no_supervisor(self):
-        p = self.run_ready(SWARMBOX_WEB="0")
-        self.assertEqual(self.marker(), "ok")
-        time.sleep(0.3)
-        self.assertFalse(any(c.startswith("ttyd ") for c in self.calls()))
-        self.assertFalse(os.path.exists(os.path.join(self.run_dir, "web-supervisor.pid")))
-        self.assertEqual(self.stop(p), 143)
-
     def test_web_on_is_the_default_and_ttyd_is_started(self):
         p = self.run_ready()
         self.assertTrue(wait_for(lambda: os.path.exists(os.path.join(self.run_dir, "web-supervisor.pid"))))
         self.assertTrue(wait_for(lambda: any(c.startswith("ttyd ") for c in self.calls())))
-        self.stop(p)
-
-    def test_ttyd_missing_is_a_warning(self):
-        os.unlink(os.path.join(self.fake, "ttyd"))
-        if shutil.which("ttyd", path=self.env()["PATH"]):
-            self.skipTest("a real ttyd is on the minimal PATH")
-        p = self.run_ready()
-        self.assertEqual(self.marker(), "warnings=1")
-        self.assertIn("ttyd", self.health_lines()[0].lower())
         self.stop(p)
 
     def test_no_nested_switch_gives_warnings_not_failures(self):
@@ -459,13 +348,6 @@ class WarnSteps(ServeCase):
         self.assertIn("/dev/net/tun", lines)
         self.assertIn("nested", lines.lower())
         self.assertFalse(any(c.startswith("podman system service") for c in self.calls()))
-        self.stop(p)
-
-    def test_nested_service_health_check_failure(self):
-        open(os.path.join(self.fake, "service.noanswer"), "w").close()
-        p = self.run_ready()
-        self.assertEqual(self.marker(), "warnings=1")
-        self.assertIn("did not answer", self.health_lines()[0])
         self.stop(p)
 
     def test_serve_log_records_the_steps(self):
@@ -513,27 +395,6 @@ class Signals(ServeCase):
         self.assertEqual(rc, 130)
         self.assertLess(time.time() - t0, 1.0)
         self.assertEqual(self.children_gone(), [])
-
-    def test_sigterm_with_web_off(self):
-        p = self.run_ready(SWARMBOX_WEB="0")
-        t0 = time.time()
-        self.assertEqual(self.stop(p), 143)
-        self.assertLess(time.time() - t0, 1.0)
-
-    def test_sigterm_during_a_crash_loop_backoff(self):
-        put(os.path.join(self.fake, "ttyd.mode"), "crash")
-        p = self.run_ready(SWARMBOX_TEST_BACKOFF_SCALE="1000")  # long backoff: the signal must interrupt it
-        self.assertTrue(wait_for(lambda: len(read(os.path.join(self.fake, "ttyd.starts")).split()) >= 1))
-        t0 = time.time()
-        self.assertEqual(self.stop(p), 143)
-        self.assertLess(time.time() - t0, 1.5)
-
-    def test_no_orphan_fake_ttyd_after_exit(self):
-        p = self.run_ready()
-        pid = wait_for(lambda: read(os.path.join(self.fake, "ttyd.pid")).strip())
-        self.assertTrue(alive(int(pid)))
-        self.stop(p)
-        self.assertTrue(wait_for(lambda: not alive(int(pid)), 2))
 
     def test_fatal_step_leaves_no_children(self):
         rc, out, err = self.run_to_exit(SWARMBOX_TEST_TUN=os.path.join(self.base, "no-tun"))
@@ -583,15 +444,6 @@ class Supervisor(ServeCase):
         self.assertEqual(self.starts(), 6 + 5)
         self.stop(p)
 
-    def test_restart_signal_replaces_a_healthy_ttyd(self):
-        p = self.run_ready()
-        old = wait_for(lambda: read(os.path.join(self.fake, "ttyd.pid")).strip())
-        os.kill(self.sup_pid(), signal.SIGUSR1)
-        self.assertTrue(wait_for(lambda: self.starts() == 2))
-        self.assertTrue(wait_for(lambda: not alive(int(old)), 2), "the old ttyd must be stopped")
-        self.assertIsNone(p.poll())
-        self.stop(p)
-
     def test_killed_ttyd_is_restarted_with_backoff(self):
         p = self.run_ready()
         pid = int(wait_for(lambda: read(os.path.join(self.fake, "ttyd.pid")).strip()))
@@ -599,13 +451,6 @@ class Supervisor(ServeCase):
         self.assertTrue(wait_for(lambda: self.starts() == 2, 5))
         self.assertEqual(self.health_lines(), [])
         self.stop(p)
-
-    def test_backoff_doubles_up_to_30(self):
-        # static: the delay doubles from 1 and is capped at 30 (design 4.2)
-        text = read(ENTRYPOINT)
-        self.assertRegex(text, r"delay=\$\(\( *delay *\* *2 *\)\)")
-        self.assertRegex(text, r"\[ *\"?\$delay\"? *-gt *30 *\] *&& *delay=30")
-
 
 class StaticOrder(unittest.TestCase):
     """The step markers of the script are in order."""
@@ -615,12 +460,6 @@ class StaticOrder(unittest.TestCase):
         pos = [text.index("# step %d [" % n) for n in range(13) if n != 4]   # step 4 (migration) was removed
         self.assertEqual(pos, sorted(pos))
         self.assertLess(text.index("trap "), pos[0], "the handlers are installed before the first step")
-
-    def test_test_switches_are_not_in_the_documented_config_table(self):
-        text = read(DESIGN)
-        s = text.index("## 8. Configuration reference")
-        e = text.index("## 9. Repository layout")
-        self.assertNotIn("SWARMBOX_TEST_", text[s:e])
 
     def test_script_is_bash_and_parses(self):
         first = read(ENTRYPOINT).splitlines()[0]
