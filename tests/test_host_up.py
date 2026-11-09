@@ -334,8 +334,7 @@ class CreateTest(Base):
         self.assertEqual(self.subs("rm"), [["rm", "-f", cid]])
         self.assertIn("swarmbox: could not create the box:", r.stderr)
         self.assertIn(BUSY, r.stderr)
-        self.assertIn("swarmbox config set", r.stderr)
-        self.assertIn("WEB_PORT", r.stderr)
+        self.assertIn("the web port 7681 is busy. Try another: `swarmbox config set WEB_PORT 7682`", r.stderr)
         self.assertEqual(os.listdir(self.state), [])
 
 class ConflictTest(Base):

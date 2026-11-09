@@ -1512,23 +1512,23 @@ create_box() {
     UP_CIDF=
     warn "could not create the box:"
     show_err "$UP_ERRF"
-    port_hint
-    die 7 "If a port is in use, change WEB_PORT or PORTS with \`swarmbox config set\`."
+    port_hint up || die 7 "If a port is in use, change WEB_PORT or PORTS with \`swarmbox config set\`."
+    exit 7
 }
 
 # When Podman says a port is busy and it is the web port, name the command that fixes it.
 # shellcheck disable=SC2016  # the backticks in the message are literal
 port_hint() {
-    grep -qi 'address already in use' "$UP_ERRF" 2> /dev/null || return 0
-    grep -q ":$C_WEB_PORT:" "$UP_ERRF" 2> /dev/null || return 0
-    warn "the web port $C_WEB_PORT is busy. Try another: \`swarmbox config set WEB_PORT $((C_WEB_PORT + 1))\`"
+    grep -qi 'address already in use' "$UP_ERRF" 2> /dev/null || return 1
+    grep -q ":$C_WEB_PORT:" "$UP_ERRF" 2> /dev/null || return 1
+    warn "the web port $C_WEB_PORT is busy. Try another: \`swarmbox config set WEB_PORT $((C_WEB_PORT + 1))\`, then run \`swarmbox $1\`."
 }
 
 start_box() {
     if ! podman start "$BOX" > /dev/null 2> "$UP_ERRF"; then
         warn "could not start the box:"
         show_err "$UP_ERRF"
-        port_hint
+        port_hint reset && exit 7
         die 7 "Nothing was changed; the box '$BOX' is still there. If a port is in use, change WEB_PORT or PORTS and run \`swarmbox reset\`."
     fi
 }
