@@ -49,7 +49,7 @@ your own machine with the same care, unless you put SwarmBox inside a virtual ma
 **What weakens isolation on purpose:**
 
 - Nested Podman is always on. It needs `/dev/net/tun` and an unmasked `/proc`, so the box is less isolated than a plain container.
-- With remote access on, a browser session is a shell with `sudo`. The login length you choose is the time a stolen or forgotten session stays usable.
+- With remote access on, whoever passes the Cloudflare login has the same control as the agent: the workspace, the tokens and the SSH key. The login length you choose is the time a stolen or forgotten session stays usable.
 
 **Practical advice:**
 
