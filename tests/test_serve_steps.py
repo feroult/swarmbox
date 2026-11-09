@@ -172,6 +172,10 @@ class ServeCase(unittest.TestCase):
                 except Exception:
                     p.kill()
                     p.wait()
+            try:  # serve is the leader of its own session: end what it left behind (its `sleep infinity`, fake ttyd)
+                os.killpg(p.pid, signal.SIGKILL)
+            except OSError:
+                pass
             for f in (p.stdout, p.stderr):
                 if f:
                     f.close()

@@ -8,11 +8,14 @@
 #   --browser  include the three browser tests (they need chromium and ttyd and run in the scheduled job)
 #   --list     print the selected file names and stop
 # Env: SWARMBOX_TESTS_DIR points the runner at another folder of test files (used by tests/test_run_all.py).
-# Output: "<file> OK|FAIL <n> tests, <k> skipped" per run, then "TOTAL <f> files, <n> tests, <x> failed files".
+# Output: "<file> OK|FAIL <n> tests, <k> skipped, <s> s[, reaped <r>]" per run, then "TOTAL <f> files, <n> tests, <x> failed files, <s> s".
+#   Every file runs under tests/reap_run.py: when it ends, the processes it left behind (orphans adopted by that wrapper, found
+#   by PID, never by name) are killed, and their number is the "reaped" part.
 # Exit status: 0 when every run passed, 1 when one failed, 2 on a usage error. It starts nothing but python3 and takes no
 # action against the host (the tests make their own mktemp folders and swarmbox-test- names).
 set -u
 DIR=${SWARMBOX_TESTS_DIR:-$(cd "$(dirname "$0")" && pwd)}
+REAP=$(cd "$(dirname "$0")" && pwd)/reap_run.py
 WERROR=0
 REPEAT=1
 ONLY=""
@@ -58,6 +61,7 @@ RUNS=0
 NFILES=0
 TESTS=0
 BAD=0
+TOTAL_S=0
 for f in $FILES; do
     NFILES=$((NFILES + 1))
     i=0
@@ -65,18 +69,24 @@ for f in $FILES; do
         i=$((i + 1))
         RUNS=$((RUNS + 1))
         # shellcheck disable=SC2086  # FLAGS is a list of options
-        python3 $FLAGS "$DIR/$f" > "$OUT/log" 2>&1
+        python3 "$REAP" python3 $FLAGS "$DIR/$f" > "$OUT/log" 2>&1
         rc=$?
         n=$(sed -n 's/^Ran \([0-9][0-9]*\) tests\{0,1\} in .*/\1/p' "$OUT/log" | tail -n 1)
         k=$(sed -n 's/^OK.*skipped=\([0-9][0-9]*\).*/\1/p; s/^FAILED.*skipped=\([0-9][0-9]*\).*/\1/p' "$OUT/log" | tail -n 1)
         n=${n:-0}
         k=${k:-0}
         if [ "$rc" = 0 ]; then st=OK; else st=FAIL; BAD=$((BAD + 1)); fi
-        printf '%s %s %s tests, %s skipped\n' "$f" "$st" "$n" "$k"
+        secs=$(sed -n 's/^reap_run: seconds \([0-9.]*\)$/\1/p' "$OUT/log" | tail -n 1)
+        reaped=$(sed -n 's/^reap_run: reaped \([0-9]*\)$/\1/p' "$OUT/log" | tail -n 1)
+        secs=${secs:-0.0}
+        extra=""
+        [ -n "$reaped" ] && extra=", reaped $reaped"
+        printf '%s %s %s tests, %s skipped, %s s%s\n' "$f" "$st" "$n" "$k" "$secs" "$extra"
+        TOTAL_S=$(awk -v a="$TOTAL_S" -v b="$secs" 'BEGIN { printf "%.1f", a + b }')
         if [ "$rc" != 0 ]; then tail -n 15 "$OUT/log" | sed 's/^/    | /'; fi
         TESTS=$((TESTS + n))
     done
 done
 if [ "$REPEAT" -gt 1 ]; then echo "TOTAL $RUNS runs"; fi
-echo "TOTAL $NFILES files, $TESTS tests, $BAD failed files"
+echo "TOTAL $NFILES files, $TESTS tests, $BAD failed files, $TOTAL_S s"
 [ "$BAD" = 0 ]

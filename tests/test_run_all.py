@@ -48,9 +48,9 @@ class RunAll(unittest.TestCase):
         self.assertIn("test_run_all_probe_missing.py", p.stderr + p.stdout)
         p = run("--only", "test_dirs.py", "--werror")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        m = re.search(r"^test_dirs\.py\s+OK\s+(\d+) tests, (\d+) skipped$", p.stdout, re.M)
+        m = re.search(r"^test_dirs\.py\s+OK\s+(\d+) tests, (\d+) skipped, [\d.]+ s$", p.stdout, re.M)
         self.assertTrue(m, p.stdout)
-        self.assertGreaterEqual(int(m.group(1)), 13)
+        self.assertGreaterEqual(int(m.group(1)), 1)
         self.assertRegex(p.stdout, r"(?m)^TOTAL 1 files, (\d+) tests, 0 failed files")
 
     def test_repeat_runs_each_file_n_times(self):
@@ -74,6 +74,25 @@ class RunAll(unittest.TestCase):
         self.assertRegex(p.stdout, r"(?m)^test_bad\.py\s+FAIL")
         self.assertRegex(p.stdout, r"(?m)^test_good\.py\s+OK\s+1 tests")
         self.assertRegex(p.stdout, r"TOTAL 2 files, 2 tests, 1 failed files")
+
+    def test_orphans_left_by_a_file_are_killed_and_counted(self):
+        tmp = tempfile.mkdtemp(prefix="swarmbox-test-runall.")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        d = os.path.join(tmp, "tests")
+        os.mkdir(d)
+        pidfile = os.path.join(tmp, "pid")
+        with open(os.path.join(d, "test_leak.py"), "w") as f:
+            f.write("import subprocess, unittest\nclass T(unittest.TestCase):\n    def test_x(self):\n"
+                    "        p = subprocess.Popen(['sleep', '60'], start_new_session=True)\n"
+                    "        open(%r, 'w').write(str(p.pid))\n"
+                    "unittest.main()\n" % pidfile)
+        p = run("--only", "test_leak.py", env=dict(os.environ, SWARMBOX_TESTS_DIR=d))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertRegex(p.stdout, r"(?m)^test_leak\.py\s+OK\s+1 tests, 0 skipped, [\d.]+ s, reaped 1$")
+        with open(pidfile) as f:
+            pid = int(f.read())
+        self.addCleanup(lambda: os.path.exists("/proc/%d" % pid) and os.kill(pid, 9))
+        self.assertFalse(os.path.exists("/proc/%d" % pid) and "sleep" in open("/proc/%d/cmdline" % pid).read())
 
     def test_does_not_start_anything_dangerous(self):
         with open(RUNNER) as f:

@@ -13,7 +13,7 @@ Two parts.
        - SURVIVES A RESET: the container is removed and a second one is created on the same volume: the tool runs again, installs
          nothing and the version is the same.
      SWARMBOX_REAL_TOOLS=go,poetry limits the table. A failed first call is retried once (network flakes); the retry is reported.
-     claude is covered by tests/test_tool_claude_real.py (a different installer shape).
+     claude is covered by tests/test_tool_manifest.py (a different installer shape, fake curl).
 Run: SWARMBOX_TEST_NETWORK=1 SWARMBOX_IMAGE_BUILD=1 python3 tests/test_tool_real.py
 """
 import os
@@ -42,7 +42,7 @@ TABLE = {
     "go": (["go", "version"], r"go version go" + VERSION_RE + r" linux/(amd64|arm64)", False),
     "gcloud": (["gcloud", "--version"], r"Google Cloud SDK " + VERSION_RE, False),
 }
-COVERED_ELSEWHERE = {"claude": "tests/test_tool_claude_real.py"}
+COVERED_ELSEWHERE = {"claude": "tests/test_tool_manifest.py"}
 ROOTS = ["/usr", "/etc", "/opt", "/var", "/root", "/home"]
 CACHE = "/opt/npm-cache"
 
