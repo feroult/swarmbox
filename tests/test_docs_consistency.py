@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT, DEFAULT_NAME  # noqa: E402
 
 HOST = os.path.join(ROOT, "container", "host", "swarmbox-host")
-HOST_WORDS_ROUTED = ["stop", "reset", "up", "url", "update", "config", "env", "remote", "fingerprint", "version"]
+HOST_WORDS_ROUTED = ["stop", "reset", "up", "url", "update", "config", "env", "remote", "fingerprint", "version", "help"]
 FORWARDED_WORDS = ["attach", "pubkey", "tool", "--plain", "claude", "gemini", "yolo", "bash"]
 
 
