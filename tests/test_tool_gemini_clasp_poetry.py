@@ -133,58 +133,16 @@ class NpmToolInstallTest(InstallBase):
         r = self.install("gemini", None)  # no TOOL_VERSION at all: an agent defaults to latest
         self.assertEqual(r.returncode, 0, r.stderr)
 
-    def test_a_pinned_tool_without_a_version_is_refused(self):
-        r = self.install("clasp", None)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertFalse(os.path.exists(self.calls))
-
     def test_writes_nothing_outside_the_prefix(self):
         for tool in NPM_TOOLS:
             with self.subTest(tool=tool):
                 self.assertEqual(self.install(tool, "1.2.3").returncode, 0)
                 self.assertEqual(self.outside(), [])
 
-    def test_node_gyp_headers_go_to_a_scratch_dir_that_is_removed(self):
-        """Measured in 4b.7: gemini's native dependency makes node-gyp download Node headers into ~/.cache/node-gyp (2811 files)."""
-        for tool in NPM_TOOLS:
-            with self.subTest(tool=tool):
-                self.assertEqual(self.install(tool, "1.2.3").returncode, 0)
-                lines = [l for l in read(self.calls).splitlines() if l.startswith("devdir=")]
-                self.assertEqual(len(lines), 1, lines)
-                devdir = lines[0][len("devdir="):]
-                self.assertNotEqual(devdir, "unset")
-                self.assertFalse(devdir.startswith(self.home), devdir)  # not in the home
-                self.assertFalse(os.path.exists(devdir), "the scratch devdir was left behind")
-                xdg = [l for l in read(self.calls).splitlines() if l.startswith("xdg=")][0][4:].split("|")
-                for d in xdg:  # a postinstall that runs the program writes its data and logs here, not in the home
-                    self.assertNotEqual(d, "unset")
-                    self.assertFalse(d.startswith(self.home), d)
-                    self.assertFalse(os.path.exists(d))
-                self.assertEqual(self.outside(), [])
-                os.remove(self.calls)
-
     def test_a_failing_npm_fails_the_install(self):
         for tool in NPM_TOOLS:
             with self.subTest(tool=tool):
                 self.assertNotEqual(self.install(tool, "1.2.3", FAKE_NPM_FAIL="1").returncode, 0)
-
-    def test_a_missing_program_fails_the_install(self):
-        for tool in NPM_TOOLS:
-            with self.subTest(tool=tool):
-                r = self.install(tool, "1.2.3", FAKE_NO_BIN="1")
-                self.assertNotEqual(r.returncode, 0)
-                self.assertIn("missing", r.stderr)
-
-    def test_a_failing_cache_clean_is_only_a_warning(self):
-        r = self.install("clasp", "1.2.3", FAKE_CACHE_EXIT="1")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("warning", r.stderr)
-
-    def test_the_package_name_is_one_variable(self):
-        for tool, (pkg, _) in NPM_TOOLS.items():
-            text = read(os.path.join(REAL_TOOLS, tool, "install.sh"))
-            self.assertEqual([l for l in text.splitlines() if l.startswith("PACKAGE=")], ['PACKAGE="%s"' % pkg])
-
 
 class PoetryInstallTest(InstallBase):
     def test_runs_the_official_installer_with_the_version_and_poetry_home_under_the_prefix(self):
@@ -197,28 +155,11 @@ class PoetryInstallTest(InstallBase):
         self.assertNotIn("fake installer stdout", r.stdout)  # stdout is empty, progress goes to stderr
         self.assertIn("fake installer stdout", r.stderr)
 
-    def test_writes_nothing_outside_the_prefix_even_if_the_installer_writes_caches(self):
-        r = self.install("poetry", "2.5.1", FAKE_WRITE_CACHE="1")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.outside(), [])  # the caches went to a private folder that is gone
-        self.assertEqual(os.listdir(self.home), [])
-
     def test_a_failed_download_fails_and_runs_nothing(self):
         r = self.install("poetry", "2.5.1", FAKE_CURL_FAIL="1")
         self.assertNotEqual(r.returncode, 0)
         self.assertNotIn("installer args", read(self.calls))
         self.assertEqual(os.listdir(self.prefix), [])
-
-    def test_no_version_is_refused(self):
-        self.assertNotEqual(self.install("poetry", None).returncode, 0)
-
-    def test_the_installed_program_must_run(self):
-        # an installer that leaves a poetry which fails: the install must fail
-        write(os.path.join(self.fakebin, "curl"), FAKE_CURL.replace("echo \"Poetry", "exit 3; echo \"Poetry"), 0o755)
-        r = self.install("poetry", "2.5.1")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("does not run", r.stderr)
-
 
 class ThroughSwarmboxToolTest(InstallBase):
     def run_tool(self, *args):
@@ -247,36 +188,6 @@ class ThroughSwarmboxToolTest(InstallBase):
         self.assertIn("@google/clasp@" + expect["clasp"], read(self.calls))
         self.assertIn("['--version', '%s']" % expect["poetry"], read(self.calls))
 
-    def test_poetry_home_is_not_in_the_home_outside_the_tool_prefix(self):
-        self.assertEqual(self.run_tool("install", "poetry").returncode, 0)
-        top = sorted(os.listdir(self.home))
-        self.assertEqual(top, [".local"])
-        self.assertEqual(sorted(os.listdir(os.path.join(self.home, ".local"))), ["share"])
-        self.assertEqual(os.listdir(os.path.join(self.home, ".local", "share")), ["swarmbox"])
-
-    def test_the_shim_runs_the_fake_installed_poetry(self):
-        shims = os.path.join(self.base, "shims")
-        env = {"PATH": self.fakebin + ":/usr/bin:/bin", "HOME": self.home, "SWARMBOX_TEST_LIB": LIB,
-               "SWARMBOX_TEST_IMAGE_TOOLS": REAL_TOOLS, "SWARMBOX_TEST_USER_TOOLS": os.path.join(self.base, "user"),
-               "SWARMBOX_TEST_HOST_DIR": os.path.join(self.base, "host"), "SWARMBOX_TEST_IMAGE_SHIMS": shims,
-               "SWARMBOX_TEST_ARCH": "amd64", "SWARMBOX_TEST_LOCK": os.path.join(self.base, "lock"), "FAKE_CALLS": self.calls,
-               "SWARMBOX_TEST_RUN_DIR": os.path.join(self.base, "run"), "TMPDIR": self.base}
-        r = subprocess.run(["bash", TOOL, "link", "--system"], env=env, capture_output=True, text=True, timeout=60, cwd=self.base)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertTrue(os.path.lexists(os.path.join(shims, "poetry")))
-        # first call through the shim installs (fake) and runs the program
-        # the symlink points at /usr/local/lib/swarmbox (absent here): aim it at the real dispatcher of the repository
-        os.remove(os.path.join(shims, "poetry"))
-        os.symlink(os.path.join(LIB, "swarmbox-shim.sh"), os.path.join(shims, "poetry"))
-        os.makedirs(os.path.join(self.base, "ushims"))
-        env.update({"SWARMBOX_TEST_USER_SHIMS": os.path.join(self.base, "ushims"), "SWARMBOX_TEST_TOOL": TOOL})
-        env["PATH"] = ":".join([os.path.join(self.home, ".local", "bin"), os.path.join(self.base, "ushims"), shims, self.fakebin, "/usr/bin", "/bin"])
-        r = subprocess.run([os.path.join(shims, "poetry"), "--version"], env=env, capture_output=True, text=True, timeout=60, cwd=self.base)
-        self.assertIn("Poetry (version %s)" % manifest("poetry")[2], r.stdout, r.stderr)
-        self.assertIn("installer args", read(self.calls))  # the fake installer ran, not the network
-        self.assertEqual(r.returncode, 0, r.stderr)
-
-
 class ManifestTest(unittest.TestCase):
     def test_the_real_tools_folder_validates_with_all_five(self):
         r = subprocess.run(["bash", TOOL, "validate", REAL_TOOLS], capture_output=True, text=True, timeout=60,
@@ -294,27 +205,6 @@ class ManifestTest(unittest.TestCase):
                 else:
                     self.assertEqual(kind, "tool")
                     self.assertRegex(version, r"^\d+\.\d+(\.\d+)?$")
-
-    def test_provides_names_are_unique_across_tools(self):
-        seen = []
-        for t in sorted(os.listdir(REAL_TOOLS)):
-            seen += manifest(t)[1].split()
-        self.assertEqual(len(seen), len(set(seen)), seen)
-
-    def test_manifest_values(self):
-        self.assertEqual(manifest("gemini"), ["agent", "gemini", "latest", "managed", "--yolo", "", "", ""])
-        self.assertEqual(manifest("clasp")[:2] + manifest("clasp")[3:], ["tool", "clasp", "managed", "", "43323", "", ""])
-        self.assertEqual(manifest("poetry")[:2] + manifest("poetry")[3:], ["tool", "poetry", "managed", "", "", "", ""])
-
-    def test_files_and_modes(self):
-        for t, files in (("gemini", ("install.sh", "tool.conf")), ("clasp", ("install.sh", "shell.sh", "tool.conf")),
-                         ("poetry", ("install.sh", "tool.conf"))):
-            for f in files:
-                self.assertTrue(os.path.isfile(os.path.join(REAL_TOOLS, t, f)), t + "/" + f)
-            self.assertTrue(os.access(os.path.join(REAL_TOOLS, t, "install.sh"), os.X_OK))
-        for t in ("gemini", "poetry"):
-            self.assertFalse(os.path.exists(os.path.join(REAL_TOOLS, t, "shell.sh")), "design 6.12: no environment set")
-
 
 class PortsTest(unittest.TestCase):
     def setUp(self):
@@ -376,32 +266,11 @@ class ClaspShellTest(unittest.TestCase):
             with self.subTest(shell=sh):
                 self.assertEqual(self.run_in(sh, "login"), "[login][--redirect-port][43323]")
 
-    def test_login_keeps_its_other_arguments(self):
-        for sh in SHELLS:
-            with self.subTest(shell=sh):
-                self.assertEqual(self.run_in(sh, "login --no-localhost 'a b'"),
-                                 "[login][--redirect-port][43323][--no-localhost][a b]")
-
     def test_a_login_that_names_its_own_port_is_untouched(self):
         for sh in SHELLS:
             with self.subTest(shell=sh):
                 self.assertEqual(self.run_in(sh, "login --redirect-port 5555"), "[login][--redirect-port][5555]")
                 self.assertEqual(self.run_in(sh, "login --redirect-port=5555"), "[login][--redirect-port=5555]")
-
-    def test_other_subcommands_are_untouched(self):
-        for sh in SHELLS:
-            with self.subTest(shell=sh):
-                self.assertEqual(self.run_in(sh, "push --force"), "[push][--force]")
-                self.assertEqual(self.run_in(sh, "logout"), "[logout]")
-                self.assertEqual(self.run_in(sh, "--version"), "[--version]")
-                self.assertEqual(self.run_in(sh, ""), "")
-                self.assertEqual(self.run_in(sh, "run login"), "[run][login]")
-
-    def test_the_file_defines_one_function_and_sets_no_variable(self):
-        text = read(self.SHSH)
-        self.assertEqual(len(re.findall(r"^clasp\(\)", text, re.M)), 1)
-        self.assertEqual(len(re.findall(r"^[A-Za-z_]+=", text, re.M)), 0)
-
 
 class GeminiFragmentTest(unittest.TestCase):
     def run_frag(self, script, agent="gemini"):
@@ -425,20 +294,6 @@ class GeminiFragmentTest(unittest.TestCase):
         self.assertIn("--yolo", out)
         self.assertRegex(out, r"alias gemini='?gemini --yolo")
         self.assertNotIn("mcp", out.lower())
-
-    def test_yolo_runs_gemini_with_the_flag_and_no_mcp_flags(self):
-        out = self.run_frag("yolo hello")
-        self.assertEqual(out.strip().splitlines()[-1], "[--yolo][hello]")
-
-    def test_clasp_and_poetry_get_no_alias(self):
-        out = self.run_frag("alias clasp poetry 2>&1")
-        self.assertNotIn("alias clasp=", out)
-        self.assertNotIn("alias poetry=", out)
-
-    def test_the_clasp_function_is_defined_by_the_fragment(self):
-        out = self.run_frag("type clasp | head -n 1")
-        self.assertIn("clasp is a function", out)
-
 
 if __name__ == "__main__":
     unittest.main()

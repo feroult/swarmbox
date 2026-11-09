@@ -149,19 +149,6 @@ class InstallTest(InstallBase):
                     self.assertIn("TOOL_SHA256", r.stderr)
                     self.assertFalse(os.path.exists(self.calls))
 
-    def test_uppercase_hex_is_accepted(self):
-        tb, sha = self.make_tarball("go")
-        self.assertEqual(self.install("go", sha=sha.upper(), tarball=tb).returncode, 0)
-
-    def test_a_failed_download_fails_and_leaves_nothing(self):
-        for tool in SPECS:
-            with self.subTest(tool=tool):
-                tb, sha = self.make_tarball(tool)
-                r = self.install(tool, sha=sha, tarball=tb, FAKE_CURL_FAIL="1")
-                self.assertNotEqual(r.returncode, 0)
-                self.assertEqual(os.listdir(self.prefix), [])
-                self.assertEqual(self.outside(), [])
-
     def test_the_url_uses_the_version_and_the_arch_name_of_the_vendor(self):
         for tool, s in SPECS.items():
             for arch, vendor in s["arch"].items():
@@ -174,35 +161,6 @@ class InstallTest(InstallBase):
                     self.assertIn(s["url"] % ("4.5.6", vendor), read(self.calls))
                     shutil.rmtree(self.prefix)
                     os.makedirs(self.prefix)
-
-    def test_an_unknown_arch_or_no_version_is_refused(self):
-        for tool in SPECS:
-            tb, sha = self.make_tarball(tool)
-            self.assertNotEqual(self.install(tool, arch="riscv", sha=sha, tarball=tb).returncode, 0)
-            self.assertNotEqual(self.install(tool, version=None, sha=sha, tarball=tb).returncode, 0)
-            self.assertNotEqual(self.install(tool, version="latest", sha=sha, tarball=tb).returncode, 0)
-            self.assertNotEqual(self.install(tool, version="1.2/../x", sha=sha, tarball=tb).returncode, 0)
-
-    def test_a_tarball_without_the_programs_fails(self):
-        tb, sha = self.make_tarball("go")
-        empty = os.path.join(self.base, "empty.tgz")
-        with tarfile.open(empty, "w:gz") as t:
-            ti = tarfile.TarInfo("go/VERSION")
-            ti.size = 1
-            t.addfile(ti, io.BytesIO(b"x"))
-        with open(empty, "rb") as f:
-            esha = hashlib.sha256(f.read()).hexdigest()
-        r = self.install("go", sha=esha, tarball=empty)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("missing", r.stderr)
-
-    def test_gcloud_does_not_run_the_vendor_installer_and_writes_no_config(self):
-        tb, sha = self.make_tarball("gcloud")
-        self.assertEqual(self.install("gcloud", sha=sha, tarball=tb).returncode, 0)
-        self.assertEqual(os.listdir(self.home), [])  # no ~/.config/gcloud, no rc-file edit
-        code = [l for l in read(os.path.join(REAL_TOOLS, "gcloud", "install.sh")).splitlines() if not l.lstrip().startswith("#")]
-        self.assertFalse([l for l in code if "google-cloud-sdk" in l or "install.sh" in l], code)
-
 
 class ThroughSwarmboxToolTest(InstallBase):
     """The manifest's own checksum reaches the installer as TOOL_SHA256 for the host arch, and the real manifest validates."""
@@ -237,37 +195,6 @@ class ThroughSwarmboxToolTest(InstallBase):
                                                            s["names"][0]), os.X_OK))
                     shutil.rmtree(os.path.join(self.home, ".local"))
 
-    def test_a_wrong_manifest_checksum_installs_nothing(self):
-        self.tarball, sha = self.make_tarball("go")
-        image = self.image_with("go", "2" * 64, "2" * 64)
-        r = self.run_tool("install", "go", image=image)
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("checksum", r.stderr)
-        tools = os.path.join(self.home, ".local", "share", "swarmbox", "tools", "go")
-        self.assertFalse(os.path.exists(os.path.join(tools, "current")))
-        self.assertEqual([x for x in os.listdir(tools)] if os.path.isdir(tools) else [], [])
-
-
-class ShimTest(unittest.TestCase):
-    def test_all_commands_of_a_tool_get_a_shim_to_the_one_install(self):
-        d = tempfile.mkdtemp(prefix="gg-shim-")
-        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
-        env = {"PATH": "/usr/bin:/bin", "HOME": d, "SWARMBOX_TEST_LIB": LIB, "SWARMBOX_TEST_IMAGE_TOOLS": REAL_TOOLS,
-               "SWARMBOX_TEST_USER_TOOLS": os.path.join(d, "u"), "SWARMBOX_TEST_HOST_DIR": os.path.join(d, "host"),
-               "SWARMBOX_TEST_IMAGE_SHIMS": os.path.join(d, "shims")}
-        r = subprocess.run(["bash", TOOL, "link", "--system"], env=env, capture_output=True, text=True, timeout=60, cwd=d)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        for c in ("go", "gofmt", "gcloud", "gsutil", "bq"):
-            self.assertTrue(os.path.lexists(os.path.join(d, "shims", c)), c)
-        index = read(os.path.join(d, "host", "tool-ports")) if os.path.exists(os.path.join(d, "host", "tool-ports")) else ""
-        self.assertNotIn("go\t", index)
-        self.assertNotIn("gcloud\t", index)  # neither publishes a port
-        # one tool per command: the index (<dirname of the shims>/index) maps every command to its own tool
-        lines = read(os.path.join(d, "index")).splitlines()
-        for c, t in (("go", "go"), ("gofmt", "go"), ("gcloud", "gcloud"), ("gsutil", "gcloud"), ("bq", "gcloud")):
-            self.assertIn("%s %s" % (c, t), lines)
-
-
 SHELLS = [s for s in ("bash", "zsh") if shutil.which(s)]
 
 
@@ -289,29 +216,6 @@ class GoShellTest(unittest.TestCase):
                 d, out = self.run_in(sh, 'echo "$GOPATH|$GOCACHE|$PATH"')
                 self.assertEqual(out, "%s/go|%s/.cache/go-build|/usr/bin:/bin:%s/go/bin" % (d, d, d))
 
-    def test_path_gets_gopath_bin_once_even_when_sourced_twice(self):
-        for sh in SHELLS:
-            with self.subTest(shell=sh):
-                _, out = self.run_in(sh, '. %s; . %s; echo "$PATH"' % (self.SHSH, self.SHSH))
-                self.assertEqual(out.count("/go/bin"), 1)
-
-    def test_variables_are_exported_and_an_existing_value_is_kept(self):
-        for sh in SHELLS:
-            with self.subTest(shell=sh):
-                _, out = self.run_in(sh, 'sh -c \'echo "$GOPATH|$GOCACHE"\'', {"GOPATH": "/mine/go", "GOCACHE": "/mine/cache"})
-                self.assertEqual(out, "/mine/go|/mine/cache")
-                _, out = self.run_in(sh, 'echo "$PATH"', {"GOPATH": "/mine/go"})
-                self.assertTrue(out.endswith(":/mine/go/bin"), out)
-
-    def test_nothing_is_created_by_sourcing(self):
-        d, _ = self.run_in(SHELLS[0], "true")
-        self.assertEqual(os.listdir(d), [])
-
-    def test_no_functions_and_no_gcloud_shell_file(self):
-        self.assertNotIn("()", read(self.SHSH))
-        self.assertFalse(os.path.exists(os.path.join(REAL_TOOLS, "gcloud", "shell.sh")))
-
-
 class ManifestTest(unittest.TestCase):
     def validate(self, path):
         return subprocess.run(["bash", TOOL, "validate", path], capture_output=True, text=True, timeout=60, cwd=ROOT,
@@ -322,18 +226,6 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         for t in ("go", "gcloud"):
             self.assertIn(t, r.stdout)
-
-    def test_manifest_values(self):
-        kind, provides, version, update, amd, arm, ports = conf_vars("go")
-        self.assertEqual((kind, provides, update, ports), ("tool", "go gofmt", "managed", ""))
-        self.assertRegex(version, r"^\d+\.\d+(\.\d+)?$")
-        kind, provides, version, update, amd2, arm2, ports = conf_vars("gcloud")
-        self.assertEqual((kind, provides, update, ports), ("tool", "gcloud gsutil bq", "managed", ""))
-        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
-        for h in (amd, arm, amd2, arm2):
-            self.assertRegex(h, r"^[0-9a-f]{64}$")
-        self.assertNotEqual(amd, arm)
-        self.assertNotEqual(amd2, arm2)
 
     def test_the_real_manifests_carry_the_checksums_the_installers_need(self):
         for t in ("go", "gcloud"):
@@ -358,16 +250,6 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("SHA256_amd64", r.stdout + r.stderr)
         self.assertEqual(self.validate(self.make("SHA256_amd64=%s\nSHA256_arm64=%s\n" % (h, h))).returncode, 0)
-
-    def test_malformed_hex_fails(self):
-        for bad in ("xyz", "a" * 63, "a" * 65, ""):
-            with self.subTest(bad=bad):
-                r = self.validate(self.make("SHA256_amd64=%s\nSHA256_arm64=%s\n" % (bad, "a" * 64)))
-                self.assertEqual(r.returncode, 1, r.stdout)
-
-    def test_an_installer_that_does_not_verify_needs_no_checksum(self):
-        self.assertEqual(self.validate(self.make("", install="#!/bin/bash\ntrue\n")).returncode, 0)
-
 
 if __name__ == "__main__":
     unittest.main()

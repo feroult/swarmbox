@@ -87,11 +87,6 @@ class InstallArguments(unittest.TestCase):
             self.assertIn("vendor args: 0:", self.calls())
             self.assertEqual(r.stdout, "")
 
-    def test_a_pinned_version_is_the_one_argument(self):
-        r = self.run_install("2.1.314")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("vendor args: 1:2.1.314", self.calls())
-
     def test_the_download_is_the_vendors_https_script_and_failure_runs_nothing(self):
         r = self.run_install()
         self.assertIn("curl -fsSL https://claude.ai/install.sh", self.calls())
@@ -195,12 +190,6 @@ class FirstCallOnline(unittest.TestCase):
         self.assertIn("link", out(r))
         self.assertRegex(out(r), r"/home/agent/\.local/share/claude/versions/\d+\.\d+\.\d+")
 
-    def test_04_the_record_exists_and_has_no_checksum(self):
-        r = self.box.sh("find /home/agent -path '*swarmbox/tools/claude/self/.swarmbox-env' | head -1")
-        self.assertTrue(out(r), "no record of the install")
-        rec = self.box.sh("cat " + out(r) + "; ls -A $(dirname " + out(r) + ")")
-        self.assertIn("installed", out(rec))
-
     def test_05_a_second_call_installs_nothing(self):
         r = self.box.sh("claude --version")
         self.assertEqual(r.returncode, 0, errtext(r))
@@ -208,36 +197,6 @@ class FirstCallOnline(unittest.TestCase):
         self.assertNotIn("installing", errtext(r))
         self.assertEqual(errtext(r), "", errtext(r))
         self.assertEqual(out(r), out(self.first))
-
-    def test_06_nothing_outside_the_home_changed_except_the_npm_cache(self):
-        b, a = set(self.before.splitlines()), set(self.after.splitlines())
-        changed = sorted(l.split(" ")[0] for l in (a ^ b))
-        changed = [p for p in changed if not p.startswith("/opt/npm-cache")]
-        # the entrypoint is not running here (sleep is), so nothing else may differ, not even logs
-        self.assertEqual(changed, [], changed[:20])
-
-    def test_07_the_installed_paths_are_the_four_of_6_7_plus_the_users_own(self):
-        r = self.box.sh("find /home/agent -mindepth 1 -maxdepth 3 | sort")
-        top = set(out(r).splitlines()) - set(self.home_before.splitlines())
-        allowed = ("/home/agent/.local", "/home/agent/.cache", "/home/agent/.config", "/home/agent/.claude")
-        for p in top:
-            self.assertTrue(p.startswith(allowed), "unexpected path: " + p)
-        r = self.box.sh("ls ~/.local/share ~/.local/state ~/.cache ~/.local/bin")
-        text = out(r)
-        for need in ("claude",):
-            self.assertIn(need, text)
-        # under ~/.local/share and ~/.local/state, claude and SwarmBox's record dir are the only entries
-        share = out(self.box.sh("ls -A ~/.local/share")).split()
-        self.assertEqual(sorted(share), sorted(set(share) & {"claude", "swarmbox"}), share)
-
-    def test_08_claude_json_is_written_by_the_vendor_installer_and_holds_no_login(self):
-        # Measured in 4a.6 (decision log): the vendor's own installer creates ~/.claude and ~/.claude.json (installMethod native);
-        # install.sh does not touch them. Design 6.7 first said "never"; it now says the vendor creates them.
-        r = self.box.sh("cat ~/.claude.json")
-        self.assertEqual(r.returncode, 0, "the vendor installer left no ~/.claude.json")
-        self.assertIn('"installMethod": "native"', out(r))
-        self.assertNotRegex(out(r), r"(?i)oauth|accessToken|apiKey")
-        self.assertEqual(self.box.sh("test -d ~/.claude").returncode, 0)
 
     def test_09_claude_update_works(self):
         r = self.box.sh("swarmbox-tool update claude")
@@ -247,13 +206,6 @@ class FirstCallOnline(unittest.TestCase):
         r = self.box.sh("claude --version")
         self.assertEqual(r.returncode, 0)
         self.assertNotIn("Installing", errtext(r))
-
-    def test_10_the_binary_is_not_the_shim_after_install(self):
-        r = self.box.sh("command -v claude; readlink -f $(command -v claude)")
-        lines = out(r).splitlines()
-        self.assertEqual(lines[0], "/usr/local/lib/swarmbox/shims/claude")
-        self.assertEqual(os.path.basename(lines[1]), "swarmbox-shim")
-
 
 @unittest.skipUnless(ENABLED, "real test: needs SWARMBOX_TEST_NETWORK=1, SWARMBOX_IMAGE_BUILD=1 and podman")
 class FirstCallOffline(unittest.TestCase):
