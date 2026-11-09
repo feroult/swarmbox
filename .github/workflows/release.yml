@@ -255,7 +255,7 @@ jobs:
         run: |
           cosign verify --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$REGISTRY_IMAGE@$DIGEST" > /dev/null
           cosign verify-attestation --type spdxjson --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$REGISTRY_IMAGE@$DIGEST" > /dev/null
-      - uses: actions/upload-artifact@v4.6.0
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: sbom
           path: sbom.spdx.json
