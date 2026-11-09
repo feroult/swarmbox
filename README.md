@@ -71,8 +71,8 @@ The image is not published yet, so today you build it locally. In the repository
 
 ```bash
 podman build -t localhost/swarmbox-dev:local .
-podman run --rm localhost/swarmbox-dev:local install --with claude        # read what it prints
-podman run --rm localhost/swarmbox-dev:local install --with claude | sh
+podman run --rm localhost/swarmbox-dev:local install --with claude --image localhost/swarmbox-dev:local        # read what it prints
+podman run --rm localhost/swarmbox-dev:local install --with claude --image localhost/swarmbox-dev:local | sh
 ```
 
 This writes one script, `swarmbox`, to `~/.local/bin` (set `SWARMBOX_BIN_DIR` to use another folder), and records the image and the tools in

@@ -61,7 +61,7 @@ class Readme(unittest.TestCase):
         local = "localhost/" + DEFAULT_NAME + ":local"
         qs = section(README, "Quick start")
         self.assertIn("podman build -t " + local + " .", qs)
-        self.assertIn("podman run --rm " + local + " install --with claude | sh", qs)
+        self.assertIn("podman run --rm " + local + " install --with claude --image " + local + " | sh", qs)
         self.assertNotIn("init", qs)
         self.assertNotIn(">> ~/", qs)   # no line appended to a startup file
 
