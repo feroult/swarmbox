@@ -221,6 +221,7 @@ class WithServe(serve_steps.ServeCase):
 
     def setUp(self):
         super().setUp()
+        os.replace(os.path.join(self.fake, "swarmbox-web"), os.path.join(self.fake, "ttyd"))   # the base set-up's fake becomes the ttyd that swarmbox-web runs
         os.symlink(WEB, os.path.join(self.fake, "swarmbox-web"))
         self.page = build_page(self.base)
         self.port = str(20000 + (os.getpid() * 11) % 15000)
