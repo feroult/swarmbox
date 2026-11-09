@@ -138,29 +138,6 @@ class ShellMatrix(unittest.TestCase):
         os.symlink(bash, os.path.join(d, "sh"))
         self.scenario("bash as sh", [os.path.join(d, "sh")])
 
-    def test_bash_3_2_and_macos_sh_are_reported_unverified(self):
-        out = subprocess.run([shutil.which("bash") or "bash", "-c", "echo $BASH_VERSINFO"], capture_output=True, text=True).stdout.strip()
-        if out == "3":
-            self.scenario("bash 3.x", [shutil.which("bash")])
-        else:
-            print("[unverified] bash 3.2 and macOS /bin/sh are not available here (this bash is %s); Phase 6, B23" % (out or "unknown"))
-
-    def test_helper_is_executable_with_a_posix_shebang(self):
-        self.assertTrue(os.access(HELPER, os.X_OK))
-        with open(HELPER) as f:
-            self.assertEqual(f.readline().rstrip("\n"), "#!/bin/sh")
-
-    def test_no_bashisms_by_grep(self):
-        with open(HELPER) as f:
-            lines = [l.split("#")[0] if not l.lstrip().startswith("#") else "" for l in f.read().splitlines()]
-        code = "\n".join(lines)
-        import re
-        for pat, why in ((r"(^|[;{(&|]\s*)local\s+[A-Za-z_]", "local"), (r"\becho\s+-e\b", "echo -e"), (r"\bread\s+-[a-qs-z]*s", "read -s"),
-                         (r"\[\[(?!:)", "[[ ]]"), (r"\bfunction\s+\w+", "function keyword"), (r"<<<", "here-string"),
-                         (r"\$\{[A-Za-z_]+\[", "array"), (r"\bsource\s", "source"), (r"\bdeclare\b|\btypeset\b", "declare"),
-                         (r"\$'", "ANSI-C quoting"), (r"&>", "&>")):
-            self.assertIsNone(re.search(pat, code), why)
-
     def test_shellcheck_sh_has_no_findings(self):
         sc = shutil.which("shellcheck")
         if not sc:

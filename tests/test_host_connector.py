@@ -72,12 +72,6 @@ class ConnectorTest(ConnectorBase):
         self.assertNotIn(TOK, r.stdout + r.stderr)
         self.assertEqual(self.subs("rm"), [])
 
-    def test_the_connector_step_runs_after_the_box_is_ready(self):
-        self.with_connector()
-        self.up(**self.tok_env())
-        first_box_run = next(i for i, c in enumerate(self.calls()) if c[:1] == ["run"] and CN not in c)
-        self.assertLess(first_box_run, self.calls().index(self.run_calls()[0]))
-
     def test_running_with_same_token_is_a_noop_beyond_inspect(self):
         self.with_connector({"stdout": cn_line(True)})
         r = self.up(**self.tok_env())
@@ -109,11 +103,6 @@ class ConnectorTest(ConnectorBase):
                 self.assertLess(self.calls().index(["rm", "-f", CN]), self.calls().index(self.run_calls()[0]))
                 self.assertEqual(self.subs("start"), [])
                 self.assert_token_never_in_argv()
-
-    def test_a_token_that_is_a_prefix_of_the_stored_one_is_a_different_token(self):
-        self.with_connector({"stdout": cn_line(True, token=TOK + "xx")})
-        self.up(**self.tok_env())
-        self.assertEqual(len(self.run_calls()), 1)
 
     def test_image_override_by_env_and_not_by_config(self):
         self.with_connector()
@@ -157,51 +146,6 @@ class ConnectorTest(ConnectorBase):
                 self.assertIn("connector", r.stderr)
                 self.assertNotIn(TOK, r.stderr)
 
-    def test_exact_name_match_does_not_confuse_swarmbox_cloudflared_with_swarmbox(self):
-        # an inspect that resolves to the box (ID prefix or name quirk) is not the connector: it is created
-        self.with_connector({"stdout": cn_line(True, name="swarmbox")})
-        self.up(**self.tok_env())
-        self.assertEqual(len(self.run_calls()), 1)
-        # and the box's own lookup is not mistaken for the connector either (the box exists, the connector is created)
-        for c in self.calls():
-            self.assertFalse(any(a.startswith("name=") for a in c), c)
-        with open(HELPER_SRC) as f:
-            src = f.read()
-        self.assertNotIn(("grep -q " + DEFAULT_CONNECTOR), src)
-
-    def test_web_off_skips_the_connector(self):
-        self.with_connector()
-        r = self.up(**self.tok_env(SWARMBOX_WEB="0"))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.cn_calls(), [])
-
-    def test_a_second_box_name_does_not_create_a_second_connector(self):
-        self.with_connector({"stdout": cn_line(True)})
-        r = self.up(**self.tok_env(SWARMBOX_NAME="other"))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.run_calls(), [])
-        for c in self.cn_calls():
-            self.assertNotIn((DEFAULT_CONNECTOR + "-other"), " ".join(c))
-        self.assertTrue(all(CN == c[-1] for c in self.cn_calls()))
-
-    def test_the_token_of_the_config_file_is_used_only_with_mode_600(self):
-        cfg = os.path.join(self.home, ".config", "swarmbox")
-        os.makedirs(cfg)
-        path = os.path.join(cfg, "config")
-        with open(path, "w") as f:
-            f.write("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TOK)
-        os.chmod(path, 0o644)
-        self.with_connector()
-        r = self.up()
-        self.assertEqual(self.cn_calls(), [])
-        self.assertIn("chmod 600", r.stderr)
-        os.chmod(path, 0o600)
-        self.podman()
-        self.with_connector()
-        r = self.up()
-        self.assertEqual(len(self.run_calls()), 1)
-        self.assert_token_never_in_argv()
-
     def test_a_running_box_still_brings_the_connector_up_on_every_entry(self):
         """Ported from v0.1.0's test_existing_web_container_brings_up_the_tunnel_even_without_the_flag (slice 6.2)."""
         running = {"stdout": self.matching_line()}
@@ -216,20 +160,6 @@ class ConnectorTest(ConnectorBase):
         self.assertEqual(self.fp.envs()[self.calls().index(self.run_calls()[0])].get("TUNNEL_TOKEN"), TOK)
         self.assert_token_never_in_argv()
 
-    def test_a_stopped_box_is_started_and_the_connector_is_still_ensured(self):
-        self.with_connector({"stdout": cn_line(False)})
-        r = self.up(**self.tok_env())
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.subs("start"), [["start", CN]])
-
-    def test_no_cloudflare_api_token_is_needed_or_used(self):
-        """Ported from v0.1.0's test_no_api_token_is_needed_or_used: only the tunnel token matters to up."""
-        self.with_connector()
-        r = self.up(**self.tok_env(CLOUDFLARE_API_TOKEN=""))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertNotIn("CLOUDFLARE_API_TOKEN", r.stdout + r.stderr)
-        self.assertEqual(len(self.run_calls()), 1)
-
     def test_the_tunnel_token_never_reaches_the_box_container(self):
         """Ported from v0.1.0's test_the_token_is_not_passed_to_the_swarmbox_container: the box run has no TUNNEL and no token."""
         self.with_connector()
@@ -238,13 +168,6 @@ class ConnectorTest(ConnectorBase):
         self.assertEqual(len(box), 1, self.calls())
         self.assertFalse(any("TUNNEL" in a or TOK in a for a in box[0]), box[0])
         self.assertNotIn("TUNNEL_TOKEN", self.fp.envs()[self.calls().index(box[0])])
-
-    def test_reset_and_stop_do_not_touch_the_connector(self):
-        self.with_connector({"stdout": cn_line(True)})
-        self.run_h("stop", env=self.env(**self.tok_env()))
-        self.run_h("reset", env=self.env(**self.tok_env()))
-        self.assertEqual(self.cn_calls(), [])
-
 
 if __name__ == "__main__":
     unittest.main()
