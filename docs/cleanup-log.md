@@ -102,3 +102,33 @@ All entries: undo with `git revert` of the commit that holds the change (see `gi
 - Step 2, test_docs_consistency (1100 lines of phase-close and wording audits) replaced by 6 guards: README commands exist, relative links of the user docs resolve, no `<org>`, topics, quick start, security wording.
 - Step 2, test_ci_workflow rewritten as 10 text checks without PyYAML (it used to pip-install PyYAML into a venv). ci.yml now runs `sh tests/run_all.sh` in the linux job instead of listing 80 files by hand.
 - The historical docs (design.md, decision-log.md, implementation-plan.md, implementation-status.md, overnight-report.md) still mention deleted files and the migration. I left them as history; no test reads them any more. A later step may prune or delete them.
+
+- Step 3, shrinking: tests were removed by name, keeping one test per behaviour or branch and dropping copies, table-driven repeats, wording-of-docs tests and implementation-detail tests. Biggest cuts: test_host_up 1257 to 620 lines, test_host_create_flags 1090 to 548, test_host_config 917 to 412, test_cloudflare_setup 844 to 438, test_attach_command 818 to 501, test_security_review 818 to 378 (the security-review doc table of docs/security-review.md still names some removed tests; its own checking test is gone). Undo: `git revert` the commits titled "test: trim ..." / "test: further trim ...".
+- Step 3, deleted whole files beyond step 2: test_release_checklist (doc wording), test_tool_claude_real (its real run is the claude row of test_tool_real, its fake-curl cases are in test_tool_manifest), test_serve_container, test_attach_container, test_web_container (smoke_image.py covers the same steps in the real image; CI still runs smoke_image, test_bashrc_container, test_image_build and test_image_with_tools). The shared image set-up moved to tests/image_support.py. I could not run the image tests here (no SWARMBOX_IMAGE_BUILD), so that move is checked only by import and skip.
+- Step 3, test_ci_workflow and test_release_workflow were rewritten as plain text checks; PyYAML (which the old test pip-installed into a venv under /tmp) is not needed any more.
+- Step 3, `BashPosixFunction` (the same function cases run a second time under `bash --posix`) was removed; test_host_shells still covers the helper under POSIX shells.
+- Step 3 fix: test_host_remote_e2e_fake waited 60 s on a real network check of `talkr.run` in `remote status`; it now passes `--verify-timeout 1` (61 s to 3.5 s). Undo: remove that argument.
+- Step 3, v0.1.0-flavoured tests that are left: one test that a v0.1.0 container is refused by `up` (product behaviour that still exists). Remove it together with the product code in the later simplification step.
+- Step 4: `tests/run_all.sh` prints seconds per file and the total, and runs every file under `tests/reap_run.py`, a wrapper that becomes a child subreaper (Linux prctl) and, when the file ends, kills by PID the processes it adopted ("reaped N" in the line). No kill by name. test_run_all has a test for it. Undo: revert the commit "run_all.sh prints seconds".
+- Step 5: leaks fixed at the source. test_serve_steps kills the whole process group of each `serve` it starts (its `sleep infinity`), and the `cf-slow` and `slow-flags` helper scripts of test_host_up and test_security_review stop when their test folder is gone. A full run now reaps nothing.
+- Step 6: CONTRIBUTING.md describes the layout by groups of files instead of one row per file; `swarmbox:dev` is now `swarmbox-dev:local`; test_repo_files no longer requires every test file to be named there.
+- ci.yml: the linux job runs `sh tests/run_all.sh`; the macos list lost the deleted files; the three deleted container tests were removed from the smoke job.
+
+## Result
+
+| | before | after |
+|---|---|---|
+| lines in tests/ (py, sh, fixtures) | 28254 | 13654 |
+| test files test_*.py | 83 | 60 |
+| tests (all files run here) | about 2100 | 662 |
+| whole suite, seconds (browser tests excluded) | about 194 s, test_parity not finished (stopped at 45 s); the old run_all had no timing | 44 s |
+
+Not reached: the target of about 12000 lines. What is left is mostly set-up code of fakes (host_up, create_flags, host_config, security_review, function_cases, helpers) plus tests/smoke_image.py (569 lines, run by CI) and the three browser tests (636 lines, scheduled CI, not run here). I kept those because each remaining test guards a real behaviour.
+
+Kept on purpose: tests/test_default_names_lint.py, tests/test_repo_files.py, test_build_index.py (real build script), test_record_checksums.py (the script is referenced by CONTRIBUTING, the PR template, dependabot.yml and tool.conf), test_name_check.py, test_release_check.py and test_release_version.py (release.yml uses the version script), test_dev_build.py, the three browser tests (not run here: need chromium).
+
+Skipped in the final run (by design): the real-image tests (no SWARMBOX_IMAGE_BUILD), the real installers (no network), zsh and fish function tests (those shells are not installed in this box), and the three browser tests. Everything else passes.
+
+Files deleted in total (git diff --diff-filter=D 3eaa045..HEAD): 47 files, listed by `git diff --diff-filter=D --name-only 3eaa045 HEAD`.
+
+Owner review: (1) the old design/plan/status/decision-log/overnight-report docs still name deleted files and the migration; (2) docs/security-review.md maps findings to test names, some now removed; (3) the image tests were not run here.
