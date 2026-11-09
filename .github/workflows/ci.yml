@@ -15,7 +15,7 @@
 #   B31  the arm64 job builds the image natively on an arm64 runner (no emulation) and runs the full smoke test. It has
 #        never run: B31 is [unverified] until its first real run. The runner label ubuntu-24.04-arm is the one GitHub
 #        documents for its arm64 hosted runners; if the account cannot use it the job stays queued or fails, and the
-#        owner decides (record in docs/decision-log.md, slice 3.7). The jobs of this file were only validated by
+#        owner decides (record in docs/history/decision-log.md, slice 3.7). The jobs of this file were only validated by
 #        tests/test_ci_workflow.py (and actionlint when present) in the development box: none of them ever ran.
 name: ci
 

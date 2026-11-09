@@ -100,9 +100,7 @@ class Readme(unittest.TestCase):
 class Links(unittest.TestCase):
     def test_every_relative_link_of_the_user_docs_resolves(self):
         files = [os.path.join(ROOT, n) for n in ("README.md", "SECURITY.md", "CONTRIBUTING.md")]
-        files += [f for f in sorted(glob.glob(os.path.join(ROOT, "docs", "*.md")))
-                  if os.path.basename(f) not in ("design.md", "decision-log.md", "implementation-plan.md",
-                                                 "implementation-status.md", "overnight-report.md")]
+        files += sorted(glob.glob(os.path.join(ROOT, "docs", "*.md")))
         bad = []
         for f in files:
             text = re.sub(r"`[^`\n]*`", "", outside_fences(read(os.path.relpath(f, ROOT))))

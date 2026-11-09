@@ -8,7 +8,7 @@ browser ── https://swarmbox.example.com ──> Cloudflare Access (email cod
 
 `cloudflared` runs **on the host, not in the box**, so the tunnel credentials never reach the agent (decision D14).
 It only makes outbound connections: no router port, no public IP. Free plan (Zero Trust, up to 50 users); a card may
-be requested to activate it. Remote access is part of the 2.0 scope (D39). Design: section 5.2 of `docs/design.md`.
+be requested to activate it. Design: section 7 of [design.md](design.md).
 
 `swarmbox remote` is a thin wrapper over `cloudflare-setup.py`, which sits next to the host helper. It is the only part
 of the host side that needs `python3` (3.8+, no other dependency; the helper itself is POSIX `sh`, D16). If `python3` or
@@ -166,8 +166,6 @@ and a fake `podman` only. Run this once, on a real host with a real domain, and 
    only after `swarmbox up`.
 7. `swarmbox remote off --dry-run`, then `swarmbox remote off`: the URL stops answering, the connector container is
    gone, `swarmbox remote status` reports nothing configured. Delete the API token in the Cloudflare dashboard.
-
-Report results back; the 5.owner-checklist row of `docs/implementation-status.md` is then set to done.
 
 Tests (fake Cloudflare API and fake podman, no network): `python3 tests/test_cloudflare_setup.py`,
 `python3 tests/test_host_remote.py`, `python3 tests/test_host_connector.py`, `python3 tests/test_host_up.py`.

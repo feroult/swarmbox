@@ -1,8 +1,7 @@
 # Contributing to SwarmBox
 
-SwarmBox is a Podman-based sandbox for running AI coding agents in auto-approve mode. The design is in `docs/design.md`
-and the build order in `docs/implementation-plan.md`. Progress is in `docs/implementation-status.md` and the reasons for
-choices in `docs/decision-log.md`. Contributions are accepted under the Apache License 2.0 (`LICENSE`). Please follow `CODE_OF_CONDUCT.md`; report security problems as `SECURITY.md` says, not in a public issue; user-visible changes go in `CHANGELOG.md`.
+SwarmBox is a Podman-based sandbox for running AI coding agents in auto-approve mode. The architecture is in `docs/design.md`;
+`docs/history/` holds records of how it was built (not current documentation). Contributions are accepted under the Apache License 2.0 (`LICENSE`). Please follow `CODE_OF_CONDUCT.md`; report security problems as `SECURITY.md` says, not in a public issue; user-visible changes go in `CHANGELOG.md`.
 
 ## Safety first: never touch a live box
 
@@ -56,8 +55,8 @@ sh dev/dev-build.sh            # tag swarmbox-test-img-<random>; then: podman rm
 ```
 
 which builds from a scratch copy of the `Dockerfile` that carries the apt override (see below); the product file is never changed.
-`SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. To build by hand: `podman build -t swarmbox-dev:local .`
-(then `SWARMBOX_IMAGE=swarmbox-dev:local swarmbox`).
+`SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. To build by hand: `podman build -t localhost/swarmbox-dev:local .`
+(then install it as the README Quick start shows, or run `SWARMBOX_IMAGE=localhost/swarmbox-dev:local swarmbox`).
 
 Caveats when building inside a SwarmBox (nested rootless Podman 4.3.1):
 
@@ -96,16 +95,14 @@ managers can read: the `uses:` lines of the workflows and a literal `FROM` line.
 A go or gcloud bump without the checksum step leaves the old checksums in the file and the installer refuses the new
 archive; the pull request template reminds you.
 
-GitHub Actions are pinned by version tag (`actions/checkout@v4`), not by commit SHA. A SHA would be stronger against a moved
-tag, but this build had no network and cannot look SHAs up, and inventing one is worse than a tag. Dependabot bumps the tags
-and can also update SHA-pinned actions, so the choice can be reversed later by the owner (decision log `[7.4]`). Whether the
-Dependabot entries open pull requests as described is `[unverified]` until the repository is on GitHub.
+GitHub Actions are pinned by version tag (`actions/checkout@v4`), not by commit SHA. A SHA is stronger against a moved tag; Dependabot bumps
+tags and can also update SHA-pinned actions, so the choice can be reversed. Whether the Dependabot entries open pull requests as described is
+unverified until the repository is on GitHub.
 
 ## Branches and commits
 
 - Work on a branch, not on `main`. Do not rewrite history or move tags.
 - One logical change per commit. Start the message with a type: `feat:`, `fix:`, `test:`, `docs:`, `refactor:` or `build:`.
 - Add only the files you changed (no `git add -A`).
-- Keep `docs/design.md` and `docs/implementation-plan.md` consistent in the same commit as the change; mark anything you could
-  not check as `[unverified]`.
+- Keep `docs/design.md` consistent in the same commit as the change; say in the docs what you could not check.
 - Code, comments and docs are in English.

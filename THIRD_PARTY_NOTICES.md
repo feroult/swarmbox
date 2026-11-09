@@ -2,7 +2,7 @@
 
 SwarmBox itself is licensed under the Apache License 2.0 (see `LICENSE`). The image built from the `Dockerfile` contains
 the software below. Each part stays under its own license; SwarmBox does not modify any of it. This file is the complete
-list for the 2.0 image (slice 7.2 of `docs/implementation-plan.md`).
+list for the 2.0 image.
 
 Evidence tags: a verified tag says what was read, where, and when. An owner-check tag marks something that could
 not be checked here (legal sufficiency, texts that need a lawyer or a hardware or account check), with the reason. This file is not legal advice: it is a record of what the license
@@ -255,7 +255,7 @@ statements below are for people who bake them in or want to know the terms.
 - License: MIT
 - Source: https://github.com/anomalyco/opencode (the repository field of the npm package `@opencode/cli`; https://github.com/sst/opencode names the same project and carries the same LICENSE)
 - [verified: "license" and "repository" fields of the npm registry entry (`npm view @opencode/cli`, version 2.2.6) and LICENSE of the repository's dev branch, "MIT License, Copyright (c) 2025 opencode"; 2026-11-08]
-- The other package, `opencode-ai` 1.x, is also MIT by `npm view`; which of the two the tool installs is an open question (docs/decision-log.md), not a license one.
+- The other package, `opencode-ai` 1.x, is also MIT by `npm view`; which of the two the tool installs is an open question (docs/release-checklist.md), not a license one.
 
 ### Poetry (tool `poetry`)
 
