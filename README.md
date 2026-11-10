@@ -21,7 +21,7 @@ swarmbox        # creates the box the first time, joins it afterwards
 claude          # inside the box: installs Claude Code on first use, then runs it in auto-approve mode
 ```
 
-Open a second tab, run `swarmbox` again, and you are in the same session. Open `http://127.0.0.1:7681` (`swarmbox url` prints it) and the same tabs are there.
+Open a second tab, run `swarmbox` again, and you are in the same session. Open `http://127.0.0.1:7681` (`swarmbox url` prints it) and the same tabs are there. In the browser, `Alt+1..9` (`Option` on a Mac) switches tab and `Alt+N` opens a new one ([web terminal](docs/web-terminal.md)).
 
 ## Security
 
