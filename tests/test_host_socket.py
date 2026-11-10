@@ -127,6 +127,11 @@ class Base(unittest.TestCase):
         self.ws = os.path.join(self.tmp, "ws")
         open(os.path.join(self.tmp, "containers.conf"), "w").close()   # Podman wants the file named by CONTAINERS_CONF to exist
 
+    def need_room_for_the_link(self):
+        """The link path is <home>/.local/state/swarmbox/<name>.sock-dir/podman.sock: a long temporary folder (macOS) cannot hold it."""
+        if len((self.link() + "/podman.sock").encode()) > LIMIT:
+            self.skipTest("the temporary folder is too long for the short link (the Linux job covers this case)")
+
     def mkws(self, path):
         os.makedirs(os.path.join(path, ".local", "state", "swarmbox"), exist_ok=True)
         self.ws = path
@@ -181,6 +186,7 @@ class BoundaryTest(Base):
         self.assertFalse(os.path.lexists(self.link()))
 
     def test_101_characters_gets_the_symlink_and_registers_the_link_path(self):
+        self.need_room_for_the_link()
         ws = self.mkws(pad_ws(self.tmp, LIMIT - len(SUFFIX) + 1))
         self.assertEqual(len((ws + SUFFIX).encode()), 101)
         r = self.connect()
@@ -209,6 +215,7 @@ class SymlinkRefreshTest(Base):
         os.makedirs(self.state)
 
     def test_a_correct_link_is_kept(self):
+        self.need_room_for_the_link()
         os.symlink(self.ws + "/.local/state/swarmbox", self.link())
         ino = os.lstat(self.link()).st_ino
         r = self.connect()

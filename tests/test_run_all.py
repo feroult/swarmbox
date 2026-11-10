@@ -37,9 +37,9 @@ class RunAll(unittest.TestCase):
         listed = p.stdout.split()
         disk = sorted(f for f in os.listdir(os.path.join(ROOT, "tests")) if re.match(r"test_.*\.py$", f))
         browser = {"test_clipboard_bridge.py", "test_web_style.py", "test_tmux_browser_keys.py"}
-        self.assertEqual(listed, [f for f in disk if f not in browser])
+        self.assertEqual(sorted(listed), [f for f in disk if f not in browser])   # the shell sorts by locale, python by code point
         p = run("--list", "--browser")
-        self.assertEqual(p.stdout.split(), disk)
+        self.assertEqual(sorted(p.stdout.split()), disk)
 
     def test_runs_selected_files_and_prints_counts(self):
         p = run("--only", "test_dirs.py,test_run_all_probe_missing.py")
@@ -75,6 +75,7 @@ class RunAll(unittest.TestCase):
         self.assertRegex(p.stdout, r"(?m)^test_good\.py\s+OK\s+1 tests")
         self.assertRegex(p.stdout, r"TOTAL 2 files, 2 tests, 1 failed files")
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "reap_run adopts orphans with a Linux child subreaper (prctl)")
     def test_orphans_left_by_a_file_are_killed_and_counted(self):
         tmp = tempfile.mkdtemp(prefix="swarmbox-test-runall.")
         self.addCleanup(shutil.rmtree, tmp, True)
