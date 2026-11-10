@@ -45,6 +45,9 @@ RUN apt-get update && apt-get install -y \
 # driver, which Debian only lists as a hidden requirement); uidmap provides newuidmap/newgidmap; libcap2-bin setcap.
 RUN apt-get update && \
     apt-get install -y podman netavark aardvark-dns iptables uidmap libcap2-bin && \
+    # Podman only recommends criu (checkpoint and restore, unused here); criu drags in python3-protobuf, which the
+    # release scan flags (GHSA-8qvm-5x2c-j2w7, GHSA-7gcm-g887-7qv7). Removing it does not remove podman.
+    apt-get purge -y criu python3-pycriu python3-protobuf && \
     rm -rf /var/lib/apt/lists/*
 
 # Chromium, for the chrome-devtools MCP

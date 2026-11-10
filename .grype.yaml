@@ -13,5 +13,67 @@
 #       package:
 #         name: example
 #
-# No finding is ignored today.
-ignore: []
+# Go standard library inside the Debian 13 (trixie) Podman, buildah and rootlessport binaries (go1.24.4).
+#
+# Decided by: Fernando Ultremare (owner), 2026-11-10. Look again: at every release, and as soon as Debian trixie ships
+# golang-1.24 1.24.12 or newer (then rebuild the image and delete these entries).
+# Why they are ignored: the fix exists upstream and in Debian unstable (golang-1.24 1.24.12-1) but not in trixie, where
+# https://security-tracker.debian.org/tracker/<CVE> lists golang-1.24 1.24.4-1 as "vulnerable". The Podman package is the
+# Debian build; the only way to change that now is to compile Podman ourselves, which this project does not do.
+# Why that is acceptable here (read from each advisory's description; the code paths of Podman were not audited line by line):
+#   - cmd/go and cgo (build time only; no Go toolchain is in the image, nothing is compiled inside it at run time):
+#       CVE-2025-61732, CVE-2025-61731, CVE-2025-4674
+#   - crypto/tls and crypto/x509 certificate handling (denial of service, or a panic, of the process that validates a
+#       certificate; Podman does that as a client of a registry, so the worst case is a hostile registry stopping a pull;
+#       CVE-2025-68121 needs a program that changes a TLS config between handshakes, which is not Podman's use):
+#       CVE-2025-68121, CVE-2025-61729, CVE-2025-61723, CVE-2025-58188, CVE-2025-58187
+#   - server side parsing (net/url forms, net/mail): the box runs no HTTP service on Podman's code and mounts no Podman
+#       socket (docs/nested-podman.md): CVE-2025-61726, CVE-2025-61725
+#   - database/sql, a race when a query is cancelled during a scan: CVE-2025-47907 [unverified: Podman's use of its
+#       state database was not checked for this pattern]
+# None of these gives code execution inside the box or an escape from it.
+ignore:
+  - vulnerability: CVE-2025-68121
+    package:
+      name: stdlib
+      type: go-module
+  - vulnerability: CVE-2025-61732
+    package:
+      name: stdlib
+      type: go-module
+  - vulnerability: CVE-2025-61731
+    package:
+      name: stdlib
+      type: go-module
+  - vulnerability: CVE-2025-61729
+    package:
+      name: stdlib
+      type: go-module
+  - vulnerability: CVE-2025-61726
+    package:
+      name: stdlib
+      type: go-module
+  - vulnerability: CVE-2025-61725
+    package:
+      name: stdlib
+      type: go-module
+  - vulnerability: CVE-2025-61723
+    package:
+      name: stdlib
+      type: go-module
+  - vulnerability: CVE-2025-58188
+    package:
+      name: stdlib
+      type: go-module
+  - vulnerability: CVE-2025-58187
+    package:
+      name: stdlib
+      type: go-module
+  - vulnerability: CVE-2025-47907
+    package:
+      name: stdlib
+      type: go-module
+  - vulnerability: CVE-2025-4674
+    package:
+      name: stdlib
+      type: go-module
