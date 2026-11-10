@@ -59,19 +59,23 @@ def make_repo(parent):
 
 
 def tree_hash(repo):
+    # The working tree plus the repository's refs and HEAD. Git's own bookkeeping files (the index's stat cache, which
+    # `git status` rewrites on macOS, and similar) are not part of "the release check changed something".
     h = hashlib.sha256()
     for base, dirs, files in os.walk(repo):
-        dirs.sort()
+        dirs[:] = sorted(d for d in dirs if d != ".git")
         for f in sorted(files):
             p = os.path.join(base, f)
-            if os.path.relpath(p, repo) == os.path.join(".git", "index"):
-                continue   # `git status` rewrites the index's stat cache (macOS does it on every run); no file of the tree changed
             h.update(os.path.relpath(p, repo).encode())
             if os.path.islink(p):
                 h.update(os.readlink(p).encode())
             else:
                 with open(p, "rb") as fh:
                     h.update(fh.read())
+    env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
+    for args in (["rev-parse", "HEAD"], ["symbolic-ref", "-q", "HEAD"], ["for-each-ref"]):
+        out = subprocess.run(["git", "-C", repo] + args, env=env, capture_output=True).stdout
+        h.update(out)
     return h.hexdigest()
 
 
