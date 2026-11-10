@@ -44,6 +44,12 @@ import tarfile
 import tempfile
 import time
 
+# A long temporary folder (macOS: /private/var/folders/xx/yyyy/T/) pushes the Podman socket path of a test workspace past the 100
+# byte limit of a unix socket, and the script then exits 4. Use /tmp when the default is long. Children inherit TMPDIR.
+if len(os.path.realpath(tempfile.gettempdir())) > 40 and os.path.isdir("/tmp"):
+    os.environ["TMPDIR"] = "/tmp"
+    tempfile.tempdir = "/tmp"
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 DEFAULTS_FILE = os.path.join(ROOT, "container", "host", "DEFAULTS")
