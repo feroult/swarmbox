@@ -120,6 +120,8 @@ class StatusHostLinesTest(Base):
         from helpers import FakePodman
         with FakePodman({"container": {"rules": rules}}) as fp:
             e = fp.env()
+            for k in [k for k in e if k.startswith(("SWARMBOX_", "XDG_", "CLOUDFLARE_"))]:
+                del e[k]   # a CI runner sets XDG_CONFIG_HOME, which would move the config folder the script reads
             e.update({"HOME": self.home, "STUB_OUT": self.out})
             r = self.run_h(*args, env=e)
             return r, fp.calls()
