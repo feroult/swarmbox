@@ -1014,7 +1014,7 @@ load_creation() {
             _v=$BROWSER_OVERRIDE
             R_SRC='env'
         fi
-        if [ "$R_SRC" != default ]; then   # a default is the helper's own value (the image default holds the <org> placeholder)
+        if [ "$R_SRC" != default ]; then   # a default is the helper's own value (the image default is the registry path)
             validate_value "$_key" "$_v" || exit 2
             _v=$V_OUT
         fi

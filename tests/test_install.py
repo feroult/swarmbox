@@ -324,10 +324,9 @@ class InstallShTest(Base):
 
     def test_without_version_it_asks_the_script_and_the_image_is_repo_colon_version(self):
         r = self.run_sh()
-        # the default repository holds the <org> placeholder, which is not an image reference: setup says so, the script is in place
-        self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertIn("is not an image reference", r.stderr)
+        self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("%s:%s" % (DEFAULT_IMAGE_REPO, VERSION), r.stderr)
+        self.assertIn("IMAGE=%s:%s\n" % (DEFAULT_IMAGE_REPO, VERSION), self.config())
         self.assertEqual(read_bytes(self.installed()), read_bytes(SCRIPT))
 
     def test_a_checksum_that_does_not_match_installs_nothing(self):

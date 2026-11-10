@@ -26,6 +26,7 @@ DEFAULTS = "container/host/DEFAULTS"
 # Retired spellings: the names v0.1.0 used as defaults, which must not come back as defaults of 2.0.
 RETIRED = [
     r"ghcr\.io/<org>/swarmbox(?![\w-])",
+    r"ghcr\.io/feroult/swarmbox-dev",
     r"swarmbox-cloudflared",
     r"swarmbox-containers",
     r":-swarmbox\}",
@@ -83,7 +84,7 @@ class DefaultNamesLint(unittest.TestCase):
         d = read_defaults()
         self.assertEqual(sorted(d), ["SWARMBOX_DEFAULT_IMAGE_REPO", "SWARMBOX_DEFAULT_NAME"])
         self.assertTrue(d["SWARMBOX_DEFAULT_IMAGE_REPO"].endswith("/" + d["SWARMBOX_DEFAULT_NAME"]), d)
-        self.assertIn("<org>", d["SWARMBOX_DEFAULT_IMAGE_REPO"])   # the placeholder stays
+        self.assertNotIn("<org>", d["SWARMBOX_DEFAULT_IMAGE_REPO"])   # a real owner, not the placeholder
 
     def test_no_product_file_holds_a_default_name(self):
         self.assertEqual(scan(ROOT, PRODUCT_ROOTS, DEFAULT_NAME, DEFAULT_IMAGE_REPO), [])

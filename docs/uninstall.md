@@ -12,4 +12,4 @@ There is no `swarmbox uninstall` command, and the installer never edited a start
 4. Remove the support files the installer fetched from the image, and the state: `rm -rf ~/.local/share/swarmbox`, and `rm -rf ~/.local/state/swarmbox` (locks and notices).
 5. Remove the host configuration: `rm -rf ~/.config/swarmbox` (the config, `cloudflare.json`, the folders of second boxes; it may hold the tunnel token).
 6. Optional: the workspace folder `~/swarmbox` (your projects, logins and tools; back up what you need) and the nested Podman volume, `podman volume rm swarmbox-containers` (`<name>-containers` for a second box).
-7. Optional: the image, `podman rmi ghcr.io/<org>/swarmbox:<tag>` (for a local build, `podman rmi localhost/swarmbox:local`).
+7. Optional: the image, `podman rmi ghcr.io/feroult/swarmbox:<tag>` (for a local build, `podman rmi localhost/swarmbox:local`).

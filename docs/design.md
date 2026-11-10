@@ -27,7 +27,7 @@ Podman 4.3 or newer.
 ## 2. The box model
 
 ```
- HOST (your machine)                                             IMAGE  ghcr.io/<org>/swarmbox:X.Y.Z
+ HOST (your machine)                                             IMAGE  ghcr.io/feroult/swarmbox:X.Y.Z
  +-------------------------------------------+                   neutral: shell environment, tmux, ttyd,
  | script `swarmbox`  (a file on your PATH)  |   podman run/     Podman, Node, swarmbox-tool, tool manifests
  | support files host:~/.local/share/        |   exec            (no agent inside)
@@ -366,7 +366,7 @@ build tools, jq, tmux, vim, openssh-client and similar, Podman and its network p
 `pubkey`, `tool`, `host-helper` (the archive of the script and support files on stdout), anything else is run as given. Layers: stable first, volatile last; every `RUN` that downloads cleans up in the same `RUN`; `NPM_CONFIG_CACHE` is
 `/opt/npm-cache`, owned by `agent`. Every version is an `ARG` with a default; `CONTRIBUTING.md` says how they are bumped. A tool the image needs that is not in Debian is fetched with its published checksum verified.
 
-**Distribution.** Image `ghcr.io/<org>/swarmbox`, multi-arch (amd64, arm64), tags `X.Y.Z` and `X.Y`; not published yet (section 16). `.github/workflows/release.yml` runs the tests, a native build per architecture, a check that the
+**Distribution.** Image `ghcr.io/feroult/swarmbox`, multi-arch (amd64, arm64), tags `X.Y.Z` and `X.Y`; not published yet (section 16). `.github/workflows/release.yml` runs the tests, a native build per architecture, a check that the
 script in the image reports the tag's version, a vulnerability scan (grype), the manifest list, keyless signing (cosign), and the SBOM (syft). Until then you build locally (README Quick start; `dev/dev-build.sh` inside a
 development box). A missing image is pulled by `up`, never built.
 

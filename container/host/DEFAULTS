@@ -4,4 +4,4 @@
 # the volume (<name>-containers), the Podman connection, the locks, the connector (<name>-cloudflared), the tunnel and the
 # hostname key all derive from the box name. To flip the names for the real release, change these two lines.
 SWARMBOX_DEFAULT_NAME=swarmbox
-SWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/<org>/swarmbox'
+SWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/feroult/swarmbox'
