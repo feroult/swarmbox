@@ -616,6 +616,7 @@ cfg_write_keys() {
     _i=1
     while [ "$_i" -le "$#" ]; do
         eval "_wk=\${$_i}"
+        # shellcheck disable=SC2154  # _wk is assigned by the eval above
         _ks="$_ks $_wk "
         [ "$_wk" = CLOUDFLARE_TUNNEL_TOKEN ] && _tok=1
         _i=$((_i + 2))
@@ -795,6 +796,7 @@ cmd_config_seed() {
         eval "_want=\$SEED_$_key"
         # compare with what the file (or the default) says, ignoring the environment
         if _have=$(cfg_raw "$_key") && [ -n "$_have" ]; then :; else _have=$(default_of "$_key"); fi
+        # shellcheck disable=SC2154  # _want is assigned by the eval above
         [ "$_want" != "$_have" ] || continue
         if notice_seen "$_key"; then continue; fi
         warn "the installer asked for $_key=$_want, the config says $_key=$_have; run \`swarmbox config set $_key $_want\` to change it"
@@ -866,6 +868,7 @@ cmd_env() {
                     continue
                 fi
                 eval "_isset=\${$_item+x}"
+                # shellcheck disable=SC2154  # _isset is assigned by the eval above
                 if [ "$_isset" = x ]; then
                     printf '%s\tset\n' "$_item"
                 else

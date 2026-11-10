@@ -153,7 +153,7 @@ run_command() {
     tmux wait-for "$chan" < /dev/null &
     waiter=$!
 
-    # shellcheck disable=SC2317  # called from the trap
+    # shellcheck disable=SC2317,SC2329  # called from the trap
     abort() {
         kill "$waiter" 2>/dev/null
         tmux kill-session -t "=$grp" 2>/dev/null

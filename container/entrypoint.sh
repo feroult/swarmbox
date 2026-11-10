@@ -112,7 +112,7 @@ supervise() {
     local scale=${SWARMBOX_TEST_BACKOFF_SCALE:-1}
     local line="web terminal keeps crashing; see web-terminal.log"
     local wlog="$SB_STATE_DIR/web-terminal.log"
-    # shellcheck disable=SC2317  # called from the traps below
+    # shellcheck disable=SC2317,SC2329  # called from the traps below
     kill_pids() {
         [ "$tp" -gt 0 ] && kill "$tp" 2>/dev/null
         [ "$sp" -gt 0 ] && kill "$sp" 2>/dev/null

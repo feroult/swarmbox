@@ -43,6 +43,7 @@ if [ "$br" = "$BRANCH_WANTED" ]; then ok branch "$br"; else fail branch "on '$br
 # version and changelog
 dver=""
 if [ -f "$REPO/docs/design.md" ]; then
+    # shellcheck disable=SC2016  # the backticks are literal text to match
     dver=$(sed -n 's/.*The first public version is `\([0-9][0-9.]*\)`.*/\1/p' "$REPO/docs/design.md" | head -n 1)
 fi
 cver=""
