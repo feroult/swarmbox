@@ -228,7 +228,6 @@ jobs:
           set -o pipefail
           python3 tests/test_tool_real.py 2>&1 | tee real.out
           if grep -q 'skipped' real.out; then echo "real tests were skipped"; exit 1; fi
-      - name: Real first call of Claude Code
       - name: Remove the image
         if: always()
         run: podman rmi "$SWARMBOX_IMAGE_TAG" || true

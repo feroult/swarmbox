@@ -39,6 +39,17 @@ class Ci(unittest.TestCase):
         for u in uses:
             self.assertRegex(u, r"@(v\d+(\.\d+){0,2}|[0-9a-f]{40})$")
 
+    def test_every_step_has_a_run_or_a_uses(self):
+        """GitHub refuses the whole workflow (no job starts) for a step without either; a YAML parser would not notice."""
+        for wf in ("ci.yml", "release.yml"):
+            text = open(os.path.join(ROOT, ".github", "workflows", wf), encoding="utf-8").read()
+            blocks = re.findall(r"(?ms)^    steps:\n(.*?)(?=^  [a-z0-9-]+:\n|\Z)", text)
+            steps = [st for b in blocks for st in re.split(r"(?m)^      - ", b)[1:]]
+            self.assertTrue(steps, wf)
+            for st in steps:
+                head = st.split("\n", 1)[0]
+                self.assertRegex(st, r"(?m)^(?:uses|run):|^        (?:uses|run):", "%s: step '%s' has no run or uses" % (wf, head))
+
     def test_every_job_has_a_timeout(self):
         for name in re.findall(r"(?m)^  ([a-z0-9-]+):\n    (?:name|if):", TEXT):
             self.assertIn("timeout-minutes:", job(name), name)
