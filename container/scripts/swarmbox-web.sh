@@ -59,6 +59,7 @@ declare -A OPT=(
     [fontWeight]=400
     [fontWeightBold]=700
     [padding]=10
+    [macOptionIsMeta]=true
     [cursorBlink]=true
     [titleFixed]=SwarmBox
     [fontFamily]="'JetBrainsMono Nerd Font', 'JetBrainsMono NF', 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace"

@@ -171,6 +171,12 @@ class Run(WebCase):
         self.assertEqual(o["scrollback"], "5000")
         self.assertEqual(o["cursorBlink"], "false")
 
+    def test_mac_option_is_meta_by_default_and_the_user_can_turn_it_off(self):
+        # without it Option+1 types a character on a Mac and tmux's Alt+digit window shortcuts never arrive
+        self.assertEqual(self.opts(self.run_web()["argv"])["macOptionIsMeta"], "true")
+        self.conf("macOptionIsMeta=false\n")
+        self.assertEqual(self.opts(self.run_web()["argv"])["macOptionIsMeta"], "false")
+
     def test_the_session_is_swarmbox_attach_when_it_exists_else_tmux_attach(self):
         argv = self.run_web()["argv"]
         self.assertEqual(argv[-4:], ["tmux", "attach", "-t", "main"])

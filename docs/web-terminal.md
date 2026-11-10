@@ -49,6 +49,8 @@ own page with a small script injected (`container/web/ttyd-clipboard.js`; `conta
 - **Right click** opens only tmux's menu while tmux captures the mouse (the browser's menu used to open on top of
   it). `Shift`+right-click still opens the browser's, and in a plain shell (no mouse capture) the right click keeps
   the browser's menu, so copy and paste stay there.
+On a Mac, Option acts as Meta by default (`macOptionIsMeta=true`), so the Alt shortcuts of tmux (Option+1..9 to change window, Option+N for a new one) reach the terminal instead of typing characters such as `¡™£`. The cost is that Option no longer composes special characters in the browser; set `macOptionIsMeta=false` in `web-terminal.conf` to get them back.
+
 Set `ctrlVPaste=false` and/or `ctrlCCopy=false` in `web-terminal.conf` to keep `^V` (vim block mode, readline
 quoted-insert) or to let `Ctrl+C` always interrupt, then `swarmbox-web restart`. Tested in Chromium; a
 browser that only allows clipboard writes from a user gesture (Firefox) may need the click to be recent.
