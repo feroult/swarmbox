@@ -64,6 +64,8 @@ def tree_hash(repo):
         dirs.sort()
         for f in sorted(files):
             p = os.path.join(base, f)
+            if os.path.relpath(p, repo) == os.path.join(".git", "index"):
+                continue   # `git status` rewrites the index's stat cache (macOS does it on every run); no file of the tree changed
             h.update(os.path.relpath(p, repo).encode())
             if os.path.islink(p):
                 h.update(os.readlink(p).encode())
