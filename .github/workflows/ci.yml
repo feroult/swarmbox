@@ -73,7 +73,13 @@ jobs:
           python3 tests/test_host_shells.py
           python3 tests/test_host_create_flags.py
       - name: Unit tests (tests/run_all.sh; the browser and real-installer tests run in their own jobs)
-        run: sh tests/run_all.sh
+        run: |
+          # The failing files go to an annotation too, which is readable without a login (the log is not).
+          if sh tests/run_all.sh > run_all.out 2>&1; then cat run_all.out; exit 0; fi
+          cat run_all.out
+          msg=$(grep -A15 ' FAIL ' run_all.out | head -c 8000 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+          echo "::error title=run_all failed::$msg"
+          exit 1
 
   # The image smoke test in full mode: the runner is level 1, the throwaway box level 2 and the
   # nested Podman inside it level 3, which is why the development box cannot run this. Image, containers and volumes are
