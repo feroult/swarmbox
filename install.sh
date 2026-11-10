@@ -43,6 +43,7 @@ curl -fsSL -o "$tmp" "$URL/swarmbox" || fail "cannot download $URL/swarmbox"
 curl -fsSL -o "$tmp.sha256" "$URL/swarmbox.sha256" || fail "cannot download $URL/swarmbox.sha256"
 want=$(cut -d ' ' -f 1 < "$tmp.sha256")
 if command -v sha256sum > /dev/null 2>&1; then got=$(sha256sum < "$tmp" | cut -d ' ' -f 1); else got=$(shasum -a 256 < "$tmp" | cut -d ' ' -f 1); fi
+# shellcheck disable=SC2015  # A && B || C is the intent: fail unless both hold
 [ -n "$want" ] && [ "$want" = "$got" ] || fail "the checksum of swarmbox does not match $URL/swarmbox.sha256; nothing was installed."
 chmod 755 "$tmp"
 [ -n "$VERSION" ] || VERSION=$("$tmp" version)

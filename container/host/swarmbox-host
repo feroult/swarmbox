@@ -141,6 +141,7 @@ needs_support() {
 # The version of the support files (empty when there is none or it is not a version).
 support_version() {
     _sv=
+    # shellcheck disable=SC2015  # the `|| true` is the point: a missing or empty file is not an error
     [ -r "$SUPPORT/VERSION" ] && IFS= read -r _sv < "$SUPPORT/VERSION" || true
     trim "$_sv"
     _sv=$_t
