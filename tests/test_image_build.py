@@ -64,7 +64,7 @@ def tearDownModule():
 @unittest.skipUnless(ENABLED, "image build tests need SWARMBOX_IMAGE_BUILD=1 and podman")
 class ImageTest(unittest.TestCase):
     def test_base_image_has_node_1000_b26(self):
-        r = podman("run", "--rm", "--name", "swarmbox-test-img-run-" + rnd(), "node:24-slim", "id", "node")
+        r = podman("run", "--rm", "--name", "swarmbox-test-img-run-" + rnd(), "node:24-trixie-slim", "id", "node")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("uid=1000(node) gid=1000(node)", r.stdout)
 

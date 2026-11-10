@@ -44,7 +44,7 @@ class BaseAndUser(unittest.TestCase):
     def test_base_image(self):
         froms = [i for i in INS if i.startswith("FROM ")]
         self.assertEqual(len(froms), 1)
-        self.assertRegex(froms[0], r"^FROM node:24-slim$|^FROM node:\$\{NODE_VERSION\}-slim$")
+        self.assertRegex(froms[0], r"^FROM node:24-trixie-slim$|^FROM node:\$\{NODE_VERSION\}-trixie-slim$")
         if "NODE_VERSION" in froms[0]:
             self.assertIn("ARG NODE_VERSION=24", D)
 

@@ -186,13 +186,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: debian:bookworm
+      image: debian:trixie
     steps:
       - name: Install browser test tools
         run: |
           apt-get update
           apt-get install -y --no-install-recommends ca-certificates curl git python3 tmux chromium
-          # ttyd is not in Debian 12: fetch the same pinned release as the Dockerfile and verify its checksum.
+          # ttyd is not in Debian 13: fetch the same pinned release as the Dockerfile and verify its checksum.
           base=https://github.com/tsl0922/ttyd/releases/download/1.7.7
           curl -fsSL -o /tmp/ttyd.x86_64 "$base/ttyd.x86_64"
           curl -fsSL -o /tmp/ttyd.SHA256SUMS "$base/SHA256SUMS"

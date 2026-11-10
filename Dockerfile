@@ -1,9 +1,9 @@
 # SwarmBox 2.0 image. Slim: no agent, gcloud, clasp, Go or Poetry; tools arrive on demand.
 # Layer order: stable first (packages, Podman, pinned downloads), volatile last (scripts, configuration).
 ARG NODE_VERSION=24
-FROM node:${NODE_VERSION}-slim
+FROM node:${NODE_VERSION}-trixie-slim
 
-# System packages (Debian 12 base). Every RUN that downloads cleans up in the same RUN.
+# System packages (Debian 13 "trixie" base). Every RUN that downloads cleans up in the same RUN.
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -96,7 +96,7 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Web terminal: ttyd is not in Debian 12, so fetch the pinned release and verify its published checksum.
+# Web terminal: ttyd is not in Debian 13, so fetch the pinned release and verify its published checksum.
 ARG TTYD_VERSION=1.7.7
 RUN case "$(dpkg --print-architecture)" in \
         amd64) T=ttyd.x86_64 ;; \
