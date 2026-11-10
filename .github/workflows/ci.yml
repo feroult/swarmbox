@@ -155,39 +155,28 @@ jobs:
           /bin/sh -c 'echo "/bin/sh $BASH_VERSION"; [ "${BASH_VERSINFO[0]}" = 3 ]'
       - name: The swarmbox script and both installers under /bin/sh with a fake podman
         run: |
-          python3 tests/test_swarmbox_command.py
-          python3 tests/test_install.py
+          # Each file runs alone; a failing one goes to an annotation too (readable without a login) and the others still run.
+          rc=0
+          for t in tests/test_swarmbox_command.py tests/test_install.py; do
+            out="${RUNNER_TEMP:-/tmp}/$(basename "$t").out"
+            if python3 "$t" > "$out" 2>&1; then cat "$out"; continue; fi
+            rc=1; cat "$out"
+            msg=$(tail -c 6000 "$out" | awk '{ gsub(/%/, "%25"); gsub(/\r/, "%0D"); printf "%s%%0A", $0 }')
+            echo "::error title=$t failed::$msg"
+          done
+          exit $rc
       - name: The other shell-level tests with a fake podman
         run: |
-          python3 tests/test_build_index.py
-          python3 tests/test_dev_build.py
-          python3 tests/test_default_names_lint.py
-          python3 tests/test_dirs.py
-          python3 tests/test_dockerfile.py
-          python3 tests/test_helpers.py
-          python3 tests/test_host_config.py
-          python3 tests/test_host_connector.py
-          python3 tests/test_host_create_flags.py
-          python3 tests/test_host_shells.py
-          python3 tests/test_host_socket.py
-          python3 tests/test_host_remote.py
-          python3 tests/test_host_remote_e2e_fake.py
-          python3 tests/test_host_up.py
-          python3 tests/test_host_update.py
-          python3 tests/test_image_build.py
-          python3 tests/test_ssh_key.py
-          python3 tests/test_starship.py
-          python3 tests/test_cloudflare_setup.py
-          python3 tests/test_ci_workflow.py
-          python3 tests/test_docs_consistency.py
-          python3 tests/test_name_check.py
-          python3 tests/test_release_check.py
-          python3 tests/test_release_version.py
-          python3 tests/test_release_workflow.py
-          python3 tests/test_third_party_notices.py
-          python3 tests/test_security_review.py
-          python3 tests/test_repo_files.py
-          python3 tests/test_run_all.py
+          # Each file runs alone; a failing one goes to an annotation too (readable without a login) and the others still run.
+          rc=0
+          for t in tests/test_build_index.py tests/test_dev_build.py tests/test_default_names_lint.py tests/test_dirs.py tests/test_dockerfile.py tests/test_helpers.py tests/test_host_config.py tests/test_host_connector.py tests/test_host_create_flags.py tests/test_host_shells.py tests/test_host_socket.py tests/test_host_remote.py tests/test_host_remote_e2e_fake.py tests/test_host_up.py tests/test_host_update.py tests/test_image_build.py tests/test_ssh_key.py tests/test_starship.py tests/test_cloudflare_setup.py tests/test_ci_workflow.py tests/test_docs_consistency.py tests/test_name_check.py tests/test_release_check.py tests/test_release_version.py tests/test_release_workflow.py tests/test_third_party_notices.py tests/test_security_review.py tests/test_repo_files.py tests/test_run_all.py; do
+            out="${RUNNER_TEMP:-/tmp}/$(basename "$t").out"
+            if python3 "$t" > "$out" 2>&1; then cat "$out"; continue; fi
+            rc=1; cat "$out"
+            msg=$(tail -c 6000 "$out" | awk '{ gsub(/%/, "%25"); gsub(/\r/, "%0D"); printf "%s%%0A", $0 }')
+            echo "::error title=$t failed::$msg"
+          done
+          exit $rc
 
   # Browser tests are slow and need chromium and ttyd: they run on the weekly schedule (and by hand), in a Debian
   # container so that "chromium" is a real binary (on Ubuntu it is a snap stub).
