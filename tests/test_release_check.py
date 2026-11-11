@@ -155,7 +155,12 @@ class ReleaseCheckTest(unittest.TestCase):
         r = run(repo)
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("v2.0.1 does not exist yet", r.stdout)
-        git(repo, "tag", "v2.0.1")
+        git(repo, "tag", "v2.0.1")   # made on HEAD, as before a push: fine
+        r = run(repo)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("v2.0.1 exists and points at HEAD", r.stdout)
+        write(repo, "later.txt", "x")
+        self.commit(repo)   # HEAD moved on: the tag is on another commit than the one checked
         self.assertFails(run(repo), "tag")
 
     def test_a_changelog_older_than_the_first_public_version_fails(self):
@@ -165,17 +170,28 @@ class ReleaseCheckTest(unittest.TestCase):
         self.commit(repo)
         self.assertFails(run(repo), "version")
 
-    def test_tag_already_exists(self):
+    def test_a_tag_on_another_commit_than_head_fails(self):
         repo = self.fresh()
         git(repo, "tag", "v2.0.0")
+        write(repo, "later.txt", "x")
+        self.commit(repo)
         r = run(repo)
         self.assertFails(r, "tag")
         self.assertIn("v2.0.0", r.stdout)
 
+    def test_a_tag_on_head_is_the_state_just_before_a_push_and_passes(self):
+        repo = self.fresh()
+        git(repo, "tag", "v2.0.0")
+        r = run(repo)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("v2.0.0 exists and points at HEAD", r.stdout)
+
     def test_several_failures_are_all_reported(self):
         repo = self.fresh()
-        git(repo, "checkout", "-q", "-b", "feature")
         git(repo, "tag", "v2.0.0")
+        git(repo, "checkout", "-q", "-b", "feature")
+        write(repo, "later.txt", "x")
+        self.commit(repo)
         write(repo, "x.txt", "x")
         r = run(repo)
         self.assertEqual(r.returncode, 1)

@@ -129,10 +129,17 @@ else
     ok workflows "reduced: no PyYAML here, only tabs, brackets and braces were checked (set SWARMBOX_YAML_PYTHON)"
 fi
 
-# tag
+# tag: it must not exist, or it must be on HEAD (the tag made just before the push)
 RTAG=${SWARMBOX_RELEASE_TAG:-v${cver:-$dver}}   # the newest CHANGELOG entry: 2.0.1 after 2.0.0
 if [ -n "$dver" ]; then
-    if [ -n "$(G tag --list "$RTAG")" ]; then fail tag "$RTAG already exists"; else ok tag "$RTAG does not exist yet"; fi
+    if [ -z "$(G tag --list "$RTAG")" ]; then
+        ok tag "$RTAG does not exist yet"
+    elif [ "$(G rev-parse "$RTAG^{commit}" 2>/dev/null)" = "$(G rev-parse HEAD 2>/dev/null)" ]; then
+        # the pre-push hook runs this check when the tag is about to be pushed: it exists, and it is on the commit that was checked
+        ok tag "$RTAG exists and points at HEAD, the commit checked here (about to be pushed)"
+    else
+        fail tag "$RTAG already exists on another commit than HEAD"
+    fi
 else
     fail tag "no version to look for"
 fi
