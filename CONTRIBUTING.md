@@ -58,7 +58,7 @@ git config core.hooksPath dev/hooks    # once per clone: run it before every pus
 ```
 
 The shellcheck file lists are read from `.github/workflows/ci.yml`, so they cannot drift; a new shell file goes into that list and is checked from then on.
-The version is pinned to 0.9, the one of the CI runner: when none is installed, `check.sh` fetches it with pip into `~/.cache/swarmbox-dev`.
+The version is pinned to 0.9, the one of the CI runner: when none is installed, `dev/check.sh` fetches it with pip into `~/.cache/swarmbox-dev`.
 The tests run under `env -i` with `PATH`, `HOME` and a UTF-8 `LANG`: a test that reads `TERM` or another variable must set it itself.
 A push of another branch is not checked. Skip it once with `git push --no-verify` (or `SWARMBOX_SKIP_CHECK=1 git push`).
 It cannot cover what only CI has: the macOS job (bash 3.2), the arm64 job and the image smoke test. It also prints how many tests were skipped
