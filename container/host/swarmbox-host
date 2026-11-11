@@ -2392,15 +2392,20 @@ ensure_short_name() {
         return 0
     fi
     sn_t=$(mktemp "$1/.sx.XXXXXX" 2> /dev/null) || return 0
-    {
+    # shellcheck disable=SC2016  # the $ in these lines belong to the file being written
+    if ! {
         printf '#!/bin/sh\n'
         printf '# swarmbox-short-name: runs the swarmbox next to this file. Written by `swarmbox setup`; delete it if you do not want it.\n'
         printf 'case $0 in */*) d=${0%%/*} ;; *) d=. ;; esac\n'
         printf 'exec "$d/swarmbox" "$@"\n'
-    } > "$sn_t" 2> /dev/null && chmod 755 "$sn_t" 2> /dev/null && mv -f "$sn_t" "$sn_f" 2> /dev/null || {
+    } > "$sn_t" 2> /dev/null; then
         rm -f "$sn_t"
         return 0
-    }
+    fi
+    if ! chmod 755 "$sn_t" 2> /dev/null || ! mv -f "$sn_t" "$sn_f" 2> /dev/null; then
+        rm -f "$sn_t"
+        return 0
+    fi
     printf 'sx is a short name for swarmbox (%s). SWARMBOX_NO_SX=1 skips it.\n' "$sn_f"
 }
 
