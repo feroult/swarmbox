@@ -190,7 +190,7 @@ class PullProgressTest(UpdateBase):
         self.assertEqual(r.returncode, 0)
         self.assertEqual(self.subs("pull"), [["pull", REPO + ":2.0"]])
 
-    def test_a_failed_pull_with_a_terminal_points_at_the_error_already_shown(self):
+    def test_a_failed_pull_with_a_terminal_shows_podmans_error_and_says_it_in_the_message(self):
         import pty
         self.podman_for("2.0.9", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
         self.install_script()
@@ -207,7 +207,7 @@ class PullProgressTest(UpdateBase):
             os.close(slave)
             os.close(master)
         self.assertEqual(r.returncode, 3)
-        self.assertIn("cannot pull %s:2.0: see the Podman error above" % REPO, shown)
+        self.assertIn("cannot pull %s:2.0: Error: unable to pull: connection refused" % REPO, shown)
 
 
 class ScriptRefreshTest(UpdateBase):

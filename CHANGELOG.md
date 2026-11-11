@@ -3,6 +3,13 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [semantic versioning](https://semver.org/).
 
+## [2.0.5] - 2026-11-11
+
+- Added: a progress line for the image pull in `swarmbox update`, the first `swarmbox` and the installer, in the colors of the prompt of the box: `[ pull ][ bar and percentage ][ MB done/total ][ MB/s and time ]`,
+  and `unpack` when the download is over and Podman writes the layers out. The bytes come from Podman's temporary download folder and the total from the layer sizes of the manifest on `ghcr.io`
+  (read with `curl` in the background; without it the bar sweeps and shows no percentage). Powerline separators and an icon are on when Starship runs in your shell (`SWARMBOX_ICONS=1` or `0` forces them);
+  `NO_COLOR=1` turns the colors off; `SWARMBOX_PROGRESS=plain` goes back to Podman's own bars; without a terminal the pull stays quiet. A failed pull shows the last lines of Podman's error.
+
 ## [2.0.4] - 2026-11-11
 
 - Added: the installers (`install.sh` and `podman run IMAGE install | sh`) write `sx`, a short name for `swarmbox` (`sx up`, `sx claude`), next to the script.
@@ -88,6 +95,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.5]: https://github.com/feroult/swarmbox/releases/tag/v2.0.5
 [2.0.4]: https://github.com/feroult/swarmbox/releases/tag/v2.0.4
 [2.0.3]: https://github.com/feroult/swarmbox/releases/tag/v2.0.3
 [2.0.2]: https://github.com/feroult/swarmbox/releases/tag/v2.0.2
