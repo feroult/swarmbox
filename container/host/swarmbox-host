@@ -25,7 +25,7 @@
 # Paths honor HOME, XDG_CONFIG_HOME and XDG_STATE_HOME (an empty or relative XDG value is ignored, as in dirs.sh).
 # The file mode is read as an octal number (stat -c %a, then stat -f %Lp, then find -perm); `ls` output is never parsed.
 
-SCRIPT_VERSION=2.0.3
+SCRIPT_VERSION=2.0.4
 
 # shellcheck disable=SC2154  # some variables are assigned through eval (keys are validated names, never user text)
 LC_ALL=C
@@ -2374,6 +2374,37 @@ cmd_config() {
 
 # ---------------------------------------------------------------- setup, run by the installers
 
+# ensure_short_name DIR: writes DIR/sx, a small script that runs the swarmbox next to it, so `sx` works as a short name. It is written
+# only when nothing else answers to `sx`: no other file of that name in DIR and no `sx` anywhere on the PATH (a startx replacement
+# is called that). SWARMBOX_NO_SX=1 skips it. A script, not a link: this script names itself by $0 and `update` renames a new copy over
+# that name, which would turn a link into a file and leave `swarmbox` behind. The marker line lets a later setup see that the file is ours.
+ensure_short_name() {
+    [ -z "${SWARMBOX_NO_SX:-}" ] || return 0
+    sn_f=$1/sx
+    if [ -e "$sn_f" ] || [ -L "$sn_f" ]; then
+        grep -q 'swarmbox-short-name' "$sn_f" 2> /dev/null && return 0
+        printf 'not creating the short name sx: %s already exists.\n' "$sn_f"
+        return 0
+    fi
+    sn_o=$(command -v sx 2> /dev/null) || sn_o=
+    if [ -n "$sn_o" ]; then
+        printf 'not creating the short name sx: another sx is on your PATH (%s).\n' "$sn_o"
+        return 0
+    fi
+    sn_t=$(mktemp "$1/.sx.XXXXXX" 2> /dev/null) || return 0
+    {
+        printf '#!/bin/sh\n'
+        printf '# swarmbox-short-name: runs the swarmbox next to this file. Written by `swarmbox setup`; delete it if you do not want it.\n'
+        printf 'case $0 in */*) d=${0%%/*} ;; *) d=. ;; esac\n'
+        printf 'exec "$d/swarmbox" "$@"\n'
+    } > "$sn_t" 2> /dev/null && chmod 755 "$sn_t" 2> /dev/null && mv -f "$sn_t" "$sn_f" 2> /dev/null || {
+        rm -f "$sn_t"
+        return 0
+    }
+    printf 'sx is a short name for swarmbox (%s). SWARMBOX_NO_SX=1 skips it.\n' "$sn_f"
+}
+
+
 # setup --image REF [--with LIST]: what both installers run, once they have written this script. Checks Podman (present, 4.3 or
 # newer), puts the support files of the image in place, records IMAGE (and WITH) in the config file the way `config seed` does
 # (an existing value is never overwritten), then prints what is left to do: the PATH if the folder of this script is not in it,
@@ -2413,6 +2444,7 @@ cmd_setup() {
     cmd_config_seed --image "$s_image" "$@"
     s_bin=$(self_dir) || s_bin=.
     printf 'swarmbox %s is in %s\n' "$SCRIPT_VERSION" "$s_bin"
+    ensure_short_name "$s_bin"
     case ":$PATH:" in
         *":$s_bin:"*) ;;
         *)

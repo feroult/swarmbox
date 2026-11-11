@@ -411,7 +411,8 @@ def step_install_script(ctx):
     hs = HostSide(ctx)   # installed once already
     first = open(hs.helper, "rb").read()
     assert os.stat(hs.helper).st_mode & 0o777 == 0o755, "mode of the installed script"
-    assert sorted(os.listdir(hs.bindir)) == ["podman", "swarmbox"], os.listdir(hs.bindir)
+    names = sorted(os.listdir(hs.bindir))
+    assert "swarmbox" in names and set(names) <= {"podman", "swarmbox", "sx"}, names   # sx, the short name, is written unless another sx exists
     with open(os.path.join(hs.home, ".bashrc"), "w") as f:
         f.write("# >>> swarmbox 2.0.0 >>>\nswarmbox() { :; }\n# <<< swarmbox 2.0.0 <<<\n")
     rc_before = open(os.path.join(hs.home, ".bashrc"), "rb").read()

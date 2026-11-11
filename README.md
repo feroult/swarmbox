@@ -80,6 +80,7 @@ curl -fsSL https://github.com/feroult/swarmbox/releases/latest/download/install.
 ```
 
 It downloads the `swarmbox` script of the release, checks its sha256, writes it to `~/.local/bin/swarmbox` (set `SWARMBOX_BIN_DIR` to use another folder) and records the image and `claude` in `~/.config/swarmbox/config`.
+It also writes `sx`, a short name for the same command (`sx up`, `sx claude`), unless some other `sx` already exists on your machine; `SWARMBOX_NO_SX=1` skips it.
 It edits no startup file. If `~/.local/bin` is not in your `PATH` it says how to add it; then open a new terminal. To read the installer first, save `install.sh` from the same address and run `sh install.sh --with claude`.
 The other way, with no `curl`: `podman run --rm ghcr.io/feroult/swarmbox:2.0.0 install --with claude | sh`.
 

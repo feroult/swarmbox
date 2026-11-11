@@ -54,7 +54,8 @@ class Base(unittest.TestCase):
 
     def env(self, path=None, **extra):
         e = {k: v for k, v in os.environ.items() if not k.startswith(("SWARMBOX_", "XDG_"))}
-        e.update({"HOME": self.home, "SWARMBOX_BIN_DIR": self.bin, "LC_ALL": "C", "PATH": path or self.fp.env()["PATH"]})
+        e.update({"HOME": self.home, "SWARMBOX_BIN_DIR": self.bin, "LC_ALL": "C", "PATH": path or self.fp.env()["PATH"],
+                  "SWARMBOX_NO_SX": "1"})   # the short name has its own tests; the others look at the script alone
         e.pop("SHELL", None)
         e.update(extra)
         return e
@@ -151,6 +152,77 @@ class InstallerTextTest(Base):
         r = self.installer_text("--help")
         self.assertEqual(r.returncode, 0)
         self.assertIn("podman run --rm IMAGE install", r.stdout)
+
+
+class ShortNameTest(Base):
+    """`sx`: a short name written next to the script, only when nothing else is called that."""
+
+    def run_installer(self, **env):
+        env.setdefault("SWARMBOX_NO_SX", "")
+        return self.pipe_to_sh(self.installer_text("--image", IMG).stdout, **env)
+
+    def sx(self):
+        return os.path.join(self.bin, "sx")
+
+    def foreign_sx_dir(self):
+        d = os.path.join(self.tmp, "other-bin")
+        os.makedirs(d)
+        with open(os.path.join(d, "sx"), "w") as f:
+            f.write("#!/bin/sh\necho startx\n")
+        os.chmod(os.path.join(d, "sx"), 0o755)
+        return d
+
+    def test_it_is_written_by_default_and_runs_the_swarmbox_next_to_it(self):
+        r = self.run_installer()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(sorted(os.listdir(self.bin)), ["swarmbox", "sx"], "no temporary file is left")
+        self.assertEqual(stat.S_IMODE(os.stat(self.sx()).st_mode), 0o755)
+        self.assertIn("sx is a short name for swarmbox", r.stdout)
+        self.assertFalse(os.path.islink(self.sx()), "a link would be replaced by `update`")
+        p = subprocess.run([self.sx(), "version"], env=self.env(), capture_output=True, text=True, cwd=self.tmp)
+        self.assertEqual((p.returncode, p.stdout.strip()), (0, VERSION), p.stderr)
+
+    def test_it_works_through_the_path_and_from_the_folder_itself(self):
+        self.run_installer()
+        for cmd, cwd in ((["sx", "version"], self.tmp), (["./sx", "version"], self.bin), (["sh", "sx", "version"], self.bin)):
+            p = subprocess.run(cmd, env=self.env(PATH=self.bin + os.pathsep + self.fp.env()["PATH"]), capture_output=True, text=True, cwd=cwd)
+            self.assertEqual((p.returncode, p.stdout.strip()), (0, VERSION), (cmd, p.stderr))
+
+    def test_a_second_setup_changes_nothing_and_says_nothing(self):
+        self.run_installer()
+        first = read_bytes(self.sx())
+        r = self.run_installer(PATH=self.bin + os.pathsep + self.fp.env()["PATH"])   # now `sx` is found on the PATH: it is ours
+        self.assertEqual(read_bytes(self.sx()), first)
+        self.assertNotIn("short name", r.stdout)
+
+    def test_another_sx_on_the_path_is_left_alone_and_none_is_written(self):
+        other = self.foreign_sx_dir()
+        r = self.run_installer(PATH=other + os.pathsep + self.fp.env()["PATH"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(sorted(os.listdir(self.bin)), ["swarmbox"])
+        self.assertIn("not creating the short name sx: another sx is on your PATH (%s)" % os.path.join(other, "sx"), r.stdout)
+
+    def test_a_file_called_sx_in_the_folder_is_never_overwritten(self):
+        os.makedirs(self.bin)
+        with open(self.sx(), "w") as f:
+            f.write("#!/bin/sh\necho mine\n")
+        r = self.run_installer()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(read_bytes(self.sx()), b"#!/bin/sh\necho mine\n")
+        self.assertIn("not creating the short name sx: %s already exists" % self.sx(), r.stdout)
+
+    def test_a_link_called_sx_is_never_replaced(self):
+        os.makedirs(self.bin)
+        os.symlink("/nonexistent/target", self.sx())
+        r = self.run_installer()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(os.readlink(self.sx()), "/nonexistent/target")
+
+    def test_swarmbox_no_sx_skips_it(self):
+        r = self.run_installer(SWARMBOX_NO_SX="1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(sorted(os.listdir(self.bin)), ["swarmbox"])
+        self.assertNotIn("short name", r.stdout)
 
 
 class InstallRunTest(Base):

@@ -137,6 +137,8 @@ Standard output carries data, messages go to standard error.
 
 **Install.** Two ways, one result: a file `${SWARMBOX_BIN_DIR:-$HOME/.local/bin}/swarmbox` (mode 755, written through a temporary file and a rename), the support
 files in `~/.local/share/swarmbox/host/`, and the image and tools in the host config (`IMAGE`, `WITH`, only the keys that are not set yet).
+Next to the script `setup` writes `sx`, a two-line script that runs the `swarmbox` beside it (a script, not a link: the script names itself by `$0` and `update` renames
+a new copy over that name). It is written only when nothing else answers to `sx` (no other file of that name in the folder, no `sx` on the `PATH`), never overwrites one, and `SWARMBOX_NO_SX=1` skips it.
 
 ```
 podman run --rm <image> install [--with TOOLS] | sh        # from an image; run it without `| sh` to read it first

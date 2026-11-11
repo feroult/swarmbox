@@ -3,6 +3,14 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [semantic versioning](https://semver.org/).
 
+## [2.0.4] - 2026-11-11
+
+- Added: the installers (`install.sh` and `podman run IMAGE install | sh`) write `sx`, a short name for `swarmbox` (`sx up`, `sx claude`), next to the script.
+  It is a two-line script that runs the `swarmbox` beside it, so `swarmbox update` keeps working and `sx` always follows it.
+  It is written only when nothing else answers to `sx`: no other file of that name in the folder and no `sx` anywhere on the `PATH`
+  (a startx replacement has that name); an existing `sx` is never touched and the installer says why none was written. `SWARMBOX_NO_SX=1` skips it.
+  A box that is only updated does not get it: run the installer again.
+
 ## [2.0.3] - 2026-11-11
 
 - Fixed: `swarmbox update`, the first `swarmbox` and the installer (`install.sh`, `podman run IMAGE install | sh`) showed no progress while they pulled the image, so they looked stuck.
@@ -80,6 +88,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.4]: https://github.com/feroult/swarmbox/releases/tag/v2.0.4
 [2.0.3]: https://github.com/feroult/swarmbox/releases/tag/v2.0.3
 [2.0.2]: https://github.com/feroult/swarmbox/releases/tag/v2.0.2
 [2.0.1]: https://github.com/feroult/swarmbox/releases/tag/v2.0.1

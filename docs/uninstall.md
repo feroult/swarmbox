@@ -6,7 +6,7 @@ There is no `swarmbox uninstall` command, and the installer never edited a start
 
 1. If you set up remote access, run `swarmbox remote off` first (it needs the script): it removes the DNS record, the route and the Access application. Then remove the connector: `podman rm -f swarmbox-cloudflared`.
 2. Stop and remove the box: `podman rm -f swarmbox`, and the host connection `podman system connection rm swarmbox` (an error that none exists can be ignored). For a second box give its `SWARMBOX_NAME` instead of `swarmbox`, one box at a time.
-3. Delete the script: `rm ~/.local/bin/swarmbox` (or `$SWARMBOX_BIN_DIR/swarmbox` if you set it). If you installed an earlier version that added a `swarmbox` function to
+3. Delete the script: `rm ~/.local/bin/swarmbox` (or `$SWARMBOX_BIN_DIR/swarmbox` if you set it), and the short name next to it, `~/.local/bin/sx`, if the installer wrote one (`grep -l swarmbox-short-name ~/.local/bin/sx` tells you it is ours). If you installed an earlier version that added a `swarmbox` function to
    `~/.bashrc`, `~/.zshrc` or `~/.config/fish/config.fish`, delete that block too: the lines from `# >>> swarmbox X.Y.Z >>>` to `# <<< swarmbox X.Y.Z <<<` and the
    comment line above them. The installer finds such a block when you install again and warns.
 4. Remove the support files the installer fetched from the image, and the state: `rm -rf ~/.local/share/swarmbox`, and `rm -rf ~/.local/state/swarmbox` (locks and notices).
