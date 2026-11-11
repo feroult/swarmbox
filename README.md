@@ -97,10 +97,10 @@ The installer's `--with` option installs some up front.
 
 ## Status and limits
 
-SwarmBox 2.0.0-beta.1 is the first public prerelease of 2.0.0. The image is built and tested in CI on Linux (amd64 and arm64, with nested Podman and the
+SwarmBox 2.0.0-beta.2 is a public prerelease of 2.0.0. The image is built and tested in CI on Linux (amd64 and arm64, with nested Podman and the
 web terminal), and the `swarmbox` script is tested under macOS's `/bin/sh` with a fake Podman. It is still a beta: macOS with a real Podman machine, WSL with real Windows
 drives, Podman older than 4.3, a host user other than UID 1000 and the real Cloudflare setup are unverified. Docker is not supported.
-To install the beta from its release: `sh install.sh --version 2.0.0-beta.1` (`install.sh` is attached to the GitHub release). `swarmbox update` follows the `2.0` series,
+To install the beta from its release: `sh install.sh --version 2.0.0-beta.2` (`install.sh` is attached to the GitHub release). `swarmbox update` follows the `2.0` series,
 which exists only once 2.0.0 is out; until then move between betas with `swarmbox update --to 2.0.0-beta.2`.
 The architecture is in [docs/design.md](docs/design.md).
 

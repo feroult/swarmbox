@@ -5,8 +5,8 @@
 #
 # Inputs: the image registry /etc/swarmbox/mcp/<name>/config.json and the user level $SB_CONFIG_DIR/mcp/<name>/config.json
 # (<workspace>/.config/swarmbox/mcp/<name>/config.json). A server found in either is merged field by field (shallow: a user
-# field replaces the image field of the same name). {"enabled": false} drops the server. When BROWSER_URL is not empty and the
-# merged entry has browserUrlArgs, those replace args with ${BROWSER_URL} replaced by the value. `browserUrlArgs` and `enabled`
+# field replaces the image field of the same name). {"enabled": false} drops the server. When SWARMBOX_BROWSER_URL (the BROWSER_URL setting of the host, as the
+# box receives it) is not empty and the merged entry has browserUrlArgs, those replace args with the ${BROWSER_URL} placeholder replaced by the value. `browserUrlArgs` and `enabled`
 # are removed from the output. An entry without a string `command` is skipped.
 #
 # A bad file (not JSON, not an object, no command) gives one warning line on stderr and is skipped; the other servers are still
@@ -57,7 +57,7 @@ for name in $names; do
         fi
     done
     [ ${#files[@]} -gt 0 ] || continue
-    entry=$(jq -s -c --arg url "${BROWSER_URL:-}" '
+    entry=$(jq -s -c --arg url "${SWARMBOX_BROWSER_URL:-}" '
         add
         | if .enabled == false then empty
           else (if $url != "" and (.browserUrlArgs | type) == "array"

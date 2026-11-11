@@ -3,6 +3,18 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [semantic versioning](https://semver.org/).
 
+## [2.0.0-beta.2] - Unreleased
+
+Second prerelease of 2.0.0, tagged `2.0.0-beta.2` only. Install it with `sh install.sh --version 2.0.0-beta.2`, or move from a
+beta.1 box with `swarmbox update --to 2.0.0-beta.2`. Changes since beta.1:
+
+- Fixed: with `BROWSER_URL` set, the Chrome DevTools MCP now attaches to that browser. `swarmbox-mcp` read a variable the host never
+  passes (`BROWSER_URL`) instead of `SWARMBOX_BROWSER_URL`, so the generated MCP file kept the headless Chromium of the box.
+- The web terminal treats Option as Meta on a Mac, so Option+1..9 and Option+N change and open tmux windows (`macOptionIsMeta=false`
+  in `web-terminal.conf` brings the special characters back).
+- The `tmux` status bar stays visible in the browser, so every window is listed.
+- macOS test and CI fixes (macos-15 runner, tests run one by one).
+
 ## [2.0.0-beta.1] - Unreleased
 
 First public prerelease of 2.0.0, for testing before the final release. The image is tagged `2.0.0-beta.1` only (never `2.0` or

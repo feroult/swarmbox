@@ -75,9 +75,14 @@ class McpCase(unittest.TestCase):
         self.assertEqual(e["env"], {})
 
     def test_browser_url_replaces_args(self):
-        r = self.run_gen(BROWSER_URL="http://host.example:9222")
+        r = self.run_gen(SWARMBOX_BROWSER_URL="http://host.example:9222")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.data()["mcpServers"]["chrome-devtools"]["args"], ["--browserUrl=http://host.example:9222"])
+
+    def test_the_unprefixed_browser_url_is_not_read(self):
+        r = self.run_gen(BROWSER_URL="http://host.example:9222")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("--headless", self.data()["mcpServers"]["chrome-devtools"]["args"])
 
     def test_off_switch_drops_the_entry(self):
         put(os.path.join(self.user, "chrome-devtools", "config.json"), '{"enabled": false}')
