@@ -13,7 +13,7 @@
 #   anything else is run as given (already the final behavior)
 #
 # Test-only variables (not in the configuration table and not read by anything else): SWARMBOX_TEST_LIB (folder holding dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces
-# /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
+# /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_PODMAN_RUNROOT (the folder serve clears before the nested service), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
 # instead of a failure for step 2 and no service at step 8), SWARMBOX_TEST_BACKOFF_SCALE (integer multiplier of the
 # ttyd backoff, 0 for none), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10).
 
@@ -284,6 +284,13 @@ serve() {
     elif ! have podman; then
         warn "nested Podman service not started: podman not found"
     else
+        # The nested Podman keeps its runtime state in /tmp/storage-run-<uid>, which is in the box's own filesystem, not in a tmpfs. After a
+        # host reboot it still holds the old boot ID and Podman refuses to start ("an unhandled reboot has occurred"). Nothing of a previous
+        # run is alive when serve starts, so remove it, as the Podman message itself says to do.
+        runroot=${SWARMBOX_TEST_PODMAN_RUNROOT:-/tmp/storage-run-$(id -u)}
+        if [ -e "$runroot" ]; then
+            rm -rf "$runroot" 2>/dev/null && log "step 8: removed the runtime state of the previous run of nested Podman ($runroot)"
+        fi
         log "step 8: starting the nested Podman service on $SB_PODMAN_SOCK"
         rm -f "$SB_PODMAN_SOCK"
         env -u CONTAINER_HOST podman system service --time=0 "unix://$SB_PODMAN_SOCK" \

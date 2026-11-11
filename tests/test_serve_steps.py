@@ -254,6 +254,25 @@ class RunFolderNotWritable(ServeCase):
         self.stop(p)
 
 
+class NestedRunroot(ServeCase):
+    """After a host reboot the nested Podman refused to start: its runtime folder, in the box's own filesystem, held the old boot ID."""
+
+    def test_a_stale_runtime_folder_of_nested_podman_is_removed_before_the_service_starts(self):
+        rr = os.path.join(self.base, "storage-run")
+        os.makedirs(os.path.join(rr, "libpod", "tmp"))
+        put(os.path.join(rr, "libpod", "tmp", "alive"), "old boot id")
+        p = self.run_ready(SWARMBOX_TEST_PODMAN_RUNROOT=rr)
+        self.assertFalse(os.path.exists(rr), "the stale folder must be gone")
+        self.assertIn("removed the runtime state of the previous run", self.serve_log())
+        self.assertTrue([c for c in self.calls() if c.startswith("podman system service")])
+        self.stop(p)
+
+    def test_no_folder_to_remove_says_nothing(self):
+        p = self.run_ready(SWARMBOX_TEST_PODMAN_RUNROOT=os.path.join(self.base, "never-there"))
+        self.assertNotIn("removed the runtime state", self.serve_log())
+        self.stop(p)
+
+
 class WarnSteps(ServeCase):
     """Steps 4 to 10: failure writes a health line and continues (W); the marker carries the count."""
 
