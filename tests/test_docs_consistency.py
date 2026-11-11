@@ -9,7 +9,9 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT, DEFAULT_NAME  # noqa: E402
+from helpers import ROOT, DEFAULT_NAME, DEFAULT_IMAGE_REPO  # noqa: E402
+
+DEFAULT_REPO_PATH = DEFAULT_IMAGE_REPO.split("/", 1)[1]   # ghcr.io/<owner>/<name> without the registry
 
 HOST = os.path.join(ROOT, "container", "host", "swarmbox-host")
 HOST_WORDS_ROUTED = ["stop", "reset", "up", "url", "update", "config", "env", "remote", "fingerprint", "version", "help"]   # the words the script handles itself
@@ -51,19 +53,28 @@ class Readme(unittest.TestCase):
             section(README, h)
         self.assertEqual(README.count("```") % 2, 0)
         self.assertNotIn("<org>", README)
-        self.assertNotRegex(README, r"ghcr\.io")
+        # the image is published: the README may name it, but only the one default image repository
+        for ref in set(re.findall(r"ghcr\.io/[\w./-]+", README)):
+            self.assertEqual(ref, "ghcr.io/" + DEFAULT_REPO_PATH, ref)
         for needle in ("swarmbox config", "swarmbox env add", "swarmbox url", "swarmbox update", "swarmbox tool list",
                        "docs/cloudflare.md", "docs/web-terminal.md", "docs/nested-podman.md", "docs/uninstall.md",
                        "swarmbox remote setup", "swarmbox reset"):
             self.assertIn(needle, README, needle)
 
-    def test_quick_start_builds_locally(self):
-        local = "localhost/" + DEFAULT_NAME + ":local"
+    def test_quick_start_installs_the_published_release_with_claude(self):
         qs = section(README, "Quick start")
-        self.assertIn("podman build -t " + local + " .", qs)
-        self.assertIn("podman run --rm " + local + " install --with claude --image " + local + " | sh", qs)
+        self.assertIn("releases/latest/download/install.sh | sh -s -- --with claude", qs)
+        self.assertIn("podman run --rm ghcr.io/" + DEFAULT_REPO_PATH + ":", qs)
+        self.assertIn("claude", qs)
+        self.assertIn("swarmbox env add ANTHROPIC_API_KEY", qs)
         self.assertNotIn("init", qs)
         self.assertNotIn(">> ~/", qs)   # no line appended to a startup file
+
+    def test_remote_access_section_is_in_the_readme(self):
+        rem = section(README, "Remote access")
+        for needle in ("swarmbox remote setup --domain", "CLOUDFLARE_API_TOKEN", "swarmbox remote off",
+                       "swarmbox remote token", "swarmbox url", "ssh ", "docs/cloudflare.md"):
+            self.assertIn(needle, rem, needle)
 
     def test_security_section_states_the_kernel_limit_and_no_safe_claim(self):
         sec = section(README, "Security")

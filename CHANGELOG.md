@@ -3,30 +3,12 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [semantic versioning](https://semver.org/).
 
-## [2.0.0-beta.2] - Unreleased
+## [2.0.0] - 2026-11-11
 
-Second prerelease of 2.0.0, tagged `2.0.0-beta.2` only. Install it with `sh install.sh --version 2.0.0-beta.2`, or move from a
-beta.1 box with `swarmbox update --to 2.0.0-beta.2`. Changes since beta.1:
+First stable version. Same feature set as the two prereleases (below), with these changes since 2.0.0-beta.2:
 
-- Fixed: with `BROWSER_URL` set, the Chrome DevTools MCP now attaches to that browser. `swarmbox-mcp` read a variable the host never
-  passes (`BROWSER_URL`) instead of `SWARMBOX_BROWSER_URL`, so the generated MCP file kept the headless Chromium of the box.
-- The web terminal treats Option as Meta on a Mac, so Option+1..9 and Option+N change and open tmux windows (`macOptionIsMeta=false`
-  in `web-terminal.conf` brings the special characters back).
-- The `tmux` status bar stays visible in the browser, so every window is listed.
-- macOS test and CI fixes (macos-15 runner, tests run one by one).
-
-## [2.0.0-beta.1] - Unreleased
-
-First public prerelease of 2.0.0, for testing before the final release. The image is tagged `2.0.0-beta.1` only (never `2.0` or
-`latest`) and the GitHub release is marked as a prerelease. Install it with `sh install.sh --version 2.0.0-beta.1`;
-`swarmbox update` follows the `2.0` series, which exists only once 2.0.0 is out, so until then move between betas with
-`swarmbox update --to TAG`. The feature list is the one of 2.0.0 below. Changes while preparing it: the base image is
-`node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
-standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
-
-## [2.0.0] - Unreleased
-
-First public version. Not released: it stays "Unreleased" until the maintainer creates the tag `v2.0.0`.
+- The README now walks through the install from zero with Claude Code (Podman, the installer, the login, the first run) and through remote access to the same tmux session (from a browser with Cloudflare, or over SSH to your machine).
+- The image is published at `ghcr.io/feroult/swarmbox` with the tags `2.0.0`, `2.0` and `latest`; `swarmbox update` follows the `2.0` series.
 
 ### Features
 
@@ -49,7 +31,28 @@ First public version. Not released: it stays "Unreleased" until the maintainer c
 
 ### Known limits
 
-macOS, Podman older than 4.3, a host user other than UID 1000 and the real Cloudflare setup are not verified, and the image is not published yet. A container shares the host kernel:
+macOS with a real Podman machine, Podman older than 4.3, a host user other than UID 1000 and the real Cloudflare setup are not verified. A container shares the host kernel:
 see [SECURITY.md](SECURITY.md) and [docs/microvm.md](docs/microvm.md).
 
-[2.0.0]: https://github.com/feroult/swarmbox/commits/opensource
+## [2.0.0-beta.2] - 2026-11-11
+
+Second prerelease of 2.0.0, tagged `2.0.0-beta.2` only. Install it with `sh install.sh --version 2.0.0-beta.2`, or move from a
+beta.1 box with `swarmbox update --to 2.0.0-beta.2`. Changes since beta.1:
+
+- Fixed: with `BROWSER_URL` set, the Chrome DevTools MCP now attaches to that browser. `swarmbox-mcp` read a variable the host never
+  passes (`BROWSER_URL`) instead of `SWARMBOX_BROWSER_URL`, so the generated MCP file kept the headless Chromium of the box.
+- The web terminal treats Option as Meta on a Mac, so Option+1..9 and Option+N change and open tmux windows (`macOptionIsMeta=false`
+  in `web-terminal.conf` brings the special characters back).
+- The `tmux` status bar stays visible in the browser, so every window is listed.
+- macOS test and CI fixes (macos-15 runner, tests run one by one).
+
+## [2.0.0-beta.1] - 2026-11-11
+
+First public prerelease of 2.0.0, for testing before the final release. The image is tagged `2.0.0-beta.1` only (never `2.0` or
+`latest`) and the GitHub release is marked as a prerelease. Install it with `sh install.sh --version 2.0.0-beta.1`;
+`swarmbox update` follows the `2.0` series, which exists only once 2.0.0 is out, so until then move between betas with
+`swarmbox update --to TAG`. The feature list is the one of 2.0.0 below. Changes while preparing it: the base image is
+`node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
+standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
+
+[2.0.0]: https://github.com/feroult/swarmbox/releases/tag/v2.0.0

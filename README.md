@@ -54,25 +54,68 @@ With remote access on, whoever passes the Cloudflare login has the same control 
 
 More in [SECURITY.md](SECURITY.md) and the security model of [docs/design.md](docs/design.md).
 
-## Quick start
+## Quick start: from zero to Claude Code in a box
 
-Requirements: Podman 4.3 or newer on Linux, or WSL2 with the workspace on the Linux filesystem (macOS through a Podman machine is unverified).
-Docker is not supported.
+Five steps, about ten minutes (most of it is the image download, about 1.75 GB). You need Linux, or Windows with WSL2. Docker is not supported, and macOS through a Podman machine is unverified.
 
-The image is not published yet, so today you build it locally. In the repository:
+**1. Install Podman 4.3 or newer.**
 
 ```bash
-podman build -t localhost/swarmbox:local .
-podman run --rm localhost/swarmbox:local install --with claude --image localhost/swarmbox:local        # read what it prints
-podman run --rm localhost/swarmbox:local install --with claude --image localhost/swarmbox:local | sh
+sudo apt install podman uidmap       # Debian 12/13, Ubuntu 24.04 or newer, and WSL2 with one of them
+sudo dnf install podman              # Fedora
 ```
 
-This writes one script, `swarmbox`, to `~/.local/bin` (set `SWARMBOX_BIN_DIR` to use another folder), and records the image and the tools in
-`~/.config/swarmbox/config`. It edits no startup file; if `~/.local/bin` is not in your `PATH` it says how to add it. Open a new terminal and
-run `swarmbox`. If port 7681 is busy, run `swarmbox config set WEB_PORT 7682` first.
+Ubuntu 22.04 ships Podman 3.4, which is too old: use 24.04. On WSL2 keep everything on the Linux filesystem (your home, not `/mnt/c`). Check that it works as your own user, not as root:
 
+```bash
+podman --version                     # 4.3 or newer
+podman run --rm docker.io/library/alpine echo ok
+ls /dev/net/tun                      # must exist: the box runs Podman inside itself
+```
+
+**2. Install SwarmBox with Claude Code as the default agent.**
+
+```bash
+curl -fsSL https://github.com/feroult/swarmbox/releases/latest/download/install.sh | sh -s -- --with claude
+```
+
+It downloads the `swarmbox` script of the release, checks its sha256, writes it to `~/.local/bin/swarmbox` (set `SWARMBOX_BIN_DIR` to use another folder) and records the image and `claude` in `~/.config/swarmbox/config`.
+It edits no startup file. If `~/.local/bin` is not in your `PATH` it says how to add it; then open a new terminal. To read the installer first, save `install.sh` from the same address and run `sh install.sh --with claude`.
+The other way, with no `curl`: `podman run --rm ghcr.io/feroult/swarmbox:2.0.0 install --with claude | sh`.
+
+**3. Open the box.**
+
+```bash
+swarmbox
+```
+
+The first time it pulls the image, creates the box and opens a shell in it. You are the user `agent`, and your home there is the workspace folder `~/swarmbox` of your machine. If port 7681 is busy, run
+`swarmbox config set WEB_PORT 7682` and `swarmbox reset` first.
+
+**4. Run Claude Code and log in.**
+
+```bash
+mkdir hello && cd hello              # inside the box; it is ~/swarmbox/hello on your machine
+claude                               # the first run installs Claude Code, then it asks you to log in
+```
+
+`claude` runs in auto-approve mode (`--dangerously-skip-permissions`), which is the point of the box; `yolo` starts your default agent the same way. Log in with your Claude account (open the address it prints in a browser on your machine), or give it an API key:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...  # in the terminal where you run swarmbox, not inside the box
+swarmbox env add ANTHROPIC_API_KEY
+swarmbox reset                       # keys are passed when the box is created; the workspace is kept
+```
+
+The login lives in `~/swarmbox/.claude` and survives `swarmbox reset`. Prefer a scoped key: the agent can read every variable you pass in.
+
+**5. Come back from anywhere.** Open a second terminal tab and run `swarmbox` again: it joins the same tmux session. `swarmbox url` prints the address of the web terminal (`http://127.0.0.1:7681`), which shows the same tabs. To reach it from your phone or another machine, see [Remote access](#remote-access-the-same-session-from-anywhere).
+
+`swarmbox pubkey` prints the box's SSH public key; add it as a deploy key to let the agent push to a repository.
+
+If something stops: `swarmbox up` exits 3 when Podman is older than 4.3 or `/dev/net/tun` is missing, and 4 when the workspace is on a Windows drive (`/mnt/c/...`) or not writable.
 If you used an earlier version that put a `swarmbox` function in `~/.bashrc`, `~/.zshrc` or `~/.config/fish/config.fish`, delete that block (it starts with
-`# >>> swarmbox`): a shell function wins over the script, and the installer warns when it finds one.
+`# >>> swarmbox`): a shell function wins over the script, and the installer warns when it finds one. To remove SwarmBox, see [docs/uninstall.md](docs/uninstall.md).
 
 ## Everyday commands
 
@@ -90,6 +133,44 @@ swarmbox tool list          # show the tools you can install
 swarmbox remote setup       # set up remote access with Cloudflare
 ```
 
+## Remote access: the same session from anywhere
+
+Everything you start in the box keeps running while you are away, and every way in lands in the same tmux session (`main`). Two ways to reach it from outside.
+
+**A. A browser, from any device (Cloudflare Tunnel and Access).** No router port and no public IP: a connector on your machine makes an outbound connection, and Cloudflare asks for an e-mail code before it shows the terminal.
+You need a free Cloudflare account, a domain on Cloudflare, and Zero Trust activated once at <https://one.dash.cloudflare.com>.
+
+1. Create an API token at <https://dash.cloudflare.com/profile/api-tokens> (Create Custom Token) with these permissions, for your account and your domain's zone:
+
+   | Scope | Permission | Level |
+   |---|---|---|
+   | Account | Cloudflare Tunnel | Edit |
+   | Account | Access: Apps and Policies | Edit |
+   | Account | Access: Organizations, Identity Providers, and Groups | Edit |
+   | Zone | DNS | Edit |
+   | Zone | Zone | Read |
+
+2. Set it up, on your machine (not in the box). Only the e-mails you list can log in:
+
+   ```bash
+   export CLOUDFLARE_API_TOKEN=...      # or leave it out and paste it when asked
+   swarmbox remote setup --domain example.com --email you@example.com
+   swarmbox url                         # prints the local and the public address
+   ```
+
+   The public address is `https://swarmbox.example.com` (`--hostname tty.example.com` picks another one-level name).
+3. Open it, type your e-mail, type the code you receive. You are in the tmux session you left. Delete the API token in the dashboard when the command finishes; it is never stored.
+4. Keep the connector alive: when `setup` offers to store the tunnel token, say yes (or run `swarmbox config set CLOUDFLARE_TUNNEL_TOKEN` and paste the output of `swarmbox remote token`).
+   After that every `swarmbox` entry makes sure the connector is running, so after a reboot a single `swarmbox up` brings the public address back.
+5. Check or undo it: `swarmbox remote status` reports the login and the connector, and `swarmbox remote off` removes the hostname, the login and the connector. A longer login: `--session 168h`.
+
+Whoever passes that login has the same control as the agent, a shell with `sudo`: list only your own e-mail and keep the session short. More in [docs/cloudflare.md](docs/cloudflare.md).
+
+**B. A terminal, over SSH to your machine.** If you can already SSH to the machine that runs the box, you need nothing else: `ssh you@your-machine`, then `swarmbox`. You join the same tmux session, and closing the connection leaves it running.
+
+**Moving around the session.** In the browser, `Alt+1..9` (`Option` on a Mac) switches window, `Alt+N` opens one, `Alt+W` closes, and the green **+** in the status bar also opens one (the way to do it on a phone, where there is no Alt key). In a terminal the tmux prefix is `Ctrl+A`
+(`Ctrl+A d` detaches and leaves everything running; if your own terminal also runs tmux, press `Ctrl+A a` to send the prefix inside). Font, size, theme and your own tmux config are in [docs/web-terminal.md](docs/web-terminal.md).
+
 ## Tools
 
 Tools install on first use and live in the workspace: Claude Code, Gemini CLI, OpenCode, gcloud, clasp, Go and Poetry. Run `swarmbox tool list` to see them.
@@ -97,12 +178,9 @@ The installer's `--with` option installs some up front.
 
 ## Status and limits
 
-SwarmBox 2.0.0-beta.2 is a public prerelease of 2.0.0. The image is built and tested in CI on Linux (amd64 and arm64, with nested Podman and the
-web terminal), and the `swarmbox` script is tested under macOS's `/bin/sh` with a fake Podman. It is still a beta: macOS with a real Podman machine, WSL with real Windows
-drives, Podman older than 4.3, a host user other than UID 1000 and the real Cloudflare setup are unverified. Docker is not supported.
-To install the beta from its release: `sh install.sh --version 2.0.0-beta.2` (`install.sh` is attached to the GitHub release). `swarmbox update` follows the `2.0` series,
-which exists only once 2.0.0 is out; until then move between betas with `swarmbox update --to 2.0.0-beta.2`.
-The architecture is in [docs/design.md](docs/design.md).
+SwarmBox 2.0.0 is the first stable version. The image is built, scanned, signed and tested in CI on Linux (amd64 and arm64, with nested Podman and the web terminal), and the `swarmbox` script is tested under macOS's `/bin/sh` with a fake Podman.
+Not verified on real machines: macOS with a Podman machine, WSL with real Windows drives, Podman older than 4.3, a host user other than UID 1000 and the real Cloudflare setup end to end. Docker is not supported.
+`swarmbox update` fetches the newest image of the `2.0` series and refreshes the `swarmbox` command from it; `swarmbox update --to 2.0.0` pins a version. The architecture is in [docs/design.md](docs/design.md).
 
 ## Privacy
 

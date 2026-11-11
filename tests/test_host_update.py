@@ -185,16 +185,6 @@ class ScriptRefreshTest(UpdateBase):
         self.assertEqual(self.bin_names(), ["swarmbox"])
         self.assertEqual(self.image_line(), ["IMAGE=%s:1.9.2" % REPO])
 
-    def test_a_final_image_replaces_a_prerelease_script(self):
-        # the script is 2.0.0-beta.N; the image 2.0.0 (the final release) is newer, so the script is replaced
-        self.assertIn("-", CUR, "this test is for a prerelease script; delete it with the prerelease")
-        final = CUR.split("-")[0]
-        self.podman_for(final)
-        r = self.update("--to", final)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertNotIn("is newer than the image", r.stderr)
-        self.assertNotEqual(self.script_text(), REAL_SCRIPT)
-
     def test_the_same_version_replaces_nothing_and_says_nothing(self):
         self.podman_for(CUR)
         r = self.update("--to", CUR)

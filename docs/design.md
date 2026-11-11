@@ -366,9 +366,8 @@ build tools, jq, tmux, vim, openssh-client and similar, Podman and its network p
 `pubkey`, `tool`, `host-helper` (the archive of the script and support files on stdout), anything else is run as given. Layers: stable first, volatile last; every `RUN` that downloads cleans up in the same `RUN`; `NPM_CONFIG_CACHE` is
 `/opt/npm-cache`, owned by `agent`. Every version is an `ARG` with a default; `CONTRIBUTING.md` says how they are bumped. A tool the image needs that is not in Debian is fetched with its published checksum verified.
 
-**Distribution.** Image `ghcr.io/feroult/swarmbox`, multi-arch (amd64, arm64), tags `X.Y.Z` and `X.Y`; not published yet (section 16). `.github/workflows/release.yml` runs the tests, a native build per architecture, a check that the
-script in the image reports the tag's version, a vulnerability scan (grype), the manifest list, keyless signing (cosign), and the SBOM (syft). Until then you build locally (README Quick start; `dev/dev-build.sh` inside a
-development box). A missing image is pulled by `up`, never built.
+**Distribution.** Image `ghcr.io/feroult/swarmbox`, multi-arch (amd64, arm64), tags `X.Y.Z`, `X.Y` and `latest`, published with each release. `.github/workflows/release.yml` runs the tests, a native build per architecture, a check that the
+script in the image reports the tag's version, a vulnerability scan (grype), the manifest list, keyless signing (cosign), and the SBOM (syft). To build it yourself, see CONTRIBUTING.md (`dev/dev-build.sh` inside a development box). A missing image is pulled by `up`, never built.
 
 **`swarmbox update`.** Without options it pulls the moving `X.Y` tag of the series in `IMAGE` (`--to TAG` takes exactly that tag). It extracts the archive of the pulled image into a temporary folder (the
 archive's member names are checked: no absolute or `..` names, only files and folders), reads the exact `X.Y.Z` from it, creates a local tag `<repo>:X.Y.Z`, renames the folder over the old support files,
@@ -438,7 +437,7 @@ Decisions that are still true. The full reasoning of D1 to D40 is in [history/de
 
 - Nothing has run on a real host: macOS, a real WSL with a Windows drive, a host UID other than 1000, Podman older than 4.3 (the 4.3 limit is where `keep-id:uid=,gid=` was observed; the true minimum is unknown),
   `python3` on a clean macOS, bash 3.2 and BSD `stat` for the script.
-- The image is not published; `release.yml` and `ci.yml` have not run on GitHub; cosign identity, grype on the real image and the arm64 runner are unverified. The image owner and name are placeholders (`<org>`).
+- `ci.yml` and `release.yml` ran on GitHub for 2.0.0-beta.1 and 2.0.0-beta.2 (both architectures, grype, cosign keyless signing, SBOM). Nobody has yet verified the published image on a clean machine from the README alone.
 - Cloudflare was only tested against a fake API; the real end-to-end check is in [cloudflare.md](cloudflare.md). Whether the connector restarts after a reboot needs `podman-restart.service` enabled for the user (not tried).
 - Nested Podman has not been started on a real host with a normal subuid range; the third nesting level cannot run it.
 - The OpenCode package: `@opencode/cli` 2.x or `opencode-ai` 1.x; the installer has one variable `PACKAGE` (decision pending).
