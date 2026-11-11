@@ -176,27 +176,18 @@ class PlainUpdateTest(UpdateBase):
             self.assertEqual(c[-1], "host-helper")
 
 class PullProgressTest(UpdateBase):
-    def test_with_a_terminal_the_pull_shows_podmans_progress_and_without_one_it_is_quiet(self):
+    def update_on_a_terminal(self, **env):
+        """`swarmbox update` with standard error on a pseudo-terminal: (exit status, what was written there). TERM is set (or removed)
+        here, never taken from the machine that runs the tests: the progress line needs one, and a CI runner has none."""
         import pty
-        self.podman_for("2.0.9")
         self.install_script()
-        master, slave = pty.openpty()
-        try:   # standard error is a terminal: no -q, so Podman's progress bars reach the person
-            r = subprocess.run([self.helper, "update"], env=self.env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                               stderr=slave, cwd=self.tmp, timeout=60)
-        finally:
-            os.close(slave)
-            os.close(master)
-        self.assertEqual(r.returncode, 0)
-        self.assertEqual(self.subs("pull"), [["pull", REPO + ":2.0"]])
-
-    def test_a_failed_pull_with_a_terminal_shows_podmans_error_and_says_it_in_the_message(self):
-        import pty
-        self.podman_for("2.0.9", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
-        self.install_script()
+        e = self.env(**env)
+        for k in ("TERM", "NO_COLOR", "SWARMBOX_PROGRESS", "STARSHIP_SHELL", "SWARMBOX_ICONS"):
+            if k not in env:
+                e.pop(k, None)
         master, slave = pty.openpty()
         try:
-            r = subprocess.run([self.helper, "update"], env=self.env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            r = subprocess.run([self.helper, "update"], env=e, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=slave, cwd=self.tmp, timeout=60)
             os.set_blocking(master, False)
             try:
@@ -206,8 +197,27 @@ class PullProgressTest(UpdateBase):
         finally:
             os.close(slave)
             os.close(master)
-        self.assertEqual(r.returncode, 3)
+        return r.returncode, shown
+
+    def test_with_a_terminal_the_pull_has_no_quiet_flag(self):
+        self.podman_for("2.0.9")
+        for env in ({"TERM": "xterm-256color", "LANG": "C.UTF-8"}, {}, {"TERM": "dumb"}, {"TERM": "xterm", "SWARMBOX_PROGRESS": "plain"}):
+            self.podman_for("2.0.9")
+            rc, _ = self.update_on_a_terminal(**env)
+            self.assertEqual(rc, 0, env)
+            self.assertEqual(self.subs("pull")[-1], ["pull", REPO + ":2.0"], env)
+
+    def test_a_failed_pull_with_the_progress_line_shows_podmans_error_and_says_it_in_the_message(self):
+        self.podman_for("2.0.9", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
+        rc, shown = self.update_on_a_terminal(TERM="xterm-256color", LANG="C.UTF-8")
+        self.assertEqual(rc, 3)
         self.assertIn("cannot pull %s:2.0: Error: unable to pull: connection refused" % REPO, shown)
+
+    def test_a_failed_pull_without_a_TERM_leaves_podmans_own_output_and_points_at_it(self):
+        self.podman_for("2.0.9", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
+        rc, shown = self.update_on_a_terminal()
+        self.assertEqual(rc, 3)
+        self.assertIn("cannot pull %s:2.0: see the Podman error above" % REPO, shown)
 
 
 class ScriptRefreshTest(UpdateBase):
