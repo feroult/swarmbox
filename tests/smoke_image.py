@@ -187,7 +187,8 @@ def step_tmpfs_restart(ctx):
 def step_page_built(ctx):
     built = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
                    "grep -o '__SWARMBOX_[A-Z_]*__' /usr/local/share/swarmbox/web/index.html | sort -u")
-    assert built.stdout.split() == ["__SWARMBOX_CTRL_C__", "__SWARMBOX_CTRL_V__", "__SWARMBOX_PADDING__"], \
+    assert sorted(built.stdout.split()) == sorted(["__SWARMBOX_CTRL_C__", "__SWARMBOX_CTRL_V__", "__SWARMBOX_PADDING__",
+                                                   "__SWARMBOX_SCROLLBAR__", "__SWARMBOX_SCROLLBAR_FF__"]), \
         "the built page has no placeholders: " + built.stdout + built.stderr
     name = ctx.box()
     assert ctx.ready(name), ctx.logs(name)

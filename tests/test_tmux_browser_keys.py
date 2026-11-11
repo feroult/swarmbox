@@ -187,6 +187,22 @@ class DefaultConfig(BrowserKeys):
         self.press(b"\x01-")  # Ctrl+A -
         self.assertEqual(self.panes(), 3)
 
+    def wheel_up(self, col=10, row=5):
+        self.press(b"\x1b[<64;%d;%dM" % (col, row), 0.3)   # SGR mouse report: button 64 is the wheel turned up
+
+    def scroll_position(self):
+        return int(self.out("display-message", "-p", "#{scroll_position}") or 0)
+
+    def test_the_mouse_wheel_scrolls_five_lines_per_event_in_copy_mode(self):
+        self.press(b"seq 1 500\n", 0.8)
+        self.wheel_up()   # the first event of a stopped pane only enters copy mode
+        self.assertEqual(self.out("display-message", "-p", "#{pane_in_mode}"), "1")
+        self.wheel_up()
+        first = self.scroll_position()
+        self.wheel_up()
+        self.wheel_up()
+        self.assertEqual(self.scroll_position() - first, 10, "two events, five lines each (it was 2 lines: too little for 50,000 lines)")
+
     def alone(self, with_keys):
         """Copy tmux.conf (and optionally its sibling) to an empty directory and load it from there."""
         directory = os.path.join(self.tmp, "etc" if with_keys else "etc-alone")

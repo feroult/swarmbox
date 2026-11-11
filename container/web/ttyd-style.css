@@ -8,13 +8,15 @@
   height: calc(100% - 2 * var(--swarmbox-padding, 10px));
 }
 
-/* Minimal scrollbar: a thin, rounded, translucent thumb on a transparent track. */
-.xterm .xterm-viewport::-webkit-scrollbar { width: 6px; height: 6px; background: transparent; }
+/* No scrollbar by default: tmux owns the scrollback (the wheel scrolls its copy mode, 50,000 lines), and the browser terminal has no
+   history of its own to move through, so the bar would sit still. scrollbar=true in web-terminal.conf brings back a minimal one: a thin,
+   rounded, translucent thumb on a transparent track. The width is --swarmbox-scrollbar (0 or 6 px) so the column count is computed with it. */
+.xterm .xterm-viewport::-webkit-scrollbar { width: var(--swarmbox-scrollbar, 0px); height: var(--swarmbox-scrollbar, 0px); background: transparent; }
 .xterm .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
 .xterm .xterm-viewport::-webkit-scrollbar-corner { background: transparent; }
 .xterm .xterm-viewport::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .16); border-radius: 3px; }
 .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .34); }
 /* Firefox has no ::-webkit-scrollbar */
 @supports not selector(::-webkit-scrollbar) {
-  .xterm .xterm-viewport { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+  .xterm .xterm-viewport { scrollbar-width: var(--swarmbox-scrollbar-ff, none); scrollbar-color: rgba(255, 255, 255, .22) transparent; }
 }

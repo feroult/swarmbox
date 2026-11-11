@@ -6,11 +6,13 @@
 #   swarmbox-web restart   make the supervisor start ttyd again (SIGUSR1 to the PID in box:/tmp/swarmbox/web-supervisor.pid),
 #                          for example after editing web-terminal.conf; the box and its tmux sessions stay up
 #
-# The page is built into the image (build-index.sh) with three placeholders. Every start replaces them with a plain text
+# The page is built into the image (build-index.sh) with placeholders. Every start replaces them with a plain text
 # substitution (sed, no Python, no hash) from <config>/web-terminal.conf:
 #   padding      a number from 0 to 99 (pixels around the terminal), default 10
 #   ctrlVPaste   true (default) or false
 #   ctrlCCopy    true (default) or false
+#   scrollbar    true or false (default false): a thin scrollbar on the right; tmux owns the scrollback, so it is off, and so is the
+#                scrollback of the browser (scrollback=0, unless you set one)
 # Every other key of that file is a ttyd/xterm.js option (font, theme, size, scrollback ...) and goes to ttyd as `-t key=value`;
 # they are not in the page. One `key=value` per line, `#` starts a comment.
 #
@@ -88,19 +90,28 @@ if ! [[ "$PAD" =~ ^[0-9]{1,2}$ ]]; then
     warn "padding='$PAD' in $CONF is not a number from 0 to 99; using 10"
     PAD=10
 fi
-unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]' 'OPT[padding]'
+SCROLLBAR_PX=0
+SCROLLBAR_FF=none
+if [ "${OPT[scrollbar]:-}" = true ]; then
+    SCROLLBAR_PX=6
+    SCROLLBAR_FF=thin
+fi
+# Without a scrollbar the browser keeps no history either (tmux has it): xterm.js reserves 15 px for a scrollbar it measures as zero width
+# (and none when scrollback is 0), so a hidden bar with a scrollback would still cost a column. A scrollback set in the conf wins.
+if [ "${OPT[scrollbar]:-}" != true ] && [ -z "${OPT[scrollback]+x}" ]; then OPT[scrollback]=0; fi
+unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]' 'OPT[padding]' 'OPT[scrollbar]'
 
-# render: the three-value substitution. The values are validated above, so sed needs no escaping.
+# render: the substitution of the placeholders. The values are validated above, so sed needs no escaping.
 render() {
     [ -r "$PAGE" ] || die "the built page $PAGE is missing (build-index.sh runs at image build; is this the right image?)"
     local ph
-    for ph in __SWARMBOX_PADDING__ __SWARMBOX_CTRL_V__ __SWARMBOX_CTRL_C__; do
+    for ph in __SWARMBOX_PADDING__ __SWARMBOX_CTRL_V__ __SWARMBOX_CTRL_C__ __SWARMBOX_SCROLLBAR__ __SWARMBOX_SCROLLBAR_FF__; do
         grep -q "$ph" "$PAGE" || die "the built page $PAGE has no $ph placeholder (a stale page? rebuild the image)"
     done
     mkdir -p "$SB_RUN_DIR" || die "cannot create $SB_RUN_DIR"
     local tmp
     tmp=$(mktemp "$SB_RUN_DIR/index.html.XXXXXX") || die "cannot write in $SB_RUN_DIR"
-    if ! sed -e "s/__SWARMBOX_PADDING__/$PAD/g" -e "s/__SWARMBOX_CTRL_V__/$CTRL_V/g" -e "s/__SWARMBOX_CTRL_C__/$CTRL_C/g" "$PAGE" > "$tmp" \
+    if ! sed -e "s/__SWARMBOX_PADDING__/$PAD/g" -e "s/__SWARMBOX_CTRL_V__/$CTRL_V/g" -e "s/__SWARMBOX_CTRL_C__/$CTRL_C/g" -e "s/__SWARMBOX_SCROLLBAR__/$SCROLLBAR_PX/g" -e "s/__SWARMBOX_SCROLLBAR_FF__/$SCROLLBAR_FF/g" "$PAGE" > "$tmp" \
         || ! chmod 644 "$tmp" || ! mv -f "$tmp" "$SB_RUN_DIR/index.html"; then
         rm -f "$tmp"
         die "cannot write $SB_RUN_DIR/index.html"

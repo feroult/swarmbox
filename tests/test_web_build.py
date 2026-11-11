@@ -1,6 +1,6 @@
 """The web terminal. build-index.sh builds the page at image build (tests/test_build_index.py
 covers the script itself); `swarmbox-web` (container/scripts/swarmbox-web.sh) turns it into box:/tmp/swarmbox/index.html at
-every start with a plain text substitution of three values (padding, ctrlVPaste, ctrlCCopy), builds ttyd's `-t key=value`
+every start with a plain text substitution of four values (padding, ctrlVPaste, ctrlCCopy, scrollbar), builds ttyd's `-t key=value`
 options (font, theme, size, scrollback, anything else) from web-terminal.conf, and execs ttyd; `swarmbox-web restart`
 signals the supervisor.
 
@@ -126,6 +126,28 @@ class Render(WebCase):
         self.assertNotIn("__SWARMBOX_", page)
         self.assertIn("--swarmbox-padding:10px", page)
         self.assertIn('window.__swarmboxClipboard={"ctrlVPaste":true,"ctrlCCopy":true};', page)
+        self.assertIn("--swarmbox-scrollbar:0px;--swarmbox-scrollbar-ff:none", page, "no scrollbar by default: tmux owns the scrollback")
+
+    def test_scrollbar_true_brings_back_a_thin_scrollbar_and_nothing_else_does(self):
+        self.conf("scrollbar=true\n")
+        self.assertEqual(self.web("render").returncode, 0)
+        self.assertIn("--swarmbox-scrollbar:6px;--swarmbox-scrollbar-ff:thin", self.index())
+        for value in ("false", "1", "yes", "True", ""):
+            self.conf("scrollbar=%s\n" % value)
+            self.web("render")
+            self.assertIn("--swarmbox-scrollbar:0px;--swarmbox-scrollbar-ff:none", self.index(), value)
+
+    def test_scrollbar_is_not_passed_to_ttyd_as_an_option(self):
+        self.conf("scrollbar=true\nfontSize=17\n")
+        self.assertEqual(self.web("run").returncode, 0)
+        self.assertNotIn("scrollbar", self.opts(self.ttyd_call()["argv"]))
+
+    def test_the_browser_keeps_no_scrollback_unless_the_bar_is_on_or_the_conf_sets_one(self):
+        for conf, want in (("", "0"), ("scrollbar=false\n", "0"), ("scrollbar=true\n", None), ("scrollback=500\n", "500"),
+                           ("scrollbar=true\nscrollback=0\n", "0"), ("scrollbar=true\nscrollback=2000\n", "2000")):
+            self.conf(conf)
+            self.assertEqual(self.web("run").returncode, 0, conf)
+            self.assertEqual(self.opts(self.ttyd_call()["argv"]).get("scrollback"), want, conf)
 
     def test_only_the_word_false_turns_a_switch_off(self):
         self.conf("ctrlVPaste=0\nctrlCCopy=no\n")

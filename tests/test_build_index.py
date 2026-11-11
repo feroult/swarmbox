@@ -28,22 +28,24 @@ class BuildIndex(unittest.TestCase):
         r = subprocess.run(["sh", SCRIPT, paths["stock.html"], paths["b.js"], paths["s.css"], out], capture_output=True, text=True)
         return r, out
 
-    def test_page_has_the_three_placeholders_and_both_assets(self):
+    def test_page_has_the_five_placeholders_and_both_assets(self):
         r, out = self.build()
         self.assertEqual(r.returncode, 0, r.stderr)
         page = open(out).read()
-        for p in ("__SWARMBOX_PADDING__", "__SWARMBOX_CTRL_V__", "__SWARMBOX_CTRL_C__"):
+        for p in ("__SWARMBOX_PADDING__", "__SWARMBOX_CTRL_V__", "__SWARMBOX_CTRL_C__", "__SWARMBOX_SCROLLBAR__", "__SWARMBOX_SCROLLBAR_FF__"):
             self.assertEqual(page.count(p), 1, p)
         self.assertIn("var a=1;", page)
         self.assertIn("body{margin:0}", page)
         self.assertIn("<div id=terminal>", page)
-        self.assertEqual(set(re.findall(r"__SWARMBOX_\w+__", page)), {"__SWARMBOX_PADDING__", "__SWARMBOX_CTRL_V__", "__SWARMBOX_CTRL_C__"})
+        self.assertEqual(set(re.findall(r"__SWARMBOX_\w+__", page)), {"__SWARMBOX_PADDING__", "__SWARMBOX_CTRL_V__", "__SWARMBOX_CTRL_C__",
+                                                                          "__SWARMBOX_SCROLLBAR__", "__SWARMBOX_SCROLLBAR_FF__"})
 
     def test_substitution_gives_valid_script_config(self):
         r, out = self.build()
         page = open(out).read().replace("__SWARMBOX_PADDING__", "12").replace("__SWARMBOX_CTRL_V__", "true").replace("__SWARMBOX_CTRL_C__", "false")
+        page = page.replace("__SWARMBOX_SCROLLBAR__", "6").replace("__SWARMBOX_SCROLLBAR_FF__", "thin")
         self.assertIn('window.__swarmboxClipboard={"ctrlVPaste":true,"ctrlCCopy":false};', page)
-        self.assertIn("--swarmbox-padding:12px", page)
+        self.assertIn("--swarmbox-padding:12px;--swarmbox-scrollbar:6px;--swarmbox-scrollbar-ff:thin", page)
 
     def test_closing_tags_inside_assets_are_escaped(self):
         r, out = self.build(js="var s='</script>';", css="/* </style> */")

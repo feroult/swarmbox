@@ -3,6 +3,14 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [semantic versioning](https://semver.org/).
 
+## [2.0.6] - 2026-11-11
+
+- Changed: the web terminal has no scrollbar by default. tmux owns the scrollback (50,000 lines) and the browser has no history of its own, so the bar sat still while the wheel
+  scrolled tmux. `scrollbar=true` in `web-terminal.conf` brings back the thin one. Without the bar the browser keeps no scrollback (`scrollback=0` unless you set one): xterm.js reserves
+  15 px for a scrollbar it measures as zero width, which cost a column of text.
+- Changed: the mouse wheel scrolls tmux's copy mode 5 lines per event (tmux's default) instead of 2. How to change it is in `docs/web-terminal.md`.
+- Tests: the browser tests of the web terminal now start ttyd with the options `swarmbox-web run` builds, as in the box, and a real tmux checks the lines per wheel event.
+
 ## [2.0.5] - 2026-11-11
 
 - Added: a progress line for the image pull in `swarmbox update`, the first `swarmbox` and the installer, in the colors of the prompt of the box: `[ pull ][ bar and percentage ][ MB done/total ][ MB/s and time ]`,
@@ -95,6 +103,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.6]: https://github.com/feroult/swarmbox/releases/tag/v2.0.6
 [2.0.5]: https://github.com/feroult/swarmbox/releases/tag/v2.0.5
 [2.0.4]: https://github.com/feroult/swarmbox/releases/tag/v2.0.4
 [2.0.3]: https://github.com/feroult/swarmbox/releases/tag/v2.0.3

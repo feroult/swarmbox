@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Browser tests for the look of the web terminal (container/web/ttyd-style.css): the padding around the terminal
-and the minimal scrollbar. Same setup as test_clipboard_bridge.py: the real build-index.sh and swarmbox-web build the page, a
+and the scrollbar (off by default: tmux owns the scrollback; scrollbar=true is a minimal one). Same setup as test_clipboard_bridge.py: the real build-index.sh and swarmbox-web build the page, a
 real ttyd serves it, headless Chromium measures it.
 
 Run:  python3 tests/test_web_style.py        (needs chromium, ttyd and tmux; skipped otherwise)
@@ -17,7 +17,7 @@ MEASURE = """(() => {
   const q = s => document.querySelector(s), rect = e => e.getBoundingClientRect();
   const screen = rect(q('.xterm-screen')), viewport = q('.xterm-viewport');
   return {win: [innerWidth, innerHeight], left: screen.left, top: screen.top, right: innerWidth - screen.right,
-          bottom: innerHeight - screen.bottom, cols: term.cols, rows: term.rows,
+          bottom: innerHeight - screen.bottom, cols: term.cols, rows: term.rows, scrollback: term.options.scrollback,
           bar: getComputedStyle(viewport, '::-webkit-scrollbar').width,
           thumb: getComputedStyle(viewport, '::-webkit-scrollbar-thumb').backgroundColor,
           radius: getComputedStyle(viewport, '::-webkit-scrollbar-thumb').borderRadius,
@@ -31,6 +31,8 @@ class WebStyle(base.ClipboardBridge):
     for _name in [n for n in dir(base.ClipboardBridge) if n.startswith("test_")]:
         locals()[_name] = None
     del _name
+
+    PASS_OPTIONS = True   # the scrollback and the font come from swarmbox-web, as in the box
 
     def measure(self, conf=""):
         self.open_terminal(conf)
@@ -52,12 +54,21 @@ class WebStyle(base.ClipboardBridge):
         m = self.measure("padding=lots\n")
         self.assertEqual((m["left"], m["top"]), (10, 10))
 
-    def test_the_scrollbar_is_thin_translucent_and_has_no_track(self):
+    def test_there_is_no_scrollbar_by_default_because_tmux_owns_the_scrollback(self):
         m = self.measure()
+        self.assertEqual(m["bar"], "0px")
+        self.assertEqual(m["scrollback"], 0, "xterm.js would reserve 15 px for a bar it measures as zero if it kept a history")
+
+    def test_scrollbar_true_gives_a_thin_translucent_bar_with_no_track_and_keeps_the_history(self):
+        m = self.measure("scrollbar=true\n")
         self.assertEqual(m["bar"], "6px")
         self.assertEqual(m["track"], "rgba(0, 0, 0, 0)")
         self.assertEqual(m["thumb"], "rgba(255, 255, 255, 0.16)")
         self.assertEqual(m["radius"], "3px")
+        self.assertGreater(m["scrollback"], 0)
+
+    def test_a_scrollback_in_the_conf_wins(self):
+        self.assertEqual(self.measure("scrollback=500\n")["scrollback"], 500)
 
     def test_the_terminal_still_fills_the_window(self):
         self.open_terminal()

@@ -16,8 +16,8 @@ runs tmux, give it another prefix (SwarmBox uses `C-a`) or press `C-a a` to send
 **Font, size, theme**: out of the box the terminal is dark (Windows Terminal's Campbell colors), size 21, with a
 Nerd Font list (JetBrainsMono, Cascadia). To change any of it, put `key=value` lines (xterm.js options) in `<workspace>/.config/swarmbox/web-terminal.conf`
 (`~/.config/swarmbox/web-terminal.conf` inside the box), e.g. `fontFamily='JetBrainsMono Nerd Font', Consolas, monospace`.
-`padding=10` is the space (px) around the terminal, and the scrollbar is a thin translucent one (both are CSS in
-`container/web/ttyd-style.css`, joined into ttyd's page when the image is built). A `theme` line replaces the whole default theme. No rebuild and no new box: run `swarmbox-web restart` inside the box to apply (the box and its tmux sessions stay up). The page is rendered again at every ttyd start, by a plain text substitution of `padding`, `ctrlVPaste` and `ctrlCCopy`; every other key goes to ttyd as `-t key=value`. The font is
+`padding=10` is the space (px) around the terminal (CSS in
+`container/web/ttyd-style.css`, joined into ttyd's page when the image is built). A `theme` line replaces the whole default theme. No rebuild and no new box: run `swarmbox-web restart` inside the box to apply (the box and its tmux sessions stay up). The page is rendered again at every ttyd start, by a plain text substitution of `padding`, `ctrlVPaste`, `ctrlCCopy` and `scrollbar`; every other key goes to ttyd as `-t key=value`. The font is
 the *browser's*, so it must be installed on the machine that opens the page.
 
 **tmux.** The image ships a complete default config, `container/config/tmux.conf` (installed as `/etc/tmux.conf`): prefix
@@ -35,6 +35,21 @@ binds **Alt** instead, without the prefix:
 window. Use the left Alt: the right one is AltGr on an international layout. If you use your own tmux config
 without ours, add `source-file /path/to/tmux-browser-keys.conf` to it (it needs `set -g base-index 1` so
 `Alt+1..9` match the status bar).
+
+**Scrolling.** The history is tmux's: 50,000 lines, and the mouse wheel moves through it in copy mode, **5 lines per wheel event** (tmux's own default; it was 2, which
+is little for 50,000 lines). The browser keeps no history of its own, because tmux draws on the terminal's alternate screen, so there is **no scrollbar** by default: it would
+sit still. In copy mode tmux shows where you are (`[position/total]`, top right); `q` or `Esc` leaves it, `PageUp`/`PageDown` move by a screen. To scroll faster or slower, put in your
+`~/.tmux.conf` (read after ours; `tmux source-file ~/.tmux.conf` applies it without a new box):
+
+```
+bind -T copy-mode WheelUpPane send -N10 -X scroll-up
+bind -T copy-mode WheelDownPane send -N10 -X scroll-down
+bind -T copy-mode-vi WheelUpPane send -N10 -X scroll-up
+bind -T copy-mode-vi WheelDownPane send -N10 -X scroll-down
+```
+
+`scrollbar=true` in `web-terminal.conf` (then `swarmbox-web restart`) brings back a thin translucent bar on the right and keeps a browser history of 1000 lines for it; without the bar the
+browser history is 0 (`scrollback=0`), because xterm.js reserves 15 px for a scrollbar it measures as zero width, which would cost a column. A `scrollback=` line of yours wins.
 
 **Copy and paste.** With the mouse on, tmux owns the mouse: a selection is copied into tmux's own buffer and
 sent to the terminal as OSC 52, but ttyd 1.7.7 ignores OSC 52, so nothing reached the browser clipboard, and

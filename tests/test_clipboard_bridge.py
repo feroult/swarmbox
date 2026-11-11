@@ -165,18 +165,43 @@ class ClipboardBridge(unittest.TestCase):
         run = os.path.join(self.tmp, "run")
         env = {"PATH": "/usr/bin:/bin", "HOME": home, "SWARMBOX_TEST_LIB": lib, "SWARMBOX_TEST_RUN_DIR": run,
                "SWARMBOX_TEST_WEB_PAGE": built}
+        self.web_env = env
         r = subprocess.run(["bash", WEB, "render"], env=env, capture_output=True, text=True, timeout=20)
         assert r.returncode == 0, r.stderr
         return os.path.join(run, "index.html")
 
+    # True: ttyd gets the `-t key=value` options that `swarmbox-web run` builds from web-terminal.conf (font, size, scrollback ...), as in the
+    # box. False (the default here): only the page, so the clipboard tests keep the cell size they were written for.
+    PASS_OPTIONS = False
+
+    def web_options(self):
+        """The -t options `swarmbox-web run` would give ttyd: it is run with a ttyd that only writes its arguments down."""
+        fake = os.path.join(self.tmp, "fakebin")
+        os.makedirs(fake, exist_ok=True)
+        out = os.path.join(self.tmp, "ttyd.args")
+        with open(os.path.join(fake, "ttyd"), "w") as f:
+            f.write('#!/bin/sh\nprintf "%%s\\n" "$@" > "%s"\n' % out)
+        os.chmod(os.path.join(fake, "ttyd"), 0o755)
+        env = dict(self.web_env, PATH=fake + os.pathsep + "/usr/bin:/bin", SWARMBOX_TEST_WEB_IFACE="lo")
+        r = subprocess.run(["bash", WEB, "run"], env=env, capture_output=True, text=True, timeout=20)
+        assert r.returncode == 0, r.stderr
+        with open(out) as f:
+            args = f.read().splitlines()
+        opts = []
+        for i, a in enumerate(args):
+            if a == "-t" and i + 1 < len(args) and "=" in args[i + 1]:
+                opts += ["-t", args[i + 1]]
+        return opts
+
     def open_terminal(self, conf=""):
         index = self.build_index(conf)
+        extra = self.web_options() if self.PASS_OPTIONS else []
         self.sock = "clipb%d_%d" % (os.getpid(), free_port())
         tmux_conf = os.path.join(self.tmp, "tmux.conf")
         with open(tmux_conf, "w") as f:
             f.write("set -g mouse on\n")
         port = free_port()
-        self.spawn(["ttyd", "-p", str(port), "-W", "-O", "-i", "lo", "--index", index,
+        self.spawn(["ttyd", "-p", str(port), "-W", "-O", "-i", "lo", "--index", index, *extra,
                     "tmux", "-L", self.sock, "-f", tmux_conf, "new", "-A", "-s", "t", "bash --norc"])
         dbg = free_port()
         self.spawn(["chromium", "--headless=new", "--no-sandbox", "--disable-gpu", "--remote-debugging-port=%d" % dbg,
