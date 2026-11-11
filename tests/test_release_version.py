@@ -27,7 +27,7 @@ class Accepts(unittest.TestCase):
     def test_v2_0_0(self):
         r = run("v2.0.0")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(parse(r.stdout), {"version": "2.0.0", "minor": "2.0", "tags": "2.0.0 2.0 latest"})
+        self.assertEqual(parse(r.stdout), {"version": "2.0.0", "minor": "2.0", "tags": "2.0.0 2.0 latest", "prerelease": "false"})
 
     def test_other_valid_tags(self):
         for tag, ver, minor in (("v0.0.1", "0.0.1", "0.0"), ("v10.20.30", "10.20.30", "10.20"), ("v2.10.0", "2.10.0", "2.10")):
@@ -45,8 +45,25 @@ class Accepts(unittest.TestCase):
             self.assertRegex(line, r"^[a-z]+=[0-9a-z. ]+$")
 
 
+class Prereleases(unittest.TestCase):
+    def test_a_beta_gets_one_image_tag_and_neither_minor_nor_latest(self):
+        r = run("v2.0.0-beta.1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), ["version=2.0.0-beta.1", "minor=", "tags=2.0.0-beta.1", "prerelease=true"])
+
+    def test_rc_and_two_digit_numbers(self):
+        self.assertIn("tags=2.0.0-rc.12", run("v2.0.0-rc.12").stdout.splitlines())
+
+    def test_a_final_release_is_not_a_prerelease(self):
+        self.assertIn("prerelease=false", run("v2.0.0").stdout.splitlines())
+
+    def test_same_output_in_every_shell(self):
+        outs = {sh: run("v2.0.0-beta.1", shell=sh).stdout for sh in ("sh", "bash", "dash")}
+        self.assertEqual(len(set(outs.values())), 1, outs)
+
+
 class Rejects(unittest.TestCase):
-    BAD = ["2.0.0", "v2.0", "v2", "v2.0.0.1", "v2.0.0-rc.1", "v2.0.0-rc1", "v2.0.0+build", "v02.0.0", "v2.00.0", "v2.0.00",
+    BAD = ["2.0.0", "v2.0", "v2", "v2.0.0.1", "v2.0.0-rc1", "v2.0.0-alpha.1", "v2.0.0-beta", "v2.0.0-beta.0", "v2.0.0-beta.01", "v2.0.0-beta.1a", "v2.0.0-rc.", "v2.0.0-beta.1.2", "v2.0.0-beta.1+x", "v2.0.0-", "v2.0.0+build", "v02.0.0", "v2.00.0", "v2.0.00",
            "V2.0.0", "v2.0.x", "v-1.0.0", "v2.0.0 ", " v2.0.0", "", "refs/tags/v2.0.0", "v2.0.0\nv3.0.0", "vv2.0.0",
            "-v2.0.0", "--help", "v2.0.0;echo", "v2.0.$(id)"]
 
@@ -58,7 +75,7 @@ class Rejects(unittest.TestCase):
             self.assertIn("release-version:", r.stderr, repr(tag))
 
     def test_prerelease_message_says_why(self):
-        self.assertIn("prerelease", run("v2.0.0-rc.1").stderr)
+        self.assertIn("prerelease", run("v2.0.0-alpha.1").stderr)
 
     def test_usage_errors_exit_64(self):
         self.assertEqual(run().returncode, 64)

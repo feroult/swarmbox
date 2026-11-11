@@ -1,6 +1,6 @@
 """Dev/release-check.sh, the read-only check the owner runs before tagging v2.0.0.
 
-A fixture repository (a mktemp folder, its own git repository on branch opensource) satisfies every condition; the script
+A fixture repository (a mktemp folder, its own git repository on branch main) satisfies every condition; the script
 passes on it. Each violated condition is then made in a fresh copy and the script must exit 1 with a FAIL line that names
 the condition. The script must never change anything: the fixture (files and .git) is hashed before and after every run.
 Run: python3 tests/test_release_check.py
@@ -44,7 +44,7 @@ def write(repo, name, text):
 
 def make_repo(parent):
     repo = tempfile.mkdtemp(prefix="relcheck-", dir=parent)
-    git(repo, "init", "-q", "-b", "opensource")
+    git(repo, "init", "-q", "-b", "main")
     for name in REQUIRED:
         write(repo, name, "text\n")
     write(repo, "docs/design.md", DESIGN)

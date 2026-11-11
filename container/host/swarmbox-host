@@ -25,7 +25,7 @@
 # Paths honor HOME, XDG_CONFIG_HOME and XDG_STATE_HOME (an empty or relative XDG value is ignored, as in dirs.sh).
 # The file mode is read as an octal number (stat -c %a, then stat -f %Lp, then find -perm); `ls` output is never parsed.
 
-SCRIPT_VERSION=2.0.0
+SCRIPT_VERSION=2.0.0-beta.1
 
 # shellcheck disable=SC2154  # some variables are assigned through eval (keys are validated names, never user text)
 LC_ALL=C
@@ -1975,11 +1975,14 @@ AEOF
     return 0
 }
 
-# ver_newer A B: succeeds when version A is newer than version B. X.Y.Z as numbers (2.0.10 is newer than 2.0.9); anything after
-# the patch number is ignored.
+# ver_newer A B: succeeds when version A is newer than version B. X.Y.Z as numbers (2.0.10 is newer than 2.0.9). When the
+# numbers are equal, a final version is newer than its prerelease (2.0.0 over 2.0.0-beta.1) and prereleases order as
+# beta.N < rc.N, then by N (-beta.2 over -beta.1, -rc.1 over -beta.9). Any other suffix is treated as equal.
 ver_newer() {
     _va=${1%%[!0-9.]*}
     _vb=${2%%[!0-9.]*}
+    _pa=${1#"$_va"}
+    _pb=${2#"$_vb"}
     _vi=0
     while [ "$_vi" -lt 3 ]; do
         _vx=${_va%%.*}
@@ -1992,7 +1995,19 @@ ver_newer() {
         [ "$_vx" -lt "$_vy" ] && return 1
         _vi=$((_vi + 1))
     done
-    return 1
+    # Equal numbers: compare the prerelease parts (-beta.N, -rc.N) or their absence.
+    case $_pa in -beta.[0-9]* | -rc.[0-9]*) ;; *) _pa="" ;; esac
+    case $_pb in -beta.[0-9]* | -rc.[0-9]*) ;; *) _pb="" ;; esac
+    [ "$_pa" = "$_pb" ] && return 1
+    [ -z "$_pa" ] && return 0
+    [ -z "$_pb" ] && return 1
+    _ka=${_pa#-}; _ka=${_ka%%.*}
+    _kb=${_pb#-}; _kb=${_kb%%.*}
+    if [ "$_ka" != "$_kb" ]; then [ "$_ka" = rc ] && return 0; return 1; fi
+    _na=${_pa##*.}
+    _nb=${_pb##*.}
+    case $_na$_nb in *[!0-9]*) return 1 ;; esac
+    [ "$_na" -gt "$_nb" ]
 }
 
 # fetch_helper REF: unpacks the helper archive of the image (`podman run --rm REF host-helper`: this script, VERSION, DEFAULTS,

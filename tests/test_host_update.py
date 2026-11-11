@@ -23,6 +23,8 @@ from helpers import ROOT, DEFAULT_IMAGE_REPO, HELPER_SH  # noqa: E402
 with open(os.path.join(ROOT, "container", "host", "swarmbox-host")) as _f:
     REAL_SCRIPT = _f.read()
 REPO = "localhost:34567/org/swarmbox"
+with open(os.path.join(ROOT, "container", "host", "VERSION")) as _f:
+    CUR = _f.read().strip()   # the version of the real script (the tests follow a version bump)
 MSG = "updated to %s; run `swarmbox reset` to use it (running sessions end)\n"
 
 
@@ -178,15 +180,25 @@ class ScriptRefreshTest(UpdateBase):
         self.podman_for("1.9.2")
         r = self.update("--to", "1.9.2")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("this script (2.0.0) is newer than the image (1.9.2); the script is kept.", r.stderr)
+        self.assertIn("this script (%s) is newer than the image (1.9.2); the script is kept." % CUR, r.stderr)
         self.assertEqual(self.script_text(), REAL_SCRIPT)
         self.assertEqual(self.bin_names(), ["swarmbox"])
         self.assertEqual(self.image_line(), ["IMAGE=%s:1.9.2" % REPO])
 
+    def test_a_final_image_replaces_a_prerelease_script(self):
+        # the script is 2.0.0-beta.N; the image 2.0.0 (the final release) is newer, so the script is replaced
+        self.assertIn("-", CUR, "this test is for a prerelease script; delete it with the prerelease")
+        final = CUR.split("-")[0]
+        self.podman_for(final)
+        r = self.update("--to", final)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("is newer than the image", r.stderr)
+        self.assertNotEqual(self.script_text(), REAL_SCRIPT)
+
     def test_the_same_version_replaces_nothing_and_says_nothing(self):
-        self.podman_for("2.0.0")
-        r = self.update("--to", "2.0.0")
-        self.assertEqual((r.returncode, r.stdout), (0, MSG % "2.0.0"))
+        self.podman_for(CUR)
+        r = self.update("--to", CUR)
+        self.assertEqual((r.returncode, r.stdout), (0, MSG % CUR))
         self.assertNotIn("newer", r.stderr)
         self.assertEqual(self.script_text(), REAL_SCRIPT)
 

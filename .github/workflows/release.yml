@@ -77,7 +77,7 @@ jobs:
           image=$(printf '%s' "$repo" | sed "s|<org>|$REGISTRY_OWNER|")
           echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "image=$image"
-      - name: Map the tag to the image tags (a malformed or prerelease tag fails the run here)
+      - name: Map the tag to the image tags (a malformed tag fails the run here; vX.Y.Z-beta.N and -rc.N are prereleases with one image tag)
         id: ver
         env:
           REF_TYPE: ${{ github.ref_type }}
@@ -308,4 +308,7 @@ jobs:
             echo
             echo "    sh install.sh --version $VERSION"
           } > notes.md
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "SwarmBox $VERSION" --notes-file notes.md sbom.spdx.json swarmbox swarmbox.sha256 install.sh
+          pre=""
+          case "$VERSION" in *-*) pre="--prerelease" ;; esac
+          # shellcheck disable=SC2086
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag $pre --title "SwarmBox $VERSION" --notes-file notes.md sbom.spdx.json swarmbox swarmbox.sha256 install.sh

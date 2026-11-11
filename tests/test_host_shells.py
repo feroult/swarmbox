@@ -62,7 +62,8 @@ class ShellMatrix(unittest.TestCase):
             if out is not None:
                 self.assertEqual(p.stdout, out, name)
 
-        ok(run("version"), "2.0.0\n")
+        with open(os.path.join(ROOT, "container", "host", "VERSION")) as f:
+            ok(run("version"), f.read().strip() + "\n")
         # remote: no cloudflare-setup.py sits in the support folder (the repository folder here) (exit 3); an unknown subcommand is exit 2
         ok(run("remote", "nope"), "", 2)
         p = run("remote", "status")

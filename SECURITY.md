@@ -7,7 +7,7 @@ please read what the box does and does not protect (below) before you rely on it
 
 Please report a vulnerability privately, not in a public issue.
 
-- Contact: [OWNER-TODO: security contact, for example a private security advisory link of the repository or a mailbox]
+- Contact: use GitHub's private vulnerability reporting: <https://github.com/feroult/swarmbox/security/advisories/new>
 - Include the SwarmBox version (`swarmbox version`), your host (Linux, macOS or WSL) and Podman version, and the steps that reproduce it.
 - This project is maintained by one person. Expect an answer within a few days, not hours; a fix is released as a patch
   version of the supported series and named in `CHANGELOG.md`.

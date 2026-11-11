@@ -7,12 +7,12 @@ list for the 2.0 image.
 Evidence tags: a verified tag says what was read, where, and when. An owner-check tag marks something that could
 not be checked here (legal sufficiency, texts that need a lawyer or a hardware or account check), with the reason. This file is not legal advice: it is a record of what the license
 files say, not a legal opinion.
-`[OWNER-TODO: the owner reviews this file and the redistribution questions below before the first public image]`
+This file has not been reviewed by a lawyer.
 
 ## What the image ships, and what it does not
 
 The default image is slim: `ARG WITH_TOOLS=""`, so **no agent and no tool is baked in**. What the image
-contains: Debian packages (the base `node:24-slim`, which is Debian 12, plus the packages of the `Dockerfile`), Node.js and
+contains: Debian packages (the base `node:24-trixie-slim`, which is Debian 13, plus the packages of the `Dockerfile`), Node.js and
 Yarn from the base image, `chrome-devtools-mcp` (npm, pinned), `uv`, `ttyd` and `starship` (pinned release binaries), the
 Python virtual environment `/opt/flow` (pip and setuptools), and SwarmBox's own scripts. The licenses of all of them are
 below. Everything under "Not shipped in the image" is downloaded on the user's machine, on first use, by the user's own box;
@@ -23,7 +23,7 @@ like that and published would redistribute them, and then their terms below appl
 
 Every Debian package of the built image (594 packages) with its version, its license identifiers and the link to its Debian
 source is in `docs/debian-packages.tsv`, produced by `dev/gen-notices.sh` (read-only: `dpkg-query -W` and the `License:`
-fields of `/usr/share/doc/<package>/copyright`). [verified: dev/gen-notices.sh --image swarmbox-test-notices-96a61e, an image built by dev/dev-build.sh from the repository at commit b24882c, run in a throwaway container and removed by its exact name; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm), amd64]
+fields of `/usr/share/doc/<package>/copyright`). [verified: dev/gen-notices.sh --image swarmbox-test-img-notices, an image built by dev/dev-build.sh from the repository at commit cdab064 plus the Debian 13 package list change, run in a throwaway container and removed by its exact name; 2026-11-10; Podman 4.3.1 on the build host, image Debian 13 (trixie), amd64]
 Run again with `sh dev/dev-build.sh --tag swarmbox-test-<name>` and `sh dev/gen-notices.sh --image swarmbox-test-<name>`.
 How to read the file: the `licenses` column is what the package's own copyright file declares (Debian's machine-readable
 format). The `flags` column is `NO-LICENSE-FIELD` for the old-style copyright files (146 packages, among them glibc, gcc
@@ -41,50 +41,50 @@ identifier. The text of such a file has to be read by hand; the table below reco
 The packages the `Dockerfile` installs by name (the other 554 are their dependencies and the base image: see the full list).
 The license column is read from the table of the full list; where it says "read by hand" the old-style copyright file was
 read in the image and the cell is the identifier I took from it. Source links point to the Debian source package.
-[verified: dev/gen-notices.sh --image swarmbox-test-notices-96a61e, an image built by dev/dev-build.sh from the repository at commit b24882c, run in a throwaway container and removed by its exact name; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm), amd64]
+[verified: dev/gen-notices.sh --image swarmbox-test-img-notices, an image built by dev/dev-build.sh from the repository at commit cdab064 plus the Debian 13 package list change, run in a throwaway container and removed by its exact name; 2026-11-10; Podman 4.3.1 on the build host, image Debian 13 (trixie), amd64]
 
 | Package | License identifiers (from the package's copyright file) | Version | Source |
 |---|---|---|---|
-| `aardvark-dns` | Apache-2.0 | 1.4.0-3 | https://sources.debian.org/src/aardvark-dns/ |
-| `bash-completion` | GPL-2+ | 1:2.11-6 | https://sources.debian.org/src/bash-completion/ |
-| `build-essential` | GPL-2+ (old-style file, read by hand) | 12.9 | https://sources.debian.org/src/build-essential/ |
-| `bzip2` | BSD-variant, GPL-2 | 1.0.8-5+b1 | https://sources.debian.org/src/bzip2/ |
-| `ca-certificates` | GPL-2+, MPL-2.0 | 20250419~deb12u2 | https://sources.debian.org/src/ca-certificates/ |
-| `chromium` | mixed, 22 identifiers (main part: see the note; complete list in docs/debian-packages.tsv) | 156.0.8078.79-1~deb12u1 | https://sources.debian.org/src/chromium/ |
-| `curl` | 11 identifiers, among them BSD-3-Clause, BSD-3-clause, BSD-4-Clause-UC, FSFULLR (complete list in docs/debian-packages.tsv) | 7.88.1-10+deb12u15 | https://sources.debian.org/src/curl/ |
-| `dnsutils` | 10 identifiers, among them BSD-2-clause, BSD-3-clause, CC0-1.0, ISC (complete list in docs/debian-packages.tsv) | 1:9.18.49-1~deb12u3 | https://sources.debian.org/src/bind9/ |
-| `file` | 5 identifiers, among them BSD-2-Clause-alike, BSD-2-Clause-netbsd, BSD-2-Clause-regents, MIT-Old-Style-with-legal-disclaimer-2 (complete list in docs/debian-packages.tsv) | 1:5.44-3 | https://sources.debian.org/src/file/ |
-| `git` | 15 identifiers, among them Apache-2.0, Artistic-1, BSD-3-clause, Boost (complete list in docs/debian-packages.tsv) | 1:2.39.5-0+deb12u3 | https://sources.debian.org/src/git/ |
-| `gzip` | FSF-manpages, GFDL-1.3+-no-invariant, GPL-3+ | 1.12-1 | https://sources.debian.org/src/gzip/ |
-| `htop` | GPL-2+ | 3.2.2-2 | https://sources.debian.org/src/htop/ |
-| `iptables` | Artistic, GPL-2, GPL-2+, custom | 1.8.9-2 | https://sources.debian.org/src/iptables/ |
-| `iputils-ping` | BSD-3-clause, GPL-2+, public-domain | 3:20221126-1+deb12u1 | https://sources.debian.org/src/iputils/ |
-| `jq` | CC-BY-3.0, Expat, GPL-2.0+, MIT | 1.6-2.1+deb12u3 | https://sources.debian.org/src/jq/ |
-| `less` | GPL-3+, GPL-3+ or Less, GPL-3+ or Less, and X11, Less, Spencer-86, X11, public-domain | 590-2.1~deb12u2 | https://sources.debian.org/src/less/ |
-| `libcap2-bin` | BSD-3-clause, BSD-3-clause or GPL-2, BSD-3-clause or GPL-2+, GPL-2, GPL-2+ | 1:2.66-4+deb12u3+b1 | https://sources.debian.org/src/libcap2/ |
-| `man-db` | GPL-2+, GPL-3+ | 2.11.2-2 | https://sources.debian.org/src/man-db/ |
-| `nano` | GFDL-NIV+, GFDL-NIV+ or GPL-3+, GPL-3+ | 7.2-1+deb12u1 | https://sources.debian.org/src/nano/ |
-| `net-tools` | GPL-2+ | 2.10-0.1+deb12u2 | https://sources.debian.org/src/net-tools/ |
-| `netavark` | Apache-2.0 | 1.4.0-3 | https://sources.debian.org/src/netavark/ |
-| `netcat-openbsd` | BSD-2-Clause, BSD-3-Clause | 1.219-1 | https://sources.debian.org/src/netcat-openbsd/ |
-| `openssh-client` | 7 identifiers, among them BSD-2-clause, BSD-3-clause, Expat-with-advertising-restriction, Mazieres-BSD-style (complete list in docs/debian-packages.tsv) | 1:9.2p1-2+deb12u10 | https://sources.debian.org/src/openssh/ |
-| `podman` | Apache-2.0, BSD-3-clause, Expat, ISC | 4.3.1+ds1-8+deb12u1+b3 | https://sources.debian.org/src/libpod/ |
-| `procps` | GPL-2.0+, LGPL-2.0+, LGPL-2.1+ | 2:4.0.2-3 | https://sources.debian.org/src/procps/ |
-| `python3` | PSF-2.0 (Python license; old-style file, read by hand) | 3.11.2-1+b1 | https://sources.debian.org/src/python3-defaults/ |
-| `python3-pip` | Apache-2.0, Apache-2.0 OR BSD-2, BSD-2, BSD-3, Expat, ISC, LGPL-2.1+, MPL-2, Python | 23.0.1+dfsg-1 | https://sources.debian.org/src/python-pip/ |
-| `python3-venv` | PSF-2.0 (as python3) | 3.11.2-1+b1 | https://sources.debian.org/src/python3-defaults/ |
-| `rsync` | GPL-3+ (old-style file; GPL-3 file named, "or later" not confirmed) | 3.2.7-1+deb12u6 | https://sources.debian.org/src/rsync/ |
-| `sqlite3` | GPL-2+, public-domain | 3.40.1-2+deb12u2 | https://sources.debian.org/src/sqlite3/ |
-| `sudo` | BSD-2-Clause, BSD-3-Clause, ISC, Zlib, other, public-domain | 1.9.13p3-1+deb12u4 | https://sources.debian.org/src/sudo/ |
-| `tar` | GPL-2+, GPL-3+, GPL-3+ with Bison exception, LGPL-3+ | 1.34+dfsg-1.2+deb12u1 | https://sources.debian.org/src/tar/ |
-| `tmux` | BSD-2-clause, BSD-2-clause or ISC, BSD-2-clause-NetBSD, BSD-3-clause, Expat, FSFUL, FSFULLR, ISC | 3.3a-3 | https://sources.debian.org/src/tmux/ |
-| `tree` | GPL-2+, LGPL-2.1+ | 2.1.0-1 | https://sources.debian.org/src/tree/ |
-| `uidmap` | BSD-3-clause, GPL-1, GPL-2+, public-domain | 1:4.13+dfsg1-1+deb12u2 | https://sources.debian.org/src/shadow/ |
-| `unzip` | Info-ZIP license (BSD-style; old-style file, read by hand) | 6.0-28+deb12u1 | https://sources.debian.org/src/unzip/ |
-| `vim` | 19 identifiers, among them Apache, Artistic-1, BSD-2-clause, BSD-3-clause (complete list in docs/debian-packages.tsv) | 2:9.0.1378-2+deb12u2 | https://sources.debian.org/src/vim/ |
-| `wget` | GPL-3 with the OpenSSL linking exception (old-style file, read by hand) | 1.21.3-1+deb12u1 | https://sources.debian.org/src/wget/ |
-| `xz-utils` | 12 identifiers, among them Autoconf, GPL-2, GPL-2+, LGPL-2.1+ (complete list in docs/debian-packages.tsv) | 5.4.1-1+deb12u2 | https://sources.debian.org/src/xz-utils/ |
-| `zip` | Info-ZIP license (BSD-style; old-style file, read by hand) | 3.0-13+deb12u1 | https://sources.debian.org/src/zip/ |
+| `aardvark-dns` | Apache-2.0 | 1.14.0-3 | https://sources.debian.org/src/aardvark-dns/ |
+| `bash-completion` | GPL-2+ | 1:2.16.0-7 | https://sources.debian.org/src/bash-completion/ |
+| `build-essential` | GPL-2+ (old-style file, read by hand) | 12.12 | https://sources.debian.org/src/build-essential/ |
+| `bzip2` | BSD-variant, GPL-2 | 1.0.8-6 | https://sources.debian.org/src/bzip2/ |
+| `ca-certificates` | GPL-2+, MPL-2.0 | 20250419+deb13u1 | https://sources.debian.org/src/ca-certificates/ |
+| `chromium` | mixed, 22 identifiers (main part: see the note; complete list in docs/debian-packages.tsv) | 156.0.8078.79-1~deb13u1 | https://sources.debian.org/src/chromium/ |
+| `curl` | 12 identifiers, among them BSD-3-Clause, BSD-3-clause, BSD-4-Clause-UC, FSFULLR (complete list in docs/debian-packages.tsv) | 8.14.1-2+deb13u7 | https://sources.debian.org/src/curl/ |
+| `bind9-dnsutils` | 10 identifiers, among them BSD-2-clause, BSD-3-clause, CC0-1.0, FSFAP (complete list in docs/debian-packages.tsv) | 1:9.20.30-1~deb13u1 | https://sources.debian.org/src/bind9/ |
+| `file` | 5 identifiers, among them BSD-2-Clause-alike, BSD-2-Clause-netbsd, BSD-2-Clause-regents, MIT-Old-Style-with-legal-disclaimer-2 (complete list in docs/debian-packages.tsv) | 1:5.46-5 | https://sources.debian.org/src/file/ |
+| `git` | 15 identifiers, among them Apache-2.0, Artistic-1, BSD-3-clause, Boost (complete list in docs/debian-packages.tsv) | 1:2.47.3-0+deb13u1 | https://sources.debian.org/src/git/ |
+| `gzip` | FSF-manpages, GFDL-1.3+-no-invariant, GPL-3+ | 1.13-1+deb13u1 | https://sources.debian.org/src/gzip/ |
+| `htop` | GPL-2+ | 3.4.1-5 | https://sources.debian.org/src/htop/ |
+| `iptables` | Artistic, GPL-2, GPL-2+, custom | 1.8.11-2 | https://sources.debian.org/src/iptables/ |
+| `iputils-ping` | BSD-3-clause, GPL-2+, public-domain | 3:20240905-3 | https://sources.debian.org/src/iputils/ |
+| `jq` | CC-BY-3.0, Expat, GPL-2.0+, MIT | 1.7.1-6+deb13u4 | https://sources.debian.org/src/jq/ |
+| `less` | GPL-3+, GPL-3+ or Less, GPL-3+ or Less, and X11, Less, Spencer-86, X11, public-domain | 668-1 | https://sources.debian.org/src/less/ |
+| `libcap2-bin` | BSD-3-clause, BSD-3-clause or GPL-2, BSD-3-clause or GPL-2+, GPL-2, GPL-2+ | 1:2.75-10+deb13u1+b3 | https://sources.debian.org/src/libcap2/ |
+| `man-db` | GPL-2+, GPL-3+ | 2.13.1-1 | https://sources.debian.org/src/man-db/ |
+| `nano` | GFDL-NIV+, GFDL-NIV+ or GPL-3+, GPL-3+ | 8.4-1+deb13u1 | https://sources.debian.org/src/nano/ |
+| `net-tools` | GPL-2+ | 2.10-1.3 | https://sources.debian.org/src/net-tools/ |
+| `netavark` | Apache-2.0 | 1.14.0-2 | https://sources.debian.org/src/netavark/ |
+| `netcat-openbsd` | BSD-2-Clause, BSD-3-Clause | 1.229-1 | https://sources.debian.org/src/netcat-openbsd/ |
+| `openssh-client` | 7 identifiers, among them BSD-2-clause, BSD-3-clause, Expat-with-advertising-restriction, Mazieres-BSD-style (complete list in docs/debian-packages.tsv) | 1:10.0p1-7+deb13u4 | https://sources.debian.org/src/openssh/ |
+| `podman` | Apache-2.0, BSD-3-clause, Expat, LGPL-2.1+ | 5.4.2+ds1-2+b2 | https://sources.debian.org/src/podman/ |
+| `procps` | GPL-2.0+, LGPL-2.0+, LGPL-2.1+ | 2:4.0.4-9 | https://sources.debian.org/src/procps/ |
+| `python3` | PSF-2.0 (Python license; old-style file, read by hand) | 3.13.5-1 | https://sources.debian.org/src/python3-defaults/ |
+| `python3-pip` | 8 identifiers, among them Apache-2.0, Apache-2.0 OR BSD-2, BSD-2, BSD-3 (complete list in docs/debian-packages.tsv) | 25.1.1+dfsg-1 | https://sources.debian.org/src/python-pip/ |
+| `python3-venv` | PSF-2.0 (as python3) | 3.13.5-1 | https://sources.debian.org/src/python3-defaults/ |
+| `rsync` | 14 identifiers, among them FSF-unlimited, FSFULLR, GPL-2, GPL-2+ (complete list in docs/debian-packages.tsv) | 3.5.0+ds1-0+deb13u1 | https://sources.debian.org/src/rsync/ |
+| `sqlite3` | GPL-2+, public-domain | 3.46.1-7+deb13u2 | https://sources.debian.org/src/sqlite3/ |
+| `sudo` | 7 identifiers, among them BSD-2-Clause, BSD-3-Clause, GPL-2+, ISC (complete list in docs/debian-packages.tsv) | 1.9.16p2-3+deb13u2 | https://sources.debian.org/src/sudo/ |
+| `tar` | GPL-2+, GPL-3+, GPL-3+ with Bison exception, LGPL-2.1+, LGPL-3+ | 1.35+dfsg-3.1 | https://sources.debian.org/src/tar/ |
+| `tmux` | BSD-2-clause, BSD-2-clause or ISC, BSD-2-clause-NetBSD, BSD-3-clause, Expat, FSFUL, FSFULLR, ISC | 3.5a-3 | https://sources.debian.org/src/tmux/ |
+| `tree` | GPL-2+, LGPL-2.1+ | 2.2.1-1 | https://sources.debian.org/src/tree/ |
+| `uidmap` | BSD-3-clause, GPL-1, GPL-2+ | 1:4.17.4-2 | https://sources.debian.org/src/shadow/ |
+| `unzip` | Info-ZIP license (BSD-style; old-style file, read by hand) | 6.0-29+deb13u1 | https://sources.debian.org/src/unzip/ |
+| `vim` | 24 identifiers, among them Apache, Apache or Expat, Artistic-1, BSD-2-clause (complete list in docs/debian-packages.tsv) | 2:9.1.1230-2+deb13u2 | https://sources.debian.org/src/vim/ |
+| `wget` | GPL-3 with the OpenSSL linking exception (old-style file, read by hand) | 1.25.0-2 | https://sources.debian.org/src/wget/ |
+| `xz-utils` | 11 identifiers, among them 0BSD, FSFUL, FSFULLR, GPL-2+ (complete list in docs/debian-packages.tsv) | 5.8.1-1+deb13u2 | https://sources.debian.org/src/xz-utils/ |
+| `zip` | Info-ZIP license (BSD-style; old-style file, read by hand) | 3.0-15+deb13u1 | https://sources.debian.org/src/zip/ |
 
 Notes on the table: `podman`'s helper packages (`netavark` and `aardvark-dns`, Apache-2.0 for the programs; the Debian
 packages also contain the vendored Rust crates the programs were built with, which carry MIT, Apache-2.0 and other licenses
@@ -94,27 +94,27 @@ lacked.
 
 ### tmux
 
-- Version: the Debian 12 package (3.3a)
+- Version: the Debian 13 package (3.5a-3)
 - License: ISC (the source files carry ISC and BSD notices; Debian lists ISC, BSD-2-clause and BSD-3-clause for some files)
 - Source: https://github.com/tmux/tmux
-- [verified: /usr/share/doc/tmux/copyright of the installed package and COPYING of tag 3.3a; 2026-11-08]
+- [verified: /usr/share/doc/tmux/copyright of the installed package (3.5a-3), in an image built from the repository on 2026-11-10; the license text of upstream tag 3.5a was not re-read, the 3.3a one was on 2026-11-08]
 
 ### Podman and its helpers
 
-- Version: the Debian 12 packages (Podman 4.3.1, netavark and aardvark-dns 1.4.0)
-- License: Apache-2.0 (Podman, netavark, aardvark-dns); `iptables` GPL-2+ (with Artistic for some scripts); `uidmap` (shadow) GPL-2+ and BSD-3-clause; `libcap2-bin` BSD-3-clause or GPL-2
+- Version: the Debian 13 packages (Podman 5.4.2, netavark 1.14.0, aardvark-dns 1.14.0)
+- License: Apache-2.0 (netavark, aardvark-dns); Apache-2.0 for Podman with parts under BSD-3-clause, Expat and LGPL-2.1+ (the `podman` row of `docs/debian-packages.tsv`); `iptables` GPL-2+ (with Artistic for some scripts); `uidmap` (shadow) GPL-2+ and BSD-3-clause; `libcap2-bin` BSD-3-clause or GPL-2
 - Source: https://github.com/containers/podman, https://github.com/containers/netavark, https://github.com/containers/aardvark-dns, https://sources.debian.org/src/iptables/, https://sources.debian.org/src/shadow/, https://sources.debian.org/src/libcap2/
-- [verified: dev/gen-notices.sh --image swarmbox-test-notices-96a61e, an image built by dev/dev-build.sh from the repository at commit b24882c, run in a throwaway container and removed by its exact name; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm), amd64]
+- [verified: dev/gen-notices.sh --image swarmbox-test-img-notices, an image built by dev/dev-build.sh from the repository at commit cdab064 plus the Debian 13 package list change, run in a throwaway container and removed by its exact name; 2026-11-10; Podman 4.3.1 on the build host, image Debian 13 (trixie), amd64]
 
 ### Chromium
 
-- Version: the Debian 12 package (156.0.8078.79-1~deb12u1 in the listed image)
+- Version: the Debian 13 package (156.0.8078.79-1~deb13u1 in the listed image)
 - License: BSD-3-clause for the main part (the Chromium Authors). The Debian copyright file lists the bundled components
   under Apache-2.0, BSD-2-clause, BSD-3-clause, BSL-1 (Boost), GPL-2 and GPL-3 (some build and test files), ICU, ISC, LGPL-2
   to LGPL-2.1+, MIT, MPL-1.1 and MPL-2.0 (with the GPL and LGPL alternatives of the MPL-1.1 files), Ms-PL, Unicode,
   zlib, public domain and a license of Apple's; the exact list of 22 identifiers is the `chromium` row of `docs/debian-packages.tsv`.
 - Source: https://www.chromium.org/ and https://sources.debian.org/src/chromium/
-- [verified: dev/gen-notices.sh --image swarmbox-test-notices-96a61e, an image built by dev/dev-build.sh from the repository at commit b24882c, run in a throwaway container and removed by its exact name; 2026-11-08; Podman 4.3.1, Debian 12 (bookworm), amd64]
+- [verified: dev/gen-notices.sh --image swarmbox-test-img-notices, an image built by dev/dev-build.sh from the repository at commit cdab064 plus the Debian 13 package list change, run in a throwaway container and removed by its exact name; 2026-11-10; Podman 4.3.1 on the build host, image Debian 13 (trixie), amd64]
 - [owner-check: the Debian copyright file is Debian's summary of the bundled components, written for the source package. The
   texts that Chromium shows in its own about:credits page (the licenses of the code compiled into the binary, including
   components Debian does not bundle but links from the system, such as the libraries listed as the package's dependencies) were not
@@ -125,17 +125,17 @@ lacked.
 
 Many Debian packages above are under the GPL, LGPL, MPL or similar terms (the identifiers `GPL-*`, `LGPL-*`, `MPL-*` in the
 list: for example glibc, bash, tar, gzip, git, vim, rsync, wget, iptables, `uidmap`, `libcap2-bin`, `bzip2`, `xz-utils`, GNU
-binutils and GCC). They are installed unmodified from the Debian 12 archive, and SwarmBox does not patch them. Where to get
+binutils and GCC). They are installed unmodified from the Debian 13 archive, and SwarmBox does not patch them. Where to get
 the corresponding source of any package of the image:
 
 1. **Debian's source archive.** Each package row links to `https://sources.debian.org/src/<source package>/`. The exact
    version is the one in the `version` column; older versions of a package stay available at https://snapshot.debian.org/.
-2. **On the running box:** with the `deb-src` lines of Debian 12 added to apt's sources (`deb-src http://deb.debian.org/debian
-   bookworm main` and the matching security line), `apt-get source <package>` downloads the source of the installed
+2. **On the running box:** with the `deb-src` lines of Debian 13 added to apt's sources (`deb-src http://deb.debian.org/debian
+   trixie main` and the matching security line), `apt-get source <package>` downloads the source of the installed
    version. This works in the box because the image keeps the Debian apt configuration of the base image.
 3. **Written offer.** For three years after the image of a release is last distributed, a copy of the complete corresponding
    source of the GPL and LGPL parts is available on request, at cost of the physical distribution, from
-   [OWNER-TODO: the contact address for source requests; the same one as in SECURITY.md or another]. The offer is here so
+   feroult@gmail.com. The offer is here so
    that the pointer above is not the only means.
 4. **The programs SwarmBox downloads itself** (`ttyd` MIT, `starship` ISC, `uv` Apache-2.0 or MIT, `chrome-devtools-mcp`
    Apache-2.0) are not copyleft; their source is at the URLs in their sections.
@@ -156,14 +156,14 @@ in the image, where they were installed.
 - Version: the `node:24-slim` base image (v24.22.2 in the listed image)
 - License: MIT, with the licenses of its bundled dependencies (V8, ICU, OpenSSL, c-ares, acorn and others) in `/usr/local/LICENSE` (2946 lines)
 - Source: https://github.com/nodejs/node
-- [verified: first lines and the list of bundled dependencies of /usr/local/LICENSE in the image, "Node.js is licensed for use as follows"; 2026-11-08; Podman 4.3.1, Debian 12; swarmbox-test-notices-96a61e]
+- [verified: first lines and the list of bundled dependencies of /usr/local/LICENSE in the image, "Node.js is licensed for use as follows"; 2026-11-10; Podman 4.3.1 on the build host, image Debian 13; swarmbox-test-img-notices]
 
 ### Yarn 1.x
 
 - Version: 1.22.22 (shipped by the base image in `/opt/yarn-v1.22.22`)
 - License: BSD-2-Clause
 - Source: https://github.com/yarnpkg/yarn
-- [verified: /opt/yarn-v1.22.22/LICENSE of the image, "BSD 2-Clause License, For Yarn software"; 2026-11-08; swarmbox-test-notices-96a61e]
+- [verified: /opt/yarn-v1.22.22/LICENSE of the image, "BSD 2-Clause License, For Yarn software"; 2026-11-10; swarmbox-test-img-notices]
 
 ### Python packages of `/opt/flow` (pip, setuptools)
 

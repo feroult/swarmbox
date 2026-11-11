@@ -3,6 +3,15 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [semantic versioning](https://semver.org/).
 
+## [2.0.0-beta.1] - Unreleased
+
+First public prerelease of 2.0.0, for testing before the final release. The image is tagged `2.0.0-beta.1` only (never `2.0` or
+`latest`) and the GitHub release is marked as a prerelease. Install it with `sh install.sh --version 2.0.0-beta.1`;
+`swarmbox update` follows the `2.0` series, which exists only once 2.0.0 is out, so until then move between betas with
+`swarmbox update --to TAG`. The feature list is the one of 2.0.0 below. Changes while preparing it: the base image is
+`node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
+standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
+
 ## [2.0.0] - Unreleased
 
 First public version. Not released: it stays "Unreleased" until the maintainer creates the tag `v2.0.0`.
@@ -10,7 +19,7 @@ First public version. Not released: it stays "Unreleased" until the maintainer c
 ### Features
 
 - One persistent rootless Podman box per workspace; every terminal tab and the browser join the same tmux session.
-- A small neutral image (`node:24-slim`, user `agent`, about 1.75 GB) with no agent inside. Claude Code, Gemini CLI, OpenCode, gcloud, clasp, Go and Poetry
+- A small neutral image (`node:24-trixie-slim`, user `agent`, about 1.75 GB) with no agent inside. Claude Code, Gemini CLI, OpenCode, gcloud, clasp, Go and Poetry
   install on first use from manifests, through shims, with pinned versions and checksums where the vendor publishes them.
 - The workspace is one folder of your machine and holds projects, logins, the SSH key and installed tools; the box can be recreated without loss (`swarmbox reset`).
 - One executable POSIX `sh` script, `swarmbox`, on the `PATH` (no shell function, no startup file): `up`, `stop`, `reset`, `url`, `update`, `config`, `env`, `pubkey`, `tool`, `remote`, `fingerprint`, `version`; any other word runs in the box.

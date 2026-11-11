@@ -5,7 +5,8 @@
 #
 # Usage: sh dev/release-check.sh
 # Env:   SWARMBOX_RELEASE_REPO    the repository to check (default: the one this script is in)
-#        SWARMBOX_RELEASE_BRANCH  the branch the release is made from (default: opensource)
+#        SWARMBOX_RELEASE_BRANCH  the branch the release is made from (default: main)
+#        SWARMBOX_RELEASE_TAG     the tag to be created, for a prerelease such as v2.0.0-beta.1 (default: v<version>)
 #        SWARMBOX_YAML_PYTHON     a python3 that can import yaml, when the default python3 cannot (optional)
 # Output: one line per condition, "OK|FAIL|WARN <name> <text>", then "RELEASE CHECK OK" or "RELEASE CHECK FAILED <n>".
 # Exit:   0 every condition holds (warnings do not count), 1 at least one FAIL.
@@ -16,7 +17,7 @@
 # has <org> (an owner decision; it does not fail the check).
 set -u
 REPO=${SWARMBOX_RELEASE_REPO:-$(cd "$(dirname "$0")/.." && pwd)}
-BRANCH_WANTED=${SWARMBOX_RELEASE_BRANCH:-opensource}
+BRANCH_WANTED=${SWARMBOX_RELEASE_BRANCH:-main}
 BAD=0
 GIT_OPTIONAL_LOCKS=0
 export GIT_OPTIONAL_LOCKS
@@ -127,8 +128,9 @@ else
 fi
 
 # tag
+RTAG=${SWARMBOX_RELEASE_TAG:-v$dver}
 if [ -n "$dver" ]; then
-    if [ -n "$(G tag --list "v$dver")" ]; then fail tag "v$dver already exists"; else ok tag "v$dver does not exist yet"; fi
+    if [ -n "$(G tag --list "$RTAG")" ]; then fail tag "$RTAG already exists"; else ok tag "$RTAG does not exist yet"; fi
 else
     fail tag "no version to look for"
 fi
