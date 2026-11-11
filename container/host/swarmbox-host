@@ -25,7 +25,7 @@
 # Paths honor HOME, XDG_CONFIG_HOME and XDG_STATE_HOME (an empty or relative XDG value is ignored, as in dirs.sh).
 # The file mode is read as an octal number (stat -c %a, then stat -f %Lp, then find -perm); `ls` output is never parsed.
 
-SCRIPT_VERSION=2.0.2
+SCRIPT_VERSION=2.0.3
 
 # shellcheck disable=SC2154  # some variables are assigned through eval (keys are validated names, never user text)
 LC_ALL=C
@@ -1409,13 +1409,27 @@ check_tun() {
 # The last lines of Podman's error, indented, on standard error.
 show_err() { tail -n "${2:-3}" "$1" 2> /dev/null | sed 's/^/    /' >&2; }
 
+# pull_image REF: pulls with Podman's own progress when a person is watching (standard error is a terminal), quietly otherwise (a
+# script or a log gets no progress bars). When it fails, PULL_MSG says why: the last line of Podman's error, or, with the progress
+# on screen, that the error is already above.
+pull_image() {
+    PULL_MSG=
+    if [ -t 2 ]; then
+        podman pull "$1" > /dev/null && return 0
+        PULL_MSG="see the Podman error above"
+        return 1
+    fi
+    podman pull -q "$1" > /dev/null 2> "${UP_ERRF:-/dev/null}" && return 0
+    [ -z "${UP_ERRF:-}" ] || PULL_MSG=$(tail -n 1 "$UP_ERRF" 2> /dev/null)
+    return 1
+}
+
 # A missing image is pulled, never built.
 ensure_image() {
     podman image exists "$C_IMAGE" > /dev/null 2>&1 && return 0
     warn "pulling $C_IMAGE (this can take a while)..."
-    if ! podman pull -q "$C_IMAGE" > /dev/null 2> "$UP_ERRF"; then
-        u_m=$(tail -n 1 "$UP_ERRF" 2> /dev/null)
-        die 3 "cannot pull $C_IMAGE: $u_m. Check the network, or set SWARMBOX_IMAGE to an image you already have."
+    if ! pull_image "$C_IMAGE"; then
+        die 3 "cannot pull $C_IMAGE: $PULL_MSG. Check the network, or set SWARMBOX_IMAGE to an image you already have."
     fi
 }
 
@@ -2100,9 +2114,8 @@ cmd_update() {
     up_traps
     trap 'up_update_cleanup' EXIT
     warn "pulling $up_ref (this can take a while)..."
-    if ! podman pull -q "$up_ref" > /dev/null 2> "$UP_ERRF"; then
-        up_m=$(tail -n 1 "$UP_ERRF" 2> /dev/null)
-        die 3 "cannot pull $up_ref: ${up_m:-podman failed}. Nothing was changed. Check the network and the tag."
+    if ! pull_image "$up_ref"; then
+        die 3 "cannot pull $up_ref: ${PULL_MSG:-podman failed}. Nothing was changed. Check the network and the tag."
     fi
     fetch_helper "$up_ref"
     up_ver=$FH_VER
@@ -2384,7 +2397,13 @@ cmd_setup() {
     check_podman_version
     up_traps
     trap 'up_update_cleanup' EXIT
-    warn "reading the support files from $s_image (a missing image is pulled; this can take a while)..."
+    if ! podman image exists "$s_image" > /dev/null 2>&1; then
+        warn "pulling $s_image (this can take a while)..."
+        if ! pull_image "$s_image"; then
+            die 3 "cannot pull $s_image: ${PULL_MSG:-podman failed}. Nothing was changed. Check the network, or the image name."
+        fi
+    fi
+    warn "reading the support files from $s_image..."
     fetch_helper "$s_image"
     swap_support
     support_dir

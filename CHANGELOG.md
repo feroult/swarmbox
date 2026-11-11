@@ -3,6 +3,12 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [semantic versioning](https://semver.org/).
 
+## [2.0.3] - 2026-11-11
+
+- Fixed: `swarmbox update`, the first `swarmbox` and the installer (`install.sh`, `podman run IMAGE install | sh`) showed no progress while they pulled the image, so they looked stuck.
+  When standard error is a terminal the pull now shows Podman's own progress, and a failed pull points at the error already on screen. Without a terminal (a script, a log) the pull stays quiet as before.
+- The installer now pulls the image in its own step, with the message "pulling IMAGE (this can take a while)...", before it reads the support files from it.
+
 ## [2.0.2] - 2026-11-11
 
 Fixes the nested Podman not starting after a host reboot.
@@ -74,6 +80,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.3]: https://github.com/feroult/swarmbox/releases/tag/v2.0.3
 [2.0.2]: https://github.com/feroult/swarmbox/releases/tag/v2.0.2
 [2.0.1]: https://github.com/feroult/swarmbox/releases/tag/v2.0.1
 [2.0.0]: https://github.com/feroult/swarmbox/releases/tag/v2.0.0

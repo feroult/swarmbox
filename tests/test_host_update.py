@@ -175,6 +175,41 @@ class PlainUpdateTest(UpdateBase):
             self.assertEqual(c[:2], ["run", "--rm"])
             self.assertEqual(c[-1], "host-helper")
 
+class PullProgressTest(UpdateBase):
+    def test_with_a_terminal_the_pull_shows_podmans_progress_and_without_one_it_is_quiet(self):
+        import pty
+        self.podman_for("2.0.9")
+        self.install_script()
+        master, slave = pty.openpty()
+        try:   # standard error is a terminal: no -q, so Podman's progress bars reach the person
+            r = subprocess.run([self.helper, "update"], env=self.env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=slave, cwd=self.tmp, timeout=60)
+        finally:
+            os.close(slave)
+            os.close(master)
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(self.subs("pull"), [["pull", REPO + ":2.0"]])
+
+    def test_a_failed_pull_with_a_terminal_points_at_the_error_already_shown(self):
+        import pty
+        self.podman_for("2.0.9", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
+        self.install_script()
+        master, slave = pty.openpty()
+        try:
+            r = subprocess.run([self.helper, "update"], env=self.env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=slave, cwd=self.tmp, timeout=60)
+            os.set_blocking(master, False)
+            try:
+                shown = os.read(master, 65536).decode(errors="replace")
+            except BlockingIOError:
+                shown = ""
+        finally:
+            os.close(slave)
+            os.close(master)
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("cannot pull %s:2.0: see the Podman error above" % REPO, shown)
+
+
 class ScriptRefreshTest(UpdateBase):
     def test_a_script_newer_than_the_image_is_kept_with_a_clear_message(self):
         self.podman_for("1.9.2")
