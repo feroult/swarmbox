@@ -356,8 +356,15 @@ class RealPodmanIsolationTest(Base):
         ls = self.reall("system", "connection", "list", "--format", "{{.Name}} {{.URI}}").stdout.splitlines()
         self.assertEqual(sorted(ls), sorted(["swarmbox-test-foreign unix:///tmp/swarmbox-test-foreign.sock",
                                              "%s unix://%s%s" % (NAME, self.ws, SUFFIX)]))
-        with open(os.path.join(self.tmp, "containers.conf")) as f:   # the isolated file holds the registrations
-            self.assertIn(NAME, f.read())
+        # the isolated config holds the registrations: in containers.conf (Podman 4.x) or in podman-connections.json (5.x); the
+        # guard in tearDownModule is what proves the real files were not the ones written
+        found = ""
+        for base, _, files in os.walk(self.tmp):
+            for f in files:
+                if f in ("containers.conf", "podman-connections.json"):
+                    with open(os.path.join(base, f)) as fh:
+                        found += fh.read()
+        self.assertIn(NAME, found)
 
 
 def tearDownModule():

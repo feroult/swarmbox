@@ -1,0 +1,27 @@
+#!/bin/sh
+# pre-push: runs dev/check.sh before a push of main or of a release tag (v*), so what CI would reject is found here first.
+# Enable it once in this clone:   git config core.hooksPath dev/hooks
+# Skip it for one push:           git push --no-verify     (or SWARMBOX_SKIP_CHECK=1 git push)
+# A release tag also runs the release check (dev/release-check.sh). Pushes of other branches and deletions are not checked.
+# SWARMBOX_CHECK_CMD replaces the command (the tests of this hook use it).
+[ -z "${SWARMBOX_SKIP_CHECK:-}" ] || { echo "pre-push: SWARMBOX_SKIP_CHECK is set; the checks are skipped." >&2; exit 0; }
+root=$(git rev-parse --show-toplevel 2> /dev/null) || exit 0
+zero=0000000000000000000000000000000000000000
+run=0
+rel=0
+while read -r _lref lsha rref _rsha; do
+    [ "$lsha" != "$zero" ] || continue   # deleting a ref
+    case $rref in
+        refs/heads/main) run=1 ;;
+        refs/tags/v*) run=1; rel=1 ;;
+    esac
+done
+[ "$run" = 1 ] || exit 0
+cmd=${SWARMBOX_CHECK_CMD:-"sh $root/dev/check.sh"}
+[ "$rel" = 0 ] || cmd="$cmd --release"
+echo "pre-push: $cmd" >&2
+# shellcheck disable=SC2086  # the command and its option are words
+$cmd
+rc=$?
+[ "$rc" = 0 ] || echo "pre-push: the checks failed; nothing was pushed. Fix them, or skip once with git push --no-verify." >&2
+exit "$rc"

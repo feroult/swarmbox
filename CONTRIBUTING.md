@@ -46,6 +46,24 @@ What each group covers (a file name tells the rest):
 Shared helpers (the fake `podman`, the helper archive of an image, a pseudo terminal) are in `tests/helpers.py`. Write a test first, with fakes; use a real
 container only for a smoke test, with a `swarmbox-test-` name.
 
+## Before you push: the local gate
+
+CI rejects a push for things that pass on a developer machine: shellcheck findings, and tests that need the variables of your terminal
+(`TERM`, `COLORTERM`, `STARSHIP_SHELL`; a CI runner has none of them). `dev/check.sh` runs those checks here:
+
+```bash
+sh dev/check.sh                # shellcheck 0.9 on the files ci.yml lists, then the unit tests in a clean environment (about a minute and a half)
+sh dev/check.sh --release      # and dev/release-check.sh, before a release tag
+git config core.hooksPath dev/hooks    # once per clone: run it before every push of main or of a v* tag
+```
+
+The shellcheck file lists are read from `.github/workflows/ci.yml`, so they cannot drift; a new shell file goes into that list and is checked from then on.
+The version is pinned to 0.9, the one of the CI runner: when none is installed, `check.sh` fetches it with pip into `~/.cache/swarmbox-dev`.
+The tests run under `env -i` with `PATH`, `HOME` and a UTF-8 `LANG`: a test that reads `TERM` or another variable must set it itself.
+A push of another branch is not checked. Skip it once with `git push --no-verify` (or `SWARMBOX_SKIP_CHECK=1 git push`).
+It cannot cover what only CI has: the macOS job (bash 3.2), the arm64 job and the image smoke test. It also prints how many tests were skipped
+here (no tmux, dash or busybox): CI runs them.
+
 ## Smoke test on a host
 
 `dev/host-smoke.sh` builds the image and checks the product end to end on a real host (not inside a box): it installs the `swarmbox` script of its own image into a temporary folder (twice) and puts it on `PATH` for the run, then checks `up`, labels, `config`,
