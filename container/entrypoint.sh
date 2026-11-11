@@ -189,6 +189,13 @@ serve() {
     trap 'on_signal INT 130' INT
 
     # step 0 [-]: delete the readiness marker and every exit.* file, before anything else (second defense after the tmpfs)
+    # After a host reboot the run folder has come back as a folder the agent cannot write: no ready marker, no ttyd pid file, and
+    # `swarmbox` waited for a marker that could not appear. The agent has sudo without a password, so make the folder writable first.
+    if [ -d "$SB_RUN_DIR" ] && [ ! -w "$SB_RUN_DIR" ] && have sudo; then
+        if sudo -n chmod 1777 "$SB_RUN_DIR" 2>/dev/null; then
+            log "step 0: $SB_RUN_DIR was not writable by $(id -un); made it writable (mode 1777)"
+        fi
+    fi
     rm -f "$SB_RUN_DIR/ready" "$SB_RUN_DIR/ready.tmp" "$SB_RUN_DIR"/exit.* 2>/dev/null
     log "step 0: old readiness marker and exit.* files removed"
 

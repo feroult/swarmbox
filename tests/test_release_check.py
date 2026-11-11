@@ -147,6 +147,24 @@ class ReleaseCheckTest(unittest.TestCase):
         self.assertFails(r, "changelog")
         self.assertIn("2.0.0", r.stdout)
 
+    def test_a_later_release_than_the_first_public_version_is_checked_against_its_own_tag(self):
+        repo = self.fresh()
+        write(repo, "CHANGELOG.md", "# Changelog\n\n## [2.0.1] - 2026-11-11\n\n- fix\n\n## [2.0.0] - 2026-11-11\n\n- first\n")
+        self.commit(repo)
+        git(repo, "tag", "v2.0.0")   # the first release exists; the new one must not
+        r = run(repo)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("v2.0.1 does not exist yet", r.stdout)
+        git(repo, "tag", "v2.0.1")
+        self.assertFails(run(repo), "tag")
+
+    def test_a_changelog_older_than_the_first_public_version_fails(self):
+        repo = self.fresh()
+        write(repo, "CHANGELOG.md", "# Changelog\n\n## [2.0.0] - 2026-11-11\n\n## [2.0.0] - again\n")
+        write(repo, "docs/design.md", "# Design\n\n- The first public version is `2.1.0`.\n")
+        self.commit(repo)
+        self.assertFails(run(repo), "version")
+
     def test_tag_already_exists(self):
         repo = self.fresh()
         git(repo, "tag", "v2.0.0")

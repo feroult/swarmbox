@@ -3,6 +3,16 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [semantic versioning](https://semver.org/).
 
+## [2.0.1] - 2026-11-11
+
+Fixes a box that never became ready after a host reboot.
+
+- Fixed: after a host reboot the box's run folder (`/tmp/swarmbox`, a tmpfs) could come back as a folder the agent user cannot write. `serve` then could not write the
+  readiness marker or the ttyd pid file, the web terminal gave up after five crashes, and `swarmbox` waited 60 s and failed with "the box did not become ready".
+  `serve` now checks the folder first and, when it is not writable, makes it writable with `sudo chmod 1777` (the agent has sudo in the box) and says so in `serve.log`.
+- When the box is running but never writes its readiness marker, `swarmbox` now prints the last 15 lines of the box's log before it exits with status 6, so the cause is on screen.
+- The cause of the unwritable folder after a reboot is not known; if the nested Podman service still does not start after this fix, send `podman-service.log`.
+
 ## [2.0.0] - 2026-11-11
 
 First stable version. Same feature set as the two prereleases (below), with these changes since 2.0.0-beta.2:
@@ -55,4 +65,5 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.1]: https://github.com/feroult/swarmbox/releases/tag/v2.0.1
 [2.0.0]: https://github.com/feroult/swarmbox/releases/tag/v2.0.0

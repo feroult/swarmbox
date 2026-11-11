@@ -232,6 +232,28 @@ class FatalSteps(ServeCase):
         self.assertIn("nested Podman needs /dev/net/tun", err)
         self.assertEqual(self.calls(), [], "nothing after step 2 may run")
 
+class RunFolderNotWritable(ServeCase):
+    """After a host reboot the tmpfs of the box came back unwritable for the agent: serve made no marker and the host timed out."""
+
+    def test_a_run_folder_the_agent_cannot_write_is_made_writable_with_sudo(self):
+        if os.geteuid() == 0:
+            self.skipTest("root ignores the mode")
+        os.mkdir(self.run_dir, 0o555)
+        write_exec(os.path.join(self.fake, "sudo"),
+                   '#!/bin/bash\necho "sudo $*" >> "$FAKE_DIR/calls.log"\n[ "$1" = -n ] && shift\nexec "$@"\n')
+        p = self.run_ready()
+        self.assertEqual(self.marker(), "ok")
+        self.assertIn("sudo -n chmod 1777 %s" % self.run_dir, self.calls())
+        self.assertIn("was not writable", self.serve_log())
+        self.stop(p)
+
+    def test_a_writable_run_folder_never_calls_sudo(self):
+        write_exec(os.path.join(self.fake, "sudo"), '#!/bin/bash\necho "sudo $*" >> "$FAKE_DIR/calls.log"\nexit 1\n')
+        p = self.run_ready()
+        self.assertFalse([c for c in self.calls() if c.startswith("sudo")])
+        self.stop(p)
+
+
 class WarnSteps(ServeCase):
     """Steps 4 to 10: failure writes a health line and continues (W); the marker carries the count."""
 

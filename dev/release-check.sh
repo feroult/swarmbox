@@ -57,6 +57,8 @@ elif [ -z "$cver" ]; then
     fail version "CHANGELOG.md has no '## [X.Y.Z]' entry"
 elif [ "$dver" = "$cver" ]; then
     ok version "$dver (design and the newest CHANGELOG entry agree)"
+elif [ "$(printf '%s\n%s\n' "$dver" "$cver" | sort -V | tail -n 1)" = "$cver" ]; then
+    ok version "$cver (a later release than the first public version $dver named by docs/design.md)"
 else
     fail version "docs/design.md says $dver, the newest CHANGELOG.md entry is $cver"
 fi
@@ -128,7 +130,7 @@ else
 fi
 
 # tag
-RTAG=${SWARMBOX_RELEASE_TAG:-v$dver}
+RTAG=${SWARMBOX_RELEASE_TAG:-v${cver:-$dver}}   # the newest CHANGELOG entry: 2.0.1 after 2.0.0
 if [ -n "$dver" ]; then
     if [ -n "$(G tag --list "$RTAG")" ]; then fail tag "$RTAG already exists"; else ok tag "$RTAG does not exist yet"; fi
 else

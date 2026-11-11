@@ -389,7 +389,7 @@ class ReadinessTest(Base):
         self.assertIn("swarmbox: the box did not become ready", r.stderr)
         self.assertIn("podman logs %s" % NAME, r.stderr)
         self.assertEqual(len(self.subs("exec")), 6)
-        self.assertEqual(self.subs("logs"), [])
+        self.assertEqual(len(self.subs("logs")), 1, "the timeout shows the last lines of the box's log, once")
 
     def test_a_container_that_exits_while_waiting_is_exit_6_at_once_with_its_logs(self):
         self.podman(exec={"exit": 125, "stderr": "container is not running\n"},
