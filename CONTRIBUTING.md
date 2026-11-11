@@ -64,6 +64,24 @@ A push of another branch is not checked. Skip it once with `git push --no-verify
 It cannot cover what only CI has: the macOS job (bash 3.2), the arm64 job and the image smoke test. It also prints how many tests were skipped
 here (no tmux, dash or busybox): CI runs them.
 
+## Releasing
+
+A release is one command, and the part that needs a writer is the CHANGELOG, which is written **before** it runs, by whoever made the changes (a person or
+an agent), under `## [Unreleased]` in `CHANGELOG.md`: one `- ` item per change that matters to a user of SwarmBox, in the same commit as the change when
+you can (that is when the reason is fresh). Changes only to `dev/`, tests or CI go in one short line, or are left out.
+
+```bash
+sh dev/release.sh               # the next patch version; or: minor, major, 2.1.0
+sh dev/release.sh --dry-run     # checks and says what it would do, changes nothing
+```
+
+It checks that you are on `main`, in step with `origin`, and that only `CHANGELOG.md` has changes; it **refuses to go on when `[Unreleased]` is empty, a placeholder
+or too thin**, and its error says what to do, with the commits since the last release and the last entry as a model, so the author can write it and run the
+command again. Then it moves the items under the new dated heading, sets the version (`container/host/VERSION` and `SCRIPT_VERSION`), runs `sh dev/check.sh`, makes
+the commit `release: X.Y.Z`, runs `dev/release-check.sh`, pushes `main`, **waits for the CI of that commit** and only then creates and pushes the tag `vX.Y.Z`, which starts
+the release workflow. It then waits for the release and verifies it: the checksum of `swarmbox`, the version it reports and, with Podman, that the image tags agree and have two
+architectures. A failure after the bump puts the files back (your CHANGELOG text included); a CI that fails leaves no tag. `GH_TOKEN` (optional) avoids the anonymous rate limit of the API.
+
 ## Smoke test on a host
 
 `dev/host-smoke.sh` builds the image and checks the product end to end on a real host (not inside a box): it installs the `swarmbox` script of its own image into a temporary folder (twice) and puts it on `PATH` for the run, then checks `up`, labels, `config`,

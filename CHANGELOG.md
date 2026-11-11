@@ -3,6 +3,10 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+- Dev only: a local gate (`dev/check.sh` and a pre-push hook) and `dev/release.sh`, which releases from a CHANGELOG written beforehand; see CONTRIBUTING.md.
+
 ## [2.0.6] - 2026-11-11
 
 - Changed: the web terminal has no scrollbar by default. tmux owns the scrollback (50,000 lines) and the browser has no history of its own, so the bar sat still while the wheel
