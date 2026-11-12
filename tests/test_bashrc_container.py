@@ -19,6 +19,9 @@ from image_support import ENABLED, rnd, podman, setUpModule as _setup, tearDownM
 import image_support as base  # noqa: E402
 from test_attach_command import wait_until  # noqa: E402
 
+# a line of the banner that does not change with its colours or its lettering: the tagline under the letters
+BANNER_MARK = "a box for your agent"
+
 
 def setUpModule():
     _setup()
@@ -65,7 +68,7 @@ class FragmentInContainer(unittest.TestCase):
         with open(os.path.join(state, "health"), "w") as f:
             f.write("web terminal keeps crashing; see web-terminal.log\nthe local image has been replaced; run swarmbox reset\n")
         out = self.interactive("true")
-        self.assertIn("███", out)
+        self.assertIn(BANNER_MARK, out)
         self.assertIn("web terminal keeps crashing", out)
         self.assertIn("the local image has been replaced", out)
 
@@ -104,7 +107,7 @@ class FragmentInContainer(unittest.TestCase):
         self.assertEqual(r.stderr.decode(), "")
         r = podman("exec", self.name, "swarmbox-entrypoint", "attach", "printenv", "PATH")
         self.assertTrue(r.stdout.decode().startswith("/home/agent/.local/share/swarmbox/shims:"), r.stdout)
-        self.assertNotIn("███", r.stdout.decode())
+        self.assertNotIn(BANNER_MARK, r.stdout.decode())
         self.assertEqual(r.stderr.decode(), "")
 
     def test_starship_is_active_in_an_interactive_shell(self):
