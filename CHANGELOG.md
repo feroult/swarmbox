@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.9] - 2026-11-12
+
 - Added: tmux has a scrollbar again, and this one works: a thin bar on the right of the pane, showing where you are in the 50,000 lines of history; drag it with the mouse or click its track.
   It is one column wide and always on, on purpose: a bar that showed only while scrolling would resize the pane each time, and a program with columns would reflow while you read. A full-screen program
   (vim, less, a TUI) gets the whole width and no bar, and one that asks for the mouse gets the wheel itself. The image now carries tmux 3.7c (Debian 13 has 3.5a, which has no scrollbar),
@@ -122,6 +124,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.9]: https://github.com/feroult/swarmbox/releases/tag/v2.0.9
 [2.0.8]: https://github.com/feroult/swarmbox/releases/tag/v2.0.8
 [2.0.7]: https://github.com/feroult/swarmbox/releases/tag/v2.0.7
 [2.0.6]: https://github.com/feroult/swarmbox/releases/tag/v2.0.6
