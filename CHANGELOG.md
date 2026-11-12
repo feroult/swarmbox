@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.8] - 2026-11-12
+
 - Changed: a tab that leaves and comes back (`exit`, then `swarmbox` again in the same terminal tab) is now put back in the same place in the browser, not at the end. The host passes the
   `tty` of the terminal tab, which names it in any terminal or over ssh, and the box keeps the host tabs in the order they first appeared. Dragging the tabs of your terminal is not followed,
   and a window opened from the browser (`Alt+N`) can end up on either side of a returning tab. Needs `swarmbox update` and `swarmbox reset`.
@@ -115,6 +117,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.8]: https://github.com/feroult/swarmbox/releases/tag/v2.0.8
 [2.0.7]: https://github.com/feroult/swarmbox/releases/tag/v2.0.7
 [2.0.6]: https://github.com/feroult/swarmbox/releases/tag/v2.0.6
 [2.0.5]: https://github.com/feroult/swarmbox/releases/tag/v2.0.5
