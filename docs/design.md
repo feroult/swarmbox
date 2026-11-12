@@ -150,7 +150,7 @@ in the script: `podman pull` runs in the background with its own output in a fil
 percentage, MB done of the total, MB/s and seconds; narrow terminals drop the right-hand blocks). The bytes are the size of `container_images_storage*` in the temporary folder that `podman info` reports as
 `ImageCopyTmpDir` (measured on Podman 5.4: it grows to about the compressed size of the image while the layers arrive); the total is the sum of the layer sizes of the manifest for this machine's architecture,
 read from `ghcr.io` with `curl` in the background (any other registry, or any failure, gives a bar that sweeps with no percentage). The percentage never goes back and stops at 99 until Podman exits; when it is
-95 or more and no bytes arrive the label is `unpack`. Colors are the cool palette of the box prompt (24-bit with `COLORTERM`, else 256), off with `NO_COLOR`; the powerline separators and the icon are on when
+95 or more and no bytes arrive the label is `unpack`. Colors are a palette of its own, violet, teal, indigo and slate (24-bit with `COLORTERM`, else 256), off with `NO_COLOR`; the powerline separators and the icon are on when
 `STARSHIP_SHELL` is set or `SWARMBOX_ICONS=1`; without a UTF-8 locale the bar is ASCII; `SWARMBOX_PROGRESS=plain` leaves Podman's own bars. [verified: tests/test_pull_ui.py with a fake Podman and curl, and a real
 pull of the 2.0.4 image: 785 MB, 99% at 749 MB, 24 s; Podman 5.4.2] Not checked: Podman 4.3 to 5.3 (the folder name is the same in the containers/image library for years), macOS, a registry other than ghcr.io.
 

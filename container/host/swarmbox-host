@@ -1412,7 +1412,7 @@ show_err() { tail -n "${2:-3}" "$1" 2> /dev/null | sed 's/^/    /' >&2; }
 # ---------------------------------------------------------------- the pull, for a person at a terminal
 
 # ui_setup: UI=1 when standard error is a terminal the progress line may draw on (not with SWARMBOX_PROGRESS=plain, TERM=dumb or
-# no TERM). Colors follow the cool palette of the prompt in the box (container/config/starship.toml); NO_COLOR turns them off. The
+# no TERM). Colors are a palette of its own (the roles in ui_c: violet, teal, indigo, slate), not the prompt's; NO_COLOR turns them off. The
 # powerline separators and the download icon need a Nerd Font, which cannot be detected: they are on when Starship runs in this shell
 # (STARSHIP_SHELL is set) or SWARMBOX_ICONS=1, and off with SWARMBOX_ICONS=0. Without a UTF-8 locale the bar is plain ASCII.
 ui_setup() {
