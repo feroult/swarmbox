@@ -10,7 +10,11 @@ Inside the box ttyd always uses port 7681; `WEB_PORT` is only the host side of t
 window of the same tmux session (`main`) the browser shows, so each host tab is also a tab in the browser. In your terminal it
 behaves like any program: **`exit` ends the shell and returns you to your own shell**, it does not move you to the window of another
 tab (the tmux tabs are for the browser). Closing the host tab only detaches: the window keeps running and stays in the browser until its
-shell exits. Nested tmux: if your host terminal also
+shell exits. A tab that leaves and comes back is **put back in the same place in the browser**: the host passes the pty of the terminal tab
+(`tty`, the same for as long as the tab lives, in any terminal or over ssh) and the box keeps the host tabs in the order they first appeared, so after
+`exit` and `swarmbox` again in the leftmost tab the browser shows it on the left, not at the end. What is kept is the order of the host tabs among
+themselves: dragging the tabs of your terminal is not followed (nothing tells the box), and a window opened from the browser (`Alt+N`) can end up on either side of a
+returning tab. Nested tmux: if your host terminal also
 runs tmux, give it another prefix (SwarmBox uses `C-a`) or press `C-a a` to send the prefix inside.
 `swarmbox --plain` gives the plain bash instead.
 

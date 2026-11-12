@@ -58,6 +58,16 @@ def opt(name):
 sub = argv[0] if argv else ""
 if sub == "has-session":
     sys.exit(1 if mode("no-session") else 0)
+if sub == "show-options":
+    p = os.path.join(d, "show-options.txt")
+    if "@sb_order" in argv and os.path.exists(p):
+        print(open(p).read().strip())
+    sys.exit(0)
+if sub == "list-windows" and "@sb_tab" in (opt("-F") or ""):
+    p = os.path.join(d, "owners.txt")
+    if os.path.exists(p):
+        print(open(p).read().strip())
+    sys.exit(0)
 if sub == "list-windows":
     fmt = opt("-F") or ""
     for row in windows():
@@ -90,6 +100,8 @@ if sub == "display-message":
     print(mode("next-id", "@7"))
     sys.exit(0)
 if sub == "link-window":
+    if "-b" in argv and os.path.exists(os.path.join(d, "link-before-fails")):
+        sys.exit(1)
     save(windows() + [opt("-s") + "|bash|bash|1"])
     sys.exit(0)
 if sub == "attach-session":
@@ -376,6 +388,44 @@ class InteractiveAttachFakeTests(FakeTmuxCase):
         # the order matters: the window is linked into main before the idle one goes, so main never ends up with no window
         self.assertLess(kinds.index("link-window"), kinds.index("kill-window"))
         self.assertLess(kinds.index("kill-window"), kinds.index("attach-session"))
+        self.assertFalse(any("@sb_tab" in " ".join(c) or "@sb_order" in " ".join(c) for c in calls), "no key given: nothing is recorded")
+
+    def test_a_key_is_recorded_on_the_window_and_in_the_order_and_a_new_tab_goes_to_the_end(self):
+        self.put("windows.txt", "@0|idle|bash|1\n")
+        p = self.run_term(self.fake, [], SWARMBOX_TAB="/dev/pts/9")
+        self.assertEqual(p.wait(), 0)
+        calls = self.calls()
+        owner = [c for c in calls if c[:1] == ["set-option"] and "@sb_tab" in c][0]
+        self.assertEqual(owner, ["set-option", "-w", "-t", "@7", "@sb_tab", "/dev/pts/9"])
+        order = [c for c in calls if c[:1] == ["set-option"] and "@sb_order" in c][0]
+        self.assertEqual(order, ["set-option", "-g", "@sb_order", "/dev/pts/9"])
+        link = self.subs("link-window")[0]
+        self.assertEqual(link[link.index("-t") + 1], "=main:{end}", "a tab the box has not seen goes to the end")
+        self.assertIn("-a", link)
+
+    def test_a_known_key_goes_before_the_first_window_of_a_later_tab_and_the_target_names_the_session(self):
+        self.put("windows.txt", "@0|idle|bash|1\n")
+        self.put("show-options.txt", "/dev/pts/9 /dev/pts/10\n")
+        self.put("owners.txt", "@3|/dev/pts/10\n")
+        p = self.run_term(self.fake, [], SWARMBOX_TAB="/dev/pts/9")
+        self.assertEqual(p.wait(), 0)
+        link = self.subs("link-window")[0]
+        self.assertEqual(link[link.index("-t") + 1], "=main:@3", "before the window of the later tab, named with the session")
+        self.assertIn("-b", link)
+        self.assertNotIn("-a", link)
+        self.assertEqual([c for c in self.calls() if c[:1] == ["set-option"] and "@sb_order" in c], [], "the key was already in the order")
+
+    def test_if_the_anchor_window_cannot_be_used_the_window_goes_to_the_end(self):
+        self.put("windows.txt", "@0|idle|bash|1\n")
+        self.put("show-options.txt", "/dev/pts/9 /dev/pts/10\n")
+        self.put("owners.txt", "@3|/dev/pts/10\n")
+        self.put("link-before-fails", "x")
+        p = self.run_term(self.fake, [], SWARMBOX_TAB="/dev/pts/9")
+        self.assertEqual(p.wait(), 0)
+        links = self.subs("link-window")
+        self.assertEqual(len(links), 2)
+        self.assertIn("-b", links[0])
+        self.assertEqual(links[1][links[1].index("-t") + 1], "=main:{end}")
 
     def test_web_attaches_to_the_session_itself_so_the_status_bar_stays(self):
         self.put("windows.txt", "@0|idle|bash|1\n")
@@ -511,6 +561,79 @@ class RealTmuxCase(Base):
         self.assertTrue(wait_until(lambda: self.tabs() == []), "no session of a finished tab is left")
         # main had no other window, so tmux ends it as it always did when the last window of a session goes; the next call makes it again
         # (the test below)
+
+    # -- the place of a tab in main: the same host tab comes back to the same slot ------------------------------------------------------
+    def owners(self):
+        """The key of the host tab that owns each window of main, in the order the browser shows them ('' for a window nobody owns)."""
+        return self.iso.run("list-windows", "-t", "=main", "-F", "#{@sb_tab}").stdout.split("\n")[:-1]
+
+    def enter(self, key, expect):
+        t = self.term([], **({"SWARMBOX_TAB": key} if key is not None else {}))
+        self.assertTrue(wait_until(lambda: len(self.windows()) == expect), t.out)
+        time.sleep(0.4)
+        return t
+
+    def leave(self, tab, expect):
+        time.sleep(0.6)
+        tab.write(b"exit\r")
+        self.assertEqual(tab.wait(), 0, tab.out)
+        self.assertTrue(wait_until(lambda: len(self.windows()) == expect))
+
+    def test_a_tab_that_leaves_and_comes_back_returns_to_its_place_in_the_browser(self):
+        k = ["/dev/pts/101", "/dev/pts/102", "/dev/pts/103"]
+        t1 = self.enter(k[0], 1)
+        t2 = self.enter(k[1], 2)
+        t3 = self.enter(k[2], 3)
+        self.assertEqual(self.owners(), k, "the order in which the tabs were opened")
+        self.leave(t1, 2)                                    # exit in the tab on the LEFT
+        self.assertEqual(self.owners(), k[1:])
+        t1 = self.enter(k[0], 3)                             # and the same host tab comes back
+        self.assertEqual(self.owners(), k, "back on the left, not at the end")
+        self.leave(t2, 2)                                    # the one in the MIDDLE
+        self.assertEqual(self.owners(), [k[0], k[2]])
+        t2 = self.enter(k[1], 3)
+        self.assertEqual(self.owners(), k, "back in the middle")
+        self.leave(t3, 2)                                    # the last one: it goes to the end again
+        t3 = self.enter(k[2], 3)
+        self.assertEqual(self.owners(), k)
+
+    def test_a_tab_without_a_key_goes_to_the_end_and_does_not_disturb_the_others(self):
+        a = self.enter("/dev/pts/201", 1)
+        self.enter(None, 2)                                  # an old host script, or a client that gave no key
+        c = self.enter("/dev/pts/202", 3)
+        self.assertEqual(self.owners(), ["/dev/pts/201", "", "/dev/pts/202"])
+        self.leave(a, 2)
+        self.enter("/dev/pts/201", 3)
+        # What is kept is the order of the host tabs among themselves. Nothing records on which side of a returning tab a window with no owner
+        # was, so it can end up on either side; the returning tab goes right before the next tab that has an owner.
+        self.assertEqual([k for k in self.owners() if k], ["/dev/pts/201", "/dev/pts/202"])
+        self.assertEqual(self.owners().count(""), 1, "the keyless window is still there")
+        self.assertEqual(self.owners()[-2:], ["/dev/pts/201", "/dev/pts/202"])
+        self.assertTrue(c.alive())
+
+    def test_a_window_opened_from_the_browser_stays_and_the_host_tabs_keep_their_order(self):
+        a = self.enter("/dev/pts/301", 1)
+        self.iso.run("new-window", "-d", "-a", "-t", "=main:{end}", "sleep 600", check=True)   # Alt+N in the browser: no owner
+        self.assertTrue(wait_until(lambda: len(self.windows()) == 2))
+        self.enter("/dev/pts/302", 3)
+        self.assertEqual(self.owners(), ["/dev/pts/301", "", "/dev/pts/302"])
+        self.leave(a, 2)
+        self.enter("/dev/pts/301", 3)
+        self.assertEqual([k for k in self.owners() if k], ["/dev/pts/301", "/dev/pts/302"], "the host tabs keep their order")
+        self.assertEqual(self.owners().count(""), 1, "the window from the browser is still there")
+
+    def test_the_key_is_cleaned_before_it_is_kept(self):
+        self.enter("a b;c$(id)", 1)
+        self.assertEqual(self.owners(), ["a_b_c__id_"])
+        self.assertEqual(self.iso.run("show-options", "-gqv", "@sb_order").stdout.strip(), "a_b_c__id_", "one word, so the list stays a list")
+
+    def test_the_order_remembers_at_most_64_tabs_the_newest_ones(self):
+        self.iso.run("set-option", "-g", "@sb_order", " ".join("old%d" % i for i in range(100)), check=True)
+        self.enter("/dev/pts/401", 1)
+        keys = self.iso.run("show-options", "-gqv", "@sb_order").stdout.split()
+        self.assertEqual(len(keys), 64)
+        self.assertEqual(keys[-1], "/dev/pts/401")
+        self.assertEqual(keys[0], "old37")
 
     def test_a_tab_opened_after_another_one_ended_still_works(self):
         a = self.term([])

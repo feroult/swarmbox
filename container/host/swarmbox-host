@@ -2696,6 +2696,13 @@ attach_main() {
         pubkey|tool) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
         attach) shift ;;
     esac
+    # The pty of this terminal tab names the tab: it is the same for as long as the tab lives, in any terminal or over ssh, so after `exit`
+    # and `swarmbox` again in the same tab the box can put the window back in the same place in the browser (swarmbox-attach, SWARMBOX_TAB).
+    a_key=
+    if [ "$a_t" = -it ]; then a_key=$(tty 2> /dev/null) || a_key=; fi
+    if [ -n "$a_key" ]; then
+        exec podman exec "$a_t" -e TERM -e COLORTERM -e "SWARMBOX_TAB=$a_key" "$a_name" swarmbox-entrypoint attach "$@"
+    fi
     exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint attach "$@"
 }
 

@@ -5,6 +5,9 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Changed: a tab that leaves and comes back (`exit`, then `swarmbox` again in the same terminal tab) is now put back in the same place in the browser, not at the end. The host passes the
+  `tty` of the terminal tab, which names it in any terminal or over ssh, and the box keeps the host tabs in the order they first appeared. Dragging the tabs of your terminal is not followed,
+  and a window opened from the browser (`Alt+N`) can end up on either side of a returning tab. Needs `swarmbox update` and `swarmbox reset`.
 ## [2.0.7] - 2026-11-11
 
 - Changed: `exit` in a host terminal tab now ends `swarmbox` and returns you to your own shell. Before, with two tabs open, it closed the window and moved you to the

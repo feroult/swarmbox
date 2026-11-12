@@ -143,14 +143,27 @@ class TerminalTest(Base):
             self.assertEqual(c[1], "-i")
             self.assertNotIn("-t", c)
 
-    def test_a_terminal_on_both_ends_adds_t_to_every_exec_form(self):
+    def test_a_terminal_on_both_ends_adds_t_to_every_exec_form_and_the_attach_carries_the_tty_of_the_tab(self):
         for args, words in (([], ["attach"]), (["pubkey"], ["pubkey"]), (["ls", "-l"], ["attach", "ls", "-l"]),
                             (["--plain"], ["attach", "--plain"])):
             with self.subTest(args=args):
                 open(self.fp.log_path, "w").close()
                 rc, out, err = self.pty(*args)
                 self.assertEqual(rc, 0, err)
-                self.assertEqual(self.exec_calls(), [self.entry(*words, tty="-it")])
+                calls = self.exec_calls()
+                self.assertEqual(len(calls), 1)
+                call = calls[0]
+                keys = [a for a in call if a.startswith("SWARMBOX_TAB=")]
+                if words[0] == "attach":
+                    # the pty of the terminal, which names the tab for as long as it lives: the box puts a returning tab back in its place
+                    self.assertEqual(len(keys), 1, call)
+                    self.assertRegex(keys[0], r"^SWARMBOX_TAB=/dev/(pts/\d+|tty\w*|ttys\d+)$")
+                    i = call.index(keys[0])
+                    self.assertEqual(call[i - 1], "-e")
+                    call = call[:i - 1] + call[i + 1:]
+                else:
+                    self.assertEqual(keys, [], "pubkey and tool do not need it")
+                self.assertEqual([call], [self.entry(*words, tty="-it")])
 
     def test_one_end_that_is_not_a_terminal_is_enough_to_leave_t_out(self):
         for stdin_tty, stdout_tty in ((True, False), (False, True)):

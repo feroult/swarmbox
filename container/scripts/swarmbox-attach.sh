@@ -7,7 +7,8 @@
 #                           so the browser shows every window (tab) of the session, the ones opened from host terminals too
 #   no command, terminal    a new window of tmux session "main", shown through a session of its own (no status bar): `exit` ends
 #                           the window and this program, and closing the host tab only detaches; when the only other window is
-#                           the idle one `serve` made, that one is closed
+#                           the idle one `serve` made, that one is closed. SWARMBOX_TAB (the host passes the tty of its terminal) puts the
+#                           window back in the place its host tab had in the browser (slot_target, below)
 #   command, terminal       the `swarmbox <command>` mechanism: a detached window runs the command through an
 #                           interactive shell; this program waits on a tmux wait-for channel, with a poll of the window id
 #                           as the fallback, and exits with the command's status (128+signal; 129 when the window was
@@ -100,13 +101,40 @@ new_window() {
 
 window_listed() { tmux list-windows -t "=$SESSION" -F '#{window_id}' 2>/dev/null | grep -qxF "$1"; }
 
+# slot_target KEY: where the window of the host tab KEY goes in main, so that a tab that leaves and comes back (exit, then `swarmbox` again in the
+# same host tab) is back in the same place in the browser. KEY is SWARMBOX_TAB, the pty of the host tab, which the host script passes: it names the tab
+# in any terminal or over ssh. The server keeps the keys in the order they first appeared (the global option @sb_order, at most 64) and each window
+# the key of its tab (the window option @sb_tab). Prints the id of the first window of main whose tab comes AFTER this one in that order, to go before
+# it; nothing when there is none (a new tab, or the last one): the end. Windows with no key (opened from the browser) keep their places.
+slot_target() {
+    local key=$1 k l id found=0
+    local -a keys later=()
+    read -ra keys <<< "$(tmux show-options -gqv @sb_order 2>/dev/null)"
+    for k in "${keys[@]}"; do
+        if [ "$found" = 1 ]; then later+=("$k"); elif [ "$k" = "$key" ]; then found=1; fi
+    done
+    if [ "$found" = 0 ]; then
+        keys+=("$key")
+        if [ "${#keys[@]}" -gt 64 ]; then keys=("${keys[@]: -64}"); fi
+        tmux set-option -g @sb_order "${keys[*]}" 2>/dev/null
+        return 0
+    fi
+    while IFS='|' read -r id k; do
+        [ -n "$k" ] || continue
+        for l in "${later[@]}"; do
+            if [ "$l" = "$k" ]; then printf '%s\n' "$id"; return 0; fi
+        done
+    done < <(tmux list-windows -t "=$SESSION" -F '#{window_id}|#{@sb_tab}' 2>/dev/null)
+    return 0
+}
+
 # interactive: a terminal tab of the host. It gets a session of its OWN with just its window, and that window is also linked into the
 # session "main", so the browser still shows it as a tab. When the shell of the tab ends (`exit`) its window goes, its session has
 # no window left and ends, and so does this client: you are back at the host shell, as with any program. (A grouped session would not
 # do: it shares the window list of all the tabs, so when its window went the client was moved to the window of ANOTHER tab.)
 # Closing the host tab only detaches: the session of the tab ends (destroy-unattached) but the window keeps running in main.
 interactive() {
-    local idle w term size
+    local idle w term size key anchor linked
     ensure_session || die "tmux could not start the session $SESSION"
     idle=$(idle_window)
     term="swarmbox-tab-$$-$(date +%s%N)"
@@ -115,7 +143,20 @@ interactive() {
     if read -r _rows _cols < <(stty size 2>/dev/null) && [ "${_rows:-0}" -gt 0 ] && [ "${_cols:-0}" -gt 0 ]; then size=(-x "$_cols" -y "$_rows"); fi
     tmux new-session -d -s "$term" -c "$PWD" "${size[@]}" || die "tmux could not open a window"
     w=$(tmux display-message -p -t "=$term:" '#{window_id}' 2>/dev/null)
-    if [ -z "$w" ] || ! tmux link-window -d -a -s "$w" -t "=$SESSION:{end}" 2>/dev/null; then
+    # the place in main: back where this host tab was (see slot_target), else the end. The target names the session: a bare window id would
+    # be looked up in the first session that has the window, which is the session of the tab that owns it, not main.
+    key=${SWARMBOX_TAB:-}
+    key=${key//[^A-Za-z0-9._\/-]/_}
+    key=${key:0:80}
+    anchor=
+    if [ -n "$key" ] && [ -n "$w" ]; then
+        tmux set-option -w -t "$w" @sb_tab "$key" 2>/dev/null
+        anchor=$(slot_target "$key")
+    fi
+    linked=0
+    if [ -n "$w" ] && [ -n "$anchor" ] && tmux link-window -d -b -s "$w" -t "=$SESSION:$anchor" 2>/dev/null; then linked=1; fi   # else the end, below
+    if [ "$linked" = 0 ] && [ -n "$w" ] && tmux link-window -d -a -s "$w" -t "=$SESSION:{end}" 2>/dev/null; then linked=1; fi
+    if [ "$linked" = 0 ]; then
         tmux kill-session -t "=$term" 2>/dev/null
         die "tmux could not open a window"
     fi

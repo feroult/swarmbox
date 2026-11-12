@@ -194,7 +194,12 @@ and must be your choice. It also warns when the box's image is not the one the c
   window into `main`**, so the browser lists it as a tab. (Not a grouped session: a group shares the window list of every tab, so when the window
   of a tab ended its client was moved to the window of another tab instead of ending.) `exit` in a tab ends its window, its session (which has no
   window left) and its client: the user is back at the host shell. Closing the tab only detaches: its session ends (`destroy-unattached`), the window
-  stays in `main` until its shell exits. When the only other window is the
+  stays in `main` until its shell exits. The window goes to the place its host tab had: the host script passes `SWARMBOX_TAB`, the `tty` of the terminal (the
+  same for as long as the tab lives, in any terminal or over ssh; only with a terminal on both ends), the window keeps it in the window option `@sb_tab`, and the
+  server keeps the keys in the order they first appeared in the global option `@sb_order` (the newest 64; the key is cleaned to `A-Za-z0-9._/-`, at most 80
+  characters). The window is linked before the first window of `main` whose tab comes later in that order, else at the end, and the target is written
+  `=main:@id`: a bare window id is looked up in the first session that has the window, which is the session of the tab that owns it, not `main`. Windows with no
+  key (opened from the browser) are not in the order: nothing records on which side of a returning tab they were. When the only other window is the
   untouched idle one (named `idle`, one pane, a shell), it is closed. A host tab has no tmux status bar. The browser (`swarmbox-attach --web`, what ttyd runs) attaches to `main` itself and keeps the bar, so it lists every window, the ones opened from host tabs too.
 - Closing every tab or the browser stops nothing; `swarmbox stop` does.
 - `attach` waits for the readiness marker (60 s, then exit 6 and a message naming `podman logs`).
