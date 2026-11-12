@@ -3,7 +3,7 @@
 #
 #   serve     the box's main process: the ordered startup, the readiness marker and health file,
 #             PID 1 signal handling, and the ttyd supervisor
-#   attach    forwards to swarmbox-attach (the grouped session, the idle window, `swarmbox <command>`)
+#   attach    forwards to swarmbox-attach (the session of each tab, the idle window, `swarmbox <command>`)
 #   install   forwards to swarmbox-install
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
 #   tool      forwards to swarmbox-tool

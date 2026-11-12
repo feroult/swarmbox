@@ -1,4 +1,4 @@
-"""`swarmbox-attach`: the grouped session, the idle window and the
+"""`swarmbox-attach`: the session of each terminal tab, the idle window and the
 `swarmbox <command>` mechanism: detached window, wait-for channel, status file, exit codes, no-terminal path.
 
 Three layers, all against container/scripts/swarmbox-attach.sh:
@@ -85,6 +85,14 @@ if sub == "wait-for":
 if sub == "kill-window":
     t = opt("-t")
     save([r for r in windows() if r.split("|")[0] != t])
+    sys.exit(0)
+if sub == "display-message":
+    print(mode("next-id", "@7"))
+    sys.exit(0)
+if sub == "link-window":
+    save(windows() + [opt("-s") + "|bash|bash|1"])
+    sys.exit(0)
+if sub == "attach-session":
     sys.exit(0)
 if sub == "new-session":
     if "-t" in argv and mode("client") == "block":
@@ -339,24 +347,35 @@ class ReadinessTests(FakeTmuxCase):
         self.assertEqual(self.calls(), [])
 
 class InteractiveAttachFakeTests(FakeTmuxCase):
-    def test_the_grouped_session_without_status_bar_and_a_new_window(self):
+    def test_a_terminal_tab_gets_a_session_of_its_own_with_its_window_linked_into_main(self):
         self.put("windows.txt", "@0|idle|bash|1\n")
         p = self.run_term(self.fake, [])
         self.assertEqual(p.wait(), 0)
-        kinds = [c[0] for c in self.calls()]
+        calls = self.calls()
+        kinds = [c[0] for c in calls]
         self.assertEqual(kinds[0], "has-session")
-        self.assertIn("=main", self.calls()[0])
-        nw = self.subs("new-window")[0]
-        self.assertIn("-d", nw)
-        self.assertIn("=main:", nw)
-        self.assertIn(self.base, nw)  # -c <cwd of the caller>
-        ns = [c for c in self.subs("new-session") if "-t" in c][0]
-        flat = " ".join(ns)
-        self.assertIn("-t =main", flat)
+        self.assertIn("=main", calls[0])
+        self.assertEqual(self.subs("new-window"), [], "the window is made by new-session, in the session of the tab")
+        ns = self.subs("new-session")[0]
+        self.assertIn("-d", ns)
+        name = ns[ns.index("-s") + 1]
+        self.assertTrue(name.startswith("swarmbox-tab-"), name)
+        self.assertIn(self.base, ns)  # -c <cwd of the caller>
+        link = self.subs("link-window")[0]
+        self.assertEqual(link[link.index("-s") + 1], "@7", "the window id read back from the tab's session")
+        self.assertEqual(link[link.index("-t") + 1], "=main:{end}")
+        self.assertIn("-a", link)
+        self.assertIn("-d", link)
+        self.assertEqual(self.subs("kill-window")[0][-1], "@0", "the idle window of serve is closed")
+        att = self.subs("attach-session")[0]
+        flat = " ".join(att)
+        self.assertIn("-t =" + name, flat)
         self.assertIn("set-option destroy-unattached on", flat)
         self.assertIn("set-option status off", flat)
-        self.assertIn("select-window -t @7", flat)
-        self.assertEqual(ns.count(";"), 3)  # three chained commands
+        self.assertEqual(att.count(";"), 2)  # two chained commands
+        # the order matters: the window is linked into main before the idle one goes, so main never ends up with no window
+        self.assertLess(kinds.index("link-window"), kinds.index("kill-window"))
+        self.assertLess(kinds.index("kill-window"), kinds.index("attach-session"))
 
     def test_web_attaches_to_the_session_itself_so_the_status_bar_stays(self):
         self.put("windows.txt", "@0|idle|bash|1\n")
@@ -443,7 +462,10 @@ class RealTmuxCase(Base):
     def sessions(self):
         return self.iso.run("list-sessions", "-F", "#{session_name}").stdout.split()
 
-    def test_two_attach_calls_share_one_session_as_two_windows_and_the_idle_one_is_gone(self):
+    def tabs(self):
+        return [x for x in self.sessions() if x.startswith("swarmbox-tab-")]
+
+    def test_two_attach_calls_are_two_windows_of_main_each_in_a_session_of_its_own_and_the_idle_one_is_gone(self):
         self.assertEqual([w[1] for w in self.windows()], ["idle"])
         a = self.term([])
         self.assertTrue(wait_until(lambda: len(self.sessions()) == 2), a.out)
@@ -452,19 +474,54 @@ class RealTmuxCase(Base):
         self.assertNotEqual(w[0][1], "idle")  # the idle window is gone
         b = self.term([])
         self.assertTrue(wait_until(lambda: len(self.sessions()) == 3), b.out)
-        self.assertEqual(len(self.windows()), 2)
+        self.assertEqual(len(self.windows()), 2, "main shows both tabs (the browser sees them as tabs)")
         self.assertNotIn("idle", [x[1] for x in self.windows()])
-        # the grouped sessions: no status bar; each keeps its own current window; the group shares the windows
-        for s in (s for s in self.sessions() if s != "main"):
+        # a session per tab: no status bar, one window each (not a group sharing every window), destroyed when the client goes
+        for s in self.tabs():
             self.assertEqual(self.iso.run("show-options", "-t", s, "-v", "status").stdout.strip(), "off")
             self.assertEqual(self.iso.run("show-options", "-t", s, "-v", "destroy-unattached").stdout.strip(), "on")
-            self.assertEqual(len(self.windows(s)), 2)
+            self.assertEqual(len(self.windows(s)), 1)
         self.assertNotEqual(self.iso.run("show-options", "-t", "=main", "-v", "status").stdout.strip(), "off")
-        # closing a tab removes its grouped session and nothing else: both windows stay
+        # closing a tab of the host terminal only detaches: its session goes, its window keeps running in main
         a.p.send_signal(signal.SIGHUP)
         a.close()
         self.assertTrue(wait_until(lambda: len(self.sessions()) == 2))
         self.assertEqual(len(self.windows()), 2)
+
+    def test_exit_in_a_tab_leaves_the_box_and_does_not_jump_to_the_window_of_another_tab(self):
+        a = self.term([])
+        self.assertTrue(wait_until(lambda: len(self.tabs()) == 1), a.out)
+        b = self.term([])
+        self.assertTrue(wait_until(lambda: len(self.tabs()) == 2), b.out)
+        self.assertEqual(len(self.windows()), 2)
+        time.sleep(0.8)  # let the shell of tab A draw its prompt
+        a.write(b"exit\r")
+        self.assertEqual(a.wait(), 0, a.out)   # the client of A is gone: the user is back at the host shell
+        self.assertTrue(b.alive(), "the other tab is untouched")
+        self.assertTrue(wait_until(lambda: len(self.windows()) == 1), "the window of A is gone from main")
+        self.assertEqual(len(self.tabs()), 1, "the session of A ended with its window")
+        self.assertEqual(len(self.windows(self.tabs()[0])), 1)
+
+    def test_exit_in_the_only_tab_ends_that_client_too(self):
+        a = self.term([])
+        self.assertTrue(wait_until(lambda: len(self.tabs()) == 1), a.out)
+        time.sleep(0.8)
+        a.write(b"exit\r")
+        self.assertEqual(a.wait(), 0, a.out)
+        self.assertTrue(wait_until(lambda: self.tabs() == []), "no session of a finished tab is left")
+        # main had no other window, so tmux ends it as it always did when the last window of a session goes; the next call makes it again
+        # (the test below)
+
+    def test_a_tab_opened_after_another_one_ended_still_works(self):
+        a = self.term([])
+        self.assertTrue(wait_until(lambda: len(self.tabs()) == 1), a.out)
+        time.sleep(0.8)
+        a.write(b"exit\r")
+        a.wait()
+        self.assertTrue(wait_until(lambda: self.tabs() == []))
+        b = self.term([])
+        self.assertTrue(wait_until(lambda: len(self.tabs()) == 1), b.out)
+        self.assertEqual(len(self.windows()), 1)
 
     def test_the_last_screen_of_a_command_is_printed_after_its_window_closes(self):
         p = self.term(["echo", "output-of-the-command"])
@@ -479,7 +536,7 @@ class RealTmuxCase(Base):
                 p = self.term(args)
                 self.assertEqual(p.wait(), want, p.out)
         self.assertEqual([f for f in os.listdir(self.run_dir) if f.startswith("exit.")], [])
-        self.assertEqual(self.sessions(), ["main"], "grouped sessions of finished calls must be gone")
+        self.assertEqual(self.sessions(), ["main"], "the sessions of finished calls must be gone")
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Layer 3: the entrypoint's attach subcommand

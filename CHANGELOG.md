@@ -5,6 +5,9 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Changed: `exit` in a host terminal tab now ends `swarmbox` and returns you to your own shell. Before, with two tabs open, it closed the window and moved you to the
+  shell of the other tab. Each tab has a session of its own with its window linked into the box's session, so the browser still shows every tab, and closing a host tab
+  only detaches (the window keeps running and stays in the browser). Needs `swarmbox update` and `swarmbox reset`.
 - Dev only: a local gate (`dev/check.sh` and a pre-push hook) and `dev/release.sh`, which releases from a CHANGELOG written beforehand; see CONTRIBUTING.md.
 
 ## [2.0.6] - 2026-11-11

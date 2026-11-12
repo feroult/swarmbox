@@ -7,9 +7,10 @@ The box serves its shell in a browser (ttyd + tmux, so sessions survive closing 
 Inside the box ttyd always uses port 7681; `WEB_PORT` is only the host side of the mapping. There is no host-network mode in 2.0.
 
 **Same tabs in the browser and in your terminal**: the shell `swarmbox` opens in your host terminal is a new
-window of the same tmux session (`main`) the browser shows, through a grouped session, so each host tab is also a
-tab in the browser and the other way round; each side keeps its own current window, and the grouped session goes
-away when you close the host tab (the window stays until its shell exits). Nested tmux: if your host terminal also
+window of the same tmux session (`main`) the browser shows, so each host tab is also a tab in the browser. In your terminal it
+behaves like any program: **`exit` ends the shell and returns you to your own shell**, it does not move you to the window of another
+tab (the tmux tabs are for the browser). Closing the host tab only detaches: the window keeps running and stays in the browser until its
+shell exits. Nested tmux: if your host terminal also
 runs tmux, give it another prefix (SwarmBox uses `C-a`) or press `C-a a` to send the prefix inside.
 `swarmbox --plain` gives the plain bash instead.
 

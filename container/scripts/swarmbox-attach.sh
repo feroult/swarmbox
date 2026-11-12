@@ -5,8 +5,9 @@
 #
 #   --web                   what the web terminal (ttyd) runs: attaches to tmux session "main" itself, with its status bar,
 #                           so the browser shows every window (tab) of the session, the ones opened from host terminals too
-#   no command, terminal    a new window of tmux session "main" through a grouped session (no status bar, ends with the
-#                           tab); when the only other window is the idle one `serve` made, that one is closed
+#   no command, terminal    a new window of tmux session "main", shown through a session of its own (no status bar): `exit` ends
+#                           the window and this program, and closing the host tab only detaches; when the only other window is
+#                           the idle one `serve` made, that one is closed
 #   command, terminal       the `swarmbox <command>` mechanism: a detached window runs the command through an
 #                           interactive shell; this program waits on a tmux wait-for channel, with a poll of the window id
 #                           as the fallback, and exits with the command's status (128+signal; 129 when the window was
@@ -99,18 +100,31 @@ new_window() {
 
 window_listed() { tmux list-windows -t "=$SESSION" -F '#{window_id}' 2>/dev/null | grep -qxF "$1"; }
 
+# interactive: a terminal tab of the host. It gets a session of its OWN with just its window, and that window is also linked into the
+# session "main", so the browser still shows it as a tab. When the shell of the tab ends (`exit`) its window goes, its session has
+# no window left and ends, and so does this client: you are back at the host shell, as with any program. (A grouped session would not
+# do: it shares the window list of all the tabs, so when its window went the client was moved to the window of ANOTHER tab.)
+# Closing the host tab only detaches: the session of the tab ends (destroy-unattached) but the window keeps running in main.
 interactive() {
-    local idle w
+    local idle w term size
     ensure_session || die "tmux could not start the session $SESSION"
     idle=$(idle_window)
-    w=$(new_window) || die "tmux could not open a window"
-    [ -n "$w" ] || die "tmux could not open a window"
+    term="swarmbox-tab-$$-$(date +%s%N)"
+    # the size of this terminal, so that the window does not start at 80x24 and is resized when the client attaches
+    size=()
+    if read -r _rows _cols < <(stty size 2>/dev/null) && [ "${_rows:-0}" -gt 0 ] && [ "${_cols:-0}" -gt 0 ]; then size=(-x "$_cols" -y "$_rows"); fi
+    tmux new-session -d -s "$term" -c "$PWD" "${size[@]}" || die "tmux could not open a window"
+    w=$(tmux display-message -p -t "=$term:" '#{window_id}' 2>/dev/null)
+    if [ -z "$w" ] || ! tmux link-window -d -a -s "$w" -t "=$SESSION:{end}" 2>/dev/null; then
+        tmux kill-session -t "=$term" 2>/dev/null
+        die "tmux could not open a window"
+    fi
     [ -z "$idle" ] || tmux kill-window -t "$idle" 2>/dev/null
-    exec tmux new-session -t "=$SESSION" \; set-option destroy-unattached on \; set-option status off \; select-window -t "$w"
+    exec tmux attach-session -t "=$term" \; set-option destroy-unattached on \; set-option status off
 }
 
-# web: the browser attaches to the session itself (not a grouped one), so it keeps the status bar with the tabs; the host
-# terminals are the ones that go through a grouped session without a bar.
+# web: the browser attaches to the session main itself, so it keeps the status bar with the tabs (the windows of the host tabs are
+# linked into it); the host terminals each have a session of their own without a bar (interactive, above).
 web() {
     ensure_session || die "tmux could not start the session $SESSION"
     exec tmux attach-session -t "=$SESSION"
