@@ -203,6 +203,42 @@ class DefaultConfig(BrowserKeys):
         self.wheel_up()
         self.assertEqual(self.scroll_position() - first, 10, "two events, five lines each (it was 2 lines: too little for 50,000 lines)")
 
+    def test_the_scrollbar_is_on_not_modal_and_set_quietly_so_an_older_tmux_still_loads_the_file(self):
+        text = open(DEFAULT_CONF).read()
+        self.assertRegex(text, r"(?m)^set -gq pane-scrollbars on$")
+        self.assertNotRegex(text, r"(?m)^set -g\w* pane-scrollbars modal", "modal resizes the pane, and the program in it, each time copy mode starts or ends")
+        self.assertRegex(text, r"(?m)^set -gq pane-scrollbars-style ")
+        self.assertRegex(text, r"(?m)^# -q: ", "the file says why the lines are quiet")
+
+    def test_where_tmux_has_the_scrollbar_it_is_on(self):
+        if not self.out("show", "-gqv", "pane-scrollbars-style"):
+            self.skipTest("this tmux (%s) has no pane scrollbar (3.6 and later have)" % self.out("-V").replace("tmux ", ""))
+        self.assertEqual(self.out("show", "-gqv", "pane-scrollbars"), "on")
+
+    APP = (
+        "import os, sys, termios, tty, select, time\n"
+        "log = open(sys.argv[1], 'a', buffering=1)\n"
+        "fd = sys.stdin.fileno(); old = termios.tcgetattr(fd); tty.setraw(fd)\n"
+        "sys.stdout.write('\\x1b[?1049h\\x1b[2J\\x1b[?1000h\\x1b[?1006h'); sys.stdout.flush()\n"
+        "log.write('READY\\n'); end = time.time() + 20\n"
+        "while time.time() < end:\n"
+        "    if select.select([fd], [], [], 0.2)[0]: log.write('GOT %r\\n' % os.read(fd, 4096))\n"
+    )
+
+    def test_a_program_that_asks_for_the_mouse_gets_the_wheel_and_tmux_does_not_scroll_over_it(self):
+        log = os.path.join(self.tmp, "mouse.log")
+        app = os.path.join(self.tmp, "app.py")
+        with open(app, "w") as f:
+            f.write(self.APP)
+        self.press(("python3 %s %s\r" % (app, log)).encode(), 1.5)   # a full-screen program, as a TUI with its own scrolling is
+        self.assertIn("READY", open(log).read())
+        self.assertEqual(self.out("display-message", "-p", "#{mouse_any_flag}"), "1", "the program asked for the mouse")
+        for _ in range(3):
+            self.press(b"\x1b[<64;10;5M", 0.3)                       # the wheel, turned up
+        time.sleep(0.4)
+        self.assertEqual(self.out("display-message", "-p", "#{pane_in_mode}"), "0", "tmux must not enter copy mode over such a program")
+        self.assertEqual(open(log).read().count("\\x1b[<64;10;5M"), 3, "the program got the three wheel events")
+
     def alone(self, with_keys):
         """Copy tmux.conf (and optionally its sibling) to an empty directory and load it from there."""
         directory = os.path.join(self.tmp, "etc" if with_keys else "etc-alone")

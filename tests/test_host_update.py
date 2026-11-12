@@ -98,7 +98,7 @@ class UpdateBase(up_tests.Base):
         make_archive(p, **kw)
         return p
 
-    def podman_for(self, version="2.0.9", pull=None, tag=None, run=None, **archive_kw):
+    def podman_for(self, version="2.0.99", pull=None, tag=None, run=None, **archive_kw):
         conf = {"pull": pull or {}, "tag": tag or {},
                 "run": run or {"stdout_file": self.archive(version=version, **archive_kw)}}
         return self.podman(**conf)
@@ -125,17 +125,17 @@ class UpdateBase(up_tests.Base):
 
 class PlainUpdateTest(UpdateBase):
     def test_pulls_the_series_tag_reads_the_version_tags_and_writes_image(self):
-        self.podman_for("2.0.9")
+        self.podman_for("2.0.99")
         r = self.update()
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.calls(), [
             ["pull", "-q", REPO + ":2.0"],
             ["run", "--rm", REPO + ":2.0", "host-helper"],
-            ["tag", REPO + ":2.0", REPO + ":2.0.9"],
+            ["tag", REPO + ":2.0", REPO + ":2.0.99"],
         ])
-        self.assertEqual(self.image_line(), ["IMAGE=%s:2.0.9" % REPO])
+        self.assertEqual(self.image_line(), ["IMAGE=%s:2.0.99" % REPO])
         with open(os.path.join(self.host_dir, "VERSION")) as f:
-            self.assertEqual(f.read().strip(), "2.0.9")
+            self.assertEqual(f.read().strip(), "2.0.99")
         # the script of the image is the new command, in place, and its copy is not left in the support folder
         self.assertEqual(self.script_text(), HELPER_SH)
         self.assertTrue(os.access(self.helper, os.X_OK))
@@ -157,7 +157,7 @@ class PlainUpdateTest(UpdateBase):
         for ref in ("swarmbox", "%s:dev" % REPO, "%s:latest" % REPO, "%s:2" % REPO, "%s:main-2.0" % REPO):
             with self.subTest(ref=ref):
                 self.write_config("IMAGE=%s\n" % ref)
-                self.podman_for("2.0.9")
+                self.podman_for("2.0.99")
                 before = self.before()
                 r = self.update()
                 self.assertEqual(r.returncode, 2, r.stderr)
@@ -167,7 +167,7 @@ class PlainUpdateTest(UpdateBase):
 
     def test_update_never_recreates_the_box(self):
         # no rm, stop, start, create, a box run or an inspect of the box: pull, the helper's `run --rm` and tag only
-        self.podman_for("2.0.9")
+        self.podman_for("2.0.99")
         r = self.update()
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(sorted(self.names()), ["pull", "run", "tag"])
@@ -200,24 +200,32 @@ class PullProgressTest(UpdateBase):
         return r.returncode, shown
 
     def test_with_a_terminal_the_pull_has_no_quiet_flag(self):
-        self.podman_for("2.0.9")
+        self.podman_for("2.0.99")
         for env in ({"TERM": "xterm-256color", "LANG": "C.UTF-8"}, {}, {"TERM": "dumb"}, {"TERM": "xterm", "SWARMBOX_PROGRESS": "plain"}):
-            self.podman_for("2.0.9")
+            self.podman_for("2.0.99")
             rc, _ = self.update_on_a_terminal(**env)
             self.assertEqual(rc, 0, env)
             self.assertEqual(self.subs("pull")[-1], ["pull", REPO + ":2.0"], env)
 
     def test_a_failed_pull_with_the_progress_line_shows_podmans_error_and_says_it_in_the_message(self):
-        self.podman_for("2.0.9", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
+        self.podman_for("2.0.99", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
         rc, shown = self.update_on_a_terminal(TERM="xterm-256color", LANG="C.UTF-8")
         self.assertEqual(rc, 3)
         self.assertIn("cannot pull %s:2.0: Error: unable to pull: connection refused" % REPO, shown)
 
     def test_a_failed_pull_without_a_TERM_leaves_podmans_own_output_and_points_at_it(self):
-        self.podman_for("2.0.9", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
+        self.podman_for("2.0.99", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
         rc, shown = self.update_on_a_terminal()
         self.assertEqual(rc, 3)
         self.assertIn("cannot pull %s:2.0: see the Podman error above" % REPO, shown)
+
+
+class NewerVersionLiteralsTest(unittest.TestCase):
+    def test_the_versions_that_stand_for_an_image_newer_than_the_script_are_still_newer(self):
+        # Many tests here say "the image is 2.0.99" or "2.0.100" to mean "newer than this script". They stop meaning it when the script reaches
+        # that version, and the failure shows up in the middle of a release (it did, twice). This fails nine patches before that, with the cause.
+        patch = int(CUR.split("-")[0].split(".")[2])
+        self.assertLess(patch, 90, "the script is %s: raise the literals 2.0.99 and 2.0.100 of this file (and its comments) well above it" % CUR)
 
 
 class ScriptRefreshTest(UpdateBase):
@@ -238,15 +246,15 @@ class ScriptRefreshTest(UpdateBase):
         self.assertEqual(self.script_text(), REAL_SCRIPT)
 
     def test_two_digit_numbers_are_compared_as_numbers(self):
-        self.podman_for("2.0.10")
-        r = self.update("--to", "2.0.10")
+        self.podman_for("2.0.100")
+        r = self.update("--to", "2.0.100")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.script_text(), HELPER_SH)
 
     def test_a_folder_that_cannot_be_written_warns_and_still_updates_the_rest(self):
         if os.geteuid() == 0:
             self.skipTest("root ignores the mode")
-        self.podman_for("2.0.9")
+        self.podman_for("2.0.99")
         self.install_script()
         os.chmod(self.bin, 0o500)
         self.addCleanup(os.chmod, self.bin, 0o700)
@@ -254,10 +262,10 @@ class ScriptRefreshTest(UpdateBase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("cannot write next to this script", r.stderr)
         self.assertEqual(self.script_text(), REAL_SCRIPT)
-        self.assertEqual(self.image_line(), ["IMAGE=%s:2.0.9" % REPO])
+        self.assertEqual(self.image_line(), ["IMAGE=%s:2.0.99" % REPO])
 
     def test_the_script_is_replaced_by_a_rename_so_a_running_copy_is_never_cut(self):
-        self.podman_for("2.0.9")
+        self.podman_for("2.0.99")
         self.install_script()
         before = os.stat(self.helper).st_ino
         r = self.run_h("update", env=self.env())
@@ -266,7 +274,7 @@ class ScriptRefreshTest(UpdateBase):
 
     def test_a_checkout_is_never_replaced(self):
         # run from the folder that holds VERSION (the repository, the image's own folder): the file is not an installed copy
-        self.podman_for("2.0.9")
+        self.podman_for("2.0.99")
         with open(up_tests.HELPER_SRC) as f:
             src = f.read()
         r = subprocess.run([up_tests.HELPER_SRC, "update"], env=self.env(), capture_output=True, text=True, input="", cwd=self.tmp)
@@ -303,7 +311,7 @@ class ToTest(UpdateBase):
                "sha256:abc", "2.0.0@sha256:" + "a" * 64, "a\\b", "a?b"]
         for tag in bad:
             with self.subTest(tag=tag):
-                self.podman_for("2.0.9")
+                self.podman_for("2.0.99")
                 before = self.before()
                 r = self.update("--to", tag)
                 self.assertEqual(r.returncode, 2, r.stderr)
@@ -324,9 +332,9 @@ class FailureTest(UpdateBase):
         self.snapshot = self.before()
 
     def test_a_failed_pull_changes_nothing_and_is_exit_3(self):
-        for args in ([], ["--to", "2.0.9"]):
+        for args in ([], ["--to", "2.0.99"]):
             with self.subTest(args=args):
-                self.podman_for("2.0.9", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
+                self.podman_for("2.0.99", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
                 r = self.update(*args)
                 self.check_nothing_changed(r)
                 self.assertIn("cannot pull %s:" % REPO, r.stderr)
@@ -334,7 +342,7 @@ class FailureTest(UpdateBase):
                 self.assertEqual(self.names(), ["pull"])
 
     def test_an_archive_with_no_helper_is_exit_3(self):
-        self.podman_for("2.0.9", helper=False)
+        self.podman_for("2.0.99", helper=False)
         r = self.update()
         self.check_nothing_changed(r)
         self.assertIn("no usable host helper", r.stderr)
@@ -350,7 +358,7 @@ class FailureTest(UpdateBase):
         # documented order: tag, helper rename, config write; a failing write is the one failure that leaves the new helper
         if os.geteuid() == 0:
             self.skipTest("root ignores the mode")
-        self.podman_for("2.0.9")
+        self.podman_for("2.0.99")
         os.chmod(self.cfg_dir, 0o500)
         self.addCleanup(os.chmod, self.cfg_dir, 0o700)
         r = self.update()
@@ -361,7 +369,7 @@ class FailureTest(UpdateBase):
 
 class AfterUpdateTest(UpdateBase):
     def test_reset_after_update_uses_the_exact_tag_and_needs_no_network(self):
-        self.podman_for("2.0.9")
+        self.podman_for("2.0.99")
         r = self.update()
         self.assertEqual(r.returncode, 0, r.stderr)
         # now the box: no network at all (a fake pull would fail), the exact image is present locally
@@ -378,11 +386,11 @@ class AfterUpdateTest(UpdateBase):
         self.assertEqual(self.subs("pull"), [])
         runs = self.real_runs()
         self.assertEqual(len(runs), 1)
-        self.assertIn(REPO + ":2.0.9", runs[0])
+        self.assertIn(REPO + ":2.0.99", runs[0])
         self.assertNotIn(REPO + ":2.0", runs[0])
         self.assertNotIn(REPO + ":2.0.0", runs[0])
         self.assertEqual(self.subs("image")[0][:2], ["image", "exists"])
-        self.assertIn("swarmbox.image=%s:2.0.9" % REPO, runs[0])
+        self.assertIn("swarmbox.image=%s:2.0.99" % REPO, runs[0])
 
 if __name__ == "__main__":
     unittest.main()

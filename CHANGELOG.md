@@ -5,9 +5,10 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- Added: tmux has a scrollbar again, and this one works. It shows only in copy mode: turn the mouse wheel and a thin bar appears on the right, showing where you are in the 50,000 lines of
-  history, and you can drag it or click its track; outside copy mode it is gone and the text keeps its whole width (in copy mode it takes one column). The image now carries tmux 3.7c (Debian 13 has
-  3.5a, which has no scrollbar), a Debian backport pinned by SHA-256 so every build gets the same file. `set -g pane-scrollbars off` in your `~/.tmux.conf` turns it off. Needs `swarmbox update` and `swarmbox reset`.
+- Added: tmux has a scrollbar again, and this one works: a thin bar on the right of the pane, showing where you are in the 50,000 lines of history; drag it with the mouse or click its track.
+  It is one column wide and always on, on purpose: a bar that showed only while scrolling would resize the pane each time, and a program with columns would reflow while you read. A full-screen program
+  (vim, less, a TUI) gets the whole width and no bar, and one that asks for the mouse gets the wheel itself. The image now carries tmux 3.7c (Debian 13 has 3.5a, which has no scrollbar),
+  a Debian backport pinned by SHA-256 so every build gets the same file. `set -g pane-scrollbars off` (or `modal`) in your `~/.tmux.conf` changes it. Needs `swarmbox update` and `swarmbox reset`.
 
 ## [2.0.8] - 2026-11-12
 

@@ -186,15 +186,16 @@ def step_tmpfs_restart(ctx):
 
 
 def step_tmux_scrollbar(ctx):
-    """The tmux of the image is the pinned backport, and our configuration gives it the scrollbar in copy mode only: the pane is one column
-    narrower there and has its whole width outside it. (The tmux of Debian 13 has no such option.)"""
+    """The tmux of the image is the pinned backport, and our configuration gives it the scrollbar: `on`, so the pane is one column narrower
+    (79 of 80) in and out of copy mode, which keeps the program in it from being resized each time you start or stop scrolling.
+    (The tmux of Debian 13 has no such option.)"""
     with open(os.path.join(ROOT, "Dockerfile")) as f:
         want = re.search(r"^ARG TMUX_VERSION=(\S+)", f.read(), re.M).group(1).split("-")[0]
     r = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
                "tmux -V; K=sbchk; tmux -L $K -f /etc/tmux.conf new-session -d -x 80 -y 24 -s x 'sleep 30' && "
                "tmux -L $K show-options -gqv pane-scrollbars && tmux -L $K display-message -p -t x '#{pane_width}' && "
                "tmux -L $K copy-mode -t x && sleep 0.3 && tmux -L $K display-message -p -t x '#{pane_width}'; tmux -L $K kill-server")
-    assert r.stdout.split() == ["tmux", want, "modal", "80", "79"], "tmux in the image: %r %r" % (r.stdout, r.stderr)
+    assert r.stdout.split() == ["tmux", want, "on", "79", "79"], "tmux in the image: %r %r" % (r.stdout, r.stderr)
     assert r.stderr.strip() == "", "the configuration did not load cleanly: " + r.stderr
 
 
@@ -531,7 +532,7 @@ def step_up_busy_port_and_foreign(ctx):
 STEPS = [
     Step("ready", "serve reaches readiness (marker, PID 1, session main, user agent, ttyd)", False, step_ready),
     Step("tmpfs-restart", "stop is prompt (exit 143), start empties box:/tmp/swarmbox, workspace survives", False, step_tmpfs_restart),
-    Step("tmux-scrollbar", "the pinned tmux is in the image and the scrollbar shows in copy mode only (80 columns, 79 in copy mode)", False, step_tmux_scrollbar),
+    Step("tmux-scrollbar", "the pinned tmux is in the image and has the scrollbar on (79 of 80 columns, in and out of copy mode)", False, step_tmux_scrollbar),
     Step("page-built", "the ttyd page is built into the image and served with the three settings", False, step_page_built),
     Step("tool-validate", "swarmbox-tool validate passes on the shipped manifests (the real validate)", False, step_tool_validate),
     Step("tool-shim", "the shims of all seven tools are links to swarmbox-shim found on PATH; nothing is installed", False, step_tool_shim),
