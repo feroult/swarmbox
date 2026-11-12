@@ -5,6 +5,14 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.10] - 2026-11-12
+
+- Changed: a new banner. Half-block lettering in a rounded frame, like the login screen of a 90s BBS, in a gradient that runs across the whole word: dark gray and purple that light up to white in the middle and fade
+  out again. In a tmux pane, which is where the box always runs, a glint crosses the letters back and forth every few seconds, from a background process, so the shell never waits for it. It writes only
+  when the screen has been still, skips a frame if anything moved, and stops when the banner has scrolled away or been cleared; outside tmux there is no glint. It needs 256 colours. Needs `swarmbox update` and `swarmbox reset`.
+- Changed: the prompt follows the banner: its segments go from dark gray through purple and back to gray, with one light text colour on all of them. The roles of the palette in `starship.toml` changed (`color_text` is the text colour);
+  a `~/.config/starship.toml` of your own is untouched and still wins. Needs `swarmbox update` and `swarmbox reset`.
+- Dev only: `banner.sh` is in the shellcheck list of the CI; a comment and a line of `design.md` no longer say that the pull progress bar follows the colours of the prompt.
 - Changed: the thumb of the tmux scrollbar is dimmer (a dark gray, `colour238`, on a transparent track), so the bar is there when you look for it and out of the way when you do not. It is already one column, the least tmux
   allows. Change it with `set -g pane-scrollbars-style "bg=default,fg=colourNNN,width=1"` in your `~/.tmux.conf` (236 nearly vanishes, 243 is the lighter gray of 2.0.9). Needs `swarmbox update` and `swarmbox reset`.
 
@@ -127,6 +135,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.10]: https://github.com/feroult/swarmbox/releases/tag/v2.0.10
 [2.0.9]: https://github.com/feroult/swarmbox/releases/tag/v2.0.9
 [2.0.8]: https://github.com/feroult/swarmbox/releases/tag/v2.0.8
 [2.0.7]: https://github.com/feroult/swarmbox/releases/tag/v2.0.7
