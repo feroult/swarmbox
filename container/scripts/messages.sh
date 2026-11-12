@@ -1,6 +1,6 @@
 #!/bin/bash
 # Swarmbox messaging utilities
-# Simple, sober design to complement the colorful banner
+# Simple, sober design to complement the banner
 
 # Minimal color palette - just muted tones
 GRAY='\033[0;90m'
