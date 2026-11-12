@@ -37,8 +37,30 @@ RUN apt-get update && apt-get install -y \
     man-db \
     bash-completion \
     sqlite3 \
-    tmux \
     && rm -rf /var/lib/apt/lists/*
+
+# tmux, PINNED to a Debian backport. Debian 13 ships 3.5a, which has no pane scrollbar (tmux 3.6 added it); trixie-backports has 3.7c. The exact
+# package is fixed by its SHA-256, the one the trixie-backports index declares. The archive keeps only the newest backport, so the copy there goes
+# when backports moves on: the same file is also fetched from snapshot.debian.org by its SHA-1, which keeps every file forever. Each source is
+# checked against the SHA-256, so a wrong file is never installed. apt-get installs the local file and takes its dependencies from Debian 13.
+ARG TMUX_VERSION=3.7c-1~bpo13+1
+ARG TMUX_SHA256_AMD64=c8b53f52cd26492bde59118aaaf06a21e38faa9b20621327546532efa2805174
+ARG TMUX_SHA256_ARM64=4cadcd17d6d7f11b0cc8707109cf8ab38632e194bb2e94d0f066e962d99b1fc2
+ARG TMUX_SHA1_AMD64=34937ad9ce3d0daa60b4b76debffd5c3631ff026
+ARG TMUX_SHA1_ARM64=6ef9eb31079987a468a23104fe2eabc9ed4bc70b
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) A=amd64; SHA256=$TMUX_SHA256_AMD64; SHA1=$TMUX_SHA1_AMD64 ;; \
+        arm64) A=arm64; SHA256=$TMUX_SHA256_ARM64; SHA1=$TMUX_SHA1_ARM64 ;; \
+        *) echo "tmux: unsupported architecture $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac && \
+    F="tmux_${TMUX_VERSION}_${A}.deb" && \
+    for URL in "https://deb.debian.org/debian/pool/main/t/tmux/$F" "https://snapshot.debian.org/file/$SHA1"; do \
+        if curl -fsSL -o "/tmp/$F" "$URL" && echo "$SHA256  /tmp/$F" | sha256sum -c -; then break; fi; \
+        rm -f "/tmp/$F"; \
+    done && \
+    test -f "/tmp/$F" && \
+    apt-get update && apt-get install -y --no-install-recommends "/tmp/$F" && \
+    rm -f "/tmp/$F" && rm -rf /var/lib/apt/lists/* && tmux -V
 
 # Nested rootless Podman: no host socket is ever mounted.
 # netavark + aardvark-dns give nested networks DNS by container name (netavark needs iptables for its firewall

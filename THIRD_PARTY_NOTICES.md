@@ -77,7 +77,7 @@ read in the image and the cell is the identifier I took from it. Source links po
 | `sqlite3` | GPL-2+, public-domain | 3.46.1-7+deb13u2 | https://sources.debian.org/src/sqlite3/ |
 | `sudo` | 7 identifiers, among them BSD-2-Clause, BSD-3-Clause, GPL-2+, ISC (complete list in docs/debian-packages.tsv) | 1.9.16p2-3+deb13u2 | https://sources.debian.org/src/sudo/ |
 | `tar` | GPL-2+, GPL-3+, GPL-3+ with Bison exception, LGPL-2.1+, LGPL-3+ | 1.35+dfsg-3.1 | https://sources.debian.org/src/tar/ |
-| `tmux` | BSD-2-clause, BSD-2-clause or ISC, BSD-2-clause-NetBSD, BSD-3-clause, Expat, FSFUL, FSFULLR, ISC | 3.5a-3 | https://sources.debian.org/src/tmux/ |
+| `tmux` | BSD-2-clause, BSD-2-clause or ISC, BSD-2-clause-NetBSD, BSD-3-clause, ISC | 3.7c-1~bpo13+1 | https://sources.debian.org/src/tmux/ |
 | `tree` | GPL-2+, LGPL-2.1+ | 2.2.1-1 | https://sources.debian.org/src/tree/ |
 | `uidmap` | BSD-3-clause, GPL-1, GPL-2+ | 1:4.17.4-2 | https://sources.debian.org/src/shadow/ |
 | `unzip` | Info-ZIP license (BSD-style; old-style file, read by hand) | 6.0-29+deb13u1 | https://sources.debian.org/src/unzip/ |
@@ -94,10 +94,10 @@ lacked.
 
 ### tmux
 
-- Version: the Debian 13 package (3.5a-3)
-- License: ISC (the source files carry ISC and BSD notices; Debian lists ISC, BSD-2-clause and BSD-3-clause for some files)
+- Version: the Debian 13 backport 3.7c-1~bpo13+1, pinned by SHA-256 in the Dockerfile (Debian 13 itself has 3.5a, which has no pane scrollbar)
+- License: ISC (the source files carry ISC and BSD notices; the copyright file of the package lists ISC, BSD-2-clause, BSD-2-clause-NetBSD and BSD-3-clause for some files)
 - Source: https://github.com/tmux/tmux
-- [verified: /usr/share/doc/tmux/copyright of the installed package (3.5a-3), in an image built from the repository on 2026-11-10; the license text of upstream tag 3.5a was not re-read, the 3.3a one was on 2026-11-08]
+- [verified: /usr/share/doc/tmux/copyright read from the .deb of 3.7c-1~bpo13+1 (amd64) on 2026-11-12, extracted, not from a built image; the arm64 .deb is the same source package; the license text of upstream tag 3.7c was not re-read]
 
 ### Podman and its helpers
 

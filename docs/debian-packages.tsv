@@ -572,7 +572,7 @@ systemd-sysv	257.13-1~deb13u1	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exce
 systemd-timesyncd	257.13-1~deb13u1	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	
 sysvinit-utils	3.14-4	GPL-2.0, GPL-2.0+, GPL-3.0, LGPL-2.1+	https://sources.debian.org/src/sysvinit/	
 tar	1.35+dfsg-3.1	GPL-2+, GPL-3+, GPL-3+ with Bison exception, LGPL-2.1+, LGPL-3+	https://sources.debian.org/src/tar/	
-tmux	3.5a-3	BSD-2-clause, BSD-2-clause or ISC, BSD-2-clause-NetBSD, BSD-3-clause, Expat, FSFUL, FSFULLR, ISC	https://sources.debian.org/src/tmux/	
+tmux	3.7c-1~bpo13+1	BSD-2-clause, BSD-2-clause or ISC, BSD-2-clause-NetBSD, BSD-3-clause, ISC	https://sources.debian.org/src/tmux/	
 tree	2.2.1-1	GPL-2+, LGPL-2.1+	https://sources.debian.org/src/tree/	
 tzdata	2026f-0+deb13u1	public-domain	https://sources.debian.org/src/tzdata/	
 udev	257.13-1~deb13u1	CC0-1.0, Expat, GPL-2 with Linux-syscall-note exception, GPL-2+, LGPL-2.1+, public-domain	https://sources.debian.org/src/systemd/	

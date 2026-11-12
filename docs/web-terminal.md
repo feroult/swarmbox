@@ -43,7 +43,9 @@ without ours, add `source-file /path/to/tmux-browser-keys.conf` to it (it needs 
 
 **Scrolling.** The history is tmux's: 50,000 lines, and the mouse wheel moves through it in copy mode, **5 lines per wheel event** (tmux's own default; it was 2, which
 is little for 50,000 lines). The browser keeps no history of its own, because tmux draws on the terminal's alternate screen, so there is **no scrollbar** by default: it would
-sit still. In copy mode tmux shows where you are (`[position/total]`, top right); `q` or `Esc` leaves it, `PageUp`/`PageDown` move by a screen. To scroll faster or slower, put in your
+sit still. **tmux has its own scrollbar, and it shows only in copy mode**: turning the wheel enters copy mode, and a thin bar appears on the right (one column of the pane
+is used while it is there, and none outside it); drag it with the mouse, or click the track to jump. It needs tmux 3.6 or later, which the image carries (3.7c, pinned). In copy mode tmux also shows
+where you are (`[position/total]`, top right); `q` or `Esc` leaves it, `PageUp`/`PageDown` move by a screen. To scroll faster or slower, put in your
 `~/.tmux.conf` (read after ours; `tmux source-file ~/.tmux.conf` applies it without a new box):
 
 ```
@@ -53,7 +55,8 @@ bind -T copy-mode-vi WheelUpPane send -N10 -X scroll-up
 bind -T copy-mode-vi WheelDownPane send -N10 -X scroll-down
 ```
 
-`scrollbar=true` in `web-terminal.conf` (then `swarmbox-web restart`) brings back a thin translucent bar on the right and keeps a browser history of 1000 lines for it; without the bar the
+To change the bar of tmux: `set -g pane-scrollbars off` hides it, `on` keeps it always, and `set -g pane-scrollbars-style "bg=default,fg=colour243,width=1"` (in your `~/.tmux.conf`) sets its colors and width.
+`scrollbar=true` in `web-terminal.conf` (then `swarmbox-web restart`) brings back the BROWSER's thin translucent bar on the right (which only scrolls the browser's own history, so it sits still under tmux) and keeps a browser history of 1000 lines for it; without it the
 browser history is 0 (`scrollback=0`), because xterm.js reserves 15 px for a scrollbar it measures as zero width, which would cost a column. A `scrollback=` line of yours wins.
 
 **Copy and paste.** With the mouse on, tmux owns the mouse: a selection is copied into tmux's own buffer and

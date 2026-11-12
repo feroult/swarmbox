@@ -5,6 +5,10 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added: tmux has a scrollbar again, and this one works. It shows only in copy mode: turn the mouse wheel and a thin bar appears on the right, showing where you are in the 50,000 lines of
+  history, and you can drag it or click its track; outside copy mode it is gone and the text keeps its whole width (in copy mode it takes one column). The image now carries tmux 3.7c (Debian 13 has
+  3.5a, which has no scrollbar), a Debian backport pinned by SHA-256 so every build gets the same file. `set -g pane-scrollbars off` in your `~/.tmux.conf` turns it off. Needs `swarmbox update` and `swarmbox reset`.
+
 ## [2.0.8] - 2026-11-12
 
 - Changed: a tab that leaves and comes back (`exit`, then `swarmbox` again in the same terminal tab) is now put back in the same place in the browser, not at the end. The host passes the

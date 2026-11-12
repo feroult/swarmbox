@@ -123,6 +123,7 @@ managers can read: the `uses:` lines of the workflows and a literal `FROM` line.
 |---|---|---|
 | `NODE_VERSION` | by hand | the base image is `FROM node:${NODE_VERSION}-slim`, which Dependabot does not read; change the `ARG` (and `ARG NODE_VERSION` in the test) and rebuild |
 | `node:${NODE_VERSION}-slim` | by hand | the same line as `NODE_VERSION` (a FROM built from an ARG is not read by Dependabot) |
+| `TMUX_VERSION` and its four hashes | by hand, with the commands below | a Debian 13 backport (3.5a of Debian 13 has no pane scrollbar), pinned by SHA-256; see "Bumping tmux" |
 | `TTYD_VERSION` | by hand | change the `ARG`; the build checks the release's `SHA256SUMS` |
 | `STARSHIP_VERSION` | by hand | change the `ARG`; the build checks the release's `.sha256` file |
 | `UV_VERSION` | by hand | change the `ARG` |
@@ -135,6 +136,26 @@ managers can read: the `uses:` lines of the workflows and a literal `FROM` line.
 | `container/tools/claude/tool.conf` | floating (nothing to bump) | `VERSION=latest`; the tool updates itself |
 | `container/tools/gemini/tool.conf` | floating (nothing to bump) | `VERSION=latest` |
 | `container/tools/opencode/tool.conf` | floating (nothing to bump) | `VERSION=latest` |
+
+**Bumping tmux.** The image installs one exact package of `trixie-backports`, `TMUX_VERSION` (for example `3.7c-1~bpo13+1`), checked against `TMUX_SHA256_AMD64` and
+`TMUX_SHA256_ARM64`; the `.deb` is fetched from the archive and, when backports has moved on and the archive no longer has it, from `snapshot.debian.org` by `TMUX_SHA1_AMD64` / `TMUX_SHA1_ARM64`.
+To move to another version, get the four hashes and check them against two independent sources:
+
+```bash
+V='3.8-1~bpo13+1'                                     # a version that trixie-backports has: https://sources.debian.org/src/tmux/
+for A in amd64 arm64; do
+  echo "== $A: what the archive's own index declares"
+  curl -fsSL https://deb.debian.org/debian/dists/trixie-backports/main/binary-$A/Packages.xz | xz -dc | awk -v RS= '/^Package: tmux\n/' | grep -E '^(Version|SHA256):'
+  curl -fsSLO "https://deb.debian.org/debian/pool/main/t/tmux/tmux_${V}_$A.deb"
+  echo "sha256 $(sha256sum tmux_${V}_$A.deb | cut -d' ' -f1)"   # must be the SHA256 above
+  echo "sha1   $(sha1sum tmux_${V}_$A.deb | cut -d' ' -f1)"
+done
+curl -sI "https://snapshot.debian.org/file/<the sha1>" | head -1   # HTTP 200: the fallback has it (it can take a day for a new package)
+```
+
+Put the version and the four hashes in the `Dockerfile`, the version in `docs/debian-packages.tsv` and `THIRD_PARTY_NOTICES.md` (the licenses from `/usr/share/doc/tmux/copyright` of the package:
+`dpkg-deb -x tmux_*.deb x; grep '^License:' x/usr/share/doc/tmux/copyright`); `tests/test_dockerfile.py` fails when the lists and the `ARG` disagree. A newer tmux can change what our
+configuration assumes: run `sh tests/run_all.sh --browser --only test_tmux_browser_keys.py,test_attach_command.py` against it too, putting the extracted binary first in `PATH`.
 
 A go or gcloud bump without the checksum step leaves the old checksums in the file and the installer refuses the new
 archive; the pull request template reminds you.

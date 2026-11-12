@@ -65,6 +65,45 @@ class Pinned(unittest.TestCase):
         self.assertGreaterEqual(CODE.count("sha256sum -c"), 2)
 
 
+class TmuxPinned(unittest.TestCase):
+    """tmux is a pinned Debian backport (3.5a of Debian 13 has no pane scrollbar), fetched by checksum with a copy that never goes away."""
+
+    def arg(self, name):
+        m = re.search(r"^ARG %s=(\S+)" % name, D, re.M)
+        self.assertTrue(m, "no ARG %s" % name)
+        return m.group(1)
+
+    def test_it_is_no_longer_in_the_package_list_of_the_base_layer(self):
+        first = next(i for i in INS if i.startswith("RUN apt-get update") and re.search(r"\sgit\s", i) and re.search(r"\scurl\s", i))
+        self.assertNotRegex(first, r"(^|\s)tmux(\s|$)", "the Debian 13 tmux (3.5a) must not be the one in the image")
+
+    def test_the_version_and_the_hashes_are_pinned_for_both_architectures(self):
+        self.assertRegex(self.arg("TMUX_VERSION"), r"^\d+\.\d+[a-z]?-\d+~bpo13\+\d+$")
+        for a in ("AMD64", "ARM64"):
+            self.assertRegex(self.arg("TMUX_SHA256_" + a), r"^[0-9a-f]{64}$")
+            self.assertRegex(self.arg("TMUX_SHA1_" + a), r"^[0-9a-f]{40}$")
+        self.assertNotEqual(self.arg("TMUX_SHA256_AMD64"), self.arg("TMUX_SHA256_ARM64"))
+
+    def test_the_install_checks_every_source_and_falls_back_to_the_snapshot(self):
+        run = next(i for i in INS if i.startswith("RUN") and "TMUX_VERSION" in i)
+        self.assertIn("https://deb.debian.org/debian/pool/main/t/tmux/", run)
+        self.assertIn("https://snapshot.debian.org/file/$SHA1", run, "the archive drops the file when backports moves on; the snapshot keeps it")
+        self.assertIn("sha256sum -c", run)
+        self.assertIn('apt-get install -y --no-install-recommends "/tmp/$F"', run, "dependencies come from Debian 13")
+        self.assertRegex(run, r"unsupported architecture")
+        self.assertTrue(run.rstrip().endswith("tmux -V"), "the build prints the version it installed")
+        # the checksum is checked in the loop, for each source, before the file is kept: a wrong file is never installed
+        self.assertLess(run.index("sha256sum -c"), run.index("apt-get install"))
+
+    def test_the_version_in_the_third_party_lists_is_the_one_pinned(self):
+        pinned = self.arg("TMUX_VERSION")
+        rows = [l.split("\t") for l in read("docs/debian-packages.tsv").splitlines() if l.startswith("tmux\t")]
+        self.assertEqual([r[1] for r in rows], [pinned], "docs/debian-packages.tsv")
+        notice = [l for l in read("THIRD_PARTY_NOTICES.md").splitlines() if l.startswith("| `tmux` |")]
+        self.assertEqual(len(notice), 1)
+        self.assertIn("| %s |" % pinned, notice[0], "THIRD_PARTY_NOTICES.md")
+
+
 class StartupAndLayout(unittest.TestCase):
     def test_entrypoint_and_cmd(self):
         self.assertIn('ENTRYPOINT ["/usr/local/bin/swarmbox-entrypoint"]', INS)
