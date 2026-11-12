@@ -57,7 +57,7 @@ bind -T copy-mode-vi WheelUpPane send -N10 -X scroll-up
 bind -T copy-mode-vi WheelDownPane send -N10 -X scroll-down
 ```
 
-To change the bar of tmux: `set -g pane-scrollbars off` hides it, `modal` shows it only in copy mode (at the cost of the resize above), and `set -g pane-scrollbars-style "bg=default,fg=colour243,width=1"` (in your `~/.tmux.conf`) sets its colors and width.
+To change the bar of tmux: `set -g pane-scrollbars off` hides it, `modal` shows it only in copy mode (at the cost of the resize above), and `set -g pane-scrollbars-style "bg=default,fg=colour238,width=1"` (in your `~/.tmux.conf`) sets its colors and width.
 `scrollbar=true` in `web-terminal.conf` (then `swarmbox-web restart`) brings back the BROWSER's thin translucent bar on the right (which only scrolls the browser's own history, so it sits still under tmux) and keeps a browser history of 1000 lines for it; without it the
 browser history is 0 (`scrollback=0`), because xterm.js reserves 15 px for a scrollbar it measures as zero width, which would cost a column. A `scrollback=` line of yours wins.
 

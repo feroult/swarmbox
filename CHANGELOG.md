@@ -5,6 +5,9 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Changed: the thumb of the tmux scrollbar is dimmer (a dark gray, `colour238`, on a transparent track), so the bar is there when you look for it and out of the way when you do not. It is already one column, the least tmux
+  allows. Change it with `set -g pane-scrollbars-style "bg=default,fg=colourNNN,width=1"` in your `~/.tmux.conf` (236 nearly vanishes, 243 is the lighter gray of 2.0.9). Needs `swarmbox update` and `swarmbox reset`.
+
 ## [2.0.9] - 2026-11-12
 
 - Added: tmux has a scrollbar again, and this one works: a thin bar on the right of the pane, showing where you are in the 50,000 lines of history; drag it with the mouse or click its track.
