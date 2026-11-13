@@ -5,6 +5,16 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.12] - 2026-11-13
+
+- Fixed: the glint of the banner. A pass from left to right stopped one step too soon and left one cell of the last row a shade lighter until the next pass; it now ends past the last column. And a step no longer rewrites the three rows whole: it writes
+  only the cells that change (about 210 bytes a step in place of 940, and about five times less for tmux to send to the terminal), which should help a terminal that draws while it is still receiving. It was reported as flicker of little white
+  blocks in Ghostty on a Mac; that is not reproduced here, so whether it is gone is for you to say. New: `set -g @swarmbox-glint off` in your `~/.tmux.conf` turns the glint off, and `tmux set -g @swarmbox-glint off` (or `on`) does it at once, in a
+  box that is already open. Needs `swarmbox update` and `swarmbox reset`.
+- Changed: the progress line of `swarmbox update` (and of the first pull) is minimal and in the violet and gray of the box: `pull  ▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱ 42%  130/310 MB · 4.1 MB/s 32s`, the filled part of the bar in violet and the rest in dark gray, and a
+  `✓ pulled <image> · 310 MB in 1m05s` that stays when it is done. The four colored blocks, the powerline arrows and the icon are gone, and so is `SWARMBOX_ICONS`: nothing in the line needs a Nerd Font any more. As before, a narrow
+  terminal drops the right-hand parts, `NO_COLOR=1` turns the colors off, a locale without UTF-8 gives `#` and `-`, and `SWARMBOX_PROGRESS=plain` leaves Podman's own bars.
+
 ## [2.0.11] - 2026-11-13
 
 - Changed: the banner is lighter. The half-block lettering keeps its dark gray and purple glow, but the rounded frame and the two tagline lines are gone: under the letters there is now a segmented bar that lights up
@@ -149,6 +159,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.12]: https://github.com/feroult/swarmbox/releases/tag/v2.0.12
 [2.0.11]: https://github.com/feroult/swarmbox/releases/tag/v2.0.11
 [2.0.10]: https://github.com/feroult/swarmbox/releases/tag/v2.0.10
 [2.0.9]: https://github.com/feroult/swarmbox/releases/tag/v2.0.9
