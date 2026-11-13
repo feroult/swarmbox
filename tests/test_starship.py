@@ -23,23 +23,6 @@ INIT = os.path.join(ROOT, "container", "scripts", "starship-init.sh")
 DOCKERFILE = os.path.join(ROOT, "Dockerfile")  # the 2.0 image (the bashrc fragment sources the init script)
 FRAGMENT = os.path.join(ROOT, "container", "config", "bashrc.sh")
 
-# The warm Gruvbox colors of the preset this layout comes from: the SwarmBox palette must not reuse any
-# of them, so a SwarmBox shell is never mistaken for a personal one.
-GRUVBOX = {"#fbf1c7", "#3c3836", "#665c54", "#458588", "#689d6a", "#98971a", "#d65d0e", "#b16286",
-           "#cc241d", "#d79921", "#83a598"}
-
-
-def luminance(hex_color):
-    r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
-    f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
-
-
-def contrast(a, b):
-    hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
-    return (hi + 0.05) / (lo + 0.05)
-
-
 def load():
     with open(CONFIG, "rb") as f:
         return tomllib.load(f)
@@ -55,6 +38,24 @@ class Config(unittest.TestCase):
         cfg = load()
         self.assertEqual(cfg["palette"], "swarmbox")
         self.assertIn("swarmbox", cfg["palettes"])
+
+    def test_the_prompt_is_one_line_under_a_blank_line(self):
+        cfg = load()
+        self.assertNotIn("\n", cfg["format"], "a newline in the format makes a second line")
+        self.assertIs(cfg.get("add_newline"), True, "the blank line above every prompt keeps one command off the last output")
+
+    def test_it_uses_no_nerd_font_glyph(self):
+        # private-use characters are where the Nerd Font icons and powerline separators live: the prompt must look the same in any font
+        icons = sorted({hex(ord(c)) for c in text() if 0xE000 <= ord(c) <= 0xF8FF or ord(c) >= 0xF0000})
+        self.assertEqual(icons, [])
+
+    def test_every_palette_role_is_used_and_every_role_used_exists(self):
+        defined = set(load()["palettes"]["swarmbox"])
+        body = text().split("[palettes.swarmbox]", 1)[1]
+        body = body[body.index("\n[") if "\n[" in body else 0:]   # after the palette table
+        used = set(re.findall(r"\bcolor_\w+", body))
+        self.assertEqual(sorted(used - defined), [], "a role is used but not defined")
+        self.assertEqual(sorted(defined - used), [], "a role is defined but never used")
 
 @unittest.skipUnless(shutil.which("starship") and shutil.which("git"), "needs starship and git")
 class Rendering(unittest.TestCase):
@@ -88,6 +89,13 @@ class Rendering(unittest.TestCase):
         plain = re.sub(r"\x1b\[[0-9;]*m|\\\[|\\\]|[\x01\x02]", "", r.stdout)
         self.assertIn("main", plain)
         self.assertIn("proj", plain)
+
+    def test_it_prints_a_blank_line_and_then_a_single_line(self):
+        r = self.prompt()
+        plain = re.sub(r"\x1b\[[0-9;]*m|\\\[|\\\]|[\x01\x02]", "", r.stdout)
+        self.assertTrue(plain.startswith("\n"), "the blank line above the prompt")
+        self.assertNotIn("\n", plain.strip("\n"), "the prompt is one line")
+        self.assertIn("❯", plain)
 
 class InitScript(unittest.TestCase):
     def setUp(self):

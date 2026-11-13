@@ -2,24 +2,23 @@
 
 # SwarmBox prompt (Starship), installed as /etc/swarmbox/starship.toml.
 #
-# The layout is Starship's "Gruvbox Rainbow" preset, recolored to match the banner: dark gray and purple, the
-# same family as the glowing letters above it (gray, deep purple, bright violet, back to gray), with one light
-# text color on every segment. Not Gruvbox's warm colors, so a SwarmBox shell is never mistaken for your own.
-# Every color lives in the palette table below, named by ROLE (color_user, color_path, ...): recolor the
-# prompt there, nowhere else. The text color (color_text) is legible on every segment.
+# One line, in the style of the banner above it: thin "─" separators in dark gray, the words in gray and violet, the directory
+# on a soft band whose edges fade in and out with the dithered "░▒▓" of the old BBS screens, and a violet "❯" at the end. No Nerd Font glyph anywhere, so it looks the same in any terminal font: the language symbols are short words
+# (py, go, node...), not icons. A segment appears only when it has something to say: the user and the directory always, the
+# branch inside a repository, a language inside a project of it, the Docker context, and the time.
+# Every color lives in the palette table below, named by ROLE (color_sep, color_path, ...): recolor the prompt there,
+# nowhere else.
 #
 # Your own ~/.config/starship.toml, if it exists, is used instead of this file.
 
+add_newline = true   # a blank line above every prompt, so one command does not stick to the output of the one before
+
 format = """
-[](color_user)\
-$os\
+[╶](fg:color_sep)\
 $username\
-[](bg:color_path fg:color_user)\
 $directory\
-[](fg:color_path bg:color_vcs)\
 $git_branch\
 $git_status\
-[](fg:color_vcs bg:color_lang)\
 $c\
 $cpp\
 $rust\
@@ -31,173 +30,107 @@ $java\
 $kotlin\
 $haskell\
 $python\
-[](fg:color_lang bg:color_ctx)\
 $docker_context\
 $conda\
 $pixi\
-[](fg:color_ctx bg:color_clock)\
 $time\
-[ ](fg:color_clock)"""
+$character"""
 
 palette = 'swarmbox'
 
 [palettes.swarmbox]
-color_text = '#fafafa'
-color_user = '#3f3f46'
-color_path = '#5b21b6'
-color_vcs = '#7c3aed'
-color_lang = '#6d28d9'
-color_ctx = '#52525b'
-color_clock = '#27272a'
-color_ok = '#4ade80'
+color_sep = '#52525b'
+color_user = '#a1a1aa'
+color_path = '#a78bfa'
+color_vcs = '#c4b5fd'
+color_dim = '#71717a'
+color_band = '#27222f'
+color_ok = '#a78bfa'
 color_err = '#f87171'
 color_alt = '#c084fc'
 color_warn = '#fbbf24'
 
-[os]
-disabled = false
-style = "bg:color_user fg:color_text"
-
-[os.symbols]
-Windows = "󰍲 "
-Ubuntu = "󰕈 "
-SUSE = " "
-Raspbian = "󰐿 "
-Mint = "󰣭 "
-Macos = "󰀵 "
-Manjaro = " "
-Linux = "󰌽 "
-Gentoo = "󰣨 "
-Fedora = "󰣛 "
-Alpine = " "
-Amazon = " "
-Android = " "
-AOSC = " "
-Arch = "󰣇 "
-Artix = "󰣇 "
-EndeavourOS = " "
-CentOS = " "
-Debian = "󰣚 "
-Redhat = "󱄛 "
-RedHatEnterprise = "󱄛 "
-Pop = " "
-
 [username]
 show_always = true
-style_user = "bg:color_user fg:color_text"
-style_root = "bg:color_user fg:color_text"
-format = '[$user ]($style)'
+style_user = ''
+style_root = ''
+format = '[─ ](fg:color_sep)[$user](fg:color_user)'
 
 [directory]
-style = "fg:color_text bg:color_path"
-format = "[ $path ]($style)"
-truncation_length = 3
-truncation_symbol = "…/"
-
-[directory.substitutions]
-"Documents" = "󰈙 "
-"Downloads" = " "
-"Music" = "󰝚 "
-"Pictures" = " "
-"Developer" = "󰲋 "
+truncation_length = 2
+truncation_symbol = '…/'
+format = '[ ─ ](fg:color_sep)[░▒▓](fg:color_band)[ $path ](fg:color_path bg:color_band)[▓▒░](fg:color_band)'
 
 [git_branch]
-symbol = ""
-style = "bg:color_vcs"
-format = '[[ $symbol $branch ](fg:color_text bg:color_vcs)]($style)'
+symbol = ''
+format = '[ ─ ](fg:color_sep)[$branch](fg:color_vcs)'
 
 [git_status]
-style = "bg:color_vcs"
-format = '[[($all_status$ahead_behind )](fg:color_text bg:color_vcs)]($style)'
-
-[nodejs]
-symbol = ""
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
-
-[bun]
-symbol = ""
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
+format = '[( $all_status$ahead_behind)](fg:color_vcs)'
 
 [c]
-symbol = " "
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
+symbol = 'c '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
 
 [cpp]
-symbol = " "
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
+symbol = 'c++ '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
 
 [rust]
-symbol = ""
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
+symbol = 'rs '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
 
 [golang]
-symbol = ""
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
+symbol = 'go '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+
+[nodejs]
+symbol = 'node '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+
+[bun]
+symbol = 'bun '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
 
 [php]
-symbol = ""
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
+symbol = 'php '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
 
 [java]
-symbol = ""
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
-
-[jj_bookmark]
-symbol = ""
-style = "bg:color_vcs"
-format = '[[ $symbol $bookmark(@$remote)$diverged( \\(+$overflow_count others\\)) ](fg:color_text bg:color_vcs)]($style)'
-
-[jj_status]
-style = "bg:color_vcs"
-format = '[[($all )](fg:color_text bg:color_vcs)]($style)'
+symbol = 'java '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
 
 [kotlin]
-symbol = ""
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
+symbol = 'kt '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
 
 [haskell]
-symbol = ""
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
+symbol = 'hs '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
 
 [python]
-symbol = ""
-style = "bg:color_lang"
-format = '[[ $symbol( $version) ](fg:color_text bg:color_lang)]($style)'
+symbol = 'py '
+format = '[ ─ ](fg:color_sep)[$symbol($version)](fg:color_dim)'
 
 [docker_context]
-symbol = ""
-style = "bg:color_ctx"
-format = '[[ $symbol( $context) ](fg:color_text bg:color_ctx)]($style)'
+symbol = ''
+format = '[ ─ ](fg:color_sep)[$context](fg:color_dim)'
 
 [conda]
-style = "bg:color_ctx"
-format = '[[ $symbol( $environment) ](fg:color_text bg:color_ctx)]($style)'
+symbol = 'conda '
+format = '[ ─ ](fg:color_sep)[$symbol$environment](fg:color_dim)'
 
 [pixi]
-style = "bg:color_ctx"
-format = '[[ $symbol( $version)( $environment) ](fg:color_text bg:color_ctx)]($style)'
+symbol = 'pixi '
+format = '[ ─ ](fg:color_sep)[$symbol($version)( $environment)](fg:color_dim)'
 
 [time]
 disabled = false
-time_format = "%R"
-style = "bg:color_clock"
-format = '[[  $time ](fg:color_text bg:color_clock)]($style)'
-
-[line_break]
-disabled = false
+time_format = '%R'
+format = '[ ─ ](fg:color_sep)[$time](fg:color_dim)'
 
 [character]
-disabled = false
+format = ' $symbol '
 success_symbol = '[❯](bold fg:color_ok)'
 error_symbol = '[❯](bold fg:color_err)'
 vimcmd_symbol = '[❮](bold fg:color_ok)'
