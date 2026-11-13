@@ -55,7 +55,8 @@ if [ "$MODE" = restart ]; then
 fi
 
 # ---------------------------------------------------------------------------------------------------------------------
-# The user's settings: defaults, then web-terminal.conf. The theme is Windows Terminal's Campbell scheme.
+# The user's settings: defaults, then web-terminal.conf. The theme is the purple glow of the box (docs/theme.md): near-black, violet and gray, with the
+# usual hues of the 16 colors kept (red for an error, green for success) in tones of the same family.
 declare -A OPT=(
     [fontSize]=21
     [fontWeight]=400
@@ -65,7 +66,7 @@ declare -A OPT=(
     [cursorBlink]=true
     [titleFixed]=SwarmBox
     [fontFamily]="'JetBrainsMono Nerd Font', 'JetBrainsMono NF', 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace"
-    [theme]='{"background":"#0c0c0c","foreground":"#c2c2c2","cursor":"#ffffff","selectionBackground":"#264f78","black":"#0c0c0c","red":"#e74856","green":"#16c60c","yellow":"#f9f1a5","blue":"#3b78ff","magenta":"#b4009e","cyan":"#61d6d6","white":"#cccccc","brightBlack":"#767676","brightRed":"#ff6b78","brightGreen":"#3ee05f","brightYellow":"#f9f1a5","brightBlue":"#6ea0ff","brightMagenta":"#e04fc4","brightCyan":"#8ee6e6","brightWhite":"#f2f2f2"}'
+    [theme]='{"background":"#0c0b10","foreground":"#d4d4d8","cursor":"#c4b5fd","cursorAccent":"#0c0b10","selectionBackground":"#6d28d9","selectionForeground":"#fafafa","selectionInactiveBackground":"#3f3f46","black":"#1c1a24","red":"#e5484d","green":"#3dba7a","yellow":"#d9a441","blue":"#8b5cf6","magenta":"#d946ef","cyan":"#5eb5c9","white":"#d4d4d8","brightBlack":"#71717a","brightRed":"#ff6b78","brightGreen":"#4ade80","brightYellow":"#fbbf24","brightBlue":"#a78bfa","brightMagenta":"#e879f9","brightCyan":"#8ad7e6","brightWhite":"#fafafa"}'
 )
 CONF=$SB_CONFIG_DIR/web-terminal.conf
 

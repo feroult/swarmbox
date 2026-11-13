@@ -18,7 +18,7 @@ returning tab. Nested tmux: if your host terminal also
 runs tmux, give it another prefix (SwarmBox uses `C-a`) or press `C-a a` to send the prefix inside.
 `swarmbox --plain` gives the plain bash instead.
 
-**Font, size, theme**: out of the box the terminal is dark (Windows Terminal's Campbell colors), size 21, with a
+**Font, size, theme**: out of the box the terminal is dark (Windows Terminal's Campbell colors, with the violet of the box for a selection made in the browser, the one tmux uses for its own), size 21, with a
 Nerd Font list (JetBrainsMono, Cascadia). To change any of it, put `key=value` lines (xterm.js options) in `<workspace>/.config/swarmbox/web-terminal.conf`
 (`~/.config/swarmbox/web-terminal.conf` inside the box), e.g. `fontFamily='JetBrainsMono Nerd Font', Consolas, monospace`.
 `padding=10` is the space (px) around the terminal (CSS in

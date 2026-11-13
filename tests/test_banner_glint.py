@@ -62,7 +62,7 @@ class Glint(unittest.TestCase):
                     "bash %s; sleep 120" % BANNER)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.addCleanup(self.stop)
-        self.assertTrue(self.wait(lambda: "// agent box" in self.capture(), 10), "the banner did not appear")
+        self.assertTrue(self.wait(lambda: "from anywhere" in self.capture(), 10), "the banner did not appear")
 
     def stop(self):
         self.tm("kill-server")

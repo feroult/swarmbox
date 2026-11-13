@@ -1,0 +1,23 @@
+# SwarmBox Purple-Glow: near-black, violet and gray (docs/theme.md)
+palette = 0=#1c1a24
+palette = 1=#e5484d
+palette = 2=#3dba7a
+palette = 3=#d9a441
+palette = 4=#8b5cf6
+palette = 5=#d946ef
+palette = 6=#5eb5c9
+palette = 7=#d4d4d8
+palette = 8=#71717a
+palette = 9=#ff6b78
+palette = 10=#4ade80
+palette = 11=#fbbf24
+palette = 12=#a78bfa
+palette = 13=#e879f9
+palette = 14=#8ad7e6
+palette = 15=#fafafa
+background = #0c0b10
+foreground = #d4d4d8
+cursor-color = #c4b5fd
+cursor-text = #0c0b10
+selection-background = #6d28d9
+selection-foreground = #fafafa

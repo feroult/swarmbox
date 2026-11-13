@@ -1,0 +1,27 @@
+{
+  "schemes": [
+    {
+      "name": "SwarmBox Purple-Glow",
+      "background": "#0c0b10",
+      "foreground": "#d4d4d8",
+      "cursorColor": "#c4b5fd",
+      "selectionBackground": "#6d28d9",
+      "black": "#1c1a24",
+      "red": "#e5484d",
+      "green": "#3dba7a",
+      "yellow": "#d9a441",
+      "blue": "#8b5cf6",
+      "purple": "#d946ef",
+      "cyan": "#5eb5c9",
+      "white": "#d4d4d8",
+      "brightBlack": "#71717a",
+      "brightRed": "#ff6b78",
+      "brightGreen": "#4ade80",
+      "brightYellow": "#fbbf24",
+      "brightBlue": "#a78bfa",
+      "brightPurple": "#e879f9",
+      "brightCyan": "#8ad7e6",
+      "brightWhite": "#fafafa"
+    }
+  ]
+}

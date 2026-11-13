@@ -8,6 +8,7 @@ Skipped unless SWARMBOX_IMAGE_BUILD=1 and podman works. SWARMBOX_IMAGE_TAG=<swar
 Run: SWARMBOX_IMAGE_BUILD=1 python3 tests/test_bashrc_container.py
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,8 +20,13 @@ from image_support import ENABLED, rnd, podman, setUpModule as _setup, tearDownM
 import image_support as base  # noqa: E402
 from test_attach_command import wait_until  # noqa: E402
 
-# a line of the banner that does not change with its colours or its lettering: the signature under the bar
-BANNER_MARK = "// agent box"
+# a line of the banner that does not change with its colours or its lettering: the signature under the bar. Its words are colored one by one,
+# so the escape sequences are taken out before looking for it.
+BANNER_MARK = "your agent's shell, from anywhere"
+
+
+def plain(text):
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def setUpModule():
@@ -68,7 +74,7 @@ class FragmentInContainer(unittest.TestCase):
         with open(os.path.join(state, "health"), "w") as f:
             f.write("web terminal keeps crashing; see web-terminal.log\nthe local image has been replaced; run swarmbox reset\n")
         out = self.interactive("true")
-        self.assertIn(BANNER_MARK, out)
+        self.assertIn(BANNER_MARK, plain(out))
         self.assertIn("web terminal keeps crashing", out)
         self.assertIn("the local image has been replaced", out)
 
@@ -107,7 +113,7 @@ class FragmentInContainer(unittest.TestCase):
         self.assertEqual(r.stderr.decode(), "")
         r = podman("exec", self.name, "swarmbox-entrypoint", "attach", "printenv", "PATH")
         self.assertTrue(r.stdout.decode().startswith("/home/agent/.local/share/swarmbox/shims:"), r.stdout)
-        self.assertNotIn(BANNER_MARK, r.stdout.decode())
+        self.assertNotIn(BANNER_MARK, plain(r.stdout.decode()))
         self.assertEqual(r.stderr.decode(), "")
 
     def test_starship_is_active_in_an_interactive_shell(self):

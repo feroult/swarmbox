@@ -196,6 +196,7 @@ to check for a tool update, and, with `swarmbox remote`, to reach Cloudflare. Lo
 ## Documentation
 
 - [docs/web-terminal.md](docs/web-terminal.md): the browser terminal
+- [docs/theme.md](docs/theme.md): the purple glow, the palette of every part, and schemes for Windows Terminal, Ghostty and Claude Code
 - [docs/cloudflare.md](docs/cloudflare.md): remote access with Cloudflare Tunnel and Access (`swarmbox remote setup`)
 - [docs/nested-podman.md](docs/nested-podman.md): containers inside the box
 - [docs/uninstall.md](docs/uninstall.md): remove SwarmBox

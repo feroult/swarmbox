@@ -193,6 +193,16 @@ class Run(WebCase):
         self.assertEqual(o["scrollback"], "5000")
         self.assertEqual(o["cursorBlink"], "false")
 
+    def test_the_selection_of_the_browser_is_the_violet_that_tmux_uses_for_its_own(self):
+        # a selection made with Shift (the browser's, not tmux's) must not be another color than tmux's: both are the violet of the box
+        o = self.opts(self.run_web()["argv"])
+        theme = json.loads(o["theme"])
+        with open(os.path.join(ROOT, "container", "config", "tmux.conf")) as f:
+            tmux = [l for l in f if l.startswith("setw -g mode-style")][0]
+        self.assertEqual(theme["selectionBackground"], tmux.split("bg=")[1].split(",")[0])
+        self.assertEqual(theme["selectionBackground"], "#6d28d9")
+        self.assertEqual(theme["selectionForeground"], tmux.split("fg=")[1].split('"')[0])
+
     def test_mac_option_is_meta_by_default_and_the_user_can_turn_it_off(self):
         # without it Option+1 types a character on a Mac and tmux's Alt+digit window shortcuts never arrive
         self.assertEqual(self.opts(self.run_web()["argv"])["macOptionIsMeta"], "true")

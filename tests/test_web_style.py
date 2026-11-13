@@ -63,7 +63,7 @@ class WebStyle(base.ClipboardBridge):
         m = self.measure("scrollbar=true\n")
         self.assertEqual(m["bar"], "6px")
         self.assertEqual(m["track"], "rgba(0, 0, 0, 0)")
-        self.assertEqual(m["thumb"], "rgba(255, 255, 255, 0.16)")
+        self.assertEqual(m["thumb"], "rgba(167, 139, 250, 0.28)")
         self.assertEqual(m["radius"], "3px")
         self.assertGreater(m["scrollback"], 0)
 

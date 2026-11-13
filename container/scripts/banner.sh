@@ -34,25 +34,27 @@ nearest256() {
     if ((gd < d)); then REPLY=$((232 + gl)); else REPLY=$((16 + 36 * q[0] + 6 * q[1] + q[2])); fi
 }
 
-# gradient WIDTH HEX...: COLS[0..WIDTH-1], one colour per column, running smoothly through the HEX keypoints
+# gradient ARRAY WIDTH HEX...: ARRAY[0..WIDTH-1], one colour per column, running smoothly through the HEX keypoints
 # (rrggbb), so the colour changes inside a letter too: the gradient belongs to the word, not to the letters
+# shellcheck disable=SC2034  # gradient_cells is a nameref: it fills the array of the caller
 gradient() {
-    local n=$1; shift
+    local -n gradient_cells=$1
+    local n=$2; shift 2
     local -a k=("$@") rgb
     local segs=$((${#k[@]} - 1)) j pos s f a b i ca cb
-    COLS=()
+    gradient_cells=()
     for ((j = 0; j < n; j++)); do
-        pos=$((j * segs * 1000 / (n - 1))); s=$((pos / 1000)); ((s >= segs)) && s=$((segs - 1)); f=$((pos - s * 1000))
+        pos=$((n > 1 ? j * segs * 1000 / (n - 1) : 0)); s=$((pos / 1000)); ((s >= segs)) && s=$((segs - 1)); f=$((pos - s * 1000))
         a=${k[s]}; b=${k[s + 1]}
         for i in 0 2 4; do
             ca=$((16#${a:i:2})); cb=$((16#${b:i:2})); rgb[i / 2]=$((ca + (cb - ca) * f / 1000))
         done
-        nearest256 "${rgb[0]}" "${rgb[1]}" "${rgb[2]}"; COLS[j]=$REPLY
+        nearest256 "${rgb[0]}" "${rgb[1]}" "${rgb[2]}"; gradient_cells[j]=$REPLY
     done
 }
 
 # dark gray and purple that light up to white in the middle of the word and fade out again: a smooth gradient
-gradient ${#FONT[0]} 3f3f46 6d28d9 a78bfa ffffff a78bfa 6d28d9 3f3f46
+gradient COLS ${#FONT[0]} 3f3f46 6d28d9 a78bfa ffffff a78bfa 6d28d9 3f3f46
 
 # lighten COLOUR K -> REPLY: the 256-colour number moved K quarters of the way to white, in the same hue
 lighten() {
@@ -95,11 +97,22 @@ bar() {
     put "$out" "$W"
 }
 
+# signature TEXT: "// TEXT" under the bar, right-aligned, in the dark grays of the box: the slashes darkest, the words gray, and the last word
+# darkening letter by letter, the way the end of a line fades on an old BBS screen
+signature() {
+    local text=$1 lead=${1% *} last=${1##* } out j
+    local -a fade
+    gradient fade ${#last} a1a1aa 3f3f46
+    out="${F}240m// ${F}243m$lead "
+    for ((j = 0; j < ${#last}; j++)); do out+="${F}${fade[j]}m${last:j:1}"; done
+    printf ' %*s%s%s\n' $((W - ${#text} - 3)) '' "$out" "$R"
+}
+
 echo
 for row in "${FONT[@]}"; do paint "$row"; put "$REPLY" "${#row}"; done
 put '' 0
 bar
-printf ' %*s%s// agent box%s\n' $((W - 12)) '' "${F}240m" "$R"
+signature "your agent's shell, from anywhere"
 # no blank line after the signature: the prompt brings its own above it (add_newline in starship.toml)
 
 # the glint: a white diagonal with a soft halo that crosses the letters, back and forth, in the background so the

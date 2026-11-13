@@ -14,9 +14,9 @@
 .xterm .xterm-viewport::-webkit-scrollbar { width: var(--swarmbox-scrollbar, 0px); height: var(--swarmbox-scrollbar, 0px); background: transparent; }
 .xterm .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
 .xterm .xterm-viewport::-webkit-scrollbar-corner { background: transparent; }
-.xterm .xterm-viewport::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .16); border-radius: 3px; }
-.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .34); }
+.xterm .xterm-viewport::-webkit-scrollbar-thumb { background: rgba(167, 139, 250, .28); border-radius: 3px; }
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover { background: rgba(167, 139, 250, .5); }
 /* Firefox has no ::-webkit-scrollbar */
 @supports not selector(::-webkit-scrollbar) {
-  .xterm .xterm-viewport { scrollbar-width: var(--swarmbox-scrollbar-ff, none); scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+  .xterm .xterm-viewport { scrollbar-width: var(--swarmbox-scrollbar-ff, none); scrollbar-color: rgba(167, 139, 250, .35) transparent; }
 }
