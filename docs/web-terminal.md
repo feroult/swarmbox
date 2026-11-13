@@ -43,10 +43,9 @@ without ours, add `source-file /path/to/tmux-browser-keys.conf` to it (it needs 
 
 **Scrolling.** The history is tmux's: 50,000 lines, and the mouse wheel moves through it in copy mode, **5 lines per wheel event** (tmux's own default; it was 2, which
 is little for 50,000 lines). The browser keeps no history of its own, because tmux draws on the terminal's alternate screen, so there is **no scrollbar** by default: it would
-sit still. **tmux has its own scrollbar**: a thin bar on the right of the pane (one column of its width), whose thumb shows where you are in the history; drag it with the mouse, or click the track to jump.
-It needs tmux 3.6 or later, which the image carries (3.7c, pinned). A program that takes over the screen (vim, less, a full-screen TUI) gets the whole width and no bar, and one that asks for
-the mouse gets the wheel itself (tmux does not scroll its history over it): the scrolling of such a program is its own. The bar is always on, not only in copy mode, on purpose: a bar that appeared
-and went away would resize the pane each time, and the program in it would reflow and redraw while you read. In copy mode tmux also shows
+sit still. **tmux can draw its own scrollbar**, a thin bar on the right of the pane (one column of its width) whose thumb shows where you are in the history, but it is **off** by default:
+the pane keeps its whole width. `set -g pane-scrollbars on` in your `~/.tmux.conf` turns it on (it needs tmux 3.6 or later, which the image carries: 3.7c, pinned). A program that takes over
+the screen (vim, less, a full-screen TUI) gets the whole width and no bar, and one that asks for the mouse gets the wheel itself (tmux does not scroll its history over it): the scrolling of such a program is its own. In copy mode tmux also shows
 where you are (`[position/total]`, top right); `q` or `Esc` leaves it, `PageUp`/`PageDown` move by a screen. To scroll faster or slower, put in your
 `~/.tmux.conf` (read after ours; `tmux source-file ~/.tmux.conf` applies it without a new box):
 
@@ -57,7 +56,7 @@ bind -T copy-mode-vi WheelUpPane send -N10 -X scroll-up
 bind -T copy-mode-vi WheelDownPane send -N10 -X scroll-down
 ```
 
-To change the bar of tmux: `set -g pane-scrollbars off` hides it, `modal` shows it only in copy mode (at the cost of the resize above), and `set -g pane-scrollbars-style "bg=default,fg=colour238,width=1"` (in your `~/.tmux.conf`) sets its colors and width.
+To change the bar of tmux: `set -g pane-scrollbars on` shows it, `modal` shows it only in copy mode (the pane is then one column narrower each time copy mode starts or ends, and the program in it is resized), and `set -g pane-scrollbars-style "bg=default,fg=colour238,width=1"` (in your `~/.tmux.conf`) sets its colors and width.
 `scrollbar=true` in `web-terminal.conf` (then `swarmbox-web restart`) brings back the BROWSER's thin translucent bar on the right (which only scrolls the browser's own history, so it sits still under tmux) and keeps a browser history of 1000 lines for it; without it the
 browser history is 0 (`scrollback=0`), because xterm.js reserves 15 px for a scrollbar it measures as zero width, which would cost a column. A `scrollback=` line of yours wins.
 

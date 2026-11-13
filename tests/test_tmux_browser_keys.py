@@ -203,17 +203,16 @@ class DefaultConfig(BrowserKeys):
         self.wheel_up()
         self.assertEqual(self.scroll_position() - first, 10, "two events, five lines each (it was 2 lines: too little for 50,000 lines)")
 
-    def test_the_scrollbar_is_on_not_modal_and_set_quietly_so_an_older_tmux_still_loads_the_file(self):
+    def test_the_scrollbar_is_off_and_set_quietly_so_an_older_tmux_still_loads_the_file(self):
         text = open(DEFAULT_CONF).read()
-        self.assertRegex(text, r"(?m)^set -gq pane-scrollbars on$")
-        self.assertNotRegex(text, r"(?m)^set -g\w* pane-scrollbars modal", "modal resizes the pane, and the program in it, each time copy mode starts or ends")
-        self.assertRegex(text, r"(?m)^set -gq pane-scrollbars-style ")
-        self.assertRegex(text, r"(?m)^# -q: ", "the file says why the lines are quiet")
+        self.assertRegex(text, r"(?m)^set -gq pane-scrollbars off$")
+        self.assertNotRegex(text, r"(?m)^set -g\w* pane-scrollbars (on|modal)", "the default is no bar: it takes a column of the pane")
+        self.assertRegex(text, r"(?m)^# -q: ", "the file says why the line is quiet")
 
-    def test_where_tmux_has_the_scrollbar_it_is_on(self):
+    def test_where_tmux_has_the_scrollbar_it_is_off(self):
         if not self.out("show", "-gqv", "pane-scrollbars-style"):
             self.skipTest("this tmux (%s) has no pane scrollbar (3.6 and later have)" % self.out("-V").replace("tmux ", ""))
-        self.assertEqual(self.out("show", "-gqv", "pane-scrollbars"), "on")
+        self.assertEqual(self.out("show", "-gqv", "pane-scrollbars"), "off")
 
     APP = (
         "import os, sys, termios, tty, select, time\n"
