@@ -5,6 +5,20 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.11] - 2026-11-13
+
+- Changed: the banner is lighter. The half-block lettering keeps its dark gray and purple glow, but the rounded frame and the two tagline lines are gone: under the letters there is now a segmented bar that lights up
+  like them, and a dim `// agent box` on the right. The glint that crosses the letters in a tmux pane is the same. Needs `swarmbox update` and `swarmbox reset`.
+- Changed: the prompt is one line again, in the style of the banner: thin gray `─` separators, the user, the directory, the branch, the language, the Docker context and the time in gray and violet, the directory on a soft band whose edges fade in and out with `░▒▓` like the old BBS screens, and a violet `❯` at the end. There is a blank line above every prompt, so one command does not stick to the output of the one before (the banner lost its own blank line at the bottom for it). It no
+  longer uses any Nerd Font glyph (the language symbols are short words such as `py`, `go` and `node`), so it looks the same in any terminal font. The colored ribbon is gone. A `~/.config/starship.toml` of your own is untouched
+  and still wins. Needs `swarmbox update` and `swarmbox reset`.
+- Changed: the tmux theme follows the banner and the prompt: dark gray and violet instead of the pastel one. The current window sits on the same soft band as the directory of the prompt, with a dithered `▒` at each edge; the other windows,
+  the date and the time are gray with thin `─` dashes, and every window is the same width, so nothing moves when you change window. The session name is no longer shown. The active pane border and the copy-mode selection are violet.
+  The `[+]` button keeps its first three columns, now in gray. Put your own `set -g status-style ...` and the like in `~/.tmux.conf`, which is read after this file. Needs `swarmbox update` and `swarmbox reset`.
+- Changed: the tmux scrollbar is off by default. The pane keeps its whole width; in copy mode tmux still shows where you are (`[position/total]`) and the wheel scrolls 5 lines per event.
+  `set -g pane-scrollbars on` in your `~/.tmux.conf` brings the bar back. Needs `swarmbox update` and `swarmbox reset`.
+- Dev only: `dev/local-up.sh` builds the image from the checkout and switches your box to it in one command (and `--release` goes back to the published image), so a change can be tried without a release.
+
 ## [2.0.10] - 2026-11-12
 
 - Changed: a new banner. Half-block lettering in a rounded frame, like the login screen of a 90s BBS, in a gradient that runs across the whole word: dark gray and purple that light up to white in the middle and fade
@@ -135,6 +149,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.11]: https://github.com/feroult/swarmbox/releases/tag/v2.0.11
 [2.0.10]: https://github.com/feroult/swarmbox/releases/tag/v2.0.10
 [2.0.9]: https://github.com/feroult/swarmbox/releases/tag/v2.0.9
 [2.0.8]: https://github.com/feroult/swarmbox/releases/tag/v2.0.8
