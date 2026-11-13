@@ -1,8 +1,8 @@
 #!/bin/bash
-# The entry banner: half-block lettering in a rounded frame, in the style of a 90s BBS login screen.
+# The entry banner: half-block lettering with a segmented bar under it, in the style of a 90s BBS login screen.
 # The letters glow: dark gray and purple lighting up to white in the middle of the word, a smooth gradient across
 # all of it, and, in a tmux pane, a glint keeps sweeping back and forth across them in the background.
-# 256 colours, 60 columns.
+# 256 colours, 49 columns.
 
 LC_ALL=C.UTF-8   # the art is UTF-8 and is measured in characters, not bytes
 ESC=$'\033'
@@ -14,7 +14,7 @@ FONT=(
 ' ▀▀▀▄ █▄▀▄█ █▀▀▀█ █▀▀█  █ ▀ █ █▀▀▀▄ █   █  ▄▀▄ '
 '▀▀▀▀  ▀   ▀ ▀   ▀ ▀   ▀ ▀   ▀ ▀▀▀▀   ▀▀▀  ▀   ▀'
 )
-W=54   # inner width of the frame
+W=${#FONT[0]}   # the width of the lettering
 
 # nearest256 R G B -> REPLY: the 256-colour number closest to the colour (0-255 each), from the 6x6x6 cube or
 # the gray ramp, whichever is nearer
@@ -53,8 +53,6 @@ gradient() {
 
 # dark gray and purple that light up to white in the middle of the word and fade out again: a smooth gradient
 gradient ${#FONT[0]} 3f3f46 6d28d9 a78bfa ffffff a78bfa 6d28d9 3f3f46
-FRAME=99   # the colour of the frame (a soft violet)
-SIDE="${F}${FRAME}m│${R}"
 
 # lighten COLOUR K -> REPLY: the 256-colour number moved K quarters of the way to white, in the same hue
 lighten() {
@@ -81,26 +79,27 @@ paint() {
     REPLY="$out$R"
 }
 
-# put COLOURED VISIBLE-LENGTH: one line between the sides of the frame, centred
-put() {
-    local pad=$((W - $2)) lp
-    ((pad < 0)) && pad=0
-    lp=$((pad / 2))
-    printf '  %s %*s%s%*s %s\n' "$SIDE" "$lp" '' "$1" $((pad - lp)) '' "$SIDE"
+# put COLOURED VISIBLE-LENGTH: one line, one column from the left edge (the length is only there for the glint, which
+# draws the same lines as the banner)
+put() { printf ' %s\n' "$1"; }
+
+# bar: segments of a heavy line, each coloured by the gradient at its own columns, so it lights up like the letters
+bar() {
+    local col=0 out='' j n
+    for n in 14 8 4 2; do
+        for ((j = 0; j < n; j++)); do out+="${F}${COLS[col + j]}m━"; done
+        out+="$R "
+        col=$((col + n + 1))
+    done
+    put "$out" "$W"
 }
-say() { put "${F}$1m$2${R}" "${#2}"; }
-# hbar LEFT RIGHT: the top or bottom of the frame
-hbar() { local line; printf -v line '%*s' $((W + 2)) ''; printf '  %s%s%s%s%s\n' "${F}${FRAME}m" "$1" "${line// /─}" "$2" "$R"; }
 
 echo
-hbar ╭ ╮
-put '' 0
 for row in "${FONT[@]}"; do paint "$row"; put "$REPLY" "${#row}"; done
 put '' 0
-say 245 'a box for your agent'
-say 240 'a shell you can reach from anywhere'
-hbar ╰ ╯
-echo
+bar
+printf ' %*s%s// agent box%s\n' $((W - 12)) '' "${F}240m" "$R"
+# no blank line after the signature: the prompt brings its own above it (add_newline in starship.toml)
 
 # the glint: a white diagonal with a soft halo that crosses the letters, back and forth, in the background so the
 # shell never waits for it. It writes into the pane while the shell may be writing too, so it is careful: it only
