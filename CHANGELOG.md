@@ -5,6 +5,23 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.13] - 2026-11-13
+
+- Fixed: the colors of the Claude Code theme came out wrong inside tmux. Claude Code caps itself at 256 colors there unless `CLAUDE_CODE_TMUX_TRUECOLOR` is set, and turned every exact color into the nearest of 256 with a rough formula: the rose of an error
+  (`#ff6b78`) came out as a salmon (`#ff8787`), and the grays of the borders were off. The shell of the box now sets it, because the tmux of the box declares RGB. Set it empty in your `~/.bashrc` to go back to 256. Needs `swarmbox update` and
+  `swarmbox reset`.
+- Added: `swarmbox-statusline`, a status line for Claude Code in the style of the box: `╶─ …/swarmbox ─ main ! ─ Sonnet 5.5 ─ ▰▰▰▱▱▱▱▱▱▱ 34% ─ 5h 71%`, the context as a bar that is violet, fuchsia from 70% and rose from 90%, and the usage limits when
+  Claude Code reports them. It is not on by default: put `"statusLine": {"type": "command", "command": "swarmbox-statusline"}` in `~/.claude/settings.json`.
+- Changed: the whole box is in one palette, the purple glow (`docs/theme.md`). The browser terminal has new colors: a near-black background (`#0c0b10`), `#d4d4d8` text, a lavender cursor and a violet selection, and its 16 colors are
+  tones of the same family (blue is a violet, so what a program paints blue is violet; red, green and yellow keep their meaning). `ls` (folders violet, links lavender) and `grep` (the match lavender) use 256-colour numbers, so they look
+  the same in any terminal scheme, and the messages of the scripts use two fixed grays; the scrollbar of the browser is violet. `theme=` in `web-terminal.conf` still replaces the whole theme of the browser terminal, and `LS_COLORS` and
+  `GREP_COLORS` in your `~/.bashrc` still win. New in `docs/theme/`: a color scheme for Windows Terminal and one for Ghostty with the same palette, so the terminal you run the box in can match it, and the theme of Claude Code
+  (`custom:swarmbox-purple-glow`, 29 colors: the selection, permissions, suggestions, the prompt box, user messages, Claude's orange, and the tones of errors, successes and warnings). Needs `swarmbox update` and `swarmbox reset`.
+- Changed: a selection made in the web terminal with the browser's own selection (Shift and drag, which skips tmux) is the violet of the box (`#6d28d9`, light text), the same as tmux's, and no longer the steel blue of the old theme. A selection made
+  by dragging with the mouse is tmux's and was already violet. A program that takes the mouse for itself (a full-screen TUI) draws its own selection in its own colors; that is not tmux's and not ours. Needs `swarmbox update` and `swarmbox reset`.
+- Changed: the line under the banner now says what the box is for: `// your agent's shell, from anywhere` (it was `// agent box`). It is in the dark grays of the box, with the `//` darkest and the last word darkening letter by letter.
+  Needs `swarmbox update` and `swarmbox reset`.
+
 ## [2.0.12] - 2026-11-13
 
 - Fixed: the glint of the banner. A pass from left to right stopped one step too soon and left one cell of the last row a shade lighter until the next pass; it now ends past the last column. And a step no longer rewrites the three rows whole: it writes
@@ -159,6 +176,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.13]: https://github.com/feroult/swarmbox/releases/tag/v2.0.13
 [2.0.12]: https://github.com/feroult/swarmbox/releases/tag/v2.0.12
 [2.0.11]: https://github.com/feroult/swarmbox/releases/tag/v2.0.11
 [2.0.10]: https://github.com/feroult/swarmbox/releases/tag/v2.0.10
