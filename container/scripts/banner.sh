@@ -63,11 +63,12 @@ lighten() {
     REPLY=$((16 + 36 * r + 6 * g + b))
 }
 
-# paint TEXT [GLINT] -> REPLY: the text coloured by the gradient. Around column GLINT the letters are white at
-# the centre and fade back to their own colour over three more columns (a soft halo, which is the glint)
+# paint TEXT [GLINT [FROM [TO]]] -> REPLY: the text coloured by the gradient, or only its columns FROM to TO (all of them by default).
+# Around column GLINT the letters are white at the centre and fade back to their own colour over three more columns (a soft halo,
+# which is the glint)
 paint() {
-    local t=$1 g=${2:--99} n=${#1} j ch col cur='' out='' d
-    for ((j = 0; j < n; j++)); do
+    local t=$1 g=${2:--99} from=${3:-0} to=${4:-$((${#1} - 1))} j ch col cur='' out='' d
+    for ((j = from; j <= to; j++)); do
         ch=${t:j:1}
         if [ "$ch" = ' ' ]; then out+=$ch; continue; fi
         col=${COLS[j]}
@@ -112,10 +113,14 @@ GLINT_FRAMES=44 # steps in one pass; with the pause below, a pass takes about tw
 GLINT_STEP=0.03 # seconds between two steps
 TMUX_STATE='#{history_size} #{cursor_y}'   # changes whenever the screen scrolls or the cursor changes line
 
-# draw GLINT: redraw the three rows of lettering with the glint at column GLINT (-99: none, plain). 0 drawn;
-# 1 the lettering is not on the screen, or the pane is gone; 2 the screen moved while we looked, nothing drawn.
+# draw GLINT [PREVIOUS]: redraw the glint at column GLINT (-99: none, the plain letters). 0 drawn; 1 the lettering is not on the screen, or
+# the pane is gone; 2 the screen moved while we looked, nothing drawn. With PREVIOUS (where the glint was a step ago) it writes only the
+# cells that can have changed: the 7 columns of the halo now and then, and what lies between. Without it, or for the plain letters, it
+# writes the three rows whole. The point is what tmux has to send to the terminal behind it: a whole row per step is about a kilobyte of
+# color changes three times over, a handful of cells is a few hundred bytes, and a terminal that draws while it is still receiving
+# (Ghostty, for one) has much less to catch half done.
 draw() {
-    local g=$1 lines y s1 s2 frame i
+    local g=$1 prev=${2:-} lines y s1 s2 frame i gi pi a b n=${#FONT[0]}
     # one tmux call: the visible rows, then the state as the last line
     mapfile -t lines < <(tmux capture-pane -p -t "$TMUX_PANE" \; display-message -p -t "$TMUX_PANE" "$TMUX_STATE" 2> /dev/null)
     ((${#lines[@]} > 1)) || return 1
@@ -124,8 +129,18 @@ draw() {
     ((y >= 0)) || return 1
     frame="${ESC}7"
     for i in 0 1 2; do
-        paint "${FONT[$i]}" $((g - i * 2))
-        frame+="${ESC}[$((y + 1 + i));1H$(put "$REPLY" "${#FONT[$i]}")"
+        gi=$((g - i * 2))
+        a=0; b=$((n - 1))
+        if [ -n "$prev" ] && [ "$g" != -99 ]; then
+            pi=$((prev - i * 2))
+            if ((gi < pi)); then a=$((gi - 3)); b=$((pi + 3)); else a=$((pi - 3)); b=$((gi + 3)); fi
+            ((a < 0)) && a=0
+            ((b > n - 1)) && b=$((n - 1))
+        fi
+        if ((a <= b)); then
+            paint "${FONT[$i]}" "$gi" "$a" "$b"
+            frame+="${ESC}[$((y + 1 + i));$((a + 2))H$REPLY"   # the banner has a one-column margin: column j is at j + 2
+        fi
     done
     s2=$(tmux display-message -p -t "$TMUX_PANE" "$TMUX_STATE" 2> /dev/null) || return 1
     [ "$s2" = "$s1" ] || return 2
@@ -135,12 +150,15 @@ draw() {
 # sweep DIRECTION: one pass, 1 left to right and -1 right to left. It eases in and out (smoothstep), so it starts
 # slowly, is fastest in the middle and settles at the end. Fails (1) when the lettering is gone.
 sweep() {
-    local dir=$1 lo=-6 hi=$((${#FONT[0]} + 6)) frames=$GLINT_FRAMES k t e g rc
+    # the ends are far enough out for the glint to be off every row at the last step: the halo reaches 3 columns each side, and each row below
+    # the first has the glint 2 columns behind (4 on the third), so the right end is 3 + 4 beyond the last column, and one more
+    local dir=$1 lo=-6 hi=$((${#FONT[0]} + 8)) frames=$GLINT_FRAMES k t e g rc prev=
     for ((k = 0; k <= frames; k++)); do
         t=$((k * 1000 / frames)); e=$((t * t * (3000 - 2 * t) / 1000000))
         ((dir < 0)) && e=$((1000 - e))
         g=$((lo + (hi - lo) * e / 1000))
-        draw "$g"; rc=$?
+        draw "$g" "${prev:-$g}"; rc=$?
+        prev=$g
         ((rc == 1)) && return 1
         if ((rc == 2)); then sleep 0.3; draw -99; return 0; fi   # something moved: plain letters again, end the pass
         sleep "$GLINT_STEP"
@@ -150,12 +168,15 @@ sweep() {
 # glint: the loop, alternating the direction. It ends when the lettering is gone (scrolled away, cleared), when the
 # pane is gone, or when a newer banner in the same pane takes over (the pane option holds the pid of the one that
 # owns it). It skips a pass while a full-screen program or copy mode is up, or while the screen is not still.
+# `set -g @swarmbox-glint off` in your ~/.tmux.conf turns it off, and `tmux set -g @swarmbox-glint off` (or `on`) does it at once, in a
+# box that is already open: the option is read before every pass.
 glint() {
     local me=$BASHPID q1 q2 dir=1
-    tmux set-option -p -t "$TMUX_PANE" @swarmbox_glint "$me" 2> /dev/null || return
+    tmux set-option -p -t "$TMUX_PANE" @swarmbox_glint_pid "$me" 2> /dev/null || return
     sleep 0.1   # let the rest of the login output settle
     while :; do
-        [ "$(tmux show-options -pqv -t "$TMUX_PANE" @swarmbox_glint 2> /dev/null)" = "$me" ] || return
+        [ "$(tmux show-options -pqv -t "$TMUX_PANE" @swarmbox_glint_pid 2> /dev/null)" = "$me" ] || return
+        if [ "$(tmux show-options -gqv @swarmbox-glint 2> /dev/null)" = off ]; then sleep "$GLINT_EVERY"; continue; fi
         q1=$(tmux display-message -p -t "$TMUX_PANE" "#{alternate_on} #{pane_in_mode} $TMUX_STATE" 2> /dev/null) || return
         sleep 0.25
         q2=$(tmux display-message -p -t "$TMUX_PANE" "#{alternate_on} #{pane_in_mode} $TMUX_STATE" 2> /dev/null) || return
