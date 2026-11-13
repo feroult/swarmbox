@@ -182,7 +182,7 @@ class PullProgressTest(UpdateBase):
         import pty
         self.install_script()
         e = self.env(**env)
-        for k in ("TERM", "NO_COLOR", "SWARMBOX_PROGRESS", "STARSHIP_SHELL", "SWARMBOX_ICONS"):
+        for k in ("TERM", "NO_COLOR", "SWARMBOX_PROGRESS", "STARSHIP_SHELL"):
             if k not in env:
                 e.pop(k, None)
         master, slave = pty.openpty()

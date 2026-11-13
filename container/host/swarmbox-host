@@ -1412,9 +1412,8 @@ show_err() { tail -n "${2:-3}" "$1" 2> /dev/null | sed 's/^/    /' >&2; }
 # ---------------------------------------------------------------- the pull, for a person at a terminal
 
 # ui_setup: UI=1 when standard error is a terminal the progress line may draw on (not with SWARMBOX_PROGRESS=plain, TERM=dumb or
-# no TERM). Colors are a palette of its own (the roles in ui_c: violet, teal, indigo, slate), not the prompt's; NO_COLOR turns them off. The
-# powerline separators and the download icon need a Nerd Font, which cannot be detected: they are on when Starship runs in this shell
-# (STARSHIP_SHELL is set) or SWARMBOX_ICONS=1, and off with SWARMBOX_ICONS=0. Without a UTF-8 locale the bar is plain ASCII.
+# no TERM). Colors are the violet and gray of the box (the roles in ui_c); NO_COLOR turns them off. Nothing in the line needs a Nerd Font.
+# Without a UTF-8 locale the bar and the marks are plain ASCII.
 ui_setup() {
     UI=0
     [ -t 2 ] || return 0
@@ -1423,38 +1422,33 @@ ui_setup() {
     UI=1
     UI_ESC=$(printf '\033')
     if [ -n "${NO_COLOR:-}" ]; then UI_COLOR=0; else UI_COLOR=1; fi
-    UI_PL=0
-    if [ "${SWARMBOX_ICONS:-}" = 1 ] || { [ -n "${STARSHIP_SHELL:-}" ] && [ "${SWARMBOX_ICONS:-}" != 0 ]; }; then UI_PL=1; fi
     case ${LC_ALL:-${LC_CTYPE:-${LANG:-}}} in
         *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*)
             UI_ON=$(printf '\342\226\260')
             UI_OFF=$(printf '\342\226\261')
-            UI_OK=$(printf '\342\234\224')
+            UI_OK=$(printf '\342\234\223')
+            UI_DOT=$(printf '\302\267')
             ;;
         *)
             UI_ON='#'
             UI_OFF='-'
             UI_OK='ok'
-            UI_PL=0
+            UI_DOT='-'
             ;;
     esac
-    UI_SEP=$(printf '\356\202\260')
-    UI_ICON=$(printf '\357\200\231')
     UI_COLS=$(tput cols 2> /dev/null) || UI_COLS=80
     case $UI_COLS in ''|*[!0-9]*) UI_COLS=80 ;; esac
 }
 
-# ui_c fg|bg ROLE: the escape that sets that color, nothing when colors are off.
+# ui_c fg|bg ROLE: the escape that sets that color, nothing when colors are off. The roles are the violet and gray of the box: violet
+# (the filled part of the bar, the check), light (the percent), dim (the words) and empty (the part of the bar still to come).
 ui_c() {
     [ "$UI_COLOR" = 1 ] || return 0
     case $2 in
-        violet) uc_r=109; uc_g=40; uc_b=217; uc_n=56 ;;
-        teal) uc_r=15; uc_g=118; uc_b=110; uc_n=30 ;;
-        indigo) uc_r=79; uc_g=70; uc_b=229; uc_n=62 ;;
-        slate) uc_r=71; uc_g=85; uc_b=105; uc_n=59 ;;
-        light) uc_r=248; uc_g=250; uc_b=252; uc_n=231 ;;
-        ok) uc_r=74; uc_g=222; uc_b=128; uc_n=78 ;;
-        err) uc_r=248; uc_g=113; uc_b=113; uc_n=203 ;;
+        violet) uc_r=167; uc_g=139; uc_b=250; uc_n=141 ;;
+        light) uc_r=196; uc_g=181; uc_b=253; uc_n=183 ;;
+        dim) uc_r=113; uc_g=113; uc_b=122; uc_n=243 ;;
+        empty) uc_r=63; uc_g=63; uc_b=70; uc_n=238 ;;
         *) return 0 ;;
     esac
     if [ "$1" = bg ]; then uc_k=48; else uc_k=38; fi
@@ -1466,37 +1460,29 @@ ui_c() {
 
 ui_reset() { [ "$UI_COLOR" = 1 ] && printf '%s[0m' "$UI_ESC"; return 0; }
 
-# ui_seg ROLE TEXT NEXTROLE: one segment of the line, a colored block with the text and, with the powerline glyphs, the arrow into the
-# next block (NEXTROLE empty for the last one). Without colors the blocks are separated by a bar.
-ui_seg() {
-    if [ "$UI_COLOR" = 1 ]; then
-        printf '%s%s %s ' "$(ui_c bg "$1")" "$(ui_c fg light)" "$2"
-        if [ "$UI_PL" = 1 ]; then
-            if [ -n "$3" ]; then printf '%s%s%s' "$(ui_c fg "$1")" "$(ui_c bg "$3")" "$UI_SEP"; else printf '%s%s%s' "${UI_ESC}[0m" "$(ui_c fg "$1")" "$UI_SEP"; fi
-        fi
-    else
-        printf '[ %s ]' "$2"
-    fi
-}
-
-# ui_bar PCT: the 16 cells of the bar; a negative PCT is a short bright stretch that sweeps along (no total known yet).
+# ui_bar PCT: the 16 cells of the bar, the filled ones violet and the rest dark gray; a negative PCT is a short lit stretch that sweeps
+# along (no total known yet).
 ui_bar() {
     ub_w=16
     ub_i=0
     ub_out=
-    if [ "$1" -ge 0 ]; then
-        ub_f=$(($1 * ub_w / 100))
-        while [ "$ub_i" -lt "$ub_w" ]; do
-            if [ "$ub_i" -lt "$ub_f" ]; then ub_out=$ub_out$UI_ON; else ub_out=$ub_out$UI_OFF; fi
-            ub_i=$((ub_i + 1))
-        done
-    else
-        ub_p=$((ui_tick % (ub_w + 4)))
-        while [ "$ub_i" -lt "$ub_w" ]; do
-            if [ "$ub_i" -lt "$ub_p" ] && [ "$ub_i" -ge $((ub_p - 4)) ]; then ub_out=$ub_out$UI_ON; else ub_out=$ub_out$UI_OFF; fi
-            ub_i=$((ub_i + 1))
-        done
-    fi
+    ub_prev=
+    if [ "$1" -ge 0 ]; then ub_f=$(($1 * ub_w / 100)); else ub_p=$((ui_tick % (ub_w + 4))); fi
+    while [ "$ub_i" -lt "$ub_w" ]; do
+        if [ "$1" -ge 0 ]; then
+            if [ "$ub_i" -lt "$ub_f" ]; then ub_lit=1; else ub_lit=0; fi
+        elif [ "$ub_i" -lt "$ub_p" ] && [ "$ub_i" -ge $((ub_p - 4)) ]; then
+            ub_lit=1
+        else
+            ub_lit=0
+        fi
+        if [ "$ub_lit" != "$ub_prev" ]; then
+            if [ "$ub_lit" = 1 ]; then ub_out=$ub_out$(ui_c fg violet); else ub_out=$ub_out$(ui_c fg empty); fi
+            ub_prev=$ub_lit
+        fi
+        if [ "$ub_lit" = 1 ]; then ub_out=$ub_out$UI_ON; else ub_out=$ub_out$UI_OFF; fi
+        ub_i=$((ub_i + 1))
+    done
     printf '%s' "$ub_out"
 }
 
@@ -1595,18 +1581,15 @@ ui_pull() {
     return 1
 }
 
-# ui_draw_pull PCT MB TOTAL SPEED SECONDS LABEL: one redrawn line: [ pull ][ bar and percent ][ MB done/total ][ speed and time ]; LABEL is
-# pull, or unpack when the download is over. Narrow terminals drop the right-hand blocks.
+# ui_draw_pull PCT MB TOTAL SPEED SECONDS LABEL: one redrawn line: pull, the bar and the percent, MB done/total, speed and time; LABEL is
+# pull, or unpack when the download is over. Narrow terminals drop the right-hand parts.
 ui_draw_pull() {
     if [ "$1" -ge 0 ]; then dp_pct="$1%"; else dp_pct=; fi
-    dp_icon=
-    [ "$UI_PL" != 1 ] || dp_icon="$UI_ICON "
     dp_mb="$2 MB"
     [ -z "$3" ] || dp_mb="$2/$(($3 / 1000000)) MB"
-    dp_line=$(ui_seg violet "${dp_icon}$6" teal)
-    dp_line=$dp_line$(ui_seg teal "$(ui_bar "$1") $dp_pct" indigo)
-    if [ "$UI_COLS" -ge 56 ]; then dp_line=$dp_line$(ui_seg indigo "$dp_mb" slate); fi
-    if [ "$UI_COLS" -ge 72 ]; then dp_line=$dp_line$(ui_seg slate "$4 MB/s $(ui_dur "$5")" ""); fi
+    dp_line="$(ui_c fg dim)$6  $(ui_bar "$1") $(ui_c fg light)$dp_pct"
+    if [ "$UI_COLS" -ge 56 ]; then dp_line="$dp_line  $(ui_c fg dim)$dp_mb"; fi
+    if [ "$UI_COLS" -ge 72 ]; then dp_line="$dp_line $UI_DOT $4 MB/s $(ui_dur "$5")"; fi
     printf '\r%s%s%s[K' "$dp_line" "$(ui_reset)" "$UI_ESC" >&2
 }
 
@@ -1614,7 +1597,7 @@ ui_draw_pull() {
 ui_done_line() {
     dl_what=$(ui_dur "$2")
     [ -z "$3" ] || dl_what="$(($3 / 1000000)) MB in $dl_what"
-    printf ' %s%s%s pulled %s (%s)\n' "$(ui_c fg ok)" "$UI_OK" "$(ui_reset)" "$1" "$dl_what"
+    printf '%s%s%s pulled %s %s %s%s\n' "$(ui_c fg violet)" "$UI_OK" "$(ui_c fg dim)" "$1" "$UI_DOT" "$dl_what" "$(ui_reset)"
 }
 
 # pull_image REF: pulls the image. For a person at a terminal it draws the progress line (ui_pull); otherwise it is quiet (-q), so a

@@ -134,8 +134,8 @@ swarmbox tool list          # show the tools you can install
 swarmbox remote setup       # set up remote access with Cloudflare
 ```
 
-While the image downloads (`swarmbox update`, the first `swarmbox`, the installer) a progress line shows the percentage, the megabytes, the speed and the time, in the colors of the prompt of the box; when the download is over and Podman writes the layers out, it says `unpack`.
-The separators and the icon are Nerd Font glyphs, on by default only when Starship runs in your shell; `SWARMBOX_ICONS=1` or `0` forces them on or off. `NO_COLOR=1` turns the colors off, and `SWARMBOX_PROGRESS=plain` goes back to Podman's own bars.
+While the image downloads (`swarmbox update`, the first `swarmbox`, the installer) a progress line shows a bar with the percentage, the megabytes, the speed and the time, in the violet and gray of the box; when the download is over and Podman writes the layers out, it says `unpack`.
+It uses no Nerd Font glyph, so it looks the same in any terminal font. `NO_COLOR=1` turns the colors off, and `SWARMBOX_PROGRESS=plain` goes back to Podman's own bars.
 Without a terminal (a script, a log) the pull stays quiet.
 
 ## Remote access: the same session from anywhere

@@ -117,8 +117,8 @@ class PullUiTest(unittest.TestCase):
         self.assertIn("pull", text)
         self.assertRegex(text, r"\d+%")
         self.assertRegex(text, r"MB")
-        self.assertIn("pulled %s (" % REF, text)
-        self.assertIn("✔", text)
+        self.assertIn("pulled %s \u00b7 " % REF, text)
+        self.assertIn("✓", text)
         self.assertIn("▰", text)
         self.assertNotIn("Trying to pull", text, "Podman's own output stays out of the line")
 
@@ -139,17 +139,12 @@ class PullUiTest(unittest.TestCase):
         self.assertNotRegex(text.split("pulled")[0], r"\d+%")
         self.assertIn("pull", text)
 
-    def test_starship_in_the_shell_turns_the_powerline_glyphs_on_and_icons_zero_turns_them_off(self):
-        sep = "".encode()
-        _, out = self.run_pull(STARSHIP_SHELL="bash")
-        self.assertIn(sep, out)
-        self.assertIn("".encode(), out)
-        _, out = self.run_pull(STARSHIP_SHELL="bash", SWARMBOX_ICONS="0")
-        self.assertNotIn(sep, out)
-        _, out = self.run_pull()
-        self.assertNotIn(sep, out, "no Starship, no glyphs that need a Nerd Font")
-        _, out = self.run_pull(SWARMBOX_ICONS="1")
-        self.assertIn(sep, out)
+    def test_no_nerd_font_glyph_is_ever_drawn_whatever_the_shell_or_the_environment(self):
+        # private-use characters are where the powerline arrows and the icons live: the line looks the same in any terminal font
+        for env in ({}, {"STARSHIP_SHELL": "bash"}, {"SWARMBOX_ICONS": "1"}, {"STARSHIP_SHELL": "bash", "SWARMBOX_ICONS": "1"}):
+            _, out = self.run_pull(**env)
+            icons = sorted({hex(ord(c)) for c in out.decode("utf-8", "replace") if 0xE000 <= ord(c) <= 0xF8FF or ord(c) >= 0xF0000})
+            self.assertEqual(icons, [], env)
 
     def test_no_color_has_no_color_escapes_and_no_utf8_locale_gives_ascii(self):
         _, out = self.run_pull(NO_COLOR="1")
@@ -162,10 +157,15 @@ class PullUiTest(unittest.TestCase):
 
     def test_truecolor_and_256_color_terminals_get_their_own_sequences(self):
         _, out = self.run_pull(COLORTERM="truecolor")
-        self.assertIn(b"\x1b[48;2;109;40;217m", out)
+        self.assertIn(b"\x1b[38;2;167;139;250m", out, "the violet of the filled bar")
         _, out = self.run_pull()
-        self.assertIn(b"\x1b[48;5;56m", out)
-        self.assertNotIn(b";2;109;40;217", out)
+        self.assertIn(b"\x1b[38;5;141m", out)
+        self.assertNotIn(b";2;167;139;250", out)
+
+    def test_the_filled_part_of_the_bar_is_violet_and_the_rest_dark_gray(self):
+        _, out = self.run_pull(COLORTERM="truecolor")
+        self.assertIn(b"\x1b[38;2;63;63;70m", out, "the part of the bar still to come")
+        self.assertNotRegex(out, rb"\x1b\[48;", "no background anywhere: the line is words and a bar")
 
     def test_swarmbox_progress_plain_and_a_dumb_terminal_leave_podmans_own_output(self):
         for env in ({"SWARMBOX_PROGRESS": "plain"}, {"TERM": "dumb"}):
