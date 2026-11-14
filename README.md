@@ -16,7 +16,7 @@ browser, on your machine or from your phone.
 
 ## Quick start
 
-You need Podman 4.3 or newer, on Linux or Windows with WSL2.
+You need Podman 4.3 or newer.
 
 ```bash
 curl -fsSL https://github.com/feroult/swarmbox/releases/latest/download/install.sh | sh -s -- --with claude
@@ -40,9 +40,8 @@ swarmbox remote setup       # remote access from a browser, with Cloudflare (doc
 
 ## Security
 
-SwarmBox is rootless Podman and the agent sees one workspace folder, not the rest of your machine, but it is **not complete isolation**: like any container it shares the kernel with your machine.
-The agent can change everything in the workspace, use `sudo` in the box, reach the network and read every token you pass in, so pass scoped tokens. For a stronger boundary run it inside a virtual machine
-([docs/microvm.md](docs/microvm.md)). More in [SECURITY.md](SECURITY.md).
+SwarmBox runs in a rootless Podman container, and a container is **not complete isolation**: it shares the kernel with your machine and has the known limits of that model.
+For a stronger boundary run it inside a virtual machine ([docs/microvm.md](docs/microvm.md)). More in [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
