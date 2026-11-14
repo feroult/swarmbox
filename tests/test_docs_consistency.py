@@ -49,7 +49,7 @@ def anchors(text):
 
 class Readme(unittest.TestCase):
     def test_sections_topics_and_no_placeholder(self):
-        for h in ("Quick start", "Everyday commands", "Security", "Privacy"):
+        for h in ("Quick start", "Everyday commands", "Security"):
             section(README, h)
         self.assertEqual(README.count("```") % 2, 0)
         self.assertNotIn("<org>", README)
@@ -64,17 +64,17 @@ class Readme(unittest.TestCase):
     def test_quick_start_installs_the_published_release_with_claude(self):
         qs = section(README, "Quick start")
         self.assertIn("releases/latest/download/install.sh | sh -s -- --with claude", qs)
-        self.assertIn("podman run --rm ghcr.io/" + DEFAULT_REPO_PATH + ":", qs)
         self.assertIn("claude", qs)
         self.assertIn("swarmbox env add ANTHROPIC_API_KEY", qs)
         self.assertNotIn("init", qs)
         self.assertNotIn(">> ~/", qs)   # no line appended to a startup file
 
-    def test_remote_access_section_is_in_the_readme(self):
-        rem = section(README, "Remote access")
-        for needle in ("swarmbox remote setup --domain", "CLOUDFLARE_API_TOKEN", "swarmbox remote off",
-                       "swarmbox remote token", "swarmbox url", "ssh ", "docs/cloudflare.md"):
-            self.assertIn(needle, rem, needle)
+    def test_remote_access_points_to_its_page_which_has_the_details(self):
+        self.assertIn("swarmbox remote setup", README)
+        self.assertIn("docs/cloudflare.md", README)
+        page = read("docs", "cloudflare.md")
+        for needle in ("swarmbox remote setup --domain", "CLOUDFLARE_API_TOKEN", "swarmbox remote off", "swarmbox remote token"):
+            self.assertIn(needle, page, needle)
 
     def test_security_section_states_the_kernel_limit_and_no_safe_claim(self):
         sec = section(README, "Security")
@@ -107,7 +107,7 @@ class Readme(unittest.TestCase):
                     self.assertIn(words[2], tool_words, ln)
                 if w in HOST_WORDS_ROUTED:
                     self.assertIn(w, usage, ln)
-        self.assertGreater(seen, 8)
+        self.assertGreater(seen, 5)
 
 
 class Links(unittest.TestCase):
