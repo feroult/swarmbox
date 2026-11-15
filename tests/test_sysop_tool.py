@@ -88,18 +88,20 @@ class Tree(unittest.TestCase):
         self.addCleanup(self.kill_service)
 
     def kill_service(self):
-        try:
-            with open(self.paths.pidfile) as f:
-                pid = int(f.read())
-        except (OSError, ValueError):
-            return
-        for sig in (signal.SIGTERM, signal.SIGKILL):
+        """the watcher first (it would start the service again), then the service"""
+        for pidfile in (self.paths.watch_pidfile, self.paths.pidfile):
             try:
-                os.kill(pid, sig)
-            except ProcessLookupError:
-                return
-            if ss.wait_for(lambda: not self.alive(pid), 5):
-                return
+                with open(pidfile) as f:
+                    pid = int(f.read())
+            except (OSError, ValueError):
+                continue
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.kill(pid, sig)
+                except ProcessLookupError:
+                    break
+                if ss.wait_for(lambda: not self.alive(pid), 5):
+                    break
 
     @staticmethod
     def alive(pid):
@@ -209,7 +211,10 @@ class Prepare(Tree):
         pid = self.pid()
         self.assertTrue(self.alive(pid))
         stat_ = rd("/proc/%d/stat" % pid).rsplit(")", 1)[1].split()
-        self.assertEqual((int(stat_[2]), int(stat_[3])), (pid, pid), "its own session and group (setsid): the timeout of prepare cannot reach it")
+        watcher = int(rd(self.paths.watch_pidfile))
+        self.assertNotEqual(watcher, pid, "the service runs under a watcher that starts it again when it dies")
+        self.assertEqual(int(rd("/proc/%d/stat" % watcher).rsplit(")", 1)[1].split()[3]), watcher, "the watcher is the leader of a session of its own (setsid)")
+        self.assertEqual((int(stat_[2]), int(stat_[3])), (watcher, watcher), "the service is in that session and group: the timeout of prepare cannot reach it")
         self.assertEqual(os.readlink("/proc/%d/fd/0" % pid), "/dev/null")
         self.assertEqual(os.readlink("/proc/%d/fd/1" % pid), self.paths.log)
         self.assertEqual(stat.S_IMODE(os.stat(self.paths.log).st_mode), 0o600)
@@ -247,7 +252,7 @@ class Prepare(Tree):
             env = rd("/proc/%d/environ" % pid)
         except OSError:
             return False
-        return "swarmbox_sysop" in cmd and "serve" in cmd and ("SB_RUN_DIR=" + self.env["SB_RUN_DIR"]) in env
+        return "swarmbox_sysop" in cmd and "serve" in cmd and "--watch" not in cmd and ("SB_RUN_DIR=" + self.env["SB_RUN_DIR"]) in env       # the watcher is not a service
 
     def test_a_service_that_died_is_started_again(self):
         self.install()

@@ -13,7 +13,7 @@ Run it with tests/e2e_sysop.sh (it starts the container and passes the login). I
     python3 tests/e2e_sysop.py [--only 1,3,4] [--runs 5] [--list]
 
 Scenarios (the numbers of the brief): 1 basic path, 2 the same in Portuguese, 3 countdown (veto and no key), 4 high risk, 5 prompt injection,
-6 stop (panel and command), 7 budgets, 8 queue, 9 brain not logged in, 10 bus and service restarts, 11 target busy or with a dialog.
+6 stop (panel and command), 7 budgets, 8 queue, 9 brain not logged in, 10 bus and service restarts, 11 target busy or with a dialog, 12 the panel always up (idle screen, new tabs, the toggle), 13 sysop.panel=auto, 14 sysop.panel=off.
 Every check prints PASS or FAIL; the exit status is 1 when one failed. Screens, audit files and a JSON report go to $E2E_RESULTS (default /work/results).
 
 The login (CLAUDE_CODE_OAUTH_TOKEN) is only read from the environment, handed to the service and the tabs as they would have it in the box, and
@@ -319,6 +319,9 @@ class Box:
         self.stop_service()
         env = dict(self.env)
         env.update(self.sysop_env())
+        # in the box every process has the setting (the container's environment): the keys of tmux.conf (run-shell) read it from the environment of the tmux server
+        mode = self.settings.get("panel_mode")
+        self.tmux(*(["set-environment", "-g", "SWARMBOX_SYSOP_PANEL_MODE", str(mode)] if mode else ["set-environment", "-gu", "SWARMBOX_SYSOP_PANEL_MODE"]))
         for k in drop:
             env.pop(k, None)
         r = subprocess.run(["swarmbox-tool", "prepare"], env=env, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
@@ -401,7 +404,24 @@ class Box:
         return [dict(zip(("pane", "win", "active", "winactive", "panel", "cmd"), r.split("|"))) for r in rows if "|" in r]
 
     def panel(self):
-        return next((p for p in self.panes() if p["panel"] == "1"), None)
+        """the panel of the window the client shows (the panel is up in every window: the mode always)"""
+        panels = [p for p in self.panes() if p["panel"] == "1"]
+        return next((p for p in panels if p["winactive"] == "1"), None) or (panels[0] if panels else None)
+
+    def panels_up(self):
+        """True when every window has exactly one panel"""
+        wins = [w["id"] for w in self.windows()]
+        panels = [p["win"] for p in self.panes() if p["panel"] == "1"]
+        return bool(wins) and sorted(panels) == sorted(wins)
+
+    def listed_tabs(self):
+        """what swarmbox-tabs lists (a list of dicts)"""
+        r = self.sh(["swarmbox-tabs", "list"])
+        try:
+            d = json.loads(r.stdout)
+        except ValueError:
+            return []
+        return d.get("tabs", d) if isinstance(d, dict) else d
 
     def click_panel(self):
         """a left click (SGR mouse, as the terminal sends it) on the head row of the panel"""
@@ -434,9 +454,8 @@ class Box:
             self.tmux("send-keys", "-t", pane, "Enter")
 
     def reset_tabs(self, claude=True, shell_name="shell", extra=()):
-        """a clean set of tabs: a shell tab, a Claude Code tab (when asked) and extra bash tabs; the claude tab is the active one; panels are gone"""
+        """a clean set of tabs: a shell tab, a Claude Code tab (when asked) and extra bash tabs; the claude tab is the active one; the panel is up in each"""
         self.idle(60)
-        time.sleep(3.6)       # the Follower of the service closes its panel 3 s after the last goal; a goal inside that time finds the panel it left (by design)
         old = [w["id"] for w in self.windows()]
         shell = self.new_tab(shell_name)
         tabs = {"shell": shell}
@@ -447,6 +466,8 @@ class Box:
         time.sleep(0.3)
         if claude:
             tabs["claude"] = self.boot_claude()
+        if self.settings.get("panel_mode", "always") == "always":
+            wait_for(self.panels_up, 10)       # the hook of the sysop puts a panel in each new window
         self.select(tabs["claude"] if claude else shell)
         time.sleep(1.2)       # client_activity has a resolution of 1 s: the window shown is the active tab
         return tabs
@@ -1108,7 +1129,7 @@ def s10(box):
     check("s10a: the goal in flight ended (it did not hang)", (st or {}).get("state") in ("done", "failed"), (st or {}).get("state"))
     check("s10a: the bus going away did not touch the goal: its tools act through swarmbox-tabs (state done)", (st or {}).get("state") == "done", (st or {}).get("state"))
     ok = one_goal_works(box, "s10a: the next goal after the bus restart works")
-    # 10b: the service is killed (SIGKILL) while a goal runs, and started again as a box start does
+    # 10b: the service is killed (SIGKILL) while a goal runs, and started again (by its watcher; then as a box start does)
     tabs = box.reset_tabs(claude=True)
     rc, gid, _ = box.pub("call the wait tool with 25 seconds, one call, then call done", "cli")
     ok = wait_for(lambda: any(c["tool"] == "wait" for c in box.calls(gid)), 60)
@@ -1120,7 +1141,9 @@ def s10(box):
     check("s10b: the service is dead", gone is not None)
     left = wait_for(lambda: not box.strays(), 10)
     check("s10b: the brain of the dead service got its death signal (no stray)", left is not None, box.strays())
-    check("s10b: `pub goal` fails at once with exit 3 (nobody listens)", box.pub("hello", "cli")[0] == 3)
+    # the watcher of the service (watch.py, started by prepare.sh) starts it again by itself: no box start is needed (the soak test, tests/soak_v1.py, times it)
+    back = wait_for(lambda: box.service_pid() not in (None, svc) and box.alive(box.service_pid()) and box.sysop("status", "-q").returncode == 0, 30)
+    check("s10b: the watcher started the service again by itself", back is not None, "%.1f s" % back[0] if back else "never")
     box.configure(countdown=0)
     st = box.goal_state(gid)
     check("s10b: the goal that was running is marked failed (lost) by the new service", (st or {}).get("state") == "failed" and "lost" in ((st or {}).get("error") or "").lower(), (st or {}).get("error"))
@@ -1227,8 +1250,119 @@ def s11(box):
         box.tmux("send-keys", "-t", box.pane_of(cw), "Escape")
 
 
+def s12(box):
+    """the panel is always up (sysop.panel = always, the default): no brain needed except for one short goal"""
+    box.scenario = "s12-panel-always"
+    box.configure(countdown=0)
+    tabs = box.reset_tabs(claude=False, extra=("two",))
+    up = wait_for(box.panels_up, 15)
+    check("s12: before any goal every window has its panel", up is not None, box.panes())
+    check("s12: no panel has the focus", all(p["active"] == "0" for p in box.panes() if p["panel"] == "1"), box.panes())
+    txt = wait_for(lambda: "no goal." in box.panel_text(), 10) and box.panel_text()
+    box.save("12-panel-idle.txt", box.panel_text())
+    check("s12: the idle panel says there is no goal, the keys, the autonomy and the topic",
+          bool(txt) and all(x in txt for x in ("no goal. Type one", "autonomy:", "brain:", "topic: " + TOPIC)) and any(x in txt for x in ("IDLE", "DONE", "FAILED", "STOPPED")), (txt or box.panel_text())[-400:])
+    before = box.listed_tabs()
+    t = box.new_tab("three")
+    check("s12: a new tab gets its panel", wait_for(box.panels_up, 10) is not None, box.panes())
+    tl = box.listed_tabs()
+    pp = {p["pane"] for p in box.panes() if p["panel"] == "1"}
+    check("s12f: the new window is listed as ONE tab (%d tabs before, %d after) and its panel is not a tab: no listed pane is a panel, one pane each" % (len(before), len(tl)),
+          len(tl) == len(before) + 1 and any(x.get("tab") == t for x in tl) and not any(x.get("pane") in pp for x in tl) and all(len(x.get("panes") or []) == 1 for x in tl), tl)
+    check("s12f: the new window's own pane is the one that is active, not its panel", all(p["active"] == "0" for p in box.panes() if p["panel"] == "1"), box.panes())
+    # one goal: the panel shows it, and it is still there, with the result, long after the end
+    rc, gid, _ = box.pub("say hello in one word and finish", "voice")
+    st = box.wait_goal(gid, 90)
+    check("s12: the goal ended", (st or {}).get("state") in ("done", "failed"), (st or {}).get("state"))
+    time.sleep(6)          # the mode auto would have closed the panel 3 s after the end
+    check("s12: the panels are all still up after the goal", box.panels_up(), box.panes())
+    after = box.panel_text()
+    box.save("12-panel-after-goal.txt", after)
+    check("s12: the panel shows the last goal and its result", "last goal (voice" in after and ("done:" in after or "failed:" in after), after[-500:])
+    # kill the pane of a tab: its window closes, the others keep their panel
+    n = len(box.windows())
+    box.tmux("kill-pane", "-t", box.pane_of(t))
+    check("s12: closing the pane of a tab closes a window that would hold only the panel", wait_for(lambda: len(box.windows()) == n - 1, 10) is not None, box.windows())
+    check("s12: the other windows keep their panel", wait_for(box.panels_up, 10) is not None, box.panes())
+    # the key hides the panels in every window and shows them again
+    box.keys("\x01S")
+    check("s12: Ctrl+A S hides the panels of all windows", wait_for(lambda: not [p for p in box.panes() if p["panel"] == "1"], 10) is not None, box.panes())
+    box.new_tab("four")
+    time.sleep(2.5)
+    check("s12: while hidden a new tab gets no panel", not [p for p in box.panes() if p["panel"] == "1"], box.panes())
+    box.keys("\x01S")
+    check("s12: Ctrl+A S shows them again in every window", wait_for(box.panels_up, 10) is not None, box.panes())
+    ps = box.tmux("show-options", "-gqv", "@swarmbox_sysop_hidden").strip()
+    check("s12: the hidden choice is cleared", ps == "", ps)
+
+
+def panels_all(box):
+    return [p for p in box.panes() if p["panel"] == "1"]
+
+
+def s13(box):
+    """sysop.panel = auto: no panel until a goal arrives, then one in the window you look at (not focused), gone a few seconds after the goal; Ctrl+A S opens and closes one by hand"""
+    box.scenario = "s13-panel-auto"
+    box.configure(countdown=2, panel_mode="auto")
+    tabs = box.reset_tabs(claude=False, extra=("two",))
+    box.select(tabs["shell"])
+    time.sleep(2.0)
+    check("s13 auto: with no goal there is no panel in any window", not panels_all(box) and wait_for(lambda: not panels_all(box), 6) is not None, box.panes())
+    t = box.new_tab("three")
+    time.sleep(2.0)
+    check("s13 auto: a new window gets no panel", not panels_all(box), box.panes())
+    seen = {"n": 0, "focus": False, "win": None}
+
+    def tick(st):
+        p = box.panel()
+        if p:
+            seen["n"] += 1
+            seen["focus"] = seen["focus"] or (p["active"] == "1")
+            seen["win"] = p["win"]
+    rc, gid, _ = box.pub("say hello in one word and finish", "voice")
+    st = box.wait_goal(gid, 90, tick=tick)
+    check("s13 auto: the goal ended", (st or {}).get("state") in ("done", "failed"), (st or {}).get("state"))
+    check("s13 auto: the panel opened while the goal ran, in the window shown (%s), and never had the focus" % tabs["shell"], seen["n"] > 0 and seen["win"] == tabs["shell"] and not seen["focus"], seen)
+    closed = wait_for(lambda: not panels_all(box), 12)
+    check("s13 auto: the panel closed a few seconds after the goal", closed is not None, box.panes())
+    box.keys("\x01S")
+    check("s13 auto: Ctrl+A S opens the panel of this window by hand", wait_for(lambda: len(panels_all(box)) == 1, 10) is not None, box.panes())
+    check("s13 auto: that panel is idle", wait_for(lambda: "no goal." in box.panel_text(), 8) is not None, box.panel_text()[-200:])
+    box.keys("\x01S")
+    check("s13 auto: Ctrl+A S closes it", wait_for(lambda: not panels_all(box), 10) is not None, box.panes())
+    n = len(box.windows())
+    check("s13 auto: the tabs listed are the windows (no panel is left over)", len(box.listed_tabs()) == n, box.listed_tabs())
+
+
+def s14(box):
+    """sysop.panel = off: the sysop never opens a panel (a goal runs without one); Ctrl+A S still opens and closes one by hand"""
+    box.scenario = "s14-panel-off"
+    box.configure(countdown=2, panel_mode="off")
+    tabs = box.reset_tabs(claude=False, extra=("two",))
+    box.select(tabs["shell"])
+    time.sleep(2.0)
+    seen = {"n": 0}
+
+    def tick(st):
+        if panels_all(box):
+            seen["n"] += 1
+    rc, gid, _ = box.pub("say hello in one word and finish", "voice")
+    st = box.wait_goal(gid, 90, tick=tick)
+    check("s14 off: the goal ended", (st or {}).get("state") in ("done", "failed"), (st or {}).get("state"))
+    check("s14 off: no panel was ever opened for the goal", seen["n"] == 0 and not panels_all(box), (seen, box.panes()))
+    time.sleep(4)
+    check("s14 off: still none a few seconds after", not panels_all(box), box.panes())
+    box.keys("\x01S")
+    check("s14 off: Ctrl+A S opens one by hand, in the window it was pressed in", wait_for(lambda: len(panels_all(box)) == 1 and panels_all(box)[0]["win"] == tabs["shell"], 10) is not None, box.panes())
+    check("s14 off: the panel opened by hand is idle", wait_for(lambda: "no goal." in box.panel_text(), 8) is not None, box.panel_text()[-200:])
+    info("s14 off", "the panel opened by hand with Ctrl+A S (modes auto and off) %s the focus (the mode always never gives it)" % ("has" if any(p["active"] == "1" for p in panels_all(box)) else "does not have"))
+    box.keys("\x01S")
+    check("s14 off: Ctrl+A S closes it", wait_for(lambda: not panels_all(box), 10) is not None, box.panes())
+    check("s14 off: the tabs listed are the windows", len(box.listed_tabs()) == len(box.windows()), box.listed_tabs())
+
+
 SCENARIOS = {1: ("basic path", s1), 2: ("portuguese", s2), 3: ("countdown", s3), 4: ("high risk", s4), 5: ("injection", s5), 6: ("stop", s6), 7: ("budgets", s7),
-             8: ("queue", s8), 9: ("not logged in", s9), 10: ("restarts", s10), 11: ("target busy or dialog", s11)}
+             8: ("queue", s8), 9: ("not logged in", s9), 10: ("restarts", s10), 11: ("target busy or dialog", s11), 12: ("panel always up", s12), 13: ("panel auto", s13), 14: ("panel off", s14)}
 
 
 def summary():

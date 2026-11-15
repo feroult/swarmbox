@@ -80,7 +80,7 @@ is_file_key() {
     case $1 in
         WORKSPACE|HOSTNAME|TZ|INIT|PORTS|HOST_ACCESS|BROWSER_URL|WEB|WEB_PORT|WITH|AGENT|YOLO|ENV_KEYS|IMAGE|CLOUDFLARE_TUNNEL_TOKEN) return 0 ;;
         voice.language|voice.stt.model|voice.stt.vocabulary|voice.web|voice.topic) return 0 ;;
-        sysop.brain|sysop.model|sysop.autonomy|sysop.countdown|sysop.max_steps|sysop.max_seconds|sysop.topic|sysop.group) return 0 ;;
+        sysop.brain|sysop.model|sysop.autonomy|sysop.countdown|sysop.max_steps|sysop.max_seconds|sysop.topic|sysop.group|sysop.panel) return 0 ;;
     esac
     return 1
 }
@@ -90,14 +90,16 @@ is_file_key() {
 env_of() {
     ENV_OF=$(printf '%s' "$1" | tr 'a-z.' 'A-Z_')
     ENV_OF=SWARMBOX_$ENV_OF
+    # SWARMBOX_SYSOP_PANEL=1 is the marker in the start command of a panel pane (swarmbox-tabs hides those panes by it): the mode has its own name
+    [ "$ENV_OF" != SWARMBOX_SYSOP_PANEL ] || ENV_OF=SWARMBOX_SYSOP_PANEL_MODE
 }
 VOICE_KEYS='voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic'
-SYSOP_KEYS='sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group'
+SYSOP_KEYS='sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group sysop.panel'
 TOOL_KEYS="$VOICE_KEYS $SYSOP_KEYS"   # the keys passed to the box only when they differ from its defaults
 
 is_key() { [ "$1" = NAME ] || is_file_key "$1"; }
 
-ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group'
+ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group sysop.panel'
 
 # Built-in default; empty means "no default" (the key is unset). AGENT has none here: the box picks the first agent of WITH.
 default_of() {
@@ -115,6 +117,7 @@ default_of() {
         voice.web) printf '1' ;;
         voice.topic|sysop.topic) printf 'goal' ;;
         sysop.group) printf 'sysop' ;;
+        sysop.panel) printf 'always' ;;
         sysop.brain) printf 'claude' ;;
         sysop.model) printf 'haiku' ;;
         sysop.autonomy) printf 'confirm-risky' ;;
@@ -664,6 +667,12 @@ validate_value() {
             case $V_OUT in
                 confirm-all|confirm-risky|auto) ;;
                 *) _bad "it must be confirm-all, confirm-risky or auto."; return 1 ;;
+            esac
+            ;;
+        sysop.panel)
+            case $V_OUT in
+                always|auto|off) ;;
+                *) _bad "it must be always, auto or off."; return 1 ;;
             esac
             ;;
         sysop.countdown)

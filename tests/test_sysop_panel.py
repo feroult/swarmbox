@@ -33,8 +33,11 @@ from swarmbox_sysop.panel import Model, Snap, render, strip_ansi, text_width  # 
 BIDI = "‮⁦‏؜"
 
 
-def snap(goal=None, pending=None, queue=(), up=True, bus="connected", gid="g1"):
-    return Snap(up, bus, gid if goal else "", goal, pending, list(queue), {})
+SETTINGS = {"topic": "goal", "autonomy": "confirm-risky", "brain": "claude", "model": "haiku", "panel": "always"}
+
+
+def snap(goal=None, pending=None, queue=(), up=True, bus="connected", gid="g1", settings=None):
+    return Snap(up, bus, gid if goal else "", goal, pending, list(queue), settings or {})
 
 
 def make_goal(state="running", text="list the files", source="voice", calls=(), say=(), **kw):
@@ -68,6 +71,179 @@ def model_with(goal=None, pending=None, now=0.0, **kw):
     return m
 
 
+class TakeRequest(unittest.TestCase):
+    """Every window has a panel and the approval request is one file: only the panel it names (by its tmux pane) takes it."""
+
+    def setUp(self):
+        self.st = FakeState()
+        self.addCleanup(self.st.close)
+        self.saved = os.environ.get("TMUX_PANE")
+        self.addCleanup(lambda: os.environ.pop("TMUX_PANE", None) if self.saved is None else os.environ.__setitem__("TMUX_PANE", self.saved))
+        self.p = panel.Panel(self.st.paths, in_fd=-1, out_fd=-1)
+        self.addCleanup(lambda: [os.close(fd) for fd in (self.p.wake_r, self.p.wake_w)])
+        self.p.model.update(snap(make_goal("waiting_approval"), make_pending("approve", "high")), self.p.now() - 5)
+
+    def request(self, **kw):
+        ipc.write_json(self.st.paths.panel_request, dict({"action": "approve", "id": "p1", "time": time.time()}, **kw))
+
+    def test_the_panel_that_is_named_takes_it_and_opens_the_prompt(self):
+        os.environ["TMUX_PANE"] = "%5"
+        self.request(pane="%5")
+        self.p.take_request()
+        self.assertEqual(self.p.model.mode, "word")
+        self.assertFalse(os.path.exists(self.st.paths.panel_request))
+
+    def test_a_panel_of_another_window_leaves_it_alone(self):
+        os.environ["TMUX_PANE"] = "%9"
+        self.request(pane="%5")
+        self.p.take_request()
+        self.assertEqual(self.p.model.mode, "view")
+        self.assertTrue(os.path.exists(self.st.paths.panel_request), "not deleted: the panel it is for still has to take it")
+
+    def test_a_request_without_a_pane_is_taken_by_any_panel(self):
+        os.environ["TMUX_PANE"] = "%9"
+        self.request(pane=None)
+        self.p.take_request()
+        self.assertEqual(self.p.model.mode, "word")
+        self.assertFalse(os.path.exists(self.st.paths.panel_request))
+
+    def test_outside_tmux_any_panel_takes_it(self):
+        os.environ.pop("TMUX_PANE", None)
+        self.request(pane="%5")
+        self.p.take_request()
+        self.assertEqual(self.p.model.mode, "word")
+
+
+class IdleScreen(unittest.TestCase):
+    """The idle screen of the panel that is always up: one clear screen, at any size."""
+
+    def idle(self, cols, rows, goal=None, settings=SETTINGS):
+        m = model_with(goal, settings=settings)
+        m.panel_mode = "always"
+        return frame_text(m, cols, rows)[0]
+
+    def test_it_says_what_there_is_and_how_to_give_a_goal(self):
+        text = "\n".join(self.idle(70, 24))
+        for needle in ("SYSOP", "IDLE", "no goal. Type one: Ctrl+A g", "From any tab: Ctrl+A, then g goal, V veto, X stop, a approve, S hide this panel",
+                       "autonomy: confirm-risky", "brain: claude (haiku)", "topic: goal", "[g] Goal", "[q] Hide"):
+            self.assertIn(needle, " ".join(text.split()) if len(needle) > 40 else text, needle)
+        self.assertNotIn("voice", text.lower(), "the panel does not know the voice tool: it says speak or type")
+
+    def test_the_panel_knows_nothing_of_a_microphone_nor_of_speaking(self):
+        keys = [("c", "Veto"), ("x", "Stop"), ("g", "Goal"), ("l", "Log"), ("q", "Hide")]
+        lines, _ = panel._key_line(keys, 30, False)
+        self.assertEqual(len(lines), 2, "the key line wraps at the width of the pane: nothing covers the last columns any more")
+        self.assertFalse(hasattr(panel, "MIC_RESERVE"))
+        self.assertNotRegex(panel.IDLE_TEXT.lower(), "speak|voice|micro")
+
+    def test_the_title_is_the_first_line_and_the_screen_has_the_size_of_the_pane(self):
+        for cols in (16, 24, 30, 40, 60, 100, 200):
+            for rows in (4, 8, 12, 24, 50):
+                lines = self.idle(cols, rows)
+                self.assertEqual(len(lines), rows, (cols, rows))
+                self.assertIn("SYSOP", lines[0])
+                self.assertTrue(all(text_width(x) <= max(16, cols) for x in lines), (cols, rows, lines))
+                self.assertIn("no goal.", "\n".join(lines), (cols, rows, "the first thing under the title survives any size"))
+
+    def test_what_is_dropped_in_a_short_pane_is_the_least_important_and_the_keys_stay(self):
+        short = "\n".join(self.idle(60, 8))
+        self.assertIn("no goal. Type one", short)
+        self.assertIn("[q] Hide", short)
+        self.assertNotIn("topic:", short)
+        tall = "\n".join(self.idle(60, 24))
+        self.assertIn("topic: goal", tall)
+        self.assertLess(tall.index("no goal"), tall.index("From any tab"))
+        self.assertLess(tall.index("From any tab"), tall.index("autonomy"))
+        self.assertLess(tall.index("autonomy"), tall.index("topic:"))
+
+    def test_in_a_short_pane_the_result_of_the_last_goal_is_on_the_screen(self):
+        """found in the e2e screenshot of a phone held upright (28 columns, 8 lines): the panel showed the goal, `49 earlier (Up)` and the idle line, and not the
+        result: the marker took the only line the log had. The test used to pass on the DONE badge alone"""
+        say = [{"t": 5.0, "text": "I looked at the tab"}] * 12
+        g = make_goal("done", "reply with exactly banana 9", "voice", say=say, ended=time.time() - 3, summary="Typed the prompt into the active Claude tab; it replied banana 9.")
+        for rows in (8, 9, 10, 12):
+            text = " ".join("\n".join(self.idle(28, rows, g)).split())
+            self.assertIn("banana 9.", text.split("no goal.")[0], (rows, text))     # the end of the summary, above the idle line
+            self.assertIn("no goal.", text, rows)
+            self.assertIn("[q] Hide", text, rows)
+        long_goal = make_goal("running", "x " * 400, "voice", say=say)
+        text = "\n".join(self.idle(28, 8, long_goal))
+        self.assertIn("SYSOP", text)
+
+    def test_a_paragraph_of_the_idle_screen_is_whole_or_gone_never_half(self):
+        """found in the e2e screenshot of a phone held sideways (64 columns, 8 lines): the hint `From any tab: ...` was cut after `a approve, S`, so it ended
+        in a letter that means nothing. A paragraph (a wrapped text) goes whole, the facts (autonomy, brain, topic) go one by one."""
+        full = ("From any tab: Ctrl+A, then g goal, V veto, X stop, a approve, S hide this panel. The keys below work after a click on this pane.").split()
+        for cols in (28, 30, 40, 64, 100):
+            for rows in range(4, 30):
+                for goal in (None, make_goal("done", "run the tests", "voice", ended=time.time() - 5, summary="ok")):
+                    text = " ".join("\n".join(self.idle(cols, rows, goal)).split())
+                    at = text.find("From any tab")
+                    if at < 0:
+                        continue
+                    shown = text[at:].split()
+                    seen = []
+                    for w in shown:
+                        if w in ("[g]", "[q]", "autonomy:", "brain:", "topic:", "last", "say:", "done:"):
+                            break
+                        seen.append(w)
+                    self.assertEqual(seen, full[:len(seen)], (cols, rows))
+                    self.assertIn(len(seen), (len(full) - 9, len(full)), "the hint is the sentence or the sentence and the note, not a piece (%d cols, %d rows): %r" % (cols, rows, seen))
+
+    def test_the_last_goal_is_shown_with_how_it_ended_and_what_was_said(self):
+        for state, key, why in (("done", "summary", "tests pass"), ("failed", "error", "the brain crashed"), ("stopped", "error", "stopped by the user")):
+            g = make_goal(state, "run the tests", "voice", say=[{"t": 5.0, "text": "I looked at the tab"}], ended=time.time() - 125, **{key: why})
+            text = "\n".join(self.idle(70, 30, g))
+            self.assertIn("last goal (voice, 2 min ago): run the tests", text)
+            self.assertIn("say: I looked at the tab", text)
+            self.assertIn("%s: %s" % (state, why), text)
+            self.assertIn("no goal. Type one", text, "and it is idle: the way to give another one is there")
+            self.assertIn("autonomy: confirm-risky", text)
+
+    def test_while_a_goal_runs_or_waits_there_is_no_idle_text(self):
+        for m in (model_with(make_goal("running")), model_with(make_goal("running"), make_pending("veto")), model_with(make_goal("queued"), queue=[{"id": "g2", "source": "cli", "text": "x"}])):
+            text = "\n".join(frame_text(m, 70, 30)[0])
+            self.assertNotIn("no goal.", text)
+            self.assertNotIn("topic:", text)
+
+    def test_the_service_down_has_its_own_screen(self):
+        text = "\n".join(frame_text(model_with(up=False, settings=SETTINGS), 70, 24)[0])
+        self.assertIn("SERVICE DOWN", text)
+        self.assertNotIn("no goal.", text)
+
+    def test_a_service_without_settings_still_gives_a_screen(self):
+        text = "\n".join(self.idle(60, 24, settings={}))
+        self.assertIn("no goal. Type one", text)
+        self.assertNotIn("autonomy", text)
+
+    def test_text_in_the_settings_is_made_safe(self):
+        text = "\n".join(self.idle(80, 24, settings=dict(SETTINGS, brain="x\x1b[31mred", topic="t\x07")))
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("\x07", text)
+
+    def test_the_quit_key_says_hide_in_the_mode_always_and_close_in_the_others(self):
+        m = model_with(settings=SETTINGS)
+        self.assertIn("[q] Close", "\n".join(frame_text(m)[0]))
+        m.panel_mode = "always"
+        self.assertIn("[q] Hide", "\n".join(frame_text(m)[0]))
+
+    def test_ago(self):
+        for secs, want in ((0, "just now"), (9, "just now"), (10, "10 s ago"), (59, "59 s ago"), (60, "1 min ago"), (3599, "59 min ago"), (3600, "1 h ago"), (86400 * 3, "3 d ago")):
+            self.assertEqual(panel.ago(secs), want)
+
+    def test_quiet_is_idle_and_not_typing(self):
+        self.assertFalse(Model().quiet(), "not looked yet")
+        self.assertTrue(model_with().quiet())
+        self.assertTrue(model_with(make_goal("done")).quiet())
+        self.assertTrue(model_with(up=False).quiet(), "down: it only waits for the service to come")
+        self.assertFalse(model_with(make_goal("running")).quiet())
+        self.assertFalse(model_with(make_goal("queued"), queue=[{"id": "g2", "source": "cli", "text": "x"}]).quiet())
+        self.assertFalse(model_with(make_goal("running"), make_pending()).quiet())
+        m = model_with()
+        m.key("g", 5.0, time.time())
+        self.assertFalse(m.quiet(), "typing a goal: look often")
+
+
 class Rendering(unittest.TestCase):
     def test_every_state_fits_every_size(self):
         states = {
@@ -92,12 +268,12 @@ class Rendering(unittest.TestCase):
 
     def test_the_idle_text_and_the_service_down_message(self):
         lines, _ = frame_text(model_with())
-        self.assertIn("no goal; speak or type one: g", "\n".join(lines))
+        self.assertIn("no goal. Type one: Ctrl+A g", "\n".join(lines))
         self.assertIn("IDLE", lines[0])
         lines, _ = frame_text(model_with(up=False), 50, 30)
         text = " ".join(" ".join(lines).split())
         self.assertIn("SERVICE DOWN", lines[0])
-        self.assertNotIn("no goal; speak", text)
+        self.assertNotIn("no goal. Type", text)
         m = model_with(up=False)
         self.assertIsNone(m.key("g", 5.0, time.time()))
         self.assertIn("not running", m.notice)
@@ -120,7 +296,7 @@ class Rendering(unittest.TestCase):
             m = model_with(make_goal(state, **{key: word.split(": ", 1)[1]}))
             text = "\n".join(frame_text(m)[0])
             self.assertIn(word, text)
-            self.assertIn("no goal; speak or type one: g", text, "idle text under the end")
+            self.assertIn("no goal. Type one: Ctrl+A g", text, "idle text under the end")
 
     def test_the_log_shows_its_end_and_scrolls(self):
         calls = [call("run", {"command": "step %d" % i}, "r%d" % i, t=float(i)) for i in range(12)]
@@ -575,12 +751,66 @@ class PanelProgram(PtyBase):
     def test_idle_shows_the_text_and_q_closes_the_pane(self):
         self.st.serve()
         t = self.open()
-        self.ready(t, "no goal; speak or type one: g")
+        self.ready(t, "no goal. Type one: Ctrl+A g")
         self.assertIn("IDLE", "\n".join(t.last_frame()))
         self.assertEqual(len(t.last_frame()), 30)
         t.send("q")
         self.assertEqual(t.wait_exit(), 0)
         self.assertIn("\x1b[?1049l", t.raw().decode("utf-8", "replace"), "the screen is given back")
+
+    def test_idle_at_several_widths_in_a_real_pane_and_the_last_goal(self):
+        self.st.serve(settings=dict(SETTINGS))
+        for cols, rows in ((20, 10), (40, 12), (60, 30), (120, 12), (200, 50)):
+            t = self.open(rows=rows, cols=cols)
+            self.assertTrue(t.wait_frame("no goal."), (cols, rows, t.last_frame()))
+            lines = t.last_frame()
+            self.assertEqual(len(lines), rows)
+            self.assertTrue(all(text_width(x) <= cols for x in lines), (cols, rows, lines))
+            self.assertIn("IDLE", lines[0])
+        self.st.goal(state="done", summary="tests pass", text="run the tests", ended=time.time() - 30, say=[{"t": 1.0, "text": "all green"}])
+        self.st.serve(settings=dict(SETTINGS))
+        t = self.open(rows=30, cols=70)
+        self.assertTrue(t.wait_frame("last goal (voice, "), "\n".join(t.last_frame()))
+        text = "\n".join(t.last_frame())
+        for needle in ("run the tests", "say: all green", "done: tests pass", "no goal. Type one", "topic: goal"):
+            self.assertIn(needle, text)
+
+    def test_the_idle_panel_costs_almost_no_cpu_and_follows_a_new_goal(self):
+        self.st.serve(settings=dict(SETTINGS))
+        t = self.open(rows=30, cols=70)
+        self.ready(t, "no goal.")
+
+        def ticks():
+            with open("/proc/%d/stat" % t.pid) as f:
+                f_ = f.read().rsplit(")", 1)[1].split()
+            return (int(f_[11]) + int(f_[12])) / os.sysconf("SC_CLK_TCK")
+        before, t0 = ticks(), time.time()
+        time.sleep(10)
+        used = ticks() - before
+        wall = time.time() - t0
+        self.assertLess(used / wall, 0.01, "the idle panel used %.3f s of CPU in %.1f s" % (used, wall))
+        # and it still sees a goal, within the idle look (one second) and then faster
+        self.st.goal(state="running", text="check the thing")
+        self.st.serve(current="g1", settings=dict(SETTINGS))
+        self.assertTrue(t.wait_frame("check the thing", 4), "\n".join(t.last_frame()))
+        self.assertIn("RUNNING", "\n".join(t.last_frame()))
+
+    def test_the_service_coming_and_going_is_seen_by_an_idle_panel(self):
+        self.st.serve(settings=dict(SETTINGS))
+        t = self.open(rows=20, cols=60)
+        self.assertTrue(t.wait_frame("no goal."))
+        self.st.serve(on=False)
+        self.assertTrue(t.wait_frame("SERVICE DOWN", 4), "\n".join(t.last_frame()))
+        self.st.serve(settings=dict(SETTINGS))
+        self.assertTrue(t.wait_frame("no goal.", 4), "\n".join(t.last_frame()))
+
+    def test_q_in_the_mode_always_ends_the_panel_like_before(self):
+        self.st.e.env["SWARMBOX_SYSOP_PANEL_MODE"] = "always"
+        self.st.serve(settings=dict(SETTINGS))
+        t = self.open()
+        self.ready(t, "[q] Hide")
+        t.send("q")
+        self.assertEqual(t.wait_exit(), 0)
 
     def test_it_shows_the_goal_the_log_and_the_queue_as_the_service_writes_them(self):
         self.st.serve(current="g1", queue=[{"id": "g2", "source": "cli", "text": "the next one"}])
@@ -599,7 +829,7 @@ class PanelProgram(PtyBase):
         self.st.goal(state="done", summary="tests pass", calls=g["calls"])
         self.st.serve(current=None)
         self.assertTrue(t.wait_frame("done: tests pass"), "\n".join(t.last_frame()))
-        self.assertIn("no goal; speak or type one: g", "\n".join(t.last_frame()))
+        self.assertIn("no goal. Type one: Ctrl+A g", "\n".join(t.last_frame()))
 
     def test_calls_and_says_come_from_the_files_of_the_mcp_server_while_the_goal_runs(self):
         self.st.serve(current="g1")
@@ -622,7 +852,7 @@ class PanelProgram(PtyBase):
             lines = t.last_frame()
             self.assertEqual(len(lines), rows, (cols, rows))
             self.assertTrue(all(text_width(x) <= cols for x in lines), (cols, rows, lines))
-            self.assertIn("[q] Close", "\n".join(lines))
+            self.assertIn("[q] Hide", "\n".join(lines), "the default mode is always: q hides the panels")
 
     def test_sigwinch_redraws_at_the_new_size(self):
         self.st.serve(current="g1")
@@ -754,7 +984,7 @@ class PanelProgram(PtyBase):
         bus.deliver = lambda env: (got.append(env), orig(env))[1]
         self.st.serve()
         t = self.open()
-        self.ready(t, "no goal; speak or type one: g")
+        self.ready(t, "no goal. Type one: Ctrl+A g")
         t.send("g")
         self.assertTrue(t.wait_frame("New goal."))
         t.send("open the api logs")
@@ -783,7 +1013,7 @@ class PanelProgram(PtyBase):
         self.assertTrue(json.loads(f.readline())["ok"])
         self.st.serve()
         t = self.open()
-        self.ready(t, "no goal; speak")
+        self.ready(t, "no goal. Type")
         t.send("g")
         t.send("check the disk")
         t.send("\r")
@@ -803,7 +1033,7 @@ class PanelProgram(PtyBase):
         self.assertTrue(json.loads(f.readline())["ok"])
         self.st.serve()
         t = self.open()
-        self.ready(t, "no goal; speak")
+        self.ready(t, "no goal. Type")
         t.send("g")
         t.send("check the disk")
         t.send("\r")
@@ -816,11 +1046,11 @@ class PanelProgram(PtyBase):
         self.assertTrue(t.wait_frame("SERVICE DOWN"), "\n".join(t.last_frame()))
         text = " ".join(" ".join(t.last_frame()).split())
         self.assertIn("service is not running", text)
-        self.assertNotIn("no goal; speak", text)
+        self.assertNotIn("no goal. Type", text)
         t.send("g")
         self.assertTrue(t.wait_frame("not running: a goal would have nobody"))
         self.st.serve()
-        self.assertTrue(t.wait_frame("no goal; speak or type one: g"), "\n".join(t.last_frame()))
+        self.assertTrue(t.wait_frame("no goal. Type one: Ctrl+A g"), "\n".join(t.last_frame()))
         self.st.serve(on=False)
         self.assertTrue(t.wait_frame("SERVICE DOWN"), "\n".join(t.last_frame()))
         t.send("q")
@@ -925,7 +1155,7 @@ class RealCore(PtyBase):
         self.start([{"tool": "say", "args": {"text": "listing"}}, {"tool": "run", "args": {"tab": "main", "command": "echo from-the-sysop"}},
                     {"tool": "say", "args": {"text": "it was vetoed"}}, {"tool": "done", "args": {"summary": "vetoed by you"}}])
         t = self.open(rows=30, cols=80)
-        self.ready(t, "no goal; speak")
+        self.ready(t, "no goal. Type")
         gid = self.goal("echo something", "voice")
         self.assertTrue(t.wait_frame("COUNTDOWN"), "\n".join(t.last_frame()))
         text = "\n".join(t.last_frame())
@@ -991,7 +1221,7 @@ class RealCore(PtyBase):
         gid = self.wait(lambda: self.svc.current is None and next((g for g in service.recent_goals(self.st.paths, 1)), None), "the goal")["id"]
         st = self.state(gid)
         self.assertEqual((st["source"], st["text"], st["state"]), ("panel", "do the thing", "done"))
-        self.assertIn("goal (panel): do the thing", "\n".join(t.last_frame()))
+        self.assertIn("last goal (panel", "\n".join(t.last_frame()))
 
 
 if __name__ == "__main__":

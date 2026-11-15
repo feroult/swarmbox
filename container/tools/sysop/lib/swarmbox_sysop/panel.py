@@ -34,13 +34,15 @@ from . import busclient, config, dock, ipc, paths as pathsmod, service
 
 GUARD = 0.5             # seconds after a new pending action appears in which keys are ignored
 ESC_WAIT = 0.05         # a lone ESC is a key when nothing follows within this long
-POLL = 0.2              # seconds between two looks at the files
-MIC_RESERVE = 7         # the browser's microphone button covers the last columns of the bottom row: the key line stays clear of them
+POLL = 0.2              # seconds between two looks at the files while something happens (a goal, a countdown, you typing)
+IDLE_POLL = 1.0         # idle: once a second only a stat of two files and a lock probe; the files are read when one of them changed
 MAX_EDIT = service.MAX_GOAL_TEXT
 GOAL_LINES = 3
+MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
 HINT = "These keys work when this pane has the focus (click it). From any tab: Ctrl+A, then V veto, X stop, a approve, g goal."
-IDLE_TEXT = "no goal; speak or type one: g"
-LAST_FRESH = 3600       # seconds a finished goal is still shown as the last one when the panel opens
+IDLE_TEXT = "no goal. Type one: Ctrl+A g"
+IDLE_KEYS = "From any tab: Ctrl+A, then g goal, V veto, X stop, a approve, S hide this panel. The keys below work after a click on this pane."
+LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last one when the panel opens
 TERMINAL = ("done", "stopped", "failed")
 
 PALETTE = {"violet": "a78bfa", "deep": "6d28d9", "lavender": "c4b5fd", "dim": "a1a1aa", "text": "d4d4d8", "red": "ff6b78",
@@ -316,6 +318,8 @@ class Model:
         self.focused = None       # True/False after the first focus event of tmux; None until then (not known)
         self.hidden = 0           # characters of the pending action the last render did not show (set by _pending_lines)
         self.finished = False
+        self.quit_key = False     # the panel ends because q was pressed (not because it was killed): in the mode always that hides the panels
+        self.panel_mode = "auto"  # the setting sysop.panel; "always" makes q hide the panels of all windows
 
     # -------- the state
     def update(self, snap, now):
@@ -370,6 +374,15 @@ class Model:
 
     def running(self):
         return bool(self.goal) and self.goal.get("state") not in TERMINAL
+
+    def quiet(self):
+        """Nothing is going on that the next look could change before a file does: the service is down, or it is idle (no goal, no queue,
+        no action waiting) and you are not typing. The loop then looks once a second, and reads the files only when one of them changed."""
+        if self.up is None:
+            return False
+        if not self.up:
+            return True
+        return not self.pending and not self.queue and self.mode == "view" and (not self.goal or self.goal.get("state") in TERMINAL)
 
     # -------- keys
     def key(self, k, now, wall):
@@ -560,17 +573,60 @@ def _log(model, W, color):
         elif st == "queued":
             para("dim", "waiting in the queue", 1)
     if not model.up:
-        para("red", "The sysop service is not running, so no goal can be run. It starts with the box; by hand: swarmbox-sysop serve --log", 1)
+        para("red", "The sysop service is not running, so no goal can be run. It starts with the box and again within seconds after a crash; if it stays down: swarmbox-tool prepare", 1)
         return rows
-    if not g or g.get("state") in TERMINAL:
-        if not model.queue:
-            para("dim", IDLE_TEXT, 1)
     return rows
 
 
+def ago(seconds):
+    seconds = max(0, int(seconds))
+    if seconds < 10:
+        return "just now"
+    for unit, size in (("d", 86400), ("h", 3600), ("min", 60)):
+        if seconds >= size:
+            return "%d %s ago" % (seconds // size, unit)
+    return "%d s ago" % seconds
+
+
+def _idle_rows(model, W, color):
+    """The idle screen: what to do, the keys that work without the focus, the autonomy, the brain and the topic. The result of the last goal is
+    the log and the goal line the render already shows. Items are separated by a blank line that is the first to go when the pane is short."""
+    s = model.settings if isinstance(model.settings, dict) else {}
+    items = [[(IDLE_TEXT, "lavender", True)], [(IDLE_KEYS, "dim", False)]]
+    facts = []
+    if s.get("autonomy") or s.get("brain"):
+        brain = " ".join(x for x in (one_line(s.get("brain"), 30), ("(%s)" % one_line(s.get("model"), 30)) if s.get("model") else "") if x)
+        facts.append(("autonomy: %s" % (one_line(s.get("autonomy"), 14) or "?"), "text", False))
+        facts.append(("brain: %s" % (brain or "?"), "text", False))
+    if s.get("topic"):
+        facts.append(("topic: %s" % one_line(s.get("topic"), 40), "text", False))
+    if facts:
+        items.append(facts)
+    rows, starts = [], []
+    for n, item in enumerate(items):
+        if n:
+            starts.append(len(rows))
+            rows.append("")
+        for text, name, bold in item:
+            starts.append(len(rows))
+            rows += [" " + _paint(color, name, ln, bold) for ln in wrap(text, W)]
+    return rows, starts
+
+
+def _drop_block(rows, starts):
+    """Take the last block off the idle rows (a paragraph or a fact stays whole or goes whole, so a short pane never shows half a sentence) and the blank
+    line before it. `starts` is the list of the first row of each block, from _idle_rows; it loses the entries of what went."""
+    while starts and rows:
+        del rows[starts.pop():]
+        if not rows or rows[-1] != "":
+            break
+    return rows
+
+
+
 def _key_line(keys, cols, color):
-    """The key line(s), wrapped so that they stay clear of the microphone button: ([ANSI lines], [(line index, c0, c1, key)])."""
-    limit = max(10, cols - MIC_RESERVE)
+    """The key line(s), wrapped to the width of the pane: ([ANSI lines], [(line index, c0, c1, key)])."""
+    limit = max(10, cols)
     lines, spans, cur, w, idx = [], [], "", 1, 0
     for key, label in keys:
         piece = "[%s] %s" % (key, cut(label, max(1, cols - 2 - len(key) - 3)))
@@ -639,8 +695,13 @@ def render(model, cols, rows, wall, color=True):
 
     top = []
     g = model.goal
+    idle = bool(model.up and model.mode == "view" and not model.pending and not model.queue and (not g or g.get("state") in TERMINAL))
     if g and model.up:
-        lines = wrap("goal (%s): %s" % (one_line(g.get("source"), 12), one_line(g.get("text"), 1000)), W)
+        label = "goal (%s)" % one_line(g.get("source"), 12)
+        if g.get("state") in TERMINAL:
+            when = ", " + ago(wall - g["ended"]) if isinstance(g.get("ended"), (int, float)) else ""
+            label = "last goal (%s%s)" % (one_line(g.get("source"), 12), when)
+        lines = wrap("%s: %s" % (label, one_line(g.get("text"), 1000)), W)
         if len(lines) > GOAL_LINES:
             lines = lines[:GOAL_LINES]
             lines[-1] = cut(lines[-1] + " …", W)
@@ -672,21 +733,35 @@ def render(model, cols, rows, wall, color=True):
             keys.append(("x", "Stop"))
         if model.up and not model.live(wall):
             keys.append(("g", "Goal"))
-        keys.append(("q", "Close"))
+        keys.append(("q", "Hide" if model.panel_mode == "always" else "Close"))
         key_lines, spans = _key_line(keys, cols, color)
-        if model.focused is not True:
+        if model.focused is not True and not idle:       # the idle screen says it in its own words (IDLE_KEYS)
             hint_l = [" " + _paint(color, "dim", ln) for ln in wrap(HINT, W)]
 
+    idle_l, idle_starts = _idle_rows(model, W, color) if idle else ([], [])
+    idle_top = None
+    if idle_l and not g:
+        idle_l, idle_top = [], idle_l          # no goal to show above it: the idle screen takes the place of the log, right under the head
+
     def total():
-        return len(top) + len(queue_l) + len(pend_l) + len(notice_l) + len(hint_l) + len(prompt_l) + len(key_lines)
+        return len(top) + len(queue_l) + len(pend_l) + len(notice_l) + len(hint_l) + len(prompt_l) + len(key_lines) + len(idle_l)
+    while rows - 1 - total() < 1 and idle_l:
+        _drop_block(idle_l, idle_starts)
     while rows - 1 - total() < 1 and hint_l:
         hint_l.pop()
     while rows - 1 - total() < 1 and queue_l:
         queue_l.pop()
     while rows - 1 - total() < 1 and len(top) > 1:
         top.pop()
+    while rows - 1 - total() < MIN_LOG and len(top) > 1:        # a short pane: the end of the log (the result of the goal) is worth more than the 2nd and 3rd line of the goal
+        top.pop()
     avail = max(1, rows - 1 - total())
-    body = _log(model, W, color)
+    if idle_top is not None:
+        while len(idle_top) > avail and len(idle_starts) > 1:
+            _drop_block(idle_top, idle_starts)
+        body = idle_top[:avail]
+    else:
+        body = _log(model, W, color)
     s = max(0, min(model.scroll, max(0, len(body) - 1)))
     model.scroll = s
     if len(body) <= avail:
@@ -695,7 +770,7 @@ def render(model, cols, rows, wall, color=True):
         end = len(body) - s
         room = avail - (1 if s else 0)
         start = max(0, end - room)
-        older = start > 0
+        older = start > 0 and room >= MIN_LOG + 1                # no marker when it would leave less than MIN_LOG lines of the log: the lines matter more
         if older:
             room -= 1
             start = max(0, end - room)
@@ -704,8 +779,8 @@ def render(model, cols, rows, wall, color=True):
             visible = [" " + _paint(color, "dim", cut("%d earlier (Up)" % start, W))] + visible
         if s:
             visible = visible + [" " + _paint(color, "dim", cut("%d later (Down)" % s, W))]
-    out = [head] + top + visible
-    while len(out) < rows - (total() - len(top)):
+    out = [head] + top + visible + idle_l
+    while len(out) < rows - (total() - len(top) - len(idle_l)):
         out.append("")
     base = len(out)
     out += queue_l + pend_l + notice_l + hint_l + prompt_l
@@ -733,7 +808,12 @@ class Panel:
         self.mouse = mouse
         self.bus = bus or busclient.Bus(self.paths.socket, timeout=5.0)
         self.model = Model(now())
+        try:
+            self.model.panel_mode = config.panel_mode()
+        except config.ConfigError:
+            pass
         self.keys = KeyParser()
+        self.sig = None               # what the files looked like at the last full look (see changed)
         self.hits = []
         self.focus_at = None          # when the pane got the focus (a click that gave it the focus is not a click on a button)
         self.last_gid = None
@@ -775,9 +855,28 @@ class Panel:
             if os.path.exists(self.paths.panel_request):      # damaged: nothing to do with it
                 ipc.remove(self.paths.panel_request)
             return
+        mine = os.environ.get("TMUX_PANE")
+        if mine and isinstance(req, dict) and req.get("pane") and req.get("pane") != mine:
+            return                                            # for the panel of another window (there is one in each): not ours to take or to delete
         if self.model.request_approve(req, self.now(), self.wall()) != "wait":
             ipc.remove(self.paths.panel_request)
             self.drawn = None
+
+    def changed(self):
+        """True when the next look can show something new: the service came or went, status.json or the approval request changed. A stat of two files
+        and a lock probe; this is all the idle panel does each second."""
+        sig = [service.running(self.paths)]
+        for f in (self.paths.status, self.paths.panel_request):
+            try:
+                st = os.stat(f)
+                sig.append((st.st_ino, st.st_mtime_ns, st.st_size))
+            except OSError:
+                sig.append(None)
+        sig = tuple(sig)
+        if sig == self.sig:
+            return False
+        self.sig = sig
+        return True
 
     def look(self):
         snap = snapshot(self.paths, self.last_gid)
@@ -813,7 +912,7 @@ class Panel:
         m = self.model
         kind = cmd[0]
         if kind == "quit":
-            m.finished = True
+            m.finished = m.quit_key = True
         elif kind == "decide":
             _, gid, pid, decision, word = cmd
             if not gid:
@@ -844,7 +943,7 @@ class Panel:
             except (busclient.BusError, config.ConfigError) as e:
                 m.draft = text
                 m.notice = ("The sysop is not running: nobody takes the goal (your text is kept: g)." if getattr(e, "code", "") == "no_subscriber"
-                            else "The goal was not sent (%s). Your text is kept: g." % clean(str(e), 120))
+                            else "The goal was not sent: %s. Your text is kept: g." % clean(busclient.words(e), 120))
 
     @staticmethod
     def topic():
@@ -899,36 +998,61 @@ class Panel:
             signal.signal(signal.SIGWINCH, old_winch)
             for s, h in zip((signal.SIGTERM, signal.SIGHUP), old_term):
                 signal.signal(s, h)
-            if os.environ.get("SWARMBOX_SYSOP_PANEL"):          # a panel opened by the dock: its window may have a frozen name
-                dock.thaw_own_window()
+            if os.environ.get("SWARMBOX_SYSOP_PANEL"):          # a panel opened by the dock
+                if self.model.quit_key:
+                    dock.panel_quit()                            # q: the mode always hides the panels of all windows, the others thaw the name of the window
+                else:
+                    dock.thaw_own_window()
         return self.exit_code
 
     def loop(self):
+        """Turns until the model is finished. A turn that fails (a file that went away, a disk that refuses, a state of an unexpected shape) is ONE line in the
+        panel ("The panel hit a problem and goes on"), never a traceback on the screen of the user's tab and a pane that dies and comes back every few seconds;
+        twenty failures in a row end it (the dock makes a new one)."""
+        fails = 0
         while not self.model.finished:
-            self.look()
-            self.draw()
-            timeout = ESC_WAIT if self.keys.pending() else POLL
             try:
-                ready, _, _ = select.select([self.in_fd, self.wake_r], [], [], timeout)
-            except InterruptedError:
+                more = self.turn()
+                fails = 0
+            except Exception as e:
+                fails += 1
+                self.model.notice = "The panel hit a problem and goes on (%s)." % clean("%s: %s" % (type(e).__name__, getattr(e, "strerror", None) or e), 80)
+                self.drawn = None
+                if fails >= 20:
+                    raise
+                time.sleep(min(2.0, 0.1 * fails))
                 continue
-            if self.wake_r in ready:
-                try:
-                    os.read(self.wake_r, 4096)
-                except BlockingIOError:
-                    pass
-            if self.in_fd in ready:
-                try:
-                    data = os.read(self.in_fd, 4096)
-                except OSError:
-                    break
-                if not data:
-                    break          # the pane's terminal is gone
-                for k in self.keys.feed(data):
-                    self.handle_key(k)
-            elif not ready and self.keys.pending():
-                for k in self.keys.flush():
-                    self.handle_key(k)
+            if not more:
+                break
+
+    def turn(self):
+        """One look, one drawing and one wait for a key; False when the pane's terminal is gone."""
+        if not self.model.quiet() or self.changed():
+            self.look()
+        self.draw()
+        timeout = ESC_WAIT if self.keys.pending() else IDLE_POLL if self.model.quiet() else POLL
+        try:
+            ready, _, _ = select.select([self.in_fd, self.wake_r], [], [], timeout)
+        except InterruptedError:
+            return True
+        if self.wake_r in ready:
+            try:
+                os.read(self.wake_r, 4096)
+            except BlockingIOError:
+                pass
+        if self.in_fd in ready:
+            try:
+                data = os.read(self.in_fd, 4096)
+            except OSError:
+                return False
+            if not data:
+                return False          # the pane's terminal is gone
+            for k in self.keys.feed(data):
+                self.handle_key(k)
+        elif not ready and self.keys.pending():
+            for k in self.keys.flush():
+                self.handle_key(k)
+        return True
 
 
 def run(argv=None):

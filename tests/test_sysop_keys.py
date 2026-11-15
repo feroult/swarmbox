@@ -28,6 +28,9 @@ class FakeDock:
         if self.fail_open:
             raise dock.DockError("no session")
 
+    def panel_pane(self, window=None):
+        return "%7"
+
     def focus(self, window=None):
         self.calls.append(("focus", window))
         if self.fail_focus:
@@ -103,6 +106,7 @@ class Approve(Base):
         self.assertEqual(rc, 0)
         self.assertEqual(dk.calls, [("open", "@3", False, True), ("focus", "@3")], "open without focus, focus last")
         self.assertEqual((self.seen["action"], self.seen["id"]), ("approve", "p1"))
+        self.assertEqual(self.seen["pane"], "%7", "the request names the panel that is to take it: there is one in every window")
         self.assertIsNone(self.svc.decision(), "the gesture decides nothing")
 
     def test_a_panel_that_does_not_answer_is_not_focused(self):
@@ -196,6 +200,14 @@ class Bindings(unittest.TestCase):
         self.assertIn("display-popup -E", b["g"])
         self.assertIn("swarmbox-sysop goal", b["g"])
         self.assertNotIn("switch-client", CONF, "no key table: a queued table switch loses the next key typed fast")
+
+    def test_every_sysop_key_checks_that_the_tool_is_installed_and_prints_nothing_into_the_pane(self):
+        b = self.binds()
+        for k in "SVXag":
+            self.assertTrue(b[k].split()[2] == "if-shell" and "command -v swarmbox-sysop" in b[k], k)
+            self.assertIn("swarmbox tool install sysop", b[k], k)
+            if k != "g":
+                self.assertIn(">/dev/null 2>&1", b[k], k)
 
     def test_no_other_binding_uses_these_keys(self):
         for k in "VXag":

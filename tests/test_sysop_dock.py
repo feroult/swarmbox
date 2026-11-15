@@ -1,6 +1,6 @@
 """Docking of the panel of the sysop (container/tools/sysop/lib/swarmbox_sysop/dock.py).
 
-  * layout(cols, rows) is ONE pure function: portrait -> a full-width pane at the bottom, 40 % of the height; otherwise a pane at the right edge,
+  * layout(cols, rows) is ONE pure function: portrait -> a full-width pane at the bottom, 30 % of the height (at least 8 lines, never more than half of the window); otherwise a pane at the right edge,
     20 % of the width, at least 40 columns; if that leaves the terminal fewer than 60 columns, the bottom layout. Boundaries are tested.
     These tests, and the reading of tmux.conf, need no tmux.
   * the real thing against a REAL tmux on a private socket with real clients attached through a pty: where the pane goes for a portrait, a landscape
@@ -39,7 +39,7 @@ from swarmbox_sysop import dock, ipc, paths  # noqa: E402
 from swarmbox_sysop.dock import Follower, Layout, Tmux, layout, split_args  # noqa: E402
 
 TMUX_CONF = os.path.join(ROOT, "container", "config", "tmux.conf")
-BOTTOM = Layout("bottom", "40%")
+BOTTOM = Layout("bottom", "30%")
 HAVE = bool(shutil.which("tmux")) and os.environ.get("SWARMBOX_TEST_REAL_TMUX") == "1"
 
 
@@ -53,7 +53,7 @@ def slurp(path):
 
 class LayoutRule(unittest.TestCase):
     def test_the_constants_are_the_ones_of_the_design(self):
-        self.assertEqual((dock.CELL_FACTOR, dock.BOTTOM_PERCENT, dock.RIGHT_PERCENT, dock.MIN_PANEL_COLS, dock.MIN_TERMINAL_COLS), (2, 40, 20, 40, 60))
+        self.assertEqual((dock.CELL_FACTOR, dock.BOTTOM_PERCENT, dock.RIGHT_PERCENT, dock.MIN_PANEL_COLS, dock.MIN_TERMINAL_COLS, dock.MIN_BOTTOM_ROWS), (2, 30, 20, 40, 60, 8))
 
     def test_portrait_windows_get_a_full_width_pane_at_the_bottom(self):
         for cols, rows in ((50, 70), (40, 80), (30, 40), (80, 41), (60, 31), (100, 51), (200, 101), (1, 1000)):
@@ -74,8 +74,8 @@ class LayoutRule(unittest.TestCase):
         self.assertEqual(layout(90, 30), BOTTOM)
         self.assertEqual(layout(100, 30), BOTTOM, "100 columns: 40 + the border leave 59")
         self.assertEqual(layout(101, 30), Layout("right", "40"), "101 columns: 40 + the border leave 60, enough")
-        self.assertEqual(layout(60, 20), BOTTOM)
-        self.assertEqual(layout(80, 24), BOTTOM)
+        self.assertEqual(layout(60, 20), Layout("bottom", "8"), "a short window: 30 % would be 6 lines, 8 is the least that is useful")
+        self.assertEqual(layout(80, 24), Layout("bottom", "8"))
 
     def test_the_portrait_boundary_is_cols_below_twice_the_rows(self):
         self.assertEqual(layout(119, 60), BOTTOM)
@@ -97,11 +97,13 @@ class LayoutRule(unittest.TestCase):
                     self.assertGreaterEqual(width, 40)
                     self.assertGreaterEqual(cols - width - 1, 60)
                     self.assertGreaterEqual(cols, 2 * rows)
+                elif rows * 30 // 100 >= 8:
+                    self.assertEqual(lay.size, "30%")
                 else:
-                    self.assertEqual(lay.size, "40%")
+                    self.assertEqual(lay.size, str(max(1, min(8, rows // 2))), (cols, rows))
 
     def test_the_tmux_flags(self):
-        self.assertEqual(split_args(BOTTOM), ["-f", "-v", "-l", "40%"])
+        self.assertEqual(split_args(BOTTOM), ["-f", "-v", "-l", "30%"])
         self.assertEqual(split_args(Layout("right", "20%")), ["-f", "-h", "-l", "20%"])
         self.assertEqual(split_args(Layout("right", "40")), ["-f", "-h", "-l", "40"])
 
@@ -119,6 +121,16 @@ class Wiring(unittest.TestCase):
 
     def test_the_hook_has_its_own_slot(self):
         self.assertEqual(dock.HOOK, "window-resized[418]")      # [417] was the voice panel's, removed: nobody else's slot is touched
+
+    def test_the_hooks_keep_the_session_and_the_tabs_socket_of_the_service(self):
+        saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
+        os.environ.update({"SB_TABS_SESSION": "work", "SB_TABS_SOCKET": "sock-x", "SB_TABS_BIN": "/opt/tabs"})
+        d = dock.default_dock(Tmux(argv=["tmux", "-L", "never-started-%d" % os.getpid()]))
+        for argv in (d.redock_argv, d.sync_argv):
+            for want in ("SB_TABS_SESSION=work", "SB_TABS_SOCKET=sock-x", "SB_TABS_BIN=/opt/tabs"):
+                self.assertIn(want, argv)
+        self.assertEqual(d.session, "work")
 
     def test_the_default_dock_runs_this_library_and_hands_the_folders_on(self):
         saved = dict(os.environ)
@@ -194,6 +206,8 @@ STAND_IN = ["env", "SWARMBOX_SYSOP_PANEL=1", "sleep", "600"]      # a stand-in f
 @unittest.skipUnless(HAVE, "needs tmux and a container (run it in Podman, see the docstring)")
 class RealTmux(unittest.TestCase):
     counter = 0
+    MODE = "auto"       # SWARMBOX_SYSOP_PANEL_MODE of these tests: the transient panel (the default of the box is always: tests/test_sysop_always.py)
+    OWN_PATH = False    # True: the PATH is the test's bin and the system's, so a tool that is installed on this machine is not found
 
     def setUp(self):
         RealTmux.counter += 1
@@ -203,8 +217,9 @@ class RealTmux(unittest.TestCase):
         self.bin = os.path.join(self.tmp, "bin")
         os.mkdir(self.bin)
         self.run_dir, self.state_dir = os.path.join(self.tmp, "run"), os.path.join(self.tmp, "state")
-        self.env = {"PATH": self.bin + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin"), "HOME": self.tmp, "TMUX_TMPDIR": self.tmp, "TERM": "xterm",
-                    "PYTHONPATH": ss.LIB, "TMPDIR": self.tmp, "SB_RUN_DIR": self.run_dir, "SB_STATE_DIR": self.state_dir, "LANG": "C.UTF-8"}
+        self.env = {"PATH": self.bin + os.pathsep + ("/usr/bin:/bin" if self.OWN_PATH else os.environ.get("PATH", "/usr/bin:/bin")), "HOME": self.tmp, "TMUX_TMPDIR": self.tmp, "TERM": "xterm",
+                    "PYTHONPATH": ss.LIB, "TMPDIR": self.tmp, "SB_RUN_DIR": self.run_dir, "SB_STATE_DIR": self.state_dir, "LANG": "C.UTF-8",
+                    "SWARMBOX_SYSOP_PANEL_MODE": self.MODE}
         self.saved = dict(os.environ)
         self.addCleanup(lambda: (os.environ.clear(), os.environ.update(self.saved)))
         os.environ.update(self.env)
@@ -272,14 +287,14 @@ class RealTmux(unittest.TestCase):
 
 
 class Placement(RealTmux):
-    def test_a_portrait_window_gets_a_full_width_pane_of_40_percent_at_the_bottom(self):
+    def test_a_portrait_window_gets_a_full_width_pane_of_30_percent_at_the_bottom(self):
         self.attach(70, 50)
         self.assertEqual(self.d.open(), "created")
         panel, = self.panels()
         self.assertEqual((panel["ww"], panel["wh"]), (50, 70))
         self.assertEqual((panel["left"], panel["w"]), (0, 50), "full width")
         self.assertEqual(panel["top"] + panel["h"], 70, "at the bottom edge")
-        self.assertTrue(26 <= panel["h"] <= 29, "about 40 %% of the height: %d" % panel["h"])
+        self.assertTrue(20 <= panel["h"] <= 22, "about 30 %% of the height: %d" % panel["h"])
         self.assertTrue(panel["active"], "the panel has the focus: the keys are for it")
         self.assertEqual([p["id"] for p in self.panes() if not p["panel"]], [self.user], "the user's pane is the only other one")
 
@@ -328,7 +343,7 @@ class Placement(RealTmux):
         self.attach(70, 50)
         self.d.open()
         split = [c for c in calls if c[0] == "split-window"][0]
-        self.assertEqual(split[split.index("-f"):split.index("-f") + 4], ["-f", "-v", "-l", "40%"])
+        self.assertEqual(split[split.index("-f"):split.index("-f") + 4], ["-f", "-v", "-l", "30%"])
         self.d.close()
         calls.clear()
         self.clients[0].resize(50, 200)
@@ -863,7 +878,7 @@ class Cli(RealTmux):
         r = self.cli("open", "--window", self.win1)
         self.assertEqual(r.returncode, 0, r.stderr)
         panel, = self.wait(self.panels, "the panel")
-        self.wait(lambda: "no goal; speak or type one: g" in self.tmux.run("capture-pane", "-p", "-t", panel["id"]).out, "the idle text")
+        self.wait(lambda: "no goal. Type one" in self.tmux.run("capture-pane", "-p", "-t", panel["id"]).out, "the idle text")
         self.tmux.run("send-keys", "-t", panel["id"], "q")
         self.wait(lambda: not self.panels(), "the panel to close by itself with q")
 
@@ -929,6 +944,36 @@ class KeyBinding(RealTmux):
 
 
 LAUNCHER = '#!/bin/sh\nexec "%s" -B -m swarmbox_sysop "$@"\n' % sys.executable
+
+
+class NoSysopTool(RealTmux):
+    """The sysop is an optional tool. Without it the keys of tmux.conf (Panel button of the phone strip = Ctrl+A S, and V X a g) say so in the status line and leave
+    the pane alone: a failed command printed into the pane puts it in view-mode, where nothing typed reaches the shell."""
+    OWN_PATH = True
+
+    def conf(self):
+        return TMUX_CONF
+
+    def test_every_sysop_key_without_the_tool_leaves_the_pane_typing(self):
+        self.assertIsNone(shutil.which("swarmbox-sysop", path=self.env["PATH"]))
+        client = self.attach(40, 100)
+        for key in "SVXag":
+            client.send("\x01" + key)
+            time.sleep(0.8)
+            if key == "g":
+                client.send("\x1b")                      # a popup would have taken the keys: it must not open
+            marker = "TYPED-AFTER-%s" % key
+            client.send("echo %s\r" % marker)
+            self.wait(lambda: marker in self.tmux.run("capture-pane", "-p", "-t", self.user).out, "the typed text after the key " + key)
+            mode = self.tmux.run("display-message", "-p", "-t", self.user, "#{pane_in_mode} #{window_name}").out.strip()
+            self.assertTrue(mode.startswith("0 "), "after Ctrl+A %s the pane is %r" % (key, mode))
+            self.assertNotIn("[tmux]", mode)
+
+    def test_the_hint_names_the_command_that_installs_it(self):
+        client = self.attach(40, 100)
+        client.send("\x01S")
+        time.sleep(0.5)
+        self.wait(lambda: "swarmbox tool install sysop" in self.tmux.run("show-messages").out, "the hint in the message log")
 
 
 class NoFocus(RealTmux):

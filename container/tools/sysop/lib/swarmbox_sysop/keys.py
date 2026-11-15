@@ -13,8 +13,9 @@ the goal without that:
   goal       g   `swarmbox-sysop goal` with no text on a terminal asks for the goal on one line (tmux runs it in a popup: a popup takes the keys
                  of the client, never of the panel).
 
-The approve request is a file in the run folder (ipc.py: panel.request, {"action": "approve", "id": the pending action, "time"}); the panel
-deletes it when it has taken it (panel.py, Panel.take_request).
+The approve request is a file in the run folder (ipc.py: panel.request, {"action": "approve", "id": the pending action, "time", "pane": the tmux
+pane of the panel that is to take it}); the panel deletes it when it has taken it (panel.py, Panel.take_request). Every window has a panel, so the
+pane says which one: the others leave the request alone.
 """
 import os
 import sys
@@ -77,7 +78,8 @@ def approve(pth, dk, window, tmux=None, client="", wait=ACK_SECONDS):
         _say("the panel could not be opened: %s" % e, tmux, client)
         return 1
     try:
-        ipc.write_json(pth.panel_request, {"action": "approve", "id": str(p["id"]), "time": time.time()})
+        # the request names the pane: with a panel in every window, only the panel that is about to get the focus may take it
+        ipc.write_json(pth.panel_request, {"action": "approve", "id": str(p["id"]), "time": time.time(), "pane": dk.panel_pane(window)})
     except OSError as e:
         _say("could not ask the panel: %s" % (e.strerror or e), tmux, client)
         return 1
@@ -112,7 +114,7 @@ def prompt(bus, source="panel", inp=None, out=None, topic=None):
     try:
         bus.pub(topic or config.goal_topic(), {"text": text}, source)
     except (busclient.BusError, config.ConfigError) as e:
-        out.write("the goal was not sent: %s%s. Press Enter." % (e, " (the sysop is not running)" if getattr(e, "code", "") == "no_subscriber" else ""))
+        out.write("the goal was not sent: %s. Press Enter." % busclient.words(e))
         out.flush()
         inp.readline()
         return 3
