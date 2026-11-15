@@ -228,6 +228,13 @@ class ContextTests(unittest.TestCase):
         self.assertTrue(out.endswith("\nb"))
         self.assertNotIn("AAAA", context.redact("x\n-----BEGIN PRIVATE KEY-----\nAAAA"))  # no END: to the end
 
+    def test_one_long_base64_run_on_a_single_line_is_removed(self):
+        body = "LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0K" * 6          # `base64 -w0 ~/.ssh/id_rsa`
+        out = context.redact("$ base64 -w0 key\n%s\n$ " % body)
+        self.assertNotIn(body[:60], out)
+        self.assertIn("$ base64 -w0 key\n", out)
+        self.assertEqual(context.redact("sha256 " + "a" * 64), "sha256 " + "a" * 64, "a hash is not a key")
+
     def test_ordinary_text_is_untouched(self):
         for text in ("ls -la", "git commit -m 'add key bindings'", "the monkey ate 3 bananas", "sk-short", "$ pytest -x\n3 passed",
                      "keyboard layout: us", "author: Maria"):
@@ -240,7 +247,7 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(len(out), 5)
         self.assertEqual(out[0]["id"], "%17", "the active pane is always kept, first")
         self.assertTrue(all(len(p["tail"].splitlines()) == 10 for p in out))
-        big = context.limit_context([{"id": "%1", "tail": "x" * 100000}], tail_chars=100)
+        big = context.limit_context([{"id": "%1", "tail": "x-" * 50000}], tail_chars=100)
         self.assertEqual(len(big[0]["tail"]), 100)
         self.assertEqual(context.limit_context(many, tail_lines=0)[0]["tail"], "")
 
@@ -250,7 +257,7 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(out[0]["tail"], "line97\nline98\nline99")
 
     def test_fields_are_clean(self):
-        out = context.limit_context([{"id": "%1", "window": "w" * 999, "cwd": None, "command": 5, "tail": None, "extra": "x"},
+        out = context.limit_context([{"id": "%1", "window": "w-" * 500, "cwd": None, "command": 5, "tail": None, "extra": "x"},
                                      {"id": "bad"}, "str", {"id": "%2; x"}])
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["cwd"], "")

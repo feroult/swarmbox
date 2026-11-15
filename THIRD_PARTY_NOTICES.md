@@ -279,6 +279,14 @@ statements below are for people who bake them in or want to know the terms.
 - Models: https://huggingface.co/ggerganov/whisper.cpp (converted from https://github.com/openai/whisper)
 - [verified: LICENSE of whisper.cpp v1.9.5, "Copyright (c) 2023-2026 The ggml authors"; LICENSE of openai/whisper, "Copyright (c) 2022 OpenAI"; license:mit tag of the model repository; 2026-11-14]
 
+### Sysop (SwarmBox's own code, tool `sysop`)
+
+- Version: 1.0.0, the Python library of `container/tools/sysop/`, copied into the tools volume at install; nothing is downloaded and nothing third-party is imported (the library uses only the Python standard library)
+- License: Apache-2.0 (the license of SwarmBox itself, see `LICENSE`)
+- Source: https://github.com/feroult/swarmbox/tree/main/container/tools/sysop
+- The brain that the sysop runs (`claude -p` by default) is a separate tool with its own section above; the sysop only starts it.
+- [verified: LICENSE of this repository, Apache License 2.0; `tests/test_sysop_tool.py` checks that the library imports only the standard library; 2026-11-15]
+
 ## Run-time downloads
 
 The 2.0 image downloads nothing at run time except what the user asks for: the tools above on first use, and the connector

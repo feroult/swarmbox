@@ -1,0 +1,81 @@
+"""Settings of the sysop: the ONE place of the defaults and of the checks.
+
+The host passes the non-default values as SWARMBOX_SYSOP_* variables (the same way voice gets SWARMBOX_VOICE_*); missing or empty means the
+default. A wrong value raises ConfigError with a line that names the variable: the service does not start with a setting it cannot honour.
+
+  SWARMBOX_SYSOP_BRAIN             `claude` (a preset) or a command template, see brain.py: split into words like a shell would, but never run
+                                   by a shell. {mcp_config} is required; {model}, {system_prompt_file}, {system_prompt}, {max_turns} and {goal_dir}
+                                   are known; leading NAME=value words are environment; {{ and }} are literal braces
+  SWARMBOX_SYSOP_MODEL             model name for the brain (default haiku)
+  SWARMBOX_SYSOP_AUTONOMY          confirm-all | confirm-risky (default) | auto, see policy.py
+  SWARMBOX_SYSOP_COUNTDOWN         seconds a low-risk action waits for a veto (default 4; 0 = none)
+  SWARMBOX_SYSOP_APPROVAL_TIMEOUT  seconds a high-risk action waits for the word `run` before it is refused (default 60)
+  SWARMBOX_SYSOP_MAX_STEPS         tool calls (not say/done) per goal (default 20)
+  SWARMBOX_SYSOP_MAX_SECONDS       seconds per goal, the brain is killed after that (default 300)
+  SWARMBOX_SYSOP_MAX_GOALS         goals that may wait in the queue (default 5)
+"""
+import re
+from collections import namedtuple
+
+DEFAULTS = {
+    "brain": "claude",
+    "model": "haiku",
+    "autonomy": "confirm-risky",
+    "countdown": "4",
+    "approval_timeout": "60",
+    "max_steps": "20",
+    "max_seconds": "300",
+    "max_goals": "5",
+}
+ENV = {k: "SWARMBOX_SYSOP_" + k.upper() for k in DEFAULTS}
+AUTONOMY = ("confirm-all", "confirm-risky", "auto")
+PRESETS = ("claude",)
+MAX_BRAIN = 2000
+
+Config = namedtuple("Config", sorted(DEFAULTS))
+
+
+class ConfigError(ValueError):
+    pass
+
+
+def _number(name, raw, lo, hi, integer):
+    try:
+        v = int(raw) if integer else float(raw)
+    except ValueError:
+        raise ConfigError("%s: %s expected, got %r" % (name, "a whole number" if integer else "a number", raw))
+    if v != v or not lo <= v <= hi:
+        raise ConfigError("%s: between %g and %g, got %s" % (name, lo, hi, raw))
+    return v
+
+
+def load(env):
+    """Config from a mapping (pass os.environ, or an explicit dict in tests); numbers are converted."""
+    raw = {}
+    for key, default in DEFAULTS.items():
+        v = env.get(ENV[key], "")
+        raw[key] = v if v.strip() != "" else default
+        if "\0" in raw[key] or (key != "brain" and ("\n" in raw[key] or "\r" in raw[key])):
+            raise ConfigError("%s: no line breaks or NUL allowed" % ENV[key])
+    v = {}
+    brain = raw["brain"].strip()
+    if len(brain) > MAX_BRAIN:
+        raise ConfigError("%s: at most %d characters" % (ENV["brain"], MAX_BRAIN))
+    from . import brain as brainmod            # the template is checked where it is understood
+    try:
+        brainmod.parse_template(brain)
+    except brainmod.TemplateError as e:
+        raise ConfigError("%s: %s" % (ENV["brain"], e))
+    v["brain"] = brain
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}", raw["model"]):
+        raise ConfigError("%s: a model name (letters, digits and . _ : / -, no blanks or quotes)" % ENV["model"])
+    v["model"] = raw["model"]
+    if raw["autonomy"] not in AUTONOMY:
+        raise ConfigError("%s: one of %s" % (ENV["autonomy"], ", ".join(AUTONOMY)))
+    v["autonomy"] = raw["autonomy"]
+    v["countdown"] = _number(ENV["countdown"], raw["countdown"], 0, 60, False)
+    v["approval_timeout"] = _number(ENV["approval_timeout"], raw["approval_timeout"], 1, 3600, False)
+    v["max_steps"] = _number(ENV["max_steps"], raw["max_steps"], 1, 500, True)
+    v["max_seconds"] = _number(ENV["max_seconds"], raw["max_seconds"], 5, 86400, True)
+    v["max_goals"] = _number(ENV["max_goals"], raw["max_goals"], 1, 100, True)
+    return Config(**v)

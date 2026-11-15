@@ -40,11 +40,22 @@ KEYS = {
     "AGENT": (None, "claude", "opencode", ["a,b", "A B"]),
     "YOLO": ("1", "0", "1", ["yes", "2"]),
     "ENV_KEYS": (None, "ANTHROPIC_API_KEY,GEMINI_API_KEY", "FOO", ["1BAD", "A,SWARMBOX_CLOUDFLARE_X", "a b", "A-B"]),
+    "sysop.brain": ("claude", "claude", "gemini -p {mcp_config}", ["a\nb", "foo bar", "gemini -p"]),
+    "sysop.model": ("haiku", "sonnet", "claude-sonnet-4-5", ["a b", "-x", "a;b", "$(x)"]),
+    "sysop.autonomy": ("confirm-risky", "auto", "confirm-all", ["yes", "Auto", "confirm"]),
+    "sysop.countdown": ("4", "0", "30", ["31", "-1", "1.5", "abc", "04", "+3"]),
+    "sysop.max_steps": ("20", "1", "100", ["0", "101", "x", "010"]),
+    "sysop.max_seconds": ("300", "10", "3600", ["9", "3601", "1e3", "0"]),
     "IMAGE": (None, "localhost:5000/sb:2.0.1", "swarmbox:dev", ["a b", "x\ty"]),
 }
 LIST_ORDER = ["NAME", "WORKSPACE", "HOSTNAME", "TZ", "INIT", "PORTS", "HOST_ACCESS", "BROWSER_URL", "WEB", "WEB_PORT",
               "WITH", "AGENT", "YOLO", "ENV_KEYS", "IMAGE", "CLOUDFLARE_TUNNEL_TOKEN",
-              "voice.language", "voice.stt.model", "voice.stt.vocabulary", "voice.planner", "voice.planner.model", "voice.web"]
+              "voice.language", "voice.stt.model", "voice.stt.vocabulary", "voice.planner", "voice.planner.model", "voice.web",
+              "sysop.brain", "sysop.model", "sysop.autonomy", "sysop.countdown", "sysop.max_steps", "sysop.max_seconds"]
+
+
+def ENVNAME(key):
+    return "SWARMBOX_" + key.upper().replace(".", "_")
 
 
 def slurp(path):
@@ -201,9 +212,9 @@ class DefaultsAndPrecedenceTest(Base):
         for key, (_, good, other, _bad) in KEYS.items():
             self.write_cfg("%s=%s\n" % (key, good))
             self.assertEqual(self.get(key)[:2], (0, good + "\n"), key)
-            self.assertEqual(self.get(key, env={"SWARMBOX_" + key: other})[:2], (0, other + "\n"), key)
+            self.assertEqual(self.get(key, env={ENVNAME(key): other})[:2], (0, other + "\n"), key)
             # an empty environment value does not override
-            self.assertEqual(self.get(key, env={"SWARMBOX_" + key: ""})[:2], (0, good + "\n"), key)
+            self.assertEqual(self.get(key, env={ENVNAME(key): ""})[:2], (0, good + "\n"), key)
 
 class GrammarTest(Base):
     def test_values_are_literal(self):
@@ -439,6 +450,36 @@ class ModeCheckTest(Base):
     def get_with(self, path):
         p = self.run_h("config", "get", "CLOUDFLARE_TUNNEL_TOKEN", path=path)
         return p.returncode, p.stdout, p.stderr
+
+
+import test_host_create_flags as cf  # noqa: E402
+
+
+class SysopFlagsTest(cf.Base):
+    """The sysop.* keys reach the box as SWARMBOX_SYSOP_* only when they differ from the default (a box that never set one keeps its fingerprint)."""
+
+    def sysop(self, flags):
+        return [flags[i + 1] for i, f in enumerate(flags) if f == "-e" and flags[i + 1].startswith("SWARMBOX_SYSOP_")]
+
+    def test_defaults_and_explicit_defaults_pass_nothing(self):
+        base = self.fp()
+        self.assertEqual(self.sysop(self.flags()), [])
+        cfg = "sysop.brain=claude\nsysop.model=haiku\nsysop.autonomy=confirm-risky\nsysop.countdown=4\nsysop.max_steps=20\nsysop.max_seconds=300\n"
+        self.assertEqual(self.sysop(self.flags(cfg=cfg)), [])
+        self.assertEqual(self.fp(cfg=cfg), base)
+
+    def test_other_values_pass_and_change_the_fingerprint(self):
+        cfg = ("sysop.brain=gemini -p {mcp_config} 'x'\nsysop.model=sonnet\nsysop.autonomy=auto\nsysop.countdown=0\n"
+               "sysop.max_steps=5\nsysop.max_seconds=60\n")
+        base = self.fp()
+        self.assertEqual(self.sysop(self.flags(cfg=cfg)), [
+            "SWARMBOX_SYSOP_BRAIN=gemini -p {mcp_config} 'x'", "SWARMBOX_SYSOP_MODEL=sonnet", "SWARMBOX_SYSOP_AUTONOMY=auto",
+            "SWARMBOX_SYSOP_COUNTDOWN=0", "SWARMBOX_SYSOP_MAX_STEPS=5", "SWARMBOX_SYSOP_MAX_SECONDS=60"])
+        self.assertNotEqual(self.fp(cfg=cfg), base)
+
+    def test_an_invalid_value_in_the_file_stops_create_flags(self):
+        self.assertEqual(self.cf(cfg="sysop.autonomy=yolo\n").returncode, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

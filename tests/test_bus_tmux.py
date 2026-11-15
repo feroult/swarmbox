@@ -367,11 +367,16 @@ class TestScreenSecretsAndMarkers(Base):
                          "[sel]one[/sel] KEY=[err][REDACTED][/err] [sel]two[/sel]")
 
     def test_a_secret_across_the_cut_of_a_long_line_is_removed_whole(self):
-        text = self.screen("x" * 990 + " sk-abcdefghijklmnopqrstuvwxyz0123456789")
+        text = self.screen("x " * 495 + " sk-abcdefghijklmnopqrstuvwxyz0123456789")      # blanks: a single run of 120 base64 characters is redacted on its own
         self.assertNotIn("sk-abc", text)
         self.assertNotIn("abcdef", text)
         self.assertIn("[REDACTED", text)
         self.assertTrue(text.endswith("more characters]"), text[-30:])
+
+    def test_one_long_base64_run_on_a_single_line_is_removed(self):
+        body = "LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0K" * 6          # `base64 -w0 ~/.ssh/id_rsa` on a wide pane
+        self.assertEqual(self.screen("$ base64 -w0 key\n" + body + "\n$ "), "$ base64 -w0 key\n[REDACTED]\n$")
+        self.assertEqual(self.screen("sha256 " + "a" * 64), "sha256 " + "a" * 64)
 
     def test_a_private_key_with_colours_in_it(self):
         self.assertEqual(self.screen("-----BEGIN PRIVATE KEY-----\n\x1b[31mMIIE\x1b[0m\nxx\n-----END PRIVATE KEY-----\nafter"), "[REDACTED]\nafter")

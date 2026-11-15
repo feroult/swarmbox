@@ -70,8 +70,8 @@ class HostKeyTests(cf.Base):
         p = self.run_h("config", "list")
         self.assertEqual(p.returncode, 0, p.stderr)
         rows = p.stdout.splitlines()
-        self.assertEqual([r.split("=")[0] for r in rows][-6:], ORDER)
-        for row, key in zip(rows[-6:], ORDER):
+        self.assertEqual([r.split("=")[0] for r in rows][-12:-6], ORDER)
+        for row, key in zip(rows[-12:-6], ORDER):
             self.assertEqual(row, "%s=%s\tdefault" % (key, KEYS[key][0]))
 
     def test_get_set_roundtrip_and_empty_resets_to_the_default(self):

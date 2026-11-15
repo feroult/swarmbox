@@ -79,21 +79,24 @@ is_file_key() {
     case $1 in
         WORKSPACE|HOSTNAME|TZ|INIT|PORTS|HOST_ACCESS|BROWSER_URL|WEB|WEB_PORT|WITH|AGENT|YOLO|ENV_KEYS|IMAGE|CLOUDFLARE_TUNNEL_TOKEN) return 0 ;;
         voice.language|voice.stt.model|voice.stt.vocabulary|voice.planner|voice.planner.model|voice.web) return 0 ;;
+        sysop.brain|sysop.model|sysop.autonomy|sysop.countdown|sysop.max_steps|sysop.max_seconds) return 0 ;;
     esac
     return 1
 }
 
 # The environment variable of a key: SWARMBOX_ plus the key in upper case, a dot becoming an underscore (voice.stt.model is
-# SWARMBOX_VOICE_STT_MODEL). ENV_OF is set; the keys with a dot are the voice keys of the `voice` tool.
+# SWARMBOX_VOICE_STT_MODEL). ENV_OF is set; the keys with a dot are the keys of the `voice` and `sysop` tools.
 env_of() {
     ENV_OF=$(printf '%s' "$1" | tr 'a-z.' 'A-Z_')
     ENV_OF=SWARMBOX_$ENV_OF
 }
 VOICE_KEYS='voice.language voice.stt.model voice.stt.vocabulary voice.planner voice.planner.model voice.web'
+SYSOP_KEYS='sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds'
+TOOL_KEYS="$VOICE_KEYS $SYSOP_KEYS"   # the keys passed to the box only when they differ from its defaults
 
 is_key() { [ "$1" = NAME ] || is_file_key "$1"; }
 
-ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.planner voice.planner.model voice.web'
+ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.planner voice.planner.model voice.web sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds'
 
 # Built-in default; empty means "no default" (the key is unset). AGENT has none here: the box picks the first agent of WITH.
 default_of() {
@@ -110,6 +113,12 @@ default_of() {
         voice.stt.model) printf 'small' ;;
         voice.planner) printf 'passthrough' ;;
         voice.web) printf '1' ;;
+        sysop.brain) printf 'claude' ;;
+        sysop.model) printf 'haiku' ;;
+        sysop.autonomy) printf 'confirm-risky' ;;
+        sysop.countdown) printf '4' ;;
+        sysop.max_steps) printf '20' ;;
+        sysop.max_seconds) printf '300' ;;
     esac
 }
 
@@ -512,6 +521,14 @@ valid_image_ref() {
     return 0
 }
 
+# valid_int_range VALUE MIN MAX: a whole number in decimal (no sign, no leading zero) within the range.
+valid_int_range() {
+    case $1 in
+        ''|*[!0-9]*|0?*) return 1 ;;
+    esac
+    [ "${#1}" -le 5 ] && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]
+}
+
 # validate_value KEY VALUE: sets V_OUT (the value to store) or prints the rule and returns 1.
 validate_value() {
     _k=$1
@@ -626,6 +643,35 @@ validate_value() {
             case $V_OUT in
                 [!A-Za-z0-9._:/]*|*[!A-Za-z0-9._:/-]*) _bad "it must use only letters, digits and '.', '_', ':', '/', '-', without blanks."; return 1 ;;
             esac
+            ;;
+        sysop.brain)
+            [ "${#V_OUT}" -le 2000 ] || { _bad "it must be at most 2000 characters."; return 1; }
+            # the service refuses a command without {mcp_config} and the box would start with no sysop and no word about it
+            case $V_OUT in
+                claude|*'{mcp_config}'*) ;;
+                *) _bad "it must be claude or a command that contains {mcp_config} (the file that tells the brain where the tools are)."; return 1 ;;
+            esac
+            ;;
+        sysop.model)
+            case $V_OUT in
+                [!A-Za-z0-9]*|*[!A-Za-z0-9._:/-]*) _bad "it must be a model name such as haiku (letters, digits and '.', '_', ':', '/', '-', without blanks, starting with a letter or digit)."; return 1 ;;
+            esac
+            [ "${#V_OUT}" -le 100 ] || { _bad "it must be at most 100 characters."; return 1; }
+            ;;
+        sysop.autonomy)
+            case $V_OUT in
+                confirm-all|confirm-risky|auto) ;;
+                *) _bad "it must be confirm-all, confirm-risky or auto."; return 1 ;;
+            esac
+            ;;
+        sysop.countdown)
+            valid_int_range "$V_OUT" 0 30 || { _bad "it must be a whole number of seconds from 0 to 30."; return 1; }
+            ;;
+        sysop.max_steps)
+            valid_int_range "$V_OUT" 1 100 || { _bad "it must be a whole number from 1 to 100."; return 1; }
+            ;;
+        sysop.max_seconds)
+            valid_int_range "$V_OUT" 10 3600 || { _bad "it must be a whole number of seconds from 10 to 3600."; return 1; }
             ;;
         CLOUDFLARE_TUNNEL_TOKEN)
             case $V_OUT in
@@ -1059,8 +1105,8 @@ load_creation() {
         fi
         eval "C_$_key=\$_v"
     done
-    # The voice keys reach the box only when they differ from the box's own defaults, so a box that never set one keeps its fingerprint.
-    for _key in $VOICE_KEYS; do
+    # The voice and sysop keys reach the box only when they differ from the box's own defaults, so a box that never set one keeps its fingerprint.
+    for _key in $TOOL_KEYS; do
         resolve "$_key"
         _v=$R_VAL
         if [ "$R_SRC" != default ]; then
@@ -1121,7 +1167,7 @@ compute_fingerprint() {
     compute_env_hash
     [ -n "$ENV_HASH" ] || die 3 "could not compute a SHA-256 hash with $SHA."
     _l="AGENT=$C_AGENT${NL}BROWSER_URL=$C_BROWSER_URL${NL}ENV_KEYS=$C_ENV_KEYS${NL}HOSTNAME=$C_HOSTNAME${NL}HOST_ACCESS=$C_HOST_ACCESS${NL}IMAGE=$C_IMAGE${NL}INIT=$C_INIT${NL}NAME=$C_NAME${NL}PORTS=$PORT_LIST${NL}TZ=$TZ_R${NL}WEB=$C_WEB${NL}WEB_PORT=$C_WEB_PORT${NL}WITH=$C_WITH${NL}WORKSPACE=$C_WORKSPACE${NL}YOLO=$C_YOLO${NL}env-hash=$ENV_HASH$NL"
-    for _key in $VOICE_KEYS; do
+    for _key in $TOOL_KEYS; do
         env_of "$_key"
         eval "_v=\$C_${ENV_OF#SWARMBOX_}"
         [ -z "$_v" ] || _l="$_l$ENV_OF=$_v$NL"
@@ -1291,7 +1337,7 @@ PEOF
     if [ -n "$C_WITH" ]; then emit -e; emit "SWARMBOX_WITH=$C_WITH"; fi
     if [ -n "$C_AGENT" ]; then emit -e; emit "SWARMBOX_AGENT=$C_AGENT"; fi
     if [ -n "$C_BROWSER_URL" ]; then emit -e; emit "SWARMBOX_BROWSER_URL=$C_BROWSER_URL"; fi
-    for _key in $VOICE_KEYS; do
+    for _key in $TOOL_KEYS; do
         env_of "$_key"
         eval "_v=\$C_${ENV_OF#SWARMBOX_}"
         if [ -n "$_v" ]; then emit -e; emit "$ENV_OF=$_v"; fi

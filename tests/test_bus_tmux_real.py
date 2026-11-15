@@ -190,6 +190,14 @@ class TestTabs(Base):
             self.d.send(self.w1, {"input": "echo from-%s{Enter}" % opt[-5:]})
             self.assertTrue(self.wait(lambda: "from-%s" % opt[-5:] in self.text()))
             self.tm("kill-pane", "-t", p)
+        # the marker in the start command hides a pane before its option is set (split-window makes the pane first)
+        p = self.tm("split-window", "-t", "main:", "-P", "-F", "#{pane_id}", "SWARMBOX_SYSOP_PANEL=1 sleep 300")
+        t = self.d.list_tabs()[0]
+        self.assertEqual((t["pane"], t["panes"]), (main_pane, [main_pane]))
+        self.assertEqual(self.tm("display-message", "-p", "-t", "main:", "#{pane_id}"), p)
+        self.d.send(self.w1, {"input": "echo from-marker{Enter}"})
+        self.assertTrue(self.wait(lambda: "from-marker" in self.text()))
+        self.tm("kill-pane", "-t", p)
         w = self.tm("new-window", "-d", "-t", "main", "-n", "ghost", "-P", "-F", "#{pane_id}", "sleep 300")
         self.tm("set-option", "-p", "-t", w, "@swarmbox_sysop_panel", "1")
         self.assertNotIn("ghost", [t["name"] for t in self.d.list_tabs()])
@@ -374,7 +382,7 @@ class TestAgent(Base):
 
     def test_a_burst_would_have_failed_and_the_driver_does_not_burst(self):
         wid, pane = self.agent(env="FAKE_AGENT_BUSY=0.3 ")
-        long = "x" * 600
+        long = "xxxxxxxxxxxx " * 46      # blanks: a run of 120 base64 characters is redacted on its own
         self.tm("send-keys", "-t", pane, "-l", "--", long, ";", "send-keys", "-t", pane, "Enter")    # one burst: the stand-in sees a paste
         time.sleep(0.6)
         self.assertIn("xxxxxxxxxxxx", self.text(wid))

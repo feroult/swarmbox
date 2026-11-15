@@ -45,6 +45,7 @@ from collections import namedtuple
 
 SEP = "@@sb@@"     # never a tab: tmux 3.6+ prints control characters of a list as `_` when it has no terminal
 HIDDEN_OPTIONS = ("@swarmbox_sysop_panel", "@swarmbox_voice_panel")
+HIDDEN_MARKERS = ("SWARMBOX_SYSOP_PANEL=1",)      # in the start command of a panel pane (container/tools/sysop/lib/swarmbox_sysop/dock.py PANEL_COMMAND)
 PAUSE = 0.15
 MAX_STEPS = 100          # steps (texts and keys) of one body: each key costs PAUSE plus a tmux process (about 0.15 s), the bus gives a call 30 s
 CHUNK = 1024             # characters of one send-keys word (4 KiB at most in UTF-8, far below the 16 KB that tmux accepts in a command)
@@ -77,6 +78,8 @@ _PATTERNS = [
     re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"),
     # the body of a key whose BEGIN line fell outside the captured window: two or more long base64 lines in a row
     re.compile(r"(?m)^[ \t]*[A-Za-z0-9+/=]{32,}[ \t]*(?:\n[ \t]*[A-Za-z0-9+/=]{32,}[ \t]*)+"),
+    # one long base64 run on a single line (`base64 -w0 ~/.ssh/id_rsa`): 120 characters or more. Linear: tried only from the start of the run.
+    re.compile(r"(?<![A-Za-z0-9+/=])[A-Za-z0-9+/]{120,}={0,2}"),
 ]
 _BEARER = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}")
 _AUTH = re.compile(r"(?i)\b(authorization|x-api-key|api-key|proxy-authorization)\s*[:=]\s*[^\r\n]+")
@@ -437,9 +440,13 @@ class TmuxDriver:
             return [line.split(SEP, len(fields) - 1) for line in listing.splitlines()]
         flags = ["#{?#{%s},1,0}" % o for o in HIDDEN_OPTIONS]
         wins, order, panes = {}, [], {}
-        first = ask("#{window_id}", "#{window_index}", "#{pane_id}", "#{pane_active}", "#{pane_last}", *flags, "#{window_name}")
+        first = ask("#{window_id}", "#{window_index}", "#{pane_id}", "#{pane_active}", "#{pane_last}", *flags, "#{pane_start_command}", "#{window_name}")
         for p in first:
-            if len(p) != 6 + len(HIDDEN_OPTIONS) or any(f == "1" for f in p[5:5 + len(HIDDEN_OPTIONS)]):
+            n = len(HIDDEN_OPTIONS)
+            if len(p) != 7 + n or any(f == "1" for f in p[5:5 + n]):
+                continue
+            # a panel pane is also known by the marker in its start command: split-window makes the pane before the option can be set on it
+            if any(m in p[5 + n] for m in HIDDEN_MARKERS):
                 continue
             if p[0] not in wins:
                 try:

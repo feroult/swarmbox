@@ -1,0 +1,120 @@
+#!/usr/bin/python3
+"""Fake `claude -p` for the sysop tests. It never talks to a model: it plays a scripted brain over the REAL MCP server of the goal.
+
+It reads the flags the sysop passes, the goal on stdin, starts the MCP server named in --mcp-config (a child in the same process group, as
+the real claude does), and calls tools from a script, writing stream-json lines on stdout like the real one (system init, assistant tool_use,
+user tool_result, result).
+
+SWARMBOX_TEST_FAKE_CLAUDE_LOG     file that receives {"argv", "stdin", "cwd", "pid", "pgid", "env"} as JSON
+SWARMBOX_TEST_FAKE_CLAUDE_OUT     file that receives one JSON line per tool result {"tool", "args", "is_error", "text"}
+SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT  JSON file: a list of steps {"tool": name, "args": {...}} | {"sleep": seconds} | {"touch": path}
+SWARMBOX_TEST_FAKE_CLAUDE_MODE    script (default) | notloggedin (what the real CLI does: the line on stdout, exit 1) | notloggedin-json |
+                                  crash (exit 3, a line on stderr) | hang (sleeps) | hang-ignore-term (sleeps, ignores SIGTERM) |
+                                  quiet (a result event, exit 0, no done) | maxturns | badjson
+"""
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+
+argv = sys.argv[1:]
+stdin = sys.stdin.read()
+log = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_LOG")
+if log:
+    with open(log, "w") as f:
+        json.dump({"argv": argv, "stdin": stdin, "cwd": os.getcwd(), "pid": os.getpid(), "pgid": os.getpgid(0),
+                   "env": {k: v for k, v in os.environ.items() if k.startswith(("SWARMBOX_", "FOO", "SB_", "PATH"))}}, f)
+mode = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_MODE") or "script"
+
+
+def emit(obj):
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+
+
+def result(sub="success", err=False, text="", turns=1):
+    emit({"type": "result", "subtype": sub, "is_error": err, "num_turns": turns, "total_cost_usd": 0.0012, "result": text})
+
+
+if mode == "notloggedin":
+    print("Not logged in · Please run /login")
+    sys.exit(1)
+if mode == "notloggedin-json":
+    emit({"type": "result", "subtype": "success", "is_error": True, "result": "Not logged in · Please run /login", "num_turns": 1})
+    sys.exit(1)
+if mode == "crash":
+    print("boom: the brain crashed", file=sys.stderr)
+    sys.exit(3)
+if mode == "badjson":
+    print("{not json")
+    print("garbage")
+    sys.exit(0)
+if mode == "hang":
+    time.sleep(600)
+if mode == "hang-ignore-term":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    while True:
+        time.sleep(1)
+if mode == "quiet":
+    result(text="nothing to do")
+    sys.exit(0)
+if mode == "maxturns":
+    result(sub="error_max_turns", err=True)
+    sys.exit(1)
+
+cfg = json.load(open(argv[argv.index("--mcp-config") + 1]))
+srv = cfg["mcpServers"]["sysop"]
+env = dict(os.environ)
+env.update(srv.get("env", {}))
+p = subprocess.Popen([srv["command"]] + srv.get("args", []), stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env, text=True, bufsize=1)
+mid = [0]
+
+
+def rpc(method, params=None, notify=False):
+    msg = {"jsonrpc": "2.0", "method": method}
+    if params is not None:
+        msg["params"] = params
+    if not notify:
+        mid[0] += 1
+        msg["id"] = mid[0]
+    p.stdin.write(json.dumps(msg) + "\n")
+    p.stdin.flush()
+    if notify:
+        return None
+    line = p.stdout.readline()
+    if not line:
+        raise SystemExit("the MCP server went away")
+    return json.loads(line)
+
+
+init = rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "claude-code", "version": "0"}})
+rpc("notifications/initialized", notify=True)
+tools = rpc("tools/list")["result"]["tools"]
+emit({"type": "system", "subtype": "init", "tools": ["mcp__sysop__" + t["name"] for t in tools], "mcp_servers": [{"name": "sysop", "status": "connected"}]})
+steps = json.load(open(os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"])) if os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT") else []
+out = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_OUT")
+n = 0
+for st in steps:
+    if "sleep" in st:
+        time.sleep(st["sleep"])
+        continue
+    if "touch" in st:
+        open(st["touch"], "w").close()
+        continue
+    n += 1
+    emit({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t%d" % n, "name": "mcp__sysop__" + st["tool"], "input": st.get("args", {})}]}})
+    rep = rpc("tools/call", {"name": st["tool"], "arguments": st.get("args", {})})
+    r = rep.get("result") or {}
+    text = "".join(c.get("text", "") for c in r.get("content", [])) if r else json.dumps(rep.get("error"))
+    emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t%d" % n, "is_error": bool(r.get("isError")), "content": [{"type": "text", "text": text}]}]}})
+    if out:
+        with open(out, "a") as f:
+            f.write(json.dumps({"tool": st["tool"], "args": st.get("args", {}), "is_error": bool(r.get("isError")), "text": text}) + "\n")
+result(text="finished", turns=n + 1)
+try:
+    p.stdin.close()
+    p.wait(5)
+except Exception:
+    p.kill()

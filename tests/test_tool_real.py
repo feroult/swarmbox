@@ -42,7 +42,7 @@ TABLE = {
     "go": (["go", "version"], r"go version go" + VERSION_RE + r" linux/(amd64|arm64)", False),
     "gcloud": (["gcloud", "--version"], r"Google Cloud SDK " + VERSION_RE, False),
 }
-COVERED_ELSEWHERE = {"claude": "tests/test_tool_manifest.py", "voice": "tests/test_tool_voice.py"}
+COVERED_ELSEWHERE = {"claude": "tests/test_tool_manifest.py", "voice": "tests/test_tool_voice.py", "sysop": "tests/test_sysop_tool.py"}
 ROOTS = ["/usr", "/etc", "/opt", "/var", "/root", "/home"]
 CACHE = "/opt/npm-cache"
 

@@ -5,6 +5,12 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added: the `sysop` tool (`swarmbox tool install sysop`, `docs/sysop.md`), an agent that operates the box from a goal. A resident process takes the goals published on the bus (`swarmbox-sysop goal "text"`), runs a brain (`claude -p` by default, with every built-in tool off) and gives it
+  seven tools that only read and type into your tmux tabs through the bus. The host rates every `run` and `input`: a low risk waits a few seconds for a veto, a high one waits for you to type `run`, a text that starts with `/` or `!` for an agent is refused, and no autonomy level skips the approval
+  of a high risk. It has step and time budgets, a stop command and an append-only audit file. The brain is a command template (`sysop.brain`), not a plugin. Text read from a tab is treated as untrusted data. Needs the tool to be installed; it is code of this repository and downloads nothing.
+- Changed: the secrets filter of the bus and of the `voice` tool also removes a single run of 120 or more base64 characters (`base64 -w0 ~/.ssh/id_rsa`), and the bus no longer offers a panel pane as a tab in the instant before its option is set.
+- Added: six settings, `sysop.brain` (`claude`), `sysop.model` (`haiku`), `sysop.autonomy` (`confirm-risky`), `sysop.countdown` (`4`), `sysop.max_steps` (`20`) and `sysop.max_seconds` (`300`). They reach the box as `SWARMBOX_SYSOP_*` when the box is created, and only when they differ from
+  the default, so a box that never sets one keeps its fingerprint. Needs `swarmbox update` and `swarmbox reset`.
 - Added: the bus, a small message broker inside the box (`swarmbox bus pub|sub|get|ls|watch|ping|restart`, `swarmbox-bus --help` in the box). The box starts and supervises it at start; nothing else depends on it. `pub goal` hands a message to one subscriber that is reading
   (a consumer that is alive but not reading is skipped, and the pub fails with exit 7 when every subscriber is behind); `pub tab/<tab>/in` types into a tmux tab (it refuses a busy agent, an open dialog and a text that starts with `/` or `!` unless told otherwise);
   `get tab/<tab>/screen` reads a tab with the secrets removed, whatever the colours, and the colours as `[sel]`, `[bg]` and `[err]` spans. The socket is private to your user. `bus` is now a word of the `swarmbox` script, so a program of the box called `bus` runs as

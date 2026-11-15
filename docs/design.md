@@ -211,7 +211,7 @@ and must be your choice. It also warns when the box's image is not the one the c
   or with `--plain`, the command runs directly, through `bash -c` with the shell fragment sourced, not an interactive shell, so standard error stays clean.
   Measured with a spike and real tmux 3.3a: exit codes, 17 awkward arguments byte for byte.
 - A command named like a host word cannot be run this way: use `swarmbox bash -c '<command>'`.
-- tmux config: `container/config/tmux.conf` (prefix `Ctrl+A`, mouse, history, true colour, and `Ctrl+A` then `v` to show or hide the panel of the `voice` tool); your `~/.tmux.conf` is read after it.
+- tmux config: `container/config/tmux.conf` (prefix `Ctrl+A`, mouse, history, true colour, and `Ctrl+A` then `v` or `S` to show or hide the panel of the `voice` or the `sysop` tool); your `~/.tmux.conf` is read after it.
 
 ## 6. Startup of the box
 
@@ -265,7 +265,7 @@ spikes behind it are in [plugins-design.md](plugins-design.md). Nothing of the b
   secrets filter of `voice`, and a test keeps the two equal). It talks to the tmux session `main` (`SB_BUS_TMUX_SESSION`; `SB_BUS_TMUX_SOCKET` adds `-L name` and `SB_BUS_TMUX_BIN` names the binary, for tests), every
   call has a 5 s timeout, and a failed call is `no_session`, `no_such_tab`, `timeout`, `tmux_error`.
   - *Tabs.* A tab is a window of `main`. The address is the window id (`@3`); `index:name`, the index and the name are accepted too, and a name used twice is `ambiguous_tab` with the candidates. Every tmux call targets
-    the pane id. Panes with the option `@swarmbox_sysop_panel` or `@swarmbox_voice_panel` are never listed or targeted. `active` is the window of the non-control client with the latest activity, else the current window of `main`.
+    the pane id. Panes with the option `@swarmbox_sysop_panel` or `@swarmbox_voice_panel`, or with `SWARMBOX_SYSOP_PANEL=1` in their start command (a pane exists for an instant before its option is set), are never listed or targeted. `active` is the window of the non-control client with the latest activity, else the current window of `main`.
   - *Screen.* `capture-pane -p -J -e`, turned into the plain text of the pane plus the style of each character, then the last `lines` lines, then the secrets filter (on the plain text, whole lines, whatever the colours), then the text written with `[sel]` (reverse video), `[bg]` (background colour)
     and `[err]` (red) spans and each line cut to 1000 characters (so no secret is cut in half and no colour hides one). Text of the pane that looks like a marker (`[sel]`, `[/err]`, `[REDACTED]`) gets one more `[` (`[[sel]`), so program output cannot forge one. A full-screen program (alternate screen) has no scrollback, so `lines` is ignored for it (`"lines": null` in the answer).
   - *Typing.* `{"run": text}` types the text literally and presses Enter; `{"input": text}` types text with keys in braces (`{Esc}`, `{Enter}`, `{C-c}`, `{Up}`, ... any other `{word}` is text, `{{` is a brace). The text goes in pieces of 1024 characters (a `;` at the end of a piece as the key 0x3b: tmux would take it for the end of the command) and each key
@@ -273,6 +273,15 @@ spikes behind it are in [plugins-design.md](plugins-design.md). Nothing of the b
     a busy agent is refused unless the body has `"queue": true` (`busy_tab`), text starting with `/` or `!` is refused unless `"slash": true` (`slash_refused`; every submitted text is checked, and a message that submits more than one text to an agent needs `"queue": true`), and after the Enter the driver checks that the text left
     the input box and presses Enter once more if it did not (`not_submitted` if it still did not). `input` without a submission is never judged, so a dialog can be answered and a busy agent interrupted.
 - **Restart.** While the broker restarts (1 to 30 s) `pub goal` fails with 3 and nothing is replayed; a resident subscriber must reconnect with a backoff.
+
+### The sysop
+
+The `sysop` tool (`swarmbox tool install sysop`; user guide in [sysop.md](sysop.md), design in [plugins-design.md](plugins-design.md)) is a resident process that subscribes to the topic `goal` of the bus and, for each goal, runs
+a **brain** (`claude -p` by default, any command that speaks MCP) with a few tools served by `swarmbox-sysop mcp`: `list_tabs`, `read_tab`, `run`, `input`, `wait`, `say`, `done`. The tools only call the bus (`ls tab/`, `get tab/<tab>/screen`, `pub tab/<tab>/in`),
+so everything the sysop does is typed in a tmux tab you can see. The host side of the tool, not the brain, rates each `run` and `input` (low, medium, high or blocked, from the text and from what the tab runs) and routes it by the autonomy level:
+a countdown the user can veto, an approval (the word `run` in the panel), or a refusal. Budgets (`sysop.max_steps`, `sysop.max_seconds`), the stop key and the audit file (`<state>/sysop/events.jsonl`, append-only, mode 0600) apply to every goal.
+The tool is code of this repository (standard library Python, nothing downloaded); like `voice`, its `prepare.sh` refreshes its library at every box start and starts the subscriber. Its settings are the six `sysop.*` keys of section 9,
+passed to the box as `SWARMBOX_SYSOP_*` only when they differ from the default.
 
 ## 7. Web terminal and remote access
 
@@ -299,7 +308,7 @@ Details and the end-to-end check list: [cloudflare.md](cloudflare.md).
 
 A tool is a directory `container/tools/<name>/` with `tool.conf` (manifest), `install.sh`, and optionally `shell.sh` (aliases for the interactive shell),
 `prepare.sh` (run by `serve` at every start to render files into `box:/tmp/swarmbox`) and data files. Shipped: agents `claude`, `gemini`, `opencode`; tools `gcloud`
-(with `gsutil`, `bq`), `clasp`, `go`, `poetry`, `voice` (whisper.cpp, a multilingual Whisper model and the voice service; `docs/voice.md`).
+(with `gsutil`, `bq`), `clasp`, `go`, `poetry`, `voice` (whisper.cpp, a multilingual Whisper model and the voice service; `docs/voice.md`), `sysop` (the agent that operates the tabs from a goal; `docs/sysop.md`).
 
 Manifest keys: `SCHEMA`, `NAME`, `KIND` (`tool` or `agent`), `PROVIDES` (commands), `VERSION`, `UPDATE` (`managed` or `self`), `UPDATE_CMD`, `YOLO_FLAGS`, `YOLO_ALIAS`,
 `MCP_FLAGS`, `MCP_FORMAT`, `PORTS`, and `SHA256_<arch>` where the vendor's checksum is recorded.
@@ -359,8 +368,14 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `voice.planner` | `passthrough` | the planner that turns the text into a plan; `SWARMBOX_VOICE_PLANNER` |
 | `voice.planner.model` | empty | handed to the planner, which reads it its own way; `SWARMBOX_VOICE_PLANNER_MODEL` |
 | `voice.web` | `1` | `0` keeps the voice front off: the web terminal port then goes straight to ttyd, with no voice button; `SWARMBOX_VOICE_WEB` |
+| `sysop.brain` | `claude` | the brain of the `sysop` tool: a preset name or a command template (no line break; [sysop.md](sysop.md)); `SWARMBOX_SYSOP_BRAIN` |
+| `sysop.model` | `haiku` | the model the `claude` preset asks for; `SWARMBOX_SYSOP_MODEL` |
+| `sysop.autonomy` | `confirm-risky` | `confirm-all`, `confirm-risky` or `auto`; `SWARMBOX_SYSOP_AUTONOMY` |
+| `sysop.countdown` | `4` | seconds an action waits for a veto, 0 to 30; `SWARMBOX_SYSOP_COUNTDOWN` |
+| `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100; `SWARMBOX_SYSOP_MAX_STEPS` |
+| `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600; `SWARMBOX_SYSOP_MAX_SECONDS` |
 
-The six `voice.*` keys are lower case with dots; the environment variable of a key is `SWARMBOX_` plus the key in upper case with `.` turned into `_`. They are creation settings like the others (applied by `swarmbox reset`), but
+The `voice.*` and `sysop.*` keys are lower case with dots (`sysop.max_steps` keeps its underscore); the environment variable of a key is `SWARMBOX_` plus the key in upper case with `.` turned into `_`. They are creation settings like the others (applied by `swarmbox reset`), but
 they are passed to the box, and enter the fingerprint, only when they differ from the default.
 
 Also environment only: `SWARMBOX_WEB_DOMAIN`, `SWARMBOX_WEB_HOSTNAME` (public address printed by `url`), `SWARMBOX_CLOUDFLARED_IMAGE`; in the box `SWARMBOX_STARSHIP=0` (plain prompt),
