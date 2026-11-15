@@ -12,6 +12,7 @@ browser, on your machine or from your phone.
 - **One session, from anywhere.** Every terminal tab and the browser share one tmux session. Remote access with Cloudflare Tunnel and an e-mail code.
 - **Persistent.** Projects, logins and tools live in one workspace folder: delete and recreate the box and lose nothing.
 - **Tools on demand.** Claude Code, Gemini CLI, OpenCode, gcloud, clasp, Go and Poetry install the first time you use them.
+- **Talk to your box.** Optional: type or speak a goal and an agent operates your tmux tabs, asking you before anything risky ([sysop](docs/sysop.md), [voice](docs/voice.md)).
 - **No telemetry.**
 
 ## Quick start
