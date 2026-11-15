@@ -36,6 +36,7 @@ import json
 import os
 import pty
 import select
+import signal
 import shutil
 import stat
 import subprocess
@@ -233,6 +234,15 @@ case "$1" in
 esac
 exit 0
 """
+
+
+def restore_signals():
+    """An ignored signal is inherited through exec and a shell cannot trap it (a runner under nohup or a CI agent hands SIGHUP,
+    SIGINT or SIGTERM down as ignored). Tests that signal a helper call this at import so every child starts with the defaults
+    (tests/reap_run.py does the same for the whole run)."""
+    for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGQUIT):
+        signal.signal(sig, signal.SIG_DFL)
+    signal.signal(signal.SIGINT, signal.default_int_handler)
 
 
 def make_archive(path, version="2.0.0", helper=True, executable=True, extra=None):

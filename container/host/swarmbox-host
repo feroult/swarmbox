@@ -4,7 +4,7 @@
 # under dash, busybox sh, bash in POSIX mode and macOS /bin/sh. No shell function and no startup file is involved.
 #
 #   (no command), attach, any other word   up, then run it in the box: `podman exec -it ... swarmbox-entrypoint attach ...`
-#   pubkey | tool | bus                    forwarded into the box with `podman exec`
+#   pubkey | tool | bus | tabs                  forwarded into the box with `podman exec`
 #   version | help                         the version of this script | the command list
 #   config get|set|list|seed               the settings (the tunnel token is read from the terminal, never argv)
 #   env add|rm NAME | env list             the names of host variables passed to the box (ENV_KEYS)
@@ -66,7 +66,8 @@ usage: swarmbox [--plain] [command [args...]]
   env add|rm NAME       pass a variable of yours into the box (env list shows them)
   pubkey                the box's git SSH key
   tool list|install|use|remove NAME   tools inside the box
-  bus pub|sub|get|ls|watch ...        the box's message bus (swarmbox-bus --help in the box)
+  bus pub|sub ...                     the box's message bus (swarmbox-bus --help in the box)
+  tabs list|active|screen|send ...    the tabs of the box (swarmbox-tabs --help in the box)
   remote setup|status|off|token       remote access through Cloudflare (--dry-run shows the changes)
   help                  this list
 USAGE
@@ -78,8 +79,8 @@ USAGE
 is_file_key() {
     case $1 in
         WORKSPACE|HOSTNAME|TZ|INIT|PORTS|HOST_ACCESS|BROWSER_URL|WEB|WEB_PORT|WITH|AGENT|YOLO|ENV_KEYS|IMAGE|CLOUDFLARE_TUNNEL_TOKEN) return 0 ;;
-        voice.language|voice.stt.model|voice.stt.vocabulary|voice.planner|voice.planner.model|voice.web) return 0 ;;
-        sysop.brain|sysop.model|sysop.autonomy|sysop.countdown|sysop.max_steps|sysop.max_seconds) return 0 ;;
+        voice.language|voice.stt.model|voice.stt.vocabulary|voice.web|voice.topic) return 0 ;;
+        sysop.brain|sysop.model|sysop.autonomy|sysop.countdown|sysop.max_steps|sysop.max_seconds|sysop.topic|sysop.group) return 0 ;;
     esac
     return 1
 }
@@ -90,13 +91,13 @@ env_of() {
     ENV_OF=$(printf '%s' "$1" | tr 'a-z.' 'A-Z_')
     ENV_OF=SWARMBOX_$ENV_OF
 }
-VOICE_KEYS='voice.language voice.stt.model voice.stt.vocabulary voice.planner voice.planner.model voice.web'
-SYSOP_KEYS='sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds'
+VOICE_KEYS='voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic'
+SYSOP_KEYS='sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group'
 TOOL_KEYS="$VOICE_KEYS $SYSOP_KEYS"   # the keys passed to the box only when they differ from its defaults
 
 is_key() { [ "$1" = NAME ] || is_file_key "$1"; }
 
-ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.planner voice.planner.model voice.web sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds'
+ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group'
 
 # Built-in default; empty means "no default" (the key is unset). AGENT has none here: the box picks the first agent of WITH.
 default_of() {
@@ -111,8 +112,9 @@ default_of() {
         IMAGE) printf '%s:%s' "$REGISTRY_REPO" "$VERSION_STR" ;;
         voice.language) printf 'auto' ;;
         voice.stt.model) printf 'small' ;;
-        voice.planner) printf 'passthrough' ;;
         voice.web) printf '1' ;;
+        voice.topic|sysop.topic) printf 'goal' ;;
+        sysop.group) printf 'sysop' ;;
         sysop.brain) printf 'claude' ;;
         sysop.model) printf 'haiku' ;;
         sysop.autonomy) printf 'confirm-risky' ;;
@@ -477,6 +479,14 @@ valid_tool_name() {
     return 0
 }
 
+# A bus topic or group name: [a-z0-9][a-z0-9._-]{0,62} (the charset of swarmbox-bus).
+valid_topic_name() {
+    case $1 in
+        ''|[!a-z0-9]*|*[!a-z0-9._-]*) return 1 ;;
+    esac
+    [ "${#1}" -le 63 ]
+}
+
 valid_env_name() {
     case $1 in
         ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*) return 1 ;;
@@ -636,14 +646,6 @@ validate_value() {
         voice.stt.vocabulary)
             [ "${#V_OUT}" -le 500 ] || { _bad "it must be at most 500 characters."; return 1; }
             ;;
-        voice.planner)
-            valid_tool_name "$V_OUT" || { _bad "it must be one planner name: lower-case letters, digits, '_' and '-'."; return 1; }
-            ;;
-        voice.planner.model)
-            case $V_OUT in
-                [!A-Za-z0-9._:/]*|*[!A-Za-z0-9._:/-]*) _bad "it must use only letters, digits and '.', '_', ':', '/', '-', without blanks."; return 1 ;;
-            esac
-            ;;
         sysop.brain)
             [ "${#V_OUT}" -le 2000 ] || { _bad "it must be at most 2000 characters."; return 1; }
             # the service refuses a command without {mcp_config} and the box would start with no sysop and no word about it
@@ -672,6 +674,12 @@ validate_value() {
             ;;
         sysop.max_seconds)
             valid_int_range "$V_OUT" 10 3600 || { _bad "it must be a whole number of seconds from 10 to 3600."; return 1; }
+            ;;
+        voice.topic|sysop.topic)
+            valid_topic_name "$V_OUT" || { _bad "it must be a bus topic name: lower-case letters, digits, '.', '_' and '-', starting with a letter or digit, at most 63 characters."; return 1; }
+            ;;
+        sysop.group)
+            valid_topic_name "$V_OUT" || { _bad "it must be a group name: lower-case letters, digits, '.', '_' and '-', starting with a letter or digit, at most 63 characters."; return 1; }
             ;;
         CLOUDFLARE_TUNNEL_TOKEN)
             case $V_OUT in
@@ -2774,7 +2782,7 @@ cmd_setup() {
 
 # attach_main WORDS...: for every first word that is not handled above. Start the box if needed (a separate shell: `up` holds the
 # lock until it ends, and the session below must not), then `podman exec` into it. -t only when standard input and output are
-# both terminals; TERM and COLORTERM are passed. pubkey, tool and bus go to swarmbox-entrypoint as they are; a leading `attach` is a
+# both terminals; TERM and COLORTERM are passed. pubkey, tool, bus and tabs go to swarmbox-entrypoint as they are; a leading `attach` is a
 # prefix, not an argument; the exit status is the command's.
 attach_main() {
     ( cmd_up ) || exit $?
@@ -2782,7 +2790,7 @@ attach_main() {
     a_t=-i
     if [ -t 0 ] && [ -t 1 ]; then a_t=-it; fi
     case ${1-} in
-        pubkey|tool|bus) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
+        pubkey|tool|bus|tabs) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
         attach) shift ;;
     esac
     # The pty of this terminal tab names the tab: it is the same for as long as the tab lives, in any terminal or over ssh, so after `exit`

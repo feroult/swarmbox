@@ -40,6 +40,9 @@ KEYS = {
     "AGENT": (None, "claude", "opencode", ["a,b", "A B"]),
     "YOLO": ("1", "0", "1", ["yes", "2"]),
     "ENV_KEYS": (None, "ANTHROPIC_API_KEY,GEMINI_API_KEY", "FOO", ["1BAD", "A,SWARMBOX_CLOUDFLARE_X", "a b", "A-B"]),
+    "voice.topic": ("goal", "speech", "voice.goals", ["Goal", "-x", "a b", "a/b", "x" * 64, "a\nb"]),
+    "sysop.topic": ("goal", "ops", "a-b_c.d", ["Goal", "-x", "a b", "a/b", "x" * 64, ".x"]),
+    "sysop.group": ("sysop", "ops2", "g-1", ["Sysop", "-x", "a b", "a/b", "x" * 64, "_x"]),
     "sysop.brain": ("claude", "claude", "gemini -p {mcp_config}", ["a\nb", "foo bar", "gemini -p"]),
     "sysop.model": ("haiku", "sonnet", "claude-sonnet-4-5", ["a b", "-x", "a;b", "$(x)"]),
     "sysop.autonomy": ("confirm-risky", "auto", "confirm-all", ["yes", "Auto", "confirm"]),
@@ -50,8 +53,9 @@ KEYS = {
 }
 LIST_ORDER = ["NAME", "WORKSPACE", "HOSTNAME", "TZ", "INIT", "PORTS", "HOST_ACCESS", "BROWSER_URL", "WEB", "WEB_PORT",
               "WITH", "AGENT", "YOLO", "ENV_KEYS", "IMAGE", "CLOUDFLARE_TUNNEL_TOKEN",
-              "voice.language", "voice.stt.model", "voice.stt.vocabulary", "voice.planner", "voice.planner.model", "voice.web",
-              "sysop.brain", "sysop.model", "sysop.autonomy", "sysop.countdown", "sysop.max_steps", "sysop.max_seconds"]
+              "voice.language", "voice.stt.model", "voice.stt.vocabulary", "voice.web", "voice.topic",
+              "sysop.brain", "sysop.model", "sysop.autonomy", "sysop.countdown", "sysop.max_steps", "sysop.max_seconds",
+              "sysop.topic", "sysop.group"]
 
 
 def ENVNAME(key):

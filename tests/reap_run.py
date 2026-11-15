@@ -43,6 +43,12 @@ def main(argv):
         subreaper = ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
     except (OSError, AttributeError):
         pass
+    # A runner started with nohup, setsid wrappers or a CI agent can hand down SIGHUP/SIGINT/SIGTERM as ignored; an ignored signal
+    # stays ignored through exec and a shell cannot trap it, so the tests that signal a helper would wait for their timeout.
+    # Give the command the default dispositions (the test files do the same for themselves, see restore_signals in them).
+    for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGQUIT):
+        signal.signal(sig, signal.SIG_DFL)
+    signal.signal(signal.SIGINT, signal.default_int_handler)
     started = time.time()
     p = subprocess.Popen(argv)
     try:

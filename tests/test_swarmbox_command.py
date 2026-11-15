@@ -31,6 +31,8 @@ ROUTING = [
     (["tool"], ["tool"]),
     (["bus", "pub", "goal", "a b"], ["bus", "pub", "goal", "a b"]),
     (["bus"], ["bus"]),
+    (["tabs", "send", "work", "ls"], ["tabs", "send", "work", "ls"]),
+    (["tabs"], ["tabs"]),
     (["frobnicate", "up"], ["attach", "frobnicate", "up"]),     # only the FIRST word decides
     (["bash", "-c", "stop"], ["attach", "bash", "-c", "stop"]),
 ]

@@ -212,9 +212,9 @@ def step_page_built(ctx):
     assert "--swarmbox-padding:" in page and "window.__swarmboxClipboard=" in page, "the served page is not the built page"
 
 
-# The eight tools of the repository and the commands they provide (the order of the index is the sort of `link`).
+# The nine tools of the repository and the commands they provide (the order of the index is the sort of `link`).
 TOOL_COMMANDS = {"claude": ["claude"], "gemini": ["gemini"], "opencode": ["opencode"], "gcloud": ["gcloud", "gsutil", "bq"],
-                 "clasp": ["clasp"], "go": ["go", "gofmt"], "poetry": ["poetry"], "voice": ["swarmbox-voice"]}
+                 "clasp": ["clasp"], "go": ["go", "gofmt"], "poetry": ["poetry"], "voice": ["swarmbox-voice"], "sysop": ["swarmbox-sysop"]}
 ALL_COMMANDS = [c for cmds in TOOL_COMMANDS.values() for c in cmds]
 
 
@@ -227,8 +227,18 @@ def step_tool_validate(ctx):
     assert "%d manifest(s) checked" % len(TOOL_COMMANDS) in out, "validate did not check all %d manifests: %s" % (len(TOOL_COMMANDS), out)
 
 
+def step_box_commands(ctx):
+    """The bus and the tabs are commands of the box itself, not tools: both are executable files in the image and answer --help."""
+    r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
+               "for c in swarmbox-bus swarmbox-tabs; do test -x /usr/local/bin/$c && echo \"EXEC:$c\"; /usr/local/bin/$c --help >/dev/null 2>&1 && echo \"HELP:$c\"; done; true")
+    lines = r.stdout.split()
+    for c in ("swarmbox-bus", "swarmbox-tabs"):
+        assert "EXEC:" + c in lines, "/usr/local/bin/%s is missing or not executable in the image: %s %s" % (c, r.stdout, r.stderr)
+        assert "HELP:" + c in lines, "%s --help does not work in the image: %s %s" % (c, r.stdout, r.stderr)
+
+
 def step_tool_shim(ctx):
-    """Every command of the eight tools is a shim (a link to swarmbox-shim) found on PATH, and nothing is installed."""
+    """Every command of the nine tools is a shim (a link to swarmbox-shim) found on PATH, and nothing is installed."""
     r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
                "test -x /usr/local/bin/swarmbox-shim && echo SHIM-EXEC; SWARMBOX_CMD=1 . /etc/swarmbox/bashrc.sh; "
                "for c in %s; do echo \"$c|$(readlink /usr/local/lib/swarmbox/shims/$c)|$(type -P $c)\"; done; "
@@ -299,7 +309,7 @@ def step_attach_session(ctx):
 def step_no_agent(ctx):
     """A default build holds no tool (bash, because dash has no `type -P`; the step used sh and found nothing at first): every command resolves to its shim and /opt/swarmbox/tools is empty."""
     r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
-               "for c in claude opencode gemini codex clasp gcloud gsutil bq go gofmt poetry swarmbox-voice; do p=$(type -P $c) && echo \"FOUND:$c:$p\"; done; "
+               "for c in claude opencode gemini codex clasp gcloud gsutil bq go gofmt poetry swarmbox-voice swarmbox-sysop; do p=$(type -P $c) && echo \"FOUND:$c:$p\"; done; "
                "ls -A /opt/swarmbox/tools | wc -l; true")
     found = [l for l in r.stdout.splitlines() if l.startswith("FOUND:")]
     # the shims are on PATH (a link to swarmbox-shim each); codex has no tool; none is a program
@@ -534,8 +544,9 @@ STEPS = [
     Step("tmux-scrollbar", "the pinned tmux is in the image and has the scrollbar off (80 of 80 columns, in and out of copy mode)", False, step_tmux_scrollbar),
     Step("page-built", "the ttyd page is built into the image and served with the three settings", False, step_page_built),
     Step("tool-validate", "swarmbox-tool validate passes on the shipped manifests (the real validate)", False, step_tool_validate),
-    Step("tool-shim", "the shims of all eight tools are links to swarmbox-shim found on PATH; nothing is installed", False, step_tool_shim),
-    Step("tool-index-ports", "the index lists the commands of all eight tools and tool-ports is exactly clasp 43323", False, step_tool_index_ports),
+    Step("box-commands", "swarmbox-bus and swarmbox-tabs are executable in the image and answer --help", False, step_box_commands),
+    Step("tool-shim", "the shims of all nine tools are links to swarmbox-shim found on PATH; nothing is installed", False, step_tool_shim),
+    Step("tool-index-ports", "the index lists the commands of all nine tools and tool-ports is exactly clasp 43323", False, step_tool_index_ports),
     Step("mcp-generated", "swarmbox-mcp generates mcp-servers.json with chrome-devtools and no npx", False, step_mcp_generated),
     Step("attach-session", "two attach calls share one session, the idle window is gone, exit codes", False, step_attach_session),
     Step("no-agent", "a default build holds no agent, gcloud, clasp, Go, Poetry or voice and /opt/swarmbox/tools is empty", False, step_no_agent),

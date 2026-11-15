@@ -96,7 +96,7 @@ fi
 if [ "$DO_TESTS" = 1 ]; then
     out=$(mktemp "${TMPDIR:-/tmp}/swarmbox-check.XXXXXX") || exit 1
     trap 'rm -f "$out"' EXIT HUP INT TERM
-    say "     running tests/run_all.sh in a clean environment (about a minute) ..."
+    say "     running tests/run_all.sh in a clean environment (about six minutes) ..."
     if env -i PATH="$PATH" HOME="$HOME" LANG=C.UTF-8 TMPDIR="${TMPDIR:-/tmp}" sh tests/run_all.sh > "$out" 2>&1; then
         total=$(grep '^TOTAL ' "$out" | tail -n 1)
         skipped=$(sed -n 's/.* \([0-9][0-9]*\) skipped.*/\1/p' "$out" | awk '{s += $1} END {print s + 0}')

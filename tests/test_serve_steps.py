@@ -21,7 +21,9 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, restore_signals  # noqa: E402
+
+restore_signals()
 
 ENTRYPOINT = os.path.join(ROOT, "container", "entrypoint.sh")
 DIRS_SH = os.path.join(ROOT, "container", "scripts", "dirs.sh")

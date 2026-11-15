@@ -1,4 +1,4 @@
-"""Shared by the tests of the tmux driver of swarmbox-bus: the module loaded by path, and a FAKE tmux (an executable script on a private
+"""Shared by the tests of swarmbox-tabs: the module loaded by path, the command run as a process, and a FAKE tmux (an executable script on a private
 path) that answers the few commands the driver uses from a JSON state file, keeps a log of every call with its time, and can play a
 Claude Code screen (input box, busy, dialog, an Enter that is swallowed). No tmux, no network, no model: these tests run on any host."""
 import importlib.util
@@ -6,17 +6,18 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT  # noqa: E402
 
-DRIVER_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-bus-tmux.py")
+TABS_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py")
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location("swarmbox_bus_tmux", DRIVER_PATH)
+    spec = importlib.util.spec_from_file_location("swarmbox_tabs", TABS_PATH)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -88,8 +89,8 @@ def render(p):
 
 def variables(w, p):
     return {"window_id": w["id"], "window_index": str(w["index"]), "window_name": w["name"], "pane_id": p["id"],
-            "pane_active": "1" if p.get("active") else "0", "pane_current_path": p.get("cwd", "/"), "pane_current_command": p.get("cmd", "bash"),
-            "pane_last": "1" if p.get("last") else "0", "@swarmbox_sysop_panel": p.get("sysop", ""), "@swarmbox_voice_panel": p.get("voice", ""),
+            "pane_active": "1" if p.get("active") else "0", "pane_current_path": p.get("cwd", "/"), "pane_current_command": p.get("cmd", "bash"), "pane_start_command": p.get("start", ""),
+            "pane_last": "1" if p.get("last") else "0", "@swarmbox_sysop_panel": p.get("sysop", ""),
             "cursor_x": str(p.get("cx", 0)), "cursor_y": str(p.get("cy", 0)), "pane_in_mode": "1" if p.get("in_mode") else "0",
             "alternate_on": "1" if p.get("alt") else "0", "pane_width": str(p.get("w", 80)), "pane_height": str(p.get("h", 24)),
             "pane_mode": "copy-mode" if p.get("in_mode") else ""}
@@ -204,16 +205,25 @@ class FakeTmux:
                     return p
 
     def driver(self, **kw):
+        """a Tabs on this fake tmux, with a short pause, its locks in this fake's folder, and a TabsError class as .Err"""
         os.environ["FAKE_TMUX_STATE"] = self.state_path
         mod = load_module()
-
-        class Err(Exception):
-            def __init__(self, code, message=""):
-                Exception.__init__(self, code)
-                self.code, self.message = code, message
-        d = mod.TmuxDriver(Err, binary=self.bin, **dict({"pause": 0.02, "verify_timeout": 0.6}, **kw))
-        d.Err = Err
+        d = mod.Tabs(binary=self.bin, **dict({"pause": 0.02, "verify_timeout": 0.6, "run_dir": self.dir}, **kw))
+        d.Err = mod.TabsError
         return d
+
+    def env(self, **extra):
+        """the environment of the command: this fake tmux, its folder as the run folder"""
+        e = {k: v for k, v in os.environ.items() if not k.startswith("SB_") and k != "TMUX"}
+        e.update(FAKE_TMUX_STATE=self.state_path, SB_TABS_BIN=self.bin, SB_RUN_DIR=self.dir)
+        e.update(extra)
+        return e
+
+    def cli(self, *args, stdin=None, timeout=30, **extra):
+        """run `swarmbox-tabs ARGS` as a process (python3 -S, as the image does): (returncode, parsed stdout or None, stderr text)"""
+        r = subprocess.run([sys.executable, "-S", TABS_PATH, *args], env=self.env(**extra), input=stdin, capture_output=True, timeout=timeout)
+        out = r.stdout.decode()
+        return r.returncode, (json.loads(out) if out.strip() else None), r.stderr.decode()
 
     def close(self):
         os.environ.pop("FAKE_TMUX_STATE", None)

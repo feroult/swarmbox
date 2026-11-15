@@ -1,7 +1,8 @@
-"""The broker of swarmbox-bus (container/scripts/swarmbox-bus.py), in process, over a real unix socket, with a fake driver.
+"""The broker of swarmbox-bus (container/scripts/swarmbox-bus.py), in process, over a real unix socket.
 
-Queue semantics, subscribers that die or are slow, big messages, bad topics and requests, permissions, a stale socket, two brokers,
-the driver interface, watch. No tmux, no network, no model. Run with: python3 tests/test_bus.py
+Topics, broadcast, groups (one member gets each message, round robin; a member that dies, is slow or all are slow), the count of receivers
+and --allow-none, topics, watch, big messages, bad names and requests, permissions, a stale socket, two brokers. A goal still works end to
+end on a topic that the test chooses. No tmux, no network, no model. Run with: python3 tests/test_bus.py
 """
 import os
 import socket
@@ -12,43 +13,8 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bus_support  # noqa: E402
 from bus_support import Conn, Harness, bus, rpc, short_tmp, wait_for  # noqa: E402
-
-
-class FakeDriver(bus.Driver):
-    """records what it is asked; a tab named slow sleeps; a tab named boom raises; two tabs exist"""
-
-    def __init__(self):
-        self.sent, self.reads, self.active, self.max_active = [], [], {}, {}
-        self.lock = threading.Lock()
-        self.delay = 0.0
-
-    def list_tabs(self):
-        self.reads.append(("ls",))
-        return [{"tab": "@1", "name": "main", "active": True}, {"tab": "@2", "name": "work", "active": False}]
-
-    def screen(self, tab, lines):
-        self.reads.append(("screen", tab, lines))
-        if tab == "boom":
-            raise RuntimeError("tmux exploded")
-        if tab != "@1":
-            raise bus.DriverError("no_such_tab", "no tab %s" % tab)
-        return {"text": "hello\nworld\n", "cursor": [1, 2]}
-
-    def send(self, tab, body):
-        with self.lock:
-            self.active[tab] = self.active.get(tab, 0) + 1
-            self.max_active[tab] = max(self.max_active.get(tab, 0), self.active[tab])
-        try:
-            if tab == "boom":
-                raise RuntimeError("tmux exploded")
-            if tab == "amb":
-                raise bus.DriverError("ambiguous_tab", "two windows are called amb: @4, @5")
-            time.sleep(self.delay)
-            self.sent.append((tab, body))
-        finally:
-            with self.lock:
-                self.active[tab] -= 1
 
 
 def collect(conn):
@@ -69,39 +35,56 @@ def collect(conn):
 
 
 class Base(unittest.TestCase):
-    driver = None
-
-    def start(self, driver=None, **kw):
-        h = Harness(driver or self.driver, **kw)
+    def start(self, **kw):
+        h = Harness(**kw)
         self.addCleanup(h.close)
         self.assertEqual(h.rc, 0)
         return h
 
 
-class Goal(Base):
+TOPIC = "orders.7"      # a name the test chooses: the bus has no special topic
+
+
+class Basics(Base):
     def test_no_subscriber(self):
         h = self.start()
-        self.assertEqual(h.pub("goal", {"text": "x"}), {"ok": False, "err": "no_subscriber"})
+        self.assertEqual(h.pub(TOPIC, {"text": "x"}), {"ok": False, "err": "no_subscriber", "delivered": 0})
 
     def test_one_subscriber_gets_the_envelope(self):
         h = self.start()
-        s = h.sub()
-        rep = h.pub("goal", {"text": "run the tests"}, source="voice")
+        s = h.sub(TOPIC)
+        rep = h.pub(TOPIC, {"text": "run the tests"}, source="voice")
         self.assertTrue(rep["ok"])
         self.assertEqual(rep["delivered"], 1)
         env = s.line()
         self.assertEqual(sorted(env), ["body", "id", "peer", "source", "time", "topic", "v"])
-        self.assertEqual((env["v"], env["topic"], env["source"], env["body"]), (1, "goal", "voice", {"text": "run the tests"}))
+        self.assertEqual((env["v"], env["topic"], env["source"], env["body"]), (1, TOPIC, "voice", {"text": "run the tests"}))
         self.assertEqual(env["id"], rep["id"])
         self.assertEqual(env["peer"]["uid"], os.getuid())
         self.assertRegex(env["time"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$")
         self.assertRegex(env["id"], r"^[0-9a-f]{6}-\d+$")
 
+    def test_the_subscribe_reply_names_the_topic_and_the_group(self):
+        h = self.start()
+        c = h.conn().send({"op": "sub", "topic": TOPIC, "group": "g1"})
+        self.assertEqual(c.line(), {"ok": True, "subscribed": TOPIC, "group": "g1"})
+        c = h.conn().send({"op": "sub", "topic": TOPIC})
+        self.assertEqual(c.line(), {"ok": True, "subscribed": TOPIC, "group": None})
+
+    def test_a_message_goes_only_to_its_own_topic(self):
+        h = self.start()
+        a, b = h.sub("one"), h.sub("two")
+        self.assertEqual(h.pub("one", 1)["delivered"], 1)
+        self.assertEqual(a.line()["body"], 1)
+        self.assertEqual(h.pub("three", 1)["err"], "no_subscriber")
+        b.s.settimeout(0.2)
+        with self.assertRaises(socket.timeout):
+            b.line()
+
     def test_ids_are_ordered_and_unique(self):
         h = self.start()
-        s = h.sub()
-        got = collect(s)
-        ids = [h.pub("goal", i)["id"] for i in range(5)]
+        got = collect(h.sub(TOPIC))
+        ids = [h.pub(TOPIC, i)["id"] for i in range(5)]
         self.assertEqual([int(i.split("-")[1]) for i in ids], sorted(int(i.split("-")[1]) for i in ids))
         self.assertEqual(len(set(ids)), 5)
         self.assertTrue(wait_for(lambda: len(got) == 5))
@@ -109,73 +92,125 @@ class Goal(Base):
 
     def test_source_is_cut_at_64_and_peer_cannot_be_forged(self):
         h = self.start()
-        s = h.sub()
-        h.pub("goal", 1, source="x" * 200, peer={"pid": 1, "uid": 0})
+        s = h.sub(TOPIC)
+        h.pub(TOPIC, 1, source="x" * 200, peer={"pid": 1, "uid": 0})
         env = s.line()
         self.assertEqual(env["source"], "x" * 64)
         self.assertEqual(env["peer"]["uid"], os.getuid())
-        h.pub("goal", 2)
+        h.pub(TOPIC, 2)
         self.assertEqual(s.line()["source"], "cli")
-
-    def test_two_subscribers_share_by_round_robin_and_each_message_goes_to_one(self):
-        h = self.start()
-        a, b = h.sub(), h.sub()
-        ga, gb = collect(a), collect(b)          # consumers that read all the time
-        for i in range(10):
-            self.assertTrue(h.pub("goal", i)["ok"])
-        self.assertTrue(wait_for(lambda: len(ga) + len(gb) == 10))
-        self.assertEqual((len(ga), len(gb)), (5, 5))
-        self.assertEqual(sorted(ga + gb), list(range(10)))
-
-    def test_a_subscriber_that_dies_is_dropped_and_the_other_gets_everything(self):
-        h = self.start()
-        a, b = h.sub(), h.sub()
-        a.close()
-        self.assertTrue(wait_for(lambda: len(h.broker.subs["goal"]) == 1))
-        got = collect(b)
-        for i in range(6):
-            self.assertTrue(h.pub("goal", i)["ok"])
-        self.assertTrue(wait_for(lambda: len(got) == 6))
-        self.assertEqual(got, list(range(6)))
-        b.close()
-        self.assertTrue(wait_for(lambda: not h.broker.subs["goal"]))
-        self.assertEqual(h.pub("goal", 1)["err"], "no_subscriber")
 
     def test_a_subscriber_may_talk_and_nothing_happens(self):
         h = self.start()
-        s = h.sub()
+        s = h.sub(TOPIC)
         s.s.sendall(b"garbage\n" * 100)
-        h.pub("goal", "still works")
+        h.pub(TOPIC, "still works")
         self.assertEqual(s.line()["body"], "still works")
 
-    def test_slow_subscriber_is_skipped_then_busy_and_a_healthy_one_keeps_receiving(self):
+    def test_the_body_is_any_json_value(self):
+        h = self.start()
+        s = h.sub(TOPIC)
+        for body in ("text", 5, None, [1, 2], {"a": {"b": 1}}, True):
+            self.assertTrue(h.pub(TOPIC, body)["ok"])
+            self.assertEqual(s.line()["body"], body)
+
+    def test_a_goal_end_to_end_on_a_topic_the_test_chose(self):
+        h = self.start()
+        sysop = h.sub("tasks:today", "sysop")
+        voice = h.rpc({"op": "pub", "topic": "tasks:today", "source": "voice", "body": {"text": "open the logs"}})
+        self.assertEqual((voice["ok"], voice["delivered"]), (True, 1))
+        env = sysop.line()
+        self.assertEqual((env["topic"], env["source"], env["body"]), ("tasks:today", "voice", {"text": "open the logs"}))
+        self.assertEqual(h.pub("goal", {"text": "x"})["err"], "no_subscriber")       # "goal" is a name like any other
+
+
+class Broadcast(Base):
+    def test_every_subscriber_gets_every_message(self):
+        h = self.start()
+        subs = [h.sub(TOPIC) for _ in range(3)]
+        gots = [collect(c) for c in subs]
+        for i in range(5):
+            self.assertEqual(h.pub(TOPIC, i)["delivered"], 3)
+        self.assertTrue(wait_for(lambda: all(len(g) == 5 for g in gots)))
+        self.assertTrue(all(g == [0, 1, 2, 3, 4] for g in gots))
+
+    def test_a_subscriber_that_dies_is_dropped_and_the_count_follows(self):
+        h = self.start()
+        a, b = h.sub(TOPIC), h.sub(TOPIC)
+        self.assertEqual(h.pub(TOPIC, 0)["delivered"], 2)
+        a.close()
+        self.assertTrue(wait_for(lambda: len(h.broker.subs[TOPIC]) == 1))
+        got = collect(b)
+        self.assertEqual(h.pub(TOPIC, 1)["delivered"], 1)
+        b.close()
+        self.assertTrue(wait_for(lambda: TOPIC not in h.broker.subs))
+        self.assertEqual(h.pub(TOPIC, 2)["err"], "no_subscriber")
+
+    def test_a_slow_subscriber_without_a_group_is_skipped_and_the_others_still_get_the_message(self):
         old = bus.SLOW_BUFFER
         bus.SLOW_BUFFER = 200 * 1024
         self.addCleanup(setattr, bus, "SLOW_BUFFER", old)
         h = self.start()
         slow = h.conn()
         slow.s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
-        slow.send({"op": "sub", "topic": "goal"})
+        slow.send({"op": "sub", "topic": TOPIC})
         self.assertTrue(slow.line()["ok"])      # and never reads again
         big = "x" * 100000
         res = None
         for _ in range(100):
-            res = h.pub("goal", big)
+            res = h.pub(TOPIC, big)
             if not res["ok"]:
                 break
-        self.assertEqual(res, {"ok": False, "err": "busy"})
-        good = h.sub()
-        self.assertTrue(h.pub("goal", "to the healthy one")["ok"])
+        self.assertEqual((res["err"], res["delivered"]), ("busy", 0))        # the only subscriber is far behind
+        good = h.sub(TOPIC)
+        res = h.pub(TOPIC, "to the healthy one")
+        self.assertEqual((res["ok"], res["delivered"]), (True, 1))           # the slow one is skipped, not counted
         self.assertEqual(good.line()["body"], "to the healthy one")
 
-    def test_a_subscriber_that_does_not_read_gets_one_message_and_then_the_others_get_the_rest(self):
-        # alive but not reading (stopped, hung): the goals are not queued behind it, they go to a consumer that reads
+
+class Groups(Base):
+    def test_two_members_share_by_round_robin_and_each_message_goes_to_one(self):
         h = self.start()
-        stuck = h.sub()
-        reading = h.sub()
+        a, b = h.sub(TOPIC, "workers"), h.sub(TOPIC, "workers")
+        ga, gb = collect(a), collect(b)          # consumers that read all the time
+        for i in range(10):
+            rep = h.pub(TOPIC, i)
+            self.assertEqual((rep["ok"], rep["delivered"]), (True, 1))
+        self.assertTrue(wait_for(lambda: len(ga) + len(gb) == 10))
+        self.assertEqual((len(ga), len(gb)), (5, 5))
+        self.assertEqual(sorted(ga + gb), list(range(10)))
+
+    def test_the_rotation_alternates_members_in_order(self):
+        h = self.start()
+        gots = [collect(h.sub(TOPIC, "g")) for _ in range(3)]
+        for i in range(6):
+            h.pub(TOPIC, i)
+            time.sleep(0.03)            # the member that took it reads it before the next one is published
+        self.assertTrue(wait_for(lambda: sum(len(g) for g in gots) == 6))
+        self.assertEqual(gots, [[0, 3], [1, 4], [2, 5]])
+
+    def test_a_member_that_dies_is_dropped_and_the_other_gets_everything(self):
+        h = self.start()
+        a, b = h.sub(TOPIC, "g"), h.sub(TOPIC, "g")
+        a.close()
+        self.assertTrue(wait_for(lambda: len(h.broker.subs[TOPIC]) == 1))
+        got = collect(b)
+        for i in range(6):
+            self.assertEqual(h.pub(TOPIC, i)["delivered"], 1)
+        self.assertTrue(wait_for(lambda: len(got) == 6))
+        self.assertEqual(got, list(range(6)))
+        b.close()
+        self.assertTrue(wait_for(lambda: TOPIC not in h.broker.subs))
+        self.assertEqual(h.pub(TOPIC, 1)["err"], "no_subscriber")
+
+    def test_a_member_that_does_not_read_gets_one_message_and_then_the_other_gets_the_rest(self):
+        # alive but not reading (stopped, hung): the messages are not queued behind it, they go to a member that reads
+        h = self.start()
+        stuck = h.sub(TOPIC, "g")
+        reading = h.sub(TOPIC, "g")
         got = collect(reading)
         for i in range(20):
-            rep = h.pub("goal", {"n": i})
+            rep = h.pub(TOPIC, {"n": i})
             self.assertEqual(rep.get("delivered"), 1, rep)
         self.assertTrue(wait_for(lambda: len(got) >= 19, 5), got)
         self.assertEqual([g["n"] for g in got], list(range(1, 20)))      # the first went to the stuck one, which had read nothing yet
@@ -184,46 +219,141 @@ class Goal(Base):
         with self.assertRaises(socket.timeout):
             stuck.line()                                                    # and nothing else is waiting for it
 
-    def test_when_every_subscriber_is_stuck_the_goal_is_busy_after_a_short_wait_and_goes_again_when_one_reads(self):
+    def test_a_slow_member_is_skipped_and_a_healthy_one_keeps_receiving(self):
+        old = bus.SLOW_BUFFER
+        bus.SLOW_BUFFER = 200 * 1024
+        self.addCleanup(setattr, bus, "SLOW_BUFFER", old)
         h = self.start()
-        a = h.sub()
-        self.assertTrue(h.pub("goal", 1)["ok"])
+        slow = h.conn()
+        slow.s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        slow.send({"op": "sub", "topic": TOPIC, "group": "g"})
+        self.assertTrue(slow.line()["ok"])
+        big = "x" * 100000
+        res = None
+        for _ in range(100):
+            res = h.pub(TOPIC, big)
+            if not res["ok"]:
+                break
+        self.assertEqual((res["err"], res["delivered"], res["busy"]), ("busy", 0, ["g"]))
+        self.assertIn("group g", res["msg"])
+        good = h.sub(TOPIC, "g")
+        self.assertTrue(h.pub(TOPIC, "to the healthy one")["ok"])
+        self.assertEqual(good.line()["body"], "to the healthy one")
+
+    def test_when_every_member_is_stuck_the_share_is_busy_after_a_short_wait_and_goes_again_when_one_reads(self):
+        h = self.start()
+        a = h.sub(TOPIC, "g")
+        self.assertTrue(h.pub(TOPIC, 1)["ok"])
         t = time.time()
-        rep = h.pub("goal", 2)
-        self.assertEqual(rep, {"ok": False, "err": "busy"})
-        self.assertGreaterEqual(time.time() - t, bus.GOAL_GRACE * 0.9)
-        self.assertLess(time.time() - t, bus.GOAL_GRACE + 2)
+        rep = h.pub(TOPIC, 2)
+        self.assertEqual((rep["ok"], rep["err"], rep["delivered"], rep["busy"]), (False, "busy", 0, ["g"]))
+        self.assertGreaterEqual(time.time() - t, bus.GROUP_GRACE * 0.9)
+        self.assertLess(time.time() - t, bus.GROUP_GRACE + 2)
         self.assertEqual(a.line()["body"], 1)                                # it reads, so it is ready again
-        self.assertTrue(h.pub("goal", 3)["ok"])
+        self.assertTrue(h.pub(TOPIC, 3)["ok"])
         self.assertEqual(a.line()["body"], 3)
 
-    def test_a_consumer_that_reads_a_moment_later_is_waited_for(self):
+    def test_a_member_that_reads_a_moment_later_is_waited_for(self):
         h = self.start()
-        a = h.sub()
-        self.assertTrue(h.pub("goal", 1)["ok"])
+        a = h.sub(TOPIC, "g")
+        self.assertTrue(h.pub(TOPIC, 1)["ok"])
         threading.Timer(0.05, a.line).start()
-        self.assertTrue(h.pub("goal", 2)["ok"])
+        self.assertTrue(h.pub(TOPIC, 2)["ok"])
 
-    def test_goal_body_is_any_json_value(self):
+    def test_two_groups_each_get_the_message_once(self):
         h = self.start()
-        s = h.sub()
-        for body in ("text", 5, None, [1, 2], {"a": {"b": 1}}, True):
-            self.assertTrue(h.pub("goal", body)["ok"])
-            self.assertEqual(s.line()["body"], body)
+        a1, a2 = h.sub(TOPIC, "a"), h.sub(TOPIC, "a")
+        b1 = h.sub(TOPIC, "b")
+        gots = [collect(c) for c in (a1, a2, b1)]
+        for i in range(4):
+            self.assertEqual(h.pub(TOPIC, i)["delivered"], 2)          # one per group
+        self.assertTrue(wait_for(lambda: len(gots[0]) + len(gots[1]) == 4 and len(gots[2]) == 4))
+        self.assertEqual(sorted(gots[0] + gots[1]), [0, 1, 2, 3])
+        self.assertEqual(gots[2], [0, 1, 2, 3])
+
+    def test_broadcast_and_a_group_mix(self):
+        h = self.start()
+        w1, w2 = h.sub(TOPIC, "workers"), h.sub(TOPIC, "workers")
+        logger, auditor = h.sub(TOPIC), h.sub(TOPIC)
+        gots = [collect(c) for c in (w1, w2, logger, auditor)]
+        for i in range(6):
+            self.assertEqual(h.pub(TOPIC, i)["delivered"], 3)          # two without a group, plus the group once
+        self.assertTrue(wait_for(lambda: len(gots[0]) + len(gots[1]) == 6 and len(gots[2]) == 6 and len(gots[3]) == 6))
+        self.assertEqual(gots[2], list(range(6)))
+        self.assertEqual(gots[3], list(range(6)))
+        self.assertEqual(sorted(gots[0] + gots[1]), list(range(6)))
+        self.assertEqual((len(gots[0]), len(gots[1])), (3, 3))
+
+    def test_a_busy_group_does_not_stop_the_others_from_receiving_and_the_reply_says_both(self):
+        h = self.start()
+        stuck = h.sub(TOPIC, "slowpoke")
+        self.assertTrue(h.pub(TOPIC, 0)["ok"])                           # the stuck member now has an unread message
+        fine = h.sub(TOPIC)
+        rep = h.pub(TOPIC, 1)
+        self.assertEqual((rep["ok"], rep["err"], rep["delivered"], rep["busy"]), (False, "busy", 1, ["slowpoke"]))
+        self.assertEqual(fine.line()["body"], 1)                         # the broadcast subscriber did get it
+
+    def test_the_same_group_name_on_another_topic_is_another_group(self):
+        h = self.start()
+        a, b = h.sub("t1", "g"), h.sub("t2", "g")
+        self.assertEqual(h.pub("t1", 1)["delivered"], 1)
+        self.assertEqual(h.pub("t2", 2)["delivered"], 1)
+        self.assertEqual((a.line()["body"], b.line()["body"]), (1, 2))
+
+
+class Receivers(Base):
+    def test_allow_none_accepts_no_receiver(self):
+        h = self.start()
+        self.assertEqual(h.pub(TOPIC, 1, allow_none=True)["delivered"], 0)
+        self.assertTrue(h.pub(TOPIC, 1, allow_none=True)["ok"])
+        self.assertEqual(h.pub(TOPIC, 1, allow_none=False)["err"], "no_subscriber")
+        self.assertEqual(h.pub(TOPIC, 1, allow_none="yes")["err"], "no_subscriber")      # only the boolean true counts
+
+    def test_allow_none_does_not_hide_a_busy_group(self):
+        h = self.start()
+        h.sub(TOPIC, "g")
+        h.pub(TOPIC, 1)
+        self.assertEqual(h.pub(TOPIC, 2, allow_none=True)["err"], "busy")
+
+    def test_the_count_is_ungrouped_subscribers_plus_one_per_group(self):
+        h = self.start()
+        cs = [h.sub(TOPIC), h.sub(TOPIC, "a"), h.sub(TOPIC, "a"), h.sub(TOPIC, "b"), h.sub(TOPIC, "c"), h.sub(TOPIC, "c"), h.sub(TOPIC, "c")]
+        [collect(c) for c in cs]
+        self.assertEqual(h.pub(TOPIC, 1)["delivered"], 4)
+
+
+class Topics(Base):
+    def test_topics_lists_only_topics_with_subscribers_with_their_counts(self):
+        h = self.start()
+        self.assertEqual(h.rpc({"op": "topics"}), {"ok": True, "result": []})
+        a = h.sub("zeta")
+        h.sub("alpha")
+        h.sub("alpha", "g")
+        h.sub("alpha", "g")
+        h.sub("alpha", "h")
+        self.assertEqual(h.rpc({"op": "topics"})["result"],
+                         [{"topic": "alpha", "subscribers": 4, "groups": {"g": 2, "h": 1}}, {"topic": "zeta", "subscribers": 1, "groups": {}}])
+        a.close()
+        self.assertTrue(wait_for(lambda: [t["topic"] for t in h.rpc({"op": "topics"})["result"]] == ["alpha"]))
+
+    def test_a_watcher_is_not_a_topic(self):
+        h = self.start()
+        h.conn().send({"op": "watch"}).line()
+        self.assertEqual(h.rpc({"op": "topics"})["result"], [])
 
 
 class Sizes(Base):
     def test_900_kib_arrives_whole(self):
         h = self.start()
-        s = h.sub()
-        body = "é" * 450000 if False else "a" * (900 * 1024)
-        self.assertTrue(h.pub("goal", body)["ok"])
+        s = h.sub(TOPIC)
+        body = "a" * (900 * 1024)
+        self.assertTrue(h.pub(TOPIC, body)["ok"])
         env = s.line()
         self.assertEqual(len(env["body"]), len(body))
 
     def test_over_the_limit_is_too_large_and_the_broker_survives(self):
         h = self.start()
-        self.assertEqual(h.pub("goal", "a" * bus.MAX_LINE), {"ok": False, "err": "too_large"})
+        self.assertEqual(h.pub(TOPIC, "a" * bus.MAX_LINE), {"ok": False, "err": "too_large"})
         c = h.conn()
         try:
             c.s.sendall(b"x" * (bus.MAX_LINE + 5000))     # no newline within the limit
@@ -237,9 +367,9 @@ class Sizes(Base):
 
     def test_the_envelope_never_exceeds_the_limit(self):
         h = self.start()
-        s = h.sub()
+        s = h.sub(TOPIC)
         body = "a" * (bus.MAX_REQUEST - 200)
-        rep = h.pub("goal", body, source="é" * 64)
+        rep = h.pub(TOPIC, body, source="é" * 64)
         if rep["ok"]:
             raw = s.f.readline()
             self.assertLessEqual(len(raw), bus.MAX_LINE)
@@ -248,41 +378,46 @@ class Sizes(Base):
 
 
 class BadInput(Base):
-    BAD_TOPICS = ["", "foo", "tab", "tab/x", "tab/x/out", "tab//in", "tab/a b/in", "tab/x/in/y", "goal/", "Goal", "tab/x/screen", "tab/" + "a" * 65 + "/in",
-                  "tab/a;b/in", "tab/../in", "tab/a\nb/in", "/goal"]
+    BAD_NAMES = ["", ".x", "-x", "_x", ":x", "a b", "a/b", "tab/x/in", "a;b", "a\nb", "x" * 65, "é", "a\x00b", "..", "a\\b", "a*", " x"]
+    GOOD_NAMES = ["goal", "Goal", "a", "0", "9lives", "a.b_c-d:e", "A" * 64, "voice.topic", "tab"]
 
     def test_bad_topics_on_pub(self):
         h = self.start()
-        for t in self.BAD_TOPICS:
+        for t in self.BAD_NAMES:
             with self.subTest(topic=t):
                 self.assertEqual(h.pub(t, 1), {"ok": False, "err": "bad_topic"})
-        self.assertEqual(h.rpc({"op": "pub", "topic": 5, "body": 1})["err"], "bad_topic")
-        self.assertEqual(h.rpc({"op": "pub", "topic": None, "body": 1})["err"], "bad_topic")
-        self.assertEqual(h.driver.sent if hasattr(h.driver, "sent") else [], [])
+        for t in (5, None, ["a"], {"a": 1}, True):
+            self.assertEqual(h.rpc({"op": "pub", "topic": t, "body": 1})["err"], "bad_topic")
+        self.assertEqual(h.rpc({"op": "pub", "body": 1})["err"], "bad_topic")
 
-    def test_good_tab_names(self):
-        h = self.start(FakeDriver())
-        for t in ("main", "@3", "1:main", "a.b_c-d", "A" * 64):
-            with self.subTest(tab=t):
-                self.assertTrue(h.pub("tab/%s/in" % t, {"run": "x"})["ok"])
-
-    def test_bad_topics_on_get_ls_sub(self):
+    def test_good_names_are_all_free_topics_and_no_name_is_reserved(self):
         h = self.start()
-        for t in ("", "goal", "tab/x", "tab/x/in", "tab/x/screen/y", "tab//screen", "foo"):
-            with self.subTest(get=t):
-                self.assertEqual(h.rpc({"op": "get", "topic": t})["err"], "bad_topic")
-        for t in ("goal", "tab/x", "foo"):
-            with self.subTest(ls=t):
-                self.assertEqual(h.rpc({"op": "ls", "topic": t})["err"], "bad_topic")
-        for t in ("tab/x/in", "foo", "", "tab/x/screen"):
+        for t in self.GOOD_NAMES:
+            with self.subTest(topic=t):
+                c = h.sub(t)
+                self.assertEqual(h.pub(t, "x")["delivered"], 1)
+                self.assertEqual(c.line()["topic"], t)
+
+    def test_bad_topics_and_groups_on_sub(self):
+        h = self.start()
+        for t in self.BAD_NAMES + [5, None]:
             with self.subTest(sub=t):
                 self.assertEqual(h.rpc({"op": "sub", "topic": t})["err"], "bad_topic")
+        self.assertEqual(h.rpc({"op": "sub"})["err"], "bad_topic")
+        for g in self.BAD_NAMES[1:] + [5, ["a"]]:
+            with self.subTest(group=g):
+                self.assertEqual(h.rpc({"op": "sub", "topic": "t", "group": g})["err"], "bad_group")
+        self.assertEqual(h.rpc({"op": "sub", "topic": "t", "group": ""})["err"], "bad_group")
+        self.assertEqual(h.rpc({"op": "topics"})["result"], [])          # nothing was subscribed
+
+    def test_the_old_ops_are_gone(self):
+        h = self.start()
+        for req in ({"op": "get", "topic": "tab/x/screen"}, {"op": "ls", "topic": "tab/"}, {"op": "ls"}):
+            self.assertEqual(h.rpc(req)["err"], "bad_request", req)
 
     def test_bad_requests_and_the_broker_lives(self):
         h = self.start()
-        for raw in (b"not json\n", b"[1,2]\n", b"5\n", b"{}\n", b'{"op":5}\n', b'{"op":"nope"}\n', b'{"op":"pub","topic":"goal"}\n', b"\n",
-                    b'{"op":"get","topic":"tab/x/screen","lines":"3"}\n', b'{"op":"get","topic":"tab/x/screen","lines":0}\n',
-                    b'{"op":"get","topic":"tab/x/screen","lines":true}\n', b"\xff\xfe\n"):
+        for raw in (b"not json\n", b"[1,2]\n", b"5\n", b"{}\n", b'{"op":5}\n', b'{"op":"nope"}\n', b'{"op":"pub","topic":"goal"}\n', b"\n", b"\xff\xfe\n"):
             with self.subTest(raw=raw):
                 rep = Conn(h.path).send(raw).line()
                 self.assertEqual(rep["err"], "bad_request")
@@ -297,7 +432,7 @@ class BadInput(Base):
         self.assertEqual(c.line()["err"], "bad_request")
         c.close()
         c = Conn(h.path)
-        c.s.sendall(b'{"op":"pub","topic":"goal","body":1}\n')
+        c.s.sendall(b'{"op":"pub","topic":"t","body":1,"allow_none":true}\n')
         c.close()                                         # sent and left without reading the reply
         self.assertTrue(h.rpc({"op": "ping"})["ok"])
 
@@ -327,16 +462,16 @@ class Permissions(Base):
     def test_a_missing_folder_is_created_private(self):
         d = short_tmp()
         self.addCleanup(__import__("shutil").rmtree, d, True)
-        b = bus.Broker(os.path.join(d, "sub", "bus.sock"), bus.StubDriver())
+        b = bus.Broker(os.path.join(d, "sub", "bus.sock"))
         self.assertEqual(b.acquire(), 0)
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(d, "sub")).st_mode), 0o700)
 
     def test_another_uid_is_refused(self):
         h = self.start(allowed_uids={os.getuid() + 4242})
         self.assertEqual(h.rpc({"op": "ping"})["err"], "forbidden")
-        self.assertEqual(h.pub("goal", 1)["err"], "forbidden")
-        self.assertEqual(h.rpc({"op": "ls", "topic": "tab/"})["err"], "forbidden")
-        self.assertEqual(h.rpc({"op": "sub"})["err"], "forbidden")
+        self.assertEqual(h.pub(TOPIC, 1)["err"], "forbidden")
+        self.assertEqual(h.rpc({"op": "topics"})["err"], "forbidden")
+        self.assertEqual(h.rpc({"op": "sub", "topic": TOPIC})["err"], "forbidden")
 
     def test_root_and_own_uid_are_accepted_by_default(self):
         h = self.start()
@@ -362,8 +497,8 @@ class SingleInstance(Base):
         with self.assertRaises(ConnectionRefusedError):
             rpc(path, {"op": "ping"})
         h = Harness.__new__(Harness)
-        h.dir, h.path, h.logs, h.driver, h.conns = d, path, [], bus.StubDriver(), []
-        h.broker = bus.Broker(path, h.driver, log=h.logs.append)
+        h.dir, h.path, h.logs, h.conns = d, path, [], []
+        h.broker = bus.Broker(path, log=h.logs.append)
         h.broker.started = threading.Event()
         self.assertEqual(h.broker.acquire(), 0)
         h.thread = threading.Thread(target=h._run, daemon=True)
@@ -378,25 +513,25 @@ class SingleInstance(Base):
         path = os.path.join(d, "bus.sock")
         with open(path, "w") as f:
             f.write("precious")
-        b = bus.Broker(path, bus.StubDriver())
+        b = bus.Broker(path)
         self.assertEqual(b.acquire(), 1)
         with open(path) as f:
             self.assertEqual(f.read(), "precious")
 
     def test_a_second_broker_exits_8_and_the_first_is_untouched(self):
         h = self.start()
-        second = bus.Broker(h.path, bus.StubDriver())
+        second = bus.Broker(h.path)
         self.assertEqual(second.acquire(), 8)
         self.assertTrue(os.path.exists(h.path))
-        s = h.sub()
-        self.assertTrue(h.pub("goal", "still the first")["ok"])
+        s = h.sub(TOPIC)
+        self.assertTrue(h.pub(TOPIC, "still the first")["ok"])
         self.assertEqual(s.line()["body"], "still the first")
 
     def test_many_brokers_at_once_leave_exactly_one(self):
         d = short_tmp()
         self.addCleanup(__import__("shutil").rmtree, d, True)
         path = os.path.join(d, "bus.sock")
-        brokers = [bus.Broker(path, bus.StubDriver()) for _ in range(6)]
+        brokers = [bus.Broker(path) for _ in range(6)]
         rcs = []
         ts = [threading.Thread(target=lambda b=b: rcs.append(b.acquire())) for b in brokers]
         [t.start() for t in ts]
@@ -407,12 +542,12 @@ class SingleInstance(Base):
         h = self.start()
         h.broker.stop()
         h.thread.join(10)
-        again = bus.Broker(h.path, bus.StubDriver())
+        again = bus.Broker(h.path)
         self.assertEqual(again.acquire(), 0)
 
     def test_stop_closes_subscribers_and_removes_the_socket(self):
         h = self.start()
-        s = h.sub()
+        s = h.sub(TOPIC)
         w = h.conn().send({"op": "watch"})
         w.line()
         h.broker.stop()
@@ -422,162 +557,50 @@ class SingleInstance(Base):
         self.assertFalse(os.path.exists(h.path))
 
 
-class Tabs(Base):
-    def setUp(self):
-        self.driver = FakeDriver()
-
-    def test_pub_to_a_tab_goes_to_the_driver(self):
-        h = self.start()
-        rep = h.pub("tab/@1/in", {"run": "pytest -x"})
-        self.assertEqual((rep["ok"], rep["delivered"]), (True, 1))
-        self.assertEqual(self.driver.sent, [("@1", {"run": "pytest -x"})])
-
-    def test_driver_errors_reach_the_client_with_code_and_message(self):
-        h = self.start()
-        rep = h.pub("tab/amb/in", {"run": "x"})
-        self.assertEqual(rep, {"ok": False, "err": "ambiguous_tab", "msg": "two windows are called amb: @4, @5"})
-        self.assertEqual(h.rpc({"op": "get", "topic": "tab/@9/screen"})["err"], "no_such_tab")
-
-    def test_a_driver_that_raises_is_driver_error_and_the_broker_lives(self):
-        h = self.start()
-        self.assertEqual(h.pub("tab/boom/in", {"run": "x"}), {"ok": False, "err": "driver_error", "msg": "RuntimeError"})
-        self.assertEqual(h.rpc({"op": "get", "topic": "tab/boom/screen"})["err"], "driver_error")
-        self.assertTrue(any("tmux exploded" in l for l in h.logs))
-        self.assertTrue(h.rpc({"op": "ping"})["ok"])
-
-    def test_ls_and_get(self):
-        h = self.start()
-        self.assertEqual(h.rpc({"op": "ls", "topic": "tab/"})["result"], self.driver.list_tabs())
-        self.assertEqual(h.rpc({"op": "ls", "topic": "tab"})["result"][0]["tab"], "@1")
-        self.assertEqual(h.rpc({"op": "ls", "topic": ""})["result"], ["tab/"])
-        rep = h.rpc({"op": "get", "topic": "tab/@1/screen", "lines": 7})
-        self.assertEqual(rep["result"], {"text": "hello\nworld\n", "cursor": [1, 2]})
-        self.assertIn(("screen", "@1", 7), self.driver.reads)
-        h.rpc({"op": "get", "topic": "tab/@1/screen"})
-        self.assertIn(("screen", "@1", None), self.driver.reads)
-
-    def test_sends_to_one_tab_never_overlap_but_other_tabs_run_in_parallel(self):
-        self.driver.delay = 0.15
-        h = self.start()
-        t0 = time.time()
-        res = []
-        ts = [threading.Thread(target=lambda i=i: res.append(h.pub("tab/@1/in", {"run": str(i)})["ok"])) for i in range(4)]
-        ts += [threading.Thread(target=lambda: res.append(h.pub("tab/@2/in", {"run": "o"})["ok"]))]
-        [t.start() for t in ts]
-        [t.join() for t in ts]
-        self.assertEqual(res, [True] * 5)
-        self.assertEqual(self.driver.max_active["@1"], 1)
-        self.assertGreaterEqual(time.time() - t0, 0.55)         # four sends in a row
-        self.assertEqual(len(self.driver.sent), 5)
-        self.assertEqual(h.broker.tab_locks, {}, "no lock is kept after use")
-
-    def test_a_driver_call_that_takes_too_long_is_a_timeout(self):
-        old = bus.DRIVER_TIMEOUT
-        bus.DRIVER_TIMEOUT = 0.3
-        self.addCleanup(setattr, bus, "DRIVER_TIMEOUT", old)
-        self.driver.delay = 1.0
-        h = self.start()
-        rep = h.pub("tab/@1/in", {"run": "x"})
-        self.assertEqual(rep["err"], "timeout")
-        self.assertTrue(h.rpc({"op": "ping"})["ok"])
-
-    def test_a_timed_out_send_keeps_the_tab_locked_until_it_really_ends(self):
-        # the sender is told `timeout`, the keys are still being typed: a second send to the tab must wait, never type over the first
-        old = bus.DRIVER_TIMEOUT
-        bus.DRIVER_TIMEOUT = 0.4
-        self.addCleanup(setattr, bus, "DRIVER_TIMEOUT", old)
-        self.driver.delay = 0.7
-        h = self.start()
-        rep = h.pub("tab/@1/in", {"run": "first"})
-        self.assertEqual(rep["err"], "timeout")
-        self.assertIn("do not send it again", rep["msg"])
-        self.driver.delay = 0.0
-        rep2 = h.pub("tab/@1/in", {"run": "second"})                       # waits for the first to end (0.3 s more), then types
-        self.assertTrue(rep2["ok"], rep2)
-        self.assertEqual(self.driver.max_active["@1"], 1)
-        self.assertEqual([b["run"] for _, b in self.driver.sent], ["first", "second"])
-        self.assertTrue(wait_for(lambda: h.broker.tab_locks == {}), "the lock entry is removed once the thread ended")
-        self.assertEqual([l for l in h.logs if "never retrieved" in l or "internal" in l], [])
-
-    def test_a_send_that_waits_too_long_for_a_stuck_one_is_a_timeout_and_types_nothing(self):
-        old = bus.DRIVER_TIMEOUT
-        bus.DRIVER_TIMEOUT = 0.3
-        self.addCleanup(setattr, bus, "DRIVER_TIMEOUT", old)
-        self.driver.delay = 1.5
-        h = self.start()
-        self.assertEqual(h.pub("tab/@1/in", {"run": "first"})["err"], "timeout")
-        rep = h.pub("tab/@1/in", {"run": "second"})
-        self.assertEqual(rep["err"], "timeout")
-        self.assertIn("nothing was typed", rep["msg"])
-        self.assertTrue(wait_for(lambda: len(self.driver.sent) == 1, 5))
-        self.assertEqual(self.driver.sent, [("@1", {"run": "first"})])
-
-    def test_the_stub_driver_validates_its_body(self):
-        d = bus.StubDriver()
-        d.send("main", {"run": "ls"})
-        d.send("main", {"input": "x{Esc}"})
-        for bad in ({}, {"run": 1}, {"run": "a", "input": "b"}, {"other": "x"}, "ls", None, ["run"]):
-            with self.subTest(body=bad):
-                with self.assertRaises(bus.DriverError) as cm:
-                    d.send("main", bad)
-                self.assertEqual(cm.exception.code, "bad_body")
-        with self.assertRaises(bus.DriverError) as cm:
-            d.send("nope", {"run": "ls"})
-        self.assertEqual(cm.exception.code, "no_such_tab")
-        self.assertEqual(len(d.sent), 2)
-
-    def test_the_base_driver_class_is_an_interface(self):
-        d = bus.Driver()
-        for call in (d.list_tabs, lambda: d.screen("a", None), lambda: d.send("a", {})):
-            with self.assertRaises(NotImplementedError):
-                call()
-        self.assertIsInstance(bus.make_driver("auto"), bus.Driver)
-        with self.assertRaises(ValueError):
-            bus.make_driver("nope")
-
-
 class Watch(Base):
-    def setUp(self):
-        self.driver = FakeDriver()
-
-    def watcher(self, h, **kw):
-        c = h.conn().send(dict({"op": "watch"}, **kw))
-        self.assertEqual(c.line(), {"ok": True, "subscribed": "*"})
+    def watcher(self, h):
+        c = h.conn().send({"op": "watch"})
+        self.assertEqual(c.line(), {"ok": True, "subscribed": "*", "group": None})
         return c
 
-    def test_watch_sees_every_pub_including_the_failed_ones_and_the_reads(self):
+    def test_watch_sees_every_pub_with_its_topic_receivers_and_result(self):
         h = self.start()
         w = self.watcher(h)
-        h.pub("goal", "nobody")
-        s = h.sub()
-        h.pub("goal", "someone")
-        h.pub("tab/@1/in", {"run": "ls"})
-        h.pub("tab/@7/in", {"run": "ls"})     # the fake driver accepts any tab for send
-        h.rpc({"op": "ls", "topic": "tab/"})
-        h.rpc({"op": "get", "topic": "tab/@1/screen"})
-        evs = [w.line() for _ in range(6)]
-        self.assertEqual([(e["kind"], e.get("result") if e["kind"] == "pub" else e["op"]) for e in evs],
-                         [("pub", "no_subscriber"), ("pub", "ok"), ("pub", "ok"), ("pub", "ok"), ("read", "ls"), ("read", "get")])
+        h.pub("alpha", "nobody")
+        h.pub("alpha", "nobody, accepted", allow_none=True)
+        s = h.sub("alpha")
+        g1, g2 = h.sub("beta", "g"), h.sub("beta", "g")
+        h.pub("alpha", "someone")
+        h.pub("beta", "a group")
+        evs = [w.line() for _ in range(4)]
+        self.assertEqual([(e["kind"], e["topic"], e["receivers"], e["result"]) for e in evs],
+                         [("pub", "alpha", 0, "no_subscriber"), ("pub", "alpha", 0, "ok"), ("pub", "alpha", 1, "ok"), ("pub", "beta", 1, "ok")])
         self.assertEqual(evs[0]["envelope"]["body"], "nobody")
-        self.assertEqual(evs[5]["result"]["text"], "hello\nworld\n")
+        self.assertEqual(evs[2]["envelope"]["topic"], "alpha")
         self.assertEqual(s.line()["body"], "someone")
 
-    def test_no_screen_replaces_the_text_in_the_broker(self):
+    def test_watch_shows_a_busy_share(self):
         h = self.start()
-        w = self.watcher(h, no_screen=True)
-        full = self.watcher(h)
-        h.rpc({"op": "get", "topic": "tab/@1/screen"})
-        ev = w.line()
-        self.assertEqual(ev["result"], {"text": "<12 bytes omitted>", "cursor": [1, 2]})
-        self.assertNotIn("hello", str(ev))
-        self.assertEqual(full.line()["result"]["text"], "hello\nworld\n")
+        w = self.watcher(h)
+        h.sub("t", "g")
+        h.pub("t", 1)
+        h.pub("t", 2)
+        self.assertEqual([w.line()["result"] for _ in range(2)], ["ok", "busy"])
+
+    def test_nothing_but_publications_passes(self):
+        h = self.start()
+        w = self.watcher(h)
+        h.rpc({"op": "topics"})
+        h.rpc({"op": "ping"})
+        h.pub("t", 1, allow_none=True)
+        self.assertEqual(w.line()["kind"], "pub")
 
     def test_a_watcher_that_dies_is_removed(self):
         h = self.start()
         w = self.watcher(h)
         w.close()
         self.assertTrue(wait_for(lambda: not h.broker.watchers))
-        self.assertTrue(h.pub("tab/@1/in", {"run": "x"})["ok"])
+        self.assertTrue(h.pub(TOPIC, "x", allow_none=True)["ok"])
 
     def test_a_slow_watcher_is_dropped(self):
         old = bus.SLOW_BUFFER
@@ -589,11 +612,22 @@ class Watch(Base):
         slow.send({"op": "watch"})
         slow.line()
         for _ in range(60):
-            h.pub("tab/@1/in", {"run": "x" * 20000})
+            h.pub(TOPIC, "x" * 20000, allow_none=True)
             if not h.broker.watchers:
                 break
         self.assertEqual(h.broker.watchers, [])
         self.assertTrue(h.rpc({"op": "ping"})["ok"])
+
+
+class NoTabs(unittest.TestCase):
+    def test_the_bus_has_no_trace_of_tmux_or_tabs(self):
+        with open(bus_support.BUS_PATH) as f:
+            code = f.read()
+        code = code.split('"""', 2)[2]                    # the docstring may say that there are none
+        for word in ("tmux", "tab/", "Driver", "driver", "no_screen", "DriverError", "make_driver", "executor", "ThreadPool"):
+            self.assertNotIn(word, code, word)
+        for name in ("Driver", "StubDriver", "make_driver", "load_tmux_module", "DriverError", "pub_topic_ok", "tab_topic"):
+            self.assertFalse(hasattr(bus, name), name)
 
 
 if __name__ == "__main__":

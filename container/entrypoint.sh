@@ -8,6 +8,7 @@
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
 #   tool      forwards to swarmbox-tool
 #   bus       forwards to swarmbox-bus (the bus broker's command line)
+#   tabs      forwards to swarmbox-tabs (the tabs of the box: list, active, screen, send)
 #   host-helper
 #             writes the helper archive (box:/usr/local/share/swarmbox/host/) as a tar archive on stdout
 #   (none)    exit 64
@@ -272,7 +273,7 @@ serve() {
     [ "$rc" = 0 ] || warn "linking the user tools failed (swarmbox-tool link exit $rc); see serve.log"
 
     # step 6b [W]: the bus broker, supervised, before step 7 because the prepare.sh of a tool may start subscribers and publishers.
-    # It needs the run folder (step 3) and not tmux (step 9): its driver calls tmux when asked. Nothing of the box depends on it.
+    # It needs only the run folder (step 3): the bus knows nothing about tmux. Nothing of the box depends on it.
     if ! have swarmbox-bus; then
         warn "the bus was not started: swarmbox-bus not found"
     else
@@ -435,7 +436,7 @@ case "${1:-}" in
     serve)
         serve
         ;;
-    attach|install|pubkey|tool|bus)
+    attach|install|pubkey|tool|bus|tabs)
         sub=$1
         shift
         case "$sub" in
@@ -444,6 +445,7 @@ case "${1:-}" in
             pubkey) forward swarmbox-pubkey "$@" ;;
             tool) forward swarmbox-tool "$@" ;;
             bus) forward swarmbox-bus "$@" ;;
+            tabs) forward swarmbox-tabs "$@" ;;
         esac
         ;;
     host-helper)

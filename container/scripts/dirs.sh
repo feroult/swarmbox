@@ -22,6 +22,7 @@
 # SB_PODMAN_SOCK           $SB_STATE_DIR/podman.sock
 # SB_RUN_DIR               /tmp/swarmbox                                          tmpfs, regenerated at every start
 # SB_BUS_SOCK              $SB_RUN_DIR/bus.sock                                   the bus broker's socket (swarmbox-bus)
+#                          $SB_RUN_DIR/tabs/                                      the locks of swarmbox-tabs (one file per tab; made by the command itself)
 #
 # Inside the box HOME is the workspace, so these are <workspace>/.config/swarmbox and so on.
 

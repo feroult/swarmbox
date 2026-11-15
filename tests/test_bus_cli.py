@@ -1,6 +1,5 @@
 """swarmbox-bus as programs: the broker as a process and the command line against it, with the exit codes, stdin, streams, a stale socket
-after kill -9, many clients and 100 messages per second. The tmux driver is not involved (the broker runs its StubDriver).
-No tmux, no network, no model. Run with: python3 tests/test_bus_cli.py
+after kill -9, groups, many clients and 100 messages per second. No tmux, no network, no model. Run with: python3 tests/test_bus_cli.py
 """
 import json
 import os
@@ -30,9 +29,9 @@ class Base(unittest.TestCase):
 class Usage(Base):
     def test_no_arguments_and_unknown_things_are_2(self):
         p = self.idle()
-        for args in ([], ["frobnicate"], ["pub"], ["pub", "a", "b", "c"], ["pub", "--source"], ["pub", "--nope", "goal", "x"], ["get"],
-                     ["get", "a", "b"], ["get", "x", "--lines"], ["get", "tab/x/screen", "--lines", "many"], ["ls", "a", "b"], ["sub", "a", "b"],
-                     ["sub", "--nope"], ["watch", "x"], ["ping", "x"], ["restart", "x"], ["serve", "--nope"], ["serve", "--driver", "nope"]):
+        for args in ([], ["frobnicate"], ["pub"], ["pub", "a", "b", "c"], ["pub", "--source"], ["pub", "--nope", "jobs", "x"], ["get", "a"], ["ls"],
+                     ["sub"], ["sub", "a", "b"], ["sub", "--nope", "a"], ["sub", "--group"], ["sub", "--group", "g"], ["topics", "x"], ["watch", "x"],
+                     ["watch", "--no-screen"], ["ping", "x"], ["restart", "x"], ["serve", "--nope"], ["serve", "--driver", "stub"]):
             with self.subTest(args=args):
                 r = p.cli(*args)
                 self.assertEqual(r.returncode, 2, r.stderr)
@@ -44,16 +43,16 @@ class Usage(Base):
         for a in ("--help", "-h", "help"):
             r = p.cli(a)
             self.assertEqual(r.returncode, 0)
-            self.assertIn(b"Exit codes: 0 ok, 1 other error, 2 usage, 3 no subscriber, 4", r.stdout)
+            self.assertIn(b"Exit codes: 0 ok, 1 other error, 2 usage, 3 nobody received the message", r.stdout)
 
     def test_the_documented_exit_codes_are_the_ones_of_the_code(self):
-        self.assertEqual(bus.EXIT, {"no_subscriber": 3, "too_large": 5, "bad_topic": 6, "bad_request": 6, "bad_body": 6, "busy": 7})
+        self.assertEqual(bus.EXIT, {"no_subscriber": 3, "too_large": 5, "bad_topic": 6, "bad_group": 6, "bad_request": 6, "busy": 7})
 
 
 class NotRunning(Base):
     def test_every_command_says_4_with_no_traceback(self):
         p = self.idle()
-        for args in (["pub", "goal", "x"], ["get", "tab/x/screen"], ["ls"], ["sub"], ["watch"], ["ping"]):
+        for args in (["pub", "jobs", "x"], ["topics"], ["sub", "jobs"], ["sub", "--group", "g", "jobs"], ["watch"], ["ping"]):
             with self.subTest(args=args):
                 r = p.cli(*args, stdin=b"")
                 self.assertEqual(r.returncode, 4, r.stderr)
@@ -92,28 +91,66 @@ class NotRunning(Base):
         self.assertEqual(p.cli("ping", env=dict(env, SB_RUN_DIR=p.dir + "x")).returncode, 4)
 
 
-class PubGetLs(Base):
+class Pub(Base):
     def test_pub_exit_codes(self):
         p = self.broker()
-        r = p.cli("pub", "goal", "hi")
+        r = p.cli("pub", "jobs", "hi")
         self.assertEqual((r.returncode, r.stdout), (3, b""))
         self.assertIn(b"no_subscriber", r.stderr)
-        self.assertEqual(p.cli("pub", "nope", "hi").returncode, 6)
-        self.assertEqual(p.cli("pub", "tab/x/in", "text").returncode, 1)                 # no such tab
-        self.assertEqual(p.cli("pub", "tab/main/in", '{"bad": 1}').returncode, 6)        # bad_body
-        r = p.cli("pub", "tab/main/in", '{"run": "ls"}')
+        self.assertEqual(p.cli("pub", "no good", "hi").returncode, 6)
+        self.assertEqual(p.cli("pub", "tab/x/in", "text").returncode, 6)                 # the tab topics are gone: a slash is not a name
+        sub = p.popen("sub", "--raw", "-v", "jobs")
+        self.assertIn(b"subscribed", sub.stderr.readline())
+        r = p.cli("pub", "jobs", '{"run": "ls"}')
         self.assertEqual(r.returncode, 0)
-        self.assertRegex(r.stdout.decode(), r"^[0-9a-f]{6}-\d+\n$")
+        out = json.loads(r.stdout)
+        self.assertRegex(out["id"], r"^[0-9a-f]{6}-\d+$")
+        self.assertEqual(out["receivers"], 1)
+        sub.terminate()
+        sub.wait()
+
+    def test_allow_none_and_the_count(self):
+        p = self.broker()
+        r = p.cli("pub", "--allow-none", "jobs", "hi")
+        self.assertEqual((r.returncode, json.loads(r.stdout)["receivers"]), (0, 0))
+        r = p.cli("pub", "jobs", "--allow-none", "hi")           # the flag may come anywhere before the end
+        self.assertEqual(r.returncode, 0)
+        subs = [p.popen("sub", "-v", "jobs"), p.popen("sub", "-v", "--group", "g", "jobs"), p.popen("sub", "-v", "--group", "g", "jobs")]
+        for s in subs:
+            self.assertIn(b"subscribed", s.stderr.readline())
+        r = p.cli("pub", "jobs", "x")
+        self.assertEqual(json.loads(r.stdout)["receivers"], 2)       # the plain subscriber, and one member of the group
+        for s in subs:
+            s.terminate()
+            s.wait()
+
+    def test_bad_names_are_6(self):
+        p = self.broker()
+        for t in ("-x", "a b", "a/b", "x" * 65):
+            self.assertEqual(p.cli("pub", "--", t, "m").returncode, 6, t)
+            self.assertEqual(p.cli("sub", "--", t).returncode, 6, t)
+        r = p.cli("sub", "--group", "bad group", "jobs")
+        self.assertEqual(r.returncode, 6)
+        self.assertIn(b"bad_group", r.stderr)
+
+    def test_topics_prints_one_line_of_json(self):
+        p = self.broker()
+        self.assertEqual(json.loads(p.cli("topics").stdout), [])
+        s = p.popen("sub", "-v", "--group", "sysop", "jobs")
+        self.assertIn(b"subscribed", s.stderr.readline())
+        self.assertEqual(json.loads(p.cli("topics").stdout), [{"topic": "jobs", "subscribers": 1, "groups": {"sysop": 1}}])
+        s.terminate()
+        s.wait()
 
     def test_message_forms_text_json_and_stdin(self):
         p = self.broker()
-        sub = p.popen("sub", "--raw", "-v")
+        sub = p.popen("sub", "--raw", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
-        p.cli("pub", "goal", "plain text with spaces")
-        p.cli("pub", "goal", '{"text": "run the tests"}')
-        p.cli("pub", "goal", "-", stdin=b'{"text":\n "multi line json"}\n')
-        p.cli("pub", "goal", stdin=b"from stdin by default\n")
-        p.cli("pub", "goal", "5")
+        p.cli("pub", "jobs", "plain text with spaces")
+        p.cli("pub", "jobs", '{"text": "run the tests"}')
+        p.cli("pub", "jobs", "-", stdin=b'{"text":\n "multi line json"}\n')
+        p.cli("pub", "jobs", stdin=b"from stdin by default\n")
+        p.cli("pub", "jobs", "5")
         got = [sub.stdout.readline().decode().rstrip("\n") for _ in range(5)]
         sub.terminate()
         sub.wait()
@@ -123,10 +160,10 @@ class PubGetLs(Base):
     def test_raw_prints_one_line_per_message_whatever_the_body(self):
         # a line reader (`while read -r goal`) must see one goal per published message
         p = self.broker()
-        sub = p.popen("sub", "--raw", "-v")
+        sub = p.popen("sub", "--raw", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
         for msg in ('"line one\\nline two"', "plain text", "null", '"null"', "5", '"5"', '"a\\rb"', '"é ü"', '{"k": "é\\nx"}', "NaN"):
-            self.assertEqual(p.cli("pub", "goal", msg).returncode, 0, msg)
+            self.assertEqual(p.cli("pub", "jobs", msg).returncode, 0, msg)
         got = [sub.stdout.readline().decode().rstrip("\n") for _ in range(10)]
         sub.terminate()
         sub.wait()
@@ -134,10 +171,10 @@ class PubGetLs(Base):
 
     def test_nan_and_infinity_are_text_and_never_reach_a_subscriber_as_bare_json(self):
         p = self.broker()
-        sub = p.popen("sub", "-v")
+        sub = p.popen("sub", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
         for msg in ("NaN", "Infinity", "-Infinity", "1e999", "[NaN]"):
-            self.assertEqual(p.cli("pub", "goal", "--", msg).returncode, 0, msg)
+            self.assertEqual(p.cli("pub", "jobs", "--", msg).returncode, 0, msg)
         envs = [sub.stdout.readline() for _ in range(5)]
         sub.terminate()
         sub.wait()
@@ -146,35 +183,35 @@ class PubGetLs(Base):
         self.assertEqual([json.loads(l)["body"] for l in envs], ["NaN", "Infinity", "-Infinity", "1e999", "[NaN]"])
         # a client that sends it anyway (not this CLI) is refused by the broker
         c = Conn(p.path)
-        c.send(b'{"op":"pub","topic":"goal","body":NaN}\n')
+        c.send(b'{"op":"pub","topic":"jobs","body":NaN}\n')
         self.assertEqual(c.line()["err"], "bad_request")
         c.close()
         c = Conn(p.path)
-        c.send(b'{"op":"pub","topic":"goal","body":1e999}\n')
+        c.send(b'{"op":"pub","topic":"jobs","body":1e999}\n')
         self.assertEqual(c.line()["err"], "bad_request")
         c.close()
 
     def test_double_dash_ends_the_options(self):
         p = self.broker()
-        sub = p.popen("sub", "--raw", "-v")
+        sub = p.popen("sub", "--raw", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
-        for args in (("--", "goal", "-5"), ("goal", "--", "-x"), ("--source", "me", "--", "goal", "--help"), ("goal", "--")):
+        for args in (("--", "jobs", "-5"), ("jobs", "--", "-x"), ("--source", "me", "--", "jobs", "--help"), ("jobs", "--")):
             r = p.cli("pub", *args, stdin=b"from stdin\n")
             self.assertEqual(r.returncode, 0, (args, r.stderr))
         got = [sub.stdout.readline().decode().rstrip("\n") for _ in range(4)]
         sub.terminate()
         sub.wait()
         self.assertEqual(got, ["-5", "-x", "--help", "from stdin"])
-        for args in (("goal", "-5"), ("goal", "--help"), ("goal", "-x")):           # without `--` a dash word is still an unknown option
+        for args in (("jobs", "-5"), ("jobs", "--help"), ("jobs", "-x")):           # without `--` a dash word is still an unknown option
             self.assertEqual(p.cli("pub", *args).returncode, 2, args)
 
     def test_source_flag_and_env(self):
         p = self.broker()
-        sub = p.popen("sub", "-v")
+        sub = p.popen("sub", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
-        p.cli("pub", "--source", "voice", "goal", "a")
-        p.cli("pub", "goal", "b", env={"SB_BUS_SOURCE": "sysop"})
-        p.cli("pub", "goal", "c")
+        p.cli("pub", "--source", "voice", "jobs", "a")
+        p.cli("pub", "jobs", "b", env={"SB_BUS_SOURCE": "sysop"})
+        p.cli("pub", "jobs", "c")
         srcs = [json.loads(sub.stdout.readline())["source"] for _ in range(3)]
         sub.terminate()
         sub.wait()
@@ -182,11 +219,11 @@ class PubGetLs(Base):
 
     def test_a_big_body_goes_by_stdin_and_arrives_whole(self):
         p = self.broker()
-        sub = p.popen("sub", "--raw")
-        self.assertTrue(wait_for(lambda: p.cli("pub", "goal", "probe").returncode == 0, 5))
+        sub = p.popen("sub", "--raw", "jobs")
+        self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "probe").returncode == 0, 5))
         sub.stdout.readline()
         body = ("0123456789abcdef" * 56 * 1024)[:900 * 1024]
-        r = p.cli("pub", "goal", "-", stdin=body.encode())
+        r = p.cli("pub", "jobs", "-", stdin=body.encode())
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(sub.stdout.readline().decode().rstrip("\n"), body)
         sub.terminate()
@@ -194,35 +231,23 @@ class PubGetLs(Base):
 
     def test_too_large_is_5_from_stdin_and_from_a_long_argument(self):
         p = self.broker()
-        r = p.cli("pub", "goal", "-", stdin=b"x" * (bus.MAX_LINE + 10))
+        r = p.cli("pub", "jobs", "-", stdin=b"x" * (bus.MAX_LINE + 10))
         self.assertEqual(r.returncode, 5)
         self.assertIn(b"too large", r.stderr)
-        r = p.cli("pub", "goal", "x" * 120000, stdin=b"")      # under the 128 KiB argv limit, over nothing: no subscriber
+        r = p.cli("pub", "jobs", "x" * 120000, stdin=b"")      # under the 128 KiB argv limit, over nothing: no subscriber
         self.assertEqual(r.returncode, 3)
         self.assertEqual(p.cli("ping").returncode, 0)
 
     def test_invalid_utf8_on_stdin_is_6(self):
         p = self.broker()
-        self.assertEqual(p.cli("pub", "goal", "-", stdin=b"\xff\xfe").returncode, 6)
-
-    def test_get_and_ls_print_one_line_of_json(self):
-        p = self.broker()
-        r = p.cli("ls", "tab/")
-        self.assertEqual(r.returncode, 0)
-        self.assertEqual(json.loads(r.stdout), [{"name": "main", "dir": "/work", "cmd": "bash", "active": True, "tab": "main"}])
-        self.assertEqual(json.loads(p.cli("ls").stdout), ["tab/"])
-        r = p.cli("get", "tab/main/screen", "--lines", "3")
-        self.assertEqual(len(json.loads(r.stdout)["text"].splitlines()), 3)
-        self.assertEqual(p.cli("get", "tab/zz/screen").returncode, 1)
-        self.assertEqual(p.cli("get", "tab/main/in").returncode, 6)
-        self.assertEqual(p.cli("ls", "nope").returncode, 6)
+        self.assertEqual(p.cli("pub", "jobs", "-", stdin=b"\xff\xfe").returncode, 6)
 
 
 class Streams(Base):
     def test_sub_exits_4_when_the_broker_goes_away_and_watch_too(self):
         p = self.broker()
-        sub, watch = p.popen("sub"), p.popen("watch")
-        self.assertTrue(wait_for(lambda: p.cli("pub", "goal", "x").returncode == 0, 5))
+        sub, watch = p.popen("sub", "jobs"), p.popen("watch")
+        self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "x").returncode == 0, 5))
         p.stop()
         for c in (sub, watch):
             self.assertEqual(c.wait(10), 4)
@@ -232,33 +257,47 @@ class Streams(Base):
         p = self.broker()
         self.assertEqual(p.cli("sub", "tab/x/in").returncode, 6)
 
+    def test_groups_share_between_two_cli_subscribers(self):
+        p = self.broker()
+        a, b = p.popen("sub", "--raw", "-v", "--group", "w", "jobs"), p.popen("sub", "--raw", "-v", "--group", "w", "jobs")
+        for s in (a, b):
+            self.assertIn(b"subscribed", s.stderr.readline())
+        for i in range(6):
+            self.assertEqual(p.cli("pub", "jobs", "m%d" % i).returncode, 0)
+            time.sleep(0.05)
+        time.sleep(0.2)
+        outs = []
+        for s in (a, b):
+            s.terminate()
+            out, _ = s.communicate(10)
+            outs.append(out.decode().split())
+        self.assertEqual(sorted(outs[0] + outs[1]), ["m%d" % i for i in range(6)])
+        self.assertEqual((len(outs[0]), len(outs[1])), (3, 3))
+
     def test_ctrl_c_is_130_and_a_closed_pipe_ends_quietly(self):
         p = self.broker()
-        sub = p.popen("sub")
-        self.assertTrue(wait_for(lambda: p.cli("pub", "goal", "x").returncode == 0, 5))
+        sub = p.popen("sub", "jobs")
+        self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "x").returncode == 0, 5))
         sub.send_signal(signal.SIGINT)
         self.assertEqual(sub.wait(10), 130)
-        sub = subprocess.Popen("%s -S %s sub | head -n 1" % (sys.executable, BUS_PATH), shell=True, env=p.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        sub = subprocess.Popen("%s -S %s sub jobs | head -n 1" % (sys.executable, BUS_PATH), shell=True, env=p.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         time.sleep(0.5)
-        self.assertEqual(p.cli("pub", "goal", "one").returncode, 0)
+        self.assertEqual(p.cli("pub", "jobs", "one").returncode, 0)
         time.sleep(0.2)
-        p.cli("pub", "goal", "two")
+        p.cli("pub", "jobs", "two")
         out, err = sub.communicate(10)
         self.assertEqual((out.strip().count(b"\n"), err), (0, b""))
 
-    def test_watch_no_screen(self):
+    def test_watch_prints_one_json_line_per_message(self):
         p = self.broker()
-        full, safe = p.popen("watch"), p.popen("watch", "--no-screen", "-v")
-        self.assertIn(b"subscribed", safe.stderr.readline())
-        self.assertTrue(wait_for(lambda: p.cli("ping").returncode == 0))
-        time.sleep(0.2)
-        p.cli("get", "tab/main/screen")
-        ev_full, ev_safe = json.loads(full.stdout.readline()), json.loads(safe.stdout.readline())
-        full.terminate(), safe.terminate()
-        full.wait(), safe.wait()
-        self.assertIn("screen of main", ev_full["result"]["text"])
-        self.assertRegex(ev_safe["result"]["text"], r"^<\d+ bytes omitted>$")
-        self.assertEqual(ev_safe["result"]["cursor"], ev_full["result"]["cursor"])
+        w = p.popen("watch", "-v")
+        self.assertIn(b"subscribed", w.stderr.readline())
+        p.cli("pub", "--allow-none", "--source", "t", "alpha", '{"a": 1}')
+        ev = json.loads(w.stdout.readline())
+        w.terminate()
+        w.wait()
+        self.assertEqual((ev["kind"], ev["topic"], ev["receivers"], ev["result"], ev["envelope"]["body"], ev["envelope"]["source"]),
+                         ("pub", "alpha", 0, "ok", {"a": 1}, "t"))
 
 
 class SecondBroker(Base):
@@ -309,7 +348,7 @@ class Restart(Base):
 class ClientPath(Base):
     def test_the_client_never_imports_asyncio(self):
         p = self.broker()
-        code = ("import sys, runpy\nsys.argv = ['swarmbox-bus', sys.argv[1], 'goal', 'x']\n"
+        code = ("import sys, runpy\nsys.argv = ['swarmbox-bus', sys.argv[1], 'jobs', 'x']\n"
                 "try:\n    runpy.run_path(%r, run_name='__main__')\nexcept SystemExit as e:\n    print('rc', e.code)\n"
                 "print('asyncio' in sys.modules)" % BUS_PATH)
         r = subprocess.run([sys.executable, "-S", "-c", code, "pub"], env=p.env, capture_output=True, text=True)
@@ -332,7 +371,7 @@ class ClientPath(Base):
 class Load(Base):
     def test_many_clients_in_parallel_all_delivered_once(self):
         p = self.broker()
-        subs = [p.popen("sub", "--raw", "-v") for _ in range(3)]
+        subs = [p.popen("sub", "--raw", "-v", "--group", "w", "jobs") for _ in range(3)]
         for s in subs:
             self.assertIn(b"subscribed", s.stderr.readline())
         n_threads, per = 8, 25
@@ -340,7 +379,7 @@ class Load(Base):
 
         def work(k):
             for i in range(per):
-                r = p.cli("pub", "--source", "t%d" % k, "goal", "m-%d-%d" % (k, i))
+                r = p.cli("pub", "--source", "t%d" % k, "jobs", "m-%d-%d" % (k, i))
                 if r.returncode != 0:
                     fails.append(r.stderr)
 
@@ -356,12 +395,12 @@ class Load(Base):
             seen += out.decode().split()
             s.stderr.close()
         self.assertEqual(len(seen), n_threads * per)
-        self.assertEqual(len(set(seen)), n_threads * per, "a message went to two subscribers")
+        self.assertEqual(len(set(seen)), n_threads * per, "a message went to two members of one group")
 
     def test_100_messages_per_second_for_3_seconds_one_process_each(self):
         p = self.broker()
-        sub = p.popen("sub", "--raw")
-        self.assertTrue(wait_for(lambda: p.cli("pub", "goal", "probe").returncode == 0, 5))
+        sub = p.popen("sub", "--raw", "jobs")
+        self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "probe").returncode == 0, 5))
         sub.stdout.readline()
         total, rate = 300, 100
         start = time.time()
@@ -371,7 +410,7 @@ class Load(Base):
             delay = start + i / rate - time.time()
             if delay > 0:
                 time.sleep(delay)
-            procs.append(subprocess.Popen([sys.executable, "-S", BUS_PATH, "pub", "goal", str(i)], env=p.env, stdout=subprocess.DEVNULL))
+            procs.append(subprocess.Popen([sys.executable, "-S", BUS_PATH, "pub", "jobs", str(i)], env=p.env, stdout=subprocess.DEVNULL))
         for q in procs:
             fails += q.wait(30) != 0
         elapsed = time.time() - start

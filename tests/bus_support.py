@@ -1,5 +1,5 @@
-"""Shared by tests/test_bus.py and tests/test_bus_cli.py: load swarmbox-bus.py as a module, run a broker in a thread or as a process,
-and a raw protocol client. Nothing here needs tmux, a network or a model."""
+"""Shared by tests/test_bus.py, tests/test_bus_cli.py and the tests of the plugins: load swarmbox-bus.py as a module, run a broker in a thread
+or as a process, and a raw protocol client. Nothing here needs tmux, a network or a model."""
 import importlib.util
 import json
 import os
@@ -86,12 +86,11 @@ def rpc(path, req, timeout=10):
 class Harness:
     """an in-process broker (own thread and loop) on a fresh socket path"""
 
-    def __init__(self, driver=None, allowed_uids=None):
+    def __init__(self, allowed_uids=None):
         self.dir = short_tmp()
         self.path = os.path.join(self.dir, "bus.sock")
         self.logs = []
-        self.driver = driver if driver is not None else bus.StubDriver()
-        self.broker = bus.Broker(self.path, self.driver, allowed_uids=allowed_uids, log=self.logs.append)
+        self.broker = bus.Broker(self.path, allowed_uids=allowed_uids, log=self.logs.append)
         self.broker.started = threading.Event()
         self.rc = self.broker.acquire()
         self.thread = None
@@ -110,8 +109,8 @@ class Harness:
         self.conns.append(c)
         return c
 
-    def sub(self, topic="goal"):
-        c = self.conn().send({"op": "sub", "topic": topic})
+    def sub(self, topic="goal", group=None):
+        c = self.conn().send({"op": "sub", "topic": topic, "group": group})
         rep = c.line()
         assert rep and rep.get("ok"), rep
         return c
@@ -134,8 +133,7 @@ class Harness:
 class Process:
     """a broker as a real process (python3 -S swarmbox-bus.py serve) on a fresh socket path"""
 
-    def __init__(self, env_extra=None, driver="stub"):
-        self.driver = driver
+    def __init__(self, env_extra=None):
         self.dir = short_tmp()
         self.path = os.path.join(self.dir, "bus.sock")
         self.env = dict(os.environ, SB_BUS_SOCKET=self.path)
@@ -146,7 +144,7 @@ class Process:
 
     def start(self, wait=True):
         with open(os.path.join(self.dir, "serve.log"), "ab") as logf:
-            self.proc = subprocess.Popen([sys.executable, "-S", BUS_PATH, "serve", "--driver", self.driver], env=self.env, stdout=subprocess.DEVNULL, stderr=logf)
+            self.proc = subprocess.Popen([sys.executable, "-S", BUS_PATH, "serve"], env=self.env, stdout=subprocess.DEVNULL, stderr=logf)
         if wait:
             assert wait_for(lambda: self.alive(), 10), "the broker did not answer: " + self.log()
         return self

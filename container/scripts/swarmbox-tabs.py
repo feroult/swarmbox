@@ -1,53 +1,77 @@
-"""swarmbox-bus-tmux: the tmux driver of swarmbox-bus (the tabs of the box), standard library only. Loaded by path by swarmbox-bus.py
-(`make_driver`), never run on its own; it belongs to the host image next to the bus and imports nothing from any plugin.
+#!/usr/bin/python3 -S
+"""swarmbox-tabs: the tabs of the box (the windows of the tmux session), a capability of the host. One file, standard library only: it is a
+command line and, at the same time, the library the plugins can import by path. No daemon: a call reads or acts on tmux and ends.
 
-The class TmuxDriver implements the three blocking methods of the bus driver interface (see the docstring of swarmbox-bus.py):
+  swarmbox-tabs list                                     the tabs, a JSON list
+  swarmbox-tabs active                                   the active tab, a JSON object
+  swarmbox-tabs screen TAB [--lines N]                   the text on the tab now (JSON object, see below)
+  swarmbox-tabs send TAB (--run TEXT | --input TEXT) [--queue] [--slash]
+                                                         type into the tab. --run types TEXT and presses Enter; --input types TEXT as it is
+                                                         ({Esc} {C-c} {Enter} {Up} ... are keys, see KEYS). TEXT "-" reads stdin (long or
+                                                         multi-line text: one trailing newline is dropped). --queue types although the agent in
+                                                         the tab is busy; --slash allows a first character "/" or "!" for an agent.
 
-  list_tabs()        one dict per tab (a window of the session): tab "@3" (the address), label "1:name", index, name, dir, cmd, pane, panes,
-                     active (true for exactly one)
-  screen(tab, lines) {"tab", "pane", "text", "cursor", "alternate", "in_mode", "mode", "size", "lines"}; text is made from the plain text of the pane:
-                     the last `lines` lines, the secrets removed (on whole lines, whatever the colours), then the markers written and a
-                     line longer than 1000 characters cut. Text of the pane that looks like a marker has one more `[` (see to_marked)
-  send(tab, body)    body is {"run": text} (typed literally, then Enter) or {"input": text} (braces keys, see parse_keys); both accept
-                     "queue": true (type although the agent in the tab is busy) and "slash": true (allow a first character "/" or "!")
+Output: JSON on stdout, always. Success: the object or list above; send answers {"ok":true,"tab":"@3","pane":"%3","submitted":BOOL}. A
+failure is {"err":CODE,"msg":TEXT} (also on stdout, so a program has one place to read) and a non-zero exit.
+Exit codes: 0 ok; 1 the call was understood and refused or failed: no_such_tab ambiguous_tab dialog_open busy_tab slash_refused
+not_submitted tmux_error lock_error; 2 usage or a text that cannot be typed (usage, bad_body); 4 tmux is not there: no_tmux, or no_session
+(no server, or no session of that name); 5 timeout (tmux, or an earlier send to the same tab still running).
 
-Errors are raised as the error class the bus gives to the constructor (swarmbox-bus's DriverError(code, message)): no_such_tab,
-ambiguous_tab, bad_body, no_session, no_tmux, timeout, dialog_open, busy_tab, slash_refused, not_submitted, tmux_error.
-
-Tabs.  A tab is a tmux window of the session "main" (SB_BUS_TMUX_SESSION). The address is the window id "@3" (stable, never reused), and the
+Tabs.  A tab is a tmux window of the session "main" (SB_TABS_SESSION). The address is the window id "@3" (stable, never reused), and the
 label "index:name" is accepted too, as is a bare index or a bare name; a name used by two windows is the error ambiguous_tab that lists the
 candidates. The tmux target of every call is the pane id "%7", never the window. Panes that carry one of the pane options in HIDDEN_OPTIONS
 (the panels of the sysop and of voice) are never listed, never a target, and a window with only such panes is not a tab. The pane of a tab is
 its active pane, or, when the focus is in a panel, the pane that had it before (pane_last), or the first one.
 The active tab is the window shown by the non-control client with the latest client_activity (1 s resolution, a tie is arbitrary); the
 current window of the session when no client shows a tab.
+  list:    one object per tab: tab "@3" (the address), label "1:name", index, name, dir, cmd, pane, panes, active (true for exactly one)
+  screen:  {"tab", "pane", "text", "cursor", "alternate", "in_mode", "mode", "size", "lines"}; text is made from the plain text of the pane:
+           the last `lines` lines, the secrets removed (on whole lines, whatever the colours), then the markers written and a line longer
+           than 1000 characters cut. Text of the pane that looks like a marker has one more `[` (see to_marked)
 
-The tmux used: `tmux` (or SB_BUS_TMUX_BIN), with `-L SB_BUS_TMUX_SOCKET` when that is set (tests); TMUX_TMPDIR is passed on as it is. TMUX is removed
-from the environment of every call so a nested shell never changes the server. Every tmux call has a timeout.
+Environment.  SB_TABS_SESSION (default main), SB_TABS_SOCKET (a tmux server with -L, for tests), SB_TABS_BIN (the tmux program, default tmux),
+SB_RUN_DIR (the run folder: the locks are in its subfolder tabs/, default /tmp/swarmbox); TMUX_TMPDIR passes on to tmux as it is. TMUX is
+removed from the environment of every call so a nested shell never changes the server. Every tmux call has a timeout.
 
 Typing.  The text goes as `send-keys -l -- piece` calls of CHUNK characters (a `;` at the end of a piece as the key 0x3b: tmux would take
-it for the end of the command), then, after PAUSE seconds, each key (the Enter of `run` too) as its own tmux call:
+it for the end of the command), then, after PAUSE seconds, each key (the Enter of --run too) as its own tmux call:
 two processes, never one burst, because a terminal program that sees text and Enter in one burst treats it as a paste and the Enter
 becomes a line break (docs/spikes/enter.md: 0 of 4 at 600 characters). A pane in copy mode gets `-X cancel` first.
 When the pane runs an agent (Claude Code: the input box between two rules, a dialog, "esc to interrupt"; or the command is a known agent) and
-the message submits text (text followed by Enter): a dialog is refused (dialog_open), a busy agent is refused unless "queue", a text that
-starts with "/" or "!" is refused unless "slash" (it would open a menu or run a shell command; every text that is submitted is checked, not
-only the first, and a body that submits more than one text to an agent needs "queue", because the agent is busy after the first), and after the Enter the driver checks that the end
-of the text left the input box, pressing Enter once more only when it did not (not_submitted when it still did not). Plain `input` (keys,
-or text without Enter) is not judged: it is how a dialog is answered and a busy agent interrupted.
+the message submits text (text followed by Enter): a dialog is refused (dialog_open), a busy agent is refused unless --queue, a text that
+starts with "/" or "!" is refused unless --slash (it would open a menu or run a shell command; every text that is submitted is checked, not
+only the first, and a body that submits more than one text to an agent needs --queue, because the agent is busy after the first), and after the Enter the
+call checks that the end of the text left the input box, pressing Enter once more only when it did not (not_submitted when it still did not).
+Plain --input (keys, or text without Enter) is not judged: it is how a dialog is answered and a busy agent interrupted.
+
+The lock.  A send holds an flock on <run folder>/tabs/<window id>.lock for as long as it types (the kernel drops it however the process
+dies), so two sends to one tab, from any processes, never interleave; the second waits up to LOCK_TIMEOUT seconds and then fails with timeout,
+nothing typed. Reads (list, active, screen) take no lock. No other state is kept.
+
+The library.  Importing this file by path (importlib.util.spec_from_file_location) gives the class Tabs, the same calls without
+a process: list_tabs(), active(), screen(tab, lines=None), send(tab, run=None, input=None, queue=False, slash=False); failures are raised as
+TabsError(code, message). The pure functions (redact, to_marked, parse_keys, agent_state, input_box) are importable too. Recommended for a
+plugin: run the command, not the library. The command is the contract (JSON, exit codes, the lock, the timeouts, the same code path as every
+other caller, nothing to import from the host's files, a failure that cannot take the plugin's process down); the library is for tests and
+for this file's own main(). The cost is one Python start-up (about 15 ms) per call.
 """
+import contextlib
+import fcntl
+import json
 import os
 import re
 import subprocess
-import threading
+import sys
 import time
 from collections import namedtuple
 
 SEP = "@@sb@@"     # never a tab: tmux 3.6+ prints control characters of a list as `_` when it has no terminal
-HIDDEN_OPTIONS = ("@swarmbox_sysop_panel", "@swarmbox_voice_panel")
+HIDDEN_OPTIONS = ("@swarmbox_sysop_panel",)
 HIDDEN_MARKERS = ("SWARMBOX_SYSOP_PANEL=1",)      # in the start command of a panel pane (container/tools/sysop/lib/swarmbox_sysop/dock.py PANEL_COMMAND)
 PAUSE = 0.15
-MAX_STEPS = 100          # steps (texts and keys) of one body: each key costs PAUSE plus a tmux process (about 0.15 s), the bus gives a call 30 s
+MAX_STEPS = 100          # steps (texts and keys) of one send: each key costs PAUSE plus a tmux process (about 0.15 s)
+LOCK_TIMEOUT = 30.0      # seconds a send waits for an earlier send to the same tab
+MAX_STDIN = 1 << 20      # bytes of a text read from stdin
 CHUNK = 1024             # characters of one send-keys word (4 KiB at most in UTF-8, far below the 16 KB that tmux accepts in a command)
 TMUX_TIMEOUT = 5.0
 MAX_LINE = 1000          # characters of one line of a screen, cut after the secrets filter (see _render)
@@ -57,11 +81,21 @@ REDACTED = "[REDACTED]"
 
 Tab = namedtuple("Tab", "id index name cwd command pane panes active label")
 
+# exit code of the command for each error code (the others are 1); see the docstring
+EXIT = {"usage": 2, "bad_body": 2, "no_tmux": 4, "no_session": 4, "timeout": 5}
+
+
+class TabsError(Exception):
+    """A failure of the tabs: `code` is a short word (no_such_tab, dialog_open, ...), `message` the text for a person."""
+
+    def __init__(self, code, message=""):
+        Exception.__init__(self, "%s: %s" % (code, message) if message else code)
+        self.code, self.message = code, message
+
 
 # ---------------------------------------------------------------------------------------------------------------- the secrets filter
-# A copy of the redaction of the voice plugin (container/tools/voice/lib/swarmbox_voice/context.py, the version with linear-time
-# patterns): the bus is part of the host image and voice is an optional plugin, so the bus does not import it. tests/test_bus_tmux.py
-# checks that the two stay the same.
+# The one secrets filter of the box: every screen swarmbox-tabs reads passes through it. Its patterns run in linear time (no pattern
+# rescans a long run from every position inside it); tests/test_tabs_redact_dos.py measures that on adversarial text.
 
 _PATTERNS = [
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S),
@@ -124,8 +158,74 @@ def _sub(pat, fn, text, org):
     return "".join(out), o2
 
 
+_TOKEN_END = re.compile(r"[A-Za-z0-9_-]{16,}$")
+_TOKEN_ROW = re.compile(r"[A-Za-z0-9_-]+$")
+
+
+def _wrapped_spans(text):
+    """Spans (start, end) of the secrets that a program wrapped with hard line breaks (a TUI at a narrow width): the rows are joined, the token
+    patterns run on the joined text and each match is mapped back to the rows. A group is a row that ends with 16 or more token characters
+    followed by rows made only of token characters, as long as each row but the last ends with 16 or more of them. The line-wise pass cannot
+    see these: the continuation rows have no keyword or prefix."""
+    spans, lines, pos, i = [], text.split("\n"), 0, 0
+    starts = []
+    for ln in lines:
+        starts.append(pos)
+        pos += len(ln) + 1
+    while i < len(lines):
+        j = i
+        while j + 1 < len(lines) and _TOKEN_END.search(lines[j]) and _TOKEN_ROW.match(lines[j + 1]):
+            j += 1
+        if j == i:
+            i += 1
+            continue
+        joined, idx = [], []
+        for k in range(i, j + 1):
+            joined.append(lines[k])
+            idx.extend(range(starts[k], starts[k] + len(lines[k])))
+        joined = "".join(joined)
+        for pat in _PATTERNS:
+            for m in pat.finditer(joined):
+                a = m.end("keep") if "keep" in pat.groupindex and m.group("keep") is not None else m.start()
+                b = m.end()
+                run = None
+                for q in range(a, b):
+                    if run is not None and idx[q] == run[1]:
+                        run[1] += 1
+                    else:
+                        if run is not None:
+                            spans.append(tuple(run))
+                        run = [idx[q], idx[q] + 1]
+                if run is not None:
+                    spans.append(tuple(run))
+        i = j + 1
+    return spans
+
+
+def _replace_spans(text, org, spans):
+    """text with each span replaced by REDACTED; a replacement takes the org entry of the first character it replaces."""
+    out, o2, pos = [], [], 0
+    for a, b in sorted(set(spans)):
+        if a < pos:
+            a = pos
+        if b <= a:
+            continue
+        out.append(text[pos:a] + REDACTED)
+        if org is not None:
+            o2.extend(org[pos:a])
+            o2.extend([org[a]] * len(REDACTED))
+        pos = b
+    out.append(text[pos:])
+    if org is not None:
+        o2.extend(org[pos:])
+    return "".join(out), (o2 if org is not None else None)
+
+
 def redact_tracked(text, org=None):
     """(text, org) with the secrets removed; org is None when it was None (see _sub)."""
+    spans = _wrapped_spans(text)
+    if spans:
+        text, org = _replace_spans(text, org, spans)
     for pat in _PATTERNS:
         text, org = _sub(pat, _secret, text, org)
     text, org = _sub(_AUTH, lambda m: m.group(1) + ": " + REDACTED, text, org)
@@ -391,15 +491,16 @@ def agent_state(rows, command=""):
     return True, "idle" if box else "unknown"
 
 
-class TmuxDriver:
-    def __init__(self, error, session=None, socket=None, pause=PAUSE, timeout=TMUX_TIMEOUT, verify_timeout=VERIFY_TIMEOUT, binary=None):
-        self.error = error
-        self.session = session or os.environ.get("SB_BUS_TMUX_SESSION") or "main"
-        self.socket = socket if socket is not None else os.environ.get("SB_BUS_TMUX_SOCKET")
-        self.binary = binary or os.environ.get("SB_BUS_TMUX_BIN") or "tmux"
-        self.pause, self.timeout, self.verify_timeout = pause, timeout, verify_timeout
-        self._locks = {}
-        self._locks_guard = threading.Lock()
+class Tabs:
+    """The tabs of one tmux session: the calls of the docstring without a process. Every argument has a default from the environment."""
+
+    def __init__(self, session=None, socket=None, binary=None, run_dir=None, pause=PAUSE, timeout=TMUX_TIMEOUT, verify_timeout=VERIFY_TIMEOUT,
+                 lock_timeout=LOCK_TIMEOUT):
+        self.session = session or os.environ.get("SB_TABS_SESSION") or "main"
+        self.socket = socket if socket is not None else os.environ.get("SB_TABS_SOCKET")
+        self.binary = binary or os.environ.get("SB_TABS_BIN") or "tmux"
+        self.run_dir = run_dir or os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox"
+        self.pause, self.timeout, self.verify_timeout, self.lock_timeout = pause, timeout, verify_timeout, lock_timeout
 
     # ---- tmux
     def tmux(self, *args, check=True):
@@ -408,19 +509,19 @@ class TmuxDriver:
         try:
             p = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=self.timeout)
         except subprocess.TimeoutExpired:
-            raise self.error("timeout", "tmux %s did not answer in %g s" % (args[0], self.timeout))
+            raise TabsError("timeout", "tmux %s did not answer in %g s" % (args[0], self.timeout))
         except FileNotFoundError:
-            raise self.error("no_tmux", "tmux is not installed")
+            raise TabsError("no_tmux", "tmux is not installed")
         except OSError as e:
-            raise self.error("no_tmux", "cannot run tmux: %s" % (e.strerror or e))
+            raise TabsError("no_tmux", "cannot run tmux: %s" % (e.strerror or e))
         out = p.stdout.decode("utf-8", "replace")
         if check and p.returncode != 0:
             msg = p.stderr.decode("utf-8", "replace").strip() or "tmux %s failed" % args[0]
             if "no server running" in msg or "can't find session" in msg or "error connecting" in msg:
-                raise self.error("no_session", "no tmux session %s (%s)" % (self.session, msg))
+                raise TabsError("no_session", "no tmux session %s (%s)" % (self.session, msg))
             if "can't find pane" in msg or "can't find window" in msg:
-                raise self.error("no_such_tab", "the tab closed (%s)" % msg)
-            raise self.error("tmux_error", msg)
+                raise TabsError("no_such_tab", "the tab closed (%s)" % msg)
+            raise TabsError("tmux_error", msg)
         return out
 
     # ---- tabs
@@ -433,20 +534,28 @@ class TmuxDriver:
             fmt = SEP.join(fields)
             try:
                 listing = self.tmux("list-panes", "-s", "-t", "=" + self.session, "-F", fmt)
-            except self.error as e:
+            except TabsError as e:
                 if e.code == "no_such_tab":         # the target of this call is the session: "can't find window" means it is not there
-                    raise self.error("no_session", "no tmux session %s (%s)" % (self.session, e.message))
+                    raise TabsError("no_session", "no tmux session %s (%s)" % (self.session, e.message))
                 raise
             return [line.split(SEP, len(fields) - 1) for line in listing.splitlines()]
         flags = ["#{?#{%s},1,0}" % o for o in HIDDEN_OPTIONS]
         wins, order, panes = {}, [], {}
-        first = ask("#{window_id}", "#{window_index}", "#{pane_id}", "#{pane_active}", "#{pane_last}", *flags, "#{pane_start_command}", "#{window_name}")
+        first = ask("#{window_id}", "#{window_index}", "#{pane_id}", "#{pane_active}", "#{pane_last}", *flags, "#{window_name}")
+
+        def column(field):
+            # a value with a newline in it (a directory can be named so) would add lines, even lines that look like another pane's: when the
+            # pane ids of the answer are not exactly those of the first call, the values are not trusted at all
+            rows = ask("#{pane_id}", field)
+            ok = [p[0] for p in rows] == [p[2] for p in first if len(p) > 2] and all(len(p) == 2 for p in rows)
+            return {p[0]: p[1] for p in rows} if ok else {}
+        starts = column("#{pane_start_command}")      # in a call of its own: a start command can hold SEP (`sleep 99 # @@sb@@x`)
         for p in first:
             n = len(HIDDEN_OPTIONS)
-            if len(p) != 7 + n or any(f == "1" for f in p[5:5 + n]):
+            if len(p) != 6 + n or any(f == "1" for f in p[5:5 + n]):
                 continue
             # a panel pane is also known by the marker in its start command: split-window makes the pane before the option can be set on it
-            if any(m in p[5 + n] for m in HIDDEN_MARKERS):
+            if any(m in starts.get(p[2], "") for m in HIDDEN_MARKERS):
                 continue
             if p[0] not in wins:
                 try:
@@ -457,13 +566,6 @@ class TmuxDriver:
                 order.append(p[0])
             wins[p[0]]["rows"].append(p)
             panes[p[2]] = p
-
-        def column(field):
-            # a value with a newline in it (a directory can be named so) would add lines, even lines that look like another pane's: when the
-            # pane ids of the answer are not exactly those of the first call, the values are not trusted at all
-            rows = ask("#{pane_id}", field)
-            ok = [p[0] for p in rows] == [p[2] for p in first if len(p) > 2] and all(len(p) == 2 for p in rows)
-            return {p[0]: p[1] for p in rows} if ok else {}
         cwds, cmds = column("#{pane_current_path}"), column("#{pane_current_command}")
         home = os.path.expanduser("~")
         tabs = []
@@ -504,6 +606,13 @@ class TmuxDriver:
         return [{"tab": t.id, "label": t.label, "index": t.index, "name": t.name, "dir": t.cwd, "cmd": t.command, "pane": t.pane,
                  "panes": t.panes, "active": t.active} for t in self.tabs()]
 
+    def active(self):
+        """the dict of list_tabs() of the active tab; no_such_tab when the session has no tab"""
+        for t in self.list_tabs():
+            if t["active"]:
+                return t
+        raise TabsError("no_such_tab", "the session %s has no tab" % self.session)
+
     def resolve(self, tab):
         """Tab for "@3", "1:name" (the label), "1" (the index) or "name". no_such_tab, or ambiguous_tab with the candidates."""
         tabs = self._windows()
@@ -511,9 +620,9 @@ class TmuxDriver:
         hit = [t for t in tabs if t.id == s] or [t for t in tabs if t.label == s] or [t for t in tabs if s.isdigit() and t.index == int(s)] \
             or [t for t in tabs if t.name == s]
         if not hit:
-            raise self.error("no_such_tab", "no tab %s; the tabs are: %s" % (s, ", ".join("%s (%s)" % (t.label, t.id) for t in tabs) or "none"))
+            raise TabsError("no_such_tab", "no tab %s; the tabs are: %s" % (s, ", ".join("%s (%s)" % (t.label, t.id) for t in tabs) or "none"))
         if len(hit) > 1:
-            raise self.error("ambiguous_tab", "the name %s is used by %s: use the id" % (s, ", ".join("%s (%s)" % (t.label, t.id) for t in hit)))
+            raise TabsError("ambiguous_tab", "the name %s is used by %s: use the id" % (s, ", ".join("%s (%s)" % (t.label, t.id) for t in hit)))
         return hit[0]
 
     # ---- the screen
@@ -526,7 +635,7 @@ class TmuxDriver:
         fmt = SEP.join(["#{cursor_x}", "#{cursor_y}", "#{pane_in_mode}", "#{alternate_on}", "#{pane_width}", "#{pane_height}", "#{pane_mode}"])
         meta = self.tmux("display-message", "-p", "-t", t.pane, fmt).rstrip("\n").split(SEP)
         if len(meta) != 7:
-            raise self.error("tmux_error", "unexpected answer of display-message")
+            raise TabsError("tmux_error", "unexpected answer of display-message")
         alternate = meta[3] == "1"
         n = None if alternate else lines     # a full-screen program has no scrollback: only the visible screen exists
         args = ["capture-pane", "-p", "-J", "-e", "-t", t.pane]
@@ -546,9 +655,29 @@ class TmuxDriver:
                 "in_mode": meta[2] == "1", "mode": meta[6], "size": [int(meta[4]), int(meta[5])], "lines": n}
 
     # ---- typing
-    def _lock(self, pane):
-        with self._locks_guard:
-            return self._locks.setdefault(pane, threading.Lock())
+    @contextlib.contextmanager
+    def _lock(self, wid):
+        """flock on <run folder>/tabs/<window id>.lock: one send at a time per tab, across processes; waits up to lock_timeout"""
+        d = os.path.join(self.run_dir, "tabs")
+        path = os.path.join(d, "tab-%s.lock" % re.sub(r"[^0-9A-Za-z]", "", wid))
+        try:
+            os.makedirs(d, mode=0o700, exist_ok=True)
+            fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        except OSError as e:
+            raise TabsError("lock_error", "cannot create the lock %s: %s" % (path, e.strerror or e))
+        try:
+            end = time.time() + self.lock_timeout
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.time() >= end:
+                        raise TabsError("timeout", "an earlier send to the tab %s is still typing (waited %g s); nothing was typed" % (wid, self.lock_timeout))
+                    time.sleep(0.02)
+            yield
+        finally:
+            os.close(fd)        # closing drops the lock
 
     def _body(self, body):
         """(steps, submit, queue, slash) of a body, or bad_body."""
@@ -557,26 +686,37 @@ class TmuxDriver:
             ok = all(k in ("run", "input", "queue", "slash") for k in body) and all(isinstance(body[k], bool) for k in ("queue", "slash") if k in body)
         key = "run" if isinstance(body, dict) and "run" in body else "input"
         if not ok or not isinstance(body.get(key), str) or not body[key]:
-            raise self.error("bad_body", 'the body of a tab message is {"run": text} or {"input": text}, with the optional booleans "queue" and "slash"')
+            raise TabsError("bad_body", 'a send is --run TEXT or --input TEXT (a non-empty text), with the optional --queue and --slash')
         text = body[key]
         if "\x00" in text:
-            raise self.error("bad_body", "the text holds a NUL character")
+            raise TabsError("bad_body", "the text holds a NUL character")
         try:
             text.encode("utf-8")
         except UnicodeEncodeError:
-            raise self.error("bad_body", "the text is not valid Unicode (a lone surrogate)")
+            raise TabsError("bad_body", "the text is not valid Unicode (a lone surrogate)")
         steps = [("text", text), ("key", "Enter")] if key == "run" else parse_keys(text)
         if not steps:
-            raise self.error("bad_body", "nothing to type")
+            raise TabsError("bad_body", "nothing to type")
         if len(steps) > MAX_STEPS:
-            raise self.error("bad_body", "%d steps (texts and keys) in one message, at most %d: send it in several messages" % (len(steps), MAX_STEPS))
+            raise TabsError("bad_body", "%d steps (texts and keys) in one message, at most %d: send it in several messages" % (len(steps), MAX_STEPS))
         has_text = any(k == "text" for k, _ in steps)
         return steps, has_text and any(k == "key" and v == "Enter" for k, v in steps), bool(body.get("queue")), bool(body.get("slash"))
 
-    def send(self, tab, body):
+    def send(self, tab, run=None, input=None, queue=False, slash=False):
+        """type into a tab: run=TEXT (TEXT and Enter) or input=TEXT (braces keys); returns {"ok", "tab", "pane", "submitted"}"""
+        body = {k: v for k, v in (("run", run), ("input", input)) if v is not None}
+        if queue:
+            body["queue"] = True
+        if slash:
+            body["slash"] = True
+        return self.send_body(tab, body)
+
+    def send_body(self, tab, body):
+        """send() with its arguments as a dict: {"run": text} or {"input": text}, with the optional booleans "queue" and "slash"; bad_body
+        for anything else"""
         steps, submit, queue, slash = self._body(body)
         t = self.resolve(tab)
-        with self._lock(t.pane):
+        with self._lock(t.id):
             if self.tmux("display-message", "-p", "-t", t.pane, "#{pane_in_mode}").strip() == "1":
                 self.tmux("send-keys", "-t", t.pane, "-X", "cancel")
             agent = False
@@ -585,14 +725,14 @@ class TmuxDriver:
                 agent, state = agent_state(self._plain_rows(t.pane), t.command)
                 if agent:
                     if state == "dialog":
-                        raise self.error("dialog_open", "a dialog is open in the tab; answer it with input (a key), nothing was typed")
+                        raise TabsError("dialog_open", "a dialog is open in the tab; answer it with input (a key), nothing was typed")
                     if state == "busy" and not queue:
-                        raise self.error("busy_tab", 'the agent in the tab is busy; nothing was typed (use "queue": true to queue the message, or interrupt it with {Esc})')
+                        raise TabsError("busy_tab", 'the agent in the tab is busy; nothing was typed (use --queue to queue the message, or interrupt it with --input {Esc})')
                     if len(submitted) > 1 and not queue:
                         # the state above is read once: after the first Enter the agent works, so the later texts would be typed into a busy agent
-                        raise self.error("busy_tab", 'the message submits %d texts to an agent, and the agent is busy after the first; nothing was typed (use "queue": true, or send one message per text)' % len(submitted))
+                        raise TabsError("busy_tab", 'the message submits %d texts to an agent, and the agent is busy after the first; nothing was typed (use --queue, or send one message per text)' % len(submitted))
                     if not slash and any(steps[i][1][:1] in ("/", "!") for i in submitted):
-                        raise self.error("slash_refused", 'text that starts with "/" or "!" is a command for the agent, not a prompt; nothing was typed ("slash": true allows it)')
+                        raise TabsError("slash_refused", 'text that starts with "/" or "!" is a command for the agent, not a prompt; nothing was typed (--slash allows it)')
             last_enter = max(i for i, (k, v) in enumerate(steps) if k == "key" and v == "Enter") if submit else -1
             for i, (kind, val) in enumerate(steps):
                 if i and self.pause:
@@ -603,6 +743,7 @@ class TmuxDriver:
                     self.tmux("send-keys", "-t", t.pane, val)
                 if agent and i == last_enter:
                     self._verify(t, steps, i)
+        return {"ok": True, "tab": t.id, "pane": t.pane, "submitted": submit}
 
     @staticmethod
     def _submitted(steps):
@@ -661,4 +802,101 @@ class TmuxDriver:
                 time.sleep(0.1)
             if attempt == 1:
                 self.tmux("send-keys", "-t", t.pane, "Enter")
-        raise self.error("not_submitted", "the text was typed but did not leave the input box")
+        raise TabsError("not_submitted", "the text was typed but did not leave the input box")
+
+
+# ---------------------------------------------------------------------------------------------------------------- the command line
+
+def usage_error(msg):
+    return TabsError("usage", msg + " (swarmbox-tabs --help)")
+
+
+def read_stdin():
+    data = sys.stdin.buffer.read(MAX_STDIN + 1)
+    if len(data) > MAX_STDIN:
+        raise TabsError("bad_body", "more than %d bytes on stdin" % MAX_STDIN)
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise TabsError("bad_body", "the text on stdin is not valid UTF-8")
+    return text[:-1] if text.endswith("\n") else text
+
+
+def parse_args(a, takes, flags):
+    """(opts, positional) of a: takes are the options with a value, flags the ones without; usage error for anything else"""
+    opts, rest, i = {}, [], 0
+    while i < len(a):
+        x = a[i]
+        if x in takes:
+            if i + 1 >= len(a):
+                raise usage_error("%s takes a value" % x)
+            if x in opts:
+                raise usage_error("%s given twice" % x)
+            opts[x] = a[i + 1]
+            i += 1
+        elif x in flags:
+            opts[x] = True
+        elif x.startswith("-") and x != "-":
+            raise usage_error("unknown option %s" % x)
+        else:
+            rest.append(x)
+        i += 1
+    return opts, rest
+
+
+def run(argv, tabs=None):
+    """the command: a JSON-able result, or TabsError"""
+    if not argv:
+        raise usage_error("a command is needed: list, active, screen, send")
+    cmd, a = argv[0], argv[1:]
+    tabs = tabs or Tabs()
+    if cmd in ("list", "active"):
+        opts, rest = parse_args(a, (), ())
+        if rest:
+            raise usage_error("%s takes no argument" % cmd)
+        return tabs.list_tabs() if cmd == "list" else tabs.active()
+    if cmd == "screen":
+        opts, rest = parse_args(a, ("--lines",), ())
+        if len(rest) != 1:
+            raise usage_error("usage: screen TAB [--lines N]")
+        lines = None
+        if "--lines" in opts:
+            try:
+                lines = int(opts["--lines"])
+            except ValueError:
+                lines = 0
+            if not 0 < lines <= 100000:
+                raise usage_error("--lines takes a number from 1 to 100000")
+        return tabs.screen(rest[0], lines)
+    if cmd == "send":
+        opts, rest = parse_args(a, ("--run", "--input"), ("--queue", "--slash"))
+        if len(rest) != 1 or ("--run" in opts) == ("--input" in opts):
+            raise usage_error("usage: send TAB (--run TEXT | --input TEXT) [--queue] [--slash]")
+        key = "--run" if "--run" in opts else "--input"
+        text = read_stdin() if opts[key] == "-" else opts[key]
+        return tabs.send(rest[0], run=text if key == "--run" else None, input=text if key == "--input" else None,
+                         queue="--queue" in opts, slash="--slash" in opts)
+    raise usage_error("unknown command %s" % cmd)
+
+
+def main(argv):
+    if argv[:1] in (["-h"], ["--help"], ["help"]):
+        print(__doc__)
+        return 0
+    try:
+        out, rc = run(argv), 0
+    except TabsError as e:
+        out, rc = {"err": e.code, "msg": e.message}, EXIT.get(e.code, 1)
+    try:
+        print(json.dumps(out, ensure_ascii=False))
+        sys.stdout.flush()
+    except BrokenPipeError:
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+    return rc
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(130)

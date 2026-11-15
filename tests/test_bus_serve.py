@@ -36,10 +36,10 @@ class RealBroker(ServeCase):
         self.assertEqual(self.health_lines(), [])
         self.assertEqual(self.bus("ping").returncode, 0)
         self.assertEqual(oct(os.stat(self.sock).st_mode & 0o777), "0o600")
-        sub = subprocess.Popen(["swarmbox-bus", "sub", "--raw", "-v"], env=dict(self.env(), SB_BUS_SOCKET=self.sock),
+        sub = subprocess.Popen(["swarmbox-bus", "sub", "--raw", "-v", "jobs"], env=dict(self.env(), SB_BUS_SOCKET=self.sock),
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.assertIn(b"subscribed", sub.stderr.readline())
-        self.assertEqual(self.bus("pub", "goal", "hello").returncode, 0)
+        self.assertEqual(self.bus("pub", "jobs", "hello").returncode, 0)
         self.assertEqual(sub.stdout.readline(), b"hello\n")
         sub.terminate()
         sub.wait()
@@ -63,7 +63,7 @@ class RealBroker(ServeCase):
         self.assertLess(dt, 4)
         self.assertTrue(alive(sup))
         self.assertIn("bus exited; restarting in 1 s", self.serve_log())
-        self.assertEqual(self.bus("ls").returncode, 0)          # the broker answers (its driver is the tmux one: this run has no tmux session)
+        self.assertEqual(self.bus("topics").returncode, 0)      # the broker answers
         # a second kill: 2 s of backoff
         t0 = time.time()
         os.kill(new, signal.SIGKILL)

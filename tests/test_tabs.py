@@ -1,7 +1,7 @@
-"""The tmux driver of swarmbox-bus (container/scripts/swarmbox-bus-tmux.py) against a FAKE tmux (tests/bus_tmux_support.py): the active-tab
-rule, addressing, the hidden panels, the screen pipeline (markers, last N lines, clip, secrets), the typing rules (pause, separate Enter,
-dialog, busy, queue, slash, verify, copy mode, braces), errors, timeouts, and the driver through a real broker. No tmux, network or model.
-The same driver against a real tmux is tests/test_bus_tmux_real.py (Podman). Run with: python3 tests/test_bus_tmux.py"""
+"""swarmbox-tabs (container/scripts/swarmbox-tabs.py) against a FAKE tmux (tests/tabs_support.py): the active-tab rule, addressing, the
+hidden panels, the screen pipeline (markers, last N lines, clip, secrets), the typing rules (pause, separate Enter, dialog, busy, queue, slash,
+verify, copy mode, braces), errors, timeouts, the lock between sends, and the command line (JSON, exit codes, stdin). No tmux, network or model.
+The same code against a real tmux is tests/test_tabs_real.py (Podman). Run with: python3 tests/test_tabs.py"""
 import os
 import sys
 import threading
@@ -9,8 +9,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from bus_support import Harness, bus, short_tmp  # noqa: E402
-from bus_tmux_support import FakeTmux, claude_pane, load_module  # noqa: E402
+from tabs_support import FakeTmux, claude_pane, load_module  # noqa: E402
 from helpers import ROOT  # noqa: E402
 
 mod = load_module()
@@ -75,13 +74,26 @@ class TestTabs(Base):
         w = ft.state["windows"][0]
         w["panes"][0].update(active=False, last=True)
         w["panes"].append({"id": "%11", "active": True, "sysop": "1", "cmd": "swarmbox-sysop"})
-        w["panes"].append({"id": "%12", "active": False, "voice": "1", "cmd": "swarmbox-voice"})
         ft.save()
         d = ft.driver()
         t = d.list_tabs()[0]
         self.assertEqual((t["pane"], t["panes"]), ("%1", ["%1"]))       # the focus is in the panel: pane_last
         self.assertEqual(d.resolve("@1").pane, "%1")
         self.assertNotIn("sysop", d.screen("@1", None)["text"])
+
+    def test_a_start_command_that_holds_the_separator_cannot_move_the_name(self):
+        ft = self.three()
+        ft.window("@4", 3, "real", start="sleep 99 # %s" % ("x" + mod.SEP + "y" + mod.SEP + "z"))
+        d = ft.save().driver()
+        t = [x for x in d.list_tabs() if x["tab"] == "@4"][0]
+        self.assertEqual((t["name"], t["label"]), ("real", "3:real"))
+        self.assertEqual(d.resolve("real").id, "@4")
+        self.assertEqual(d.screen("real", None)["tab"], "@4")
+
+    def test_a_panel_is_still_hidden_by_the_marker_in_its_start_command(self):
+        ft = self.three()
+        ft.window("@4", 3, "panel", start="SWARMBOX_SYSOP_PANEL=1 swarmbox-sysop panel")
+        self.assertEqual([t["tab"] for t in ft.save().driver().list_tabs()], ["@1", "@2", "@3"])
 
     def test_addresses_id_label_index_name(self):
         d = self.three().save().driver()
@@ -100,7 +112,7 @@ class TestTabs(Base):
         self.assertEqual(d.resolve("@4").index, 3)                  # the id and the label still work
         self.assertEqual(d.resolve("3:build").id, "@4")
         self.assertEqual(self.code(d.screen, "build", None)[0], "ambiguous_tab")
-        self.assertEqual(self.code(d.send, "build", {"run": "x"})[0], "ambiguous_tab")
+        self.assertEqual(self.code(d.send_body, "build", {"run": "x"})[0], "ambiguous_tab")
         self.assertEqual(self.ft.sent(), [])
 
     def test_a_stale_id_is_no_such_tab_with_the_list(self):
@@ -165,7 +177,7 @@ class TestScreen(Base):
         self.assertNotIn("-S", self.ft.calls("capture-pane")[-1][1])
         self.assertEqual(len(s["text"].split("\n")), 4)             # the visible screen, not the last 3 lines
 
-    def test_the_driver_is_not_a_cache(self):
+    def test_tabs_keeps_no_cache(self):
         self.d.screen("@1", None)
         self.ft.load()
         self.ft.state["windows"][0]["panes"][0]["screen"] = "changed"
@@ -185,7 +197,7 @@ class TestSend(Base):
 
     def test_run_is_text_then_a_separate_enter_after_the_pause(self):
         d = self.ft.driver(pause=0.15)
-        d.send("@1", {"run": "ls -la"})
+        d.send_body("@1", {"run": "ls -la"})
         sent = self.ft.sent()
         self.assertEqual([a for _, a in sent], [["-l", "--", "ls -la"], ["Enter"]])        # two tmux processes, the text is literal
         self.assertGreaterEqual(sent[1][0] - sent[0][0], 0.15)
@@ -193,33 +205,33 @@ class TestSend(Base):
 
     def test_run_is_literal_text_and_braces_in_it_are_not_keys(self):
         d = self.ft.driver()
-        d.send("@1", {"run": "echo {Esc} ${HOME} {"})
+        d.send_body("@1", {"run": "echo {Esc} ${HOME} {"})
         self.assertEqual(self.typed("%1"), ["echo {Esc} ${HOME} {", "<Enter>"])
 
     def test_input_braces_are_keys_exactly_as_parse_keys(self):
         d = self.ft.driver()
-        d.send("@1", {"input": "ab{C-c}{Esc}cd{{x}}{Up}{foo}${HOME}{HOME}{ {\"a\": 1}"})
+        d.send_body("@1", {"input": "ab{C-c}{Esc}cd{{x}}{Up}{foo}${HOME}{HOME}{ {\"a\": 1}"})
         self.assertEqual(self.typed("%1"), ["ab", "<C-c>", "<Escape>", "cd{x}", "<Up>", "{foo}${HOME}{HOME}{ {\"a\": 1}"])
         self.assertEqual(mod.parse_keys("{F12}{F13}{M-x}{M-xy}{c-c}"), [("key", "F12"), ("text", "{F13}"), ("key", "M-x"), ("text", "{M-xy}{c-c}")])
         self.assertEqual(mod.parse_keys("{PgUp}{PgDn}{Delete}{BTab}"), [("key", "PageUp"), ("key", "PageDown"), ("key", "DC"), ("key", "BTab")])
 
     def test_each_key_is_its_own_call_with_the_pause_between(self):
         d = self.ft.driver(pause=0.1)
-        d.send("@1", {"input": "{Esc}{Esc}"})
+        d.send_body("@1", {"input": "{Esc}{Esc}"})
         s = self.ft.sent()
         self.assertEqual([a for _, a in s], [["Escape"], ["Escape"]])
         self.assertGreaterEqual(s[1][0] - s[0][0], 0.1)
 
     def test_multi_line_text_is_one_literal_call(self):
         d = self.ft.driver()
-        d.send("@1", {"run": "line one\nline two \"q\" 'q' `bt` $(id) é"})
+        d.send_body("@1", {"run": "line one\nline two \"q\" 'q' `bt` $(id) é"})
         self.assertEqual(self.typed("%1")[0], "line one\nline two \"q\" 'q' `bt` $(id) é")
 
     def test_a_pane_in_copy_mode_is_cancelled_first(self):
         self.ft.load()
         self.ft.state["windows"][0]["panes"][0]["in_mode"] = True
         self.ft.save()
-        self.ft.driver().send("@1", {"run": "x"})
+        self.ft.driver().send_body("@1", {"run": "x"})
         self.assertEqual(self.typed("%1"), ["<cancel>", "x", "<Enter>"])
         self.assertEqual(self.ft.sent()[0][1], ["-X", "cancel"])
 
@@ -227,51 +239,51 @@ class TestSend(Base):
         d = self.ft.driver()
         for body in ("text", None, 5, [], {}, {"run": 5}, {"run": ""}, {"input": ""}, {"run": "a", "input": "b"}, {"x": "a"}, {"run": "a", "queue": "yes"},
                      {"run": "a", "extra": True}, {"run": "a\x00b"}, {"input": "{{"[:0]}):
-            self.assertEqual(self.code(d.send, "@1", body)[0], "bad_body", repr(body))
+            self.assertEqual(self.code(d.send_body, "@1", body)[0], "bad_body", repr(body))
         self.assertEqual(self.ft.sent(), [])
 
     def test_a_dialog_is_refused_and_nothing_is_typed(self):
         self.ft.window("@3", 2, "dlg", **claude_pane("dialog"))
         self.ft.save()
         d = self.ft.driver()
-        self.assertEqual(self.code(d.send, "@3", {"run": "hello"})[0], "dialog_open")
-        self.assertEqual(self.code(d.send, "@3", {"run": "hello", "queue": True})[0], "dialog_open")      # queueing does not help
+        self.assertEqual(self.code(d.send_body, "@3", {"run": "hello"})[0], "dialog_open")
+        self.assertEqual(self.code(d.send_body, "@3", {"run": "hello", "queue": True})[0], "dialog_open")      # queueing does not help
         self.assertEqual(self.ft.sent(), [])
-        d.send("@3", {"input": "1"})                              # an answer is typed: input is not judged
-        d.send("@3", {"input": "{Enter}"})
+        d.send_body("@3", {"input": "1"})                              # an answer is typed: input is not judged
+        d.send_body("@3", {"input": "{Enter}"})
         self.assertEqual(self.typed("%3"), ["1", "<Enter>"])
 
     def test_a_busy_agent_is_refused_unless_queue(self):
         self.ft.window("@3", 2, "busy", **claude_pane("busy"))
         self.ft.save()
         d = self.ft.driver()
-        code, msg = self.code(d.send, "@3", {"run": "next"})
+        code, msg = self.code(d.send_body, "@3", {"run": "next"})
         self.assertEqual(code, "busy_tab")
         self.assertIn("queue", msg)
         self.assertEqual(self.ft.sent(), [])
-        d.send("@3", {"run": "next", "queue": True})
+        d.send_body("@3", {"run": "next", "queue": True})
         self.assertEqual(self.typed("%3"), ["next", "<Enter>"])
-        d.send("@3", {"input": "{Esc}"})                         # the interrupt is allowed: it is not a submission
+        d.send_body("@3", {"input": "{Esc}"})                         # the interrupt is allowed: it is not a submission
         self.assertEqual(self.ft.pane("%3")["claude"]["mode"], "idle")
 
     def test_slash_and_bang_are_refused_for_an_agent_not_for_a_shell(self):
         d = self.ft.driver()
         for text in ("/help", "!ls"):
-            self.assertEqual(self.code(d.send, "@2", {"run": text})[0], "slash_refused")
+            self.assertEqual(self.code(d.send_body, "@2", {"run": text})[0], "slash_refused")
         self.assertEqual(self.ft.sent(), [])
-        d.send("@1", {"run": "/bin/ls"})                         # a shell: it is a path
-        d.send("@2", {"run": "/clear", "slash": True})           # explicit opt-in
+        d.send_body("@1", {"run": "/bin/ls"})                         # a shell: it is a path
+        d.send_body("@2", {"run": "/clear", "slash": True})           # explicit opt-in
         self.assertEqual(self.typed("%1"), ["/bin/ls", "<Enter>"])
         self.assertEqual(self.typed("%2"), ["/clear", "<Enter>"])
 
     def test_input_text_without_enter_is_raw(self):
         d = self.ft.driver()
-        d.send("@2", {"input": "/not-judged"})
+        d.send_body("@2", {"input": "/not-judged"})
         self.assertEqual(self.typed("%2"), ["/not-judged"])
 
     def test_agent_prompt_is_submitted_and_checked(self):
         d = self.ft.driver()
-        d.send("@2", {"run": "reply with exactly PONG"})
+        d.send_body("@2", {"run": "reply with exactly PONG"})
         self.assertEqual(self.typed("%2"), ["reply with exactly PONG", "<Enter>"])
         c = self.ft.pane("%2")["claude"]
         self.assertEqual(c["box"], "")
@@ -280,13 +292,13 @@ class TestSend(Base):
     def test_a_swallowed_enter_is_pressed_once_more_and_the_text_is_not_typed_again(self):
         self.ft.window("@3", 2, "flaky", **claude_pane(swallow=1))
         self.ft.save()
-        self.ft.driver(verify_timeout=0.3).send("@3", {"run": "a prompt that stays"})
+        self.ft.driver(verify_timeout=0.3).send_body("@3", {"run": "a prompt that stays"})
         self.assertEqual(self.typed("%3"), ["a prompt that stays", "<Enter>", "<Enter>"])
 
     def test_an_enter_that_never_submits_is_not_submitted(self):
         self.ft.window("@3", 2, "stuck", **claude_pane(swallow=99))
         self.ft.save()
-        code, msg = self.code(self.ft.driver(verify_timeout=0.3).send, "@3", {"run": "x prompt"})
+        code, msg = self.code(self.ft.driver(verify_timeout=0.3).send_body, "@3", {"run": "x prompt"})
         self.assertEqual(code, "not_submitted")
         self.assertEqual(self.typed("%3"), ["x prompt", "<Enter>", "<Enter>"])               # two Enters, never more
 
@@ -295,12 +307,12 @@ class TestSend(Base):
         self.ft.state["windows"][2]["panes"][0]["claude"]["box"] = ""
         self.ft.save()
         d = self.ft.driver(verify_timeout=0.2)
-        self.assertEqual(self.code(d.send, "@3", {"run": "long " * 200})[0], "not_submitted")
+        self.assertEqual(self.code(d.send_body, "@3", {"run": "long " * 200})[0], "not_submitted")
 
     def test_a_queued_message_while_busy_counts_as_submitted(self):
         self.ft.window("@3", 2, "busy", **claude_pane("busy"))
         self.ft.save()
-        self.ft.driver(verify_timeout=0.3).send("@3", {"run": "queued one", "queue": True})
+        self.ft.driver(verify_timeout=0.3).send_body("@3", {"run": "queued one", "queue": True})
         self.assertEqual(self.typed("%3"), ["queued one", "<Enter>"])
 
     def test_the_agent_is_known_by_its_screen_when_the_command_is_a_shell(self):
@@ -308,17 +320,17 @@ class TestSend(Base):
         p["cmd"] = "sh"                                           # claude started as the command of new-session
         self.ft.window("@3", 2, "viasn", **p)
         self.ft.save()
-        self.assertEqual(self.code(self.ft.driver().send, "@3", {"run": "x"})[0], "dialog_open")
+        self.assertEqual(self.code(self.ft.driver().send_body, "@3", {"run": "x"})[0], "dialog_open")
 
     def test_a_shell_screen_that_says_do_you_want_to_is_no_dialog(self):
         self.ft.state["windows"][0]["panes"][0]["screen"] = "Do you want to continue? [Y/n]"
         self.ft.save()
-        self.ft.driver().send("@1", {"run": "y"})
+        self.ft.driver().send_body("@1", {"run": "y"})
         self.assertEqual(self.typed("%1"), ["y", "<Enter>"])
 
     def test_sends_to_one_pane_never_interleave(self):
         d = self.ft.driver(pause=0.05)
-        ts = [threading.Thread(target=d.send, args=("@1", {"run": "msg%d" % i})) for i in range(4)]
+        ts = [threading.Thread(target=d.send_body, args=("@1", {"run": "msg%d" % i})) for i in range(4)]
         for t in ts:
             t.start()
         for t in ts:
@@ -342,6 +354,21 @@ class TestScreenSecretsAndMarkers(Base):
         self.pane["screen"] = raw
         self.ft.save()
         return self.d.screen("@1", lines)["text"]
+
+    def test_a_secret_wrapped_by_hard_line_breaks_is_removed_on_every_row(self):
+        # a TUI at a narrow width wraps a token over rows that have no keyword and no prefix; `-` and `_` are token characters
+        tok = "sk-" + "ant-oat01-" + ("Y4rUmer_BH3M1XS0DRdJuPnBIKpi99lSi0tcL21p" * 3)[:95]
+        rows = [tok[:40], tok[40:80], tok[80:]]
+        for raw in ("The login token is:\n" + "\n".join(rows) + "\n$ ready", "login " + rows[0] + "\n" + "\n".join(rows[1:]), "\n".join(rows)):
+            out = self.screen(raw)
+            for i in range(0, len(tok) - 15, 8):
+                self.assertNotIn(tok[i:i + 16], out, raw[:20])
+            self.assertIn("[REDACTED]", out)
+        self.assertTrue(self.screen("The login token is:\n" + "\n".join(rows) + "\n$ ready").endswith("\n$ ready"))
+
+    def test_rows_of_plain_words_are_not_taken_for_a_wrapped_secret(self):
+        text = "installation-directory-listing\nREADME-with-a-long-name-here\nshort"
+        self.assertEqual(self.screen(text), text)
 
     def test_a_colour_inside_a_name_does_not_hide_the_value(self):
         # `grep --color=always KEY .env` paints the matched word red, in the middle of the name
@@ -417,7 +444,7 @@ class TestSendLimits(Base):
     def test_a_long_text_goes_in_small_words_and_is_typed_whole(self):
         d = self.ft.driver()
         text = "echo " + "é" * 5000 + "\n" + "a" * 300000
-        d.send("@1", {"run": text})
+        d.send_body("@1", {"run": text})
         calls = [a for _, a in self.ft.sent() if a[0] == "-l"]
         self.assertGreater(len(calls), 100)
         self.assertLessEqual(max(len(a[-1].encode()) for a in calls), 4096)           # far below the 16 KB of tmux and the 128 KB of an argv word
@@ -429,7 +456,7 @@ class TestSendLimits(Base):
         d = self.ft.driver()
         done = 0
         for text in ("echo SEMI;", "echo B ;", "echo A\\;", ";", ";;;", "a;b;"):
-            d.send("@1", {"input": text})
+            d.send_body("@1", {"input": text})
             self.assertEqual("".join(self.typed("%1")[done:]), text, text)
             done = len(self.typed("%1"))
         for _, a in self.ft.sent():
@@ -437,7 +464,7 @@ class TestSendLimits(Base):
                 self.assertFalse(a[-1].endswith(";"), a)
         # also where a long text is cut: no word ends with ;
         text = "x" * (mod.CHUNK - 1) + ";" + "y" * 10
-        d.send("@1", {"input": text})
+        d.send_body("@1", {"input": text})
         self.assertEqual("".join(self.typed("%1")[done:]), text)
         for _, a in self.ft.sent()[-5:]:
             if a[0] == "-l":
@@ -445,38 +472,38 @@ class TestSendLimits(Base):
 
     def test_too_many_steps_are_refused_before_anything_is_typed(self):
         d = self.ft.driver()
-        code, msg = self.code(d.send, "@1", {"input": "{Down}" * (mod.MAX_STEPS + 1)})
+        code, msg = self.code(d.send_body, "@1", {"input": "{Down}" * (mod.MAX_STEPS + 1)})
         self.assertEqual(code, "bad_body")
         self.assertIn("several messages", msg)
         self.assertEqual(self.ft.sent(), [])
-        d.send("@1", {"input": "{Down}" * mod.MAX_STEPS})
+        d.send_body("@1", {"input": "{Down}" * mod.MAX_STEPS})
         self.assertEqual(len(self.typed("%1")), mod.MAX_STEPS)
 
     def test_a_lone_surrogate_is_a_bad_body(self):
         d = self.ft.driver()
-        self.assertEqual(self.code(d.send, "@1", {"run": "a\ud800b"})[0], "bad_body")
+        self.assertEqual(self.code(d.send_body, "@1", {"run": "a\ud800b"})[0], "bad_body")
         self.assertEqual(self.ft.sent(), [])
 
     def test_every_submitted_text_is_checked_for_slash_and_bang_not_only_the_first(self):
         d = self.ft.driver()
         for body in ("hi{Enter}/exit{Enter}", "hi{Enter}!rm -rf x{Enter}", "a{Enter}b{Down}/c{Enter}"):
-            self.assertEqual(self.code(d.send, "@2", {"input": body, "queue": True})[0], "slash_refused", body)
+            self.assertEqual(self.code(d.send_body, "@2", {"input": body, "queue": True})[0], "slash_refused", body)
         self.assertEqual(self.ft.sent(), [])
-        d.send("@2", {"input": "/ok{Enter}", "slash": True})                 # still allowed, explicitly
+        d.send_body("@2", {"input": "/ok{Enter}", "slash": True})                 # still allowed, explicitly
         self.assertEqual(self.typed("%2"), ["/ok", "<Enter>"])
 
     def test_a_text_that_is_not_submitted_may_start_with_a_slash(self):
         d = self.ft.driver()
-        d.send("@2", {"input": "hi{Enter}x{Down}/y"})            # /y is typed and not submitted
+        d.send_body("@2", {"input": "hi{Enter}x{Down}/y"})            # /y is typed and not submitted
         self.assertEqual(self.typed("%2")[-3:], ["x", "<Down>", "/y"])
 
     def test_two_submits_to_an_agent_need_queue_because_it_is_busy_after_the_first(self):
         d = self.ft.driver()
-        code, msg = self.code(d.send, "@2", {"input": "one{Enter}two{Enter}"})
+        code, msg = self.code(d.send_body, "@2", {"input": "one{Enter}two{Enter}"})
         self.assertEqual(code, "busy_tab")
         self.assertIn("queue", msg)
         self.assertEqual(self.ft.sent(), [])
-        d.send("@1", {"input": "one{Enter}two{Enter}"})            # a shell: no agent, no rule
+        d.send_body("@1", {"input": "one{Enter}two{Enter}"})            # a shell: no agent, no rule
 
 
 class TestHostileWindowText(Base):
@@ -514,7 +541,7 @@ class TestErrors(Base):
         self.ft.state["fail"] = {"send-keys": "can't find pane: %1"}
         d = self.ft.save().driver()
         self.assertEqual([t["tab"] for t in d.list_tabs()], ["@1"])
-        self.assertEqual(self.code(d.send, "@1", {"run": "x"})[0], "no_such_tab")
+        self.assertEqual(self.code(d.send_body, "@1", {"run": "x"})[0], "no_such_tab")
         self.ft.load()
         self.ft.state["fail"] = {"capture-pane": "can't find pane: %1"}
         self.ft.save()
@@ -560,13 +587,15 @@ class TestErrors(Base):
         self.assertIsNone(self.ft.state["env_seen"]["TMUX"])
 
     def test_defaults_come_from_the_environment(self):
-        os.environ.update(SB_BUS_TMUX_SESSION="s2", SB_BUS_TMUX_SOCKET="sock2")
-        self.addCleanup(lambda: [os.environ.pop(k, None) for k in ("SB_BUS_TMUX_SESSION", "SB_BUS_TMUX_SOCKET")])
-        d = mod.TmuxDriver(Exception)
-        self.assertEqual((d.session, d.socket, d.binary), ("s2", "sock2", "tmux"))
-        os.environ.pop("SB_BUS_TMUX_SESSION"), os.environ.pop("SB_BUS_TMUX_SOCKET")
-        d = mod.TmuxDriver(Exception)
-        self.assertEqual((d.session, d.socket, d.pause), ("main", None, 0.15))
+        names = ("SB_TABS_SESSION", "SB_TABS_SOCKET", "SB_TABS_BIN", "SB_RUN_DIR")
+        self.addCleanup(lambda: [os.environ.pop(k, None) for k in names])
+        os.environ.update(SB_TABS_SESSION="s2", SB_TABS_SOCKET="sock2", SB_TABS_BIN="/x/tmux", SB_RUN_DIR="/x/run")
+        d = mod.Tabs()
+        self.assertEqual((d.session, d.socket, d.binary, d.run_dir), ("s2", "sock2", "/x/tmux", "/x/run"))
+        for k in names:
+            os.environ.pop(k)
+        d = mod.Tabs()
+        self.assertEqual((d.session, d.socket, d.binary, d.run_dir, d.pause), ("main", None, "tmux", "/tmp/swarmbox", 0.15))
 
 
 class TestAgentState(unittest.TestCase):
@@ -600,126 +629,229 @@ class TestAgentState(unittest.TestCase):
         self.assertEqual(mod.agent_state(rows, "claude"), (True, "idle"))
 
 
-class TestRedactionStaysInSync(unittest.TestCase):
-    """The bus keeps its own copy of the filter of the voice plugin (it is in the host image, the plugin is optional)."""
+class TestRedactionKeepsWhatItMustAndLeavesText(Base):
+    """The filter of swarmbox-tabs is the only one of the box (it moved here from the voice plugin, whose tests were ported:
+    tests/test_tabs_redact_dos.py has the linear-time and behaviour tests)."""
 
-    def test_same_patterns_and_same_answers(self):
-        sys.path.insert(0, os.path.join(ROOT, "container", "tools", "voice", "lib"))
-        try:
-            from swarmbox_voice import context
-        except ImportError as e:
-            self.skipTest("voice library not importable: %s" % e)
-        pairs = [(mod._PATTERNS, context._PATTERNS)]
-        for n in ("_BEARER", "_AUTH", "_ASSIGN", "_FLAG", "_USERFLAG", "_URLCRED"):
-            pairs.append(([getattr(mod, n)], [getattr(context, n)]))
-        for ours, theirs in pairs:
-            self.assertEqual([(p.pattern, p.flags) for p in ours], [(p.pattern, p.flags) for p in theirs])
-        corpus = ["token=abc123def", "curl --token 'x y' https://u:pw@host/", "Authorization: Bearer abcdefgh12345", KEY, "plain text", "ghp_" + "A" * 24,
-                  "-----BEGIN PRIVATE KEY-----\nxx\n-----END PRIVATE KEY-----", "ssh -u admin:pw box", "eyJabcdefgh.eyJabcdefgh.abcdefghij", "a" * 5000,
-                  "id-eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkw.abcdefghijk", "x_eyJabcdefgh.abcdefgh.abcdefgh", "eyJ-" * 2000]
-        for text in corpus:
-            self.assertEqual(mod.redact(text), context.redact(text), text[:30])
+    def test_known_secret_shapes(self):
+        corpus = {"token=abc123def": "abc123def", "curl --token 'x y' https://u:pw@host/": "pw@", "Authorization: Bearer abcdefgh12345": "abcdefgh12345",
+                  KEY: KEY, "ghp_" + "A" * 24: "A" * 24, "-----BEGIN PRIVATE KEY-----\nxx\n-----END PRIVATE KEY-----": "xx",
+                  "ssh -u admin:pw box": "admin:pw", "eyJabcdefgh.eyJabcdefgh.abcdefghij": "abcdefghij"}
+        for text, secret in corpus.items():
+            with self.subTest(text[:30]):
+                out = mod.redact(text)
+                self.assertNotIn(secret, out)
+                self.assertIn(mod.REDACTED, out)
 
-    def test_the_driver_does_not_import_the_voice_plugin(self):
-        with open(mod.__file__ if hasattr(mod, "__file__") and mod.__file__ else os.path.join(ROOT, "container", "scripts", "swarmbox-bus-tmux.py")) as f:
+    def test_tabs_does_not_import_a_plugin(self):
+        with open(os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py")) as f:
             src = f.read()
-        self.assertNotIn("import swarmbox_voice", src)
-        self.assertNotIn("from swarmbox_voice", src)
+        for name in ("swarmbox_voice", "swarmbox_sysop"):
+            self.assertNotIn("import " + name, src)
+            self.assertNotIn("from " + name, src)
 
 
-class TestImage(unittest.TestCase):
-    def test_the_dockerfile_installs_the_driver_where_the_bus_looks_for_it(self):
-        with open(os.path.join(ROOT, "Dockerfile")) as f:
-            d = f.read()
-        self.assertIn("COPY container/scripts/swarmbox-bus-tmux.py /usr/local/lib/swarmbox/swarmbox-bus-tmux.py", d)
-        self.assertIn("/usr/local/lib/swarmbox/swarmbox-bus-tmux.py /etc/swarmbox/scripts/starship-init.sh", d)       # chmod 644
-        with open(bus.__file__ if getattr(bus, "__file__", None) else os.path.join(ROOT, "container", "scripts", "swarmbox-bus.py")) as f:
-            self.assertIn('"/usr/local/lib/swarmbox"', f.read())
+class TestApi(Base):
+    """the keyword form of the library (send_body, with a dict, is what the tests above use)"""
 
-    def test_the_bus_finds_the_driver_next_to_itself_or_in_the_image_folder(self):
-        os.environ["SB_BUS_DRIVER_DIR"] = "/nonexistent"
-        self.addCleanup(os.environ.pop, "SB_BUS_DRIVER_DIR", None)
-        self.assertTrue(hasattr(bus.load_tmux_module(), "TmuxDriver"))          # the folder of swarmbox-bus.py
+    def test_send_keywords_and_the_result(self):
+        self.ft.window("@1", 0, "sh")
+        self.ft.window("@2", 1, "agent", **claude_pane("busy"))
+        d = self.ft.save().driver()
+        self.assertEqual(d.send("@1", run="ls"), {"ok": True, "tab": "@1", "pane": "%1", "submitted": True})
+        self.assertEqual(d.send("@1", input="ab")["submitted"], False)
+        self.assertEqual(self.ft.pane("%1")["typed"], ["ls", "<Enter>", "ab"])
+        self.assertEqual(self.code(lambda: d.send("@2", run="next"))[0], "busy_tab")
+        self.assertEqual(d.send("@2", run="next", queue=True)["tab"], "@2")
+        self.assertEqual(self.code(lambda: d.send("@1"))[0], "bad_body")
+        self.assertEqual(self.code(lambda: d.send("@1", run="a", input="b"))[0], "bad_body")
+
+    def test_active(self):
+        self.ft.window("@1", 0, "a")
+        self.ft.window("@2", 1, "b")
+        self.ft.client("@2", 50)
+        d = self.ft.save().driver()
+        self.assertEqual(d.active()["tab"], "@2")
+        self.assertEqual(self.code(self.ft.driver(session="other").active)[0], "no_session")
 
 
-class TestThroughTheBroker(Base):
-    """make_driver loads the module by path; pub / get / ls reach the fake tmux through a real broker on a real socket."""
+class TestLock(Base):
+    """a lock per tab (flock in the run folder): two sends to one tab never interleave, whoever sends"""
 
     def setUp(self):
         Base.setUp(self)
-        self.ft.window("@1", 0, "sh", screen="hello \x1b[7mworld\x1b[27m  token=abc12345")
-        self.ft.window("@2", 1, "agent", **claude_pane())
+        self.ft.window("@1", 0, "one")
+        self.ft.window("@2", 1, "two")
         self.ft.save()
-        os.environ["FAKE_TMUX_STATE"] = self.ft.state_path
-        os.environ["SB_BUS_TMUX_BIN"] = self.ft.bin
-        self.addCleanup(lambda: [os.environ.pop(k, None) for k in ("SB_BUS_TMUX_BIN",)])
-        self.h = Harness(bus.make_driver("auto"))
-        self.addCleanup(self.h.close)
 
-    def test_make_driver_gives_a_bus_driver_and_stub_still_exists(self):
-        self.assertIsInstance(self.h.driver, bus.Driver)
-        self.assertIsInstance(bus.make_driver("stub"), bus.StubDriver)
-        self.assertIsInstance(bus.make_driver("tmux"), bus.Driver)
+    def test_the_lock_is_a_file_in_the_run_folder_and_is_kept_between_sends(self):
+        self.ft.driver().send("@1", run="x")
+        self.assertEqual(sorted(os.listdir(os.path.join(self.ft.dir, "tabs"))), ["tab-1.lock"])
+        self.assertEqual(oct(os.stat(os.path.join(self.ft.dir, "tabs", "tab-1.lock")).st_mode & 0o777), "0o600")
+        self.ft.driver().send("@2", run="y")
+        self.assertEqual(sorted(os.listdir(os.path.join(self.ft.dir, "tabs"))), ["tab-1.lock", "tab-2.lock"])
 
-    def test_ls_get_pub(self):
-        h = self.h
-        ls = h.rpc({"op": "ls", "topic": "tab/"})
-        self.assertTrue(ls["ok"])
-        self.assertEqual([t["tab"] for t in ls["result"]], ["@1", "@2"])
-        self.assertEqual(sum(t["active"] for t in ls["result"]), 1)
-        sc = h.rpc({"op": "get", "topic": "tab/@1/screen"})
-        self.assertEqual(sc["result"]["text"], "hello [sel]world[/sel]  token=[REDACTED]")
-        self.assertEqual(h.rpc({"op": "get", "topic": "tab/sh/screen", "lines": 3})["ok"], True)
-        r = h.pub("tab/@2/in", {"run": "reply with exactly PONG-1"})
-        self.assertTrue(r["ok"], r)
-        self.assertEqual(self.ft.pane("%2")["typed"], ["reply with exactly PONG-1", "<Enter>"])
-
-    def test_driver_errors_reach_the_client(self):
-        h = self.h
-        self.assertEqual(h.pub("tab/@9/in", {"run": "x"})["err"], "no_such_tab")
-        self.assertEqual(h.rpc({"op": "get", "topic": "tab/@9/screen"})["err"], "no_such_tab")
-        self.assertEqual(h.pub("tab/@1/in", {"nope": 1})["err"], "bad_body")
-        self.assertEqual(h.pub("tab/@2/in", {"run": "/help"})["err"], "slash_refused")
-
-    def test_a_slow_tmux_does_not_stall_the_broker(self):
+    def test_a_held_lock_makes_the_send_wait_and_then_time_out_with_nothing_typed(self):
+        import fcntl
+        d = self.ft.driver(lock_timeout=0.4)
+        d.send("@1", run="warm")
         self.ft.load()
-        self.ft.state["sleep"] = {"capture-pane": 1.5}
+        before = len(self.ft.sent())
+        fd = os.open(os.path.join(self.ft.dir, "tabs", "tab-1.lock"), os.O_RDWR)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            t = time.time()
+            code, msg = self.code(lambda: d.send("@1", run="late"))
+            self.assertEqual(code, "timeout")
+            self.assertGreaterEqual(time.time() - t, 0.4)
+            self.assertIn("nothing was typed", msg)
+            d.send("@2", run="other tab is free")        # another tab is not blocked
+        finally:
+            os.close(fd)
+        self.assertNotIn("late", self.ft.pane("%1")["typed"])
+        self.assertEqual(len(self.ft.sent()), before + 2)
+        d.send("@1", run="after")                         # released: it works again
+        self.assertEqual(self.ft.pane("%1")["typed"][-2:], ["after", "<Enter>"])
+
+    def test_two_processes_sending_to_one_tab_never_interleave(self):
+        import subprocess
+        import tabs_support
+        procs = []
+        for i in range(4):
+            procs.append(subprocess.Popen([sys.executable, "-S", tabs_support.TABS_PATH, "send", "@1", "--run", "msg%d one two three" % i],
+                                          env=self.ft.env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+        for p in procs:
+            out, err = p.communicate(timeout=60)
+            self.assertEqual(p.returncode, 0, (out, err))
+        typed = self.ft.pane("%1")["typed"]
+        self.assertEqual(len(typed), 8)
+        for i in range(0, 8, 2):
+            self.assertTrue(typed[i].startswith("msg") and typed[i + 1] == "<Enter>", typed)
+
+    def test_a_run_folder_that_cannot_be_used_is_lock_error_and_nothing_is_typed(self):
+        open(os.path.join(self.ft.dir, "tabs"), "w").close()         # a file where the folder should be
+        d = self.ft.driver()
+        self.assertEqual(self.code(lambda: d.send("@1", run="x"))[0], "lock_error")
+        self.assertEqual(self.ft.sent(), [])
+
+
+class TestCommand(Base):
+    """the command line: JSON on stdout, the exit codes, stdin, the environment"""
+
+    def setUp(self):
+        Base.setUp(self)
+        self.ft.window("@1", 0, "sh", screen="hello \x1b[7mworld\x1b[27m  token=abc12345\nsecond")
+        self.ft.window("@2", 1, "agent", **claude_pane())
+        self.ft.client("@2", 10)
         self.ft.save()
-        h = self.h
-        res = {}
-        t = threading.Thread(target=lambda: res.update(h.rpc({"op": "get", "topic": "tab/@1/screen"})))
-        t.start()
-        time.sleep(0.2)
-        t0 = time.time()
-        self.assertTrue(h.rpc({"op": "ping"})["ok"])
-        self.assertLess(time.time() - t0, 0.5)
-        t.join(10)
-        self.assertTrue(res.get("ok"))
 
-    def test_a_broker_without_tmux_answers_with_errors_and_lives(self):
-        from bus_support import Process
-        p = Process(env_extra={"SB_BUS_TMUX_BIN": "/nonexistent/tmux"}, driver="auto").start()
-        self.addCleanup(p.close)
-        for args in (("ls", "tab/"), ("get", "tab/x/screen"), ("pub", "tab/x/in", '{"run":"a"}')):
-            out = p.cli(*args)
-            self.assertEqual(out.returncode, 1, args)
-            self.assertIn("no_tmux", out.stderr.decode())
-        self.assertEqual(p.cli("ping").returncode, 0)
+    def test_list_active_screen(self):
+        rc, out, err = self.ft.cli("list")
+        self.assertEqual((rc, err), (0, ""))
+        self.assertEqual([t["tab"] for t in out], ["@1", "@2"])
+        self.assertEqual([t["active"] for t in out], [False, True])
+        rc, out, _ = self.ft.cli("active")
+        self.assertEqual((rc, out["tab"], out["label"]), (0, "@2", "1:agent"))
+        rc, out, _ = self.ft.cli("screen", "sh")
+        self.assertEqual((rc, out["text"]), (0, "hello [sel]world[/sel]  token=[REDACTED]\nsecond"))
+        rc, out, _ = self.ft.cli("screen", "@1", "--lines", "1")
+        self.assertEqual((rc, out["text"], out["lines"]), (0, "second", 1))
 
-    def test_the_cli_process_serves_the_tmux_driver(self):
-        from bus_support import Process
-        p = Process(env_extra={"FAKE_TMUX_STATE": self.ft.state_path, "SB_BUS_TMUX_BIN": self.ft.bin}, driver="auto").start()
-        self.addCleanup(p.close)
-        out = p.cli("ls", "tab/")
-        self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertIn(b'"tab":"@1"', out.stdout.replace(b'": "', b'":"'))
-        out = p.cli("pub", "tab/agent/in", '{"run": "hello there"}')
-        self.assertEqual(out.returncode, 0, out.stderr)
-        out = p.cli("pub", "tab/agent/in", '{"run": "/help"}')
-        self.assertEqual((out.returncode, out.stderr.decode().strip()[:13]), (1, "swarmbox-bus:"))
-        self.assertIn("slash_refused", out.stderr.decode())
-        out = p.cli("get", "tab/agent/screen", "--lines", "30")
-        self.assertIn(b"hello there", out.stdout)
+    def test_send_run_and_input_and_queue_and_slash(self):
+        rc, out, _ = self.ft.cli("send", "@1", "--run", "echo hi")
+        self.assertEqual((rc, out), (0, {"ok": True, "tab": "@1", "pane": "%1", "submitted": True}))
+        rc, out, _ = self.ft.cli("send", "1:agent", "--input", "ab{Esc}")
+        self.assertEqual((rc, out["submitted"]), (0, False))
+        self.assertEqual(self.ft.pane("%1")["typed"], ["echo hi", "<Enter>"])
+        self.assertEqual(self.ft.pane("%2")["typed"], ["ab", "<Escape>"])
+        rc, out, _ = self.ft.cli("send", "agent", "--run", "/help")
+        self.assertEqual((rc, out["err"]), (1, "slash_refused"))
+        rc, out, _ = self.ft.cli("send", "agent", "--run", "/clear", "--slash")
+        self.assertEqual(rc, 0)
+        self.ft.load()
+        self.ft.state["windows"][1]["panes"][0]["claude"]["mode"] = "busy"
+        self.ft.save()
+        rc, out, _ = self.ft.cli("send", "agent", "--run", "next")
+        self.assertEqual((rc, out["err"]), (1, "busy_tab"))
+        rc, out, _ = self.ft.cli("send", "agent", "--run", "next", "--queue")
+        self.assertEqual(rc, 0)
+
+    def test_the_text_may_come_from_stdin(self):
+        rc, out, _ = self.ft.cli("send", "@1", "--run", "-", stdin=b"line one\nline two\n")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.ft.pane("%1")["typed"], ["line one\nline two", "<Enter>"])
+        rc, out, _ = self.ft.cli("send", "@1", "--input", "-", stdin=b"{C-c}")
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.ft.pane("%1")["typed"][-1], "<C-c>")
+        rc, out, _ = self.ft.cli("send", "@1", "--run", "-", stdin=b"\xff\xfe")
+        self.assertEqual((rc, out["err"]), (2, "bad_body"))
+        rc, out, _ = self.ft.cli("send", "@1", "--run", "-", stdin=b"a\x00b")
+        self.assertEqual((rc, out["err"]), (2, "bad_body"))
+        rc, out, _ = self.ft.cli("send", "@1", "--run", "-", stdin=b"")
+        self.assertEqual((rc, out["err"]), (2, "bad_body"))
+
+    def test_errors_are_json_on_stdout_with_the_exit_codes(self):
+        cases = [(("screen", "@9"), 1, "no_such_tab"), (("send", "@9", "--run", "x"), 1, "no_such_tab"), (("list", "x"), 2, "usage"),
+                 (("nope",), 2, "usage"), ((), 2, "usage"), (("screen",), 2, "usage"), (("screen", "@1", "--lines", "x"), 2, "usage"),
+                 (("screen", "@1", "--lines", "0"), 2, "usage"), (("send", "@1"), 2, "usage"), (("send", "@1", "--run", "a", "--input", "b"), 2, "usage"),
+                 (("send", "@1", "--run"), 2, "usage"), (("send", "@1", "--bogus", "a"), 2, "usage")]
+        for args, rc, code in cases:
+            with self.subTest(args=args):
+                got, out, _ = self.ft.cli(*args)
+                self.assertEqual((got, out["err"]), (rc, code))
+                self.assertTrue(out["msg"])
+        self.assertEqual(self.ft.sent(), [])
+        ft2 = self.ft
+        ft2.window("@3", 2, "sh")
+        ft2.save()
+        rc, out, _ = ft2.cli("screen", "sh")
+        self.assertEqual((rc, out["err"]), (1, "ambiguous_tab"))
+
+    def test_no_tmux_and_no_session_are_4_and_a_timeout_is_5(self):
+        rc, out, _ = self.ft.cli("list", SB_TABS_BIN="/nonexistent/tmux")
+        self.assertEqual((rc, out["err"]), (4, "no_tmux"))
+        rc, out, _ = self.ft.cli("list", SB_TABS_SESSION="other")
+        self.assertEqual((rc, out["err"]), (4, "no_session"))
+        self.ft.load()
+        self.ft.state["sleep"] = {"list-panes": 8}
+        self.ft.save()
+        t = time.time()
+        rc, out, _ = self.ft.cli("list")
+        self.assertEqual((rc, out["err"]), (5, "timeout"))
+        self.assertLess(time.time() - t, 8)
+
+    def test_the_environment_chooses_the_socket_and_TMUX_is_dropped(self):
+        self.ft.load()
+        self.ft.state["env_check"] = 1
+        self.ft.save()
+        rc, _, _ = self.ft.cli("list", SB_TABS_SOCKET="spike", TMUX="/tmp/master,1,0", TMUX_TMPDIR="/x/tmp")
+        self.assertEqual(rc, 0)
+        self.ft.load()
+        self.assertEqual(self.ft.state["socket_seen"], "spike")
+        self.assertEqual(self.ft.state["env_seen"], {"TMUX": None, "TMUX_TMPDIR": "/x/tmp"})
+
+    def test_help(self):
+        import subprocess
+        import tabs_support
+        r = subprocess.run([sys.executable, "-S", tabs_support.TABS_PATH, "--help"], capture_output=True, env=self.ft.env())
+        self.assertEqual(r.returncode, 0)
+        self.assertIn(b"swarmbox-tabs list", r.stdout)
+
+
+class TestImage(unittest.TestCase):
+    def test_the_dockerfile_installs_the_command_and_no_driver_module(self):
+        with open(os.path.join(ROOT, "Dockerfile")) as f:
+            d = f.read()
+        self.assertIn("COPY container/scripts/swarmbox-tabs.py /usr/local/bin/swarmbox-tabs\n", d)
+        self.assertRegex(d, r"chmod 755 [^\n]*(\\\n[^\n]*)*/usr/local/bin/swarmbox-tabs ")
+        self.assertNotIn("swarmbox-bus-tmux", d)
+
+    def test_the_bus_knows_nothing_of_tmux_or_tabs(self):
+        with open(os.path.join(ROOT, "container", "scripts", "swarmbox-bus.py")) as f:
+            src = f.read()
+        code = src.split('"""', 2)[2]
+        for word in ("tmux", "tab/", "Driver", "driver", "no_screen"):
+            self.assertNotIn(word, code)
 
 
 if __name__ == "__main__":
