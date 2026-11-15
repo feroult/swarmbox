@@ -1,0 +1,19 @@
+tester@swarmbox:/work/proj$ claude
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Managed settings require approval
+
+ Your organization has configured Claude Code to send telemetry to the destination below. Depending on your
+ organization's settings, this can include the content of your prompts and responses.
+
+ Telemetry destination:
+   · OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.us.signoz.cloud
+
+ Only accept if you recognize this as your organization's telemetry collector.
+
+ Approving applies: env var ×1 — this redirects where telemetry from this machine is sent.
+
+ ❯ 1. Yes, I trust these settings
+   2. No, exit Claude Code
+
+ Enter to confirm · Esc to exit

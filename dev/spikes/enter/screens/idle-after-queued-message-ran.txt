@@ -1,0 +1,40 @@
+  They fought the canvas on the pitching deck, hands raw and numb. Spray came over the rail like thrown gravel. Tomas
+  lost his footing once, and Ilse's fist closed on his collar before he reached the rail.
+
+  Back at the wheel, soaked and shaking, he felt it again: the strange lightness as a wave lifted the stern. Before he
+  could think, he knew what it meant. The next wave would break across the quarter.
+
+  "Hard to port!" he shouted. "Now!"
+
+  Ilse spun the wheel without question. The Marguerite turned her shoulder to the sea. The wave struck with a sound like
+  a cathedral falling, but it broke against her bow and slid harmlessly down the length of the deck.
+
+  Nobody spoke for a long moment. Then Bram began to laugh, a cracked and helpless sound, and the others joined him.
+
+  At dawn the storm was gone, leaving a pale and innocent sky. The third frame groaned softly as the ship settled into
+  the calm. Tomas stood at the rail with a mug of tea, listening.
+
+  "She sounds different," he said.
+
+  "She sounds the same," said Ilse. "You've changed."
+
+  He thought about that for a while, watching the light spread across the water.
+
+  "I don't think we should sell her," he said at last.
+
+  Ilse smiled and looked out toward the horizon, where the long road home was waiting.
+
+  The Marguerite creaked once, softly, as if in agreement.
+
+✻ Cooked for 11s · done 4:19 AM
+
+❯ reply with exactly the word QUEUED-ONE
+
+● QUEUED-ONE
+
+✻ Churned for 3s · done 4:19 AM
+                  tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ make it shorter
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

@@ -1,0 +1,40 @@
+
+  Fable 5.2 is here for your longest and toughest coding tasks. It draws down usage faster than Opus 5.5. Switch with
+  /model.
+
+❯ write a 400 word story about a bridge, no preamble
+
+● The bridge had no name until the winter Marta started crossing it.
+
+  Locals just called it "the span," a rusted arc of iron over a river so wide that fog swallowed the far bank each
+  morning. Nobody remembered who built it. Nobody much cared, until the ferry stopped running and the span became the
+  only way across.
+
+  Marta was nine, new to the village, and sure the bridge was alive. She said so to her grandfather on the first day of
+  school. "It hums," she told him.
+
+  "That's wind in the cables."
+
+  "It's humming."
+
+  He let it go. He was seventy-one and had stopped arguing with certainty sometime around his wife's funeral.
+
+  Every morning Marta walked the span alone, her bo
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ reply with exactly the word QUEUED
+
+● QUEUED
+
+✻ Cogitated for 1s · done 4:31 AM
+
+❯ reply with exactly the word OK1
+
+● OK1
+
+✻ Worked for 1s · done 4:31 AM
+                     tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ finish the story
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Press Ctrl-C again to exit

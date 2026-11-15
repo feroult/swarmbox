@@ -1,0 +1,339 @@
+#!/usr/bin/python3 -S
+"""swarmbox-bus (spike PoC): broker and CLI in one file, standard library only.
+
+  swarmbox-bus serve [--stub]            run the broker (asyncio, one process, one unix socket)
+  swarmbox-bus pub [--source S] TOPIC [MESSAGE|-]
+  swarmbox-bus sub [--raw] TOPIC         stream messages; the first line printed on stderr is "subscribed" only with -v
+  swarmbox-bus get TOPIC | ls [PREFIX]
+  swarmbox-bus watch [--no-screen]
+
+Exit codes: 0 ok, 1 other error, 2 usage, 3 no subscriber, 4 broker not running, 5 too large, 6 bad topic/request, 7 busy
+(the only subscriber is too slow), 8 broker already running (serve).
+
+Protocol: line-delimited JSON over the socket. One request line, then for pub/get/ls one reply line and close;
+for sub/watch one {"ok":true} line and then a stream of lines until either side closes.
+The client path imports no asyncio (start-up cost); only `serve` does.
+"""
+import json, os, socket, sys, time
+
+VERSION = 1
+MAX_LINE = 1 << 20          # one envelope (a line) at most 1 MiB, JSON included
+SLOW_BUFFER = 4 << 20       # a subscriber with more than this unread is slow
+EXIT = {"no_subscriber": 3, "too_large": 5, "bad_topic": 6, "bad_request": 6, "busy": 7}
+
+
+def sock_path():
+    p = os.environ.get("SB_BUS_SOCKET")
+    if p:
+        return p
+    return os.path.join(os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox", "bus.sock")
+
+
+def topic_ok(t):
+    if t == "goal":
+        return True
+    parts = t.split("/")
+    return len(parts) == 3 and parts[0] == "tab" and parts[2] == "in" and bool(parts[1]) and all(c.isalnum() or c in "-_." for c in parts[1])
+
+
+def read_topic_ok(t):
+    return t.startswith("tab/") or t == "tab"
+
+
+# ------------------------------------------------------------------------------------------------ broker
+
+def serve(argv):
+    import asyncio, fcntl, itertools, signal, struct, uuid
+    path = sock_path()
+    stub = "--stub" in argv
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True) if not os.path.isdir(os.path.dirname(path)) else None
+
+    # single instance: an flock on a lock file (released by the kernel when the process dies, however it dies)
+    lock = os.open(path + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("swarmbox-bus: another broker holds %s.lock" % path, file=sys.stderr)
+        return 8
+    # we own the lock: whatever socket file is there is stale (crash) and is removed
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+
+    boot = uuid.uuid4().hex[:6]
+    seq = itertools.count(1)
+    my_uid = os.getuid()
+
+    class Sub:
+        __slots__ = ("w", "peer", "topic")
+        def __init__(s, w, peer, topic): s.w, s.peer, s.topic = w, peer, topic
+        def slow(s): return s.w.transport.get_write_buffer_size() > SLOW_BUFFER
+
+    queues = {}      # topic -> list of Sub (goal: round robin by rotating the list)
+    watchers = []    # (Sub, no_screen)
+
+    # ---- callbacks (the real broker plugs tmux here; blocking ones run in the executor)
+    tabs = {"main": {"dir": "/work", "cmd": "bash", "active": True}}
+    delivered_to_tabs = []
+    def driver(tab, body):
+        if tab not in tabs:
+            return {"ok": False, "err": "no_such_tab"}
+        delivered_to_tabs.append((tab, body))
+        return {"ok": True}
+    def state(kind, topic):
+        if kind == "ls":
+            return [{"tab": k, **v} for k, v in tabs.items()]
+        t = topic.split("/")
+        if len(t) == 3 and t[2] == "screen" and t[1] in tabs:
+            return {"text": "screen of %s\n" % t[1] + "x" * 2000, "cursor": [0, 0]}
+        raise KeyError(topic)
+
+    def now():
+        t = time.time()
+        return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + ".%03dZ" % int(t % 1 * 1000)
+
+    def send(sub, obj):
+        sub.w.write((json.dumps(obj, separators=(",", ":")) + "\n").encode())
+
+    def to_watchers(ev):
+        for sub, no_screen in list(watchers):
+            if sub.slow():
+                watchers.remove((sub, no_screen)); sub.w.close(); continue
+            e = ev
+            if no_screen and ev.get("kind") == "read" and isinstance(ev.get("result"), dict) and "text" in ev["result"]:
+                e = dict(ev, result=dict(ev["result"], text="<%d bytes omitted>" % len(ev["result"]["text"])))
+            send(sub, e)
+
+    def peer_of(w):
+        s = w.get_extra_info("socket")
+        pid, uid, gid = struct.unpack("3i", s.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))
+        return {"pid": pid, "uid": uid}
+
+    async def reply(w, obj):
+        send(Sub(w, None, None), obj)
+        try:
+            await w.drain()
+        except Exception:
+            pass
+
+    async def handle(r, w):
+        peer = peer_of(w)
+        try:
+            if peer["uid"] not in (my_uid, 0):
+                return await reply(w, {"ok": False, "err": "forbidden"})
+            try:
+                line = await r.readuntil(b"\n")
+            except asyncio.LimitOverrunError:
+                return await reply(w, {"ok": False, "err": "too_large"})
+            except (asyncio.IncompleteReadError, ConnectionError):
+                return
+            try:
+                req = json.loads(line)
+                op = req["op"]
+            except Exception:
+                return await reply(w, {"ok": False, "err": "bad_request"})
+            loop = asyncio.get_running_loop()
+
+            if op == "pub":
+                topic = req.get("topic", "")
+                if not isinstance(topic, str) or not topic_ok(topic):
+                    return await reply(w, {"ok": False, "err": "bad_topic"})
+                # source: the label is declared by the client (not trusted); peer is set by the broker from SO_PEERCRED
+                env = {"v": VERSION, "id": "%s-%d" % (boot, next(seq)), "topic": topic,
+                       "source": str(req.get("source") or "cli")[:64], "peer": peer, "time": now(), "body": req.get("body")}
+                if topic == "goal":
+                    subs = queues.get("goal", [])
+                    ok = [s for s in subs if not s.slow()]
+                    if not subs:
+                        res = {"ok": False, "err": "no_subscriber"}
+                    elif not ok:
+                        res = {"ok": False, "err": "busy"}
+                    else:
+                        s = ok[0]
+                        subs.remove(s); subs.append(s)        # round robin
+                        send(s, env)
+                        res = {"ok": True, "id": env["id"], "delivered": 1}
+                else:
+                    res = await loop.run_in_executor(None, driver, topic.split("/")[1], env["body"])
+                    if res.get("ok"):
+                        res = {"ok": True, "id": env["id"], "delivered": 1}
+                to_watchers({"kind": "pub", "envelope": env, "result": res.get("err", "ok")})
+                return await reply(w, res)
+
+            if op in ("get", "ls"):
+                topic = req.get("topic", "")
+                if op == "get" and not read_topic_ok(topic):
+                    return await reply(w, {"ok": False, "err": "bad_topic"})
+                try:
+                    result = await loop.run_in_executor(None, state, op, topic)
+                except KeyError:
+                    res = {"ok": False, "err": "bad_topic"}
+                else:
+                    res = {"ok": True, "result": result}
+                to_watchers({"kind": "read", "op": op, "topic": topic, "peer": peer, "time": now(), "result": res.get("result", res.get("err"))})
+                return await reply(w, res)
+
+            if op in ("sub", "watch"):
+                topic = req.get("topic", "goal")
+                if op == "sub" and not topic_ok(topic):
+                    return await reply(w, {"ok": False, "err": "bad_topic"})
+                sub = Sub(w, peer, topic)
+                if op == "sub":
+                    queues.setdefault(topic, []).append(sub)
+                else:
+                    watchers.append((sub, bool(req.get("no_screen"))))
+                send(sub, {"ok": True, "subscribed": topic if op == "sub" else "*"})
+                try:
+                    await r.read()       # returns at EOF: the client left or died
+                finally:
+                    if op == "sub":
+                        queues[topic].remove(sub) if sub in queues.get(topic, []) else None
+                    else:
+                        for x in list(watchers):
+                            if x[0] is sub: watchers.remove(x)
+                return
+            await reply(w, {"ok": False, "err": "bad_request"})
+        except ConnectionError:
+            pass
+        finally:
+            try:
+                w.close()
+            except Exception:
+                pass
+
+    async def main():
+        old = os.umask(0o177)
+        try:
+            srv = await asyncio.start_unix_server(handle, path=path, limit=MAX_LINE)
+        finally:
+            os.umask(old)
+        os.chmod(path, 0o600)
+        stop = asyncio.Event()
+        for sg in (signal.SIGTERM, signal.SIGINT):
+            asyncio.get_running_loop().add_signal_handler(sg, stop.set)
+        print("swarmbox-bus: listening on %s (pid %d)" % (path, os.getpid()), file=sys.stderr, flush=True)
+        await stop.wait()
+        srv.close()
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+
+    asyncio.run(main())
+    return 0
+
+
+# ------------------------------------------------------------------------------------------------ client
+
+def connect():
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.connect(sock_path())
+    except (FileNotFoundError, ConnectionRefusedError):
+        print("swarmbox-bus: the bus is not running (%s)" % sock_path(), file=sys.stderr)
+        sys.exit(4)
+    except PermissionError:
+        print("swarmbox-bus: permission denied on %s (the socket is private to its user)" % sock_path(), file=sys.stderr)
+        sys.exit(1)
+    return s
+
+
+def request(req):
+    """send one request line, return the socket and a file for reading"""
+    data = (json.dumps(req, separators=(",", ":")) + "\n").encode()
+    s = connect()
+    if len(data) > MAX_LINE:
+        print("swarmbox-bus: message too large (%d bytes, limit %d)" % (len(data), MAX_LINE), file=sys.stderr)
+        sys.exit(5)
+    try:
+        s.sendall(data)
+    except (BrokenPipeError, ConnectionResetError):
+        pass        # the broker may have answered and closed already: read the reply
+    return s, s.makefile("rb")
+
+
+def fail(rep):
+    err = rep.get("err", "error")
+    print("swarmbox-bus: " + err, file=sys.stderr)
+    sys.exit(EXIT.get(err, 1))
+
+
+def one_reply(f):
+    line = f.readline()
+    if not line:
+        print("swarmbox-bus: the broker closed the connection", file=sys.stderr)
+        sys.exit(4)
+    return json.loads(line)
+
+
+def stream(f, raw=False):
+    rep = one_reply(f)
+    if not rep.get("ok"):
+        fail(rep)
+    if os.environ.get("SB_BUS_VERBOSE"):
+        print(json.dumps(rep), file=sys.stderr, flush=True)
+    out = sys.stdout
+    try:
+        for line in f:
+            if raw:
+                m = json.loads(line)
+                b = m.get("body")
+                line = ((b if isinstance(b, str) else json.dumps(b)) + "\n").encode()
+            out.buffer.write(line)
+            out.buffer.flush()
+    except BrokenPipeError:
+        return 0
+    print("swarmbox-bus: the broker closed the connection", file=sys.stderr)
+    return 4
+
+
+def main(argv):
+    if not argv:
+        print(__doc__, file=sys.stderr); return 2
+    cmd, a = argv[0], argv[1:]
+    if cmd == "serve":
+        return serve(a)
+    if cmd == "pub":
+        source = os.environ.get("SB_BUS_SOURCE", "cli")
+        if a[:1] == ["--source"]:
+            source, a = a[1], a[2:]
+        if not a or len(a) > 2:
+            return 2
+        topic, msg = a[0], (a[1] if len(a) > 1 else "-")
+        if msg == "-":
+            msg = sys.stdin.read().rstrip("\n")
+        try:
+            body = json.loads(msg)         # one line of JSON, or else plain text
+        except ValueError:
+            body = msg
+        s, f = request({"op": "pub", "topic": topic, "source": source, "body": body})
+        rep = one_reply(f)
+        if not rep.get("ok"):
+            fail(rep)
+        print(rep["id"])
+        return 0
+    if cmd in ("get", "ls"):
+        s, f = request({"op": cmd, "topic": a[0] if a else ""})
+        rep = one_reply(f)
+        if not rep.get("ok"):
+            fail(rep)
+        print(json.dumps(rep["result"]))
+        return 0
+    if cmd == "sub":
+        raw = "--raw" in a
+        a = [x for x in a if x != "--raw"]
+        s, f = request({"op": "sub", "topic": a[0] if a else "goal"})
+        return stream(f, raw)
+    if cmd == "watch":
+        s, f = request({"op": "watch", "no_screen": "--no-screen" in a})
+        return stream(f)
+    print(__doc__, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(130)

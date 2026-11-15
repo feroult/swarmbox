@@ -1,0 +1,4 @@
+^[[38;5;246m^[[48;5;237mM-bM-^]M-/ ^[[38;5;231mwrite a 400 word story about a bridge, no preamble^[[39m
+^[[38;5;246m^[[48;5;237mM-bM-^]M-/ ^[[38;5;231mreply with exactly the word QUEUED^[[39m
+^[[38;5;246m^[[48;5;237mM-bM-^]M-/ ^[[38;5;231mreply with exactly the word OK1^[[39m
+^[[39mM-bM-^]M-/M-BM- ^[[2mfinish the story^[[0m
