@@ -8,7 +8,7 @@ Stable API (other parts of the tool import only these names):
     models.fetch / models.MODELS                           pinned multilingual Whisper models
     config.load / config.Config / config.ConfigError
 
-Nothing here plans or executes: what is done with a goal is the business of whoever subscribes to it (the sysop).
+Nothing here plans or executes: what is done with a goal is the business of whoever subscribes to it (whoever listens on the topic).
 Nothing here uses the network, a model or a microphone by itself.
 """
 

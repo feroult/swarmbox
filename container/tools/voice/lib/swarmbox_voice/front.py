@@ -5,7 +5,7 @@
 
 `swarmbox-voice front [--listen HOST:PORT] [--ttyd-port N] [--service-port N] -- ttyd ARGS...` starts ttyd and the voice service as
 children and routes each connection by its FIRST request head. The browser only captures the microphone, so this is an audio entry, not a
-router of tools; what happens to the goal that the audio becomes is decided on the box (the bus, the sysop) and never crosses the tunnel. The table of /voice/:
+router of tools; what happens to the goal that the audio becomes is decided on the box (by whoever subscribes to the topic) and never crosses the tunnel. The table of /voice/:
 
    GET  /voice/page.js     the script of the microphone button, from the tool's web/ folder (no-store)
    GET  /voice/page.css    its style
@@ -27,7 +27,7 @@ the original Host and Origin.
 
 When ttyd exits the front stops the service and exits with the status of ttyd, so the supervisor of the box keeps its restart policy.
 SIGTERM and SIGINT stop both children and exit 0. The service is restarted (with a back-off) if it dies: voice trouble never touches
-the terminal path. Security: what the tunnel can do is send audio, which makes at most a goal on the bus (what the sysop does with it is its own policy: risk, confirmation); it is as reachable as the terminal itself (whoever reaches the web port), and the front is the one place that sees the public Host.
+the terminal path. Security: what the tunnel can do is send audio, which makes at most a goal on the bus (what a subscriber does with it is its own policy: risk, confirmation); it is as reachable as the terminal itself (whoever reaches the web port), and the front is the one place that sees the public Host.
 """
 import ctypes
 import http.client
