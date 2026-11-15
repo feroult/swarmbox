@@ -15,14 +15,14 @@ shell exits. A tab that leaves and comes back is **put back in the same place in
 `exit` and `swarmbox` again in the leftmost tab the browser shows it on the left, not at the end. What is kept is the order of the host tabs among
 themselves: dragging the tabs of your terminal is not followed (nothing tells the box), and a window opened from the browser (`Alt+N`) can end up on either side of a
 returning tab. Nested tmux: if your host terminal also
-runs tmux, give it another prefix (SwarmBox uses `C-a`) or press `C-a a` to send the prefix inside.
+runs tmux, give it another prefix (SwarmBox uses `C-a`) or press `C-a C-a` to send the prefix inside (`C-a a` is the approval key of the sysop).
 `swarmbox --plain` gives the plain bash instead.
 
 **Font, size, theme**: out of the box the terminal is dark (Windows Terminal's Campbell colors, with the violet of the box for a selection made in the browser, the one tmux uses for its own), size 21, with a
 Nerd Font list (JetBrainsMono, Cascadia). To change any of it, put `key=value` lines (xterm.js options) in `<workspace>/.config/swarmbox/web-terminal.conf`
 (`~/.config/swarmbox/web-terminal.conf` inside the box), e.g. `fontFamily='JetBrainsMono Nerd Font', Consolas, monospace`.
 `padding=10` is the space (px) around the terminal (CSS in
-`container/web/ttyd-style.css`, joined into ttyd's page when the image is built). A `theme` line replaces the whole default theme. No rebuild and no new box: run `swarmbox-web restart` inside the box to apply (the box and its tmux sessions stay up). The page is rendered again at every ttyd start, by a plain text substitution of `padding`, `ctrlVPaste`, `ctrlCCopy` and `scrollbar`; every other key goes to ttyd as `-t key=value`. The font is
+`container/web/ttyd-style.css`, joined into ttyd's page when the image is built). A `theme` line replaces the whole default theme. No rebuild and no new box: run `swarmbox-web restart` inside the box to apply (the box and its tmux sessions stay up). The page is rendered again at every ttyd start, by a plain text substitution of `padding`, `ctrlVPaste`, `ctrlCCopy`, `scrollbar`, `strip` and `stripKeys`; every other key goes to ttyd as `-t key=value`. The font is
 the *browser's*, so it must be installed on the machine that opens the page.
 
 **tmux.** The image ships a complete default config, `container/config/tmux.conf` (installed as `/etc/tmux.conf`): prefix
@@ -40,7 +40,23 @@ binds **Alt** instead, without the prefix:
 window. Use the left Alt: the right one is AltGr on an international layout. If you use your own tmux config
 without ours, add `source-file /path/to/tmux-browser-keys.conf` to it (it needs `set -g base-index 1` so
 `Alt+1..9` match the status bar).
-With the `voice` tool installed the page has a microphone button (bottom right): hold it and speak, and what you said becomes a goal on the bus, which the `sysop` tool acts on when it is installed ([voice.md](voice.md)). **Ctrl+A then `S`** shows or hides the panel of the sysop ([sysop.md](sysop.md)).
+With the `voice` tool installed the controls strip (below) has a microphone button: hold it and speak, and what you said becomes a goal on the bus, which the `sysop` tool acts on when it is installed ([voice.md](voice.md)). **Ctrl+A then `S`** shows or hides the panel of the sysop ([sysop.md](sysop.md)).
+
+**The controls strip.** A slim bar under the terminal, part of the web page of the box (not of any plugin): the terminal ends where the strip begins, xterm is refitted to what is left, so tmux sees the smaller window and the strip never covers a cell, the status bar and its clock included. It holds two things:
+
+- **Key buttons**, for a phone keyboard that has no Esc, Tab, Ctrl+C or arrows. They type into the terminal when you tap or click them (a tap is sent on release, so a drag along the row types nothing; a held arrow, PageUp, PageDown or BSpace repeats), they keep the focus in the terminal (the on-screen keyboard stays open), and they are at least 44 px. The default is `Esc=Escape, Tab=Tab, ^C=C-c, ↑=Up, ↓=Down, ←=Left, →=Right, Panel=C-a S, Veto=C-a V, Stop=C-a X`; **Panel**, **Veto** and **Stop** type the prefix and `S`, `V` or `X`, the bindings of `container/config/tmux.conf` for the panel of the sysop ([sysop.md](sysop.md)): a phone has no Ctrl, so these are the way to veto the countdown of a spoken goal. They need no plugin; without the sysop tool installed they say so in tmux's status line and change nothing (they follow the prefix: if you change it with `set -g prefix`, change the buttons too). The strip is never built in a page that another origin frames, so a click in a frame cannot type a key; the voice front also sends `frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN` with the page.
+- **The controls of plugins**, at the right end. The page offers a small API, `window.swarmboxStrip` (`container/web/ttyd-clipboard.js`): `add({id, title, label, icon, className, order})` returns the `<button>` to wire, `note(text, tone)` shows a short sentence in the strip (tone `ok`, `warn` or `error`; it covers the key buttons until the plugin clears it with `note('')` or the host does, after 12 seconds (130 for a plain state without a tone); a tap dismisses it; it wraps to two lines and the strip does not grow), `remove(id)`. The `voice` tool puts its microphone and state light there ([voice.md](voice.md)) and knows no other control.
+
+When it is shown: with `strip=auto` (the default) the key buttons appear on a touch screen (`pointer: coarse`) or when you list them yourself, and the strip appears on any screen as soon as a plugin adds a control; on a desktop with only the microphone it holds just the microphone. `strip=on` always shows it (with the key buttons), `strip=off` never (a plugin then has no place for its controls: for the microphone, set `voice.web` to `0` too). In `web-terminal.conf`, then `swarmbox-web restart`:
+
+```
+strip=auto
+stripKeys=Esc=Escape, Tab=Tab, ^C=C-c, Up=Up, Down=Down, Panel=C-a S, F5=F5
+```
+
+`stripKeys` is a list of `label=keys` entries separated by commas. The keys are **tmux key names** separated by spaces and sent in order: `Escape Tab BTab Enter Space BSpace Up Down Left Right Home End PageUp PageDown IC DC F1`..`F12`, `C-x` (Ctrl), `M-x` (Alt), `C-M-x`, a single character (typed as it is) and `Comma` (the character `,`). `C-a S` is Ctrl+A then S. An entry that cannot be read is dropped with a warning in the browser console; an empty `stripKeys=` means no buttons (a listed `stripKeys`, empty or not, also shows the strip on a desktop). Arrow and Home/End keys follow the mode the program asked for (`ESC [ A` or `ESC O A`).
+
+Layout: one row on a phone turned sideways (the keys scroll inside the strip if they do not fit, so the terminal keeps its height) and wrapped on a portrait phone or a tablet; the safe-area insets of a notch are respected (the page asks for `viewport-fit=cover`); the page has a viewport meta tag (ttyd's own has none, so a phone used to lay it out 980 px wide and shrink it), which also makes the on-screen keyboard shrink the layout in Chrome, and on iOS, where only the visual viewport shrinks, the strip follows `visualViewport` and stays above the keyboard. The colours are those of [theme.md](theme.md). With the strip hidden the page is exactly ttyd's, as before.
 
 **Scrolling.** The history is tmux's: 50,000 lines, and the mouse wheel moves through it in copy mode, **5 lines per wheel event** (tmux's own default; it was 2, which
 is little for 50,000 lines). The browser keeps no history of its own, because tmux draws on the terminal's alternate screen, so there is **no scrollbar** by default: it would

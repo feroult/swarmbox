@@ -22,13 +22,13 @@ behaviour or branch, no copies of the same case, no tests of wording in docs. Ru
 
 ```
 python3 tests/test_host_up.py        # one file
-sh tests/run_all.sh                  # all files, one line each with the count and the seconds (about 1 minute)
+sh tests/run_all.sh                  # all files, one line each with the count and the seconds (about 7 minutes on an idle 32-core machine: run it in the background)
 ```
 
 `tests/run_all.sh` options: `--werror` (each file under `python3 -W error`), `--repeat N`, `--only a.py,b.py`, `--browser` (adds the
-three browser tests, which need chromium and ttyd and run in the scheduled CI job), `--list`. It runs every file under
+four browser tests, which need chromium and ttyd and run in the scheduled CI job), `--list`. It runs every file under
 `tests/reap_run.py`, which kills by PID whatever a file left behind and shows it as `reaped N`; a test that leaks a process is a bug
-to fix in that test (end children in `addCleanup`). Run files in the foreground.
+to fix in that test (end children in `addCleanup`). Run one file in the foreground; the whole suite takes minutes, so run it in the background.
 
 What each group covers (a file name tells the rest):
 
@@ -41,7 +41,7 @@ What each group covers (a file name tells the rest):
 | `test_dockerfile.py`, `test_dev_build.py`, `test_image_build.py`, `test_image_with_tools.py`, `test_bashrc_container.py` | the `Dockerfile` (static) and the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; the image comes from `dev/dev-build.sh` or `SWARMBOX_IMAGE_TAG`, shared by `tests/image_support.py`). `tests/smoke_image.py` is the image smoke test (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box, `SWARMBOX_SMOKE_FULL=1` the full run for CI |
 | `test_ci_workflow.py`, `test_release_workflow.py`, `test_release_check.py`, `test_release_version.py`, `test_third_party_notices.py`, `test_record_checksums.py`, `test_name_check.py` | the repository machinery: text checks of the two workflows, the release scripts under `dev/` on fixture repositories, the notices generator, the checksum recorder |
 | `test_default_names_lint.py`, `test_repo_files.py`, `test_docs_consistency.py`, `test_run_all.py`, `test_helpers.py` | guards: no default name or image repository written as a literal (read `container/host/DEFAULTS`), the policy files exist and link, the README commands exist and its links resolve, the runner itself, the fake `podman` |
-| `test_clipboard_bridge.py`, `test_web_style.py`, `test_tmux_browser_keys.py` | the web terminal in a real browser and tmux keys; they need chromium and ttyd and run in the scheduled CI job only |
+| `test_clipboard_bridge.py`, `test_web_style.py`, `test_tmux_browser_keys.py`, `test_voice_page_browser.py`, `test_web_strip.py` | the web terminal in a real browser and tmux keys, the controls strip and the microphone; they need chromium and ttyd and run in the scheduled CI job only. The layers that need a real tmux (`test_web_strip.py`, `test_sysop_dock.py`, `test_sysop_always.py`, `test_tabs_real.py`, `test_sysop_web.py`, `test_sysop_real.py`) skip unless `SWARMBOX_TEST_REAL_TMUX=1`, which only a container run sets (never on a machine whose tmux you use). `tests/e2e_sysop.sh`, `tests/e2e_voice.sh` and `tests/soak_v1.sh` are development harnesses for Podman with a Claude login: not part of any gate |
 
 Shared helpers (the fake `podman`, the helper archive of an image, a pseudo terminal) are in `tests/helpers.py`. Write a test first, with fakes; use a real
 container only for a smoke test, with a `swarmbox-test-` name.
@@ -52,7 +52,7 @@ CI rejects a push for things that pass on a developer machine: shellcheck findin
 (`TERM`, `COLORTERM`, `STARSHIP_SHELL`; a CI runner has none of them). `dev/check.sh` runs those checks here:
 
 ```bash
-sh dev/check.sh                # shellcheck 0.9 on the files ci.yml lists, then the unit tests in a clean environment (about a minute and a half)
+sh dev/check.sh                # shellcheck 0.9 on the files ci.yml lists, then the unit tests in a clean environment (about 7 minutes now: run it in the background)
 sh dev/check.sh --release      # and dev/release-check.sh, before a release tag
 git config core.hooksPath dev/hooks    # once per clone: run it before every push of main or of a v* tag
 ```

@@ -14,7 +14,7 @@ brain -> tool calls (MCP) -> host policy -> swarmbox-tabs -> tmux tab         th
 1. A goal is a line of text published on the topic of `sysop.topic` (default `goal`) of the bus ([design.md](design.md), section 6, "The bus"). Today that is `swarmbox-sysop goal "text"` in the box, the key `g`, the panel, or any program that runs `swarmbox bus pub goal` (with the topic of the setting). The `voice` tool publishes where `voice.topic` says (`source` `voice`): when that is the same name as `sysop.topic`, what you say into the microphone of the web terminal arrives as a goal. The two tools know nothing of each other; the shared name is the only connection. The sysop subscribes as a member of the group `sysop.group` (default `sysop`): two sysops in one group handle a goal once between them, one each in turn. Each goal carries a `source`, a label such as `panel`, `voice` or `cli`.
 2. The resident `swarmbox-sysop serve` takes one goal at a time (up to five wait; the next is dropped and audited). It starts the brain, which gets the goal on its standard input and a list of tools.
 3. The brain looks first (`list_tabs`, `read_tab`), then acts (`run`, `input`), checks the screen that comes back, and ends with `done`. The tools are served over MCP by `swarmbox-sysop mcp`, which acts on the box only through `swarmbox-tabs` (the tabs of the box: list, screen, send). The bus is for goals only, and the brain never sees it.
-4. Before an action is typed, the host rates it and decides what must happen (autonomy levels, below). The panel, a pane of the shared tmux session, shows the goal, the log, the countdown and the approval prompt.
+4. Before an action is typed, the host rates it and decides what must happen (autonomy levels, below). The panel, a pane of the shared tmux session that is up in every window (`sysop.panel`, below), shows the goal, the log, the countdown and the approval prompt, and an idle screen when there is no goal.
 
 ## The tools
 
@@ -69,6 +69,15 @@ A failure of the command is `{"err", "msg"}`, and becomes an error result the mo
 Everything is written to `<state>/sysop/events.jsonl` (in the workspace state folder of the box, so it survives a restart): append-only, one JSON object per line, mode 0600, in a private folder. It has every goal, each call of the brain with its arguments,
 the result, each decision (sent, vetoed, refused, approved, blocked) with the risk and the reasons, the `say` texts and the way the goal ended. Next to it, `goals/<id>/` keeps what the brain printed (`stream.jsonl`) and its error output. `swarmbox-sysop status` shows the service and its goals.
 
+**The limit.** The audit file does not grow for ever: past **8 MiB** it is renamed to `events.jsonl.1` (the older ones move up to `.2` and `.3`) and a new file starts; the oldest of the three old files is deleted. So the audit takes **at most 32 MiB** of the workspace and keeps the last 24 to 32 MiB of events (some 20 000 goals); copy the old files elsewhere if you need more. Folders of goals are pruned to the newest 50, and `serve.log` of the sysop is moved to `serve.log.1` past 1 MiB.
+A line that cannot be written (the disk is full) does not stop the service: it goes on and says so once a minute in `serve.log`. An action that types (`run`, `input`) is the exception: it is refused with "nothing was typed: the audit file cannot be written", because nothing should be typed that the audit cannot show; reading, `say` and `done` go on.
+
+## Staying up
+
+`prepare.sh` starts the service under a small **watcher** (`swarmbox-sysop serve --log --dock --watch`). If the service dies (a kill, the kernel's out-of-memory killer, a crash) the watcher starts it again after 1, 2, 4 ... 30 seconds, and the new service marks the goals that were in flight as `failed` ("lost": goals in flight are not kept, and nobody is told). A stop on purpose (SIGTERM to the service) ends the watcher too, and so does a refused setting (the reason is in `serve.log`).
+Five abnormal exits within a minute make the watcher give up: it writes `crashloop` in the run folder, `swarmbox-sysop status` and the panel say that the service keeps crashing, and `swarmbox-tool prepare` (what the box runs at its start; run it by hand to try again) wakes the watcher and starts the service now. The bus and the web terminal have their own supervisors in the entrypoint; the sysop is a tool, so its supervisor is its own and the entrypoint knows nothing of it.
+While the bus is away (it is restarted within seconds; after five crashes in a minute it waits for `swarmbox-bus restart`) the service retries every 1 to 5 seconds, so it listens again within five seconds of the bus coming back. A goal published in that gap is not delivered: the publisher is told (`swarmbox-sysop goal` exits 4 or 3, the microphone shows "The bus of the box is not answering" or "Nobody is listening").
+
 ## The brain
 
 `sysop.brain` is either a preset name or a **command template**. The only preset today is `claude`: the headless Claude Code CLI (`claude -p`, using the login that is already in the box) with every built-in tool turned off (`--tools ""`; without it Bash stays on),
@@ -107,13 +116,16 @@ The `claude` preset is a piece of text, so the sysop does not depend on the `cla
 
 ## Install and try
 
+The default brain is Claude Code, so first have the `claude` tool (`--with claude` when you install SwarmBox, or `swarmbox tool install claude` later) and a login (run `claude` once in a tab, or `swarmbox env add CLAUDE_CODE_OAUTH_TOKEN`).
+
 ```bash
-swarmbox tool install sysop              # code of this repository, nothing is downloaded
-swarmbox config set sysop.autonomy confirm-all
-swarmbox reset                           # the box learns its settings when it is created
-swarmbox attach                          # then, in a tab of the box:
-swarmbox-sysop goal --wait "say hello in the second tab"
+swarmbox tool install sysop              # code of this repository, nothing is downloaded; the sysop starts at once and with every start of the box (the first `swarmbox-sysop` you type installs it too)
+swarmbox                                 # a tab of the box; open a second one (Alt+N in the browser, or `swarmbox` in another terminal tab), then in the first:
+swarmbox-sysop goal --wait "run echo hello in the second tab"
 ```
+
+With the default autonomy the goal runs by itself: the panel shows `echo hello` for 4 seconds (veto it with `Ctrl+A V`), it is typed in the second tab, and the command ends with `done: ...` (exit 0; `--wait` exits 1 when the goal failed or was stopped).
+A setting is learned by the box when it is created, so to be asked about every action: `swarmbox config set sysop.autonomy confirm-all` and `swarmbox reset`: the goal then waits for you, so press `Ctrl+A a` and type `run` and Enter in the panel (see "The panel"). You can also type the goal with `Ctrl+A g`, or speak it ([voice.md](voice.md)).
 
 Check the service with `swarmbox-sysop status` (it runs from `prepare.sh` at every start of the box); `swarmbox-sysop --self-test` checks the install without a model, and `swarmbox tabs list` shows the tabs the sysop sees (`swarmbox bus topics` shows who listens on which topic). `swarmbox-sysop goal` exits with 3 when nobody listens (the service is not running) and 4 when the bus is not.
 The brain needs a login: the `claude` preset uses the one already in the box.
@@ -128,14 +140,39 @@ The brain needs a login: the `claude` preset uses the one already in the box.
 | `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600 |
 | `sysop.topic` | `goal` | the bus topic the sysop listens on (`[a-z0-9][a-z0-9._-]{0,62}`); it hears voice when `voice.topic` is the same name |
 | `sysop.group` | `sysop` | the group the sysop subscribes with (same charset); members of a group share the goals, one each |
+| `sysop.panel` | `always` | when the panel is in tmux: `always` (in every window from the start of the box), `auto` (while a goal runs) or `off` (the sysop never opens it); see "The panel" |
 
-A setting that equals its default is not passed to the box. Inside the box the sysop reads `SWARMBOX_SYSOP_BRAIN`, `_MODEL`, `_AUTONOMY`, `_COUNTDOWN`, `_MAX_STEPS`, `_MAX_SECONDS`, `_TOPIC` and `_GROUP`. Changing a setting needs `swarmbox reset`; after `swarmbox update` the tool refreshes its code at the next start.
+A setting that equals its default is not passed to the box. Inside the box the sysop reads `SWARMBOX_SYSOP_BRAIN`, `_MODEL`, `_AUTONOMY`, `_COUNTDOWN`, `_MAX_STEPS`, `_MAX_SECONDS`, `_TOPIC`, `_GROUP` and `_PANEL_MODE` (not `SWARMBOX_SYSOP_PANEL`: that name, set to `1`, marks the start command of a panel pane, which `swarmbox-tabs` hides). Changing a setting needs `swarmbox reset`; after `swarmbox update` the tool refreshes its code at the next start.
 
 ## The panel
 
-`Ctrl+A` then `S` shows or hides the panel, a pane of the tmux session (`swarmbox-sysop panel` runs it by hand); with the service started with `--dock`, which the box does, it opens by itself when a goal arrives. It shows the goal, what the brain did and said, and the countdown or the approval prompt, which carries the whole text of the action. A text that does not fit the pane says how many characters are left out and cannot be allowed there, only refused.
+The panel is a pane of the tmux session (`swarmbox-sysop panel` runs it by hand). It shows the goal, what the brain did and said, and the countdown or the approval prompt, which carries the whole text of the action. A text that does not fit the pane says how many characters are left out and cannot be allowed there, only refused.
+**When it is there is a setting, `sysop.panel`**, so that it never comes as a surprise:
 
-**The panel never takes the focus by itself.** When a goal arrives it opens beside your tab and what you are typing keeps going to your tab: not one key reaches the panel, where `c`, `x` and `g` would veto, stop or start something. The keys are reachable in three ways:
+| `sysop.panel` | What it does |
+|---|---|
+| `always` (default) | the panel is up **in every window** from the start of the box, and shows an idle screen when there is no goal. It follows new windows (a tmux hook on window creation) and re-docks when a window changes shape. `Ctrl+A S` (and `q` in the panel) hide it in all windows, and `Ctrl+A S` shows it again; the choice is remembered until the box starts again |
+| `auto` | the panel opens, in the window you look at, when a goal arrives and closes a few seconds after the last goal; `Ctrl+A S` opens or closes the panel of one window by hand |
+| `off` | the sysop never opens it; `Ctrl+A S` still opens one by hand, in the window you press it in |
+
+Change it with `swarmbox config set sysop.panel auto` and `swarmbox reset`. The service (`serve --dock`, which the box starts) carries it out.
+
+**Where it docks** (one panel per window, a pane that `swarmbox-tabs` never lists or targets):
+
+| Window | Panel |
+|---|---|
+| landscape (at least twice as many columns as lines) | on the right, 20 % of the width, at least 40 columns |
+| portrait (a phone held upright) | at the bottom, **30 %** of the height, at least 8 lines (never more than half the window) |
+| landscape but narrower than 100 columns (the terminal would keep fewer than 60) | at the bottom, as portrait |
+
+When a window changes shape the panel of that window (only that one) moves to the other layout and keeps running. Nothing it does takes the focus. A browser window that is being dragged makes dozens of resize events a second; the runs of the hook are coalesced (each leaves a mark and the one that holds the lock serves every mark), and it imports only the dock, so the box never has more than a few of them at once (10 Python processes and 114 MiB at the very peak of a burst of 200 resizes in the soak test, against 105 processes before). A panel that meets a problem (a file that went away, a full disk) says "The panel hit a problem and goes on (...)" in one line instead of printing a traceback in your tab.
+
+**The idle screen** is one screen: the title and the state (`IDLE`; `DONE`, `STOPPED` or `FAILED` for as long as the last goal is the one shown), "no goal. Type one: Ctrl+A g", the keys that work from any tab without focusing the panel (`Ctrl+A` then `g` goal, `V` veto, `X` stop, `a` approve, `S` hide), the autonomy level and the brain in use, the bus topic it listens on, and the result of the **last goal** (`done`, `stopped` or `failed`, with its text, how long ago it ended and what the sysop said), also after a restart of the box. In a short pane the lowest lines go first (the topic, then the brain, then the keys); the title, "no goal" and the key line at the bottom always stay. It does not name the tool that hears you: any program can publish a goal on the topic.
+An idle panel does almost nothing: it looks once a second (a stat of two files and a lock probe) and reads the files only when one changed, so it uses well under 1 % of a core; the service in the mode `always` looks at tmux every 4 seconds and the hooks do the quick part.
+
+**Windows and panes.** A window never stays with only the panel in it, because that is not a tab: when the last pane of yours in a window is gone (`tmux kill-pane`, or the program ends), the window is closed with its panel. If it was the last window the session ends, exactly as it would without a panel. Killing the panel pane itself (`kill-pane` on it) is not a choice to hide it, so in the mode `always` it comes back at once; hide it with `Ctrl+A S` or `q`. The names of the tabs follow the program of your pane as usual in the mode `always` (the panel does not take the focus; after a click on it the name reads `python3` until you click back). In the modes `auto` and `off` a window with a panel keeps the name it had.
+
+**The panel never takes the focus by itself.** Whether it is up already or opens when a goal arrives, what you are typing keeps going to your tab: not one key reaches the panel, where `c`, `x` and `g` would veto, stop or start something. The keys are reachable in three ways:
 
 | What | How |
 |---|---|
@@ -144,8 +181,29 @@ A setting that equals its default is not passed to the box. Inside the box the s
 | Approve a high-risk action | `Ctrl+A a`: opens the approval prompt in the panel and **then** gives it the focus, so keys you typed before went to your tab and keys you type after are the word `run` and Enter. The gesture allows nothing by itself. If no approval waits it does nothing |
 
 These are plain tmux prefix keys (`container/config/tmux.conf`, all four unbound in tmux itself, so a fast `Ctrl+A a` never loses a key); they call `swarmbox-sysop veto | stop | approve | goal`, which you can run from any shell of the box too (`approve` and `veto` act on the pane of the window you press them in; `goal` with no text asks for one line).
-Keys of the focused panel: `c` vetoes a countdown or refuses an approval, `r` then the word `run` and Enter allows an approval, `x` stops the goal (`X` also drops the queue), `g` types a goal, Up and Down scroll the log, `q` closes the panel. The panel says on its screen which keys work now (the line "From any tab: ..." shows while it has no focus). Keys are ignored for half a second after a new action appears, as a second guard.
+Keys of the focused panel: `c` vetoes a countdown or refuses an approval, `r` then the word `run` and Enter allows an approval, `x` stops the goal (`X` also drops the queue), `g` types a goal, Up and Down scroll the log, `q` hides the panels (the mode `always`) or closes this one. The panel says on its screen which keys work now (the line "From any tab: ..." shows while it has no focus). Keys are ignored for half a second after a new action appears, as a second guard.
 The web terminal behaves the same: keys and mouse arrive from the browser as from any terminal.
+
+## Troubleshooting
+
+What you see, why, and what to do. Everything here was met in the soak and end-to-end runs; the messages are the exact ones.
+
+| What you see | Why | What to do |
+|---|---|---|
+| `swarmbox-sysop: no_subscriber (is the sysop service running? swarmbox-sysop status)` (exit 3), or "Nobody is listening." on the microphone | nobody listens on the goal topic: the tool is not installed, the service is down (for a second or two after a crash), or the topics differ (`voice.topic` is not `sysop.topic`) | `swarmbox-sysop status`; `swarmbox bus topics` shows who listens on which topic; if it is not running, `swarmbox-tool prepare` starts it; if the command is missing, `swarmbox tool install sysop` |
+| `sysop: not running (the box starts it at boot and again after a crash; by hand: swarmbox-tool prepare)` | the service is down | `swarmbox-tool prepare`. When the line says it keeps crashing (five abnormal exits in a minute), the cause is in `serve.log` of the sysop in the state folder; `swarmbox-sysop --self-test` checks the install |
+| `swarmbox-sysop: ...` with exit 4, or "The bus of the box is not answering" on the microphone | the bus is away (it is restarted within seconds; after five crashes in a minute it waits) | `swarmbox-bus ping`; `swarmbox-bus restart` |
+| `failed: the brain program 'claude' was not found: install it (swarmbox tool install claude) or set SWARMBOX_SYSOP_BRAIN` | the brain command is not in the box | `swarmbox tool install claude`, or point `sysop.brain` to a command that exists |
+| `failed: the brain is not logged in (claude). Log in once in a tab (`claude`, then /login) or add CLAUDE_CODE_OAUTH_TOKEN with `swarmbox env add`` | the brain has no login (a login in `~/.claude` is enough and survives a reset) | run `claude` in a tab and log in, or `swarmbox env add CLAUDE_CODE_OAUTH_TOKEN` and `swarmbox reset`; then send the goal again |
+| a tool answers "tmux is not available: the goal cannot act on the box" (`no_tmux`) | no `tmux` on the PATH of the service | this is a box without tmux; the image has it, so check what changed the PATH (`swarmbox-tabs list` in a tab shows the error) |
+| a tool answers "there is no tmux session: the goal cannot act on the box" (`no_session`) | the tmux session `main` is gone (its server was killed) | open a tab (`swarmbox attach`, or the web terminal): it starts the session again, and the sysop goes on with the next goal |
+| the panel is not there | `sysop.panel` is `off`, or it is `auto` and no goal is running; or you hid it (`Ctrl+A S` or `q` in the panel); or the service is down | `swarmbox config get sysop.panel`; press `Ctrl+A S`; `swarmbox-sysop status`. In the mode `always` the panel is back within a few seconds of a new window or a resize |
+| `failed: the time budget of 300 s is spent: the brain was killed` | the goal took longer than `sysop.max_seconds` (a slow model, a long `wait`, an approval nobody gave) | send a smaller goal, or `swarmbox config set sysop.max_seconds 600` and `swarmbox reset`; `haiku` (the default) is the fast model |
+| `failed: the brain used all its 23 turns without calling done` | the goal needs more steps than `sysop.max_steps` allows (the turns are the steps plus 3) | raise `sysop.max_steps`, or split the goal |
+| the goal sits at "waiting for approval" and then ends refused | a high-risk action waits for the word `run`, and no answer came in 60 seconds | `Ctrl+A a`, then type `run` and Enter; or `Ctrl+A V` to refuse it at once |
+| the goal ends `failed` with "lost" after the service was killed or crashed | goals in flight are not kept | send the goal again |
+
+`swarmbox-sysop status` also lists the last goals with their state, and the audit file (`events.jsonl`, above) says what the brain did, step by step.
 
 ## Limits of version 1
 
@@ -154,6 +212,7 @@ The web terminal behaves the same: keys and mouse arrive from the browser as fro
 - Only text: a program that draws without text (a full-screen graphic) is not readable, and a full-screen program has no scrollback, so only what is visible counts.
 - The risk analysis is conservative and best effort; it flags quoted separators too and can ask for approval of something harmless. It cannot read what a script does.
 - Typing into an agent that is busy or has a dialog open is refused by `swarmbox-tabs` (`dialog_open`, `busy_tab`); the brain sees the error.
+- Whether an agent is busy is read from the text of its screen: the footer of Claude Code says `· esc to interrupt` while it works. In a pane of about 40 to 70 columns (a phone held sideways) the end of that footer is cut and `swarmbox-tabs` reads the cut words, but in a pane of about 30 columns (a phone held upright, where every window is that narrow) the footer shows no sign at all, so a busy Claude Code looks idle there and a prompt is typed into its input box, where Claude Code queues it as it would a line you typed.
 - One preset (`claude`). Other brains are templates you write and test.
 - The panel works inside the shared tmux session (see "The panel"); `swarmbox-sysop stop` is the stop key from any shell of the box, and `swarmbox-sysop goal` gives a goal without it.
 - An approval is not authenticated against code of your own user. It is a file in the state folder that the panel writes, and a process of yours, in a tab the brain types into for instance, can write it too. The host rates every command that mentions the sysop's files, `tmux`, the bus or the sysop commands (`swarmbox-tabs` included) as high risk, so the obvious ways to approve or to type into another tab cost an approval themselves, but a script or an alias can still do it. This is the same trust the box gives any of its processes, and one more reason to run with `confirm-all` when in doubt.

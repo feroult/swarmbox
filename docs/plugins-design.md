@@ -131,6 +131,9 @@ swarmbox-tabs send <tab> --input TEXT  type TEXT as it is, without Enter ({Esc} 
 
 Other capabilities can come later (for example a notification to the user), each with its own command; none of them is a topic.
 
+**The controls strip is a feature of the web page, not a plugin and not a topic.** The page of the box has a slim bar under the terminal with key buttons for a phone (`Esc`, `Tab`, `^C`, arrows, and `Panel`, which types the prefix and `S` of tmux, so it needs no plugin) and one small API, `window.swarmboxStrip` (`add`, `note`, `remove`), by which a plugin that lives in the page asks for a control at the right end.
+The host page knows no plugin by name; `voice` puts its microphone and its state sentences there and nothing else. It is configured in `web-terminal.conf` (`strip`, `stripKeys`; see [web-terminal.md](web-terminal.md)).
+
 ## Voice and sysop
 
 ```
@@ -203,7 +206,8 @@ The path that version 1 had to do: you send audio from the browser; the sysop un
 
 - the bus (publish, subscribe with groups, `topics`, `watch`, `ping`, `restart`; `pub` counts receivers and exits 3 for none) and the `tabs` capability (`list`, `active`, `screen`, `send`, with the lock per tab);
 - `voice` publishing on `voice.topic` and the sysop listening on `sysop.topic` in the group `sysop.group`; both are settings, validated by the host (`config set`) and by the tools;
-- the `sysop` with the tools `list_tabs`, `read_tab`, `run`, `input`, `wait`, `say` and `done`, a panel that opens beside the tab without taking the focus, the countdown to veto, the approval, the stop and the audit file; the keys `Ctrl+A` then `S`, `V`, `X`, `a`, `g`;
+- the `sysop` with the tools `list_tabs`, `read_tab`, `run`, `input`, `wait`, `say` and `done`, a panel that is beside the tab and never takes the focus on its own (`sysop.panel`: `always` in every window, `auto` while a goal runs, `off`; at the right in a wide window, at the bottom in a narrow or portrait one), the countdown to veto, the approval, the stop and the audit file; the keys `Ctrl+A` then `S`, `V`, `X`, `a`, `g`; a watcher that starts the service again when it dies;
+- the controls strip of the web page (key buttons for a phone, a place for the microphone), which belongs to the host page;
   `ask` and `look_tab` come later;
 - the policy that any key typed while a dialog of an agent is on the screen is a high risk (Esc included) and always needs approval.
 
@@ -221,8 +225,10 @@ changed topic, a mismatch, two sysops in a group, a plain watcher), the states w
 approval that only the panel can give, and that no screen reaches the bus. It found two bugs, now fixed with tests: Whisper turns silence into a word (`you`) that became a goal (voice), and a goal that is a request for the agent
 of the active tab was answered by the brain itself (sysop prompt). The 11 scenarios of the sysop on its own are `tests/e2e_sysop.sh`; the real-tmux tests of `swarmbox-tabs` are `tests/test_tabs_real.py` (gated by `SWARMBOX_TEST_REAL_TMUX=1`, run in Podman).
 
-**Not proven yet**: a real microphone and a human voice (espeak's Portuguese is heard badly by Whisper small: the transcripts vary between runs, see `docs/voice.md`), the real `entrypoint.sh serve` (the harness starts the same programs the
-entrypoint starts, the steps themselves are in `tests/test_serve_steps.py`), a real tunnel (only a second host name), a real phone browser, and other versions of Claude Code (this is 2.1.325, the texts of its interface are signals).
+**Walked through as a new reader** (the docs followed command by command, Podman, the image built for the previous round with the files of this checkout laid over it, the real `entrypoint.sh serve`, tmux 3.7c, Claude Code 2.1.325, Whisper small built by `swarmbox-tool install voice`): the sysop installed with `swarmbox-tool install` (its service starts at once), the first goal from a shell (`done`, the command typed in the second tab), from the `Ctrl+A g` popup and an approval with `Ctrl+A a` then `run` in a client of 130 columns (the panel at the right, 40 columns), the panel at the bottom in 80 columns, `sysop.panel` `auto` (opens on a goal, closes a few seconds after it),
+the voice front on the web port (`/voice/health`, the page files, 404 for another path, 415 for a wrong content type, a silent WAV answered `nothing_heard`), `swarmbox-voice say` with and without a listener, the key buttons and the microphone in a headless Chromium with touch emulation (every button 44 px; `Panel` toggled the panel and `^C` interrupted a `sleep` in the active tab), and the failures of the Troubleshooting sections with their exact messages (no `claude`, not logged in, no listener, no tmux session, the time and step budgets). It found three documentation errors (the nested-tmux key, `confirm-all` in the first example that waits for an approval, and the `claude` prerequisite), now fixed.
+
+**Not proven yet**: a real microphone and a human voice (espeak's Portuguese is heard badly by Whisper small: the transcripts vary between runs, see `docs/voice.md`), nested Podman in that walk-through (no `/dev/net/tun` here; it is `SWARMBOX_TEST_NO_NESTED=1`), a real tunnel (only a second host name), a real phone browser (touch is emulated), and other versions of Claude Code (this is 2.1.325, the texts of its interface are signals).
 
 ### Decisions from the spikes
 

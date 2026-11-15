@@ -212,7 +212,7 @@ and must be your choice. It also warns when the box's image is not the one the c
   or with `--plain`, the command runs directly, through `bash -c` with the shell fragment sourced, not an interactive shell, so standard error stays clean.
   Measured with a spike and real tmux 3.3a: exit codes, 17 awkward arguments byte for byte.
 - A command named like a host word cannot be run this way: use `swarmbox bash -c '<command>'`.
-- tmux config: `container/config/tmux.conf` (prefix `Ctrl+A`, mouse, history, true colour, and `Ctrl+A` then `S` to show or hide the panel of the `sysop` tool); your `~/.tmux.conf` is read after it.
+- tmux config: `container/config/tmux.conf` (prefix `Ctrl+A`, mouse, history, true colour, and the prefix keys `S`, `V`, `X`, `a`, `g` of the `sysop` tool: show or hide its panel, veto, stop, approve, type a goal); your `~/.tmux.conf` is read after it.
 
 ## 6. Startup of the box
 
@@ -229,13 +229,13 @@ and must be your choice. It also warns when the box's image is not the one the c
 | 6 | `swarmbox-tool link --user` (shims and index of the user level) | W |
 | 6b | start and supervise the bus broker (`swarmbox-bus serve`), wait up to 2 s for it to answer | W |
 | 7 | generate the MCP file (`swarmbox-mcp`), then run `prepare.sh` of every tool that is installed or in `WITH` | W per tool |
-| 8 | start the nested Podman service on `<state>/podman.sock` and check that it answers (10 s) | W |
+| 8 | clear the runtime state of the previous nested Podman and, when `/dev/fuse` is not usable, the stale `fuse-overlayfs` marker (`overlay/.has-mount-program`) of the graph root; start the nested Podman service on `<state>/podman.sock` and check that it answers (10 s) | W |
 | 9 | start tmux with session `main` and the idle window | W |
 | 10 | start and supervise ttyd when `WEB=1` | W |
 | 11 | write the ready marker: `ok` or `warnings=<n>` | W |
 | 12 | in the background, install the tools of `WITH`, one after another, output to `serve.log` | W per tool |
 
-Tools of `WITH` install after the marker, so a slow download never blocks the door. `serve` handles SIGTERM and SIGINT (it sleeps in `wait`
+A log trimmer (a background job of `serve`, not a numbered step) looks every 5 minutes at `serve.log`, `bus.log`, `web-terminal.log` and `podman-service.log` and cuts one that is past 4 MiB to its last 1 MiB (the writers append with `>>`, so they go on at the new end), with a line that says so; it never fails. Tools of `WITH` install after the marker, so a slow download never blocks the door. `serve` handles SIGTERM and SIGINT (it sleeps in `wait`
 on a background `sleep infinity`), stops its children and exits, so `podman stop` is prompt (0.14 s measured, with and without `--init`).
 One supervisor function, `supervise_one`, serves ttyd and the bus broker. It restarts the child with a backoff of 1, 2, 4 ... 30 s; after 5 exits within 60 s it records a health line and stays idle, so that
 `swarmbox-web restart` (or `swarmbox-bus restart`) can still restart it by hand; the box does not stop when ttyd or the bus does. A broker that exits 8 (another one holds the lock) is not restarted. The box is created without `--restart`: after a host
@@ -292,8 +292,8 @@ The `sysop` tool (`swarmbox tool install sysop`; user guide in [sysop.md](sysop.
 a **brain** (`claude -p` by default, any command that speaks MCP) with a few tools served by `swarmbox-sysop mcp`: `list_tabs`, `read_tab`, `run`, `input`, `wait`, `say`, `done`. The tools call `swarmbox-tabs` (`list`, `screen`, `send`) as a child process and never the bus,
 so everything the sysop does is typed in a tmux tab you can see. The host side of the tool, not the brain, rates each `run` and `input` (low, medium, high or blocked, from the text and from what the tab runs) and routes it by the autonomy level:
 a countdown the user can veto, an approval (the word `run` in the panel), or a refusal. Budgets (`sysop.max_steps`, `sysop.max_seconds`), the stop command and the audit file (`<state>/sysop/events.jsonl`, append-only, mode 0600) apply to every goal.
-The panel opens beside the tab without taking the focus; veto, stop, approve and goal are tmux prefix keys (`Ctrl+A` then `V`, `X`, `a`, `g`; `S` shows or hides the panel). A key typed while a dialog of an agent is on the screen is always a high risk.
-The tool is code of this repository (standard library Python, nothing downloaded); like `voice`, its `prepare.sh` refreshes its library at every box start and starts the subscriber. Its settings are the eight `sysop.*` keys of section 9,
+The panel is one pane per window beside the tab (at the right in a wide window, at the bottom in a narrow or portrait one) and never takes the focus by itself; `sysop.panel` says when it exists: `always` (the service, started with `serve --dock`, puts it in every window and follows new windows and resizes through tmux hooks, with a look every 4 seconds as a safety net), `auto` (opened in the window you look at when a goal arrives, closed a few seconds after the last) or `off`. Veto, stop, approve and goal are tmux prefix keys (`Ctrl+A` then `V`, `X`, `a`, `g`; `S` shows or hides the panel), plain bindings of `tmux.conf` that call `swarmbox-sysop`. A key typed while a dialog of an agent is on the screen is always a high risk.
+The tool is code of this repository (standard library Python, nothing downloaded); like `voice`, its `prepare.sh` refreshes its library at every box start and starts the subscriber under a small watcher (`serve --log --dock --watch`) that starts it again after 1, 2, 4 ... 30 s when it dies and gives up after five abnormal exits in a minute (`swarmbox-tool prepare` wakes it); the entrypoint knows nothing of it. Its settings are the nine `sysop.*` keys of section 9,
 passed to the box as `SWARMBOX_SYSOP_*` only when they differ from the default.
 
 ### The voice tool
@@ -311,8 +311,10 @@ browser -> https://swarmbox.example.com -> Cloudflare Access (e-mail code) -> cl
 **Inside the box.** ttyd (pinned, checksummed) runs tmux attached to `main`. It is on by default, listens only on `127.0.0.1:<WEB_PORT>` of the host
 (always 7681 inside) and has no login of its own. The page is built at image build by `container/web/build-index.sh`, which joins ttyd's own page,
 the clipboard bridge and the style into one file (ttyd serves a single file, measured). At start `swarmbox-web run` copies it to `box:/tmp/swarmbox/index.html` substituting
-`padding`, `ctrlVPaste`, `ctrlCCopy` from `<workspace>/.config/swarmbox/web-terminal.conf`; every other key goes to ttyd as `-t key=value`.
+`padding`, `ctrlVPaste`, `ctrlCCopy`, `scrollbar`, `strip` and `stripKeys` from `<workspace>/.config/swarmbox/web-terminal.conf`; every other key goes to ttyd as `-t key=value`.
 `swarmbox-web restart` applies a change without ending the box. Details: [web-terminal.md](web-terminal.md).
+
+**The controls strip.** The page has a slim bar under the terminal (`ttyd-clipboard.js`, `ttyd-style.css`; configured by `strip` and `stripKeys`). The terminal ends where the bar begins and xterm is refitted to what is left, so tmux sees the smaller window and the bar covers no cell, the status bar included. It holds key buttons that type tmux key names into the terminal (default `Esc`, `Tab`, `^C`, the arrows and `Panel`, which types `C-a S`, the sysop binding of `tmux.conf`, so it needs no plugin; a tap is sent on release, a held arrow repeats, the terminal keeps the focus) and, at the right end, the controls that a plugin adds through `window.swarmboxStrip` (`add`, `note`, `remove`), which knows no plugin by name: the `voice` tool puts its microphone and its state sentences there. The key buttons show on a touch screen (`pointer: coarse`) or when `stripKeys` is listed, the strip itself on any screen once a plugin adds a control; the page has a viewport meta tag and, on iOS, follows `visualViewport` so the strip stays above the keyboard. With the strip hidden the page is ttyd's own.
 
 **Remote access.** `swarmbox remote` is a wrapper that runs `cloudflare-setup.py` (the only part that needs `python3`, stdlib only, in the support folder) with
 the box name and web port. `setup` asks for a domain, an e-mail and an API token (hidden input, never stored) and provisions the Access application with
@@ -394,6 +396,7 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600; `SWARMBOX_SYSOP_MAX_SECONDS` |
 | `sysop.topic` | `goal` | the bus topic the sysop listens on (same charset as `voice.topic`; both default to `goal`, which is the only link between the two tools); `SWARMBOX_SYSOP_TOPIC` |
 | `sysop.group` | `sysop` | the group the sysop subscribes with, so several sysops share the goals; `SWARMBOX_SYSOP_GROUP` |
+| `sysop.panel` | `always` | when the panel of the sysop is in tmux: `always` (every window, from the start of the box), `auto` (while a goal runs) or `off`; passed as `SWARMBOX_SYSOP_PANEL_MODE` (`SWARMBOX_SYSOP_PANEL=1` marks the start command of a panel pane) |
 
 The `voice.*` and `sysop.*` keys are lower case with dots (`sysop.max_steps` keeps its underscore); the environment variable of a key is `SWARMBOX_` plus the key in upper case with `.` turned into `_`. They are creation settings like the others (applied by `swarmbox reset`), but
 they are passed to the box, and enter the fingerprint, only when they differ from the default.
@@ -430,7 +433,7 @@ Image settings that make it work: packages `podman`, `netavark`, `aardvark-dns` 
 `utsns = "host"` (the nested `crun` cannot call `sethostname`; nested containers share the box's hostname), `cgroup_manager = "cgroupfs"`, `events_logger = "file"` (no systemd inside) and
 `network_backend = "netavark"`. Neither file lives under the home, because the home is a bind mount.
 
-**The cost.** `/dev/net/tun` and an unmasked `/proc` make the box less isolated than a plain container; this is deliberate and always on. Two limits found on the development box: a third nesting level
+**The cost.** `/dev/net/tun` and an unmasked `/proc` make the box less isolated than a plain container; this is deliberate and always on. The box has no `/dev/fuse`, so Podman must use the kernel's overlay; a stale `fuse-overlayfs` marker left by another run of Podman would break it, and `serve` removes it at every start (step 8; [nested-podman.md](nested-podman.md)). Two limits found on the development box: a third nesting level
 (a SwarmBox inside a SwarmBox) cannot run nested Podman; and a host whose user namespace is narrower than the box's subuid range makes `newuidmap` fail (works with a normal 65536 range, not run on a real host).
 
 ## 12. Security model

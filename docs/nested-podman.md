@@ -29,9 +29,27 @@ podman run -d --name mongo --network dev -p 27017:27017 mongo:7   # inside Swarm
   `podman rm -f swarmbox`, then `podman volume rm swarmbox-containers`.
 - **User IDs**: SwarmBox has ~64k user IDs, so an image whose default user has a higher ID (distroless `nonroot` 65532, some `nobody` 65534
   images) can be pulled but not run as that user: run it with `--user root` (inside SwarmBox that is your own user, not host root).
+- **No `/dev/fuse`, and why Podman uses the kernel's overlay**: the box is created without `/dev/fuse` (only `/dev/net/tun`), so the only
+  storage driver that can work is the kernel's own rootless overlay (kernel 5.13 or newer, on the volume above). `/etc/containers/storage.conf`
+  in the image asks for `overlay` and does not name `fuse-overlayfs`. The package is on the `PATH` anyway (Debian pulls it in with Podman), and
+  Podman falls back to it when its probe of native overlay says "no". That answer is cached in `/tmp/storage-run-<uid>/containers/overlay/overlay-false`,
+  a folder shared by **every** graph root of your user, and the fallback leaves `~/.local/share/containers/storage/overlay/.has-mount-program`
+  containing `true`, which Podman never reads again as a question. A fresh box does not hit this (checked on the real image: native overlay,
+  marker `false`), but one `podman --root /tmp/x ...`, or one run with another `HOME`, on a file system that cannot do native overlay (such as
+  the box's own `/tmp`) can set it off, and from then on every run fails with `fuse: device not found` and `kernel does not support overlay fs`.
+  `swarmbox` removes the marker for you at every start of the box when `/dev/fuse` is not usable (a log line says so in `serve.log`), next to
+  the runtime folder it already clears. To repair a box that is running now, without a restart:
+  ```bash
+  rm -rf /tmp/storage-run-$(id -u) ~/.local/share/containers/storage/overlay/.has-mount-program
+  ```
+  Images and containers already in the storage keep working. If you add `--device /dev/fuse` to a box by hand, nothing is touched. A volume on
+  a file system or a kernel that cannot do native overlay at all still fails; `podman info` shows `Native Overlay Diff: "true"` when it works.
 - **Limits**: nested containers share the box's hostname (`utsns=host`). Settings such as `PORTS` only apply when the box is created,
   so use `swarmbox reset` to change them. Running Podman inside a box that is itself inside another container (a third level) needs the
-  same `/dev/net/tun` and unmasked `/proc`, which a plain test container does not have; the image's smoke test for the nested container runs
+  same `/dev/net/tun` and unmasked `/proc`, which a plain test container does not have, and it needs the 64535 sub-IDs of `/etc/subuid` to exist in the
+  level above: a box that was itself started with `--userns=keep-id` has only 63535 of them, so the nested start fails with `newuidmap: write to uid_map
+  failed: Operation not permitted` until `/etc/subuid` and `/etc/subgid` inside it are lowered (a property of that development box, not of a box made by
+  `swarmbox up`; `tests/test_nested_fuse_real.py` does it with `SWARMBOX_TEST_SUBID_FIX=1`). The image's smoke test for the nested container runs
   only in CI [unverified: that job has never run].
 
 [← Back to the README](../README.md)

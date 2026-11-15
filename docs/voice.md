@@ -5,7 +5,7 @@ The design of the split is in [plugins-design.md](plugins-design.md); [voice-des
 
 ## How it works for you
 
-1. Hold the microphone button of the web terminal (bottom right) and speak; release to send. The light on the button shows recording, sending, then one of:
+1. Hold the microphone button of the web terminal (at the right end of the controls strip under the terminal, [web-terminal.md](web-terminal.md)) and speak; release to send. The light on the button shows recording, sending, then one of:
 
    | Light | Sentence | Meaning |
    |---|---|---|
@@ -15,7 +15,7 @@ The design of the split is in [plugins-design.md](plugins-design.md); [voice-des
    | amber | Busy | a subscriber is behind with another message |
    | red | a short sentence | the recognizer, the audio or the bus failed |
 
-2. What happens next is the business of whoever listens. With the sysop: its panel opens in tmux, it works the goal and asks you when an action is risky ([sysop.md](sysop.md)). The page shows nothing else: no transcript, no plan, no card, no buttons.
+2. What happens next is the business of whoever listens. With the sysop: its panel (up in every window in the default `sysop.panel=always`, opened for the goal in `auto`) shows the goal, it works it and asks you when an action is risky ([sysop.md](sysop.md)). The page shows nothing else: no transcript, no plan, no card, no buttons.
 
 Without a subscriber on the topic (for instance the `sysop` tool is not installed) the page says "Nobody is listening". The page never shows the topic, the transcript or any detail.
 
@@ -23,7 +23,7 @@ Without a subscriber on the topic (for instance the `sysop` tool is not installe
 
 - The tool: `swarmbox tool install voice` builds `whisper.cpp` inside the box (a few minutes, needs the network and the compiler of the image) and downloads one multilingual model (`small`, about 490 MB). Nothing is in the image. It needs no login and no other tool.
 - `swarmbox-voice`, in the box: `serve` (the service), `front` (the web port, below), `model list|fetch NAME`, `say "text"` and `--self-test`.
-- The page (`web/page.js`, `web/page.css`): the microphone button and a state light, served by the front. It hides itself when the service does not answer.
+- The page (`web/page.js`, `web/page.css`): the microphone button and a state light, served by the front. It does not float over the terminal: it asks the controls strip of the web page of the box (`window.swarmboxStrip`, which belongs to the host page and knows no plugin by name) for a place at its right end and says its short sentences through the strip, so it never covers the status bar and its clock. It hides itself when the service does not answer, and does nothing on a page without a strip (an older image).
 - The service, on the loopback address of the box, `127.0.0.1:17682`. It is not published: the front starts it.
 - `swarmbox-voice front`: the web terminal port of the box with the voice parts next to ttyd.
 
@@ -61,7 +61,7 @@ Every connection is routed by its first request. Under `/voice/` the front has a
 | `GET /voice/health` | forwards it; only `{"ok": ...}` is passed back |
 | `POST /voice/audio` | forwards the WAV (up to 8 MiB); only `ok`, `state`, `error` and `message` are passed back, and only booleans and short strings of them |
 
-Every other path under `/voice/` is answered 404 (405 for a listed path with the wrong method, or OPTIONS) by the front itself, before the `Host` or `Origin` are looked at, and never reaches the service. Anything that is not `/voice/` is piped to ttyd byte for byte, websockets included (the head is not changed, except that a request that is not a websocket gets `Connection: close`). For the four routes the front checks what ttyd's `-O` checks for the terminal and a bit more, before the service sees the request: an `Origin` must name the `Host` (else 403), a POST needs the WAV content type (a cross-site form cannot send it) and a `Content-Length`, the body is limited, and at most 16 voice requests run at once. What it forwards is rebuilt: the path alone, `Host` and `Origin` rewritten to the loopback address of the service, which keeps its own loopback-only guard.
+Every other path under `/voice/` is answered 404 (405 for a listed path with the wrong method, or OPTIONS) by the front itself, before the `Host` or `Origin` are looked at, and never reaches the service. Anything that is not `/voice/` is piped to ttyd byte for byte, websockets included (the request head is not changed, except that a request that is not a websocket gets `Connection: close`; the answer to such a request gets `Content-Security-Policy: frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`, so no other origin can frame the terminal and click its key buttons). For the four routes the front checks what ttyd's `-O` checks for the terminal and a bit more, before the service sees the request: an `Origin` must name the `Host` (else 403), a POST needs the WAV content type (a cross-site form cannot send it) and a `Content-Length`, the body is limited, and at most 16 voice requests run at once. What it forwards is rebuilt: the path alone, `Host` and `Origin` rewritten to the loopback address of the service, which keeps its own loopback-only guard.
 
 When ttyd exits the front stops the service and exits with ttyd's status, so the restart policy of the box applies unchanged; SIGTERM stops both children. If the service dies the front restarts it with a back-off, and meanwhile `/voice/` answers 502 while the terminal is not affected. If the tool is not installed, is an old install without the front, or `voice.web` is `0`, `swarmbox-web` runs ttyd on the web port exactly as before and the page has no voice button.
 
@@ -120,6 +120,28 @@ What the service guarantees:
 - **The audio is not kept.** It lives in a private temporary folder while Whisper runs. The transcript is not logged.
 
 Whisper is called through one function (`stt.transcribe`), with `-l` from `voice.language` (`-l auto` for detection: the default of `whisper-cli` is English), the multilingual model, and `--prompt` only when a vocabulary is set.
+
+## Troubleshooting
+
+What you see on the page (or from `swarmbox-voice say`, which prints the same sentences with a full stop), why, and what to do. The sentences are the exact ones.
+
+| What you see | Why | What to do |
+|---|---|---|
+| no microphone button | the tool is not installed, `voice.web` is `0`, the strip is off (`strip=off` in `web-terminal.conf`), the page is cached from an older box, or the voice service is down | `swarmbox tool install voice`; `swarmbox config get voice.web`; reload the page after `swarmbox reset`; `swarmbox-voice --self-test` in a tab; `curl -s http://127.0.0.1:7681/voice/health` should answer `{"ok": true}` |
+| "The microphone needs https or localhost." | the page was opened over plain `http` on an address that is not `localhost` (for example the IP of the box on your network): a browser records only on a secure page | open `http://localhost:7681` (`swarmbox url`), or reach the box through the https address of `swarmbox remote setup` |
+| "Microphone blocked. Allow it in the site settings." | the browser was told no (or the permission is blocked for this site) | allow the microphone for this address in the site settings of the browser (the lock icon), reload, hold the button again |
+| "No microphone found." / "The microphone is busy." | no input device, or another program holds it | plug one in, or close the program that uses it |
+| "This browser cannot record audio." | no `getUserMedia` or Web Audio in this browser | use a current Chrome, Edge, Safari or Firefox |
+| "Nothing heard" (grey) | Whisper found no speech: silence, noise, or you released too soon | hold the button a little longer and speak closer; nothing was published |
+| "Nobody is listening" (amber); `swarmbox-voice: Nobody is listening.` and exit 3 | no subscriber on the topic: the `sysop` tool is not installed or not running, or its `sysop.topic` is not the name of `voice.topic` | `swarmbox bus topics` shows who listens on which topic; `swarmbox tool install sysop`; `swarmbox-sysop status` ([sysop.md](sysop.md)); make the two topic settings the same name and `swarmbox reset` |
+| "Busy" (amber); `swarmbox-voice: The listener is busy.` and exit 7 | a subscriber is behind with an earlier message | wait a moment and say it again |
+| "The bus of the box is not answering." (red); exit 4 | the bus is away (it is restarted within seconds) | `swarmbox-bus ping`; `swarmbox-bus restart` |
+| "The speech recognizer is not installed." / "The speech model is missing." | `whisper-cli` or the model file is not in the install | `swarmbox tool install voice --force`; `swarmbox-voice model list` shows which models are there, `swarmbox-voice model fetch small` gets one |
+| "The speech recognizer is busy: try again in a moment." / "took too long." / "failed." / "The recording is too long." | a burst of recordings, a big model on a slow machine, or more than 8 MiB of audio | wait and try again; a smaller `voice.stt.model` (`base`, `small`); say less in one go |
+| the text came out in the wrong language, or as symbols | `voice.language` is `auto` and the phrase is short | `swarmbox config set voice.language pt` (a code, not `pt-br`) and `swarmbox reset` |
+| the light says "Sent", but nothing happens | voice only publishes; what to do with a goal is for the listener | open its panel (`Ctrl+A S`), look at `swarmbox bus watch` in a tab, and see [sysop.md](sysop.md) |
+
+The audio is not kept and the transcript is not logged, so a wrong sentence cannot be looked up afterwards: `swarmbox bus watch` in a tab shows what was published, as it passes.
 
 ## Security notes
 
