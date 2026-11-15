@@ -181,6 +181,9 @@ COPY container/mcp/ /etc/swarmbox/mcp/
 COPY container/scripts/swarmbox-attach.sh /usr/local/bin/swarmbox-attach
 COPY container/scripts/swarmbox-web.sh /usr/local/bin/swarmbox-web
 COPY container/scripts/swarmbox-tool.sh /usr/local/bin/swarmbox-tool
+COPY container/scripts/swarmbox-bus.py /usr/local/bin/swarmbox-bus
+# The tmux driver of the bus: the bus loads it by path from this folder (it is a module, not a command).
+COPY container/scripts/swarmbox-bus-tmux.py /usr/local/lib/swarmbox/swarmbox-bus-tmux.py
 COPY container/scripts/swarmbox-shim.sh /usr/local/bin/swarmbox-shim
 COPY container/tools/ /usr/local/lib/swarmbox/tools/
 COPY container/scripts/swarmbox-mcp.sh /usr/local/bin/swarmbox-mcp
@@ -194,9 +197,9 @@ COPY container/host/ /usr/local/share/swarmbox/host/
 COPY cloudflare-setup.py /usr/local/share/swarmbox/host/cloudflare-setup.py
 COPY container/entrypoint.sh /usr/local/bin/swarmbox-entrypoint
 RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.toml /etc/swarmbox/bashrc.sh /etc/ssh/ssh_config.d/swarmbox.conf \
-        /usr/local/lib/swarmbox/dirs.sh /etc/swarmbox/scripts/starship-init.sh /etc/swarmbox/scripts/messages.sh && \
+        /usr/local/lib/swarmbox/dirs.sh /usr/local/lib/swarmbox/swarmbox-bus-tmux.py /etc/swarmbox/scripts/starship-init.sh /etc/swarmbox/scripts/messages.sh && \
     chmod 755 /usr/local/bin/banner.sh /usr/local/bin/swarmbox-statusline /usr/local/bin/swarmbox-pubkey \
-        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-tool /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-mcp /usr/local/bin/swarmbox-install /usr/local/bin/swarmbox-entrypoint && \
+        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-tool /usr/local/bin/swarmbox-bus /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-mcp /usr/local/bin/swarmbox-install /usr/local/bin/swarmbox-entrypoint && \
     chmod 755 /usr/local/share/swarmbox/host/swarmbox-host && \
     chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py /usr/local/share/swarmbox/host/VERSION /usr/local/share/swarmbox/host/DEFAULTS && \
     chmod -R a+rX /usr/local/share/swarmbox/host && \

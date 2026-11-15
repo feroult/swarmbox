@@ -4,7 +4,7 @@
 # under dash, busybox sh, bash in POSIX mode and macOS /bin/sh. No shell function and no startup file is involved.
 #
 #   (no command), attach, any other word   up, then run it in the box: `podman exec -it ... swarmbox-entrypoint attach ...`
-#   pubkey | tool                          forwarded into the box with `podman exec`
+#   pubkey | tool | bus                    forwarded into the box with `podman exec`
 #   version | help                         the version of this script | the command list
 #   config get|set|list|seed               the settings (the tunnel token is read from the terminal, never argv)
 #   env add|rm NAME | env list             the names of host variables passed to the box (ENV_KEYS)
@@ -66,6 +66,7 @@ usage: swarmbox [--plain] [command [args...]]
   env add|rm NAME       pass a variable of yours into the box (env list shows them)
   pubkey                the box's git SSH key
   tool list|install|use|remove NAME   tools inside the box
+  bus pub|sub|get|ls|watch ...        the box's message bus (swarmbox-bus --help in the box)
   remote setup|status|off|token       remote access through Cloudflare (--dry-run shows the changes)
   help                  this list
 USAGE
@@ -2727,7 +2728,7 @@ cmd_setup() {
 
 # attach_main WORDS...: for every first word that is not handled above. Start the box if needed (a separate shell: `up` holds the
 # lock until it ends, and the session below must not), then `podman exec` into it. -t only when standard input and output are
-# both terminals; TERM and COLORTERM are passed. pubkey and tool go to swarmbox-entrypoint as they are; a leading `attach` is a
+# both terminals; TERM and COLORTERM are passed. pubkey, tool and bus go to swarmbox-entrypoint as they are; a leading `attach` is a
 # prefix, not an argument; the exit status is the command's.
 attach_main() {
     ( cmd_up ) || exit $?
@@ -2735,7 +2736,7 @@ attach_main() {
     a_t=-i
     if [ -t 0 ] && [ -t 1 ]; then a_t=-it; fi
     case ${1-} in
-        pubkey|tool) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
+        pubkey|tool|bus) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
         attach) shift ;;
     esac
     # The pty of this terminal tab names the tab: it is the same for as long as the tab lives, in any terminal or over ssh, so after `exit`

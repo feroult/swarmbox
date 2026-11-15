@@ -5,6 +5,10 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added: the bus, a small message broker inside the box (`swarmbox bus pub|sub|get|ls|watch|ping|restart`, `swarmbox-bus --help` in the box). The box starts and supervises it at start; nothing else depends on it. `pub goal` hands a message to one subscriber that is reading
+  (a consumer that is alive but not reading is skipped, and the pub fails with exit 7 when every subscriber is behind); `pub tab/<tab>/in` types into a tmux tab (it refuses a busy agent, an open dialog and a text that starts with `/` or `!` unless told otherwise);
+  `get tab/<tab>/screen` reads a tab with the secrets removed, whatever the colours, and the colours as `[sel]`, `[bg]` and `[err]` spans. The socket is private to your user. `bus` is now a word of the `swarmbox` script, so a program of the box called `bus` runs as
+  `swarmbox attach bus`. The tmux driver and the secrets filter also fixed a JWT after a hyphen (`id-eyJ...`) that the speed fix of the filter had stopped redacting, in the `voice` context as well. Needs `swarmbox update` and `swarmbox reset`.
 - Added: the `voice` tool (`swarmbox tool install voice`), the first step of voice control (`docs/voice.md`, `docs/voice-design.md`). It builds whisper.cpp inside the box, downloads one multilingual Whisper model (`small` by default,
   never an `.en` one) and gives `swarmbox-voice`, a small service that listens only on the loopback address of the box: audio in, text out, then a planner (a program that reads JSON and answers with a plan of `send_text`, `new_window`
   or `select_pane`) and a plan that waits for your confirmation in a tmux panel. Nothing reaches tmux before it, a plan can be confirmed once and expires, the host rates the risk (`rm`, `push`, `sudo`, `curl | sh` and similar) and ignores what a planner says

@@ -1,4 +1,4 @@
-"""The subcommands of swarmbox-entrypoint: serve, attach, install, pubkey, tool, host-helper and
+"""The subcommands of swarmbox-entrypoint: serve, attach, install, pubkey, tool, bus, host-helper and
 "any other command, run as given". Everything runs against container/entrypoint.sh with FAKE programs first on PATH.
 
 Test-only variable: SWARMBOX_TEST_HOST_DIR replaces /usr/local/share/swarmbox/host.
@@ -43,7 +43,7 @@ class Base(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
         self.fake = os.path.join(self.base, "fake")
         os.mkdir(self.fake)
-        for name in ("swarmbox-attach", "swarmbox-install", "swarmbox-pubkey", "swarmbox-tool"):
+        for name in ("swarmbox-attach", "swarmbox-install", "swarmbox-pubkey", "swarmbox-tool", "swarmbox-bus"):
             write_exec(os.path.join(self.fake, name), FAKE)
 
     def env(self, path=None, **extra):
@@ -66,7 +66,7 @@ class Base(unittest.TestCase):
 class Dispatch(Base):
     def test_each_subcommand_runs_its_program_with_every_argument_preserved(self):
         for sub, prog in (("attach", "swarmbox-attach"), ("install", "swarmbox-install"), ("pubkey", "swarmbox-pubkey"),
-                          ("tool", "swarmbox-tool")):
+                          ("tool", "swarmbox-tool"), ("bus", "swarmbox-bus")):
             with self.subTest(sub=sub):
                 os.path.exists(os.path.join(self.base, "calls.jsonl")) and os.unlink(os.path.join(self.base, "calls.jsonl"))
                 r = self.run_ep(sub, *AWKWARD)
@@ -74,7 +74,7 @@ class Dispatch(Base):
                 self.assertEqual(self.calls(), [[prog] + AWKWARD])
 
     def test_exit_status_of_the_program_is_the_exit_status_of_the_entrypoint(self):
-        for sub in ("attach", "install", "pubkey", "tool"):
+        for sub in ("attach", "install", "pubkey", "tool", "bus"):
             for rc in (1, 3, 42, 130):
                 with self.subTest(sub=sub, rc=rc):
                     r = self.run_ep(sub, "x", env=self.env(FAKE_RC=str(rc)))
@@ -84,7 +84,7 @@ class Dispatch(Base):
         empty = os.path.join(self.base, "empty")
         os.mkdir(empty)
         for sub, prog in (("attach", "swarmbox-attach"), ("install", "swarmbox-install"), ("pubkey", "swarmbox-pubkey"),
-                          ("tool", "swarmbox-tool")):
+                          ("tool", "swarmbox-tool"), ("bus", "swarmbox-bus")):
             with self.subTest(sub=sub):
                 r = self.run_ep(sub, env=self.env(empty))
                 self.assertEqual(r.returncode, 127)

@@ -1,6 +1,6 @@
 # Plugins and the bus (design)
 
-Status: **design only, nothing here is implemented.** It replaces the "tools" of SwarmBox 2.0 by "plugins", adds a small **bus** (topics and the
+Status: **the bus and its tmux driver are implemented** (`swarmbox-bus`, `swarmbox-bus-tmux`, see section 6 of [design.md](design.md)); the plugins and the sysop are still design only. It replaces the "tools" of SwarmBox 2.0 by "plugins", adds a small **bus** (topics and the
 state of the box) that plugins use to talk without knowing each other, and splits the `voice` tool in two plugins, `voice` and `sysop`.
 There is no compatibility with the 2.0 manifests: they are migrated once. Today's mechanism is in [design.md](design.md) (section 8).
 

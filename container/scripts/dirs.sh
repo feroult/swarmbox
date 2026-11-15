@@ -21,6 +21,7 @@
 # SB_HEALTH_FILE           $SB_STATE_DIR/health
 # SB_PODMAN_SOCK           $SB_STATE_DIR/podman.sock
 # SB_RUN_DIR               /tmp/swarmbox                                          tmpfs, regenerated at every start
+# SB_BUS_SOCK              $SB_RUN_DIR/bus.sock                                   the bus broker's socket (swarmbox-bus)
 #
 # Inside the box HOME is the workspace, so these are <workspace>/.config/swarmbox and so on.
 
@@ -47,6 +48,7 @@ SB_LOG_DIR=$SB_STATE_DIR/logs
 SB_HEALTH_FILE=$SB_STATE_DIR/health
 SB_PODMAN_SOCK=$SB_STATE_DIR/podman.sock
 SB_RUN_DIR=/tmp/swarmbox
+SB_BUS_SOCK=$SB_RUN_DIR/bus.sock
 
 unset _sb_home _sb_v
 unset -f _sb_xdg_root 2>/dev/null || true

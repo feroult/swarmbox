@@ -23,27 +23,40 @@ _SEP = SEP
 
 _PATTERNS = [
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S),
+    # A JWT may follow a dash or letters of a name (`id-eyJ...`). Linear: it is tried only from the start of its maximal run of token characters
+    # (lookbehind); the atomic group runs on to the FIRST eyJ of the run, because a later eyJ of the same run fails exactly where the first did
+    # (the rest of the run and what follows it are the same), so every run is scanned once. `(?<![A-Za-z0-9_])eyJ...` alone is quadratic on
+    # "eyJ-eyJ-..." (13 s for 400000 characters). The part before eyJ is kept (group `keep`). It runs before `sk-`, which would take the first segment of `sk-eyJ...` and leave the rest.
+    re.compile(r"(?<![A-Za-z0-9_-])(?P<keep>(?>(?:(?!eyJ)[A-Za-z0-9_-])*))eyJ[A-Za-z0-9_-]{8,}+\.[A-Za-z0-9_-]{8,}+\.[A-Za-z0-9_-]{8,}"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"),
     re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}"),
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"),
     re.compile(r"\b(?:AKIA|ASIA|AGPA|AIDA|AROA)[0-9A-Z]{16}\b"),
     re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
     re.compile(r"\bAIza[0-9A-Za-z_-]{30,}"),
-    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
     # the body of a key whose BEGIN line fell outside the captured window: two or more long base64 lines in a row
     re.compile(r"(?m)^[ \t]*[A-Za-z0-9+/=]{32,}[ \t]*(?:\n[ \t]*[A-Za-z0-9+/=]{32,}[ \t]*)+"),
 ]
 _BEARER = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}")
 _AUTH = re.compile(r"(?i)\b(authorization|x-api-key|api-key|proxy-authorization)\s*[:=]\s*[^\r\n]+")
-_ASSIGN = re.compile(r"(?i)\b([A-Za-z0-9_.-]*(?:key|token|secret|passw(?:or)?d|passwd|credential)[A-Za-z0-9_.-]*)([\"']?\s*[=:]\s*)(\"[^\"\n]*\"|'[^'\n]*'|[^\s\"']+)")
-_FLAG = re.compile(r"(?i)(--[a-z0-9-]*(?:key|token|secret|passw(?:or)?d|passwd|credential)[a-z0-9-]*)(\s+)(?!-)(\"[^\"\n]*\"|'[^'\n]*'|\S+)")
+# Linear-time matching. A name (variable or flag) is matched only from the start of its maximal run of name characters (lookbehind), and the
+# part before the first keyword is atomic, so every run is scanned once (a flag may be glued to a word: the group runs on to the first `--` of the run); an unbounded [..]* behind a bare \\b rescans the rest of the run from
+# every dash or dot inside it (quadratic: 100000 dashes took 110 s). The keyword is always the first one of the run: what follows it (the rest
+# of the run, the separator) is the same for every later keyword of that run, so they could not match where the first did not.
+_KW = r"(?:key|token|secret|passw(?:or)?d|passwd|credential)"
+_ASSIGN = re.compile(r"(?i)(?<![A-Za-z0-9_.-])((?>(?:(?!" + _KW + r")[A-Za-z0-9_.-])*)" + _KW + r"[A-Za-z0-9_.-]*+)([\"']?\s*[=:]\s*)(\"[^\"\n]*\"|'[^'\n]*'|[^\s\"']+)")
+_FLAG = re.compile(r"(?i)(?<![a-z0-9-])((?>(?:(?!--)[a-z0-9-])*)--(?>(?:(?!" + _KW + r")[a-z0-9-])*)" + _KW + r"[a-z0-9-]*+)(\s+)(?!-)(\"[^\"\n]*\"|'[^'\n]*'|\S+)")
 _USERFLAG = re.compile(r"(?<!\S)(-u|--user|--proxy-user)(\s+)(\"[^\"\n]*\"|'[^'\n]*'|\S+)")
-_URLCRED = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^/\s:@]+):[^/\s@]+@")
+_URLCRED = re.compile(r"(?i)(?<![a-z0-9+.-])([a-z0-9+.-]++://[^/\s:@]+):[^/\s@]+@")
+
+
+def _secret(m):
+    return (m.groupdict().get("keep") or "") + REDACTED
 
 
 def redact(text):
     for pat in _PATTERNS:
-        text = pat.sub(REDACTED, text)
+        text = pat.sub(_secret, text)
     text = _AUTH.sub(lambda m: m.group(1) + ": " + REDACTED, text)
     text = _BEARER.sub(lambda m: m.group(1) + " " + REDACTED, text)
     text = _URLCRED.sub(lambda m: m.group(1) + ":" + REDACTED + "@", text)

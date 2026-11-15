@@ -107,9 +107,9 @@ Measured with a stand-in server, Podman 4.3.1.
 ## 4. Commands
 
 Every `swarmbox <word>` is handled by the script or forwarded into the box. Its own words win and are reserved: `stop`, `reset`, `up`, `url`,
-`update`, `config`, `env`, `remote`, `fingerprint`, `version`, `help`, `--help`, `-h` (and `create-flags`, `connection` and `setup`, which are internal). `pubkey` and `tool` go
+`update`, `config`, `env`, `remote`, `fingerprint`, `version`, `help`, `--help`, `-h` (and `create-flags`, `connection` and `setup`, which are internal). `pubkey`, `tool` and `bus` go
 to the box as they are; `attach` and any other first word run `up` and then `podman exec` into the box (`-t` only when stdin and stdout are
-terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a reserved name runs as `swarmbox attach <name>`.
+terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a reserved name runs as `swarmbox attach <name>` (so a box program called `bus`, `tool` or `pubkey` does too).
 
 | Command | What it does |
 |---|---|
@@ -123,6 +123,7 @@ terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a r
 | `env add\|rm NAME`, `env list` | variables of yours to pass into the box (section 10) |
 | `pubkey` | the box's git SSH public key |
 | `tool list\|install\|update\|use\|remove\|doctor\|new\|validate` | tools inside the box (section 8) |
+| `bus pub\|sub\|get\|ls\|watch\|ping\|restart` | the message bus of the box (section 6); `swarmbox-bus --help` in the box |
 | `remote setup\|status\|off\|token` | remote access through Cloudflare (`--dry-run` shows changes) |
 | `version`, `fingerprint`, `help` | script version; creation fingerprint (`--explain` lists differences); the command list |
 
@@ -225,6 +226,7 @@ and must be your choice. It also warns when the box's image is not the one the c
 | 3 | create the XDG folders and `box:/tmp/swarmbox`; clear `health` | F |
 | 5 | ensure the SSH key (`swarmbox-pubkey --ensure`) | W |
 | 6 | `swarmbox-tool link --user` (shims and index of the user level) | W |
+| 6b | start and supervise the bus broker (`swarmbox-bus serve`), wait up to 2 s for it to answer | W |
 | 7 | generate the MCP file (`swarmbox-mcp`), then run `prepare.sh` of every tool that is installed or in `WITH` | W per tool |
 | 8 | start the nested Podman service on `<state>/podman.sock` and check that it answers (10 s) | W |
 | 9 | start tmux with session `main` and the idle window | W |
@@ -234,10 +236,43 @@ and must be your choice. It also warns when the box's image is not the one the c
 
 Tools of `WITH` install after the marker, so a slow download never blocks the door. `serve` handles SIGTERM and SIGINT (it sleeps in `wait`
 on a background `sleep infinity`), stops its children and exits, so `podman stop` is prompt (0.14 s measured, with and without `--init`).
-The supervisor restarts ttyd with a backoff of 1, 2, 4 ... 30 s; after 5 exits within 60 s it records a health line and stays idle, so that
-`swarmbox-web restart` can still restart ttyd by hand; the box does not stop when ttyd does. The box is created without `--restart`: after a host
+One supervisor function, `supervise_one`, serves ttyd and the bus broker. It restarts the child with a backoff of 1, 2, 4 ... 30 s; after 5 exits within 60 s it records a health line and stays idle, so that
+`swarmbox-web restart` (or `swarmbox-bus restart`) can still restart it by hand; the box does not stop when ttyd or the bus does. A broker that exits 8 (another one holds the lock) is not restarted. The box is created without `--restart`: after a host
 reboot it is stopped and the next `swarmbox` starts it (the connector, by contrast, is created with `--restart=always`).
 The entry banner shows the health lines. The test-only switches are `SWARMBOX_TEST_*` variables; they are not settings.
+
+### The bus
+
+`swarmbox-bus` (source `container/scripts/swarmbox-bus.py`, one file, standard library only) is the broker and its command line. Rationale and the
+spikes behind it are in [plugins-design.md](plugins-design.md). Nothing of the box depends on it; step 6b starts it and a failure is only a warning.
+
+- **Where.** A unix socket `box:/tmp/swarmbox/bus.sock` (`SB_BUS_SOCK` in `dirs.sh`; `SB_BUS_SOCKET` overrides it for the client and the broker), mode 0600, and the broker refuses
+  any uid that is not its own or root (`SO_PEERCRED`). One broker per socket, by `flock` on `bus.sock.lock`; a socket left by a crashed broker is removed by the next one.
+  Log `<state>/bus.log`; supervisor pid `box:/tmp/swarmbox/bus-supervisor.pid`. From the host: `swarmbox bus ...` (forwarded like `pubkey` and `tool`).
+- **Commands.** `pub [--source S] [--] TOPIC [MESSAGE|-]` (a big body goes by stdin: one argv string is capped at 128 KiB; a message that starts with `-` goes after `--`), `sub [--raw] [TOPIC]` (`--raw`: one line per body, plain one-line text as it is, anything else as JSON), `get TOPIC [--lines N]`,
+  `ls [PREFIX]`, `watch [--no-screen]`, `ping`, `restart`, `serve`. Exit codes: 0 ok, 1 error, 2 usage, 3 no subscriber, 4 broker not running, 5 too large, 6 bad topic or request,
+  7 busy, 8 already running.
+- **Topics.** `goal` is a queue: each message goes to one live subscriber (round robin), nothing is buffered, there is no ack, and `pub` fails with 3 when nobody listens
+  (7 when every subscriber still has an earlier message unread after a 0.2 s wait: a consumer that is alive but not reading is skipped, not fed). The one loss window of "no ack" is a message written to a consumer that dies before it reads it. NaN and Infinity are not JSON: the CLI sends them as text and the broker refuses them. `tab/<tab>/in` goes to the tab through the driver. State is read, never stored: `ls tab/`, `get tab/<tab>/screen`.
+- **Protocol.** One JSON line per request; `pub`, `get`, `ls`, `ping` get one reply line `{"ok":true,...}` or `{"ok":false,"err":CODE,"msg":TEXT}`; `sub` and `watch` get
+  `{"ok":true,"subscribed":T}` and then one line per event. A line is at most 1 MiB. The envelope `{v,id,topic,source,peer,time,body}`: the broker sets `id`, `time` and `peer`;
+  `source` is a label the sender declares, for display and never for authorization. The full text is the docstring of the file.
+- **The driver interface.** The broker has no tmux code. It calls a `Driver` (same file; `make_driver()` chooses it: `auto` and `tmux` are the tmux driver, `stub` the in-memory one for tests) with three blocking
+  methods, run in worker threads: `list_tabs() -> [{"tab": address, "active": bool, ...}]`, `screen(tab, lines) -> {"text", "cursor", ...}` (already redacted) and
+  `send(tab, body)`, which types into the tab. Failures are `DriverError(code, message)` (`no_such_tab`, `ambiguous_tab`, `bad_body`, ...), which the client gets as `err` and `msg`.
+  A driver call that takes over 30 s is answered as `timeout`; sends to one tab never overlap: after a timeout the tab stays locked until the driver thread really ends, so the next send waits (and fails with `timeout` after 30 s) instead of typing over it.
+- **The tmux driver** is `container/scripts/swarmbox-bus-tmux.py`, a module in the image at `/usr/local/lib/swarmbox/` that the bus loads by path (it imports nothing from any plugin; it keeps its own copy of the
+  secrets filter of `voice`, and a test keeps the two equal). It talks to the tmux session `main` (`SB_BUS_TMUX_SESSION`; `SB_BUS_TMUX_SOCKET` adds `-L name` and `SB_BUS_TMUX_BIN` names the binary, for tests), every
+  call has a 5 s timeout, and a failed call is `no_session`, `no_such_tab`, `timeout`, `tmux_error`.
+  - *Tabs.* A tab is a window of `main`. The address is the window id (`@3`); `index:name`, the index and the name are accepted too, and a name used twice is `ambiguous_tab` with the candidates. Every tmux call targets
+    the pane id. Panes with the option `@swarmbox_sysop_panel` or `@swarmbox_voice_panel` are never listed or targeted. `active` is the window of the non-control client with the latest activity, else the current window of `main`.
+  - *Screen.* `capture-pane -p -J -e`, turned into the plain text of the pane plus the style of each character, then the last `lines` lines, then the secrets filter (on the plain text, whole lines, whatever the colours), then the text written with `[sel]` (reverse video), `[bg]` (background colour)
+    and `[err]` (red) spans and each line cut to 1000 characters (so no secret is cut in half and no colour hides one). Text of the pane that looks like a marker (`[sel]`, `[/err]`, `[REDACTED]`) gets one more `[` (`[[sel]`), so program output cannot forge one. A full-screen program (alternate screen) has no scrollback, so `lines` is ignored for it (`"lines": null` in the answer).
+  - *Typing.* `{"run": text}` types the text literally and presses Enter; `{"input": text}` types text with keys in braces (`{Esc}`, `{Enter}`, `{C-c}`, `{Up}`, ... any other `{word}` is text, `{{` is a brace). The text goes in pieces of 1024 characters (a `;` at the end of a piece as the key 0x3b: tmux would take it for the end of the command) and each key
+    is a separate tmux call 150 ms apart; a message has at most 100 steps (texts and keys). A pane in copy mode is cancelled first. When a message submits text (text, then Enter) to a pane that runs an agent (Claude Code, seen on the screen), a dialog is refused (`dialog_open`),
+    a busy agent is refused unless the body has `"queue": true` (`busy_tab`), text starting with `/` or `!` is refused unless `"slash": true` (`slash_refused`; every submitted text is checked, and a message that submits more than one text to an agent needs `"queue": true`), and after the Enter the driver checks that the text left
+    the input box and presses Enter once more if it did not (`not_submitted` if it still did not). `input` without a submission is never judged, so a dialog can be answered and a busy agent interrupted.
+- **Restart.** While the broker restarts (1 to 30 s) `pub goal` fails with 3 and nothing is replayed; a resident subscriber must reconnect with a backoff.
 
 ## 7. Web terminal and remote access
 
@@ -391,7 +426,7 @@ listens only on `127.0.0.1` and has no login on its own port; the Cloudflare cre
 The image is the root `Dockerfile` (about 1.75 GB built; no agent inside): `node:24-trixie-slim` (Debian 13), user `agent` UID/GID 1000 (the base user renamed, passwordless `sudo` on purpose), git, curl, python3 and venv,
 build tools, jq, tmux, vim, openssh-client and similar, Podman and its network packages, Chromium, `chrome-devtools-mcp` (pinned), `uv`, ttyd and Starship (pinned, checksummed), a Python venv at `/opt/flow`,
 `container/` scripts and configuration, `cloudflare-setup.py`, and the tool manifests with their shims. `ENTRYPOINT swarmbox-entrypoint`, `CMD serve`. Subcommands of the entrypoint: `serve`, `attach`, `install`,
-`pubkey`, `tool`, `host-helper` (the archive of the script and support files on stdout), anything else is run as given. Layers: stable first, volatile last; every `RUN` that downloads cleans up in the same `RUN`; `NPM_CONFIG_CACHE` is
+`pubkey`, `tool`, `bus`, `host-helper` (the archive of the script and support files on stdout), anything else is run as given. Layers: stable first, volatile last; every `RUN` that downloads cleans up in the same `RUN`; `NPM_CONFIG_CACHE` is
 `/opt/npm-cache`, owned by `agent`. Every version is an `ARG` with a default; `CONTRIBUTING.md` says how they are bumped. A tool the image needs that is not in Debian is fetched with its published checksum verified. **tmux is the one exception to "the Debian package"**: Debian 13 has 3.5a, which has no pane scrollbar (tmux 3.6 added it), so the image installs one exact backport, `TMUX_VERSION` (3.7c-1~bpo13+1), pinned by SHA-256 for amd64 and arm64 and fetched from the archive or, when backports has moved on, from `snapshot.debian.org` by SHA-1; each source is checked against the SHA-256 before the file is installed. `container/config/tmux.conf` enables `pane-scrollbars on` with `set -gq`, so the same file loads on the older tmux of a development machine, which ignores it. `on` and not `modal`: with `modal` the pane is resized (one column) each time copy mode starts and ends, and the program in it gets a resize and redraws while you read its output [verified: tmux 3.7c with a program that logs SIGWINCH: 80 -> 79 -> 80 with `modal`, 79 throughout with `on`]; a program on the alternate screen gets the whole width and no bar, and one that asks for the mouse gets the wheel and tmux does not enter copy mode [verified: same tmux, a program that enables mouse tracking received the three wheel events].
 
 **Distribution.** Image `ghcr.io/feroult/swarmbox`, multi-arch (amd64, arm64), tags `X.Y.Z`, `X.Y` and `latest`, published with each release. `.github/workflows/release.yml` runs the tests, a native build per architecture, a check that the
@@ -408,8 +443,8 @@ An `IMAGE` with no `X.Y` series (a digest, `latest`, `dev`) needs `--to`.
 
 ```
 Dockerfile                  the image
-container/entrypoint.sh     serve, attach, install, pubkey, tool, host-helper
-container/scripts/          dirs, banner, messages, ssh-key, starship-init, swarmbox-{attach,install,mcp,shim,tool,web}
+container/entrypoint.sh     serve, attach, install, pubkey, tool, bus, host-helper
+container/scripts/          dirs, banner, messages, ssh-key, starship-init, swarmbox-{attach,bus,bus-tmux,install,mcp,shim,tool,web}
 container/host/             swarmbox-host (the `swarmbox` script), VERSION, DEFAULTS   (the archive of `host-helper`)
 install.sh                  the release installer (downloads swarmbox, checks its sha256)
 container/config/           tmux.conf, tmux-browser-keys.conf, starship.toml, bashrc.sh (the shell fragment), ssh-swarmbox.conf

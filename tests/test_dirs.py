@@ -29,7 +29,7 @@ EXPECTED = {
     "SB_PODMAN_SOCK": ("state", ".local/state", "swarmbox/podman.sock"),
 }
 XDGVAR = {"config": "XDG_CONFIG_HOME", "data": "XDG_DATA_HOME", "state": "XDG_STATE_HOME"}
-FIXED = {"SB_RUN_DIR": "/tmp/swarmbox"}
+FIXED = {"SB_RUN_DIR": "/tmp/swarmbox", "SB_BUS_SOCK": "/tmp/swarmbox/bus.sock"}
 SHELLS = [s for s in ("sh", "dash", "bash") if shutil.which(s)]
 
 

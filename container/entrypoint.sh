@@ -2,11 +2,12 @@
 # swarmbox-entrypoint: the image's entry point.
 #
 #   serve     the box's main process: the ordered startup, the readiness marker and health file,
-#             PID 1 signal handling, and the ttyd supervisor
+#             PID 1 signal handling, and the supervisors of the bus broker and of ttyd
 #   attach    forwards to swarmbox-attach (the session of each tab, the idle window, `swarmbox <command>`)
 #   install   forwards to swarmbox-install
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
 #   tool      forwards to swarmbox-tool
+#   bus       forwards to swarmbox-bus (the bus broker's command line)
 #   host-helper
 #             writes the helper archive (box:/usr/local/share/swarmbox/host/) as a tar archive on stdout
 #   (none)    exit 64
@@ -15,7 +16,7 @@
 # Test-only variables (not in the configuration table and not read by anything else): SWARMBOX_TEST_LIB (folder holding dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces
 # /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_PODMAN_RUNROOT (the folder serve clears before the nested service), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
 # instead of a failure for step 2 and no service at step 8), SWARMBOX_TEST_BACKOFF_SCALE (integer multiplier of the
-# ttyd backoff, 0 for none), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10).
+# backoff of both supervisors, 0 for none), SWARMBOX_TEST_BUS_WAIT (seconds to wait for the bus to answer, default 2), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10).
 
 SB_LIB=${SWARMBOX_TEST_LIB:-/usr/local/lib/swarmbox}
 
@@ -26,6 +27,7 @@ SB_LIB=${SWARMBOX_TEST_LIB:-/usr/local/lib/swarmbox}
 EARLY_LOG=""   # log lines written before the state folder exists (steps 0 to 2); flushed at step 3
 WARNINGS=0
 SUP=""
+BUSSUP=""
 SVC=""
 INST=""
 STOPPING=0
@@ -61,11 +63,11 @@ warn() {
     log "WARNING: $1"
 }
 
-# stop_children: the ttyd supervisor (which stops ttyd), the installer job, the nested Podman service. The tmux server is
-# left to end with the container.
+# stop_children: the ttyd and bus supervisors (which stop ttyd and the broker), the installer job, the nested Podman service. The
+# tmux server is left to end with the container.
 stop_children() {
     local p
-    for p in "$SUP" "$INST"; do
+    for p in "$SUP" "$BUSSUP" "$INST"; do
         if [ -n "$p" ]; then
             kill -TERM "$p" 2>/dev/null
             wait "$p" 2>/dev/null
@@ -75,8 +77,8 @@ stop_children() {
         kill -TERM "$SVC" 2>/dev/null
         wait "$SVC" 2>/dev/null
     fi
-    SUP=""; INST=""; SVC=""
-    rm -f "${SB_RUN_DIR:-/nonexistent}/web-supervisor.pid" 2>/dev/null
+    SUP=""; BUSSUP=""; INST=""; SVC=""
+    rm -f "${SB_RUN_DIR:-/nonexistent}/web-supervisor.pid" "${SB_RUN_DIR:-/nonexistent}/bus-supervisor.pid" 2>/dev/null
     return 0
 }
 
@@ -104,14 +106,24 @@ run_logged() {
     "$@" >> "$SERVE_LOG" 2>&1
 }
 
-# supervise: the ttyd restart policy. Runs in a subshell. Restarts ttyd after 1, 2, 4 ... 30 s; after 5 exits
-# within 60 s it records a health line and idles (alive) until `swarmbox-web restart` sends USR1; TERM stops it.
-supervise() {
-    local tp=0 sp=0 stop=0 restart=0 delay=1 i
+# supervise_one NAME HEALTH-LINE LOGFILE RESTART-COMMAND STOP-STATUS COMMAND [ARGS...]: the restart policy of a long-running child
+# (ttyd, the bus broker). Runs in a subshell. Restarts it after 1, 2, 4 ... 30 s; after 5 exits within 60 s it records HEALTH-LINE and
+# idles (alive) until RESTART-COMMAND sends USR1; TERM stops it. A child that exits with STOP-STATUS (empty: none) is not restarted and
+# the supervisor ends: someone else runs that service.
+supervise_one() {
+    local name=$1 line=$2 wlog=$3 hint=$4 stop_rc=$5
+    shift 5
+    # SUP_PIDFILE (set for this call only): the supervisor writes its own pid there and removes the file when it ends, whatever the reason
+    # (a child with STOP-STATUS, a TERM): a pid file that outlives its supervisor would send USR1 to whatever process has that pid later.
+    # It writes it itself, so the file cannot be written after the supervisor already left.
+    if [ -n "${SUP_PIDFILE:-}" ]; then
+        printf '%s\n' "$BASHPID" > "$SUP_PIDFILE" 2>/dev/null
+        # shellcheck disable=SC2064  # the path is expanded now, on purpose
+        trap "rm -f -- $(printf '%q' "$SUP_PIDFILE")" EXIT
+    fi
+    local tp=0 sp=0 stop=0 restart=0 delay=1 i rc
     local -a exits=() keep=()
     local scale=${SWARMBOX_TEST_BACKOFF_SCALE:-1}
-    local line="web terminal keeps crashing; see web-terminal.log"
-    local wlog="$SB_STATE_DIR/web-terminal.log"
     # shellcheck disable=SC2317,SC2329  # called from the traps below
     kill_pids() {
         [ "$tp" -gt 0 ] && kill "$tp" 2>/dev/null
@@ -132,16 +144,21 @@ supervise() {
     while [ "$stop" = 0 ]; do
         if [ "$restart" = 1 ]; then
             restart=0; exits=(); delay=1; health_remove "$line"
-            log "ttyd restarted by hand; crash count reset"
+            log "$name restarted by hand; crash count reset"
         fi
-        swarmbox-web run >> "$wlog" 2>&1 < /dev/null &
+        "$@" >> "$wlog" 2>&1 < /dev/null &
         tp=$!
-        # a signal that arrived before tp was known must still act on this ttyd
+        # a signal that arrived before tp was known must still act on this child
         if [ "$restart" = 1 ] || [ "$stop" = 1 ]; then kill "$tp" 2>/dev/null; fi
-        while kill -0 "$tp" 2>/dev/null; do wait "$tp" 2>/dev/null; done   # wait returns early when a trap fires
+        rc=0
+        while kill -0 "$tp" 2>/dev/null; do wait "$tp" 2>/dev/null; rc=$?; done   # wait returns early when a trap fires
         tp=0
         [ "$stop" = 1 ] && break
         [ "$restart" = 1 ] && continue
+        if [ -n "$stop_rc" ] && [ "$rc" = "$stop_rc" ]; then
+            log "$name exited with status $rc: another one is running; not restarting"
+            break
+        fi
         exits+=("$SECONDS")
         keep=()
         for i in "${exits[@]}"; do
@@ -150,17 +167,29 @@ supervise() {
         exits=("${keep[@]}")
         if [ "${#exits[@]}" -ge 5 ]; then
             health_add "$line"
-            log "ttyd exited 5 times within 60 s: giving up; waiting for 'swarmbox-web restart'"
+            log "$name exited 5 times within 60 s: giving up; waiting for '$hint'"
             while [ "$restart" = 0 ] && [ "$stop" = 0 ]; do
                 nap infinity
             done
             continue
         fi
-        log "ttyd exited; restarting in $((delay * scale)) s"
+        log "$name exited; restarting in $((delay * scale)) s"
         nap "$((delay * scale))"
         delay=$((delay * 2)); [ "$delay" -gt 30 ] && delay=30
     done
     exit 0
+}
+
+# wait_for_bus SECONDS: 0 when `swarmbox-bus ping` answers, 1 when the time ran out or the supervisor is gone.
+wait_for_bus() {
+    local n=$(( $1 * 5 ))
+    while [ "$n" -gt 0 ]; do
+        SB_BUS_SOCKET=$SB_BUS_SOCK swarmbox-bus ping > /dev/null 2>&1 && return 0
+        kill -0 "$BUSSUP" 2>/dev/null || return 1
+        sleep 0.2
+        n=$((n - 1))
+    done
+    SB_BUS_SOCKET=$SB_BUS_SOCK swarmbox-bus ping > /dev/null 2>&1
 }
 
 wait_for_service() {
@@ -179,6 +208,7 @@ serve() {
     # shellcheck source=/dev/null
     . "$SB_LIB/dirs.sh" || { echo "swarmbox serve: cannot read $SB_LIB/dirs.sh" >&2; exit 1; }
     SB_RUN_DIR=${SWARMBOX_TEST_RUN_DIR:-$SB_RUN_DIR}
+    SB_BUS_SOCK=$SB_RUN_DIR/bus.sock   # dirs.sh's value, recomputed because the test switch may have moved the run folder
     SERVE_LOG=$SB_STATE_DIR/serve.log
     local tun=${SWARMBOX_TEST_TUN:-/dev/net/tun}
     local no_nested=${SWARMBOX_TEST_NO_NESTED:-0}
@@ -240,6 +270,18 @@ serve() {
     log "step 6: swarmbox-tool link --user"
     run_logged swarmbox-tool link --user; rc=$?
     [ "$rc" = 0 ] || warn "linking the user tools failed (swarmbox-tool link exit $rc); see serve.log"
+
+    # step 6b [W]: the bus broker, supervised, before step 7 because the prepare.sh of a tool may start subscribers and publishers.
+    # It needs the run folder (step 3) and not tmux (step 9): its driver calls tmux when asked. Nothing of the box depends on it.
+    if ! have swarmbox-bus; then
+        warn "the bus was not started: swarmbox-bus not found"
+    else
+        log "step 6b: starting the bus broker supervisor"
+        SUP_PIDFILE="$SB_RUN_DIR/bus-supervisor.pid" supervise_one bus "the bus keeps crashing; see bus.log" "$SB_STATE_DIR/bus.log" "swarmbox-bus restart" 8 \
+            env "SB_BUS_SOCKET=$SB_BUS_SOCK" swarmbox-bus serve &
+        BUSSUP=$!
+        wait_for_bus "${SWARMBOX_TEST_BUS_WAIT:-2}" || warn "the bus did not answer on $SB_BUS_SOCK; see bus.log"
+    fi
 
     # step 7 [W]: the MCP configuration (swarmbox-mcp), then prepare.sh of every tool
     # The claude alias passes --mcp-config <workspace>/.claude/mcp-servers.json and claude refuses a missing file, so when the
@@ -317,7 +359,8 @@ serve() {
         log "step 10: WEB=0, no web terminal and no supervisor"
     else
         log "step 10: starting the ttyd supervisor"
-        supervise &
+        supervise_one ttyd "web terminal keeps crashing; see web-terminal.log" "$SB_STATE_DIR/web-terminal.log" "swarmbox-web restart" "" \
+            swarmbox-web run &
         SUP=$!
         printf '%s\n' "$SUP" > "$SB_RUN_DIR/web-supervisor.pid"
     fi
@@ -392,7 +435,7 @@ case "${1:-}" in
     serve)
         serve
         ;;
-    attach|install|pubkey|tool)
+    attach|install|pubkey|tool|bus)
         sub=$1
         shift
         case "$sub" in
@@ -400,6 +443,7 @@ case "${1:-}" in
             install) forward swarmbox-install "$@" ;;
             pubkey) forward swarmbox-pubkey "$@" ;;
             tool) forward swarmbox-tool "$@" ;;
+            bus) forward swarmbox-bus "$@" ;;
         esac
         ;;
     host-helper)

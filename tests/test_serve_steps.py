@@ -43,6 +43,19 @@ mode=run
 exec sleep 1000
 """
 
+# the fake bus broker: `serve` records itself and runs (or exits with the status in bus.exit when bus.mode is crash); `ping` is
+# answered unless bus.noping exists. SB_BUS_SOCKET is recorded, to see what the entrypoint passes.
+FAKE_BUS = """#!/bin/bash
+if [ "$1" = ping ]; then [ -f "$FAKE_DIR/bus.noping" ] && exit 4; exit 0; fi
+echo "swarmbox-bus $* [$SB_BUS_SOCKET]" >> "$FAKE_DIR/calls.log"
+echo start >> "$FAKE_DIR/bus.starts"
+echo $$ > "$FAKE_DIR/bus.pid"
+mode=run
+[ -f "$FAKE_DIR/bus.mode" ] && mode=$(cat "$FAKE_DIR/bus.mode")
+[ "$mode" = crash ] && exit "$(cat "$FAKE_DIR/bus.exit" 2>/dev/null || echo 1)"
+exec sleep 1000
+"""
+
 FAKE_PODMAN = """#!/usr/bin/env python3
 import os, socket, sys, time
 d = os.environ["FAKE_DIR"]
@@ -136,6 +149,7 @@ class ServeCase(unittest.TestCase):
         write_exec(os.path.join(self.fake, "tmux"), FAKE_TMUX)
         write_exec(os.path.join(self.fake, "swarmbox-web"), FAKE_TTYD)
         write_exec(os.path.join(self.fake, "podman"), FAKE_PODMAN)
+        write_exec(os.path.join(self.fake, "swarmbox-bus"), FAKE_BUS)
         for p in self.PROGRAMS:
             write_exec(os.path.join(self.fake, p), FAKE_PROG)
         self.state = os.path.join(self.home, ".local", "state", "swarmbox")
@@ -148,7 +162,7 @@ class ServeCase(unittest.TestCase):
         path = self.fake + os.pathsep + "/usr/bin" + os.pathsep + "/bin"
         env = {"PATH": path, "HOME": self.home, "FAKE_DIR": self.fake, "SWARMBOX_TEST_LIB": self.lib,
                "SWARMBOX_TEST_RUN_DIR": self.run_dir, "SWARMBOX_TEST_TUN": self.tun,
-               "SWARMBOX_TEST_BACKOFF_SCALE": "0", "SWARMBOX_TEST_SERVICE_WAIT": "2", "LANG": "C.UTF-8"}
+               "SWARMBOX_TEST_BACKOFF_SCALE": "0", "SWARMBOX_TEST_SERVICE_WAIT": "2", "SWARMBOX_TEST_BUS_WAIT": "1", "LANG": "C.UTF-8"}
         env.update({k: v for k, v in extra.items() if v is not None})
         for k, v in extra.items():
             if v is None:
@@ -179,7 +193,7 @@ class ServeCase(unittest.TestCase):
             for f in (p.stdout, p.stderr):
                 if f:
                     f.close()
-        for name in ("ttyd.pid", "service.pid", "web-supervisor.pid"):
+        for name in ("ttyd.pid", "service.pid", "bus.pid", "web-supervisor.pid", "bus-supervisor.pid"):
             for base in (self.fake, self.run_dir):
                 s = read(os.path.join(base, name)).strip()
                 if s.isdigit() and alive(int(s)):
@@ -307,7 +321,7 @@ class WarnSteps(ServeCase):
                 if c.startswith(prefix):
                     return i
             self.fail("no call starting with %r in %r" % (prefix, calls))
-        order = [first("swarmbox-pubkey --ensure"), first("swarmbox-tool link --user"),
+        order = [first("swarmbox-pubkey --ensure"), first("swarmbox-tool link --user"), first("swarmbox-bus serve"),
                  first("swarmbox-tool prepare"), first("podman system service"), first("tmux new-session"), first("ttyd ")]
         self.assertEqual(order, sorted(order), calls)
         new = [c for c in calls if c.startswith("tmux new-session")][0]
@@ -326,8 +340,8 @@ class WarnSteps(ServeCase):
         p = self.run_ready()
         self.stop(p)
         log = self.serve_log()
-        for n in (1, 2, 3, 5, 6, 7, 8, 9, 10, 11):
-            self.assertIn("step %d" % n, log)
+        for n in (1, 2, 3, 5, 6, "6b", 7, 8, 9, 10, 11):
+            self.assertIn("step %s" % n, log)
 
     def tearDown_state(self):
         """Reset between sub-tests that start serve more than once."""
@@ -410,12 +424,109 @@ class Supervisor(ServeCase):
         self.assertEqual(self.starts(), 6 + 5)
         self.stop(p)
 
+class BusStep(ServeCase):
+    """Step 6b: the bus broker under supervise_one (the same policy as ttyd's), a W step."""
+
+    def starts(self):
+        return len(read(os.path.join(self.fake, "bus.starts")).split())
+
+    def sup_pid(self):
+        s = read(os.path.join(self.run_dir, "bus-supervisor.pid")).strip()
+        return int(s) if s.isdigit() else None
+
+    def test_the_broker_runs_with_the_socket_in_the_run_folder_and_the_marker_is_ok(self):
+        p = self.run_ready()
+        self.assertEqual(self.marker(), "ok")
+        self.assertEqual(self.health_lines(), [])
+        self.assertIn("swarmbox-bus serve [%s]" % os.path.join(self.run_dir, "bus.sock"), self.calls())
+        self.assertTrue(alive(self.sup_pid()))
+        self.stop(p)
+
+    def test_it_is_started_before_prepare_and_without_waiting_for_tmux(self):
+        p = self.run_ready()
+        calls = self.calls()
+        idx = lambda pre: [i for i, c in enumerate(calls) if c.startswith(pre)][0]  # noqa: E731
+        self.assertLess(idx("swarmbox-bus serve"), idx("swarmbox-tool prepare"))
+        self.assertLess(idx("swarmbox-bus serve"), idx("tmux new-session"))
+        self.stop(p)
+
+    def test_a_broker_that_does_not_answer_is_one_warning_and_serve_goes_on(self):
+        put(os.path.join(self.fake, "bus.noping"), "")
+        p = self.run_ready()
+        self.assertEqual(self.marker(), "warnings=1")
+        self.assertEqual(len(self.health_lines()), 1, self.health_lines())
+        self.assertIn("the bus did not answer", self.health_lines()[0])
+        self.assertTrue(any(c.startswith("ttyd ") for c in self.calls()), "ttyd must still start")
+        self.stop(p)
+
+    def test_a_missing_program_is_one_warning(self):
+        os.unlink(os.path.join(self.fake, "swarmbox-bus"))
+        p = self.run_ready()
+        self.assertEqual(self.marker(), "warnings=1")
+        self.assertIn("swarmbox-bus not found", self.health_lines()[0])
+        self.assertFalse(os.path.exists(os.path.join(self.run_dir, "bus-supervisor.pid")))
+        self.stop(p)
+
+    def test_a_killed_broker_is_started_again_with_the_backoff(self):
+        p = self.run_ready(SWARMBOX_TEST_BACKOFF_SCALE="1")
+        pid = int(wait_for(lambda: read(os.path.join(self.fake, "bus.pid")).strip()))
+        t0 = time.time()
+        os.kill(pid, signal.SIGKILL)
+        self.assertTrue(wait_for(lambda: self.starts() == 2, 5), "the broker was not restarted")
+        self.assertGreaterEqual(time.time() - t0, 0.9, "the first retry is after 1 s")
+        self.assertIn("bus exited; restarting in 1 s", self.serve_log())
+        self.stop(p)
+
+    def test_crash_loop_gives_up_with_a_health_line_and_restart_by_signal_starts_again(self):
+        put(os.path.join(self.fake, "bus.mode"), "crash")
+        p = self.run_ready()
+        self.assertTrue(wait_for(lambda: "the bus keeps crashing; see bus.log" in self.health_lines(), 10), self.health_lines())
+        time.sleep(0.3)
+        self.assertEqual(self.starts(), 5)
+        self.assertIn("waiting for 'swarmbox-bus restart'", self.serve_log())
+        self.assertIsNone(p.poll(), "the box stays up")
+        put(os.path.join(self.fake, "bus.mode"), "run")
+        os.kill(self.sup_pid(), signal.SIGUSR1)
+        self.assertTrue(wait_for(lambda: self.starts() == 6))
+        self.assertTrue(wait_for(lambda: not self.health_lines(), 3), self.health_lines())
+        self.stop(p)
+
+    def test_exit_8_means_another_broker_runs_and_is_not_restarted(self):
+        put(os.path.join(self.fake, "bus.mode"), "crash")
+        put(os.path.join(self.fake, "bus.exit"), "8")
+        p = self.run_ready()
+        self.assertTrue(wait_for(lambda: "another one is running" in self.serve_log(), 5))
+        time.sleep(0.3)
+        self.assertEqual(self.starts(), 1)
+        self.assertEqual(self.health_lines(), [])
+        self.stop(p)
+
+    def test_the_pid_file_does_not_outlive_a_supervisor_that_ended_by_itself(self):
+        # `swarmbox-bus restart` sends USR1 to the pid in that file, and USR1 kills a process that does not handle it
+        put(os.path.join(self.fake, "bus.mode"), "crash")
+        put(os.path.join(self.fake, "bus.exit"), "8")
+        p = self.run_ready()
+        self.assertTrue(wait_for(lambda: "another one is running" in self.serve_log(), 5))
+        self.assertTrue(wait_for(lambda: not os.path.exists(os.path.join(self.run_dir, "bus-supervisor.pid")), 3),
+                        "bus-supervisor.pid is still there: %r" % read(os.path.join(self.run_dir, "bus-supervisor.pid")))
+        self.stop(p)
+
+    def test_sigterm_stops_the_supervisor_and_the_broker_and_removes_the_pid_file(self):
+        p = self.run_ready()
+        pid = int(wait_for(lambda: read(os.path.join(self.fake, "bus.pid")).strip()))
+        sup = self.sup_pid()
+        self.assertEqual(self.stop(p), 143)
+        self.assertFalse(alive(pid))
+        self.assertFalse(alive(sup))
+        self.assertFalse(os.path.exists(os.path.join(self.run_dir, "bus-supervisor.pid")))
+
+
 class StaticOrder(unittest.TestCase):
     """The step markers of the script are in order."""
 
     def test_step_markers_are_in_the_serve_function_in_order(self):
         text = read(ENTRYPOINT)
-        pos = [text.index("# step %d [" % n) for n in range(13) if n != 4]   # step 4 (migration) was removed
+        pos = [text.index("# step %s [" % n) for n in ("0", "1", "2", "3", "5", "6", "6b", "7", "8", "9", "10", "11", "12")]   # step 4 (migration) was removed
         self.assertEqual(pos, sorted(pos))
         self.assertLess(text.index("trap "), pos[0], "the handlers are installed before the first step")
 

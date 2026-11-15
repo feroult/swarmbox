@@ -29,6 +29,8 @@ ROUTING = [
     (["pubkey"], ["pubkey"]),                       # forwarded as they are
     (["tool", "list"], ["tool", "list"]),
     (["tool"], ["tool"]),
+    (["bus", "pub", "goal", "a b"], ["bus", "pub", "goal", "a b"]),
+    (["bus"], ["bus"]),
     (["frobnicate", "up"], ["attach", "frobnicate", "up"]),     # only the FIRST word decides
     (["bash", "-c", "stop"], ["attach", "bash", "-c", "stop"]),
 ]
