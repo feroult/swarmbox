@@ -271,6 +271,14 @@ statements below are for people who bake them in or want to know the terms.
 - Source: https://github.com/golang/go
 - [verified: LICENSE of the installed /usr/local/go, "Copyright 2009 The Go Authors", BSD-style; 2026-11-08]
 
+### Voice (whisper.cpp and the Whisper models, tool `voice`)
+
+- Version: whisper.cpp 1.9.5, built from the source tarball at install time (CPU only, with a cmake wheel from PyPI); one multilingual `ggml-<model>.bin` file (`small` by default) from a pinned revision of the model repository
+- License: MIT (whisper.cpp), MIT (the OpenAI Whisper weights)
+- Source: https://github.com/ggml-org/whisper.cpp
+- Models: https://huggingface.co/ggerganov/whisper.cpp (converted from https://github.com/openai/whisper)
+- [verified: LICENSE of whisper.cpp v1.9.5, "Copyright (c) 2023-2026 The ggml authors"; LICENSE of openai/whisper, "Copyright (c) 2022 OpenAI"; license:mit tag of the model repository; 2026-11-14]
+
 ## Run-time downloads
 
 The 2.0 image downloads nothing at run time except what the user asks for: the tools above on first use, and the connector

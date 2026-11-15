@@ -72,6 +72,16 @@ class Ci(unittest.TestCase):
         for name in ("browser", "real-tools"):
             self.assertIn("github.event_name == 'schedule'", job(name), name)
 
+    def test_the_real_tools_job_installs_voice_for_real_and_rejects_a_skip(self):
+        body = job("real-tools")
+        self.assertIn('SWARMBOX_REAL_VOICE_INSTALL: "1"', body)
+        self.assertIn("python3 tests/test_tool_voice.py", body)
+        self.assertIn("grep -q 'skipped'", body)
+
+    def test_the_voice_page_browser_test_is_in_the_browser_job_without_a_switch(self):
+        self.assertIn("python3 tests/test_voice_page_browser.py", job("browser"))
+        self.assertNotIn("SWARMBOX_BROWSER_TESTS", TEXT)
+
     def test_smoke_jobs_run_the_full_smoke_test_and_reject_skips(self):
         for name in ("smoke", "arm64"):
             body = job(name)

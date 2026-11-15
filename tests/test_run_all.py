@@ -36,7 +36,7 @@ class RunAll(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         listed = p.stdout.split()
         disk = sorted(f for f in os.listdir(os.path.join(ROOT, "tests")) if re.match(r"test_.*\.py$", f))
-        browser = {"test_clipboard_bridge.py", "test_web_style.py", "test_tmux_browser_keys.py"}
+        browser = {"test_clipboard_bridge.py", "test_web_style.py", "test_tmux_browser_keys.py", "test_voice_page_browser.py"}
         self.assertEqual(sorted(listed), [f for f in disk if f not in browser])   # the shell sorts by locale, python by code point
         p = run("--list", "--browser")
         self.assertEqual(sorted(p.stdout.split()), disk)

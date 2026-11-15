@@ -1,0 +1,32 @@
+#!/usr/bin/python3
+"""Built-in planner `passthrough`: plain dictation.
+
+Reads the planner input JSON on stdin and answers with ONE send_text of the utterance to the active pane, enter=false, so the
+text lands on the input line and nothing runs. Line breaks in the utterance become spaces. Standalone on purpose (no import
+of the host library): it is also the smallest example of the planner contract in docs/voice-design.md.
+"""
+import json
+import sys
+
+
+def main():
+    try:
+        data = json.loads(sys.stdin.read())
+        utterance = " ".join(str(data.get("utterance", "")).split())[:2000]
+        pane = data.get("active_pane")
+        ids = [p.get("id") for p in data.get("panes", []) if isinstance(p, dict)]
+    except (ValueError, AttributeError, TypeError):
+        print("planner-passthrough: input is not the planner JSON", file=sys.stderr)
+        return 2
+    if not utterance:
+        out = {"say": "I heard nothing", "actions": []}
+    elif pane not in ids:
+        out = {"say": "There is no active pane to type into", "actions": []}
+    else:
+        out = {"say": "Typing it in the pane", "actions": [{"type": "send_text", "pane": pane, "text": utterance, "enter": False}]}
+    print(json.dumps(out))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

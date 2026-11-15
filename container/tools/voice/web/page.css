@@ -1,0 +1,53 @@
+/* Voice control for the ttyd page (page.js): a microphone button and a small state light. Purple-glow palette of docs/theme.md.
+   Every rule is under #swarmbox-voice. No card: the plan and its confirmation are in the tmux panel. */
+#swarmbox-voice {
+  --sv-bg: #0c0b10; --sv-band: #27222f; --sv-text: #d4d4d8; --sv-dim: #a1a1aa; --sv-line: #52525b;
+  --sv-violet: #a78bfa; --sv-deep: #6d28d9; --sv-lavender: #c4b5fd;
+  --sv-red: #ff6b78; --sv-amber: #fbbf24; --sv-green: #4ade80;
+  position: fixed; z-index: 2147483000; right: 0; bottom: 0; left: 0; height: 0;
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--sv-text);
+  pointer-events: none;
+}
+#swarmbox-voice[hidden] { display: none; }
+#swarmbox-voice * { box-sizing: border-box; }
+#swarmbox-voice [hidden] { display: none !important; }
+
+#swarmbox-voice .sv-mic {
+  position: absolute; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 52px; height: 52px; border-radius: 50%; padding: 0; pointer-events: auto; cursor: pointer;
+  border: 1px solid var(--sv-deep); background: var(--sv-band); color: var(--sv-lavender);
+  box-shadow: 0 0 14px rgba(167, 139, 250, .35); display: flex; align-items: center; justify-content: center;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+}
+#swarmbox-voice .sv-mic svg { width: 24px; height: 24px; fill: currentColor; pointer-events: none; }
+#swarmbox-voice .sv-mic:hover { border-color: var(--sv-violet); }
+#swarmbox-voice .sv-mic:focus-visible { outline: 2px solid var(--sv-lavender); outline-offset: 2px; }
+@media (pointer: coarse) { #swarmbox-voice .sv-mic { width: 64px; height: 64px; } #swarmbox-voice .sv-mic svg { width: 28px; height: 28px; } }
+
+/* the state light: a dot on the button, by data-state of the root (idle is quiet) */
+#swarmbox-voice .sv-light {
+  position: absolute; top: 2px; right: 2px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--sv-line); border: 2px solid var(--sv-bg); pointer-events: none;
+}
+#swarmbox-voice[data-state="starting"] .sv-light, #swarmbox-voice[data-state="sending"] .sv-light { background: var(--sv-amber); }
+#swarmbox-voice[data-state="recording"] .sv-light { background: var(--sv-red); }
+#swarmbox-voice[data-state="sent"] .sv-light { background: var(--sv-green); }
+#swarmbox-voice[data-state="error"] .sv-light { background: var(--sv-red); }
+#swarmbox-voice[data-state="nothing"] .sv-light { background: var(--sv-dim); }
+#swarmbox-voice[data-state="recording"] .sv-mic {
+  background: var(--sv-deep); color: #fff; border-color: var(--sv-lavender); box-shadow: 0 0 0 6px rgba(167, 139, 250, .25), 0 0 22px rgba(167, 139, 250, .7);
+}
+#swarmbox-voice[data-state="sending"] .sv-mic { opacity: .6; cursor: progress; }
+#swarmbox-voice[data-support="no"] .sv-mic { opacity: .5; }
+
+/* the short sentence above the button: what the light means, or what went wrong */
+#swarmbox-voice .sv-note {
+  position: absolute; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  max-width: calc(100vw - 32px); padding: 4px 10px; border-radius: 8px; pointer-events: none;
+  background: var(--sv-band); border: 1px solid var(--sv-line); color: var(--sv-text);
+}
+#swarmbox-voice[data-state="error"] .sv-note { border-color: var(--sv-red); color: var(--sv-red); }
+#swarmbox-voice[data-state="sent"] .sv-note { border-color: var(--sv-green); color: var(--sv-green); }
+#swarmbox-voice .sv-level { position: absolute; left: 12px; right: 12px; bottom: 4px; height: 3px; border-radius: 2px; overflow: hidden; pointer-events: none; }
+#swarmbox-voice .sv-level i { display: block; height: 100%; width: 0; background: var(--sv-lavender); }
+@media (prefers-reduced-motion: no-preference) { #swarmbox-voice .sv-mic { transition: box-shadow .15s, background .15s; } }

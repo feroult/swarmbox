@@ -1,0 +1,37 @@
+#!/usr/bin/python3
+"""Fake whisper-cli for the voice tests: no model, no network.
+
+Reads the transcript from a sidecar next to the audio (<audio>.txt) when there is one, else from the DATA chunk of the WAV
+(the test puts the words there). Records its argv, one JSON line per call, in the file named by SWARMBOX_TEST_WHISPER_LOG.
+Words "FAIL" make it exit 3; "SILENCE" makes it print only a noise marker.
+"""
+import json
+import os
+import sys
+
+argv = sys.argv[1:]
+opts = {}
+i = 0
+while i < len(argv):
+    if argv[i] in ("-m", "-f", "-l", "--prompt"):
+        opts[argv[i]] = argv[i + 1]
+        i += 2
+    else:
+        opts[argv[i]] = True
+        i += 1
+log = os.environ.get("SWARMBOX_TEST_WHISPER_LOG")
+if log:
+    with open(log, "a") as f:
+        f.write(json.dumps(argv) + "\n")
+wav = opts["-f"]
+if os.path.exists(wav + ".txt"):
+    text = open(wav + ".txt", encoding="utf-8").read()
+else:
+    raw = open(wav, "rb").read()
+    text = raw[raw.index(b"data") + 8:].decode("utf-8", "replace")
+if "FAIL" in text:
+    print("fake whisper failing on purpose", file=sys.stderr)
+    sys.exit(3)
+if "SILENCE" in text:
+    text = "[BLANK_AUDIO]"
+print(" " + text + "\n")

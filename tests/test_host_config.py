@@ -43,7 +43,8 @@ KEYS = {
     "IMAGE": (None, "localhost:5000/sb:2.0.1", "swarmbox:dev", ["a b", "x\ty"]),
 }
 LIST_ORDER = ["NAME", "WORKSPACE", "HOSTNAME", "TZ", "INIT", "PORTS", "HOST_ACCESS", "BROWSER_URL", "WEB", "WEB_PORT",
-              "WITH", "AGENT", "YOLO", "ENV_KEYS", "IMAGE", "CLOUDFLARE_TUNNEL_TOKEN"]
+              "WITH", "AGENT", "YOLO", "ENV_KEYS", "IMAGE", "CLOUDFLARE_TUNNEL_TOKEN",
+              "voice.language", "voice.stt.model", "voice.stt.vocabulary", "voice.planner", "voice.planner.model", "voice.web"]
 
 
 def slurp(path):

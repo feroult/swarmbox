@@ -204,6 +204,7 @@ jobs:
           python3 tests/test_clipboard_bridge.py
           python3 tests/test_web_style.py
           python3 tests/test_tmux_browser_keys.py
+          python3 tests/test_voice_page_browser.py
 
   # The real-installer tests: every tool of container/tools is installed for real in a throwaway container
   # ("no side effects", "survives a reset"). They download several hundred MB, so they run on the weekly schedule and by hand,
@@ -217,12 +218,19 @@ jobs:
       SWARMBOX_IMAGE_TAG: swarmbox-test-img-ci-real
       SWARMBOX_TEST_NETWORK: "1"
       SWARMBOX_IMAGE_BUILD: "1"
+      SWARMBOX_REAL_VOICE_INSTALL: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Podman version
         run: podman --version
       - name: Build the image (not pushed)
         run: podman build -t "$SWARMBOX_IMAGE_TAG" .
+      - name: Real voice installer (whisper.cpp built from source, tiny model)
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 tests/test_tool_voice.py 2>&1 | tee voice.out
+          if grep -q 'skipped' voice.out; then echo "the real voice install was skipped"; exit 1; fi
       - name: Real installers, one table row per tool
         shell: bash
         run: |

@@ -5,6 +5,7 @@
 #   link --system | --user                 shims and index of a level (the image level also writes tool-ports)
 #   install NAME [--version X] [--force]   first-use install under the lock (--image: at image build, into /opt/swarmbox/tools)
 #   run NAME COMMAND [-- ARGS...]          install when needed, then exec the real program
+#   where NAME COMMAND                     print the real program when the install is complete (never installs); exit 1 otherwise
 #   list                                   every tool of both levels and its state
 #   update NAME                            runs UPDATE_CMD of a self-updating tool; a managed tool says how to update it, exit 1
 #   use NAME VERSION                       switch the active version of a managed tool
@@ -876,6 +877,23 @@ cmd_run() {
     exec "$real" "$@"
 }
 
+# where NAME COMMAND: prints the path of the real program of an install that is complete, without installing anything. Exit 1 when the
+# tool is not installed (the shim does not count). Used by swarmbox-web to know whether the voice tool is really there.
+cmd_where() {
+    local name cmd found=0 c
+    [ $# -eq 2 ] || usage
+    name=$1
+    cmd=$2
+    check_tool_name "$name"
+    need_tdir
+    find_manifest "$name" 2>/dev/null || exit 1
+    for c in ${M[PROVIDES]}; do [ "$c" != "$cmd" ] || found=1; done
+    [ "$found" -eq 1 ] || exit 1
+    is_installed "$name" "$cmd" || exit 1
+    real_command "$name" "$cmd" || exit 1
+    echo
+}
+
 cmd_update() {
     local name real status words
     [ $# -eq 1 ] || usage
@@ -1461,6 +1479,7 @@ case "$cmd" in
         ;;
     install) cmd_install "$@" ;;
     run) cmd_run "$@" ;;
+    where) cmd_where "$@" ;;
     list) cmd_list "$@" ;;
     update) cmd_update "$@" ;;
     use) cmd_use "$@" ;;

@@ -5,7 +5,7 @@
 #   --werror   run each file as `python3 -W error` (the earlier phases did this for their own files)
 #   --repeat N run each selected file N times (the lock and function tests are run three times in a row)
 #   --only     a comma-separated list of file names inside tests/; a name that does not exist is an error
-#   --browser  include the three browser tests (they need chromium and ttyd and run in the scheduled job)
+#   --browser  include the browser tests (they need chromium and ttyd and run in the scheduled job)
 #   --list     print the selected file names and stop
 # Env: SWARMBOX_TESTS_DIR points the runner at another folder of test files (used by tests/test_run_all.py).
 # Output: "<file> OK|FAIL <n> tests, <k> skipped, <s> s[, reaped <r>]" per run, then "TOTAL <f> files, <n> tests, <x> failed files, <s> s".
@@ -43,7 +43,7 @@ else
     for p in "$DIR"/test_*.py; do
         f=$(basename "$p")
         case $f in
-            test_clipboard_bridge.py|test_web_style.py|test_tmux_browser_keys.py) [ "$BROWSER" = 1 ] || continue ;;
+            test_clipboard_bridge.py|test_web_style.py|test_tmux_browser_keys.py|test_voice_page_browser.py) [ "$BROWSER" = 1 ] || continue ;;
         esac
         FILES="$FILES $f"
     done

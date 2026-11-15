@@ -77,13 +77,22 @@ USAGE
 is_file_key() {
     case $1 in
         WORKSPACE|HOSTNAME|TZ|INIT|PORTS|HOST_ACCESS|BROWSER_URL|WEB|WEB_PORT|WITH|AGENT|YOLO|ENV_KEYS|IMAGE|CLOUDFLARE_TUNNEL_TOKEN) return 0 ;;
+        voice.language|voice.stt.model|voice.stt.vocabulary|voice.planner|voice.planner.model|voice.web) return 0 ;;
     esac
     return 1
 }
 
+# The environment variable of a key: SWARMBOX_ plus the key in upper case, a dot becoming an underscore (voice.stt.model is
+# SWARMBOX_VOICE_STT_MODEL). ENV_OF is set; the keys with a dot are the voice keys of the `voice` tool.
+env_of() {
+    ENV_OF=$(printf '%s' "$1" | tr 'a-z.' 'A-Z_')
+    ENV_OF=SWARMBOX_$ENV_OF
+}
+VOICE_KEYS='voice.language voice.stt.model voice.stt.vocabulary voice.planner voice.planner.model voice.web'
+
 is_key() { [ "$1" = NAME ] || is_file_key "$1"; }
 
-ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN'
+ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.planner voice.planner.model voice.web'
 
 # Built-in default; empty means "no default" (the key is unset). AGENT has none here: the box picks the first agent of WITH.
 default_of() {
@@ -96,6 +105,10 @@ default_of() {
         WEB|YOLO) printf '1' ;;
         WEB_PORT) printf '7681' ;;
         IMAGE) printf '%s:%s' "$REGISTRY_REPO" "$VERSION_STR" ;;
+        voice.language) printf 'auto' ;;
+        voice.stt.model) printf 'small' ;;
+        voice.planner) printf 'passthrough' ;;
+        voice.web) printf '1' ;;
     esac
 }
 
@@ -377,7 +390,8 @@ cfg_prepare() {
 resolve() {
     R_SRC=default
     R_VAL=
-    eval "_e=\${SWARMBOX_$1:-}"
+    env_of "$1"
+    eval "_e=\${$ENV_OF:-}"
     if [ -n "$_e" ]; then
         R_VAL=$_e
         R_SRC='env'
@@ -546,7 +560,7 @@ validate_value() {
                 *) _bad "it must be auto, 0 or 1."; return 1 ;;
             esac
             ;;
-        HOST_ACCESS|WEB|YOLO)
+        HOST_ACCESS|WEB|YOLO|voice.web)
             case $V_OUT in
                 0|1) ;;
                 *) _bad "it must be 0 or 1."; return 1 ;;
@@ -588,6 +602,29 @@ validate_value() {
             ;;
         IMAGE)
             valid_image_ref "$V_OUT" || { _bad "it must be an image reference: letters, digits and '.', '_', '/', ':', '@', '-' only, not starting with '-' (Podman would read it as an option)."; return 1; }
+            ;;
+        voice.language)
+            case $V_OUT in
+                auto) ;;
+                *[!a-z]*|?|????*) _bad "it must be auto or a Whisper language code such as pt or en (two or three lower-case letters; there is no pt-br)."; return 1 ;;
+            esac
+            ;;
+        voice.stt.model)
+            case $V_OUT in
+                *.en) _bad "it must be a multilingual model (small, medium, ...): the .en models only know English."; return 1 ;;
+                [!a-z0-9]*|*[!a-z0-9._-]*) _bad "it must be a model name such as small or medium (lower-case letters, digits, '.', '_', '-')."; return 1 ;;
+            esac
+            ;;
+        voice.stt.vocabulary)
+            [ "${#V_OUT}" -le 500 ] || { _bad "it must be at most 500 characters."; return 1; }
+            ;;
+        voice.planner)
+            valid_tool_name "$V_OUT" || { _bad "it must be one planner name: lower-case letters, digits, '_' and '-'."; return 1; }
+            ;;
+        voice.planner.model)
+            case $V_OUT in
+                [!A-Za-z0-9._:/]*|*[!A-Za-z0-9._:/-]*) _bad "it must use only letters, digits and '.', '_', ':', '/', '-', without blanks."; return 1 ;;
+            esac
             ;;
         CLOUDFLARE_TUNNEL_TOKEN)
             case $V_OUT in
@@ -1021,6 +1058,18 @@ load_creation() {
         fi
         eval "C_$_key=\$_v"
     done
+    # The voice keys reach the box only when they differ from the box's own defaults, so a box that never set one keeps its fingerprint.
+    for _key in $VOICE_KEYS; do
+        resolve "$_key"
+        _v=$R_VAL
+        if [ "$R_SRC" != default ]; then
+            validate_value "$_key" "$_v" || exit 2
+            _v=$V_OUT
+        fi
+        [ "$_v" != "$(default_of "$_key")" ] || _v=
+        env_of "$_key"
+        eval "C_${ENV_OF#SWARMBOX_}=\$_v"
+    done
     C_NAME=$BOX
     if [ "$1" = 1 ]; then
         case $C_INIT in
@@ -1071,6 +1120,11 @@ compute_fingerprint() {
     compute_env_hash
     [ -n "$ENV_HASH" ] || die 3 "could not compute a SHA-256 hash with $SHA."
     _l="AGENT=$C_AGENT${NL}BROWSER_URL=$C_BROWSER_URL${NL}ENV_KEYS=$C_ENV_KEYS${NL}HOSTNAME=$C_HOSTNAME${NL}HOST_ACCESS=$C_HOST_ACCESS${NL}IMAGE=$C_IMAGE${NL}INIT=$C_INIT${NL}NAME=$C_NAME${NL}PORTS=$PORT_LIST${NL}TZ=$TZ_R${NL}WEB=$C_WEB${NL}WEB_PORT=$C_WEB_PORT${NL}WITH=$C_WITH${NL}WORKSPACE=$C_WORKSPACE${NL}YOLO=$C_YOLO${NL}env-hash=$ENV_HASH$NL"
+    for _key in $VOICE_KEYS; do
+        env_of "$_key"
+        eval "_v=\$C_${ENV_OF#SWARMBOX_}"
+        [ -z "$_v" ] || _l="$_l$ENV_OF=$_v$NL"
+    done
     FP=$(printf '%s' "$_l" | sort | sha256_stdin)
     [ -n "$FP" ] || die 3 "could not compute a SHA-256 hash with $SHA."
 }
@@ -1236,6 +1290,11 @@ PEOF
     if [ -n "$C_WITH" ]; then emit -e; emit "SWARMBOX_WITH=$C_WITH"; fi
     if [ -n "$C_AGENT" ]; then emit -e; emit "SWARMBOX_AGENT=$C_AGENT"; fi
     if [ -n "$C_BROWSER_URL" ]; then emit -e; emit "SWARMBOX_BROWSER_URL=$C_BROWSER_URL"; fi
+    for _key in $VOICE_KEYS; do
+        env_of "$_key"
+        eval "_v=\$C_${ENV_OF#SWARMBOX_}"
+        if [ -n "$_v" ]; then emit -e; emit "$ENV_OF=$_v"; fi
+    done
     emit --label
     emit swarmbox.managed=2
     emit --label

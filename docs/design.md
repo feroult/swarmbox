@@ -210,7 +210,7 @@ and must be your choice. It also warns when the box's image is not the one the c
   or with `--plain`, the command runs directly, through `bash -c` with the shell fragment sourced, not an interactive shell, so standard error stays clean.
   Measured with a spike and real tmux 3.3a: exit codes, 17 awkward arguments byte for byte.
 - A command named like a host word cannot be run this way: use `swarmbox bash -c '<command>'`.
-- tmux config: `container/config/tmux.conf` (prefix `Ctrl+A`, mouse, history, true colour); your `~/.tmux.conf` is read after it.
+- tmux config: `container/config/tmux.conf` (prefix `Ctrl+A`, mouse, history, true colour, and `Ctrl+A` then `v` to show or hide the panel of the `voice` tool); your `~/.tmux.conf` is read after it.
 
 ## 6. Startup of the box
 
@@ -264,7 +264,7 @@ Details and the end-to-end check list: [cloudflare.md](cloudflare.md).
 
 A tool is a directory `container/tools/<name>/` with `tool.conf` (manifest), `install.sh`, and optionally `shell.sh` (aliases for the interactive shell),
 `prepare.sh` (run by `serve` at every start to render files into `box:/tmp/swarmbox`) and data files. Shipped: agents `claude`, `gemini`, `opencode`; tools `gcloud`
-(with `gsutil`, `bq`), `clasp`, `go`, `poetry`.
+(with `gsutil`, `bq`), `clasp`, `go`, `poetry`, `voice` (whisper.cpp, a multilingual Whisper model and the voice service; `docs/voice.md`).
 
 Manifest keys: `SCHEMA`, `NAME`, `KIND` (`tool` or `agent`), `PROVIDES` (commands), `VERSION`, `UPDATE` (`managed` or `self`), `UPDATE_CMD`, `YOLO_FLAGS`, `YOLO_ALIAS`,
 `MCP_FLAGS`, `MCP_FORMAT`, `PORTS`, and `SHA256_<arch>` where the vendor's checksum is recorded.
@@ -318,6 +318,15 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `ENV_KEYS` | empty | names of host variables passed at creation (section 10) |
 | `IMAGE` | `<repo>:<version>` | image reference (letters, digits, `. _ / : @ -`, never starting with `-`); written by `update` |
 | `CLOUDFLARE_TUNNEL_TOKEN` | unset | optional, mode 600 only, host only |
+| `voice.language` | `auto` | Whisper language of the `voice` tool: `auto` or a code such as `pt` (no `pt-br`); passed as `SWARMBOX_VOICE_LANGUAGE` |
+| `voice.stt.model` | `small` | multilingual Whisper model (`tiny`, `base`, `small`, `medium`, `large-v3`), never `.en`; `SWARMBOX_VOICE_STT_MODEL` |
+| `voice.stt.vocabulary` | empty | words given to Whisper as its initial prompt (at most 500 characters); `SWARMBOX_VOICE_STT_VOCABULARY` |
+| `voice.planner` | `passthrough` | the planner that turns the text into a plan; `SWARMBOX_VOICE_PLANNER` |
+| `voice.planner.model` | empty | handed to the planner, which reads it its own way; `SWARMBOX_VOICE_PLANNER_MODEL` |
+| `voice.web` | `1` | `0` keeps the voice front off: the web terminal port then goes straight to ttyd, with no voice button; `SWARMBOX_VOICE_WEB` |
+
+The six `voice.*` keys are lower case with dots; the environment variable of a key is `SWARMBOX_` plus the key in upper case with `.` turned into `_`. They are creation settings like the others (applied by `swarmbox reset`), but
+they are passed to the box, and enter the fingerprint, only when they differ from the default.
 
 Also environment only: `SWARMBOX_WEB_DOMAIN`, `SWARMBOX_WEB_HOSTNAME` (public address printed by `url`), `SWARMBOX_CLOUDFLARED_IMAGE`; in the box `SWARMBOX_STARSHIP=0` (plain prompt),
 `SWARMBOX_UPDATE_CHECK=0`. `config set` writes under `umask 077`, replaces the file by `mv`, and refuses to write if `chmod 600` fails. `config list` shows each key with its source

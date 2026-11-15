@@ -20,9 +20,15 @@
 # and runs `swarmbox-attach`, so the browser is a window of the shared tmux session like every other entry; without
 # swarmbox-attach it attaches to the session main directly.
 #
+# The voice front. When the `voice` tool is really installed (`swarmbox-tool where voice swarmbox-voice`, which is false for the bare
+# shim) and SWARMBOX_VOICE_WEB is not 0 (the setting voice.web), the page gets the two tags of the voice page (/voice/page.css before
+# </head>, /voice/page.js before </body>) and `run` execs `swarmbox-voice front` instead of ttyd: the front owns the web port, serves
+# /voice/ itself and pipes everything else to ttyd on 127.0.0.1:7680. Otherwise nothing changes: ttyd on the web port, no tags.
+#
 # Test-only variables (not in the configuration table): SWARMBOX_TEST_LIB (folder with dirs.sh),
 # SWARMBOX_TEST_RUN_DIR (replaces /tmp/swarmbox), SWARMBOX_TEST_WEB_PAGE (the built page), SWARMBOX_TEST_WEB_PORT (replaces
-# 7681), SWARMBOX_TEST_WEB_IFACE (ttyd -i value).
+# 7681), SWARMBOX_TEST_WEB_IFACE (ttyd -i value, and the address the front listens on), SWARMBOX_TEST_WEB_TTYD_PORT (the port of ttyd
+# behind the front, default 7680), SWARMBOX_TEST_VOICE_PORT (the port of the voice service, default 17682).
 
 SB_LIB=${SWARMBOX_TEST_LIB:-/usr/local/lib/swarmbox}
 PAGE=${SWARMBOX_TEST_WEB_PAGE:-/usr/local/share/swarmbox/web/index.html}
@@ -102,6 +108,19 @@ fi
 if [ "${OPT[scrollbar]:-}" != true ] && [ -z "${OPT[scrollback]+x}" ]; then OPT[scrollback]=0; fi
 unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]' 'OPT[padding]' 'OPT[scrollbar]'
 
+# voice_front_bin: prints the real swarmbox-voice when the front is to be used, else nothing. One place for the rule: the setting is on and
+# the tool is installed (swarmbox-tool decides, with the same logic as everywhere else) and carries the front and the page parts.
+voice_front_bin() {
+    [ "${SWARMBOX_VOICE_WEB:-1}" = 0 ] && return 0
+    local real prefix
+    real=$(swarmbox-tool where voice swarmbox-voice 2>/dev/null) || return 0
+    prefix=${real%/bin/swarmbox-voice}
+    [ "$prefix" != "$real" ] || return 0
+    [ -f "$prefix/lib/swarmbox_voice/front.py" ] && [ -f "$prefix/web/page.js" ] && [ -f "$prefix/web/page.css" ] || return 0
+    printf '%s' "$real"
+}
+VOICE_BIN=$(voice_front_bin)
+
 # render: the substitution of the placeholders. The values are validated above, so sed needs no escaping.
 render() {
     [ -r "$PAGE" ] || die "the built page $PAGE is missing (build-index.sh runs at image build; is this the right image?)"
@@ -111,8 +130,12 @@ render() {
     done
     mkdir -p "$SB_RUN_DIR" || die "cannot create $SB_RUN_DIR"
     local tmp
+    local -a voice_tags=()
+    if [ -n "$VOICE_BIN" ]; then
+        voice_tags=(-e 's#</head>#<link rel="stylesheet" href="/voice/page.css"></head>#' -e 's#</body>#<script src="/voice/page.js" defer></script></body>#')
+    fi
     tmp=$(mktemp "$SB_RUN_DIR/index.html.XXXXXX") || die "cannot write in $SB_RUN_DIR"
-    if ! sed -e "s/__SWARMBOX_PADDING__/$PAD/g" -e "s/__SWARMBOX_CTRL_V__/$CTRL_V/g" -e "s/__SWARMBOX_CTRL_C__/$CTRL_C/g" -e "s/__SWARMBOX_SCROLLBAR__/$SCROLLBAR_PX/g" -e "s/__SWARMBOX_SCROLLBAR_FF__/$SCROLLBAR_FF/g" "$PAGE" > "$tmp" \
+    if ! sed -e "s/__SWARMBOX_PADDING__/$PAD/g" -e "s/__SWARMBOX_CTRL_V__/$CTRL_V/g" -e "s/__SWARMBOX_CTRL_C__/$CTRL_C/g" -e "s/__SWARMBOX_SCROLLBAR__/$SCROLLBAR_PX/g" -e "s/__SWARMBOX_SCROLLBAR_FF__/$SCROLLBAR_FF/g" "${voice_tags[@]}" "$PAGE" > "$tmp" \
         || ! chmod 644 "$tmp" || ! mv -f "$tmp" "$SB_RUN_DIR/index.html"; then
         rm -f "$tmp"
         die "cannot write $SB_RUN_DIR/index.html"
@@ -161,4 +184,9 @@ else
     TTYD_ARGS+=(tmux attach -t main)
 fi
 command -v ttyd > /dev/null 2>&1 || die "ttyd not found on PATH" 127
+if [ -n "$VOICE_BIN" ]; then
+    FRONT_ARGS=(front --listen "${SWARMBOX_TEST_WEB_IFACE:-0.0.0.0}:${SWARMBOX_TEST_WEB_PORT:-7681}" --ttyd-port "${SWARMBOX_TEST_WEB_TTYD_PORT:-7680}")
+    [ -n "${SWARMBOX_TEST_VOICE_PORT:-}" ] && FRONT_ARGS+=(--service-listen "127.0.0.1:$SWARMBOX_TEST_VOICE_PORT")
+    exec "$VOICE_BIN" "${FRONT_ARGS[@]}" -- ttyd "${TTYD_ARGS[@]}"
+fi
 exec ttyd "${TTYD_ARGS[@]}"

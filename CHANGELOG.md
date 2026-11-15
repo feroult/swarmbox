@@ -5,6 +5,22 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added: the `voice` tool (`swarmbox tool install voice`), the first step of voice control (`docs/voice.md`, `docs/voice-design.md`). It builds whisper.cpp inside the box, downloads one multilingual Whisper model (`small` by default,
+  never an `.en` one) and gives `swarmbox-voice`, a small service that listens only on the loopback address of the box: audio in, text out, then a planner (a program that reads JSON and answers with a plan of `send_text`, `new_window`
+  or `select_pane`) and a plan that waits for your confirmation in a tmux panel. Nothing reaches tmux before it, a plan can be confirmed once and expires, the host rates the risk (`rm`, `push`, `sudo`, `curl | sh` and similar) and ignores what a planner says
+  about it, and Enter is never pressed on a transcription. The built-in planners are `passthrough` (plain dictation) and `claude` (the headless Claude Code CLI, with every tool, MCP server and hook disabled); yours go in `~/.config/swarmbox/voice/planner-<name>`. Nothing is installed in the image.
+- Added: the voice front. With the `voice` tool installed, the web terminal port serves the microphone button (with a state light) and takes its audio, next to ttyd, on the same origin (so it works on `localhost` and through the Cloudflare tunnel, with no second published
+  port): `swarmbox-web` starts `swarmbox-voice front`, which runs ttyd and the service as children. Under `/voice/` the front has a fixed table of four routes (the two page files, the health check and the audio upload); every other path is a 404 from the front and never reaches the
+  service, and the answers are filtered, so the tunnel can send audio but cannot run, edit, cancel or read a plan. The same-origin rule of ttyd (`-O`) is applied to those routes too (see `docs/voice.md`).
+- Added: the voice panel. The browser only captures the microphone; the plan, its risk and the confirmation are shown and decided in `swarmbox-voice panel`, a text program in a pane of the shared tmux session, identical for every client. The service opens it when a plan becomes pending
+  and it closes with the plan: at the bottom (40 % of the height) for a window taller than wide, else at the right edge (20 % of the width, at least 40 columns, falling back to the bottom for a narrow window), and it moves when the window changes shape (the tmux hook `window-resized`).
+  Keys: `r` run, `e` edit, `c` or Esc cancel, `q` close; a high risk plan needs the word `run` and Enter. Ctrl+A then `v` shows or hides it. The panel pane is never the target of a plan and its text is never given to a planner.
+- Changed: one pending plan at a time, and the service calls are `POST /voice/audio` (transcribe and plan in one call, answer without the transcript), `GET /voice/pending` (long poll), `POST /voice/plan|edit|run|cancel`; `POST /voice/transcribe` is gone.
+- Fixed: the re-check of the risk at run time read the pane list with a tab as separator, which tmux 3.6 and later (the image has 3.7c) prints as `_` when it has no terminal, so the commands of the panes were lost and a pane that had become riskier was not noticed. The separator is now a plain string. The tool follows `swarmbox update`: its `prepare.sh` refreshes the copies of its library, planners and page from the image at every box start. Without the tool, or with `voice.web` at `0`, nothing changes.
+- Added: `swarmbox-tool where NAME COMMAND`, which prints the real program of a complete install without installing anything.
+- Added: six settings, `voice.language` (`auto`), `voice.stt.model` (`small`), `voice.stt.vocabulary` (empty), `voice.planner` (`passthrough`), `voice.planner.model` (empty) and `voice.web` (`1`; `0` turns the voice front off). They reach the box as `SWARMBOX_VOICE_*` when the box is created, and only
+  when they differ from the default, so a box that never sets one keeps its fingerprint. Needs `swarmbox update` and `swarmbox reset`.
+
 ## [2.0.13] - 2026-11-13
 
 - Fixed: the colors of the Claude Code theme came out wrong inside tmux. Claude Code caps itself at 256 colors there unless `CLAUDE_CODE_TMUX_TRUECOLOR` is set, and turned every exact color into the nearest of 256 with a rough formula: the rose of an error

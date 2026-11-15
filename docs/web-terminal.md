@@ -40,6 +40,7 @@ binds **Alt** instead, without the prefix:
 window. Use the left Alt: the right one is AltGr on an international layout. If you use your own tmux config
 without ours, add `source-file /path/to/tmux-browser-keys.conf` to it (it needs `set -g base-index 1` so
 `Alt+1..9` match the status bar).
+With the `voice` tool installed, **Ctrl+A then `v`** (a prefix key, so no Alt letter is used) shows or hides the voice panel, the pane where a spoken command waits for your decision ([voice.md](voice.md)).
 
 **Scrolling.** The history is tmux's: 50,000 lines, and the mouse wheel moves through it in copy mode, **5 lines per wheel event** (tmux's own default; it was 2, which
 is little for 50,000 lines). The browser keeps no history of its own, because tmux draws on the terminal's alternate screen, so there is **no scrollbar** by default: it would

@@ -1,0 +1,53 @@
+#!/usr/bin/python3
+"""Fake `claude` CLI for the voice tests. It never talks to a model.
+
+SWARMBOX_TEST_FAKE_CLAUDE_LOG  file that receives {"argv", "stdin", "cwd"} as JSON (when set)
+SWARMBOX_TEST_FAKE_CLAUDE      reply mode: ok (default: fenced JSON that types the utterance in the active pane), fenced,
+                               prose, bare, malformed, empty, exit1, exit1out, hang, badpane, noaction, risk
+"""
+import json
+import os
+import re
+import sys
+import time
+
+stdin = sys.stdin.read()
+log = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_LOG")
+if log:
+    with open(log, "w") as f:
+        json.dump({"argv": sys.argv[1:], "stdin": stdin, "cwd": os.getcwd()}, f)
+mode = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE") or "ok"
+m = re.search(r"^BEGIN-DATA-(\w+)\n(.*)\nEND-DATA-\1$", stdin, re.S | re.M)
+data = json.loads(m.group(2)) if m else {}
+pane = data.get("active_pane")
+ids = [p["id"] for p in data.get("panes", [])]
+plan = {"say": "Typing it", "actions": []}
+if pane in ids:
+    plan["actions"] = [{"type": "send_text", "pane": pane, "text": data.get("utterance", ""), "enter": False}]
+text = json.dumps(plan)
+if mode == "exit1":
+    print("Not logged in", file=sys.stderr)
+    sys.exit(1)
+if mode == "exit1out":  # what the real CLI does: it says "Not logged in" on stdout
+    print("Not logged in · Please run /login")
+    sys.exit(1)
+if mode == "hang":
+    time.sleep(60)
+if mode == "empty":
+    text = "  \n"
+elif mode in ("ok", "fenced"):
+    text = "```json\n%s\n```" % text
+elif mode == "prose":
+    text = "Sure, here is the plan {not json} for you:\n%s\nLet me know if {that} helps." % text
+elif mode == "malformed":
+    text = '{"say": "oops", "actions": ['
+elif mode == "badpane":
+    plan["actions"] = [{"type": "send_text", "pane": "%9999", "text": "x", "enter": False}]
+    text = json.dumps(plan)
+elif mode == "noaction":
+    plan["actions"] = [{"type": "run_shell", "cmd": "id"}]
+    text = json.dumps(plan)
+elif mode == "risk":
+    plan["risk"] = "low"
+    text = json.dumps(plan)
+print(text)
