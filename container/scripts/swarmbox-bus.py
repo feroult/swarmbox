@@ -430,7 +430,7 @@ def connect():
     try:
         s.connect(sock_path())
     except (FileNotFoundError, ConnectionRefusedError):
-        die(4, "the bus is not running (%s)" % sock_path())
+        die(4, "the bus is not running (%s); the box starts it again within seconds, or run: swarmbox-bus restart" % sock_path())
     except PermissionError:
         die(1, "permission denied on %s (the socket is private to its user)" % sock_path())
     except OSError as e:

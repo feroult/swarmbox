@@ -2,7 +2,7 @@
 """Image smoke test.
 
 Builds (or reuses) the image and checks it in throwaway containers: `serve` reaches readiness, `box:/tmp/swarmbox` is empty
-after a stop and a start, the ttyd page is built, `swarmbox-tool validate` passes on the shipped manifests, the claude shim, index and tool-ports are there, two `attach` calls share one session, the
+after a stop and a start, the ttyd page is built, `swarmbox-tool validate` passes on the shipped manifests, the claude shim, index and tool-ports are there, two `attach` calls give each tab a session of its own with its window linked into main, the
 image holds no agent, the `swarmbox` script installs from the image (twice) and its up, reset and stop work against a real throwaway box, and (full mode only) a nested Podman runs a container.
 
 Two modes:
@@ -202,7 +202,8 @@ def step_page_built(ctx):
     built = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
                    "grep -o '__SWARMBOX_[A-Z_]*__' /usr/local/share/swarmbox/web/index.html | sort -u")
     assert sorted(built.stdout.split()) == sorted(["__SWARMBOX_CTRL_C__", "__SWARMBOX_CTRL_V__", "__SWARMBOX_PADDING__",
-                                                   "__SWARMBOX_SCROLLBAR__", "__SWARMBOX_SCROLLBAR_FF__"]), \
+                                                   "__SWARMBOX_SCROLLBAR__", "__SWARMBOX_SCROLLBAR_FF__", "__SWARMBOX_STRIP__",
+                                                   "__SWARMBOX_STRIP_CUSTOM__", "__SWARMBOX_STRIP_KEYS__"]), \
         "the built page has no placeholders: " + built.stdout + built.stderr
     name = ctx.box()
     assert ctx.ready(name), ctx.logs(name)
@@ -297,7 +298,10 @@ def step_attach_session(ctx):
             want = 1 + len(tabs)
             assert wait_until(lambda: len(ctx.sh(name, "tmux list-sessions -F x").split()) == want, 30), p.out
         assert len(windows()) == 2 and "idle" not in windows(), "windows after two attaches: %r" % windows()
-        assert set(ctx.sh(name, "tmux list-sessions -F '#{session_group}'").split()) == {"main"}, "not one shared session"
+        # each terminal tab has a session of its own (no status bar) and its window is linked into main, which is what the browser shows
+        main_ids = set(ctx.sh(name, "tmux list-windows -t =main -F '#{window_id}'").split())
+        tab_ids = set(ctx.sh(name, "for s in $(tmux list-sessions -F '#{session_name}' | grep '^swarmbox-tab-'); do tmux display-message -p -t \"=$s:\" '#{window_id}'; done").split())
+        assert len(tab_ids) == 2 and tab_ids == main_ids, "the windows of the tabs are not the windows of main: tabs %r, main %r" % (tab_ids, main_ids)
         for p in tabs:
             p.write(b"\x01d")   # the tmux detach key (prefix C-a, d)
             assert p.wait(30) == 0, p.out
@@ -548,7 +552,7 @@ STEPS = [
     Step("tool-shim", "the shims of all nine tools are links to swarmbox-shim found on PATH; nothing is installed", False, step_tool_shim),
     Step("tool-index-ports", "the index lists the commands of all nine tools and tool-ports is exactly clasp 43323", False, step_tool_index_ports),
     Step("mcp-generated", "swarmbox-mcp generates mcp-servers.json with chrome-devtools and no npx", False, step_mcp_generated),
-    Step("attach-session", "two attach calls share one session, the idle window is gone, exit codes", False, step_attach_session),
+    Step("attach-session", "two attach calls give each tab a session of its own with its window linked into main, the idle window is gone, exit codes", False, step_attach_session),
     Step("no-agent", "a default build holds no agent, gcloud, clasp, Go, Poetry or voice and /opt/swarmbox/tools is empty", False, step_no_agent),
     Step("install-script", "the image's installer writes one script and the config, twice, warns about an old function, edits no rc file", False, step_install_script),
     Step("up-lifecycle", "the script: up creates, a second up takes the fast path, reset replaces, stop and up again (3.7.2)", False, step_up_lifecycle),

@@ -46,7 +46,8 @@ Plain --input (keys, or text without Enter) is not judged: it is how a dialog is
 
 The lock.  A send holds an flock on <run folder>/tabs/<window id>.lock for as long as it types (the kernel drops it however the process
 dies), so two sends to one tab, from any processes, never interleave; the second waits up to LOCK_TIMEOUT seconds and then fails with timeout,
-nothing typed. Reads (list, active, screen) take no lock. No other state is kept.
+nothing typed. Reads (list, active, screen) take no lock. The lock files of tabs that are gone are deleted when there are more than LOCK_KEEP (64) of them.
+No other state is kept.
 
 The library.  Importing this file by path (importlib.util.spec_from_file_location) gives the class Tabs, the same calls without
 a process: list_tabs(), active(), screen(tab, lines=None), send(tab, run=None, input=None, queue=False, slash=False); failures are raised as
@@ -71,6 +72,7 @@ HIDDEN_MARKERS = ("SWARMBOX_SYSOP_PANEL=1",)      # in the start command of a pa
 PAUSE = 0.15
 MAX_STEPS = 100          # steps (texts and keys) of one send: each key costs PAUSE plus a tmux process (about 0.15 s)
 LOCK_TIMEOUT = 30.0      # seconds a send waits for an earlier send to the same tab
+LOCK_KEEP = 64           # lock files of tabs that are gone are deleted past this many (see Tabs._sweep_locks)
 MAX_STDIN = 1 << 20      # bytes of a text read from stdin
 CHUNK = 1024             # characters of one send-keys word (4 KiB at most in UTF-8, far below the 16 KB that tmux accepts in a command)
 TMUX_TIMEOUT = 5.0
@@ -472,6 +474,19 @@ def input_box(rows, lenient=False):
     return "\n".join(box).strip("\n")
 
 
+_INTERRUPT = "esc to interrupt"
+
+
+def _footer_busy(row):
+    """The footer of Claude Code while it works ends with `· esc to interrupt`. In a narrow pane the end is cut (`· esc to in…`, `· esc …`, a lone `·`) and
+    the words are not whole on the screen, which a phone held sideways (about 60 columns) does. So: after the last `·` of the row, nothing, or a start of
+    those words (with an ellipsis or not). A pane of about 30 columns shows no `·` at all: nothing on that screen tells busy from idle."""
+    if "\u00b7" not in row:
+        return False
+    tail = row.rsplit("\u00b7", 1)[1].strip().rstrip("\u2026").strip().lower()
+    return _INTERRUPT.startswith(tail)
+
+
 def agent_state(rows, command=""):
     """(is_agent, state) for the rows of a plain screen: state is dialog, busy, idle or unknown. A screen is an agent's when it has the
     input box, or a dialog footer next to a rule, or the command is a known agent. Only the bottom of the screen is read: an old answer
@@ -486,7 +501,7 @@ def agent_state(rows, command=""):
         return False, "unknown"
     if dialog:
         return True, "dialog"
-    if any("esc to interrupt" in x for x in bottom[-3:]):
+    if any("esc to interrupt" in x for x in bottom[-3:]) or (box and _footer_busy(used[-1])):
         return True, "busy"
     return True, "idle" if box else "unknown"
 
@@ -518,7 +533,7 @@ class Tabs:
         if check and p.returncode != 0:
             msg = p.stderr.decode("utf-8", "replace").strip() or "tmux %s failed" % args[0]
             if "no server running" in msg or "can't find session" in msg or "error connecting" in msg:
-                raise TabsError("no_session", "no tmux session %s (%s)" % (self.session, msg))
+                raise TabsError("no_session", "no tmux session %s (%s); opening a tab (the web terminal, or `swarmbox attach`) starts it again" % (self.session, msg))
             if "can't find pane" in msg or "can't find window" in msg:
                 raise TabsError("no_such_tab", "the tab closed (%s)" % msg)
             raise TabsError("tmux_error", msg)
@@ -536,7 +551,7 @@ class Tabs:
                 listing = self.tmux("list-panes", "-s", "-t", "=" + self.session, "-F", fmt)
             except TabsError as e:
                 if e.code == "no_such_tab":         # the target of this call is the session: "can't find window" means it is not there
-                    raise TabsError("no_session", "no tmux session %s (%s)" % (self.session, e.message))
+                    raise TabsError("no_session", "no tmux session %s (%s); opening a tab (the web terminal, or `swarmbox attach`) starts it again" % (self.session, e.message))
                 raise
             return [line.split(SEP, len(fields) - 1) for line in listing.splitlines()]
         flags = ["#{?#{%s},1,0}" % o for o in HIDDEN_OPTIONS]
@@ -660,24 +675,61 @@ class Tabs:
         """flock on <run folder>/tabs/<window id>.lock: one send at a time per tab, across processes; waits up to lock_timeout"""
         d = os.path.join(self.run_dir, "tabs")
         path = os.path.join(d, "tab-%s.lock" % re.sub(r"[^0-9A-Za-z]", "", wid))
+        end = time.monotonic() + self.lock_timeout
+        fd = None
         try:
-            os.makedirs(d, mode=0o700, exist_ok=True)
-            fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-        except OSError as e:
-            raise TabsError("lock_error", "cannot create the lock %s: %s" % (path, e.strerror or e))
-        try:
-            end = time.time() + self.lock_timeout
-            while True:
+            while fd is None:
                 try:
-                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
+                    os.makedirs(d, mode=0o700, exist_ok=True)
+                    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+                except OSError as e:
+                    raise TabsError("lock_error", "cannot create the lock %s: %s" % (path, e.strerror or e))
+                while True:
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except OSError:
+                        if time.monotonic() >= end:
+                            raise TabsError("timeout", "an earlier send to the tab %s is still typing (waited %g s); nothing was typed" % (wid, self.lock_timeout))
+                        time.sleep(0.02)
+                try:
+                    same = os.fstat(fd).st_ino == os.stat(path).st_ino
                 except OSError:
-                    if time.time() >= end:
-                        raise TabsError("timeout", "an earlier send to the tab %s is still typing (waited %g s); nothing was typed" % (wid, self.lock_timeout))
-                    time.sleep(0.02)
+                    same = False
+                if not same:        # the sweep (_sweep_locks) deleted the file while we waited: what we hold is a lock nobody else sees; take the new file
+                    os.close(fd)
+                    fd = None
             yield
         finally:
-            os.close(fd)        # closing drops the lock
+            if fd is not None:
+                os.close(fd)        # closing drops the lock
+
+    def _sweep_locks(self):
+        """Delete the lock files of tabs that are gone. A window id is never reused, so the files of a box that opens and closes tabs for weeks would only
+        pile up (empty files, in the run folder, which is gone at every start): past LOCK_KEEP files, those of windows that no longer exist and that nobody
+        holds are removed. Never fails."""
+        d = os.path.join(self.run_dir, "tabs")
+        try:
+            names = [n for n in os.listdir(d) if re.fullmatch(r"tab-[0-9A-Za-z]+\.lock", n)]
+            if len(names) <= LOCK_KEEP:
+                return
+            live = {"tab-%s.lock" % re.sub(r"[^0-9A-Za-z]", "", w) for w in self.tmux("list-panes", "-s", "-t", "=" + self.session, "-F", "#{window_id}").split()}
+        except (OSError, TabsError):
+            return
+        for n in names:
+            if n in live:
+                continue
+            try:
+                fd = os.open(os.path.join(d, n), os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
+            except OSError:
+                continue
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)      # held by a send that is still typing: leave it
+                os.unlink(os.path.join(d, n))                        # unlinked while we hold it: a waiter sees that in _lock and opens the new file
+            except OSError:
+                pass
+            finally:
+                os.close(fd)
 
     def _body(self, body):
         """(steps, submit, queue, slash) of a body, or bad_body."""
@@ -716,6 +768,7 @@ class Tabs:
         for anything else"""
         steps, submit, queue, slash = self._body(body)
         t = self.resolve(tab)
+        self._sweep_locks()
         with self._lock(t.id):
             if self.tmux("display-message", "-p", "-t", t.pane, "#{pane_in_mode}").strip() == "1":
                 self.tmux("send-keys", "-t", t.pane, "-X", "cancel")
@@ -793,11 +846,11 @@ class Tabs:
             box = input_box(rows, lenient=True)
             return state in ("idle", "unknown") and box is not None and (tail in box or "[Pasted text" in box)
         for attempt in (1, 2):
-            end = time.time() + self.verify_timeout
+            end = time.monotonic() + self.verify_timeout
             while True:
                 if not left_in_box():
                     return
-                if time.time() >= end:
+                if time.monotonic() >= end:
                     break
                 time.sleep(0.1)
             if attempt == 1:

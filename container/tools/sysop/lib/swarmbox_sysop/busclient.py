@@ -32,6 +32,20 @@ class BusError(Exception):
         self.code, self.msg = code, msg
 
 
+def words(e):
+    """What a refused or failed publication means, for a person (the panel, the key g, `goal`): no code names, no socket path."""
+    code = getattr(e, "code", "")
+    if code == "no_subscriber":
+        return "nobody takes goals: the sysop is not running"
+    if code in ("bus_down", "bus_closed"):
+        return "the bus is not answering (the box starts it again within seconds)"
+    if code == "busy":
+        return "the sysop is busy with another goal"
+    if code == "timeout":
+        return "the bus did not answer in time"
+    return str(e)
+
+
 def _line(f):
     raw = f.readline(MAX_LINE + 1)
     if not raw:

@@ -232,7 +232,7 @@ class Server:
             raise ToolError("error: blocked by the policy of the sysop (%s). Nothing was typed. Do not look for another way to do the same: "
                             "say what happened and call done." % "; ".join(verdict.reasons[:3]))
         if route.action == "allow":
-            a.append("decision", decision="allowed", why="no countdown", kind=kind, tab=tab["tab"], text=text, verdict=verdict.as_dict())
+            a.require("decision", decision="allowed", why="no countdown", kind=kind, tab=tab["tab"], text=text, verdict=verdict.as_dict())
             return "allowed"
         self.seq += 1
         pid = "p%d" % self.seq
@@ -273,8 +273,8 @@ class Server:
             ipc.remove(pend)
             ipc.remove(dec)
         if outcome == "approve" or (outcome == "timeout" and mode == "veto"):
-            a.append("decision", decision="approved" if outcome == "approve" else "allowed", why="user approved" if outcome == "approve" else "countdown ended",
-                     id=pid, kind=kind, tab=tab["tab"])
+            a.require("decision", decision="approved" if outcome == "approve" else "allowed", why="user approved" if outcome == "approve" else "countdown ended",
+                      id=pid, kind=kind, tab=tab["tab"])
             return outcome
         words = {"veto": "vetoed by the user", "deny": "refused by the user", "timeout": "not approved in time, so refused (the user did not type `run`)",
                  "stopped": "the goal was stopped", "goal_deadline": "the time budget of the goal ended while it waited"}[outcome]
@@ -384,8 +384,11 @@ class Server:
         verdict = None
         self.last_verdict = None
         free = name in ("say", "done")
-        self.audit.append("call", tool=name, args=args)
         try:
+            if name in ("run", "input"):
+                self.audit.require("call", tool=name, args=args)      # what types is never typed without its record
+            else:
+                self.audit.append("call", tool=name, args=args)
             if not isinstance(args, dict):
                 raise ToolError("error: bad arguments: an object is expected")
             if self.stopped():
@@ -400,6 +403,9 @@ class Server:
             text, err = fn(args), False
         except ToolError as e:
             text, err = str(e), True
+        except auditmod.AuditError as e:
+            self.log("audit: %s" % e)
+            text, err = "error: nothing was typed: %s. The disk of the box may be full: tell the user with say and call done." % e, True
         except Exception as e:      # a bug is an error the model can read, not a dead server
             self.log("tool %s failed: %r" % (name, e))
             text, err = "error: internal: %s" % type(e).__name__, True
@@ -478,6 +484,14 @@ class Server:
                 fout.flush()
 
 
+def steady_clock():
+    """The wall clock of now, advanced by the monotonic clock: a countdown or the time budget of a goal (epochs, compared in this process) must not be
+    stretched by a wall clock that jumps back (NTP, a laptop that wakes up), nor cut short by one that jumps forward. One goal lives for minutes, so
+    the two clocks cannot drift apart enough to matter."""
+    w0, m0 = time.time(), time.monotonic()
+    return lambda: w0 + (time.monotonic() - m0)
+
+
 def main(env=None):
     env = os.environ if env is None else env
     cpath = env.get("SWARMBOX_SYSOP_CONTEXT")
@@ -488,13 +502,19 @@ def main(env=None):
         gid = "manual-%d" % os.getpid()
         gdir = paths.private_dir(pth.goal_dir(gid))
         ctx = Context({"goal": gid, "source": "cli", "goal_dir": gdir, "audit": pth.audit})
-    logf = open(os.path.join(ctx.goal_dir, "mcp.log"), "a", encoding="utf-8")
-    os.chmod(os.path.join(ctx.goal_dir, "mcp.log"), 0o600)
+    try:
+        logf = open(os.path.join(ctx.goal_dir, "mcp.log"), "a", encoding="utf-8")
+        os.chmod(os.path.join(ctx.goal_dir, "mcp.log"), 0o600)
+    except OSError:
+        logf = open(os.devnull, "w")           # no room for the log of this goal: the tools still work (and say what they cannot do)
 
     def log(m):
-        logf.write("%s %s\n" % (time.strftime("%H:%M:%S"), m))
-        logf.flush()
+        try:
+            logf.write("%s %s\n" % (time.strftime("%H:%M:%S"), m))
+            logf.flush()
+        except (OSError, ValueError):
+            pass                      # a full disk: the line is lost, the tool call goes on
     stdin = open(sys.stdin.fileno(), encoding="utf-8", errors="replace", closefd=False)
     stdout = open(sys.stdout.fileno(), "w", encoding="utf-8", closefd=False)
-    Server(ctx, log=log).serve(stdin, stdout)
+    Server(ctx, log=log, clock=steady_clock()).serve(stdin, stdout)
     return 0

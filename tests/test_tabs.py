@@ -624,6 +624,24 @@ class TestAgentState(unittest.TestCase):
         self.assertEqual(mod.agent_state(["Do you want to continue? [Y/n]"], "apt"), (False, "unknown"))
         self.assertEqual(mod.agent_state(["booting"], "claude"), (True, "unknown"))
 
+    def test_busy_in_a_narrow_pane_where_the_footer_is_cut(self):
+        """Real footers of Claude Code 2.1 in panes of 37, 45 and 52 columns while it worked, and the same panes idle (captured in Podman, tmux 3.7c). The words
+        `esc to interrupt` are not whole on the screen there, so a phone held sideways (about 60 columns) looked idle while Claude was busy and swarmbox-tabs
+        typed into it. The idle footers have no `·` after the hint."""
+        def screen(w, footer):
+            return ["  history of lighthouses", "", "─" * w, "❯ ", "─" * w, footer]
+        busy = {37: "  ⏵⏵ bypass permissions on  · esc …", 45: "  ⏵⏵ bypass permissions on (shift+tab to  ·",
+                52: "  ⏵⏵ bypass permissions on (shift+tab to cycle) ·", 62: "  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to in…",
+                50: "  ⏵⏵ bypass permissions on (shift+tab to cycle) · e", 80: "  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt"}
+        idle = {37: "  ⏵⏵ bypass permissions on", 52: "  ⏵⏵ bypass permissions on (shift+tab to cycle)", 62: "  ⏵⏵ bypass permissions on (shift+tab to cycle)",
+                80: "  ⏵⏵ bypass permissions on (shift+tab to cycle)", 29: "  ⏵⏵ bypass permissions on"}
+        for w, footer in busy.items():
+            self.assertEqual(mod.agent_state(screen(w, footer), "claude"), (True, "busy"), footer)
+        for w, footer in idle.items():
+            self.assertEqual(mod.agent_state(screen(w, footer), "claude"), (True, "idle"), footer)
+        for footer in ("  7:19 PM · 1 shell still running", "  ◐ medium · /effort", "  ⏵⏵ auto mode on (shift+tab to cycle) · ctrl+t to hide tasks", "  ? for shortcuts"):
+            self.assertEqual(mod.agent_state(screen(40, footer), "claude"), (True, "idle"), footer)
+
     def test_an_old_answer_that_says_do_you_want_to_is_no_dialog(self):
         rows = ["● Do you want to see more?", ""] + ["x"] * 20 + ["─" * 40, "❯ ", "─" * 40, "  auto mode on"]
         self.assertEqual(mod.agent_state(rows, "claude"), (True, "idle"))

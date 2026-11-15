@@ -65,6 +65,8 @@ args = sys.argv[1:]
 with open(os.path.join(d, "calls.log"), "a") as f:
     f.write("podman " + " ".join(args) + "\\n")
 if "system" in args and "service" in args:
+    if os.environ.get("FAKE_MARKER"):   # the stale-marker tests: was the fuse-overlayfs marker still there when the service started?
+        open(os.path.join(d, "marker.seen"), "w").write("yes" if os.path.exists(os.environ["FAKE_MARKER"]) else "no")
     if os.path.exists(os.path.join(d, "service.mode")) and open(os.path.join(d, "service.mode")).read().strip() == "fail":
         sys.exit(1)
     path = [a for a in args if a.startswith("unix://")][0][len("unix://"):]
@@ -164,6 +166,9 @@ class ServeCase(unittest.TestCase):
         path = self.fake + os.pathsep + "/usr/bin" + os.pathsep + "/bin"
         env = {"PATH": path, "HOME": self.home, "FAKE_DIR": self.fake, "SWARMBOX_TEST_LIB": self.lib,
                "SWARMBOX_TEST_RUN_DIR": self.run_dir, "SWARMBOX_TEST_TUN": self.tun,
+               # step 8 removes this folder: by default it is the real /tmp/storage-run-<uid>, i.e. the runtime state of the nested Podman of whatever
+               # box runs these tests (found when the gate wiped it in a running box); every test gets its own
+               "SWARMBOX_TEST_PODMAN_RUNROOT": os.path.join(self.base, "storage-run"),
                "SWARMBOX_TEST_BACKOFF_SCALE": "0", "SWARMBOX_TEST_SERVICE_WAIT": "2", "SWARMBOX_TEST_BUS_WAIT": "1", "LANG": "C.UTF-8"}
         env.update({k: v for k, v in extra.items() if v is not None})
         for k, v in extra.items():
@@ -287,6 +292,55 @@ class NestedRunroot(ServeCase):
         p = self.run_ready(SWARMBOX_TEST_PODMAN_RUNROOT=os.path.join(self.base, "never-there"))
         self.assertNotIn("removed the runtime state", self.serve_log())
         self.stop(p)
+
+
+class NestedFuseMarker(ServeCase):
+    """The box has no /dev/fuse. One probe of native overlay that fails on another graph root (the cache is shared by all of them) makes Podman fall back to
+    fuse-overlayfs and leave .has-mount-program = true, for good: every later run died with "fuse: device not found" (found in a real box). serve step 8 removes
+    that marker when there is no usable /dev/fuse, before the service starts, and touches nothing when there is one."""
+
+    def setUp(self):
+        super().setUp()
+        self.graph = os.path.join(self.base, "graphroot")
+        self.marker_path = os.path.join(self.graph, "overlay", ".has-mount-program")
+        os.makedirs(os.path.dirname(self.marker_path))
+        self.no_fuse = os.path.join(self.base, "no-such-fuse")
+
+    def serve(self, fuse, content="true"):
+        put(self.marker_path, content)
+        p = self.run_ready(SWARMBOX_TEST_PODMAN_GRAPHROOT=self.graph, SWARMBOX_TEST_FUSE=fuse, FAKE_MARKER=self.marker_path,
+                           SWARMBOX_TEST_PODMAN_RUNROOT=os.path.join(self.base, "never-there"))
+        self.addCleanup(self.stop, p)
+        return p
+
+    def test_without_fuse_the_stale_marker_is_removed_before_the_service_starts(self):
+        self.serve(self.no_fuse)
+        self.assertFalse(os.path.exists(self.marker_path))
+        self.assertEqual(read(os.path.join(self.fake, "marker.seen")), "no", "the marker must be gone when the service starts")
+        self.assertIn("removed the stale marker", self.serve_log())
+        self.assertEqual(self.marker(), "ok")
+
+    def test_a_marker_that_says_false_is_left_alone(self):
+        self.serve(self.no_fuse, content="false")
+        self.assertEqual(read(self.marker_path), "false")
+        self.assertNotIn("stale marker", self.serve_log())
+
+    def test_a_path_that_is_not_a_character_device_counts_as_no_fuse(self):
+        self.serve(os.path.join(self.base, "dir-not-device"), content="true")   # a path that is not a character device
+        self.assertFalse(os.path.exists(self.marker_path))
+
+    def test_with_a_usable_fuse_device_nothing_is_touched(self):
+        self.serve("/dev/null")   # a character device the agent can open: stands for /dev/fuse
+        self.assertEqual(read(self.marker_path), "true")
+        self.assertEqual(read(os.path.join(self.fake, "marker.seen")), "yes")
+        self.assertNotIn("stale marker", self.serve_log())
+
+    def test_no_graph_root_yet_says_nothing(self):
+        shutil.rmtree(self.graph)
+        p = self.run_ready(SWARMBOX_TEST_PODMAN_GRAPHROOT=self.graph, SWARMBOX_TEST_FUSE=self.no_fuse)
+        self.addCleanup(self.stop, p)
+        self.assertNotIn("stale marker", self.serve_log())
+        self.assertEqual(self.marker(), "ok")
 
 
 class WarnSteps(ServeCase):

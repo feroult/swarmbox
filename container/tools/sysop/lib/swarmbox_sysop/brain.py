@@ -138,7 +138,7 @@ def write_mcp_config(path, ctx_path, paths, libdir):
     ipc.write_json(path, {"mcpServers": {"sysop": {"command": sys.executable, "args": ["-B", "-m", "swarmbox_sysop", "mcp"], "env": env}}})
 
 
-MAX_OUTPUT = 256 << 20       # bytes one file written by the brain (its stream and error output) may reach
+MAX_OUTPUT = 32 << 20        # bytes one file written by the brain (its stream and error output) may reach: with 50 folders of goals kept, at most 3.2 GB in the worst case (a real goal writes some 100 KB)
 
 
 def pdeathsig():
@@ -163,8 +163,8 @@ def kill_group(pgid, grace=KILL_GRACE, proc=None):
             os.killpg(pgid, sig)
         except (ProcessLookupError, PermissionError):
             return
-        end = time.time() + wait
-        while proc is not None and time.time() < end and proc.poll() is None:
+        end = time.monotonic() + wait
+        while proc is not None and time.monotonic() < end and proc.poll() is None:
             time.sleep(0.02)
         if proc is not None and proc.poll() is not None:
             break
@@ -206,6 +206,19 @@ def read_stream(path, limit=8 << 20):
             if isinstance(ev, dict) and ev.get("type") == "result":
                 res = ev
     return res, text
+
+
+def exit_words(code):
+    """What an exit status of the brain means, for a person: a signal (a negative status, or 128 + n from the `timeout` wrapper or a shell) is said as one."""
+    sig = -code if code < 0 else (code - 128 if 128 < code < 192 else 0)
+    if sig:
+        try:
+            name = signal.Signals(sig).name[3:]
+        except ValueError:
+            name = "signal"
+        extra = "; the box may be out of memory" if sig in (6, 9) else ""
+        return "was killed (signal %d, %s%s)" % (sig, name, extra)
+    return "exited with status %d" % code
 
 
 def _tail(path, n=300):
@@ -256,12 +269,13 @@ def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline
             pass
         outcome = None
         done_seen = None
+        mono_end = time.monotonic() + (deadline - clock())       # a wall clock that jumps back (NTP, a resumed laptop) must not stretch the budget
         while proc.poll() is None:
             if stop_check():
                 outcome = "stopped"
                 break
             now = clock()
-            if now >= deadline + 1:
+            if now >= deadline + 1 or time.monotonic() >= mono_end + 1:
                 outcome = "timeout"
                 break
             if done_seen is None and os.path.exists(done_path):
@@ -304,8 +318,8 @@ def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline
     if ev.get("subtype") == "error_max_turns":
         return Result("failed", "the brain used all its %d turns without calling done" % (cfg.max_steps + 3), "", code, turns, cost)
     if code not in (0, None):
-        why = _tail(errf) or str(ev.get("result") or "")[:300] or "no message"
-        return Result("failed", "the brain exited with status %s: %s" % (code, why), "", code, turns, cost)
+        why = _tail(errf) or str(ev.get("result") or "")[:300]
+        return Result("failed", "the brain %s%s" % (exit_words(code), (": " + why) if why else "; it left no message (brain.err in the folder of the goal may say more)"), "", code, turns, cost)
     if ev.get("is_error"):
         return Result("failed", "the brain reported an error: %s" % str(ev.get("result") or "")[:300], "", code, turns, cost)
     return Result("done", "", str(ev.get("result") or "")[:500], code, turns, cost, note="the brain ended without calling done")

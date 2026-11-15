@@ -15,9 +15,9 @@
 #   anything else is run as given (already the final behavior)
 #
 # Test-only variables (not in the configuration table and not read by anything else): SWARMBOX_TEST_LIB (folder holding dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces
-# /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_PODMAN_RUNROOT (the folder serve clears before the nested service), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
+# /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_PODMAN_RUNROOT (the folder serve clears before the nested service), SWARMBOX_TEST_PODMAN_GRAPHROOT (the graph root whose stale fuse-overlayfs marker serve removes), SWARMBOX_TEST_FUSE (replaces /dev/fuse), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
 # instead of a failure for step 2 and no service at step 8), SWARMBOX_TEST_BACKOFF_SCALE (integer multiplier of the
-# backoff of both supervisors, 0 for none), SWARMBOX_TEST_BUS_WAIT (seconds to wait for the bus to answer, default 2), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10).
+# backoff of both supervisors, 0 for none), SWARMBOX_TEST_BUS_WAIT (seconds to wait for the bus to answer, default 2), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10), SWARMBOX_TEST_LOG_EVERY (seconds between two looks of the log trimmer, default 300), SWARMBOX_TEST_LOG_MAX (bytes past which it trims a log, default 4194304).
 
 SB_LIB=${SWARMBOX_TEST_LIB:-/usr/local/lib/swarmbox}
 
@@ -29,6 +29,7 @@ EARLY_LOG=""   # log lines written before the state folder exists (steps 0 to 2)
 WARNINGS=0
 SUP=""
 BUSSUP=""
+JANITOR=""
 SVC=""
 INST=""
 STOPPING=0
@@ -47,6 +48,12 @@ log() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# fuse_usable: 0 when /dev/fuse is a character device the agent can open (a box started by hand with --device /dev/fuse), else 1.
+fuse_usable() {
+    local f=${SWARMBOX_TEST_FUSE:-/dev/fuse}
+    [ -c "$f" ] && [ -r "$f" ] && [ -w "$f" ]
+}
+
 health_add() { printf '%s\n' "$1" >> "$SB_HEALTH_FILE" 2>/dev/null; return 0; }
 
 health_remove() {
@@ -64,11 +71,39 @@ warn() {
     log "WARNING: $1"
 }
 
+# trim_log FILE MAX: when FILE is bigger than MAX bytes keep its last quarter (the writers append with >>, so they go on at the new end; a line
+# written in the instant of the trim may be lost, which a log can bear). Never fails: a disk that is full leaves the file as it was.
+trim_log() {
+    local f=$1 max=$2 size
+    size=$(stat -c %s -- "$f" 2>/dev/null) || return 0
+    [ "$size" -gt "$max" ] || return 0
+    if tail -c "$((max / 4))" -- "$f" > "$f.trim.$$" 2>/dev/null && cat -- "$f.trim.$$" > "$f" 2>/dev/null; then
+        printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "serve: the log was cut to its last $((max / 4)) bytes (limit $max)" >> "$f" 2>/dev/null
+    fi
+    rm -f -- "$f.trim.$$"
+    return 0
+}
+
+# log_trimmer: runs in a subshell. The logs of the box (serve.log, bus.log, web-terminal.log, podman-service.log) are written by `>>` redirections of processes that
+# stay up for weeks (ttyd logs every connection of a browser), so nothing else would ever shorten them.
+log_trimmer() {
+    local sp=0 f
+    trap '[ "$sp" -gt 0 ] && kill "$sp" 2>/dev/null; exit 0' TERM
+    while :; do
+        sleep "${SWARMBOX_TEST_LOG_EVERY:-300}" &
+        sp=$!
+        wait "$sp" 2>/dev/null
+        for f in "$SERVE_LOG" "$SB_STATE_DIR/bus.log" "$SB_STATE_DIR/web-terminal.log" "$SB_STATE_DIR/podman-service.log"; do
+            trim_log "$f" "${SWARMBOX_TEST_LOG_MAX:-4194304}"
+        done
+    done
+}
+
 # stop_children: the ttyd and bus supervisors (which stop ttyd and the broker), the installer job, the nested Podman service. The
 # tmux server is left to end with the container.
 stop_children() {
     local p
-    for p in "$SUP" "$BUSSUP" "$INST"; do
+    for p in "$SUP" "$BUSSUP" "$INST" "$JANITOR"; do
         if [ -n "$p" ]; then
             kill -TERM "$p" 2>/dev/null
             wait "$p" 2>/dev/null
@@ -78,7 +113,7 @@ stop_children() {
         kill -TERM "$SVC" 2>/dev/null
         wait "$SVC" 2>/dev/null
     fi
-    SUP=""; BUSSUP=""; INST=""; SVC=""
+    SUP=""; BUSSUP=""; INST=""; JANITOR=""; SVC=""
     rm -f "${SB_RUN_DIR:-/nonexistent}/web-supervisor.pid" "${SB_RUN_DIR:-/nonexistent}/bus-supervisor.pid" 2>/dev/null
     return 0
 }
@@ -334,6 +369,23 @@ serve() {
         if [ -e "$runroot" ]; then
             rm -rf "$runroot" 2>/dev/null && log "step 8: removed the runtime state of the previous run of nested Podman ($runroot)"
         fi
+        # The box is created without /dev/fuse (the host script passes /dev/net/tun only), so the only overlay that can work is the kernel's own
+        # (rootless, kernel 5.13+). But fuse-overlayfs is on the PATH, and Podman falls back to it when its probe of native overlay says "no": that
+        # answer is cached in the runtime folder, which is shared by every graph root of this user (one `podman --root /tmp/x ...`, or a run with
+        # another HOME, on a file system that cannot do native overlay is enough to cache "no" for the real graph root), and the fallback leaves
+        # $graphroot/overlay/.has-mount-program = true, which is never revisited. From then on every run fails with "fuse: device not found".
+        # The runtime folder was removed above; this removes the other half of the poison when there is no usable /dev/fuse. With /dev/fuse
+        # nothing is touched (a marker there is legitimate).
+        if ! fuse_usable; then
+            local fuse_marker=${SWARMBOX_TEST_PODMAN_GRAPHROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/containers/storage}/overlay/.has-mount-program
+            if [ -f "$fuse_marker" ] && [ "$(cat "$fuse_marker" 2>/dev/null)" = true ]; then
+                if rm -f "$fuse_marker" 2>/dev/null; then
+                    log "step 8: no usable /dev/fuse: removed the stale marker $fuse_marker (it made Podman use fuse-overlayfs); native overlay is tried again"
+                else
+                    log "step 8: no usable /dev/fuse and the stale marker $fuse_marker could not be removed"
+                fi
+            fi
+        fi
         log "step 8: starting the nested Podman service on $SB_PODMAN_SOCK"
         rm -f "$SB_PODMAN_SOCK"
         env -u CONTAINER_HOST podman system service --time=0 "unix://$SB_PODMAN_SOCK" \
@@ -365,6 +417,10 @@ serve() {
         SUP=$!
         printf '%s\n' "$SUP" > "$SB_RUN_DIR/web-supervisor.pid"
     fi
+
+    # the log trimmer (not a numbered step: it only keeps the logs from growing for ever)
+    log_trimmer &
+    JANITOR=$!
 
     # step 11 [W]: the readiness marker (ok, or warnings=<n>)
     local marker=ok

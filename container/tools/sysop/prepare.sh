@@ -4,12 +4,13 @@
 # 1. install.sh copies lib/ into the install, and swarmbox-tool skips the installer when that version folder exists, so after `swarmbox update`
 #    (a new image, the same VERSION) the install would keep the OLD library. Like the voice tool's, this makes the files of the image (next to
 #    this script) the ones in use: when lib differs it is replaced by a fresh copy (copy beside it, then two renames). Idempotent.
-# 2. It starts the resident subscriber, detached: `setsid nohup ... serve --log --dock &` (--dock: the service opens the panel in tmux for a goal), with its three standard streams and every other descriptor
+# 2. It starts the resident subscriber, detached: `setsid nohup ... serve --log --dock --watch &` (--dock: the service keeps the panel in tmux; --watch: a watcher (watch.py) starts the service again when it
+#    dies, so a kill or a crash is not the end of the sysop until the next box start; when the watcher is already there, this start only tells it to start the service now), with its three standard streams and every other descriptor
 #    away from this script (the caller captures our output and kills our children when the timeout ends, so the service must not be one of
 #    them). Starting is idempotent: when a service already runs (`status -q`), nothing starts; and two starts at once end with one service
 #    (the service takes a flock; the loser exits 0). The service keeps a pid file and a log in its run and state folders (see paths.py), and
 #    reconnects to the bus by itself, so it does not matter that the bus starts before or after this.
-# Exit 0, or 1 with a line on stderr when the install could not be updated or the service did not come up within 3 s (a refused setting is in serve.log).
+# Exit 0, or 1 with a line on stderr when the install could not be updated or the service did not come up within 5 s (a refused setting is in serve.log).
 set -u
 here=${SWARMBOX_TOOL_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}
 real=$(swarmbox-tool where sysop swarmbox-sysop 2>/dev/null) || exit 0   # not installed: nothing to refresh or start
@@ -45,12 +46,12 @@ fi
 if "$bin" status -q > /dev/null 2>&1; then
     exit "$rc"                          # a service runs already
 fi
-setsid nohup "$bin" serve --log --dock < /dev/null > /dev/null 2>&1 &
+setsid nohup "$bin" serve --log --dock --watch < /dev/null > /dev/null 2>&1 &
 # The service reads its settings first: a refused one (a bad SWARMBOX_SYSOP_BRAIN) ends it in a moment. Say so, instead of "started".
 n=0
 until "$bin" status -q > /dev/null 2>&1; do
     n=$((n + 1))
-    if [ "$n" -gt 30 ]; then
+    if [ "$n" -gt 50 ]; then
         echo "sysop prepare: the goal subscriber did not come up (see serve.log in the state folder of the sysop, or run: swarmbox-sysop --self-test)" >&2
         exit 1
     fi

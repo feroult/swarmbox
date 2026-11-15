@@ -279,7 +279,7 @@ class Reading(Rig):
         self.assertIn("tabs_protocol", self.fail("list_tabs"))
 
     def test_a_command_that_hangs_is_killed_at_the_timeout(self):
-        self.srv.tabs = tabsclient.Tabs(cmd=["sh", "-c", "sleep 30"], read_timeout=0.3)
+        self.srv.tabs = tabsclient.Tabs(cmd=["sh", "-c", "exec sleep 30"], read_timeout=0.3)
         t0 = time.time()
         self.assertIn("tabs_timeout", self.fail("list_tabs"))
         self.assertLess(time.time() - t0, 5)

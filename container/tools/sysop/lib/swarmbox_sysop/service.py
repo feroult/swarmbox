@@ -1,7 +1,7 @@
 """The resident subscriber of the sysop: it reads goals from the bus, keeps a queue and runs ONE goal at a time.
 
   reader thread   subscribes to the topic of `sysop.topic` (default `goal`) as a member of the group `sysop.group` (default `sysop`: sysops of one group share
-                  the goals, one gets each), with reconnect and backoff (1, 2, 4 ... 30 s; the bus is restarted by its supervisor within
+                  the goals, one gets each), with reconnect and backoff (1, 2, 4, 5, 5 ... s; the bus is restarted by its supervisor within
                   a few seconds), puts each goal in the queue, writes its state `queued`
   main thread     takes the oldest goal, writes the files of the goal (context.json, the MCP config), runs the brain (brain.py), keeps state.json
                   up to date while it runs, and writes the end: done, stopped or failed (with the reason). It also takes the stop requests
@@ -16,6 +16,7 @@ service gets SIGTERM from the kernel (brain.pdeathsig).
 Files: ipc.py has the contract; status.json (run folder) is the state of the whole service, state.json (goal folder) the state of one goal.
 """
 import collections
+import errno
 import fcntl
 import json
 import os
@@ -32,9 +33,28 @@ from . import audit as auditmod
 MAX_GOAL_TEXT = 4000
 KEEP_GOALS = 50
 RECENT_CALLS = 12
-BACKOFF = (1.0, 30.0)
+HOUSEKEEPING = 60.0
+RETRY_WRITES = 2.0       # seconds between two tries to write the end of a goal that the disk refused
+BACKOFF = (1.0, 5.0)       # the bus is on a unix socket of the same box (a try costs nothing), and its supervisor can give up and be restarted by hand: the wait is short
 FREE_TOOLS = ("say", "done")
 LOST = "lost: the sysop restarted while this goal was in flight (goals in flight are not kept)"
+
+
+LOW_DISK = 2 << 20      # bytes free below which a failed goal says that the disk is almost full
+
+
+def disk_low(path):
+    try:
+        return shutil.disk_usage(path).free < LOW_DISK
+    except OSError:
+        return False
+
+
+def explain(e):
+    """The reason a goal failed for an exception of the service itself: a full disk is said as one, the rest as an internal error"""
+    if isinstance(e, OSError) and getattr(e, "errno", None) in (errno.ENOSPC, errno.EDQUOT):
+        return "the disk of the box is full (%s): free some space and send the goal again" % (e.strerror or "no space left")
+    return "internal error: %s: %s" % (type(e).__name__, e)
 
 
 def sanitize(s, default):
@@ -91,7 +111,7 @@ class Service:
     def __init__(self, cfg, paths, bus=None, clock=time.time, log=None, backoff=BACKOFF, popen=None):
         self.cfg, self.paths, self.clock = cfg, paths, clock
         self.bus = bus or busclient.Bus(paths.socket)
-        self.log = log or (lambda m: print("%s sysop[%d]: %s" % (time.strftime("%Y-%m-%dT%H:%M:%S"), os.getpid(), m), file=sys.stderr, flush=True))
+        self.log = log or self.stderr_log
         self.backoff = backoff
         self.audit = auditmod.Audit(paths.audit, clock=clock)
         self.cond = threading.Condition()
@@ -107,9 +127,21 @@ class Service:
         self.lock_fd = None
         self.reader = None
         self.popen = popen
+        self.housekeeping = None       # a callable the main loop runs every HOUSEKEEPING seconds (the daemon's log rotation: cli.py)
+        self._retried = 0.0
+        self.unwritten = {}            # goals whose end could not be written to their state.json (a full disk): tried again by retry_writes
         self._last_status = None
         self._ready = threading.Event()
         self.libdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    @staticmethod
+    def stderr_log(m):
+        """the log of the daemon (standard error is serve.log). A log that cannot be written (the disk is full) must not take the service down with it:
+        the line is lost, which is all a full disk can mean for a log."""
+        try:
+            print("%s sysop[%d]: %s" % (time.strftime("%Y-%m-%dT%H:%M:%S"), os.getpid(), m), file=sys.stderr, flush=True)
+        except (OSError, ValueError):
+            pass
 
     # ---- life
     LOCK_WAIT = 1.0
@@ -121,13 +153,13 @@ class Service:
         again for LOCK_WAIT seconds: a probe is gone by then, a live service is not."""
         self.paths.make()
         fd = os.open(self.paths.lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-        end = time.time() + (self.LOCK_WAIT if wait is None else wait)
+        end = time.monotonic() + (self.LOCK_WAIT if wait is None else wait)
         while True:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except OSError:
-                if time.time() >= end:
+                if time.monotonic() >= end:
                     os.close(fd)
                     return False
                 time.sleep(0.02)
@@ -152,13 +184,26 @@ class Service:
             self.status()
             self._ready.set()
             self.log("serving: autonomy %s, brain %s, topic %s, group %s, bus %s" % (self.cfg.autonomy, self.cfg.brain.split()[0], self.cfg.topic, self.cfg.group, self.paths.socket))
+            fails, tidied = 0, self.clock()
             while not self.stopping:
-                self.poll_stop()
-                goal = self.next_goal(0.2)
-                if goal is not None:
-                    self.execute(goal)
-                    self.prune()
-                    self.status()
+                try:
+                    if self.housekeeping is not None and self.clock() - tidied >= HOUSEKEEPING:
+                        tidied = self.clock()
+                        self.housekeeping()
+                    self.retry_writes()
+                    self.poll_stop()
+                    goal = self.next_goal(0.2)
+                    if goal is not None:
+                        self.execute(goal)
+                        self.prune()
+                        self.status()
+                    fails = 0
+                except Exception as e:      # a disk that is full, a folder that went away: one turn of the loop fails, the service does not end (and does not spin)
+                    fails += 1
+                    if fails <= 3 or fails % 100 == 0:
+                        self.log("internal error in the main loop (%d in a row): %s: %s" % (fails, type(e).__name__, e))
+                    with self.cond:
+                        self.cond.wait(min(5.0, 0.5 * fails))
         finally:
             self.shutdown()
             self.status(final=True)
@@ -168,6 +213,20 @@ class Service:
                 os.close(self.lock_fd)
                 self.lock_fd = None
         return 0
+
+    def retry_writes(self):
+        """The end of a goal that could not be written (the disk was full) is written when there is room again: without this its state.json says `running`
+        for ever (the panel shows a goal that is long over) until the next start of the service marks it lost."""
+        if not self.unwritten or time.monotonic() - self._retried < RETRY_WRITES:
+            return
+        self._retried = time.monotonic()
+        for gid, goal in list(self.unwritten.items()):
+            try:
+                self.write_goal(goal)
+            except OSError:
+                return
+            del self.unwritten[gid]
+            self.log("goal %s: its end is written now (the disk has room again)" % gid)
 
     def wait_ready(self, timeout=10):
         return self._ready.wait(timeout)
@@ -192,7 +251,11 @@ class Service:
             st = ipc.read_json(p)
             if isinstance(st, dict) and st.get("state") in ("queued", "running", "waiting_approval"):
                 st.update(state="failed", error=LOST, ended=self.clock(), pending=None)
-                ipc.write_json(p, st)
+                try:
+                    ipc.write_json(p, st)
+                except OSError as e:           # a full disk: the service still starts; the goal is marked at the next start
+                    self.log("goal %s was %s when the sysop stopped, but its state cannot be written: %s" % (name, st.get("state"), e.strerror or e))
+                    continue
                 self.audit.bind(st.get("id"), st.get("source")).append("lost", was=st.get("state"), error=LOST)
                 self.log("goal %s was %s when the sysop stopped: marked failed (lost)" % (name, st.get("state")))
         ipc.remove(self.paths.status)
@@ -330,7 +393,7 @@ class Service:
             st = {"pid": os.getpid(), "version": __version__, "started": self.started, "updated": self.clock(),
                   "bus": "stopped" if final else self.bus_state, "current": self.current.id if self.current else None, "queue": queue,
                   "rejected": self.rejected,
-                  "settings": {"topic": self.cfg.topic, "group": self.cfg.group, "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "brain": self.cfg.brain.split()[0], "model": self.cfg.model,
+                  "settings": {"topic": self.cfg.topic, "group": self.cfg.group, "autonomy": self.cfg.autonomy, "panel": self.cfg.panel_mode, "countdown": self.cfg.countdown, "brain": self.cfg.brain.split()[0], "model": self.cfg.model,
                                "max_steps": self.cfg.max_steps, "max_seconds": self.cfg.max_seconds, "max_goals": self.cfg.max_goals}}
             key = json.dumps({k: v for k, v in st.items() if k != "updated"}, sort_keys=True)
             if key == self._last_status and not final:
@@ -357,7 +420,10 @@ class Service:
                 self.queue = collections.deque(g for g in self.queue if g.id != target)
         for g in dropped:
             g.state, g.error, g.ended = "stopped", "stopped before it started", self.clock()
-            self.write_goal(g)
+            try:
+                self.write_goal(g)
+            except OSError as e:
+                self.log("goal %s: cannot write its state: %s" % (g.id, e.strerror or e))
             self.audit.bind(g.id, g.source).append("state", state="stopped", why="stop request, queued")
         if self.current is not None and (target is None or target == self.current.id):
             self.stop_current = True
@@ -400,7 +466,7 @@ class Service:
             deadline = goal.started + self.cfg.max_seconds
             ctx = os.path.join(gdir, "context.json")
             ipc.write_json(ctx, {"goal": goal.id, "source": goal.source, "goal_dir": gdir, "audit": self.paths.audit,
-                                 "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "approval_timeout": self.cfg.approval_timeout,
+                                 "autonomy": self.cfg.autonomy, "panel": self.cfg.panel_mode, "countdown": self.cfg.countdown, "approval_timeout": self.cfg.approval_timeout,
                                  "max_steps": self.cfg.max_steps, "deadline": deadline})
             mcp = os.path.join(gdir, "mcp.json")
             brain.write_mcp_config(mcp, ctx, self.paths, self.libdir)
@@ -427,7 +493,7 @@ class Service:
                             clock=self.clock, on_start=on_start, **kw)
         except Exception as e:             # a bug here must not kill the service: this goal fails, the next one runs
             self.log("goal %s: internal error: %r" % (goal.id, e))
-            res = brain.Result("failed", "internal error: %s: %s" % (type(e).__name__, e))
+            res = brain.Result("failed", explain(e))
         goal.state, goal.ended, goal.error, goal.note = res.outcome, self.clock(), res.error, res.note
         if self.stopping and res.outcome == "stopped":
             goal.error = "the sysop service was stopped"
@@ -437,10 +503,13 @@ class Service:
         goal.pending = None
         for name in ("pending_action.json", "decision.json"):
             ipc.remove(os.path.join(gdir, name))
+        if res.outcome == "failed" and disk_low(gdir):
+            goal.error = (goal.error + " " if goal.error else "") + "(the disk of the box is almost full: free some space)"
         try:
             self.refresh_final(goal)
         except Exception as e:       # not only OSError: the end of one goal must never end the service
             self.log("cannot write the end of goal %s: %r" % (goal.id, e))
+            self.unwritten[goal.id] = goal
         aud.append("brain", **res.as_dict(), note=res.note)
         aud.append("state", state=goal.state, summary=goal.summary, error=goal.error)
         self.log("goal %s: %s%s" % (goal.id, goal.state, (" (%s)" % goal.error) if goal.error else ""))

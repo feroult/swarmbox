@@ -1,7 +1,10 @@
 """swarmbox-sysop: the command of the sysop tool.
 
-  swarmbox-sysop serve [--log] [--dock]        the resident service: reads goals from the bus and runs them, one at a time (prepare.sh starts it).
-                                               --dock: it also opens the panel in tmux when a goal arrives and closes it when the goal ends (dock.Follower)
+  swarmbox-sysop serve [--log] [--dock] [--watch]   the resident service: reads goals from the bus and runs them, one at a time (prepare.sh starts it).
+                                               --watch: it runs as a child of a watcher that starts it again when it dies (a kill, a crash), with a back-off and a
+                                               stop after five crashes in a minute (watch.py); a second `serve --watch` tells the first to start it now
+                                               --dock: it also keeps the panel in tmux as `sysop.panel` says: up in every window (always), or open while a goal runs (auto), or
+                                               never (off); dock.Follower
   swarmbox-sysop goal [--source S] [--wait] [--timeout N] TEXT...    publish a goal on the bus (topic goal); `-` reads the text from stdin;
                                                prints the goal id. --wait follows the goal to its end (exit 0 done, 1 failed or stopped)
   swarmbox-sysop goal              with no text, on a terminal: asks for the goal on one line (the tmux key `g` runs it in a popup)
@@ -12,7 +15,7 @@
   swarmbox-sysop stop [GOAL_ID]                the stop key: ends the running goal (and drops the queue), or just GOAL_ID
   swarmbox-sysop mcp                           the MCP server of a goal (the brain's MCP config runs this; SWARMBOX_SYSOP_CONTEXT names the goal)
   swarmbox-sysop panel                         the panel: the goal, the log, the countdown, the approval; g types a goal (run it in a tmux pane)
-  swarmbox-sysop dock open|close|toggle|redock [--socket PATH] [--window ID]   the panel in tmux, one per window (the tmux key and the hook call this)
+  swarmbox-sysop dock open|close|toggle|redock|sync [--socket PATH] [--window ID]   the panel in tmux, one per window (the tmux key and the hooks call this)
   swarmbox-sysop --self-test                   checks the install without a model
 
 Settings: SWARMBOX_SYSOP_* (config.py). Exit codes of `goal` follow swarmbox-bus: 3 nobody listens (the service is not running), 4 the bus is not
@@ -26,7 +29,7 @@ import signal
 import sys
 import time
 
-from . import brain, busclient, config, dock, ipc, keys, mcpserver, panel, paths, policy, service
+from . import brain, busclient, config, dock, ipc, keys, mcpserver, panel, paths, policy, service, watch
 
 EXIT = {"no_subscriber": 3, "bus_down": 4, "bus_closed": 4, "too_large": 5, "bad_topic": 6, "bad_request": 6, "bad_body": 6, "busy": 7}
 
@@ -39,6 +42,35 @@ def _cfg():
         raise SystemExit(2)
 
 
+LOG_MAX = 1 << 20      # serve.log is moved to serve.log.1 past this (one old file), at the start of the service and then every minute while it runs
+
+
+def _open_log(pth):
+    """serve.log, appended, mode 0600: its descriptor (the caller closes it)"""
+    return os.open(pth.log, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+
+
+def rotate_log(pth):
+    """Past LOG_MAX move serve.log to serve.log.1 (the older one is replaced) and point standard output and error at a new serve.log. True when it rotated.
+    For the daemon (--log): without this the log of a service that runs for months only grows."""
+    try:
+        if os.path.getsize(pth.log) <= LOG_MAX:
+            return False
+        os.replace(pth.log, pth.log + ".1")
+        fd = _open_log(pth)
+    except OSError:
+        return False
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except (OSError, ValueError):
+        pass
+    os.dup2(fd, 1)
+    os.dup2(fd, 2)
+    os.close(fd)
+    return True
+
+
 def _daemonize(pth):
     """What `serve --log` does first: no inherited descriptors (the caller may hold a pipe or a lock), output to serve.log."""
     try:
@@ -47,11 +79,11 @@ def _daemonize(pth):
         pass
     pth.make()
     try:
-        if os.path.getsize(pth.log) > (1 << 20):
+        if os.path.getsize(pth.log) > LOG_MAX:
             os.replace(pth.log, pth.log + ".1")
     except OSError:
         pass
-    fd = os.open(pth.log, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    fd = _open_log(pth)
     null = os.open(os.devnull, os.O_RDONLY)
     os.dup2(null, 0)
     os.dup2(fd, 1)
@@ -61,13 +93,23 @@ def _daemonize(pth):
             os.close(x)
 
 
+def cmd_watch(args, pth):
+    """serve --watch: the watcher (watch.py) runs `serve` (the same options, without --watch) as a child and starts it again when it dies."""
+    argv = [sys.executable, "-B", "-m", "swarmbox_sysop", "serve"] + (["--log"] if args.log else []) + (["--dock"] if args.dock else [])
+    return watch.Watcher(pth, argv).run()
+
+
 def cmd_serve(args):
     pth = paths.Paths()
     if args.log:
         _daemonize(pth)       # first: a refused setting is then written to serve.log, where the one who started the service in the background can read it
+    if args.watch:
+        return cmd_watch(args, pth)
     cfg = _cfg()
     svc = service.Service(cfg, pth)
-    follower = dock.Follower(pth, log=svc.log).start() if args.dock else None
+    if args.log:
+        svc.housekeeping = lambda: rotate_log(pth)
+    follower = dock.Follower(pth, log=svc.log, mode=cfg.panel_mode).start() if args.dock else None      # off too: its thread only takes away the hooks of an earlier always
     for sg in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sg, lambda *_: svc.shutdown())
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
@@ -106,7 +148,10 @@ def cmd_goal(args):
         print("swarmbox-sysop: %s" % e, file=sys.stderr)
         return 2
     except busclient.BusError as e:
-        print("swarmbox-sysop: %s%s" % (e, " (is the sysop service running? swarmbox-sysop status)" if e.code == "no_subscriber" else ""), file=sys.stderr)
+        hint = {"no_subscriber": " (is the sysop service running? swarmbox-sysop status)",
+                "bus_down": " (the box starts the bus again within seconds, or run: swarmbox-bus restart)",
+                "busy": " (the sysop is busy with another goal: try again in a moment)"}.get(e.code, "")
+        print("swarmbox-sysop: %s%s" % (e, hint), file=sys.stderr)
         return EXIT.get(e.code, 1)
     gid = service.sanitize(rep.get("id"), "")
     print(gid)
@@ -137,7 +182,11 @@ def cmd_status(args):
         print(json.dumps({"running": up, "status": st, "recent": service.recent_goals(pth, 5)}, indent=2))
     elif not args.quiet:
         if not up:
-            print("sysop: not running (swarmbox-sysop serve starts it; the box starts it at boot)")
+            crash = ipc.read_text(pth.crashloop)
+            if crash:
+                print("sysop: not running: %s. Start it again: swarmbox-tool prepare" % panel.clean(crash.strip().rstrip(";.")))
+            else:
+                print("sysop: not running (the box starts it at boot and again after a crash; by hand: swarmbox-tool prepare)")
         else:
             st = st or {}
             s = st.get("settings", {})
@@ -210,7 +259,8 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd")
     s = sub.add_parser("serve")
     s.add_argument("--log", action="store_true", help="detached mode: output to serve.log")
-    s.add_argument("--dock", action="store_true", help="open the panel in tmux when a goal arrives, close it when the goal ends")
+    s.add_argument("--dock", action="store_true", help="keep the panel in tmux as sysop.panel says (always, auto, off)")
+    s.add_argument("--watch", action="store_true", help="run the service as a child and start it again when it dies (what the box does)")
     s.set_defaults(fn=cmd_serve)
     g = sub.add_parser("goal")
     g.add_argument("--source", default="cli")

@@ -1,6 +1,6 @@
 """Where the sysop keeps its files, with the same rules as dirs.sh (SB_RUN_DIR, SB_STATE_DIR, XDG_STATE_HOME, HOME).
 
-  run   <SB_RUN_DIR>/sysop      (tmpfs in the box, regenerated at every start)  serve.lock serve.pid status.json stop.request
+  run   <SB_RUN_DIR>/sysop      (tmpfs in the box, regenerated at every start)  serve.lock serve.pid status.json stop.request watch.lock watch.pid crashloop
   state <SB_STATE_DIR>/sysop    (the workspace, survives a restart)             events.jsonl (the audit file) serve.log goals/<id>/...
 
 Both folders are private: made with mode 0700, owned by the user, not a symbolic link, and put back to 0700 when something loosened them.
@@ -77,6 +77,9 @@ class Paths:
     status = property(lambda self: os.path.join(self.run, "status.json"))
     stop_request = property(lambda self: os.path.join(self.run, "stop.request"))
     panel_request = property(lambda self: os.path.join(self.run, "panel.request"))
+    watch_lock = property(lambda self: os.path.join(self.run, "watch.lock"))
+    watch_pidfile = property(lambda self: os.path.join(self.run, "watch.pid"))
+    crashloop = property(lambda self: os.path.join(self.run, "crashloop"))
     audit = property(lambda self: os.path.join(self.state, "events.jsonl"))
     log = property(lambda self: os.path.join(self.state, "serve.log"))
 
