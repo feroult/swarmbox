@@ -8,15 +8,16 @@ THE RISK of an action (assess_run / assess_input), low, medium or high, plus `bl
     a program that is running a command, node...). A tab that is not a shell or an agent is rated at least medium: what is typed there is
     code of a program the policy cannot read.
   * agent: the text is a prompt, low. A text whose first character is `/` or `!` (a slash command, a shell escape) is BLOCKED (no approval path:
-    the sysop never asks the bus to allow it, and the driver refuses it anyway). A later line that starts so is medium. Answering a dialog of the
-    agent (a key other than Esc while a dialog is on the screen) is high: it may grant permissions.
+    the sysop never passes --slash to swarmbox-tabs, which refuses it anyway). A later line that starts so is medium. Any key
+    while a dialog of the agent is on the screen (Esc included: it rejects the request) is high, so it always needs the user's approval, never a
+    countdown: a dialog is the USER's decision.
   * shell: classify_command(the whole line; for `run` the text already on the command line of the screen is part of it) from risk.py. The line is what is already typed plus the new text, because a command can be typed in
     several parts (input "r", input "m -rf ~", input "{Enter}"): the policy keeps what it typed in each tab since the last Enter or {C-c}. Keys
     that edit the line ({Up}, {Left}, {Tab}...) make that text unreliable: an Enter then is at least medium. An Enter with nothing known on the
     line runs whatever is there (medium). {C-j}, {C-m} and {C-o} end a line like {Enter}. A command that mentions tmux, the bus, the sysop commands or the
     sysop's own files is high (risk.py): an approval is a file, and those commands type into any tab.
   * control characters in a text (ESC, C-c, a carriage return...) are blocked: keys are written {Key}. Text longer than MAX_TEXT is blocked.
-  * `{Key}` words follow the bus driver (parse_keys): only the known names are keys; an unknown {word} is an error for the brain, {{ and }}
+  * `{Key}` words follow swarmbox-tabs (parse_keys): only the known names are keys; an unknown {word} is an error for the brain, {{ and }}
     are literal braces.
   * it is not a sandbox: an alias, a script, a Makefile can do anything. The point is that the dangerous shapes cost a deliberate approval.
 
@@ -44,14 +45,42 @@ SHELLS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "ash")
 MAX_TEXT = 4000
 LEVELS = risk.LEVELS
 
-# the keys of the bus driver (container/scripts/swarmbox-bus-tmux.py KEYS and parse_keys): the same names, so a key that this accepts is one
-# the driver turns into a key. tests/test_sysop_policy.py compares this table with the driver's.
+# the keys of swarmbox-tabs (container/scripts/swarmbox-tabs.py KEYS and parse_keys): the same names, so a key that this accepts is one
+# swarmbox-tabs turns into a key. tests/test_sysop_policy.py compares this table with that of swarmbox-tabs.
 KEYS = ("Esc", "Enter", "Tab", "BTab", "Space", "BSpace", "Up", "Down", "Left", "Right", "Home", "End", "PgUp", "PgDn", "Delete", "Insert")
 # keys that end a line like Enter does: C-j and C-m are a line feed and a carriage return, C-o runs the line and fetches the next one (bash)
 ENTERS = ("Enter", "C-j", "C-m", "C-o")
 _TOKEN = re.compile(r"\{\{|\}\}|(?<!\$)\{([A-Za-z][A-Za-z0-9-]*)\}")
 _DIALOG = re.compile(r"Enter to confirm|Esc to cancel|Esc to exit|Do you want to|\(y/n\)|\[Y/n\]|\[y/N\]")
+DIALOG_REASON = "{%s} answers a dialog of the agent: that is the user's decision (it may grant or reject a permission)"
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f\x80-\x9f]")      # everything but \t and \n; includes C1 (CSI as one byte)
+
+
+def history_reference(line):
+    """A reason when `line` (typed into a shell) holds a history expansion that bash would replace with an earlier command of the tab: `!!`,
+    `!rm`, `!-3`, `^a^b` at the start. A `!` inside single quotes, behind a backslash or behind `$`, or followed by a blank, `=` or `(` is not one.
+    Anything else is refused, which is the safe side: the brain can write the command without it."""
+    if line[:1] == "^":
+        return "a line that starts with ^ is a history substitution (it re-runs an earlier command with a change)"
+    quote, i = "", 0
+    while i < len(line):
+        c = line[i]
+        if c == "\\" and quote != "'":
+            i += 2
+            continue
+        if quote == "'":
+            if c == "'":
+                quote = ""
+        elif c == "'" and quote == "":
+            quote = "'"
+        elif c == '"':
+            quote = "" if quote == '"' else '"'
+        elif c == "!" and quote != "'" and not (i > 0 and line[i - 1] == "$"):
+            nxt = line[i + 1:i + 2]
+            if nxt and nxt not in " \t\n=(":
+                return "an exclamation mark followed by text is a history reference (it re-runs an earlier command): write the command out"
+        i += 1
+    return ""
 
 
 class PolicyError(Exception):
@@ -59,14 +88,14 @@ class PolicyError(Exception):
 
 
 def key_name(name):
-    """The driver's name of {name}, or None when {name} is not a key."""
+    """The name swarmbox-tabs gives to {name}, or None when {name} is not a key."""
     if name in KEYS or re.fullmatch(r"C-[a-z]", name) or re.fullmatch(r"M-[a-zA-Z0-9]", name) or re.fullmatch(r"F([1-9]|1[0-2])", name):
         return name
     return None
 
 
 def parse_input(text):
-    """text with {Key} tokens -> [("text", str) | ("key", name)], like the driver; an unknown {word} raises PolicyError."""
+    """text with {Key} tokens -> [("text", str) | ("key", name)], like swarmbox-tabs; an unknown {word} raises PolicyError."""
     steps, pos, buf = [], 0, []
 
     def flush():
@@ -158,10 +187,19 @@ class Policy:
             raise PolicyError("the text has %d characters, at most %d: split the work" % (len(text), MAX_TEXT))
 
     @staticmethod
-    def _control(text, v):
+    def _control(text, v, kind="agent", before=""):
         if _CONTROL.search(text):
             v.block = True
             v.add("high", "the text holds control characters (use a {Key} for keys)")
+        if kind != "agent":
+            # readline and history expand text before the shell parses it, so the text that risk.py rates is not what runs
+            if "\t" in text:
+                v.block = True
+                v.add("high", "a Tab character completes a name in the shell: what runs is not the text typed (use plain spaces)")
+            reason = history_reference(before + text)
+            if reason:
+                v.block = True
+                v.add("high", reason)
 
     def _line_risk(self, kind, line, v, dirty):
         """The text of a command line in a shell (or a program that is not an agent)."""
@@ -194,8 +232,8 @@ class Policy:
         self._check_text(text)
         kind = tab_kind(tab.get("cmd"))
         v = Verdict()
-        self._control(text, v)
         b = self.buf(tab["tab"])
+        self._control(text, v, kind, b.text)
         if kind == "agent":
             if not b.text or b.dirty:
                 self._agent_start(text, v)
@@ -213,9 +251,13 @@ class Policy:
         steps = parse_input(text)
         kind = tab_kind(tab.get("cmd"))
         v = Verdict()
-        self._control(text, v)
         buf, dirty = self.buf(tab["tab"]).text, self.buf(tab["tab"]).dirty
-        dialog = kind == "agent" and bool(_DIALOG.search("\n".join([x for x in screen.split("\n") if x.strip()][-14:])))
+        # the screen decides, not the name of the process: Claude Code started through `tmux new-window CMD`, `env`, `ssh` or `bash -c` shows as sh,
+        # ssh or node. A screen with a dialog is a dialog whatever runs: it is rated as an agent's (the safe side)
+        dialog = bool(_DIALOG.search("\n".join([x for x in screen.split("\n") if x.strip()][-14:])))
+        if dialog:
+            kind = "agent"
+        self._control(text, v, kind, buf)
         for what, val in steps:
             if what == "text":
                 if kind == "agent" and (not buf or dirty):
@@ -240,21 +282,25 @@ class Policy:
                         self._line_risk(kind, buf, v, dirty)
                 buf, dirty = "", False
             elif val == "C-c":
-                if kind == "agent":
+                if dialog:
+                    v.add("high", DIALOG_REASON % "C-c")
+                elif kind == "agent":
                     v.add("medium", "C-c can exit the agent")
                 buf, dirty = "", False
             elif val == "C-d":
                 v.add("medium", "C-d ends the input: it exits a shell or an agent")
+                if dialog:
+                    v.add("high", DIALOG_REASON % "C-d")
                 buf, dirty = "", False
             elif val == "Esc":
                 if dialog:
-                    pass
+                    v.add("high", DIALOG_REASON % "Esc")      # Esc rejects the request the dialog asks about
                 else:
                     dirty = dirty or bool(buf)
             else:
                 dirty = True
                 if dialog:
-                    v.add("high", "{%s} answers a dialog of the agent (it may grant permissions)" % val)
+                    v.add("high", DIALOG_REASON % val)
         if not v.reasons:
             v.reasons.append("keys only" if all(w == "key" for w, _ in steps) else "text typed, nothing runs")
         return v

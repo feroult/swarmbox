@@ -4,7 +4,7 @@
     the line editor, the countdown and its expiry.
   * the program on a pty, as tmux runs it, against a FAKE state dir (the files of ipc.py written by the test): rendering at several widths, every
     key, typing a goal (a fake bus), the approval gesture, expiry, the service down and coming back, SIGWINCH.
-  * the program on a pty against the REAL service and the REAL bus (a process, with its in-memory driver) and the fake claude: a goal runs, the
+  * the program on a pty against the REAL service and the REAL bus (a process) and the fake claude: a goal runs, the
     panel shows its steps, the veto and the typed `run` decide for real, and a goal typed in the panel is run by the service.
 No tmux, no network, no model. Run with: python3 -W error tests/test_sysop_panel.py
 """
@@ -165,7 +165,7 @@ class Rendering(unittest.TestCase):
         now = time.time()
         m = model_with(make_goal(), make_pending("veto", deadline=now + 3.2, text="echo hi"))
         text = "\n".join(frame_text(m, 70, 24, now)[0])
-        for needle in ("COUNTDOWN", "echo hi", "tab 0:shell: run", "sent in 4 s unless you veto it: c", "[c] Veto"):
+        for needle in ("COUNTDOWN", "echo hi", "tab 0:shell: run", "sent in 4 s unless you veto it", "Ctrl+A V", "[c] Veto"):
             self.assertIn(needle, text)
         self.assertNotIn("[g] Goal", text, "no new goal while an action waits")
         self.assertIn("sent in 1 s", "\n".join(frame_text(m, 70, 24, now + 2.5)[0]))
@@ -337,6 +337,59 @@ class Keys(unittest.TestCase):
         self.assertIsNone(model_with().key(("click", 3, 3), 1.0, self.now))
 
 
+class ApprovalRequest(unittest.TestCase):
+    """`swarmbox-sysop approve` asks the panel for its approval prompt (Model.request_approve); keys.py then gives it the focus."""
+    REQ = {"action": "approve", "id": "p1"}
+
+    def approval(self, now=0.0, **kw):
+        kw.setdefault("text", "rm -rf ~/x")
+        return model_with(make_goal("waiting_approval"), make_pending("approve", "high", **kw), now=now)
+
+    def test_the_request_opens_the_word_prompt_of_the_pending_approval(self):
+        m = self.approval()
+        self.assertEqual(m.request_approve(self.REQ, 1.0, time.time()), "ok")
+        self.assertEqual((m.mode, m.word), ("word", ""))
+        self.assertIsNone(m.key("x", 1.0, time.time()), "in the word prompt x is a letter, not a stop")
+        self.assertEqual(m.word, "x")
+
+    def test_the_key_guard_of_a_new_action_still_holds(self):
+        m = self.approval(now=10.0)
+        self.assertEqual(m.request_approve(self.REQ, 10.1, time.time()), "wait", "the request stays until the guard has passed")
+        self.assertEqual(m.mode, "view")
+        self.assertEqual(m.request_approve(self.REQ, 10.0 + panel.GUARD + 0.01, time.time()), "ok")
+
+    def test_a_request_for_another_action_a_countdown_or_nothing_is_dropped(self):
+        for m, req in ((self.approval(), {"action": "approve", "id": "p9"}), (self.approval(), {"action": "stop", "id": "p1"}),
+                       (model_with(make_goal(), make_pending("veto")), self.REQ), (model_with(make_goal()), self.REQ),
+                       (self.approval(deadline=time.time() - 1), self.REQ)):
+            self.assertEqual(m.request_approve(req, 5.0, time.time()), "no")
+            self.assertEqual(m.mode, "view")
+
+    def test_an_action_that_does_not_fit_cannot_be_opened_for_approval(self):
+        m = self.approval(text="x" * 3000)
+        frame_text(m, 40, 24)           # a render sets how much of the action is hidden
+        self.assertEqual(m.request_approve(self.REQ, 5.0, time.time()), "no")
+        self.assertEqual(m.mode, "view")
+
+    def test_losing_the_focus_drops_a_half_typed_word(self):
+        pn = panel.Panel(pth=None, in_fd=-1, out_fd=-1, bus=object())
+        pn.model = self.approval()
+        pn.model.request_approve(self.REQ, 5.0, time.time())
+        pn.model.word = "ru"
+        pn.handle_key("focus-out")
+        self.assertEqual((pn.model.mode, pn.model.word, pn.model.focused), ("view", "", False))
+        pn.handle_key("focus-in")
+        self.assertTrue(pn.model.focused)
+
+    def test_the_text_says_which_keys_work_unfocused_and_drops_it_when_focused(self):
+        m = self.approval()
+        text = " ".join(frame_text(m, 70, 30)[0])
+        for needle in ("Ctrl+A a, then type run", "type run", "Ctrl+A, then V veto, X stop, a approve, g goal"):
+            self.assertIn(needle, text)
+        m.focused = True
+        self.assertNotIn("Ctrl+A, then V", " ".join(frame_text(m, 70, 30)[0]))
+
+
 class KeyBytes(unittest.TestCase):
     def test_the_parser(self):
         kp = panel.KeyParser()
@@ -403,7 +456,7 @@ class Terminal:
         self.out = b""
         self.lock = threading.Lock()
         e = {"PATH": os.environ["PATH"], "PYTHONPATH": ss.LIB, "TERM": "xterm-256color", "LANG": "C.UTF-8", "HOME": env.get("HOME", "/tmp")}
-        e.update({k: v for k, v in env.items() if k.startswith("SB_")})
+        e.update({k: v for k, v in env.items() if k.startswith(("SB_", "SWARMBOX_SYSOP_"))})
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.execvpe(sys.executable, [sys.executable, "-B", "-m", "swarmbox_sysop", "panel"], e)
@@ -717,6 +770,27 @@ class PanelProgram(PtyBase):
         t.send("\x1b")
         self.assertTrue(ss.wait_for(lambda: "[g] Goal" in "\n".join(t.last_frame()), 5))
 
+    def test_the_goal_goes_to_the_topic_of_the_setting(self):
+        self.st.e.env["SWARMBOX_SYSOP_TOPIC"] = "ops.goals"
+        bus = ss.FakeBus(self.st.e.env["SB_BUS_SOCKET"])
+        self.addCleanup(bus.stop)
+        c = socket.socket(socket.AF_UNIX)
+        self.addCleanup(c.close)
+        c.connect(self.st.e.env["SB_BUS_SOCKET"])
+        c.settimeout(10)
+        c.sendall(b'{"op":"sub","topic":"ops.goals"}\n')
+        f = c.makefile("rb")
+        self.assertTrue(json.loads(f.readline())["ok"])
+        self.st.serve()
+        t = self.open()
+        self.ready(t, "no goal; speak")
+        t.send("g")
+        t.send("check the disk")
+        t.send("\r")
+        env = json.loads(f.readline())
+        self.assertEqual((env["topic"], env["source"], env["body"]), ("ops.goals", "panel", {"text": "check the disk"}))
+        self.assertEqual([p[0] for p in bus.pubs], ["ops.goals"])
+
     def test_a_goal_typed_in_the_panel_reaches_a_subscriber(self):
         bus = ss.FakeBus(self.st.e.env["SB_BUS_SOCKET"])
         self.addCleanup(bus.stop)
@@ -795,7 +869,7 @@ class PanelProgram(PtyBase):
 # ---------------------------------------------------------------------------------------------------------------------- the real core
 
 class RealCore(PtyBase):
-    """The real service, the real broker (a process, in-memory tabs) and the fake claude: the panel shows and answers what the core does."""
+    """The real service, the real broker (a process), a fake swarmbox-tabs and the fake claude: the panel shows and answers what the core does."""
 
     def setUp(self):
         super().setUp()
@@ -807,7 +881,12 @@ class RealCore(PtyBase):
         self.addCleanup(self.bus.close)
         self.st.e.env["SB_BUS_SOCKET"] = self.bus.path
         self.st.paths = paths.Paths(self.st.e.env)
+        self.tabs = ss.FakeTabs(os.path.join(self.st.e.dir, "tabs.sock"), {"main": dict(tab="main", label="0:shell", index=0, name="shell", dir="/work", cmd="bash",
+                                                                                       active=True, pane="%1", panes=1)})
+        self.addCleanup(self.tabs.stop)
+        self.tabs.screens["main"] = "$ "
         os.environ.update(self.st.e.env)
+        os.environ.update(self.tabs.cmd_env)
         self.out = os.path.join(self.st.e.dir, "out.jsonl")
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_OUT"] = self.out
         self.svc = None

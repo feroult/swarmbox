@@ -2,6 +2,9 @@
 
 It shows the goal the sysop is working on and is the place where you answer it: the goal (text and source), the live log of the steps (each tool
 call with a short result, and what the sysop said), the queue of goals, and the PENDING ACTION with its countdown. What you type becomes a goal.
+The panel NEVER takes the focus by itself (dock.py opens it with -d), so these keys only work after you focus it: a mouse click on it, or `Ctrl+A a`
+(the approval gesture, keys.py: it opens the approval prompt here and then focuses the panel). From any tab, without focusing it: `Ctrl+A` then
+V (veto), X (stop), a (approval), g (goal): the tmux keys of container/config/tmux.conf.
 Keys:   c  veto the action that waits in a countdown (it is NOT sent); in an approval, refuse it
         r  then the word `run` and Enter: allow a HIGH-RISK action (nothing less than the typed word counts; Esc goes back)
         x  stop the goal that runs (X: the goal and the whole queue)
@@ -27,7 +30,7 @@ import tty
 import unicodedata
 from collections import namedtuple
 
-from . import busclient, dock, ipc, paths as pathsmod, service
+from . import busclient, config, dock, ipc, paths as pathsmod, service
 
 GUARD = 0.5             # seconds after a new pending action appears in which keys are ignored
 ESC_WAIT = 0.05         # a lone ESC is a key when nothing follows within this long
@@ -35,6 +38,7 @@ POLL = 0.2              # seconds between two looks at the files
 MIC_RESERVE = 7         # the browser's microphone button covers the last columns of the bottom row: the key line stays clear of them
 MAX_EDIT = service.MAX_GOAL_TEXT
 GOAL_LINES = 3
+HINT = "These keys work when this pane has the focus (click it). From any tab: Ctrl+A, then V veto, X stop, a approve, g goal."
 IDLE_TEXT = "no goal; speak or type one: g"
 LAST_FRESH = 3600       # seconds a finished goal is still shown as the last one when the panel opens
 TERMINAL = ("done", "stopped", "failed")
@@ -309,6 +313,7 @@ class Model:
         self.scroll = 0             # lines back from the end of the log; 0 follows it
         self.ready_at = 0.0
         self.pending_key = None
+        self.focused = None       # True/False after the first focus event of tmux; None until then (not known)
         self.hidden = 0           # characters of the pending action the last render did not show (set by _pending_lines)
         self.finished = False
 
@@ -329,6 +334,23 @@ class Model:
             elif self.mode == "word":
                 self.mode, self.word = "view", ""
         self.pending = p
+
+    def request_approve(self, req, now, wall):
+        """`swarmbox-sysop approve` asks for the approval prompt of the pending action req["id"]. "wait": the key guard of a new action has not
+        passed, keep the request; "ok": the prompt is open; "no": it cannot be (the request is dropped, the notice says why)."""
+        if not isinstance(req, dict) or req.get("action") != "approve":
+            return "no"
+        if not (self.pending and self.up and self.pmode() == "approve" and self.live(wall)) or str(self.pending.get("id")) != str(req.get("id")):
+            self.notice = "That action is no longer waiting for approval."
+            return "no"
+        if now < self.ready_at:
+            return "wait"
+        self.scroll = 0
+        if self.hidden:
+            self.notice = "The whole action is not on the screen, so it cannot be allowed: refuse it (c) or make the pane bigger."
+            return "no"
+        self.mode, self.word, self.notice = "word", "", ""
+        return "ok"
 
     def pmode(self):
         return "veto" if self.pending and self.pending.get("mode") == "veto" else "approve"      # an unknown mode gets the strongest treatment
@@ -592,10 +614,10 @@ def _pending_lines(model, W, wall, color):
     if lv != "low" and reasons:
         rows += [" " + _paint(color, name, ln) for ln in wrap("why: " + "; ".join(reasons), W)]
     if model.pmode() == "veto":
-        msg = "sent in %d s unless you veto it: c" % int(left + 0.999) if left > 0 else "sending now"
+        msg = "sent in %d s unless you veto it: Ctrl+A V, or click here and press c" % int(left + 0.999) if left > 0 else "sending now"
         rows += [" " + _paint(color, "amber", ln, True) for ln in wrap(msg, W)]
     else:
-        msg = ("NOT sent unless you allow it: r, then type run, Enter. Refused in %s" % clock(int(left + 0.999))) if left > 0 else "time is up: refused"
+        msg = ("NOT sent unless you allow it: Ctrl+A a, then type run and Enter (or click here, r, run). Refused in %s" % clock(int(left + 0.999))) if left > 0 else "time is up: refused"
         rows += [" " + _paint(color, "red", ln, True) for ln in wrap(msg, W)]
     return rows
 
@@ -632,7 +654,7 @@ def render(model, cols, rows, wall, color=True):
             queue_l.append(" " + _paint(color, "dim", "+%d more" % (len(model.queue) - 3)))
     pend_l = _pending_lines(model, W, wall, color) if (model.pending and model.up) else []
     notice_l = [" " + _paint(color, "red", ln) for ln in wrap(model.notice, W)] if model.notice else []
-    prompt_l, key_lines, spans, cursor_at = [], [], [], None
+    prompt_l, key_lines, spans, cursor_at, hint_l = [], [], [], None, []
     if model.mode == "word":
         prompt_l = [" " + _paint(color, "red", ln) for ln in wrap("HIGH RISK. To allow it type the word run, then Enter. Esc goes back.", W)]
         prompt_l.append(" > " + model.word)
@@ -652,9 +674,13 @@ def render(model, cols, rows, wall, color=True):
             keys.append(("g", "Goal"))
         keys.append(("q", "Close"))
         key_lines, spans = _key_line(keys, cols, color)
+        if model.focused is not True:
+            hint_l = [" " + _paint(color, "dim", ln) for ln in wrap(HINT, W)]
 
     def total():
-        return len(top) + len(queue_l) + len(pend_l) + len(notice_l) + len(prompt_l) + len(key_lines)
+        return len(top) + len(queue_l) + len(pend_l) + len(notice_l) + len(hint_l) + len(prompt_l) + len(key_lines)
+    while rows - 1 - total() < 1 and hint_l:
+        hint_l.pop()
     while rows - 1 - total() < 1 and queue_l:
         queue_l.pop()
     while rows - 1 - total() < 1 and len(top) > 1:
@@ -682,7 +708,7 @@ def render(model, cols, rows, wall, color=True):
     while len(out) < rows - (total() - len(top)):
         out.append("")
     base = len(out)
-    out += queue_l + pend_l + notice_l + prompt_l
+    out += queue_l + pend_l + notice_l + hint_l + prompt_l
     hits = []
     if key_lines:
         first = len(out)
@@ -742,6 +768,17 @@ class Panel:
                 continue
             data = data[n:]
 
+    def take_request(self):
+        """The approval request of `swarmbox-sysop approve`: deleted once taken, so the command knows the prompt is open before it focuses us."""
+        req = ipc.read_json(self.paths.panel_request)
+        if req is None:
+            if os.path.exists(self.paths.panel_request):      # damaged: nothing to do with it
+                ipc.remove(self.paths.panel_request)
+            return
+        if self.model.request_approve(req, self.now(), self.wall()) != "wait":
+            ipc.remove(self.paths.panel_request)
+            self.drawn = None
+
     def look(self):
         snap = snapshot(self.paths, self.last_gid)
         if snap.up:
@@ -755,6 +792,7 @@ class Panel:
         if snap.gid:
             self.last_gid = snap.gid
         self.model.update(snap, self.now())
+        self.take_request()
 
     def draw(self, force=False):
         cols, rows = self.size()
@@ -801,20 +839,29 @@ class Panel:
                 m.draft, m.notice = text, "The goal has %d characters, at most %d." % (len(text), service.MAX_GOAL_TEXT)
                 return
             try:
-                self.bus.pub("goal", {"text": text}, "panel")
+                self.bus.pub(self.topic(), {"text": text}, "panel")
                 m.notice = "Goal sent."
-            except busclient.BusError as e:
+            except (busclient.BusError, config.ConfigError) as e:
                 m.draft = text
-                m.notice = ("The sysop is not running: nobody takes the goal (your text is kept: g)." if e.code == "no_subscriber"
+                m.notice = ("The sysop is not running: nobody takes the goal (your text is kept: g)." if getattr(e, "code", "") == "no_subscriber"
                             else "The goal was not sent (%s). Your text is kept: g." % clean(str(e), 120))
+
+    @staticmethod
+    def topic():
+        """the topic goals go to (SWARMBOX_SYSOP_TOPIC, read at each goal: the setting of the box)"""
+        return config.goal_topic()
 
     def handle_key(self, k):
         now = self.now()
         if k == "focus-in":
             self.focus_at = now
+            self.model.focused = True
             return
         if k == "focus-out":
             self.focus_at = None
+            self.model.focused = False
+            if self.model.mode == "word":              # the focus went elsewhere: a half-typed word does not wait for it
+                self.model.mode, self.model.word = "view", ""
             return
         if isinstance(k, tuple):
             if k[0] == "wheel":

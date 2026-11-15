@@ -30,12 +30,13 @@ def level(cmd):
 
 
 class SelfControls(unittest.TestCase):
-    """A command that reaches the box's own controls is high, quoted or not: the approval is a file, and tmux and the bus type into any tab."""
+    """A command that reaches the box's own controls is high, quoted or not: the approval is a file, and tmux, swarmbox-tabs and the bus reach the other tabs."""
 
     def test_commands_that_type_into_other_tabs_or_forge_an_approval(self):
         for cmd in ("tmux send-keys -t main:two 'rm -rf X' Enter",
-                    "swarmbox-bus pub tab/@2/in '{\"run\":\"rm -rf ~\"}'",
-                    "swarmbox bus pub tab/@2/in '{\"run\":\"ls\"}'",
+                    "swarmbox-tabs send @2 --run 'rm -rf ~'",
+                    "swarmbox tabs send @2 --input '{Enter}'", "swarmbox-tabs screen @2", "SB_TABS_SOCKET=x swarmbox-tabs list",
+                    "swarmbox-bus pub goal 'rm -rf ~'", "swarmbox bus pub goal ls",
                     "watch -n0.2 'printf x > /home/u/.local/state/swarmbox/sysop/goals/g1/decision.json'",
                     "echo '{}' > $HOME/.local/state/swarmbox/sysop/goals/g1/decision.json",
                     "tmux run-shell 'x'", "python3 -c 'import socket; socket.socket().connect(\"/tmp/swarmbox/bus.sock\")'",
@@ -126,17 +127,17 @@ class ServerGate(tm.Rig):
         text, err = self.call("run", tab="@1", command=cmd)
         self.assertTrue(err, text)
         self.assertIn("not approved", text)
-        self.assertEqual(self.bus.sent, [])
+        self.assertEqual(self.tabs.sent, [])
 
     def test_run_on_a_prompt_with_text_left_on_it(self):
-        self.srv.bus.screen = lambda tab, lines=None: {"text": "user@h:~$ rm -rf ", "cursor": [17, 0], "alternate": False}
+        self.srv.tabs.screen = lambda tab, lines=None: {"text": "user@h:~$ rm -rf ", "cursor": [17, 0], "alternate": False}
         text, err = self.call("run", tab="@1", command="/work/victim5")
         self.assertTrue(err, text)
-        self.assertEqual(self.bus.sent, [])
+        self.assertEqual(self.tabs.sent, [])
 
     def test_a_long_result_keeps_the_newest_lines_and_the_end_marker(self):
         rows = ["line %d %s" % (i, "x" * 70) for i in range(500)] + ["$ make test <- the prompt, the newest line"]
-        self.bus.set_screen("@1", "\n".join(rows))
+        self.tabs.set_screen("@1", "\n".join(rows))
         text = self.ok("read_tab", tab="@1", lines=500)
         self.assertLessEqual(len(text), mcpserver.MAX_RESULT + 100)
         self.assertIn("the newest line", text)
@@ -163,14 +164,14 @@ class ServerWait(tm.Rig):
     autonomy, countdown, approval = "auto", 0.6, 2.0
 
     def test_a_dialog_that_opens_while_an_action_waits_stops_it(self):
-        self.bus.tabs["@2"]["cmd"] = "claude"
+        self.tabs.tabs["@2"]["cmd"] = "claude"
         t0 = time.time()
         # no dialog at the start, a dialog 0.3 s later (during the countdown)
-        self.bus.screens["@2"] = lambda bus, tab: "> " if time.time() - t0 < 0.3 else "Bash command\nDo you want to proceed?\n 1. Yes\n 2. No\nEnter to confirm - Esc to cancel"
+        self.tabs.screens["@2"] = lambda bus, tab: "> " if time.time() - t0 < 0.3 else "Bash command\nDo you want to proceed?\n 1. Yes\n 2. No\nEnter to confirm - Esc to cancel"
         text, err = self.call("input", tab="@2", text="{Enter}")
         self.assertTrue(err, text)
         self.assertIn("changed while the action waited", text)
-        self.assertEqual(self.bus.sent, [])
+        self.assertEqual(self.tabs.sent, [])
         self.assertTrue([e for e in self.events("decision") if e.get("decision") == "refused_after_wait"])
 
 
@@ -252,8 +253,8 @@ class ShutdownRace(tss.Base):
         real = svc.bus.subscribe
         subs = []
 
-        def subscribe(topic):
-            sub = real(topic)
+        def subscribe(topic, group=None):
+            sub = real(topic, group)
             subs.append(sub)
             svc.shutdown()                  # the stop arrives when the broker has acknowledged and svc.sub is not set yet,
             t.join(10)                      # and the service has ended its main loop (its own shutdown found no stream to close)

@@ -1,14 +1,18 @@
-"""A client of swarmbox-bus that speaks its socket protocol directly (standard library only).
+"""A client of swarmbox-bus that speaks its socket protocol directly (standard library only): publish, and subscribe with a group.
 
-Why not run the `swarmbox-bus` command: (1) the answers keep their shape: a failure is {"err": CODE, "msg": TEXT} (dialog_open, slash_refused,
-no_such_tab, busy_tab...), which the tools hand to the model, while the command turns it into an exit code and a line on stderr; (2) `sub` is
-one long connection that the service must close from another thread and reconnect with backoff, which is a socket and not a pipe to a child;
-(3) no PATH, no process per call (the MCP server makes a call for every poll of the settled screen, 0.1 s apart). The cost is that this file
-repeats the protocol of container/scripts/swarmbox-bus.py (its docstring is the specification); tests/test_sysop_bus.py runs this client against
-the real broker, so a change of the protocol breaks a test here.
+The bus is plain publish/subscribe (container/scripts/swarmbox-bus.py, its docstring is the specification): it keeps no state, answers no
+questions and knows nothing about tmux. The sysop uses it for one thing, goals: the service subscribes to the topic of `sysop.topic` with the
+group of `sysop.group`, and the panel, the key g and `swarmbox-sysop goal` publish there. Reading and typing into the tabs of the box does NOT
+go through here: that is the capability swarmbox-tabs (tabsclient.py).
 
-Protocol: line-delimited JSON, one request line per connection. pub, get, ls and ping get one reply {"ok": true, ...} or {"ok": false, "err",
-"msg"}; sub gets {"ok": true, "subscribed": T} and then one envelope per line. A line is at most 1 MiB.
+Why not run the `swarmbox-bus` command: (1) `sub` is one long connection that the service must close from another thread and reconnect with
+backoff, which is a socket and not a pipe to a child; (2) the answers keep their shape: a failure is {"err": CODE, "msg": TEXT} and the callers
+look at the code (no_subscriber: nobody listens, so the sysop is not running). The cost is that this file repeats the protocol;
+tests/test_sysop_bus.py runs this client against the real broker, so a change of the protocol breaks a test here.
+
+Protocol: line-delimited JSON, one request line per connection. pub, ping and topics get one reply {"ok": true, ...} or {"ok": false, "err",
+"msg"}; pub's reply has "id" and "delivered" (the number of receivers); sub gets {"ok": true, "subscribed": T, "group": G} and then one envelope
+per line. A line is at most 1 MiB.
 """
 import json
 import os
@@ -58,7 +62,7 @@ def _connect(path, timeout):
 
 
 class Subscription:
-    """The stream of `sub goal`: iterate it for envelopes; close() from any thread ends the iteration."""
+    """The stream of a `sub`: iterate it for envelopes; close() from any thread ends the iteration."""
 
     def __init__(self, sock, f):
         self.sock, self.f = sock, f
@@ -120,36 +124,20 @@ class Bus:
     def ping(self):
         return self.request({"op": "ping"}, 5)
 
-    def tabs(self):
-        """`ls tab/`: a list of dicts (tab, label, index, name, dir, cmd, pane, panes, active)."""
-        res = self.request({"op": "ls", "topic": "tab/"})["result"]
-        if not isinstance(res, list):
-            raise BusError("bus_protocol", "ls tab/ did not give a list")
-        return [t for t in res if isinstance(t, dict) and isinstance(t.get("tab"), str)]
-
-    def screen(self, tab, lines=None):
-        """`get tab/<tab>/screen`: {"tab", "pane", "text", "cursor", "alternate", ...}"""
-        req = {"op": "get", "topic": "tab/%s/screen" % tab}
-        if lines:
-            req["lines"] = int(lines)
-        res = self.request(req)["result"]
-        if not isinstance(res, dict) or not isinstance(res.get("text"), str):
-            raise BusError("bus_protocol", "get screen did not give a screen")
-        return res
-
     def pub(self, topic, body, source="cli"):
-        """Publish; the reply has "id". For a tab topic the reply comes after the typing (the driver's pauses)."""
+        """Publish; the reply has "id" and "delivered" (how many received it). Nobody subscribed is the error no_subscriber."""
         return self.request({"op": "pub", "topic": topic, "source": source, "body": body})
 
-    def send(self, tab, body):
-        return self.pub("tab/%s/in" % tab, body, "sysop")
-
-    def subscribe(self, topic="goal"):
-        """Open the stream; raises BusError when the bus is down or refuses. The timeout of the socket is lifted: the stream waits."""
+    def subscribe(self, topic, group=None):
+        """Open the stream of `topic`, as a member of `group` (members of a group share the messages: one gets each) or alone; raises
+        BusError when the bus is down or refuses. The timeout of the socket is lifted: the stream waits."""
         s = _connect(self.path, 10)
         f = s.makefile("rb")
         try:
-            s.sendall((json.dumps({"op": "sub", "topic": topic}) + "\n").encode())
+            req = {"op": "sub", "topic": topic}
+            if group:
+                req["group"] = group
+            s.sendall((json.dumps(req) + "\n").encode())
             rep = _line(f)
         except (OSError, BusError) as e:
             f.close()

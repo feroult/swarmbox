@@ -8,10 +8,10 @@ scheduled job. No network, no model and no real microphone: Chromium reads a WAV
 (--use-fake-device-for-media-stream, --use-fake-ui-for-media-stream, --use-file-for-fake-audio-capture), and a STUB voice
 service on 127.0.0.1 answers the page (health and audio only) and records every request.
 
-The page is the microphone and a state light: the plan, its risk and the confirmation are in the tmux panel. Covers: the button appears
+The page is the microphone and a state light: voice is an input, the audio becomes a goal on the bus. Covers: the button appears
 only when the service answers; hold records and POSTs a 16 kHz mono 16-bit WAV to /voice/audio and nothing else; the light goes
-recording, sending, sent (or nothing heard, or an error with a short sentence); the page shows no card, no plan, no transcript, no
-Run/Edit/Cancel; text of an error is shown as text; denied and missing microphone give a short message; touch works; it fits a phone.
+recording, sending, sent (or nothing heard, nobody listening, busy, bus down, or an error with a short sentence); the page shows no card,
+no plan, no transcript, no Run/Edit/Cancel; text of an error is shown as text; denied and missing microphone give a short message; touch works; it fits a phone.
 """
 import json
 import math
@@ -64,7 +64,7 @@ class Stub:
 
     def __init__(self, healthy=True, answer=None):
         self.healthy = healthy
-        self.answer = answer or (200, {"ok": True, "state": "pending"})
+        self.answer = answer or (200, {"ok": True, "state": "sent"})
         self.requests = []   # (method, path, content type, body bytes)
         self.lock = threading.Lock()
         stub = self
@@ -266,7 +266,7 @@ class VoicePage(unittest.TestCase):
         self.assertEqual(self.stub.paths(), [("GET", "/voice/health"), ("POST", "/voice/audio")])
 
     def test_the_page_shows_only_a_microphone_and_a_light(self):
-        self.open(Stub(answer=(200, {"ok": True, "state": "pending", "text": "SECRET transcript", "id": "p1"})))
+        self.open(Stub(answer=(200, {"ok": True, "state": "sent", "text": "SECRET transcript", "id": "p1"})))
         self.hold()
         self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'sent'", what="sent")
         self.assertEqual(self.page.js("document.querySelectorAll('#swarmbox-voice button').length"), 1)
@@ -278,11 +278,37 @@ class VoicePage(unittest.TestCase):
         self.assertEqual(text.strip(), "Sent")
 
     def test_nothing_heard_is_its_own_light(self):
-        self.open(Stub(answer=(200, {"ok": True, "state": "nothing_heard"})))
+        self.open(Stub(answer=(200, {"ok": False, "state": "nothing_heard", "message": "Nothing heard."})))
         self.hold()
         self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'nothing'", what="nothing heard")
         self.assertEqual(self.note(), "Nothing heard")
         self.assertEqual(len(self.stub.posts()), 1)
+
+    def state_after(self, answer):
+        self.open(Stub(answer=answer))
+        self.hold()
+        self.wait("['sent','nothing','nolistener','busy','error'].includes(document.querySelector('#swarmbox-voice').dataset.state)", what="an answer state")
+        return self.state(), self.note()
+
+    def test_no_listener_says_only_that_nobody_is_listening(self):
+        st = self.state_after((503, {"ok": False, "state": "no_listener", "message": "ignored: the page has its own sentence"}))
+        self.assertEqual(st, ("nolistener", "Nobody is listening"))
+        self.assertEqual(len(self.stub.posts()), 1)
+
+    def test_busy_is_its_own_light_and_the_next_try_works(self):
+        self.assertEqual(self.state_after((503, {"ok": False, "state": "busy", "message": "x"}))[0], "busy")
+        self.stub.answer = (200, {"ok": True, "state": "sent"})
+        self.hold()
+        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'sent'", what="sent after busy")
+
+    def test_bus_down_is_an_error_light_with_a_sentence(self):
+        st = self.state_after((503, {"ok": False, "state": "bus_down", "message": "x"}))
+        self.assertEqual(st, ("error", "The bus of the box is not answering."))
+
+    def test_an_unknown_state_is_an_error_and_never_shown_as_text(self):
+        st = self.state_after((200, {"ok": True, "state": "SECRET-state"}))
+        self.assertEqual(st[0], "error")
+        self.assertNotIn("SECRET", st[1])
 
     def test_a_service_error_is_a_short_sentence_in_the_light(self):
         self.open(Stub(answer=(422, {"error": "stt_failed", "message": "The speech recognizer failed."})))
@@ -290,7 +316,7 @@ class VoicePage(unittest.TestCase):
         self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'error'", what="error")
         self.assertEqual(self.note(), "The speech recognizer failed.")
         # and the next try works (the page is not stuck)
-        self.stub.answer = (200, {"ok": True, "state": "pending"})
+        self.stub.answer = (200, {"ok": True, "state": "sent"})
         self.hold()
         self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'sent'", what="sent after an error")
         self.assertEqual(len(self.stub.posts()), 2)

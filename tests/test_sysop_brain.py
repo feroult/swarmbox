@@ -120,13 +120,58 @@ class Template(unittest.TestCase):
         self.assertIn("active", p)
         self.assertIn("look", p.lower())
 
+    def test_the_prompt_explains_tabs_and_never_mentions_the_bus(self):
+        p = " ".join(brain.system_prompt("voice", 20, 300).split())
+        self.assertIn("TABS", p)
+        self.assertIn("window of a tmux session", p)
+        for word in ("bus", "topic", "publish", "subscri", "swarmbox-tabs", "socket"):
+            self.assertNotIn(word, p.lower(), "the model never sees the bus (or the command behind its tools)")
+
+    def test_the_mcp_config_carries_what_the_server_needs_for_the_tabs_and_not_the_bus(self):
+        env_keys = ("TMUX_TMPDIR", "SB_TABS_SESSION", "SB_TABS_SOCKET", "SB_TABS_BIN", "SWARMBOX_SYSOP_TABS_CMD", "PATH")
+        saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
+        for k in env_keys:
+            os.environ.pop(k, None)
+        os.environ.update({"SB_TABS_SESSION": "box", "SB_TABS_SOCKET": "tt", "TMUX_TMPDIR": "/x/y", "SB_BUS_SOCKET": "/x/bus.sock", "PATH": "/a:/b"})
+        e = ss.Env()
+        self.addCleanup(e.cleanup)
+        out = os.path.join(e.dir, "mcp.json")
+        brain.write_mcp_config(out, "/c.json", e.paths, ss.LIB)
+        env = ipc.read_json(out)["mcpServers"]["sysop"]["env"]
+        self.assertEqual({k: env[k] for k in ("SB_TABS_SESSION", "SB_TABS_SOCKET", "TMUX_TMPDIR", "PATH")},
+                         {"SB_TABS_SESSION": "box", "SB_TABS_SOCKET": "tt", "TMUX_TMPDIR": "/x/y", "PATH": "/a:/b"})
+        self.assertNotIn("SB_TABS_BIN", env)
+        self.assertNotIn("SB_BUS_SOCKET", env)
+
+    def test_the_prompt_sends_a_goal_meant_for_an_agent_to_the_agent_of_the_active_tab(self):
+        """found by tests/e2e_voice.py: a spoken 'reply with exactly banana nine' with Claude Code in the active tab was answered by the brain itself
+        (done with the summary 'banana 9') and nothing was typed; the path of version 1 is that the goal is typed in the agent of the active tab"""
+        p = " ".join(brain.system_prompt("voice", 20, 300).split())
+        for needle in ("never answer the goal yourself", "meant for the agent in the ACTIVE tab", "type the goal there with run", "do not type it into a shell",
+                       "A goal that is an operation on the box"):
+            self.assertIn(needle, p)
+
+    def test_the_prompt_asks_for_one_simple_command_per_run(self):
+        """found by tests/e2e_voice.py: 'delete the build folder' made the brain type `pwd; ls -la; ls -la build | head`, a chained line the host rates medium, so the user was
+        asked to approve a look before the command that mattered"""
+        p = " ".join(brain.system_prompt("voice", 20, 300).split())
+        for needle in ("ONE simple command per run", "no `;`, `&&`, `||` or pipes", "the host holds a chained line for the user's approval"):
+            self.assertIn(needle, p)
+
+    def test_the_prompt_says_a_dialog_is_the_users_decision(self):
+        p = " ".join(brain.system_prompt("voice", 20, 300).split())
+        for needle in ("is the USER's decision", "do not answer it", "do not press Esc", "do not type a prompt over it", "Report it with say",
+                       "unless the goal itself asks you to answer that dialog"):
+            self.assertIn(needle, p)
+
 
 class RunBrain(unittest.TestCase):
     def setUp(self):
         self.e = ss.Env()
         self.addCleanup(self.e.cleanup)
-        self.bus = ss.FakeBus(self.e.env["SB_BUS_SOCKET"])
-        self.addCleanup(self.bus.stop)
+        self.tabs = ss.FakeTabs(os.path.join(self.e.dir, "tabs.sock"))
+        self.addCleanup(self.tabs.stop)
         self.pth = self.e.paths.make()
         self.gdir = os.path.join(self.pth.goals, "g1")
         os.mkdir(self.gdir, 0o700)
@@ -145,9 +190,12 @@ class RunBrain(unittest.TestCase):
     def go(self, goal="do it", mode=None, seconds=30, source="cli", brain_tpl=None, **kw):
         cfg = self.e.cfg(max_seconds=max(5, int(seconds)), **({"brain": brain_tpl} if brain_tpl else {}))
         ctx = os.path.join(self.gdir, "context.json")
-        ipc.write_json(ctx, {"goal": "g1", "source": source, "goal_dir": self.gdir, "audit": self.pth.audit, "socket": self.pth.socket, "countdown": 0,
+        ipc.write_json(ctx, {"goal": "g1", "source": source, "goal_dir": self.gdir, "audit": self.pth.audit, "countdown": 0,
                              "max_steps": cfg.max_steps, "deadline": time.time() + seconds})
         mcp = os.path.join(self.gdir, "mcp.json")
+        saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
+        os.environ.update(self.tabs.cmd_env)          # the MCP config carries what the server needs to run swarmbox-tabs
         brain.write_mcp_config(mcp, ctx, self.pth, ss.LIB)
         argv, env = brain.build(cfg, self.gdir, mcp, source)
         env = dict(self.env_extra, **env)
@@ -168,7 +216,7 @@ class RunBrain(unittest.TestCase):
                      {"tool": "done", "args": {"summary": "listed"}}])
         r = self.go()
         self.assertEqual((r.outcome, r.summary, r.error), ("done", "listed", ""))
-        self.assertEqual(self.bus.sent, [("@1", {"run": "ls"})])
+        self.assertEqual(self.tabs.sent, [("@1", {"run": "ls"})])
         self.assertEqual(r.exit_code, 0)
         self.assertEqual(r.turns, 5)
         self.assertAlmostEqual(r.cost, 0.0012)

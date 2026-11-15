@@ -1,5 +1,5 @@
 /* Voice control for the ttyd page (page.js): a microphone button and a small state light. Purple-glow palette of docs/theme.md.
-   Every rule is under #swarmbox-voice. No card: the plan and its confirmation are in the tmux panel. */
+   Every rule is under #swarmbox-voice. No card and no plan: the page only says what became of the audio. */
 #swarmbox-voice {
   --sv-bg: #0c0b10; --sv-band: #27222f; --sv-text: #d4d4d8; --sv-dim: #a1a1aa; --sv-line: #52525b;
   --sv-violet: #a78bfa; --sv-deep: #6d28d9; --sv-lavender: #c4b5fd;
@@ -34,6 +34,7 @@
 #swarmbox-voice[data-state="sent"] .sv-light { background: var(--sv-green); }
 #swarmbox-voice[data-state="error"] .sv-light { background: var(--sv-red); }
 #swarmbox-voice[data-state="nothing"] .sv-light { background: var(--sv-dim); }
+#swarmbox-voice[data-state="nolistener"] .sv-light, #swarmbox-voice[data-state="busy"] .sv-light { background: var(--sv-amber); }
 #swarmbox-voice[data-state="recording"] .sv-mic {
   background: var(--sv-deep); color: #fff; border-color: var(--sv-lavender); box-shadow: 0 0 0 6px rgba(167, 139, 250, .25), 0 0 22px rgba(167, 139, 250, .7);
 }
@@ -48,6 +49,7 @@
 }
 #swarmbox-voice[data-state="error"] .sv-note { border-color: var(--sv-red); color: var(--sv-red); }
 #swarmbox-voice[data-state="sent"] .sv-note { border-color: var(--sv-green); color: var(--sv-green); }
+#swarmbox-voice[data-state="nolistener"] .sv-note, #swarmbox-voice[data-state="busy"] .sv-note { border-color: var(--sv-amber); color: var(--sv-amber); }
 #swarmbox-voice .sv-level { position: absolute; left: 12px; right: 12px; bottom: 4px; height: 3px; border-radius: 2px; overflow: hidden; pointer-events: none; }
 #swarmbox-voice .sv-level i { display: block; height: 100%; width: 0; background: var(--sv-lavender); }
 @media (prefers-reduced-motion: no-preference) { #swarmbox-voice .sv-mic { transition: box-shadow .15s, background .15s; } }

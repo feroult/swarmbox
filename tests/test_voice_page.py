@@ -3,8 +3,8 @@
 
 Fast: no browser, no network. The behaviour in a real browser is in test_voice_page_browser.py (opt in).
 
-The page is the microphone and a state light only: the plan, its risk and the confirmation are in the tmux panel, so the page has no
-card, no Run/Edit/Cancel and no way to call /voice/run, edit, cancel, pending or plan (the front would refuse them anyway).
+The page is the microphone and a state light only: voice is an input, the audio becomes a goal on the bus and the page says what became of it
+(sent, nothing heard, nobody is listening, busy, error). It has no card, no plan, no Run/Edit/Cancel and no way to call anything but health and audio.
 
 Checks: both assets exist; no external URL (nothing is loaded from, or sent to, anywhere but the page's own origin); no way to
 turn a string into markup or code (innerHTML, outerHTML, insertAdjacentHTML, document.write, eval, new Function); the assets can be
@@ -92,19 +92,20 @@ class PageAssets(unittest.TestCase):
     def test_required_pieces(self):
         js = read(JS)
         for needle in ("getUserMedia", "'audio/wav'", "pointerdown", "pointerup", "pointercancel", "lostpointercapture", "'health'", "'audio'",
-                       "NotAllowedError", "NotFoundError", "isSecureContext", "swarmbox-voice", "RIFF", "WAVE", "'nothing_heard'", "'pending'",
+                       "NotAllowedError", "NotFoundError", "isSecureContext", "swarmbox-voice", "RIFF", "WAVE", "'nothing_heard'", "'no_listener'", "'busy'", "'bus_down'", "'nolistener'", "Nobody is listening",
                        "'recording'", "'sending'", "'sent'", "'error'", "'nothing'", "'idle'", "Space", "keydown", "keyup"):
             if needle == "Space":
                 needle = "' '"
             self.assertTrue(needle in js, 'page.js lacks ' + needle)
         css = read(CSS)
         for needle in ("touch-action: none", "user-select: none", "env(safe-area-inset-bottom", "(pointer: coarse)", ".sv-light",
-                       'data-state="recording"', 'data-state="sent"', 'data-state="error"', 'data-state="nothing"', 'data-state="sending"'):
+                       'data-state="recording"', 'data-state="sent"', 'data-state="error"', 'data-state="nothing"', 'data-state="sending"', 'data-state="nolistener"', 'data-state="busy"'):
             self.assertTrue(needle in css, 'page.css lacks ' + needle)
 
     def test_the_page_is_only_the_microphone_and_a_light(self):
         """Nothing of the old confirmation card is left, in the script or the style (dead code is a bug)."""
         js, css = code_only(read(JS)), read(CSS)
+        self.assertNotIn("'pending'", js, "a plan is not pending anywhere any more")
         for gone in ("transcribe", "'plan'", "'run'", "'edit'", "'cancel'", "utterance", "voice/pending", "postJson", "openCard", "closeCard", "describe",
                      "textarea", "checkbox", "'Run'", "'Edit'", "'Cancel'", "'Apply'", "risk", "sv-card", "sv-run", "sv-banner", "Escape", "X-Swarmbox-Voice"):
             self.assertNotIn(gone, js, "page.js still has " + gone)

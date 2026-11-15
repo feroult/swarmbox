@@ -1,6 +1,7 @@
 """The resident subscriber of the sysop: it reads goals from the bus, keeps a queue and runs ONE goal at a time.
 
-  reader thread   subscribes to the topic `goal`, with reconnect and backoff (1, 2, 4 ... 30 s; the bus is restarted by its supervisor within
+  reader thread   subscribes to the topic of `sysop.topic` (default `goal`) as a member of the group `sysop.group` (default `sysop`: sysops of one group share
+                  the goals, one gets each), with reconnect and backoff (1, 2, 4 ... 30 s; the bus is restarted by its supervisor within
                   a few seconds), puts each goal in the queue, writes its state `queued`
   main thread     takes the oldest goal, writes the files of the goal (context.json, the MCP config), runs the brain (brain.py), keeps state.json
                   up to date while it runs, and writes the end: done, stopped or failed (with the reason). It also takes the stop requests
@@ -8,7 +9,7 @@
 Limits: at most max_goals goals wait; the next is dropped, with its own state `failed` ("queue is full") and an audit line (the bus has no ack in
 v1, so the sender cannot be told). A goal is at most MAX_GOAL_TEXT characters.
 Survival: a brain that crashes, hangs or is not logged in ends ITS goal as failed with the reason, and the service takes the next goal; a bus that
-goes away makes the reader reconnect, and a run in progress goes on (its tools get `bus_down` errors the model can read until the bus is back);
+goes away makes the reader reconnect, and a run in progress goes on (its tools act on the tabs, not through the bus);
 when the service itself dies, the next start (the single-instance lock is a flock, so a dead one never blocks it) marks every goal that was
 queued, running or waiting as `failed` with the note that goals in flight are LOST (they are not kept, and no one is told). The brain of a dead
 service gets SIGTERM from the kernel (brain.pdeathsig).
@@ -150,7 +151,7 @@ class Service:
             self.reader.start()
             self.status()
             self._ready.set()
-            self.log("serving: autonomy %s, brain %s, bus %s" % (self.cfg.autonomy, self.cfg.brain.split()[0], self.paths.socket))
+            self.log("serving: autonomy %s, brain %s, topic %s, group %s, bus %s" % (self.cfg.autonomy, self.cfg.brain.split()[0], self.cfg.topic, self.cfg.group, self.paths.socket))
             while not self.stopping:
                 self.poll_stop()
                 goal = self.next_goal(0.2)
@@ -216,7 +217,7 @@ class Service:
         while not self.stopping:
             began = None
             try:
-                sub = self.bus.subscribe("goal")
+                sub = self.bus.subscribe(self.cfg.topic, self.cfg.group)
             except busclient.BusError as e:
                 self.set_bus("down")
                 self.log("the bus is not reachable (%s): retrying in %g s" % (e, wait))
@@ -329,7 +330,7 @@ class Service:
             st = {"pid": os.getpid(), "version": __version__, "started": self.started, "updated": self.clock(),
                   "bus": "stopped" if final else self.bus_state, "current": self.current.id if self.current else None, "queue": queue,
                   "rejected": self.rejected,
-                  "settings": {"autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "brain": self.cfg.brain.split()[0], "model": self.cfg.model,
+                  "settings": {"topic": self.cfg.topic, "group": self.cfg.group, "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "brain": self.cfg.brain.split()[0], "model": self.cfg.model,
                                "max_steps": self.cfg.max_steps, "max_seconds": self.cfg.max_seconds, "max_goals": self.cfg.max_goals}}
             key = json.dumps({k: v for k, v in st.items() if k != "updated"}, sort_keys=True)
             if key == self._last_status and not final:
@@ -398,7 +399,7 @@ class Service:
             self.status()
             deadline = goal.started + self.cfg.max_seconds
             ctx = os.path.join(gdir, "context.json")
-            ipc.write_json(ctx, {"goal": goal.id, "source": goal.source, "goal_dir": gdir, "audit": self.paths.audit, "socket": self.paths.socket,
+            ipc.write_json(ctx, {"goal": goal.id, "source": goal.source, "goal_dir": gdir, "audit": self.paths.audit,
                                  "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "approval_timeout": self.cfg.approval_timeout,
                                  "max_steps": self.cfg.max_steps, "deadline": deadline})
             mcp = os.path.join(gdir, "mcp.json")

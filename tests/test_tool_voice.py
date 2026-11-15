@@ -102,8 +102,12 @@ class ManifestTests(unittest.TestCase):
 
     def test_installer_is_executable_and_nothing_runs_at_image_build(self):
         self.assertTrue(os.stat(os.path.join(TOOL, "install.sh")).st_mode & stat.S_IXUSR)
-        for name in os.listdir(os.path.join(TOOL, "planners")):
-            self.assertTrue(os.stat(os.path.join(TOOL, "planners", name)).st_mode & stat.S_IXUSR, name)
+        self.assertFalse(os.path.exists(os.path.join(TOOL, "planners")), "voice only hears: it ships no planner")
+        for name in ("install.sh", "prepare.sh", "tool.conf"):
+            # the one allowed word: prepare.sh removes the planners folder of an old install
+            text = "\n".join(l for l in rd(os.path.join(TOOL, name)).splitlines() if "an install from before voice became an input" not in l)
+            for gone in ("planner", "claude", "login", "CLAUDE_CODE"):
+                self.assertNotIn(gone, text.replace("voice only hears", ""), "%s still mentions %s" % (name, gone))
         dockerfile = rd(os.path.join(ROOT, "Dockerfile"))
         self.assertNotRegex(dockerfile, r"(?m)^[^#\n]*\bvoice\b")
 
@@ -168,9 +172,10 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(p.stdout, "", "progress goes to stderr")
         for rel in ("bin/swarmbox-voice", "libexec/whisper-cli", "models/ggml-small.bin", "lib/swarmbox_voice/__init__.py",
-                    "planners/planner-passthrough"):
+                    "web/page.js", "web/page.css"):
             self.assertTrue(os.path.exists(os.path.join(self.prefix, rel)), rel)
-        for rel in ("bin/swarmbox-voice", "libexec/whisper-cli", "planners/planner-passthrough"):
+        self.assertFalse(os.path.exists(os.path.join(self.prefix, "planners")))
+        for rel in ("bin/swarmbox-voice", "libexec/whisper-cli"):
             self.assertTrue(os.access(os.path.join(self.prefix, rel), os.X_OK), rel)
         self.assertEqual(os.listdir(self.home), [], "nothing in the home")
         self.assertEqual(os.listdir(self.scratchroot), [], "the scratch folder is removed")
@@ -179,8 +184,9 @@ class InstallTests(unittest.TestCase):
         env = {"PATH": "/usr/bin:/bin", "HOME": self.home}
         r = subprocess.run([os.path.join(self.prefix, "bin", "swarmbox-voice"), "--self-test"], env=env, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
-        r = subprocess.run([os.path.join(self.prefix, "bin", "swarmbox-voice"), "planners"], env=env, capture_output=True, text=True)
-        self.assertIn("passthrough", r.stdout)
+        r = subprocess.run([os.path.join(self.prefix, "bin", "swarmbox-voice"), "say", "--help"], env=env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("goal", r.stdout)
 
     def _pycache(self):
         for d, dirs, _ in os.walk(self.prefix):

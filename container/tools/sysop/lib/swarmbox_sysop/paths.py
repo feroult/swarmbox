@@ -76,6 +76,7 @@ class Paths:
     pidfile = property(lambda self: os.path.join(self.run, "serve.pid"))
     status = property(lambda self: os.path.join(self.run, "status.json"))
     stop_request = property(lambda self: os.path.join(self.run, "stop.request"))
+    panel_request = property(lambda self: os.path.join(self.run, "panel.request"))
     audit = property(lambda self: os.path.join(self.state, "events.jsonl"))
     log = property(lambda self: os.path.join(self.state, "serve.log"))
 

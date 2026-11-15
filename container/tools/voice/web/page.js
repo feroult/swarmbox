@@ -4,9 +4,10 @@
 // to send. It records PCM with getUserMedia + the Web Audio API and sends 16 kHz mono 16-bit WAV, which is what the recognizer reads
 // (the box has no audio decoder, so MediaRecorder's webm/opus would not be understood).
 //
-//  - POST <base>audio (audio/wav) -> {ok, state: 'pending' | 'nothing_heard'}. That is all that comes back: the transcript, the plan, its
-//    risk and the confirmation are shown and decided in the tmux panel, the same for every client. This page shows none of it.
-//  - A small state light: idle, recording, sending, sent, error, nothing heard. Errors say a short sentence.
+//  - POST <base>audio (audio/wav) -> {ok, state: 'sent' | 'nothing_heard' | 'no_listener' | 'busy' | 'bus_down'}. That is all that comes
+//    back: the audio became a goal on the bus of the box, and what happens to it (whoever listens on the topic) is not shown
+//    here. Never the transcript.
+//  - A small state light: idle, recording, sending, sent, nothing heard, no listener, busy, error. Each says a short sentence.
 //  - Text from the service is shown with textContent. This file never uses innerHTML.
 //  - The page stays unchanged when the service is absent: the button only appears if GET <base>health answers 200.
 (function () {
@@ -16,10 +17,10 @@
   var MIN_SECONDS = 0.3;
   var MAX_SECONDS = 60;
   var SVGNS = 'http://www.w3.org/2000/svg';
-  var LABEL = { recording: 'Listening', sending: 'Sending', sent: 'Sent', nothing: 'Nothing heard' };
+  var LABEL = { recording: 'Listening', sending: 'Sending', sent: 'Sent', nothing: 'Nothing heard', nolistener: 'Nobody is listening', busy: 'Busy' };
 
   var root, mic, noteEl, levelBar;
-  var state = 'idle'; // idle | starting | recording | sending | sent | error | nothing | unsupported
+  var state = 'idle'; // idle | starting | recording | sending | sent | nothing | nolistener | busy | error | unsupported
   var pressed = false;
   var rec = null;
   var timer = null;
@@ -64,6 +65,7 @@
       return r.text().then(function (t) {
         var data = null;
         try { data = t ? JSON.parse(t) : {}; } catch (e) { data = null; }
+        if (data && typeof data === 'object' && typeof data.state === 'string') return data; // a state answer, also with a 503
         if (!r.ok) throw new Error(data && (data.message || data.error) ? str(data.message || data.error) : 'The voice service answered ' + r.status + '.');
         if (!data || typeof data !== 'object') throw new Error('The voice service did not answer properly.');
         return data;
@@ -159,8 +161,11 @@
     var wav = encodeWav(downsample(r.chunks, r.samples, rate, RATE), RATE);
     show('sending');
     send(wav).then(function (d) {
-      if (d.state === 'pending') show('sent', '', 2500);
+      if (d.ok === true && d.state === 'sent') show('sent', '', 2500);
       else if (d.state === 'nothing_heard') show('nothing', '', 4000);
+      else if (d.state === 'no_listener') show('nolistener', '', 8000);
+      else if (d.state === 'busy') show('busy', '', 5000);
+      else if (d.state === 'bus_down') show('error', 'The bus of the box is not answering.', 8000);
       else show('error', 'The voice service did not understand.', 6000);
       refocusTerminal();
     }, function (e) {

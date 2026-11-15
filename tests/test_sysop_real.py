@@ -1,6 +1,8 @@
-"""The sysop against the REAL bus process and a REAL tmux (an isolated server, -L name under a private TMUX_TMPDIR), with the fake claude scripted
-to call the MCP tools and the stand-in agent TUI of tests/fixtures/bus/fake_agent.py. No model, no network. Covers: goal -> brain -> MCP ->
-bus -> tab typing; the policy holding a high-risk run (and an approval that sends it); the veto; the stop; errors of the driver as results.
+"""The sysop against the REAL bus process, the REAL swarmbox-tabs command and a REAL tmux (an isolated server, -L name under a private TMUX_TMPDIR),
+with the fake claude scripted to call the MCP tools and the stand-in agent TUI of tests/fixtures/bus/fake_agent.py. No model, no network. The topic of
+the goals is a name this file chooses (SWARMBOX_SYSOP_TOPIC), not the default. Covers: goal on the bus -> sysop -> brain -> MCP -> swarmbox-tabs ->
+typing in a tab; the bus carrying nothing but the goals; two sysops of one group (a goal handled once); the policy holding a high-risk run (and an
+approval that sends it); the veto; the stop; errors of swarmbox-tabs as results.
 
 Run in Podman only (a developer's machine may have a tmux of its own that these tests must never touch): they skip unless tmux is installed
 AND SWARMBOX_TEST_REAL_TMUX=1 is set, which only this command does:
@@ -22,8 +24,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sysop_support as ss  # noqa: E402
 from bus_support import Process  # noqa: E402
 from helpers import ROOT  # noqa: E402
+from tabs_support import TABS_PATH  # noqa: E402
 
 from swarmbox_sysop import audit, busclient, ipc, service  # noqa: E402
+
+TOPIC = "sysop-test.goals-7"
 
 FIX = os.path.join(ROOT, "tests", "fixtures", "bus")
 HAVE = bool(shutil.which("tmux")) and os.environ.get("SWARMBOX_TEST_REAL_TMUX") == "1"      # the podman command below sets it: never on a machine with a tmux of its own
@@ -55,7 +60,7 @@ class Panel(threading.Thread):
 @unittest.skipUnless(HAVE, "needs tmux and a container (run it in Podman, see the docstring)")
 class Real(unittest.TestCase):
     def setUp(self):
-        self.e = ss.Env()
+        self.e = ss.Env(SWARMBOX_SYSOP_TOPIC=TOPIC)
         self.e.env["SB_BUS_SOCKET"] = os.path.join(self.e.dir, "b.sock")
         self.tmux_sock = "sysop%d" % os.getpid()
         self.tmpdir = os.path.join(self.e.dir, "tmx")
@@ -66,7 +71,7 @@ class Real(unittest.TestCase):
         with open(shell, "w") as f:
             f.write("#!/bin/sh\nPS1='$ '\nexport PS1\nexec bash --norc --noprofile \"$@\"\n")
         os.chmod(shell, 0o755)
-        # a program named `claude` (what the policy and the driver see in pane_current_command): a link to python running the stand-in agent
+        # a program named `claude` (what the policy and swarmbox-tabs see in pane_current_command): a link to python running the stand-in agent
         os.mkdir(os.path.join(self.e.dir, "bin"))
         self.claude = os.path.join(self.e.dir, "bin", "claude")
         os.symlink(shutil.which("python3"), self.claude)
@@ -76,12 +81,15 @@ class Real(unittest.TestCase):
         os.environ.update(self.e.env)
         os.environ["TMUX_TMPDIR"] = self.tmpdir
         os.environ.pop("TMUX", None)
+        # the real command, found as the sysop finds it; it reaches the isolated server by SB_TABS_SOCKET (the MCP config passes both on to the server)
+        os.environ["SB_TABS_SOCKET"] = self.tmux_sock
+        os.environ["SWARMBOX_SYSOP_TABS_CMD"] = "%s -S %s" % (sys.executable, TABS_PATH)
         self.tm("new-session", "-d", "-s", "main", "-n", "shell", "-x", "100", "-y", "30")
         self.agent_pane = self.tm("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", "agent", "%s %s/fake_agent.py" % (self.claude, FIX))
         self.sh = self.window("shell")
         self.ag = self.window("agent")
         self.assertTrue(ss.wait_for(lambda: "auto mode on" in self.text(self.ag), 10), self.text(self.ag))
-        self.bus = Process(env_extra={"SB_BUS_TMUX_SOCKET": self.tmux_sock, "TMUX_TMPDIR": self.tmpdir, "SB_BUS_SOCKET": self.e.env["SB_BUS_SOCKET"]}, driver="tmux")
+        self.bus = Process(env_extra={"SB_BUS_SOCKET": self.e.env["SB_BUS_SOCKET"]})
         self.bus.path = self.e.env["SB_BUS_SOCKET"]
         self.bus.start(wait=False)
         self.addCleanup(self.bus.close)
@@ -165,7 +173,7 @@ class Typing(Real):
         self.assertEqual([r["tool"] for r in res], ["list_tabs", "run", "say", "done"])
         self.assertFalse(res[1]["is_error"], res[1]["text"])
         self.assertIn("hello-from-the-sysop\n", res[1]["text"], "run answers with the settled screen, output included")
-        tabs = json.loads(res[0]["text"])
+        tabs = json.loads("\n".join(res[0]["text"].splitlines()[1:-1]))
         self.assertEqual({t["label"]: t["cmd"] for t in tabs}, {"0:shell": "bash", "1:agent": "claude"})
         self.assertEqual([t["active"] for t in tabs], [True, False])
         self.assertEqual(self.decisions(), ["waiting", "allowed"], "a low-risk command went through the countdown")
@@ -188,7 +196,7 @@ class Typing(Real):
         # the line was edited with {Left}, so it was rated medium (held for a countdown in auto)
         self.assertIn("aXb", self.text(self.sh))
 
-    def test_driver_errors_reach_the_model_as_results(self):
+    def test_errors_of_swarmbox_tabs_reach_the_model_as_results(self):
         dlg = self.tm("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", "dialog", "env FAKE_AGENT_DIALOG=1 %s %s/fake_agent.py" % (self.claude, FIX))
         wid = self.window("dialog")
         self.assertTrue(ss.wait_for(lambda: "Do you want to" in self.text(wid), 10))
@@ -206,6 +214,67 @@ class Typing(Real):
         self.assertTrue(res[3]["is_error"])
         self.assertIn("no_such_tab", res[3]["text"])
         self.assertNotIn("second", self.text(self.ag))
+
+
+class OnTheBus(Real):
+    def test_the_bus_carries_only_the_goals_and_the_sysop_is_in_its_group(self):
+        self.start([{"tool": "list_tabs"}, {"tool": "run", "args": {"command": "echo on-the-bus"}}, {"tool": "done", "args": {"summary": "ok"}}])
+        topics = json.loads(self.bus.cli("topics").stdout)
+        self.assertEqual(topics, [{"topic": TOPIC, "subscribers": 1, "groups": {"sysop": 1}}])
+        watch = self.bus.popen("watch")
+        self.addCleanup(lambda: (watch.terminate(), watch.wait(5), watch.stdout.close(), watch.stderr.close()))
+        time.sleep(0.5)
+        p = self.goal("echo on the bus", "voice")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("on-the-bus", self.text(self.sh))
+        watch.terminate()
+        out = watch.stdout.read().decode().splitlines()
+        seen = [json.loads(x) for x in out if x.strip()]
+        self.assertEqual([(m["topic"], m["receivers"]) for m in seen], [(TOPIC, 1)], "one message on the bus: the goal; the tabs never touched it")
+        self.assertEqual(seen[0]["envelope"]["source"], "voice")
+
+    def test_a_goal_on_another_topic_has_no_listener(self):
+        self.start([{"tool": "done", "args": {"summary": "x"}}])
+        env = dict(os.environ, PYTHONPATH=ss.LIB, SWARMBOX_SYSOP_TOPIC="goal")
+        p = subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop", "goal", "x"], env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+
+    def test_two_sysops_in_the_same_group_handle_a_goal_once(self):
+        # the second sysop is in the same box in this test only to share the bus and the tabs: its own run and state folders (the service has a lock per run folder)
+        e2 = ss.Env(SWARMBOX_SYSOP_TOPIC=TOPIC)
+        self.addCleanup(e2.cleanup)
+        e2.env["SB_BUS_SOCKET"] = self.e.env["SB_BUS_SOCKET"]
+        self.start([{"tool": "run", "args": {"command": "echo run-$((40+2)) >> %s" % os.path.join(self.e.dir, "log")}}, {"tool": "done", "args": {"summary": "ok"}}],
+                   autonomy="auto")        # a redirect is medium: in auto it only waits out the countdown
+        svc2 = service.Service(e2.cfg(countdown=0.3, approval_timeout=2, autonomy="auto"), e2.paths, backoff=(0.1, 0.5), log=lambda m: None)
+        t2 = threading.Thread(target=svc2.run, daemon=True)
+        t2.start()
+        self.addCleanup(lambda: (svc2.shutdown(), t2.join(20)))
+        self.assertTrue(svc2.wait_ready(10))
+        self.assertTrue(ss.wait_for(lambda: svc2.bus_state == "connected", 10))
+        topics = json.loads(self.bus.cli("topics").stdout)
+        self.assertEqual(topics, [{"topic": TOPIC, "subscribers": 2, "groups": {"sysop": 2}}])
+        log = os.path.join(self.e.dir, "log")
+
+        def count():
+            try:
+                with open(log) as fh:
+                    return fh.read().count("run-42")
+            except OSError:
+                return 0
+        for i in range(2):
+            # no --wait: it follows the goal in the state folder of THIS box, and the goal may be the other sysop's
+            p = subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop", "goal", "--source", "voice", "goal %d" % i], env=dict(os.environ, PYTHONPATH=ss.LIB),
+                               capture_output=True, text=True, timeout=60)
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            self.assertTrue(ss.wait_for(lambda: count() == i + 1, 30), self.text(self.sh))
+            self.assertTrue(ss.wait_for(lambda: self.svc.current is None and svc2.current is None, 20), "the first goal ends before the second is sent")
+        self.assertTrue(ss.wait_for(lambda: count() == 2, 30), self.text(self.sh))
+        time.sleep(1.5)
+        self.assertEqual(count(), 2, "two goals, each typed ONCE (not by both sysops)")
+        n1 = len([e for e in audit.read(self.e.paths.audit) if e["event"] == "goal"])
+        n2 = len([e for e in audit.read(e2.paths.audit) if e["event"] == "goal"])
+        self.assertEqual((n1, n2), (1, 1), "round robin inside the group: one goal each")
 
 
 class Policy(Real):
@@ -232,7 +301,7 @@ class Policy(Real):
         self.assertEqual(self.panel.seen[0]["risk"], "high")
         self.assertEqual(self.panel.seen[0]["mode"], "approve")
 
-    def test_a_slash_command_for_the_agent_is_blocked_before_the_bus(self):
+    def test_a_slash_command_for_the_agent_is_blocked_before_swarmbox_tabs(self):
         self.start([{"tool": "run", "args": {"tab": "agent", "command": "/exit"}}, {"tool": "done", "args": {"summary": "blocked"}}])
         before = self.text(self.ag)
         p = self.goal("exit the agent", "voice")

@@ -1,8 +1,8 @@
-"""Voice settings: the box-side module (the one place of the defaults), the six host keys of `swarmbox config`, and the docs.
+"""Voice settings: the box-side module (the one place of the defaults), the four host keys of `swarmbox config`, and the docs.
 
 The host helper runs as a real program with a cleared environment (the Base of test_host_create_flags: a mktemp HOME, a fixture
-tool-ports, no Podman). Keys: voice.language (auto), voice.stt.model (small), voice.stt.vocabulary (empty), voice.planner
-(passthrough), voice.planner.model (empty). They reach the box as SWARMBOX_VOICE_* at creation, only when they differ from the
+tool-ports, no Podman). Keys: voice.language (auto), voice.stt.model (small), voice.stt.vocabulary (empty), voice.web (1).
+(voice.planner and voice.planner.model are gone: voice only hears.) They reach the box as SWARMBOX_VOICE_* at creation, only when they differ from the
 default, so a box that never set one keeps its fingerprint. Run with: python3 -W error tests/test_voice_config.py
 """
 import os
@@ -22,8 +22,6 @@ KEYS = {
     "voice.language": ("auto", "SWARMBOX_VOICE_LANGUAGE", "pt", ["pt-br", "PT", "p", "portuguese", "p t", "a1"]),
     "voice.stt.model": ("small", "SWARMBOX_VOICE_STT_MODEL", "medium", ["small.en", "tiny.en", "Small", "../x", "a b", "-x", "a/b"]),
     "voice.stt.vocabulary": ("", "SWARMBOX_VOICE_STT_VOCABULARY", "kubectl, Podman, swarmbox", ["x" * 501]),
-    "voice.planner": ("passthrough", "SWARMBOX_VOICE_PLANNER", "claude", ["Claude", "a b", "-x", "a/b", "a.b"]),
-    "voice.planner.model": ("", "SWARMBOX_VOICE_PLANNER_MODEL", "haiku", ["a b", "-x", "a;b", "$(x)", "a\tb"]),
     "voice.web": ("1", "SWARMBOX_VOICE_WEB", "0", ["yes", "2", "true", "on", "00"]),
 }
 ORDER = list(KEYS)
@@ -37,9 +35,10 @@ def read(path):
 class BoxSideTests(unittest.TestCase):
     def test_defaults(self):
         c = config.load({})
-        self.assertEqual((c.language, c.stt_model, c.stt_vocabulary, c.planner, c.planner_model, c.web), ("auto", "small", "", "passthrough", "", "1"))
+        self.assertEqual((c.language, c.stt_model, c.stt_vocabulary, c.web, c.topic), ("auto", "small", "", "1", "goal"))
+        self.assertEqual(sorted(c._fields), ["language", "stt_model", "stt_vocabulary", "topic", "web"], "no planner settings")
         self.assertEqual(c, config.load({k: "" for _, (_, k, _, _) in KEYS.items()}), "empty means default")
-        self.assertEqual({v[0] for v in KEYS.values()}, {"auto", "small", "", "passthrough", "1"})
+        self.assertEqual({v[0] for v in KEYS.values()}, {"auto", "small", "", "1"})
 
     def test_the_host_defaults_equal_the_box_defaults(self):
         for key, (default, env, _, _) in KEYS.items():
@@ -61,17 +60,28 @@ class BoxSideTests(unittest.TestCase):
         self.assertEqual(config.load(os.environ).language, "fr")
 
 
+class TopicTests(unittest.TestCase):
+    def test_topic_default_and_values(self):
+        self.assertEqual(config.load({"SWARMBOX_VOICE_TOPIC": "tasks.one"}).topic, "tasks.one")
+        for bad in ("Goal", "-x", "a b", "a" * 64, "a\nb", "x/y"):
+            with self.subTest(bad=bad), self.assertRaises(config.ConfigError):
+                config.load({"SWARMBOX_VOICE_TOPIC": bad})
+
+
 class HostKeyTests(cf.Base):
     def get(self, key, env=None, cfg=None):
         p = self.run_h("config", "get", key, env=env, cfg=cfg)
         return p.returncode, p.stdout, p.stderr
 
-    def test_list_has_the_six_keys_last_with_their_defaults(self):
+    def test_list_has_the_four_keys_before_the_sysop_ones_with_their_defaults(self):
         p = self.run_h("config", "list")
         self.assertEqual(p.returncode, 0, p.stderr)
         rows = p.stdout.splitlines()
-        self.assertEqual([r.split("=")[0] for r in rows][-12:-6], ORDER)
-        for row, key in zip(rows[-12:-6], ORDER):
+        names = [r.split("=")[0] for r in rows]
+        i = names.index("voice.language")
+        self.assertEqual(names[i:i + 4], ORDER)
+        self.assertEqual(names[i + 4], "voice.topic", "the topic follows the four (its test is in test_host_config)")
+        for row, key in zip(rows[i:i + 4], ORDER):
             self.assertEqual(row, "%s=%s\tdefault" % (key, KEYS[key][0]))
 
     def test_get_set_roundtrip_and_empty_resets_to_the_default(self):
@@ -116,22 +126,20 @@ class HostKeyTests(cf.Base):
 
     def test_a_default_value_set_explicitly_changes_nothing(self):
         base = self.fp()
-        cfg = "voice.language=auto\nvoice.stt.model=small\nvoice.planner=passthrough\nvoice.stt.vocabulary=\nvoice.web=1\n"
+        cfg = "voice.language=auto\nvoice.stt.model=small\nvoice.stt.vocabulary=\nvoice.web=1\n"
         self.assertEqual(self.fp(cfg=cfg), base)
         self.assertFalse([f for f in self.flags(cfg=cfg) if "VOICE" in f])
 
     def test_set_values_reach_the_box_as_flags_and_change_the_fingerprint(self):
         cfg = ("voice.language=pt\nvoice.stt.model=medium\nvoice.stt.vocabulary=kubectl, Podman, $HOME 'x'\n"
-               "voice.planner=claude\nvoice.planner.model=haiku\nvoice.web=0\n")
+               "voice.web=0\n")
         base = self.fp()
         flags = self.flags(cfg=cfg)
         got = [flags[i + 1] for i, f in enumerate(flags) if f == "-e" and flags[i + 1].startswith("SWARMBOX_VOICE_")]
         self.assertEqual(got, ["SWARMBOX_VOICE_LANGUAGE=pt", "SWARMBOX_VOICE_STT_MODEL=medium",
-                               "SWARMBOX_VOICE_STT_VOCABULARY=kubectl, Podman, $HOME 'x'", "SWARMBOX_VOICE_PLANNER=claude",
-                               "SWARMBOX_VOICE_PLANNER_MODEL=haiku", "SWARMBOX_VOICE_WEB=0"])
+                               "SWARMBOX_VOICE_STT_VOCABULARY=kubectl, Podman, $HOME 'x'", "SWARMBOX_VOICE_WEB=0"])
         lines = self.fp_lines({"SWARMBOX_VOICE_LANGUAGE": "pt", "SWARMBOX_VOICE_STT_MODEL": "medium",
                                "SWARMBOX_VOICE_STT_VOCABULARY": "kubectl, Podman, $HOME 'x'",
-                               "SWARMBOX_VOICE_PLANNER": "claude", "SWARMBOX_VOICE_PLANNER_MODEL": "haiku",
                                "SWARMBOX_VOICE_WEB": "0"})
         self.assertEqual(self.fp(cfg=cfg), cf.fingerprint(lines, cf.env_hash([])))
         self.assertNotEqual(self.fp(cfg=cfg), base)
@@ -141,8 +149,13 @@ class HostKeyTests(cf.Base):
         self.assertEqual(self.cf(cfg="voice.language=pt-br\n").returncode, 2)
         self.clear()
         self.assertEqual(self.cf(env={"SWARMBOX_VOICE_STT_MODEL": "small.en"}).returncode, 2)
-        flags = self.flags(env={"SWARMBOX_VOICE_PLANNER": "claude"})
-        self.assertIn("SWARMBOX_VOICE_PLANNER=claude", flags)
+
+    def test_the_planner_keys_are_gone(self):
+        for key in ("voice.planner", "voice.planner.model"):
+            p = self.run_h("config", "set", key, "claude")
+            self.assertEqual(p.returncode, 2, key)
+        self.assertNotIn("planner", self.run_h("config", "list").stdout)
+        self.assertFalse([f for f in self.flags(env={"SWARMBOX_VOICE_PLANNER": "claude"}) if "PLANNER" in f], "the variable is not passed on")
 
     def test_an_unknown_dotted_key_in_the_file_is_still_reported(self):
         p = self.cf(cfg="voice.nosuch=1\n")  # noqa
@@ -150,13 +163,14 @@ class HostKeyTests(cf.Base):
 
 
 class DocsTests(unittest.TestCase):
-    def test_design_doc_lists_the_six_keys_with_their_defaults(self):
+    def test_design_doc_lists_the_four_keys_with_their_defaults(self):
         text = read(os.path.join(ROOT, "docs", "design.md"))
         for key, (default, env, _, _) in KEYS.items():
             row = [r for r in text.splitlines() if r.startswith("| `%s`" % key)]
             self.assertEqual(len(row), 1, key)
             self.assertIn(env, row[0], key)
             self.assertIn("`%s`" % default if default else "empty", row[0], key)
+        self.assertNotIn("voice.planner", text)
 
     def test_voice_doc_lists_the_keys_and_the_changelog_has_an_entry(self):
         text = read(os.path.join(ROOT, "docs", "voice.md"))

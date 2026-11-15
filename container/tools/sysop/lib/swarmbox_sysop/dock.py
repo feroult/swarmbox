@@ -15,7 +15,7 @@ program in it keeps running) when the layout kind changed. A redock never takes 
 The hook is set while a panel exists and removes itself when the next resize finds no panel in any window.
 
 One panel PER WINDOW: a pane with the pane option @swarmbox_sysop_panel (and the marker argument SWARMBOX_SYSOP_PANEL=1 in its start command, for the
-instant before the option is set), found by those, never by position. The bus driver hides these panes from the tabs. Never two in one window (an
+instant before the option is set), found by those, never by position. swarmbox-tabs hides these panes from the tabs. Never two in one window (an
 extra one found is killed); panels of other windows are never touched by an operation on this one. Every operation holds a file lock.
 A panel opened by the Follower also carries @swarmbox_sysop_auto=1: only those are closed when the goal ends; one opened by hand stays.
 The name of the tab. tmux names a window after the command of its ACTIVE pane, and the panel takes the focus: without care the tab would be called
@@ -87,16 +87,16 @@ class DockError(RuntimeError):
 
 
 class Tmux:
-    """argv is the command prefix. Default: the words of SWARMBOX_TEST_TMUX, else `tmux` with `-L SB_BUS_TMUX_SOCKET` when that is set (the same
-    server as the bus driver). `run` never raises: a missing binary is rc 127, a timeout rc 124. TMUX is removed from the environment."""
+    """argv is the command prefix. Default: the words of SWARMBOX_TEST_TMUX, else `tmux` with `-L SB_TABS_SOCKET` when that is set (the same
+    server as swarmbox-tabs). `run` never raises: a missing binary is rc 127, a timeout rc 124. TMUX is removed from the environment."""
 
     def __init__(self, argv=None, env=None, timeout=5.0):
         if argv is None:
             argv = shlex.split(os.environ.get("SWARMBOX_TEST_TMUX", ""))
         if not argv:
-            argv = [os.environ.get("SB_BUS_TMUX_BIN") or "tmux"]
-            if os.environ.get("SB_BUS_TMUX_SOCKET"):
-                argv += ["-L", os.environ["SB_BUS_TMUX_SOCKET"]]
+            argv = [os.environ.get("SB_TABS_BIN") or "tmux"]
+            if os.environ.get("SB_TABS_SOCKET"):
+                argv += ["-L", os.environ["SB_TABS_SOCKET"]]
         self.argv = list(argv)
         base = dict(os.environ if env is None else env)
         base.pop("TMUX", None)
@@ -187,6 +187,7 @@ class Dock:
     def open(self, window=None, focus=True, auto=False):
         """Make the panel exist in `window` (default: the window the session shows), once. Panels of other windows are left alone.
         `focus`: the panel gets the focus when it is created (keys are for it); an existing panel gets it only when `focus` and not `auto`.
+        The Follower and `swarmbox-sysop approve` open with focus=False: the panel never takes the focus on its own (see focus() and keys.py).
         Returns a word: created, shown (already there)."""
         with self._lock():
             rows = self._rows()
@@ -220,6 +221,18 @@ class Dock:
             if not any(r.panel for r in rows):
                 self._hook(False)
             return n
+
+    def focus(self, window=None):
+        """Give the focus to the panel of `window` (default: the window the session shows). Only the keys `swarmbox-sysop approve` and a click do
+        this: nothing else in the sysop selects the panel. Returns its pane id."""
+        with self._lock():
+            rows = self._rows()
+            target = window or self._shown_window(rows)
+            here = [r for r in rows if r.panel and r.window == target]
+            if not here:
+                raise DockError("there is no panel in this window")
+            self._tm("select-pane", "-t", here[0].pane)
+            return here[0].pane
 
     def toggle(self, window=None):
         """Closes the panel of the window (the one given, else the one shown) when there is one, else opens it there. "closed" or what open returns."""
@@ -361,7 +374,7 @@ def default_dock(tmux=None, session=None):
     env = ["PYTHONPATH=" + lib_dir() + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else "")]
     env += ["%s=%s" % (k, os.environ[k]) for k in PASS_ENV if os.environ.get(k)]
     base = ["env"] + env + [sys.executable, "-B", "-m", "swarmbox_sysop"]
-    return Dock(tmux or Tmux(), session or os.environ.get("SB_BUS_TMUX_SESSION") or "main",
+    return Dock(tmux or Tmux(), session or os.environ.get("SB_TABS_SESSION") or "main",
                 panel_argv=["env", PANEL_COMMAND] + base[1:] + ["panel"], redock_argv=base + ["dock", "redock"])
 
 
@@ -392,7 +405,7 @@ def run(action, socket=None, window=None):
 
 
 class Follower:
-    """Opens the panel when a goal arrives and closes it (the ones it opened) `grace` seconds after the last goal and the queue ended.
+    """Opens the panel (WITHOUT taking the focus) when a goal arrives and closes it (the ones it opened) `grace` seconds after the last goal and the queue ended.
     It reads status.json of the service (the files of ipc.py), nothing else. Once per goal: a panel the user closed with `q` is not opened
     again for the same run of goals. A tmux that is missing or has no session is not an error here: it is tried again at the next goal."""
 
@@ -413,7 +426,7 @@ class Follower:
             self.idle_since = None
             if not self.busy:
                 self.busy = True
-                self._do(lambda d: d.open(auto=True, focus=True), "open")
+                self._do(lambda d: d.open(auto=True, focus=False), "open")      # never the focus: what you type in your tab must not reach the panel
         elif self.busy:
             if self.idle_since is None:
                 self.idle_since = now

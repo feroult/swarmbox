@@ -53,9 +53,12 @@ class Base(unittest.TestCase):
         self.addCleanup(self.restore_env)
         self.bus = ss.FakeBus(self.e.env["SB_BUS_SOCKET"])
         self.addCleanup(self.bus.stop)
+        self.tabs = ss.FakeTabs(os.path.join(self.e.dir, "tabs.sock"))
+        self.addCleanup(self.tabs.stop)
         self.out = os.path.join(self.e.dir, "out.jsonl")
         self.logf = os.path.join(self.e.dir, "claude.log")
         os.environ.update(self.e.env)
+        os.environ.update(self.tabs.cmd_env)
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_OUT"] = self.out
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_LOG"] = self.logf
         os.environ.pop("SWARMBOX_TEST_FAKE_CLAUDE_MODE", None)
@@ -247,7 +250,7 @@ class Flow(Base):
         end = self.wait_state(gid)
         self.assertEqual(end["state"], "done")
         self.assertIsNone(end["pending"])
-        self.assertEqual(self.bus.sent, [], "never approved, never typed")
+        self.assertEqual(self.tabs.sent, [], "never approved, never typed")
         self.assertEqual([c["is_error"] for c in end["calls"]], [True, False, False])
 
     def test_a_high_risk_goal_with_a_panel_that_approves(self):
@@ -258,7 +261,7 @@ class Flow(Base):
         gdir = os.path.join(self.e.paths.goals, gid)
         ipc.write_json(os.path.join(gdir, "decision.json"), {"id": st["pending"]["id"], "decision": "approve", "by": "panel", "word": "run"})
         self.assertEqual(self.wait_state(gid)["state"], "done")
-        self.assertEqual(self.bus.sent, [("@1", {"run": "rm -rf build"})])
+        self.assertEqual(self.tabs.sent, [("@1", {"run": "rm -rf build"})])
 
 
 class Rejections(Base):
@@ -276,7 +279,7 @@ class Rejections(Base):
         self.assertEqual(len([e for e in self.events("rejected")]), 2)
         for i in (0, 1, 2):
             self.assertEqual(self.wait_state(ids[i])["state"], "done")
-        self.assertEqual(self.bus.sent, [])
+        self.assertEqual(self.tabs.sent, [])
 
     def test_the_default_limit_is_five(self):
         self.script([{"sleep": 2}] + DONE)
@@ -298,7 +301,7 @@ class Rejections(Base):
             st = self.state(gid)
             self.assertEqual(st["state"], "failed", body)
             self.assertIn(why, st["error"])
-        self.assertEqual(self.bus.sent, [])
+        self.assertEqual(self.tabs.sent, [])
         self.assertEqual(self.status()["queue"], [])
 
     def test_a_newer_envelope_version_and_garbage_are_ignored(self):
@@ -311,6 +314,50 @@ class Rejections(Base):
         gid = self.goal("after the garbage")
         self.assertEqual(self.wait_state(gid)["state"], "done")
         self.assertEqual(len(self.events("rejected")), 3)
+
+
+class TopicAndGroup(Base):
+    def test_the_defaults_are_the_topic_goal_and_the_group_sysop(self):
+        self.start()
+        self.assertEqual(self.bus.sub_reqs, [("goal", "sysop")])
+        self.assertEqual(self.status()["settings"]["topic"], "goal")
+        self.assertEqual(self.status()["settings"]["group"], "sysop")
+
+    def test_the_service_listens_where_its_settings_say(self):
+        self.start(topic="ops.goals", group="night")
+        self.assertEqual(self.bus.sub_reqs, [("ops.goals", "night")])
+        r = self.bus.publish_goal("on the default topic", topic="goal")
+        self.assertEqual(r.get("err"), "no_subscriber", "nobody listens on `goal` now")
+        gid = self.goal("on the topic of the setting", topic="ops.goals")
+        self.assertEqual(self.wait_state(gid)["state"], "done")
+
+    def test_a_reconnect_asks_for_the_same_topic_and_group(self):
+        self.start(topic="ops", group="g")
+        self.bus.stop()
+        self.assertTrue(ss.wait_for(lambda: self.status()["bus"] == "down", 10))
+        self.bus.start()
+        self.assertTrue(self.bus.wait_subscriber(1, 10))
+        self.assertEqual(set(self.bus.sub_reqs), {("ops", "g")})
+        self.assertEqual(self.wait_state(self.goal("again", topic="ops"))["state"], "done")
+
+    def test_two_sysops_of_a_group_share_the_goals_one_each(self):
+        self.start()
+        e2 = ss.Env()
+        self.addCleanup(e2.cleanup)
+        e2.env["SB_BUS_SOCKET"] = self.e.env["SB_BUS_SOCKET"]
+        svc2 = service.Service(e2.cfg(countdown=0), e2.paths, backoff=(0.05, 0.3), log=lambda m: None)
+        t2 = threading.Thread(target=svc2.run, daemon=True)
+        t2.start()
+        self.addCleanup(lambda: (svc2.shutdown(), t2.join(15)))
+        self.assertTrue(svc2.wait_ready(10))
+        self.assertTrue(self.bus.wait_subscriber(2, 10))
+        ids = [self.goal("goal %d" % i) for i in range(4)]
+        self.assertTrue(ss.wait_for(lambda: all((self.state(i) or {}).get("state") in TERMINAL for i in ids) or
+                                    len([1 for x in audit.read(self.e.paths.audit) if x["event"] == "goal"]) +
+                                    len([1 for x in audit.read(e2.paths.audit) if x["event"] == "goal"]) == 4, 20))
+        mine = len([1 for x in audit.read(self.e.paths.audit) if x["event"] == "goal"])
+        theirs = len([1 for x in audit.read(e2.paths.audit) if x["event"] == "goal"])
+        self.assertEqual((mine, theirs), (2, 2), "round robin inside the group: each goal went to ONE sysop")
 
 
 class Survival(Base):
@@ -479,7 +526,7 @@ class Stopping(Base):
         self.wait_state(a, ("waiting_approval",))
         ipc.request_stop(self.e.paths)
         self.assertEqual(self.wait_state(a)["state"], "stopped")
-        self.assertEqual(self.bus.sent, [])
+        self.assertEqual(self.tabs.sent, [])
 
     def test_the_deadline_ends_a_goal(self):
         self.script([{"sleep": 60}])
@@ -654,13 +701,31 @@ class OwnProcess(Base):
 
     def test_bad_settings_stop_it_with_a_clear_line(self):
         for var, val in (("SWARMBOX_SYSOP_AUTONOMY", "yolo"), ("SWARMBOX_SYSOP_COUNTDOWN", "x"), ("SWARMBOX_SYSOP_MAX_STEPS", "0"),
-                         ("SWARMBOX_SYSOP_BRAIN", "b {nope}"), ("SWARMBOX_SYSOP_MODEL", "a b")):
+                         ("SWARMBOX_SYSOP_BRAIN", "b {nope}"), ("SWARMBOX_SYSOP_MODEL", "a b"),
+                         ("SWARMBOX_SYSOP_TOPIC", "Goal"), ("SWARMBOX_SYSOP_TOPIC", "a/b"), ("SWARMBOX_SYSOP_GROUP", "x" * 64), ("SWARMBOX_SYSOP_GROUP", "-g")):
             with self.subTest(var=var):
                 p = self.spawn({var: val}, log=False)
                 out, err = p.communicate(timeout=20)
                 self.assertEqual(p.returncode, 2)
                 self.assertIn(var.encode(), err)
                 self.assertFalse(service.running(self.e.paths))
+
+
+class Settings(unittest.TestCase):
+    def test_topic_and_group_defaults_and_values(self):
+        from swarmbox_sysop import config
+        c = config.load({})
+        self.assertEqual((c.topic, c.group), ("goal", "sysop"))
+        c = config.load({"SWARMBOX_SYSOP_TOPIC": "ops.night-1", "SWARMBOX_SYSOP_GROUP": "g_2"})
+        self.assertEqual((c.topic, c.group), ("ops.night-1", "g_2"))
+        self.assertEqual(config.load({"SWARMBOX_SYSOP_TOPIC": "  "}).topic, "goal", "empty means the default")
+        self.assertEqual(config.goal_topic({}), "goal")
+        self.assertEqual(config.goal_topic({"SWARMBOX_SYSOP_TOPIC": "ops"}), "ops")
+        for bad in ("Goal", "a b", "a/b", ".x", "-x", "x" * 64, "a\nb"):
+            for fn in (lambda: config.load({"SWARMBOX_SYSOP_TOPIC": bad}), lambda: config.load({"SWARMBOX_SYSOP_GROUP": bad}),
+                       lambda: config.goal_topic({"SWARMBOX_SYSOP_TOPIC": bad})):
+                with self.assertRaises(config.ConfigError, msg=bad):
+                    fn()
 
 
 class Cli(Base):

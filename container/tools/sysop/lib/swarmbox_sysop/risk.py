@@ -42,14 +42,20 @@ _INTERPRETERS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "ash", "python", "p
 _SENSITIVE_TARGET = re.compile(r"^(/dev/(?!null$|stdout$|stderr$|tty$)|/etc/|/boot/|/usr/|/bin/|/sbin/|/lib|/var/|/sys/|/proc/|/root)")
 _SENSITIVE_NAME = re.compile(r"(^|/)(\.bashrc|\.zshrc|\.profile|\.bash_profile|authorized_keys|\.gitconfig|\.npmrc|\.netrc|\.env)$|(^|/)\.(ssh|gnupg|aws)(/|$)")
 # What reaches the box's own controls: the files of the sysop (an approval is a file any process of the user can write), tmux (it types into
-# any pane, the panel's included, and kills the session), the bus and the sysop commands (they type into tabs: `swarmbox bus pub tab/@2/in`).
+# any pane, the panel's included, and kills the session), swarmbox-tabs (it types into any tab: `swarmbox tabs send @2 --run ls`), the bus and the sysop commands.
 # Matched on the text as a whole, quoted or not, so a payload in a quoted argument does not hide.
 _SELF = re.compile(r"(?i)decision\.json|pending_action|events\.jsonl|stop\.request|/sysop\b|\bsysop/|swarmbox[-_ ]?sysop|(?<![\w-])tmux(?![\w-])|"
-                   r"swarmbox[-_]bus|swarmbox\s+bus\b|\bbus\s+(pub|sub|serve|stop|tabs|screen)\b|bus\.sock")
+                   r"swarmbox[-_ ]?tabs|SB_TABS_|swarmbox[-_]bus|swarmbox\s+bus\b|\bbus\s+(pub|sub|serve|stop|tabs|screen)\b|bus\.sock")
 # files that hold secrets: reading them is at least medium (a screen is redacted by patterns only)
 _SECRET = re.compile(r"(?i)(^|[/=~])\.(ssh|gnupg|aws|docker|kube)(/|$)|(^|/)id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx)$|(^|/)\.(env|netrc|pgpass|npmrc|git-credentials)\b|"
-                     r"(^|/)(credentials|secrets?)(\.[a-z]+)?$|(^|/)\.config/(gh|gcloud)(/|$)")
-_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+                     r"(^|/)(credentials|secrets?)(\.[a-z]+)?$|(^|/)\.config/(gh|gcloud)(/|$)|^/proc/(\d+|self|thread-self|\*)/(environ|cmdline|mem|fd(/|$))|^/proc/self/")
+_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
+# variables whose value is run as code or changes what runs (the shell runs PROMPT_COMMAND before every prompt, BASH_ENV in every script...)
+_HOOK_VARS = ("PROMPT_COMMAND", "PS0", "PS1", "PS2", "PS4", "BASH_ENV", "ENV", "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "SHELLOPTS", "BASHOPTS",
+              "PYTHONSTARTUP", "PYTHONPATH", "NODE_OPTIONS", "GIT_SSH_COMMAND", "GIT_ASKPASS", "SSH_ASKPASS", "EDITOR", "VISUAL", "PAGER")
+_VAR_SETTERS = ("export", "declare", "typeset", "readonly", "local")
+# the login of Claude Code lives in the environment of process 1, readable by every process of the user
+_SECRET_ENV = re.compile(r"(?i)CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY")
 _REDIRECT = re.compile(r"^(\d*)(>>|>\||>|&>>|&>)$")
 
 
@@ -166,13 +172,29 @@ _WRAPPER_ARGS = {
 _PREFIXES = ("!", "coproc", "do", "then", "else", "elif", "if", "while", "until", "{", "function")
 
 
-def _strip_wrappers(words):
+def _hook_assignment(word, acc, depth):
+    """NAME=value where NAME is a hook or a state variable of the shell: the quoted value is code (or a path that code is loaded from)."""
+    m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=(.*)$", word, re.S)
+    if not m:
+        return
+    name, value = m.group(1), m.group(2)
+    if name in _HOOK_VARS:
+        acc.add("high", "sets %s, which makes the shell run or load code later" % name)
+        if depth < _MAX_DEPTH and value.strip():
+            _analyse(value, acc, depth + 1)
+    elif name == "PATH":
+        acc.add("medium", "changes PATH, so other programs run under the same names")
+
+
+def _strip_wrappers(words, acc=None, depth=0):
     """Drop env assignments, shell keywords and wrapper commands from the front; return the remaining words."""
     guard = 0
     while words and guard < 20:
         guard += 1
         w = words[0]
         if _ASSIGN.match(w):
+            if acc is not None:
+                _hook_assignment(w, acc, depth)
             words = words[1:]
             continue
         if w in _PREFIXES:
@@ -192,6 +214,8 @@ def _strip_wrappers(words):
                 elif rest[0] in takes and len(rest) > 1:
                     rest = rest[2:]
                 else:
+                    if acc is not None and _ASSIGN.match(rest[0]):
+                        _hook_assignment(rest[0], acc, depth)
                     rest = rest[1:]
             words = rest
             continue
@@ -256,10 +280,47 @@ _CODE_READERS = ("python", "python3", "perl", "ruby", "node", "php", "awk", "gaw
 _GIT_PROGRAM = re.compile(r"(?i)^(core\.(pager|editor|sshcommand|fsmonitor|askpass|hookspath)|pager\.|sequence\.editor|credential\.helper|diff\.external|gpg\.program|alias\.)")
 
 
+_LIST_ONLY = ("-l", "-p", "-P", "-v", "-V", "-s", "-S", "-a", "-f", "-r")
+
+
+def _shell_state(cmd, rest, acc, depth):
+    """Builtins that make the shell run text later or change what runs: an alias, a trap, a key binding, a completion command, a variable that
+    is a hook. The text they hold is code that runs without another Enter, so it is high and it is analysed too."""
+    args = [a for a in rest if not a.startswith("-")]
+    code = None
+    if cmd == "alias" and args:
+        acc.add("high", "alias redefines a command name: what runs later is not what is typed")
+        code = [a.split("=", 1)[1] for a in args if "=" in a]
+    elif cmd == "trap" and args and not (len(args) == 1 and "-l" in rest) and args[0] != "-" and rest[:1] != ["-p"]:
+        acc.add("high", "trap runs a command when a signal or an event happens")
+        code = args[:1]
+    elif cmd == "bind" and any(a == "-x" or (a.startswith("-") and not a.startswith("--") and "x" in a) for a in rest) or \
+            (cmd == "bind" and any(":" in a for a in args)):
+        acc.add("high", "bind attaches a command or a macro to a key")
+        code = args
+    elif cmd in ("complete", "compgen") and any(a in ("-C", "-F") or (a.startswith("-") and not a.startswith("--") and ("C" in a or "F" in a)) for a in rest):
+        acc.add("high", "%s runs a command or a function" % cmd)
+        code = args
+    elif cmd == "enable" and any(a == "-f" for a in rest):
+        acc.add("high", "enable -f loads a compiled builtin")
+    elif cmd in _VAR_SETTERS or cmd in ("set", "unset"):
+        for a in rest:
+            _hook_assignment(a, acc, depth)
+    elif cmd in ("printenv", "env") and not args:
+        acc.add("medium", "%s prints the environment, where the login of the box lives" % cmd)
+    if code and depth < _MAX_DEPTH:
+        for c in code:
+            if c.strip():
+                _analyse(c, acc, depth + 1)
+
+
 def _segment(words, acc, depth, after_pipe):
     here = [w[1:] for w in words if w.startswith("\x01")]
-    words = _strip_wrappers([w for w in words if not w.startswith("\x01")])
+    raw = [w for w in words if not w.startswith("\x01")]
+    words = _strip_wrappers(raw, acc, depth)
     if not words:
+        if raw and os.path.basename(raw[0]).lower() == "env" and not any(_ASSIGN.match(w) for w in raw):
+            acc.add("medium", "env prints the environment, where the login of the box lives")
         return
     if re.search(r"\s", words[0]) and depth < _MAX_DEPTH:
         # a command "name" with blanks is a whole command line in one quoted string (`watch -n1 'rm -rf x'`): the wrappers run it through a shell
@@ -292,6 +353,7 @@ def _segment(words, acc, depth, after_pipe):
                     acc.add("high", "%s code that deletes files or runs programs" % cmd)
                 if cmd in SHELLS or cmd in ("at", "batch"):
                     _analyse(h, acc, depth + 1)
+    _shell_state(cmd, rest, acc, depth)
     if cmd in ("exit", "logout"):
         acc.add("medium", "%s ends the shell of the tab" % cmd)
     if cmd == "script" and "-c" in rest and rest.index("-c") + 1 < len(rest) and depth < _MAX_DEPTH:
@@ -344,6 +406,9 @@ def _segment(words, acc, depth, after_pipe):
         acc.add("medium", "%s writes a file or sends data" % cmd)
     if cmd in ("nc", "ncat", "netcat") and any(a in ("-e", "-c", "--exec", "--sh-exec") for a in rest):
         acc.add("high", "%s runs a program on a connection" % cmd)
+    elif (cmd in ("nc", "ncat", "netcat", "socat", "telnet") and any(not a.startswith("-") for a in rest)) or \
+            (cmd == "openssl" and rest[:1] in (["s_client"], ["s_server"])):
+        acc.add("medium", "%s opens a network connection" % cmd)
     if cmd == "tar" and any((a.startswith("-") and not a.startswith("--") and "x" in a) or a in ("x", "--extract", "--get") or (not a.startswith("-") and a[:1] == "x") for a in rest[:2]):
         acc.add("medium", "tar extracts files")
         for j, a in enumerate(rest):
@@ -433,6 +498,10 @@ def classify_command(text):
     flat = re.sub(r"\\\r?\n", "", _normalize(text))
     if _SELF.search(flat) or _SELF.search(flat.replace("\\", "").replace("'", "").replace('"', "")):
         acc.add("high", "touches the controls of the box or of the sysop itself (tmux, the bus, the sysop's files)")
+    if _SECRET_ENV.search(flat):
+        acc.add("medium", "names the login of the box (an environment variable that holds a token)")
+    if re.search(r"/dev/(tcp|udp)/", flat):
+        acc.add("medium", "opens a network connection from the shell")
     _analyse(text, acc, 0)
     if not acc.reasons:
         acc.reasons.append("no risky pattern found")

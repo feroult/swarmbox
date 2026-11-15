@@ -6,6 +6,9 @@ default. A wrong value raises ConfigError with a line that names the variable: t
   SWARMBOX_SYSOP_BRAIN             `claude` (a preset) or a command template, see brain.py: split into words like a shell would, but never run
                                    by a shell. {mcp_config} is required; {model}, {system_prompt_file}, {system_prompt}, {max_turns} and {goal_dir}
                                    are known; leading NAME=value words are environment; {{ and }} are literal braces
+  SWARMBOX_SYSOP_TOPIC             the bus topic the sysop listens on for goals (default goal); voice publishes on its own voice.topic: they meet by
+                                   the same name. 1 to 63 characters of a-z 0-9 . _ - (a digit or a letter first)
+  SWARMBOX_SYSOP_GROUP             the group the sysop subscribes with (default sysop; same characters): sysops of one group share the goals, one gets each
   SWARMBOX_SYSOP_MODEL             model name for the brain (default haiku)
   SWARMBOX_SYSOP_AUTONOMY          confirm-all | confirm-risky (default) | auto, see policy.py
   SWARMBOX_SYSOP_COUNTDOWN         seconds a low-risk action waits for a veto (default 4; 0 = none)
@@ -18,6 +21,8 @@ import re
 from collections import namedtuple
 
 DEFAULTS = {
+    "topic": "goal",
+    "group": "sysop",
     "brain": "claude",
     "model": "haiku",
     "autonomy": "confirm-risky",
@@ -49,6 +54,18 @@ def _number(name, raw, lo, hi, integer):
     return v
 
 
+def goal_topic(env=None):
+    """The topic goals are published on (what the service listens to): SWARMBOX_SYSOP_TOPIC, default `goal`. Raises ConfigError. For the publishers
+    (the panel, the key g, `swarmbox-sysop goal`), which read one setting and not all of them."""
+    import os
+    env = os.environ if env is None else env
+    raw = env.get(ENV["topic"], "")
+    raw = raw if raw.strip() != "" else DEFAULTS["topic"]
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,62}", raw):
+        raise ConfigError("%s: a name of 1 to 63 characters (a-z 0-9 . _ -, a letter or a digit first)" % ENV["topic"])
+    return raw
+
+
 def load(env):
     """Config from a mapping (pass os.environ, or an explicit dict in tests); numbers are converted."""
     raw = {}
@@ -58,6 +75,10 @@ def load(env):
         if "\0" in raw[key] or (key != "brain" and ("\n" in raw[key] or "\r" in raw[key])):
             raise ConfigError("%s: no line breaks or NUL allowed" % ENV[key])
     v = {}
+    for key in ("topic", "group"):
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,62}", raw[key]):
+            raise ConfigError("%s: a name of 1 to 63 characters (a-z 0-9 . _ -, a letter or a digit first)" % ENV[key])
+        v[key] = raw[key]
     brain = raw["brain"].strip()
     if len(brain) > MAX_BRAIN:
         raise ConfigError("%s: at most %d characters" % (ENV["brain"], MAX_BRAIN))

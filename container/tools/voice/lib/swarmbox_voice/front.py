@@ -5,18 +5,18 @@
 
 `swarmbox-voice front [--listen HOST:PORT] [--ttyd-port N] [--service-port N] -- ttyd ARGS...` starts ttyd and the voice service as
 children and routes each connection by its FIRST request head. The browser only captures the microphone, so this is an audio entry, not a
-router of tools; the plan, its risk and the confirmation live in the tmux panel and never cross the tunnel. The table of /voice/:
+router of tools; what happens to the goal that the audio becomes is decided on the box (the bus, the sysop) and never crosses the tunnel. The table of /voice/:
 
    GET  /voice/page.js     the script of the microphone button, from the tool's web/ folder (no-store)
    GET  /voice/page.css    its style
-   GET  /voice/health      forwarded to the service; only {"ok": ...} is passed back (no planner, model or counts)
-   POST /voice/audio       16 kHz mono 16-bit WAV (audio/wav), forwarded to the service; only {"ok", "state"} or {"error", "message"} comes back
+   GET  /voice/health      forwarded to the service; only {"ok": ...} is passed back (no language or model)
+   POST /voice/audio       16 kHz mono 16-bit WAV (audio/wav), forwarded to the service; only {"ok", "state", "message"} or {"error", "message"} comes back
+                           (short strings and booleans: no object, no list, nothing else of what the service says)
 
 Every other path under /voice/ answers 404 (or 405 for a known path with the wrong method, or for OPTIONS) FROM THE FRONT, before the Host
-or Origin are even looked at, and never reaches the service: /voice/run, edit, cancel, pending, plan and the removed transcribe are only
-reachable from inside the box, on 127.0.0.1:17682. What is forwarded is rebuilt (the path alone, no query; Host and Origin rewritten to the
+or Origin are even looked at, and never reaches the service (which has only health and audio anyway). What is forwarded is rebuilt (the path alone, no query; Host and Origin rewritten to the
 loopback address of the service, which keeps its own loopback-only guard), and the answer is filtered, so even a faulty service could not
-hand a transcript or a plan to the browser.
+hand a transcript to the browser.
 
 Rules kept for the four routes: an `Origin`, when there is one, must name the `Host` (else 403), as ttyd's -O does for the terminal; a POST
 needs the WAV content type and a Content-Length (a cross-site form cannot send that type), no chunked bodies; the body is capped (8 MiB);
@@ -27,8 +27,7 @@ the original Host and Origin.
 
 When ttyd exits the front stops the service and exits with the status of ttyd, so the supervisor of the box keeps its restart policy.
 SIGTERM and SIGINT stop both children and exit 0. The service is restarted (with a back-off) if it dies: voice trouble never touches
-the terminal path. Security: what the tunnel can do is send audio, which makes at most a pending plan that only a key in the tmux panel can
-run; it is as reachable as the terminal itself (whoever reaches the web port), and the front is the one place that sees the public Host.
+the terminal path. Security: what the tunnel can do is send audio, which makes at most a goal on the bus (what the sysop does with it is its own policy: risk, confirmation); it is as reachable as the terminal itself (whoever reaches the web port), and the front is the one place that sees the public Host.
 """
 import ctypes
 import http.client
@@ -49,12 +48,13 @@ MAX_HEAD = 16 * 1024
 HEAD_TIMEOUT = 10.0
 MAX_AUDIO = stt.MAX_WAV_BYTES
 BODY_IDLE = 15.0               # no byte for this long while a body is arriving: give up
-UPSTREAM_TIMEOUT = 180.0       # a plan may wait for whisper and a planner
+BODY_TOTAL = 30.0              # and the whole body must be there by then (a byte every few seconds would hold a slot for ever)
+UPSTREAM_TIMEOUT = 180.0       # a request may wait for whisper
 MAX_RESPONSE = 4 * 1024 * 1024
 IDLE = 120.0                   # a plain (non-websocket) piped request that stalls this long is cut
 GRACE = 30.0                   # after one side closed its end, the other side has this long to finish
 MAX_CONNECTIONS = 512
-MAX_VOICE = 16
+MAX_VOICE = 8
 AUDIO_TYPES = ("audio/wav", "audio/x-wav", "audio/wave")
 # THE table of what the web can reach under /voice/: path -> (method, what). Nothing else is served or forwarded, whatever the service has.
 STATIC = {"/voice/page.js": ("page.js", "text/javascript; charset=utf-8"), "/voice/page.css": ("page.css", "text/css; charset=utf-8")}
@@ -440,8 +440,12 @@ def read_body(conn, extra, length):
         raise BadRequest(400, "bad_request", "more bytes than Content-Length")
     parts = [buf]
     got = len(buf)
-    conn.settimeout(BODY_IDLE)
+    end = time.monotonic() + BODY_TOTAL
     while got < length:
+        left = end - time.monotonic()
+        if left <= 0:
+            raise BadRequest(408, "timeout", "the body took too long to arrive")
+        conn.settimeout(min(BODY_IDLE, left))
         try:
             data = conn.recv(min(65536, length - got))
         except socket.timeout:

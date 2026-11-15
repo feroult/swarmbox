@@ -1,13 +1,13 @@
 #!/bin/bash
 # Voice installer. Builds whisper.cpp (CPU only, static) from the pinned release tarball, fetches ONE multilingual Whisper model,
-# and copies the tool's own files (the Python library, the built-in planners, the web page parts) into $TOOL_PREFIX.
+# and copies the tool's own files (the Python library and the web page parts) into $TOOL_PREFIX.
 #
 # Called by `swarmbox-tool install voice` with TOOL_PREFIX, TOOL_VERSION (the whisper.cpp release) and TOOL_ARCH. Progress goes to
 # stderr only. Needs network, a C++ compiler (the image has build-essential) and python3 with venv; cmake comes from a pinned
 # PyPI wheel in a scratch venv, because the installer may not use apt. Both downloads are verified with SHA-256 BEFORE use.
 #
 # The model is $SWARMBOX_VOICE_STT_MODEL (default small; never an `.en` model: those only know English). Another model later:
-# `swarmbox-voice model fetch NAME`. Result: bin/swarmbox-voice, libexec/whisper-cli, models/ggml-<model>.bin, lib/, planners/, web/.
+# `swarmbox-voice model fetch NAME`. Result: bin/swarmbox-voice, libexec/whisper-cli, models/ggml-<model>.bin, lib/, web/.
 set -euo pipefail
 
 : "${TOOL_PREFIX:?TOOL_PREFIX is not set}"
@@ -45,9 +45,7 @@ if [ -z "${MODEL_SHA256[$model]:-}" ]; then
 fi
 
 here=$(cd "$(dirname "$0")" && pwd)
-for d in lib planners; do
-    [ -d "$here/$d" ] || { echo "voice: $here/$d is missing" >&2; exit 1; }
-done
+[ -d "$here/lib" ] || { echo "voice: $here/lib is missing" >&2; exit 1; }
 
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/voice-install.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
@@ -90,10 +88,8 @@ verify "$scratch/model.bin" "${MODEL_SHA256[$model]}" "model $model"
 mv "$scratch/model.bin" "$TOOL_PREFIX/models/ggml-$model.bin"
 
 cp -R "$here/lib" "$TOOL_PREFIX/lib"
-cp -R "$here/planners" "$TOOL_PREFIX/planners"
 if [ -d "$here/web" ]; then cp -R "$here/web" "$TOOL_PREFIX/web"; fi
 find "$TOOL_PREFIX/lib" -name __pycache__ -prune -exec rm -rf {} +
-chmod 755 "$TOOL_PREFIX"/planners/planner-*
 
 cat > "$TOOL_PREFIX/bin/swarmbox-voice" << 'LAUNCHER'
 #!/bin/sh

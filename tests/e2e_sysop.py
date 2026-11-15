@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """End to end proof of the sysop (version 1) with the REAL pieces, inside a container. NOT part of the fast gate (dev/check.sh does not run it).
 
-The real swarmbox-bus (broker and tmux driver) under a small supervisor like the entrypoint's, the real sysop (installed and started by the real
+The real swarmbox-bus (the broker, goals only, on a topic chosen here: TOPIC) under a small supervisor like the entrypoint's, the real swarmbox-tabs
+(how the sysop reads and types into the tabs; no daemon), the real sysop (installed and started by the real
 swarmbox-tool: install.sh, prepare.sh, the resident subscriber with --dock), the real `claude` as the brain (haiku) and a second real Claude Code in a
 tab (started from a bash pane with the box's auto-approve flag). The tmux server is isolated (-L e2e under TMUX_TMPDIR), uses the box's tmux.conf and has
-a real client attached through a pty, so the active tab, the focus of the panel and the keys pressed in the panel are real.
+a real client attached through a pty, so the active tab, the focus of the panel and the keys pressed are real. The panel never takes the focus by itself:
+the scenarios answer it with the tmux keys of the box (Ctrl+A then V / X / a), by a click on it, or by the approval gesture.
 
 Run it with tests/e2e_sysop.sh (it starts the container and passes the login). Inside the container:
 
@@ -39,6 +41,7 @@ WORK = os.environ.get("E2E_WORK", "/work")
 RESULTS = os.environ.get("E2E_RESULTS") or os.path.join(WORK, "results")
 TOKEN = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
 SOCK = "e2e"                     # the tmux server of this test: never the default one
+TOPIC = "e2e-goals"             # the topic of the goals: a name chosen here (sysop.topic), not the default
 COLS, ROWS = 160, 45
 ANSWER = "[●⏺]"
 FAILED = []
@@ -108,8 +111,8 @@ class Box:
         self.scenario = "setup"
         self.env = {
             "PATH": self.bin + ":/usr/local/bin:/usr/bin:/bin", "HOME": self.home, "TERM": "xterm-256color", "LANG": "C.UTF-8",
-            "SB_RUN_DIR": self.run_dir, "SB_STATE_DIR": self.state_dir, "SB_BUS_SOCKET": self.sock, "SB_BUS_TMUX_SOCKET": SOCK,
-            "SB_BUS_TMUX_SESSION": "main", "TMUX_TMPDIR": self.tmux_tmp,
+            "SB_RUN_DIR": self.run_dir, "SB_STATE_DIR": self.state_dir, "SB_BUS_SOCKET": self.sock, "SB_TABS_SOCKET": SOCK,
+            "SB_TABS_SESSION": "main", "TMUX_TMPDIR": self.tmux_tmp, "SWARMBOX_SYSOP_TOPIC": TOPIC,
             "SWARMBOX_TEST_LIB": os.path.join(REPO, "container", "scripts"), "SWARMBOX_TEST_IMAGE_TOOLS": os.path.join(WORK, "imagetools"),
             "SWARMBOX_TEST_USER_TOOLS": os.path.join(WORK, "usertools"), "SWARMBOX_TEST_HOST_DIR": os.path.join(WORK, "host"),
             "SWARMBOX_TEST_IMAGE_SHIMS": os.path.join(WORK, "out", "shims"), "SWARMBOX_TEST_USER_SHIMS": os.path.join(WORK, "out", "ushims"),
@@ -185,6 +188,7 @@ class Box:
         shutil.copytree(os.path.join(REPO, "container", "tools", "sysop"), os.path.join(self.env["SWARMBOX_TEST_IMAGE_TOOLS"], "sysop"),
                         ignore=shutil.ignore_patterns("__pycache__"))
         for name, body in (("swarmbox-bus", 'exec /usr/bin/python3 -S "%s/container/scripts/swarmbox-bus.py" "$@"' % REPO),
+                           ("swarmbox-tabs", 'exec /usr/bin/python3 -S "%s/container/scripts/swarmbox-tabs.py" "$@"' % REPO),
                            ("swarmbox-tool", 'exec bash "%s/container/scripts/swarmbox-tool.sh" "$@"' % REPO)):
             p = os.path.join(self.bin, name)
             with open(p, "w") as f:
@@ -199,6 +203,10 @@ class Box:
         check("setup: the bus answers", wait_for(lambda: self.sh(["swarmbox-bus", "ping"]).returncode == 0, 15) is not None)
         r = self.sh(["swarmbox-tool", "install", "sysop"], timeout=90)
         check("setup: swarmbox-tool install sysop (install.sh, self-test, prepare.sh)", r.returncode == 0, r.stderr.strip().replace("\n", " | ")[-300:])
+        # the box has a shim `swarmbox-sysop` on its PATH (swarmbox-tool link); the tmux keys call it by name, so here it is a launcher of the installed copy
+        with open(os.path.join(self.bin, "swarmbox-sysop"), "w") as f:
+            f.write('#!/bin/sh\nexec "%s" "$@"\n' % self.sysop_bin())
+        os.chmod(os.path.join(self.bin, "swarmbox-sysop"), 0o755)
         check("setup: the service runs and is connected to the bus", self.wait_service(30))
 
     def trace_panes(self):
@@ -246,10 +254,16 @@ class Box:
             time.sleep(1.5)
 
     def pub(self, text, source="voice", timeout=15):
-        """swarmbox-bus pub: (exit code, id or error text, seconds)"""
+        """swarmbox-bus pub: (exit code, id of the message or error text, seconds). pub prints {"id", "receivers"}: the id is the goal's id."""
         t = time.time()
-        r = self.sh(["swarmbox-bus", "pub", "--source", source, "goal", "--", text], timeout=timeout)
-        return r.returncode, (r.stdout.strip() if r.returncode == 0 else r.stderr.strip()), time.time() - t
+        r = self.sh(["swarmbox-bus", "pub", "--source", source, TOPIC, "--", text], timeout=timeout)
+        out = r.stderr.strip()
+        if r.returncode == 0:
+            try:
+                out = json.loads(r.stdout)["id"]
+            except (ValueError, KeyError, TypeError):
+                out = r.stdout.strip()
+        return r.returncode, out, time.time() - t
 
     def bus(self, *a):
         r = self.sh(["swarmbox-bus"] + list(a))
@@ -388,6 +402,14 @@ class Box:
 
     def panel(self):
         return next((p for p in self.panes() if p["panel"] == "1"), None)
+
+    def click_panel(self):
+        """a left click (SGR mouse, as the terminal sends it) on the head row of the panel"""
+        row = self.tmux("list-panes", "-s", "-t", "main", "-F", "#{pane_left}|#{pane_top}|#{@swarmbox_sysop_panel}")
+        left, top = next((int(x.split("|")[0]), int(x.split("|")[1])) for x in row.splitlines() if x.endswith("|1"))
+        self.keys("\x1b[<0;%d;%dM" % (left + 4, top + 1))
+        time.sleep(0.05)
+        self.keys("\x1b[<0;%d;%dm" % (left + 4, top + 1))
 
     def panel_text(self):
         p = self.panel()
@@ -560,7 +582,7 @@ def basic_path(box, tag, goal, source="voice", label=""):
     box.save("%s-claude-tab-%s.txt" % (label.strip().replace(" ", "_") or "run", gid), box.cap(cw))
     check(label + "the target answered %s" % tag, r is not None and "answer" in seen, "%.1fs" % seen["answer"] if "answer" in seen else box.cap(cw)[-600:])
     check(label + "the panel opened in the window of the claude tab", seen.get("panel_win") == cw, seen.get("panel_info"))
-    check(label + "the panel has the focus when it opens", seen.get("panel_focus") is True, seen.get("panel_info"))
+    check(label + "the panel does NOT take the focus when it opens (the user's tab keeps it)", seen.get("panel_focus") is False, seen.get("panel_info"))
     check(label + "the tab keeps its name while the panel is open (not python3)", (seen.get("names") or {}).get(cw) == "claude", seen.get("names"))
     check(label + "the panel showed the countdown", "countdown" in seen, (seen.get("panel_text") or "")[-300:])
     check(label + "the goal ended done", ev["state"] == "done", (st or {}).get("error"))
@@ -601,7 +623,7 @@ LONG_PROMPT = ("Read this carefully, it is a long prompt with \"quotes\", it's g
 
 
 def s1_long(box):
-    """a prompt of about 700 characters with quotes, accents and a dollar sign, typed by the real driver into the real Claude Code: does Enter submit?"""
+    """a prompt of about 700 characters with quotes, accents and a dollar sign, typed by the real swarmbox-tabs into the real Claude Code: does Enter submit?"""
     box.scenario = "s1-basic"
     box.configure()
     tabs = box.reset_tabs(claude=True)
@@ -674,12 +696,12 @@ def s3(box):
     txt = box.panel_text()
     box.save("3a-panel-countdown.txt", txt)
     check("s3a: the panel says LOW RISK and the text of the action", "LOW RISK" in txt and "PONG-3" in txt, txt[-500:])
-    check("s3a: the panel has the focus", (box.panel() or {}).get("active") == "1")
+    check("s3a: the panel does not have the focus", (box.panel() or {}).get("active") == "0")
     time.sleep(0.8)       # keys are ignored for 0.5 s after an action appears
     t_veto = time.time()
-    box.keys("c")
+    box.keys("\x01V")      # the veto key of the box: prefix, a, c (from the tab: the panel is not focused)
     ok = wait_for(lambda: any(d.get("decision") == "vetoed" for d in box.decisions(gid)), 6)
-    check("s3a: c vetoes the action (audit says vetoed)", ok is not None, "%.2fs after the key" % (time.time() - t_veto))
+    check("s3a: Ctrl+A V vetoes the action (audit says vetoed)", ok is not None, "%.2fs after the key" % (time.time() - t_veto))
     st = box.wait_goal(gid, 60)
     time.sleep(1.0)
     after = box.cap(cw)
@@ -765,7 +787,9 @@ def s4(box):
     r = wait_approval_visible(box)
     check("s4b: the approval prompt appears", r is not None)
     time.sleep(0.8)
-    box.keys("r")
+    box.keys("\x01a")      # the approval gesture: opens the approval prompt in the panel and focuses it
+    focused = wait_for(lambda: (box.panel() or {}).get("active") == "1", 5)
+    check("s4b: the approval gesture focuses the panel", focused is not None, box.panel())
     time.sleep(0.4)
     box.keys("yes\r")
     time.sleep(1.0)
@@ -775,21 +799,29 @@ def s4(box):
     check("s4b: a word other than run is not an approval (nothing typed, build exists)", "rm -r" not in s and os.path.isdir(os.path.join(box.throw, "build")) and "Not allowed" in p, p[-400:])
     box.keys("c")
     ok = wait_for(lambda: any(d.get("decision") == "denied" for d in box.decisions(gid)), 8)
-    check("s4b: c refuses it (denied)", ok is not None, [d["decision"] for d in box.decisions(gid)])
+    check("s4b: c in the focused panel refuses it (denied)", ok is not None, [d["decision"] for d in box.decisions(gid)])
     st = box.wait_goal(gid, 60)
     s = box.cap(sw)
     check("s4b: tab untouched, build exists", "rm -r" not in s and os.path.isdir(os.path.join(box.throw, "build")), s[-200:])
     box.save_goal("4b", gid)
-    # 4c: the word run
+    # 4c: the word run. The user is in another tab (scratch): what is typed there before the gesture must reach scratch and nothing else
     box.configure(approval_timeout=45)
-    tabs = box.reset_tabs(claude=False)
+    tabs = box.reset_tabs(claude=False, extra=("scratch",))
     sw = tabs["shell"]
+    box.select(tabs["scratch"])
+    time.sleep(1.2)
     mkbuild(box)
     rc, gid, _ = box.pub(RM_GOAL, "cli")
     r = wait_approval_visible(box)
     check("s4c: the approval prompt appears", r is not None)
     time.sleep(0.8)
-    box.keys("r")
+    box.keys("run\r")                 # typed before the gesture: it goes to the active tab, never to the panel
+    time.sleep(0.6)
+    check("s4c: what was typed before the gesture is in the scratch tab", "run" in box.cap(tabs["scratch"]), box.cap(tabs["scratch"])[-200:])
+    check("s4c: nothing typed before the gesture decided anything", not any(d.get("decision") in ("approved", "denied") for d in box.decisions(gid)) and os.path.isdir(os.path.join(box.throw, "build")))
+    box.keys("\x01a")
+    focused = wait_for(lambda: (box.panel() or {}).get("active") == "1", 5)
+    check("s4c: the approval gesture focuses the panel", focused is not None, box.panel())
     time.sleep(0.4)
     box.keys("run")
     time.sleep(0.5)
@@ -862,7 +894,7 @@ LONG_GOAL = "call the wait tool with 25 seconds, three times in a row, one call 
 def s6(box):
     box.scenario = "s6-stop"
     box.configure()
-    for how in ("panel", "command"):
+    for how in ("click", "key", "command"):
         tabs = box.reset_tabs(claude=False)
         rc, gid, _ = box.pub(LONG_GOAL, "cli")
         ok = wait_for(lambda: (box.goal_state(gid) or {}).get("brain", {}).get("pid") and any(c["tool"] == "wait" for c in box.calls(gid)), 60)
@@ -873,11 +905,17 @@ def s6(box):
         box.save("%s-processes-before.txt" % how, "\n".join(group))
         check("s6 %s: a brain and its MCP server are running" % how, any("claude -p" in x for x in group) and any("swarmbox_sysop mcp" in x for x in group), group)
         pane = box.panel()
-        check("s6 %s: the panel is open with the focus" % how, bool(pane) and pane["active"] == "1", pane)
+        check("s6 %s: the panel is open and has not taken the focus" % how, bool(pane) and pane["active"] == "0", pane)
         time.sleep(0.8)
         t = time.time()
-        if how == "panel":
+        if how == "click":
+            box.click_panel()
+            focused = wait_for(lambda: (box.panel() or {}).get("active") == "1", 5)
+            check("s6 click: a mouse click on the panel focuses it", focused is not None, box.panel())
+            time.sleep(0.8)
             box.keys("x")
+        elif how == "key":
+            box.keys("\x01X")
         else:
             r = box.sysop("stop")
             check("s6 command: `swarmbox-sysop stop` exits 0", r.returncode == 0, r.stderr)
@@ -1061,13 +1099,14 @@ def s10(box):
     ok = wait_for(lambda: box.sh(["swarmbox-bus", "ping"]).returncode == 0, 20)
     t_up = time.time() - t_kill
     check("s10a: the supervisor started the bus again (%.1fs)" % t_up, ok is not None and box.bus_restarts == n0 + 1)
-    rc2, out2 = box.bus("ls", "tab/")
-    check("s10a: the new bus lists the tabs (the tmux driver reconnects by itself)", rc2 == 0 and "claude" in out2, out2[-200:])
+    r2 = box.sh(["swarmbox-tabs", "list"])
+    check("s10a: the tabs do not depend on the bus (swarmbox-tabs list answers)", r2.returncode == 0 and "claude" in r2.stdout, r2.stdout[-200:] + r2.stderr[-200:])
     st = box.wait_goal(gid, 90)
     box.save_goal("10a", gid)
     info("s10a", "the goal in flight ended %s: %s" % ((st or {}).get("state"), (st or {}).get("error") or (st or {}).get("summary")))
     check("s10a: the service survived and reconnected (status says bus connected)", box.service_pid() and box.alive(box.service_pid()) and box.status().get("bus") == "connected", box.status().get("bus"))
     check("s10a: the goal in flight ended (it did not hang)", (st or {}).get("state") in ("done", "failed"), (st or {}).get("state"))
+    check("s10a: the bus going away did not touch the goal: its tools act through swarmbox-tabs (state done)", (st or {}).get("state") == "done", (st or {}).get("state"))
     ok = one_goal_works(box, "s10a: the next goal after the bus restart works")
     # 10b: the service is killed (SIGKILL) while a goal runs, and started again as a box start does
     tabs = box.reset_tabs(claude=True)
@@ -1115,7 +1154,7 @@ def reported(box, gid):
 
 def s11(box):
     box.scenario = "s11-target-state"
-    box.configure(countdown=0, max_seconds=90)
+    box.configure(countdown=0, max_seconds=90, approval_timeout=12)
     # 11a: busy for the whole goal (a long answer; a long `sleep` would be moved to the background by Claude Code, which is then idle again)
     tabs = box.reset_tabs(claude=True)
     cw = tabs["claude"]
@@ -1136,7 +1175,7 @@ def s11(box):
     calls = box.calls(gid)
     says = reported(box, gid)
     box.save_goal("11a", gid)
-    check("s11a: the driver refused (a run came back busy_tab)", bool(refused_calls(box, gid, "busy_tab")), [(c["tool"], c["is_error"], (c["text"] or "")[:60]) for c in calls])
+    check("s11a: swarmbox-tabs refused (a run came back busy_tab)", bool(refused_calls(box, gid, "busy_tab")), [(c["tool"], c["is_error"], (c["text"] or "")[:60]) for c in calls])
     check("s11a: nothing was typed or queued while the target was busy (PONG-11A never on its screen)", not seen_busy.get("typed") and "PONG-11A" not in after, after[-300:])
     check("s11a: the brain told the user (say or the summary of done)", bool(says), says)
     check("s11a: the goal ended", (st or {}).get("state") in ("done", "failed"), (st or {}).get("state"))
@@ -1168,19 +1207,20 @@ def s11(box):
         box.save_goal("11b-" + tag, gid)
         refused = refused_calls(box, gid, "dialog_open")
         if tag == "forced":
-            check("s11b forced: the driver refused (dialog_open)", bool(refused), [(c["tool"], c["is_error"], (c["text"] or "")[:60]) for c in calls])
-        # what the brain did next is its own choice, inside the policy: it may press Esc on the dialog (rated low by design: Esc only cancels) and then type.
-        # The invariant is that no run was ACCEPTED while the dialog was still open: every accepted run comes after an accepted input of the brain.
+            check("s11b forced: swarmbox-tabs refused the run (dialog_open)", bool(refused), [(c["tool"], c["is_error"], (c["text"] or "")[:60]) for c in calls])
+        # A dialog is the USER's decision: the policy rates every key on it (Esc included) high, so it needs an approval, and nobody approves here. The brain
+        # may TRY to press a key (the system prompt tells it not to); the invariant is that nothing was typed or pressed: every run and input came back an error.
         order = [(c["tool"], c["is_error"]) for c in calls]
-        accepted_run = next((i for i, (t, e) in enumerate(order) if t == "run" and not e), None)
-        dismissed = next((i for i, (t, e) in enumerate(order) if t == "input" and not e), None)
-        ok = accepted_run is None or (dismissed is not None and dismissed < accepted_run)
-        check("s11b %s: no run was accepted while the dialog was open" % tag, ok, order)
-        if dismissed is not None:
-            info("s11b %s" % tag, "the brain dismissed the dialog itself with an input call (%s) and then typed: the policy rates Esc on a dialog low by design" %
-                 [(c["args"] or {}).get("text") for c in calls if c["tool"] == "input"])
-        else:
-            check("s11b %s: nothing was typed: the dialog is as it was, the file was not created" % tag, "PONG-11B" not in after and box.claude_state(after) == "dialog" and not os.path.exists("/work/proj/s11.txt"), after[-300:])
+        acted = [(c["tool"], (c["args"] or {}).get("text")) for c in calls if c["tool"] in ("run", "input") and not c["is_error"]]
+        check("s11b %s: no run or input was accepted (nothing typed or pressed)" % tag, not acted, acted)
+        inputs = [c for c in calls if c["tool"] == "input"]
+        decs = [(d.get("decision"), (d.get("verdict") or {}).get("level")) for d in box.decisions(gid) if d.get("decision") != "waiting"]
+        if inputs:
+            info("s11b %s" % tag, "the brain tried a key anyway: %s; decisions %s" % ([(c["args"] or {}).get("text") for c in inputs], decs))
+            check("s11b %s: a key on the dialog was held for approval (high), never sent after a countdown" % tag,
+                  all(lvl == "high" and dec in ("timed_out", "denied", "blocked") for dec, lvl in decs), decs)
+        check("s11b %s: the dialog is as it was, the user's request is still pending, the file was not created" % tag,
+              "PONG-11B" not in after and box.claude_state(after) == "dialog" and not os.path.exists("/work/proj/s11.txt"), after[-300:])
         check("s11b %s: the brain told the user (say or the summary of done)" % tag, bool(says), says)
         check("s11b %s: the goal ended" % tag, (st or {}).get("state") in ("done", "failed"), (st or {}).get("state"))
         info("s11b %s" % tag, "calls %s; told: %s; state %s" % (order, says, (st or {}).get("state")))

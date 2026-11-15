@@ -1,12 +1,13 @@
 """swarmbox_sysop: the library of the `sysop` tool (stdlib only, Python 3.9+).
 
-The sysop takes goals from the bus (topic `goal`), runs a brain (a command that speaks MCP, by default `claude -p`) with ONE set of tools,
-and the tools act on the tabs of the box through the bus (`tab/<tab>/in`, `tab/<tab>/screen`, `ls tab/`). Everything the brain does is rated
-by the host (policy.py) before it is published, and everything is written to the audit file (audit.py). Modules:
+The sysop takes goals from the bus (the topic of `sysop.topic`, default `goal`, as a member of the group `sysop.group`), runs a brain (a command that
+speaks MCP, by default `claude -p`) with ONE set of tools, and the tools act on the tabs of the box through the command `swarmbox-tabs`, never
+through the bus. Everything the brain does is rated by the host (policy.py) before it is typed, and everything is written to the audit file (audit.py). Modules:
 
     config       the settings (SWARMBOX_SYSOP_*), validated in one place
     paths        the run and state folders, private (0700) and checked
-    busclient    the socket protocol of swarmbox-bus, spoken directly
+    busclient    the socket protocol of swarmbox-bus (publish, subscribe with a group), spoken directly: goals only
+    tabsclient   the command swarmbox-tabs (list, screen, send), run as a child, its JSON parsed: the tools' only way to the tabs
     risk, policy host-computed risk, autonomy levels, countdown and approval, budgets
     audit        events.jsonl, append-only
     ipc          the files the panel and the sysop share (pending action, decision, stop request, goal state)

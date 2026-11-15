@@ -111,9 +111,13 @@ class Stub:
                 elif body.startswith(b"TEAPOT"):
                     out = json.dumps({"error": "x", "message": "short and stout", "text": "LEAK-transcript", "plan": {"actions": []}}).encode()
                     self.send_response(418)
+                elif body.startswith(b"NOLISTENER"):
+                    out = json.dumps({"ok": False, "state": "no_listener", "message": "Nobody is listening.",
+                                      "text": "LEAK-transcript", "goal": {"text": "LEAK-goal"}, "id": 7}).encode()
+                    self.send_response(503)
                 else:
-                    # more than the front may pass on: it must keep only ok/state (audio) or ok (health)
-                    out = json.dumps({"ok": True, "state": "pending", "len": len(body), "planner": "claude", "pending": 1,
+                    # more than the front may pass on: it must keep only ok/state/error/message (audio) or ok (health)
+                    out = json.dumps({"ok": True, "state": "sent", "len": len(body), "planner": "claude", "pending": 1,
                                       "text": "LEAK-transcript", "id": "LEAK-id", "actions": [{"text": "LEAK-command"}]}).encode()
                     self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -333,8 +337,8 @@ class VoicePath(FrontCase):
         wav = voice_support.wav_with("x" * 100000)
         status, hdrs, out = post(self.port, "/voice/audio", wav, "audio/x-wav")
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(out), {"ok": True, "state": "pending"})
-        self.assertNotIn(b"LEAK", out, "a transcript, a plan or an id never comes back through the front")
+        self.assertEqual(json.loads(out), {"ok": True, "state": "sent"})
+        self.assertNotIn(b"LEAK", out, "a transcript, a goal or an id never comes back through the front")
         self.assertEqual(hdrs["cache-control"], "no-store")
         seen = self.stub.seen[0]
         self.assertEqual((seen["path"], seen["body"]), ("/voice/audio", wav))
@@ -343,6 +347,15 @@ class VoicePath(FrontCase):
     def test_an_error_answer_keeps_its_status_and_only_error_and_message(self):
         status, _, out = post(self.port, "/voice/audio", b"TEAPOT" + WAV, "audio/wav")
         self.assertEqual((status, json.loads(out)), (418, {"error": "x", "message": "short and stout"}))
+
+    def test_a_state_that_is_not_ok_keeps_its_status_state_and_message_and_nothing_else(self):
+        status, _, out = post(self.port, "/voice/audio", b"NOLISTENER" + WAV, "audio/wav")
+        self.assertEqual((status, json.loads(out)), (503, {"ok": False, "state": "no_listener", "message": "Nobody is listening."}))
+        self.assertNotIn(b"LEAK", out)
+
+    def test_the_answer_filter_is_exactly_the_keys_of_the_new_answer(self):
+        self.assertEqual(front.PASS_KEYS, {"/voice/health": ("ok",), "/voice/audio": ("ok", "state", "error", "message")})
+        self.assertEqual(sorted(front.ROUTES), ["/voice/audio", "/voice/health", "/voice/page.css", "/voice/page.js"], "the table of the front did not grow")
 
     def test_the_answer_must_be_a_json_object(self):
         status, _, out = post(self.port, "/voice/audio", b"NOTJSON" + WAV, "audio/wav")
@@ -374,6 +387,29 @@ class VoicePath(FrontCase):
         self.addCleanup(c.close)
         c.sendall(b"POST /voice/audio HTTP/1.1\r\nHost: h\r\nContent-Type: audio/wav\r\nContent-Length: 50\r\n\r\nRIFF")
         self.assertIn(b" 408 ", c.recv(4096))
+
+    def test_a_body_that_trickles_in_has_a_total_deadline(self):
+        # one byte every 0.2 s is never idle for BODY_IDLE, and used to hold the slot for ever
+        old = (front.BODY_IDLE, front.BODY_TOTAL)
+        front.BODY_IDLE, front.BODY_TOTAL = 5.0, 1.0
+        self.addCleanup(lambda: setattr(front, "BODY_IDLE", old[0]) or setattr(front, "BODY_TOTAL", old[1]))
+        c = socket.create_connection(("127.0.0.1", self.port), 5)
+        self.addCleanup(c.close)
+        c.sendall(b"POST /voice/audio HTTP/1.1\r\nHost: h\r\nContent-Type: audio/wav\r\nContent-Length: 5000\r\n\r\n")
+        t0, got = time.time(), b""
+        c.settimeout(0.2)
+        while time.time() - t0 < 4 and b" 408 " not in got:
+            try:
+                c.sendall(b"R")
+            except OSError:
+                pass
+            try:
+                got += c.recv(4096)
+            except socket.timeout:
+                pass
+        self.assertIn(b" 408 ", got)
+        self.assertLess(time.time() - t0, 3)
+        self.assertEqual(self.stub.seen, [])
 
     def test_the_page_parts_come_from_the_web_folder(self):
         for path, ctype, text in (("/voice/page.js", "text/javascript", b"/* js */"), ("/voice/page.css", "text/css", b"/* css */")):

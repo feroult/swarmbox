@@ -5,7 +5,7 @@
     These tests, and the reading of tmux.conf, need no tmux.
   * the real thing against a REAL tmux on a private socket with real clients attached through a pty: where the pane goes for a portrait, a landscape
     and a narrow landscape window, ONE PANEL PER WINDOW (never two in one window, the other windows never touched), the user's panes untouched, the
-    panel is a marked pane that the bus driver hides, the key binding of container/config/tmux.conf (next to the voice one), the hook that fits only
+    panel is a marked pane that swarmbox-tabs hides, the key binding of container/config/tmux.conf, the hook that fits only
     the window that was resized and never takes the focus, and its removal when no panel is left in any window, the Follower (opens for a goal,
     closes the panel it opened when the goal ends) and `swarmbox-sysop dock ...` as the key and the hook run it, with the real panel in the pane.
 
@@ -109,18 +109,16 @@ class LayoutRule(unittest.TestCase):
 class Wiring(unittest.TestCase):
     """What needs no tmux: the marks, the hook, the key in the file."""
 
-    def test_the_marks_are_the_ones_the_bus_driver_hides(self):
-        spec = importlib.util.spec_from_file_location("swarmbox_bus_tmux", os.path.join(ROOT, "container", "scripts", "swarmbox-bus-tmux.py"))
+    def test_the_marks_are_the_ones_swarmbox_tabs_hides(self):
+        spec = importlib.util.spec_from_file_location("swarmbox_tabs", os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         self.assertIn(dock.PANEL_OPTION, mod.HIDDEN_OPTIONS)
         self.assertEqual(dock.PANEL_OPTION, "@swarmbox_sysop_panel")
         self.assertEqual(dock.PANEL_COMMAND, "SWARMBOX_SYSOP_PANEL=1")
 
-    def test_the_hook_does_not_collide_with_the_one_of_voice(self):
-        voice = slurp(os.path.join(ROOT, "container", "tools", "voice", "lib", "swarmbox_voice", "dock.py"))
-        self.assertIn('HOOK = "window-resized[417]"', voice)
-        self.assertEqual(dock.HOOK, "window-resized[418]")
+    def test_the_hook_has_its_own_slot(self):
+        self.assertEqual(dock.HOOK, "window-resized[418]")      # [417] was the voice panel's, removed: nobody else's slot is touched
 
     def test_the_default_dock_runs_this_library_and_hands_the_folders_on(self):
         saved = dict(os.environ)
@@ -135,17 +133,17 @@ class Wiring(unittest.TestCase):
             self.assertTrue(any(w.startswith("PYTHONPATH=") and ss.LIB in w for w in words))
         self.assertEqual(d.redock_argv[-3:], ["swarmbox_sysop", "dock", "redock"])
 
-    def test_the_tmux_file_binds_a_free_key_for_the_sysop_next_to_the_voice_one(self):
+    def test_the_tmux_file_binds_a_free_key_for_the_sysop_and_none_for_voice(self):
         conf = slurp(TMUX_CONF)
         binds = [ln for ln in conf.splitlines() if re.match(r"\s*bind\s+S\s", ln)]
         self.assertEqual(len(binds), 1, binds)
         self.assertIn("swarmbox-sysop dock toggle --socket '#{socket_path}' --window '#{window_id}'", binds[0])
-        self.assertEqual(len([ln for ln in conf.splitlines() if re.match(r"\s*bind\s+v\s", ln)]), 1, "the voice key stays")
-        self.assertLess(conf.index("bind v "), conf.index("bind S "))
+        self.assertEqual([ln for ln in conf.splitlines() if re.match(r"\s*bind\s+v\s", ln)], [], "voice has no panel and no key")
+        self.assertNotIn("swarmbox-voice", conf)
 
     def test_the_cli_refuses_a_bad_window_and_a_bad_action(self):
         for bad in ("1", "%1", "@x", "-t", "@1;kill-server", ""):
-            r = subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop", "dock", "toggle", "--window", bad], env=dict(os.environ, PYTHONPATH=ss.LIB, SB_BUS_TMUX_SOCKET="never-%d" % os.getpid()),
+            r = subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop", "dock", "toggle", "--window", bad], env=dict(os.environ, PYTHONPATH=ss.LIB, SB_TABS_SOCKET="never-%d" % os.getpid()),
                                capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 2, bad)
         r = subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop", "dock", "nonsense"], env=dict(os.environ, PYTHONPATH=ss.LIB), capture_output=True, text=True, timeout=30)
@@ -211,7 +209,7 @@ class RealTmux(unittest.TestCase):
         self.addCleanup(lambda: (os.environ.clear(), os.environ.update(self.saved)))
         os.environ.update(self.env)
         os.environ.pop("TMUX", None)
-        os.environ.pop("SB_BUS_TMUX_SOCKET", None)
+        os.environ.pop("SB_TABS_SOCKET", None)
         self.tmux = Tmux(argv=["tmux", "-L", self.sock, "-f", self.conf()], env=self.env)
         self.addCleanup(self.tmux.run, "kill-server")
         self.clients = []
@@ -377,14 +375,6 @@ class Placement(RealTmux):
         self.d.open()
         self.assertEqual(len(self.panels()), 1)
 
-    def test_the_voice_panel_is_not_the_sysop_panel(self):
-        self.attach(50, 200)
-        v = self.tmux.run("split-window", "-d", "-t", self.user, "-P", "-F", "#{pane_id}", "sleep 600").out.strip()
-        self.tmux.run("set-option", "-p", "-t", v, "@swarmbox_voice_panel", "1")
-        self.assertEqual(self.d.open(), "created")
-        self.assertEqual(self.d.close(), 1)
-        self.assertIn(v, [p["id"] for p in self.panes()], "closing the sysop panel leaves the voice panel alone")
-
     def test_close_removes_the_panel_and_the_hook(self):
         self.attach(50, 200)
         self.d.open()
@@ -478,15 +468,12 @@ class PerWindow(RealTmux):
         self.assertEqual(self.tmux.run("capture-pane", "-p", "-t", p2).out.strip(), before)
         self.assertEqual([p["id"] for p in self.panes() if not p["panel"]], [self.user, p2])
 
-    def test_the_bus_driver_never_lists_the_panel_as_a_tab(self):
-        spec = importlib.util.spec_from_file_location("swarmbox_bus_tmux_x", os.path.join(ROOT, "container", "scripts", "swarmbox-bus-tmux.py"))
+    def test_swarmbox_tabs_never_lists_the_panel_as_a_tab(self):
+        spec = importlib.util.spec_from_file_location("swarmbox_tabs_x", os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
 
-        class Err(Exception):
-            def __init__(self, code, msg=""):
-                Exception.__init__(self, code, msg)
-        drv = mod.TmuxDriver(Err, session="main", socket=self.sock)
+        drv = mod.Tabs(session="main", socket=self.sock)
         self.attach(70, 50)
         win2, p2 = self.new_window()
         self.d.open(window=self.win1)
@@ -769,7 +756,8 @@ class Following(RealTmux):
         panel, = self.panels()
         self.assertEqual(panel["win"], self.win1)
         self.assertEqual(self.tmux.run("display-message", "-p", "-t", panel["id"], "#{@swarmbox_sysop_auto}").out.strip(), "1")
-        self.assertTrue(panel["active"], "it opens with the focus: the countdown is answered with a key")
+        self.assertFalse(panel["active"], "it never takes the focus: what you type in your tab must not reach it")
+        self.assertEqual(self.active_pane(self.win1), [self.user])
         self.step(1)
         self.assertEqual(len(self.panels()), 1, "no second panel while the goal runs")
         self.status(current=None)
@@ -907,14 +895,22 @@ class KeyBinding(RealTmux):
         self.assertIn("socket_path", out)
         self.assertIn("window_id", out)
 
-    def test_the_key_is_free_in_tmuxs_own_table_and_the_voice_key_stays(self):
+    def test_the_key_is_free_in_tmuxs_own_table_and_the_voice_key_is_gone(self):
         defaults = subprocess.run(["tmux", "-L", self.sock + "d", "-f", "/dev/null", "start-server", ";", "list-keys", "-T", "prefix"], env=self.env,
                                   capture_output=True, text=True, timeout=30).stdout
         self.assertEqual([ln for ln in defaults.splitlines() if ln.split()[3:4] == ["S"]], [], "S is unbound in the table of tmux itself")
         keys = self.tmux.run("list-keys", "-T", "prefix").out
         self.assertEqual(len([ln for ln in keys.splitlines() if ln.split()[3:4] == ["S"]]), 1)
-        self.assertEqual(len([ln for ln in keys.splitlines() if ln.split()[3:4] == ["v"]]), 1)
+        self.assertEqual([ln for ln in keys.splitlines() if ln.split()[3:4] == ["v"]], [], "tmux's own table has no v either")
         self.assertNotIn(" M-S ", self.tmux.run("list-keys", "-T", "root").out)
+
+    def test_the_sysop_keys_are_free_in_tmuxs_own_table_and_bound_by_the_box(self):
+        defaults = subprocess.run(["tmux", "-L", self.sock + "d", "-f", "/dev/null", "start-server", ";", "list-keys", "-T", "prefix"], env=self.env,
+                                  capture_output=True, text=True, timeout=30).stdout
+        mine = self.tmux.run("list-keys", "-T", "prefix").out
+        for k, cmd in (("V", "swarmbox-sysop veto"), ("X", "swarmbox-sysop stop"), ("a", "swarmbox-sysop approve"), ("g", "swarmbox-sysop goal")):
+            self.assertEqual([ln for ln in defaults.splitlines() if ln.split()[3:4] == [k]], [], k + " is unbound in tmux itself")
+            self.assertEqual(len([ln for ln in mine.splitlines() if ln.split()[3:4] == [k] and cmd in ln]), 1, k)
 
     def test_pressing_the_key_calls_the_toggle_for_this_window_on_this_server(self):
         log = os.path.join(self.tmp, "args.log")
@@ -930,6 +926,188 @@ class KeyBinding(RealTmux):
         self.assertTrue(line.startswith("dock toggle --socket "), line)
         self.assertTrue(line.endswith("--window " + window), line)
         self.assertTrue(line.split("--socket ")[1].split(" ")[0].endswith(self.sock), "the socket of THIS server: " + line)
+
+
+LAUNCHER = '#!/bin/sh\nexec "%s" -B -m swarmbox_sysop "$@"\n' % sys.executable
+
+
+class NoFocus(RealTmux):
+    """The panel never takes the focus by itself, and the sysop keys of tmux.conf (Ctrl+A then V X a g, typed fast as a user does) work from any tab. The REAL panel, the REAL
+    commands and the box's tmux.conf, with the files of a service written by ss.FakeService."""
+
+    def conf(self):
+        return TMUX_CONF
+
+    def setUp(self):
+        super().setUp()
+        exe = os.path.join(self.bin, "swarmbox-sysop")
+        with open(exe, "w") as f:
+            f.write(LAUNCHER)
+        os.chmod(exe, 0o755)
+        self.pth = paths.Paths(self.env)
+        self.svc = ss.FakeService(self.pth)
+        self.addCleanup(self.svc.close)
+        self.d = dock.default_dock(self.tmux)            # the real panel program in the pane
+        self.client = self.attach(40, 100)
+        self.follower = Follower(self.pth, dock=self.d, grace=3.0)
+
+    def goal_with(self, **pending):
+        self.svc.goal()
+        if pending:
+            self.svc.pending(**pending)
+        self.follower.step()
+        return self.wait(self.panels, "the panel")[0]
+
+    def screen(self, pane):
+        return self.tmux.run("capture-pane", "-p", "-t", pane).out
+
+    def user_text(self):
+        return self.tmux.run("capture-pane", "-p", "-J", "-S", "-", "-t", self.user).out
+
+    def typing(self, text, every=0.03):
+        """a user who keeps typing in the tab; returns (stop function that gives the number of times `text` was sent)"""
+        state = {"n": 0, "run": True}
+
+        def go():
+            while state["run"]:
+                self.client.send(text)
+                state["n"] += 1
+                time.sleep(every)
+        t = threading.Thread(target=go, daemon=True)
+        t.start()
+
+        def stop():
+            state["run"] = False
+            t.join()
+            return state["n"]
+        return stop
+
+    def _typed_while_a_goal_arrives(self, **pending):
+        stop = self.typing("xcgxqrXG")             # every key the panel knows (x stop, c veto, g goal, q close, r run) and more
+        time.sleep(0.4)
+        panel = self.goal_with(**pending)
+        self.wait(lambda: "COUNTDOWN" in self.screen(panel["id"]) or "APPROVAL" in self.screen(panel["id"]), "the panel to show the action")
+        time.sleep(1.5)
+        sent = stop()
+        time.sleep(0.5)
+        panel, = self.panels()
+        self.assertFalse(panel["active"], "the panel did not take the focus")
+        self.assertEqual(self.active_pane(self.win1), [self.user])
+        self.assertEqual(self.user_text().count("x"), 2 * sent, "every key typed in the tab reached the tab (x twice per send)")
+        self.assertFalse(os.path.exists(self.pth.stop_request), "not one x reached the panel: no stop")
+        self.assertIsNone(self.svc.decision(), "not one c or r reached the panel: no decision")
+        self.assertFalse(os.path.exists(self.pth.panel_request))
+        self.assertEqual(len(self.panels()), 1, "q did not close the panel")
+        self.assertIn("goal (voice)", self.screen(panel["id"]), "and it is alive and showing the goal")
+
+    def test_keys_typed_in_the_tab_while_a_goal_arrives_never_reach_a_countdown_panel(self):
+        self._typed_while_a_goal_arrives(mode="veto")
+
+    def test_keys_typed_in_the_tab_while_a_goal_arrives_never_reach_an_approval_panel(self):
+        self._typed_while_a_goal_arrives(mode="approve", risk="high", text="rm -rf ~/x")
+
+    def test_the_panel_says_which_keys_work_from_any_tab(self):
+        panel = self.goal_with(mode="veto")
+        text = self.wait(lambda: (lambda t: t if "Ctrl+A, then" in t else "")(self.screen(panel["id"])), "the hint")
+        self.assertIn("V veto, X stop, a approve, g goal", " ".join(text.split()))
+
+    def test_the_veto_key_vetoes_a_countdown_and_refuses_an_approval(self):
+        self.goal_with(mode="veto")
+        self.client.send("\x01V")
+        d = self.wait(self.svc.decision, "the decision")
+        self.assertEqual((d["id"], d["decision"], d["by"]), ("p1", "veto", "key"))
+        os.unlink(os.path.join(self.pth.goal_dir("g1"), "decision.json"))
+        self.svc.pending(mode="approve", risk="high")
+        self.client.send("\x01V")
+        self.assertEqual(self.wait(self.svc.decision, "the decision")["decision"], "deny")
+        self.assertEqual(self.active_pane(self.win1), [self.user], "the focus never moved")
+
+    def test_the_veto_key_with_nothing_waiting_does_nothing(self):
+        self.goal_with()
+        self.client.send("\x01V")
+        time.sleep(1.0)
+        self.assertIsNone(self.svc.decision())
+
+    def test_the_stop_key_asks_for_the_stop(self):
+        self.goal_with(mode="veto")
+        self.client.send("\x01X")
+        self.wait(lambda: os.path.exists(self.pth.stop_request), "the stop request")
+        self.assertEqual(self.active_pane(self.win1), [self.user])
+
+    def test_the_approval_gesture_focuses_the_panel_on_the_approval_prompt_and_run_allows_it(self):
+        panel = self.goal_with(mode="approve", risk="high", text="rm -rf ~/x")
+        self.wait(lambda: "APPROVAL" in self.screen(panel["id"]), "the approval")
+        time.sleep(0.7)                                      # past the key guard of a new action
+        self.client.send("run\r")                           # typed BEFORE the gesture: it is for the tab
+        time.sleep(0.5)
+        self.assertIsNone(self.svc.decision(), "nothing typed before the gesture reached the panel")
+        self.assertIn("run", self.user_text())
+        self.client.send("\x01a")
+        self.wait(lambda: self.active_pane(self.win1) == [panel["id"]], "the panel to get the focus")
+        self.assertFalse(os.path.exists(self.pth.panel_request), "the panel took the request before it was focused")
+        self.wait(lambda: "type the word run" in " ".join(self.screen(panel["id"]).split()), "the approval prompt")
+        self.assertIsNone(self.svc.decision(), "the gesture alone allows nothing")
+        self.client.send("run")
+        time.sleep(0.3)
+        self.assertIsNone(self.svc.decision(), "the word without Enter allows nothing")
+        self.client.send("\r")
+        d = self.wait(self.svc.decision, "the decision")
+        self.assertEqual((d["id"], d["decision"], d["word"]), ("p1", "approve", "run"))
+
+    def test_the_approval_gesture_opens_the_panel_when_it_is_not_there_and_does_not_focus_without_an_approval(self):
+        self.svc.goal()
+        self.client.send("\x01a")                          # no pending action
+        time.sleep(1.0)
+        self.assertEqual(self.panels(), [])
+        self.assertEqual(self.active_pane(self.win1), [self.user])
+        self.svc.pending(mode="approve", risk="high")
+        self.client.send("\x01a")                          # a pending approval, no panel yet: it is made, then focused
+        panel, = self.wait(self.panels, "the panel")
+        self.wait(lambda: self.active_pane(self.win1) == [panel["id"]], "the focus")
+        self.wait(lambda: "type the word run" in " ".join(self.screen(panel["id"]).split()), "the approval prompt")
+
+    def test_the_approval_gesture_refuses_a_countdown_action(self):
+        self.goal_with(mode="veto")
+        self.client.send("\x01a")
+        time.sleep(1.0)
+        self.assertEqual(self.active_pane(self.win1), [self.user], "a countdown has its own veto key: the gesture is for approvals")
+
+    def test_a_click_on_the_panel_focuses_it_and_then_its_own_keys_work(self):
+        panel = self.goal_with(mode="veto")
+        self.wait(lambda: "COUNTDOWN" in self.screen(panel["id"]), "the panel")
+        time.sleep(0.7)
+        self.client.send("x")
+        time.sleep(0.4)
+        self.assertFalse(os.path.exists(self.pth.stop_request), "x in the tab is for the tab")
+        col, row = panel["left"] + 4, panel["top"] + 1               # the head row of the panel, 1-based for the terminal
+        self.client.send("\x1b[<0;%d;%dM" % (col, row))
+        time.sleep(0.05)
+        self.client.send("\x1b[<0;%d;%dm" % (col, row))
+        self.wait(lambda: self.active_pane(self.win1) == [panel["id"]], "the click to focus the panel")
+        time.sleep(0.6)
+        self.client.send("x")
+        self.wait(lambda: os.path.exists(self.pth.stop_request), "x in the focused panel to stop the goal")
+
+    def test_the_goal_key_asks_for_a_goal_in_a_popup_and_publishes_it(self):
+        bus = ss.FakeBus(os.path.join(self.tmp, "bus.sock"))
+        self.addCleanup(bus.stop)
+        self.tmux.run("set-environment", "-g", "SB_BUS_SOCKET", bus.path)
+        import socket
+        sub = socket.socket(socket.AF_UNIX)
+        sub.settimeout(20)
+        sub.connect(bus.path)
+        sub.sendall(b'{"op":"sub","topic":"goal"}\n')
+        f = sub.makefile("rb")
+        self.addCleanup(sub.close)
+        f.readline()
+        self.client.send("\x01g")
+        time.sleep(1.0)
+        self.client.send("say hello in the second tab\r")
+        import json
+        env = json.loads(f.readline())
+        self.assertEqual((env["topic"], env["body"], env["source"]), ("goal", {"text": "say hello in the second tab"}, "panel"))
+        self.assertEqual(self.active_pane(self.win1), [self.user])
+        self.assertNotIn("say hello", self.user_text(), "the popup took the keys, not the tab")
 
 
 if __name__ == "__main__":

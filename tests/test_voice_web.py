@@ -217,23 +217,25 @@ class PrepareTests(Base):
         self.old_lib = os.path.join(self.prefix, "lib", "swarmbox_voice")
 
     def staleness(self):
-        # an old service: no front, an old server, an old page, a planner that is gone
+        # an old service: no front, an old server, an old page, the planners folder of an install from before voice became an input
         os.remove(os.path.join(self.old_lib, "front.py"))
         with open(os.path.join(self.old_lib, "server.py"), "a") as f:
             f.write("# old\n")
         with open(os.path.join(self.prefix, "web", "page.js"), "w") as f:
             f.write("old page")
+        os.makedirs(os.path.join(self.prefix, "planners"))
         with open(os.path.join(self.prefix, "planners", "planner-gone"), "w") as f:
             f.write("x")
 
-    def test_prepare_refreshes_lib_planners_and_web_from_the_image_copy(self):
+    def test_prepare_refreshes_lib_and_web_from_the_image_copy_and_drops_the_old_planners(self):
         self.staleness()
         r = self.tool("prepare")
         self.assertEqual(r.returncode, 0, r.stderr)
-        for d in ("lib", "planners", "web"):
+        for d in ("lib", "web"):
             same = subprocess.run(["diff", "-rq", "-x", "__pycache__", os.path.join(VOICE, d), os.path.join(self.prefix, d)], capture_output=True, text=True)
             self.assertEqual(same.stdout, "", d)
-        self.assertTrue(os.access(os.path.join(self.prefix, "planners", "planner-passthrough"), os.X_OK))
+        self.assertFalse(os.path.exists(os.path.join(self.prefix, "planners")), "the planners of an old install are removed")
+        self.assertFalse(os.path.exists(os.path.join(VOICE, "planners")), "and the image has none")
         self.assertEqual(sorted(f for f in os.listdir(self.prefix) if f.startswith(".")), [".swarmbox-env"], "no scratch folder is left")
 
     def test_it_leaves_whisper_the_models_and_the_launcher_alone(self):
