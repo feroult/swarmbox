@@ -5,6 +5,8 @@
    height; keep the pair in step so the terminal still fits the window exactly. */
 #terminal-container .terminal {
   padding: var(--swarmbox-padding, 10px);
+  padding-left: max(var(--swarmbox-padding, 10px), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--swarmbox-padding, 10px), env(safe-area-inset-right, 0px));
   height: calc(100% - 2 * var(--swarmbox-padding, 10px));
 }
 
@@ -19,4 +21,53 @@
 /* Firefox has no ::-webkit-scrollbar */
 @supports not selector(::-webkit-scrollbar) {
   .xterm .xterm-viewport { scrollbar-width: var(--swarmbox-scrollbar-ff, none); scrollbar-color: rgba(167, 139, 250, .35) transparent; }
+}
+
+/* ---- The controls strip (ttyd-clipboard.js, part 2) ----------------------------------------------------------------------------------
+   A bar below the terminal: key buttons and the controls of plugins. When it is shown (html.swarmbox-strip-on) the page is a column, the terminal
+   container takes what the strip leaves and ttyd refits xterm to it, so the strip never covers a cell. Palette of docs/theme.md. */
+#swarmbox-strip {
+  --sb-bg: #0c0b10; --sb-band: #27222f; --sb-line: #52525b; --sb-text: #d4d4d8; --sb-violet: #a78bfa; --sb-deep: #6d28d9; --sb-lavender: #c4b5fd;
+  --sb-red: #ff6b78; --sb-amber: #fbbf24; --sb-green: #4ade80; --sb-btn: 44px;
+  position: relative; flex: 0 0 auto; box-sizing: border-box; display: flex; align-items: center; gap: 6px;
+  padding: 5px calc(8px + env(safe-area-inset-right, 0px)) calc(5px + env(safe-area-inset-bottom, 0px)) calc(8px + env(safe-area-inset-left, 0px));
+  background: var(--sb-bg); border-top: 1px solid var(--sb-band); color: var(--sb-text);
+  font: 15px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+#swarmbox-strip[hidden], #swarmbox-strip [hidden] { display: none !important; }
+#swarmbox-strip * { box-sizing: border-box; }
+#swarmbox-strip .sb-keys { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+#swarmbox-strip .sb-slot { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; margin-left: auto; }
+#swarmbox-strip .sb-btn {
+  position: relative; min-width: var(--sb-btn); min-height: var(--sb-btn); padding: 0 12px; margin: 0; border-radius: 10px; cursor: pointer;
+  border: 1px solid rgba(167, 139, 250, .28); background: var(--sb-band); color: var(--sb-text); font: inherit; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+#swarmbox-strip .sb-btn:hover { border-color: var(--sb-violet); }
+#swarmbox-strip .sb-btn:active { background: var(--sb-deep); color: #fff; }
+#swarmbox-strip .sb-btn:focus-visible { outline: 2px solid var(--sb-lavender); outline-offset: 1px; }
+#swarmbox-strip .sb-plugin { padding: 0; }
+/* the sentence a plugin shows: it covers the key buttons until the plugin clears it or the host does (12 s, opaque, tap to dismiss), on two lines at most and ends where the plugin controls begin */
+#swarmbox-strip .sb-note {
+  position: absolute; z-index: 2; top: 0; bottom: 0; left: 0; right: var(--sb-slot-w, 0px); display: flex; align-items: center;
+  padding: 0 8px 0 calc(8px + env(safe-area-inset-left, 0px)); overflow: hidden;
+  background: var(--sb-bg); color: var(--sb-text); font-size: 14px; line-height: 1.2; cursor: pointer;
+}
+#swarmbox-strip .sb-note span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+#swarmbox-strip .sb-note[data-tone="ok"] { color: var(--sb-green); }
+#swarmbox-strip .sb-note[data-tone="warn"] { color: var(--sb-amber); }
+#swarmbox-strip .sb-note[data-tone="error"] { color: var(--sb-red); }
+
+html.swarmbox-strip-on body {
+  display: flex; flex-direction: column; position: fixed; left: 0; top: 0; width: 100%;
+  height: var(--swarmbox-vvh, 100%); min-height: 0; transform: translateY(var(--swarmbox-vvtop, 0px));
+}
+html.swarmbox-strip-on #terminal-container { flex: 1 1 0; min-height: 0; height: auto; width: 100%; overflow: hidden; }
+/* a phone turned sideways: one row, the keys scroll inside the strip if they do not fit, so the terminal keeps its height */
+@media (max-height: 500px) {
+  #swarmbox-strip { padding-top: 3px; padding-bottom: calc(3px + env(safe-area-inset-bottom, 0px)); }
+  #swarmbox-strip .sb-keys { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  #swarmbox-strip .sb-keys::-webkit-scrollbar { display: none; }
+  #swarmbox-strip .sb-btn { flex: 0 0 auto; }
 }

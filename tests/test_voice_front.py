@@ -188,6 +188,12 @@ class TerminalPath(FrontCase):
         self.assertEqual(head[0], "GET / HTTP/1.1")
         self.assertEqual(head[1:], ["Host: 127.0.0.1:%d" % self.port, "User-Agent: x", "Accept: text/html", "Connection: close"])
 
+    def test_no_other_origin_may_frame_a_page_of_the_terminal_nor_an_answer_of_voice(self):
+        want = ("content-security-policy", "frame-ancestors 'self'"), ("x-frame-options", "SAMEORIGIN")
+        for status, hdrs, _ in (get(self.port, "/"), get(self.port, "/voice/health"), get(self.port, "/nothing-here/at-all")):
+            for k, v in want:
+                self.assertEqual(hdrs.get(k), v, (status, hdrs))
+
     def test_connection_close_is_added_when_the_client_sent_none(self):
         get(self.port, "/")
         self.assertEqual(self.heads()[-1].split("\r\n")[-1], "Connection: close")

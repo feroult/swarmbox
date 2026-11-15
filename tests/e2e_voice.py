@@ -15,8 +15,10 @@ Run it with tests/e2e_voice.sh (it starts the container and passes the login). I
 
 Scenarios: 1 the path of version 1 (the microphone to the answer, 5 runs: 4 Portuguese and 1 English), 2 topics are settings (a changed topic, a mismatch,
 two sysops in a group, a plain watcher), 3 no sysop, sysop stopped, bus down, 4 the panel inside the browser terminal (landscape and portrait) and its keys,
-5 the path of a tunnel (another host name): only the four routes, a cross-origin POST, 6 a goal that needs approval, 7 the screens never pass through the bus.
-The 11 scenarios of the sysop itself are tests/e2e_sysop.py (tests/e2e_sysop.sh).
+5 the path of a tunnel (another host name): only the four routes, a cross-origin POST, 6 a goal that needs approval, 7 the screens never pass through the bus,
+8 the microphone never over the status bar and its clock (desktop, phone portrait, phone landscape; bounding boxes and a screenshot of each), 9 the thumb path on a phone (tap Panel,
+tap Esc, hold the microphone; the panel in portrait is 30 %, typing along never reaches it, the idle screen), 10 a new window with the panel always up (Alt+N, the + button).
+The 14 scenarios of the sysop itself (the last three: the panel always up, auto and off) are tests/e2e_sysop.py (tests/e2e_sysop.sh).
 Every check prints PASS or FAIL; the exit status is 1 when one failed. Screens, screenshots, audit files and a JSON report go to $E2E_RESULTS.
 
 The login (CLAUDE_CODE_OAUTH_TOKEN) is only read from the environment, handed to the box's processes as they would have it, never to the browser, and
@@ -140,6 +142,8 @@ class Browser:
         self.browser = None
         self.proc = None
         self.tmp = None
+        self.touch = False          # a phone: mobile viewport, touch events, (pointer: coarse); set before open()
+        self.dsf = 1
         self.launch()
 
     def launch(self):
@@ -190,7 +194,10 @@ class Browser:
         p.call("Page.enable")
         p.call("Runtime.enable")
         p.call("Emulation.setFocusEmulationEnabled", enabled=True)
-        self.resize(*self.viewport)
+        self.resize(*self.viewport, mobile=self.touch)
+        if self.touch:
+            p.call("Emulation.setTouchEmulationEnabled", enabled=True, maxTouchPoints=5)
+            p.call("Emulation.setEmulatedMedia", features=[{"name": "pointer", "value": "coarse"}, {"name": "hover", "value": "none"}])
         p.call("Page.navigate", url="http://%s:%d%s" % (self.host, PORT, path))
         ok = True
         if wait_term:
@@ -204,7 +211,16 @@ class Browser:
 
     def resize(self, w, h, mobile=False):
         self.viewport = (w, h)
-        self.page.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=1, mobile=mobile)
+        self.page.call("Emulation.setDeviceMetricsOverride", width=w, height=h, deviceScaleFactor=self.dsf if mobile else 1, mobile=mobile)
+
+    def device(self, kind):
+        """desktop 1600x900, phone portrait 390x844, phone landscape 844x390 (touch, coarse pointer), the page opened again. The device scale stays 1: headless
+        Chromium with an EMULATED scale factor of 2 draws the canvas text of xterm.js twice as large as its grid (a screenshot shows the top left quarter of the
+        terminal), and the same page with a real --force-device-scale-factor=2 is right, so the emulated scale would only make the screenshots lie"""
+        w, h, touch = {"desktop": (1600, 900, False), "portrait": (390, 844, True), "landscape": (844, 390, True)}[kind]
+        self.touch, self.dsf = touch, 1
+        self.viewport = (w, h)
+        return self.open(self.path)
 
     def js(self, expr, wait=False):
         return self.page.js(expr, wait=wait)
@@ -231,11 +247,12 @@ class Browser:
         return tuple(self.js("[term.cols, term.rows]") or (0, 0))
 
     def light(self):
-        return self.js("(() => { const r = document.getElementById('swarmbox-voice'); if (!r) return ['none', '']; "
-                       "const n = r.querySelector('.sv-note'); return [r.getAttribute('data-state'), n && !n.hidden ? n.textContent : '']; })()")
+        # the button of the microphone carries the state; the sentence is said through the controls strip of the host page
+        return self.js("(() => { const r = document.getElementById('swarmbox-voice-mic'); if (!r) return ['none', '']; "
+                       "const n = document.querySelector('#swarmbox-strip .sb-note'); return [r.getAttribute('data-state'), n && !n.hidden ? n.textContent : '']; })()")
 
     def voice_text(self):
-        return self.js("(document.getElementById('swarmbox-voice') || {textContent: ''}).textContent")
+        return self.js("(document.getElementById('swarmbox-strip') || {textContent: ''}).textContent")
 
     def screenshot(self, name):
         r = self.page.call("Page.captureScreenshot", format="png")
@@ -254,7 +271,25 @@ class Browser:
         r = self.js("(() => { const b = document.getElementById('swarmbox-voice-mic').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; })()")
         return r[0], r[1]
 
-    def hold(self, seconds, final_timeout=120):
+    def tap(self, x, y, hold=0.06):
+        """a finger: touchStart, touchEnd (the strip sends a tap on release)"""
+        self.page.call("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": x, "y": y}])
+        time.sleep(hold)
+        self.page.call("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
+
+    def strip_button(self, text):
+        """centre of a key button of the strip by its label"""
+        r = self.js("(() => { const b = Array.from(document.querySelectorAll('#swarmbox-strip .sb-key')).find(e => e.textContent === %s); "
+                    "if (!b) return null; const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()" % json.dumps(text))
+        return tuple(r) if r else None
+
+    def tap_key(self, text):
+        c = self.strip_button(text)
+        if c is None:
+            raise RuntimeError("no key button %r in the strip" % text)
+        self.tap(*c)
+
+    def hold(self, seconds, final_timeout=120, finger=False):
         """hold the microphone button for `seconds` (the mouse, as a person), release, follow the light until it shows an end state.
         Returns {press, release, timeline: [(abs time, state, note)], final}"""
         x, y = self.mic_center()
@@ -265,15 +300,22 @@ class Browser:
             if not tl or tl[-1][1:] != s:
                 tl.append((time.time(),) + s)
             return s[0]
-        self.mouse("mouseMoved", x, y)
-        press = time.time()
-        self.mouse("mousePressed", x, y)
+        if finger:
+            press = time.time()
+            self.page.call("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": x, "y": y}])
+        else:
+            self.mouse("mouseMoved", x, y)
+            press = time.time()
+            self.mouse("mousePressed", x, y)
         end = press + seconds
         while time.time() < end:
             poll()
             time.sleep(0.05)
         release = time.time()
-        self.mouse("mouseReleased", x, y)
+        if finger:
+            self.page.call("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
+        else:
+            self.mouse("mouseReleased", x, y)
         final = None
         while time.time() - release < final_timeout:
             st = poll()
@@ -738,8 +780,8 @@ def s2(box):
     time.sleep(3.5)
     br.screenshot("2b-page-nobody-listening")
     check("s2b: the page says 'Nobody is listening' (amber light, state nolistener)", state == "nolistener" and "Nobody is listening" in (note or ""), (state, note))
-    check("s2b: nothing was typed in the claude tab and the sysop saw no goal", not TYPED.search(box.cap(cw)) and box.goal_events() == n_goals and box.panel() is None,
-          (box.goal_events() - n_goals, box.panel()))
+    check("s2b: nothing was typed in the claude tab, the sysop saw no goal and its panel (always up) is still idle", not TYPED.search(box.cap(cw)) and box.goal_events() == n_goals
+          and "no goal." in box.panel_text() and "unless you veto it" not in box.panel_text(), (box.goal_events() - n_goals, box.panel_text()[-200:]))
     check("s2b: the page does not name the topic", "'a'" not in br.voice_text() and " b" not in br.voice_text().lower().replace("nobody", ""), br.voice_text())
     # 2c: two sysops in one group: a goal is handled once
     box.configure()                              # the default topic again, on both sides
@@ -1376,9 +1418,339 @@ def s7(box):
     E.REPORT["s7"] = {"messages": len(msgs), "texts": transcripts}
 
 
+# ====================================================================================================================== scenarios 8 to 10: the new page and the always-up panel
+PROBE = """(() => {
+  const R = e => { if (!e) return null; const b = e.getBoundingClientRect(); return {left: b.left, top: b.top, right: b.right, bottom: b.bottom, w: b.width, h: b.height}; };
+  const q = s => document.querySelector(s);
+  const scr = q('.xterm-screen').getBoundingClientRect();
+  const ch = scr.height / term.rows, cw = scr.width / term.cols;
+  const b = term.buffer.active, line = b.getLine(b.baseY + term.rows - 1), txt = line ? line.translateToString(true) : '';
+  const m = /\\d\\d:\\d\\d/.exec(txt);
+  const status = {left: scr.left, right: scr.right, top: scr.top + (term.rows - 1) * ch, bottom: scr.bottom}; status.w = status.right - status.left; status.h = status.bottom - status.top;
+  const clock = m ? {left: scr.left + m.index * cw, right: scr.left + (m.index + 5) * cw, top: status.top, bottom: status.bottom} : null;
+  let covered = null;
+  if (clock) { const e = document.elementFromPoint((clock.left + clock.right) / 2, (clock.top + clock.bottom) / 2); covered = e ? (e.closest('#swarmbox-strip') ? 'strip' : 'terminal') : 'nothing'; }
+  const note = q('#swarmbox-strip .sb-note');
+  return {win: [innerWidth, innerHeight], docw: document.documentElement.scrollWidth, rows: term.rows, cols: term.cols, status: status, statusText: txt, clock: clock, covered: covered,
+          strip: R(q('#swarmbox-strip')), stripShown: !!q('#swarmbox-strip') && !q('#swarmbox-strip').hidden, container: R(q('#terminal-container')), screen: R(q('.xterm-screen')),
+          mic: R(q('#swarmbox-voice-mic')), note: note && !note.hidden ? R(note) : null, coarse: matchMedia('(pointer: coarse)').matches,
+          keys: Array.from(document.querySelectorAll('#swarmbox-strip .sb-key')).map(e => Object.assign({t: e.textContent}, R(e))).filter(k => k.w > 0),
+          render: {dpr: devicePixelRatio, scale: window.visualViewport ? visualViewport.scale : null, fontSize: term.options.fontSize, vvw: window.visualViewport ? visualViewport.width : null,
+                   canvases: Array.from(document.querySelectorAll('.xterm-screen canvas')).map(c => [c.width, c.height, c.style.width, c.style.height]),
+                   cell: [scr.width / term.cols, scr.height / term.rows]}};
+})()"""
+
+
+def overlap(a, b, eps=0.5):
+    """True when two bounding boxes share area"""
+    return bool(a and b and a["left"] < b["right"] - eps and b["left"] < a["right"] - eps and a["top"] < b["bottom"] - eps and b["top"] < a["bottom"] - eps)
+
+
+def phone(box, kind="portrait", wav="en-banana"):
+    """a new browser (the fake microphone plays `wav`) as a phone: portrait 390x844 or landscape 844x390, touch, coarse pointer; or desktop"""
+    if box.br:
+        box.br.close()
+    box.br = Browser(box, wav, tag=kind)
+    ok = box.br.device(kind)
+    time.sleep(1.5)
+    return box.br, ok
+
+
+def s8(box):
+    """(a) the microphone never lies over the status bar of tmux and its clock: bounding boxes at desktop, phone portrait and phone landscape, a screenshot of each"""
+    box.scenario = "s8-geometry"
+    box.configure()
+    box.start_web()
+    tabs = box.reset_tabs(claude=False, extra=("two",))
+    box.select(tabs["shell"])
+    for kind in ("desktop", "portrait", "landscape"):
+        br, ok = phone(box, kind)
+        check("s8 %s: the page loads with the terminal and the microphone" % kind, ok, br.term_text()[-200:])
+        time.sleep(1.5)
+        g = br.js(PROBE)
+        box.save("8-%s-probe.json" % kind, g)
+        br.screenshot("8-%s-idle" % kind)
+        mic, strip, st, ck = g["mic"], g["strip"], g["status"], g["clock"]
+        check("s8 %s: the controls strip is there (%s keys, coarse pointer %s)" % (kind, len(g["keys"]), g["coarse"]), g["stripShown"] and g["coarse"] == (kind != "desktop")
+              and (len(g["keys"]) == 0) == (kind == "desktop"), (g["stripShown"], g["coarse"], len(g["keys"])))
+        check("s8 %s: the microphone is inside the strip, inside the window and at least 44 px (%.0fx%.0f)" % (kind, mic["w"], mic["h"]),
+              mic["w"] >= 43.9 and mic["h"] >= 43.9 and mic["left"] >= strip["left"] - 0.5 and mic["right"] <= strip["right"] + 0.5 and mic["top"] >= strip["top"] - 0.5
+              and mic["bottom"] <= strip["bottom"] + 0.5 and mic["right"] <= g["win"][0] + 0.5 and mic["bottom"] <= g["win"][1] + 0.5, (mic, strip, g["win"]))
+        check("s8 %s: the microphone does not overlap the status bar of tmux (its last row)" % kind, not overlap(mic, st), (mic, st))
+        check("s8 %s: the clock of the status bar is on its row (%r) and nothing of the strip is over it" % (kind, g["statusText"].strip()[-18:]), ck is not None and g["covered"] == "terminal"
+              and not overlap(mic, ck) and not overlap(strip, ck), (ck, g["covered"], g["statusText"]))
+        check("s8 %s: the whole strip is below the last row of the terminal and the terminal ends where the strip begins" % kind,
+              g["screen"]["bottom"] <= strip["top"] + 0.5 and g["container"]["bottom"] <= strip["top"] + 0.5 and strip["bottom"] <= g["win"][1] + 0.5, (g["screen"], g["container"], strip))
+        check("s8 %s: the microphone overlaps no key button and there is no horizontal scroll" % kind, not any(overlap(mic, k) for k in g["keys"]) and g["docw"] <= g["win"][0], (mic, g["docw"]))
+        rows = wait_for(lambda: box.tmux("list-clients", "-F", "#{client_height}").split()[:1] == [str(g["rows"])], 8, 0.25)
+        check("s8 %s: tmux sees exactly the %d rows xterm shows (the strip took its place out of the window)" % (kind, g["rows"]), rows is not None, box.tmux("list-clients", "-F", "#{client_width}x#{client_height}"))
+        # a sentence of the voice page: it covers the keys and ends where the microphone begins
+        br.js("window.swarmboxStrip.note('Nobody is listening', 'warn')")
+        time.sleep(0.3)
+        g2 = br.js(PROBE)
+        br.screenshot("8-%s-note" % kind)
+        check("s8 %s: the sentence of the strip ends before the microphone (no overlap) and is inside the strip" % kind,
+              g2["note"] is not None and not overlap(g2["note"], g2["mic"]) and g2["note"]["right"] <= g2["mic"]["left"] + 0.5 and g2["note"]["bottom"] <= g2["strip"]["bottom"] + 0.5, (g2["note"], g2["mic"]))
+        br.js("window.swarmboxStrip.note('')")
+        # the microphone while recording: its glow is a box-shadow and the strip does not grow
+        x, y = br.mic_center()
+        before = g["strip"]["h"]
+        if kind != "desktop":
+            br.page.call("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": x, "y": y}])
+        else:
+            br.mouse("mouseMoved", x, y)
+            br.mouse("mousePressed", x, y)
+        wait_for(lambda: br.light()[0] == "recording", 3, 0.02)
+        g3 = br.js(PROBE)
+        br.screenshot("8-%s-recording" % kind)
+        state = br.light()[0]
+        if kind != "desktop":
+            br.page.call("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
+        else:
+            br.mouse("mouseReleased", x, y)
+        check("s8 %s: recording (state %s): the strip keeps its height and the microphone its place, clear of the status bar" % (kind, state),
+              state in ("recording", "starting") and abs(g3["strip"]["h"] - before) < 1 and not overlap(g3["mic"], g3["status"]) and abs(g3["mic"]["left"] - mic["left"]) < 1, (state, before, g3["strip"]))
+        wait_for(lambda: br.light()[0] in FINAL_LIGHTS or br.light()[0] == "idle", 20, 0.2)
+        box.sh(["swarmbox-sysop", "stop"])          # the first half second of the file is silence, so nothing should be published; if a goal was made anyway it ends here
+        box.idle(30)
+        E.REPORT.setdefault("s8", {})[kind] = {"viewport": g["win"], "cells": [g["cols"], g["rows"]], "strip_h": round(g["strip"]["h"], 1), "mic": [round(mic["w"]), round(mic["h"])],
+                                              "status_row": [round(st["top"], 1), round(st["bottom"], 1)], "mic_top": round(mic["top"], 1)}
+        info("s8 %s" % kind, "viewport %dx%d, terminal %dx%d cells, strip %.0f px high, status row y %.0f..%.0f, microphone y %.0f..%.0f x %.0f..%.0f; render %s"
+             % (g["win"][0], g["win"][1], g["cols"], g["rows"], g["strip"]["h"], st["top"], st["bottom"], mic["top"], mic["bottom"], mic["left"], mic["right"], json.dumps(g["render"])))
+    phone(box, "desktop")
+
+
+def panel_rows(box, win=None):
+    """[(panel pane height, width, window height, window width, pane_top)] of the panels (of one window)"""
+    out = []
+    for row in box.tmux("list-panes", "-s", "-t", "main", "-F", "#{window_id}|#{@swarmbox_sysop_panel}|#{pane_height}|#{pane_width}|#{window_height}|#{window_width}|#{pane_top}|#{pane_active}").splitlines():
+        w, mark, ph, pw, wh, ww, top, act = row.split("|")
+        if mark == "1" and (win is None or w == win):
+            out.append((int(ph), int(pw), int(wh), int(ww), int(top), act == "1"))
+    return out
+
+
+def s9(box):
+    """(b) the thumb path on a phone: tap Panel (hide, show), tap Esc to interrupt a busy Claude Code tab, hold the microphone and speak, see the panel idle, the goal and the answer;
+    (c) the panel in portrait is 30 % and fits; (d) typing in the Claude tab while a goal arrives never reaches the panel; (e) the idle panel and the last goal"""
+    box.scenario = "s9-thumb"
+    box.configure(countdown=2)
+    box.start_web()
+    tabs = box.reset_tabs(claude=True)
+    cw, sw = tabs["claude"], tabs["shell"]
+    br, ok = phone(box, "portrait", "en-banana")
+    check("s9: the phone page (390x844, touch) loads with the strip, the keys and the microphone", ok and br.strip_button("Esc") is not None and br.strip_button("Panel") is not None, br.term_text()[-200:])
+    box.select(cw)
+    time.sleep(1.5)
+    br.js("term.focus()")
+    cols, rows = br.term_size()
+    info("s9 terminal on the phone", "%dx%d cells" % (cols, rows))
+    # (c) and (e): the panel in portrait
+    wait_for(lambda: "no goal." in br.term_text(), 15, 0.3)
+    txt = br.term_text()
+    br.screenshot("9-1-idle-portrait")
+    box.save("9-1-idle-terminal.txt", txt)
+    pr = panel_rows(box, cw)
+    ph, pw, wh, ww, top, act = pr[0] if pr else (0, 0, 0, 0, 0, True)
+    want = wh * 30 // 100
+    want = want if want >= 8 else max(1, min(8, wh // 2))
+    check("s9c: the panel of the window in portrait is at the bottom, 30%% of its height (%d of %d lines, expected about %d), at least 8 and no more than half" % (ph, wh, want),
+          bool(pr) and abs(ph - want) <= 1 and ph >= min(8, wh // 2) and ph <= wh // 2 + 1 and top > wh // 2 - 1 and pw == ww, pr)
+    check("s9c: the panel fits in %d columns: its head, the idle line and the key line are on the screen, nothing wider than the terminal" % cols,
+          all(x in txt for x in ("no goal.", "Ctrl+A")) and max((len(x) for x in txt.splitlines()), default=0) <= cols and not act, txt[-500:])
+    check("s9e: the idle panel has its head with IDLE or the last result, 'no goal', and the key line [g] Goal [q] Hide (a pane of 8 lines at 28 columns drops the long lines first)",
+          ("IDLE" in txt or "DONE" in txt or "FAILED" in txt or "STOPPED" in txt) and "SYSOP" in txt and "[g] Goal" in txt, txt[-500:])
+    ptxt = box.panel_text()
+    box.save("9-1-idle-panel.txt", ptxt)
+    # (b1) Panel hides and shows
+    n0 = len(panel_rows(box))
+    t = time.time()
+    br.tap_key("Panel")
+    gone = wait_for(lambda: not panel_rows(box), 8, 0.1)
+    t_hide = time.time() - t
+    time.sleep(0.5)
+    br.screenshot("9-2-panel-hidden")
+    check("s9b: tapping Panel hides the panels of all windows (%d before, %.1f s)" % (n0, t_hide), gone is not None and "no goal." not in br.term_text(), (panel_rows(box), br.term_text()[-200:]))
+    t = time.time()
+    br.tap_key("Panel")
+    up = wait_for(lambda: box.panels_up() and "no goal." in br.term_text(), 15, 0.1)
+    t_show = time.time() - t
+    check("s9b: tapping Panel again shows them in every window and the idle screen is back in the browser (%.1f s)" % t_show, up is not None, (panel_rows(box), br.term_text()[-200:]))
+    check("s9b: the focus stayed in the Claude tab through both taps (the panel is not active, the Claude pane is)",
+          all(not r[5] for r in panel_rows(box)) and box.tmux("display-message", "-p", "-t", box.pane_of(cw), "#{pane_active}") == "1", panel_rows(box))
+    # (b2) Esc interrupts a busy Claude Code
+    br.send_keys("write an essay of 3000 words on the history of lighthouses, no tools, no preamble\r", gap=0.01)
+    def streaming():
+        # at this width (28 columns) Claude Code's footer shows no `esc to interrupt` and no `·` at all, so busy is seen by the screen moving
+        a = box.cap(cw)
+        time.sleep(0.8)
+        b = box.cap(cw)
+        return a != b and re.search(r"^❯\s*$", b, re.M) is not None        # the screen moves and the prompt has left the input box: Claude is working on it
+    busy = wait_for(streaming, 60, 0.1)
+    check("s9b: Claude Code in the tab is busy (typed on the phone keyboard; its screen is streaming)", busy is not None, box.cap(cw)[-300:])
+    t = time.time()
+    br.tap_key("Esc")
+
+    def stopped_now():
+        c = box.cap(cw)
+        if "Interrup" not in c and not re.search(r"^❯\s+write an essay", c, re.M):         # "Interrupted" is cut at 28 columns; an Esc before the first words
+            return False                          # arrive gives the prompt back in the input box instead
+        a = box.cap(cw)
+        time.sleep(1.0)
+        return a == box.cap(cw)
+    stopped = wait_for(stopped_now, 15, 0.1)
+    t_esc = time.time() - t
+    box.save("9-3-claude-after-esc.txt", box.cap(cw))
+    br.screenshot("9-3-after-esc")
+    check("s9b: tapping Esc interrupts the busy Claude Code tab (%.1f s)" % t_esc, stopped is not None, box.cap(cw)[-400:])
+    check("s9b: the Esc went to the Claude pane, not to the panel (the panel is idle, not focused)", "no goal." in box.panel_text() and not any(r[5] for r in panel_rows(box)), box.panel_text()[-200:])
+    # (d) typing along while a goal arrives, on the phone
+    since = time.time()
+    rc, gid_d, _ = box.pub("in the tab named shell run the command: echo hello-9d", "voice")
+    actives, seen_goal = [], False
+    for ch in "cxgqcxgqcxgq":
+        br.send_keys(ch, gap=0)
+        actives += [r[5] for r in panel_rows(box, cw)]
+        seen_goal = seen_goal or "unless you veto it" in br.term_text()
+        time.sleep(0.35)
+    ok = wait_for(lambda: "hello-9d" in box.cap(sw).replace("echo hello-9d", ""), 120)
+    st = box.wait_goal(gid_d, 60)
+    decisions = [d.get("decision") for d in box.decisions(gid_d)]
+    claude_box = box.cap(cw)
+    box.save("9-4-claude-tab.txt", claude_box)
+    check("s9d: the goal arrived while the user typed on the phone (panel seen %d times) and the panel never had the focus" % len(actives), len(actives) > 0 and not any(actives), actives)
+    check("s9d: the keys c x g q went to the input box of Claude Code, not to the panel", "cxgqcxgqcxgq" in claude_box.replace("\n", ""), claude_box[-300:])
+    check("s9d: no veto, no stop, no new goal from those keys; the goal ended done and the shell tab ran the command", ok is not None and (st or {}).get("state") == "done"
+          and "vetoed" not in decisions and "stop" not in decisions, (decisions, (st or {}).get("state"), box.cap(sw)[-200:]))
+    br.tap_key("^C")            # the thumb clears the draft
+    cleared = wait_for(lambda: "cxgq" not in box.cap(cw), 5, 0.2)
+    check("s9b: tapping ^C clears the draft of the Claude tab", cleared is not None, box.cap(cw)[-200:])
+    box.idle(60)
+    box.select(cw)
+    time.sleep(1.4)
+    # (b3) hold the microphone with a finger and speak: the panel idle, then the goal, then the answer
+    before_panel = box.panel_text()
+    before = box.cap(cw)
+    since = time.time()
+    dur = wav_seconds("en-banana")
+    seen = {}
+    h = br.hold(max(1.0, dur - 0.4), finger=True)
+    rel = h["release"]
+    gid = None
+    snaps = []
+
+    def tick():
+        nonlocal gid
+        t = time.time() - rel
+        if gid is None:
+            g = box.voice_goals(since)
+            if g:
+                gid = g[0][0]
+                seen["goal"] = t
+        pt = box.panel_text()
+        if "unless you veto it" in " ".join(pt.split()) and "countdown" not in seen:
+            seen["countdown"] = t
+            snaps.append(br.term_text())
+            br.screenshot("9-5-countdown")
+        s = box.cap(cw)
+        if "typed" not in seen and TYPED.search(s) and s != before:
+            seen["typed"] = t
+        if ANSWER_EN.search(s):
+            seen["answer"] = t
+            return True
+        st = box.goal_state(gid) if gid else None
+        return bool(st and st.get("state") in ("failed", "stopped"))
+    wait_for(tick, 120, 0.1)
+    st = box.wait_goal(gid, 60) if gid else None
+    states = [t[1] for t in h["timeline"]]
+    br.screenshot("9-6-answer")
+    box.save("9-6-claude-tab.txt", box.cap(cw))
+    check("s9b: holding the microphone with a finger: the light went recording, sending, sent", "recording" in states and "sending" in states and h["final"] is not None and h["final"][1] == "sent", states)
+    check("s9b: the panel was idle before the goal ('no goal.')", "no goal." in before_panel, before_panel[-200:])
+    check("s9b: the goal reached the sysop, the countdown showed in the phone terminal and the panel never had the focus", bool(gid) and "countdown" in seen and not any(r[5] for r in panel_rows(box)), (seen, panel_rows(box)))
+    check("s9b: the prompt was typed in the Claude tab and the answer appeared", "typed" in seen and "answer" in seen, "%s; tab: %s" % (seen, box.cap(cw)[-300:]))
+    check("s9b: the goal ended done", (st or {}).get("state") == "done", (st or {}).get("error"))
+    # (e) the idle panel after the goal
+    wait_for(lambda: "last goal (voice" in box.panel_text(), 15, 0.3)
+    wait_for(lambda: "no goal." in br.term_text(), 15, 0.3)
+    after = box.panel_text()
+    br.screenshot("9-7-idle-after-goal")
+    box.save("9-7-panel-after-goal.txt", after)
+    box.save("9-7-terminal-after-goal.txt", br.term_text())
+    check("s9e: after the goal the panel is idle again and shows the last goal (source voice) with its result", "no goal." in after and "last goal (voice" in after and ("done:" in after or "DONE" in after or "failed:" in after), after[-600:])
+    check("s9e: the idle panel keeps its head, 'no goal' and the key line after the goal", all(x in after for x in ("SYSOP", "no goal.", "[g] Goal")), after[-600:])
+    summary = ((st or {}).get("summary") or "").split()
+    check("s9e: the END of the result of the goal ('%s') is on the 8-line panel of the phone, not only the DONE badge and the goal text" % " ".join(summary[-2:]),
+          len(summary) >= 2 and " ".join(summary[-2:]) in " ".join(after.split()), (summary, after[-500:]))
+    info("s9 path", "release -> goal %.1fs, countdown shown %.1fs, prompt typed %.1fs, answer %.1fs (countdown 2 s, whisper small, haiku); Esc %.1fs; Panel hide %.1fs show %.1fs"
+         % (seen.get("goal", -1), seen.get("countdown", -1), seen.get("typed", -1), seen.get("answer", -1), t_esc, t_hide, t_show))
+    E.REPORT["s9"] = {"seen": {k: round(v, 2) for k, v in seen.items()}, "esc_s": round(t_esc, 2), "panel_hide_s": round(t_hide, 2), "panel_show_s": round(t_show, 2), "terminal_cells": [cols, rows],
+                      "panel": pr}
+    if seen.get("answer"):
+        TIMES.append(seen["answer"])
+    phone(box, "desktop")
+
+
+def s10(box):
+    """(f) a window created while the panel is always up gets its own panel and is not listed as a tab; the browser makes the window (Alt+N and the + button)"""
+    box.scenario = "s10-new-window"
+    box.configure()
+    box.start_web()
+    tabs = box.reset_tabs(claude=False, extra=("two",))
+    br, ok = phone(box, "desktop")
+    box.select(tabs["shell"])
+    time.sleep(1.4)
+    br.js("term.focus()")
+    n0 = len(box.windows())
+    wait_for(box.panels_up, 10)
+
+    def listed():
+        r = box.sh(["swarmbox-tabs", "list"])
+        try:
+            d = json.loads(r.stdout)
+        except ValueError:
+            return []
+        return d.get("tabs", d) if isinstance(d, dict) else d
+    check("s10: before: %d windows, each with a panel, and swarmbox-tabs lists %d tabs" % (n0, n0), box.panels_up() and len(listed()) == n0, (box.panes(), listed()))
+    t = time.time()
+    br.key("n", mods=1)            # Alt+N: a new window, from the browser
+    got = wait_for(lambda: len(box.windows()) == n0 + 1 and box.panels_up(), 15, 0.1)
+    t_panel = time.time() - t
+    check("s10: Alt+N in the browser made a window and its panel is up (%.1f s)" % t_panel, got is not None, (box.windows(), box.panes()))
+    tl = listed()
+    panel_panes = {p["pane"] for p in box.panes() if p["panel"] == "1"}
+    check("s10: the new window is a tab and its panel is not: %d tabs listed for %d windows, none of them is a panel pane, one pane each" % (len(tl), n0 + 1),
+          len(tl) == n0 + 1 and not any(x.get("pane") in panel_panes for x in tl) and all(len(x.get("panes") or []) == 1 for x in tl), tl)
+    check("s10: the panel of the new window is idle, unfocused, and the new window's own pane is the active one",
+          all(p["active"] == "0" for p in box.panes() if p["panel"] == "1") and "no goal." in box.panel_text(), box.panes())
+    time.sleep(1.0)
+    br.screenshot("10-new-window")
+    box.save("10-terminal.txt", br.term_text())
+    names = [w["name"] for w in box.windows()]
+    check("s10: no window is named after the panel (python3 or swarmbox-sysop) and the status bar lists %d windows" % (n0 + 1), not any("python" in n or "sysop" in n for n in names), names)
+    # the + button of the status bar (a click on its cells) makes another one
+    txt = br.term_text().splitlines()
+    n1 = len(box.windows())
+    status = next((l for l in reversed(txt) if "+" in l and ":" in l), "")
+    col = status.find("+")
+    if col >= 0:
+        br.click_cell(col, br.term_size()[1] - 1)
+        got = wait_for(lambda: len(box.windows()) == n1 + 1 and box.panels_up(), 15, 0.2)
+        check("s10: the + button of the status bar makes a window with its panel", got is not None, (box.windows(), status))
+    else:
+        info("s10", "the + button is not in the status row; skipped: %r" % status)
+    tl = listed()
+    check("s10: after both, every window has exactly one panel and the tabs listed are the windows", box.panels_up() and len(tl) == len(box.windows()), (len(tl), len(box.windows())))
+    # closing the new windows leaves the rest with their panels
+    for w in [w["id"] for w in box.windows()][n0:]:
+        box.tmux("kill-window", "-t", w)
+    check("s10: closing them leaves the first windows with their panels", wait_for(lambda: len(box.windows()) == n0 and box.panels_up(), 10) is not None, (box.windows(), box.panes()))
+
+
 # ====================================================================================================================== main
 SCENARIOS = {1: ("the path of version 1", s1), 2: ("topics are settings", s2), 3: ("no sysop, stopped, bus down", s3), 4: ("the panel in the browser terminal", s4),
-             5: ("the path of a tunnel", s5), 6: ("a goal that needs approval", s6), 7: ("screens never pass through the bus", s7)}
+             5: ("the path of a tunnel", s5), 6: ("a goal that needs approval", s6), 7: ("screens never pass through the bus", s7),
+             8: ("the microphone and the status bar: desktop, phone portrait and landscape", s8), 9: ("the thumb path on a phone", s9), 10: ("a new window with the panel always up", s10)}
 
 
 def summary():

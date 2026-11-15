@@ -66,7 +66,7 @@ class PageAssets(unittest.TestCase):
             self.assertFalse(bad in js, 'page.js must not contain ' + bad)
         # text reaches the page only through textContent (el() and show()); there is no form control to fill
         self.assertIn("e.textContent = String(text)", js)
-        self.assertIn("noteEl.textContent = msg", js)
+        self.assertIn("strip.note(msg, tone)", js)
         self.assertEqual(re.findall(r"\.(?:value)\s*=", js), [], "no form control is filled")
 
     def test_the_assets_can_be_injected_into_a_page(self):
@@ -87,7 +87,7 @@ class PageAssets(unittest.TestCase):
         css = re.sub(r"/\*.*?\*/", "", read(CSS), flags=re.S)
         for sel in re.findall(r"(?m)^([^{}@\n][^{}]*)\{", css):
             for part in sel.split(","):
-                self.assertTrue(part.strip().startswith("#swarmbox-voice"), "rule escapes its root: " + part.strip())
+                self.assertTrue(part.strip().startswith("#swarmbox-voice-mic"), "rule escapes its root: " + part.strip())
 
     def test_required_pieces(self):
         js = read(JS)
@@ -98,7 +98,7 @@ class PageAssets(unittest.TestCase):
                 needle = "' '"
             self.assertTrue(needle in js, 'page.js lacks ' + needle)
         css = read(CSS)
-        for needle in ("touch-action: none", "user-select: none", "env(safe-area-inset-bottom", "(pointer: coarse)", ".sv-light",
+        for needle in ("touch-action: none", "user-select: none", "min-width: 44px", ".sv-light",
                        'data-state="recording"', 'data-state="sent"', 'data-state="error"', 'data-state="nothing"', 'data-state="sending"', 'data-state="nolistener"', 'data-state="busy"'):
             self.assertTrue(needle in css, 'page.css lacks ' + needle)
 
@@ -116,6 +116,17 @@ class PageAssets(unittest.TestCase):
         styled = set(re.findall(r"\.(sv-[a-z-]+)", css))
         self.assertEqual(used - styled, set(), "classes without a style")
         self.assertEqual(styled - used, set(), "styles of classes nothing uses")
+
+    def test_the_microphone_lives_in_the_strip_of_the_host_and_floats_nowhere(self):
+        js, css = code_only(read(JS)), read(CSS)
+        self.assertIn("window.swarmboxStrip", js)
+        self.assertIn("strip.add(", js)
+        for floating in ("position: fixed", "position:fixed", "position: sticky", "z-index"):
+            self.assertNotIn(floating, css, "the microphone must not float over the terminal")
+        self.assertNotIn("document.body.appendChild", js, "the page adds nothing to the body itself: the strip is the place")
+        # the voice page knows no other control of the strip, nor the sysop
+        for other in ("Panel", "sysop", "Escape", "term.input", "swarmbox-strip"):
+            self.assertNotIn(other, js, "page.js must not know " + other)
 
     def test_the_page_only_posts_audio(self):
         js = code_only(read(JS))

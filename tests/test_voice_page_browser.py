@@ -35,13 +35,14 @@ from helpers import ROOT  # noqa: E402
 from test_clipboard_bridge import CDP  # noqa: E402
 
 WEB = os.path.join(ROOT, "container", "tools", "voice", "web")
+HOST = os.path.join(ROOT, "container", "web")
 CHROMIUM = next((c for c in (shutil.which(n) for n in ("chromium", "chromium-browser", "google-chrome")) if c), None)
 
 HOSTILE = '<img src=x onerror="window.__pwn=1"><script>window.__pwn=2</script>'
 
 BASE_PAGE = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>stub terminal</title><style>html,body{margin:0;height:100%%;background:#0c0b10}%s</style></head>
-<body><div id="terminal" style="height:100%%"></div><script>%s</script></body></html>"""
+<title>stub terminal</title><style>html,body{margin:0;height:100%%;background:#0c0b10}#terminal-container{height:100%%}%s%s</style></head>
+<body><div id="terminal-container"><div id="terminal" style="height:100%%"></div></div><script>%s</script><script>%s</script></body></html>"""
 
 
 def free_port():
@@ -72,7 +73,12 @@ class Stub:
             js = f.read()
         with open(os.path.join(WEB, "page.css"), encoding="utf-8") as f:
             css = f.read()
-        self.page = (BASE_PAGE % (css, js)).encode()
+        # the controls strip is part of the HOST page: the real one is in the stub page, as build-index.sh puts it in ttyd's
+        with open(os.path.join(HOST, "ttyd-style.css"), encoding="utf-8") as f:
+            host_css = f.read()
+        with open(os.path.join(HOST, "ttyd-clipboard.js"), encoding="utf-8") as f:
+            host_js = f.read()
+        self.page = (BASE_PAGE % (host_css, css, host_js, js)).encode()
 
         class H(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -221,22 +227,22 @@ class VoicePage(unittest.TestCase):
         self.wait("!!document.querySelector('#swarmbox-voice-mic')", what="the mic button")
         x, y = self.center("#swarmbox-voice-mic")
         self.mouse("mousePressed", x, y)
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'recording'", what="recording")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'recording'", what="recording")
         time.sleep(seconds)
         if release:
             self.mouse("mouseReleased", x, y)
 
     def state(self):
-        return self.page.js("document.querySelector('#swarmbox-voice').dataset.state")
+        return self.page.js("document.querySelector('#swarmbox-voice-mic').dataset.state")
 
     def note(self):
-        return self.page.js("(() => { const n = document.querySelector('.sv-note'); return n.hidden ? '' : n.textContent; })()")
+        return self.page.js("(() => { const n = document.querySelector('#swarmbox-strip .sb-note'); return n.hidden ? '' : n.textContent; })()")
 
     # ---- tests ---------------------------------------------------------------------------------
     def test_the_button_is_absent_when_the_service_is_absent(self):
         self.open(Stub(healthy=False))
         time.sleep(1.5)
-        self.assertFalse(self.page.js("!!document.querySelector('#swarmbox-voice')"))
+        self.assertFalse(self.page.js("!!document.querySelector('#swarmbox-voice-mic')"))
         self.assertTrue(self.page.js("!!document.querySelector('#terminal')"), "the terminal is untouched")
 
     def test_hold_records_posts_wav_and_only_the_light_changes(self):
@@ -248,10 +254,10 @@ class VoicePage(unittest.TestCase):
         self.assertEqual(self.note(), "Listening")
         x, y = self.center("#swarmbox-voice-mic")
         self.mouse("mouseReleased", x, y)
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'sending'", what="sending")
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'sent'", what="sent")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'sending'", what="sending")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'sent'", what="sent")
         self.assertEqual(self.note(), "Sent")
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'idle'", timeout=6, what="back to idle")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'idle'", timeout=6, what="back to idle")
         up = self.stub.posts()
         self.assertEqual([(r[1], r[2]) for r in up], [("/voice/audio", "audio/wav")], "the only request is the audio upload")
         body = up[0][3]
@@ -268,11 +274,11 @@ class VoicePage(unittest.TestCase):
     def test_the_page_shows_only_a_microphone_and_a_light(self):
         self.open(Stub(answer=(200, {"ok": True, "state": "sent", "text": "SECRET transcript", "id": "p1"})))
         self.hold()
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'sent'", what="sent")
-        self.assertEqual(self.page.js("document.querySelectorAll('#swarmbox-voice button').length"), 1)
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'sent'", what="sent")
+        self.assertEqual(self.page.js("document.querySelectorAll('#swarmbox-strip button').length"), 1)
         for gone in (".sv-card", ".sv-run", ".sv-btn", ".sv-risk", "textarea", "input"):
-            self.assertEqual(self.page.js("document.querySelectorAll(%s).length" % json.dumps("#swarmbox-voice " + gone)), 0, gone)
-        text = self.page.js("document.querySelector('#swarmbox-voice').innerText")
+            self.assertEqual(self.page.js("document.querySelectorAll(%s).length" % json.dumps("#swarmbox-strip " + gone)), 0, gone)
+        text = self.page.js("document.querySelector('#swarmbox-strip').innerText")
         self.assertNotIn("SECRET", text)
         self.assertNotIn("SECRET", self.page.js("document.documentElement.outerHTML"), "an extra field of the answer is never shown")
         self.assertEqual(text.strip(), "Sent")
@@ -280,14 +286,14 @@ class VoicePage(unittest.TestCase):
     def test_nothing_heard_is_its_own_light(self):
         self.open(Stub(answer=(200, {"ok": False, "state": "nothing_heard", "message": "Nothing heard."})))
         self.hold()
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'nothing'", what="nothing heard")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'nothing'", what="nothing heard")
         self.assertEqual(self.note(), "Nothing heard")
         self.assertEqual(len(self.stub.posts()), 1)
 
     def state_after(self, answer):
         self.open(Stub(answer=answer))
         self.hold()
-        self.wait("['sent','nothing','nolistener','busy','error'].includes(document.querySelector('#swarmbox-voice').dataset.state)", what="an answer state")
+        self.wait("['sent','nothing','nolistener','busy','error'].includes(document.querySelector('#swarmbox-voice-mic').dataset.state)", what="an answer state")
         return self.state(), self.note()
 
     def test_no_listener_says_only_that_nobody_is_listening(self):
@@ -299,7 +305,7 @@ class VoicePage(unittest.TestCase):
         self.assertEqual(self.state_after((503, {"ok": False, "state": "busy", "message": "x"}))[0], "busy")
         self.stub.answer = (200, {"ok": True, "state": "sent"})
         self.hold()
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'sent'", what="sent after busy")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'sent'", what="sent after busy")
 
     def test_bus_down_is_an_error_light_with_a_sentence(self):
         st = self.state_after((503, {"ok": False, "state": "bus_down", "message": "x"}))
@@ -313,37 +319,37 @@ class VoicePage(unittest.TestCase):
     def test_a_service_error_is_a_short_sentence_in_the_light(self):
         self.open(Stub(answer=(422, {"error": "stt_failed", "message": "The speech recognizer failed."})))
         self.hold()
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'error'", what="error")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'error'", what="error")
         self.assertEqual(self.note(), "The speech recognizer failed.")
         # and the next try works (the page is not stuck)
         self.stub.answer = (200, {"ok": True, "state": "sent"})
         self.hold()
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'sent'", what="sent after an error")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'sent'", what="sent after an error")
         self.assertEqual(len(self.stub.posts()), 2)
 
     def test_text_from_the_service_is_text_not_markup(self):
         self.open(Stub(answer=(422, {"error": "x", "message": HOSTILE})))
         self.hold()
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'error'", what="error")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'error'", what="error")
         time.sleep(0.4)
         self.assertFalse(self.page.js("'__pwn' in window"), "no handler or script ran")
-        self.assertEqual(self.page.js("document.querySelectorAll('#swarmbox-voice img, #swarmbox-voice script').length"), 0)
+        self.assertEqual(self.page.js("document.querySelectorAll('#swarmbox-strip img, #swarmbox-strip script').length"), 0)
         self.assertIn("<img src=x", self.note())
 
     def test_a_denied_microphone_gives_a_short_message(self):
         self.open(Stub(), init_script="navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('no', 'NotAllowedError'));")
         self.wait("!!document.querySelector('#swarmbox-voice-mic')")
         self.click("#swarmbox-voice-mic")
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'error'", what="a message")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'error'", what="a message")
         self.assertEqual(self.note(), "Microphone blocked. Allow it in the site settings.")
         self.assertEqual(self.stub.posts(), [])
 
     def test_a_browser_without_a_microphone_api_says_so(self):
         self.open(Stub(), init_script="Object.defineProperty(navigator, 'mediaDevices', {value: undefined});")
         self.wait("!!document.querySelector('#swarmbox-voice-mic')")
-        self.assertEqual(self.page.js("document.querySelector('#swarmbox-voice').dataset.support"), "no")
+        self.assertEqual(self.page.js("document.querySelector('#swarmbox-voice-mic').dataset.support"), "no")
         self.click("#swarmbox-voice-mic")
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'error'")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'error'")
         self.assertIn("cannot record", self.note())
 
     def test_a_tap_that_is_too_short_sends_nothing(self):
@@ -362,24 +368,27 @@ class VoicePage(unittest.TestCase):
         self.wait("!!document.querySelector('#swarmbox-voice-mic')")
         x, y = self.center("#swarmbox-voice-mic")
         self.page.call("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": x, "y": y}])
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'recording'", what="recording by touch")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'recording'", what="recording by touch")
         time.sleep(1.3)
         self.page.call("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
-        self.wait("document.querySelector('#swarmbox-voice').dataset.state === 'error'", what="the error light")
+        self.wait("document.querySelector('#swarmbox-voice-mic').dataset.state === 'error'", what="the error light")
         self.assertEqual(len(self.stub.posts()), 1)
         geo = self.page.js("""(() => { const out = {w: innerWidth, h: innerHeight, scroll: document.documentElement.scrollWidth};
-          for (const sel of ['.sv-mic', '.sv-note']) { const b = document.querySelector(sel).getBoundingClientRect();
+          for (const sel of ['#swarmbox-voice-mic', '#swarmbox-strip .sb-note', '#swarmbox-strip', '#terminal-container']) { const b = document.querySelector(sel).getBoundingClientRect();
             out[sel] = {left: b.left, right: b.right, top: b.top, bottom: b.bottom, w: b.width, h: b.height}; }
           return out; })()""")
-        for sel in (".sv-mic", ".sv-note"):
+        for sel in ("#swarmbox-voice-mic", "#swarmbox-strip .sb-note"):
             b = geo[sel]
             self.assertGreaterEqual(b["left"], 0, sel)
             self.assertLessEqual(b["right"], geo["w"], sel)
             self.assertGreaterEqual(b["top"], 0, sel)
             self.assertLessEqual(b["bottom"], geo["h"], sel)
         self.assertLessEqual(geo["scroll"], geo["w"], "no horizontal scroll")
-        self.assertGreaterEqual(min(geo[".sv-mic"]["w"], geo[".sv-mic"]["h"]), 44, "a touch target")
-        self.assertLess(geo[".sv-note"]["bottom"], geo[".sv-mic"]["top"], "the sentence is above the button, not on it")
+        self.assertGreaterEqual(min(geo["#swarmbox-voice-mic"]["w"], geo["#swarmbox-voice-mic"]["h"]), 44, "a touch target")
+        mic, strip, term = geo["#swarmbox-voice-mic"], geo["#swarmbox-strip"], geo["#terminal-container"]
+        self.assertGreaterEqual(mic["top"], strip["top"], "the microphone is in the strip")
+        self.assertLessEqual(mic["bottom"], strip["bottom"])
+        self.assertLessEqual(term["bottom"], strip["top"] + 0.5, "the strip is below the terminal and covers none of it")
 
 
 if __name__ == "__main__":

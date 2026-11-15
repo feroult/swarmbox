@@ -205,6 +205,9 @@ jobs:
           python3 tests/test_web_style.py
           python3 tests/test_tmux_browser_keys.py
           python3 tests/test_voice_page_browser.py
+          # the real-tmux gate (SWARMBOX_TEST_REAL_TMUX) is set only here: without it these files skip their browser and tmux layers
+          SWARMBOX_TEST_REAL_TMUX=1 python3 tests/test_web_strip.py
+          SWARMBOX_TEST_REAL_TMUX=1 python3 tests/test_sysop_dock.py
 
   # The real-installer tests: every tool of container/tools is installed for real in a throwaway container
   # ("no side effects", "survives a reset"). They download several hundred MB, so they run on the weekly schedule and by hand,

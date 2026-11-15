@@ -11,6 +11,12 @@
 #   padding      a number from 0 to 99 (pixels around the terminal), default 10
 #   ctrlVPaste   true (default) or false
 #   ctrlCCopy    true (default) or false
+#   strip        auto (default), on or off: the controls strip under the terminal. auto shows it when it has something to show (the key buttons
+#                on a touch screen, or when stripKeys is set; a plugin control such as the microphone on any screen); off never shows it
+#                (a plugin then has no place for its controls)
+#   stripKeys    the key buttons of the strip: entries `label=keys` separated by commas, keys written as tmux key names separated by spaces
+#                (Escape Tab Up C-c M-x F5 ...; "C-a S" is Ctrl+A then S). Default: Esc=Escape, Tab=Tab, ^C=C-c, arrows, Panel=C-a S, Veto=C-a V, Stop=C-a X.
+#                An empty value means no buttons.
 #   scrollbar    true or false (default false): a thin scrollbar on the right; tmux owns the scrollback, so it is off, and so is the
 #                scrollback of the browser (scrollback=0, unless you set one)
 # Every other key of that file is a ttyd/xterm.js option (font, theme, size, scrollback ...) and goes to ttyd as `-t key=value`;
@@ -68,6 +74,8 @@ declare -A OPT=(
     [fontWeight]=400
     [fontWeightBold]=700
     [padding]=10
+    [strip]=auto
+    [stripKeys]="Esc=Escape, Tab=Tab, ^C=C-c, ↑=Up, ↓=Down, ←=Left, →=Right, Panel=C-a S, Veto=C-a V, Stop=C-a X"
     [macOptionIsMeta]=true
     [cursorBlink]=true
     [titleFixed]=SwarmBox
@@ -97,6 +105,23 @@ if ! [[ "$PAD" =~ ^[0-9]{1,2}$ ]]; then
     warn "padding='$PAD' in $CONF is not a number from 0 to 99; using 10"
     PAD=10
 fi
+STRIP=${OPT[strip]:-auto}
+case "$STRIP" in
+    auto|on|off) ;;
+    *) warn "strip='$STRIP' in $CONF is not auto, on or off; using auto"; STRIP=auto ;;
+esac
+# the user listed the key buttons (an empty list included) when the conf has a stripKeys line; the default list is not "listed"
+STRIP_CUSTOM=false
+[ -f "$CONF" ] && grep -Eq '^[[:space:]]*stripKeys[[:space:]]*=' "$CONF" && STRIP_CUSTOM=true
+STRIP_KEYS=${OPT[stripKeys]-}
+# for a JS string inside the page (a script element), then for the replacement of sed
+STRIP_KEYS=${STRIP_KEYS//$'\t'/ }
+STRIP_KEYS=${STRIP_KEYS//\\/\\\\}
+STRIP_KEYS=${STRIP_KEYS//\"/\\\"}
+STRIP_KEYS=${STRIP_KEYS//</\\u003c}
+STRIP_KEYS=${STRIP_KEYS//\\/\\\\}
+STRIP_KEYS=${STRIP_KEYS//&/\\&}
+STRIP_KEYS=${STRIP_KEYS//\//\\\/}
 SCROLLBAR_PX=0
 SCROLLBAR_FF=none
 if [ "${OPT[scrollbar]:-}" = true ]; then
@@ -106,7 +131,7 @@ fi
 # Without a scrollbar the browser keeps no history either (tmux has it): xterm.js reserves 15 px for a scrollbar it measures as zero width
 # (and none when scrollback is 0), so a hidden bar with a scrollback would still cost a column. A scrollback set in the conf wins.
 if [ "${OPT[scrollbar]:-}" != true ] && [ -z "${OPT[scrollback]+x}" ]; then OPT[scrollback]=0; fi
-unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]' 'OPT[padding]' 'OPT[scrollbar]'
+unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]' 'OPT[padding]' 'OPT[scrollbar]' 'OPT[strip]' 'OPT[stripKeys]'
 
 # voice_front_bin: prints the real swarmbox-voice when the front is to be used, else nothing. One place for the rule: the setting is on and
 # the tool is installed (swarmbox-tool decides, with the same logic as everywhere else) and carries the front and the page parts.
@@ -125,7 +150,7 @@ VOICE_BIN=$(voice_front_bin)
 render() {
     [ -r "$PAGE" ] || die "the built page $PAGE is missing (build-index.sh runs at image build; is this the right image?)"
     local ph
-    for ph in __SWARMBOX_PADDING__ __SWARMBOX_CTRL_V__ __SWARMBOX_CTRL_C__ __SWARMBOX_SCROLLBAR__ __SWARMBOX_SCROLLBAR_FF__; do
+    for ph in __SWARMBOX_PADDING__ __SWARMBOX_CTRL_V__ __SWARMBOX_CTRL_C__ __SWARMBOX_SCROLLBAR__ __SWARMBOX_SCROLLBAR_FF__ __SWARMBOX_STRIP__ __SWARMBOX_STRIP_CUSTOM__ __SWARMBOX_STRIP_KEYS__; do
         grep -q "$ph" "$PAGE" || die "the built page $PAGE has no $ph placeholder (a stale page? rebuild the image)"
     done
     mkdir -p "$SB_RUN_DIR" || die "cannot create $SB_RUN_DIR"
@@ -135,7 +160,7 @@ render() {
         voice_tags=(-e 's#</head>#<link rel="stylesheet" href="/voice/page.css"></head>#' -e 's#</body>#<script src="/voice/page.js" defer></script></body>#')
     fi
     tmp=$(mktemp "$SB_RUN_DIR/index.html.XXXXXX") || die "cannot write in $SB_RUN_DIR"
-    if ! sed -e "s/__SWARMBOX_PADDING__/$PAD/g" -e "s/__SWARMBOX_CTRL_V__/$CTRL_V/g" -e "s/__SWARMBOX_CTRL_C__/$CTRL_C/g" -e "s/__SWARMBOX_SCROLLBAR__/$SCROLLBAR_PX/g" -e "s/__SWARMBOX_SCROLLBAR_FF__/$SCROLLBAR_FF/g" "${voice_tags[@]}" "$PAGE" > "$tmp" \
+    if ! sed -e "s/__SWARMBOX_PADDING__/$PAD/g" -e "s/__SWARMBOX_CTRL_V__/$CTRL_V/g" -e "s/__SWARMBOX_CTRL_C__/$CTRL_C/g" -e "s/__SWARMBOX_SCROLLBAR__/$SCROLLBAR_PX/g" -e "s/__SWARMBOX_SCROLLBAR_FF__/$SCROLLBAR_FF/g" -e "s/__SWARMBOX_STRIP__/$STRIP/g" -e "s/__SWARMBOX_STRIP_CUSTOM__/$STRIP_CUSTOM/g" -e "s/__SWARMBOX_STRIP_KEYS__/$STRIP_KEYS/g" "${voice_tags[@]}" "$PAGE" > "$tmp" \
         || ! chmod 644 "$tmp" || ! mv -f "$tmp" "$SB_RUN_DIR/index.html"; then
         rm -f "$tmp"
         die "cannot write $SB_RUN_DIR/index.html"
@@ -173,7 +198,9 @@ json_value() {
 TTYD_ARGS=(-p "${SWARMBOX_TEST_WEB_PORT:-7681}")
 [ -n "${SWARMBOX_TEST_WEB_IFACE:-}" ] && TTYD_ARGS+=(-i "$SWARMBOX_TEST_WEB_IFACE")
 # -W writable (ttyd is read-only by default); -O refuse websockets whose Origin differs from the Host, so a random web page
-# cannot drive the terminal through localhost. Authentication is not done here: Cloudflare Access sits in front.
+# cannot drive the terminal through localhost. It does not stop another origin from FRAMING the page (the socket of a framed page has the same origin as
+# the Host): the controls strip is never built in a frame, and the voice front adds frame-ancestors when it is on. Authentication is not done here:
+# Cloudflare Access sits in front.
 TTYD_ARGS+=(-W -O --index "$SB_RUN_DIR/index.html")
 for key in "${!OPT[@]}"; do
     TTYD_ARGS+=(-t "$key=$(json_value "${OPT[$key]}")")

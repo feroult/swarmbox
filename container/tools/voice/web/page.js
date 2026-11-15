@@ -1,5 +1,9 @@
 // Voice control for the ttyd page (the `voice` tool). Injected into the page by swarmbox-web with page.css.
 //
+// The page has a controls strip under the terminal that belongs to the host page (window.swarmboxStrip, container/web/ttyd-clipboard.js). This file
+// only asks it for a place (add), puts the microphone there and says its short sentences through it (note). It knows no other control of the strip;
+// when the host page has no strip (an older image) it does nothing.
+
 // The browser only captures the microphone. Push-to-talk: hold the button (mouse, touch, or Space/Enter on the focused button), release
 // to send. It records PCM with getUserMedia + the Web Audio API and sends 16 kHz mono 16-bit WAV, which is what the recognizer reads
 // (the box has no audio decoder, so MediaRecorder's webm/opus would not be understood).
@@ -7,7 +11,7 @@
 //  - POST <base>audio (audio/wav) -> {ok, state: 'sent' | 'nothing_heard' | 'no_listener' | 'busy' | 'bus_down'}. That is all that comes
 //    back: the audio became a goal on the bus of the box, and what happens to it (whoever listens on the topic) is not shown
 //    here. Never the transcript.
-//  - A small state light: idle, recording, sending, sent, nothing heard, no listener, busy, error. Each says a short sentence.
+//  - A small state light on the button: idle, recording, sending, sent, nothing heard, no listener, busy, error. Each says a short sentence (in the strip).
 //  - Text from the service is shown with textContent. This file never uses innerHTML.
 //  - The page stays unchanged when the service is absent: the button only appears if GET <base>health answers 200.
 (function () {
@@ -19,7 +23,7 @@
   var SVGNS = 'http://www.w3.org/2000/svg';
   var LABEL = { recording: 'Listening', sending: 'Sending', sent: 'Sent', nothing: 'Nothing heard', nolistener: 'Nobody is listening', busy: 'Busy' };
 
-  var root, mic, noteEl, levelBar;
+  var strip, mic, levelBar;
   var state = 'idle'; // idle | starting | recording | sending | sent | nothing | nolistener | busy | error | unsupported
   var pressed = false;
   var rec = null;
@@ -41,11 +45,11 @@
   function show(s, text, ms) {
     clearTimeout(timer);
     state = s;
-    root.setAttribute('data-state', s);
+    mic.setAttribute('data-state', s);
     mic.setAttribute('aria-pressed', s === 'recording' ? 'true' : 'false');
     var msg = text || LABEL[s] || '';
-    noteEl.textContent = msg;
-    noteEl.hidden = !msg;
+    var tone = s === 'error' ? 'error' : s === 'sent' ? 'ok' : s === 'nolistener' || s === 'busy' ? 'warn' : '';
+    strip.note(msg, tone);
     if (ms) timer = setTimeout(function () { if (state === s) show('idle'); }, ms);
   }
 
@@ -216,28 +220,18 @@
   }
 
   function build() {
-    root = el('div');
-    root.id = 'swarmbox-voice';
-    mic = el('button', 'sv-mic');
-    mic.type = 'button';
-    mic.id = 'swarmbox-voice-mic';
-    mic.setAttribute('aria-label', 'Hold to talk');
-    mic.title = 'Hold to talk';
-    mic.appendChild(micIcon());
+    strip = window.swarmboxStrip;
+    if (!strip || typeof strip.add !== 'function') return;
+    mic = strip.add({ id: 'swarmbox-voice-mic', title: 'Hold to talk', icon: micIcon(), className: 'sv-mic', order: 10 });
+    if (!mic) return;
+    mic.setAttribute('data-state', 'idle');
     mic.appendChild(el('i', 'sv-light'));
-    noteEl = el('div', 'sv-note');
-    noteEl.setAttribute('role', 'status');
-    noteEl.setAttribute('aria-live', 'polite');
-    noteEl.hidden = true;
     levelBar = el('i');
     var lv = el('span', 'sv-level');
     lv.appendChild(levelBar);
     mic.appendChild(lv);
-    root.appendChild(noteEl);
-    root.appendChild(mic);
-    document.body.appendChild(root);
     show('idle');
-    if (!micSupported()) root.setAttribute('data-support', 'no');
+    if (!micSupported()) mic.setAttribute('data-support', 'no');
 
     // keep the terminal's focus: pressing the button must not blur it
     mic.addEventListener('pointerdown', function (e) {

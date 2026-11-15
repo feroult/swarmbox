@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import tempfile
+import threading
 import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
@@ -34,9 +35,11 @@ from . import config as vconfig
 from . import stt
 
 MAX_GOAL = 4000           # characters of one goal; a longer transcript is cut
+MAX_PARALLEL = 2          # recognizer processes at a time: each one loads the model (some 0.5 GB for small, 3 GB for large), so a burst of recordings must wait its turn
+QUEUE_WAIT = 25.0         # seconds a recording waits for a free place before the answer is "busy"
 AUDIO_TYPES = ("audio/wav", "audio/x-wav", "audio/wave")
 # what /voice/audio says when it fails: fixed texts by error code, never the text of the error itself (it could hold the transcript)
-AUDIO_MESSAGES = {"stt_bad_audio": "The audio could not be read.", "stt_too_large": "The recording is too long.",
+AUDIO_MESSAGES = {"stt_busy": "The speech recognizer is busy: try again in a moment.", "stt_bad_audio": "The audio could not be read.", "stt_too_large": "The recording is too long.",
                   "stt_no_whisper": "The speech recognizer is not installed.", "stt_no_model": "The speech model is missing.",
                   "stt_failed": "The speech recognizer failed.", "stt_timeout": "The speech recognizer took too long."}
 # the states of a goal that was not sent, by name: (HTTP status, fixed message). "sent" is the only ok one.
@@ -61,6 +64,7 @@ class Service:
         self.transcribe_fn = transcribe or stt.transcribe
         self.publish_fn = publish or (lambda text: busclient.publish(self.cfg.topic, text))
         self.log = log or (lambda text: print("swarmbox-voice: " + text, file=sys.stderr, flush=True))
+        self.places = threading.BoundedSemaphore(MAX_PARALLEL)
 
     def health(self):
         return {"ok": True, "language": self.cfg.language, "model": self.cfg.stt_model}
@@ -70,11 +74,16 @@ class Service:
         try:
             stt.check_wav(wav)
             stt.check_speech(wav)
-            with tempfile.TemporaryDirectory(prefix="swarmbox-voice-") as folder:
-                path = os.path.join(folder, "audio.wav")
-                with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as f:
-                    f.write(wav)
-                return self.transcribe_fn(path, self.cfg.language, self.cfg.stt_model, self.cfg.stt_vocabulary)
+            if not self.places.acquire(timeout=QUEUE_WAIT):
+                raise HttpError(503, "stt_busy", "the recognizer has been busy for %g s" % QUEUE_WAIT)
+            try:
+                with tempfile.TemporaryDirectory(prefix="swarmbox-voice-") as folder:
+                    path = os.path.join(folder, "audio.wav")
+                    with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as f:
+                        f.write(wav)
+                    return self.transcribe_fn(path, self.cfg.language, self.cfg.stt_model, self.cfg.stt_vocabulary)
+            finally:
+                self.places.release()
         except stt.SttError as e:
             status = {"too_large": 413, "bad_audio": 400, "no_speech": 422, "no_whisper": 502, "no_model": 502}.get(e.code, 422)
             raise HttpError(status, "stt_" + e.code, e.message) from None

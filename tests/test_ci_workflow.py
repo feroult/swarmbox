@@ -82,6 +82,11 @@ class Ci(unittest.TestCase):
         self.assertIn("python3 tests/test_voice_page_browser.py", job("browser"))
         self.assertNotIn("SWARMBOX_BROWSER_TESTS", TEXT)
 
+    def test_the_browser_job_sets_the_real_tmux_gate_for_the_strip_and_the_dock(self):
+        body = job("browser")
+        for f in ("test_web_strip.py", "test_sysop_dock.py"):
+            self.assertIn("SWARMBOX_TEST_REAL_TMUX=1 python3 tests/" + f, body)
+
     def test_smoke_jobs_run_the_full_smoke_test_and_reject_skips(self):
         for name in ("smoke", "arm64"):
             body = job(name)

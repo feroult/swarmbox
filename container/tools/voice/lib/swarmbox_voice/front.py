@@ -21,7 +21,7 @@ hand a transcript to the browser.
 Rules kept for the four routes: an `Origin`, when there is one, must name the `Host` (else 403), as ttyd's -O does for the terminal; a POST
 needs the WAV content type and a Content-Length (a cross-site form cannot send that type), no chunked bodies; the body is capped (8 MiB);
 at most 16 voice requests at a time (a 503 beyond that, never a queue on the terminal); a failure is a JSON error for that request only.
-Anything that is not /voice/ is piped to ttyd byte for byte. A request without `Upgrade: websocket` gets `Connection: close` (one connection
+Anything that is not /voice/ is piped to ttyd byte for byte (the answer to a plain request gets the frame headers, FRAME_GUARD). A request without `Upgrade: websocket` gets `Connection: close` (one connection
 is one request, so the first head is the only one this front ever reads); a websocket upgrade keeps its head untouched, since ttyd -O needs
 the original Host and Origin.
 
@@ -241,9 +241,42 @@ def read_head(conn, deadline):
     return Head(buf[:i], buf[i:])
 
 
+# No other origin may frame the terminal page: a click in a frame would press a key button of the controls strip. ttyd cannot set headers, so
+# the front adds these to every plain HTTP response (a websocket upgrade is not a page and is piped untouched).
+FRAME_GUARD = ("Content-Security-Policy: frame-ancestors 'self'", "X-Frame-Options: SAMEORIGIN")
+
+
+def guard_response(up, conn, limit=16384, wait=10.0):
+    """Read the response head from ttyd, add FRAME_GUARD to it (once; the ones ttyd sent are kept out) and send it on. Anything that is
+    not a readable head is handed on as it came."""
+    buf = b""
+    deadline = time.monotonic() + wait
+    while b"\r\n\r\n" not in buf and len(buf) < limit:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            break
+        up.settimeout(left)
+        try:
+            data = up.recv(4096)
+        except (socket.timeout, OSError):
+            break
+        if not data:
+            break
+        buf += data
+    i = buf.find(b"\r\n\r\n")
+    if i < 0 or not buf.startswith(b"HTTP/1."):
+        conn.sendall(buf)
+        return
+    lines = buf[:i].split(b"\r\n")
+    drop = (b"content-security-policy", b"x-frame-options")
+    keep = [l for l in lines[1:] if l.partition(b":")[0].strip().lower() not in drop]
+    head = b"\r\n".join([lines[0]] + keep + [h.encode("latin-1") for h in FRAME_GUARD]) + b"\r\n\r\n"
+    conn.sendall(head + buf[i + 4:])
+
+
 def send(conn, status, body=b"", ctype="application/json; charset=utf-8", extra=()):
     head = ["HTTP/1.1 %d %s" % (status, REASONS.get(status, "Error")), "Content-Type: " + ctype, "Content-Length: %d" % len(body),
-            "Cache-Control: no-store", "X-Content-Type-Options: nosniff", "Connection: close"]
+            "Cache-Control: no-store", "X-Content-Type-Options: nosniff", "Connection: close"] + list(FRAME_GUARD)
     head += ["%s: %s" % kv for kv in extra]
     conn.settimeout(30)
     conn.sendall(("\r\n".join(head) + "\r\n\r\n").encode("latin-1") + body)
@@ -329,6 +362,8 @@ class Front:
         try:
             upgrade = head.is_upgrade()
             up.sendall((head.raw if upgrade else head.with_connection_close()) + head.extra)
+            if not upgrade:
+                guard_response(up, conn)
             pump(conn, up, None if upgrade else IDLE)
         except OSError:
             pass
@@ -413,9 +448,9 @@ class Front:
             finally:
                 c.close()
         except socket.timeout:
-            raise BadRequest(504, "voice_timeout", "the voice service took too long") from None
+            raise BadRequest(504, "voice_timeout", "The voice service is slow: try again in a moment.") from None
         except (OSError, http.client.HTTPException, ValueError):
-            raise BadRequest(502, "voice_unavailable", "the voice service is not answering") from None
+            raise BadRequest(502, "voice_unavailable", "The voice service is restarting: try again in a few seconds.") from None
         try:
             if len(data) > MAX_RESPONSE:
                 raise ValueError("too large")

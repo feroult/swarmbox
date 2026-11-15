@@ -31,6 +31,14 @@ def cmd_front(args, ttyd_args):
     return front.run(args, ttyd_args)
 
 
+def _on_term(*_):
+    """SIGTERM ends the service through KeyboardInterrupt, ONCE. The front sends one SIGTERM and, when it exits, the kernel sends a second (--die-with-parent): the
+    second one used to arrive while the first was being handled, or while the interpreter was shutting down, and raised KeyboardInterrupt there (a traceback in
+    web-terminal.log, found by the soak test)."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    raise KeyboardInterrupt
+
+
 def cmd_serve(args):
     if args.die_with_parent:
         front.pdeathsig()
@@ -41,7 +49,7 @@ def cmd_serve(args):
     except (ValueError, OSError) as e:
         print("swarmbox-voice: %s" % e, file=sys.stderr)
         return 2
-    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
+    signal.signal(signal.SIGTERM, _on_term)
     print("swarmbox-voice: listening on http://%s:%d/voice/" % httpd.server_address[:2], file=sys.stderr)
     try:
         httpd.serve_forever()
