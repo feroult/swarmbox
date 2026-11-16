@@ -179,6 +179,7 @@ bump_files() {
 bump_files
 say "bumped: $CHANGELOG, $VERSION_FILE, SCRIPT_VERSION -> $new"
 if [ "$BUMP_ONLY" = 1 ]; then
+    rm -f "$BACKUP" "$BACKUP.new"
     BACKUP=
     exit 0
 fi
