@@ -2,7 +2,7 @@
 # check.sh: the checks of .github/workflows/ci.yml that can run on this machine, before a push.
 #
 # Usage: sh dev/check.sh [--release] [--no-tests] [--no-shellcheck] [--print-shellcheck]
-#   (nothing)           shellcheck 0.9 on the files ci.yml lists, then the unit tests in a clean environment
+#   (nothing)           shellcheck 0.9 on the files ci.yml lists, then the FAST tests (tests/run.sh fast) in a clean environment
 #   --release           also dev/release-check.sh (the tag is about to be pushed: it must print RELEASE CHECK OK)
 #   --no-tests          skip the unit tests
 #   --no-shellcheck     skip shellcheck
@@ -14,7 +14,8 @@
 #               ${XDG_CACHE_HOME:-~/.cache}/swarmbox-dev (set SWARMBOX_SHELLCHECK to use a binary of your own).
 #   Tests       a CI runner has no TERM, no COLORTERM, no STARSHIP_SHELL: a test that only passes with the variables of your terminal
 #               passes here and fails there. The tests run under `env -i` with PATH, HOME and a UTF-8 LANG only.
-# What it cannot cover: the macOS job (bash 3.2), the arm64 job and the image smoke test exist only in CI.
+# What it cannot cover: the slow tests (real tmux, browser, image: dev/test-slow.sh runs them in Podman), the macOS job (bash 3.2), the
+# arm64 job and the image smoke test exist only in CI.
 # Exit: 0 when everything that ran passed, 1 otherwise.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -96,15 +97,15 @@ fi
 if [ "$DO_TESTS" = 1 ]; then
     out=$(mktemp "${TMPDIR:-/tmp}/swarmbox-check.XXXXXX") || exit 1
     trap 'rm -f "$out"' EXIT HUP INT TERM
-    say "     running tests/run_all.sh in a clean environment (about six minutes) ..."
-    if env -i PATH="$PATH" HOME="$HOME" LANG=C.UTF-8 TMPDIR="${TMPDIR:-/tmp}" sh tests/run_all.sh > "$out" 2>&1; then
+    say "     running tests/run.sh fast in a clean environment ..."
+    if env -i PATH="$PATH" HOME="$HOME" LANG=C.UTF-8 TMPDIR="${TMPDIR:-/tmp}" sh tests/run.sh fast > "$out" 2>&1; then
         total=$(grep '^TOTAL ' "$out" | tail -n 1)
         skipped=$(sed -n 's/.* \([0-9][0-9]*\) skipped.*/\1/p' "$out" | awk '{s += $1} END {print s + 0}')
         ok "tests: $total"
-        [ "$skipped" = 0 ] || say "     note: $skipped test(s) were skipped here; CI installs tmux, dash and busybox and runs them"
+        [ "$skipped" = 0 ] || say "     note: $skipped test(s) were skipped here; CI installs dash and busybox and runs them (the slow tests: sh dev/test-slow.sh)"
     else
         grep -E ' FAIL |^TOTAL ' "$out" | head -n 20
-        fail "tests: see the files above (run: env -i PATH=\"\$PATH\" HOME=\"\$HOME\" LANG=C.UTF-8 sh tests/run_all.sh --only FILE)"
+        fail "tests: see the files above (run: env -i PATH=\"\$PATH\" HOME=\"\$HOME\" LANG=C.UTF-8 sh tests/run.sh --only FILE)"
     fi
 fi
 

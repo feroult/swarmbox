@@ -49,7 +49,7 @@ podman run -d --name mongo --network dev -p 27017:27017 mongo:7   # inside Swarm
   same `/dev/net/tun` and unmasked `/proc`, which a plain test container does not have, and it needs the 64535 sub-IDs of `/etc/subuid` to exist in the
   level above: a box that was itself started with `--userns=keep-id` has only 63535 of them, so the nested start fails with `newuidmap: write to uid_map
   failed: Operation not permitted` until `/etc/subuid` and `/etc/subgid` inside it are lowered (a property of that development box, not of a box made by
-  `swarmbox up`; `tests/test_nested_fuse_real.py` does it with `SWARMBOX_TEST_SUBID_FIX=1`). The image's smoke test for the nested container runs
+  `swarmbox up`; `tests/slow/test_nested_fuse_real.py` does it with `SWARMBOX_TEST_SUBID_FIX=1`). The image's smoke test for the nested container runs
   only in CI [unverified: that job has never run].
 
 [← Back to the README](../README.md)

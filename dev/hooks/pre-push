@@ -1,5 +1,5 @@
 #!/bin/sh
-# pre-push: runs dev/check.sh before a push of main or of a release tag (v*), so what CI would reject is found here first.
+# pre-push: runs dev/check.sh (shellcheck and the FAST tests) before a push of main or of a release tag (v*), so what CI would reject is found here first.
 # Enable it once in this clone:   git config core.hooksPath dev/hooks
 # Skip it for one push:           git push --no-verify     (or SWARMBOX_SKIP_CHECK=1 git push)
 # A release tag also runs the release check (dev/release-check.sh). Pushes of other branches and deletions are not checked.

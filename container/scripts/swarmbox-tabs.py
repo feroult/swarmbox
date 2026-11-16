@@ -97,7 +97,7 @@ class TabsError(Exception):
 
 # ---------------------------------------------------------------------------------------------------------------- the secrets filter
 # The one secrets filter of the box: every screen swarmbox-tabs reads passes through it. Its patterns run in linear time (no pattern
-# rescans a long run from every position inside it); tests/test_tabs_redact_dos.py measures that on adversarial text.
+# rescans a long run from every position inside it); tests/fast/test_tabs_redact_dos.py measures that on adversarial text.
 
 _PATTERNS = [
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S),

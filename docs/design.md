@@ -153,7 +153,7 @@ percentage, MB done of the total, MB/s and seconds; narrow terminals drop the ri
 `ImageCopyTmpDir` (measured on Podman 5.4: it grows to about the compressed size of the image while the layers arrive); the total is the sum of the layer sizes of the manifest for this machine's architecture,
 read from `ghcr.io` with `curl` in the background (any other registry, or any failure, gives a bar that sweeps with no percentage). The percentage never goes back and stops at 99 until Podman exits; when it is
 95 or more and no bytes arrive the label is `unpack`. The line is words and a bar, in the violet and gray of the box (24-bit with `COLORTERM`, else 256), off with `NO_COLOR`; it draws no glyph that needs a Nerd Font and no background;
-without a UTF-8 locale the bar is ASCII; `SWARMBOX_PROGRESS=plain` leaves Podman's own bars. [verified: tests/test_pull_ui.py with a fake Podman and curl, and a real
+without a UTF-8 locale the bar is ASCII; `SWARMBOX_PROGRESS=plain` leaves Podman's own bars. [verified: tests/fast/test_pull_ui.py with a fake Podman and curl, and a real
 pull of the 2.0.4 image: 785 MB, 99% at 749 MB, 24 s; Podman 5.4.2] Not checked: Podman 4.3 to 5.3 (the folder name is the same in the containers/image library for years), macOS, a registry other than ghcr.io.
 
 `install` runs in a container and prints a small POSIX `sh` installer that carries the script in a quoted here-doc; it writes nothing itself. The
@@ -280,7 +280,7 @@ a call reads or acts on tmux and ends, and it imports nothing from any addon. Th
   the pane id. Panes with the option `@swarmbox_sysop_panel`, or with `SWARMBOX_SYSOP_PANEL=1` in their start command (a pane exists for an instant before its option is set), are never listed or targeted. `active` is the window of the non-control client with the latest activity, else the current window of `main`.
 - *Screen.* `capture-pane -p -J -e`, turned into the plain text of the pane plus the style of each character, then the last `lines` lines, then the secrets filter (on the plain text, whole lines, whatever the colours), then the text written with `[sel]` (reverse video), `[bg]` (background colour)
   and `[err]` (red) spans and each line cut to 1000 characters (so no secret is cut in half and no colour hides one). Text of the pane that looks like a marker (`[sel]`, `[/err]`, `[REDACTED]`) gets one more `[` (`[[sel]`), so program output cannot forge one. A full-screen program (alternate screen) has no scrollback, so `lines` is ignored for it (`"lines": null` in the answer).
-  The secrets filter is the one of the box, tested in `tests/test_tabs.py` and `tests/test_tabs_redact_dos.py`.
+  The secrets filter is the one of the box, tested in `tests/fast/test_tabs.py` and `tests/fast/test_tabs_redact_dos.py`.
 - *Typing.* `--run` types the text literally and presses Enter; `--input` types text with keys in braces (`{Esc}`, `{Enter}`, `{C-c}`, `{Up}`, ... any other `{word}` is text, `{{` is a brace). The text goes in pieces of 1024 characters (a `;` at the end of a piece as the key 0x3b: tmux would take it for the end of the command) and each key
   is a separate tmux call 150 ms apart; a send has at most 100 steps (texts and keys). A pane in copy mode is cancelled first. When a send submits text (text, then Enter) to a pane that runs an agent (Claude Code, seen on the screen), a dialog is refused (`dialog_open`),
   a busy agent is refused unless `--queue` (`busy_tab`), text starting with `/` or `!` is refused unless `--slash` (`slash_refused`; every submitted text is checked, and a send that submits more than one text to an agent needs `--queue`), and after the Enter the command checks that the text left
@@ -491,7 +491,7 @@ container/addons/<name>/     addon manifests and installers;  container/mcp/<nam
 container/web/              ttyd page parts and build-index.sh
 cloudflare-setup.py         the back end of `swarmbox remote`
 dev/                        dev-build, name-check, release-check, release-version, record-checksums, gen-notices, kata-probe
-tests/                      unittest scripts (stdlib only); run `sh tests/run_all.sh`
+tests/                      unittest scripts (stdlib only); run `sh tests/run.sh`
 docs/                       this file, security-review, release-checklist, microvm, web-terminal, cloudflare, nested-podman, uninstall, history/
 .github/workflows/          ci.yml, release.yml
 ```

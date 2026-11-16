@@ -1,0 +1,1902 @@
+{
+ "test_addon_agent_shell.py": {
+  "layer": "fast",
+  "tests": 18,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.16,
+  "podman_s": 0.14,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_doctor.py": {
+  "layer": "fast",
+  "tests": 8,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 2.46,
+  "podman_s": 2.43,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "DoctorFix.test_fix_respects_the_lock": 1.1
+  }
+ },
+ "test_addon_gemini_clasp_poetry.py": {
+  "layer": "fast",
+  "tests": 13,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.51,
+  "podman_s": 0.51,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_go_gcloud.py": {
+  "layer": "fast",
+  "tests": 10,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.34,
+  "podman_s": 0.31,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_image_level.py": {
+  "layer": "fast",
+  "tests": 5,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.31,
+  "podman_s": 0.27,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_install.py": {
+  "layer": "fast",
+  "tests": 12,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 2.23,
+  "podman_s": 2.14,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "Concurrency.test_two_installs_at_once_run_the_installer_once": 1.539
+  }
+ },
+ "test_addon_link.py": {
+  "layer": "fast",
+  "tests": 12,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.39,
+  "podman_s": 0.33,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_manifest.py": {
+  "layer": "fast",
+  "tests": 23,
+  "skipped_host_hidden": 1,
+  "skipped_podman": 0,
+  "host_s": 0.62,
+  "podman_s": 0.61,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "shellcheck"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_new.py": {
+  "layer": "fast",
+  "tests": 5,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.21,
+  "podman_s": 0.19,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_opencode.py": {
+  "layer": "fast",
+  "tests": 9,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.28,
+  "podman_s": 0.29,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "chromium"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_prepare.py": {
+  "layer": "fast",
+  "tests": 7,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 1.33,
+  "podman_s": 1.32,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "PrepareTest.test_a_hanging_prepare_times_out_and_the_others_still_run": 1.038
+  }
+ },
+ "test_addon_real.py": {
+  "layer": "slow",
+  "tests": 50,
+  "skipped_host_hidden": 42,
+  "skipped_podman": 42,
+  "host_s": 0.11,
+  "podman_s": 0.11,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "env:SWARMBOX_IMAGE_BUILD",
+   "env:SWARMBOX_REAL_ADDONS",
+   "env:SWARMBOX_TEST_NETWORK",
+   "podman"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_shim.py": {
+  "layer": "fast",
+  "tests": 9,
+  "skipped_host_hidden": 1,
+  "skipped_podman": 0,
+  "host_s": 0.58,
+  "podman_s": 1.54,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "selfy",
+   "shellcheck"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_stub.py": {
+  "layer": "fast",
+  "tests": 4,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.06,
+  "podman_s": 0.83,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "shellcheck"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_use_remove.py": {
+  "layer": "fast",
+  "tests": 12,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.61,
+  "podman_s": 0.56,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_addon_voice.py": {
+  "layer": "fast",
+  "tests": 12,
+  "skipped_host_hidden": 1,
+  "skipped_podman": 1,
+  "host_s": 0.38,
+  "podman_s": 0.35,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "env:SWARMBOX_REAL_VOICE_INSTALL"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_attach_command.py": {
+  "layer": "slow",
+  "tests": 24,
+  "skipped_host_hidden": 12,
+  "skipped_podman": 0,
+  "host_s": 3.97,
+  "podman_s": 20.43,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "pty",
+   "tmux"
+  ],
+  "pty": true,
+  "slow_tests_s": {
+   "CommandFakeTests.test_window_arguments_and_the_quoted_command_string": 2.214,
+   "ReadinessTests.test_not_ready_exits_6_after_the_timeout_and_never_calls_tmux": 1.012
+  }
+ },
+ "test_banner.py": {
+  "layer": "fast",
+  "tests": 4,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.08,
+  "podman_s": 0.08,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_banner_glint.py": {
+  "layer": "slow",
+  "tests": 3,
+  "skipped_host_hidden": 3,
+  "skipped_podman": 0,
+  "host_s": 0.04,
+  "podman_s": 15.24,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "tmux"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_bashrc_container.py": {
+  "layer": "slow",
+  "tests": 6,
+  "skipped_host_hidden": 6,
+  "skipped_podman": 6,
+  "host_s": 0.05,
+  "podman_s": 0.05,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "env:SWARMBOX_IMAGE_BUILD"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_bashrc_fragment.py": {
+  "layer": "fast",
+  "tests": 26,
+  "skipped_host_hidden": 1,
+  "skipped_podman": 0,
+  "host_s": 0.21,
+  "podman_s": 0.19,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "shellcheck"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_build_index.py": {
+  "layer": "fast",
+  "tests": 6,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.11,
+  "podman_s": 0.1,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_bus.py": {
+  "layer": "fast",
+  "tests": 56,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 2.37,
+  "podman_s": 2.36,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_bus_cli.py": {
+  "layer": "fast",
+  "tests": 33,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 8.55,
+  "podman_s": 8.65,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "Load.test_100_messages_per_second_for_3_seconds_one_process_each": 3.06,
+   "Load.test_many_clients_in_parallel_all_delivered_once": 0.982,
+   "Streams.test_ctrl_c_is_130_and_a_closed_pipe_ends_quietly": 0.784,
+   "Streams.test_groups_share_between_two_cli_subscribers": 0.635
+  }
+ },
+ "test_bus_serve.py": {
+  "layer": "fast",
+  "tests": 4,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 5.27,
+  "podman_s": 5.26,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "RealBroker.test_a_killed_broker_is_restarted_after_the_backoff_and_takes_over_the_stale_socket": 3.598,
+   "RealBroker.test_the_step_starts_the_broker_and_the_bus_works_end_to_end": 0.544,
+   "RealBroker.test_a_broker_that_is_already_running_is_left_alone": 0.528
+  }
+ },
+ "test_ci_workflow.py": {
+  "layer": "fast",
+  "tests": 14,
+  "skipped_host_hidden": 1,
+  "skipped_podman": 1,
+  "host_s": 0.05,
+  "podman_s": 0.05,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "actionlint",
+   "env:SWARMBOX_REAL_VOICE_INSTALL",
+   "env:SWARMBOX_SMOKE_FULL",
+   "env:SWARMBOX_TEST_REAL_TMUX",
+   "shellcheck"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_clipboard_bridge.py": {
+  "layer": "slow",
+  "tests": 11,
+  "skipped_host_hidden": 11,
+  "skipped_podman": 0,
+  "host_s": 0.05,
+  "podman_s": 39.81,
+  "gated_s": 39.54,
+  "ran_gated": 11,
+  "needs": [
+   "chromium",
+   "ttyd"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "ClipboardBridge.test_a_mouse_selection_in_tmux_reaches_the_browser_clipboard": 5.17,
+   "ClipboardBridge.test_set_buffer_with_w_also_reaches_the_clipboard": 3.764,
+   "ClipboardBridge.test_right_click_keeps_the_browsers_menu_when_nothing_captures_the_mouse": 3.569,
+   "ClipboardBridge.test_ctrl_v_pastes_instead_of_sending_a_control_character": 3.368,
+   "ClipboardBridge.test_right_click_opens_only_tmuxs_menu_while_tmux_captures_the_mouse": 3.368,
+   "ClipboardBridge.test_ctrl_c_copies_a_selection_without_interrupting": 3.367,
+   "ClipboardBridge.test_ctrl_c_without_a_selection_is_still_an_interrupt": 3.366,
+   "ClipboardBridge.test_ctrl_v_can_be_left_as_a_control_character": 3.366,
+   "ClipboardBridge.test_shift_right_click_still_opens_the_browsers_menu": 3.366,
+   "ClipboardBridge.test_ctrl_c_can_always_interrupt": 3.365,
+   "ClipboardBridge.test_an_osc52_read_request_is_never_answered": 3.36
+  }
+ },
+ "test_cloudflare_setup.py": {
+  "layer": "fast",
+  "tests": 12,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.76,
+  "podman_s": 0.75,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "TestVerify.test_redirect_to_access_is_protected": 0.505
+  }
+ },
+ "test_default_names_lint.py": {
+  "layer": "fast",
+  "tests": 5,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.12,
+  "podman_s": 0.12,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_dev_build.py": {
+  "layer": "fast",
+  "tests": 13,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.2,
+  "podman_s": 0.2,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_dev_check.py": {
+  "layer": "fast",
+  "tests": 11,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.07,
+  "podman_s": 0.07,
+  "gated_s": 0.07,
+  "ran_gated": 11,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_dirs.py": {
+  "layer": "fast",
+  "tests": 4,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.07,
+  "podman_s": 0.08,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "shellcheck"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_dockerfile.py": {
+  "layer": "fast",
+  "tests": 16,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.05,
+  "podman_s": 0.05,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_docs_consistency.py": {
+  "layer": "fast",
+  "tests": 7,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.05,
+  "podman_s": 0.05,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_entrypoint.py": {
+  "layer": "fast",
+  "tests": 11,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.45,
+  "podman_s": 0.63,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "shellcheck"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_helpers.py": {
+  "layer": "fast",
+  "tests": 3,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.04,
+  "podman_s": 0.04,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "podman"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_host_config.py": {
+  "layer": "fast",
+  "tests": 22,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 3.11,
+  "podman_s": 3.06,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "find",
+   "pty",
+   "stat"
+  ],
+  "pty": true,
+  "slow_tests_s": {
+   "SetTest.test_set_every_key_roundtrip_and_file_mode": 0.518
+  }
+ },
+ "test_host_connector.py": {
+  "layer": "fast",
+  "tests": 10,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 3.44,
+  "podman_s": 3.5,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "ConnectorTest.test_connector_failure_warns_and_the_up_exit_code_is_unchanged": 0.964,
+   "ConnectorTest.test_different_token_recreates": 0.525
+  }
+ },
+ "test_host_create_flags.py": {
+  "layer": "fast",
+  "tests": 33,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 14.74,
+  "podman_s": 14.63,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "bash",
+   "busybox",
+   "dash",
+   "zsh"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "NeverUnsafeTest.test_loop_over_key_combinations": 8.737,
+   "FingerprintTest.test_unchanged_by_runtime_only_keys_and_secrets": 0.573,
+   "SecretsTest.test_env_keys_values_never_appear_but_the_hash_follows_them": 0.539
+  }
+ },
+ "test_host_remote.py": {
+  "layer": "fast",
+  "tests": 8,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.58,
+  "podman_s": 0.57,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "pty",
+   "stat"
+  ],
+  "pty": true,
+  "slow_tests_s": {}
+ },
+ "test_host_remote_e2e_fake.py": {
+  "layer": "fast",
+  "tests": 4,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.59,
+  "podman_s": 3.49,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_host_shells.py": {
+  "layer": "fast",
+  "tests": 4,
+  "skipped_host_hidden": 2,
+  "skipped_podman": 0,
+  "host_s": 0.9,
+  "podman_s": 2.22,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "bash",
+   "busybox",
+   "dash",
+   "shellcheck",
+   "zsh"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "ShellMatrix.test_matrix": 0.572
+  }
+ },
+ "test_host_socket.py": {
+  "layer": "fast",
+  "tests": 8,
+  "skipped_host_hidden": 1,
+  "skipped_podman": 1,
+  "host_s": 0.83,
+  "podman_s": 0.84,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "podman"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_host_up.py": {
+  "layer": "fast",
+  "tests": 37,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 8.17,
+  "podman_s": 8.14,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "podman"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "PrerequisiteTest.test_versions_are_compared_as_numbers": 1.136,
+   "LockTest.test_two_up_calls_started_together_make_exactly_one_box": 0.785
+  }
+ },
+ "test_host_update.py": {
+  "layer": "fast",
+  "tests": 22,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 2.56,
+  "podman_s": 2.6,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "pty"
+  ],
+  "pty": true,
+  "slow_tests_s": {
+   "PullProgressTest.test_with_a_terminal_the_pull_has_no_quiet_flag": 0.513
+  }
+ },
+ "test_image_build.py": {
+  "layer": "slow",
+  "tests": 4,
+  "skipped_host_hidden": 4,
+  "skipped_podman": 4,
+  "host_s": 0.04,
+  "podman_s": 0.04,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "chromium",
+   "env:SWARMBOX_IMAGE_BUILD",
+   "podman"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_image_with_addons.py": {
+  "layer": "slow",
+  "tests": 3,
+  "skipped_host_hidden": 3,
+  "skipped_podman": 3,
+  "host_s": 0.04,
+  "podman_s": 0.04,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "env:SWARMBOX_IMAGE_BUILD",
+   "env:SWARMBOX_TEST_NETWORK",
+   "podman"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_install.py": {
+  "layer": "fast",
+  "tests": 43,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 2.13,
+  "podman_s": 1.95,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_local_up.py": {
+  "layer": "fast",
+  "tests": 10,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.21,
+  "podman_s": 0.2,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_mcp_registry.py": {
+  "layer": "fast",
+  "tests": 9,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.19,
+  "podman_s": 0.19,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "chromium"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_name_check.py": {
+  "layer": "fast",
+  "tests": 7,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.12,
+  "podman_s": 0.12,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_nested_fuse_real.py": {
+  "layer": "slow",
+  "tests": 1,
+  "skipped_host_hidden": 1,
+  "skipped_podman": 1,
+  "host_s": 0.04,
+  "podman_s": 0.05,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "env:SWARMBOX_IMAGE_BUILD",
+   "env:SWARMBOX_TEST_NESTED",
+   "env:SWARMBOX_TEST_NETWORK",
+   "podman"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_no_old_names.py": {
+  "layer": "fast",
+  "tests": 13,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.72,
+  "podman_s": 0.69,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "TheRepository.test_no_old_name_and_no_stray_tool_word_is_left": 0.6
+  }
+ },
+ "test_pubkey_ensure.py": {
+  "layer": "fast",
+  "tests": 5,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.1,
+  "podman_s": 0.1,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "ssh-keygen"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_pull_ui.py": {
+  "layer": "fast",
+  "tests": 12,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 26.13,
+  "podman_s": 26.34,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "pty"
+  ],
+  "pty": true,
+  "slow_tests_s": {
+   "PullUiTest.test_no_nerd_font_glyph_is_ever_drawn_whatever_the_shell_or_the_environment": 5.151,
+   "PullUiTest.test_when_the_download_is_over_and_the_pull_is_still_writing_the_label_says_unpack": 4.355,
+   "PullUiTest.test_truecolor_and_256_color_terminals_get_their_own_sequences": 2.575,
+   "PullUiTest.test_a_narrow_terminal_drops_the_right_hand_blocks": 2.571,
+   "PullUiTest.test_no_color_has_no_color_escapes_and_no_utf8_locale_gives_ascii": 2.567,
+   "PullUiTest.test_swarmbox_progress_plain_and_a_dumb_terminal_leave_podmans_own_output": 2.434,
+   "PullUiTest.test_the_percent_only_grows_and_never_passes_99_before_the_end": 1.29,
+   "PullUiTest.test_without_a_total_the_bar_sweeps_and_shows_no_percent": 1.29,
+   "PullUiTest.test_the_filled_part_of_the_bar_is_violet_and_the_rest_dark_gray": 1.288,
+   "PullUiTest.test_a_terminal_gets_the_line_with_a_percent_and_ends_on_a_done_line": 1.285,
+   "PullUiTest.test_without_a_terminal_it_is_quiet_and_draws_nothing": 1.216
+  }
+ },
+ "test_record_checksums.py": {
+  "layer": "fast",
+  "tests": 6,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.14,
+  "podman_s": 0.14,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_release_check.py": {
+  "layer": "fast",
+  "tests": 11,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.94,
+  "podman_s": 0.86,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_release_script.py": {
+  "layer": "fast",
+  "tests": 23,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 1.63,
+  "podman_s": 1.34,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_release_version.py": {
+  "layer": "fast",
+  "tests": 11,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.08,
+  "podman_s": 0.08,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_release_workflow.py": {
+  "layer": "fast",
+  "tests": 9,
+  "skipped_host_hidden": 1,
+  "skipped_podman": 1,
+  "host_s": 0.04,
+  "podman_s": 0.04,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "actionlint",
+   "shellcheck"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_repo_files.py": {
+  "layer": "fast",
+  "tests": 8,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.05,
+  "podman_s": 0.04,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "chromium"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_run_all.py": {
+  "layer": "fast",
+  "tests": 7,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.61,
+  "podman_s": 0.65,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_security_review.py": {
+  "layer": "fast",
+  "tests": 14,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 3.27,
+  "podman_s": 3.22,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "QuotingTest.test_workspace_names_with_hostile_characters_stay_one_literal_argument": 0.982
+  }
+ },
+ "test_serve_logs.py": {
+  "layer": "fast",
+  "tests": 3,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 2.93,
+  "podman_s": 2.92,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "Trimmer.test_a_log_past_the_limit_is_cut_to_its_last_quarter_and_a_small_one_is_left_alone": 1.278,
+   "Trimmer.test_the_serve_log_itself_is_trimmed_too": 1.278
+  }
+ },
+ "test_serve_steps.py": {
+  "layer": "fast",
+  "tests": 30,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 11.28,
+  "podman_s": 11.29,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "BusStep.test_a_killed_broker_is_started_again_with_the_backoff": 1.279,
+   "BusStep.test_a_broker_that_does_not_answer_is_one_warning_and_serve_goes_on": 1.278,
+   "Supervisor.test_restart_signal_restarts_ttyd_resets_count_and_clears_the_line": 0.813,
+   "WarnSteps.test_each_w_step_failure_is_one_health_line_and_serve_continues": 0.801,
+   "Supervisor.test_crash_loop_gives_up_after_five_exits_and_stays_alive": 0.672,
+   "BusStep.test_crash_loop_gives_up_with_a_health_line_and_restart_by_signal_starts_again": 0.592,
+   "BusStep.test_exit_8_means_another_broker_runs_and_is_not_restarted": 0.572
+  }
+ },
+ "test_smoke_image_data.py": {
+  "layer": "fast",
+  "tests": 3,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.04,
+  "podman_s": 0.04,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_ssh_key.py": {
+  "layer": "fast",
+  "tests": 4,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.08,
+  "podman_s": 0.08,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_starship.py": {
+  "layer": "fast",
+  "tests": 10,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 2,
+  "host_s": 0.18,
+  "podman_s": 0.05,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "git",
+   "starship"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_statusline.py": {
+  "layer": "fast",
+  "tests": 10,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.39,
+  "podman_s": 0.34,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "git",
+   "jq"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_swarmbox_command.py": {
+  "layer": "fast",
+  "tests": 14,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 8.44,
+  "podman_s": 8.32,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "bash",
+   "dash"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "RoutingTest.test_exit_codes_of_forwarded_commands_propagate": 2.9,
+   "RoutingTest.test_every_other_word_goes_to_the_box_after_up": 2.305,
+   "TerminalTest.test_a_terminal_on_both_ends_adds_t_to_every_exec_form_and_the_attach_carries_the_tty_of_the_tab": 0.604
+  }
+ },
+ "test_sysop_addon.py": {
+  "layer": "fast",
+  "tests": 15,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 8.21,
+  "podman_s": 7.87,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "shellcheck"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "Prepare.test_prepare_and_goals_work_together_with_the_real_command": 1.73,
+   "Prepare.test_two_prepares_at_once_end_with_one_service": 1.289,
+   "Prepare.test_a_service_that_died_is_started_again": 1.15,
+   "Prepare.test_prepare_is_idempotent_one_service_however_often_it_runs": 1.043,
+   "Prepare.test_prepare_starts_the_subscriber_detached_and_returns_at_once": 0.882,
+   "Prepare.test_prepare_refreshes_the_installed_library_from_the_image_copy": 0.847,
+   "Install.test_install_copies_the_library_and_leaves_a_working_command": 0.623
+  }
+ },
+ "test_sysop_always.py": {
+  "layer": "slow",
+  "tests": 60,
+  "skipped_host_hidden": 43,
+  "skipped_podman": 43,
+  "host_s": 2.28,
+  "podman_s": 2.27,
+  "gated_s": 106.5,
+  "ran_gated": 60,
+  "needs": [
+   "env:SWARMBOX_TEST_REAL_TMUX"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "IdleCpu.test_idle_panels_use_almost_no_cpu": 12.24,
+   "AtStart.test_the_follower_in_always_mode_brings_the_panels_by_itself_and_costs_no_cpu": 11.679,
+   "Following.test_a_panel_that_crashes_at_its_start_is_not_made_in_a_loop": 5.659,
+   "NoFocusAlways.test_keys_typed_in_the_tab_while_a_goal_arrives_never_reach_a_countdown_panel": 4.749,
+   "NoFocusAlways.test_keys_typed_in_the_tab_while_a_goal_arrives_never_reach_an_approval_panel": 4.72,
+   "NoFocusAlways.test_with_a_panel_in_every_window_the_gesture_reaches_the_panel_of_the_window_it_is_pressed_in": 4.396,
+   "OtherModes.test_a_service_that_starts_in_auto_or_off_after_an_always_leaves_no_hook_that_makes_panels": 3.921,
+   "NoFocusSteal.test_typing_in_the_tab_while_windows_and_panels_come_and_go_reaches_only_the_tab": 3.622,
+   "NoFocusAlways.test_the_approval_gesture_focuses_the_panel_on_the_approval_prompt_and_run_allows_it": 3.512,
+   "NoFocusAlways.test_a_click_on_the_panel_focuses_it_and_then_its_own_keys_work": 3.503,
+   "Following.test_a_panel_that_crashed_comes_back_at_the_next_sync": 3.182,
+   "NoFocusAlways.test_the_approval_gesture_does_not_focus_without_an_approval_and_does_with_one": 3.171,
+   "Following.test_a_panel_that_was_killed_comes_back": 3.059,
+   "Toggle.test_a_panel_killed_by_the_tmux_server_signal_is_not_a_hide": 3.057,
+   "Toggle.test_the_toggle_hides_all_windows_and_is_remembered_until_shown_again": 2.515,
+   "NoFocusAlways.test_the_veto_key_with_nothing_waiting_does_nothing": 2.328,
+   "NoFocusAlways.test_the_goal_key_asks_for_a_goal_in_a_popup_and_publishes_it": 2.326,
+   "NoFocusAlways.test_the_approval_gesture_refuses_a_countdown_action": 2.324,
+   "NoFocusAlways.test_the_idle_screen_gives_way_to_the_goal_and_comes_back": 1.908,
+   "NoFocusAlways.test_the_panel_says_which_keys_work_from_any_tab": 1.743,
+   "Following.test_a_window_with_a_split_of_the_user_is_not_closed": 1.65,
+   "NoFocusSteal.test_a_click_on_the_panel_focuses_it_and_then_q_hides": 1.558,
+   "FollowerModes.test_the_thread_in_auto_or_off_takes_away_the_hooks_of_an_earlier_always_once_and_the_mode_always_never_does": 1.502,
+   "NoFocusAlways.test_the_veto_key_vetoes_a_countdown_and_refuses_an_approval": 1.429,
+   "NoFocusAlways.test_the_stop_key_asks_for_the_stop": 1.376,
+   "Resizing.test_the_idle_screen_at_several_widths": 1.2,
+   "Toggle.test_the_tmux_key_toggles": 1.127,
+   "Following.test_closing_the_user_pane_closes_a_window_that_holds_only_the_panel": 1.11,
+   "Resizing.test_a_window_that_gets_shorter_keeps_a_useful_panel": 0.902,
+   "Resizing.test_a_resize_flips_the_layout_of_each_window": 0.89,
+   "Following.test_a_new_window_gets_a_panel_by_the_hook": 0.876,
+   "Following.test_the_last_window_closing_ends_the_session_as_it_would_without_a_panel": 0.856,
+   "OtherModes.test_sync_in_auto_still_closes_a_window_of_only_a_panel": 0.804,
+   "Toggle.test_q_in_a_panel_hides_the_panels_of_all_windows": 0.778,
+   "OtherModes.test_by_hand_a_panel_opens_in_the_window_in_auto_and_off": 0.715,
+   "AtStart.test_the_panel_is_idle_and_says_so": 0.703,
+   "FollowerModes.test_the_thread_in_the_mode_always_syncs_at_once_and_then_at_the_tick": 0.701,
+   "AtStart.test_every_window_gets_a_panel_that_does_not_take_the_focus": 0.691,
+   "AtStart.test_the_hooks_are_set_by_the_first_sync_and_stay": 0.665,
+   "AtStart.test_the_names_of_the_tabs_are_not_frozen": 0.648,
+   "Following.test_sync_with_a_window_makes_only_that_panel": 0.647,
+   "Resizing.test_a_short_portrait_window_gets_the_minimum_height": 0.644,
+   "OtherModes.test_the_old_behaviour_of_auto_freezes_the_name_of_a_window_with_a_panel": 0.641,
+   "OtherModes.test_auto_and_off_never_make_panels_by_themselves": 0.628
+  }
+ },
+ "test_sysop_brain.py": {
+  "layer": "fast",
+  "tests": 33,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 8.2,
+  "podman_s": 8.25,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "RunBrain.test_stop_while_the_brain_ignores_term_still_kills_it": 2.719,
+   "RunBrain.test_the_brain_runs_in_its_own_process_group_and_none_is_left": 2.13,
+   "RunBrain.test_stop_kills_the_whole_group_and_ends_the_goal_stopped": 1.028,
+   "RunBrain.test_the_deadline_kills_the_brain_and_fails_the_goal": 1.007,
+   "RunBrain.test_a_scripted_goal_runs_through_the_real_mcp_server": 0.706
+  }
+ },
+ "test_sysop_bus.py": {
+  "layer": "fast",
+  "tests": 12,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 1.18,
+  "podman_s": 1.21,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "WholePath.test_a_goal_on_the_topic_of_the_setting_types_in_the_tab_through_swarmbox_tabs": 0.855
+  }
+ },
+ "test_sysop_dock.py": {
+  "layer": "slow",
+  "tests": 81,
+  "skipped_host_hidden": 66,
+  "skipped_podman": 66,
+  "host_s": 0.41,
+  "podman_s": 0.41,
+  "gated_s": 71.03,
+  "ran_gated": 81,
+  "needs": [
+   "env:SWARMBOX_TEST_REAL_TMUX",
+   "pty",
+   "swarmbox-sysop",
+   "tmux"
+  ],
+  "pty": true,
+  "slow_tests_s": {
+   "NoSysopAddon.test_every_sysop_key_without_the_addon_leaves_the_pane_typing": 4.649,
+   "HookRedock.test_only_one_panel_survives_a_redock_race": 3.244,
+   "NoFocus.test_keys_typed_in_the_tab_while_a_goal_arrives_never_reach_a_countdown_panel": 3.126,
+   "NoFocus.test_keys_typed_in_the_tab_while_a_goal_arrives_never_reach_an_approval_panel": 3.124,
+   "TabName.test_opening_the_panel_does_not_rename_the_tab_and_closing_gives_the_automatic_name_back": 3.114,
+   "NoFocus.test_the_approval_gesture_focuses_the_panel_on_the_approval_prompt_and_run_allows_it": 2.528,
+   "NoFocus.test_a_click_on_the_panel_focuses_it_and_then_its_own_keys_work": 2.512,
+   "NoFocus.test_the_approval_gesture_opens_the_panel_when_it_is_not_there_and_does_not_focus_without_an_approval": 2.372,
+   "HookRedock.test_the_hook_stays_while_any_window_has_a_panel_and_goes_with_the_last": 1.729,
+   "NoFocus.test_the_approval_gesture_refuses_a_countdown_action": 1.658,
+   "NoFocus.test_the_veto_key_with_nothing_waiting_does_nothing": 1.656,
+   "HookRedock.test_a_resize_that_keeps_the_layout_changes_nothing": 1.645,
+   "NoFocus.test_the_goal_key_asks_for_a_goal_in_a_popup_and_publishes_it": 1.634,
+   "Placement.test_the_tmux_calls_are_the_split_the_design_names": 1.484,
+   "HookRedock.test_a_redock_of_one_window_changes_nothing_about_what_is_shown_or_the_other_windows": 1.443,
+   "HookRedock.test_the_hook_fits_the_window_that_was_resized_and_the_other_when_it_is_shown": 1.277,
+   "HookRedock.test_a_redock_keeps_the_focus_in_the_panel_when_it_had_it": 1.197,
+   "HookRedock.test_a_redock_never_takes_the_focus_from_the_pane_the_user_is_in": 1.197,
+   "Cli.test_a_panel_that_exits_by_itself_closes_its_pane": 1.17,
+   "Cli.test_even_with_remain_on_exit_the_panel_pane_goes": 1.167,
+   "NoSysopAddon.test_the_hint_names_the_command_that_installs_it": 1.125,
+   "Following.test_the_thread_follows_status_json": 1.091,
+   "Placement.test_the_users_panes_are_untouched": 0.885,
+   "PerWindow.test_the_users_panes_in_every_window_are_untouched": 0.884,
+   "Cli.test_toggle_creates_the_real_panel_and_toggles_it_closed": 0.821,
+   "Cli.test_the_real_panel_in_tmux_shows_the_state_of_the_service": 0.805,
+   "HookRedock.test_resizing_the_window_moves_the_same_pane_to_the_other_layout": 0.759,
+   "NoFocus.test_the_veto_key_vetoes_a_countdown_and_refuses_an_approval": 0.757,
+   "PerWindow.test_each_window_has_its_own_panel_and_never_two": 0.721,
+   "PerWindow.test_close_without_a_window_closes_all_and_with_one_closes_that_one": 0.713,
+   "NoFocus.test_the_panel_says_which_keys_work_from_any_tab": 0.711,
+   "NoFocus.test_the_stop_key_asks_for_the_stop": 0.706,
+   "PerWindow.test_toggle_acts_on_the_window_it_is_given_only": 0.703,
+   "PerWindow.test_swarmbox_tabs_never_lists_the_panel_as_a_tab": 0.695,
+   "HookRedock.test_a_redock_for_one_window_fits_only_that_window": 0.689,
+   "PerWindow.test_a_stray_second_panel_is_removed_only_from_its_own_window": 0.682,
+   "Following.test_a_panel_the_user_closed_is_not_opened_again_for_the_same_goal_but_is_for_the_next": 0.681,
+   "Placement.test_parallel_opens_make_one_panel": 0.68,
+   "KeyBinding.test_pressing_the_key_calls_the_toggle_for_this_window_on_this_server": 0.675,
+   "Following.test_a_goal_opens_the_panel_in_the_shown_window_and_the_end_closes_it": 0.673,
+   "TabName.test_the_quit_key_of_the_panel_gives_the_name_back": 0.671,
+   "Placement.test_close_removes_the_panel_and_the_hook": 0.67,
+   "PerWindow.test_opening_without_a_window_uses_the_window_the_session_shows_and_leaves_the_others_alone": 0.668,
+   "TabName.test_opening_twice_remembers_the_first_value": 0.666,
+   "HookRedock.test_the_voice_hook_and_the_sysop_hook_live_side_by_side": 0.663,
+   "TabName.test_a_panel_killed_by_hand_is_healed_at_the_next_close": 0.662,
+   "TabName.test_a_tab_the_user_renamed_stays_renamed": 0.661,
+   "Placement.test_the_panel_is_marked_by_the_option_and_the_command": 0.659,
+   "Placement.test_opening_again_never_makes_a_second_panel_in_the_window": 0.658,
+   "Following.test_a_panel_opened_by_hand_is_not_closed_when_the_goal_ends": 0.657,
+   "Placement.test_a_stray_second_panel_in_the_window_is_removed": 0.655,
+   "Following.test_a_queued_goal_keeps_it_open_and_a_new_goal_in_the_grace_cancels_the_close": 0.647,
+   "Following.test_an_existing_panel_does_not_get_the_focus_back": 0.645,
+   "TabName.test_the_other_windows_are_never_touched": 0.644,
+   "HookRedock.test_the_hook_passes_the_window_that_changed": 0.643,
+   "Placement.test_a_portrait_window_gets_a_full_width_pane_of_30_percent_at_the_bottom": 0.641,
+   "Placement.test_a_landscape_window_gets_20_percent_at_the_right_edge": 0.639,
+   "Placement.test_a_narrow_landscape_window_falls_back_to_the_bottom": 0.638,
+   "Placement.test_a_wide_window_short_of_the_minimum_uses_40_columns": 0.638,
+   "TabName.test_a_failed_open_leaves_the_name_alone": 0.624
+  }
+ },
+ "test_sysop_keys.py": {
+  "layer": "fast",
+  "tests": 13,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.48,
+  "podman_s": 0.47,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_sysop_mcp.py": {
+  "layer": "fast",
+  "tests": 84,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 22.85,
+  "podman_s": 22.88,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "Typing.test_a_send_that_was_refused_typed_nothing_and_a_timeout_may_have": 2.167,
+   "Audit.test_every_call_decision_and_result_is_in_the_audit_file_with_the_source": 2.137,
+   "Typing.test_an_error_after_a_refusal_keeps_the_memory_of_the_line": 2.134,
+   "Approval.test_an_approval_without_the_word_run_is_not_one": 0.837,
+   "Approval.test_a_decision_for_another_id_does_not_approve": 0.834,
+   "Wait.test_wait_ends_at_the_deadline_and_at_the_stop": 0.827,
+   "Approval.test_a_stale_approval_file_cannot_approve_a_later_action": 0.825,
+   "Approval.test_with_nobody_to_approve_it_times_out_to_a_refusal": 0.825,
+   "Countdown.test_the_pending_file_says_what_the_panel_needs": 0.723,
+   "Countdown.test_a_decision_for_another_action_is_ignored": 0.722,
+   "Countdown.test_a_damaged_decision_file_is_ignored": 0.714,
+   "Countdown.test_a_decision_with_a_wrong_word_is_ignored": 0.714,
+   "Countdown.test_an_old_decision_file_cannot_veto_a_new_action": 0.713,
+   "Countdown.test_a_low_risk_action_goes_after_the_countdown_when_nobody_vetoes": 0.712,
+   "Autonomy.test_confirm_risky": 0.5
+  }
+ },
+ "test_sysop_panel.py": {
+  "layer": "fast",
+  "tests": 77,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 46.9,
+  "podman_s": 46.99,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "pty"
+  ],
+  "pty": true,
+  "slow_tests_s": {
+   "PanelProgram.test_the_idle_panel_costs_almost_no_cpu_and_follows_a_new_goal": 11.156,
+   "RealCore.test_the_countdown_runs_out_and_the_action_is_sent": 3.175,
+   "RealCore.test_a_high_risk_action_needs_the_typed_word_run": 3.147,
+   "PanelProgram.test_an_expired_countdown_cannot_be_answered": 3.055,
+   "PanelProgram.test_the_countdown_runs_on_screen_and_c_vetoes_it": 2.175,
+   "RealCore.test_the_panel_follows_a_goal_and_the_veto_key_stops_the_action": 2.115,
+   "PanelProgram.test_the_service_down_is_said_and_the_panel_goes_on_looking": 2.112,
+   "PanelProgram.test_the_service_coming_and_going_is_seen_by_an_idle_panel": 2.111,
+   "RealCore.test_the_stop_key_ends_the_goal": 2.093,
+   "RealCore.test_a_goal_typed_in_the_panel_is_run_by_the_service": 1.804,
+   "PanelProgram.test_keys_are_ignored_right_after_an_action_appears": 1.775,
+   "PanelProgram.test_sigterm_and_sighup_end_it_cleanly": 1.505,
+   "PanelProgram.test_the_approval_gesture": 1.375,
+   "PanelProgram.test_it_shows_the_goal_the_log_and_the_queue_as_the_service_writes_them": 1.106,
+   "PanelProgram.test_typing_a_goal_publishes_it_with_the_source_panel": 1.015,
+   "PanelProgram.test_c_refuses_an_approval_and_esc_leaves_the_word_prompt": 0.925,
+   "PanelProgram.test_a_goal_typed_in_the_panel_reaches_a_subscriber": 0.805,
+   "PanelProgram.test_x_asks_the_service_to_stop_the_goal": 0.794,
+   "PanelProgram.test_the_goal_goes_to_the_topic_of_the_setting": 0.755,
+   "PanelProgram.test_idle_shows_the_text_and_q_closes_the_pane": 0.753,
+   "PanelProgram.test_q_ends_the_panel_in_every_mode_but_typing": 0.753,
+   "PanelProgram.test_q_in_the_mode_always_ends_the_panel_like_before": 0.753,
+   "PanelProgram.test_idle_at_several_widths_in_a_real_pane_and_the_last_goal": 0.612
+  }
+ },
+ "test_sysop_policy.py": {
+  "layer": "fast",
+  "tests": 43,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.43,
+  "podman_s": 0.44,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_sysop_real.py": {
+  "layer": "slow",
+  "tests": 15,
+  "skipped_host_hidden": 15,
+  "skipped_podman": 15,
+  "host_s": 0.06,
+  "podman_s": 0.06,
+  "gated_s": 24.14,
+  "ran_gated": 15,
+  "needs": [
+   "env:SWARMBOX_TEST_REAL_TMUX",
+   "python3",
+   "tmux"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "OnTheBus.test_two_sysops_in_the_same_group_handle_a_goal_once": 4.19,
+   "Policy.test_a_command_typed_in_parts_is_held_when_it_completes": 2.391,
+   "Policy.test_without_a_veto_the_countdown_sends_it": 2.186,
+   "OnTheBus.test_the_bus_carries_only_the_goals_and_the_sysop_is_in_its_group": 2.109,
+   "Typing.test_input_with_keys_into_the_shell": 1.788,
+   "Typing.test_a_prompt_for_the_agent_tab_is_typed_and_submitted": 1.769,
+   "Typing.test_a_goal_types_a_command_in_the_active_tab_and_reads_the_result": 1.59,
+   "Typing.test_errors_of_swarmbox_tabs_reach_the_model_as_results": 1.414,
+   "Policy.test_a_high_risk_run_is_held_and_never_typed_without_approval": 1.389,
+   "Stop.test_stop_ends_the_goal_and_nothing_more_is_typed": 1.32,
+   "Policy.test_the_same_run_with_an_approval_from_the_panel_goes": 1.188,
+   "Policy.test_the_veto_stops_a_low_risk_action": 1.086,
+   "Stop.test_stop_during_the_countdown_types_nothing": 1.033
+  }
+ },
+ "test_sysop_review.py": {
+  "layer": "fast",
+  "tests": 31,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 5.64,
+  "podman_s": 5.61,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "ServerGate.test_the_forger_of_decisions_needs_an_approval_itself": 2.026,
+   "ServerGate.test_run_on_a_prompt_with_text_left_on_it": 2.014,
+   "ServerWait.test_a_dialog_that_opens_while_an_action_waits_stops_it": 0.64
+  }
+ },
+ "test_sysop_service.py": {
+  "layer": "fast",
+  "tests": 56,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 29.76,
+  "podman_s": 29.72,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "Rejections.test_the_queue_limit": 4.869,
+   "Stopping.test_the_deadline_ends_a_goal": 4.041,
+   "Stopping.test_stop_of_one_queued_goal_leaves_the_rest": 2.226,
+   "Flow.test_the_state_while_it_runs_shows_the_queue_and_the_current_goal": 2.225,
+   "Flow.test_the_state_waiting_approval_with_the_pending_action": 2.125,
+   "Flow.test_goals_run_one_at_a_time_in_order": 1.539,
+   "OwnProcess.test_a_second_service_does_not_start_and_does_not_disturb_the_first": 1.24,
+   "Stopping.test_stop_of_a_goal_that_is_not_running_does_not_hurt_the_current_one": 1.114,
+   "Flow.test_a_high_risk_goal_with_a_panel_that_approves": 0.772,
+   "Survival.test_the_bus_is_not_there_at_the_start": 0.687,
+   "Survival.test_the_bus_dies_in_the_middle_of_a_goal": 0.65,
+   "Cli.test_goal_wait_follows_it_to_the_end": 0.525
+  }
+ },
+ "test_sysop_soak.py": {
+  "layer": "fast",
+  "tests": 39,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 15.19,
+  "podman_s": 15.06,
+  "gated_s": 15.04,
+  "ran_gated": 39,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "LogOnAFullDisk.test_a_log_that_cannot_be_written_does_not_end_the_service": 4.809,
+   "ServiceMainLoop.test_an_error_in_one_turn_of_the_main_loop_is_logged_and_the_loop_goes_on": 2.237,
+   "BrainClock.test_the_time_budget_of_a_goal_is_not_stretched_by_a_wall_clock_that_jumps_back": 2.027,
+   "Housekeeping.test_the_service_runs_the_housekeeping_of_its_main_loop": 1.406,
+   "PanelFailures.test_a_failing_turn_is_one_line_in_the_panel_not_a_traceback_and_the_panel_goes_on": 1.308,
+   "FullDiskEnds.test_the_end_of_a_goal_that_the_disk_refused_is_written_when_there_is_room_again": 0.947,
+   "ClockJumps.test_a_countdown_ends_on_time_when_the_wall_clock_jumps_back_during_it": 0.715
+  }
+ },
+ "test_sysop_watch.py": {
+  "layer": "fast",
+  "tests": 6,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 4.3,
+  "podman_s": 4.29,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "RealService.test_a_second_watch_start_changes_nothing_when_the_service_runs": 1.656,
+   "RealService.test_kill_9_of_the_service_brings_it_back_and_a_term_does_not": 1.187,
+   "Scripted.test_a_crash_loop_ends_in_giving_up_with_a_file_that_says_so_and_a_second_watcher_wakes_it": 1.02
+  }
+ },
+ "test_sysop_web.py": {
+  "layer": "slow",
+  "tests": 4,
+  "skipped_host_hidden": 4,
+  "skipped_podman": 4,
+  "host_s": 0.06,
+  "podman_s": 0.07,
+  "gated_s": 15.34,
+  "ran_gated": 4,
+  "needs": [
+   "chromium",
+   "env:SWARMBOX_TEST_REAL_TMUX",
+   "ttyd"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "WebKeys.test_keys_typed_in_the_browser_while_a_goal_arrives_never_reach_the_panel": 4.712,
+   "WebKeys.test_the_approval_gesture_then_the_word_run_from_the_browser": 4.306,
+   "WebKeys.test_a_mouse_click_on_the_panel_focuses_it_and_its_keys_work": 3.772,
+   "WebKeys.test_the_sysop_keys_work_from_the_browser": 2.43
+  }
+ },
+ "test_tabs.py": {
+  "layer": "fast",
+  "tests": 88,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 27.63,
+  "podman_s": 27.65,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "TestCommand.test_no_tmux_and_no_session_are_4_and_a_timeout_is_5": 5.076,
+   "TestSendLimits.test_a_long_text_goes_in_small_words_and_is_typed_whole": 3.765,
+   "TestSendLimits.test_too_many_steps_are_refused_before_anything_is_typed": 3.169,
+   "TestCommand.test_send_run_and_input_and_queue_and_slash": 1.224,
+   "TestLock.test_two_processes_sending_to_one_tab_never_interleave": 0.87,
+   "TestSend.test_an_enter_that_never_submits_is_not_submitted": 0.817,
+   "TestLock.test_a_held_lock_makes_the_send_wait_and_then_time_out_with_nothing_typed": 0.778,
+   "TestSend.test_a_pasted_text_placeholder_in_the_box_counts_as_not_submitted": 0.602,
+   "TestSendLimits.test_a_semicolon_at_the_end_of_a_word_is_typed_as_a_key_not_taken_for_the_end_of_the_command": 0.54
+  }
+ },
+ "test_tabs_locks.py": {
+  "layer": "fast",
+  "tests": 4,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.84,
+  "podman_s": 0.83,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_tabs_real.py": {
+  "layer": "slow",
+  "tests": 28,
+  "skipped_host_hidden": 28,
+  "skipped_podman": 28,
+  "host_s": 0.05,
+  "podman_s": 0.05,
+  "gated_s": 25.17,
+  "ran_gated": 28,
+  "needs": [
+   "env:SWARMBOX_TEST_REAL_TMUX",
+   "fzf",
+   "less",
+   "pty",
+   "tmux"
+  ],
+  "pty": true,
+  "slow_tests_s": {
+   "TestTabs.test_active_is_the_window_of_the_last_active_client_two_pty_clients": 6.719,
+   "TestAgent.test_busy_is_refused_unless_queue_then_the_answer_runs_the_queued_one": 4.271,
+   "TestAgent.test_a_burst_would_have_failed_and_the_driver_does_not_burst": 1.619,
+   "TestSendShell.test_literal_brace_and_braces_that_are_keys": 1.588,
+   "TestScreen.test_a_select_menu_has_no_marker_and_fzf_has_the_background_one": 1.123,
+   "TestCommand.test_the_whole_path": 1.051,
+   "TestSendShell.test_a_semicolon_at_the_end_is_typed_and_long_text_goes_through": 1.014,
+   "TestAgent.test_a_prompt_is_submitted_with_the_pause_and_the_answer_appears": 0.808,
+   "TestScreen.test_the_cost_of_ten_windows": 0.797,
+   "TestCommand.test_two_concurrent_sends_to_one_tab_do_not_interleave": 0.748,
+   "TestAgent.test_a_dialog_is_refused_and_answered_by_input": 0.634,
+   "TestAgent.test_multi_line_prompt_is_one_prompt": 0.574,
+   "TestSendShell.test_a_shell_is_not_judged_slash_and_dialog_words_are_typed": 0.534,
+   "TestTabs.test_a_secret_wrapped_by_a_narrow_pane_is_removed_on_every_row": 0.505
+  }
+ },
+ "test_tabs_redact_dos.py": {
+  "layer": "fast",
+  "tests": 8,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 6.68,
+  "podman_s": 6.61,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "RedactTimeTest.test_adversarial_inputs_are_fast": 5.913,
+   "RedactTimeTest.test_cost_does_not_grow_faster_than_the_size": 0.597
+  }
+ },
+ "test_theme.py": {
+  "layer": "fast",
+  "tests": 13,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.05,
+  "podman_s": 0.05,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_third_party_notices.py": {
+  "layer": "fast",
+  "tests": 6,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.09,
+  "podman_s": 0.09,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_tmux_browser_keys.py": {
+  "layer": "slow",
+  "tests": 22,
+  "skipped_host_hidden": 22,
+  "skipped_podman": 1,
+  "host_s": 0.05,
+  "podman_s": 72.09,
+  "gated_s": 72.09,
+  "ran_gated": 22,
+  "needs": [
+   "pty",
+   "tmux"
+  ],
+  "pty": true,
+  "slow_tests_s": {
+   "DefaultConfig.test_the_plus_button_creates_a_window_only_in_the_first_three_columns": 5.251,
+   "DefaultConfig.test_splits_focus_resize_zoom_and_close": 5.244,
+   "BrowserKeys.test_the_plus_button_creates_a_window_only_in_the_first_three_columns": 5.242,
+   "BrowserKeys.test_splits_focus_resize_zoom_and_close": 5.237,
+   "DefaultConfig.test_a_program_that_asks_for_the_mouse_gets_the_wheel_and_tmux_does_not_scroll_over_it": 4.427,
+   "DefaultConfig.test_alt_w_asks_before_closing_a_window": 3.873,
+   "BrowserKeys.test_alt_w_asks_before_closing_a_window": 3.865,
+   "DefaultConfig.test_the_mouse_wheel_scrolls_five_lines_per_event_in_copy_mode": 3.627,
+   "DefaultConfig.test_alt_n_creates_a_window_and_alt_h_l_move_between_them": 3.43,
+   "DefaultConfig.test_alt_digits_jump_and_alt_0_returns_to_the_last_window": 3.424,
+   "BrowserKeys.test_alt_n_creates_a_window_and_alt_h_l_move_between_them": 3.421,
+   "BrowserKeys.test_alt_digits_jump_and_alt_0_returns_to_the_last_window": 3.417,
+   "DefaultConfig.test_the_prefix_bindings_of_the_default_config_work": 2.978,
+   "DefaultConfig.test_alt_shift_l_moves_the_window_and_keeps_it_selected": 2.976,
+   "BrowserKeys.test_alt_shift_l_moves_the_window_and_keeps_it_selected": 2.967,
+   "DefaultConfig.test_it_finds_the_keys_file_next_to_itself_from_any_directory": 2.243,
+   "DefaultConfig.test_it_loads_cleanly_when_the_keys_file_is_absent": 2.239,
+   "DefaultConfig.test_the_default_config_sets_the_swarmbox_options": 1.637,
+   "DefaultConfig.test_the_config_loads_without_errors_and_binds_the_keys": 1.636,
+   "DefaultConfig.test_where_tmux_has_the_scrollbar_it_is_off": 1.621,
+   "DefaultConfig.test_the_scrollbar_is_off_and_set_quietly_so_an_older_tmux_still_loads_the_file": 1.618,
+   "BrowserKeys.test_the_config_loads_without_errors_and_binds_the_keys": 1.617
+  }
+ },
+ "test_voice_config.py": {
+  "layer": "fast",
+  "tests": 18,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 1.42,
+  "podman_s": 1.41,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_voice_front.py": {
+  "layer": "fast",
+  "tests": 46,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 24.92,
+  "podman_s": 24.87,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "Processes.test_ttyd_exiting_stops_the_service_and_gives_its_status": 1.771,
+   "Processes.test_a_dead_service_is_restarted_and_the_terminal_never_noticed": 1.514,
+   "VoicePath.test_a_body_that_trickles_in_has_a_total_deadline": 1.504,
+   "TerminalPath.test_connections_do_not_leak_threads": 1.123,
+   "VoicePath.test_a_slow_service_is_a_504_and_does_not_block_the_terminal": 1.056,
+   "TerminalPath.test_a_silent_client_is_cut_after_the_head_timeout": 1.003,
+   "VoicePath.test_a_stalled_body_times_out": 1.003,
+   "VoicePath.test_audio_needs_a_wav_content_type": 0.561,
+   "TerminalPath.test_no_other_origin_may_frame_a_page_of_the_terminal_nor_an_answer_of_voice": 0.556,
+   "VoicePath.test_an_error_answer_keeps_its_status_and_only_error_and_message": 0.556,
+   "VoicePath.test_a_garbage_answer_is_a_502_and_the_terminal_still_works": 0.555,
+   "VoicePath.test_a_same_origin_origin_is_rewritten_to_the_service_loopback": 0.555,
+   "VoicePath.test_a_state_that_is_not_ok_keeps_its_status_state_and_message_and_nothing_else": 0.555,
+   "VoicePath.test_audio_is_forwarded_whole_and_only_ok_and_state_come_back": 0.555,
+   "VoicePath.test_get_health_is_forwarded_rebuilt_and_only_ok_comes_back": 0.555,
+   "VoicePath.test_the_answer_must_be_a_json_object": 0.555,
+   "VoicePath.test_a_dead_service_is_a_502_and_the_terminal_still_works": 0.506,
+   "TtydDown.test_without_ttyd_the_terminal_is_a_502_and_voice_works": 0.505,
+   "TerminalPath.test_a_big_body_comes_through_whole": 0.503,
+   "TerminalPath.test_a_plain_request_reaches_ttyd_with_connection_close_and_nothing_else_changed": 0.503,
+   "TerminalPath.test_a_websocket_upgrade_is_passed_through_untouched_and_echoes": 0.503,
+   "TerminalPath.test_connection_close_is_added_when_the_client_sent_none": 0.503,
+   "TerminalPath.test_half_closing_the_request_still_gets_the_answer": 0.503,
+   "TerminalPath.test_head_limits": 0.503,
+   "TerminalPath.test_ttyd_origin_rule_sees_the_original_host_and_origin": 0.503,
+   "VoicePath.test_a_cross_origin_request_is_403_and_never_forwarded": 0.503,
+   "VoicePath.test_host_is_required_exactly_once": 0.503,
+   "VoicePath.test_length_rules": 0.503,
+   "VoicePath.test_paths_that_only_look_like_voice_go_to_the_terminal": 0.503,
+   "VoicePath.test_the_answer_filter_is_exactly_the_keys_of_the_new_answer": 0.503,
+   "VoicePath.test_the_four_routes_with_the_wrong_method_are_refused": 0.503,
+   "VoicePath.test_the_front_exposes_only_audio": 0.503,
+   "VoicePath.test_the_page_parts_come_from_the_web_folder": 0.503,
+   "VoicePath.test_the_table_is_exactly_these_four_routes": 0.503,
+   "VoicePath.test_too_many_voice_requests_are_refused_not_queued_on_the_terminal": 0.503,
+   "VoicePath.test_size_caps": 0.502
+  }
+ },
+ "test_voice_page.py": {
+  "layer": "fast",
+  "tests": 11,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 0.06,
+  "podman_s": 0.11,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "node"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_voice_page_browser.py": {
+  "layer": "slow",
+  "tests": 14,
+  "skipped_host_hidden": 14,
+  "skipped_podman": 0,
+  "host_s": 0.06,
+  "podman_s": 31.68,
+  "gated_s": 31.68,
+  "ran_gated": 14,
+  "needs": [
+   "chromium"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "VoicePage.test_hold_records_posts_wav_and_only_the_light_changes": 4.552,
+   "VoicePage.test_a_service_error_is_a_short_sentence_in_the_light": 3.864,
+   "VoicePage.test_busy_is_its_own_light_and_the_next_try_works": 3.862,
+   "VoicePage.test_text_from_the_service_is_text_not_markup": 2.545,
+   "VoicePage.test_touch_hold_works_and_everything_fits_a_phone": 2.054,
+   "VoicePage.test_the_page_shows_only_a_microphone_and_a_light": 2.049,
+   "VoicePage.test_bus_down_is_an_error_light_with_a_sentence": 2.048,
+   "VoicePage.test_no_listener_says_only_that_nobody_is_listening": 2.048,
+   "VoicePage.test_an_unknown_state_is_an_error_and_never_shown_as_text": 2.046,
+   "VoicePage.test_nothing_heard_is_its_own_light": 2.046,
+   "VoicePage.test_a_tap_that_is_too_short_sends_nothing": 1.535,
+   "VoicePage.test_the_button_is_absent_when_the_service_is_absent": 1.534,
+   "VoicePage.test_a_browser_without_a_microphone_api_says_so": 0.538,
+   "VoicePage.test_a_denied_microphone_gives_a_short_message": 0.534
+  }
+ },
+ "test_voice_service.py": {
+  "layer": "fast",
+  "tests": 36,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 7.46,
+  "podman_s": 7.43,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "GoalOnTheBus.test_loudest_gives_the_same_answer_as_the_prefix_sum_and_keeps_no_list_of_samples": 1.056,
+   "HttpTests.test_no_listener_over_http_is_a_503_with_a_state": 0.704,
+   "HttpTests.test_audio_states_and_errors_over_http": 0.531,
+   "HttpTests.test_the_service_has_only_health_and_audio": 0.511,
+   "HttpTests.test_host_and_origin_are_checked": 0.51,
+   "HttpTests.test_an_internal_error_does_not_leak_a_traceback": 0.505,
+   "HttpTests.test_audio_over_http_publishes_the_goal_and_answers_sent": 0.504,
+   "HttpTests.test_only_loopback_addresses_are_accepted_for_listening": 0.504,
+   "HttpTests.test_health": 0.503
+  }
+ },
+ "test_voice_soak.py": {
+  "layer": "fast",
+  "tests": 5,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 4.0,
+  "podman_s": 4.0,
+  "gated_s": 4.0,
+  "ran_gated": 5,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {
+   "TwoSigterms.test_two_sigterms_in_a_row_leave_no_traceback": 2.562,
+   "Burst.test_at_most_max_parallel_recognizers_run_at_once_and_every_recording_is_served": 0.756,
+   "Burst.test_a_recording_that_waits_too_long_gets_a_fixed_busy_answer_and_the_places_come_back": 0.602
+  }
+ },
+ "test_voice_web.py": {
+  "layer": "fast",
+  "tests": 25,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 1.46,
+  "podman_s": 1.29,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_web_build.py": {
+  "layer": "fast",
+  "tests": 18,
+  "skipped_host_hidden": 0,
+  "skipped_podman": 0,
+  "host_s": 1.64,
+  "podman_s": 1.66,
+  "gated_s": null,
+  "ran_gated": null,
+  "needs": [
+   "chromium",
+   "shellcheck",
+   "ttyd"
+  ],
+  "pty": false,
+  "slow_tests_s": {}
+ },
+ "test_web_strip.py": {
+  "layer": "slow",
+  "tests": 35,
+  "skipped_host_hidden": 18,
+  "skipped_podman": 18,
+  "host_s": 0.54,
+  "podman_s": 0.53,
+  "gated_s": 62.14,
+  "ran_gated": 35,
+  "needs": [
+   "chromium",
+   "env:SWARMBOX_TEST_REAL_TMUX",
+   "node",
+   "ttyd"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "Browser.test_holding_an_arrow_repeats_and_a_tap_types_once": 4.766,
+   "Browser.test_the_keyboard_of_a_phone_moves_the_strip_above_it": 4.719,
+   "Browser.test_a_addon_control_alone_shows_the_strip_on_desktop_without_the_key_buttons": 3.948,
+   "Browser.test_the_panel_button_runs_the_sysop_panel_binding_of_the_image": 3.548,
+   "Browser.test_every_default_key_button_delivers_its_bytes_by_touch": 3.504,
+   "Browser.test_a_note_covers_the_keys_but_not_the_addon_controls_and_goes_away": 3.449,
+   "Browser.test_every_default_key_button_delivers_its_bytes_by_mouse": 3.392,
+   "Browser.test_the_terminal_still_works_and_the_clipboard_bridge_is_intact_with_the_strip": 3.154,
+   "Browser.test_the_sentences_of_the_voice_addon_are_read_whole_on_a_phone_in_two_lines": 3.15,
+   "Browser.test_listed_keys_show_the_strip_on_desktop": 3.143,
+   "Browser.test_strip_off_wins_over_touch_and_addons": 3.142,
+   "Browser.test_strip_on_forces_it_and_off_hides_it_even_for_a_addon_and_touch": 3.139,
+   "Browser.test_phone_landscape_is_one_small_row": 3.138,
+   "Browser.test_tablet": 3.137,
+   "Browser.test_desktop_with_the_keys_forced_on_and_a_control": 3.136,
+   "Browser.test_desktop_has_no_strip_until_something_needs_it": 3.13,
+   "Browser.test_phone_portrait": 3.118,
+   "Browser.test_a_note_nobody_clears_goes_away_by_itself": 2.844
+  }
+ },
+ "test_web_style.py": {
+  "layer": "slow",
+  "tests": 7,
+  "skipped_host_hidden": 7,
+  "skipped_podman": 0,
+  "host_s": 0.06,
+  "podman_s": 20.1,
+  "gated_s": 19.89,
+  "ran_gated": 7,
+  "needs": [
+   "chromium",
+   "ttyd"
+  ],
+  "pty": false,
+  "slow_tests_s": {
+   "WebStyle.test_the_terminal_still_fills_the_window": 3.288,
+   "WebStyle.test_scrollbar_true_gives_a_thin_translucent_bar_with_no_track_and_keeps_the_history": 2.794,
+   "WebStyle.test_a_scrollback_in_the_conf_wins": 2.793,
+   "WebStyle.test_the_terminal_is_5px_from_every_edge_by_default": 2.782,
+   "WebStyle.test_the_padding_can_be_changed_in_the_config_file": 2.763,
+   "WebStyle.test_there_is_no_scrollbar_by_default_because_tmux_owns_the_scrollback": 2.758,
+   "WebStyle.test_a_bad_padding_falls_back_to_the_default": 2.597
+  }
+ }
+}

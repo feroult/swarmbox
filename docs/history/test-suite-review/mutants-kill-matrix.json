@@ -1,0 +1,4963 @@
+{
+ "risk.py:19:const:cbd5a8b9": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 19,
+  "kind": "const",
+  "desc": "constant 4 -> 5",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:147:compare:1058eeba": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 147,
+  "kind": "compare",
+  "desc": "flip In -> NotIn",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:181:negate-cond:0f197916": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 181,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:208:const:6cd301a9": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 208,
+  "kind": "const",
+  "desc": "constant 0 -> 1",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:243:compare:3da14739": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 243,
+  "kind": "compare",
+  "desc": "flip Gt -> GtE",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:244:negate-cond:c0df896c": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 244,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:274:const:4f42d921": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 274,
+  "kind": "const",
+  "desc": "constant 1 -> 2",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:293:compare:dbd85977": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 293,
+  "kind": "compare",
+  "desc": "flip In -> NotIn",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:304:compare:e9b2fdf6": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 304,
+  "kind": "compare",
+  "desc": "flip Eq -> NotEq",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:398:boolop:2534a1dd": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 398,
+  "kind": "boolop",
+  "desc": "And -> Or",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:399:compare:c234fb14": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 399,
+  "kind": "compare",
+  "desc": "flip In -> NotIn",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:405:negate-cond:8ec1df80": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 405,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_panel.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:407:boolop:3b56ef77": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 407,
+  "kind": "boolop",
+  "desc": "And -> Or",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:407:negate-cond:255575d5": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 407,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_panel.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:418:boolop:424f51a9": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 418,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:420:boolop:75e2a2cb": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 420,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:421:boolop:aacfb42f": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 421,
+  "kind": "boolop",
+  "desc": "And -> Or",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:425:drop-call:e3b3b3bc": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 425,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:450:loop-ctl:4eac757e": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 450,
+  "kind": "loop-ctl",
+  "desc": "break/continue swapped",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_service.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py"
+  ]
+ },
+ "risk.py:455:negate-cond:092d5f9c": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 455,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "risk.py:506:not-removed:eb928c6a": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "line": 506,
+  "kind": "not-removed",
+  "desc": "remove a not",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "policy.py:66:compare:cf592db9": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 66,
+  "kind": "compare",
+  "desc": "flip Lt -> LtE",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:112:compare:406a8668": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 112,
+  "kind": "compare",
+  "desc": "flip Is -> IsNot",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:123:boolop:322c698b": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 123,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:236:drop-call:52424e1c": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 236,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:262:negate-cond:44b6ec55": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 262,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:263:compare:92abdccc": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 263,
+  "kind": "compare",
+  "desc": "flip Eq -> NotEq",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:287:compare:e72b147f": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 287,
+  "kind": "compare",
+  "desc": "flip Eq -> NotEq",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:287:negate-cond:c544c0c4": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 287,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:301:bool-const:a3f129bd": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 301,
+  "kind": "bool-const",
+  "desc": "True -> False",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:320:negate-cond:dd0bb956": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 320,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:322:negate-cond:44eb2f44": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 322,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:331:negate-cond:b11eeb2f": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 331,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:334:negate-cond:c7460ca1": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 334,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "policy.py:334:compare:1f942299": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "line": 334,
+  "kind": "compare",
+  "desc": "flip Eq -> NotEq",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_policy.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "brain.py:96:const:d13db67b": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "line": 96,
+  "kind": "const",
+  "desc": "constant 1 -> 2",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_brain.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "brain.py:103:negate-cond:6614d1bb": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "line": 103,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_always.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "brain.py:228:drop-call:a4c54008": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "line": 228,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_brain.py",
+   "test_sysop_service.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "brain.py:243:drop-call:2ea4adb2": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "line": 243,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_brain.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "brain.py:259:boolop:d598997d": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "line": 259,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "brain.py:274:negate-cond:9ca7e738": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "line": 274,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "service.py:55:compare:c5c11fe3": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "line": 55,
+  "kind": "compare",
+  "desc": "flip In -> NotIn",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_soak.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_bus.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "service.py:193:drop-call:a201bdd6": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "line": 193,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_soak.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_bus.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "service.py:206:drop-call:efc38a73": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "line": 206,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_bus.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "service.py:316:drop-call:2d6dd45a": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "line": 316,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_bus.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "service.py:353:const:cea2d2a9": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "line": 353,
+  "kind": "const",
+  "desc": "constant 200 -> 201",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_bus.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "service.py:420:compare:b65cd35f": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "line": 420,
+  "kind": "compare",
+  "desc": "flip NotEq -> Eq",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_service.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_bus.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "service.py:506:boolop:3157fb42": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "line": 506,
+  "kind": "boolop",
+  "desc": "And -> Or",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_bus.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "mcpserver.py:98:boolop:40199c01": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "line": 98,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ]
+ },
+ "mcpserver.py:198:bool-const:f6697222": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "line": 198,
+  "kind": "bool-const",
+  "desc": "False -> True",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ]
+ },
+ "mcpserver.py:200:negate-cond:54aba2e8": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "line": 200,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ]
+ },
+ "mcpserver.py:266:negate-cond:14799714": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "line": 266,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ]
+ },
+ "mcpserver.py:266:compare:40aceaef": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "line": 266,
+  "kind": "compare",
+  "desc": "flip IsNot -> Is",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ]
+ },
+ "mcpserver.py:268:compare:6713bf7b": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "line": 268,
+  "kind": "compare",
+  "desc": "invert GtE -> Lt",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ]
+ },
+ "mcpserver.py:333:boolop:8855bb55": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "line": 333,
+  "kind": "boolop",
+  "desc": "And -> Or",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py"
+  ]
+ },
+ "panel.py:80:negate-cond:78e17dd2": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "line": 80,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_no_old_names.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "panel.py:98:negate-cond:51512f1b": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "line": 98,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_web.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_no_old_names.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "panel.py:347:not-removed:229c3e31": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "line": 347,
+  "kind": "not-removed",
+  "desc": "remove a not",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_web.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_no_old_names.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "panel.py:455:compare:37928565": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "line": 455,
+  "kind": "compare",
+  "desc": "invert Lt -> GtE",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_web.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_no_old_names.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "panel.py:538:return-none:821c3609": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "line": 538,
+  "kind": "return-none",
+  "desc": "return None",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_panel.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_no_old_names.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "panel.py:793:negate-cond:f625f9f2": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "line": 793,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_panel.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_no_old_names.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "panel.py:955:negate-cond:2ab3c66f": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "line": 955,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_web.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_no_old_names.py",
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "dock.py:369:boolop:e41183c4": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "line": 369,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_soak.py",
+   "test_sysop_dock.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_service.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "dock.py:490:negate-cond:04e0cf8b": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "line": 490,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_service.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "dock.py:597:exit-code:1c739121": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "line": 597,
+  "kind": "exit-code",
+  "desc": "return 2 -> 0",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_soak.py",
+   "test_sysop_service.py",
+   "test_sysop_dock.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_service.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "dock.py:667:const:2de9ce68": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "line": 667,
+  "kind": "const",
+  "desc": "constant 1 -> 2",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_web.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_service.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "dock.py:692:negate-cond:ee866a99": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "line": 692,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_web.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_service.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "dock.py:722:drop-call:0a512370": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "line": 722,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_service.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "watch.py:98:compare:111c16af": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/watch.py",
+  "line": 98,
+  "kind": "compare",
+  "desc": "invert Lt -> GtE",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_addon.py"
+  ],
+  "ran": [
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "watch.py:127:negate-cond:b5896855": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/watch.py",
+  "line": 127,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_watch.py"
+  ],
+  "ran": [
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "watch.py:133:drop-call:c5f2c176": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/watch.py",
+  "line": 133,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "watch.py:141:negate-cond:847d64ca": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/watch.py",
+  "line": 141,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_watch.py",
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "audit.py:39:compare:878f7d93": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "line": 39,
+  "kind": "compare",
+  "desc": "invert LtE -> Gt",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_mcp.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py"
+  ]
+ },
+ "audit.py:42:boolop:53a49e51": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "line": 42,
+  "kind": "boolop",
+  "desc": "And -> Or",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py"
+  ]
+ },
+ "audit.py:59:boolop:ca39ee15": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "line": 59,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_soak.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py"
+  ]
+ },
+ "audit.py:84:drop-call:4e874268": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "line": 84,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_soak.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py"
+  ]
+ },
+ "audit.py:122:drop-call:503bbdb6": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "line": 122,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py"
+  ]
+ },
+ "audit.py:144:drop-call:58353a2d": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "line": 144,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_review.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_no_old_names.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py"
+  ]
+ },
+ "ipc.py:109:drop-call:23d1d4d9": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/ipc.py",
+  "line": 109,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_service.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_no_old_names.py",
+   "test_sysop_bus.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "ipc.py:111:return-none:6b81914c": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/ipc.py",
+  "line": 111,
+  "kind": "return-none",
+  "desc": "return None",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_real.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_no_old_names.py",
+   "test_sysop_bus.py",
+   "test_sysop_review.py",
+   "test_sysop_brain.py",
+   "test_sysop_soak.py",
+   "test_sysop_mcp.py",
+   "test_sysop_real.py",
+   "test_sysop_service.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "keys.py:56:boolop:25a6c131": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/keys.py",
+  "line": 56,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_keys.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_keys.py",
+   "test_sysop_review.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "keys.py:98:exit-code:93d846df": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/keys.py",
+  "line": 98,
+  "kind": "exit-code",
+  "desc": "return 0 -> 1",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_keys.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_keys.py",
+   "test_sysop_review.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "keys.py:104:boolop:e3a38203": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/keys.py",
+  "line": 104,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_keys.py",
+   "test_sysop_soak.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_keys.py",
+   "test_sysop_review.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "keys.py:113:exit-code:fe95f3d3": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/keys.py",
+  "line": 113,
+  "kind": "exit-code",
+  "desc": "return 2 -> 0",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_keys.py"
+  ],
+  "ran": [
+   "test_sysop_policy.py",
+   "test_sysop_keys.py",
+   "test_sysop_review.py",
+   "test_sysop_soak.py",
+   "test_sysop_web.py",
+   "test_sysop_real.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_panel.py",
+   "test_sysop_dock.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "config.py:90:boolop:cc25fd3d": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/config.py",
+  "line": 90,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_brain.py",
+   "test_sysop_service.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "config.py:116:const:245fcc1a": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/config.py",
+  "line": 116,
+  "kind": "const",
+  "desc": "constant 5 -> 6",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_brain.py",
+   "test_sysop_service.py"
+  ],
+  "ran": [
+   "test_sysop_brain.py",
+   "test_sysop_service.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "busclient.py:42:compare:ca22c051": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/busclient.py",
+  "line": 42,
+  "kind": "compare",
+  "desc": "flip Eq -> NotEq",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_keys.py",
+   "test_sysop_soak.py"
+  ],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_sysop_bus.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "busclient.py:53:compare:a0fd616c": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/busclient.py",
+  "line": 53,
+  "kind": "compare",
+  "desc": "flip Gt -> GtE",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_keys.py",
+   "test_sysop_bus.py",
+   "test_sysop_soak.py",
+   "test_sysop_real.py"
+  ]
+ },
+ "tabsclient.py:38:drop-call:1bc47c5a": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/tabsclient.py",
+  "line": 38,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_mcp.py"
+  ]
+ },
+ "tabsclient.py:64:compare:1dee014f": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/tabsclient.py",
+  "line": 64,
+  "kind": "compare",
+  "desc": "flip In -> NotIn",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_mcp.py"
+  ],
+  "ran": [
+   "test_sysop_mcp.py"
+  ]
+ },
+ "cli.py:62:bool-const:f0da293a": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/cli.py",
+  "line": 62,
+  "kind": "bool-const",
+  "desc": "False -> True",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_service.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "cli.py:71:bool-const:b078ae79": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/cli.py",
+  "line": 71,
+  "kind": "bool-const",
+  "desc": "True -> False",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_soak.py"
+  ],
+  "ran": [
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_service.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "cli.py:139:negate-cond:210b9992": {
+  "file": "container/addons/sysop/lib/swarmbox_sysop/cli.py",
+  "line": 139,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_soak.py",
+   "test_sysop_service.py"
+  ],
+  "ran": [
+   "test_sysop_review.py",
+   "test_sysop_addon.py",
+   "test_sysop_soak.py",
+   "test_sysop_service.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "swarmbox-bus.py:145:boolop:dacf2396": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 145,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:198:drop-call:310bb9b8": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 198,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:201:drop-call:da3372c6": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 201,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:213:drop-call:62812862": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 213,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:243:negate-cond:d67f1356": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 243,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_bus.py"
+  ],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:290:bool-const:cd05db8e": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 290,
+  "kind": "bool-const",
+  "desc": "False -> True",
+  "status": "killed",
+  "killed_by": [
+   "test_bus.py"
+  ],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:319:arith:e9d0cab8": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 319,
+  "kind": "arith",
+  "desc": "+/-",
+  "status": "killed",
+  "killed_by": [
+   "test_bus.py"
+  ],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:337:const:7f238070": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 337,
+  "kind": "const",
+  "desc": "constant 0 -> 1",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_bus.py",
+   "test_bus.py"
+  ],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:337:negate-cond:a94e0cc1": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 337,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_bus.py",
+   "test_bus.py"
+  ],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:354:compare:41a1f447": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 354,
+  "kind": "compare",
+  "desc": "flip Gt -> GtE",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:388:negate-cond:b1fbe5f3": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 388,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py"
+  ],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:498:bool-const:e628d93f": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 498,
+  "kind": "bool-const",
+  "desc": "True -> False",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:512:exit-code:90a2d292": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 512,
+  "kind": "exit-code",
+  "desc": "return 4 -> 0",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:525:negate-cond:a96fedc3": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 525,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:553:const:d218280c": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 553,
+  "kind": "const",
+  "desc": "constant 2 -> 3",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:574:negate-cond:4550b7a7": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 574,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:583:exit-code:f401a019": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 583,
+  "kind": "exit-code",
+  "desc": "return 0 -> 1",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-bus.py:605:bool-const:1bdb3d9e": {
+  "file": "container/scripts/swarmbox-bus.py",
+  "line": 605,
+  "kind": "bool-const",
+  "desc": "False -> True",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_sysop_bus.py",
+   "test_bus.py",
+   "test_voice_service.py",
+   "test_tabs.py"
+  ]
+ },
+ "swarmbox-tabs.py:148:negate-cond:56945584": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 148,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "timeout",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:156:arith:4221c65e": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 156,
+  "kind": "arith",
+  "desc": "+/-",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:177:compare:755f24df": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 177,
+  "kind": "compare",
+  "desc": "flip Lt -> LtE",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:191:compare:7123c01b": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 191,
+  "kind": "compare",
+  "desc": "flip IsNot -> Is",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:198:negate-cond:7ccf7f62": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 198,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:262:negate-cond:adc8ef9d": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 262,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:268:negate-cond:15fc2419": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 268,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:280:compare:3f5982ef": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 280,
+  "kind": "compare",
+  "desc": "flip Eq -> NotEq",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:284:compare:4ea29f80": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 284,
+  "kind": "compare",
+  "desc": "flip Eq -> NotEq",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:292:compare:bc2863d4": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 292,
+  "kind": "compare",
+  "desc": "flip GtE -> Gt",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:292:compare:1095820c": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 292,
+  "kind": "compare",
+  "desc": "invert GtE -> Lt",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:353:compare:fb0dc810": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 353,
+  "kind": "compare",
+  "desc": "flip Lt -> LtE",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:376:negate-cond:b15f0b67": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 376,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "timeout",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:376:compare:80b2c2d7": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 376,
+  "kind": "compare",
+  "desc": "flip Eq -> NotEq",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:380:negate-cond:1510e63d": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 380,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:464:const:aa6b9a2f": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 464,
+  "kind": "const",
+  "desc": "constant 0 -> 1",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:498:boolop:205ea792": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 498,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:565:const:40b5eb05": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 565,
+  "kind": "const",
+  "desc": "constant 2 -> 3",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:593:boolop:98be44c6": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 593,
+  "kind": "boolop",
+  "desc": "And -> Or",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:627:negate-cond:8ac14603": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 627,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:655:negate-cond:fbfe74f0": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 655,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:740:negate-cond:2fa8dc3a": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 740,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:761:bool-const:ba317554": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 761,
+  "kind": "bool-const",
+  "desc": "True -> False",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:880:const:bf0119cd": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 880,
+  "kind": "const",
+  "desc": "constant 0 -> 1",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-tabs.py:931:compare:e3570df1": {
+  "file": "container/scripts/swarmbox-tabs.py",
+  "line": 931,
+  "kind": "compare",
+  "desc": "flip In -> NotIn",
+  "status": "killed",
+  "killed_by": [
+   "test_tabs_real.py",
+   "test_tabs.py"
+  ],
+  "ran": [
+   "test_tabs_redact_dos.py",
+   "test_tabs_real.py",
+   "test_tabs.py",
+   "test_sysop_dock.py"
+  ]
+ },
+ "swarmbox-host:114:sh-case:942efa9f": {
+  "file": "container/host/swarmbox-host",
+  "line": 114,
+  "kind": "sh-case",
+  "desc": "the branch IMAGE never matches",
+  "status": "killed",
+  "killed_by": [
+   "test_host_config.py",
+   "test_host_up.py",
+   "test_host_create_flags.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:118:sh-case:78ffeb87": {
+  "file": "container/host/swarmbox-host",
+  "line": 118,
+  "kind": "sh-case",
+  "desc": "the branch voice.topic|sysop.topic never matches",
+  "status": "killed",
+  "killed_by": [
+   "test_host_config.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:283:exit-code:667d6685": {
+  "file": "container/host/swarmbox-host",
+  "line": 283,
+  "kind": "exit-code",
+  "desc": "return 0 -> return 1",
+  "status": "killed",
+  "killed_by": [
+   "test_host_remote.py",
+   "test_host_shells.py",
+   "test_host_config.py",
+   "test_security_review.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:390:sh-test-flag:79efd0d7": {
+  "file": "container/host/swarmbox-host",
+  "line": 390,
+  "kind": "sh-test-flag",
+  "desc": "-z -> -n",
+  "status": "killed",
+  "killed_by": [
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_config.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:502:sh-delete:a0110cd6": {
+  "file": "container/host/swarmbox-host",
+  "line": 502,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "killed",
+  "killed_by": [
+   "test_host_config.py",
+   "test_security_review.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:581:exit-code:f42f3ecb": {
+  "file": "container/host/swarmbox-host",
+  "line": 581,
+  "kind": "exit-code",
+  "desc": "return 1 -> return 0",
+  "status": "killed",
+  "killed_by": [
+   "test_host_config.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:609:sh-case:a66633a2": {
+  "file": "container/host/swarmbox-host",
+  "line": 609,
+  "kind": "sh-case",
+  "desc": "the branch *:* never matches",
+  "status": "killed",
+  "killed_by": [
+   "test_host_config.py",
+   "test_host_create_flags.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:629:sh-and-or:1071681b": {
+  "file": "container/host/swarmbox-host",
+  "line": 629,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_create_flags.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:647:exit-code:e8c911bd": {
+  "file": "container/host/swarmbox-host",
+  "line": 647,
+  "kind": "exit-code",
+  "desc": "return 1 -> return 0",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:650:sh-case:e885abfd": {
+  "file": "container/host/swarmbox-host",
+  "line": 650,
+  "kind": "sh-case",
+  "desc": "the branch voice.stt.vocabulary never matches",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:1474:sh-test-flag:7d9dae28": {
+  "file": "container/host/swarmbox-host",
+  "line": 1474,
+  "kind": "sh-test-flag",
+  "desc": "-z -> -n",
+  "status": "killed",
+  "killed_by": [
+   "test_security_review.py",
+   "test_host_up.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:1521:sh-negate:37dc4d0c": {
+  "file": "container/host/swarmbox-host",
+  "line": 1521,
+  "kind": "sh-negate",
+  "desc": "negate the if condition",
+  "status": "killed",
+  "killed_by": [
+   "test_host_socket.py",
+   "test_install.py",
+   "test_host_update.py",
+   "test_security_review.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:2062:sh-negate:743d3b5b": {
+  "file": "container/host/swarmbox-host",
+  "line": 2062,
+  "kind": "sh-negate",
+  "desc": "negate a guard",
+  "status": "killed",
+  "killed_by": [
+   "test_host_socket.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_security_review.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:2065:sh-and-or:adcecf14": {
+  "file": "container/host/swarmbox-host",
+  "line": 2065,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:2248:sh-delete:a7d7c802": {
+  "file": "container/host/swarmbox-host",
+  "line": 2248,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:2267:sh-delete:21efd31f": {
+  "file": "container/host/swarmbox-host",
+  "line": 2267,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "killed",
+  "killed_by": [
+   "test_host_update.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:2306:exit-code:1c43d6f7": {
+  "file": "container/host/swarmbox-host",
+  "line": 2306,
+  "kind": "exit-code",
+  "desc": "return 1 -> return 0",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:2607:sh-and-or:a2cb07c8": {
+  "file": "container/host/swarmbox-host",
+  "line": 2607,
+  "kind": "sh-and-or",
+  "desc": "&& -> ||",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:2642:sh-delete:b89114be": {
+  "file": "container/host/swarmbox-host",
+  "line": 2642,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-host:2824:sh-case:47a230f3": {
+  "file": "container/host/swarmbox-host",
+  "line": 2824,
+  "kind": "sh-case",
+  "desc": "the branch env never matches",
+  "status": "killed",
+  "killed_by": [
+   "test_host_shells.py",
+   "test_host_config.py",
+   "test_swarmbox_command.py"
+  ],
+  "ran": [
+   "test_helpers.py",
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_nested_fuse_real.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_host_socket.py",
+   "test_release_script.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_host_config.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_up.py",
+   "test_swarmbox_command.py",
+   "test_host_create_flags.py",
+   "test_pull_ui.py"
+  ]
+ },
+ "swarmbox-addon.sh:566:sh-delete:8992200a": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 566,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:566:sh-and-or:0770b4b9": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 566,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:595:sh-cmp:f394f90a": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 595,
+  "kind": "sh-cmp",
+  "desc": "-eq -> -ne",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_web.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:682:sh-and-or:6f706b7b": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 682,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_addon_new.py",
+   "test_addon_install.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:695:sh-and-or:00418a99": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 695,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:696:sh-negate:9803aa12": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 696,
+  "kind": "sh-negate",
+  "desc": "negate the if condition",
+  "status": "killed",
+  "killed_by": [
+   "test_addon_install.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:697:sh-delete:80b48df1": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 697,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:709:sh-and-or:0720b7d2": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 709,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:826:sh-negate:dbddcf78": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 826,
+  "kind": "sh-negate",
+  "desc": "negate a guard",
+  "status": "killed",
+  "killed_by": [
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_prepare.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:833:sh-negate:abeac8a1": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 833,
+  "kind": "sh-negate",
+  "desc": "negate a guard",
+  "status": "killed",
+  "killed_by": [
+   "test_addon_install.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:846:sh-and-or:43407217": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 846,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_prepare.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:872:sh-and-or:87ed846c": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 872,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_addon_install.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:910:sh-cmp:60a6099d": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 910,
+  "kind": "sh-cmp",
+  "desc": "-eq -> -ne",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_web.py",
+   "test_sysop_addon.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:1248:sh-negate:0e438e05": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 1248,
+  "kind": "sh-negate",
+  "desc": "negate the if condition",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:1248:sh-const:f0d663d0": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 1248,
+  "kind": "sh-const",
+  "desc": "bound 1 -> 2",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:1366:sh-negate:419cbb6d": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 1366,
+  "kind": "sh-negate",
+  "desc": "negate the if condition",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:1424:sh-delete:5d7e0dc9": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 1424,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "swarmbox-addon.sh:1433:sh-delete:5125b606": {
+  "file": "container/scripts/swarmbox-addon.sh",
+  "line": 1433,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_docs_consistency.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_link.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_addon_stub.py",
+   "test_addon_prepare.py",
+   "test_voice_web.py",
+   "test_addon_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "entrypoint.sh:107:sh-negate:7c3a8b0f": {
+  "file": "container/entrypoint.sh",
+  "line": 107,
+  "kind": "sh-negate",
+  "desc": "negate the if condition",
+  "status": "killed",
+  "killed_by": [
+   "test_entrypoint.py",
+   "test_serve_steps.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:117:sh-delete:1634e9da": {
+  "file": "container/entrypoint.sh",
+  "line": 117,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:166:sh-negate:fdca2061": {
+  "file": "container/entrypoint.sh",
+  "line": 166,
+  "kind": "sh-negate",
+  "desc": "negate a guard",
+  "status": "killed",
+  "killed_by": [
+   "test_serve_steps.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:174:sh-str-eq:a22b7efa": {
+  "file": "container/entrypoint.sh",
+  "line": 174,
+  "kind": "sh-str-eq",
+  "desc": "= -> !=",
+  "status": "killed",
+  "killed_by": [
+   "test_serve_steps.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:181:sh-negate:e65bc04f": {
+  "file": "container/entrypoint.sh",
+  "line": 181,
+  "kind": "sh-negate",
+  "desc": "negate the if condition",
+  "status": "killed",
+  "killed_by": [
+   "test_serve_steps.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:190:sh-negate:44e719ce": {
+  "file": "container/entrypoint.sh",
+  "line": 190,
+  "kind": "sh-negate",
+  "desc": "negate the while condition",
+  "status": "killed",
+  "killed_by": [
+   "test_serve_steps.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:194:sh-negate:6f892b84": {
+  "file": "container/entrypoint.sh",
+  "line": 194,
+  "kind": "sh-negate",
+  "desc": "negate the if condition",
+  "status": "killed",
+  "killed_by": [
+   "test_entrypoint.py",
+   "test_serve_steps.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:201:sh-cmp:469d6e28": {
+  "file": "container/entrypoint.sh",
+  "line": 201,
+  "kind": "sh-cmp",
+  "desc": "-lt -> -ge",
+  "status": "killed",
+  "killed_by": [
+   "test_serve_steps.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:207:sh-negate:6347ff4b": {
+  "file": "container/entrypoint.sh",
+  "line": 207,
+  "kind": "sh-negate",
+  "desc": "negate the while condition",
+  "status": "killed",
+  "killed_by": [
+   "test_serve_steps.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:207:sh-str-eq:00f366df": {
+  "file": "container/entrypoint.sh",
+  "line": 207,
+  "kind": "sh-str-eq",
+  "desc": "= -> !=",
+  "status": "killed",
+  "killed_by": [
+   "test_serve_steps.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:223:exit-code:e3227023": {
+  "file": "container/entrypoint.sh",
+  "line": 223,
+  "kind": "exit-code",
+  "desc": "return 0 -> return 1",
+  "status": "killed",
+  "killed_by": [
+   "test_serve_steps.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:480:sh-cmp:58cdc2c6": {
+  "file": "container/entrypoint.sh",
+  "line": 480,
+  "kind": "sh-cmp",
+  "desc": "-ne -> -eq",
+  "status": "killed",
+  "killed_by": [
+   "test_entrypoint.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:495:sh-case:8733ec79": {
+  "file": "container/entrypoint.sh",
+  "line": 495,
+  "kind": "sh-case",
+  "desc": "the branch attach|install|pubkey|addon|bus|tabs never matches",
+  "status": "killed",
+  "killed_by": [
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_attach_command.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:500:sh-case:b940a3a5": {
+  "file": "container/entrypoint.sh",
+  "line": 500,
+  "kind": "sh-case",
+  "desc": "the branch install never matches",
+  "status": "killed",
+  "killed_by": [
+   "test_entrypoint.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:503:sh-case:34e64f08": {
+  "file": "container/entrypoint.sh",
+  "line": 503,
+  "kind": "sh-case",
+  "desc": "the branch bus never matches",
+  "status": "killed",
+  "killed_by": [
+   "test_entrypoint.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "entrypoint.sh:513:exit-code:a9980d33": {
+  "file": "container/entrypoint.sh",
+  "line": 513,
+  "kind": "exit-code",
+  "desc": "exit 64 -> exit 0",
+  "status": "killed",
+  "killed_by": [
+   "test_entrypoint.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_pubkey_ensure.py",
+   "test_entrypoint.py",
+   "test_addon_stub.py",
+   "test_voice_web.py",
+   "test_serve_steps.py",
+   "test_attach_command.py"
+  ]
+ },
+ "swarmbox-web.sh:46:sh-const:e8e8bc79": {
+  "file": "container/scripts/swarmbox-web.sh",
+  "line": 46,
+  "kind": "sh-const",
+  "desc": "bound 1 -> 2",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_web.py",
+   "test_web_build.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ],
+  "ran": [
+   "test_theme.py",
+   "test_voice_web.py",
+   "test_web_build.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "swarmbox-web.sh:46:sh-and-or:2588b088": {
+  "file": "container/scripts/swarmbox-web.sh",
+  "line": 46,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_web.py",
+   "test_web_build.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ],
+  "ran": [
+   "test_theme.py",
+   "test_voice_web.py",
+   "test_web_build.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "swarmbox-web.sh:51:sh-and-or:7ef62e84": {
+  "file": "container/scripts/swarmbox-web.sh",
+  "line": 51,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_web.py",
+   "test_web_build.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ],
+  "ran": [
+   "test_theme.py",
+   "test_voice_web.py",
+   "test_web_build.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "swarmbox-web.sh:55:sh-negate:c58c588a": {
+  "file": "container/scripts/swarmbox-web.sh",
+  "line": 55,
+  "kind": "sh-negate",
+  "desc": "negate the if condition",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_web.py",
+   "test_web_build.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ],
+  "ran": [
+   "test_theme.py",
+   "test_voice_web.py",
+   "test_web_build.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "swarmbox-web.sh:57:sh-delete:6f3a6c24": {
+  "file": "container/scripts/swarmbox-web.sh",
+  "line": 57,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_theme.py",
+   "test_voice_web.py",
+   "test_web_build.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "swarmbox-attach.sh:49:sh-delete:67527b77": {
+  "file": "container/scripts/swarmbox-attach.sh",
+  "line": 49,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_entrypoint.py",
+   "test_attach_command.py"
+  ]
+ },
+ "swarmbox-attach.sh:60:sh-delete:84ab85ae": {
+  "file": "container/scripts/swarmbox-attach.sh",
+  "line": 60,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "killed",
+  "killed_by": [
+   "test_attach_command.py"
+  ],
+  "ran": [
+   "test_entrypoint.py",
+   "test_attach_command.py"
+  ]
+ },
+ "swarmbox-attach.sh:201:sh-negate:c38bb950": {
+  "file": "container/scripts/swarmbox-attach.sh",
+  "line": 201,
+  "kind": "sh-negate",
+  "desc": "negate a guard",
+  "status": "killed",
+  "killed_by": [
+   "test_attach_command.py"
+  ],
+  "ran": [
+   "test_entrypoint.py",
+   "test_attach_command.py"
+  ]
+ },
+ "swarmbox-attach.sh:282:sh-and-or:693636ae": {
+  "file": "container/scripts/swarmbox-attach.sh",
+  "line": 282,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_entrypoint.py",
+   "test_attach_command.py"
+  ],
+  "ran": [
+   "test_entrypoint.py",
+   "test_attach_command.py"
+  ]
+ },
+ "swarmbox-shim.sh:60:sh-test-flag:f84e34d0": {
+  "file": "container/scripts/swarmbox-shim.sh",
+  "line": 60,
+  "kind": "sh-test-flag",
+  "desc": "-n -> -z",
+  "status": "killed",
+  "killed_by": [
+   "test_addon_shim.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_addon_shim.py"
+  ]
+ },
+ "swarmbox-install.sh:42:sh-case:536f0891": {
+  "file": "container/scripts/swarmbox-install.sh",
+  "line": 42,
+  "kind": "sh-case",
+  "desc": "the branch -h|--help never matches",
+  "status": "killed",
+  "killed_by": [
+   "test_install.py"
+  ],
+  "ran": [
+   "test_entrypoint.py",
+   "test_install.py"
+  ]
+ },
+ "swarmbox-install.sh:44:sh-and-or:5e90daa7": {
+  "file": "container/scripts/swarmbox-install.sh",
+  "line": 44,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_entrypoint.py",
+   "test_install.py"
+  ],
+  "ran": [
+   "test_entrypoint.py",
+   "test_install.py"
+  ]
+ },
+ "swarmbox-mcp.sh:32:sh-and-or:9047bd79": {
+  "file": "container/scripts/swarmbox-mcp.sh",
+  "line": 32,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_mcp_registry.py"
+  ],
+  "ran": [
+   "test_mcp_registry.py"
+  ]
+ },
+ "swarmbox-mcp.sh:84:exit-code:3eb4455c": {
+  "file": "container/scripts/swarmbox-mcp.sh",
+  "line": 84,
+  "kind": "exit-code",
+  "desc": "exit 2 -> exit 0",
+  "status": "killed",
+  "killed_by": [
+   "test_mcp_registry.py"
+  ],
+  "ran": [
+   "test_mcp_registry.py"
+  ]
+ },
+ "banner.sh:195:sh-and-or:a7fed8dc": {
+  "file": "container/scripts/banner.sh",
+  "line": 195,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_banner_glint.py"
+  ],
+  "ran": [
+   "test_theme.py",
+   "test_banner.py",
+   "test_addon_agent_shell.py",
+   "test_bashrc_fragment.py",
+   "test_banner_glint.py"
+  ]
+ },
+ "swarmbox-statusline.sh:23:sh-delete:687f01f1": {
+  "file": "container/scripts/swarmbox-statusline.sh",
+  "line": 23,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_statusline.py"
+  ]
+ },
+ "build-index.sh:20:sh-delete:a53c6f81": {
+  "file": "container/web/build-index.sh",
+  "line": 20,
+  "kind": "sh-delete",
+  "desc": "drop the line",
+  "status": "killed",
+  "killed_by": [
+   "test_build_index.py",
+   "test_web_build.py",
+   "test_web_style.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ],
+  "ran": [
+   "test_build_index.py",
+   "test_web_build.py",
+   "test_web_style.py",
+   "test_voice_page_browser.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "ttyd-clipboard.js:58:js-cmp:ee8cd238": {
+  "file": "container/web/ttyd-clipboard.js",
+  "line": 58,
+  "kind": "js-cmp",
+  "desc": "=== -> !==",
+  "status": "killed",
+  "killed_by": [
+   "test_clipboard_bridge.py"
+  ],
+  "ran": [
+   "test_voice_page_browser.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "ttyd-clipboard.js:153:js-cmp:6a3fedef": {
+  "file": "container/web/ttyd-clipboard.js",
+  "line": 153,
+  "kind": "js-cmp",
+  "desc": "!== -> ===",
+  "status": "killed",
+  "killed_by": [
+   "test_web_strip.py"
+  ],
+  "ran": [
+   "test_voice_page_browser.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "page.js:79:js-andor:00a79c4c": {
+  "file": "container/addons/voice/web/page.js",
+  "line": 79,
+  "kind": "js-andor",
+  "desc": "&& -> ||",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_page_browser.py"
+  ],
+  "ran": [
+   "test_voice_page.py",
+   "test_addon_voice.py",
+   "test_voice_web.py",
+   "test_voice_service.py",
+   "test_sysop_web.py",
+   "test_web_style.py",
+   "test_voice_front.py",
+   "test_voice_page_browser.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "page.js:202:js-const:da69d628": {
+  "file": "container/addons/voice/web/page.js",
+  "line": 202,
+  "kind": "js-const",
+  "desc": "constant 34 -> 35",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_page_browser.py"
+  ],
+  "ran": [
+   "test_voice_page.py",
+   "test_addon_voice.py",
+   "test_voice_web.py",
+   "test_voice_service.py",
+   "test_sysop_web.py",
+   "test_web_style.py",
+   "test_voice_front.py",
+   "test_voice_page_browser.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "page.js:254:js-cmp:0c375b01": {
+  "file": "container/addons/voice/web/page.js",
+  "line": 254,
+  "kind": "js-cmp",
+  "desc": "=== -> !==",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_voice_page.py",
+   "test_addon_voice.py",
+   "test_voice_web.py",
+   "test_voice_service.py",
+   "test_sysop_web.py",
+   "test_web_style.py",
+   "test_voice_front.py",
+   "test_voice_page_browser.py",
+   "test_clipboard_bridge.py",
+   "test_web_strip.py"
+  ]
+ },
+ "front.py:85:boolop:79030747": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 85,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_front.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "front.py:91:negate-cond:6581884d": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 91,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_front.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "front.py:205:negate-cond:ea5ed940": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 205,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_front.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "front.py:299:drop-call:34d5a229": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 299,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_front.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "front.py:315:drop-call:92f34361": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 315,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "front.py:375:bool-const:5a4950df": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 375,
+  "kind": "bool-const",
+  "desc": "False -> True",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_front.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "front.py:404:boolop:fd71aabd": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 404,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_front.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "front.py:406:boolop:2e004b40": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 406,
+  "kind": "boolop",
+  "desc": "And -> Or",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_front.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "front.py:438:compare:b95a00f3": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 438,
+  "kind": "compare",
+  "desc": "flip Eq -> NotEq",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_front.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "front.py:499:drop-call:baf2c016": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 499,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "front.py:581:const:1ee27b1c": {
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "line": 581,
+  "kind": "const",
+  "desc": "constant 0 -> 1",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_front.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_front.py"
+  ]
+ },
+ "server.py:46:const:bbb3f24d": {
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "line": 46,
+  "kind": "const",
+  "desc": "constant 200 -> 201",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_service.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_voice_front.py",
+   "test_tabs.py"
+  ]
+ },
+ "server.py:65:boolop:885db7a2": {
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "line": 65,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_soak.py",
+   "test_voice_service.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_voice_front.py",
+   "test_tabs.py"
+  ]
+ },
+ "server.py:66:boolop:06d5d63a": {
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "line": 66,
+  "kind": "boolop",
+  "desc": "Or -> And",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_voice_front.py",
+   "test_tabs.py"
+  ]
+ },
+ "server.py:66:bool-const:4b11c3db": {
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "line": 66,
+  "kind": "bool-const",
+  "desc": "True -> False",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_voice_front.py",
+   "test_tabs.py"
+  ]
+ },
+ "server.py:77:not-removed:40d39996": {
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "line": 77,
+  "kind": "not-removed",
+  "desc": "remove a not",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_soak.py",
+   "test_voice_service.py"
+  ],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_voice_front.py",
+   "test_tabs.py"
+  ]
+ },
+ "server.py:140:drop-call:48ca0894": {
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "line": 140,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_voice_web.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_voice_front.py",
+   "test_tabs.py"
+  ]
+ },
+ "stt.py:33:drop-call:3c2001bb": {
+  "file": "container/addons/voice/lib/swarmbox_voice/stt.py",
+  "line": 33,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_voice_config.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_voice_front.py"
+  ]
+ },
+ "stt.py:79:compare:02715c00": {
+  "file": "container/addons/voice/lib/swarmbox_voice/stt.py",
+  "line": 79,
+  "kind": "compare",
+  "desc": "flip NotEq -> Eq",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_soak.py",
+   "test_voice_service.py"
+  ],
+  "ran": [
+   "test_voice_config.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_voice_front.py"
+  ]
+ },
+ "stt.py:96:compare:54a1ee43": {
+  "file": "container/addons/voice/lib/swarmbox_voice/stt.py",
+  "line": 96,
+  "kind": "compare",
+  "desc": "flip Eq -> NotEq",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_service.py"
+  ],
+  "ran": [
+   "test_voice_config.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_voice_front.py"
+  ]
+ },
+ "stt.py:129:negate-cond:2adf3aab": {
+  "file": "container/addons/voice/lib/swarmbox_voice/stt.py",
+  "line": 129,
+  "kind": "negate-cond",
+  "desc": "negate the condition",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_service.py"
+  ],
+  "ran": [
+   "test_voice_config.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_voice_front.py"
+  ]
+ },
+ "config.py:33:compare:39f93ef7": {
+  "file": "container/addons/voice/lib/swarmbox_voice/config.py",
+  "line": 33,
+  "kind": "compare",
+  "desc": "flip In -> NotIn",
+  "status": "killed",
+  "killed_by": [
+   "test_voice_config.py",
+   "test_voice_soak.py",
+   "test_voice_service.py"
+  ],
+  "ran": [
+   "test_voice_config.py",
+   "test_voice_soak.py",
+   "test_voice_service.py",
+   "test_sysop_always.py"
+  ]
+ },
+ "release.sh:120:sh-and-or:da5a7f2c": {
+  "file": "dev/release.sh",
+  "line": 120,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_release_script.py"
+  ],
+  "ran": [
+   "test_release_script.py"
+  ]
+ },
+ "release.sh:125:sh-and-or:b31dd9ca": {
+  "file": "dev/release.sh",
+  "line": 125,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_release_script.py"
+  ],
+  "ran": [
+   "test_release_script.py"
+  ]
+ },
+ "release.sh:291:sh-str-eq:0431fa0b": {
+  "file": "dev/release.sh",
+  "line": 291,
+  "kind": "sh-str-eq",
+  "desc": "= -> !=",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_release_script.py"
+  ]
+ },
+ "release.sh:300:exit-code:6694a8d2": {
+  "file": "dev/release.sh",
+  "line": 300,
+  "kind": "exit-code",
+  "desc": "exit 0 -> exit 1",
+  "status": "killed",
+  "killed_by": [
+   "test_release_script.py"
+  ],
+  "ran": [
+   "test_release_script.py"
+  ]
+ },
+ "release-check.sh:38:sh-negate:525626fe": {
+  "file": "dev/release-check.sh",
+  "line": 38,
+  "kind": "sh-negate",
+  "desc": "negate the if condition",
+  "status": "killed",
+  "killed_by": [
+   "test_release_check.py"
+  ],
+  "ran": [
+   "test_release_check.py"
+  ]
+ },
+ "release-check.sh:121:sh-and-or:794a4c15": {
+  "file": "dev/release-check.sh",
+  "line": 121,
+  "kind": "sh-and-or",
+  "desc": "&& -> ||",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_release_check.py"
+  ]
+ },
+ "release-version.sh:58:sh-test-flag:758296e3": {
+  "file": "dev/release-version.sh",
+  "line": 58,
+  "kind": "sh-test-flag",
+  "desc": "-n -> -z",
+  "status": "killed",
+  "killed_by": [
+   "test_release_version.py"
+  ],
+  "ran": [
+   "test_release_version.py"
+  ]
+ },
+ "record-checksums.sh:55:sh-and-or:7e772702": {
+  "file": "dev/record-checksums.sh",
+  "line": 55,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_record_checksums.py"
+  ]
+ },
+ "install.sh:22:sh-and-or:e725ef0b": {
+  "file": "install.sh",
+  "line": 22,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_install.py"
+  ],
+  "ran": [
+   "test_image_with_addons.py",
+   "test_docs_consistency.py",
+   "test_addon_real.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_no_old_names.py",
+   "test_voice_web.py",
+   "test_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "install.sh:27:sh-case:2def8b29": {
+  "file": "install.sh",
+  "line": 27,
+  "kind": "sh-case",
+  "desc": "the branch * never matches",
+  "status": "killed",
+  "killed_by": [
+   "test_install.py"
+  ],
+  "ran": [
+   "test_image_with_addons.py",
+   "test_docs_consistency.py",
+   "test_addon_real.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_no_old_names.py",
+   "test_voice_web.py",
+   "test_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "install.sh:43:sh-and-or:0d95d63d": {
+  "file": "install.sh",
+  "line": 43,
+  "kind": "sh-and-or",
+  "desc": "|| -> &&",
+  "status": "killed",
+  "killed_by": [
+   "test_install.py"
+  ],
+  "ran": [
+   "test_image_with_addons.py",
+   "test_docs_consistency.py",
+   "test_addon_real.py",
+   "test_addon_new.py",
+   "test_addon_opencode.py",
+   "test_addon_go_gcloud.py",
+   "test_addon_voice.py",
+   "test_addon_gemini_clasp_poetry.py",
+   "test_addon_manifest.py",
+   "test_no_old_names.py",
+   "test_voice_web.py",
+   "test_install.py",
+   "test_sysop_addon.py"
+  ]
+ },
+ "cloudflare-setup.py:384:return-none:16ca0cbd": {
+  "file": "cloudflare-setup.py",
+  "line": 384,
+  "kind": "return-none",
+  "desc": "return None",
+  "status": "killed",
+  "killed_by": [
+   "test_cloudflare_setup.py",
+   "test_host_remote_e2e_fake.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_default_names_lint.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_cloudflare_setup.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_connector.py"
+  ]
+ },
+ "cloudflare-setup.py:424:drop-call:45ed9881": {
+  "file": "cloudflare-setup.py",
+  "line": 424,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_default_names_lint.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_cloudflare_setup.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_connector.py"
+  ]
+ },
+ "cloudflare-setup.py:638:boolop:aee55445": {
+  "file": "cloudflare-setup.py",
+  "line": 638,
+  "kind": "boolop",
+  "desc": "And -> Or",
+  "status": "survived",
+  "killed_by": [],
+  "ran": [
+   "test_dockerfile.py",
+   "test_default_names_lint.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_cloudflare_setup.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_connector.py"
+  ]
+ },
+ "cloudflare-setup.py:723:drop-call:9ddf3e69": {
+  "file": "cloudflare-setup.py",
+  "line": 723,
+  "kind": "drop-call",
+  "desc": "drop the call",
+  "status": "killed",
+  "killed_by": [
+   "test_cloudflare_setup.py",
+   "test_host_remote_e2e_fake.py"
+  ],
+  "ran": [
+   "test_dockerfile.py",
+   "test_default_names_lint.py",
+   "test_host_remote.py",
+   "test_entrypoint.py",
+   "test_cloudflare_setup.py",
+   "test_install.py",
+   "test_host_shells.py",
+   "test_host_update.py",
+   "test_security_review.py",
+   "test_host_remote_e2e_fake.py",
+   "test_host_connector.py"
+  ]
+ }
+}

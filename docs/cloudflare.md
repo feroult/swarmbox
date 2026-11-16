@@ -167,7 +167,7 @@ and a fake `podman` only. Run this once, on a real host with a real domain, and 
 7. `swarmbox remote off --dry-run`, then `swarmbox remote off`: the URL stops answering, the connector container is
    gone, `swarmbox remote status` reports nothing configured. Delete the API token in the Cloudflare dashboard.
 
-Tests (fake Cloudflare API and fake podman, no network): `python3 tests/test_cloudflare_setup.py`,
-`python3 tests/test_host_remote.py`, `python3 tests/test_host_connector.py`, `python3 tests/test_host_up.py`.
+Tests (fake Cloudflare API and fake podman, no network): `python3 tests/fast/test_cloudflare_setup.py`,
+`python3 tests/fast/test_host_remote.py`, `python3 tests/fast/test_host_connector.py`, `python3 tests/fast/test_host_up.py`.
 
 [Back to the README](../README.md)

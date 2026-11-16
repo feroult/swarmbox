@@ -149,7 +149,7 @@ class Service:
     def acquire(self, wait=None):
         """Take the single-instance lock. `running()` (the panel every 0.2 s, `swarmbox-sysop status`, prepare.sh) probes the same lock with a
         non-blocking flock that holds it for an instant when it is free: a start that lands on such an instant used to find the lock taken, say
-        "already running" and exit 0, leaving NO service until the next start of the box (seen once by tests/e2e_sysop.py). So a taken lock is tried
+        "already running" and exit 0, leaving NO service until the next start of the box (seen once by tests/e2e/e2e_sysop.py). So a taken lock is tried
         again for LOCK_WAIT seconds: a probe is gone by then, a live service is not."""
         self.paths.make()
         fd = os.open(self.paths.lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
@@ -385,7 +385,7 @@ class Service:
 
     def status(self, final=False):
         """Write status.json. The state is read AND written under one lock: two threads call this (the reader when a goal arrives, the main thread when
-        it starts it), and a state read first but written last would leave an old file (found by tests/e2e_sysop.py: the panel showed `1 queued, idle`
+        it starts it), and a state read first but written last would leave an old file (found by tests/e2e/e2e_sysop.py: the panel showed `1 queued, idle`
         for the whole goal, so the countdown and the approval were never shown and the veto key had nothing to act on)."""
         with self.status_lock:
             with self.cond:

@@ -23,7 +23,7 @@ next. A hostile process of the same user is out of scope.
 
 Severity: high (host compromise from unprivileged input), medium (a guard can be bypassed by crafted input), low (hardening, a local-account concern),
 info (reviewed, no defect). Status: `fixed` (code changed, a regression test fails without it) or `documented` (no change, reason given). No finding is open.
-Tests are in `tests/test_security_review.py`, by class.
+Tests are in `tests/fast/test_security_review.py`, by class.
 
 | ID | Severity | Location | Finding | Status | Test |
 |---|---|---|---|---|---|
@@ -46,5 +46,5 @@ Tests are in `tests/test_security_review.py`, by class.
 ## Addons and limits
 
 - `shellcheck -s sh container/host/swarmbox-host container/scripts/swarmbox-install.sh install.sh` found nothing in the earlier script (shellcheck 0.9.0, 2026-11-08); the installers and `setup` were added later and shellcheck is not installed in the development box, so CI is their first run.
-- `tests/test_security_review.py` runs the real helper and script against a fake Podman, on `mktemp` folders only.
-- The real registry, image signing and a real Cloudflare account were not used. The review is of the code at this commit; a change to the script needs these tests run again (`sh tests/run_all.sh` does).
+- `tests/fast/test_security_review.py` runs the real helper and script against a fake Podman, on `mktemp` folders only.
+- The real registry, image signing and a real Cloudflare account were not used. The review is of the code at this commit; a change to the script needs these tests run again (`sh tests/run.sh` does).

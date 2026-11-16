@@ -31,7 +31,8 @@ project follows [semantic versioning](https://semver.org/).
 - Changed: the logs of the box (`serve.log`, `bus.log`, `web-terminal.log`, `podman-service.log`) no longer grow for ever: every five minutes one that is past 4 MiB is cut to its last megabyte, with a line that says so. Needs `swarmbox update` and `swarmbox reset`.
 - Fixed: `Ctrl+A a`, which `docs/web-terminal.md` gave for sending the prefix to a nested tmux, is `Ctrl+A Ctrl+A`.
 - Added: `swarmbox-addon where NAME COMMAND`, which prints the real program of a complete install without installing anything.
-- Dev only: `tests/e2e_sysop.sh` and `tests/e2e_voice.sh` (the real pieces, a real Claude Code and a headless browser, in Podman), `tests/soak_v1.sh` (the soak and fault run) and the real-tmux tests (`SWARMBOX_TEST_REAL_TMUX=1`) are not part of `dev/check.sh`.
+- Dev only: `tests/e2e/e2e_sysop.sh` and `tests/e2e/e2e_voice.sh` (the real pieces, a real Claude Code and a headless browser, in Podman), `tests/e2e/soak_v1.sh` (the soak and fault run) and the real-tmux tests (`SWARMBOX_TEST_REAL_TMUX=1`) are not part of `dev/check.sh`.
+- Dev only: the tests live in `tests/fast`, `tests/slow` (real tmux, browser, Podman) and `tests/e2e`, run by one runner, `sh tests/run.sh` (the fast ones, in parallel, by default); `dev/check.sh` and the pre-push hook run the fast ones, `sh dev/test-slow.sh` runs the slow ones in Podman, and `dev/mutate.py` measures what the tests would notice (`tests/README.md`).
 
 ## [2.0.13] - 2026-11-13
 

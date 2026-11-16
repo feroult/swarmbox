@@ -18,4 +18,4 @@ through the bus. Everything the brain does is rated by the host (policy.py) befo
     cli          swarmbox-sysop serve | goal | status | stop | mcp | panel | dock
 """
 
-__version__ = "1.0.0"      # equal to VERSION of addon.conf (tests/test_sysop_addon.py checks it)
+__version__ = "1.0.0"      # equal to VERSION of addon.conf (tests/fast/test_sysop_addon.py checks it)

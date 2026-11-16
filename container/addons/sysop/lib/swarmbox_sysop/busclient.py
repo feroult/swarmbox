@@ -8,7 +8,7 @@ go through here: that is the capability swarmbox-tabs (tabsclient.py).
 Why not run the `swarmbox-bus` command: (1) `sub` is one long connection that the service must close from another thread and reconnect with
 backoff, which is a socket and not a pipe to a child; (2) the answers keep their shape: a failure is {"err": CODE, "msg": TEXT} and the callers
 look at the code (no_subscriber: nobody listens, so the sysop is not running). The cost is that this file repeats the protocol;
-tests/test_sysop_bus.py runs this client against the real broker, so a change of the protocol breaks a test here.
+tests/fast/test_sysop_bus.py runs this client against the real broker, so a change of the protocol breaks a test here.
 
 Protocol: line-delimited JSON, one request line per connection. pub, ping and topics get one reply {"ok": true, ...} or {"ok": false, "err",
 "msg"}; pub's reply has "id" and "delivered" (the number of receivers); sub gets {"ok": true, "subscribed": T, "group": G} and then one envelope

@@ -4,7 +4,7 @@
 
 ## Checklist
 
-- [ ] Tests added or updated and run (`sh tests/run_all.sh`).
+- [ ] Tests added or updated and run (`sh tests/run.sh`).
 - [ ] `docs/design.md` is consistent with the change.
 - [ ] A bump of `VERSION` in `container/addons/go/addon.conf` or `container/addons/gcloud/addon.conf` ran
       `sh dev/record-checksums.sh go` (or `gcloud`) so `SHA256_amd64` and `SHA256_arm64` match the new version.

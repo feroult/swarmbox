@@ -43,7 +43,7 @@ browser (microphone) --audio--> web terminal port --> voice service (Whisper) --
 
 ## Tests
 
-Unit tests of the config, the service, the front and the page (`tests/test_voice_*.py`, `tests/test_addon_voice.py`), a browser test of the page with a fake service (`tests/test_voice_page_browser.py`), and the end-to-end run in Podman (`tests/e2e_voice.sh`): the microphone of a headless Chromium
+Unit tests of the config, the service, the front and the page (`tests/test_voice_*.py`, `tests/fast/test_addon_voice.py`), a browser test of the page with a fake service (`tests/slow/test_voice_page_browser.py`), and the end-to-end run in Podman (`tests/e2e/e2e_voice.sh`): the microphone of a headless Chromium
 plays speech made with espeak-ng, and the goal is followed through the real bus and sysop to a real Claude Code in the active tab (see "Version 1" in addons-design.md for what it proved and found).
 
 ## Open questions

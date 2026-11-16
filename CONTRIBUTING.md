@@ -18,32 +18,43 @@ Tests and experiments run on a machine where someone may have a real SwarmBox ru
 ## Running the tests
 
 Tests are Python `unittest` scripts that need only Python 3 and the standard library. The suite is small on purpose: one test per
-behaviour or branch, no copies of the same case, no tests of wording in docs. Run one file, or all of them:
+behaviour or branch, no copies of the same case, no tests of wording in docs. They live in three folders by what they need
+(`tests/README.md` has the layout, the gating rules and how to add a test):
+
+- `tests/fast/`: no real tmux, browser, Podman or network, no long waits; fakes and a `mktemp` world. The default, and what `dev/check.sh` and the pre-push hook run.
+- `tests/slow/`: integration tests with real tmux, a pty, ttyd, Chromium, Podman or the image. They skip with a message when a program is missing. `sh dev/test-slow.sh` runs them in Podman.
+- `tests/e2e/`: the harnesses with the real `claude` and the long soak. Manual, never in a default run.
 
 ```
-python3 tests/test_host_up.py        # one file
-sh tests/run_all.sh                  # all files, one line each with the count and the seconds (about 7 minutes on an idle 32-core machine: run it in the background)
+python3 tests/fast/test_host_up.py   # one file
+sh tests/run.sh                      # the fast tests, in parallel, one line per file, the slowest files at the end
+sh tests/run.sh slow                 # the slow ones (use dev/test-slow.sh: real tmux belongs in a container)
+sh dev/test-slow.sh                  # the slow ones in Podman, in the image of dev/test-image/Containerfile (built when missing)
 ```
 
-`tests/run_all.sh` options: `--werror` (each file under `python3 -W error`), `--repeat N`, `--only a.py,b.py`, `--browser` (adds the
-four browser tests, which need chromium and ttyd and run in the scheduled CI job), `--list`. It runs every file under
-`tests/reap_run.py`, which kills by PID whatever a file left behind and shows it as `reaped N`; a test that leaks a process is a bug
-to fix in that test (end children in `addCleanup`). Run one file in the foreground; the whole suite takes minutes, so run it in the background.
+`tests/run.sh` options: `-j N` (files in parallel), `--only a.py,b.py`, `--list`, `--repeat N`, `--werror` (each file under `python3 -W error`),
+`--timing N`, `--timeout S`. It runs every file under `tests/support/reap_run.py`, which kills by PID whatever a file left behind and shows
+it as `reaped N`; a test that leaks a process is a bug to fix in that test (end children in `addCleanup`). Run the slow and the whole
+suites in the background.
+
+To see whether a change to the tests lost coverage, `dev/mutate.py` applies about 250 small mutations to the product code (a comparison
+flipped, a condition negated, an exit code changed, a call dropped, ...) and runs the tests that cover each one: a mutant that no test
+kills is behaviour that nothing checks. `python3 dev/mutate.py --help`; run it in the test image (`tests/README.md`), never on a machine whose tmux you use.
 
 What each group covers (a file name tells the rest):
 
 | Files | What they cover |
 |---|---|
-| `test_host_*.py`, `test_security_review.py`, `test_cloudflare_setup.py` | the script `container/host/swarmbox-host` (installed as `swarmbox`) against a fake `podman` (`tests/helpers.py`): `up`, `reset`, `stop`, `url`, `update`, `config`, `env`, `remote`, create flags with golden files in `tests/fixtures/`, the host connection, the connector, hostile input; `cloudflare-setup.py` against a fake Cloudflare API on loopback |
+| `test_host_*.py`, `test_security_review.py`, `test_cloudflare_setup.py` | the script `container/host/swarmbox-host` (installed as `swarmbox`) against a fake `podman` (`tests/support/helpers.py`): `up`, `reset`, `stop`, `url`, `update`, `config`, `env`, `remote`, create flags with golden files in `tests/support/fixtures/`, the host connection, the connector, hostile input; `cloudflare-setup.py` against a fake Cloudflare API on loopback |
 | `test_swarmbox_command.py`, `test_install.py`, `test_host_shells.py` | the `swarmbox` script as a program: which words it handles and which go to the box, `podman exec` forwarding and the `-t` rule; the two installers (`container/scripts/swarmbox-install.sh`, `install.sh`): idempotence, atomic write, PATH advice, old-function warning, the Podman version check; the script under dash, bash and busybox |
 | `test_serve_steps.py`, `test_entrypoint.py`, `test_attach_command.py`, `test_web_build.py`, `test_bashrc_fragment.py`, `test_starship.py`, `test_pubkey_ensure.py`, `test_ssh_key.py`, `test_mcp_registry.py`, `test_dirs.py`, `test_build_index.py` | what runs inside the box: `serve` steps and signals with fakes on `PATH`, `swarmbox-attach` (fake tmux, then real tmux on a private `-L swarmbox-test-<random>` socket), `swarmbox-web`, the shell fragment, the key, the MCP registry, the XDG paths, the web page build |
 | `test_addon_*.py` | the addon machinery `swarmbox-addon` and `swarmbox-shim` (manifests, link, install, run, prepare, use, remove, doctor, image level, the per-addon installers); `test_addon_real.py` also installs for real in throwaway containers, only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` |
-| `test_dockerfile.py`, `test_dev_build.py`, `test_image_build.py`, `test_image_with_addons.py`, `test_bashrc_container.py` | the `Dockerfile` (static) and the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; the image comes from `dev/dev-build.sh` or `SWARMBOX_IMAGE_TAG`, shared by `tests/image_support.py`). `tests/smoke_image.py` is the image smoke test (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box, `SWARMBOX_SMOKE_FULL=1` the full run for CI |
+| `test_dockerfile.py`, `test_dev_build.py`, `test_image_build.py`, `test_image_with_addons.py`, `test_bashrc_container.py` | the `Dockerfile` (static) and the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; the image comes from `dev/dev-build.sh` or `SWARMBOX_IMAGE_TAG`, shared by `tests/support/image_support.py`). `tests/slow/smoke_image.py` is the image smoke test (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/slow/smoke_image.py` is the reduced run for a development box, `SWARMBOX_SMOKE_FULL=1` the full run for CI |
 | `test_ci_workflow.py`, `test_release_workflow.py`, `test_release_check.py`, `test_release_version.py`, `test_third_party_notices.py`, `test_record_checksums.py`, `test_name_check.py` | the repository machinery: text checks of the two workflows, the release scripts under `dev/` on fixture repositories, the notices generator, the checksum recorder |
-| `test_default_names_lint.py`, `test_repo_files.py`, `test_docs_consistency.py`, `test_run_all.py`, `test_helpers.py`, `test_no_old_names.py` | guards: no old name of the addon concept anywhere (the allowlist of legitimate uses of the old word is in the test), no default name or image repository written as a literal (read `container/host/DEFAULTS`), the policy files exist and link, the README commands exist and its links resolve, the runner itself, the fake `podman` |
-| `test_clipboard_bridge.py`, `test_web_style.py`, `test_tmux_browser_keys.py`, `test_voice_page_browser.py`, `test_web_strip.py` | the web terminal in a real browser and tmux keys, the controls strip and the microphone; they need chromium and ttyd and run in the scheduled CI job only. The layers that need a real tmux (`test_web_strip.py`, `test_sysop_dock.py`, `test_sysop_always.py`, `test_tabs_real.py`, `test_sysop_web.py`, `test_sysop_real.py`) skip unless `SWARMBOX_TEST_REAL_TMUX=1`, which only a container run sets (never on a machine whose tmux you use). `tests/e2e_sysop.sh`, `tests/e2e_voice.sh` and `tests/soak_v1.sh` are development harnesses for Podman with a Claude login: not part of any gate |
+| `test_default_names_lint.py`, `test_repo_files.py`, `test_docs_consistency.py`, `test_runner.py`, `test_layout.py`, `test_helpers.py`, `test_no_old_names.py` | guards: no old name of the addon concept anywhere (the allowlist of legitimate uses of the old word is in the test), no default name or image repository written as a literal (read `container/host/DEFAULTS`), the policy files exist and link, the README commands exist and its links resolve, the runner itself, the fake `podman` |
+| `test_clipboard_bridge.py`, `test_web_style.py`, `test_tmux_browser_keys.py`, `test_voice_page_browser.py`, `test_web_strip.py` | the web terminal in a real browser and tmux keys, the controls strip and the microphone; they need chromium and ttyd and run in the scheduled CI job only. The layers that need a real tmux (`test_web_strip.py`, `test_sysop_dock.py`, `test_sysop_always.py`, `test_tabs_real.py`, `test_sysop_web.py`, `test_sysop_real.py`) skip unless `SWARMBOX_TEST_REAL_TMUX=1`, which only a container run sets (never on a machine whose tmux you use). `tests/e2e/e2e_sysop.sh`, `tests/e2e/e2e_voice.sh` and `tests/e2e/soak_v1.sh` are development harnesses for Podman with a Claude login: not part of any gate |
 
-Shared helpers (the fake `podman`, the helper archive of an image, a pseudo terminal) are in `tests/helpers.py`. Write a test first, with fakes; use a real
+Shared helpers (the fake `podman`, the helper archive of an image, a pseudo terminal) are in `tests/support/helpers.py`. Write a test first, with fakes; use a real
 container only for a smoke test, with a `swarmbox-test-` name.
 
 ## Before you push: the local gate
@@ -52,7 +63,7 @@ CI rejects a push for things that pass on a developer machine: shellcheck findin
 (`TERM`, `COLORTERM`, `STARSHIP_SHELL`; a CI runner has none of them). `dev/check.sh` runs those checks here:
 
 ```bash
-sh dev/check.sh                # shellcheck 0.9 on the files ci.yml lists, then the unit tests in a clean environment (about 7 minutes now: run it in the background)
+sh dev/check.sh                # shellcheck 0.9 on the files ci.yml lists, then the fast tests in a clean environment
 sh dev/check.sh --release      # and dev/release-check.sh, before a release tag
 git config core.hooksPath dev/hooks    # once per clone: run it before every push of main or of a v* tag
 ```
@@ -99,7 +110,7 @@ sh dev/dev-build.sh            # tag swarmbox-test-img-<random>; then: podman rm
 ```
 
 which builds from a scratch copy of the `Dockerfile` that carries the apt override (see below); the product file is never changed.
-`SWARMBOX_IMAGE_BUILD=1 python3 tests/test_image_build.py` builds and inspects it. To try a change in your own box on the host, without a release, run `sh dev/local-up.sh`: it builds `localhost/swarmbox:local` from the checkout, installs the `swarmbox` script of that image, records the image in your config and resets the box (`--yes` skips the question, `--no-reset` stops before it, `--dry-run` prints the commands); `sh dev/local-up.sh --release` goes back to the published image. It refuses to run inside a box, where the image would land in the box's own storage. To build by hand: `podman build -t localhost/swarmbox:local .`
+`SWARMBOX_IMAGE_BUILD=1 python3 tests/slow/test_image_build.py` builds and inspects it. To try a change in your own box on the host, without a release, run `sh dev/local-up.sh`: it builds `localhost/swarmbox:local` from the checkout, installs the `swarmbox` script of that image, records the image in your config and resets the box (`--yes` skips the question, `--no-reset` stops before it, `--dry-run` prints the commands); `sh dev/local-up.sh --release` goes back to the published image. It refuses to run inside a box, where the image would land in the box's own storage. To build by hand: `podman build -t localhost/swarmbox:local .`
 (then install it as the README Quick start shows: `podman run --rm localhost/swarmbox:local install --with claude --image localhost/swarmbox:local | sh`; `SWARMBOX_BIN_DIR=DIR` installs somewhere else). Tests-only variables: `SWARMBOX_TEST_SUPPORT_DIR` (where the script keeps its support files), `SWARMBOX_TEST_HOST_DIR` and `SWARMBOX_TEST_CONTAINERENV` (what `install` reads).
 
 Caveats when building inside a SwarmBox (nested rootless Podman 4.3.1):
@@ -154,8 +165,8 @@ curl -sI "https://snapshot.debian.org/file/<the sha1>" | head -1   # HTTP 200: t
 ```
 
 Put the version and the four hashes in the `Dockerfile`, the version in `docs/debian-packages.tsv` and `THIRD_PARTY_NOTICES.md` (the licenses from `/usr/share/doc/tmux/copyright` of the package:
-`dpkg-deb -x tmux_*.deb x; grep '^License:' x/usr/share/doc/tmux/copyright`); `tests/test_dockerfile.py` fails when the lists and the `ARG` disagree. A newer tmux can change what our
-configuration assumes: run `sh tests/run_all.sh --browser --only test_tmux_browser_keys.py,test_attach_command.py` against it too, putting the extracted binary first in `PATH`.
+`dpkg-deb -x tmux_*.deb x; grep '^License:' x/usr/share/doc/tmux/copyright`); `tests/fast/test_dockerfile.py` fails when the lists and the `ARG` disagree. A newer tmux can change what our
+configuration assumes: run `sh tests/run.sh slow --only test_tmux_browser_keys.py,test_attach_command.py` against it too, putting the extracted binary first in `PATH`.
 
 A go or gcloud bump without the checksum step leaves the old checksums in the file and the installer refuses the new
 archive; the pull request template reminds you.

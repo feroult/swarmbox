@@ -32,7 +32,7 @@ through violet to white and back; the prompt, the tmux bar, the progress line of
 ## Your own terminal
 
 The box cannot paint the colors of the terminal you run it in: a selection made with `Shift` and dragged, the background and the 16 colors are your terminal's. These files give it the same
-palette as the browser terminal (`tests/test_theme.py` checks that they agree):
+palette as the browser terminal (`tests/fast/test_theme.py` checks that they agree):
 
 - **Windows Terminal:** paste the scheme of [theme/windows-terminal.json](theme/windows-terminal.json) into `"schemes"` in `settings.json`, then set `"colorScheme": "SwarmBox Purple-Glow"` in your profile.
 - **Ghostty:** copy [theme/ghostty](theme/ghostty) to `~/.config/ghostty/themes/swarmbox-purple-glow` and put `theme = swarmbox-purple-glow` in your config.

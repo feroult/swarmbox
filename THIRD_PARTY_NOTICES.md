@@ -285,7 +285,7 @@ statements below are for people who bake them in or want to know the terms.
 - License: Apache-2.0 (the license of SwarmBox itself, see `LICENSE`)
 - Source: https://github.com/feroult/swarmbox/tree/main/container/addons/sysop
 - The brain that the sysop runs (`claude -p` by default) is a separate addon with its own section above; the sysop only starts it.
-- [verified: LICENSE of this repository, Apache License 2.0; `tests/test_sysop_addon.py` checks that the library imports only the standard library; 2026-11-15]
+- [verified: LICENSE of this repository, Apache License 2.0; `tests/fast/test_sysop_addon.py` checks that the library imports only the standard library; 2026-11-15]
 
 ## Run-time downloads
 

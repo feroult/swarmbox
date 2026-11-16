@@ -2157,7 +2157,7 @@ up_main() {
 
 # ---------------------------------------------------------------- the Cloudflare connector on every entry
 
-# Pinned. The single source in the helper; tests/test_host_connector.py checks that it equals DEFAULT_CONNECTOR_IMAGE of
+# Pinned. The single source in the helper; tests/fast/test_host_connector.py checks that it equals DEFAULT_CONNECTOR_IMAGE of
 # cloudflare-setup.py. SWARMBOX_CLOUDFLARED_IMAGE overrides it (environment only: the config table has no file key).
 # CONNECTOR_NAME is set by load_defaults: <default name>-cloudflared, one per host.
 CONNECTOR_IMAGE_DEFAULT=docker.io/cloudflare/cloudflared:2026.10.7

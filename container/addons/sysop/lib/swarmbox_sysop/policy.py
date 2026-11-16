@@ -46,7 +46,7 @@ MAX_TEXT = 4000
 LEVELS = risk.LEVELS
 
 # the keys of swarmbox-tabs (container/scripts/swarmbox-tabs.py KEYS and parse_keys): the same names, so a key that this accepts is one
-# swarmbox-tabs turns into a key. tests/test_sysop_policy.py compares this table with that of swarmbox-tabs.
+# swarmbox-tabs turns into a key. tests/fast/test_sysop_policy.py compares this table with that of swarmbox-tabs.
 KEYS = ("Esc", "Enter", "Tab", "BTab", "Space", "BSpace", "Up", "Down", "Left", "Right", "Home", "End", "PgUp", "PgDn", "Delete", "Insert")
 # keys that end a line like Enter does: C-j and C-m are a line feed and a carriage return, C-o runs the line and fetches the next one (bash)
 ENTERS = ("Enter", "C-j", "C-m", "C-o")

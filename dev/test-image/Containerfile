@@ -1,0 +1,68 @@
+# The image of the test suite: what tests/slow (and the offline run of tests/fast) need, and nothing else. dev/test-slow.sh builds it
+# from this file when the image is missing. It is not the product image (that is the root Dockerfile) and nothing in it is published.
+#
+#   podman build -f dev/test-image/Containerfile -t swarmbox-test-slow:tmux35 dev/test-image
+#   podman build -f dev/test-image/Containerfile --build-arg TMUX_VARIANT=backport -t swarmbox-test-slow:tmux37 dev/test-image
+#
+# TMUX_VARIANT=stock    the tmux of Debian 13 (3.5a)
+# TMUX_VARIANT=backport the tmux that the product image ships (the pinned trixie-backports package of the root Dockerfile, 3.7c)
+# Contents: python3, tmux, dash, busybox, chromium, ttyd, git, jq, shellcheck, build-essential, espeak-ng, less, vim, fzf, node and the
+# claude CLI (the CLI is for tests/e2e; the suites never call a model). Podman is NOT inside: the tests that build the image or run a
+# nested Podman skip here and run in CI. The user is `tester` (not root) and the work folder is /work (a tmpfs in dev/test-slow.sh).
+# tests/fast/test_layout.py keeps the tmux and ttyd pins below equal to the ones of the root Dockerfile.
+ARG NODE_VERSION=24
+FROM docker.io/library/node:${NODE_VERSION}-trixie-slim
+
+ARG DEBIAN_FRONTEND=noninteractive
+# the sandbox user of apt cannot be switched in a nested rootless build, so apt runs as root (harmless elsewhere)
+RUN apt-get -o APT::Sandbox::User=root update && \
+    apt-get -o APT::Sandbox::User=root install -y --no-install-recommends \
+        python3 python3-venv python3-pip tmux dash busybox-static chromium git procps curl ca-certificates openssh-client \
+        shellcheck bash jq build-essential espeak-ng less vim fzf && \
+    rm -rf /var/lib/apt/lists/*
+
+# tmux 3.7c, the pins of the root Dockerfile (same package, same checks), only when TMUX_VARIANT=backport
+ARG TMUX_VARIANT=stock
+ARG TMUX_VERSION=3.7c-1~bpo13+1
+ARG TMUX_SHA256_AMD64=c8b53f52cd26492bde59118aaaf06a21e38faa9b20621327546532efa2805174
+ARG TMUX_SHA256_ARM64=4cadcd17d6d7f11b0cc8707109cf8ab38632e194bb2e94d0f066e962d99b1fc2
+ARG TMUX_SHA1_AMD64=34937ad9ce3d0daa60b4b76debffd5c3631ff026
+ARG TMUX_SHA1_ARM64=6ef9eb31079987a468a23104fe2eabc9ed4bc70b
+RUN if [ "$TMUX_VARIANT" = backport ]; then \
+        case "$(dpkg --print-architecture)" in \
+            amd64) A=amd64; SHA256=$TMUX_SHA256_AMD64; SHA1=$TMUX_SHA1_AMD64 ;; \
+            arm64) A=arm64; SHA256=$TMUX_SHA256_ARM64; SHA1=$TMUX_SHA1_ARM64 ;; \
+            *) echo "tmux: unsupported architecture $(dpkg --print-architecture)" >&2; exit 1 ;; \
+        esac && \
+        F="tmux_${TMUX_VERSION}_${A}.deb" && \
+        for URL in "https://deb.debian.org/debian/pool/main/t/tmux/$F" "https://snapshot.debian.org/file/$SHA1"; do \
+            if curl -fsSL -o "/tmp/$F" "$URL" && echo "$SHA256  /tmp/$F" | sha256sum -c -; then break; fi; \
+            rm -f "/tmp/$F"; \
+        done && \
+        test -f "/tmp/$F" && \
+        apt-get -o APT::Sandbox::User=root update && apt-get -o APT::Sandbox::User=root install -y --no-install-recommends "/tmp/$F" && \
+        rm -f "/tmp/$F" && rm -rf /var/lib/apt/lists/*; \
+    elif [ "$TMUX_VARIANT" != stock ]; then echo "TMUX_VARIANT must be stock or backport" >&2; exit 1; \
+    fi && tmux -V
+
+# ttyd is not in Debian 13: the pinned release of the root Dockerfile, checked against its published SHA256SUMS
+ARG TTYD_VERSION=1.7.7
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) T=ttyd.x86_64 ;; \
+        arm64) T=ttyd.aarch64 ;; \
+        *) echo "ttyd: unsupported architecture $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac && \
+    BASE="https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}" && \
+    curl -fsSL -o "/tmp/$T" "$BASE/$T" && \
+    curl -fsSL -o /tmp/ttyd.SHA256SUMS "$BASE/SHA256SUMS" && \
+    (cd /tmp && grep " $T\$" ttyd.SHA256SUMS | sha256sum -c -) && \
+    install -m 755 "/tmp/$T" /usr/local/bin/ttyd && \
+    rm -f "/tmp/$T" /tmp/ttyd.SHA256SUMS
+
+# the claude CLI, for tests/e2e only (pinned: bump it by hand)
+ARG CLAUDE_CODE_VERSION=2.1.325
+RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" && npm cache clean --force
+
+RUN useradd -m tester
+USER tester
+WORKDIR /work

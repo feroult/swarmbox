@@ -14,8 +14,8 @@
 # It pushes only to the image of container/host/DEFAULTS under the owner feroult, ghcr.io/feroult/<default name> with the workflow's own token, contacts no other registry, and uses no
 # stored credential: the signature is keyless (a short-lived certificate from the OIDC token of the run).
 #
-# NONE OF THIS HAS EVER RUN. It was validated in the development box only by tests/test_release_workflow.py (YAML shape,
-# gating, permissions, pins), tests/test_release_version.py (tag to image tags) and actionlint when present. Everything
+# NONE OF THIS HAS EVER RUN. It was validated in the development box only by tests/fast/test_release_workflow.py (YAML shape,
+# gating, permissions, pins), tests/fast/test_release_version.py (tag to image tags) and actionlint when present. Everything
 # below that depends on GitHub or on an action is [unverified] until the first real run; the checklist is in
 # docs/design.md (sections "Image and updates" and "Not done, and open questions"). In short:
 #   - [unverified] the runner label ubuntu-24.04-arm is available to the account (same open fact as for ci.yml);
