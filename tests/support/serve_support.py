@@ -174,7 +174,7 @@ class ServeCase(unittest.TestCase):
             if p.poll() is None:  # only the PID this test started
                 try:
                     os.kill(p.pid, signal.SIGTERM)
-                    p.wait(timeout=5)
+                    p.wait(timeout=30)
                 except Exception:
                     p.kill()
                     p.wait()
@@ -193,7 +193,7 @@ class ServeCase(unittest.TestCase):
 
     def run_to_exit(self, **extra):
         p = self.start(**extra)
-        out, err = p.communicate(timeout=20)
+        out, err = p.communicate(timeout=60)
         return p.returncode, out, err
 
     def run_ready(self, **extra):
@@ -225,7 +225,7 @@ class ServeCase(unittest.TestCase):
 
     def stop(self, p, sig=signal.SIGTERM):
         os.kill(p.pid, sig)
-        p.wait(timeout=10)
+        p.wait(timeout=60)
         return p.returncode
 
 

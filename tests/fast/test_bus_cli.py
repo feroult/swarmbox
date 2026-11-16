@@ -247,8 +247,9 @@ class Pub(Base):
 class Streams(Base):
     def test_sub_exits_4_when_the_broker_goes_away_and_watch_too(self):
         p = self.broker()
-        sub, watch = p.popen("sub", "jobs"), p.popen("watch")
-        self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "x").returncode == 0, 5))
+        sub, watch = p.popen("sub", "-v", "jobs"), p.popen("watch", "-v")
+        for c in (sub, watch):      # both are connected, or the one that is late says "the bus is not running" instead of "the broker closed the connection"
+            self.assertIn(b"subscribed", c.stderr.readline())
         p.stop()
         for c in (sub, watch):
             self.assertEqual(c.wait(10), 4)

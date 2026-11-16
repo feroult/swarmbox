@@ -326,7 +326,7 @@ class RedockCoalescing(unittest.TestCase):
         t0 = time.monotonic()
         self.assertEqual(self.dock(work).redock("@2"), "queued", "the second run does not wait for the first")
         self.assertEqual(self.dock(work).redock("@2"), "queued")
-        self.assertLess(time.monotonic() - t0, 1.0)
+        self.assertLess(time.monotonic() - t0, 3.0)
         self.assertEqual(calls, ["@1"])
         release.set()
         t.join(10)

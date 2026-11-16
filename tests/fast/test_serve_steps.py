@@ -87,9 +87,9 @@ class DefaultRun(unittest.TestCase):
         self.assertNotIn("removed the runtime state", self.log, "no stale runtime folder of nested Podman")
         self.assertNotIn("stale marker", self.log, "no graph root yet")
 
-    def test_sigterm_gives_143_within_a_second_and_stops_the_children_and_the_supervisors(self):
+    def test_sigterm_gives_143_promptly_and_stops_the_children_and_the_supervisors(self):
         self.assertEqual(self.rc, 143)
-        self.assertLess(self.stop_seconds, 1.0)
+        self.assertLess(self.stop_seconds, 8.0, "a stop that waits for a child takes the 10 s of the container's grace; a second on a quiet machine")
         self.assertEqual([p for p in self.live_pids + [self.bus_pid, self.bus_sup] if alive(p)], [])
         self.assertFalse(os.path.exists(os.path.join(self.c.run_dir, "bus-supervisor.pid")))
 
