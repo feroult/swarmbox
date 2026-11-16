@@ -5,13 +5,9 @@ cloudflare-setup.py against the shared FakePodman; HOME, the XDG folders and the
 here starts a real container. The pre-planted symlink tests need the pid of the helper before it runs: a wrapper writes its
 own pid, waits for a marker file and `exec`s the helper, so the pid is the helper's and the planting happens before its first
 step (no sleeps decide an outcome).
-Also checked here: docs/security-review.md exists, every finding row has a severity, a location and a status, a row that says
-"fixed" or "documented" names a test that exists in tests/, and no row is open.
+(The rows of docs/security-review.md are checked by dev/release-check.sh: tests/fast/test_release_check.py.)
 Run: python3 tests/fast/test_security_review.py
 """
-import contextlib
-import importlib.util
-import io
 import os
 import re
 import shutil
@@ -19,16 +15,13 @@ import signal
 import stat
 import subprocess
 import sys
-import tarfile
 import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-import test_host_update as upd  # noqa: E402
-import test_host_up as up_tests  # noqa: E402
-from helpers import make_archive  # noqa: E402
-from helpers import ROOT, DEFAULT_CONNECTOR, DEFAULT_NAME, restore_signals  # noqa: E402
+from helpers import DEFAULT_CONNECTOR, DEFAULT_NAME, restore_signals  # noqa: E402
+from host_support import UpBase  # noqa: E402
 
 restore_signals()
 
@@ -36,14 +29,7 @@ TOK = "tunnelTOKEN0123456789abcdefSECRETvalue=="
 CN = DEFAULT_CONNECTOR
 
 
-def load_cf(name):
-    spec = importlib.util.spec_from_file_location(name, os.path.join(ROOT, "cloudflare-setup.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-class Base(up_tests.Base):
+class Base(UpBase):
     def assert_no_marker(self):
         for d in (self.tmp, self.ws, self.home, os.getcwd()):
             self.assertFalse(os.path.exists(os.path.join(d, "MARK")), "a command substitution ran")
@@ -92,8 +78,9 @@ class Base(up_tests.Base):
 
 # ============================================================================ quoting of user values
 
-HOSTILE_NAMES = ["with space", "it's", 'dq"quote', "$(touch MARK)", "`touch MARK`", "semi;colon&amp|pipe", "-leading-dash",
-                 "star*glob?[x]", "#hash", "back\\slash", "tab\there", "{brace,comma}", "unicode-é"]
+# one name per class of hostile character a workspace name can carry into a shell or an argument list
+HOSTILE_NAMES = ["with space\ttab", "it's dq\"quote", "$(touch MARK) `touch MARK`", "semi;colon&amp|pipe", "-leading-dash",
+                 "star*glob?[x]{brace,comma}", "#hash back\\slash", "unicode-\u00e9"]
 
 
 class QuotingTest(Base):
@@ -114,12 +101,11 @@ class QuotingTest(Base):
                 self.assertIn("swarmbox.workspace=" + ws, lines)
                 self.assert_no_marker()
 
-    def test_config_set_refuses_shell_metacharacters_in_every_validated_key(self):
-        cases = [("HOSTNAME", "$(touch MARK)"), ("HOSTNAME", "a b"), ("HOSTNAME", "a;b"), ("TZ", "`touch MARK`"),
-                 ("TZ", "../../etc/passwd"), ("PORTS", "80;touch MARK"), ("PORTS", "80,$(x)"), ("WITH", "a;b"),
-                 ("WITH", "$(x)"), ("AGENT", "$(touch MARK)"), ("AGENT", "-x"), ("ENV_KEYS", "A;B"), ("ENV_KEYS", "A B"),
-                 ("ENV_KEYS", "$(x)"), ("IMAGE", "$(touch MARK)"), ("IMAGE", "`x`"), ("IMAGE", "a b"), ("IMAGE", "a;b"),
-                 ("WEB_PORT", "80;x"), ("WEB", "1;x"), ("INIT", "$(x)"), ("BROWSER_URL", "http://a b"),
+    def test_config_set_refuses_shell_metacharacters_and_writes_nothing(self):
+        # one value per class: command substitution, a separator, a path out of the folder, an option, a stray separator of the key
+        # (the validation of every key and the message are the table of test_host_config.py)
+        cases = [("HOSTNAME", "$(touch MARK)"), ("TZ", "../../etc/passwd"), ("PORTS", "80;touch MARK"), ("WITH", "`touch MARK`"),
+                 ("AGENT", "-x"), ("ENV_KEYS", "A;B"), ("IMAGE", "$(touch MARK)"), ("WEB_PORT", "80;x"), ("BROWSER_URL", "http://a b"),
                  ("WORKSPACE", "/tmp/a:b")]
         for key, val in cases:
             with self.subTest(key=key, val=val):
@@ -291,52 +277,6 @@ class ModeTest(Base):
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.home, ".config", "swarmbox", "config")).st_mode), 0o600)
 
 
-# ============================================================================ update --to, the archive, the folder swap
-
-class UpdateInputTest(upd.UpdateBase):
-    def test_update_to_refuses_references_and_hostile_tags_before_any_podman_call(self):
-        bad = ["a b", "-x", "--help", "a;b", "$(touch MARK)", "`touch MARK`", "a/b", "a:b", "a@sha256:abc", "a|b", "a&b",
-               "a>b", "a'b", 'a"b', ".hidden", "a\\b", "x" * 129, "a*b", "a?b", "a\tb", "~", "${HOME}", "a\nb", "a\rb", ""]
-        self.podman_for("2.0.1")
-        for tag in bad:
-            with self.subTest(tag=tag):
-                r = self.update("--to", tag)
-                self.assertEqual(r.returncode, 2, r.stderr)
-                self.assertEqual(self.calls(), [])
-                self.assertEqual(r.stdout, "")
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, "MARK")))
-
-    def test_an_exact_tag_must_equal_the_version_inside_the_image(self):
-        self.podman_for("2.0.5")
-        before = self.before()
-        r = self.update("--to", "2.0.9")
-        self.assertEqual(r.returncode, 3, r.stderr)
-        self.assert_unchanged(before)
-
-    def test_an_archive_with_parent_or_absolute_entries_is_refused_and_nothing_escapes(self):
-        outside = os.path.join(self.tmp, "escaped")
-        for extra in ({"../escaped": b"x"}, {"../../escaped": b"x"}, {"a/../../escaped": b"x"}):
-            with self.subTest(extra=list(extra)):
-                self.podman_for("2.0.1", extra=extra)
-                before = self.before()
-                r = self.update("--to", "2.0.1")
-                self.assertEqual(r.returncode, 3, r.stderr)
-                self.assert_unchanged(before)
-                self.assertFalse(os.path.lexists(outside))
-        p = os.path.join(self.tmp, "abs.tar")
-        make_archive(p, version="2.0.1")
-        absname = os.path.join(self.tmp, "abs-escaped")
-        with tarfile.open(p, "a") as tf:
-            ti = tarfile.TarInfo(absname)
-            ti.size = 1
-            tf.addfile(ti, io.BytesIO(b"x"))
-        self.podman(run={"stdout_file": p})
-        before = self.before()
-        r = self.update("--to", "2.0.1")
-        self.assertEqual(r.returncode, 3, r.stderr)
-        self.assert_unchanged(before)
-        self.assertFalse(os.path.lexists(absname))
-
 # ============================================================================ parsing of the config file
 
 class ConfigParsingTest(Base):
@@ -359,22 +299,6 @@ class ConfigParsingTest(Base):
             self.run_h(*args)
             self.assert_no_marker()
         self.assertEqual(self.real_runs(), [])  # the invalid HOSTNAME stops `up` before Podman creates anything
-
-# ============================================================================ the review document
-
-DOC = os.path.join(ROOT, "docs", "security-review.md")
-TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
-
-
-def doc_rows():
-    with open(DOC) as f:
-        text = f.read()
-    out = []
-    for ln in text.splitlines():
-        if re.match(r"^\|\s*SR-\d+", ln):
-            out.append([c.strip() for c in ln.strip().strip("|").split("|")])
-    return text, out
-
 
 if __name__ == "__main__":
     unittest.main()

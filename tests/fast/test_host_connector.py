@@ -12,7 +12,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from helpers import ROOT, DEFAULT_CONNECTOR  # noqa: E402
-from test_host_up import Base, HELPER_SRC  # noqa: E402
+from host_support import UpBase as Base, HELPER_SRC  # noqa: E402
 
 CN = DEFAULT_CONNECTOR
 TOK = "eyJhIjoiYWNjdCIsInQiOiJ0dW4ifQ=="
@@ -52,6 +52,8 @@ class ConnectorBase(Base):
 
 
 class ConnectorTest(ConnectorBase):
+    # (that the token never reaches the box container, argv or the output, from the file or the environment: test_security_review.py)
+
     def test_no_token_means_no_connector_calls(self):
         self.with_connector()
         r = self.up()
@@ -136,7 +138,6 @@ class ConnectorTest(ConnectorBase):
                           ("lookup fails", {"exit": 125, "stderr": "Error: something broke\n"})):
             with self.subTest(name):
                 self.podman()
-                self.with_connector(ans)
                 c = self.conf()
                 c["container"]["rules"].insert(0, {"match": ["inspect", CN], **(ans or {"exit": 125, "stderr": "Error: no such container\n"})})
                 c["run"] = {"rules": [{"match": [CN], "exit": 126, "stderr": "Error: boom for connector\n"}]}
@@ -161,14 +162,6 @@ class ConnectorTest(ConnectorBase):
         self.assertEqual(self.fp.envs()[self.calls().index(self.run_calls()[0])].get("TUNNEL_TOKEN"), TOK)
         self.assert_token_never_in_argv()
 
-    def test_the_tunnel_token_never_reaches_the_box_container(self):
-        """Ported from v0.1.0's test_the_token_is_not_passed_to_the_swarmbox_container: the box run has no TUNNEL and no token."""
-        self.with_connector()
-        self.up(**self.tok_env())
-        box = [c for c in self.subs("run") if CN not in c]
-        self.assertEqual(len(box), 1, self.calls())
-        self.assertFalse(any("TUNNEL" in a or TOK in a for a in box[0]), box[0])
-        self.assertNotIn("TUNNEL_TOKEN", self.fp.envs()[self.calls().index(box[0])])
 
 if __name__ == "__main__":
     unittest.main()

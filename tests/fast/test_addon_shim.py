@@ -13,72 +13,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from helpers import ROOT  # noqa: E402
-from test_addon_install import Base, SELF, SELF_CONF, ADDON  # noqa: E402
-from test_addon_manifest import make_addon  # noqa: E402
-
-SHIM = os.path.join(ROOT, "container", "scripts", "swarmbox-shim.sh")
-
-INTERPRETERS = [("shebang", None)]
-for _name, _argv in (("dash", ["dash"]), ("bash", ["bash"]), ("busybox", ["busybox", "sh"])):
-    if shutil.which(_argv[0]):
-        INTERPRETERS.append((_name, _argv))
-
-# An "addon manager" that only records how it was called (for tests that must not run the real swarmbox-addon).
-FAKE_MGR = """#!/bin/sh
-printf '%s\\n' "$@" > "$FAKE_ARGS"
-printf '%s\\n' "${SWARMBOX_SHIM_DEPTH:-}" > "$FAKE_ARGS.depth"
-exit "${MGR_EXIT:-0}"
-"""
-
-
-class ShimBase(Base):
-    def setUp(self):
-        super().setUp()
-        j = lambda *p: os.path.join(self.base, *p)  # noqa: E731
-        self.ishims, self.ushims = j("img", "shims"), j("home", ".local", "share", "swarmbox", "shims")
-        os.makedirs(self.ishims)
-        os.makedirs(self.ushims)
-        self.args = j("args.txt")
-
-    def env(self, **extra):
-        e = super().env(**extra)
-        for k, v in (("SWARMBOX_TEST_IMAGE_SHIMS", self.ishims), ("SWARMBOX_TEST_USER_SHIMS", self.ushims),
-                     ("SWARMBOX_TEST_ADDON", ADDON), ("FAKE_ARGS", self.args)):
-            e.setdefault(k, v)
-        e["PATH"] = ":".join([os.path.join(self.home, ".local", "bin"), self.ushims, self.ishims, "/usr/bin", "/bin"])
-        return e
-
-    def link(self, level, shims, *commands):
-        """Shims of `commands` in `shims` pointing to the real dispatcher in the repository."""
-        for c in commands:
-            p = os.path.join(shims, c)
-            if os.path.lexists(p):
-                os.remove(p)
-            os.symlink(SHIM, p)
-
-    def index(self, shims, *lines):
-        with open(os.path.join(os.path.dirname(shims), "index"), "w") as f:
-            f.write("".join(l + "\n" for l in lines))
-
-    def call(self, shim_path, *args, interp=None, env=None, **extra):
-        argv = (interp or []) + [shim_path, *args]
-        return subprocess.run(argv, env=env or self.env(**extra), capture_output=True, text=True, timeout=60, cwd=self.base)
-
-    def fake_mgr(self):
-        p = os.path.join(self.base, "fake-mgr")
-        with open(p, "w") as f:
-            f.write(FAKE_MGR)
-        os.chmod(p, 0o755)
-        return p
-
-    def setup_demo(self, **over):
-        """Image-level managed addon 'demo' and self addon 'selfy', both indexed and linked."""
-        self.managed(**over)
-        self.selfy()
-        self.index(self.ishims, "demo demo", "selfy selfy")
-        self.link("image", self.ishims, "demo", "selfy")
-
+from addon_support import ADDON, INTERPRETERS, SHIM, ShimBase  # noqa: E402
 
 class Lifecycle(ShimBase):
     def test_first_call_installs_then_runs_the_real_program_for_every_interpreter(self):

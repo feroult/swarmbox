@@ -3,16 +3,13 @@
 Fake installers only (the fixtures of test_addon_install.py); HOME, both manifest levels and the lock are temp paths.
 Run with: python3 -W error tests/fast/test_addon_use_remove.py
 """
-import fcntl
 import os
 import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from test_addon_install import MANAGED as MANAGED_INSTALL, Base, SELF  # noqa: E402
-from test_addon_link import tree_hash  # noqa: E402
-from test_addon_manifest import make_addon  # noqa: E402
+from addon_support import Base, MANAGED, SELF, make_addon, tree_hash  # noqa: E402
 
 
 class UseBase(Base):
@@ -118,7 +115,7 @@ class Remove(UseBase):
 
     def test_purge_of_a_user_level_addon_removes_install_manifest_shim_and_index_entry(self):
         self.managed(level=self.user)
-        make_addon(self.user, "keeper", install=MANAGED_INSTALL, COMMANDS='"keeper"')
+        make_addon(self.user, "keeper", install=MANAGED, COMMANDS='"keeper"')
         self.assertEqual(self.addon("link", "--user").returncode, 0)
         self.addon("install", "demo")
         shims = os.path.join(self.home, ".local", "share", "swarmbox", "shims")

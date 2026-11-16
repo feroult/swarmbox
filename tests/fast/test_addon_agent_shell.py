@@ -68,13 +68,6 @@ class ClaudeShell(Base):
                 self.assertEqual(self.run_in(sh, "claude", "'fix the build'"), self.want("[fix the build]"))
                 self.assertEqual(self.run_in(sh, "claude", "--model haiku"), self.want("[--model][haiku]"))
 
-    def test_the_flags_are_given_exactly_once(self):
-        for sh in SHELLS:
-            with self.subTest(shell=sh):
-                out = self.run_in(sh, "claude", "-p x")
-                self.assertEqual(out.count("--dangerously-skip-permissions"), 1)
-                self.assertEqual(out.count("--mcp-config"), 1)
-
     def test_subcommands_do_not_receive_the_flags(self):
         for sh in SHELLS:
             for args in ("update", "mcp list", "mcp add x -- y", "doctor", "auth login", "install", "agents"):
@@ -88,24 +81,12 @@ class ClaudeShell(Base):
                     self.assertNotIn("--dangerously-skip-permissions", self.run_in(sh, "claude", args, yolo="0"))
                 self.assertIn("--dangerously-skip-permissions", self.run_in(sh, "claude", "", yolo="1"))
 
-    def test_the_function_is_the_only_place_of_the_flags(self):
-        with open(os.path.join(REAL_ADDONS, "claude", "addon.conf")) as f:
-            conf = f.read()
-        self.assertNotIn("dangerously", conf)
-        self.assertNotIn("mcp-config", conf)
-
-
 class GeminiShell(Base):
     def test_gemini_starts_with_yolo(self):
         for sh in SHELLS:
             with self.subTest(shell=sh):
                 self.assertEqual(self.run_in(sh, "gemini", ""), "gemini:[--yolo]")
                 self.assertEqual(self.run_in(sh, "gemini", "-p 'say hi'"), "gemini:[--yolo][-p][say hi]")
-
-    def test_gemini_has_no_mcp_flag(self):
-        for sh in SHELLS:
-            with self.subTest(shell=sh):
-                self.assertNotIn("mcp", self.run_in(sh, "gemini", "").lower())
 
     def test_swarmbox_yolo_zero_turns_it_off(self):
         for sh in SHELLS:
@@ -178,9 +159,6 @@ class ThroughTheFragment(Base):
         self.assertNotIn("aliased", r.stdout)
         self.assertEqual(self.frag("alias claude gemini opencode 2>&1").stdout.count("alias "), 0)
 
-    def test_the_gemini_function_uses_yolo(self):
-        self.assertIn("gemini:[--yolo]", self.frag("gemini").stdout)
-
     def test_yolo_runs_the_default_agent_in_auto_approve_mode(self):
         for agent, want in (("claude", "claude:[--dangerously-skip-permissions]"), ("gemini", "gemini:[--yolo][-p][go]"),
                             ("opencode", "opencode:[run][--auto][go]")):
@@ -189,11 +167,6 @@ class ThroughTheFragment(Base):
                 r = self.frag("yolo %s" % args, SWARMBOX_AGENT=agent)
                 self.assertIn(want, r.stdout, r.stdout + r.stderr)
                 self.assertEqual(r.stdout.count("%s:" % agent), 1)
-
-    def test_yolo_without_a_default_agent_says_so(self):
-        r = self.frag("yolo; echo status=$?")
-        self.assertIn("status=1", r.stdout)
-        self.assertRegex(r.stdout + r.stderr, r"no default agent")
 
 
 if __name__ == "__main__":

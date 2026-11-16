@@ -16,140 +16,12 @@ import signal
 import stat
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from helpers import ROOT, FakePodman, DEFAULT_NAME, DEFAULT_CONNECTOR, DEFAULT_IMAGE_REPO  # noqa: E402
-
-HELPER_SRC = os.path.join(ROOT, "container", "host", "swarmbox-host")
-VERSION_SRC = os.path.join(ROOT, "container", "host", "VERSION")
-with open(VERSION_SRC) as _f:
-    VERSION = _f.read().strip()
-NAME = DEFAULT_NAME
-IMAGE = (DEFAULT_IMAGE_REPO + ":%s") % VERSION
-BUSY = ("Error: rootlessport listen tcp 127.0.0.1:7681: bind: address already in use")
-NOSUCH = {"exit": 125, "stderr": "Error: inspecting object: no such container swarmbox\n"}
-HELPER_PROGRAMS = ["sh", "dash", "bash", "cat", "rm", "mkdir", "rmdir", "sleep", "kill", "sort", "tail", "head", "grep", "sed",
-                "tr", "uname", "date", "find", "stat", "mv", "chmod", "printf", "cut", "readlink", "env", "id", "test",
-                "sha256sum", "wc", "basename", "dirname", "mktemp", "touch", "ls", "true", "false", "expr", "awk"]
-
-
-def line(state="running", name=NAME, image_id="sha256:aaa", init="false", managed="2", image=IMAGE, ports="",
-         env_hash="", fp="", ws=""):
-    """What `podman container inspect --format` prints for the box (the helper's format, in this order)."""
-    return "|".join([state, name, image_id, init, managed, image, ports, env_hash, fp, ws]) + "\n"
-
-
-class Base(unittest.TestCase):
-    def setUp(self):
-        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-up."))
-        self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.home = os.path.join(self.tmp, "home")
-        os.mkdir(self.home)
-        self.ws = os.path.join(self.tmp, "ws")
-        os.mkdir(self.ws)
-        self.state = os.path.join(self.home, ".local", "state", "swarmbox")
-        self.hdir = os.path.join(self.tmp, "helper")
-        os.makedirs(self.hdir)
-        shutil.copy(HELPER_SRC, os.path.join(self.hdir, "swarmbox-host"))
-        os.chmod(os.path.join(self.hdir, "swarmbox-host"), 0o755)
-        shutil.copy(VERSION_SRC, os.path.join(self.hdir, "VERSION"))
-        shutil.copy(os.path.join(ROOT, "container", "host", "DEFAULTS"), os.path.join(self.hdir, "DEFAULTS"))
-        with open(os.path.join(self.hdir, "addon-ports"), "w") as f:
-            f.write("")
-        for n, c in (("localtime", ""), ("tun", ""), ("proc-version", "Linux version 6.1.0 (debian)\n")):
-            with open(os.path.join(self.tmp, n), "w") as f:
-                f.write(c)
-        self.helper = os.path.join(self.hdir, "swarmbox-host")
-        self.fp = None
-
-    def podman(self, **over):
-        """A FakePodman with a default script for a box that does not exist; `over` replaces entries."""
-        conf = self.conf(**over)
-        self.fp = FakePodman(conf)
-        self.fp.__enter__()
-        self.addCleanup(self.fp.__exit__)
-        return self.fp
-
-    def conf(self, lookup=None, state="running\n", mounts="", **over):
-        lookup = NOSUCH if lookup is None else lookup
-        c = {
-            "container": {"rules": [
-                {"match": ["inspect", ".Mounts"], "stdout": mounts},
-                {"match": ["inspect", "swarmbox.fingerprint"], **lookup},
-                {"match": ["inspect", "State.Status"], "stdout": state},
-            ]},
-            "image": {"rules": [{"match": ["exists"]}, {"match": ["inspect"], "stdout": "sha256:aaa\n"}]},
-            "version": {"stdout": "4.3.1\n"},
-            "exec": {"stdout": "ok\n"},
-        }
-        c.update(over)
-        return c
-
-    def env(self, **extra):
-        e = self.fp.env() if self.fp else dict(os.environ)
-        for k in list(e):
-            if k.startswith("SWARMBOX_"):
-                del e[k]
-        e.update({
-            "HOME": self.home, "SWARMBOX_WORKSPACE": self.ws, "SWARMBOX_INIT": "0",
-            "SWARMBOX_LOCALTIME_FILE": os.path.join(self.tmp, "localtime"),
-            "SWARMBOX_TEST_PROC_VERSION": os.path.join(self.tmp, "proc-version"),
-            "SWARMBOX_TEST_OS": "Linux", "SWARMBOX_TEST_TUN": os.path.join(self.tmp, "tun"),
-            "SWARMBOX_TEST_NAP": "0.02", "SWARMBOX_TEST_READY_TRIES": "40",
-            "SWARMBOX_TEST_LOCK_TRIES": "100", "SWARMBOX_TEST_LOCK_PIDWAIT": "10",
-        })
-        for k in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
-            e.pop(k, None)
-        e.update(extra)
-        return e
-
-    def run_h(self, *args, env=None, timeout=60):
-        return subprocess.run([self.helper, *args], env=env if env is not None else self.env(), capture_output=True,
-                              text=True, input="", cwd=self.tmp, timeout=timeout)
-
-    def up(self, **extra):
-        return self.run_h("up", env=self.env(**extra))
-
-    def calls(self):
-        return self.fp.calls()
-
-    def subs(self, name):
-        """The recorded calls of one podman subcommand (the first word)."""
-        return [c for c in self.calls() if c and c[0] == name]
-
-    def lookups(self):
-        return [c for c in self.calls() if c[:2] == ["container", "inspect"] and any("swarmbox.fingerprint" in a for a in c)]
-
-    def creation_flags(self, env_extra=None):
-        """The real create-flags output for the default configuration: labels in it make a box that matches the config."""
-        p = subprocess.run([self.helper, "create-flags"], env=self.env(**(env_extra or {})), capture_output=True, text=True,
-                           input="", cwd=self.tmp)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        return p.stdout.split("\n")[:-1]
-
-    def matching_line(self, env_extra=None, **kw):
-        """A lookup line whose labels equal what the helper would create now (so no warning is due)."""
-        flags = self.creation_flags(env_extra)
-        labels = {}
-        for i, a in enumerate(flags):
-            if a == "--label":
-                k, v = flags[i + 1].split("=", 1)
-                labels[k] = v
-        d = dict(ports=labels["swarmbox.ports"], env_hash=labels["swarmbox.env-hash"], fp=labels["swarmbox.fingerprint"],
-                 ws=labels["swarmbox.workspace"], image=labels["swarmbox.image"])
-        d.update(kw)
-        return line(**d)
-
-    def assert_no_run(self):
-        self.assertEqual([c for c in self.subs("run") if "--rm" not in c], [])
-
-    def real_runs(self):
-        return [c for c in self.subs("run") if "--rm" not in c]
-
+from host_support import UpBase as Base, BUSY, HELPER_PROGRAMS, HELPER_SRC, IMAGE, NAME, NOSUCH, line  # noqa: E402
 
 # ============================================================================ the fast path and the exact-name match
 
@@ -159,8 +31,6 @@ class FastPathTest(Base):
 
     def test_a_running_box_takes_one_inspect_and_no_run(self):
         self.podman(lookup=self.running())
-        # the lookup needs the labels of the configuration: build them with the fake in place (create-flags calls no podman)
-        self.fp.configure(self.conf(lookup=self.running()))
         r = self.up()
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout, "")
@@ -172,15 +42,12 @@ class FastPathTest(Base):
         self.assert_no_run()
         for sub in ("start", "rm", "ps", "pull", "version"):
             self.assertEqual(self.subs(sub), [], sub)
-
-    def test_the_fast_path_call_count_budget_of_b35(self):
-        self.podman(lookup=self.running())
-        r = self.up()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        # step 6 adds `system connection list` (and an add only when the connection is not registered yet)
+        # the call budget: step 6 adds `system connection list` (and an add only when the connection is not registered yet)
         plain = [c for c in self.calls() if c[:1] != ["system"]]
         self.assertLessEqual(len(plain), 2, self.calls())
-        self.assertLessEqual(len(self.calls()) - len(plain), 2, self.calls())
+        sysc = [c for c in self.calls() if c[:1] == ["system"]]
+        self.assertEqual(sysc[0][:3], ["system", "connection", "list"])
+        self.assertLessEqual(len(sysc), 2, self.calls())
 
 class WarningsTest(Base):
     def setUp(self):
@@ -199,20 +66,13 @@ class WarningsTest(Base):
         r = self.run_with()
         self.assertEqual((r.returncode, r.stderr), (0, ""))
 
-    def test_ports_changed_line(self):
-        r = self.run_with({"SWARMBOX_PORTS": "3000"})
-        self.assertEqual(r.returncode, 0)
+    def test_every_difference_is_one_warning_and_the_box_is_never_touched(self):
+        # the ports changed in the config and the local image was replaced under the same reference
+        r = self.run_with({"SWARMBOX_PORTS": "3000"}, image_inspect="sha256:bbb\n")
+        self.assertEqual(r.returncode, 0, "warnings never change the exit code")
         self.assertIn("`PORTS` changed: box has (none), config has 127.0.0.1:3000:3000; run `swarmbox reset` to apply", r.stderr)
-
-    def test_same_reference_but_the_local_image_was_replaced_is_stale(self):
-        r = self.run_with(image_inspect="sha256:bbb\n")
-        self.assertEqual(r.returncode, 0)
         self.assertIn("is newer than the one this box runs", r.stderr)
         self.assertIn(IMAGE, r.stderr)
-
-    def test_warnings_never_change_the_exit_code(self):
-        r = self.run_with({"SWARMBOX_PORTS": "3000", "SWARMBOX_IMAGE": "x/y:1"}, image_inspect="sha256:bbb\n")
-        self.assertEqual(r.returncode, 0)
         self.assertEqual(self.real_runs(), [])
         self.assertEqual(self.subs("rm"), [])
 
@@ -241,9 +101,13 @@ class PrerequisiteTest(Base):
         self.assertEqual(r.returncode, code, r.stderr)
         return r
 
-    def test_versions_are_compared_as_numbers(self):
-        for v in ("4.3.1", "4.10.0", "5.0.1", "10.0.0", "4.3.0-dev"):
-            self.version_case(v + "\n", 0)
+    def test_versions_are_compared_as_numbers_and_a_podman_older_than_4_3_is_exit_3(self):
+        for v, code in (("4.10.0", 0), ("10.0.0", 0), ("4.3.0-dev", 0), ("4.2.9", 3), ("3.4.4", 3)):
+            with self.subTest(v):
+                r = self.version_case(v + "\n", code)
+                if code:
+                    self.assertIn("4.3 or newer is required", r.stderr)
+                    self.assert_no_run()
 
     def test_an_unreadable_version_is_a_warning_not_a_failure(self):
         r = self.version_case("garbage\n", 0)
@@ -569,6 +433,20 @@ class StopUrlTest(Base):
         r = self.run_h("stop")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.subs("stop"), [["stop", NAME]])
+
+    def test_stop_that_podman_refuses_is_exit_1_with_its_error(self):
+        self.podman(lookup={"stdout": self.matching_line()}, stop={"exit": 125, "stderr": "Error: cannot stop: boom\n"})
+        r = self.run_h("stop")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("could not stop the box '%s'" % NAME, r.stderr)
+        self.assertIn("cannot stop: boom", r.stderr)
+
+    def test_stop_with_no_box_is_a_warning_and_exit_0(self):
+        self.podman()
+        r = self.run_h("stop")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("nothing to stop", r.stderr)
+        self.assertEqual(self.subs("stop"), [])
 
     def test_stop_of_a_container_that_is_not_ours_is_refused(self):
         self.podman(lookup={"stdout": line(managed="")})

@@ -8,9 +8,7 @@ Interactive runs use `bash --norc -i` with `. <fragment>` and the commands on st
 without a terminal; its job-control complaints on standard error are ignored). Every run has a timeout.
 """
 import os
-import re
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -241,40 +239,7 @@ class PathAndEnvironment(Base):
         self.assertLess(out.index("BANNER-ART"), out.index("STARSHIP-INIT-RAN"))
 
 
-class RealAddons(Base):
-    """The fragment over the addons the image ships (container/addons), not made-up ones."""
-
-    def setUp(self):
-        super().setUp()
-        shutil.copytree(os.path.join(ROOT, "container", "addons"), self.imgaddons, dirs_exist_ok=True)
-        for name in ("claude", "gemini", "opencode"):
-            self.fake_agent(name)
-
-    def test_the_claude_function_has_the_yolo_flag_and_the_mcp_config_for_a_prompt_and_nothing_for_update(self):
-        r = self.interactive("claude -p hi; claude update; claude mcp list")
-        want = "RAN claude --dangerously-skip-permissions --mcp-config %s/.claude/mcp-servers.json -p hi" % self.home
-        self.assertIn(want, r.stdout, r.stdout + r.stderr)
-        self.assertIn("RAN claude update\n", r.stdout)
-        self.assertIn("RAN claude mcp list\n", r.stdout)
-
-    def test_gemini_and_opencode_have_their_functions(self):
-        r = self.interactive("gemini -p hi; opencode run hi; opencode mcp list")
-        self.assertIn("RAN gemini --yolo -p hi", r.stdout, r.stdout + r.stderr)
-        self.assertIn("RAN opencode run --auto hi", r.stdout)
-        self.assertIn("RAN opencode mcp list\n", r.stdout)
-
-    def test_swarmbox_yolo_zero_turns_auto_approve_off_in_all_three(self):
-        r = self.interactive("claude -p hi; gemini -p hi; opencode run hi", SWARMBOX_YOLO="0")
-        for flag in ("--dangerously-skip-permissions", "--yolo", "--auto"):
-            self.assertNotIn(flag, r.stdout)
-
-    def test_the_path_has_the_user_shims_first_then_the_image_shims(self):
-        out = self.interactive('echo "P=$PATH"').stdout
-        path = [l for l in out.splitlines() if l.startswith("P=")][0][2:].split(":")
-        user_shims = os.path.join(self.data, "swarmbox", "shims")
-        self.assertEqual(path[0], user_shims)
-        self.assertLess(path.index(user_shims), path.index(self.imgshims))
-        self.assertLess(path.index(self.imgshims), path.index(os.path.join(self.home, ".local", "bin")))
+# (the fragment over the real agent addons, their flags and SWARMBOX_YOLO=0: tests/fast/test_addon_agent_shell.py)
 
 
 @unittest.skipUnless(shutil.which("shellcheck"), "shellcheck not installed")

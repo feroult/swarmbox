@@ -6,165 +6,18 @@ Podman. Nothing touches the real home or a Windows drive: the WSL probe and the 
 (SWARMBOX_TEST_PROC_VERSION, SWARMBOX_TEST_OS), the local time file is SWARMBOX_LOCALTIME_FILE.
 Run: python3 tests/fast/test_host_create_flags.py
 """
-import hashlib
 import itertools
 import os
 import random
 import shutil
-import stat
 import subprocess
 import sys
-import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from helpers import ROOT, DEFAULT_NAME, DEFAULT_IMAGE_REPO, DEFAULT_VOLUME  # noqa: E402
-
-HELPER_SRC = os.path.join(ROOT, "container", "host", "swarmbox-host")
-VERSION_SRC = os.path.join(ROOT, "container", "host", "VERSION")
-DEFAULTS_SRC = os.path.join(ROOT, "container", "host", "DEFAULTS")
-FIXTURES = os.path.join(ROOT, "tests", "support", "fixtures")
-with open(VERSION_SRC) as _f:
-    VERSION = _f.read().strip()
-CANARY = "CANARY-VALUE-do-not-print-7f3a"
-TOKEN = "eyJhbGciOiJIUzI1NiJ9.canarytoken-0123456789"
-WSL_VERSION = "Linux version 5.15.153.1-microsoft-standard-WSL2 (root@x) (gcc 11.2.0) #1 SMP"
-PLAIN_VERSION = "Linux version 6.1.0-18-amd64 (debian-kernel@lists.debian.org) (gcc-12 (Debian 12.2.0-14)) #1 SMP"
-WINDOWS_DRIVE_MSG = ("swarmbox: workspace %s is on a Windows drive; WSL2 is supported only with the workspace on the Linux "
-       "filesystem (for example ~/swarmbox).")
-
-
-def sha256(text):
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
-def env_hash(pairs):
-    """pairs: list of (name, value or None). NAME=value for a set name, NAME for an unset one, sorted."""
-    lines = sorted(n if v is None else "%s=%s" % (n, v) for n, v in pairs)
-    return sha256("".join(l + "\n" for l in lines))
-
-
-def fingerprint(lines, ehash):
-    all_lines = sorted(list(lines) + ["env-hash=" + ehash])
-    return sha256("".join(l + "\n" for l in all_lines))
-
-
-def pairs_of(args):
-    """The flag/value pairs of an argument list: [(flag, value)] for flags that take a value on the next line."""
-    out = []
-    i = 0
-    takes = {"-p", "-v", "-e", "--hostname", "--tmpfs", "--device", "--security-opt", "--label", "--add-host"}
-    while i < len(args):
-        if args[i] in takes:
-            out.append((args[i], args[i + 1]))
-            i += 2
-        else:
-            out.append((args[i], None))
-            i += 1
-    return out
-
-
-def values(args, flag):
-    return [v for f, v in pairs_of(args) if f == flag]
-
-
-class Base(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.real_home = os.path.realpath(os.path.expanduser("~"))
-
-    def setUp(self):
-        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-cflags."))
-        self.addCleanup(self._cleanup)
-        self.home = os.path.join(self.tmp, "home")
-        os.mkdir(self.home)
-        self.assertNotEqual(os.path.realpath(self.home), self.real_home)
-        self.ws = os.path.join(self.tmp, "ws")
-        self.hdir = os.path.join(self.tmp, "helper")
-        self.localtime = os.path.join(self.tmp, "localtime")
-        self.procversion = os.path.join(self.tmp, "proc-version")
-        for p in (self.localtime,):
-            open(p, "w").close()
-        with open(self.procversion, "w") as f:
-            f.write(PLAIN_VERSION + "\n")
-        self.make_helper("")
-        self.cfgroot = os.path.join(self.home, ".config", "swarmbox")
-
-    def _cleanup(self):
-        for d, dirs, _files in os.walk(self.tmp):
-            for n in dirs:
-                try:
-                    os.chmod(os.path.join(d, n), 0o700)
-                except OSError:
-                    pass
-        shutil.rmtree(self.tmp, True)
-
-    def make_helper(self, addon_ports, version=True):
-        shutil.rmtree(self.hdir, True)
-        os.makedirs(self.hdir)
-        shutil.copy(HELPER_SRC, os.path.join(self.hdir, "swarmbox-host"))
-        os.chmod(os.path.join(self.hdir, "swarmbox-host"), 0o755)
-        if version:
-            shutil.copy(VERSION_SRC, os.path.join(self.hdir, "VERSION"))
-            shutil.copy(DEFAULTS_SRC, os.path.join(self.hdir, "DEFAULTS"))
-        if addon_ports is not None:
-            with open(os.path.join(self.hdir, "addon-ports"), "w") as f:
-                f.write(addon_ports)
-
-    @property
-    def helper(self):
-        return os.path.join(self.hdir, "swarmbox-host")
-
-    def base_env(self):
-        return {
-            "PATH": os.environ["PATH"], "HOME": self.home,
-            "SWARMBOX_WORKSPACE": self.ws, "SWARMBOX_INIT": "0",
-            "SWARMBOX_LOCALTIME_FILE": self.localtime, "SWARMBOX_TEST_PROC_VERSION": self.procversion,
-            "SWARMBOX_TEST_OS": "Linux",
-        }
-
-    def run_h(self, *args, env=None, drop=(), cfg=None, path=None, shell=None, cwd=None):
-        e = self.base_env()
-        e.update(env or {})
-        for k in drop:
-            e.pop(k, None)
-        if path is not None:
-            e["PATH"] = path
-        if cfg is not None:
-            name = (env or {}).get("SWARMBOX_NAME", DEFAULT_NAME)
-            folder = self.cfgroot if name == DEFAULT_NAME else os.path.join(self.cfgroot, name)
-            os.makedirs(folder, exist_ok=True)
-            f = os.path.join(folder, "config")
-            with open(f, "w") as fh:
-                fh.write(cfg)
-            os.chmod(f, 0o600)
-        argv = (shell or []) + [self.helper, *args]
-        return subprocess.run(argv, env=e, capture_output=True, text=True, input="", cwd=cwd or self.tmp, timeout=60)
-
-    def cf(self, env=None, cfg=None, args=(), **kw):
-        return self.run_h("create-flags", *args, env=env, cfg=cfg, **kw)
-
-    def flags(self, env=None, cfg=None, args=(), **kw):
-        p = self.cf(env=env, cfg=cfg, args=args, **kw)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        return p.stdout.split("\n")[:-1] if p.stdout else []
-
-    def fp(self, env=None, cfg=None, args=(), **kw):
-        p = self.run_h("fingerprint", *args, env=env, cfg=cfg, **kw)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        return p.stdout.strip()
-
-    # the expected fingerprint lines of the default configuration; `over` replaces some of them
-    def fp_lines(self, over=None):
-        d = {
-            "AGENT": "", "BROWSER_URL": "", "ENV_KEYS": "", "HOSTNAME": DEFAULT_NAME, "HOST_ACCESS": "0",
-            "IMAGE": (DEFAULT_IMAGE_REPO + ":%s") % VERSION, "INIT": "0", "NAME": DEFAULT_NAME, "PORTS": "",
-            "TZ": "local", "WEB": "1", "WEB_PORT": "7681", "WITH": "", "WORKSPACE": self.ws, "YOLO": "1",
-        }
-        d.update(over or {})
-        return ["%s=%s" % kv for kv in d.items()]
-
+from helpers import DEFAULT_NAME, DEFAULT_IMAGE_REPO, DEFAULT_VOLUME  # noqa: E402
+from host_support import CreateFlagsBase as Base, CANARY, FIXTURES, HELPER_SRC, PLAIN_VERSION, TOKEN, VERSION, WINDOWS_DRIVE_MSG, WSL_VERSION, env_hash, fingerprint, pairs_of, values  # noqa: E402
 
 # ============================================================================ the flag set: golden files
 
@@ -425,15 +278,14 @@ class NeverUnsafeTest(Base):
         ]
         combos = list(itertools.product(*[[(k, v) for v in vs] for k, vs in axes]))
         random.Random(32).shuffle(combos)
-        n = 0
-        for combo in combos[:120]:
+        chosen = combos[:24]       # the product has 17280 combinations and one run costs a process: a seeded sample is enough
+        for combo in chosen:
             env = dict(combo)
             env["A_ONE"] = CANARY
             env["SWARMBOX_WORKSPACE"] = self.ws
-            p = self.cf(env=env)
-            self.check(p, env)
-            n += 1
-        self.assertEqual(n, 120)
+            self.check(self.cf(env=env), env)
+        for k, vs in axes:      # the sample must have met every value of every axis (a changed seed or axis list could lose one)
+            self.assertEqual({dict(c)[k] for c in chosen}, set(vs), k)
 
 # ============================================================================ secrets
 

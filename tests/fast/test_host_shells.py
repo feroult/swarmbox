@@ -125,11 +125,6 @@ class ShellMatrix(unittest.TestCase):
         for must in ("dash", "bash --posix"):
             self.assertIn(must, ran)
 
-    def test_busybox_runs_when_present(self):
-        if not shutil.which("busybox"):
-            self.skipTest("[skipped: busybox missing; busybox part unverified here]")
-        self.assertIn("busybox sh", interpreters())
-
     def test_bash_under_the_name_sh(self):
         """A symlink named `sh` to bash: bash then runs in POSIX mode, as macOS's /bin/sh does (bash 3.2 there)."""
         bash = shutil.which("bash")

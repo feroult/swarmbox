@@ -14,7 +14,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from helpers import ROOT  # noqa: E402
-from test_addon_manifest import make_addon  # noqa: E402
+from addon_support import ADDON, Base, LIB, make_addon  # noqa: E402
 
 ADDON = os.path.join(ROOT, "container", "scripts", "swarmbox-addon.sh")
 LIB = os.path.join(ROOT, "container", "scripts")

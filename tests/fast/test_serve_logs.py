@@ -1,6 +1,6 @@
 """The log trimmer of `swarmbox-entrypoint serve`: the logs of the box (serve.log, bus.log, web-terminal.log) are written for weeks by `>>` redirections, so
 the entrypoint cuts each one to its last quarter when it passes SWARMBOX_TEST_LOG_MAX (4 MiB in the box), looking every SWARMBOX_TEST_LOG_EVERY seconds (300),
-and it ends with the box. The fakes of tests/fast/test_serve_steps.py (no real tmux, ttyd, podman or bus). Run with: python3 -W error tests/fast/test_serve_logs.py
+and it ends with the box. The fakes of tests/support/serve_support.py (no real tmux, ttyd, podman or bus). Run with: python3 -W error tests/fast/test_serve_logs.py
 """
 import os
 import sys
@@ -8,7 +8,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-import test_serve_steps as tss  # noqa: E402
+import serve_support as tss  # noqa: E402
 
 
 class Trimmer(tss.ServeCase):
@@ -23,6 +23,7 @@ class Trimmer(tss.ServeCase):
     def test_a_log_past_the_limit_is_cut_to_its_last_quarter_and_a_small_one_is_left_alone(self):
         self.big("web-terminal.log", 8000)
         self.big("bus.log", 8000)
+        self.big("serve.log", 9000)   # the serve log itself is trimmed too
         small = self.big("podman-service.log", 800)
         p = self.run_ready(SWARMBOX_TEST_LOG_EVERY="1", SWARMBOX_TEST_LOG_MAX="4000")
         web = os.path.join(self.state, "web-terminal.log")
@@ -32,18 +33,12 @@ class Trimmer(tss.ServeCase):
         self.assertIn("000159 ", text, "what is kept is the END of the log")
         self.assertNotIn("000001 ", text)
         self.assertLess(os.path.getsize(os.path.join(self.state, "bus.log")), 4000)
+        self.assertTrue(tss.wait_for(lambda: os.path.getsize(os.path.join(self.state, "serve.log")) < 4000, 15))
         self.assertEqual(os.path.getsize(small), 800, "a log under the limit is not touched")
         # a writer that appends keeps writing at the new end
         with open(web, "a") as f:
             f.write("after the cut\n")
         self.assertTrue(tss.read(web).endswith("after the cut\n"))
-        self.stop(p)
-
-    def test_the_serve_log_itself_is_trimmed_too(self):
-        os.makedirs(self.state, exist_ok=True)
-        self.big("serve.log", 9000)
-        p = self.run_ready(SWARMBOX_TEST_LOG_EVERY="1", SWARMBOX_TEST_LOG_MAX="4000")
-        self.assertTrue(tss.wait_for(lambda: os.path.getsize(os.path.join(self.state, "serve.log")) < 4000, 15))
         self.stop(p)
 
     def test_the_trimmer_ends_with_serve_and_leaves_no_sleep_behind(self):

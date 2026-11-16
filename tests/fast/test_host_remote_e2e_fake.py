@@ -1,7 +1,7 @@
 """`swarmbox-host remote ...` end to end against the fake Cloudflare API and a fake podman.
 
 The REAL wrapper and the REAL cloudflare-setup.py run as subprocesses. The API base URL is redirected with the script's existing
-CLOUDFLARE_API_BASE variable (the mechanism of tests/fast/test_cloudflare_setup.py, whose in-process fake server is reused and which
+CLOUDFLARE_API_BASE variable (the mechanism of tests/fast/test_cloudflare_setup.py, whose fake server (tests/support/cloudflare_support.py) is reused and which
 binds 127.0.0.1 on a random port). podman is a shell shim first in PATH. HOME and XDG_* are mktemp folders.
 This is the reduced form of the owner's end-to-end run: no real Cloudflare account, no real connector image pull.
 Run: python3 tests/fast/test_host_remote_e2e_fake.py
@@ -16,7 +16,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-import test_cloudflare_setup as tcs  # noqa: E402  (starts the fake server on 127.0.0.1, sets CLOUDFLARE_API_BASE)
+import cloudflare_support as tcs  # noqa: E402  (starts the fake server on 127.0.0.1, sets CLOUDFLARE_API_BASE)
 from helpers import ROOT, DEFAULT_NAME  # noqa: E402
 
 HELPER_SRC = os.path.join(ROOT, "container", "host", "swarmbox-host")

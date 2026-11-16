@@ -36,6 +36,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "..", "support"))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 
 PREFIX = "swarmbox-test-"
@@ -281,7 +282,8 @@ def step_mcp_generated(ctx):
 
 
 def step_attach_session(ctx):
-    from test_attach_command import PtyProc, wait_until
+    from attach_support import PtyProc
+    from waiting import wait_until
     name = ctx.box("SWARMBOX_WEB=0")
     assert ctx.ready(name), ctx.logs(name)
     assert podman("exec", name, "swarmbox-entrypoint", "attach", "false").returncode == 1

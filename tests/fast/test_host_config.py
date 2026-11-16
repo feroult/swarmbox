@@ -41,6 +41,10 @@ KEYS = {
     "AGENT": (None, "claude", "opencode", ["a,b", "A B", "yolo"]),
     "YOLO": ("1", "0", "1", ["yes", "2"]),
     "ENV_KEYS": (None, "ANTHROPIC_API_KEY,GEMINI_API_KEY", "FOO", ["1BAD", "A,SWARMBOX_CLOUDFLARE_X", "a b", "A-B"]),
+    "voice.language": ("auto", "pt", "en", ["pt-br", "P", "abcd", "x1", "a b"]),
+    "voice.stt.model": ("small", "medium", "large-v3", ["small.en", "Small", "-x", "a b", ".x", "a/b"]),
+    "voice.stt.vocabulary": (None, "kubectl, podman, tmux", "SwarmBox", ["x" * 501]),
+    "voice.web": ("1", "0", "1", ["yes", "2"]),
     "voice.topic": ("goal", "speech", "voice.goals", ["Goal", "-x", "a b", "a/b", "x" * 64, "a\nb"]),
     "sysop.topic": ("goal", "ops", "a-b_c.d", ["Goal", "-x", "a b", "a/b", "x" * 64, ".x"]),
     "sysop.group": ("sysop", "ops2", "g-1", ["Sysop", "-x", "a b", "a/b", "x" * 64, "_x"]),
@@ -154,7 +158,8 @@ class VersionTest(Base):
             self.assertIn("\nSCRIPT_VERSION=%s\n" % VERSION, f.read())
 
     def test_support_files_of_another_version_give_one_short_warning_once(self):
-        h = self.copied_helper(open(os.path.join(ROOT, "container", "host", "DEFAULTS")).read(), version="9.8.7")
+        with open(os.path.join(ROOT, "container", "host", "DEFAULTS")) as f:
+            h = self.copied_helper(f.read(), version="9.8.7")
         p = self.run_h("config", "get", "WEB_PORT", helper=h)
         self.assertEqual((p.returncode, p.stdout), (0, "7681\n"))
         self.assertEqual(p.stderr.count("\n"), 1, p.stderr)
@@ -459,10 +464,10 @@ class ModeCheckTest(Base):
         return p.returncode, p.stdout, p.stderr
 
 
-import test_host_create_flags as cf  # noqa: E402
+from host_support import CreateFlagsBase  # noqa: E402
 
 
-class SysopFlagsTest(cf.Base):
+class SysopFlagsTest(CreateFlagsBase):
     """The sysop.* keys reach the box as SWARMBOX_SYSOP_* only when they differ from the default (a box that never set one keeps its fingerprint)."""
 
     def sysop(self, flags):

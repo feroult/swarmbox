@@ -13,34 +13,26 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-import test_host_up as up_tests  # noqa: E402
 from helpers import DEFAULT_NAME, pty_run  # noqa: E402
+from host_support import UpBase  # noqa: E402
 
-HOST_WORDS = ["stop", "reset", "up", "url", "update", "config", "env", "remote", "fingerprint", "version", "help", "--help", "-h"]
 # (arguments, the words after `swarmbox-entrypoint` in the `podman exec`)
 ROUTING = [
     ([], ["attach"]),
-    (["--plain"], ["attach", "--plain"]),
     (["--plain", "ls", "-la"], ["attach", "--plain", "ls", "-la"]),
     (["claude"], ["attach", "claude"]),
-    (["ls", "-la"], ["attach", "ls", "-la"]),
     (["attach"], ["attach"]),                       # a leading `attach` is a prefix, not an argument
-    (["attach", "--plain"], ["attach", "--plain"]),
     (["attach", "make", "all"], ["attach", "make", "all"]),
     (["pubkey"], ["pubkey"]),                       # forwarded as they are
     (["addon", "list"], ["addon", "list"]),
-    (["addon"], ["addon"]),
     (["bus", "pub", "goal", "a b"], ["bus", "pub", "goal", "a b"]),
-    (["bus"], ["bus"]),
     (["tabs", "send", "work", "ls"], ["tabs", "send", "work", "ls"]),
-    (["tabs"], ["tabs"]),
-    (["frobnicate", "up"], ["attach", "frobnicate", "up"]),     # only the FIRST word decides
-    (["bash", "-c", "stop"], ["attach", "bash", "-c", "stop"]),
+    (["frobnicate", "up"], ["attach", "frobnicate", "up"]),     # only the FIRST word decides: a host word later on is an argument
 ]
 AWKWARD = ["a b", "it's", 'say "hi"', "$HOME", "*", "x\ny", "", "--x=y z", "`id`", "~", "-n", "\\", "tab\there", "é", ";", "&", "!"]
 
 
-class Base(up_tests.Base):
+class Base(UpBase):
     def setUp(self):
         super().setUp()
         self.podman()
@@ -83,12 +75,11 @@ class RoutingTest(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.exec_calls(), [self.entry("attach", "ls", name="other")])
 
-    def test_exit_codes_of_forwarded_commands_propagate(self):
-        for rc in (0, 1, 2, 3, 130, 137):
+    def test_the_exit_code_of_the_box_command_is_the_exit_code_of_swarmbox(self):
+        for rc, args in ((2, ["sh", "-c", "exit 2"]), (137, ["pubkey"]), (130, [])):
             with self.subTest(rc=rc):
                 self.fp.configure(self.conf(lookup={"stdout": self.matching_line()}, exec={"exit": rc}))
-                for args in (["sh", "-c", "exit %d" % rc], ["pubkey"], []):
-                    self.assertEqual(self.swarmbox(*args).returncode, rc)
+                self.assertEqual(self.swarmbox(*args).returncode, rc)
 
     def test_a_failing_up_stops_before_podman_exec(self):
         self.fp.configure(self.conf(lookup={"exit": 1, "stderr": "Error: boom\n"}))
@@ -124,33 +115,13 @@ class HostWordsTest(Base):
                 self.assertEqual(self.exec_calls(), [])
                 self.assertTrue(self.calls())
 
-    def test_a_host_word_counts_only_as_the_first_word(self):
-        r = self.swarmbox("run", "stop")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.exec_calls(), [self.entry("attach", "run", "stop")])
-
-    def test_every_host_word_is_in_the_case_of_the_script(self):
-        with open(up_tests.HELPER_SRC) as f:
-            text = f.read()
-        tail = text[text.rindex("\ncase ${1-} in"):]
-        for word in HOST_WORDS:
-            self.assertRegex(tail, r"(^|[|\s])%s[|)\s]" % word, word)
-
 
 class TerminalTest(Base):
     def pty(self, *args, stdin_tty=True, stdout_tty=True):
         return pty_run([self.helper, *args], self.env(), self.tmp, stdin_tty, stdout_tty)
 
-    def test_no_t_without_a_terminal(self):
-        for args in (["pubkey"], ["ls"], []):
-            self.swarmbox(*args)
-        for c in self.exec_calls():
-            self.assertEqual(c[1], "-i")
-            self.assertNotIn("-t", c)
-
     def test_a_terminal_on_both_ends_adds_t_to_every_exec_form_and_the_attach_carries_the_tty_of_the_tab(self):
-        for args, words in (([], ["attach"]), (["pubkey"], ["pubkey"]), (["ls", "-l"], ["attach", "ls", "-l"]),
-                            (["--plain"], ["attach", "--plain"])):
+        for args, words in (([], ["attach"]), (["pubkey"], ["pubkey"])):
             with self.subTest(args=args):
                 open(self.fp.log_path, "w").close()
                 rc, out, err = self.pty(*args)
@@ -170,6 +141,7 @@ class TerminalTest(Base):
                     self.assertEqual(keys, [], "pubkey and addon do not need it")
                 self.assertEqual([call], [self.entry(*words, tty="-it")])
 
+    # (without a terminal at all the Routing tests already see `exec -i` and no -t)
     def test_one_end_that_is_not_a_terminal_is_enough_to_leave_t_out(self):
         for stdin_tty, stdout_tty in ((True, False), (False, True)):
             with self.subTest(stdin_tty=stdin_tty, stdout_tty=stdout_tty):

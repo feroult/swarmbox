@@ -21,6 +21,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
+from host_support import HELPER_PROGRAMS  # noqa: E402
 from helpers import ROOT, DEFAULT_CONNECTOR, DEFAULT_NAME  # noqa: E402
 
 HELPER_SRC = os.path.join(ROOT, "container", "host", "swarmbox-host")
@@ -137,6 +138,20 @@ class StatusHostLinesTest(Base):
         self.assertEqual(len(calls), 1, calls)
         self.assertEqual(calls[0][:2], ["container", "inspect"])
         self.assertEqual(calls[0][-1], self.CN)
+
+    def test_status_says_so_when_podman_is_not_there(self):
+        self.cfg()
+        bindir = os.path.join(self.tmp, "bin-without-podman")
+        os.mkdir(bindir)
+        for prog in HELPER_PROGRAMS + ["python3"]:
+            real = shutil.which(prog)
+            if real and not os.path.exists(os.path.join(bindir, prog)):
+                os.symlink(real, os.path.join(bindir, prog))
+        self.assertIsNone(shutil.which("podman", path=bindir))
+        r = self.run_h("status", env=self.env(PATH=bindir))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("connector: unknown (podman was not found)", r.stdout)
+
 
 class SecretsTest(Base):
     def test_no_secret_in_argv(self):
@@ -273,6 +288,15 @@ class TunnelTokenTest(Base):
         self.assertEqual(self.rec()["argv"][0], "token")
         self.assertNotIn(TUNNEL_SECRET, json.dumps(self.rec()["argv"]))
         self.assertEqual(self.get()[:2], (0, TUNNEL_SECRET + "\n"))
+
+    def test_the_epilogue_is_offered_only_after_a_real_setup_that_worked(self):
+        # a dry run changes nothing, and a setup that failed has no tunnel to ask the token of: no question, nothing stored
+        for label, args, env in (("dry run", ("--dry-run",), {}), ("failure", (), {"STUB_EXIT": "3"})):
+            with self.subTest(label):
+                rc, shown = self.run_pty_setup("y", *args, **env)
+                self.assertNotIn("[y/N]", shown)
+                self.assertEqual(rc, int(env.get("STUB_EXIT", "0")), shown)
+                self.assertEqual(self.get()[0], 1, "no token was stored")
 
 
 if __name__ == "__main__":

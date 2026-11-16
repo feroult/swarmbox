@@ -2,7 +2,9 @@
 
 Every test starts its own tmux server on a socket of its own (swarmbox-test-glint-...) with the banner as the program of the pane, and the
 switch `@swarmbox-glint` OFF, so the screen is still while the reference is taken; the glint is then turned on with `tmux set -g`.
-They are skipped without tmux. Run: python3 tests/slow/test_banner_glint.py
+The server is private: `-L swarmbox-test-glint-<random>` and a TMUX_TMPDIR in the test's own folder, so nothing of the machine's tmux
+is reachable. They are skipped without tmux and without the gate SWARMBOX_TEST_REAL_TMUX=1 (dev/test-slow.sh and CI set it).
+Run: python3 tests/slow/test_banner_glint.py
 """
 import os
 import random
@@ -18,6 +20,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from helpers import ROOT  # noqa: E402
+from waiting import wait_until  # noqa: E402
 
 BANNER = os.path.join(ROOT, "container", "scripts", "banner.sh")
 GLINT_CENTRE = "38;5;231"   # the colour of the one column where the glint is white
@@ -49,14 +52,15 @@ def visible_cells(colored):
     return out
 
 
-@unittest.skipUnless(shutil.which("tmux"), "needs tmux")
+@unittest.skipUnless(shutil.which("tmux") and os.environ.get("SWARMBOX_TEST_REAL_TMUX") == "1",
+                     "needs tmux and a container (SWARMBOX_TEST_REAL_TMUX=1, which only dev/test-slow.sh and CI set)")
 class Glint(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="glint-")
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.sock = "swarmbox-test-glint-" + "".join(random.choice(string.ascii_lowercase) for _ in range(6))
         self.env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "TMUX_PANE")}
-        self.env.update(TERM="xterm-256color", LANG="C.UTF-8")
+        self.env.update(TERM="xterm-256color", LANG="C.UTF-8", TMUX_TMPDIR=self.tmp)
         with open(os.path.join(self.tmp, "tmux.conf"), "w") as f:
             f.write("set -g @swarmbox-glint off\n")
         r = self.tm("-f", os.path.join(self.tmp, "tmux.conf"), "new-session", "-d", "-s", "x", "-x", "80", "-y", "24",
@@ -66,11 +70,7 @@ class Glint(unittest.TestCase):
         self.assertTrue(self.wait(lambda: "from anywhere" in self.capture(), 10), "the banner did not appear")
 
     def stop(self):
-        self.tm("kill-server")
-        for d in [d for d in os.listdir("/tmp") if d.startswith("tmux-")]:   # a server that died on its own leaves its socket file behind
-            path = os.path.join("/tmp", d, self.sock)
-            if os.path.exists(path):
-                os.unlink(path)
+        self.tm("kill-server")   # only this -L name; its socket is in the test's own TMUX_TMPDIR, removed with it
 
     def tm(self, *args):
         return subprocess.run(["tmux", "-L", self.sock] + list(args), env=self.env, capture_output=True, text=True)
@@ -80,12 +80,7 @@ class Glint(unittest.TestCase):
 
     @staticmethod
     def wait(cond, timeout, step=0.05):
-        end = time.time() + timeout
-        while time.time() < end:
-            if cond():
-                return True
-            time.sleep(step)
-        return False
+        return bool(wait_until(cond, timeout, step))
 
     def one_pass(self):
         """turn the glint on and wait for it to start and to end (white seen, then not seen for a while)"""

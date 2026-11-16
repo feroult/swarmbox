@@ -15,41 +15,11 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from helpers import ROOT  # noqa: E402
+from addon_support import ADDON, Base, GOOD_INSTALL, LIB, SELF_UPDATING, make_addon  # noqa: E402
 
 ADDON = os.path.join(ROOT, "container", "scripts", "swarmbox-addon.sh")
 LIB = os.path.join(ROOT, "container", "scripts")
 REAL_ADDONS = os.path.join(ROOT, "container", "addons")
-
-GOOD_CONF = {
-    "SCHEMA": "1", "NAME": "demo", "DESCRIPTION": '"A demo addon"', "COMMANDS": '"demo demo2"', "VERSION": "1.2.3",
-}
-SELF_UPDATING = dict(VERSION="latest", UPDATE="self", UPDATE_CMD='"demo update"')
-GOOD_INSTALL = '#!/bin/bash\nset -euo pipefail\nmkdir -p "$ADDON_PREFIX/bin"\necho installing >&2\n'
-
-
-def write_conf(path, conf, extra=""):
-    with open(path, "w") as f:
-        for k, v in conf.items():
-            f.write("%s=%s\n" % (k, v))
-        f.write(extra)
-
-
-def make_addon(level, name="demo", conf=None, install=GOOD_INSTALL, executable=True, extra="", drop=(), **over):
-    d = os.path.join(level, name)
-    os.makedirs(d, exist_ok=True)
-    c = dict(GOOD_CONF, NAME=name)
-    c.update(conf or {})
-    c.update(over)
-    for k in drop:
-        c.pop(k, None)
-    write_conf(os.path.join(d, "addon.conf"), c, extra)
-    if install is not None:
-        p = os.path.join(d, "install.sh")
-        with open(p, "w") as f:
-            f.write(install)
-        os.chmod(p, 0o755 if executable else 0o644)
-    return d
-
 
 class Base(unittest.TestCase):
     def setUp(self):
@@ -234,11 +204,37 @@ class NoProjectLevel(Base):
                 self.assertNotIn("evil", r.stdout + r.stderr)
         self.assertFalse(os.path.exists(marker))
 
+
+class Cli(Base):
+    """The command line of swarmbox-addon: a usage error is 64, and the script is clean bash."""
+
+    def test_validate_with_no_manifests_passes_and_says_how_many_it_checked(self):
+        r = self.validate()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("0 manifest(s) checked", r.stdout)
+
+    def test_no_arguments_or_an_unknown_command_is_a_usage_error_64(self):
+        for args in ((), ("bogus",)):
+            with self.subTest(args=args):
+                r = self.run_addon(*args)
+                self.assertEqual(r.returncode, 64)
+                self.assertIn("usage: swarmbox addon", r.stderr)
+                self.assertEqual(r.stdout, "")
+
+    def test_the_script_is_bash_and_shellcheck_clean(self):
+        self.assertEqual(subprocess.run(["bash", "-n", ADDON], capture_output=True).returncode, 0)
+        if not shutil.which("shellcheck"):
+            self.skipTest("shellcheck is not installed")
+        r = subprocess.run(["shellcheck", "-s", "bash", ADDON], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+
 class RealClaudeManifest(Base):
-    def test_the_repository_addons_folder_validates(self):
+    def test_the_repository_addons_folder_validates_with_every_addon_it_ships(self):
         r = self.validate(REAL_ADDONS)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("claude", r.stdout)
+        for name in sorted(os.listdir(REAL_ADDONS)):
+            self.assertIn(name, r.stdout)
 
     def test_the_claude_installer_passes_bash_n_shellcheck_and_the_lint(self):
         inst = os.path.join(REAL_ADDONS, "claude", "install.sh")

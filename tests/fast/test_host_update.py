@@ -9,17 +9,19 @@ Reduced: the real Podman (pull, tag, run) is not involved here, only its recorde
 Run: python3 tests/fast/test_host_update.py
 """
 import hashlib
+import io
 import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-import test_host_up as up_tests  # noqa: E402
+from host_support import UpBase, HELPER_SRC, line  # noqa: E402
 from helpers import make_archive  # noqa: E402
-from helpers import ROOT, DEFAULT_IMAGE_REPO, HELPER_SH  # noqa: E402
+from helpers import ROOT, HELPER_SH  # noqa: E402
 
 with open(os.path.join(ROOT, "container", "host", "swarmbox-host")) as _f:
     REAL_SCRIPT = _f.read()
@@ -46,7 +48,7 @@ def snap(path):
     return out
 
 
-class UpdateBase(up_tests.Base):
+class UpdateBase(UpBase):
     def setUp(self):
         super().setUp()
         self.cfg_dir = os.path.join(self.home, ".config", "swarmbox")
@@ -62,7 +64,7 @@ class UpdateBase(up_tests.Base):
 
     def install_script(self):
         """The real script as the installers write it: alone in a folder, with no VERSION next to it."""
-        shutil.copy(up_tests.HELPER_SRC, self.helper)
+        shutil.copy(HELPER_SRC, self.helper)
         os.chmod(self.helper, 0o755)
 
     def script_text(self):
@@ -80,8 +82,9 @@ class UpdateBase(up_tests.Base):
 
     def install_old_helper(self, version):
         os.makedirs(self.host_dir, exist_ok=True)
-        for n, c in (("VERSION", version + "\n"), ("DEFAULTS", open(os.path.join(ROOT, "container", "host", "DEFAULTS")).read()),
-                     ("addon-ports", "")):
+        with open(os.path.join(ROOT, "container", "host", "DEFAULTS")) as f:
+            defaults = f.read()
+        for n, c in (("VERSION", version + "\n"), ("DEFAULTS", defaults), ("addon-ports", "")):
             p = os.path.join(self.host_dir, n)
             with open(p, "w") as f:
                 f.write(c)
@@ -276,11 +279,11 @@ class ScriptRefreshTest(UpdateBase):
     def test_a_checkout_is_never_replaced(self):
         # run from the folder that holds VERSION (the repository, the image's own folder): the file is not an installed copy
         self.podman_for("2.0.99")
-        with open(up_tests.HELPER_SRC) as f:
+        with open(HELPER_SRC) as f:
             src = f.read()
-        r = subprocess.run([up_tests.HELPER_SRC, "update"], env=self.env(), capture_output=True, text=True, input="", cwd=self.tmp)
+        r = subprocess.run([HELPER_SRC, "update"], env=self.env(), capture_output=True, text=True, input="", cwd=self.tmp)
         self.assertEqual(r.returncode, 0, r.stderr)
-        with open(up_tests.HELPER_SRC) as f:
+        with open(HELPER_SRC) as f:
             self.assertEqual(f.read(), src)
 
 
@@ -307,12 +310,16 @@ class ToTest(UpdateBase):
                 self.assertEqual(self.subs("tag"), [["tag", "%s:%s" % (REPO, tag), REPO + ":2.1.7"]])
                 self.assertEqual(self.image_line(), ["IMAGE=%s:2.1.7" % REPO])
 
-    def test_an_invalid_tag_is_exit_2_before_any_podman_call(self):
-        bad = ["", "a/b", "a:b", "a b", "-x", ".x", "a@b", "x" * 129, "$(id)", "a\nb", "a;b", "a'b", "a`b", "ü", "*", "a\tb",
-               "sha256:abc", "2.0.0@sha256:" + "a" * 64, "a\\b", "a?b"]
-        for tag in bad:
+    # one tag per class of what a tag must not be: a reference (path, registry, digest), an option, a hidden name, too long, a character
+    # that separates words (space, tab, newline), that a shell expands or quotes, or that is not ASCII
+    BAD_TAGS = ["", "a/b", "a:b", "a@b", "sha256:abc", "2.0.0@sha256:" + "a" * 64, "-x", "--help", ".hidden", "x" * 129,
+                "a b", "a\tb", "a\nb", "a\rb", "a;b", "a&b", "a|b", "a>b", "$(touch MARK)", "`touch MARK`", "${HOME}", "a'b", 'a"b',
+                "a\\b", "a*b", "a?b", "~", "\u00fc"]
+
+    def test_an_invalid_tag_is_exit_2_before_any_podman_call_and_runs_nothing(self):
+        self.podman_for("2.0.99")
+        for tag in self.BAD_TAGS:
             with self.subTest(tag=tag):
-                self.podman_for("2.0.99")
                 before = self.before()
                 r = self.update("--to", tag)
                 self.assertEqual(r.returncode, 2, r.stderr)
@@ -320,6 +327,7 @@ class ToTest(UpdateBase):
                 self.assertIn("tag", r.stderr)
                 self.assertEqual(self.calls(), [])
                 self.assert_unchanged(before)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "MARK")), "a command substitution ran")
 
 class FailureTest(UpdateBase):
     def check_nothing_changed(self, r, code=3, tag_calls=0):
@@ -355,6 +363,29 @@ class FailureTest(UpdateBase):
         self.assertIn("2.0.6", r.stderr)
         self.assertIn("2.0.7", r.stderr)
 
+    def test_an_archive_with_an_unsafe_member_is_refused_and_nothing_escapes(self):
+        # security review SR-05: one member per class a tar can use to write outside the temporary folder or leave a link behind
+        escaped = os.path.join(self.tmp, "escaped")
+        absname = os.path.join(self.tmp, "abs-escaped")
+
+        def member(name, kind=tarfile.REGTYPE, link=""):
+            ti = tarfile.TarInfo(name)
+            ti.type, ti.linkname = kind, link
+            return ti
+        for label, ti in (("parent", member("../escaped")), ("deep parent", member("a/../../escaped")),
+                          ("absolute", member(absname)), ("symlink", member("./evil", tarfile.SYMTYPE, escaped)),
+                          ("hard link", member("./evil", tarfile.LNKTYPE, "swarmbox-host"))):
+            with self.subTest(label):
+                p = self.archive(version="2.0.1")
+                with tarfile.open(p, "a") as tf:
+                    tf.addfile(ti, io.BytesIO(b"") if ti.type == tarfile.REGTYPE else None)
+                self.podman(run={"stdout_file": p})
+                r = self.update("--to", "2.0.1")
+                self.assert_unchanged(self.snapshot)
+                self.assertEqual(r.returncode, 3, r.stderr)
+                self.assertFalse(os.path.lexists(escaped))
+                self.assertFalse(os.path.lexists(absname))
+
     def test_an_unwritable_config_folder_is_exit_1_after_the_helper_is_replaced(self):
         # documented order: tag, helper rename, config write; a failing write is the one failure that leaves the new helper
         if os.geteuid() == 0:
@@ -374,7 +405,7 @@ class AfterUpdateTest(UpdateBase):
         r = self.update()
         self.assertEqual(r.returncode, 0, r.stderr)
         # now the box: no network at all (a fake pull would fail), the exact image is present locally
-        conf = self.conf(lookup={"stdout": up_tests.line(image=REPO + ":2.0.0")},
+        conf = self.conf(lookup={"stdout": line(image=REPO + ":2.0.0")},
                          pull={"exit": 125, "stderr": "Error: no route to host\n"})
         self.fp.configure(conf)
         open(self.fp.log_path, "w").close()

@@ -13,8 +13,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from test_addon_link import tree_hash  # noqa: E402
-from test_addon_shim import INTERPRETERS, ShimBase  # noqa: E402
+from addon_support import INTERPRETERS, ShimBase, tree_hash  # noqa: E402
 
 
 def rows(out):

@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from helpers import ROOT  # noqa: E402
-from test_addon_install import Base  # noqa: E402
+from addon_support import Base, make_addon  # noqa: E402
 
 
 class New(Base):
@@ -53,7 +53,6 @@ class New(Base):
         with open(conf) as f:
             self.assertEqual(f.read(), before)
         # a name that is a command of another addon
-        from test_addon_manifest import make_addon
         make_addon(self.image, "multi", COMMANDS='"multi demo2"')
         r = self.addon("new", "demo2")
         self.assertEqual(r.returncode, 1)

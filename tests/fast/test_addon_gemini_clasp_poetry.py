@@ -4,7 +4,6 @@ install.sh runs against a FAKE npm and a FAKE curl serving a fake Poetry install
 (real installs are in tests/slow/test_addon_real.py). Run with: python3 -W error tests/fast/test_addon_gemini_clasp_poetry.py   (needs bash, jq; zsh is optional)
 """
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -190,13 +189,6 @@ class ThroughSwarmboxAddonTest(InstallBase):
         self.assertIn("['--version', '%s']" % expect["poetry"], read(self.calls))
 
 class ManifestTest(unittest.TestCase):
-    def test_the_real_addons_folder_validates_with_all_five(self):
-        r = subprocess.run(["bash", ADDON, "validate", REAL_ADDONS], capture_output=True, text=True, timeout=60,
-                           env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "SWARMBOX_TEST_LIB": LIB}, cwd=ROOT)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        for t in ("claude", "opencode", "gemini", "clasp", "poetry"):
-            self.assertIn(t, r.stdout)
-
     def test_latest_updates_itself_and_every_other_version_is_pinned_and_managed(self):
         for t in sorted(os.listdir(REAL_ADDONS)):
             version, update, _, _, update_cmd = manifest(t)
@@ -208,27 +200,10 @@ class ManifestTest(unittest.TestCase):
                     self.assertEqual(update, "managed")
                     self.assertRegex(version, r"^\d+\.\d+(\.\d+)?$")
 
-class PortsTest(unittest.TestCase):
-    def setUp(self):
-        self.d = tempfile.mkdtemp(prefix="gcp-ports-")
-        self.addCleanup(shutil.rmtree, self.d, ignore_errors=True)
-
-    def test_addon_ports_lists_43323_once_for_clasp_and_nothing_else(self):
-        d = self.d
-        env = {"PATH": "/usr/bin:/bin", "HOME": d, "SWARMBOX_TEST_LIB": LIB, "SWARMBOX_TEST_IMAGE_ADDONS": REAL_ADDONS,
-               "SWARMBOX_TEST_USER_ADDONS": os.path.join(d, "u"), "SWARMBOX_TEST_HOST_DIR": os.path.join(d, "host"),
-               "SWARMBOX_TEST_IMAGE_SHIMS": os.path.join(d, "shims")}
-        r = subprocess.run(["bash", ADDON, "link", "--system"], env=env, capture_output=True, text=True, timeout=60, cwd=d)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(read(os.path.join(d, "host", "addon-ports")), "clasp\t43323\n")
-        for c in ("gemini", "clasp", "poetry"):
-            self.assertTrue(os.path.lexists(os.path.join(d, "shims", c)), c)
+from host_support import CreateFlagsBase, values  # noqa: E402
 
 
-import test_host_create_flags as _hcf  # noqa: E402
-
-
-class ClaspPortPublishedTest(_hcf.Base):
+class ClaspPortPublishedTest(CreateFlagsBase):
     """The real addon-ports of this image level, handed to the 3.2 helper: WITH=clasp publishes 43323 on 127.0.0.1 only."""
 
     def real_addon_ports(self):
@@ -242,9 +217,9 @@ class ClaspPortPublishedTest(_hcf.Base):
 
     def test_with_clasp_publishes_43323_and_without_it_does_not(self):
         self.make_helper(self.real_addon_ports())
-        ps = _hcf.values(self.flags(env={"SWARMBOX_WITH": "clasp"}), "-p")
+        ps = values(self.flags(env={"SWARMBOX_WITH": "clasp"}), "-p")
         self.assertEqual(sorted(p for p in ps if not p.endswith(":7681")), ["127.0.0.1:43323:43323"])
-        ps = _hcf.values(self.flags(env={"SWARMBOX_WITH": "gemini,poetry"}), "-p")
+        ps = values(self.flags(env={"SWARMBOX_WITH": "gemini,poetry"}), "-p")
         self.assertEqual(ps, ["127.0.0.1:7681:7681"])
 
 

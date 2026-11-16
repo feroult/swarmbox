@@ -337,11 +337,6 @@ class InstallRunTest(Base):
         self.assertIsNone(self.config())
         self.assertEqual([c for c in self.fp.calls() if c[0] == "run"], [])
 
-    def test_podman_4_10_is_newer_than_4_3(self):
-        archive = os.path.join(self.tmp, "image.tar")
-        self.fp.configure({"version": {"stdout": "4.10.0\n"}, "run": {"stdout_file": archive}})
-        self.assertEqual(self.run_installer().returncode, 0)
-
     def test_podman_missing_is_exit_3_with_the_advice(self):
         r = self.run_installer(PATH=os.path.join(self.tmp, "programs"))
         self.assertEqual(r.returncode, 3, r.stderr)

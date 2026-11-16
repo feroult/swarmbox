@@ -185,6 +185,8 @@ class HostHelper(Base):
 
 class Static(unittest.TestCase):
     def test_bash_syntax_and_shellcheck(self):
+        with open(ENTRYPOINT) as f:
+            self.assertEqual(f.readline(), "#!/bin/bash\n")
         r = subprocess.run(["bash", "-n", ENTRYPOINT], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         if shutil.which("shellcheck"):

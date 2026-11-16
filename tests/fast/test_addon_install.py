@@ -11,127 +11,11 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from helpers import ROOT  # noqa: E402
-from test_addon_link import tree_hash  # noqa: E402
-from test_addon_manifest import make_addon  # noqa: E402
-
-ADDON = os.path.join(ROOT, "container", "scripts", "swarmbox-addon.sh")
-LIB = os.path.join(ROOT, "container", "scripts")
-
-# The program the fake installers write: prints every argument as [arg] on its own line, exits with $DEMO_EXIT.
-PROGRAM = r"""#!/bin/sh
-if [ "$1" = update ] && [ -n "${FAKE_CALLS:-}" ]; then echo "update called with: $*" >> "$FAKE_CALLS"; exit "${UPDATE_EXIT:-0}"; fi
-for a in "$@"; do printf '[%s]\n' "$a"; done
-exit "${DEMO_EXIT:-0}"
-"""
-
-COMMON = r"""#!/bin/bash
-set -eu
-echo "$ADDON_PREFIX|$ADDON_VERSION|$ADDON_ARCH|${ADDON_SHA256:-}|$PWD|$HOME" >> "$FAKE_REC"
-echo x >> "$FAKE_COUNT"
-[ -z "${FAKE_SLEEP:-}" ] || sleep "$FAKE_SLEEP"
-echo "INSTALLER-STDOUT-NOISE"
-"""
-
-PROG_WRITER = r"""cat > "$DEST" <<'PROG_EOF'
-""" + PROGRAM + r"""PROG_EOF
-chmod +x "$DEST"
-"""
-
-MANAGED = COMMON + r"""mkdir -p "$ADDON_PREFIX/bin"
-echo partial > "$ADDON_PREFIX/partial.txt"
-[ -z "${FAKE_FAIL:-}" ] || { echo "curl: could not resolve host" >&2; exit 1; }
-DEST="$ADDON_PREFIX/bin/demo"
-""" + PROG_WRITER
-
-SELF = COMMON + r"""mkdir -p "$HOME/.local/bin" "$HOME/.local/share/selfy"
-echo partial > "$HOME/.local/share/selfy/blob"
-[ -z "${FAKE_FAIL:-}" ] || { echo "curl: could not resolve host" >&2; exit 1; }
-DEST="$HOME/.local/bin/selfy"
-rm -f "$DEST"
-if [ -n "${FAKE_LINK_TO_SHIM:-}" ]; then
-    ln -s "$FAKE_LINK_TO_SHIM" "$DEST"
-else
-""" + PROG_WRITER + r"""fi
-echo "requested=$ADDON_VERSION" > "$ADDON_PREFIX/installed"
-"""
-
-SHA = r"""#!/bin/bash
-set -eu
-echo x >> "$FAKE_COUNT"
-mkdir -p "$ADDON_PREFIX/bin"
-cp "$FIXTURE_ARCHIVE" "$ADDON_PREFIX/download.tar.gz"
-echo "$ADDON_SHA256  $ADDON_PREFIX/download.tar.gz" | sha256sum -c - >&2 || exit 1
-DEST="$ADDON_PREFIX/bin/demo"
-""" + PROG_WRITER
-
-SELF_CONF = {"VERSION": "latest", "UPDATE": "self", "UPDATE_CMD": '"selfy update"',
-             "COMMANDS": '"selfy"'}
-
-
-def all_paths(root):
-    out = []
-    for dp, dn, fn in os.walk(root):
-        for n in dn + fn:
-            out.append(os.path.join(dp, n))
-    return out
-
-
-class Base(unittest.TestCase):
-    def setUp(self):
-        self.base = tempfile.mkdtemp(prefix="addon-install-")
-        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
-        j = lambda *p: os.path.join(self.base, *p)  # noqa: E731
-        self.home, self.image, self.user = j("home"), j("image"), j("user")
-        self.tmp, self.lock = j("tmp"), j("run", "addons.lock")
-        self.rec, self.count, self.calls = j("rec.txt"), j("count.txt"), j("calls.txt")
-        for d in (self.home, self.image, self.user, self.tmp):
-            os.makedirs(d)
-        self.addons = os.path.join(self.home, ".local", "share", "swarmbox", "addons")
-
-    def env(self, **extra):
-        e = {"PATH": "/usr/bin:/bin", "HOME": self.home, "TMPDIR": self.tmp, "SWARMBOX_TEST_LIB": LIB,
-             "SWARMBOX_TEST_IMAGE_ADDONS": self.image, "SWARMBOX_TEST_USER_ADDONS": self.user,
-             "SWARMBOX_TEST_HOST_DIR": os.path.join(self.base, "host"),
-             "SWARMBOX_TEST_LOCK": self.lock, "SWARMBOX_TEST_ARCH": "amd64",
-             "FAKE_REC": self.rec, "FAKE_COUNT": self.count, "FAKE_CALLS": self.calls}
-        e.update(extra)
-        return e
-
-    def addon(self, *args, env=None, **extra):
-        return subprocess.run(["bash", ADDON, *args], env=env or self.env(**extra), capture_output=True, text=True,
-                              timeout=60, cwd=self.base)
-
-    def managed(self, name="demo", installer=MANAGED, level=None, **over):
-        return make_addon(level or self.image, name, install=installer, COMMANDS='"demo"', **over)
-
-    def selfy(self, installer=SELF, **over):
-        conf = dict(SELF_CONF)
-        conf.update(over)
-        return make_addon(self.image, "selfy", install=installer, **conf)
-
-    def installs(self):
-        if not os.path.exists(self.count):
-            return 0
-        with open(self.count) as f:
-            return len(f.read().split())
-
-    def records(self):
-        if not os.path.exists(self.rec):
-            return []
-        with open(self.rec) as f:
-            return [line.rstrip("\n").split("|") for line in f if line.strip()]
-
-    def write_program(self, content, version="1.2.3"):
-        with open(os.path.join(self.addons, "demo", version, "bin", "demo"), "w") as f:
-            f.write(content)
-
+from addon_support import ADDON, Base, SHA, SHIM, tree_hash  # noqa: E402
 
 class InstallManaged(Base):
     def test_passes_prefix_version_arch_and_runs_in_home(self):
@@ -237,6 +121,26 @@ class InstallSelf(Base):
         self.assertTrue(os.access(self.launcher, os.X_OK))
         self.assertEqual(os.listdir(os.path.join(self.addons, "selfy")), ["self"])  # no current link, no versions, no staging
 
+    def assert_nothing_recorded(self):
+        folder = os.path.join(self.addons, "selfy")
+        self.assertEqual(os.listdir(folder) if os.path.isdir(folder) else [], [], "no record and no staging folder: the next call installs again")
+
+    def test_a_failing_installer_records_nothing_and_the_next_call_retries(self):
+        r = self.addon("install", "selfy", FAKE_FAIL="1")
+        self.assertEqual(r.returncode, 69)
+        self.assertIn("the install of selfy failed (installer exit 1)", r.stderr)
+        self.assert_nothing_recorded()
+        self.assertEqual(self.addon("install", "selfy").returncode, 0)
+        self.assertTrue(os.access(self.launcher, os.X_OK))
+        self.assertTrue(os.path.isdir(self.record))
+
+    def test_an_installer_whose_program_is_the_shim_is_refused_and_records_nothing(self):
+        # the vendor installer links the command to swarmbox-shim: recording it would make the command call itself forever
+        r = self.addon("install", "selfy", FAKE_LINK_TO_SHIM=SHIM)
+        self.assertEqual(r.returncode, 69)
+        self.assertIn("resolves to swarmbox-shim", r.stderr)
+        self.assert_nothing_recorded()
+
     def test_update_runs_update_cmd_with_the_real_binary(self):
         self.addon("install", "selfy")
         r = self.addon("update", "selfy")
@@ -297,6 +201,80 @@ class ListAndLater(Base):
         r = self.addon("list")
         self.assertIn("installed (self)", [x for x in r.stdout.splitlines() if x.startswith("selfy")][0])
         self.assertEqual(self.addon("list", "extra").returncode, 64)
+
+
+# ---- addons installed at the image level (what the Dockerfile's WITH_ADDONS loop runs, as the owner of /opt/swarmbox/addons) ----
+# `install NAME --image` installs into the image state folder (test override SWARMBOX_TEST_IMAGE_STATE) instead of the workspace, records
+# the fingerprint, and for an UPDATE=self addon runs the installer with HOME=<image state>/<name>/home (the workspace home is a bind
+# mount at run time). At run time `run`, `list`, `doctor` and the shim find the workspace install first and the image install second; a
+# workspace install that is incomplete never shadows a complete image install.
+
+
+class ImageLevel(Base):
+    def setUp(self):
+        super().setUp()
+        self.state = os.path.join(self.base, "optstate")  # stands for /opt/swarmbox/addons (does not exist yet)
+
+    def env(self, **extra):
+        e = super().env(**extra)
+        e["SWARMBOX_TEST_IMAGE_STATE"] = self.state
+        return e
+
+    def run_demo(self, *args):
+        return self.addon("run", "demo", "demo", "--", *args)
+
+    def test_managed_image_install_goes_to_the_image_state_not_the_workspace(self):
+        self.managed()
+        r = self.addon("install", "demo", "--image")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(os.path.isfile(os.path.join(self.state, "demo", "1.2.3", "bin", "demo")))
+        self.assertEqual(os.readlink(os.path.join(self.state, "demo", "current")), "1.2.3")
+        self.assertFalse(os.path.exists(self.addons), "the workspace addons folder was created")
+        (rec,) = self.records()
+        self.assertEqual(rec[0], os.path.join(self.state, "demo", "1.2.3"))
+
+    def test_run_uses_the_image_install_without_the_installer_and_without_network(self):
+        self.managed()
+        self.assertEqual(self.addon("install", "demo", "--image").returncode, 0)
+        n = self.installs()
+        r = self.run_demo("a b", "c")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines(), ["[a b]", "[c]"])
+        self.assertEqual(self.installs(), n, "run installed again")
+        self.assertFalse(os.path.exists(self.addons), "run created a workspace install")
+
+    def test_a_complete_workspace_install_wins_over_the_image_one(self):
+        self.managed()
+        self.addon("install", "demo", "--image")
+        self.managed(VERSION="2.0.0")
+        self.assertEqual(self.addon("install", "demo").returncode, 0)
+        with open(os.path.join(self.addons, "demo", "2.0.0", "bin", "demo"), "w") as f:
+            f.write("#!/bin/sh\necho WORKSPACE\n")
+        r = self.run_demo()
+        self.assertEqual(r.stdout.strip(), "WORKSPACE")
+
+    def test_self_addon_image_install_uses_its_own_home_and_runs_from_it(self):
+        self.selfy()
+        r = self.addon("install", "selfy", "--image")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        home = os.path.join(self.state, "selfy", "home")
+        self.assertTrue(os.access(os.path.join(home, ".local", "bin", "selfy"), os.X_OK))
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".local", "bin", "selfy")), "wrote the workspace home")
+        self.assertEqual(self.records()[0][5], home)
+        self.assertTrue(os.path.isfile(os.path.join(self.state, "selfy", "self", ".swarmbox-env")))
+        n = self.installs()
+        out = self.addon("run", "selfy", "selfy", "--", "hi")
+        self.assertEqual(out.stdout.strip(), "[hi]", out.stderr)
+        self.assertEqual(self.installs(), n)
+        self.assertIn("installed (self)", [x for x in self.addon("list").stdout.splitlines() if x.startswith("selfy")][0])
+
+    def test_failed_image_install_leaves_nothing(self):
+        self.managed()
+        r = self.addon("install", "demo", "--image", FAKE_FAIL="1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertFalse(os.path.exists(os.path.join(self.state, "demo", "1.2.3")))
+        self.assertFalse(os.path.exists(os.path.join(self.state, "demo", "current")))
+
 
 if __name__ == "__main__":
     unittest.main()

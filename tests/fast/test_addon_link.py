@@ -6,7 +6,6 @@ SWARMBOX_TEST_HOST_DIR, SWARMBOX_TEST_USER_ADDONS (manifests) and SWARMBOX_TEST_
 Without the user overrides, link --user uses dirs.sh with HOME and the XDG variables (tested too).
 Run with: python3 tests/fast/test_addon_link.py
 """
-import hashlib
 import os
 import shutil
 import subprocess
@@ -17,27 +16,12 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from helpers import ROOT  # noqa: E402
-from test_addon_manifest import make_addon  # noqa: E402
+from addon_support import ADDON, Base, LIB, SHIM, make_addon, tree_hash  # noqa: E402
 
 ADDON = os.path.join(ROOT, "container", "scripts", "swarmbox-addon.sh")
 LIB = os.path.join(ROOT, "container", "scripts")
 REAL_ADDONS = os.path.join(ROOT, "container", "addons")
 SHIM = "/usr/local/bin/swarmbox-shim"
-
-
-def tree_hash(root):
-    h = hashlib.sha256()
-    for dp, dn, fn in sorted(os.walk(root)):
-        dn.sort()
-        for n in sorted(fn + dn):
-            p = os.path.join(dp, n)
-            h.update(os.path.relpath(p, root).encode())
-            if os.path.islink(p):
-                h.update(b"L" + os.readlink(p).encode())
-            elif os.path.isfile(p):
-                with open(p, "rb") as f:
-                    h.update(b"F" + f.read())
-    return h.hexdigest()
 
 
 class Base(unittest.TestCase):
@@ -180,12 +164,13 @@ class Absence(Base):
 
 
 class RealImageTree(Base):
-    def test_real_addons_tree_links_claude_and_addon_ports_lists_only_clasp(self):
+    def test_the_real_addons_tree_links_a_shim_per_addon_and_only_clasp_has_a_port(self):
         shutil.rmtree(self.image)
         shutil.copytree(REAL_ADDONS, self.image)
         r = self.link("--system")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("claude", os.listdir(self.ishims))
+        for command in ("claude", "gemini", "clasp", "poetry"):
+            self.assertIn(command, os.listdir(self.ishims))
         self.assertIn("claude claude\n", self.read(self.base, "lib", "index"))
         p = os.path.join(self.host, "addon-ports")
         self.assertTrue(os.path.isfile(p))

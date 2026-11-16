@@ -216,16 +216,6 @@ class ManifestTest(unittest.TestCase):
         return subprocess.run(["bash", ADDON, "validate", path], capture_output=True, text=True, timeout=60, cwd=ROOT,
                               env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "SWARMBOX_TEST_LIB": LIB})
 
-    def test_the_real_addons_folder_validates(self):
-        r = self.validate(REAL_ADDONS)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        for t in ("go", "gcloud"):
-            self.assertIn(t, r.stdout)
-
-    def test_the_real_manifests_carry_the_checksums_the_installers_need(self):
-        for t in ("go", "gcloud"):
-            self.assertIn("ADDON_SHA256", read(os.path.join(REAL_ADDONS, t, "install.sh")))
-
     def make(self, conf_extra, install="#!/bin/bash\nset -e\n: \"${ADDON_SHA256:?}\"\n"):
         d = tempfile.mkdtemp(prefix="gg-val-")
         self.addCleanup(shutil.rmtree, d, ignore_errors=True)

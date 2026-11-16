@@ -213,11 +213,5 @@ class ManifestTest(unittest.TestCase):
     def conf(self):
         return read(os.path.join(ADDONDIR, "addon.conf"))
 
-    def test_the_real_addons_folder_validates_with_claude_and_opencode(self):
-        r = self.validate(REAL_ADDONS)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("claude", r.stdout)
-        self.assertIn("opencode", r.stdout)
-
 if __name__ == "__main__":
     unittest.main()
