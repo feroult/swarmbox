@@ -85,54 +85,21 @@ class Veto(Base):
 
 
 class Approve(Base):
-    def run_approve(self, ack=True, dk=None, wait=2.0):
-        dk = dk or FakeDock()
-        if ack:
-            def panel():          # what the panel does: take the request (delete it)
-                end = time.time() + 5
-                while time.time() < end:
-                    if os.path.exists(self.pth.panel_request):
-                        self.seen = ipc.read_json(self.pth.panel_request)
-                        os.unlink(self.pth.panel_request)
-                        return
-                    time.sleep(0.01)
-            threading.Thread(target=panel, daemon=True).start()
-        rc = keys.approve(self.pth, dk, "@3", self.tm, "c1", wait=wait)
-        return rc, dk
-
-    def test_it_opens_without_focus_asks_the_panel_and_focuses_only_after_the_panel_took_the_request(self):
+    def test_one_press_allows_what_waits_with_the_word_the_service_requires(self):
         self.svc.goal()
-        self.svc.pending("approve", "high")
-        rc, dk = self.run_approve()
-        self.assertEqual(rc, 0)
-        self.assertEqual(dk.calls, [("open", "@3", False, True), ("focus", "@3")], "open without focus, focus last")
-        self.assertEqual((self.seen["action"], self.seen["id"]), ("approve", "p1"))
-        self.assertEqual(self.seen["pane"], "%7", "the request names the panel that is to take it: there is one in every window")
-        self.assertIsNone(self.svc.decision(), "the gesture decides nothing")
+        for mode, risk in (("approve", "high"), ("veto", "medium")):
+            self.svc.pending(mode, risk)
+            self.assertEqual(keys.approve(self.pth, tmux=self.tm, client="c1"), 0)
+            self.assertEqual(self.svc.decision(), {"id": "p1", "decision": "approve", "by": "key", "word": "run"})
+        self.assertTrue(any(a[:3] == ("display-message", "-c", "c1") for a in self.tm.ran), "the client is told")
 
-    def test_a_panel_that_does_not_answer_is_not_focused(self):
+    def test_nothing_waiting_or_an_expired_action_writes_nothing(self):
+        self.assertEqual(keys.approve(self.pth), 1)            # no goal
         self.svc.goal()
-        self.svc.pending("approve", "high")
-        rc, dk = self.run_approve(ack=False, wait=0.3)
-        self.assertEqual(rc, 1)
-        self.assertNotIn(("focus", "@3"), dk.calls)
-        self.assertFalse(os.path.exists(self.pth.panel_request), "the stale request is removed")
-
-    def test_no_approval_waiting_does_nothing_at_all(self):
-        self.svc.goal()
-        for setup in (lambda: None, lambda: self.svc.pending("veto"), lambda: self.svc.pending("approve", "high", seconds=-1)):
-            setup()
-            rc, dk = self.run_approve(ack=False, wait=0.1)
-            self.assertEqual((rc, dk.calls), (1, []))
-        self.assertFalse(os.path.exists(self.pth.panel_request))
-
-    def test_a_dock_that_fails_is_said_and_nothing_is_focused(self):
-        self.svc.goal()
-        self.svc.pending("approve", "high")
-        rc, dk = self.run_approve(ack=False, dk=FakeDock(fail_open=True))
-        self.assertEqual((rc, dk.calls), (1, [("open", "@3", False, True)]))
-        rc, dk = self.run_approve(dk=FakeDock(fail_focus=True))
-        self.assertEqual(rc, 1)
+        self.assertEqual(keys.approve(self.pth), 1)            # a goal, no action
+        self.svc.pending("approve", "high", seconds=-1)
+        self.assertEqual(keys.approve(self.pth), 1)            # expired
+        self.assertIsNone(self.svc.decision())
 
 
 class Prompt(Base):

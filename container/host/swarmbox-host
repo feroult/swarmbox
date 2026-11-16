@@ -120,7 +120,7 @@ default_of() {
         sysop.panel) printf 'always' ;;
         sysop.brain) printf 'claude' ;;
         sysop.model) printf 'haiku' ;;
-        sysop.autonomy) printf 'confirm-risky' ;;
+        sysop.autonomy) printf 'auto' ;;
         sysop.countdown) printf '4' ;;
         sysop.max_steps) printf '20' ;;
         sysop.max_seconds) printf '300' ;;

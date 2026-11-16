@@ -5,7 +5,7 @@ another process, and the real service and the real bus behind it.
 
   * against a FAKE state dir (the files of ipc.py written by the test): idle, resize and q, signals, the idle CPU, the countdown and the approval
     gesture as keystrokes, a goal typed and published on a bus, the service going and coming.
-  * against the REAL service, the REAL bus (a process) and the fake claude: the veto key, the typed word `run`, a goal typed in the panel.
+  * against the REAL service, the REAL bus (a process) and the fake claude: the cancel key, the allow key, a goal typed in the panel.
 No tmux, no network, no model. Run with: python3 -W error tests/slow/test_sysop_panel_pty.py
 """
 import fcntl
@@ -162,9 +162,10 @@ class PanelProgram(PtyBase):
     def test_idle_screen_resize_and_q(self):
         self.st.serve(settings=dict(SETTINGS))
         t = self.open(rows=20, cols=80)
-        self.ready(t, "no goal. Type one: Ctrl+A g")
+        self.ready(t, "Say or type a goal.")
         self.assertEqual(len(t.last_frame()), 20)
-        self.assertIn("IDLE", t.last_frame()[0])
+        self.assertIn("SYSOP  idle", t.last_frame()[0])
+        self.assertIn("Goal", t.last_frame()[-1], "the idle panel offers the Goal button on its last row")
         t.resize(30, 40)                                       # SIGWINCH: redrawn at the new size, nothing wider than the pane
         self.assertTrue(ss.wait_for(lambda: len(t.last_frame()) == 30, 5), t.last_frame())
         self.assertTrue(all(text_width(x) <= 40 for x in t.last_frame()), t.last_frame())
@@ -176,7 +177,7 @@ class PanelProgram(PtyBase):
         for sig in (signal.SIGTERM, signal.SIGHUP):
             self.st.serve()
             t = self.open()
-            self.ready(t, "IDLE")
+            self.ready(t, "idle")
             os.kill(t.pid, sig)
             self.assertEqual(t.wait_exit(), 0, sig)
 
@@ -184,7 +185,7 @@ class PanelProgram(PtyBase):
         """a past bug: the idle panel looked at the files every turn. (The rule, a look only when a file changed, is Panel.changed in the fast tests.)"""
         self.st.serve(settings=dict(SETTINGS))
         t = self.open(rows=30, cols=70)
-        self.ready(t, "no goal.")
+        self.ready(t, "Say or type a goal.")
 
         def cpu():
             with open("/proc/%d/stat" % t.pid) as f:
@@ -197,43 +198,42 @@ class PanelProgram(PtyBase):
         self.st.goal(state="running", text="check the thing")        # and it still sees a goal, within the idle look (one second)
         self.st.serve(current="g1", settings=dict(SETTINGS))
         self.assertTrue(t.wait_frame("check the thing", 4), "\n".join(t.last_frame()))
-        self.assertIn("RUNNING", "\n".join(t.last_frame()))
+        self.assertIn("working", "\n".join(t.last_frame()))
 
     def test_the_service_coming_and_going_is_seen_by_the_panel(self):
         t = self.open(rows=20, cols=60)
-        self.assertTrue(t.wait_frame("SERVICE DOWN"), "\n".join(t.last_frame()))
+        self.assertTrue(t.wait_frame("The sysop is not running. It starts with the box."), "\n".join(t.last_frame()))
+        self.assertIn("SYSOP  off", t.last_frame()[0])
         self.st.serve(settings=dict(SETTINGS))
-        self.assertTrue(t.wait_frame("no goal.", 4), "\n".join(t.last_frame()))
+        self.assertTrue(t.wait_frame("Say or type a goal.", 4), "\n".join(t.last_frame()))
         self.st.serve(on=False)
-        self.assertTrue(t.wait_frame("SERVICE DOWN", 4), "\n".join(t.last_frame()))
+        self.assertTrue(t.wait_frame("The sysop is not running.", 4), "\n".join(t.last_frame()))
 
     def test_the_countdown_ticks_and_the_keys_decide(self):
         self.st.serve(current="g1")
         self.st.goal(state="waiting_approval")
         self.st.pending(mode="veto", deadline=time.time() + 20, text="ls /tmp")
         t = self.open()
-        self.assertTrue(t.wait_frame("COUNTDOWN"))
+        self.assertTrue(t.wait_frame("sending in"))
         t.send("c")                                           # typing meant for another pane, a moment after the action appeared: ignored
         time.sleep(0.2)
         self.assertIsNone(self.st.decision())
         time.sleep(panel.GUARD)
-        first = [x for x in t.last_frame() if "sent in" in x][0]
+        first = [x for x in t.last_frame() if "sending in" in x][0]
         time.sleep(1.1)
-        self.assertNotEqual([x for x in t.last_frame() if "sent in" in x][0], first, "the clock ticks by itself")
+        self.assertNotEqual([x for x in t.last_frame() if "sending in" in x][0], first, "the clock ticks by itself")
         t.send("c")
         self.assertEqual(self.wait(self.st.decision, "decision.json"), {"id": "p1", "decision": "veto", "by": "panel"})
         self.st.clear_pending()
         self.st.pending(mode="approve", risk="high", text="rm -rf ~/work", deadline=time.time() + 30, pid="p2")
-        self.assertTrue(t.wait_frame("APPROVAL"), "\n".join(t.last_frame()))
+        self.assertTrue(t.wait_frame("allow? high risk"), "\n".join(t.last_frame()))
         ipc.remove(os.path.join(self.st.paths.goal_dir("g1"), "decision.json"))
         time.sleep(panel.GUARD + 0.15)
-        for k in ("y", "\r", "a", "\r"):                      # a key, Enter: not enough
+        for k in ("\r", "r", "u", "z", "\r"):                 # Enter and letters that are no answer allow nothing
             t.send(k)
         time.sleep(0.3)
-        self.assertIsNone(self.st.decision(), "no key but the word allows a high-risk action")
-        t.send("r")
-        self.assertTrue(t.wait_frame("type the word run"))
-        t.send("run\r")
+        self.assertIsNone(self.st.decision(), "only a, y (allow) or c, n (cancel) answer")
+        t.send("y")                                           # one key, no typed word (the word of the decision file is written by the panel)
         self.assertEqual(self.wait(self.st.decision, "decision.json"), {"id": "p2", "decision": "approve", "by": "panel", "word": "run"})
 
     def test_a_goal_typed_in_the_panel_is_published_on_the_bus(self):
@@ -248,9 +248,9 @@ class PanelProgram(PtyBase):
         self.assertTrue(json.loads(f.readline())["ok"])
         self.st.serve()
         t = self.open()
-        self.ready(t, "no goal. Type")
+        self.ready(t, "Say or type a goal.")
         t.send("g")
-        self.assertTrue(t.wait_frame("New goal."))
+        self.assertTrue(t.wait_frame("Goal (Enter sends, Esc cancels):"))
         t.send("check the disk")
         self.assertTrue(t.wait_frame("check the disk"))
         t.send("\r")
@@ -312,18 +312,18 @@ class RealCore(PtyBase):
     def state(self, gid):
         return ipc.read_json(os.path.join(self.st.paths.goals, gid, "state.json"))
 
-    def test_the_panel_follows_a_goal_and_the_veto_key_stops_the_action(self):
-        self.start([{"tool": "say", "args": {"text": "listing"}}, {"tool": "run", "args": {"tab": "main", "command": "echo from-the-sysop"}},
+    def test_the_panel_follows_a_goal_and_the_cancel_key_stops_the_action(self):
+        # cp is medium risk: in auto it waits out a countdown (a low-risk command would be sent at once, with nothing to cancel)
+        self.start([{"tool": "say", "args": {"text": "listing"}}, {"tool": "run", "args": {"tab": "main", "command": "cp /dev/null /tmp/panel-test-nothing"}},
                     {"tool": "say", "args": {"text": "it was vetoed"}}, {"tool": "done", "args": {"summary": "vetoed by you"}}])
         t = self.open(rows=30, cols=80)
-        self.ready(t, "no goal. Type")
+        self.ready(t, "Say or type a goal.")
         gid = self.goal("echo something", "voice")
-        self.assertTrue(t.wait_frame("COUNTDOWN"), "\n".join(t.last_frame()))
+        self.assertTrue(t.wait_frame("sending in"), "\n".join(t.last_frame()))
         text = "\n".join(t.last_frame())
-        for needle in ("goal (voice): echo something", "say: listing", "echo from-the-sysop", "tab 0:shell: run", "sent in"):
-            if needle.startswith("tab 0"):
-                continue                      # the label of a stub tab is its name
+        for needle in ("echo something", "listing", "cp /dev/null /tmp/panel-test-nothing", "Cancel"):
             self.assertIn(needle, text)
+        self.assertNotIn("Allow", text, "a countdown has only Cancel")
         time.sleep(panel.GUARD + 0.2)
         t.send("c")
         self.assertTrue(t.wait_frame("done: vetoed by you"), "\n".join(t.last_frame()))
@@ -332,30 +332,42 @@ class RealCore(PtyBase):
             res = [json.loads(x) for x in f]
         self.assertIn("vetoed by the user", res[1]["text"])
         self.assertEqual(self.state(gid)["state"], "done")
-        self.assertIn("say: it was vetoed", "\n".join(t.last_frame()))
-        self.assertIn("= error: vetoed by the user", " ".join(" ".join(t.last_frame()).split()).replace("! ", "= "))
+        frame = "\n".join(t.last_frame())
+        self.assertIn("it was vetoed", frame)
+        self.assertIn("✗ run: cp /dev/null /tmp/panel-test-nothing", frame, "the vetoed step is a cross")
 
-    def test_a_high_risk_action_needs_the_typed_word_run(self):
+    def test_a_low_risk_action_is_sent_at_once_with_nothing_to_answer(self):
+        self.start([{"tool": "run", "args": {"tab": "main", "command": "echo from-the-sysop"}}, {"tool": "done", "args": {"summary": "echoed"}}])
+        t = self.open(rows=30, cols=80)
+        self.ready(t, "Say or type a goal.")
+        self.goal("echo something", "voice")
+        self.assertTrue(t.wait_frame("done: echoed", 15), "\n".join(t.last_frame()))
+        self.assertNotIn("sending in", t.text(), "no countdown was ever drawn")
+        self.assertEqual(self.decisions(), ["allowed"])
+        self.assertIn("✓ run: echo from-the-sysop", "\n".join(t.last_frame()))
+
+    def test_a_high_risk_action_is_allowed_with_one_key(self):
         self.start([{"tool": "run", "args": {"tab": "main", "command": "rm -rf /tmp/sysop-panel-test-nothing"}}, {"tool": "done", "args": {"summary": "removed"}}])
         t = self.open(rows=30, cols=80)
-        self.ready(t, "no goal")
+        self.ready(t, "Say or type a goal.")
         self.goal("clean up")
-        self.assertTrue(t.wait_frame("APPROVAL"), "\n".join(t.last_frame()))
+        self.assertTrue(t.wait_frame("allow? high risk"), "\n".join(t.last_frame()))
+        text = "\n".join(t.last_frame())
+        self.assertIn("Allow", text)
+        self.assertIn("Cancel", text)
         time.sleep(panel.GUARD + 0.2)
-        for k in ("y", "\r", "a"):
+        for k in ("\r", "r", "u", "z"):
             t.send(k)
         time.sleep(0.5)
-        self.assertEqual(self.decisions(), ["waiting"], "keys alone allow nothing")
-        t.send("r")
-        t.send("run")
-        t.send("\r")
+        self.assertEqual(self.decisions(), ["waiting"], "Enter and letters that are no answer allow nothing")
+        t.send("y")
         self.assertTrue(t.wait_frame("done: removed", 15), "\n".join(t.last_frame()))
         self.assertEqual(self.decisions(), ["waiting", "approved"])
 
     def test_a_goal_typed_in_the_panel_is_run_by_the_service(self):
         self.start([{"tool": "say", "args": {"text": "typed goals work"}}, {"tool": "done", "args": {"summary": "got it"}}])
         t = self.open(rows=30, cols=80)
-        self.ready(t, "no goal")
+        self.ready(t, "Say or type a goal.")
         t.send("g")
         t.send("do the thing")
         t.send("\r")
@@ -363,7 +375,7 @@ class RealCore(PtyBase):
         gid = self.wait(lambda: self.svc.current is None and next((g for g in service.recent_goals(self.st.paths, 1)), None), "the goal")["id"]
         st = self.state(gid)
         self.assertEqual((st["source"], st["text"], st["state"]), ("panel", "do the thing", "done"))
-        self.assertIn("last goal (panel", "\n".join(t.last_frame()))
+        self.assertIn("do the thing", "\n".join(t.last_frame()), "the goal stays on screen with its end")
 
 
 if __name__ == "__main__":

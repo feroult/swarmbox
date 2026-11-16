@@ -178,7 +178,7 @@ class Typing(Real):
         tabs = json.loads("\n".join(res[0]["text"].splitlines()[1:-1]))
         self.assertEqual({t["label"]: t["cmd"] for t in tabs}, {"0:shell": "bash", "1:agent": "claude"})
         self.assertEqual([t["active"] for t in tabs], [True, False])
-        self.assertEqual(self.decisions(), ["waiting", "allowed"], "a low-risk command went through the countdown")
+        self.assertEqual(self.decisions(), ["allowed"], "a low-risk command is sent at once (autonomy auto): no countdown, nothing waited")
 
     def test_a_prompt_for_the_agent_tab_is_typed_and_submitted(self):
         self.start([{"tool": "run", "args": {"tab": "agent", "command": "please list the files"}}, {"tool": "done", "args": {"summary": "asked"}}])
@@ -187,7 +187,7 @@ class Typing(Real):
         self.assertTrue(ss.wait_for(lambda: "ANSWER please list the files" in self.text(self.ag), 10), self.text(self.ag))
         res = self.results()
         self.assertFalse(res[0]["is_error"], res[0]["text"])
-        self.assertEqual(self.decisions(), ["waiting", "allowed"])
+        self.assertEqual(self.decisions(), ["allowed"], "low risk: sent at once")
 
     def test_input_with_keys_into_the_shell(self):
         self.start([{"tool": "input", "args": {"tab": "shell", "text": "echo ab{Left}X{Enter}"}}, {"tool": "done", "args": {"summary": "x"}}], autonomy="auto")
@@ -314,10 +314,21 @@ class Policy(Real):
         self.assertEqual(self.text(self.ag), before)
         self.assertEqual(self.decisions(), ["blocked"])
 
-    def test_the_veto_stops_a_low_risk_action(self):
+    def test_a_low_risk_action_is_sent_at_once_and_waits_for_nobody(self):
+        marker = os.path.join(self.e.dir, "marker")
+        self.panel = Panel(self.e.paths.goals, lambda p: "veto")      # would veto whatever waits: nothing waits
+        self.start([{"tool": "run", "args": {"command": "touch %s" % marker}}, {"tool": "done", "args": {"summary": "made"}}], countdown=30)
+        t0 = time.time()
+        p = self.goal("make the marker", "voice")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertLess(time.time() - t0, 25, "no countdown for a low-risk action")
+        self.assertTrue(ss.wait_for(lambda: os.path.exists(marker), 5))
+        self.assertEqual(self.panel.seen, [], "nothing was held for the panel")
+
+    def test_the_veto_stops_a_medium_risk_action(self):
         marker = os.path.join(self.e.dir, "marker")
         self.panel = Panel(self.e.paths.goals, lambda p: "veto")
-        self.start([{"tool": "run", "args": {"command": "touch %s" % marker}}, {"tool": "done", "args": {"summary": "vetoed"}}], countdown=3)
+        self.start([{"tool": "run", "args": {"command": "cp /dev/null %s" % marker}}, {"tool": "done", "args": {"summary": "vetoed"}}], countdown=3)
         t0 = time.time()
         p = self.goal("make the marker", "voice")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -330,7 +341,7 @@ class Policy(Real):
 
     def test_without_a_veto_the_countdown_sends_it(self):
         marker = os.path.join(self.e.dir, "marker")
-        self.start([{"tool": "run", "args": {"command": "touch %s" % marker}}, {"tool": "done", "args": {"summary": "ok"}}], countdown=1)
+        self.start([{"tool": "run", "args": {"command": "cp /dev/null %s" % marker}}, {"tool": "done", "args": {"summary": "ok"}}], countdown=1)
         t0 = time.time()
         p = self.goal("make the marker", "voice")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -375,7 +386,7 @@ class Stop(Real):
 
     def test_stop_during_the_countdown_types_nothing(self):
         marker = os.path.join(self.e.dir, "marker")
-        self.start([{"tool": "run", "args": {"command": "touch %s" % marker}}], countdown=30)
+        self.start([{"tool": "run", "args": {"command": "cp /dev/null %s" % marker}}], countdown=30)      # medium risk: the countdown (low is sent at once)
         p = self.goal("later", "voice", wait=False)
         gid = p.stdout.strip()
         self.assertTrue(ss.wait_for(lambda: (self.state(gid) or {}).get("state") == "waiting_approval", 15))

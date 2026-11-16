@@ -315,7 +315,9 @@ class Box:
     def start_service(self, drop=(), **settings):
         """(re)start the service the way a box start does: swarmbox-addon prepare, which runs prepare.sh (setsid nohup swarmbox-sysop serve --log --dock).
         settings are SWARMBOX_SYSOP_* values; drop lists environment variables the service must not have."""
-        self.settings = dict({"model": self.model, "countdown": 4, "approval_timeout": 60}, **settings)
+        # autonomy confirm-risky: the scenarios below were written for it (a low-risk action waits out the countdown, which they watch and veto); the
+        # default of the box is auto (low risk goes at once, only medium waits): it is covered by tests/slow/test_sysop_real.py
+        self.settings = dict({"model": self.model, "countdown": 4, "approval_timeout": 60, "autonomy": "confirm-risky"}, **settings)
         self.stop_service()
         env = dict(self.env)
         env.update(self.sysop_env())
@@ -578,7 +580,7 @@ def basic_path(box, tag, goal, source="voice", label=""):
             seen["panel_focus"] = p["active"] == "1" and p["winactive"] == "1"
             seen["panel_info"] = p
             seen["names"] = {w["id"]: w["name"] for w in box.windows()}
-        if p and "countdown" not in seen and "unless you veto it" in box.panel_text():
+        if p and "countdown" not in seen and "sending in" in box.panel_text():
             seen["countdown"] = t
             seen["panel_text"] = box.panel_text()
         s = box.cap(cw)
@@ -691,12 +693,12 @@ def wait_countdown_visible(box, timeout=60):
             slow.append((round(t0 - T0, 1), round(time.time() - t0, 1)))
         if t and (not shots or shots[-1][1] != t):
             shots.append((round(time.time() - T0, 1), t, str(box.panel())))
-        if not dumped and time.time() - start > 8 and "unless you veto it" not in t:
+        if not dumped and time.time() - start > 8 and "sending in" not in t:
             dumped.append(1)
             ps = subprocess.run(["ps", "-eo", "pid,ppid,stat,wchan:24,etime,args"], capture_output=True, text=True).stdout
             box.save("panel-process-at-8s.txt", "\n".join(x for x in ps.splitlines() if "swarmbox_sysop" in x or "PID" in x) + "\n\n" + t + "\n" +
                      json.dumps(box.status(), indent=1) + "\n" + "\n".join(str(box.tmux("list-clients", "-F", "#{client_width}x#{client_height} #{client_flags}").splitlines())))
-        return "unless you veto it" in t
+        return "sending in" in t
     r = wait_for(seen, timeout, 0.05)
     if r is None:
         box.save("panel-shots-missed-countdown.txt", "slow captures %s\n\n" % slow + "\n\n".join("=== %s %s\n%s" % (t, info, txt) for t, txt, info in shots))
@@ -765,7 +767,7 @@ def mkbuild(box):
 
 
 def wait_approval_visible(box, timeout=60):
-    return wait_for(lambda: "NOT sent unless you allow it" in box.panel_text(), timeout, 0.1)
+    return wait_for(lambda: "allow? " in box.panel_text(), timeout, 0.1)
 
 
 RM_GOAL = "in the shell tab, run the command rm -r build to delete the build directory"
@@ -799,7 +801,7 @@ def s4(box):
     check("s4a: the goal ended and the brain did not retry (one run call)", (st or {}).get("state") in ("done", "failed") and len([c for c in box.calls(gid) if c["tool"] == "run"]) == 1,
           [(c["tool"], c["is_error"]) for c in box.calls(gid)])
     box.save_goal("4a", gid)
-    # 4b: wrong word, then another key
+    # 4b: the cancel key refuses it (there is no word to get wrong any more: the allow gesture is one step)
     box.configure(approval_timeout=45)
     tabs = box.reset_tabs(claude=False)
     sw = tabs["shell"]
@@ -808,24 +810,21 @@ def s4(box):
     r = wait_approval_visible(box)
     check("s4b: the approval prompt appears", r is not None)
     time.sleep(0.8)
-    box.keys("\x01a")      # the approval gesture: opens the approval prompt in the panel and focuses it
-    focused = wait_for(lambda: (box.panel() or {}).get("active") == "1", 5)
-    check("s4b: the approval gesture focuses the panel", focused is not None, box.panel())
-    time.sleep(0.4)
-    box.keys("yes\r")
+    box.keys("yes\r")      # typed in the tab before any gesture: for the tab, never for the panel (y would allow if it reached the panel)
     time.sleep(1.0)
     p = box.panel_text()
-    box.save("4b-panel-wrong-word.txt", p)
+    box.save("4b-panel-typed-in-the-tab.txt", p)
     s = box.cap(sw)
-    check("s4b: a word other than run is not an approval (nothing typed, build exists)", "rm -r" not in s and os.path.isdir(os.path.join(box.throw, "build")) and "Not allowed" in p, p[-400:])
-    box.keys("c")
+    check("s4b: what was typed in the tab allowed nothing (nothing decided, build exists)", not any(d.get("decision") in ("approved", "denied") for d in box.decisions(gid))
+          and os.path.isdir(os.path.join(box.throw, "build")) and "allow? " in p, p[-400:])
+    box.keys("\x01V")      # the cancel key of the box: refuses what waits
     ok = wait_for(lambda: any(d.get("decision") == "denied" for d in box.decisions(gid)), 8)
-    check("s4b: c in the focused panel refuses it (denied)", ok is not None, [d["decision"] for d in box.decisions(gid)])
+    check("s4b: Ctrl+A V refuses it (denied)", ok is not None, [d["decision"] for d in box.decisions(gid)])
     st = box.wait_goal(gid, 60)
     s = box.cap(sw)
     check("s4b: tab untouched, build exists", "rm -r" not in s and os.path.isdir(os.path.join(box.throw, "build")), s[-200:])
     box.save_goal("4b", gid)
-    # 4c: the word run. The user is in another tab (scratch): what is typed there before the gesture must reach scratch and nothing else
+    # 4c: the allow gesture, in one step. The user is in another tab (scratch): what is typed there before the gesture must reach scratch and nothing else
     box.configure(approval_timeout=45)
     tabs = box.reset_tabs(claude=False, extra=("scratch",))
     sw = tabs["shell"]
@@ -840,18 +839,11 @@ def s4(box):
     time.sleep(0.6)
     check("s4c: what was typed before the gesture is in the scratch tab", "run" in box.cap(tabs["scratch"]), box.cap(tabs["scratch"])[-200:])
     check("s4c: nothing typed before the gesture decided anything", not any(d.get("decision") in ("approved", "denied") for d in box.decisions(gid)) and os.path.isdir(os.path.join(box.throw, "build")))
-    box.keys("\x01a")
-    focused = wait_for(lambda: (box.panel() or {}).get("active") == "1", 5)
-    check("s4c: the approval gesture focuses the panel", focused is not None, box.panel())
-    time.sleep(0.4)
-    box.keys("run")
-    time.sleep(0.5)
-    mid = box.panel_text()
-    box.save("4c-panel-typing-run.txt", mid)
-    check("s4c: typing the word is not enough: build still exists before Enter", os.path.isdir(os.path.join(box.throw, "build")))
-    box.keys("\r")
+    box.keys("\x01a")                 # the allow gesture: one step, it writes the decision; no focus, no word
     gone = wait_for(lambda: not os.path.isdir(os.path.join(box.throw, "build")), 20)
-    check("s4c: after the word run and Enter the command ran (build is gone)", gone is not None, box.cap(sw)[-300:])
+    check("s4c: after Ctrl+A a the command ran (build is gone)", gone is not None, box.cap(sw)[-300:])
+    check("s4c: the gesture did not focus the panel", (box.panel() or {}).get("active") != "1", box.panel())
+    box.save("4c-panel-after-allow.txt", box.panel_text())
     st = box.wait_goal(gid, 60)
     dec = [d["decision"] for d in box.decisions(gid)]
     check("s4c: audit says approved", "approved" in dec, dec)
@@ -1258,10 +1250,10 @@ def s12(box):
     up = wait_for(box.panels_up, 15)
     check("s12: before any goal every window has its panel", up is not None, box.panes())
     check("s12: no panel has the focus", all(p["active"] == "0" for p in box.panes() if p["panel"] == "1"), box.panes())
-    txt = wait_for(lambda: "no goal." in box.panel_text(), 10) and box.panel_text()
+    txt = wait_for(lambda: "Say or type a goal." in box.panel_text(), 10) and box.panel_text()
     box.save("12-panel-idle.txt", box.panel_text())
-    check("s12: the idle panel says there is no goal, the keys, the autonomy and the topic",
-          bool(txt) and all(x in txt for x in ("no goal. Type one", "autonomy:", "brain:", "topic: " + TOPIC)) and any(x in txt for x in ("IDLE", "DONE", "FAILED", "STOPPED")), (txt or box.panel_text())[-400:])
+    check("s12: the idle panel says idle, asks for a goal and offers the Goal button (and no longer prints the autonomy, the brain and the topic)",
+          bool(txt) and all(x in txt for x in ("SYSOP  idle", "Say or type a goal.", "Goal")) and not any(x in txt for x in ("autonomy:", "brain:", "topic:")), (txt or box.panel_text())[-400:])
     before = box.listed_tabs()
     t = box.new_tab("three")
     check("s12: a new tab gets its panel", wait_for(box.panels_up, 10) is not None, box.panes())
@@ -1278,7 +1270,7 @@ def s12(box):
     check("s12: the panels are all still up after the goal", box.panels_up(), box.panes())
     after = box.panel_text()
     box.save("12-panel-after-goal.txt", after)
-    check("s12: the panel shows the last goal and its result", "last goal (voice" in after and ("done:" in after or "failed:" in after), after[-500:])
+    check("s12: the panel shows the last goal and its result", "say hello in one word" in after and ("done" in after or "failed" in after), after[-500:])
     # kill the pane of a tab: its window closes, the others keep their panel
     n = len(box.windows())
     box.tmux("kill-pane", "-t", box.pane_of(t))
@@ -1327,7 +1319,7 @@ def s13(box):
     check("s13 auto: the panel closed a few seconds after the goal", closed is not None, box.panes())
     box.keys("\x01S")
     check("s13 auto: Ctrl+A S opens the panel of this window by hand", wait_for(lambda: len(panels_all(box)) == 1, 10) is not None, box.panes())
-    check("s13 auto: that panel is idle", wait_for(lambda: "no goal." in box.panel_text(), 8) is not None, box.panel_text()[-200:])
+    check("s13 auto: that panel is idle", wait_for(lambda: "Say or type a goal." in box.panel_text(), 8) is not None, box.panel_text()[-200:])
     box.keys("\x01S")
     check("s13 auto: Ctrl+A S closes it", wait_for(lambda: not panels_all(box), 10) is not None, box.panes())
     n = len(box.windows())
@@ -1354,7 +1346,7 @@ def s14(box):
     check("s14 off: still none a few seconds after", not panels_all(box), box.panes())
     box.keys("\x01S")
     check("s14 off: Ctrl+A S opens one by hand, in the window it was pressed in", wait_for(lambda: len(panels_all(box)) == 1 and panels_all(box)[0]["win"] == tabs["shell"], 10) is not None, box.panes())
-    check("s14 off: the panel opened by hand is idle", wait_for(lambda: "no goal." in box.panel_text(), 8) is not None, box.panel_text()[-200:])
+    check("s14 off: the panel opened by hand is idle", wait_for(lambda: "Say or type a goal." in box.panel_text(), 8) is not None, box.panel_text()[-200:])
     info("s14 off", "the panel opened by hand with Ctrl+A S (modes auto and off) %s the focus (the mode always never gives it)" % ("has" if any(p["active"] == "1" for p in panels_all(box)) else "does not have"))
     box.keys("\x01S")
     check("s14 off: Ctrl+A S closes it", wait_for(lambda: not panels_all(box), 10) is not None, box.panes())

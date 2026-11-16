@@ -19,7 +19,7 @@ from helpers import ROOT  # noqa: E402
 import test_web_build as wb  # noqa: E402
 
 JS = os.path.join(ROOT, "container", "web", "ttyd-clipboard.js")
-DEFAULT_KEYS = "Esc=Escape, Tab=Tab, ^C=C-c, \u2191=Up, \u2193=Down, \u2190=Left, \u2192=Right, Panel=C-a S, Veto=C-a V, Stop=C-a X"
+DEFAULT_KEYS = "Esc=Escape, Tab=Tab, ^C=C-c, \u2191=Up, \u2193=Down, \u2190=Left, \u2192=Right, Panel=C-a S, Allow=C-a a, Cancel=C-a V"
 
 
 class Render(wb.WebCase):
@@ -101,8 +101,8 @@ process.stdout.write(JSON.stringify(%s));
     def test_the_list_is_parsed_and_a_bad_entry_is_dropped_with_one_warning_not_fatal(self):
         got = self.run_js("[s.parseKeys(%s), s.parseKeys('Esc=Escape, Bad=Nope, , =Tab, justtext, Ok=C-c Up'), win.__warned]" % json.dumps(DEFAULT_KEYS))
         self.assertEqual([(d["label"], d["keys"]) for d in got[0]], [("Esc", "Escape"), ("Tab", "Tab"), ("^C", "C-c"), ("\u2191", "Up"), ("\u2193", "Down"),
-                                                                  ("\u2190", "Left"), ("\u2192", "Right"), ("Panel", "C-a S"), ("Veto", "C-a V"), ("Stop", "C-a X")])
-        self.assertEqual(got[0][-1]["seq"], ["C-a", "X"])
+                                                                  ("\u2190", "Left"), ("\u2192", "Right"), ("Panel", "C-a S"), ("Allow", "C-a a"), ("Cancel", "C-a V")])
+        self.assertEqual(got[0][-1]["seq"], ["C-a", "V"])
         self.assertEqual([d["label"] for d in got[1]], ["Esc", "Ok"])
         self.assertEqual(got[2], 3, "one warning per entry that cannot be read: Bad=Nope, =Tab, justtext")
 
@@ -144,7 +144,7 @@ const s = win.swarmboxStrip;
             self.assertEqual(got, {"made": 2, "visible": False, "add": None, "keys": "\x03"}, how)  # 2: the body and the root the harness made
 
     def test_the_same_page_not_framed_builds_the_strip(self):
-        got = self.run_js("process.stdout.write(JSON.stringify({buttons: made.filter(e => e.className === 'sb-btn sb-key').length, visible: s.visible}));")
+        got = self.run_js("process.stdout.write(JSON.stringify({buttons: made.filter(e => /(^| )sb-key( |$)/.test(e.className)).length, visible: s.visible}));")
         self.assertEqual(got["buttons"], 10)
         self.assertTrue(got["visible"])
 

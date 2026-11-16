@@ -9,7 +9,7 @@
                                                prints the goal id. --wait follows the goal to its end (exit 0 done, 1 failed or stopped)
   swarmbox-sysop goal              with no text, on a terminal: asks for the goal on one line (the tmux key `g` runs it in a popup)
   swarmbox-sysop veto [KEY OPTIONS]            the veto key: refuses what waits (a countdown is vetoed, an approval is refused)
-  swarmbox-sysop approve [KEY OPTIONS]         the approval gesture: opens the panel on the approval prompt and focuses it (keys.py); allows nothing itself
+  swarmbox-sysop approve [KEY OPTIONS]         allow what waits (keys.py)
                                                KEY OPTIONS (veto, approve, stop): --socket PATH --window ID --client NAME, as the tmux keys pass them
   swarmbox-sysop status [--json] [-q]          the service and its goals; exit 0 when it runs, 1 when it does not
   swarmbox-sysop stop [GOAL_ID]                the stop key: ends the running goal (and drops the queue), or just GOAL_ID
@@ -228,7 +228,13 @@ def cmd_stop(args):
 
 
 def cmd_veto(args):
-    return keys.veto(paths.Paths(), _key_tmux(args), args.client)
+    """Cancel: refuse what waits; with nothing waiting, stop the goal that runs (one button for "no" and for "enough")."""
+    pth = paths.Paths()
+    gid, p = keys.pending_of(pth)
+    if gid and not (p and keys._live(p)):
+        args.goal = None
+        return cmd_stop(args)
+    return keys.veto(pth, _key_tmux(args), args.client)
 
 
 def cmd_approve(args):

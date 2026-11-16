@@ -15,7 +15,7 @@
 #                on a touch screen, or when stripKeys is set; an addon control such as the microphone on any screen); off never shows it
 #                (an addon then has no place for its controls)
 #   stripKeys    the key buttons of the strip: entries `label=keys` separated by commas, keys written as tmux key names separated by spaces
-#                (Escape Tab Up C-c M-x F5 ...; "C-a S" is Ctrl+A then S). Default: Esc=Escape, Tab=Tab, ^C=C-c, arrows, Panel=C-a S, Veto=C-a V, Stop=C-a X.
+#                (Escape Tab Up C-c M-x F5 ...; "C-a S" is Ctrl+A then S). Default: Esc=Escape, Tab=Tab, ^C=C-c, arrows, Panel=C-a S, Allow=C-a a, Cancel=C-a V.
 #                An empty value means no buttons.
 #   scrollbar    true or false (default false): a thin scrollbar on the right; tmux owns the scrollback, so it is off, and so is the
 #                scrollback of the browser (scrollback=0, unless you set one)
@@ -75,7 +75,7 @@ declare -A OPT=(
     [fontWeightBold]=700
     [padding]=10
     [strip]=auto
-    [stripKeys]="Esc=Escape, Tab=Tab, ^C=C-c, ↑=Up, ↓=Down, ←=Left, →=Right, Panel=C-a S, Veto=C-a V, Stop=C-a X"
+    [stripKeys]="Esc=Escape, Tab=Tab, ^C=C-c, ↑=Up, ↓=Down, ←=Left, →=Right, Panel=C-a S, Allow=C-a a, Cancel=C-a V"
     [macOptionIsMeta]=true
     [cursorBlink]=true
     [titleFixed]=SwarmBox

@@ -63,70 +63,21 @@ def model_with(goal=None, pending=None, now=0.0, **kw):
     return m
 
 
-class TakeRequest(unittest.TestCase):
-    """Every window has a panel and the approval request is one file: only the panel it names (by its tmux pane) takes it."""
-
-    def setUp(self):
-        self.st = FakeState()
-        self.addCleanup(self.st.close)
-        self.saved = os.environ.get("TMUX_PANE")
-        self.addCleanup(lambda: os.environ.pop("TMUX_PANE", None) if self.saved is None else os.environ.__setitem__("TMUX_PANE", self.saved))
-        self.p = panel.Panel(self.st.paths, in_fd=-1, out_fd=-1)
-        self.addCleanup(lambda: [os.close(fd) for fd in (self.p.wake_r, self.p.wake_w)])
-        self.p.model.update(snap(make_goal("waiting_approval"), make_pending("approve", "high")), self.p.now() - 5)
-
-    def request(self, **kw):
-        ipc.write_json(self.st.paths.panel_request, dict({"action": "approve", "id": "p1", "time": time.time()}, **kw))
-
-    def test_the_panel_that_is_named_takes_it_and_opens_the_prompt(self):
-        os.environ["TMUX_PANE"] = "%5"
-        self.request(pane="%5")
-        self.p.take_request()
-        self.assertEqual(self.p.model.mode, "word")
-        self.assertFalse(os.path.exists(self.st.paths.panel_request))
-
-    def test_a_panel_of_another_window_leaves_it_alone(self):
-        os.environ["TMUX_PANE"] = "%9"
-        self.request(pane="%5")
-        self.p.take_request()
-        self.assertEqual(self.p.model.mode, "view")
-        self.assertTrue(os.path.exists(self.st.paths.panel_request), "not deleted: the panel it is for still has to take it")
-
-    def test_a_request_without_a_pane_is_taken_by_any_panel(self):
-        os.environ["TMUX_PANE"] = "%9"
-        self.request(pane=None)
-        self.p.take_request()
-        self.assertEqual(self.p.model.mode, "word")
-        self.assertFalse(os.path.exists(self.st.paths.panel_request))
-
-    def test_outside_tmux_any_panel_takes_it(self):
-        os.environ.pop("TMUX_PANE", None)
-        self.request(pane="%5")
-        self.p.take_request()
-        self.assertEqual(self.p.model.mode, "word")
-
-
 class IdleScreen(unittest.TestCase):
-    """The idle screen of the panel that is always up: one clear screen, at any size."""
+    """The idle screen of the panel that is always up: a few quiet words, at any size."""
 
     def idle(self, cols, rows, goal=None, settings=SETTINGS):
         m = model_with(goal, settings=settings)
         m.panel_mode = "always"
         return frame_text(m, cols, rows)[0]
 
-    def test_it_says_what_there_is_and_how_to_give_a_goal(self):
-        text = "\n".join(self.idle(70, 24))
-        for needle in ("SYSOP", "IDLE", "no goal. Type one: Ctrl+A g", "From any tab: Ctrl+A, then g goal, V veto, X stop, a approve, S hide this panel",
-                       "autonomy: confirm-risky", "brain: claude (haiku)", "topic: goal", "[g] Goal", "[q] Hide"):
-            self.assertIn(needle, " ".join(text.split()) if len(needle) > 40 else text, needle)
-        self.assertNotIn("voice", text.lower(), "the panel does not know the voice addon: it says speak or type")
-
-    def test_the_panel_knows_nothing_of_a_microphone_nor_of_speaking(self):
-        keys = [("c", "Veto"), ("x", "Stop"), ("g", "Goal"), ("l", "Log"), ("q", "Hide")]
-        lines, _ = panel._key_line(keys, 30, False)
-        self.assertEqual(len(lines), 2, "the key line wraps at the width of the pane: nothing covers the last columns any more")
-        self.assertFalse(hasattr(panel, "MIC_RESERVE"))
-        self.assertNotRegex(panel.IDLE_TEXT.lower(), "speak|voice|micro")
+    def test_it_is_short_and_says_nothing_of_keys_settings_or_a_microphone(self):
+        text = "\n".join(self.idle(60, 24)).lower()
+        self.assertIn("idle", text)
+        self.assertIn("say or type a goal", text)
+        for word in ("ctrl+a", "autonomy", "brain", "topic", "micro", "voice", "[q]"):
+            self.assertNotIn(word, text)
+        self.assertLessEqual(len([x for x in self.idle(60, 24) if x.strip()]), 3, "the head, one line, one button")
 
     def test_the_title_is_the_first_line_and_the_screen_has_the_size_of_the_pane(self):
         for cols in (16, 24, 30, 40, 60, 100, 200):
@@ -135,89 +86,38 @@ class IdleScreen(unittest.TestCase):
                 self.assertEqual(len(lines), rows, (cols, rows))
                 self.assertIn("SYSOP", lines[0])
                 self.assertTrue(all(text_width(x) <= max(16, cols) for x in lines), (cols, rows, lines))
-                self.assertIn("no goal.", "\n".join(lines), (cols, rows, "the first thing under the title survives any size"))
-
-    def test_what_is_dropped_in_a_short_pane_is_the_least_important_and_the_keys_stay(self):
-        short = "\n".join(self.idle(60, 8))
-        self.assertIn("no goal. Type one", short)
-        self.assertIn("[q] Hide", short)
-        self.assertNotIn("topic:", short)
-        tall = "\n".join(self.idle(60, 24))
-        self.assertIn("topic: goal", tall)
-        self.assertLess(tall.index("no goal"), tall.index("From any tab"))
-        self.assertLess(tall.index("From any tab"), tall.index("autonomy"))
-        self.assertLess(tall.index("autonomy"), tall.index("topic:"))
 
     def test_in_a_short_pane_the_result_of_the_last_goal_is_on_the_screen(self):
-        """found in the e2e screenshot of a phone held upright (28 columns, 8 lines): the panel showed the goal, `49 earlier (Up)` and the idle line, and not the
-        result: the marker took the only line the log had. The test used to pass on the DONE badge alone"""
+        """found in the e2e screenshot of a phone held upright (28 columns, 8 lines): the panel showed the goal and a marker, and not the result"""
         say = [{"t": 5.0, "text": "I looked at the tab"}] * 12
         g = make_goal("done", "reply with exactly banana 9", "voice", say=say, ended=time.time() - 3, summary="Typed the prompt into the active Claude tab; it replied banana 9.")
         for rows in (8, 9, 10, 12):
             text = " ".join("\n".join(self.idle(28, rows, g)).split())
-            self.assertIn("banana 9.", text.split("no goal.")[0], (rows, text))     # the end of the summary, above the idle line
-            self.assertIn("no goal.", text, rows)
-            self.assertIn("[q] Hide", text, rows)
+            self.assertIn("banana 9.", text, rows)
+            self.assertIn("[ Goal ]".replace("[ ", "").replace(" ]", ""), text, rows)
         long_goal = make_goal("running", "x " * 400, "voice", say=say)
-        text = "\n".join(self.idle(28, 8, long_goal))
-        self.assertIn("SYSOP", text)
-
-    def test_a_paragraph_of_the_idle_screen_is_whole_or_gone_never_half(self):
-        """found in the e2e screenshot of a phone held sideways (64 columns, 8 lines): the hint `From any tab: ...` was cut after `a approve, S`, so it ended
-        in a letter that means nothing. A paragraph (a wrapped text) goes whole, the facts (autonomy, brain, topic) go one by one."""
-        full = ("From any tab: Ctrl+A, then g goal, V veto, X stop, a approve, S hide this panel. The keys below work after a click on this pane.").split()
-        for cols in (28, 30, 40, 64, 100):
-            for rows in range(4, 30):
-                for goal in (None, make_goal("done", "run the tests", "voice", ended=time.time() - 5, summary="ok")):
-                    text = " ".join("\n".join(self.idle(cols, rows, goal)).split())
-                    at = text.find("From any tab")
-                    if at < 0:
-                        continue
-                    shown = text[at:].split()
-                    seen = []
-                    for w in shown:
-                        if w in ("[g]", "[q]", "autonomy:", "brain:", "topic:", "last", "say:", "done:"):
-                            break
-                        seen.append(w)
-                    self.assertEqual(seen, full[:len(seen)], (cols, rows))
-                    self.assertIn(len(seen), (len(full) - 9, len(full)), "the hint is the sentence or the sentence and the note, not a piece (%d cols, %d rows): %r" % (cols, rows, seen))
+        self.assertIn("SYSOP", "\n".join(self.idle(28, 8, long_goal)))
 
     def test_the_last_goal_is_shown_with_how_it_ended_and_what_was_said(self):
         for state, key, why in (("done", "summary", "tests pass"), ("failed", "error", "the brain crashed"), ("stopped", "error", "stopped by the user")):
             g = make_goal(state, "run the tests", "voice", say=[{"t": 5.0, "text": "I looked at the tab"}], ended=time.time() - 125, **{key: why})
             text = "\n".join(self.idle(70, 30, g))
-            self.assertIn("last goal (voice, 2 min ago): run the tests", text)
-            self.assertIn("say: I looked at the tab", text)
+            self.assertIn("run the tests", text)
+            self.assertIn("I looked at the tab", text)
             self.assertIn("%s: %s" % (state, why), text)
-            self.assertIn("no goal. Type one", text, "and it is idle: the way to give another one is there")
-            self.assertIn("autonomy: confirm-risky", text)
+            self.assertIn("Goal", text, "and it is idle: the button for another goal is there")
 
-    def test_while_a_goal_runs_or_waits_there_is_no_idle_text(self):
+    def test_while_a_goal_runs_or_waits_it_does_not_offer_a_new_goal(self):
         for m in (model_with(make_goal("running")), model_with(make_goal("running"), make_pending("veto")), model_with(make_goal("queued"), queue=[{"id": "g2", "source": "cli", "text": "x"}])):
             text = "\n".join(frame_text(m, 70, 30)[0])
-            self.assertNotIn("no goal.", text)
-            self.assertNotIn("topic:", text)
+            self.assertNotIn("Say or type a goal", text)
+            self.assertNotIn("Goal ", text.replace("goal", ""))
 
     def test_the_service_down_has_its_own_screen(self):
         text = "\n".join(frame_text(model_with(up=False, settings=SETTINGS), 70, 24)[0])
-        self.assertIn("SERVICE DOWN", text)
-        self.assertNotIn("no goal.", text)
-
-    def test_a_service_without_settings_still_gives_a_screen(self):
-        text = "\n".join(self.idle(60, 24, settings={}))
-        self.assertIn("no goal. Type one", text)
-        self.assertNotIn("autonomy", text)
-
-    def test_text_in_the_settings_is_made_safe(self):
-        text = "\n".join(self.idle(80, 24, settings=dict(SETTINGS, brain="x\x1b[31mred", topic="t\x07")))
-        self.assertNotIn("\x1b", text)
-        self.assertNotIn("\x07", text)
-
-    def test_the_quit_key_says_hide_in_the_mode_always_and_close_in_the_others(self):
-        m = model_with(settings=SETTINGS)
-        self.assertIn("[q] Close", "\n".join(frame_text(m)[0]))
-        m.panel_mode = "always"
-        self.assertIn("[q] Hide", "\n".join(frame_text(m)[0]))
+        self.assertIn("off", text)
+        self.assertIn("not running", text)
+        self.assertNotIn("Say or type", text)
 
     def test_ago(self):
         for secs, want in ((0, "just now"), (9, "just now"), (10, "10 s ago"), (59, "59 s ago"), (60, "1 min ago"), (3599, "59 min ago"), (3600, "1 h ago"), (86400 * 3, "3 d ago")):
@@ -256,20 +156,23 @@ class Rendering(unittest.TestCase):
                         self.assertEqual(len(f.lines), rows, (name, cols, rows))
                         for ln in f.lines:
                             self.assertLessEqual(text_width(strip_ansi(ln)), max(16, cols), (name, cols, rows, strip_ansi(ln)))
-                        self.assertIn("[q]" if color else "[q]", " ".join(strip_ansi(x) for x in f.lines), (name, cols, rows, "the close key is always visible"))
+                        if m.pending and rows >= 6 and cols >= 20:
+                            self.assertIn("Cancel", " ".join(strip_ansi(x) for x in f.lines), (name, cols, rows, "the way to say no is always visible"))
 
-    def test_the_goal_its_source_the_steps_and_the_queue(self):
+    def test_the_goal_the_steps_in_plain_words_and_the_queue(self):
         g = make_goal("running", "open the logs of the api", "voice", calls=[
             call("list_tabs", summary='[{"tab":"@1"}]', t=1), call("run", {"tab": "@1", "command": "tail -f api.log"}, "line one\nline two", t=2, verdict="medium"),
-            call("run", {"tab": "@9", "command": "x"}, "error: no such tab", t=3, is_error=True)], say=[{"t": 2.5, "text": "I opened the log"}])
+            call("run", {"tab": "@9", "command": "x"}, "error: no such tab", t=3, is_error=True), call("read_tab", {"tab": "@1"}, "screen", t=4)],
+            say=[{"t": 2.5, "text": "I opened the log"}])
         m = model_with(g, queue=[{"id": "g2", "source": "cli", "text": "second goal"}, {"id": "g3", "source": "panel", "text": "third"}])
         lines, _ = frame_text(m, 70, 30)
         text = "\n".join(lines)
-        for needle in ("goal (voice): open the logs of the api", "> list_tabs", "> run @1 tail -f api.log [medium]", "= line one | line two", "say: I opened the log",
-                       "! error: no such tab", "queue 1 (cli): second goal", "queue 2 (panel): third", "2 queued", "RUNNING", "[x] Stop", "[g] Goal"):
+        for needle in ("open the logs of the api", "✓ look at the tabs", "✓ run: tail -f api.log", "I opened the log", "✗ run: x", "✓ read tab @1", "+2 queued", "working", "Stop"):
             self.assertIn(needle, text)
-        order = [text.index(x) for x in ("> list_tabs", "> run @1 tail", "say: I opened", "> run @9")]
-        self.assertEqual(order, sorted(order), "calls and says in time order")
+        for noise in ("line one", "no such tab", "[medium]", "queue 1", "tool", "verdict"):
+            self.assertNotIn(noise, text, "the results stay out of the log: one short line a step")
+        order = [text.index(x) for x in ("look at the tabs", "tail -f", "I opened", "run: x")]
+        self.assertEqual(order, sorted(order), "steps and says in time order")
 
     def test_the_log_shows_its_end_and_scrolls(self):
         calls = [call("run", {"command": "step %d" % i}, "r%d" % i, t=float(i)) for i in range(12)]
@@ -310,37 +213,42 @@ class Rendering(unittest.TestCase):
             self.assertTrue(all(text_width(x) <= cols for x in lines), cols)
         self.assertGreater(len([x for x in frame_text(m, 30, 60)[0] if "word" in x]), 1)
 
-    def test_the_countdown_and_the_approval_prompt(self):
+    def test_the_countdown_and_the_approval_say_what_they_need_in_few_words(self):
         now = time.time()
         m = model_with(make_goal(), make_pending("veto", deadline=now + 3.2, text="echo hi"))
         text = "\n".join(frame_text(m, 70, 24, now)[0])
-        for needle in ("COUNTDOWN", "echo hi", "tab 0:shell: run", "sent in 4 s unless you veto it", "Ctrl+A V", "[c] Veto"):
+        for needle in ("sending in 4 s", "tab 0:shell", "echo hi", "Cancel"):
             self.assertIn(needle, text)
-        self.assertNotIn("[g] Goal", text, "no new goal while an action waits")
-        self.assertIn("sent in 1 s", "\n".join(frame_text(m, 70, 24, now + 2.5)[0]))
-        self.assertIn("sending now", "\n".join(frame_text(m, 70, 24, now + 3.3)[0]))
+        self.assertNotIn("Allow", text, "a countdown sends by itself: only Cancel")
+        self.assertNotIn("Ctrl+A", text, "no key to learn")
+        self.assertIn("sending in 1 s", "\n".join(frame_text(m, 70, 24, now + 2.5)[0]))
         m = model_with(make_goal(), make_pending("approve", "high", deadline=now + 45, text="rm -rf ~/x"))
         text = "\n".join(frame_text(m, 70, 24, now)[0])
-        for needle in ("APPROVAL", "HIGH RISK", "rm -rf ~/x", "why: it deletes files", "NOT sent unless you allow it", "0:45", "[r] Allow (type run)", "[c] Refuse"):
+        for needle in ("allow? high risk", "rm -rf ~/x", "it deletes files", "Allow", "Cancel"):
             self.assertIn(needle, text)
-        self.assertIn("time is up: refused", "\n".join(frame_text(m, 70, 24, now + 46)[0]))
-        m.key("r", 5.0, now)
-        text = "\n".join(frame_text(m, 70, 24, now)[0])
-        self.assertIn("type the word run, then Enter", text)
-        self.assertIn(" > ", text)
+        for noise in ("type run", "NOT sent", "0:45", "Ctrl+A"):
+            self.assertNotIn(noise, text)
 
-    def test_the_risk_is_a_word_as_well_as_a_colour(self):
-        for risk in ("low", "medium", "high", "nonsense"):
-            m = model_with(make_goal(), make_pending("veto", risk))
-            self.assertIn(("HIGH" if risk == "nonsense" else risk.upper()) + " RISK", "\n".join(frame_text(m, 70, 24)[0]))
+    def test_the_bar_that_needs_you_is_a_full_width_block_of_colour(self):
+        now = time.time()
+        for mode, risk, want in (("approve", "high", "ff6b78"), ("veto", "medium", "fbbf24")):
+            m = model_with(make_goal(), make_pending(mode, risk, deadline=now + 30))
+            lines = render(m, 40, 14, now, True).lines
+            bar = next(x for x in lines if "tab 0:shell" in x)
+            self.assertIn("48;2;%d;%d;%d" % tuple(int(want[i:i + 2], 16) for i in (0, 2, 4)), bar, "a background colour, not only coloured letters")
+            self.assertEqual(text_width(strip_ansi(bar)), 40, "the bar spans the pane")
+        self.assertNotIn("tab 0:shell", "\n".join(frame_text(model_with(make_goal()), 40, 14)[0]))
 
-    def test_hits_are_the_key_labels(self):
-        m = model_with(make_goal())
-        f = render(m, 60, 12, time.time(), True)
-        keys = [h[3] for h in f.hits]
-        self.assertEqual(keys, ["x", "g", "q"])
-        for row, c0, c1, key in f.hits:
-            self.assertIn("[%s]" % key, strip_ansi(f.lines[row - 1])[c0 - 1:c1 + 1])
+    def test_hits_are_the_buttons(self):
+        now = time.time()
+        for pend, want in ((None, ["c"]), (make_pending("approve", "high", deadline=now + 30), ["a", "c"]), (make_pending("veto", deadline=now + 30), ["c"])):
+            f = render(model_with(make_goal(), pend), 60, 12, now, True)
+            self.assertEqual([h[3] for h in f.hits], want)
+            for row, c0, c1, key in f.hits:
+                label = {"a": "Allow", "c": "Cancel" if pend else "Stop"}[key]
+                self.assertIn(label, strip_ansi(f.lines[row - 1])[c0 - 1:c1], key)
+        f = render(model_with(), 60, 12, now, True)
+        self.assertEqual([h[3] for h in f.hits], ["g"])
 
 
 class Keys(unittest.TestCase):
@@ -364,61 +272,18 @@ class Keys(unittest.TestCase):
         self.assertEqual(self.veto_model().key("C", 101.0, self.now), ("decide", "g1", "p1", "veto", None))
         m = model_with(make_goal(), make_pending("approve", "high", deadline=self.now + 30), now=100.0)
         self.assertEqual(m.key("c", 101.0, self.now), ("decide", "g1", "p1", "deny", None))
-        self.assertIsNone(model_with(make_goal(), now=100.0).key("c", 101.0, self.now), "nothing waits: c does nothing")
+        self.assertEqual(model_with(make_goal(), now=100.0).key("c", 101.0, self.now), ("stop", None), "nothing waits and a goal runs: Cancel is Stop")
+        self.assertIsNone(model_with(now=100.0).key("c", 101.0, self.now), "nothing at all: nothing to cancel")
 
     def test_an_unknown_mode_is_an_approval(self):
         m = model_with(make_goal(), make_pending("whatever", deadline=self.now + 30), now=100.0)
         self.assertEqual(m.pmode(), "approve")
-        m.key("r", 101.0, self.now)
-        self.assertEqual(m.mode, "word")
+        self.assertEqual(m.key("a", 101.0, self.now), ("decide", "g1", "p1", "approve", "run"))
 
-    def test_the_approval_needs_the_word_run_and_enter(self):
-        m = model_with(make_goal(), make_pending("approve", "high", deadline=self.now + 30), now=100.0)
-        for k in ("y", "enter", "a", "x", "g"):
-            self.assertIsNone(m.key(k, 101.0, self.now) if k != "x" else None)
-        self.assertEqual(m.mode, "view", "no key but r starts the typing; y, a and Enter alone allow nothing")
-        m.key("r", 101.0, self.now)
-        self.assertEqual(m.mode, "word")
-        for k in "yes":
-            self.assertIsNone(m.key(k, 101.0, self.now))
-        self.assertIsNone(m.key("enter", 101.0, self.now), "a wrong word allows nothing")
-        self.assertIn("Not allowed", m.notice)
-        self.assertEqual(m.mode, "view")
-        m.key("r", 101.0, self.now)
-        for k in "run":
-            m.key(k, 101.0, self.now)
-        self.assertEqual(m.key("enter", 101.0, self.now), ("decide", "g1", "p1", "approve", "run"))
-        m.key("r", 101.0, self.now)
-        for k in "RUN":
-            m.key(k, 101.0, self.now)
-        self.assertEqual(m.key("enter", 101.0, self.now)[3], "approve", "the word is not case sensitive")
-        m.key("r", 101.0, self.now)
-        m.key("r", 101.0, self.now)
-        m.key("esc", 101.0, self.now)
-        self.assertEqual((m.mode, m.word), ("view", ""))
-
-    def test_r_does_nothing_for_a_countdown(self):
-        m = self.veto_model()
-        m.key("r", 101.0, self.now)
-        self.assertEqual(m.mode, "view")
-
-    def test_nothing_is_decided_after_the_deadline(self):
+    def test_nothing_is_allowed_after_the_deadline(self):
         m = model_with(make_goal(), make_pending("approve", "high", deadline=self.now - 1), now=100.0)
-        self.assertIsNone(m.key("c", 101.0, self.now))
-        self.assertIsNone(m.key("r", 101.0, self.now))
-        m = model_with(make_goal(), make_pending("approve", "high", deadline=self.now + 0.5), now=100.0)
-        m.key("r", 101.0, self.now)
-        for k in "run":
-            m.key(k, 101.0, self.now)
-        self.assertIsNone(m.key("enter", 101.0, self.now + 1), "the word typed too late allows nothing")
-        self.assertIn("time is up", m.notice)
-
-    def test_the_action_vanishing_ends_the_word_mode(self):
-        m = model_with(make_goal(), make_pending("approve", "high", deadline=self.now + 30), now=100.0)
-        m.key("r", 101.0, self.now)
-        m.key("r", 101.0, self.now)
-        m.update(snap(make_goal()), 102.0)
-        self.assertEqual((m.mode, m.word), ("view", ""))
+        self.assertIsNone(m.key("a", 101.0, self.now))
+        self.assertEqual(m.key("c", 101.0, self.now), ("stop", None), "an action that is gone: c stops the goal, it does not refuse a ghost")
 
     def test_x_stops_the_goal_and_big_x_everything(self):
         m = model_with(make_goal(), now=0.0)
@@ -491,71 +356,37 @@ class Keys(unittest.TestCase):
         self.assertIsNone(model_with().key(("click", 3, 3), 1.0, self.now))
 
 
-class ApprovalRequest(unittest.TestCase):
-    """`swarmbox-sysop approve` asks the panel for its approval prompt (Model.request_approve); keys.py then gives it the focus."""
-    REQ = {"action": "approve", "id": "p1"}
+class Approval(unittest.TestCase):
+    """Allow is one press (a or y, or a click on the button); text that is cut off cannot be allowed."""
 
     def approval(self, now=0.0, **kw):
         kw.setdefault("text", "rm -rf ~/x")
         return model_with(make_goal("waiting_approval"), make_pending("approve", "high", **kw), now=now)
 
-    def test_the_request_opens_the_word_prompt_of_the_pending_approval(self):
-        m = self.approval()
-        self.assertEqual(m.request_approve(self.REQ, 1.0, time.time()), "ok")
-        self.assertEqual((m.mode, m.word), ("word", ""))
-        self.assertIsNone(m.key("x", 1.0, time.time()), "in the word prompt x is a letter, not a stop")
-        self.assertEqual(m.word, "x")
-
-    def test_the_key_guard_of_a_new_action_still_holds(self):
+    def test_one_press_allows_after_the_guard(self):
         m = self.approval(now=10.0)
-        self.assertEqual(m.request_approve(self.REQ, 10.1, time.time()), "wait", "the request stays until the guard has passed")
-        self.assertEqual(m.mode, "view")
-        self.assertEqual(m.request_approve(self.REQ, 10.0 + panel.GUARD + 0.01, time.time()), "ok")
-
-    def test_a_request_for_another_action_a_countdown_or_nothing_is_dropped(self):
-        for m, req in ((self.approval(), {"action": "approve", "id": "p9"}), (self.approval(), {"action": "stop", "id": "p1"}),
-                       (model_with(make_goal(), make_pending("veto")), self.REQ), (model_with(make_goal()), self.REQ),
-                       (self.approval(deadline=time.time() - 1), self.REQ)):
-            self.assertEqual(m.request_approve(req, 5.0, time.time()), "no")
-            self.assertEqual(m.mode, "view")
+        self.assertIsNone(m.key("a", 10.1, time.time()), "the guard of a new action: a key meant for another pane")
+        for k in ("a", "y", "A"):
+            self.assertEqual(m.key(k, 11.0, time.time()), ("decide", "g1", "p1", "approve", "run"))
 
     def test_an_action_that_does_not_fit_says_so_and_cannot_be_allowed(self):
-        """the word `run` allows what is on the screen: text that is cut off could hide the end of a command ("...; rm -rf ~")"""
+        """Allow means what is on the screen: text that is cut off could hide the end of a command ("...; rm -rf ~")"""
         text = "rm -rf ./build-cache " + "# cleaning the build cache ... " * 80 + "; rm -rf ~"
         m = self.approval(text=text)
         joined = "\n".join(frame_text(m, 40, 40)[0])
         self.assertGreater(m.hidden, 0)
-        self.assertIn("NOT shown", joined)
-        self.assertIn("only refused", " ".join(joined.split()))
+        self.assertIn("not shown", joined)
+        self.assertIn("cancel it", " ".join(joined.split()))
         self.assertNotIn("Allow", joined)
-        m.key("r", 100.0, time.time())
-        self.assertNotEqual(m.mode, "word", "the word `run` cannot be typed for text that is not on the screen")
-        self.assertEqual(m.request_approve(self.REQ, 5.0, time.time()), "no", "nor can `swarmbox-sysop approve` open it")
-        self.assertEqual(m.mode, "view")
+        self.assertIsNone(m.key("a", 100.0, time.time()))
+        self.assertIn("cannot be allowed", m.notice)
+        self.assertEqual(m.key("c", 100.0, time.time())[3], "deny", "it can be cancelled")
 
     def test_a_command_of_600_characters_is_shown_whole_on_a_wide_pane(self):
         """a past bug: the budget of the pane hid the end of a 615 character command that did fit"""
         m = self.approval(text="rm -rf ./build-cache " + "# cleaning the build cache ... " * 20 + "; rm -rf ~")
         self.assertIn("; rm -rf ~", " ".join(" ".join(frame_text(m, 200, 40)[0]).split()))
         self.assertEqual(m.hidden, 0)
-
-    def test_losing_the_focus_drops_a_half_typed_word(self):
-        pn = panel.Panel(pth=None, in_fd=-1, out_fd=-1, bus=object())
-        pn.model = self.approval()
-        pn.model.request_approve(self.REQ, 5.0, time.time())
-        pn.model.word = "ru"
-        pn.handle_key("focus-out")
-        self.assertEqual((pn.model.mode, pn.model.word, pn.model.focused), ("view", "", False))
-        pn.handle_key("focus-in")
-        self.assertTrue(pn.model.focused)
-
-    def test_the_text_says_which_keys_work_unfocused_and_drops_it_when_focused(self):
-        m = self.approval()
-        text = " ".join(frame_text(m, 70, 30)[0])
-        for needle in ("Ctrl+A a, then type run", "type run", "Ctrl+A, then V veto, X stop, a approve, g goal"):
-            self.assertIn(needle, text)
-        m.focused = True
-        self.assertNotIn("Ctrl+A, then V", " ".join(frame_text(m, 70, 30)[0]))
 
 
 class KeyBytes(unittest.TestCase):
@@ -659,31 +490,31 @@ class PanelObject(unittest.TestCase):
             self.p.handle_key(k)
 
     def test_it_shows_what_the_service_writes_and_follows_it(self):
-        self.assertIn("SERVICE DOWN", self.see())
+        self.assertIn("not running", self.see())
         self.st.serve(current="g1", queue=[{"id": "g2", "source": "cli", "text": "the next one"}])
         self.st.goal(calls=[call("run", {"tab": "@1", "command": "make test"}, "ok 12 tests")], say=[{"t": 20.0, "text": "running the tests"}], text="run the tests")
         text = self.see()
-        for needle in ("goal (voice): run the tests", "> run @1 make test", "= ok 12 tests", "say: running the tests", "queue 1 (cli): the next one", "RUNNING"):
+        for needle in ("run the tests", "✓ run: make test", "running the tests", "+1 queued", "working"):
             self.assertIn(needle, text)
         gdir = self.st.paths.goal_dir("g1")                  # the files of the mcp server are fresher than state.json
         ipc.append_jsonl(os.path.join(gdir, "calls.jsonl"), call("read_tab", {"tab": "@2"}, "screen text", t=30))
         ipc.append_jsonl(os.path.join(gdir, "say.jsonl"), {"t": 31, "text": "fresher than state.json"})
         text = self.see()
-        self.assertIn("> read_tab @2", text)
+        self.assertIn("✓ read tab @2", text)
         self.assertIn("fresher than state.json", text)
         self.st.goal(state="done", summary="tests pass")      # the end of the goal stays on screen under the idle text
         self.st.serve(current=None, settings=dict(SETTINGS))
         text = self.see()
         self.assertIn("done: tests pass", text)
-        self.assertIn("no goal. Type one: Ctrl+A g", text)
+        self.assertIn("[Goal]", text)
         self.st.serve(on=False)
-        self.assertIn("SERVICE DOWN", self.see())
+        self.assertIn("not running", self.see())
 
     def test_the_last_goal_that_ended_between_two_looks_is_shown(self):
         self.st.serve(settings=dict(SETTINGS))
         self.st.goal(state="done", summary="tests pass", text="run the tests", ended=time.time() - 30, say=[{"t": 1.0, "text": "all green"}])
         text = self.see()
-        for needle in ("last goal (voice, ", "run the tests", "say: all green", "done: tests pass", "no goal. Type one", "topic: goal"):
+        for needle in ("run the tests", "all green", "done: tests pass", "Goal"):
             self.assertIn(needle, text)
 
     def test_an_idle_panel_looks_only_when_a_file_changed(self):
@@ -714,44 +545,13 @@ class PanelObject(unittest.TestCase):
         self.st.goal()
         self.st.pending(mode="veto", deadline=time.time() - 1)
         self.p.look()
-        self.assertIn("sending now", self.text())
+        self.assertIn("sending", self.text())
         self.keys("c")
         self.assertIsNone(self.st.decision(), "the time is up: the service decides")
         self.st.pending(mode="approve", risk="high", deadline=time.time() - 1, pid="p2")
         self.p.look()
-        self.assertIn("time is up: refused", self.text())
-        self.keys("r", "r", "u", "n", "enter")
-        self.assertIsNone(self.st.decision())
-
-    def test_the_approval_gesture_writes_a_decision_only_with_the_word(self):
-        self.st.serve(current="g1")
-        self.st.goal(state="waiting_approval")
-        self.st.pending(mode="approve", risk="high", text="rm -rf ~/work", deadline=time.time() + 30)
-        text = self.see()
-        for needle in ("HIGH RISK", "rm -rf ~/work", "why: it deletes files", "[r] Allow (type run)", "[c] Refuse"):
-            self.assertIn(needle, text)
-        self.keys("y", "enter", "a", "enter")
-        self.assertIsNone(self.st.decision(), "no key but the word allows a high-risk action")
-        self.keys("r", "y", "e", "s", "enter")
-        self.assertIsNone(self.st.decision())
-        self.assertIn("Not allowed", self.text())
-        self.keys("r", "r", "u", "n")
-        self.assertIn("> run", self.text())
-        self.keys("enter")
-        self.assertEqual(self.st.decision(), {"id": "p1", "decision": "approve", "by": "panel", "word": "run"})
-
-    def test_c_refuses_an_approval_and_esc_leaves_the_word_prompt(self):
-        self.st.serve(current="g1")
-        self.st.goal()
-        self.st.pending(mode="approve", risk="high", deadline=time.time() + 30)
-        self.see()
-        self.keys("r")
-        self.assertIn("type the word run", self.text())
-        self.keys("esc")
-        self.assertIn("[r] Allow", self.text())
-        self.assertIsNone(self.st.decision())
-        self.keys("c")
-        self.assertEqual(self.st.decision(), {"id": "p1", "decision": "deny", "by": "panel"})
+        self.keys("a", "y")
+        self.assertIsNone(self.st.decision(), "the time is up: nothing is allowed")
 
     def test_x_asks_the_service_to_stop_the_goal_and_big_x_everything(self):
         self.st.serve(current="g1", queue=[{"id": "g2", "source": "cli", "text": "q"}])
@@ -820,7 +620,7 @@ class PanelObject(unittest.TestCase):
         self.p.draw()
         self.screen.seek(0)
         raw = self.screen.read().decode("utf-8", "replace")
-        self.assertIn("COUNTDOWN", raw)
+        self.assertIn("sending in", raw)
         for bad in ("pwned\x07", "\x1b]0;", "\x1b[2Jbig") + tuple(BIDI):
             self.assertNotIn(bad, raw)
         self.assertEqual(set(re.findall(r"\x1b\[\??[0-9;]*([A-Za-z])", raw)) - set("HKmhlJ"), set(), "only the escape sequences of the panel itself")

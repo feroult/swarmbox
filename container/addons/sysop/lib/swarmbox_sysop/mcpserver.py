@@ -86,7 +86,7 @@ class Context:
         self.source = str(d.get("source") or "unknown")
         self.goal_dir = d["goal_dir"]
         self.audit_path = d.get("audit") or os.path.join(os.path.dirname(os.path.dirname(self.goal_dir)), "events.jsonl")
-        self.autonomy = d.get("autonomy", "confirm-risky")
+        self.autonomy = d.get("autonomy", "auto")
         self.countdown = float(d.get("countdown", 4))
         self.approval_timeout = float(d.get("approval_timeout", 60))
         self.max_steps = int(d.get("max_steps", 20))

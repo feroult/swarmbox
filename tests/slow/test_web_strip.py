@@ -26,7 +26,7 @@ TMUX_CONF = os.path.join(ROOT, "container", "config", "tmux.conf")
 SHOTS = os.environ.get("SWARMBOX_TEST_SHOTS", "")
 RAW_CAT = "stty raw -echo; exec cat -vT"   # a pane that shows, in caret notation, the bytes tmux hands it
 BARE_TMUX = "set -g mouse on\nset -g status-right '%H:%M'\n"
-DEFAULT_LABELS = ["Esc", "Tab", "^C", "\u2191", "\u2193", "\u2190", "\u2192", "Panel", "Veto", "Stop"]
+DEFAULT_LABELS = ["Esc", "Tab", "^C", "\u2191", "\u2193", "\u2190", "\u2192", "Panel", "Allow", "Cancel"]
 KEY_CARETS = [("Esc", "^["), ("Tab", "^I"), ("^C", "^C"), ("\u2191", "^[[A"), ("\u2193", "^[[B"), ("\u2190", "^[[D"), ("\u2192", "^[[C")]
 
 VIEWPORTS = {  # name: (width, height, touch)
@@ -42,7 +42,7 @@ GEO = """(() => {
   return {win: [innerWidth, innerHeight], docw: document.documentElement.scrollWidth, strip: r(q('#swarmbox-strip')),
           stripShown: !!q('#swarmbox-strip') && !q('#swarmbox-strip').hidden, container: r(q('#terminal-container')), screen: r(q('.xterm-screen')),
           rows: term.rows, cols: term.cols,
-          keys: Array.from(document.querySelectorAll('#swarmbox-strip .sb-key')).map(e => Object.assign({t: e.textContent}, r(e))),
+          keys: Array.from(document.querySelectorAll('#swarmbox-strip .sb-key')).map(e => Object.assign({t: e.textContent, cls: e.className}, r(e))),
           addons: Array.from(document.querySelectorAll('#swarmbox-strip .sb-addon')).map(e => Object.assign({id: e.id}, r(e))),
           keysShown: !!q('#swarmbox-strip .sb-keys') && !q('#swarmbox-strip .sb-keys').hidden, coarse: matchMedia('(pointer: coarse)').matches};
 })()"""
@@ -101,12 +101,14 @@ class StripCase(unittest.TestCase):
         self.assertTrue(heights, "tmux sees %s rows, xterm shows %d: the smaller window" % (self.t.tmux("list-clients", "-F", "#{client_height}").strip(), g["rows"]))
 
     def assert_buttons(self, g, labels=DEFAULT_LABELS):
-        """Every key button and addon control is at least 44 px, inside the strip and the window, and none overlaps the control."""
+        """Every key button and addon control is at least 44 px (40 px on a touch screen: the phone strip is tighter so ten keys take two short rows),
+        inside the strip and the window, and none overlaps the control."""
+        min_h = 40 if g["coarse"] else 44
         self.assertTrue(g["keysShown"])
         self.assertEqual([k["t"] for k in g["keys"]], labels)
         for k in g["keys"] + g["addons"]:
-            self.assertGreaterEqual(k["w"], 44 - 0.01, k)
-            self.assertGreaterEqual(k["h"], 44 - 0.01, k)
+            self.assertGreaterEqual(k["w"], min_h - 0.01, k)
+            self.assertGreaterEqual(k["h"], min_h - 0.01, k)
             self.assertTrue(g["strip"]["top"] <= k["top"] and k["bottom"] <= g["strip"]["bottom"], "inside the strip: %r" % k)
             self.assertGreaterEqual(k["left"], 0)
             self.assertLessEqual(k["right"], g["win"][0] + 0.5, "a button off the screen: %r" % k)
@@ -187,6 +189,15 @@ class Desktop(StripCase):
         self.assert_nothing_covered(g)
         self.assert_buttons(g)
         self.assertIsNotNone(self.page.js("window.__swarmboxClipboard"), "the clipboard bridge is intact with the strip")
+        # a desktop window wider than tall: the strip is only the column of the sysop panel (max(20%, 340 px)), at the right edge
+        s = g["strip"]
+        self.assertAlmostEqual(s["w"], max(0.2 * g["win"][0], 340), delta=2, msg="the strip is the width of the panel column: %r" % s)
+        self.assertAlmostEqual(s["right"], g["win"][0], delta=1, msg="aligned right")
+        # Allow and Cancel are the two coloured answers to the sysop; the other keys are plain
+        classes = {k["t"]: k["cls"].split() for k in g["keys"]}
+        self.assertIn("sb-yes", classes["Allow"])
+        self.assertIn("sb-no", classes["Cancel"])
+        self.assertEqual([t for t, c in classes.items() if "sb-yes" in c or "sb-no" in c], ["Allow", "Cancel"])
         self.shot("desktop-keys-and-control")
         self.assert_keys_deliver_their_bytes(touch=False)
         self.t.tmux("respawn-pane", "-k", "-t", "t:", RAW_CAT)   # one tap is one key; a held arrow repeats

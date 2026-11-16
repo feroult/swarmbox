@@ -138,7 +138,7 @@ voice (input) --pub--> topic (voice.topic) ...... topic (sysop.topic, same name)
   name (`claude`) are data, a piece of text, and not a dependency on those addons.
 - **Safety is a policy of the sysop.** The host-computed risk of each `run` and `input`, a high risk pauses the loop and asks in the panel, budgets (steps, time), a stop that is always possible, a
   live log in the panel and an audit file, an autonomy level as a setting (`confirm-all`, `confirm-risky`, `auto`), and an action of low risk (typing a prompt in a tab that runs an agent is one) is **not**
-  asked first: the panel shows it with a countdown of a few seconds and sends it unless you veto it, so the path can be hands-free and a badly transcribed goal can still be stopped. Text read from a tab is
+  asked first: in the default level `auto` it goes at once, so the path is hands-free; a medium risk shows a countdown of a few seconds that you can cancel, and a high risk waits for Allow. Text read from a tab is
   untrusted data; the `source` of a goal tells how much to trust it.
 - **Only audio crosses the tunnel.** The front on the web terminal port stays with `voice` as an audio entry with a fixed, minimal table.
 
@@ -283,7 +283,7 @@ Answered and removed: the consumer of `goal` (a group), the active tab and the p
 
 - With no subscriber, `pub` fails at once (exit 3). Starting the sysop on demand would need a manifest attribute; left out until it hurts. The same gap appears for 1 to 30 s while the sysop restarts (the voice page says "Nobody is listening").
 - Whether the pause of `swarmbox-tabs send` depends on the program or on the load (the slow ttyd path, other sizes, other Claude Code versions); the UI strings of Claude Code 2.1.325 that mark a dialog or a busy agent can change.
-- The sysop's policy defaults (autonomy, limits) after use by people: today `confirm-risky`, a 4 s countdown, 20 steps, 300 s.
+- The sysop's policy defaults (autonomy, limits) after use by people: today `auto` (harmless actions at once, medium risk a countdown, high risk Allow), a 4 s countdown, 20 steps, 300 s.
 - A message is lost when its subscriber dies after receiving it (no acknowledgement). Does a spoken goal need one, or is "say it again" enough?
 - A goal with a transcription error (a spoken goal can contain wrong words, mostly in a language other than English with `auto`): is the sysop prompt ("a spoken goal can contain errors") and the veto countdown enough, or does it need `ask` to confirm what it understood?
 - Two inputs on one topic and two sysops on different groups: each sysop in its own group gets every goal and both act. Only `sysop.group` prevents it; whether the box should warn (`swarmbox bus topics` shows it) is open.

@@ -1,14 +1,11 @@
 """The panel of the sysop: `swarmbox-sysop panel`, a text program for a tmux pane. Stdlib only (raw ANSI, termios, select).
 
-It shows the goal the sysop is working on and is the place where you answer it: the goal (text and source), the live log of the steps (each tool
-call with a short result, and what the sysop said), the queue of goals, and the PENDING ACTION with its countdown. What you type becomes a goal.
-The panel NEVER takes the focus by itself (dock.py opens it with -d), so these keys only work after you focus it: a mouse click on it, or `Ctrl+A a`
-(the approval gesture, keys.py: it opens the approval prompt here and then focuses the panel). From any tab, without focusing it: `Ctrl+A` then
-V (veto), X (stop), a (approval), g (goal): the tmux keys of container/config/tmux.conf.
-Keys:   c  veto the action that waits in a countdown (it is NOT sent); in an approval, refuse it
-        r  then the word `run` and Enter: allow a HIGH-RISK action (nothing less than the typed word counts; Esc goes back)
-        x  stop the goal that runs (X: the goal and the whole queue)
-        g  type a goal (Enter sends it with source `panel`, Esc aborts)
+It is small and quiet: the state in one word, the goal, a line for each step, and at the bottom what needs YOU, as a coloured bar, the text of
+the action and two big buttons (Allow, Cancel). In the countdown (sending in N s) only Cancel is there. What you type becomes a goal.
+The panel NEVER takes the focus by itself (dock.py opens it with -d). To act without focusing it: the buttons of the web strip, or `Ctrl+A` then
+a (allow), V (cancel: refuses what waits, or stops the goal), g (goal). With the focus, or a click on a button:
+Keys:   a or y  allow the action that waits        c or n  cancel it (it is NOT sent); with nothing waiting, stop the goal
+        x  stop the goal that runs (X: the goal and the whole queue)         g  type a goal (Enter sends it with source `panel`, Esc aborts)
         q  close the panel (the goal goes on)         Up/Down/PgUp/PgDn  scroll the log (Down to the end follows the log again)
 Keys are ignored for GUARD seconds after a new action appears: typing meant for another pane must not answer it.
 
@@ -39,9 +36,6 @@ IDLE_POLL = 1.0         # idle: once a second only a stat of two files and a loc
 MAX_EDIT = service.MAX_GOAL_TEXT
 GOAL_LINES = 3
 MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
-HINT = "These keys work when this pane has the focus (click it). From any tab: Ctrl+A, then V veto, X stop, a approve, g goal."
-IDLE_TEXT = "no goal. Type one: Ctrl+A g"
-IDLE_KEYS = "From any tab: Ctrl+A, then g goal, V veto, X stop, a approve, S hide this panel. The keys below work after a click on this pane."
 LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last one when the panel opens
 TERMINAL = ("done", "stopped", "failed")
 
@@ -309,8 +303,8 @@ class Model:
     def __init__(self, now=0.0):
         self.up = None              # None: not looked yet
         self.bus, self.gid, self.goal, self.pending, self.queue, self.settings = "", "", None, None, [], {}
-        self.mode = "view"          # view | word | edit
-        self.word, self.notice, self.draft = "", "", ""
+        self.mode = "view"          # view | edit
+        self.notice, self.draft = "", ""
         self.editor = None
         self.scroll = 0             # lines back from the end of the log; 0 follows it
         self.ready_at = 0.0
@@ -330,31 +324,10 @@ class Model:
             self.pending_key = key
             if p:
                 self.ready_at = now + GUARD
-                if self.mode == "word":
-                    self.mode, self.word = "view", ""
-                elif self.mode == "edit":      # the countdown runs while you type: the editor yields, the text is kept
+                if self.mode == "edit":      # the countdown runs while you type: the editor yields, the text is kept
                     self.draft, self.editor, self.mode = self.editor.text, None, "view"
                     self.notice = "An action is waiting: answer it first. Your text is kept (g)."
-            elif self.mode == "word":
-                self.mode, self.word = "view", ""
         self.pending = p
-
-    def request_approve(self, req, now, wall):
-        """`swarmbox-sysop approve` asks for the approval prompt of the pending action req["id"]. "wait": the key guard of a new action has not
-        passed, keep the request; "ok": the prompt is open; "no": it cannot be (the request is dropped, the notice says why)."""
-        if not isinstance(req, dict) or req.get("action") != "approve":
-            return "no"
-        if not (self.pending and self.up and self.pmode() == "approve" and self.live(wall)) or str(self.pending.get("id")) != str(req.get("id")):
-            self.notice = "That action is no longer waiting for approval."
-            return "no"
-        if now < self.ready_at:
-            return "wait"
-        self.scroll = 0
-        if self.hidden:
-            self.notice = "The whole action is not on the screen, so it cannot be allowed: refuse it (c) or make the pane bigger."
-            return "no"
-        self.mode, self.word, self.notice = "word", "", ""
-        return "ok"
 
     def pmode(self):
         return "veto" if self.pending and self.pending.get("mode") == "veto" else "approve"      # an unknown mode gets the strongest treatment
@@ -390,8 +363,6 @@ class Model:
             return None
         if self.mode == "edit":
             return self._key_edit(k)
-        if self.mode == "word":
-            return self._key_word(k, wall)
         return self._key_view(k, wall)
 
     def _key_view(self, k, wall):
@@ -411,16 +382,17 @@ class Model:
             self.scroll = 10 ** 6
         elif low == "end":
             self.scroll = 0
-        elif low == "c":
+        elif low in ("a", "y"):
             if self.live(wall):
-                pid = str(self.pending["id"])
-                return ("decide", self.gid, pid, "veto" if self.pmode() == "veto" else "deny", None)
-        elif low == "r":
-            if self.live(wall) and self.pmode() == "approve":
                 if self.hidden:
-                    self.notice = "The whole action is not on the screen, so it cannot be allowed: refuse it (c) or make the pane bigger."
+                    self.notice = "The whole action is not on the screen, so it cannot be allowed: cancel it or make the pane bigger."
                 else:
-                    self.mode, self.word = "word", ""
+                    return ("decide", self.gid, str(self.pending["id"]), "approve", "run")
+        elif low in ("c", "n"):
+            if self.live(wall):
+                return ("decide", self.gid, str(self.pending["id"]), "veto" if self.pmode() == "veto" else "deny", None)
+            if self.running() or self.queue:
+                return ("stop", None)
         elif low == "x":
             target = self.gid if self.running() else (self.queue[0].get("id") if self.queue else None)
             if not target:
@@ -434,26 +406,6 @@ class Model:
                 self.notice = "An action is waiting: answer it first."
             else:
                 self.mode, self.editor = "edit", LineEditor(self.draft, MAX_EDIT)
-        return None
-
-    def _key_word(self, k, wall):
-        if k in ("esc", "ctrl-c"):
-            self.mode, self.word = "view", ""
-        elif k == "enter":
-            ok = self.word.strip().lower() == "run"
-            self.mode, self.word = "view", ""
-            if not self.live(wall):
-                self.notice = "The time is up: the action was refused."
-            elif ok and self.hidden:
-                self.notice = "The whole action is not on the screen, so it cannot be allowed."
-            elif ok:
-                return ("decide", self.gid, str(self.pending["id"]), "approve", "run")
-            else:
-                self.notice = "Not allowed. To allow a high-risk action type the word run and press Enter."
-        elif k == "backspace":
-            self.word = self.word[:-1]
-        elif isinstance(k, str) and len(k) == 1 and k >= " " and len(self.word) < 12:
-            self.word += k
         return None
 
     def _key_edit(self, k):
@@ -474,8 +426,6 @@ class Model:
 Frame = namedtuple("Frame", "lines cursor hits")   # lines: `rows` ANSI strings; cursor: (row, col) 1-based or None; hits: [(row, c0, c1, key)]
 
 RISK_COLOR = {"low": "green", "medium": "amber", "high": "red"}
-STATE_WORD = {"running": ("RUNNING", "green"), "queued": ("QUEUED", "dim"), "waiting_approval": ("WAITING", "amber"), "done": ("DONE", "green"),
-              "failed": ("FAILED", "red"), "stopped": ("STOPPED", "amber")}
 
 
 def _paint(color, name, text, bold=False):
@@ -484,14 +434,7 @@ def _paint(color, name, text, bold=False):
     return ("\x1b[1m" if bold else "") + (fg(name) if name else "") + text + RESET
 
 
-def _badge(word, name, color):
-    """A state or a risk as a word, and with colour as a filled block: never colour alone."""
-    if not color:
-        return "[%s]" % word
-    return "\x1b[1m" + bg(name) + fg("ink") + " %s " % word + RESET
-
-
-SHOW_LINES = 6      # rows of the pending action's text; a longer one shows how many characters are left out, and cannot be approved
+SHOW_LINES = 4      # rows of the pending action's text; a longer one shows how many characters are left out, and cannot be approved
 
 
 def one_line(text, limit):
@@ -512,69 +455,53 @@ def cut(text, width):
 
 
 def state_of(model):
+    """The state as one lowercase word and a colour: what the sysop is doing, in the words of someone who just asked for something."""
     if not model.up:
-        return "SERVICE DOWN", "red"
+        return "off", "red"
     if model.pending:
-        return ("APPROVAL", "red") if model.pmode() == "approve" else ("COUNTDOWN", "amber")
-    return STATE_WORD.get(model.goal.get("state") if model.goal else None, ("IDLE", "dim"))
+        return ("allow?", "red") if model.pmode() == "approve" else ("sending", "amber")
+    return {"running": ("working", "green"), "queued": ("queued", "dim"), "waiting_approval": ("waiting", "amber"), "done": ("done", "green"),
+            "failed": ("failed", "red"), "stopped": ("stopped", "amber")}.get(model.goal.get("state") if model.goal else None, ("idle", "dim"))
 
 
-def args_text(call):
+def step_text(call):
+    """One tool call as a few plain words: `read tab 1`, `run: ls -la`, `type: fix the tests`."""
     a = call.get("args") if isinstance(call.get("args"), dict) else {}
-    parts = [str(a["tab"])] if "tab" in a else []
-    parts += [str(a[k]) for k in ("command", "text", "summary") if k in a]
-    parts += ["%s=%s" % (k, v) for k, v in a.items() if k not in ("tab", "command", "text", "summary") and isinstance(v, (str, int, float, bool))]
-    return one_line(" ".join(parts), 300)
-
-
-def result_text(call):
-    s = call.get("summary")
-    lines = [ln.strip() for ln in clean(s if isinstance(s, str) else "").split("\n") if ln.strip()]
-    return " | ".join(lines)[:300]
-
-
-def verdict_text(v):
-    v = v.get("level") if isinstance(v, dict) else v
-    return v if isinstance(v, str) and v not in ("", "allowed", "low") else ""
+    tool = one_line(call.get("tool"), 30)
+    tab = one_line(a.get("tab"), 12)
+    if tool == "list_tabs":
+        return "look at the tabs"
+    if tool == "read_tab":
+        return "read tab %s" % tab if tab else "read a tab"
+    if tool in ("run", "input"):
+        what = one_line(a.get("command") if tool == "run" else a.get("text"), 200)
+        return "%s: %s" % ("run" if tool == "run" else "type", what)
+    if tool == "wait":
+        return "wait"
+    return tool
 
 
 def _log(model, W, color):
-    """The live log, oldest first: calls and says in time order, then how the goal ended."""
+    """The log, oldest first: a line for each step (a tick, or a cross when it failed) and for what the sysop said, then how the goal ended."""
     rows = []
-
-    def para(name, text, indent, lead=None, bold=False):
-        for n, line in enumerate(wrap(text, max(1, W - indent))):
-            rows.append((lead if (n == 0 and lead is not None) else " " * indent) + _paint(color, name, line, bold))
-
     g = model.goal
     if g:
-        items = [("call", c) for c in g.get("calls") or [] if isinstance(c, dict)] + [("say", s) for s in g.get("say") or [] if isinstance(s, dict)]
-
-        def when(it):
-            t = it[1].get("t")
-            return t if isinstance(t, (int, float)) else 0
-        for kind, it in sorted(items, key=when):
+        items = [("call", c) for c in g.get("calls") or [] if isinstance(c, dict) and c.get("tool") != "done"]
+        items += [("say", s) for s in g.get("say") or [] if isinstance(s, dict)]
+        items.sort(key=lambda it: it[1].get("t") if isinstance(it[1].get("t"), (int, float)) else 0)
+        for kind, it in items:
             if kind == "say":
-                para("lavender", "say: " + one_line(it.get("text"), 600), 2)
-                continue
-            v = verdict_text(it.get("verdict"))
-            head = "%s %s" % (one_line(it.get("tool"), 30), args_text(it))
-            para("text", head + ((" [%s]" % one_line(v, 20)) if v else ""), 4, lead=" " + _paint(color, "violet", ">", True) + " ")
-            res = result_text(it)
-            if res:
-                para("red" if it.get("is_error") else "dim", ("! " if it.get("is_error") else "= ") + res, 4, lead="   ")
+                rows += [" " + _paint(color, "lavender", ln) for ln in wrap(one_line(it.get("text"), 400), W)]
+            else:
+                bad = bool(it.get("is_error"))
+                rows.append(" " + _paint(color, "red" if bad else "green", "✗" if bad else "✓") + " " + _paint(color, "red" if bad else "dim", cut(step_text(it), W - 3)))
         st = g.get("state")
         if st in TERMINAL:
-            why = one_line(g.get("summary") or g.get("error"), 500)
+            why = one_line(g.get("summary") or g.get("error"), 400)
             name = {"done": "green", "failed": "red", "stopped": "amber"}[st]
-            para(name, st + (": " + why if why else ""), 1, bold=True)
-            if g.get("note"):
-                para("dim", one_line(g.get("note"), 300), 1)
-        elif st == "queued":
-            para("dim", "waiting in the queue", 1)
+            rows += [" " + _paint(color, name, ln, True) for ln in wrap(st + (": " + why if why else ""), W)]
     if not model.up:
-        para("red", "The sysop service is not running, so no goal can be run. It starts with the box and again within seconds after a crash; if it stays down: swarmbox-addon prepare", 1)
-        return rows
+        rows += [" " + _paint(color, "red", ln) for ln in wrap("The sysop is not running. It starts with the box.", W)]
     return rows
 
 
@@ -588,69 +515,43 @@ def ago(seconds):
     return "%d s ago" % seconds
 
 
-def _idle_rows(model, W, color):
-    """The idle screen: what to do, the keys that work without the focus, the autonomy, the brain and the topic. The result of the last goal is
-    the log and the goal line the render already shows. Items are separated by a blank line that is the first to go when the pane is short."""
-    s = model.settings if isinstance(model.settings, dict) else {}
-    items = [[(IDLE_TEXT, "lavender", True)], [(IDLE_KEYS, "dim", False)]]
-    facts = []
-    if s.get("autonomy") or s.get("brain"):
-        brain = " ".join(x for x in (one_line(s.get("brain"), 30), ("(%s)" % one_line(s.get("model"), 30)) if s.get("model") else "") if x)
-        facts.append(("autonomy: %s" % (one_line(s.get("autonomy"), 14) or "?"), "text", False))
-        facts.append(("brain: %s" % (brain or "?"), "text", False))
-    if s.get("topic"):
-        facts.append(("topic: %s" % one_line(s.get("topic"), 40), "text", False))
-    if facts:
-        items.append(facts)
-    rows, starts = [], []
-    for n, item in enumerate(items):
-        if n:
-            starts.append(len(rows))
-            rows.append("")
-        for text, name, bold in item:
-            starts.append(len(rows))
-            rows += [" " + _paint(color, name, ln, bold) for ln in wrap(text, W)]
-    return rows, starts
+def _bar(text, name, color, cols):
+    """A full-width bar of colour with text on it (the state that needs you; the colour is the same on every screen, and the words say it too)."""
+    text = " " + cut(text, cols - 2)
+    if not color:
+        return text
+    return "\x1b[1m" + bg(name) + fg("ink") + text + " " * max(0, cols - text_width(text)) + RESET
 
 
-def _drop_block(rows, starts):
-    """Take the last block off the idle rows (a paragraph or a fact stays whole or goes whole, so a short pane never shows half a sentence) and the blank
-    line before it. `starts` is the list of the first row of each block, from _idle_rows; it loses the entries of what went."""
-    while starts and rows:
-        del rows[starts.pop():]
-        if not rows or rows[-1] != "":
+def _buttons(buttons, cols, color, row):
+    """One line of buttons: ([ANSI line], [(row, c0, c1, key)]). A button is a filled block; with no colour it is [Label]."""
+    line, hits, col = "", [], 1
+    for key, label, name in buttons:
+        piece = " %s " % label
+        w = text_width(piece)
+        if col + w > cols:
             break
-    return rows
-
-
-
-def _key_line(keys, cols, color):
-    """The key line(s), wrapped to the width of the pane: ([ANSI lines], [(line index, c0, c1, key)])."""
-    limit = max(10, cols)
-    lines, spans, cur, w, idx = [], [], "", 1, 0
-    for key, label in keys:
-        piece = "[%s] %s" % (key, cut(label, max(1, cols - 2 - len(key) - 3)))
-        pw = text_width(piece)
-        if w + pw > limit and cur:
-            lines.append(cur)
-            cur, w, idx = "", 1, idx + 1
-        cur += " " * (w - text_width(strip_ansi(cur)) if cur else 1)
-        cur += _paint(color, "violet", "[%s]" % key, True) + _paint(color, "text", piece[len(key) + 2:])
-        spans.append((idx, w + 1, w + pw, key))
-        w += pw + 2
-    if cur:
-        lines.append(cur)
-    return lines, spans
+        line += " "
+        col += 1
+        shown = _paint(color, None, "[%s]" % label) if not color else "\x1b[1m" + bg(name) + fg("ink") + piece + RESET
+        w = text_width(strip_ansi(shown))
+        line += shown
+        hits.append((row, col, col + w - 1, key))
+        col += w
+    return line, hits
 
 
 def _pending_lines(model, W, wall, color):
+    """The action that waits, as a bar (what is needed from you) and the text of the action."""
     p = model.pending
-    lv, name = model.risk(), RISK_COLOR[model.risk()]
-    left = model.remaining(wall)
-    badge = _badge(lv.upper() + " RISK", name, color)
-    where = "tab %s: %s" % (one_line(p.get("label") or p.get("tab"), 40), one_line(p.get("kind"), 10))
-    room = W - text_width(strip_ansi(badge)) - 2
-    rows = [" " + _paint(color, "dim", cut(where, room)) + "  " + badge] if room >= 8 else [" " + _paint(color, "dim", cut(where, W)), " " + badge]
+    lv = model.risk()
+    left = max(0, int(model.remaining(wall) + 0.999))
+    tab = one_line(p.get("label") or p.get("tab"), 20)
+    if model.pmode() == "veto":
+        head, name = "sending in %d s" % left if left else "sending", "amber"
+    else:
+        head, name = "allow? %s risk" % lv, ("red" if lv == "high" else "amber")
+    bar = _bar("%s · tab %s" % (head, tab), name, color, W + 2)
     full = one_line(p.get("text"), 4100)
     text = wrap(full, W - 3)
     model.hidden = 0
@@ -659,109 +560,66 @@ def _pending_lines(model, W, wall, color):
     else:
         shown = text[:SHOW_LINES - 1]
         model.hidden = max(1, len(full) - sum(len(x) for x in shown))
-    for ln in shown:
-        rows.append("  > " + _paint(color, "text", ln))
+    rows = [bar] + [" " + _paint(color, "violet", "›") + " " + _paint(color, "text", ln) for ln in shown]
     if model.hidden:
-        note = "(+%d more characters NOT shown)" % model.hidden
-        if model.pmode() == "approve":
-            note += ": it cannot be allowed here, only refused"
-        rows += ["    " + _paint(color, "red", ln, True) for ln in wrap(note, W - 4)]
-    reasons = [one_line(r, 200) for r in (p.get("reasons") if isinstance(p.get("reasons"), list) else [])[:6]]
-    if lv != "low" and reasons:
-        rows += [" " + _paint(color, name, ln) for ln in wrap("why: " + "; ".join(reasons), W)]
-    if model.pmode() == "veto":
-        msg = "sent in %d s unless you veto it: Ctrl+A V, or click here and press c" % int(left + 0.999) if left > 0 else "sending now"
-        rows += [" " + _paint(color, "amber", ln, True) for ln in wrap(msg, W)]
-    else:
-        msg = ("NOT sent unless you allow it: Ctrl+A a, then type run and Enter (or click here, r, run). Refused in %s" % clock(int(left + 0.999))) if left > 0 else "time is up: refused"
-        rows += [" " + _paint(color, "red", ln, True) for ln in wrap(msg, W)]
+        rows += [" " + _paint(color, "red", ln, True) for ln in wrap("+%d more characters not shown: cancel it" % model.hidden, W)]
+    reasons = [one_line(r, 120) for r in (p.get("reasons") if isinstance(p.get("reasons"), list) else [])[:1]]
+    if lv != "low" and reasons and model.pmode() == "approve":
+        rows += [" " + _paint(color, RISK_COLOR[lv], ln) for ln in wrap(reasons[0], W)[:2]]
     return rows
 
 
 def render(model, cols, rows, wall, color=True):
-    """The screen as a Frame of exactly `rows` lines. The key line is at the bottom and always visible; the log shows its end (Up scrolls back)."""
+    """The screen as a Frame of exactly `rows` lines: the state, the goal, the steps, and at the bottom what needs you (a bar, the action, buttons)."""
     cols, rows = max(16, cols), max(4, rows)
     W = cols - 2
     word, name = state_of(model)
-    title = _paint(color, "violet", "SYSOP", True)
-    extra = ""
-    if model.up and model.queue:
-        extra = _paint(color, "dim", "%d queued" % len(model.queue))
-    if model.up and model.bus and model.bus != "connected":
-        extra = _paint(color, "red", "bus %s" % one_line(model.bus, 12))
-    badge = _badge(word, name, color)
-    options = [" %s  %s%s" % (title, badge, ("  " + extra) if extra else ""), " %s  %s" % (title, badge), " " + badge]
-    head = next((o for o in options if text_width(strip_ansi(o)) <= cols), options[-1])
+    head, used = " " + _paint(color, "violet", "SYSOP", True) + "  " + _paint(color, name, word, True), 8 + len(word)
+    for text, tone in (("+%d queued" % len(model.queue) if model.up and model.queue else "", "dim"),
+                       ("bus %s" % one_line(model.bus, 12) if model.up and model.bus and model.bus != "connected" else "", "red")):
+        if text and used + 2 + len(text) <= cols:
+            head += "  " + _paint(color, tone, text)
+            used += 2 + len(text)
 
     top = []
     g = model.goal
-    idle = bool(model.up and model.mode == "view" and not model.pending and not model.queue and (not g or g.get("state") in TERMINAL))
     if g and model.up:
-        label = "goal (%s)" % one_line(g.get("source"), 12)
-        if g.get("state") in TERMINAL:
-            when = ", " + ago(wall - g["ended"]) if isinstance(g.get("ended"), (int, float)) else ""
-            label = "last goal (%s%s)" % (one_line(g.get("source"), 12), when)
-        lines = wrap("%s: %s" % (label, one_line(g.get("text"), 1000)), W)
+        lines = wrap(one_line(g.get("text"), 1000), W)
         if len(lines) > GOAL_LINES:
             lines = lines[:GOAL_LINES]
             lines[-1] = cut(lines[-1] + " …", W)
-        top = [" " + _paint(color, "lavender", ln) for ln in lines]
+        top = [" " + _paint(color, "lavender", ln, True) for ln in lines]
 
-    queue_l = []
-    if model.up and model.queue:
-        for n, q in enumerate(model.queue[:3]):
-            queue_l.append(" " + _paint(color, "dim", cut("queue %d (%s): %s" % (n + 1, one_line(q.get("source"), 12), one_line(q.get("text"), 200)), W)))
-        if len(model.queue) > 3:
-            queue_l.append(" " + _paint(color, "dim", "+%d more" % (len(model.queue) - 3)))
     pend_l = _pending_lines(model, W, wall, color) if (model.pending and model.up) else []
     notice_l = [" " + _paint(color, "red", ln) for ln in wrap(model.notice, W)] if model.notice else []
-    prompt_l, key_lines, spans, cursor_at, hint_l = [], [], [], None, []
-    if model.mode == "word":
-        prompt_l = [" " + _paint(color, "red", ln) for ln in wrap("HIGH RISK. To allow it type the word run, then Enter. Esc goes back.", W)]
-        prompt_l.append(" > " + model.word)
-        cursor_at = (len(prompt_l), 4 + text_width(model.word))
-    elif model.mode == "edit":
-        prompt_l = [" " + _paint(color, "violet", ln) for ln in wrap("New goal. Enter sends it, Esc aborts.", W)]
+    prompt_l, buttons, cursor_at = [], [], None
+    if model.mode == "edit":
+        prompt_l = [" " + _paint(color, "violet", "Goal (Enter sends, Esc cancels):")]
         shown, curw, left, right = model.editor.view(W - 1)
         prompt_l.append(("<" if left else " ") + _paint(color, "lavender", shown) + (">" if right else ""))
         cursor_at = (len(prompt_l), curw + 2)
     else:
-        keys = []
         if model.up and model.live(wall):
-            keys = [("c", "Veto")] if model.pmode() == "veto" else ([] if model.hidden else [("r", "Allow (type run)")]) + [("c", "Refuse")]
-        if model.up and (model.running() or model.queue):
-            keys.append(("x", "Stop"))
-        if model.up and not model.live(wall):
-            keys.append(("g", "Goal"))
-        keys.append(("q", "Hide" if model.panel_mode == "always" else "Close"))
-        key_lines, spans = _key_line(keys, cols, color)
-        if model.focused is not True and not idle:       # the idle screen says it in its own words (IDLE_KEYS)
-            hint_l = [" " + _paint(color, "dim", ln) for ln in wrap(HINT, W)]
-
-    idle_l, idle_starts = _idle_rows(model, W, color) if idle else ([], [])
-    idle_top = None
-    if idle_l and not g:
-        idle_l, idle_top = [], idle_l          # no goal to show above it: the idle screen takes the place of the log, right under the head
+            buttons = ([] if (model.hidden or model.pmode() == "veto") else [("a", "Allow", "green")]) + [("c", "Cancel", "red")]
+        elif model.up and (model.running() or model.queue):
+            buttons = [("c", "Stop", "red")]
+        elif model.up:
+            buttons = [("g", "Goal", "violet")]
 
     def total():
-        return len(top) + len(queue_l) + len(pend_l) + len(notice_l) + len(hint_l) + len(prompt_l) + len(key_lines) + len(idle_l)
-    while rows - 1 - total() < 1 and idle_l:
-        _drop_block(idle_l, idle_starts)
-    while rows - 1 - total() < 1 and hint_l:
-        hint_l.pop()
-    while rows - 1 - total() < 1 and queue_l:
-        queue_l.pop()
+        return len(top) + len(pend_l) + len(notice_l) + len(prompt_l) + (1 if buttons else 0)
+    while rows - 1 - total() < 1 and notice_l:
+        notice_l.pop()
     while rows - 1 - total() < 1 and len(top) > 1:
         top.pop()
-    while rows - 1 - total() < MIN_LOG and len(top) > 1:        # a short pane: the end of the log (the result of the goal) is worth more than the 2nd and 3rd line of the goal
+    while rows - 1 - total() < MIN_LOG and len(top) > 1:
         top.pop()
     avail = max(1, rows - 1 - total())
-    if idle_top is not None:
-        while len(idle_top) > avail and len(idle_starts) > 1:
-            _drop_block(idle_top, idle_starts)
-        body = idle_top[:avail]
-    else:
-        body = _log(model, W, color)
+    body = _log(model, W, color)
+    if not body and model.up and not g:
+        body = [" " + _paint(color, "dim", ln) for ln in wrap("Say or type a goal.", W)]
+    elif not body and g and g.get("state") in TERMINAL:
+        body = []
     s = max(0, min(model.scroll, max(0, len(body) - 1)))
     model.scroll = s
     if len(body) <= avail:
@@ -770,27 +628,25 @@ def render(model, cols, rows, wall, color=True):
         end = len(body) - s
         room = avail - (1 if s else 0)
         start = max(0, end - room)
-        older = start > 0 and room >= MIN_LOG + 1                # no marker when it would leave less than MIN_LOG lines of the log: the lines matter more
-        if older:
+        if start > 0 and room >= MIN_LOG + 1:
             room -= 1
             start = max(0, end - room)
         visible = body[start:end]
-        if older:
+        if start > 0 and room >= MIN_LOG:
             visible = [" " + _paint(color, "dim", cut("%d earlier (Up)" % start, W))] + visible
         if s:
             visible = visible + [" " + _paint(color, "dim", cut("%d later (Down)" % s, W))]
-    out = [head] + top + visible + idle_l
-    while len(out) < rows - (total() - len(top) - len(idle_l)):
+    out = [head] + top + visible
+    while len(out) < rows - (total() - len(top)):
         out.append("")
     base = len(out)
-    out += queue_l + pend_l + notice_l + hint_l + prompt_l
+    out += pend_l + notice_l + prompt_l
     hits = []
-    if key_lines:
-        first = len(out)
-        hits = [(first + 1 + i, c0, c1, key) for i, c0, c1, key in spans]
-        out += key_lines
-    cursor = (base + len(queue_l) + len(pend_l) + len(notice_l) + cursor_at[0], cursor_at[1]) if cursor_at else None
-    if len(out) > rows:                       # too small for everything: the head and the end (prompt, keys) win
+    if buttons:
+        line, hits = _buttons(buttons, cols, color, len(out) + 1)
+        out.append(line)
+    cursor = (base + len(pend_l) + len(notice_l) + cursor_at[0], cursor_at[1]) if cursor_at else None
+    if len(out) > rows:                       # too small for everything: the head and the end (action, buttons) win
         drop = len(out) - rows
         out = [out[0]] + out[1 + drop:]
         hits = [(r - drop, a, b, k) for r, a, b, k in hits if r - drop > 1]
@@ -848,25 +704,11 @@ class Panel:
                 continue
             data = data[n:]
 
-    def take_request(self):
-        """The approval request of `swarmbox-sysop approve`: deleted once taken, so the command knows the prompt is open before it focuses us."""
-        req = ipc.read_json(self.paths.panel_request)
-        if req is None:
-            if os.path.exists(self.paths.panel_request):      # damaged: nothing to do with it
-                ipc.remove(self.paths.panel_request)
-            return
-        mine = os.environ.get("TMUX_PANE")
-        if mine and isinstance(req, dict) and req.get("pane") and req.get("pane") != mine:
-            return                                            # for the panel of another window (there is one in each): not ours to take or to delete
-        if self.model.request_approve(req, self.now(), self.wall()) != "wait":
-            ipc.remove(self.paths.panel_request)
-            self.drawn = None
-
     def changed(self):
-        """True when the next look can show something new: the service came or went, status.json or the approval request changed. A stat of two files
+        """True when the next look can show something new: the service came or went or status.json changed. A stat of one file
         and a lock probe; this is all the idle panel does each second."""
         sig = [service.running(self.paths)]
-        for f in (self.paths.status, self.paths.panel_request):
+        for f in (self.paths.status,):
             try:
                 st = os.stat(f)
                 sig.append((st.st_ino, st.st_mtime_ns, st.st_size))
@@ -891,7 +733,6 @@ class Panel:
         if snap.gid:
             self.last_gid = snap.gid
         self.model.update(snap, self.now())
-        self.take_request()
 
     def draw(self, force=False):
         cols, rows = self.size()
@@ -959,8 +800,6 @@ class Panel:
         if k == "focus-out":
             self.focus_at = None
             self.model.focused = False
-            if self.model.mode == "word":              # the focus went elsewhere: a half-typed word does not wait for it
-                self.model.mode, self.model.word = "view", ""
             return
         if isinstance(k, tuple):
             if k[0] == "wheel":

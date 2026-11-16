@@ -7,9 +7,6 @@ In the run folder (paths.Paths.run):
                      "queue": [{"id", "source", "text", "queued"}], "settings": {...}, "rejected": N, "version"}
   stop.request       written by `swarmbox-sysop stop` and by the panel's stop key: {"goal": id or null (the running one and the queue), "time"}.
                      The service takes it (reads and deletes it) within 0.2 s, kills the process group of the brain and ends the goal as `stopped`.
-  panel.request      written by `swarmbox-sysop approve` (keys.py): {"action": "approve", "id": the pending action, "time", "pane": the tmux pane id of
-                     the panel to take it, or null}. The panel whose pane it is (every window has one; a request with no pane is taken by any) takes
-                     it (reads and deletes it) and opens its approval prompt for that action; the command then gives that panel the focus.
 In the goal folder (state/goals/<id>/):
   state.json         written by the service only: {"id", "source", "text", "state", "created", "started", "ended", "say": [{"t", "text"}],
                      "calls": the last 12 [{"t", "tool", "args", "verdict", "is_error", "summary"}], "pending": the pending action or null,

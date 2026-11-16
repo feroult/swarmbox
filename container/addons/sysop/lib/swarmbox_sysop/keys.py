@@ -2,20 +2,16 @@
 container/config/tmux.conf: Ctrl+A then V / X / a / g.
 
 Why they exist: the panel never takes the focus by itself (dock.Follower opens it with -d), so what you type in your own tab never reaches it.
-Its own keys (c, x, r, g) only work once you focus it with a click or with the approval gesture below. These commands are the way to act on
+Its own keys only work once you focus it with a click. These commands are the way to act on
 the goal without that:
 
-  veto       V   refuse what waits: a countdown is vetoed (it is NOT sent), an approval is refused. Writes decision.json like the panel's c.
+  veto       V   Cancel: refuse what waits (a countdown is vetoed, it is NOT sent; an approval is refused); with nothing waiting it stops the goal.
+                 Writes decision.json like the panel's Cancel.
   stop       X   `swarmbox-sysop stop`: ends the goal and drops the queue (cmd_stop in cli.py).
-  approve    a   the stronger gesture for a HIGH-RISK action: it does NOT allow anything. It makes the panel of this window exist, tells it to open
-                 its approval prompt, waits until it did, and only THEN gives it the focus. So keys typed before the gesture went to your tab, and
-                 keys typed after it are the word `run` you mean to type (nothing is allowed until the panel gets `run` and Enter).
+  approve    a   allow what waits (a high-risk action, or a countdown now). One press, no typed word: it is a tmux prefix key or a tap on the Allow
+                 button of the web strip, which a program in a tab cannot press. Writes decision.json like the panel's Allow.
   goal       g   `swarmbox-sysop goal` with no text on a terminal asks for the goal on one line (tmux runs it in a popup: a popup takes the keys
                  of the client, never of the panel).
-
-The approve request is a file in the run folder (ipc.py: panel.request, {"action": "approve", "id": the pending action, "time", "pane": the tmux
-pane of the panel that is to take it}); the panel deletes it when it has taken it (panel.py, Panel.take_request). Every window has a panel, so the
-pane says which one: the others leave the request alone.
 """
 import os
 import sys
@@ -66,35 +62,20 @@ def veto(pth, tmux=None, client=""):
     return 0
 
 
-def approve(pth, dk, window, tmux=None, client="", wait=ACK_SECONDS):
-    """The key a. Exit code 0 when the panel has its approval prompt open and the focus, 1 otherwise (and nothing was focused)."""
+def approve(pth, dk=None, window=None, tmux=None, client="", wait=0):
+    """The key a (and the Allow button of the web strip): allow what waits. A countdown is sent now; a high-risk action is allowed. It is a
+    deliberate gesture of a client of tmux (a prefix key or a tap on a button), which is why it needs no typed word. Writes decision.json with
+    the word the service requires. Exit code 0 when a decision was written, 1 when nothing waits."""
     gid, p = pending_of(pth)
-    if not p or not _live(p) or p.get("mode") == "veto":
-        _say("no high-risk action is waiting for approval", tmux, client)
+    if not p or not _live(p):
+        _say("nothing is waiting for you", tmux, client)
         return 1
     try:
-        dk.open(window=window, focus=False, auto=True)
-    except dock.DockError as e:
-        _say("the panel could not be opened: %s" % e, tmux, client)
-        return 1
-    try:
-        # the request names the pane: with a panel in every window, only the panel that is about to get the focus may take it
-        ipc.write_json(pth.panel_request, {"action": "approve", "id": str(p["id"]), "time": time.time(), "pane": dk.panel_pane(window)})
+        ipc.write_json(os.path.join(pth.goal_dir(gid), "decision.json"), {"id": str(p["id"]), "decision": "approve", "by": "key", "word": "run"})
     except OSError as e:
-        _say("could not ask the panel: %s" % (e.strerror or e), tmux, client)
+        _say("could not write the decision: %s" % (e.strerror or e), tmux, client)
         return 1
-    end = time.time() + wait
-    while time.time() < end and os.path.exists(pth.panel_request):
-        time.sleep(0.05)
-    if os.path.exists(pth.panel_request):
-        ipc.remove(pth.panel_request)
-        _say("the panel did not answer: focus it with a click", tmux, client)
-        return 1
-    try:
-        dk.focus(window=window)
-    except dock.DockError as e:
-        _say("the panel could not be focused: %s" % e, tmux, client)
-        return 1
+    _say("allowed", tmux, client)
     return 0
 
 

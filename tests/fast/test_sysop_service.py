@@ -211,7 +211,7 @@ class Flow(Base):
         st = self.status()
         self.assertEqual(st["pid"], os.getpid())
         self.assertEqual((st["bus"], st["current"], st["queue"]), ("connected", None, []))
-        self.assertEqual(st["settings"]["autonomy"], "confirm-risky")
+        self.assertEqual(st["settings"]["autonomy"], "auto")
         self.assertEqual(st["settings"]["max_goals"], 5)
         self.assertEqual(st["version"], "1.0.0")
 
@@ -512,7 +512,7 @@ class Stopping(Base):
 
     def test_stop_while_a_countdown_is_running(self):
         self.script([{"tool": "run", "args": {"tab": "@1", "command": "ls"}}] + DONE)
-        self.start(countdown=30)
+        self.start(countdown=30, autonomy="confirm-risky")
         a = self.goal("a")
         self.wait_state(a, ("waiting_approval",))
         ipc.request_stop(self.e.paths)
@@ -762,7 +762,7 @@ class Cli(Base):
         self.assertEqual(s.returncode, 0)
         self.assertIn("running (pid %d)" % os.getpid(), s.stdout)
         self.assertIn("current: %s" % gid, s.stdout)
-        self.assertIn("autonomy confirm-risky", s.stdout)
+        self.assertIn("autonomy auto", s.stdout)
         j = json.loads(self.run_cli("status", "--json").stdout)
         self.assertTrue(j["running"])
         self.assertEqual(j["recent"][0]["id"], gid)

@@ -672,10 +672,11 @@ class Autonomy(Rig):
         table = [("confirm-all", "ls", "@1", "approve"),
                  ("confirm-risky", "ls", "@1", "veto"), ("confirm-risky", "cd x && make", "@1", "approve"), ("confirm-risky", "rm x", "@1", "approve"),
                  ("confirm-risky", "run the tests", "@2", "veto"),            # a prompt for an agent is a countdown, not a question
-                 ("auto", "ls", "@1", "veto"), ("auto", "cd x && make", "@1", "veto"), ("auto", "rm x", "@1", "approve")]
+                 ("auto", "ls", "@1", None), ("auto", "run the tests", "@2", None),      # auto: a harmless action goes at once, no question
+                 ("auto", "cd x && make", "@1", "veto"), ("auto", "rm x", "@1", "approve")]
         for autonomy, command, tab, want in table:
             with self.subTest(autonomy=autonomy, command=command):
-                self.assertEqual(self.level(autonomy, command, tab), [want])
+                self.assertEqual(self.level(autonomy, command, tab), [want] if want else [])
 
 
 class Blocked(Rig):

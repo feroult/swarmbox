@@ -45,7 +45,7 @@ The three area ledgers in this folder say where each old test went; this file sa
 | a framed page must not get the voice or strip controls (frame-ancestors, X-Frame-Options) | `fast/test_voice_front.py::VoicePath`, `fast/test_web_strip_script.py::FakeDom` | fast |
 | a brain left running after an error of the supervisor | `fast/test_sysop_brain.py::BrainSupervision` | fast |
 | keys typed in the tab while a goal arrives answered an action that had just appeared (the keys guard; the panel never takes the focus) | `fast/test_sysop_panel.py::Keys::test_keys_are_ignored_for_half_a_second_after_a_new_action`, `slow/test_sysop_dock.py::NoFocus`, `slow/test_sysop_always.py::NoFocusSteal`, `slow/test_sysop_web.py` | fast + slow |
-| the text that does not fit cannot be allowed with `run`; a long command is shown whole | `fast/test_sysop_panel.py::ApprovalRequest` | fast |
+| the text that does not fit cannot be allowed; a long command is shown whole | `fast/test_sysop_panel.py::Approval` | fast |
 | the result of the last goal in a short pane; a paragraph whole or gone | `fast/test_sysop_panel.py::IdleScreen` | fast |
 | the panel in a portrait, landscape, narrow or short window; a resize flips the layout | `fast/test_sysop_dock_logic.py::LayoutRule`, `slow/test_sysop_always.py::Resizing` | fast + slow |
 | the real stop ends the goal and nothing more is typed (pid of its own brain, never a `pgrep` of the machine) | `slow/test_sysop_real.py` | slow |

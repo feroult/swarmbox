@@ -47,7 +47,7 @@ KEYS = {
     "sysop.group": ("sysop", "ops2", "g-1", ["Sysop", "-x", "a b", "a/b", "x" * 64, "_x"]),
     "sysop.brain": ("claude", "claude", "gemini -p {mcp_config}", ["a\nb", "foo bar", "gemini -p"]),
     "sysop.model": ("haiku", "sonnet", "claude-sonnet-4-5", ["a b", "-x", "a;b", "$(x)"]),
-    "sysop.autonomy": ("confirm-risky", "auto", "confirm-all", ["yes", "Auto", "confirm"]),
+    "sysop.autonomy": ("auto", "confirm-risky", "confirm-all", ["yes", "Auto", "confirm"]),
     "sysop.countdown": ("4", "0", "30", ["31", "-1", "1.5", "abc", "04", "+3"]),
     "sysop.max_steps": ("20", "1", "100", ["0", "101", "x", "010"]),
     "sysop.max_seconds": ("300", "10", "3600", ["9", "3601", "1e3", "0"]),
@@ -412,16 +412,16 @@ class SysopFlagsTest(CreateFlagsBase):
     def test_defaults_and_explicit_defaults_pass_nothing(self):
         base = self.fp()
         self.assertEqual(self.sysop(self.flags()), [])
-        cfg = "sysop.brain=claude\nsysop.model=haiku\nsysop.autonomy=confirm-risky\nsysop.countdown=4\nsysop.max_steps=20\nsysop.max_seconds=300\n"
+        cfg = "sysop.brain=claude\nsysop.model=haiku\nsysop.autonomy=auto\nsysop.countdown=4\nsysop.max_steps=20\nsysop.max_seconds=300\n"
         self.assertEqual(self.sysop(self.flags(cfg=cfg)), [])
         self.assertEqual(self.fp(cfg=cfg), base)
 
     def test_other_values_pass_and_change_the_fingerprint(self):
-        cfg = ("sysop.brain=gemini -p {mcp_config} 'x'\nsysop.model=sonnet\nsysop.autonomy=auto\nsysop.countdown=0\n"
+        cfg = ("sysop.brain=gemini -p {mcp_config} 'x'\nsysop.model=sonnet\nsysop.autonomy=confirm-risky\nsysop.countdown=0\n"
                "sysop.max_steps=5\nsysop.max_seconds=60\n")
         base = self.fp()
         self.assertEqual(self.sysop(self.flags(cfg=cfg)), [
-            "SWARMBOX_SYSOP_BRAIN=gemini -p {mcp_config} 'x'", "SWARMBOX_SYSOP_MODEL=sonnet", "SWARMBOX_SYSOP_AUTONOMY=auto",
+            "SWARMBOX_SYSOP_BRAIN=gemini -p {mcp_config} 'x'", "SWARMBOX_SYSOP_MODEL=sonnet", "SWARMBOX_SYSOP_AUTONOMY=confirm-risky",
             "SWARMBOX_SYSOP_COUNTDOWN=0", "SWARMBOX_SYSOP_MAX_STEPS=5", "SWARMBOX_SYSOP_MAX_SECONDS=60"])
         self.assertNotEqual(self.fp(cfg=cfg), base)
 

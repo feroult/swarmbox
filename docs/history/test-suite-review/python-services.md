@@ -86,7 +86,7 @@ Test counts and seconds are in the table above (seconds: the baseline's host col
 | two SIGTERMs in a row left a traceback (voice) | `test_voice_soak.py::TwoSigterms` | fast |
 | the body that trickles in held a slot of the voice front for ever | `test_voice_front.py::VoicePath::test_a_body_that_trickles_in_has_a_total_deadline` | fast |
 | the dialog that opens while an action waits stops it; keys typed in the tab while a goal arrives never reach a countdown or an approval | `test_sysop_mcp.py::ServerWait`; `slow/test_sysop_dock.py::NoFocus`, `slow/test_sysop_always.py::NoFocusSteal`, `slow/test_sysop_web.py` | fast + slow |
-| the text that does not fit cannot be allowed with `run`; a command of 615 characters shown whole | `test_sysop_panel.py::ApprovalRequest` (two tests) | fast |
+| the text that does not fit cannot be allowed; a command of 615 characters shown whole | `test_sysop_panel.py::Approval` (two tests) | fast |
 | the result of the last goal in a short pane; a paragraph whole or gone | `test_sysop_panel.py::IdleScreen` (two tests) | fast |
 | the keys guard (stray typing answered an action that had just appeared) | `test_sysop_panel.py::Keys::test_keys_are_ignored_for_half_a_second_after_a_new_action`, `PanelObject::test_the_veto_key_writes_the_decision_once_the_guard_has_passed`, `slow/test_sysop_panel_pty.py::test_the_countdown_ticks_and_the_keys_decide` | fast + slow |
 | the burst of kill and restart of the broker; the stale socket | `test_bus_serve.py`, `test_bus_cli.py::NotRunning` | fast |

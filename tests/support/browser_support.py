@@ -168,6 +168,9 @@ class Chromium:
         self.dbg = free_port()
         self.proc = subprocess.Popen(
             [CHROMIUM, "--headless=new", "--no-sandbox", "--disable-gpu", "--remote-debugging-port=%d" % self.dbg,
+             # headless Chromium has no pointing device (pointer: none); a desktop has a mouse, and the page styles a desktop window apart (the touch
+             # viewports still turn into pointer: coarse with their touch emulation)
+             "--blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2",
              "--user-data-dir=" + os.path.join(self.tmp, "chrome"), *extra, "about:blank"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         version = wait_until(lambda: _json("http://127.0.0.1:%d/json/version" % self.dbg, timeout=1), 30, 0.1)

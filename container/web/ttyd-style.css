@@ -48,6 +48,21 @@
 #swarmbox-strip .sb-btn:active { background: var(--sb-deep); color: #fff; }
 #swarmbox-strip .sb-btn:focus-visible { outline: 2px solid var(--sb-lavender); outline-offset: 1px; }
 #swarmbox-strip .sb-addon { padding: 0; }
+/* Allow and Cancel, the two answers to the sysop: green and red, the first of the row, so a thumb finds them and the colour says which is which */
+#swarmbox-strip .sb-yes { background: #166534; border-color: var(--sb-green); color: #fff; order: -2; }
+#swarmbox-strip .sb-no { background: #7f1d1d; border-color: var(--sb-red); color: #fff; order: -1; }
+#swarmbox-strip .sb-yes:active { background: var(--sb-green); color: #052e16; }
+#swarmbox-strip .sb-no:active { background: var(--sb-red); color: #450a0a; }
+/* a phone: smaller type and tighter buttons, so ten keys take two short rows */
+@media (pointer: coarse) {
+  #swarmbox-strip { --sb-btn: 40px; font-size: 13px; gap: 5px; }
+  #swarmbox-strip .sb-keys { gap: 5px; }
+  #swarmbox-strip .sb-btn { padding: 0 9px; }
+}
+/* a desktop window wider than tall: the panel of the sysop is the right-hand column, so the strip is only as wide as that column and sits below it */
+@media (pointer: fine) and (min-aspect-ratio: 1/1) {
+  #swarmbox-strip { margin-left: auto; width: max(20%, 340px); border-left: 1px solid var(--sb-band); }
+}
 /* the sentence an addon shows: it covers the key buttons until the addon clears it or the host does (12 s, opaque, tap to dismiss), on two lines at most and ends where the addon controls begin */
 #swarmbox-strip .sb-note {
   position: absolute; z-index: 2; top: 0; bottom: 0; left: 0; right: var(--sb-slot-w, 0px); display: flex; align-items: center;

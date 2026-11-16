@@ -24,10 +24,10 @@ THE RISK of an action (assess_run / assess_input), low, medium or high, plus `bl
 WHAT HAPPENS (route) depends on the autonomy level and on the risk:
                     low          medium       high
   confirm-all       approve      approve      approve
-  confirm-risky     countdown    approve      approve        (the default)
-  auto              countdown    countdown    approve
+  confirm-risky     countdown    approve      approve
+  auto              at once      countdown    approve        (the default)
   `countdown` = the action is shown in the panel and sent after SWARMBOX_SYSOP_COUNTDOWN seconds unless the user vetoes it (0 = sent at once);
-  `approve` = it is NOT sent unless the user types the word `run` in the panel, and after SWARMBOX_SYSOP_APPROVAL_TIMEOUT seconds it is
+  `approve` = it is NOT sent unless the user allows it (a tap on Allow in the panel or on the strip, or Ctrl+A a), and after SWARMBOX_SYSOP_APPROVAL_TIMEOUT seconds it is
   refused. No autonomy level sends a high-risk action without that approval. A blocked action is refused outright.
 
 THE BUDGETS (Budget): at most max_steps tool calls (say and done do not count) and until a deadline; past either, every tool but say and
@@ -170,7 +170,7 @@ class Buffer:
 
 
 class Policy:
-    def __init__(self, autonomy="confirm-risky", countdown=4.0, approval_timeout=60.0, max_steps=20, deadline=None, clock=time.time):
+    def __init__(self, autonomy="auto", countdown=4.0, approval_timeout=60.0, max_steps=20, deadline=None, clock=time.time):
         self.autonomy, self.countdown, self.approval_timeout = autonomy, float(countdown), float(approval_timeout)
         self.budget = Budget(max_steps, deadline, clock)
         self.buffers = {}
@@ -333,6 +333,6 @@ class Policy:
         level = verdict.level
         if self.autonomy == "confirm-all" or level == "high" or (level == "medium" and self.autonomy == "confirm-risky"):
             return Route("approve", self.approval_timeout)
-        if self.countdown <= 0:
+        if self.countdown <= 0 or (self.autonomy == "auto" and level == "low"):
             return Route("allow")
         return Route("veto", self.countdown)

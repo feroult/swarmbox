@@ -76,7 +76,7 @@ class Always(td.RealTmux):
         return subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop", "dock", *args, "--socket", sock], env=self.env, capture_output=True, text=True, timeout=30)
 
     def serve_files(self, **status):
-        """the files of a running service (the lock and status.json), so the panels show the idle screen and not SERVICE DOWN"""
+        """the files of a running service (the lock and status.json), so the panels show the idle screen and not the "not running" text"""
         self.pth.make()
         fd = os.open(self.pth.lock, os.O_RDWR | os.O_CREAT, 0o600)
         self.addCleanup(os.close, fd)
@@ -105,10 +105,12 @@ class AtStart(Always):
         self.attach(50, 200)
         self.d.sync()
         panel, = self.panels()
-        self.wait(lambda: "no goal. Type one" in self.screen(panel["id"]), "the idle text")
+        self.wait(lambda: "Say or type a goal." in self.screen(panel["id"]), "the idle text")
         text = self.screen(panel["id"])
-        for needle in ("SYSOP", "IDLE", "autonomy: confirm-risky", "brain: claude (haiku)", "topic: goal", "[q] Hide"):
+        for needle in ("SYSOP  idle", "Say or type a goal.", "Goal"):
             self.assertIn(needle, text)
+        for gone in ("autonomy:", "brain:", "topic:", "[q] Hide", "no goal. Type"):
+            self.assertNotIn(gone, text, "the idle panel is short: the state, one sentence and a button")
 
     def test_the_hooks_are_set_by_the_first_sync_and_stay(self):
         self.attach(50, 200)
@@ -296,8 +298,8 @@ class Resizing(Always):
             self.wait(lambda: "SYSOP" in (self.screen(panel["id"]).splitlines() or [""])[0], "the panel to redraw at %dx%d: %s" % (cols, rows, self.panes()))
             text = self.screen(panel["id"])
             self.assertIn("SYSOP", text.splitlines()[0])
-            self.assertIn("no goal.", text, (rows, cols))
-            self.assertIn("[q] Hide", text, (rows, cols))
+            self.assertIn("Say or type a goal.", text, (rows, cols))
+            self.assertIn("Goal", text.splitlines()[-1] if text.splitlines()[-1].strip() else [x for x in text.splitlines() if x.strip()][-1], (rows, cols))
             for line in text.splitlines():
                 self.assertLessEqual(len(line), width)
 
@@ -349,7 +351,7 @@ class Toggle(Always):
         self.d.sync()
         self.wait(self.one_panel_in_each_window, "panels")
         panel = self.panels_of(self.win1)[0]
-        self.wait(lambda: "[q] Hide" in self.screen(panel["id"]), "the panel to be ready")
+        self.wait(lambda: "Say or type a goal." in self.screen(panel["id"]), "the panel to be ready")
         self.tmux.run("send-keys", "-t", panel["id"], "q")
         self.wait(lambda: not self.panels(), "q to hide the panels of every window")
         self.assertTrue(self.hidden())
@@ -443,7 +445,7 @@ class NoFocusSteal(Always):
 
         def go():
             while state["run"]:
-                c.send("xcgxqrXG")
+                c.send("xcgxqrXGayn")
                 state["n"] += 1
                 time.sleep(0.03)
         th = threading.Thread(target=go, daemon=True)
@@ -465,14 +467,13 @@ class NoFocusSteal(Always):
         self.assertEqual(text.count("x"), 2 * state["n"], "every key typed reached the tab (x twice per send)")
         self.assertFalse(os.path.exists(self.pth.stop_request), "no x reached the panel")
         self.assertFalse(self.hidden(), "no q reached the panel")
-        self.assertFalse(os.path.exists(self.pth.panel_request))
 
     def test_a_click_on_the_panel_focuses_it_and_then_q_hides(self):
         self.serve_files()
         c = self.attach(40, 160)
         self.d.sync()
         panel, = self.wait(self.panels, "panel")
-        self.wait(lambda: "[q] Hide" in self.screen(panel["id"]), "panel ready")
+        self.wait(lambda: "Say or type a goal." in self.screen(panel["id"]), "panel ready")
         self.tmux.run("set-option", "-g", "mouse", "on")
         c.send("\x1b[<0;%d;%dM\x1b[<0;%d;%dM" % (panel["left"] + 5, panel["top"] + 3, panel["left"] + 5, panel["top"] + 3))   # SGR: press, release
         self.wait(lambda: self.panels()[0]["active"], "the click to focus the panel")
@@ -490,7 +491,7 @@ class IdleCpu(Always):
         self.d.sync()
         self.wait(self.one_panel_in_each_window, "panels")
         for p in self.panels():
-            self.wait(lambda: "no goal." in self.screen(p["id"]), "idle")
+            self.wait(lambda: "Say or type a goal." in self.screen(p["id"]), "idle")
         pids = [self.pid_of(p["id"]) for p in self.panels()]
 
         def ticks():
@@ -518,63 +519,61 @@ class NoFocusAlways(td.NoFocus):
         self.assertEqual(self.d.mode, "always")
         self.d.sync()
         self.wait(lambda: len(self.panels()) == 1, "the panel that is up before any goal")
-        self.wait(lambda: "no goal." in self.tmux.run("capture-pane", "-p", "-t", self.panels()[0]["id"]).out or "SERVICE DOWN" in self.tmux.run("capture-pane", "-p", "-t", self.panels()[0]["id"]).out, "the panel to draw")
+        self.wait(lambda: any(w in self.tmux.run("capture-pane", "-p", "-t", self.panels()[0]["id"]).out for w in ("Say or type a goal.", "The sysop is not running")), "the panel to draw")
         time.sleep(0.6)
 
     test_the_approval_gesture_opens_the_panel_when_it_is_not_there_and_does_not_focus_without_an_approval = None    # the panel is always there: the test below
 
-    def test_the_panel_says_which_keys_work_from_any_tab(self):
-        panel = self.goal_with(mode="veto")
-        self.wait(lambda: "COUNTDOWN" in self.screen(panel["id"]), "the countdown")
-        self.assertIn("V veto, X stop, a approve, g goal", " ".join(self.screen(panel["id"]).split()))
+    test_the_approval_gesture_does_nothing_without_an_approval_and_opens_no_panel = None    # the panel is always there: the test below
 
-    def test_the_approval_gesture_does_not_focus_without_an_approval_and_does_with_one(self):
+    def test_the_approval_gesture_does_nothing_without_an_approval_and_allows_with_one(self):
         self.svc.goal()
         self.client.send("\x01a")                          # no pending action
         time.sleep(1.0)
         panel, = self.panels()
         self.assertEqual(self.active_pane(self.win1), [self.user])
+        self.assertIsNone(self.svc.decision())
         self.svc.pending(mode="approve", risk="high")
-        self.client.send("\x01a")                          # a pending approval: the panel that is up opens its prompt, then it is focused
-        self.wait(lambda: self.active_pane(self.win1) == [panel["id"]], "the focus")
-        self.wait(lambda: "type the word run" in " ".join(self.screen(panel["id"]).split()), "the approval prompt")
-        self.assertEqual(len(self.panels()), 1, "the same panel, no second one")
+        self.client.send("\x01a")                          # a pending approval: allowed in one step, the panel that is up keeps its place and nobody gets the focus
+        d = self.wait(self.svc.decision, "the decision")
+        self.assertEqual((d["decision"], d["by"], d["word"]), ("approve", "key", "run"))
+        time.sleep(0.5)
+        self.assertEqual(self.active_pane(self.win1), [self.user], "the gesture never takes the focus")
+        self.assertEqual([p["id"] for p in self.panels()], [panel["id"]], "the same panel, no second one")
 
-    def test_with_a_panel_in_every_window_the_gesture_reaches_the_panel_of_the_window_it_is_pressed_in(self):
-        """found by tests/e2e/e2e_sysop.py (s4c): the request is one file and every panel read it; the wrong panel took it and the one that got the focus
-        was not in the approval prompt, so the first letter of the word run was lost"""
+    def test_with_a_panel_in_every_window_the_gesture_allows_once_and_moves_no_focus(self):
+        """found by tests/e2e/e2e_sysop.py (s4c) when the gesture went through a request file that every panel read: the wrong panel took it. The gesture now
+        writes the decision itself, so the claim is: with a panel in each window it allows exactly the action that waits, and no pane gets the focus"""
         w2, u2 = self.new_window(detached=False)                    # the client now shows the second window
         self.d.sync()
         self.wait(lambda: len(self.panels()) == 2, "a panel in each window")
-        self.wait(lambda: all("no goal." in self.screen(p["id"]) or "SERVICE" in self.screen(p["id"]) for p in self.panels()), "both to draw")
+        self.wait(lambda: all(any(w in self.screen(p["id"]) for w in ("Say or type a goal.", "The sysop is not running")) for p in self.panels()), "both to draw")
         time.sleep(0.6)
         self.svc.goal()
         self.svc.pending(mode="approve", risk="high", text="rm -r build")
         mine, other = self.panels_of(w2)[0], self.panels_of(self.win1)[0]
-        self.wait(lambda: "NOT sent unless" in self.screen(mine["id"]), "the approval in the panel of the window")
+        self.wait(lambda: "allow? high risk" in self.screen(mine["id"]) and "allow? high risk" in self.screen(other["id"]), "the approval in the panel of each window")
         time.sleep(0.8)
         self.client.send("\x01a")
-        self.wait(lambda: self.active_pane(w2) == [mine["id"]], "the focus on the panel of THIS window")
-        self.wait(lambda: "type the word run" in " ".join(self.screen(mine["id"]).split()), "the approval prompt in the panel that has the focus")
-        self.assertNotIn("type the word run", " ".join(self.screen(other["id"]).split()), "and not in the panel of the other window")
-        time.sleep(0.4)
-        self.client.send("run")
-        time.sleep(0.5)
-        self.assertIn("> run", self.screen(mine["id"]), "all three letters arrived")
-        self.client.send("\r")
         d = self.wait(self.svc.decision, "the decision")
-        self.assertEqual((d["decision"], d["word"]), ("approve", "run"))
+        self.assertEqual((d["id"], d["decision"], d["by"], d["word"]), ("p1", "approve", "key", "run"))
+        time.sleep(0.5)
+        self.assertEqual(self.active_pane(w2), [u2], "the pane of the user of THIS window keeps the focus")
+        self.assertEqual(self.active_pane(self.win1), [self.user])
+        self.assertEqual(len(self.panels()), 2)
 
-    def test_the_idle_screen_gives_way_to_the_goal_and_comes_back(self):
+    def test_the_idle_screen_gives_way_to_the_goal_and_its_end_stays(self):
         panel = self.panels()[0]
-        self.assertTrue(self.wait(lambda: "no goal." in self.screen(panel["id"]), "idle"))
+        self.assertTrue(self.wait(lambda: "Say or type a goal." in self.screen(panel["id"]), "idle"))
         self.svc.goal()                                   # a goal runs (status.json names it)
-        self.wait(lambda: "goal (voice)" in self.screen(panel["id"]) and "no goal." not in self.screen(panel["id"]), "the goal to replace the idle text")
+        self.wait(lambda: "run the tests" in self.screen(panel["id"]) and "Say or type a goal." not in self.screen(panel["id"]), "the goal to replace the idle text")
+        self.assertIn("working", self.screen(panel["id"]).splitlines()[0])
         self.svc.goal(state="done")
         self.svc.write_status(None)
-        self.wait(lambda: "last goal (voice" in self.screen(panel["id"]) and "no goal." in self.screen(panel["id"]), "the idle screen with the last goal")
-        self.assertIn("DONE", self.screen(panel["id"]))
-
+        self.wait(lambda: "done" in self.screen(panel["id"]).splitlines()[0], "the end of the goal")
+        text = self.screen(panel["id"])
+        self.assertIn("run the tests", text, "the goal and its end stay on screen")
+        self.assertNotIn("Say or type a goal.", text, "that sentence is only for a panel that has seen no goal")
 
 if __name__ == "__main__":
     unittest.main()

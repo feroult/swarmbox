@@ -76,7 +76,6 @@ class Paths:
     pidfile = property(lambda self: os.path.join(self.run, "serve.pid"))
     status = property(lambda self: os.path.join(self.run, "status.json"))
     stop_request = property(lambda self: os.path.join(self.run, "stop.request"))
-    panel_request = property(lambda self: os.path.join(self.run, "panel.request"))
     watch_lock = property(lambda self: os.path.join(self.run, "watch.lock"))
     watch_pidfile = property(lambda self: os.path.join(self.run, "watch.pid"))
     crashloop = property(lambda self: os.path.join(self.run, "crashloop"))

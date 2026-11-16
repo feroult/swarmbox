@@ -40,13 +40,14 @@ In a tab that runs an agent, a prompt is low; **any key while a dialog of the ag
 | Level | low | medium | high |
 |---|---|---|---|
 | `confirm-all` | approval | approval | approval |
-| `confirm-risky` (default) | countdown | approval | approval |
-| `auto` | countdown | countdown | approval |
+| `confirm-risky` | countdown | approval | approval |
+| `auto` (default) | at once | countdown | approval |
 
 A **blocked** action is refused at once at every level, and no level lets a high risk go without your approval.
 
-- **Countdown.** The panel shows the action and sends it after `sysop.countdown` seconds (default 4; `0` sends at once) unless you veto it (`Ctrl+A V` from any tab, see "The panel"). This keeps a hands-free path (speak, wait four seconds) while a badly heard goal can still be stopped.
-- **Approval.** The action is not sent until you type the word `run` and Enter in the panel, which you reach with `Ctrl+A a` (see "The panel"). If you do not answer within 60 seconds it is refused. A refusal, a veto or a block goes back to the brain as an error; it is told not to try another way round it.
+- **At once.** In `auto`, a harmless action (a prompt for an agent, `ls`, `git status`) is typed without waiting: that is the point of speaking a goal.
+- **Countdown.** The panel shows the action in an amber bar ("sending in 4 s") and sends it after `sysop.countdown` seconds (default 4; `0` sends at once) unless you cancel it: the **Cancel** button of the panel or of the web strip, or `Ctrl+A V`.
+- **Approval.** The action is shown in a red or amber bar ("allow? high risk") with two buttons, **Allow** and **Cancel**. It is not sent until you press Allow (in the panel, on the web strip, or `Ctrl+A a`): one tap, no word to type. If you do not answer within 60 seconds it is refused. A refusal, a veto or a block goes back to the brain as an error; it is told not to try another way round it.
 
 ## Stop and budgets
 
@@ -124,8 +125,8 @@ swarmbox                                 # a tab of the box; open a second one (
 swarmbox-sysop goal --wait "run echo hello in the second tab"
 ```
 
-With the default autonomy the goal runs by itself: the panel shows `echo hello` for 4 seconds (veto it with `Ctrl+A V`), it is typed in the second tab, and the command ends with `done: ...` (exit 0; `--wait` exits 1 when the goal failed or was stopped).
-A setting is learned by the box when it is created, so to be asked about every action: `swarmbox config set sysop.autonomy confirm-all` and `swarmbox reset`: the goal then waits for you, so press `Ctrl+A a` and type `run` and Enter in the panel (see "The panel"). You can also type the goal with `Ctrl+A g`, or speak it ([voice.md](voice.md)).
+With the default autonomy the goal runs by itself: `echo hello` is typed at once (in `auto` a harmless action does not wait), it is typed in the second tab, and the command ends with `done: ...` (exit 0; `--wait` exits 1 when the goal failed or was stopped).
+A setting is learned by the box when it is created, so to be asked about every action: `swarmbox config set sysop.autonomy confirm-all` and `swarmbox reset`: the goal then waits for you, so press Allow (the strip button, a click on the panel, or `Ctrl+A a`). You can also type the goal with `Ctrl+A g`, or speak it ([voice.md](voice.md)).
 
 Check the service with `swarmbox-sysop status` (it runs from `prepare.sh` at every start of the box); `swarmbox-sysop --self-test` checks the install without a model, and `swarmbox tabs list` shows the tabs the sysop sees (`swarmbox bus topics` shows who listens on which topic). `swarmbox-sysop goal` exits with 3 when nobody listens (the service is not running) and 4 when the bus is not.
 The brain needs a login: the `claude` preset uses the one already in the box.
@@ -134,7 +135,7 @@ The brain needs a login: the `claude` preset uses the one already in the box.
 |---|---|---|
 | `sysop.brain` | `claude` | a preset name or a command template (no line break) |
 | `sysop.model` | `haiku` | the model the `claude` preset asks for, and `{model}` |
-| `sysop.autonomy` | `confirm-risky` | `confirm-all`, `confirm-risky` or `auto` |
+| `sysop.autonomy` | `auto` | `confirm-all`, `confirm-risky` or `auto` |
 | `sysop.countdown` | `4` | seconds an action waits for your veto, 0 to 30 (`0` sends at once) |
 | `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100 |
 | `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600 |
@@ -167,7 +168,7 @@ Change it with `swarmbox config set sysop.panel auto` and `swarmbox reset`. The 
 
 When a window changes shape the panel of that window (only that one) moves to the other layout and keeps running. Nothing it does takes the focus. A browser window that is being dragged makes dozens of resize events a second; the runs of the hook are coalesced (each leaves a mark and the one that holds the lock serves every mark), and it imports only the dock, so the box never has more than a few of them at once (10 Python processes and 114 MiB at the very peak of a burst of 200 resizes in the soak test, against 105 processes before). A panel that meets a problem (a file that went away, a full disk) says "The panel hit a problem and goes on (...)" in one line instead of printing a traceback in your tab.
 
-**The idle screen** is one screen: the title and the state (`IDLE`; `DONE`, `STOPPED` or `FAILED` for as long as the last goal is the one shown), "no goal. Type one: Ctrl+A g", the keys that work from any tab without focusing the panel (`Ctrl+A` then `g` goal, `V` veto, `X` stop, `a` approve, `S` hide), the autonomy level and the brain in use, the bus topic it listens on, and the result of the **last goal** (`done`, `stopped` or `failed`, with its text, how long ago it ended and what the sysop said), also after a restart of the box. In a short pane the lowest lines go first (the topic, then the brain, then the keys); the title, "no goal" and the key line at the bottom always stay. It does not name the addon that hears you: any program can publish a goal on the topic.
+**What the panel shows** is little, on purpose. The head is the name and one word for the state: `idle`, `working`, `sending` (a countdown), `allow?` (it waits for you), `done`, `failed`, `stopped` or `off`. Under it the goal in a line or two, then a line for each step in plain words (`✓ read tab 1`, `✓ run: pytest -q`, `✗` when it failed) and what the sysop said; the results of the tools stay out. At the bottom is what needs you, and only then: a **bar of colour the width of the panel** (amber for a countdown, red for a high risk, with the tab), the text of the action, and the buttons: **Allow** and **Cancel** for an approval, **Cancel** for a countdown, **Stop** while a goal runs, **Goal** when idle. The result of the last goal stays on screen when idle, also after a restart of the box. There is no list of keys, settings or topic on it: `swarmbox-sysop status` has those.
 An idle panel does almost nothing: it looks once a second (a stat of two files and a lock probe) and reads the files only when one changed, so it uses well under 1 % of a core; the service in the mode `always` looks at tmux every 4 seconds and the hooks do the quick part.
 
 **Windows and panes.** A window never stays with only the panel in it, because that is not a tab: when the last pane of yours in a window is gone (`tmux kill-pane`, or the program ends), the window is closed with its panel. If it was the last window the session ends, exactly as it would without a panel. Killing the panel pane itself (`kill-pane` on it) is not a choice to hide it, so in the mode `always` it comes back at once; hide it with `Ctrl+A S` or `q`. The names of the tabs follow the program of your pane as usual in the mode `always` (the panel does not take the focus; after a click on it the name reads `python3` until you click back). In the modes `auto` and `off` a window with a panel keeps the name it had.
@@ -176,12 +177,12 @@ An idle panel does almost nothing: it looks once a second (a stat of two files a
 
 | What | How |
 |---|---|
-| From any tab, without focusing the panel | `Ctrl+A` then **`V`** veto (a countdown is vetoed, an approval is refused), **`X`** stop the goal and the queue, **`a`** approve (below), **`g`** type a goal (a small popup) |
+| From any tab, without focusing the panel | `Ctrl+A` then **`V`** cancel (a countdown is vetoed, an approval is refused; with nothing waiting it stops the goal), **`X`** stop the goal and the queue, **`a`** allow what waits, **`g`** type a goal (a small popup). On a phone: the **Allow** and **Cancel** buttons of the web strip send `Ctrl+A a` and `Ctrl+A V` |
 | Click | a mouse click on the panel focuses it; then its own keys work (below) |
-| Approve a high-risk action | `Ctrl+A a`: opens the approval prompt in the panel and **then** gives it the focus, so keys you typed before went to your tab and keys you type after are the word `run` and Enter. The gesture allows nothing by itself. If no approval waits it does nothing |
+| Allow a high-risk action | the **Allow** button (strip, or a click on the panel's button), or `Ctrl+A a`: one press, nothing to type. If nothing waits it does nothing |
 
 These are plain tmux prefix keys (`container/config/tmux.conf`, all four unbound in tmux itself, so a fast `Ctrl+A a` never loses a key); they call `swarmbox-sysop veto | stop | approve | goal`, which you can run from any shell of the box too (`approve` and `veto` act on the pane of the window you press them in; `goal` with no text asks for one line).
-Keys of the focused panel: `c` vetoes a countdown or refuses an approval, `r` then the word `run` and Enter allows an approval, `x` stops the goal (`X` also drops the queue), `g` types a goal, Up and Down scroll the log, `q` hides the panels (the mode `always`) or closes this one. The panel says on its screen which keys work now (the line "From any tab: ..." shows while it has no focus). Keys are ignored for half a second after a new action appears, as a second guard.
+Keys of the focused panel: `a` or `y` allows, `c` or `n` cancels (it stops the goal when nothing waits), `x` stops the goal (`X` also drops the queue), `g` types a goal, Up and Down scroll the log, `q` hides the panels (the mode `always`) or closes this one. Keys are ignored for half a second after a new action appears, as a second guard. An action whose text does not fit on the panel cannot be allowed (only cancelled): you allow only what you can read.
 The web terminal behaves the same: keys and mouse arrive from the browser as from any terminal.
 
 ## Troubleshooting
@@ -200,7 +201,7 @@ What you see, why, and what to do. Everything here was met in the soak and end-t
 | the panel is not there | `sysop.panel` is `off`, or it is `auto` and no goal is running; or you hid it (`Ctrl+A S` or `q` in the panel); or the service is down | `swarmbox config get sysop.panel`; press `Ctrl+A S`; `swarmbox-sysop status`. In the mode `always` the panel is back within a few seconds of a new window or a resize |
 | `failed: the time budget of 300 s is spent: the brain was killed` | the goal took longer than `sysop.max_seconds` (a slow model, a long `wait`, an approval nobody gave) | send a smaller goal, or `swarmbox config set sysop.max_seconds 600` and `swarmbox reset`; `haiku` (the default) is the fast model |
 | `failed: the brain used all its 23 turns without calling done` | the goal needs more steps than `sysop.max_steps` allows (the turns are the steps plus 3) | raise `sysop.max_steps`, or split the goal |
-| the goal sits at "waiting for approval" and then ends refused | a high-risk action waits for the word `run`, and no answer came in 60 seconds | `Ctrl+A a`, then type `run` and Enter; or `Ctrl+A V` to refuse it at once |
+| the goal sits at "waiting for approval" and then ends refused | a high-risk action waits for you, and no answer came in 60 seconds | tap Allow (or `Ctrl+A a`); or Cancel (`Ctrl+A V`) to refuse it at once |
 | the goal ends `failed` with "lost" after the service was killed or crashed | goals in flight are not kept | send the goal again |
 
 `swarmbox-sysop status` also lists the last goals with their state, and the audit file (`events.jsonl`, above) says what the brain did, step by step.

@@ -178,7 +178,7 @@
   }
 
   function keyButton(def) {
-    var b = el('button', 'sb-btn sb-key');
+    var b = el('button', 'sb-btn sb-key' + (def.label === 'Allow' ? ' sb-yes' : def.label === 'Cancel' ? ' sb-no' : ''));  // the two answers to the sysop wear their colours
     b.type = 'button';
     b.textContent = def.label;
     b.title = def.keys;

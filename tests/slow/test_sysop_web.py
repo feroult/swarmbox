@@ -2,7 +2,7 @@
 """The sysop panel and its keys through the WEB TERMINAL: a real ttyd attached to a real tmux (the box's tmux.conf), driven in headless Chromium over the
 DevTools protocol, so keys and mouse arrive the way a browser sends them (xterm.js -> websocket -> ttyd -> pty -> tmux). The same claims as class NoFocus
 of test_sysop_dock.py (a pty client): keys typed in the tab while a goal arrives never reach the panel, Ctrl+A then V / X / a / g work, a click on the
-panel focuses it and then its own keys work, and the approval gesture needs the word run. The panel is the real program; the service is the files of
+panel focuses it and then its own keys work, and the approval gesture allows in ONE step (no typed word, no focus). The panel is the real program; the service is the files of
 ss.FakeService.
 
 Podman only (like the real tmux tests): it skips unless chromium, ttyd and tmux exist AND SWARMBOX_TEST_REAL_TMUX=1 is set.
@@ -167,7 +167,7 @@ class WebKeys(bs.BrowserCase):
         self.assertEqual(self.user_text().count("x"), 2 * sent, "every key reached the tab")
         self.assertFalse(os.path.exists(self.pth.stop_request))
         self.assertIsNone(self.svc.decision())
-        self.assertIn("APPROVAL", self.screen(panel["id"]))
+        self.assertIn("allow?", self.screen(panel["id"]))
 
     def test_the_sysop_keys_work_from_the_browser(self):
         self.open_panel(mode="veto")
@@ -194,10 +194,10 @@ class WebKeys(bs.BrowserCase):
         self.real_key("x")
         self.wait(lambda: os.path.exists(self.pth.stop_request), "x in the panel to stop the goal")
 
-    def test_the_approval_gesture_then_the_word_run_from_the_browser(self):
+    def test_the_approval_gesture_allows_in_one_step_from_the_browser(self):
         panel = self.open_panel(mode="approve", risk="high", text="rm -rf ~/x")
         time.sleep(0.8)
-        for ch in "run\r":                                    # before the gesture: for the tab
+        for ch in "run\r":                                    # before the gesture: for the tab, they allow nothing
             self.real_key(ch)
         time.sleep(0.5)
         self.assertIsNone(self.svc.decision())
@@ -205,17 +205,28 @@ class WebKeys(bs.BrowserCase):
         self.send("\x01")
         time.sleep(0.3)                                       # a key event right behind term.input is sometimes dropped by xterm.js (seen 3 of 4)
         self.real_key("a")
-        self.wait(lambda: self.active() == panel["id"], "the focus")
-        self.wait(lambda: "type the word run" in " ".join(self.screen(panel["id"]).split()), "the approval prompt")
-        self.assertIsNone(self.svc.decision())
-        for ch in "run":
-            self.real_key(ch)
-        time.sleep(0.3)
-        self.assertIsNone(self.svc.decision(), "the word without Enter allows nothing")
-        self.real_key("\r")
         d = self.wait(self.svc.decision, "the decision")
-        self.assertEqual((d["decision"], d["word"]), ("approve", "run"))
+        self.assertEqual((d["decision"], d["by"], d["word"]), ("approve", "key", "run"), "one gesture, no typed word")
+        self.assertEqual(self.active(), self.user, "the gesture did not take the focus")
+        self.assertFalse(self.panels()[0]["active"])
 
+    def test_a_click_on_the_allow_button_of_the_panel_allows(self):
+        panel = self.open_panel(mode="approve", risk="high", text="rm -rf ~/x")
+        time.sleep(0.8)
+
+        def button(label):
+            for r, line in enumerate(self.screen(panel["id"]).splitlines()):
+                if " %s " % label in line:                        # a filled block of colour: " Allow "
+                    return panel["left"] + line.index(" %s " % label) + 2, panel["top"] + r
+            return None
+        pos = self.wait(lambda: button("Allow"), "the Allow button")
+        self.click_cell(*pos)                                 # the first click gives the panel the focus: it is not a click on the button
+        self.wait(lambda: self.active() == panel["id"], "the click to focus the panel")
+        time.sleep(0.8)
+        self.assertIsNone(self.svc.decision())
+        self.click_cell(*pos)
+        d = self.wait(self.svc.decision, "the decision")
+        self.assertEqual((d["decision"], d["by"], d["word"]), ("approve", "panel", "run"))
 
 if __name__ == "__main__":
     unittest.main()

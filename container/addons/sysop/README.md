@@ -17,7 +17,7 @@ swarmbox-sysop veto | approve       the keys of any tab: Ctrl+A then V veto, X s
 ```
 
 Settings (environment, `SWARMBOX_SYSOP_*`, see `lib/swarmbox_sysop/config.py`): `TOPIC` (goal), `GROUP` (sysop), `BRAIN` (preset `claude` or a command template, never run by a shell),
-`MODEL` (haiku), `AUTONOMY` (`confirm-all` | `confirm-risky` | `auto`), `COUNTDOWN` (4 s, 0 = none), `APPROVAL_TIMEOUT` (60 s), `MAX_STEPS` (20),
+`MODEL` (haiku), `AUTONOMY` (`confirm-all` | `confirm-risky` | `auto`, default `auto`), `COUNTDOWN` (4 s, 0 = none), `APPROVAL_TIMEOUT` (60 s), `MAX_STEPS` (20),
 `MAX_SECONDS` (300), `MAX_GOALS` (5), `PANEL_MODE` (`always` | `auto` | `off`: when the panel is in tmux; not `SWARMBOX_SYSOP_PANEL`, which marks a panel pane).
 
 Files (all private, folders 0700 and files 0600; `lib/swarmbox_sysop/paths.py`):

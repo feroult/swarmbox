@@ -729,7 +729,7 @@ class Cli(RealTmux):
         self.assertIn("panel created", r.stderr)
         panel, = self.wait(self.panels, "the panel")
         # the real program is in the pane and says the service is down (nothing runs in this run folder)
-        self.wait(lambda: "SERVICE DOWN" in self.tmux.run("capture-pane", "-p", "-t", panel["id"]).out, "the panel's message")
+        self.wait(lambda: "The sysop is not running" in self.tmux.run("capture-pane", "-p", "-t", panel["id"]).out, "the panel's message")
         self.assertIn("swarmbox_sysop", self.tmux.run("display-message", "-p", "-t", panel["id"], "#{pane_start_command}").out)
         r = self.cli("toggle", "--window", self.win1)
         self.assertIn("panel closed", r.stderr)
@@ -745,7 +745,7 @@ class Cli(RealTmux):
         r = self.cli("open", "--window", self.win1)
         self.assertEqual(r.returncode, 0, r.stderr)
         panel, = self.wait(self.panels, "the panel")
-        self.wait(lambda: "no goal. Type one" in self.tmux.run("capture-pane", "-p", "-t", panel["id"]).out, "the idle text")
+        self.wait(lambda: "Say or type a goal." in self.tmux.run("capture-pane", "-p", "-t", panel["id"]).out, "the idle text")
         self.tmux.run("send-keys", "-t", panel["id"], "q")
         self.wait(lambda: not self.panels(), "the panel to close by itself with q")
 
@@ -895,10 +895,10 @@ class NoFocus(RealTmux):
         return stop
 
     def _typed_while_a_goal_arrives(self, **pending):
-        stop = self.typing("xcgxqrXG")             # every key the panel knows (x stop, c veto, g goal, q close, r run) and more
+        stop = self.typing("xcgxqrXGayn")          # every key the panel knows (x stop, c n cancel, a y allow, g goal, q close) and more
         time.sleep(0.4)
         panel = self.goal_with(**pending)
-        self.wait(lambda: "COUNTDOWN" in self.screen(panel["id"]) or "APPROVAL" in self.screen(panel["id"]), "the panel to show the action")
+        self.wait(lambda: "sending in" in self.screen(panel["id"]) or "allow?" in self.screen(panel["id"]), "the panel to show the action")
         time.sleep(1.5)
         sent = stop()
         time.sleep(0.5)
@@ -907,10 +907,9 @@ class NoFocus(RealTmux):
         self.assertEqual(self.active_pane(self.win1), [self.user])
         self.assertEqual(self.user_text().count("x"), 2 * sent, "every key typed in the tab reached the tab (x twice per send)")
         self.assertFalse(os.path.exists(self.pth.stop_request), "not one x reached the panel: no stop")
-        self.assertIsNone(self.svc.decision(), "not one c or r reached the panel: no decision")
-        self.assertFalse(os.path.exists(self.pth.panel_request))
+        self.assertIsNone(self.svc.decision(), "not one c, n, a or y reached the panel: no decision")
         self.assertEqual(len(self.panels()), 1, "q did not close the panel")
-        self.assertIn("goal (voice)", self.screen(panel["id"]), "and it is alive and showing the goal")
+        self.assertIn("run the tests", self.screen(panel["id"]), "and it is alive and showing the goal")
 
     def test_keys_typed_in_the_tab_while_a_goal_arrives_never_reach_a_countdown_panel(self):
         self._typed_while_a_goal_arrives(mode="veto")
@@ -918,10 +917,15 @@ class NoFocus(RealTmux):
     def test_keys_typed_in_the_tab_while_a_goal_arrives_never_reach_an_approval_panel(self):
         self._typed_while_a_goal_arrives(mode="approve", risk="high", text="rm -rf ~/x")
 
-    def test_the_panel_says_which_keys_work_from_any_tab(self):
+    def test_the_panel_offers_buttons_for_what_it_waits_for(self):
+        # (it replaces the hint of the keys that work from any tab, which the panel no longer prints: the buttons are the hint)
         panel = self.goal_with(mode="veto")
-        text = self.wait(lambda: (lambda t: t if "Ctrl+A, then" in t else "")(self.screen(panel["id"])), "the hint")
-        self.assertIn("V veto, X stop, a approve, g goal", " ".join(text.split()))
+        text = self.wait(lambda: (lambda t: t if "Cancel" in t else "")(self.screen(panel["id"])), "the buttons")
+        self.assertNotIn("Allow", text, "a countdown has only Cancel")
+        self.svc.pending(mode="approve", risk="high", text="rm -rf ~/x")
+        text = self.wait(lambda: (lambda t: t if "Allow" in t else "")(self.screen(panel["id"])), "the approval buttons")
+        self.assertIn("Cancel", text)
+        self.assertIn("allow? high risk", text)
 
     def test_the_veto_key_vetoes_a_countdown_and_refuses_an_approval(self):
         self.goal_with(mode="veto")
@@ -934,11 +938,17 @@ class NoFocus(RealTmux):
         self.assertEqual(self.wait(self.svc.decision, "the decision")["decision"], "deny")
         self.assertEqual(self.active_pane(self.win1), [self.user], "the focus never moved")
 
-    def test_the_veto_key_with_nothing_waiting_does_nothing(self):
-        self.goal_with()
+    def test_the_cancel_key_with_nothing_waiting_stops_the_goal_and_with_no_goal_does_nothing(self):
+        self.svc.write_status(None)                            # no goal at all: nothing to cancel, nothing to stop
         self.client.send("\x01V")
         time.sleep(1.0)
         self.assertIsNone(self.svc.decision())
+        self.assertFalse(os.path.exists(self.pth.stop_request))
+        self.goal_with()                                       # a goal that runs and nothing waiting: Cancel is Stop
+        self.client.send("\x01V")
+        self.wait(lambda: os.path.exists(self.pth.stop_request), "the stop request")
+        self.assertIsNone(self.svc.decision())
+        self.assertEqual(self.active_pane(self.win1), [self.user])
 
     def test_the_stop_key_asks_for_the_stop(self):
         self.goal_with(mode="veto")
@@ -946,47 +956,45 @@ class NoFocus(RealTmux):
         self.wait(lambda: os.path.exists(self.pth.stop_request), "the stop request")
         self.assertEqual(self.active_pane(self.win1), [self.user])
 
-    def test_the_approval_gesture_focuses_the_panel_on_the_approval_prompt_and_run_allows_it(self):
+    def test_the_approval_gesture_allows_in_one_step_without_focusing_the_panel(self):
         panel = self.goal_with(mode="approve", risk="high", text="rm -rf ~/x")
-        self.wait(lambda: "APPROVAL" in self.screen(panel["id"]), "the approval")
+        self.wait(lambda: "allow?" in self.screen(panel["id"]), "the approval")
         time.sleep(0.7)                                      # past the key guard of a new action
         self.client.send("run\r")                           # typed BEFORE the gesture: it is for the tab
         time.sleep(0.5)
         self.assertIsNone(self.svc.decision(), "nothing typed before the gesture reached the panel")
         self.assertIn("run", self.user_text())
         self.client.send("\x01a")
-        self.wait(lambda: self.active_pane(self.win1) == [panel["id"]], "the panel to get the focus")
-        self.assertFalse(os.path.exists(self.pth.panel_request), "the panel took the request before it was focused")
-        self.wait(lambda: "type the word run" in " ".join(self.screen(panel["id"]).split()), "the approval prompt")
-        self.assertIsNone(self.svc.decision(), "the gesture alone allows nothing")
-        self.client.send("run")
-        time.sleep(0.3)
-        self.assertIsNone(self.svc.decision(), "the word without Enter allows nothing")
-        self.client.send("\r")
         d = self.wait(self.svc.decision, "the decision")
-        self.assertEqual((d["id"], d["decision"], d["word"]), ("p1", "approve", "run"))
+        self.assertEqual((d["id"], d["decision"], d["by"], d["word"]), ("p1", "approve", "key", "run"), "one gesture allows: no typed word")
+        self.assertEqual(self.active_pane(self.win1), [self.user], "the gesture never takes the focus")
+        self.assertFalse(self.panels()[0]["active"])
 
-    def test_the_approval_gesture_opens_the_panel_when_it_is_not_there_and_does_not_focus_without_an_approval(self):
+    def test_the_approval_gesture_does_nothing_without_an_approval_and_opens_no_panel(self):
         self.svc.goal()
         self.client.send("\x01a")                          # no pending action
         time.sleep(1.0)
         self.assertEqual(self.panels(), [])
         self.assertEqual(self.active_pane(self.win1), [self.user])
+        self.assertIsNone(self.svc.decision())
         self.svc.pending(mode="approve", risk="high")
-        self.client.send("\x01a")                          # a pending approval, no panel yet: it is made, then focused
-        panel, = self.wait(self.panels, "the panel")
-        self.wait(lambda: self.active_pane(self.win1) == [panel["id"]], "the focus")
-        self.wait(lambda: "type the word run" in " ".join(self.screen(panel["id"]).split()), "the approval prompt")
+        self.client.send("\x01a")                          # a pending approval, no panel: the decision is written all the same, no panel is made
+        d = self.wait(self.svc.decision, "the decision")
+        self.assertEqual((d["decision"], d["by"]), ("approve", "key"))
+        time.sleep(0.5)
+        self.assertEqual(self.panels(), [])
+        self.assertEqual(self.active_pane(self.win1), [self.user])
 
-    def test_the_approval_gesture_refuses_a_countdown_action(self):
+    def test_the_approval_gesture_sends_a_countdown_action_now(self):
         self.goal_with(mode="veto")
         self.client.send("\x01a")
-        time.sleep(1.0)
-        self.assertEqual(self.active_pane(self.win1), [self.user], "a countdown has its own veto key: the gesture is for approvals")
+        d = self.wait(self.svc.decision, "the decision")
+        self.assertEqual((d["id"], d["decision"], d["by"]), ("p1", "approve", "key"), "a countdown is cut short: it is sent now")
+        self.assertEqual(self.active_pane(self.win1), [self.user])
 
     def test_a_click_on_the_panel_focuses_it_and_then_its_own_keys_work(self):
         panel = self.goal_with(mode="veto")
-        self.wait(lambda: "COUNTDOWN" in self.screen(panel["id"]), "the panel")
+        self.wait(lambda: "sending in" in self.screen(panel["id"]), "the panel")
         time.sleep(0.7)
         self.client.send("x")
         time.sleep(0.4)
@@ -999,6 +1007,29 @@ class NoFocus(RealTmux):
         time.sleep(0.6)
         self.client.send("x")
         self.wait(lambda: os.path.exists(self.pth.stop_request), "x in the focused panel to stop the goal")
+
+    def test_a_click_on_the_cancel_button_of_the_panel_cancels(self):
+        panel = self.goal_with(mode="veto")
+        self.wait(lambda: "Cancel" in self.screen(panel["id"]), "the button")
+        time.sleep(0.7)
+
+        def cell():
+            for r, line in enumerate(self.screen(panel["id"]).splitlines()):
+                if " Cancel" in line:                                  # the colour block " Cancel " (the capture drops the last space)
+                    return panel["left"] + line.index(" Cancel") + 3, panel["top"] + r + 1      # 1-based, for the terminal
+        col, row = self.wait(cell, "the place of the button")
+
+        def click():
+            self.client.send("\x1b[<0;%d;%dM" % (col, row))
+            time.sleep(0.05)
+            self.client.send("\x1b[<0;%d;%dm" % (col, row))
+        click()                                              # the first click gives the panel the focus: it is not a click on the button
+        self.wait(lambda: self.active_pane(self.win1) == [panel["id"]], "the click to focus the panel")
+        time.sleep(0.7)
+        self.assertIsNone(self.svc.decision())
+        click()
+        d = self.wait(self.svc.decision, "the decision")
+        self.assertEqual((d["id"], d["decision"], d["by"]), ("p1", "veto", "panel"))
 
     def test_the_goal_key_asks_for_a_goal_in_a_popup_and_publishes_it(self):
         bus = ss.FakeBus(os.path.join(self.tmp, "bus.sock"))

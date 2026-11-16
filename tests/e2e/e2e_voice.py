@@ -664,7 +664,7 @@ def v1_run(box, br, wav, label, answer_re, claude=True, save=True):
             seen["panel_win"] = p["win"]
             seen["panel_focus"] = p["active"] == "1" and p["winactive"] == "1"
             seen["names"] = {w["id"]: w["name"] for w in box.windows()}
-        if p and "countdown" not in seen and "unless you veto it" in box.panel_text():
+        if p and "countdown" not in seen and "sending in" in box.panel_text():
             seen["countdown"] = t
             seen["panel_text"] = box.panel_text()
             seen["term_with_panel"] = br.term_text()
@@ -782,7 +782,7 @@ def s2(box):
     br.screenshot("2b-page-nobody-listening")
     check("s2b: the page says 'Nobody is listening' (amber light, state nolistener)", state == "nolistener" and "Nobody is listening" in (note or ""), (state, note))
     check("s2b: nothing was typed in the claude tab, the sysop saw no goal and its panel (always up) is still idle", not TYPED.search(box.cap(cw)) and box.goal_events() == n_goals
-          and "no goal." in box.panel_text() and "unless you veto it" not in box.panel_text(), (box.goal_events() - n_goals, box.panel_text()[-200:]))
+          and "Say or type a goal." in box.panel_text() and "sending in" not in box.panel_text(), (box.goal_events() - n_goals, box.panel_text()[-200:]))
     check("s2b: the page does not name the topic", "'a'" not in br.voice_text() and " b" not in br.voice_text().lower().replace("nobody", ""), br.voice_text())
     # 2c: two sysops in one group: a goal is handled once
     box.configure()                              # the default topic again, on both sides
@@ -835,7 +835,8 @@ def second_sysop(box):
         os.makedirs(d, exist_ok=True)
     os.chmod(run, 0o700)
     env = dict(box.env)
-    env.update({"SB_RUN_DIR": run, "SB_STATE_DIR": state, "SB_BUS_SOCKET": box.sock, "SWARMBOX_SYSOP_MODEL": box.model, "SWARMBOX_SYSOP_COUNTDOWN": "2"})
+    env.update({"SB_RUN_DIR": run, "SB_STATE_DIR": state, "SB_BUS_SOCKET": box.sock, "SWARMBOX_SYSOP_MODEL": box.model, "SWARMBOX_SYSOP_COUNTDOWN": "2",
+                "SWARMBOX_SYSOP_AUTONOMY": "confirm-risky"})   # the scenarios watch the countdown of a low-risk action: the box default (auto) sends it at once
     log_f = open(os.path.join(state, "serve.out"), "ab")
     p = subprocess.Popen([box.sysop_bin(), "serve", "--log"], env=env, stdout=log_f, stderr=log_f, stdin=subprocess.DEVNULL, start_new_session=True)
     SECOND.update({"proc": p, "state": state, "run": run, "env": env})
@@ -943,7 +944,7 @@ def s4(box):
     info("s4a landscape terminal", "%dx%d cells" % (cols, rows))
     since = time.time()
     h, state, note, _ = speak_and_end(box, br, "en-banana")
-    ok = wait_for(lambda: "unless you veto it" in br.term_text(), 40, 0.1)
+    ok = wait_for(lambda: "sending in" in br.term_text(), 40, 0.1)
     check("s4a landscape: the panel is in the browser terminal with the countdown", ok is not None and state == "sent", (state, br.term_text()[-300:]))
     p = box.panel()
     geo = box.tmux("list-panes", "-s", "-t", "main", "-F", "#{pane_id} #{@swarmbox_sysop_panel} #{pane_left},#{pane_top} #{pane_width}x#{pane_height} window #{window_width}x#{window_height}")
@@ -971,7 +972,7 @@ def s4(box):
     cw = tabs["claude"]
     since = time.time()
     h, state, note, _ = speak_and_end(box, br, "en-banana")
-    ok = wait_for(lambda: "unless you veto it" in br.term_text(), 60, 0.1)
+    ok = wait_for(lambda: "sending in" in br.term_text(), 60, 0.1)
     txt = br.term_text()
     br.screenshot("4b-portrait-panel-countdown")
     check("s4b portrait (%dx%d cells): the panel is in the browser terminal with the countdown" % (cols, rows), ok is not None and state == "sent", txt[-400:])
@@ -1024,7 +1025,7 @@ def s4(box):
     br.js("term.focus()")
     since = time.time()
     rc, gid2, _ = box.pub('type the prompt "reply with exactly PONG-5" in the claude tab and send it', "voice")
-    ok = wait_for(lambda: "unless you veto it" in br.term_text(), 60, 0.1)
+    ok = wait_for(lambda: "sending in" in br.term_text(), 60, 0.1)
     p = box.panel()
     check("s4d: the panel is open and not focused before the click", ok is not None and p is not None and p["active"] == "0", p)
     time.sleep(0.8)
@@ -1218,11 +1219,8 @@ Browser.open_plain = _open_plain
 
 # ====================================================================================================================== scenario 6
 def approve_in_browser(box, br):
-    """what the user does for an approval: Ctrl+A a (opens the prompt, gives the panel the focus), then the word run and Enter"""
+    """what the user does for an approval: Ctrl+A a (one step: it writes the decision; the panel does not get the focus)"""
     br.send_keys("\x01a")
-    wait_for(lambda: (box.panel() or {}).get("active") == "1", 5, 0.1)
-    time.sleep(0.8)
-    br.send_keys("run\r")
 
 
 def await_rm_approval(box, br, gid, others, timeout=150):
@@ -1234,7 +1232,7 @@ def await_rm_approval(box, br, gid, others, timeout=150):
         st = box.goal_state(gid) or {}
         if st.get("state") in ("done", "failed", "stopped"):
             return None
-        if "NOT sent unless you allow it" in box.panel_text():
+        if "allow? " in box.panel_text():
             waiting = [d for d in box.decisions(gid) if d.get("decision") == "waiting" and d.get("mode") == "approve"]
             if waiting:
                 last = waiting[-1]
@@ -1287,19 +1285,16 @@ def s6(box):
     tries["GET /approve"] = br.fetch("/approve")
     time.sleep(1.0)
     check("s6a: speaking 'sim, aprova' (a new goal) and the page's own calls do not approve: the directory still exists, the approval still waits",
-          state2 in ("sent", "busy") and os.path.isdir(build) and "NOT sent unless you allow it" in box.panel_text() and all(v.get("status") in (404, 405) for k, v in tries.items() if k != "GET /approve"),
+          state2 in ("sent", "busy") and os.path.isdir(build) and "allow? " in box.panel_text() and all(v.get("status") in (404, 405) for k, v in tries.items() if k != "GET /approve"),
           (state2, os.path.isdir(build), {k: v.get("status") for k, v in tries.items()}))
     decisions = [d.get("decision") for d in box.decisions(gid)]
     check("s6a: the audit has no approval so far", "approved" not in decisions, decisions)
-    # the user approves in the panel, from the web terminal: Ctrl+A a, then the word run and Enter
+    # the user allows it from the web terminal: Ctrl+A a, one step (no word, no focus on the panel)
     t = time.time()
     br.send_keys("\x01a")
-    ok = wait_for(lambda: (box.panel() or {}).get("active") == "1", 5, 0.1)
-    check("s6a: Ctrl+A a typed in the web terminal opens the approval prompt and gives the panel the focus", ok is not None, box.panel())
-    time.sleep(0.8)
-    br.send_keys("run\r")
     ok = wait_for(lambda: not os.path.isdir(build), 40, 0.2)
-    check("s6a: after `run` and Enter typed in the panel the command ran: the directory build is gone", ok is not None, "%.1fs" % (time.time() - t))
+    check("s6a: after Ctrl+A a typed in the web terminal the command ran: the directory build is gone, and the panel did not get the focus",
+          ok is not None and (box.panel() or {}).get("active") != "1", "%.1fs %s" % (time.time() - t, box.panel()))
     decisions = [d.get("decision") for d in box.decisions(gid)]
     check("s6a: the audit says approved", "approved" in decisions, decisions)
     box.save_goal("6a", gid)
@@ -1350,7 +1345,7 @@ def s6(box):
     asked = False
     while time.time() < end and gid:
         st = box.goal_state(gid) or {}
-        if "NOT sent unless you allow it" in box.panel_text():
+        if "allow? " in box.panel_text():
             asked = True
             break
         if st.get("state") in ("done", "failed", "stopped"):
@@ -1404,7 +1399,7 @@ def s7(box):
     check("s7: the bus carried only goal messages (a topic of the run, a body that is the text or {text}, source voice or cli), nothing else",
           bool(pubs) and len(pubs) == len(msgs) and all(m["topic"] in TOPICS_USED and body_ok(m) and m["envelope"].get("source") in ("voice", "cli") for m in pubs), (len(pubs), len(msgs)))
     check("s7: no secret on the bus (the planted fake key, any 'sk-' string)", SECRET not in raw and "sk-ant" not in raw and "DEMO_KEY" not in raw, "")
-    seen = [w for w in ("bypass permissions", "esc to interrupt", "unless you veto it", "NOT sent unless", "Claude Code", "PS1", "$ export", "/work/throw", "/work/proj", "❯", "DEMO_KEY") if w in raw]
+    seen = [w for w in ("bypass permissions", "esc to interrupt", "sending in", "allow?", "Claude Code", "PS1", "$ export", "/work/throw", "/work/proj", "❯", "DEMO_KEY") if w in raw]
     check("s7: no screen text, no tab content, no path of a tab, no panel text on the bus", not seen, seen)
     reply_text = " ".join(c["text"] for c in read_shell)
     check("s7: what the sysop read had the secret removed (the filter of swarmbox-tabs): the screen it got and the audit have no key", SECRET not in reply_text and SECRET not in audit_text and "FAKEFAKE" not in audit_text,
@@ -1543,7 +1538,7 @@ def s9(box):
     cols, rows = br.term_size()
     info("s9 terminal on the phone", "%dx%d cells" % (cols, rows))
     # (c) and (e): the panel in portrait
-    wait_for(lambda: "no goal." in br.term_text(), 15, 0.3)
+    wait_for(lambda: "Say or type a goal." in br.term_text(), 15, 0.3)
     txt = br.term_text()
     br.screenshot("9-1-idle-portrait")
     box.save("9-1-idle-terminal.txt", txt)
@@ -1553,10 +1548,10 @@ def s9(box):
     want = want if want >= 8 else max(1, min(8, wh // 2))
     check("s9c: the panel of the window in portrait is at the bottom, 30%% of its height (%d of %d lines, expected about %d), at least 8 and no more than half" % (ph, wh, want),
           bool(pr) and abs(ph - want) <= 1 and ph >= min(8, wh // 2) and ph <= wh // 2 + 1 and top > wh // 2 - 1 and pw == ww, pr)
-    check("s9c: the panel fits in %d columns: its head, the idle line and the key line are on the screen, nothing wider than the terminal" % cols,
-          all(x in txt for x in ("no goal.", "Ctrl+A")) and max((len(x) for x in txt.splitlines()), default=0) <= cols and not act, txt[-500:])
-    check("s9e: the idle panel has its head with IDLE or the last result, 'no goal', and the key line [g] Goal [q] Hide (a pane of 8 lines at 28 columns drops the long lines first)",
-          ("IDLE" in txt or "DONE" in txt or "FAILED" in txt or "STOPPED" in txt) and "SYSOP" in txt and "[g] Goal" in txt, txt[-500:])
+    check("s9c: the panel fits in %d columns: its head, the idle line and the Goal button are on the screen, nothing wider than the terminal" % cols,
+          all(x in txt for x in ("Say or type a goal.", "Goal")) and max((len(x) for x in txt.splitlines()), default=0) <= cols and not act, txt[-500:])
+    check("s9e: the idle panel has its head with the state word (idle, or the end of the last goal), the sentence 'Say or type a goal.' and the Goal button",
+          any(w in txt for w in ("idle", "done", "failed", "stopped")) and "SYSOP" in txt and "Goal" in txt, txt[-500:])
     ptxt = box.panel_text()
     box.save("9-1-idle-panel.txt", ptxt)
     # (b1) Panel hides and shows
@@ -1567,10 +1562,10 @@ def s9(box):
     t_hide = time.time() - t
     time.sleep(0.5)
     br.screenshot("9-2-panel-hidden")
-    check("s9b: tapping Panel hides the panels of all windows (%d before, %.1f s)" % (n0, t_hide), gone is not None and "no goal." not in br.term_text(), (panel_rows(box), br.term_text()[-200:]))
+    check("s9b: tapping Panel hides the panels of all windows (%d before, %.1f s)" % (n0, t_hide), gone is not None and "Say or type a goal." not in br.term_text(), (panel_rows(box), br.term_text()[-200:]))
     t = time.time()
     br.tap_key("Panel")
-    up = wait_for(lambda: box.panels_up() and "no goal." in br.term_text(), 15, 0.1)
+    up = wait_for(lambda: box.panels_up() and "SYSOP" in br.term_text(), 15, 0.1)
     t_show = time.time() - t
     check("s9b: tapping Panel again shows them in every window and the idle screen is back in the browser (%.1f s)" % t_show, up is not None, (panel_rows(box), br.term_text()[-200:]))
     check("s9b: the focus stayed in the Claude tab through both taps (the panel is not active, the Claude pane is)",
@@ -1600,7 +1595,7 @@ def s9(box):
     box.save("9-3-claude-after-esc.txt", box.cap(cw))
     br.screenshot("9-3-after-esc")
     check("s9b: tapping Esc interrupts the busy Claude Code tab (%.1f s)" % t_esc, stopped is not None, box.cap(cw)[-400:])
-    check("s9b: the Esc went to the Claude pane, not to the panel (the panel is idle, not focused)", "no goal." in box.panel_text() and not any(r[5] for r in panel_rows(box)), box.panel_text()[-200:])
+    check("s9b: the Esc went to the Claude pane, not to the panel (the panel is idle, not focused)", "Say or type a goal." in box.panel_text() and not any(r[5] for r in panel_rows(box)), box.panel_text()[-200:])
     # (d) typing along while a goal arrives, on the phone
     since = time.time()
     rc, gid_d, _ = box.pub("in the tab named shell run the command: echo hello-9d", "voice")
@@ -1608,7 +1603,7 @@ def s9(box):
     for ch in "cxgqcxgqcxgq":
         br.send_keys(ch, gap=0)
         actives += [r[5] for r in panel_rows(box, cw)]
-        seen_goal = seen_goal or "unless you veto it" in br.term_text()
+        seen_goal = seen_goal or "sending in" in br.term_text()
         time.sleep(0.35)
     ok = wait_for(lambda: "hello-9d" in box.cap(sw).replace("echo hello-9d", ""), 120)
     st = box.wait_goal(gid_d, 60)
@@ -1645,7 +1640,7 @@ def s9(box):
                 gid = g[0][0]
                 seen["goal"] = t
         pt = box.panel_text()
-        if "unless you veto it" in " ".join(pt.split()) and "countdown" not in seen:
+        if "sending in" in " ".join(pt.split()) and "countdown" not in seen:
             seen["countdown"] = t
             snaps.append(br.term_text())
             br.screenshot("9-5-countdown")
@@ -1663,19 +1658,18 @@ def s9(box):
     br.screenshot("9-6-answer")
     box.save("9-6-claude-tab.txt", box.cap(cw))
     check("s9b: holding the microphone with a finger: the light went recording, sending, sent", "recording" in states and "sending" in states and h["final"] is not None and h["final"][1] == "sent", states)
-    check("s9b: the panel was idle before the goal ('no goal.')", "no goal." in before_panel, before_panel[-200:])
+    check("s9b: the panel was idle before the goal ('Say or type a goal.')", "Say or type a goal." in before_panel, before_panel[-200:])
     check("s9b: the goal reached the sysop, the countdown showed in the phone terminal and the panel never had the focus", bool(gid) and "countdown" in seen and not any(r[5] for r in panel_rows(box)), (seen, panel_rows(box)))
     check("s9b: the prompt was typed in the Claude tab and the answer appeared", "typed" in seen and "answer" in seen, "%s; tab: %s" % (seen, box.cap(cw)[-300:]))
     check("s9b: the goal ended done", (st or {}).get("state") == "done", (st or {}).get("error"))
     # (e) the idle panel after the goal
-    wait_for(lambda: "last goal (voice" in box.panel_text(), 15, 0.3)
-    wait_for(lambda: "no goal." in br.term_text(), 15, 0.3)
+    wait_for(lambda: "done" in box.panel_text().splitlines()[0], 15, 0.3)
     after = box.panel_text()
     br.screenshot("9-7-idle-after-goal")
     box.save("9-7-panel-after-goal.txt", after)
     box.save("9-7-terminal-after-goal.txt", br.term_text())
-    check("s9e: after the goal the panel is idle again and shows the last goal (source voice) with its result", "no goal." in after and "last goal (voice" in after and ("done:" in after or "DONE" in after or "failed:" in after), after[-600:])
-    check("s9e: the idle panel keeps its head, 'no goal' and the key line after the goal", all(x in after for x in ("SYSOP", "no goal.", "[g] Goal")), after[-600:])
+    check("s9e: after the goal the panel shows its end (the state word done or failed and 'done: ...') and the Goal button, not the sentence for a panel that saw no goal",
+          "Say or type a goal." not in after and ("done:" in after or "failed:" in after) and all(x in after for x in ("SYSOP", "Goal")), after[-600:])
     summary = ((st or {}).get("summary") or "").split()
     check("s9e: the END of the result of the goal ('%s') is on the 8-line panel of the phone, not only the DONE badge and the goal text" % " ".join(summary[-2:]),
           len(summary) >= 2 and " ".join(summary[-2:]) in " ".join(after.split()), (summary, after[-500:]))
@@ -1719,7 +1713,7 @@ def s10(box):
     check("s10: the new window is a tab and its panel is not: %d tabs listed for %d windows, none of them is a panel pane, one pane each" % (len(tl), n0 + 1),
           len(tl) == n0 + 1 and not any(x.get("pane") in panel_panes for x in tl) and all(len(x.get("panes") or []) == 1 for x in tl), tl)
     check("s10: the panel of the new window is idle, unfocused, and the new window's own pane is the active one",
-          all(p["active"] == "0" for p in box.panes() if p["panel"] == "1") and "no goal." in box.panel_text(), box.panes())
+          all(p["active"] == "0" for p in box.panes() if p["panel"] == "1") and "Say or type a goal." in box.panel_text(), box.panes())
     time.sleep(1.0)
     br.screenshot("10-new-window")
     box.save("10-terminal.txt", br.term_text())

@@ -12,7 +12,7 @@ default. A wrong value raises ConfigError with a line that names the variable: t
   SWARMBOX_SYSOP_PANEL_MODE        always (default) | auto | off: when the panel is in tmux, see dock.py. Not SWARMBOX_SYSOP_PANEL: that name is the marker
                                    (=1) in the start command of a panel pane, which swarmbox-tabs hides
   SWARMBOX_SYSOP_MODEL             model name for the brain (default haiku)
-  SWARMBOX_SYSOP_AUTONOMY          confirm-all | confirm-risky (default) | auto, see policy.py
+  SWARMBOX_SYSOP_AUTONOMY          confirm-all | confirm-risky | auto (default), see policy.py
   SWARMBOX_SYSOP_COUNTDOWN         seconds a low-risk action waits for a veto (default 4; 0 = none)
   SWARMBOX_SYSOP_APPROVAL_TIMEOUT  seconds a high-risk action waits for the word `run` before it is refused (default 60)
   SWARMBOX_SYSOP_MAX_STEPS         tool calls (not say/done) per goal (default 20)
@@ -28,7 +28,7 @@ DEFAULTS = {
     "panel_mode": "always",
     "brain": "claude",
     "model": "haiku",
-    "autonomy": "confirm-risky",
+    "autonomy": "auto",
     "countdown": "4",
     "approval_timeout": "60",
     "max_steps": "20",
