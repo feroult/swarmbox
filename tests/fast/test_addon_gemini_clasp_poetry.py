@@ -189,16 +189,19 @@ class ThroughSwarmboxAddonTest(InstallBase):
         self.assertIn("['--version', '%s']" % expect["poetry"], read(self.calls))
 
 class ManifestTest(unittest.TestCase):
-    def test_latest_updates_itself_and_every_other_version_is_pinned_and_managed(self):
+    def test_a_self_updating_addon_is_latest_and_a_pinned_one_is_managed(self):
         for t in sorted(os.listdir(REAL_ADDONS)):
             version, update, _, _, update_cmd = manifest(t)
             with self.subTest(addon=t):
-                if version == "latest":
-                    self.assertEqual(update, "self")
+                if update == "self":
+                    self.assertEqual(version, "latest")
                     self.assertNotEqual(update_cmd, "")
-                else:
-                    self.assertEqual(update, "managed")
+                elif version != "latest":
                     self.assertRegex(version, r"^\d+\.\d+(\.\d+)?$")
+        # the npm agents follow the newest release and SwarmBox installs them (they have no update command of their own, or a different one)
+        for t in ("gemini", "opencode"):
+            with self.subTest(addon=t):
+                self.assertEqual(tuple(manifest(t)[:2]), ("latest", "managed"))
 
 from host_support import CreateFlagsBase, values  # noqa: E402
 

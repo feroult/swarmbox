@@ -132,10 +132,13 @@ class Rules(Base):
         self.case(dict(conf=dict(VERSION="latest", UPDATE="self")), good, "UPDATE_CMD")
         self.case(dict(conf=dict(VERSION="latest", UPDATE="self", UPDATE_CMD='""')), good, "UPDATE_CMD")
 
-    def test_latest_needs_update_self_and_an_update_command(self):
-        good = dict(conf=SELF_UPDATING)
-        self.case(dict(conf=dict(VERSION="latest")), good, "latest", "UPDATE")
-        self.case(dict(conf=dict(VERSION="latest", UPDATE="managed", UPDATE_CMD='"demo update"')), good, "latest", "UPDATE")
+    def test_latest_may_be_managed_by_swarmbox(self):
+        # an npm agent without an update command of its own (gemini, opencode) follows the newest release and SwarmBox installs it again
+        make_addon(self.image, name="npmagent", COMMANDS='"npmagent"', VERSION="latest", UPDATE="managed")
+        make_addon(self.image, name="npmdefault", COMMANDS='"npmdefault"', VERSION="latest")
+        r = self.validate()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertRegex(r.stdout, r"npmagent.*VERSION=latest, UPDATE=managed")
 
     def test_a_pinned_version_is_managed(self):
         good = dict(conf=dict(VERSION="1.0.0"))

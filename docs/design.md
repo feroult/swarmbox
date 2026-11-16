@@ -332,7 +332,7 @@ An addon is a directory `container/addons/<name>/` with `addon.conf` (manifest),
 (with `gsutil`, `bq`), `clasp`, `go`, `poetry`, `voice` (an input: whisper.cpp, a multilingual Whisper model and a service that publishes what you say as a goal on the bus; `docs/voice.md`), `sysop` (the agent that operates the tabs from a goal; `docs/sysop.md`).
 
 Manifest keys: `SCHEMA`, `NAME`, `DESCRIPTION`, `VERSION` and `COMMANDS` (mandatory), and `UPDATE` (`managed` or `self`) with `UPDATE_CMD`, `PORTS` and `SHA256_<arch>` where the vendor's checksum is recorded (optional).
-`VERSION=latest` needs `UPDATE=self` and an `UPDATE_CMD`; any other version is pinned and managed. The manifest says nothing about how a command starts: that is the addon's own `shell.sh`. Full table and reasons: [addons-design.md](addons-design.md).
+`VERSION` is `latest` (the newest release when the addon is installed) or pinned; `UPDATE=managed` (the default) means SwarmBox installs it again, and `UPDATE=self` means the program updates itself with `UPDATE_CMD` and needs `VERSION=latest`. The manifest says nothing about how a command starts: that is the addon's own `shell.sh`. Full table and reasons: [addons-design.md](addons-design.md).
 
 **Shims.** A shim is a symlink named after a command, pointing to one dispatcher, `swarmbox-shim`. A call finds its addon in the index (`command addon`),
 runs `swarmbox-addon run`, which, if the addon is not installed, takes an `flock` lock, prints `Installing <name> (first use)...`, runs `install.sh`, and then `exec`s the

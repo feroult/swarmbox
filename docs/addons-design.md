@@ -57,7 +57,7 @@ The host only runs these files at the right moments (install, start of the box, 
 | `PORTS` | publishes the ports when the box is created (`clasp` uses it for the OAuth login) |
 | `SHA256_amd64`, `SHA256_arm64` | passes `ADDON_SHA256` to `install.sh`, which checks the download |
 
-Rule: `VERSION=latest` needs `UPDATE=self` and an `UPDATE_CMD`; any other version is pinned and `managed`.
+Rules: `VERSION` is `latest` (the newest release when the addon is installed) or a pinned version. `UPDATE=managed` (the default) means SwarmBox installs it again (`swarmbox addon install NAME --force`); `UPDATE=self` means the program updates itself with `UPDATE_CMD` and needs `VERSION=latest` (`claude update`).
 
 **Not in the manifest, on purpose:**
 

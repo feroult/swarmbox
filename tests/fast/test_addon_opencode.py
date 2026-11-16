@@ -132,10 +132,10 @@ class InstallTest(unittest.TestCase):
         r = subprocess.run(["bash", ADDON, "install", "opencode"], env=env, capture_output=True, text=True, timeout=60, cwd=self.base)
         self.assertEqual(r.returncode, 0, r.stderr)
         addons = os.path.join(self.home, ".local", "share", "swarmbox", "addons", "opencode")
-        pinned = re.search(r"(?m)^VERSION=(\S+)$", read(os.path.join(ADDONDIR, "addon.conf"))).group(1)
-        self.assertRegex(pinned, r"^\d+\.\d+\.\d+$")   # a pinned addon: managed by SwarmBox
-        self.assertEqual(os.readlink(os.path.join(addons, "current")), pinned)
-        self.assertIn("@opencode/cli@" + pinned, read(self.calls))
+        version = re.search(r"(?m)^VERSION=(\S+)$", read(os.path.join(ADDONDIR, "addon.conf"))).group(1)
+        self.assertEqual(version, "latest")   # it follows the newest release, installed by SwarmBox (managed)
+        self.assertEqual(os.readlink(os.path.join(addons, "current")), version)
+        self.assertIn("@opencode/cli@" + version, read(self.calls))
         self.assertTrue(os.access(os.path.join(addons, "current", "bin", "opencode"), os.X_OK))
         # and the prepare.sh that ran after the install rendered the configuration
         self.assertTrue(os.path.exists(os.path.join(self.base, "run", "opencode.json")), r.stderr)

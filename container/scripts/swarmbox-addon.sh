@@ -247,10 +247,8 @@ check_manifest() {
             [ -n "${M[UPDATE_CMD]:-}" ] || err "UPDATE=self needs a non-empty UPDATE_CMD (6.7)" ;;
         *) err "UPDATE must be managed or self, found '$update'" ;;
     esac
-    # VERSION=latest and UPDATE=self go together; any other version is pinned, and SwarmBox manages it
-    if [ "$version" = latest ] && [ "$update" != self ]; then
-        err "VERSION=latest needs UPDATE=self and an UPDATE_CMD: an addon that follows the latest release updates itself, any other VERSION is pinned and managed"
-    fi
+    # UPDATE says who updates: managed (SwarmBox installs again, for a pinned version or for latest, the newest release at that moment) or
+    # self (the program does, with UPDATE_CMD, and then VERSION is latest: checked above)
     for a in amd64 arm64; do
         h=${M[SHA256_$a]:-}
         if [ -n "$h" ] && [[ ! "$h" =~ ^[0-9a-fA-F]{64}$ ]]; then
@@ -1330,7 +1328,7 @@ cmd_new() {
         exit 1
     fi
     cat >"$base/$name/addon.conf" <<EOF
-# Manifest of $name. VERSION=latest needs UPDATE=self and an UPDATE_CMD; any other VERSION is pinned and managed.
+# Manifest of $name. VERSION is latest (the newest release when SwarmBox installs it) or pinned; UPDATE=self (the program updates itself with UPDATE_CMD) needs VERSION=latest.
 SCHEMA=1
 NAME=$name
 DESCRIPTION="What $name is, in one line"
