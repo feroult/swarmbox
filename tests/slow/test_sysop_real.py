@@ -99,6 +99,8 @@ class Real(unittest.TestCase):
         os.mkdir(self.victim)
         self.out = os.path.join(self.e.dir, "out.jsonl")
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_OUT"] = self.out
+        self.brain_log = os.path.join(self.e.dir, "claude.log")
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_LOG"] = self.brain_log
         self.panel = None
         self.svc = None
 
@@ -366,9 +368,11 @@ class Stop(Real):
         time.sleep(0.5)
         self.assertFalse(os.path.exists(m2))
         self.assertNotIn("marker2", self.text(self.sh))
-        # no brain left
-        left = subprocess.run(["pgrep", "-f", "fixtures/sysop/bin/claude"], capture_output=True, text=True).stdout.split()
-        self.assertEqual(left, [])
+        # no brain left: the pid of THIS test's brain (another test, in another container or not, may run its own fake claude: no pgrep over the machine)
+        with open(self.brain_log) as f:
+            brain_pid = json.load(f)["pid"]
+        self.assertTrue(ss.wait_for(lambda: not os.path.exists("/proc/%d" % brain_pid) or open("/proc/%d/stat" % brain_pid).read().rsplit(")", 1)[1].split()[0] == "Z", 5),
+                        "the brain is still running")
 
     def test_stop_during_the_countdown_types_nothing(self):
         marker = os.path.join(self.e.dir, "marker")

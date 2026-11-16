@@ -3,6 +3,8 @@ crashes, a bus that restarts, a service that is killed and started again, the pr
 A fake bus and the fake claude (tests/support/fixtures/sysop); no model, no tmux.
 Run with: python3 -W error tests/fast/test_sysop_service.py
 """
+import contextlib
+import io
 import json
 import os
 import signal
@@ -45,6 +47,7 @@ def read(path):
 
 class Base(unittest.TestCase):
     cfg_over = {}
+    fast_loop = False          # True: the waits of the main loop are cut (ss.fast_cond), for a test of a loop that fails turn after turn
     read = staticmethod(read)
 
     def setUp(self):
@@ -77,9 +80,17 @@ class Base(unittest.TestCase):
             json.dump(steps, f)
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"] = p
 
+    def gate(self):
+        """(a script step, open): the brain waits at the step until open() is called. A goal that stays running without a sleep"""
+        path = os.path.join(self.e.dir, "gate-%d" % len(os.listdir(self.e.dir)))
+        return {"waitfile": path}, lambda: open(path, "w").close()
+
     def start(self, **over):
+        replace = {k: over.pop(k) for k in ("max_seconds", "approval_timeout") if isinstance(over.get(k), float) and over[k] < 5}   # below what a setting may be
         kw = dict(dict(self.cfg_over, countdown=0), **over)
-        self.svc = service.Service(self.e.cfg(**kw), self.e.paths, backoff=(0.05, 0.3), log=lambda m: None)
+        self.svc = service.Service(self.e.cfg(**kw)._replace(**replace), self.e.paths, backoff=(0.05, 0.3), log=lambda m: None)
+        if self.fast_loop:
+            ss.fast_cond(self.svc)
         self.thread = threading.Thread(target=self.svc.run, daemon=True)
         self.thread.start()
         self.assertTrue(self.svc.wait_ready(10))
@@ -184,16 +195,11 @@ class Flow(Base):
         self.assertTrue(st["created"] <= st["started"] <= st["ended"])
         with open(self.logf) as f:
             self.assertEqual(json.load(f)["stdin"], "list the tabs\n")
-
-    def test_the_audit_file_has_the_goal_its_states_and_the_end(self):
-        self.start()
-        gid = self.goal("hello world", "panel")
-        self.wait_state(gid)
-        ev = self.events(goal=gid)
-        self.assertTrue(all(e["source"] == "panel" for e in ev))
+        ev = self.events(goal=gid)             # the audit file has the goal, its states and the end
+        self.assertTrue(all(e["source"] == "voice" for e in ev))
         kinds = [(e["event"], e.get("state")) for e in ev if e["event"] in ("goal", "state", "brain")]
         self.assertEqual(kinds, [("goal", None), ("state", "queued"), ("state", "running"), ("brain", None), ("state", "done")])
-        self.assertEqual([e["text"] for e in ev if e["event"] == "goal"], ["hello world"])
+        self.assertEqual([e["text"] for e in ev if e["event"] == "goal"], ["list the tabs"])
         self.assertEqual([e["tool"] for e in ev if e["event"] == "call"], ["say", "done"])
         self.assertEqual([e["event"] for e in ev if e["event"] in ("say",)], ["say"])
 
@@ -207,44 +213,26 @@ class Flow(Base):
         self.assertEqual(st["settings"]["max_goals"], 5)
         self.assertEqual(st["version"], "1.0.0")
 
-    def test_a_plain_text_body_is_a_goal(self):
+    def test_goals_run_one_at_a_time_in_order_and_the_status_shows_the_queue(self):
+        hold, release = self.gate()
+        self.script([hold] + DONE)
         self.start()
-        gid = self.goal(body="run the tests")
-        self.assertEqual(self.wait_state(gid)["text"], "run the tests")
-
-    def test_the_source_is_a_clean_label(self):
-        self.start()
-        for src, want in (("VOICE", "voice"), ("evil\nsource", "evil_source"), ("", "unknown"), ("x" * 100, "x" * 32)):
-            gid = self.goal("x", src)
-            self.assertEqual(self.wait_state(gid)["source"], want)
-
-    def test_goals_run_one_at_a_time_in_order(self):
-        self.script([{"sleep": 0.4}] + DONE)
-        self.start()
-        ids = [self.goal("g%d" % i) for i in range(3)]
-        sts = [self.wait_state(i) for i in ids]
-        starts = [s["started"] for s in sts]
-        ends = [s["ended"] for s in sts]
-        self.assertEqual(starts, sorted(starts))
-        for i in range(2):
-            self.assertLessEqual(ends[i], starts[i + 1] + 0.001, "one at a time")
-        self.assertEqual([s["state"] for s in sts], ["done"] * 3)
-
-    def test_the_state_while_it_runs_shows_the_queue_and_the_current_goal(self):
-        self.script([{"sleep": 1.0}] + DONE)
-        self.start()
-        a, b = self.goal("first"), self.goal("second")
-        self.assertTrue(ss.wait_for(lambda: (self.status() or {}).get("current") == a and [q["id"] for q in self.status()["queue"]] == [b], 10), self.status())
-        self.assertEqual(self.state(a)["state"], "running")
-        self.assertEqual(self.state(b)["state"], "queued")
+        a, b, c = self.goal("first"), self.goal("second"), self.goal("third")
+        self.assertTrue(ss.wait_for(lambda: (self.status() or {}).get("current") == a and [q["id"] for q in self.status()["queue"]] == [b, c], 10), self.status())
+        self.assertEqual((self.state(a)["state"], self.state(b)["state"]), ("running", "queued"))
         self.assertEqual(self.status()["queue"][0]["text"], "second")
-        self.wait_state(b)
+        release()
+        sts = [self.wait_state(i) for i in (a, b, c)]
+        self.assertEqual([s["state"] for s in sts], ["done"] * 3)
+        self.assertEqual([s["started"] for s in sts], sorted(s["started"] for s in sts), "in order")
+        for i in range(2):
+            self.assertLessEqual(sts[i]["ended"], sts[i + 1]["started"] + 0.001, "one at a time")
         self.assertTrue(ss.wait_for(lambda: self.status()["current"] is None and not self.status()["queue"], 5))
 
     def test_the_state_waiting_approval_with_the_pending_action(self):
         self.script([{"tool": "run", "args": {"tab": "@1", "command": "rm -rf build"}}, {"tool": "say", "args": {"text": "not allowed"}},
                      {"tool": "done", "args": {"summary": "refused"}}])
-        self.start(approval_timeout=2)
+        self.start(approval_timeout=0.5)
         gid = self.goal("clean the build folder")
         st = self.wait_state(gid, ("waiting_approval",))
         self.assertEqual((st["pending"]["risk"], st["pending"]["mode"], st["pending"]["text"], st["pending"]["tab"]), ("high", "approve", "rm -rf build", "@1"))
@@ -265,56 +253,50 @@ class Flow(Base):
         self.assertEqual(self.tabs.sent, [("@1", {"run": "rm -rf build"})])
 
 
-class Rejections(Base):
-    def test_the_queue_limit(self):
-        self.script([{"sleep": 1.5}] + DONE)
-        self.start(max_goals=2)
-        ids = [self.goal("g%d" % i) for i in range(5)]
-        self.assertTrue(ss.wait_for(lambda: self.state(ids[4]) is not None, 5))
-        self.assertTrue(ss.wait_for(lambda: self.state(ids[3]) is not None, 5))
-        for i in (3, 4):
-            st = self.state(ids[i])
-            self.assertEqual(st["state"], "failed", st)
-            self.assertIn("queue is full", st["error"])
-        self.assertEqual(self.status()["rejected"], 2)
-        self.assertEqual(len([e for e in self.events("rejected")]), 2)
-        for i in (0, 1, 2):
-            self.assertEqual(self.wait_state(ids[i])["state"], "done")
-        self.assertEqual(self.tabs.sent, [])
+class Accept(Base):
+    """What the reader does with an envelope (Service.accept): the label of the source, the goals that are refused, the queue limit. No brain runs."""
 
-    def test_the_default_limit_is_five(self):
-        self.script([{"sleep": 2}] + DONE)
-        self.start()
-        ids = [self.goal("g%d" % i) for i in range(8)]       # 1 running + 5 waiting + 2 dropped
-        self.assertTrue(ss.wait_for(lambda: self.state(ids[7]) is not None, 8))
-        dropped = [i for i in ids if (self.state(i) or {}).get("state") == "failed"]
-        self.assertEqual(len(dropped), 2, [(i, (self.state(i) or {}).get("state")) for i in ids])
+    def setUp(self):
+        super().setUp()
+        self.svc = service.Service(self.e.cfg(max_goals=2), self.e.paths, log=lambda m: None)
+        self.e.paths.make()
+        self.n = 0
 
-    def test_bad_goals(self):
-        self.start()
+    def accept(self, body="x", source="cli", **env):
+        self.n += 1
+        self.svc.accept(dict({"v": 1, "id": "e%d" % self.n, "topic": "goal", "source": source, "body": body}, **env))
+        return self.state("e%d" % self.n)
+
+    def test_the_source_is_a_clean_label(self):
+        for src, want in (("VOICE", "voice"), ("evil\nsource", "evil_source"), ("", "unknown"), ("x" * 100, "x" * 32)):
+            self.assertEqual(self.accept(source=src)["source"], want)
+
+    def test_a_plain_text_body_is_a_goal_and_the_text_is_stripped(self):
+        self.assertEqual(self.accept("  run the tests ")["text"], "run the tests")
+        self.assertEqual(self.accept({"text": "from a map"})["text"], "from a map")
+
+    def test_bad_goals_fail_with_their_reason_and_keep_no_big_text(self):
         cases = [({"text": ""}, "no text"), ({"text": "   "}, "no text"), ({"nope": 1}, "no text"), (5, "no text"), (None, "no text"), (["a"], "no text"),
                  ({"text": 5}, "no text"), ({"text": "x" * 5000}, "5000 characters")]
         for body, why in cases:
-            r = self.bus.publish_goal("", body=body)
-            self.assertTrue(r["ok"])
-            gid = r["id"]
-            self.assertTrue(ss.wait_for(lambda: self.state(gid), 5))
-            st = self.state(gid)
+            st = self.accept(body)
             self.assertEqual(st["state"], "failed", body)
             self.assertIn(why, st["error"])
-        self.assertEqual(self.tabs.sent, [])
-        self.assertEqual(self.status()["queue"], [])
+            self.assertLessEqual(len(st["text"]), 200)
+        self.assertEqual(len(self.svc.queue), 0)
+
+    def test_the_queue_limit_drops_the_goals_over_it_and_counts_them(self):
+        got = [self.accept("g%d" % i)["state"] for i in range(5)]
+        self.assertEqual(got, ["queued", "queued", "failed", "failed", "failed"])
+        self.assertIn("queue is full", self.state("e3")["error"])
+        self.assertEqual(self.svc.rejected, 3)
+        self.assertEqual(len(self.events("rejected")), 3)
 
     def test_a_newer_envelope_version_and_garbage_are_ignored(self):
-        self.start()
-        with self.bus.lock:
-            sub = self.bus.subs[0]
-        sub.sendall(b'{"v":2,"id":"x","topic":"goal","body":{"text":"hi"}}\n')
-        sub.sendall(b"this is not json\n")
-        sub.sendall(b'[1,2]\n')
-        gid = self.goal("after the garbage")
-        self.assertEqual(self.wait_state(gid)["state"], "done")
-        self.assertEqual(len(self.events("rejected")), 3)
+        for env in ({"v": 2, "id": "x", "topic": "goal", "body": {"text": "hi"}}, {"_bad": True}, [1, 2], "text", {"v": "1", "body": "x"}):
+            self.svc.accept(env)
+        self.assertEqual(len(self.events("rejected")), 5)
+        self.assertEqual(len(self.svc.queue), 0)
 
 
 class TopicAndGroup(Base):
@@ -419,20 +401,21 @@ class Survival(Base):
         self.thread.start()
         self.addCleanup(self.end)
         self.assertTrue(self.svc.wait_ready(10))
-        time.sleep(0.4)
         self.assertEqual(self.status()["bus"], "down")
         self.bus.start()
         self.assertTrue(self.bus.wait_subscriber(1, 10))
         self.assertEqual(self.wait_state(self.goal("late"))["state"], "done")
 
     def test_the_bus_dies_in_the_middle_of_a_goal(self):
-        self.script([{"sleep": 0.5}, {"tool": "list_tabs"}, {"tool": "say", "args": {"text": "x"}}] + DONE)
+        hold, release = self.gate()
+        self.script([hold, {"tool": "list_tabs"}, {"tool": "say", "args": {"text": "x"}}] + DONE)
         self.start()
         gid = self.goal("long")
         self.wait_state(gid, ("running",))
         self.bus.stop()
-        time.sleep(0.2)
+        self.assertTrue(ss.wait_for(lambda: self.status()["bus"] == "down", 10))
         self.bus.start()
+        release()
         st = self.wait_state(gid)
         self.assertEqual(st["state"], "done", st)
         self.assertTrue(ss.wait_for(lambda: self.bus.wait_subscriber(1, 1), 10))
@@ -487,22 +470,27 @@ class Stopping(Base):
         self.assertIn("stop", [e.get("decision") for e in self.events("decision", a)])
 
     def test_stop_of_one_queued_goal_leaves_the_rest(self):
-        self.script([{"sleep": 1.0}] + DONE)
+        hold, release = self.gate()
+        self.script([hold] + DONE)
         self.start()
         a, b, c = self.goal("a"), self.goal("b"), self.goal("c")
         self.wait_state(a, ("running",))
         ss.wait_for(lambda: len(self.status()["queue"]) == 2, 5)
         ipc.request_stop(self.e.paths, b)
         self.assertEqual(self.wait_state(b)["state"], "stopped")
+        release()
         self.assertEqual(self.wait_state(a)["state"], "done")
         self.assertEqual(self.wait_state(c)["state"], "done")
 
     def test_stop_of_a_goal_that_is_not_running_does_not_hurt_the_current_one(self):
-        self.script([{"sleep": 1.0}] + DONE)
+        hold, release = self.gate()
+        self.script([hold] + DONE)
         self.start()
         a = self.goal("a")
         self.wait_state(a, ("running",))
         ipc.request_stop(self.e.paths, "no-such-goal")
+        self.assertTrue(ss.wait_for(lambda: not os.path.exists(self.e.paths.stop_request), 5), "the request was taken")
+        release()
         self.assertEqual(self.wait_state(a)["state"], "done")
 
     def test_stop_while_idle_is_taken_and_harmless(self):
@@ -531,7 +519,7 @@ class Stopping(Base):
 
     def test_the_deadline_ends_a_goal(self):
         self.script([{"sleep": 60}])
-        self.start(max_seconds=5)
+        self.start(max_seconds=1.0)         # below what the setting allows (5): the budget is the same code
         a = self.goal("a")
         st = self.wait_state(a, seconds=30)
         self.assertEqual(st["state"], "failed")
@@ -820,6 +808,120 @@ class Cli(Base):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("self-test ok", p.stderr)
         self.assertEqual(self.run_cli().returncode, 2)
+
+
+class CliText(unittest.TestCase):
+    def test_status_prints_no_escape_sequence_from_a_goal_text(self):
+        e = ss.Env()
+        self.addCleanup(e.cleanup)
+        saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
+        os.environ.update(e.env)
+        pth = e.paths.make()
+        gdir = paths.private_dir(pth.goal_dir("g1"))
+        ipc.write_json(os.path.join(gdir, "state.json"), {"id": "g1", "state": "queued", "source": "cli", "text": "hello \x1b]0;PWNED-TITLE\x07 \x1b[2J\x1b[31m red"})
+        out = io.StringIO()
+        ns = type("A", (), {"json": False, "quiet": False})()
+        with contextlib.redirect_stdout(out):
+            cli.cmd_status(ns)
+        self.assertIn("hello", out.getvalue())
+        self.assertNotIn("\x1b", out.getvalue())
+        self.assertNotIn("\x07", out.getvalue())
+
+
+class Flood(Base):
+    def accept(self, svc, i, text):
+        svc.accept({"v": 1, "id": "f%d" % i, "topic": "goal", "source": "cli", "peer": {}, "body": {"text": text}})
+
+    def test_rejected_goals_keep_little_and_the_folders_are_pruned_while_it_runs(self):
+        svc = service.Service(self.e.cfg(), self.e.paths, log=lambda m: None)
+        self.e.paths.make()
+        self.accept(svc, 0, "keep me")                 # queued: its folder must survive the pruning
+        for i in range(1, 80):
+            self.accept(svc, i, "x" * (service.MAX_GOAL_TEXT + 5000))
+        names = os.listdir(self.e.paths.goals)
+        self.assertLessEqual(len(names), service.KEEP_GOALS + 1)
+        self.assertIn("f0", names, "a queued goal is never pruned")
+        sizes = [os.path.getsize(os.path.join(self.e.paths.goals, n, "state.json")) for n in names]
+        self.assertLess(max(sizes), 2000, "a rejected goal does not keep its text")
+        self.assertLess(os.path.getsize(self.e.paths.audit), 80 * 3000)
+        self.assertEqual(len(svc.queue), 1)
+
+    def test_the_audit_file_rotates_instead_of_growing_without_bound(self):
+        old = audit.MAX_FILE
+        audit.MAX_FILE = 2000
+        self.addCleanup(setattr, audit, "MAX_FILE", old)
+        a = audit.Audit(os.path.join(self.e.dir, "events.jsonl"))
+        for i in range(100):
+            a.append("say", text="x" * 100)
+        self.assertTrue(os.path.exists(a.path + ".1"))
+        self.assertLess(os.path.getsize(a.path), 2000 + 400)
+
+
+class ShutdownRace(Base):
+    def test_a_shutdown_between_the_ack_and_the_assignment_does_not_leave_the_stream_open(self):
+        svc = service.Service(self.e.cfg(), self.e.paths, backoff=(0.05, 0.3), log=lambda m: None)
+        real = svc.bus.subscribe
+        subs = []
+
+        def subscribe(topic, group=None):
+            sub = real(topic, group)
+            subs.append(sub)
+            svc.shutdown()                  # the stop arrives when the broker has acknowledged and svc.sub is not set yet,
+            t.join(10)                      # and the service has ended its main loop (its own shutdown found no stream to close)
+            return sub
+        svc.bus.subscribe = subscribe
+        t = threading.Thread(target=svc.run, daemon=True)
+        t.start()
+        t.join(15)
+        self.assertFalse(t.is_alive())
+        self.assertTrue(subs)
+        self.assertTrue(ss.wait_for(lambda: subs[0].sock.fileno() == -1, 5), "the goal stream was left open")
+
+
+class Surrogates(Base):
+    def test_a_goal_with_a_byte_that_is_not_utf8_does_not_kill_the_service(self):
+        self.start()
+        first = self.goal("caf\udce9 list tabs")
+        st = self.wait_state(first)
+        self.assertIn(st["state"], ("done", "failed"))
+        self.assertTrue(self.thread.is_alive(), "the service is still running")
+        self.assertTrue(self.svc.reader.is_alive(), "and still reads goals")
+        self.assertEqual(self.wait_state(self.goal("second goal"))["state"], "done")
+
+    def test_whatever_accept_or_the_end_of_a_goal_raises_the_service_goes_on(self):
+        self.start()
+        real_accept, real_final = self.svc.accept, self.svc.refresh_final
+        calls = []
+
+        def accept(env):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("bug in accept")
+            return real_accept(env)
+
+        def final(goal):
+            if len(calls) == 2:
+                raise RuntimeError("bug at the end")
+            return real_final(goal)
+        self.svc.accept, self.svc.refresh_final = accept, final
+        self.goal("lost goal")                                # accept raises: the reader must live on
+        self.assertTrue(ss.wait_for(lambda: len(calls) >= 1, 5))
+        self.assertTrue(self.svc.reader.is_alive())
+        second = self.goal("second")                          # the end of this goal raises: the loop must live on
+        self.assertTrue(ss.wait_for(lambda: self.events("brain", second), 30))
+        third = self.goal("third")
+        self.assertEqual(self.wait_state(third)["state"], "done")
+        self.assertTrue(self.thread.is_alive())
+
+    def test_json_files_and_the_audit_take_a_lone_surrogate(self):
+        p = os.path.join(self.e.dir, "x.json")
+        ipc.write_json(p, {"t": "a\udce9b"})
+        self.assertEqual(ipc.read_json(p), {"t": "a\udce9b"})
+        audit.Audit(os.path.join(self.e.dir, "ev.jsonl")).append("goal", text="a\udce9b")
+        self.assertEqual(audit.read(os.path.join(self.e.dir, "ev.jsonl"))[0]["text"], "a\udce9b")
+        ipc.append_jsonl(os.path.join(self.e.dir, "c.jsonl"), {"t": "a\udce9b"})
+        self.assertEqual(len(ipc.read_jsonl(os.path.join(self.e.dir, "c.jsonl"))), 1)
 
 
 if __name__ == "__main__":

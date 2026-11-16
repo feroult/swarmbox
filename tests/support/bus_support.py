@@ -49,7 +49,11 @@ class Conn:
     def __init__(self, path, timeout=10):
         self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.s.settimeout(timeout)
-        self.s.connect(path)
+        try:
+            self.s.connect(path)
+        except OSError:
+            self.s.close()                          # no ResourceWarning for a broker that is not up yet
+            raise
         self.f = self.s.makefile("rb")
 
     def send(self, req):

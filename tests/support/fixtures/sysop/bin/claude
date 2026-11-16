@@ -7,7 +7,8 @@ user tool_result, result).
 
 SWARMBOX_TEST_FAKE_CLAUDE_LOG     file that receives {"argv", "stdin", "cwd", "pid", "pgid", "env"} as JSON
 SWARMBOX_TEST_FAKE_CLAUDE_OUT     file that receives one JSON line per tool result {"tool", "args", "is_error", "text"}
-SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT  JSON file: a list of steps {"tool": name, "args": {...}} | {"sleep": seconds} | {"touch": path}
+SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT  JSON file: a list of steps {"tool": name, "args": {...}} | {"sleep": seconds} | {"touch": path} |
+                                  {"waitfile": path} (wait until the file exists, up to 60 s: a goal held running until the test lets it go)
 SWARMBOX_TEST_FAKE_CLAUDE_MODE    script (default) | notloggedin (what the real CLI does: the line on stdout, exit 1) | notloggedin-json |
                                   crash (exit 3, a line on stderr) | hang (sleeps) | hang-ignore-term (sleeps, ignores SIGTERM) |
                                   quiet (a result event, exit 0, no done) | maxturns | badjson
@@ -23,9 +24,10 @@ argv = sys.argv[1:]
 stdin = sys.stdin.read()
 log = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_LOG")
 if log:
-    with open(log, "w") as f:
+    with open(log + ".tmp", "w") as f:            # written whole and renamed: a test that waits for the file never reads half of it
         json.dump({"argv": argv, "stdin": stdin, "cwd": os.getcwd(), "pid": os.getpid(), "pgid": os.getpgid(0),
                    "env": {k: v for k, v in os.environ.items() if k.startswith(("SWARMBOX_", "FOO", "SB_", "PATH"))}}, f)
+    os.replace(log + ".tmp", log)
 mode = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_MODE") or "script"
 
 
@@ -102,6 +104,11 @@ for st in steps:
         continue
     if "touch" in st:
         open(st["touch"], "w").close()
+        continue
+    if "waitfile" in st:
+        end = time.time() + 60
+        while not os.path.exists(st["waitfile"]) and time.time() < end:
+            time.sleep(0.02)
         continue
     n += 1
     emit({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t%d" % n, "name": "mcp__sysop__" + st["tool"], "input": st.get("args", {})}]}})

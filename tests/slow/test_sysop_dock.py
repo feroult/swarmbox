@@ -1,8 +1,6 @@
 """Docking of the panel of the sysop (container/addons/sysop/lib/swarmbox_sysop/dock.py).
 
-  * layout(cols, rows) is ONE pure function: portrait -> a full-width pane at the bottom, 30 % of the height (at least 8 lines, never more than half of the window); otherwise a pane at the right edge,
-    20 % of the width, at least 40 columns; if that leaves the terminal fewer than 60 columns, the bottom layout. Boundaries are tested.
-    These tests, and the reading of tmux.conf, need no tmux.
+  * (the layout rule, the marks, the hook slot and the key of tmux.conf need no tmux: tests/fast/test_sysop_dock_logic.py)
   * the real thing against a REAL tmux on a private socket with real clients attached through a pty: where the pane goes for a portrait, a landscape
     and a narrow landscape window, ONE PANEL PER WINDOW (never two in one window, the other windows never touched), the user's panes untouched, the
     panel is a marked pane that swarmbox-tabs hides, the key binding of container/config/tmux.conf, the hook that fits only
@@ -19,7 +17,6 @@ import fcntl
 import importlib.util
 import os
 import pty
-import re
 import shutil
 import signal
 import struct
@@ -37,7 +34,7 @@ import sysop_support as ss  # noqa: E402
 from helpers import ROOT  # noqa: E402
 
 from swarmbox_sysop import dock, ipc, paths  # noqa: E402
-from swarmbox_sysop.dock import Follower, Layout, Tmux, layout, split_args  # noqa: E402
+from swarmbox_sysop.dock import Follower, Layout, Tmux  # noqa: E402
 
 TMUX_CONF = os.path.join(ROOT, "container", "config", "tmux.conf")
 BOTTOM = Layout("bottom", "30%")
@@ -52,115 +49,8 @@ def slurp(path):
         return ""
 
 
-class LayoutRule(unittest.TestCase):
-    def test_the_constants_are_the_ones_of_the_design(self):
-        self.assertEqual((dock.CELL_FACTOR, dock.BOTTOM_PERCENT, dock.RIGHT_PERCENT, dock.MIN_PANEL_COLS, dock.MIN_TERMINAL_COLS, dock.MIN_BOTTOM_ROWS), (2, 30, 20, 40, 60, 8))
-
-    def test_portrait_windows_get_a_full_width_pane_at_the_bottom(self):
-        for cols, rows in ((50, 70), (40, 80), (30, 40), (80, 41), (60, 31), (100, 51), (200, 101), (1, 1000)):
-            self.assertEqual(layout(cols, rows), BOTTOM, (cols, rows))
-
-    def test_landscape_windows_get_20_percent_at_the_right_edge(self):
-        self.assertEqual(layout(200, 50), Layout("right", "20%"))
-        self.assertEqual(layout(300, 50), Layout("right", "20%"))
-        self.assertEqual(layout(400, 100), Layout("right", "20%"))
-
-    def test_the_right_pane_is_never_narrower_than_40_columns(self):
-        self.assertEqual(layout(150, 50), Layout("right", "40"))      # 20 % of 150 is 30: the minimum applies, in columns
-        self.assertEqual(layout(120, 40), Layout("right", "40"))
-        self.assertEqual(layout(200, 50), Layout("right", "20%"))     # 20 % of 200 is exactly 40, of 199 is 39
-        self.assertEqual(layout(199, 50), Layout("right", "40"))
-
-    def test_a_narrow_landscape_window_falls_back_to_the_bottom(self):
-        self.assertEqual(layout(90, 30), BOTTOM)
-        self.assertEqual(layout(100, 30), BOTTOM, "100 columns: 40 + the border leave 59")
-        self.assertEqual(layout(101, 30), Layout("right", "40"), "101 columns: 40 + the border leave 60, enough")
-        self.assertEqual(layout(60, 20), Layout("bottom", "8"), "a short window: 30 % would be 6 lines, 8 is the least that is useful")
-        self.assertEqual(layout(80, 24), Layout("bottom", "8"))
-
-    def test_the_portrait_boundary_is_cols_below_twice_the_rows(self):
-        self.assertEqual(layout(119, 60), BOTTOM)
-        self.assertEqual(layout(120, 60), Layout("right", "40"), "exactly twice as many columns as rows is landscape")
-        self.assertEqual(layout(121, 60), Layout("right", "40"))
-        self.assertEqual(layout(239, 120), BOTTOM)
-
-    def test_nonsense_sizes_give_the_bottom_layout(self):
-        for cols, rows in ((0, 0), (-5, 10), (10, 0), (None, None), ("x", 5), (0, 30)):
-            self.assertEqual(layout(cols, rows), BOTTOM, (cols, rows))
-
-    def test_the_rule_is_a_function_of_the_size_alone(self):
-        for cols in range(1, 260, 7):
-            for rows in range(1, 120, 5):
-                lay = layout(cols, rows)
-                self.assertIn(lay.kind, ("bottom", "right"))
-                if lay.kind == "right":
-                    width = cols * 20 // 100 if lay.size == "20%" else int(lay.size)
-                    self.assertGreaterEqual(width, 40)
-                    self.assertGreaterEqual(cols - width - 1, 60)
-                    self.assertGreaterEqual(cols, 2 * rows)
-                elif rows * 30 // 100 >= 8:
-                    self.assertEqual(lay.size, "30%")
-                else:
-                    self.assertEqual(lay.size, str(max(1, min(8, rows // 2))), (cols, rows))
-
-    def test_the_tmux_flags(self):
-        self.assertEqual(split_args(BOTTOM), ["-f", "-v", "-l", "30%"])
-        self.assertEqual(split_args(Layout("right", "20%")), ["-f", "-h", "-l", "20%"])
-        self.assertEqual(split_args(Layout("right", "40")), ["-f", "-h", "-l", "40"])
 
 
-class Wiring(unittest.TestCase):
-    """What needs no tmux: the marks, the hook, the key in the file."""
-
-    def test_the_marks_are_the_ones_swarmbox_tabs_hides(self):
-        spec = importlib.util.spec_from_file_location("swarmbox_tabs", os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        self.assertIn(dock.PANEL_OPTION, mod.HIDDEN_OPTIONS)
-        self.assertEqual(dock.PANEL_OPTION, "@swarmbox_sysop_panel")
-        self.assertEqual(dock.PANEL_COMMAND, "SWARMBOX_SYSOP_PANEL=1")
-
-    def test_the_hook_has_its_own_slot(self):
-        self.assertEqual(dock.HOOK, "window-resized[418]")      # [417] was the voice panel's, removed: nobody else's slot is touched
-
-    def test_the_hooks_keep_the_session_and_the_tabs_socket_of_the_service(self):
-        saved = dict(os.environ)
-        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
-        os.environ.update({"SB_TABS_SESSION": "work", "SB_TABS_SOCKET": "sock-x", "SB_TABS_BIN": "/opt/tabs"})
-        d = dock.default_dock(Tmux(argv=["tmux", "-L", "never-started-%d" % os.getpid()]))
-        for argv in (d.redock_argv, d.sync_argv):
-            for want in ("SB_TABS_SESSION=work", "SB_TABS_SOCKET=sock-x", "SB_TABS_BIN=/opt/tabs"):
-                self.assertIn(want, argv)
-        self.assertEqual(d.session, "work")
-
-    def test_the_default_dock_runs_this_library_and_hands_the_folders_on(self):
-        saved = dict(os.environ)
-        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
-        os.environ.update(SB_RUN_DIR="/tmp/run-x", SB_STATE_DIR="/tmp/state-x", SB_BUS_SOCKET="/tmp/bus-x.sock")
-        d = dock.default_dock(Tmux(argv=["tmux", "-L", "never-started-%d" % os.getpid()]))
-        self.assertEqual(d.panel_argv[:2], ["env", "SWARMBOX_SYSOP_PANEL=1"])
-        self.assertEqual(d.panel_argv[-3:], ["-m", "swarmbox_sysop", "panel"])
-        for words in (d.panel_argv, d.redock_argv):
-            for want in ("SB_RUN_DIR=/tmp/run-x", "SB_STATE_DIR=/tmp/state-x", "SB_BUS_SOCKET=/tmp/bus-x.sock", sys.executable):
-                self.assertIn(want, words)
-            self.assertTrue(any(w.startswith("PYTHONPATH=") and ss.LIB in w for w in words))
-        self.assertEqual(d.redock_argv[-3:], ["swarmbox_sysop", "dock", "redock"])
-
-    def test_the_tmux_file_binds_a_free_key_for_the_sysop_and_none_for_voice(self):
-        conf = slurp(TMUX_CONF)
-        binds = [ln for ln in conf.splitlines() if re.match(r"\s*bind\s+S\s", ln)]
-        self.assertEqual(len(binds), 1, binds)
-        self.assertIn("swarmbox-sysop dock toggle --socket '#{socket_path}' --window '#{window_id}'", binds[0])
-        self.assertEqual([ln for ln in conf.splitlines() if re.match(r"\s*bind\s+v\s", ln)], [], "voice has no panel and no key")
-        self.assertNotIn("swarmbox-voice", conf)
-
-    def test_the_cli_refuses_a_bad_window_and_a_bad_action(self):
-        for bad in ("1", "%1", "@x", "-t", "@1;kill-server", ""):
-            r = subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop", "dock", "toggle", "--window", bad], env=dict(os.environ, PYTHONPATH=ss.LIB, SB_TABS_SOCKET="never-%d" % os.getpid()),
-                               capture_output=True, text=True, timeout=30)
-            self.assertEqual(r.returncode, 2, bad)
-        r = subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop", "dock", "nonsense"], env=dict(os.environ, PYTHONPATH=ss.LIB), capture_output=True, text=True, timeout=30)
-        self.assertEqual(r.returncode, 2)
 
 
 class FakeClient:

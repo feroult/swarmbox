@@ -4,11 +4,14 @@ Claude Code screen (input box, busy, dialog, an Enter that is swallowed). No tmu
 import importlib.util
 import json
 import os
+import io
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT  # noqa: E402
@@ -33,14 +36,16 @@ if args[:1] == ["-L"]:
     socket_seen, args = args[1], args[2:]
 fd = os.open(ST + ".lock", os.O_CREAT | os.O_RDWR)
 fcntl.flock(fd, fcntl.LOCK_EX)
-st = json.load(open(ST))
+with open(ST) as f:
+    st = json.load(f)
 st["log"].append([time.time(), args])
 st["socket_seen"] = socket_seen
 cmd = args[0] if args else ""
 
 
 def save():
-    json.dump(st, open(ST, "w"))
+    with open(ST, "w") as f:
+        json.dump(st, f)
 
 
 def die(msg):
@@ -161,6 +166,46 @@ save()
 '''
 
 
+class InProcessTmux:
+    """The fake tmux without a process: the same script (FAKE) run by exec in this process, for a driver whose `subprocess.run` is replaced by `run`. A
+    tmux call of the driver costs microseconds instead of a Python start. Only calls to the fake are caught: any other binary (a path that does not
+    exist) goes to the real subprocess. The calls are serialised, as the single server of a real tmux serialises them. A `sleep` of the fake that is
+    longer than the timeout of the call is a TimeoutExpired at once (the call is logged first, as the script does)."""
+    lock = threading.Lock()
+    code = compile(FAKE.replace("time.sleep(", "_sleep("), "fake-tmux", "exec")
+
+    def __init__(self, binary):
+        self.binary = binary
+
+    def run(self, argv, timeout=None, env=None, **kw):
+        if argv[0] != self.binary:
+            return subprocess.run(argv, timeout=timeout, env=env, **kw)
+        out, err = io.StringIO(), io.StringIO()
+        rc = [0]
+
+        def sleep(seconds):
+            if timeout is not None and seconds > timeout:
+                raise subprocess.TimeoutExpired(argv, timeout)
+            time.sleep(seconds)
+        ns = {"__name__": "fake_tmux", "_sleep": sleep}
+        with self.lock:
+            saved_env, saved = dict(os.environ), (sys.argv, sys.stdout, sys.stderr)
+            os.environ.clear()
+            os.environ.update(env if env is not None else saved_env)
+            sys.argv, sys.stdout, sys.stderr = argv, out, err
+            try:
+                exec(self.code, ns)
+            except SystemExit as e:
+                rc[0] = e.code if isinstance(e.code, int) else 0
+            finally:
+                sys.argv, sys.stdout, sys.stderr = saved
+                os.environ.clear()
+                os.environ.update(saved_env)
+                if "fd" in ns:
+                    os.close(ns["fd"])
+        return subprocess.CompletedProcess(argv, rc[0], out.getvalue().encode(), err.getvalue().encode())
+
+
 class FakeTmux:
     def __init__(self):
         self.dir = tempfile.mkdtemp(prefix="sbft-")
@@ -210,6 +255,10 @@ class FakeTmux:
         mod = load_module()
         d = mod.Tabs(binary=self.bin, **dict({"pause": 0.02, "verify_timeout": 0.6, "run_dir": self.dir}, **kw))
         d.Err = mod.TabsError
+        if os.environ.get("SB_TEST_TMUX_PROCESS") != "1":      # =1: every call a real process (what the command does)
+            shim = InProcessTmux(d.binary)
+            mod.subprocess = type("subprocess", (), {"run": staticmethod(shim.run), "TimeoutExpired": subprocess.TimeoutExpired, "DEVNULL": subprocess.DEVNULL,
+                                                     "PIPE": subprocess.PIPE})
         return d
 
     def env(self, **extra):

@@ -2,11 +2,15 @@
 hidden panels, the screen pipeline (markers, last N lines, clip, secrets), the typing rules (pause, separate Enter, dialog, busy, queue, slash,
 verify, copy mode, braces), errors, timeouts, the lock between sends, and the command line (JSON, exit codes, stdin). No tmux, network or model.
 The same code against a real tmux is tests/slow/test_tabs_real.py (Podman). Run with: python3 tests/fast/test_tabs.py"""
+import contextlib
+import io
+import json
 import os
 import sys
 import threading
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
@@ -444,10 +448,10 @@ class TestSendLimits(Base):
 
     def test_a_long_text_goes_in_small_words_and_is_typed_whole(self):
         d = self.ft.driver()
-        text = "echo " + "é" * 5000 + "\n" + "a" * 300000
+        text = "echo " + "é" * 2600 + "\n" + "a" * 3000          # a few pieces: the rule is the size of a piece, not the number of them
         d.send_body("@1", {"run": text})
         calls = [a for _, a in self.ft.sent() if a[0] == "-l"]
-        self.assertGreater(len(calls), 100)
+        self.assertGreater(len(calls), 4)
         self.assertLessEqual(max(len(a[-1].encode()) for a in calls), 4096)           # far below the 16 KB of tmux and the 128 KB of an argv word
         self.assertEqual("".join(self.typed("%1")[:-1]), text)
         self.assertEqual(self.typed("%1")[-1], "<Enter>")
@@ -473,12 +477,13 @@ class TestSendLimits(Base):
 
     def test_too_many_steps_are_refused_before_anything_is_typed(self):
         d = self.ft.driver()
-        code, msg = self.code(d.send_body, "@1", {"input": "{Down}" * (mod.MAX_STEPS + 1)})
-        self.assertEqual(code, "bad_body")
-        self.assertIn("several messages", msg)
-        self.assertEqual(self.ft.sent(), [])
-        d.send_body("@1", {"input": "{Down}" * mod.MAX_STEPS})
-        self.assertEqual(len(self.typed("%1")), mod.MAX_STEPS)
+        with mock.patch.dict(d.send_body.__globals__, {"MAX_STEPS": 6}):      # the real limit (100) costs a tmux process per step (the driver has its own copy of the module)
+            code, msg = self.code(d.send_body, "@1", {"input": "{Down}" * 7})
+            self.assertEqual(code, "bad_body")
+            self.assertIn("several messages", msg)
+            self.assertEqual(self.ft.sent(), [])
+            d.send_body("@1", {"input": "{Down}" * 6})
+            self.assertEqual(len(self.typed("%1")), 6)
 
     def test_a_lone_surrogate_is_a_bad_body(self):
         d = self.ft.driver()
@@ -831,13 +836,15 @@ class TestCommand(Base):
         self.assertEqual((rc, out["err"]), (4, "no_tmux"))
         rc, out, _ = self.ft.cli("list", SB_TABS_SESSION="other")
         self.assertEqual((rc, out["err"]), (4, "no_session"))
-        self.ft.load()
-        self.ft.state["sleep"] = {"list-panes": 8}
-        self.ft.save()
-        t = time.time()
-        rc, out, _ = self.ft.cli("list")
-        self.assertEqual((rc, out["err"]), (5, "timeout"))
-        self.assertLess(time.time() - t, 8)
+
+    def test_every_error_code_has_its_exit_code(self):
+        """the exit codes of the documented contract (usage, bad_body 2; no_tmux, no_session 4; timeout 5; the others 1), in process: the real 5 s timeout of a tmux call
+        is tested at the driver (test_every_tmux_call_has_a_timeout)"""
+        want = {"usage": 2, "bad_body": 2, "no_tmux": 4, "no_session": 4, "timeout": 5, "no_such_tab": 1, "ambiguous_tab": 1, "busy_tab": 1, "tmux_error": 1}
+        for code, rc in want.items():
+            with self.subTest(code=code), mock.patch.object(mod, "run", side_effect=mod.TabsError(code, "m")), contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(mod.main(["list"]), rc)
+                self.assertEqual(json.loads(out.getvalue()), {"err": code, "msg": "m"})
 
     def test_the_environment_chooses_the_socket_and_TMUX_is_dropped(self):
         self.ft.load()

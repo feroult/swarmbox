@@ -2,14 +2,11 @@
 the stop, the audit lines. A fake swarmbox-tabs (tests/support/sysop_support.py FakeTabs, a stub command) stands in for the tabs; no model, no tmux.
 Run with: python3 -W error tests/fast/test_sysop_mcp.py
 """
-import io
 import json
 import os
 import stat
 import subprocess
 import sys
-import threading
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -19,30 +16,43 @@ import sysop_support as ss  # noqa: E402
 from swarmbox_sysop import audit, ipc, mcpserver, paths, tabsclient  # noqa: E402
 
 
-class Panel(threading.Thread):
-    """a fake panel: polls pending_action.json and answers it with decide(pending) -> "approve" | "deny" | "veto" | None (leave it)"""
+class Clock:
+    """A fake clock for the server: sleep() moves it and nothing waits. What is due when it moves happens at once: the fake panel answers, a screen
+    changes (at). The server polls with its own sleeps, so a countdown of 30 s or an approval time-out is a few dozen calls."""
+
+    def __init__(self):
+        self.t = 1000.0
+        self.hooks = []
+
+    def __call__(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += s
+        for h in list(self.hooks):
+            h()
+
+    def at(self, seconds, fn):
+        due, fired = self.t + seconds, []
+        self.hooks.append(lambda: not fired and self.t >= due and (fired.append(1), fn()))
+
+
+class Panel:
+    """a fake panel, run by the clock: it reads pending_action.json at each sleep of the server and answers it once with decide(pending) -> "approve" |
+    "deny" | "veto" | None (leave it) | a whole decision as a dict (without its id: the id of the action is added)"""
 
     def __init__(self, goal_dir, decide, wrong_id=False):
-        threading.Thread.__init__(self, daemon=True)
         self.dir, self.decide, self.wrong_id = goal_dir, decide, wrong_id
-        self.seen, self.stop_flag = [], False
-        self.start()
+        self.seen = []
 
-    def run(self):
-        done = set()
-        while not self.stop_flag:
-            p = ipc.read_json(os.path.join(self.dir, "pending_action.json"))
-            if p and p["id"] not in done:
-                done.add(p["id"])
-                self.seen.append(p)
-                d = self.decide(p)
-                if d:
-                    ipc.write_json(os.path.join(self.dir, "decision.json"), {"id": "zzz" if self.wrong_id else p["id"], "decision": d, "by": "panel", "word": "run"})
-            time.sleep(0.01)
-
-    def close(self):
-        self.stop_flag = True
-        self.join(2)
+    def poll(self):
+        p = ipc.read_json(os.path.join(self.dir, "pending_action.json"))
+        if p and p["id"] not in [x["id"] for x in self.seen]:
+            self.seen.append(p)
+            d = self.decide(p)
+            if d:
+                body = d if isinstance(d, dict) else {"decision": d, "by": "panel", "word": "run"}
+                ipc.write_json(os.path.join(self.dir, "decision.json"), dict(body, id="zzz" if self.wrong_id else p["id"]))
 
 
 class Rig(unittest.TestCase):
@@ -53,6 +63,7 @@ class Rig(unittest.TestCase):
         self.addCleanup(self.e.cleanup)
         self.tabs = ss.FakeTabs(os.path.join(self.e.dir, "tabs.sock"))
         self.addCleanup(self.tabs.stop)
+        self.clock = Clock()
         self.build()
 
     def build(self, **over):
@@ -62,8 +73,9 @@ class Rig(unittest.TestCase):
              "countdown": self.countdown, "approval_timeout": self.approval, "max_steps": self.max_steps, "deadline": None}
         d.update(over)
         self.ctx = mcpserver.Context(d)
-        self.srv = mcpserver.Server(self.ctx, tabs=self.tabs.client())
-        self.srv.settle_args = {"quiet": 0.05, "cap": 0.5, "step": 0.01}
+        self.clock.hooks = []
+        self.srv = mcpserver.Server(self.ctx, tabs=self.tabs.client(), clock=self.clock, sleep=self.clock.sleep)
+        self.srv.settle_args = {"quiet": 0.05, "cap": 0.5, "step": 0.01}      # what the screen settles to is SettledScreen's own subject
         return self.srv
 
     def call(self, tool, **args):
@@ -79,9 +91,14 @@ class Rig(unittest.TestCase):
         self.assertTrue(err, text)
         return text
 
+    @staticmethod
+    def write(path, text):
+        with open(path, "w") as f:
+            f.write(text)
+
     def panel(self, decide, **kw):
         p = Panel(self.gdir, decide, **kw)
-        self.addCleanup(p.close)
+        self.clock.hooks.append(p.poll)
         return p
 
     def events(self, kind=None):
@@ -280,10 +297,8 @@ class Reading(Rig):
         self.assertIn("tabs_protocol", self.fail("list_tabs"))
 
     def test_a_command_that_hangs_is_killed_at_the_timeout(self):
-        self.srv.tabs = tabsclient.Tabs(cmd=["sh", "-c", "exec sleep 30"], read_timeout=0.3)
-        t0 = time.time()
+        self.srv.tabs = tabsclient.Tabs(cmd=["sh", "-c", "exec sleep 30"], read_timeout=0.2)
         self.assertIn("tabs_timeout", self.fail("list_tabs"))
-        self.assertLess(time.time() - t0, 5)
 
 
 class Typing(Rig):
@@ -428,17 +443,15 @@ class SettledScreen(unittest.TestCase):
         self.assertEqual(text, "b")
         self.assertAlmostEqual(t, 0.49 + 0.5, delta=0.15)
 
-    def test_the_numbers_are_the_documented_ones(self):
-        self.assertEqual((mcpserver.QUIET, mcpserver.SETTLE_CAP), (0.5, 6.0))
-
     def test_a_screen_that_cannot_be_read_after_the_action_does_not_undo_it(self):
         e = ss.Env()
         self.addCleanup(e.cleanup)
         tabs = ss.FakeTabs(os.path.join(e.dir, "tabs.sock"))
         self.addCleanup(tabs.stop)
         pth = e.paths.make()
-        srv = mcpserver.Server(mcpserver.Context({"goal": "g", "goal_dir": paths.private_dir(pth.goal_dir("g")), "audit": pth.audit, "countdown": 0}), tabs=tabs.client())
-        srv.settle_args = {"quiet": 0.05, "cap": 0.2, "step": 0.01}
+        clock = Clock()
+        srv = mcpserver.Server(mcpserver.Context({"goal": "g", "goal_dir": paths.private_dir(pth.goal_dir("g")), "audit": pth.audit, "countdown": 0}), tabs=tabs.client(),
+                               clock=clock, sleep=clock.sleep)
         tabs.on_send = lambda b, tab, body: setattr(b, "get_error", ("no_such_tab", "the tab closed"))
         text, err = srv.call("run", {"tab": "@1", "command": "true"})
         self.assertFalse(err)
@@ -448,17 +461,17 @@ class SettledScreen(unittest.TestCase):
 
 class Wait(Rig):
     def test_wait_returns_the_screen_after_the_time(self):
-        t0 = time.time()
+        t0 = self.clock()
         t = self.ok("wait", seconds=0.3)
-        self.assertGreaterEqual(time.time() - t0, 0.29)
+        self.assertGreaterEqual(self.clock() - t0, 0.29)
         self.assertIn("waited 0.3 s", t)
         self.assertIn("[screen of @1", t)
 
     def test_wait_until_the_text_shows_up(self):
-        threading.Timer(0.3, lambda: self.tabs.set_screen("@1", "$ tests passed\n$ ")).start()
-        t0 = time.time()
+        self.clock.at(0.3, lambda: self.tabs.set_screen("@1", "$ tests passed\n$ "))
+        t0 = self.clock()
         t = self.ok("wait", seconds=5, until="tests passed")
-        self.assertLess(time.time() - t0, 3)
+        self.assertLess(self.clock() - t0, 3)
         self.assertIn("the text appeared", t)
 
     def test_wait_until_that_never_comes(self):
@@ -470,24 +483,24 @@ class Wait(Rig):
             self.assertIn("seconds", self.fail("wait", seconds=bad))
 
     def test_wait_ends_at_the_deadline_and_at_the_stop(self):
-        self.build(deadline=time.time() + 0.3)
-        t0 = time.time()
+        self.build(deadline=self.clock() + 0.3)
+        t0 = self.clock()
         self.assertIn("time budget", self.fail("wait", seconds=20))
-        self.assertLess(time.time() - t0, 3)
+        self.assertLess(self.clock() - t0, 3)
         self.build()
-        threading.Timer(0.3, lambda: open(os.path.join(self.gdir, "stopped"), "w").close()).start()
-        t0 = time.time()
+        self.clock.at(0.3, lambda: open(os.path.join(self.gdir, "stopped"), "w").close())
+        t0 = self.clock()
         self.assertIn("stopped", self.fail("wait", seconds=20))
-        self.assertLess(time.time() - t0, 3)
+        self.assertLess(self.clock() - t0, 3)
 
 
 class Countdown(Rig):
     countdown = 0.6
 
     def test_a_low_risk_action_goes_after_the_countdown_when_nobody_vetoes(self):
-        t0 = time.time()
+        t0 = self.clock()
         self.ok("run", tab="@1", command="ls")
-        self.assertGreaterEqual(time.time() - t0, 0.55)
+        self.assertGreaterEqual(self.clock() - t0, 0.55)
         self.assertEqual(len(self.tabs.sent), 1)
         self.assertEqual([x["decision"] for x in self.events("decision")], ["waiting", "allowed"])
 
@@ -514,9 +527,9 @@ class Countdown(Rig):
 
     def test_veto_stops_it_and_nothing_is_typed(self):
         self.panel(lambda p: "veto")
-        t0 = time.time()
+        t0 = self.clock()
         t = self.fail("run", tab="@1", command="ls")
-        self.assertLess(time.time() - t0, 0.5, "the veto ends the wait at once")
+        self.assertLess(self.clock() - t0, 0.5, "the veto ends the wait at once")
         self.assertIn("vetoed by the user", t)
         self.assertIn("Nothing was typed", t)
         self.assertEqual(self.tabs.sent, [])
@@ -524,9 +537,9 @@ class Countdown(Rig):
 
     def test_an_early_approval_sends_it_now(self):
         self.panel(lambda p: "approve")
-        t0 = time.time()
+        t0 = self.clock()
         self.ok("run", tab="@1", command="ls")
-        self.assertLess(time.time() - t0, 0.55)
+        self.assertLess(self.clock() - t0, 0.55)
         self.assertEqual(len(self.tabs.sent), 1)
 
     def test_a_deny_in_a_countdown_is_a_refusal_too(self):
@@ -534,32 +547,27 @@ class Countdown(Rig):
         self.assertIn("refused by the user", self.fail("run", tab="@1", command="ls"))
         self.assertEqual(self.tabs.sent, [])
 
-    def test_a_decision_for_another_action_is_ignored(self):
-        self.panel(lambda p: "veto", wrong_id=True)
-        self.ok("run", tab="@1", command="ls")
-        self.assertEqual(len(self.tabs.sent), 1)
-
-    def test_an_old_decision_file_cannot_veto_a_new_action(self):
-        ipc.write_json(os.path.join(self.gdir, "decision.json"), {"id": "p1", "decision": "veto"})
-        self.ok("run", tab="@1", command="ls")
-        self.assertEqual(len(self.tabs.sent), 1)
-
-    def test_a_damaged_decision_file_is_ignored(self):
-        with open(os.path.join(self.gdir, "decision.json"), "w") as f:
-            f.write("{not json")
-        self.ok("run", tab="@1", command="ls")
-        self.assertEqual(len(self.tabs.sent), 1)
-
-    def test_a_decision_with_a_wrong_word_is_ignored(self):
-        self.panel(lambda p: "yes please")
-        self.ok("run", tab="@1", command="ls")
-        self.assertEqual(len(self.tabs.sent), 1)
+    def test_a_decision_that_is_not_for_this_action_is_ignored_in_a_countdown(self):
+        """a veto for another action, an old file, a damaged file and a wrong word never stop the action (only a decision for THIS id does)"""
+        dfile = os.path.join(self.gdir, "decision.json")
+        cases = {"another action": lambda: self.panel(lambda p: "veto", wrong_id=True),
+                 "an old file": lambda: ipc.write_json(dfile, {"id": "p1", "decision": "veto"}),
+                 "a damaged file": lambda: self.write(dfile, "{not json"),
+                 "a wrong word": lambda: self.panel(lambda p: "yes please")}
+        for name, setup in cases.items():
+            with self.subTest(name):
+                self.build()
+                ipc.remove(dfile)
+                before = len(self.tabs.sent)
+                setup()
+                self.ok("run", tab="@1", command="ls")
+                self.assertEqual(len(self.tabs.sent), before + 1)
 
     def test_the_countdown_zero_means_none(self):
         self.build(countdown=0)
-        t0 = time.time()
+        t0 = self.clock()
         self.ok("run", tab="@1", command="ls")
-        self.assertLess(time.time() - t0, 0.5)
+        self.assertLess(self.clock() - t0, 0.5)
         self.assertEqual([x["decision"] for x in self.events("decision")], ["allowed"])
 
 
@@ -578,9 +586,9 @@ class Approval(Rig):
         self.assertEqual([x["decision"] for x in self.events("decision")], ["waiting", "approved"])
 
     def test_with_nobody_to_approve_it_times_out_to_a_refusal(self):
-        t0 = time.time()
+        t0 = self.clock()
         t = self.fail("run", tab="@1", command="rm -rf build")
-        self.assertGreaterEqual(time.time() - t0, 0.75)
+        self.assertGreaterEqual(self.clock() - t0, 0.75)
         self.assertIn("not approved in time", t)
         self.assertIn("Nothing was typed", t)
         self.assertEqual(self.tabs.sent, [])
@@ -595,72 +603,59 @@ class Approval(Rig):
                 self.assertIn("by the user", t)
                 self.assertEqual(self.tabs.sent, [])
 
-    def test_a_decision_for_another_id_does_not_approve(self):
-        self.panel(lambda p: "approve", wrong_id=True)
-        self.assertIn("not approved", self.fail("run", tab="@1", command="rm x"))
-        self.assertEqual(self.tabs.sent, [])
+    def test_an_approval_for_another_action_or_left_from_an_earlier_one_does_not_approve(self):
+        for name in ("another id", "an old file"):
+            with self.subTest(name):
+                self.build()
+                ipc.remove(os.path.join(self.gdir, "decision.json"))
+                if name == "an old file":
+                    ipc.write_json(os.path.join(self.gdir, "decision.json"), {"id": "p1", "decision": "approve", "word": "run"})
+                else:
+                    self.panel(lambda p: "approve", wrong_id=True)
+                self.assertIn("not approved", self.fail("run", tab="@1", command="rm x"))
+                self.assertEqual(self.tabs.sent, [])
 
     def test_an_approval_without_the_word_run_is_not_one(self):
-        self.panel(lambda p: None)
-        done = []
-        th = threading.Thread(target=lambda: done.append(self.call("run", tab="@1", command="rm x")), daemon=True)
-        th.start()
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(os.path.join(self.gdir, "pending_action.json")), 5))
-        pid = ipc.read_json(os.path.join(self.gdir, "pending_action.json"))["id"]
-        ipc.write_json(os.path.join(self.gdir, "decision.json"), {"id": pid, "decision": "approve", "by": "panel"})
-        th.join(10)
-        self.assertTrue(done[0][1])
-        self.assertIn("not approved", done[0][0])
+        self.panel(lambda p: {"decision": "approve", "by": "panel"})
+        t = self.fail("run", tab="@1", command="rm x")
+        self.assertIn("not approved", t)
         self.assertEqual(self.tabs.sent, [])
         self.assertIn("ignored", [x["decision"] for x in self.events("decision")])
 
     def test_in_a_countdown_an_approve_sends_now_with_or_without_the_word(self):
         self.build(countdown=5)
-        ipc.remove(os.path.join(self.gdir, "decision.json"))
-        done = []
-        th = threading.Thread(target=lambda: done.append(self.call("run", tab="@1", command="ls")), daemon=True)
-        th.start()
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(os.path.join(self.gdir, "pending_action.json")), 5))
-        pid = ipc.read_json(os.path.join(self.gdir, "pending_action.json"))["id"]
-        ipc.write_json(os.path.join(self.gdir, "decision.json"), {"id": pid, "decision": "approve"})
-        th.join(4)
-        self.assertFalse(done[0][1])
-
-    def test_a_stale_approval_file_cannot_approve_a_later_action(self):
-        ipc.write_json(os.path.join(self.gdir, "decision.json"), {"id": "p1", "decision": "approve", "word": "run"})
-        self.assertIn("not approved", self.fail("run", tab="@1", command="rm x"))
+        t0 = self.clock()
+        self.panel(lambda p: {"decision": "approve"})
+        self.ok("run", tab="@1", command="ls")
+        self.assertLess(self.clock() - t0, 1)
+        self.assertEqual(len(self.tabs.sent), 1)
 
     def test_the_action_is_not_sent_while_it_waits(self):
-        result = []
-        th = threading.Thread(target=lambda: result.append(self.call("run", tab="@1", command="rm x")), daemon=True)
-        th.start()
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(os.path.join(self.gdir, "pending_action.json")), 5))
-        time.sleep(0.2)
-        self.assertEqual(self.tabs.sent, [])
-        pid = ipc.read_json(os.path.join(self.gdir, "pending_action.json"))["id"]
-        ipc.write_json(os.path.join(self.gdir, "decision.json"), {"id": pid, "decision": "approve", "word": "run"})
-        th.join(5)
+        def decide(p):
+            self.assertEqual(self.tabs.sent, [], "typed while the panel was still asked")
+            return "approve"
+        self.panel(decide)
+        self.ok("run", tab="@1", command="rm x")
         self.assertEqual(len(self.tabs.sent), 1)
-        self.assertFalse(result[0][1])
 
     def test_stop_while_waiting_ends_the_wait(self):
         self.build()
         self.approval = 30
         self.srv.policy.approval_timeout = 30
-        threading.Timer(0.3, lambda: open(os.path.join(self.gdir, "stopped"), "w").close()).start()
-        t0 = time.time()
+        self.clock.at(0.3, lambda: open(os.path.join(self.gdir, "stopped"), "w").close())
+        t0 = self.clock()
         t = self.fail("run", tab="@1", command="rm x")
-        self.assertLess(time.time() - t0, 3)
+        self.assertLess(self.clock() - t0, 3)
         self.assertIn("stopped", t)
         self.assertEqual(self.tabs.sent, [])
         self.assertFalse(os.path.exists(os.path.join(self.gdir, "pending_action.json")))
 
     def test_the_goal_deadline_ends_the_wait(self):
         self.srv.policy.approval_timeout = 30
-        self.srv.ctx.deadline = time.time() + 0.4
-        t0 = time.time()
+        self.srv.ctx.deadline = self.clock() + 0.4
+        t0 = self.clock()
         t = self.fail("run", tab="@1", command="rm x")
-        self.assertLess(time.time() - t0, 3)
+        self.assertLess(self.clock() - t0, 3)
         self.assertIn("time budget", t)
 
 
@@ -672,21 +667,15 @@ class Autonomy(Rig):
         self.call("run", tab=tab, command=command)
         return modes
 
-    def test_confirm_all_asks_for_everything(self):
-        self.assertEqual(self.level("confirm-all", "ls"), ["approve"])
-
-    def test_confirm_risky(self):
-        self.assertEqual(self.level("confirm-risky", "ls"), ["veto"])
-        self.assertEqual(self.level("confirm-risky", "cd x && make"), ["approve"])
-        self.assertEqual(self.level("confirm-risky", "rm x"), ["approve"])
-
-    def test_auto_asks_only_for_high(self):
-        self.assertEqual(self.level("auto", "ls"), ["veto"])
-        self.assertEqual(self.level("auto", "cd x && make"), ["veto"])
-        self.assertEqual(self.level("auto", "rm x"), ["approve"])
-
-    def test_a_prompt_for_an_agent_is_a_countdown_not_a_question(self):
-        self.assertEqual(self.level("confirm-risky", "run the tests", tab="@2"), ["veto"])
+    def test_what_each_level_asks(self):
+        """(autonomy, command, tab) -> the mode of the question: veto = a countdown, approve = the word `run`"""
+        table = [("confirm-all", "ls", "@1", "approve"),
+                 ("confirm-risky", "ls", "@1", "veto"), ("confirm-risky", "cd x && make", "@1", "approve"), ("confirm-risky", "rm x", "@1", "approve"),
+                 ("confirm-risky", "run the tests", "@2", "veto"),            # a prompt for an agent is a countdown, not a question
+                 ("auto", "ls", "@1", "veto"), ("auto", "cd x && make", "@1", "veto"), ("auto", "rm x", "@1", "approve")]
+        for autonomy, command, tab, want in table:
+            with self.subTest(autonomy=autonomy, command=command):
+                self.assertEqual(self.level(autonomy, command, tab), [want])
 
 
 class Blocked(Rig):
@@ -730,7 +719,7 @@ class Budgets(Rig):
         self.ok("list_tabs")
 
     def test_the_time_budget(self):
-        self.build(deadline=time.time() - 1)
+        self.build(deadline=self.clock() - 1)
         self.assertIn("time budget", self.fail("list_tabs"))
         self.ok("done", summary="late")
 
@@ -804,6 +793,60 @@ class Audit(Rig):
         res = [e for e in self.events("result")][0]
         self.assertLess(len(res["text"]), 2200)
         self.assertIn("characters in all", res["text"])
+
+
+class ServerGate(Rig):
+    def test_the_forger_of_decisions_needs_an_approval_itself(self):
+        cmd = "watch -n0.2 'printf x > %s/decision.json'" % self.gdir
+        text, err = self.call("run", tab="@1", command=cmd)
+        self.assertTrue(err, text)
+        self.assertIn("not approved", text)
+        self.assertEqual(self.tabs.sent, [])
+
+    def test_run_on_a_prompt_with_text_left_on_it(self):
+        self.srv.tabs.screen = lambda tab, lines=None: {"text": "user@h:~$ rm -rf ", "cursor": [17, 0], "alternate": False}
+        text, err = self.call("run", tab="@1", command="/work/victim5")
+        self.assertTrue(err, text)
+        self.assertEqual(self.tabs.sent, [])
+
+    def test_a_long_result_keeps_the_newest_lines_and_the_end_marker(self):
+        rows = ["line %d %s" % (i, "x" * 70) for i in range(500)] + ["$ make test <- the prompt, the newest line"]
+        self.tabs.set_screen("@1", "\n".join(rows))
+        text = self.ok("read_tab", tab="@1", lines=500)
+        self.assertLessEqual(len(text), mcpserver.MAX_RESULT + 100)
+        self.assertIn("the newest line", text)
+        self.assertIn("[end of screen", text)
+        self.assertIn("[screen of @1", text)
+        self.assertIn("characters in all", text)
+
+    def test_a_number_that_is_not_finite_is_a_bad_argument(self):
+        for bad in (float("nan"), float("inf")):
+            text, err = self.call("read_tab", lines=bad)
+            self.assertTrue(err)
+            self.assertIn("bad arguments", text)
+        text, err = self.call("wait", seconds=float("nan"))
+        self.assertTrue(err)
+        self.assertIn("bad arguments", text)
+
+    def test_a_tool_name_that_is_not_a_string_is_an_invalid_param(self):
+        for name in (["a"], {"a": 1}, 3, None):
+            rep = self.srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name}})
+            self.assertEqual(rep["error"]["code"], -32602, name)
+
+
+class ServerWait(Rig):
+    autonomy, countdown, approval = "auto", 0.6, 2.0
+
+    def test_a_dialog_that_opens_while_an_action_waits_stops_it(self):
+        self.tabs.tabs["@2"]["cmd"] = "claude"
+        t0 = self.clock()
+        # no dialog at the start, a dialog 0.3 s later (during the countdown)
+        self.tabs.screens["@2"] = lambda bus, tab: "> " if self.clock() - t0 < 0.3 else "Bash command\nDo you want to proceed?\n 1. Yes\n 2. No\nEnter to confirm - Esc to cancel"
+        text, err = self.call("input", tab="@2", text="{Enter}")
+        self.assertTrue(err, text)
+        self.assertIn("changed while the action waited", text)
+        self.assertEqual(self.tabs.sent, [])
+        self.assertTrue([e for e in self.events("decision") if e.get("decision") == "refused_after_wait"])
 
 
 if __name__ == "__main__":

@@ -12,33 +12,25 @@ Podman only (like the real tmux tests): it skips unless chromium, ttyd and tmux 
 """
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
 import unittest
 import urllib.request
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 import sysop_support as ss  # noqa: E402
-import test_clipboard_bridge as base  # noqa: E402
+import browser_support as bs  # noqa: E402
 from helpers import ROOT  # noqa: E402
 
 from swarmbox_sysop import dock, paths  # noqa: E402
 
 TMUX_CONF = os.path.join(ROOT, "container", "config", "tmux.conf")
 LAUNCHER = '#!/bin/sh\nexec "%s" -B -m swarmbox_sysop "$@"\n' % sys.executable
-HAVE = all(shutil.which(c) for c in base.NEEDED) and os.environ.get("SWARMBOX_TEST_REAL_TMUX") == "1"
 
 
-@unittest.skipUnless(HAVE, "needs chromium, ttyd and tmux, and a container (SWARMBOX_TEST_REAL_TMUX=1)")
-class WebKeys(base.ClipboardBridge):
-    # only the browser harness is reused, not the clipboard tests that live in the same class
-    for _name in [n for n in dir(base.ClipboardBridge) if n.startswith("test_")]:
-        locals()[_name] = None
-    del _name
-
+@bs.browser_tests()
+class WebKeys(bs.BrowserCase):
     def setUp(self):
         super().setUp()
         t = self.tmp
@@ -57,7 +49,7 @@ class WebKeys(base.ClipboardBridge):
         self.pth = paths.Paths(self.env)
         self.svc = ss.FakeService(self.pth)
         self.addCleanup(self.svc.close)
-        self.sock = "sbweb%d_%d" % (os.getpid() % 100000, base.free_port())
+        self.sock = "sbweb%d_%d" % (os.getpid() % 100000, bs.free_port())
         self.tm = dock.Tmux(argv=["tmux", "-L", self.sock], env=self.env)
         r = subprocess.run(["tmux", "-L", self.sock, "-f", TMUX_CONF, "new-session", "-d", "-s", "main", "-x", "160", "-y", "50", "cat -v"], env=self.env,
                            capture_output=True, text=True, timeout=20)
@@ -67,9 +59,9 @@ class WebKeys(base.ClipboardBridge):
         self.follower = dock.Follower(self.pth, dock=dock.default_dock(self.tm), grace=3.0)
 
     def open_page(self):
-        port = base.free_port()
+        port = bs.free_port()
         self.spawn(["ttyd", "-p", str(port), "-W", "-i", "lo", "tmux", "-L", self.sock, "attach", "-t", "main"], env=self.env)
-        dbg = base.free_port()
+        dbg = bs.free_port()
         self.spawn(["chromium", "--headless=new", "--no-sandbox", "--disable-gpu", "--remote-debugging-port=%d" % dbg, "--window-size=1100,800",
                     "--user-data-dir=" + os.path.join(self.tmp, "chrome"), "about:blank"])
         version = None
@@ -81,11 +73,11 @@ class WebKeys(base.ClipboardBridge):
             except OSError:
                 time.sleep(0.25)
         self.assertIsNotNone(version, "chromium did not start")
-        self.browser = base.CDP(version["webSocketDebuggerUrl"])
+        self.browser = bs.CDP(version["webSocketDebuggerUrl"])
         req = urllib.request.Request("http://127.0.0.1:%d/json/new?about:blank" % dbg, method="PUT")
         with urllib.request.urlopen(req, timeout=10) as r:
             tab = json.load(r)
-        self.page = base.CDP(tab["webSocketDebuggerUrl"])
+        self.page = bs.CDP(tab["webSocketDebuggerUrl"])
         self.page.call("Page.enable")
         self.page.call("Runtime.enable")
         self.page.call("Emulation.setFocusEmulationEnabled", enabled=True)

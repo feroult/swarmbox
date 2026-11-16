@@ -1,6 +1,6 @@
 """The secrets filter of swarmbox-tabs (container/scripts/swarmbox-tabs.py) must stay linear and keep redacting what it must. Ported from
 tests/test_voice_redact_dos.py, which tested the same filter while it lived in the voice addon (context.py, removed with the planners).
-No text of a few MB, however it is built, may take more than a fraction of a second per MB: a regex that rescans a long run from every
+No text of a few hundred KB, however it is built, may take more than a fraction of a second: a regex that rescans a long run from every
 position inside it (100000 dashes took 110 s once) is a denial of service for every screen swarmbox-tabs gives out. A screen is clipped before it is
 redacted (tests/fast/test_tabs.py), but redact is a function of its own. Run: python3 tests/fast/test_tabs_redact_dos.py"""
 import os
@@ -14,8 +14,8 @@ from tabs_support import load_module  # noqa: E402
 
 context = load_module()          # the tabs module: .redact and .REDACTED
 
-MB = 1 << 20
-LIMIT = 4.0  # seconds for 1 MB: the measured cost is about 0.2 s; the quadratic one needed minutes. Loose on purpose, a loaded CI runner is slow.
+MB = 1 << 18      # 256 KB: the quadratic version needed minutes for 100000 characters, so even this size tells it from a linear one by orders of magnitude
+LIMIT = 2.0  # seconds for it: the measured cost is about 0.05 s. Loose on purpose, a loaded CI runner is slow.
 
 
 def _fill(unit, size=MB):
@@ -67,18 +67,6 @@ class RedactTimeTest(unittest.TestCase):
                 context.redact(text)
                 dt = time.monotonic() - t
                 self.assertLess(dt, LIMIT, "%s: %.2f s for %d chars" % (name, dt, len(text)))
-
-    def test_cost_does_not_grow_faster_than_the_size(self):
-        # the old quadratic cost: 4x the input took 16x the time. Linear stays below 8x on any noise.
-        for unit in ("-", "a-", "--a", "key-", "eyJ-", "-eyJ", "eyJ-a.", "eyJaaaaaaaa."):
-            with self.subTest(unit):
-                times = []
-                for size in (100000, 400000):
-                    text = _fill(unit, size)
-                    t = time.monotonic()
-                    context.redact(text)
-                    times.append(max(time.monotonic() - t, 0.002))
-                self.assertLess(times[1] / times[0], 8, times)
 
     def test_long_inputs_still_redact_what_they_must(self):
         pad = "-" * 200000

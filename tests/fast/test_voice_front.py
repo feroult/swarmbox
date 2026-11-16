@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 import voice_support  # noqa: E402
+from waiting import wait_until  # noqa: E402
 
 from swarmbox_voice import front, stt  # noqa: E402
 
@@ -137,7 +138,7 @@ class Stub:
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
         self.httpd.daemon_threads = True
         self.port = self.httpd.server_address[1]
-        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        threading.Thread(target=self.httpd.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
 
     def close(self):
         self.httpd.shutdown()
@@ -243,7 +244,7 @@ class TerminalPath(FrontCase):
 
     def test_a_silent_client_is_cut_after_the_head_timeout(self):
         old = front.HEAD_TIMEOUT
-        front.HEAD_TIMEOUT = 0.5
+        front.HEAD_TIMEOUT = 0.2
         self.addCleanup(setattr, front, "HEAD_TIMEOUT", old)
         t = time.time()
         c = socket.create_connection(("127.0.0.1", self.port), 5)
@@ -259,8 +260,7 @@ class TerminalPath(FrontCase):
             get(self.port, "/")
             get(self.port, "/voice/health")
             exchange(self.port, b"garbage\r\n\r\n")
-        time.sleep(0.5)
-        self.assertLessEqual(threading.active_count(), before + 2)
+        self.assertTrue(wait_until(lambda: threading.active_count() <= before + 2, 3), "threads left: %d" % (threading.active_count() - before))
 
 
 WAV = voice_support.wav_with("hello")
@@ -388,7 +388,7 @@ class VoicePath(FrontCase):
 
     def test_a_stalled_body_times_out(self):
         old = front.BODY_IDLE
-        front.BODY_IDLE = 0.5
+        front.BODY_IDLE = 0.2
         self.addCleanup(setattr, front, "BODY_IDLE", old)
         c = socket.create_connection(("127.0.0.1", self.port), 5)
         self.addCleanup(c.close)
@@ -396,15 +396,15 @@ class VoicePath(FrontCase):
         self.assertIn(b" 408 ", c.recv(4096))
 
     def test_a_body_that_trickles_in_has_a_total_deadline(self):
-        # one byte every 0.2 s is never idle for BODY_IDLE, and used to hold the slot for ever
+        # one byte every 0.1 s is never idle for BODY_IDLE, and used to hold the slot for ever
         old = (front.BODY_IDLE, front.BODY_TOTAL)
-        front.BODY_IDLE, front.BODY_TOTAL = 5.0, 1.0
+        front.BODY_IDLE, front.BODY_TOTAL = 5.0, 0.5
         self.addCleanup(lambda: setattr(front, "BODY_IDLE", old[0]) or setattr(front, "BODY_TOTAL", old[1]))
         c = socket.create_connection(("127.0.0.1", self.port), 5)
         self.addCleanup(c.close)
         c.sendall(b"POST /voice/audio HTTP/1.1\r\nHost: h\r\nContent-Type: audio/wav\r\nContent-Length: 5000\r\n\r\n")
         t0, got = time.time(), b""
-        c.settimeout(0.2)
+        c.settimeout(0.1)
         while time.time() - t0 < 4 and b" 408 " not in got:
             try:
                 c.sendall(b"R")
@@ -444,7 +444,7 @@ class VoicePath(FrontCase):
 
     def test_a_slow_service_is_a_504_and_does_not_block_the_terminal(self):
         old = front.UPSTREAM_TIMEOUT
-        front.UPSTREAM_TIMEOUT = 0.5
+        front.UPSTREAM_TIMEOUT = 0.3
         self.addCleanup(setattr, front, "UPSTREAM_TIMEOUT", old)
         out = {}
         t = threading.Thread(target=lambda: out.update(r=post(self.port, "/voice/audio", b"SLOW" + WAV, "audio/wav")))
@@ -570,7 +570,7 @@ class Processes(unittest.TestCase):
         self.assertEqual(get(self.port, "/voice/health", extra="Origin: http://evil.example\r\n")[0], 403)
 
     def test_ttyd_exiting_stops_the_service_and_gives_its_status(self):
-        p = self.start(FAKE_TTYD_EXIT_AFTER="1", FAKE_TTYD_EXIT_CODE="7")
+        p = self.start(FAKE_TTYD_EXIT_AFTER="0.3", FAKE_TTYD_EXIT_CODE="7")
         kids = children_of(p.pid)
         self.assertEqual(len(kids), 2, kids)
         self.assertEqual(p.wait(timeout=15), 7)

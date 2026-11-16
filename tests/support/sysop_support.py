@@ -31,6 +31,16 @@ def wait_for(fn, seconds=10.0, step=0.02):
     return None
 
 
+def fast_cond(svc, cap=0.02):
+    """The waits of a Service (the poll of its main loop, the pause that grows after a failed turn: up to seconds) cut to `cap` seconds: a test of a
+    failing turn does not wait for them. Call it before svc.run starts."""
+    class Cond(threading.Condition):
+        def wait(self, timeout=None):
+            return threading.Condition.wait(self, None if timeout is None else min(timeout, cap))
+    svc.cond = Cond()
+    return svc
+
+
 def short_tmp(prefix="sbsy-"):
     """a short folder: a unix socket path holds at most 107 bytes"""
     return os.path.realpath(tempfile.mkdtemp(prefix=prefix, dir="/tmp"))

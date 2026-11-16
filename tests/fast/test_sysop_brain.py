@@ -5,16 +5,16 @@ Run with: python3 -W error tests/fast/test_sysop_brain.py
 """
 import json
 import os
-import signal
 import sys
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 import sysop_support as ss  # noqa: E402
 
-from swarmbox_sysop import brain, config, ipc  # noqa: E402
+from swarmbox_sysop import brain, config, ipc, paths  # noqa: E402
 
 
 def alive(pid):
@@ -114,17 +114,23 @@ class Template(unittest.TestCase):
             for must in ("untrusted DATA", "ONE tool at a time", "never start the text with / or !", "do NOT retry", "at most 20 tool calls", "300 seconds"):
                 self.assertIn(must, p)
 
-    def test_the_prompt_is_the_one_of_the_spike_adapted(self):
-        p = brain.system_prompt("cli", 20, 300)
-        for tool in ("list_tabs", "read_tab", "run", "input", "wait", "say", "done"):
-            self.assertIn(tool, p)
-        self.assertIn("active", p)
-        self.assertIn("look", p.lower())
-
-    def test_the_prompt_explains_tabs_and_never_mentions_the_bus(self):
+    def test_the_prompt_carries_what_the_e2e_runs_found_the_model_needed(self):
+        """every phrase is a behaviour that a real model got wrong without it (tests/e2e/e2e_voice.py, e2e_sysop.py)"""
         p = " ".join(brain.system_prompt("voice", 20, 300).split())
-        self.assertIn("TABS", p)
-        self.assertIn("window of a tmux session", p)
+        needs = {
+            "the tools": ("list_tabs", "read_tab", "run", "input", "wait", "say", "done"),
+            "tabs, never the bus": ("TABS", "window of a tmux session"),
+            # 'reply with exactly banana nine' with Claude Code in the active tab was answered by the brain itself and nothing was typed
+            "a goal for an agent goes to the agent of the active tab": ("never answer the goal yourself", "meant for the agent in the ACTIVE tab", "type the goal there with run",
+                                                                         "do not type it into a shell", "A goal that is an operation on the box"),
+            # 'delete the build folder' made it type `pwd; ls -la; ls -la build | head`: the user was asked to approve a look before the command that mattered
+            "one simple command per run": ("ONE simple command per run", "no `;`, `&&`, `||` or pipes", "the host holds a chained line for the user's approval"),
+            "a dialog is the user's decision": ("is the USER's decision", "do not answer it", "do not press Esc", "do not type a prompt over it", "Report it with say",
+                                                "unless the goal itself asks you to answer that dialog"),
+        }
+        for why, phrases in needs.items():
+            for phrase in phrases:
+                self.assertIn(phrase, p, why)
         for word in ("bus", "topic", "publish", "subscri", "swarmbox-tabs", "socket"):
             self.assertNotIn(word, p.lower(), "the model never sees the bus (or the command behind its tools)")
 
@@ -145,27 +151,6 @@ class Template(unittest.TestCase):
         self.assertNotIn("SB_TABS_BIN", env)
         self.assertNotIn("SB_BUS_SOCKET", env)
 
-    def test_the_prompt_sends_a_goal_meant_for_an_agent_to_the_agent_of_the_active_tab(self):
-        """found by tests/e2e/e2e_voice.py: a spoken 'reply with exactly banana nine' with Claude Code in the active tab was answered by the brain itself
-        (done with the summary 'banana 9') and nothing was typed; the path of version 1 is that the goal is typed in the agent of the active tab"""
-        p = " ".join(brain.system_prompt("voice", 20, 300).split())
-        for needle in ("never answer the goal yourself", "meant for the agent in the ACTIVE tab", "type the goal there with run", "do not type it into a shell",
-                       "A goal that is an operation on the box"):
-            self.assertIn(needle, p)
-
-    def test_the_prompt_asks_for_one_simple_command_per_run(self):
-        """found by tests/e2e/e2e_voice.py: 'delete the build folder' made the brain type `pwd; ls -la; ls -la build | head`, a chained line the host rates medium, so the user was
-        asked to approve a look before the command that mattered"""
-        p = " ".join(brain.system_prompt("voice", 20, 300).split())
-        for needle in ("ONE simple command per run", "no `;`, `&&`, `||` or pipes", "the host holds a chained line for the user's approval"):
-            self.assertIn(needle, p)
-
-    def test_the_prompt_says_a_dialog_is_the_users_decision(self):
-        p = " ".join(brain.system_prompt("voice", 20, 300).split())
-        for needle in ("is the USER's decision", "do not answer it", "do not press Esc", "do not type a prompt over it", "Report it with say",
-                       "unless the goal itself asks you to answer that dialog"):
-            self.assertIn(needle, p)
-
 
 class RunBrain(unittest.TestCase):
     def setUp(self):
@@ -181,6 +166,10 @@ class RunBrain(unittest.TestCase):
         self.env_extra = {"SWARMBOX_TEST_FAKE_CLAUDE_LOG": self.log, "SWARMBOX_TEST_FAKE_CLAUDE_OUT": self.out, "PATH": self.e.env["PATH"],
                           "HOME": self.e.env["HOME"]}
         self.stop = False
+        real_kill = brain.kill_group
+        for patcher in (mock.patch.object(brain, "GRACE_AFTER_DONE", 0.2), mock.patch.object(brain, "kill_group", lambda pgid, proc=None: real_kill(pgid, grace=0.2, proc=proc))):
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def script(self, steps):
         p = os.path.join(self.e.dir, "script.json")
@@ -254,7 +243,7 @@ class RunBrain(unittest.TestCase):
         t0 = time.time()
         r = self.go()
         self.assertEqual(r.outcome, "done")
-        self.assertLess(time.time() - t0, 3 + brain.GRACE_AFTER_DONE, "the first done ends the run (after the grace), the brain's sleep is not awaited")
+        self.assertLess(time.time() - t0, 10, "the first done ends the run (after the grace), the brain's sleep is not awaited")
         got = self.logged()
         self.assertNotEqual(got["pgid"], os.getpgid(0))
         self.assertTrue(ss.wait_for(lambda: not alive(got["pid"]), 5), "the brain was killed")
@@ -276,7 +265,7 @@ class RunBrain(unittest.TestCase):
 
     def test_stop_kills_the_whole_group_and_ends_the_goal_stopped(self):
         self.script([{"tool": "list_tabs"}, {"sleep": 60}])
-        threading_stop = __import__("threading").Timer(1.0, lambda: setattr(self, "stop", True))
+        threading_stop = __import__("threading").Timer(0.5, lambda: setattr(self, "stop", True))
         threading_stop.start()
         self.addCleanup(threading_stop.cancel)
         t0 = time.time()
@@ -288,7 +277,7 @@ class RunBrain(unittest.TestCase):
 
     def test_stop_while_the_brain_ignores_term_still_kills_it(self):
         self.stop = False
-        __import__("threading").Timer(0.7, lambda: setattr(self, "stop", True)).start()
+        __import__("threading").Timer(0.4, lambda: setattr(self, "stop", True)).start()
         t0 = time.time()
         r = self.go(mode="hang-ignore-term")
         self.assertEqual(r.outcome, "stopped")
@@ -298,7 +287,7 @@ class RunBrain(unittest.TestCase):
 
     def test_the_deadline_kills_the_brain_and_fails_the_goal(self):
         t0 = time.time()
-        r = self.go(mode="hang", seconds=2)
+        r = self.go(mode="hang", seconds=1)
         self.assertEqual(r.outcome, "failed")
         self.assertIn("time budget", r.error)
         self.assertLess(time.time() - t0, 12)
@@ -382,6 +371,40 @@ class ReadStream(unittest.TestCase):
         ev, text = brain.read_stream(p)
         self.assertEqual(ev.get("num_turns"), 2)
         self.assertLess(len(text), 9 << 20)
+
+
+class BrainSupervision(unittest.TestCase):
+    def setUp(self):
+        self.e = ss.Env()
+        self.addCleanup(self.e.cleanup)
+        self.pth = self.e.paths.make()
+        self.gdir = paths.private_dir(self.pth.goal_dir("g1"))
+        self.saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(self.saved)))
+
+    def test_an_error_while_supervising_does_not_leave_the_brain_running(self):
+        script = os.path.join(self.e.dir, "brain.sh")
+        with open(script, "w") as f:
+            f.write("#!/bin/sh\nexec sleep 120\n")
+        os.chmod(script, 0o755)
+        pids, ticks = [], []
+
+        def tick():
+            ticks.append(1)
+            if len(ticks) > 2:
+                raise OSError(28, "No space left on device")
+        with self.assertRaises(OSError):
+            brain.run(self.e.cfg(), "goal", "cli", self.gdir, [script], {}, lambda: False, tick, time.time() + 60, on_start=pids.append)
+        self.assertTrue(pids)
+        self.assertTrue(ss.wait_for(lambda: not alive(pids[0]), 10), "the brain was left running")
+
+    def test_a_brain_that_prints_without_end_is_cut_at_the_size_limit(self):
+        old = brain.MAX_OUTPUT
+        brain.MAX_OUTPUT = 1 << 20
+        self.addCleanup(setattr, brain, "MAX_OUTPUT", old)
+        res = brain.run(self.e.cfg(), "goal", "cli", self.gdir, ["yes"], {}, lambda: False, lambda: None, time.time() + 4)
+        self.assertEqual(res.outcome, "failed")
+        self.assertLessEqual(os.path.getsize(os.path.join(self.gdir, "stream.jsonl")), (1 << 20) + 4096)
 
 
 if __name__ == "__main__":

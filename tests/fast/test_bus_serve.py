@@ -6,13 +6,12 @@ import os
 import signal
 import subprocess
 import sys
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from bus_support import BUS_PATH, rpc  # noqa: E402
-from test_serve_steps import ServeCase, alive, wait_for, write_exec  # noqa: E402
+from serve_support import ServeCase, alive, wait_for, write_exec  # noqa: E402
 
 
 class RealBroker(ServeCase):
@@ -48,30 +47,17 @@ class RealBroker(ServeCase):
         self.assertIn("listening on", open(os.path.join(self.state, "bus.log")).read())
         self.stop(p)
 
-    def test_a_killed_broker_is_restarted_after_the_backoff_and_takes_over_the_stale_socket(self):
-        p = self.run_ready(SWARMBOX_TEST_BACKOFF_SCALE="1")
+    def test_a_killed_broker_is_started_again_and_takes_over_the_stale_socket(self):
+        """(the values of the backoff, 1 s then 2 s, are tested in test_serve_steps.py with fakes: here the backoff is 0)"""
+        p = self.run_ready()
         pid = self.broker_pid()
         self.assertTrue(pid)
         sup = int(open(os.path.join(self.run_dir, "bus-supervisor.pid")).read())
-        t0 = time.time()
         os.kill(pid, signal.SIGKILL)
-        self.assertTrue(os.path.exists(self.sock), "kill -9 leaves the socket file")
-        self.assertEqual(self.bus("ping").returncode, 4)
-        new = wait_for(lambda: (self.broker_pid() or None), 8)
-        dt = time.time() - t0
-        self.assertTrue(new and new != pid, "the broker was not started again")
-        self.assertGreaterEqual(dt, 0.9, "the first retry waits 1 s")
-        self.assertLess(dt, 4)
+        new = wait_for(lambda: (self.broker_pid() not in (None, pid)) and self.broker_pid(), 8)
+        self.assertTrue(new, "the broker was not started again")
         self.assertTrue(alive(sup))
-        self.assertIn("bus exited; restarting in 1 s", self.serve_log())
-        self.assertEqual(self.bus("topics").returncode, 0)      # the broker answers
-        # a second kill: 2 s of backoff
-        t0 = time.time()
-        os.kill(new, signal.SIGKILL)
-        again = wait_for(lambda: (self.broker_pid() or None), 10)
-        self.assertTrue(again and again != new)
-        self.assertGreaterEqual(time.time() - t0, 1.9)
-        self.assertIn("bus exited; restarting in 2 s", self.serve_log())
+        self.assertEqual(self.bus("topics").returncode, 0)      # the new broker answers on the old socket path
         self.stop(p)
 
     def test_sigterm_of_serve_stops_the_broker_and_removes_the_socket(self):

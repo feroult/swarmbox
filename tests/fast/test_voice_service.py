@@ -349,7 +349,7 @@ class HttpTests(Base):
         self.svc = self.service(bus_path=self.h.path)
         self.httpd = server.make_server(self.svc, "127.0.0.1", 0)
         self.port = self.httpd.server_address[1]
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.httpd.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         self.thread.start()
         self.addCleanup(self.stop)
 

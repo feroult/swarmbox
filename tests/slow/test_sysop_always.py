@@ -1,8 +1,7 @@
 """The panel of the sysop in the mode `always` (setting sysop.panel, the default): up in every window from the start of the box, idle when there
 is no goal (container/addons/sysop/lib/swarmbox_sysop/dock.py, panel.py).
 
-  * fast tests, no tmux: the setting and its checks (config.py), the Follower for each mode with a fake dock (always syncs, off does nothing, auto
-    follows the goals), the log that says a trouble once and not at every look, the tmux file;
+  * (the setting and its checks, the Follower for each mode with a fake dock and the tmux file need no tmux: tests/fast/test_sysop_dock_logic.py)
   * the real thing against a REAL tmux on a private socket with real clients on a pty, with the REAL panel program in the panes: the panel exists
     in every window and never takes the focus, a new window gets one (the hook), a window that holds only the panel is closed, a resize flips the
     layout of each window, the toggle hides and shows all windows and is remembered, `q` of the panel hides all of them, a killed panel comes
@@ -19,185 +18,20 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-import sysop_support as ss  # noqa: E402
 import test_sysop_dock as td  # noqa: E402
 
-from swarmbox_sysop import config, dock, ipc, paths  # noqa: E402
+from swarmbox_sysop import dock, ipc, paths  # noqa: E402
 from swarmbox_sysop.dock import DockError, Follower  # noqa: E402
 
 SETTINGS = {"topic": "goal", "autonomy": "confirm-risky", "brain": "claude", "model": "haiku", "panel": "always"}
 
 
-class Setting(unittest.TestCase):
-    def test_the_default_is_always_and_the_three_values_are_accepted(self):
-        self.assertEqual(config.panel_mode({}), "always")
-        self.assertEqual(config.panel_mode({"SWARMBOX_SYSOP_PANEL_MODE": ""}), "always")
-        for v in ("always", "auto", "off"):
-            self.assertEqual(config.panel_mode({"SWARMBOX_SYSOP_PANEL_MODE": v}), v)
-            self.assertEqual(config.load({"SWARMBOX_SYSOP_PANEL_MODE": v}).panel_mode, v)
-
-    def test_a_wrong_value_names_the_variable(self):
-        for bad in ("Always", "on", "never", "1", "auto ", "always\n"):
-            with self.assertRaises(config.ConfigError, msg=repr(bad)) as cm:
-                config.load({"SWARMBOX_SYSOP_PANEL_MODE": bad})
-            self.assertIn("SWARMBOX_SYSOP_PANEL_MODE", str(cm.exception))
-
-    def test_the_name_does_not_collide_with_the_marker_of_a_panel_pane(self):
-        self.assertEqual(config.ENV["panel_mode"], "SWARMBOX_SYSOP_PANEL_MODE")
-        self.assertNotEqual(config.ENV["panel_mode"], "SWARMBOX_SYSOP_PANEL")
-        self.assertEqual(dock.PANEL_COMMAND, "SWARMBOX_SYSOP_PANEL=1")
-        self.assertNotIn(dock.PANEL_COMMAND, "SWARMBOX_SYSOP_PANEL_MODE=1")
-
-    def test_the_dock_gets_the_mode_from_the_environment_and_hands_it_on(self):
-        saved = dict(os.environ)
-        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
-        os.environ.pop("SWARMBOX_SYSOP_PANEL_MODE", None)
-        self.assertEqual(dock.default_dock(td.Tmux(argv=["tmux", "-L", "never-%d" % os.getpid()])).mode, "always")
-        os.environ["SWARMBOX_SYSOP_PANEL_MODE"] = "off"
-        d = dock.default_dock(td.Tmux(argv=["tmux", "-L", "never-%d" % os.getpid()]))
-        self.assertEqual(d.mode, "off")
-        for argv in (d.panel_argv, d.redock_argv, d.sync_argv):
-            self.assertIn("SWARMBOX_SYSOP_PANEL_MODE=off", argv)
-        self.assertEqual(d.sync_argv[-3:], ["swarmbox_sysop", "dock", "sync"])
-        os.environ["SWARMBOX_SYSOP_PANEL_MODE"] = "bogus"
-        self.assertEqual(dock.default_dock(td.Tmux(argv=["tmux", "-L", "never-%d" % os.getpid()])).mode, "always", "the service refuses a bad value at its start")
-
-    def test_the_status_of_the_service_carries_the_mode(self):
-        from swarmbox_sysop import service
-        with open(service.__file__) as f:
-            self.assertIn('"panel": self.cfg.panel_mode', f.read())
-
-    def test_the_cli_knows_the_sync_action(self):
-        self.assertIn("sync", dock.ACTIONS)
 
 
-class FakeDock:
-    def __init__(self, fail=None):
-        self.calls, self.fail = [], fail
-
-    def sync(self):
-        self.calls.append("sync")
-        if self.fail:
-            raise self.fail
-
-    def forget_sync(self):
-        self.calls.append("forget_sync")
-
-    def open(self, **kw):
-        self.calls.append(("open", kw))
-
-    def close(self, **kw):
-        self.calls.append(("close", kw))
 
 
-class FollowerModes(unittest.TestCase):
-    def setUp(self):
-        self.e = ss.Env()
-        self.addCleanup(self.e.cleanup)
-        self.pth = self.e.paths.make()
-        self.now, self.log = 0.0, []
-
-    def follower(self, mode, dk, **kw):
-        return Follower(self.pth, dock=dk, mode=mode, clock=lambda: self.now, log=self.log.append, **kw)
-
-    def test_always_syncs_at_every_step_and_never_looks_at_goals(self):
-        dk = FakeDock()
-        f = self.follower("always", dk)
-        ipc.write_json(self.pth.status, {"pid": 1, "current": "g1", "queue": []})
-        f.step()
-        f.step()
-        self.assertEqual(dk.calls, ["sync", "sync"])
-
-    def test_off_does_nothing(self):
-        dk = FakeDock()
-        f = self.follower("off", dk)
-        ipc.write_json(self.pth.status, {"pid": 1, "current": "g1", "queue": []})
-        f.step()
-        self.assertEqual(dk.calls, [])
-
-    def test_auto_opens_for_a_goal_without_focus_and_closes_after_the_grace(self):
-        dk = FakeDock()
-        f = self.follower("auto", dk)
-        f.step()
-        self.assertEqual(dk.calls, [])
-        ipc.write_json(self.pth.status, {"pid": 1, "current": "g1", "queue": []})
-        f.step()
-        self.assertEqual(dk.calls, [("open", {"auto": True, "focus": False})])
-        ipc.write_json(self.pth.status, {"pid": 1, "current": None, "queue": []})
-        self.now = 1
-        f.step()
-        self.now = 5
-        f.step()
-        self.assertEqual(dk.calls[-1], ("close", {"only_auto": True}))
-
-    def test_status_json_is_read_again_only_when_it_changed(self):
-        f = self.follower("auto", FakeDock())
-        ipc.write_json(self.pth.status, {"pid": 1, "current": None, "queue": []})
-        f.step()
-        first = f._status
-        f.step()
-        self.assertIs(f._status, first, "same file: the parsed content is kept, nothing is read")
-        ipc.write_json(self.pth.status, {"pid": 1, "current": "g1", "queue": []})
-        f.step()
-        self.assertIsNot(f._status, first)
-
-    def test_the_same_trouble_is_said_once(self):
-        dk = FakeDock(fail=DockError("the tmux session 'main' is not available"))
-        f = self.follower("always", dk)
-        for _ in range(5):
-            f.step()
-        self.assertEqual(len(self.log), 1, self.log)
-        dk.fail = DockError("another trouble")
-        f.step()
-        self.assertEqual(len(self.log), 2)
-        dk.fail = None
-        f.step()
-        dk.fail = DockError("another trouble")
-        f.step()
-        self.assertEqual(len(self.log), 3, "said again after a good look")
-
-    def test_an_unexpected_error_does_not_take_the_service_down(self):
-        f = self.follower("always", FakeDock(fail=ValueError("boom")))
-        f.step()
-        self.assertIn("boom", self.log[0])
-
-    def test_the_thread_in_the_mode_always_syncs_at_once_and_then_at_the_tick(self):
-        dk = FakeDock()
-        f = self.follower("always", dk, tick=0.2).start()
-        self.addCleanup(f.shutdown)
-        time.sleep(0.7)
-        self.assertGreaterEqual(len(dk.calls), 3, dk.calls)
-        self.assertLessEqual(len(dk.calls), 5, "a tick, not a busy loop")
-
-    def test_the_thread_in_auto_or_off_takes_away_the_hooks_of_an_earlier_always_once_and_the_mode_always_never_does(self):
-        for mode in ("auto", "off", "always"):
-            dk = FakeDock()
-            f = self.follower(mode, dk, tick=0.2).start()
-            time.sleep(0.5)
-            f.shutdown()
-            f.thread.join(2)
-            self.assertEqual(dk.calls.count("forget_sync"), 0 if mode == "always" else 1, (mode, dk.calls))
 
 
-class Wiring(unittest.TestCase):
-    def test_serve_starts_the_follower_in_every_mode_so_that_off_also_drops_the_old_hooks(self):
-        """found by the e2e (sysop.panel=off after an always in the same box still made panels in new windows): serve skipped the Follower in off, so nothing took
-        the hooks of the earlier always away"""
-        cli = td.slurp(os.path.join(os.path.dirname(dock.__file__), "cli.py"))
-        line = next(x for x in cli.splitlines() if "dock.Follower(" in x)
-        self.assertNotIn('"off"', line.split("#")[0])
-        self.assertIn("args.dock", line)
-
-    def test_the_tmux_file_says_what_the_key_does_in_each_mode(self):
-        conf = td.slurp(td.TMUX_CONF)
-        self.assertIn("`always`", conf)
-        self.assertIn("`auto`", conf)
-        self.assertIn("`off`", conf)
-
-    def test_the_hooks_have_the_slot_of_the_sysop(self):
-        for h in dock.SYNC_HOOKS + (dock.HOOK,):
-            self.assertTrue(h.endswith("[418]"), h)
-        self.assertEqual(set(h.split("[")[0] for h in dock.SYNC_HOOKS), {"after-new-window", "pane-exited", "after-kill-pane"})
 
 
 LAUNCHER = td.LAUNCHER

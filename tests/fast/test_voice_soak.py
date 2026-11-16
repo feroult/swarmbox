@@ -28,7 +28,7 @@ class Burst(unittest.TestCase):
             with lock:
                 running[0] += 1
                 peak[0] = max(peak[0], running[0])
-            time.sleep(0.15)
+            time.sleep(0.05)
             with lock:
                 running[0] -= 1
             return "heard it"
@@ -102,7 +102,7 @@ class TwoSigterms(unittest.TestCase):
         import signal
         import socket
         import subprocess
-        for i in range(10):
+        for i in range(4):               # a few races between the two signals (the handler itself is tested above)
             s = socket.socket()
             s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]
@@ -119,7 +119,7 @@ class TwoSigterms(unittest.TestCase):
                         time.sleep(0.05)
                 time.sleep(0.2)                      # the handler is installed before the first connection can be made
                 p.send_signal(signal.SIGTERM)
-                time.sleep(0.0004 * i)
+                time.sleep(0.001 * i)
                 try:
                     p.send_signal(signal.SIGTERM)
                 except OSError:

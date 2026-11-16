@@ -222,7 +222,7 @@ class Prepare(Tree):
         self.assertEqual(stat.S_IMODE(os.stat(self.paths.run).st_mode), 0o700)
         self.assertTrue(ss.wait_for(lambda: "serving" in (rd(self.paths.log) if os.path.exists(self.paths.log) else ""), 10))
 
-    def test_prepare_is_idempotent_one_service_however_often_it_runs(self):
+    def test_prepare_is_idempotent_and_starts_a_service_that_died_again(self):
         self.install()
         self.assertEqual(self.prepare().returncode, 0)
         self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile), 10))
@@ -231,8 +231,14 @@ class Prepare(Tree):
             r = self.prepare()
             self.assertEqual(r.returncode, 0)
             self.assertNotIn("started", r.stderr)
-        self.assertEqual(self.pid(), pid)
-        self.assertTrue(self.alive(pid))
+        self.assertEqual(self.pid(), pid, "one service however often it runs")
+        os.kill(pid, signal.SIGKILL)
+        self.assertTrue(ss.wait_for(lambda: not self.alive(pid), 5))
+        self.assertIn("started", self.prepare().stderr)
+        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile) and self.pid() != pid and self.alive(self.pid()), 10))
+        bus = ss.FakeBus(os.path.join(self.base, "run", "bus.sock"))          # a bus that was not there when it started
+        self.addCleanup(bus.stop)
+        self.assertTrue(bus.wait_subscriber(1, 15), "the service reconnects by itself")
 
     def test_two_prepares_at_once_end_with_one_service(self):
         self.install()
@@ -243,9 +249,7 @@ class Prepare(Tree):
         pid = self.pid()
         count = lambda: [x for x in os.listdir("/proc") if x.isdigit() and self.is_service(int(x))]  # noqa: E731
         # the ones that lose the lock wait for it for Service.LOCK_WAIT (1 s) before they give up, so the count settles a moment later
-        ss.wait_for(lambda: count() == [str(pid)], 6)
-        time.sleep(0.5)
-        self.assertEqual(count(), [str(pid)], "exactly one service")
+        self.assertTrue(ss.wait_for(lambda: count() == [str(pid)], 6), "exactly one service: %s" % count())
 
     def is_service(self, pid):
         try:
@@ -254,17 +258,6 @@ class Prepare(Tree):
         except OSError:
             return False
         return "swarmbox_sysop" in cmd and "serve" in cmd and "--watch" not in cmd and ("SB_RUN_DIR=" + self.env["SB_RUN_DIR"]) in env       # the watcher is not a service
-
-    def test_a_service_that_died_is_started_again(self):
-        self.install()
-        self.prepare()
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile), 10))
-        pid = self.pid()
-        os.kill(pid, signal.SIGKILL)
-        self.assertTrue(ss.wait_for(lambda: not self.alive(pid), 5))
-        r = self.prepare()
-        self.assertIn("started", r.stderr)
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile) and self.pid() != pid and self.alive(self.pid()), 10))
 
     def test_prepare_refreshes_the_installed_library_from_the_image_copy(self):
         self.install()
@@ -283,16 +276,24 @@ class Prepare(Tree):
         r = self.prepare()
         self.assertNotIn("refreshed", r.stderr, "equal folders: nothing is written")
 
-    def test_prepare_and_goals_work_together_with_the_real_command(self):
-        self.install()
-        self.prepare()
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.status), 10))
-        bus = ss.FakeBus(os.path.join(self.base, "run", "bus.sock"))
-        self.addCleanup(bus.stop)
-        self.assertTrue(bus.wait_subscriber(1, 15), "the service reconnects to a bus that was not there when it started")
-        s = self.command("status")
-        self.assertEqual(s.returncode, 0)
-        self.assertIn("running", s.stdout)
+
+class PrepareRefused(unittest.TestCase):
+    def test_a_refused_setting_is_written_to_serve_log_and_prepare_does_not_say_started(self):
+        e = ss.Env(SWARMBOX_SYSOP_BRAIN="foo bar")
+        self.addCleanup(e.cleanup)
+        env = dict(e.env, PYTHONPATH=ss.LIB, PYTHONDONTWRITEBYTECODE="1")
+        r = subprocess.run([sys.executable, "-m", "swarmbox_sysop", "serve", "--log"], env=env, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+        self.assertEqual(r.returncode, 2)
+        log = os.path.join(e.dir, "state", "sysop", "serve.log")
+        self.assertTrue(os.path.exists(log), "no serve.log: nobody can read why the service is not there")
+        with open(log) as f:
+            self.assertIn("{mcp_config}", f.read())
+
+    def test_prepare_fails_when_the_service_does_not_come_up(self):
+        with open(os.path.join(ss.SYSOP, "prepare.sh")) as f:
+            script = f.read()
+        self.assertIn('"$bin" status -q', script.split("setsid nohup", 1)[1], "prepare.sh checks that the service came up after starting it")
+        self.assertLess(script.index("did not come up"), script.index("started the goal subscriber"))
 
 
 if __name__ == "__main__":

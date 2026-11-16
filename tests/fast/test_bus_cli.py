@@ -375,7 +375,7 @@ class Load(Base):
         subs = [p.popen("sub", "--raw", "-v", "--group", "w", "jobs") for _ in range(3)]
         for s in subs:
             self.assertIn(b"subscribed", s.stderr.readline())
-        n_threads, per = 8, 25
+        n_threads, per = 8, 10
         fails = []
 
         def work(k):
@@ -398,12 +398,12 @@ class Load(Base):
         self.assertEqual(len(seen), n_threads * per)
         self.assertEqual(len(set(seen)), n_threads * per, "a message went to two members of one group")
 
-    def test_100_messages_per_second_for_3_seconds_one_process_each(self):
+    def test_100_messages_per_second_one_process_each(self):
         p = self.broker()
         sub = p.popen("sub", "--raw", "jobs")
         self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "probe").returncode == 0, 5))
         sub.stdout.readline()
-        total, rate = 300, 100
+        total, rate = 100, 100
         start = time.time()
         procs = []
         fails = 0

@@ -3,6 +3,7 @@ line that cannot be written, a service that must not die on a full disk, the rec
 No model, no tmux. Run with: python3 -W error tests/fast/test_sysop_soak.py
 """
 import errno
+import gc
 import io
 import os
 import subprocess
@@ -10,6 +11,7 @@ import sys
 import threading
 import time
 import unittest
+import warnings
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -18,7 +20,7 @@ import sysop_support as ss  # noqa: E402
 import test_sysop_mcp as tm  # noqa: E402
 import test_sysop_service as tss  # noqa: E402
 
-from swarmbox_sysop import audit, brain, busclient, dock, ipc, keys, mcpserver, panel, service, watch  # noqa: E402
+from swarmbox_sysop import audit, brain, busclient, dock, ipc, keys, mcpserver, service, watch  # noqa: E402
 
 WRITER = r"""
 import sys
@@ -162,6 +164,8 @@ class ServiceOnAFullDisk(tss.Base):
 
 
 class ServiceMainLoop(tss.Base):
+    fast_loop = True
+
     def test_an_error_in_one_turn_of_the_main_loop_is_logged_and_the_loop_goes_on(self):
         svc = self.start()
         logs = []
@@ -219,34 +223,26 @@ class LogRotation(unittest.TestCase):
 
 
 class Housekeeping(tss.Base):
+    fast_loop = True
+
     def test_the_service_runs_the_housekeeping_of_its_main_loop(self):
         old = service.HOUSEKEEPING
-        service.HOUSEKEEPING = 0.2
+        service.HOUSEKEEPING = 0.05
         self.addCleanup(setattr, service, "HOUSEKEEPING", old)
         calls = []
-        svc = service.Service(self.e.cfg(countdown=0), self.e.paths, backoff=(0.05, 0.3), log=lambda m: None)
+        svc = self.start()
         svc.housekeeping = lambda: calls.append(1)
-        self.svc = svc
-        self.thread = threading.Thread(target=svc.run, daemon=True)
-        self.thread.start()
-        self.addCleanup(self.end)
         self.assertTrue(ss.wait_for(lambda: len(calls) >= 3, 10), calls)
-        svc.housekeeping = lambda: 1 / 0               # a housekeeping that fails is one failed turn, not the end
-        time.sleep(0.8)
+        logs = []
+        svc.log = logs.append
+        svc.housekeeping = lambda: 1 / 0               # a housekeeping that fails is one failed turn, not the end: the loop turns again
+        self.assertTrue(ss.wait_for(lambda: len([m for m in logs if "ZeroDivisionError" in m]) >= 2, 10), logs)
         self.assertTrue(self.thread.is_alive())
 
 
-class ClockJumps(tm.Rig):
-    """a wall clock that jumps back (NTP, a laptop that wakes up) must not stretch a countdown or the time budget of a goal"""
-    autonomy, countdown = "confirm-risky", 0.6
-
-    def jump_back_after(self, seconds, by=3600.0):
-        real = time.time
-        offset = [0.0]
-        self.addCleanup(setattr, time, "time", real)
-        time.time = lambda: real() + offset[0]
-        threading.Timer(seconds, lambda: offset.__setitem__(0, -by)).start()
-        return real
+class ClockJumps(unittest.TestCase):
+    """a wall clock that jumps back (NTP, a laptop that wakes up) must not stretch a countdown or the time budget of a goal: the server of a goal runs on
+    the steady clock (the countdown and the budget of the Server follow the clock it is given: tests/fast/test_sysop_mcp.py)"""
 
     def test_the_steady_clock_follows_the_monotonic_clock_not_the_wall_clock(self):
         real = time.time
@@ -257,20 +253,28 @@ class ClockJumps(tm.Rig):
         self.assertAlmostEqual(t1, t0, delta=1.0, msg="a jump of the wall clock is not seen")
         self.assertGreaterEqual(clock(), t1)
 
-    def test_a_countdown_ends_on_time_when_the_wall_clock_jumps_back_during_it(self):
-        self.build()
-        self.srv = mcpserver.Server(self.ctx, tabs=self.tabs.client(), clock=mcpserver.steady_clock())
-        self.srv.settle_args = {"quiet": 0.05, "cap": 0.5, "step": 0.01}
-        self.jump_back_after(0.2)
-        out = []
-        t = threading.Thread(target=lambda: out.append(self.srv.call("run", {"tab": "@1", "command": "echo hi"})), daemon=True)
-        t0 = time.monotonic()
-        t.start()
-        t.join(15)
-        self.assertFalse(t.is_alive(), "the countdown of 0.6 s was stretched by the jump of the wall clock")
-        self.assertLess(time.monotonic() - t0, 5)
-        self.assertFalse(out[0][1], out[0][0])
-        self.assertEqual(self.tabs.sent, [("@1", {"run": "echo hi"})], "and the action was sent when the countdown ended")
+    def test_the_mcp_process_gives_the_server_the_steady_clock(self):
+        e = ss.Env()
+        self.addCleanup(e.cleanup)
+        seen = {}
+
+        class Server:
+            def __init__(self, ctx, **kw):
+                seen.update(kw)
+
+            def serve(self, fin, fout):
+                pass
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ResourceWarning)           # main() leaves its mcp.log open: the process ends right after
+            with mock.patch.object(mcpserver, "Server", Server):
+                self.assertEqual(mcpserver.main(dict(e.env)), 0)
+            clock = seen.pop("clock")
+            seen.clear()
+            gc.collect()
+        real = time.time
+        t0 = clock()
+        with mock.patch.object(time, "time", lambda: real() - 3600):
+            self.assertAlmostEqual(clock(), t0, delta=1.0)
 
 
 class BrainClock(unittest.TestCase):
@@ -281,11 +285,11 @@ class BrainClock(unittest.TestCase):
         os.makedirs(gdir)
         real, offset = time.time, [0.0]
         clock = lambda: real() + offset[0]
-        threading.Timer(0.3, lambda: offset.__setitem__(0, -3600.0)).start()
+        threading.Timer(0.15, lambda: offset.__setitem__(0, -3600.0)).start()
         which = brain.shutil.which
         with mock.patch.object(brain.shutil, "which", lambda n, path=None: None if n == "timeout" else which(n, path=path)):        # without the `timeout` wrapper, which counts by itself
             t0 = time.monotonic()
-            res = brain.run(e.cfg(max_seconds=5), "goal", "cli", gdir, ["sleep", "30"], {}, lambda: False, lambda: None, clock() + 1.0, clock=clock)
+            res = brain.run(e.cfg(max_seconds=5), "goal", "cli", gdir, ["sleep", "30"], {}, lambda: False, lambda: None, clock() + 0.6, clock=clock)
         self.assertLess(time.monotonic() - t0, 8, "the brain ran on after its budget because the clock went back")
         self.assertEqual(res.outcome, "failed")
         self.assertIn("time budget", res.error)
@@ -373,69 +377,6 @@ class RedockCoalescing(unittest.TestCase):
         self.assertEqual(calls, ["@8", "@9"])
 
 
-class PanelFailures(unittest.TestCase):
-    def setUp(self):
-        self.e = ss.Env()
-        self.addCleanup(self.e.cleanup)
-        self.r, self.w = os.pipe()
-        self.out = os.open(os.devnull, os.O_WRONLY)
-        self.addCleanup(lambda: [os.close(fd) for fd in (self.r, self.w, self.out)])
-        self.p = panel.Panel(self.e.paths.make(), in_fd=self.r, out_fd=self.out)
-        self.addCleanup(lambda: [os.close(fd) for fd in (self.p.wake_r, self.p.wake_w)])
-
-    def run_loop(self, seconds=3.0):
-        out = []
-        t = threading.Thread(target=lambda: out.append(self.p.loop()), daemon=True)
-        t.start()
-        return t, out
-
-    def test_a_failing_turn_is_one_line_in_the_panel_not_a_traceback_and_the_panel_goes_on(self):
-        calls, seen = [], []
-        real = self.p.look
-
-        def look():
-            calls.append(1)
-            seen.append(self.p.model.notice)
-            if len(calls) <= 2:
-                raise OSError(errno.EIO, "Input/output error")
-            return real()
-        self.p.look = look
-        t, out = self.run_loop()
-        self.assertTrue(ss.wait_for(lambda: len(calls) >= 4, 10), "the panel kept turning")
-        self.assertTrue(t.is_alive())
-        self.assertTrue(any("The panel hit a problem and goes on (OSError: Input/output error)." == n for n in seen[1:]), seen)
-        self.p.model.finished = True
-        self.p.wake()
-        t.join(10)
-        self.assertFalse(t.is_alive())
-        self.assertEqual(out, [None])
-
-    def test_the_message_is_short_and_has_no_traceback(self):
-        def look():
-            raise ValueError("x" * 500)
-        self.p.look = look
-        t, out = self.run_loop()
-        self.assertTrue(ss.wait_for(lambda: "hit a problem" in self.p.model.notice, 10))
-        n = self.p.model.notice
-        self.assertLessEqual(len(n), 140)
-        self.assertNotIn("Traceback", n)
-        self.assertIn("ValueError", n)
-        self.p.model.finished = True
-        self.p.wake()
-        t.join(10)
-
-    def test_twenty_failures_in_a_row_end_the_panel_and_the_terminal_is_gone_ends_it_quietly(self):
-        self.p.look = lambda: 1 / 0
-        with mock.patch.object(panel.time, "sleep", lambda s: None):
-            with self.assertRaises(ZeroDivisionError):
-                self.p.loop()
-        os.close(self.w)
-        self.w = os.open(os.devnull, os.O_WRONLY)
-        p2 = panel.Panel(self.e.paths, in_fd=self.r, out_fd=self.out)
-        self.addCleanup(lambda: [os.close(fd) for fd in (p2.wake_r, p2.wake_w)])
-        p2.loop()                # the other end of the pipe is closed: EOF, the loop ends
-
-
 class Words(unittest.TestCase):
     def test_a_goal_that_was_not_sent_is_said_in_words_not_codes_or_paths(self):
         for code, text in (("no_subscriber", "sysop is not running"), ("bus_down", "starts it again within seconds"), ("bus_closed", "starts it again within seconds"),
@@ -506,7 +447,7 @@ class LogOnAFullDisk(tss.Base):
     earlier failure)"""
 
     def test_a_log_that_cannot_be_written_does_not_end_the_service(self):
-        svc = service.Service(self.e.cfg(countdown=0), self.e.paths, backoff=(0.05, 0.3))     # the default log: standard error
+        svc = ss.fast_cond(service.Service(self.e.cfg(countdown=0), self.e.paths, backoff=(0.05, 0.3)))     # the default log: standard error
         self.svc = svc
         real = svc.poll_stop
         calls = [0]
@@ -572,25 +513,30 @@ class FullDiskEnds(tss.Base):
     def test_the_end_of_a_goal_that_the_disk_refused_is_written_when_there_is_room_again(self):
         """found by the soak test: a goal whose end could not be written stayed `running` in its state.json for ever (the panel showed a goal that was long over)"""
         old = service.RETRY_WRITES
-        service.RETRY_WRITES = 0.2
+        service.RETRY_WRITES = 0.05
         self.addCleanup(setattr, service, "RETRY_WRITES", old)
-        self.script([{"tool": "list_tabs"}, {"sleep": 1.5}, {"tool": "done", "args": {"summary": "finished"}}])
+        hold, release = self.gate()
+        self.script([{"tool": "list_tabs"}, hold, {"tool": "done", "args": {"summary": "finished"}}])
         svc = self.start()
         real = svc.write_goal
         full = threading.Event()
+        refused = []
 
         def write_goal(goal):
             if full.is_set():
+                refused.append(1)
                 raise OSError(errno.ENOSPC, "No space left on device")
             return real(goal)
         svc.write_goal = write_goal
         gid = self.goal("a goal that ends on a full disk")
         self.assertTrue(ss.wait_for(lambda: (self.state(gid) or {}).get("state") == "running", 20))
         full.set()                                   # the disk fills while the goal works
+        release()
         self.assertTrue(ss.wait_for(lambda: gid in svc.unwritten, 20), "the service remembers the end it could not write")
         self.assertEqual(self.state(gid)["state"], "running", "this is what the panel would show")
-        time.sleep(0.6)
-        self.assertIn(gid, svc.unwritten, "and it keeps trying while the disk is full")
+        n = len(refused)
+        self.assertTrue(ss.wait_for(lambda: len(refused) >= n + 2, 10), "it keeps trying while the disk is full")
+        self.assertIn(gid, svc.unwritten)
         full.clear()
         got = ss.wait_for(lambda: (self.state(gid) or {}).get("state") == "failed", 10)
         self.assertTrue(got, self.state(gid))
