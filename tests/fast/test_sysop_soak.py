@@ -576,6 +576,19 @@ class FailedGoalOnAFullDisk(tss.Base):
         self.assertIn("the disk of the box is almost full: free some space", st["error"])
         self.assertIn("exited with status 3", st["error"])
 
+    def test_a_failure_on_a_roomy_disk_and_a_success_on_a_full_one_do_not_name_the_disk(self):
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "crash"
+        self.start()
+        gid = self.goal("this brain crashes on a roomy disk")
+        st = self.wait_state(gid)
+        self.assertEqual(st["state"], "failed")
+        self.assertNotIn("almost full", st["error"])
+        del os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"]
+        with mock.patch.object(service.shutil, "disk_usage", lambda p: type("U", (), {"free": 100 << 10})()):
+            st = self.wait_state(self.goal("this one works on a full disk"))
+        self.assertEqual(st["state"], "done")
+        self.assertNotIn("almost full", st["error"])
+
 
 class Backoff(unittest.TestCase):
     def test_the_reconnect_delay_is_short_at_most_five_seconds(self):

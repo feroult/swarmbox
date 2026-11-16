@@ -718,6 +718,13 @@ class Settings(unittest.TestCase):
                 with self.assertRaises(config.ConfigError, msg=bad):
                     fn()
 
+    def test_a_line_break_or_a_nul_in_any_setting_is_refused_by_name(self):
+        from swarmbox_sysop import config
+        for key, bad in (("model", "haiku\nx"), ("model", "haiku\rx"), ("model", "a\0b"), ("autonomy", "auto\n"), ("brain", "a\0b {mcp_config}")):
+            with self.subTest(key=key, bad=bad), self.assertRaises(config.ConfigError) as cm:
+                config.load({config.ENV[key]: bad})
+            self.assertIn("%s: no line breaks" % config.ENV[key], str(cm.exception))
+
 
 class Cli(Base):
     def run_cli(self, *args, env=None, stdin=None):
