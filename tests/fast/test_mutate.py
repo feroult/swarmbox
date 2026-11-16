@@ -140,6 +140,20 @@ class Toy(unittest.TestCase):
             f.write("from helpers import ALSO\n")
         self.assertEqual(mutate.covering_tests(self.tmp, "container/scripts/hidden-script.sh"), ["tests/fast/test_uses_support.py"])
 
+    def test_a_longer_comment_above_a_mutant_does_not_make_it_stale_even_when_its_text_is_not_unique(self):
+        twice = PY + PY.replace("limit", "again")      # `n > 3 and items` is in the file twice
+        path = os.path.join(self.tmp, "toy.py")
+        with open(path, "w") as f:
+            f.write(twice)
+        self.run_cli("plan", "--file", "toy.py", "--count", "30", "--out", self.plan)
+        planned = len(json.loads(self.read(self.plan))["mutants"])
+        with open(path, "w") as f:
+            f.write(twice.replace("def limit(n, items):", "def limit(n, items):    # a comment that moves every offset below it", 1))
+        self.run_cli("run", "--plan", self.plan, "--results", self.res)
+        rows = [json.loads(x) for x in self.read(self.res).splitlines()]
+        self.assertEqual(len(rows), planned)
+        self.assertNotIn("stale", {x["status"] for x in rows})
+
 
 if __name__ == "__main__":
     unittest.main()

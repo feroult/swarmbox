@@ -559,8 +559,14 @@ def run_mutant(slot, m, tests, args, extra_env):
     if m["kind"] != "control" and orig[m["start"]:m["end"]] != m["old"]:
         i = orig.find(m["old"])
         if i < 0 or orig.count(m["old"]) != 1:
-            res["status"] = "stale"
-            return res
+            # a comment above changed the offsets: the same text on the same line is still the mutant
+            lines = orig.split("\n")
+            ls = sum(len(x) + 1 for x in lines[:m["line"] - 1])
+            le = ls + len(lines[m["line"] - 1]) if 0 < m["line"] <= len(lines) else ls
+            i = orig.find(m["old"], ls)
+            if i < 0 or i >= le or orig.count(m["old"], ls, le + len(m["old"])) != 1:
+                res["status"] = "stale"
+                return res
         m = dict(m, start=i, end=i + len(m["old"]))
     if not tests:
         res["status"] = "no-tests"
