@@ -6,7 +6,6 @@ Run: python3 tests/fast/test_gen_notices.py
 import hashlib
 import os
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile

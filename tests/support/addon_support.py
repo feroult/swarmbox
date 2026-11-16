@@ -117,14 +117,6 @@ SELF_CONF = {"VERSION": "latest", "UPDATE": "self", "UPDATE_CMD": '"selfy update
              "COMMANDS": '"selfy"'}
 
 
-def all_paths(root):
-    out = []
-    for dp, dn, fn in os.walk(root):
-        for n in dn + fn:
-            out.append(os.path.join(dp, n))
-    return out
-
-
 class Base(unittest.TestCase):
     def setUp(self):
         self.base = tempfile.mkdtemp(prefix="addon-install-")
@@ -169,11 +161,6 @@ class Base(unittest.TestCase):
             return []
         with open(self.rec) as f:
             return [line.rstrip("\n").split("|") for line in f if line.strip()]
-
-    def write_program(self, content, version="1.2.3"):
-        with open(os.path.join(self.addons, "demo", version, "bin", "demo"), "w") as f:
-            f.write(content)
-
 
 
 SHIM = os.path.join(ROOT, "container", "scripts", "swarmbox-shim.sh")

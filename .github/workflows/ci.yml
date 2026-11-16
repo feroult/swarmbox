@@ -70,8 +70,6 @@ jobs:
           command -v dash
           command -v busybox
           busybox sh -c 'echo busybox sh works'
-          python3 tests/fast/test_host_shells.py
-          python3 tests/fast/test_host_create_flags.py
       - name: Fast tests (tests/run.sh fast, no real tmux, browser, podman or network, in parallel)
         run: sh tests/run.sh fast --github
       - name: Slow tests that need no gate (tests/run.sh slow, the panel on a pty runs, the real tmux and browser and Podman parts skip here and the browser job runs them)

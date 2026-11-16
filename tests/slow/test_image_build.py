@@ -7,7 +7,6 @@ Environment: SWARMBOX_IMAGE_TAG=<swarmbox-test-...> reuses an existing image ins
 Run: SWARMBOX_IMAGE_BUILD=1 python3 tests/slow/test_image_build.py
 """
 import os
-import subprocess
 import sys
 import unittest
 

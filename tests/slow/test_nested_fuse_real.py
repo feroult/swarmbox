@@ -25,7 +25,11 @@ import string
 import subprocess
 import tempfile
 import time
+import sys
 import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
+from waiting import wait_until  # noqa: E402
 
 TAG = os.environ.get("SWARMBOX_IMAGE_TAG", "")
 ENABLED = bool(os.environ.get("SWARMBOX_IMAGE_BUILD") == "1" and os.environ.get("SWARMBOX_TEST_NESTED") == "1"
@@ -44,13 +48,7 @@ def podman(*args, timeout=300):
 
 
 def wait_for(fn, seconds):
-    end = time.time() + seconds
-    while time.time() < end:
-        v = fn()
-        if v:
-            return v
-        time.sleep(0.5)
-    return None
+    return wait_until(fn, seconds, 0.5)
 
 
 @unittest.skipUnless(ENABLED, "needs SWARMBOX_IMAGE_BUILD=1, SWARMBOX_TEST_NESTED=1, SWARMBOX_TEST_NETWORK=1, SWARMBOX_IMAGE_TAG and podman")

@@ -20,5 +20,3 @@ def wait_until(fn, seconds=10.0, step=0.02):
             return value
         time.sleep(step)
 
-
-wait_for = wait_until   # the name the older helpers of the suite use

@@ -16,7 +16,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT, restore_signals  # noqa: E402
-from waiting import wait_for  # noqa: E402,F401  (used by the tests that import this module)
+from waiting import wait_until as wait_for  # noqa: E402,F401  (used by the tests that import this module)
 
 restore_signals()
 

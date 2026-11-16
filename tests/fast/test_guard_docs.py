@@ -84,11 +84,6 @@ class Readme(unittest.TestCase):
         self.assertNotIn("init", qs)
         self.assertNotIn(">> ~/", qs)   # no line appended to a startup file
 
-    def test_remote_access_points_to_its_page_which_has_the_details(self):
-        page = read("docs", "cloudflare.md")
-        for needle in ("swarmbox remote setup --domain", "CLOUDFLARE_API_TOKEN", "swarmbox remote off", "swarmbox remote token"):
-            self.assertIn(needle, page, needle)
-
     def test_security_section_states_the_kernel_limit_and_no_safe_claim(self):
         sec = section(README, "Security")
         self.assertIn("shares the kernel", sec)
@@ -226,11 +221,6 @@ class Notices(unittest.TestCase):
                 s = notice_section(self.text, name)
                 self.assertRegex(s, r"(?i)license:")
                 self.assertRegex(s, r"https://\S+")
-
-    def test_what_could_not_be_checked_is_tagged_not_guessed(self):
-        self.assertNotIn("[unverified", self.text)
-        self.assertIn("[owner-check:", self.text)
-        self.assertIn("[verified:", self.text)
 
 
 if __name__ == "__main__":

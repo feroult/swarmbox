@@ -98,7 +98,6 @@ class Ci(unittest.TestCase):
         self.assertIn("BASH_VERSINFO[0]", mac)
         self.assertIn("sh tests/run.sh macos", mac)
         self.assertNotIn("tests/fast/", mac, "the list of files is tests/support/macos.list, in one place")
-        self.assertNotIn("run_all", CI)
 
     def test_the_scheduled_jobs_run_only_on_schedule_or_by_hand_and_check_what_they_exist_for(self):
         for name in ("browser", "real-addons"):

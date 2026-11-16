@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Tests for the shared fake podman in helpers.py.  Run:  python3 tests/fast/test_helpers.py"""
-import json
 import os
 import shutil
 import subprocess

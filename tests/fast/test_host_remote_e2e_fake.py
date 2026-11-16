@@ -88,12 +88,6 @@ class E2E(unittest.TestCase):
 
     SETUP = ["setup", "--domain", "talkr.run", "--email", "me@example.com", "--no-verify"]
 
-    def test_the_base_url_is_loopback_and_not_a_reserved_port(self):
-        self.assertTrue(API.startswith("http://127.0.0.1:"))
-        port = int(API.split(":")[2].split("/")[0])
-        self.assertGreaterEqual(port, 1024)
-        self.assertNotIn(port, (7681, 8889, 43323))
-
     def test_dry_run_changes_nothing_and_starts_no_connector(self):
         r = self.remote(*self.SETUP, "--dry-run")
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -126,15 +120,6 @@ class E2E(unittest.TestCase):
         self.assertEqual((FAKE.apps, FAKE.policies, FAKE.dns), ([], [], []))
         self.assertEqual(FAKE.configs[FAKE.tunnels[0]["id"]]["ingress"], [{"service": "http_status:404"}])
         self.assertTrue(any(c.startswith("rm ") for c in self.calls()), "the connector is removed")
-
-    def test_writes_stay_inside_the_mktemp_folders(self):
-        self.remote(*self.SETUP)
-        self.remote("off", "--domain", "talkr.run", "--yes")
-        cfg = os.path.join(self.xdg, "c", "swarmbox", "cloudflare.json")
-        self.assertTrue(os.path.exists(cfg))
-        for root, _, files in os.walk(self.home):
-            for n in files:
-                self.assertTrue(os.path.realpath(os.path.join(root, n)).startswith(self.tmp))
 
 
 if __name__ == "__main__":

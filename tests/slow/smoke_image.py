@@ -37,6 +37,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "support"))
+from waiting import wait_until  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(HERE))
 
 PREFIX = "swarmbox-test-"
@@ -72,13 +73,7 @@ def vol_rm_exact(name):
 
 
 def wait_for(fn, seconds=60, step=0.3):
-    end = time.time() + seconds
-    while time.time() < end:
-        v = fn()
-        if v:
-            return v
-        time.sleep(step)
-    return None
+    return wait_until(fn, seconds, step)
 
 
 class Step:

@@ -6,7 +6,6 @@ addon-ports, no Podman). Keys: voice.language (auto), voice.stt.model (small), v
 default, so a box that never set one keeps its fingerprint. Run with: python3 -W error tests/fast/test_voice_config.py
 """
 import os
-import re
 import sys
 import unittest
 

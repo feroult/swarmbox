@@ -185,12 +185,6 @@ class CreateTest(Base):
         self.assertIn("is not a folder", r.stderr)
         self.assert_no_run()
 
-    def wsl_version(self):
-        p = os.path.join(self.tmp, "wsl-version")
-        with open(p, "w") as f:
-            f.write("Linux version 5.15.153.1-microsoft-standard-WSL2\n")
-        return p
-
     def test_a_failed_run_removes_only_the_container_of_its_cidfile(self):
         cid = "a" * 64
         self.podman(run={"rules": [{"match": ["--cidfile"], "exit": 126, "stderr": "x\n" + BUSY + "\n", "cidfile": cid}]})

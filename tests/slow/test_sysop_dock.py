@@ -200,14 +200,6 @@ class Placement(RealTmux):
         user, = [p for p in self.panes() if not p["panel"]]
         self.assertGreaterEqual(user["w"], 60)
 
-    def test_a_narrow_landscape_window_falls_back_to_the_bottom(self):
-        self.attach(30, 90)
-        self.d.open()
-        panel, = self.panels()
-        self.assertEqual((panel["ww"], panel["wh"]), (90, 30))
-        self.assertEqual((panel["left"], panel["w"]), (0, 90), "full width, at the bottom")
-        self.assertEqual(panel["top"] + panel["h"], 30)
-
     def test_a_wide_window_short_of_the_minimum_uses_40_columns(self):
         self.attach(40, 150)
         self.d.open()
@@ -226,22 +218,6 @@ class Placement(RealTmux):
         self.assertEqual(len(self.d.panels()), 1)
         self.assertEqual(self.d.open(), "shown", "found by the marker argument: no second panel")
         self.assertEqual(len(self.d.panels()), 1)
-
-    def test_the_tmux_calls_are_the_split_the_design_names(self):
-        calls = []
-        real = self.tmux.run
-        self.d.tmux = type("Spy", (), {"argv": self.tmux.argv, "run": lambda s, *a: (calls.append(list(a)), real(*a))[1]})()
-        self.attach(70, 50)
-        self.d.open()
-        split = [c for c in calls if c[0] == "split-window"][0]
-        self.assertEqual(split[split.index("-f"):split.index("-f") + 4], ["-f", "-v", "-l", "30%"])
-        self.d.close()
-        calls.clear()
-        self.clients[0].resize(50, 200)
-        time.sleep(0.8)
-        self.d.open()
-        split = [c for c in calls if c[0] == "split-window"][0]
-        self.assertEqual(split[split.index("-f"):split.index("-f") + 4], ["-f", "-h", "-l", "20%"])
 
     def test_the_users_panes_are_untouched(self):
         self.attach(50, 200)

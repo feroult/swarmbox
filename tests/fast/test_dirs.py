@@ -5,7 +5,6 @@ variables the case sets, all inside mktemp directories. Nothing here touches the
 Run: python3 tests/fast/test_dirs.py
 """
 import os
-import re
 import shutil
 import subprocess
 import sys
