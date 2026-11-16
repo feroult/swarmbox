@@ -34,6 +34,8 @@ assert_no_leak() fails loudly if "podman" does not resolve to the fake on the cu
 import io
 import json
 import os
+import threading
+import socket
 import pty
 import select
 import signal
@@ -292,3 +294,50 @@ def pty_run(argv, env, cwd, stdin_tty, stdout_tty=True):
     p.wait()
     os.close(master)
     return p.returncode, out.decode(), err.decode()
+
+
+def pty_answer(argv, env, prompt, answer, cwd=None, timeout=30, settle=0.3):
+    """Run argv on a pseudo-terminal; once the output holds `prompt` (bytes) type `answer` (a line; None types nothing).
+    Returns (exit code, everything the terminal showed). `settle` lets an `stty -echo` after the prompt take effect."""
+    pid, fd = pty.fork()
+    if pid == 0:
+        if cwd:
+            os.chdir(cwd)
+        os.execve(argv[0], argv, env)
+    out = b""
+    sent = answer is None
+    end = time.time() + timeout
+    while time.time() < end:
+        if select.select([fd], [], [], 0.2)[0]:
+            try:
+                chunk = os.read(fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            out += chunk
+        if not sent and prompt in out:
+            time.sleep(settle)
+            os.write(fd, answer.encode() + b"\n")
+            sent = True
+    _, status = os.waitpid(pid, 0)
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+    return os.waitstatus_to_exitcode(status), out.decode(errors="replace")
+
+
+def close_listener(srv, thread):
+    """Wake the thread blocked in accept() and wait for it: a thread left behind would take a connection made to the listener of the next test
+    (the number of the closed descriptor is reused at once)."""
+    try:
+        srv.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+    try:
+        srv.close()
+    except OSError:
+        pass
+    if thread is not None and thread is not threading.current_thread():
+        thread.join(5)

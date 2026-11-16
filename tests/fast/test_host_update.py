@@ -12,6 +12,8 @@ import hashlib
 import io
 import os
 import shutil
+import select
+import time
 import subprocess
 import sys
 import tarfile
@@ -193,13 +195,21 @@ class PullProgressTest(UpdateBase):
         try:
             r = subprocess.run([self.helper, "update"], env=e, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                stderr=slave, cwd=self.tmp, timeout=60)
-            os.set_blocking(master, False)
-            try:
-                shown = os.read(master, 65536).decode(errors="replace")
-            except BlockingIOError:
-                shown = ""
+            os.close(slave)    # with the last slave closed the master gives what is left, then EIO: no read is left to a deferred tty flush
+            slave = -1
+            chunks, end = [], time.monotonic() + 10
+            while time.monotonic() < end and select.select([master], [], [], 1)[0]:
+                try:
+                    data = os.read(master, 65536)
+                except OSError:
+                    break
+                if not data:
+                    break
+                chunks.append(data)
+            shown = b"".join(chunks).decode(errors="replace")
         finally:
-            os.close(slave)
+            if slave >= 0:
+                os.close(slave)
             os.close(master)
         return r.returncode, shown
 

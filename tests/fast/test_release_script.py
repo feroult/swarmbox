@@ -176,7 +176,9 @@ class ReleaseCase(unittest.TestCase):
         self.put("CHANGELOG.md", CHANGELOG.replace("## [Unreleased]\n", "## [Unreleased]\n\n" + items, 1))
 
     def run_release(self, *args, **env):
-        e = dict(self.genv, PATH=self.fake + os.pathsep + os.environ["PATH"], FAKE_DIR=self.fake, SWARMBOX_RELEASE_CHECK_CMD="true",
+        self.tmpdir = os.path.join(self.tmp, "tmpdir")   # the backup of the changelog lands here, not in the /tmp of the machine
+        os.makedirs(self.tmpdir, exist_ok=True)
+        e = dict(self.genv, TMPDIR=self.tmpdir, PATH=self.fake + os.pathsep + os.environ["PATH"], FAKE_DIR=self.fake, SWARMBOX_RELEASE_CHECK_CMD="true",
                  SWARMBOX_RELEASE_RCHECK_CMD="true", SWARMBOX_RELEASE_SLUG="example/proj", SWARMBOX_RELEASE_API="http://fake",
                  SWARMBOX_RELEASE_DL="http://fake", SWARMBOX_RELEASE_POLL="0", SWARMBOX_RELEASE_NO_IMAGE_CHECK="1")
         e.update(env)
@@ -304,6 +306,7 @@ class Bump(ReleaseCase):
         self.assertIn("\nSCRIPT_VERSION=2.0.7\n", self.read("container/host/swarmbox-host"))
         self.assertTrue(os.stat(os.path.join(self.work, "container/host/swarmbox-host")).st_mode & stat.S_IXUSR, "the mode of the script stays")
         self.assertEqual(self.head(), head, "no commit")
+        self.assertEqual(os.listdir(self.tmpdir), [], "the backup of the changelog is removed when the script stops after the bump")
 
 
 class FullRelease(ReleaseCase):

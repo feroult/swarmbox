@@ -246,9 +246,9 @@ class RiskTable(unittest.TestCase):
         for text in ("a;" * 2000, "$(" * 1000 + ")" * 1000, "bash -c '" * 40 + "rm x" + "'" * 40, "'" * 4000, "a(){" * 1000, "f(){ f|f& }" * 300,
                      "-" * 4000, "eyJ-" * 1000, "\\" * 4000, "`" * 3999, "x=" * 2000):
             with self.subTest(text=text[:20]):
-                t = time.time()
+                t = time.process_time()   # CPU time of this process: a starved machine delays the wall clock, not the work
                 policy.Policy().assess_run(SH, text)
-                self.assertLess(time.time() - t, 3.0)
+                self.assertLess(time.process_time() - t, 3.0)
 
     def test_the_text_that_is_not_a_string_or_too_long_is_an_error(self):
         p = policy.Policy()

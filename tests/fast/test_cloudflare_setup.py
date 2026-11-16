@@ -14,6 +14,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -38,6 +39,7 @@ class T(unittest.TestCase):
     def setUp(self):
         FAKE.reset()
         self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
         self.env = {"CLOUDFLARE_API_TOKEN": GOOD_TOKEN, "XDG_CONFIG_HOME": self.tmp}
         for k in ("SWARMBOX_WEB_DOMAIN", "SWARMBOX_WEB_EMAIL"):
             os.environ.pop(k, None)
@@ -64,10 +66,6 @@ class T(unittest.TestCase):
 
     def apply(self, *extra, **kw):
         return self.run_cli(*(BASE + list(extra)), **kw)
-
-    def host_rule(self, host=DEFAULT_NAME + ".talkr.run"):
-        cfg = FAKE.configs[FAKE.tunnels[0]["id"]]
-        return next(r for r in cfg["ingress"] if r.get("hostname") == host)
 
 
 # --------------------------------------------------------------------------- tests
@@ -167,6 +165,7 @@ class TestConnector(T):
     def setUp(self):
         super().setUp()
         self.shim = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.shim, True)
         path = os.path.join(self.shim, "podman")
         with open(path, "w") as f:
             f.write('''#!/bin/sh

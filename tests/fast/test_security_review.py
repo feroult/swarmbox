@@ -240,6 +240,7 @@ class TokenTest(Base):
         self.assertEqual([c for c in self.subs("run") if CN in c], [])
 
     def test_the_remote_wrapper_does_not_pass_the_tunnel_token_to_the_script(self):
+        self.podman()   # `remote status` asks podman about the connector: a fake one answers
         script = os.path.join(self.hdir, "cloudflare-setup.py")
         out = os.path.join(self.tmp, "seen")
         with open(script, "w") as f:

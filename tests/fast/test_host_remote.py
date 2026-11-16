@@ -9,20 +9,17 @@ Run: python3 tests/fast/test_host_remote.py
 """
 import json
 import os
-import pty
-import select
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from host_support import HELPER_PROGRAMS  # noqa: E402
-from helpers import ROOT, DEFAULT_CONNECTOR, DEFAULT_NAME  # noqa: E402
+from helpers import ROOT, DEFAULT_CONNECTOR, DEFAULT_NAME, pty_answer  # noqa: E402
 
 HELPER_SRC = os.path.join(ROOT, "container", "host", "swarmbox-host")
 VERSION_SRC = os.path.join(ROOT, "container", "host", "VERSION")
@@ -53,6 +50,10 @@ sys.exit(int(os.environ.get("STUB_EXIT", "0")))
 
 class Base(unittest.TestCase):
     def setUp(self):
+        from helpers import FakePodman
+        fp = FakePodman({})   # `remote status` asks podman about the connector: never the podman of the machine that runs the suite
+        fp.__enter__()
+        self.addCleanup(fp.__exit__)
         self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-remote."))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.home = os.path.join(self.tmp, "home")
@@ -180,38 +181,6 @@ class SecretsTest(Base):
                 self.assertNotIn("SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN", self.rec()["env_names"])
 
 
-def pty_run(argv, env, answer=None, cwd=None, timeout=30):
-    """Run argv on a pseudo-terminal; after the prompt "[y/N]" type `answer` (a line). Returns (exit code, terminal output)."""
-    pid, fd = pty.fork()
-    if pid == 0:
-        if cwd:
-            os.chdir(cwd)
-        os.execve(argv[0], argv, env)
-    out = b""
-    sent = answer is None
-    end = time.time() + timeout
-    while time.time() < end:
-        r, _, _ = select.select([fd], [], [], 0.2)
-        if r:
-            try:
-                chunk = os.read(fd, 4096)
-            except OSError:
-                break
-            if not chunk:
-                break
-            out += chunk
-        if not sent and b"[y/N]" in out:
-            time.sleep(0.2)
-            os.write(fd, answer.encode() + b"\n")
-            sent = True
-    _, status = os.waitpid(pid, 0)
-    try:
-        os.close(fd)
-    except OSError:
-        pass
-    return os.waitstatus_to_exitcode(status), out.decode(errors="replace")
-
-
 class TunnelTokenTest(Base):
     """Where the tunnel token comes from, how `remote token` prints it, and the terminal-only setup epilogue."""
 
@@ -271,7 +240,7 @@ class TunnelTokenTest(Base):
 
     def run_pty_setup(self, answer, *args, **env):
         e = self.env(STUB_TOKEN=TUNNEL_SECRET, **env)
-        return pty_run([self.helper, "remote", "setup", *args], e, answer=answer, cwd=self.tmp)
+        return pty_answer([self.helper, "remote", "setup", *args], e, b"[y/N]", answer, cwd=self.tmp, settle=0.2)
 
     def test_setup_epilogue_yes_stores_the_token_at_mode_600_without_showing_it(self):
         old = os.umask(0o022)

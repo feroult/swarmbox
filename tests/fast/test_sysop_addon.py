@@ -71,7 +71,7 @@ class Tree(unittest.TestCase):
     """a tree for the real swarmbox-addon.sh: image addons (a copy of this addon), a home, a lock, and a swarmbox-addon command on PATH"""
 
     def setUp(self):
-        self.base = os.path.realpath(tempfile.mkdtemp(prefix="sbtl-", dir="/tmp"))
+        self.base = ss.short_tmp("sbtl-")
         self.addCleanup(shutil.rmtree, self.base, True)
         j = lambda *p: os.path.join(self.base, *p)  # noqa: E731
         self.image, self.home, self.user, self.fbin = j("image"), j("home"), j("user"), j("fbin")
@@ -81,7 +81,11 @@ class Tree(unittest.TestCase):
         self.env = {"PATH": self.fbin + ":/usr/bin:/bin", "HOME": self.home, "SB_RUN_DIR": j("run"), "SB_STATE_DIR": j("state"),
                     "SWARMBOX_TEST_LIB": os.path.join(ROOT, "container", "scripts"), "SWARMBOX_TEST_IMAGE_ADDONS": self.image,
                     "SWARMBOX_TEST_USER_ADDONS": self.user, "SWARMBOX_TEST_HOST_DIR": j("host"),
-                    "SWARMBOX_TEST_IMAGE_SHIMS": j("out", "shims"), "SWARMBOX_TEST_USER_SHIMS": j("out", "ushims"), "SWARMBOX_TEST_LOCK": j("lock")}
+                    "SWARMBOX_TEST_IMAGE_SHIMS": j("out", "shims"), "SWARMBOX_TEST_USER_SHIMS": j("out", "ushims"), "SWARMBOX_TEST_LOCK": j("lock"),
+                    # a dock that finds no tmux of its own would split the panel into the tmux server of whoever runs the suite
+                    "SB_TABS_SOCKET": "sbtl-%d" % os.getpid(), "TMUX_TMPDIR": j("tmx"), "TMPDIR": j("tmp")}
+        os.mkdir(j("tmx"))
+        os.mkdir(j("tmp"))
         with open(os.path.join(self.fbin, "swarmbox-addon"), "w") as f:
             f.write('#!/bin/sh\nexec bash "%s" "$@"\n' % ADDON_SH)
         os.chmod(os.path.join(self.fbin, "swarmbox-addon"), 0o755)

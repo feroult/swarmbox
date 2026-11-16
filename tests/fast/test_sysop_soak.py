@@ -335,23 +335,27 @@ class RedockCoalescing(unittest.TestCase):
         self.assertEqual([n for n in os.listdir(self.e.dir) if ".redock." in n], [], "no mark is left")
 
     def test_a_burst_of_events_is_a_few_runs_not_one_each(self):
-        calls = []
+        """no timing: the first run is held while the 59 others come in, so they all find the lock taken"""
+        started, release, calls = threading.Event(), threading.Event(), []
 
         def work(window):
             calls.append(window)
-            time.sleep(0.05)
+            started.set()
+            release.wait(10)
             return "unchanged"
         results = []
-        threads = [threading.Thread(target=lambda: results.append(self.dock(work).redock("@3"))) for _ in range(60)]
-        for th in threads:
+        threads = [threading.Thread(target=lambda: results.append(self.dock(work).redock("@3")), daemon=True) for _ in range(60)]
+        threads[0].start()
+        self.assertTrue(started.wait(10))
+        for th in threads[1:]:
             th.start()
-            time.sleep(0.003)
-        for th in threads:
+        for th in threads[1:]:
             th.join(20)
+        self.assertEqual(results.count("queued"), 59, "a run that finds the lock taken ends at once")
+        release.set()
+        threads[0].join(20)
         self.assertEqual(len(results), 60)
-        self.assertGreaterEqual(len(calls), 1)
-        self.assertLess(len(calls), 25, "60 events made %d redocks" % len(calls))
-        self.assertTrue(results.count("queued") > 30)
+        self.assertLessEqual(len(calls), 2, "60 events made %d redocks" % len(calls))
         self.assertEqual([n for n in os.listdir(self.e.dir) if ".redock." in n], [])
 
     def test_the_last_event_is_never_lost(self):

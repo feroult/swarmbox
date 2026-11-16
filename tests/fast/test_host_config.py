@@ -6,19 +6,16 @@ real home: a module-level guard compares a listing of the real SwarmBox folders 
 Run: python3 tests/fast/test_host_config.py
 """
 import os
-import pty
-import select
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from helpers import ROOT, DEFAULT_NAME, DEFAULT_IMAGE_REPO  # noqa: E402
+from helpers import ROOT, DEFAULT_NAME, DEFAULT_IMAGE_REPO, pty_answer  # noqa: E402
 
 HELPER = os.path.join(ROOT, "container", "host", "swarmbox-host")
 with open(os.path.join(ROOT, "container", "host", "VERSION")) as _f:
@@ -57,11 +54,6 @@ KEYS = {
     "sysop.panel": ("always", "auto", "off", ["Always", "on", "yes", "never", "0"]),
     "IMAGE": (None, "localhost:5000/sb:2.0.1", "swarmbox:dev", ["a b", "x\ty"]),
 }
-LIST_ORDER = ["NAME", "WORKSPACE", "HOSTNAME", "TZ", "INIT", "PORTS", "HOST_ACCESS", "BROWSER_URL", "WEB", "WEB_PORT",
-              "WITH", "AGENT", "YOLO", "ENV_KEYS", "IMAGE", "CLOUDFLARE_TUNNEL_TOKEN",
-              "voice.language", "voice.stt.model", "voice.stt.vocabulary", "voice.web", "voice.topic",
-              "sysop.brain", "sysop.model", "sysop.autonomy", "sysop.countdown", "sysop.max_steps", "sysop.max_seconds",
-              "sysop.topic", "sysop.group", "sysop.panel"]
 
 
 def ENVNAME(key):
@@ -311,41 +303,9 @@ class EnvTest(Base):
         self.assertEqual(self.run_h("env", "rm", "GEMINI_API_KEY").returncode, 0)
         self.assertEqual(self.run_h("env", "list").stdout, "")
 
-def pty_run(argv, env, typed=None, wait_prompt=True, cwd=None, timeout=20):
-    """Run argv on a pseudo-terminal; type `typed` (a line) after the prompt. Returns (exit code, everything the terminal showed)."""
-    pid, fd = pty.fork()
-    if pid == 0:
-        if cwd:
-            os.chdir(cwd)
-        os.execve(argv[0], argv, env)
-    out = b""
-    sent = typed is None
-    end = time.time() + timeout
-    while time.time() < end:
-        r, _, _ = select.select([fd], [], [], 0.2)
-        if r:
-            try:
-                chunk = os.read(fd, 4096)
-            except OSError:
-                break
-            if not chunk:
-                break
-            out += chunk
-        if not sent and b"hidden" in out:
-            time.sleep(0.3)   # let stty -echo take effect
-            os.write(fd, typed.encode() + b"\n")
-            sent = True
-    _, status = os.waitpid(pid, 0)
-    try:
-        os.close(fd)
-    except OSError:
-        pass
-    return os.waitstatus_to_exitcode(status), out.decode(errors="replace")
-
-
 class TokenTest(Base):
     def set_token(self, token=TOKEN, extra_env=None, path=None):
-        return pty_run([HELPER, "config", "set", "CLOUDFLARE_TUNNEL_TOKEN"], self.env(extra_env, path), typed=token)
+        return pty_answer([HELPER, "config", "set", "CLOUDFLARE_TUNNEL_TOKEN"], self.env(extra_env, path), b"hidden", token, timeout=20)
 
     def test_set_reads_the_terminal_without_echo(self):
         rc, shown = self.set_token()
@@ -420,30 +380,6 @@ class ModeCheckTest(Base):
 
     def calls(self):
         return slurp(self.log).splitlines() if os.path.exists(self.log) else []
-
-    def check_variant(self, variant, via):
-        path = self.make_shims(variant)
-        for m in self.MODES:
-            self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TOKEN, mode=m)
-            os.chmod(self.cfg_file, m)
-            rc, out, err = (lambda p: (p.returncode, p.stdout, p.stderr))(self.run_h("config", "get", "CLOUDFLARE_TUNNEL_TOKEN", path=path))
-            if m == 0o600:
-                self.assertEqual((rc, out, err), (0, TOKEN + "\n", ""), (variant, oct(m)))
-            else:
-                self.assertEqual((rc, out), (1, ""), (variant, oct(m)))
-                self.assertIn("mode is %o;" % m, err, (variant, oct(m)))
-        calls = self.calls()
-        self.assertFalse([c for c in calls if c.startswith("ls ")], "ls must never be called")
-        used = {c.split()[0] + " " + (c.split()[1] if len(c.split()) > 1 else "") for c in calls}
-        if via == "c":
-            self.assertTrue(any(u.startswith("stat -c") for u in used))
-            self.assertFalse(any(u.startswith("stat -f") for u in used))
-            self.assertFalse(any(u.startswith("find") for u in used))
-        elif via == "f":
-            self.assertTrue(any(u.startswith("stat -f") for u in used), used)
-            self.assertFalse(any(u.startswith("find") for u in used))
-        else:
-            self.assertTrue(any(u.startswith("find") for u in used), used)
 
     def test_a_file_with_an_extended_attribute(self):
         self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\n" % TOKEN, mode=0o600)

@@ -14,6 +14,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT  # noqa: E402
+from waiting import wait_until  # noqa: E402
 
 BUS_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-bus.py")
 
@@ -29,18 +30,12 @@ bus = load_bus()
 
 
 def wait_for(fn, seconds=5.0, step=0.01):
-    end = time.time() + seconds
-    while time.time() < end:
-        v = fn()
-        if v:
-            return v
-        time.sleep(step)
-    return None
+    return wait_until(fn, seconds, step)
 
 
 def short_tmp(prefix="sbbus-"):
     """a short folder: a unix socket path holds at most 107 bytes"""
-    return tempfile.mkdtemp(prefix=prefix, dir="/tmp")
+    return tempfile.mkdtemp(prefix=prefix)
 
 
 class Conn:

@@ -24,6 +24,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 import voice_support  # noqa: E402
+from helpers import close_listener  # noqa: E402
 from bus_support import Harness, short_tmp  # noqa: E402
 from voice_support import wav_samples, wav_with  # noqa: E402
 
@@ -43,13 +44,13 @@ class FakeBroker:
         self.srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.srv.bind(self.path)
         self.srv.listen(8)
-        self.thread = threading.Thread(target=self.loop, daemon=True)
+        self.thread = threading.Thread(target=self.loop, args=(self.srv,), daemon=True)
         self.thread.start()
 
-    def loop(self):
+    def loop(self, srv):
         while True:
             try:
-                c, _ = self.srv.accept()
+                c, _ = srv.accept()
             except OSError:
                 return
             with c, c.makefile("rb") as f:
@@ -58,7 +59,7 @@ class FakeBroker:
                     c.sendall(self.reply if isinstance(self.reply, bytes) else (json.dumps(self.reply) + "\n").encode())
 
     def close(self):
-        self.srv.close()
+        close_listener(self.srv, self.thread)
         shutil.rmtree(self.dir, ignore_errors=True)
 
 

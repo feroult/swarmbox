@@ -10,7 +10,8 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, close_listener  # noqa: E402
+from waiting import wait_until  # noqa: E402
 
 SYSOP = os.path.join(ROOT, "container", "addons", "sysop")
 LIB = os.path.join(SYSOP, "lib")
@@ -22,13 +23,7 @@ from swarmbox_sysop import config, paths  # noqa: E402
 
 
 def wait_for(fn, seconds=10.0, step=0.02):
-    end = time.time() + seconds
-    while time.time() < end:
-        v = fn()
-        if v:
-            return v
-        time.sleep(step)
-    return None
+    return wait_until(fn, seconds, step)
 
 
 def fast_cond(svc, cap=0.02):
@@ -43,7 +38,10 @@ def fast_cond(svc, cap=0.02):
 
 def short_tmp(prefix="sbsy-"):
     """a short folder: a unix socket path holds at most 107 bytes"""
-    return os.path.realpath(tempfile.mkdtemp(prefix=prefix, dir="/tmp"))
+    base = os.path.realpath(tempfile.gettempdir())
+    if len(base) > 30 or not os.access(base, os.W_OK):
+        base = "/tmp"
+    return os.path.realpath(tempfile.mkdtemp(prefix=prefix, dir=base))
 
 
 class Env:
@@ -53,8 +51,12 @@ class Env:
         self.dir = short_tmp()
         self.env = {"SB_RUN_DIR": os.path.join(self.dir, "run"), "SB_STATE_DIR": os.path.join(self.dir, "state"),
                     "SB_BUS_SOCKET": os.path.join(self.dir, "bus.sock"), "HOME": os.path.join(self.dir, "home"),
-                    "PATH": FAKE_BIN + ":" + os.environ.get("PATH", "/usr/bin:/bin")}
+                    "PATH": FAKE_BIN + ":" + os.environ.get("PATH", "/usr/bin:/bin"),
+                    # never the tmux server of whoever runs the suite: a dock of a service started here finds its own, empty one
+                    "SB_TABS_SOCKET": "sbsy-%d" % os.getpid(), "TMUX_TMPDIR": os.path.join(self.dir, "sb-tmux"), "TMPDIR": os.path.join(self.dir, "sb-tmp")}
         os.makedirs(self.env["HOME"])
+        os.makedirs(self.env["TMUX_TMPDIR"])
+        os.makedirs(self.env["TMPDIR"])
         self.env.update(extra)
 
     @property
@@ -102,16 +104,13 @@ class FakeBus:
         os.chmod(self.path, 0o600)
         self.srv.listen(16)
         self.up = True
-        self.thread = threading.Thread(target=self._accept, daemon=True)
+        self.thread = threading.Thread(target=self._accept, args=(self.srv,), daemon=True)
         self.thread.start()
 
     def stop(self):
         """the broker goes away: the listener and every connection close, the socket file is removed"""
         self.up = False
-        try:
-            self.srv.close()
-        except OSError:
-            pass
+        close_listener(self.srv, self.thread)
         with self.lock:
             conns, self.conns, self.subs, self.sub_info = self.conns, [], [], []
         for c in conns:
@@ -125,10 +124,10 @@ class FakeBus:
         except FileNotFoundError:
             pass
 
-    def _accept(self):
+    def _accept(self, srv):
         while self.up:
             try:
-                c, _ = self.srv.accept()
+                c, _ = srv.accept()
             except OSError:
                 return
             with self.lock:
@@ -268,24 +267,22 @@ class FakeTabs:
         self.srv.bind(self.path)
         self.srv.listen(16)
         self.up = True
-        threading.Thread(target=self._accept, daemon=True).start()
+        self.thread = threading.Thread(target=self._accept, args=(self.srv,), daemon=True)
+        self.thread.start()
 
     def stop(self):
         """the command cannot reach the fake any more: it answers no_tmux, as the real one does when tmux is gone"""
         self.up = False
-        try:
-            self.srv.close()
-        except OSError:
-            pass
+        close_listener(self.srv, self.thread)
         try:
             os.unlink(self.path)
         except FileNotFoundError:
             pass
 
-    def _accept(self):
+    def _accept(self, srv):
         while self.up:
             try:
-                c, _ = self.srv.accept()
+                c, _ = srv.accept()
             except OSError:
                 return
             threading.Thread(target=self._conn, args=(c,), daemon=True).start()
