@@ -185,6 +185,56 @@ class Setting(unittest.TestCase):
         self.assertIn("sync", dock.ACTIONS)
 
 
+class OptionTmux:
+    """A tmux that knows only the window options the dock freezes the tab name with: `automatic-rename` (absent = inherited from the session) and the
+    dock's own remembering option."""
+    def __init__(self, opts=None):
+        self.opts = dict(opts or {})
+
+    def run(self, *args):
+        a = list(args)
+        if a[0] == "show-options":
+            name = a[-1]
+            v = self.opts.get(name)
+            if "-wqv" in a:
+                return dock.Result(0, (v or "") + "\n", "")
+            return dock.Result(0, "%s %s\n" % (name, v) if v else "", "")
+        if a[0] == "set-option":
+            if a[1] == "-wu":
+                self.opts.pop(a[-1], None)
+            else:
+                self.opts[a[-2]] = a[-1]
+            return dock.Result(0, "", "")
+        raise AssertionError("unexpected tmux call %r" % (a,))
+
+
+class TabName(unittest.TestCase):
+    """Found by the e2e run: tmux names a window after the command of its ACTIVE pane and the panel takes the focus, so the Claude Code tab was called
+    "python3" while the panel was open. The dock freezes automatic-rename while a panel is there and gives back exactly what the window had (the real
+    tmux version of this is tests/slow/test_sysop_dock.py::TabName)."""
+
+    def cycle(self, before):
+        tm = OptionTmux(before)
+        d = dock.Dock(tm)
+        d._freeze_name("@1")
+        frozen = tm.opts.get("automatic-rename")
+        d._freeze_name("@1")   # idempotent: the second call must not remember "off" as the user's value
+        d._thaw_name("@1")
+        return frozen, tm.opts
+
+    def test_the_name_is_frozen_while_the_panel_is_there_and_given_back_as_it_was(self):
+        for before, after in (({}, {}), ({"automatic-rename": "on"}, {"automatic-rename": "on"}), ({"automatic-rename": "off"}, {"automatic-rename": "off"})):
+            with self.subTest(before=before):
+                frozen, opts = self.cycle(before)
+                self.assertEqual(frozen, "off")
+                self.assertEqual(opts, after, "a tab the user renamed (automatic-rename off) stays renamed; an inherited setting is inherited again")
+
+    def test_a_window_that_was_never_frozen_is_left_alone_by_the_thaw(self):
+        tm = OptionTmux({"automatic-rename": "off"})
+        dock.Dock(tm)._thaw_name("@1")
+        self.assertEqual(tm.opts, {"automatic-rename": "off"})
+
+
 class FakeDock:
     def __init__(self, fail=None):
         self.calls, self.fail = [], fail

@@ -60,6 +60,24 @@ class Layout(unittest.TestCase):
             self.assertTrue(a and b, arg)
             self.assertEqual(a.group(1), b.group(1), "%s differs between Dockerfile and dev/test-image/Containerfile" % arg)
 
+    def test_every_test_the_regression_ledger_names_exists(self):
+        # docs/history/test-suite-review/regressions.md: bug -> test id -> layer. An id is `layer/test_file.py::Class` or `::Class::test_name`;
+        # renaming or deleting a test that guards a past bug must be a decision, so the ledger has to be changed with it.
+        import ast
+        ledger = read("docs", "history", "test-suite-review", "regressions.md")
+        ids = re.findall(r"`((?:fast|slow)/test_\w+\.py(?:::\w+){1,2})`", ledger)
+        self.assertGreater(len(ids), 60, "the ledger lists the tests that guard the bugs of version 1")
+        tree = {}
+        for i in sorted(set(ids)):
+            path, *rest = i.split("::")
+            if path not in tree:
+                with open(os.path.join(TESTS, path), encoding="utf-8") as f:
+                    tree[path] = {c.name: {m.name for m in c.body if isinstance(m, ast.FunctionDef)}
+                                  for c in ast.parse(f.read()).body if isinstance(c, ast.ClassDef)}
+            self.assertIn(rest[0], tree[path], "%s: no such class" % i)
+            if len(rest) == 2:
+                self.assertIn(rest[1], tree[path][rest[0]], "%s: no such test" % i)
+
     def test_the_scripts_of_the_layout_parse(self):
         for rel in ("tests/run.sh", "dev/test-slow.sh", "dev/check.sh"):
             r = subprocess.run(["sh", "-n", os.path.join(ROOT, rel)], capture_output=True, text=True)

@@ -225,6 +225,20 @@ class Run(WebCase):
         self.conf("macOptionIsMeta=false\n")
         self.assertEqual(self.opts(self.run_web()["argv"])["macOptionIsMeta"], "false")
 
+    def test_ttyd_always_gets_a_utf8_locale_so_an_accent_typed_alone_is_not_dropped(self):
+        for env in ({"LANG": "C"}, {"LANG": None}, {"LANG": "en_US.UTF-8"}):
+            with self.subTest(env=env):
+                lang = self.run_web(**env)["lang"]
+                self.assertEqual(lang, env["LANG"] if env["LANG"] and "UTF" in env["LANG"] else "C.UTF-8")
+
+    def test_a_value_is_handed_to_ttyd_as_json_so_a_font_list_keeps_its_fallbacks(self):
+        # ttyd stops reading at the first thing that parses: 'A', 'B', monospace would become A
+        self.conf("fontFamily='JetBrains Mono', Menlo, monospace\nfontSize=15\ncursorBlink=true\nletterSpacing=0.5\nthemeName=a\"b\n")
+        o = self.opts(self.run_web()["argv"])
+        self.assertEqual(o["fontFamily"], '"\'JetBrains Mono\', Menlo, monospace"')
+        self.assertEqual([o["fontSize"], o["cursorBlink"], o["letterSpacing"]], ["15", "true", "0.5"])
+        self.assertEqual(o["themeName"], '"a\\"b"')
+
     def test_the_session_is_swarmbox_attach_when_it_exists_else_tmux_attach(self):
         argv = self.run_web()["argv"]
         self.assertEqual(argv[-4:], ["tmux", "attach", "-t", "main"])
