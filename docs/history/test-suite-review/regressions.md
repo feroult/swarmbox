@@ -119,6 +119,10 @@ The three area ledgers in this folder say where each old test went; this file sa
 | old names of the addon concept; default names written as literals | `fast/test_guard_names.py::TheRepository`, `fast/test_guard_names.py::TheOldNamesScanner` | fast |
 | a test that leaks a process, or starts a real tmux on a machine that is not a container | `fast/test_runner.py`, `fast/test_layout.py` | fast |
 | the mutation harness: a plan replays the same mutants, the helper modules of the tests are followed | `fast/test_mutate.py` | fast |
+| the Dockerfile stops installing `swarmbox-attach`, or stops making a script copied to `/usr/local/bin` executable | `fast/test_dockerfile.py::Image::test_every_script_copied_to_usr_local_bin_is_made_executable_and_attach_is_one` | fast |
+| a held key of the web strip starts to repeat too late (the 420 ms delay grew tenfold) | `slow/test_web_strip.py::Desktop::test_strip_on_shows_the_default_keys_with_a_control_and_every_key_delivers_its_bytes_and_an_arrow_repeats_when_held` (first repeat within 3 s) | slow |
+| a test of the sysop addon split its panel into the tmux server of the machine that ran the suite | `fast/test_sysop_addon.py::Tree` and `tests/support/sysop_support.py::Env` give a private socket, `TMUX_TMPDIR` and `TMPDIR` | fast |
+| `dev/release.sh --bump-only` left its backup of the changelog in `/tmp` | `fast/test_release_script.py::Bump::test_bump_only_rewrites_the_three_files_and_commits_nothing` | fast |
 
 ## Fixes of code that no longer exists
 
