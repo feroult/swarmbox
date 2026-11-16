@@ -74,7 +74,7 @@ jobs:
           python3 tests/fast/test_host_create_flags.py
       - name: Fast tests (tests/run.sh fast, no real tmux, browser, podman or network, in parallel)
         run: sh tests/run.sh fast --github
-      - name: Slow tests that this runner can run (tests/run.sh slow, real tmux and a pty, the browser and the Podman ones skip here)
+      - name: Slow tests that need no gate (tests/run.sh slow, the panel on a pty runs, the real tmux and browser and Podman parts skip here and the browser job runs them)
         run: sh tests/run.sh slow --github
 
   # The image smoke test in full mode: the runner is level 1, the throwaway box level 2 and the

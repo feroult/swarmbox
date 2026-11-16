@@ -76,7 +76,7 @@ container themselves and pass the Claude login without printing it. They are nev
 5. Run it alone, with `--werror`, and with `--repeat 3` for anything with processes or timing; then `sh tests/run.sh`.
 6. If it must run on macOS (bash 3.2 as `/bin/sh`, a fake podman), add its file name to `support/macos.list`. That list is the only place CI reads.
 
-CI (`.github/workflows/ci.yml`): `linux` runs fast and slow (tmux present, no browser); `macos` runs `tests/run.sh macos`; `smoke` and
+CI (`.github/workflows/ci.yml`): `linux` runs fast (also in the dash and busybox step) and the slow files that need no gate (the gate is off there, so the real-tmux and browser parts skip: that is 271 of 288 slow tests, checked in a container with tmux and without ttyd and Chromium); `macos` runs `tests/run.sh macos`; `smoke` and
 `arm64` build the image and run `slow/smoke_image.py`; the scheduled `browser` job runs the whole slow suite with the gate set; `real-addons`
 installs the addons for real. `fast/test_workflows.py` keeps both workflows honest.
 
