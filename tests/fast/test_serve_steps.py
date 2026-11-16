@@ -143,6 +143,20 @@ class NestedPodmanState(ServeCase):
         self.assertIn(lr, self.serve_log())
         self.stop(p)
 
+    def test_a_state_folder_that_cannot_hold_a_socket_gets_the_service_on_the_box_disk(self):
+        # a Mac: the workspace is a virtiofs share, a stale podman.sock in it cannot be seen or removed and Podman cannot bind there ("operation not supported")
+        p = self.run_ready(SWARMBOX_TEST_NO_STATE_SOCKET="1")
+        fb = os.path.join(self.base, "fallback.sock")
+        self.assertIn("cannot hold a unix socket", self.serve_log())
+        self.assertTrue([c for c in self.calls() if c.startswith("podman system service") and fb in c], self.calls())
+        self.stop(p)
+
+    def test_a_state_folder_that_holds_sockets_keeps_the_service_where_it_was(self):
+        p = self.run_ready()
+        self.assertNotIn("cannot hold a unix socket", self.serve_log())
+        self.assertTrue([c for c in self.calls() if c.startswith("podman system service") and "podman.sock" in c], self.calls())
+        self.stop(p)
+
     def test_a_serve_test_never_points_step_8_at_the_real_runtime_folder_of_podman(self):
         # step 8 removes this folder: by default the real /tmp/storage-run-<uid> of whatever box runs the tests (the gate once wiped a live box's)
         env = self.env()

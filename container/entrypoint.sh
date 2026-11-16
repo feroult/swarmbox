@@ -15,7 +15,7 @@
 #   anything else is run as given (already the final behavior)
 #
 # Test-only variables (not in the configuration table and not read by anything else): SWARMBOX_TEST_LIB (folder holding dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces
-# /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_PODMAN_RUNROOT and SWARMBOX_TEST_PODMAN_LIBPOD_RUN (the folders serve clears before the nested service), SWARMBOX_TEST_PODMAN_GRAPHROOT (the graph root whose stale fuse-overlayfs marker serve removes), SWARMBOX_TEST_FUSE (replaces /dev/fuse), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
+# /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_PODMAN_RUNROOT and SWARMBOX_TEST_NO_STATE_SOCKET=1 and SWARMBOX_TEST_FALLBACK_SOCK (the state folder cannot hold a socket; where the service listens then), SWARMBOX_TEST_PODMAN_LIBPOD_RUN (the folders serve clears before the nested service), SWARMBOX_TEST_PODMAN_GRAPHROOT (the graph root whose stale fuse-overlayfs marker serve removes), SWARMBOX_TEST_FUSE (replaces /dev/fuse), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
 # instead of a failure for step 2 and no service at step 8), SWARMBOX_TEST_BACKOFF_SCALE (integer multiplier of the
 # backoff of both supervisors, 0 for none), SWARMBOX_TEST_BUS_WAIT (seconds to wait for the bus to answer, default 2), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10), SWARMBOX_TEST_LOG_EVERY (seconds between two looks of the log trimmer, default 300), SWARMBOX_TEST_LOG_MAX (bytes past which it trims a log, default 4194304).
 
@@ -228,6 +228,16 @@ wait_for_bus() {
     SB_BUS_SOCKET=$SB_BUS_SOCK swarmbox-bus ping > /dev/null 2>&1
 }
 
+# socket_works_in DIR: 0 when a unix socket can be bound (and removed) in DIR. SWARMBOX_TEST_NO_STATE_SOCKET=1 says no (tests).
+socket_works_in() {
+    [ "${SWARMBOX_TEST_NO_STATE_SOCKET:-0}" = 1 ] && return 1
+    local probe="$1/.socket-probe.$$"
+    python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$probe" 2>/dev/null
+    local rc=$?
+    rm -f "$probe" 2>/dev/null
+    return $rc
+}
+
 wait_for_service() {
     # $1 seconds; returns 0 when the socket exists, 1 when the service died or the time ran out
     local n=$(( $1 * 5 ))
@@ -390,6 +400,13 @@ serve() {
                     log "step 8: no usable /dev/fuse and the stale marker $fuse_marker could not be removed"
                 fi
             fi
+        fi
+        # The state folder is in the workspace, and on macOS the workspace is a virtiofs share that cannot hold a unix socket: a stale socket there cannot be
+        # seen or removed ("Operation not supported") and Podman cannot bind a new one, so the service never started. When a socket cannot be made in
+        # the folder, the service listens on the box's own disk instead (the host reaches no socket through the macOS VM anyway).
+        if ! socket_works_in "$SB_STATE_DIR"; then
+            SB_PODMAN_SOCK=${SWARMBOX_TEST_FALLBACK_SOCK:-/tmp/swarmbox-podman-$(id -u).sock}
+            log "step 8: the state folder cannot hold a unix socket (a shared drive of the host): the nested Podman service uses $SB_PODMAN_SOCK"
         fi
         log "step 8: starting the nested Podman service on $SB_PODMAN_SOCK"
         rm -f "$SB_PODMAN_SOCK"
