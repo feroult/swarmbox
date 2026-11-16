@@ -80,12 +80,11 @@ class RealTmuxCase(Base):
         self.assertEqual([w[1] for w in self.windows()], ["idle"])
         a = self.term([])
         self.assertTrue(wait_until(lambda: len(self.sessions()) == 2), a.out)
-        w = self.windows()
-        self.assertEqual(len(w), 1)
-        self.assertNotEqual(w[0][1], "idle")  # the idle window is gone
+        # the session of a call exists before the call has made its window and dropped the idle one: wait for the windows (a loaded machine shows the gap)
+        self.assertTrue(wait_until(lambda: len(self.windows()) == 1 and self.windows()[0][1] != "idle"), self.windows())  # the idle window is gone
         b = self.term([])
         self.assertTrue(wait_until(lambda: len(self.sessions()) == 3), b.out)
-        self.assertEqual(len(self.windows()), 2, "main shows both tabs (the browser sees them as tabs)")
+        self.assertTrue(wait_until(lambda: len(self.windows()) == 2), "main shows both tabs (the browser sees them as tabs): %s" % self.windows())
         self.assertNotIn("idle", [x[1] for x in self.windows()])
         # a session per tab: no status bar, one window each (not a group sharing every window), destroyed when the client goes
         for s in self.tabs():
@@ -104,7 +103,7 @@ class RealTmuxCase(Base):
         self.assertTrue(wait_until(lambda: len(self.tabs()) == 1), a.out)
         b = self.term([])
         self.assertTrue(wait_until(lambda: len(self.tabs()) == 2), b.out)
-        self.assertEqual(len(self.windows()), 2)
+        self.assertTrue(wait_until(lambda: len(self.windows()) == 2), self.windows())
         self.prompt(a)   # the shell of tab A has drawn its prompt
         a.write(b"exit\r")
         self.assertEqual(a.wait(), 0, a.out)   # the client of A is gone: the user is back at the host shell
@@ -204,7 +203,8 @@ class RealTmuxCase(Base):
         self.assertTrue(wait_until(lambda: self.tabs() == []))
         b = self.term([])
         self.assertTrue(wait_until(lambda: len(self.tabs()) == 1), b.out)
-        self.assertEqual(len(self.windows()), 1)
+        # the session of the tab exists before the call has made its window and dropped the idle one: wait for that, a loaded machine shows the gap
+        self.assertTrue(wait_until(lambda: len(self.windows()) == 1), self.windows())
 
     def test_the_last_screen_of_a_command_is_printed_after_its_window_closes(self):
         p = self.term(["echo", "output-of-the-command"])

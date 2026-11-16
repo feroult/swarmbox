@@ -33,7 +33,10 @@ sh dev/check.sh                         # shellcheck + the fast tests in a clean
 `support/reap_run.py`: when it ends, the processes it left behind are found by PID (never by name), killed and shown as `reaped N`.
 A test that leaks a process is a bug in that test: end children in `addCleanup`.
 
-Targets: `fast` under 60 seconds on a 32-core machine, in parallel, offline, with a read-only root file system.
+Targets and what they measure today (32 cores, Podman, tmux 3.5a): `fast` under 60 seconds in parallel, offline, with a read-only root file system:
+81 files, 1426 tests, 20 s wall (150 s of file time at `-j 8`, the same in `sh dev/test-slow.sh fast`); `slow` 19 files, 288 tests, about 105 s at `-j 3`
+(`test_sysop_always` 104 s and `test_sysop_dock` 71 s are the long poles; the same with tmux 3.7c). A loaded machine (every core busy, or two cores for the
+whole run) takes 3 to 9 times longer and still passes: the tests wait for the effect they check, never for a fixed time.
 
 ## Which folder
 
@@ -77,6 +80,25 @@ CI (`.github/workflows/ci.yml`): `linux` runs fast and slow (tmux present, no br
 `arm64` build the image and run `slow/smoke_image.py`; the scheduled `browser` job runs the whole slow suite with the gate set; `real-addons`
 installs the addons for real. `fast/test_workflows.py` keeps both workflows honest.
 
+## Tests that do not flake
+
+A test that passes on a quiet machine and fails on a loaded one is a bug of the test. What was found and fixed in this suite, as the rules to follow:
+
+- Wait for the effect, not for a duration: `support/waiting.py` `wait_until(fn, seconds)`. Where a service writes two things one after the other (the
+  state file of a goal, then its audit line), wait for the LAST one. A supervisor that starts a child in the background is not started yet when its readiness
+  marker appears.
+- Do not assert an exact split of work between threads that read a socket (`5` and `5`): the bus does not give a message to a member that has not read the last one,
+  so a slow reader changes the split. Wait for each read before the next publish, or assert the sum.
+- A file that is cut and rewritten (the log trimmer) is empty for a moment: wait for the finished content, not for the size.
+- End what the test starts in `addCleanup`, with the same environment that started it (a tmux server started with another `TMUX_TMPDIR` is not found by a bare `tmux kill-server`).
+- Check a new test the way a loaded CI runner would: `taskset -c 0,1 sh tests/run.sh --only test_x.py --repeat 20` while four `python3 -c 'while True: pass'`
+  (started by you, stopped by PID) run on the same two cores.
+
+## The regression ledger
+
+`docs/history/test-suite-review/regressions.md` lists the real bugs of version 1 and the test that guards each one (`layer/test_file.py::Class::test`).
+`fast/test_layout.py` fails when a test named there no longer exists. When you fix a bug, add the test and one row.
+
 ## Coverage is behaviours, not a percentage
 
 What a regression can bring back is the set of distinct behaviours and past bugs. Before you delete or merge a test, know which case it
@@ -89,8 +111,13 @@ killed or survived. A plan file replays the same mutants against a changed suite
 python3 dev/mutate.py plan --out /tmp/plan.json                  # choose the mutants (seed and weights: dev/mutate.py)
 python3 dev/mutate.py run --plan /tmp/plan.json --results /tmp/r.jsonl -j 8 --all-tests --confirm --control
 python3 dev/mutate.py report --plan /tmp/plan.json --results /tmp/r.jsonl --matrix /tmp/matrix.json
-python3 dev/mutate.py tests container/scripts/swarmbox-tabs.py   # which test files cover a product file
+python3 dev/mutate.py tests container/scripts/swarmbox-tabs.py   # which test files cover a product file (it follows the modules of tests/support they import)
+python3 dev/mutate.py run --plan P --results R --layer fast       # only the fast files: cheap, run the survivors again with --layer slow
 ```
+
+A mutant that moved because a comment above it changed length is found again by its line. The plan of the baseline (249 mutants) is
+`docs/history/test-suite-review/mutants-plan.json`; the old suite killed 180 of them and this one kills 217, none lost
+(`mutants-after.md`, the matrix in `mutants-kill-matrix-after.json`).
 
 Run it in the test image (it starts tmux, ttyd and Chromium through the tests): see the head of `dev/mutate.py` for the `podman run` command.
 The baseline of the suite before the reorganisation is in `docs/history/test-suite-review/`.

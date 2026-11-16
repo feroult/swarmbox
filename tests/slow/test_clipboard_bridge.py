@@ -39,6 +39,8 @@ class Terminal(unittest.TestCase):
     def setUpClass(cls):
         cls.term = bs.WebTerminal(CHROMIUM, conf=cls.CONF, options=False)
         cls.term.wait_screen("$")
+        # the bridge looks for the terminal every 100 ms: a click or a key before it has found it is the browser's, not the bridge's
+        assert cls.term.page.wait_js("window.swarmboxClipboardReady === true", 10), "the clipboard bridge never installed itself"
 
     @classmethod
     def tearDownClass(cls):

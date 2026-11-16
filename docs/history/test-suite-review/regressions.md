@@ -36,6 +36,8 @@ The three area ledgers in this folder say where each old test went; this file sa
 |---|---|---|
 | a goal with a byte that is not UTF-8 killed the service | `fast/test_sysop_service.py::Surrogates` | fast |
 | a flood of rejected goals filled the folders | `fast/test_sysop_service.py::Flood::test_rejected_goals_keep_little_and_the_folders_are_pruned_while_it_runs` | fast |
+| the service died and nothing started it again: the watcher restarts it after 1, 2, 4 ... 30 s, gives up on a status 2, and the goals in flight are marked `failed` | `fast/test_sysop_watch.py::Scripted`, `fast/test_sysop_watch.py::RealService`, `fast/test_sysop_service.py::OwnProcess::test_kill_and_restart_loses_the_goal_in_flight_and_says_so` | fast |
+| the locks of `swarmbox-tabs` (one per tab) and the bus survive a killed holder | `fast/test_tabs_locks.py::Locks`, `fast/test_bus.py::SingleInstance` | fast |
 | the log of a daemon grew; output must follow the rotated file | `fast/test_sysop_soak.py::LogRotation` | fast |
 | two SIGTERMs in a row left a traceback (voice) | `fast/test_voice_soak.py::TwoSigterms` | fast |
 | a burst of recordings: at most N recognizers, a fixed busy answer, the places come back | `fast/test_voice_soak.py::Burst` | fast |
@@ -117,3 +119,10 @@ The three area ledgers in this folder say where each old test went; this file sa
 | old names of the addon concept; default names written as literals | `fast/test_guard_names.py::TheRepository`, `fast/test_guard_names.py::TheOldNamesScanner` | fast |
 | a test that leaks a process, or starts a real tmux on a machine that is not a container | `fast/test_runner.py`, `fast/test_layout.py` | fast |
 | the mutation harness: a plan replays the same mutants, the helper modules of the tests are followed | `fast/test_mutate.py` | fast |
+
+## Fixes of code that no longer exists
+
+The fixes of the first commits (the memory MCP server and its WAL and busy timeout, the hooks of the memory agent, `start.sh` messages, the Playwright and Vite
+installs, the port 8338 -> 8889 of the memory dashboard, `CLAUDE.md` deployment) are of files that were deleted before version 1 (`git log --diff-filter=D`):
+nothing is left to regress. The `swarmbox-migrate` of the 2.0 layout was dropped with them. The fixes of the shell fragment, the installer, `swarmbox update`,
+the web terminal and the image that are still in the tree are the rows above.

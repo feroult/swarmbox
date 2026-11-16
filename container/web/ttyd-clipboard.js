@@ -86,6 +86,7 @@
       }
       return previous ? previous(ev) : true;
     });
+    window.swarmboxClipboardReady = true;   // the bridge polls for the terminal every 100 ms: the tests wait for this before they click or type
     return true;
   }
 

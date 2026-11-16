@@ -1,0 +1,2677 @@
+{
+ "audit.py:122:drop-call:503bbdb6": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 122
+ },
+ "audit.py:144:drop-call:58353a2d": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 144
+ },
+ "audit.py:39:compare:878f7d93": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "invert LtE -> Gt",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "killed_by": [
+   "tests/fast/test_sysop_mcp.py"
+  ],
+  "layer": "fast",
+  "line": 39
+ },
+ "audit.py:42:boolop:53a49e51": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "And -> Or",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "killed_by": [
+   "tests/fast/test_sysop_brain.py"
+  ],
+  "layer": "fast",
+  "line": 42
+ },
+ "audit.py:59:boolop:ca39ee15": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 59
+ },
+ "audit.py:84:drop-call:4e874268": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/audit.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 84
+ },
+ "banner.sh:195:sh-and-or:a7fed8dc": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/scripts/banner.sh",
+  "killed_by": [
+   "tests/slow/test_banner_glint.py"
+  ],
+  "layer": "slow",
+  "line": 195
+ },
+ "brain.py:103:negate-cond:6614d1bb": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "killed_by": [
+   "tests/fast/test_sysop_bus.py"
+  ],
+  "layer": "fast",
+  "line": 103
+ },
+ "brain.py:228:drop-call:a4c54008": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "killed_by": [
+   "tests/fast/test_sysop_brain.py"
+  ],
+  "layer": "fast",
+  "line": 228
+ },
+ "brain.py:243:drop-call:2ea4adb2": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "killed_by": [
+   "tests/fast/test_sysop_brain.py"
+  ],
+  "layer": "fast",
+  "line": 243
+ },
+ "brain.py:259:boolop:d598997d": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "Or -> And",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 259
+ },
+ "brain.py:274:negate-cond:9ca7e738": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "killed_by": [
+   "tests/fast/test_sysop_bus.py"
+  ],
+  "layer": "fast",
+  "line": 274
+ },
+ "brain.py:96:const:d13db67b": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 1 -> 2",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/brain.py",
+  "killed_by": [
+   "tests/fast/test_sysop_brain.py"
+  ],
+  "layer": "fast",
+  "line": 96
+ },
+ "build-index.sh:20:sh-delete:a53c6f81": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the line",
+  "file": "container/web/build-index.sh",
+  "killed_by": [
+   "tests/fast/test_web_strip_script.py"
+  ],
+  "layer": "fast",
+  "line": 20
+ },
+ "busclient.py:42:compare:ca22c051": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Eq -> NotEq",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/busclient.py",
+  "killed_by": [
+   "tests/fast/test_sysop_keys.py"
+  ],
+  "layer": "fast",
+  "line": 42
+ },
+ "busclient.py:53:compare:a0fd616c": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "flip Gt -> GtE",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/busclient.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 53
+ },
+ "cli.py:139:negate-cond:210b9992": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/cli.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 139
+ },
+ "cli.py:62:bool-const:f0da293a": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "False -> True",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/cli.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 62
+ },
+ "cli.py:71:bool-const:b078ae79": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "True -> False",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/cli.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 71
+ },
+ "cloudflare-setup.py:384:return-none:16ca0cbd": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "return None",
+  "file": "cloudflare-setup.py",
+  "killed_by": [
+   "tests/fast/test_host_remote_e2e_fake.py"
+  ],
+  "layer": "fast",
+  "line": 384
+ },
+ "cloudflare-setup.py:424:drop-call:45ed9881": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "cloudflare-setup.py",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 424
+ },
+ "cloudflare-setup.py:638:boolop:aee55445": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "And -> Or",
+  "file": "cloudflare-setup.py",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 638
+ },
+ "cloudflare-setup.py:723:drop-call:9ddf3e69": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "cloudflare-setup.py",
+  "killed_by": [
+   "tests/fast/test_host_remote_e2e_fake.py"
+  ],
+  "layer": "fast",
+  "line": 723
+ },
+ "config.py:116:const:245fcc1a": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 5 -> 6",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/config.py",
+  "killed_by": [
+   "tests/fast/test_sysop_brain.py"
+  ],
+  "layer": "fast",
+  "line": 116
+ },
+ "config.py:33:compare:39f93ef7": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip In -> NotIn",
+  "file": "container/addons/voice/lib/swarmbox_voice/config.py",
+  "killed_by": [
+   "tests/fast/test_voice_soak.py"
+  ],
+  "layer": "fast",
+  "line": 33
+ },
+ "config.py:90:boolop:cc25fd3d": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "Or -> And",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/config.py",
+  "killed_by": [
+   "test_sysop_service.py"
+  ],
+  "layer": "fast (a case added by the Integrate step)",
+  "line": 90
+ },
+ "dock.py:369:boolop:e41183c4": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 369
+ },
+ "dock.py:490:negate-cond:04e0cf8b": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "killed_by": [
+   "tests/fast/test_sysop_dock_logic.py"
+  ],
+  "layer": "fast",
+  "line": 490
+ },
+ "dock.py:597:exit-code:1c739121": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "return 2 -> 0",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "killed_by": [
+   "tests/fast/test_sysop_dock_logic.py"
+  ],
+  "layer": "fast",
+  "line": 597
+ },
+ "dock.py:667:const:2de9ce68": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 1 -> 2",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "killed_by": [
+   "tests/fast/test_sysop_dock_logic.py"
+  ],
+  "layer": "fast",
+  "line": 667
+ },
+ "dock.py:692:negate-cond:ee866a99": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "killed_by": [
+   "tests/fast/test_sysop_dock_logic.py"
+  ],
+  "layer": "fast",
+  "line": 692
+ },
+ "dock.py:722:drop-call:0a512370": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/dock.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 722
+ },
+ "entrypoint.sh:107:sh-negate:7c3a8b0f": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the if condition",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_bus_serve.py"
+  ],
+  "layer": "fast",
+  "line": 107
+ },
+ "entrypoint.sh:117:sh-delete:1634e9da": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "drop the line",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/slow/test_attach_real.py"
+  ],
+  "layer": "slow",
+  "line": 117
+ },
+ "entrypoint.sh:166:sh-negate:fdca2061": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate a guard",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_bus_serve.py"
+  ],
+  "layer": "fast",
+  "line": 166
+ },
+ "entrypoint.sh:174:sh-str-eq:a22b7efa": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "= -> !=",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_serve_steps.py"
+  ],
+  "layer": "fast",
+  "line": 174
+ },
+ "entrypoint.sh:181:sh-negate:e65bc04f": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the if condition",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_serve_steps.py"
+  ],
+  "layer": "fast",
+  "line": 181
+ },
+ "entrypoint.sh:190:sh-negate:44e719ce": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the while condition",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_bus_serve.py"
+  ],
+  "layer": "fast",
+  "line": 190
+ },
+ "entrypoint.sh:194:sh-negate:6f892b84": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the if condition",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_entrypoint.py"
+  ],
+  "layer": "fast",
+  "line": 194
+ },
+ "entrypoint.sh:201:sh-cmp:469d6e28": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "-lt -> -ge",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_serve_steps.py"
+  ],
+  "layer": "fast",
+  "line": 201
+ },
+ "entrypoint.sh:207:sh-negate:6347ff4b": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the while condition",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_serve_steps.py"
+  ],
+  "layer": "fast",
+  "line": 207
+ },
+ "entrypoint.sh:207:sh-str-eq:00f366df": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "= -> !=",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_serve_steps.py"
+  ],
+  "layer": "fast",
+  "line": 207
+ },
+ "entrypoint.sh:223:exit-code:e3227023": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "return 0 -> return 1",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_bus_serve.py"
+  ],
+  "layer": "fast",
+  "line": 223
+ },
+ "entrypoint.sh:480:sh-cmp:58cdc2c6": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "-ne -> -eq",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_entrypoint.py"
+  ],
+  "layer": "fast",
+  "line": 480
+ },
+ "entrypoint.sh:495:sh-case:8733ec79": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "the branch attach|install|pubkey|addon|bus|tabs never matches",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_ssh_key.py"
+  ],
+  "layer": "fast",
+  "line": 495
+ },
+ "entrypoint.sh:500:sh-case:b940a3a5": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "the branch install never matches",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_entrypoint.py"
+  ],
+  "layer": "fast",
+  "line": 500
+ },
+ "entrypoint.sh:503:sh-case:34e64f08": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "the branch bus never matches",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_entrypoint.py"
+  ],
+  "layer": "fast",
+  "line": 503
+ },
+ "entrypoint.sh:513:exit-code:a9980d33": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "exit 64 -> exit 0",
+  "file": "container/entrypoint.sh",
+  "killed_by": [
+   "tests/fast/test_entrypoint.py"
+  ],
+  "layer": "fast",
+  "line": 513
+ },
+ "front.py:205:negate-cond:ea5ed940": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [
+   "tests/fast/test_voice_front.py"
+  ],
+  "layer": "fast",
+  "line": 205
+ },
+ "front.py:299:drop-call:34d5a229": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [
+   "tests/fast/test_voice_front.py"
+  ],
+  "layer": "fast",
+  "line": 299
+ },
+ "front.py:315:drop-call:92f34361": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 315
+ },
+ "front.py:375:bool-const:5a4950df": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "False -> True",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [
+   "tests/fast/test_voice_front.py"
+  ],
+  "layer": "fast",
+  "line": 375
+ },
+ "front.py:404:boolop:fd71aabd": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [
+   "tests/fast/test_voice_front.py"
+  ],
+  "layer": "fast",
+  "line": 404
+ },
+ "front.py:406:boolop:2e004b40": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "And -> Or",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [
+   "tests/fast/test_voice_front.py"
+  ],
+  "layer": "fast",
+  "line": 406
+ },
+ "front.py:438:compare:b95a00f3": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Eq -> NotEq",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [
+   "tests/fast/test_voice_front.py"
+  ],
+  "layer": "fast",
+  "line": 438
+ },
+ "front.py:499:drop-call:baf2c016": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 499
+ },
+ "front.py:581:const:1ee27b1c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 0 -> 1",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [
+   "tests/fast/test_voice_front.py"
+  ],
+  "layer": "fast",
+  "line": 581
+ },
+ "front.py:85:boolop:79030747": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [
+   "tests/fast/test_voice_front.py"
+  ],
+  "layer": "fast",
+  "line": 85
+ },
+ "front.py:91:negate-cond:6581884d": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/voice/lib/swarmbox_voice/front.py",
+  "killed_by": [
+   "tests/fast/test_voice_front.py"
+  ],
+  "layer": "fast",
+  "line": 91
+ },
+ "install.sh:22:sh-and-or:e725ef0b": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "install.sh",
+  "killed_by": [
+   "tests/fast/test_install.py"
+  ],
+  "layer": "fast",
+  "line": 22
+ },
+ "install.sh:27:sh-case:2def8b29": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "the branch * never matches",
+  "file": "install.sh",
+  "killed_by": [
+   "tests/fast/test_install.py"
+  ],
+  "layer": "fast",
+  "line": 27
+ },
+ "install.sh:43:sh-and-or:0d95d63d": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "install.sh",
+  "killed_by": [
+   "tests/fast/test_install.py"
+  ],
+  "layer": "fast",
+  "line": 43
+ },
+ "ipc.py:109:drop-call:23d1d4d9": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/ipc.py",
+  "killed_by": [
+   "tests/fast/test_sysop_service.py"
+  ],
+  "layer": "fast",
+  "line": 109
+ },
+ "ipc.py:111:return-none:6b81914c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "return None",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/ipc.py",
+  "killed_by": [
+   "tests/fast/test_sysop_service.py"
+  ],
+  "layer": "fast",
+  "line": 111
+ },
+ "keys.py:104:boolop:e3a38203": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/keys.py",
+  "killed_by": [
+   "tests/fast/test_sysop_keys.py"
+  ],
+  "layer": "fast",
+  "line": 104
+ },
+ "keys.py:113:exit-code:fe95f3d3": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "return 2 -> 0",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/keys.py",
+  "killed_by": [
+   "tests/fast/test_sysop_keys.py"
+  ],
+  "layer": "fast",
+  "line": 113
+ },
+ "keys.py:56:boolop:25a6c131": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/keys.py",
+  "killed_by": [
+   "tests/fast/test_sysop_keys.py"
+  ],
+  "layer": "fast",
+  "line": 56
+ },
+ "keys.py:98:exit-code:93d846df": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "return 0 -> 1",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/keys.py",
+  "killed_by": [
+   "tests/fast/test_sysop_keys.py"
+  ],
+  "layer": "fast",
+  "line": 98
+ },
+ "mcpserver.py:198:bool-const:f6697222": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "False -> True",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 198
+ },
+ "mcpserver.py:200:negate-cond:54aba2e8": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 200
+ },
+ "mcpserver.py:266:compare:40aceaef": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip IsNot -> Is",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "killed_by": [
+   "tests/fast/test_sysop_mcp.py"
+  ],
+  "layer": "fast",
+  "line": 266
+ },
+ "mcpserver.py:266:negate-cond:14799714": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "killed_by": [
+   "tests/fast/test_sysop_mcp.py"
+  ],
+  "layer": "fast",
+  "line": 266
+ },
+ "mcpserver.py:268:compare:6713bf7b": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "invert GtE -> Lt",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "killed_by": [
+   "tests/fast/test_sysop_mcp.py"
+  ],
+  "layer": "fast",
+  "line": 268
+ },
+ "mcpserver.py:333:boolop:8855bb55": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "And -> Or",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 333
+ },
+ "mcpserver.py:98:boolop:40199c01": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "Or -> And",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/mcpserver.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 98
+ },
+ "page.js:202:js-const:da69d628": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 34 -> 35",
+  "file": "container/addons/voice/web/page.js",
+  "killed_by": [
+   "tests/slow/test_voice_page_browser.py"
+  ],
+  "layer": "slow",
+  "line": 202
+ },
+ "page.js:254:js-cmp:0c375b01": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "=== -> !==",
+  "file": "container/addons/voice/web/page.js",
+  "killed_by": [
+   "tests/slow/test_voice_page_browser.py"
+  ],
+  "layer": "slow",
+  "line": 254
+ },
+ "page.js:79:js-andor:00a79c4c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "&& -> ||",
+  "file": "container/addons/voice/web/page.js",
+  "killed_by": [
+   "tests/slow/test_voice_page_browser.py"
+  ],
+  "layer": "slow",
+  "line": 79
+ },
+ "panel.py:347:not-removed:229c3e31": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "remove a not",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "killed_by": [
+   "tests/fast/test_sysop_panel.py"
+  ],
+  "layer": "fast",
+  "line": 347
+ },
+ "panel.py:455:compare:37928565": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "invert Lt -> GtE",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "killed_by": [
+   "tests/fast/test_sysop_panel.py"
+  ],
+  "layer": "fast",
+  "line": 455
+ },
+ "panel.py:538:return-none:821c3609": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "return None",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "killed_by": [
+   "tests/fast/test_sysop_panel.py"
+  ],
+  "layer": "fast",
+  "line": 538
+ },
+ "panel.py:793:negate-cond:f625f9f2": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "killed_by": [
+   "tests/fast/test_sysop_panel.py"
+  ],
+  "layer": "fast",
+  "line": 793
+ },
+ "panel.py:80:negate-cond:78e17dd2": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "killed_by": [
+   "tests/fast/test_sysop_panel.py"
+  ],
+  "layer": "fast",
+  "line": 80
+ },
+ "panel.py:955:negate-cond:2ab3c66f": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "killed_by": [
+   "tests/fast/test_sysop_panel.py"
+  ],
+  "layer": "fast",
+  "line": 955
+ },
+ "panel.py:98:negate-cond:51512f1b": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/panel.py",
+  "killed_by": [
+   "tests/fast/test_sysop_panel.py"
+  ],
+  "layer": "fast",
+  "line": 98
+ },
+ "policy.py:112:compare:406a8668": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Is -> IsNot",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 112
+ },
+ "policy.py:123:boolop:322c698b": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 123
+ },
+ "policy.py:236:drop-call:52424e1c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 236
+ },
+ "policy.py:262:negate-cond:44b6ec55": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 262
+ },
+ "policy.py:263:compare:92abdccc": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Eq -> NotEq",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 263
+ },
+ "policy.py:287:compare:e72b147f": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Eq -> NotEq",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 287
+ },
+ "policy.py:287:negate-cond:c544c0c4": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 287
+ },
+ "policy.py:301:bool-const:a3f129bd": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "True -> False",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 301
+ },
+ "policy.py:320:negate-cond:dd0bb956": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 320
+ },
+ "policy.py:322:negate-cond:44eb2f44": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 322
+ },
+ "policy.py:331:negate-cond:b11eeb2f": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 331
+ },
+ "policy.py:334:compare:1f942299": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Eq -> NotEq",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 334
+ },
+ "policy.py:334:negate-cond:c7460ca1": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 334
+ },
+ "policy.py:66:compare:cf592db9": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Lt -> LtE",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/policy.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 66
+ },
+ "record-checksums.sh:55:sh-and-or:7e772702": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "|| -> &&",
+  "file": "dev/record-checksums.sh",
+  "killed_by": [
+   "tests/fast/test_record_checksums.py"
+  ],
+  "layer": "fast",
+  "line": 55
+ },
+ "release-check.sh:121:sh-and-or:794a4c15": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "&& -> ||",
+  "file": "dev/release-check.sh",
+  "killed_by": [
+   "tests/fast/test_release_check.py"
+  ],
+  "layer": "fast",
+  "line": 121
+ },
+ "release-check.sh:38:sh-negate:525626fe": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the if condition",
+  "file": "dev/release-check.sh",
+  "killed_by": [
+   "tests/fast/test_release_check.py"
+  ],
+  "layer": "fast",
+  "line": 38
+ },
+ "release-version.sh:58:sh-test-flag:758296e3": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "-n -> -z",
+  "file": "dev/release-version.sh",
+  "killed_by": [
+   "tests/fast/test_release_version.py"
+  ],
+  "layer": "fast",
+  "line": 58
+ },
+ "release.sh:120:sh-and-or:da5a7f2c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "dev/release.sh",
+  "killed_by": [
+   "tests/fast/test_release_script.py"
+  ],
+  "layer": "fast",
+  "line": 120
+ },
+ "release.sh:125:sh-and-or:b31dd9ca": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "dev/release.sh",
+  "killed_by": [
+   "tests/fast/test_release_script.py"
+  ],
+  "layer": "fast",
+  "line": 125
+ },
+ "release.sh:291:sh-str-eq:0431fa0b": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "= -> !=",
+  "file": "dev/release.sh",
+  "killed_by": [
+   "tests/fast/test_release_script.py"
+  ],
+  "layer": "fast",
+  "line": 291
+ },
+ "release.sh:300:exit-code:6694a8d2": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "exit 0 -> exit 1",
+  "file": "dev/release.sh",
+  "killed_by": [
+   "tests/fast/test_release_script.py"
+  ],
+  "layer": "fast",
+  "line": 300
+ },
+ "risk.py:147:compare:1058eeba": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip In -> NotIn",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 147
+ },
+ "risk.py:181:negate-cond:0f197916": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 181
+ },
+ "risk.py:19:const:cbd5a8b9": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "constant 4 -> 5",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 19
+ },
+ "risk.py:208:const:6cd301a9": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 0 -> 1",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 208
+ },
+ "risk.py:243:compare:3da14739": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "flip Gt -> GtE",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 243
+ },
+ "risk.py:244:negate-cond:c0df896c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 244
+ },
+ "risk.py:274:const:4f42d921": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 1 -> 2",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 274
+ },
+ "risk.py:293:compare:dbd85977": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "flip In -> NotIn",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 293
+ },
+ "risk.py:304:compare:e9b2fdf6": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "flip Eq -> NotEq",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "test_sysop_policy.py"
+  ],
+  "layer": "fast (a case added by the Integrate step)",
+  "line": 304
+ },
+ "risk.py:398:boolop:2534a1dd": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "And -> Or",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 398
+ },
+ "risk.py:399:compare:c234fb14": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "flip In -> NotIn",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 399
+ },
+ "risk.py:405:negate-cond:8ec1df80": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_bus.py"
+  ],
+  "layer": "fast",
+  "line": 405
+ },
+ "risk.py:407:boolop:3b56ef77": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "And -> Or",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 407
+ },
+ "risk.py:407:negate-cond:255575d5": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_bus.py"
+  ],
+  "layer": "fast",
+  "line": 407
+ },
+ "risk.py:418:boolop:424f51a9": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 418
+ },
+ "risk.py:420:boolop:75e2a2cb": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 420
+ },
+ "risk.py:421:boolop:aacfb42f": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "And -> Or",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 421
+ },
+ "risk.py:425:drop-call:e3b3b3bc": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 425
+ },
+ "risk.py:450:loop-ctl:4eac757e": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "break/continue swapped",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_bus.py"
+  ],
+  "layer": "fast",
+  "line": 450
+ },
+ "risk.py:455:negate-cond:092d5f9c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 455
+ },
+ "risk.py:506:not-removed:eb928c6a": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "remove a not",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/risk.py",
+  "killed_by": [
+   "tests/fast/test_sysop_policy.py"
+  ],
+  "layer": "fast",
+  "line": 506
+ },
+ "server.py:140:drop-call:48ca0894": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 140
+ },
+ "server.py:46:const:bbb3f24d": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 200 -> 201",
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "killed_by": [
+   "tests/fast/test_voice_service.py"
+  ],
+  "layer": "fast",
+  "line": 46
+ },
+ "server.py:65:boolop:885db7a2": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "killed_by": [
+   "tests/fast/test_voice_soak.py"
+  ],
+  "layer": "fast",
+  "line": 65
+ },
+ "server.py:66:bool-const:4b11c3db": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "True -> False",
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 66
+ },
+ "server.py:66:boolop:06d5d63a": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "Or -> And",
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 66
+ },
+ "server.py:77:not-removed:40d39996": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "remove a not",
+  "file": "container/addons/voice/lib/swarmbox_voice/server.py",
+  "killed_by": [
+   "tests/fast/test_voice_soak.py"
+  ],
+  "layer": "fast",
+  "line": 77
+ },
+ "service.py:193:drop-call:a201bdd6": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 193
+ },
+ "service.py:206:drop-call:efc38a73": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 206
+ },
+ "service.py:316:drop-call:2d6dd45a": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 316
+ },
+ "service.py:353:const:cea2d2a9": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "constant 200 -> 201",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "killed_by": [
+   "tests/fast/test_sysop_service.py"
+  ],
+  "layer": "fast",
+  "line": 353
+ },
+ "service.py:420:compare:b65cd35f": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip NotEq -> Eq",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "killed_by": [
+   "tests/fast/test_sysop_service.py"
+  ],
+  "layer": "fast",
+  "line": 420
+ },
+ "service.py:506:boolop:3157fb42": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "And -> Or",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "killed_by": [
+   "test_sysop_soak.py"
+  ],
+  "layer": "fast (a case added by the Integrate step)",
+  "line": 506
+ },
+ "service.py:55:compare:c5c11fe3": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip In -> NotIn",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/service.py",
+  "killed_by": [
+   "tests/fast/test_sysop_soak.py"
+  ],
+  "layer": "fast",
+  "line": 55
+ },
+ "stt.py:129:negate-cond:2adf3aab": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/voice/lib/swarmbox_voice/stt.py",
+  "killed_by": [
+   "tests/fast/test_voice_service.py"
+  ],
+  "layer": "fast",
+  "line": 129
+ },
+ "stt.py:33:drop-call:3c2001bb": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/addons/voice/lib/swarmbox_voice/stt.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 33
+ },
+ "stt.py:79:compare:02715c00": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip NotEq -> Eq",
+  "file": "container/addons/voice/lib/swarmbox_voice/stt.py",
+  "killed_by": [
+   "tests/fast/test_voice_soak.py"
+  ],
+  "layer": "fast",
+  "line": 79
+ },
+ "stt.py:96:compare:54a1ee43": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Eq -> NotEq",
+  "file": "container/addons/voice/lib/swarmbox_voice/stt.py",
+  "killed_by": [
+   "tests/fast/test_voice_service.py"
+  ],
+  "layer": "fast",
+  "line": 96
+ },
+ "swarmbox-addon.sh:1248:sh-const:f0d663d0": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "bound 1 -> 2",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_use_remove.py"
+  ],
+  "layer": "fast",
+  "line": 1248
+ },
+ "swarmbox-addon.sh:1248:sh-negate:0e438e05": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "negate the if condition",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_use_remove.py"
+  ],
+  "layer": "fast",
+  "line": 1248
+ },
+ "swarmbox-addon.sh:1366:sh-negate:419cbb6d": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "negate the if condition",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_doctor.py"
+  ],
+  "layer": "fast",
+  "line": 1366
+ },
+ "swarmbox-addon.sh:1424:sh-delete:5d7e0dc9": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "drop the line",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_doctor.py"
+  ],
+  "layer": "fast",
+  "line": 1424
+ },
+ "swarmbox-addon.sh:1433:sh-delete:5125b606": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "drop the line",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_doctor.py"
+  ],
+  "layer": "fast",
+  "line": 1433
+ },
+ "swarmbox-addon.sh:566:sh-and-or:0770b4b9": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_shim.py"
+  ],
+  "layer": "fast",
+  "line": 566
+ },
+ "swarmbox-addon.sh:566:sh-delete:8992200a": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the line",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [],
+  "layer": "-",
+  "line": 566
+ },
+ "swarmbox-addon.sh:595:sh-cmp:f394f90a": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "-eq -> -ne",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_install.py"
+  ],
+  "layer": "fast",
+  "line": 595
+ },
+ "swarmbox-addon.sh:682:sh-and-or:6f706b7b": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_new.py"
+  ],
+  "layer": "fast",
+  "line": 682
+ },
+ "swarmbox-addon.sh:695:sh-and-or:00418a99": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_install.py"
+  ],
+  "layer": "fast",
+  "line": 695
+ },
+ "swarmbox-addon.sh:696:sh-negate:9803aa12": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the if condition",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_shim.py"
+  ],
+  "layer": "fast",
+  "line": 696
+ },
+ "swarmbox-addon.sh:697:sh-delete:80b48df1": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "drop the line",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_install.py"
+  ],
+  "layer": "fast",
+  "line": 697
+ },
+ "swarmbox-addon.sh:709:sh-and-or:0720b7d2": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [],
+  "layer": "-",
+  "line": 709
+ },
+ "swarmbox-addon.sh:826:sh-negate:dbddcf78": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate a guard",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_new.py"
+  ],
+  "layer": "fast",
+  "line": 826
+ },
+ "swarmbox-addon.sh:833:sh-negate:abeac8a1": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate a guard",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_use_remove.py"
+  ],
+  "layer": "fast",
+  "line": 833
+ },
+ "swarmbox-addon.sh:846:sh-and-or:43407217": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_new.py"
+  ],
+  "layer": "fast",
+  "line": 846
+ },
+ "swarmbox-addon.sh:872:sh-and-or:87ed846c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_addon_shim.py"
+  ],
+  "layer": "fast",
+  "line": 872
+ },
+ "swarmbox-addon.sh:910:sh-cmp:60a6099d": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "-eq -> -ne",
+  "file": "container/scripts/swarmbox-addon.sh",
+  "killed_by": [
+   "tests/fast/test_voice_web.py"
+  ],
+  "layer": "fast",
+  "line": 910
+ },
+ "swarmbox-attach.sh:201:sh-negate:c38bb950": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate a guard",
+  "file": "container/scripts/swarmbox-attach.sh",
+  "killed_by": [
+   "tests/fast/test_attach_command.py"
+  ],
+  "layer": "fast",
+  "line": 201
+ },
+ "swarmbox-attach.sh:282:sh-and-or:693636ae": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-attach.sh",
+  "killed_by": [
+   "tests/fast/test_attach_command.py"
+  ],
+  "layer": "fast",
+  "line": 282
+ },
+ "swarmbox-attach.sh:49:sh-delete:67527b77": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the line",
+  "file": "container/scripts/swarmbox-attach.sh",
+  "killed_by": [],
+  "layer": "-",
+  "line": 49
+ },
+ "swarmbox-attach.sh:60:sh-delete:84ab85ae": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the line",
+  "file": "container/scripts/swarmbox-attach.sh",
+  "killed_by": [
+   "tests/fast/test_attach_command.py"
+  ],
+  "layer": "fast",
+  "line": 60
+ },
+ "swarmbox-bus.py:145:boolop:dacf2396": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "Or -> And",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_serve.py"
+  ],
+  "layer": "fast",
+  "line": 145
+ },
+ "swarmbox-bus.py:198:drop-call:310bb9b8": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 198
+ },
+ "swarmbox-bus.py:201:drop-call:da3372c6": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_serve.py"
+  ],
+  "layer": "fast",
+  "line": 201
+ },
+ "swarmbox-bus.py:213:drop-call:62812862": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 213
+ },
+ "swarmbox-bus.py:243:negate-cond:d67f1356": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_cli.py"
+  ],
+  "layer": "fast",
+  "line": 243
+ },
+ "swarmbox-bus.py:290:bool-const:cd05db8e": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "False -> True",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus.py"
+  ],
+  "layer": "fast",
+  "line": 290
+ },
+ "swarmbox-bus.py:319:arith:e9d0cab8": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "+/-",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_cli.py"
+  ],
+  "layer": "fast",
+  "line": 319
+ },
+ "swarmbox-bus.py:337:const:7f238070": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 0 -> 1",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_sysop_bus.py"
+  ],
+  "layer": "fast",
+  "line": 337
+ },
+ "swarmbox-bus.py:337:negate-cond:a94e0cc1": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_sysop_bus.py"
+  ],
+  "layer": "fast",
+  "line": 337
+ },
+ "swarmbox-bus.py:354:compare:41a1f447": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "flip Gt -> GtE",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 354
+ },
+ "swarmbox-bus.py:388:negate-cond:b1fbe5f3": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_serve.py"
+  ],
+  "layer": "fast",
+  "line": 388
+ },
+ "swarmbox-bus.py:498:bool-const:e628d93f": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "True -> False",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_serve.py"
+  ],
+  "layer": "fast",
+  "line": 498
+ },
+ "swarmbox-bus.py:512:exit-code:90a2d292": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "return 4 -> 0",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_cli.py"
+  ],
+  "layer": "fast",
+  "line": 512
+ },
+ "swarmbox-bus.py:525:negate-cond:a96fedc3": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_cli.py"
+  ],
+  "layer": "fast",
+  "line": 525
+ },
+ "swarmbox-bus.py:553:const:d218280c": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "constant 2 -> 3",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_cli.py"
+  ],
+  "layer": "fast",
+  "line": 553
+ },
+ "swarmbox-bus.py:574:negate-cond:4550b7a7": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_cli.py"
+  ],
+  "layer": "fast",
+  "line": 574
+ },
+ "swarmbox-bus.py:583:exit-code:f401a019": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "return 0 -> 1",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_cli.py"
+  ],
+  "layer": "fast",
+  "line": 583
+ },
+ "swarmbox-bus.py:605:bool-const:1bdb3d9e": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "False -> True",
+  "file": "container/scripts/swarmbox-bus.py",
+  "killed_by": [
+   "tests/fast/test_bus_serve.py"
+  ],
+  "layer": "fast",
+  "line": 605
+ },
+ "swarmbox-host:114:sh-case:942efa9f": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "the branch IMAGE never matches",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 114
+ },
+ "swarmbox-host:118:sh-case:78ffeb87": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "the branch voice.topic|sysop.topic never matches",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 118
+ },
+ "swarmbox-host:1474:sh-test-flag:7d9dae28": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "-z -> -n",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 1474
+ },
+ "swarmbox-host:1521:sh-negate:37dc4d0c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the if condition",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 1521
+ },
+ "swarmbox-host:2062:sh-negate:743d3b5b": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate a guard",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_shells.py"
+  ],
+  "layer": "fast",
+  "line": 2062
+ },
+ "swarmbox-host:2065:sh-and-or:adcecf14": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "|| -> &&",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 2065
+ },
+ "swarmbox-host:2248:sh-delete:a7d7c802": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "drop the line",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 2248
+ },
+ "swarmbox-host:2267:sh-delete:21efd31f": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the line",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 2267
+ },
+ "swarmbox-host:2306:exit-code:1c43d6f7": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "return 1 -> return 0",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 2306
+ },
+ "swarmbox-host:2607:sh-and-or:a2cb07c8": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "&& -> ||",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast (by hand: several equal tokens on the line)",
+  "line": 2607
+ },
+ "swarmbox-host:2642:sh-delete:b89114be": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "drop the line",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 2642
+ },
+ "swarmbox-host:2824:sh-case:47a230f3": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "the branch env never matches",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_shells.py"
+  ],
+  "layer": "fast (by hand: several equal tokens on the line)",
+  "line": 2824
+ },
+ "swarmbox-host:283:exit-code:667d6685": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "return 0 -> return 1",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_shells.py"
+  ],
+  "layer": "fast",
+  "line": 283
+ },
+ "swarmbox-host:390:sh-test-flag:79efd0d7": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "-z -> -n",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_shells.py"
+  ],
+  "layer": "fast",
+  "line": 390
+ },
+ "swarmbox-host:502:sh-delete:a0110cd6": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "drop the line",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 502
+ },
+ "swarmbox-host:581:exit-code:f42f3ecb": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "return 1 -> return 0",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 581
+ },
+ "swarmbox-host:609:sh-case:a66633a2": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "the branch *:* never matches",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 609
+ },
+ "swarmbox-host:629:sh-and-or:1071681b": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_shells.py"
+  ],
+  "layer": "fast",
+  "line": 629
+ },
+ "swarmbox-host:647:exit-code:e8c911bd": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "return 1 -> return 0",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 647
+ },
+ "swarmbox-host:650:sh-case:e885abfd": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "the branch voice.stt.vocabulary never matches",
+  "file": "container/host/swarmbox-host",
+  "killed_by": [
+   "tests/fast/test_host_connector.py"
+  ],
+  "layer": "fast",
+  "line": 650
+ },
+ "swarmbox-install.sh:42:sh-case:536f0891": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "the branch -h|--help never matches",
+  "file": "container/scripts/swarmbox-install.sh",
+  "killed_by": [
+   "tests/fast/test_install.py"
+  ],
+  "layer": "fast",
+  "line": 42
+ },
+ "swarmbox-install.sh:44:sh-and-or:5e90daa7": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-install.sh",
+  "killed_by": [
+   "tests/fast/test_entrypoint.py"
+  ],
+  "layer": "fast",
+  "line": 44
+ },
+ "swarmbox-mcp.sh:32:sh-and-or:9047bd79": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-mcp.sh",
+  "killed_by": [
+   "tests/fast/test_mcp_registry.py"
+  ],
+  "layer": "fast",
+  "line": 32
+ },
+ "swarmbox-mcp.sh:84:exit-code:3eb4455c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "exit 2 -> exit 0",
+  "file": "container/scripts/swarmbox-mcp.sh",
+  "killed_by": [
+   "tests/fast/test_mcp_registry.py"
+  ],
+  "layer": "fast",
+  "line": 84
+ },
+ "swarmbox-shim.sh:60:sh-test-flag:f84e34d0": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "-n -> -z",
+  "file": "container/scripts/swarmbox-shim.sh",
+  "killed_by": [
+   "tests/fast/test_addon_shim.py"
+  ],
+  "layer": "fast",
+  "line": 60
+ },
+ "swarmbox-statusline.sh:23:sh-delete:687f01f1": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the line",
+  "file": "container/scripts/swarmbox-statusline.sh",
+  "killed_by": [],
+  "layer": "-",
+  "line": 23
+ },
+ "swarmbox-tabs.py:148:negate-cond:56945584": {
+  "after": "killed",
+  "before": "timeout",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 148
+ },
+ "swarmbox-tabs.py:156:arith:4221c65e": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "+/-",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 156
+ },
+ "swarmbox-tabs.py:177:compare:755f24df": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "flip Lt -> LtE",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 177
+ },
+ "swarmbox-tabs.py:191:compare:7123c01b": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "flip IsNot -> Is",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 191
+ },
+ "swarmbox-tabs.py:198:negate-cond:7ccf7f62": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs_redact_dos.py"
+  ],
+  "layer": "fast",
+  "line": 198
+ },
+ "swarmbox-tabs.py:262:negate-cond:adc8ef9d": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 262
+ },
+ "swarmbox-tabs.py:268:negate-cond:15fc2419": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 268
+ },
+ "swarmbox-tabs.py:280:compare:3f5982ef": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Eq -> NotEq",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 280
+ },
+ "swarmbox-tabs.py:284:compare:4ea29f80": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Eq -> NotEq",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 284
+ },
+ "swarmbox-tabs.py:292:compare:1095820c": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "invert GtE -> Lt",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 292
+ },
+ "swarmbox-tabs.py:292:compare:bc2863d4": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip GtE -> Gt",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 292
+ },
+ "swarmbox-tabs.py:353:compare:fb0dc810": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "flip Lt -> LtE",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 353
+ },
+ "swarmbox-tabs.py:376:compare:80b2c2d7": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip Eq -> NotEq",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 376
+ },
+ "swarmbox-tabs.py:376:negate-cond:b15f0b67": {
+  "after": "killed",
+  "before": "timeout",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 376
+ },
+ "swarmbox-tabs.py:380:negate-cond:1510e63d": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 380
+ },
+ "swarmbox-tabs.py:464:const:aa6b9a2f": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 0 -> 1",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 464
+ },
+ "swarmbox-tabs.py:498:boolop:205ea792": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "Or -> And",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 498
+ },
+ "swarmbox-tabs.py:565:const:40b5eb05": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 2 -> 3",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/slow/test_sysop_real.py"
+  ],
+  "layer": "fast+slow (2 of the 3 equal tokens killed; the old suite did not kill the third either)",
+  "line": 565
+ },
+ "swarmbox-tabs.py:593:boolop:98be44c6": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "And -> Or",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 593
+ },
+ "swarmbox-tabs.py:627:negate-cond:8ac14603": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 627
+ },
+ "swarmbox-tabs.py:655:negate-cond:fbfe74f0": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 655
+ },
+ "swarmbox-tabs.py:740:negate-cond:2fa8dc3a": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs_locks.py"
+  ],
+  "layer": "fast",
+  "line": 740
+ },
+ "swarmbox-tabs.py:761:bool-const:ba317554": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "True -> False",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 761
+ },
+ "swarmbox-tabs.py:880:const:bf0119cd": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "constant 0 -> 1",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 880
+ },
+ "swarmbox-tabs.py:931:compare:e3570df1": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip In -> NotIn",
+  "file": "container/scripts/swarmbox-tabs.py",
+  "killed_by": [
+   "tests/fast/test_tabs.py"
+  ],
+  "layer": "fast",
+  "line": 931
+ },
+ "swarmbox-web.sh:46:sh-and-or:2588b088": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-web.sh",
+  "killed_by": [
+   "tests/fast/test_web_strip_script.py"
+  ],
+  "layer": "fast",
+  "line": 46
+ },
+ "swarmbox-web.sh:46:sh-const:e8e8bc79": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "bound 1 -> 2",
+  "file": "container/scripts/swarmbox-web.sh",
+  "killed_by": [
+   "tests/fast/test_web_strip_script.py"
+  ],
+  "layer": "fast",
+  "line": 46
+ },
+ "swarmbox-web.sh:51:sh-and-or:7ef62e84": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "|| -> &&",
+  "file": "container/scripts/swarmbox-web.sh",
+  "killed_by": [
+   "tests/fast/test_web_strip_script.py"
+  ],
+  "layer": "fast",
+  "line": 51
+ },
+ "swarmbox-web.sh:55:sh-negate:c58c588a": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the if condition",
+  "file": "container/scripts/swarmbox-web.sh",
+  "killed_by": [
+   "tests/fast/test_web_strip_script.py"
+  ],
+  "layer": "fast",
+  "line": 55
+ },
+ "swarmbox-web.sh:57:sh-delete:6f3a6c24": {
+  "after": "killed",
+  "before": "survived",
+  "desc": "drop the line",
+  "file": "container/scripts/swarmbox-web.sh",
+  "killed_by": [
+   "tests/fast/test_web_build.py"
+  ],
+  "layer": "fast",
+  "line": 57
+ },
+ "tabsclient.py:38:drop-call:1bc47c5a": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/tabsclient.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 38
+ },
+ "tabsclient.py:64:compare:1dee014f": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "flip In -> NotIn",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/tabsclient.py",
+  "killed_by": [
+   "tests/fast/test_sysop_bus.py"
+  ],
+  "layer": "fast",
+  "line": 64
+ },
+ "ttyd-clipboard.js:153:js-cmp:6a3fedef": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "!== -> ===",
+  "file": "container/web/ttyd-clipboard.js",
+  "killed_by": [
+   "tests/fast/test_web_strip_script.py"
+  ],
+  "layer": "fast",
+  "line": 153
+ },
+ "ttyd-clipboard.js:58:js-cmp:ee8cd238": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "=== -> !==",
+  "file": "container/web/ttyd-clipboard.js",
+  "killed_by": [
+   "tests/slow/test_clipboard_bridge.py"
+  ],
+  "layer": "slow",
+  "line": 58
+ },
+ "watch.py:127:negate-cond:b5896855": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/watch.py",
+  "killed_by": [
+   "tests/fast/test_sysop_watch.py"
+  ],
+  "layer": "fast",
+  "line": 127
+ },
+ "watch.py:133:drop-call:c5f2c176": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "drop the call",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/watch.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 133
+ },
+ "watch.py:141:negate-cond:847d64ca": {
+  "after": "survived",
+  "before": "survived",
+  "desc": "negate the condition",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/watch.py",
+  "killed_by": [],
+  "layer": "-",
+  "line": 141
+ },
+ "watch.py:98:compare:111c16af": {
+  "after": "killed",
+  "before": "killed",
+  "desc": "invert Lt -> GtE",
+  "file": "container/addons/sysop/lib/swarmbox_sysop/watch.py",
+  "killed_by": [
+   "tests/fast/test_sysop_addon.py"
+  ],
+  "layer": "fast",
+  "line": 98
+ }
+}
