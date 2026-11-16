@@ -368,7 +368,8 @@ class BrowserCase(unittest.TestCase):
         for p in self.procs:
             kill_group(p)
         if getattr(self, "sock", None):
-            subprocess.run(["tmux", "-L", self.sock, "kill-server"], capture_output=True)
+            # the server was started with the TMUX_TMPDIR of self.env: without it this names another (empty) socket folder and the server leaks
+            subprocess.run(["tmux", "-L", self.sock, "kill-server"], capture_output=True, env=getattr(self, "env", None))
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def spawn(self, argv, **kw):

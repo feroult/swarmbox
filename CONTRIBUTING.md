@@ -28,9 +28,17 @@ behaviour or branch, no copies of the same case, no tests of wording in docs. Th
 ```
 python3 tests/fast/test_host_up.py   # one file
 sh tests/run.sh                      # the fast tests, in parallel, one line per file, the slowest files at the end
+sh tests/run.sh macos                # the fast files of tests/support/macos.list: what the macOS job runs
 sh tests/run.sh slow                 # the slow ones (use dev/test-slow.sh: real tmux belongs in a container)
 sh dev/test-slow.sh                  # the slow ones in Podman, in the image of dev/test-image/Containerfile (built when missing)
+sh dev/test-slow.sh fast             # the fast ones in the same container, offline with a read-only root file system: the world of a CI runner
+sh dev/test-slow.sh --tmux 37        # the slow ones with tmux 3.7c, the version of the product image (the default is 3.5a)
 ```
+
+On a 32-core machine the fast tests take about 20 seconds (150 s of file time, run 8 files at a time) and the slow ones about two minutes in
+Podman. A test is a regression test when a past bug lives on in it: `docs/history/test-suite-review/regressions.md` lists each bug of
+version 1 with the test that guards it, and `tests/fast/test_layout.py` checks that those tests still exist, so change that file when you
+rename or delete one of them.
 
 `tests/run.sh` options: `-j N` (files in parallel), `--only a.py,b.py`, `--list`, `--repeat N`, `--werror` (each file under `python3 -W error`),
 `--timing N`, `--timeout S`. It runs every file under `tests/support/reap_run.py`, which kills by PID whatever a file left behind and shows
@@ -73,7 +81,7 @@ The version is pinned to 0.9, the one of the CI runner: when none is installed, 
 The tests run under `env -i` with `PATH`, `HOME` and a UTF-8 `LANG`: a test that reads `TERM` or another variable must set it itself.
 A push of another branch is not checked. Skip it once with `git push --no-verify` (or `SWARMBOX_SKIP_CHECK=1 git push`).
 It cannot cover what only CI has: the macOS job (bash 3.2), the arm64 job and the image smoke test. It also prints how many tests were skipped
-here (no tmux, dash or busybox): CI runs them.
+here (no dash or busybox, for example): CI installs them and runs those tests.
 
 ## Releasing
 
