@@ -158,7 +158,9 @@ def run_one(rel, o, timeout):
     if o["durations"] is not None:
         cmd += ["--durations", str(o["durations"])]
     t0 = time.time()
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True,
+    # stdin is /dev/null: a file that starts a program which reads or configures "its terminal" (a full-screen panel, stty) must never reach the one
+    # the developer is typing in. It left that terminal in raw mode once (the lines of the output no longer returned to the first column).
+    p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True,
                          cwd=os.path.dirname(TESTS))
     timed_out = False
     try:
@@ -261,5 +263,23 @@ def main(argv):
     return 1 if bad else 0
 
 
+def main_keeping_the_terminal(argv):
+    """The terminal the runner was started in comes back as it was, whatever a test did to it (belt and braces: the files get no terminal at all)."""
+    saved = None
+    try:
+        import termios
+        saved = termios.tcgetattr(sys.stdin.fileno()) if sys.stdin.isatty() else None
+    except (ImportError, OSError, ValueError, termios.error):
+        saved = None
+    try:
+        return main(argv)
+    finally:
+        if saved is not None:
+            try:
+                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, saved)
+            except (OSError, ValueError, termios.error):
+                pass
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main_keeping_the_terminal(sys.argv[1:]))

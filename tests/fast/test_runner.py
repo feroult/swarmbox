@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import shutil
 import unittest
 
@@ -103,6 +104,29 @@ class Runner(unittest.TestCase):
             self.assertRegex(p.stdout, r"TOTAL 2 files, 2 tests, 1 failed files")
         p = run("--github", env=env)
         self.assertIn("::error title=test_bad.py failed::", p.stdout)
+
+    def test_a_file_gets_no_terminal_and_the_terminal_of_the_runner_is_left_as_it_was(self):
+        """A file once started a full-screen panel on the developer's terminal and left it in raw mode (the lines of the output no longer returned to
+        the first column). The runner gives every file /dev/null as its stdin, and puts its own terminal back whatever happened."""
+        import pty
+        import select
+        import termios
+        body = ("import os, unittest\nclass T(unittest.TestCase):\n    def test_no_terminal(self):\n"
+                "        self.assertFalse(os.isatty(0))\nunittest.main()\n")
+        tmp, env = fake_tests({"test_tty.py": body})
+        self.addCleanup(shutil.rmtree, tmp, True)
+        master, slave = pty.openpty()
+        self.addCleanup(os.close, master)
+        self.addCleanup(os.close, slave)
+        before = termios.tcgetattr(slave)
+        p = subprocess.Popen(["sh", RUNNER], stdin=slave, stdout=slave, stderr=slave, env=env, cwd=ROOT, start_new_session=True)
+        out = b""
+        deadline = time.time() + 120
+        while p.poll() is None and time.time() < deadline:
+            if select.select([master], [], [], 0.2)[0]:
+                out += os.read(master, 65536)
+        self.assertEqual(p.poll(), 0, out.decode(errors="replace"))
+        self.assertEqual(termios.tcgetattr(slave), before, "the runner left its terminal changed")
 
     def test_a_file_over_its_time_limit_is_killed_and_reported(self):
         tmp, env = fake_tests({"test_hang.py": "import time\ntime.sleep(60)\n"})

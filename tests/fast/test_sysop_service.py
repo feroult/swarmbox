@@ -729,7 +729,9 @@ class Settings(unittest.TestCase):
 class Cli(Base):
     def run_cli(self, *args, env=None, stdin=None):
         e = dict(os.environ, PYTHONPATH=ss.LIB, **(env or {}))
-        return subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop"] + list(args), env=e, capture_output=True, text=True, timeout=60, input=stdin)
+        # no input means no terminal either: `panel` asks isatty(0), and on a developer's terminal it started a real full-screen panel and left it in raw mode
+        feed = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
+        return subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop"] + list(args), env=e, capture_output=True, text=True, timeout=60, **feed)
 
     def test_status_when_not_running(self):
         p = self.run_cli("status")
