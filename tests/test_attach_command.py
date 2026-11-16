@@ -491,7 +491,7 @@ class RealTmuxCase(Base):
         self.addCleanup(self.iso.close)
         with open(os.path.join(self.home, ".bashrc"), "w") as f:
             f.write(FRAGMENT)
-        write_exec(os.path.join(self.home, "bin", "mytool"), '#!/bin/sh\necho "mytool:$*" > "$OUT_DIR/path_out"\n')
+        write_exec(os.path.join(self.home, "bin", "myprog"), '#!/bin/sh\necho "myprog:$*" > "$OUT_DIR/path_out"\n')
         self.start_server()
 
     def start_server(self):

@@ -1,7 +1,7 @@
 """`swarmbox-entrypoint serve`: the ordered steps, failures, readiness marker, health file,
 PID 1 signals and the ttyd supervisor, all against a fake environment.
 
-Nothing here touches the live box: tmux, ttyd, podman, swarmbox-pubkey and swarmbox-tool are fakes in a
+Nothing here touches the live box: tmux, ttyd, podman, swarmbox-pubkey and swarmbox-addon are fakes in a
 scratch folder that comes first on PATH (the test refuses to run when tmux or podman would resolve elsewhere); HOME, the run
 folder and every XDG folder are mktemp directories; `serve` is started by the test and only that PID is ever signalled.
 The test-only variables SWARMBOX_TEST_* are the ones decided in docs/history/decision-log.md ([2.2] test-only switches).
@@ -85,7 +85,7 @@ FAKE_PROG = """#!/bin/bash
 # generic fake: records the call, exit code from <name>.exit
 n=$(basename "$0")
 echo "$n $*" >> "$FAKE_DIR/calls.log"
-if [ "$n" = swarmbox-tool ] && [ "$1" = install ]; then
+if [ "$n" = swarmbox-addon ] && [ "$1" = install ]; then
     if [ -f "$SWARMBOX_TEST_RUN_DIR/ready" ]; then echo "install $2 saw-ready" >> "$FAKE_DIR/calls.log"; else echo "install $2 no-ready" >> "$FAKE_DIR/calls.log"; fi
 fi
 if [ -f "$FAKE_DIR/$n.$1.out" ]; then cat "$FAKE_DIR/$n.$1.out"; fi
@@ -136,7 +136,7 @@ def wait_for(fn, seconds=10.0, step=0.02):
 
 
 class ServeCase(unittest.TestCase):
-    PROGRAMS = ("swarmbox-pubkey", "swarmbox-tool", "swarmbox-mcp")
+    PROGRAMS = ("swarmbox-pubkey", "swarmbox-addon", "swarmbox-mcp")
 
     def setUp(self):
         self.base = tempfile.mkdtemp(prefix="serve-test-")
@@ -174,8 +174,8 @@ class ServeCase(unittest.TestCase):
         for k, v in extra.items():
             if v is None:
                 env.pop(k, None)
-        for tool in ("tmux", "podman"):  # a real tmux or podman must never run from these tests
-            self.assertEqual(shutil.which(tool, path=env["PATH"]), os.path.join(self.fake, tool))
+        for prog in ("tmux", "podman"):  # a real tmux or podman must never run from these tests
+            self.assertEqual(shutil.which(prog, path=env["PATH"]), os.path.join(self.fake, prog))
         return env
 
     def start(self, **extra):
@@ -377,8 +377,8 @@ class WarnSteps(ServeCase):
                 if c.startswith(prefix):
                     return i
             self.fail("no call starting with %r in %r" % (prefix, calls))
-        order = [first("swarmbox-pubkey --ensure"), first("swarmbox-tool link --user"), first("swarmbox-bus serve"),
-                 first("swarmbox-tool prepare"), first("podman system service"), first("tmux new-session"), first("ttyd ")]
+        order = [first("swarmbox-pubkey --ensure"), first("swarmbox-addon link --user"), first("swarmbox-bus serve"),
+                 first("swarmbox-addon prepare"), first("podman system service"), first("tmux new-session"), first("ttyd ")]
         self.assertEqual(order, sorted(order), calls)
         new = [c for c in calls if c.startswith("tmux new-session")][0]
         self.assertIn("-d", new.split())
@@ -387,8 +387,8 @@ class WarnSteps(ServeCase):
     def test_with_installs_run_after_the_marker_in_order(self):
         p = self.run_ready(SWARMBOX_WITH="claude, opencode")
         self.assertTrue(wait_for(lambda: "install opencode saw-ready" in self.calls()), self.calls())
-        installs = [c for c in self.calls() if c.startswith("swarmbox-tool install ")]
-        self.assertEqual(installs, ["swarmbox-tool install claude", "swarmbox-tool install opencode"])
+        installs = [c for c in self.calls() if c.startswith("swarmbox-addon install ")]
+        self.assertEqual(installs, ["swarmbox-addon install claude", "swarmbox-addon install opencode"])
         self.assertIn("install claude saw-ready", self.calls())
         self.stop(p)
 
@@ -502,7 +502,7 @@ class BusStep(ServeCase):
         p = self.run_ready()
         calls = self.calls()
         idx = lambda pre: [i for i, c in enumerate(calls) if c.startswith(pre)][0]  # noqa: E731
-        self.assertLess(idx("swarmbox-bus serve"), idx("swarmbox-tool prepare"))
+        self.assertLess(idx("swarmbox-bus serve"), idx("swarmbox-addon prepare"))
         self.assertLess(idx("swarmbox-bus serve"), idx("tmux new-session"))
         self.stop(p)
 

@@ -1,9 +1,9 @@
 #!/bin/bash
-# Maintainer script: records SHA256_amd64 and SHA256_arm64 of a tool's pinned download into its tool.conf.
-# Run it by hand when the pinned VERSION of go or gcloud is bumped, then commit the changed tool.conf. It is NOT run by any test against
+# Maintainer script: records SHA256_amd64 and SHA256_arm64 of an addon's pinned download into its addon.conf.
+# Run it by hand when the pinned VERSION of go or gcloud is bumped, then commit the changed addon.conf. It is NOT run by any test against
 # the network (the tests use a fake curl) and it is not part of the image.
 #
-#   dev/record-checksums.sh go|gcloud [TOOL_CONF]     (default: container/tools/<tool>/tool.conf of this repository)
+#   dev/record-checksums.sh go|gcloud [ADDON_CONF]     (default: container/addons/<addon>/addon.conf of this repository)
 #
 #   go      copies the checksums of go.dev's JSON listing (https://go.dev/dl/?mode=json, then &include=all for an older release), after
 #           downloading both tarballs and checking that the computed checksum equals the listing's. A mismatch refuses.
@@ -15,13 +15,13 @@
 set -euo pipefail
 
 die() { echo "record-checksums: $*" >&2; exit 1; }
-usage() { echo "usage: dev/record-checksums.sh go|gcloud [TOOL_CONF]" >&2; exit 64; }
+usage() { echo "usage: dev/record-checksums.sh go|gcloud [ADDON_CONF]" >&2; exit 64; }
 
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then usage; fi
-tool=$1
-case "$tool" in go | gcloud) ;; *) usage ;; esac
+addon=$1
+case "$addon" in go | gcloud) ;; *) usage ;; esac
 root=$(cd "$(dirname "$0")/.." && pwd)
-conf=${2:-$root/container/tools/$tool/tool.conf}
+conf=${2:-$root/container/addons/$addon/addon.conf}
 [ -f "$conf" ] || { echo "record-checksums: no such file: $conf" >&2; exit 64; }
 
 version=$(sed -n 's/^VERSION=//p' "$conf" | head -n 1 | tr -d "\"'")
@@ -39,7 +39,7 @@ download() { # URL FILE
 sha_of() { sha256sum "$1" | cut -d' ' -f1; }
 
 declare -A sums
-case "$tool" in
+case "$addon" in
     go)
         listing_sha() { # JSON ARCH -> checksum of the linux tarball of $version
             jq -r --arg v "go$version" --arg a "$2" \
@@ -82,4 +82,4 @@ awk -v amd="${sums[amd64]}" -v arm="${sums[arm64]}" '
 ' "$conf" >"$work/new.conf"
 # A conf that did not end with a newline gets one from awk's print; the mode of the file is kept.
 cat "$work/new.conf" >"$work/final" && chmod --reference="$conf" "$work/final" && mv "$work/final" "$conf"
-echo "record-checksums: $tool $version: SHA256_amd64=${sums[amd64]} SHA256_arm64=${sums[arm64]}" >&2
+echo "record-checksums: $addon $version: SHA256_amd64=${sums[amd64]} SHA256_arm64=${sums[arm64]}" >&2

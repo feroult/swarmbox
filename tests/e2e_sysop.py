@@ -3,7 +3,7 @@
 
 The real swarmbox-bus (the broker, goals only, on a topic chosen here: TOPIC) under a small supervisor like the entrypoint's, the real swarmbox-tabs
 (how the sysop reads and types into the tabs; no daemon), the real sysop (installed and started by the real
-swarmbox-tool: install.sh, prepare.sh, the resident subscriber with --dock), the real `claude` as the brain (haiku) and a second real Claude Code in a
+swarmbox-addon: install.sh, prepare.sh, the resident subscriber with --dock), the real `claude` as the brain (haiku) and a second real Claude Code in a
 tab (started from a bash pane with the box's auto-approve flag). The tmux server is isolated (-L e2e under TMUX_TMPDIR), uses the box's tmux.conf and has
 a real client attached through a pty, so the active tab, the focus of the panel and the keys pressed are real. The panel never takes the focus by itself:
 the scenarios answer it with the tmux keys of the box (Ctrl+A then V / X / a), by a click on it, or by the approval gesture.
@@ -113,14 +113,14 @@ class Box:
             "PATH": self.bin + ":/usr/local/bin:/usr/bin:/bin", "HOME": self.home, "TERM": "xterm-256color", "LANG": "C.UTF-8",
             "SB_RUN_DIR": self.run_dir, "SB_STATE_DIR": self.state_dir, "SB_BUS_SOCKET": self.sock, "SB_TABS_SOCKET": SOCK,
             "SB_TABS_SESSION": "main", "TMUX_TMPDIR": self.tmux_tmp, "SWARMBOX_SYSOP_TOPIC": TOPIC,
-            "SWARMBOX_TEST_LIB": os.path.join(REPO, "container", "scripts"), "SWARMBOX_TEST_IMAGE_TOOLS": os.path.join(WORK, "imagetools"),
-            "SWARMBOX_TEST_USER_TOOLS": os.path.join(WORK, "usertools"), "SWARMBOX_TEST_HOST_DIR": os.path.join(WORK, "host"),
+            "SWARMBOX_TEST_LIB": os.path.join(REPO, "container", "scripts"), "SWARMBOX_TEST_IMAGE_ADDONS": os.path.join(WORK, "imageaddons"),
+            "SWARMBOX_TEST_USER_ADDONS": os.path.join(WORK, "useraddons"), "SWARMBOX_TEST_HOST_DIR": os.path.join(WORK, "host"),
             "SWARMBOX_TEST_IMAGE_SHIMS": os.path.join(WORK, "out", "shims"), "SWARMBOX_TEST_USER_SHIMS": os.path.join(WORK, "out", "ushims"),
-            "SWARMBOX_TEST_LOCK": os.path.join(WORK, "tool.lock"),
+            "SWARMBOX_TEST_LOCK": os.path.join(WORK, "addon.lock"),
         }
         if TOKEN:
             self.env["CLAUDE_CODE_OAUTH_TOKEN"] = TOKEN
-        self.prefix = os.path.join(self.home, ".local", "share", "swarmbox", "tools", "sysop")
+        self.prefix = os.path.join(self.home, ".local", "share", "swarmbox", "addons", "sysop")
 
     # ------------------------------------------------------------------------------------------------------------------ files
     def save(self, name, text):
@@ -182,14 +182,14 @@ class Box:
             json.dump({"hasCompletedOnboarding": True, "theme": "dark", "projects": projects}, f)
         with open(os.path.join(self.home, ".claude", "settings.json"), "w") as f:
             json.dump({"skipDangerousModePermissionPrompt": True}, f)
-        # the image tools (a copy of this tool, as the Dockerfile puts it) and the two commands of the image on PATH
-        shutil.rmtree(self.env["SWARMBOX_TEST_IMAGE_TOOLS"], ignore_errors=True)
-        os.makedirs(self.env["SWARMBOX_TEST_IMAGE_TOOLS"])
-        shutil.copytree(os.path.join(REPO, "container", "tools", "sysop"), os.path.join(self.env["SWARMBOX_TEST_IMAGE_TOOLS"], "sysop"),
+        # the image addons (a copy of this addon, as the Dockerfile puts it) and the two commands of the image on PATH
+        shutil.rmtree(self.env["SWARMBOX_TEST_IMAGE_ADDONS"], ignore_errors=True)
+        os.makedirs(self.env["SWARMBOX_TEST_IMAGE_ADDONS"])
+        shutil.copytree(os.path.join(REPO, "container", "addons", "sysop"), os.path.join(self.env["SWARMBOX_TEST_IMAGE_ADDONS"], "sysop"),
                         ignore=shutil.ignore_patterns("__pycache__"))
         for name, body in (("swarmbox-bus", 'exec /usr/bin/python3 -S "%s/container/scripts/swarmbox-bus.py" "$@"' % REPO),
                            ("swarmbox-tabs", 'exec /usr/bin/python3 -S "%s/container/scripts/swarmbox-tabs.py" "$@"' % REPO),
-                           ("swarmbox-tool", 'exec bash "%s/container/scripts/swarmbox-tool.sh" "$@"' % REPO)):
+                           ("swarmbox-addon", 'exec bash "%s/container/scripts/swarmbox-addon.sh" "$@"' % REPO)):
             p = os.path.join(self.bin, name)
             with open(p, "w") as f:
                 f.write("#!/bin/sh\n" + body + "\n")
@@ -201,9 +201,9 @@ class Box:
         if os.environ.get("E2E_TRACE"):
             threading.Thread(target=self.trace_panes, daemon=True).start()
         check("setup: the bus answers", wait_for(lambda: self.sh(["swarmbox-bus", "ping"]).returncode == 0, 15) is not None)
-        r = self.sh(["swarmbox-tool", "install", "sysop"], timeout=90)
-        check("setup: swarmbox-tool install sysop (install.sh, self-test, prepare.sh)", r.returncode == 0, r.stderr.strip().replace("\n", " | ")[-300:])
-        # the box has a shim `swarmbox-sysop` on its PATH (swarmbox-tool link); the tmux keys call it by name, so here it is a launcher of the installed copy
+        r = self.sh(["swarmbox-addon", "install", "sysop"], timeout=90)
+        check("setup: swarmbox-addon install sysop (install.sh, self-test, prepare.sh)", r.returncode == 0, r.stderr.strip().replace("\n", " | ")[-300:])
+        # the box has a shim `swarmbox-sysop` on its PATH (swarmbox-addon link); the tmux keys call it by name, so here it is a launcher of the installed copy
         with open(os.path.join(self.bin, "swarmbox-sysop"), "w") as f:
             f.write('#!/bin/sh\nexec "%s" "$@"\n' % self.sysop_bin())
         os.chmod(os.path.join(self.bin, "swarmbox-sysop"), 0o755)
@@ -313,7 +313,7 @@ class Box:
         return e
 
     def start_service(self, drop=(), **settings):
-        """(re)start the service the way a box start does: swarmbox-tool prepare, which runs prepare.sh (setsid nohup swarmbox-sysop serve --log --dock).
+        """(re)start the service the way a box start does: swarmbox-addon prepare, which runs prepare.sh (setsid nohup swarmbox-sysop serve --log --dock).
         settings are SWARMBOX_SYSOP_* values; drop lists environment variables the service must not have."""
         self.settings = dict({"model": self.model, "countdown": 4, "approval_timeout": 60}, **settings)
         self.stop_service()
@@ -324,7 +324,7 @@ class Box:
         self.tmux(*(["set-environment", "-g", "SWARMBOX_SYSOP_PANEL_MODE", str(mode)] if mode else ["set-environment", "-gu", "SWARMBOX_SYSOP_PANEL_MODE"]))
         for k in drop:
             env.pop(k, None)
-        r = subprocess.run(["swarmbox-tool", "prepare"], env=env, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+        r = subprocess.run(["swarmbox-addon", "prepare"], env=env, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
         return r
 
     def wait_service(self, seconds=20):

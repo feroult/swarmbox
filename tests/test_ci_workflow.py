@@ -69,13 +69,13 @@ class Ci(unittest.TestCase):
         self.assertIn("tests/test_install.py", mac)
 
     def test_slow_jobs_run_only_on_schedule_or_by_hand(self):
-        for name in ("browser", "real-tools"):
+        for name in ("browser", "real-addons"):
             self.assertIn("github.event_name == 'schedule'", job(name), name)
 
-    def test_the_real_tools_job_installs_voice_for_real_and_rejects_a_skip(self):
-        body = job("real-tools")
+    def test_the_real_addons_job_installs_voice_for_real_and_rejects_a_skip(self):
+        body = job("real-addons")
         self.assertIn('SWARMBOX_REAL_VOICE_INSTALL: "1"', body)
-        self.assertIn("python3 tests/test_tool_voice.py", body)
+        self.assertIn("python3 tests/test_addon_voice.py", body)
         self.assertIn("grep -q 'skipped'", body)
 
     def test_the_voice_page_browser_test_is_in_the_browser_job_without_a_switch(self):

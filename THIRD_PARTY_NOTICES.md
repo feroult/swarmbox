@@ -11,12 +11,12 @@ This file has not been reviewed by a lawyer.
 
 ## What the image ships, and what it does not
 
-The default image is slim: `ARG WITH_TOOLS=""`, so **no agent and no tool is baked in**. What the image
+The default image is slim: `ARG WITH_ADDONS=""`, so **no agent and no addon is baked in**. What the image
 contains: Debian packages (the base `node:24-trixie-slim`, which is Debian 13, plus the packages of the `Dockerfile`), Node.js and
 Yarn from the base image, `chrome-devtools-mcp` (npm, pinned), `uv`, `ttyd` and `starship` (pinned release binaries), the
 Python virtual environment `/opt/flow` (pip and setuptools), and SwarmBox's own scripts. The licenses of all of them are
 below. Everything under "Not shipped in the image" is downloaded on the user's machine, on first use, by the user's own box;
-SwarmBox does not distribute those files. A build with `WITH_TOOLS=<names>` bakes the named tools in; an image built
+SwarmBox does not distribute those files. A build with `WITH_ADDONS=<names>` bakes the named addons in; an image built
 like that and published would redistribute them, and then their terms below apply (Claude Code and Google Cloud CLI first of all).
 
 ## Full package list
@@ -211,26 +211,26 @@ in the image, where they were installed.
 - [verified: LICENSE of the master branch, "Apache License Version 2.0, January 2004"; 2026-11-08]
 - [owner-check: the licenses of the layers inside Cloudflare's image were not read here; Cloudflare publishes the image and SwarmBox does not redistribute it]
 
-## Not shipped in the image: tools installed on first use
+## Not shipped in the image: addons installed on first use
 
-These tools have a manifest under `container/tools/` and are installed by `swarmbox-tool` into the user's own tools volume
-the first time they are used (or at build time only when someone passes `WITH_TOOLS`). With the default build none of them is in
+These addons have a manifest under `container/addons/` and are installed by `swarmbox-addon` into the user's own addons volume
+the first time they are used (or at build time only when someone passes `WITH_ADDONS`). With the default build none of them is in
 the image, so SwarmBox does not redistribute them: the user's machine downloads them from the vendor. The license
 statements below are for people who bake them in or want to know the terms.
 
-### Claude Code (`@anthropic-ai/claude-code`, tool `claude`)
+### Claude Code (`@anthropic-ai/claude-code`, addon `claude`)
 
 - License: proprietary. Use is subject to Anthropic's legal agreements (https://code.claude.com/docs/en/legal-and-compliance).
   The npm "license" field reads `SEE LICENSE IN README.md` and the package's `LICENSE.md` reads "(c) Anthropic PBC. All rights reserved".
 - Source: not published as open source; the vendor's installer and package registry are the only source.
 - Not redistributed by SwarmBox: the manifest installs it on first use with the vendor's native installer, into the user's
-  tools volume. It must not be baked into a published image (`WITH_TOOLS=claude` is for private images; a test
+  addons volume. It must not be baked into a published image (`WITH_ADDONS=claude` is for private images; a test
   documents this in the manifest list).
 - [verified: LICENSE.md of the installed package; `npm view @anthropic-ai/claude-code license` on 2026-11-08 returns "SEE LICENSE IN README.md"; 2026-11-08]
 
-### Google Cloud CLI (`google-cloud-cli`, tool `gcloud`)
+### Google Cloud CLI (`google-cloud-cli`, addon `gcloud`)
 
-- Version: 592.0.0 (pinned in `container/tools/gcloud/tool.conf`; SHA-256 per architecture recorded by `dev/record-checksums.sh`)
+- Version: 592.0.0 (pinned in `container/addons/gcloud/addon.conf`; SHA-256 per architecture recorded by `dev/record-checksums.sh`)
 - License: Apache-2.0 for the CLI and its source "unless otherwise specified by an alternate license file"; use with Google Cloud
   products is additionally governed by the terms of service of those products. Some bundled components carry their own license files.
 - Source: https://github.com/twistedpair/google-cloud-sdk (a mirror) and https://cloud.google.com/sdk/docs/downloads-versioned-archives; the SDK's `LICENSE` is in the archive.
@@ -238,40 +238,40 @@ statements below are for people who bake them in or want to know the terms.
 - [verified: google-cloud-sdk/LICENSE inside google-cloud-cli-592.0.0-linux-x86_64.tar.gz, "licensed under Apache License v. 2.0 (the License), unless otherwise specified by an alternate license file"; 2026-11-08]
 - [owner-check: the license files of the bundled components (gsutil, bq, the Python and third-party directories of the archive) were not individually read; only the top-level LICENSE was extracted]
 
-### Gemini CLI (`@google/gemini-cli`, tool `gemini`)
+### Gemini CLI (`@google/gemini-cli`, addon `gemini`)
 
 - License: Apache-2.0
 - Source: https://github.com/google-gemini/gemini-cli
 - [verified: "license" field of the installed package.json and LICENSE on the main branch; `npm view` shows Apache-2.0 and the repository URL (version 0.67.0); 2026-11-08]
 
-### clasp (`@google/clasp`, tool `clasp`)
+### clasp (`@google/clasp`, addon `clasp`)
 
 - License: Apache-2.0
 - Source: https://github.com/google/clasp
 - [verified: "license" field of the installed package.json and LICENSE on the master branch; `npm view` shows Apache-2.0 (version 3.4.1); 2026-11-08]
 
-### OpenCode (`@opencode/cli`, tool `opencode`)
+### OpenCode (`@opencode/cli`, addon `opencode`)
 
 - License: MIT
 - Source: https://github.com/anomalyco/opencode (the repository field of the npm package `@opencode/cli`; https://github.com/sst/opencode names the same project and carries the same LICENSE)
 - [verified: "license" and "repository" fields of the npm registry entry (`npm view @opencode/cli`, version 2.2.6) and LICENSE of the repository's dev branch, "MIT License, Copyright (c) 2025 opencode"; 2026-11-08]
-- The other package, `opencode-ai` 1.x, is also MIT by `npm view`; which of the two the tool installs is an open question (docs/release-checklist.md), not a license one.
+- The other package, `opencode-ai` 1.x, is also MIT by `npm view`; which of the two the addon installs is an open question (docs/release-checklist.md), not a license one.
 
-### Poetry (tool `poetry`)
+### Poetry (addon `poetry`)
 
 - Version: latest at install time (`install.python-poetry.org`)
 - License: MIT
 - Source: https://github.com/python-poetry/poetry
 - [verified: LICENSE on the main branch, "Copyright (c) 2018-present Sebastien Eustace"; 2026-11-08]
 
-### Go (tool `go`)
+### Go (addon `go`)
 
 - Version: latest at install time (`go.dev/dl`)
 - License: BSD-3-Clause
 - Source: https://github.com/golang/go
 - [verified: LICENSE of the installed /usr/local/go, "Copyright 2009 The Go Authors", BSD-style; 2026-11-08]
 
-### Voice (whisper.cpp and the Whisper models, tool `voice`)
+### Voice (whisper.cpp and the Whisper models, addon `voice`)
 
 - Version: whisper.cpp 1.9.5, built from the source tarball at install time (CPU only, with a cmake wheel from PyPI); one multilingual `ggml-<model>.bin` file (`small` by default) from a pinned revision of the model repository
 - License: MIT (whisper.cpp), MIT (the OpenAI Whisper weights)
@@ -279,16 +279,16 @@ statements below are for people who bake them in or want to know the terms.
 - Models: https://huggingface.co/ggerganov/whisper.cpp (converted from https://github.com/openai/whisper)
 - [verified: LICENSE of whisper.cpp v1.9.5, "Copyright (c) 2023-2026 The ggml authors"; LICENSE of openai/whisper, "Copyright (c) 2022 OpenAI"; license:mit tag of the model repository; 2026-11-14]
 
-### Sysop (SwarmBox's own code, tool `sysop`)
+### Sysop (SwarmBox's own code, addon `sysop`)
 
-- Version: 1.0.0, the Python library of `container/tools/sysop/`, copied into the tools volume at install; nothing is downloaded and nothing third-party is imported (the library uses only the Python standard library)
+- Version: 1.0.0, the Python library of `container/addons/sysop/`, copied into the addons volume at install; nothing is downloaded and nothing third-party is imported (the library uses only the Python standard library)
 - License: Apache-2.0 (the license of SwarmBox itself, see `LICENSE`)
-- Source: https://github.com/feroult/swarmbox/tree/main/container/tools/sysop
-- The brain that the sysop runs (`claude -p` by default) is a separate tool with its own section above; the sysop only starts it.
-- [verified: LICENSE of this repository, Apache License 2.0; `tests/test_sysop_tool.py` checks that the library imports only the standard library; 2026-11-15]
+- Source: https://github.com/feroult/swarmbox/tree/main/container/addons/sysop
+- The brain that the sysop runs (`claude -p` by default) is a separate addon with its own section above; the sysop only starts it.
+- [verified: LICENSE of this repository, Apache License 2.0; `tests/test_sysop_addon.py` checks that the library imports only the standard library; 2026-11-15]
 
 ## Run-time downloads
 
-The 2.0 image downloads nothing at run time except what the user asks for: the tools above on first use, and the connector
+The 2.0 image downloads nothing at run time except what the user asks for: the addons above on first use, and the connector
 image when remote access is on. The v0.1.0 image fetched the Chrome DevTools MCP server with `npx` at run time; 2.0 installs
 it at build (above). The MCP servers an agent starts for its own use are the user's choice.

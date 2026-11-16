@@ -246,7 +246,7 @@ def restore_signals():
 
 
 def make_archive(path, version="2.0.0", helper=True, executable=True, extra=None):
-    """A helper archive like the image's: swarmbox-host (a fake that records its calls), VERSION, DEFAULTS, cloudflare-setup.py, tool-ports."""
+    """A helper archive like the image's: swarmbox-host (a fake that records its calls), VERSION, DEFAULTS, cloudflare-setup.py, addon-ports."""
     with tarfile.open(path, "w") as tf:
         def add(name, data, mode):
             ti = tarfile.TarInfo("./" + name)
@@ -260,7 +260,7 @@ def make_archive(path, version="2.0.0", helper=True, executable=True, extra=None
         with open(os.path.join(ROOT, "container", "host", "DEFAULTS"), "rb") as f:
             add("DEFAULTS", f.read(), 0o644)
         add("cloudflare-setup.py", b"# cf\n", 0o644)
-        add("tool-ports", b"", 0o644)
+        add("addon-ports", b"", 0o644)
         for name, data in (extra or {}).items():
             add(name, data, 0o644)
 

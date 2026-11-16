@@ -1,6 +1,6 @@
 // Scripts of the host page of the web terminal (injected into ttyd's page by build-index.sh at image build). Two independent parts:
 //   1. the clipboard bridge (this comment, down to the line "the controls strip"), and
-//   2. the controls strip: a slim bar under the terminal with key buttons and a place where plugins add controls (window.swarmboxStrip).
+//   2. the controls strip: a slim bar under the terminal with key buttons and a place where addons add controls (window.swarmboxStrip).
 //
 // Part 1, the clipboard bridge.
 //
@@ -98,11 +98,11 @@
 // A slim bar BELOW the terminal (never over it: the terminal container ends where the strip begins, xterm is refitted, so tmux sees the
 // smaller window and nothing is covered). It carries
 //   - KEY BUTTONS that type keys into the terminal (a phone keyboard has no Esc, Tab, Ctrl+C or arrows), from web-terminal.conf (stripKeys);
-//   - a place for the controls of plugins: window.swarmboxStrip.add({id, title, label, icon, className, order}) returns the <button> (the
-//     plugin attaches its own handlers to it); window.swarmboxStrip.note(text, tone) shows a short sentence in the strip (tone: '', 'ok',
-//     'warn' or 'error'; '' clears it), window.swarmboxStrip.remove(id) takes a control away. The host knows no plugin by name.
+//   - a place for the controls of addons: window.swarmboxStrip.add({id, title, label, icon, className, order}) returns the <button> (the
+//     addon attaches its own handlers to it); window.swarmboxStrip.note(text, tone) shows a short sentence in the strip (tone: '', 'ok',
+//     'warn' or 'error'; '' clears it), window.swarmboxStrip.remove(id) takes a control away. The host knows no addon by name.
 // It is shown when it has something to show: key buttons on a coarse pointer (touch), or when the user listed buttons or forced it on
-// (strip=on); a plugin control on any pointer; never with strip=off.
+// (strip=on); an addon control on any pointer; never with strip=off.
 //
 // The list of keys is "label=keys" entries separated by commas; keys are tmux key names separated by spaces, sent in order:
 //   Escape Tab BTab Enter Space BSpace Up Down Left Right Home End PageUp PageDown IC DC F1..F12 C-x (Ctrl) M-x (Alt) C-M-x, a single
@@ -265,10 +265,10 @@
     if (text) { noteEl.appendChild(el('span')).textContent = text; }
     noteEl.title = text;
     noteEl.hidden = !text;
-    // a sentence a plugin forgot never covers the keys for good: a tone lasts 12 s, a plain state 130 s (a little more than a recording takes to send)
+    // a sentence an addon forgot never covers the keys for good: a tone lasts 12 s, a plain state 130 s (a little more than a recording takes to send)
     if (text) noteTimer = setTimeout(function () { note(''); }, tone === 'ok' || tone === 'warn' || tone === 'error' ? 12000 : 130000);
     if (tone === 'ok' || tone === 'warn' || tone === 'error') noteEl.setAttribute('data-tone', tone); else noteEl.removeAttribute('data-tone');
-    // the sentence covers the key buttons, not the plugin controls: it ends where they begin
+    // the sentence covers the key buttons, not the addon controls: it ends where they begin
     strip.style.setProperty('--sb-slot-w', slot.children.length ? Math.max(0, Math.round(strip.getBoundingClientRect().right - slot.getBoundingClientRect().left)) + 'px' : '0px');
   }
 
@@ -277,7 +277,7 @@
     if (!strip) return null;
     var id = typeof spec.id === 'string' ? spec.id : 'swarmbox-control-' + (++count);
     if (byId[id]) return byId[id];
-    var b = el('button', 'sb-btn sb-plugin' + (spec.className ? ' ' + spec.className : ''));
+    var b = el('button', 'sb-btn sb-addon' + (spec.className ? ' ' + spec.className : ''));
     b.type = 'button';
     b.id = id;
     if (spec.title) { b.title = String(spec.title); b.setAttribute('aria-label', String(spec.title)); }

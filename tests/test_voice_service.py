@@ -1,4 +1,4 @@
-"""Voice tool, the service: audio -> text (Whisper) -> a goal on the bus. Voice is an input: nothing is planned, shown or executed here.
+"""Voice addon, the service: audio -> text (Whisper) -> a goal on the bus. Voice is an input: nothing is planned, shown or executed here.
 
 The recognizer is a fake whisper-cli (tests/fixtures/voice/whisper-fake: no model, no network, no microphone). The bus is the REAL broker
 (swarmbox-bus.py in a thread, tests/bus_support.py) for the goals that arrive and for the answers a missing

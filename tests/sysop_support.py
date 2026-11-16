@@ -12,7 +12,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT  # noqa: E402
 
-SYSOP = os.path.join(ROOT, "container", "tools", "sysop")
+SYSOP = os.path.join(ROOT, "container", "addons", "sysop")
 LIB = os.path.join(SYSOP, "lib")
 sys.path.insert(0, LIB)
 FIXTURES = os.path.join(ROOT, "tests", "fixtures", "sysop")

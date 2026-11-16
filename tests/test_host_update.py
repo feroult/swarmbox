@@ -80,7 +80,7 @@ class UpdateBase(up_tests.Base):
     def install_old_helper(self, version):
         os.makedirs(self.host_dir, exist_ok=True)
         for n, c in (("VERSION", version + "\n"), ("DEFAULTS", open(os.path.join(ROOT, "container", "host", "DEFAULTS")).read()),
-                     ("tool-ports", "")):
+                     ("addon-ports", "")):
             p = os.path.join(self.host_dir, n)
             with open(p, "w") as f:
                 f.write(c)
@@ -141,7 +141,7 @@ class PlainUpdateTest(UpdateBase):
         self.assertTrue(os.access(self.helper, os.X_OK))
         self.assertEqual(self.bin_names(), ["swarmbox"])
         self.assertEqual(sorted(set(os.listdir(self.host_dir)) - {"calls"}),   # calls: the fake script records its `version` call
-                         ["DEFAULTS", "VERSION", "cloudflare-setup.py", "tool-ports"])
+                         ["DEFAULTS", "VERSION", "addon-ports", "cloudflare-setup.py"])
 
     def test_the_series_comes_from_the_current_image_tag(self):
         for tag, series in (("2.0.0", "2.0"), ("2.1", "2.1"), ("10.12.3", "10.12"), ("3.4.5-rc1", "3.4")):

@@ -1,8 +1,8 @@
 # The sysop
 
-The `sysop` tool operates the box for you from a goal in plain words: "run the tests in the second tab", "ask Claude in the active tab to fix the failing test". It looks at your tmux tabs, types into them, looks again and tells you what happened.
+The `sysop` addon operates the box for you from a goal in plain words: "run the tests in the second tab", "ask Claude in the active tab to fix the failing test". It looks at your tmux tabs, types into them, looks again and tells you what happened.
 It uses a **brain** (by default the headless Claude Code CLI) to decide what to do, but the brain has no hands of its own: every action goes through tmux, where you see it, and the host rates and may hold each one before it is typed.
-The design and its reasons are in [plugins-design.md](plugins-design.md). This page says what is there now and how to use it.
+The design and its reasons are in [addons-design.md](addons-design.md). This page says what is there now and how to use it.
 
 ## The path
 
@@ -11,7 +11,7 @@ goal (typed, spoken, or from a program) -> bus topic (sysop.topic, default `goal
 brain -> tool calls (MCP) -> host policy -> swarmbox-tabs -> tmux tab         the panel shows each step
 ```
 
-1. A goal is a line of text published on the topic of `sysop.topic` (default `goal`) of the bus ([design.md](design.md), section 6, "The bus"). Today that is `swarmbox-sysop goal "text"` in the box, the key `g`, the panel, or any program that runs `swarmbox bus pub goal` (with the topic of the setting). The `voice` tool publishes where `voice.topic` says (`source` `voice`): when that is the same name as `sysop.topic`, what you say into the microphone of the web terminal arrives as a goal. The two tools know nothing of each other; the shared name is the only connection. The sysop subscribes as a member of the group `sysop.group` (default `sysop`): two sysops in one group handle a goal once between them, one each in turn. Each goal carries a `source`, a label such as `panel`, `voice` or `cli`.
+1. A goal is a line of text published on the topic of `sysop.topic` (default `goal`) of the bus ([design.md](design.md), section 6, "The bus"). Today that is `swarmbox-sysop goal "text"` in the box, the key `g`, the panel, or any program that runs `swarmbox bus pub goal` (with the topic of the setting). The `voice` addon publishes where `voice.topic` says (`source` `voice`): when that is the same name as `sysop.topic`, what you say into the microphone of the web terminal arrives as a goal. The two addons know nothing of each other; the shared name is the only connection. The sysop subscribes as a member of the group `sysop.group` (default `sysop`): two sysops in one group handle a goal once between them, one each in turn. Each goal carries a `source`, a label such as `panel`, `voice` or `cli`.
 2. The resident `swarmbox-sysop serve` takes one goal at a time (up to five wait; the next is dropped and audited). It starts the brain, which gets the goal on its standard input and a list of tools.
 3. The brain looks first (`list_tabs`, `read_tab`), then acts (`run`, `input`), checks the screen that comes back, and ends with `done`. The tools are served over MCP by `swarmbox-sysop mcp`, which acts on the box only through `swarmbox-tabs` (the tabs of the box: list, screen, send). The bus is for goals only, and the brain never sees it.
 4. Before an action is typed, the host rates it and decides what must happen (autonomy levels, below). The panel, a pane of the shared tmux session that is up in every window (`sysop.panel`, below), shows the goal, the log, the countdown and the approval prompt, and an idle screen when there is no goal.
@@ -75,7 +75,7 @@ A line that cannot be written (the disk is full) does not stop the service: it g
 ## Staying up
 
 `prepare.sh` starts the service under a small **watcher** (`swarmbox-sysop serve --log --dock --watch`). If the service dies (a kill, the kernel's out-of-memory killer, a crash) the watcher starts it again after 1, 2, 4 ... 30 seconds, and the new service marks the goals that were in flight as `failed` ("lost": goals in flight are not kept, and nobody is told). A stop on purpose (SIGTERM to the service) ends the watcher too, and so does a refused setting (the reason is in `serve.log`).
-Five abnormal exits within a minute make the watcher give up: it writes `crashloop` in the run folder, `swarmbox-sysop status` and the panel say that the service keeps crashing, and `swarmbox-tool prepare` (what the box runs at its start; run it by hand to try again) wakes the watcher and starts the service now. The bus and the web terminal have their own supervisors in the entrypoint; the sysop is a tool, so its supervisor is its own and the entrypoint knows nothing of it.
+Five abnormal exits within a minute make the watcher give up: it writes `crashloop` in the run folder, `swarmbox-sysop status` and the panel say that the service keeps crashing, and `swarmbox-addon prepare` (what the box runs at its start; run it by hand to try again) wakes the watcher and starts the service now. The bus and the web terminal have their own supervisors in the entrypoint; the sysop is an addon, so its supervisor is its own and the entrypoint knows nothing of it.
 While the bus is away (it is restarted within seconds; after five crashes in a minute it waits for `swarmbox-bus restart`) the service retries every 1 to 5 seconds, so it listens again within five seconds of the bus coming back. A goal published in that gap is not delivered: the publisher is told (`swarmbox-sysop goal` exits 4 or 3, the microphone shows "The bus of the box is not answering" or "Nobody is listening").
 
 ## The brain
@@ -102,8 +102,8 @@ swarmbox reset
 
 Some brains need more than a flag to find an MCP file (Gemini reads `mcpServers` from its own settings file), so such a template may need a small wrapper script of yours. The command you name must run without interaction, speak MCP over stdio, and exist in the box.
 
-**Why a template and not a plugin.** A brain is a command line, not code that needs to live inside SwarmBox: a plugin would add an interface to maintain and a second place to decide what is allowed. With a template there is one rule: the brain gets tools, and the host policy sits in front of them whatever the brain is.
-The `claude` preset is a piece of text, so the sysop does not depend on the `claude` tool being installed through SwarmBox; it only needs a `claude` command and a login.
+**Why a template and not an addon.** A brain is a command line, not code that needs to live inside SwarmBox: an addon would add an interface to maintain and a second place to decide what is allowed. With a template there is one rule: the brain gets tools, and the host policy sits in front of them whatever the brain is.
+The `claude` preset is a piece of text, so the sysop does not depend on the `claude` addon being installed through SwarmBox; it only needs a `claude` command and a login.
 
 ## Security
 
@@ -116,10 +116,10 @@ The `claude` preset is a piece of text, so the sysop does not depend on the `cla
 
 ## Install and try
 
-The default brain is Claude Code, so first have the `claude` tool (`--with claude` when you install SwarmBox, or `swarmbox tool install claude` later) and a login (run `claude` once in a tab, or `swarmbox env add CLAUDE_CODE_OAUTH_TOKEN`).
+The default brain is Claude Code, so first have the `claude` addon (`--with claude` when you install SwarmBox, or `swarmbox addon install claude` later) and a login (run `claude` once in a tab, or `swarmbox env add CLAUDE_CODE_OAUTH_TOKEN`).
 
 ```bash
-swarmbox tool install sysop              # code of this repository, nothing is downloaded; the sysop starts at once and with every start of the box (the first `swarmbox-sysop` you type installs it too)
+swarmbox addon install sysop              # code of this repository, nothing is downloaded; the sysop starts at once and with every start of the box (the first `swarmbox-sysop` you type installs it too)
 swarmbox                                 # a tab of the box; open a second one (Alt+N in the browser, or `swarmbox` in another terminal tab), then in the first:
 swarmbox-sysop goal --wait "run echo hello in the second tab"
 ```
@@ -142,7 +142,7 @@ The brain needs a login: the `claude` preset uses the one already in the box.
 | `sysop.group` | `sysop` | the group the sysop subscribes with (same charset); members of a group share the goals, one each |
 | `sysop.panel` | `always` | when the panel is in tmux: `always` (in every window from the start of the box), `auto` (while a goal runs) or `off` (the sysop never opens it); see "The panel" |
 
-A setting that equals its default is not passed to the box. Inside the box the sysop reads `SWARMBOX_SYSOP_BRAIN`, `_MODEL`, `_AUTONOMY`, `_COUNTDOWN`, `_MAX_STEPS`, `_MAX_SECONDS`, `_TOPIC`, `_GROUP` and `_PANEL_MODE` (not `SWARMBOX_SYSOP_PANEL`: that name, set to `1`, marks the start command of a panel pane, which `swarmbox-tabs` hides). Changing a setting needs `swarmbox reset`; after `swarmbox update` the tool refreshes its code at the next start.
+A setting that equals its default is not passed to the box. Inside the box the sysop reads `SWARMBOX_SYSOP_BRAIN`, `_MODEL`, `_AUTONOMY`, `_COUNTDOWN`, `_MAX_STEPS`, `_MAX_SECONDS`, `_TOPIC`, `_GROUP` and `_PANEL_MODE` (not `SWARMBOX_SYSOP_PANEL`: that name, set to `1`, marks the start command of a panel pane, which `swarmbox-tabs` hides). Changing a setting needs `swarmbox reset`; after `swarmbox update` the addon refreshes its code at the next start.
 
 ## The panel
 
@@ -167,7 +167,7 @@ Change it with `swarmbox config set sysop.panel auto` and `swarmbox reset`. The 
 
 When a window changes shape the panel of that window (only that one) moves to the other layout and keeps running. Nothing it does takes the focus. A browser window that is being dragged makes dozens of resize events a second; the runs of the hook are coalesced (each leaves a mark and the one that holds the lock serves every mark), and it imports only the dock, so the box never has more than a few of them at once (10 Python processes and 114 MiB at the very peak of a burst of 200 resizes in the soak test, against 105 processes before). A panel that meets a problem (a file that went away, a full disk) says "The panel hit a problem and goes on (...)" in one line instead of printing a traceback in your tab.
 
-**The idle screen** is one screen: the title and the state (`IDLE`; `DONE`, `STOPPED` or `FAILED` for as long as the last goal is the one shown), "no goal. Type one: Ctrl+A g", the keys that work from any tab without focusing the panel (`Ctrl+A` then `g` goal, `V` veto, `X` stop, `a` approve, `S` hide), the autonomy level and the brain in use, the bus topic it listens on, and the result of the **last goal** (`done`, `stopped` or `failed`, with its text, how long ago it ended and what the sysop said), also after a restart of the box. In a short pane the lowest lines go first (the topic, then the brain, then the keys); the title, "no goal" and the key line at the bottom always stay. It does not name the tool that hears you: any program can publish a goal on the topic.
+**The idle screen** is one screen: the title and the state (`IDLE`; `DONE`, `STOPPED` or `FAILED` for as long as the last goal is the one shown), "no goal. Type one: Ctrl+A g", the keys that work from any tab without focusing the panel (`Ctrl+A` then `g` goal, `V` veto, `X` stop, `a` approve, `S` hide), the autonomy level and the brain in use, the bus topic it listens on, and the result of the **last goal** (`done`, `stopped` or `failed`, with its text, how long ago it ended and what the sysop said), also after a restart of the box. In a short pane the lowest lines go first (the topic, then the brain, then the keys); the title, "no goal" and the key line at the bottom always stay. It does not name the addon that hears you: any program can publish a goal on the topic.
 An idle panel does almost nothing: it looks once a second (a stat of two files and a lock probe) and reads the files only when one changed, so it uses well under 1 % of a core; the service in the mode `always` looks at tmux every 4 seconds and the hooks do the quick part.
 
 **Windows and panes.** A window never stays with only the panel in it, because that is not a tab: when the last pane of yours in a window is gone (`tmux kill-pane`, or the program ends), the window is closed with its panel. If it was the last window the session ends, exactly as it would without a panel. Killing the panel pane itself (`kill-pane` on it) is not a choice to hide it, so in the mode `always` it comes back at once; hide it with `Ctrl+A S` or `q`. The names of the tabs follow the program of your pane as usual in the mode `always` (the panel does not take the focus; after a click on it the name reads `python3` until you click back). In the modes `auto` and `off` a window with a panel keeps the name it had.
@@ -190,10 +190,10 @@ What you see, why, and what to do. Everything here was met in the soak and end-t
 
 | What you see | Why | What to do |
 |---|---|---|
-| `swarmbox-sysop: no_subscriber (is the sysop service running? swarmbox-sysop status)` (exit 3), or "Nobody is listening." on the microphone | nobody listens on the goal topic: the tool is not installed, the service is down (for a second or two after a crash), or the topics differ (`voice.topic` is not `sysop.topic`) | `swarmbox-sysop status`; `swarmbox bus topics` shows who listens on which topic; if it is not running, `swarmbox-tool prepare` starts it; if the command is missing, `swarmbox tool install sysop` |
-| `sysop: not running (the box starts it at boot and again after a crash; by hand: swarmbox-tool prepare)` | the service is down | `swarmbox-tool prepare`. When the line says it keeps crashing (five abnormal exits in a minute), the cause is in `serve.log` of the sysop in the state folder; `swarmbox-sysop --self-test` checks the install |
+| `swarmbox-sysop: no_subscriber (is the sysop service running? swarmbox-sysop status)` (exit 3), or "Nobody is listening." on the microphone | nobody listens on the goal topic: the addon is not installed, the service is down (for a second or two after a crash), or the topics differ (`voice.topic` is not `sysop.topic`) | `swarmbox-sysop status`; `swarmbox bus topics` shows who listens on which topic; if it is not running, `swarmbox-addon prepare` starts it; if the command is missing, `swarmbox addon install sysop` |
+| `sysop: not running (the box starts it at boot and again after a crash; by hand: swarmbox-addon prepare)` | the service is down | `swarmbox-addon prepare`. When the line says it keeps crashing (five abnormal exits in a minute), the cause is in `serve.log` of the sysop in the state folder; `swarmbox-sysop --self-test` checks the install |
 | `swarmbox-sysop: ...` with exit 4, or "The bus of the box is not answering" on the microphone | the bus is away (it is restarted within seconds; after five crashes in a minute it waits) | `swarmbox-bus ping`; `swarmbox-bus restart` |
-| `failed: the brain program 'claude' was not found: install it (swarmbox tool install claude) or set SWARMBOX_SYSOP_BRAIN` | the brain command is not in the box | `swarmbox tool install claude`, or point `sysop.brain` to a command that exists |
+| `failed: the brain program 'claude' was not found: install it (swarmbox addon install claude) or set SWARMBOX_SYSOP_BRAIN` | the brain command is not in the box | `swarmbox addon install claude`, or point `sysop.brain` to a command that exists |
 | `failed: the brain is not logged in (claude). Log in once in a tab (`claude`, then /login) or add CLAUDE_CODE_OAUTH_TOKEN with `swarmbox env add`` | the brain has no login (a login in `~/.claude` is enough and survives a reset) | run `claude` in a tab and log in, or `swarmbox env add CLAUDE_CODE_OAUTH_TOKEN` and `swarmbox reset`; then send the goal again |
 | a tool answers "tmux is not available: the goal cannot act on the box" (`no_tmux`) | no `tmux` on the PATH of the service | this is a box without tmux; the image has it, so check what changed the PATH (`swarmbox-tabs list` in a tab shows the error) |
 | a tool answers "there is no tmux session: the goal cannot act on the box" (`no_session`) | the tmux session `main` is gone (its server was killed) | open a tab (`swarmbox attach`, or the web terminal): it starts the session again, and the sysop goes on with the next goal |

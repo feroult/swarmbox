@@ -22,7 +22,7 @@ EXPECTED = {
     "SB_CONFIG_DIR": ("config", ".config", "swarmbox"),
     "SB_DATA_DIR": ("data", ".local/share", "swarmbox"),
     "SB_STATE_DIR": ("state", ".local/state", "swarmbox"),
-    "SB_TOOLS_DIR": ("data", ".local/share", "swarmbox/tools"),
+    "SB_ADDONS_DIR": ("data", ".local/share", "swarmbox/addons"),
     "SB_SHIMS_DIR": ("data", ".local/share", "swarmbox/shims"),
     "SB_LOG_DIR": ("state", ".local/state", "swarmbox/logs"),
     "SB_HEALTH_FILE": ("state", ".local/state", "swarmbox/health"),

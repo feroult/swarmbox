@@ -27,8 +27,8 @@ ROUTING = [
     (["attach", "--plain"], ["attach", "--plain"]),
     (["attach", "make", "all"], ["attach", "make", "all"]),
     (["pubkey"], ["pubkey"]),                       # forwarded as they are
-    (["tool", "list"], ["tool", "list"]),
-    (["tool"], ["tool"]),
+    (["addon", "list"], ["addon", "list"]),
+    (["addon"], ["addon"]),
     (["bus", "pub", "goal", "a b"], ["bus", "pub", "goal", "a b"]),
     (["bus"], ["bus"]),
     (["tabs", "send", "work", "ls"], ["tabs", "send", "work", "ls"]),
@@ -166,7 +166,7 @@ class TerminalTest(Base):
                     self.assertEqual(call[i - 1], "-e")
                     call = call[:i - 1] + call[i + 1:]
                 else:
-                    self.assertEqual(keys, [], "pubkey and tool do not need it")
+                    self.assertEqual(keys, [], "pubkey and addon do not need it")
                 self.assertEqual([call], [self.entry(*words, tty="-it")])
 
     def test_one_end_that_is_not_a_terminal_is_enough_to_leave_t_out(self):

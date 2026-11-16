@@ -5,7 +5,7 @@ measured say how; anything not run on a real host is listed in "Not done, and op
 (decision log, build plan, overnight report) are in [history/](history/README.md); they are not documentation.
 
 Contents: 1 Purpose, 2 The box model, 3 Directories and paths, 4 Commands, 5 The shared session, 6 Startup of the box,
-7 Web terminal and remote access, 8 Tools and shims, 9 Configuration, 10 Environment variables, 11 Nested Podman,
+7 Web terminal and remote access, 8 Addons and shims, 9 Configuration, 10 Environment variables, 11 Nested Podman,
 12 Security model, 13 Image and updates, 14 Repository layout, 15 Decisions, 16 Not done and open questions.
 
 ## 1. Purpose
@@ -15,11 +15,11 @@ on your own machine. It is one long-lived, rootless Podman container, the **box*
 **workspace**, mounted as its home. You enter it from any terminal tab or from a browser, and every entry lands in the same
 tmux session. The aim is that a mistake of the agent is limited to one folder, not that untrusted code becomes safe (section 12).
 
-Goals: one command to start (`swarmbox`); one shared session for every client; a small neutral image with tools installed
+Goals: one command to start (`swarmbox`); one shared session for every client; a small neutral image with addons installed
 when first used; everything that must survive in one folder; no telemetry; remote access without putting credentials in the box.
 
 Non-goals: a virtual machine boundary (see [microvm.md](microvm.md)); Docker or rootful Podman; Windows without WSL2;
-a throwaway-container mode; tools per project.
+a throwaway-container mode; addons per project.
 
 Supported hosts: Linux, macOS through a Podman machine (not verified), and WSL2 with the workspace on the Linux filesystem.
 Podman 4.3 or newer.
@@ -29,7 +29,7 @@ Podman 4.3 or newer.
 ```
  HOST (your machine)                                             IMAGE  ghcr.io/feroult/swarmbox:X.Y.Z
  +-------------------------------------------+                   neutral: shell environment, tmux, ttyd,
- | script `swarmbox`  (a file on your PATH)  |   podman run/     Podman, Node, swarmbox-tool, tool manifests
+ | script `swarmbox`  (a file on your PATH)  |   podman run/     Podman, Node, swarmbox-addon, addon manifests
  | support files host:~/.local/share/        |   exec            (no agent inside)
  |              swarmbox/host/               | ------------------------+
  | config       host:~/.config/swarmbox/     |                         | the box is created from it
@@ -39,8 +39,8 @@ Podman 4.3 or newer.
             +------------------------------------------>| serve  (the box's main process, PID 1)       |
                                                         |  +- tmux server, session `main`  <- every tab |
  WORKSPACE  host:~/swarmbox   ===== mounted as =======> |  +- ttyd -> tmux   (the web terminal)         |
- (projects, .ssh, .claude, tools, in-box config)        |  +- nested Podman service                     |
-                  /home/agent  (the home)               |  +- tools, reached through shims, installed   |
+ (projects, .ssh, .claude, addons, in-box config)        |  +- nested Podman service                     |
+                  /home/agent  (the home)               |  +- addons, reached through shims, installed   |
                                                         |     into the workspace on first use           |
                                                         +----------------------------------------------+
  browser ---> https://swarmbox.example.com ---> Cloudflare Access ---> connector ---> 127.0.0.1:7681
@@ -48,17 +48,17 @@ Podman 4.3 or newer.
 
 - **One persistent box per workspace.** Entering never creates a second box. A second box is a different name
   (`SWARMBOX_NAME`) with its own workspace and web port.
-- **Neutral image, tools on demand.** The image holds the shell environment only; agents and CLIs are installed into the workspace
+- **Neutral image, addons on demand.** The image holds the shell environment only; agents and CLIs are installed into the workspace
   on first use (section 8).
 - **The workspace is the home and the only thing that must survive.** The box can be deleted and recreated (`swarmbox reset`);
-  projects, logins, the SSH key and installed tools are in the workspace.
+  projects, logins, the SSH key and installed addons are in the workspace.
 - **A thin host half.** One POSIX `sh` script, `swarmbox`, on your `PATH` drives Podman: no shell function, no startup file. Cloudflare credentials and the connector
   stay on the host, outside the box.
 - **One configuration surface**, applied when the box is created and compared on every entry (section 9).
 
 Glossary: the **script** is the `swarmbox` command (the file `container/host/swarmbox-host` in the repository), written to your `PATH` by an installer; the
-**support files** are `VERSION`, `DEFAULTS`, `cloudflare-setup.py` and `tool-ports`, which one file cannot hold and the image carries; a **tool** is a program installed on demand; an **agent** is a tool with `KIND=agent`; a **shim** is a link on `PATH` named
-after a command of a tool; a **manifest** is a tool's `tool.conf`; a **creation setting** is fixed when the box is created and
+**support files** are `VERSION`, `DEFAULTS`, `cloudflare-setup.py` and `addon-ports`, which one file cannot hold and the image carries; an **addon** is a program installed on demand; an **agent** is an AI CLI such as `claude`, itself an addon; a **shim** is a link on `PATH` named
+after a command of an addon; a **manifest** is an addon's `addon.conf`; a **creation setting** is fixed when the box is created and
 changes with `swarmbox reset`, a **runtime** setting changes in the running box.
 
 ## 3. Directories and path notation
@@ -72,8 +72,8 @@ host:~/swarmbox/                       # the workspace = /home/agent in the box 
 ├── my-project/                        # your projects
 ├── .ssh/                              # the box's SSH key (id_ed25519, id_ed25519.pub)
 ├── .claude/, .claude.json             # Claude Code: login, settings, history
-├── .config/swarmbox/                  # you edit: web-terminal.conf, user-level tool manifests, mcp/<name>/config.json
-├── .local/share/swarmbox/             # installed: tools/<name>/..., shims/, index
+├── .config/swarmbox/                  # you edit: web-terminal.conf, user-level addon manifests, mcp/<name>/config.json
+├── .local/share/swarmbox/             # installed: addons/<name>/..., shims/, index
 ├── .local/state/swarmbox/             # logs (serve.log, podman-service.log, web-terminal.log), health, podman.sock
 └── .local/share/containers/           # empty here: the nested Podman storage is a volume
 
@@ -107,9 +107,9 @@ Measured with a stand-in server, Podman 4.3.1.
 ## 4. Commands
 
 Every `swarmbox <word>` is handled by the script or forwarded into the box. Its own words win and are reserved: `stop`, `reset`, `up`, `url`,
-`update`, `config`, `env`, `remote`, `fingerprint`, `version`, `help`, `--help`, `-h` (and `create-flags`, `connection` and `setup`, which are internal). `pubkey`, `tool`, `bus` and `tabs` go
+`update`, `config`, `env`, `remote`, `fingerprint`, `version`, `help`, `--help`, `-h` (and `create-flags`, `connection` and `setup`, which are internal). `pubkey`, `addon`, `bus` and `tabs` go
 to the box as they are; `attach` and any other first word run `up` and then `podman exec` into the box (`-t` only when stdin and stdout are
-terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a reserved name runs as `swarmbox attach <name>` (so a box program called `bus`, `tabs`, `tool` or `pubkey` does too).
+terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a reserved name runs as `swarmbox attach <name>` (so a box program called `bus`, `tabs`, `addon` or `pubkey` does too).
 
 | Command | What it does |
 |---|---|
@@ -122,14 +122,14 @@ terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a r
 | `config get\|set\|list` | the host configuration (section 9) |
 | `env add\|rm NAME`, `env list` | variables of yours to pass into the box (section 10) |
 | `pubkey` | the box's git SSH public key |
-| `tool list\|install\|update\|use\|remove\|doctor\|new\|validate` | tools inside the box (section 8) |
+| `addon list\|install\|update\|use\|remove\|doctor\|new\|validate` | addons inside the box (section 8) |
 | `bus pub\|sub\|topics\|watch\|ping\|restart` | the message bus of the box (section 6); `swarmbox-bus --help` in the box |
 | `tabs list\|active\|screen\|send` | the tmux tabs of the box, a capability of the host (section 6); `swarmbox-tabs --help` in the box |
 | `remote setup\|status\|off\|token` | remote access through Cloudflare (`--dry-run` shows changes) |
 | `version`, `fingerprint`, `help` | script version; creation fingerprint (`--explain` lists differences); the command list |
 
 Inside the box: `claude`, `gemini`, ... (shims, auto-approve by default for agents), `yolo` (the default agent in auto-approve mode),
-`swarmbox-web restart`, `swarmbox-tool`, `swarmbox-pubkey`, `swarmbox-bus`, `swarmbox-tabs` (and `swarmbox-sysop` and `swarmbox-voice` once those tools are installed). There is no `swarmbox uninstall`; the manual steps are in [uninstall.md](uninstall.md).
+`swarmbox-web restart`, `swarmbox-addon`, `swarmbox-pubkey`, `swarmbox-bus`, `swarmbox-tabs` (and `swarmbox-sysop` and `swarmbox-voice` once those addons are installed). There is no `swarmbox uninstall`; the manual steps are in [uninstall.md](uninstall.md).
 
 **Exit codes of the script.** 0 ok; 1 failure of Podman or of a file operation; 2 usage or an invalid value; 3 a prerequisite
 (Podman missing or older than 4.3, no `/dev/net/tun`, image cannot be pulled, no usable support files or `python3` for `remote`);
@@ -138,13 +138,13 @@ it is never adopted or removed); 6 not ready after 60 s, or the box exited while
 Standard output carries data, messages go to standard error.
 
 **Install.** Two ways, one result: a file `${SWARMBOX_BIN_DIR:-$HOME/.local/bin}/swarmbox` (mode 755, written through a temporary file and a rename), the support
-files in `~/.local/share/swarmbox/host/`, and the image and tools in the host config (`IMAGE`, `WITH`, only the keys that are not set yet).
+files in `~/.local/share/swarmbox/host/`, and the image and addons in the host config (`IMAGE`, `WITH`, only the keys that are not set yet).
 Next to the script `setup` writes `sx`, a two-line script that runs the `swarmbox` beside it (a script, not a link: the script names itself by `$0` and `update` renames
 a new copy over that name). It is written only when nothing else answers to `sx` (no other file of that name in the folder, no `sx` on the `PATH`), never overwrites one, and `SWARMBOX_NO_SX=1` skips it.
 
 ```
-podman run --rm <image> install [--with TOOLS] | sh        # from an image; run it without `| sh` to read it first
-sh install.sh [--version X.Y.Z] [--image REF] [--with TOOLS]  # from a release: downloads swarmbox, checks swarmbox.sha256
+podman run --rm <image> install [--with ADDONS] | sh        # from an image; run it without `| sh` to read it first
+sh install.sh [--version X.Y.Z] [--image REF] [--with ADDONS]  # from a release: downloads swarmbox, checks swarmbox.sha256
 ```
 
 **The pull.** `pull_image` (used by `up`, `update` and `setup`) draws a progress line when standard error is a terminal, and is quiet (`-q`) otherwise. The line is one `ui_pull` loop
@@ -158,7 +158,7 @@ pull of the 2.0.4 image: 785 MB, 99% at 749 MB, 24 s; Podman 5.4.2] Not checked:
 
 `install` runs in a container and prints a small POSIX `sh` installer that carries the script in a quoted here-doc; it writes nothing itself. The
 image it records is `--image`, else the name Podman recorded for the container (`/run/.containerenv`, so a local build is found under its own
-name), else the default repository at the image's version. The installer writes the script and runs `swarmbox setup --image REF [--with TOOLS]`, which both ways share:
+name), else the default repository at the image's version. The installer writes the script and runs `swarmbox setup --image REF [--with ADDONS]`, which both ways share:
 it checks that Podman exists and is 4.3 or newer, extracts the support files from the image (`podman run --rm <image> host-helper` writes a tar archive,
 checked for member names, unpacked into a temporary folder, and renamed into place), records `IMAGE` and `WITH` the way `config seed` does
 (a key that is already set is never overwritten; a different value is reported once), prints the `PATH` advice when the folder is not in `PATH`,
@@ -185,7 +185,7 @@ and exits 0 when there is no box.
 **Labels and the fingerprint.** The box is created with the labels `swarmbox.managed=2`, `swarmbox.image`, `swarmbox.workspace`, `swarmbox.ports`,
 `swarmbox.env-hash` and `swarmbox.fingerprint`, which are the only state the host keeps about it. The fingerprint is a SHA-256 over the sorted
 `KEY=value` lines of the creation settings (`AGENT`, `BROWSER_URL`, `ENV_KEYS` names, `HOSTNAME`, `HOST_ACCESS`, `IMAGE`, `INIT`, `NAME`, `PORTS` with the
-tools' ports, `TZ` resolved, `WEB`, `WEB_PORT`, `WITH`, `WORKSPACE`, `YOLO`) plus the hash of the passed variables. On every entry `up`
+addons' ports, `TZ` resolved, `WEB`, `WEB_PORT`, `WITH`, `WORKSPACE`, `YOLO`) plus the hash of the passed variables. On every entry `up`
 recomputes it and, when it differs, prints one line per difference it can name and continues: it only warns, because `reset` ends sessions
 and must be your choice. It also warns when the box's image is not the one the config asks for or the local image was replaced since.
 
@@ -212,7 +212,7 @@ and must be your choice. It also warns when the box's image is not the one the c
   or with `--plain`, the command runs directly, through `bash -c` with the shell fragment sourced, not an interactive shell, so standard error stays clean.
   Measured with a spike and real tmux 3.3a: exit codes, 17 awkward arguments byte for byte.
 - A command named like a host word cannot be run this way: use `swarmbox bash -c '<command>'`.
-- tmux config: `container/config/tmux.conf` (prefix `Ctrl+A`, mouse, history, true colour, and the prefix keys `S`, `V`, `X`, `a`, `g` of the `sysop` tool: show or hide its panel, veto, stop, approve, type a goal); your `~/.tmux.conf` is read after it.
+- tmux config: `container/config/tmux.conf` (prefix `Ctrl+A`, mouse, history, true colour, and the prefix keys `S`, `V`, `X`, `a`, `g` of the `sysop` addon: show or hide its panel, veto, stop, approve, type a goal); your `~/.tmux.conf` is read after it.
 
 ## 6. Startup of the box
 
@@ -226,16 +226,16 @@ and must be your choice. It also warns when the box's image is not the one the c
 | 2 | `/dev/net/tun` exists | F |
 | 3 | create the XDG folders and `box:/tmp/swarmbox`; clear `health` | F |
 | 5 | ensure the SSH key (`swarmbox-pubkey --ensure`) | W |
-| 6 | `swarmbox-tool link --user` (shims and index of the user level) | W |
+| 6 | `swarmbox-addon link --user` (shims and index of the user level) | W |
 | 6b | start and supervise the bus broker (`swarmbox-bus serve`), wait up to 2 s for it to answer | W |
-| 7 | generate the MCP file (`swarmbox-mcp`), then run `prepare.sh` of every tool that is installed or in `WITH` | W per tool |
+| 7 | generate the MCP file (`swarmbox-mcp`), then run `prepare.sh` of every addon that is installed or in `WITH` | W per addon |
 | 8 | clear the runtime state of the previous nested Podman and, when `/dev/fuse` is not usable, the stale `fuse-overlayfs` marker (`overlay/.has-mount-program`) of the graph root; start the nested Podman service on `<state>/podman.sock` and check that it answers (10 s) | W |
 | 9 | start tmux with session `main` and the idle window | W |
 | 10 | start and supervise ttyd when `WEB=1` | W |
 | 11 | write the ready marker: `ok` or `warnings=<n>` | W |
-| 12 | in the background, install the tools of `WITH`, one after another, output to `serve.log` | W per tool |
+| 12 | in the background, install the addons of `WITH`, one after another, output to `serve.log` | W per addon |
 
-A log trimmer (a background job of `serve`, not a numbered step) looks every 5 minutes at `serve.log`, `bus.log`, `web-terminal.log` and `podman-service.log` and cuts one that is past 4 MiB to its last 1 MiB (the writers append with `>>`, so they go on at the new end), with a line that says so; it never fails. Tools of `WITH` install after the marker, so a slow download never blocks the door. `serve` handles SIGTERM and SIGINT (it sleeps in `wait`
+A log trimmer (a background job of `serve`, not a numbered step) looks every 5 minutes at `serve.log`, `bus.log`, `web-terminal.log` and `podman-service.log` and cuts one that is past 4 MiB to its last 1 MiB (the writers append with `>>`, so they go on at the new end), with a line that says so; it never fails. Addons of `WITH` install after the marker, so a slow download never blocks the door. `serve` handles SIGTERM and SIGINT (it sleeps in `wait`
 on a background `sleep infinity`), stops its children and exits, so `podman stop` is prompt (0.14 s measured, with and without `--init`).
 One supervisor function, `supervise_one`, serves ttyd and the bus broker. It restarts the child with a backoff of 1, 2, 4 ... 30 s; after 5 exits within 60 s it records a health line and stays idle, so that
 `swarmbox-web restart` (or `swarmbox-bus restart`) can still restart it by hand; the box does not stop when ttyd or the bus does. A broker that exits 8 (another one holds the lock) is not restarted. The box is created without `--restart`: after a host
@@ -245,17 +245,17 @@ The entry banner shows the health lines. The test-only switches are `SWARMBOX_TE
 ### The bus
 
 `swarmbox-bus` (source `container/scripts/swarmbox-bus.py`, one file, standard library only) is the broker and its command line. Rationale and the
-spikes behind it are in [plugins-design.md](plugins-design.md). Nothing of the box depends on it; step 6b starts it and a failure is only a warning. The bus is plain publish
+spikes behind it are in [addons-design.md](addons-design.md). Nothing of the box depends on it; step 6b starts it and a failure is only a warning. The bus is plain publish
 and subscribe: it knows nothing about tmux, tabs or what a message means, keeps no state and answers no question about the box (the tabs are a separate command, below).
 
 - **Where.** A unix socket `box:/tmp/swarmbox/bus.sock` (`SB_BUS_SOCK` in `dirs.sh`; `SB_BUS_SOCKET` overrides it for the client and the broker), mode 0600, and the broker refuses
   any uid that is not its own or root (`SO_PEERCRED`). One broker per socket, by `flock` on `bus.sock.lock`; a socket left by a crashed broker is removed by the next one.
-  Log `<state>/bus.log`; supervisor pid `box:/tmp/swarmbox/bus-supervisor.pid`. From the host: `swarmbox bus ...` (forwarded like `pubkey` and `tool`).
+  Log `<state>/bus.log`; supervisor pid `box:/tmp/swarmbox/bus-supervisor.pid`. From the host: `swarmbox bus ...` (forwarded like `pubkey` and `addon`).
 - **Commands.** `pub [--source S] [--allow-none] [--] TOPIC [MESSAGE|-]` (a big body goes by stdin: one argv string is capped at 128 KiB; a message that starts with `-` goes after `--`; it prints `{"id","receivers"}`),
   `sub [--group NAME] [--raw] TOPIC` (`--raw`: one line per body, plain one-line text as it is, anything else as JSON), `topics` (the topics that have subscribers, as JSON: `topic`, `subscribers`, `groups` with the members of each),
   `watch` (every message with its topic, receivers and result), `ping`, `restart`, `serve`. Exit codes: 0 ok, 1 error, 2 usage, 3 nobody received the message, 4 broker not running, 5 too large,
   6 bad topic, group or request, 7 busy, 8 already running.
-- **Topics are free names**: 1 to 64 characters of `A-Za-z0-9_.:-`, starting with a letter or a digit; the bus has no list of topics and no reserved name. Plugins take the name from their settings (`voice.topic`, `sysop.topic`, both `goal` by default).
+- **Topics are free names**: 1 to 64 characters of `A-Za-z0-9_.:-`, starting with a letter or a digit; the bus has no list of topics and no reserved name. Addons take the name from their settings (`voice.topic`, `sysop.topic`, both `goal` by default).
 - **Delivery.** A message goes to every subscriber of its topic that is listening at that moment (broadcast), and subscribers that gave the same `--group` share the work: the group gets the message once, to one member, round robin.
   Nothing is buffered and nothing is acknowledged; the one loss window is a message written to a subscriber that dies before it reads it. A group member that is alive but not reading (an earlier message unread) is skipped, not fed; when every
   member of a group is like that, the group's share fails after a 0.2 s wait and the reply is `busy` (exit 7), still saying how many others received it. A subscriber without a group that is over 4 MiB behind is skipped. NaN and Infinity are not JSON: the CLI sends them as text and the broker refuses them.
@@ -268,14 +268,14 @@ and subscribe: it knows nothing about tmux, tabs or what a message means, keeps 
 ### The tabs
 
 `swarmbox-tabs` (source `container/scripts/swarmbox-tabs.py`, in the image as `/usr/local/bin/swarmbox-tabs`; from the host `swarmbox tabs ...`) is a **capability of the host**, used directly and never through a bus topic. It has no daemon:
-a call reads or acts on tmux and ends, and it imports nothing from any plugin. The file is a command line and a library at once; the full text is its docstring.
+a call reads or acts on tmux and ends, and it imports nothing from any addon. The file is a command line and a library at once; the full text is its docstring.
 
 - **Commands.** `list` (JSON list of the tabs), `active`, `screen TAB [--lines N]`, `send TAB (--run TEXT | --input TEXT) [--queue] [--slash]`; `-` as TEXT reads stdin (long or multi-line text). Everything is JSON on stdout; a failure is
   `{"err":CODE,"msg":TEXT}` on stdout too, with an exit code: 0 ok; 1 refused or failed (`no_such_tab`, `ambiguous_tab`, `dialog_open`, `busy_tab`, `slash_refused`, `not_submitted`, `tmux_error`, `lock_error`); 2 usage or a text that cannot be typed (`usage`, `bad_body`);
   4 tmux is not there (`no_tmux`, `no_session`); 5 `timeout`.
 - **Environment.** `SB_TABS_SESSION` (default `main`), `SB_TABS_SOCKET` (adds `-L name`, for tests), `SB_TABS_BIN` (the tmux program), `SB_RUN_DIR` (locks); `TMUX_TMPDIR` passes through and `TMUX` is removed. Every tmux call has a 5 s timeout.
 - **The lock.** A send holds an `flock` on `<run folder>/tabs/<window id>.lock` while it types, so two sends to one tab never interleave, from any processes (the kernel drops the lock however the process dies); the second waits up to 30 s, then fails with `timeout` and types nothing. Reads take no lock.
-- **For a plugin**, run the command rather than import the file: the command is the contract (JSON, exit codes, lock, timeouts) and costs one Python start-up (about 15 ms); the library (`Tabs`, with `list_tabs()`, `active()`, `screen()`, `send()`, errors as `TabsError`) exists for tests and for the command itself.
+- **For an addon**, run the command rather than import the file: the command is the contract (JSON, exit codes, lock, timeouts) and costs one Python start-up (about 15 ms); the library (`Tabs`, with `list_tabs()`, `active()`, `screen()`, `send()`, errors as `TabsError`) exists for tests and for the command itself.
 - *Tabs.* A tab is a window of `main`. The address is the window id (`@3`); `index:name`, the index and the name are accepted too, and a name used twice is `ambiguous_tab` with the candidates. Every tmux call targets
   the pane id. Panes with the option `@swarmbox_sysop_panel`, or with `SWARMBOX_SYSOP_PANEL=1` in their start command (a pane exists for an instant before its option is set), are never listed or targeted. `active` is the window of the non-control client with the latest activity, else the current window of `main`.
 - *Screen.* `capture-pane -p -J -e`, turned into the plain text of the pane plus the style of each character, then the last `lines` lines, then the secrets filter (on the plain text, whole lines, whatever the colours), then the text written with `[sel]` (reverse video), `[bg]` (background colour)
@@ -288,17 +288,17 @@ a call reads or acts on tmux and ends, and it imports nothing from any plugin. T
 
 ### The sysop
 
-The `sysop` tool (`swarmbox tool install sysop`; user guide in [sysop.md](sysop.md), design in [plugins-design.md](plugins-design.md)) is a resident process that subscribes to the bus topic of `sysop.topic` (default `goal`) in the group `sysop.group` and, for each goal, runs
+The `sysop` addon (`swarmbox addon install sysop`; user guide in [sysop.md](sysop.md), design in [addons-design.md](addons-design.md)) is a resident process that subscribes to the bus topic of `sysop.topic` (default `goal`) in the group `sysop.group` and, for each goal, runs
 a **brain** (`claude -p` by default, any command that speaks MCP) with a few tools served by `swarmbox-sysop mcp`: `list_tabs`, `read_tab`, `run`, `input`, `wait`, `say`, `done`. The tools call `swarmbox-tabs` (`list`, `screen`, `send`) as a child process and never the bus,
-so everything the sysop does is typed in a tmux tab you can see. The host side of the tool, not the brain, rates each `run` and `input` (low, medium, high or blocked, from the text and from what the tab runs) and routes it by the autonomy level:
+so everything the sysop does is typed in a tmux tab you can see. The host side of the addon, not the brain, rates each `run` and `input` (low, medium, high or blocked, from the text and from what the tab runs) and routes it by the autonomy level:
 a countdown the user can veto, an approval (the word `run` in the panel), or a refusal. Budgets (`sysop.max_steps`, `sysop.max_seconds`), the stop command and the audit file (`<state>/sysop/events.jsonl`, append-only, mode 0600) apply to every goal.
 The panel is one pane per window beside the tab (at the right in a wide window, at the bottom in a narrow or portrait one) and never takes the focus by itself; `sysop.panel` says when it exists: `always` (the service, started with `serve --dock`, puts it in every window and follows new windows and resizes through tmux hooks, with a look every 4 seconds as a safety net), `auto` (opened in the window you look at when a goal arrives, closed a few seconds after the last) or `off`. Veto, stop, approve and goal are tmux prefix keys (`Ctrl+A` then `V`, `X`, `a`, `g`; `S` shows or hides the panel), plain bindings of `tmux.conf` that call `swarmbox-sysop`. A key typed while a dialog of an agent is on the screen is always a high risk.
-The tool is code of this repository (standard library Python, nothing downloaded); like `voice`, its `prepare.sh` refreshes its library at every box start and starts the subscriber under a small watcher (`serve --log --dock --watch`) that starts it again after 1, 2, 4 ... 30 s when it dies and gives up after five abnormal exits in a minute (`swarmbox-tool prepare` wakes it); the entrypoint knows nothing of it. Its settings are the nine `sysop.*` keys of section 9,
+The addon is code of this repository (standard library Python, nothing downloaded); like `voice`, its `prepare.sh` refreshes its library at every box start and starts the subscriber under a small watcher (`serve --log --dock --watch`) that starts it again after 1, 2, 4 ... 30 s when it dies and gives up after five abnormal exits in a minute (`swarmbox-addon prepare` wakes it); the entrypoint knows nothing of it. Its settings are the nine `sysop.*` keys of section 9,
 passed to the box as `SWARMBOX_SYSOP_*` only when they differ from the default.
 
-### The voice tool
+### The voice addon
 
-The `voice` tool (`swarmbox tool install voice`; [voice.md](voice.md)) is an input and nothing more. It builds whisper.cpp inside the box, and `swarmbox-web` puts its front on the web terminal port: the microphone page and an audio entry with a fixed table of four routes under `/voice/`, next to ttyd.
+The `voice` addon (`swarmbox addon install voice`; [voice.md](voice.md)) is an input and nothing more. It builds whisper.cpp inside the box, and `swarmbox-web` puts its front on the web terminal port: the microphone page and an audio entry with a fixed table of four routes under `/voice/`, next to ttyd.
 Audio becomes text with Whisper and the text is published as `{"text": ...}` with source `voice` on the bus topic of `voice.topic` (default `goal`), through the socket of the bus. It has no planner, no panel and no code that reads or types into tmux. With nobody on the topic the page says so;
 the sysop hears it when `sysop.topic` is the same name. Settings: `voice.language`, `voice.stt.model`, `voice.stt.vocabulary`, `voice.web` and `voice.topic` (section 9).
 
@@ -314,7 +314,7 @@ the clipboard bridge and the style into one file (ttyd serves a single file, mea
 `padding`, `ctrlVPaste`, `ctrlCCopy`, `scrollbar`, `strip` and `stripKeys` from `<workspace>/.config/swarmbox/web-terminal.conf`; every other key goes to ttyd as `-t key=value`.
 `swarmbox-web restart` applies a change without ending the box. Details: [web-terminal.md](web-terminal.md).
 
-**The controls strip.** The page has a slim bar under the terminal (`ttyd-clipboard.js`, `ttyd-style.css`; configured by `strip` and `stripKeys`). The terminal ends where the bar begins and xterm is refitted to what is left, so tmux sees the smaller window and the bar covers no cell, the status bar included. It holds key buttons that type tmux key names into the terminal (default `Esc`, `Tab`, `^C`, the arrows and `Panel`, which types `C-a S`, the sysop binding of `tmux.conf`, so it needs no plugin; a tap is sent on release, a held arrow repeats, the terminal keeps the focus) and, at the right end, the controls that a plugin adds through `window.swarmboxStrip` (`add`, `note`, `remove`), which knows no plugin by name: the `voice` tool puts its microphone and its state sentences there. The key buttons show on a touch screen (`pointer: coarse`) or when `stripKeys` is listed, the strip itself on any screen once a plugin adds a control; the page has a viewport meta tag and, on iOS, follows `visualViewport` so the strip stays above the keyboard. With the strip hidden the page is ttyd's own.
+**The controls strip.** The page has a slim bar under the terminal (`ttyd-clipboard.js`, `ttyd-style.css`; configured by `strip` and `stripKeys`). The terminal ends where the bar begins and xterm is refitted to what is left, so tmux sees the smaller window and the bar covers no cell, the status bar included. It holds key buttons that type tmux key names into the terminal (default `Esc`, `Tab`, `^C`, the arrows and `Panel`, which types `C-a S`, the sysop binding of `tmux.conf`, so it needs no addon; a tap is sent on release, a held arrow repeats, the terminal keeps the focus) and, at the right end, the controls that an addon adds through `window.swarmboxStrip` (`add`, `note`, `remove`), which knows no addon by name: the `voice` addon puts its microphone and its state sentences there. The key buttons show on a touch screen (`pointer: coarse`) or when `stripKeys` is listed, the strip itself on any screen once an addon adds a control; the page has a viewport meta tag and, on iOS, follows `visualViewport` so the strip stays above the keyboard. With the strip hidden the page is ttyd's own.
 
 **Remote access.** `swarmbox remote` is a wrapper that runs `cloudflare-setup.py` (the only part that needs `python3`, stdlib only, in the support folder) with
 the box name and web port. `setup` asks for a domain, an e-mail and an API token (hidden input, never stored) and provisions the Access application with
@@ -325,41 +325,42 @@ hostname, box name and session. The tunnel token is read on the host only: from 
 the file has mode 600 (checked as an octal number, not from `ls`); it never enters the box. `up` ends by making sure the connector runs; `reset` and `stop` never touch it.
 Details and the end-to-end check list: [cloudflare.md](cloudflare.md).
 
-## 8. Tools and shims
+## 8. Addons and shims
 
-A tool is a directory `container/tools/<name>/` with `tool.conf` (manifest), `install.sh`, and optionally `shell.sh` (aliases for the interactive shell),
-`prepare.sh` (run by `serve` at every start to render files into `box:/tmp/swarmbox`) and data files. Shipped: agents `claude`, `gemini`, `opencode`; tools `gcloud`
+An addon is a directory `container/addons/<name>/` with `addon.conf` (manifest), `install.sh`, and optionally `shell.sh` (sourced by every interactive shell: aliases and functions),
+`prepare.sh` (run by `serve` at every start to render files into `box:/tmp/swarmbox`) and data files. Shipped: agents `claude`, `gemini`, `opencode`; addons `gcloud`
 (with `gsutil`, `bq`), `clasp`, `go`, `poetry`, `voice` (an input: whisper.cpp, a multilingual Whisper model and a service that publishes what you say as a goal on the bus; `docs/voice.md`), `sysop` (the agent that operates the tabs from a goal; `docs/sysop.md`).
 
-Manifest keys: `SCHEMA`, `NAME`, `KIND` (`tool` or `agent`), `PROVIDES` (commands), `VERSION`, `UPDATE` (`managed` or `self`), `UPDATE_CMD`, `YOLO_FLAGS`, `YOLO_ALIAS`,
-`MCP_FLAGS`, `MCP_FORMAT`, `PORTS`, and `SHA256_<arch>` where the vendor's checksum is recorded.
+Manifest keys: `SCHEMA`, `NAME`, `DESCRIPTION`, `VERSION` and `COMMANDS` (mandatory), and `UPDATE` (`managed` or `self`) with `UPDATE_CMD`, `PORTS` and `SHA256_<arch>` where the vendor's checksum is recorded (optional).
+`VERSION=latest` needs `UPDATE=self` and an `UPDATE_CMD`; any other version is pinned and managed. The manifest says nothing about how a command starts: that is the addon's own `shell.sh`. Full table and reasons: [addons-design.md](addons-design.md).
 
-**Shims.** A shim is a symlink named after a command, pointing to one dispatcher, `swarmbox-shim`. A call finds its tool in the index (`command tool`),
-runs `swarmbox-tool run`, which, if the tool is not installed, takes an `flock` lock, prints `Installing <name> (first use)...`, runs `install.sh`, and then `exec`s the
-real program. A failed install prints the reason and the next call retries. Two levels of manifests: the **user** level `<workspace>/.config/swarmbox/tools/<name>/`
-(wins, no rebuild) and the **image** level `/usr/local/lib/swarmbox/tools/<name>/` (read-only). `swarmbox-tool link --system` runs at image build and writes the image shims, the
-index and `tool-ports`; `link --user` runs at start and at every entry. `PATH` order: user shims, image shims, `<workspace>/.local/share/swarmbox/tools/*/current/bin`, so once installed the
-real binary wins. There are no project-level tools: a repository's `install.sh` would run with network and your keys.
+**Shims.** A shim is a symlink named after a command, pointing to one dispatcher, `swarmbox-shim`. A call finds its addon in the index (`command addon`),
+runs `swarmbox-addon run`, which, if the addon is not installed, takes an `flock` lock, prints `Installing <name> (first use)...`, runs `install.sh`, and then `exec`s the
+real program. A failed install prints the reason and the next call retries. Two levels of manifests: the **user** level `<workspace>/.config/swarmbox/addons/<name>/`
+(wins, no rebuild) and the **image** level `/usr/local/lib/swarmbox/addons/<name>/` (read-only). `swarmbox-addon link --system` runs at image build and writes the image shims, the
+index and `addon-ports`; `link --user` runs at start and at every entry. `PATH` order: user shims, image shims, `<workspace>/.local/share/swarmbox/addons/*/current/bin`, so once installed the
+real binary wins. There are no project-level addons: a repository's `install.sh` would run with network and your keys.
 
-**Installed layout:** `<workspace>/.local/share/swarmbox/tools/<name>/<version>/` with a `current` link (managed) or `self/` (self-updating). Installers write only inside their prefix.
+**Installed layout:** `<workspace>/.local/share/swarmbox/addons/<name>/<version>/` with a `current` link (managed) or `self/` (self-updating). Installers write only inside their prefix.
 Each install records `NODE_MAJOR`, `ARCH` and `LIBC` in `.swarmbox-env`; a different `ARCH` makes the shim refuse (exit 69) and ask for a reinstall, a different Node or libc warns.
-`swarmbox-tool doctor [--fix]` lists `ok`, `needs reinstall` or `missing`.
+`swarmbox-addon doctor [--fix]` lists `ok`, `needs reinstall` or `missing`.
 
-**Updating.** Managed tools are pinned in the manifest except agents, which say `latest`. `update NAME` installs the new version side by side and moves `current`; `use NAME VERSION` rolls
+**Updating.** Managed addons are pinned in the manifest; an addon that says `latest` updates itself (`UPDATE=self`, as the agents do). `update NAME` installs the new version side by side and moves `current`; `use NAME VERSION` rolls
 back. A once-a-day, online-only notice says when a newer version exists (`SWARMBOX_UPDATE_CHECK=0` turns it off). Claude Code is `UPDATE=self`: installed once by the vendor's native
 installer (npm under a prefix cannot update itself, measured), then it updates itself; `update` runs `claude update`. This costs reproducibility and runs new vendor code in the box.
-gcloud's checksum is recorded by `dev/record-checksums.sh`. `WITH_TOOLS` is a build argument of the Dockerfile that bakes tools into the image with the same installer.
+gcloud's checksum is recorded by `dev/record-checksums.sh`. `WITH_ADDONS` is a build argument of the Dockerfile that bakes addons into the image with the same installer.
 
-**Agents.** For every installed or declared agent the interactive shell gets an alias from the manifest, for example `claude --dangerously-skip-permissions --mcp-config ...`, so agents are
-auto-approve by default; `command claude` bypasses it, `SWARMBOX_YOLO=0` turns the aliases off. `yolo` runs the default agent (`AGENT`, else the first agent of `WITH`, else the first
-agent manifest by name). OpenCode gets no alias (`YOLO_ALIAS=0`): its `--auto` flag is not accepted before a subcommand, so only `yolo` uses it. OpenCode's local-LLM setup is
-`prepare.sh` rendering `box:/tmp/swarmbox/opencode.json` from `LOCAL_LLM_*` variables.
+**Agents.** `bashrc.sh` reads no manifest and builds no alias: it sources the `shell.sh` of every installed addon. Each agent addon ships one that starts the agent in auto-approve mode. `claude` defines a function that adds
+`--dangerously-skip-permissions` and `--mcp-config $HOME/.claude/mcp-servers.json` only for the interactive prompt form, so `claude update` and `claude mcp ...` do not receive them; `gemini` defines a function with `--yolo`;
+`opencode` defines a function that adds `--auto` only for `opencode` and `opencode run` (its flag is refused before other subcommands). `command claude` bypasses them and `SWARMBOX_YOLO=0` turns auto-approve off.
+`yolo` runs the default agent, `$SWARMBOX_AGENT`, whose alias or function already starts it in auto-approve mode. The host records it when the box is created: the setting `AGENT`, else the first item of `WITH`;
+with neither, `yolo` says that there is no default agent, and when the default is not a command (the first item of `WITH` may be an addon that is not an agent) it says that too. OpenCode's local-LLM setup is `prepare.sh` rendering `box:/tmp/swarmbox/opencode.json` from `LOCAL_LLM_*` variables.
 
 **MCP.** `container/mcp/<name>/config.json` describes an MCP server (`command`, `args`, `env`, `browserUrlArgs`). `swarmbox-mcp generate` writes `<workspace>/.claude/mcp-servers.json`;
 a user file `<workspace>/.config/swarmbox/mcp/<name>/config.json` can override or set `{"enabled": false}`. The only shipped server is `chrome-devtools-mcp`, pinned and installed in the
-image (never `npx`), with Chromium. When `BROWSER_URL` is set it attaches to a remote Chrome instead. OpenCode gets a mirrored copy (`MCP_FORMAT=opencode`).
+image (never `npx`), with Chromium. When `BROWSER_URL` is set it attaches to a remote Chrome instead. OpenCode gets a mirrored copy.
 
-Adding a tool: `swarmbox tool new NAME` (a `tool.conf` and `install.sh` skeleton; `--repo` or `--dir`), then `swarmbox tool validate`. [../CONTRIBUTING.md](../CONTRIBUTING.md) lists how pins are bumped.
+Adding an addon: `swarmbox addon new NAME` (an `addon.conf` and `install.sh` skeleton; `--repo` or `--dir`), then `swarmbox addon validate`. [../CONTRIBUTING.md](../CONTRIBUTING.md) lists how pins are bumped.
 
 ## 9. Configuration
 
@@ -374,27 +375,27 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `HOSTNAME` | the box name | container hostname |
 | `TZ` | `local` | `local`, `off` or `Area/City` |
 | `INIT` | `auto` | `--init` (zombie reaping); `auto` tests support |
-| `PORTS` | empty | extra published ports, `127.0.0.1` unless an address is given (a warning for `0.0.0.0`); the tools' `PORTS` are added |
+| `PORTS` | empty | extra published ports, `127.0.0.1` unless an address is given (a warning for `0.0.0.0`); the addons' `PORTS` are added |
 | `HOST_ACCESS` | `0` | adds `host.containers.internal:host-gateway` |
 | `BROWSER_URL` | empty | remote Chrome for chrome-devtools; a bare number or `HOST:PORT` |
 | `WEB`, `WEB_PORT` | `1`, `7681` | the web terminal and its host port (on `127.0.0.1`) |
-| `WITH` | empty | tools to install at start |
-| `AGENT`, `YOLO` | first agent of `WITH`, `1` | the agent `yolo` starts; `0` disables the auto-approve aliases |
+| `WITH` | empty | addons to install at start |
+| `AGENT`, `YOLO` | first item of `WITH`, `1` | the agent `yolo` starts (none when `WITH` is empty); `0` turns off the auto-approve of the agents |
 | `ENV_KEYS` | empty | names of host variables passed at creation (section 10) |
 | `IMAGE` | `<repo>:<version>` | image reference (letters, digits, `. _ / : @ -`, never starting with `-`); written by `update` |
 | `CLOUDFLARE_TUNNEL_TOKEN` | unset | optional, mode 600 only, host only |
-| `voice.language` | `auto` | Whisper language of the `voice` tool: `auto` or a code such as `pt` (no `pt-br`); passed as `SWARMBOX_VOICE_LANGUAGE` |
+| `voice.language` | `auto` | Whisper language of the `voice` addon: `auto` or a code such as `pt` (no `pt-br`); passed as `SWARMBOX_VOICE_LANGUAGE` |
 | `voice.stt.model` | `small` | multilingual Whisper model (`tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo`), never `.en`; `SWARMBOX_VOICE_STT_MODEL` |
 | `voice.stt.vocabulary` | empty | words given to Whisper as its initial prompt (at most 500 characters); `SWARMBOX_VOICE_STT_VOCABULARY` |
 | `voice.web` | `1` | `0` keeps the voice front off: the web terminal port then goes straight to ttyd, with no voice button; `SWARMBOX_VOICE_WEB` |
-| `voice.topic` | `goal` | the bus topic the voice tool publishes its goals to (a topic name: `[a-z0-9][a-z0-9._-]{0,62}`); passed as `SWARMBOX_VOICE_TOPIC` |
-| `sysop.brain` | `claude` | the brain of the `sysop` tool: a preset name or a command template (no line break; [sysop.md](sysop.md)); `SWARMBOX_SYSOP_BRAIN` |
+| `voice.topic` | `goal` | the bus topic the voice addon publishes its goals to (a topic name: `[a-z0-9][a-z0-9._-]{0,62}`); passed as `SWARMBOX_VOICE_TOPIC` |
+| `sysop.brain` | `claude` | the brain of the `sysop` addon: a preset name or a command template (no line break; [sysop.md](sysop.md)); `SWARMBOX_SYSOP_BRAIN` |
 | `sysop.model` | `haiku` | the model the `claude` preset asks for; `SWARMBOX_SYSOP_MODEL` |
 | `sysop.autonomy` | `confirm-risky` | `confirm-all`, `confirm-risky` or `auto`; `SWARMBOX_SYSOP_AUTONOMY` |
 | `sysop.countdown` | `4` | seconds an action waits for a veto, 0 to 30; `SWARMBOX_SYSOP_COUNTDOWN` |
 | `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100; `SWARMBOX_SYSOP_MAX_STEPS` |
 | `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600; `SWARMBOX_SYSOP_MAX_SECONDS` |
-| `sysop.topic` | `goal` | the bus topic the sysop listens on (same charset as `voice.topic`; both default to `goal`, which is the only link between the two tools); `SWARMBOX_SYSOP_TOPIC` |
+| `sysop.topic` | `goal` | the bus topic the sysop listens on (same charset as `voice.topic`; both default to `goal`, which is the only link between the two addons); `SWARMBOX_SYSOP_TOPIC` |
 | `sysop.group` | `sysop` | the group the sysop subscribes with, so several sysops share the goals; `SWARMBOX_SYSOP_GROUP` |
 | `sysop.panel` | `always` | when the panel of the sysop is in tmux: `always` (every window, from the start of the box), `auto` (while a goal runs) or `off`; passed as `SWARMBOX_SYSOP_PANEL_MODE` (`SWARMBOX_SYSOP_PANEL=1` marks the start command of a panel pane) |
 
@@ -452,20 +453,20 @@ listens only on `127.0.0.1` and has no login on its own port; the Cloudflare cre
 - The SSH key is in the workspace: anything in the box can use it. Use a deploy key per repository.
 - With remote access on, whoever passes the Cloudflare login has the agent's control: a shell with `sudo`. The `--session` length is the time a stolen or forgotten session stays usable; an administrator can revoke
   sessions in the Zero Trust dashboard (read from Cloudflare's documentation, not tried).
-- Tools are downloaded on the agent's request, pinned and checksummed where the vendor publishes one; agents install `latest`, and Claude Code updates itself.
+- Addons are downloaded on the agent's request, pinned and checksummed where the vendor publishes one; agents install `latest`, and Claude Code updates itself.
 - The script runs on the host with your privileges and is accepted as coming from the signed image you already trust (D26); the review is [security-review.md](security-review.md), written by the same AI that built it,
   with no human or third-party review yet. The tunnel token may be in the host config, mode 600, and never enters the box.
 
-**No telemetry.** SwarmBox makes no network call of its own except to pull the image, to install a tool you asked for, to check for a tool update, and, with `remote`, to reach Cloudflare. Logs stay local:
+**No telemetry.** SwarmBox makes no network call of its own except to pull the image, to install an addon you asked for, to check for an addon update, and, with `remote`, to reach Cloudflare. Logs stay local:
 `<workspace>/.local/state/swarmbox/` and, on the host, `~/.local/state/swarmbox/` (locks, `notices`). Third-party software in the image is listed in `THIRD_PARTY_NOTICES.md`.
 
 ## 13. Image and updates
 
 The image is the root `Dockerfile` (about 1.75 GB built; no agent inside): `node:24-trixie-slim` (Debian 13), user `agent` UID/GID 1000 (the base user renamed, passwordless `sudo` on purpose), git, curl, python3 and venv,
 build tools, jq, tmux, vim, openssh-client and similar, Podman and its network packages, Chromium, `chrome-devtools-mcp` (pinned), `uv`, ttyd and Starship (pinned, checksummed), a Python venv at `/opt/flow`,
-`container/` scripts and configuration (including `swarmbox-bus` and `swarmbox-tabs`, one Python file each), `cloudflare-setup.py`, and the tool manifests with their shims. The `voice` and `sysop` tools are in the image as source, and nothing of them is installed or running until you install them. `ENTRYPOINT swarmbox-entrypoint`, `CMD serve`. Subcommands of the entrypoint: `serve`, `attach`, `install`,
-`pubkey`, `tool`, `bus`, `tabs`, `host-helper` (the archive of the script and support files on stdout), anything else is run as given. Layers: stable first, volatile last; every `RUN` that downloads cleans up in the same `RUN`; `NPM_CONFIG_CACHE` is
-`/opt/npm-cache`, owned by `agent`. Every version is an `ARG` with a default; `CONTRIBUTING.md` says how they are bumped. A tool the image needs that is not in Debian is fetched with its published checksum verified. **tmux is the one exception to "the Debian package"**: Debian 13 has 3.5a, which has no pane scrollbar (tmux 3.6 added it), so the image installs one exact backport, `TMUX_VERSION` (3.7c-1~bpo13+1), pinned by SHA-256 for amd64 and arm64 and fetched from the archive or, when backports has moved on, from `snapshot.debian.org` by SHA-1; each source is checked against the SHA-256 before the file is installed. `container/config/tmux.conf` enables `pane-scrollbars on` with `set -gq`, so the same file loads on the older tmux of a development machine, which ignores it. `on` and not `modal`: with `modal` the pane is resized (one column) each time copy mode starts and ends, and the program in it gets a resize and redraws while you read its output [verified: tmux 3.7c with a program that logs SIGWINCH: 80 -> 79 -> 80 with `modal`, 79 throughout with `on`]; a program on the alternate screen gets the whole width and no bar, and one that asks for the mouse gets the wheel and tmux does not enter copy mode [verified: same tmux, a program that enables mouse tracking received the three wheel events].
+`container/` scripts and configuration (including `swarmbox-bus` and `swarmbox-tabs`, one Python file each), `cloudflare-setup.py`, and the addon manifests with their shims. The `voice` and `sysop` addons are in the image as source, and nothing of them is installed or running until you install them. `ENTRYPOINT swarmbox-entrypoint`, `CMD serve`. Subcommands of the entrypoint: `serve`, `attach`, `install`,
+`pubkey`, `addon`, `bus`, `tabs`, `host-helper` (the archive of the script and support files on stdout), anything else is run as given. Layers: stable first, volatile last; every `RUN` that downloads cleans up in the same `RUN`; `NPM_CONFIG_CACHE` is
+`/opt/npm-cache`, owned by `agent`. Every version is an `ARG` with a default; `CONTRIBUTING.md` says how they are bumped. A program the image needs that is not in Debian is fetched with its published checksum verified. **tmux is the one exception to "the Debian package"**: Debian 13 has 3.5a, which has no pane scrollbar (tmux 3.6 added it), so the image installs one exact backport, `TMUX_VERSION` (3.7c-1~bpo13+1), pinned by SHA-256 for amd64 and arm64 and fetched from the archive or, when backports has moved on, from `snapshot.debian.org` by SHA-1; each source is checked against the SHA-256 before the file is installed. `container/config/tmux.conf` enables `pane-scrollbars on` with `set -gq`, so the same file loads on the older tmux of a development machine, which ignores it. `on` and not `modal`: with `modal` the pane is resized (one column) each time copy mode starts and ends, and the program in it gets a resize and redraws while you read its output [verified: tmux 3.7c with a program that logs SIGWINCH: 80 -> 79 -> 80 with `modal`, 79 throughout with `on`]; a program on the alternate screen gets the whole width and no bar, and one that asks for the mouse gets the wheel and tmux does not enter copy mode [verified: same tmux, a program that enables mouse tracking received the three wheel events].
 
 **Distribution.** Image `ghcr.io/feroult/swarmbox`, multi-arch (amd64, arm64), tags `X.Y.Z`, `X.Y` and `latest`, published with each release. `.github/workflows/release.yml` runs the tests, a native build per architecture, a check that the
 script in the image reports the tag's version, a vulnerability scan (grype), the manifest list, keyless signing (cosign), and the SBOM (syft). To build it yourself, see CONTRIBUTING.md (`dev/dev-build.sh` inside a development box). A missing image is pulled by `up`, never built.
@@ -481,12 +482,12 @@ An `IMAGE` with no `X.Y` series (a digest, `latest`, `dev`) needs `--to`.
 
 ```
 Dockerfile                  the image
-container/entrypoint.sh     serve, attach, install, pubkey, tool, bus, tabs, host-helper
-container/scripts/          dirs, banner, messages, ssh-key, starship-init, swarmbox-{attach,bus,tabs,install,mcp,shim,tool,web}
+container/entrypoint.sh     serve, attach, install, pubkey, addon, bus, tabs, host-helper
+container/scripts/          dirs, banner, messages, ssh-key, starship-init, swarmbox-{attach,bus,tabs,install,mcp,shim,addon,web}
 container/host/             swarmbox-host (the `swarmbox` script), VERSION, DEFAULTS   (the archive of `host-helper`)
 install.sh                  the release installer (downloads swarmbox, checks its sha256)
 container/config/           tmux.conf, tmux-browser-keys.conf, starship.toml, bashrc.sh (the shell fragment), ssh-swarmbox.conf
-container/tools/<name>/     tool manifests and installers;  container/mcp/<name>/  MCP server descriptions
+container/addons/<name>/     addon manifests and installers;  container/mcp/<name>/  MCP server descriptions
 container/web/              ttyd page parts and build-index.sh
 cloudflare-setup.py         the back end of `swarmbox remote`
 dev/                        dev-build, name-check, release-check, release-version, record-checksums, gen-notices, kata-probe
@@ -502,9 +503,9 @@ Decisions that are still true. The full reasoning of D1 to D40 is in [history/de
 | Id | Decision | Reason |
 |---|---|---|
 | D1 | One persistent box; every tab and the browser share tmux session `main` | one environment, nothing to reconcile |
-| D2 | Neutral image, tools and agents installed on demand through shims | small image, independent versions |
+| D2 | Neutral image, addons and agents installed on demand through shims | small image, independent versions |
 | D3 | Claude Code updates itself (`UPDATE=self`) | npm install cannot self-update; vendor path works |
-| D4 | OpenCode is a shim like Claude Code; local-LLM setup lives in its tool directory | no special case in the core |
+| D4 | OpenCode is a shim like Claude Code; local-LLM setup lives in its addon directory | no special case in the core |
 | D5 | Nested Podman is always on, not a setting | agents need containers; the cost is stated in section 11 |
 | D6 | macOS through a Podman machine | wide audience; not yet tested |
 | D7 | No host-network mode | keeps the network surface small |
@@ -516,10 +517,10 @@ Decisions that are still true. The full reasoning of D1 to D40 is in [history/de
 | D15 | One script on the `PATH`, not a shell function or an alias | works from any shell and from scripts; no startup file to edit |
 | D16 | The script is POSIX `sh`; only `remote` is Python | runs on a bare host |
 | D17 | `update` records `IMAGE` in the host config; no startup file is edited | rollback and reset stay simple |
-| D18 | No project-level tools | an `install.sh` from a clone would run with your keys |
+| D18 | No project-level addons | an `install.sh` from a clone would run with your keys |
 | D19 | No throwaway-container mode; a second box uses `SWARMBOX_NAME` | one concept of "box" |
 | D20 | `install` only prints an installer; the installer writes one file, the support files and the config keys that are unset | nothing is written until you run it with `sh`; no startup file |
-| D21 | Agents install `latest`; every other tool is pinned | agents change fast; the rest must be reproducible |
+| D21 | Agents install `latest`; every other addon is pinned | agents change fast; the rest must be reproducible |
 | D23 | `chrome-devtools-mcp` pinned in the image, run directly, never `npx` | no download when the browser starts |
 | D25 | Apache-2.0 license; the name SwarmBox must be checked before the first release | see release checklist |
 | D26 | The script is trusted as part of the signed image; `install.sh` only compares a checksum from the same release | no separate signature unless asked |

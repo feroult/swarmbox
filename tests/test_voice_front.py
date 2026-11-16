@@ -1,4 +1,4 @@
-"""The voice front (container/tools/voice/lib/swarmbox_voice/front.py): routing, the same-origin rules, caps, the terminal pass-through
+"""The voice front (container/addons/voice/lib/swarmbox_voice/front.py): routing, the same-origin rules, caps, the terminal pass-through
 and the life of its two children. Fakes: tests/fixtures/voice/fake-ttyd.py (a page, a big body, websocket echo, the -O rule) and a stub
 service in this process. The process tests run the real command `swarmbox-voice front` (with the real service, whose /voice/health
 needs neither tmux nor a model). The front is an AUDIO ENTRY with a fixed table (page.js, page.css, health, audio): the tests pin that

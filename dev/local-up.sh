@@ -2,14 +2,14 @@
 # local-up.sh: build the image from this checkout and switch your box to it, in one command, so a change can be tried
 # without a release. Run it on the HOST (your own machine), from anywhere: it finds the checkout by its own path.
 #
-# Usage: sh dev/local-up.sh [--yes] [--no-reset] [--no-cache] [--with TOOLS] [--dry-run]
+# Usage: sh dev/local-up.sh [--yes] [--no-reset] [--no-cache] [--with ADDONS] [--dry-run]
 #        sh dev/local-up.sh --release [--yes] [--no-reset] [--dry-run]
 #   (nothing)    build localhost/swarmbox:local from this checkout, install the `swarmbox` script that image carries, record the
 #                image in your config, and reset the box so it runs on it
 #   --yes        reset without asking (without it, the reset is asked for on a terminal, and only printed otherwise)
 #   --no-reset   stop before the reset: build, install and record only; run `swarmbox reset` yourself when you are ready
 #   --no-cache   build from scratch (podman build --no-cache)
-#   --with TOOLS tools to record in a config that does not exist yet (an existing config keeps its own)
+#   --with ADDONS  addons to record in a config that does not exist yet (an existing config keeps its own)
 #   --dry-run    print the commands, run none
 #   --release    the way back: pull the published image of this series (the repository of container/host/DEFAULTS, the tag
 #                X.Y of container/host/VERSION), install its `swarmbox` script, record that image again, and reset

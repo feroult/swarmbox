@@ -1,4 +1,4 @@
-"""The panel of the sysop (container/tools/sysop/lib/swarmbox_sysop/panel.py): what it shows and what its keys do.
+"""The panel of the sysop (container/addons/sysop/lib/swarmbox_sysop/panel.py): what it shows and what its keys do.
 
   * Model and render alone (no terminal): every state at several sizes, text that came from a tab or the model made safe, the keys, the guard,
     the line editor, the countdown and its expiry.
@@ -127,7 +127,7 @@ class IdleScreen(unittest.TestCase):
         for needle in ("SYSOP", "IDLE", "no goal. Type one: Ctrl+A g", "From any tab: Ctrl+A, then g goal, V veto, X stop, a approve, S hide this panel",
                        "autonomy: confirm-risky", "brain: claude (haiku)", "topic: goal", "[g] Goal", "[q] Hide"):
             self.assertIn(needle, " ".join(text.split()) if len(needle) > 40 else text, needle)
-        self.assertNotIn("voice", text.lower(), "the panel does not know the voice tool: it says speak or type")
+        self.assertNotIn("voice", text.lower(), "the panel does not know the voice addon: it says speak or type")
 
     def test_the_panel_knows_nothing_of_a_microphone_nor_of_speaking(self):
         keys = [("c", "Veto"), ("x", "Stop"), ("g", "Goal"), ("l", "Log"), ("q", "Hide")]

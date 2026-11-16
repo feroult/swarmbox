@@ -14,7 +14,7 @@
 # Variable                 Value (defaults shown)
 # SB_CONFIG_DIR            ${XDG_CONFIG_HOME:-$HOME/.config}/swarmbox            you edit (web-terminal.conf, manifests)
 # SB_DATA_DIR              ${XDG_DATA_HOME:-$HOME/.local/share}/swarmbox         installed things
-# SB_TOOLS_DIR             $SB_DATA_DIR/tools
+# SB_ADDONS_DIR            $SB_DATA_DIR/addons
 # SB_SHIMS_DIR             $SB_DATA_DIR/shims
 # SB_STATE_DIR             ${XDG_STATE_HOME:-$HOME/.local/state}/swarmbox        logs, health, socket
 # SB_LOG_DIR               $SB_STATE_DIR/logs
@@ -43,7 +43,7 @@ _sb_home=${HOME:-}
 SB_CONFIG_DIR=$(_sb_xdg_root "${XDG_CONFIG_HOME:-}" "$_sb_home/.config")/swarmbox
 SB_DATA_DIR=$(_sb_xdg_root "${XDG_DATA_HOME:-}" "$_sb_home/.local/share")/swarmbox
 SB_STATE_DIR=$(_sb_xdg_root "${XDG_STATE_HOME:-}" "$_sb_home/.local/state")/swarmbox
-SB_TOOLS_DIR=$SB_DATA_DIR/tools
+SB_ADDONS_DIR=$SB_DATA_DIR/addons
 SB_SHIMS_DIR=$SB_DATA_DIR/shims
 SB_LOG_DIR=$SB_STATE_DIR/logs
 SB_HEALTH_FILE=$SB_STATE_DIR/health

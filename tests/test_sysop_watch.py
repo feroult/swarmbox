@@ -125,7 +125,7 @@ class Scripted(unittest.TestCase):
         with open(pth.crashloop) as f:
             self.assertIn("keeps crashing", f.read())
         self.set_mode("sleep")
-        w2 = self.start_watcher()                    # what `swarmbox-tool prepare` does
+        w2 = self.start_watcher()                    # what `swarmbox-addon prepare` does
         self.assertEqual(w2.wait(10), 0, "a second watcher ends at once")
         self.assertTrue(wait_for(lambda: self.n_starts() == 4), "the first one started the service again")
         self.assertTrue(wait_for(lambda: not os.path.exists(pth.crashloop)))

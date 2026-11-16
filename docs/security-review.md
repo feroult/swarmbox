@@ -8,7 +8,7 @@ Treat it as a first written review, not an audit. A human review is on the [rele
 Read in full: the `swarmbox` script `container/host/swarmbox-host` (POSIX sh: configuration, `create-flags`, `fingerprint`, `up`, `reset`, `stop`, `url`,
 `update`, `remote`, the connector step, the lock, temporary files, every `eval`, the extraction of the support files from the image, `setup`), the installers `container/scripts/swarmbox-install.sh` and `install.sh`, and `cloudflare-setup.py` as the back end of `remote`.
 
-Not reviewed: the container side (`serve`, tools, shims), the web terminal, Cloudflare's services, Podman itself, the signing of the image,
+Not reviewed: the container side (`serve`, addons, shims), the web terminal, Cloudflare's services, Podman itself, the signing of the image,
 and the flags the script builds as Podman handles them. No real macOS, no real WSL and no Podman older than 4.3 were available, so behaviour
 that differs there (BSD `stat` and `find` for the mode check, `mktemp -d` templates, `chmod` on `/mnt`) is unverified.
 
@@ -43,7 +43,7 @@ Tests are in `tests/test_security_review.py`, by class.
 | SR-14 | info | `umask 077`, `cfg_write_keys`, `fetch_helper`, `save_config` | File modes. With umask 000 everything the helper creates under the config, state and data folders has no group or other permission. The mode is read as an octal number (`stat -c %a`, `stat -f %Lp`, `find -perm`), never from `ls`. The BSD forms were not run on a real macOS (unverified). | documented | ModeTest |
 | SR-15 | low | `notice_mark` | The notices file (names of keys already announced, not secret) is appended with `>>`, which follows a symlink at that name. The folder is private (SR-03), so only the user can plant it. Accepted: same-user input is out of scope. | documented | TempFileTest |
 
-## Tools and limits
+## Addons and limits
 
 - `shellcheck -s sh container/host/swarmbox-host container/scripts/swarmbox-install.sh install.sh` found nothing in the earlier script (shellcheck 0.9.0, 2026-11-08); the installers and `setup` were added later and shellcheck is not installed in the development box, so CI is their first run.
 - `tests/test_security_review.py` runs the real helper and script against a fake Podman, on `mktemp` folders only.

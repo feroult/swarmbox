@@ -2,9 +2,9 @@
 
 Checks:
   - no "[unverified" is left in the notices; what could not be checked is tagged "[owner-check: ...]" and says why;
-  - every package of the Dockerfile apt lists and every manifest under container/tools appears in the file with a license
+  - every package of the Dockerfile apt lists and every manifest under container/addons appears in the file with a license
     identifier and a source URL;
-  - the image-baked set (WITH_TOOLS default, empty) is stated, and equals the manifests that are installed on first use;
+  - the image-baked set (WITH_ADDONS default, empty) is stated, and equals the manifests that are installed on first use;
   - the notices say how to obtain the corresponding source of copyleft components;
   - the full package list (docs/debian-packages.tsv) has one line per package with a license column and flags;
   - dev/gen-notices.sh against a fake dpkg-query and a fixture /usr/share/doc tree: deterministic, flags a package without a
@@ -82,7 +82,7 @@ class NoticesContentTest(unittest.TestCase):
     def test_every_manifest_has_license_and_source(self):
         low = self.t.lower()
         notice_name = {"gcloud": "google cloud cli"}
-        for name in sorted(os.listdir(os.path.join(ROOT, "container", "tools"))):
+        for name in sorted(os.listdir(os.path.join(ROOT, "container", "addons"))):
             s = section(self.t, notice_name.get(name, name))
             self.assertRegex(s, r"(?i)license:", "%s has no license line" % name)
             self.assertRegex(s, r"https://\S+", "%s has no source URL" % name)

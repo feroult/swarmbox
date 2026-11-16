@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """End to end proof of version 1 FROM THE MICROPHONE IN A BROWSER TO THE ANSWER IN A REAL CLAUDE CODE TAB, inside a container. NOT part of the fast gate.
 
-Every piece is the real one: the voice tool installed by the real swarmbox-tool (whisper.cpp built from source, model small; the install is cached in a
+Every piece is the real one: the voice addon installed by the real swarmbox-addon (whisper.cpp built from source, model small; the install is cached in a
 mounted folder and copied from it), the web terminal started as the box starts it (container/scripts/swarmbox-web.sh run: the voice front on 7681, ttyd
 attached to the real tmux session through swarmbox-attach, the voice service), the real swarmbox-bus under a supervisor like the entrypoint's, the sysop
-installed and started by swarmbox-tool, swarmbox-tabs, `claude -p` (haiku) as the brain, a second real Claude Code in a tab (auto-approve flag), and a
+installed and started by swarmbox-addon, swarmbox-tabs, `claude -p` (haiku) as the brain, a second real Claude Code in a tab (auto-approve flag), and a
 headless Chromium whose fake microphone plays WAVs made here with espeak-ng, driven over the DevTools protocol: the mouse presses the microphone button,
 the keys are real key events into the terminal of the page. The only browser client of tmux is the web terminal. The tmux server is the container's own
 (a private TMUX_TMPDIR; the program refuses to run outside a container).
@@ -430,14 +430,14 @@ class VBox(E.Box):
             json.dump({"hasCompletedOnboarding": True, "theme": "dark", "projects": projects}, f)
         with open(os.path.join(self.home, ".claude", "settings.json"), "w") as f:
             json.dump({"skipDangerousModePermissionPrompt": True}, f)
-        tools = self.env["SWARMBOX_TEST_IMAGE_TOOLS"]
-        shutil.rmtree(tools, ignore_errors=True)
-        os.makedirs(tools)
+        addons = self.env["SWARMBOX_TEST_IMAGE_ADDONS"]
+        shutil.rmtree(addons, ignore_errors=True)
+        os.makedirs(addons)
         for t in ("sysop", "voice"):
-            shutil.copytree(os.path.join(REPO, "container", "tools", t), os.path.join(tools, t), ignore=shutil.ignore_patterns("__pycache__"))
+            shutil.copytree(os.path.join(REPO, "container", "addons", t), os.path.join(addons, t), ignore=shutil.ignore_patterns("__pycache__"))
         for name, body in (("swarmbox-bus", 'exec /usr/bin/python3 -S "%s/container/scripts/swarmbox-bus.py" "$@"' % REPO),
                            ("swarmbox-tabs", 'exec /usr/bin/python3 -S "%s/container/scripts/swarmbox-tabs.py" "$@"' % REPO),
-                           ("swarmbox-tool", 'exec bash "%s/container/scripts/swarmbox-tool.sh" "$@"' % REPO),
+                           ("swarmbox-addon", 'exec bash "%s/container/scripts/swarmbox-addon.sh" "$@"' % REPO),
                            ("swarmbox-attach", 'SWARMBOX_TEST_RUN_DIR="%s" exec bash "%s" "$@"' % (self.run_dir, ATTACH_SH))):
             p = os.path.join(self.bin, name)
             with open(p, "w") as f:
@@ -451,8 +451,8 @@ class VBox(E.Box):
         check("setup: the bus answers", wait_for(lambda: self.sh(["swarmbox-bus", "ping"]).returncode == 0, 15) is not None)
         self.install_voice()
         self.voice_launcher()
-        r = self.sh(["swarmbox-tool", "install", "sysop"], timeout=90)
-        check("setup: swarmbox-tool install sysop (install.sh, self-test, prepare.sh)", r.returncode == 0, r.stderr.strip().replace("\n", " | ")[-300:])
+        r = self.sh(["swarmbox-addon", "install", "sysop"], timeout=90)
+        check("setup: swarmbox-addon install sysop (install.sh, self-test, prepare.sh)", r.returncode == 0, r.stderr.strip().replace("\n", " | ")[-300:])
         self.sysop_launcher()
         check("setup: the sysop service runs and is connected to the bus", self.wait_service(30))
         self.build_page()
@@ -466,7 +466,7 @@ class VBox(E.Box):
         self.br.screenshot("setup-page")
 
     def voice_launcher(self):
-        """the shim `swarmbox-voice` of the box's PATH (swarmbox-tool link): here a launcher of the installed copy"""
+        """the shim `swarmbox-voice` of the box's PATH (swarmbox-addon link): here a launcher of the installed copy"""
         with open(os.path.join(self.bin, "swarmbox-voice"), "w") as f:
             f.write('#!/bin/sh\nexec "%s" "$@"\n' % os.path.join(self.voice_prefix(), "current", "bin", "swarmbox-voice"))
         os.chmod(os.path.join(self.bin, "swarmbox-voice"), 0o755)
@@ -481,19 +481,19 @@ class VBox(E.Box):
         os.chmod(os.path.join(self.bin, "swarmbox-sysop"), 0o755)
 
     def voice_prefix(self):
-        return os.path.join(self.home, ".local", "share", "swarmbox", "tools", "voice")
+        return os.path.join(self.home, ".local", "share", "swarmbox", "addons", "voice")
 
     def install_voice(self):
-        """the voice tool: copied from the cache folder when it has the install (whisper.cpp built, the model), else installed by swarmbox-tool and put there"""
+        """the voice addon: copied from the cache folder when it has the install (whisper.cpp built, the model), else installed by swarmbox-addon and put there"""
         dest = self.voice_prefix()
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        cached = os.path.join(CACHE, "home", ".local", "share", "swarmbox", "tools", "voice")
+        cached = os.path.join(CACHE, "home", ".local", "share", "swarmbox", "addons", "voice")
         t = time.time()
         if os.path.isdir(os.path.join(cached, "1.9.5", "models")) and os.path.exists(os.path.join(cached, "current")):
             shutil.copytree(cached, dest, symlinks=True)
             info("voice", "install copied from the cache in %.1fs" % (time.time() - t))
-        r = self.sh(["swarmbox-tool", "install", "voice"], timeout=1500)
-        check("setup: swarmbox-tool install voice (whisper.cpp, model small, self-test)", r.returncode == 0 and
+        r = self.sh(["swarmbox-addon", "install", "voice"], timeout=1500)
+        check("setup: swarmbox-addon install voice (whisper.cpp, model small, self-test)", r.returncode == 0 and
               os.path.exists(os.path.join(dest, "1.9.5", "models", "ggml-small.bin")), r.stderr.strip().replace("\n", " | ")[-300:])
         if os.path.isdir(CACHE) and not os.path.isdir(os.path.join(cached, "1.9.5", "models")):
             try:
@@ -501,7 +501,7 @@ class VBox(E.Box):
                 shutil.copytree(dest, cached, symlinks=True)
             except OSError as e:
                 info("voice", "the cache could not be written: %s" % e)
-        r = self.sh(["swarmbox-tool", "prepare"], timeout=60)
+        r = self.sh(["swarmbox-addon", "prepare"], timeout=60)
         info("voice prepare", r.stderr.strip().replace("\n", " | ")[-200:])
 
     def build_page(self):
@@ -893,8 +893,8 @@ def s3(box):
     br.screenshot("3a-sysop-stopped")
     check("s3a: sysop stopped: the page says 'Nobody is listening' and the terminal still works", state == "nolistener" and "Nobody is listening" in note and br.term_size()[0] > 0, (state, note))
     # 3b: the sysop is not installed
-    r = box.sh(["swarmbox-tool", "remove", "sysop"], timeout=60)
-    check("s3b: swarmbox-tool remove sysop", r.returncode == 0, r.stderr.strip()[-200:])
+    r = box.sh(["swarmbox-addon", "remove", "sysop"], timeout=60)
+    check("s3b: swarmbox-addon remove sysop", r.returncode == 0, r.stderr.strip()[-200:])
     time.sleep(0.5)
     h, state, note, _ = speak_and_end(box, br, "en-hello")
     check("s3b: no sysop installed: the same clean state, 'Nobody is listening'", state == "nolistener" and "Nobody is listening" in note, (state, note))
@@ -909,8 +909,8 @@ def s3(box):
     # 3d: everything comes back: bus, sysop install and start, then the full path again
     box.start_bus()
     check("s3d: the bus is back", wait_for(lambda: box.sh(["swarmbox-bus", "ping"]).returncode == 0, 15) is not None)
-    r = box.sh(["swarmbox-tool", "install", "sysop"], timeout=90)
-    check("s3d: swarmbox-tool install sysop again (prepare starts the service)", r.returncode == 0, r.stderr.strip()[-200:])
+    r = box.sh(["swarmbox-addon", "install", "sysop"], timeout=90)
+    check("s3d: swarmbox-addon install sysop again (prepare starts the service)", r.returncode == 0, r.stderr.strip()[-200:])
     box.sysop_launcher()
     check("s3d: the service is connected to the bus", box.wait_service(30))
     tabs = box.reset_tabs(claude=True)

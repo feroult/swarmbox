@@ -10,7 +10,7 @@
 #
 #   dev/host-smoke.sh                 build the image, create a throw-away box, check it, remove everything
 #   dev/host-smoke.sh --no-cache      build without the layer cache (slow)
-#   dev/host-smoke.sh --with-tools    also run `tool install go` (needs the network, slow)
+#   dev/host-smoke.sh --with-addons   also run `addon install go` (needs the network, slow)
 #   dev/host-smoke.sh --keep          do not clean up; print the names so you can look and remove them
 #   dev/host-smoke.sh --force         run even when /run/.containerenv or /.dockerenv says this is a container
 #   dev/host-smoke.sh --dry-run       print the commands without running Podman
@@ -23,11 +23,11 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 say() { printf '%s\n' "$*"; }
 
-NOCACHE= TOOLS=0 KEEP=0 FORCE=0 DRY=0
+NOCACHE= ADDONS=0 KEEP=0 FORCE=0 DRY=0
 for a in "$@"; do
   case $a in
     --no-cache) NOCACHE=--no-cache ;;
-    --with-tools) TOOLS=1 ;;
+    --with-addons) ADDONS=1 ;;
     --keep) KEEP=1 ;;
     --force) FORCE=1 ;;
     --dry-run) DRY=1 ;;
@@ -204,10 +204,10 @@ s_nested() {
   [ "$(IN podman run --rm docker.io/library/alpine:3.20 echo nested-ok)" = nested-ok ] || fail "nested podman run did not print nested-ok"
 }
 s_tun() { IN test -c /dev/net/tun || fail "/dev/net/tun is missing in the box"; }
-s_toollist() { SB tool list; }
-s_toolgo() {
-  [ "$TOOLS" = 1 ] || { say "needs the network and is slow; use --with-tools" >&2; return 77; }
-  SB tool install go && IN sh -lc 'go version' || fail "go is not usable after tool install"
+s_addonlist() { SB addon list; }
+s_addongo() {
+  [ "$ADDONS" = 1 ] || { say "needs the network and is slow; use --with-addons" >&2; return 77; }
+  SB addon install go && IN sh -lc 'go version' || fail "go is not usable after addon install"
 }
 s_up2() {
   id1=$(inspect '{{.Id}}'); SB up || return 1
@@ -228,7 +228,7 @@ s_url() {
 }
 s_help() {
   h=$(SB help 2>&1)
-  for w in up stop reset url config env pubkey tool remote; do say "$h" | grep -q "$w" || fail "help does not list $w"; done
+  for w in up stop reset url config env pubkey addon remote; do say "$h" | grep -q "$w" || fail "help does not list $w"; done
   [ "$(SB --help 2>&1)" = "$h" ] && [ "$(SB -h 2>&1)" = "$h" ] || fail "--help and -h differ from help"
   [ -n "$(SB version)" ] || fail "version printed nothing"
 }
@@ -246,7 +246,7 @@ step "install script from the image, twice" onimg s_install
 step "up creates the box" onimg s_up
 for t in "box running, name, labels:s_labels" "config get/set:s_config" "env add/list/rm:s_env" "pubkey prints a key:s_pubkey" \
   "user is agent uid 1000:s_user" "workspace is home:s_home" "tmux session main:s_tmux" "ttyd answers 200:s_web" "git installed:s_git" "swarmbox <command> runs in the box:s_run" \
-  "nested podman run:s_nested" "/dev/net/tun:s_tun" "tool list:s_toollist" "tool install go:s_toolgo" "second up is harmless:s_up2" \
+  "nested podman run:s_nested" "/dev/net/tun:s_tun" "addon list:s_addonlist" "addon install go:s_addongo" "second up is harmless:s_up2" \
   "stop:s_stop" "up again, web answers:s_restart" "reset keeps workspace and key:s_reset" "url local only:s_url" "help lists commands:s_help"; do
   step "${t%:*}" onbox "${t##*:}"
 done

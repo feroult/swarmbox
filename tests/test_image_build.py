@@ -68,7 +68,7 @@ class ImageTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("uid=1000(node) gid=1000(node)", r.stdout)
 
-    def test_tools_present(self):
+    def test_programs_present(self):
         for cmd in (["tmux", "-V"], ["ttyd", "--version"], ["starship", "--version"], ["git", "--version"],
                     ["podman", "--version"], ["chromium", "--version"], ["uv", "--version"], ["jq", "--version"]):
             r = in_image(*cmd)

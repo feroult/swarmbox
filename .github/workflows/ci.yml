@@ -62,9 +62,9 @@ jobs:
       - name: Shellcheck the new shell files
         run: |
           shellcheck -s sh install.sh container/host/swarmbox-host container/scripts/swarmbox-install.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh dev/gen-notices.sh dev/release-version.sh dev/release-check.sh dev/name-check.sh dev/check.sh dev/hooks/pre-push dev/release.sh dev/local-up.sh
-          shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-tool.sh container/scripts/banner.sh container/scripts/swarmbox-statusline.sh container/config/bashrc.sh
-      - name: Validate the tool manifests (swarmbox-tool validate, no container)
-        run: container/scripts/swarmbox-tool.sh validate container/tools
+          shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-addon.sh container/scripts/banner.sh container/scripts/swarmbox-statusline.sh container/config/bashrc.sh
+      - name: Validate the addon manifests (swarmbox-addon validate, no container)
+        run: container/scripts/swarmbox-addon.sh validate container/addons
       - name: The swarmbox script under dash and busybox sh
         run: |
           command -v dash
@@ -105,7 +105,7 @@ jobs:
           export SWARMBOX_IMAGE_BUILD=1
           python3 tests/test_bashrc_container.py
           python3 tests/test_image_build.py
-          python3 tests/test_image_with_tools.py
+          python3 tests/test_image_with_addons.py
       - name: Remove the image
         if: always()
         run: podman rmi "$SWARMBOX_IMAGE_TAG" || true
@@ -209,10 +209,10 @@ jobs:
           SWARMBOX_TEST_REAL_TMUX=1 python3 tests/test_web_strip.py
           SWARMBOX_TEST_REAL_TMUX=1 python3 tests/test_sysop_dock.py
 
-  # The real-installer tests: every tool of container/tools is installed for real in a throwaway container
+  # The real-installer tests: every addon of container/addons is installed for real in a throwaway container
   # ("no side effects", "survives a reset"). They download several hundred MB, so they run on the weekly schedule and by hand,
   # never on push. Nothing is pushed and no port is published. [unverified] that this job ever ran on a runner.
-  real-tools:
+  real-addons:
     name: real installers (scheduled)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -232,13 +232,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python3 tests/test_tool_voice.py 2>&1 | tee voice.out
+          python3 tests/test_addon_voice.py 2>&1 | tee voice.out
           if grep -q 'skipped' voice.out; then echo "the real voice install was skipped"; exit 1; fi
-      - name: Real installers, one table row per tool
+      - name: Real installers, one table row per addon
         shell: bash
         run: |
           set -o pipefail
-          python3 tests/test_tool_real.py 2>&1 | tee real.out
+          python3 tests/test_addon_real.py 2>&1 | tee real.out
           if grep -q 'skipped' real.out; then echo "real tests were skipped"; exit 1; fi
       - name: Remove the image
         if: always()

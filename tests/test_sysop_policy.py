@@ -1,4 +1,4 @@
-"""The policy of the sysop: the risk of a text (the table of the voice tool plus the new patterns), bypass attempts, what the tab runs, text
+"""The policy of the sysop: the risk of a text (the table of the voice addon plus the new patterns), bypass attempts, what the tab runs, text
 typed in several parts, keys, the autonomy table, the budgets. Pure functions: no bus, no model, no tmux.
 Run with: python3 -W error tests/test_sysop_policy.py
 """

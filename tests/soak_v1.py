@@ -6,7 +6,7 @@ Run it with tests/soak_v1.sh (it starts the container and, for the few real goal
     python3 tests/soak_v1.py [--minutes 40] [--faults NAMES] [--list] [--real N] [--no-idle]
 
 The stack is the box's own, not a copy of it: `container/entrypoint.sh serve` (the real supervisors of the bus and of the web terminal, the readiness
-marker, the steps) with the real swarmbox-bus, swarmbox-tabs, swarmbox-sysop (installed by swarmbox-tool, started by its prepare.sh) and swarmbox-voice
+marker, the steps) with the real swarmbox-bus, swarmbox-tabs, swarmbox-sysop (installed by swarmbox-addon, started by its prepare.sh) and swarmbox-voice
 (the front on the web port, the voice service, the real ttyd attached to the real tmux through swarmbox-attach); tmux uses the box's tmux.conf.
 Stand-ins, and only these: the brain of most goals is the fake claude of tests/fixtures/sysop behind tests/fixtures/soak/brain.py (a goal can ask for the real
 `claude -p`, a few are made); whisper-cli is tests/fixtures/voice/whisper-fake (the transcript is in the WAV); the nested Podman is off
@@ -308,9 +308,9 @@ class Stack:
         self.env = {
             "PATH": self.bin + ":/usr/local/bin:/usr/bin:/bin", "HOME": self.home, "TERM": "xterm-256color", "LANG": "C.UTF-8",
             "XDG_STATE_HOME": STATE_MOUNT, "TMUX_TMPDIR": self.tmux_tmp, "SWARMBOX_TEST_LIB": os.path.join(REPO, "container", "scripts"),
-            "SWARMBOX_TEST_IMAGE_TOOLS": os.path.join(WORK, "imagetools"), "SWARMBOX_TEST_USER_TOOLS": os.path.join(WORK, "usertools"),
+            "SWARMBOX_TEST_IMAGE_ADDONS": os.path.join(WORK, "imageaddons"), "SWARMBOX_TEST_USER_ADDONS": os.path.join(WORK, "useraddons"),
             "SWARMBOX_TEST_HOST_DIR": os.path.join(WORK, "host"), "SWARMBOX_TEST_IMAGE_SHIMS": os.path.join(WORK, "out", "shims"),
-            "SWARMBOX_TEST_USER_SHIMS": os.path.join(WORK, "out", "ushims"), "SWARMBOX_TEST_LOCK": os.path.join(WORK, "tool.lock"),
+            "SWARMBOX_TEST_USER_SHIMS": os.path.join(WORK, "out", "ushims"), "SWARMBOX_TEST_LOCK": os.path.join(WORK, "addon.lock"),
             "SWARMBOX_TEST_NO_NESTED": "1", "SWARMBOX_TEST_TUN": "/dev/null", "SWARMBOX_TEST_WEB_PAGE": os.path.join(WORK, "built", "index.html"),
             "SWARMBOX_WEB": "1", "SWARMBOX_WITH": "",
             "SWARMBOX_SYSOP_BRAIN": "python3 %s {mcp_config} {model} {max_turns} {system_prompt_file}" % os.path.join(REPO, "tests", "fixtures", "soak", "brain.py"),
@@ -402,7 +402,7 @@ class Stack:
         return self.tmux("capture-pane", "-p", "-J", "-t", pane) if pane else ""
 
     def sysop_bin(self):
-        base = os.path.join(self.home, ".local", "share", "swarmbox", "tools", "sysop")
+        base = os.path.join(self.home, ".local", "share", "swarmbox", "addons", "sysop")
         v = sorted(os.listdir(base)) if os.path.isdir(base) else []
         v = [x for x in v if x != "current"]
         return os.path.join(base, v[0], "bin", "swarmbox-sysop") if v else None
@@ -452,17 +452,17 @@ class Stack:
             json.dump({"hasCompletedOnboarding": True, "theme": "dark", "projects": proj}, f)
         with open(os.path.join(self.home, ".claude", "settings.json"), "w") as f:
             json.dump({"skipDangerousModePermissionPrompt": True}, f)
-        # the image's tools: copies of the two tools (the voice one with its installer replaced: no download, no build)
-        tools = self.env["SWARMBOX_TEST_IMAGE_TOOLS"]
-        shutil.rmtree(tools, ignore_errors=True)
-        os.makedirs(tools)
+        # the image's addons: copies of the two addons (the voice one with its installer replaced: no download, no build)
+        addons = self.env["SWARMBOX_TEST_IMAGE_ADDONS"]
+        shutil.rmtree(addons, ignore_errors=True)
+        os.makedirs(addons)
         for t in ("sysop", "voice"):
-            shutil.copytree(os.path.join(REPO, "container", "tools", t), os.path.join(tools, t), ignore=shutil.ignore_patterns("__pycache__"))
-        shutil.copy(os.path.join(REPO, "tests", "fixtures", "soak", "voice-install.sh"), os.path.join(tools, "voice", "install.sh"))
+            shutil.copytree(os.path.join(REPO, "container", "addons", t), os.path.join(addons, t), ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copy(os.path.join(REPO, "tests", "fixtures", "soak", "voice-install.sh"), os.path.join(addons, "voice", "install.sh"))
         scripts = os.path.join(REPO, "container", "scripts")
         launchers = (("swarmbox-bus", 'exec /usr/bin/python3 -S "%s/swarmbox-bus.py" "$@"' % scripts),
                      ("swarmbox-tabs", 'exec /usr/bin/python3 -S "%s/swarmbox-tabs.py" "$@"' % scripts),
-                     ("swarmbox-tool", 'exec bash "%s/swarmbox-tool.sh" "$@"' % scripts),
+                     ("swarmbox-addon", 'exec bash "%s/swarmbox-addon.sh" "$@"' % scripts),
                      ("swarmbox-web", 'exec bash "%s/swarmbox-web.sh" "$@"' % scripts),
                      ("swarmbox-attach", 'exec bash "%s/swarmbox-attach.sh" "$@"' % scripts),
                      ("swarmbox-pubkey", "exit 0"), ("swarmbox-mcp", "exit 0"),
@@ -476,15 +476,15 @@ class Stack:
             os.makedirs(d, exist_ok=True)
         self.build_page()
         log("versions: tmux %s; python %s" % (self.sh(["tmux", "-V"]).stdout.strip(), sys.version.split()[0]))
-        # install the tools as the box does (swarmbox-tool install: install.sh then prepare.sh at the next start); serve runs prepare
-        r = self.sh(["swarmbox-tool", "install", "sysop"], timeout=90, env={"SWARMBOX_SYSOP_PANEL_MODE": "off"})
-        check("setup: swarmbox-tool install sysop", r.returncode == 0, r.stderr.strip().replace("\n", " | ")[-200:])
+        # install the addons as the box does (swarmbox-addon install: install.sh then prepare.sh at the next start); serve runs prepare
+        r = self.sh(["swarmbox-addon", "install", "sysop"], timeout=90, env={"SWARMBOX_SYSOP_PANEL_MODE": "off"})
+        check("setup: swarmbox-addon install sysop", r.returncode == 0, r.stderr.strip().replace("\n", " | ")[-200:])
         self.stop_sysop_started_by_install()
-        r = self.sh(["swarmbox-tool", "install", "voice"], timeout=90)
-        check("setup: swarmbox-tool install voice (stand-in installer)", r.returncode == 0, r.stderr.strip().replace("\n", " | ")[-200:])
-        # the shims `swarmbox-sysop` and `swarmbox-voice` of the box's PATH (swarmbox-tool link): launchers of the installed copies
-        for name, tool in (("swarmbox-sysop", "sysop"), ("swarmbox-voice", "voice")):
-            real = self.sh(["swarmbox-tool", "where", tool, name]).stdout.strip()
+        r = self.sh(["swarmbox-addon", "install", "voice"], timeout=90)
+        check("setup: swarmbox-addon install voice (stand-in installer)", r.returncode == 0, r.stderr.strip().replace("\n", " | ")[-200:])
+        # the shims `swarmbox-sysop` and `swarmbox-voice` of the box's PATH (swarmbox-addon link): launchers of the installed copies
+        for name, addon in (("swarmbox-sysop", "sysop"), ("swarmbox-voice", "voice")):
+            real = self.sh(["swarmbox-addon", "where", addon, name]).stdout.strip()
             with open(os.path.join(self.bin, name), "w") as f:
                 f.write('#!/bin/sh\nexec "%s" "$@"\n' % real)
             os.chmod(os.path.join(self.bin, name), 0o755)
@@ -864,8 +864,8 @@ def heal(box, wait=70):
             wait_for(box.bus_ok, 15)
     if not box.sysop_up():
         if not wait_for(box.sysop_up, 12):
-            box.sh(["swarmbox-tool", "prepare"], timeout=60)
-            repairs.append("swarmbox-tool prepare")
+            box.sh(["swarmbox-addon", "prepare"], timeout=60)
+            repairs.append("swarmbox-addon prepare")
             wait_for(box.sysop_up, 20)
     if not (box.front_ok() and box.term_ok()):
         if not wait_for(lambda: box.front_ok() and box.term_ok(), 20):
@@ -909,9 +909,9 @@ def f_sysop_kill(box, load):
     rec = time.time() - t0
     note = ""
     if not got:
-        r = box.sh(["swarmbox-tool", "prepare"], timeout=60)
+        r = box.sh(["swarmbox-addon", "prepare"], timeout=60)
         wait_for(box.sysop_up, 20)
-        note = "nobody restarted it; `swarmbox-tool prepare` by hand did"
+        note = "nobody restarted it; `swarmbox-addon prepare` by hand did"
     ok, secs, det = probe_flow(box, 40)
     row("sysop-kill", "kill -9 of the resident service while idle; %s" % ("a new service was up after %.1f s" % got[0] if got else "no service for 45 s"), got[0] if got else None, bool(got and ok), note=note)
 
@@ -927,7 +927,7 @@ def f_sysop_kill_midgoal(box, load):
         got = wait_for(lambda: (box.one("sysop") or p).pid != p.pid and box.sysop_up(), 45)
         note = ""
         if not got:
-            box.sh(["swarmbox-tool", "prepare"], timeout=60)
+            box.sh(["swarmbox-addon", "prepare"], timeout=60)
             wait_for(box.sysop_up, 20)
             note = "nobody restarted it; prepare by hand"
         rec = time.time() - t0
@@ -965,11 +965,11 @@ def f_sysop_crashloop(box, load):
         pub = pub_goal(box, "while the sysop has given up #s=read")
         v = voice_say("voice while the sysop has given up #s=read")
         t1 = time.time()
-        box.sh(["swarmbox-tool", "prepare"], timeout=60)
+        box.sh(["swarmbox-addon", "prepare"], timeout=60)
         back = wait_for(box.sysop_up, 30)
         ok, secs, det = probe_flow(box, 40)
         cleared = not os.path.exists(crash)
-        row("sysop-crashloop", "kill -9 of the service %d times in a row: the watcher %s; status said: %s; pub then said exit %s, voice %s; `swarmbox-tool prepare` brought it back in %s s (crashloop file gone: %s)"
+        row("sysop-crashloop", "kill -9 of the service %d times in a row: the watcher %s; status said: %s; pub then said exit %s, voice %s; `swarmbox-addon prepare` brought it back in %s s (crashloop file gone: %s)"
             % (kills, "gave up" if gave else "kept restarting", said, pub[0], v, "%.1f" % back[0] if back else "never", cleared), time.time() - t1,
             bool(gave) and down and bool(back) and ok and cleared and "keeps crashing" in said)
     finally:
@@ -1315,7 +1315,7 @@ def f_voice_stop(box, load):
 
 
 def audit_limits():
-    sys.path.insert(0, os.path.join(REPO, "container", "tools", "sysop", "lib"))
+    sys.path.insert(0, os.path.join(REPO, "container", "addons", "sysop", "lib"))
     from swarmbox_sysop import audit
     return audit.MAX_FILE, getattr(audit, "KEEP", 1)
 
@@ -1397,7 +1397,7 @@ def f_disk_full(box, load):
         t1 = time.time()
         got = wait_for(box.sysop_up, 60)
         if not got:
-            box.sh(["swarmbox-tool", "prepare"], timeout=60)
+            box.sh(["swarmbox-addon", "prepare"], timeout=60)
             wait_for(box.sysop_up, 20)
         ok, secs, det = probe_flow(box, 60)
         tmp = [f for r, d, fs in os.walk(box.state) for f in fs if f.startswith(".tmp-")]

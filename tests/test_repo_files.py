@@ -1,7 +1,7 @@
 """Repository files: LICENSE, THIRD_PARTY_NOTICES.md and CONTRIBUTING.md.
 
 Checks: LICENSE is the Apache License 2.0 with its appendix; the notices name ttyd, starship and tmux (each with a license and
-a URL) and every tool the Dockerfile installs from a pinned download or a package manager; CONTRIBUTING.md names the test
+a URL) and every program the Dockerfile installs from a pinned download or a package manager; CONTRIBUTING.md names the test
 command, the build command, the swarmbox-test- rule and the never-touch-the-live-box rule, and every relative path it
 mentions exists.
 Run: python3 tests/test_repo_files.py
@@ -23,10 +23,10 @@ def read(name):
         return f.read()
 
 
-def notice_section(text, tool):
-    """The part of the notices that starts at the heading of `tool` and ends at the next heading."""
-    m = re.search(r"^#{2,3} .*\b%s\b.*$" % re.escape(tool), text, re.M | re.I)
-    assert m, "no heading for %s" % tool
+def notice_section(text, program):
+    """The part of the notices that starts at the heading of `program` and ends at the next heading."""
+    m = re.search(r"^#{2,3} .*\b%s\b.*$" % re.escape(program), text, re.M | re.I)
+    assert m, "no heading for %s" % program
     rest = text[m.end():]
     n = re.search(r"^#{1,3} ", rest, re.M)
     return rest[:n.start()] if n else rest
@@ -44,37 +44,37 @@ class LicenseTest(unittest.TestCase):
 
 
 class NoticesTest(unittest.TestCase):
-    def test_core_tools_have_license_and_url(self):
+    def test_core_programs_have_license_and_url(self):
         t = read("THIRD_PARTY_NOTICES.md")
-        for tool in ("ttyd", "starship", "tmux"):
-            s = notice_section(t, tool)
-            self.assertRegex(s, r"(?i)license:", "%s has no license line" % tool)
-            self.assertRegex(s, r"https://\S+", "%s has no URL" % tool)
+        for program in ("ttyd", "starship", "tmux"):
+            s = notice_section(t, program)
+            self.assertRegex(s, r"(?i)license:", "%s has no license line" % program)
+            self.assertRegex(s, r"https://\S+", "%s has no URL" % program)
 
-    def test_every_dockerfile_tool_is_listed(self):
-        """The 2.0 Dockerfile and the manifests of container/tools/ (the v0.1.0 Dockerfile is retired)."""
+    def test_every_dockerfile_program_is_listed(self):
+        """The 2.0 Dockerfile and the manifests of container/addons/ (the v0.1.0 Dockerfile is retired)."""
         t = read("THIRD_PARTY_NOTICES.md").lower()
-        tools = set()
+        programs = set()
         with open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8") as f:
             d = f.read()
         for arg in re.findall(r"^ARG (\w+)_VERSION=", d, re.M):
             if arg not in ("CLAUDE_CODE", "OPENCODE"):
-                tools.add(arg.lower().replace("_", "-"))
-        tools.update(re.findall(r"npm install -g (@[\w-]+/[\w-]+)(?:@\$\{\w+\})?", d))
+                programs.add(arg.lower().replace("_", "-"))
+        programs.update(re.findall(r"npm install -g (@[\w-]+/[\w-]+)(?:@\$\{\w+\})?", d))
         for pkg in ("podman", "chromium", "tmux"):
             self.assertIn(pkg, d)
-            tools.add(pkg)
-        # the tools v0.1.0 baked into its image are manifests now (name in container/tools -> name in the notices)
+            programs.add(pkg)
+        # every addon is a program too (name in container/addons -> name in the notices)
         notice_name = {"gcloud": "google-cloud-cli"}
-        for name in sorted(os.listdir(os.path.join(ROOT, "container", "tools"))):
-            tools.add(notice_name.get(name, name))
-        self.assertTrue({"google-cloud-cli", "poetry", "go", "clasp", "gemini"} <= tools, tools)
-        tools.discard("node")  # the base image tag, not a download
-        self.assertIn("ttyd", tools)
-        self.assertIn("starship", tools)
-        self.assertIn("chrome-devtools-mcp", tools)
-        for tool in sorted(tools):
-            self.assertIn(tool.lower(), t, "%s is installed by a Dockerfile but not in the notices" % tool)
+        for name in sorted(os.listdir(os.path.join(ROOT, "container", "addons"))):
+            programs.add(notice_name.get(name, name))
+        self.assertTrue({"google-cloud-cli", "poetry", "go", "clasp", "gemini"} <= programs, programs)
+        programs.discard("node")  # the base image tag, not a download
+        self.assertIn("ttyd", programs)
+        self.assertIn("starship", programs)
+        self.assertIn("chrome-devtools-mcp", programs)
+        for program in sorted(programs):
+            self.assertIn(program.lower(), t, "%s is installed by a Dockerfile but not in the notices" % program)
 
     def test_unverified_is_tagged_not_guessed(self):
         t = read("THIRD_PARTY_NOTICES.md")

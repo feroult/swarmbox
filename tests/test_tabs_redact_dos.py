@@ -1,5 +1,5 @@
 """The secrets filter of swarmbox-tabs (container/scripts/swarmbox-tabs.py) must stay linear and keep redacting what it must. Ported from
-tests/test_voice_redact_dos.py, which tested the same filter while it lived in the voice plugin (context.py, removed with the planners).
+tests/test_voice_redact_dos.py, which tested the same filter while it lived in the voice addon (context.py, removed with the planners).
 No text of a few MB, however it is built, may take more than a fraction of a second per MB: a regex that rescans a long run from every
 position inside it (100000 dashes took 110 s once) is a denial of service for every screen swarmbox-tabs gives out. A screen is clipped before it is
 redacted (tests/test_tabs.py), but redact is a function of its own. Run: python3 tests/test_tabs_redact_dos.py"""

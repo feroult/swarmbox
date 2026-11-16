@@ -1,4 +1,4 @@
-"""Docking of the panel of the sysop (container/tools/sysop/lib/swarmbox_sysop/dock.py).
+"""Docking of the panel of the sysop (container/addons/sysop/lib/swarmbox_sysop/dock.py).
 
   * layout(cols, rows) is ONE pure function: portrait -> a full-width pane at the bottom, 30 % of the height (at least 8 lines, never more than half of the window); otherwise a pane at the right edge,
     20 % of the width, at least 40 columns; if that leaves the terminal fewer than 60 columns, the bottom layout. Boundaries are tested.
@@ -207,7 +207,7 @@ STAND_IN = ["env", "SWARMBOX_SYSOP_PANEL=1", "sleep", "600"]      # a stand-in f
 class RealTmux(unittest.TestCase):
     counter = 0
     MODE = "auto"       # SWARMBOX_SYSOP_PANEL_MODE of these tests: the transient panel (the default of the box is always: tests/test_sysop_always.py)
-    OWN_PATH = False    # True: the PATH is the test's bin and the system's, so a tool that is installed on this machine is not found
+    OWN_PATH = False    # True: the PATH is the test's bin and the system's, so a program that is installed on this machine is not found
 
     def setUp(self):
         RealTmux.counter += 1
@@ -946,15 +946,15 @@ class KeyBinding(RealTmux):
 LAUNCHER = '#!/bin/sh\nexec "%s" -B -m swarmbox_sysop "$@"\n' % sys.executable
 
 
-class NoSysopTool(RealTmux):
-    """The sysop is an optional tool. Without it the keys of tmux.conf (Panel button of the phone strip = Ctrl+A S, and V X a g) say so in the status line and leave
+class NoSysopAddon(RealTmux):
+    """The sysop is an optional addon. Without it the keys of tmux.conf (Panel button of the phone strip = Ctrl+A S, and V X a g) say so in the status line and leave
     the pane alone: a failed command printed into the pane puts it in view-mode, where nothing typed reaches the shell."""
     OWN_PATH = True
 
     def conf(self):
         return TMUX_CONF
 
-    def test_every_sysop_key_without_the_tool_leaves_the_pane_typing(self):
+    def test_every_sysop_key_without_the_addon_leaves_the_pane_typing(self):
         self.assertIsNone(shutil.which("swarmbox-sysop", path=self.env["PATH"]))
         client = self.attach(40, 100)
         for key in "SVXag":
@@ -973,7 +973,7 @@ class NoSysopTool(RealTmux):
         client = self.attach(40, 100)
         client.send("\x01S")
         time.sleep(0.5)
-        self.wait(lambda: "swarmbox tool install sysop" in self.tmux.run("show-messages").out, "the hint in the message log")
+        self.wait(lambda: "swarmbox addon install sysop" in self.tmux.run("show-messages").out, "the hint in the message log")
 
 
 class NoFocus(RealTmux):

@@ -12,8 +12,8 @@
 #   ctrlVPaste   true (default) or false
 #   ctrlCCopy    true (default) or false
 #   strip        auto (default), on or off: the controls strip under the terminal. auto shows it when it has something to show (the key buttons
-#                on a touch screen, or when stripKeys is set; a plugin control such as the microphone on any screen); off never shows it
-#                (a plugin then has no place for its controls)
+#                on a touch screen, or when stripKeys is set; an addon control such as the microphone on any screen); off never shows it
+#                (an addon then has no place for its controls)
 #   stripKeys    the key buttons of the strip: entries `label=keys` separated by commas, keys written as tmux key names separated by spaces
 #                (Escape Tab Up C-c M-x F5 ...; "C-a S" is Ctrl+A then S). Default: Esc=Escape, Tab=Tab, ^C=C-c, arrows, Panel=C-a S, Veto=C-a V, Stop=C-a X.
 #                An empty value means no buttons.
@@ -26,7 +26,7 @@
 # and runs `swarmbox-attach`, so the browser is a window of the shared tmux session like every other entry; without
 # swarmbox-attach it attaches to the session main directly.
 #
-# The voice front. When the `voice` tool is really installed (`swarmbox-tool where voice swarmbox-voice`, which is false for the bare
+# The voice front. When the `voice` addon is really installed (`swarmbox-addon where voice swarmbox-voice`, which is false for the bare
 # shim) and SWARMBOX_VOICE_WEB is not 0 (the setting voice.web), the page gets the two tags of the voice page (/voice/page.css before
 # </head>, /voice/page.js before </body>) and `run` execs `swarmbox-voice front` instead of ttyd: the front owns the web port, serves
 # /voice/ itself and pipes everything else to ttyd on 127.0.0.1:7680. Otherwise nothing changes: ttyd on the web port, no tags.
@@ -134,11 +134,11 @@ if [ "${OPT[scrollbar]:-}" != true ] && [ -z "${OPT[scrollback]+x}" ]; then OPT[
 unset 'OPT[ctrlVPaste]' 'OPT[ctrlCCopy]' 'OPT[padding]' 'OPT[scrollbar]' 'OPT[strip]' 'OPT[stripKeys]'
 
 # voice_front_bin: prints the real swarmbox-voice when the front is to be used, else nothing. One place for the rule: the setting is on and
-# the tool is installed (swarmbox-tool decides, with the same logic as everywhere else) and carries the front and the page parts.
+# the addon is installed (swarmbox-addon decides, with the same logic as everywhere else) and carries the front and the page parts.
 voice_front_bin() {
     [ "${SWARMBOX_VOICE_WEB:-1}" = 0 ] && return 0
     local real prefix
-    real=$(swarmbox-tool where voice swarmbox-voice 2>/dev/null) || return 0
+    real=$(swarmbox-addon where voice swarmbox-voice 2>/dev/null) || return 0
     prefix=${real%/bin/swarmbox-voice}
     [ "$prefix" != "$real" ] || return 0
     [ -f "$prefix/lib/swarmbox_voice/front.py" ] && [ -f "$prefix/web/page.js" ] && [ -f "$prefix/web/page.css" ] || return 0

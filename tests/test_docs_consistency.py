@@ -15,7 +15,7 @@ DEFAULT_REPO_PATH = DEFAULT_IMAGE_REPO.split("/", 1)[1]   # ghcr.io/<owner>/<nam
 
 HOST = os.path.join(ROOT, "container", "host", "swarmbox-host")
 HOST_WORDS_ROUTED = ["stop", "reset", "up", "url", "update", "config", "env", "remote", "fingerprint", "version", "help"]   # the words the script handles itself
-FORWARDED_WORDS = ["attach", "pubkey", "tool", "--plain", "claude", "gemini", "yolo", "bash"]
+FORWARDED_WORDS = ["attach", "pubkey", "addon", "--plain", "claude", "gemini", "yolo", "bash"]
 
 
 def read(*p):
@@ -56,7 +56,7 @@ class Readme(unittest.TestCase):
         # the image is published: the README may name it, but only the one default image repository
         for ref in set(re.findall(r"ghcr\.io/[\w./-]+", README)):
             self.assertEqual(ref, "ghcr.io/" + DEFAULT_REPO_PATH, ref)
-        for needle in ("swarmbox config", "swarmbox env add", "swarmbox url", "swarmbox update", "swarmbox tool list",
+        for needle in ("swarmbox config", "swarmbox env add", "swarmbox url", "swarmbox update", "swarmbox addon list",
                        "docs/cloudflare.md", "docs/web-terminal.md", "docs/nested-podman.md", "docs/uninstall.md",
                        "swarmbox remote setup", "swarmbox reset"):
             self.assertIn(needle, README, needle)
@@ -86,8 +86,8 @@ class Readme(unittest.TestCase):
 
     def test_every_swarmbox_command_in_code_blocks_is_a_real_word(self):
         usage = subprocess.run(["sh", HOST, "help"], capture_output=True, text=True).stdout
-        tool_words = set(re.findall(r"^    ([a-z]+)\) cmd_", read("container", "scripts", "swarmbox-tool.sh"), re.M))
-        tool_words |= {"validate", "link"}
+        addon_words = set(re.findall(r"^    ([a-z]+)\) cmd_", read("container", "scripts", "swarmbox-addon.sh"), re.M))
+        addon_words |= {"validate", "link"}
         subs = {"config": ["get", "set", "list", "seed"], "env": ["add", "rm", "list"],
                 "remote": ["setup", "status", "off", "token"]}
         seen = 0
@@ -103,8 +103,8 @@ class Readme(unittest.TestCase):
                 self.assertIn(w, HOST_WORDS_ROUTED + FORWARDED_WORDS, ln)
                 if w in subs and len(words) > 2:
                     self.assertIn(words[2], subs[w], ln)
-                if w == "tool" and len(words) > 2:
-                    self.assertIn(words[2], tool_words, ln)
+                if w == "addon" and len(words) > 2:
+                    self.assertIn(words[2], addon_words, ln)
                 if w in HOST_WORDS_ROUTED:
                     self.assertIn(w, usage, ln)
         self.assertGreater(seen, 5)

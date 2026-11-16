@@ -49,7 +49,7 @@ and the update path, and revise the review. Check `THIRD_PARTY_NOTICES.md` and i
 
 ## 5. OpenCode package line
 
-The tool installs one npm package, named in the single variable `PACKAGE` at the top of `container/tools/opencode/install.sh`: `@opencode/cli` 2.x or `opencode-ai` 1.x (both showed as MIT by `npm view`). Pick one and
+The addon installs one npm package, named in the single variable `PACKAGE` at the top of `container/addons/opencode/install.sh`: `@opencode/cli` 2.x or `opencode-ai` 1.x (both showed as MIT by `npm view`). Pick one and
 make `THIRD_PARTY_NOTICES.md` say which.
 
 ## 6. Publish

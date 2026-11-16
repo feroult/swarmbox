@@ -1,5 +1,5 @@
 """The panel of the sysop in the mode `always` (setting sysop.panel, the default): up in every window from the start of the box, idle when there
-is no goal (container/tools/sysop/lib/swarmbox_sysop/dock.py, panel.py).
+is no goal (container/addons/sysop/lib/swarmbox_sysop/dock.py, panel.py).
 
   * fast tests, no tmux: the setting and its checks (config.py), the Follower for each mode with a fake dock (always syncs, off does nothing, auto
     follows the goals), the log that says a trouble once and not at every look, the tmux file;

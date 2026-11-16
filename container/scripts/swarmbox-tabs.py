@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -S
 """swarmbox-tabs: the tabs of the box (the windows of the tmux session), a capability of the host. One file, standard library only: it is a
-command line and, at the same time, the library the plugins can import by path. No daemon: a call reads or acts on tmux and ends.
+command line and, at the same time, the library the addons can import by path. No daemon: a call reads or acts on tmux and ends.
 
   swarmbox-tabs list                                     the tabs, a JSON list
   swarmbox-tabs active                                   the active tab, a JSON object
@@ -51,9 +51,9 @@ No other state is kept.
 
 The library.  Importing this file by path (importlib.util.spec_from_file_location) gives the class Tabs, the same calls without
 a process: list_tabs(), active(), screen(tab, lines=None), send(tab, run=None, input=None, queue=False, slash=False); failures are raised as
-TabsError(code, message). The pure functions (redact, to_marked, parse_keys, agent_state, input_box) are importable too. Recommended for a
-plugin: run the command, not the library. The command is the contract (JSON, exit codes, the lock, the timeouts, the same code path as every
-other caller, nothing to import from the host's files, a failure that cannot take the plugin's process down); the library is for tests and
+TabsError(code, message). The pure functions (redact, to_marked, parse_keys, agent_state, input_box) are importable too. Recommended for an
+addon: run the command, not the library. The command is the contract (JSON, exit codes, the lock, the timeouts, the same code path as every
+other caller, nothing to import from the host's files, a failure that cannot take the addon's process down); the library is for tests and
 for this file's own main(). The cost is one Python start-up (about 15 ms) per call.
 """
 import contextlib
@@ -68,7 +68,7 @@ from collections import namedtuple
 
 SEP = "@@sb@@"     # never a tab: tmux 3.6+ prints control characters of a list as `_` when it has no terminal
 HIDDEN_OPTIONS = ("@swarmbox_sysop_panel",)
-HIDDEN_MARKERS = ("SWARMBOX_SYSOP_PANEL=1",)      # in the start command of a panel pane (container/tools/sysop/lib/swarmbox_sysop/dock.py PANEL_COMMAND)
+HIDDEN_MARKERS = ("SWARMBOX_SYSOP_PANEL=1",)      # in the start command of a panel pane (container/addons/sysop/lib/swarmbox_sysop/dock.py PANEL_COMMAND)
 PAUSE = 0.15
 MAX_STEPS = 100          # steps (texts and keys) of one send: each key costs PAUSE plus a tmux process (about 0.15 s)
 LOCK_TIMEOUT = 30.0      # seconds a send waits for an earlier send to the same tab

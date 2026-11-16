@@ -1,7 +1,7 @@
 """The shell fragment inside a real throwaway container from the 2.1 image.
 
-Checks that the image's /etc/bash.bashrc sources /etc/swarmbox/bashrc.sh (banner, health lines, alias from a user-level
-manifest, yolo message, Starship) and that `swarmbox-entrypoint attach <command>` without a terminal gets the aliases and
+Checks that the image's /etc/bash.bashrc sources /etc/swarmbox/bashrc.sh (banner, health lines, the function of an addon's
+shell.sh, yolo message, Starship) and that `swarmbox-entrypoint attach <command>` without a terminal gets the addon functions and
 the PATH with a clean standard error and no banner. The nested Podman service is off (SWARMBOX_TEST_NO_NESTED), so this is
 tagged reduced.
 Skipped unless SWARMBOX_IMAGE_BUILD=1 and podman works. SWARMBOX_IMAGE_TAG=<swarmbox-test-...> reuses an image.
@@ -78,38 +78,48 @@ class FragmentInContainer(unittest.TestCase):
         self.assertIn("web terminal keeps crashing", out)
         self.assertIn("the local image has been replaced", out)
 
-    def test_the_shipped_claude_manifest_gives_the_alias_and_an_unknown_agent_is_reported(self):
-        # the image ships the claude manifest (and no program). `yolo` is never run for claude here: it would
-        # trigger the first-use install, a real download.
-        out = self.interactive("alias claude; alias opencode gemini 2>&1; SWARMBOX_AGENT=nonesuch yolo 2>&1; echo status=$?")
-        self.assertIn("alias claude='claude --dangerously-skip-permissions --mcp-config /home/agent/.claude/mcp-servers.json'", out)
-        self.assertNotIn("alias opencode=", out)
-        self.assertIn("'nonesuch' is not installed", out)
-        self.assertIn("status=1", out)
+    def test_the_shipped_agent_addons_give_functions_and_an_unknown_default_agent_is_reported(self):
+        # the image ships the agent addons (and no program). The agents are never run here: that would trigger the first-use
+        # install, a real download.
+        out = self.interactive("type claude gemini opencode; alias claude 2>&1; yolo 2>&1; echo status=$?; "
+                               "SWARMBOX_AGENT=nonesuch yolo 2>&1; echo status=$?")
+        for name in ("claude", "gemini", "opencode"):
+            self.assertIn("%s is a function" % name, out)
+        self.assertIn("--dangerously-skip-permissions", out)
+        self.assertIn("--mcp-config \"$HOME/.claude/mcp-servers.json\"", out)
+        self.assertIn("--yolo", out)
+        self.assertIn("--auto", out)
+        self.assertNotIn("claude is aliased", out)
+        self.assertIn("no default agent", out)
+        self.assertIn("nonesuch", out)
+        self.assertEqual(len(re.findall(r"status=1\b", out)), 1, out)       # no default agent: 1; the program that does not exist: 127
+        self.assertIn("status=127", out)
 
-    def test_a_user_manifest_gives_an_alias_and_yolo_runs_it(self):
-        d = os.path.join(self.ws, ".config", "swarmbox", "tools", "fakeagent")
+    def write_fake_agent(self):
+        d = os.path.join(self.ws, ".config", "swarmbox", "addons", "fakeagent")
         os.makedirs(d)
-        with open(os.path.join(d, "tool.conf"), "w") as f:
-            f.write('SCHEMA=1\nNAME=fakeagent\nKIND=agent\nPROVIDES="fakeagent"\nYOLO_FLAGS="--auto-approve"\n')
-        os.makedirs(os.path.join(self.ws, ".local", "bin"))
+        with open(os.path.join(d, "addon.conf"), "w") as f:
+            f.write('SCHEMA=1\nNAME=fakeagent\nDESCRIPTION="a fake agent"\nVERSION=1.0.0\nCOMMANDS="fakeagent"\n')
+        with open(os.path.join(d, "shell.sh"), "w") as f:
+            f.write('fakeagent() { command fakeagent --auto-approve "$@"; }\n')
+        os.makedirs(os.path.join(self.ws, ".local", "bin"), exist_ok=True)
         prog = os.path.join(self.ws, ".local", "bin", "fakeagent")
         with open(prog, "w") as f:
             f.write('#!/bin/sh\necho "RAN fakeagent $*"\n')
         os.chmod(prog, 0o755)
-        out = self.interactive("alias fakeagent; SWARMBOX_AGENT=fakeagent yolo extra")
-        self.assertIn("alias fakeagent='fakeagent --auto-approve'", out)
+
+    def test_a_user_addon_gives_a_function_and_yolo_runs_it(self):
+        self.write_fake_agent()
+        out = self.interactive("type fakeagent | head -1; SWARMBOX_AGENT=fakeagent yolo extra")
+        self.assertIn("fakeagent is a function", out)
         self.assertIn("RAN fakeagent --auto-approve extra", out)
 
-    def test_attach_command_without_a_terminal_gets_alias_and_path_and_no_banner(self):
-        d = os.path.join(self.ws, ".config", "swarmbox", "tools", "fakeagent")
-        os.makedirs(d)
-        with open(os.path.join(d, "tool.conf"), "w") as f:
-            f.write('SCHEMA=1\nNAME=fakeagent\nKIND=agent\nPROVIDES="fakeagent"\nYOLO_FLAGS="--auto-approve"\n')
+    def test_attach_command_without_a_terminal_gets_function_and_path_and_no_banner(self):
+        self.write_fake_agent()
         r = podman("exec", self.name, "swarmbox-entrypoint", "attach", "sh", "-c", "true")
         self.assertEqual(r.returncode, 0)
-        r = podman("exec", self.name, "swarmbox-entrypoint", "attach", "alias", "fakeagent")
-        self.assertIn("alias fakeagent='fakeagent --auto-approve'", r.stdout.decode())
+        r = podman("exec", self.name, "swarmbox-entrypoint", "attach", "type", "fakeagent")
+        self.assertIn("fakeagent is a function", r.stdout.decode())
         self.assertEqual(r.stderr.decode(), "")
         r = podman("exec", self.name, "swarmbox-entrypoint", "attach", "printenv", "PATH")
         self.assertTrue(r.stdout.decode().startswith("/home/agent/.local/share/swarmbox/shims:"), r.stdout)

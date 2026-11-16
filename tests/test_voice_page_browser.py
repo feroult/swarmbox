@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Browser test for the voice control of the web page (container/tools/voice/web/page.js and page.css), in headless Chromium.
+"""Browser test for the voice control of the web page (container/addons/voice/web/page.js and page.css), in headless Chromium.
 
 Run:  python3 tests/test_voice_page_browser.py     (needs chromium; skipped otherwise)
 
@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT  # noqa: E402
 from test_clipboard_bridge import CDP  # noqa: E402
 
-WEB = os.path.join(ROOT, "container", "tools", "voice", "web")
+WEB = os.path.join(ROOT, "container", "addons", "voice", "web")
 HOST = os.path.join(ROOT, "container", "web")
 CHROMIUM = next((c for c in (shutil.which(n) for n in ("chromium", "chromium-browser", "google-chrome")) if c), None)
 

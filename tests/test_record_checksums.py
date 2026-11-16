@@ -65,7 +65,7 @@ class Base(unittest.TestCase):
         self.map = os.path.join(self.d, "map")
         self.calls = os.path.join(self.d, "calls")
         self.served = {}
-        self.conf = os.path.join(self.d, "tool.conf")
+        self.conf = os.path.join(self.d, "addon.conf")
 
     def serve(self, url, path):
         self.served[url] = path
@@ -86,11 +86,11 @@ class Base(unittest.TestCase):
             return f.read()
 
     def leftovers(self):
-        return sorted(x for x in os.listdir(self.d) if x not in ("fakebin", "map", "calls", "tool.conf") and not x.endswith(".json")
+        return sorted(x for x in os.listdir(self.d) if x not in ("fakebin", "map", "calls", "addon.conf") and not x.endswith(".json")
                       and not x.endswith(".tgz"))
 
 
-CONF = ("# comment kept as is\nSCHEMA=1\nNAME=%s\nKIND=tool\nPROVIDES=\"%s\"\nVERSION=%s\n")
+CONF = ("# comment kept as is\nSCHEMA=1\nNAME=%s\nDESCRIPTION=\"d\"\nCOMMANDS=\"%s\"\nVERSION=%s\n")
 
 
 class GoTest(Base):

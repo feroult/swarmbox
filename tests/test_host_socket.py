@@ -116,7 +116,7 @@ class Base(unittest.TestCase):
         shutil.copy(HELPER_SRC, hdir)
         shutil.copy(VERSION_SRC, hdir)
         shutil.copy(DEFAULTS_SRC, hdir)
-        open(os.path.join(hdir, "tool-ports"), "w").close()
+        open(os.path.join(hdir, "addon-ports"), "w").close()
         os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)
         self.helper = os.path.join(hdir, "swarmbox-host")
         self.fake = os.path.join(self.tmp, "fakebin")
@@ -254,7 +254,7 @@ class UpIntegrationTest(unittest.TestCase):
         shutil.copy(HELPER_SRC, hdir)
         shutil.copy(VERSION_SRC, hdir)
         shutil.copy(DEFAULTS_SRC, hdir)
-        open(os.path.join(hdir, "tool-ports"), "w").close()
+        open(os.path.join(hdir, "addon-ports"), "w").close()
         os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)
         self.helper = os.path.join(hdir, "swarmbox-host")
         for n, c in (("localtime", ""), ("tun", ""), ("proc-version", "Linux version 6.1.0 (debian)\n")):

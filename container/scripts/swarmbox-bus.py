@@ -19,7 +19,7 @@ Exit codes: 0 ok, 1 other error, 2 usage, 3 nobody received the message (pub; --
 away), 5 message too large, 6 bad topic, group or request, 7 busy (a share of the message was not delivered: see Delivery),
 8 a broker already runs (serve).
 
-Topics.  A topic is a free name chosen by the plugins through their settings (voice.topic, sysop.topic; both default to "goal"): 1 to 64
+Topics.  A topic is a free name chosen by the addons through their settings (voice.topic, sysop.topic; both default to "goal"): 1 to 64
 characters of A-Z a-z 0-9 _ . : - , starting with a letter or a digit. The bus has no list of topics and no reserved name. A group name
 follows the same rules.
 

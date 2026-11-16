@@ -4,7 +4,7 @@
 # under dash, busybox sh, bash in POSIX mode and macOS /bin/sh. No shell function and no startup file is involved.
 #
 #   (no command), attach, any other word   up, then run it in the box: `podman exec -it ... swarmbox-entrypoint attach ...`
-#   pubkey | tool | bus | tabs                  forwarded into the box with `podman exec`
+#   pubkey | addon | bus | tabs                 forwarded into the box with `podman exec`
 #   version | help                         the version of this script | the command list
 #   config get|set|list|seed               the settings (the tunnel token is read from the terminal, never argv)
 #   env add|rm NAME | env list             the names of host variables passed to the box (ENV_KEYS)
@@ -18,7 +18,7 @@
 #
 # The words handled by the script itself are in the last case of the file; every other first word goes to the box.
 # SCRIPT_VERSION below is the version of this file (a test checks it equals container/host/VERSION). The support folder holds
-# what an image carries and one file cannot: VERSION, DEFAULTS, cloudflare-setup.py and tool-ports (see support_dir).
+# what an image carries and one file cannot: VERSION, DEFAULTS, cloudflare-setup.py and addon-ports (see support_dir).
 #
 # Data goes to standard output, messages to standard error. Exit codes: 0 ok; 1 unset key or a failed write; 2 usage, unknown
 # key, invalid value or name; 3 prerequisite missing; 4 workspace or path problem; 5 conflict; 6 not ready; 7 Podman failed.
@@ -65,7 +65,7 @@ usage: swarmbox [--plain] [command [args...]]
   config get|set|list   the settings, for example: swarmbox config set WEB_PORT 7682
   env add|rm NAME       pass a variable of yours into the box (env list shows them)
   pubkey                the box's git SSH key
-  tool list|install|use|remove NAME   tools inside the box
+  addon list|install|use|remove NAME  the addons of the box
   bus pub|sub ...                     the box's message bus (swarmbox-bus --help in the box)
   tabs list|active|screen|send ...    the tabs of the box (swarmbox-tabs --help in the box)
   remote setup|status|off|token       remote access through Cloudflare (--dry-run shows the changes)
@@ -86,7 +86,7 @@ is_file_key() {
 }
 
 # The environment variable of a key: SWARMBOX_ plus the key in upper case, a dot becoming an underscore (voice.stt.model is
-# SWARMBOX_VOICE_STT_MODEL). ENV_OF is set; the keys with a dot are the keys of the `voice` and `sysop` tools.
+# SWARMBOX_VOICE_STT_MODEL). ENV_OF is set; the keys with a dot are the keys of the `voice` and `sysop` addons.
 env_of() {
     ENV_OF=$(printf '%s' "$1" | tr 'a-z.' 'A-Z_')
     ENV_OF=SWARMBOX_$ENV_OF
@@ -95,13 +95,13 @@ env_of() {
 }
 VOICE_KEYS='voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic'
 SYSOP_KEYS='sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group sysop.panel'
-TOOL_KEYS="$VOICE_KEYS $SYSOP_KEYS"   # the keys passed to the box only when they differ from its defaults
+ADDON_KEYS="$VOICE_KEYS $SYSOP_KEYS"   # the keys passed to the box only when they differ from its defaults
 
 is_key() { [ "$1" = NAME ] || is_file_key "$1"; }
 
 ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group sysop.panel'
 
-# Built-in default; empty means "no default" (the key is unset). AGENT has none here: the box picks the first agent of WITH.
+# Built-in default; empty means "no default" (the key is unset). AGENT has none here: the box records the first addon of WITH.
 default_of() {
     case $1 in
         NAME|HOSTNAME) printf '%s' "$DEFAULT_NAME" ;;
@@ -137,7 +137,7 @@ self_dir() {
     (cd "$_d" 2>/dev/null && pwd -P)
 }
 
-# support_dir: sets SUPPORT to the folder of VERSION, DEFAULTS, cloudflare-setup.py and tool-ports. The installers and
+# support_dir: sets SUPPORT to the folder of VERSION, DEFAULTS, cloudflare-setup.py and addon-ports. The installers and
 # `swarmbox update` put it at $XDG_DATA_HOME/swarmbox/host (default ~/.local/share/swarmbox/host), next to nothing else of the script.
 # When a VERSION file sits next to this program (the image's own folder, a checkout, the tests) that folder is the support folder.
 support_dir() {
@@ -475,7 +475,7 @@ valid_port_entry() {
     esac
 }
 
-valid_tool_name() {
+valid_addon_name() {
     case $1 in
         ''|[!a-z0-9]*|*[!a-z0-9_-]*) return 1 ;;
     esac
@@ -623,9 +623,10 @@ validate_value() {
             ;;
         WITH|AGENT)
             if [ "$_k" = AGENT ]; then
-                valid_tool_name "$V_OUT" || { _bad "it must be one tool name: lower-case letters, digits, '_' and '-'."; return 1; }
+                valid_addon_name "$V_OUT" || { _bad "it must be one addon name: lower-case letters, digits, '_' and '-'."; return 1; }
+                [ "$V_OUT" != yolo ] || { _bad "yolo runs the default agent; it cannot be the agent."; return 1; }
             else
-                valid_list valid_tool_name "$V_OUT" || { _bad "it must be a comma list, without spaces, of tool names (lower-case letters, digits, '_' and '-')."; return 1; }
+                valid_list valid_addon_name "$V_OUT" || { _bad "it must be a comma list, without spaces, of addon names (lower-case letters, digits, '_' and '-')."; return 1; }
             fi
             ;;
         ENV_KEYS)
@@ -1009,10 +1010,10 @@ sha256_stdin() {
     printf '%s' "${_so%% *}"
 }
 
-# Reads tool-ports from the support folder into TP_DATA: one "tool<TAB>port" line each, malformed lines skipped with a
+# Reads addon-ports from the support folder into TP_DATA: one "addon<TAB>port" line each, malformed lines skipped with a
 # warning. The file always exists in a good archive; a missing one is an incomplete install: exit 3.
-load_tool_ports() {
-    needs_support tool-ports
+load_addon_ports() {
+    needs_support addon-ports
     _dir=$SUPPORT
     TP_DATA=
     while IFS= read -r _l || [ -n "$_l" ]; do
@@ -1021,14 +1022,14 @@ load_tool_ports() {
             *"$TAB"*)
                 _tn=${_l%%"$TAB"*}
                 _tp=${_l#*"$TAB"}
-                if valid_tool_name "$_tn" && valid_port "$_tp"; then
+                if valid_addon_name "$_tn" && valid_port "$_tp"; then
                     TP_DATA=$TP_DATA$_tn$TAB$_tp$NL
                     continue
                 fi
                 ;;
         esac
-        warn "ignoring a malformed line in $_dir/tool-ports: $_l"
-    done < "$_dir/tool-ports"
+        warn "ignoring a malformed line in $_dir/addon-ports: $_l"
+    done < "$_dir/addon-ports"
 }
 
 # norm_port ENTRY: N_OUT = ADDRESS:HOST:CONTAINER; loopback unless an address was given (PORTS).
@@ -1040,7 +1041,7 @@ norm_port() {
     esac
 }
 
-# The published ports of the box: the user's PORTS (normalized), then the ports of the tools in WITH from tool-ports,
+# The published ports of the box: the user's PORTS (normalized), then the ports of the addons in WITH from addon-ports,
 # skipping a host port that is already published. Sets PORT_LIST (comma list) and PORT_ARGS (one mapping per line).
 # $1 = 1 to warn about all-interface binds.
 build_ports() {
@@ -1123,7 +1124,7 @@ load_creation() {
         eval "C_$_key=\$_v"
     done
     # The voice and sysop keys reach the box only when they differ from the box's own defaults, so a box that never set one keeps its fingerprint.
-    for _key in $TOOL_KEYS; do
+    for _key in $ADDON_KEYS; do
         resolve "$_key"
         _v=$R_VAL
         if [ "$R_SRC" != default ]; then
@@ -1184,7 +1185,7 @@ compute_fingerprint() {
     compute_env_hash
     [ -n "$ENV_HASH" ] || die 3 "could not compute a SHA-256 hash with $SHA."
     _l="AGENT=$C_AGENT${NL}BROWSER_URL=$C_BROWSER_URL${NL}ENV_KEYS=$C_ENV_KEYS${NL}HOSTNAME=$C_HOSTNAME${NL}HOST_ACCESS=$C_HOST_ACCESS${NL}IMAGE=$C_IMAGE${NL}INIT=$C_INIT${NL}NAME=$C_NAME${NL}PORTS=$PORT_LIST${NL}TZ=$TZ_R${NL}WEB=$C_WEB${NL}WEB_PORT=$C_WEB_PORT${NL}WITH=$C_WITH${NL}WORKSPACE=$C_WORKSPACE${NL}YOLO=$C_YOLO${NL}env-hash=$ENV_HASH$NL"
-    for _key in $TOOL_KEYS; do
+    for _key in $ADDON_KEYS; do
         env_of "$_key"
         eval "_v=\$C_${ENV_OF#SWARMBOX_}"
         [ -z "$_v" ] || _l="$_l$ENV_OF=$_v$NL"
@@ -1279,7 +1280,7 @@ cmd_create_flags() {
         esac
     done
     need_sha256
-    load_tool_ports
+    load_addon_ports
     WARN_PORTS=1
     load_creation 1
     check_workspace
@@ -1352,9 +1353,12 @@ PEOF
     emit "SWARMBOX_YOLO=$C_YOLO"
     if [ "${SWARMBOX_TEST_NO_NESTED:-}" = 1 ]; then emit -e; emit SWARMBOX_TEST_NO_NESTED=1; fi
     if [ -n "$C_WITH" ]; then emit -e; emit "SWARMBOX_WITH=$C_WITH"; fi
-    if [ -n "$C_AGENT" ]; then emit -e; emit "SWARMBOX_AGENT=$C_AGENT"; fi
+    # the default agent that `yolo` runs: AGENT, else the first addon of WITH (recorded here, when the box is created)
+    _agent=$C_AGENT
+    [ -n "$_agent" ] || _agent=${C_WITH%%,*}
+    if [ -n "$_agent" ]; then emit -e; emit "SWARMBOX_AGENT=$_agent"; fi
     if [ -n "$C_BROWSER_URL" ]; then emit -e; emit "SWARMBOX_BROWSER_URL=$C_BROWSER_URL"; fi
-    for _key in $TOOL_KEYS; do
+    for _key in $ADDON_KEYS; do
         env_of "$_key"
         eval "_v=\$C_${ENV_OF#SWARMBOX_}"
         if [ -n "$_v" ]; then emit -e; emit "$ENV_OF=$_v"; fi
@@ -1435,7 +1439,7 @@ cmd_fingerprint() {
         esac
     done
     need_sha256
-    load_tool_ports
+    load_addon_ports
     WARN_PORTS=0
     load_creation 0
     compute_fingerprint
@@ -1811,7 +1815,7 @@ resolve_init() {
 }
 
 # The flags of the new box, captured into a file BEFORE `podman run` and the status of create-flags checked: a helper
-# failure (4 workspace, 3 missing tool-ports) never reaches Podman. create-flags runs in the background and is waited for, so a
+# failure (4 workspace, 3 missing addon-ports) never reaches Podman. create-flags runs in the background and is waited for, so a
 # signal ends this call at once. SWARMBOX_TEST_CREATE_FLAGS replaces the program, for tests.
 capture_flags() {
     UP_FLAGS=$STATE_DIR/flags.$$
@@ -2116,7 +2120,7 @@ up_main() {
     RESET=$1
     need_podman
     need_sha256
-    load_tool_ports
+    load_addon_ports
     WARN_PORTS=0
     load_creation 0
     ensure_state_dir
@@ -2345,7 +2349,7 @@ ver_newer() {
 }
 
 # fetch_helper REF: unpacks the helper archive of the image (`podman run --rm REF host-helper`: this script, VERSION, DEFAULTS,
-# cloudflare-setup.py, tool-ports) into a new folder next to the support folder. Sets FH_TMP (the folder, removed by the EXIT
+# cloudflare-setup.py, addon-ports) into a new folder next to the support folder. Sets FH_TMP (the folder, removed by the EXIT
 # trap up_update_cleanup unless it is moved) and FH_VER (the version the archive's script reports). The archive goes to a file,
 # is checked, unpacked, and the result is tested (no pipe: a pipe's status is the last command's). Exits 3, changing nothing.
 fetch_helper() {
@@ -2791,7 +2795,7 @@ cmd_setup() {
 
 # attach_main WORDS...: for every first word that is not handled above. Start the box if needed (a separate shell: `up` holds the
 # lock until it ends, and the session below must not), then `podman exec` into it. -t only when standard input and output are
-# both terminals; TERM and COLORTERM are passed. pubkey, tool, bus and tabs go to swarmbox-entrypoint as they are; a leading `attach` is a
+# both terminals; TERM and COLORTERM are passed. pubkey, addon, bus and tabs go to swarmbox-entrypoint as they are; a leading `attach` is a
 # prefix, not an argument; the exit status is the command's.
 attach_main() {
     ( cmd_up ) || exit $?
@@ -2799,7 +2803,7 @@ attach_main() {
     a_t=-i
     if [ -t 0 ] && [ -t 1 ]; then a_t=-it; fi
     case ${1-} in
-        pubkey|tool|bus|tabs) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
+        pubkey|addon|bus|tabs) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
         attach) shift ;;
     esac
     # The pty of this terminal tab names the tab: it is the same for as long as the tab lives, in any terminal or over ssh, so after `exit`

@@ -648,7 +648,7 @@ class TestAgentState(unittest.TestCase):
 
 
 class TestRedactionKeepsWhatItMustAndLeavesText(Base):
-    """The filter of swarmbox-tabs is the only one of the box (it moved here from the voice plugin, whose tests were ported:
+    """The filter of swarmbox-tabs is the only one of the box (it moved here from the voice addon, whose tests were ported:
     tests/test_tabs_redact_dos.py has the linear-time and behaviour tests)."""
 
     def test_known_secret_shapes(self):
@@ -661,7 +661,7 @@ class TestRedactionKeepsWhatItMustAndLeavesText(Base):
                 self.assertNotIn(secret, out)
                 self.assertIn(mod.REDACTED, out)
 
-    def test_tabs_does_not_import_a_plugin(self):
+    def test_tabs_does_not_import_an_addon(self):
         with open(os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py")) as f:
             src = f.read()
         for name in ("swarmbox_voice", "swarmbox_sysop"):

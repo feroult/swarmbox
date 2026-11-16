@@ -5,7 +5,7 @@
 #   tests/e2e_voice.sh [-i IMAGE] [-r RESULTS_DIR] [-c CACHE_DIR] [-- e2e_voice.py arguments, e.g. --only 1,3 --runs 5]
 #
 # IMAGE defaults to localhost/swarmbox-sysop-test (tmux 3.5a); localhost/tmuxfacts-test37 has tmux 3.7c, the version of the box image. Both have the claude CLI,
-# chromium, ttyd, espeak-ng and python3. CACHE_DIR (default: a folder next to the results) keeps the install of the voice tool (whisper.cpp built from
+# chromium, ttyd, espeak-ng and python3. CACHE_DIR (default: a folder next to the results) keeps the install of the voice addon (whisper.cpp built from
 # source and the model small, about 500 MB) between runs: the first run builds it (about a minute), the next ones copy it. The tmux server and everything
 # else runs inside the container; the host's tmux is never touched.
 #

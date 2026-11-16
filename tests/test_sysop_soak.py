@@ -481,12 +481,12 @@ class StatusWords(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("not running", r.stdout)
         self.assertIn("again after a crash", r.stdout)
-        self.assertIn("swarmbox-tool prepare", r.stdout)
+        self.assertIn("swarmbox-addon prepare", r.stdout)
         with open(pth.crashloop, "w") as f:
             f.write("the sysop service keeps crashing (killed by signal 9); see serve.log\n")
         r = self.status(e)
         self.assertEqual(r.returncode, 1)
-        self.assertIn("keeps crashing (killed by signal 9); see serve.log. Start it again: swarmbox-tool prepare", r.stdout)
+        self.assertIn("keeps crashing (killed by signal 9); see serve.log. Start it again: swarmbox-addon prepare", r.stdout)
         self.assertNotIn("Traceback", r.stdout + r.stderr)
 
 

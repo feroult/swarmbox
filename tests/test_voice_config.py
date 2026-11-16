@@ -1,7 +1,7 @@
 """Voice settings: the box-side module (the one place of the defaults), the four host keys of `swarmbox config`, and the docs.
 
 The host helper runs as a real program with a cleared environment (the Base of test_host_create_flags: a mktemp HOME, a fixture
-tool-ports, no Podman). Keys: voice.language (auto), voice.stt.model (small), voice.stt.vocabulary (empty), voice.web (1).
+addon-ports, no Podman). Keys: voice.language (auto), voice.stt.model (small), voice.stt.vocabulary (empty), voice.web (1).
 (voice.planner and voice.planner.model are gone: voice only hears.) They reach the box as SWARMBOX_VOICE_* at creation, only when they differ from the
 default, so a box that never set one keeps its fingerprint. Run with: python3 -W error tests/test_voice_config.py
 """

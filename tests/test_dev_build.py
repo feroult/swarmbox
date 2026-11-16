@@ -121,19 +121,19 @@ class DevBuild(unittest.TestCase):
             self.assertIn("--build-arg", b)
             self.assertIn("CHROME_DEVTOOLS_MCP_VERSION=1.0.0", b)
 
-    def test_with_tools_passes_through_as_one_build_arg_and_the_product_file_stays_clean(self):
+    def test_with_addons_passes_through_as_one_build_arg_and_the_product_file_stays_clean(self):
         with FakePodman() as fp:
-            r = run(fp, "--build-arg", "WITH_TOOLS=claude,gcloud", "--keep-scratch")
+            r = run(fp, "--build-arg", "WITH_ADDONS=claude,gcloud", "--keep-scratch")
             self.assertEqual(r.returncode, 0, r.stderr)
             b = [c for c in fp.calls() if c[0] == "build"][0]
-            i = b.index("WITH_TOOLS=claude,gcloud")
+            i = b.index("WITH_ADDONS=claude,gcloud")
             self.assertEqual(b[i - 1], "--build-arg")
-            self.assertEqual(sum(1 for a in b if a.startswith("WITH_TOOLS")), 1)
+            self.assertEqual(sum(1 for a in b if a.startswith("WITH_ADDONS")), 1)
             d = scratch_dir(r)
             try:
                 scratch = open(os.path.join(d, "Dockerfile"), encoding="utf-8").read()
                 self.assertIn("APT::Sandbox::User", scratch)
-                self.assertIn("ARG WITH_TOOLS", scratch)  # the scratch copy is the product file plus the one line
+                self.assertIn("ARG WITH_ADDONS", scratch)  # the scratch copy is the product file plus the one line
             finally:
                 shutil.rmtree(d, ignore_errors=True)
         with open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8") as f:
@@ -143,13 +143,13 @@ class DevBuild(unittest.TestCase):
         with FakePodman() as fp:
             run(fp)
             b = [c for c in fp.calls() if c[0] == "build"][0]
-            self.assertFalse(any(a.startswith("WITH_TOOLS") for a in b))
+            self.assertFalse(any(a.startswith("WITH_ADDONS") for a in b))
 
     def test_two_build_args_keep_their_order(self):
         with FakePodman() as fp:
-            run(fp, "--build-arg", "WITH_TOOLS=go", "--build-arg", "NODE_VERSION=22")
+            run(fp, "--build-arg", "WITH_ADDONS=go", "--build-arg", "NODE_VERSION=22")
             b = [c for c in fp.calls() if c[0] == "build"][0]
-            self.assertLess(b.index("WITH_TOOLS=go"), b.index("NODE_VERSION=22"))
+            self.assertLess(b.index("WITH_ADDONS=go"), b.index("NODE_VERSION=22"))
 
 
 if __name__ == "__main__":

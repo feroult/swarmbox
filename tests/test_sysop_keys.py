@@ -1,4 +1,4 @@
-"""The keys of the sysop that work from any tab (container/tools/sysop/lib/swarmbox_sysop/keys.py): veto, approve, the goal prompt, the stop key's
+"""The keys of the sysop that work from any tab (container/addons/sysop/lib/swarmbox_sysop/keys.py): veto, approve, the goal prompt, the stop key's
 messages and the bindings in container/config/tmux.conf. No tmux here: the dock is a fake that records what was asked. The same commands against a
 real tmux, the real panel and a real client typing are in test_sysop_dock.py (class NoFocus, Podman only)."""
 import io
@@ -201,11 +201,11 @@ class Bindings(unittest.TestCase):
         self.assertIn("swarmbox-sysop goal", b["g"])
         self.assertNotIn("switch-client", CONF, "no key table: a queued table switch loses the next key typed fast")
 
-    def test_every_sysop_key_checks_that_the_tool_is_installed_and_prints_nothing_into_the_pane(self):
+    def test_every_sysop_key_checks_that_the_addon_is_installed_and_prints_nothing_into_the_pane(self):
         b = self.binds()
         for k in "SVXag":
             self.assertTrue(b[k].split()[2] == "if-shell" and "command -v swarmbox-sysop" in b[k], k)
-            self.assertIn("swarmbox tool install sysop", b[k], k)
+            self.assertIn("swarmbox addon install sysop", b[k], k)
             if k != "g":
                 self.assertIn(">/dev/null 2>&1", b[k], k)
 

@@ -1,12 +1,12 @@
 #!/bin/sh
 # swarmbox-install (installed as /usr/local/bin/swarmbox-install, run by `swarmbox-entrypoint install`).
 #
-#   podman run --rm IMAGE install [--with TOOLS] [--image REF] | sh
+#   podman run --rm IMAGE install [--with ADDONS] [--image REF] | sh
 #
 # Prints, on standard output and only there, a small POSIX sh installer that carries the `swarmbox` script of this image (a quoted
 # here-doc). Run by sh, the installer writes the script to ${SWARMBOX_BIN_DIR:-$HOME/.local/bin}/swarmbox (mode 755, through a
 # temporary file and a rename, so a running or half-written copy is never seen), then runs `swarmbox setup`, which checks Podman,
-# puts the support files in place, records the image reference and the tools in the SwarmBox config file, and prints the PATH
+# puts the support files in place, records the image reference and the addons in the SwarmBox config file, and prints the PATH
 # advice, a warning for an old shell function, and what to run next. It writes no shell startup file. The same arguments always
 # print the same text, and running the installer again changes nothing that is already right.
 #
@@ -28,10 +28,10 @@ die() { _rc=$1; shift; err "$*"; exit "$_rc"; }
 
 usage() {
     cat <<'USAGE'
-usage: podman run --rm IMAGE install [--with TOOLS] [--image REF] | sh
+usage: podman run --rm IMAGE install [--with ADDONS] [--image REF] | sh
   Prints an installer for the `swarmbox` command; sh runs it. Nothing is written until sh does.
-  --with TOOLS   tools to have ready (recorded as WITH in the config, for example claude,gcloud)
-  --image REF    the image to record (default: the name this image was started under)
+  --with ADDONS  addons to have ready (recorded as WITH in the config, for example claude,gcloud)
+  --image REF   the image to record (default: the name this image was started under)
 USAGE
 }
 

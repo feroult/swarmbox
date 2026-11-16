@@ -37,7 +37,7 @@ KEYS = {
     "WEB": ("1", "0", "1", ["yes", "2"]),
     "WEB_PORT": ("7681", "8000", "8001", ["0", "65536", "abc", "-1"]),
     "WITH": (None, "claude,gcloud", "claude", ["Claude", "a b", "a,,b", ",a", "a,"]),
-    "AGENT": (None, "claude", "opencode", ["a,b", "A B"]),
+    "AGENT": (None, "claude", "opencode", ["a,b", "A B", "yolo"]),
     "YOLO": ("1", "0", "1", ["yes", "2"]),
     "ENV_KEYS": (None, "ANTHROPIC_API_KEY,GEMINI_API_KEY", "FOO", ["1BAD", "A,SWARMBOX_CLOUDFLARE_X", "a b", "A-B"]),
     "voice.topic": ("goal", "speech", "voice.goals", ["Goal", "-x", "a b", "a/b", "x" * 64, "a\nb"]),

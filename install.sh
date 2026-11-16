@@ -1,11 +1,11 @@
 #!/bin/sh
 # install.sh: install the `swarmbox` command from a GitHub release (the other way is `podman run --rm IMAGE install | sh`).
 #
-#   sh install.sh [--version X.Y.Z] [--image REF] [--with TOOLS]
+#   sh install.sh [--version X.Y.Z] [--image REF] [--with ADDONS]
 #
 # Downloads the `swarmbox` script of the release, checks it against the published `swarmbox.sha256`, writes it to
 # ${SWARMBOX_BIN_DIR:-$HOME/.local/bin}/swarmbox (mode 755, through a temporary file and a rename), then runs `swarmbox setup`: it checks
-# Podman (4.3 or newer), fetches the support files from the image, records the image and the tools in the SwarmBox config file, and
+# Podman (4.3 or newer), fetches the support files from the image, records the image and the addons in the SwarmBox config file, and
 # says what to run next. It edits no shell startup file, and running it again changes nothing that is already right.
 # Without --version the latest release is installed; without --image the image is REPO:VERSION.
 # SWARMBOX_RELEASE_URL replaces the download folder (tests use file://).
@@ -19,12 +19,12 @@ WITH=
 
 fail() { echo "install.sh: $*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
-    [ $# -ge 2 ] || fail "usage: sh install.sh [--version X.Y.Z] [--image REF] [--with TOOLS]"
+    [ $# -ge 2 ] || fail "usage: sh install.sh [--version X.Y.Z] [--image REF] [--with ADDONS]"
     case $1 in
         --version) VERSION=$2 ;;
         --image) IMAGE=$2 ;;
         --with) WITH=$2 ;;
-        *) fail "usage: sh install.sh [--version X.Y.Z] [--image REF] [--with TOOLS]" ;;
+        *) fail "usage: sh install.sh [--version X.Y.Z] [--image REF] [--with ADDONS]" ;;
     esac
     shift 2
 done

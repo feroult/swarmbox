@@ -20,7 +20,7 @@ sys.path.insert(0, HERE)
 import tmuxfacts as tf  # noqa: E402
 
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-VOICE_LIB = next((p for p in (os.path.join(REPO, "container/tools/voice/lib"), "/src/container/tools/voice/lib") if os.path.isdir(p)), None)
+VOICE_LIB = next((p for p in (os.path.join(REPO, "container/addons/voice/lib"), "/src/container/addons/voice/lib") if os.path.isdir(p)), None)
 
 
 class Box:

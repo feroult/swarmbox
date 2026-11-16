@@ -1,16 +1,16 @@
 # SwarmBox shell fragment. Installed as /etc/swarmbox/bashrc.sh and sourced from the
 # image's /etc/bash.bashrc; `swarmbox-attach` also sources it directly for a command run without a terminal.
 #
-# It gives every shell: the Python venv, the PATH additions of the tools, the colored ls and grep aliases, the
-# auto-approve alias of every agent manifest and the `yolo` function, the `shell.sh` of every tool, and, in an
+# It gives every shell: the Python venv, the PATH additions of the addons, the colored ls and grep aliases, the
+# `shell.sh` of every addon (the auto-approve function of an agent is there) and the `yolo` function, and, in an
 # interactive shell only, the banner with the startup-health lines and the Starship prompt. Nothing here
 # regenerates a file: that is `serve`'s job.
 #
 # bash only (arrays and here-strings; bash 3.2 semantics are kept). Sourcing twice is harmless.
-# Test-only variables (the paths the design fixes): SWARMBOX_DIRS_SH, SWARMBOX_IMAGE_TOOLS_DIR, SWARMBOX_IMAGE_SHIMS_DIR,
+# Test-only variables (the paths the design fixes): SWARMBOX_DIRS_SH, SWARMBOX_IMAGE_ADDONS_DIR, SWARMBOX_IMAGE_SHIMS_DIR,
 # SWARMBOX_BANNER_SCRIPT, SWARMBOX_STARSHIP_INIT, SWARMBOX_VENV.
 
-# An interactive shell is unchanged; a command run without a terminal (SWARMBOX_CMD=1) gets the aliases and the PATH
+# An interactive shell is unchanged; a command run without a terminal (SWARMBOX_CMD=1) gets the aliases, the functions of the addons and the PATH
 # and nothing else; any other shell (scripts, `bash -c`) is left alone.
 case $- in *i*) ;; *) [ -n "${SWARMBOX_CMD:-}" ] || return 0 ;; esac
 
@@ -19,11 +19,11 @@ case $- in *i*) ;; *) [ -n "${SWARMBOX_CMD:-}" ] || return 0 ;; esac
     SB_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/swarmbox
     SB_DATA_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/swarmbox
     SB_STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/swarmbox
-    SB_TOOLS_DIR=$SB_DATA_DIR/tools
+    SB_ADDONS_DIR=$SB_DATA_DIR/addons
     SB_SHIMS_DIR=$SB_DATA_DIR/shims
     SB_HEALTH_FILE=$SB_STATE_DIR/health
 }
-_sb_image_tools=${SWARMBOX_IMAGE_TOOLS_DIR:-/usr/local/lib/swarmbox/tools}
+_sb_image_addons=${SWARMBOX_IMAGE_ADDONS_DIR:-/usr/local/lib/swarmbox/addons}
 _sb_image_shims=${SWARMBOX_IMAGE_SHIMS_DIR:-/usr/local/lib/swarmbox/shims}
 
 # --- Python virtual environment (before the PATH additions, so the shims still come first) ---
@@ -34,12 +34,12 @@ if [ -z "${VIRTUAL_ENV:-}" ] && [ -r "$_sb_venv/bin/activate" ]; then
 fi
 unset _sb_venv
 
-# --- PATH: user shims, image shims, the tools' current/bin, ~/.local/bin, then what was there ---
+# --- PATH: user shims, image shims, the addons' current/bin, ~/.local/bin, then what was there ---
 _sb_path_add() {
     case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH" ;; esac
 }
 _sb_path_add "$HOME/.local/bin"
-for _sb_d in "$SB_TOOLS_DIR"/*/current/bin; do
+for _sb_d in "$SB_ADDONS_DIR"/*/current/bin; do
     [ -d "$_sb_d" ] && _sb_path_add "$_sb_d"
 done
 _sb_path_add "$_sb_image_shims"
@@ -67,86 +67,44 @@ alias grep='grep --color=auto'
 alias fgrep='fgrep --color=auto'
 alias egrep='egrep --color=auto'
 
-# --- Agents from the manifests ---
-# _sb_scan prints one record per tool, fields separated by the character 0x1f:
-#   name, KIND, PROVIDES, YOLO_FLAGS, YOLO_ALIAS, MCP_FLAGS, directory
-# The user level (<config>/tools) wins over the image level for the same name. Each manifest is read in a subshell,
-# so its variables never reach the shell; a manifest that fails to load gives no record. Assumption: tool.conf is a sourceable KEY=VALUE file, the tool name is its directory name.
-_sb_scan() {
-    local base d name seen=" " us=$'\037'
-    for base in "$SB_CONFIG_DIR/tools" "$_sb_image_tools"; do
-        for d in "$base"/*/; do
-            [ -r "${d}tool.conf" ] || continue
-            d=${d%/}
-            name=${d##*/}
-            case "$seen" in *" $name "*) continue ;; esac
-            seen="$seen$name "
-            (
-                unset KIND PROVIDES YOLO_FLAGS YOLO_ALIAS MCP_FLAGS
-                # shellcheck source=/dev/null
-                . "$d/tool.conf" >/dev/null 2>&1 </dev/null || exit 0
-                printf '%s%s%s%s%s%s%s%s%s%s%s%s%s\n' "$name" "$us" "${KIND:-tool}" "$us" "${PROVIDES:-$name}" "$us" \
-                    "${YOLO_FLAGS:-}" "$us" "${YOLO_ALIAS:-1}" "$us" "${MCP_FLAGS:-}" "$us" "$d"
-            ) 2>/dev/null
-        done
+# --- The addons ---
+# The shell.sh of every addon is sourced: what an addon wants in the shell (the auto-approve function of an agent, a port for
+# `clasp login`, the path of Go) is in its own file; this fragment reads no manifest. The user level (<config>/addons) wins over the
+# image level for the same name. A failing file does not stop the shell.
+_sb_seen=" "
+for _sb_base in "$SB_CONFIG_DIR/addons" "$_sb_image_addons"; do
+    for _sb_d in "$_sb_base"/*/; do
+        [ -d "$_sb_d" ] || continue
+        _sb_d=${_sb_d%/}
+        _sb_name=${_sb_d##*/}
+        case "$_sb_seen" in *" $_sb_name "*) continue ;; esac
+        _sb_seen="$_sb_seen$_sb_name "
+        [ -r "$_sb_d/shell.sh" ] || continue
+        # shellcheck source=/dev/null
+        . "$_sb_d/shell.sh" </dev/null 2>/dev/null || true
     done
-}
+done
+unset _sb_seen _sb_base _sb_d _sb_name
 
-_sb_records=$(_sb_scan)
-if [ "${SWARMBOX_YOLO:-1}" != "0" ] && [ -n "$_sb_records" ]; then
-    while IFS=$'\037' read -r _sb_name _sb_kind _sb_provides _sb_flags _sb_alias _sb_mcp _sb_dir; do
-        [ "$_sb_kind" = "agent" ] || continue
-        [ -n "$_sb_flags" ] || continue
-        [ "$_sb_alias" != "0" ] || continue
-        _sb_cmd=${_sb_provides%% *}
-        # shellcheck disable=SC2139  # the alias is built now, from the manifest, on purpose
-        alias "$_sb_cmd=$_sb_cmd $_sb_flags${_sb_mcp:+ $_sb_mcp}" 2>/dev/null
-    done <<< "$_sb_records"
-fi
-
-# yolo: the default agent in auto-approve mode. The default is SWARMBOX_AGENT, else the first agent of SWARMBOX_WITH,
-# else (a choice of this script) the first agent manifest by name. It calls the program, not the alias, so the
-# flags are never given twice, and it works with SWARMBOX_YOLO=0 and for agents without an alias (YOLO_ALIAS=0).
+# yolo: run the default agent, $SWARMBOX_AGENT (the host records it when the box is created: the AGENT setting, else the first addon
+# of WITH). The agent's own function (its shell.sh) starts it in auto-approve mode; yolo asks for that mode even when SWARMBOX_YOLO=0.
 yolo() {
-    local records agent=${SWARMBOX_AGENT:-} name kind provides flags mcp found="" first="" w
-    records=$(_sb_scan | LC_ALL=C sort)
-    while IFS=$'\037' read -r name kind provides flags _ mcp _; do
-        [ "$kind" = "agent" ] || continue
-        [ -n "$first" ] || first=$name
-    done <<< "$records"
-    if [ -z "$first" ]; then
-        echo "yolo: no agent installed (no agent manifest found; add one with SWARMBOX_WITH or swarmbox-tool)" >&2
+    if [ -z "${SWARMBOX_AGENT:-}" ]; then
+        echo "yolo: this box has no default agent. Set one on the host (swarmbox config set AGENT claude, then swarmbox reset) or create the box with --with claude." >&2
         return 1
     fi
-    if [ -z "$agent" ]; then
-        for w in ${SWARMBOX_WITH//,/ }; do
-            while IFS=$'\037' read -r name kind provides flags _ mcp _; do
-                [ "$name" = "$w" ] && [ "$kind" = "agent" ] && { agent=$w; break; }
-            done <<< "$records"
-            [ -n "$agent" ] && break
-        done
-        [ -n "$agent" ] || agent=$first
-    fi
-    while IFS=$'\037' read -r name kind provides flags _ mcp _; do
-        [ "$name" = "$agent" ] && [ "$kind" = "agent" ] && { found=1; break; }
-    done <<< "$records"
-    if [ -z "$found" ]; then
-        echo "yolo: the agent '$agent' is not installed (no agent manifest of that name)" >&2
+    # yolo is not an agent: it would call itself until the shell dies.
+    if [ "$SWARMBOX_AGENT" = yolo ]; then
+        echo "yolo: the default agent cannot be 'yolo'. Set an agent on the host (swarmbox config set AGENT claude, then swarmbox reset)." >&2
         return 1
     fi
-    local -a argv
-    read -r -a argv <<< "$flags $mcp"
-    command "${provides%% *}" "${argv[@]}" "$@"
+    # The first item of WITH is the default when AGENT is not set, and it may be an addon that is not an agent (sysop, voice): say so.
+    if ! command -v "$SWARMBOX_AGENT" > /dev/null 2>&1; then
+        echo "yolo: the default agent '$SWARMBOX_AGENT' is not a command in this box. Set the agent on the host (swarmbox config set AGENT claude, then swarmbox reset)." >&2
+        return 127
+    fi
+    SWARMBOX_YOLO=1 "$SWARMBOX_AGENT" "$@"
 }
-
-# shell.sh of every tool, after the generated aliases so it can extend or override them. A failing file
-# does not stop the shell.
-while IFS=$'\037' read -r _sb_name _sb_kind _sb_provides _sb_flags _sb_alias _sb_mcp _sb_dir; do
-    [ -r "$_sb_dir/shell.sh" ] || continue
-    # shellcheck source=/dev/null
-    . "$_sb_dir/shell.sh" </dev/null 2>/dev/null || true
-done <<< "$_sb_records"
-unset _sb_name _sb_kind _sb_provides _sb_flags _sb_alias _sb_mcp _sb_dir _sb_cmd _sb_records
 
 # --- Interactive only: the banner with the startup-health lines, then the prompt ---
 # Not for a shell started with -c (the command window of `swarmbox <command>` runs `bash -ic`): the banner would
@@ -170,5 +128,4 @@ if [ -z "${SWARMBOX_CMD:-}" ] && [ -z "${BASH_EXECUTION_STRING:-}" ] && [ -z "${
     [ -r "$_sb_starship" ] && . "$_sb_starship"
     unset _sb_starship
 fi
-# _sb_scan and _sb_image_tools stay defined: `yolo` uses them when it runs.
-unset _sb_image_shims
+unset _sb_image_addons _sb_image_shims

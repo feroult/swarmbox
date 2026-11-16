@@ -27,7 +27,7 @@ VERSION_SRC = os.path.join(ROOT, "container", "host", "VERSION")
 REAL_SCRIPT = os.path.join(ROOT, "cloudflare-setup.py")
 API_SECRET = "CANARY-api-token-5f2a"
 TUNNEL_SECRET = "CANARY-tunnel-token-77c1"
-HELPER_TOOLS = ["sh", "dash", "bash", "cat", "rm", "mkdir", "rmdir", "sed", "grep", "head", "tail", "tr", "uname", "find", "stat",
+HELPER_PROGRAMS = ["sh", "dash", "bash", "cat", "rm", "mkdir", "rmdir", "sed", "grep", "head", "tail", "tr", "uname", "find", "stat",
                 "mv", "chmod", "printf", "cut", "readlink", "env", "id", "test", "wc", "basename", "dirname", "mktemp", "touch",
                 "ls", "true", "false", "expr", "awk", "sort"]
 

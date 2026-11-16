@@ -24,7 +24,7 @@ SCRIPT = os.path.join(HOST_DIR, "swarmbox-host")
 with open(os.path.join(HOST_DIR, "VERSION")) as _f:
     VERSION = _f.read().strip()
 IMG = "localhost/swarmbox-test-image:local"
-TOOLS = ["sh", "dash", "bash", "cat", "rm", "mkdir", "rmdir", "mv", "chmod", "mktemp", "sed", "tr", "head", "tail", "grep", "cut",
+PROGRAMS = ["sh", "dash", "bash", "cat", "rm", "mkdir", "rmdir", "mv", "chmod", "mktemp", "sed", "tr", "head", "tail", "grep", "cut",
          "uname", "dirname", "basename", "wc", "tar", "cp", "sort", "id", "true", "false", "sleep", "touch", "date", "stat", "find",
          "sha256sum", "printf", "env", "ls", "readlink", "kill"]
 OLD_BLOCK = "alias x=y\n# >>> swarmbox 2.0.0 >>>\nswarmbox() { :; }\n# <<< swarmbox 2.0.0 <<<\n"
@@ -42,11 +42,11 @@ class Base(unittest.TestCase):
         self.home = os.path.join(self.tmp, "home")
         self.bin = os.path.join(self.tmp, "bin")
         os.makedirs(self.home)
-        os.makedirs(self.tmp + "/tools")
-        for t in TOOLS:
+        os.makedirs(self.tmp + "/programs")
+        for t in PROGRAMS:
             p = shutil.which(t)
             if p:
-                os.symlink(p, os.path.join(self.tmp, "tools", t))
+                os.symlink(p, os.path.join(self.tmp, "programs", t))
         archive = os.path.join(self.tmp, "image.tar")
         make_archive(archive, version=VERSION)
         self.fp = FakePodman({"version": {"stdout": "4.3.1\n"}, "run": {"stdout_file": archive}}).__enter__()
@@ -236,7 +236,7 @@ class InstallRunTest(Base):
         self.assertEqual(stat.S_IMODE(os.stat(self.installed()).st_mode), 0o755)
         self.assertEqual(sorted(os.listdir(self.bin)), ["swarmbox"], "no temporary file is left")
         support = os.path.join(self.home, ".local", "share", "swarmbox", "host")
-        self.assertEqual(sorted(set(os.listdir(support)) - {"calls"}), ["DEFAULTS", "VERSION", "cloudflare-setup.py", "tool-ports"])
+        self.assertEqual(sorted(set(os.listdir(support)) - {"calls"}), ["DEFAULTS", "VERSION", "addon-ports", "cloudflare-setup.py"])
         cfg = self.config()
         self.assertIn("IMAGE=%s\n" % IMG, cfg)
         self.assertIn("WITH=claude,go\n", cfg)
@@ -244,7 +244,7 @@ class InstallRunTest(Base):
         self.assertEqual([c for c in self.fp.calls() if c[0] == "run"], [["run", "--rm", IMG, "host-helper"]])
         self.assertIn("Next: open a new terminal and run `swarmbox`", r.stdout)
 
-    def test_without_tools_no_with_line_is_written(self):
+    def test_without_addons_no_with_line_is_written(self):
         self.assertEqual(self.run_installer().returncode, 0)
         self.assertNotIn("WITH", self.config())
 
@@ -342,7 +342,7 @@ class InstallRunTest(Base):
         self.assertEqual(self.run_installer().returncode, 0)
 
     def test_podman_missing_is_exit_3_with_the_advice(self):
-        r = self.run_installer(PATH=os.path.join(self.tmp, "tools"))
+        r = self.run_installer(PATH=os.path.join(self.tmp, "programs"))
         self.assertEqual(r.returncode, 3, r.stderr)
         self.assertIn("Podman is not installed", r.stderr)
         self.assertIn("brew install podman", r.stderr)
@@ -451,7 +451,7 @@ class InstallShTest(Base):
                 self.assertFalse(os.path.exists(self.bin))
 
     def test_podman_missing_is_refused_before_any_download(self):
-        r = subprocess.run(["sh", INSTALL_SH, "--image", IMG], env=self.env(PATH=os.path.join(self.tmp, "tools"), SWARMBOX_RELEASE_URL=self.release()),
+        r = subprocess.run(["sh", INSTALL_SH, "--image", IMG], env=self.env(PATH=os.path.join(self.tmp, "programs"), SWARMBOX_RELEASE_URL=self.release()),
                            capture_output=True, text=True, cwd=self.tmp, input="")
         self.assertEqual(r.returncode, 1)
         self.assertIn("Podman is not installed", r.stderr)

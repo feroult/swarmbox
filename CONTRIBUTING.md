@@ -37,10 +37,10 @@ What each group covers (a file name tells the rest):
 | `test_host_*.py`, `test_security_review.py`, `test_cloudflare_setup.py` | the script `container/host/swarmbox-host` (installed as `swarmbox`) against a fake `podman` (`tests/helpers.py`): `up`, `reset`, `stop`, `url`, `update`, `config`, `env`, `remote`, create flags with golden files in `tests/fixtures/`, the host connection, the connector, hostile input; `cloudflare-setup.py` against a fake Cloudflare API on loopback |
 | `test_swarmbox_command.py`, `test_install.py`, `test_host_shells.py` | the `swarmbox` script as a program: which words it handles and which go to the box, `podman exec` forwarding and the `-t` rule; the two installers (`container/scripts/swarmbox-install.sh`, `install.sh`): idempotence, atomic write, PATH advice, old-function warning, the Podman version check; the script under dash, bash and busybox |
 | `test_serve_steps.py`, `test_entrypoint.py`, `test_attach_command.py`, `test_web_build.py`, `test_bashrc_fragment.py`, `test_starship.py`, `test_pubkey_ensure.py`, `test_ssh_key.py`, `test_mcp_registry.py`, `test_dirs.py`, `test_build_index.py` | what runs inside the box: `serve` steps and signals with fakes on `PATH`, `swarmbox-attach` (fake tmux, then real tmux on a private `-L swarmbox-test-<random>` socket), `swarmbox-web`, the shell fragment, the key, the MCP registry, the XDG paths, the web page build |
-| `test_tool_*.py` | the tool machinery `swarmbox-tool` and `swarmbox-shim` (manifests, link, install, run, prepare, use, remove, doctor, image level, the per-tool installers); `test_tool_real.py` also installs for real in throwaway containers, only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` |
-| `test_dockerfile.py`, `test_dev_build.py`, `test_image_build.py`, `test_image_with_tools.py`, `test_bashrc_container.py` | the `Dockerfile` (static) and the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; the image comes from `dev/dev-build.sh` or `SWARMBOX_IMAGE_TAG`, shared by `tests/image_support.py`). `tests/smoke_image.py` is the image smoke test (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box, `SWARMBOX_SMOKE_FULL=1` the full run for CI |
+| `test_addon_*.py` | the addon machinery `swarmbox-addon` and `swarmbox-shim` (manifests, link, install, run, prepare, use, remove, doctor, image level, the per-addon installers); `test_addon_real.py` also installs for real in throwaway containers, only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` |
+| `test_dockerfile.py`, `test_dev_build.py`, `test_image_build.py`, `test_image_with_addons.py`, `test_bashrc_container.py` | the `Dockerfile` (static) and the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; the image comes from `dev/dev-build.sh` or `SWARMBOX_IMAGE_TAG`, shared by `tests/image_support.py`). `tests/smoke_image.py` is the image smoke test (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/smoke_image.py` is the reduced run for a development box, `SWARMBOX_SMOKE_FULL=1` the full run for CI |
 | `test_ci_workflow.py`, `test_release_workflow.py`, `test_release_check.py`, `test_release_version.py`, `test_third_party_notices.py`, `test_record_checksums.py`, `test_name_check.py` | the repository machinery: text checks of the two workflows, the release scripts under `dev/` on fixture repositories, the notices generator, the checksum recorder |
-| `test_default_names_lint.py`, `test_repo_files.py`, `test_docs_consistency.py`, `test_run_all.py`, `test_helpers.py` | guards: no default name or image repository written as a literal (read `container/host/DEFAULTS`), the policy files exist and link, the README commands exist and its links resolve, the runner itself, the fake `podman` |
+| `test_default_names_lint.py`, `test_repo_files.py`, `test_docs_consistency.py`, `test_run_all.py`, `test_helpers.py`, `test_no_old_names.py` | guards: no old name of the addon concept anywhere (the allowlist of legitimate uses of the old word is in the test), no default name or image repository written as a literal (read `container/host/DEFAULTS`), the policy files exist and link, the README commands exist and its links resolve, the runner itself, the fake `podman` |
 | `test_clipboard_bridge.py`, `test_web_style.py`, `test_tmux_browser_keys.py`, `test_voice_page_browser.py`, `test_web_strip.py` | the web terminal in a real browser and tmux keys, the controls strip and the microphone; they need chromium and ttyd and run in the scheduled CI job only. The layers that need a real tmux (`test_web_strip.py`, `test_sysop_dock.py`, `test_sysop_always.py`, `test_tabs_real.py`, `test_sysop_web.py`, `test_sysop_real.py`) skip unless `SWARMBOX_TEST_REAL_TMUX=1`, which only a container run sets (never on a machine whose tmux you use). `tests/e2e_sysop.sh`, `tests/e2e_voice.sh` and `tests/soak_v1.sh` are development harnesses for Podman with a Claude login: not part of any gate |
 
 Shared helpers (the fake `podman`, the helper archive of an image, a pseudo terminal) are in `tests/helpers.py`. Write a test first, with fakes; use a real
@@ -88,7 +88,7 @@ architectures. A failure after the bump puts the files back (your CHANGELOG text
 `env`, `pubkey`, the user and workspace, tmux, the web terminal, nested Podman, `stop`, `reset`, `url` and `help`. It prints one
 `OK`, `FAIL` or `SKIP` line per step and `RESULT: N ok, M fail, K skip`; paste that when you report a failure. It uses only
 `swarmbox-test-*` names, a temporary workspace, a private config folder, a private install folder and a random port on `127.0.0.1`, and removes them on exit
-(`--keep` leaves them, `--with-tools` also installs Go, `--no-cache` builds from scratch, `--dry-run` prints the commands only).
+(`--keep` leaves them, `--with-addons` also installs Go, `--no-cache` builds from scratch, `--dry-run` prints the commands only).
 
 ## Building the image locally
 
@@ -117,7 +117,7 @@ See `docs/nested-podman.md` for the nested engine in detail.
 
 Every version the repository pins, who bumps it, and how. `.github/dependabot.yml` (Dependabot, weekly) bumps what its
 managers can read: the `uses:` lines of the workflows and a literal `FROM` line. It cannot read the shell-style
-`tool.conf` files or the `ARG` pins of the Dockerfile, so those are bumped by hand. Keep this table in step with the pins.
+`addon.conf` files or the `ARG` pins of the Dockerfile, so those are bumped by hand. Keep this table in step with the pins.
 
 | Pin | Bumped by | How |
 |---|---|---|
@@ -129,13 +129,13 @@ managers can read: the `uses:` lines of the workflows and a literal `FROM` line.
 | `UV_VERSION` | by hand | change the `ARG` |
 | `CHROME_DEVTOOLS_MCP_VERSION` | by hand | change the `ARG` and check its Node range against the base image |
 | `cloudflared image` | by hand | change the default in `container/host/swarmbox-host` AND `cloudflare-setup.py` together (the tests compare them) |
-| `container/tools/go/tool.conf` | by hand, then the checksum script | change `VERSION`, then run `sh dev/record-checksums.sh go` (it writes `SHA256_amd64` and `SHA256_arm64` from go.dev's listing and refuses a mismatch), commit both |
-| `container/tools/gcloud/tool.conf` | by hand, then the checksum script | change `VERSION`, then run `sh dev/record-checksums.sh gcloud` (it downloads the pinned archive for each architecture and records the computed `SHA256_amd64` and `SHA256_arm64`), commit both |
-| `container/tools/clasp/tool.conf` | by hand | change `VERSION` |
-| `container/tools/poetry/tool.conf` | by hand | change `VERSION` |
-| `container/tools/claude/tool.conf` | floating (nothing to bump) | `VERSION=latest`; the tool updates itself |
-| `container/tools/gemini/tool.conf` | floating (nothing to bump) | `VERSION=latest` |
-| `container/tools/opencode/tool.conf` | floating (nothing to bump) | `VERSION=latest` |
+| `container/addons/go/addon.conf` | by hand, then the checksum script | change `VERSION`, then run `sh dev/record-checksums.sh go` (it writes `SHA256_amd64` and `SHA256_arm64` from go.dev's listing and refuses a mismatch), commit both |
+| `container/addons/gcloud/addon.conf` | by hand, then the checksum script | change `VERSION`, then run `sh dev/record-checksums.sh gcloud` (it downloads the pinned archive for each architecture and records the computed `SHA256_amd64` and `SHA256_arm64`), commit both |
+| `container/addons/clasp/addon.conf` | by hand | change `VERSION` |
+| `container/addons/poetry/addon.conf` | by hand | change `VERSION` |
+| `container/addons/claude/addon.conf` | floating (nothing to bump) | `VERSION=latest`; the addon updates itself |
+| `container/addons/gemini/addon.conf` | floating (nothing to bump) | `VERSION=latest` |
+| `container/addons/opencode/addon.conf` | floating (nothing to bump) | `VERSION=latest` |
 
 **Bumping tmux.** The image installs one exact package of `trixie-backports`, `TMUX_VERSION` (for example `3.7c-1~bpo13+1`), checked against `TMUX_SHA256_AMD64` and
 `TMUX_SHA256_ARM64`; the `.deb` is fetched from the archive and, when backports has moved on and the archive no longer has it, from `snapshot.debian.org` by `TMUX_SHA1_AMD64` / `TMUX_SHA1_ARM64`.

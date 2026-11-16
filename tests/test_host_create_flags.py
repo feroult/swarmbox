@@ -1,6 +1,6 @@
 """`create-flags`, `fingerprint` and the workspace checks of the host helper.
 
-The helper runs as a real program, copied with a fixture `tool-ports` into a mktemp folder (the repository has none: the
+The helper runs as a real program, copied with a fixture `addon-ports` into a mktemp folder (the repository has none: the
 image build writes it), with a cleared environment: PATH, a mktemp HOME and the variables a case sets. Nothing calls
 Podman. Nothing touches the real home or a Windows drive: the WSL probe and the OS are test-overridable
 (SWARMBOX_TEST_PROC_VERSION, SWARMBOX_TEST_OS), the local time file is SWARMBOX_LOCALTIME_FILE.
@@ -99,7 +99,7 @@ class Base(unittest.TestCase):
                     pass
         shutil.rmtree(self.tmp, True)
 
-    def make_helper(self, tool_ports, version=True):
+    def make_helper(self, addon_ports, version=True):
         shutil.rmtree(self.hdir, True)
         os.makedirs(self.hdir)
         shutil.copy(HELPER_SRC, os.path.join(self.hdir, "swarmbox-host"))
@@ -107,9 +107,9 @@ class Base(unittest.TestCase):
         if version:
             shutil.copy(VERSION_SRC, os.path.join(self.hdir, "VERSION"))
             shutil.copy(DEFAULTS_SRC, os.path.join(self.hdir, "DEFAULTS"))
-        if tool_ports is not None:
-            with open(os.path.join(self.hdir, "tool-ports"), "w") as f:
-                f.write(tool_ports)
+        if addon_ports is not None:
+            with open(os.path.join(self.hdir, "addon-ports"), "w") as f:
+                f.write(addon_ports)
 
     @property
     def helper(self):
@@ -232,6 +232,26 @@ class KeyTest(Base):
         out = self.flags(env={"SWARMBOX_WEB": "0"})
         self.assertFalse([v for v in values(out, "-p") if v.endswith(":7681")])
 
+    def agent_of(self, out):
+        return [v for k, v in pairs_of(out) if k == "-e" and v.startswith("SWARMBOX_AGENT=")]
+
+    def test_the_default_agent_is_the_agent_setting(self):
+        out = self.flags(env={"SWARMBOX_AGENT": "gemini", "SWARMBOX_WITH": "claude,gemini"})
+        self.assertEqual(self.agent_of(out), ["SWARMBOX_AGENT=gemini"])
+
+    def test_without_an_agent_setting_the_first_addon_of_with_is_recorded(self):
+        for with_, want in (("claude", "claude"), ("claude,go", "claude"), ("opencode,gemini,claude", "opencode"), ("go,claude", "go")):
+            with self.subTest(with_=with_):
+                out = self.flags(env={"SWARMBOX_WITH": with_})
+                self.assertEqual(self.agent_of(out), ["SWARMBOX_AGENT=" + want])
+
+    def test_the_agent_setting_wins_even_when_it_is_not_in_with(self):
+        out = self.flags(env={"SWARMBOX_AGENT": "opencode", "SWARMBOX_WITH": "claude"})
+        self.assertEqual(self.agent_of(out), ["SWARMBOX_AGENT=opencode"])
+
+    def test_with_neither_agent_nor_with_no_default_agent_is_recorded(self):
+        self.assertEqual(self.agent_of(self.flags()), [])
+
     def test_env_keys_are_passed_by_name_only_when_set(self):
         out = self.flags(env={"SWARMBOX_ENV_KEYS": "SET_ONE,UNSET_ONE,EMPTY_ONE", "SET_ONE": CANARY, "EMPTY_ONE": ""})
         es = values(out, "-e")
@@ -294,12 +314,12 @@ class FramingTest(Base):
             got = r.stdout.decode().split("\0")[:-1]
             self.assertEqual(got, lines, sh)
 
-# ============================================================================ tool ports
+# ============================================================================ addon ports
 
-class ToolPortsTest(Base):
+class AddonPortsTest(Base):
     TP = "clasp\t43323\ngcloud\t8085\ngcloud\t8086\n"
 
-    def test_with_selects_only_its_tools_ports(self):
+    def test_with_selects_only_its_addons_ports(self):
         self.make_helper(self.TP)
         out = self.flags(env={"SWARMBOX_WITH": "clasp"})
         ps = values(out, "-p")
@@ -313,12 +333,12 @@ class ToolPortsTest(Base):
             ps = [p for p in values(out, "-p") if not p.endswith(":7681")]
             self.assertEqual(len([p for p in ps if p.split(":")[1] == "43323"]), 1, (user, ps))
 
-    def test_a_missing_tool_ports_is_a_corrupted_helper_exit_3(self):
+    def test_a_missing_addon_ports_is_a_corrupted_helper_exit_3(self):
         self.make_helper(None)
         p = self.cf()
         self.assertEqual(p.returncode, 3)
         self.assertEqual(p.stdout, "")
-        self.assertIn("tool-ports", p.stderr)
+        self.assertIn("addon-ports", p.stderr)
         self.assertIn("swarmbox update", p.stderr)
 
 # ============================================================================ ports and BROWSER_URL parity (v0.1.0 flags)
@@ -457,7 +477,7 @@ class FingerprintTest(Base):
 
     def test_unchanged_by_runtime_only_keys_and_secrets(self):
         base = self.fp()
-        for k, v in (("SWARMBOX_STARSHIP", "0"), ("SWARMBOX_UPDATE_CHECK", "0"), ("SWARMBOX_TOOLS_DIR", "/x"),
+        for k, v in (("SWARMBOX_STARSHIP", "0"), ("SWARMBOX_UPDATE_CHECK", "0"), ("SWARMBOX_ADDONS_DIR", "/x"),
                      ("SWARMBOX_WEB_DOMAIN", "x.example"), ("SWARMBOX_WEB_HOSTNAME", "h"),
                      ("SWARMBOX_CLOUDFLARED_IMAGE", "img"), ("SWARMBOX_CLOUDFLARE_TUNNEL_TOKEN", TOKEN),
                      ("SWARMBOX_UNKNOWN", "1")):

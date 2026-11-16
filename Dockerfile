@@ -1,4 +1,4 @@
-# SwarmBox 2.0 image. Slim: no agent, gcloud, clasp, Go or Poetry; tools arrive on demand.
+# SwarmBox 2.0 image. Slim: no agent, gcloud, clasp, Go or Poetry; addons arrive on demand.
 # Layer order: stable first (packages, Podman, pinned downloads), volatile last (scripts, configuration).
 ARG NODE_VERSION=24
 FROM node:${NODE_VERSION}-trixie-slim
@@ -180,18 +180,18 @@ COPY container/scripts/ssh-key.sh /usr/local/bin/swarmbox-pubkey
 COPY container/mcp/ /etc/swarmbox/mcp/
 COPY container/scripts/swarmbox-attach.sh /usr/local/bin/swarmbox-attach
 COPY container/scripts/swarmbox-web.sh /usr/local/bin/swarmbox-web
-COPY container/scripts/swarmbox-tool.sh /usr/local/bin/swarmbox-tool
+COPY container/scripts/swarmbox-addon.sh /usr/local/bin/swarmbox-addon
 COPY container/scripts/swarmbox-bus.py /usr/local/bin/swarmbox-bus
 # The tabs of the box (list, active, screen, send): a capability of the host with its own command, separate from the bus.
 COPY container/scripts/swarmbox-tabs.py /usr/local/bin/swarmbox-tabs
 COPY container/scripts/swarmbox-shim.sh /usr/local/bin/swarmbox-shim
-COPY container/tools/ /usr/local/lib/swarmbox/tools/
+COPY container/addons/ /usr/local/lib/swarmbox/addons/
 COPY container/scripts/swarmbox-mcp.sh /usr/local/bin/swarmbox-mcp
-# The tool manifests are read-only data of the image; `swarmbox-tool link --system` below generates the shims,
-# the index and tool-ports from them. No agent is installed here: the first call of a shim installs it.
+# The addon manifests are read-only data of the image; `swarmbox-addon link --system` below generates the shims,
+# the index and addon-ports from them. No agent is installed here: the first call of a shim installs it.
 COPY container/scripts/swarmbox-install.sh /usr/local/bin/swarmbox-install
 # The helper archive: what `swarmbox-entrypoint host-helper` writes. container/host/ holds swarmbox-host (the `swarmbox` command,
-# which `swarmbox-install` prints an installer for), VERSION and DEFAULTS; tool-ports is written by `swarmbox-tool link --system` below, always, empty
+# which `swarmbox-install` prints an installer for), VERSION and DEFAULTS; addon-ports is written by `swarmbox-addon link --system` below, always, empty
 # when no manifest has ports.
 COPY container/host/ /usr/local/share/swarmbox/host/
 COPY cloudflare-setup.py /usr/local/share/swarmbox/host/cloudflare-setup.py
@@ -199,25 +199,25 @@ COPY container/entrypoint.sh /usr/local/bin/swarmbox-entrypoint
 RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.toml /etc/swarmbox/bashrc.sh /etc/ssh/ssh_config.d/swarmbox.conf \
         /usr/local/lib/swarmbox/dirs.sh /etc/swarmbox/scripts/starship-init.sh /etc/swarmbox/scripts/messages.sh && \
     chmod 755 /usr/local/bin/banner.sh /usr/local/bin/swarmbox-statusline /usr/local/bin/swarmbox-pubkey \
-        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-tool /usr/local/bin/swarmbox-bus /usr/local/bin/swarmbox-tabs /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-mcp /usr/local/bin/swarmbox-install /usr/local/bin/swarmbox-entrypoint && \
+        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-addon /usr/local/bin/swarmbox-bus /usr/local/bin/swarmbox-tabs /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-mcp /usr/local/bin/swarmbox-install /usr/local/bin/swarmbox-entrypoint && \
     chmod 755 /usr/local/share/swarmbox/host/swarmbox-host && \
     chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py /usr/local/share/swarmbox/host/VERSION /usr/local/share/swarmbox/host/DEFAULTS && \
     chmod -R a+rX /usr/local/share/swarmbox/host && \
-    chmod -R a+rX /etc/swarmbox/mcp /usr/local/lib/swarmbox/tools && \
-    find /usr/local/lib/swarmbox/tools -name '*.sh' -exec chmod 755 {} + && \
-    swarmbox-tool link --system
+    chmod -R a+rX /etc/swarmbox/mcp /usr/local/lib/swarmbox/addons && \
+    find /usr/local/lib/swarmbox/addons -name '*.sh' -exec chmod 755 {} + && \
+    swarmbox-addon link --system
 
-# Build-time preinstall: WITH_TOOLS is a comma list of tool names (default empty: no tool is baked). Each one is
-# installed by the same installer that an on-demand install runs, as agent (the owner of /opt/swarmbox/tools, so no chown -R and no
-# root-owned entries; the npm cache rule: NPM_CONFIG_CACHE is /opt/npm-cache, owned by agent), into /opt/swarmbox/tools instead
+# Build-time preinstall: WITH_ADDONS is a comma list of addon names (default empty: no addon is baked). Each one is
+# installed by the same installer that an on-demand install runs, as agent (the owner of /opt/swarmbox/addons, so no chown -R and no
+# root-owned entries; the npm cache rule: NPM_CONFIG_CACHE is /opt/npm-cache, owned by agent), into /opt/swarmbox/addons instead
 # of the workspace. The fingerprint is recorded at that moment. An unknown name or a failed installer fails the build; with an
-# empty list the loop does nothing. The core never names a tool: the names come from the argument and the manifests.
-ARG WITH_TOOLS=""
-RUN install -d -o agent -g agent -m 755 /opt/swarmbox /opt/swarmbox/tools
+# empty list the loop does nothing. The core never names an addon: the names come from the argument and the manifests.
+ARG WITH_ADDONS=""
+RUN install -d -o agent -g agent -m 755 /opt/swarmbox /opt/swarmbox/addons
 USER agent
 RUN set -eu; set -f; \
-    for t in $(printf '%s' "$WITH_TOOLS" | tr ',' ' '); do \
-        swarmbox-tool install "$t" --image; \
+    for t in $(printf '%s' "$WITH_ADDONS" | tr ',' ' '); do \
+        swarmbox-addon install "$t" --image; \
     done
 USER root
 

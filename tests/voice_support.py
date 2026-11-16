@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT  # noqa: E402
 
-VOICE = os.path.join(ROOT, "container", "tools", "voice")
+VOICE = os.path.join(ROOT, "container", "addons", "voice")
 sys.path.insert(0, os.path.join(VOICE, "lib"))
 
 FIXTURES = os.path.join(ROOT, "tests", "fixtures", "voice")

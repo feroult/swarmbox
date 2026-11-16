@@ -6,7 +6,7 @@
 #   attach    forwards to swarmbox-attach (the session of each tab, the idle window, `swarmbox <command>`)
 #   install   forwards to swarmbox-install
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
-#   tool      forwards to swarmbox-tool
+#   addon     forwards to swarmbox-addon
 #   bus       forwards to swarmbox-bus (the bus broker's command line)
 #   tabs      forwards to swarmbox-tabs (the tabs of the box: list, active, screen, send)
 #   host-helper
@@ -286,7 +286,7 @@ serve() {
     fi
 
     # step 3 [F]: the XDG folders and the run folder
-    if ! mkdir -p "$SB_CONFIG_DIR" "$SB_DATA_DIR" "$SB_STATE_DIR" "$SB_TOOLS_DIR" "$SB_SHIMS_DIR" "$SB_LOG_DIR" "$SB_RUN_DIR" 2>/dev/null; then
+    if ! mkdir -p "$SB_CONFIG_DIR" "$SB_DATA_DIR" "$SB_STATE_DIR" "$SB_ADDONS_DIR" "$SB_SHIMS_DIR" "$SB_LOG_DIR" "$SB_RUN_DIR" 2>/dev/null; then
         fatal "cannot create the SwarmBox folders under $HOME and $SB_RUN_DIR"
     fi
     : > "$SB_HEALTH_FILE" 2>/dev/null || fatal "cannot create $SB_HEALTH_FILE"   # cleared at every start
@@ -302,12 +302,12 @@ serve() {
     run_logged swarmbox-pubkey --ensure; rc=$?
     [ "$rc" = 0 ] || warn "could not create the Git SSH key (swarmbox-pubkey exit $rc); see serve.log"
 
-    # step 6 [W]: link the user-level tools: shims and index in the workspace
-    log "step 6: swarmbox-tool link --user"
-    run_logged swarmbox-tool link --user; rc=$?
-    [ "$rc" = 0 ] || warn "linking the user tools failed (swarmbox-tool link exit $rc); see serve.log"
+    # step 6 [W]: link the user-level addons: shims and index in the workspace
+    log "step 6: swarmbox-addon link --user"
+    run_logged swarmbox-addon link --user; rc=$?
+    [ "$rc" = 0 ] || warn "linking the user addons failed (swarmbox-addon link exit $rc); see serve.log"
 
-    # step 6b [W]: the bus broker, supervised, before step 7 because the prepare.sh of a tool may start subscribers and publishers.
+    # step 6b [W]: the bus broker, supervised, before step 7 because the prepare.sh of an addon may start subscribers and publishers.
     # It needs only the run folder (step 3): the bus knows nothing about tmux. Nothing of the box depends on it.
     if ! have swarmbox-bus; then
         warn "the bus was not started: swarmbox-bus not found"
@@ -319,7 +319,7 @@ serve() {
         wait_for_bus "${SWARMBOX_TEST_BUS_WAIT:-2}" || warn "the bus did not answer on $SB_BUS_SOCK; see bus.log"
     fi
 
-    # step 7 [W]: the MCP configuration (swarmbox-mcp), then prepare.sh of every tool
+    # step 7 [W]: the MCP configuration (swarmbox-mcp), then prepare.sh of every addon
     # The claude alias passes --mcp-config <workspace>/.claude/mcp-servers.json and claude refuses a missing file, so when the
     # generator is missing or fails before it wrote anything, an empty valid list is left where there is none.
     log "step 7: swarmbox-mcp generate"
@@ -334,11 +334,11 @@ serve() {
             warn "could not write $HOME/.claude/mcp-servers.json; the claude alias may refuse to start"
         fi
     fi
-    log "step 7: swarmbox-tool prepare"
-    # prepare prints one "prepare-failed: <tool>: <reason>" line per failing tool; each becomes one W line (health line),
+    log "step 7: swarmbox-addon prepare"
+    # prepare prints one "prepare-failed: <addon>: <reason>" line per failing addon; each becomes one W line (health line),
     # and a failure with no such line (the command itself failed) is one generic W line.
     prep_out=$(mktemp "${TMPDIR:-/tmp}/swarmbox-prepare.XXXXXX" 2>/dev/null) || prep_out=/dev/null
-    swarmbox-tool prepare > "$prep_out" 2>&1; rc=$?
+    swarmbox-addon prepare > "$prep_out" 2>&1; rc=$?
     [ "$prep_out" = /dev/null ] || cat "$prep_out" >> "$SERVE_LOG" 2>/dev/null
     nfail=0
     if [ "$prep_out" != /dev/null ]; then
@@ -352,7 +352,7 @@ serve() {
         rm -f "$prep_out"
     fi
     if [ "$rc" != 0 ] && [ "$nfail" = 0 ]; then
-        warn "preparing the tools failed (swarmbox-tool prepare exit $rc); see serve.log"
+        warn "preparing the addons failed (swarmbox-addon prepare exit $rc); see serve.log"
     fi
 
     # step 8 [W]: start the nested Podman service and check that it answers
@@ -430,7 +430,7 @@ serve() {
         warn "could not write the readiness marker $SB_RUN_DIR/ready"
     fi
 
-    # step 12 [W]: in the background, install the tools listed in WITH, one after another, output to serve.log
+    # step 12 [W]: in the background, install the addons listed in WITH, one after another, output to serve.log
     local -a with=()
     local t
     IFS=', ' read -r -a with <<< "${SWARMBOX_WITH:-}"
@@ -441,7 +441,7 @@ serve() {
         (
             for t in "${with[@]}"; do
                 [ -n "$t" ] || continue
-                if swarmbox-tool install "$t" >> "$SERVE_LOG" 2>&1; then
+                if swarmbox-addon install "$t" >> "$SERVE_LOG" 2>&1; then
                     log "installed $t"
                 else
                     health_add "installing $t failed (the next call of it retries); see serve.log"
@@ -492,14 +492,14 @@ case "${1:-}" in
     serve)
         serve
         ;;
-    attach|install|pubkey|tool|bus|tabs)
+    attach|install|pubkey|addon|bus|tabs)
         sub=$1
         shift
         case "$sub" in
             attach) forward swarmbox-attach "$@" ;;
             install) forward swarmbox-install "$@" ;;
             pubkey) forward swarmbox-pubkey "$@" ;;
-            tool) forward swarmbox-tool "$@" ;;
+            addon) forward swarmbox-addon "$@" ;;
             bus) forward swarmbox-bus "$@" ;;
             tabs) forward swarmbox-tabs "$@" ;;
         esac

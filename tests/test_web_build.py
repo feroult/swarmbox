@@ -254,7 +254,7 @@ class Restart(WebCase):
 
 class WithServe(serve_steps.ServeCase):
     """serve (real entrypoint) runs `swarmbox-web run` under its supervisor; `swarmbox-web restart` restarts ttyd."""
-    PROGRAMS = ("swarmbox-pubkey", "swarmbox-tool")
+    PROGRAMS = ("swarmbox-pubkey", "swarmbox-addon")
 
     def setUp(self):
         super().setUp()

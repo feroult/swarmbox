@@ -60,8 +60,8 @@ class BaseAndUser(unittest.TestCase):
 
 class Pinned(unittest.TestCase):
     def test_downloads_are_checksummed(self):
-        for tool in ("ttyd", "starship"):
-            self.assertRegex(D, r"ARG %s_VERSION=\d" % tool.upper())
+        for prog in ("ttyd", "starship"):
+            self.assertRegex(D, r"ARG %s_VERSION=\d" % prog.upper())
         self.assertGreaterEqual(CODE.count("sha256sum -c"), 2)
 
 
@@ -140,13 +140,13 @@ class NestedPodman(unittest.TestCase):
         self.assertIn("setcap cap_setuid+ep /usr/bin/newuidmap", CODE)
         self.assertIn("setcap cap_setgid+ep /usr/bin/newgidmap", CODE)
 
-class ToolMachinery(unittest.TestCase):
-    """The image ships the real tool program, the manifests and the generated shims."""
+class AddonMachinery(unittest.TestCase):
+    """The image ships the real addon program, the manifests and the generated shims."""
 
     def test_link_system_runs_after_every_copy_and_chmod_it_needs(self):
-        idx = [n for n, i in enumerate(INS) if "swarmbox-tool link --system" in i]
+        idx = [n for n, i in enumerate(INS) if "swarmbox-addon link --system" in i]
         self.assertEqual(len(idx), 1)
-        for needle in ("COPY container/tools/", "COPY container/scripts/swarmbox-tool.sh", "COPY container/scripts/swarmbox-shim.sh",
+        for needle in ("COPY container/addons/", "COPY container/scripts/swarmbox-addon.sh", "COPY container/scripts/swarmbox-shim.sh",
                        "COPY container/scripts/dirs.sh"):
             first = [n for n, i in enumerate(INS) if i.startswith(needle)]
             self.assertEqual(len(first), 1, needle)
@@ -154,44 +154,44 @@ class ToolMachinery(unittest.TestCase):
         self.assertIn("chmod 755", INS[idx[0]])  # same RUN as the chmod, so the link sees executable scripts
         self.assertTrue(INS[idx[0]].startswith("RUN "))
 
-    def test_no_agent_is_installed_and_no_tool_state_is_baked(self):
-        # the only install is the WITH_TOOLS loop (class WithTools); nothing named, nothing by default
-        installs = [i for i in INS if "swarmbox-tool install" in i]
+    def test_no_agent_is_installed_and_no_addon_state_is_baked(self):
+        # the only install is the WITH_ADDONS loop (class WithAddons); nothing named, nothing by default
+        installs = [i for i in INS if "swarmbox-addon install" in i]
         self.assertEqual(len(installs), 1)
         self.assertIn('"$t"', installs[0])
-        self.assertNotIn("swarmbox-tool run", CODE)
+        self.assertNotIn("swarmbox-addon run", CODE)
         self.assertNotIn(".local/share/swarmbox", CODE)
-        self.assertNotRegex(CODE, r"tools/claude")
+        self.assertNotRegex(CODE, r"addons/claude")
 
 
-def tool_names():
-    return sorted(os.listdir(os.path.join(ROOT, "container", "tools")))
+def addon_names():
+    return sorted(os.listdir(os.path.join(ROOT, "container", "addons")))
 
 
-class WithTools(unittest.TestCase):
-    """The WITH_TOOLS build argument."""
+class WithAddons(unittest.TestCase):
+    """The WITH_ADDONS build argument."""
 
     def run_idx(self):
-        idx = [n for n, i in enumerate(INS) if "swarmbox-tool install" in i]
+        idx = [n for n, i in enumerate(INS) if "swarmbox-addon install" in i]
         self.assertEqual(len(idx), 1)
         return idx[0]
 
     def test_the_run_loops_over_the_comma_list_and_installs_into_the_image_state(self):
         i = INS[self.run_idx()]
         self.assertTrue(i.startswith("RUN "))
-        self.assertIn("$WITH_TOOLS", i)
+        self.assertIn("$WITH_ADDONS", i)
         self.assertIn("tr ',' ' '", i)
-        self.assertIn('swarmbox-tool install "$t" --image', i)
+        self.assertIn('swarmbox-addon install "$t" --image', i)
         self.assertIn("set -eu", i)  # an unknown name or a failed installer fails the build
         self.assertIn("set -f", i)   # no globbing of a name
 
-    def test_the_core_never_names_a_tool(self):
-        names = tool_names()
+    def test_the_core_never_names_an_addon(self):
+        names = addon_names()
         self.assertGreaterEqual(len(names), 7)
         for name in names:
-            self.assertNotRegex(CODE, r"(?<![\w./-])%s(?![\w-])" % re.escape(name), "the Dockerfile names the tool " + name)
+            self.assertNotRegex(CODE, r"(?<![\w./-])%s(?![\w-])" % re.escape(name), "the Dockerfile names the addon " + name)
         # and the argument carries no default list
-        self.assertNotRegex(D, r"WITH_TOOLS=\"?[a-z]")
+        self.assertNotRegex(D, r"WITH_ADDONS=\"?[a-z]")
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

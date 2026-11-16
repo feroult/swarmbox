@@ -1,4 +1,4 @@
-"""Shared by tests/test_bus.py, tests/test_bus_cli.py and the tests of the plugins: load swarmbox-bus.py as a module, run a broker in a thread
+"""Shared by tests/test_bus.py, tests/test_bus_cli.py and the tests of the addons: load swarmbox-bus.py as a module, run a broker in a thread
 or as a process, and a raw protocol client. Nothing here needs tmux, a network or a model."""
 import importlib.util
 import json

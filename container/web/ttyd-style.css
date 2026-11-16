@@ -24,7 +24,7 @@
 }
 
 /* ---- The controls strip (ttyd-clipboard.js, part 2) ----------------------------------------------------------------------------------
-   A bar below the terminal: key buttons and the controls of plugins. When it is shown (html.swarmbox-strip-on) the page is a column, the terminal
+   A bar below the terminal: key buttons and the controls of addons. When it is shown (html.swarmbox-strip-on) the page is a column, the terminal
    container takes what the strip leaves and ttyd refits xterm to it, so the strip never covers a cell. Palette of docs/theme.md. */
 #swarmbox-strip {
   --sb-bg: #0c0b10; --sb-band: #27222f; --sb-line: #52525b; --sb-text: #d4d4d8; --sb-violet: #a78bfa; --sb-deep: #6d28d9; --sb-lavender: #c4b5fd;
@@ -47,8 +47,8 @@
 #swarmbox-strip .sb-btn:hover { border-color: var(--sb-violet); }
 #swarmbox-strip .sb-btn:active { background: var(--sb-deep); color: #fff; }
 #swarmbox-strip .sb-btn:focus-visible { outline: 2px solid var(--sb-lavender); outline-offset: 1px; }
-#swarmbox-strip .sb-plugin { padding: 0; }
-/* the sentence a plugin shows: it covers the key buttons until the plugin clears it or the host does (12 s, opaque, tap to dismiss), on two lines at most and ends where the plugin controls begin */
+#swarmbox-strip .sb-addon { padding: 0; }
+/* the sentence an addon shows: it covers the key buttons until the addon clears it or the host does (12 s, opaque, tap to dismiss), on two lines at most and ends where the addon controls begin */
 #swarmbox-strip .sb-note {
   position: absolute; z-index: 2; top: 0; bottom: 0; left: 0; right: var(--sb-slot-w, 0px); display: flex; align-items: center;
   padding: 0 8px 0 calc(8px + env(safe-area-inset-left, 0px)); overflow: hidden;

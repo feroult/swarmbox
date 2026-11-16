@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static gate for the voice control of the web page (container/tools/voice/web/page.js and page.css).
+"""Static gate for the voice control of the web page (container/addons/voice/web/page.js and page.css).
 
 Fast: no browser, no network. The behaviour in a real browser is in test_voice_page_browser.py (opt in).
 
@@ -23,7 +23,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT  # noqa: E402
 
-WEB = os.path.join(ROOT, "container", "tools", "voice", "web")
+WEB = os.path.join(ROOT, "container", "addons", "voice", "web")
 JS = os.path.join(WEB, "page.js")
 CSS = os.path.join(WEB, "page.css")
 THEME = os.path.join(ROOT, "docs", "theme.md")

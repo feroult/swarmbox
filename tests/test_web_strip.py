@@ -7,7 +7,7 @@ Three layers:
   2. The key notation: parseKeys / keyBytes of the page script, run by node when it is installed (fast, no browser).
   3. Browser (Chromium + the real ttyd + a REAL tmux, so SWARMBOX_TEST_REAL_TMUX=1, which only the Podman runs set): the strip at several viewports
      (desktop, phone portrait and landscape with touch, tablet) by bounding boxes: it never covers the last row of the terminal, the tmux window has
-     exactly the rows xterm shows, the buttons are at least 44 px, a plugin control sits in the strip, every key button delivers its bytes to a pane
+     exactly the rows xterm shows, the buttons are at least 44 px, an addon control sits in the strip, every key button delivers its bytes to a pane
      running `cat -vT` (by mouse and by touch), the Panel button runs the binding of the sysop panel of container/config/tmux.conf, the settings show
      and hide the strip, and the keyboard of a phone (visualViewport) moves the strip with it. SWARMBOX_TEST_SHOTS=<dir> also saves a screenshot per viewport.
 
@@ -303,7 +303,7 @@ class Browser(base.ClipboardBridge):
       return {win: [innerWidth, innerHeight], docw: document.documentElement.scrollWidth, strip: r(q('#swarmbox-strip')), stripShown: !!q('#swarmbox-strip') && !q('#swarmbox-strip').hidden,
               container: r(q('#terminal-container')), screen: r(q('.xterm-screen')), rows: term.rows, cols: term.cols,
               keys: Array.from(document.querySelectorAll('#swarmbox-strip .sb-key')).map(e => Object.assign({t: e.textContent}, r(e))),
-              plugins: Array.from(document.querySelectorAll('#swarmbox-strip .sb-plugin')).map(e => Object.assign({id: e.id}, r(e))),
+              addons: Array.from(document.querySelectorAll('#swarmbox-strip .sb-addon')).map(e => Object.assign({id: e.id}, r(e))),
               keysShown: !!q('#swarmbox-strip .sb-keys') && !q('#swarmbox-strip .sb-keys').hidden,
               coarse: matchMedia('(pointer: coarse)').matches};
     })()"""
@@ -378,19 +378,19 @@ class Browser(base.ClipboardBridge):
         self.assertFalse(self.page.js("document.documentElement.classList.contains('swarmbox-strip-on')"))
         self.shot("desktop-no-strip")
 
-    def test_a_plugin_control_alone_shows_the_strip_on_desktop_without_the_key_buttons(self):
+    def test_a_addon_control_alone_shows_the_strip_on_desktop_without_the_key_buttons(self):
         self.open_strip(viewport="desktop")
         self.page.js("""(() => { const b = swarmboxStrip.add({id: 'demo-mic', title: 'Hold to talk', label: 'mic'}); window.__b = b; })()""")
         self.settle()
         g = self.geo()
         self.assert_nothing_covered(g)
         self.assertFalse(g["keysShown"], "a mouse user did not ask for key buttons")
-        self.assertEqual([p["id"] for p in g["plugins"]], ["demo-mic"])
-        p, s = g["plugins"][0], g["strip"]
+        self.assertEqual([p["id"] for p in g["addons"]], ["demo-mic"])
+        p, s = g["addons"][0], g["strip"]
         self.assertGreaterEqual(min(p["w"], p["h"]), 44)
         self.assertTrue(s["top"] <= p["top"] and p["bottom"] <= s["bottom"], "the control is inside the strip")
         self.assertGreater(p["left"], g["win"][0] / 2, "at the right end")
-        self.shot("desktop-plugin-control")
+        self.shot("desktop-addon-control")
         self.page.js("swarmboxStrip.remove('demo-mic')")
         self.settle()
         self.assertFalse(self.geo()["stripShown"], "with its last control gone the strip goes too and the terminal grows back")
@@ -406,7 +406,7 @@ class Browser(base.ClipboardBridge):
         self.press(*self.center(1), touch=False)
         self.assertTrue(self.wait_pane("hi"), self.pane_text())
 
-    def test_strip_on_forces_it_and_off_hides_it_even_for_a_plugin_and_touch(self):
+    def test_strip_on_forces_it_and_off_hides_it_even_for_a_addon_and_touch(self):
         self.open_strip(conf="strip=on\n", viewport="desktop")
         self.settle()
         g = self.geo()
@@ -415,7 +415,7 @@ class Browser(base.ClipboardBridge):
         self.assertEqual(len(g["keys"]), 10)
         self.shot("desktop-strip-on")
 
-    def test_strip_off_wins_over_touch_and_plugins(self):
+    def test_strip_off_wins_over_touch_and_addons(self):
         self.open_strip(conf="strip=off\n", viewport="phone-portrait")
         self.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'x'})")
         self.settle()
@@ -434,13 +434,13 @@ class Browser(base.ClipboardBridge):
         self.assert_nothing_covered(g)
         self.assertTrue(g["keysShown"])
         self.assertEqual([k["t"] for k in g["keys"]], ["Esc", "Tab", "^C", "↑", "↓", "←", "→", "Panel", "Veto", "Stop"])
-        for k in g["keys"] + g["plugins"]:
+        for k in g["keys"] + g["addons"]:
             self.assertGreaterEqual(k["w"], 44 - 0.01, k)
             self.assertGreaterEqual(k["h"], 44 - 0.01, k)
             self.assertTrue(g["strip"]["top"] <= k["top"] and k["bottom"] <= g["strip"]["bottom"], "inside the strip: %r" % k)
             self.assertGreaterEqual(k["left"], 0)
             self.assertLessEqual(k["right"], g["win"][0] + 0.5, "a button off the screen: %r" % k)
-        mic = g["plugins"][0]
+        mic = g["addons"][0]
         for k in g["keys"]:
             self.assertFalse(k["left"] < mic["right"] and mic["left"] < k["right"] and k["top"] < mic["bottom"] and mic["top"] < k["bottom"], "keys and mic overlap")
         return g
@@ -454,7 +454,7 @@ class Browser(base.ClipboardBridge):
         g = self.check_viewport("phone-landscape")
         self.assertLessEqual(g["strip"]["h"], 64, "a slim strip: %r" % g["strip"])
         self.assertLess(g["strip"]["h"], 390 * 0.17)
-        tops = {round(k["top"]) for k in g["keys"] + g["plugins"]}
+        tops = {round(k["top"]) for k in g["keys"] + g["addons"]}
         self.assertEqual(len(tops), 1, "a single row")
         self.assertGreater(g["rows"], 8)
         # the clock of the tmux status bar (its last row) is on screen: nothing covers it and it is not cut off at the right
@@ -529,7 +529,7 @@ class Browser(base.ClipboardBridge):
         self.assertEqual(len(open(self.sysop_log).read().strip().split("\n")), 2)
         self.shot("phone-portrait-panel-pressed")
 
-    def test_a_note_covers_the_keys_but_not_the_plugin_controls_and_goes_away(self):
+    def test_a_note_covers_the_keys_but_not_the_addon_controls_and_goes_away(self):
         self.open_strip(conf="strip=on\n", viewport="phone-portrait")
         self.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'x'})")
         self.settle()
@@ -547,7 +547,7 @@ class Browser(base.ClipboardBridge):
         self.page.js("document.querySelector('#swarmbox-strip .sb-note').click()")
         self.assertTrue(self.page.js("document.querySelector('#swarmbox-strip .sb-note').hidden"), "a tap dismisses it")
 
-    def test_the_sentences_of_the_voice_tool_are_read_whole_on_a_phone_in_two_lines(self):
+    def test_the_sentences_of_the_voice_addon_are_read_whole_on_a_phone_in_two_lines(self):
         self.open_strip(conf="strip=on\n", viewport="phone-portrait")
         self.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'x'})")
         self.settle()

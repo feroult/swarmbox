@@ -37,7 +37,7 @@ mounted). It does not protect the following, and you should assume all of it whe
 - The SSH key lives in the workspace: anything in the box can use it. Use per-repository deploy keys.
 - The web terminal has no login on its own port. It is bound to `127.0.0.1`. With `swarmbox remote`, access goes only through
   Cloudflare Access, and a browser session there is a shell with `sudo`: keep the session length short.
-- Tools installed on demand are downloaded by the agent's request. Versions are pinned and checksums verified where the vendor
+- Addons installed on demand are downloaded by the agent's request. Versions are pinned and checksums verified where the vendor
   publishes them; Claude Code updates itself inside the box.
 - The Cloudflare tunnel token may be stored in the host config with mode 600; it never enters the box.
 
@@ -57,9 +57,9 @@ and edit no shell startup file.
 
 ## Logs and telemetry
 
-SwarmBox sends **no telemetry**. It makes no network call of its own except to pull the image, to install a tool you asked for,
-to check for a tool update, and, with `swarmbox remote`, to reach Cloudflare. Logs stay on your machine:
+SwarmBox sends **no telemetry**. It makes no network call of its own except to pull the image, to install an addon you asked for,
+to check for an addon update, and, with `swarmbox remote`, to reach Cloudflare. Logs stay on your machine:
 `<workspace>/.local/state/swarmbox/` holds `serve.log`, `health` and `web-terminal.log`; on the host only `~/.local/state/swarmbox/` exists (locks and `notices`).
 
-The tools you install have their own policies (Go, for one, keeps local telemetry counters; the others were not checked for
+The addons you install have their own policies (Go, for one, keeps local telemetry counters; the others were not checked for
 this). They are not part of SwarmBox; read their documentation.

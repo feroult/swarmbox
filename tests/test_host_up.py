@@ -1,6 +1,6 @@
 """`up`, `reset`, `stop` and `url` of the host helper.
 
-The helper runs as a real program (copied with a fixture `tool-ports` into a mktemp folder) against the shared FakePodman,
+The helper runs as a real program (copied with a fixture `addon-ports` into a mktemp folder) against the shared FakePodman,
 which records every call and answers from a script (rules by arguments, answers in sequence). Nothing here starts a real
 container (tests/smoke_image.py does, in its opt-in `up-lifecycle` step). HOME, XDG_STATE_HOME and the workspace are mktemp
 folders. Tests-only switches of the helper used here (all start with SWARMBOX_TEST_): TUN (the file that stands for
@@ -31,7 +31,7 @@ NAME = DEFAULT_NAME
 IMAGE = (DEFAULT_IMAGE_REPO + ":%s") % VERSION
 BUSY = ("Error: rootlessport listen tcp 127.0.0.1:7681: bind: address already in use")
 NOSUCH = {"exit": 125, "stderr": "Error: inspecting object: no such container swarmbox\n"}
-HELPER_TOOLS = ["sh", "dash", "bash", "cat", "rm", "mkdir", "rmdir", "sleep", "kill", "sort", "tail", "head", "grep", "sed",
+HELPER_PROGRAMS = ["sh", "dash", "bash", "cat", "rm", "mkdir", "rmdir", "sleep", "kill", "sort", "tail", "head", "grep", "sed",
                 "tr", "uname", "date", "find", "stat", "mv", "chmod", "printf", "cut", "readlink", "env", "id", "test",
                 "sha256sum", "wc", "basename", "dirname", "mktemp", "touch", "ls", "true", "false", "expr", "awk"]
 
@@ -57,7 +57,7 @@ class Base(unittest.TestCase):
         os.chmod(os.path.join(self.hdir, "swarmbox-host"), 0o755)
         shutil.copy(VERSION_SRC, os.path.join(self.hdir, "VERSION"))
         shutil.copy(os.path.join(ROOT, "container", "host", "DEFAULTS"), os.path.join(self.hdir, "DEFAULTS"))
-        with open(os.path.join(self.hdir, "tool-ports"), "w") as f:
+        with open(os.path.join(self.hdir, "addon-ports"), "w") as f:
             f.write("")
         for n, c in (("localtime", ""), ("tun", ""), ("proc-version", "Linux version 6.1.0 (debian)\n")):
             with open(os.path.join(self.tmp, n), "w") as f:
@@ -223,7 +223,7 @@ class PrerequisiteTest(Base):
         self.podman()
         bindir = os.path.join(self.tmp, "bin")
         os.mkdir(bindir)
-        for t in HELPER_TOOLS:
+        for t in HELPER_PROGRAMS:
             p = shutil.which(t)
             if p and not os.path.exists(os.path.join(bindir, t)):
                 os.symlink(p, os.path.join(bindir, t))
