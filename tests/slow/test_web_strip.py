@@ -124,7 +124,7 @@ class StripCase(unittest.TestCase):
         return self.page.js("(() => { const b = document.querySelectorAll('#swarmbox-strip .sb-key')[%d].getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; })()"
                             % labels.index(label))
 
-    def press(self, label, touch, until=None):
+    def press(self, label, touch, until=None, within=3):
         """Tap a key button (by touch or mouse); with `until`, keep it down until the condition is true: a held arrow repeats."""
         x, y = self.center(label)
         if touch:
@@ -133,7 +133,8 @@ class StripCase(unittest.TestCase):
             self.page.mouse("mouseMoved", x, y)
             self.page.mouse("mousePressed", x, y)
         if until:
-            self.assertTrue(wait_until(until, 10, 0.05), "the held button never did it")
+            # the script waits 420 ms, then repeats every 70 ms: a delay grown tenfold must fail, a loaded machine has seconds to spare
+            self.assertTrue(wait_until(until, within, 0.05), "the held button did not repeat within %s s" % within)
         if touch:
             self.page.call("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
         else:

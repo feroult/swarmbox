@@ -65,6 +65,16 @@ class Image(unittest.TestCase):
                 for src in [p for p in i.split()[1:] if not p.startswith("--")][:-1]:
                     self.assertTrue(os.path.exists(os.path.join(ROOT, src)), "COPY source missing: %s" % src)
 
+    def test_every_script_copied_to_usr_local_bin_is_made_executable_and_attach_is_one(self):
+        copied = [i.split()[-1] for i in INS if i.startswith("COPY ") and i.split()[-1].startswith("/usr/local/bin/")]
+        self.assertIn("/usr/local/bin/swarmbox-attach", copied)
+        run = [i for i in INS if i.startswith("RUN chmod 644") and "swarmbox-entrypoint" in i]
+        self.assertEqual(len(run), 1)
+        m = re.search(r"chmod 755 ((?:/\S+\s+)+)", run[0] + " ")
+        self.assertTrue(m)
+        for dst in copied:
+            self.assertIn(dst, m.group(1).split(), "not made executable: %s" % dst)
+
     def test_the_host_helper_archive_folder_is_copied_readable_with_the_host_script_executable(self):
         self.assertIn("COPY container/host/ /usr/local/share/swarmbox/host/", INS)
         self.assertIn("COPY cloudflare-setup.py /usr/local/share/swarmbox/host/cloudflare-setup.py", INS)
