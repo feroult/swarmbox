@@ -34,6 +34,14 @@ def children_of(pid):
     return found
 
 
+def cmdline(pid):
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            return f.read().replace(b"\0", b" ").decode("utf-8", "replace").strip()[:70] or "?"
+    except OSError:
+        return "?"
+
+
 def main(argv):
     if not argv:
         print(__doc__, file=sys.stderr)
@@ -57,6 +65,7 @@ def main(argv):
         p.send_signal(signal.SIGINT)
         rc = p.wait()
     reaped = 0
+    left = []
     if subreaper:
         me = os.getpid()
         for _ in range(5):
@@ -67,6 +76,7 @@ def main(argv):
                 if state == "Z":   # already dead, only waiting to be collected
                     continue
                 try:
+                    left.append(cmdline(pid))
                     os.kill(pid, signal.SIGKILL)
                     reaped += 1
                 except OSError:
@@ -82,6 +92,7 @@ def main(argv):
     print("reap_run: seconds %.1f" % (time.time() - started), file=sys.stderr)
     if reaped:
         print("reap_run: reaped %d" % reaped, file=sys.stderr)
+        print("reap_run: left behind: %s" % " | ".join(left), file=sys.stderr)   # which test leaks: the first words of each command
     return rc
 
 

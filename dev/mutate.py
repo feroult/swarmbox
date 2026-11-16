@@ -15,7 +15,7 @@ copies under $TMPDIR. A test that needs real tmux must be run where tmux is (see
 
 Commands
     mutate.py plan   [--count N] [--seed S] [--file F ...] [--out plan.json]   choose the mutants, write the plan, print a summary
-    mutate.py run    [--plan plan.json | plan options] [-j N] [--timeout S] [--results r.jsonl] [--limit K] [--shard K/N] [--all-tests]
+    mutate.py run    [--plan plan.json | plan options] [-j N] [--timeout S] [--results r.jsonl] [--limit K] [--shard K/N] [--all-tests] [--layer fast|slow|all]
                      run the mutants of the plan (a new one is planned when --plan is absent); every result is appended to the
                      results file at once, so a stopped run continues where it stopped when it is started again with the same files
     mutate.py report --plan plan.json --results r.jsonl [--matrix m.json] [--md out.md]
@@ -451,11 +451,35 @@ def read(root, rel):
         return ""
 
 
+IMPORT = re.compile(r"^\s*(?:from|import)\s+([A-Za-z_]\w*)", re.M)
+
+
+def text_with_helpers(root, rel, cache):
+    """The text of a test file and of the helper modules it imports (tests/support/*.py, or another tests/ file), transitively: the shared
+    fakes live in tests/support, so a product file is often named there and not in the test file that uses it."""
+    if rel in cache:
+        return cache[rel]
+    cache[rel] = ""   # a cycle ends here
+    text = read(root, rel)
+    parts = [text]
+    for mod in sorted(set(IMPORT.findall(text))):
+        if mod == "helpers":   # every test imports it, and it names the host script: following it would select every file
+            continue
+        for folder in ("tests/support", "tests/fast", "tests/slow"):
+            cand = "%s/%s.py" % (folder, mod)
+            if cand != rel and os.path.isfile(os.path.join(root, cand)):
+                parts.append(text_with_helpers(root, cand, cache))
+                break
+    cache[rel] = "\n".join(parts)
+    return cache[rel]
+
+
 def covering_tests(root, product, durations=None, override=None):
     all_tests = test_files(root)
     if override:
         names = set(override)
         return [t for t in all_tests if os.path.basename(t) in names]
+    cache = {}
     base = os.path.basename(product)
     stem = os.path.splitext(base)[0]
     pkg = None
@@ -466,7 +490,7 @@ def covering_tests(root, product, durations=None, override=None):
     pat_mod = re.compile(r"\b%s\b" % re.escape(stem))
     hits = []
     for t in all_tests:
-        text = read(root, t)
+        text = text_with_helpers(root, t, cache)
         if pat_name.search(text) or (pkg and pkg in text and pat_mod.search(text) and not stem in ("config", "cli")) \
                 or (pkg and stem in ("config", "cli") and re.search(r"(from|import) %s\.?\s*(import )?[\w, ]*\b%s\b" % (pkg, stem), text)):
             hits.append(t)
@@ -660,7 +684,8 @@ def cmd_run(args):
     mapping = {}
     for m in plan:
         if m["file"] not in mapping:
-            mapping[m["file"]] = covering_tests(args.root, m["file"], durations, override)
+            mapping[m["file"]] = [t for t in covering_tests(args.root, m["file"], durations, override)
+                                  if args.layer == "all" or t.split("/")[1] == args.layer]
     extra_env = dict(kv.split("=", 1) for kv in args.env)
     print("%d mutants planned, %d already done, %d to run, %d jobs" % (len(plan), len(done), len(todo), args.jobs), flush=True)
     if not todo:
@@ -784,6 +809,8 @@ def main(argv=None):
     p.add_argument("--file-timeout", type=int, default=240, help="seconds for one test file (default 240)")
     p.add_argument("--all-tests", action="store_true", help="run every selected test file even after a kill (the kill matrix needs it)")
     p.add_argument("--tests", help="comma-separated test file names that replace the automatic choice")
+    p.add_argument("--layer", choices=("all", "fast", "slow"), default="all",
+                   help="only the test files of this folder (fast first is cheap: run the survivors again with slow to see which mutants only slow tests kill)")
     p.add_argument("--durations", help="a JSON of seconds per test file (a baseline): the fastest files run first")
     p.add_argument("--limit", type=int, help="run only the first K mutants of the plan")
     p.add_argument("--shard", metavar="K/N", help="run only every N-th mutant, starting with the K-th (0 based): to split a plan over several containers; give each its own --results")

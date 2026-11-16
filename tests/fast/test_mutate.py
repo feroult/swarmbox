@@ -128,6 +128,18 @@ class Toy(unittest.TestCase):
         # no file refers to it: the fast files are the fallback
         self.assertEqual(mutate.covering_tests(self.tmp, "container/other.py"), ["tests/fast/test_toy.py"])
 
+    def test_a_product_file_named_only_in_a_support_module_is_covered_by_the_tests_that_import_it(self):
+        os.makedirs(os.path.join(self.tmp, "tests", "support"))
+        with open(os.path.join(self.tmp, "tests", "support", "fake_support.py"), "w") as f:
+            f.write("PRODUCT = 'container/scripts/hidden-script.sh'\n")
+        with open(os.path.join(self.tmp, "tests", "support", "helpers.py"), "w") as f:
+            f.write("ALSO = 'hidden-script.sh'\n")   # a module every test imports must not make every test cover it
+        with open(os.path.join(self.tmp, "tests", "fast", "test_uses_support.py"), "w") as f:
+            f.write("import fake_support\n")
+        with open(os.path.join(self.tmp, "tests", "fast", "test_uses_helpers.py"), "w") as f:
+            f.write("from helpers import ALSO\n")
+        self.assertEqual(mutate.covering_tests(self.tmp, "container/scripts/hidden-script.sh"), ["tests/fast/test_uses_support.py"])
+
 
 if __name__ == "__main__":
     unittest.main()
