@@ -200,6 +200,28 @@ class ReleaseCheckTest(unittest.TestCase):
             self.assertRegex(r.stdout, r"(?m)^FAIL %s " % name)
         self.assertIn("RELEASE CHECK FAILED 3", r.stdout)
 
+    def test_without_pyyaml_a_workflow_that_is_empty_tabbed_or_unbalanced_fails_and_a_good_one_passes(self):
+        # the reduced check (no PyYAML on the machine: a python3 that cannot import yaml comes first in PATH)
+        fake = os.path.join(self.tmp, "no-yaml-bin")
+        os.makedirs(fake, exist_ok=True)
+        write(fake, "python3", "#!/bin/sh\nexit 1\n")
+        os.chmod(os.path.join(fake, "python3"), 0o755)
+        env = {"PATH": fake + os.pathsep + os.environ["PATH"]}
+        cases = (("a good one", WORKFLOW, True), ("an empty file", "", False), ("a tab for indentation", "jobs:\n\ta: 1\n", False),
+                 ("an unclosed [", WORKFLOW + "x: [1, 2\n", False), ("an unclosed {", WORKFLOW + "x: {a: 1\n", False),
+                 ("a closed [ and an unclosed {", WORKFLOW + "x: [1]\ny: {a: 1\n", False))
+        for what, text, good in cases:
+            with self.subTest(what):
+                repo = self.fresh()
+                if not good:
+                    write(repo, ".github/workflows/ci.yml", text)
+                    self.commit(repo)
+                r = run(repo, **env)
+                if good:
+                    self.assertRegex(r.stdout, r"(?m)^OK workflows reduced", r.stdout)
+                else:
+                    self.assertFails(r, "workflows")
+
     def test_the_real_repository_is_not_modified_by_a_run(self):
         # Read-only on the real repository too: the tracked-file listing and the index are unchanged.
         before = subprocess.run(["git", "-C", ROOT, "ls-files", "-s"], capture_output=True, text=True).stdout

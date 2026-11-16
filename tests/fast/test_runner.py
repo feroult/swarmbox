@@ -64,21 +64,22 @@ class Runner(unittest.TestCase):
         self.assertGreater(len(listed), 10)
         self.assertTrue(set(listed) <= set(on_disk("fast")), set(listed) - set(on_disk("fast")))
 
-    def test_only_runs_the_named_files_and_an_unknown_name_is_an_error(self):
-        p = run("--only", "test_dirs.py,test_runner_probe_missing.py")
+    def test_only_runs_the_named_files_an_unknown_name_is_an_error_and_repeat_runs_each_n_times(self):
+        tmp, env = fake_tests({"test_good.py": GOOD, "test_other.py": GOOD})
+        self.addCleanup(shutil.rmtree, tmp, True)
+        p = run("--only", "test_good.py,test_probe_missing.py", env=env)
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
-        self.assertIn("test_runner_probe_missing.py", p.stderr)
-        p = run("--only", "test_dirs.py", "--werror")
+        self.assertIn("test_probe_missing.py", p.stderr)
+        p = run("--only", "test_good.py", "--werror", env=env)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertRegex(p.stdout, r"(?m)^test_dirs\.py OK \d+ tests, \d+ skipped, [\d.]+ s$")
+        self.assertRegex(p.stdout, r"(?m)^test_good\.py OK \d+ tests, \d+ skipped, [\d.]+ s$")
         self.assertRegex(p.stdout, r"(?m)^TOTAL 1 files, (\d+) tests, 0 failed files")
         self.assertIn("slowest files:", p.stdout)
-        self.assertEqual(run("slow", "--only", "test_dirs.py").returncode, 2, "test_dirs.py is not a slow test")
-
-    def test_repeat_runs_each_file_n_times(self):
-        p = run("--only", "test_dirs.py", "--repeat", "2")
+        self.assertNotIn("test_other.py", p.stdout)
+        self.assertEqual(run("slow", "--only", "test_good.py", env=env).returncode, 2, "test_good.py is not a slow test")
+        p = run("--only", "test_good.py", "--repeat", "2", env=env)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertEqual(len(re.findall(r"(?m)^test_dirs\.py OK", p.stdout)), 2)
+        self.assertEqual(len(re.findall(r"(?m)^test_good\.py OK", p.stdout)), 2)
         self.assertIn("TOTAL 2 runs", p.stdout)
 
     def test_a_failing_file_makes_the_runner_fail_and_files_run_in_parallel(self):
@@ -96,7 +97,7 @@ class Runner(unittest.TestCase):
     def test_a_file_over_its_time_limit_is_killed_and_reported(self):
         tmp, env = fake_tests({"test_hang.py": "import time\ntime.sleep(60)\n"})
         self.addCleanup(shutil.rmtree, tmp, True)
-        p = run("--timeout", "2", env=env)
+        p = run("--timeout", "1", env=env)
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertRegex(p.stdout, r"(?m)^test_hang\.py FAIL")
         self.assertIn("time limit", p.stdout)

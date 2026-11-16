@@ -1,8 +1,8 @@
 """The local gate: dev/check.sh (the checks of ci.yml that run on this machine) and the pre-push hook that calls it.
 
-The hook is run with a stub in place of check.sh (SWARMBOX_CHECK_CMD), fed the lines Git gives a pre-push hook on standard input. The
-real check.sh is only asked what it would run (--print-shellcheck) and run with nothing to do: its shellcheck and test parts are the
-very things CI runs, and run.sh must not run itself from inside a test.
+The hook is run with a stub in place of check.sh (SWARMBOX_CHECK_CMD), fed the lines Git gives a pre-push hook on standard input. check.sh is
+asked what it would run (--print-shellcheck), and run in a copy of its tree with a fake tests/run.sh: it must run the FAST suite, in a clean
+environment (a CI runner has no TERM, COLORTERM or STARSHIP_SHELL), and fail when a file fails. run.sh must not run itself from inside a test.
 Run with: python3 tests/fast/test_dev_check.py
 """
 import os
@@ -31,7 +31,7 @@ class CheckScriptTest(unittest.TestCase):
             self.assertEqual(subprocess.run(["sh", "-n", p], capture_output=True, text=True).returncode, 0, p)
         self.assertTrue(os.stat(HOOK).st_mode & stat.S_IXUSR, "git runs the hook as a program")
 
-    def test_the_shellcheck_lines_are_the_ones_of_ci_yml_and_every_file_exists(self):
+    def test_the_shellcheck_lines_are_the_ones_of_ci_yml_they_lint_the_gate_and_every_file_exists(self):
         r = subprocess.run(["sh", CHECK, "--print-shellcheck"], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         lines = r.stdout.splitlines()
@@ -42,18 +42,36 @@ class CheckScriptTest(unittest.TestCase):
         for line in lines:
             for name in line.split()[3:]:
                 self.assertTrue(os.path.isfile(os.path.join(ROOT, name)), "%s is in ci.yml but missing" % name)
-
-    def test_the_gate_and_its_hook_are_linted_by_ci_too(self):
-        r = subprocess.run(["sh", CHECK, "--print-shellcheck"], capture_output=True, text=True)
-        files = " ".join(r.stdout.splitlines())
         for name in ("dev/check.sh", "dev/hooks/pre-push"):
-            self.assertIn(name, files)
+            self.assertIn(name, " ".join(lines))
 
     def test_with_nothing_to_do_it_is_ok_and_a_bad_option_is_refused(self):
         r = subprocess.run(["sh", CHECK, "--no-tests", "--no-shellcheck"], capture_output=True, text=True)
         self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, "CHECK OK"), r.stdout + r.stderr)
-        r = subprocess.run(["sh", CHECK, "--nonsense"], capture_output=True, text=True)
-        self.assertEqual(r.returncode, 2)
+        self.assertEqual(subprocess.run(["sh", CHECK, "--nonsense"], capture_output=True, text=True).returncode, 2)
+
+    def test_it_runs_the_fast_suite_in_a_clean_environment_and_a_failed_file_fails_the_check(self):
+        tmp = tempfile.mkdtemp(prefix="swarmbox-test-check.")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        os.makedirs(os.path.join(tmp, "dev"))
+        os.makedirs(os.path.join(tmp, "tests"))
+        shutil.copy(CHECK, os.path.join(tmp, "dev", "check.sh"))
+        log = os.path.join(tmp, "run.log")
+        with open(os.path.join(tmp, "tests", "run.sh"), "w") as f:
+            f.write('#!/bin/sh\necho "args: $*" >> "%s"\nenv | sort >> "%s"\n[ ! -e "%s/fail" ] || { echo "test_x.py FAIL"; exit 1; }\n'
+                    'echo "TOTAL 1 files, 3 tests, 0 failed files"\n' % (log, log, tmp))
+        env = dict(os.environ, TERM="xterm", COLORTERM="truecolor", STARSHIP_SHELL="bash")
+        r = subprocess.run(["sh", os.path.join(tmp, "dev", "check.sh"), "--no-shellcheck"], env=env, capture_output=True, text=True)
+        self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, "CHECK OK"), r.stdout + r.stderr)
+        with open(log) as f:
+            seen = f.read()
+        self.assertIn("args: fast", seen)
+        for var in ("TERM=", "COLORTERM=", "STARSHIP_SHELL="):
+            self.assertNotIn("\n" + var, "\n" + seen, "the tests must run without %s" % var)
+        open(os.path.join(tmp, "fail"), "w").close()
+        r = subprocess.run(["sh", os.path.join(tmp, "dev", "check.sh"), "--no-shellcheck"], env=env, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("CHECK FAILED", r.stdout)
 
 
 class HookTest(unittest.TestCase):
@@ -103,14 +121,6 @@ class HookTest(unittest.TestCase):
     def test_a_push_with_main_and_a_tag_together_runs_the_check_once_with_the_release_part(self):
         r, calls = self.push((SHA, "refs/heads/main"), (SHA, "refs/tags/v2.0.6"))
         self.assertEqual(calls, ["ran --release"], r.stderr)
-
-
-class ContributingTest(unittest.TestCase):
-    def test_contributing_tells_how_to_turn_the_gate_on(self):
-        with open(os.path.join(ROOT, "CONTRIBUTING.md")) as f:
-            text = f.read()
-        self.assertIn("git config core.hooksPath dev/hooks", text)
-        self.assertIn("dev/check.sh", text)
 
 
 if __name__ == "__main__":

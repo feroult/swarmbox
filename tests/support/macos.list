@@ -1,13 +1,12 @@
 # The fast test files that the macOS job runs (sh tests/run.sh macos): /bin/sh is bash 3.2 in POSIX mode, podman is a fake.
 # One file name per line, each in tests/fast. This is the only list: ci.yml names no file.
-test_build_index.py
-test_ci_workflow.py
 test_cloudflare_setup.py
-test_default_names_lint.py
 test_dev_build.py
 test_dirs.py
 test_dockerfile.py
-test_docs_consistency.py
+test_gen_notices.py
+test_guard_docs.py
+test_guard_names.py
 test_helpers.py
 test_host_config.py
 test_host_connector.py
@@ -22,11 +21,9 @@ test_install.py
 test_name_check.py
 test_release_check.py
 test_release_version.py
-test_release_workflow.py
-test_repo_files.py
 test_runner.py
 test_security_review.py
 test_ssh_key.py
 test_starship.py
 test_swarmbox_command.py
-test_third_party_notices.py
+test_workflows.py

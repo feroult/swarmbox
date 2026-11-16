@@ -136,6 +136,18 @@ class GoTest(Base):
         self.assertIn("does not match", r.stderr)
         self.assertEqual(self.conf_text(), before)
 
+    def test_a_listing_that_cannot_be_read_is_reported_as_a_missing_version_and_the_conf_is_untouched(self):
+        for url in (GO_JSON, GO_JSON_ALL):
+            junk = os.path.join(self.d, "junk.json")
+            with open(junk, "w") as f:
+                f.write("this is not json")
+            self.serve(url, junk)
+        before = self.conf_text()
+        r = self.run_script("go", self.conf)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("is not in go.dev's listing", r.stderr)
+        self.assertEqual(self.conf_text(), before)
+
 class GcloudTest(Base):
     def setUp(self):
         super().setUp()
@@ -156,10 +168,7 @@ class GcloudTest(Base):
         self.assertIn("-linux-x86_64.tar.gz", calls)
         self.assertIn("-linux-arm.tar.gz", calls)
         self.assertNotIn("components-2.json", calls)
-
-    def test_downloads_the_pinned_url_never_the_unversioned_one(self):
-        self.run_script("gcloud", self.conf)
-        for line in slurp(self.calls).splitlines():
+        for line in calls.splitlines():   # the pinned URL, never the unversioned one
             self.assertIn("google-cloud-cli-592.0.0-linux-", line)
 
     def test_a_failed_download_leaves_the_conf_untouched(self):

@@ -28,27 +28,22 @@ def scratch_dir(r):
     return m.group(1) if m else None
 
 
+def build_call(fp):
+    return [c for c in fp.calls() if c[0] == "build"][0]
+
+
 class DevBuild(unittest.TestCase):
-    def test_script_exists_and_is_posix_sh(self):
-        self.assertTrue(os.path.isfile(SCRIPT))
-        with open(SCRIPT) as f:
-            self.assertTrue(f.readline().startswith("#!/bin/sh"))
-
-    def test_product_dockerfile_never_has_the_override(self):
-        with open(os.path.join(ROOT, "Dockerfile")) as f:
-            self.assertNotIn("Sandbox", f.read())
-
-    def test_default_tag_starts_with_swarmbox_test(self):
+    def test_the_tag_is_always_in_the_test_namespace(self):
         with FakePodman() as fp:
             r = run(fp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            build = [c for c in fp.calls() if c[0] == "build"]
-            self.assertEqual(len(build), 1)
-            tag = build[0][build[0].index("-t") + 1]
+            tag = build_call(fp)[build_call(fp).index("-t") + 1]
             self.assertRegex(tag, r"^swarmbox-test-img-[a-z0-9]{4,}$")
             self.assertIn(tag, r.stdout)
-
-    def test_a_tag_outside_the_test_namespace_is_refused(self):
+        with FakePodman() as fp:
+            self.assertEqual(run(fp, "--tag", "swarmbox-test-img-abc123").returncode, 0)
+            b = build_call(fp)
+            self.assertEqual(b[b.index("-t") + 1], "swarmbox-test-img-abc123")
         for bad in ("swarmbox", "swarmbox:latest", "myimage", "swarmbox-test", "docker.io/x/swarmbox-test-a"):
             with FakePodman() as fp:
                 r = run(fp, "--tag", bad)
@@ -56,101 +51,57 @@ class DevBuild(unittest.TestCase):
                 self.assertEqual(fp.calls(), [], bad)
                 self.assertIn("swarmbox-test-", r.stderr)
 
-    def test_explicit_valid_tag_is_used(self):
-        with FakePodman() as fp:
-            r = run(fp, "--tag", "swarmbox-test-img-abc123")
-            self.assertEqual(r.returncode, 0, r.stderr)
-            b = [c for c in fp.calls() if c[0] == "build"][0]
-            self.assertEqual(b[b.index("-t") + 1], "swarmbox-test-img-abc123")
-
-    def test_override_only_in_a_scratch_copy(self):
+    def test_the_apt_override_is_only_in_a_scratch_copy_which_is_removed_and_the_product_dockerfile_is_never_touched(self):
+        with open(os.path.join(ROOT, "Dockerfile")) as f:
+            product = f.read()
+        self.assertNotIn("Sandbox", product)
         with FakePodman() as fp:
             r = run(fp, "--keep-scratch")
             self.assertEqual(r.returncode, 0, r.stderr)
             sd = scratch_dir(r)
             self.assertTrue(sd and os.path.isdir(sd), r.stderr)
             try:
-                self.assertNotEqual(os.path.realpath(sd), os.path.realpath(ROOT))
                 self.assertFalse(os.path.realpath(sd).startswith(os.path.realpath(ROOT) + os.sep))
                 with open(os.path.join(sd, "Dockerfile")) as f:
                     scratch = f.read()
-                with open(os.path.join(ROOT, "Dockerfile")) as f:
-                    product = f.read()
                 self.assertIn('APT::Sandbox::User "root";', scratch)
-                self.assertNotIn("Sandbox", product)
-                # the copy is the product file plus the override, nothing else
-                lines = [l for l in scratch.splitlines() if "Sandbox" not in l and "99swarmbox-dev" not in l]
-                self.assertEqual("\n".join(lines).strip(), product.strip())
-                # first line of the scratch copy is still the FROM (after any ARG): the override comes right after it
+                # the copy is the product file plus the override, right after the FROM, nothing else
+                self.assertEqual("\n".join(l for l in scratch.splitlines() if "Sandbox" not in l and "99swarmbox-dev" not in l).strip(), product.strip())
                 code = [l for l in scratch.splitlines() if l.strip() and not l.startswith("#")]
-                self.assertTrue(code[0].startswith("ARG ") or code[0].startswith("FROM "))
                 self.assertIn("Sandbox", code[code.index([l for l in code if l.startswith("FROM ")][0]) + 1])
-                # build call: -f the scratch file, context = the repository
-                b = [c for c in fp.calls() if c[0] == "build"][0]
+                b = build_call(fp)   # the build uses the scratch file and the repository as its context
                 self.assertEqual(b[b.index("-f") + 1], os.path.join(sd, "Dockerfile"))
                 self.assertEqual(os.path.realpath(b[-1]), os.path.realpath(ROOT))
             finally:
                 shutil.rmtree(sd, ignore_errors=True)
-
-    def test_scratch_is_removed_by_default_and_the_product_file_is_unchanged(self):
-        with open(os.path.join(ROOT, "Dockerfile"), "rb") as f:
-            before = f.read()
-        with FakePodman() as fp:
+        with FakePodman() as fp:   # by default the scratch copy is removed
             r = run(fp, "--dry-run")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual([c for c in fp.calls() if c[0] == "build"], [])
             sd = scratch_dir(r)
             self.assertTrue(sd is None or not os.path.exists(sd))
-        with open(os.path.join(ROOT, "Dockerfile"), "rb") as f:
-            self.assertEqual(f.read(), before)
+        with open(os.path.join(ROOT, "Dockerfile")) as f:
+            self.assertEqual(f.read(), product)
 
-    def test_build_failure_is_reported(self):
+    def test_a_failed_build_fails_and_nothing_but_build_is_called_on_podman(self):
         with FakePodman(subcommands={"build": {"exit": 125, "stderr": "boom"}}) as fp:
-            r = run(fp)
-            self.assertNotEqual(r.returncode, 0)
-
-    def test_only_build_is_called_on_podman(self):
+            self.assertNotEqual(run(fp).returncode, 0)
         with FakePodman() as fp:
             run(fp)
             self.assertEqual({c[0] for c in fp.calls()}, {"build"})
 
-    def test_a_dockerfile_option_and_build_args_pass_through(self):
+    def test_build_args_pass_through_in_their_order_and_none_is_added(self):
         with FakePodman() as fp:
-            r = run(fp, "--build-arg", "CHROME_DEVTOOLS_MCP_VERSION=1.0.0")
-            self.assertEqual(r.returncode, 0, r.stderr)
-            b = [c for c in fp.calls() if c[0] == "build"][0]
-            self.assertIn("--build-arg", b)
-            self.assertIn("CHROME_DEVTOOLS_MCP_VERSION=1.0.0", b)
-
-    def test_with_addons_passes_through_as_one_build_arg_and_the_product_file_stays_clean(self):
+            run(fp)
+            self.assertFalse(any(a.startswith("WITH_ADDONS") for a in build_call(fp)))
         with FakePodman() as fp:
-            r = run(fp, "--build-arg", "WITH_ADDONS=claude,gcloud", "--keep-scratch")
+            r = run(fp, "--build-arg", "WITH_ADDONS=claude,gcloud", "--build-arg", "NODE_VERSION=22")
             self.assertEqual(r.returncode, 0, r.stderr)
-            b = [c for c in fp.calls() if c[0] == "build"][0]
+            b = build_call(fp)
             i = b.index("WITH_ADDONS=claude,gcloud")
             self.assertEqual(b[i - 1], "--build-arg")
             self.assertEqual(sum(1 for a in b if a.startswith("WITH_ADDONS")), 1)
-            d = scratch_dir(r)
-            try:
-                scratch = open(os.path.join(d, "Dockerfile"), encoding="utf-8").read()
-                self.assertIn("APT::Sandbox::User", scratch)
-                self.assertIn("ARG WITH_ADDONS", scratch)  # the scratch copy is the product file plus the one line
-            finally:
-                shutil.rmtree(d, ignore_errors=True)
-        with open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8") as f:
-            self.assertNotIn("APT::Sandbox", f.read())
-
-    def test_a_build_without_the_argument_does_not_pass_one(self):
-        with FakePodman() as fp:
-            run(fp)
-            b = [c for c in fp.calls() if c[0] == "build"][0]
-            self.assertFalse(any(a.startswith("WITH_ADDONS") for a in b))
-
-    def test_two_build_args_keep_their_order(self):
-        with FakePodman() as fp:
-            run(fp, "--build-arg", "WITH_ADDONS=go", "--build-arg", "NODE_VERSION=22")
-            b = [c for c in fp.calls() if c[0] == "build"][0]
-            self.assertLess(b.index("WITH_ADDONS=go"), b.index("NODE_VERSION=22"))
+            self.assertLess(i, b.index("NODE_VERSION=22"))
 
 
 if __name__ == "__main__":

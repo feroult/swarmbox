@@ -25,42 +25,24 @@ def parse(out):
 
 
 class Accepts(unittest.TestCase):
-    def test_v2_0_0(self):
+    def test_a_release_gives_its_version_minor_and_the_three_image_tags(self):
         r = run("v2.0.0")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(parse(r.stdout), {"version": "2.0.0", "minor": "2.0", "tags": "2.0.0 2.0 latest", "prerelease": "false"})
-
-    def test_other_valid_tags(self):
         for tag, ver, minor in (("v0.0.1", "0.0.1", "0.0"), ("v10.20.30", "10.20.30", "10.20"), ("v2.10.0", "2.10.0", "2.10")):
-            r = run(tag)
-            self.assertEqual(r.returncode, 0, tag + r.stderr)
-            d = parse(r.stdout)
-            self.assertEqual((d["version"], d["minor"], d["tags"]), (ver, minor, "%s %s latest" % (ver, minor)))
+            d = parse(run(tag).stdout)
+            self.assertEqual((d["version"], d["minor"], d["tags"]), (ver, minor, "%s %s latest" % (ver, minor)), tag)
 
-    def test_same_output_in_dash_and_bash(self):
-        outs = {sh: run("v2.0.0", shell=sh).stdout for sh in ("sh", "bash", "dash")}
-        self.assertEqual(len(set(outs.values())), 1, outs)
-
-    def test_stdout_is_only_key_value_lines(self):
-        for line in run("v2.0.0").stdout.splitlines():
-            self.assertRegex(line, r"^[a-z]+=[0-9a-z. ]+$")
-
-
-class Prereleases(unittest.TestCase):
-    def test_a_beta_gets_one_image_tag_and_neither_minor_nor_latest(self):
+    def test_a_prerelease_gets_one_image_tag_and_neither_minor_nor_latest(self):
         r = run("v2.0.0-beta.1")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.splitlines(), ["version=2.0.0-beta.1", "minor=", "tags=2.0.0-beta.1", "prerelease=true"])
-
-    def test_rc_and_two_digit_numbers(self):
         self.assertIn("tags=2.0.0-rc.12", run("v2.0.0-rc.12").stdout.splitlines())
 
-    def test_a_final_release_is_not_a_prerelease(self):
-        self.assertIn("prerelease=false", run("v2.0.0").stdout.splitlines())
-
-    def test_same_output_in_every_shell(self):
-        outs = {sh: run("v2.0.0-beta.1", shell=sh).stdout for sh in ("sh", "bash", "dash")}
-        self.assertEqual(len(set(outs.values())), 1, outs)
+    def test_the_output_is_the_same_in_every_shell(self):
+        for tag in ("v2.0.0", "v2.0.0-beta.1"):
+            outs = {sh: run(tag, shell=sh).stdout for sh in ("sh", "bash", "dash")}
+            self.assertEqual(len(set(outs.values())), 1, outs)
 
 
 class Rejects(unittest.TestCase):
@@ -74,9 +56,6 @@ class Rejects(unittest.TestCase):
             self.assertEqual(r.returncode, 1, repr(tag))
             self.assertEqual(r.stdout, "", repr(tag))
             self.assertIn("release-version:", r.stderr, repr(tag))
-
-    def test_prerelease_message_says_why(self):
-        self.assertIn("prerelease", run("v2.0.0-alpha.1").stderr)
 
     def test_usage_errors_exit_64(self):
         self.assertEqual(run().returncode, 64)

@@ -1,15 +1,15 @@
-"""The web terminal. build-index.sh builds the page at image build (tests/fast/test_build_index.py
-covers the script itself); `swarmbox-web` (container/scripts/swarmbox-web.sh) turns it into box:/tmp/swarmbox/index.html at
-every start with a plain text substitution of four values (padding, ctrlVPaste, ctrlCCopy, scrollbar), builds ttyd's `-t key=value`
-options (font, theme, size, scrollback, anything else) from web-terminal.conf, and execs ttyd; `swarmbox-web restart`
-signals the supervisor.
+"""The page of the web terminal. build-index.sh assembles it at image build from ttyd's own page with the clipboard script, the style and eight
+placeholders; `swarmbox-web` (container/scripts/swarmbox-web.sh) turns it into box:/tmp/swarmbox/index.html at every start with a plain text
+substitution of the values of web-terminal.conf (padding, ctrlVPaste, ctrlCCopy, scrollbar, strip, stripKeys), builds ttyd's `-t key=value` options
+(font, theme, size, scrollback, anything else) from the same file, and execs ttyd; `swarmbox-web restart` signals the supervisor.
 
 Layers:
-  1. swarmbox-web against a FAKE ttyd (records its arguments). Nothing is served. The test asserts that no port it hands
-     out is 7681, 8889 or 43323, the ports of this very network namespace.
-  2. serve (the real entrypoint, fake tmux/podman/ttyd) with the real swarmbox-web: `swarmbox-web restart` restarts ttyd.
-  3. Browser: tests/slow/test_clipboard_bridge.py and tests/slow/test_web_style.py build the page with build-index.sh and render it with
-     swarmbox-web (skipped without chromium, ttyd and tmux).
+  1. build-index.sh on a small stock page.
+  2. swarmbox-web against a FAKE ttyd (records its arguments). Nothing is served. No port it hands out is 7681, 8889 or 43323 (the ports of
+     this very network namespace).
+  3. serve (the real entrypoint, fake tmux/podman/ttyd) with the real swarmbox-web: `swarmbox-web restart` restarts ttyd.
+  The page in a real browser is in tests/slow/test_clipboard_bridge.py, test_web_style.py and test_web_strip.py; the strip's script and its settings
+  are in test_web_strip_script.py.
 
 Test-only variables (not in the configuration table): SWARMBOX_TEST_LIB, SWARMBOX_TEST_RUN_DIR,
 SWARMBOX_TEST_WEB_PAGE (the built page, default /usr/local/share/swarmbox/web/index.html), SWARMBOX_TEST_WEB_PORT (default
@@ -18,18 +18,17 @@ Run with: python3 tests/fast/test_web_build.py
 """
 import json
 import os
+import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from helpers import ROOT  # noqa: E402
-import test_serve_steps as serve_steps  # noqa: E402
+import serve_support as serve_steps  # noqa: E402
 
 WEB = os.path.join(ROOT, "container", "scripts", "swarmbox-web.sh")
 BUILD = os.path.join(ROOT, "container", "web", "build-index.sh")
@@ -45,6 +44,11 @@ with open(os.path.join(os.environ["FAKE_DIR"], "ttyd.json"), "w") as f:
     json.dump({"argv": sys.argv[1:], "pid": os.getpid(), "lang": os.environ.get("LANG")}, f)
 '''
 FAKE_ATTACH = '#!/bin/sh\nexit 0\n'
+
+
+def put(path, text):
+    with open(path, "w") as f:
+        f.write(text)
 
 
 def write_exec(path, text):
@@ -139,11 +143,6 @@ class Render(WebCase):
             self.web("render")
             self.assertIn("--swarmbox-scrollbar:0px;--swarmbox-scrollbar-ff:none", self.index(), value)
 
-    def test_scrollbar_is_not_passed_to_ttyd_as_an_option(self):
-        self.conf("scrollbar=true\nfontSize=17\n")
-        self.assertEqual(self.web("run").returncode, 0)
-        self.assertNotIn("scrollbar", self.opts(self.ttyd_call()["argv"]))
-
     def test_the_browser_keeps_no_scrollback_unless_the_bar_is_on_or_the_conf_sets_one(self):
         for conf, want in (("", "0"), ("scrollbar=false\n", "0"), ("scrollbar=true\n", None), ("scrollback=500\n", "500"),
                            ("scrollbar=true\nscrollback=0\n", "0"), ("scrollbar=true\nscrollback=2000\n", "2000")):
@@ -151,10 +150,17 @@ class Render(WebCase):
             self.assertEqual(self.web("run").returncode, 0, conf)
             self.assertEqual(self.opts(self.ttyd_call()["argv"]).get("scrollback"), want, conf)
 
-    def test_only_the_word_false_turns_a_switch_off(self):
-        self.conf("ctrlVPaste=0\nctrlCCopy=no\n")
+    def test_only_the_word_false_turns_a_switch_off_and_a_bad_padding_is_the_default(self):
+        self.conf("ctrlVPaste=0\nctrlCCopy=no\npadding=lots\n")
         self.web("render")
-        self.assertIn('{"ctrlVPaste":true,"ctrlCCopy":true}', self.index())
+        page = self.index()
+        self.assertIn('{"ctrlVPaste":true,"ctrlCCopy":true}', page)
+        self.assertIn("--swarmbox-padding:10px", page)
+        self.conf("ctrlVPaste=false\nctrlCCopy=false\npadding=12\n")
+        self.web("render")
+        page = self.index()
+        self.assertIn('{"ctrlVPaste":false,"ctrlCCopy":false}', page)
+        self.assertIn("--swarmbox-padding:12px", page)
 
     def test_a_missing_built_page_fails_with_a_message_and_writes_nothing(self):
         r = self.web("render", SWARMBOX_TEST_WEB_PAGE=os.path.join(self.tmp, "nope.html"))
@@ -168,6 +174,14 @@ class Render(WebCase):
         page = self.index()
         self.assertNotIn("&2", page)
         self.assertNotIn("true</script>", page)
+
+    def test_the_settings_the_page_consumes_never_reach_ttyd_as_options(self):
+        self.conf("padding=13\nscrollbar=true\nctrlVPaste=false\nctrlCCopy=false\nstrip=on\nstripKeys=Esc=Escape\nfontSize=17\n")
+        self.assertEqual(self.web("run").returncode, 0)
+        opts = self.opts(self.ttyd_call()["argv"])
+        for consumed in ("padding", "scrollbar", "ctrlVPaste", "ctrlCCopy", "strip", "stripKeys"):
+            self.assertNotIn(consumed, opts)
+        self.assertEqual(opts.get("fontSize"), "17")
 
 class Run(WebCase):
     def run_web(self, **extra):
@@ -236,20 +250,23 @@ class Restart(WebCase):
     def test_restart_sends_usr1_to_the_pid_in_the_file(self):
         p, marker = self.start_listener()
         os.makedirs(self.run_dir)
-        open(os.path.join(self.run_dir, "web-supervisor.pid"), "w").write("%d\n" % p.pid)
+        put(os.path.join(self.run_dir, "web-supervisor.pid"), "%d\n" % p.pid)
         r = self.web("restart")
         self.assertEqual(r.returncode, 0, r.stderr)
         serve_steps.wait_for(lambda: os.path.exists(marker), 5)
-        self.assertEqual(open(marker).read().split(), ["got"])
+        self.assertEqual(serve_steps.read(marker).split(), ["got"])
         self.assertIsNone(p.poll())
 
     def test_a_stale_garbage_or_unsafe_pid_is_refused_and_nothing_is_signalled(self):
         os.makedirs(self.run_dir)
         dead = subprocess.Popen(["true"])
         dead.wait()
+        r = self.web("restart")   # no pid file at all: the supervisor is not running
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("no web terminal supervisor is running", r.stderr)
         for content in ("%d\n" % dead.pid, "abc\n", "", "0\n", "1\n", "-1\n", "12 34\n"):
             with self.subTest(content=content):
-                open(os.path.join(self.run_dir, "web-supervisor.pid"), "w").write(content)
+                put(os.path.join(self.run_dir, "web-supervisor.pid"), content)
                 r = self.web("restart")
                 self.assertEqual(r.returncode, 1, r.stderr)
                 self.assertTrue(r.stderr)
@@ -302,14 +319,60 @@ class WithServe(serve_steps.ServeCase):
         self.stop(p)
 
 
-class Static(unittest.TestCase):
-    def test_script_is_bash_executable_and_clean(self):
-        with open(WEB) as f:
-            self.assertTrue(f.readline().startswith("#!/bin/bash"))
-        self.assertEqual(subprocess.run(["bash", "-n", WEB], capture_output=True).returncode, 0)
-        if shutil.which("shellcheck"):
-            r = subprocess.run(["shellcheck", "-s", "bash", WEB], capture_output=True, text=True)
-            self.assertEqual(r.returncode, 0, r.stdout)
+BUILD_STOCK = "<html><head><title>t</title></head><body><div id=terminal></div></body></html>"
+PLACEHOLDERS = {"__SWARMBOX_PADDING__", "__SWARMBOX_CTRL_V__", "__SWARMBOX_CTRL_C__", "__SWARMBOX_SCROLLBAR__", "__SWARMBOX_SCROLLBAR_FF__",
+                "__SWARMBOX_STRIP__", "__SWARMBOX_STRIP_CUSTOM__", "__SWARMBOX_STRIP_KEYS__"}
+
+
+class BuildIndex(unittest.TestCase):
+    """build-index.sh itself, on a stock page of a few bytes."""
+
+    def build(self, stock=BUILD_STOCK, js="var a=1;", css="body{margin:0}"):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        paths = {}
+        for name, text in (("stock.html", stock), ("b.js", js), ("s.css", css)):
+            paths[name] = os.path.join(d, name)
+            with open(paths[name], "w") as f:
+                f.write(text)
+        out = os.path.join(d, "sub", "index.html")
+        r = subprocess.run(["sh", BUILD, paths["stock.html"], paths["b.js"], paths["s.css"], out], capture_output=True, text=True)
+        return r, out
+
+    def test_the_page_has_each_placeholder_once_and_both_assets_and_the_stock_page(self):
+        r, out = self.build()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(out) as f:
+            page = f.read()
+        for p in PLACEHOLDERS:
+            self.assertEqual(page.count(p), 1, p)
+        self.assertEqual(set(re.findall(r"__SWARMBOX_\w+__", page)), PLACEHOLDERS)
+        for part in ("var a=1;", "body{margin:0}", "<div id=terminal>"):
+            self.assertIn(part, page)
+
+    def test_the_page_gets_a_viewport_meta_unless_it_has_one(self):
+        r, out = self.build()
+        with open(out) as f:
+            page = f.read()
+        self.assertEqual(page.count('name="viewport"'), 1)
+        for part in ("width=device-width", "viewport-fit=cover", "interactive-widget=resizes-content"):
+            self.assertIn(part, page)
+        r, out = self.build(stock='<html><head><meta name="viewport" content="width=800"></head><body></body></html>')
+        with open(out) as f:
+            self.assertEqual(f.read().count('name="viewport"'), 1, "an existing one is kept, not doubled")
+
+    def test_closing_tags_inside_assets_are_escaped(self):
+        r, out = self.build(js="var s='</script>';", css="/* </style> */")
+        with open(out) as f:
+            page = f.read()
+        self.assertEqual(page.count("</script>"), 2)  # the config script and the bridge, no more
+        self.assertEqual(page.count("</style>"), 1)
+
+    def test_a_stock_page_without_a_body_fails_and_leaves_no_output(self):
+        r, out = self.build(stock="<html></html>")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertFalse(os.path.exists(out))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -68,14 +68,14 @@ container themselves and pass the Claude login without printing it. They are nev
    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
    from helpers import ROOT  # noqa: E402
    ```
-3. Use `support/helpers.py` (`ROOT`, `FakePodman`, ...) and the `*_support.py` of the area; fixtures live in `support/fixtures/`.
-4. Name no default name, image repository or version as a literal (read `container/host/DEFAULTS`: `fast/test_default_names_lint.py` enforces it).
+3. Use `support/helpers.py` (`ROOT`, `FakePodman`, ...) and the `*_support.py` of the area; fixtures live in `support/fixtures/`. Never sleep for a fixed time: `support/waiting.py` has `wait_until(fn, seconds)`. A browser test uses `support/browser_support.py` (one `Chromium` per file, a `WebTerminal` per test: a real ttyd over a real tmux in a private socket); a guard that reads every file of the repository uses `support/repo_scan.py` (one `git ls-files`, each file read once).
+4. Name no default name, image repository or version as a literal (read `container/host/DEFAULTS`: `fast/test_guard_names.py` enforces it).
 5. Run it alone, with `--werror`, and with `--repeat 3` for anything with processes or timing; then `sh tests/run.sh`.
 6. If it must run on macOS (bash 3.2 as `/bin/sh`, a fake podman), add its file name to `support/macos.list`. That list is the only place CI reads.
 
 CI (`.github/workflows/ci.yml`): `linux` runs fast and slow (tmux present, no browser); `macos` runs `tests/run.sh macos`; `smoke` and
 `arm64` build the image and run `slow/smoke_image.py`; the scheduled `browser` job runs the whole slow suite with the gate set; `real-addons`
-installs the addons for real. `fast/test_ci_workflow.py` keeps the workflow honest.
+installs the addons for real. `fast/test_workflows.py` keeps both workflows honest.
 
 ## Coverage is behaviours, not a percentage
 

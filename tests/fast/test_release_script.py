@@ -383,18 +383,64 @@ class FullRelease(ReleaseCase):
         self.assertIn("says '2.0.6', not 2.0.7", r.stderr)
 
 
+FAKE_PODMAN = """#!/bin/sh
+# podman manifest inspect REPO:TAG: the text of $FAKE_DIR/manifest.<tag kind>, one kind per tag of the release 2.0.7
+case $3 in
+    *:2.0.7) kind=new ;;
+    *:2.0) kind=series ;;
+    *:latest) kind=latest ;;
+    *) exit 1 ;;
+esac
+cat "$FAKE_DIR/manifest.$kind"
+"""
+
+
+class ImageVerification(ReleaseCase):
+    """After the tag the script checks that the image tags of the release (2.0.7, 2.0 and latest) are one manifest list with at least two architectures."""
+
+    def setUp(self):
+        super().setUp()
+        with open(os.path.join(self.fake, "podman"), "w") as f:
+            f.write(FAKE_PODMAN)
+        os.chmod(os.path.join(self.fake, "podman"), 0o755)
+        self.write_items()
+
+    def manifests(self, new=2, series=2, latest=2, series_digest="a", latest_digest="a"):
+        def text(archs, digest):   # `podman manifest inspect` prints one "architecture" line per image of the list
+            return '{\n  "digest": "%s",\n  "manifests": [\n%s\n  ]\n}\n' % (digest, ",\n".join('    {"platform": {\n      "architecture": "arch%d"\n    }}' % i for i in range(archs)))
+        for kind, archs, digest in (("new", new, "a"), ("series", series, series_digest), ("latest", latest, latest_digest)):
+            with open(os.path.join(self.fake, "manifest." + kind), "w") as f:
+                f.write(text(archs, digest))
+
+    def release(self, **kwargs):
+        self.manifests(**kwargs)
+        return self.run_release(SWARMBOX_RELEASE_NO_IMAGE_CHECK="")
+
+    def assert_disagree(self, r):
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("the image tags do not agree", r.stderr)
+
+    def test_three_tags_of_one_image_with_two_architectures_are_verified(self):
+        r = self.release()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(":2.0.7, :2.0 and :latest are the same image, with 2 architectures", r.stdout)
+
+    def test_a_series_tag_that_is_another_image_is_a_failure(self):
+        self.assert_disagree(self.release(series_digest="b"))
+
+    def test_a_latest_tag_that_is_another_image_is_a_failure(self):
+        self.assert_disagree(self.release(latest_digest="b"))
+
+    def test_a_single_architecture_is_a_failure(self):
+        self.assert_disagree(self.release(new=1, series=1, latest=1))
+
+
 class Housekeeping(unittest.TestCase):
     def test_the_script_parses_and_is_executable_and_linted_by_ci(self):
         self.assertEqual(subprocess.run(["sh", "-n", RELEASE], capture_output=True, text=True).returncode, 0)
         self.assertTrue(os.stat(RELEASE).st_mode & stat.S_IXUSR)
         with open(os.path.join(ROOT, ".github", "workflows", "ci.yml")) as f:
             self.assertIn("dev/release.sh", f.read())
-
-    def test_contributing_describes_the_release_command(self):
-        with open(os.path.join(ROOT, "CONTRIBUTING.md")) as f:
-            text = f.read()
-        self.assertIn("dev/release.sh", text)
-        self.assertIn("[Unreleased]", text)
 
 
 if __name__ == "__main__":

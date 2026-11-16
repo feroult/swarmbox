@@ -16,7 +16,7 @@
 #        never run: it is [unverified] until its first real run. The runner label ubuntu-24.04-arm is the one GitHub
 #        documents for its arm64 hosted runners; if the account cannot use it the job stays queued or fails, and the
 #        owner decides (record it in docs/history/decision-log.md). The jobs of this file were only validated by
-#        tests/fast/test_ci_workflow.py (and actionlint when present) in the development box: none of them ever ran.
+#        tests/fast/test_workflows.py (and actionlint when present) in the development box: none of them ever ran.
 name: ci
 
 on:

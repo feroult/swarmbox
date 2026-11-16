@@ -43,10 +43,9 @@ import wave
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-sys.path.insert(0, os.path.join(HERE, "..", "slow"))      # CDP, the browser driver of tests/slow/test_clipboard_bridge.py
 sys.path.insert(0, os.path.join(HERE, "..", "support"))
 import e2e_sysop as E  # noqa: E402  (the Box of the sysop's harness, its checks and its helpers)
-from test_clipboard_bridge import CDP  # noqa: E402
+from browser_support import CDP  # noqa: E402  (the browser driver of tests/slow)
 
 E.SOCK = "default"       # the server of this container, in a private TMUX_TMPDIR: swarmbox-attach (which ttyd runs) finds it without options
 E.TOPIC = "goal"         # the default topic: voice.topic and sysop.topic are not set unless a scenario sets them
