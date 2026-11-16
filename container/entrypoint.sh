@@ -15,7 +15,7 @@
 #   anything else is run as given (already the final behavior)
 #
 # Test-only variables (not in the configuration table and not read by anything else): SWARMBOX_TEST_LIB (folder holding dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces
-# /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_PODMAN_RUNROOT (the folder serve clears before the nested service), SWARMBOX_TEST_PODMAN_GRAPHROOT (the graph root whose stale fuse-overlayfs marker serve removes), SWARMBOX_TEST_FUSE (replaces /dev/fuse), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
+# /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_PODMAN_RUNROOT and SWARMBOX_TEST_PODMAN_LIBPOD_RUN (the folders serve clears before the nested service), SWARMBOX_TEST_PODMAN_GRAPHROOT (the graph root whose stale fuse-overlayfs marker serve removes), SWARMBOX_TEST_FUSE (replaces /dev/fuse), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
 # instead of a failure for step 2 and no service at step 8), SWARMBOX_TEST_BACKOFF_SCALE (integer multiplier of the
 # backoff of both supervisors, 0 for none), SWARMBOX_TEST_BUS_WAIT (seconds to wait for the bus to answer, default 2), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10), SWARMBOX_TEST_LOG_EVERY (seconds between two looks of the log trimmer, default 300), SWARMBOX_TEST_LOG_MAX (bytes past which it trims a log, default 4194304).
 
@@ -366,9 +366,14 @@ serve() {
         # host reboot it still holds the old boot ID and Podman refuses to start ("an unhandled reboot has occurred"). Nothing of a previous
         # run is alive when serve starts, so remove it, as the Podman message itself says to do.
         runroot=${SWARMBOX_TEST_PODMAN_RUNROOT:-/tmp/storage-run-$(id -u)}
-        if [ -e "$runroot" ]; then
-            rm -rf "$runroot" 2>/dev/null && log "step 8: removed the runtime state of the previous run of nested Podman ($runroot)"
-        fi
+        # Podman keeps a second runtime folder, the one its own message names ("delete /tmp/podman-run-1000/containers and /tmp/podman-run-1000/libpod/tmp"):
+        # with no XDG_RUNTIME_DIR it is /tmp/podman-run-<uid>, and it holds the boot ID too. Both go.
+        libpodrun=${SWARMBOX_TEST_PODMAN_LIBPOD_RUN:-/tmp/podman-run-$(id -u)}
+        for stale in "$runroot" "$libpodrun"; do
+            if [ -e "$stale" ]; then
+                rm -rf "$stale" 2>/dev/null && log "step 8: removed the runtime state of the previous run of nested Podman ($stale)"
+            fi
+        done
         # The box is created without /dev/fuse (the host script passes /dev/net/tun only), so the only overlay that can work is the kernel's own
         # (rootless, kernel 5.13+). But fuse-overlayfs is on the PATH, and Podman falls back to it when its probe of native overlay says "no": that
         # answer is cached in the runtime folder, which is shared by every graph root of this user (one `podman --root /tmp/x ...`, or a run with

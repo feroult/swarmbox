@@ -154,6 +154,7 @@ class ServeCase(unittest.TestCase):
                # step 8 removes this folder: by default it is the real /tmp/storage-run-<uid>, i.e. the runtime state of the nested Podman of whatever
                # box runs these tests (found when the gate wiped it in a running box); every test gets its own
                "SWARMBOX_TEST_PODMAN_RUNROOT": os.path.join(self.base, "storage-run"),
+               "SWARMBOX_TEST_PODMAN_LIBPOD_RUN": os.path.join(self.base, "podman-run"),
                "SWARMBOX_TEST_BACKOFF_SCALE": "0", "SWARMBOX_TEST_SERVICE_WAIT": "2", "SWARMBOX_TEST_BUS_WAIT": "1", "LANG": "C.UTF-8"}
         env.update({k: v for k, v in extra.items() if v is not None})
         for k, v in extra.items():

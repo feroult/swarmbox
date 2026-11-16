@@ -132,10 +132,22 @@ class NestedPodmanState(ServeCase):
         self.assertTrue([c for c in self.calls() if c.startswith("podman system service")])
         self.stop(p)
 
+    def test_the_second_runtime_folder_podman_names_in_its_boot_id_error_is_removed_too(self):
+        # seen on a Mac after local-up: "current system boot ID differs from cached boot ID ... delete /tmp/podman-run-1000/containers and
+        # /tmp/podman-run-1000/libpod/tmp": step 8 only cleared /tmp/storage-run-<uid>, so the service never started
+        lr = os.path.join(self.base, "podman-run")
+        os.makedirs(os.path.join(lr, "libpod", "tmp"))
+        os.makedirs(os.path.join(lr, "containers"))
+        p = self.run_ready()
+        self.assertFalse(os.path.exists(lr), "the stale folder must be gone")
+        self.assertIn(lr, self.serve_log())
+        self.stop(p)
+
     def test_a_serve_test_never_points_step_8_at_the_real_runtime_folder_of_podman(self):
         # step 8 removes this folder: by default the real /tmp/storage-run-<uid> of whatever box runs the tests (the gate once wiped a live box's)
         env = self.env()
         self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_RUNROOT"]), self.base)
+        self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_LIBPOD_RUN"]), self.base)
         self.assertEqual(env["HOME"], self.home)
         self.assertTrue(self.home.startswith(self.base))
 
