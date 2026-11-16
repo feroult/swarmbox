@@ -36,7 +36,7 @@ A test that leaks a process is a bug in that test: end children in `addCleanup`.
 Targets and what they measure today (32 cores, Podman, tmux 3.5a): `fast` under 60 seconds in parallel, offline, with a read-only root file system:
 81 files, 1426 tests, 20 s wall (150 s of file time at `-j 8`, the same in `sh dev/test-slow.sh fast`); `slow` 19 files, 288 tests, about 105 s at `-j 3`
 (`test_sysop_always` 104 s and `test_sysop_dock` 71 s are the long poles; the same with tmux 3.7c). A loaded machine (every core busy, or two cores for the
-whole run) takes 3 to 9 times longer and still passes: the tests wait for the effect they check, never for a fixed time.
+whole run) takes 2 to 9 times longer (40 s, 80 s and 178 s in the three runs of the review) and still passes: the tests wait for the effect they check, never for a fixed time.
 
 ## Which folder
 
