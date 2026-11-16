@@ -27,12 +27,13 @@ class Trimmer(tss.ServeCase):
         small = self.big("podman-service.log", 800)
         p = self.run_ready(SWARMBOX_TEST_LOG_EVERY="1", SWARMBOX_TEST_LOG_MAX="4000")
         web = os.path.join(self.state, "web-terminal.log")
-        self.assertTrue(tss.wait_for(lambda: os.path.getsize(web) < 4000, 15), "the log was not cut: %d bytes" % os.path.getsize(web))
+        # the cut empties the file and then writes the end of it: wait for the finished log (its notice), not for the size
+        self.assertTrue(tss.wait_for(lambda: "the log was cut" in tss.read(web), 15), "the log was not cut: %d bytes" % os.path.getsize(web))
         text = tss.read(web)
         self.assertIn("the log was cut to its last 1000 bytes", text)
         self.assertIn("000159 ", text, "what is kept is the END of the log")
         self.assertNotIn("000001 ", text)
-        self.assertLess(os.path.getsize(os.path.join(self.state, "bus.log")), 4000)
+        self.assertTrue(tss.wait_for(lambda: os.path.getsize(os.path.join(self.state, "bus.log")) < 4000, 15))
         self.assertTrue(tss.wait_for(lambda: os.path.getsize(os.path.join(self.state, "serve.log")) < 4000, 15))
         self.assertEqual(os.path.getsize(small), 800, "a log under the limit is not touched")
         # a writer that appends keeps writing at the new end

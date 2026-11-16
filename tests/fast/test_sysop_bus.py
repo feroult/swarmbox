@@ -70,6 +70,8 @@ class Client(unittest.TestCase):
         for i in range(4):
             rep = self.bus.pub("goal", {"text": str(i)})
             self.assertEqual(rep["delivered"], 2, "one for the group, one for the member without a group")
+            # the broker does not pick a member that has not read the last message: wait for the reads, or a loaded machine skews the rotation
+            self.assertTrue(ss.wait_for(lambda: len(a) + len(b) == i + 1 and len(solo) == i + 1, 5), (a, b, solo))
         self.assertTrue(ss.wait_for(lambda: len(a) + len(b) == 4 and len(solo) == 4, 5), (a, b, solo))
         self.assertEqual((len(a), len(b)), (2, 2), "round robin")
         self.assertEqual(sorted(e["body"]["text"] for e in a + b), ["0", "1", "2", "3"])

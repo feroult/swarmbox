@@ -132,6 +132,13 @@ class NestedPodmanState(ServeCase):
         self.assertTrue([c for c in self.calls() if c.startswith("podman system service")])
         self.stop(p)
 
+    def test_a_serve_test_never_points_step_8_at_the_real_runtime_folder_of_podman(self):
+        # step 8 removes this folder: by default the real /tmp/storage-run-<uid> of whatever box runs the tests (the gate once wiped a live box's)
+        env = self.env()
+        self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_RUNROOT"]), self.base)
+        self.assertEqual(env["HOME"], self.home)
+        self.assertTrue(self.home.startswith(self.base))
+
     def serve_with_marker(self, fuse, content="true"):
         """A serve (the one before it is over) whose graph root has the fuse-overlayfs marker `content`; `fuse` is the path that
         stands for /dev/fuse. Returns the path of the marker; the serve ends in the cleanup of the test."""
@@ -184,7 +191,8 @@ class WarnSteps(ServeCase):
                 lines = self.health_lines()
                 self.assertEqual(len(lines), 1, lines)
                 self.assertIn(word, lines[0].lower())
-                self.assertTrue(any(c.startswith("ttyd ") for c in self.calls()), "ttyd must still start: %s" % label)
+                # ttyd is started by its supervisor in the background, about when the marker appears: wait for the call
+                self.assertTrue(wait_for(lambda: any(c.startswith("ttyd ") for c in self.calls())), "ttyd must still start: %s" % label)
                 self.stop(p)
 
     def test_with_installs_run_after_the_marker_in_order(self):
@@ -249,7 +257,7 @@ class BusStep(SupervisorCase):
         self.assertEqual(self.marker(), "warnings=1")
         self.assertEqual(len(self.health_lines()), 1, self.health_lines())
         self.assertIn("the bus did not answer", self.health_lines()[0])
-        self.assertTrue(any(c.startswith("ttyd ") for c in self.calls()), "ttyd must still start")
+        self.assertTrue(wait_for(lambda: any(c.startswith("ttyd ") for c in self.calls())), "ttyd must still start")
         self.stop(p)
 
     def test_a_missing_program_is_one_warning(self):

@@ -195,6 +195,8 @@ class Flow(Base):
         self.assertTrue(st["created"] <= st["started"] <= st["ended"])
         with open(self.logf) as f:
             self.assertEqual(json.load(f)["stdin"], "list the tabs\n")
+        # the state file and the audit file are written one after the other: wait for the last line of the audit
+        self.assertTrue(ss.wait_for(lambda: any(e.get("state") == "done" for e in self.events("state", gid)), 10))
         ev = self.events(goal=gid)             # the audit file has the goal, its states and the end
         self.assertTrue(all(e["source"] == "voice" for e in ev))
         kinds = [(e["event"], e.get("state")) for e in ev if e["event"] in ("goal", "state", "brain")]

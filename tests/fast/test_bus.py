@@ -177,7 +177,9 @@ class Groups(Base):
         for i in range(10):
             rep = h.pub(TOPIC, i)
             self.assertEqual((rep["ok"], rep["delivered"]), (True, 1))
-        self.assertTrue(wait_for(lambda: len(ga) + len(gb) == 10))
+            # a member that has not read the last message yet is not picked (that is the busy rule, tested below): wait for the read,
+            # or a slow consumer thread on a loaded machine turns the order of the rotation into 9 and 1
+            self.assertTrue(wait_for(lambda: len(ga) + len(gb) == i + 1))
         self.assertEqual((len(ga), len(gb)), (5, 5))
         self.assertEqual(sorted(ga + gb), list(range(10)))
 
@@ -279,7 +281,8 @@ class Groups(Base):
         gots = [collect(c) for c in (w1, w2, logger, auditor)]
         for i in range(6):
             self.assertEqual(h.pub(TOPIC, i)["delivered"], 3)          # two without a group, plus the group once
-        self.assertTrue(wait_for(lambda: len(gots[0]) + len(gots[1]) == 6 and len(gots[2]) == 6 and len(gots[3]) == 6))
+            # wait for the read: the broker does not pick a member that has not read the last message (a loaded machine would skew the 3 and 3)
+            self.assertTrue(wait_for(lambda: len(gots[0]) + len(gots[1]) == i + 1 and len(gots[2]) == i + 1 and len(gots[3]) == i + 1))
         self.assertEqual(gots[2], list(range(6)))
         self.assertEqual(gots[3], list(range(6)))
         self.assertEqual(sorted(gots[0] + gots[1]), list(range(6)))
