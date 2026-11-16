@@ -18,7 +18,7 @@ tests/
 sh tests/run.sh                         # fast, in parallel (-j: the CPUs up to 8), one line per file, the slowest files at the end
 sh tests/run.sh slow                    # slow (3 files at a time): in a container, see below
 sh tests/run.sh all                     # fast, then slow
-sh tests/run.sh e2e                     # the manual harnesses (they start containers and need a Claude login)
+sh tests/run.sh e2e                     # the manual harnesses (the .sh wrappers start the containers and need a Claude login)
 sh tests/run.sh macos                   # the fast files of support/macos.list: what the macOS job runs
 sh tests/run.sh --only test_bus.py      # one file, wherever it is (a name that does not exist is an error)
 sh tests/run.sh --list | --repeat 3 | --werror | -j 16 | --timing 25 | --timeout 600 | --durations 10

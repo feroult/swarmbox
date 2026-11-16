@@ -1428,4 +1428,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if not (os.path.exists("/run/.containerenv") or os.path.exists("/.dockerenv")):
+        raise SystemExit("e2e_sysop: this harness starts a tmux server and installs addons: run it in a container (tests/e2e/e2e_sysop.sh)")
     sys.exit(main())

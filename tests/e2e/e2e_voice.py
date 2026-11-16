@@ -927,10 +927,6 @@ def s3(box):
 
 
 # ====================================================================================================================== scenario 4
-def term_has(br, text):
-    return text in br.term_text()
-
-
 def s4(box):
     box.scenario = "s4-panel-in-browser"
     box.configure()
@@ -1811,4 +1807,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if not (os.path.exists("/run/.containerenv") or os.path.exists("/.dockerenv")):
+        raise SystemExit("e2e_voice: this harness starts a tmux server and installs addons: run it in a container (tests/e2e/e2e_voice.sh)")
     sys.exit(main())

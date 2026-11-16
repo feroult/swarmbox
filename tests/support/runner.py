@@ -7,7 +7,7 @@ Selectors (a folder each, see tests/README.md):
     fast    tests/fast/test_*.py   no real tmux, browser, podman or network; run in parallel; the default
     slow    tests/slow/test_*.py   real tmux, pty, ttyd, Chromium, Podman, the image; they skip with a message when a program they need is missing
     all     fast, then slow
-    e2e     tests/e2e/*.py         the harnesses with the real claude and the long soak: manual, never part of all
+    e2e     tests/e2e/*.sh         the wrappers that start Podman and run the harnesses with the real claude and the long soak: manual, never part of all
     macos   the fast files named in tests/support/macos.list (the macOS job: /bin/sh is bash 3.2, podman is a fake)
 Options:
     -j N          files in parallel (default: fast and macos the CPUs up to 8, slow 3, e2e 1)
@@ -19,6 +19,7 @@ Options:
     --timeout S   seconds one file may run (default: fast 300, slow 900, e2e none); a file over it is killed and reported as FAIL
     --timing N    print the N slowest files at the end (default 10)
     --durations N pass `--durations N` to every file (per-test seconds; Python 3.12 or newer)
+    --shuffle [N] run the files in a random order (the seed is printed; N repeats an order)
     --github      for a failed file also print a GitHub `::error` annotation (CI)
 Output: one line per finished file "<file> OK|FAIL <n> tests, <k> skipped, <s> s[, reaped <r>]", the tail of every failed file,
 then "TOTAL <f> files, <n> tests, <x> failed files, <s> s (wall <w> s)" and the slowest files. Every file runs under
@@ -27,6 +28,7 @@ Exit status: 0 when every run passed, 1 when one failed, 2 on a usage error. Env
 (the tests of this runner use it).
 """
 import os
+import random
 import re
 import subprocess
 import sys
@@ -86,6 +88,11 @@ def parse(argv):
             o["durations"] = num("--durations", val(), 0)
         elif a == "--github":
             o["github"] = True
+        elif a == "--shuffle":
+            # --shuffle or --shuffle SEED (a number): the files in a random order, to find a file that needs another to run first
+            o["shuffle"] = int(argv[i + 1]) if i + 1 < len(argv) and argv[i + 1].isdigit() else -1
+            if o["shuffle"] >= 0:
+                i += 1
         elif a in ("-h", "--help"):
             sys.stdout.write(__doc__)
             sys.exit(0)
@@ -100,7 +107,7 @@ def folder_files(layer):
     if not os.path.isdir(d):
         return []
     if layer == "e2e":
-        return sorted(os.path.join(layer, f) for f in os.listdir(d) if f.endswith(".py") and not f.startswith("_"))
+        return sorted(os.path.join(layer, f) for f in os.listdir(d) if f.endswith(".sh"))
     return sorted(os.path.join(layer, f) for f in os.listdir(d) if re.match(r"test_.*\.py$", f))
 
 
@@ -142,8 +149,10 @@ def select(o):
 
 
 def run_one(rel, o, timeout):
-    cmd = [sys.executable, REAP, sys.executable]
-    if o["werror"]:
+    # e2e: the .sh wrappers, which start the container and pass the login; the .py harnesses are written to run inside it
+    interpreter = ["bash"] if rel.endswith(".sh") else [sys.executable]
+    cmd = [sys.executable, REAP] + interpreter
+    if o["werror"] and not rel.endswith(".sh"):
         cmd += ["-W", "error"]
     cmd.append(os.path.join(TESTS, rel))
     if o["durations"] is not None:
@@ -192,6 +201,10 @@ def main(argv):
             work.append(f)
     # the longest files first (by the name of the layer, then the size of the file) keeps the pool busy to the end
     work.sort(key=lambda f: -os.path.getsize(os.path.join(TESTS, f)))
+    if o.get("shuffle") is not None:
+        seed = o["shuffle"] if o["shuffle"] >= 0 else random.SystemRandom().randrange(1, 10**6)
+        sys.stdout.write("shuffle seed %d (repeat with --shuffle %d)\n" % (seed, seed))
+        random.Random(seed).shuffle(work)
     results = []
     lock = threading.Lock()
     todo = list(work)
