@@ -30,4 +30,10 @@ for d in lib web; do
     fi
 done
 [ -d "$prefix/planners" ] && rm -rf "$prefix/planners"   # an install from before voice became an input only
+# Installed while the box runs: the web terminal started without the front, so its page has no microphone and /voice/ is not served. Ask the
+# supervisor to start it again, once, so a reload of the page shows the microphone. At box start this script runs before the web terminal
+# exists (no ttyd yet): nothing to do. When the front already runs, or the web terminal is off, or voice.web is 0: nothing to do either.
+if [ "${SWARMBOX_VOICE_WEB:-1}" != 0 ] && pgrep -x ttyd > /dev/null 2>&1 && ! pgrep -f -- "swarmbox_voice front" > /dev/null 2>&1; then
+    swarmbox-web restart > /dev/null 2>&1 && echo "voice prepare: the web terminal restarts to show the microphone (reload the page)" >&2
+fi
 exit "$rc"

@@ -273,6 +273,34 @@ class PrepareTests(Base):
         self.assertEqual((r.returncode, r.stderr), (0, ""))
         self.assertFalse(os.path.exists(os.path.join(self.prefix, "lib", "swarmbox_voice", "front.py.new")))
 
+    def web_restart_world(self, ttyd=True, front=False):
+        """Fake pgrep (which processes 'run') and a fake swarmbox-web that records its arguments."""
+        wb.write_exec(os.path.join(self.fake, "pgrep"), '#!/bin/sh\nfor a in "$@"; do case "$a" in ttyd) [ "$FAKE_TTYD" = 1 ] && exit 0 ;; '
+                      '"swarmbox_voice front") [ "$FAKE_FRONT" = 1 ] && exit 0 ;; esac; done\nexit 1\n')
+        wb.write_exec(os.path.join(self.fake, "swarmbox-web"), '#!/bin/sh\nprintf "%s\\n" "$@" >> "$FAKE_DIR/web.calls"\n')
+        return dict(FAKE_TTYD="1" if ttyd else "0", FAKE_FRONT="1" if front else "0")
+
+    def web_calls(self):
+        p = os.path.join(self.tmp, "web.calls")
+        return read(p).split() if os.path.exists(p) else []
+
+    def test_installed_while_the_web_terminal_runs_without_the_front_it_asks_for_a_restart_once(self):
+        extra = self.web_restart_world(ttyd=True, front=False)
+        r = self.addon("prepare", **extra)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.web_calls(), ["restart"])
+        self.assertIn("microphone", r.stderr)
+
+    def test_no_restart_when_the_front_runs_when_there_is_no_web_terminal_or_voice_web_is_off(self):
+        for what, extra in (("the front runs", dict(ttyd=True, front=True)), ("no web terminal", dict(ttyd=False, front=False))):
+            with self.subTest(what):
+                env = self.web_restart_world(**extra)
+                self.assertEqual(self.addon("prepare", **env).returncode, 0)
+                self.assertEqual(self.web_calls(), [], what)
+        env = self.web_restart_world(ttyd=True, front=False)
+        self.assertEqual(self.addon("prepare", SWARMBOX_VOICE_WEB="0", **env).returncode, 0)
+        self.assertEqual(self.web_calls(), [], "voice.web is 0")
+
     def test_an_unwritable_install_is_one_prepare_failed_line_and_the_old_files_stay(self):
         if os.geteuid() == 0:
             self.skipTest("root ignores permissions")
