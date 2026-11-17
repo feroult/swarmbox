@@ -70,7 +70,7 @@ class StripCase(unittest.TestCase):
         self.addCleanup(term.close)
         self.use(term)
         if viewport.startswith("phone"):      # the letters of a phone follow the width: wait for that, or a measure taken before it is of a terminal that is about to change
-            self.assertTrue(wait_until(lambda: term.page.js("window.term && window.term.options.fontSize") <= 14, 10, 0.05), "the phone font was not applied")
+            self.assertTrue(wait_until(lambda: term.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05), "the phone font was not applied")
             term.page.js("window.dispatchEvent(new Event('resize'))")
         return term
 
@@ -224,7 +224,7 @@ class Phone(StripCase):
     def setUpClass(cls):
         cls.term = bs.WebTerminal(CHROMIUM, command=RAW_CAT, tmux_conf=BARE_TMUX, viewport=VIEWPORTS["phone-portrait"])
         cls.term.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'Hold to talk', order: 10})")
-        assert wait_until(lambda: cls.term.page.js("window.term && window.term.options.fontSize") <= 14, 10, 0.05), "the phone font was not applied"
+        assert wait_until(lambda: cls.term.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05), "the phone font was not applied"
         cls.term.page.js("window.dispatchEvent(new Event('resize'))")
         time.sleep(0.5)       # the terminal is refitted to the phone font before any test measures it
 
@@ -280,6 +280,16 @@ class Phone(StripCase):
     NOTE = ("(() => { const n = document.querySelector('#swarmbox-strip .sb-note'); const m = document.getElementById('demo-mic').getBoundingClientRect();"
             " const b = n.getBoundingClientRect(); return {hidden: n.hidden, text: n.textContent, tone: n.dataset.tone, right: b.right, micLeft: m.left}; })()")
 
+    def test_the_phone_letters_leave_no_column_cut_off_at_the_right_and_fill_the_width(self):
+        """seen on a phone: after the size changed the terminal was refitted with the old letter width, and the last characters of every row fell off the right edge"""
+        g = self.geo(lambda g: g["cols"] >= 50)
+        self.assertGreaterEqual(g["cols"], 50, "a phone held upright shows about 56 columns (it was 29 at 21 px)")
+        self.assertLessEqual(g["cols"], 62)
+        self.assertLessEqual(g["screen"]["right"], g["win"][0] - 8, "the last column ends before the right edge (the padding of the page is 10 px)")
+        self.assertGreaterEqual(g["screen"]["right"], g["win"][0] - 30, "and not much before it: the width is used")
+        self.assertTrue(wait_until(lambda: self.t.tmux("list-clients", "-F", "#{client_width}").split()[:1] == [str(g["cols"])], 10, 0.05),
+                        "tmux has the columns xterm shows: %s" % self.t.tmux("list-clients", "-F", "#{client_width}").strip())
+
     def test_a_note_covers_the_keys_but_not_the_addon_controls_never_resizes_the_strip_and_a_tap_dismisses_it(self):
         before = self.geo()
         self.page.js("swarmboxStrip.note('Nobody is listening', 'warn')")
@@ -326,7 +336,7 @@ class Settings(StripCase):
           addEventListener(t, f) { (l[t] = l[t] || []).push(f); }, fire() { for (const t of ['resize', 'scroll']) (l[t] || []).forEach(f => f()); }};
           Object.defineProperty(window, 'visualViewport', {value: vv}); window.__vv = vv; })()"""
         self.open(conf="strip=on\n", viewport="phone-portrait", init_script=fake)
-        g0 = self.geo(lambda g: g["stripShown"] and self.page.js("window.term.options.fontSize") <= 14)     # the phone font (13 px) is in place
+        g0 = self.geo(lambda g: g["stripShown"] and self.page.js("window.term.options.fontSize") <= 12)     # the phone font (11 px) is in place
         self.page.js("__vv.height = 500; __vv.fire()")
         g = self.geo(lambda g: abs(g["strip"]["bottom"] - 500) <= 1 and g["rows"] < g0["rows"])
         self.assertAlmostEqual(g["strip"]["bottom"], 500, delta=1, msg="the strip sits on the keyboard")
