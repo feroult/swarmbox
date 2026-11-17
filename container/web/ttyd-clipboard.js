@@ -312,7 +312,7 @@
   // (370 px usable) gets 10 px = about 65 columns, instead of 21 px = 29; turned sideways (844 px) 11 px = about 120 columns. The target can be tried live: swarmboxStrip.setColumns(70)
   // in the console of the browser (kept in this browser, setColumns() forgets it). The sysop panel and the
   // tab are the same terminal, so one size serves both. A mouse screen wider than PHONE_WIDTH (600 px) keeps the configured size, as before.
-  var GLYPH = 0.6, COLS_UPRIGHT = 64, COLS_SIDEWAYS = 120, FONT_MIN = 8, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
+  var GLYPH = 0.6, COLS_UPRIGHT = 100, COLS_SIDEWAYS = 200, FONT_MIN = 5, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
   function fontFor(width, height, base, touch) {
     if (!touch) return base;
     var cols = height >= width ? COLS_UPRIGHT : COLS_SIDEWAYS;
@@ -328,26 +328,37 @@
       if (up === undefined) localStorage.removeItem('swarmbox.columns');
       else localStorage.setItem('swarmbox.columns', JSON.stringify({ up: up, side: side || Math.round(up * 1.8) }));
     } catch (e) { /* no storage: this page only */ }
-    if (up === undefined) { COLS_UPRIGHT = 64; COLS_SIDEWAYS = 120; } else { COLS_UPRIGHT = Number(up); COLS_SIDEWAYS = Number(side) || Math.round(up * 1.8); }
+    if (up === undefined) { COLS_UPRIGHT = 100; COLS_SIDEWAYS = 200; } else { COLS_UPRIGHT = Number(up); COLS_SIDEWAYS = Number(side) || Math.round(up * 1.8); }
+    manual = false;      // the page fits the letters again, from whatever size the terminal has now
+    if (window.term && window.term.options) setFont = Number(window.term.options.fontSize);
     fitFont();
     return [COLS_UPRIGHT, COLS_SIDEWAYS];
   }
-  var baseFont = null, setFont = null;
+  // The size is the automatic one until SOMEONE ELSE changes it: ttyd applies its own fontSize a moment after the terminal exists (that is the configured size and is
+  // read as the base), but a change later than that, made in the console or by anything else, is a choice and stays: the page stops fitting until setColumns()
+  // is called. (It used to fit again at every resize and undo the choice: a value above the computed one went back, and it was not predictable.)
+  var baseFont = null, setFont = null, firstAt = null, manual = false, SETTLE_MS = 3000;
   function fitFont() {
     var t = window.term;
     if (!t || !t.options) return false;
-    // the configured size is whatever the size is when it is not the one set here: ttyd applies its fontSize after the terminal exists, so it is read again each time
-    if (baseFont === null || t.options.fontSize !== setFont) baseFont = Number(t.options.fontSize) || 21;
+    var now = Date.now();
+    if (firstAt === null) firstAt = now;
+    var cur = Number(t.options.fontSize);
+    if (setFont !== null && cur !== setFont) {
+      if (now - firstAt > SETTLE_MS) manual = true; else baseFont = cur || 21;
+    }
+    if (manual) return true;
+    if (baseFont === null) baseFont = cur || 21;
     var w = document.documentElement.clientWidth || window.innerWidth;
     var want = fontFor(w, document.documentElement.clientHeight || window.innerHeight, baseFont, coarse.matches || w <= PHONE_WIDTH);
-    if (t.options.fontSize !== want) {
-      t.options.fontSize = setFont = want;
+    if (cur !== want) {
+      t.options.fontSize = want;
       // xterm measures the new letter on its next render: a refit asked at once counts the columns with the OLD width and the last ones fall off the right edge,
       // so it is asked again once the new size is in (the later ones change nothing when the first was right)
       refit();
       [120, 400, 1000].forEach(function (ms) { setTimeout(refit, ms); });
     }
-    if (t.options.fontSize === want && setFont === null) setFont = want;
+    setFont = want;
     return true;
   }
 
