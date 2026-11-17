@@ -61,8 +61,11 @@ if [ "$SHELL_ONLY" = 1 ]; then
 else
     CMD='cp -r /src /work/repo 2>/dev/null; cd /work/repo && HOME=/work/home TMPDIR=/tmp exec sh tests/run.sh "$@"'
 fi
-# shellcheck disable=SC2086  # TTY is empty or one option
-podman run --rm $TTY --name "$NAME" --network "$NET" --read-only --userns=keep-id:uid=1000,gid=1000 \
+# SWARMBOX_TEST_SHOTS=<host folder>: the browser tests save their screenshots there (mounted at /shots)
+SHOTS_ARGS=
+if [ -n "${SWARMBOX_TEST_SHOTS:-}" ] && [ -d "$SWARMBOX_TEST_SHOTS" ]; then SHOTS_ARGS="-v $SWARMBOX_TEST_SHOTS:/shots:rw -e SWARMBOX_TEST_SHOTS=/shots"; fi
+# shellcheck disable=SC2086  # TTY and SHOTS_ARGS are empty or options
+podman run --rm $TTY $SHOTS_ARGS --name "$NAME" --network "$NET" --read-only --userns=keep-id:uid=1000,gid=1000 \
     -e SWARMBOX_TEST_REAL_TMUX=1 -e PYTHONDONTWRITEBYTECODE=1 -e LANG=C.UTF-8 \
     -v "$ROOT":/src:ro --tmpfs /work:rw,exec,mode=1777,size=4g --tmpfs /tmp:rw,exec,mode=1777,size=2g \
     "$IMAGE" sh -c "$CMD" test-slow "$SEL" "$@"

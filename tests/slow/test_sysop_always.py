@@ -269,6 +269,23 @@ class Resizing(Always):
         for p in self.panels():
             self.assertEqual(p["w"], 40, "20 %% of 200")
 
+    def test_a_phone_that_changes_its_letters_keeps_one_panel_of_30_percent(self):
+        """the letters of a phone shrink after the page opens and the window goes from 50 x 33 cells to 130 x 100 in a few steps (each refit): seen with two panels
+        in the window, 70 % of its height between them, one showing Stop and the other Goal"""
+        c = self.attach(50, 33)
+        self.d.sync()
+        self.wait(self.one_panel_in_each_window, "the panel")
+        for rows, cols in ((50, 33), (90, 60), (130, 100), (130, 100), (118, 92), (130, 100), (60, 40), (130, 100)):
+            c.resize(rows, cols)
+            time.sleep(0.05)
+        self.wait(lambda: self.panels() and self.panels()[0]["wh"] == 130, "the window to be 130 lines: %s" % self.panes())
+        time.sleep(1.5)
+        self.d.sync()
+        panels = self.panels()
+        self.assertEqual(len(panels), 1, "one panel in the window: %s" % self.panes())
+        self.wait(lambda: abs(self.panels()[0]["h"] - 39) <= 2, "30 %% of 130 lines (now %s)" % self.panes())
+        self.assertEqual(self.active_pane(self.win1), [self.user])
+
     def test_a_short_portrait_window_gets_the_minimum_height(self):
         self.attach(24, 60)
         self.d.sync()

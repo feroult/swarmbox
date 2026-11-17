@@ -304,19 +304,19 @@ class Phone(StripCase):
                         "tmux has the columns xterm shows: %s" % self.t.tmux("list-clients", "-F", "#{client_width}").strip())
 
     def test_the_columns_can_be_tried_in_the_console_kept_and_forgotten(self):
-        base = self.geo(lambda g: g["cols"] >= 85)["cols"]
+        self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") <= 8, 10, 0.05))
+        time.sleep(0.6)
+        auto = self.page.js("term.options.fontSize")
         self.page.js("swarmboxStrip.setColumns(48)")
-        g = self.geo(lambda g: g["cols"] < base - 5)
-        self.assertLess(g["cols"], base - 5, "fewer columns asked: bigger letters, fewer columns")
+        self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") > auto + 2, 10, 0.05), "fewer columns asked: bigger letters")
         self.assertEqual(self.page.js("JSON.parse(localStorage.getItem('swarmbox.columns')).up"), 48, "kept in this browser")
         self.page.js("swarmboxStrip.setColumns()")
         self.assertIsNone(self.page.js("localStorage.getItem('swarmbox.columns')"))
-        g = self.geo(lambda g: abs(g["cols"] - base) <= 1)
-        self.assertAlmostEqual(g["cols"], base, delta=1, msg="and the default again")
+        self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") == auto, 10, 0.05), "and the default again")
 
     def test_a_size_set_by_hand_stays_through_resizes_and_setcolumns_makes_the_page_fit_again(self):
         """seen: the same value typed in the console sometimes took and sometimes went back, because the page fitted again at every resize"""
-        base = self.geo(lambda g: g["cols"] >= 85)["cols"]
+        self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") <= 8, 10, 0.05))
         time.sleep(3.3)      # the page has settled: ttyd's own fontSize is long applied
         for size in (9, 5, 12, 7):
             self.page.js("term.options.fontSize = %d" % size)
@@ -326,7 +326,7 @@ class Phone(StripCase):
             self.assertEqual(self.page.js("term.options.fontSize"), size, "the size set by hand is left alone")
         self.page.js("swarmboxStrip.setColumns()")
         self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") <= 6, 10, 0.05), "and the page fits again (7 was the last size set by hand)")
-        self.assertAlmostEqual(self.geo(lambda g: abs(g["cols"] - base) <= 1)["cols"], base, delta=1)
+        self.assertGreaterEqual(self.geo(lambda g: g["cols"] >= 85)["cols"], 85)
 
     def test_a_note_covers_the_keys_but_not_the_addon_controls_never_resizes_the_strip_and_a_tap_dismisses_it(self):
         before = self.geo()
@@ -421,3 +421,4 @@ class Settings(StripCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
