@@ -362,7 +362,23 @@
     return true;
   }
 
-  window.swarmboxStrip = { fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
+  // ---- this page is the screen you are looking at: tell tmux ---------------------------------------------------------------
+  // tmux sizes a window by the client that last had focus (window-size latest). Another client of the same session (the terminal of the host, another tab) that
+  // got focus after this page leaves the window at ITS size: on a phone the window is 193 columns wide, the screen shows 123, lines run behind the edge and the
+  // prompt is out of sight. A page that is looked at sends the focus-in report (ESC [ I) tmux asked for, which makes the window follow this client again.
+  // Only when tmux asked for focus reports (term.modes.sendFocusMode): otherwise those bytes would be typed into the shell.
+  var claimedAt = 0;
+  function claimSize(force) {
+    var t = window.term, now = Date.now();
+    if (!t || !t.input || !t.modes || !t.modes.sendFocusMode) return false;
+    if (!force && now - claimedAt < 1500) return false;
+    if (document.visibilityState === 'hidden') return false;
+    claimedAt = now;
+    t.input('\x1b[I', true);
+    return true;
+  }
+
+  window.swarmboxStrip = { claimSize: claimSize, fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
                            get element() { return strip; }, get visible() { return !!strip && !strip.hidden; } };
 
   // A page in another origin's frame never gets the strip: one click there would type a key (clickjacking). The server side says the same with
@@ -376,6 +392,13 @@
     (function waitTerm(n) { if (!fitFont() && n > 0) setTimeout(function () { waitTerm(n - 1); }, 100); })(100);
     var later;
     function fitSoon() { fitFont(); clearTimeout(later); later = setTimeout(fitFont, 300); }      // again once the window has settled (a turning phone reports its size late)
+    var claimLater;
+    function claimSoon() { clearTimeout(claimLater); claimLater = setTimeout(function () { claimSize(true); }, 700); }      // after the refits have told tmux the new size
+    window.addEventListener('focus', function () { claimSize(false); });
+    document.addEventListener('visibilitychange', function () { claimSize(false); });
+    document.addEventListener('pointerdown', function () { claimSize(false); }, true);
+    window.addEventListener('resize', claimSoon);
+    (function waitModes(n) { if (!claimSize(true) && n > 0) setTimeout(function () { waitModes(n - 1); }, 300); })(40);
     window.addEventListener('resize', fitSoon);
     window.addEventListener('orientationchange', fitSoon);
     if (coarse.addEventListener) coarse.addEventListener('change', function () { fitFont(); update(); });

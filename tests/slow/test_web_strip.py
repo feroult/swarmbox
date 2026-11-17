@@ -419,6 +419,34 @@ class Settings(StripCase):
         self.shot("phone-portrait-panel-pressed")
 
 
+@bs.browser_tests()
+class OtherClient(StripCase):
+    def test_a_page_that_is_looked_at_takes_the_window_back_from_a_wider_client(self):
+        """seen on a phone: the terminal of the host (193 columns) got focus after the page and tmux kept the window at 193 columns: lines ran behind the right edge and
+        the prompt was out of sight. The page sends the focus-in report when it is looked at, and the window follows it again"""
+        import fcntl
+        import pty
+        import struct
+        import termios
+        self.open(viewport="phone-portrait", tmux_conf=BARE_TMUX + "set -g focus-events on\n")
+        g = self.geo(lambda g: g["cols"] >= 85)
+        cols = g["cols"]
+        win = lambda: self.t.tmux("display-message", "-p", "-t", "t:", "#{window_width}")
+        self.assertTrue(wait_until(lambda: win().strip() == str(cols), 10, 0.05), "the page owns the window: %r" % win())
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.environ.update(self.t.env)
+            os.environ["TERM"] = "xterm-256color"
+            os.execvp("tmux", ["tmux", "-L", self.t.sock, "attach", "-t", "t"])
+        self.addCleanup(lambda: (os.close(fd), os.kill(pid, 9), os.waitpid(pid, 0)))
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 99, 193, 0, 0))
+        time.sleep(0.5)
+        os.write(fd, b"\x1b[I")          # the host terminal got focus
+        self.assertTrue(wait_until(lambda: win().strip() == "193", 10, 0.05), "the wide client took the window: %r" % win())
+        self.page.js("window.dispatchEvent(new Event('focus'))")     # the page is looked at again
+        self.assertTrue(wait_until(lambda: win().strip() == str(cols), 10, 0.05), "the page took the window back: %r (page %d)" % (win(), cols))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 
