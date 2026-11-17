@@ -35,6 +35,7 @@ POLL = 0.2              # seconds between two looks at the files while something
 IDLE_POLL = 1.0         # idle: once a second only a stat of two files and a lock probe; the files are read when one of them changed
 MAX_EDIT = service.MAX_GOAL_TEXT
 GOAL_LINES = 3
+DONE_LINES = 3          # lines of how a goal ended
 MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
 LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last one when the panel opens
 TERMINAL = ("done", "stopped", "failed")
@@ -499,7 +500,11 @@ def _log(model, W, color):
         if st in TERMINAL:
             why = one_line(g.get("summary") or g.get("error"), 400)
             name = {"done": "green", "failed": "red", "stopped": "amber"}[st]
-            rows.append(" " + _paint(color, name, cut(st + (": " + why if why else ""), W), True))      # one line: the screen of the tab has the result
+            lines = wrap(st + (": " + why if why else ""), W)
+            if len(lines) > DONE_LINES:           # the brain is made to write two or three lines; this is only the net under it
+                lines = lines[:DONE_LINES]
+                lines[-1] = cut(lines[-1] + " …", W)
+            rows += [" " + _paint(color, name, ln, True) for ln in lines]
     if not model.up:
         rows += [" " + _paint(color, "red", ln) for ln in wrap("The sysop is not running. It starts with the box.", W)]
     return rows

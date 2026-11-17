@@ -737,6 +737,19 @@ class Finishing(Rig):
         self.assertEqual(ipc.read_json(os.path.join(self.gdir, "done.json"))["summary"], "all good", "the first done counts")
         self.ok("say", text="a stray say is harmless")
 
+    def test_a_long_summary_is_sent_back_once_to_be_written_again_and_then_taken(self):
+        long_text = "the command printed this and that " * 20
+        t = self.fail("done", summary=long_text)
+        self.assertIn("at most 240", t)
+        self.assertIsNone(ipc.read_json(os.path.join(self.gdir, "done.json")), "the goal is not finished by the refused call")
+        self.ok("done", summary="Tests pass: 41 of 41.")
+        self.assertEqual(ipc.read_json(os.path.join(self.gdir, "done.json"))["summary"], "Tests pass: 41 of 41.")
+
+    def test_a_brain_that_keeps_a_long_summary_is_not_asked_twice(self):
+        self.fail("done", summary="x " * 200)
+        self.ok("done", summary="y " * 200)         # a second long one is taken as it is (the panel shows three lines at most)
+        self.assertTrue(ipc.read_json(os.path.join(self.gdir, "done.json")))
+
     def test_say_is_stored_as_plain_text_and_cut(self):
         self.ok("say", text="<b>hi</b> " + "x" * 1000)
         s = ipc.read_jsonl(os.path.join(self.gdir, "say.jsonl"))

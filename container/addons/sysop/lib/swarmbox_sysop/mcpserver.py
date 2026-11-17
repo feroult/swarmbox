@@ -40,6 +40,7 @@ POLL = 0.1
 WAIT_MAX = 30.0
 MAX_RESULT = 20000
 MAX_SAY = 500
+DONE_MAX = 240          # the summary of `done` shown on the panel: two or three lines; a longer one is sent back to the brain once to be written shorter
 MAX_LINES = 500
 HINTS = {
     "dialog_open": "a dialog is open in the tab: it is the user's decision, nothing was typed; report it with say and call done unless the goal asks you to answer it",
@@ -144,6 +145,7 @@ class Server:
         self.audit = auditmod.Audit(ctx.audit_path, ctx.goal, ctx.source, clock)
         self.policy = policy.Policy(ctx.autonomy, ctx.countdown, ctx.approval_timeout, ctx.max_steps, ctx.deadline, clock)
         self.finished = False
+        self.done_refused = False
         self.seq = 0
         self.log = log or (lambda m: None)
         self.tools = {
@@ -160,7 +162,7 @@ class Server:
                      {"tab": ("string", "tab id; default: the active tab"), "seconds": ("number", "default 2, at most 30"),
                       "until": ("string", "stop waiting when this text is on the screen")}),
             "say": (self.t_say, "Tell the user something short; it is shown in the panel.", {"text": ("string!", "the message")}),
-            "done": (self.t_done, "Finish the goal. Call it last, with a summary of a few words: no command output.", {"summary": ("string!", "what was done or why not")}),
+            "done": (self.t_done, "Finish the goal. Call it last, with a summary of two short sentences at most (under 200 characters): the result in your own words, no command output.", {"summary": ("string!", "what was done or why not")}),
         }
 
     # ---- helpers
@@ -372,6 +374,10 @@ class Server:
 
     def t_done(self, args):
         summary = self.arg(args, "summary", "string", True)[:MAX_SAY]
+        if len(summary) > DONE_MAX and not self.finished and not self.done_refused:
+            self.done_refused = True       # once: the brain summarizes again (a cut sentence is worse), and the next one is taken as it is
+            raise ToolError("the summary has %d characters, at most %d: call done again with two short sentences that say the result in your own words, "
+                            "no command output, no lists" % (len(summary), DONE_MAX))
         if not self.finished:
             self.finished = True
             ipc.write_json(os.path.join(self.ctx.goal_dir, "done.json"), {"t": self.clock(), "summary": summary})

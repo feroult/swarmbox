@@ -174,13 +174,18 @@ class Rendering(unittest.TestCase):
         order = [text.index(x) for x in ("look at the tabs", "tail -f", "I opened", "run: x")]
         self.assertEqual(order, sorted(order), "steps and says in time order")
 
-    def test_the_end_of_a_goal_is_one_line_and_a_long_summary_is_cut(self):
-        g = make_goal("done", summary="the tests ran and here is everything they printed " * 12)
-        lines, _ = frame_text(model_with(g), 40, 20)
-        ends = [x for x in lines if x.strip().startswith("done:")]
-        self.assertEqual(len(ends), 1)
-        self.assertTrue(ends[0].rstrip().endswith("…"))
-        self.assertEqual(len([x for x in lines if "the tests ran" in x]), 1, "the summary is not wrapped over several lines")
+    def test_the_end_of_a_goal_is_two_or_three_whole_lines_and_only_a_runaway_summary_is_cut(self):
+        ok = "Ran the tests in tab 2: 41 passed and one failed, test_login. I did not touch the code."
+        lines, _ = frame_text(model_with(make_goal("done", summary=ok)), 40, 20)
+        text = " ".join(" ".join(lines).split())
+        self.assertIn(ok, text, "a summary of this size is shown whole, wrapped")
+        self.assertNotIn("…", text)
+        runaway = "the tests ran and here is everything they printed " * 12
+        lines, _ = frame_text(model_with(make_goal("done", summary=runaway)), 40, 20)
+        ends = [i for i, x in enumerate(lines) if x.strip().startswith("done:")]
+        block = [x for x in lines[ends[0]:] if x.strip() and "[Goal]" not in x]
+        self.assertEqual(len(block), 3)
+        self.assertTrue(block[-1].rstrip().endswith("…"))
         say = [{"t": float(i), "text": "word " * 60} for i in range(1, 3)]
         lines, _ = frame_text(model_with(make_goal(say=say)), 40, 30)
         self.assertLessEqual(len([x for x in lines if "word" in x]), 4, "a long say takes two lines at most")
