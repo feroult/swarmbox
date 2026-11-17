@@ -126,7 +126,11 @@ class Runner(unittest.TestCase):
             if select.select([master], [], [], 0.2)[0]:
                 out += os.read(master, 65536)
         self.assertEqual(p.poll(), 0, out.decode(errors="replace"))
-        self.assertEqual(termios.tcgetattr(slave), before, "the runner left its terminal changed")
+        try:
+            after = termios.tcgetattr(slave)
+        except termios.error:
+            return       # macOS: the terminal of a session that has ended cannot be asked any more; nothing of it is left to be found changed
+        self.assertEqual(after, before, "the runner left its terminal changed")
 
     def test_a_file_over_its_time_limit_is_killed_and_reported(self):
         tmp, env = fake_tests({"test_hang.py": "import time\ntime.sleep(60)\n"})

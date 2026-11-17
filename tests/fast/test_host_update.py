@@ -193,20 +193,30 @@ class PullProgressTest(UpdateBase):
                 e.pop(k, None)
         master, slave = pty.openpty()
         try:
-            r = subprocess.run([self.helper, "update"], env=e, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                               stderr=slave, cwd=self.tmp, timeout=60)
-            os.close(slave)    # with the last slave closed the master gives what is left, then EIO: no read is left to a deferred tty flush
-            slave = -1
-            chunks, end = [], time.monotonic() + 10
-            while time.monotonic() < end and select.select([master], [], [], 1)[0]:
+            # read WHILE it runs and until it has ended, and only then close the slave: on macOS the last close of the slave throws away what was not read yet
+            # (on Linux it is still there), which made `shown` empty on the CI runner of macOS
+            p = subprocess.Popen([self.helper, "update"], env=e, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=slave, cwd=self.tmp)
+            chunks, end = [], time.monotonic() + 60
+
+            def pull(wait):
+                if not select.select([master], [], [], wait)[0]:
+                    return False
                 try:
                     data = os.read(master, 65536)
                 except OSError:
-                    break
-                if not data:
-                    break
-                chunks.append(data)
+                    return False
+                if data:
+                    chunks.append(data)
+                return bool(data)
+            while p.poll() is None and time.monotonic() < end:
+                pull(0.2)
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+            while pull(0.3):
+                pass
             shown = b"".join(chunks).decode(errors="replace")
+            r = p
         finally:
             if slave >= 0:
                 os.close(slave)
