@@ -177,9 +177,11 @@ class DocsTests(unittest.TestCase):
         for key in KEYS:
             self.assertIn("`%s`" % key, text)
         change = read(os.path.join(ROOT, "CHANGELOG.md"))
-        unreleased = change.split("## [Unreleased]")[1].split("\n## [")[0]
-        self.assertRegex(unreleased, r"- Added: .*`voice`")
-        self.assertIn("swarmbox update", unreleased)
+        # [Unreleased] and the newest release: the release script moves the first into the second, so the entry is in one or the other at any moment
+        sections = change.split("\n## [")
+        recent = "\n".join(sections[1:3])
+        self.assertRegex(recent, r"- Added: .*`voice`")
+        self.assertIn("swarmbox update", recent)
 
     def test_the_usage_and_every_key_are_documented_in_the_status_line_of_the_design(self):
         text = read(os.path.join(ROOT, "docs", "voice-design.md"))
