@@ -29,7 +29,10 @@ if page.count("</body>") != 1 or page.count("</head>") != 1:
     sys.exit("build-index: the stock page must have exactly one </head> and one </body>")
 cfg = '{"ctrlVPaste":__SWARMBOX_CTRL_V__,"ctrlCCopy":__SWARMBOX_CTRL_C__}'
 strip = '{"mode":"__SWARMBOX_STRIP__","custom":__SWARMBOX_STRIP_CUSTOM__,"keys":"__SWARMBOX_STRIP_KEYS__"}'
-page = page.replace("</body>", "<script>window.__swarmboxClipboard=%s;window.__swarmboxStripCfg=%s;</script><script>%s</script></body>" % (cfg, strip, js), 1)
+# in the HEAD, before ttyd's own script: the page rewrites the settings message of the websocket (the font size of a phone) before ttyd opens its socket
+if page.count("<head>") != 1:
+    sys.exit("build-index: the stock page must have exactly one <head>")
+page = page.replace("<head>", "<head><script>window.__swarmboxClipboard=%s;window.__swarmboxStripCfg=%s;</script><script>%s</script>" % (cfg, strip, js), 1)
 # ttyd's page has no viewport meta: a phone would lay it out 980 px wide and shrink it, and the strip's buttons with it. viewport-fit=cover lets the
 # safe-area insets work; interactive-widget=resizes-content makes the on-screen keyboard shrink the layout (the strip stays above it).
 if 'name="viewport"' not in page and "name='viewport'" not in page:

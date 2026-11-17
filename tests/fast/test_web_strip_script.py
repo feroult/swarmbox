@@ -126,7 +126,7 @@ win.self = win; win.top = process.argv[3] === 'framed' ? {} : win;
 if (process.argv[3] === 'throws') Object.defineProperty(win, 'top', {get() { throw new Error('cross-origin'); }});
 const doc = {body: mk('body'), documentElement: mk('html'), createElement: mk, addEventListener() {}, getElementById() { return null; }};
 const ctx = vm.createContext({window: win, document: doc, setTimeout(f, ms) { timers.push({f, ms, live: true}); return timers.length; },
-  clearTimeout(id) { if (timers[id - 1]) timers[id - 1].live = false; }, clearInterval() {}, setInterval() { return 0; }, requestAnimationFrame(f) { f(); }, Event: function () {}, console});
+  clearTimeout(id) { if (timers[id - 1]) timers[id - 1].live = false; }, clearInterval() {}, setInterval() { return 0; }, requestAnimationFrame(f) { f(); }, Event: function () {}, console, TextEncoder, TextDecoder, Uint8Array});
 vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), ctx);
 const s = win.swarmboxStrip;
 %s
@@ -149,6 +149,18 @@ const s = win.swarmboxStrip;
                           " s.fontFor(320, 568, 21, true), s.fontFor(768, 1024, 21, true), s.fontFor(390, 844, 12, true), s.fontFor(200, 400, 21, true),"
                           " s.fontFor(390, 844, 21, false), s.fontFor(1920, 1080, 21, false)]));")
         self.assertEqual(got, [5, 6, 5, 5, 11, 5, 5, 21, 21], "an upright 390 px phone 5 px (about 120 columns), sideways 6 px, a tablet the configured size")
+
+    def test_the_settings_message_of_ttyd_is_rewritten_with_the_font_of_this_screen(self):
+        """ttyd sends `2{json}` first; on a phone the fontSize in it becomes the size that fits, so the terminal is measured once. Other messages are left alone."""
+        got = self.run_js("""doc.documentElement.clientWidth = 390; doc.documentElement.clientHeight = 844;
+          const enc = o => { const e = new TextEncoder().encode('2' + JSON.stringify(o)); return e.buffer.slice(e.byteOffset, e.byteOffset + e.byteLength); };
+          const dec = b => JSON.parse(new TextDecoder().decode(new Uint8Array(b).subarray(1)));
+          const a = dec(s.rewritePrefs(enc({fontSize: 21, cursorBlink: true})));
+          const text = s.rewritePrefs('2' + JSON.stringify({fontSize: 21}));
+          const out = new TextEncoder().encode('0hello'), other = s.rewritePrefs(out.buffer);
+          const nofont = s.rewritePrefs(enc({cursorBlink: true}));
+          process.stdout.write(JSON.stringify([a.fontSize, a.cursorBlink, JSON.parse(text.slice(1)).fontSize, other === out.buffer, dec(nofont).cursorBlink, s.fontSets]));""")
+        self.assertEqual(got, [5, True, 5, True, True, 0])
 
     def test_the_same_page_not_framed_builds_the_strip(self):
         got = self.run_js("process.stdout.write(JSON.stringify({buttons: made.filter(e => /(^| )sb-key( |$)/.test(e.className)).length, visible: s.visible}));")

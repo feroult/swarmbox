@@ -337,11 +337,14 @@
   // The size is the automatic one until SOMEONE ELSE changes it: ttyd applies its own fontSize a moment after the terminal exists (that is the configured size and is
   // read as the base), but a change later than that, made in the console or by anything else, is a choice and stays: the page stops fitting until setColumns()
   // is called. (It used to fit again at every resize and undo the choice: a value above the computed one went back, and it was not predictable.)
-  var baseFont = null, setFont = null, firstAt = null, manual = false, SETTLE_MS = 3000;
+  var baseFont = null, setFont = null, firstAt = null, manual = false, SETTLE_MS = 3000, PREFS_WAIT_MS = 2500, loadedAt = Date.now();
   function fitFont() {
     var t = window.term;
     if (!t || !t.options) return false;
     var now = Date.now();
+    // not before ttyd's settings message has come (it is rewritten to the right size on its way in, see rewritePrefs): a size set earlier would be the extra change
+    // that this avoids. If it never comes (an old ttyd, no websocket) the page fits by itself after PREFS_WAIT_MS.
+    if (!prefsSeen && now - loadedAt < PREFS_WAIT_MS) return false;
     if (firstAt === null) firstAt = now;
     var cur = Number(t.options.fontSize);
     if (setFont !== null && cur !== setFont) {
@@ -352,6 +355,7 @@
     var w = document.documentElement.clientWidth || window.innerWidth;
     var want = fontFor(w, document.documentElement.clientHeight || window.innerHeight, baseFont, coarse.matches || w <= PHONE_WIDTH);
     if (cur !== want) {
+      fontSets++;
       t.options.fontSize = want;
       // xterm measures the new letter on its next render: a refit asked at once counts the columns with the OLD width and the last ones fall off the right edge,
       // so it is asked again once the new size is in (the later ones change nothing when the first was right)
@@ -381,7 +385,51 @@
     return true;
   }
 
-  window.swarmboxStrip = { claimSize: claimSize, fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
+  // ---- the font size from the first moment -------------------------------------------------------------------------------------
+  // ttyd sends its settings (`-t fontSize=21 ...`) over the websocket as the first message, and the terminal applies them as they come. Changing the size
+  // AFTER that (what fitFont does when the window turns) lands while the renderer is being made, and on some browsers left it with letters at the wrong width
+  // and a tmux that was told 28 columns, then 123. So the message itself is rewritten on its way in: ttyd applies the size that fits THIS screen, once, in its own
+  // order, and fitFont only has to follow later changes of the window. (The page is in the head, so this runs before ttyd opens its socket.)
+  var fontSets = 0, prefsSeen = 0, prefsRewritten = 0;
+  function rewritePrefs(data) {
+    var bytes = Object.prototype.toString.call(data) === '[object ArrayBuffer]' ? new Uint8Array(data) : null, text;
+    if (bytes) { if (bytes.length < 3 || bytes[0] !== 0x32) return data; text = new TextDecoder().decode(bytes.subarray(1)); }
+    else if (typeof data === 'string' && data.charAt(0) === '2') text = data.slice(1);
+    else return data;
+    var o;
+    try { o = JSON.parse(text); } catch (e) { return data; }
+    if (!o || typeof o !== 'object' || o.fontSize === undefined || manual) return data;
+    prefsSeen++;
+    var base = Number(o.fontSize) || 21;
+    var w = document.documentElement.clientWidth || window.innerWidth;
+    var want = fontFor(w, document.documentElement.clientHeight || window.innerHeight, base, coarse.matches || w <= PHONE_WIDTH);
+    baseFont = base;
+    setFont = want;
+    if (want === base) return data;
+    o.fontSize = want;
+    prefsRewritten++;
+    var out = JSON.stringify(o);
+    if (bytes) { var enc = new TextEncoder().encode(out), nb = new Uint8Array(enc.length + 1); nb[0] = 0x32; nb.set(enc, 1); return nb.buffer; }
+    return '2' + out;
+  }
+  var NativeWS = window.WebSocket;
+  if (NativeWS && NativeWS.prototype && !(function () { try { return window.top !== window.self; } catch (e) { return true; } })()) {
+    var onmsg = Object.getOwnPropertyDescriptor(NativeWS.prototype, 'onmessage');
+    var wrapMsg = function (fn) {
+      return function (ev) {
+        var data = rewritePrefs(ev.data);
+        return fn.call(this, data === ev.data ? ev : { data: data, type: ev.type, target: ev.target, currentTarget: ev.currentTarget, origin: ev.origin });
+      };
+    };
+    window.WebSocket = class extends NativeWS {
+      constructor(a, b) { if (b === undefined) super(a); else super(a, b); }
+      addEventListener(type, fn, opt) { super.addEventListener(type, type === 'message' && typeof fn === 'function' ? wrapMsg(fn) : fn, opt); }
+      set onmessage(fn) { onmsg.set.call(this, typeof fn === 'function' ? wrapMsg(fn) : fn); }
+      get onmessage() { return onmsg.get.call(this); }
+    };
+  }
+
+  window.swarmboxStrip = { rewritePrefs: rewritePrefs, get fontSets() { return fontSets; }, get prefs() { return [prefsSeen, prefsRewritten]; }, claimSize: claimSize, fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
                            get element() { return strip; }, get visible() { return !!strip && !strip.hidden; } };
 
   // A page in another origin's frame never gets the strip: one click there would type a key (clickjacking). The server side says the same with

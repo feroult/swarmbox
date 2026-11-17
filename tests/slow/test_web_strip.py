@@ -451,6 +451,31 @@ class OtherClient(StripCase):
 
 
 @bs.browser_tests()
+class FontFromTheStart(StripCase):
+    def test_a_phone_gets_its_font_in_the_settings_message_and_the_terminal_never_changes_size_after_it_opens(self):
+        """seen on a phone: tmux was told 28 x 112 and then 123 x 99 at every refresh, because the font was changed after ttyd had applied its own: the size now
+        arrives already right in the settings message of ttyd, so the terminal is measured once"""
+        self.open(viewport="phone-portrait", command="bash --norc", init_script="window.__sizes = []; ")
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 8, 10, 0.05))
+        time.sleep(3.0)
+        import re
+        sizes = [(int(c), int(r)) for c, r in re.findall(r'"columns":(\d+),"rows":(\d+)', self.t.sent())]
+        self.assertEqual(sizes[-1][0], self.page.js("term.cols"), "the last size told to tmux is the size of the terminal: %r" % (sizes,))
+        self.assertLessEqual(len(sizes), 5, "a handful of sizes at load, ending at the final one: %r" % (sizes,))
+        self.assertEqual(self.page.js("swarmboxStrip.prefs"), [1, 1], "the settings message of ttyd was seen and rewritten once")
+        self.assertEqual(self.page.js("swarmboxStrip.fontSets"), 0, "the page never had to change the font after ttyd applied its settings")
+        self.assertLessEqual(self.page.js("term.options.fontSize"), 8)
+        self.assertGreaterEqual(self.page.js("term.cols"), 85)
+        self.assertEqual(self.t.tmux("list-clients", "-F", "#{client_width}").strip(), str(self.page.js("term.cols")))
+
+    def test_a_wide_window_keeps_the_size_of_the_settings(self):
+        self.open(command="bash --norc")
+        time.sleep(1.5)
+        self.assertEqual(self.page.js("swarmboxStrip.fontSets"), 0)
+        self.assertGreaterEqual(self.page.js("term.options.fontSize"), 13)
+
+
+@bs.browser_tests()
 class Renderer(StripCase):
     def test_the_default_renderer_draws_the_letters_on_the_grid_after_the_phone_font_is_set(self):
         """seen on a phone: with ttyd's own renderer (webgl) the letters were drawn at twice the pitch of the grid, so the 123 columns did not fit the screen and the
