@@ -75,13 +75,21 @@
 }
 #swarmbox-strip .sb-toggle[data-on="1"] { border-style: solid; border-color: var(--sb-violet); color: var(--sb-lavender); background: rgba(109, 40, 217, .14); }
 #swarmbox-strip .sb-toggle[data-on="1"]::before { border-color: var(--sb-lavender); background: var(--sb-lavender); box-shadow: 0 0 8px rgba(196, 181, 253, .9); }
-/* The default keys are a grid of six columns, five of one width and the sixth a little wider (Panel is a pill with a light): the answers, Esc, Tab, ^C and Panel on the
-   first row; on the second, under Cancel, Esc, Tab and ^C, the four arrows, so a right edge or a left edge of the first row is the edge of one below it. */
-#swarmbox-strip .sb-keys[data-grid="default"] { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(0, 1.25fr); gap: 6px; align-content: center; }
+/* The default keys are a grid of five equal columns and two rows, so every edge of one row is the edge of a key in the other:
+       Allow   Esc  Tab  ^C   Panel
+       Cancel  <    ^    v    >
+   (the answers to the sysop stacked on the left, the keys on top, the arrows below, Panel at the corner by the microphone). */
+#swarmbox-strip .sb-keys[data-grid="default"] { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: auto auto; gap: 6px; align-content: center; }
 #swarmbox-strip .sb-keys[data-grid="default"] .sb-btn { width: 100%; min-width: 0; padding: 0 2px; font-size: clamp(11px, 3.1vw, 13px); }
 #swarmbox-strip .sb-keys[data-grid="default"] .sb-toggle { padding: 0 6px; gap: 5px; }
 #swarmbox-strip .sb-keys[data-grid="default"] .sb-toggle::before { width: 7px; height: 7px; flex: none; }
 #swarmbox-strip .sb-keys[data-grid="default"] .sb-pad { display: contents; }
+#swarmbox-strip .sb-keys[data-grid="default"] > :nth-child(1) { grid-column: 1; grid-row: 1; }
+#swarmbox-strip .sb-keys[data-grid="default"] > :nth-child(2) { grid-column: 1; grid-row: 2; }
+#swarmbox-strip .sb-keys[data-grid="default"] > :nth-child(3) { grid-column: 2; grid-row: 1; }
+#swarmbox-strip .sb-keys[data-grid="default"] > :nth-child(4) { grid-column: 3; grid-row: 1; }
+#swarmbox-strip .sb-keys[data-grid="default"] > :nth-child(5) { grid-column: 4; grid-row: 1; }
+#swarmbox-strip .sb-keys[data-grid="default"] > :nth-child(6) { grid-column: 5; grid-row: 1; }
 #swarmbox-strip .sb-keys[data-grid="default"] .sb-pad > :nth-child(1) { grid-column: 2; grid-row: 2; }
 #swarmbox-strip .sb-keys[data-grid="default"] .sb-pad > :nth-child(2) { grid-column: 3; grid-row: 2; }
 #swarmbox-strip .sb-keys[data-grid="default"] .sb-pad > :nth-child(3) { grid-column: 4; grid-row: 2; }

@@ -572,20 +572,25 @@ class Answers(StripCase):
                 self.assertFalse(on, "a row of plain text is not: %r" % (rows,))
         self.assertEqual(self.page.js("getComputedStyle(document.querySelector('.xterm-rows > div.sb-blk')).transform !== 'none'"), True)
 
-    def test_the_arrows_sit_under_the_keys_of_the_row_above_on_any_phone_width(self):
-        """a grid: the left arrow ends where Cancel ends, the up arrow starts where Esc starts, the down arrow where Tab starts, the right one where ^C starts"""
+    def test_the_keys_are_a_grid_of_five_columns_on_any_phone_width(self):
+        """Allow over Cancel on the left, Esc Tab ^C Panel on top, the arrows under them: every edge of one row is the edge of a key in the other"""
         for vp in ("phone-portrait", "small-phone", "pixel"):
             term = self.open(viewport=vp, command="bash --norc")
             self.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'Hold to talk', order: 10})")      # the microphone takes 48 px of the width
             g = self.geo(lambda g: g["stripShown"] and g["keysShown"] and g["addons"])
             k = {x["t"]: x for x in g["keys"]}
-            self.assertAlmostEqual(k["\u2190"]["right"], k["Cancel"]["right"], delta=1.0, msg="%s: left arrow / Cancel right edges %r" % (vp, (k["\u2190"], k["Cancel"])))
-            self.assertAlmostEqual(k["\u2191"]["left"], k["Esc"]["left"], delta=1.0, msg="%s: up arrow / Esc" % vp)
-            self.assertAlmostEqual(k["\u2193"]["left"], k["Tab"]["left"], delta=1.0, msg="%s: down arrow / Tab" % vp)
-            self.assertAlmostEqual(k["\u2192"]["left"], k["^C"]["left"], delta=1.0, msg="%s: right arrow / ^C" % vp)
-            self.assertGreater(k["\u2191"]["top"], k["Esc"]["bottom"] - 1, "%s: the arrows are on the second row" % vp)
-            for label in ("Allow", "Cancel", "Esc", "Tab", "^C", "Panel"):
+            columns = [("Allow", "Cancel"), ("Esc", "\u2190"), ("Tab", "\u2191"), ("^C", "\u2193"), ("Panel", "\u2192")]
+            for top, bottom in columns:
+                self.assertAlmostEqual(k[top]["left"], k[bottom]["left"], delta=1.0, msg="%s: %s over %s, left edges %r" % (vp, top, bottom, (k[top], k[bottom])))
+                self.assertAlmostEqual(k[top]["right"], k[bottom]["right"], delta=1.0, msg="%s: %s over %s, right edges" % (vp, top, bottom))
+                self.assertGreater(k[bottom]["top"], k[top]["bottom"] - 1, "%s: %s is under %s" % (vp, bottom, top))
+            for label in ("Allow", "Esc", "Tab", "^C", "Panel"):
                 self.assertAlmostEqual(k[label]["top"], k["Allow"]["top"], delta=1.0, msg="%s: %s on the first row" % (vp, label))
+            for label in ("Cancel", "\u2190", "\u2191", "\u2193", "\u2192"):
+                self.assertAlmostEqual(k[label]["top"], k["Cancel"]["top"], delta=1.0, msg="%s: %s on the second row" % (vp, label))
+            lefts = [k[t]["left"] for t, _ in columns]
+            gaps = [round(lefts[i + 1] - lefts[i], 1) for i in range(4)]
+            self.assertLessEqual(max(gaps) - min(gaps), 1.5, "%s: the columns are one width: %r" % (vp, gaps))
             texts = self.page.js("Array.from(document.querySelectorAll('#swarmbox-strip .sb-key')).map(b => [b.textContent, b.scrollWidth <= b.clientWidth + 1])")
             self.assertEqual([t for t, ok in texts if not ok], [], "%s: the labels fit their buttons" % vp)
             self.assertGreaterEqual(min(x["w"] for x in g["keys"]), 36, "%s: a thumb still hits every button" % vp)
