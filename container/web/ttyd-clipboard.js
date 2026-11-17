@@ -394,6 +394,7 @@
     function fitSoon() { fitFont(); clearTimeout(later); later = setTimeout(fitFont, 300); }      // again once the window has settled (a turning phone reports its size late)
     var claimLater;
     function claimSoon() { clearTimeout(claimLater); claimLater = setTimeout(function () { claimSize(true); }, 700); }      // after the refits have told tmux the new size
+    setInterval(function () { if (document.hasFocus && document.hasFocus()) claimSize(false); }, 2000);      // while this page has the focus it keeps the size: nothing else takes it from it
     window.addEventListener('focus', function () { claimSize(false); });
     document.addEventListener('visibilitychange', function () { claimSize(false); });
     document.addEventListener('pointerdown', function () { claimSize(false); }, true);

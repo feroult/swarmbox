@@ -445,6 +445,9 @@ class OtherClient(StripCase):
         self.assertTrue(wait_until(lambda: win().strip() == "193", 10, 0.05), "the wide client took the window: %r" % win())
         self.page.js("window.dispatchEvent(new Event('focus'))")     # the page is looked at again
         self.assertTrue(wait_until(lambda: win().strip() == str(cols), 10, 0.05), "the page took the window back: %r (page %d)" % (win(), cols))
+        os.write(fd, b"\x1b[I")          # the host terminal takes it again while the page still has the focus: the page keeps the size by itself
+        self.assertTrue(wait_until(lambda: win().strip() == "193", 5, 0.05), "the wide client took the window again: %r" % win())
+        self.assertTrue(wait_until(lambda: win().strip() == str(cols), 8, 0.1), "a page that has the focus takes it back with no event: %r (page %d)" % (win(), cols))
 
 
 if __name__ == "__main__":
