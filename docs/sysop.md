@@ -82,7 +82,7 @@ While the bus is away (it is restarted within seconds; after five crashes in a m
 ## The brain
 
 `sysop.brain` is either a preset name or a **command template**. The only preset today is `claude`: the headless Claude Code CLI (`claude -p`, using the login that is already in the box) with every built-in tool turned off (`--tools ""`; without it Bash stays on),
-only the tools of the sysop allowed, a system prompt of its own, no session file and a turn limit. The model is `sysop.model` (default `haiku`, about 7 seconds and a tenth of a cent a goal in the tests; `sonnet` is slower and costs about ten times as much).
+only the tools of the sysop allowed, a system prompt of its own, no session file and a turn limit. The model is `sysop.model` (default `sonnet`: about 11 to 15 seconds and a cent a goal in the tests; `haiku` is quicker, about 7 seconds, and costs about a tenth as much, at the price of more mistakes on a spoken goal that is not clear).
 
 To use another brain, write a template. It is split into words like a shell would, but **no shell runs it**: a quote, `$(...)` or `;` in it is a character of an argument, never a command. Placeholders are replaced inside each word:
 
@@ -134,7 +134,7 @@ The brain needs a login: the `claude` preset uses the one already in the box.
 | Key | Default | Meaning |
 |---|---|---|
 | `sysop.brain` | `claude` | a preset name or a command template (no line break) |
-| `sysop.model` | `haiku` | the model the `claude` preset asks for, and `{model}` |
+| `sysop.model` | `sonnet` | the model the `claude` preset asks for, and `{model}` |
 | `sysop.autonomy` | `auto` | `confirm-all`, `confirm-risky` or `auto` |
 | `sysop.countdown` | `4` | seconds an action waits for your veto, 0 to 30 (`0` sends at once) |
 | `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100 |

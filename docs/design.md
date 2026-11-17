@@ -390,7 +390,7 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `voice.web` | `1` | `0` keeps the voice front off: the web terminal port then goes straight to ttyd, with no voice button; `SWARMBOX_VOICE_WEB` |
 | `voice.topic` | `goal` | the bus topic the voice addon publishes its goals to (a topic name: `[a-z0-9][a-z0-9._-]{0,62}`); passed as `SWARMBOX_VOICE_TOPIC` |
 | `sysop.brain` | `claude` | the brain of the `sysop` addon: a preset name or a command template (no line break; [sysop.md](sysop.md)); `SWARMBOX_SYSOP_BRAIN` |
-| `sysop.model` | `haiku` | the model the `claude` preset asks for; `SWARMBOX_SYSOP_MODEL` |
+| `sysop.model` | `sonnet` | the model the `claude` preset asks for; `SWARMBOX_SYSOP_MODEL` |
 | `sysop.autonomy` | `auto` | `confirm-all`, `confirm-risky` or `auto`; `SWARMBOX_SYSOP_AUTONOMY` |
 | `sysop.countdown` | `4` | seconds an action waits for a veto, 0 to 30; `SWARMBOX_SYSOP_COUNTDOWN` |
 | `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100; `SWARMBOX_SYSOP_MAX_STEPS` |

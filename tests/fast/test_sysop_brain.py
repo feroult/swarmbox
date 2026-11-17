@@ -37,7 +37,7 @@ class Template(unittest.TestCase):
         argv, env = brain.build(self.cfg(), "/g", "/g/mcp.json", "cli")
         self.assertEqual(env, {})
         self.assertEqual(argv[:2], ["claude", "-p"])
-        for pair in (["--model", "haiku"], ["--mcp-config", "/g/mcp.json"], ["--tools", ""], ["--allowedTools", "mcp__sysop__*"],
+        for pair in (["--model", "sonnet"], ["--mcp-config", "/g/mcp.json"], ["--tools", ""], ["--allowedTools", "mcp__sysop__*"],
                      ["--permission-mode", "dontAsk"], ["--max-turns", "23"], ["--output-format", "stream-json"]):
             i = argv.index(pair[0])
             self.assertEqual(argv[i:i + 2], pair)
@@ -58,7 +58,7 @@ class Template(unittest.TestCase):
     def test_a_custom_template_with_env_and_placeholders(self):
         c = self.cfg(brain="OPENCODE_CONFIG={mcp_config} MODE=x opencode run --model {model} -- {goal_dir}")
         argv, env = brain.build(c, "/g d", "/g d/mcp.json", "cli")
-        self.assertEqual(argv, ["opencode", "run", "--model", "haiku", "--", "/g d"])
+        self.assertEqual(argv, ["opencode", "run", "--model", "sonnet", "--", "/g d"])
         self.assertEqual(env, {"OPENCODE_CONFIG": "/g d/mcp.json", "MODE": "x"})
 
     def test_literal_braces_and_the_prompt_in_a_file(self):
@@ -94,7 +94,7 @@ class Template(unittest.TestCase):
         for bad in ('haiku"; touch x', "haiku $(id)", "a b", "`id`", "x;y", "", "-x y", "a'b", "a\nb", "a" * 101):
             with self.subTest(bad=bad):
                 if bad == "":
-                    self.assertEqual(self.cfg(model=bad).model, "haiku")
+                    self.assertEqual(self.cfg(model=bad).model, "sonnet")
                     continue
                 with self.assertRaises(config.ConfigError):
                     self.cfg(model=bad)

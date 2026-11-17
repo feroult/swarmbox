@@ -11,7 +11,7 @@ default. A wrong value raises ConfigError with a line that names the variable: t
   SWARMBOX_SYSOP_GROUP             the group the sysop subscribes with (default sysop; same characters): sysops of one group share the goals, one gets each
   SWARMBOX_SYSOP_PANEL_MODE        always (default) | auto | off: when the panel is in tmux, see dock.py. Not SWARMBOX_SYSOP_PANEL: that name is the marker
                                    (=1) in the start command of a panel pane, which swarmbox-tabs hides
-  SWARMBOX_SYSOP_MODEL             model name for the brain (default haiku)
+  SWARMBOX_SYSOP_MODEL             model name for the brain (default sonnet)
   SWARMBOX_SYSOP_AUTONOMY          confirm-all | confirm-risky | auto (default), see policy.py
   SWARMBOX_SYSOP_COUNTDOWN         seconds a low-risk action waits for a veto (default 4; 0 = none)
   SWARMBOX_SYSOP_APPROVAL_TIMEOUT  seconds a high-risk action waits for the word `run` before it is refused (default 60)
@@ -27,7 +27,7 @@ DEFAULTS = {
     "group": "sysop",
     "panel_mode": "always",
     "brain": "claude",
-    "model": "haiku",
+    "model": "sonnet",
     "autonomy": "auto",
     "countdown": "4",
     "approval_timeout": "60",

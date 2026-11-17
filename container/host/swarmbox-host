@@ -119,7 +119,7 @@ default_of() {
         sysop.group) printf 'sysop' ;;
         sysop.panel) printf 'always' ;;
         sysop.brain) printf 'claude' ;;
-        sysop.model) printf 'haiku' ;;
+        sysop.model) printf 'sonnet' ;;
         sysop.autonomy) printf 'auto' ;;
         sysop.countdown) printf '4' ;;
         sysop.max_steps) printf '20' ;;
@@ -660,7 +660,7 @@ validate_value() {
             ;;
         sysop.model)
             case $V_OUT in
-                [!A-Za-z0-9]*|*[!A-Za-z0-9._:/-]*) _bad "it must be a model name such as haiku (letters, digits and '.', '_', ':', '/', '-', without blanks, starting with a letter or digit)."; return 1 ;;
+                [!A-Za-z0-9]*|*[!A-Za-z0-9._:/-]*) _bad "it must be a model name such as sonnet (letters, digits and '.', '_', ':', '/', '-', without blanks, starting with a letter or digit)."; return 1 ;;
             esac
             [ "${#V_OUT}" -le 100 ] || { _bad "it must be at most 100 characters."; return 1; }
             ;;
