@@ -251,6 +251,7 @@
     strip.setAttribute('aria-label', 'Terminal controls');
     strip.hidden = true;
     keysEl = el('div', 'sb-keys');
+    if (!custom) keysEl.setAttribute('data-grid', 'default');      // the default list is a grid: each arrow sits under a key of the row above (ttyd-style.css)
     var pad = null;      // consecutive arrow keys go in one group that never breaks across lines
     keys.forEach(function (d) {
       var arrow = d.seq.length === 1 && CURSOR[d.seq[0]] && d.seq[0] !== 'Home' && d.seq[0] !== 'End';

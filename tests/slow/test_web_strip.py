@@ -35,6 +35,7 @@ VIEWPORTS = {  # name: (width, height, touch)
     "phone-portrait": (390, 844, True),
     "phone-landscape": (844, 390, True),
     "tablet": (820, 1180, True),
+    "small-phone": (360, 740, True),
     "pixel": (412, 915, True, 2.625),      # a Pixel in the device mode of Chrome: the device pixel ratio is not a whole number
 }
 
@@ -570,6 +571,28 @@ class Answers(StripCase):
             if text.startswith("pla"):
                 self.assertFalse(on, "a row of plain text is not: %r" % (rows,))
         self.assertEqual(self.page.js("getComputedStyle(document.querySelector('.xterm-rows > div.sb-blk')).transform !== 'none'"), True)
+
+    def test_the_arrows_sit_under_the_keys_of_the_row_above_on_any_phone_width(self):
+        """a grid: the left arrow ends where Cancel ends, the up arrow starts where Esc starts, the down arrow where Tab starts, the right one where ^C starts"""
+        for vp in ("phone-portrait", "small-phone", "pixel"):
+            term = self.open(viewport=vp, command="bash --norc")
+            self.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'Hold to talk', order: 10})")      # the microphone takes 48 px of the width
+            g = self.geo(lambda g: g["stripShown"] and g["keysShown"] and g["addons"])
+            k = {x["t"]: x for x in g["keys"]}
+            self.assertAlmostEqual(k["\u2190"]["right"], k["Cancel"]["right"], delta=1.0, msg="%s: left arrow / Cancel right edges %r" % (vp, (k["\u2190"], k["Cancel"])))
+            self.assertAlmostEqual(k["\u2191"]["left"], k["Esc"]["left"], delta=1.0, msg="%s: up arrow / Esc" % vp)
+            self.assertAlmostEqual(k["\u2193"]["left"], k["Tab"]["left"], delta=1.0, msg="%s: down arrow / Tab" % vp)
+            self.assertAlmostEqual(k["\u2192"]["left"], k["^C"]["left"], delta=1.0, msg="%s: right arrow / ^C" % vp)
+            self.assertGreater(k["\u2191"]["top"], k["Esc"]["bottom"] - 1, "%s: the arrows are on the second row" % vp)
+            for label in ("Allow", "Cancel", "Esc", "Tab", "^C", "Panel"):
+                self.assertAlmostEqual(k[label]["top"], k["Allow"]["top"], delta=1.0, msg="%s: %s on the first row" % (vp, label))
+            texts = self.page.js("Array.from(document.querySelectorAll('#swarmbox-strip .sb-key')).map(b => [b.textContent, b.scrollWidth <= b.clientWidth + 1])")
+            self.assertEqual([t for t, ok in texts if not ok], [], "%s: the labels fit their buttons" % vp)
+            self.assertGreaterEqual(min(x["w"] for x in g["keys"]), 36, "%s: a thumb still hits every button" % vp)
+            self.assertGreaterEqual(min(x["h"] for x in g["keys"]), 40)
+            if vp == "small-phone":
+                self.shot("small-phone-grid")
+            term.close()
 
     def test_the_arrows_share_one_line_and_the_resize_box_of_ttyd_is_off(self):
         self.open(viewport="phone-portrait", command="bash --norc")

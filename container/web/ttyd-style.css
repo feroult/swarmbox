@@ -75,6 +75,17 @@
 }
 #swarmbox-strip .sb-toggle[data-on="1"] { border-style: solid; border-color: var(--sb-violet); color: var(--sb-lavender); background: rgba(109, 40, 217, .14); }
 #swarmbox-strip .sb-toggle[data-on="1"]::before { border-color: var(--sb-lavender); background: var(--sb-lavender); box-shadow: 0 0 8px rgba(196, 181, 253, .9); }
+/* The default keys are a grid of six columns, five of one width and the sixth a little wider (Panel is a pill with a light): the answers, Esc, Tab, ^C and Panel on the
+   first row; on the second, under Cancel, Esc, Tab and ^C, the four arrows, so a right edge or a left edge of the first row is the edge of one below it. */
+#swarmbox-strip .sb-keys[data-grid="default"] { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(0, 1.25fr); gap: 6px; align-content: center; }
+#swarmbox-strip .sb-keys[data-grid="default"] .sb-btn { width: 100%; min-width: 0; padding: 0 2px; font-size: clamp(11px, 3.1vw, 13px); }
+#swarmbox-strip .sb-keys[data-grid="default"] .sb-toggle { padding: 0 6px; gap: 5px; }
+#swarmbox-strip .sb-keys[data-grid="default"] .sb-toggle::before { width: 7px; height: 7px; flex: none; }
+#swarmbox-strip .sb-keys[data-grid="default"] .sb-pad { display: contents; }
+#swarmbox-strip .sb-keys[data-grid="default"] .sb-pad > :nth-child(1) { grid-column: 2; grid-row: 2; }
+#swarmbox-strip .sb-keys[data-grid="default"] .sb-pad > :nth-child(2) { grid-column: 3; grid-row: 2; }
+#swarmbox-strip .sb-keys[data-grid="default"] .sb-pad > :nth-child(3) { grid-column: 4; grid-row: 2; }
+#swarmbox-strip .sb-keys[data-grid="default"] .sb-pad > :nth-child(4) { grid-column: 5; grid-row: 2; }
 /* the arrows stay together on one line: the row of keys may break before the group, never inside it */
 #swarmbox-strip .sb-pad { display: inline-flex; flex-wrap: nowrap; gap: 6px; }
 /* a phone: smaller type and tighter buttons, so ten keys take two short rows */
@@ -116,4 +127,8 @@ html.swarmbox-strip-on #terminal-container { flex: 1 1 0; min-height: 0; height:
   #swarmbox-strip .sb-keys { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   #swarmbox-strip .sb-keys::-webkit-scrollbar { display: none; }
   #swarmbox-strip .sb-btn { flex: 0 0 auto; }
+  #swarmbox-strip .sb-keys[data-grid="default"] { display: flex; }
+  #swarmbox-strip .sb-keys[data-grid="default"] .sb-btn { width: auto; min-width: var(--sb-btn); padding: 0 9px; font-size: inherit; }
+  #swarmbox-strip .sb-keys[data-grid="default"] .sb-toggle { padding: 0 12px 0 10px; gap: 8px; }
+  #swarmbox-strip .sb-keys[data-grid="default"] .sb-pad { display: inline-flex; }
 }
