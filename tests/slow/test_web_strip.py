@@ -27,7 +27,7 @@ TMUX_CONF = os.path.join(ROOT, "container", "config", "tmux.conf")
 SHOTS = os.environ.get("SWARMBOX_TEST_SHOTS", "")
 RAW_CAT = "stty raw -echo; exec cat -vT"   # a pane that shows, in caret notation, the bytes tmux hands it
 BARE_TMUX = "set -g mouse on\nset -g status-right '%H:%M'\n"
-DEFAULT_LABELS = ["Esc", "Tab", "^C", "\u2191", "\u2193", "\u2190", "\u2192", "Panel", "Allow", "Cancel"]
+DEFAULT_LABELS = ["Allow", "Cancel", "Esc", "Tab", "^C", "Panel", "\u2190", "\u2191", "\u2193", "\u2192"]
 KEY_CARETS = [("Esc", "^["), ("Tab", "^I"), ("^C", "^C"), ("\u2191", "^[[A"), ("\u2193", "^[[B"), ("\u2190", "^[[D"), ("\u2192", "^[[C")]
 
 VIEWPORTS = {  # name: (width, height, touch)
@@ -517,6 +517,39 @@ class Renderer(StripCase):
                 f.write(shot)
         self.assertEqual(self.page.js("term.options.fontSize") <= 12, True)
         self.assertLessEqual(g["screen"]["right"], g["win"][0] - 8)
+
+
+@bs.browser_tests()
+class Answers(StripCase):
+    def test_allow_and_cancel_are_on_only_when_the_sysop_waits_for_them(self):
+        """Allow and Cancel read the head of the sysop panel off the screen: `SYSOP  allow?` both on, `SYSOP  sending` only Cancel, `SYSOP  working` Cancel
+        (it stops), nothing: both off and a tap types nothing"""
+        self.open(viewport="phone-portrait", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05))
+        time.sleep(1.0)
+        off = lambda: self.page.js("(() => { const q = c => document.querySelector('#swarmbox-strip .sb-' + c); return [q('yes').dataset.off, q('no').dataset.off, q('yes').getAttribute('aria-disabled'), document.getElementById('swarmbox-strip').dataset.sysop]; })()")
+        self.assertTrue(wait_until(lambda: off() == ["1", "1", "true", "none"], 5, 0.1), "nothing to answer: both off %r" % (off(),))
+        self.t.clear_sent()
+        self.page.js("document.querySelector('#swarmbox-strip .sb-yes').dispatchEvent(new PointerEvent('pointerdown', {button: 0, pointerId: 1, bubbles: true})); "
+                     "document.querySelector('#swarmbox-strip .sb-yes').dispatchEvent(new PointerEvent('pointerup', {button: 0, pointerId: 1, bubbles: true}))")
+        time.sleep(0.4)
+        self.assertEqual(self.t.sent().count("\x01"), 0, "a tap on an Allow that is off types nothing: %r" % self.t.sent())
+        for head, want in (("SYSOP  allow? high risk", ["0", "0", "false", "allow?"]), ("SYSOP  sending in 3 s", ["1", "0", "true", "sending"]), ("SYSOP  working", ["1", "0", "true", "working"])):
+            self.t.type("clear; echo '%s'\r" % head)
+            self.assertTrue(wait_until(lambda: off() == want, 6, 0.1), "%r -> %r wanted %r" % (head, off(), want))
+            if head.startswith("SYSOP  allow?"):
+                self.shot("phone-portrait-allow-on")
+        self.t.type("clear\r")
+        self.assertTrue(wait_until(lambda: off() == ["1", "1", "true", "none"], 6, 0.1), "and off again when the panel is gone: %r" % (off(),))
+
+    def test_the_arrows_share_one_line_and_the_resize_box_of_ttyd_is_off(self):
+        self.open(viewport="phone-portrait", command="bash --norc")
+        g = self.geo(lambda g: g["stripShown"] and g["keysShown"])
+        arrows = [k for k in g["keys"] if k["t"] in ("\u2190", "\u2191", "\u2193", "\u2192")]
+        self.assertEqual(len(arrows), 4)
+        self.assertEqual(len({round(k["top"]) for k in arrows}), 1, "the four arrows are on one line: %r" % [(k["t"], k["top"]) for k in arrows])
+        self.assertEqual(self.page.js("!!document.querySelector('.xterm-overlay') && getComputedStyle(document.querySelector('.xterm-overlay')).opacity !== '0'"), False,
+                         "no box with the size of the terminal")
 
 
 if __name__ == "__main__":

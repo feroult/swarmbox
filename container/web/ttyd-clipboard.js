@@ -178,7 +178,9 @@
   }
 
   function keyButton(def) {
-    var b = el('button', 'sb-btn sb-key' + (def.label === 'Allow' ? ' sb-yes' : def.label === 'Cancel' ? ' sb-no' : ''));  // the two answers to the sysop wear their colours
+    var answer = def.label === 'Allow' ? 'yes' : def.label === 'Cancel' ? 'no' : '';      // the two answers to the sysop: their own look, and they are off when there is nothing to answer
+    var b = el('button', 'sb-btn sb-key' + (answer ? ' sb-' + answer : ''));
+    if (answer) { b.setAttribute('data-off', '1'); b.setAttribute('aria-disabled', 'true'); answers[answer] = b; }
     b.type = 'button';
     b.textContent = def.label;
     b.title = def.keys;
@@ -186,23 +188,56 @@
     keepFocus(b);
     var rep = def.seq.length === 1 && REPEAT[def.seq[0]], delay = 0, tick = 0, fired = false, down = false;
     function stop() { clearTimeout(delay); clearInterval(tick); }
+    function press() { if (answer && b.getAttribute('data-off') === '1') return; typeKeys(def); }
     b.addEventListener('pointerdown', function (e) {
       if (e.button > 0) return;
       e.preventDefault();
       down = true; fired = false;
       try { b.setPointerCapture(e.pointerId); } catch (x) { /* not for this pointer */ }
-      if (rep) delay = setTimeout(function () { fired = true; typeKeys(def); tick = setInterval(function () { typeKeys(def); }, 70); }, 420);
+      if (rep) delay = setTimeout(function () { fired = true; press(); tick = setInterval(press, 70); }, 420);
     });
     // a tap is typed on release, so a drag along a scrolling row (a phone in landscape) types nothing
     b.addEventListener('pointerup', function (e) {
       stop();
-      if (down && !fired) typeKeys(def);
+      if (down && !fired) press();
       down = false;
       e.preventDefault();
     });
     b.addEventListener('pointercancel', function () { stop(); down = false; });
-    b.addEventListener('click', function (e) { if (e.detail === 0) typeKeys(def); }); // Enter or Space on the focused button
+    b.addEventListener('click', function (e) { if (e.detail === 0) press(); }); // Enter or Space on the focused button
     return b;
+  }
+
+  // ---- Allow and Cancel are on only when the sysop waits for them -----------------------------------------------------------------
+  // The panel of the sysop is part of the terminal, so the page reads its head line off the screen: `SYSOP  allow?` (it needs a yes or a no), `SYSOP  sending`
+  // (a countdown: only a no), `SYSOP  working` or `queued` (a no stops it). Anything else, or no panel: both are off and a tap does nothing. Text on a screen can
+  // say these words too, and all that costs is a button that is on: Allow and Cancel only type keys that do nothing when the sysop waits for nothing.
+  var answers = {}, SYSOP_HEAD = /SYSOP\s+(allow\?|sending|working|queued)/;
+  function sysopState() {
+    var t = window.term;
+    if (!t || !t.buffer || !t.buffer.active) return '';
+    var buf = t.buffer.active;
+    for (var r = 0; r < t.rows; r++) {
+      var line = buf.getLine(buf.viewportY + r);
+      if (!line) continue;
+      var text = line.translateToString(true);
+      if (text.indexOf('SYSOP') < 0) continue;
+      var m = SYSOP_HEAD.exec(text);
+      if (m) return m[1];
+    }
+    return '';
+  }
+  function setOff(b, off) {
+    if (!b) return;
+    b.setAttribute('data-off', off ? '1' : '0');
+    b.setAttribute('aria-disabled', off ? 'true' : 'false');
+  }
+  function syncAnswers() {
+    if (!strip || (!answers.yes && !answers.no)) return;
+    var st = sysopState();
+    strip.setAttribute('data-sysop', st || 'none');
+    setOff(answers.yes, st !== 'allow?');
+    setOff(answers.no, st === '');
   }
 
   function build() {
@@ -212,7 +247,12 @@
     strip.setAttribute('aria-label', 'Terminal controls');
     strip.hidden = true;
     keysEl = el('div', 'sb-keys');
-    keys.forEach(function (d) { keysEl.appendChild(keyButton(d)); });
+    var pad = null;      // consecutive arrow keys go in one group that never breaks across lines
+    keys.forEach(function (d) {
+      var arrow = d.seq.length === 1 && CURSOR[d.seq[0]] && d.seq[0] !== 'Home' && d.seq[0] !== 'End';
+      if (arrow) { if (!pad) { pad = el('div', 'sb-pad'); keysEl.appendChild(pad); } pad.appendChild(keyButton(d)); }
+      else { pad = null; keysEl.appendChild(keyButton(d)); }
+    });
     slot = el('div', 'sb-slot');
     noteEl = el('div', 'sb-note');
     noteEl.hidden = true;
@@ -224,6 +264,7 @@
     strip.appendChild(noteEl);
     document.body.appendChild(strip);
     update();
+    setInterval(syncAnswers, 250);
   }
 
   var refitQueued = false;

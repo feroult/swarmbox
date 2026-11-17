@@ -48,15 +48,31 @@
 #swarmbox-strip .sb-btn:active { background: var(--sb-deep); color: #fff; }
 #swarmbox-strip .sb-btn:focus-visible { outline: 2px solid var(--sb-lavender); outline-offset: 1px; }
 #swarmbox-strip .sb-addon { padding: 0; }
-/* Allow and Cancel, the two answers to the sysop: green and red, the first of the row, so a thumb finds them and the colour says which is which */
-#swarmbox-strip .sb-yes { background: #166534; border-color: var(--sb-green); color: #fff; order: -2; }
-#swarmbox-strip .sb-no { background: #7f1d1d; border-color: var(--sb-red); color: #fff; order: -1; }
-#swarmbox-strip .sb-yes:active { background: var(--sb-green); color: #052e16; }
-#swarmbox-strip .sb-no:active { background: var(--sb-red); color: #450a0a; }
+/* Allow and Cancel, the two answers to the sysop, in the violet of the box: Allow is the filled one (the thing it asks for is yours to give), Cancel the outlined one.
+   They are OFF (dim, a tap does nothing) until the sysop waits for them; the page sets data-off by what the panel says (ttyd-clipboard.js, syncAnswers), and
+   while it asks for an Allow the button breathes. The other keys keep the plain look. */
+#swarmbox-strip .sb-yes {
+  background: linear-gradient(180deg, #7c3aed, #5b21b6); border-color: var(--sb-lavender); color: #fff;
+  box-shadow: 0 0 12px rgba(167, 139, 250, .5), inset 0 1px 0 rgba(255, 255, 255, .18);
+}
+#swarmbox-strip .sb-no { background: rgba(109, 40, 217, .14); border-color: var(--sb-violet); color: var(--sb-lavender); }
+#swarmbox-strip .sb-yes:active { background: var(--sb-lavender); color: #1e1b4b; }
+#swarmbox-strip .sb-no:active { background: var(--sb-violet); color: #1e1b4b; }
+#swarmbox-strip .sb-yes[data-off="1"], #swarmbox-strip .sb-no[data-off="1"] {
+  opacity: .34; box-shadow: none; filter: saturate(.4); cursor: default; background: var(--sb-band); border-color: rgba(167, 139, 250, .28); color: var(--sb-text);
+}
+#swarmbox-strip .sb-yes[data-off="1"]:active, #swarmbox-strip .sb-no[data-off="1"]:active { background: var(--sb-band); color: var(--sb-text); }
+@media (prefers-reduced-motion: no-preference) {
+  #swarmbox-strip[data-sysop="allow?"] .sb-yes { animation: sb-breathe 1.6s ease-in-out infinite; }
+  @keyframes sb-breathe { 50% { box-shadow: 0 0 20px rgba(196, 181, 253, .95), inset 0 1px 0 rgba(255, 255, 255, .25); } }
+}
+/* the arrows stay together on one line: the row of keys may break before the group, never inside it */
+#swarmbox-strip .sb-pad { display: inline-flex; flex-wrap: nowrap; gap: 6px; }
 /* a phone: smaller type and tighter buttons, so ten keys take two short rows */
 @media (pointer: coarse) {
   #swarmbox-strip { --sb-btn: 40px; font-size: 13px; gap: 5px; }
   #swarmbox-strip .sb-keys { gap: 5px; }
+  #swarmbox-strip .sb-pad { gap: 5px; }
   #swarmbox-strip .sb-btn { padding: 0 9px; }
 }
 /* a desktop with only the microphone (no key buttons): no bar and no space taken; the controls float in the top right corner, where the head of the sysop

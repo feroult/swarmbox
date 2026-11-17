@@ -15,7 +15,7 @@
 #                on a touch screen, or when stripKeys is set; an addon control such as the microphone on any screen); off never shows it
 #                (an addon then has no place for its controls)
 #   stripKeys    the key buttons of the strip: entries `label=keys` separated by commas, keys written as tmux key names separated by spaces
-#                (Escape Tab Up C-c M-x F5 ...; "C-a S" is Ctrl+A then S). Default: Esc=Escape, Tab=Tab, ^C=C-c, arrows, Panel=C-a S, Allow=C-a a, Cancel=C-a V.
+#                (Escape Tab Up C-c M-x F5 ...; "C-a S" is Ctrl+A then S). Default: Allow=C-a a, Cancel=C-a V (the answers to the sysop), Esc, Tab, ^C, Panel=C-a S, the arrows.
 #                An empty value means no buttons.
 #   scrollbar    true or false (default false): a thin scrollbar on the right; tmux owns the scrollback, so it is off, and so is the
 #                scrollback of the browser (scrollback=0, unless you set one)
@@ -71,12 +71,13 @@ fi
 # usual hues of the 16 colors kept (red for an error, green for success) in tones of the same family.
 declare -A OPT=(
     [fontSize]=21
+    [disableResizeOverlay]=true      # ttyd's box with the size (61x66) that flashes at every resize, on a phone at every refit; false in web-terminal.conf brings it back
     [rendererType]=canvas      # not ttyd's default, webgl: after a change of the font size (a phone) it draws the letters at twice the width of the grid or not at all
     [fontWeight]=400
     [fontWeightBold]=700
     [padding]=10
     [strip]=auto
-    [stripKeys]="Esc=Escape, Tab=Tab, ^C=C-c, ↑=Up, ↓=Down, ←=Left, →=Right, Panel=C-a S, Allow=C-a a, Cancel=C-a V"
+    [stripKeys]="Allow=C-a a, Cancel=C-a V, Esc=Escape, Tab=Tab, ^C=C-c, Panel=C-a S, ←=Left, ↑=Up, ↓=Down, →=Right"
     [macOptionIsMeta]=true
     [cursorBlink]=true
     [titleFixed]=SwarmBox
