@@ -296,16 +296,16 @@ class Phone(StripCase):
 
     def test_the_phone_letters_leave_no_column_cut_off_at_the_right_and_fill_the_width(self):
         """seen on a phone: after the size changed the terminal was refitted with the old letter width, and the last characters of every row fell off the right edge"""
-        g = self.geo(lambda g: g["cols"] >= 85)
-        self.assertGreaterEqual(g["cols"], 85, "a phone held upright shows about 120 columns (it was 29 at 21 px)")
-        self.assertLessEqual(g["cols"], 180)
+        g = self.geo(lambda g: g["cols"] >= 55)
+        self.assertGreaterEqual(g["cols"], 55, "a phone held upright shows about 65 columns (it was 29 at 21 px)")
+        self.assertLessEqual(g["cols"], 90)
         self.assertLessEqual(g["screen"]["right"], g["win"][0] - 8, "the last column ends before the right edge (the padding of the page is 10 px)")
         self.assertGreaterEqual(g["screen"]["right"], g["win"][0] - 30, "and not much before it: the width is used")
         self.assertTrue(wait_until(lambda: self.t.tmux("list-clients", "-F", "#{client_width}").split()[:1] == [str(g["cols"])], 10, 0.05),
                         "tmux has the columns xterm shows: %s" % self.t.tmux("list-clients", "-F", "#{client_width}").strip())
 
     def test_the_columns_can_be_tried_in_the_console_kept_and_forgotten(self):
-        self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") <= 8, 10, 0.05))
+        self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") <= 12, 10, 0.05))
         time.sleep(0.6)
         auto = self.page.js("term.options.fontSize")
         self.page.js("swarmboxStrip.setColumns(48)")
@@ -317,7 +317,7 @@ class Phone(StripCase):
 
     def test_a_size_set_by_hand_stays_through_resizes_and_setcolumns_makes_the_page_fit_again(self):
         """seen: the same value typed in the console sometimes took and sometimes went back, because the page fitted again at every resize"""
-        self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") <= 8, 10, 0.05))
+        self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") <= 12, 10, 0.05))
         time.sleep(3.3)      # the page has settled: ttyd's own fontSize is long applied
         for size in (9, 5, 12, 7):
             self.page.js("term.options.fontSize = %d" % size)
@@ -326,8 +326,8 @@ class Phone(StripCase):
                 time.sleep(0.4)
             self.assertEqual(self.page.js("term.options.fontSize"), size, "the size set by hand is left alone")
         self.page.js("swarmboxStrip.setColumns()")
-        self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") <= 6, 10, 0.05), "and the page fits again (7 was the last size set by hand)")
-        self.assertGreaterEqual(self.geo(lambda g: g["cols"] >= 85)["cols"], 85)
+        self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") >= 9, 10, 0.05), "and the page fits again (7 was the last size set by hand)")
+        self.assertGreaterEqual(self.geo(lambda g: g["cols"] >= 55)["cols"], 55)
 
     def test_a_note_covers_the_keys_but_not_the_addon_controls_never_resizes_the_strip_and_a_tap_dismisses_it(self):
         before = self.geo()
@@ -430,7 +430,7 @@ class OtherClient(StripCase):
         import struct
         import termios
         self.open(viewport="phone-portrait", tmux_conf=BARE_TMUX + "set -g focus-events on\n")
-        g = self.geo(lambda g: g["cols"] >= 85)
+        g = self.geo(lambda g: g["cols"] >= 55)
         cols = g["cols"]
         win = lambda: self.t.tmux("display-message", "-p", "-t", "t:", "#{window_width}")
         self.assertTrue(wait_until(lambda: win().strip() == str(cols), 10, 0.05), "the page owns the window: %r" % win())
@@ -457,17 +457,18 @@ class FontFromTheStart(StripCase):
         """seen on a phone: tmux was told 28 x 112 and then 123 x 99 at every refresh, because the font was changed after ttyd had applied its own: the size now
         arrives already right in the settings message of ttyd, so the terminal is measured once"""
         self.open(viewport="phone-portrait", command="bash --norc", init_script="window.__sizes = []; ")
-        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 8, 10, 0.05))
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05))
         time.sleep(3.0)
         import re
         sizes = [(int(c), int(r)) for c, r in re.findall(r'"columns":(\d+),"rows":(\d+)', self.t.sent())]
         self.assertEqual(sizes[-1][0], self.page.js("term.cols"), "the last size told to tmux is the size of the terminal: %r" % (sizes,))
-        self.assertLessEqual(len(sizes), 5, "a handful of sizes at load, ending at the final one: %r" % (sizes,))
+        self.assertLessEqual(len(sizes), 3, "the two sizes of ttyd before its settings, then the final one: %r" % (sizes,))
+        self.assertGreater(sizes[-1][0], sizes[-2][0] + 5, "no size with the width of a scrollbar between them (58 columns, then 61, was the blink): %r" % (sizes,))
         self.assertEqual(self.page.js("swarmboxStrip.prefs"), [1, 1], "the settings message of ttyd was seen and rewritten once")
         self.assertEqual(self.page.js("document.querySelectorAll('.xterm-screen canvas').length"), 0, "and the renderer is the DOM one on a phone")
         self.assertEqual(self.page.js("swarmboxStrip.fontSets"), 0, "the page never had to change the font after ttyd applied its settings")
-        self.assertLessEqual(self.page.js("term.options.fontSize"), 8)
-        self.assertGreaterEqual(self.page.js("term.cols"), 85)
+        self.assertLessEqual(self.page.js("term.options.fontSize"), 12)
+        self.assertGreaterEqual(self.page.js("term.cols"), 55)
         self.assertEqual(self.t.tmux("list-clients", "-F", "#{client_width}").strip(), str(self.page.js("term.cols")))
 
     def test_a_wide_window_keeps_the_size_of_the_settings(self):
@@ -483,9 +484,9 @@ class FractionalPixels(StripCase):
     def test_a_pixel_in_device_mode_gets_a_terminal_that_fits_its_width(self):
         """the device mode of Chrome emulates 2.625 device pixels per css pixel: the grid must still end at the screen"""
         self.open(viewport="pixel", command="bash --norc")
-        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 8, 10, 0.05))
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05))
         time.sleep(2.0)
-        g = self.geo(lambda g: g["cols"] >= 85)
+        g = self.geo(lambda g: g["cols"] >= 55)
         self.assertEqual(self.page.js("devicePixelRatio"), 2.625)
         self.assertLessEqual(g["screen"]["right"], g["win"][0] - 8)
         self.assertGreaterEqual(g["screen"]["right"], g["win"][0] - 30, "and the width is used")
@@ -498,11 +499,11 @@ class Renderer(StripCase):
         """seen on a phone: with ttyd's own renderer (webgl) the letters were drawn at twice the pitch of the grid, so the 123 columns did not fit the screen and the
         lines seemed not to wrap. A long line of known text must show its first and its last characters inside the screen"""
         self.open(viewport="phone-portrait", command="bash --norc")
-        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 8, 10, 0.05))
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05))
         time.sleep(1.5)
         self.assertEqual(self.page.js("document.querySelectorAll('.xterm-screen canvas').length"), 0, "a phone gets the DOM renderer: no bitmap to be sized by a pixel ratio")
         self.assertTrue(self.page.js("!!document.querySelector('.xterm-rows')"))
-        cols = self.geo(lambda g: g["cols"] >= 85)["cols"]
+        cols = self.geo(lambda g: g["cols"] >= 55)["cols"]
         self.t.type("echo %s\r" % ("0123456789" * (cols // 10 + 2) + "END"))
         self.assertTrue(self.t.wait_line("END", 10) or self.t.wait_screen("END", 10), "the end of the long line is in the terminal")
         self.assertTrue(self.t.wait_screen("0123456789", 10))
@@ -514,7 +515,7 @@ class Renderer(StripCase):
         if SHOTS:
             with open(os.path.join(SHOTS, "phone-renderer.png"), "wb") as f:
                 f.write(shot)
-        self.assertEqual(self.page.js("term.options.fontSize") <= 8, True)
+        self.assertEqual(self.page.js("term.options.fontSize") <= 12, True)
         self.assertLessEqual(g["screen"]["right"], g["win"][0] - 8)
 
 

@@ -312,7 +312,7 @@
   // (370 px usable) gets 10 px = about 65 columns, instead of 21 px = 29; turned sideways (844 px) 11 px = about 120 columns. The target can be tried live: swarmboxStrip.setColumns(70)
   // in the console of the browser (kept in this browser, setColumns() forgets it). The sysop panel and the
   // tab are the same terminal, so one size serves both. A mouse screen wider than PHONE_WIDTH (600 px) keeps the configured size, as before.
-  var GLYPH = 0.6, COLS_UPRIGHT = 118, COLS_SIDEWAYS = 220, FONT_MIN = 5, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
+  var GLYPH = 0.6, COLS_UPRIGHT = 64, COLS_SIDEWAYS = 120, FONT_MIN = 7, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
   function fontFor(width, height, base, touch) {
     if (!touch) return base;
     var cols = height >= width ? COLS_UPRIGHT : COLS_SIDEWAYS;
@@ -328,7 +328,7 @@
       if (up === undefined) localStorage.removeItem('swarmbox.columns');
       else localStorage.setItem('swarmbox.columns', JSON.stringify({ up: up, side: side || Math.round(up * 1.8) }));
     } catch (e) { /* no storage: this page only */ }
-    if (up === undefined) { COLS_UPRIGHT = 118; COLS_SIDEWAYS = 220; } else { COLS_UPRIGHT = Number(up); COLS_SIDEWAYS = Number(side) || Math.round(up * 1.8); }
+    if (up === undefined) { COLS_UPRIGHT = 64; COLS_SIDEWAYS = 120; } else { COLS_UPRIGHT = Number(up); COLS_SIDEWAYS = Number(side) || Math.round(up * 1.8); }
     manual = false;      // the page fits the letters again, from whatever size the terminal has now
     if (window.term && window.term.options) setFont = Number(window.term.options.fontSize);
     fitFont();
@@ -414,6 +414,12 @@
     if (touch && o.rendererType !== 'dom') { o.rendererType = 'dom'; changed = true; }
     if (!changed) return data;
     prefsRewritten++;
+    // ttyd applies the settings in the order they are written, and refits the terminal after the font changes: with `scrollback` after `fontSize` that fit still
+    // reserves the width of a scrollbar (xterm leaves it out only when the scrollback is 0), and the next one gives it back: tmux was told 58 columns and then 61.
+    var ordered = {};
+    ['scrollback', 'rendererType'].forEach(function (k) { if (o[k] !== undefined) ordered[k] = o[k]; });
+    Object.keys(o).forEach(function (k) { if (ordered[k] === undefined) ordered[k] = o[k]; });
+    o = ordered;
     var out = JSON.stringify(o);
     if (bytes) { var enc = new TextEncoder().encode(out), nb = new Uint8Array(enc.length + 1); nb[0] = 0x32; nb.set(enc, 1); return nb.buffer; }
     return '2' + out;
