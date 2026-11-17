@@ -306,7 +306,29 @@
     update();
   }
 
-  window.swarmboxStrip = { add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
+  // ---- the size of the letters on a phone ---------------------------------------------------------------------------------------
+  // On a touch screen the size is not a number but a number of COLUMNS: size = usable width / (columns * GLYPH), rounded, never above the size the box
+  // configured (fontSize, 21 by default) and never below FONT_MIN. A monospace letter is about 0.6 of its size wide, so a 390 px phone held upright
+  // (370 px usable) gets 13 px = about 47 columns, instead of 21 px = 29; turned sideways (844 px) 14 px = about 100 columns. The sysop panel and the
+  // tab are the same terminal, so one size serves both. A mouse screen keeps the configured size, as before.
+  var GLYPH = 0.6, COLS_UPRIGHT = 46, COLS_SIDEWAYS = 100, FONT_MIN = 10, FONT_PAD = 10;
+  function fontFor(width, height, base, touch) {
+    if (!touch) return base;
+    var cols = height >= width ? COLS_UPRIGHT : COLS_SIDEWAYS;
+    var size = Math.round((width - 2 * FONT_PAD) / (cols * GLYPH));
+    return Math.max(FONT_MIN, Math.min(base, size));
+  }
+  var baseFont = null;
+  function fitFont() {
+    var t = window.term;
+    if (!t || !t.options) return false;
+    if (baseFont === null) baseFont = Number(t.options.fontSize) || 21;
+    var want = fontFor(document.documentElement.clientWidth || window.innerWidth, document.documentElement.clientHeight || window.innerHeight, baseFont, coarse.matches);
+    if (t.options.fontSize !== want) { t.options.fontSize = want; refit(); }
+    return true;
+  }
+
+  window.swarmboxStrip = { fontFor: fontFor, add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
                            get element() { return strip; }, get visible() { return !!strip && !strip.hidden; } };
 
   // A page in another origin's frame never gets the strip: one click there would type a key (clickjacking). The server side says the same with
@@ -317,7 +339,10 @@
     if (framed()) return;
     if (!document.body) { document.addEventListener('DOMContentLoaded', start); return; }
     build();
-    if (coarse.addEventListener) coarse.addEventListener('change', update);
+    (function waitTerm(n) { if (!fitFont() && n > 0) setTimeout(function () { waitTerm(n - 1); }, 100); })(100);
+    window.addEventListener('resize', fitFont);
+    window.addEventListener('orientationchange', fitFont);
+    if (coarse.addEventListener) coarse.addEventListener('change', function () { fitFont(); update(); });
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', viewport);
       window.visualViewport.addEventListener('scroll', viewport);

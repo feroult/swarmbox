@@ -12,6 +12,7 @@ Run in a container (sh dev/test-slow.sh): SWARMBOX_TEST_REAL_TMUX=1 python3 test
 """
 import base64
 import json
+import time
 import os
 import sys
 import tempfile
@@ -68,6 +69,9 @@ class StripCase(unittest.TestCase):
         term = bs.WebTerminal(CHROMIUM, conf=conf, tmux_conf=tmux_conf, command=command, viewport=VIEWPORTS[viewport], **kw)
         self.addCleanup(term.close)
         self.use(term)
+        if viewport.startswith("phone"):      # the letters of a phone follow the width: wait for that, or a measure taken before it is of a terminal that is about to change
+            self.assertTrue(wait_until(lambda: term.page.js("window.term && window.term.options.fontSize") <= 14, 10, 0.05), "the phone font was not applied")
+            term.page.js("window.dispatchEvent(new Event('resize'))")
         return term
 
     def use(self, term):
@@ -220,6 +224,9 @@ class Phone(StripCase):
     def setUpClass(cls):
         cls.term = bs.WebTerminal(CHROMIUM, command=RAW_CAT, tmux_conf=BARE_TMUX, viewport=VIEWPORTS["phone-portrait"])
         cls.term.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'Hold to talk', order: 10})")
+        assert wait_until(lambda: cls.term.page.js("window.term && window.term.options.fontSize") <= 14, 10, 0.05), "the phone font was not applied"
+        cls.term.page.js("window.dispatchEvent(new Event('resize'))")
+        time.sleep(0.5)       # the terminal is refitted to the phone font before any test measures it
 
     @classmethod
     def tearDownClass(cls):
@@ -319,7 +326,7 @@ class Settings(StripCase):
           addEventListener(t, f) { (l[t] = l[t] || []).push(f); }, fire() { for (const t of ['resize', 'scroll']) (l[t] || []).forEach(f => f()); }};
           Object.defineProperty(window, 'visualViewport', {value: vv}); window.__vv = vv; })()"""
         self.open(conf="strip=on\n", viewport="phone-portrait", init_script=fake)
-        g0 = self.geo(lambda g: g["stripShown"])
+        g0 = self.geo(lambda g: g["stripShown"] and self.page.js("window.term.options.fontSize") <= 14)     # the phone font (13 px) is in place
         self.page.js("__vv.height = 500; __vv.fire()")
         g = self.geo(lambda g: abs(g["strip"]["bottom"] - 500) <= 1 and g["rows"] < g0["rows"])
         self.assertAlmostEqual(g["strip"]["bottom"], 500, delta=1, msg="the strip sits on the keyboard")

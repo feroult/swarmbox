@@ -121,7 +121,7 @@ function mk(tag) {
     getBoundingClientRect() { return {right: 100, left: 0, top: 0, bottom: 0, width: 100, height: 40}; }};
   made.push(e); return e;
 }
-const win = {__swarmboxStripCfg: JSON.parse(process.argv[2]), matchMedia() { return {matches: true}; }, dispatchEvent() {}, Event: function () {}};
+const win = {__swarmboxStripCfg: JSON.parse(process.argv[2]), matchMedia() { return {matches: true}; }, dispatchEvent() {}, addEventListener() {}, Event: function () {}};
 win.self = win; win.top = process.argv[3] === 'framed' ? {} : win;
 if (process.argv[3] === 'throws') Object.defineProperty(win, 'top', {get() { throw new Error('cross-origin'); }});
 const doc = {body: mk('body'), documentElement: mk('html'), createElement: mk, addEventListener() {}, getElementById() { return null; }};
@@ -142,6 +142,13 @@ const s = win.swarmboxStrip;
         for how in ("framed", "throws"):
             got = self.run_js("process.stdout.write(JSON.stringify({made: made.length, visible: s.visible, add: s.add({id: 'x'}), keys: s.keyBytes('C-c', false)}));", how=how)
             self.assertEqual(got, {"made": 2, "visible": False, "add": None, "keys": "\x03"}, how)  # 2: the body and the root the harness made
+
+    def test_the_letters_on_a_phone_follow_the_width_as_a_number_of_columns(self):
+        """size = (width - 20) / (columns * 0.6), rounded, between 10 and the configured size; a mouse screen keeps the configured size"""
+        got = self.run_js("process.stdout.write(JSON.stringify([s.fontFor(390, 844, 21, true), s.fontFor(844, 390, 21, true), s.fontFor(360, 640, 21, true),"
+                          " s.fontFor(320, 568, 21, true), s.fontFor(768, 1024, 21, true), s.fontFor(390, 844, 12, true), s.fontFor(200, 400, 21, true),"
+                          " s.fontFor(390, 844, 21, false), s.fontFor(1920, 1080, 21, false)]));")
+        self.assertEqual(got, [13, 14, 12, 11, 21, 12, 10, 21, 21], "an upright 390 px phone 13 px (about 47 columns), sideways 14 px, a tablet the configured size")
 
     def test_the_same_page_not_framed_builds_the_strip(self):
         got = self.run_js("process.stdout.write(JSON.stringify({buttons: made.filter(e => /(^| )sb-key( |$)/.test(e.className)).length, visible: s.visible}));")
