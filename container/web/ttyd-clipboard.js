@@ -398,15 +398,21 @@
     else return data;
     var o;
     try { o = JSON.parse(text); } catch (e) { return data; }
-    if (!o || typeof o !== 'object' || o.fontSize === undefined || manual) return data;
+    if (!o || typeof o !== 'object' || (o.fontSize === undefined && o.rendererType === undefined) || manual) return data;
     prefsSeen++;
     var base = Number(o.fontSize) || 21;
     var w = document.documentElement.clientWidth || window.innerWidth;
-    var want = fontFor(w, document.documentElement.clientHeight || window.innerHeight, base, coarse.matches || w <= PHONE_WIDTH);
-    baseFont = base;
-    setFont = want;
-    if (want === base) return data;
-    o.fontSize = want;
+    var touch = coarse.matches || w <= PHONE_WIDTH;
+    var want = fontFor(w, document.documentElement.clientHeight || window.innerHeight, base, touch);
+    var changed = false;
+    if (o.fontSize !== undefined) { baseFont = base; setFont = want; }
+    if (o.fontSize !== undefined && want !== base) { o.fontSize = want; changed = true; }
+    // On a phone (or any window as narrow as one) the terminal is drawn with the DOM renderer: the canvas ones size their bitmap by the device pixel ratio they saw
+    // when they were made, and where that changes (the device mode of a desktop browser, a screen that is moved or zoomed) they paint the letters at 2 or 3 times
+    // the width of the grid, so 109 columns did not fit the screen and lines seemed not to wrap (seen in Chrome, measured: bitmap 467 px for 374 css px at a pixel
+    // ratio of 2.625). The DOM renderer lays the text out with the browser and has no such state.
+    if (touch && o.rendererType !== 'dom') { o.rendererType = 'dom'; changed = true; }
+    if (!changed) return data;
     prefsRewritten++;
     var out = JSON.stringify(o);
     if (bytes) { var enc = new TextEncoder().encode(out), nb = new Uint8Array(enc.length + 1); nb[0] = 0x32; nb.set(enc, 1); return nb.buffer; }

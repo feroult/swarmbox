@@ -155,12 +155,12 @@ const s = win.swarmboxStrip;
         got = self.run_js("""doc.documentElement.clientWidth = 390; doc.documentElement.clientHeight = 844;
           const enc = o => { const e = new TextEncoder().encode('2' + JSON.stringify(o)); return e.buffer.slice(e.byteOffset, e.byteOffset + e.byteLength); };
           const dec = b => JSON.parse(new TextDecoder().decode(new Uint8Array(b).subarray(1)));
-          const a = dec(s.rewritePrefs(enc({fontSize: 21, cursorBlink: true})));
+          const a = dec(s.rewritePrefs(enc({fontSize: 21, cursorBlink: true, rendererType: 'canvas'})));
           const text = s.rewritePrefs('2' + JSON.stringify({fontSize: 21}));
           const out = new TextEncoder().encode('0hello'), other = s.rewritePrefs(out.buffer);
           const nofont = s.rewritePrefs(enc({cursorBlink: true}));
-          process.stdout.write(JSON.stringify([a.fontSize, a.cursorBlink, JSON.parse(text.slice(1)).fontSize, other === out.buffer, dec(nofont).cursorBlink, s.fontSets]));""")
-        self.assertEqual(got, [5, True, 5, True, True, 0])
+          process.stdout.write(JSON.stringify([a.fontSize, a.cursorBlink, JSON.parse(text.slice(1)).fontSize, other === out.buffer, dec(nofont).cursorBlink, s.fontSets, a.rendererType]));""")
+        self.assertEqual(got, [5, True, 5, True, True, 0, "dom"], "on a phone the size fits the screen and the renderer is the DOM one")
 
     def test_the_same_page_not_framed_builds_the_strip(self):
         got = self.run_js("process.stdout.write(JSON.stringify({buttons: made.filter(e => /(^| )sb-key( |$)/.test(e.className)).length, visible: s.visible}));")

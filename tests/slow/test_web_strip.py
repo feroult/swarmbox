@@ -464,6 +464,7 @@ class FontFromTheStart(StripCase):
         self.assertEqual(sizes[-1][0], self.page.js("term.cols"), "the last size told to tmux is the size of the terminal: %r" % (sizes,))
         self.assertLessEqual(len(sizes), 5, "a handful of sizes at load, ending at the final one: %r" % (sizes,))
         self.assertEqual(self.page.js("swarmboxStrip.prefs"), [1, 1], "the settings message of ttyd was seen and rewritten once")
+        self.assertEqual(self.page.js("document.querySelectorAll('.xterm-screen canvas').length"), 0, "and the renderer is the DOM one on a phone")
         self.assertEqual(self.page.js("swarmboxStrip.fontSets"), 0, "the page never had to change the font after ttyd applied its settings")
         self.assertLessEqual(self.page.js("term.options.fontSize"), 8)
         self.assertGreaterEqual(self.page.js("term.cols"), 85)
@@ -474,6 +475,7 @@ class FontFromTheStart(StripCase):
         time.sleep(1.5)
         self.assertEqual(self.page.js("swarmboxStrip.fontSets"), 0)
         self.assertGreaterEqual(self.page.js("term.options.fontSize"), 13)
+        self.assertEqual(self.page.js("document.querySelectorAll('.xterm-screen canvas').length"), 4, "a wide window keeps the canvas renderer of the box")
 
 
 @bs.browser_tests()
@@ -498,7 +500,8 @@ class Renderer(StripCase):
         self.open(viewport="phone-portrait", command="bash --norc")
         self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 8, 10, 0.05))
         time.sleep(1.5)
-        self.assertEqual(self.page.js("document.querySelectorAll('.xterm-screen canvas').length"), 4, "the canvas renderer is the one in use")
+        self.assertEqual(self.page.js("document.querySelectorAll('.xterm-screen canvas').length"), 0, "a phone gets the DOM renderer: no bitmap to be sized by a pixel ratio")
+        self.assertTrue(self.page.js("!!document.querySelector('.xterm-rows')"))
         cols = self.geo(lambda g: g["cols"] >= 85)["cols"]
         self.t.type("echo %s\r" % ("0123456789" * (cols // 10 + 2) + "END"))
         self.assertTrue(self.t.wait_line("END", 10) or self.t.wait_screen("END", 10), "the end of the long line is in the terminal")
