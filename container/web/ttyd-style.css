@@ -66,6 +66,15 @@
   #swarmbox-strip[data-sysop="allow?"] .sb-yes { animation: sb-breathe 1.6s ease-in-out infinite; }
   @keyframes sb-breathe { 50% { box-shadow: 0 0 20px rgba(196, 181, 253, .95), inset 0 1px 0 rgba(255, 255, 255, .25); } }
 }
+/* the DOM renderer (a phone) leaves a hairline between two rows of block characters: the rows that hold them, marked by ttyd-clipboard.js, are drawn 12% taller */
+.xterm-rows > div.sb-blk { transform: scaleY(1.12); }
+/* Panel is a switch (it shows or hides the panel of the sysop, and the page knows whether it is up): a pill with a light that is lit while the panel is on the screen */
+#swarmbox-strip .sb-toggle { border-radius: 999px; padding-left: 14px; padding-right: 16px; gap: 8px; background: transparent; border-style: dashed; border-color: rgba(167, 139, 250, .45); }
+#swarmbox-strip .sb-toggle::before {
+  content: ""; width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; border: 1.5px solid var(--sb-line); background: transparent;
+}
+#swarmbox-strip .sb-toggle[data-on="1"] { border-style: solid; border-color: var(--sb-violet); color: var(--sb-lavender); background: rgba(109, 40, 217, .14); }
+#swarmbox-strip .sb-toggle[data-on="1"]::before { border-color: var(--sb-lavender); background: var(--sb-lavender); box-shadow: 0 0 8px rgba(196, 181, 253, .9); }
 /* the arrows stay together on one line: the row of keys may break before the group, never inside it */
 #swarmbox-strip .sb-pad { display: inline-flex; flex-wrap: nowrap; gap: 6px; }
 /* a phone: smaller type and tighter buttons, so ten keys take two short rows */

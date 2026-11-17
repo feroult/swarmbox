@@ -542,6 +542,35 @@ class Answers(StripCase):
         self.t.type("clear\r")
         self.assertTrue(wait_until(lambda: off() == ["1", "1", "true", "none"], 6, 0.1), "and off again when the panel is gone: %r" % (off(),))
 
+    def test_the_panel_button_is_a_switch_that_says_whether_the_panel_is_up(self):
+        self.open(viewport="phone-portrait", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05))
+        time.sleep(1.0)
+        on = lambda: self.page.js("(() => { const b = document.querySelector('#swarmbox-strip .sb-toggle'); return [b.textContent, b.dataset.on, b.getAttribute('aria-pressed'), getComputedStyle(b).borderRadius]; })()")
+        self.assertTrue(wait_until(lambda: on()[1:3] == ["0", "false"], 5, 0.1), "no panel on the screen: the switch is off %r" % (on(),))
+        self.assertEqual(on()[0], "Panel")
+        self.assertGreaterEqual(float(on()[3].replace("px", "")), 20, "a pill, not a square key")
+        self.t.type("clear; echo 'SYSOP  idle'\r")
+        self.assertTrue(wait_until(lambda: on()[1:3] == ["1", "true"], 6, 0.1), "a panel (idle too) on the screen: the switch is on %r" % (on(),))
+        self.shot("phone-portrait-panel-switch-on")
+
+    def test_rows_of_block_characters_are_drawn_taller_in_the_dom_renderer_and_other_rows_are_not(self):
+        """the banner of the box is made of block characters: in the DOM renderer a hairline of background cut across every letter between two rows"""
+        self.open(viewport="phone-portrait", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("!!document.querySelector('.xterm-rows')"), 10, 0.05), "the DOM renderer")
+        time.sleep(1.0)
+        self.t.type("clear; printf '\\u2580\\u2584\\u2588\\n\\u2588\\u2580\\u2584\\nplain text row\\n'\r")
+        blk = lambda: self.page.js("Array.from(document.querySelectorAll('.xterm-rows > div')).map((d, i) => [i, d.textContent.trim().slice(0, 3), d.classList.contains('sb-blk')]).filter(x => x[1] !== '')")
+        self.assertTrue(wait_until(lambda: [x for x in blk() if x[1].startswith("\u2580") or x[1].startswith("\u2588")] != [], 8, 0.1), "the rows were drawn: %r" % (blk(),))
+        time.sleep(0.5)
+        rows = blk()
+        for i, text, on in rows:
+            if text[:1] in ("\u2580", "\u2588"):
+                self.assertTrue(on, "a row of blocks is marked: %r" % (rows,))
+            if text.startswith("pla"):
+                self.assertFalse(on, "a row of plain text is not: %r" % (rows,))
+        self.assertEqual(self.page.js("getComputedStyle(document.querySelector('.xterm-rows > div.sb-blk')).transform !== 'none'"), True)
+
     def test_the_arrows_share_one_line_and_the_resize_box_of_ttyd_is_off(self):
         self.open(viewport="phone-portrait", command="bash --norc")
         g = self.geo(lambda g: g["stripShown"] and g["keysShown"])

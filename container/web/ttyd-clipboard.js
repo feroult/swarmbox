@@ -179,7 +179,9 @@
 
   function keyButton(def) {
     var answer = def.label === 'Allow' ? 'yes' : def.label === 'Cancel' ? 'no' : '';      // the two answers to the sysop: their own look, and they are off when there is nothing to answer
-    var b = el('button', 'sb-btn sb-key' + (answer ? ' sb-' + answer : ''));
+    var toggle = def.label === 'Panel';      // shows or hides the panel of the sysop: a switch, not a key, and it says whether the panel is up
+    var b = el('button', 'sb-btn sb-key' + (answer ? ' sb-' + answer : '') + (toggle ? ' sb-toggle' : ''));
+    if (toggle) { b.setAttribute('aria-pressed', 'false'); b.setAttribute('data-on', '0'); answers.panel = b; }
     if (answer) { b.setAttribute('data-off', '1'); b.setAttribute('aria-disabled', 'true'); answers[answer] = b; }
     b.type = 'button';
     b.textContent = def.label;
@@ -212,10 +214,11 @@
   // The panel of the sysop is part of the terminal, so the page reads its head line off the screen: `SYSOP  allow?` (it needs a yes or a no), `SYSOP  sending`
   // (a countdown: only a no), `SYSOP  working` or `queued` (a no stops it). Anything else, or no panel: both are off and a tap does nothing. Text on a screen can
   // say these words too, and all that costs is a button that is on: Allow and Cancel only type keys that do nothing when the sysop waits for nothing.
-  var answers = {}, SYSOP_HEAD = /SYSOP\s+(allow\?|sending|working|queued)/;
+  var answers = {}, SYSOP_HEAD = /SYSOP\s+(allow\?|sending|working|queued|idle|done|failed|stopped|off)/, ACTIVE = /^(allow\?|sending|working|queued)$/;
+  // the state of the panel as the screen shows it: {up: whether a panel is on the screen, state: what it waits for, '' when it is idle or finished}
   function sysopState() {
     var t = window.term;
-    if (!t || !t.buffer || !t.buffer.active) return '';
+    if (!t || !t.buffer || !t.buffer.active) return { up: false, state: '' };
     var buf = t.buffer.active;
     for (var r = 0; r < t.rows; r++) {
       var line = buf.getLine(buf.viewportY + r);
@@ -223,9 +226,9 @@
       var text = line.translateToString(true);
       if (text.indexOf('SYSOP') < 0) continue;
       var m = SYSOP_HEAD.exec(text);
-      if (m) return m[1];
+      if (m) return { up: true, state: ACTIVE.test(m[1]) ? m[1] : '' };
     }
-    return '';
+    return { up: false, state: '' };
   }
   function setOff(b, off) {
     if (!b) return;
@@ -233,9 +236,10 @@
     b.setAttribute('aria-disabled', off ? 'true' : 'false');
   }
   function syncAnswers() {
-    if (!strip || (!answers.yes && !answers.no)) return;
-    var st = sysopState();
+    if (!strip || (!answers.yes && !answers.no && !answers.panel)) return;
+    var seen = sysopState(), st = seen.state;
     strip.setAttribute('data-sysop', st || 'none');
+    if (answers.panel) { answers.panel.setAttribute('data-on', seen.up ? '1' : '0'); answers.panel.setAttribute('aria-pressed', seen.up ? 'true' : 'false'); }
     setOff(answers.yes, st !== 'allow?');
     setOff(answers.no, st === '');
   }
@@ -482,7 +486,30 @@
     };
   }
 
-  window.swarmboxStrip = { rewritePrefs: rewritePrefs, get fontSets() { return fontSets; }, get prefs() { return [prefsSeen, prefsRewritten]; }, claimSize: claimSize, fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
+  // ---- block art in the DOM renderer ------------------------------------------------------------------------------------------
+  // The DOM renderer lays every row of the terminal in a box of its own, and where the height of a row is not a whole number of device pixels (13.34 css px at a ratio
+  // of 2.625) a thin line of background shows between two rows of block characters: the banner of the box (the half and whole blocks, U+2580 to U+259F) was cut across
+  // every letter. The rows that hold block characters are marked and drawn 12% taller (CSS .sb-blk), which closes the line; the other rows are left as they are.
+  // Measured in Chrome at 2.625: two dark rows of pixels in the banner before, none with it.
+  var BLOCKS = /[\u2580-\u259f]/;
+  function markBlockRows(a, b) {
+    var host = document.querySelector('.xterm-rows');
+    if (!host) return;
+    var rows = host.children;
+    for (var r = a; r <= b && r < rows.length; r++) {
+      var on = BLOCKS.test(rows[r].textContent);
+      if (rows[r].classList.contains('sb-blk') !== on) rows[r].classList.toggle('sb-blk', on);
+    }
+  }
+  function watchBlockRows() {
+    var t = window.term;
+    if (!t || !t.onRender) return false;
+    t.onRender(function (e) { markBlockRows(e.start, e.end); });
+    markBlockRows(0, t.rows - 1);
+    return true;
+  }
+
+  window.swarmboxStrip = { rewritePrefs: rewritePrefs, markBlockRows: markBlockRows, get fontSets() { return fontSets; }, get prefs() { return [prefsSeen, prefsRewritten]; }, claimSize: claimSize, fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
                            get element() { return strip; }, get visible() { return !!strip && !strip.hidden; } };
 
   // A page in another origin's frame never gets the strip: one click there would type a key (clickjacking). The server side says the same with
@@ -493,6 +520,7 @@
     if (framed()) return;
     if (!document.body) { document.addEventListener('DOMContentLoaded', start); return; }
     build();
+    (function waitBlocks(n) { if (!watchBlockRows() && n > 0) setTimeout(function () { waitBlocks(n - 1); }, 100); })(100);
     (function waitTerm(n) { if (!fitFont() && n > 0) setTimeout(function () { waitTerm(n - 1); }, 100); })(100);
     var later;
     function fitSoon() { fitFont(); clearTimeout(later); later = setTimeout(fitFont, 300); }      // again once the window has settled (a turning phone reports its size late)
