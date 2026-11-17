@@ -148,7 +148,7 @@ const s = win.swarmboxStrip;
         got = self.run_js("process.stdout.write(JSON.stringify([s.fontFor(390, 844, 21, true), s.fontFor(844, 390, 21, true), s.fontFor(360, 640, 21, true),"
                           " s.fontFor(320, 568, 21, true), s.fontFor(768, 1024, 21, true), s.fontFor(390, 844, 12, true), s.fontFor(200, 400, 21, true),"
                           " s.fontFor(390, 844, 21, false), s.fontFor(1920, 1080, 21, false)]));")
-        self.assertEqual(got, [6, 7, 6, 5, 12, 6, 5, 21, 21], "an upright 390 px phone 6 px (about 100 columns), sideways 7 px, a tablet the configured size")
+        self.assertEqual(got, [5, 6, 5, 5, 11, 5, 5, 21, 21], "an upright 390 px phone 5 px (about 120 columns), sideways 6 px, a tablet the configured size")
 
     def test_the_same_page_not_framed_builds_the_strip(self):
         got = self.run_js("process.stdout.write(JSON.stringify({buttons: made.filter(e => /(^| )sb-key( |$)/.test(e.className)).length, visible: s.visible}));")

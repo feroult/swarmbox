@@ -296,8 +296,8 @@ class Phone(StripCase):
     def test_the_phone_letters_leave_no_column_cut_off_at_the_right_and_fill_the_width(self):
         """seen on a phone: after the size changed the terminal was refitted with the old letter width, and the last characters of every row fell off the right edge"""
         g = self.geo(lambda g: g["cols"] >= 85)
-        self.assertGreaterEqual(g["cols"], 85, "a phone held upright shows about 100 columns (it was 29 at 21 px)")
-        self.assertLessEqual(g["cols"], 140)
+        self.assertGreaterEqual(g["cols"], 85, "a phone held upright shows about 120 columns (it was 29 at 21 px)")
+        self.assertLessEqual(g["cols"], 180)
         self.assertLessEqual(g["screen"]["right"], g["win"][0] - 8, "the last column ends before the right edge (the padding of the page is 10 px)")
         self.assertGreaterEqual(g["screen"]["right"], g["win"][0] - 30, "and not much before it: the width is used")
         self.assertTrue(wait_until(lambda: self.t.tmux("list-clients", "-F", "#{client_width}").split()[:1] == [str(g["cols"])], 10, 0.05),

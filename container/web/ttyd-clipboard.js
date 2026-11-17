@@ -312,7 +312,7 @@
   // (370 px usable) gets 10 px = about 65 columns, instead of 21 px = 29; turned sideways (844 px) 11 px = about 120 columns. The target can be tried live: swarmboxStrip.setColumns(70)
   // in the console of the browser (kept in this browser, setColumns() forgets it). The sysop panel and the
   // tab are the same terminal, so one size serves both. A mouse screen wider than PHONE_WIDTH (600 px) keeps the configured size, as before.
-  var GLYPH = 0.6, COLS_UPRIGHT = 100, COLS_SIDEWAYS = 200, FONT_MIN = 5, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
+  var GLYPH = 0.6, COLS_UPRIGHT = 118, COLS_SIDEWAYS = 220, FONT_MIN = 5, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
   function fontFor(width, height, base, touch) {
     if (!touch) return base;
     var cols = height >= width ? COLS_UPRIGHT : COLS_SIDEWAYS;
@@ -328,7 +328,7 @@
       if (up === undefined) localStorage.removeItem('swarmbox.columns');
       else localStorage.setItem('swarmbox.columns', JSON.stringify({ up: up, side: side || Math.round(up * 1.8) }));
     } catch (e) { /* no storage: this page only */ }
-    if (up === undefined) { COLS_UPRIGHT = 100; COLS_SIDEWAYS = 200; } else { COLS_UPRIGHT = Number(up); COLS_SIDEWAYS = Number(side) || Math.round(up * 1.8); }
+    if (up === undefined) { COLS_UPRIGHT = 118; COLS_SIDEWAYS = 220; } else { COLS_UPRIGHT = Number(up); COLS_SIDEWAYS = Number(side) || Math.round(up * 1.8); }
     manual = false;      // the page fits the letters again, from whatever size the terminal has now
     if (window.term && window.term.options) setFont = Number(window.term.options.fontSize);
     fitFont();
