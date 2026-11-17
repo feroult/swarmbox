@@ -310,27 +310,30 @@
   // On a touch screen the size is not a number but a number of COLUMNS: size = usable width / (columns * GLYPH), rounded, never above the size the box
   // configured (fontSize, 21 by default) and never below FONT_MIN. A monospace letter is about 0.6 of its size wide, so a 390 px phone held upright
   // (370 px usable) gets 11 px = about 56 columns, instead of 21 px = 29; turned sideways (844 px) 12 px = about 110 columns. The sysop panel and the
-  // tab are the same terminal, so one size serves both. A mouse screen keeps the configured size, as before.
-  var GLYPH = 0.6, COLS_UPRIGHT = 56, COLS_SIDEWAYS = 110, FONT_MIN = 9, FONT_PAD = 10;
+  // tab are the same terminal, so one size serves both. A mouse screen wider than PHONE_WIDTH (600 px) keeps the configured size, as before.
+  var GLYPH = 0.6, COLS_UPRIGHT = 56, COLS_SIDEWAYS = 110, FONT_MIN = 9, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
   function fontFor(width, height, base, touch) {
     if (!touch) return base;
     var cols = height >= width ? COLS_UPRIGHT : COLS_SIDEWAYS;
     var size = Math.round((width - 2 * FONT_PAD) / (cols * GLYPH));
     return Math.max(FONT_MIN, Math.min(base, size));
   }
-  var baseFont = null;
+  var baseFont = null, setFont = null;
   function fitFont() {
     var t = window.term;
     if (!t || !t.options) return false;
-    if (baseFont === null) baseFont = Number(t.options.fontSize) || 21;
-    var want = fontFor(document.documentElement.clientWidth || window.innerWidth, document.documentElement.clientHeight || window.innerHeight, baseFont, coarse.matches);
+    // the configured size is whatever the size is when it is not the one set here: ttyd applies its fontSize after the terminal exists, so it is read again each time
+    if (baseFont === null || t.options.fontSize !== setFont) baseFont = Number(t.options.fontSize) || 21;
+    var w = document.documentElement.clientWidth || window.innerWidth;
+    var want = fontFor(w, document.documentElement.clientHeight || window.innerHeight, baseFont, coarse.matches || w <= PHONE_WIDTH);
     if (t.options.fontSize !== want) {
-      t.options.fontSize = want;
+      t.options.fontSize = setFont = want;
       // xterm measures the new letter on its next render: a refit asked at once counts the columns with the OLD width and the last ones fall off the right edge,
       // so it is asked again once the new size is in (the later ones change nothing when the first was right)
       refit();
       [120, 400, 1000].forEach(function (ms) { setTimeout(refit, ms); });
     }
+    if (t.options.fontSize === want && setFont === null) setFont = want;
     return true;
   }
 
@@ -346,8 +349,10 @@
     if (!document.body) { document.addEventListener('DOMContentLoaded', start); return; }
     build();
     (function waitTerm(n) { if (!fitFont() && n > 0) setTimeout(function () { waitTerm(n - 1); }, 100); })(100);
-    window.addEventListener('resize', fitFont);
-    window.addEventListener('orientationchange', fitFont);
+    var later;
+    function fitSoon() { fitFont(); clearTimeout(later); later = setTimeout(fitFont, 300); }      // again once the window has settled (a turning phone reports its size late)
+    window.addEventListener('resize', fitSoon);
+    window.addEventListener('orientationchange', fitSoon);
     if (coarse.addEventListener) coarse.addEventListener('change', function () { fitFont(); update(); });
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', viewport);

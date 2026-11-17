@@ -164,6 +164,19 @@ class StripCase(unittest.TestCase):
 
 @bs.browser_tests()
 class Desktop(StripCase):
+    def test_a_narrow_window_with_a_mouse_gets_the_phone_letters_and_a_wide_one_keeps_its_size(self):
+        """the device mode of a desktop browser (a responsive window) has a mouse, not a touch screen: the width decides"""
+        self.open()
+        fs = "window.term.options.fontSize"
+        base = self.page.js(fs)
+        self.assertGreaterEqual(base, 13, "a desktop window keeps the configured size (13 is ttyd's own without a conf)")
+        self.page.call("Emulation.setDeviceMetricsOverride", width=390, height=844, deviceScaleFactor=1, mobile=False)
+        self.assertTrue(wait_until(lambda: self.page.js(fs) <= 11, 10, 0.05), "a window 390 px wide gets the phone size: %r" % self.page.js(fs))
+        self.assertGreaterEqual(self.geo(lambda g: g["cols"] >= 50)["cols"], 50)
+        self.page.call("Emulation.setDeviceMetricsOverride", width=1280, height=800, deviceScaleFactor=1, mobile=False)
+        self.assertTrue(wait_until(lambda: self.page.js(fs) == base, 10, 0.05), "and it goes back when the window is wide again (base %r): %r" % (base, self.page.js("[term.options.fontSize, innerWidth, document.documentElement.clientWidth, matchMedia('(pointer: coarse)').matches]")))
+
+
     def test_a_microphone_alone_floats_in_the_top_right_corner_and_takes_no_space(self):
         self.open()
         cls = "document.documentElement.classList.contains(%r)"
