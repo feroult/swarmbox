@@ -93,7 +93,7 @@ class IdleScreen(unittest.TestCase):
         g = make_goal("done", "reply with exactly banana 9", "voice", say=say, ended=time.time() - 3, summary="Typed the prompt into the active Claude tab; it replied banana 9.")
         for rows in (8, 9, 10, 12):
             text = " ".join("\n".join(self.idle(28, rows, g)).split())
-            self.assertIn("banana 9.", text, rows)
+            self.assertIn("done: Typed", text, rows)
             self.assertIn("[ Goal ]".replace("[ ", "").replace(" ]", ""), text, rows)
         long_goal = make_goal("running", "x " * 400, "voice", say=say)
         self.assertIn("SYSOP", "\n".join(self.idle(28, 8, long_goal)))
@@ -173,6 +173,17 @@ class Rendering(unittest.TestCase):
             self.assertNotIn(noise, text, "the results stay out of the log: one short line a step")
         order = [text.index(x) for x in ("look at the tabs", "tail -f", "I opened", "run: x")]
         self.assertEqual(order, sorted(order), "steps and says in time order")
+
+    def test_the_end_of_a_goal_is_one_line_and_a_long_summary_is_cut(self):
+        g = make_goal("done", summary="the tests ran and here is everything they printed " * 12)
+        lines, _ = frame_text(model_with(g), 40, 20)
+        ends = [x for x in lines if x.strip().startswith("done:")]
+        self.assertEqual(len(ends), 1)
+        self.assertTrue(ends[0].rstrip().endswith("…"))
+        self.assertEqual(len([x for x in lines if "the tests ran" in x]), 1, "the summary is not wrapped over several lines")
+        say = [{"t": float(i), "text": "word " * 60} for i in range(1, 3)]
+        lines, _ = frame_text(model_with(make_goal(say=say)), 40, 30)
+        self.assertLessEqual(len([x for x in lines if "word" in x]), 4, "a long say takes two lines at most")
 
     def test_the_log_shows_its_end_and_scrolls(self):
         calls = [call("run", {"command": "step %d" % i}, "r%d" % i, t=float(i)) for i in range(12)]

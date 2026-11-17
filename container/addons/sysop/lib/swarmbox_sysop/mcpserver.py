@@ -160,7 +160,7 @@ class Server:
                      {"tab": ("string", "tab id; default: the active tab"), "seconds": ("number", "default 2, at most 30"),
                       "until": ("string", "stop waiting when this text is on the screen")}),
             "say": (self.t_say, "Tell the user something short; it is shown in the panel.", {"text": ("string!", "the message")}),
-            "done": (self.t_done, "Finish the goal. Call it last, with a one-line summary.", {"summary": ("string!", "what was done or why not")}),
+            "done": (self.t_done, "Finish the goal. Call it last, with a summary of a few words: no command output.", {"summary": ("string!", "what was done or why not")}),
         }
 
     # ---- helpers

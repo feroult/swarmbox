@@ -491,7 +491,7 @@ def _log(model, W, color):
         items.sort(key=lambda it: it[1].get("t") if isinstance(it[1].get("t"), (int, float)) else 0)
         for kind, it in items:
             if kind == "say":
-                rows += [" " + _paint(color, "lavender", ln) for ln in wrap(one_line(it.get("text"), 400), W)]
+                rows += [" " + _paint(color, "lavender", ln) for ln in wrap(one_line(it.get("text"), 400), W)[:2]]
             else:
                 bad = bool(it.get("is_error"))
                 rows.append(" " + _paint(color, "red" if bad else "green", "✗" if bad else "✓") + " " + _paint(color, "red" if bad else "dim", cut(step_text(it), W - 3)))
@@ -499,7 +499,7 @@ def _log(model, W, color):
         if st in TERMINAL:
             why = one_line(g.get("summary") or g.get("error"), 400)
             name = {"done": "green", "failed": "red", "stopped": "amber"}[st]
-            rows += [" " + _paint(color, name, ln, True) for ln in wrap(st + (": " + why if why else ""), W)]
+            rows.append(" " + _paint(color, name, cut(st + (": " + why if why else ""), W), True))      # one line: the screen of the tab has the result
     if not model.up:
         rows += [" " + _paint(color, "red", ln) for ln in wrap("The sysop is not running. It starts with the box.", W)]
     return rows
