@@ -357,6 +357,9 @@
       // so it is asked again once the new size is in (the later ones change nothing when the first was right)
       refit();
       [120, 400, 1000].forEach(function (ms) { setTimeout(refit, ms); });
+      // and the letters are drawn again from scratch once the size has settled: the cache of glyphs of the renderer is made for the size it had, and on some
+      // browsers a repaint of the old cache is what showed letters at the wrong width until the next reload
+      [1300, 2600].forEach(function (ms) { setTimeout(function () { try { if (t.clearTextureAtlas) t.clearTextureAtlas(); t.refresh(0, t.rows - 1); } catch (e) { /* no renderer yet */ } }, ms); });
     }
     setFont = want;
     return true;

@@ -242,6 +242,29 @@ class Following(Always):
         self.assertEqual([p["win"] for p in self.panels()], [w2])
 
 
+class TwoScreens(Always):
+    """The computer and a phone on the same session: the window follows the client that last had focus, so it goes back and forth between 193 and 123 columns"""
+    USE_BOX_CONF = True
+
+    def test_the_panel_survives_two_screens_taking_the_window_by_turns(self):
+        computer = self.attach(99, 193)
+        self.d.sync()
+        self.wait(self.one_panel_in_each_window, "the panel")
+        phone = self.attach(99, 123)
+        for _ in range(8):
+            computer.send(b"\x1b[I")
+            time.sleep(0.4)
+            phone.send(b"\x1b[I")
+            time.sleep(0.4)
+        time.sleep(2.5)
+        self.d.sync()
+        panels = self.panels()
+        self.assertEqual(len(panels), 1, "one panel, not none and not two: %s" % self.panes())
+        self.assertEqual(self.hidden(), False, "the panels were not hidden")
+        self.assertTrue(self.tmux.run("list-panes", "-t", panels[0]["id"], "-F", "x").rc == 0)
+        self.assertEqual(self.active_pane(self.win1), [self.user])
+
+
 class Resizing(Always):
     def test_a_resize_flips_the_layout_of_each_window(self):
         c = self.attach(50, 200)               # landscape: right
