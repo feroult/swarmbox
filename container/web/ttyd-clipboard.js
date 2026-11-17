@@ -487,6 +487,55 @@
     };
   }
 
+  // ---- scrolling with a finger ----------------------------------------------------------------------------------------------------
+  // tmux owns the history, and it scrolls it when it gets WHEEL events (the mouse wheel of a computer, which xterm.js turns into mouse reports). A finger dragged over
+  // the terminal makes no wheel event, and the browser would scroll xterm's own history, which is off (scrollback=0): so on a phone the history could not be reached.
+  // A vertical drag is turned here into the wheel events a mouse would make, at the place of the finger, so the pane under it scrolls (a tab in copy mode, the log of
+  // the sysop panel). One wheel event is tmux's step of 5 lines, so one is sent per 5 rows of drag: the text follows the finger, one to one. A tap is left alone.
+  var DRAG_PX = 8, WHEEL_ROWS = 5;
+  function rowHeight() {
+    try { return window.term._core._renderService.dimensions.css.cell.height || 14; } catch (e) { return 14; }
+  }
+  function wheel(x, y, rows) {
+    var target = document.querySelector('.xterm-screen') || document.getElementById('terminal-container');
+    if (!target || typeof WheelEvent !== 'function') return;
+    target.dispatchEvent(new WheelEvent('wheel', { deltaY: rows * rowHeight(), deltaMode: 0, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+  }
+  function dragScroll() {
+    var host = document.getElementById('terminal-container');
+    if (!host) return false;
+    if (host.getAttribute('data-drag') === '1') return true;
+    host.setAttribute('data-drag', '1');
+    var id = null, y0 = 0, last = 0, moved = false, carry = 0;
+    function mine(e) {
+      for (var i = 0; i < e.touches.length; i++) if (e.touches[i].identifier === id) return e.touches[i];
+      return null;
+    }
+    host.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) { id = null; return; }
+      id = e.touches[0].identifier; y0 = last = e.touches[0].clientY; moved = false; carry = 0;
+    }, { passive: true });
+    host.addEventListener('touchmove', function (e) {
+      var t = id === null ? null : mine(e);
+      if (!t) return;
+      if (!moved && Math.abs(t.clientY - y0) < DRAG_PX) return;
+      moved = true;
+      carry += t.clientY - last;
+      last = t.clientY;
+      var step = WHEEL_ROWS * rowHeight();
+      while (Math.abs(carry) >= step) {
+        wheel(t.clientX, t.clientY, carry > 0 ? -WHEEL_ROWS : WHEEL_ROWS);      // a finger moving down brings older text into view: the wheel turns up
+        carry += carry > 0 ? -step : step;
+      }
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+    host.addEventListener('touchend', function (e) {
+      if (moved && e.cancelable) e.preventDefault();      // a drag is not a tap: no click follows it
+      id = null; moved = false;
+    }, { passive: false });
+    return true;
+  }
+
   // ---- block art in the DOM renderer ------------------------------------------------------------------------------------------
   // The DOM renderer lays every row of the terminal in a box of its own, and where the height of a row is not a whole number of device pixels (13.34 css px at a ratio
   // of 2.625) a thin line of background shows between two rows of block characters: the banner of the box (the half and whole blocks, U+2580 to U+259F) was cut across
@@ -521,6 +570,7 @@
     if (framed()) return;
     if (!document.body) { document.addEventListener('DOMContentLoaded', start); return; }
     build();
+    (function waitDrag(n) { if (!dragScroll() && n > 0) setTimeout(function () { waitDrag(n - 1); }, 100); })(100);
     (function waitBlocks(n) { if (!watchBlockRows() && n > 0) setTimeout(function () { waitBlocks(n - 1); }, 100); })(100);
     (function waitTerm(n) { if (!fitFont() && n > 0) setTimeout(function () { waitTerm(n - 1); }, 100); })(100);
     var later;

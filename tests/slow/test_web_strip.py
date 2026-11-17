@@ -608,6 +608,43 @@ class Answers(StripCase):
         self.assertEqual(self.page.js("!!document.querySelector('.xterm-overlay') && getComputedStyle(document.querySelector('.xterm-overlay')).opacity !== '0'"), False,
                          "no box with the size of the terminal")
 
+@bs.browser_tests()
+class FingerScroll(StripCase):
+    def test_dragging_a_finger_scrolls_the_history_of_tmux_and_a_tap_does_not(self):
+        """on a phone the history could not be reached: a finger dragged over the terminal made no wheel event, which is what tmux scrolls on"""
+        self.open(viewport="phone-portrait", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05))
+        time.sleep(1.0)
+        self.t.type("clear; seq 1 400\r")
+        self.assertTrue(self.t.wait_screen("400", 10), "the output is there")
+        mode = lambda: self.t.tmux("display-message", "-p", "-t", "t:", "#{pane_in_mode} #{scroll_position}").split()
+
+        def drag(y_from, y_to, steps=12, x=200):
+            self.page.call("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": x, "y": y_from}])
+            for i in range(1, steps + 1):
+                self.page.call("Input.dispatchTouchEvent", type="touchMove", touchPoints=[{"x": x, "y": y_from + (y_to - y_from) * i / steps}])
+                time.sleep(0.02)
+            self.page.call("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
+        self.assertEqual(mode()[0], "0")
+        drag(300, 500)      # a finger down: older text comes into view
+        self.assertTrue(wait_until(lambda: mode()[0] == "1" and int(mode()[1]) > 0, 6, 0.1), "tmux is in copy mode, scrolled back: %r" % (mode(),))
+        far = int(mode()[1])
+        drag(300, 560)
+        self.assertTrue(wait_until(lambda: int(mode()[1]) > far, 6, 0.1), "a longer drag goes further back: %r after %d" % (mode(), far))
+        far = int(mode()[1])
+        drag(560, 300)      # a finger up: back toward the present
+        self.assertTrue(wait_until(lambda: int(mode()[1]) < far, 6, 0.1), "and the other way: %r from %d" % (mode(), far))
+
+    def test_a_tap_scrolls_nothing(self):
+        self.open(viewport="phone-portrait", command="bash --norc")
+        time.sleep(1.5)
+        self.t.type("clear; seq 1 400\r")
+        self.assertTrue(self.t.wait_screen("400", 10))
+        self.page.call("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": 200, "y": 300}])
+        self.page.call("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
+        time.sleep(0.5)
+        self.assertEqual(self.t.tmux("display-message", "-p", "-t", "t:", "#{pane_in_mode}").strip(), "0", "a tap does not enter copy mode")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

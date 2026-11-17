@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Fixed: on a phone, dragging a finger over the terminal did nothing, so the history of tmux could not be reached (the mouse wheel of a computer worked, but a finger makes no wheel event, and the history of the browser is off on purpose). A vertical drag is now turned into the wheel events a mouse would make, at the place of the finger, one per 5 rows, so the pane under it scrolls (a tab goes into copy mode, the log of the sysop panel moves); a tap is left alone.
+
 ## [2.0.14] - 2026-11-17
 
 - Changed: what you install on demand (agents such as Claude Code, and gcloud, clasp, Go, Poetry, `voice`, `sysop`) is called an **addon**: `swarmbox addon list|install|remove|update|use|link|prepare|run|where|doctor|validate|new` (`swarmbox-addon` in the box), manifests in `container/addons/<name>/addon.conf`, with the commands of the addon in `COMMANDS` and its start-up in an optional `shell.sh` (the auto-approve flags of the agents live there: `claude` adds them only to the interactive prompt, so `claude update` and `claude mcp ...` do not get them). `yolo` runs the default agent, `AGENT` or else the first item of `WITH`, and says so when there is none. Needs `swarmbox update` and `swarmbox reset`, and addons are installed again on first use.
