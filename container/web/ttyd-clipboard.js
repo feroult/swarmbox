@@ -233,15 +233,21 @@
     requestAnimationFrame(function () { refitQueued = false; window.dispatchEvent(new Event('resize')); });
   }
 
+  var columnLayout = false;   // the bar is in the page layout (terminal above it); false when hidden or floating
   function update() {
     if (!strip) return;
     var keysOn = mode === 'on' || custom || coarse.matches;
     keysEl.hidden = !(keysOn && keys.length > 0);
     var show = mode !== 'off' && (!keysEl.hidden || slot.children.length > 0 || mode === 'on');
-    var was = !strip.hidden;
+    // only controls of addons and no key buttons (a desktop with the microphone): no bar at all, the controls float in the top right corner, over the
+    // sysop panel, and the terminal keeps the whole window. With key buttons (a phone, or stripKeys listed, or strip=on) it is the bar below the terminal.
+    var floating = show && keysEl.hidden && mode !== 'on' && !coarse.matches;   // never on a touch screen: the thumb is at the bottom
+    var was = columnLayout;
+    columnLayout = show && !floating;
     strip.hidden = !show;
-    document.documentElement.classList.toggle('swarmbox-strip-on', show);
-    if (show !== was) refit();
+    document.documentElement.classList.toggle('swarmbox-strip-on', columnLayout);
+    document.documentElement.classList.toggle('swarmbox-strip-float', floating);
+    if (columnLayout !== was) refit();
     viewport();
   }
 

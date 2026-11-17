@@ -59,9 +59,15 @@
   #swarmbox-strip .sb-keys { gap: 5px; }
   #swarmbox-strip .sb-btn { padding: 0 9px; }
 }
-/* a desktop window wider than tall: the panel of the sysop is the right-hand column, so the strip is only as wide as that column and sits below it */
-@media (pointer: fine) and (min-aspect-ratio: 1/1) {
-  #swarmbox-strip { margin-left: auto; width: max(20%, 340px); border-left: 1px solid var(--sb-band); }
+/* a desktop with only the microphone (no key buttons): no bar and no space taken; the controls float in the top right corner, where the head of the sysop
+   panel has room, and what an addon says shows as a small card under them */
+html.swarmbox-strip-float #swarmbox-strip {
+  position: fixed; z-index: 20; top: 8px; right: calc(14px + env(safe-area-inset-right, 0px)); left: auto; bottom: auto; width: auto; padding: 0;
+  background: transparent; border: 0; flex: none;
+}
+html.swarmbox-strip-float #swarmbox-strip .sb-note {
+  position: fixed; top: 64px; right: calc(14px + env(safe-area-inset-right, 0px)); left: auto; bottom: auto; width: max-content; max-width: min(280px, 60vw);
+  padding: 8px 10px; border-radius: 10px; border: 1px solid var(--sb-band); box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
 }
 /* the sentence an addon shows: it covers the key buttons until the addon clears it or the host does (12 s, opaque, tap to dismiss), on two lines at most and ends where the addon controls begin */
 #swarmbox-strip .sb-note {

@@ -160,27 +160,26 @@ class StripCase(unittest.TestCase):
 
 @bs.browser_tests()
 class Desktop(StripCase):
-    def test_there_is_no_strip_until_a_control_needs_it_and_it_goes_with_the_last_one(self):
+    def test_a_microphone_alone_floats_in_the_top_right_corner_and_takes_no_space(self):
         self.open()
-        g = self.geo()
-        self.assertFalse(g["stripShown"])
-        self.assertFalse(g["coarse"])
-        self.assertAlmostEqual(g["container"]["bottom"], g["win"][1], delta=1, msg="the terminal has the whole window as before")
-        self.assertFalse(self.page.js("document.documentElement.classList.contains('swarmbox-strip-on')"))
+        cls = "document.documentElement.classList.contains(%r)"
+        win = VIEWPORTS["desktop"]
+        self.assertFalse(self.page.js(cls % "swarmbox-strip-float"))
+        self.assertAlmostEqual(self.geo()["container"]["bottom"], win[1], delta=1, msg="the terminal has the whole window as before")
         self.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'Hold to talk', label: 'mic'})")   # what an addon does
-        g = self.geo(lambda g: g["stripShown"])
-        self.assert_nothing_covered(g)
-        self.assertFalse(g["keysShown"], "a mouse user did not ask for key buttons")
-        self.assertEqual([p["id"] for p in g["addons"]], ["demo-mic"])
-        p, s = g["addons"][0], g["strip"]
+        self.assertTrue(wait_until(lambda: self.page.js(cls % "swarmbox-strip-float"), 10, 0.05))
+        self.assertFalse(self.page.js(cls % "swarmbox-strip-on"), "no bar: the layout is not a column")
+        g = self.geo()
+        self.assertAlmostEqual(g["container"]["bottom"], win[1], delta=1, msg="the terminal keeps the whole window, nothing below it")
+        self.assertAlmostEqual(g["container"]["right"], win[0], delta=1)
+        p = g["addons"][0]
         self.assertGreaterEqual(min(p["w"], p["h"]), 44)
-        self.assertTrue(s["top"] <= p["top"] and p["bottom"] <= s["bottom"], "the control is inside the strip")
-        self.assertGreater(p["left"], g["win"][0] / 2, "at the right end")
+        self.assertGreater(p["left"], win[0] * 0.8, "at the right")
+        self.assertLess(p["top"], 40, "at the top")
+        self.assertLessEqual(p["right"], win[0])
         self.shot("desktop-addon-control")
         self.page.js("swarmboxStrip.remove('demo-mic')")
-        g = self.geo(lambda g: not g["stripShown"] and abs(g["container"]["bottom"] - g["win"][1]) <= 1)
-        self.assertFalse(g["stripShown"], "with its last control gone the strip goes too and the terminal grows back")
-        self.assertAlmostEqual(g["container"]["bottom"], VIEWPORTS["desktop"][1], delta=1)
+        self.assertTrue(wait_until(lambda: not self.page.js(cls % "swarmbox-strip-float"), 10, 0.05), "with its last control gone nothing is left")
 
     def test_strip_on_shows_the_default_keys_with_a_control_and_every_key_delivers_its_bytes_and_an_arrow_repeats_when_held(self):
         self.open(conf="strip=on\n")
@@ -189,10 +188,6 @@ class Desktop(StripCase):
         self.assert_nothing_covered(g)
         self.assert_buttons(g)
         self.assertIsNotNone(self.page.js("window.__swarmboxClipboard"), "the clipboard bridge is intact with the strip")
-        # a desktop window wider than tall: the strip is only the column of the sysop panel (max(20%, 340 px)), at the right edge
-        s = g["strip"]
-        self.assertAlmostEqual(s["w"], max(0.2 * g["win"][0], 340), delta=2, msg="the strip is the width of the panel column: %r" % s)
-        self.assertAlmostEqual(s["right"], g["win"][0], delta=1, msg="aligned right")
         # Allow and Cancel are the two coloured answers to the sysop; the other keys are plain
         classes = {k["t"]: k["cls"].split() for k in g["keys"]}
         self.assertIn("sb-yes", classes["Allow"])
