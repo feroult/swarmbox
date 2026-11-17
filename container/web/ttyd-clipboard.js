@@ -309,14 +309,28 @@
   // ---- the size of the letters on a phone ---------------------------------------------------------------------------------------
   // On a touch screen the size is not a number but a number of COLUMNS: size = usable width / (columns * GLYPH), rounded, never above the size the box
   // configured (fontSize, 21 by default) and never below FONT_MIN. A monospace letter is about 0.6 of its size wide, so a 390 px phone held upright
-  // (370 px usable) gets 11 px = about 56 columns, instead of 21 px = 29; turned sideways (844 px) 12 px = about 110 columns. The sysop panel and the
+  // (370 px usable) gets 10 px = about 65 columns, instead of 21 px = 29; turned sideways (844 px) 11 px = about 120 columns. The target can be tried live: swarmboxStrip.setColumns(70)
+  // in the console of the browser (kept in this browser, setColumns() forgets it). The sysop panel and the
   // tab are the same terminal, so one size serves both. A mouse screen wider than PHONE_WIDTH (600 px) keeps the configured size, as before.
-  var GLYPH = 0.6, COLS_UPRIGHT = 56, COLS_SIDEWAYS = 110, FONT_MIN = 9, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
+  var GLYPH = 0.6, COLS_UPRIGHT = 64, COLS_SIDEWAYS = 120, FONT_MIN = 8, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
   function fontFor(width, height, base, touch) {
     if (!touch) return base;
     var cols = height >= width ? COLS_UPRIGHT : COLS_SIDEWAYS;
     var size = Math.round((width - 2 * FONT_PAD) / (cols * GLYPH));
     return Math.max(FONT_MIN, Math.min(base, size));
+  }
+  try {      // a choice made in this browser with setColumns, kept in localStorage
+    var kept = JSON.parse(localStorage.getItem('swarmbox.columns') || 'null');
+    if (kept && kept.up >= 20 && kept.up <= 200) { COLS_UPRIGHT = kept.up; COLS_SIDEWAYS = kept.side; }
+  } catch (e) { /* no storage: the defaults */ }
+  function setColumns(up, side) {
+    try {
+      if (up === undefined) localStorage.removeItem('swarmbox.columns');
+      else localStorage.setItem('swarmbox.columns', JSON.stringify({ up: up, side: side || Math.round(up * 1.8) }));
+    } catch (e) { /* no storage: this page only */ }
+    if (up === undefined) { COLS_UPRIGHT = 64; COLS_SIDEWAYS = 120; } else { COLS_UPRIGHT = Number(up); COLS_SIDEWAYS = Number(side) || Math.round(up * 1.8); }
+    fitFont();
+    return [COLS_UPRIGHT, COLS_SIDEWAYS];
   }
   var baseFont = null, setFont = null;
   function fitFont() {
@@ -337,7 +351,7 @@
     return true;
   }
 
-  window.swarmboxStrip = { fontFor: fontFor, add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
+  window.swarmboxStrip = { fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
                            get element() { return strip; }, get visible() { return !!strip && !strip.hidden; } };
 
   // A page in another origin's frame never gets the strip: one click there would type a key (clickjacking). The server side says the same with

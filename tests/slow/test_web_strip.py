@@ -295,13 +295,35 @@ class Phone(StripCase):
 
     def test_the_phone_letters_leave_no_column_cut_off_at_the_right_and_fill_the_width(self):
         """seen on a phone: after the size changed the terminal was refitted with the old letter width, and the last characters of every row fell off the right edge"""
-        g = self.geo(lambda g: g["cols"] >= 50)
-        self.assertGreaterEqual(g["cols"], 50, "a phone held upright shows about 56 columns (it was 29 at 21 px)")
-        self.assertLessEqual(g["cols"], 62)
+        g = self.geo(lambda g: g["cols"] >= 55)
+        self.assertGreaterEqual(g["cols"], 55, "a phone held upright shows about 65 columns (it was 29 at 21 px)")
+        self.assertLessEqual(g["cols"], 80)
         self.assertLessEqual(g["screen"]["right"], g["win"][0] - 8, "the last column ends before the right edge (the padding of the page is 10 px)")
         self.assertGreaterEqual(g["screen"]["right"], g["win"][0] - 30, "and not much before it: the width is used")
         self.assertTrue(wait_until(lambda: self.t.tmux("list-clients", "-F", "#{client_width}").split()[:1] == [str(g["cols"])], 10, 0.05),
                         "tmux has the columns xterm shows: %s" % self.t.tmux("list-clients", "-F", "#{client_width}").strip())
+
+    def test_the_columns_can_be_tried_in_the_console_kept_and_forgotten(self):
+        base = self.geo(lambda g: g["cols"] >= 55)["cols"]
+        self.page.js("swarmboxStrip.setColumns(48)")
+        g = self.geo(lambda g: g["cols"] < base - 5)
+        self.assertLess(g["cols"], base - 5, "fewer columns asked: bigger letters, fewer columns")
+        self.assertEqual(self.page.js("JSON.parse(localStorage.getItem('swarmbox.columns')).up"), 48, "kept in this browser")
+        self.page.js("swarmboxStrip.setColumns()")
+        self.assertIsNone(self.page.js("localStorage.getItem('swarmbox.columns')"))
+        g = self.geo(lambda g: abs(g["cols"] - base) <= 1)
+        self.assertAlmostEqual(g["cols"], base, delta=1, msg="and the default again")
+
+    def test_the_columns_can_be_tried_in_the_console_kept_and_forgotten(self):
+        base = self.geo(lambda g: g["cols"] >= 55)["cols"]
+        self.page.js("swarmboxStrip.setColumns(48)")
+        g = self.geo(lambda g: g["cols"] < base - 5)
+        self.assertLess(g["cols"], base - 5, "fewer columns asked: bigger letters, fewer columns")
+        self.assertEqual(self.page.js("JSON.parse(localStorage.getItem('swarmbox.columns')).up"), 48, "kept in this browser")
+        self.page.js("swarmboxStrip.setColumns()")
+        self.assertIsNone(self.page.js("localStorage.getItem('swarmbox.columns')"))
+        g = self.geo(lambda g: abs(g["cols"] - base) <= 1)
+        self.assertAlmostEqual(g["cols"], base, delta=1, msg="and the default again")
 
     def test_a_note_covers_the_keys_but_not_the_addon_controls_never_resizes_the_strip_and_a_tap_dismisses_it(self):
         before = self.geo()
