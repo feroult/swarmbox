@@ -71,6 +71,7 @@ fi
 # usual hues of the 16 colors kept (red for an error, green for success) in tones of the same family.
 declare -A OPT=(
     [fontSize]=21
+    [rendererType]=canvas      # not ttyd's default, webgl: after a change of the font size (a phone) it draws the letters at twice the width of the grid or not at all
     [fontWeight]=400
     [fontWeightBold]=700
     [padding]=10

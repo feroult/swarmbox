@@ -450,6 +450,31 @@ class OtherClient(StripCase):
         self.assertTrue(wait_until(lambda: win().strip() == str(cols), 8, 0.1), "a page that has the focus takes it back with no event: %r (page %d)" % (win(), cols))
 
 
+@bs.browser_tests()
+class Renderer(StripCase):
+    def test_the_default_renderer_draws_the_letters_on_the_grid_after_the_phone_font_is_set(self):
+        """seen on a phone: with ttyd's own renderer (webgl) the letters were drawn at twice the pitch of the grid, so the 123 columns did not fit the screen and the
+        lines seemed not to wrap. A long line of known text must show its first and its last characters inside the screen"""
+        self.open(viewport="phone-portrait", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 8, 10, 0.05))
+        time.sleep(1.5)
+        self.assertEqual(self.page.js("document.querySelectorAll('.xterm-screen canvas').length"), 4, "the canvas renderer is the one in use")
+        cols = self.geo(lambda g: g["cols"] >= 85)["cols"]
+        self.t.type("echo %s\r" % ("0123456789" * (cols // 10 + 2) + "END"))
+        self.assertTrue(self.t.wait_line("END", 10) or self.t.wait_screen("END", 10), "the end of the long line is in the terminal")
+        self.assertTrue(self.t.wait_screen("0123456789", 10))
+        # the pitch of the letters equals the pitch of the grid: ten characters of a row take ten cells (a row of M is as wide as `cols` cells)
+        self.t.type("clear; printf '%%*s\\n' %d '' | tr ' ' M\r" % cols)
+        self.assertTrue(self.t.wait_line("M" * cols, 10), "a row of M fills exactly the columns of the pane")
+        g = self.geo()
+        shot = base64.b64decode(self.page.call("Page.captureScreenshot", format="png")["data"])
+        if SHOTS:
+            with open(os.path.join(SHOTS, "phone-renderer.png"), "wb") as f:
+                f.write(shot)
+        self.assertEqual(self.page.js("term.options.fontSize") <= 8, True)
+        self.assertLessEqual(g["screen"]["right"], g["win"][0] - 8)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 
