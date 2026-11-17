@@ -35,6 +35,7 @@ VIEWPORTS = {  # name: (width, height, touch)
     "phone-portrait": (390, 844, True),
     "phone-landscape": (844, 390, True),
     "tablet": (820, 1180, True),
+    "pixel": (412, 915, True, 2.625),      # a Pixel in the device mode of Chrome: the device pixel ratio is not a whole number
 }
 
 GEO = """(() => {
@@ -473,6 +474,20 @@ class FontFromTheStart(StripCase):
         time.sleep(1.5)
         self.assertEqual(self.page.js("swarmboxStrip.fontSets"), 0)
         self.assertGreaterEqual(self.page.js("term.options.fontSize"), 13)
+
+
+@bs.browser_tests()
+class FractionalPixels(StripCase):
+    def test_a_pixel_in_device_mode_gets_a_terminal_that_fits_its_width(self):
+        """the device mode of Chrome emulates 2.625 device pixels per css pixel: the grid must still end at the screen"""
+        self.open(viewport="pixel", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 8, 10, 0.05))
+        time.sleep(2.0)
+        g = self.geo(lambda g: g["cols"] >= 85)
+        self.assertEqual(self.page.js("devicePixelRatio"), 2.625)
+        self.assertLessEqual(g["screen"]["right"], g["win"][0] - 8)
+        self.assertGreaterEqual(g["screen"]["right"], g["win"][0] - 30, "and the width is used")
+        self.assertEqual(self.t.tmux("list-clients", "-F", "#{client_width}").strip(), str(g["cols"]))
 
 
 @bs.browser_tests()

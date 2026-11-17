@@ -262,7 +262,7 @@ class WebTerminal:
     """A real ttyd serving the real page over a real tmux whose one pane runs `command`, in a tab of `chromium`.
 
     conf: the text of web-terminal.conf. tmux_conf: the text of the tmux configuration. options: pass ttyd the options swarmbox-web builds (font, scrollback...).
-    viewport: (width, height, touch). init_script: JavaScript that runs before the page's own. env: more environment for ttyd and tmux.
+    viewport: (width, height, touch[, device pixel ratio: 2 for a touch screen, 1 otherwise]). init_script: JavaScript that runs before the page's own. env: more environment for ttyd and tmux.
     """
 
     def __init__(self, chromium, conf="", tmux_conf="set -g mouse on\n", command="bash --norc", options=True, viewport=None, init_script="",
@@ -298,8 +298,9 @@ class WebTerminal:
         p.call("Runtime.enable")
         p.call("Emulation.setFocusEmulationEnabled", enabled=True)
         if viewport:
-            width, height, touch = viewport
-            p.call("Emulation.setDeviceMetricsOverride", width=width, height=height, deviceScaleFactor=2 if touch else 1, mobile=touch)
+            width, height, touch = viewport[:3]
+            dpr = viewport[3] if len(viewport) > 3 else (2 if touch else 1)
+            p.call("Emulation.setDeviceMetricsOverride", width=width, height=height, deviceScaleFactor=dpr, mobile=touch)
             if touch:
                 p.call("Emulation.setTouchEmulationEnabled", enabled=True, maxTouchPoints=5)
                 p.call("Emulation.setEmulatedMedia", features=[{"name": "pointer", "value": "coarse"}, {"name": "hover", "value": "none"}])
