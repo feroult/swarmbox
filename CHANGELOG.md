@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.14] - 2026-11-17
+
 - Changed: what you install on demand (agents such as Claude Code, and gcloud, clasp, Go, Poetry, `voice`, `sysop`) is called an **addon**: `swarmbox addon list|install|remove|update|use|link|prepare|run|where|doctor|validate|new` (`swarmbox-addon` in the box), manifests in `container/addons/<name>/addon.conf`, with the commands of the addon in `COMMANDS` and its start-up in an optional `shell.sh` (the auto-approve flags of the agents live there: `claude` adds them only to the interactive prompt, so `claude update` and `claude mcp ...` do not get them). `yolo` runs the default agent, `AGENT` or else the first item of `WITH`, and says so when there is none. Needs `swarmbox update` and `swarmbox reset`, and addons are installed again on first use.
 - Added: talk to your box, typed or spoken (the `sysop` addon and the `voice` addon). Give a goal in plain words ("run the tests in the second tab", "ask Claude in the active tab to fix the failing test") and the **sysop** operates the box for you: it looks at your tmux tabs, types into them, looks again and tells you what happened
   (`swarmbox addon install sysop`, and `swarmbox addon install voice` for the microphone; `docs/sysop.md`, `docs/voice.md`). It is optional and made of separate pieces that know nothing of each other; a box that installs none of them behaves as before.
@@ -218,6 +220,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.14]: https://github.com/feroult/swarmbox/releases/tag/v2.0.14
 [2.0.13]: https://github.com/feroult/swarmbox/releases/tag/v2.0.13
 [2.0.12]: https://github.com/feroult/swarmbox/releases/tag/v2.0.12
 [2.0.11]: https://github.com/feroult/swarmbox/releases/tag/v2.0.11
