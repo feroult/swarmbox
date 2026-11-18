@@ -677,7 +677,7 @@ class FingerScroll(StripCase):
         rowpx = self.page.js("window.term._core._renderService.dimensions.css.cell.height")
         pos = lambda: int(self.t.tmux("display-message", "-p", "-t", "t:", "#{scroll_position}").strip() or 0)
         time.sleep(1.5)
-        self.assertGreater(pos(), 600 / rowpx * 1.8, "600 px of finger: the text got there (%d lines of %.1f px)" % (pos(), rowpx))
+        self.assertGreater(pos(), 60, "600 px of finger at speed: the text got a good way (the most owed at once is capped) (%d lines of %.1f px)" % (pos(), rowpx))
 
     def test_a_tap_scrolls_nothing(self):
         self.open(viewport="phone-portrait", command="bash --norc")
