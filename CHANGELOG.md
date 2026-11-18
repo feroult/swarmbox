@@ -5,6 +5,7 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Fixed: scrolling with a finger on a phone was slow (the text went as far as the finger): it now goes three times as far. The Panel switch no longer lights up and goes out as the history scrolls by: it reads the word SYSOP only where it is bold and coloured, as in the panel, and not in the plain text of a tab.
 ## [2.0.15] - 2026-11-18
 
 - Fixed: on a phone, dragging a finger over the terminal did nothing, so the history of tmux could not be reached (the mouse wheel of a computer worked, but a finger makes no wheel event, and the history of the browser is off on purpose). A vertical drag is now turned into the wheel events a mouse would make, at the place of the finger, one per 5 rows, so the pane under it scrolls (a tab goes into copy mode, the log of the sysop panel moves); a tap is left alone.

@@ -536,12 +536,22 @@ class Answers(StripCase):
         time.sleep(0.4)
         self.assertEqual(self.t.sent().count("\x01"), 0, "a tap on an Allow that is off types nothing: %r" % self.t.sent())
         for head, want in (("SYSOP  allow? high risk", ["0", "0", "false", "allow?"]), ("SYSOP  sending in 3 s", ["1", "0", "true", "sending"]), ("SYSOP  working", ["1", "0", "true", "working"])):
-            self.t.type("clear; echo '%s'\r" % head)
+            self.t.type("clear; printf '\\033[1;38;2;167;139;250mSYSOP\\033[0m%%s\\n' '%s'\r" % head[len("SYSOP"):])
             self.assertTrue(wait_until(lambda: off() == want, 6, 0.1), "%r -> %r wanted %r" % (head, off(), want))
             if head.startswith("SYSOP  allow?"):
                 self.shot("phone-portrait-allow-on")
         self.t.type("clear\r")
         self.assertTrue(wait_until(lambda: off() == ["1", "1", "true", "none"], 6, 0.1), "and off again when the panel is gone: %r" % (off(),))
+
+    def test_the_words_of_the_panel_in_plain_text_do_not_count(self):
+        """history that scrolling brings into view may say SYSOP  idle: only the bold violet word of the panel lights the switch"""
+        self.open(viewport="phone-portrait", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05))
+        time.sleep(1.0)
+        self.t.type("clear; echo 'SYSOP  working'\r")
+        time.sleep(1.0)
+        self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-toggle').dataset.on"), "0")
+        self.assertEqual(self.page.js("document.getElementById('swarmbox-strip').dataset.sysop"), "none")
 
     def test_the_panel_button_is_a_switch_that_says_whether_the_panel_is_up(self):
         self.open(viewport="phone-portrait", command="bash --norc")
@@ -551,7 +561,7 @@ class Answers(StripCase):
         self.assertTrue(wait_until(lambda: on()[1:3] == ["0", "false"], 5, 0.1), "no panel on the screen: the switch is off %r" % (on(),))
         self.assertEqual(on()[0], "Panel")
         self.assertGreaterEqual(float(on()[3].replace("px", "")), 20, "a pill, not a square key")
-        self.t.type("clear; echo 'SYSOP  idle'\r")
+        self.t.type("clear; printf '\\033[1;38;2;167;139;250mSYSOP\\033[0m  idle\\n'\r")
         self.assertTrue(wait_until(lambda: on()[1:3] == ["1", "true"], 6, 0.1), "a panel (idle too) on the screen: the switch is on %r" % (on(),))
         self.shot("phone-portrait-panel-switch-on")
 
@@ -634,6 +644,23 @@ class FingerScroll(StripCase):
         far = int(mode()[1])
         drag(560, 300)      # a finger up: back toward the present
         self.assertTrue(wait_until(lambda: int(mode()[1]) < far, 6, 0.1), "and the other way: %r from %d" % (mode(), far))
+
+    def test_the_text_goes_further_than_the_finger(self):
+        self.open(viewport="phone-portrait", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05))
+        time.sleep(1.0)
+        self.t.type("clear; seq 1 400\r")
+        self.assertTrue(self.t.wait_screen("400", 10))
+        self.page.call("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": 200, "y": 300}])
+        for i in range(1, 11):
+            self.page.call("Input.dispatchTouchEvent", type="touchMove", touchPoints=[{"x": 200, "y": 300 + 10 * i}])
+            time.sleep(0.02)
+        self.page.call("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
+        rowpx = self.page.js("window.term._core._renderService.dimensions.css.cell.height")
+        self.assertTrue(wait_until(lambda: int(self.t.tmux("display-message", "-p", "-t", "t:", "#{scroll_position}").strip() or 0) > 0, 6, 0.1))
+        time.sleep(0.5)
+        got = int(self.t.tmux("display-message", "-p", "-t", "t:", "#{scroll_position}").strip())
+        self.assertGreater(got, 2 * 100 / rowpx, "100 px of finger is %d lines of %.1f px: more than twice the distance" % (got, rowpx))
 
     def test_a_tap_scrolls_nothing(self):
         self.open(viewport="phone-portrait", command="bash --norc")

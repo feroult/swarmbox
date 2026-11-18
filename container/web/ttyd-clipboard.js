@@ -224,11 +224,20 @@
       var line = buf.getLine(buf.viewportY + r);
       if (!line) continue;
       var text = line.translateToString(true);
-      if (text.indexOf('SYSOP') < 0) continue;
+      var at = text.indexOf('SYSOP');
+      if (at < 0 || !panelInk(line, at)) continue;
       var m = SYSOP_HEAD.exec(text);
       if (m) return { up: true, state: ACTIVE.test(m[1]) ? m[1] : '' };
     }
     return { up: false, state: '' };
+  }
+  // The word SYSOP of the panel is bold and coloured (violet); the same word in the history of a tab, which scrolling brings into view, is plain text.
+  // Only the first one counts, or the switch lit up and went out as a finger scrolled.
+  function panelInk(line, at) {
+    try {
+      var c = line.getCell(at);
+      return !!c && c.isBold() !== 0 && !c.isFgDefault();      // tmux may turn the violet into the nearest of 256 colours, so it is not compared
+    } catch (e) { return true; }      // a terminal that cannot say: trust the words
   }
   function setOff(b, off) {
     if (!b) return;
@@ -492,7 +501,7 @@
   // the terminal makes no wheel event, and the browser would scroll xterm's own history, which is off (scrollback=0): so on a phone the history could not be reached.
   // A vertical drag is turned here into the wheel events a mouse would make, at the place of the finger, so the pane under it scrolls (a tab in copy mode, the log of
   // the sysop panel). One wheel event is tmux's step of 5 lines, so one is sent per 5 rows of drag: the text follows the finger, one to one. A tap is left alone.
-  var DRAG_PX = 8, WHEEL_ROWS = 5;
+  var DRAG_PX = 8, WHEEL_ROWS = 5, DRAG_GAIN = 3;      // the text goes DRAG_GAIN times as far as the finger: one to one felt slow
   function rowHeight() {
     try { return window.term._core._renderService.dimensions.css.cell.height || 14; } catch (e) { return 14; }
   }
@@ -522,7 +531,7 @@
       moved = true;
       carry += t.clientY - last;
       last = t.clientY;
-      var step = WHEEL_ROWS * rowHeight();
+      var step = WHEEL_ROWS * rowHeight() / DRAG_GAIN;
       while (Math.abs(carry) >= step) {
         wheel(t.clientX, t.clientY, carry > 0 ? -WHEEL_ROWS : WHEEL_ROWS);      // a finger moving down brings older text into view: the wheel turns up
         carry += carry > 0 ? -step : step;
