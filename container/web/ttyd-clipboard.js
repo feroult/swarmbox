@@ -516,7 +516,7 @@
   // Like a finger on any list: the text goes further the faster the finger moves (GAIN_MIN to GAIN_MAX times its distance, by its speed), and it keeps going a while
   // after the finger leaves (inertia), slowing down by itself. The wheel events are handed out a few per frame, so a fast flick is not one burst that tmux and the
   // screen swallow in one go.
-  var DRAG_PX = 8, WHEEL_ROWS = 5, GAIN_MIN = 2, GAIN_MAX = 5, GAIN_PER_SPEED = 3, FLICK_SPEED = 0.25, FRICTION = 0.94, PER_FRAME = 6, MAX_BACKLOG = 16;
+  var DRAG_PX = 8, WHEEL_ROWS = 5, GAIN_MIN = 2, GAIN_MAX = 6, GAIN_PER_SPEED = 3, FLICK_SPEED = 0.25, FRICTION = 0.94, PER_FRAME = 6, MAX_BACKLOG = 16, MAX_PAGES = 8;
   function rowHeight() {
     try { return window.term._core._renderService.dimensions.css.cell.height || 14; } catch (e) { return 14; }
   }
@@ -530,18 +530,26 @@
     if (!host) return false;
     if (host.getAttribute('data-drag') === '1') return true;
     host.setAttribute('data-drag', '1');
-    var id = null, y0 = 0, last = 0, lastT = 0, px = 0, py = 0, moved = false, carry = 0, speed = 0, gain = GAIN_MIN, coasting = 0;
+    var id = null, y0 = 0, last = 0, lastT = 0, px = 0, py = 0, moved = false, carry = 0, speed = 0, gain = GAIN_MIN, coasting = 0, wheeled = 0;
     function mine(e) {
       for (var i = 0; i < e.touches.length; i++) if (e.touches[i].identifier === id) return e.touches[i];
       return null;
     }
     function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
     function pump() {      // gives out the wheel events owed, a few per frame; carry is in pixels of text
-      var step = WHEEL_ROWS * rowHeight(), n = 0;
-      if (Math.abs(carry) > step * MAX_BACKLOG) carry = carry > 0 ? step * MAX_BACKLOG : -step * MAX_BACKLOG;
-      while (Math.abs(carry) >= step && n < PER_FRAME) {
-        wheel(px, py, carry > 0 ? -WHEEL_ROWS : WHEEL_ROWS);      // a finger moving down brings older text into view: the wheel turns up
-        carry += carry > 0 ? -step : step;
+      var rh = rowHeight(), step = WHEEL_ROWS * rh, n = 0;
+      var page = Math.max(10, (window.term && window.term.rows || 24) - 2) * rh, cap = Math.max(step * MAX_BACKLOG, page * MAX_PAGES);
+      if (Math.abs(carry) > cap) carry = carry > 0 ? cap : -cap;
+      while (n < PER_FRAME && Math.abs(carry) >= step) {
+        if (wheeled > 0 && Math.abs(carry) >= page && window.term && typeof window.term.input === 'function') {
+          // a screenful or more: ONE PageUp or PageDown, as the keyboard of a computer does (an app scrolls its page, tmux in copy mode its page), instead of a dozen wheel events
+          window.term.input(carry > 0 ? '\x1b[5~' : '\x1b[6~', true);
+          carry += carry > 0 ? -page : page;
+        } else {
+          wheel(px, py, carry > 0 ? -WHEEL_ROWS : WHEEL_ROWS);      // a finger moving down brings older text into view: the wheel turns up
+          carry += carry > 0 ? -step : step;
+          wheeled++;      // the first wheel is what puts a plain tab into copy mode: the pages follow it, never come first
+        }
         n++;
       }
     }
@@ -561,7 +569,7 @@
     function ensureTick() { if (!coasting && typeof requestAnimationFrame === 'function') coasting = requestAnimationFrame(function () { tick(now()); }); }
     host.addEventListener('touchstart', function (e) {
       if (e.touches.length !== 1) { id = null; return; }
-      id = e.touches[0].identifier; y0 = last = e.touches[0].clientY; lastT = now(); moved = false; carry = 0; speed = 0;
+      id = e.touches[0].identifier; y0 = last = e.touches[0].clientY; lastT = now(); moved = false; carry = 0; speed = 0; wheeled = 0;
       px = e.touches[0].clientX; py = y0;
     }, { passive: true });
     host.addEventListener('touchmove', function (e) {
