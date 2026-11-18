@@ -629,7 +629,87 @@
     return true;
   }
 
-  window.swarmboxStrip = { rewritePrefs: rewritePrefs, markBlockRows: markBlockRows, get fontSets() { return fontSets; }, get prefs() { return [prefsSeen, prefsRewritten]; }, claimSize: claimSize, fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
+  // ---- coming back: no Enter to reconnect ---------------------------------------------------------------------------------------------
+  // When the connection is lost for good (a phone that slept, a box that restarted) ttyd writes "Press ⏎ to Reconnect" over the terminal and waits for the Enter
+  // key. The page presses it itself: at once, then again every 2 s, 4 s ... up to 10 s while the message stays (the box may still be coming up).
+  var RECONNECT_TEXT = 'to Reconnect', reconnectTimer = 0, reconnectWait = 300;
+  function reconnectNotice() {      // ttyd's message is a plain div (no class) added to the element of the terminal
+    var t = window.term, kids = t && t.element ? t.element.children : [];
+    for (var i = 0; i < kids.length; i++) if (!kids[i].className && (kids[i].textContent || '').indexOf(RECONNECT_TEXT) >= 0) return true;
+    return false;
+  }
+  function pressEnter() {
+    var t = window.term;
+    var ta = t && (t.textarea || document.querySelector('.xterm-helper-textarea'));
+    if (!ta) return;
+    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+  }
+  function checkReconnect() {
+    if (!reconnectNotice()) { reconnectWait = 300; clearTimeout(reconnectTimer); reconnectTimer = 0; return; }
+    if (reconnectTimer) return;
+    reconnectTimer = setTimeout(function () {
+      reconnectTimer = 0;
+      if (!reconnectNotice()) { reconnectWait = 300; return; }
+      pressEnter();
+      reconnectWait = Math.min(10000, reconnectWait < 2000 ? 2000 : reconnectWait * 2);
+      setTimeout(checkReconnect, reconnectWait);      // still there after this long: press again
+    }, reconnectWait);
+  }
+  function watchReconnect() {
+    var host = document.getElementById('terminal-container');
+    if (!host || !window.MutationObserver) return false;
+    new MutationObserver(checkReconnect).observe(host, { childList: true, subtree: true, characterData: true });
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) { reconnectWait = 300; checkReconnect(); } });
+    checkReconnect();
+    return true;
+  }
+
+  // ---- what the sysop is doing, in one line, beside the microphone ---------------------------------------------------------------------
+  // tmux sends the title of the terminal when the option @sysop_line changes (the sysop sets it; tmux.conf has set-titles on): "sysop:<state>:<sentence>". On a
+  // phone the line shows over the key buttons, left of the addon controls, two lines at most; a tap opens the panel (Ctrl+A S). It is hidden while the panel
+  // is on the screen (the panel says it all) and when the title is anything else. A finished goal (done, failed, stopped) stays 10 s.
+  var SYSOP_TITLE = /^sysop:(working|sending|allow\?|queued|done|failed|stopped):([\s\S]*)$/, TOAST_HOLD = 10000;
+  var toastEl = null, toastState = '', toastText = '', toastTimer = 0;
+  function phone() { return coarse.matches || window.innerWidth <= PHONE_WIDTH; }
+  function showToast() {
+    if (!strip) return;
+    if (!toastEl) {
+      toastEl = el('div', 'sb-toast');
+      toastEl.setAttribute('role', 'button');
+      toastEl.setAttribute('aria-label', 'Open the sysop panel');
+      toastEl.appendChild(el('i', 'sb-dot'));
+      toastEl.appendChild(el('span'));
+      toastEl.addEventListener('click', function () { typeKeys({ seq: ['C-a', 'S'] }); });
+      strip.appendChild(toastEl);
+    }
+    var up = false;
+    try { up = sysopState().up; } catch (e) { /* the screen cannot be read yet */ }
+    var on = !!toastState && phone() && !up;
+    toastEl.hidden = !on;
+    if (!on) return;
+    toastEl.setAttribute('data-state', toastState);
+    toastEl.lastChild.textContent = toastText;
+    toastEl.title = toastText;
+    strip.style.setProperty('--sb-slot-w', slot.children.length ? Math.max(0, Math.round(strip.getBoundingClientRect().right - slot.getBoundingClientRect().left)) + 'px' : '0px');
+  }
+  function titleChanged(title) {
+    var m = SYSOP_TITLE.exec(String(title || ''));
+    clearTimeout(toastTimer);
+    toastTimer = 0;
+    toastState = m ? m[1] : '';
+    toastText = m ? m[2].replace(/\s+/g, ' ').trim().slice(0, 160) : '';
+    if (m && /^(done|failed|stopped)$/.test(m[1])) toastTimer = setTimeout(function () { toastState = ''; showToast(); }, TOAST_HOLD);
+    showToast();
+  }
+  function watchTitle() {
+    var t = window.term;
+    if (!t || typeof t.onTitleChange !== 'function') return false;
+    t.onTitleChange(titleChanged);
+    setInterval(showToast, 500);      // the panel coming or going, a phone turning
+    return true;
+  }
+
+  window.swarmboxStrip = { rewritePrefs: rewritePrefs, markBlockRows: markBlockRows, get fontSets() { return fontSets; }, get prefs() { return [prefsSeen, prefsRewritten]; }, claimSize: claimSize, fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, titleChanged: titleChanged, checkReconnect: checkReconnect, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
                            get element() { return strip; }, get visible() { return !!strip && !strip.hidden; } };
 
   // A page in another origin's frame never gets the strip: one click there would type a key (clickjacking). The server side says the same with
@@ -641,6 +721,8 @@
     if (!document.body) { document.addEventListener('DOMContentLoaded', start); return; }
     build();
     (function waitDrag(n) { if (!dragScroll() && n > 0) setTimeout(function () { waitDrag(n - 1); }, 100); })(100);
+    (function waitReconnect(n) { if (!watchReconnect() && n > 0) setTimeout(function () { waitReconnect(n - 1); }, 100); })(100);
+    (function waitTitle(n) { if (!watchTitle() && n > 0) setTimeout(function () { waitTitle(n - 1); }, 100); })(100);
     (function waitBlocks(n) { if (!watchBlockRows() && n > 0) setTimeout(function () { waitBlocks(n - 1); }, 100); })(100);
     (function waitTerm(n) { if (!fitFont() && n > 0) setTimeout(function () { waitTerm(n - 1); }, 100); })(100);
     var later;

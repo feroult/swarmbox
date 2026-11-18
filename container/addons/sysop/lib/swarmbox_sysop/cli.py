@@ -29,7 +29,7 @@ import signal
 import sys
 import time
 
-from . import brain, busclient, config, dock, ipc, keys, mcpserver, panel, paths, policy, service, watch
+from . import brain, busclient, config, dock, ipc, keys, line, mcpserver, panel, paths, policy, service, watch
 
 EXIT = {"no_subscriber": 3, "bus_down": 4, "bus_closed": 4, "too_large": 5, "bad_topic": 6, "bad_request": 6, "bad_body": 6, "busy": 7}
 
@@ -110,14 +110,18 @@ def cmd_serve(args):
     if args.log:
         svc.housekeeping = lambda: rotate_log(pth)
     follower = dock.Follower(pth, log=svc.log, mode=cfg.panel_mode).start() if args.dock else None      # off too: its thread only takes away the hooks of an earlier always
+    toaster = line.Toaster(pth, log=svc.log).start() if args.dock else None      # the one line for a phone: in every panel mode, the panel mode off too
     for sg in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sg, lambda *_: svc.shutdown())
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    rc = None
     try:
         rc = svc.run()
     finally:
         if follower:
             follower.shutdown()
+        if toaster:
+            toaster.shutdown(unset=rc != 9)      # 9: another service is running and keeps the line
     if rc == 9:
         print("swarmbox-sysop: already running", file=sys.stderr)
         return 0

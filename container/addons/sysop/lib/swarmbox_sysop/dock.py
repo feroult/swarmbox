@@ -13,6 +13,14 @@ A window never stays with only the panel in it (that is not a tab): when the las
 hooks pane-exited and after-kill-pane run `dock sync`, which closes the window; this ends the session only when it was the last window, as it
 does when the last shell of a box without panels exits.
 
+Compact windows (the mode always only). A window of COMPACT_COLS columns or fewer (the window is as wide as the client that used it last: a phone) has NO panel
+by default: the web page shows one line of what the sysop does (line.py) and a tap on it opens the panel. The panel is there only while the global option
+@swarmbox_sysop_open is set: "1" when you opened it (the key, the Panel button, a tap on the line: it stays until you close it with the key or the close
+control of the panel), "auto" when an action waited for your approval (the Follower opened it; it closes by itself AUTO_GRACE seconds after the approval is
+answered, unless you touched it: a toggle by hand always turns "auto" or "1" off, and opens "1" when there was none). Wide windows are not touched by any
+of this, and while the panels are hidden by hand (@swarmbox_sysop_hidden) a wide window stays without one as before; the flag only matters to windows
+that are compact when sync, the resize hook or a toggle looks at them, so a desktop that takes the window back wide brings the panel back at the next sync.
+
 layout(cols, rows) is the one rule for where it docks (a pure function, tested alone):
   * portrait, `cols < CELL_FACTOR * rows` (cells are about twice as tall as wide, so a window that is taller than wide in pixels still has
     more columns than rows): a full-width pane at the bottom, 30 % of the height, at least 8 lines (never more than half of the window)
@@ -47,7 +55,7 @@ import threading
 import time
 from collections import namedtuple
 
-from . import ipc
+from . import ipc, service
 
 PANEL_OPTION = "@swarmbox_sysop_panel"
 AUTO_OPTION = "@swarmbox_sysop_auto"
@@ -71,6 +79,9 @@ RIGHT_PERCENT = 20
 MIN_PANEL_COLS = 40
 MIN_TERMINAL_COLS = 60
 SYNC_TICK = 4.0                         # seconds between two looks of the Follower in the mode always (a hook does the quick part)
+COMPACT_COLS = 80                       # a window this narrow (a phone held upright is about 64 columns) is compact: no panel in it unless it is opened (OPEN_OPTION)
+OPEN_OPTION = "@swarmbox_sysop_open"    # global option of the tmux server: "1" a compact window's panel opened by hand, "auto" opened because an action waits for you
+COMPACT_ENV = "SWARMBOX_SYSOP_PANEL_COMPACT"      # "1" in the environment of a panel made in a compact window: it shows the close control
 ACTIONS = ("open", "close", "toggle", "redock", "sync")
 PASS_ENV = ("SWARMBOX_SYSOP_PANEL_MODE", "SB_TABS_SESSION", "SB_TABS_SOCKET", "SB_TABS_BIN", "SB_RUN_DIR", "SB_STATE_DIR", "SB_BUS_SOCKET", "XDG_STATE_HOME", "HOME", "NO_COLOR", "LANG", "LC_ALL", "TERM")
 
@@ -270,6 +281,17 @@ class Dock:
         """Mode always: hide the panels of ALL windows, or show them again (the choice is remembered by the tmux server): "closed" or "shown". Other
         modes: closes the panel of the window (the one given, else the one shown) when there is one, else opens it there: "closed" or what open returns."""
         if self.mode == "always":
+            rows = self._rows()
+            target = window or self._shown_window(rows)
+            here = next((r for r in rows if r.window == target), None)
+            if here is not None and self.is_compact(here.win_w):
+                if self.open_flag():
+                    self.set_open(None)
+                    self.sync(force=True)
+                    return "closed"
+                self.set_open("1")
+                self.sync(force=True)
+                return "shown"
             if self.hidden():
                 self.set_hidden(False)
                 self.sync(force=True)
@@ -287,6 +309,66 @@ class Dock:
 
     def hidden(self):
         return self.tmux.run("show-options", "-gqv", HIDDEN_OPTION).out.strip() == "1"
+
+    # ---- compact windows (the mode always)
+    @staticmethod
+    def is_compact(cols):
+        try:
+            return 0 < int(cols) <= COMPACT_COLS
+        except (TypeError, ValueError):
+            return False
+
+    def open_flag(self):
+        """"" (closed), "1" (opened by hand) or "auto" (opened for an approval): what the compact windows do with their panel."""
+        v = self.tmux.run("show-options", "-gqv", OPEN_OPTION).out.strip()
+        return v if v in ("1", "auto") else ""
+
+    def set_open(self, value):
+        if value:
+            self._tm("set-option", "-g", OPEN_OPTION, value)
+        else:
+            self._tm("set-option", "-gu", OPEN_OPTION, check=False)
+
+    def _shut_compact(self, rows, window=None):
+        """Kill the panel of every compact window (of `window` only, when one is given) while the compact panels are not open. Returns how many."""
+        if self.open_flag():
+            return 0
+        n = 0
+        for p in rows:
+            if p.panel and self.is_compact(p.win_w) and (window is None or p.window == window):
+                self._tm("kill-pane", "-t", p.pane, check=False)
+                n += 1
+        return n
+
+    def approval(self, on):
+        """The Follower (mode always): an action waits for you (`on`) -> a compact window gets the panel ("auto"), once; it is answered (`on` false) -> the panel
+        that was opened for it closes, unless you opened it by hand. Returns a word: opened, closed, unchanged."""
+        if self.mode != "always":
+            return "unchanged"
+        flag = self.open_flag()
+        if on:
+            if flag:
+                return "unchanged"
+            if not any(self.is_compact(r.win_w) for r in self._rows()):
+                return "unchanged"           # nobody holds a narrow window: a desktop has its panel already
+            self.set_open("auto")
+            self.sync(force=True)
+            return "opened"
+        if flag != "auto":
+            return "unchanged"
+        self.set_open(None)
+        self.sync()
+        return "closed"
+
+    def close_compact(self, own_pane=None):
+        """The close control and the key q of a panel in a compact window: the panels of the compact windows go away and stay away until opened again.
+        Nothing else (a wide window's panel, the hidden flag) changes."""
+        self.set_open(None)
+        try:
+            self.sync()
+        finally:
+            if own_pane:
+                self._tm("kill-pane", "-t", own_pane, check=False)
 
     def set_hidden(self, on):
         self._tm("set-option", "-g", HIDDEN_OPTION, "1") if on else self._tm("set-option", "-gu", HIDDEN_OPTION, check=False)
@@ -318,13 +400,23 @@ class Dock:
             if self.mode != "always":
                 return ", ".join(note) or "unchanged"
             self._hook(True)
-            if self.hidden():
+            hidden, flag = self.hidden(), self.open_flag()
+            wins = list(dict.fromkeys(r.window for r in rows))
+            if hidden and not any(self.is_compact(self._window_size(w, rows)[0]) for w in wins):
                 return ", ".join(note + ["hidden"])
-            made = 0
-            for win in dict.fromkeys(r.window for r in rows):
+            made = shut = 0
+            for win in wins:
                 if window is not None and win != window:
                     continue
                 here = [r for r in rows if r.panel and r.window == win]
+                if self.is_compact(self._window_size(win, rows)[0]):
+                    if not flag:                  # a narrow window: no panel until it is opened (the line of the page says what the sysop does)
+                        for extra in here:
+                            self._tm("kill-pane", "-t", extra.pane, check=False)
+                            shut += 1
+                        continue
+                elif hidden:
+                    continue
                 for extra in here[1:]:
                     self._tm("kill-pane", "-t", extra.pane, check=False)
                 if not here:
@@ -344,6 +436,10 @@ class Dock:
                         pass
             if made:
                 note.append("created %d" % made)
+            if shut:
+                note.append("closed %d compact" % shut)
+            if hidden:
+                note.append("hidden")
             return ", ".join(note) or "unchanged"
 
     def _born_lately(self, window):
@@ -412,6 +508,8 @@ class Dock:
     def _redock_now(self, window=None):
         with self._lock():
             rows = self._rows()
+            if self.mode == "always" and self._shut_compact(rows, window):      # a phone took the window: its panel goes now, not at the next tick
+                rows = self._rows()
             panels = [r for r in rows if r.panel]
             if not panels:
                 self._hook(False)
@@ -440,7 +538,10 @@ class Dock:
         if self.mode != "always":
             self._freeze_name(window)
         try:
-            res = self._tm("split-window", "-t", window, *flags, *split_args(layout(cols, lines)), "-P", "-F", "#{pane_id}", "--", *self.panel_argv)
+            argv = list(self.panel_argv)
+            if self.mode == "always" and self.is_compact(cols) and argv[:1] == ["env"]:
+                argv.insert(1, COMPACT_ENV + "=1")      # the panel of a narrow window shows the close control
+            res = self._tm("split-window", "-t", window, *flags, *split_args(layout(cols, lines)), "-P", "-F", "#{pane_id}", "--", *argv)
         except DockError:
             if self.mode != "always":
                 self._thaw_name(window)
@@ -616,7 +717,8 @@ def run(action, socket=None, window=None):
 
 
 def panel_quit():
-    """Called by the panel when its quit key `q` was pressed (not when it is killed). Mode always: the panels of ALL windows are hidden, and stay
+    """Called by the panel when its quit key `q` (or its close control) was pressed (not when it is killed). Mode always: in a compact window
+    (COMPACT_COLS or fewer columns) the compact panels close (close_compact); in a wide one the panels of ALL windows are hidden, and stay
     hidden until the key shows them or the box starts again. Other modes: the window gets its automatic name back. Never raises."""
     from . import config
     try:
@@ -631,7 +733,13 @@ def panel_quit():
     try:
         sock = os.environ.get("TMUX", "").split(",")[0]
         t = Tmux(argv=["tmux", "-S", sock]) if sock else Tmux()
-        default_dock(t, mode=mode).hide()
+        d = default_dock(t, mode=mode)
+        pane = os.environ.get("TMUX_PANE")
+        cols = t.run("display-message", "-p", "-t", pane, "#{window_width}").out.strip() if pane else ""
+        if d.is_compact(cols):
+            d.close_compact(own_pane=pane)       # a narrow window: only the compact panels close, the panels of the wide windows stay
+        else:
+            d.hide()
     except Exception:
         pass
 
@@ -645,9 +753,11 @@ class Follower:
       off     does nothing (but, once at its start, takes away the hooks of an earlier always, like auto).
     A tmux that is missing or has no session is not an error here: it is tried again at the next look (and said once in the log, not at every look)."""
 
-    def __init__(self, pth, dock=None, interval=0.5, grace=3.0, clock=time.monotonic, log=None, mode="auto", tick=SYNC_TICK):
+    def __init__(self, pth, dock=None, interval=0.5, grace=3.0, clock=time.monotonic, log=None, mode="auto", tick=SYNC_TICK, wall=time.time):
         self.paths, self.dock, self.mode = pth, dock, mode
-        self.interval, self.grace, self.clock, self.tick = interval, grace, clock, tick
+        self.interval, self.grace, self.clock, self.tick, self.wall = interval, grace, clock, tick, wall
+        self.approving = None            # always: the (goal, action) a compact window's panel was opened for, until it is answered and the grace is over
+        self.answered_at = None
         self.log = log or (lambda msg: None)
         self.busy, self.idle_since = False, None
         self.stop = threading.Event()
@@ -671,6 +781,7 @@ class Follower:
             return
         if self.mode == "always":
             self._do(lambda d: d.sync(), "sync")
+            self.watch_approval()
             return
         now = self.clock()
         st = self._read_status()
@@ -686,6 +797,40 @@ class Follower:
             if now - self.idle_since >= self.grace:
                 self.busy, self.idle_since = False, None
                 self._do(lambda d: d.close(only_auto=True), "close")
+
+    def _waiting(self):
+        """(goal id, action id) of an action that waits for YOUR approval right now (not a veto countdown), else None. A stat of status.json while nothing
+        runs; the one small file of the action while a goal does."""
+        cur = self._read_status().get("current")
+        if not cur:
+            return None
+        gid = service.sanitize(cur, "")
+        p = ipc.read_json(os.path.join(self.paths.goal_dir(gid), "pending_action.json")) if gid else None
+        if not isinstance(p, dict) or not p.get("id") or p.get("mode") == "veto":
+            return None
+        try:
+            if float(p.get("deadline")) - self.wall() <= 0:
+                return None
+        except (TypeError, ValueError):
+            return None
+        return (gid, str(p["id"]))
+
+    def watch_approval(self):
+        """Mode always, every look (0.5 s): an action that needs your approval opens the panel of a compact window (once for each action: if you close it, it
+        stays closed), and it closes again `grace` seconds after the action is answered, when it was opened for the approval and you did not take it over."""
+        now = self.clock()
+        waiting = self._waiting()
+        if waiting:
+            self.answered_at = None
+            if waiting != self.approving:
+                self.approving = waiting
+                self._do(lambda d: d.approval(True), "approval")
+        elif self.approving:
+            if self.answered_at is None:
+                self.answered_at = now
+            if now - self.answered_at >= self.grace:
+                self.approving, self.answered_at = None, None
+                self._do(lambda d: d.approval(False), "approval")
 
     def _do(self, fn, what):
         try:
@@ -710,7 +855,15 @@ class Follower:
             self._do(lambda d: d.forget_sync(), "unhook")       # the hooks of an earlier always are not wanted in auto or off
         if self.mode == "off":
             return                           # nothing else to do in off: the thread ends
-        while not self.stop.wait(self.tick if self.mode == "always" else self.interval):
+        always = self.mode == "always"
+        wait = min(self.tick, self.interval) if always else self.interval
+        every = max(1, int(round(self.tick / wait))) if always else 1       # a sync every `every` looks; the looks between them only watch for an approval
+        looks = 0
+        while not self.stop.wait(wait):
+            looks += 1
+            if always and looks % every:
+                self.watch_approval()
+                continue
             self.step()
 
     def start(self):

@@ -43,6 +43,7 @@ TERMINAL = ("done", "stopped", "failed")
 PALETTE = {"violet": "a78bfa", "deep": "6d28d9", "lavender": "c4b5fd", "dim": "a1a1aa", "text": "d4d4d8", "red": "ff6b78",
            "amber": "fbbf24", "green": "4ade80", "line": "52525b", "ink": "0c0b10"}
 RESET = "\x1b[0m"
+CLOSE = " ✕ close "      # the close control of the panel of a narrow window; nine cells, a thumb can hit it
 
 
 def fg(name):
@@ -574,8 +575,9 @@ def _pending_lines(model, W, wall, color):
     return rows
 
 
-def render(model, cols, rows, wall, color=True):
-    """The screen as a Frame of exactly `rows` lines: the state, the goal, the steps, and at the bottom what needs you (a bar, the action, buttons)."""
+def render(model, cols, rows, wall, color=True, closer=False):
+    """The screen as a Frame of exactly `rows` lines: the state, the goal, the steps, and at the bottom what needs you (a bar, the action, buttons).
+    `closer`: the panel of a narrow window (a phone) has a close control at the right end of its head line: a hit on the key q."""
     cols, rows = max(16, cols), max(4, rows)
     W = cols - 2
     word, name = state_of(model)
@@ -585,6 +587,10 @@ def render(model, cols, rows, wall, color=True):
         if text and used + 2 + len(text) <= cols:
             head += "  " + _paint(color, tone, text)
             used += 2 + len(text)
+    close_at = None
+    if closer and cols - used >= len(CLOSE) + 2:
+        head += " " * (cols - used - len(CLOSE)) + (_paint(color, "dim", CLOSE) if not color else "\x1b[1m" + bg("deep") + fg("lavender") + CLOSE + RESET)
+        close_at = (cols - len(CLOSE) + 1, cols)
 
     top = []
     g = model.goal
@@ -656,6 +662,8 @@ def render(model, cols, rows, wall, color=True):
         out = [out[0]] + out[1 + drop:]
         hits = [(r - drop, a, b, k) for r, a, b, k in hits if r - drop > 1]
         cursor = (cursor[0] - drop, cursor[1]) if cursor and cursor[0] - drop > 1 else None
+    if close_at:
+        hits = hits + [(1, close_at[0], close_at[1], "q")]
     return Frame(out + [""] * (rows - len(out)), cursor, hits)
 
 
@@ -741,7 +749,7 @@ class Panel:
 
     def draw(self, force=False):
         cols, rows = self.size()
-        frame = render(self.model, cols, rows, self.wall(), self.color)
+        frame = render(self.model, cols, rows, self.wall(), self.color, closer=os.environ.get(dock.COMPACT_ENV) == "1")
         sig = (cols, rows, tuple(frame.lines), frame.cursor)
         if sig == self.drawn and not force:
             return

@@ -267,6 +267,46 @@ class Rendering(unittest.TestCase):
         self.assertEqual([h[3] for h in f.hits], ["g"])
 
 
+class CloseControl(unittest.TestCase):
+    """The panel of a narrow window (a phone) has a close control at the right end of its head line; a click on it is the key q."""
+
+    def test_the_head_line_of_a_narrow_panel_ends_with_a_close_control_that_is_a_hit_on_q(self):
+        for cols in (30, 40, 64, 80):
+            f = render(model_with(make_goal()), cols, 12, time.time(), color=False, closer=True)
+            head = strip_ansi(f.lines[0])
+            self.assertTrue(head.rstrip().endswith("✕ close"), head)
+            self.assertEqual(text_width(head), cols, "the control is at the right edge: %r" % head)
+            hit = [h for h in f.hits if h[3] == "q"]
+            self.assertEqual(len(hit), 1, f.hits)
+            row, c0, c1, key = hit[0]
+            self.assertEqual(row, 1)
+            self.assertIn("✕ close", head[c0 - 1:c1])
+            self.assertGreaterEqual(c1 - c0 + 1, 7, "a thumb can hit it")
+        for color in (True, False):
+            f = render(model_with(make_goal()), 40, 12, time.time(), color=color, closer=True)
+            self.assertIn("✕ close", strip_ansi(f.lines[0]))
+
+    def test_a_panel_that_is_not_in_a_narrow_window_has_none(self):
+        f = render(model_with(make_goal()), 60, 12, time.time(), color=False)
+        self.assertNotIn("close", strip_ansi(f.lines[0]))
+        self.assertNotIn("q", [h[3] for h in f.hits])
+
+    def test_the_control_gives_way_when_the_head_has_no_room(self):
+        f = render(model_with(make_goal()), 18, 12, time.time(), color=False, closer=True)
+        self.assertEqual(text_width(strip_ansi(f.lines[0])) <= 18, True)
+        self.assertEqual([h for h in f.hits if h[3] == "q"] != [], "✕ close" in strip_ansi(f.lines[0]))
+
+    def test_the_other_buttons_keep_their_hits_and_the_control_does_not_cover_them(self):
+        now = time.time()
+        f = render(model_with(make_goal(), make_pending("approve", "high", deadline=now + 30)), 40, 14, now, color=False, closer=True)
+        self.assertEqual(sorted(h[3] for h in f.hits), ["a", "c", "q"])
+        self.assertEqual([h[0] for h in f.hits if h[3] == "q"], [1])
+
+    def test_q_closes_the_panel_the_way_the_key_does(self):
+        m = model_with(make_goal(), now=100.0)
+        self.assertEqual(m.key("q", 101.0, time.time()), ("quit",))
+
+
 class Keys(unittest.TestCase):
     def setUp(self):
         self.now = time.time()
@@ -504,6 +544,27 @@ class PanelObject(unittest.TestCase):
         self.clock[0] += wait                 # past the guard against stray typing
         for k in ks:
             self.p.handle_key(k)
+
+    def test_a_click_on_the_close_control_of_a_narrow_panel_ends_it_as_q_does(self):
+        os.environ["SWARMBOX_SYSOP_PANEL_COMPACT"] = "1"
+        self.st.serve(current="g1")
+        self.st.goal()
+        self.p.look()
+        self.p.draw(force=True)
+        hit = [h for h in self.p.hits if h[3] == "q"]
+        self.assertEqual(len(hit), 1, self.p.hits)
+        row, c0, c1, key = hit[0]
+        self.clock[0] += 1.0
+        self.p.handle_key(("click", c0 + 1, row))
+        self.assertTrue(self.p.model.finished and self.p.model.quit_key, "it ends and says it was asked to (q), not killed")
+
+    def test_without_the_environment_of_a_narrow_window_there_is_no_close_control(self):
+        os.environ.pop("SWARMBOX_SYSOP_PANEL_COMPACT", None)
+        self.st.serve(current="g1")
+        self.st.goal()
+        self.p.look()
+        self.p.draw(force=True)
+        self.assertEqual([h for h in self.p.hits if h[3] == "q"], [])
 
     def test_it_shows_what_the_service_writes_and_follows_it(self):
         self.assertIn("not running", self.see())

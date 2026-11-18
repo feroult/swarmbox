@@ -60,6 +60,10 @@ class Always(td.RealTmux):
     def hidden(self):
         return self.tmux.run("show-options", "-gqv", "@swarmbox_sysop_hidden").out.strip() == "1"
 
+    def open_compact(self):
+        """a window of 80 columns or fewer has no panel until it is opened (see the class Compact): the tests of the geometry of the panel in a narrow window open it first"""
+        self.assertEqual(self.tmux.run("set-option", "-g", "@swarmbox_sysop_open", "1").rc, 0)
+
     def windows(self):
         return self.tmux.run("list-windows", "-t", "=main", "-F", "#{window_id}").out.split()
 
@@ -265,8 +269,108 @@ class TwoScreens(Always):
         self.assertEqual(self.active_pane(self.win1), [self.user])
 
 
+class Compact(Always):
+    """A window of 80 columns or fewer (a phone) has no panel until it is opened: the key (or the Panel button, or a tap on the line of the page) opens it, the
+    close control or q closes it, an approval opens it by itself, and a computer that takes the window back wide gets its panel back."""
+
+    def flag(self):
+        return self.tmux.run("show-options", "-gqv", "@swarmbox_sysop_open").out.strip()
+
+    def test_a_narrow_window_has_no_panel_and_the_key_opens_and_closes_it(self):
+        self.serve_files()
+        self.attach(60, 50)
+        self.d.sync()
+        time.sleep(0.5)
+        self.assertEqual(self.panels(), [], "no panel in a window of 50 columns")
+        r = self.cli("toggle")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        panel, = self.wait(self.panels, "the panel after the key")
+        self.assertEqual(self.flag(), "1")
+        self.wait(lambda: "✕ close" in self.screen(panel["id"]), "the close control on its head line: %r" % self.screen(panel["id"]))
+        self.assertEqual(self.active_pane(self.win1), [self.user], "the panel did not take the focus")
+        self.assertEqual(self.cli("toggle").returncode, 0)
+        self.wait(lambda: not self.panels(), "the second key closes it")
+        self.assertEqual(self.flag(), "")
+        self.assertFalse(self.hidden(), "nothing was hidden for the other screens")
+
+    def test_the_close_control_closes_the_panel_and_hides_nothing(self):
+        self.serve_files()
+        c = self.attach(60, 50)
+        self.tmux.run("set-option", "-g", "mouse", "on")
+        self.assertEqual(self.cli("toggle").returncode, 0)
+        panel, = self.wait(self.panels, "the panel")
+        self.wait(lambda: "✕ close" in self.screen(panel["id"]), "the panel ready")
+        col, row = panel["left"] + panel["w"] - 3, panel["top"] + 1
+
+        def click():
+            c.send("\x1b[<0;%d;%dM\x1b[<0;%d;%dM" % (col, row, col, row))
+        click()                                      # the first click gives the panel the focus
+        self.wait(lambda: self.panels() and self.panels()[0]["active"], "the click to focus the panel")
+        time.sleep(0.8)
+        click()
+        self.wait(lambda: not self.panels(), "the close control closes the panel")
+        self.assertEqual(self.flag(), "")
+        self.assertFalse(self.hidden())
+
+    def test_q_in_a_narrow_panel_closes_it_and_hides_nothing(self):
+        self.serve_files()
+        c = self.attach(60, 50)
+        self.tmux.run("set-option", "-g", "mouse", "on")
+        self.assertEqual(self.cli("toggle").returncode, 0)
+        panel, = self.wait(self.panels, "the panel")
+        self.wait(lambda: "✕ close" in self.screen(panel["id"]), "the panel ready")
+        c.send("\x1b[<0;%d;%dM\x1b[<0;%d;%dM" % (panel["left"] + 5, panel["top"] + 3, panel["left"] + 5, panel["top"] + 3))
+        self.wait(lambda: self.panels() and self.panels()[0]["active"], "the click to focus the panel")
+        time.sleep(0.8)
+        self.tmux.run("send-keys", "-t", panel["id"], "q")
+        self.wait(lambda: not self.panels(), "q closes it")
+        self.assertEqual(self.flag(), "")
+        self.assertFalse(self.hidden())
+
+    def test_an_approval_opens_the_panel_and_it_closes_after_the_answer(self):
+        self.serve_files(current="g1")
+        gdir = self.pth.goal_dir("g1")
+        os.makedirs(gdir, mode=0o700, exist_ok=True)
+        ipc.write_json(os.path.join(gdir, "state.json"), {"id": "g1", "source": "voice", "text": "deploy", "state": "running", "created": time.time(), "started": time.time(),
+                                                          "ended": None, "say": [], "calls": [], "pending": None, "summary": "", "error": "", "note": "", "steps": 0, "brain": {}})
+        self.attach(60, 50)
+        f = dock.Follower(self.pth, dock=self.d, mode="always", interval=0.1, tick=0.5, grace=1.0).start()
+        self.addCleanup(f.shutdown)
+        time.sleep(1.0)
+        self.assertEqual(self.panels(), [], "a goal that runs opens nothing")
+        now = time.time()
+        pend = os.path.join(gdir, "pending_action.json")
+        ipc.write_json(pend, {"id": "p1", "goal": "g1", "tab": "@1", "label": "1:shell", "kind": "run", "text": "git push --force", "risk": "high", "reasons": ["a test"],
+                              "mode": "approve", "created": now, "deadline": now + 120})
+        self.wait(self.panels, "the panel opens for the approval", timeout=8)
+        self.assertEqual(self.flag(), "auto")
+        self.assertEqual(self.active_pane(self.win1), [self.user], "and does not take the focus")
+        time.sleep(2.0)
+        self.assertTrue(self.panels(), "it stays while the action waits")
+        os.unlink(pend)
+        self.wait(lambda: not self.panels(), "it closes by itself after the answer", timeout=10)
+        self.assertEqual(self.flag(), "")
+
+    def test_a_phone_takes_the_panel_away_and_the_computer_brings_it_back(self):
+        computer = self.attach(50, 200)
+        self.d.sync()
+        self.wait(self.one_panel_in_each_window, "the panel")
+        phone = self.attach(60, 50)
+        phone.send(b"\x1b[I")
+        width = lambda: self.tmux.run("display-message", "-p", "-t", self.win1, "#{window_width}").out.strip()
+        self.wait(lambda: width() == "50", "the window to be the phone's")
+        self.d.sync()
+        self.wait(lambda: not self.panels(), "no panel in the phone's window: %s" % self.panes())
+        computer.send(b"\x1b[I")
+        self.wait(lambda: width() == "200", "the window to be the computer's")
+        self.d.sync(force=True)
+        self.wait(self.one_panel_in_each_window, "the panel is back for the computer")
+        self.assertFalse(self.hidden())
+
+
 class Resizing(Always):
     def test_a_resize_flips_the_layout_of_each_window(self):
+        self.open_compact()
         c = self.attach(50, 200)               # landscape: right
         w2, _ = self.new_window()
         self.d.sync()
@@ -295,6 +399,7 @@ class Resizing(Always):
     def test_a_phone_that_changes_its_letters_keeps_one_panel_of_30_percent(self):
         """the letters of a phone shrink after the page opens and the window goes from 50 x 33 cells to 130 x 100 in a few steps (each refit): seen with two panels
         in the window, 70 % of its height between them, one showing Stop and the other Goal"""
+        self.open_compact()
         c = self.attach(50, 33)
         self.d.sync()
         self.wait(self.one_panel_in_each_window, "the panel")
@@ -310,6 +415,7 @@ class Resizing(Always):
         self.assertEqual(self.active_pane(self.win1), [self.user])
 
     def test_a_short_portrait_window_gets_the_minimum_height(self):
+        self.open_compact()
         self.attach(24, 60)
         self.d.sync()
         panel, = self.panels()
@@ -318,6 +424,7 @@ class Resizing(Always):
 
     def test_a_window_that_gets_shorter_keeps_a_useful_panel(self):
         """tmux shrinks panes in proportion and can leave a panel one line high: the hook puts the size back"""
+        self.open_compact()
         c = self.attach(70, 50)
         self.d.sync()
         self.wait(lambda: self.panels() and self.panels()[0]["h"] == 21, "30 % of 70")
@@ -328,6 +435,7 @@ class Resizing(Always):
         self.assertEqual(self.active_pane(self.win1), [self.user])
 
     def test_the_idle_screen_at_several_widths(self):
+        self.open_compact()
         self.serve_files()
         c = self.attach(50, 200)
         self.d.sync()
