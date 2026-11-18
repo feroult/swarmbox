@@ -66,8 +66,8 @@
   #swarmbox-strip[data-sysop="allow?"] .sb-yes { animation: sb-breathe 1.6s ease-in-out infinite; }
   @keyframes sb-breathe { 50% { box-shadow: 0 0 20px rgba(196, 181, 253, .95), inset 0 1px 0 rgba(255, 255, 255, .25); } }
 }
-/* a finger dragged over the terminal scrolls the history of tmux (ttyd-clipboard.js, dragScroll), so the browser must not pan or zoom the page under it */
-#terminal-container { touch-action: none; }
+/* a finger dragged over the terminal scrolls the history of tmux (ttyd-clipboard.js, dragScroll), so the browser must not pan the page under it; two fingers still zoom (pinch-zoom is the one gesture left to the browser) */
+#terminal-container { touch-action: pinch-zoom; }
 /* the DOM renderer (a phone) leaves a hairline between two rows of block characters: the rows that hold them, marked by ttyd-clipboard.js, are drawn 12% taller */
 .xterm-rows > div.sb-blk { transform: scaleY(1.12); }
 /* Panel is a switch (it shows or hides the panel of the sysop, and the page knows whether it is up): a pill with a light that is lit while the panel is on the screen */

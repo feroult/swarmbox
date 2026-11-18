@@ -595,6 +595,7 @@
       ensureTick();
       if (e.cancelable) e.preventDefault();
     }, { passive: false });
+    host.addEventListener('touchcancel', function () { id = null; moved = false; speed = 0; carry = 0; }, { passive: true });      // the browser took the gesture (a pinch)
     host.addEventListener('touchend', function (e) {
       if (moved && e.cancelable) e.preventDefault();      // a drag is not a tap: no click follows it
       var flick = moved && Math.abs(speed) >= FLICK_SPEED && now() - lastT < 80;      // still moving when the finger left

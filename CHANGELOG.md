@@ -5,6 +5,7 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Fixed: two fingers zoom the page again on a phone (the finger scroll had turned every gesture on the terminal off, the pinch too): the terminal now leaves the pinch to the browser and takes only the single finger.
 - Fixed: scrolling with a finger on a phone was slow and uneven. The text now goes further the faster the finger moves (2 to 8 times its distance), keeps going a little after a flick and slows down by itself, the wheel events are given out a few per frame, and a stretch of a screenful or more goes as one PageUp or PageDown key, as on a computer, instead of a dozen wheel events, and a slow finger is followed line by line (Ctrl+Up and Ctrl+Down of tmux in copy mode) and not in jumps of five lines. The Panel switch no longer lights up and goes out as the history scrolls by: it reads the word SYSOP only where it is bold and coloured, as in the panel, and is left alone while a tab is scrolled back.
 ## [2.0.15] - 2026-11-18
 

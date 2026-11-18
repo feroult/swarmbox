@@ -697,6 +697,13 @@ class FingerScroll(StripCase):
         self.assertTrue(any(s < 5 for s in steps), "the text moved by single lines at times, not only by 5: steps %r" % (sorted(steps),))
         self.assertGreater(seen[-1], 1.2 * 120 / self.page.js("window.term._core._renderService.dimensions.css.cell.height"), "and followed the finger: %r" % (seen,))
 
+    def test_two_fingers_still_zoom_the_page(self):
+        self.open(viewport="phone-portrait", command="bash --norc")
+        time.sleep(1.5)
+        self.assertEqual(self.page.js("getComputedStyle(document.getElementById('terminal-container')).touchAction"), "pinch-zoom", "the browser keeps the pinch, the page takes the single finger")
+        self.assertNotRegex(self.page.js("document.querySelector('meta[name=viewport]').content"), r"user-scalable|maximum-scale")
+        # (a pinch itself cannot be made in this headless Chromium: the scale stays 1 even with touch-action auto, so the two properties above are what is checked)
+
     def test_a_tap_scrolls_nothing(self):
         self.open(viewport="phone-portrait", command="bash --norc")
         time.sleep(1.5)
