@@ -239,6 +239,17 @@
       return !!c && c.isBold() !== 0 && !c.isFgDefault();      // tmux may turn the violet into the nearest of 256 colours, so it is not compared
     } catch (e) { return true; }      // a terminal that cannot say: trust the words
   }
+  // tmux writes [position/total] at the top right of a pane that is in copy mode (scrolled back): the screen shows old text then, so the state of the panel is left as it was
+  function inCopyMode() {
+    var t = window.term;
+    if (!t || !t.buffer || !t.buffer.active) return false;
+    var buf = t.buffer.active;
+    for (var r = 0; r < t.rows; r++) {
+      var line = buf.getLine(buf.viewportY + r);
+      if (line && /\[\d+\/\d+\]/.test(line.translateToString(true))) return true;
+    }
+    return false;
+  }
   function setOff(b, off) {
     if (!b) return;
     b.setAttribute('data-off', off ? '1' : '0');
@@ -248,7 +259,8 @@
     if (!strip || (!answers.yes && !answers.no && !answers.panel)) return;
     var seen = sysopState(), st = seen.state;
     strip.setAttribute('data-sysop', st || 'none');
-    if (answers.panel) { answers.panel.setAttribute('data-on', seen.up ? '1' : '0'); answers.panel.setAttribute('aria-pressed', seen.up ? 'true' : 'false'); }
+    // the switch is left as it was while a tab is scrolled back (its old text may say SYSOP too); Allow and Cancel keep reading, so a real question is never missed
+    if (answers.panel && !inCopyMode()) { answers.panel.setAttribute('data-on', seen.up ? '1' : '0'); answers.panel.setAttribute('aria-pressed', seen.up ? 'true' : 'false'); }
     setOff(answers.yes, st !== 'allow?');
     setOff(answers.no, st === '');
   }
@@ -501,7 +513,10 @@
   // the terminal makes no wheel event, and the browser would scroll xterm's own history, which is off (scrollback=0): so on a phone the history could not be reached.
   // A vertical drag is turned here into the wheel events a mouse would make, at the place of the finger, so the pane under it scrolls (a tab in copy mode, the log of
   // the sysop panel). One wheel event is tmux's step of 5 lines, so one is sent per 5 rows of drag: the text follows the finger, one to one. A tap is left alone.
-  var DRAG_PX = 8, WHEEL_ROWS = 5, DRAG_GAIN = 3;      // the text goes DRAG_GAIN times as far as the finger: one to one felt slow
+  // Like a finger on any list: the text goes further the faster the finger moves (GAIN_MIN to GAIN_MAX times its distance, by its speed), and it keeps going a while
+  // after the finger leaves (inertia), slowing down by itself. The wheel events are handed out a few per frame, so a fast flick is not one burst that tmux and the
+  // screen swallow in one go.
+  var DRAG_PX = 8, WHEEL_ROWS = 5, GAIN_MIN = 2, GAIN_MAX = 8, GAIN_PER_SPEED = 3, FLICK_SPEED = 0.25, FRICTION = 0.94, PER_FRAME = 3, MAX_BACKLOG = 40;
   function rowHeight() {
     try { return window.term._core._renderService.dimensions.css.cell.height || 14; } catch (e) { return 14; }
   }
@@ -515,32 +530,54 @@
     if (!host) return false;
     if (host.getAttribute('data-drag') === '1') return true;
     host.setAttribute('data-drag', '1');
-    var id = null, y0 = 0, last = 0, moved = false, carry = 0;
+    var id = null, y0 = 0, last = 0, lastT = 0, px = 0, py = 0, moved = false, carry = 0, speed = 0, gain = GAIN_MIN, coasting = 0;
     function mine(e) {
       for (var i = 0; i < e.touches.length; i++) if (e.touches[i].identifier === id) return e.touches[i];
       return null;
     }
+    function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+    function pump() {      // gives out the wheel events owed, a few at a time; carry is in pixels of text
+      var step = WHEEL_ROWS * rowHeight(), n = 0;
+      if (Math.abs(carry) > step * MAX_BACKLOG) carry = carry > 0 ? step * MAX_BACKLOG : -step * MAX_BACKLOG;
+      while (Math.abs(carry) >= step && n < PER_FRAME) {
+        wheel(px, py, carry > 0 ? -WHEEL_ROWS : WHEEL_ROWS);      // a finger moving down brings older text into view: the wheel turns up
+        carry += carry > 0 ? -step : step;
+        n++;
+      }
+    }
+    function coast(t0) {
+      var t = now(), dt = Math.min(50, t - t0);
+      if (id !== null) { coasting = 0; return; }      // a new touch stops it
+      carry += speed * dt * gain;
+      speed *= Math.pow(FRICTION, dt / 16);
+      pump();
+      if (Math.abs(speed) < 0.02 && Math.abs(carry) < WHEEL_ROWS * rowHeight()) { coasting = 0; return; }
+      coasting = requestAnimationFrame(function () { coast(t); });
+    }
     host.addEventListener('touchstart', function (e) {
       if (e.touches.length !== 1) { id = null; return; }
-      id = e.touches[0].identifier; y0 = last = e.touches[0].clientY; moved = false; carry = 0;
+      id = e.touches[0].identifier; y0 = last = e.touches[0].clientY; lastT = now(); moved = false; carry = 0; speed = 0;
+      px = e.touches[0].clientX; py = y0;
     }, { passive: true });
     host.addEventListener('touchmove', function (e) {
       var t = id === null ? null : mine(e);
       if (!t) return;
       if (!moved && Math.abs(t.clientY - y0) < DRAG_PX) return;
       moved = true;
-      carry += t.clientY - last;
-      last = t.clientY;
-      var step = WHEEL_ROWS * rowHeight() / DRAG_GAIN;
-      while (Math.abs(carry) >= step) {
-        wheel(t.clientX, t.clientY, carry > 0 ? -WHEEL_ROWS : WHEEL_ROWS);      // a finger moving down brings older text into view: the wheel turns up
-        carry += carry > 0 ? -step : step;
-      }
+      var tt = now(), dt = Math.max(1, tt - lastT), dy = t.clientY - last;
+      speed = speed === 0 ? dy / dt : 0.6 * speed + 0.4 * (dy / dt);      // px per ms, smoothed
+      gain = Math.min(GAIN_MAX, GAIN_MIN + GAIN_PER_SPEED * Math.abs(speed));
+      carry += dy * gain;
+      last = t.clientY; lastT = tt; px = t.clientX; py = t.clientY;
+      pump();
       if (e.cancelable) e.preventDefault();
     }, { passive: false });
     host.addEventListener('touchend', function (e) {
       if (moved && e.cancelable) e.preventDefault();      // a drag is not a tap: no click follows it
+      var flick = moved && Math.abs(speed) >= FLICK_SPEED && now() - lastT < 80;      // still moving when the finger left
       id = null; moved = false;
+      if (flick && typeof requestAnimationFrame === 'function' && !coasting) coasting = requestAnimationFrame(function () { coast(now()); });
+      else if (!flick) carry = 0;
     }, { passive: false });
     return true;
   }
