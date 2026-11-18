@@ -180,13 +180,15 @@ html.swarmbox-strip-float #swarmbox-strip .sb-note {
 @keyframes sb-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { #swarmbox-strip .sb-dot { animation: none !important; } }
 
-/* the page while it loads: black, with the name in the middle, until ttyd has sent the first screen (ttyd-clipboard.js adds swarmbox-ready); a pure CSS fallback
-   takes it away after 12 s, whatever happens to the script */
-html:not(.swarmbox-ready)::before {
+/* the page while it loads: black, with the name in the middle, until the page has settled (ttyd-clipboard.js adds swarmbox-ready once ttyd has sent its screen and the
+   size, font and strip stopped changing); it fades out. A pure CSS fallback takes it away after 12 s, whatever happens to the script */
+html::before {
   content: "SwarmBox"; position: fixed; z-index: 2147483000; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
   background: #0c0b10; color: #c4b5fd; font: 600 30px/1 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: .04em;
-  animation: sb-boot-in .5s ease both, sb-boot-out 0s linear 12s forwards;
+  opacity: 1; transition: opacity .45s ease, visibility 0s linear .45s;
+  animation: sb-boot-in .5s ease backwards, sb-boot-out 0s linear 12s forwards;
 }
+html.swarmbox-ready::before { opacity: 0; visibility: hidden; }
 @keyframes sb-boot-in { from { opacity: .0; } to { opacity: 1; } }
 @keyframes sb-boot-out { to { opacity: 0; visibility: hidden; } }
 

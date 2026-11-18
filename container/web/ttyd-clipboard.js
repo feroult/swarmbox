@@ -503,15 +503,27 @@
   }
   // The title of the terminal (OSC 0 or 2) is read off the output as it arrives, here, before xterm: tmux sends it when a client attaches, which is before the
   // terminal exists for onTitleChange to hear it, and the line of the sysop (below) would stay unknown until it changed.
-  // The first screen from ttyd (an output frame) ends the black page with the name (ttyd-style.css, html:not(.swarmbox-ready)::before); a moment later, so it is drawn.
-  var readyTimer = 0;
-  function ready() { var cl = document.documentElement && document.documentElement.classList; if (cl && cl.add) cl.add('swarmbox-ready'); }
-  function markReady(data) {
+  // The black page with the name (ttyd-style.css, html::before) goes when the page has SETTLED, not at the first screen: that one is drawn at the size the terminal had
+  // before the font, the strip and the size were fitted, and tmux then redraws it. So it waits for the first output, then for the strip to exist and for a quiet
+  // moment (QUIET_MS with no output and no resize); and never longer than BOOT_MAX_MS.
+  var QUIET_MS = 500, BOOT_MAX_MS = 7000, bootAt = Date.now(), firstOutput = 0, lastActivity = Date.now(), bootTimer = 0;
+  function ready() {
     var cl = document.documentElement && document.documentElement.classList;
-    if (readyTimer || !cl || (cl.contains && cl.contains('swarmbox-ready'))) return;
-    var first = typeof data === 'string' ? data.charCodeAt(0) : (data && Object.prototype.toString.call(data) === '[object ArrayBuffer]' ? new Uint8Array(data)[0] : -1);
-    if (first === 0x30) readyTimer = setTimeout(ready, 150);
+    if (cl && cl.add) cl.add('swarmbox-ready');
+    if (bootTimer) { clearInterval(bootTimer); bootTimer = 0; }
   }
+  function bootCheck() {
+    var now = Date.now();
+    if (now - bootAt >= BOOT_MAX_MS || (firstOutput && strip && now - lastActivity >= QUIET_MS)) ready();
+  }
+  function markReady(data) {
+    var first = typeof data === 'string' ? data.charCodeAt(0) : (data && Object.prototype.toString.call(data) === '[object ArrayBuffer]' ? new Uint8Array(data)[0] : -1);
+    if (first !== 0x30) return;
+    lastActivity = Date.now();
+    if (!firstOutput) firstOutput = lastActivity;
+    if (!bootTimer && typeof setInterval === 'function') bootTimer = setInterval(bootCheck, 100);
+  }
+  if (window.addEventListener) window.addEventListener('resize', function () { lastActivity = Date.now(); });
   function sniffTitle(data) {
     var u8;
     if (typeof data === 'string') { if (data.charCodeAt(0) !== 0x30 || data.indexOf('\x1b]') < 0) return; u8 = null; }
@@ -668,22 +680,25 @@
   }
 
   // ---- the keyboard of the phone ---------------------------------------------------------------------------------------------------
-  // A tap on the terminal focuses xterm's hidden textarea, and the phone then opens its keyboard every time, over half of the screen. On a touch screen the textarea
-  // is therefore marked inputmode="none": it takes the focus (the key buttons and a hardware keyboard type into it) and the phone shows no keyboard. The "Aa" button
-  // among the key buttons is the way to it: it makes the textarea a text one for as long as that keyboard is open, and the page puts it back to "none" when the keyboard
-  // goes away (the window gets its height back, or the textarea loses the focus).
-  var oskOpen = false, oskHeight = 0;
+  // A tap on the terminal focuses xterm's hidden textarea, and the phone then opens its keyboard every time, over half of the screen. On a touch screen the keyboard is
+  // therefore opened only by the "Aa" button among the key buttons. Chrome on a phone has an API for exactly this, the VirtualKeyboard: with virtualkeyboardpolicy="manual"
+  // on the textarea a focus never shows the keyboard, and navigator.virtualKeyboard.show() does. Where there is none (Safari, Firefox) the textarea is marked
+  // inputmode="none" (it takes the focus, the key buttons and a hardware keyboard type into it, and no keyboard shows), "Aa" makes it a text one for as long as that keyboard
+  // is open, and the page puts it back when the keyboard goes away (the window gets its height back, or the textarea loses the focus).
+  var oskOpen = false, oskHeight = 0, oskAt = 0;
+  function vkApi() { try { return navigator.virtualKeyboard && typeof navigator.virtualKeyboard.show === 'function' ? navigator.virtualKeyboard : null; } catch (e) { return null; } }
   function inputBox() { var t = window.term; if (t && t.textarea) return t.textarea; try { return document.querySelector('.xterm-helper-textarea'); } catch (e) { return null; } }
   function setInputMode(mode) { var ta = inputBox(); if (ta && ta.getAttribute('inputmode') !== mode) ta.setAttribute('inputmode', mode); }
   function openPhoneKeyboard() {
-    var ta = inputBox();
+    var ta = inputBox(), vk = vkApi();
     if (!ta) return;
+    if (vk) { ta.focus(); try { vk.show(); } catch (e) { /* not now */ } return; }
     ta.blur();      // a focus that is already there does not bring the keyboard: take it (before oskOpen, or its own blur would close what is being opened) and give it again
     oskOpen = true;
     oskAt = Date.now();
     oskHeight = window.innerHeight;
     ta.setAttribute('inputmode', 'text');
-    ta.focus();
+    setTimeout(function () { ta.focus(); }, 30);
   }
   function closePhoneKeyboard() { oskOpen = false; setInputMode('none'); }
   function watchInputMode() {
@@ -692,14 +707,18 @@
     if (!coarse.matches) return true;      // a computer: nothing to turn off
     if (ta.getAttribute('data-sbosk') === '1') return true;
     ta.setAttribute('data-sbosk', '1');
+    if (vkApi()) {
+      ta.setAttribute('virtualkeyboardpolicy', 'manual');
+      try { ta.virtualKeyboardPolicy = 'manual'; } catch (e) { /* the attribute is enough */ }
+      return true;
+    }
     ta.setAttribute('inputmode', 'none');
-    ta.addEventListener('blur', function () { if (oskOpen) closePhoneKeyboard(); });
+    ta.addEventListener('blur', function () { if (oskOpen && Date.now() - oskAt > 300) closePhoneKeyboard(); });
     window.addEventListener('resize', function () {
       if (oskOpen && window.innerHeight >= oskHeight - 2 && Date.now() - oskAt > 1500) closePhoneKeyboard();      // the keyboard went away: the window is as tall as it was
     });
     return true;
   }
-  var oskAt = 0;
 
   // ---- coming back: no Enter to reconnect ---------------------------------------------------------------------------------------------
   // When the connection is lost for good (a phone that slept, a box that restarted) ttyd writes "Press ⏎ to Reconnect" over the terminal and waits for the Enter

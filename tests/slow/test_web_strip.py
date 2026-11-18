@@ -723,28 +723,45 @@ KEEP_SOCKETS = "(() => { const O = WebSocket; window.__ws = []; window.WebSocket
 
 @bs.browser_tests()
 class PhoneKeyboard(StripCase):
-    def mode(self):
-        return self.page.js("document.querySelector('.xterm-helper-textarea').getAttribute('inputmode')")
+    NO_VK = "Object.defineProperty(navigator, 'virtualKeyboard', {value: undefined, configurable: true});"
+    SPY_VK = "if (navigator.virtualKeyboard) { window.__vk = []; navigator.virtualKeyboard.show = () => window.__vk.push('show'); navigator.virtualKeyboard.hide = () => window.__vk.push('hide'); }"
 
-    def test_a_tap_on_the_screen_does_not_open_the_keyboard_of_the_phone_and_the_button_does(self):
-        self.open(viewport="phone-portrait", command="bash --norc")
-        self.assertTrue(wait_until(lambda: self.mode() == "none", 6, 0.1), "the textarea of a touch screen is inputmode none: %r" % (self.mode(),))
+    def attr(self, name):
+        return self.page.js("document.querySelector('.xterm-helper-textarea').getAttribute(%r)" % name)
+
+    def test_chrome_on_a_phone_never_shows_the_keyboard_on_a_tap_and_the_button_shows_it(self):
+        self.open(viewport="phone-portrait", command="bash --norc", init_script=self.SPY_VK)
+        if not self.page.js("!!navigator.virtualKeyboard"):
+            self.skipTest("this Chromium has no VirtualKeyboard API")
+        self.assertTrue(wait_until(lambda: self.attr("virtualkeyboardpolicy") == "manual", 6, 0.1), "the textarea of a touch screen has the policy manual: a focus shows no keyboard")
         self.page.js("term.focus()")
         time.sleep(0.3)
-        self.assertEqual(self.mode(), "none", "a tap that focuses the terminal brings no keyboard")
-        self.assertEqual(self.page.js("document.activeElement === document.querySelector('.xterm-helper-textarea')"), True, "the focus is there: the key buttons and a keyboard of hardware still type")
-        self.t.clear_sent()
+        self.assertEqual(self.page.js("window.__vk"), [], "a tap that focuses the terminal asks for no keyboard")
         self.page.js("document.querySelector('#swarmbox-strip .sb-osk').click()")
         time.sleep(0.3)
-        self.assertEqual(self.mode(), "text", "the Aa button opens it")
+        self.assertEqual(self.page.js("window.__vk"), ["show"], "the Aa button asks for it")
         self.assertEqual(self.page.js("document.activeElement === document.querySelector('.xterm-helper-textarea')"), True)
+
+    def test_without_that_api_the_textarea_is_inputmode_none_until_the_button_opens_it(self):
+        self.open(viewport="phone-portrait", command="bash --norc", init_script=self.NO_VK)
+        self.assertTrue(wait_until(lambda: self.attr("inputmode") == "none", 6, 0.1), "inputmode none: %r" % (self.attr("inputmode"),))
+        self.page.js("term.focus()")
+        time.sleep(0.3)
+        self.assertEqual(self.attr("inputmode"), "none", "a tap that focuses the terminal brings no keyboard")
+        self.assertEqual(self.page.js("document.activeElement === document.querySelector('.xterm-helper-textarea')"), True, "the focus is there: the key buttons and a keyboard of hardware still type")
+        self.page.js("document.querySelector('#swarmbox-strip .sb-osk').click()")
+        self.assertTrue(wait_until(lambda: self.attr("inputmode") == "text", 3, 0.1), "the Aa button opens it")
+        time.sleep(0.2)
+        self.assertEqual(self.page.js("document.activeElement === document.querySelector('.xterm-helper-textarea')"), True)
+        time.sleep(0.4)
         self.page.js("document.querySelector('.xterm-helper-textarea').blur()")
-        self.assertTrue(wait_until(lambda: self.mode() == "none", 4, 0.1), "and when the keyboard goes away it is none again")
+        self.assertTrue(wait_until(lambda: self.attr("inputmode") == "none", 4, 0.1), "and when the keyboard goes away it is none again")
 
     def test_a_computer_keeps_its_textarea_as_it_was(self):
         self.open(viewport="desktop", command="bash --norc")
         time.sleep(1.0)
-        self.assertIsNone(self.mode())
+        self.assertIsNone(self.attr("inputmode"))
+        self.assertIsNone(self.attr("virtualkeyboardpolicy"))
         self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-osk') === null || document.querySelector('#swarmbox-strip .sb-osk').hidden"), True)
 
 
@@ -805,7 +822,11 @@ class Toast(StripCase):
                   init_script="document.addEventListener('DOMContentLoaded', () => { window.__splash = getComputedStyle(document.documentElement, '::before').content; });")
         self.assertEqual(self.page.js("window.__splash"), '"SwarmBox"', "the page starts with the name")
         self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.classList.contains('swarmbox-ready')"), 10, 0.1), "and is ready once the terminal drew")
-        self.assertEqual(self.page.js("getComputedStyle(document.documentElement, '::before').content"), "none")
+        shape = lambda: self.page.js("[term.cols, term.rows, Math.round(document.getElementById('swarmbox-strip').getBoundingClientRect().height), term.options.fontSize]")
+        at_ready = shape()
+        time.sleep(1.5)
+        self.assertEqual(shape(), at_ready, "when the black page goes, the screen behind it has stopped changing (font, columns, rows and strip)")
+        self.assertEqual(self.page.js("getComputedStyle(document.documentElement, '::before').visibility"), "hidden")
 
     def test_a_line_that_was_there_before_the_page_opened_is_known_at_once(self):
         """tmux sends the title when a client attaches, before the terminal exists to hear it: the page reads it off the websocket"""
