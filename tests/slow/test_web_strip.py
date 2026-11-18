@@ -722,6 +722,33 @@ KEEP_SOCKETS = "(() => { const O = WebSocket; window.__ws = []; window.WebSocket
 
 
 @bs.browser_tests()
+class PhoneKeyboard(StripCase):
+    def mode(self):
+        return self.page.js("document.querySelector('.xterm-helper-textarea').getAttribute('inputmode')")
+
+    def test_a_tap_on_the_screen_does_not_open_the_keyboard_of_the_phone_and_the_button_does(self):
+        self.open(viewport="phone-portrait", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.mode() == "none", 6, 0.1), "the textarea of a touch screen is inputmode none: %r" % (self.mode(),))
+        self.page.js("term.focus()")
+        time.sleep(0.3)
+        self.assertEqual(self.mode(), "none", "a tap that focuses the terminal brings no keyboard")
+        self.assertEqual(self.page.js("document.activeElement === document.querySelector('.xterm-helper-textarea')"), True, "the focus is there: the key buttons and a keyboard of hardware still type")
+        self.t.clear_sent()
+        self.page.js("document.querySelector('#swarmbox-strip .sb-osk').click()")
+        time.sleep(0.3)
+        self.assertEqual(self.mode(), "text", "the Aa button opens it")
+        self.assertEqual(self.page.js("document.activeElement === document.querySelector('.xterm-helper-textarea')"), True)
+        self.page.js("document.querySelector('.xterm-helper-textarea').blur()")
+        self.assertTrue(wait_until(lambda: self.mode() == "none", 4, 0.1), "and when the keyboard goes away it is none again")
+
+    def test_a_computer_keeps_its_textarea_as_it_was(self):
+        self.open(viewport="desktop", command="bash --norc")
+        time.sleep(1.0)
+        self.assertIsNone(self.mode())
+        self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-osk') === null || document.querySelector('#swarmbox-strip .sb-osk').hidden"), True)
+
+
+@bs.browser_tests()
 class Toast(StripCase):
     STATE = ("(() => { const s = document.getElementById('swarmbox-strip'), v = e => !!e && getComputedStyle(e).display !== 'none'; "
              "const t = s.querySelector('.sb-toast'), p = s.querySelector('.sb-sysop'); "
@@ -751,7 +778,7 @@ class Toast(StripCase):
         self.page.js("document.querySelector('#swarmbox-strip .sb-keytoggle').click()")
         self.assertTrue(wait_until(lambda: self.state()[:3] == ["keys", True, True], 6, 0.1), "the keyboard button brings the row of keys above the bar: %r" % (self.state(),))
         row = self.page.js("Array.from(document.querySelectorAll('#swarmbox-strip .sb-keys .sb-btn')).filter(b => getComputedStyle(b).display !== 'none').map(b => [b.textContent.trim(), Math.round(b.getBoundingClientRect().top), Math.round(b.getBoundingClientRect().height)])")
-        self.assertEqual([r[0] for r in row], ["Esc", "Tab", "^C", "\u2190", "\u2191", "\u2193", "\u2192"], "one slim row, no Allow, Cancel or Panel: %r" % (row,))
+        self.assertEqual([r[0] for r in row], ["Esc", "Tab", "^C", "\u2190", "\u2191", "\u2193", "\u2192", "Aa"], "one slim row, no Allow, Cancel or Panel, and Aa for the keyboard of the phone: %r" % (row,))
         self.assertEqual(len({r[1] for r in row}), 1, "all in one row: %r" % (row,))
         self.assertLessEqual(row[0][2], 38)
         self.shot("phone-portrait-toast-keys")

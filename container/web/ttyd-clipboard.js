@@ -159,7 +159,7 @@
   }
 
   var keys = parseKeys(cfg.keys);
-  var strip, keysEl, slot, noteEl, noteTimer = 0, byId = {}, count = 0;
+  var oskBtn, strip, keysEl, slot, noteEl, noteTimer = 0, byId = {}, count = 0;
   var coarse = window.matchMedia ? window.matchMedia('(pointer: coarse)') : { matches: false };
 
   function el(tag, cls) { var e = document.createElement(tag); if (cls) e.className = cls; return e; }
@@ -279,6 +279,14 @@
       if (arrow) { if (!pad) { pad = el('div', 'sb-pad'); keysEl.appendChild(pad); } pad.appendChild(keyButton(d)); }
       else { pad = null; keysEl.appendChild(keyButton(d)); }
     });
+    oskBtn = el('button', 'sb-btn sb-osk');      // the one way to the keyboard of the phone: it is not opened by a tap on the screen (see "the keyboard of the phone")
+    oskBtn.type = 'button';
+    oskBtn.textContent = 'Aa';
+    oskBtn.setAttribute('aria-label', 'Open the keyboard of the phone');
+    oskBtn.title = 'Open the keyboard of the phone';
+    keepFocus(oskBtn);
+    oskBtn.addEventListener('click', openPhoneKeyboard);
+    keysEl.appendChild(oskBtn);
     slot = el('div', 'sb-slot');
     noteEl = el('div', 'sb-note');
     noteEl.hidden = true;
@@ -305,6 +313,8 @@
     if (!strip) return;
     var keysOn = mode === 'on' || custom || coarse.matches;
     keysEl.hidden = !(keysOn && keys.length > 0);
+    oskBtn.hidden = !coarse.matches;
+    keysEl.setAttribute('data-osk', coarse.matches ? '1' : '0');
     var show = mode !== 'off' && (!keysEl.hidden || slot.children.length > 0 || mode === 'on');
     // only controls of addons and no key buttons (a desktop with the microphone): no bar at all, the controls float in the top right corner, over the
     // sysop panel, and the terminal keeps the whole window. With key buttons (a phone, or stripKeys listed, or strip=on) it is the bar below the terminal.
@@ -657,6 +667,40 @@
     return true;
   }
 
+  // ---- the keyboard of the phone ---------------------------------------------------------------------------------------------------
+  // A tap on the terminal focuses xterm's hidden textarea, and the phone then opens its keyboard every time, over half of the screen. On a touch screen the textarea
+  // is therefore marked inputmode="none": it takes the focus (the key buttons and a hardware keyboard type into it) and the phone shows no keyboard. The "Aa" button
+  // among the key buttons is the way to it: it makes the textarea a text one for as long as that keyboard is open, and the page puts it back to "none" when the keyboard
+  // goes away (the window gets its height back, or the textarea loses the focus).
+  var oskOpen = false, oskHeight = 0;
+  function inputBox() { var t = window.term; if (t && t.textarea) return t.textarea; try { return document.querySelector('.xterm-helper-textarea'); } catch (e) { return null; } }
+  function setInputMode(mode) { var ta = inputBox(); if (ta && ta.getAttribute('inputmode') !== mode) ta.setAttribute('inputmode', mode); }
+  function openPhoneKeyboard() {
+    var ta = inputBox();
+    if (!ta) return;
+    ta.blur();      // a focus that is already there does not bring the keyboard: take it (before oskOpen, or its own blur would close what is being opened) and give it again
+    oskOpen = true;
+    oskAt = Date.now();
+    oskHeight = window.innerHeight;
+    ta.setAttribute('inputmode', 'text');
+    ta.focus();
+  }
+  function closePhoneKeyboard() { oskOpen = false; setInputMode('none'); }
+  function watchInputMode() {
+    var ta = inputBox();
+    if (!ta) return false;
+    if (!coarse.matches) return true;      // a computer: nothing to turn off
+    if (ta.getAttribute('data-sbosk') === '1') return true;
+    ta.setAttribute('data-sbosk', '1');
+    ta.setAttribute('inputmode', 'none');
+    ta.addEventListener('blur', function () { if (oskOpen) closePhoneKeyboard(); });
+    window.addEventListener('resize', function () {
+      if (oskOpen && window.innerHeight >= oskHeight - 2 && Date.now() - oskAt > 1500) closePhoneKeyboard();      // the keyboard went away: the window is as tall as it was
+    });
+    return true;
+  }
+  var oskAt = 0;
+
   // ---- coming back: no Enter to reconnect ---------------------------------------------------------------------------------------------
   // When the connection is lost for good (a phone that slept, a box that restarted) ttyd writes "Press ⏎ to Reconnect" over the terminal and waits for the Enter
   // key. The page presses it itself: at once, then again every 2 s, 4 s ... up to 10 s while the message stays (the box may still be coming up).
@@ -767,7 +811,7 @@
     return true;
   }
 
-  window.swarmboxStrip = { rewritePrefs: rewritePrefs, markBlockRows: markBlockRows, get fontSets() { return fontSets; }, get prefs() { return [prefsSeen, prefsRewritten]; }, claimSize: claimSize, fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, titleChanged: titleChanged, checkReconnect: checkReconnect, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
+  window.swarmboxStrip = { rewritePrefs: rewritePrefs, markBlockRows: markBlockRows, get fontSets() { return fontSets; }, get prefs() { return [prefsSeen, prefsRewritten]; }, claimSize: claimSize, fontFor: fontFor, setColumns: setColumns, add: add, remove: remove, note: note, titleChanged: titleChanged, checkReconnect: checkReconnect, openPhoneKeyboard: openPhoneKeyboard, refit: refit, parseKeys: parseKeys, keyBytes: keyBytes,
                            get element() { return strip; }, get visible() { return !!strip && !strip.hidden; } };
 
   // A page in another origin's frame never gets the strip: one click there would type a key (clickjacking). The server side says the same with
@@ -801,6 +845,7 @@
       window.visualViewport.addEventListener('resize', viewport);
       window.visualViewport.addEventListener('scroll', viewport);
     }
+    (function waitInput(n) { if (!watchInputMode() && n > 0) setTimeout(function () { waitInput(n - 1); }, 100); })(100);
     var tc = document.getElementById('terminal-container');
     if (tc && window.ResizeObserver) new ResizeObserver(refit).observe(tc);
   }
