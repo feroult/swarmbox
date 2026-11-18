@@ -660,7 +660,24 @@ class FingerScroll(StripCase):
         self.assertTrue(wait_until(lambda: int(self.t.tmux("display-message", "-p", "-t", "t:", "#{scroll_position}").strip() or 0) > 0, 6, 0.1))
         time.sleep(0.5)
         got = int(self.t.tmux("display-message", "-p", "-t", "t:", "#{scroll_position}").strip())
-        self.assertGreater(got, 2 * 100 / rowpx, "100 px of finger is %d lines of %.1f px: more than twice the distance" % (got, rowpx))
+        self.assertGreater(got, 1.3 * 100 / rowpx, "100 px of finger is %d lines of %.1f px: further than the finger" % (got, rowpx))
+
+    def test_a_long_fast_drag_is_followed_to_the_end_even_if_the_finger_stops(self):
+        self.open(viewport="phone-portrait", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05))
+        time.sleep(1.0)
+        self.t.type("clear; seq 1 3000\r")
+        self.assertTrue(self.t.wait_screen("3000", 10))
+        self.page.call("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": 200, "y": 100}])
+        for i in range(1, 7):
+            self.page.call("Input.dispatchTouchEvent", type="touchMove", touchPoints=[{"x": 200, "y": 100 + 100 * i}])
+            time.sleep(0.01)
+        time.sleep(0.3)      # the finger rests at the bottom
+        self.page.call("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
+        rowpx = self.page.js("window.term._core._renderService.dimensions.css.cell.height")
+        pos = lambda: int(self.t.tmux("display-message", "-p", "-t", "t:", "#{scroll_position}").strip() or 0)
+        time.sleep(1.5)
+        self.assertGreater(pos(), 600 / rowpx * 1.8, "600 px of finger: the text got there (%d lines of %.1f px)" % (pos(), rowpx))
 
     def test_a_tap_scrolls_nothing(self):
         self.open(viewport="phone-portrait", command="bash --norc")

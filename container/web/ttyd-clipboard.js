@@ -516,7 +516,7 @@
   // Like a finger on any list: the text goes further the faster the finger moves (GAIN_MIN to GAIN_MAX times its distance, by its speed), and it keeps going a while
   // after the finger leaves (inertia), slowing down by itself. The wheel events are handed out a few per frame, so a fast flick is not one burst that tmux and the
   // screen swallow in one go.
-  var DRAG_PX = 8, WHEEL_ROWS = 5, GAIN_MIN = 2, GAIN_MAX = 8, GAIN_PER_SPEED = 3, FLICK_SPEED = 0.25, FRICTION = 0.94, PER_FRAME = 3, MAX_BACKLOG = 40;
+  var DRAG_PX = 8, WHEEL_ROWS = 5, GAIN_MIN = 2, GAIN_MAX = 8, GAIN_PER_SPEED = 3, FLICK_SPEED = 0.25, FRICTION = 0.94, PER_FRAME = 6, MAX_BACKLOG = 200;
   function rowHeight() {
     try { return window.term._core._renderService.dimensions.css.cell.height || 14; } catch (e) { return 14; }
   }
@@ -536,7 +536,7 @@
       return null;
     }
     function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
-    function pump() {      // gives out the wheel events owed, a few at a time; carry is in pixels of text
+    function pump() {      // gives out the wheel events owed, a few per frame; carry is in pixels of text
       var step = WHEEL_ROWS * rowHeight(), n = 0;
       if (Math.abs(carry) > step * MAX_BACKLOG) carry = carry > 0 ? step * MAX_BACKLOG : -step * MAX_BACKLOG;
       while (Math.abs(carry) >= step && n < PER_FRAME) {
@@ -545,15 +545,20 @@
         n++;
       }
     }
-    function coast(t0) {
+    // One loop per frame while the finger is down and after it leaves, until everything owed is given out: the events do not wait for the next touchmove
+    // (a finger that stops, or a drag faster than PER_FRAME events a frame, would otherwise leave the text behind it).
+    function tick(t0) {
       var t = now(), dt = Math.min(50, t - t0);
-      if (id !== null) { coasting = 0; return; }      // a new touch stops it
-      carry += speed * dt * gain;
-      speed *= Math.pow(FRICTION, dt / 16);
+      if (id === null) {      // released: inertia, if it was a flick
+        carry += speed * dt * gain;
+        speed *= Math.pow(FRICTION, dt / 16);
+      }
       pump();
-      if (Math.abs(speed) < 0.02 && Math.abs(carry) < WHEEL_ROWS * rowHeight()) { coasting = 0; return; }
-      coasting = requestAnimationFrame(function () { coast(t); });
+      var owed = Math.abs(carry) >= WHEEL_ROWS * rowHeight();
+      if (id !== null || owed || Math.abs(speed) >= 0.02) { coasting = requestAnimationFrame(function () { tick(t); }); return; }
+      coasting = 0; carry = 0;
     }
+    function ensureTick() { if (!coasting && typeof requestAnimationFrame === 'function') coasting = requestAnimationFrame(function () { tick(now()); }); }
     host.addEventListener('touchstart', function (e) {
       if (e.touches.length !== 1) { id = null; return; }
       id = e.touches[0].identifier; y0 = last = e.touches[0].clientY; lastT = now(); moved = false; carry = 0; speed = 0;
@@ -569,15 +574,15 @@
       gain = Math.min(GAIN_MAX, GAIN_MIN + GAIN_PER_SPEED * Math.abs(speed));
       carry += dy * gain;
       last = t.clientY; lastT = tt; px = t.clientX; py = t.clientY;
-      pump();
+      ensureTick();
       if (e.cancelable) e.preventDefault();
     }, { passive: false });
     host.addEventListener('touchend', function (e) {
       if (moved && e.cancelable) e.preventDefault();      // a drag is not a tap: no click follows it
       var flick = moved && Math.abs(speed) >= FLICK_SPEED && now() - lastT < 80;      // still moving when the finger left
       id = null; moved = false;
-      if (flick && typeof requestAnimationFrame === 'function' && !coasting) coasting = requestAnimationFrame(function () { coast(now()); });
-      else if (!flick) carry = 0;
+      if (!flick) speed = 0;
+      ensureTick();
     }, { passive: false });
     return true;
   }
