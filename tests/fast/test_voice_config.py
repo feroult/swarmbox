@@ -177,9 +177,8 @@ class DocsTests(unittest.TestCase):
         for key in KEYS:
             self.assertIn("`%s`" % key, text)
         change = read(os.path.join(ROOT, "CHANGELOG.md"))
-        # [Unreleased] and the newest release: the release script moves the first into the second, so the entry is in one or the other at any moment
-        sections = change.split("\n## [")
-        recent = "\n".join(sections[1:3])
+        # the entry is history: it stays in the CHANGELOG whichever release is the newest, so the whole file is searched
+        recent = change
         self.assertRegex(recent, r"- Added: .*`voice`")
         self.assertIn("swarmbox update", recent)
 
