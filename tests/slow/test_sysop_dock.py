@@ -140,12 +140,12 @@ class RealTmux(unittest.TestCase):
         return c
 
     def panes(self):
-        fmt = "#{pane_id} #{window_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height} #{window_width} #{window_height} #{pane_active} #{@swarmbox_sysop_panel}"
+        fmt = "#{pane_id} #{window_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height} #{window_width} #{window_height} #{pane_active} #{@swarmbox_sysop_panel} #{@swarmbox_sysop_kind}"
         out = []
         for line in self.tmux.run("list-panes", "-s", "-t", "=main", "-F", fmt).out.splitlines():
             p = line.split(" ")
             out.append({"id": p[0], "win": p[1], "left": int(p[2]), "top": int(p[3]), "w": int(p[4]), "h": int(p[5]), "ww": int(p[6]), "wh": int(p[7]),
-                        "active": p[8] == "1", "panel": p[9] == "1"})
+                        "active": p[8] == "1", "panel": p[9] == "1" and p[10] != "approval", "approval": p[10] == "approval"})
         return out
 
     def panels(self):

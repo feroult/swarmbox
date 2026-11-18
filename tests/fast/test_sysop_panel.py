@@ -445,6 +445,121 @@ class Approval(unittest.TestCase):
         self.assertEqual(m.hidden, 0)
 
 
+class ApprovalPane(unittest.TestCase):
+    """The approval pane of a narrow window (render_approval, the keys with approval_only): the action and two big buttons, nothing else."""
+
+    def pending_model(self, **kw):
+        kw.setdefault("mode", "approve")
+        kw.setdefault("risk", "high")
+        m = model_with(make_goal(text="deploy the site"), make_pending(**kw))
+        m.approval_only = True
+        return m
+
+    def lines(self, m, cols=64, rows=10, color=False, wall=None):
+        f = panel.render_approval(m, cols, rows, time.time() if wall is None else wall, color)
+        return [strip_ansi(x) for x in f.lines], f
+
+    def test_it_shows_the_risk_the_action_and_two_buttons_and_nothing_else(self):
+        m = self.pending_model(text="git push --force origin main", risk="high")
+        lines, f = self.lines(m)
+        text = "\n".join(lines)
+        self.assertEqual(len(lines), 10)
+        self.assertIn("ALLOW?", lines[0])
+        self.assertIn("high risk", lines[0])
+        self.assertIn("git push --force origin main", text)
+        self.assertIn("Allow", text)
+        self.assertIn("Cancel", text)
+        for word in ("deploy the site", "SYSOP", "Goal", "Stop", "earlier", "Say or type"):
+            self.assertNotIn(word, text, "the goal, the log and the panel's own words stay out")
+
+    def test_the_risk_colours_the_bar_and_medium_says_medium(self):
+        for risk, name in (("high", "ff6b78"), ("medium", "fbbf24")):
+            lines, f = self.lines(self.pending_model(risk=risk), color=True)
+            r, g, b = int(name[0:2], 16), int(name[2:4], 16), int(name[4:6], 16)
+            self.assertIn("48;2;%d;%d;%d" % (r, g, b), f.lines[0], risk)
+        self.assertIn("medium risk", self.lines(self.pending_model(risk="medium"))[0][0])
+
+    def test_the_buttons_are_three_rows_high_and_each_takes_half_the_width(self):
+        lines, f = self.lines(self.pending_model(), cols=64, rows=10)
+        allow = [h for h in f.hits if h[3] == "a"]
+        cancel = [h for h in f.hits if h[3] == "c"]
+        self.assertEqual(sorted(h[0] for h in allow), [8, 9, 10], "Allow: three rows at the bottom")
+        self.assertEqual(sorted(h[0] for h in cancel), [8, 9, 10])
+        a0, a1 = allow[0][1], allow[0][2]
+        c0, c1 = cancel[0][1], cancel[0][2]
+        self.assertLess(a1, c0, "side by side, Allow first")
+        self.assertAlmostEqual(a1 - a0, c1 - c0, delta=1)
+        self.assertGreaterEqual((a1 - a0 + 1) * 2 + 3, 64 - 3, "and each is about half of the width")
+        self.assertTrue(lines[9].strip() or lines[8].strip(), "the buttons are drawn")
+
+    def test_a_pane_that_is_short_has_one_row_buttons_and_every_size_fits(self):
+        for cols in (16, 24, 40, 64, 80):
+            for rows in (3, 4, 5, 6, 7, 8, 10, 12):
+                for text in ("ls", "x " * 300):
+                    m = self.pending_model(text=text)
+                    lines, f = self.lines(m, cols=cols, rows=rows)
+                    self.assertEqual(len(lines), max(3, rows), (cols, rows))
+                    for ln in lines:
+                        self.assertLessEqual(text_width(ln), cols, (cols, rows))
+                    for row, c0, c1, key in f.hits:
+                        self.assertTrue(1 <= row <= len(lines) and 1 <= c0 <= c1 <= cols, (cols, rows, f.hits))
+
+    def test_an_action_that_does_not_fit_says_so_and_can_only_be_cancelled(self):
+        m = self.pending_model(text="word " * 200)
+        lines, f = self.lines(m, cols=40, rows=10)
+        self.assertIn("more characters not shown", "\n".join(lines))
+        self.assertEqual({h[3] for h in f.hits}, {"c"}, "no Allow")
+        self.assertEqual(m.hidden > 0, True)
+        m.update(snap(make_goal(), make_pending(mode="approve", risk="high", text="word " * 200)), 0.0)
+        self.assertIsNone(m.key("a", 99.0, time.time()), "and the key refuses too")
+
+    def test_five_lines_of_the_action_are_shown(self):
+        m = self.pending_model(text=" ".join("w%02d" % i for i in range(60)))
+        lines, f = self.lines(m, cols=40, rows=12)
+        self.assertEqual(sum(1 for ln in lines if ln.startswith(" \u203a")), 4, "four lines and the note that the rest is not shown")
+        m2 = self.pending_model(text=" ".join("w%02d" % i for i in range(44)))
+        lines2, _ = self.lines(m2, cols=40, rows=12)
+        self.assertEqual(sum(1 for ln in lines2 if ln.startswith(" \u203a")), 5)
+
+    def test_with_nothing_to_approve_it_is_empty(self):
+        for m in (model_with(), model_with(make_goal(), make_pending(mode="veto")), model_with(make_goal(), make_pending(mode="approve", deadline=time.time() - 5))):
+            m.approval_only = True
+            lines, f = self.lines(m)
+            self.assertEqual("".join(lines).strip(), "", "an empty, calm screen")
+            self.assertEqual(f.hits, [])
+
+    def test_the_text_of_a_tab_in_the_action_is_printed_safe(self):
+        m = self.pending_model(text="echo \x1b[31mred\x1b[0m \u202eevil")
+        lines, f = self.lines(m, color=True)
+        shown = "".join(f.lines)
+        self.assertNotIn("\x1b[31m", shown)
+        self.assertNotIn("\u202e", shown)
+
+    def test_keys_a_and_y_allow_c_and_n_refuse_and_nothing_else_does_anything(self):
+        for k, want in (("a", "approve"), ("y", "approve"), ("c", "deny"), ("n", "deny")):
+            m = self.pending_model()
+            cmd = m.key(k, 99.0, time.time())
+            self.assertEqual(cmd[0], "decide", k)
+            self.assertEqual(cmd[3], want, k)
+        for k in ("q", "ctrl-c", "g", "x", "X", "up", "down", "pgup", " ", "enter", "esc"):
+            m = self.pending_model()
+            self.assertIsNone(m.key(k, 99.0, time.time()), "a stray %r does nothing here" % k)
+            self.assertFalse(m.finished or m.quit_key, k)
+            self.assertEqual((m.mode, m.scroll), ("view", 0), k)
+
+    def test_it_answers_after_the_guard_only_an_approval_that_is_live_and_never_a_countdown(self):
+        m = self.pending_model()
+        m.ready_at = 5.0
+        self.assertIsNone(m.key("a", 4.0, time.time()), "the half second guard")
+        self.assertIsNotNone(m.key("a", 6.0, time.time()))
+        veto = model_with(make_goal(), make_pending(mode="veto"))
+        veto.approval_only = True
+        self.assertIsNone(veto.key("c", 99.0, time.time()), "a countdown is not for this pane")
+        late = model_with(make_goal(), make_pending(mode="approve", deadline=time.time() - 1))
+        late.approval_only = True
+        self.assertIsNone(late.key("a", 99.0, time.time()))
+
+
 class KeyBytes(unittest.TestCase):
     def test_the_parser(self):
         kp = panel.KeyParser()
@@ -701,6 +816,76 @@ class PanelObject(unittest.TestCase):
         for bad in ("pwned\x07", "\x1b]0;", "\x1b[2Jbig") + tuple(BIDI):
             self.assertNotIn(bad, raw)
         self.assertEqual(set(re.findall(r"\x1b\[\??[0-9;]*([A-Za-z])", raw)) - set("HKmhlJ"), set(), "only the escape sequences of the panel itself")
+
+
+class ApprovalPaneObject(unittest.TestCase):
+    """The Panel that runs in the approval pane: the same decision file as the panel, one tap, and it never takes the pane for a panel."""
+
+    def setUp(self):
+        self.st = FakeState()
+        self.addCleanup(self.st.close)
+        self.clock = [100.0]
+        self.screen = tempfile.TemporaryFile()
+        self.addCleanup(self.screen.close)
+        saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
+        os.environ.pop("TMUX_PANE", None)
+        self.plain = panel.Panel(self.st.paths, in_fd=-1, out_fd=self.screen.fileno(), now=lambda: self.clock[0], bus=FakeBus(), color=False)
+        os.environ[panel.dock.APPROVAL_ENV] = "1"
+        self.p2 = panel.Panel(self.st.paths, in_fd=-1, out_fd=self.screen.fileno(), now=lambda: self.clock[0], bus=FakeBus(), color=False)
+        for q in (self.plain, self.p2):
+            self.addCleanup(lambda q=q: [os.close(fd) for fd in (q.wake_r, q.wake_w)])
+        self.st.serve(current="g1")
+        self.st.goal()
+
+    def hit(self, key):
+        row, c0, c1, _ = next(h for h in self.p2.hits if h[3] == key)
+        self.p2.handle_key(("click", (c0 + c1) // 2, row))
+
+    def test_the_env_var_makes_it_an_approval_pane(self):
+        self.assertTrue(self.p2.approval and self.p2.model.approval_only)
+        self.assertFalse(self.plain.approval, "a panel made without the variable is the sysop panel")
+
+    def test_a_tap_on_allow_writes_the_decision_the_panel_writes(self):
+        self.st.pending(mode="approve", risk="high", text="git push --force")
+        self.p2.look()
+        self.p2.draw(force=True)
+        self.clock[0] += 1.0
+        self.p2.focus_at = self.clock[0] - 0.05          # the tap that gave the pane the focus is the tap that answers
+        self.hit("a")
+        self.assertEqual(self.st.decision(), {"id": "p1", "decision": "approve", "by": "panel", "word": "run"})
+
+    def test_a_tap_on_cancel_refuses(self):
+        self.st.pending(mode="approve", risk="high", text="rm -rf build")
+        self.p2.look()
+        self.p2.draw(force=True)
+        self.clock[0] += 1.0
+        self.hit("c")
+        self.assertEqual(self.st.decision(), {"id": "p1", "decision": "deny", "by": "panel"})
+
+    def test_a_tap_inside_the_guard_is_ignored(self):
+        self.st.pending(mode="approve", risk="high")
+        self.p2.look()
+        self.p2.draw(force=True)
+        self.hit("a")
+        self.assertIsNone(self.st.decision(), "half a second after it appeared nothing is answered")
+
+    def test_a_stray_q_does_not_end_it(self):
+        self.st.pending(mode="approve", risk="high")
+        self.p2.look()
+        self.clock[0] += 1.0
+        self.p2.handle_key("q")
+        self.assertFalse(self.p2.model.finished)
+
+    def test_it_draws_no_sysop_word_and_no_goal(self):
+        self.st.pending(mode="approve", risk="high", text="git push --force")
+        self.p2.look()
+        self.p2.draw(force=True)
+        self.screen.seek(0)
+        raw = strip_ansi(self.screen.read().decode("utf-8", "replace"))
+        self.assertIn("ALLOW?", raw)
+        self.assertNotIn("SYSOP", raw)
+        self.assertNotIn("list the files", raw)
 
 
 class PanelLoop(unittest.TestCase):

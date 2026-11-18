@@ -15,11 +15,16 @@ does when the last shell of a box without panels exits.
 
 Compact windows (the mode always only). A window of COMPACT_COLS columns or fewer (the window is as wide as the client that used it last: a phone) has NO panel
 by default: the web page shows one line of what the sysop does (line.py) and a tap on it opens the panel. The panel is there only while the global option
-@swarmbox_sysop_open is set: "1" when you opened it (the key, the Panel button, a tap on the line: it stays until you close it with the key or the close
-control of the panel), "auto" when an action waited for your approval (the Follower opened it; it closes by itself AUTO_GRACE seconds after the approval is
-answered, unless you touched it: a toggle by hand always turns "auto" or "1" off, and opens "1" when there was none). Wide windows are not touched by any
-of this, and while the panels are hidden by hand (@swarmbox_sysop_hidden) a wide window stays without one as before; the flag only matters to windows
-that are compact when sync, the resize hook or a toggle looks at them, so a desktop that takes the window back wide brings the panel back at the next sync.
+@swarmbox_sysop_open is "1" (you opened it: the key, the Panel button, a tap on the line; it stays until you close it with the key or the close control of the
+panel). Wide windows are not touched by any of this, and while the panels are hidden by hand (@swarmbox_sysop_hidden) a wide window stays without one as before;
+the flag only matters to windows that are compact when sync, the resize hook or a toggle looks at them, so a desktop that takes the window back wide brings the
+panel back at the next sync.
+The APPROVAL pane. An action that needs your approval (not a veto countdown) does not open the sysop panel in a compact window: it opens a second, small pane
+at the bottom of the window (full width, about 10 rows, never more than 40 % of the window), the approval pane, that shows only that action and two big buttons,
+Allow and Cancel. The Follower (approval_sync) keeps one in every compact window while an action waits and takes it away APPROVAL_GRACE seconds after the action
+is answered, expired or stopped; a window that stops being compact loses it at the next sync or resize. It is marked like the panel (so swarmbox-tabs hides it)
+and also by the pane option @swarmbox_sysop_kind=approval and APPROVAL_COMMAND in its start command: every operation on "the panel" of a window means the
+sysop panel only, and the two never take each other for an extra one. It never takes the focus (a tap on its buttons does, and it is gone a second later).
 
 layout(cols, rows) is the one rule for where it docks (a pure function, tested alone):
   * portrait, `cols < CELL_FACTOR * rows` (cells are about twice as tall as wide, so a window that is taller than wide in pixels still has
@@ -32,8 +37,8 @@ the tmux hook `window-resized` runs `swarmbox-sysop dock redock --window #{hook_
 program in it keeps running) when the layout kind changed. A redock never takes the focus: the pane that had it in that window has it after.
 In the modes auto and off the hook is set while a panel exists and removes itself when the next resize finds no panel in any window.
 
-One panel PER WINDOW: a pane with the pane option @swarmbox_sysop_panel (and the marker argument SWARMBOX_SYSOP_PANEL=1 in its start command, for the
-instant before the option is set), found by those, never by position. swarmbox-tabs hides these panes from the tabs. Never two in one window (an
+One panel PER WINDOW (and one approval pane, in a compact window while an action waits): a pane with the pane option @swarmbox_sysop_panel (and the marker
+argument SWARMBOX_SYSOP_PANEL=1 in its start command, for the instant before the option is set), found by those, never by position. swarmbox-tabs hides these panes from the tabs. Never two in one window (an
 extra one found is killed); panels of other windows are never touched by an operation on this one. Every operation holds a file lock.
 A panel opened by the Follower in the mode auto also carries @swarmbox_sysop_auto=1: only those are closed when the goal ends; one opened by hand stays.
 The name of the tab. tmux names a window after the command of its ACTIVE pane. The panel never takes the focus by itself, so in the mode always the
@@ -80,7 +85,14 @@ MIN_PANEL_COLS = 40
 MIN_TERMINAL_COLS = 60
 SYNC_TICK = 4.0                         # seconds between two looks of the Follower in the mode always (a hook does the quick part)
 COMPACT_COLS = 80                       # a window this narrow (a phone held upright is about 64 columns) is compact: no panel in it unless it is opened (OPEN_OPTION)
-OPEN_OPTION = "@swarmbox_sysop_open"    # global option of the tmux server: "1" a compact window's panel opened by hand, "auto" opened because an action waits for you
+OPEN_OPTION = "@swarmbox_sysop_open"    # global option of the tmux server: "1" while a compact window's panel is open (you opened it by hand)
+KIND_OPTION = "@swarmbox_sysop_kind"    # pane option: "approval" on the approval pane (the sysop panel has none)
+APPROVAL_COMMAND = "SWARMBOX_SYSOP_APPROVAL=1"      # in the start command of an approval pane (for the instant before KIND_OPTION is set); the panel reads it as an env var
+APPROVAL_ENV = "SWARMBOX_SYSOP_APPROVAL"
+APPROVAL_ROWS = 10                      # height of the approval pane: a head bar, five lines of the action, a spacer and two big buttons of three rows
+APPROVAL_PERCENT = 40                   # but never more than this part of the window (and never more than half of it)
+APPROVAL_GRACE = 1.0                    # seconds the approval pane stays after the action is answered, expired or stopped
+ABORN_OPTION = "@swarmbox_sysop_aborn"  # window option: when an approval pane was last made in the window (REMAKE_AFTER, as BORN_OPTION)
 COMPACT_ENV = "SWARMBOX_SYSOP_PANEL_COMPACT"      # "1" in the environment of a panel made in a compact window: it shows the close control
 ACTIONS = ("open", "close", "toggle", "redock", "sync")
 PASS_ENV = ("SWARMBOX_SYSOP_PANEL_MODE", "SB_TABS_SESSION", "SB_TABS_SOCKET", "SB_TABS_BIN", "SB_RUN_DIR", "SB_STATE_DIR", "SB_BUS_SOCKET", "XDG_STATE_HOME", "HOME", "NO_COLOR", "LANG", "LC_ALL", "TERM")
@@ -149,11 +161,21 @@ class Tmux:
         return Result(p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace"))
 
 
-Row = namedtuple("Row", "pane window win_active pane_active left top width height win_w win_h panel auto")
+Row = namedtuple("Row", "pane window win_active pane_active left top width height win_w win_h panel auto approval")
+# panel: the sysop panel; approval: the approval pane (never both); a pane of the user is neither
 
 
 def _is_panel(mark, start):
     return mark == PANEL_MARK or PANEL_COMMAND in start
+
+
+def _is_approval(kind, start):
+    return kind == "approval" or APPROVAL_COMMAND in start
+
+
+def mine(row):
+    """a pane of the sysop (the panel or the approval pane), not a pane of the user"""
+    return row.panel or row.approval
 
 
 def shape_of(row):
@@ -186,20 +208,22 @@ class Dock:
 
     def _rows(self):
         fmt = SEP.join(["#{pane_id}", "#{window_id}", "#{window_active}", "#{pane_active}", "#{pane_left}", "#{pane_top}", "#{pane_width}",
-                        "#{pane_height}", "#{window_width}", "#{window_height}", "#{%s}" % PANEL_OPTION, "#{pane_start_command}", "#{%s}" % AUTO_OPTION])
+                        "#{pane_height}", "#{window_width}", "#{window_height}", "#{%s}" % PANEL_OPTION, "#{pane_start_command}", "#{%s}" % AUTO_OPTION,
+                        "#{%s}" % KIND_OPTION])
         res = self.tmux.run("list-panes", "-s", "-t", "=" + self.session, "-F", fmt)
         if res.rc != 0:
             raise DockError("the tmux session %r is not available" % self.session)
         rows = []
         for line in res.out.splitlines():
             p = line.split(SEP)
-            if len(p) != 13:
+            if len(p) != 14:
                 continue
             try:
                 nums = [int(x) for x in p[4:10]]
             except ValueError:
                 continue
-            rows.append(Row(p[0], p[1], p[2] == "1", p[3] == "1", *nums, _is_panel(p[10], p[11]), p[12] == "1"))
+            owned, approval = _is_panel(p[10], p[11]), _is_approval(p[13], p[11])
+            rows.append(Row(p[0], p[1], p[2] == "1", p[3] == "1", *nums, owned and not approval, p[12] == "1", approval))
         return rows
 
     def _lock(self):
@@ -319,9 +343,8 @@ class Dock:
             return False
 
     def open_flag(self):
-        """"" (closed), "1" (opened by hand) or "auto" (opened for an approval): what the compact windows do with their panel."""
-        v = self.tmux.run("show-options", "-gqv", OPEN_OPTION).out.strip()
-        return v if v in ("1", "auto") else ""
+        """"1" while the panel of the compact windows is open (you opened it), else "" (closed)."""
+        return "1" if self.tmux.run("show-options", "-gqv", OPEN_OPTION).out.strip() == "1" else ""
 
     def set_open(self, value):
         if value:
@@ -340,25 +363,51 @@ class Dock:
                 n += 1
         return n
 
-    def approval(self, on):
-        """The Follower (mode always): an action waits for you (`on`) -> a compact window gets the panel ("auto"), once; it is answered (`on` false) -> the panel
-        that was opened for it closes, unless you opened it by hand. Returns a word: opened, closed, unchanged."""
+    def approval_sync(self, on):
+        """The Follower (mode always): `on` while an action waits for your approval -> every compact window has exactly one approval pane (made at the bottom,
+        without the focus; one that is there is kept at its height); `off` -> the approval panes go. A window that is not compact never has one. Cheap and
+        idempotent: the Follower asks at every look. Returns a word: "made N", "closed N" or "unchanged"."""
         if self.mode != "always":
             return "unchanged"
-        flag = self.open_flag()
-        if on:
-            if flag:
-                return "unchanged"
-            if not any(self.is_compact(r.win_w) for r in self._rows()):
-                return "unchanged"           # nobody holds a narrow window: a desktop has its panel already
-            self.set_open("auto")
-            self.sync(force=True)
-            return "opened"
-        if flag != "auto":
-            return "unchanged"
-        self.set_open(None)
-        self.sync()
-        return "closed"
+        with self._lock():
+            rows = self._rows()
+            made = shut = 0
+            for win in dict.fromkeys(r.window for r in rows):
+                here = [r for r in rows if r.approval and r.window == win]
+                if on and self.is_compact(self._window_size(win, rows)[0]):
+                    for extra in here[1:]:
+                        self._tm("kill-pane", "-t", extra.pane, check=False)
+                    if here:
+                        self._fit_approval(here[0], rows)
+                    elif any(not mine(r) for r in rows if r.window == win) and not self._born_lately(win, ABORN_OPTION):
+                        try:
+                            self._create_approval(win, rows)
+                            made += 1
+                        except DockError:
+                            pass
+                else:
+                    for p in here:
+                        self._tm("kill-pane", "-t", p.pane, check=False)
+                        shut += 1
+            return "made %d" % made if made else "closed %d" % shut if shut else "unchanged"
+
+    def _shut_approval(self, rows, window=None):
+        """Kill the approval panes of the windows that are not compact (of `window` only, when one is given). Returns how many."""
+        n = 0
+        for p in rows:
+            if p.approval and not self.is_compact(p.win_w) and (window is None or p.window == window):
+                self._tm("kill-pane", "-t", p.pane, check=False)
+                n += 1
+        return n
+
+    @staticmethod
+    def approval_height(lines):
+        """rows of the approval pane in a window of `lines` rows: APPROVAL_ROWS, at most APPROVAL_PERCENT of the window and never more than half of it"""
+        try:
+            lines = int(lines)
+        except (TypeError, ValueError):
+            return APPROVAL_ROWS
+        return max(1, min(APPROVAL_ROWS, lines * APPROVAL_PERCENT // 100, lines // 2))
 
     def close_compact(self, own_pane=None):
         """The close control and the key q of a panel in a compact window: the panels of the compact windows go away and stay away until opened again.
@@ -400,6 +449,8 @@ class Dock:
             if self.mode != "always":
                 return ", ".join(note) or "unchanged"
             self._hook(True)
+            if self._shut_approval(rows, window):          # a window that is not compact any more: its approval pane goes
+                rows = self._rows()
             hidden, flag = self.hidden(), self.open_flag()
             wins = list(dict.fromkeys(r.window for r in rows))
             if hidden and not any(self.is_compact(self._window_size(w, rows)[0]) for w in wins):
@@ -420,7 +471,7 @@ class Dock:
                 for extra in here[1:]:
                     self._tm("kill-pane", "-t", extra.pane, check=False)
                 if not here:
-                    if not any(not r.panel for r in rows if r.window == win):
+                    if not any(not mine(r) for r in rows if r.window == win):
                         continue
                     if not force and self._born_lately(win):
                         continue
@@ -442,9 +493,9 @@ class Dock:
                 note.append("hidden")
             return ", ".join(note) or "unchanged"
 
-    def _born_lately(self, window):
+    def _born_lately(self, window, option=BORN_OPTION):
         try:
-            born = float(self.tmux.run("show-options", "-wqv", "-t", window, BORN_OPTION).out.strip() or 0)
+            born = float(self.tmux.run("show-options", "-wqv", "-t", window, option).out.strip() or 0)
         except ValueError:
             return False
         return 0 <= time.time() - born < REMAKE_AFTER
@@ -452,7 +503,7 @@ class Dock:
     @staticmethod
     def _panel_only_windows(rows):
         wins = list(dict.fromkeys(r.window for r in rows))
-        return [w for w in wins if all(r.panel for r in rows if r.window == w)]
+        return [w for w in wins if all(mine(r) for r in rows if r.window == w)]
 
     def redock(self, window=None):
         """The hook: when the window's shape changed so that another layout applies, move ITS panel there (all windows when none is given). Never
@@ -508,8 +559,8 @@ class Dock:
     def _redock_now(self, window=None):
         with self._lock():
             rows = self._rows()
-            if self.mode == "always" and self._shut_compact(rows, window):      # a phone took the window: its panel goes now, not at the next tick
-                rows = self._rows()
+            if self.mode == "always" and (self._shut_compact(rows, window) + self._shut_approval(rows, window)):      # a phone took the window: its panel goes now, a
+                rows = self._rows()                                                                                   # window that is wide again loses its approval pane
             panels = [r for r in rows if r.panel]
             if not panels:
                 self._hook(False)
@@ -554,6 +605,28 @@ class Dock:
             self._tm("set-option", "-p", "-t", pane, AUTO_OPTION, "1", check=False)
         self._tm("set-option", "-p", "-t", pane, "remain-on-exit", "off", check=False)
 
+    def _create_approval(self, window, rows):
+        """The approval pane: full width at the bottom of the window, `approval_height` rows, WITHOUT the focus."""
+        if not self.panel_argv:
+            raise DockError("no panel command is set")
+        cols, lines = self._window_size(window, rows)
+        argv = list(self.panel_argv)
+        if argv[:1] == ["env"]:
+            argv.insert(1, APPROVAL_COMMAND)      # the panel reads it as an environment variable and shows only the action and its two buttons
+        res = self._tm("split-window", "-t", window, "-d", "-f", "-v", "-l", str(self.approval_height(lines)), "-P", "-F", "#{pane_id}", "--", *argv)
+        pane = res.out.strip()
+        self._tm("set-option", "-w", "-t", window, ABORN_OPTION, "%.3f" % time.time(), check=False)
+        self._tm("set-option", "-p", "-t", pane, PANEL_OPTION, PANEL_MARK, check=False)      # swarmbox-tabs hides it like the panel
+        self._tm("set-option", "-p", "-t", pane, KIND_OPTION, "approval", check=False)
+        self._tm("set-option", "-p", "-t", pane, "remain-on-exit", "off", check=False)
+
+    def _fit_approval(self, pane, rows):
+        """Keep the approval pane at its height when the window changed size (a difference of one row is rounding)."""
+        _, lines = self._window_size(pane.window, rows)
+        want = self.approval_height(lines)
+        if abs(pane.height - want) > 1 and pane.width >= pane.win_w:
+            self._tm("resize-pane", "-t", pane.pane, "-y", str(want), check=False)
+
     def _fit(self, panel, rows, focus):
         """Move the panel to the layout that applies now when its shape is the other one. True when it moved. The pane that was active in the
         window (the panel included) is active after, unless `focus` gives the focus to the panel."""
@@ -564,8 +637,8 @@ class Dock:
             return False
         if have == want:
             return self._resize(panel, layout(cols, lines), cols, lines)
-        anchor = next((r for r in rows if r.window == panel.window and not r.panel and r.pane_active), None) or \
-            next((r for r in rows if r.window == panel.window and not r.panel), None)
+        anchor = next((r for r in rows if r.window == panel.window and not mine(r) and r.pane_active), None) or \
+            next((r for r in rows if r.window == panel.window and not mine(r)), None)
         if anchor is None:
             raise DockError("the window has no pane of its own to dock beside")
         active = next((r.pane for r in rows if r.window == panel.window and r.pane_active), None)
@@ -753,10 +826,12 @@ class Follower:
       off     does nothing (but, once at its start, takes away the hooks of an earlier always, like auto).
     A tmux that is missing or has no session is not an error here: it is tried again at the next look (and said once in the log, not at every look)."""
 
-    def __init__(self, pth, dock=None, interval=0.5, grace=3.0, clock=time.monotonic, log=None, mode="auto", tick=SYNC_TICK, wall=time.time):
+    def __init__(self, pth, dock=None, interval=0.5, grace=3.0, clock=time.monotonic, log=None, mode="auto", tick=SYNC_TICK, wall=time.time,
+                 approval_grace=APPROVAL_GRACE):
         self.paths, self.dock, self.mode = pth, dock, mode
         self.interval, self.grace, self.clock, self.tick, self.wall = interval, grace, clock, tick, wall
-        self.approving = None            # always: the (goal, action) a compact window's panel was opened for, until it is answered and the grace is over
+        self.approval_grace = approval_grace
+        self.approving = None            # always: the (goal, action) the approval panes were made for, until it is answered and the grace is over
         self.answered_at = None
         self.log = log or (lambda msg: None)
         self.busy, self.idle_since = False, None
@@ -816,21 +891,20 @@ class Follower:
         return (gid, str(p["id"]))
 
     def watch_approval(self):
-        """Mode always, every look (0.5 s): an action that needs your approval opens the panel of a compact window (once for each action: if you close it, it
-        stays closed), and it closes again `grace` seconds after the action is answered, when it was opened for the approval and you did not take it over."""
+        """Mode always, every look (0.5 s): while an action waits for your approval every compact window has the approval pane (a window that becomes compact, or
+        is made, while it waits gets one at the next look), and it goes `approval_grace` seconds after the action is answered, expired or stopped."""
         now = self.clock()
         waiting = self._waiting()
         if waiting:
             self.answered_at = None
-            if waiting != self.approving:
-                self.approving = waiting
-                self._do(lambda d: d.approval(True), "approval")
+            self.approving = waiting
+            self._do(lambda d: d.approval_sync(True), "approval")
         elif self.approving:
             if self.answered_at is None:
                 self.answered_at = now
-            if now - self.answered_at >= self.grace:
+            if now - self.answered_at >= self.approval_grace:
                 self.approving, self.answered_at = None, None
-                self._do(lambda d: d.approval(False), "approval")
+                self._do(lambda d: d.approval_sync(False), "approval")
 
     def _do(self, fn, what):
         try:

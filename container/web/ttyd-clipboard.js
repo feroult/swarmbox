@@ -493,6 +493,15 @@
   }
   // The title of the terminal (OSC 0 or 2) is read off the output as it arrives, here, before xterm: tmux sends it when a client attaches, which is before the
   // terminal exists for onTitleChange to hear it, and the line of the sysop (below) would stay unknown until it changed.
+  // The first screen from ttyd (an output frame) ends the black page with the name (ttyd-style.css, html:not(.swarmbox-ready)::before); a moment later, so it is drawn.
+  var readyTimer = 0;
+  function ready() { var cl = document.documentElement && document.documentElement.classList; if (cl && cl.add) cl.add('swarmbox-ready'); }
+  function markReady(data) {
+    var cl = document.documentElement && document.documentElement.classList;
+    if (readyTimer || !cl || (cl.contains && cl.contains('swarmbox-ready'))) return;
+    var first = typeof data === 'string' ? data.charCodeAt(0) : (data && Object.prototype.toString.call(data) === '[object ArrayBuffer]' ? new Uint8Array(data)[0] : -1);
+    if (first === 0x30) readyTimer = setTimeout(ready, 150);
+  }
   function sniffTitle(data) {
     var u8;
     if (typeof data === 'string') { if (data.charCodeAt(0) !== 0x30 || data.indexOf('\x1b]') < 0) return; u8 = null; }
@@ -513,6 +522,7 @@
     var onmsg = Object.getOwnPropertyDescriptor(NativeWS.prototype, 'onmessage');
     var wrapMsg = function (fn) {
       return function (ev) {
+        markReady(ev.data);
         sniffTitle(ev.data);
         var data = rewritePrefs(ev.data);
         return fn.call(this, data === ev.data ? ev : { data: data, type: ev.type, target: ev.target, currentTarget: ev.currentTarget, origin: ev.origin });
@@ -684,46 +694,60 @@
 
   // ---- what the sysop is doing, in one line, beside the microphone ---------------------------------------------------------------------
   // tmux sends the title of the terminal when the option @sysop_line changes (the sysop sets it; tmux.conf has set-titles on): "sysop:<state>:<sentence>", and
-  // "sysop:idle:" while a sysop is there with nothing to do. Where a sysop is there (a title of that shape was seen), on a phone, and while its panel is not on
-  // the screen, the strip is COMPACT: the key buttons give way to the line, two lines at most with a light for the state, and the microphone. A tap on the line
-  // opens the panel (Ctrl+A S); the keyboard button at its left brings the key buttons back for as long as you want them. When the panel is open, or there is
-  // no sysop, the strip is the one with the keys. A finished goal (done, failed, stopped) stays 10 s, and the sysop itself says idle after that.
+  // "sysop:idle:" while a sysop is there with nothing to do. Where a sysop is there (a title of that shape was seen) and on a phone, the strip is COMPACT:
+  //     [ ◆ Sysop ▴ ]  what it is doing, in two lines at most  [ ⌨ ] [ mic ]
+  // The Sysop button is the one way to open and close the operator panel (Ctrl+A S): a light for the state, an arrow that says which way it goes, filled while the panel
+  // is open. The key buttons are ONE slim row (Esc Tab ^C and the arrows) that is above the bar whenever the panel is open, and for as long as the ⌨ button says
+  // when it is closed. What needs a yes or a no is not here: the sysop opens its own small approval panel for that. A finished goal (done, failed, stopped) stays
+  // 10 s on the line, and the sysop itself says idle after that. Without a sysop, or on a computer, the strip is the one with all the keys.
   var SYSOP_TITLE = /^sysop:(idle|working|sending|allow\?|queued|done|failed|stopped):([\s\S]*)$/, TOAST_HOLD = 10000;
-  var toastEl = null, keyBtn = null, toastState = '', toastText = '', toastTimer = 0, sysopSeen = false, keysShown = false;
+  var toastEl = null, pillEl = null, keyBtn = null, toastState = '', toastText = '', toastTimer = 0, sysopSeen = false, keysShown = false;
   function phone() { return coarse.matches || window.innerWidth <= PHONE_WIDTH; }
   function buildToast() {
+    pillEl = el('button', 'sb-btn sb-sysop');
+    pillEl.type = 'button';
+    pillEl.setAttribute('aria-label', 'Open the sysop panel');
+    pillEl.setAttribute('aria-pressed', 'false');
+    pillEl.appendChild(el('i', 'sb-dot'));
+    pillEl.appendChild(el('b')).textContent = 'Sysop';
+    pillEl.appendChild(el('u', 'sb-arrow'));
+    keepFocus(pillEl);
+    pillEl.addEventListener('click', function () { typeKeys({ seq: ['C-a', 'S'] }); });
     toastEl = el('div', 'sb-toast');
-    toastEl.setAttribute('role', 'button');
-    toastEl.setAttribute('aria-label', 'Open the sysop panel');
-    toastEl.appendChild(el('i', 'sb-dot'));
+    toastEl.setAttribute('role', 'status');
     toastEl.appendChild(el('span'));
-    toastEl.addEventListener('click', function () { typeKeys({ seq: ['C-a', 'S'] }); });
     keyBtn = el('button', 'sb-btn sb-keytoggle');
     keyBtn.type = 'button';
     keyBtn.textContent = '⌨';
     keyBtn.setAttribute('aria-label', 'Show the key buttons');
     keyBtn.setAttribute('aria-pressed', 'false');
     keepFocus(keyBtn);
-    keyBtn.addEventListener('click', function () { keysShown = !keysShown; showToast(); });
+    keyBtn.addEventListener('click', function () { if (keyBtn.getAttribute('data-locked') === '1') return; keysShown = !keysShown; showToast(); });
     strip.insertBefore(keyBtn, strip.firstChild);
-    strip.insertBefore(toastEl, keyBtn.nextSibling);
+    strip.insertBefore(toastEl, strip.firstChild);
+    strip.insertBefore(pillEl, strip.firstChild);
   }
   function showToast() {
     if (!strip) return;
     if (!toastEl) buildToast();
     var up = false;
     try { up = sysopState().up; } catch (e) { /* the screen cannot be read yet */ }
-    var compact = sysopSeen && phone() && !up;
-    var shape = compact ? (keysShown ? 'keys' : '1') : '0';
+    var compact = sysopSeen && phone();
+    var shape = compact ? (keysShown || up ? 'keys' : '1') : '0';
     if (strip.getAttribute('data-compact') !== shape) { strip.setAttribute('data-compact', shape); refit(); }      // the strip changed height: the terminal is fitted again
-    keyBtn.hidden = toastEl.hidden = !compact;
-    keyBtn.setAttribute('aria-pressed', keysShown ? 'true' : 'false');
+    pillEl.hidden = keyBtn.hidden = toastEl.hidden = !compact;
     if (!compact) return;
     var idle = !toastState || toastState === 'idle';
+    pillEl.setAttribute('data-state', idle ? 'idle' : toastState);
+    pillEl.setAttribute('data-on', up ? '1' : '0');
+    pillEl.setAttribute('aria-pressed', up ? 'true' : 'false');
+    pillEl.setAttribute('aria-label', up ? 'Close the sysop panel' : 'Open the sysop panel');
+    keyBtn.setAttribute('aria-pressed', keysShown || up ? 'true' : 'false');
+    keyBtn.setAttribute('data-locked', up ? '1' : '0');      // the panel is open: the keys are there and this button has nothing to say
+    var text = idle ? (up ? '' : 'idle') : toastText;
     toastEl.setAttribute('data-state', idle ? 'idle' : toastState);
-    toastText = idle ? 'Sysop · tap to open' : toastText;
-    toastEl.lastChild.textContent = toastText;
-    toastEl.title = toastText;
+    toastEl.lastChild.textContent = text;
+    toastEl.title = text;
   }
   function titleChanged(title) {
     var m = SYSOP_TITLE.exec(String(title || ''));
@@ -749,6 +773,7 @@
   // A page in another origin's frame never gets the strip: one click there would type a key (clickjacking). The server side says the same with
   // frame-ancestors (the voice front); this stays when ttyd runs alone.
   function framed() { try { return window.top !== window.self; } catch (e) { return true; } }
+  if (framed()) ready();      // a framed page has no strip and no splash
 
   function start() {
     if (framed()) return;

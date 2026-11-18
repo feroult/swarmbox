@@ -126,30 +126,61 @@ html.swarmbox-strip-float #swarmbox-strip .sb-note {
 #swarmbox-strip .sb-note[data-tone="warn"] { color: var(--sb-amber); }
 #swarmbox-strip .sb-note[data-tone="error"] { color: var(--sb-red); }
 
-/* what the sysop is doing, one line (two at most), in the place of the key buttons while the panel is closed (ttyd-clipboard.js): the strip is "compact" then,
-   [keyboard button][the line][microphone]; a tap on the line opens the panel, the keyboard button brings the keys back above it */
-#swarmbox-strip[data-compact="1"] .sb-keys, #swarmbox-strip[data-compact="0"] .sb-toast, #swarmbox-strip[data-compact="0"] .sb-keytoggle { display: none; }
-#swarmbox-strip[data-compact="keys"] { flex-wrap: wrap; }
+/* the compact strip of a phone with a sysop (ttyd-clipboard.js): [Sysop button][what it is doing][keyboard button][microphone]; the key buttons are one slim row
+   above it, there while the panel is open or the keyboard button is on. data-compact: "0" the usual strip, "1" compact, "keys" compact with the row of keys */
+#swarmbox-strip[data-compact="0"] .sb-sysop, #swarmbox-strip[data-compact="0"] .sb-toast, #swarmbox-strip[data-compact="0"] .sb-keytoggle { display: none; }
+#swarmbox-strip[data-compact="1"] .sb-keys { display: none; }
+#swarmbox-strip[data-compact="1"], #swarmbox-strip[data-compact="keys"] { flex-wrap: wrap; row-gap: 5px; }
 #swarmbox-strip[data-compact="keys"] .sb-keys { order: -1; flex: 0 0 100%; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] { grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: auto; gap: 5px; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] > .sb-yes, #swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] > .sb-no,
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] > .sb-toggle { display: none; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] > :nth-child(n), #swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] .sb-pad > :nth-child(n) { grid-row: 1; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] > :nth-child(3) { grid-column: 1; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] > :nth-child(4) { grid-column: 2; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] > :nth-child(5) { grid-column: 3; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] .sb-pad > :nth-child(1) { grid-column: 4; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] .sb-pad > :nth-child(2) { grid-column: 5; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] .sb-pad > :nth-child(3) { grid-column: 6; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] .sb-pad > :nth-child(4) { grid-column: 7; }
+#swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] .sb-btn { min-height: 36px; height: 36px; border-radius: 9px; font-size: 13px; }
+#swarmbox-strip .sb-sysop { order: 1; gap: 7px; padding: 0 12px 0 11px; border-radius: 999px; background: transparent; border-color: rgba(167, 139, 250, .5); color: var(--sb-lavender); }
+#swarmbox-strip .sb-sysop b { font-weight: 600; }
+#swarmbox-strip .sb-sysop .sb-arrow { width: 0; height: 0; border-left: 4.5px solid transparent; border-right: 4.5px solid transparent; border-bottom: 6px solid currentColor; text-decoration: none; transition: transform .18s ease; }
+#swarmbox-strip .sb-sysop[data-on="1"] { background: rgba(109, 40, 217, .35); border-color: var(--sb-violet); color: #fff; }
+#swarmbox-strip .sb-sysop[data-on="1"] .sb-arrow { transform: rotate(180deg); }
+#swarmbox-strip .sb-sysop:active { background: rgba(109, 40, 217, .5); }
+#swarmbox-strip .sb-sysop .sb-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--sb-violet); box-shadow: 0 0 8px rgba(167, 139, 250, .8); }
+#swarmbox-strip .sb-sysop[data-state="idle"] .sb-dot { background: var(--sb-line); box-shadow: none; }
+#swarmbox-strip .sb-sysop[data-state="working"] .sb-dot, #swarmbox-strip .sb-sysop[data-state="queued"] .sb-dot { animation: sb-pulse 1.4s ease-in-out infinite; }
+#swarmbox-strip .sb-sysop[data-state="sending"] .sb-dot { background: var(--sb-amber); box-shadow: 0 0 8px rgba(251, 191, 36, .8); }
+#swarmbox-strip .sb-sysop[data-state="allow?"] .sb-dot { background: var(--sb-red); box-shadow: 0 0 8px rgba(255, 107, 120, .9); animation: sb-pulse 1s ease-in-out infinite; }
+#swarmbox-strip .sb-sysop[data-state="done"] .sb-dot { background: var(--sb-green); box-shadow: none; }
+#swarmbox-strip .sb-sysop[data-state="failed"] .sb-dot { background: var(--sb-red); box-shadow: none; }
+#swarmbox-strip .sb-sysop[data-state="stopped"] .sb-dot { background: var(--sb-amber); box-shadow: none; }
 #swarmbox-strip .sb-toast {
-  flex: 1 1 0; min-width: 0; min-height: var(--sb-btn); display: flex; align-items: center; gap: 9px; padding: 0 6px; overflow: hidden; cursor: pointer;
-  color: var(--sb-lavender); font-size: 14px; line-height: 1.25; -webkit-tap-highlight-color: transparent;
+  order: 2; flex: 1 1 0; min-width: 0; min-height: var(--sb-btn); display: flex; align-items: center; padding: 0 4px; overflow: hidden;
+  color: var(--sb-lavender); font-size: 14px; line-height: 1.25;
 }
-#swarmbox-strip .sb-keytoggle { flex: none; width: var(--sb-btn); padding: 0; font-size: 20px; background: transparent; }
-#swarmbox-strip .sb-keytoggle[aria-pressed="true"] { background: rgba(109, 40, 217, .25); border-color: var(--sb-violet); color: var(--sb-lavender); }
-#swarmbox-strip .sb-toast span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; min-width: 0; }
-#swarmbox-strip .sb-toast .sb-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--sb-violet); box-shadow: 0 0 8px rgba(167, 139, 250, .8); }
 #swarmbox-strip .sb-toast[data-state="idle"] { color: var(--sb-line); }
-#swarmbox-strip .sb-toast[data-state="idle"] .sb-dot { background: var(--sb-line); box-shadow: none; }
-#swarmbox-strip .sb-toast[data-state="working"] .sb-dot, #swarmbox-strip .sb-toast[data-state="queued"] .sb-dot { animation: sb-pulse 1.4s ease-in-out infinite; }
-#swarmbox-strip .sb-toast[data-state="sending"] .sb-dot { background: var(--sb-amber); box-shadow: 0 0 8px rgba(251, 191, 36, .8); }
 #swarmbox-strip .sb-toast[data-state="allow?"] { color: var(--sb-text); }
-#swarmbox-strip .sb-toast[data-state="allow?"] .sb-dot { background: var(--sb-red); box-shadow: 0 0 8px rgba(255, 107, 120, .9); }
-#swarmbox-strip .sb-toast[data-state="done"] .sb-dot { background: var(--sb-green); box-shadow: none; }
-#swarmbox-strip .sb-toast[data-state="failed"] .sb-dot { background: var(--sb-red); box-shadow: none; }
-#swarmbox-strip .sb-toast[data-state="stopped"] .sb-dot { background: var(--sb-amber); box-shadow: none; }
+#swarmbox-strip .sb-toast span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; min-width: 0; }
+#swarmbox-strip .sb-keytoggle { order: 3; flex: none; width: var(--sb-btn); padding: 0; font-size: 20px; background: transparent; }
+#swarmbox-strip .sb-keytoggle[aria-pressed="true"] { background: rgba(109, 40, 217, .25); border-color: var(--sb-violet); color: var(--sb-lavender); }
+#swarmbox-strip .sb-keytoggle[data-locked="1"] { opacity: .45; }
+#swarmbox-strip[data-compact="1"] .sb-slot, #swarmbox-strip[data-compact="keys"] .sb-slot { order: 4; margin-left: 0; }
 @keyframes sb-pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { #swarmbox-strip .sb-toast .sb-dot { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { #swarmbox-strip .sb-dot { animation: none !important; } }
+
+/* the page while it loads: black, with the name in the middle, until ttyd has sent the first screen (ttyd-clipboard.js adds swarmbox-ready); a pure CSS fallback
+   takes it away after 12 s, whatever happens to the script */
+html:not(.swarmbox-ready)::before {
+  content: "SwarmBox"; position: fixed; z-index: 2147483000; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
+  background: #0c0b10; color: #c4b5fd; font: 600 30px/1 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: .04em;
+  animation: sb-boot-in .5s ease both, sb-boot-out 0s linear 12s forwards;
+}
+@keyframes sb-boot-in { from { opacity: .0; } to { opacity: 1; } }
+@keyframes sb-boot-out { to { opacity: 0; visibility: hidden; } }
 
 html.swarmbox-strip-on body {
   display: flex; flex-direction: column; position: fixed; left: 0; top: 0; width: 100%;

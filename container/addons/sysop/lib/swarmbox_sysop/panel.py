@@ -316,6 +316,7 @@ class Model:
         self.finished = False
         self.quit_key = False     # the panel ends because q was pressed (not because it was killed): in the mode always that hides the panels
         self.panel_mode = "auto"  # the setting sysop.panel; "always" makes q hide the panels of all windows
+        self.approval_only = False  # the approval pane (dock.APPROVAL_ENV): it answers the action that waits and does nothing else
 
     # -------- the state
     def update(self, snap, now):
@@ -370,6 +371,15 @@ class Model:
     def _key_view(self, k, wall):
         self.notice = ""
         low = k.lower() if isinstance(k, str) and len(k) == 1 else k
+        if self.approval_only:
+            if low in ("a", "y") and self.live(wall) and self.pmode() == "approve":
+                if self.hidden:
+                    self.notice = "The whole action is not on the screen, so it cannot be allowed: cancel it."
+                else:
+                    return ("decide", self.gid, str(self.pending["id"]), "approve", "run")
+            elif low in ("c", "n") and self.live(wall) and self.pmode() == "approve":
+                return ("decide", self.gid, str(self.pending["id"]), "deny", None)
+            return None            # nothing else: no scrolling, no goal, no stop, and a stray q does not close it (it closes by itself)
         if low in ("q", "ctrl-c"):
             return ("quit",)
         if low in ("up", "k"):
@@ -575,6 +585,78 @@ def _pending_lines(model, W, wall, color):
     return rows
 
 
+APPROVAL_LINES = 5      # lines of the action in the approval pane
+BUTTON_ROWS = 3         # height of the two big buttons of the approval pane (one row in a pane too short for three)
+
+
+def _big_buttons(buttons, cols, color, first_row, height):
+    """The two big buttons of the approval pane side by side, each half of the width, `height` rows high: ([ANSI lines], [(row, c0, c1, key)]).
+    One button takes the whole width. Allow is a violet block, Cancel the deep violet one; with no colour they are drawn as boxes."""
+    n = len(buttons)
+    gap = 1
+    width = (cols - 2 - gap * (n - 1)) // n
+    lines, hits = [], []
+    for r in range(height):
+        line, col = " ", 2
+        for i, (key, label, name) in enumerate(buttons):
+            mid = r == height // 2
+            if color:
+                paint = "\x1b[1m" + bg(name) + (fg("ink") if name == "violet" else fg("lavender"))
+                text = label[:width].center(width) if mid else " " * width
+                line += paint + text + RESET
+            else:
+                if height == 1:
+                    text = "[" + label[:max(0, width - 2)].center(max(0, width - 2)) + "]"
+                elif r == 0:
+                    text = "+" + "-" * (width - 2) + "+"
+                elif r == height - 1:
+                    text = "+" + "-" * (width - 2) + "+"
+                else:
+                    text = "|" + (label[:max(0, width - 2)].center(max(0, width - 2)) if mid else " " * (width - 2)) + "|"
+                line += text
+            if r == 0:
+                hits.append((first_row, col, col + width - 1, key))
+            if i < n - 1:
+                line += " " * gap
+            col += width + gap
+        lines.append(line)
+    hits = [(first_row + r, a, b, k) for r in range(height) for (_, a, b, k) in hits]
+    return lines, hits
+
+
+def render_approval(model, cols, rows, wall, color=True):
+    """The screen of the approval pane (a narrow window, while an action waits for you): a bar with the risk, the action, and two big buttons, Allow and
+    Cancel. Nothing else: not the goal, not the log, and no word SYSOP (the web page reads that word to know the sysop panel is up). With nothing that waits
+    for approval it is empty and calm: the dock takes the pane away a moment later."""
+    cols, rows = max(16, cols), max(3, rows)
+    p = model.pending
+    if not (p and model.up and model.pmode() == "approve" and model.live(wall)):
+        return Frame([""] * rows, None, [])
+    W = cols - 2
+    lv = model.risk()
+    tab = one_line(p.get("label") or p.get("tab"), 20)
+    bar = _bar("ALLOW?  %s risk%s" % (lv, " · tab %s" % tab if tab else ""), "red" if lv == "high" else "amber", color, cols)
+    height = BUTTON_ROWS if rows >= 7 else 1
+    spacer = 1 if rows >= height + 3 else 0
+    room = max(1, min(APPROVAL_LINES, rows - 1 - height - spacer))
+    full = one_line(p.get("text"), 4100)
+    text = wrap(full, W - 3)
+    model.hidden = 0
+    if len(text) <= room:
+        shown = text
+    else:
+        shown = text[:max(0, room - 1)]
+        model.hidden = max(1, len(full) - sum(len(x) for x in shown))
+    body = [" " + _paint(color, "violet", "\u203a") + " " + _paint(color, "text", ln) for ln in shown]
+    if model.hidden:
+        body += [" " + _paint(color, "red", ln, True) for ln in wrap("+%d more characters not shown: cancel it" % model.hidden, W)[:1]]
+    buttons = ([] if model.hidden else [("a", "Allow", "violet")]) + [("c", "Cancel", "deep")]
+    out = [bar] + body[:rows - 1 - height - spacer]
+    out += [""] * (rows - height - len(out))
+    big, hits = _big_buttons(buttons, cols, color, len(out) + 1, height)
+    return Frame(out + big, None, hits)
+
+
 def render(model, cols, rows, wall, color=True, closer=False):
     """The screen as a Frame of exactly `rows` lines: the state, the goal, the steps, and at the bottom what needs you (a bar, the action, buttons).
     `closer`: the panel of a narrow window (a phone) has a close control at the right end of its head line: a hit on the key q."""
@@ -677,6 +759,8 @@ class Panel:
         self.mouse = mouse
         self.bus = bus or busclient.Bus(self.paths.socket, timeout=5.0)
         self.model = Model(now())
+        self.approval = os.environ.get(dock.APPROVAL_ENV) == "1"      # the approval pane of a narrow window: see render_approval
+        self.model.approval_only = self.approval
         try:
             self.model.panel_mode = config.panel_mode()
         except config.ConfigError:
@@ -749,7 +833,10 @@ class Panel:
 
     def draw(self, force=False):
         cols, rows = self.size()
-        frame = render(self.model, cols, rows, self.wall(), self.color, closer=os.environ.get(dock.COMPACT_ENV) == "1")
+        if self.approval:
+            frame = render_approval(self.model, cols, rows, self.wall(), self.color)
+        else:
+            frame = render(self.model, cols, rows, self.wall(), self.color, closer=os.environ.get(dock.COMPACT_ENV) == "1")
         sig = (cols, rows, tuple(frame.lines), frame.cursor)
         if sig == self.drawn and not force:
             return
@@ -818,7 +905,7 @@ class Panel:
             if k[0] == "wheel":
                 self.model.scroll = max(0, self.model.scroll + (1 if k[1] == "up" else -1))
             elif k[0] == "click" and self.model.mode == "view" and now >= self.model.ready_at:
-                if self.focus_at is not None and now - self.focus_at < 0.4:
+                if self.focus_at is not None and now - self.focus_at < 0.4 and not self.approval:      # the first tap on the approval pane gives it the focus AND answers
                     return
                 for row, c0, c1, key in self.hits:
                     if k[2] == row and c0 <= k[1] <= c1:
@@ -850,7 +937,7 @@ class Panel:
             signal.signal(signal.SIGWINCH, old_winch)
             for s, h in zip((signal.SIGTERM, signal.SIGHUP), old_term):
                 signal.signal(s, h)
-            if os.environ.get("SWARMBOX_SYSOP_PANEL"):          # a panel opened by the dock
+            if os.environ.get("SWARMBOX_SYSOP_PANEL") and not self.approval:          # a panel opened by the dock (the approval pane has no window to thaw and nothing to hide)
                 if self.model.quit_key:
                     dock.panel_quit()                            # q: the mode always hides the panels of all windows, the others thaw the name of the window
                 else:

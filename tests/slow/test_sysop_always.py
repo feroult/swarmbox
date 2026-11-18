@@ -271,7 +271,8 @@ class TwoScreens(Always):
 
 class Compact(Always):
     """A window of 80 columns or fewer (a phone) has no panel until it is opened: the key (or the Panel button, or a tap on the line of the page) opens it, the
-    close control or q closes it, an approval opens it by itself, and a computer that takes the window back wide gets its panel back."""
+    close control or q closes it, an approval makes a small second pane (the approval pane, not the panel) that goes after the answer, and a computer that takes
+    the window back wide gets its panel back."""
 
     def flag(self):
         return self.tmux.run("show-options", "-gqv", "@swarmbox_sysop_open").out.strip()
@@ -327,29 +328,95 @@ class Compact(Always):
         self.assertEqual(self.flag(), "")
         self.assertFalse(self.hidden())
 
-    def test_an_approval_opens_the_panel_and_it_closes_after_the_answer(self):
+    def approvals(self):
+        return [p for p in self.panes() if p["approval"]]
+
+    def start_goal(self):
         self.serve_files(current="g1")
         gdir = self.pth.goal_dir("g1")
         os.makedirs(gdir, mode=0o700, exist_ok=True)
         ipc.write_json(os.path.join(gdir, "state.json"), {"id": "g1", "source": "voice", "text": "deploy", "state": "running", "created": time.time(), "started": time.time(),
                                                           "ended": None, "say": [], "calls": [], "pending": None, "summary": "", "error": "", "note": "", "steps": 0, "brain": {}})
+        return gdir, os.path.join(gdir, "pending_action.json")
+
+    def pend(self, path, mode="approve", text="git push --force", pid="p1"):
+        now = time.time()
+        ipc.write_json(path, {"id": pid, "goal": "g1", "tab": "@1", "label": "1:shell", "kind": "run", "text": text, "risk": "high", "reasons": ["a test"],
+                              "mode": mode, "created": now, "deadline": now + 120})
+
+    def test_an_approval_makes_a_small_pane_that_is_not_the_panel_and_it_goes_after_the_answer(self):
+        gdir, pend = self.start_goal()
         self.attach(60, 50)
-        f = dock.Follower(self.pth, dock=self.d, mode="always", interval=0.1, tick=0.5, grace=1.0).start()
+        f = dock.Follower(self.pth, dock=self.d, mode="always", interval=0.1, tick=0.5, grace=1.0, approval_grace=0.5).start()
         self.addCleanup(f.shutdown)
         time.sleep(1.0)
-        self.assertEqual(self.panels(), [], "a goal that runs opens nothing")
-        now = time.time()
-        pend = os.path.join(gdir, "pending_action.json")
-        ipc.write_json(pend, {"id": "p1", "goal": "g1", "tab": "@1", "label": "1:shell", "kind": "run", "text": "git push --force", "risk": "high", "reasons": ["a test"],
-                              "mode": "approve", "created": now, "deadline": now + 120})
-        self.wait(self.panels, "the panel opens for the approval", timeout=8)
-        self.assertEqual(self.flag(), "auto")
-        self.assertEqual(self.active_pane(self.win1), [self.user], "and does not take the focus")
-        time.sleep(2.0)
-        self.assertTrue(self.panels(), "it stays while the action waits")
-        os.unlink(pend)
-        self.wait(lambda: not self.panels(), "it closes by itself after the answer", timeout=10)
+        self.assertEqual((self.panels(), self.approvals()), ([], []), "a goal that runs opens nothing")
+        self.pend(pend)
+        appr, = self.wait(self.approvals, "the approval pane", timeout=8)
+        self.assertEqual(self.panels(), [], "the sysop panel is not opened for an approval")
         self.assertEqual(self.flag(), "")
+        self.assertEqual((appr["w"], appr["h"]), (50, dock.Dock.approval_height(60)), "full width at the bottom, about ten rows")
+        self.assertEqual(appr["top"] + appr["h"], 60, "below everything")
+        self.assertEqual(self.active_pane(self.win1), [self.user], "and it does not take the focus")
+        self.wait(lambda: "ALLOW?" in self.screen(appr["id"]), "the action on its screen: %r" % self.screen(appr["id"]))
+        text = self.screen(appr["id"])
+        for needle in ("high risk", "git push --force", "Allow", "Cancel"):
+            self.assertIn(needle, text)
+        self.assertNotIn("SYSOP", text, "the page reads that word to know the panel is up")
+        self.assertNotIn("deploy", text, "the goal stays out")
+        time.sleep(1.5)
+        self.assertTrue(self.approvals(), "it stays while the action waits")
+        os.unlink(pend)
+        self.wait(lambda: not self.approvals(), "it goes by itself after the answer", timeout=10)
+
+    def test_a_tap_on_allow_answers_in_one_tap_and_a_countdown_never_makes_the_pane(self):
+        gdir, pend = self.start_goal()
+        c = self.attach(60, 50)
+        self.tmux.run("set-option", "-g", "mouse", "on")
+        f = dock.Follower(self.pth, dock=self.d, mode="always", interval=0.1, tick=0.5, grace=1.0, approval_grace=0.5).start()
+        self.addCleanup(f.shutdown)
+        self.pend(pend, mode="veto", text="ls")
+        time.sleep(1.5)
+        self.assertEqual(self.approvals(), [], "a veto countdown is not for the approval pane")
+        self.pend(pend, text="git push --force", pid="p2")
+        appr, = self.wait(self.approvals, "the approval pane", timeout=8)
+        self.wait(lambda: "Allow" in self.screen(appr["id"]), "the buttons")
+        time.sleep(0.8)                                   # past the guard of half a second
+        col, row = appr["left"] + 8, appr["top"] + appr["h"] - 2          # the middle of the left button (Allow)
+        c.send("\x1b[<0;%d;%dM\x1b[<0;%d;%dM" % (col, row, col, row))
+        dec = os.path.join(gdir, "decision.json")
+        self.wait(lambda: os.path.exists(dec), "the decision written by one tap")
+        self.assertEqual(ipc.read_json(dec), {"id": "p2", "decision": "approve", "by": "panel", "word": "run"})
+
+    def test_the_panel_opened_by_hand_and_the_approval_pane_are_together_and_the_panel_stays_after(self):
+        gdir, pend = self.start_goal()
+        self.attach(60, 50)
+        self.assertEqual(self.cli("toggle").returncode, 0)
+        panel, = self.wait(self.panels, "the panel opened by hand")
+        f = dock.Follower(self.pth, dock=self.d, mode="always", interval=0.1, tick=0.5, grace=1.0, approval_grace=0.5).start()
+        self.addCleanup(f.shutdown)
+        self.pend(pend)
+        appr, = self.wait(self.approvals, "the approval pane", timeout=8)
+        self.assertEqual([p["id"] for p in self.panels()], [panel["id"]], "the panel was not touched")
+        time.sleep(1.5)
+        self.assertEqual(len(self.approvals()), 1)
+        self.assertEqual([p["id"] for p in self.panels()], [panel["id"]])
+        os.unlink(pend)
+        self.wait(lambda: not self.approvals(), "the approval pane goes", timeout=10)
+        self.assertEqual([p["id"] for p in self.panels()], [panel["id"]], "the panel opened by hand stays")
+        self.assertEqual(self.flag(), "1")
+
+    def test_a_wide_window_gets_no_approval_pane_and_its_panel_answers(self):
+        gdir, pend = self.start_goal()
+        self.attach(50, 200)
+        self.d.sync()
+        panel, = self.wait(self.panels, "the panel of the wide window")
+        f = dock.Follower(self.pth, dock=self.d, mode="always", interval=0.1, tick=0.5, grace=1.0, approval_grace=0.5).start()
+        self.addCleanup(f.shutdown)
+        self.pend(pend)
+        self.wait(lambda: "allow? high risk" in self.screen(panel["id"]), "the approval in the panel")
+        time.sleep(1.0)
+        self.assertEqual(self.approvals(), [], "nothing new in a wide window")
 
     def test_a_phone_takes_the_panel_away_and_the_computer_brings_it_back(self):
         computer = self.attach(50, 200)
