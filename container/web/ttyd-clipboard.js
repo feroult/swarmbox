@@ -516,7 +516,7 @@
   // Like a finger on any list: the text goes further the faster the finger moves (GAIN_MIN to GAIN_MAX times its distance, by its speed), and it keeps going a while
   // after the finger leaves (inertia), slowing down by itself. The wheel events are handed out a few per frame, so a fast flick is not one burst that tmux and the
   // screen swallow in one go.
-  var DRAG_PX = 8, WHEEL_ROWS = 5, GAIN_MIN = 2, GAIN_MAX = 6, GAIN_PER_SPEED = 3, FLICK_SPEED = 0.25, FRICTION = 0.94, PER_FRAME = 6, MAX_BACKLOG = 16, MAX_PAGES = 8;
+  var DRAG_PX = 8, WHEEL_ROWS = 5, GAIN_MIN = 2, GAIN_MAX = 6, GAIN_PER_SPEED = 3, FLICK_SPEED = 0.25, FRICTION = 0.94, PER_FRAME = 6, MAX_BACKLOG = 16, MAX_PAGES = 8, FINE_PER_FRAME = 8;
   function rowHeight() {
     try { return window.term._core._renderService.dimensions.css.cell.height || 14; } catch (e) { return 14; }
   }
@@ -540,6 +540,7 @@
       var rh = rowHeight(), step = WHEEL_ROWS * rh, n = 0;
       var page = Math.max(10, (window.term && window.term.rows || 24) - 2) * rh, cap = Math.max(step * MAX_BACKLOG, page * MAX_PAGES);
       if (Math.abs(carry) > cap) carry = carry > 0 ? cap : -cap;
+      var fine = 0, copy = null;
       while (n < PER_FRAME && Math.abs(carry) >= step) {
         if (wheeled > 0 && Math.abs(carry) >= page && window.term && typeof window.term.input === 'function') {
           // a screenful or more: ONE PageUp or PageDown, as the keyboard of a computer does (an app scrolls its page, tmux in copy mode its page), instead of a dozen wheel events
@@ -551,6 +552,15 @@
           wheeled++;      // the first wheel is what puts a plain tab into copy mode: the pages follow it, never come first
         }
         n++;
+      }
+      // Less than a wheel step is left: tmux in copy mode scrolls ONE line on Ctrl+Up and Ctrl+Down, so a slow finger is followed line by line and not in jumps of five
+      // (only where the screen says tmux is in copy mode: an app has no such key, and the wheel is all it gets)
+      while (fine < FINE_PER_FRAME && Math.abs(carry) >= rh && wheeled > 0 && window.term && typeof window.term.input === 'function') {
+        if (copy === null) copy = inCopyMode();
+        if (!copy) break;
+        window.term.input(carry > 0 ? '\x1b[1;5A' : '\x1b[1;5B', true);
+        carry += carry > 0 ? -rh : rh;
+        fine++;
       }
     }
     // One loop per frame while the finger is down and after it leaves, until everything owed is given out: the events do not wait for the next touchmove

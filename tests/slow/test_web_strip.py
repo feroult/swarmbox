@@ -679,6 +679,24 @@ class FingerScroll(StripCase):
         time.sleep(1.5)
         self.assertGreater(pos(), 600 / rowpx * 1.8, "600 px of finger at speed: the text got there, in pages (%d lines of %.1f px)" % (pos(), rowpx))
 
+    def test_a_slow_drag_is_followed_line_by_line_and_not_in_jumps_of_five(self):
+        self.open(viewport="phone-portrait", command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("window.term && window.term.options.fontSize") <= 12, 10, 0.05))
+        time.sleep(1.0)
+        self.t.type("clear; seq 1 3000\r")
+        self.assertTrue(self.t.wait_screen("3000", 10))
+        pos = lambda: int(self.t.tmux("display-message", "-p", "-t", "t:", "#{scroll_position}").strip() or 0)
+        self.page.call("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": 200, "y": 200}])
+        seen = []
+        for i in range(1, 41):
+            self.page.call("Input.dispatchTouchEvent", type="touchMove", touchPoints=[{"x": 200, "y": 200 + 3 * i}])
+            time.sleep(0.06)
+            seen.append(pos())
+        self.page.call("Input.dispatchTouchEvent", type="touchEnd", touchPoints=[])
+        steps = {b - a for a, b in zip(seen, seen[1:]) if b > a}
+        self.assertTrue(any(s < 5 for s in steps), "the text moved by single lines at times, not only by 5: steps %r" % (sorted(steps),))
+        self.assertGreater(seen[-1], 1.2 * 120 / self.page.js("window.term._core._renderService.dimensions.css.cell.height"), "and followed the finger: %r" % (seen,))
+
     def test_a_tap_scrolls_nothing(self):
         self.open(viewport="phone-portrait", command="bash --norc")
         time.sleep(1.5)
