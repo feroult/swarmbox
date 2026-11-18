@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.15] - 2026-11-18
+
 - Fixed: on a phone, dragging a finger over the terminal did nothing, so the history of tmux could not be reached (the mouse wheel of a computer worked, but a finger makes no wheel event, and the history of the browser is off on purpose). A vertical drag is now turned into the wheel events a mouse would make, at the place of the finger, one per 5 rows, so the pane under it scrolls (a tab goes into copy mode, the log of the sysop panel moves); a tap is left alone.
 
 ## [2.0.14] - 2026-11-17
@@ -222,6 +224,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.15]: https://github.com/feroult/swarmbox/releases/tag/v2.0.15
 [2.0.14]: https://github.com/feroult/swarmbox/releases/tag/v2.0.14
 [2.0.13]: https://github.com/feroult/swarmbox/releases/tag/v2.0.13
 [2.0.12]: https://github.com/feroult/swarmbox/releases/tag/v2.0.12
