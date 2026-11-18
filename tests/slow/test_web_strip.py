@@ -723,29 +723,57 @@ KEEP_SOCKETS = "(() => { const O = WebSocket; window.__ws = []; window.WebSocket
 
 @bs.browser_tests()
 class Toast(StripCase):
-    def test_a_phone_shows_what_the_sysop_does_beside_the_microphone_and_a_tap_opens_the_panel(self):
+    def test_a_phone_with_a_sysop_shows_the_line_and_the_microphone_and_not_the_keys(self):
         self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX)
         time.sleep(1.0)
-        toast = lambda: self.page.js("(() => { const e = document.querySelector('#swarmbox-strip .sb-toast'); return e && !e.hidden ? [e.dataset.state, e.textContent] : null; })()")
-        self.assertIsNone(toast(), "nothing to say: no line")
+        state = lambda: self.page.js("(() => { const s = document.getElementById('swarmbox-strip'), v = e => !!e && getComputedStyle(e).display !== 'none'; "
+                                     "const t = s.querySelector('.sb-toast'); return [s.dataset.compact, v(s.querySelector('.sb-keys')), v(t), t ? t.textContent : null, t ? t.dataset.state : null]; })()")
+        self.assertEqual(state()[:3], ["0", True, False], "no sysop: the strip with the keys, as before: %r" % (state(),))
+        self.t.tmux("set-option", "-g", "@sysop_line", "sysop:idle:")
+        self.assertTrue(wait_until(lambda: state()[:3] == ["1", False, True], 6, 0.1), "a sysop, idle: the line and no keys: %r" % (state(),))
+        self.assertEqual(state()[4], "idle")
         self.t.tmux("set-option", "-g", "@sysop_line", "sysop:working:reads tab 1")
-        self.assertTrue(wait_until(lambda: toast() == ["working", "reads tab 1"], 6, 0.1), "the line: %r" % (toast(),))
+        self.assertTrue(wait_until(lambda: state()[3:] == ["reads tab 1", "working"], 6, 0.1), "the line: %r" % (state(),))
         self.shot("phone-portrait-toast")
         self.t.clear_sent()
         self.page.js("document.querySelector('#swarmbox-strip .sb-toast').click()")
         time.sleep(0.4)
-        self.assertTrue(self.t.sent().endswith("\x01S"), "a tap on the line is the key of the panel: Ctrl+A S, sent %r" % (self.t.sent(),))
+        self.assertIn("0\x01S", self.t.sent(), "a tap on the line is the key of the panel: Ctrl+A S")
+        self.page.js("document.querySelector('#swarmbox-strip .sb-keytoggle').click()")
+        self.assertTrue(wait_until(lambda: state()[:3] == ["keys", True, True], 6, 0.1), "the keyboard button brings the keys back above the line: %r" % (state(),))
+        self.shot("phone-portrait-toast-keys")
+        self.page.js("document.querySelector('#swarmbox-strip .sb-keytoggle').click()")
+        self.assertTrue(wait_until(lambda: state()[:3] == ["1", False, True], 6, 0.1), "and away again: %r" % (state(),))
         self.t.tmux("set-option", "-g", "@sysop_line", "sysop:allow?:run: rm -rf build")
-        self.assertTrue(wait_until(lambda: toast() == ["allow?", "run: rm -rf build"], 6, 0.1), "%r" % (toast(),))
+        self.assertTrue(wait_until(lambda: state()[3:] == ["run: rm -rf build", "allow?"], 6, 0.1), "%r" % (state(),))
         self.t.tmux("set-option", "-gu", "@sysop_line")
-        self.assertTrue(wait_until(lambda: toast() is None, 6, 0.1), "no line, no toast: %r" % (toast(),))
+        self.assertTrue(wait_until(lambda: state()[:3] == ["0", True, False], 6, 0.1), "the sysop is gone: the keys are back: %r" % (state(),))
+
+    def test_a_line_that_was_there_before_the_page_opened_is_known_at_once(self):
+        """tmux sends the title when a client attaches, before the terminal exists to hear it: the page reads it off the websocket"""
+        self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX)
+        time.sleep(1.0)
+        self.t.tmux("set-option", "-g", "@sysop_line", "sysop:working:was already going")
+        self.assertTrue(wait_until(lambda: self.page.js("document.getElementById('swarmbox-strip').dataset.compact") == "1", 6, 0.1))
+        self.page.js("location.reload()")
+        self.assertTrue(wait_until(lambda: self.page.js("document.getElementById('swarmbox-strip') && document.getElementById('swarmbox-strip').dataset.compact") == "1", 12, 0.2),
+                        "after a reload the line is shown without waiting for a change")
+        self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-toast').textContent"), "was already going")
+
+    def test_the_terminal_keeps_its_rows_straight_when_the_strip_turns_compact(self):
+        self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX)
+        time.sleep(1.0)
+        self.t.tmux("set-option", "-g", "@sysop_line", "sysop:idle:")
+        time.sleep(1.5)
+        g = self.geo()
+        self.assert_nothing_covered(g)
 
     def test_a_desktop_does_not_show_it(self):
         self.open(viewport="desktop", command="bash --norc", tmux_conf=TITLES_TMUX)
         time.sleep(1.0)
         self.t.tmux("set-option", "-g", "@sysop_line", "sysop:working:reads tab 1")
         time.sleep(1.5)
-        self.assertEqual(self.page.js("(() => { const e = document.querySelector('#swarmbox-strip .sb-toast'); return !e || e.hidden; })()"), True)
+        self.assertEqual(self.page.js("(() => { const e = document.querySelector('#swarmbox-strip .sb-toast'); return !e || getComputedStyle(e).display === 'none'; })()"), True)
 
 
 @bs.browser_tests()
@@ -757,6 +785,8 @@ class Reconnect(StripCase):
         self.assertGreaterEqual(n, 1)
         self.page.js("window.__ws[window.__ws.length - 1].close(1000)")      # a normal close: ttyd waits for Enter instead of reconnecting by itself
         self.assertTrue(wait_until(lambda: self.page.js("window.__ws.length") > n, 8, 0.1), "a new connection was opened without a key from the user")
+        self.assertTrue(wait_until(lambda: self.page.js("window.__ws[window.__ws.length - 1].readyState") == 1, 8, 0.1), "the new connection is open")
+        time.sleep(1.0)
         self.t.type("echo back-again\r")
         self.assertTrue(self.t.wait_line("back-again", 10), "and the terminal works again")
 

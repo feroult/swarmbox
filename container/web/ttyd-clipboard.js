@@ -491,11 +491,29 @@
     if (bytes) { var enc = new TextEncoder().encode(out), nb = new Uint8Array(enc.length + 1); nb[0] = 0x32; nb.set(enc, 1); return nb.buffer; }
     return '2' + out;
   }
+  // The title of the terminal (OSC 0 or 2) is read off the output as it arrives, here, before xterm: tmux sends it when a client attaches, which is before the
+  // terminal exists for onTitleChange to hear it, and the line of the sysop (below) would stay unknown until it changed.
+  function sniffTitle(data) {
+    var u8;
+    if (typeof data === 'string') { if (data.charCodeAt(0) !== 0x30 || data.indexOf('\x1b]') < 0) return; u8 = null; }
+    else if (data && Object.prototype.toString.call(data) === '[object ArrayBuffer]') {
+      u8 = new Uint8Array(data);
+      if (u8[0] !== 0x30) return;
+      var hit = false;
+      for (var i = 1; i < u8.length - 1; i++) if (u8[i] === 0x1b && u8[i + 1] === 0x5d) { hit = true; break; }
+      if (!hit) return;
+    } else return;
+    var text = u8 ? new TextDecoder('utf-8').decode(u8.subarray(1)) : data.slice(1);
+    var re = /\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g, m, last = null;
+    while ((m = re.exec(text))) last = m[1];
+    if (last !== null) titleChanged(last);
+  }
   var NativeWS = window.WebSocket;
   if (NativeWS && NativeWS.prototype && !(function () { try { return window.top !== window.self; } catch (e) { return true; } })()) {
     var onmsg = Object.getOwnPropertyDescriptor(NativeWS.prototype, 'onmessage');
     var wrapMsg = function (fn) {
       return function (ev) {
+        sniffTitle(ev.data);
         var data = rewritePrefs(ev.data);
         return fn.call(this, data === ev.data ? ev : { data: data, type: ev.type, target: ev.target, currentTarget: ev.currentTarget, origin: ev.origin });
       };
@@ -665,40 +683,56 @@
   }
 
   // ---- what the sysop is doing, in one line, beside the microphone ---------------------------------------------------------------------
-  // tmux sends the title of the terminal when the option @sysop_line changes (the sysop sets it; tmux.conf has set-titles on): "sysop:<state>:<sentence>". On a
-  // phone the line shows over the key buttons, left of the addon controls, two lines at most; a tap opens the panel (Ctrl+A S). It is hidden while the panel
-  // is on the screen (the panel says it all) and when the title is anything else. A finished goal (done, failed, stopped) stays 10 s.
-  var SYSOP_TITLE = /^sysop:(working|sending|allow\?|queued|done|failed|stopped):([\s\S]*)$/, TOAST_HOLD = 10000;
-  var toastEl = null, toastState = '', toastText = '', toastTimer = 0;
+  // tmux sends the title of the terminal when the option @sysop_line changes (the sysop sets it; tmux.conf has set-titles on): "sysop:<state>:<sentence>", and
+  // "sysop:idle:" while a sysop is there with nothing to do. Where a sysop is there (a title of that shape was seen), on a phone, and while its panel is not on
+  // the screen, the strip is COMPACT: the key buttons give way to the line, two lines at most with a light for the state, and the microphone. A tap on the line
+  // opens the panel (Ctrl+A S); the keyboard button at its left brings the key buttons back for as long as you want them. When the panel is open, or there is
+  // no sysop, the strip is the one with the keys. A finished goal (done, failed, stopped) stays 10 s, and the sysop itself says idle after that.
+  var SYSOP_TITLE = /^sysop:(idle|working|sending|allow\?|queued|done|failed|stopped):([\s\S]*)$/, TOAST_HOLD = 10000;
+  var toastEl = null, keyBtn = null, toastState = '', toastText = '', toastTimer = 0, sysopSeen = false, keysShown = false;
   function phone() { return coarse.matches || window.innerWidth <= PHONE_WIDTH; }
+  function buildToast() {
+    toastEl = el('div', 'sb-toast');
+    toastEl.setAttribute('role', 'button');
+    toastEl.setAttribute('aria-label', 'Open the sysop panel');
+    toastEl.appendChild(el('i', 'sb-dot'));
+    toastEl.appendChild(el('span'));
+    toastEl.addEventListener('click', function () { typeKeys({ seq: ['C-a', 'S'] }); });
+    keyBtn = el('button', 'sb-btn sb-keytoggle');
+    keyBtn.type = 'button';
+    keyBtn.textContent = '⌨';
+    keyBtn.setAttribute('aria-label', 'Show the key buttons');
+    keyBtn.setAttribute('aria-pressed', 'false');
+    keepFocus(keyBtn);
+    keyBtn.addEventListener('click', function () { keysShown = !keysShown; showToast(); });
+    strip.insertBefore(keyBtn, strip.firstChild);
+    strip.insertBefore(toastEl, keyBtn.nextSibling);
+  }
   function showToast() {
     if (!strip) return;
-    if (!toastEl) {
-      toastEl = el('div', 'sb-toast');
-      toastEl.setAttribute('role', 'button');
-      toastEl.setAttribute('aria-label', 'Open the sysop panel');
-      toastEl.appendChild(el('i', 'sb-dot'));
-      toastEl.appendChild(el('span'));
-      toastEl.addEventListener('click', function () { typeKeys({ seq: ['C-a', 'S'] }); });
-      strip.appendChild(toastEl);
-    }
+    if (!toastEl) buildToast();
     var up = false;
     try { up = sysopState().up; } catch (e) { /* the screen cannot be read yet */ }
-    var on = !!toastState && phone() && !up;
-    toastEl.hidden = !on;
-    if (!on) return;
-    toastEl.setAttribute('data-state', toastState);
+    var compact = sysopSeen && phone() && !up;
+    var shape = compact ? (keysShown ? 'keys' : '1') : '0';
+    if (strip.getAttribute('data-compact') !== shape) { strip.setAttribute('data-compact', shape); refit(); }      // the strip changed height: the terminal is fitted again
+    keyBtn.hidden = toastEl.hidden = !compact;
+    keyBtn.setAttribute('aria-pressed', keysShown ? 'true' : 'false');
+    if (!compact) return;
+    var idle = !toastState || toastState === 'idle';
+    toastEl.setAttribute('data-state', idle ? 'idle' : toastState);
+    toastText = idle ? 'Sysop · tap to open' : toastText;
     toastEl.lastChild.textContent = toastText;
     toastEl.title = toastText;
-    strip.style.setProperty('--sb-slot-w', slot.children.length ? Math.max(0, Math.round(strip.getBoundingClientRect().right - slot.getBoundingClientRect().left)) + 'px' : '0px');
   }
   function titleChanged(title) {
     var m = SYSOP_TITLE.exec(String(title || ''));
     clearTimeout(toastTimer);
     toastTimer = 0;
+    sysopSeen = !!m;
     toastState = m ? m[1] : '';
     toastText = m ? m[2].replace(/\s+/g, ' ').trim().slice(0, 160) : '';
-    if (m && /^(done|failed|stopped)$/.test(m[1])) toastTimer = setTimeout(function () { toastState = ''; showToast(); }, TOAST_HOLD);
+    if (m && /^(done|failed|stopped)$/.test(m[1])) toastTimer = setTimeout(function () { toastState = 'idle'; showToast(); }, TOAST_HOLD);
     showToast();
   }
   function watchTitle() {

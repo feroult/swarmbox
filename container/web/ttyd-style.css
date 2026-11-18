@@ -126,14 +126,21 @@ html.swarmbox-strip-float #swarmbox-strip .sb-note {
 #swarmbox-strip .sb-note[data-tone="warn"] { color: var(--sb-amber); }
 #swarmbox-strip .sb-note[data-tone="error"] { color: var(--sb-red); }
 
-/* what the sysop is doing, one line (two at most), over the key buttons and left of the addon controls (ttyd-clipboard.js): a tap opens the panel */
+/* what the sysop is doing, one line (two at most), in the place of the key buttons while the panel is closed (ttyd-clipboard.js): the strip is "compact" then,
+   [keyboard button][the line][microphone]; a tap on the line opens the panel, the keyboard button brings the keys back above it */
+#swarmbox-strip[data-compact="1"] .sb-keys, #swarmbox-strip[data-compact="0"] .sb-toast, #swarmbox-strip[data-compact="0"] .sb-keytoggle { display: none; }
+#swarmbox-strip[data-compact="keys"] { flex-wrap: wrap; }
+#swarmbox-strip[data-compact="keys"] .sb-keys { order: -1; flex: 0 0 100%; }
 #swarmbox-strip .sb-toast {
-  position: absolute; z-index: 1; top: 0; bottom: 0; left: 0; right: var(--sb-slot-w, 0px); display: flex; align-items: center; gap: 9px;
-  padding: 0 8px 0 calc(10px + env(safe-area-inset-left, 0px)); overflow: hidden; cursor: pointer;
-  background: var(--sb-bg); color: var(--sb-lavender); font-size: 14px; line-height: 1.25; -webkit-tap-highlight-color: transparent;
+  flex: 1 1 0; min-width: 0; min-height: var(--sb-btn); display: flex; align-items: center; gap: 9px; padding: 0 6px; overflow: hidden; cursor: pointer;
+  color: var(--sb-lavender); font-size: 14px; line-height: 1.25; -webkit-tap-highlight-color: transparent;
 }
+#swarmbox-strip .sb-keytoggle { flex: none; width: var(--sb-btn); padding: 0; font-size: 20px; background: transparent; }
+#swarmbox-strip .sb-keytoggle[aria-pressed="true"] { background: rgba(109, 40, 217, .25); border-color: var(--sb-violet); color: var(--sb-lavender); }
 #swarmbox-strip .sb-toast span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; min-width: 0; }
 #swarmbox-strip .sb-toast .sb-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--sb-violet); box-shadow: 0 0 8px rgba(167, 139, 250, .8); }
+#swarmbox-strip .sb-toast[data-state="idle"] { color: var(--sb-line); }
+#swarmbox-strip .sb-toast[data-state="idle"] .sb-dot { background: var(--sb-line); box-shadow: none; }
 #swarmbox-strip .sb-toast[data-state="working"] .sb-dot, #swarmbox-strip .sb-toast[data-state="queued"] .sb-dot { animation: sb-pulse 1.4s ease-in-out infinite; }
 #swarmbox-strip .sb-toast[data-state="sending"] .sb-dot { background: var(--sb-amber); box-shadow: 0 0 8px rgba(251, 191, 36, .8); }
 #swarmbox-strip .sb-toast[data-state="allow?"] { color: var(--sb-text); }

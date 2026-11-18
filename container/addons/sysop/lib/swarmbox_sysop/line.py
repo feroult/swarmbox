@@ -1,8 +1,8 @@
 """The one line of the sysop: what it is doing, in a sentence, for a screen that has no room for the panel (a phone).
 
 The service (`swarmbox-sysop serve --dock`, in every panel mode) keeps the global tmux option @sysop_line:
-    sysop:<state>:<sentence>        state: working | sending | allow? | queued | done | failed | stopped
-and unsets it when there is nothing to say (idle, the service is down, a finished goal after SHOW_END seconds). tmux.conf has `set-titles on` with the
+    sysop:<state>:<sentence>        state: idle | working | sending | allow? | queued | done | failed | stopped
+(`sysop:idle:` while the service is up and has nothing to say, also SHOW_END seconds after a goal ended) and unsets it when the service is down. tmux.conf has `set-titles on` with the
 title `#{?@sysop_line,#{@sysop_line},#S:#I:#W}`, so tmux sends the line to every client as the title of the terminal and the web page (ttyd-clipboard.js)
 shows it next to the microphone. No file, no port and no process in the pane: a change of the option is the whole channel.
 
@@ -19,6 +19,7 @@ from .dock import Tmux
 from .panel import TERMINAL, Model, one_line, snapshot, step_text
 
 OPTION = "@sysop_line"
+IDLE = ("idle", "")        # the service is up and has nothing to say: the page knows a sysop is there (it keeps the line of a phone for it)
 PREFIX = "sysop"
 MAX_TEXT = 140
 SHOW_END = 10.0          # seconds the end of a goal (done, failed, stopped) stays on the line
@@ -60,7 +61,7 @@ def line_of(snap, wall=0.0):
         if st in TERMINAL:
             ended = g.get("ended")
             if isinstance(ended, (int, float)) and wall and wall - ended > SHOW_END:
-                return None
+                return IDLE
             return (st, _cut(g.get("summary") or g.get("error") or st))
         if st == "queued":
             return ("queued", _cut(g.get("text")))
@@ -69,7 +70,7 @@ def line_of(snap, wall=0.0):
         return ("working", _cut(_last_thing(g) or g.get("text")))
     if m.queue:
         return ("queued", "%d queued" % len(m.queue))
-    return None
+    return IDLE
 
 
 def value_of(line):
@@ -107,7 +108,7 @@ class Toaster:
             if not self.ended or self.ended[0] != key:
                 self.ended = (key, now)
             if now - self.ended[1] >= SHOW_END:
-                return None
+                return IDLE
         else:
             self.ended = None
         return line

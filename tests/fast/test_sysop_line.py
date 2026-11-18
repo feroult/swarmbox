@@ -16,8 +16,8 @@ from swarmbox_sysop import dock, ipc, line  # noqa: E402
 
 
 class LineOf(unittest.TestCase):
-    def test_nothing_to_say_is_none(self):
-        self.assertIsNone(line.line_of(snap()))
+    def test_nothing_to_say_is_idle_and_a_service_that_is_down_says_nothing(self):
+        self.assertEqual(line.line_of(snap()), line.IDLE)
         self.assertIsNone(line.line_of(snap(up=False)))
         self.assertIsNone(line.line_of(snap(make_goal("running"), up=False)))
 
@@ -48,7 +48,7 @@ class LineOf(unittest.TestCase):
             g = make_goal(state, ended=now - 1, **kw)
             self.assertEqual(line.line_of(snap(g), now), (state, want))
         old = make_goal("done", ended=now - 60, summary="long gone")
-        self.assertIsNone(line.line_of(snap(old), now), "a goal that ended a minute ago says nothing")
+        self.assertEqual(line.line_of(snap(old), now), line.IDLE, "a goal that ended a minute ago says nothing: idle")
         long = make_goal("done", ended=now, summary="word " * 200)
         text = line.line_of(snap(long), now)[1]
         self.assertLessEqual(len(text), line.MAX_TEXT)
@@ -89,9 +89,9 @@ class ToasterCase(unittest.TestCase):
     def last(self):
         return self.tm.calls[-1] if self.tm.calls else None
 
-    def test_it_sets_the_option_when_the_line_changes_and_unsets_it_when_there_is_none(self):
+    def test_it_sets_the_option_when_the_line_changes_and_idle_is_a_line_too(self):
         self.t.look()
-        self.assertEqual(self.tm.calls, [("set-option", "-gu", "@sysop_line")], "the first look clears what an earlier service left")
+        self.assertEqual(self.tm.calls, [("set-option", "-g", "@sysop_line", "sysop:idle:")], "the first look replaces what an earlier service left: a sysop is here, idle")
         self.t.look()
         self.assertEqual(len(self.tm.calls), 1, "the same line is not sent twice")
         self.svc.goal("run the tests")
@@ -122,7 +122,7 @@ class ToasterCase(unittest.TestCase):
         self.assertEqual(self.last()[-1], "sysop:done:Pushed the branch.", "still there before the ten seconds")
         self.now[0] += 2
         self.t.look()
-        self.assertEqual(self.last(), ("set-option", "-gu", "@sysop_line"), "and gone after")
+        self.assertEqual(self.last(), ("set-option", "-g", "@sysop_line", "sysop:idle:"), "and idle after")
         n = len(self.tm.calls)
         self.t.look()
         self.assertEqual(len(self.tm.calls), n, "it does not come back")
@@ -163,7 +163,7 @@ class ToasterCase(unittest.TestCase):
         t.shutdown()
         t.thread.join(3)
         self.assertFalse(t.thread.is_alive())
-        self.assertEqual(self.tm.calls[0], ("set-option", "-gu", "@sysop_line"))
+        self.assertEqual(self.tm.calls[0], ("set-option", "-g", "@sysop_line", "sysop:idle:"))
 
     def test_shutdown_unsets_a_line_it_set_except_when_told_another_service_runs(self):
         self.svc.goal("x")
