@@ -448,10 +448,10 @@
   // ---- the size of the letters on a phone ---------------------------------------------------------------------------------------
   // On a touch screen the size is not a number but a number of COLUMNS: size = usable width / (columns * GLYPH), rounded, never above the size the box
   // configured (fontSize, 21 by default) and never below FONT_MIN. A monospace letter is about 0.6 of its size wide, so a 390 px phone held upright
-  // (370 px usable) gets 10 px = about 65 columns, instead of 21 px = 29; turned sideways (844 px) 11 px = about 120 columns. The target can be tried live: swarmboxStrip.setColumns(70)
+  // (370 px usable) gets 11 px = about 56 columns, instead of 21 px = 29; turned sideways (844 px) 13 px = about 105 columns. The target can be tried live: swarmboxStrip.setColumns(70)
   // in the console of the browser (kept in this browser, setColumns() forgets it). The sysop panel and the
   // tab are the same terminal, so one size serves both. A mouse screen wider than PHONE_WIDTH (600 px) keeps the configured size, as before.
-  var GLYPH = 0.6, COLS_UPRIGHT = 64, COLS_SIDEWAYS = 120, FONT_MIN = 7, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
+  var GLYPH = 0.6, COLS_UPRIGHT = 58, COLS_SIDEWAYS = 108, FONT_MIN = 7, FONT_PAD = 10, PHONE_WIDTH = 600;      // a touch screen, or any window as narrow as a phone (the device mode of a desktop browser has a mouse)
   function fontFor(width, height, base, touch) {
     if (!touch) return base;
     var cols = height >= width ? COLS_UPRIGHT : COLS_SIDEWAYS;
@@ -467,7 +467,7 @@
       if (up === undefined) localStorage.removeItem('swarmbox.columns');
       else localStorage.setItem('swarmbox.columns', JSON.stringify({ up: up, side: side || Math.round(up * 1.8) }));
     } catch (e) { /* no storage: this page only */ }
-    if (up === undefined) { COLS_UPRIGHT = 64; COLS_SIDEWAYS = 120; } else { COLS_UPRIGHT = Number(up); COLS_SIDEWAYS = Number(side) || Math.round(up * 1.8); }
+    if (up === undefined) { COLS_UPRIGHT = 58; COLS_SIDEWAYS = 108; } else { COLS_UPRIGHT = Number(up); COLS_SIDEWAYS = Number(side) || Math.round(up * 1.8); }
     manual = false;      // the page fits the letters again, from whatever size the terminal has now
     if (window.term && window.term.options) setFont = Number(window.term.options.fontSize);
     fitFont();
@@ -764,7 +764,7 @@
         var top = base - ia, h = ia + id;      // where the ink starts in the row, how tall it is
         if (h < L + 3) {
           var k = (L + 3) / h;
-          if (k < 1.6 && k > 1.001) { s = k; o = (top * k + 1.5) / (k - 1); unit = 'px'; }
+          if (k < 2.5 && k > 1.001) { s = k; o = (top * k + 1.5) / (k - 1); unit = 'px'; }
           else if (k <= 1.001) { s = 1.001; o = top; unit = 'px'; }
         }
       }

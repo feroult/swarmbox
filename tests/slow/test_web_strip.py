@@ -297,8 +297,8 @@ class Phone(StripCase):
 
     def test_the_phone_letters_leave_no_column_cut_off_at_the_right_and_fill_the_width(self):
         """seen on a phone: after the size changed the terminal was refitted with the old letter width, and the last characters of every row fell off the right edge"""
-        g = self.geo(lambda g: g["cols"] >= 55)
-        self.assertGreaterEqual(g["cols"], 55, "a phone held upright shows about 65 columns (it was 29 at 21 px)")
+        g = self.geo(lambda g: g["cols"] >= 50)
+        self.assertGreaterEqual(g["cols"], 50, "a phone held upright shows about 56 columns (it was 29 at 21 px): %r" % self.page.js("[term.options.fontSize, innerWidth, innerHeight, term.cols]"))
         self.assertLessEqual(g["cols"], 90)
         self.assertLessEqual(g["screen"]["right"], g["win"][0] - 8, "the last column ends before the right edge (the padding of the page is 10 px)")
         self.assertGreaterEqual(g["screen"]["right"], g["win"][0] - 30, "and not much before it: the width is used")
@@ -309,9 +309,9 @@ class Phone(StripCase):
         self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") <= 12, 10, 0.05))
         time.sleep(0.6)
         auto = self.page.js("term.options.fontSize")
-        self.page.js("swarmboxStrip.setColumns(48)")
+        self.page.js("swarmboxStrip.setColumns(40)")
         self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") > auto + 2, 10, 0.05), "fewer columns asked: bigger letters")
-        self.assertEqual(self.page.js("JSON.parse(localStorage.getItem('swarmbox.columns')).up"), 48, "kept in this browser")
+        self.assertEqual(self.page.js("JSON.parse(localStorage.getItem('swarmbox.columns')).up"), 40, "kept in this browser")
         self.page.js("swarmboxStrip.setColumns()")
         self.assertIsNone(self.page.js("localStorage.getItem('swarmbox.columns')"))
         self.assertTrue(wait_until(lambda: self.page.js("term.options.fontSize") == auto, 10, 0.05), "and the default again")
@@ -463,8 +463,12 @@ class FontFromTheStart(StripCase):
         import re
         sizes = [(int(c), int(r)) for c, r in re.findall(r'"columns":(\d+),"rows":(\d+)', self.t.sent())]
         self.assertEqual(sizes[-1][0], self.page.js("term.cols"), "the last size told to tmux is the size of the terminal: %r" % (sizes,))
-        self.assertLessEqual(len(sizes), 3, "the two sizes of ttyd before its settings, then the final one: %r" % (sizes,))
-        self.assertGreater(sizes[-1][0], sizes[-2][0] + 5, "no size with the width of a scrollbar between them (58 columns, then 61, was the blink): %r" % (sizes,))
+        # the two sizes of ttyd before its settings, then the final one; at 11 px the cell height is a hair under a whole number of rows and the browser's second measure
+        # of the letters can add one more size that differs by a ROW, never by columns (the failure seen on a phone was the columns: 28, then 123)
+        self.assertLessEqual(len(sizes), 4, "sizes told to tmux: %r" % (sizes,))
+        self.assertEqual(len({c for c, _ in sizes[2:]}), 1, "after the settings of ttyd the columns never change: %r" % (sizes,))
+        self.assertLessEqual(len({r for _, r in sizes[2:]}), 2, "and the rows change by one at most: %r" % (sizes,))
+        self.assertGreater(sizes[2][0], sizes[1][0] + 5, "no size with the width of a scrollbar between them (58 columns, then 61, was the blink): %r" % (sizes,))
         self.assertEqual(self.page.js("swarmboxStrip.prefs"), [1, 1], "the settings message of ttyd was seen and rewritten once")
         self.assertEqual(self.page.js("document.querySelectorAll('.xterm-screen canvas').length"), 0, "and the renderer is the DOM one on a phone")
         self.assertEqual(self.page.js("swarmboxStrip.fontSets"), 0, "the page never had to change the font after ttyd applied its settings")

@@ -148,7 +148,7 @@ const s = win.swarmboxStrip;
         got = self.run_js("process.stdout.write(JSON.stringify([s.fontFor(390, 844, 21, true), s.fontFor(844, 390, 21, true), s.fontFor(360, 640, 21, true),"
                           " s.fontFor(320, 568, 21, true), s.fontFor(768, 1024, 21, true), s.fontFor(390, 844, 12, true), s.fontFor(200, 400, 21, true),"
                           " s.fontFor(390, 844, 21, false), s.fontFor(1920, 1080, 21, false)]));")
-        self.assertEqual(got, [10, 11, 9, 8, 19, 10, 7, 21, 21], "an upright 390 px phone 10 px (about 65 columns), sideways 11 px, a tablet the configured size")
+        self.assertEqual(got, [11, 13, 10, 9, 21, 11, 7, 21, 21], "an upright 390 px phone 11 px (about 56 columns), sideways 13 px, a tablet the configured size")
 
     def test_the_settings_message_of_ttyd_is_rewritten_with_the_font_of_this_screen(self):
         """ttyd sends `2{json}` first; on a phone the fontSize in it becomes the size that fits, so the terminal is measured once. Other messages are left alone."""
@@ -160,7 +160,7 @@ const s = win.swarmboxStrip;
           const out = new TextEncoder().encode('0hello'), other = s.rewritePrefs(out.buffer);
           const nofont = s.rewritePrefs(enc({cursorBlink: true}));
           process.stdout.write(JSON.stringify([a.fontSize, a.cursorBlink, JSON.parse(text.slice(1)).fontSize, other === out.buffer, dec(nofont).cursorBlink, s.fontSets, a.rendererType]));""")
-        self.assertEqual(got, [10, True, 10, True, True, 0, "dom"], "on a phone the size fits the screen and the renderer is the DOM one")
+        self.assertEqual(got, [11, True, 11, True, True, 0, "dom"], "on a phone the size fits the screen and the renderer is the DOM one")
 
     def test_the_same_page_not_framed_builds_the_strip(self):
         got = self.run_js("process.stdout.write(JSON.stringify({buttons: made.filter(e => /(^| )sb-key( |$)/.test(e.className)).length, visible: s.visible}));")
