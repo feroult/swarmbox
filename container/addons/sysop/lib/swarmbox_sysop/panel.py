@@ -38,7 +38,7 @@ GOAL_LINES = 3
 HEAD_GAP_ROWS = 7       # a panel of a phone this tall (or taller) has a blank line under its head
 WIDE_GAP_ROWS = 14      # elsewhere (the tall panel at the right of a desktop) it takes this many rows: a short panel keeps its rows for the content
 WIDE_COLS = 80          # ... and is this many columns wide at most: the panel docked at the bottom of a wide window has no strip for buttons
-STRIP_ROWS = 2           # the lines of that strip
+STRIP_ROWS = 3           # the lines of that strip: two for the bar of buttons, and a third of space between the bar and the content
 DONE_LINES = 3          # lines of how a goal ended
 MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
 LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last one when the panel opens
@@ -706,7 +706,8 @@ def render(model, cols, rows, wall, color=True, closer=False):
             buttons = [("g", "Goal", "violet")]
 
     # Room under the head when the panel is tall enough to spare it. On a phone one blank line (the content is not stuck to the title). On a desktop, in the tall narrow
-    # panel at the right edge, STRIP_ROWS blank lines: a strip for buttons, which the web page fills (the microphone now, more later; ttyd-clipboard.js, placeMic).
+    # panel at the right edge, STRIP_ROWS blank lines: a bar of buttons (two lines) that the web page fills (the microphone now, more later) and a line of space under it
+    # (ttyd-clipboard.js, paintPanel).
     gap = (1 if rows >= HEAD_GAP_ROWS else 0) if closer else (STRIP_ROWS if rows >= WIDE_GAP_ROWS and cols <= WIDE_COLS else 0)
 
     def total():

@@ -271,7 +271,7 @@
   // The panel of the sysop and what is under it are one drawer: a dark violet a little lighter than the terminal over the whole panel, and a dim line under its head.
   // The tint is a layer over the terminal with mix-blend-mode: lighten: the dark background of the panel lifts to the tint and the (lighter) letters stay as they are.
   // On a phone the strip under the panel has the same tint and a fine gradient line stands where the border of tmux was (the row above the head).
-  // On a desktop the panel is docked at the right edge, and the two lines it leaves blank under its head (panel.py, STRIP_ROWS) are a BAR OF BUTTONS: a slightly lighter
+  // On a desktop the panel is docked at the right edge, and the lines it leaves blank under its head (panel.py, STRIP_ROWS: two, and one of space) are a BAR OF BUTTONS: a slightly lighter
   // band with the controls of the page in it, at the right: the microphone now, more buttons later. The page finds the panel by the row and the column of its head
   // (it is made of the cells of the terminal); without a panel the microphone floats in the top right corner, as it always did.
   var sheetEl = null, ruleEl = null, buttonsEl = null;
@@ -305,7 +305,7 @@
     if (border) { ruleEl.style.display = 'block'; ruleEl.style.left = wide.left + 'px'; ruleEl.style.width = wide.width + 'px'; ruleEl.style.top = (top - rowH) + 'px'; ruleEl.style.height = rowH + 'px'; }
     else ruleEl.style.display = 'none';
     // the bar of buttons: the two blank lines under the head of the tall panel, when a control floats (a desktop with only the microphone)
-    var room = docked && !isPhone && root.classList.contains('swarmbox-strip-float') && seen.row + 3 < t.rows && !rowText(seen.row + 1, seen.col - 1).trim() && !rowText(seen.row + 2, seen.col - 1).trim();
+    var room = docked && !isPhone && root.classList.contains('swarmbox-strip-float') && seen.row + 4 < t.rows && !rowText(seen.row + 1, seen.col - 1).trim() && !rowText(seen.row + 2, seen.col - 1).trim();
     if (!room) { buttonsEl.style.display = 'none'; root.removeAttribute('data-float-pos'); return; }
     var barTop = rect.top + (seen.row + 1) * rowH, size = Math.max(24, Math.min(36, Math.floor(2 * rowH - 12))), inset = (2 * rowH - size) / 2;      // the same space above, below and at the right
     buttonsEl.style.display = 'block'; buttonsEl.style.left = from + 'px'; buttonsEl.style.width = span + 'px'; buttonsEl.style.top = barTop + 'px'; buttonsEl.style.height = (2 * rowH) + 'px';

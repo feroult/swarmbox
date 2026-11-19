@@ -914,7 +914,7 @@ class Toast(StripCase):
         if panel:
             col = self.page.js("term.cols") - 39
             bar = "\\033[48;2;42;26;82m"
-            first = 4 if room else 2      # lines 2 and 3 are the blank lines of the strip; without it the content follows the title at once
+            first = 5 if room else 2      # lines 2 to 4 are the blank lines of the strip (two of the bar of buttons, one of space); without it the content follows the title at once
             self.t.type("clear; printf 'work one\\nwork two\\nwork three\\nwork four\\n'; printf '\\033[1;%dH%s \\033[1;38;2;167;139;250mSYSOP\\033[0m%s  idle%s\\033[0m\\033[%d;%dH  the goal of the sysop, a few words\\033[%d;%dH  and what it does next\\n'\r"
                         % (col, bar, bar, " " * 29, first, col, first + 1, col))
             self.assertTrue(wait_until(lambda: "SYSOP" in self.page.js("(() => { const b = term.buffer.active; return b.getLine(b.viewportY).translateToString(true); })()"), 8, 0.2))

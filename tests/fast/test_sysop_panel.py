@@ -332,7 +332,7 @@ class CloseControl(unittest.TestCase):
             self.assertEqual(len(f.lines), rows)
             self.assertNotEqual(strip_ansi(f.lines[1]).strip(), "", "no blank line in a short panel: %r" % f.lines[:3])
 
-    def test_the_tall_narrow_panel_of_a_desktop_leaves_two_blank_lines_under_its_head_for_a_bar_of_buttons(self):
+    def test_the_tall_narrow_panel_of_a_desktop_leaves_three_blank_lines_under_its_head_two_for_a_bar_of_buttons_and_one_of_space(self):
         band = "\x1b[48;2;42;26;82m"
         for cols in (40, 60, 80):
             for rows in (14, 30, 50):
@@ -342,8 +342,9 @@ class CloseControl(unittest.TestCase):
                 self.assertEqual(text_width(strip_ansi(f.lines[0])), cols, "edge to edge")
                 self.assertEqual(strip_ansi(f.lines[1]).strip(), "", "a blank line, the first of the strip of buttons")
                 self.assertEqual(strip_ansi(f.lines[2]).strip(), "", "and a second one")
-                self.assertNotIn(band, f.lines[1] + f.lines[2], "they are not lines of the bar: the page draws that strip")
-                self.assertNotEqual(strip_ansi(f.lines[3]).strip(), "", "the content follows: %r" % f.lines[:4])
+                self.assertEqual(strip_ansi(f.lines[3]).strip(), "", "and a third, the space between the bar of buttons and the content")
+                self.assertNotIn(band, "".join(f.lines[1:4]), "they are not lines of the bar: the page draws that strip")
+                self.assertNotEqual(strip_ansi(f.lines[4]).strip(), "", "the content follows: %r" % f.lines[:5])
 
     def test_a_short_panel_or_one_at_the_bottom_of_a_wide_window_has_no_strip_of_buttons(self):
         for cols, rows in ((40, 8), (40, 10), (40, 13), (120, 14), (200, 30)):
