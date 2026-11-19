@@ -35,7 +35,8 @@ POLL = 0.2              # seconds between two looks at the files while something
 IDLE_POLL = 1.0         # idle: once a second only a stat of two files and a lock probe; the files are read when one of them changed
 MAX_EDIT = service.MAX_GOAL_TEXT
 GOAL_LINES = 3
-HEAD_GAP_ROWS = 7       # a panel of a narrow window this tall (or taller) has a blank line under its head
+HEAD_GAP_ROWS = 7       # a panel of a phone this tall (or taller) has a blank line under its head
+BAR_ROWS = 14           # a panel elsewhere (the tall one at the right of a desktop) this tall has the head as a bar of two lines, for the microphone
 DONE_LINES = 3          # lines of how a goal ended
 MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
 LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last one when the panel opens
@@ -674,7 +675,7 @@ def render(model, cols, rows, wall, color=True, closer=False):
     if closer and cols - used >= len(CLOSE) + 2:
         head += " " * (cols - used - len(CLOSE)) + (_paint(color, "dim", CLOSE) if not color else "\x1b[1m" + bg("deep") + fg("lavender") + CLOSE + RESET)
         close_at = (cols - len(CLOSE) + 1, cols)
-    if closer and color:      # the head of a phone's panel is a bar of a dark purple, edge to edge: it stands out and parts the panel from the terminal above it
+    if color:      # the head is a bar of a dark purple, edge to edge: it stands out and parts the panel from what is above it
         head = bg("band") + head.replace(RESET, RESET + bg("band")) + " " * max(0, cols - text_width(strip_ansi(head))) + RESET
 
     top = []
@@ -702,7 +703,10 @@ def render(model, cols, rows, wall, color=True, closer=False):
         elif model.up:
             buttons = [("g", "Goal", "violet")]
 
-    gap = 1 if closer and rows >= HEAD_GAP_ROWS else 0      # a blank line under the head of a phone's panel, when the panel is tall enough to spare it
+    # A line under the head when the panel is tall enough to spare it. On a phone it is a blank line (the content is not stuck to the title). On a wide window it is
+    # the second line of the bar: the page puts the microphone inside the bar, at the right end, instead of over the text (ttyd-clipboard.js, placeMic).
+    gap = 1 if rows >= (HEAD_GAP_ROWS if closer else BAR_ROWS) else 0
+    under = ("" if closer or not color else bg("band") + " " * cols + RESET)
 
     def total():
         return len(top) + len(pend_l) + len(notice_l) + len(prompt_l) + (1 if buttons else 0)
@@ -734,7 +738,7 @@ def render(model, cols, rows, wall, color=True, closer=False):
             visible = [" " + _paint(color, "dim", cut("%d earlier (Up)" % start, W))] + visible
         if s:
             visible = visible + [" " + _paint(color, "dim", cut("%d later (Down)" % s, W))]
-    out = [head] + [""] * gap + top + visible
+    out = [head] + [under] * gap + top + visible
     while len(out) < rows - (total() - len(top)):
         out.append("")
     base = len(out)

@@ -218,7 +218,7 @@
   // the state of the panel as the screen shows it: {up: whether a panel is on the screen, state: what it waits for, '' when it is idle or finished}
   function sysopState() {
     var t = window.term;
-    if (!t || !t.buffer || !t.buffer.active) return { up: false, state: '', row: -1, word: '' };
+    if (!t || !t.buffer || !t.buffer.active) return { up: false, state: '', row: -1, col: -1, word: '' };
     var buf = t.buffer.active;
     for (var r = 0; r < t.rows; r++) {
       var line = buf.getLine(buf.viewportY + r);
@@ -227,9 +227,9 @@
       var at = text.indexOf('SYSOP');
       if (at < 0 || !panelInk(line, at)) continue;
       var m = SYSOP_HEAD.exec(text);
-      if (m) return { up: true, state: ACTIVE.test(m[1]) ? m[1] : '', row: r, word: m[1] };
+      if (m) return { up: true, state: ACTIVE.test(m[1]) ? m[1] : '', row: r, col: at, word: m[1] };
     }
-    return { up: false, state: '', row: -1, word: '' };
+    return { up: false, state: '', row: -1, col: -1, word: '' };
   }
   // The word SYSOP of the panel is bold and coloured (violet); the same word in the history of a tab, which scrolling brings into view, is plain text.
   // Only the first one counts, or the switch lit up and went out as a finger scrolled.
@@ -256,14 +256,28 @@
     b.setAttribute('aria-disabled', off ? 'true' : 'false');
   }
   function syncAnswers() {
-    if (!strip || (!answers.yes && !answers.no && !answers.panel)) return;
+    if (!strip) return;
+    if (!answers.yes && !answers.no && !answers.panel) { try { placeMic(sysopState()); } catch (e) { /* the place of the microphone is only paint */ } return; }
     var seen = sysopState(), st = seen.state;
     strip.setAttribute('data-sysop', st || 'none');
     // the switch is left as it was while a tab is scrolled back (its old text may say SYSOP too); Allow and Cancel keep reading, so a real question is never missed
     if (answers.panel && !inCopyMode()) { answers.panel.setAttribute('data-on', seen.up ? '1' : '0'); answers.panel.setAttribute('aria-pressed', seen.up ? 'true' : 'false'); }
     setOff(answers.yes, st !== 'allow?');
     setOff(answers.no, st === '');
-    try { paintSheet(seen); } catch (e) { /* the looks are only paint */ }
+    try { paintSheet(seen); placeMic(seen); } catch (e) { /* the looks are only paint */ }
+  }
+
+  // The controls of a desktop with only a microphone float in the top right corner. When the panel of the sysop is docked at the right edge (a wide window) its head is
+  // there too, so the microphone goes INTO the head: the head of that panel is a bar two lines high, and the microphone is centred in it, as tall as the bar leaves room for.
+  function placeMic(seen) {
+    var root = document.documentElement, t = window.term;
+    var inHead = root.classList.contains('swarmbox-strip-float') && seen && seen.up && seen.col > 0 && !inCopyMode() && t && t.element && typeof t.element.querySelector === 'function' && seen.col > t.cols / 2;
+    var screen = inHead ? t.element.querySelector('.xterm-screen') : null;
+    if (!screen) { root.removeAttribute('data-float-head'); return; }
+    var rect = screen.getBoundingClientRect(), rowH = rect.height / t.rows, size = Math.max(24, Math.min(40, Math.floor(2 * rowH - 6)));
+    root.style.setProperty('--sb-float-btn', size + 'px');
+    root.style.setProperty('--sb-float-top', Math.round(rect.top + seen.row * rowH + (2 * rowH - size) / 2) + 'px');
+    root.setAttribute('data-float-head', '1');
   }
 
   // ---- the sysop drawer on a phone -----------------------------------------------------------------------------------------------------
