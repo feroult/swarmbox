@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.16] - 2026-11-18
+
 - Changed: a cleaner sysop on a phone. In a window of 80 columns or fewer (a phone held upright) the operator panel is **closed** by default and the strip under the terminal is **compact**: a **Sysop button** (a light for the state and an arrow that says which way it opens; filled while the panel is open), **one line with what the sysop is doing** (two lines at most; "idle" when it has nothing to do) and the microphone. The key buttons are **one slim row** (Esc, Tab, ^C and the arrows) that opens by itself with the panel, and a ⌨ button shows it when the panel is closed. What needs a yes or a no is a **separate small approval panel** (the risk, the action, a big Allow and a big Cancel) that opens only while an action waits and closes a second after the answer. A wide window (a computer) is as before. The line travels as the title of the terminal (`set-titles on` in `tmux.conf`, the option `@sysop_line`, `sysop:<state>:<sentence>`), which the page reads off the connection, so a reload knows it at once; a terminal that attaches to the session now shows tmux's usual title. A narrow desktop window counts as a phone. Needs `swarmbox update` and `swarmbox reset` (the sysop addon refreshes itself).
 - Changed: the keyboard of the phone no longer opens at every tap on the terminal. On a touch screen the terminal takes the focus without it (Chrome: `virtualkeyboardpolicy="manual"`, and ONE **keyboard button** (the ⌨ of the compact bar, or the tall one at the right of the keys in the usual strip) opens the row of keys and the keyboard of the phone together, is lit while they are open, closes both on the next tap and follows the real keyboard; it calls `navigator.virtualKeyboard.show()`, tries again with a fresh focus and then with a plain text field if the keyboard does not come; elsewhere `inputmode="none"` until Aa makes it a text field; the key buttons and a hardware keyboard type either way).
 - Added: the page is black with the banner of the box while it loads (the lettering of `banner.sh`, in the style of a 90s BBS login screen: half blocks in the font of the terminal, the same gradient from dark gray and purple to white, the bar, the signature and a glint that sweeps across), and fades out only when the page has settled (the screen, font, size and strip stopped changing), so nothing is seen reorganising behind it.
@@ -230,6 +232,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.16]: https://github.com/feroult/swarmbox/releases/tag/v2.0.16
 [2.0.15]: https://github.com/feroult/swarmbox/releases/tag/v2.0.15
 [2.0.14]: https://github.com/feroult/swarmbox/releases/tag/v2.0.14
 [2.0.13]: https://github.com/feroult/swarmbox/releases/tag/v2.0.13
