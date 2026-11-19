@@ -5,6 +5,7 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Changed: the idle sysop panel ends in a line that looks like a text field (`Type a goal`, the key `g` at the right) instead of a lone Goal button; a tap anywhere on it, or `g`, opens the editor. The idle text above it says `Say a goal, or type it below.`
 - Fixed: on a phone, the sentence shown while the microphone records no longer covers the fine line at the top of the closed bar or leaves a darker patch beside the button (it takes the colour of the bar). The buttons of the bar are softer: a fainter surface and edge, a tinted microphone (red while it records) instead of a filled one, no glow on the dot of the Sysop button.
 - Changed: the buttons of the closed bar of a phone are one designed set. The Sysop button, the keyboard button and the microphone are all 44 px tall with the same corners (14 px), surface and edge; the microphone is the one that is filled (violet, it is the main action) and it is no longer bigger than the others, the Sysop button is no longer a pill, and the keyboard has a drawn icon instead of the glyph (a phone may draw U+2328 as a colour emoji). Recording turns the microphone red with a ring inside it that breathes, and nothing glows outside a button any more: the halo of the old recording state was cut by the edge of the screen and looked like a patch of colour at the right of the button. A tap presses the button in (a small scale) instead of changing its background.
 

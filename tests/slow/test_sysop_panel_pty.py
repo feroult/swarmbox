@@ -162,10 +162,10 @@ class PanelProgram(PtyBase):
     def test_idle_screen_resize_and_q(self):
         self.st.serve(settings=dict(SETTINGS))
         t = self.open(rows=20, cols=80)
-        self.ready(t, "Say or type a goal.")
+        self.ready(t, "Say a goal, or type it below.")
         self.assertEqual(len(t.last_frame()), 20)
         self.assertIn("SYSOP  idle", t.last_frame()[0])
-        self.assertIn("Goal", t.last_frame()[-1], "the idle panel offers the Goal button on its last row")
+        self.assertIn("Type a goal", t.last_frame()[-1], "the idle panel offers the Goal button on its last row")
         t.resize(30, 40)                                       # SIGWINCH: redrawn at the new size, nothing wider than the pane
         self.assertTrue(ss.wait_for(lambda: len(t.last_frame()) == 30, 5), t.last_frame())
         self.assertTrue(all(text_width(x) <= 40 for x in t.last_frame()), t.last_frame())
@@ -185,7 +185,7 @@ class PanelProgram(PtyBase):
         """a past bug: the idle panel looked at the files every turn. (The rule, a look only when a file changed, is Panel.changed in the fast tests.)"""
         self.st.serve(settings=dict(SETTINGS))
         t = self.open(rows=30, cols=70)
-        self.ready(t, "Say or type a goal.")
+        self.ready(t, "Say a goal, or type it below.")
 
         def cpu():
             with open("/proc/%d/stat" % t.pid) as f:
@@ -205,7 +205,7 @@ class PanelProgram(PtyBase):
         self.assertTrue(t.wait_frame("The sysop is not running. It starts with the box."), "\n".join(t.last_frame()))
         self.assertIn("SYSOP  off", t.last_frame()[0])
         self.st.serve(settings=dict(SETTINGS))
-        self.assertTrue(t.wait_frame("Say or type a goal.", 4), "\n".join(t.last_frame()))
+        self.assertTrue(t.wait_frame("Say a goal, or type it below.", 4), "\n".join(t.last_frame()))
         self.st.serve(on=False)
         self.assertTrue(t.wait_frame("The sysop is not running.", 4), "\n".join(t.last_frame()))
 
@@ -248,7 +248,7 @@ class PanelProgram(PtyBase):
         self.assertTrue(json.loads(f.readline())["ok"])
         self.st.serve()
         t = self.open()
-        self.ready(t, "Say or type a goal.")
+        self.ready(t, "Say a goal, or type it below.")
         t.send("g")
         self.assertTrue(t.wait_frame("Goal (Enter sends, Esc cancels):"))
         t.send("check the disk")
@@ -317,7 +317,7 @@ class RealCore(PtyBase):
         self.start([{"tool": "say", "args": {"text": "listing"}}, {"tool": "run", "args": {"tab": "main", "command": "cp /dev/null /tmp/panel-test-nothing"}},
                     {"tool": "say", "args": {"text": "it was vetoed"}}, {"tool": "done", "args": {"summary": "vetoed by you"}}])
         t = self.open(rows=30, cols=80)
-        self.ready(t, "Say or type a goal.")
+        self.ready(t, "Say a goal, or type it below.")
         gid = self.goal("echo something", "voice")
         self.assertTrue(t.wait_frame("sending in"), "\n".join(t.last_frame()))
         text = "\n".join(t.last_frame())
@@ -339,7 +339,7 @@ class RealCore(PtyBase):
     def test_a_low_risk_action_is_sent_at_once_with_nothing_to_answer(self):
         self.start([{"tool": "run", "args": {"tab": "main", "command": "echo from-the-sysop"}}, {"tool": "done", "args": {"summary": "echoed"}}])
         t = self.open(rows=30, cols=80)
-        self.ready(t, "Say or type a goal.")
+        self.ready(t, "Say a goal, or type it below.")
         self.goal("echo something", "voice")
         self.assertTrue(t.wait_frame("done: echoed", 15), "\n".join(t.last_frame()))
         self.assertNotIn("sending in", t.text(), "no countdown was ever drawn")
@@ -349,7 +349,7 @@ class RealCore(PtyBase):
     def test_a_high_risk_action_is_allowed_with_one_key(self):
         self.start([{"tool": "run", "args": {"tab": "main", "command": "rm -rf /tmp/sysop-panel-test-nothing"}}, {"tool": "done", "args": {"summary": "removed"}}])
         t = self.open(rows=30, cols=80)
-        self.ready(t, "Say or type a goal.")
+        self.ready(t, "Say a goal, or type it below.")
         self.goal("clean up")
         self.assertTrue(t.wait_frame("allow? high risk"), "\n".join(t.last_frame()))
         text = "\n".join(t.last_frame())
@@ -367,7 +367,7 @@ class RealCore(PtyBase):
     def test_a_goal_typed_in_the_panel_is_run_by_the_service(self):
         self.start([{"tool": "say", "args": {"text": "typed goals work"}}, {"tool": "done", "args": {"summary": "got it"}}])
         t = self.open(rows=30, cols=80)
-        self.ready(t, "Say or type a goal.")
+        self.ready(t, "Say a goal, or type it below.")
         t.send("g")
         t.send("do the thing")
         t.send("\r")

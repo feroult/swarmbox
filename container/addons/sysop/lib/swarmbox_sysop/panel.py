@@ -41,6 +41,7 @@ HEAD_GAP_ROWS = 7       # a panel of a phone this tall (or taller) has a blank l
 WIDE_GAP_ROWS = 14      # elsewhere (the tall panel at the right of a desktop) it takes this many rows: a short panel keeps its rows for the content
 WIDE_COLS = 80          # ... and is this many columns wide at most: the panel docked at the bottom of a wide window has no strip for buttons
 STRIP_ROWS = 3           # the lines of that strip: two for the bar of buttons, and a third of space between the bar and the content
+GOAL_HINT = "Type a goal"
 DONE_LINES = 3          # lines of how a goal ended
 MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
 LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last one when the panel opens
@@ -563,6 +564,17 @@ def _buttons(buttons, cols, color, row):
     return line, hits
 
 
+def _field(cols, color, row):
+    """The idle line to type a goal: ([ANSI line], [(row, c0, c1, "g")]). A bar of the width of the panel with a placeholder and the key at the right; a hit anywhere on it."""
+    key = "g"
+    gap = max(1, cols - 2 - len(GOAL_HINT) - len(key) - 2)
+    if not color:
+        return " > %s%s%s" % (GOAL_HINT, " " * gap, key), [(row, 1, cols, "g")]
+    body = " \u203a " + GOAL_HINT + " " * gap
+    line = bg("band") + fg("dim") + body + fg("violet") + "\x1b[1m" + key + RESET + bg("band") + " " * max(0, cols - text_width(body) - len(key)) + RESET
+    return line, [(row, 1, cols, "g")]
+
+
 def _pending_lines(model, W, wall, color):
     """The action that waits, as a bar (what is needed from you) and the text of the action."""
     p = model.pending
@@ -741,7 +753,7 @@ def render(model, cols, rows, wall, color=True, closer=False, web=True):
 
     pend_l = _pending_lines(model, W, wall, color) if (model.pending and model.up) else []
     notice_l = [" " + _paint(color, "red", ln) for ln in wrap(model.notice, W)] if model.notice else []
-    prompt_l, buttons, cursor_at = [], [], None
+    prompt_l, buttons, cursor_at, field = [], [], None, False
     if model.mode == "edit":
         prompt_l = [" " + _paint(color, "violet", "Goal (Enter sends, Esc cancels):")]
         shown, curw, left, right = model.editor.view(W - 1)
@@ -753,7 +765,7 @@ def render(model, cols, rows, wall, color=True, closer=False, web=True):
         elif model.up and (model.running() or model.queue):
             buttons = [("c", "Stop", "red")]
         elif model.up:
-            buttons = [("g", "Goal", "violet")]
+            field = True
 
     # Room under the head when the panel is tall enough to spare it. On a phone one blank line (the content is not stuck to the title). On a desktop, in the tall narrow
     # panel at the right edge, STRIP_ROWS blank lines: a bar of buttons (two lines) that the web page fills (the microphone now, more later) and a line of space under it
@@ -761,7 +773,7 @@ def render(model, cols, rows, wall, color=True, closer=False, web=True):
     gap = (1 if rows >= HEAD_GAP_ROWS else 0) if closer else ((STRIP_ROWS if web else 1) if rows >= WIDE_GAP_ROWS and cols <= WIDE_COLS else 0)
 
     def total():
-        return len(top) + len(pend_l) + len(notice_l) + len(prompt_l) + (1 if buttons else 0)
+        return len(top) + len(pend_l) + len(notice_l) + len(prompt_l) + (1 if (buttons or field) else 0)
     while rows - 1 - gap - total() < 1 and notice_l:
         notice_l.pop()
     while rows - 1 - gap - total() < 1 and len(top) > 1:
@@ -771,7 +783,7 @@ def render(model, cols, rows, wall, color=True, closer=False, web=True):
     avail = max(1, rows - 1 - gap - total())
     body = _log(model, W, color)
     if not body and model.up and not g:
-        body = [" " + _paint(color, "dim", ln) for ln in wrap("Say or type a goal.", W)]
+        body = [" " + _paint(color, "dim", ln) for ln in wrap("Say a goal, or type it below.", W)]
     elif not body and g and g.get("state") in TERMINAL:
         body = []
     s = max(0, min(model.scroll, max(0, len(body) - 1)))
@@ -798,6 +810,9 @@ def render(model, cols, rows, wall, color=True, closer=False, web=True):
     hits = []
     if buttons:
         line, hits = _buttons(buttons, cols, color, len(out) + 1)
+        out.append(line)
+    elif field:      # idle: a line that looks like a text field (a tap or the key g opens it), not a lone button
+        line, hits = _field(cols, color, len(out) + 1)
         out.append(line)
     cursor = (base + len(pend_l) + len(notice_l) + cursor_at[0], cursor_at[1]) if cursor_at else None
     if len(out) > rows:                       # too small for everything: the head and the end (action, buttons) win

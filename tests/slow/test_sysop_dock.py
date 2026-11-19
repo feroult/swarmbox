@@ -745,7 +745,7 @@ class Cli(RealTmux):
         r = self.cli("open", "--window", self.win1)
         self.assertEqual(r.returncode, 0, r.stderr)
         panel, = self.wait(self.panels, "the panel")
-        self.wait(lambda: "Say or type a goal." in self.tmux.run("capture-pane", "-p", "-t", panel["id"]).out, "the idle text")
+        self.wait(lambda: "Say a goal, or type it below." in self.tmux.run("capture-pane", "-p", "-t", panel["id"]).out, "the idle text")
         self.tmux.run("send-keys", "-t", panel["id"], "q")
         self.wait(lambda: not self.panels(), "the panel to close by itself with q")
 

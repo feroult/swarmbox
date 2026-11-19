@@ -109,9 +109,9 @@ class AtStart(Always):
         self.attach(50, 200)
         self.d.sync()
         panel, = self.panels()
-        self.wait(lambda: "Say or type a goal." in self.screen(panel["id"]), "the idle text")
+        self.wait(lambda: "Say a goal, or type it below." in self.screen(panel["id"]), "the idle text")
         text = self.screen(panel["id"])
-        for needle in ("SYSOP  idle", "Say or type a goal.", "Goal"):
+        for needle in ("SYSOP  idle", "Say a goal, or type it below.", "Type a goal"):
             self.assertIn(needle, text)
         for gone in ("autonomy:", "brain:", "topic:", "[q] Hide", "no goal. Type"):
             self.assertNotIn(gone, text, "the idle panel is short: the state, one sentence and a button")
@@ -513,8 +513,8 @@ class Resizing(Always):
             self.wait(lambda: "SYSOP" in (self.screen(panel["id"]).splitlines() or [""])[0], "the panel to redraw at %dx%d: %s" % (cols, rows, self.panes()))
             text = self.screen(panel["id"])
             self.assertIn("SYSOP", text.splitlines()[0])
-            self.assertIn("Say or type a goal.", text, (rows, cols))
-            self.assertIn("Goal", text.splitlines()[-1] if text.splitlines()[-1].strip() else [x for x in text.splitlines() if x.strip()][-1], (rows, cols))
+            self.assertIn("Say a goal, or type it below.", text, (rows, cols))
+            self.assertIn("Type a goal", text.splitlines()[-1] if text.splitlines()[-1].strip() else [x for x in text.splitlines() if x.strip()][-1], (rows, cols))
             for line in text.splitlines():
                 self.assertLessEqual(len(line), width)
 
@@ -566,7 +566,7 @@ class Toggle(Always):
         self.d.sync()
         self.wait(self.one_panel_in_each_window, "panels")
         panel = self.panels_of(self.win1)[0]
-        self.wait(lambda: "Say or type a goal." in self.screen(panel["id"]), "the panel to be ready")
+        self.wait(lambda: "Say a goal, or type it below." in self.screen(panel["id"]), "the panel to be ready")
         self.tmux.run("send-keys", "-t", panel["id"], "q")
         self.wait(lambda: not self.panels(), "q to hide the panels of every window")
         self.assertTrue(self.hidden())
@@ -688,7 +688,7 @@ class NoFocusSteal(Always):
         c = self.attach(40, 160)
         self.d.sync()
         panel, = self.wait(self.panels, "panel")
-        self.wait(lambda: "Say or type a goal." in self.screen(panel["id"]), "panel ready")
+        self.wait(lambda: "Say a goal, or type it below." in self.screen(panel["id"]), "panel ready")
         self.tmux.run("set-option", "-g", "mouse", "on")
         c.send("\x1b[<0;%d;%dM\x1b[<0;%d;%dM" % (panel["left"] + 5, panel["top"] + 3, panel["left"] + 5, panel["top"] + 3))   # SGR: press, release
         self.wait(lambda: self.panels()[0]["active"], "the click to focus the panel")
@@ -706,7 +706,7 @@ class IdleCpu(Always):
         self.d.sync()
         self.wait(self.one_panel_in_each_window, "panels")
         for p in self.panels():
-            self.wait(lambda: "Say or type a goal." in self.screen(p["id"]), "idle")
+            self.wait(lambda: "Say a goal, or type it below." in self.screen(p["id"]), "idle")
         pids = [self.pid_of(p["id"]) for p in self.panels()]
 
         def ticks():
@@ -734,7 +734,7 @@ class NoFocusAlways(td.NoFocus):
         self.assertEqual(self.d.mode, "always")
         self.d.sync()
         self.wait(lambda: len(self.panels()) == 1, "the panel that is up before any goal")
-        self.wait(lambda: any(w in self.tmux.run("capture-pane", "-p", "-t", self.panels()[0]["id"]).out for w in ("Say or type a goal.", "The sysop is not running")), "the panel to draw")
+        self.wait(lambda: any(w in self.tmux.run("capture-pane", "-p", "-t", self.panels()[0]["id"]).out for w in ("Say a goal, or type it below.", "The sysop is not running")), "the panel to draw")
         time.sleep(0.6)
 
     test_the_approval_gesture_opens_the_panel_when_it_is_not_there_and_does_not_focus_without_an_approval = None    # the panel is always there: the test below
@@ -762,7 +762,7 @@ class NoFocusAlways(td.NoFocus):
         w2, u2 = self.new_window(detached=False)                    # the client now shows the second window
         self.d.sync()
         self.wait(lambda: len(self.panels()) == 2, "a panel in each window")
-        self.wait(lambda: all(any(w in self.screen(p["id"]) for w in ("Say or type a goal.", "The sysop is not running")) for p in self.panels()), "both to draw")
+        self.wait(lambda: all(any(w in self.screen(p["id"]) for w in ("Say a goal, or type it below.", "The sysop is not running")) for p in self.panels()), "both to draw")
         time.sleep(0.6)
         self.svc.goal()
         self.svc.pending(mode="approve", risk="high", text="rm -r build")
@@ -779,16 +779,16 @@ class NoFocusAlways(td.NoFocus):
 
     def test_the_idle_screen_gives_way_to_the_goal_and_its_end_stays(self):
         panel = self.panels()[0]
-        self.assertTrue(self.wait(lambda: "Say or type a goal." in self.screen(panel["id"]), "idle"))
+        self.assertTrue(self.wait(lambda: "Say a goal, or type it below." in self.screen(panel["id"]), "idle"))
         self.svc.goal()                                   # a goal runs (status.json names it)
-        self.wait(lambda: "run the tests" in self.screen(panel["id"]) and "Say or type a goal." not in self.screen(panel["id"]), "the goal to replace the idle text")
+        self.wait(lambda: "run the tests" in self.screen(panel["id"]) and "Say a goal, or type it below." not in self.screen(panel["id"]), "the goal to replace the idle text")
         self.assertIn("working", self.screen(panel["id"]).splitlines()[0])
         self.svc.goal(state="done")
         self.svc.write_status(None)
         self.wait(lambda: "done" in self.screen(panel["id"]).splitlines()[0], "the end of the goal")
         text = self.screen(panel["id"])
         self.assertIn("run the tests", text, "the goal and its end stay on screen")
-        self.assertNotIn("Say or type a goal.", text, "that sentence is only for a panel that has seen no goal")
+        self.assertNotIn("Say a goal, or type it below.", text, "that sentence is only for a panel that has seen no goal")
 
 if __name__ == "__main__":
     unittest.main()

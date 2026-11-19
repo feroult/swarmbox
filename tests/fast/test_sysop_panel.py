@@ -74,10 +74,18 @@ class IdleScreen(unittest.TestCase):
     def test_it_is_short_and_says_nothing_of_keys_settings_or_a_microphone(self):
         text = "\n".join(self.idle(60, 24)).lower()
         self.assertIn("idle", text)
-        self.assertIn("say or type a goal", text)
+        self.assertIn("say a goal, or type it below", text)
         for word in ("ctrl+a", "autonomy", "brain", "topic", "micro", "voice", "[q]"):
             self.assertNotIn(word, text)
         self.assertLessEqual(len([x for x in self.idle(60, 24) if x.strip()]), 3, "the head, one line, one button")
+
+    def test_the_idle_goal_is_a_field_line_at_the_bottom_and_a_tap_anywhere_on_it_is_the_key_g(self):
+        for color in (False, True):
+            m = model_with(None)
+            f = render(m, 40, 24, time.time(), color=color)
+            row = max(i for i, x in enumerate(f.lines) if x.strip())
+            self.assertIn("Type a goal", strip_ansi(f.lines[row]))
+            self.assertEqual(f.hits, [(row + 1, 1, 40, "g")], color)
 
     def test_the_title_is_the_first_line_and_the_screen_has_the_size_of_the_pane(self):
         for cols in (16, 24, 30, 40, 60, 100, 200):
@@ -94,7 +102,7 @@ class IdleScreen(unittest.TestCase):
         for rows in (8, 9, 10, 12):
             text = " ".join("\n".join(self.idle(28, rows, g)).split())
             self.assertIn("done: Typed", text, rows)
-            self.assertIn("[ Goal ]".replace("[ ", "").replace(" ]", ""), text, rows)
+            self.assertIn("Type a goal", text, rows)
         long_goal = make_goal("running", "x " * 400, "voice", say=say)
         self.assertIn("SYSOP", "\n".join(self.idle(28, 8, long_goal)))
 
@@ -105,19 +113,19 @@ class IdleScreen(unittest.TestCase):
             self.assertIn("run the tests", text)
             self.assertIn("I looked at the tab", text)
             self.assertIn("%s: %s" % (state, why), text)
-            self.assertIn("Goal", text, "and it is idle: the button for another goal is there")
+            self.assertIn("Type a goal", text, "and it is idle: the line to type another goal is there")
 
     def test_while_a_goal_runs_or_waits_it_does_not_offer_a_new_goal(self):
         for m in (model_with(make_goal("running")), model_with(make_goal("running"), make_pending("veto")), model_with(make_goal("queued"), queue=[{"id": "g2", "source": "cli", "text": "x"}])):
             text = "\n".join(frame_text(m, 70, 30)[0])
-            self.assertNotIn("Say or type a goal", text)
+            self.assertNotIn("Say a goal, or type it below", text)
             self.assertNotIn("Goal ", text.replace("goal", ""))
 
     def test_the_service_down_has_its_own_screen(self):
         text = "\n".join(frame_text(model_with(up=False, settings=SETTINGS), 70, 24)[0])
         self.assertIn("off", text)
         self.assertIn("not running", text)
-        self.assertNotIn("Say or type", text)
+        self.assertNotIn("Say a goal", text)
 
     def test_ago(self):
         for secs, want in ((0, "just now"), (9, "just now"), (10, "10 s ago"), (59, "59 s ago"), (60, "1 min ago"), (3599, "59 min ago"), (3600, "1 h ago"), (86400 * 3, "3 d ago")):
@@ -183,7 +191,7 @@ class Rendering(unittest.TestCase):
         runaway = "the tests ran and here is everything they printed " * 12
         lines, _ = frame_text(model_with(make_goal("done", summary=runaway)), 40, 20)
         ends = [i for i, x in enumerate(lines) if x.strip().startswith("done:")]
-        block = [x for x in lines[ends[0]:] if x.strip() and "[Goal]" not in x]
+        block = [x for x in lines[ends[0]:] if x.strip() and "Type a goal" not in x]
         self.assertEqual(len(block), 3)
         self.assertTrue(block[-1].rstrip().endswith("…"))
         say = [{"t": float(i), "text": "word " * 60} for i in range(1, 3)]
@@ -635,7 +643,7 @@ class ApprovalPane(unittest.TestCase):
         self.assertIn("git push --force origin main", text)
         self.assertIn("Allow", text)
         self.assertIn("Cancel", text)
-        for word in ("deploy the site", "SYSOP", "Goal", "Stop", "earlier", "Say or type"):
+        for word in ("deploy the site", "SYSOP", "Goal", "Stop", "earlier", "Say a goal"):
             self.assertNotIn(word, text, "the goal, the log and the panel's own words stay out")
 
     def test_the_risk_colours_the_bar_and_medium_says_medium(self):
@@ -864,7 +872,7 @@ class PanelObject(unittest.TestCase):
         self.st.serve(current=None, settings=dict(SETTINGS))
         text = self.see()
         self.assertIn("done: tests pass", text)
-        self.assertIn("[Goal]", text)
+        self.assertIn("Type a goal", text)
         self.st.serve(on=False)
         self.assertIn("not running", self.see())
 
@@ -872,7 +880,7 @@ class PanelObject(unittest.TestCase):
         self.st.serve(settings=dict(SETTINGS))
         self.st.goal(state="done", summary="tests pass", text="run the tests", ended=time.time() - 30, say=[{"t": 1.0, "text": "all green"}])
         text = self.see()
-        for needle in ("run the tests", "all green", "done: tests pass", "Goal"):
+        for needle in ("run the tests", "all green", "done: tests pass", "Type a goal"):
             self.assertIn(needle, text)
 
     def test_an_idle_panel_looks_only_when_a_file_changed(self):
