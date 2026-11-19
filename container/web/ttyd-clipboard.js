@@ -726,12 +726,59 @@
   // every letter. The rows that hold block characters are marked and drawn 12% taller (CSS .sb-blk), which closes the line; the other rows are left as they are.
   // Measured in Chrome at 2.625: two dark rows of pixels in the banner before, none with it.
   var BLOCKS = /[\u2580-\u259f]/;
+  // How much taller, and around which line of the row: measured on the font the terminal really uses, because the full block of a font is not the height of a row (a
+  // phone's own monospace font has a line gap, and its blocks stop short of the row: a fixed 12% did not close that). The ink of the full block is found with a canvas
+  // (actualBoundingBox) and the row is scaled so that this ink fills it from edge to edge, with a pixel and a half to spare on each side (the metrics of a font are whole numbers: they can be a pixel off): the halves (U+2580, U+2584) are then
+  // exactly the halves of the row, in any font. The result is two variables on the host of the rows, used by .sb-blk.
+  var fitKey = '', fitCtx = null;
+  function fitBlocks(host, row) {
+    var cs = window.getComputedStyle(host), L = parseFloat(window.getComputedStyle(row).height) || row.offsetHeight, key = [cs.fontStyle, cs.fontWeight, cs.fontSize, cs.fontFamily, L].join('|');
+    if (key === fitKey) return;
+    fitKey = key;
+    var s = 1.12, o = 50, unit = '%';
+    try {
+      // the ink of the full block, found by drawing it (the metrics a canvas reports are whole numbers, a pixel or two off): how far it rises above the baseline and falls under it
+      var dpr = window.devicePixelRatio || 1, px = parseFloat(cs.fontSize) * dpr, cv = document.createElement('canvas');
+      cv.width = Math.ceil(px * 2); cv.height = Math.ceil(px * 4);
+      fitCtx = cv.getContext('2d', { willReadFrequently: true });
+      fitCtx.font = [cs.fontStyle, cs.fontWeight, px + 'px', cs.fontFamily].join(' ');
+      fitCtx.textBaseline = 'alphabetic';
+      fitCtx.fillStyle = '#000';
+      var by = Math.round(px * 2.5);
+      fitCtx.fillText('\u2588', Math.round(px * 0.3), by);
+      var img = fitCtx.getImageData(0, 0, cv.width, cv.height).data, first = -1, last = -1;
+      for (var y = 0; y < cv.height; y++) {
+        var hit = false;
+        for (var x = 0; x < cv.width; x++) if (img[(y * cv.width + x) * 4 + 3] > 127) { hit = true; break; }
+        if (hit) { if (first < 0) first = y; last = y; }
+      }
+      var ia = first < 0 ? 0 : (by - first) / dpr, id = first < 0 ? 0 : (last + 1 - by) / dpr;
+      // where the baseline is in a row: a probe row of the same height with an empty inline box on the baseline (the browser knows; a sum of font metrics is a pixel off)
+      var probe = document.createElement('div');
+      probe.style.cssText = 'position:absolute;visibility:hidden;left:0;top:0;white-space:pre;height:' + L + 'px;line-height:' + L + 'px';
+      probe.innerHTML = '<span>\u2588</span><i style="display:inline-block;width:0;height:0"></i>';
+      host.appendChild(probe);
+      var base = probe.lastChild.getBoundingClientRect().bottom - probe.getBoundingClientRect().top;
+      host.removeChild(probe);
+      if (L > 0 && base > 0 && ia + id > 0) {
+        var top = base - ia, h = ia + id;      // where the ink starts in the row, how tall it is
+        if (h < L + 3) {
+          var k = (L + 3) / h;
+          if (k < 1.6 && k > 1.001) { s = k; o = (top * k + 1.5) / (k - 1); unit = 'px'; }
+          else if (k <= 1.001) { s = 1.001; o = top; unit = 'px'; }
+        }
+      }
+    } catch (e) { /* no canvas or no metrics: the fixed 12% around the middle of the row */ }
+    host.style.setProperty('--sb-blk-s', String(s));
+    host.style.setProperty('--sb-blk-o', unit === 'px' ? o + 'px' : o + '%');
+  }
   function markBlockRows(a, b) {
     var host = document.querySelector('.xterm-rows');
     if (!host) return;
     var rows = host.children;
     for (var r = a; r <= b && r < rows.length; r++) {
       var on = BLOCKS.test(rows[r].textContent);
+      if (on) fitBlocks(host, rows[r]);
       if (rows[r].classList.contains('sb-blk') !== on) rows[r].classList.toggle('sb-blk', on);
     }
   }

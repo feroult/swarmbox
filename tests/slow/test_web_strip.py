@@ -582,6 +582,63 @@ class Answers(StripCase):
                 self.assertFalse(on, "a row of plain text is not: %r" % (rows,))
         self.assertEqual(self.page.js("getComputedStyle(document.querySelector('.xterm-rows > div.sb-blk')).transform !== 'none'"), True)
 
+    def _png_rows(self, x, y0, y1):
+        """the colours (r, g, b) of the pixels of one column of a screenshot of the page, from row y0 to y1 (device pixels: a screenshot is as big as the page times the device pixel ratio)"""
+        import struct, zlib
+        raw = base64.b64decode(self.page.call("Page.captureScreenshot", format="png")["data"])
+        pos, idat, w, h, ct = 8, b"", 0, 0, 0
+        while pos < len(raw):
+            n, kind = struct.unpack(">I4s", raw[pos:pos + 8])
+            body = raw[pos + 8:pos + 8 + n]
+            if kind == b"IHDR":
+                w, h, _, ct = struct.unpack(">IIBB", body[:10])
+            elif kind == b"IDAT":
+                idat += body
+            pos += 12 + n
+        bpp = {2: 3, 6: 4}[ct]
+        data, stride, rows, prev = zlib.decompress(idat), w * bpp, [], bytearray(w * bpp)
+        for r in range(h):
+            f, line = data[r * (stride + 1)], bytearray(data[r * (stride + 1) + 1:(r + 1) * (stride + 1)])
+            for i in range(stride):
+                a = line[i - bpp] if i >= bpp else 0
+                b = prev[i]
+                c = prev[i - bpp] if i >= bpp else 0
+                if f == 1: line[i] = (line[i] + a) & 255
+                elif f == 2: line[i] = (line[i] + b) & 255
+                elif f == 3: line[i] = (line[i] + ((a + b) >> 1)) & 255
+                elif f == 4:
+                    pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                    line[i] = (line[i] + (a if pa <= pb and pa <= pc else (b if pb <= pc else c))) & 255
+            prev = line
+            rows.append(tuple(line[x * bpp:x * bpp + 3]))
+        return rows[y0:y1]
+
+    def test_block_rows_have_no_line_between_them_in_a_font_whose_blocks_stop_short_of_the_row(self):
+        for viewport, line_height in ("pixel", 1.5), ("pixel", 1.2), ("phone-portrait", 1.35), ("small-phone", 1.0):
+            with self.subTest(viewport=viewport, line_height=line_height):
+                self.check_blocks(viewport, line_height)
+
+    def check_blocks(self, viewport, line_height):
+        """a phone's own monospace font has a line gap: its full blocks are shorter than the row, and the banner of the box was cut across by lines (a fixed 12% did not close it).
+        The gap is made here with a taller line (lineHeight 1.5) on a phone that has a ratio of 2.625; every device pixel of one column through three rows of full blocks is the colour of the block"""
+        self.open(viewport=viewport, command="bash --norc")
+        self.assertTrue(wait_until(lambda: self.page.js("!!document.querySelector('.xterm-rows')"), 10, 0.05), "the DOM renderer")
+        self.page.js("term.options.lineHeight = %s" % line_height)
+        time.sleep(1.0)
+        self.t.type("clear; printf '\\033[38;2;255;0;0m\\u2588\\u2588\\u2588\\n\\u2588\\u2588\\u2588\\n\\u2588\\u2588\\u2588\\033[0m\\n'\r")
+        rows_js = "Array.from(document.querySelectorAll('.xterm-rows > div')).map(d => [d.textContent.trim().slice(0, 3), d.parentElement.getBoundingClientRect().top + d.offsetTop, d.parentElement.getBoundingClientRect().top + d.offsetTop + parseFloat(getComputedStyle(d).height), d.classList.contains('sb-blk')]).filter(x => x[0] === '\u2588\u2588\u2588')"
+        self.assertTrue(wait_until(lambda: len(self.page.js(rows_js)) == 3 and all(x[3] for x in self.page.js(rows_js)), 8, 0.1), "three rows of blocks, marked: %r" % (self.page.js(rows_js),))
+        self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.classList.contains('swarmbox-ready')"), 12, 0.1), "the loading page went away")
+        time.sleep(1.2)      # its fade
+        rows = self.page.js(rows_js)
+        dpr = self.page.js("devicePixelRatio")
+        x = int((self.page.js("document.querySelector('.xterm-rows').getBoundingClientRect().left") + 5) * dpr)
+        top, bottom = int(rows[0][1] * dpr) + 2, int(rows[2][2] * dpr) - 2      # inside the three rows, 2 device pixels from the first and the last edge
+        self.shot("blocks-gap-font-%s-%s" % (viewport, line_height))
+        pix = self._png_rows(x, top, bottom)
+        bad = [top + i for i, p in enumerate(pix) if not (p[0] > 200 and p[1] < 60 and p[2] < 60)]
+        self.assertEqual(bad, [], "%s, lineHeight %s: device pixel rows that are not the colour of the block, in %d..%d: %r %r" % (viewport, line_height, top, bottom, rows, self.page.js("(() => { const h = document.querySelector('.xterm-rows'); return [h.style.getPropertyValue('--sb-blk-s'), h.style.getPropertyValue('--sb-blk-o')]; })()")))
+
     def test_the_keys_are_a_grid_of_five_columns_on_any_phone_width(self):
         """Allow over Cancel on the left, Esc Tab ^C Panel on top, the arrows under them: every edge of one row is the edge of a key in the other"""
         for vp in ("phone-portrait", "small-phone", "pixel"):

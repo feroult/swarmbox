@@ -68,8 +68,8 @@
 }
 /* a finger dragged over the terminal scrolls the history of tmux (ttyd-clipboard.js, dragScroll), so the browser must not pan the page under it; two fingers still zoom (pinch-zoom is the one gesture left to the browser) */
 #terminal-container { touch-action: pinch-zoom; }
-/* the DOM renderer (a phone) leaves a hairline between two rows of block characters: the rows that hold them, marked by ttyd-clipboard.js, are drawn 12% taller */
-.xterm-rows > div.sb-blk { transform: scaleY(1.12); }
+/* the DOM renderer (a phone) leaves a hairline between two rows of block characters: the rows that hold them, marked by ttyd-clipboard.js, are drawn taller, by the measure of the font (ttyd-clipboard.js, fitBlocks): the ink of a block then fills the row */
+.xterm-rows > div.sb-blk { transform: scaleY(var(--sb-blk-s, 1.12)); transform-origin: 50% var(--sb-blk-o, 50%); }
 /* Panel is a switch (it shows or hides the panel of the sysop, and the page knows whether it is up): a pill with a light that is lit while the panel is on the screen */
 #swarmbox-strip .sb-toggle { border-radius: 999px; padding-left: 14px; padding-right: 16px; gap: 8px; background: transparent; border-style: dashed; border-color: rgba(167, 139, 250, .45); }
 #swarmbox-strip .sb-toggle::before {
