@@ -627,7 +627,7 @@ class FingerScroll(StripCase):
         time.sleep(1.0)
         self.t.type("clear; seq 1 400\r")
         self.assertTrue(self.t.wait_screen("400", 10), "the output is there")
-        mode = lambda: self.t.tmux("display-message", "-p", "-t", "t:", "#{pane_in_mode} #{scroll_position}").split()
+        mode = lambda: (self.t.tmux("display-message", "-p", "-t", "t:", "#{pane_in_mode} #{scroll_position}").split() + ["0", "0"])[:2]      # tmux may answer nothing for a moment
 
         def drag(y_from, y_to, steps=12, x=200):
             self.page.call("Input.dispatchTouchEvent", type="touchStart", touchPoints=[{"x": x, "y": y_from}])
@@ -846,8 +846,13 @@ class Toast(StripCase):
 
     def test_the_page_is_black_with_the_name_until_the_first_screen(self):
         self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX,
-                  init_script="document.addEventListener('DOMContentLoaded', () => { window.__splash = getComputedStyle(document.documentElement, '::before').content; });")
+                  init_script="document.addEventListener('DOMContentLoaded', () => { const s = getComputedStyle(document.documentElement, '::before'); window.__splash = s.content; window.__splashLook = [s.fontFamily, s.textShadow, s.color]; });")
         self.assertEqual(self.page.js("window.__splash"), '"SwarmBox"', "the page starts with the name")
+        font, glow, color = self.page.js("window.__splashLook")
+        self.assertIn("monospace", font, "in the font of the terminal (a monospace stack)")
+        self.assertNotEqual(glow, "none", "with a glow")
+        self.assertEqual(color, "rgb(196, 181, 253)", "in the lavender of the theme")
+        self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.style.getPropertyValue('--sb-font')") != "", 6, 0.1), "and the font the box asks ttyd for once the page knows it")
         self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.classList.contains('swarmbox-ready')"), 10, 0.1), "and is ready once the terminal drew")
         shape = lambda: self.page.js("[term.cols, term.rows, Math.round(document.getElementById('swarmbox-strip').getBoundingClientRect().height), term.options.fontSize]")
         at_ready = shape()

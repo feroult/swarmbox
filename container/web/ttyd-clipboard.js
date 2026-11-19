@@ -485,6 +485,7 @@
     var want = fontFor(w, document.documentElement.clientHeight || window.innerHeight, base, touch);
     var changed = false;
     if (o.fontSize !== undefined) { baseFont = base; setFont = want; }
+    if (typeof o.fontFamily === 'string' && o.fontFamily) { try { document.documentElement.style.setProperty('--sb-font', o.fontFamily); } catch (e) { /* the default stack stays */ } }      // the black page uses the font of the terminal
     if (o.fontSize !== undefined && want !== base) { o.fontSize = want; changed = true; }
     // On a phone (or any window as narrow as one) the terminal is drawn with the DOM renderer: the canvas ones size their bitmap by the device pixel ratio they saw
     // when they were made, and where that changes (the device mode of a desktop browser, a screen that is moved or zoomed) they paint the letters at 2 or 3 times
