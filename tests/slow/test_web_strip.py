@@ -913,10 +913,13 @@ class Toast(StripCase):
             col = self.page.js("term.cols") - 39
             bar = "\\033[48;2;42;26;82m"
             first = 4 if room else 2      # lines 2 and 3 are the blank lines of the strip; without it the content follows the title at once
-            self.t.type("clear; printf '\\033[1;%dH%s \\033[1;38;2;167;139;250mSYSOP\\033[0m%s  idle%s\\033[0m\\033[%d;%dH  the goal of the sysop, a few words\\033[%d;%dH  and what it does next\\n'\r"
+            self.t.type("clear; printf 'work one\\nwork two\\nwork three\\nwork four\\n'; printf '\\033[1;%dH%s \\033[1;38;2;167;139;250mSYSOP\\033[0m%s  idle%s\\033[0m\\033[%d;%dH  the goal of the sysop, a few words\\033[%d;%dH  and what it does next\\n'\r"
                         % (col, bar, bar, " " * 29, first, col, first + 1, col))
             self.assertTrue(wait_until(lambda: "SYSOP" in self.page.js("(() => { const b = term.buffer.active; return b.getLine(b.viewportY).translateToString(true); })()"), 8, 0.2))
         time.sleep(1.2)
+        if panel:
+            left = self.page.js("(() => { const b = term.buffer.active; return [1, 2].map(r => b.getLine(b.viewportY + r).translateToString(true).slice(0, 20)); })()")
+            self.assertTrue(all(left), "the work at the left has text on the two lines of the strip, as a real shell has: %r" % (left,))
         return self.page.js("(() => { const s = document.querySelector('.xterm-screen').getBoundingClientRect(), b = document.querySelector('#demo-mic, [id=demo-mic]').getBoundingClientRect(), root = document.documentElement, tl = document.getElementById('sb-buttons'), sh = document.getElementById('sb-sheet'); const box = e => e ? (e.style.display === 'none' ? null : (r => ({ top: r.top, bottom: r.bottom, left: r.left, right: r.right }))(e.getBoundingClientRect())) : null; return { pos: root.getAttribute('data-float-pos'), sheetAttr: root.getAttribute('data-sheet'), rowH: s.height / term.rows, cellW: s.width / term.cols, top: s.top, left: s.left, right: s.right, mic: { top: b.top, bottom: b.bottom, left: b.left, right: b.right, h: b.height }, bar: box(tl), sheet: box(sh) }; })()")
 
     def test_on_a_desktop_the_microphone_is_in_a_bar_of_buttons_under_the_title_of_the_panel(self):

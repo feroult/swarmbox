@@ -275,9 +275,9 @@
   // band with the controls of the page in it, at the right: the microphone now, more buttons later. The page finds the panel by the row and the column of its head
   // (it is made of the cells of the terminal); without a panel the microphone floats in the top right corner, as it always did.
   var sheetEl = null, ruleEl = null, buttonsEl = null;
-  function rowText(r) {
+  function rowText(r, fromCol) {      // the text of a row of the screen, from a column on (the panel is the right part of the row: the left part is the work)
     var t = window.term, buf = t.buffer.active, line = buf.getLine(buf.viewportY + r);
-    return line ? line.translateToString(true) : '';
+    return line ? line.translateToString(true, fromCol || 0) : '';
   }
   function paintPanel(seen) {
     var root = document.documentElement, t = window.term, isPhone = phone();
@@ -305,7 +305,7 @@
     if (border) { ruleEl.style.display = 'block'; ruleEl.style.left = wide.left + 'px'; ruleEl.style.width = wide.width + 'px'; ruleEl.style.top = (top - rowH) + 'px'; ruleEl.style.height = rowH + 'px'; }
     else ruleEl.style.display = 'none';
     // the bar of buttons: the two blank lines under the head of the tall panel, when a control floats (a desktop with only the microphone)
-    var room = docked && !isPhone && root.classList.contains('swarmbox-strip-float') && seen.row + 3 < t.rows && !rowText(seen.row + 1).trim() && !rowText(seen.row + 2).trim();
+    var room = docked && !isPhone && root.classList.contains('swarmbox-strip-float') && seen.row + 3 < t.rows && !rowText(seen.row + 1, seen.col - 1).trim() && !rowText(seen.row + 2, seen.col - 1).trim();
     if (!room) { buttonsEl.style.display = 'none'; root.removeAttribute('data-float-pos'); return; }
     var barTop = rect.top + (seen.row + 1) * rowH, size = Math.max(24, Math.min(36, Math.floor(2 * rowH - 12))), inset = (2 * rowH - size) / 2;      // the same space above, below and at the right
     buttonsEl.style.display = 'block'; buttonsEl.style.left = from + 'px'; buttonsEl.style.width = span + 'px'; buttonsEl.style.top = barTop + 'px'; buttonsEl.style.height = (2 * rowH) + 'px';
