@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added: three looks of the sysop to compare, chosen with `?look=1`, `?look=2` or `?look=3` on the address (kept in the browser; `?look=0` is the usual one, and nothing changes without it): a tint under the panel and the strip, a fine gradient line in place of the border of tmux, and colour by state (violet working, amber asking, green done, red failed).
+
 ## [2.0.18] - 2026-11-19
 
 - Changed: the logo of the loading page is the word alone: no tagline and no segmented bar under it, and it takes about 60% of the width of the screen (it was the width of the screen, with the bar and `// your agent's shell, from anywhere` under it).

@@ -218,7 +218,7 @@
   // the state of the panel as the screen shows it: {up: whether a panel is on the screen, state: what it waits for, '' when it is idle or finished}
   function sysopState() {
     var t = window.term;
-    if (!t || !t.buffer || !t.buffer.active) return { up: false, state: '' };
+    if (!t || !t.buffer || !t.buffer.active) return { up: false, state: '', row: -1, word: '' };
     var buf = t.buffer.active;
     for (var r = 0; r < t.rows; r++) {
       var line = buf.getLine(buf.viewportY + r);
@@ -227,9 +227,9 @@
       var at = text.indexOf('SYSOP');
       if (at < 0 || !panelInk(line, at)) continue;
       var m = SYSOP_HEAD.exec(text);
-      if (m) return { up: true, state: ACTIVE.test(m[1]) ? m[1] : '' };
+      if (m) return { up: true, state: ACTIVE.test(m[1]) ? m[1] : '', row: r, word: m[1] };
     }
-    return { up: false, state: '' };
+    return { up: false, state: '', row: -1, word: '' };
   }
   // The word SYSOP of the panel is bold and coloured (violet); the same word in the history of a tab, which scrolling brings into view, is plain text.
   // Only the first one counts, or the switch lit up and went out as a finger scrolled.
@@ -263,6 +263,49 @@
     if (answers.panel && !inCopyMode()) { answers.panel.setAttribute('data-on', seen.up ? '1' : '0'); answers.panel.setAttribute('aria-pressed', seen.up ? 'true' : 'false'); }
     setOff(answers.yes, st !== 'allow?');
     setOff(answers.no, st === '');
+    try { paintSheet(seen); } catch (e) { /* the looks are only paint */ }
+  }
+
+  // ---- looks of the sysop (to compare: ?look=1, 2, 3; ?look=0 or none is the usual one) -------------------------------------------------
+  //   1  a tint under the panel and the strip, one drawer     2  1 + a fine gradient line in place of the border of tmux
+  //   3  2 + the colour of the line and the tint follow the state (violet working, amber asking, green done, red failed)
+  // The choice is kept in this browser (localStorage) so a reload keeps it; ?look=0 clears it. The tint is a layer over the terminal with mix-blend-mode: lighten:
+  // the dark background of the panel lifts to the tint and the (lighter) letters stay as they are.
+  var LOOK = '0';
+  try {
+    var asked = /[?&]look=([0-9])/.exec(window.location.search || '');
+    if (asked) { LOOK = asked[1]; try { if (LOOK === '0') window.localStorage.removeItem('swarmbox-look'); else window.localStorage.setItem('swarmbox-look', LOOK); } catch (e) { /* not kept */ } }
+    else { try { LOOK = window.localStorage.getItem('swarmbox-look') || '0'; } catch (e) { LOOK = '0'; } }
+    if (!/^[0-3]$/.test(LOOK)) LOOK = '0';
+    if (LOOK !== '0' && document.documentElement && typeof document.documentElement.setAttribute === 'function') document.documentElement.setAttribute('data-look', LOOK);
+  } catch (e) { LOOK = '0'; }
+  var sheetEl = null, ruleEl = null, STATE_LOOK = { 'allow?': 'ask', sending: 'ask', working: 'work', queued: 'work', done: 'done', failed: 'fail', stopped: 'idle', idle: 'idle', off: 'idle' };
+  function rowText(r) {
+    var t = window.term, buf = t.buffer.active, line = buf.getLine(buf.viewportY + r);
+    return line ? line.translateToString(true) : '';
+  }
+  function paintSheet(seen) {
+    if (LOOK === '0' || !document.body || typeof document.createElement !== 'function') return;
+    var root = document.documentElement, t = window.term;
+    if (!sheetEl) {
+      sheetEl = document.createElement('div'); sheetEl.id = 'sb-sheet'; sheetEl.setAttribute('aria-hidden', 'true');
+      ruleEl = document.createElement('div'); ruleEl.id = 'sb-rule'; ruleEl.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(sheetEl); document.body.appendChild(ruleEl);
+    }
+    var on = !!(seen && seen.up) && !inCopyMode() && t && t.element && typeof t.element.querySelector === 'function';
+    var screen = on ? t.element.querySelector('.xterm-screen') : null;
+    if (!screen) { sheetEl.style.display = 'none'; ruleEl.style.display = 'none'; root.setAttribute('data-sheet', '0'); return; }
+    var rect = screen.getBoundingClientRect(), box = document.getElementById('terminal-container'), wide = box ? box.getBoundingClientRect() : rect, bottom = wide.bottom;      // wide: the whole width of the terminal, its padding too
+    var rowH = rect.height / t.rows, dpr = window.devicePixelRatio || 1;
+    var border = seen.row > 0 && /^[\u2500\u2501]{8}/.test(rowText(seen.row - 1));      // the border row of tmux above the head of the panel
+    var top = rect.top + seen.row * rowH;
+    sheetEl.style.display = 'block'; sheetEl.style.left = wide.left + 'px'; sheetEl.style.width = wide.width + 'px'; sheetEl.style.top = top + 'px'; sheetEl.style.height = Math.max(0, bottom - top) + 'px';
+    root.setAttribute('data-sheet', '1');
+    root.setAttribute('data-sstate', STATE_LOOK[seen.word] || 'idle');
+    root.style.setProperty('--sb-hair', (Math.max(1, Math.round(dpr)) / dpr) + 'px');
+    if (LOOK === '1' || !border) { ruleEl.style.display = 'none'; return; }
+    // looks 2 and 3: the border row is covered by a fine gradient line (its row is the black of the terminal, the line is at its lower edge)
+    ruleEl.style.display = 'block'; ruleEl.style.left = wide.left + 'px'; ruleEl.style.width = wide.width + 'px'; ruleEl.style.top = (top - rowH) + 'px'; ruleEl.style.height = rowH + 'px';
   }
 
   function build() {

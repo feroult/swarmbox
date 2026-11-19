@@ -863,6 +863,59 @@ class Toast(StripCase):
         self.assertEqual(shape(), at_ready, "when the black page goes, the screen behind it has stopped changing (font, columns, rows and strip)")
         self.assertEqual(self.page.js("getComputedStyle(document.getElementById('sb-boot')).visibility"), "hidden")
 
+    def _look(self, look, state_word="working"):
+        self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX,
+                  init_script="try { %s } catch (e) {}" % ("localStorage.setItem('swarmbox-look', '%s');" % look if look else "localStorage.removeItem('swarmbox-look');"))
+        self.assertTrue(wait_until(lambda: self.page.js("!!document.querySelector('.xterm-rows')"), 10, 0.05), "the DOM renderer")
+        time.sleep(1.0)
+        self.t.type("clear; printf '\\033[38;2;109;40;217m\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\n\\033[1;38;2;167;139;250mSYSOP\\033[0m  %s\\n  a line of the panel\\n'\r" % state_word)
+
+    def _boot_gone(self):
+        self.assertTrue(wait_until(lambda: self.page.js("getComputedStyle(document.getElementById('sb-boot')).visibility") == "hidden", 14, 0.2),
+                        "the black page has gone: %r" % (self.page.js("[document.documentElement.className, getComputedStyle(document.getElementById('sb-boot')).opacity]"),))
+        time.sleep(0.6)
+
+    def _sheet(self):
+        return self.page.js("(() => { const s = document.getElementById('sb-sheet'), r = document.getElementById('sb-rule'), rows = Array.from(document.querySelectorAll('.xterm-rows > div')); const head = rows.find(d => d.textContent.indexOf('SYSOP') >= 0), box = rect => rect ? [Math.round(rect.top), Math.round(rect.height)] : null; return { look: document.documentElement.getAttribute('data-look'), sheet: document.documentElement.getAttribute('data-sheet'), state: document.documentElement.getAttribute('data-sstate'), has: !!s, shown: s ? getComputedStyle(s).display : null, ruleShown: r ? getComputedStyle(r).display : null, sheetBox: s ? box(s.getBoundingClientRect()) : null, ruleBox: r ? box(r.getBoundingClientRect()) : null, head: head ? box(head.getBoundingClientRect()) : null, blend: s ? getComputedStyle(s).mixBlendMode : null, stripBg: getComputedStyle(document.getElementById('swarmbox-strip')).backgroundColor, hair2: getComputedStyle(document.documentElement).getPropertyValue('--sb-hair2').trim() }; })()")
+
+    def test_no_look_asked_leaves_the_sysop_as_it_was(self):
+        self._look(None)
+        time.sleep(1.5)
+        seen = self._sheet()
+        self.assertIsNone(seen["look"]); self.assertFalse(seen["has"], "no layer is made: %r" % (seen,))
+        self.shot("look-0")
+
+    def test_look_1_tints_the_panel_and_the_strip(self):
+        self._look("1")
+        self.assertTrue(wait_until(lambda: self._sheet()["sheet"] == "1", 8, 0.2), "the layer is on: %r" % (self._sheet(),))
+        seen = self._sheet()
+        self.assertEqual(seen["blend"], "lighten", "the dark of the panel lifts, the letters stay")
+        self.assertLessEqual(abs(seen["sheetBox"][0] - seen["head"][0]), 2, "the tint starts at the head of the panel: %r" % (seen,))
+        self.assertNotEqual(seen["ruleShown"], "block", "look 1 keeps the border of tmux")
+        self.assertEqual(seen["stripBg"], "rgb(21, 18, 29)", "the strip has the tint of the panel")
+        self._boot_gone()
+        self.shot("look-1")
+
+    def test_look_2_puts_a_fine_line_where_the_border_of_tmux_was(self):
+        self._look("2")
+        self.assertTrue(wait_until(lambda: self._sheet()["ruleShown"] == "block", 8, 0.2), "the line is on: %r" % (self._sheet(),))
+        seen = self._sheet()
+        self.assertLessEqual(abs((seen["ruleBox"][0] + seen["ruleBox"][1]) - seen["head"][0]), 2, "the line covers the row above the head: %r" % (seen,))
+        self._boot_gone()
+        self.shot("look-2")
+
+    def test_look_3_follows_the_state_of_the_sysop(self):
+        self._look("3", "working")
+        self.assertTrue(wait_until(lambda: self._sheet()["state"] == "work", 8, 0.2), "working is violet: %r" % (self._sheet(),))
+        self.assertEqual(self._sheet()["hair2"], "#c4b5fd")
+        self._boot_gone()
+        self.shot("look-3-working")
+        self.t.type("clear; printf '\\033[38;2;109;40;217m\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\u2500\\n\\033[1;38;2;167;139;250mSYSOP\\033[0m  allow?\\n  rm -rf build\\n'\r")
+        self.assertTrue(wait_until(lambda: self._sheet()["state"] == "ask", 8, 0.2), "asking is amber: %r" % (self._sheet(),))
+        self.assertEqual(self._sheet()["hair2"], "#fbbf24")
+        self._boot_gone()
+        self.shot("look-3-asking")
+
     def test_a_line_that_was_there_before_the_page_opened_is_known_at_once(self):
         """tmux sends the title when a client attaches, before the terminal exists to hear it: the page reads it off the websocket"""
         self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX)
