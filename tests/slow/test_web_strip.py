@@ -801,6 +801,30 @@ class Toast(StripCase):
     def state(self):
         return self.page.js(self.STATE)
 
+    MIC_SVG = "M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"
+
+    def _phone_bar(self, line="sysop:working:reads tab 1"):
+        """the compact bar of a phone as the page really has it: the real css and the real icon of the voice addon"""
+        self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX)
+        css = open(os.path.join(os.path.dirname(__file__), "..", "..", "container", "addons", "voice", "web", "page.css")).read()
+        self.page.js("document.head.insertAdjacentHTML('beforeend', '<style>' + %s + '</style>')" % json.dumps(css))
+        self.page.js("(() => { const S = 'http://www.w3.org/2000/svg', svg = document.createElementNS(S, 'svg'), p = document.createElementNS(S, 'path'); svg.setAttribute('viewBox', '0 0 24 24'); p.setAttribute('d', %s); svg.appendChild(p); "
+                     "const b = swarmboxStrip.add({id: 'swarmbox-voice-mic', title: 'Hold to talk', icon: svg, className: 'sv-mic', order: 10}); const l = document.createElement('i'); l.className = 'sv-light'; b.appendChild(l); })()" % json.dumps(self.MIC_SVG))
+        self.t.tmux("set-option", "-g", "@sysop_line", line)
+        self.assertTrue(wait_until(lambda: self.state()[0] == "1", 8, 0.1), "the compact bar: %r" % (self.state(),))
+        time.sleep(0.6)
+
+    def test_the_closed_bar_of_a_phone_is_one_set_of_buttons(self):
+        self._phone_bar()
+        self._boot_gone()
+        self.shot("phone-bar-closed")
+        self.page.js("document.getElementById('swarmbox-voice-mic').setAttribute('data-state', 'recording')")
+        time.sleep(0.4)
+        self.shot("phone-bar-recording")
+        self.page.js("document.getElementById('swarmbox-voice-mic').removeAttribute('data-state'); document.querySelector('#swarmbox-strip .sb-keytoggle').click()")
+        time.sleep(0.8)
+        self.shot("phone-bar-keys")
+
     def test_a_phone_with_a_sysop_shows_the_sysop_button_the_line_and_the_microphone_and_not_the_keys(self):
         self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX)
         time.sleep(1.0)
@@ -970,9 +994,9 @@ class Toast(StripCase):
         self.t.tmux("set-option", "-g", "@sysop_line", "sysop:working:was already going")
         self.assertTrue(wait_until(lambda: self.page.js("document.getElementById('swarmbox-strip').dataset.compact") == "1", 6, 0.1))
         self.page.js("location.reload()")
-        self.assertTrue(wait_until(lambda: self.page.js("document.getElementById('swarmbox-strip') && document.getElementById('swarmbox-strip').dataset.compact") == "1", 12, 0.2),
-                        "after a reload the line is shown without waiting for a change")
-        self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-toast').textContent"), "was already going")
+        toast = "(() => { const t = document.querySelector('#swarmbox-strip .sb-toast'); return t ? t.textContent : null; })()"
+        # the old page answers until the new one replaces it: wait for the line itself, not for a state both pages have
+        self.assertTrue(wait_until(lambda: self.page.js(toast) == "was already going", 12, 0.2), "after a reload the line is shown without waiting for a change: %r" % (self.page.js(toast),))
 
     def test_the_terminal_keeps_its_rows_straight_when_the_strip_turns_compact(self):
         self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX)

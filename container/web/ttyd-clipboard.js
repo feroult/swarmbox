@@ -315,6 +315,16 @@
     root.setAttribute('data-float-pos', 'bar');
   }
 
+  // the icon of the keyboard buttons: a drawing, not the glyph U+2328 (a phone may draw that one as a colour emoji, and each font draws it differently)
+  function keyboardIcon() {
+    var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'), r = document.createElementNS(NS, 'rect'), p = document.createElementNS(NS, 'path');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-linecap', 'round');
+    r.setAttribute('x', '2.5'); r.setAttribute('y', '6'); r.setAttribute('width', '19'); r.setAttribute('height', '12'); r.setAttribute('rx', '2.5'); r.setAttribute('stroke-width', '1.6');
+    p.setAttribute('d', 'M6.5 10h.01M10 10h.01M13.5 10h.01M17.5 10h.01M8 13.5h.01M11.5 13.5h.01M15 13.5h.01M8.5 15.5h7'); p.setAttribute('stroke-width', '1.9');
+    svg.appendChild(r); svg.appendChild(p);
+    return svg;
+  }
+
   function build() {
     strip = el('div');
     strip.id = 'swarmbox-strip';
@@ -331,7 +341,7 @@
     });
     oskBtn = el('button', 'sb-btn sb-osk');      // the one way to the keyboard of the phone: it is not opened by a tap on the screen (see "the keyboard of the phone")
     oskBtn.type = 'button';
-    oskBtn.textContent = '\u2328';
+    oskBtn.appendChild(keyboardIcon());
     oskBtn.setAttribute('aria-label', 'Keyboard of the phone');
     oskBtn.setAttribute('aria-pressed', 'false');
     oskBtn.setAttribute('data-on', '0');
@@ -969,7 +979,7 @@
     toastEl.appendChild(el('span'));
     keyBtn = el('button', 'sb-btn sb-keytoggle');
     keyBtn.type = 'button';
-    keyBtn.textContent = '⌨';
+    keyBtn.appendChild(keyboardIcon());
     keyBtn.setAttribute('aria-label', 'Keyboard');
     keyBtn.title = 'Keys and the keyboard of the phone';
     keyBtn.setAttribute('aria-pressed', 'false');

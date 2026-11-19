@@ -124,7 +124,7 @@ function mk(tag) {
 const win = {__swarmboxStripCfg: JSON.parse(process.argv[2]), matchMedia() { return {matches: true}; }, dispatchEvent() {}, addEventListener() {}, Event: function () {}};
 win.self = win; win.top = process.argv[3] === 'framed' ? {} : win;
 if (process.argv[3] === 'throws') Object.defineProperty(win, 'top', {get() { throw new Error('cross-origin'); }});
-const doc = {body: mk('body'), documentElement: mk('html'), createElement: mk, addEventListener() {}, getElementById() { return null; }};
+const doc = {body: mk('body'), documentElement: mk('html'), createElement: mk, createElementNS(ns, tag) { return mk(tag); }, addEventListener() {}, getElementById() { return null; }};
 const ctx = vm.createContext({window: win, document: doc, setTimeout(f, ms) { timers.push({f, ms, live: true}); return timers.length; },
   clearTimeout(id) { if (timers[id - 1]) timers[id - 1].live = false; }, clearInterval() {}, setInterval() { return 0; }, requestAnimationFrame(f) { f(); }, Event: function () {}, console, TextEncoder, TextDecoder, Uint8Array});
 vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), ctx);
