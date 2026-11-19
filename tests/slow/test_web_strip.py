@@ -769,6 +769,21 @@ class PhoneKeyboard(StripCase):
         self.assertTrue(wait_until(lambda: self.attr("inputmode") == "none", 4, 0.1), "and when the keyboard goes away by itself it is none again")
         self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-osk').dataset.on"), "0")
 
+    def test_the_keyboard_button_of_the_bar_opens_the_row_of_keys_and_the_keyboard_together_and_closes_both(self):
+        self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX, init_script=self.SPY_VK)
+        if not self.page.js("!!navigator.virtualKeyboard"):
+            self.skipTest("this Chromium has no VirtualKeyboard API")
+        self.t.tmux("set-option", "-g", "@sysop_line", "sysop:idle:")
+        state = lambda: self.page.js("(() => { const s = document.getElementById('swarmbox-strip'); const b = s.querySelector('.sb-keytoggle'); return [s.dataset.compact, b.getAttribute('aria-pressed'), b.dataset.kb, window.__vk.join(',')]; })()")
+        self.assertTrue(wait_until(lambda: state()[0] == "1", 6, 0.1))
+        self.assertEqual(state()[1:], ["false", "0", ""])
+        self.page.js("document.querySelector('#swarmbox-strip .sb-keytoggle').click()")
+        time.sleep(0.2)
+        self.assertEqual(state(), ["keys", "true", "1", "show"], "one tap: the row of keys and the keyboard of the phone")
+        self.page.js("document.querySelector('#swarmbox-strip .sb-keytoggle').click()")
+        time.sleep(0.2)
+        self.assertEqual(state(), ["1", "false", "0", "show,hide"], "the next tap closes both")
+
     def test_a_computer_keeps_its_textarea_as_it_was(self):
         self.open(viewport="desktop", command="bash --norc")
         time.sleep(1.0)
@@ -807,7 +822,7 @@ class Toast(StripCase):
         self.page.js("document.querySelector('#swarmbox-strip .sb-keytoggle').click()")
         self.assertTrue(wait_until(lambda: self.state()[:3] == ["keys", True, True], 6, 0.1), "the keyboard button brings the row of keys above the bar: %r" % (self.state(),))
         row = self.page.js("Array.from(document.querySelectorAll('#swarmbox-strip .sb-keys .sb-btn')).filter(b => getComputedStyle(b).display !== 'none').map(b => [b.textContent.trim(), Math.round(b.getBoundingClientRect().top), Math.round(b.getBoundingClientRect().height)])")
-        self.assertEqual([r[0] for r in row], ["Esc", "Tab", "^C", "\u2190", "\u2191", "\u2193", "\u2192", "Aa"], "one slim row, no Allow, Cancel or Panel, and Aa for the keyboard of the phone: %r" % (row,))
+        self.assertEqual([r[0] for r in row], ["Esc", "Tab", "^C", "\u2190", "\u2191", "\u2193", "\u2192"], "one slim row, no Allow, Cancel or Panel: %r" % (row,))
         self.assertEqual(len({r[1] for r in row}), 1, "all in one row: %r" % (row,))
         self.assertLessEqual(row[0][2], 38)
         self.shot("phone-portrait-toast-keys")

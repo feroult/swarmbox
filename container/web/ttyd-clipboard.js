@@ -281,13 +281,13 @@
     });
     oskBtn = el('button', 'sb-btn sb-osk');      // the one way to the keyboard of the phone: it is not opened by a tap on the screen (see "the keyboard of the phone")
     oskBtn.type = 'button';
-    oskBtn.textContent = 'Aa';
+    oskBtn.textContent = '\u2328';
     oskBtn.setAttribute('aria-label', 'Keyboard of the phone');
     oskBtn.setAttribute('aria-pressed', 'false');
     oskBtn.setAttribute('data-on', '0');
     oskBtn.title = 'Open or close the keyboard of the phone';
     keepFocus(oskBtn);
-    oskBtn.addEventListener('click', openPhoneKeyboard);
+    oskBtn.addEventListener('click', toggleTyping);
     keysEl.appendChild(oskBtn);
     slot = el('div', 'sb-slot');
     noteEl = el('div', 'sb-note');
@@ -696,6 +696,7 @@
   function oskShow(on) {
     oskOpen = on;
     if (oskBtn) { oskBtn.setAttribute('data-on', on ? '1' : '0'); oskBtn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    if (keyBtn) showToast();
   }
   function openByInputMode(ta) {
     ta.blur();      // a focus that is already there does not bring the keyboard: take it and give it again
@@ -704,10 +705,19 @@
     ta.setAttribute('inputmode', 'text');
     setTimeout(function () { ta.focus(); }, 30);
   }
+  // ONE keyboard button does both (the ⌨ of the compact bar, or the tall one at the right of the keys in the usual strip): on a phone it opens the row of keys and the
+  // keyboard of the phone together; while the keyboard is open a tap closes both. With the keyboard closed (the back button of the phone) and the row still there, a tap
+  // opens the keyboard again. On a computer (a narrow window) it only shows and hides the row.
+  function toggleTyping() {
+    if (!coarse.matches) { keysShown = !keysShown; showToast(); return; }
+    if (oskOpen) { closePhoneKeyboard(); keysShown = false; }
+    else { keysShown = true; openPhoneKeyboard(); }
+    showToast();
+  }
   function openPhoneKeyboard() {
     var ta = inputBox(), vk = vkApi();
     if (!ta) return;
-    if (oskOpen) { closePhoneKeyboard(); return; }      // the second tap closes it
+    if (oskOpen) return;
     oskShow(true);
     oskAt = Date.now();
     var my = ++oskTry;
@@ -821,10 +831,11 @@
     keyBtn = el('button', 'sb-btn sb-keytoggle');
     keyBtn.type = 'button';
     keyBtn.textContent = '⌨';
-    keyBtn.setAttribute('aria-label', 'Show the key buttons');
+    keyBtn.setAttribute('aria-label', 'Keyboard');
+    keyBtn.title = 'Keys and the keyboard of the phone';
     keyBtn.setAttribute('aria-pressed', 'false');
     keepFocus(keyBtn);
-    keyBtn.addEventListener('click', function () { if (keyBtn.getAttribute('data-locked') === '1') return; keysShown = !keysShown; showToast(); });
+    keyBtn.addEventListener('click', toggleTyping);
     strip.insertBefore(keyBtn, strip.firstChild);
     strip.insertBefore(toastEl, strip.firstChild);
     strip.insertBefore(pillEl, strip.firstChild);
@@ -844,8 +855,8 @@
     pillEl.setAttribute('data-on', up ? '1' : '0');
     pillEl.setAttribute('aria-pressed', up ? 'true' : 'false');
     pillEl.setAttribute('aria-label', up ? 'Close the sysop panel' : 'Open the sysop panel');
-    keyBtn.setAttribute('aria-pressed', keysShown || up ? 'true' : 'false');
-    keyBtn.setAttribute('data-locked', up ? '1' : '0');      // the panel is open: the keys are there and this button has nothing to say
+    keyBtn.setAttribute('aria-pressed', keysShown || up || oskOpen ? 'true' : 'false');
+    keyBtn.setAttribute('data-kb', oskOpen ? '1' : '0');
     var text = idle ? (up ? '' : 'idle') : toastText;
     toastEl.setAttribute('data-state', idle ? 'idle' : toastState);
     toastEl.lastChild.textContent = text;
