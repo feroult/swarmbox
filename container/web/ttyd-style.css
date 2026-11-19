@@ -133,6 +133,7 @@ html.swarmbox-strip-float[data-float-pos] #swarmbox-strip .sb-note { top: calc(v
   background: var(--sb-bg); color: var(--sb-text); font-size: 14px; line-height: 1.2; cursor: pointer;
 }
 #swarmbox-strip .sb-note span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+html[data-phone-look]:not(.swarmbox-strip-float) #swarmbox-strip .sb-note { background: var(--sb-sheet); top: var(--sb-hair); }      /* the colour of the strip, under its fine line: not a darker patch */
 #swarmbox-strip .sb-note[data-tone="ok"] { color: var(--sb-green); }
 #swarmbox-strip .sb-note[data-tone="warn"] { color: var(--sb-amber); }
 #swarmbox-strip .sb-note[data-tone="error"] { color: var(--sb-red); }
@@ -167,14 +168,14 @@ html.swarmbox-strip-float[data-float-pos] #swarmbox-strip .sb-note { top: calc(v
 #swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"] .sb-btn { min-height: 36px; height: 36px; border-radius: 12px; font-size: 13px; }
 /* the bar of a phone with a sysop is one set of controls: all 44 px tall, with the same corners, the same surface and the same edge; the microphone is the one that is
    filled (it is the main action), the others are quiet and light up when they are on. Nothing glows outside its own button: a glow is cut by the edge of the screen. */
-#swarmbox-strip[data-compact="1"], #swarmbox-strip[data-compact="keys"] { --sb-btn: 44px; --sb-r: 14px; --sb-surface: rgba(196, 181, 253, .07); --sb-edge: rgba(196, 181, 253, .16); --sb-on: rgba(109, 40, 217, .3); gap: 8px; }
+#swarmbox-strip[data-compact="1"], #swarmbox-strip[data-compact="keys"] { --sb-btn: 44px; --sb-r: 14px; --sb-surface: rgba(196, 181, 253, .05); --sb-edge: rgba(196, 181, 253, .1); --sb-on: rgba(109, 40, 217, .26); gap: 8px; }
 #swarmbox-strip .sb-sysop { order: 1; gap: 8px; height: var(--sb-btn); min-height: var(--sb-btn); padding: 0 13px 0 12px; border-radius: var(--sb-r, 14px); background: var(--sb-surface, transparent); border: 1px solid var(--sb-edge, rgba(167, 139, 250, .3)); color: var(--sb-lavender); transition: transform .08s ease, background .15s ease, border-color .15s ease; }
 #swarmbox-strip .sb-sysop b { font-weight: 600; }
 #swarmbox-strip .sb-sysop .sb-arrow { width: 0; height: 0; border-left: 4.5px solid transparent; border-right: 4.5px solid transparent; border-bottom: 6px solid currentColor; text-decoration: none; transition: transform .18s ease; }
-#swarmbox-strip .sb-sysop[data-on="1"] { background: var(--sb-on, rgba(109, 40, 217, .3)); border-color: rgba(167, 139, 250, .7); color: #fff; }
+#swarmbox-strip .sb-sysop[data-on="1"] { background: var(--sb-on, rgba(109, 40, 217, .3)); border-color: rgba(167, 139, 250, .3); color: var(--sb-lavender); }
 #swarmbox-strip .sb-sysop[data-on="1"] .sb-arrow { transform: rotate(180deg); }
 #swarmbox-strip .sb-sysop:active, #swarmbox-strip .sb-keytoggle:active { transform: scale(.96); }
-#swarmbox-strip .sb-sysop .sb-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--sb-violet); box-shadow: 0 0 8px rgba(167, 139, 250, .8); }
+#swarmbox-strip .sb-sysop .sb-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--sb-violet); box-shadow: none; }
 #swarmbox-strip .sb-sysop[data-state="idle"] .sb-dot { background: var(--sb-line); box-shadow: none; }
 #swarmbox-strip .sb-sysop[data-state="working"] .sb-dot, #swarmbox-strip .sb-sysop[data-state="queued"] .sb-dot { animation: sb-pulse 1.4s ease-in-out infinite; }
 #swarmbox-strip .sb-sysop[data-state="sending"] .sb-dot { background: var(--sb-amber); box-shadow: 0 0 8px rgba(251, 191, 36, .8); }
@@ -191,8 +192,8 @@ html.swarmbox-strip-float[data-float-pos] #swarmbox-strip .sb-note { top: calc(v
 #swarmbox-strip .sb-toast span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; min-width: 0; }
 #swarmbox-strip .sb-keytoggle { order: 3; flex: none; width: var(--sb-btn); height: var(--sb-btn); padding: 0; border-radius: var(--sb-r, 10px); background: var(--sb-surface, transparent); border: 1px solid var(--sb-edge, rgba(167, 139, 250, .28)); color: var(--sb-lavender); transition: transform .08s ease, background .15s ease, border-color .15s ease; }
 #swarmbox-strip .sb-keytoggle svg { display: block; width: 24px; height: 24px; pointer-events: none; }
-#swarmbox-strip .sb-keytoggle[aria-pressed="true"] { background: var(--sb-on, rgba(109, 40, 217, .3)); border-color: rgba(167, 139, 250, .7); color: #fff; }
-#swarmbox-strip .sb-keytoggle[data-kb="1"] { color: #fff; }
+#swarmbox-strip .sb-keytoggle[aria-pressed="true"] { background: var(--sb-on, rgba(109, 40, 217, .26)); border-color: rgba(167, 139, 250, .3); color: var(--sb-lavender); }
+#swarmbox-strip .sb-keytoggle[data-kb="1"] { color: var(--sb-lavender); }
 #swarmbox-strip[data-compact="1"] .sb-slot, #swarmbox-strip[data-compact="keys"] .sb-slot { order: 4; margin-left: 0; }
 @keyframes sb-pulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { #swarmbox-strip .sb-dot { animation: none !important; } #sb-boot { animation: sb-boot-out 0s linear 12s forwards !important; } }
