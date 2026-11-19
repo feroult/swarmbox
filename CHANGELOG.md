@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.17] - 2026-11-19
+
 - Fixed: the lettering of the loading page was soft (a font draws block characters with its own line height and anti-aliasing). The letters are now drawn as squares of whole device pixels (an SVG, one half block each), as sharp as in `banner.sh`, with the same gradient and glint, and sized again when the phone has its viewport.
 
 ## [2.0.16] - 2026-11-18
@@ -234,6 +236,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.17]: https://github.com/feroult/swarmbox/releases/tag/v2.0.17
 [2.0.16]: https://github.com/feroult/swarmbox/releases/tag/v2.0.16
 [2.0.15]: https://github.com/feroult/swarmbox/releases/tag/v2.0.15
 [2.0.14]: https://github.com/feroult/swarmbox/releases/tag/v2.0.14
