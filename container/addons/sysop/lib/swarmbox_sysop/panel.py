@@ -35,6 +35,7 @@ POLL = 0.2              # seconds between two looks at the files while something
 IDLE_POLL = 1.0         # idle: once a second only a stat of two files and a lock probe; the files are read when one of them changed
 MAX_EDIT = service.MAX_GOAL_TEXT
 GOAL_LINES = 3
+HEAD_GAP_ROWS = 7       # a panel of a narrow window this tall (or taller) has a blank line under its head
 DONE_LINES = 3          # lines of how a goal ended
 MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
 LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last one when the panel opens
@@ -699,15 +700,17 @@ def render(model, cols, rows, wall, color=True, closer=False):
         elif model.up:
             buttons = [("g", "Goal", "violet")]
 
+    gap = 1 if closer and rows >= HEAD_GAP_ROWS else 0      # a blank line under the head of a phone's panel, when the panel is tall enough to spare it
+
     def total():
         return len(top) + len(pend_l) + len(notice_l) + len(prompt_l) + (1 if buttons else 0)
-    while rows - 1 - total() < 1 and notice_l:
+    while rows - 1 - gap - total() < 1 and notice_l:
         notice_l.pop()
-    while rows - 1 - total() < 1 and len(top) > 1:
+    while rows - 1 - gap - total() < 1 and len(top) > 1:
         top.pop()
-    while rows - 1 - total() < MIN_LOG and len(top) > 1:
+    while rows - 1 - gap - total() < MIN_LOG and len(top) > 1:
         top.pop()
-    avail = max(1, rows - 1 - total())
+    avail = max(1, rows - 1 - gap - total())
     body = _log(model, W, color)
     if not body and model.up and not g:
         body = [" " + _paint(color, "dim", ln) for ln in wrap("Say or type a goal.", W)]
@@ -729,7 +732,7 @@ def render(model, cols, rows, wall, color=True, closer=False):
             visible = [" " + _paint(color, "dim", cut("%d earlier (Up)" % start, W))] + visible
         if s:
             visible = visible + [" " + _paint(color, "dim", cut("%d later (Down)" % s, W))]
-    out = [head] + top + visible
+    out = [head] + [""] * gap + top + visible
     while len(out) < rows - (total() - len(top)):
         out.append("")
     base = len(out)

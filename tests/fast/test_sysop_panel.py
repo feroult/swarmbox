@@ -302,6 +302,30 @@ class CloseControl(unittest.TestCase):
         self.assertEqual(sorted(h[3] for h in f.hits), ["a", "c", "q"])
         self.assertEqual([h[0] for h in f.hits if h[3] == "q"], [1])
 
+    def test_a_tall_enough_panel_of_a_narrow_window_has_a_blank_line_under_its_head(self):
+        for rows in (7, 10, 14):
+            f = render(model_with(make_goal()), 40, rows, time.time(), color=False, closer=True)
+            self.assertEqual(len(f.lines), rows, "the frame is exactly the rows of the pane")
+            self.assertEqual(strip_ansi(f.lines[1]).strip(), "", "a space between the head and the content: %r" % f.lines[:3])
+            self.assertNotEqual(strip_ansi(f.lines[2]).strip(), "", "and the content follows: %r" % f.lines[:3])
+
+    def test_a_short_panel_keeps_all_its_rows_for_the_content(self):
+        for rows in (4, 5, 6):
+            f = render(model_with(make_goal()), 40, rows, time.time(), color=False, closer=True)
+            self.assertEqual(len(f.lines), rows)
+            self.assertNotEqual(strip_ansi(f.lines[1]).strip(), "", "no blank line in a short panel: %r" % f.lines[:3])
+
+    def test_a_panel_that_is_not_in_a_narrow_window_has_no_blank_line_under_the_head(self):
+        f = render(model_with(make_goal()), 60, 12, time.time(), color=False)
+        self.assertNotEqual(strip_ansi(f.lines[1]).strip(), "")
+
+    def test_the_buttons_of_a_panel_with_the_blank_line_are_on_the_rows_where_they_are_drawn(self):
+        now = time.time()
+        f = render(model_with(make_goal(), make_pending("approve", "high", deadline=now + 30)), 40, 14, now, color=False, closer=True)
+        for row, c0, c1, key in f.hits:
+            if key in ("a", "c"):
+                self.assertIn({"a": "Allow", "c": "Cancel"}[key], strip_ansi(f.lines[row - 1]), "the hit of %r is on its own row: %r" % (key, f.hits))
+
     def test_q_closes_the_panel_the_way_the_key_does(self):
         m = model_with(make_goal(), now=100.0)
         self.assertEqual(m.key("q", 101.0, time.time()), ("quit",))

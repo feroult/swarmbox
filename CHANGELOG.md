@@ -5,7 +5,7 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- Changed: the sysop looks finished on a phone. The panel and the strip under it are one drawer: the same dark violet, a little lighter than the terminal, a fine gradient line where the border of tmux was, and a dim line under the head of the panel (SYSOP ... close). The tabs of tmux go to the top of a window of 80 columns or fewer, above the sysop panel and the work, and come down again when a wider client takes the window. A desktop looks as it did.
+- Changed: the sysop looks finished on a phone. The panel and the strip under it are one drawer: the same dark violet, a little lighter than the terminal, a fine gradient line where the border of tmux was, and a dim line under the head of the panel (SYSOP ... close). The tabs of tmux go to the top of a window of 80 columns or fewer, above the sysop panel and the work, and come down again when a wider client takes the window. A desktop looks as it did. The panel of a phone has a blank line under its head (SYSOP ... close) when it is 7 rows tall or more, so the content is not stuck to the title.
 
 ## [2.0.18] - 2026-11-19
 
