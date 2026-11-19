@@ -5,7 +5,7 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- Added: three looks of the sysop to compare, chosen with `?look=1`, `?look=2` or `?look=3` on the address (kept in the browser; `?look=0` is the usual one, and nothing changes without it): a tint under the panel and the strip, a fine gradient line in place of the border of tmux, and colour by state (violet working, amber asking, green done, red failed).
+- Changed: the sysop looks finished on a phone. The panel and the strip under it are one drawer: the same dark violet, a little lighter than the terminal, a fine gradient line where the border of tmux was, and a dim line under the head of the panel (SYSOP ... close). The tabs of tmux go to the top of a window of 80 columns or fewer, above the sysop panel and the work, and come down again when a wider client takes the window. A desktop looks as it did.
 
 ## [2.0.18] - 2026-11-19
 

@@ -266,45 +266,38 @@
     try { paintSheet(seen); } catch (e) { /* the looks are only paint */ }
   }
 
-  // ---- looks of the sysop (to compare: ?look=1, 2, 3; ?look=0 or none is the usual one) -------------------------------------------------
-  //   1  a tint under the panel and the strip, one drawer     2  1 + a fine gradient line in place of the border of tmux
-  //   3  2 + the colour of the line and the tint follow the state (violet working, amber asking, green done, red failed)
-  // The choice is kept in this browser (localStorage) so a reload keeps it; ?look=0 clears it. The tint is a layer over the terminal with mix-blend-mode: lighten:
-  // the dark background of the panel lifts to the tint and the (lighter) letters stay as they are.
-  var LOOK = '0';
-  try {
-    var asked = /[?&]look=([0-9])/.exec(window.location.search || '');
-    if (asked) { LOOK = asked[1]; try { if (LOOK === '0') window.localStorage.removeItem('swarmbox-look'); else window.localStorage.setItem('swarmbox-look', LOOK); } catch (e) { /* not kept */ } }
-    else { try { LOOK = window.localStorage.getItem('swarmbox-look') || '0'; } catch (e) { LOOK = '0'; } }
-    if (!/^[0-3]$/.test(LOOK)) LOOK = '0';
-    if (LOOK !== '0' && document.documentElement && typeof document.documentElement.setAttribute === 'function') document.documentElement.setAttribute('data-look', LOOK);
-  } catch (e) { LOOK = '0'; }
-  var sheetEl = null, ruleEl = null, STATE_LOOK = { 'allow?': 'ask', sending: 'ask', working: 'work', queued: 'work', done: 'done', failed: 'fail', stopped: 'idle', idle: 'idle', off: 'idle' };
+  // ---- the sysop drawer on a phone -----------------------------------------------------------------------------------------------------
+  // On a phone the panel of the sysop and the strip under it are one drawer: the same dark violet, a little lighter than the terminal, a fine gradient line where the
+  // border of tmux was (the row above the head of the panel), and a dim line under the head (SYSOP ... close). The tint is a layer over the terminal with
+  // mix-blend-mode: lighten: the dark background of the panel lifts to the tint and the (lighter) letters stay as they are. The page reads where the panel is off the
+  // screen (the row of its head) because the panel is made of the cells of the terminal. Wide windows are left as they were.
+  var sheetEl = null, ruleEl = null;
   function rowText(r) {
     var t = window.term, buf = t.buffer.active, line = buf.getLine(buf.viewportY + r);
     return line ? line.translateToString(true) : '';
   }
   function paintSheet(seen) {
-    if (LOOK === '0' || !document.body || typeof document.createElement !== 'function') return;
-    var root = document.documentElement, t = window.term;
+    var root = document.documentElement, on = phone();
+    if (on) root.setAttribute('data-phone-look', '1'); else root.removeAttribute('data-phone-look');
+    if (!document.body || typeof document.createElement !== 'function' || (!on && !sheetEl)) return;
+    var t = window.term;
     if (!sheetEl) {
       sheetEl = document.createElement('div'); sheetEl.id = 'sb-sheet'; sheetEl.setAttribute('aria-hidden', 'true');
       ruleEl = document.createElement('div'); ruleEl.id = 'sb-rule'; ruleEl.setAttribute('aria-hidden', 'true');
       document.body.appendChild(sheetEl); document.body.appendChild(ruleEl);
     }
-    var on = !!(seen && seen.up) && !inCopyMode() && t && t.element && typeof t.element.querySelector === 'function';
-    var screen = on ? t.element.querySelector('.xterm-screen') : null;
+    var up = on && !!(seen && seen.up) && !inCopyMode() && t && t.element && typeof t.element.querySelector === 'function';
+    var screen = up ? t.element.querySelector('.xterm-screen') : null;
     if (!screen) { sheetEl.style.display = 'none'; ruleEl.style.display = 'none'; root.setAttribute('data-sheet', '0'); return; }
-    var rect = screen.getBoundingClientRect(), box = document.getElementById('terminal-container'), wide = box ? box.getBoundingClientRect() : rect, bottom = wide.bottom;      // wide: the whole width of the terminal, its padding too
-    var rowH = rect.height / t.rows, dpr = window.devicePixelRatio || 1;
+    var rect = screen.getBoundingClientRect(), box = document.getElementById('terminal-container'), wide = box ? box.getBoundingClientRect() : rect;      // wide: the whole width, its padding too
+    var rowH = rect.height / t.rows, dpr = window.devicePixelRatio || 1, hair = Math.max(1, Math.round(dpr)) / dpr, top = rect.top + seen.row * rowH;
     var border = seen.row > 0 && /^[\u2500\u2501]{8}/.test(rowText(seen.row - 1));      // the border row of tmux above the head of the panel
-    var top = rect.top + seen.row * rowH;
-    sheetEl.style.display = 'block'; sheetEl.style.left = wide.left + 'px'; sheetEl.style.width = wide.width + 'px'; sheetEl.style.top = top + 'px'; sheetEl.style.height = Math.max(0, bottom - top) + 'px';
+    root.style.setProperty('--sb-hair', hair + 'px');
+    sheetEl.style.display = 'block'; sheetEl.style.left = wide.left + 'px'; sheetEl.style.width = wide.width + 'px'; sheetEl.style.top = top + 'px';
+    sheetEl.style.height = Math.max(0, wide.bottom - top) + 'px'; sheetEl.style.setProperty('--sb-headrow', (rowH - hair) + 'px');      // the dim line under the head
     root.setAttribute('data-sheet', '1');
-    root.setAttribute('data-sstate', STATE_LOOK[seen.word] || 'idle');
-    root.style.setProperty('--sb-hair', (Math.max(1, Math.round(dpr)) / dpr) + 'px');
-    if (LOOK === '1' || !border) { ruleEl.style.display = 'none'; return; }
-    // looks 2 and 3: the border row is covered by a fine gradient line (its row is the black of the terminal, the line is at its lower edge)
+    if (!border) { ruleEl.style.display = 'none'; return; }
+    // the border row is covered by a fine gradient line (the row is the black of the terminal, the line is at its lower edge)
     ruleEl.style.display = 'block'; ruleEl.style.left = wide.left + 'px'; ruleEl.style.width = wide.width + 'px'; ruleEl.style.top = (top - rowH) + 'px'; ruleEl.style.height = rowH + 'px';
   }
 
