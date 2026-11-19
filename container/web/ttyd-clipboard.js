@@ -485,7 +485,6 @@
     var want = fontFor(w, document.documentElement.clientHeight || window.innerHeight, base, touch);
     var changed = false;
     if (o.fontSize !== undefined) { baseFont = base; setFont = want; }
-    if (typeof o.fontFamily === 'string' && o.fontFamily) { try { document.documentElement.style.setProperty('--sb-font', o.fontFamily); } catch (e) { /* the default stack stays */ } }      // the black page uses the font of the terminal
     if (o.fontSize !== undefined && want !== base) { o.fontSize = want; changed = true; }
     // On a phone (or any window as narrow as one) the terminal is drawn with the DOM renderer: the canvas ones size their bitmap by the device pixel ratio they saw
     // when they were made, and where that changes (the device mode of a desktop browser, a screen that is moved or zoomed) they paint the letters at 2 or 3 times
@@ -685,13 +684,13 @@
   }
 
   // ---- the page while it loads: the banner of the box, in the style of a 90s BBS login screen -----------------------------------------
-  // The same lettering as container/scripts/banner.sh (half blocks, a segmented bar and a signature), in the font of the terminal, with the same gradient (dark gray and
+  // The same lettering as container/scripts/banner.sh (half blocks and a segmented bar, no tagline), drawn pixel exact, with the same gradient (dark gray and
   // purple lighting up to white in the middle of the word) and a glint that sweeps across it now and then. It is a black page over everything until the page has
   // settled (see markReady, below); ttyd-style.css fades it out.
   var BANNER = ['▄▀▀▀▀ █   █ ▄▀▀▀▄ █▀▀▀▄ █▄ ▄█ █▀▀▀▄ ▄▀▀▀▄ ▀▄ ▄▀',
                 ' ▀▀▀▄ █▄▀▄█ █▀▀▀█ █▀▀█  █ ▀ █ █▀▀▀▄ █   █  ▄▀▄ ',
                 '▀▀▀▀  ▀   ▀ ▀   ▀ ▀   ▀ ▀   ▀ ▀▀▀▀   ▀▀▀  ▀   ▀'];
-  var SIGNATURE = "// your agent's shell, from anywhere", BAR_SEGMENTS = [14, 8, 4, 2];
+  var BAR_SEGMENTS = [14, 8, 4, 2], BOOT_SHARE = 0.6;      // the logo takes 60% of the width of the screen, with no tagline
   var GRADIENT = ['3f3f46', '6d28d9', 'a78bfa', 'ffffff', 'a78bfa', '6d28d9', '3f3f46'];
   function hexRgb(h) { return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
   function gradientAt(j, n, keys) {      // the colour of column j of n, running smoothly through the keypoints
@@ -734,13 +733,8 @@
       for (var k = 0; k < n; k++) bar.push(rect(col + k, 9, 1, 0.3, 3, col + k));
       col += n + 1;
     });
-    var pre = document.createElement('pre'), last = SIGNATURE.slice(SIGNATURE.lastIndexOf(' ') + 1), lead = SIGNATURE.slice(0, SIGNATURE.lastIndexOf(' ') + 1);
-    pre.style.textAlign = 'right';
-    var a = document.createElement('span'); a.textContent = '// '; a.style.color = '#585858'; pre.appendChild(a);
-    var b = document.createElement('span'); b.textContent = lead.slice(3); b.style.color = '#767676'; pre.appendChild(b);
-    for (var q = 0; q < last.length; q++) { var c2 = document.createElement('span'); c2.textContent = last.charAt(q); c2.style.color = rgb(gradientAt(q, last.length, ['a1a1aa', '3f3f46'])); pre.appendChild(c2); }
     var box = document.createElement('div');
-    box.appendChild(svg); box.appendChild(pre);
+    box.appendChild(svg);
     bootEl = document.createElement('div');
     bootEl.id = 'sb-boot';
     bootEl.setAttribute('aria-hidden', 'true');
@@ -748,12 +742,11 @@
     root.appendChild(bootEl);
     // the size: in the head the width of a phone is still the 980 px of a page without a viewport meta, so it is measured again when the page has its viewport
     function fit() {
-      var dpr = window.devicePixelRatio || 1, wide = root.clientWidth || window.innerWidth || 360, u = Math.floor(Math.min(Math.max(240, wide - 28) / W, 14) * dpr) / dpr;
+      var dpr = window.devicePixelRatio || 1, wide = root.clientWidth || window.innerWidth || 360, u = Math.round(Math.min(wide * BOOT_SHARE / W, 16) * dpr) / dpr;
       if (!(u > 1)) u = 4;
       svg.setAttribute('width', String(W * u)); svg.setAttribute('height', String(10 * u));
       var t = Math.max(2 / dpr, Math.round(u * 0.3 * dpr) / dpr) / u, y = 9 + (1 - t) / 2;
       bar.forEach(function (r) { r.setAttribute('height', String(t)); r.setAttribute('y', String(y)); });
-      pre.style.width = (W * u) + 'px'; pre.style.fontSize = Math.max(10, Math.round(u * 1.5)) + 'px'; pre.style.marginTop = u + 'px';
     }
     fit();
     try { document.addEventListener('DOMContentLoaded', fit); window.addEventListener('resize', fit); window.addEventListener('orientationchange', fit); } catch (e) { /* the size stays as it was */ }

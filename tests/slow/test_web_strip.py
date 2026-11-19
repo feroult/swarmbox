@@ -846,17 +846,17 @@ class Toast(StripCase):
 
     def test_the_page_starts_with_the_banner_of_the_box_and_it_goes_when_the_page_has_settled(self):
         self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX,
-                  init_script="document.addEventListener('DOMContentLoaded', () => { const b = document.getElementById('sb-boot'); window.__boot = b ? { text: b.textContent, font: getComputedStyle(b.querySelector('pre')).fontFamily, colors: new Set(Array.from(b.querySelectorAll('rect')).map(r => r.getAttribute('fill'))).size, rects: b.querySelectorAll('rect').length, bg: getComputedStyle(b).backgroundColor, w: Math.round(b.querySelector('pre').getBoundingClientRect().width), vw: innerWidth } : null; });")
+                  init_script="document.addEventListener('DOMContentLoaded', () => { const b = document.getElementById('sb-boot'); window.__boot = b ? { text: b.textContent, colors: new Set(Array.from(b.querySelectorAll('rect')).map(r => r.getAttribute('fill'))).size, rects: b.querySelectorAll('rect').length, bg: getComputedStyle(b).backgroundColor, w: Math.round(b.querySelector('svg').getBoundingClientRect().width), vw: innerWidth } : null; });")
         boot = self.page.js("window.__boot")
         self.assertIsNotNone(boot, "the page starts with the banner")
         self.assertIn("\u2584\u2580\u2580\u2580\u2580 \u2588   \u2588", boot["text"], "the lettering of banner.sh")
-        self.assertIn("// your agent's shell, from anywhere", boot["text"])
-        self.assertIn("monospace", boot["font"], "in the font of the terminal")
+        self.assertNotIn("your agent", boot["text"], "no tagline under the letters")
         self.assertGreater(boot["colors"], 10, "with the gradient: many colours, not one")
         self.assertGreater(boot["rects"], 60, "the letters are drawn as rectangles, sharp, not as the glyphs of a font")
         self.assertEqual(boot["bg"], "rgb(12, 11, 16)")
-        self.assertLessEqual(boot["w"], boot["vw"], "and it fits the width of a phone")
         self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.classList.contains('swarmbox-ready')"), 10, 0.1), "and is ready once the terminal drew")
+        width = self.page.js("[Math.round(document.querySelector('#sb-boot svg').getBoundingClientRect().width), innerWidth]")
+        self.assertTrue(0.5 * width[1] <= width[0] <= 0.65 * width[1], "it takes about 60%% of the width, measured once the page has its viewport: %r" % (width,))
         shape = lambda: self.page.js("[term.cols, term.rows, Math.round(document.getElementById('swarmbox-strip').getBoundingClientRect().height), term.options.fontSize]")
         at_ready = shape()
         time.sleep(1.5)

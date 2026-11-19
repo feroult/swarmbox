@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Changed: the logo of the loading page has no tagline any more and takes about 60% of the width of the screen (it was the width of the screen, with `// your agent's shell, from anywhere` under it).
+
 ## [2.0.17] - 2026-11-19
 
 - Fixed: the lettering of the loading page was soft (a font draws block characters with its own line height and anti-aliasing). The letters are now drawn as squares of whole device pixels (an SVG, one half block each), as sharp as in `banner.sh`, with the same gradient and glint, and sized again when the phone has its viewport.
