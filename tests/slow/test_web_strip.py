@@ -904,7 +904,7 @@ class Toast(StripCase):
         self.shot("phone-tabs-on-top")
 
     def test_the_microphone_goes_into_the_bar_of_a_panel_docked_at_the_right(self):
-        """a desktop: the panel of the sysop is at the right edge and its head is a bar two lines high; the microphone sits inside it, not over the text"""
+        """a desktop: the panel of the sysop is at the right edge and its head is a bar three lines high; the microphone sits inside it, not over the text"""
         self.open(viewport="desktop", command="bash --norc", tmux_conf=TITLES_TMUX)
         self.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'Hold to talk', label: 'mic', order: 10})")
         self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.classList.contains('swarmbox-strip-float')"), 10, 0.05))
@@ -912,16 +912,17 @@ class Toast(StripCase):
         self.assertIsNone(self.page.js("document.documentElement.getAttribute('data-float-head')"), "no panel: the microphone stays in the corner")
         corner = self.page.js("Math.round(document.getElementById('swarmbox-strip').getBoundingClientRect().top)")
         cols = self.page.js("term.cols")
-        col = cols - 39      # the panel is 40 columns at the right edge: its head is a bar of two lines
+        col = cols - 39      # the panel is 40 columns at the right edge: its head is a bar of three lines (the title on the middle one)
         bar = "\\033[48;2;42;26;82m"
-        self.t.type("clear; printf '\\033[1;%dH%s \\033[1;38;2;167;139;250mSYSOP\\033[0m%s  idle%s\\033[0m\\033[2;%dH%s%s\\033[0m\\033[3;%dH  the goal of the sysop, a few words\\n'\r"
-                    % (col, bar, bar, " " * 29, col, bar, " " * 40, col))
+        self.t.type("clear; printf '\\033[1;%dH%s%s\\033[0m\\033[2;%dH%s \\033[1;38;2;167;139;250mSYSOP\\033[0m%s  idle%s\\033[0m\\033[3;%dH%s%s\\033[0m\\033[4;%dH  the goal of the sysop, a few words\\n'\r"
+                    % (col, bar, " " * 40, col, bar, bar, " " * 29, col, bar, " " * 40, col))
         self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.getAttribute('data-float-head')") == "1", 8, 0.2), "the microphone moves into the head")
         g = self.page.js("(() => { const s = document.querySelector('.xterm-screen').getBoundingClientRect(), r = document.getElementById('swarmbox-strip').getBoundingClientRect(), b = document.querySelector('#demo-mic, [id=demo-mic]').getBoundingClientRect(); return { rowH: s.height / term.rows, top: s.top, screenRight: s.right, mic: [b.top, b.bottom, b.height, b.right], right: innerWidth - b.right }; })()")
         self.assertGreaterEqual(g["mic"][0], g["top"] - 0.5, "not above the bar: %r" % (g,))
-        self.assertLessEqual(g["mic"][1], g["top"] + 2 * g["rowH"] + 0.5, "inside the two lines of the bar, not over the text under it: %r" % (g,))
-        above, below, right = g["mic"][0] - g["top"], g["top"] + 2 * g["rowH"] - g["mic"][1], g["screenRight"] - g["mic"][3]
+        self.assertLessEqual(g["mic"][1], g["top"] + 3 * g["rowH"] + 0.5, "inside the three lines of the bar, not over the text under it: %r" % (g,))
+        above, below, right = g["mic"][0] - g["top"], g["top"] + 3 * g["rowH"] - g["mic"][1], g["screenRight"] - g["mic"][3]
         self.assertLess(max(above, below, right) - min(above, below, right), 1.5, "the same space above, below and at the right of the button: %r" % ((above, below, right),))
+        self.assertLess(abs((g["mic"][0] + g["mic"][1]) / 2 - (g["top"] + 1.5 * g["rowH"])), 1.5, "centred on the title, the middle line of the bar: %r" % (g,))
         self.assertGreaterEqual(g["mic"][2], 24, "still a button a pointer can hit")
         self.shot("desktop-bar-and-microphone")
         self.t.type("clear\r")

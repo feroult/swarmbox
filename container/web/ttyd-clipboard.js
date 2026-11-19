@@ -268,16 +268,17 @@
   }
 
   // The controls of a desktop with only a microphone float in the top right corner. When the panel of the sysop is docked at the right edge (a wide window) its head is
-  // there too, so the microphone goes INTO the head: the head of that panel is a bar two lines high, and the microphone is centred in it, as tall as the bar leaves room for.
+  // there too, so the microphone goes INTO the head: the head of that panel is a bar three lines high, and the microphone is centred in it, as tall as the bar leaves room for.
   function placeMic(seen) {
     var root = document.documentElement, t = window.term;
-    var inHead = root.classList.contains('swarmbox-strip-float') && seen && seen.up && seen.col > 0 && !inCopyMode() && t && t.element && typeof t.element.querySelector === 'function' && seen.col > t.cols / 2;
+    var inHead = root.classList.contains('swarmbox-strip-float') && seen && seen.up && seen.col > 0 && seen.row >= 1 && !inCopyMode() && t && t.element && typeof t.element.querySelector === 'function' && seen.col > t.cols / 2;
     var screen = inHead ? t.element.querySelector('.xterm-screen') : null;
     if (!screen) { root.removeAttribute('data-float-head'); return; }
-    var rect = screen.getBoundingClientRect(), rowH = rect.height / t.rows, size = Math.max(24, Math.min(40, Math.floor(2 * rowH - 6))), inset = (2 * rowH - size) / 2;
-    // the same space above, below and at the right of the button: the right edge of the bar is the right edge of the screen of the terminal (its padding is outside)
+    // the bar is three lines: one above the title (the row before the word SYSOP), the title, one below. The button is centred on all three, with the same space above,
+    // below and at the right: the right edge of the bar is the right edge of the screen of the terminal (its padding is outside)
+    var rect = screen.getBoundingClientRect(), rowH = rect.height / t.rows, size = Math.max(24, Math.min(44, Math.floor(3 * rowH - 12))), inset = (3 * rowH - size) / 2;
     root.style.setProperty('--sb-float-btn', size + 'px');
-    root.style.setProperty('--sb-float-top', Math.round((rect.top + seen.row * rowH + inset) * 10) / 10 + 'px');
+    root.style.setProperty('--sb-float-top', Math.round((rect.top + (seen.row - 1) * rowH + inset) * 10) / 10 + 'px');
     root.style.setProperty('--sb-float-right', Math.round((window.innerWidth - rect.right + inset) * 10) / 10 + 'px');
     root.setAttribute('data-float-head', '1');
   }

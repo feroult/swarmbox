@@ -5,7 +5,7 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- Changed: on a desktop the head of the sysop panel (docked at the right edge) is the same dark purple bar as on a phone, two lines high, and the microphone that floated in the top right corner over the text of the panel now sits inside that bar as a chip of its colour, with the same space above, below and at the right, as tall as the bar leaves room for. Without a panel, or with one docked at the bottom, the microphone stays in the corner. A panel shorter than 14 lines keeps all its rows for the content.
+- Changed: on a desktop the head of the sysop panel (docked at the right edge) is the same dark purple bar as on a phone, now three lines high (a line of the bar, the title, a line of the bar), and the microphone that floated in the top right corner over the text of the panel sits inside that bar as a chip of its colour, centred on the title, with the same space above, below and at the right. Without a panel, or with one docked at the bottom, the microphone stays in the corner. A panel shorter than 14 lines keeps all its rows for the content.
 
 ## [2.0.19] - 2026-11-19
 
