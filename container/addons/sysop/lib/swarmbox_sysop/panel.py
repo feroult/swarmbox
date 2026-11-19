@@ -36,7 +36,9 @@ IDLE_POLL = 1.0         # idle: once a second only a stat of two files and a loc
 MAX_EDIT = service.MAX_GOAL_TEXT
 GOAL_LINES = 3
 HEAD_GAP_ROWS = 7       # a panel of a phone this tall (or taller) has a blank line under its head
-WIDE_GAP_ROWS = 14      # elsewhere (the tall panel at the right of a desktop) it takes this many: a short panel keeps its rows for the content
+WIDE_GAP_ROWS = 14      # elsewhere (the tall panel at the right of a desktop) it takes this many rows: a short panel keeps its rows for the content
+WIDE_COLS = 80          # ... and is this many columns wide at most: the panel docked at the bottom of a wide window has no strip for buttons
+STRIP_ROWS = 2           # the lines of that strip
 DONE_LINES = 3          # lines of how a goal ended
 MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
 LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last one when the panel opens
@@ -703,8 +705,9 @@ def render(model, cols, rows, wall, color=True, closer=False):
         elif model.up:
             buttons = [("g", "Goal", "violet")]
 
-    # A blank line under the head (the content is not stuck to the title) when the panel is tall enough to spare it: the same on a phone and on a desktop.
-    gap = 1 if rows >= (HEAD_GAP_ROWS if closer else WIDE_GAP_ROWS) else 0
+    # Room under the head when the panel is tall enough to spare it. On a phone one blank line (the content is not stuck to the title). On a desktop, in the tall narrow
+    # panel at the right edge, STRIP_ROWS blank lines: a strip for buttons, which the web page fills (the microphone now, more later; ttyd-clipboard.js, placeMic).
+    gap = (1 if rows >= HEAD_GAP_ROWS else 0) if closer else (STRIP_ROWS if rows >= WIDE_GAP_ROWS and cols <= WIDE_COLS else 0)
 
     def total():
         return len(top) + len(pend_l) + len(notice_l) + len(prompt_l) + (1 if buttons else 0)

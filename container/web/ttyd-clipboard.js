@@ -257,89 +257,62 @@
   }
   function syncAnswers() {
     if (!strip) return;
-    if (!answers.yes && !answers.no && !answers.panel) { try { placeMic(sysopState()); } catch (e) { /* the place of the microphone is only paint */ } return; }
+    if (!answers.yes && !answers.no && !answers.panel) { try { paintPanel(sysopState()); } catch (e) { /* the drawer is only paint */ } return; }
     var seen = sysopState(), st = seen.state;
     strip.setAttribute('data-sysop', st || 'none');
     // the switch is left as it was while a tab is scrolled back (its old text may say SYSOP too); Allow and Cancel keep reading, so a real question is never missed
     if (answers.panel && !inCopyMode()) { answers.panel.setAttribute('data-on', seen.up ? '1' : '0'); answers.panel.setAttribute('aria-pressed', seen.up ? 'true' : 'false'); }
     setOff(answers.yes, st !== 'allow?');
     setOff(answers.no, st === '');
-    try { paintSheet(seen); placeMic(seen); } catch (e) { /* the looks are only paint */ }
+    try { paintPanel(seen); } catch (e) { /* the drawer is only paint */ }
   }
 
-  // ---- the microphone of a desktop, in the head of the sysop panel (to compare: ?look=1 .. 5; ?look=0 or none: the corner, as it was) ---------------------------------
-  // The controls of a desktop with only a microphone float in the top right corner, which is where the head of the sysop panel (docked at the right edge of a wide
-  // window) is. The looks put it somewhere else, and the panel is the same one as on a phone: a bar of one line, a blank line under it.
-  //   1  a small chip in the head line, at the right      2  only the icon, in the head line      3  only the icon, at the right end of the bar of tabs, by the clock
-  //   4  a handle on the left edge of the panel, at the head line      5  as 1, and the tint and the fine line of the phone's drawer under the panel
-  // The choice is kept in this browser (localStorage); ?look=0 clears it.
-  var LOOK = '0';
-  try {
-    var asked = /[?&]look=([0-9])/.exec(window.location.search || '');
-    if (asked) { LOOK = asked[1]; try { if (LOOK === '0') window.localStorage.removeItem('swarmbox-look'); else window.localStorage.setItem('swarmbox-look', LOOK); } catch (e) { /* not kept */ } }
-    else { try { LOOK = window.localStorage.getItem('swarmbox-look') || '0'; } catch (e) { LOOK = '0'; } }
-    if (!/^[0-5]$/.test(LOOK)) LOOK = '0';
-    if (LOOK !== '0' && document.documentElement && typeof document.documentElement.setAttribute === 'function') document.documentElement.setAttribute('data-look', LOOK);
-  } catch (e) { LOOK = '0'; }
-  function placeMic(seen) {
-    var root = document.documentElement, t = window.term;
-    function off() { root.removeAttribute('data-float-pos'); }
-    if (LOOK === '0' || !root.classList.contains('swarmbox-strip-float') || !t || !t.element || typeof t.element.querySelector !== 'function') return off();
-    var screen = t.element.querySelector('.xterm-screen');
-    if (!screen) return off();
-    var rect = screen.getBoundingClientRect(), rowH = rect.height / t.rows, cellW = rect.width / t.cols, vw = window.innerWidth;
-    var right = !!(seen && seen.up) && seen.col > t.cols / 2 && !inCopyMode();      // the panel of the sysop is docked at the right edge
-    var size = Math.max(18, Math.floor(rowH - 4)), top, edge;      // edge: the distance of the right edge of the button from the right edge of the window
-    if (LOOK === '3') {      // the right end of the bar of tabs (the last line), to the left of the date and the clock
-      var last = rowText(t.rows - 1), m = /\s{2,}(\S.*)$/.exec(last), clock = m ? m[1].length : 0;
-      top = rect.top + (t.rows - 1) * rowH + (rowH - size) / 2; edge = vw - rect.right + (clock + 2) * cellW;
-    } else if (!right) return off();
-    else if (LOOK === '4') {      // on the left edge of the panel, hanging out of it
-      size = Math.max(22, Math.floor(rowH * 1.4));
-      top = rect.top + seen.row * rowH + (rowH - size) / 2; edge = vw - (rect.left + (seen.col - 1) * cellW) + 6;
-    } else {      // 1, 2, 5: inside the head line, at its right end
-      top = rect.top + seen.row * rowH + (rowH - size) / 2; edge = vw - rect.right + Math.max(6, (rowH - size) / 2);
-    }
-    root.style.setProperty('--sb-float-btn', size + 'px');
-    root.style.setProperty('--sb-float-top', Math.round(top * 10) / 10 + 'px');
-    root.style.setProperty('--sb-float-right', Math.round(edge * 10) / 10 + 'px');
-    root.setAttribute('data-float-pos', LOOK);
-  }
-
-  // ---- the sysop drawer on a phone -----------------------------------------------------------------------------------------------------
-  // On a phone the panel of the sysop and the strip under it are one drawer: the same dark violet, a little lighter than the terminal, a fine gradient line where the
-  // border of tmux was (the row above the head of the panel), and a dim line under the head (SYSOP ... close). The tint is a layer over the terminal with
-  // mix-blend-mode: lighten: the dark background of the panel lifts to the tint and the (lighter) letters stay as they are. The page reads where the panel is off the
-  // screen (the row of its head) because the panel is made of the cells of the terminal. Wide windows are left as they were.
-  var sheetEl = null, ruleEl = null;
+  // ---- the sysop drawer: a phone, and the tall panel at the right edge of a desktop -------------------------------------------------------
+  // The panel of the sysop and what is under it are one drawer: a dark violet a little lighter than the terminal over the whole panel, and a dim line under its head.
+  // The tint is a layer over the terminal with mix-blend-mode: lighten: the dark background of the panel lifts to the tint and the (lighter) letters stay as they are.
+  // On a phone the strip under the panel has the same tint and a fine gradient line stands where the border of tmux was (the row above the head).
+  // On a desktop the panel is docked at the right edge, and the two lines it leaves blank under its head (panel.py, STRIP_ROWS) are a BAR OF BUTTONS: a slightly lighter
+  // band with the controls of the page in it, at the right: the microphone now, more buttons later. The page finds the panel by the row and the column of its head
+  // (it is made of the cells of the terminal); without a panel the microphone floats in the top right corner, as it always did.
+  var sheetEl = null, ruleEl = null, buttonsEl = null;
   function rowText(r) {
     var t = window.term, buf = t.buffer.active, line = buf.getLine(buf.viewportY + r);
     return line ? line.translateToString(true) : '';
   }
-  function paintSheet(seen) {
-    var root = document.documentElement, on = phone() || LOOK === '5';
-    if (on) root.setAttribute('data-phone-look', '1'); else root.removeAttribute('data-phone-look');
-    if (!document.body || typeof document.createElement !== 'function' || (!on && !sheetEl)) return;
-    var t = window.term;
+  function paintPanel(seen) {
+    var root = document.documentElement, t = window.term, isPhone = phone();
+    var docked = !!(seen && seen.up) && !!t && seen.col > t.cols / 2;      // the tall panel at the right edge of a wide window
+    var on = isPhone || docked;
+    if (isPhone) root.setAttribute('data-phone-look', '1'); else root.removeAttribute('data-phone-look');
+    if (!document.body || typeof document.createElement !== 'function' || (!on && !sheetEl)) { root.removeAttribute('data-float-pos'); return; }
     if (!sheetEl) {
-      sheetEl = document.createElement('div'); sheetEl.id = 'sb-sheet'; sheetEl.setAttribute('aria-hidden', 'true');
-      ruleEl = document.createElement('div'); ruleEl.id = 'sb-rule'; ruleEl.setAttribute('aria-hidden', 'true');
-      document.body.appendChild(sheetEl); document.body.appendChild(ruleEl);
+      sheetEl = document.createElement('div'); sheetEl.id = 'sb-sheet';
+      ruleEl = document.createElement('div'); ruleEl.id = 'sb-rule';
+      buttonsEl = document.createElement('div'); buttonsEl.id = 'sb-buttons';
+      [sheetEl, ruleEl, buttonsEl].forEach(function (e) { e.setAttribute('aria-hidden', 'true'); document.body.appendChild(e); });
     }
     var up = on && !!(seen && seen.up) && !inCopyMode() && t && t.element && typeof t.element.querySelector === 'function';
     var screen = up ? t.element.querySelector('.xterm-screen') : null;
-    if (!screen) { sheetEl.style.display = 'none'; ruleEl.style.display = 'none'; root.setAttribute('data-sheet', '0'); return; }
+    if (!screen) { sheetEl.style.display = ruleEl.style.display = buttonsEl.style.display = 'none'; root.setAttribute('data-sheet', '0'); root.removeAttribute('data-float-pos'); return; }
     var rect = screen.getBoundingClientRect(), box = document.getElementById('terminal-container'), wide = box ? box.getBoundingClientRect() : rect;      // wide: the whole width, its padding too
-    var rowH = rect.height / t.rows, dpr = window.devicePixelRatio || 1, hair = Math.max(1, Math.round(dpr)) / dpr, top = rect.top + seen.row * rowH;
-    var docked = seen.col > t.cols / 2, cellW = rect.width / t.cols, from = docked ? rect.left + (seen.col - 1) * cellW : wide.left, span = docked ? wide.left + wide.width - from : wide.width;      // docked at the right: only the panel
-    var border = seen.row > 0 && /^[\u2500\u2501]{8}/.test(rowText(seen.row - 1));      // the border row of tmux above the head of the panel
+    var rowH = rect.height / t.rows, cellW = rect.width / t.cols, dpr = window.devicePixelRatio || 1, hair = Math.max(1, Math.round(dpr)) / dpr, top = rect.top + seen.row * rowH;
+    var from = docked ? rect.left + (seen.col - 1) * cellW : wide.left, span = docked ? rect.right - from : wide.width;      // docked at the right: only the panel, to the end of its cells like the bar of its title
     root.style.setProperty('--sb-hair', hair + 'px');
     sheetEl.style.display = 'block'; sheetEl.style.left = from + 'px'; sheetEl.style.width = span + 'px'; sheetEl.style.top = top + 'px';
-    sheetEl.style.height = Math.max(0, wide.bottom - top) + 'px'; sheetEl.style.setProperty('--sb-headrow', (rowH - hair) + 'px');      // the dim line under the head
+    sheetEl.style.height = Math.max(0, (docked ? rect.bottom : wide.bottom) - top) + 'px'; sheetEl.style.setProperty('--sb-headrow', (rowH - hair) + 'px');      // the dim line under the head
     root.setAttribute('data-sheet', '1');
-    if (!border) { ruleEl.style.display = 'none'; return; }
-    // the border row is covered by a fine gradient line (the row is the black of the terminal, the line is at its lower edge)
-    ruleEl.style.display = 'block'; ruleEl.style.left = wide.left + 'px'; ruleEl.style.width = wide.width + 'px'; ruleEl.style.top = (top - rowH) + 'px'; ruleEl.style.height = rowH + 'px';
+    var border = seen.row > 0 && /^[\u2500\u2501]{8}/.test(rowText(seen.row - 1));      // the border row of tmux above the head of the panel (a phone's panel)
+    if (border) { ruleEl.style.display = 'block'; ruleEl.style.left = wide.left + 'px'; ruleEl.style.width = wide.width + 'px'; ruleEl.style.top = (top - rowH) + 'px'; ruleEl.style.height = rowH + 'px'; }
+    else ruleEl.style.display = 'none';
+    // the bar of buttons: the two blank lines under the head of the tall panel, when a control floats (a desktop with only the microphone)
+    var room = docked && !isPhone && root.classList.contains('swarmbox-strip-float') && seen.row + 3 < t.rows && !rowText(seen.row + 1).trim() && !rowText(seen.row + 2).trim();
+    if (!room) { buttonsEl.style.display = 'none'; root.removeAttribute('data-float-pos'); return; }
+    var barTop = rect.top + (seen.row + 1) * rowH, size = Math.max(24, Math.min(36, Math.floor(2 * rowH - 12))), inset = (2 * rowH - size) / 2;      // the same space above, below and at the right
+    buttonsEl.style.display = 'block'; buttonsEl.style.left = from + 'px'; buttonsEl.style.width = span + 'px'; buttonsEl.style.top = barTop + 'px'; buttonsEl.style.height = (2 * rowH) + 'px';
+    root.style.setProperty('--sb-float-btn', size + 'px');
+    root.style.setProperty('--sb-float-top', Math.round((barTop + (2 * rowH - size) / 2) * 10) / 10 + 'px');
+    root.style.setProperty('--sb-float-right', Math.round((window.innerWidth - rect.right + inset) * 10) / 10 + 'px');
+    root.setAttribute('data-float-pos', 'bar');
   }
 
   function build() {

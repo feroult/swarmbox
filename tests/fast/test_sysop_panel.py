@@ -332,19 +332,31 @@ class CloseControl(unittest.TestCase):
             self.assertEqual(len(f.lines), rows)
             self.assertNotEqual(strip_ansi(f.lines[1]).strip(), "", "no blank line in a short panel: %r" % f.lines[:3])
 
-    def test_a_wide_panel_has_the_same_head_as_a_phones_one_a_bar_of_one_line_and_a_blank_line(self):
+    def test_the_tall_narrow_panel_of_a_desktop_leaves_two_blank_lines_under_its_head_for_a_bar_of_buttons(self):
         band = "\x1b[48;2;42;26;82m"
-        for rows in (14, 30, 50):
-            f = render(model_with(make_goal()), 40, rows, time.time(), color=True)
-            self.assertEqual(len(f.lines), rows)
-            self.assertTrue(f.lines[0].startswith(band) and "SYSOP" in strip_ansi(f.lines[0]), "the title is the first line, on the bar: %r" % f.lines[:2])
-            self.assertEqual(text_width(strip_ansi(f.lines[0])), 40, "edge to edge")
-            self.assertEqual(strip_ansi(f.lines[1]).strip(), "", "a blank line under it")
-            self.assertNotIn(band, f.lines[1], "that is not a line of the bar")
-            self.assertNotEqual(strip_ansi(f.lines[2]).strip(), "", "the content follows")
-        for rows in (4, 8, 10, 13):
-            f = render(model_with(make_goal()), 40, rows, time.time(), color=True)
-            self.assertNotEqual(strip_ansi(f.lines[1]).strip(), "", "a short panel keeps its rows for the content: %r" % f.lines[:3])
+        for cols in (40, 60, 80):
+            for rows in (14, 30, 50):
+                f = render(model_with(make_goal()), cols, rows, time.time(), color=True)
+                self.assertEqual(len(f.lines), rows, (cols, rows))
+                self.assertTrue(f.lines[0].startswith(band) and "SYSOP" in strip_ansi(f.lines[0]), "the title is the first line, on the bar: %r" % f.lines[:2])
+                self.assertEqual(text_width(strip_ansi(f.lines[0])), cols, "edge to edge")
+                self.assertEqual(strip_ansi(f.lines[1]).strip(), "", "a blank line, the first of the strip of buttons")
+                self.assertEqual(strip_ansi(f.lines[2]).strip(), "", "and a second one")
+                self.assertNotIn(band, f.lines[1] + f.lines[2], "they are not lines of the bar: the page draws that strip")
+                self.assertNotEqual(strip_ansi(f.lines[3]).strip(), "", "the content follows: %r" % f.lines[:4])
+
+    def test_a_short_panel_or_one_at_the_bottom_of_a_wide_window_has_no_strip_of_buttons(self):
+        for cols, rows in ((40, 8), (40, 10), (40, 13), (120, 14), (200, 30)):
+            f = render(model_with(make_goal()), cols, rows, time.time(), color=True)
+            self.assertIn("SYSOP", strip_ansi(f.lines[0]))
+            self.assertNotEqual(strip_ansi(f.lines[1]).strip(), "", "the content follows the title at once: %r" % (((cols, rows), f.lines[:3]),))
+
+    def test_the_buttons_of_the_panel_with_the_strip_are_on_the_rows_where_they_are_drawn(self):
+        now = time.time()
+        f = render(model_with(make_goal(), make_pending("approve", "high", deadline=now + 30)), 40, 24, now, color=False)
+        for row, c0, c1, key in f.hits:
+            if key in ("a", "c"):
+                self.assertIn({"a": "Allow", "c": "Cancel"}[key], strip_ansi(f.lines[row - 1]), "the hit of %r is on its own row: %r" % (key, f.hits))
 
     def test_the_head_bar_is_in_colour_only(self):
         band = "\x1b[48;2;42;26;82m"
