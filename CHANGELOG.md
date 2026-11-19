@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.18] - 2026-11-19
+
 - Changed: the logo of the loading page is the word alone: no tagline and no segmented bar under it, and it takes about 60% of the width of the screen (it was the width of the screen, with the bar and `// your agent's shell, from anywhere` under it).
 
 ## [2.0.17] - 2026-11-19
@@ -238,6 +240,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.18]: https://github.com/feroult/swarmbox/releases/tag/v2.0.18
 [2.0.17]: https://github.com/feroult/swarmbox/releases/tag/v2.0.17
 [2.0.16]: https://github.com/feroult/swarmbox/releases/tag/v2.0.16
 [2.0.15]: https://github.com/feroult/swarmbox/releases/tag/v2.0.15
