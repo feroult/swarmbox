@@ -374,7 +374,7 @@ class CloseControl(unittest.TestCase):
         from swarmbox_sysop import panel as P
         me = os.getpid()
         self.assertFalse(P._proc_web(me), "this test is no browser (no mark, and its parent is no ttyd)")
-        env = dict(os.environ, SWARMBOX_WEB="1")
+        env = dict(os.environ, SWARMBOX_WEB_CLIENT="1")
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], env=env)
         try:
             deadline = time.time() + 5
@@ -385,6 +385,40 @@ class CloseControl(unittest.TestCase):
             child.kill()
             child.wait()
         self.assertIsNone(P._proc_web(2 ** 22 + 12345), "a process that is not there: cannot be told")
+
+    def test_the_setting_of_the_box_is_not_the_mark_of_the_browser(self):
+        """SWARMBOX_WEB=1 is in the environment of EVERY process of the box (it is the setting that turns the web terminal on): it says nothing about a client"""
+        import subprocess
+        from swarmbox_sysop import panel as P
+        env = dict(os.environ, SWARMBOX_WEB="1")
+        env.pop("SWARMBOX_WEB_CLIENT", None)
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], env=env)
+        try:
+            time.sleep(0.3)
+            self.assertFalse(P._proc_web(child.pid))
+        finally:
+            child.kill()
+            child.wait()
+
+    def test_a_client_whose_parent_cannot_be_read_is_a_terminal_that_came_in_from_outside_the_container(self):
+        from unittest import mock
+        from swarmbox_sysop import panel as P
+        import io
+        real_open = open
+        files = {"/proc/777/environ": b"HOME=/h\0SWARMBOX_WEB=1\0", "/proc/777/stat": "777 (tmux: client) S 0 777 777 0"}
+
+        def fake_open(path, mode="r", *a, **k):
+            if path in files:
+                data = files[path]
+                return io.BytesIO(data) if "b" in mode else io.StringIO(data)
+            if path == "/proc/0/comm":
+                raise FileNotFoundError(path)
+            return real_open(path, mode, *a, **k)
+        with mock.patch("builtins.open", fake_open):
+            self.assertIs(P._proc_web(777), False, "a parent of 0 has no comm: a terminal, not the browser and not 'cannot tell'")
+        files["/proc/777/stat"] = "777 (tmux: client) S 625 777 777 0"
+        with mock.patch("builtins.open", lambda path, mode="r", *a, **k: io.StringIO("ttyd\n") if path == "/proc/625/comm" else fake_open(path, mode, *a, **k)):
+            self.assertIs(P._proc_web(777), True, "ttyd is the parent: the browser")
 
     def test_outside_tmux_the_panel_does_not_ask_and_keeps_the_room(self):
         from swarmbox_sysop import panel as P

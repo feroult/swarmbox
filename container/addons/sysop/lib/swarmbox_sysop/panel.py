@@ -663,7 +663,7 @@ def render_approval(model, cols, rows, wall, color=True):
     return Frame(out + big, None, hits)
 
 
-WEB_MARK = b"SWARMBOX_WEB=1"      # in the environment of the tmux client that swarmbox-attach --web (the browser) starts
+WEB_MARK = b"SWARMBOX_WEB_CLIENT=1"      # in the environment of the tmux client that swarmbox-attach --web (the browser) starts (SWARMBOX_WEB is the setting of the box: all have it)
 WEB_PARENT = "ttyd"                # and the parent of that client is ttyd (the older script did not set the mark)
 
 
@@ -682,17 +682,21 @@ def latest_client_is_web(listing, is_web):
 
 
 def _proc_web(pid):
-    """The browser's client: the environment has the mark, or ttyd is its parent. False for a terminal's client; None when /proc says nothing."""
+    """The browser's client: the environment has the mark, or ttyd is its parent. False for a terminal's client (one that came in from outside the container has no parent
+    to read: that is a terminal too); None when /proc says nothing about the client itself."""
     try:
         with open("/proc/%d/environ" % pid, "rb") as f:
             if WEB_MARK in f.read().split(b"\0"):
                 return True
+    except OSError:
+        return None
+    try:
         with open("/proc/%d/stat" % pid) as f:
             ppid = int(f.read().rsplit(")", 1)[1].split()[1])      # after the name between parentheses: state, ppid, ...
         with open("/proc/%d/comm" % ppid) as f:
             return f.read().strip() == WEB_PARENT
     except (OSError, ValueError, IndexError):
-        return None
+        return False
 
 
 def web_attached():
