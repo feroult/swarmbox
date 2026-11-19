@@ -36,7 +36,7 @@ IDLE_POLL = 1.0         # idle: once a second only a stat of two files and a loc
 MAX_EDIT = service.MAX_GOAL_TEXT
 GOAL_LINES = 3
 HEAD_GAP_ROWS = 7       # a panel of a phone this tall (or taller) has a blank line under its head
-BAR_ROWS = 14           # a panel elsewhere (the tall one at the right of a desktop) this tall has the head as a bar of three lines, for the microphone
+WIDE_GAP_ROWS = 14      # elsewhere (the tall panel at the right of a desktop) it takes this many: a short panel keeps its rows for the content
 DONE_LINES = 3          # lines of how a goal ended
 MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
 LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last one when the panel opens
@@ -703,24 +703,18 @@ def render(model, cols, rows, wall, color=True, closer=False):
         elif model.up:
             buttons = [("g", "Goal", "violet")]
 
-    # A line under the head when the panel is tall enough to spare it. On a phone it is a blank line (the content is not stuck to the title). On a wide window (the
-    # tall panel at the right of a desktop) the head is a bar of THREE lines: a line of the bar above the title, the title, and a line of the bar below it. The page
-    # puts the microphone inside the bar, centred on the title (ttyd-clipboard.js, placeMic).
-    bar3 = (not closer) and rows >= BAR_ROWS
-    gap = 1 if (rows >= HEAD_GAP_ROWS if closer else bar3) else 0
-    over = 1 if bar3 else 0
-    under = ("" if closer or not color else bg("band") + " " * cols + RESET)
-    above = [under] * over
+    # A blank line under the head (the content is not stuck to the title) when the panel is tall enough to spare it: the same on a phone and on a desktop.
+    gap = 1 if rows >= (HEAD_GAP_ROWS if closer else WIDE_GAP_ROWS) else 0
 
     def total():
         return len(top) + len(pend_l) + len(notice_l) + len(prompt_l) + (1 if buttons else 0)
-    while rows - 1 - over - gap - total() < 1 and notice_l:
+    while rows - 1 - gap - total() < 1 and notice_l:
         notice_l.pop()
-    while rows - 1 - over - gap - total() < 1 and len(top) > 1:
+    while rows - 1 - gap - total() < 1 and len(top) > 1:
         top.pop()
-    while rows - 1 - over - gap - total() < MIN_LOG and len(top) > 1:
+    while rows - 1 - gap - total() < MIN_LOG and len(top) > 1:
         top.pop()
-    avail = max(1, rows - 1 - over - gap - total())
+    avail = max(1, rows - 1 - gap - total())
     body = _log(model, W, color)
     if not body and model.up and not g:
         body = [" " + _paint(color, "dim", ln) for ln in wrap("Say or type a goal.", W)]
@@ -742,7 +736,7 @@ def render(model, cols, rows, wall, color=True, closer=False):
             visible = [" " + _paint(color, "dim", cut("%d earlier (Up)" % start, W))] + visible
         if s:
             visible = visible + [" " + _paint(color, "dim", cut("%d later (Down)" % s, W))]
-    out = above + [head] + [under] * gap + top + visible
+    out = [head] + [""] * gap + top + visible
     while len(out) < rows - (total() - len(top)):
         out.append("")
     base = len(out)

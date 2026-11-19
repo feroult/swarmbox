@@ -903,31 +903,70 @@ class Toast(StripCase):
         self._boot_gone()
         self.shot("phone-tabs-on-top")
 
-    def test_the_microphone_goes_into_the_bar_of_a_panel_docked_at_the_right(self):
-        """a desktop: the panel of the sysop is at the right edge and its head is a bar three lines high; the microphone sits inside it, not over the text"""
-        self.open(viewport="desktop", command="bash --norc", tmux_conf=TITLES_TMUX)
+    def _desktop_look(self, look, panel=True):
+        """a desktop with a microphone and, at the right edge, a panel of 40 columns like the real one: a bar of one line (the title), a blank line, the content"""
+        init = "try { %s } catch (e) {}" % ("localStorage.setItem('swarmbox-look', '%s');" % look if look else "localStorage.removeItem('swarmbox-look');")
+        self.open(viewport="desktop", command="bash --norc", tmux_conf=TITLES_TMUX, init_script=init)
         self.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'Hold to talk', label: 'mic', order: 10})")
         self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.classList.contains('swarmbox-strip-float')"), 10, 0.05))
         time.sleep(1.0)
-        self.assertIsNone(self.page.js("document.documentElement.getAttribute('data-float-head')"), "no panel: the microphone stays in the corner")
-        corner = self.page.js("Math.round(document.getElementById('swarmbox-strip').getBoundingClientRect().top)")
-        cols = self.page.js("term.cols")
-        col = cols - 39      # the panel is 40 columns at the right edge: its head is a bar of three lines (the title on the middle one)
-        bar = "\\033[48;2;42;26;82m"
-        self.t.type("clear; printf '\\033[1;%dH%s%s\\033[0m\\033[2;%dH%s \\033[1;38;2;167;139;250mSYSOP\\033[0m%s  idle%s\\033[0m\\033[3;%dH%s%s\\033[0m\\033[4;%dH  the goal of the sysop, a few words\\n'\r"
-                    % (col, bar, " " * 40, col, bar, bar, " " * 29, col, bar, " " * 40, col))
-        self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.getAttribute('data-float-head')") == "1", 8, 0.2), "the microphone moves into the head")
-        g = self.page.js("(() => { const s = document.querySelector('.xterm-screen').getBoundingClientRect(), r = document.getElementById('swarmbox-strip').getBoundingClientRect(), b = document.querySelector('#demo-mic, [id=demo-mic]').getBoundingClientRect(); return { rowH: s.height / term.rows, top: s.top, screenRight: s.right, mic: [b.top, b.bottom, b.height, b.right], right: innerWidth - b.right }; })()")
-        self.assertGreaterEqual(g["mic"][0], g["top"] - 0.5, "not above the bar: %r" % (g,))
-        self.assertLessEqual(g["mic"][1], g["top"] + 3 * g["rowH"] + 0.5, "inside the three lines of the bar, not over the text under it: %r" % (g,))
-        above, below, right = g["mic"][0] - g["top"], g["top"] + 3 * g["rowH"] - g["mic"][1], g["screenRight"] - g["mic"][3]
-        self.assertLess(max(above, below, right) - min(above, below, right), 1.5, "the same space above, below and at the right of the button: %r" % ((above, below, right),))
-        self.assertLess(abs((g["mic"][0] + g["mic"][1]) / 2 - (g["top"] + 1.5 * g["rowH"])), 1.5, "centred on the title, the middle line of the bar: %r" % (g,))
-        self.assertGreaterEqual(g["mic"][2], 24, "still a button a pointer can hit")
-        self.shot("desktop-bar-and-microphone")
-        self.t.type("clear\r")
-        self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.getAttribute('data-float-head')") is None, 8, 0.2), "the panel is gone: the microphone goes back to the corner")
-        self.assertEqual(self.page.js("Math.round(document.getElementById('swarmbox-strip').getBoundingClientRect().top)"), corner)
+        if panel:
+            col = self.page.js("term.cols") - 39
+            bar = "\\033[48;2;42;26;82m"
+            self.t.type("clear; printf '\\033[1;%dH%s \\033[1;38;2;167;139;250mSYSOP\\033[0m%s  idle%s\\033[0m\\033[3;%dH  the goal of the sysop, a few words\\033[4;%dH  and what it does next\\n'\r"
+                        % (col, bar, bar, " " * 29, col, col))
+            self.assertTrue(wait_until(lambda: self.page.js("(() => { const r = Array.from(document.querySelectorAll('.xterm-rows > div')); return true; })()") and "SYSOP" in self.page.js("(() => { const b = term.buffer.active; return b.getLine(b.viewportY).translateToString(true); })()"), 8, 0.2))
+        time.sleep(1.2)
+        return self.page.js("(() => { const s = document.querySelector('.xterm-screen').getBoundingClientRect(), b = document.querySelector('#demo-mic, [id=demo-mic]').getBoundingClientRect(), root = document.documentElement; return { pos: root.getAttribute('data-float-pos'), sheet: root.getAttribute('data-sheet'), rowH: s.height / term.rows, cellW: s.width / term.cols, top: s.top, left: s.left, right: s.right, bottom: s.bottom, rows: term.rows, cols: term.cols, mic: { top: b.top, bottom: b.bottom, left: b.left, right: b.right, w: b.width, h: b.height } }; })()")
+
+    def test_look_0_leaves_the_microphone_in_the_corner(self):
+        g = self._desktop_look(None)
+        self.assertIsNone(g["pos"])
+        self.assertLess(g["mic"]["top"], 20, "the corner: %r" % (g,))
+
+    def test_looks_1_2_and_5_put_the_microphone_in_the_head_line_of_the_panel(self):
+        for look in ("1", "2", "5"):
+            with self.subTest(look=look):
+                g = self._desktop_look(look)
+                m = g["mic"]
+                self.assertEqual(g["pos"], look)
+                self.assertGreaterEqual(m["top"], g["top"] - 0.5, "not above the head line: %r" % (g,))
+                self.assertLessEqual(m["bottom"], g["top"] + g["rowH"] + 0.5, "inside the head line, not over the blank line under it: %r" % (g,))
+                self.assertLessEqual(m["right"], g["right"] + 0.5)
+                self.assertGreater(m["left"], g["right"] - 40 * g["cellW"], "inside the panel: %r" % (g,))
+                self.assertGreaterEqual(m["h"], 16, "a real button")
+                if look == "5":
+                    self.assertEqual(g["sheet"], "1", "the tint of the drawer under the panel")
+                self._boot_gone()
+                self.shot("desktop-look-%s" % look)
+
+    def test_look_3_puts_the_microphone_on_the_bar_of_tabs_by_the_clock(self):
+        g = self._desktop_look("3")
+        m = g["mic"]
+        self.assertEqual(g["pos"], "3")
+        self.assertGreaterEqual(m["top"], g["top"] + (g["rows"] - 1) * g["rowH"] - 1, "on the last line, the bar of tabs: %r" % (g,))
+        self.assertLessEqual(m["bottom"], g["bottom"] + 0.5)
+        self.assertLess(m["right"], g["right"] - 5 * g["cellW"], "to the left of the clock (the bar of the test has only HH:MM, 5 columns): %r" % (g,))
+        self._boot_gone()
+        self.shot("desktop-look-3")
+
+    def test_look_3_keeps_the_microphone_there_without_a_panel_and_the_others_go_back_to_the_corner(self):
+        g = self._desktop_look("3", panel=False)
+        self.assertEqual(g["pos"], "3", "the bar of tabs is always there")
+        for look in ("1", "4"):
+            g = self._desktop_look(look, panel=False)
+            self.assertIsNone(g["pos"], "no panel: the corner for look %s" % look)
+
+    def test_look_4_hangs_the_microphone_on_the_left_edge_of_the_panel(self):
+        g = self._desktop_look("4")
+        m = g["mic"]
+        self.assertEqual(g["pos"], "4")
+        panel_left = g["right"] - 40 * g["cellW"]
+        self.assertLessEqual(m["right"], panel_left + 1, "outside the panel, by its edge: %r" % (g,))
+        self.assertGreater(m["right"], panel_left - 12, "close to it: %r" % (g,))
+        self.assertLess(abs((m["top"] + m["bottom"]) / 2 - (g["top"] + g["rowH"] / 2)), 1.5, "centred on the head line (it is a little taller than the line): %r" % (g,))
+        self._boot_gone()
+        self.shot("desktop-look-4")
 
     def test_a_wide_window_keeps_the_usual_look_of_the_sysop(self):
         self._drawer("desktop")

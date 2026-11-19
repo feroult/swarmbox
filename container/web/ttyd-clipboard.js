@@ -267,20 +267,43 @@
     try { paintSheet(seen); placeMic(seen); } catch (e) { /* the looks are only paint */ }
   }
 
-  // The controls of a desktop with only a microphone float in the top right corner. When the panel of the sysop is docked at the right edge (a wide window) its head is
-  // there too, so the microphone goes INTO the head: the head of that panel is a bar three lines high, and the microphone is centred in it, as tall as the bar leaves room for.
+  // ---- the microphone of a desktop, in the head of the sysop panel (to compare: ?look=1 .. 5; ?look=0 or none: the corner, as it was) ---------------------------------
+  // The controls of a desktop with only a microphone float in the top right corner, which is where the head of the sysop panel (docked at the right edge of a wide
+  // window) is. The looks put it somewhere else, and the panel is the same one as on a phone: a bar of one line, a blank line under it.
+  //   1  a small chip in the head line, at the right      2  only the icon, in the head line      3  only the icon, at the right end of the bar of tabs, by the clock
+  //   4  a handle on the left edge of the panel, at the head line      5  as 1, and the tint and the fine line of the phone's drawer under the panel
+  // The choice is kept in this browser (localStorage); ?look=0 clears it.
+  var LOOK = '0';
+  try {
+    var asked = /[?&]look=([0-9])/.exec(window.location.search || '');
+    if (asked) { LOOK = asked[1]; try { if (LOOK === '0') window.localStorage.removeItem('swarmbox-look'); else window.localStorage.setItem('swarmbox-look', LOOK); } catch (e) { /* not kept */ } }
+    else { try { LOOK = window.localStorage.getItem('swarmbox-look') || '0'; } catch (e) { LOOK = '0'; } }
+    if (!/^[0-5]$/.test(LOOK)) LOOK = '0';
+    if (LOOK !== '0' && document.documentElement && typeof document.documentElement.setAttribute === 'function') document.documentElement.setAttribute('data-look', LOOK);
+  } catch (e) { LOOK = '0'; }
   function placeMic(seen) {
     var root = document.documentElement, t = window.term;
-    var inHead = root.classList.contains('swarmbox-strip-float') && seen && seen.up && seen.col > 0 && seen.row >= 1 && !inCopyMode() && t && t.element && typeof t.element.querySelector === 'function' && seen.col > t.cols / 2;
-    var screen = inHead ? t.element.querySelector('.xterm-screen') : null;
-    if (!screen) { root.removeAttribute('data-float-head'); return; }
-    // the bar is three lines: one above the title (the row before the word SYSOP), the title, one below. The button is centred on all three, with the same space above,
-    // below and at the right: the right edge of the bar is the right edge of the screen of the terminal (its padding is outside)
-    var rect = screen.getBoundingClientRect(), rowH = rect.height / t.rows, size = Math.max(24, Math.min(44, Math.floor(3 * rowH - 12))), inset = (3 * rowH - size) / 2;
+    function off() { root.removeAttribute('data-float-pos'); }
+    if (LOOK === '0' || !root.classList.contains('swarmbox-strip-float') || !t || !t.element || typeof t.element.querySelector !== 'function') return off();
+    var screen = t.element.querySelector('.xterm-screen');
+    if (!screen) return off();
+    var rect = screen.getBoundingClientRect(), rowH = rect.height / t.rows, cellW = rect.width / t.cols, vw = window.innerWidth;
+    var right = !!(seen && seen.up) && seen.col > t.cols / 2 && !inCopyMode();      // the panel of the sysop is docked at the right edge
+    var size = Math.max(18, Math.floor(rowH - 4)), top, edge;      // edge: the distance of the right edge of the button from the right edge of the window
+    if (LOOK === '3') {      // the right end of the bar of tabs (the last line), to the left of the date and the clock
+      var last = rowText(t.rows - 1), m = /\s{2,}(\S.*)$/.exec(last), clock = m ? m[1].length : 0;
+      top = rect.top + (t.rows - 1) * rowH + (rowH - size) / 2; edge = vw - rect.right + (clock + 2) * cellW;
+    } else if (!right) return off();
+    else if (LOOK === '4') {      // on the left edge of the panel, hanging out of it
+      size = Math.max(22, Math.floor(rowH * 1.4));
+      top = rect.top + seen.row * rowH + (rowH - size) / 2; edge = vw - (rect.left + (seen.col - 1) * cellW) + 6;
+    } else {      // 1, 2, 5: inside the head line, at its right end
+      top = rect.top + seen.row * rowH + (rowH - size) / 2; edge = vw - rect.right + Math.max(6, (rowH - size) / 2);
+    }
     root.style.setProperty('--sb-float-btn', size + 'px');
-    root.style.setProperty('--sb-float-top', Math.round((rect.top + (seen.row - 1) * rowH + inset) * 10) / 10 + 'px');
-    root.style.setProperty('--sb-float-right', Math.round((window.innerWidth - rect.right + inset) * 10) / 10 + 'px');
-    root.setAttribute('data-float-head', '1');
+    root.style.setProperty('--sb-float-top', Math.round(top * 10) / 10 + 'px');
+    root.style.setProperty('--sb-float-right', Math.round(edge * 10) / 10 + 'px');
+    root.setAttribute('data-float-pos', LOOK);
   }
 
   // ---- the sysop drawer on a phone -----------------------------------------------------------------------------------------------------
@@ -294,7 +317,7 @@
     return line ? line.translateToString(true) : '';
   }
   function paintSheet(seen) {
-    var root = document.documentElement, on = phone();
+    var root = document.documentElement, on = phone() || LOOK === '5';
     if (on) root.setAttribute('data-phone-look', '1'); else root.removeAttribute('data-phone-look');
     if (!document.body || typeof document.createElement !== 'function' || (!on && !sheetEl)) return;
     var t = window.term;
@@ -308,9 +331,10 @@
     if (!screen) { sheetEl.style.display = 'none'; ruleEl.style.display = 'none'; root.setAttribute('data-sheet', '0'); return; }
     var rect = screen.getBoundingClientRect(), box = document.getElementById('terminal-container'), wide = box ? box.getBoundingClientRect() : rect;      // wide: the whole width, its padding too
     var rowH = rect.height / t.rows, dpr = window.devicePixelRatio || 1, hair = Math.max(1, Math.round(dpr)) / dpr, top = rect.top + seen.row * rowH;
+    var docked = seen.col > t.cols / 2, cellW = rect.width / t.cols, from = docked ? rect.left + (seen.col - 1) * cellW : wide.left, span = docked ? wide.left + wide.width - from : wide.width;      // docked at the right: only the panel
     var border = seen.row > 0 && /^[\u2500\u2501]{8}/.test(rowText(seen.row - 1));      // the border row of tmux above the head of the panel
     root.style.setProperty('--sb-hair', hair + 'px');
-    sheetEl.style.display = 'block'; sheetEl.style.left = wide.left + 'px'; sheetEl.style.width = wide.width + 'px'; sheetEl.style.top = top + 'px';
+    sheetEl.style.display = 'block'; sheetEl.style.left = from + 'px'; sheetEl.style.width = span + 'px'; sheetEl.style.top = top + 'px';
     sheetEl.style.height = Math.max(0, wide.bottom - top) + 'px'; sheetEl.style.setProperty('--sb-headrow', (rowH - hair) + 'px');      // the dim line under the head
     root.setAttribute('data-sheet', '1');
     if (!border) { ruleEl.style.display = 'none'; return; }
