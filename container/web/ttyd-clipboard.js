@@ -282,8 +282,10 @@
     oskBtn = el('button', 'sb-btn sb-osk');      // the one way to the keyboard of the phone: it is not opened by a tap on the screen (see "the keyboard of the phone")
     oskBtn.type = 'button';
     oskBtn.textContent = 'Aa';
-    oskBtn.setAttribute('aria-label', 'Open the keyboard of the phone');
-    oskBtn.title = 'Open the keyboard of the phone';
+    oskBtn.setAttribute('aria-label', 'Keyboard of the phone');
+    oskBtn.setAttribute('aria-pressed', 'false');
+    oskBtn.setAttribute('data-on', '0');
+    oskBtn.title = 'Open or close the keyboard of the phone';
     keepFocus(oskBtn);
     oskBtn.addEventListener('click', openPhoneKeyboard);
     keysEl.appendChild(oskBtn);
@@ -685,31 +687,68 @@
   // on the textarea a focus never shows the keyboard, and navigator.virtualKeyboard.show() does. Where there is none (Safari, Firefox) the textarea is marked
   // inputmode="none" (it takes the focus, the key buttons and a hardware keyboard type into it, and no keyboard shows), "Aa" makes it a text one for as long as that keyboard
   // is open, and the page puts it back when the keyboard goes away (the window gets its height back, or the textarea loses the focus).
-  var oskOpen = false, oskHeight = 0, oskAt = 0;
+  var oskOpen = false, oskHeight = 0, oskAt = 0, oskTry = 0;
   function vkApi() { try { return navigator.virtualKeyboard && typeof navigator.virtualKeyboard.show === 'function' ? navigator.virtualKeyboard : null; } catch (e) { return null; } }
   function inputBox() { var t = window.term; if (t && t.textarea) return t.textarea; try { return document.querySelector('.xterm-helper-textarea'); } catch (e) { return null; } }
   function setInputMode(mode) { var ta = inputBox(); if (ta && ta.getAttribute('inputmode') !== mode) ta.setAttribute('inputmode', mode); }
-  function openPhoneKeyboard() {
-    var ta = inputBox(), vk = vkApi();
-    if (!ta) return;
-    if (vk) { ta.focus(); try { vk.show(); } catch (e) { /* not now */ } return; }
-    ta.blur();      // a focus that is already there does not bring the keyboard: take it (before oskOpen, or its own blur would close what is being opened) and give it again
-    oskOpen = true;
+  function vkHeight() { try { return Math.round(navigator.virtualKeyboard.boundingRect.height); } catch (e) { return -1; } }      // -1: cannot be told
+  // "Aa" is a switch: lit while the keyboard of the phone is open, and it says what is true (the page hears the keyboard come and go).
+  function oskShow(on) {
+    oskOpen = on;
+    if (oskBtn) { oskBtn.setAttribute('data-on', on ? '1' : '0'); oskBtn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  }
+  function openByInputMode(ta) {
+    ta.blur();      // a focus that is already there does not bring the keyboard: take it and give it again
     oskAt = Date.now();
     oskHeight = window.innerHeight;
     ta.setAttribute('inputmode', 'text');
     setTimeout(function () { ta.focus(); }, 30);
   }
-  function closePhoneKeyboard() { oskOpen = false; setInputMode('none'); }
+  function openPhoneKeyboard() {
+    var ta = inputBox(), vk = vkApi();
+    if (!ta) return;
+    if (oskOpen) { closePhoneKeyboard(); return; }      // the second tap closes it
+    oskShow(true);
+    oskAt = Date.now();
+    var my = ++oskTry;
+    if (!vk) { openByInputMode(ta); return; }
+    // Chrome: focus the terminal's textarea and ask for the keyboard. If it has not come in 0.4 s (a focus that was already there), once more with a fresh focus, and if that fails
+    // too the textarea is made a plain text one (inputmode, no manual policy) and focused: the old way, for as long as the keyboard is open.
+    ta.focus();
+    try { vk.show(); } catch (e) { /* tried again below */ }
+    setTimeout(function () {
+      if (my !== oskTry || !oskOpen || vkHeight() !== 0) return;
+      ta.blur(); ta.focus();
+      try { vk.show(); } catch (e) { /* tried again below */ }
+      setTimeout(function () {
+        if (my !== oskTry || !oskOpen || vkHeight() !== 0) return;
+        ta.setAttribute('virtualkeyboardpolicy', 'auto');
+        try { ta.virtualKeyboardPolicy = 'auto'; } catch (e) { /* the attribute is enough */ }
+        openByInputMode(ta);
+        setTimeout(function () { if (my === oskTry && oskOpen && vkHeight() === 0 && window.innerHeight >= oskHeight - 2) oskShow(false); }, 1200);      // nothing worked: the button says so
+      }, 450);
+    }, 400);
+  }
+  function closePhoneKeyboard() {
+    oskTry++;
+    oskShow(false);
+    var ta = inputBox(), vk = vkApi();
+    if (vk && ta && ta.getAttribute('virtualkeyboardpolicy') === 'manual') { try { vk.hide(); } catch (e) { /* closed already */ } }
+    else setInputMode('none');
+    if (ta && ta.getAttribute('virtualkeyboardpolicy') !== 'manual') { ta.setAttribute('virtualkeyboardpolicy', 'manual'); try { ta.virtualKeyboardPolicy = 'manual'; } catch (e) { /* attribute */ } }
+  }
   function watchInputMode() {
     var ta = inputBox();
     if (!ta) return false;
     if (!coarse.matches) return true;      // a computer: nothing to turn off
     if (ta.getAttribute('data-sbosk') === '1') return true;
     ta.setAttribute('data-sbosk', '1');
-    if (vkApi()) {
+    var vk = vkApi();
+    if (vk) {
       ta.setAttribute('virtualkeyboardpolicy', 'manual');
       try { ta.virtualKeyboardPolicy = 'manual'; } catch (e) { /* the attribute is enough */ }
+      // the switch follows the real keyboard: closed with the back button of the phone, it goes out
+      if (vk.addEventListener) vk.addEventListener('geometrychange', function () { var h = vkHeight(); if (h > 0) oskShow(true); else if (h === 0 && Date.now() - oskAt > 600) oskShow(false); });
       return true;
     }
     ta.setAttribute('inputmode', 'none');

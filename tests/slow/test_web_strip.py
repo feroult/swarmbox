@@ -741,6 +741,11 @@ class PhoneKeyboard(StripCase):
         time.sleep(0.3)
         self.assertEqual(self.page.js("window.__vk"), ["show"], "the Aa button asks for it")
         self.assertEqual(self.page.js("document.activeElement === document.querySelector('.xterm-helper-textarea')"), True)
+        self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-osk').dataset.on"), "1", "and is lit: it is a switch")
+        self.page.js("document.querySelector('#swarmbox-strip .sb-osk').click()")
+        time.sleep(0.2)
+        self.assertEqual(self.page.js("window.__vk"), ["show", "hide"], "the second tap closes it")
+        self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-osk').dataset.on"), "0")
 
     def test_without_that_api_the_textarea_is_inputmode_none_until_the_button_opens_it(self):
         self.open(viewport="phone-portrait", command="bash --norc", init_script=self.NO_VK)
@@ -751,11 +756,18 @@ class PhoneKeyboard(StripCase):
         self.assertEqual(self.page.js("document.activeElement === document.querySelector('.xterm-helper-textarea')"), True, "the focus is there: the key buttons and a keyboard of hardware still type")
         self.page.js("document.querySelector('#swarmbox-strip .sb-osk').click()")
         self.assertTrue(wait_until(lambda: self.attr("inputmode") == "text", 3, 0.1), "the Aa button opens it")
+        self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-osk').dataset.on"), "1", "and is lit")
         time.sleep(0.2)
         self.assertEqual(self.page.js("document.activeElement === document.querySelector('.xterm-helper-textarea')"), True)
         time.sleep(0.4)
+        self.page.js("document.querySelector('#swarmbox-strip .sb-osk').click()")
+        self.assertTrue(wait_until(lambda: self.attr("inputmode") == "none", 4, 0.1), "the second tap closes it: none again")
+        self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-osk').dataset.on"), "0")
+        self.page.js("document.querySelector('#swarmbox-strip .sb-osk').click()")
+        time.sleep(0.6)
         self.page.js("document.querySelector('.xterm-helper-textarea').blur()")
-        self.assertTrue(wait_until(lambda: self.attr("inputmode") == "none", 4, 0.1), "and when the keyboard goes away it is none again")
+        self.assertTrue(wait_until(lambda: self.attr("inputmode") == "none", 4, 0.1), "and when the keyboard goes away by itself it is none again")
+        self.assertEqual(self.page.js("document.querySelector('#swarmbox-strip .sb-osk').dataset.on"), "0")
 
     def test_a_computer_keeps_its_textarea_as_it_was(self):
         self.open(viewport="desktop", command="bash --norc")

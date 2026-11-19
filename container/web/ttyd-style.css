@@ -129,6 +129,7 @@ html.swarmbox-strip-float #swarmbox-strip .sb-note {
 /* the button of the keyboard of the phone ("Aa"), the last of the key buttons: a tall one at the right of the grid, the eighth key of the compact row */
 #swarmbox-strip .sb-osk { font-size: 15px; letter-spacing: .02em; background: transparent; border-color: rgba(167, 139, 250, .5); color: var(--sb-lavender); }
 #swarmbox-strip .sb-osk:active { background: rgba(109, 40, 217, .35); }
+#swarmbox-strip .sb-osk[data-on="1"] { background: rgba(109, 40, 217, .45); border-color: var(--sb-violet); color: #fff; box-shadow: 0 0 10px rgba(167, 139, 250, .45); }
 #swarmbox-strip .sb-keys[data-grid="default"][data-osk="1"] { grid-template-columns: repeat(5, minmax(0, 1fr)) var(--sb-btn); }
 #swarmbox-strip .sb-keys[data-grid="default"] > .sb-osk { grid-column: 6; grid-row: 1 / span 2; padding: 0; min-width: 0; width: 100%; }
 #swarmbox-strip[data-compact="keys"] .sb-keys[data-grid="default"][data-osk="1"] { grid-template-columns: repeat(7, minmax(0, 1fr)) var(--sb-btn); }
