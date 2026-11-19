@@ -911,13 +911,19 @@ class Toast(StripCase):
         time.sleep(1.0)
         self.assertIsNone(self.page.js("document.documentElement.getAttribute('data-float-head')"), "no panel: the microphone stays in the corner")
         corner = self.page.js("Math.round(document.getElementById('swarmbox-strip').getBoundingClientRect().top)")
-        col = self.page.js("term.cols") - 20
-        self.t.type("clear; printf '\\033[1;%dH\\033[1;38;2;167;139;250mSYSOP\\033[0m  idle\\n'\r" % col)
+        cols = self.page.js("term.cols")
+        col = cols - 39      # the panel is 40 columns at the right edge: its head is a bar of two lines
+        bar = "\\033[48;2;42;26;82m"
+        self.t.type("clear; printf '\\033[1;%dH%s \\033[1;38;2;167;139;250mSYSOP\\033[0m%s  idle%s\\033[0m\\033[2;%dH%s%s\\033[0m\\033[3;%dH  the goal of the sysop, a few words\\n'\r"
+                    % (col, bar, bar, " " * 29, col, bar, " " * 40, col))
         self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.getAttribute('data-float-head')") == "1", 8, 0.2), "the microphone moves into the head")
-        g = self.page.js("(() => { const s = document.querySelector('.xterm-screen').getBoundingClientRect(), r = document.getElementById('swarmbox-strip').getBoundingClientRect(), b = document.querySelector('#demo-mic, [id=demo-mic]').getBoundingClientRect(); return { rowH: s.height / term.rows, top: s.top, mic: [b.top, b.bottom, b.height, b.width], right: innerWidth - b.right }; })()")
+        g = self.page.js("(() => { const s = document.querySelector('.xterm-screen').getBoundingClientRect(), r = document.getElementById('swarmbox-strip').getBoundingClientRect(), b = document.querySelector('#demo-mic, [id=demo-mic]').getBoundingClientRect(); return { rowH: s.height / term.rows, top: s.top, screenRight: s.right, mic: [b.top, b.bottom, b.height, b.right], right: innerWidth - b.right }; })()")
         self.assertGreaterEqual(g["mic"][0], g["top"] - 0.5, "not above the bar: %r" % (g,))
         self.assertLessEqual(g["mic"][1], g["top"] + 2 * g["rowH"] + 0.5, "inside the two lines of the bar, not over the text under it: %r" % (g,))
+        above, below, right = g["mic"][0] - g["top"], g["top"] + 2 * g["rowH"] - g["mic"][1], g["screenRight"] - g["mic"][3]
+        self.assertLess(max(above, below, right) - min(above, below, right), 1.5, "the same space above, below and at the right of the button: %r" % ((above, below, right),))
         self.assertGreaterEqual(g["mic"][2], 24, "still a button a pointer can hit")
+        self.shot("desktop-bar-and-microphone")
         self.t.type("clear\r")
         self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.getAttribute('data-float-head')") is None, 8, 0.2), "the panel is gone: the microphone goes back to the corner")
         self.assertEqual(self.page.js("Math.round(document.getElementById('swarmbox-strip').getBoundingClientRect().top)"), corner)

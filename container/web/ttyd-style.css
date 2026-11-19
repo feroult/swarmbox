@@ -116,9 +116,9 @@ html.swarmbox-strip-float #swarmbox-strip .sb-note {
   padding: 8px 10px; border-radius: 10px; border: 1px solid var(--sb-band); box-shadow: 0 2px 12px rgba(0, 0, 0, .5);
 }
 /* the panel of the sysop is docked at the right and has a bar two lines high: the microphone is centred in it (placeMic in ttyd-clipboard.js sets the two variables) */
-html.swarmbox-strip-float[data-float-head] #swarmbox-strip { top: var(--sb-float-top); --sb-btn: var(--sb-float-btn); }
-html.swarmbox-strip-float[data-float-head] #swarmbox-strip .sb-btn { border-radius: 8px; }
-html.swarmbox-strip-float[data-float-head] #swarmbox-strip .sb-note { top: calc(var(--sb-float-top) + var(--sb-float-btn) + 8px); }
+html.swarmbox-strip-float[data-float-head] #swarmbox-strip { top: var(--sb-float-top); right: var(--sb-float-right); --sb-btn: var(--sb-float-btn); }
+html.swarmbox-strip-float[data-float-head] #swarmbox-strip .sb-btn { border-radius: 8px; background: rgba(196, 181, 253, .14); border-color: rgba(196, 181, 253, .38); color: var(--sb-lavender); }      /* a chip of the bar: its colour, a little lighter */
+html.swarmbox-strip-float[data-float-head] #swarmbox-strip .sb-note { top: calc(var(--sb-float-top) + var(--sb-float-btn) + 8px); right: var(--sb-float-right); }
 /* the sentence an addon shows: it covers the key buttons until the addon clears it or the host does (12 s, opaque, tap to dismiss), on two lines at most and ends where the addon controls begin */
 #swarmbox-strip .sb-note {
   position: absolute; z-index: 2; top: 0; bottom: 0; left: 0; right: var(--sb-slot-w, 0px); display: flex; align-items: center;

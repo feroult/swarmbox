@@ -274,9 +274,11 @@
     var inHead = root.classList.contains('swarmbox-strip-float') && seen && seen.up && seen.col > 0 && !inCopyMode() && t && t.element && typeof t.element.querySelector === 'function' && seen.col > t.cols / 2;
     var screen = inHead ? t.element.querySelector('.xterm-screen') : null;
     if (!screen) { root.removeAttribute('data-float-head'); return; }
-    var rect = screen.getBoundingClientRect(), rowH = rect.height / t.rows, size = Math.max(24, Math.min(40, Math.floor(2 * rowH - 6)));
+    var rect = screen.getBoundingClientRect(), rowH = rect.height / t.rows, size = Math.max(24, Math.min(40, Math.floor(2 * rowH - 6))), inset = (2 * rowH - size) / 2;
+    // the same space above, below and at the right of the button: the right edge of the bar is the right edge of the screen of the terminal (its padding is outside)
     root.style.setProperty('--sb-float-btn', size + 'px');
-    root.style.setProperty('--sb-float-top', Math.round(rect.top + seen.row * rowH + (2 * rowH - size) / 2) + 'px');
+    root.style.setProperty('--sb-float-top', Math.round((rect.top + seen.row * rowH + inset) * 10) / 10 + 'px');
+    root.style.setProperty('--sb-float-right', Math.round((window.innerWidth - rect.right + inset) * 10) / 10 + 'px');
     root.setAttribute('data-float-head', '1');
   }
 
