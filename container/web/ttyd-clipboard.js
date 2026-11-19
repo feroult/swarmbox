@@ -701,43 +701,62 @@
   function rgb(c) { return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
   function lighten(c, q) { return c.map(function (v) { return Math.round(v + (255 - v) * q / 4); }); }      // q quarters of the way to white
   var bootEl = null, bootCells = [], bootGlint = 0, bootFrame = 0;
+  // The letters are drawn as rectangles of an SVG, never as the block glyphs of a font: a font draws them with its own line height and anti-aliasing (a seam between two
+  // rows, soft edges), while a terminal draws them pixel exact. One half block is a square of whole device pixels here (u), so the letters are as sharp as in banner.sh.
+  var SVG_NS = 'http://www.w3.org/2000/svg';
   function buildBoot() {
     var root = document.documentElement;
-    if (!root || typeof root.appendChild !== 'function' || typeof document.createElement !== 'function') return;
-    var W = BANNER[0].length, base = [], pre = document.createElement('pre'), rows = [];
+    if (!root || typeof root.appendChild !== 'function' || typeof document.createElement !== 'function' || typeof document.createElementNS !== 'function') return;
+    var W = BANNER[0].length, base = [];
     for (var j = 0; j < W; j++) base.push(gradientAt(j, W, GRADIENT));
+    var svg = document.createElementNS(SVG_NS, 'svg'), bar = [];
+    svg.setAttribute('viewBox', '0 0 ' + W + ' 10');                 // one unit = one half block (a square); fit() sets the size in whole device pixels
+    svg.setAttribute('shape-rendering', 'crispEdges');
+    var title = document.createElementNS(SVG_NS, 'title'); title.textContent = BANNER.join('\n'); svg.appendChild(title);
+    function rect(x, y, w, h, row, col) {
+      var r = document.createElementNS(SVG_NS, 'rect');
+      r.setAttribute('x', String(x)); r.setAttribute('y', String(y)); r.setAttribute('width', String(w)); r.setAttribute('height', String(h));
+      r.setAttribute('fill', rgb(base[col]));
+      svg.appendChild(r);
+      bootCells.push({ el: r, row: row, col: col, base: base[col] });
+      return r;
+    }
     BANNER.forEach(function (row, i) {
-      var line = document.createElement('div');
-      for (var j = 0; j < W; j++) {
-        var ch = row.charAt(j);
-        if (ch === ' ') { line.appendChild(document.createTextNode(' ')); continue; }
-        var sp = document.createElement('span');
-        sp.textContent = ch;
-        sp.style.color = rgb(base[j]);
-        line.appendChild(sp);
-        bootCells.push({ el: sp, row: i, col: j, base: base[j] });
+      for (var c = 0; c < W; c++) {
+        var ch = row.charAt(c);
+        if (ch === '\u2588') rect(c, i * 2, 1, 2, i, c);
+        else if (ch === '\u2580') rect(c, i * 2, 1, 1, i, c);
+        else if (ch === '\u2584') rect(c, i * 2 + 1, 1, 1, i, c);
       }
-      rows.push(line);
     });
-    var bar = document.createElement('div'), col = 0;
+    var col = 0;
     BAR_SEGMENTS.forEach(function (n) {
-      for (var j = 0; j < n; j++) { var sp = document.createElement('span'); sp.textContent = '━'; sp.style.color = rgb(base[col + j]); bar.appendChild(sp); bootCells.push({ el: sp, row: 3, col: col + j, base: base[col + j] }); }
-      bar.appendChild(document.createTextNode(' '));
+      for (var k = 0; k < n; k++) bar.push(rect(col + k, 9, 1, 0.3, 3, col + k));
       col += n + 1;
     });
-    var sig = document.createElement('div'), last = SIGNATURE.slice(SIGNATURE.lastIndexOf(' ') + 1), lead = SIGNATURE.slice(0, SIGNATURE.lastIndexOf(' ') + 1);
-    sig.style.paddingLeft = Math.max(0, W - SIGNATURE.length) + 'ch';
-    var a = document.createElement('span'); a.textContent = '// '; a.style.color = '#585858'; sig.appendChild(a);
-    var b = document.createElement('span'); b.textContent = lead.slice(3); b.style.color = '#767676'; sig.appendChild(b);
-    for (var k = 0; k < last.length; k++) { var c = document.createElement('span'); c.textContent = last.charAt(k); c.style.color = rgb(gradientAt(k, last.length, ['a1a1aa', '3f3f46'])); sig.appendChild(c); }
-    pre.appendChild(rows[0]); pre.appendChild(rows[1]); pre.appendChild(rows[2]);
-    var gap = document.createElement('div'); gap.textContent = ' '; pre.appendChild(gap);
-    pre.appendChild(bar); pre.appendChild(sig);
+    var pre = document.createElement('pre'), last = SIGNATURE.slice(SIGNATURE.lastIndexOf(' ') + 1), lead = SIGNATURE.slice(0, SIGNATURE.lastIndexOf(' ') + 1);
+    pre.style.textAlign = 'right';
+    var a = document.createElement('span'); a.textContent = '// '; a.style.color = '#585858'; pre.appendChild(a);
+    var b = document.createElement('span'); b.textContent = lead.slice(3); b.style.color = '#767676'; pre.appendChild(b);
+    for (var q = 0; q < last.length; q++) { var c2 = document.createElement('span'); c2.textContent = last.charAt(q); c2.style.color = rgb(gradientAt(q, last.length, ['a1a1aa', '3f3f46'])); pre.appendChild(c2); }
+    var box = document.createElement('div');
+    box.appendChild(svg); box.appendChild(pre);
     bootEl = document.createElement('div');
     bootEl.id = 'sb-boot';
     bootEl.setAttribute('aria-hidden', 'true');
-    bootEl.appendChild(pre);
+    bootEl.appendChild(box);
     root.appendChild(bootEl);
+    // the size: in the head the width of a phone is still the 980 px of a page without a viewport meta, so it is measured again when the page has its viewport
+    function fit() {
+      var dpr = window.devicePixelRatio || 1, wide = root.clientWidth || window.innerWidth || 360, u = Math.floor(Math.min(Math.max(240, wide - 28) / W, 14) * dpr) / dpr;
+      if (!(u > 1)) u = 4;
+      svg.setAttribute('width', String(W * u)); svg.setAttribute('height', String(10 * u));
+      var t = Math.max(2 / dpr, Math.round(u * 0.3 * dpr) / dpr) / u, y = 9 + (1 - t) / 2;
+      bar.forEach(function (r) { r.setAttribute('height', String(t)); r.setAttribute('y', String(y)); });
+      pre.style.width = (W * u) + 'px'; pre.style.fontSize = Math.max(10, Math.round(u * 1.5)) + 'px'; pre.style.marginTop = u + 'px';
+    }
+    fit();
+    try { document.addEventListener('DOMContentLoaded', fit); window.addEventListener('resize', fit); window.addEventListener('orientationchange', fit); } catch (e) { /* the size stays as it was */ }
     var still = false;
     try { still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { still = false; }
     if (!still) glintLoop();
@@ -749,7 +768,7 @@
       bootCells.forEach(function (c) {
         var d = Math.abs(c.col - (g - Math.min(c.row, 2) * 2)), col = c.base;
         if (g > -50) { if (d === 0) col = [255, 255, 255]; else if (d < 4) col = lighten(c.base, 4 - d); }
-        c.el.style.color = rgb(col);
+        c.el.setAttribute('fill', rgb(col));
       });
     }
     function frame(now) {

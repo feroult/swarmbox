@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Fixed: the lettering of the loading page was soft (a font draws block characters with its own line height and anti-aliasing). The letters are now drawn as squares of whole device pixels (an SVG, one half block each), as sharp as in `banner.sh`, with the same gradient and glint, and sized again when the phone has its viewport.
+
 ## [2.0.16] - 2026-11-18
 
 - Changed: a cleaner sysop on a phone. In a window of 80 columns or fewer (a phone held upright) the operator panel is **closed** by default and the strip under the terminal is **compact**: a **Sysop button** (a light for the state and an arrow that says which way it opens; filled while the panel is open), **one line with what the sysop is doing** (two lines at most; "idle" when it has nothing to do) and the microphone. The key buttons are **one slim row** (Esc, Tab, ^C and the arrows) that opens by itself with the panel, and a ⌨ button shows it when the panel is closed. What needs a yes or a no is a **separate small approval panel** (the risk, the action, a big Allow and a big Cancel) that opens only while an action waits and closes a second after the answer. A wide window (a computer) is as before. The line travels as the title of the terminal (`set-titles on` in `tmux.conf`, the option `@sysop_line`, `sysop:<state>:<sentence>`), which the page reads off the connection, so a reload knows it at once; a terminal that attaches to the session now shows tmux's usual title. A narrow desktop window counts as a phone. Needs `swarmbox update` and `swarmbox reset` (the sysop addon refreshes itself).

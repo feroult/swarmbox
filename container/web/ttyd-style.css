@@ -189,8 +189,10 @@ html.swarmbox-strip-float #swarmbox-strip .sb-note {
 }
 #sb-boot pre {
   margin: 0; color: #a1a1aa; white-space: pre; user-select: none; -webkit-user-select: none;
-  font: 400 clamp(8px, calc((100vw - 28px) / 29.6), 22px)/1.02 var(--sb-font, 'JetBrainsMono Nerd Font', 'JetBrainsMono NF', 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace);
+  font-family: var(--sb-font, 'JetBrainsMono Nerd Font', 'JetBrainsMono NF', 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace);
+  font-size: 12px; line-height: 1.2;
 }
+#sb-boot svg { display: block; shape-rendering: crispEdges; }
 html.swarmbox-ready #sb-boot { opacity: 0; visibility: hidden; }
 @keyframes sb-boot-in { from { opacity: .0; } to { opacity: 1; } }
 @keyframes sb-boot-out { to { opacity: 0; visibility: hidden; } }
