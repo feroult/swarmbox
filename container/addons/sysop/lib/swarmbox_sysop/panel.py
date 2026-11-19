@@ -20,6 +20,7 @@ import errno
 import os
 import select
 import signal
+import subprocess
 import sys
 import termios
 import time
@@ -33,6 +34,7 @@ GUARD = 0.5             # seconds after a new pending action appears in which ke
 ESC_WAIT = 0.05         # a lone ESC is a key when nothing follows within this long
 POLL = 0.2              # seconds between two looks at the files while something happens (a goal, a countdown, you typing)
 IDLE_POLL = 1.0         # idle: once a second only a stat of two files and a lock probe; the files are read when one of them changed
+WEB_EVERY = 2.0          # seconds between two looks at the clients of tmux to tell the browser from a terminal
 MAX_EDIT = service.MAX_GOAL_TEXT
 GOAL_LINES = 3
 HEAD_GAP_ROWS = 7       # a panel of a phone this tall (or taller) has a blank line under its head
@@ -661,9 +663,53 @@ def render_approval(model, cols, rows, wall, color=True):
     return Frame(out + big, None, hits)
 
 
-def render(model, cols, rows, wall, color=True, closer=False):
+WEB_MARK = b"SWARMBOX_WEB=1"      # in the environment of the tmux client that swarmbox-attach --web (the browser) starts
+WEB_PARENT = "ttyd"                # and the parent of that client is ttyd (the older script did not set the mark)
+
+
+def latest_client_is_web(listing, is_web):
+    """Whether the client that used the window last is the browser. `listing`: the output of `tmux list-clients -F '#{client_activity} #{client_pid}'`;
+    `is_web(pid)`: True for a browser, False for a terminal, None when it cannot be told. None when there is no client or it cannot be told."""
+    best = None
+    for line in listing.splitlines():
+        try:
+            act, pid = (int(x) for x in line.split())
+        except ValueError:
+            continue
+        if best is None or act > best[0]:
+            best = (act, pid)
+    return None if best is None else is_web(best[1])
+
+
+def _proc_web(pid):
+    """The browser's client: the environment has the mark, or ttyd is its parent. False for a terminal's client; None when /proc says nothing."""
+    try:
+        with open("/proc/%d/environ" % pid, "rb") as f:
+            if WEB_MARK in f.read().split(b"\0"):
+                return True
+        with open("/proc/%d/stat" % pid) as f:
+            ppid = int(f.read().rsplit(")", 1)[1].split()[1])      # after the name between parentheses: state, ppid, ...
+        with open("/proc/%d/comm" % ppid) as f:
+            return f.read().strip() == WEB_PARENT
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def web_attached():
+    """True when the browser used the window last (the page draws the bar of buttons of the panel), False when a terminal did, None when it cannot be told."""
+    if not os.environ.get("TMUX"):      # a panel is in a pane of tmux, which says where its server is; elsewhere (a test) there is nothing to ask
+        return None
+    try:
+        out = subprocess.run(["tmux", "list-clients", "-F", "#{client_activity} #{client_pid}"], capture_output=True, text=True, timeout=1).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return latest_client_is_web(out, _proc_web)
+
+
+def render(model, cols, rows, wall, color=True, closer=False, web=True):
     """The screen as a Frame of exactly `rows` lines: the state, the goal, the steps, and at the bottom what needs you (a bar, the action, buttons).
-    `closer`: the panel of a narrow window (a phone) has a close control at the right end of its head line: a hit on the key q."""
+    `closer`: the panel of a narrow window (a phone) has a close control at the right end of its head line: a hit on the key q.
+    `web`: the tall panel of a desktop leaves room for the bar of buttons that the web page draws under the title; a terminal has no page, so it gets one blank line."""
     cols, rows = max(16, cols), max(4, rows)
     W = cols - 2
     word, name = state_of(model)
@@ -708,7 +754,7 @@ def render(model, cols, rows, wall, color=True, closer=False):
     # Room under the head when the panel is tall enough to spare it. On a phone one blank line (the content is not stuck to the title). On a desktop, in the tall narrow
     # panel at the right edge, STRIP_ROWS blank lines: a bar of buttons (two lines) that the web page fills (the microphone now, more later) and a line of space under it
     # (ttyd-clipboard.js, paintPanel).
-    gap = (1 if rows >= HEAD_GAP_ROWS else 0) if closer else (STRIP_ROWS if rows >= WIDE_GAP_ROWS and cols <= WIDE_COLS else 0)
+    gap = (1 if rows >= HEAD_GAP_ROWS else 0) if closer else ((STRIP_ROWS if web else 1) if rows >= WIDE_GAP_ROWS and cols <= WIDE_COLS else 0)
 
     def total():
         return len(top) + len(pend_l) + len(notice_l) + len(prompt_l) + (1 if buttons else 0)
@@ -782,6 +828,7 @@ class Panel:
         self.focus_at = None          # when the pane got the focus (a click that gave it the focus is not a click on a button)
         self.last_gid = None
         self.drawn = None
+        self._web, self._web_at = True, None      # whether the browser used the window last, and when that was looked at
         self.wake_r, self.wake_w = os.pipe()
         for fd in (self.wake_r, self.wake_w):
             os.set_blocking(fd, False)
@@ -828,6 +875,14 @@ class Panel:
         self.sig = sig
         return True
 
+    def web(self):
+        """Whether the browser used the window last (a look at the clients of tmux every WEB_EVERY seconds); when it cannot be told, yes (the usual case, a bar of buttons the page may fill)."""
+        now = self.now()
+        if self._web_at is None or now - self._web_at >= WEB_EVERY:
+            self._web_at, seen = now, web_attached()
+            self._web = True if seen is None else seen
+        return self._web
+
     def look(self):
         snap = snapshot(self.paths, self.last_gid)
         if snap.up:
@@ -847,7 +902,7 @@ class Panel:
         if self.approval:
             frame = render_approval(self.model, cols, rows, self.wall(), self.color)
         else:
-            frame = render(self.model, cols, rows, self.wall(), self.color, closer=os.environ.get(dock.COMPACT_ENV) == "1")
+            frame = render(self.model, cols, rows, self.wall(), self.color, closer=os.environ.get(dock.COMPACT_ENV) == "1", web=self.web())
         sig = (cols, rows, tuple(frame.lines), frame.cursor)
         if sig == self.drawn and not force:
             return

@@ -346,6 +346,55 @@ class CloseControl(unittest.TestCase):
                 self.assertNotIn(band, "".join(f.lines[1:4]), "they are not lines of the bar: the page draws that strip")
                 self.assertNotEqual(strip_ansi(f.lines[4]).strip(), "", "the content follows: %r" % f.lines[:5])
 
+    def test_a_terminal_gets_one_blank_line_under_the_title_and_the_browser_gets_room_for_the_bar_of_buttons(self):
+        for rows in (14, 30):
+            web = render(model_with(make_goal()), 40, rows, time.time(), color=False, web=True)
+            term = render(model_with(make_goal()), 40, rows, time.time(), color=False, web=False)
+            self.assertEqual(len(web.lines), rows)
+            self.assertEqual(len(term.lines), rows)
+            self.assertEqual([strip_ansi(l).strip() for l in web.lines[1:4]], ["", "", ""], "the browser: three blank lines")
+            self.assertEqual(strip_ansi(term.lines[1]).strip(), "", "a terminal: one blank line")
+            self.assertNotEqual(strip_ansi(term.lines[2]).strip(), "", "and the content: %r" % term.lines[:4])
+        phone = render(model_with(make_goal()), 40, 14, time.time(), color=False, closer=True, web=False)
+        self.assertEqual(strip_ansi(phone.lines[1]).strip(), "", "a phone is the same either way")
+
+    def test_the_client_that_used_the_window_last_tells_the_browser_from_a_terminal(self):
+        from swarmbox_sysop import panel as P
+        kinds = {10: True, 20: False, 30: None}
+        read = kinds.get
+        self.assertTrue(P.latest_client_is_web("100 10\n90 20\n", read), "the browser used it last")
+        self.assertFalse(P.latest_client_is_web("100 10\n190 20\n", read), "a terminal used it last")
+        self.assertIsNone(P.latest_client_is_web("", read), "no client")
+        self.assertIsNone(P.latest_client_is_web("100 30\n", read), "a client that cannot be told")
+        self.assertIsNone(P.latest_client_is_web("garbage\n", read))
+        self.assertFalse(P.latest_client_is_web("100 20\n", read))
+
+    def test_a_process_is_the_browser_by_the_mark_in_its_environment_or_by_ttyd_being_its_parent(self):
+        import subprocess
+        from swarmbox_sysop import panel as P
+        me = os.getpid()
+        self.assertFalse(P._proc_web(me), "this test is no browser (no mark, and its parent is no ttyd)")
+        env = dict(os.environ, SWARMBOX_WEB="1")
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], env=env)
+        try:
+            deadline = time.time() + 5
+            while time.time() < deadline and not P._proc_web(child.pid):
+                time.sleep(0.05)
+            self.assertTrue(P._proc_web(child.pid), "the mark in the environment")
+        finally:
+            child.kill()
+            child.wait()
+        self.assertIsNone(P._proc_web(2 ** 22 + 12345), "a process that is not there: cannot be told")
+
+    def test_outside_tmux_the_panel_does_not_ask_and_keeps_the_room(self):
+        from swarmbox_sysop import panel as P
+        saved = os.environ.pop("TMUX", None)
+        try:
+            self.assertIsNone(P.web_attached())
+        finally:
+            if saved is not None:
+                os.environ["TMUX"] = saved
+
     def test_a_short_panel_or_one_at_the_bottom_of_a_wide_window_has_no_strip_of_buttons(self):
         for cols, rows in ((40, 8), (40, 10), (40, 13), (120, 14), (200, 30)):
             f = render(model_with(make_goal()), cols, rows, time.time(), color=True)

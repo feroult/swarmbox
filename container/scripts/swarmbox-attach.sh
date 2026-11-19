@@ -168,6 +168,7 @@ interactive() {
 # linked into it); the host terminals each have a session of their own without a bar (interactive, above).
 web() {
     ensure_session || die "tmux could not start the session $SESSION"
+    export SWARMBOX_WEB=1      # the tmux client of the browser says so in its environment: the sysop panel looks for it (a terminal gets no bar of buttons, the page draws it)
     exec tmux attach-session -t "=$SESSION"
 }
 

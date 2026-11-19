@@ -117,6 +117,15 @@ class InteractiveAttachFakeTests(FakeTmuxCase):
         self.assertNotIn("status off", flat)
         self.assertNotIn("destroy-unattached", flat)
 
+    def test_the_browser_client_says_so_in_its_environment_and_a_terminal_does_not(self):
+        self.put("windows.txt", "@0|idle|bash|1\n")
+        self.assertEqual(self.run_term(self.fake, ["--web"]).wait(), 0)
+        self.assertEqual(open(os.path.join(self.fake, "attach-env.txt")).read().split(), ["web=1"], "the sysop panel finds the browser by this")
+        os.remove(os.path.join(self.fake, "attach-env.txt"))
+        self.put("windows.txt", "@0|idle|bash|1\n")
+        self.assertEqual(self.run_term(self.fake, []).wait(), 0)
+        self.assertEqual(open(os.path.join(self.fake, "attach-env.txt")).read().split(), ["web="], "a terminal does not")
+
 
 class CommandFakeTests(FakeTmuxCase):
     def setUp(self):

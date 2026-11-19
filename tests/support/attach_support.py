@@ -51,6 +51,8 @@ def save(rows):
 def opt(name):
     return argv[argv.index(name) + 1] if name in argv else None
 sub = argv[0] if argv else ""
+if sub == "attach-session":
+    open(os.path.join(d, "attach-env.txt"), "a").write("web=%s\n" % os.environ.get("SWARMBOX_WEB", ""))
 if sub == "has-session":
     sys.exit(1 if mode("no-session") else 0)
 if sub == "show-options":
