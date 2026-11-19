@@ -302,6 +302,23 @@ class CloseControl(unittest.TestCase):
         self.assertEqual(sorted(h[3] for h in f.hits), ["a", "c", "q"])
         self.assertEqual([h[0] for h in f.hits if h[3] == "q"], [1])
 
+    def test_the_head_of_a_phones_panel_is_a_dark_purple_bar_edge_to_edge(self):
+        band = "\x1b[48;2;42;26;82m"
+        for cols in (30, 40, 64):
+            head = render(model_with(make_goal()), cols, 12, time.time(), color=True, closer=True).lines[0]
+            self.assertTrue(head.startswith(band), "the bar starts with its colour: %r" % head[:30])
+            self.assertEqual(text_width(strip_ansi(head)), cols, "and goes to the right edge")
+            self.assertTrue(head.endswith("\x1b[0m"))
+            self.assertEqual(head.count(band), head.count("\x1b[0m"), "the colour is back after every reset in the line (the words are painted one by one)")
+            self.assertIn("SYSOP", strip_ansi(head))
+            self.assertIn("✕ close", strip_ansi(head))
+
+    def test_the_bar_is_only_for_a_phones_panel_in_colour(self):
+        band = "\x1b[48;2;42;26;82m"
+        self.assertNotIn(band, render(model_with(make_goal()), 60, 12, time.time(), color=True).lines[0], "a wide panel keeps its head")
+        plain = render(model_with(make_goal()), 40, 12, time.time(), color=False, closer=True).lines[0]
+        self.assertNotIn("\x1b", plain, "no colour, no escape")
+
     def test_a_tall_enough_panel_of_a_narrow_window_has_a_blank_line_under_its_head(self):
         for rows in (7, 10, 14):
             f = render(model_with(make_goal()), 40, rows, time.time(), color=False, closer=True)

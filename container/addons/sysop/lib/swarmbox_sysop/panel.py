@@ -42,7 +42,7 @@ LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last on
 TERMINAL = ("done", "stopped", "failed")
 
 PALETTE = {"violet": "a78bfa", "deep": "6d28d9", "lavender": "c4b5fd", "dim": "a1a1aa", "text": "d4d4d8", "red": "ff6b78",
-           "amber": "fbbf24", "green": "4ade80", "line": "52525b", "ink": "0c0b10"}
+           "amber": "fbbf24", "green": "4ade80", "line": "52525b", "ink": "0c0b10", "band": "2a1a52"}
 RESET = "\x1b[0m"
 CLOSE = " ✕ close "      # the close control of the panel of a narrow window; nine cells, a thumb can hit it
 
@@ -674,6 +674,8 @@ def render(model, cols, rows, wall, color=True, closer=False):
     if closer and cols - used >= len(CLOSE) + 2:
         head += " " * (cols - used - len(CLOSE)) + (_paint(color, "dim", CLOSE) if not color else "\x1b[1m" + bg("deep") + fg("lavender") + CLOSE + RESET)
         close_at = (cols - len(CLOSE) + 1, cols)
+    if closer and color:      # the head of a phone's panel is a bar of a dark purple, edge to edge: it stands out and parts the panel from the terminal above it
+        head = bg("band") + head.replace(RESET, RESET + bg("band")) + " " * max(0, cols - text_width(strip_ansi(head))) + RESET
 
     top = []
     g = model.goal
