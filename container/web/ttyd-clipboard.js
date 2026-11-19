@@ -684,13 +684,13 @@
   }
 
   // ---- the page while it loads: the banner of the box, in the style of a 90s BBS login screen -----------------------------------------
-  // The same lettering as container/scripts/banner.sh (half blocks and a segmented bar, no tagline), drawn pixel exact, with the same gradient (dark gray and
+  // The same lettering as container/scripts/banner.sh (the half-block lettering, nothing under it), drawn pixel exact, with the same gradient (dark gray and
   // purple lighting up to white in the middle of the word) and a glint that sweeps across it now and then. It is a black page over everything until the page has
   // settled (see markReady, below); ttyd-style.css fades it out.
   var BANNER = ['▄▀▀▀▀ █   █ ▄▀▀▀▄ █▀▀▀▄ █▄ ▄█ █▀▀▀▄ ▄▀▀▀▄ ▀▄ ▄▀',
                 ' ▀▀▀▄ █▄▀▄█ █▀▀▀█ █▀▀█  █ ▀ █ █▀▀▀▄ █   █  ▄▀▄ ',
                 '▀▀▀▀  ▀   ▀ ▀   ▀ ▀   ▀ ▀   ▀ ▀▀▀▀   ▀▀▀  ▀   ▀'];
-  var BAR_SEGMENTS = [14, 8, 4, 2], BOOT_SHARE = 0.6;      // the logo takes 60% of the width of the screen, with no tagline
+  var BOOT_SHARE = 0.6;      // the logo takes 60% of the width of the screen: the word and nothing else
   var GRADIENT = ['3f3f46', '6d28d9', 'a78bfa', 'ffffff', 'a78bfa', '6d28d9', '3f3f46'];
   function hexRgb(h) { return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
   function gradientAt(j, n, keys) {      // the colour of column j of n, running smoothly through the keypoints
@@ -708,8 +708,8 @@
     if (!root || typeof root.appendChild !== 'function' || typeof document.createElement !== 'function' || typeof document.createElementNS !== 'function') return;
     var W = BANNER[0].length, base = [];
     for (var j = 0; j < W; j++) base.push(gradientAt(j, W, GRADIENT));
-    var svg = document.createElementNS(SVG_NS, 'svg'), bar = [];
-    svg.setAttribute('viewBox', '0 0 ' + W + ' 10');                 // one unit = one half block (a square); fit() sets the size in whole device pixels
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' 6');                 // one unit = one half block (a square); fit() sets the size in whole device pixels
     svg.setAttribute('shape-rendering', 'crispEdges');
     var title = document.createElementNS(SVG_NS, 'title'); title.textContent = BANNER.join('\n'); svg.appendChild(title);
     function rect(x, y, w, h, row, col) {
@@ -728,11 +728,6 @@
         else if (ch === '\u2584') rect(c, i * 2 + 1, 1, 1, i, c);
       }
     });
-    var col = 0;
-    BAR_SEGMENTS.forEach(function (n) {
-      for (var k = 0; k < n; k++) bar.push(rect(col + k, 9, 1, 0.3, 3, col + k));
-      col += n + 1;
-    });
     var box = document.createElement('div');
     box.appendChild(svg);
     bootEl = document.createElement('div');
@@ -744,9 +739,7 @@
     function fit() {
       var dpr = window.devicePixelRatio || 1, wide = root.clientWidth || window.innerWidth || 360, u = Math.round(Math.min(wide * BOOT_SHARE / W, 16) * dpr) / dpr;
       if (!(u > 1)) u = 4;
-      svg.setAttribute('width', String(W * u)); svg.setAttribute('height', String(10 * u));
-      var t = Math.max(2 / dpr, Math.round(u * 0.3 * dpr) / dpr) / u, y = 9 + (1 - t) / 2;
-      bar.forEach(function (r) { r.setAttribute('height', String(t)); r.setAttribute('y', String(y)); });
+      svg.setAttribute('width', String(W * u)); svg.setAttribute('height', String(6 * u));
     }
     fit();
     try { document.addEventListener('DOMContentLoaded', fit); window.addEventListener('resize', fit); window.addEventListener('orientationchange', fit); } catch (e) { /* the size stays as it was */ }

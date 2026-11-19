@@ -5,7 +5,7 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- Changed: the logo of the loading page has no tagline any more and takes about 60% of the width of the screen (it was the width of the screen, with `// your agent's shell, from anywhere` under it).
+- Changed: the logo of the loading page is the word alone: no tagline and no segmented bar under it, and it takes about 60% of the width of the screen (it was the width of the screen, with the bar and `// your agent's shell, from anywhere` under it).
 
 ## [2.0.17] - 2026-11-19
 
