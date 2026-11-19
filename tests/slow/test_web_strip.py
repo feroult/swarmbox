@@ -907,6 +907,8 @@ class Toast(StripCase):
         """a desktop with a microphone and, at the right edge, a panel of 40 columns like the real one: the title on a bar, two blank lines (the strip for buttons), the content"""
         self.open(viewport="desktop", command="bash --norc", tmux_conf=TITLES_TMUX)
         self.page.js("swarmboxStrip.add({id: 'demo-mic', title: 'Hold to talk', label: 'mic', order: 10})")
+        # what the voice addon says about its own button (container/addons/voice/web/page.css): round, 48 px, with a glow
+        self.page.js("document.head.insertAdjacentHTML('beforeend', '<style>#demo-mic { width: 48px; height: 48px; min-width: 44px; min-height: 44px; border-radius: 50%; padding: 0; box-shadow: 0 0 10px rgba(167, 139, 250, .3); }</style>')")
         self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.classList.contains('swarmbox-strip-float')"), 10, 0.05))
         time.sleep(1.0)
         if panel:

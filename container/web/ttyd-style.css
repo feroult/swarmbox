@@ -118,7 +118,12 @@ html.swarmbox-strip-float #swarmbox-strip .sb-note {
 /* the bar of buttons of the tall sysop panel at the right edge of a desktop (paintPanel in ttyd-clipboard.js sets the three variables and data-float-pos): the two blank lines
    under the head of the panel are a slightly lighter band, and the controls of the page float in it, at the right. Without it they float in the corner. */
 html.swarmbox-strip-float[data-float-pos] #swarmbox-strip { top: var(--sb-float-top); right: var(--sb-float-right); --sb-btn: var(--sb-float-btn); }
-html.swarmbox-strip-float[data-float-pos] #swarmbox-strip .sb-btn { min-width: var(--sb-float-btn); min-height: var(--sb-float-btn); padding: 0; border-radius: 8px; background: rgba(196, 181, 253, .12); border-color: rgba(196, 181, 253, .34); color: var(--sb-lavender); }
+html.swarmbox-strip-float[data-float-pos] #swarmbox-strip .sb-btn {      /* width and height too: a control brings its own (the round 48 px of the microphone), and it must fit the bar */
+  width: var(--sb-float-btn); height: var(--sb-float-btn); min-width: var(--sb-float-btn); min-height: var(--sb-float-btn); padding: 0; border-radius: 8px;
+  background: rgba(196, 181, 253, .12); border-color: rgba(196, 181, 253, .34); color: var(--sb-lavender); box-shadow: none;
+}
+html.swarmbox-strip-float[data-float-pos] #swarmbox-strip .sb-btn[data-state="recording"] { background: var(--sb-deep); color: #fff; border-color: var(--sb-lavender); box-shadow: 0 0 0 2px rgba(167, 139, 250, .4); }
+html.swarmbox-strip-float[data-float-pos] #swarmbox-strip .sb-btn .sv-light { width: 9px; height: 9px; top: 1px; right: 1px; }
 html.swarmbox-strip-float[data-float-pos] #swarmbox-strip .sb-btn svg { width: calc(var(--sb-float-btn) - 10px); height: calc(var(--sb-float-btn) - 10px); }
 html.swarmbox-strip-float[data-float-pos] #swarmbox-strip .sb-note { top: calc(var(--sb-float-top) + var(--sb-float-btn) + 6px); right: var(--sb-float-right); }
 /* the sentence an addon shows: it covers the key buttons until the addon clears it or the host does (12 s, opaque, tap to dismiss), on two lines at most and ends where the addon controls begin */
