@@ -179,22 +179,19 @@ html.swarmbox-strip-float #swarmbox-strip .sb-note {
 #swarmbox-strip .sb-keytoggle[data-kb="1"] { box-shadow: 0 0 10px rgba(167, 139, 250, .45); color: #fff; }
 #swarmbox-strip[data-compact="1"] .sb-slot, #swarmbox-strip[data-compact="keys"] .sb-slot { order: 4; margin-left: 0; }
 @keyframes sb-pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { #swarmbox-strip .sb-dot { animation: none !important; } html::before { animation: sb-boot-out 0s linear 12s forwards !important; } }
+@media (prefers-reduced-motion: reduce) { #swarmbox-strip .sb-dot { animation: none !important; } #sb-boot { animation: sb-boot-out 0s linear 12s forwards !important; } }
 
-/* the page while it loads: black, with the name in the middle, until the page has settled (ttyd-clipboard.js adds swarmbox-ready once ttyd has sent its screen and the
-   size, font and strip stopped changing); it fades out. A pure CSS fallback takes it away after 12 s, whatever happens to the script */
-html::before {
-  content: "SwarmBox"; position: fixed; z-index: 2147483000; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
-  /* the font of the terminal (the page sets --sb-font from ttyd's own setting as soon as it knows it), the violet of the box, and a glow that breathes */
-  font: 600 32px/1 var(--sb-font, 'JetBrainsMono Nerd Font', 'JetBrainsMono NF', 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace);
-  letter-spacing: .02em; color: #c4b5fd;
-  background: radial-gradient(ellipse 70% 45% at 50% 50%, rgba(109, 40, 217, .22), rgba(12, 11, 16, 0) 70%), #0c0b10;
-  text-shadow: 0 0 10px rgba(167, 139, 250, .85), 0 0 28px rgba(139, 92, 246, .65), 0 0 64px rgba(109, 40, 217, .55);
-  opacity: 1; transition: opacity .45s ease, visibility 0s linear .45s;
-  animation: sb-boot-in .5s ease backwards, sb-boot-glow 2.4s ease-in-out .5s infinite, sb-boot-out 0s linear 12s forwards;
+/* the page while it loads: black, with the banner of the box (ttyd-clipboard.js builds it, the lettering of container/scripts/banner.sh) in the font of the terminal,
+   until the page has settled (swarmbox-ready); it fades out. A pure CSS fallback takes it away after 12 s, whatever happens to the script */
+#sb-boot {
+  position: fixed; z-index: 2147483000; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; background: #0c0b10;
+  opacity: 1; transition: opacity .45s ease, visibility 0s linear .45s; animation: sb-boot-in .35s ease backwards, sb-boot-out 0s linear 12s forwards;
 }
-html.swarmbox-ready::before { opacity: 0; visibility: hidden; }
-@keyframes sb-boot-glow { 50% { text-shadow: 0 0 6px rgba(167, 139, 250, .6), 0 0 18px rgba(139, 92, 246, .45), 0 0 40px rgba(109, 40, 217, .35); } }
+#sb-boot pre {
+  margin: 0; color: #a1a1aa; white-space: pre; user-select: none; -webkit-user-select: none;
+  font: 400 clamp(8px, calc((100vw - 28px) / 29.6), 22px)/1.02 var(--sb-font, 'JetBrainsMono Nerd Font', 'JetBrainsMono NF', 'JetBrainsMono Nerd Font Mono', 'JetBrainsMono NFM', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace);
+}
+html.swarmbox-ready #sb-boot { opacity: 0; visibility: hidden; }
 @keyframes sb-boot-in { from { opacity: .0; } to { opacity: 1; } }
 @keyframes sb-boot-out { to { opacity: 0; visibility: hidden; } }
 

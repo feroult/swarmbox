@@ -844,21 +844,23 @@ class Toast(StripCase):
         self.t.type("clear\r")
         self.assertTrue(wait_until(lambda: self.state()[0] == "1" and self.state()[5] == "0", 6, 0.1), "no panel: back to the bar alone: %r" % (self.state(),))
 
-    def test_the_page_is_black_with_the_name_until_the_first_screen(self):
+    def test_the_page_starts_with_the_banner_of_the_box_and_it_goes_when_the_page_has_settled(self):
         self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX,
-                  init_script="document.addEventListener('DOMContentLoaded', () => { const s = getComputedStyle(document.documentElement, '::before'); window.__splash = s.content; window.__splashLook = [s.fontFamily, s.textShadow, s.color]; });")
-        self.assertEqual(self.page.js("window.__splash"), '"SwarmBox"', "the page starts with the name")
-        font, glow, color = self.page.js("window.__splashLook")
-        self.assertIn("monospace", font, "in the font of the terminal (a monospace stack)")
-        self.assertNotEqual(glow, "none", "with a glow")
-        self.assertEqual(color, "rgb(196, 181, 253)", "in the lavender of the theme")
-        self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.style.getPropertyValue('--sb-font')") != "", 6, 0.1), "and the font the box asks ttyd for once the page knows it")
+                  init_script="document.addEventListener('DOMContentLoaded', () => { const b = document.getElementById('sb-boot'); window.__boot = b ? { text: b.textContent, font: getComputedStyle(b.querySelector('pre')).fontFamily, colors: new Set(Array.from(b.querySelectorAll('span')).map(s => s.style.color)).size, bg: getComputedStyle(b).backgroundColor, w: Math.round(b.querySelector('pre').getBoundingClientRect().width), vw: innerWidth } : null; });")
+        boot = self.page.js("window.__boot")
+        self.assertIsNotNone(boot, "the page starts with the banner")
+        self.assertIn("\u2584\u2580\u2580\u2580\u2580 \u2588   \u2588", boot["text"], "the lettering of banner.sh")
+        self.assertIn("// your agent's shell, from anywhere", boot["text"])
+        self.assertIn("monospace", boot["font"], "in the font of the terminal")
+        self.assertGreater(boot["colors"], 10, "with the gradient: many colours, not one")
+        self.assertEqual(boot["bg"], "rgb(12, 11, 16)")
+        self.assertLessEqual(boot["w"], boot["vw"], "and it fits the width of a phone")
         self.assertTrue(wait_until(lambda: self.page.js("document.documentElement.classList.contains('swarmbox-ready')"), 10, 0.1), "and is ready once the terminal drew")
         shape = lambda: self.page.js("[term.cols, term.rows, Math.round(document.getElementById('swarmbox-strip').getBoundingClientRect().height), term.options.fontSize]")
         at_ready = shape()
         time.sleep(1.5)
         self.assertEqual(shape(), at_ready, "when the black page goes, the screen behind it has stopped changing (font, columns, rows and strip)")
-        self.assertEqual(self.page.js("getComputedStyle(document.documentElement, '::before').visibility"), "hidden")
+        self.assertEqual(self.page.js("getComputedStyle(document.getElementById('sb-boot')).visibility"), "hidden")
 
     def test_a_line_that_was_there_before_the_page_opened_is_known_at_once(self):
         """tmux sends the title when a client attaches, before the terminal exists to hear it: the page reads it off the websocket"""

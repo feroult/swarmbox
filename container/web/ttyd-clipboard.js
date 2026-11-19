@@ -509,17 +509,19 @@
   // The black page with the name (ttyd-style.css, html::before) goes when the page has SETTLED, not at the first screen: that one is drawn at the size the terminal had
   // before the font, the strip and the size were fitted, and tmux then redraws it. So it waits for the first output, then for the strip to exist and for a quiet
   // moment (QUIET_MS with no output and no resize); and never longer than BOOT_MAX_MS.
-  var QUIET_MS = 500, BOOT_MAX_MS = 7000, bootAt = Date.now(), firstOutput = 0, lastActivity = Date.now(), bootTimer = 0;
+  var isReady = false, QUIET_MS = 500, BOOT_MIN_MS = 1100, BOOT_MAX_MS = 7000, bootAt = Date.now(), firstOutput = 0, lastActivity = Date.now(), bootTimer = 0;
   function ready() {
+    isReady = true;
     var cl = document.documentElement && document.documentElement.classList;
     if (cl && cl.add) cl.add('swarmbox-ready');
     if (bootTimer) { clearInterval(bootTimer); bootTimer = 0; }
   }
   function bootCheck() {
     var now = Date.now();
-    if (now - bootAt >= BOOT_MAX_MS || (firstOutput && strip && now - lastActivity >= QUIET_MS)) ready();
+    if (now - bootAt >= BOOT_MAX_MS || (firstOutput && strip && now - lastActivity >= QUIET_MS && now - bootAt >= BOOT_MIN_MS)) ready();
   }
   function markReady(data) {
+    if (isReady) return;      // after the black page the output frames are none of its business
     var first = typeof data === 'string' ? data.charCodeAt(0) : (data && Object.prototype.toString.call(data) === '[object ArrayBuffer]' ? new Uint8Array(data)[0] : -1);
     if (first !== 0x30) return;
     lastActivity = Date.now();
@@ -680,6 +682,87 @@
     t.onRender(function (e) { markBlockRows(e.start, e.end); });
     markBlockRows(0, t.rows - 1);
     return true;
+  }
+
+  // ---- the page while it loads: the banner of the box, in the style of a 90s BBS login screen -----------------------------------------
+  // The same lettering as container/scripts/banner.sh (half blocks, a segmented bar and a signature), in the font of the terminal, with the same gradient (dark gray and
+  // purple lighting up to white in the middle of the word) and a glint that sweeps across it now and then. It is a black page over everything until the page has
+  // settled (see markReady, below); ttyd-style.css fades it out.
+  var BANNER = ['▄▀▀▀▀ █   █ ▄▀▀▀▄ █▀▀▀▄ █▄ ▄█ █▀▀▀▄ ▄▀▀▀▄ ▀▄ ▄▀',
+                ' ▀▀▀▄ █▄▀▄█ █▀▀▀█ █▀▀█  █ ▀ █ █▀▀▀▄ █   █  ▄▀▄ ',
+                '▀▀▀▀  ▀   ▀ ▀   ▀ ▀   ▀ ▀   ▀ ▀▀▀▀   ▀▀▀  ▀   ▀'];
+  var SIGNATURE = "// your agent's shell, from anywhere", BAR_SEGMENTS = [14, 8, 4, 2];
+  var GRADIENT = ['3f3f46', '6d28d9', 'a78bfa', 'ffffff', 'a78bfa', '6d28d9', '3f3f46'];
+  function hexRgb(h) { return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
+  function gradientAt(j, n, keys) {      // the colour of column j of n, running smoothly through the keypoints
+    var segs = keys.length - 1, pos = n > 1 ? j * segs / (n - 1) : 0, k = Math.min(segs - 1, Math.floor(pos)), f = pos - k, a = hexRgb(keys[k]), b = hexRgb(keys[k + 1]);
+    return [0, 1, 2].map(function (i) { return Math.round(a[i] + (b[i] - a[i]) * f); });
+  }
+  function rgb(c) { return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+  function lighten(c, q) { return c.map(function (v) { return Math.round(v + (255 - v) * q / 4); }); }      // q quarters of the way to white
+  var bootEl = null, bootCells = [], bootGlint = 0, bootFrame = 0;
+  function buildBoot() {
+    var root = document.documentElement;
+    if (!root || typeof root.appendChild !== 'function' || typeof document.createElement !== 'function') return;
+    var W = BANNER[0].length, base = [], pre = document.createElement('pre'), rows = [];
+    for (var j = 0; j < W; j++) base.push(gradientAt(j, W, GRADIENT));
+    BANNER.forEach(function (row, i) {
+      var line = document.createElement('div');
+      for (var j = 0; j < W; j++) {
+        var ch = row.charAt(j);
+        if (ch === ' ') { line.appendChild(document.createTextNode(' ')); continue; }
+        var sp = document.createElement('span');
+        sp.textContent = ch;
+        sp.style.color = rgb(base[j]);
+        line.appendChild(sp);
+        bootCells.push({ el: sp, row: i, col: j, base: base[j] });
+      }
+      rows.push(line);
+    });
+    var bar = document.createElement('div'), col = 0;
+    BAR_SEGMENTS.forEach(function (n) {
+      for (var j = 0; j < n; j++) { var sp = document.createElement('span'); sp.textContent = '━'; sp.style.color = rgb(base[col + j]); bar.appendChild(sp); bootCells.push({ el: sp, row: 3, col: col + j, base: base[col + j] }); }
+      bar.appendChild(document.createTextNode(' '));
+      col += n + 1;
+    });
+    var sig = document.createElement('div'), last = SIGNATURE.slice(SIGNATURE.lastIndexOf(' ') + 1), lead = SIGNATURE.slice(0, SIGNATURE.lastIndexOf(' ') + 1);
+    sig.style.paddingLeft = Math.max(0, W - SIGNATURE.length) + 'ch';
+    var a = document.createElement('span'); a.textContent = '// '; a.style.color = '#585858'; sig.appendChild(a);
+    var b = document.createElement('span'); b.textContent = lead.slice(3); b.style.color = '#767676'; sig.appendChild(b);
+    for (var k = 0; k < last.length; k++) { var c = document.createElement('span'); c.textContent = last.charAt(k); c.style.color = rgb(gradientAt(k, last.length, ['a1a1aa', '3f3f46'])); sig.appendChild(c); }
+    pre.appendChild(rows[0]); pre.appendChild(rows[1]); pre.appendChild(rows[2]);
+    var gap = document.createElement('div'); gap.textContent = ' '; pre.appendChild(gap);
+    pre.appendChild(bar); pre.appendChild(sig);
+    bootEl = document.createElement('div');
+    bootEl.id = 'sb-boot';
+    bootEl.setAttribute('aria-hidden', 'true');
+    bootEl.appendChild(pre);
+    root.appendChild(bootEl);
+    var still = false;
+    try { still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { still = false; }
+    if (!still) glintLoop();
+  }
+  // the glint: a white diagonal with a soft halo that crosses the letters back and forth, with a rest between two passes (the one of banner.sh, smoothstep and all)
+  function glintLoop() {
+    var W = BANNER[0].length, lo = -6, hi = W + 8, dir = 1, t0 = 0, pause = 700;
+    function paintGlint(g) {
+      bootCells.forEach(function (c) {
+        var d = Math.abs(c.col - (g - Math.min(c.row, 2) * 2)), col = c.base;
+        if (g > -50) { if (d === 0) col = [255, 255, 255]; else if (d < 4) col = lighten(c.base, 4 - d); }
+        c.el.style.color = rgb(col);
+      });
+    }
+    function frame(now) {
+      if (!bootEl || !bootEl.parentNode || document.documentElement.classList.contains('swarmbox-ready')) return;
+      if (!t0) t0 = now + pause;
+      var k = (now - t0) / 1300;
+      if (k < 0) { bootFrame = requestAnimationFrame(frame); return; }
+      if (k > 1) { paintGlint(-99); dir = -dir; t0 = now + 1500 + Math.random() * 1500; bootFrame = requestAnimationFrame(frame); return; }
+      var e = k * k * (3 - 2 * k);
+      paintGlint(Math.round(lo + (hi - lo) * (dir > 0 ? e : 1 - e)));
+      bootFrame = requestAnimationFrame(frame);
+    }
+    if (typeof requestAnimationFrame === 'function') bootFrame = requestAnimationFrame(frame);
   }
 
   // ---- the keyboard of the phone ---------------------------------------------------------------------------------------------------
@@ -888,6 +971,7 @@
   // frame-ancestors (the voice front); this stays when ttyd runs alone.
   function framed() { try { return window.top !== window.self; } catch (e) { return true; } }
   if (framed()) ready();      // a framed page has no strip and no splash
+  else { try { buildBoot(); } catch (e) { /* no banner: the page loads as it is */ } }
 
   function start() {
     if (framed()) return;
