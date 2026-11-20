@@ -87,6 +87,17 @@ class IdleScreen(unittest.TestCase):
             self.assertIn("Type a goal", strip_ansi(f.lines[row]))
             self.assertEqual(f.hits, [(row + 1, 1, 40, "g")], color)
 
+    def test_the_field_has_a_blank_line_above_it_when_the_pane_is_tall_enough_and_a_short_pane_keeps_its_content(self):
+        for color in (False, True):
+            for rows, blank in ((24, True), (12, True), (11, False), (8, False)):
+                f = render(model_with(None), 40, rows, time.time(), color=color)
+                text = [strip_ansi(x) for x in f.lines]
+                at = max(i for i, x in enumerate(text) if x.strip())
+                self.assertIn("Type a goal", text[at])
+                self.assertEqual(f.hits[0][0], at + 1, (rows, color))
+                if blank:
+                    self.assertEqual(text[at - 1].strip(), "", (rows, color))
+
     def test_the_title_is_the_first_line_and_the_screen_has_the_size_of_the_pane(self):
         for cols in (16, 24, 30, 40, 60, 100, 200):
             for rows in (4, 8, 12, 24, 50):

@@ -41,6 +41,7 @@ HEAD_GAP_ROWS = 7       # a panel of a phone this tall (or taller) has a blank l
 WIDE_GAP_ROWS = 14      # elsewhere (the tall panel at the right of a desktop) it takes this many rows: a short panel keeps its rows for the content
 WIDE_COLS = 80          # ... and is this many columns wide at most: the panel docked at the bottom of a wide window has no strip for buttons
 STRIP_ROWS = 3           # the lines of that strip: two for the bar of buttons, and a third of space between the bar and the content
+FIELD_GAP_ROWS = 12      # rows from which the field of an idle panel has a blank line above it
 GOAL_HINT = "Type a goal"
 DONE_LINES = 3          # lines of how a goal ended
 MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
@@ -772,8 +773,10 @@ def render(model, cols, rows, wall, color=True, closer=False, web=True):
     # (ttyd-clipboard.js, paintPanel).
     gap = (1 if rows >= HEAD_GAP_ROWS else 0) if closer else ((STRIP_ROWS if web else 1) if rows >= WIDE_GAP_ROWS and cols <= WIDE_COLS else 0)
 
+    spacer = 1 if rows >= FIELD_GAP_ROWS else 0      # a blank line above the field of an idle panel, when the pane is tall enough to spare it (a short one keeps the result of the goal)
+
     def total():
-        return len(top) + len(pend_l) + len(notice_l) + len(prompt_l) + (1 if (buttons or field) else 0)
+        return len(top) + len(pend_l) + len(notice_l) + len(prompt_l) + (1 if buttons else (1 + spacer) if field else 0)
     while rows - 1 - gap - total() < 1 and notice_l:
         notice_l.pop()
     while rows - 1 - gap - total() < 1 and len(top) > 1:
@@ -811,7 +814,9 @@ def render(model, cols, rows, wall, color=True, closer=False, web=True):
     if buttons:
         line, hits = _buttons(buttons, cols, color, len(out) + 1)
         out.append(line)
-    elif field:      # idle: a line that looks like a text field (a tap or the key g opens it), not a lone button
+    elif field:      # idle: a line that looks like a text field (a tap or the key g opens it), not a lone button, with a blank line above it
+        if spacer:
+            out.append("")
         line, hits = _field(cols, color, len(out) + 1)
         out.append(line)
     cursor = (base + len(pend_l) + len(notice_l) + cursor_at[0], cursor_at[1]) if cursor_at else None

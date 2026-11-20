@@ -5,6 +5,7 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Changed: the field of the idle sysop panel (`Type a goal`) has a blank line above it when the pane has 12 rows or more (a short pane keeps its room for the result of the goal).
 - Changed: the letters on a phone are a little bigger: 58 columns held upright (was 64) and 108 sideways (was 120), so a 390 px phone gets 11 px (was 10) upright and 13 px (was 11) sideways. `swarmboxStrip.setColumns(64)` brings the old size back.
 - Fixed: on a phone the lettering of the banner no longer shows thin horizontal lines across the letters. In the DOM renderer the block characters of a phone's own monospace font stop short of the row (a line gap), so a hairline of background showed between two rows; the fixed 12% stretch of 2.0.x did not close it for every font. The page now measures the font it really uses (it draws a full block, finds its ink and the baseline of a row) and stretches the rows that hold blocks so that the ink fills the row, with a little to spare. Tested with lines taller than the letters (the gap of such a font) at several pixel ratios.
 - Changed: the idle sysop panel ends in a line that looks like a text field (`Type a goal`, the key `g` at the right) instead of a lone Goal button; a tap anywhere on it, or `g`, opens the editor. The idle text above it says `Say a goal, or type it below.`
