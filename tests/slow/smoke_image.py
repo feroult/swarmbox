@@ -209,8 +209,8 @@ def step_page_built(ctx):
     assert "--swarmbox-padding:" in page and "window.__swarmboxClipboard=" in page, "the served page is not the built page"
 
 
-# The nine addons of the repository and the commands they provide (the order of the index is the sort of `link`).
-ADDON_COMMANDS = {"claude": ["claude"], "gemini": ["gemini"], "opencode": ["opencode"], "gcloud": ["gcloud", "gsutil", "bq"],
+# The ten addons of the repository and the commands they provide (the order of the index is the sort of `link`).
+ADDON_COMMANDS = {"claude": ["claude"], "gemini": ["gemini"], "antigravity": ["agy"], "opencode": ["opencode"], "gcloud": ["gcloud", "gsutil", "bq"],
                  "clasp": ["clasp"], "go": ["go", "gofmt"], "poetry": ["poetry"], "voice": ["swarmbox-voice"], "sysop": ["swarmbox-sysop"]}
 ALL_COMMANDS = [c for cmds in ADDON_COMMANDS.values() for c in cmds]
 
@@ -235,7 +235,7 @@ def step_box_commands(ctx):
 
 
 def step_addon_shim(ctx):
-    """Every command of the nine addons is a shim (a link to swarmbox-shim) found on PATH, and nothing is installed."""
+    """Every command of the ten addons is a shim (a link to swarmbox-shim) found on PATH, and nothing is installed."""
     r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
                "test -x /usr/local/bin/swarmbox-shim && echo SHIM-EXEC; SWARMBOX_CMD=1 . /etc/swarmbox/bashrc.sh; "
                "for c in %s; do echo \"$c|$(readlink /usr/local/lib/swarmbox/shims/$c)|$(type -P $c)\"; done; "
@@ -310,7 +310,7 @@ def step_attach_session(ctx):
 def step_no_agent(ctx):
     """A default build holds no addon (bash, because dash has no `type -P`; the step used sh and found nothing at first): every command resolves to its shim and /opt/swarmbox/addons is empty."""
     r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
-               "for c in claude opencode gemini codex clasp gcloud gsutil bq go gofmt poetry swarmbox-voice swarmbox-sysop; do p=$(type -P $c) && echo \"FOUND:$c:$p\"; done; "
+               "for c in claude opencode gemini agy codex clasp gcloud gsutil bq go gofmt poetry swarmbox-voice swarmbox-sysop; do p=$(type -P $c) && echo \"FOUND:$c:$p\"; done; "
                "ls -A /opt/swarmbox/addons | wc -l; true")
     found = [l for l in r.stdout.splitlines() if l.startswith("FOUND:")]
     # the shims are on PATH (a link to swarmbox-shim each); codex has no addon; none is a program
@@ -546,8 +546,8 @@ STEPS = [
     Step("page-built", "the ttyd page is built into the image and served with the three settings", False, step_page_built),
     Step("addon-validate", "swarmbox-addon validate passes on the shipped manifests (the real validate)", False, step_addon_validate),
     Step("box-commands", "swarmbox-bus and swarmbox-tabs are executable in the image and answer --help", False, step_box_commands),
-    Step("addon-shim", "the shims of all nine addons are links to swarmbox-shim found on PATH; nothing is installed", False, step_addon_shim),
-    Step("addon-index-ports", "the index lists the commands of all nine addons and addon-ports is exactly clasp 43323", False, step_addon_index_ports),
+    Step("addon-shim", "the shims of all ten addons are links to swarmbox-shim found on PATH; nothing is installed", False, step_addon_shim),
+    Step("addon-index-ports", "the index lists the commands of all ten addons and addon-ports is exactly clasp 43323", False, step_addon_index_ports),
     Step("mcp-generated", "swarmbox-mcp generates mcp-servers.json with chrome-devtools and no npx", False, step_mcp_generated),
     Step("attach-session", "two attach calls give each tab a session of its own with its window linked into main, the idle window is gone, exit codes", False, step_attach_session),
     Step("no-agent", "a default build holds no agent, gcloud, clasp, Go, Poetry or voice and /opt/swarmbox/addons is empty", False, step_no_agent),

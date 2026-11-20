@@ -63,6 +63,8 @@ OLD_NAMES = [
 OLD_NAME_ALLOW = [
     ("container/addons/claude/shell.sh", r"\| plugin \| plugins \|",
      "the subcommands of the Claude Code program (`claude plugin`, `claude plugins`), which the claude function never gives the flags"),
+    ("container/addons/antigravity/shell.sh", r"\| plugin \| plugins \|",
+     "the subcommands of the Antigravity CLI program (`agy plugin`, `agy plugins`), which the agy function never gives the flag"),
     ("container/addons/opencode/shell.sh", r"\| plugin \|",
      "a subcommand of the OpenCode program"),
 ]

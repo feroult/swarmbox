@@ -21,7 +21,8 @@ REAL_ADDONS = os.path.join(ROOT, "container", "addons")
 FRAGMENT = os.path.join(ROOT, "container", "config", "bashrc.sh")
 LIB = os.path.join(ROOT, "container", "scripts")
 SHELLS = [s for s in ("bash", "zsh") if shutil.which(s)]
-AGENTS = ("claude", "gemini", "opencode")
+AGENTS = ("claude", "gemini", "opencode", "agy")
+ADDON_OF = {"agy": "antigravity"}  # the command agy comes from the addon antigravity
 
 
 def write(path, text, mode=None):
@@ -47,7 +48,7 @@ class Base(unittest.TestCase):
 
     def run_in(self, shell, agent, args, yolo=None):
         """Source the shell.sh of `agent` in `shell` and run `agent args`; the fake program prints what it received."""
-        script = ". %s; %s %s" % (os.path.join(REAL_ADDONS, agent, "shell.sh"), agent, args)
+        script = ". %s; %s %s" % (os.path.join(REAL_ADDONS, ADDON_OF.get(agent, agent), "shell.sh"), agent, args)
         r = subprocess.run([shell, "-c", script], env=self.env(yolo), capture_output=True, text=True, timeout=30, cwd=self.d)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stderr, "")
@@ -92,6 +93,26 @@ class GeminiShell(Base):
         for sh in SHELLS:
             with self.subTest(shell=sh):
                 self.assertEqual(self.run_in(sh, "gemini", "-p x", yolo="0"), "gemini:[-p][x]")
+
+
+class AntigravityShell(Base):
+    def test_agy_starts_with_dangerously_skip_permissions(self):
+        for sh in SHELLS:
+            with self.subTest(shell=sh):
+                self.assertEqual(self.run_in(sh, "agy", ""), "agy:[--dangerously-skip-permissions]")
+                self.assertEqual(self.run_in(sh, "agy", "-p 'say hi'"), "agy:[--dangerously-skip-permissions][-p][say hi]")
+                self.assertEqual(self.run_in(sh, "agy", "--model x"), "agy:[--dangerously-skip-permissions][--model][x]")
+
+    def test_subcommands_do_not_receive_the_flag(self):
+        for sh in SHELLS:
+            for args in ("update", "mcp list", "mcp add x", "models", "install", "agents", "help"):
+                with self.subTest(shell=sh, args=args):
+                    self.assertEqual(self.run_in(sh, "agy", args), "agy:" + "".join("[%s]" % a for a in args.split()))
+
+    def test_swarmbox_yolo_zero_turns_it_off(self):
+        for sh in SHELLS:
+            with self.subTest(shell=sh):
+                self.assertEqual(self.run_in(sh, "agy", "-p x", yolo="0"), "agy:[-p][x]")
 
 
 class OpencodeShell(Base):
@@ -153,11 +174,11 @@ class ThroughTheFragment(Base):
                               capture_output=True, text=True, timeout=30, cwd=d)
 
     def test_every_agent_is_a_function_and_none_is_an_alias(self):
-        r = self.frag("type claude gemini opencode")
+        r = self.frag("type claude gemini opencode agy")
         for name in AGENTS:
             self.assertIn("%s is a function" % name, r.stdout, r.stdout + r.stderr)
         self.assertNotIn("aliased", r.stdout)
-        self.assertEqual(self.frag("alias claude gemini opencode 2>&1").stdout.count("alias "), 0)
+        self.assertEqual(self.frag("alias claude gemini opencode agy 2>&1").stdout.count("alias "), 0)
 
     def test_yolo_runs_the_default_agent_in_auto_approve_mode(self):
         for agent, want in (("claude", "claude:[--dangerously-skip-permissions]"), ("gemini", "gemini:[--yolo][-p][go]"),
@@ -167,6 +188,13 @@ class ThroughTheFragment(Base):
                 r = self.frag("yolo %s" % args, SWARMBOX_AGENT=agent)
                 self.assertIn(want, r.stdout, r.stdout + r.stderr)
                 self.assertEqual(r.stdout.count("%s:" % agent), 1)
+
+    def test_yolo_runs_agy_when_the_default_agent_is_the_addon_antigravity(self):
+        # the host records the first addon of WITH, and the addon antigravity provides the command agy
+        for agent in ("antigravity", "agy"):
+            with self.subTest(agent=agent):
+                r = self.frag("yolo -p go", SWARMBOX_AGENT=agent)
+                self.assertIn("agy:[--dangerously-skip-permissions][-p][go]", r.stdout, r.stdout + r.stderr)
 
 
 if __name__ == "__main__":

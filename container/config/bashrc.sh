@@ -98,12 +98,15 @@ yolo() {
         echo "yolo: the default agent cannot be 'yolo'. Set an agent on the host (swarmbox config set AGENT claude, then swarmbox reset)." >&2
         return 1
     fi
+    # The addon antigravity provides the command agy: the default agent may be named by either.
+    local _sb_agent=$SWARMBOX_AGENT
+    [ "$_sb_agent" != antigravity ] || _sb_agent=agy
     # The first item of WITH is the default when AGENT is not set, and it may be an addon that is not an agent (sysop, voice): say so.
-    if ! command -v "$SWARMBOX_AGENT" > /dev/null 2>&1; then
+    if ! command -v "$_sb_agent" > /dev/null 2>&1; then
         echo "yolo: the default agent '$SWARMBOX_AGENT' is not a command in this box. Set the agent on the host (swarmbox config set AGENT claude, then swarmbox reset)." >&2
         return 127
     fi
-    SWARMBOX_YOLO=1 "$SWARMBOX_AGENT" "$@"
+    SWARMBOX_YOLO=1 "$_sb_agent" "$@"
 }
 
 # --- Interactive only: the banner with the startup-health lines, then the prompt ---
