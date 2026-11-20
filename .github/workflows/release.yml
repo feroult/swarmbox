@@ -66,7 +66,7 @@ jobs:
       publish: ${{ steps.pub.outputs.publish }}
       image: ${{ steps.img.outputs.image }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Read the image repository from container/host/DEFAULTS and put the owner in place of <org>
@@ -131,7 +131,7 @@ jobs:
       REGISTRY_IMAGE: ${{ needs.version.outputs.image }}
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Runner architecture and Podman version
@@ -276,7 +276,7 @@ jobs:
       REGISTRY_IMAGE: ${{ needs.version.outputs.image }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/download-artifact@v4.1.8
