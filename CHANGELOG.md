@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.23] - 2026-11-20
+
 - Changed: modernized the web terminal's mobile controls strip and desktop Sysop microphone bar. On a phone, the Sysop toggle and live status line are now one full-width glass capsule with an SVG chevron; the microphone button uses a violet gradient and hides its status dot while idle; the touch-key row is slimmer with grouped SVG arrows; and the keyboard button now lights up with a hide-keyboard chevron only when the phone keyboard is actually open (never falsely lit when only the Sysop drawer is open) without shrinking the Sysop capsule when the keyboard reduces viewport height. On desktop, the docked Sysop panel's microphone is now a `Speak` pill.
 
 ## [2.0.22] - 2026-11-20
@@ -268,6 +270,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.23]: https://github.com/feroult/swarmbox/releases/tag/v2.0.23
 [2.0.22]: https://github.com/feroult/swarmbox/releases/tag/v2.0.22
 [2.0.21]: https://github.com/feroult/swarmbox/releases/tag/v2.0.21
 [2.0.20]: https://github.com/feroult/swarmbox/releases/tag/v2.0.20
