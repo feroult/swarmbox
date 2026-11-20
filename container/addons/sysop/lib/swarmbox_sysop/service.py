@@ -26,7 +26,7 @@ import sys
 import threading
 import time
 
-from . import __version__, brain, busclient, ipc
+from . import __version__, brain, busclient, history, ipc
 from . import paths as pathsmod
 from . import audit as auditmod
 
@@ -489,7 +489,16 @@ class Service:
             def on_start(pid):
                 goal.brain["pid"] = pid
                 self.refresh(goal)
-            res = brain.run(self.cfg, goal.text, goal.source, gdir, argv, env, stop_check, lambda: self.refresh(goal), deadline,
+            # the brain starts with no memory: the goals before this one go in front of it (history.py), so a follow-up is understood
+            heard = goal.text
+            try:
+                before = history.conversation(history.load(self.paths), goal.id, self.clock())
+            except Exception as e:      # a damaged folder of an old goal must not stop this one
+                self.log("goal %s: no conversation so far (%r)" % (goal.id, e))
+                before = ""
+            if before:
+                heard = before + "\n\nThe goal now (" + goal.source + "):\n" + goal.text
+            res = brain.run(self.cfg, heard, goal.source, gdir, argv, env, stop_check, lambda: self.refresh(goal), deadline,
                             clock=self.clock, on_start=on_start, **kw)
         except Exception as e:             # a bug here must not kill the service: this goal fails, the next one runs
             self.log("goal %s: internal error: %r" % (goal.id, e))

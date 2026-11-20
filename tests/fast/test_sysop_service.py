@@ -182,6 +182,22 @@ class StatusFile(Base):
 
 
 class Flow(Base):
+    def test_the_next_goal_starts_with_the_conversation_so_far_and_the_first_one_has_none(self):
+        """a brain has no memory of its own: the goals before it (the words of the user and what the sysop said) go in front of the goal on its stdin"""
+        self.start()
+        first = self.goal("list the tabs", "voice")
+        self.assertEqual(self.wait_state(first)["state"], "done")
+        with open(self.logf) as f:
+            self.assertEqual(json.load(f)["stdin"], "list the tabs\n", "nothing before the first goal")
+        second = self.goal("and the other one?", "panel")
+        self.assertEqual(self.wait_state(second)["state"], "done")
+        with open(self.logf) as f:
+            got = json.load(f)["stdin"]
+        self.assertTrue(got.startswith("[conversation so far"), got)
+        for must in ('The user said: "list the tabs"', "you said: finished it", "[end of the conversation so far]", "The goal now (panel):\nand the other one?"):
+            self.assertIn(must, got)
+        self.assertEqual(self.wait_state(second)["text"], "and the other one?", "the goal itself is kept as the user said it")
+
     def test_a_goal_runs_to_the_end(self):
         self.start()
         gid = self.goal("list the tabs", "voice")

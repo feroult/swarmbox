@@ -83,10 +83,12 @@ class Tabs:
         return res
 
     def send(self, tab, run=None, input=None):
-        """Type `run` and press Enter, or type `input` as it is ({Esc} {C-c} {Enter} ... are keys). Never --queue and never --slash: the sysop does not
-        type into a busy agent, and a text that starts with / or ! is refused (slash_refused)."""
+        """Type `run` and press Enter, or type `input` as it is ({Esc} {C-c} {Enter} ... are keys). A `run` is always sent with --queue: an agent that is busy
+        queues what is typed (the user's message waits its turn), so a busy agent is no reason to refuse; a dialog still is (dialog_open). Never --slash: a text that
+        starts with / or ! is refused (slash_refused). `input` (keys) is never queued."""
         if (run is None) == (input is None):
             raise TabsError("usage", "send takes run or input")
         text = run if run is not None else input
         # the command drops ONE trailing newline of stdin: add one so the text is typed as it is
-        return self.call(["send", tab, "--run" if run is not None else "--input", "-"], stdin=text + "\n", timeout=self.send_timeout)
+        args = ["send", tab, "--run" if run is not None else "--input", "-"] + (["--queue"] if run is not None else [])
+        return self.call(args, stdin=text + "\n", timeout=self.send_timeout)

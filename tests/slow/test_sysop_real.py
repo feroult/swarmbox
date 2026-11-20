@@ -211,11 +211,9 @@ class Typing(Real):
         self.assertTrue(res[0]["is_error"])
         self.assertIn("dialog_open", res[0]["text"])
         self.assertFalse(res[1]["is_error"], res[1]["text"])
-        self.assertTrue(res[2]["is_error"])
-        self.assertIn("busy_tab", res[2]["text"])
+        self.assertFalse(res[2]["is_error"], "a busy agent takes the message (it is queued): %r" % res[2]["text"])
         self.assertTrue(res[3]["is_error"])
         self.assertIn("no_such_tab", res[3]["text"])
-        self.assertNotIn("second", self.text(self.ag))
 
 
 class OnTheBus(Real):

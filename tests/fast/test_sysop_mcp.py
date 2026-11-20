@@ -305,7 +305,7 @@ class Typing(Rig):
     def test_the_text_goes_on_stdin_and_never_in_the_command_line(self):
         self.ok("run", tab="@1", command="echo 'a  b' --not-an-option")
         argv, stdin = [c for c in self.tabs.calls if c[0][0] == "send"][-1]
-        self.assertEqual(argv, ["send", "@1", "--run", "-"])
+        self.assertEqual(argv, ["send", "@1", "--run", "-", "--queue"])
         self.assertEqual(stdin, "echo 'a  b' --not-an-option\n")
         self.assertEqual(self.tabs.sent[-1], ("@1", {"run": "echo 'a  b' --not-an-option"}))
 
@@ -314,12 +314,14 @@ class Typing(Rig):
         self.ok("input", tab="@1", text="x\n")
         self.assertEqual(self.tabs.sent[-1], ("@1", {"input": "x\n"}))
 
-    def test_never_queue_and_never_slash(self):
+    def test_a_run_is_always_queued_so_a_busy_agent_takes_the_message_and_keys_never_are_and_nothing_is_ever_slashed(self):
+        self.srv.policy.autonomy = "auto"
         self.ok("run", tab="@2", command="hello")
+        self.ok("input", tab="@2", text="{Up}")
         sends = [a for a, _ in self.tabs.calls if a[0] == "send"]
-        self.assertEqual(sends, [["send", "@2", "--run", "-"]])
-        self.assertNotIn("--queue", sends[0])
-        self.assertNotIn("--slash", sends[0])
+        self.assertEqual(sends, [["send", "@2", "--run", "-", "--queue"], ["send", "@2", "--input", "-"]])
+        for a in sends:
+            self.assertNotIn("--slash", a)
 
     def test_run_types_the_text_and_returns_the_settled_screen(self):
         def on_send(bus, tab, body):

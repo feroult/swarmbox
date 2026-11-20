@@ -121,8 +121,17 @@ class Template(unittest.TestCase):
             "the tools": ("list_tabs", "read_tab", "run", "input", "wait", "say", "done"),
             "tabs, never the bus": ("TABS", "window of a tmux session"),
             # 'reply with exactly banana nine' with Claude Code in the active tab was answered by the brain itself and nothing was typed
-            "a goal for an agent goes to the agent of the active tab": ("never answer the goal yourself", "meant for the agent in the ACTIVE tab", "type the goal there with run",
-                                                                         "do not type it into a shell", "A goal that is an operation on the box"),
+            # the user talks to the sysop to reach the agents: they never say "send it to Claude", and the target is inferred
+            "a goal is a message for an agent by default": ("THE USER IS TALKING TO YOU TO REACH THEIR AGENTS", "never has to say", "clearly an operation on the box",
+                                                            "never answer it yourself", "do not type it into the shell"),
+            "the most likely agent is inferred": ("WHICH AGENT", "never ask which unless you truly cannot", "the agent in the ACTIVE tab",
+                                                  "the tab the conversation so far was with", "the only agent that exists"),
+            # each goal is a brain with no memory: the host puts the goals before it in front of the goal
+            "the conversation so far is the memory": ("THE CONVERSATION SO FAR", "[conversation so far", "It is your memory", "trust the screens over it"),
+            "the message goes in the user's words": ("in the user's words", "typed with run exactly as said"),
+            # an agent that works queues what is typed: refusing because it works was the failure
+            "a working agent takes the message": ("AN AGENT THAT IS WORKING IS NOT A REASON TO WAIT OR REFUSE", "queue what is typed while they work",
+                                                  "never press Esc or interrupt it", "type the message with run anyway", "The only exception is a dialog"),
             # 'delete the build folder' made it type `pwd; ls -la; ls -la build | head`: the user was asked to approve a look before the command that mattered
             "one simple command per run": ("ONE simple command per run", "no `;`, `&&`, `||` or pipes", "the host holds a chained line for the user's approval"),
             "a dialog is the user's decision": ("is the USER's decision", "do not answer it", "do not press Esc", "do not type a prompt over it", "Report it with say",
