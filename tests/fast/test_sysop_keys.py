@@ -122,6 +122,7 @@ class Prompt(Base):
         f = sub.makefile("rb")
         self.addCleanup(sub.close)
         f.readline()
+        self.assertTrue(ss.wait_for(lambda: self.bus.subs, 5), "the bus has the subscriber before the goal is published (a race under load: exit 3, nobody subscribed)")
         self.assertEqual(self.ask("  run the tests \n")[0], 0)
         env = json.loads(f.readline())
         self.assertEqual((env["body"], env["source"]), ({"text": "run the tests"}, "panel"))
@@ -135,6 +136,7 @@ class Prompt(Base):
         f = sub.makefile("rb")
         self.addCleanup(sub.close)
         f.readline()
+        self.assertTrue(ss.wait_for(lambda: self.bus.subs, 5), "the bus has the subscriber before the goal is published (a race under load: exit 3, nobody subscribed)")
         saved = os.environ.get("SWARMBOX_SYSOP_TOPIC")
         self.addCleanup(lambda: os.environ.pop("SWARMBOX_SYSOP_TOPIC", None) if saved is None else os.environ.update(SWARMBOX_SYSOP_TOPIC=saved))
         os.environ["SWARMBOX_SYSOP_TOPIC"] = "ops"
