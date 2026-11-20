@@ -4,7 +4,7 @@ Everything here is computed by the host from the text and from what the tab runs
 risk, pick the autonomy or skip the countdown.
 
 THE RISK of an action (assess_run / assess_input), low, medium or high, plus `block`:
-  * the target tab runs an AGENT (claude, gemini, opencode, codex, aider), a SHELL (bash, zsh, ...) or something ELSE (python, vim, ssh,
+  * the target tab runs an AGENT (claude, gemini, opencode, codex, agy, aider), a SHELL (bash, zsh, ...) or something ELSE (python, vim, ssh,
     a program that is running a command, node...). A tab that is not a shell or an agent is rated at least medium: what is typed there is
     code of a program the policy cannot read.
   * agent: the text is a prompt, low. A text whose first character is `/` or `!` (a slash command, a shell escape) is BLOCKED (no approval path:
@@ -40,7 +40,7 @@ import unicodedata
 
 from . import risk
 
-AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex", "aider")
+AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex", "agy", "aider")
 SHELLS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "ash")
 MAX_TEXT = 4000
 LEVELS = risk.LEVELS

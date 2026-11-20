@@ -78,7 +78,7 @@ CHUNK = 1024             # characters of one send-keys word (4 KiB at most in UT
 TMUX_TIMEOUT = 5.0
 MAX_LINE = 1000          # characters of one line of a screen, cut after the secrets filter (see _render)
 VERIFY_TIMEOUT = 5.0     # seconds to see the text leave the input box after an Enter
-AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex")
+AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex", "agy")
 REDACTED = "[REDACTED]"
 
 Tab = namedtuple("Tab", "id index name cwd command pane panes active label")

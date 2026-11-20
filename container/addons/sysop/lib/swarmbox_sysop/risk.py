@@ -14,7 +14,7 @@ import shlex
 import unicodedata
 
 LEVELS = ("low", "medium", "high")
-AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex", "aider")
+AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex", "agy", "aider")
 SHELLS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "ash", "busybox")
 _MAX_DEPTH = 4
 

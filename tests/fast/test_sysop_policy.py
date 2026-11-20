@@ -272,7 +272,7 @@ class RiskTable(unittest.TestCase):
 
 class TabKinds(unittest.TestCase):
     def test_kind_of_the_running_command(self):
-        for cmd, kind in (("claude", "agent"), ("gemini", "agent"), ("opencode", "agent"), ("codex", "agent"), ("aider", "agent"), ("/usr/bin/claude", "agent"),
+        for cmd, kind in (("claude", "agent"), ("gemini", "agent"), ("opencode", "agent"), ("codex", "agent"), ("agy", "agent"), ("aider", "agent"), ("/usr/bin/claude", "agent"),
                           ("bash", "shell"), ("zsh", "shell"), ("-bash", "shell"), ("fish", "shell"), ("sh", "shell"), ("dash", "shell"),
                           ("python3", "other"), ("node", "other"), ("vim", "other"), ("ssh", "other"), ("sleep", "other"), ("", "other"), (None, "other")):
             with self.subTest(cmd=cmd):
