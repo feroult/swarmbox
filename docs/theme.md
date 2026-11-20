@@ -51,6 +51,13 @@ palette as the browser terminal (`tests/fast/test_theme.py` checks that they agr
 - **Exact colors inside tmux.** Claude Code caps itself at 256 colors inside tmux, even with `COLORTERM=truecolor`, and turns each exact color of a theme into the nearest of 256 with a rough formula (the rose `#ff6b78` came out as the salmon
   `#ff8787`). The shell of the box sets `CLAUDE_CODE_TMUX_TRUECOLOR=1`, which lifts the cap, because the tmux of the box declares RGB; set it empty in your `~/.bashrc` to go back.
 
+## Antigravity CLI (`agy`)
+
+The `antigravity` addon keeps its own isolated configuration and status line inside `container/addons/antigravity/` (never touching Claude Code's `swarmbox-statusline` or `~/.claude/settings.json`):
+
+- **Dedicated status line (`container/addons/antigravity/statusline.sh`):** uses the same Purple Glow palette (`╶─ …/swarmbox ─ main ! ─ Gemini 4 Neon (High) ─ ▰▰▰▱▱▱▱▱▱▱ 34% 149k ─ $0.42 ─ 7d 6%`) to show the current directory, git branch, active model, context window bar with token count, estimated USD cost, quota usage, and running subagents/tasks, adapting automatically to `terminal_width`.
+- **Automatic defaults (`container/addons/antigravity/prepare.sh`):** on install or first box start, seeds `~/.gemini/antigravity-cli/settings.json` (mode `600`, once, never overwriting existing keys) with `statusLine` wired to `statusline.sh`, `colorScheme: "tokyo night"`, `showFeedbackSurvey: false`, and `allowNonWorkspaceAccess: true`. Turn off or change it any time inside `agy` with `/statusline` or `/config`.
+
 ## Fonts
 
 Nothing here needs a Nerd Font: the prompt and the pull line use plain box-drawing characters. The browser terminal asks for JetBrainsMono Nerd Font first and falls back to Cascadia Code, Consolas, Menlo and any monospace

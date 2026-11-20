@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added: the `antigravity` addon now ships its own isolated status line (`container/addons/antigravity/statusline.sh`) and `prepare.sh` that seeds `~/.gemini/antigravity-cli/settings.json` once (without overwriting user keys) with a Purple Glow status line showing current folder, git branch, active model, context usage bar and tokens, estimated cost, and quota usage, plus `colorScheme: "tokyo night"`, `allowNonWorkspaceAccess: true`, and `showFeedbackSurvey: false`. Claude Code's `swarmbox-statusline` and `~/.claude/settings.json` remain completely separate.
+
 ## [2.0.21] - 2026-11-20
 
 - Added: the addon `antigravity`, the Antigravity CLI, Google's successor of Gemini CLI (command `agy`). `swarmbox addon install antigravity` (or `--with antigravity`, or the first `agy`) downloads the vendor's release for the architecture of the box, checks its SHA-512 against the vendor's manifest and puts the program in `~/.local/bin/agy`; the program updates itself (`agy update`), like Claude Code. The installer does not run the vendor's `install.sh`, because that edits the shell's startup files. The shell function starts `agy` with `--dangerously-skip-permissions` (not for its subcommands; `SWARMBOX_YOLO=0` turns it off), `yolo` runs it when the default agent is `antigravity` or `agy`, and `swarmbox-tabs` and the sysop know `agy` as an agent next to claude, gemini, opencode and codex. Its login and data are in `~/.gemini/` (the folder Gemini CLI uses too); on an SSH session it prints an address to log in from another browser. It is closed source (see `THIRD_PARTY_NOTICES.md`).

@@ -72,7 +72,7 @@ The base image stays small and neutral; every addon installs on demand into your
 | Addon | Commands | What is pre-configured |
 |---|---|---|
 | **`claude`** | `claude` | Claude Code in auto-approve mode with `--mcp-config` wired to `chrome-devtools-mcp`; self-updating (`claude update`) |
-| **`antigravity`** | `agy` | Antigravity CLI, Google's coding agent (replaces Gemini CLI), in auto-approve mode; self-updating (`agy update`) |
+| **`antigravity`** | `agy` | Antigravity CLI, Google's coding agent (replaces Gemini CLI), in auto-approve mode with a pre-configured Purple Glow status line; self-updating (`agy update`) |
 | **`opencode`** | `opencode` | OpenCode in auto-approve mode, mirrored MCP config, and optional `LOCAL_LLM_*` endpoint setup |
 | **`gemini`** | `gemini` | Gemini CLI in `--yolo` mode *(deprecated: paid API key only; use `antigravity`)* |
 | **`sysop`** | `swarmbox-sysop` | Tab-operating agent loop, docked tmux panel, risk policy, approvals, conversation history, and audit log |

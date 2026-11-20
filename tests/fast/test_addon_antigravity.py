@@ -2,9 +2,13 @@
 
 The real install (the vendor's release server) is in tests/slow/test_addon_real.py. Run with: python3 -W error tests/fast/test_addon_antigravity.py
 """
+import colorsys
 import hashlib
+import json
 import os
+import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -17,6 +21,24 @@ from helpers import ROOT  # noqa: E402
 
 ADDON = os.path.join(ROOT, "container", "addons", "antigravity")
 INSTALL = os.path.join(ADDON, "install.sh")
+PREPARE = os.path.join(ADDON, "prepare.sh")
+STATUSLINE = os.path.join(ADDON, "statusline.sh")
+LIB = os.path.join(ROOT, "container", "scripts")
+SGR = re.compile(r"\x1b\[[0-9;]*m")
+VIOLET, LAVENDER, FUCHSIA, ROSE = 147, 189, 177, 204
+
+
+def plain(text):
+    return SGR.sub("", text)
+
+
+def rgb256(n):
+    if n >= 232:
+        v = 8 + 10 * (n - 232)
+        return (v, v, v)
+    n -= 16
+    lv = (0, 95, 135, 175, 215, 255)
+    return (lv[n // 36], lv[n // 6 % 6], lv[n % 6])
 
 # the fake vendor server: the manifest names the tarball by a path under FAKE_SERVER; every call is recorded
 FAKE_CURL = r"""#!/bin/sh
@@ -150,11 +172,187 @@ class InstallTest(unittest.TestCase):
         self.assertEqual([n for n in os.listdir(os.path.dirname(agy))], ["agy"])  # no temporary file is left
 
 
+@unittest.skipUnless(shutil.which("jq") and shutil.which("git"), "needs jq and git")
+class StatuslineTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="agy-statusline-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = os.path.join(self.tmp, "home")
+        self.repo = os.path.join(self.home, "work", "a", "swarmbox")
+        os.makedirs(self.repo)
+        git = lambda *a: subprocess.run(("git", "-c", "user.email=t@t", "-c", "user.name=t") + a, cwd=self.repo, check=True, capture_output=True)
+        git("init", "-q", "-b", "main", ".")
+        with open(os.path.join(self.repo, "f"), "w") as f:
+            f.write("x\n")
+        git("add", "f")
+        git("commit", "-q", "-m", "first")
+
+    def run_line(self, doc, raw=None, **env):
+        e = {"PATH": os.environ["PATH"], "HOME": self.home, "LANG": "C.UTF-8"}
+        e.update(env)
+        r = subprocess.run(["bash", STATUSLINE], input=raw if raw is not None else json.dumps(doc), env=e, capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stderr, "")
+        return r.stdout.rstrip("\n")
+
+    def doc(self, ctx=34, in_tok=88244, out_tok=61074, cost=None, quota=None, cwd=None, model="Gemini 4 Neon (High)", width=None, subagents=None, tasks=None):
+        d = {
+            "product": "antigravity",
+            "workspace": {"current_dir": cwd or self.repo},
+            "model": {"display_name": model},
+            "context_window": {"used_percentage": ctx, "total_input_tokens": in_tok, "total_output_tokens": out_tok},
+        }
+        if cost is not None:
+            d["cost"] = {"total_usd": cost}
+        if quota is not None:
+            d["quota"] = quota
+        if width is not None:
+            d["terminal_width"] = width
+        if subagents is not None:
+            d["subagents"] = subagents
+        if tasks is not None:
+            d["task_count"] = tasks
+        return d
+
+    def test_renders_directory_branch_model_context_bar_and_tokens(self):
+        out = plain(self.run_line(self.doc(34.4)))
+        self.assertEqual(out, "╶─ …/a/swarmbox ─ main ─ Gemini 4 Neon (High) ─ ▰▰▰▱▱▱▱▱▱▱ 34% 149k")
+
+    def test_formats_millions_of_tokens_and_dirty_repo_and_home_tilde(self):
+        with open(os.path.join(self.repo, "f"), "a") as f:
+            f.write("changed\n")
+        out = plain(self.run_line(self.doc(62, in_tok=950000, out_tok=300000)))
+        self.assertIn("main ! ─", out)
+        self.assertIn("62% 1.2M", out)
+        self.assertEqual(plain(self.run_line(self.doc(ctx=12, in_tok=0, out_tok=0, cwd=self.home))),
+                         "╶─ ~ ─ Gemini 4 Neon (High) ─ ▰▱▱▱▱▱▱▱▱▱ 12%")
+
+    def test_renders_cost_quotas_and_active_background_work(self):
+        quota = {
+            "gemini-weekly": {"remaining_fraction": 0.9378, "reset_in_seconds": 560580},
+            "gemini-5h": {"remaining_fraction": 0.25, "reset_in_seconds": 7200},
+            "ignored-disabled": {"remaining_fraction": 0.1, "disabled": True},
+        }
+        subagents = [{"name": "a", "status": "running"}, {"name": "b", "status": "completed"}]
+        out = plain(self.run_line(self.doc(14.2, cost=0.4213, quota=quota, subagents=subagents, tasks=2)))
+        self.assertTrue(out.endswith("14% 149k ─ $0.42 ─ 5h 75% ─ 7d 6% ─ 1 sub 2 task"), out)
+
+    def test_colors_escalate_violet_to_fuchsia_to_rose_with_no_orange(self):
+        def codes(doc):
+            return {int(n) for n in re.findall(r"\x1b\[38;5;(\d+)m", self.run_line(doc))}
+        self.assertIn(VIOLET, codes(self.doc(69)))
+        self.assertNotIn(FUCHSIA, codes(self.doc(69)))
+        self.assertIn(FUCHSIA, codes(self.doc(70)))
+        self.assertNotIn(ROSE, codes(self.doc(89)))
+        self.assertIn(ROSE, codes(self.doc(90)))
+        self.assertIn(FUCHSIA, codes(self.doc(10, quota={"gemini-5h": {"remaining_fraction": 0.28}})))
+        self.assertIn(ROSE, codes(self.doc(10, quota={"gemini-weekly": {"remaining_fraction": 0.05}})))
+        for ctx, rem in ((0, 1.0), (34, 0.5), (70, 0.3), (95, 0.05)):
+            for n in codes(self.doc(ctx, cost=1.5, quota={"gemini-weekly": {"remaining_fraction": rem}})):
+                r, g, b = (c / 255 for c in rgb256(n))
+                h, s, _ = colorsys.rgb_to_hsv(r, g, b)
+                self.assertFalse(15 <= h * 360 <= 50 and s > 0.35, "color %d is orange/amber" % n)
+
+    def test_fits_terminal_width_from_json_and_columns_keeping_context(self):
+        quota = {"gemini-5h": {"remaining_fraction": 0.3}, "gemini-weekly": {"remaining_fraction": 0.6}}
+        full = plain(self.run_line(self.doc(82, cost=1.25, quota=quota, tasks=1)))
+        self.assertIn("1 task", full)
+        trimmed = plain(self.run_line(self.doc(82, cost=1.25, quota=quota, tasks=1, width=len(full) - 2)))
+        self.assertNotIn("1 task", trimmed)
+        self.assertIn("7d", trimmed)
+        narrow = plain(self.run_line(self.doc(82, cost=1.25, quota=quota, tasks=1, width=42)))
+        self.assertNotIn("Gemini", narrow)
+        self.assertNotIn("$1.25", narrow)
+        self.assertIn("82%", narrow)
+
+    def test_no_color_and_bad_json_never_fail(self):
+        out = self.run_line(self.doc(95), NO_COLOR="1")
+        self.assertEqual(SGR.findall(out), [])
+        self.assertIn("95%", out)
+        self.assertEqual(self.run_line(None, raw="not json"), "")
+        self.assertEqual(self.run_line(None, raw=""), "")
+
+
+@unittest.skipUnless(shutil.which("jq"), "needs jq")
+class PrepareTest(unittest.TestCase):
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="agy-prepare-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.home = os.path.join(self.base, "home")
+        os.makedirs(self.home)
+        self.settings = os.path.join(self.home, ".gemini", "antigravity-cli", "settings.json")
+
+    def run_prepare(self):
+        e = {"PATH": os.environ["PATH"], "HOME": self.home, "SWARMBOX_TEST_LIB": LIB, "TMPDIR": self.base}
+        return subprocess.run(["bash", PREPARE], env=e, capture_output=True, text=True, timeout=30, cwd=self.home)
+
+    def read_settings(self):
+        with open(self.settings, encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_seeds_default_settings_isolated_to_antigravity_with_mode_600(self):
+        r = self.run_prepare()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, "")
+        self.assertTrue(os.path.isfile(self.settings))
+        self.assertEqual(stat.S_IMODE(os.stat(self.settings).st_mode), 0o600)
+        cfg = self.read_settings()
+        self.assertEqual(cfg["statusLine"], {"type": "command", "command": STATUSLINE})
+        self.assertEqual(cfg["colorScheme"], "tokyo night")
+        self.assertIs(cfg["showFeedbackSurvey"], False)
+        self.assertIs(cfg["allowNonWorkspaceAccess"], True)
+        # Never touches Claude Code's folder
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".claude")))
+
+    def test_merges_missing_defaults_without_overwriting_existing_user_keys(self):
+        os.makedirs(os.path.dirname(self.settings), exist_ok=True)
+        existing = {
+            "colorScheme": "dark",
+            "model": "Gemini 4 Neon (High)",
+            "trustedWorkspaces": ["/home/agent/proj"],
+            "statusLine": {"type": "command", "command": "/my/custom.sh"},
+        }
+        with open(self.settings, "w", encoding="utf-8") as f:
+            json.dump(existing, f)
+        r = self.run_prepare()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        cfg = self.read_settings()
+        self.assertEqual(cfg["colorScheme"], "dark")
+        self.assertEqual(cfg["model"], "Gemini 4 Neon (High)")
+        self.assertEqual(cfg["trustedWorkspaces"], ["/home/agent/proj"])
+        self.assertEqual(cfg["statusLine"], {"type": "command", "command": "/my/custom.sh"})
+        self.assertIs(cfg["showFeedbackSurvey"], False)
+        self.assertIs(cfg["allowNonWorkspaceAccess"], True)
+
+    def test_seeds_only_once_so_user_reset_to_agy_default_is_respected(self):
+        self.assertEqual(self.run_prepare().returncode, 0)
+        # Simulate user running `/statusline delete` or resetting colorScheme to terminal (agy removes keys matching its defaults)
+        with open(self.settings, "w", encoding="utf-8") as f:
+            json.dump({"model": "Gemini 4 Neon (High)"}, f)
+        self.assertEqual(self.run_prepare().returncode, 0)
+        self.assertEqual(self.read_settings(), {"model": "Gemini 4 Neon (High)"})
+        # Deleting the file completely re-seeds SwarmBox defaults
+        os.unlink(self.settings)
+        self.assertEqual(self.run_prepare().returncode, 0)
+        self.assertEqual(self.read_settings()["statusLine"]["command"], STATUSLINE)
+
+    def test_broken_settings_json_is_left_untouched_and_reports_error(self):
+        os.makedirs(os.path.dirname(self.settings), exist_ok=True)
+        with open(self.settings, "w", encoding="utf-8") as f:
+            f.write("{not valid json")
+        r = self.run_prepare()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not a JSON object", r.stderr)
+        with open(self.settings, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "{not valid json")
+
+
 class StaticTest(unittest.TestCase):
-    def test_the_installer_passes_bash_n_and_shellcheck(self):
-        self.assertTrue(os.access(INSTALL, os.X_OK))
-        self.assertEqual(subprocess.run(["bash", "-n", INSTALL]).returncode, 0)
-        for f in (INSTALL, os.path.join(ADDON, "shell.sh")):
+    def test_the_scripts_pass_bash_n_and_shellcheck(self):
+        for f in (INSTALL, PREPARE, STATUSLINE):
+            self.assertTrue(os.access(f, os.X_OK), f)
+            self.assertEqual(subprocess.run(["bash", "-n", f]).returncode, 0, f)
+        for f in (INSTALL, PREPARE, STATUSLINE, os.path.join(ADDON, "shell.sh")):
             if shutil.which("shellcheck"):
                 r = subprocess.run(["shellcheck", "-s", "bash", f], capture_output=True, text=True)
                 self.assertEqual(r.returncode, 0, r.stdout)
