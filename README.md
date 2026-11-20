@@ -4,14 +4,14 @@
 
 **A box where your AI agent works with freedom, and a shell you can reach from anywhere.**
 
-Give your coding agent (Claude Code, Gemini CLI, OpenCode) a box of its own. Inside it the agent runs without approval prompts: it installs packages, builds and runs
+Give your coding agent (Claude Code, Antigravity CLI, OpenCode; Gemini CLI too, for a paid API key) a box of its own. Inside it the agent runs without approval prompts: it installs packages, builds and runs
 containers, and gets on with the job. The box keeps running while you are away, and you step into the same shell and the same session from any terminal tab or from a
 browser, on your machine or from your phone.
 
 - **Freedom to work.** Auto-approve mode, nested Podman, and a browser the agent can drive (Chrome DevTools MCP).
 - **One session, from anywhere.** Every terminal tab and the browser share one tmux session. Remote access with Cloudflare Tunnel and an e-mail code.
 - **Persistent.** Projects, logins and addons live in one workspace folder: delete and recreate the box and lose nothing.
-- **Addons on demand.** Claude Code, Gemini CLI, OpenCode, gcloud, clasp, Go and Poetry install the first time you use them.
+- **Addons on demand.** Claude Code, Antigravity CLI (`agy`), Gemini CLI (deprecated), OpenCode, gcloud, clasp, Go and Poetry install the first time you use them.
 - **Talk to your box.** Optional: type or speak a goal and an agent operates your tmux tabs, asking you before anything risky ([sysop](docs/sysop.md), [voice](docs/voice.md)).
 - **No telemetry.**
 

@@ -155,6 +155,7 @@ managers can read: the `uses:` lines of the workflows and a literal `FROM` line.
 | `container/addons/clasp/addon.conf` | by hand | change `VERSION` |
 | `container/addons/poetry/addon.conf` | by hand | change `VERSION` |
 | `container/addons/claude/addon.conf` | floating (nothing to bump) | `VERSION=latest`; the addon updates itself |
+| `container/addons/antigravity/addon.conf` | floating (nothing to bump) | `VERSION=latest`; the program updates itself (the installer reads the vendor's manifest, which is always the newest release) |
 | `container/addons/gemini/addon.conf` | floating (nothing to bump) | `VERSION=latest` |
 | `container/addons/opencode/addon.conf` | floating (nothing to bump) | `VERSION=latest` |
 

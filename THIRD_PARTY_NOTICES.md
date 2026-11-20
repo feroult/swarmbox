@@ -238,10 +238,19 @@ statements below are for people who bake them in or want to know the terms.
 - [verified: google-cloud-sdk/LICENSE inside google-cloud-cli-592.0.0-linux-x86_64.tar.gz, "licensed under Apache License v. 2.0 (the License), unless otherwise specified by an alternate license file"; 2026-11-08]
 - [owner-check: the license files of the bundled components (gsutil, bq, the Python and third-party directories of the archive) were not individually read; only the top-level LICENSE was extracted]
 
+### Antigravity CLI (`agy`, addon `antigravity`)
+
+- License: proprietary, closed source (a Go binary). Use is subject to Google's terms of service for Antigravity (linked from https://github.com/google-antigravity/antigravity-cli).
+- Source: not published as open source; the repository https://github.com/google-antigravity/antigravity-cli holds the README, the CHANGELOG and examples, no source and no license file.
+- Not redistributed by SwarmBox: the addon downloads the vendor's release (the manifest and the tarball of the vendor's own release server, checked with the SHA-512 of that manifest) on the user's machine, on first use, into the user's `~/.local/bin`. It must not be baked into a published image (`with_addons=antigravity` is for private images).
+- [verified: the contents of the repository's root and its `license` field through the GitHub API (no license; five entries: `.github`, `CHANGELOG.md`, `README.md`, a demo GIF and `examples`); the vendor's install script and release manifest of version 1.5.13; 2026-11-20]
+- [owner-check: the terms of service page was not read here (legal sufficiency is for the owner or a lawyer to confirm), nor whether the vendor allows redistribution inside an image]
+
 ### Gemini CLI (`@google/gemini-cli`, addon `gemini`)
 
 - License: Apache-2.0
 - Source: https://github.com/google-gemini/gemini-cli
+- Deprecated by the vendor: Google stopped serving it for most accounts on 2026-06-18 and points to the Antigravity CLI above (it still works with a paid Gemini API key).
 - [verified: "license" field of the installed package.json and LICENSE on the main branch; `npm view` shows Apache-2.0 and the repository URL (version 0.67.0); 2026-11-08]
 
 ### clasp (`@google/clasp`, addon `clasp`)

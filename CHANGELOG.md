@@ -5,6 +5,9 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added: the addon `antigravity`, the Antigravity CLI, Google's successor of Gemini CLI (command `agy`). `swarmbox addon install antigravity` (or `--with antigravity`, or the first `agy`) downloads the vendor's release for the architecture of the box, checks its SHA-512 against the vendor's manifest and puts the program in `~/.local/bin/agy`; the program updates itself (`agy update`), like Claude Code. The installer does not run the vendor's `install.sh`, because that edits the shell's startup files. The shell function starts `agy` with `--dangerously-skip-permissions` (not for its subcommands; `SWARMBOX_YOLO=0` turns it off), `yolo` runs it when the default agent is `antigravity` or `agy`, and `swarmbox-tabs` and the sysop know `agy` as an agent next to claude, gemini, opencode and codex. Its login and data are in `~/.gemini/` (the folder Gemini CLI uses too); on an SSH session it prints an address to log in from another browser. It is closed source (see `THIRD_PARTY_NOTICES.md`).
+- Changed: the addon `gemini` is marked deprecated. Google stopped serving Gemini CLI for most accounts on 2026-06-18; it still works with a paid Gemini API key. Nothing is removed.
+
 ## [2.0.20] - 2026-11-19
 
 - Changed: the sysop remembers the conversation. Each goal's brain gets the last 8 goals of the last 12 hours (what you said, what it typed and where, how it ended) in front of the goal, so a follow-up ("and the other one?") is understood. What you say is by default a message for an agent: the sysop infers the most likely one (the agent of the active tab, else the tab it was talking to, else the only agent) and types your words there; you never have to say "send it to Claude". Only a clear operation on the box is done by the sysop itself.
