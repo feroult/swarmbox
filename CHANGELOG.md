@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.20] - 2026-11-19
+
 - Changed: the sysop remembers the conversation. Each goal's brain gets the last 8 goals of the last 12 hours (what you said, what it typed and where, how it ended) in front of the goal, so a follow-up ("and the other one?") is understood. What you say is by default a message for an agent: the sysop infers the most likely one (the agent of the active tab, else the tab it was talking to, else the only agent) and types your words there; you never have to say "send it to Claude". Only a clear operation on the box is done by the sysop itself.
 - Changed: the sysop no longer refuses to type into an agent that is working: a `run` is sent with `--queue`, and the agent queues the message. A dialog open in the agent is still left to you.
 - Changed: the field of the idle sysop panel (`Type a goal`) has a blank line above it when the pane has 12 rows or more (a short pane keeps its room for the result of the goal).
@@ -255,6 +257,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.20]: https://github.com/feroult/swarmbox/releases/tag/v2.0.20
 [2.0.19]: https://github.com/feroult/swarmbox/releases/tag/v2.0.19
 [2.0.18]: https://github.com/feroult/swarmbox/releases/tag/v2.0.18
 [2.0.17]: https://github.com/feroult/swarmbox/releases/tag/v2.0.17
