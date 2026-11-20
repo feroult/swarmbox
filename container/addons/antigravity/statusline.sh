@@ -4,14 +4,20 @@
 #
 # Antigravity CLI pipes the session state as JSON on standard input and prints what this script writes to standard output under the prompt:
 #
-#   ╶─ …/swarmbox ─ main ! ─ Gemini 4 Neon (High) ─ ▰▰▱▱▱▱▱▱▱▱ 14% 149k ─ $0.42 ─ 7d 6%
+#   Wide:
+#     ╶─ …/swarmbox ─ main ! ─ Gemini 4 Neon (High) ─ ▰▰▱▱▱▱▱▱▱▱ 14% 149k ─ $0.42 ─ 7d 6%
+#
+#   Narrow (e.g. a 56-column phone, where one line would drop the model):
+#     ╶─ …/swarmbox ─ main ! ─ $0.42 ─ 7d 6%
+#     ╶─ Gemini 4 Neon (High) ─ ▰▰▱▱▱▱▱▱▱▱ 14% 149k
 #
 # Directory in violet (last two folders, "~" for home), git branch in lavender with "!" for tracked changes, active model dim,
 # context bar in violet (fuchsia from 70%, rose from 90%; never orange) with total tokens when reported, estimated USD cost when > 0,
 # quota usage (dim until 70%, then fuchsia/rose), and running subagents/tasks only when > 0.
 #
-# Width fitting uses COLUMNS when set, else .terminal_width from the JSON payload, dropping optional parts from least to most critical
-# (activity -> quotas -> cost -> token count -> model) so the directory, branch and context bar stay visible even on a phone.
+# Width fitting uses COLUMNS when set, else .terminal_width from the JSON payload. On wide screens optional parts drop from least to most
+# critical (activity -> quotas -> cost -> tokens). When directory + model + context still do not fit on one line, the script switches to
+# two clean lines so the current directory, active model, and context usage always remain visible.
 # Never fails the line: missing jq, bad JSON, or an unreadable folder prints what it can (or nothing) and exits 0. NO_COLOR turns ANSI off.
 
 LC_ALL=C.UTF-8
@@ -66,11 +72,16 @@ IFS=$'\037' read -r dir vcs_branch vcs_dirty model ctx total_tok cost_usd q1_lbl
                 [.subagents[] | select((type == "object") and .status == "running")] | length
             else 0 end
         ) as $subs |
+        (
+            if (.model | type) == "string" then .model
+            elif (.model | type) == "object" then (.model.display_name // .model.label // .model.name // .model.id // "")
+            else "" end
+        ) as $mdl |
         [
             (.workspace.current_dir // .workspace.project_dir // .cwd // ""),
             (.vcs.branch // ""),
             (if .vcs.dirty == true then "1" else "" end),
-            (.model.display_name // .model.id // ""),
+            $mdl,
             (.context_window.used_percentage // "" | if type == "number" then floor else "" end),
             ($tok | fmt_tok),
             (if (.cost.total_usd | type) == "number" and .cost.total_usd > 0 then .cost.total_usd else "" end),
@@ -99,6 +110,18 @@ level_color() {
     if (($1 >= 90)); then REPLY=$c_rose; elif (($1 >= 70)); then REPLY=$c_fuchsia; else REPLY=$c_violet; fi
 }
 
+# build_bar PERCENT CELLS -> REPLY (colored bar + percentage)
+build_bar() {
+    local pct=$1 cells=$2 filled i cells_on='' cells_off='' col
+    filled=$(((pct * cells + 50) / 100))
+    level_color "$pct"
+    col=$REPLY
+    for ((i = 0; i < cells; i++)); do
+        if ((i < filled)); then cells_on+='▰'; else cells_off+='▱'; fi
+    done
+    REPLY="${col}${cells_on}${c_empty}${cells_off}${c_off} ${col}${pct}%${c_off}"
+}
+
 # Directory: ~ for home, last two segments with "…/" when deeper
 shown=$dir
 [[ $shown == "$HOME" ]] && shown='~'
@@ -123,8 +146,9 @@ else
     fi
 fi
 
+lead="${c_dash}╶─ ${c_off}"
 dash="${c_dash} ─ ${c_off}"
-head_part="${c_dash}╶─ ${c_off}${c_violet}${shown}${c_off}"
+head_part="${lead}${c_violet}${shown}${c_off}"
 head_len=$((3 + ${#shown}))
 if [ -n "$branch" ]; then
     head_part+="${dash}${c_lav}${branch}${dirty}${c_off}"
@@ -141,12 +165,8 @@ ctx_part=''; ctx_len=0
 tok_part=''; tok_len=0
 if [[ $ctx =~ ^[0-9]+$ ]]; then
     ((ctx > 100)) && ctx=100
-    filled=$(((ctx * 10 + 50) / 100))
-    level_color "$ctx"
-    ctx_color=$REPLY
-    cells_on=''; cells_off=''
-    for ((i = 0; i < 10; i++)); do if ((i < filled)); then cells_on+='▰'; else cells_off+='▱'; fi; done
-    ctx_part="${dash}${ctx_color}${cells_on}${c_empty}${cells_off}${c_off} ${ctx_color}${ctx}%${c_off}"
+    build_bar "$ctx" 10
+    ctx_part="${dash}${REPLY}"
     ctx_len=$((3 + 10 + 1 + ${#ctx} + 1))
     if [ -n "$total_tok" ]; then
         tok_part=" ${c_dim}${total_tok}${c_off}"
@@ -191,21 +211,49 @@ if [ -n "$act_txt" ]; then
     act_len=$((3 + ${#act_txt}))
 fi
 
-# Fit width when known (COLUMNS wins over JSON terminal_width): drop activity, quota 2, quota 1, cost, tokens, then model.
+# Width budget: COLUMNS wins over JSON terminal_width.
 width=''
 if [[ ${COLUMNS:-} =~ ^[0-9]+$ ]] && ((COLUMNS > 0)); then
     width=$COLUMNS
 elif [[ $twidth =~ ^[0-9]+$ ]] && ((twidth > 0)); then
     width=$twidth
 fi
+
+# Narrow terminals where directory + model + context cannot fit on one line switch to two clean lines
+# so the current folder, active model, and context bar are never dropped (e.g. on a 56-column phone).
+if [ -n "$width" ] && [ -n "$model" ] && ((head_len + model_len + ctx_len > width)); then
+    # Line 1: directory + branch + whatever optional badges fit
+    l1_cost=$cost_part; l1_q1=$q1_part; l1_q2=$q2_part; l1_act=$act_part
+    l1_total=$((head_len + cost_len + q1_len + q2_len + act_len))
+    if ((l1_total > width && act_len > 0)); then l1_act=''; l1_total=$((l1_total - act_len)); fi
+    if ((l1_total > width && q2_len > 0)); then l1_q2=''; l1_total=$((l1_total - q2_len)); fi
+    if ((l1_total > width && q1_len > 0)); then l1_q1=''; l1_total=$((l1_total - q1_len)); fi
+    if ((l1_total > width && cost_len > 0)); then l1_cost=''; fi
+
+    # Line 2: model + context bar (+ tokens if they fit; shrink bar to 5 cells on very narrow screens)
+    l2_head="${lead}${c_dim}${model}${c_off}"
+    l2_head_len=$((3 + ${#model}))
+    l2_ctx=$ctx_part; l2_ctx_len=$ctx_len
+    l2_tok=$tok_part; l2_tok_len=$tok_len
+    if ((l2_head_len + l2_ctx_len + l2_tok_len > width && l2_tok_len > 0 && l2_ctx_len > 0)); then
+        l2_tok=''; l2_tok_len=0
+    fi
+    if ((l2_head_len + l2_ctx_len > width)) && [[ $ctx =~ ^[0-9]+$ ]]; then
+        build_bar "$ctx" 5
+        l2_ctx="${dash}${REPLY}"
+    fi
+    printf '%s%s%s%s%s\n%s%s%s\n' "$head_part" "$l1_cost" "$l1_q1" "$l1_q2" "$l1_act" "$l2_head" "$l2_ctx" "$l2_tok"
+    exit 0
+fi
+
+# Single-line layout: drop optional items progressively so the line fits cleanly.
 if [ -n "$width" ]; then
     total=$((head_len + model_len + ctx_len + tok_len + cost_len + q1_len + q2_len + act_len))
     if ((total > width && act_len > 0)); then act_part=''; total=$((total - act_len)); fi
     if ((total > width && q2_len > 0)); then q2_part=''; total=$((total - q2_len)); fi
     if ((total > width && q1_len > 0)); then q1_part=''; total=$((total - q1_len)); fi
     if ((total > width && cost_len > 0)); then cost_part=''; total=$((total - cost_len)); fi
-    if ((total > width && tok_len > 0 && ctx_len > 0)); then tok_part=''; total=$((total - tok_len)); fi
-    if ((total > width && model_len > 0)); then model_part=''; fi
+    if ((total > width && tok_len > 0 && ctx_len > 0)); then tok_part=''; fi
 fi
 
 printf '%s%s%s%s%s%s%s%s\n' "$head_part" "$model_part" "$ctx_part" "$tok_part" "$cost_part" "$q1_part" "$q2_part" "$act_part"

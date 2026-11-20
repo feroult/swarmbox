@@ -253,17 +253,31 @@ class StatuslineTest(unittest.TestCase):
                 h, s, _ = colorsys.rgb_to_hsv(r, g, b)
                 self.assertFalse(15 <= h * 360 <= 50 and s > 0.35, "color %d is orange/amber" % n)
 
-    def test_fits_terminal_width_from_json_and_columns_keeping_context(self):
+    def test_fits_terminal_width_and_wraps_to_two_lines_on_narrow_screens_keeping_model_and_context(self):
         quota = {"gemini-5h": {"remaining_fraction": 0.3}, "gemini-weekly": {"remaining_fraction": 0.6}}
         full = plain(self.run_line(self.doc(82, cost=1.25, quota=quota, tasks=1)))
         self.assertIn("1 task", full)
+        self.assertEqual(len(full.splitlines()), 1)
         trimmed = plain(self.run_line(self.doc(82, cost=1.25, quota=quota, tasks=1, width=len(full) - 2)))
         self.assertNotIn("1 task", trimmed)
         self.assertIn("7d", trimmed)
-        narrow = plain(self.run_line(self.doc(82, cost=1.25, quota=quota, tasks=1, width=42)))
-        self.assertNotIn("Gemini", narrow)
-        self.assertNotIn("$1.25", narrow)
-        self.assertIn("82%", narrow)
+        self.assertEqual(len(trimmed.splitlines()), 1)
+        # Phone width (56 cols): wraps cleanly into two lines so folder, active model, and context stay visible
+        phone = plain(self.run_line(self.doc(82, cost=1.25, quota=quota, tasks=1, width=56)))
+        lines = phone.splitlines()
+        self.assertEqual(len(lines), 2, phone)
+        self.assertIn("swarmbox", lines[0])
+        self.assertIn("Gemini 4 Neon (High)", lines[1])
+        self.assertIn("82%", lines[1])
+        for ln in lines:
+            self.assertLessEqual(len(ln), 56, ln)
+        # Very narrow (40 cols): shrinks the bar to 5 cells and still keeps folder, model, and context %
+        tiny = plain(self.run_line(self.doc(82, cost=1.25, quota=quota, tasks=1, width=40)))
+        tlines = tiny.splitlines()
+        self.assertEqual(len(tlines), 2, tiny)
+        self.assertIn("Gemini 4 Neon (High)", tlines[1])
+        self.assertIn("82%", tlines[1])
+        self.assertIn("▰▰▰▰▱", tlines[1])
 
     def test_no_color_and_bad_json_never_fail(self):
         out = self.run_line(self.doc(95), NO_COLOR="1")
