@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Changed: modernized the web terminal's mobile controls strip and desktop Sysop microphone bar. On a phone, the Sysop toggle and live status line are now one full-width glass capsule with an SVG chevron; the microphone button uses a violet gradient and hides its status dot while idle; the touch-key row is slimmer with grouped SVG arrows; and the keyboard button now lights up with a hide-keyboard chevron only when the phone keyboard is actually open (never falsely lit when only the Sysop drawer is open) without shrinking the Sysop capsule when the keyboard reduces viewport height. On desktop, the docked Sysop panel's microphone is now a `Speak` pill.
+
 ## [2.0.22] - 2026-11-20
 
 - Added: the `antigravity` addon now ships its own isolated status line (`container/addons/antigravity/statusline.sh`) and `prepare.sh` that seeds `~/.gemini/antigravity-cli/settings.json` once (without overwriting user keys) with a Purple Glow status line showing current folder, git branch, active model, context usage bar and tokens, estimated cost, and quota usage, plus `colorScheme: "tokyo night"`, `allowNonWorkspaceAccess: true`, and `showFeedbackSurvey: false`. Claude Code's `swarmbox-statusline` and `~/.claude/settings.json` remain completely separate.

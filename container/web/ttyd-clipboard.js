@@ -177,6 +177,23 @@
     b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   }
 
+  function chevronIcon() {
+    var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'), p = document.createElementNS(NS, 'path');
+    svg.setAttribute('viewBox', '0 0 16 16'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.9'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+    p.setAttribute('d', 'M4 10l4-4 4 4'); svg.appendChild(p);
+    return svg;
+  }
+  function arrowIcon(sym) {
+    var map = { '\u2190': 'M11 8H5m0 0l3-3M5 8l3 3', '\u2191': 'M8 11V5m0 0L5 8m3-3l3 3', '\u2193': 'M8 5v6m0 0l-3-3m3 3l3-3', '\u2192': 'M5 8h6m0 0L8 5m3 3l-3 3' };
+    if (!map[sym]) return null;
+    var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'), t = document.createElementNS(NS, 'title'), p = document.createElementNS(NS, 'path');
+    svg.setAttribute('viewBox', '0 0 16 16'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.8'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+    t.textContent = sym; p.setAttribute('d', map[sym]); svg.appendChild(t); svg.appendChild(p);
+    return svg;
+  }
+
   function keyButton(def) {
     var answer = def.label === 'Allow' ? 'yes' : def.label === 'Cancel' ? 'no' : '';      // the two answers to the sysop: their own look, and they are off when there is nothing to answer
     var toggle = def.label === 'Panel';      // shows or hides the panel of the sysop: a switch, not a key, and it says whether the panel is up
@@ -184,7 +201,8 @@
     if (toggle) { b.setAttribute('aria-pressed', 'false'); b.setAttribute('data-on', '0'); answers.panel = b; }
     if (answer) { b.setAttribute('data-off', '1'); b.setAttribute('aria-disabled', 'true'); answers[answer] = b; }
     b.type = 'button';
-    b.textContent = def.label;
+    var aIcon = arrowIcon(def.label);
+    if (aIcon) b.appendChild(aIcon); else b.textContent = def.label;
     b.title = def.keys;
     if (!/[A-Za-z0-9]/.test(def.label)) b.setAttribute('aria-label', def.keys);
     keepFocus(b);
@@ -316,12 +334,14 @@
   }
 
   // the icon of the keyboard buttons: a drawing, not the glyph U+2328 (a phone may draw that one as a colour emoji, and each font draws it differently)
+  // Two states for clarity: closed = clean keyboard ("tap to type"), open = keyboard with a down chevron ("keyboard open, tap to hide").
   function keyboardIcon() {
-    var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'), r = document.createElementNS(NS, 'rect'), p = document.createElementNS(NS, 'path');
-    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-linecap', 'round');
-    r.setAttribute('x', '2.5'); r.setAttribute('y', '6'); r.setAttribute('width', '19'); r.setAttribute('height', '12'); r.setAttribute('rx', '2.5'); r.setAttribute('stroke-width', '1.6');
-    p.setAttribute('d', 'M6.5 10h.01M10 10h.01M13.5 10h.01M17.5 10h.01M8 13.5h.01M11.5 13.5h.01M15 13.5h.01M8.5 15.5h7'); p.setAttribute('stroke-width', '1.9');
-    svg.appendChild(r); svg.appendChild(p);
+    var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'), r = document.createElementNS(NS, 'rect'), p = document.createElementNS(NS, 'path'), d = document.createElementNS(NS, 'path');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+    r.setAttribute('class', 'sb-kb-body'); r.setAttribute('x', '2.5'); r.setAttribute('y', '5.5'); r.setAttribute('width', '19'); r.setAttribute('height', '12.5'); r.setAttribute('rx', '2.5'); r.setAttribute('stroke-width', '1.6');
+    p.setAttribute('class', 'sb-kb-keys'); p.setAttribute('d', 'M6.5 9.5h.01M10 9.5h.01M13.5 9.5h.01M17.5 9.5h.01M8 12.75h.01M11.5 12.75h.01M15 12.75h.01M8.5 15h7'); p.setAttribute('stroke-width', '1.9');
+    d.setAttribute('class', 'sb-kb-down'); d.setAttribute('d', 'M9 19.5l3 2.5 3-2.5'); d.setAttribute('stroke-width', '1.8');
+    svg.appendChild(r); svg.appendChild(p); svg.appendChild(d);
     return svg;
   }
 
@@ -891,6 +911,7 @@
   // "Aa" is a switch: lit while the keyboard of the phone is open, and it says what is true (the page hears the keyboard come and go).
   function oskShow(on) {
     oskOpen = on;
+    if (!on && coarse.matches) keysShown = false;      // dismissing the phone keyboard also returns the bar to its clean closed state (unless the sysop drawer is open)
     if (oskBtn) { oskBtn.setAttribute('data-on', on ? '1' : '0'); oskBtn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
     if (keyBtn) showToast();
   }
@@ -1009,7 +1030,7 @@
   // when it is closed. What needs a yes or a no is not here: the sysop opens its own small approval panel for that. A finished goal (done, failed, stopped) stays
   // 10 s on the line, and the sysop itself says idle after that. Without a sysop, or on a computer, the strip is the one with all the keys.
   var SYSOP_TITLE = /^sysop:(idle|working|sending|allow\?|queued|done|failed|stopped):([\s\S]*)$/, TOAST_HOLD = 10000;
-  var toastEl = null, pillEl = null, keyBtn = null, toastState = '', toastText = '', toastTimer = 0, sysopSeen = false, keysShown = false;
+  var toastEl = null, pillEl = null, pillText = null, keyBtn = null, toastState = '', toastText = '', toastTimer = 0, sysopSeen = false, keysShown = false;
   function phone() { return coarse.matches || window.innerWidth <= PHONE_WIDTH; }
   function buildToast() {
     pillEl = el('button', 'sb-btn sb-sysop');
@@ -1017,8 +1038,12 @@
     pillEl.setAttribute('aria-label', 'Open the sysop panel');
     pillEl.setAttribute('aria-pressed', 'false');
     pillEl.appendChild(el('i', 'sb-dot'));
-    pillEl.appendChild(el('b')).textContent = 'Sysop';
-    pillEl.appendChild(el('u', 'sb-arrow'));
+    pillText = el('span', 'sb-pill-text');
+    pillText.textContent = 'Sysop';
+    pillEl.appendChild(pillText);
+    var arr = el('span', 'sb-arrow');
+    arr.appendChild(chevronIcon());
+    pillEl.appendChild(arr);
     keepFocus(pillEl);
     pillEl.addEventListener('click', function () { typeKeys({ seq: ['C-a', 'S'] }); });
     toastEl = el('div', 'sb-toast');
@@ -1051,12 +1076,16 @@
     pillEl.setAttribute('data-on', up ? '1' : '0');
     pillEl.setAttribute('aria-pressed', up ? 'true' : 'false');
     pillEl.setAttribute('aria-label', up ? 'Close the sysop panel' : 'Open the sysop panel');
-    keyBtn.setAttribute('aria-pressed', keysShown || up || oskOpen ? 'true' : 'false');
-    keyBtn.setAttribute('data-kb', oskOpen ? '1' : '0');
+    var kbActive = coarse.matches ? oskOpen : keysShown;
+    keyBtn.setAttribute('aria-pressed', kbActive ? 'true' : 'false');
+    keyBtn.setAttribute('data-kb', kbActive ? '1' : '0');
+    keyBtn.setAttribute('aria-label', kbActive ? 'Hide keyboard' : 'Open keyboard');
+    keyBtn.title = kbActive ? 'Hide keyboard' : 'Open keyboard';
     var text = idle ? (up ? '' : 'idle') : toastText;
     toastEl.setAttribute('data-state', idle ? 'idle' : toastState);
     toastEl.lastChild.textContent = text;
     toastEl.title = text;
+    if (pillText) pillText.textContent = idle ? 'Sysop' : (toastText || 'Sysop');
   }
   function titleChanged(title) {
     var m = SYSOP_TITLE.exec(String(title || ''));

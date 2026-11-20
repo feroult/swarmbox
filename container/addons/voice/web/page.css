@@ -6,18 +6,22 @@
   --sv-violet: #a78bfa; --sv-deep: #6d28d9; --sv-lavender: #c4b5fd;
   --sv-red: #ff6b78; --sv-amber: #fbbf24; --sv-green: #4ade80;
   width: var(--sb-btn, 44px); height: var(--sb-btn, 44px); min-width: 44px; min-height: 44px; border-radius: var(--sb-r, 14px); padding: 0;
-  color: var(--sv-lavender); border: 1px solid rgba(167, 139, 250, .22); background: rgba(109, 40, 217, .26); box-shadow: none;
+  color: #fff; border: 1px solid rgba(196, 181, 253, .38);
+  background: linear-gradient(180deg, rgba(139, 92, 246, .48), rgba(109, 40, 217, .32));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .20);
   touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
-  transition: transform .08s ease, filter .08s ease, background .15s ease;
+  transition: transform .08s ease, filter .08s ease, background .15s ease, border-color .15s ease;
 }
-#swarmbox-voice-mic[id].sb-btn:active { transform: scale(.96); background: rgba(109, 40, 217, .4); }
-#swarmbox-voice-mic svg { width: 22px; height: 22px; fill: currentColor; pointer-events: none; }
+#swarmbox-voice-mic[id].sb-btn:active { transform: scale(.94); background: linear-gradient(180deg, rgba(139, 92, 246, .62), rgba(109, 40, 217, .45)); }
+#swarmbox-voice-mic svg { width: 21px; height: 21px; fill: currentColor; pointer-events: none; }
 
-/* the state light: a dot on the button, by data-state (idle is quiet) */
+/* the state light: hidden when idle (clean icon), pops in only for active/error states */
 #swarmbox-voice-mic .sv-light {
-  position: absolute; top: 4px; right: 4px; width: 10px; height: 10px; border-radius: 50%;
-  background: var(--sv-dim); border: 2px solid var(--sv-deep); pointer-events: none;
+  position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--sv-dim); border: 1.5px solid var(--sv-bg); pointer-events: none;
+  transition: opacity .15s ease, transform .15s ease;
 }
+#swarmbox-voice-mic[data-state="idle"] .sv-light { opacity: 0; transform: scale(.4); }
 #swarmbox-voice-mic[data-state="starting"] .sv-light, #swarmbox-voice-mic[data-state="sending"] .sv-light { background: var(--sv-amber); }
 #swarmbox-voice-mic[data-state="recording"] .sv-light { background: var(--sv-red); }
 #swarmbox-voice-mic[data-state="sent"] .sv-light { background: var(--sv-green); }
