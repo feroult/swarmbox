@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.22] - 2026-11-20
+
 - Added: the `antigravity` addon now ships its own isolated status line (`container/addons/antigravity/statusline.sh`) and `prepare.sh` that seeds `~/.gemini/antigravity-cli/settings.json` once (without overwriting user keys) with a Purple Glow status line showing current folder, git branch, active model, context usage bar and tokens, estimated cost, and quota usage, plus `colorScheme: "tokyo night"`, `allowNonWorkspaceAccess: true`, and `showFeedbackSurvey: false`. Claude Code's `swarmbox-statusline` and `~/.claude/settings.json` remain completely separate.
 
 ## [2.0.21] - 2026-11-20
@@ -264,6 +266,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.22]: https://github.com/feroult/swarmbox/releases/tag/v2.0.22
 [2.0.21]: https://github.com/feroult/swarmbox/releases/tag/v2.0.21
 [2.0.20]: https://github.com/feroult/swarmbox/releases/tag/v2.0.20
 [2.0.19]: https://github.com/feroult/swarmbox/releases/tag/v2.0.19
