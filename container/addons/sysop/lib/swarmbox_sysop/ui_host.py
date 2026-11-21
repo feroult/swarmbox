@@ -41,6 +41,10 @@ def start_ui(pth, cfg, log=None, enabled=True, mux=None):
             toaster.shutdown(unset=unset)
 
         return UiSession(_stop)
+    if name == "herdr":
+        from . import agent
+        bridge = agent.HerdrBridge(pth, log=log).start()
+        return UiSession(lambda unset=True: bridge.shutdown())
     if log:
         log("sysop ui: no built-in dock for multiplexer %r; running headless" % (name,))
     return UiSession()

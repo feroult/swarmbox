@@ -6,6 +6,7 @@
 
 _SB_HERDR_HC=${SWARMBOX_TEST_HC_BIN:-hc}
 _SB_HERDR_WEB=${SWARMBOX_TEST_HERDR_WEB:-/usr/local/share/swarmbox/herdr-web/server.mjs}
+_SB_HERDR_COCKPIT=${SWARMBOX_TEST_HERDR_COCKPIT:-/usr/local/share/swarmbox/herdr-web/cockpit.mjs}
 _SB_HERDR_THEME_SRC=${SWARMBOX_TEST_HERDR_CONFIG:-/etc/swarmbox/herdr.toml}
 
 mux_available() {
@@ -52,10 +53,14 @@ _herdr_ensure_server() {
 }
 
 _herdr_live_count() {
-    local out count
+    local out sysop_out total hidden count
     out=$("$_SB_HERDR_HC" ls --json 2>/dev/null) || { printf '0'; return 0; }
-    count=$(printf '%s' "$out" | grep -o '"state"[[:space:]]*:[[:space:]]*"live"' | wc -l | tr -d '[:space:]')
-    printf '%s' "${count:-0}"
+    total=$(printf '%s' "$out" | grep -o '"state"[[:space:]]*:[[:space:]]*"live"' | wc -l | tr -d '[:space:]')
+    sysop_out=$("$_SB_HERDR_HC" ls --json --label swarmbox.role=sysop 2>/dev/null) || sysop_out=""
+    hidden=$(printf '%s' "$sysop_out" | grep -o '"state"[[:space:]]*:[[:space:]]*"live"' | wc -l | tr -d '[:space:]')
+    count=$(( ${total:-0} - ${hidden:-0} ))
+    [ "$count" -lt 0 ] && count=0
+    printf '%s' "$count"
 }
 
 _herdr_extract_address() {
@@ -135,6 +140,10 @@ mux_attach_web() {
 mux_attach_interactive() {
     _herdr_seed_config
     _herdr_ensure_server || die "herdr-core could not start"
+    _herdr_ensure_initial_tab
+    if [ "${SWARMBOX_HERDR_RAW:-0}" != "1" ] && [ -x "$_SB_HERDR_COCKPIT" ]; then
+        exec "$_SB_HERDR_COCKPIT"
+    fi
     local json addr
     json=$("$_SB_HERDR_HC" run --bg --keep --no-parent --cwd "$PWD" -- /bin/bash -l 2>/dev/null) || die "herdr-core could not open a terminal"
     addr=$(printf '%s' "$json" | _herdr_extract_address)

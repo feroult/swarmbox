@@ -32,7 +32,9 @@ TABS_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py")
 ATTACH_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-attach.sh")
 WEB_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-web.sh")
 HERDR_TOML = os.path.join(ROOT, "container", "config", "herdr.toml")
+HERDR_CLIENT = os.path.join(ROOT, "container", "web", "herdr", "hc-client.mjs")
 HERDR_SERVER = os.path.join(ROOT, "container", "web", "herdr", "server.mjs")
+HERDR_COCKPIT = os.path.join(ROOT, "container", "web", "herdr", "cockpit.mjs")
 SYSOP_LIB = os.path.join(ROOT, "container", "addons", "sysop", "lib")
 
 _spec = importlib.util.spec_from_file_location("swarmbox_tabs_herdr_test", TABS_PATH)
@@ -41,7 +43,9 @@ _spec.loader.exec_module(tabs_mod)
 
 if SYSOP_LIB not in sys.path:
     sys.path.insert(0, SYSOP_LIB)
+from swarmbox_sysop import agent as sysop_agent  # noqa: E402
 from swarmbox_sysop import brain as sysop_brain  # noqa: E402
+from swarmbox_sysop import ipc as sysop_ipc  # noqa: E402
 from swarmbox_sysop import paths as sysop_paths  # noqa: E402
 from swarmbox_sysop import risk as sysop_risk  # noqa: E402
 
@@ -90,7 +94,25 @@ if cmd == "server":
     sys.exit(0)
 
 if cmd == "ls":
-    print(json.dumps({"hidden_finished": 0, "terminals": st.get("terminals", [])}))
+    want_labels = {}
+    i = 1
+    while i < len(argv):
+        if argv[i] == "--label" and i + 1 < len(argv):
+            kv = argv[i + 1]
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                want_labels[k] = v
+            i += 2
+            continue
+        i += 1
+    out = []
+    for t in st.get("terminals", []):
+        lbls = t.get("labels") or {}
+        if all(lbls.get(k) == v for k, v in want_labels.items()):
+            # Mirror real herdr-core 0.1.21: `hc ls --json` omits `labels` from summary entries
+            summary = {k: v for k, v in t.items() if k != "labels"}
+            out.append(summary)
+    print(json.dumps({"hidden_finished": 0, "terminals": out}))
     sys.exit(0)
 
 if cmd == "get":
@@ -131,10 +153,21 @@ if cmd == "run":
     name = None
     if "--name" in argv:
         name = argv[argv.index("--name") + 1]
+    labels = {}
+    i = 1
+    while i < len(argv):
+        if argv[i] == "--label" and i + 1 < len(argv):
+            kv = argv[i + 1]
+            if "=" in kv:
+                k, v = kv.split("=", 1)
+                labels[k] = v
+            i += 2
+            continue
+        i += 1
     idx = len(st.get("terminals", [])) + 1
     addr = "t%d" % idx
     t = {"address": addr, "name": name or ("term-%d" % idx), "agent": "bash", "cwd": os.getcwd(),
-         "state": "live", "cols": 100, "rows": 30, "created_ms": idx * 1000, "reported": False, "status": None}
+         "state": "live", "cols": 100, "rows": 30, "created_ms": idx * 1000, "reported": False, "status": None, "labels": labels}
     st.setdefault("terminals", []).append(t)
     st.setdefault("screens", {})[addr] = "$ "
     # If this is a command wrapper run, simulate writing the exit status if requested
@@ -252,6 +285,21 @@ class HerdrTabsTest(unittest.TestCase):
         with open(os.path.join(self.run_dir, "herdr-active-tab"), "w", encoding="utf-8") as f:
             f.write("t2\n")
         self.assertEqual(t.active()["tab"], "t2")
+
+    def test_sysop_role_terminal_is_hidden_from_tabs(self):
+        self.write_state({
+            "terminals": [
+                {"address": "t1", "name": "shell", "agent": "bash", "cwd": "/tmp", "state": "live", "cols": 100, "rows": 30, "created_ms": 100, "labels": {}},
+                {"address": "t2", "name": "sysop", "agent": "python3", "cwd": "/tmp", "state": "live", "cols": 100, "rows": 30, "created_ms": 200, "labels": {"swarmbox.role": "sysop"}},
+            ],
+            "screens": {"t1": "$ ", "t2": "sysop ready"},
+        })
+        items = self.tabs().list_tabs()
+        self.assertEqual([x["tab"] for x in items], ["t1"])
+        # Even if active marker points to hidden sysop terminal, active() falls back to t1
+        with open(os.path.join(self.run_dir, "herdr-active-tab"), "w", encoding="utf-8") as f:
+            f.write("t2\n")
+        self.assertEqual(self.tabs().active()["tab"], "t1")
 
     def test_screen_redacts_secrets_and_clips_lines(self):
         self.write_state({
@@ -562,19 +610,187 @@ class HerdrSysopAndAssetsTest(unittest.TestCase):
             self.assertEqual(lvl, "low", safe)
 
     def test_herdr_web_cli_args_and_origin_guard(self):
-        # Verify server.mjs pure helpers directly with node (syntax + CLI flag parsing + Origin check)
         if not shutil.which("node"):
             self.skipTest("node not on PATH")
-        # server.mjs imports 'ws'; test parseCliArgs and checkSameOrigin logic without requiring node_modules on host
         with open(HERDR_SERVER, encoding="utf-8") as f:
-            src = f.read()
-        self.assertIn("frame-ancestors 'self'", src)
-        self.assertIn("X-Frame-Options", src)
-        self.assertIn("checkSameOrigin", src)
-        self.assertIn("FRAME_CREDIT", src)
-        self.assertIn("herdr-active-tab", src)
-        p = subprocess.run(["node", "--check", HERDR_SERVER], capture_output=True, text=True)
-        self.assertEqual(p.returncode, 0, p.stderr)
+            server_src = f.read()
+        with open(HERDR_CLIENT, encoding="utf-8") as f:
+            client_src = f.read()
+        with open(HERDR_COCKPIT, encoding="utf-8") as f:
+            cockpit_src = f.read()
+        self.assertIn("frame-ancestors 'self'", server_src)
+        self.assertIn("X-Frame-Options", server_src)
+        self.assertIn("checkSameOrigin", server_src)
+        self.assertIn("FRAME_CREDIT", client_src)
+        self.assertIn("herdr-active-tab", client_src)
+        self.assertIn("swarmbox.role", client_src)
+        self.assertIn("computeLayout", cockpit_src)
+        for js_path in (HERDR_CLIENT, HERDR_SERVER, HERDR_COCKPIT):
+            p = subprocess.run(["node", "--check", js_path], capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, "%s: %s" % (js_path, p.stderr))
+
+        # Exercise hc-client.mjs pure helpers directly in Node (no external npm deps needed)
+        check_js = """
+import assert from 'node:assert/strict';
+import { isHiddenTerminal, sanitizeTabName, uniqueTabName, THEME_ORDER } from %r;
+assert.equal(isHiddenTerminal({ labels: { 'swarmbox.role': 'sysop' } }), true);
+assert.equal(isHiddenTerminal({ labels: {} }), false);
+assert.equal(isHiddenTerminal({}), false);
+assert.ok(!/^t\\d+$/.test(sanitizeTabName('t1', 'shell')));
+assert.equal(uniqueTabName('shell', 'shell', [{ name: 'shell' }, { name: 'shell-2' }]), 'shell-3');
+assert.equal(THEME_ORDER.length, 5);
+""" % (HERDR_CLIENT,)
+        p2 = subprocess.run(["node", "--input-type=module", "-e", check_js], capture_output=True, text=True)
+        self.assertEqual(p2.returncode, 0, p2.stderr)
+
+    def test_attach_interactive_launches_cockpit_and_respects_raw_override(self):
+        tmp = tempfile.mkdtemp(prefix="swarmbox-test-cockpit-sh.")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        home = os.path.join(tmp, "home")
+        run_dir = os.path.join(tmp, "run")
+        os.makedirs(home)
+        os.makedirs(run_dir)
+        with open(os.path.join(run_dir, "ready"), "w", encoding="utf-8") as f:
+            f.write("ok\n")
+        state_file = os.path.join(tmp, "hc-state.json")
+        log_file = os.path.join(tmp, "hc.log")
+        hc_bin = os.path.join(tmp, "hc")
+        make_exec(hc_bin, FAKE_HC_PY)
+        with open(state_file, "w", encoding="utf-8") as f:
+            json.dump({"down": False, "terminals": [{"address": "t1", "name": "sysop", "state": "live", "labels": {"swarmbox.role": "sysop"}}], "screens": {}}, f)
+        cockpit_log = os.path.join(tmp, "cockpit.log")
+        fake_cockpit = os.path.join(tmp, "fake-cockpit")
+        make_exec(fake_cockpit, '#!/bin/sh\necho COCKPIT_RAN >> "%s"\n' % cockpit_log)
+        env = {
+            "PATH": os.environ["PATH"],
+            "HOME": home,
+            "SWARMBOX_MUX": "herdr",
+            "SWARMBOX_TEST_HC_BIN": hc_bin,
+            "SWARMBOX_TEST_HERDR_COCKPIT": fake_cockpit,
+            "SWARMBOX_TEST_HERDR_CONFIG": HERDR_TOML,
+            "SWARMBOX_TEST_LIB": os.path.join(ROOT, "container", "scripts"),
+            "SWARMBOX_TEST_RUN_DIR": run_dir,
+            "SWARMBOX_TEST_READY_TIMEOUT": "2",
+            "FAKE_HC_STATE": state_file,
+            "FAKE_HC_LOG": log_file,
+        }
+        master, slave = pty.openpty()
+        try:
+            p = subprocess.Popen(["bash", ATTACH_PATH], stdin=slave, stdout=slave, stderr=subprocess.PIPE, env=env, text=True)
+            os.close(slave)
+            slave = -1
+            _, err = p.communicate(timeout=10)
+            self.assertEqual(p.returncode, 0, err)
+        finally:
+            if slave >= 0:
+                os.close(slave)
+            os.close(master)
+        with open(cockpit_log, encoding="utf-8") as f:
+            self.assertIn("COCKPIT_RAN", f.read())
+        # Initial shell tab was created because the only live terminal had swarmbox.role=sysop
+        with open(state_file, encoding="utf-8") as f:
+            st = json.load(f)
+        self.assertEqual(len(st["terminals"]), 2)
+        self.assertEqual(st["terminals"][1]["name"], "shell")
+
+
+class HerdrSysopAgentTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-sysop-agent.")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.run_dir = os.path.join(self.tmp, "run")
+        self.state_dir = os.path.join(self.tmp, "state")
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(self.home)
+        self.pth = sysop_paths.Paths({"SB_RUN_DIR": self.run_dir, "SB_STATE_DIR": self.state_dir})
+        self.pth.make()
+
+    def test_osc_status_matches_herdr_core_colon_syntax(self):
+        self.assertEqual(sysop_agent.osc_status("idle"), "\x1b]7501;state=idle\x07")
+        self.assertEqual(sysop_agent.osc_status("working"), "\x1b]7501;state=working\x07")
+        self.assertEqual(sysop_agent.osc_status("queued"), "\x1b]7501;state=working\x07")
+        self.assertEqual(sysop_agent.osc_status("allow?"), "\x1b]7501;state=blocked:kind=permission\x07")
+        self.assertEqual(sysop_agent.osc_status("sending"), "\x1b]7501;state=blocked:kind=permission\x07")
+        self.assertEqual(sysop_agent.osc_status("done"), "\x1b]7501;state=done\x07")
+        self.assertEqual(sysop_agent.osc_status("failed"), "\x1b]7501;state=error\x07")
+        # Base64 msg payload per herdr-core OSC 7501 spec
+        self.assertEqual(sysop_agent.osc_status("allow?", "Deploy?"), "\x1b]7501;state=blocked:kind=permission:msg=RGVwbG95Pw==\x07")
+
+    def test_seed_template_once_preserves_user_edits(self):
+        env = {"HOME": self.home}
+        tpl = sysop_agent.seed_template(env)
+        self.assertTrue(os.path.isfile(tpl))
+        with open(tpl, encoding="utf-8") as f:
+            txt = f.read()
+        self.assertIn('command: ["swarmbox-sysop", "agent"]', txt)
+        with open(tpl, "w", encoding="utf-8") as f:
+            f.write("# custom user template\n")
+        sysop_agent.seed_template(env)
+        with open(tpl, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "# custom user template\n")
+
+    def test_handle_line_publishes_goal_and_answers_pending_approval(self):
+        import io
+
+        class FakeBus:
+            def __init__(self):
+                self.published = []
+
+            def pub(self, topic, body, source):
+                self.published.append((topic, body, source))
+                return {"id": "g-123"}
+
+        bus = FakeBus()
+        buf = io.StringIO()
+        ok, gid = sysop_agent.handle_line("run the unit tests", self.pth, bus, out=buf)
+        self.assertTrue(ok)
+        self.assertEqual(gid, "g-123")
+        self.assertEqual(bus.published[0][1]["text"], "run the unit tests")
+        self.assertEqual(bus.published[0][2], "agent")
+
+        # Simulate live service (flock on pth.lock) + pending approval, then reply `y` and `n`
+        import fcntl
+        lock_fd = os.open(self.pth.lock, os.O_RDWR | os.O_CREAT, 0o600)
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        self.addCleanup(os.close, lock_fd)
+        gdir = self.pth.goal_dir("g-123")
+        os.makedirs(gdir, exist_ok=True)
+        sysop_ipc.write_json(self.pth.status, {"pid": os.getpid(), "current": "g-123", "bus": "up", "queue": [], "settings": {}})
+        sysop_ipc.write_json(os.path.join(gdir, "pending_action.json"), {"id": "act-1", "mode": "approve", "text": "rm -rf /tmp/x", "deadline": 9999999999.0})
+        buf2 = io.StringIO()
+        ok2, msg2 = sysop_agent.handle_line("y", self.pth, bus, out=buf2, wall=1000.0)
+        self.assertTrue(ok2)
+        self.assertEqual(msg2, "allowed")
+        dec = sysop_ipc.read_json(os.path.join(gdir, "decision.json"))
+        self.assertEqual(dec["decision"], "approve")
+        self.assertEqual(dec["by"], "agent")
+
+        buf3 = io.StringIO()
+        ok3, msg3 = sysop_agent.handle_line("n", self.pth, bus, out=buf3, wall=1000.0)
+        self.assertTrue(ok3)
+        self.assertEqual(msg3, "refused")
+        dec2 = sysop_ipc.read_json(os.path.join(gdir, "decision.json"))
+        self.assertEqual(dec2["decision"], "deny")
+        self.assertEqual(dec2["by"], "agent")
+
+    def test_herdr_bridge_publishes_once_and_does_not_duplicate(self):
+        state_file = os.path.join(self.tmp, "hc-state.json")
+        log_file = os.path.join(self.tmp, "hc.log")
+        hc_bin = os.path.join(self.tmp, "hc")
+        make_exec(hc_bin, FAKE_HC_PY)
+        with open(state_file, "w", encoding="utf-8") as f:
+            json.dump({"down": False, "terminals": [], "screens": {}}, f)
+        env = dict(os.environ, HOME=self.home, FAKE_HC_STATE=state_file, FAKE_HC_LOG=log_file)
+        bridge = sysop_agent.HerdrBridge(self.pth, hc_bin=hc_bin, sysop_bin="/usr/local/bin/swarmbox-sysop", env=env)
+        self.assertTrue(bridge.ensure_once())
+        self.assertTrue(bridge.ensure_once())
+        with open(state_file, encoding="utf-8") as f:
+            st = json.load(f)
+        self.assertEqual(len(st["terminals"]), 1)
+        self.assertEqual(st["terminals"][0]["name"], "sysop")
+        self.assertEqual(st["terminals"][0]["labels"].get("swarmbox.role"), "sysop")
+        self.assertIn("cockpit", sysop_brain.SOURCE_NOTES)
+        self.assertIn("agent", sysop_brain.SOURCE_NOTES)
 
 
 if __name__ == "__main__":

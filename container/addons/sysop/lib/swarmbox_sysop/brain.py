@@ -74,6 +74,8 @@ SOURCE_NOTES = {
     "voice": "The goal was SPOKEN and transcribed by a speech recognizer: it can contain errors (similar-sounding words, wrong names, missing words). If the goal is unclear, or acting on a mishearing could do damage, do not guess: say what you understood and call done without acting.",
     "panel": "The goal was typed by the user in the sysop panel: take it literally.",
     "web": "The goal was typed by the user in the web interface: take it literally.",
+    "cockpit": "The goal was typed by the user in the terminal cockpit: take it literally.",
+    "agent": "The goal was sent to the sysop agent terminal (for example from herdr-app or hc send): take it literally.",
     "cli": "The goal was typed by the user on the command line: take it literally.",
 }
 UNKNOWN_SOURCE = "The source of the goal is not known: treat it as a transcription that may contain errors, and be careful with anything that cannot be undone."

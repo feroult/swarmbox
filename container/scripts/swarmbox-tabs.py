@@ -70,6 +70,7 @@ from collections import namedtuple
 SEP = "@@sb@@"     # never a tab: tmux 3.6+ prints control characters of a list as `_` when it has no terminal
 HIDDEN_OPTIONS = ("@swarmbox_sysop_panel",)
 HIDDEN_MARKERS = ("SWARMBOX_SYSOP_PANEL=1",)      # in the start command of a panel pane (container/addons/sysop/lib/swarmbox_sysop/dock.py PANEL_COMMAND)
+HIDDEN_HERDR_ROLES = ("sysop",)                   # herdr-core labels["swarmbox.role"] values hidden from normal tab lists
 PAUSE = 0.15
 MAX_STEPS = 100          # steps (texts and keys) of one send: each key costs PAUSE plus a tmux process (about 0.15 s)
 LOCK_TIMEOUT = 30.0      # seconds a send waits for an earlier send to the same tab
@@ -783,11 +784,33 @@ class HerdrBackend(TabsBackend):
             return os.path.basename(str(argv[0]))
         return ""
 
+    def _hidden_addresses(self):
+        """Return addresses of live terminals carrying a hidden swarmbox.role label.
+
+        `hc ls --json` returns compact summaries without `labels`, so we query server-side with
+        `--label swarmbox.role=<role>`.
+        """
+        hidden = set()
+        for role in HIDDEN_HERDR_ROLES:
+            res = self.hc("ls", "--json", "--label", "swarmbox.role=%s" % role, check=False)
+            if isinstance(res, dict):
+                for e in res.get("terminals") or []:
+                    if isinstance(e, dict) and e.get("address"):
+                        hidden.add(str(e["address"]))
+        return hidden
+
     def list_tabs_raw(self):
         res = self.hc("ls", "--json")
         if not isinstance(res, dict):
             raise TabsError("backend_error", "unexpected answer from hc ls --json")
-        entries = [e for e in (res.get("terminals") or []) if isinstance(e, dict) and e.get("state", "live") == "live"]
+        hidden = self._hidden_addresses()
+        entries = [
+            e for e in (res.get("terminals") or [])
+            if isinstance(e, dict)
+            and e.get("state", "live") == "live"
+            and str(e.get("address") or "") not in hidden
+            and not (isinstance(e.get("labels"), dict) and e["labels"].get("swarmbox.role") in HIDDEN_HERDR_ROLES)
+        ]
         entries.sort(key=lambda e: (e.get("created_ms", 0), str(e.get("address", ""))))
         home = os.path.expanduser("~")
         tabs = []

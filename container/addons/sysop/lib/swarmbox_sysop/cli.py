@@ -14,6 +14,7 @@
   swarmbox-sysop stop [GOAL_ID]                the stop key: ends the running goal (and drops the queue), or just GOAL_ID
   swarmbox-sysop mcp                           the MCP server of a goal (the brain's MCP config runs this; SWARMBOX_SYSOP_CONTEXT names the goal)
   swarmbox-sysop panel                         the terminal panel: the goal, the log, the countdown, the approval; g types a goal
+  swarmbox-sysop agent                         interactive OSC 7501 agent bridge for herdr-core / herdr-app (hidden from normal tabs)
   swarmbox-sysop dock open|close|toggle|redock|sync [--socket PATH] [--window ID]   the panel dock (tmux backend)
   swarmbox-sysop --self-test                   checks the install without a model
 
@@ -239,6 +240,11 @@ def _cmd_panel(_args):
     return ui_host.run_panel()
 
 
+def _cmd_agent(_args):
+    from . import agent
+    return agent.run_agent()
+
+
 def _cmd_dock(args):
     return ui_host.run_dock(args.action, args.socket, args.window)
 
@@ -289,6 +295,7 @@ def main(argv=None):
         k.add_argument("--client", default="")
     sub.add_parser("mcp").set_defaults(fn=lambda a: mcpserver.main())
     sub.add_parser("panel").set_defaults(fn=_cmd_panel)
+    sub.add_parser("agent").set_defaults(fn=_cmd_agent)
     d = sub.add_parser("dock")
     d.add_argument("action", choices=DOCK_ACTIONS)
     d.add_argument("--socket", default="")
