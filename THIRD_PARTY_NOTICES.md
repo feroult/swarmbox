@@ -138,7 +138,7 @@ the corresponding source of any package of the image:
    feroult@gmail.com. The offer is here so
    that the pointer above is not the only means.
 4. **The programs SwarmBox downloads itself** (`ttyd` MIT, `starship` ISC, `uv` Apache-2.0 or MIT, `chrome-devtools-mcp`
-   Apache-2.0) are not copyleft; their source is at the URLs in their sections.
+   Apache-2.0, `herdr-core` Apache-2.0, `herdr` Apache-2.0) are not copyleft; their source is at the URLs in their sections.
 
 [owner-check: whether a pointer to Debian's archive plus the written offer satisfies the GPL and LGPL for an image the owner
 publishes on ghcr.io, and whether the LGPL requirement to allow relinking is met by the dynamic linking in these packages,
@@ -201,6 +201,27 @@ in the image, where they were installed.
 - License: Apache-2.0
 - Source: https://github.com/ChromeDevTools/chrome-devtools-mcp
 - [verified: "license" and "repository" fields of the npm registry entry for 1.12.0 (`npm view`); 2026-11-08]
+
+### herdr-core (`hc`)
+
+- Version: 0.1.21 (`ARG HERDR_CORE_VERSION`, release tarball with SHA-256 verified per architecture)
+- License: Apache-2.0
+- Source: https://github.com/herdrdev/herdr-core
+- [verified: `hc --licenses` and release metadata for 0.1.21; 2026-11-21]
+
+### herdr
+
+- Version: 0.9.5 (`ARG HERDR_VERSION`, release binary with SHA-256 verified per architecture)
+- License: Apache-2.0
+- Source: https://github.com/herdrdev/herdr
+- [verified: GitHub release v0.9.5 and repository license; 2026-11-21]
+
+### Herdr Web Gateway npm packages (`ws`, `@xterm/xterm`, `@xterm/addon-fit`, `@xterm/addon-web-links`)
+
+- Versions: `ws` 8.23.0, `@xterm/xterm` 5.5.0, `@xterm/addon-fit` 0.10.0, `@xterm/addon-web-links` 0.11.0 (pinned in `container/web/herdr/package.json`)
+- License: MIT
+- Source: https://github.com/websockets/ws and https://github.com/xtermjs/xterm.js
+- [verified: `package.json` license and repository fields in installed packages; 2026-11-21]
 
 ### cloudflared (connector image, not in the SwarmBox image)
 

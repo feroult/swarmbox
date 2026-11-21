@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0c0b10">
+<title>SwarmBox</title>
+<link rel="stylesheet" href="/vendor/xterm.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="app" class="app" data-sysop-open="1" data-sidebar-open="1">
+  <!-- Left Sidebar (Desktop) -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span class="brand-name">SWARMBOX</span>
+        <span class="brand-tag">herdr</span>
+      </div>
+      <button class="icon-btn" id="btn-sidebar-close" title="Collapse sidebar" aria-label="Collapse sidebar">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">
+        <span>Terminals</span>
+        <span class="count-pill" id="tab-count">0</span>
+      </div>
+      <div class="tab-list" id="sidebar-tabs" role="tablist" aria-label="Terminals"></div>
+      <div class="spawn-row">
+        <button class="spawn-btn" id="btn-new-shell" title="Open a new bash shell tab">+ Shell</button>
+        <button class="spawn-btn spawn-accent" id="btn-new-agent" title="Open the box's default agent">+ Agent</button>
+      </div>
+    </div>
+
+    <div class="sidebar-foot">
+      <label class="theme-picker">
+        <span>Theme</span>
+        <select id="theme-select" aria-label="Select theme">
+          <option value="purple-glow">Purple Glow</option>
+          <option value="catppuccin">Catppuccin Mocha</option>
+          <option value="tokyo-night">Tokyo Night</option>
+          <option value="nord">Nord</option>
+          <option value="rose-pine">Rosé Pine</option>
+        </select>
+      </label>
+      <div class="conn-pill" id="conn-pill">
+        <span class="dot"></span>
+        <span id="conn-text">connecting…</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Center Stage -->
+  <main class="stage">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="icon-btn desktop-only" id="btn-sidebar-open" title="Show sidebar" aria-label="Show sidebar">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div class="active-meta">
+          <span class="status-dot" id="active-dot" data-state="idle"></span>
+          <span class="active-name" id="active-name">—</span>
+          <span class="active-status" id="active-status">idle</span>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <select class="mobile-theme-select mobile-only" id="theme-select-mobile" aria-label="Theme">
+          <option value="purple-glow">Purple</option>
+          <option value="catppuccin">Catppuccin</option>
+          <option value="tokyo-night">Tokyo</option>
+          <option value="nord">Nord</option>
+          <option value="rose-pine">Rosé</option>
+        </select>
+        <button class="chip-btn" id="btn-interrupt" title="Interrupt active terminal">Stop</button>
+        <button class="chip-btn chip-accent desktop-only" id="btn-toggle-sysop" title="Toggle Sysop panel">Sysop</button>
+      </div>
+    </header>
+
+    <!-- Mobile Tab Strip -->
+    <div class="mobile-tabs mobile-only" id="mobile-tabs"></div>
+
+    <!-- Terminal Canvas -->
+    <div class="term-wrap" id="term-wrap">
+      <div id="terminal"></div>
+    </div>
+
+    <!-- Mobile Touch Keys + Floating Sysop Pill -->
+    <div class="mobile-dock mobile-only">
+      <div class="mobile-approval hidden" id="mobile-approval">
+        <div class="approval-info">
+          <span class="approval-badge" id="mobile-approval-badge">ALLOW?</span>
+          <span class="approval-msg" id="mobile-approval-msg"></span>
+        </div>
+        <div class="approval-btns">
+          <button class="btn-allow" id="btn-mobile-allow">Allow</button>
+          <button class="btn-cancel" id="btn-mobile-cancel">Cancel</button>
+        </div>
+      </div>
+      <div class="touch-keys" id="touch-keys">
+        <button data-key="esc">Esc</button>
+        <button data-key="tab">Tab</button>
+        <button data-key="ctrl+c">^C</button>
+        <button data-key="up">↑</button>
+        <button data-key="down">↓</button>
+        <button data-key="left">←</button>
+        <button data-key="right">→</button>
+        <button data-key="enter">↵</button>
+      </div>
+      <div class="mobile-capsule">
+        <button class="capsule-main" id="btn-mobile-sysop">
+          <span class="status-dot" id="mobile-sysop-dot" data-state="idle"></span>
+          <span class="capsule-label">SYSOP</span>
+          <span class="capsule-state" id="mobile-sysop-state">idle</span>
+        </button>
+        <button class="capsule-mic" id="btn-mobile-mic" title="Hold to speak a goal" aria-label="Voice goal">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Right Sysop Panel (Desktop docked / Mobile bottom sheet) -->
+  <aside class="sysop-panel" id="sysop-panel">
+    <div class="sysop-head">
+      <div class="sysop-title">
+        <span class="status-dot" id="sysop-dot" data-state="idle"></span>
+        <span class="sysop-word">SYSOP</span>
+        <span class="sysop-state-pill" id="sysop-state">idle</span>
+      </div>
+      <div class="sysop-head-actions">
+        <button class="icon-btn hidden" id="btn-sysop-stop" title="Stop running goal" aria-label="Stop running goal">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-tts" title="Toggle spoken feedback" aria-label="Toggle spoken feedback">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+        </button>
+        <button class="icon-btn" id="btn-sysop-close" title="Close Sysop panel" aria-label="Close">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Approval / Countdown Card (Sysop pending action OR OSC 7501 blocked terminal) -->
+    <div class="approval-card hidden" id="approval-card">
+      <div class="approval-card-head">
+        <span class="approval-badge" id="approval-badge">ALLOW?</span>
+        <span class="approval-tab" id="approval-tab"></span>
+      </div>
+      <p class="approval-text" id="approval-text"></p>
+      <div class="approval-bar hidden" id="approval-bar"><div class="approval-bar-fill" id="approval-bar-fill"></div></div>
+      <div class="approval-btns">
+        <button class="btn-allow" id="btn-allow">Allow</button>
+        <button class="btn-cancel" id="btn-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Voice Status Note -->
+    <div class="voice-note hidden" id="voice-note"></div>
+
+    <!-- Activity Feed -->
+    <div class="sysop-feed" id="sysop-feed"></div>
+
+    <!-- Goal Composer -->
+    <div class="sysop-composer">
+      <div class="goal-box">
+        <textarea id="goal-input" rows="2" placeholder="Send a goal to Sysop… (Enter to send)"></textarea>
+        <div class="goal-actions">
+          <button class="mic-btn" id="btn-mic" title="Hold to speak a goal" aria-label="Speak a goal">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+          </button>
+          <span class="voice-hint" id="voice-hint"></span>
+          <button class="send-btn" id="btn-send-goal">Send</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script src="/vendor/xterm.js"></script>
+<script src="/vendor/addon-fit.js"></script>
+<script src="/vendor/addon-web-links.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

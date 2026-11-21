@@ -148,6 +148,41 @@ RUN case "$(dpkg --print-architecture)" in \
     tar -xzf "$T" -C /usr/local/bin starship && chmod 755 /usr/local/bin/starship && \
     rm -f "/tmp/$T" "/tmp/$T.sha256"
 
+# Optional multiplexer backend: herdr-core (hc daemon, OpenRPC + OSC 7501) and herdr TUI, both pinned by SHA-256.
+ARG HERDR_CORE_VERSION=0.1.21
+ARG HERDR_CORE_SHA256_AMD64=78424755c10a40dde38a0bdb55c20ac19706e9ae05ed68fc2acf1fcff0d941c1
+ARG HERDR_CORE_SHA256_ARM64=e844a2bfab48a226097679d076bc83042fe57fccef5387ef802e5b24e78b529a
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) T=herdr-core-linux-x86_64.tar.gz; SHA256=$HERDR_CORE_SHA256_AMD64 ;; \
+        arm64) T=herdr-core-linux-aarch64.tar.gz; SHA256=$HERDR_CORE_SHA256_ARM64 ;; \
+        *) echo "herdr-core: unsupported architecture $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL -o "/tmp/$T" "https://releases.herdr.dev/core/${HERDR_CORE_VERSION}/$T" && \
+    echo "$SHA256  /tmp/$T" | sha256sum -c - && \
+    tar -xzf "/tmp/$T" -C /usr/local/bin herdr-core && \
+    chmod 755 /usr/local/bin/herdr-core && \
+    ln -sf /usr/local/bin/herdr-core /usr/local/bin/hc && \
+    rm -f "/tmp/$T" && hc --version
+
+ARG HERDR_VERSION=0.9.5
+ARG HERDR_SHA256_AMD64=14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d
+ARG HERDR_SHA256_ARM64=17d7536f2da50859523680ef279dffcac8e4a235f4e46fe8da6c2ec44141897c
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) T=herdr-linux-x86_64; SHA256=$HERDR_SHA256_AMD64 ;; \
+        arm64) T=herdr-linux-aarch64; SHA256=$HERDR_SHA256_ARM64 ;; \
+        *) echo "herdr: unsupported architecture $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL -o "/tmp/$T" "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/$T" && \
+    echo "$SHA256  /tmp/$T" | sha256sum -c - && \
+    install -m 755 "/tmp/$T" /usr/local/bin/herdr && \
+    rm -f "/tmp/$T" && herdr --version
+
+# Dependencies for the herdr web gateway (ws + local xterm.js bundles, zero runtime CDN calls).
+COPY container/web/herdr/package.json /usr/local/share/swarmbox/herdr-web/package.json
+RUN cd /usr/local/share/swarmbox/herdr-web && \
+    npm install --omit=dev --no-audit --no-fund --cache /tmp/npm-build-cache && \
+    rm -rf /tmp/npm-build-cache
+
 # Python virtual environment at /opt/flow (the "(swarmbox)" prompt); the directory is created with agent as owner (no chown -R)
 RUN install -d -o agent -g agent -m 755 /opt/flow
 USER agent
@@ -168,9 +203,12 @@ RUN chmod 644 /usr/local/share/swarmbox/ttyd-clipboard.js /usr/local/share/swarm
 
 COPY container/config/tmux.conf /etc/tmux.conf
 COPY container/config/tmux-browser-keys.conf /etc/tmux-browser-keys.conf
+COPY container/config/herdr.toml /etc/swarmbox/herdr.toml
 COPY container/config/starship.toml /etc/swarmbox/starship.toml
 COPY container/config/bashrc.sh /etc/swarmbox/bashrc.sh
 COPY container/config/ssh-swarmbox.conf /etc/ssh/ssh_config.d/swarmbox.conf
+COPY container/web/herdr/server.mjs /usr/local/share/swarmbox/herdr-web/server.mjs
+COPY container/web/herdr/public/ /usr/local/share/swarmbox/herdr-web/public/
 COPY container/scripts/dirs.sh /usr/local/lib/swarmbox/dirs.sh
 COPY container/scripts/mux/ /usr/local/lib/swarmbox/mux/
 COPY container/scripts/starship-init.sh /etc/swarmbox/scripts/starship-init.sh
@@ -197,13 +235,13 @@ COPY container/scripts/swarmbox-install.sh /usr/local/bin/swarmbox-install
 COPY container/host/ /usr/local/share/swarmbox/host/
 COPY cloudflare-setup.py /usr/local/share/swarmbox/host/cloudflare-setup.py
 COPY container/entrypoint.sh /usr/local/bin/swarmbox-entrypoint
-RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.toml /etc/swarmbox/bashrc.sh /etc/ssh/ssh_config.d/swarmbox.conf \
+RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/herdr.toml /etc/swarmbox/starship.toml /etc/swarmbox/bashrc.sh /etc/ssh/ssh_config.d/swarmbox.conf \
         /usr/local/lib/swarmbox/dirs.sh /etc/swarmbox/scripts/starship-init.sh /etc/swarmbox/scripts/messages.sh && \
     chmod 755 /usr/local/bin/banner.sh /usr/local/bin/swarmbox-statusline /usr/local/bin/swarmbox-pubkey \
         /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-addon /usr/local/bin/swarmbox-bus /usr/local/bin/swarmbox-tabs /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-mcp /usr/local/bin/swarmbox-install /usr/local/bin/swarmbox-entrypoint && \
-    chmod 755 /usr/local/share/swarmbox/host/swarmbox-host && \
+    chmod 755 /usr/local/share/swarmbox/host/swarmbox-host /usr/local/share/swarmbox/herdr-web/server.mjs && \
     chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py /usr/local/share/swarmbox/host/VERSION /usr/local/share/swarmbox/host/DEFAULTS && \
-    chmod -R a+rX /usr/local/share/swarmbox/host && \
+    chmod -R a+rX /usr/local/share/swarmbox/host /usr/local/share/swarmbox/herdr-web && \
     chmod -R a+rX /etc/swarmbox/mcp /usr/local/lib/swarmbox/addons /usr/local/lib/swarmbox/mux && \
     find /usr/local/lib/swarmbox/addons -name '*.sh' -exec chmod 755 {} + && \
     swarmbox-addon link --system
