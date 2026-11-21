@@ -61,6 +61,7 @@ import fcntl
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import time
@@ -696,10 +697,276 @@ class TmuxBackend(TabsBackend):
         return set(self.tmux("list-panes", "-s", "-t", "=" + self.session, "-F", "#{window_id}").split())
 
 
-BACKENDS = {"tmux": TmuxBackend}
+_HC_KEYS = {
+    "Escape": "esc", "Enter": "enter", "Tab": "tab", "BTab": "shift+tab", "Space": "space", "BSpace": "backspace",
+    "Up": "up", "Down": "down", "Left": "left", "Right": "right", "Home": "home", "End": "end",
+    "PageUp": "pageup", "PageDown": "pagedown", "DC": "delete", "IC": "insert",
+}
 
 
-def make_backend(name=None, session=None, socket=None, binary=None, timeout=TMUX_TIMEOUT):
+def _hc_key_name(key):
+    """Map a normalized swarmbox-tabs key name (KEYS / C-x / M-x / F1..F12) to herdr-core's key spelling."""
+    if key in _HC_KEYS:
+        return _HC_KEYS[key]
+    if key.startswith("C-") and len(key) == 3:
+        return "ctrl+" + key[2].lower()
+    if key.startswith("M-") and len(key) == 3:
+        return "alt+" + key[2].lower()
+    if re.fullmatch(r"F([1-9]|1[0-2])", key):
+        return key.lower()
+    return key.lower()
+
+
+class HerdrBackend(TabsBackend):
+    """Concrete TabsBackend talking to a herdr-core (hc) daemon.
+
+    Uses `hc ls/get/read/keys --json` for queries and key presses, framed `hc connect` (`terminal.attach` DATA)
+    for arbitrary literal UTF-8 text without Enter, and native OSC 7501 status via `tab_state()` when reported.
+    """
+
+    name = "herdr"
+
+    def __init__(self, binary=None, timeout=TMUX_TIMEOUT, run_dir=None):
+        self.binary = binary or os.environ.get("SB_TABS_HC_BIN") or os.environ.get("SB_TABS_BIN") or "hc"
+        self.timeout = timeout
+        self.run_dir = run_dir or os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox"
+        self._meta = {}
+
+    def _raise_hc_error(self, kind, msg):
+        low = (msg or "").lower()
+        if kind in ("not_found", "finished") or "no terminal" in low or "has finished" in low:
+            raise TabsError("no_such_tab", msg or "no such terminal")
+        if kind == "blocked":
+            raise TabsError("dialog_open", msg or "terminal is blocked on a dialog")
+        if kind in ("not_running", "connection", "unavailable") or any(
+            w in low for w in ("not running", "connection refused", "connect", "no such file", "server is not")
+        ):
+            raise TabsError("no_session", "herdr-core is not running (%s); start it with `hc server start`" % (msg or kind))
+        raise TabsError("backend_error", msg or kind or "hc failed")
+
+    def hc(self, *args, check=True):
+        argv = [self.binary] + [str(a) for a in args]
+        try:
+            p = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            raise TabsError("timeout", "hc %s did not answer in %g s" % (args[0] if args else "", self.timeout))
+        except FileNotFoundError:
+            raise TabsError("no_backend", "hc (herdr-core) is not installed")
+        except OSError as e:
+            raise TabsError("no_backend", "cannot run hc: %s" % (e.strerror or e))
+        raw = p.stdout.decode("utf-8", "replace").strip()
+        err_txt = p.stderr.decode("utf-8", "replace").strip()
+        data = None
+        if raw:
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                data = None
+        if isinstance(data, dict) and isinstance(data.get("error"), dict):
+            if check:
+                err = data["error"]
+                self._raise_hc_error(str(err.get("kind", "")), str(err.get("message", "") or err_txt))
+            return None
+        if check and p.returncode != 0:
+            self._raise_hc_error("", err_txt or raw or ("hc %s failed (exit %d)" % (args[0] if args else "", p.returncode)))
+        return data
+
+    @staticmethod
+    def _cmd_of(entry):
+        fg = entry.get("foreground")
+        if isinstance(fg, dict) and fg.get("name"):
+            return os.path.basename(str(fg["name"]))
+        if entry.get("agent"):
+            return os.path.basename(str(entry["agent"]))
+        argv = entry.get("argv")
+        if isinstance(argv, list) and argv:
+            return os.path.basename(str(argv[0]))
+        return ""
+
+    def list_tabs_raw(self):
+        res = self.hc("ls", "--json")
+        if not isinstance(res, dict):
+            raise TabsError("backend_error", "unexpected answer from hc ls --json")
+        entries = [e for e in (res.get("terminals") or []) if isinstance(e, dict) and e.get("state", "live") == "live"]
+        entries.sort(key=lambda e: (e.get("created_ms", 0), str(e.get("address", ""))))
+        home = os.path.expanduser("~")
+        tabs = []
+        self._meta = {}
+        for idx, e in enumerate(entries, 1):
+            addr = str(e.get("address") or "")
+            if not addr:
+                continue
+            self._meta[addr] = e
+            name = str(e.get("name") or addr)
+            cwd = str(e.get("cwd") or "")
+            if home != "/" and (cwd == home or cwd.startswith(home + "/")):
+                cwd = "~" + cwd[len(home):]
+            cmd = self._cmd_of(e)
+            tabs.append(Tab(addr, idx, name, cwd, cmd, addr, [addr], False, "%d:%s" % (idx, name)))
+        return tabs
+
+    def active_tab_id(self, tab_ids):
+        if not tab_ids:
+            return None
+        marker = os.path.join(self.run_dir, "herdr-active-tab")
+        try:
+            with open(marker, encoding="utf-8") as f:
+                cur = f.read().strip()
+            if cur in tab_ids:
+                return cur
+        except OSError:
+            pass
+        return tab_ids[0]
+
+    def _get_meta(self, tab_id, fresh=False):
+        if not fresh:
+            cached = self._meta.get(tab_id)
+            if isinstance(cached, dict) and "cols" in cached and "rows" in cached:
+                return cached
+        res = self.hc("get", "--json", tab_id, check=False)
+        if isinstance(res, dict) and res.get("address"):
+            self._meta[tab_id] = res
+            return res
+        return self._meta.get(tab_id) or {}
+
+    def capture_plain_rows(self, tab):
+        res = self.hc("read", "--json", tab.id)
+        if not isinstance(res, dict):
+            raise TabsError("backend_error", "unexpected answer from hc read --json")
+        raw = str(res.get("text") or "")
+        return [x.rstrip() for x in raw.split("\n")]
+
+    def capture_screen(self, tab, lines):
+        args = ["read", "--json"]
+        if lines:
+            args += ["--lines", str(int(lines))]
+        args.append(tab.id)
+        res = self.hc(*args)
+        if not isinstance(res, dict):
+            raise TabsError("backend_error", "unexpected answer from hc read --json")
+        meta = self._get_meta(tab.id)
+        cols = int(meta.get("cols") or 80)
+        rows = int(meta.get("rows") or 24)
+        alternate = res.get("how") == "stitched"
+        return ScreenCapture(str(res.get("text") or ""), [0, 0], alternate, False, "", [cols, rows], None if alternate else lines)
+
+    def prepare_send(self, tab):
+        pass
+
+    def _framed_write(self, tab_id, payload_bytes):
+        """Deliver raw UTF-8 bytes into `tab_id` via `hc connect` framed `terminal.attach` DATA without pressing Enter."""
+        meta = self._get_meta(tab_id)
+        cols = int(meta.get("cols") or 100)
+        rows = int(meta.get("rows") or 30)
+        try:
+            proc = subprocess.Popen([self.binary, "connect"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except FileNotFoundError:
+            raise TabsError("no_backend", "hc (herdr-core) is not installed")
+        except OSError as e:
+            raise TabsError("no_backend", "cannot run hc: %s" % (e.strerror or e))
+
+        def write_frame(ch, kind, data=b""):
+            proc.stdin.write(struct.pack("<IBI", ch, kind, len(data)) + data)
+            proc.stdin.flush()
+
+        def read_exact(n):
+            buf = bytearray()
+            while len(buf) < n:
+                chunk = proc.stdout.read(n - len(buf))
+                if not chunk:
+                    raise EOFError("hc connect closed stream early")
+                buf.extend(chunk)
+            return bytes(buf)
+
+        deadline = time.monotonic() + self.timeout
+        try:
+            hello = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "hello", "params": {"framed": True, "generation": 1}}) + "\n"
+            proc.stdin.write(hello.encode("utf-8"))
+            proc.stdin.flush()
+            hello_line = proc.stdout.readline()
+            if not hello_line:
+                err = proc.stderr.read().decode("utf-8", "replace").strip()
+                self._raise_hc_error("not_running", err or "hc connect exited during handshake")
+            hello_msg = json.loads(hello_line.decode("utf-8", "replace"))
+            if hello_msg.get("error"):
+                e = hello_msg["error"]
+                self._raise_hc_error(str(e.get("data", {}).get("kind", "")), str(e.get("message", "")))
+
+            attach = json.dumps({
+                "jsonrpc": "2.0", "id": 2, "method": "terminal.attach",
+                "params": {"terminal": tab_id, "cols": cols, "rows": rows, "history": 0, "resumed": True},
+            }).encode("utf-8")
+            write_frame(0, 0, attach)
+
+            channel = None
+            while channel is None:
+                if time.monotonic() > deadline:
+                    raise TabsError("timeout", "hc connect timed out attaching to %s" % tab_id)
+                hdr = read_exact(9)
+                fch, fkind, flen = struct.unpack("<IBI", hdr)
+                fpay = read_exact(flen)
+                if fch == 0 and fkind == 0:
+                    msg = json.loads(fpay.decode("utf-8", "replace"))
+                    if msg.get("id") == 2:
+                        if msg.get("error"):
+                            e = msg["error"]
+                            kind = str((e.get("data") or {}).get("kind", "")) if isinstance(e.get("data"), dict) else ""
+                            self._raise_hc_error(kind, str(e.get("message", "")))
+                        channel = int(msg["result"]["channel"])
+
+            for i in range(0, len(payload_bytes), CHUNK):
+                write_frame(channel, 0, payload_bytes[i:i + CHUNK])
+            time.sleep(0.02)
+            write_frame(channel, 2, b"")
+            proc.stdin.close()
+            proc.wait(timeout=max(0.5, deadline - time.monotonic()))
+        except TabsError:
+            proc.kill()
+            proc.wait()
+            raise
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise TabsError("timeout", "hc connect did not finish in %g s" % self.timeout)
+        except (EOFError, OSError, ValueError, KeyError) as e:
+            proc.kill()
+            err = proc.stderr.read().decode("utf-8", "replace").strip() if proc.stderr else ""
+            proc.wait()
+            self._raise_hc_error("", err or str(e))
+
+    def send_text(self, tab, text):
+        if not text:
+            return
+        self._framed_write(tab.id, text.encode("utf-8"))
+
+    def send_key(self, tab, key):
+        self.hc("keys", "--json", tab.id, _hc_key_name(key))
+
+    def live_tab_ids(self):
+        return {t.id for t in self.list_tabs_raw()}
+
+    def tab_state(self, tab):
+        """Return native OSC 7501 `(True, dialog|busy|idle)` when the program reported status, else None for heuristic fallback."""
+        meta = self._get_meta(tab.id, fresh=True)
+        if not meta or not meta.get("reported"):
+            return None
+        st = meta.get("status")
+        if not isinstance(st, dict):
+            return None
+        state = st.get("state")
+        if state == "blocked":
+            return True, "dialog"
+        if state == "working":
+            return True, "busy"
+        if state in ("idle", "done", "error"):
+            return True, "idle"
+        return None
+
+
+BACKENDS = {"tmux": TmuxBackend, "herdr": HerdrBackend}
+
+
+def make_backend(name=None, session=None, socket=None, binary=None, timeout=TMUX_TIMEOUT, run_dir=None):
     if isinstance(name, TabsBackend):
         return name
     chosen = name or os.environ.get("SB_TABS_BACKEND") or os.environ.get("SWARMBOX_MUX") or "tmux"
@@ -708,6 +975,8 @@ def make_backend(name=None, session=None, socket=None, binary=None, timeout=TMUX
         raise TabsError("no_backend", "unknown tabs backend %r (known: %s)" % (chosen, ", ".join(sorted(BACKENDS))))
     if cls is TmuxBackend:
         return cls(session=session, socket=socket, binary=binary, timeout=timeout)
+    if cls is HerdrBackend:
+        return cls(binary=binary, timeout=timeout, run_dir=run_dir)
     return cls(timeout=timeout)
 
 
@@ -716,11 +985,11 @@ class Tabs:
 
     def __init__(self, session=None, socket=None, binary=None, run_dir=None, pause=PAUSE, timeout=TMUX_TIMEOUT, verify_timeout=VERIFY_TIMEOUT,
                  lock_timeout=LOCK_TIMEOUT, backend=None):
-        self.backend = make_backend(backend, session=session, socket=socket, binary=binary, timeout=timeout)
+        self.run_dir = run_dir or os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox"
+        self.backend = make_backend(backend, session=session, socket=socket, binary=binary, timeout=timeout, run_dir=self.run_dir)
         self.session = getattr(self.backend, "session", session or os.environ.get("SB_TABS_SESSION") or "main")
         self.socket = getattr(self.backend, "socket", socket if socket is not None else os.environ.get("SB_TABS_SOCKET"))
         self.binary = getattr(self.backend, "binary", binary or os.environ.get("SB_TABS_BIN") or "tmux")
-        self.run_dir = run_dir or os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox"
         self.pause, self.timeout, self.verify_timeout, self.lock_timeout = pause, timeout, verify_timeout, lock_timeout
 
     def tmux(self, *args, check=True):

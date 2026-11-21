@@ -40,7 +40,8 @@ PRESETS = {
               "--permission-mode dontAsk --no-session-persistence --max-turns {max_turns} --system-prompt {system_prompt} "
               "--output-format stream-json --verbose",
 }
-TABS_ENV = ("HOME", "PATH", "TMUX_TMPDIR", "SB_TABS_SESSION", "SB_TABS_SOCKET", "SB_TABS_BIN", "SWARMBOX_SYSOP_TABS_CMD")
+TABS_ENV = ("HOME", "PATH", "TMUX_TMPDIR", "SB_TABS_SESSION", "SB_TABS_SOCKET", "SB_TABS_BIN",
+            "SWARMBOX_MUX", "SB_TABS_BACKEND", "SB_TABS_HC_BIN", "HC_SESSION", "SWARMBOX_SYSOP_TABS_CMD")
 PLACEHOLDERS = ("mcp_config", "model", "system_prompt", "system_prompt_file", "max_turns", "goal_dir")
 _TOKEN = re.compile(r"\{\{|\}\}|\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
@@ -72,6 +73,7 @@ Rules:
 SOURCE_NOTES = {
     "voice": "The goal was SPOKEN and transcribed by a speech recognizer: it can contain errors (similar-sounding words, wrong names, missing words). If the goal is unclear, or acting on a mishearing could do damage, do not guess: say what you understood and call done without acting.",
     "panel": "The goal was typed by the user in the sysop panel: take it literally.",
+    "web": "The goal was typed by the user in the web interface: take it literally.",
     "cli": "The goal was typed by the user on the command line: take it literally.",
 }
 UNKNOWN_SOURCE = "The source of the goal is not known: treat it as a transcription that may contain errors, and be careful with anything that cannot be undone."

@@ -45,6 +45,7 @@ _SENSITIVE_NAME = re.compile(r"(^|/)(\.bashrc|\.zshrc|\.profile|\.bash_profile|a
 # any pane, the panel's included, and kills the session), swarmbox-tabs (it types into any tab: `swarmbox tabs send @2 --run ls`), the bus and the sysop commands.
 # Matched on the text as a whole, quoted or not, so a payload in a quoted argument does not hide.
 _SELF = re.compile(r"(?i)decision\.json|pending_action|events\.jsonl|stop\.request|/sysop\b|\bsysop/|swarmbox[-_ ]?sysop|(?<![\w-])tmux(?![\w-])|"
+                   r"(?<![\w-])herdr(?:-core)?(?![\w-])|(?<![\w-])hc\s+(?:send|keys|kill|run|interrupt|connect|server|rm|attach|read|exec|file)\b|"
                    r"swarmbox[-_ ]?tabs|SB_TABS_|swarmbox[-_]bus|swarmbox\s+bus\b|\bbus\s+(pub|sub|serve|stop|tabs|screen)\b|bus\.sock")
 # files that hold secrets: reading them is at least medium (a screen is redacted by patterns only)
 _SECRET = re.compile(r"(?i)(^|[/=~])\.(ssh|gnupg|aws|docker|kube)(/|$)|(^|/)id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx)$|(^|/)\.(env|netrc|pgpass|npmrc|git-credentials)\b|"
