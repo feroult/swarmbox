@@ -6,6 +6,7 @@ config.py, watch.py, mcpserver.py, tabsclient.py) must never acquire direct tmux
 
 Run with: python3 -W error tests/fast/test_guard_mux.py
 """
+import ast
 import os
 import re
 import sys
@@ -30,7 +31,6 @@ TMUX_ADAPTER_FILES = {
     "container/addons/sysop/lib/swarmbox_sysop/keys.py": "tmux prefix-key wrapper over actions.py",
     "container/addons/sysop/lib/swarmbox_sysop/ui_host.py": "mux UI dispatcher that lazily loads tmux Follower/Toaster",
     "container/addons/sysop/lib/swarmbox_sysop/__main__.py": "fast-path lazy dispatch for `dock redock` resize bursts",
-    "container/addons/sysop/lib/swarmbox_sysop/cli.py": "lazy subcommand dispatch to `dock` and `panel`",
     "container/addons/sysop/lib/swarmbox_sysop/risk.py": "security guardrail regex flagging commands that touch tmux",
 }
 
@@ -98,6 +98,7 @@ class MuxBoundary(unittest.TestCase):
             "container/scripts/swarmbox-web.sh",
             "container/scripts/swarmbox-bus.py",
             "container/addons/sysop/lib/swarmbox_sysop/service.py",
+            "container/addons/sysop/lib/swarmbox_sysop/cli.py",
             "container/addons/sysop/lib/swarmbox_sysop/state.py",
             "container/addons/sysop/lib/swarmbox_sysop/actions.py",
             "container/addons/sysop/lib/swarmbox_sysop/policy.py",
@@ -107,6 +108,27 @@ class MuxBoundary(unittest.TestCase):
         for rel in must_be_clean:
             self.assertIn(rel, self.files, rel)
             self.assertNotIn(rel, TMUX_ADAPTER_FILES, rel)
+
+    def test_swarmbox_tabs_only_invokes_tmux_inside_tmux_backend(self):
+        src = self.files["container/scripts/swarmbox-tabs.py"]
+        tree = ast.parse(src, filename="swarmbox-tabs.py")
+        leaks = []
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name == "TmuxBackend":
+                continue
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr == "tmux":
+                    # Only the backwards-compat Tabs.tmux() pass-through may forward to self.backend.tmux()
+                    if isinstance(node, ast.ClassDef) and node.name == "Tabs":
+                        parent_fn = next(
+                            (m.name for m in node.body if isinstance(m, ast.FunctionDef)
+                             and m.lineno <= sub.lineno <= (m.end_lineno or m.lineno)),
+                            None,
+                        )
+                        if parent_fn == "tmux":
+                            continue
+                    leaks.append((sub.lineno, getattr(node, "name", type(node).__name__)))
+        self.assertEqual(leaks, [], "tmux call leaked outside TmuxBackend in swarmbox-tabs.py: %r" % (leaks,))
 
 
 class ScannerSelfTest(unittest.TestCase):

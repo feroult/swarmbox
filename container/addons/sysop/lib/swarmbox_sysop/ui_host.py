@@ -54,3 +54,15 @@ def notify(msg, socket="", client="", mux=None):
         from . import dock
         tm = dock.Tmux(argv=["tmux", "-S", socket]) if socket else dock.Tmux()
         tm.run("display-message", "-c", client, "sysop: " + msg)
+
+
+def run_panel():
+    """Run the terminal panel UI."""
+    from . import panel
+    return panel.run()
+
+
+def run_dock(action, socket="", window=None):
+    """Run a tmux dock subcommand (`open`, `close`, `toggle`, `redock`, `sync`)."""
+    from . import dock
+    return dock.run(action, socket, window)

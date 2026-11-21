@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Changed: isolated `tmux` behind explicit multiplexer backend boundaries (`container/scripts/mux/`, `TabsBackend`/`TmuxBackend` in `swarmbox-tabs`, and mux-agnostic `state.py`, `actions.py`, and `ui_host.py` in `swarmbox_sysop`), enforced by a static boundary guard (`tests/fast/test_guard_mux.py`) and non-`tmux` isolation tests (`tests/fast/test_mux_isolation.py`). Default behavior (`SWARMBOX_MUX=tmux`) is unchanged.
+
 ## [2.0.24] - 2026-11-20
 
 - Fixed: on touch screens (such as iPhone), scrolling the web terminal no longer flashes the Sysop button's border or highlight. Button `:hover` border rules are now scoped to `@media (hover: hover)` so touch gestures do not trigger sticky hover highlights, `showToast()` preserves the panel state while scrolled back in tmux copy mode, and `sysopState()` only matches the exact two-space `SYSOP  <state>` panel header at a word/pane boundary.

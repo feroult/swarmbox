@@ -268,7 +268,7 @@ and subscribe: it knows nothing about tmux, tabs or what a message means, keeps 
 ### The tabs
 
 `swarmbox-tabs` (source `container/scripts/swarmbox-tabs.py`, in the image as `/usr/local/bin/swarmbox-tabs`; from the host `swarmbox tabs ...`) is a **capability of the host**, used directly and never through a bus topic. It has no daemon:
-a call reads or acts on tmux and ends, and it imports nothing from any addon. The file is a command line and a library at once; the full text is its docstring.
+a call delegates to its active `TabsBackend` (`TmuxBackend` by default, selected by `SB_TABS_BACKEND` or `SWARMBOX_MUX`; see [mux-architecture.md](mux-architecture.md)) and ends, and it imports nothing from any addon. The file is a command line and a library at once; the full text is its docstring.
 
 - **Commands.** `list` (JSON list of the tabs), `active`, `screen TAB [--lines N]`, `send TAB (--run TEXT | --input TEXT) [--queue] [--slash]`; `-` as TEXT reads stdin (long or multi-line text). Everything is JSON on stdout; a failure is
   `{"err":CODE,"msg":TEXT}` on stdout too, with an exit code: 0 ok; 1 refused or failed (`no_such_tab`, `ambiguous_tab`, `dialog_open`, `busy_tab`, `slash_refused`, `not_submitted`, `tmux_error`, `lock_error`); 2 usage or a text that cannot be typed (`usage`, `bad_body`);

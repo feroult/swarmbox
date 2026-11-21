@@ -236,13 +236,11 @@ def cmd_approve(args):
 
 
 def _cmd_panel(_args):
-    from . import panel
-    return panel.run()
+    return ui_host.run_panel()
 
 
 def _cmd_dock(args):
-    from . import dock
-    return dock.run(args.action, args.socket, args.window)
+    return ui_host.run_dock(args.action, args.socket, args.window)
 
 
 def self_test():

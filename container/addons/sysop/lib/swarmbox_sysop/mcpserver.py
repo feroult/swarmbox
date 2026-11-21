@@ -51,13 +51,14 @@ HINTS = {
     "tabs_unavailable": "swarmbox-tabs cannot be run: the goal cannot act on the box",
     "tabs_timeout": "swarmbox-tabs did not answer: read the tab before doing anything else",
     "no_tmux": "tmux is not available: the goal cannot act on the box",
+    "no_backend": "the configured multiplexer backend is not available: the goal cannot act on the box",
     "no_session": "there is no tmux session: the goal cannot act on the box",
     "lock_error": "another action is typing in the tab: try again",
     "not_submitted": "the text may still be in the input box of the tab: read the tab before doing anything else",
 }
 # errors of swarmbox-tabs after which nothing was typed (the buffer of the policy stays as it was); any other error may have typed part of the text
 NOT_TYPED = ("dialog_open", "busy_tab", "slash_refused", "no_such_tab", "ambiguous_tab", "bad_body", "usage", "tabs_unavailable",
-             "no_session", "no_tmux", "lock_error")
+             "no_session", "no_tmux", "no_backend", "lock_error")
 
 
 PROMPT_ENDS = ("$ ", "# ", "% ", "> ", "\u276f ", "\u00bb ")
