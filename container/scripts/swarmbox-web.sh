@@ -148,6 +148,33 @@ voice_front_bin() {
 }
 VOICE_BIN=$(voice_front_bin)
 
+# Load the active multiplexer backend (default: tmux). A backend that defines mux_web_run owns the web server
+# directly (e.g. herdr's native Web Gateway) instead of rendering and launching ttyd.
+for _sb_mc in "${SWARMBOX_TEST_MUX_DIR:-}" "$SB_LIB/mux" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/mux"; do
+    [ -n "$_sb_mc" ] || continue
+    if [ -r "$_sb_mc/mux.sh" ]; then
+        # shellcheck source=/dev/null
+        . "$_sb_mc/mux.sh" || exit $?
+        break
+    fi
+done
+unset _sb_mc
+
+# UTF-8 locale: shells and web terminals need it so accented characters are never dropped.
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+    *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;;
+    *)
+        export LANG=C.UTF-8
+        [ -n "${LC_ALL:-}" ] && export LC_ALL=C.UTF-8
+        ;;
+esac
+
+if declare -F mux_web_run > /dev/null 2>&1; then
+    [ "$MODE" = render ] && exit 0
+    mux_web_run "${SWARMBOX_TEST_WEB_PORT:-7681}" "${SWARMBOX_TEST_WEB_IFACE:-0.0.0.0}" "$VOICE_BIN"
+    exit $?
+fi
+
 # render: the substitution of the placeholders. The values are validated above, so sed needs no escaping.
 render() {
     [ -r "$PAGE" ] || die "the built page $PAGE is missing (build-index.sh runs at image build; is this the right image?)"
@@ -172,15 +199,7 @@ render
 [ "$MODE" = render ] && exit 0
 
 # ---------------------------------------------------------------------------------------------------------------------
-# run: the options and ttyd. The shells inside tmux inherit this environment; without a UTF-8 locale bash/readline drops an
-# accented character typed on its own (dead key + letter), so make sure there is one (the image sets LANG=C.UTF-8).
-case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
-    *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) ;;
-    *)
-        export LANG=C.UTF-8
-        [ -n "${LC_ALL:-}" ] && export LC_ALL=C.UTF-8
-        ;;
-esac
+# run: the options and ttyd.
 
 # ttyd reads each value as JSON and silently stops at the first thing it can parse, so a font list like  'A', 'B', monospace
 # would be cut to  A  (losing the fallbacks). Hand over real JSON: numbers, true/false/null, objects/arrays and quoted strings
@@ -211,15 +230,7 @@ if command -v swarmbox-attach > /dev/null 2>&1; then
     TTYD_ARGS+=(swarmbox-attach --web)
 else
     MUX_WEB_FALLBACK_CMD=()
-    for _sb_mc in "${SWARMBOX_TEST_MUX_DIR:-}" "$SB_LIB/mux" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/mux"; do
-        [ -n "$_sb_mc" ] || continue
-        if [ -r "$_sb_mc/mux.sh" ]; then
-            # shellcheck source=/dev/null
-            . "$_sb_mc/mux.sh" && mux_web_fallback
-            break
-        fi
-    done
-    unset _sb_mc
+    declare -F mux_web_fallback > /dev/null 2>&1 && mux_web_fallback
     if [ "${#MUX_WEB_FALLBACK_CMD[@]}" -gt 0 ]; then
         TTYD_ARGS+=("${MUX_WEB_FALLBACK_CMD[@]}")
     else

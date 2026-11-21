@@ -1,0 +1,18 @@
+# SwarmBox default theme for herdr TUI (Purple Glow palette, see docs/theme.md).
+# Copied to ~/.config/herdr/config.toml on first start; user edits there are preserved.
+onboarding = false
+
+[theme]
+name = "catppuccin"
+
+[theme.custom]
+panel_bg = "#0c0b10"
+sidebar_bg = "#14121b"
+active_row_bg = "#27222f"
+selection_bg = "#6d28d9"
+accent = "#a78bfa"
+red = "#ff6b78"
+green = "#4ade80"
+
+[terminal]
+default_shell = "/bin/bash"

@@ -9,6 +9,7 @@
 #   mux_attach_interactive    open and attach an interactive host terminal tab
 #   mux_attach_command CMD    run quoted shell command CMD in an attached tab and exit with its status
 #   mux_web_fallback          set array MUX_WEB_FALLBACK_CMD (used by swarmbox-web when swarmbox-attach is absent)
+#   mux_web_run (optional)    take over `swarmbox-web run` with a backend-native web gateway (args: PORT IFACE VOICE_BIN)
 #
 # Test-only variable: SWARMBOX_TEST_MUX_DIR replaces the folder holding <backend>.sh.
 
