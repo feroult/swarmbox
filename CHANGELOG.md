@@ -5,6 +5,10 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added: opt-in `herdr` multiplexer backend (`swarmbox config set MUX herdr` / `SWARMBOX_MUX=herdr`) running in parallel to the default `tmux` backend with zero regression:
+  - Pinned SHA-256 `herdr-core` (`hc` 0.1.21) and `herdr` TUI (0.9.5) binaries in the image with SwarmBox Purple Glow default theme (`container/config/herdr.toml`).
+  - Shell backend `container/scripts/mux/herdr.sh` and `HerdrBackend(TabsBackend)` in `swarmbox-tabs` with framed `hc connect` literal UTF-8 delivery and native OSC 7501 `tab_state()` (falling back to screen heuristics when unreported).
+  - Native Herdr Web Gateway and responsive desktop + mobile Web UI (`container/web/herdr/`) with 5 synchronized themes (Purple Glow default, Catppuccin Mocha, Tokyo Night, Nord, Rosé Pine), live OSC 7501 status indicators, real `swarmbox-sysop` integration, and native `swarmbox-voice front` compatibility.
 - Changed: isolated `tmux` behind explicit multiplexer backend boundaries (`container/scripts/mux/`, `TabsBackend`/`TmuxBackend` in `swarmbox-tabs`, and mux-agnostic `state.py`, `actions.py`, and `ui_host.py` in `swarmbox_sysop`), enforced by a static boundary guard (`tests/fast/test_guard_mux.py`) and non-`tmux` isolation tests (`tests/fast/test_mux_isolation.py`). Default behavior (`SWARMBOX_MUX=tmux`) is unchanged.
 
 ## [2.0.24] - 2026-11-20

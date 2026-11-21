@@ -379,6 +379,7 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `HOST_ACCESS` | `0` | adds `host.containers.internal:host-gateway` |
 | `BROWSER_URL` | empty | remote Chrome for chrome-devtools; a bare number or `HOST:PORT` |
 | `WEB`, `WEB_PORT` | `1`, `7681` | the web terminal and its host port (on `127.0.0.1`) |
+| `MUX` | `tmux` | terminal multiplexer backend (`tmux` default, or `herdr` opt-in; passed as `SWARMBOX_MUX` when non-default; see [mux-architecture.md](mux-architecture.md)) |
 | `WITH` | empty | addons to install at start |
 | `AGENT`, `YOLO` | first item of `WITH`, `1` | the agent `yolo` starts (none when `WITH` is empty); `0` turns off the auto-approve of the agents |
 | `ENV_KEYS` | empty | names of host variables passed at creation (section 10) |

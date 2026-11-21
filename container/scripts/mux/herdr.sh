@@ -44,8 +44,7 @@ EOF
 _herdr_ensure_server() {
     "$_SB_HERDR_HC" server status --json > /dev/null 2>&1 && return 0
     "$_SB_HERDR_HC" server start > /dev/null 2>&1 || true
-    local i
-    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
         "$_SB_HERDR_HC" server status --json > /dev/null 2>&1 && return 0
         sleep 0.15
     done
@@ -177,8 +176,7 @@ mux_attach_command() {
     "$_SB_HERDR_HC" attach "$addr" || true
 
     # Wait briefly for the status file to flush if the command just finished.
-    local i
-    for i in 1 2 3 4 5; do
+    for _ in 1 2 3 4 5; do
         [ -s "$status" ] && break
         sleep 0.1
     done

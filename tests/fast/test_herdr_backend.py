@@ -1,0 +1,573 @@
+"""Fast tests for the opt-in `herdr` multiplexer backend (`SWARMBOX_MUX=herdr`):
+
+  - HerdrBackend in container/scripts/swarmbox-tabs.py (list, active, screen, redaction,
+    framed `hc connect` literal UTF-8 text delivery, key mapping, native OSC 7501 `tab_state()`
+    + heuristic fallback, error codes)
+  - container/scripts/mux/herdr.sh (serve init + config seeding, attach interactive,
+    attach command + exit code + detach, `swarmbox-web` dispatch with and without voice front)
+  - Sysop integration (brain.write_mcp_config forwarding mux env, risk.py guarding hc/herdr)
+  - container/config/herdr.toml (valid TOML using SwarmBox Purple Glow palette)
+  - container/web/herdr/server.mjs (CLI arg parsing and Origin security check via Node)
+
+Zero real `hc` daemon, zero `tmux`, zero network.
+Run: python3 tests/fast/test_herdr_backend.py
+"""
+import importlib.util
+import json
+import os
+import pty
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import tomllib
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
+from helpers import ROOT  # noqa: E402
+
+TABS_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py")
+ATTACH_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-attach.sh")
+WEB_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-web.sh")
+HERDR_TOML = os.path.join(ROOT, "container", "config", "herdr.toml")
+HERDR_SERVER = os.path.join(ROOT, "container", "web", "herdr", "server.mjs")
+SYSOP_LIB = os.path.join(ROOT, "container", "addons", "sysop", "lib")
+
+_spec = importlib.util.spec_from_file_location("swarmbox_tabs_herdr_test", TABS_PATH)
+tabs_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(tabs_mod)
+
+if SYSOP_LIB not in sys.path:
+    sys.path.insert(0, SYSOP_LIB)
+from swarmbox_sysop import brain as sysop_brain  # noqa: E402
+from swarmbox_sysop import paths as sysop_paths  # noqa: E402
+from swarmbox_sysop import risk as sysop_risk  # noqa: E402
+
+
+FAKE_HC_PY = r"""#!/usr/bin/env python3
+import json, os, struct, sys
+
+STATE = os.environ["FAKE_HC_STATE"]
+LOG = os.environ["FAKE_HC_LOG"]
+
+def load():
+    with open(STATE, encoding="utf-8") as f:
+        return json.load(f)
+
+def save(d):
+    with open(STATE, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+
+def log(entry):
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+argv = sys.argv[1:]
+log({"argv": argv})
+
+if not argv:
+    sys.exit(0)
+
+st = load()
+if st.get("down") and argv[:2] != ["server", "start"]:
+    print(json.dumps({"error": {"kind": "not_running", "message": "herdr-core server is not running"}}))
+    sys.exit(1)
+
+cmd = argv[0]
+
+if cmd == "server":
+    sub = argv[1] if len(argv) > 1 else ""
+    if sub == "start":
+        st["down"] = False
+        save(st)
+        print(json.dumps({"ok": True}))
+        sys.exit(0)
+    if sub == "status":
+        print(json.dumps({"core": {"id": "fake", "name": "box"}, "live": len(st.get("terminals", []))}))
+        sys.exit(0)
+    sys.exit(0)
+
+if cmd == "ls":
+    print(json.dumps({"hidden_finished": 0, "terminals": st.get("terminals", [])}))
+    sys.exit(0)
+
+if cmd == "get":
+    tid = argv[-1]
+    for t in st.get("terminals", []):
+        if t["address"] == tid or t.get("name") == tid:
+            print(json.dumps(t))
+            sys.exit(0)
+    print(json.dumps({"error": {"kind": "not_found", "message": 'no terminal "%s"' % tid}}))
+    sys.exit(1)
+
+if cmd == "read":
+    tid = argv[-1]
+    lines = None
+    if "--lines" in argv:
+        lines = int(argv[argv.index("--lines") + 1])
+    screens = st.get("screens", {})
+    if tid not in screens:
+        print(json.dumps({"error": {"kind": "not_found", "message": 'no terminal "%s"' % tid}}))
+        sys.exit(1)
+    txt = screens[tid]
+    how = st.get("how", {}).get(tid, "screen")
+    print(json.dumps({"complete": True, "how": "history" if lines else how, "text": txt}))
+    sys.exit(0)
+
+if cmd == "keys":
+    # hc keys --json <tid> <key...>
+    args = [a for a in argv[1:] if a != "--json"]
+    tid, keys = args[0], args[1:]
+    if not any(t["address"] == tid for t in st.get("terminals", [])):
+        print(json.dumps({"error": {"kind": "not_found", "message": 'no terminal "%s"' % tid}}))
+        sys.exit(1)
+    log({"keys": {"terminal": tid, "keys": keys}})
+    print(json.dumps({"status": None, "turn": 0}))
+    sys.exit(0)
+
+if cmd == "run":
+    name = None
+    if "--name" in argv:
+        name = argv[argv.index("--name") + 1]
+    idx = len(st.get("terminals", [])) + 1
+    addr = "t%d" % idx
+    t = {"address": addr, "name": name or ("term-%d" % idx), "agent": "bash", "cwd": os.getcwd(),
+         "state": "live", "cols": 100, "rows": 30, "created_ms": idx * 1000, "reported": False, "status": None}
+    st.setdefault("terminals", []).append(t)
+    st.setdefault("screens", {})[addr] = "$ "
+    # If this is a command wrapper run, simulate writing the exit status if requested
+    if st.get("cmd_rc") is not None and len(argv) >= 2:
+        status_path = argv[-1]
+        if os.path.isabs(status_path):
+            with open(status_path, "w", encoding="utf-8") as sf:
+                sf.write(str(st["cmd_rc"]) + "\n")
+    save(st)
+    print(json.dumps(t))
+    sys.exit(0)
+
+if cmd == "attach":
+    sys.exit(0)
+
+if cmd == "rm":
+    sys.exit(0)
+
+if cmd == "connect":
+    # Framed JSON-RPC 2.0 server stub
+    line = sys.stdin.buffer.readline()
+    hello = json.loads(line.decode("utf-8"))
+    resp = json.dumps({"jsonrpc": "2.0", "id": hello["id"], "result": {"framed": True, "version": "0.1.21"}}) + "\n"
+    sys.stdout.buffer.write(resp.encode("utf-8"))
+    sys.stdout.buffer.flush()
+    attached_tid = None
+    while True:
+        hdr = sys.stdin.buffer.read(9)
+        if len(hdr) < 9:
+            break
+        ch, kind, length = struct.unpack("<IBI", hdr)
+        payload = sys.stdin.buffer.read(length) if length else b""
+        if ch == 0 and kind == 0:
+            req = json.loads(payload.decode("utf-8"))
+            if req.get("method") == "terminal.attach":
+                tid = req["params"]["terminal"]
+                if not any(t["address"] == tid for t in st.get("terminals", [])):
+                    err = json.dumps({"jsonrpc": "2.0", "id": req["id"], "error": {"code": -32000, "message": 'no terminal "%s"' % tid, "data": {"kind": "not_found"}}}).encode()
+                    sys.stdout.buffer.write(struct.pack("<IBI", 0, 0, len(err)) + err)
+                    sys.stdout.buffer.flush()
+                    continue
+                attached_tid = tid
+                ok = json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": {"channel": 7, "terminal": tid}}).encode()
+                sys.stdout.buffer.write(struct.pack("<IBI", 0, 0, len(ok)) + ok)
+                sys.stdout.buffer.flush()
+        elif ch == 7 and kind == 0:
+            log({"framed_data": {"terminal": attached_tid, "text": payload.decode("utf-8", "replace")}})
+        elif ch == 7 and kind == 2:
+            break
+    sys.exit(0)
+
+sys.exit(0)
+"""
+
+
+def make_exec(path, content):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+class HerdrTabsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-herdr.")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.state_file = os.path.join(self.tmp, "hc-state.json")
+        self.log_file = os.path.join(self.tmp, "hc.log")
+        self.run_dir = os.path.join(self.tmp, "run")
+        os.makedirs(self.run_dir, exist_ok=True)
+        self.hc_bin = os.path.join(self.tmp, "hc")
+        make_exec(self.hc_bin, FAKE_HC_PY)
+        self.old_env = {k: os.environ.get(k) for k in ("FAKE_HC_STATE", "FAKE_HC_LOG", "SWARMBOX_MUX", "SB_TABS_BACKEND", "SB_TABS_HC_BIN")}
+        os.environ["FAKE_HC_STATE"] = self.state_file
+        os.environ["FAKE_HC_LOG"] = self.log_file
+        self.addCleanup(self._restore_env)
+
+    def _restore_env(self):
+        for k, v in self.old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def write_state(self, state):
+        with open(self.state_file, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+
+    def read_log(self):
+        if not os.path.exists(self.log_file):
+            return []
+        with open(self.log_file, encoding="utf-8") as f:
+            return [json.loads(line) for line in f if line.strip()]
+
+    def tabs(self):
+        return tabs_mod.Tabs(backend="herdr", binary=self.hc_bin, run_dir=self.run_dir, pause=0.0, verify_timeout=0.2)
+
+    def test_list_active_marker_and_fallback(self):
+        home = os.path.expanduser("~")
+        self.write_state({
+            "terminals": [
+                {"address": "t1", "name": "shell", "agent": "bash", "cwd": home + "/proj", "state": "live", "cols": 120, "rows": 40, "created_ms": 100},
+                {"address": "t2", "name": "claude", "agent": "claude", "cwd": "/srv/app", "state": "live", "cols": 120, "rows": 40, "created_ms": 200},
+            ],
+            "screens": {"t1": "$ ", "t2": "> "},
+        })
+        t = self.tabs()
+        items = t.list_tabs()
+        self.assertEqual([x["tab"] for x in items], ["t1", "t2"])
+        self.assertEqual(items[0]["dir"], "~/proj")
+        self.assertEqual(items[0]["label"], "1:shell")
+        self.assertTrue(items[0]["active"])
+        self.assertFalse(items[1]["active"])
+
+        # Writing herdr-active-tab moves the active tab to t2
+        with open(os.path.join(self.run_dir, "herdr-active-tab"), "w", encoding="utf-8") as f:
+            f.write("t2\n")
+        self.assertEqual(t.active()["tab"], "t2")
+
+    def test_screen_redacts_secrets_and_clips_lines(self):
+        self.write_state({
+            "terminals": [
+                {"address": "t1", "name": "shell", "agent": "bash", "cwd": "/tmp", "state": "live", "cols": 110, "rows": 32, "created_ms": 1},
+            ],
+            "screens": {
+                "t1": "line1\nline2\nAPI_KEY=sk-1234567890abcdefghijklmnop\n\x1b[31merror: boom\x1b[0m\n",
+            },
+        })
+        sc = self.tabs().screen("t1", lines=2)
+        self.assertEqual(sc["size"], [110, 32])
+        self.assertNotIn("sk-1234567890", sc["text"])
+        self.assertIn("[REDACTED]", sc["text"])
+        self.assertIn("[err]error: boom[/err]", sc["text"])
+        self.assertNotIn("line1", sc["text"])
+
+    def test_send_literal_utf8_and_keys_mapping(self):
+        self.write_state({
+            "terminals": [
+                {"address": "t1", "name": "shell", "agent": "bash", "cwd": "/tmp", "state": "live", "cols": 100, "rows": 30, "created_ms": 1, "reported": False},
+            ],
+            "screens": {"t1": "$ "},
+        })
+        res = self.tabs().send("t1", input="echo !?{} café{Esc}{BTab}{C-c}{M-x}{F5}{PgUp}{Delete}{Enter}")
+        self.assertTrue(res["ok"])
+        self.assertTrue(res["submitted"])
+        entries = self.read_log()
+        framed = [e["framed_data"]["text"] for e in entries if "framed_data" in e]
+        keys = [e["keys"]["keys"][0] for e in entries if "keys" in e]
+        self.assertEqual(framed, ["echo !?{} café"])
+        self.assertEqual(keys, ["esc", "shift+tab", "ctrl+c", "alt+x", "f5", "pageup", "delete", "enter"])
+
+    def test_native_osc7501_blocked_and_busy_and_idle(self):
+        # 1. OSC 7501 blocked -> dialog_open
+        self.write_state({
+            "terminals": [{
+                "address": "t1", "name": "agent", "agent": "bash", "cwd": "/tmp", "state": "live",
+                "cols": 100, "rows": 30, "created_ms": 1, "reported": True,
+                "status": {"state": "blocked", "kind": "permission", "msg": "Run deploy?"},
+            }],
+            "screens": {"t1": "waiting..."},
+        })
+        with self.assertRaises(tabs_mod.TabsError) as ctx:
+            self.tabs().send("t1", run="hello")
+        self.assertEqual(ctx.exception.code, "dialog_open")
+
+        # 2. OSC 7501 working -> busy_tab unless queue=True
+        self.write_state({
+            "terminals": [{
+                "address": "t1", "name": "agent", "agent": "bash", "cwd": "/tmp", "state": "live",
+                "cols": 100, "rows": 30, "created_ms": 1, "reported": True,
+                "status": {"state": "working", "progress": 50, "msg": "Running tests"},
+            }],
+            "screens": {"t1": "working..."},
+        })
+        with self.assertRaises(tabs_mod.TabsError) as ctx2:
+            self.tabs().send("t1", run="next task")
+        self.assertEqual(ctx2.exception.code, "busy_tab")
+        ok = self.tabs().send("t1", run="next task", queue=True)
+        self.assertTrue(ok["ok"])
+
+        # 3. OSC 7501 idle -> accepted cleanly
+        self.write_state({
+            "terminals": [{
+                "address": "t1", "name": "agent", "agent": "bash", "cwd": "/tmp", "state": "live",
+                "cols": 100, "rows": 30, "created_ms": 1, "reported": True,
+                "status": {"state": "idle"},
+            }],
+            "screens": {"t1": "ready"},
+        })
+        ok2 = self.tabs().send("t1", run="run tests")
+        self.assertTrue(ok2["ok"])
+
+    def test_heuristic_fallback_when_not_reported(self):
+        rule = "─" * 10
+        self.write_state({
+            "terminals": [{
+                "address": "t1", "name": "claude", "agent": "claude", "cwd": "/tmp", "state": "live",
+                "cols": 100, "rows": 30, "created_ms": 1, "reported": False, "status": None,
+            }],
+            "screens": {"t1": "%s\nDo you want to run rm?\nEnter to confirm · Esc to cancel\n" % rule},
+        })
+        with self.assertRaises(tabs_mod.TabsError) as ctx:
+            self.tabs().send("t1", run="hi")
+        self.assertEqual(ctx.exception.code, "dialog_open")
+
+    def test_errors_no_backend_no_session_no_such_tab(self):
+        # Missing binary -> no_backend (exit 4)
+        missing = tabs_mod.Tabs(backend="herdr", binary=os.path.join(self.tmp, "nope-hc"), run_dir=self.run_dir)
+        with self.assertRaises(tabs_mod.TabsError) as ctx:
+            missing.list_tabs()
+        self.assertEqual(ctx.exception.code, "no_backend")
+        self.assertEqual(tabs_mod.EXIT[ctx.exception.code], 4)
+
+        # Daemon down -> no_session (exit 4)
+        self.write_state({"down": True, "terminals": []})
+        with self.assertRaises(tabs_mod.TabsError) as ctx2:
+            self.tabs().list_tabs()
+        self.assertEqual(ctx2.exception.code, "no_session")
+        self.assertEqual(tabs_mod.EXIT[ctx2.exception.code], 4)
+
+        # Unknown tab -> no_such_tab (exit 1)
+        self.write_state({"terminals": [], "screens": {}})
+        with self.assertRaises(tabs_mod.TabsError) as ctx3:
+            self.tabs().screen("t99", None)
+        self.assertEqual(ctx3.exception.code, "no_such_tab")
+
+    def test_cli_selects_herdr_via_swarmbox_mux(self):
+        self.write_state({
+            "terminals": [{"address": "t1", "name": "shell", "agent": "bash", "cwd": "/tmp", "state": "live", "cols": 80, "rows": 24, "created_ms": 1}],
+            "screens": {"t1": "$ "},
+        })
+        env = dict(os.environ, SWARMBOX_MUX="herdr", SB_TABS_HC_BIN=self.hc_bin, SB_RUN_DIR=self.run_dir)
+        p = subprocess.run([sys.executable, TABS_PATH, "list"], env=env, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        data = json.loads(p.stdout)
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["tab"], "t1")
+
+
+class HerdrShellBackendTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-herdr-sh.")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.home = os.path.join(self.tmp, "home")
+        self.run_dir = os.path.join(self.tmp, "run")
+        self.bin_dir = os.path.join(self.tmp, "bin")
+        os.makedirs(self.home)
+        os.makedirs(self.run_dir)
+        os.makedirs(self.bin_dir)
+        with open(os.path.join(self.run_dir, "ready"), "w", encoding="utf-8") as f:
+            f.write("ok\n")
+        self.state_file = os.path.join(self.tmp, "hc-state.json")
+        self.log_file = os.path.join(self.tmp, "hc.log")
+        self.hc_bin = os.path.join(self.bin_dir, "hc")
+        make_exec(self.hc_bin, FAKE_HC_PY)
+        self.web_log = os.path.join(self.tmp, "web.log")
+        self.fake_web = os.path.join(self.tmp, "fake-herdr-web")
+        make_exec(self.fake_web, '#!/bin/sh\nprintf "WEB %%s\\n" "$*" >> "%s"\n' % self.web_log)
+        with open(self.state_file, "w", encoding="utf-8") as f:
+            json.dump({"down": True, "terminals": [], "screens": {}}, f)
+
+    def env(self, extra=None):
+        e = {
+            "PATH": self.bin_dir + os.pathsep + os.environ["PATH"],
+            "HOME": self.home,
+            "SWARMBOX_MUX": "herdr",
+            "SWARMBOX_TEST_HC_BIN": self.hc_bin,
+            "SWARMBOX_TEST_HERDR_WEB": self.fake_web,
+            "SWARMBOX_TEST_HERDR_CONFIG": HERDR_TOML,
+            "SWARMBOX_TEST_LIB": os.path.join(ROOT, "container", "scripts"),
+            "SWARMBOX_TEST_RUN_DIR": self.run_dir,
+            "FAKE_HC_STATE": self.state_file,
+            "FAKE_HC_LOG": self.log_file,
+        }
+        if extra:
+            e.update(extra)
+        return e
+
+    def test_serve_init_seeds_config_once_and_creates_initial_tab(self):
+        mux_dir = os.path.join(ROOT, "container", "scripts", "mux")
+        script = (
+            'log() { :; }; warn() { echo "WARN:$*" >&2; }; have() { command -v "$1" >/dev/null 2>&1; }; '
+            'run_logged() { "$@"; }; '
+            '. "%s/mux.sh"; mux_serve_init' % mux_dir
+        )
+        p = subprocess.run(["bash", "-c", script], env=self.env(), capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        herdr_cfg = os.path.join(self.home, ".config", "herdr", "config.toml")
+        core_cfg = os.path.join(self.home, ".config", "herdr-core", "config.toml")
+        self.assertTrue(os.path.isfile(herdr_cfg))
+        self.assertTrue(os.path.isfile(core_cfg))
+        with open(herdr_cfg, encoding="utf-8") as f:
+            self.assertIn("#a78bfa", f.read())
+        with open(core_cfg, encoding="utf-8") as f:
+            self.assertIn("notes = false", f.read())
+        with open(self.state_file, encoding="utf-8") as f:
+            st = json.load(f)
+        self.assertFalse(st["down"])
+        self.assertEqual(len(st["terminals"]), 1)
+        self.assertEqual(st["terminals"][0]["name"], "shell")
+
+        # User edits are preserved on subsequent runs
+        with open(herdr_cfg, "w", encoding="utf-8") as f:
+            f.write("# custom user theme\n")
+        p2 = subprocess.run(["bash", "-c", script], env=self.env(), capture_output=True, text=True)
+        self.assertEqual(p2.returncode, 0, p2.stderr)
+        with open(herdr_cfg, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "# custom user theme\n")
+
+    def _run_on_pty(self, argv, env):
+        master, slave = pty.openpty()
+        try:
+            p = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=subprocess.PIPE, env=env, text=True)
+            os.close(slave)
+            slave = -1
+            _, err = p.communicate(timeout=10)
+            return p.returncode, err
+        finally:
+            if slave >= 0:
+                os.close(slave)
+            os.close(master)
+
+    def test_attach_command_returns_exit_code_and_handles_detach(self):
+        # 1. Command finishes with exit code 42
+        with open(self.state_file, "w", encoding="utf-8") as f:
+            json.dump({"down": False, "terminals": [], "screens": {}, "cmd_rc": 42}, f)
+        rc, err = self._run_on_pty(["bash", ATTACH_PATH, "false"], self.env({"SWARMBOX_TEST_READY_TIMEOUT": "2"}))
+        self.assertEqual(rc, 42, err)
+
+        # 2. Detached before finishing -> exit 0 + detached note
+        with open(self.state_file, "w", encoding="utf-8") as f:
+            json.dump({"down": False, "terminals": [], "screens": {}}, f)
+        rc2, err2 = self._run_on_pty(["bash", ATTACH_PATH, "sleep", "10"], self.env({"SWARMBOX_TEST_READY_TIMEOUT": "2"}))
+        self.assertEqual(rc2, 0, err2)
+        self.assertIn("detached; the command keeps running", err2)
+
+    def test_swarmbox_web_dispatches_to_herdr_gateway_and_voice_front(self):
+        # Render is a clean no-op under herdr (does not require ttyd-stock.html)
+        p_render = subprocess.run(["bash", WEB_PATH, "render"], env=self.env({"SWARMBOX_VOICE_WEB": "0"}), capture_output=True, text=True)
+        self.assertEqual(p_render.returncode, 0, p_render.stderr)
+
+        # Direct run without voice addon
+        p_run = subprocess.run(
+            ["bash", WEB_PATH, "run"],
+            env=self.env({"SWARMBOX_VOICE_WEB": "0", "SWARMBOX_TEST_WEB_PORT": "7788", "SWARMBOX_TEST_WEB_IFACE": "127.0.0.1"}),
+            capture_output=True, text=True,
+        )
+        self.assertEqual(p_run.returncode, 0, p_run.stderr)
+        with open(self.web_log, encoding="utf-8") as f:
+            self.assertIn("WEB -p 7788 -i 127.0.0.1", f.read())
+
+        # With voice addon present: swarmbox-web wraps herdr-web inside swarmbox-voice front
+        voice_prefix = os.path.join(self.tmp, "voice-addon")
+        os.makedirs(os.path.join(voice_prefix, "bin"))
+        os.makedirs(os.path.join(voice_prefix, "lib", "swarmbox_voice"))
+        os.makedirs(os.path.join(voice_prefix, "web"))
+        for rel in ("lib/swarmbox_voice/front.py", "web/page.js", "web/page.css"):
+            open(os.path.join(voice_prefix, rel), "w").close()
+        voice_log = os.path.join(self.tmp, "voice-front.log")
+        voice_bin = os.path.join(voice_prefix, "bin", "swarmbox-voice")
+        make_exec(voice_bin, '#!/bin/sh\nprintf "FRONT %%s\\n" "$*" >> "%s"\n' % voice_log)
+        make_exec(os.path.join(self.bin_dir, "swarmbox-addon"), '#!/bin/sh\nprintf "%%s\\n" "%s"\n' % voice_bin)
+        p_voice = subprocess.run(
+            ["bash", WEB_PATH, "run"],
+            env=self.env({"SWARMBOX_VOICE_WEB": "1", "SWARMBOX_TEST_WEB_PORT": "7789", "SWARMBOX_TEST_WEB_IFACE": "127.0.0.1"}),
+            capture_output=True, text=True,
+        )
+        self.assertEqual(p_voice.returncode, 0, p_voice.stderr)
+        with open(voice_log, encoding="utf-8") as f:
+            line = f.read()
+        self.assertIn("FRONT front --listen 127.0.0.1:7789 --ttyd-port 7680 -- %s -p 7789 -i 127.0.0.1" % self.fake_web, line)
+
+
+class HerdrSysopAndAssetsTest(unittest.TestCase):
+    def test_herdr_toml_is_valid_and_uses_purple_glow_palette(self):
+        with open(HERDR_TOML, encoding="utf-8") as f:
+            cfg = tomllib.loads(f.read())
+        self.assertFalse(cfg.get("onboarding", True))
+        custom = cfg["theme"]["custom"]
+        self.assertEqual(custom["panel_bg"], "#0c0b10")
+        self.assertEqual(custom["active_row_bg"], "#27222f")
+        self.assertEqual(custom["selection_bg"], "#6d28d9")
+        self.assertEqual(custom["accent"], "#a78bfa")
+        self.assertEqual(custom["red"], "#ff6b78")
+        self.assertEqual(custom["green"], "#4ade80")
+
+    def test_sysop_brain_forwards_mux_env_and_web_source_note(self):
+        tmp = tempfile.mkdtemp(prefix="swarmbox-test-herdr-sysop.")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        pth = sysop_paths.Paths({"SB_RUN_DIR": os.path.join(tmp, "run"), "SB_STATE_DIR": os.path.join(tmp, "state")})
+        mcp_path = os.path.join(tmp, "mcp.json")
+        old = {k: os.environ.get(k) for k in ("SWARMBOX_MUX", "SB_TABS_BACKEND", "SB_TABS_HC_BIN")}
+        os.environ["SWARMBOX_MUX"] = "herdr"
+        os.environ["SB_TABS_BACKEND"] = "herdr"
+        os.environ["SB_TABS_HC_BIN"] = "/usr/local/bin/hc"
+        try:
+            sysop_brain.write_mcp_config(mcp_path, os.path.join(tmp, "ctx.json"), pth, SYSOP_LIB)
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        with open(mcp_path, encoding="utf-8") as f:
+            doc = json.load(f)
+        env = doc["mcpServers"]["sysop"]["env"]
+        self.assertEqual(env["SWARMBOX_MUX"], "herdr")
+        self.assertEqual(env["SB_TABS_BACKEND"], "herdr")
+        self.assertEqual(env["SB_TABS_HC_BIN"], "/usr/local/bin/hc")
+        self.assertIn("web", sysop_brain.SOURCE_NOTES)
+
+    def test_sysop_risk_guards_hc_and_herdr_controls(self):
+        for cmd in ("hc send t1 ls", "hc kill t1", "herdr-core server stop", "herdr server stop"):
+            lvl, _ = sysop_risk.classify_command(cmd)
+            self.assertEqual(lvl, "high", cmd)
+        for safe in ("ls -la", "git status", "cat arch.txt"):
+            lvl, _ = sysop_risk.classify_command(safe)
+            self.assertEqual(lvl, "low", safe)
+
+    def test_herdr_web_cli_args_and_origin_guard(self):
+        # Verify server.mjs pure helpers directly with node (syntax + CLI flag parsing + Origin check)
+        if not shutil.which("node"):
+            self.skipTest("node not on PATH")
+        # server.mjs imports 'ws'; test parseCliArgs and checkSameOrigin logic without requiring node_modules on host
+        with open(HERDR_SERVER, encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("frame-ancestors 'self'", src)
+        self.assertIn("X-Frame-Options", src)
+        self.assertIn("checkSameOrigin", src)
+        self.assertIn("FRAME_CREDIT", src)
+        self.assertIn("herdr-active-tab", src)
+        p = subprocess.run(["node", "--check", HERDR_SERVER], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

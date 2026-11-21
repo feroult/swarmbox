@@ -15,8 +15,12 @@ SwarmBox isolates terminal multiplexer specifics behind three narrow contracts s
 | `mux_attach_interactive` | `swarmbox-attach` | Open and attach an interactive host terminal tab |
 | `mux_attach_command CMD` | `swarmbox-attach CMD...` | Run a quoted shell command in an attached tab and exit with its status |
 | `mux_web_fallback` | `swarmbox-web` | Populate `MUX_WEB_FALLBACK_CMD` when `swarmbox-attach` is absent |
+| `mux_web_run PORT IFACE VOICE_BIN` | `swarmbox-web run` | Optional: replace `ttyd` with a backend-native web gateway |
 
-The default implementation lives in `container/scripts/mux/tmux.sh`.
+Two implementations live in `container/scripts/mux/`:
+
+- `tmux.sh` (default, `MUX=tmux` / `SWARMBOX_MUX=tmux`) — keeps existing `tmux` + `ttyd` behavior unchanged.
+- `herdr.sh` (opt-in, `MUX=herdr` / `SWARMBOX_MUX=herdr`) — starts `herdr-core` (`hc`), seeds `~/.config/herdr/config.toml` (Purple Glow theme) and `~/.config/herdr-core/config.toml`, opens/attaches tabs via `hc`, and launches the native Herdr Web Gateway (`container/web/herdr/server.mjs`) via `mux_web_run` (wrapped cleanly behind `swarmbox-voice front` when the `voice` addon is installed).
 
 ## 2. Tabs backend (`container/scripts/swarmbox-tabs.py`)
 
@@ -29,11 +33,21 @@ The default implementation lives in `container/scripts/mux/tmux.sh`.
 - `prepare_send(tab)` -> backend preparation before typing (for `tmux`, exiting copy mode)
 - `send_text(tab, text)` / `send_key(tab, key)` -> literal text and normalized key delivery
 - `live_tab_ids()` -> live tab ids for stale lock cleanup
-- `tab_state(tab)` -> optional native `(is_agent, state)` (`dialog`, `busy`, `idle`, `unknown`); returns `None` on `TmuxBackend` so screen heuristics run, and lets future backends such as `herdr-core` supply OSC 7501 state directly without screen scraping
+- `tab_state(tab)` -> optional native `(is_agent, state)` (`dialog`, `busy`, `idle`, `unknown`); returns `None` on `TmuxBackend` so screen heuristics run, and returns native OSC 7501 state on `HerdrBackend` when reported (falling back to screen heuristics when `reported` is false)
 
-Backends are registered in `BACKENDS` and selected by `SB_TABS_BACKEND` or `SWARMBOX_MUX` (default `tmux`). An unknown backend returns error code `no_backend` (exit 4).
+Backends are registered in `BACKENDS` (`tmux` -> `TmuxBackend`, `herdr` -> `HerdrBackend`) and selected by `SB_TABS_BACKEND` or `SWARMBOX_MUX` (default `tmux`). An unknown backend returns error code `no_backend` (exit 4).
 
-## 3. Sysop separation (`container/addons/sysop/lib/swarmbox_sysop/`)
+## 3. Herdr Web Gateway (`container/web/herdr/`)
+
+When `SWARMBOX_MUX=herdr` and `WEB=1`, `swarmbox-web run` starts `/usr/local/share/swarmbox/herdr-web/server.mjs`:
+
+- **Framed OpenRPC multiplexing:** connects once to `hc connect` (framed binary JSON-RPC 2.0), streaming live PTY bytes over `/ws/pty/:address` with automatic `CREDIT` flow control (no `node-pty` required) and broadcasting live OSC 7501 terminal events over `/ws/events`.
+- **Real Sysop integration:** reads real `swarmbox-sysop` state (`status.json`, `state.json`, `calls.jsonl`, `say.jsonl`, `pending_action.json`) and invokes `swarmbox-sysop goal|approve|veto|stop`, plus surfaces OSC 7501 `blocked` dialogs with 1-tap approval.
+- **Voice addon compatibility:** accepts `-p PORT -i IFACE`, so `swarmbox-voice front` sits cleanly in front of it when installed, serving `/voice/health` and `/voice/audio` (local Whisper STT) with zero changes to the voice addon.
+- **Synchronized themes:** defaults to SwarmBox Purple Glow (`docs/theme.md`) and offers Catppuccin Mocha, Tokyo Night, Nord, and Rosé Pine, synced with `~/.config/herdr/config.toml` via `/api/theme`.
+- **Security:** enforces same-origin on WebSockets and mutating API routes and sets `Content-Security-Policy: frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`.
+
+## 4. Sysop separation (`container/addons/sysop/lib/swarmbox_sysop/`)
 
 The Sysop addon splits mux-agnostic core modules from `tmux`-specific UI adapters:
 

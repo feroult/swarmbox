@@ -933,6 +933,13 @@ class HerdrBackend(TabsBackend):
             err = proc.stderr.read().decode("utf-8", "replace").strip() if proc.stderr else ""
             proc.wait()
             self._raise_hc_error("", err or str(e))
+        finally:
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
 
     def send_text(self, tab, text):
         if not text:
