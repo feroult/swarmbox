@@ -82,9 +82,10 @@ AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex", "agy")
 REDACTED = "[REDACTED]"
 
 Tab = namedtuple("Tab", "id index name cwd command pane panes active label")
+ScreenCapture = namedtuple("ScreenCapture", "raw cursor alternate in_mode mode size lines")
 
 # exit code of the command for each error code (the others are 1); see the docstring
-EXIT = {"usage": 2, "bad_body": 2, "no_tmux": 4, "no_session": 4, "timeout": 5}
+EXIT = {"usage": 2, "bad_body": 2, "no_tmux": 4, "no_session": 4, "no_backend": 4, "timeout": 5}
 
 
 class TabsError(Exception):
@@ -506,18 +507,62 @@ def agent_state(rows, command=""):
     return True, "idle" if box else "unknown"
 
 
-class Tabs:
-    """The tabs of one tmux session: the calls of the docstring without a process. Every argument has a default from the environment."""
+# ---------------------------------------------------------------------------------------------------------------- multiplexer backends
 
-    def __init__(self, session=None, socket=None, binary=None, run_dir=None, pause=PAUSE, timeout=TMUX_TIMEOUT, verify_timeout=VERIFY_TIMEOUT,
-                 lock_timeout=LOCK_TIMEOUT):
+
+class TabsBackend:
+    """Contract between the mux-agnostic Tabs facade (redaction, markers, key parsing, locking, agent rules) and a concrete multiplexer."""
+
+    name = "abstract"
+
+    def list_tabs_raw(self):
+        """Return [Tab] in display order (the `active` flag is filled by Tabs.tabs())."""
+        raise NotImplementedError
+
+    def active_tab_id(self, tab_ids):
+        """Return the id of the active tab among `tab_ids`, or None."""
+        raise NotImplementedError
+
+    def capture_screen(self, tab, lines):
+        """Return ScreenCapture(raw, cursor, alternate, in_mode, mode, size, lines) for `tab`."""
+        raise NotImplementedError
+
+    def capture_plain_rows(self, tab):
+        """Return plain (non-ANSI) screen rows for `tab`."""
+        raise NotImplementedError
+
+    def prepare_send(self, tab):
+        """Run any backend-specific preparation before typing (e.g. exiting copy mode)."""
+
+    def send_text(self, tab, text):
+        """Type literal `text` into `tab`."""
+        raise NotImplementedError
+
+    def send_key(self, tab, key):
+        """Press a single normalized key name (from KEYS / C-x / M-x / F1..F12) in `tab`."""
+        raise NotImplementedError
+
+    def live_tab_ids(self):
+        """Return a set of live tab ids (used by lock sweeping)."""
+        return {t.id for t in self.list_tabs_raw()}
+
+    def tab_state(self, tab):
+        """Optional native agent state `(is_agent, state)` where state is dialog|busy|idle|unknown.
+        Return None to fall back to screen-based agent_state() heuristics."""
+        return None
+
+
+class TmuxBackend(TabsBackend):
+    """Concrete TabsBackend talking to a tmux server."""
+
+    name = "tmux"
+
+    def __init__(self, session=None, socket=None, binary=None, timeout=TMUX_TIMEOUT):
         self.session = session or os.environ.get("SB_TABS_SESSION") or "main"
         self.socket = socket if socket is not None else os.environ.get("SB_TABS_SOCKET")
         self.binary = binary or os.environ.get("SB_TABS_BIN") or "tmux"
-        self.run_dir = run_dir or os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox"
-        self.pause, self.timeout, self.verify_timeout, self.lock_timeout = pause, timeout, verify_timeout, lock_timeout
+        self.timeout = timeout
 
-    # ---- tmux
     def tmux(self, *args, check=True):
         argv = [self.binary] + (["-L", self.socket] if self.socket else []) + [str(a) for a in args]
         env = {k: v for k, v in os.environ.items() if k != "TMUX"}
@@ -539,8 +584,7 @@ class Tabs:
             raise TabsError("tmux_error", msg)
         return out
 
-    # ---- tabs
-    def _windows(self):
+    def list_tabs_raw(self):
         """[Tab] of the session, panels hidden, in window order (the `active` flag is not set)."""
         # Names, paths and commands are text that a program can choose (a window name, a directory, the name of a process), so each of them
         # is asked in a call of its own, as the LAST field of its lines and cut with a limit: whatever it holds, even SEP, it cannot move the
@@ -595,14 +639,14 @@ class Tabs:
             tabs.append(Tab(wid, w["index"], w["name"], cwd, cmds.get(row[2], ""), row[2], [r[2] for r in rows], False, "%d:%s" % (w["index"], w["name"])))
         return tabs
 
-    def _shown(self, ids):
+    def active_tab_id(self, tab_ids):
         """The window id of the active tab: the window of the non-control client with the latest activity among those that show a tab,
         else the current window of the session, else the first tab."""
         fmt = SEP.join(["#{client_activity}", "#{window_id}", "#{client_control_mode}"])
         rows = []
         for line in self.tmux("list-clients", "-F", fmt, check=False).splitlines():
             p = line.split(SEP)
-            if len(p) == 3 and p[2] != "1" and p[1] in ids:
+            if len(p) == 3 and p[2] != "1" and p[1] in tab_ids:
                 try:
                     rows.append((int(p[0] or 0), p[1]))
                 except ValueError:
@@ -610,7 +654,87 @@ class Tabs:
         if rows:
             return max(rows, key=lambda r: r[0])[1]
         cur = self.tmux("display-message", "-p", "-t", "=%s:" % self.session, "#{window_id}", check=False).strip()
-        return cur if cur in ids else (next(iter(ids)) if ids else None)
+        return cur if cur in tab_ids else (next(iter(tab_ids)) if tab_ids else None)
+
+    def capture_plain_rows(self, tab):
+        raw = self.tmux("capture-pane", "-p", "-J", "-t", tab.pane)
+        return [x.rstrip() for x in raw.split("\n")]
+
+    def capture_screen(self, tab, lines):
+        fmt = SEP.join(["#{cursor_x}", "#{cursor_y}", "#{pane_in_mode}", "#{alternate_on}", "#{pane_width}", "#{pane_height}", "#{pane_mode}"])
+        meta = self.tmux("display-message", "-p", "-t", tab.pane, fmt).rstrip("\n").split(SEP)
+        if len(meta) != 7:
+            raise TabsError("tmux_error", "unexpected answer of display-message")
+        alternate = meta[3] == "1"
+        n = None if alternate else lines     # a full-screen program has no scrollback: only the visible screen exists
+        args = ["capture-pane", "-p", "-J", "-e", "-t", tab.pane]
+        if n:
+            args += ["-S", "-%d" % int(n)]
+        raw = self.tmux(*args)
+        return ScreenCapture(raw, [int(meta[0]), int(meta[1])], alternate, meta[2] == "1", meta[6], [int(meta[4]), int(meta[5])], n)
+
+    def prepare_send(self, tab):
+        if self.tmux("display-message", "-p", "-t", tab.pane, "#{pane_in_mode}").strip() == "1":
+            self.tmux("send-keys", "-t", tab.pane, "-X", "cancel")
+
+    def send_text(self, tab, text):
+        """Type a text literally, in pieces of CHUNK characters (one word of send-keys must stay small: tmux refuses a command over 16 KB and
+        the kernel an argument over 128 KB). tmux reads a word that ends in `;` as the end of the command and drops the `;` (and turns a
+        final `\\;` into `;`), so the semicolons at the end of a piece are sent as the key 0x3b (send-keys -H) instead."""
+        for i in range(0, len(text), CHUNK):
+            piece = text[i:i + CHUNK]
+            body = piece.rstrip(";")
+            if body:
+                self.tmux("send-keys", "-t", tab.pane, "-l", "--", body)
+            if len(body) != len(piece):
+                self.tmux("send-keys", "-t", tab.pane, "-H", *["3b"] * (len(piece) - len(body)))
+
+    def send_key(self, tab, key):
+        self.tmux("send-keys", "-t", tab.pane, key)
+
+    def live_tab_ids(self):
+        return set(self.tmux("list-panes", "-s", "-t", "=" + self.session, "-F", "#{window_id}").split())
+
+
+BACKENDS = {"tmux": TmuxBackend}
+
+
+def make_backend(name=None, session=None, socket=None, binary=None, timeout=TMUX_TIMEOUT):
+    if isinstance(name, TabsBackend):
+        return name
+    chosen = name or os.environ.get("SB_TABS_BACKEND") or os.environ.get("SWARMBOX_MUX") or "tmux"
+    cls = BACKENDS.get(chosen)
+    if cls is None:
+        raise TabsError("no_backend", "unknown tabs backend %r (known: %s)" % (chosen, ", ".join(sorted(BACKENDS))))
+    if cls is TmuxBackend:
+        return cls(session=session, socket=socket, binary=binary, timeout=timeout)
+    return cls(timeout=timeout)
+
+
+class Tabs:
+    """Mux-agnostic tab facade (redaction, markers, key parsing, locking, agent rules) over a TabsBackend (default: TmuxBackend)."""
+
+    def __init__(self, session=None, socket=None, binary=None, run_dir=None, pause=PAUSE, timeout=TMUX_TIMEOUT, verify_timeout=VERIFY_TIMEOUT,
+                 lock_timeout=LOCK_TIMEOUT, backend=None):
+        self.backend = make_backend(backend, session=session, socket=socket, binary=binary, timeout=timeout)
+        self.session = getattr(self.backend, "session", session or os.environ.get("SB_TABS_SESSION") or "main")
+        self.socket = getattr(self.backend, "socket", socket if socket is not None else os.environ.get("SB_TABS_SOCKET"))
+        self.binary = getattr(self.backend, "binary", binary or os.environ.get("SB_TABS_BIN") or "tmux")
+        self.run_dir = run_dir or os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox"
+        self.pause, self.timeout, self.verify_timeout, self.lock_timeout = pause, timeout, verify_timeout, lock_timeout
+
+    def tmux(self, *args, check=True):
+        """Backwards-compatible pass-through for callers/tests on the tmux backend."""
+        if not hasattr(self.backend, "tmux"):
+            raise TabsError("no_tmux", "active backend %r is not tmux" % getattr(self.backend, "name", type(self.backend).__name__))
+        return self.backend.tmux(*args, check=check)
+
+    # ---- tabs
+    def _windows(self):
+        return self.backend.list_tabs_raw()
+
+    def _shown(self, ids):
+        return self.backend.active_tab_id(ids)
 
     def tabs(self):
         tabs = self._windows()
@@ -641,22 +765,14 @@ class Tabs:
         return hit[0]
 
     # ---- the screen
-    def _plain_rows(self, pane):
-        raw = self.tmux("capture-pane", "-p", "-J", "-t", pane)
-        return [x.rstrip() for x in raw.split("\n")]
+    def _plain_rows(self, tab):
+        return self.backend.capture_plain_rows(tab)
 
     def screen(self, tab, lines):
         t = self.resolve(tab)
-        fmt = SEP.join(["#{cursor_x}", "#{cursor_y}", "#{pane_in_mode}", "#{alternate_on}", "#{pane_width}", "#{pane_height}", "#{pane_mode}"])
-        meta = self.tmux("display-message", "-p", "-t", t.pane, fmt).rstrip("\n").split(SEP)
-        if len(meta) != 7:
-            raise TabsError("tmux_error", "unexpected answer of display-message")
-        alternate = meta[3] == "1"
-        n = None if alternate else lines     # a full-screen program has no scrollback: only the visible screen exists
-        args = ["capture-pane", "-p", "-J", "-e", "-t", t.pane]
-        if n:
-            args += ["-S", "-%d" % int(n)]
-        text, styles = _parse(self.tmux(*args))
+        cap = self.backend.capture_screen(t, lines)
+        text, styles = _parse(cap.raw)
+        n = cap.lines
         if n:       # -S -N counts N lines above the top of the screen, so the capture has N + height lines: keep the last N
             rows = text.split("\n")
             if len(rows) > int(n):
@@ -666,8 +782,8 @@ class Tabs:
         # line comes last, so no secret is cut in half
         text, styles = redact_tracked(text, styles)
         text = _render(text, styles, MAX_LINE)
-        return {"tab": t.id, "pane": t.pane, "text": text, "cursor": [int(meta[0]), int(meta[1])], "alternate": alternate,
-                "in_mode": meta[2] == "1", "mode": meta[6], "size": [int(meta[4]), int(meta[5])], "lines": n}
+        return {"tab": t.id, "pane": t.pane, "text": text, "cursor": list(cap.cursor), "alternate": bool(cap.alternate),
+                "in_mode": bool(cap.in_mode), "mode": cap.mode, "size": list(cap.size), "lines": n}
 
     # ---- typing
     @contextlib.contextmanager
@@ -713,7 +829,7 @@ class Tabs:
             names = [n for n in os.listdir(d) if re.fullmatch(r"tab-[0-9A-Za-z]+\.lock", n)]
             if len(names) <= LOCK_KEEP:
                 return
-            live = {"tab-%s.lock" % re.sub(r"[^0-9A-Za-z]", "", w) for w in self.tmux("list-panes", "-s", "-t", "=" + self.session, "-F", "#{window_id}").split()}
+            live = {"tab-%s.lock" % re.sub(r"[^0-9A-Za-z]", "", w) for w in self.backend.live_tab_ids()}
         except (OSError, TabsError):
             return
         for n in names:
@@ -763,6 +879,12 @@ class Tabs:
             body["slash"] = True
         return self.send_body(tab, body)
 
+    def _agent_state_for(self, tab):
+        native = self.backend.tab_state(tab)
+        if native is not None:
+            return native
+        return agent_state(self._plain_rows(tab), tab.command)
+
     def send_body(self, tab, body):
         """send() with its arguments as a dict: {"run": text} or {"input": text}, with the optional booleans "queue" and "slash"; bad_body
         for anything else"""
@@ -770,12 +892,11 @@ class Tabs:
         t = self.resolve(tab)
         self._sweep_locks()
         with self._lock(t.id):
-            if self.tmux("display-message", "-p", "-t", t.pane, "#{pane_in_mode}").strip() == "1":
-                self.tmux("send-keys", "-t", t.pane, "-X", "cancel")
+            self.backend.prepare_send(t)
             agent = False
             submitted = self._submitted(steps)
             if submit:
-                agent, state = agent_state(self._plain_rows(t.pane), t.command)
+                agent, state = self._agent_state_for(t)
                 if agent:
                     if state == "dialog":
                         raise TabsError("dialog_open", "a dialog is open in the tab; answer it with input (a key), nothing was typed")
@@ -791,9 +912,9 @@ class Tabs:
                 if i and self.pause:
                     time.sleep(self.pause)
                 if kind == "text":
-                    self._type(t.pane, val)
+                    self.backend.send_text(t, val)
                 else:
-                    self.tmux("send-keys", "-t", t.pane, val)
+                    self.backend.send_key(t, val)
                 if agent and i == last_enter:
                     self._verify(t, steps, i)
         return {"ok": True, "tab": t.id, "pane": t.pane, "submitted": submit}
@@ -809,18 +930,6 @@ class Tabs:
                 out.append(pending)
                 pending = None
         return out
-
-    def _type(self, pane, text):
-        """Type a text literally, in pieces of CHUNK characters (one word of send-keys must stay small: tmux refuses a command over 16 KB and
-        the kernel an argument over 128 KB). tmux reads a word that ends in `;` as the end of the command and drops the `;` (and turns a
-        final `\\;` into `;`), so the semicolons at the end of a piece are sent as the key 0x3b (send-keys -H) instead."""
-        for i in range(0, len(text), CHUNK):
-            piece = text[i:i + CHUNK]
-            body = piece.rstrip(";")
-            if body:
-                self.tmux("send-keys", "-t", pane, "-l", "--", body)
-            if len(body) != len(piece):
-                self.tmux("send-keys", "-t", pane, "-H", *["3b"] * (len(piece) - len(body)))
 
     @staticmethod
     def _tail(steps, upto):
@@ -841,8 +950,11 @@ class Tabs:
             return
 
         def left_in_box():
-            rows = self._plain_rows(t.pane)
-            _, state = agent_state(rows, t.command)
+            native = self.backend.tab_state(t)
+            if native is not None and native[1] not in ("idle", "unknown"):
+                return False
+            rows = self._plain_rows(t)
+            _, state = native if native is not None else agent_state(rows, t.command)
             box = input_box(rows, lenient=True)
             return state in ("idle", "unknown") and box is not None and (tail in box or "[Pasted text" in box)
         for attempt in (1, 2):
@@ -854,7 +966,7 @@ class Tabs:
                     break
                 time.sleep(0.1)
             if attempt == 1:
-                self.tmux("send-keys", "-t", t.pane, "Enter")
+                self.backend.send_key(t, "Enter")
         raise TabsError("not_submitted", "the text was typed but did not leave the input box")
 
 
