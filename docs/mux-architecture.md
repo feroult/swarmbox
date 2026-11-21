@@ -20,7 +20,7 @@ SwarmBox isolates terminal multiplexer specifics behind three narrow contracts s
 Two implementations live in `container/scripts/mux/`:
 
 - `tmux.sh` (default, `MUX=tmux` / `SWARMBOX_MUX=tmux`) — keeps existing `tmux` + `ttyd` behavior unchanged.
-- `herdr.sh` (opt-in, `MUX=herdr` / `SWARMBOX_MUX=herdr`) — starts `herdr-core` (`hc`), seeds `~/.config/herdr/config.toml` (Purple Glow theme) and `~/.config/herdr-core/config.toml`, opens/attaches tabs via `hc`, and launches the native Herdr Web Gateway (`container/web/herdr/server.mjs`) via `mux_web_run` (wrapped cleanly behind `swarmbox-voice front` when the `voice` addon is installed).
+- `herdr.sh` (opt-in, `MUX=herdr` / `SWARMBOX_MUX=herdr`) — starts `herdr-core` (`hc`), seeds `~/.config/herdr/config.toml` (Purple Glow theme) and `~/.config/herdr-core/config.toml`, launches the SwarmBox Terminal Cockpit (`container/web/herdr/cockpit.mjs`) on interactive attach (`SWARMBOX_HERDR_RAW=1` falls back to `hc attach`), and launches the native Herdr Web Gateway (`container/web/herdr/server.mjs`) via `mux_web_run` (wrapped cleanly behind `swarmbox-voice front` when the `voice` addon is installed). See `docs/herdr-cockpit-design.md` for the Terminal Cockpit and native OSC 7501 Sysop agent architecture.
 
 ## 2. Tabs backend (`container/scripts/swarmbox-tabs.py`)
 
