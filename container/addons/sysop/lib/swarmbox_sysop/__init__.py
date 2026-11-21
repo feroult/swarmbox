@@ -14,7 +14,11 @@ through the bus. Everything the brain does is rated by the host (policy.py) befo
     mcpserver    the MCP server the brain talks to (stdio JSON-RPC): list_tabs read_tab run input wait say done
     brain        the command template and the run of the brain (own process group, timeout, stream-json kept)
     service      the resident subscriber: goal queue, one goal at a time, state files, reconnect
-    panel, dock  the panel (goal, log, countdown, approval, typing a goal) and its docking in tmux (one per window, the hook, the Follower)
+    state        mux-agnostic presentation state: snapshot, clean, one_line, step_text, line_of, value_of, state_dict
+    actions      mux-agnostic control actions: pending_of, is_live, veto, approve, stop, publish_goal
+    ui_host      mux-selectable UI lifecycle host (tmux Follower + Toaster, or headless when SWARMBOX_MUX=none)
+    panel, dock  the terminal panel (goal, log, countdown, approval, typing a goal) and its docking in tmux (one per window, the hook, the Follower)
+    line, keys   the tmux status-line toaster and prefix-key wrappers over state.py and actions.py
     cli          swarmbox-sysop serve | goal | status | stop | mcp | panel | dock
 """
 

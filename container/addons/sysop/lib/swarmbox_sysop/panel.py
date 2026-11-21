@@ -29,6 +29,7 @@ import unicodedata
 from collections import namedtuple
 
 from . import busclient, config, dock, ipc, paths as pathsmod, service
+from .state import Snap, TERMINAL, clean, one_line, snapshot, step_text
 
 GUARD = 0.5             # seconds after a new pending action appears in which keys are ignored
 ESC_WAIT = 0.05         # a lone ESC is a key when nothing follows within this long
@@ -46,7 +47,6 @@ GOAL_HINT = "Type a goal"
 DONE_LINES = 3          # lines of how a goal ended
 MIN_LOG = 2             # lines of the log kept in a short pane (the end of it: the result of a goal)
 LAST_FRESH = 30 * 86400  # seconds a finished goal is still shown as the last one when the panel opens
-TERMINAL = ("done", "stopped", "failed")
 
 PALETTE = {"violet": "a78bfa", "deep": "6d28d9", "lavender": "c4b5fd", "dim": "a1a1aa", "text": "d4d4d8", "red": "ff6b78",
            "amber": "fbbf24", "green": "4ade80", "line": "52525b", "ink": "0c0b10", "band": "2a1a52"}
@@ -65,20 +65,6 @@ def bg(name):
 
 
 # ---------------------------------------------------------------------------------------------------------------------- text helpers
-
-def clean(text, limit=4000):
-    """Text from the service made safe to print: control and format characters (escape sequences, bidi overrides) become U+FFFD."""
-    text = text if isinstance(text, str) else ("" if text is None else str(text))
-    out = []
-    for ch in text[:limit]:
-        if ch == "\n":
-            out.append(ch)
-        elif unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"):
-            out.append("�")
-        else:
-            out.append(ch)
-    return "".join(out)
-
 
 def cell_width(ch):
     if unicodedata.combining(ch) or unicodedata.category(ch) in ("Mn", "Me"):
@@ -274,36 +260,6 @@ def strip_ansi(text):
     return "".join(out)
 
 
-# ---------------------------------------------------------------------------------------------------------------------- the files -> state
-
-Snap = namedtuple("Snap", "up bus gid goal pending queue settings")
-
-
-def snapshot(pth, last_gid=None):
-    """What the files say now. The goal is the running one, else `last_gid` (the last one seen), so that its end stays on screen. The calls and the
-    says of a running goal are read from the files of the MCP server (fresher than state.json, which the service rewrites every few tenths of a second)."""
-    up = service.running(pth)
-    st = ipc.read_json(pth.status) if up else None
-    st = st if isinstance(st, dict) else {}
-    cur = service.sanitize(st.get("current"), "") if st.get("current") else ""
-    gid = cur or last_gid or ""
-    goal, pending = None, None
-    if up and gid:
-        gdir = pth.goal_dir(gid)
-        goal = ipc.read_json(os.path.join(gdir, "state.json"))
-        goal = goal if isinstance(goal, dict) else None
-        if goal is not None and cur and goal.get("state") not in TERMINAL:
-            goal = dict(goal)
-            calls = ipc.read_jsonl(os.path.join(gdir, "calls.jsonl"), last=service.RECENT_CALLS)
-            says = ipc.read_jsonl(os.path.join(gdir, "say.jsonl"), last=20)
-            goal["calls"], goal["say"] = calls or goal.get("calls") or [], says or goal.get("say") or []
-            p = ipc.read_json(os.path.join(gdir, "pending_action.json"))
-            pending = p if isinstance(p, dict) and p.get("id") else None
-    queue = st.get("queue") if isinstance(st.get("queue"), list) else []
-    return Snap(up, str(st.get("bus", "")), gid if goal else "", goal, pending, [q for q in queue if isinstance(q, dict)],
-                st.get("settings") if isinstance(st.get("settings"), dict) else {})
-
-
 # ---------------------------------------------------------------------------------------------------------------------- model
 
 class Model:
@@ -457,10 +413,6 @@ def _paint(color, name, text, bold=False):
 SHOW_LINES = 4      # rows of the pending action's text; a longer one shows how many characters are left out, and cannot be approved
 
 
-def one_line(text, limit):
-    return clean(text, 4000).replace("\n", " ").strip()[:limit]
-
-
 def cut(text, width):
     """text cut to `width` cells, with an ellipsis."""
     if text_width(text) <= width:
@@ -482,23 +434,6 @@ def state_of(model):
         return ("allow?", "red") if model.pmode() == "approve" else ("sending", "amber")
     return {"running": ("working", "green"), "queued": ("queued", "dim"), "waiting_approval": ("waiting", "amber"), "done": ("done", "green"),
             "failed": ("failed", "red"), "stopped": ("stopped", "amber")}.get(model.goal.get("state") if model.goal else None, ("idle", "dim"))
-
-
-def step_text(call):
-    """One tool call as a few plain words: `read tab 1`, `run: ls -la`, `type: fix the tests`."""
-    a = call.get("args") if isinstance(call.get("args"), dict) else {}
-    tool = one_line(call.get("tool"), 30)
-    tab = one_line(a.get("tab"), 12)
-    if tool == "list_tabs":
-        return "look at the tabs"
-    if tool == "read_tab":
-        return "read tab %s" % tab if tab else "read a tab"
-    if tool in ("run", "input"):
-        what = one_line(a.get("command") if tool == "run" else a.get("text"), 200)
-        return "%s: %s" % ("run" if tool == "run" else "type", what)
-    if tool == "wait":
-        return "wait"
-    return tool
 
 
 def _log(model, W, color):

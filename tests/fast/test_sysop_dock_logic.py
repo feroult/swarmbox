@@ -349,9 +349,12 @@ class AlwaysWiring(unittest.TestCase):
         """found by the e2e (sysop.panel=off after an always in the same box still made panels in new windows): serve skipped the Follower in off, so nothing took
         the hooks of the earlier always away"""
         cli = slurp(os.path.join(os.path.dirname(dock.__file__), "cli.py"))
-        line = next(x for x in cli.splitlines() if "dock.Follower(" in x)
+        start_line = next(x for x in cli.splitlines() if "ui_host.start_ui(" in x)
+        self.assertNotIn('"off"', start_line.split("#")[0])
+        self.assertIn("args.dock", start_line)
+        ui = slurp(os.path.join(os.path.dirname(dock.__file__), "ui_host.py"))
+        line = next(x for x in ui.splitlines() if "dock.Follower(" in x)
         self.assertNotIn('"off"', line.split("#")[0])
-        self.assertIn("args.dock", line)
 
     def test_the_tmux_file_says_what_the_key_does_in_each_mode(self):
         conf = slurp(TMUX_CONF)

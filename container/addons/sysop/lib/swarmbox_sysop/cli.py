@@ -3,19 +3,18 @@
   swarmbox-sysop serve [--log] [--dock] [--watch]   the resident service: reads goals from the bus and runs them, one at a time (prepare.sh starts it).
                                                --watch: it runs as a child of a watcher that starts it again when it dies (a kill, a crash), with a back-off and a
                                                stop after five crashes in a minute (watch.py); a second `serve --watch` tells the first to start it now
-                                               --dock: it also keeps the panel in tmux as `sysop.panel` says: up in every window (always), or open while a goal runs (auto), or
-                                               never (off); dock.Follower
+                                               --dock: start the multiplexer UI helpers (for tmux: panel Follower + status Toaster; skipped when SWARMBOX_MUX=none)
   swarmbox-sysop goal [--source S] [--wait] [--timeout N] TEXT...    publish a goal on the bus (topic goal); `-` reads the text from stdin;
                                                prints the goal id. --wait follows the goal to its end (exit 0 done, 1 failed or stopped)
-  swarmbox-sysop goal              with no text, on a terminal: asks for the goal on one line (the tmux key `g` runs it in a popup)
+  swarmbox-sysop goal              with no text, on a terminal: asks for the goal on one line
   swarmbox-sysop veto [KEY OPTIONS]            the veto key: refuses what waits (a countdown is vetoed, an approval is refused)
-  swarmbox-sysop approve [KEY OPTIONS]         allow what waits (keys.py)
-                                               KEY OPTIONS (veto, approve, stop): --socket PATH --window ID --client NAME, as the tmux keys pass them
+  swarmbox-sysop approve [KEY OPTIONS]         allow what waits
+                                               KEY OPTIONS (veto, approve, stop): --socket PATH --window ID --client NAME
   swarmbox-sysop status [--json] [-q]          the service and its goals; exit 0 when it runs, 1 when it does not
   swarmbox-sysop stop [GOAL_ID]                the stop key: ends the running goal (and drops the queue), or just GOAL_ID
   swarmbox-sysop mcp                           the MCP server of a goal (the brain's MCP config runs this; SWARMBOX_SYSOP_CONTEXT names the goal)
-  swarmbox-sysop panel                         the panel: the goal, the log, the countdown, the approval; g types a goal (run it in a tmux pane)
-  swarmbox-sysop dock open|close|toggle|redock|sync [--socket PATH] [--window ID]   the panel in tmux, one per window (the tmux key and the hooks call this)
+  swarmbox-sysop panel                         the terminal panel: the goal, the log, the countdown, the approval; g types a goal
+  swarmbox-sysop dock open|close|toggle|redock|sync [--socket PATH] [--window ID]   the panel dock (tmux backend)
   swarmbox-sysop --self-test                   checks the install without a model
 
 Settings: SWARMBOX_SYSOP_* (config.py). Exit codes of `goal` follow swarmbox-bus: 3 nobody listens (the service is not running), 4 the bus is not
@@ -29,9 +28,10 @@ import signal
 import sys
 import time
 
-from . import brain, busclient, config, dock, ipc, keys, line, mcpserver, panel, paths, policy, service, watch
+from . import actions, brain, busclient, config, ipc, mcpserver, paths, policy, service, state, ui_host, watch
 
 EXIT = {"no_subscriber": 3, "bus_down": 4, "bus_closed": 4, "too_large": 5, "bad_topic": 6, "bad_request": 6, "bad_body": 6, "busy": 7}
+DOCK_ACTIONS = ("open", "close", "toggle", "redock", "sync")
 
 
 def _cfg():
@@ -109,8 +109,7 @@ def cmd_serve(args):
     svc = service.Service(cfg, pth)
     if args.log:
         svc.housekeeping = lambda: rotate_log(pth)
-    follower = dock.Follower(pth, log=svc.log, mode=cfg.panel_mode).start() if args.dock else None      # off too: its thread only takes away the hooks of an earlier always
-    toaster = line.Toaster(pth, log=svc.log).start() if args.dock else None      # the one line for a phone: in every panel mode, the panel mode off too
+    ui = ui_host.start_ui(pth, cfg, log=svc.log, enabled=args.dock)
     for sg in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sg, lambda *_: svc.shutdown())
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
@@ -118,10 +117,7 @@ def cmd_serve(args):
     try:
         rc = svc.run()
     finally:
-        if follower:
-            follower.shutdown()
-        if toaster:
-            toaster.shutdown(unset=rc != 9)      # 9: another service is running and keeps the line
+        ui.shutdown(unset=rc != 9)      # 9: another service is running and keeps the UI state
     if rc == 9:
         print("swarmbox-sysop: already running", file=sys.stderr)
         return 0
@@ -134,6 +130,7 @@ def cmd_goal(args):
         if not sys.stdin.isatty():
             print("swarmbox-sysop: goal: no text", file=sys.stderr)
             return 2
+        from . import keys
         return keys.prompt(busclient.Bus(), "panel")
     if text == "-":
         text = sys.stdin.read().rstrip("\n")
@@ -147,7 +144,7 @@ def cmd_goal(args):
         print("swarmbox-sysop: goal: --source is a short lowercase label (cli, panel, voice)", file=sys.stderr)
         return 2
     try:
-        rep = busclient.Bus().pub(config.goal_topic(), {"text": text}, args.source)
+        gid, _ = actions.publish_goal(busclient.Bus(), text, source=args.source)
     except config.ConfigError as e:
         print("swarmbox-sysop: %s" % e, file=sys.stderr)
         return 2
@@ -157,7 +154,6 @@ def cmd_goal(args):
                 "busy": " (the sysop is busy with another goal: try again in a moment)"}.get(e.code, "")
         print("swarmbox-sysop: %s%s" % (e, hint), file=sys.stderr)
         return EXIT.get(e.code, 1)
-    gid = service.sanitize(rep.get("id"), "")
     print(gid)
     if not args.wait:
         return 0
@@ -168,10 +164,11 @@ def cmd_goal(args):
         st = ipc.read_json(os.path.join(pth.goal_dir(gid), "state.json"))
         if isinstance(st, dict):
             for s in st.get("say", [])[said:]:
-                print("say: %s" % panel.clean(s.get("text")))
+                print("say: %s" % state.clean(s.get("text")))
             said = len(st.get("say", []))
-            if st.get("state") in ("done", "stopped", "failed"):
-                print("%s%s" % (st["state"], (": " + panel.clean(st.get("summary") or st.get("error") or "")) if (st.get("summary") or st.get("error")) else ""))
+            if st.get("state") in state.TERMINAL:
+                summary = st.get("summary") or st.get("error") or ""
+                print("%s%s" % (st["state"], (": " + state.clean(summary)) if summary else ""))
                 return 0 if st["state"] == "done" else 1
         time.sleep(0.2)
     print("swarmbox-sysop: goal %s did not end in %d s" % (gid, args.timeout), file=sys.stderr)
@@ -188,64 +185,64 @@ def cmd_status(args):
         if not up:
             crash = ipc.read_text(pth.crashloop)
             if crash:
-                print("sysop: not running: %s. Start it again: swarmbox-addon prepare" % panel.clean(crash.strip().rstrip(";.")))
+                print("sysop: not running: %s. Start it again: swarmbox-addon prepare" % state.clean(crash.strip().rstrip(";.")))
             else:
                 print("sysop: not running (the box starts it at boot and again after a crash; by hand: swarmbox-addon prepare)")
         else:
             st = st or {}
             s = st.get("settings", {})
             print("sysop: running (pid %s), bus %s, autonomy %s, countdown %gs, brain %s %s" % (
-                st.get("pid", "?"), panel.clean(st.get("bus", "?")), panel.clean(s.get("autonomy")), s.get("countdown", 0), panel.clean(s.get("brain")),
-                panel.clean(s.get("model"))))
+                st.get("pid", "?"), state.clean(st.get("bus", "?")), state.clean(s.get("autonomy")), s.get("countdown", 0), state.clean(s.get("brain")),
+                state.clean(s.get("model"))))
             print("current: %s" % (st.get("current") or "none"))
             print("queued: %d" % len(st.get("queue", [])))
         for g in service.recent_goals(pth, 3):
-            print("  %-22s %-16s %-6s %s" % (panel.clean(g.get("id")), panel.clean(g.get("state")), panel.clean(g.get("source")),
-                                                   panel.clean((g.get("text") or "")[:60]).replace("\n", " ")))
+            print("  %-22s %-16s %-6s %s" % (state.clean(g.get("id")), state.clean(g.get("state")), state.clean(g.get("source")),
+                                                   state.clean((g.get("text") or "")[:60]).replace("\n", " ")))
     return 0 if up else 1
-
-
-def _key_tmux(args):
-    return dock.Tmux(argv=["tmux", "-S", args.socket]) if getattr(args, "socket", "") else dock.Tmux()
 
 
 def cmd_stop(args):
     pth = paths.Paths()
-    tm = _key_tmux(args) if getattr(args, "client", "") else None
+    sock = getattr(args, "socket", "")
     client = getattr(args, "client", "")
-    if not service.running(pth):
-        keys._say("the sysop is not running: nothing to stop", tm, client)
-        return 1
-    ipc.request_stop(pth, args.goal)
-    end = time.time() + 5
-    while time.time() < end:
-        if not os.path.exists(pth.stop_request):
-            msg = "stop taken (%s)" % (args.goal or "the running goal and the queue")
-            if client:
-                keys._say(msg, tm, client)
-            else:
-                print("swarmbox-sysop: " + msg)
-            return 0
-        time.sleep(0.05)
-    keys._say("stop requested, the service has not taken it yet", tm, client)
-    return 1
+    res = actions.stop(pth, goal_id=args.goal)
+    if res.ok and not client:
+        print("swarmbox-sysop: " + res.message)
+    else:
+        ui_host.notify(res.message, socket=sock, client=client)
+    return res.rc
 
 
 def cmd_veto(args):
     """Cancel: refuse what waits; with nothing waiting, stop the goal that runs (one button for "no" and for "enough")."""
     pth = paths.Paths()
-    gid, p = keys.pending_of(pth)
-    if gid and not (p and keys._live(p)):
+    gid, p = actions.pending_of(pth)
+    if gid and not (p and actions.is_live(p)):
         args.goal = None
         return cmd_stop(args)
-    return keys.veto(pth, _key_tmux(args), args.client)
+    res = actions.veto(pth, by="key")
+    ui_host.notify(res.message, socket=getattr(args, "socket", ""), client=getattr(args, "client", ""))
+    return res.rc
 
 
 def cmd_approve(args):
     if args.window is not None and not re.fullmatch(r"@[0-9]{1,9}", args.window):
-        print("swarmbox-sysop: approve: --window must be a tmux window id such as @3", file=sys.stderr)
+        print("swarmbox-sysop: approve: --window must be a window id such as @3", file=sys.stderr)
         return 2
-    return keys.approve(paths.Paths(), dock.default_dock(_key_tmux(args)), args.window, _key_tmux(args), args.client)
+    res = actions.approve(paths.Paths(), by="key")
+    ui_host.notify(res.message, socket=getattr(args, "socket", ""), client=getattr(args, "client", ""))
+    return res.rc
+
+
+def _cmd_panel(_args):
+    from . import panel
+    return panel.run()
+
+
+def _cmd_dock(args):
+    from . import dock
+    return dock.run(args.action, args.socket, args.window)
 
 
 def self_test():
@@ -269,7 +266,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd")
     s = sub.add_parser("serve")
     s.add_argument("--log", action="store_true", help="detached mode: output to serve.log")
-    s.add_argument("--dock", action="store_true", help="keep the panel in tmux as sysop.panel says (always, auto, off)")
+    s.add_argument("--dock", action="store_true", help="start multiplexer UI helpers (for tmux: panel dock + status line)")
     s.add_argument("--watch", action="store_true", help="run the service as a child and start it again when it dies (what the box does)")
     s.set_defaults(fn=cmd_serve)
     g = sub.add_parser("goal")
@@ -293,12 +290,12 @@ def main(argv=None):
         k.add_argument("--window", default=None)
         k.add_argument("--client", default="")
     sub.add_parser("mcp").set_defaults(fn=lambda a: mcpserver.main())
-    sub.add_parser("panel").set_defaults(fn=lambda a: panel.run())
+    sub.add_parser("panel").set_defaults(fn=_cmd_panel)
     d = sub.add_parser("dock")
-    d.add_argument("action", choices=dock.ACTIONS)
+    d.add_argument("action", choices=DOCK_ACTIONS)
     d.add_argument("--socket", default="")
     d.add_argument("--window", default=None)
-    d.set_defaults(fn=lambda a: dock.run(a.action, a.socket, a.window))
+    d.set_defaults(fn=_cmd_dock)
     args = ap.parse_args(sys.argv[1:] if argv is None else list(argv))
     if args.self_test:
         return self_test()

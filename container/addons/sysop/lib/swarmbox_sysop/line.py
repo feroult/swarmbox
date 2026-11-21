@@ -1,90 +1,28 @@
 """The one line of the sysop: what it is doing, in a sentence, for a screen that has no room for the panel (a phone).
 
-The service (`swarmbox-sysop serve --dock`, in every panel mode) keeps the global tmux option @sysop_line:
-    sysop:<state>:<sentence>        state: idle | working | sending | allow? | queued | done | failed | stopped
-(`sysop:idle:` while the service is up and has nothing to say, also SHOW_END seconds after a goal ended) and unsets it when the service is down. tmux.conf has `set-titles on` with the
-title `#{?@sysop_line,#{@sysop_line},#S:#I:#W}`, so tmux sends the line to every client as the title of the terminal and the web page (ttyd-clipboard.js)
-shows it next to the microphone. No file, no port and no process in the pane: a change of the option is the whole channel.
-
-The sentence is one plain line of at most MAX_TEXT characters (no control characters: panel.clean), and it is not the whole result of anything: what
-the sysop said last, or else the last step in plain words (`read tab 1`, `run: pytest -q`); for `sending` and `allow?` the action that waits; for the end of
-a goal its summary or error.
-
-line_of is a pure function of the files' snapshot (panel.snapshot); Toaster is the thread that looks, cheaply, and sets the option when the line changes.
+Pure status computation lives in state.py (`line_of`, `value_of`). This module keeps the `Toaster` thread, which polls
+cheaply and delivers each change to a sink — by default the global tmux option `@sysop_line` (`TmuxOptionSink`), or any
+custom callable `sink(value)` for non-tmux front-ends.
 """
 import threading
 import time
 
 from .dock import Tmux
-from .panel import TERMINAL, Model, one_line, snapshot, step_text
+from .state import IDLE, MAX_TEXT, PREFIX, SHOW_END, TERMINAL, _cut, _last_thing, line_of, snapshot, value_of  # noqa: F401
 
 OPTION = "@sysop_line"
-IDLE = ("idle", "")        # the service is up and has nothing to say: the page knows a sysop is there (it keeps the line of a phone for it)
-PREFIX = "sysop"
-MAX_TEXT = 140
-SHOW_END = 10.0          # seconds the end of a goal (done, failed, stopped) stays on the line
 BUSY_POLL = 0.5          # while a goal runs or waits
 IDLE_POLL = 2.0          # nothing going on: a stat and a lock probe
 
 
-def _cut(text, limit=MAX_TEXT):
-    text = one_line(text, 4000)
-    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
-
-
-def _last_thing(goal):
-    """The latest of what the sysop said and of its steps (the tool done is not a step), in plain words."""
-    best = None
-    items = [("say", s) for s in goal.get("say") or [] if isinstance(s, dict)]
-    items += [("call", c) for c in goal.get("calls") or [] if isinstance(c, dict) and c.get("tool") != "done"]
-    for kind, it in items:
-        t = it.get("t") if isinstance(it.get("t"), (int, float)) else 0
-        if best is None or t >= best[0]:
-            best = (t, kind, it)
-    if best is None:
-        return ""
-    return one_line(best[2].get("text"), 4000) if best[1] == "say" else step_text(best[2])
-
-
-def line_of(snap, wall=0.0):
-    """(state, sentence) of what the files say, or None when there is nothing to show. `wall`: the time now, for how long an ended goal stays."""
-    m = Model()
-    m.update(snap, 0.0)
-    if not m.up:
-        return None
-    if m.pending:
-        what = _cut(m.pending.get("text"))
-        return ("allow?" if m.pmode() == "approve" else "sending", what or "an action")
-    g = m.goal
-    if g:
-        st = g.get("state")
-        if st in TERMINAL:
-            ended = g.get("ended")
-            if isinstance(ended, (int, float)) and wall and wall - ended > SHOW_END:
-                return IDLE
-            return (st, _cut(g.get("summary") or g.get("error") or st))
-        if st == "queued":
-            return ("queued", _cut(g.get("text")))
-        if st == "waiting_approval":
-            return ("allow?", _cut(g.get("text")))
-        return ("working", _cut(_last_thing(g) or g.get("text")))
-    if m.queue:
-        return ("queued", "%d queued" % len(m.queue))
-    return IDLE
-
-
-def value_of(line):
-    return None if line is None else "%s:%s:%s" % (PREFIX, line[0], line[1])
-
-
 class Toaster:
-    """A thread: looks at the files of the service and keeps the option @sysop_line as line_of says. Never raises and never takes the service down: a tmux that
-    is missing, or a server that is not up yet, is tried again at the next look and said once in the log. At its start it sets or unsets the option once,
-    so a line left by an earlier service does not stay."""
+    """A thread: looks at the files of the service and pushes the status line to a sink (default: tmux @sysop_line) whenever
+    it changes. Never raises and never takes the service down."""
 
-    def __init__(self, pth, tmux=None, log=None, clock=time.monotonic, wall=time.time):
+    def __init__(self, pth, tmux=None, log=None, clock=time.monotonic, wall=time.time, sink=None):
         self.paths = pth
         self.tmux = tmux
+        self.sink = sink
         self.log = log or (lambda msg: None)
         self.clock, self.wall = clock, wall
         self.stop = threading.Event()
@@ -114,8 +52,15 @@ class Toaster:
         return line
 
     def apply(self, value):
-        """Set or unset the option when `value` is not what was set last. True when tmux took it."""
+        """Deliver `value` (or None to unset) when it differs from what was sent last. True when accepted."""
         if value == self.sent:
+            return True
+        if self.sink is not None:
+            ok = self.sink(value)
+            if ok is False:
+                return False
+            self._said = None
+            self.sent = value
             return True
         if self.tmux is None:
             self.tmux = Tmux()
@@ -154,6 +99,9 @@ class Toaster:
         self.stop.set()
         try:
             if unset and self.sent:
-                (self.tmux or Tmux()).run("set-option", "-gu", OPTION)     # the service ends: the line goes with it
+                if self.sink is not None:
+                    self.sink(None)
+                else:
+                    (self.tmux or Tmux()).run("set-option", "-gu", OPTION)     # the service ends: the line goes with it
         except Exception:
             pass
