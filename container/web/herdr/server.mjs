@@ -72,20 +72,24 @@ export function parseCliArgs(argv) {
 const HERDR_THEMES = {
   'purple-glow': {
     name: 'catppuccin',
+    accent: '#a78bfa',
     custom: {
       panel_bg: '#0c0b10',
-      sidebar_bg: '#14121b',
+      sidebar_bg: '#12101a',
       active_row_bg: '#27222f',
       selection_bg: '#6d28d9',
       accent: '#a78bfa',
+      text: '#d4d4d8',
       red: '#ff6b78',
       green: '#4ade80',
+      yellow: '#fbbf24',
+      blue: '#8b5cf6',
     },
   },
-  catppuccin: { name: 'catppuccin', custom: null },
-  'tokyo-night': { name: 'tokyo-night', custom: null },
-  nord: { name: 'nord', custom: null },
-  'rose-pine': { name: 'rose-pine', custom: null },
+  catppuccin: { name: 'catppuccin', accent: '#cba6f7', custom: null },
+  'tokyo-night': { name: 'tokyo-night', accent: '#7aa2f7', custom: null },
+  nord: { name: 'nord', accent: '#88c0d0', custom: null },
+  'rose-pine': { name: 'rose-pine', accent: '#c4a7e7', custom: null },
 };
 
 const THEME_FILE = path.join(SB_CONFIG_DIR, 'herdr-web-theme');
@@ -116,7 +120,7 @@ function syncHerdrTomlTheme(themeName) {
   try {
     fs.mkdirSync(herdrDir, { recursive: true });
     const lines = [
-      '# SwarmBox herdr theme configuration (synced with Web UI).',
+      '# SwarmBox herdr configuration (synchronized with Web UI).',
       'onboarding = false',
       '',
       '[theme]',
@@ -128,9 +132,71 @@ function syncHerdrTomlTheme(themeName) {
         lines.push(`${k} = "${v}"`);
       }
     }
-    lines.push('', '[terminal]', 'default_shell = "/bin/bash"', '');
+    lines.push(
+      '',
+      '[terminal]',
+      'default_shell = "/bin/bash"',
+      'shell_mode = "login"',
+      'new_cwd = "follow"',
+      'kitty_graphics = true',
+      '',
+      '[keys]',
+      'prefix = "ctrl+a"',
+      'goto = "prefix+shift+j"',
+      '',
+      '[[keys.command]]',
+      'key = "prefix+g"',
+      'type = "popup"',
+      'command = "swarmbox-sysop goal"',
+      'width = 76',
+      'height = 5',
+      '',
+      '[[keys.command]]',
+      'key = "prefix+a"',
+      'type = "shell"',
+      'command = "swarmbox-sysop approve"',
+      '',
+      '[[keys.command]]',
+      'key = "prefix+shift+v"',
+      'type = "shell"',
+      'command = "swarmbox-sysop veto"',
+      '',
+      '[[keys.command]]',
+      'key = "prefix+shift+x"',
+      'type = "shell"',
+      'command = "swarmbox-sysop stop"',
+      '',
+      '[ui]',
+      'sidebar_width = 26',
+      'sidebar_collapsed_mode = "compact"',
+      'pane_borders = "auto"',
+      'pane_outer_borders = false',
+      'pane_scrollbars = false',
+      'pane_gaps = false',
+      'show_agent_labels_on_pane_borders = true',
+      'tab_bar_position = "top"',
+      'tab_bar_right_separator = " ─ "',
+      'status_indicators = "dots"',
+      `accent = "${spec.accent}"`,
+      'mouse_scroll_lines = 5',
+      'window_title = "SwarmBox · {workspace}"',
+      '',
+      '[[ui.tab_bar_right]]',
+      'type = "datetime"',
+      'format = "%d/%m ─ %H:%M"',
+      '',
+      '[ui.toast]',
+      'delivery = "herdr"',
+      '',
+      '[ui.toast.herdr]',
+      'position = "bottom-right"',
+      '',
+      '[ui.toast.clipboard]',
+      'enabled = true',
+      'position = "bottom-center"',
+      '',
+    );
     fs.writeFileSync(tomlPath, lines.join('\n'), 'utf8');
-    // Best-effort live reload if herdr server happens to be running
     const p = spawn('herdr', ['server', 'reload-config'], { stdio: 'ignore' });
     p.on('error', () => {});
   } catch (_) {}

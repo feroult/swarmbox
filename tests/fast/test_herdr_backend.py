@@ -517,8 +517,16 @@ class HerdrSysopAndAssetsTest(unittest.TestCase):
         self.assertEqual(custom["active_row_bg"], "#27222f")
         self.assertEqual(custom["selection_bg"], "#6d28d9")
         self.assertEqual(custom["accent"], "#a78bfa")
+        self.assertEqual(custom["text"], "#d4d4d8")
         self.assertEqual(custom["red"], "#ff6b78")
         self.assertEqual(custom["green"], "#4ade80")
+        self.assertEqual(custom["yellow"], "#fbbf24")
+        self.assertEqual(custom["blue"], "#8b5cf6")
+        self.assertEqual(cfg["keys"]["prefix"], "ctrl+a")
+        self.assertEqual(cfg["ui"]["status_indicators"], "dots")
+        self.assertFalse(cfg["ui"]["pane_outer_borders"])
+        self.assertFalse(cfg["ui"]["pane_scrollbars"])
+        self.assertEqual(cfg["ui"]["accent"], "#a78bfa")
 
     def test_sysop_brain_forwards_mux_env_and_web_source_note(self):
         tmp = tempfile.mkdtemp(prefix="swarmbox-test-herdr-sysop.")

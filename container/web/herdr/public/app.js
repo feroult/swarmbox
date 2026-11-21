@@ -5,17 +5,26 @@
     'purple-glow': {
       css: {
         '--bg': '#0c0b10',
-        '--surface': '#14121b',
-        '--surface-2': '#1c1926',
-        '--surface-hover': '#27222f',
-        '--border': 'rgba(167, 139, 250, 0.16)',
-        '--border-strong': 'rgba(167, 139, 250, 0.38)',
+        '--surface': '#12101a',
+        '--sheet': '#15121d',
+        '--band': '#27222f',
+        '--surface-2': '#1b1726',
+        '--surface-hover': '#241e33',
+        '--border': 'rgba(167, 139, 250, 0.13)',
+        '--border-strong': 'rgba(167, 139, 250, 0.34)',
+        '--hair-1': '#6d28d9',
+        '--hair-2': '#a78bfa',
         '--text': '#f4f4f5',
         '--text-muted': '#a1a1aa',
         '--text-dim': '#71717a',
         '--accent': '#a78bfa',
         '--accent-bright': '#c4b5fd',
+        '--accent-deep': '#6d28d9',
         '--accent-bg': 'rgba(167, 139, 250, 0.14)',
+        '--accent-glow': 'rgba(167, 139, 250, 0.42)',
+        '--btn-grad-1': '#7c3aed',
+        '--btn-grad-2': '#5b21b6',
+        '--btn-text': '#ffffff',
       },
       xterm: {
         background: '#0c0b10',
@@ -46,16 +55,25 @@
       css: {
         '--bg': '#11111b',
         '--surface': '#181825',
+        '--sheet': '#1a1a28',
+        '--band': '#29293e',
         '--surface-2': '#1e1e2e',
         '--surface-hover': '#2a2b3d',
-        '--border': 'rgba(203, 166, 247, 0.16)',
-        '--border-strong': 'rgba(203, 166, 247, 0.36)',
+        '--border': 'rgba(203, 166, 247, 0.14)',
+        '--border-strong': 'rgba(203, 166, 247, 0.34)',
+        '--hair-1': '#8839ef',
+        '--hair-2': '#cba6f7',
         '--text': '#cdd6f4',
         '--text-muted': '#a6adc8',
         '--text-dim': '#6c7086',
         '--accent': '#cba6f7',
         '--accent-bright': '#f5c2e7',
+        '--accent-deep': '#8839ef',
         '--accent-bg': 'rgba(203, 166, 247, 0.14)',
+        '--accent-glow': 'rgba(203, 166, 247, 0.38)',
+        '--btn-grad-1': '#9c6ade',
+        '--btn-grad-2': '#7448b5',
+        '--btn-text': '#ffffff',
       },
       xterm: {
         background: '#11111b',
@@ -76,16 +94,25 @@
       css: {
         '--bg': '#16161e',
         '--surface': '#1a1b26',
+        '--sheet': '#1d1f2c',
+        '--band': '#282d42',
         '--surface-2': '#24283b',
         '--surface-hover': '#2f3549',
-        '--border': 'rgba(122, 162, 247, 0.18)',
-        '--border-strong': 'rgba(122, 162, 247, 0.40)',
+        '--border': 'rgba(122, 162, 247, 0.15)',
+        '--border-strong': 'rgba(122, 162, 247, 0.36)',
+        '--hair-1': '#3d59a1',
+        '--hair-2': '#7aa2f7',
         '--text': '#c0caf5',
         '--text-muted': '#9aa5ce',
         '--text-dim': '#565f89',
         '--accent': '#7aa2f7',
         '--accent-bright': '#bb9af7',
+        '--accent-deep': '#3d59a1',
         '--accent-bg': 'rgba(122, 162, 247, 0.14)',
+        '--accent-glow': 'rgba(122, 162, 247, 0.38)',
+        '--btn-grad-1': '#5b82e0',
+        '--btn-grad-2': '#3d59a1',
+        '--btn-text': '#ffffff',
       },
       xterm: {
         background: '#16161e',
@@ -106,16 +133,25 @@
       css: {
         '--bg': '#242933',
         '--surface': '#2e3440',
+        '--sheet': '#313846',
+        '--band': '#3e4759',
         '--surface-2': '#3b4252',
         '--surface-hover': '#434c5e',
-        '--border': 'rgba(136, 192, 208, 0.18)',
-        '--border-strong': 'rgba(136, 192, 208, 0.42)',
+        '--border': 'rgba(136, 192, 208, 0.16)',
+        '--border-strong': 'rgba(136, 192, 208, 0.38)',
+        '--hair-1': '#5e81ac',
+        '--hair-2': '#88c0d0',
         '--text': '#eceff4',
         '--text-muted': '#d8dee9',
         '--text-dim': '#8190a8',
         '--accent': '#88c0d0',
         '--accent-bright': '#8fbcbb',
-        '--accent-bg': 'rgba(136, 192, 208, 0.15)',
+        '--accent-deep': '#5e81ac',
+        '--accent-bg': 'rgba(136, 192, 208, 0.14)',
+        '--accent-glow': 'rgba(136, 192, 208, 0.36)',
+        '--btn-grad-1': '#6fa8ba',
+        '--btn-grad-2': '#4c7399',
+        '--btn-text': '#ffffff',
       },
       xterm: {
         background: '#242933',
@@ -136,16 +172,25 @@
       css: {
         '--bg': '#191724',
         '--surface': '#1f1d2e',
+        '--sheet': '#221f32',
+        '--band': '#2e2a45',
         '--surface-2': '#26233a',
         '--surface-hover': '#312c49',
-        '--border': 'rgba(196, 167, 231, 0.18)',
-        '--border-strong': 'rgba(196, 167, 231, 0.40)',
+        '--border': 'rgba(196, 167, 231, 0.15)',
+        '--border-strong': 'rgba(196, 167, 231, 0.36)',
+        '--hair-1': '#907aa9',
+        '--hair-2': '#c4a7e7',
         '--text': '#e0def4',
         '--text-muted': '#908caa',
         '--text-dim': '#6e6a86',
         '--accent': '#c4a7e7',
         '--accent-bright': '#ebbcba',
-        '--accent-bg': 'rgba(196, 167, 231, 0.15)',
+        '--accent-deep': '#907aa9',
+        '--accent-bg': 'rgba(196, 167, 231, 0.14)',
+        '--accent-glow': 'rgba(196, 167, 231, 0.38)',
+        '--btn-grad-1': '#9c7cc4',
+        '--btn-grad-2': '#6d5191',
+        '--btn-text': '#ffffff',
       },
       xterm: {
         background: '#191724',
@@ -164,6 +209,81 @@
     },
   };
 
+  // ---- Crisp SVG Boot Splash (exact half-block lettering from container/scripts/banner.sh) ---
+  function buildBootSplash() {
+    const host = document.getElementById('sb-boot');
+    if (!host) return;
+    const FONT = [
+      '▄▀▀▀▀ █   █ ▄▀▀▀▄ █▀▀▀▄ █▄ ▄█ █▀▀▀▄ ▄▀▀▀▄ ▀▄ ▄▀',
+      ' ▀▀▀▄ █▄▀▄█ █▀▀▀█ █▀▀█  █ ▀ █ █▀▀▀▄ █   █  ▄▀▄ ',
+      '▀▀▀▀  ▀   ▀ ▀   ▀ ▀   ▀ ▀   ▀ ▀▀▀▀   ▀▀▀  ▀   ▀',
+    ];
+    const STOPS = [0x3f3f46, 0x6d28d9, 0xa78bfa, 0xffffff, 0xa78bfa, 0x6d28d9, 0x3f3f46];
+    const W = FONT[0].length;
+    const cellW = 7;
+    const cellH = 14;
+    const halfH = 7;
+    const svgW = W * cellW;
+    const svgH = FONT.length * cellH + 14;
+    const colorAt = (col) => {
+      const segs = STOPS.length - 1;
+      const pos = (col / (W - 1)) * segs;
+      const s = Math.min(segs - 1, Math.floor(pos));
+      const f = pos - s;
+      const a = STOPS[s];
+      const b = STOPS[s + 1];
+      const r = Math.round(((a >> 16) & 255) + (((b >> 16) & 255) - ((a >> 16) & 255)) * f);
+      const g = Math.round(((a >> 8) & 255) + (((b >> 8) & 255) - ((a >> 8) & 255)) * f);
+      const bl = Math.round((a & 255) + ((b & 255) - (a & 255)) * f);
+      return `rgb(${r},${g},${bl})`;
+    };
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    const dispW = Math.min(340, Math.round(window.innerWidth * 0.64));
+    svg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+    svg.setAttribute('width', String(dispW));
+    svg.setAttribute('height', String(Math.round((dispW * svgH) / svgW)));
+    const rect = (x, y, w, h, fill) => {
+      const el = document.createElementNS(NS, 'rect');
+      el.setAttribute('x', String(x));
+      el.setAttribute('y', String(y));
+      el.setAttribute('width', String(w));
+      el.setAttribute('height', String(h));
+      el.setAttribute('fill', fill);
+      svg.appendChild(el);
+    };
+    for (let row = 0; row < FONT.length; row++) {
+      for (let col = 0; col < W; col++) {
+        const ch = FONT[row][col];
+        if (ch === ' ') continue;
+        const fill = colorAt(col);
+        const x = col * cellW;
+        const y = row * cellH;
+        if (ch === '█') rect(x, y, cellW, cellH, fill);
+        else if (ch === '▀') rect(x, y, cellW, halfH, fill);
+        else if (ch === '▄') rect(x, y + halfH, cellW, halfH, fill);
+      }
+    }
+    // Segmented gradient underline matching banner.sh
+    let bc = 0;
+    for (const seg of [14, 8, 4, 2]) {
+      for (let j = 0; j < seg; j++) {
+        rect((bc + j) * cellW, FONT.length * cellH + 9, cellW, 2, colorAt(bc + j));
+      }
+      bc += seg + 1;
+    }
+    host.appendChild(svg);
+  }
+  buildBootSplash();
+
+  let bootDismissed = false;
+  function dismissBoot() {
+    if (bootDismissed) return;
+    bootDismissed = true;
+    document.documentElement.classList.add('swarmbox-ready');
+  }
+  setTimeout(dismissBoot, 3000);
+
   const appEl = document.getElementById('app');
   const sidebarTabsEl = document.getElementById('sidebar-tabs');
   const mobileTabsEl = document.getElementById('mobile-tabs');
@@ -175,8 +295,11 @@
   const connTextEl = document.getElementById('conn-text');
   const sysopDotEl = document.getElementById('sysop-dot');
   const sysopStateEl = document.getElementById('sysop-state');
+  const mobileSysopBtn = document.getElementById('btn-mobile-sysop');
   const mobileSysopDotEl = document.getElementById('mobile-sysop-dot');
-  const mobileSysopStateEl = document.getElementById('mobile-sysop-state');
+  const mobileSysopTextEl = document.getElementById('mobile-sysop-text');
+  const mobileKbBtn = document.getElementById('btn-mobile-kb');
+  const btnToggleSysop = document.getElementById('btn-toggle-sysop');
   const sysopFeedEl = document.getElementById('sysop-feed');
   const btnSysopStop = document.getElementById('btn-sysop-stop');
   const approvalCardEl = document.getElementById('approval-card');
@@ -190,27 +313,40 @@
   const mobileApprovalMsgEl = document.getElementById('mobile-approval-msg');
   const voiceNoteEl = document.getElementById('voice-note');
   const voiceHintEl = document.getElementById('voice-hint');
+  const micLabelEl = document.getElementById('mic-label');
   const goalInputEl = document.getElementById('goal-input');
   const themeSelectEl = document.getElementById('theme-select');
   const themeSelectMobileEl = document.getElementById('theme-select-mobile');
   const btnTts = document.getElementById('btn-tts');
   const btnMic = document.getElementById('btn-mic');
   const btnMobileMic = document.getElementById('btn-mobile-mic');
+  const termWrapEl = document.getElementById('term-wrap');
 
   let terminals = [];
   let activeId = null;
   let ptyWs = null;
   let ttsEnabled = false;
   let lastSpokenKey = '';
-  let currentApproval = null; // { kind: 'sysop' | 'osc', terminal?, deadline?, totalMs? }
+  let currentApproval = null;
   let voiceAddonAvailable = false;
   let countdownTimer = null;
 
-  // Initialize xterm.js
+  // Dynamic column-aware font sizing:
+  // On phones (<= 860px), pick the exact font size so >= 56 columns fit upright (keeping the
+  // 49-col SwarmBox banner & Starship prompt completely unbroken, mirroring ttyd-clipboard.js).
+  function computeFontSize() {
+    const w = window.innerWidth;
+    if (w > 860) return 15;
+    const usable = Math.max(240, (termWrapEl.clientWidth || w) - 18);
+    const targetCols = w < window.innerHeight ? 56 : 104;
+    const raw = usable / (targetCols * 0.605);
+    return Math.max(9.5, Math.min(13.5, Math.round(raw * 2) / 2));
+  }
+
   const term = new window.Terminal({
-    fontFamily: "'JetBrainsMono Nerd Font', 'JetBrains Mono', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, monospace",
-    fontSize: window.innerWidth <= 860 ? 13 : 14.5,
-    lineHeight: 1.25,
+    fontFamily: "'JetBrainsMono Nerd Font', 'JetBrains Mono', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace",
+    fontSize: computeFontSize(),
+    lineHeight: window.innerWidth <= 860 ? 1.12 : 1.24,
     cursorBlink: true,
     scrollback: 3000,
     macOptionIsMeta: true,
@@ -222,6 +358,49 @@
     term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
   }
   term.open(document.getElementById('terminal'));
+
+  // Eliminate faint horizontal hairline seams on block-drawing rows (banner.sh half-blocks)
+  const BLOCK_RE = /[\u2580-\u259f]/;
+  function markBlockRows() {
+    const rows = document.querySelectorAll('#terminal .xterm-rows > div');
+    for (const row of rows) {
+      const hasBlk = BLOCK_RE.test(row.textContent || '');
+      if (hasBlk !== row.classList.contains('sb-blk')) {
+        row.classList.toggle('sb-blk', hasBlk);
+      }
+    }
+  }
+  const rowsRoot = document.querySelector('#terminal .xterm-rows');
+  if (rowsRoot && window.MutationObserver) {
+    let blkRaf = 0;
+    const scheduleBlk = () => {
+      if (blkRaf) return;
+      blkRaf = requestAnimationFrame(() => { blkRaf = 0; markBlockRows(); });
+    };
+    new MutationObserver(scheduleBlk).observe(rowsRoot, { childList: true, subtree: true, characterData: true });
+  }
+  function updateBlockScale() {
+    const scale = window.innerWidth <= 860 ? 1.18 : 1.28;
+    document.documentElement.style.setProperty('--sb-blk-s', String(scale));
+  }
+  updateBlockScale();
+
+  // OSC 52 clipboard write support (read "?" refused for security, matching ttyd-clipboard.js)
+  if (term.parser && term.parser.registerOscHandler) {
+    term.parser.registerOscHandler(52, (data) => {
+      const i = data.indexOf(';');
+      const payload = i >= 0 ? data.slice(i + 1) : '';
+      if (!payload || payload === '?') return true;
+      try {
+        const bin = atob(payload);
+        const bytes = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+        const text = new TextDecoder().decode(bytes);
+        navigator.clipboard?.writeText(text).catch(() => {});
+      } catch (_) {}
+      return true;
+    });
+  }
 
   // Ctrl+C copies when text is selected; Ctrl+V pastes from clipboard
   term.attachCustomKeyEventHandler((ev) => {
@@ -243,6 +422,31 @@
     }
     return true;
   });
+
+  // Smooth touch drag-scroll over the terminal canvas on phones (leaving pinch-zoom intact)
+  let touchStartY = null;
+  let touchAccum = 0;
+  termWrapEl.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      touchStartY = e.touches[0].clientY;
+      touchAccum = 0;
+    } else {
+      touchStartY = null;
+    }
+  }, { passive: true });
+  termWrapEl.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 1 || touchStartY === null) return;
+    const y = e.touches[0].clientY;
+    const dy = touchStartY - y;
+    touchStartY = y;
+    touchAccum += dy;
+    const lines = Math.trunc(touchAccum / 18);
+    if (lines !== 0) {
+      touchAccum -= lines * 18;
+      term.scrollLines(lines);
+    }
+  }, { passive: true });
+  termWrapEl.addEventListener('touchend', () => { touchStartY = null; }, { passive: true });
 
   function applyTheme(name, persist = false) {
     const key = THEMES[name] ? name : 'purple-glow';
@@ -274,7 +478,13 @@
 
   function fitAndResize() {
     try {
+      const nextFont = computeFontSize();
+      const nextLH = window.innerWidth <= 860 ? 1.12 : 1.24;
+      if (term.options.fontSize !== nextFont) term.options.fontSize = nextFont;
+      if (term.options.lineHeight !== nextLH) term.options.lineHeight = nextLH;
+      updateBlockScale();
       fitAddon.fit();
+      markBlockRows();
       if (ptyWs && ptyWs.readyState === 1) {
         ptyWs.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
       }
@@ -282,9 +492,9 @@
   }
 
   const ro = new ResizeObserver(() => requestAnimationFrame(fitAndResize));
-  ro.observe(document.getElementById('term-wrap'));
+  ro.observe(termWrapEl);
+  window.addEventListener('resize', () => requestAnimationFrame(fitAndResize));
 
-  // Adapt to mobile virtual keyboard smoothly
   if (window.visualViewport) {
     const syncViewport = () => {
       appEl.style.height = `${Math.round(window.visualViewport.height)}px`;
@@ -297,6 +507,24 @@
     if (ptyWs && ptyWs.readyState === 1) {
       ptyWs.send(JSON.stringify({ type: 'input', data }));
     }
+  });
+
+  // Desktop keyboard shortcuts (Alt+1..9 tabs, Alt+N new shell, Alt+S Sysop, Alt+B sidebar)
+  window.addEventListener('keydown', (e) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
+    if (e.key >= '1' && e.key <= '9') {
+      const idx = Number(e.key) - 1;
+      if (terminals[idx]) {
+        e.preventDefault();
+        if (activeId !== terminals[idx].address) connectPty(terminals[idx].address);
+      }
+      return;
+    }
+    const low = e.key.toLowerCase();
+    if (low === 'n') { e.preventDefault(); spawnTab('shell'); }
+    else if (low === 's') { e.preventDefault(); toggleDesktopSysop(); }
+    else if (low === 'b') { e.preventDefault(); toggleSidebar(); }
   });
 
   function tabState(t) {
@@ -312,7 +540,9 @@
     }
     if (st && st.state === 'done' && st.msg) return `✓ ${st.msg}`;
     if (st && st.state === 'error' && st.msg) return `✕ ${st.msg}`;
-    return t.title || t.cwd || t.address;
+    const cwd = (t && t.cwd) || '';
+    if (cwd.startsWith('/home/agent')) return '~' + cwd.slice('/home/agent'.length);
+    return (t && t.title) || cwd || (t && t.address) || '';
   }
 
   function connectPty(address) {
@@ -323,7 +553,7 @@
     }
     activeId = address;
     term.reset();
-    fitAddon.fit();
+    fitAndResize();
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(address)}?cols=${term.cols}&rows=${term.rows}`;
@@ -335,12 +565,12 @@
       if (ptyWs !== ws) return;
       ws.send(JSON.stringify({ type: 'focus', focused: true }));
       fitAndResize();
-      term.focus();
+      if (window.innerWidth > 860) term.focus();
     };
     ws.onmessage = (ev) => {
       if (ptyWs !== ws) return;
       if (ev.data instanceof ArrayBuffer) {
-        term.write(new Uint8Array(ev.data));
+        term.write(new Uint8Array(ev.data), () => dismissBoot());
       } else if (typeof ev.data === 'string') {
         try {
           const msg = JSON.parse(ev.data);
@@ -349,6 +579,7 @@
         } catch (_) {
           term.write(ev.data);
         }
+        dismissBoot();
       }
     };
     renderTabs();
@@ -359,13 +590,13 @@
     sidebarTabsEl.innerHTML = '';
     mobileTabsEl.innerHTML = '';
 
-    for (const t of terminals) {
+    terminals.forEach((t, idx) => {
       const state = tabState(t);
       const label = t.name || t.address;
       const isActive = t.address === activeId;
 
       const btn = document.createElement('div');
-      btn.className = `tab-item${isActive ? ' active' : ''}`;
+      btn.className = `tab-item${isActive ? ' active' : ''}${state === 'blocked' ? ' is-blocked' : ''}`;
       btn.setAttribute('role', 'tab');
       btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
 
@@ -383,6 +614,11 @@
       subEl.textContent = tabSubtitle(t);
       info.append(titleEl, subEl);
 
+      const right = document.createElement('div');
+      right.className = 'tab-right';
+      const idxEl = document.createElement('span');
+      idxEl.className = 'tab-idx';
+      idxEl.textContent = idx < 9 ? String(idx + 1) : '';
       const closeBtn = document.createElement('button');
       closeBtn.className = 'tab-close';
       closeBtn.title = 'Close tab';
@@ -392,14 +628,23 @@
         e.stopPropagation();
         await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
       });
+      right.append(idxEl, closeBtn);
 
-      btn.append(dot, info, closeBtn);
+      btn.append(dot, info, right);
+      if (state === 'working' && t.status && typeof t.status.progress === 'number') {
+        const bar = document.createElement('span');
+        bar.className = 'tab-progress';
+        const fill = document.createElement('i');
+        fill.style.width = `${Math.max(4, Math.min(100, t.status.progress))}%`;
+        bar.appendChild(fill);
+        btn.appendChild(bar);
+      }
       btn.addEventListener('click', () => {
         if (activeId !== t.address) connectPty(t.address);
       });
       sidebarTabsEl.appendChild(btn);
 
-      // Mobile chip
+      // Mobile tab chip
       const m = document.createElement('button');
       m.className = `m-tab${isActive ? ' active' : ''}`;
       const mDot = document.createElement('span');
@@ -412,7 +657,7 @@
         if (activeId !== t.address) connectPty(t.address);
       });
       mobileTabsEl.appendChild(m);
-    }
+    });
 
     const mPlus = document.createElement('button');
     mPlus.className = 'm-tab';
@@ -467,8 +712,7 @@
       mobileApprovalMsgEl.textContent = pending.text || 'Pending action';
 
       if (pending.deadline) {
-        const now = Date.now() / 1000;
-        const rem = Math.max(0, pending.deadline - now);
+        const rem = Math.max(0, pending.deadline - Date.now() / 1000);
         const total = Math.max(rem, 4);
         approvalBarEl.classList.remove('hidden');
         const tick = () => {
@@ -487,6 +731,7 @@
         lastSpokenKey = key;
         speak(`${isVeto ? 'Sending' : 'Approval required'}: ${pending.text}`);
       }
+      requestAnimationFrame(fitAndResize);
       return;
     }
 
@@ -505,13 +750,16 @@
         lastSpokenKey = key;
         speak(`Input needed on ${oscBlocked.name}. ${oscBlocked.msg}`);
       }
+      requestAnimationFrame(fitAndResize);
       return;
     }
 
+    const wasVisible = !mobileApprovalEl.classList.contains('hidden');
     currentApproval = null;
     approvalCardEl.classList.add('hidden');
     mobileApprovalEl.classList.add('hidden');
     approvalBarEl.classList.add('hidden');
+    if (wasVisible) requestAnimationFrame(fitAndResize);
   }
 
   function renderSysop(sysop) {
@@ -520,7 +768,8 @@
     sysopDotEl.dataset.state = st;
     sysopStateEl.textContent = st;
     mobileSysopDotEl.dataset.state = st;
-    mobileSysopStateEl.textContent = st;
+    mobileSysopBtn.dataset.state = st;
+    mobileSysopTextEl.textContent = st === 'idle' || st === 'off' ? 'Sysop' : (sysop.sentence || `Sysop · ${st}`);
 
     const running = st === 'working' || st === 'allow?' || st === 'sending' || st === 'queued';
     btnSysopStop.classList.toggle('hidden', !running);
@@ -532,12 +781,24 @@
     if (!sysop.up) {
       const box = document.createElement('div');
       box.className = 'feed-empty';
-      box.innerHTML = 'Sysop service is not running.<br>Install &amp; start it with:<br><code>swarmbox addon install sysop</code>';
+      box.innerHTML = `
+        <div class="feed-empty-title"><span class="status-dot" data-state="off"></span><span>Sysop offline</span></div>
+        <div>Install &amp; start the operator addon to drive terminals by goal or voice:</div>
+        <div><code>swarmbox addon install sysop</code></div>
+      `;
       sysopFeedEl.appendChild(box);
     } else if (steps.length === 0) {
       const box = document.createElement('div');
       box.className = 'feed-empty';
-      box.textContent = 'Sysop is ready. Type or speak a goal below to drive your terminals.';
+      box.innerHTML = `
+        <div class="feed-empty-title"><span class="status-dot" data-state="done"></span><span>Ready for goals</span></div>
+        <div>Speak or type what you want done — Sysop reads the active tab, routes to your agent, and holds risky actions for your approval.</div>
+        <div class="shortcut-hints">
+          <span class="kbd-chip"><b>Alt+1..9</b> tabs</span>
+          <span class="kbd-chip"><b>Alt+N</b> shell</span>
+          <span class="kbd-chip"><b>Alt+S</b> sysop</span>
+        </div>
+      `;
       sysopFeedEl.appendChild(box);
     } else {
       for (const s of steps) {
@@ -599,7 +860,7 @@
             ? msg.active
             : (terminals[0] && terminals[0].address);
           if (preferred) connectPty(preferred);
-          else { activeId = null; renderTabs(); }
+          else { activeId = null; renderTabs(); dismissBoot(); }
         } else {
           renderTabs();
         }
@@ -648,10 +909,7 @@
     await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   }
 
-  // -------------------------------------------------------------------------
-  // Real voice addon integration (16 kHz mono 16-bit PCM WAV -> /voice/audio)
-  // Falls back cleanly to Web Speech API if the voice addon is not installed.
-  // -------------------------------------------------------------------------
+  // ---- Real Voice Addon (16 kHz mono 16-bit PCM WAV -> /voice/audio) ------------------------
   const VOICE_RATE = 16000;
   let wavRec = null;
   let speechRec = null;
@@ -692,6 +950,7 @@
   function setMicRecording(on) {
     btnMic.classList.toggle('recording', on);
     btnMobileMic.classList.toggle('recording', on);
+    if (micLabelEl) micLabelEl.textContent = on ? 'Listening' : 'Speak';
   }
 
   async function startWavRecording() {
@@ -762,7 +1021,7 @@
   function toggleBrowserSpeech() {
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRec) {
-      showVoiceNote('Install the voice addon (`swarmbox addon install voice`) for local Whisper speech.', 'warn', 6000);
+      showVoiceNote('Install the voice addon (`swarmbox addon install voice`) for local Whisper.', 'warn', 6000);
       goalInputEl.focus();
       return;
     }
@@ -811,22 +1070,46 @@
   wireMicButton(btnMic);
   wireMicButton(btnMobileMic);
 
-  // Probe local swarmbox-voice service via /voice/health
+  // Probe local swarmbox-voice service quietly (no ugly "off" label when absent)
   fetch('/voice/health', { credentials: 'same-origin', cache: 'no-store' })
     .then((r) => {
       if (r.ok) {
         voiceAddonAvailable = true;
-        voiceHintEl.textContent = 'hold mic · whisper';
+        voiceHintEl.textContent = 'hold · whisper';
       } else {
-        voiceHintEl.textContent = 'voice addon off';
+        voiceHintEl.textContent = '';
       }
     })
     .catch(() => { voiceHintEl.textContent = ''; });
 
-  // UI Wiring
+  // ---- Layout Controls ----------------------------------------------------------------------
+  function toggleSidebar() {
+    appEl.dataset.sidebarOpen = appEl.dataset.sidebarOpen === '1' ? '0' : '1';
+    requestAnimationFrame(fitAndResize);
+  }
+  function toggleDesktopSysop() {
+    const next = appEl.dataset.sysopOpen === '1' ? '0' : '1';
+    appEl.dataset.sysopOpen = next;
+    btnToggleSysop.dataset.on = next;
+    requestAnimationFrame(fitAndResize);
+  }
+  function setMobileSysop(open) {
+    const val = open ? '1' : '0';
+    appEl.dataset.mobileSysop = val;
+    mobileSysopBtn.dataset.on = val;
+  }
+  function setMobileKeys(open) {
+    const val = open ? '1' : '0';
+    appEl.dataset.mobileKeys = val;
+    mobileKbBtn.dataset.on = val;
+    mobileKbBtn.setAttribute('aria-pressed', open ? 'true' : 'false');
+    if (open) term.focus();
+    else term.blur();
+    requestAnimationFrame(fitAndResize);
+  }
+
   document.getElementById('btn-new-shell').addEventListener('click', () => spawnTab('shell'));
   document.getElementById('btn-new-agent').addEventListener('click', () => spawnTab('agent'));
-
   document.getElementById('btn-sidebar-close').addEventListener('click', () => {
     appEl.dataset.sidebarOpen = '0';
     requestAnimationFrame(fitAndResize);
@@ -835,21 +1118,15 @@
     appEl.dataset.sidebarOpen = '1';
     requestAnimationFrame(fitAndResize);
   });
-  document.getElementById('btn-toggle-sysop').addEventListener('click', () => {
-    appEl.dataset.sysopOpen = appEl.dataset.sysopOpen === '1' ? '0' : '1';
-    requestAnimationFrame(fitAndResize);
-  });
+  btnToggleSysop.addEventListener('click', toggleDesktopSysop);
   document.getElementById('btn-sysop-close').addEventListener('click', () => {
-    if (window.innerWidth <= 860) {
-      appEl.dataset.mobileSysop = '0';
-    } else {
-      appEl.dataset.sysopOpen = '0';
-      requestAnimationFrame(fitAndResize);
-    }
+    if (window.innerWidth <= 860) setMobileSysop(false);
+    else toggleDesktopSysop();
   });
-  document.getElementById('btn-mobile-sysop').addEventListener('click', () => {
-    appEl.dataset.mobileSysop = appEl.dataset.mobileSysop === '1' ? '0' : '1';
-  });
+  mobileSysopBtn.addEventListener('click', () => setMobileSysop(appEl.dataset.mobileSysop !== '1'));
+  document.getElementById('sheet-backdrop').addEventListener('click', () => setMobileSysop(false));
+  document.getElementById('sheet-handle').addEventListener('click', () => setMobileSysop(false));
+  mobileKbBtn.addEventListener('click', () => setMobileKeys(appEl.dataset.mobileKeys !== '1'));
 
   btnTts.addEventListener('click', () => {
     ttsEnabled = !ttsEnabled;
@@ -866,11 +1143,18 @@
     await fetch(`/api/tabs/${encodeURIComponent(activeId)}/interrupt`, { method: 'POST' });
   });
 
-  document.getElementById('btn-send-goal').addEventListener('click', () => sendGoal());
+  const btnSendGoal = document.getElementById('btn-send-goal');
+  function syncSendReady() {
+    btnSendGoal.dataset.ready = goalInputEl.value.trim() ? '1' : '0';
+  }
+  syncSendReady();
+  goalInputEl.addEventListener('input', syncSendReady);
+  btnSendGoal.addEventListener('click', () => { sendGoal(); syncSendReady(); });
   goalInputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendGoal();
+      syncSendReady();
     }
   });
 
