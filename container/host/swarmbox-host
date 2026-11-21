@@ -78,7 +78,7 @@ USAGE
 # Keys of the config file. NAME is not one of them: it selects the folder, so it comes from SWARMBOX_NAME only.
 is_file_key() {
     case $1 in
-        WORKSPACE|HOSTNAME|TZ|INIT|PORTS|HOST_ACCESS|BROWSER_URL|WEB|WEB_PORT|WITH|AGENT|YOLO|ENV_KEYS|IMAGE|CLOUDFLARE_TUNNEL_TOKEN) return 0 ;;
+        WORKSPACE|HOSTNAME|TZ|INIT|PORTS|HOST_ACCESS|BROWSER_URL|WEB|WEB_PORT|MUX|WITH|AGENT|YOLO|ENV_KEYS|IMAGE|CLOUDFLARE_TUNNEL_TOKEN) return 0 ;;
         voice.language|voice.stt.model|voice.stt.vocabulary|voice.web|voice.topic) return 0 ;;
         sysop.brain|sysop.model|sysop.autonomy|sysop.countdown|sysop.max_steps|sysop.max_seconds|sysop.topic|sysop.group|sysop.panel) return 0 ;;
     esac
@@ -99,7 +99,7 @@ ADDON_KEYS="$VOICE_KEYS $SYSOP_KEYS"   # the keys passed to the box only when th
 
 is_key() { [ "$1" = NAME ] || is_file_key "$1"; }
 
-ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group sysop.panel'
+ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT MUX WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group sysop.panel'
 
 # Built-in default; empty means "no default" (the key is unset). AGENT has none here: the box records the first addon of WITH.
 default_of() {
@@ -111,6 +111,7 @@ default_of() {
         HOST_ACCESS) printf '0' ;;
         WEB|YOLO) printf '1' ;;
         WEB_PORT) printf '7681' ;;
+        MUX) printf 'tmux' ;;
         IMAGE) printf '%s:%s' "$REGISTRY_REPO" "$VERSION_STR" ;;
         voice.language) printf 'auto' ;;
         voice.stt.model) printf 'small' ;;
@@ -621,6 +622,12 @@ validate_value() {
         WEB_PORT)
             valid_port "$V_OUT" || { _bad "it must be a port number from 1 to 65535."; return 1; }
             ;;
+        MUX)
+            case $V_OUT in
+                tmux|herdr) ;;
+                *) _bad "it must be tmux or herdr."; return 1 ;;
+            esac
+            ;;
         WITH|AGENT)
             if [ "$_k" = AGENT ]; then
                 valid_addon_name "$V_OUT" || { _bad "it must be one addon name: lower-case letters, digits, '_' and '-'."; return 1; }
@@ -1124,6 +1131,14 @@ load_creation() {
         eval "C_$_key=\$_v"
     done
     # The voice and sysop keys reach the box only when they differ from the box's own defaults, so a box that never set one keeps its fingerprint.
+    resolve MUX
+    _v=$R_VAL
+    if [ "$R_SRC" != default ]; then
+        validate_value MUX "$_v" || exit 2
+        _v=$V_OUT
+    fi
+    [ "$_v" != "$(default_of MUX)" ] || _v=
+    C_MUX=$_v
     for _key in $ADDON_KEYS; do
         resolve "$_key"
         _v=$R_VAL
@@ -1185,6 +1200,7 @@ compute_fingerprint() {
     compute_env_hash
     [ -n "$ENV_HASH" ] || die 3 "could not compute a SHA-256 hash with $SHA."
     _l="AGENT=$C_AGENT${NL}BROWSER_URL=$C_BROWSER_URL${NL}ENV_KEYS=$C_ENV_KEYS${NL}HOSTNAME=$C_HOSTNAME${NL}HOST_ACCESS=$C_HOST_ACCESS${NL}IMAGE=$C_IMAGE${NL}INIT=$C_INIT${NL}NAME=$C_NAME${NL}PORTS=$PORT_LIST${NL}TZ=$TZ_R${NL}WEB=$C_WEB${NL}WEB_PORT=$C_WEB_PORT${NL}WITH=$C_WITH${NL}WORKSPACE=$C_WORKSPACE${NL}YOLO=$C_YOLO${NL}env-hash=$ENV_HASH$NL"
+    [ -z "$C_MUX" ] || _l="${_l}SWARMBOX_MUX=$C_MUX$NL"
     for _key in $ADDON_KEYS; do
         env_of "$_key"
         eval "_v=\$C_${ENV_OF#SWARMBOX_}"
@@ -1351,6 +1367,7 @@ PEOF
     emit "SWARMBOX_WEB=$C_WEB"
     emit -e
     emit "SWARMBOX_YOLO=$C_YOLO"
+    if [ -n "$C_MUX" ]; then emit -e; emit "SWARMBOX_MUX=$C_MUX"; fi
     if [ "${SWARMBOX_TEST_NO_NESTED:-}" = 1 ]; then emit -e; emit SWARMBOX_TEST_NO_NESTED=1; fi
     if [ -n "$C_WITH" ]; then emit -e; emit "SWARMBOX_WITH=$C_WITH"; fi
     # the default agent that `yolo` runs: AGENT, else the first addon of WITH (recorded here, when the box is created)

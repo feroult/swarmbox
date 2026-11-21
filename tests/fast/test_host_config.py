@@ -34,6 +34,7 @@ KEYS = {
     "BROWSER_URL": (None, "9222", "host.example:1234", ["a b", "ftp://x", "99999", "nohostport", ":1234"]),
     "WEB": ("1", "0", "1", ["yes", "2"]),
     "WEB_PORT": ("7681", "8000", "8001", ["0", "65536", "abc", "-1"]),
+    "MUX": ("tmux", "herdr", "tmux", ["screen", "zellij", "HERDR", "a b"]),
     "WITH": (None, "claude,gcloud", "claude", ["Claude", "a b", "a,,b", ",a", "a,"]),
     "AGENT": (None, "claude", "opencode", ["a,b", "A B", "yolo"]),
     "YOLO": ("1", "0", "1", ["yes", "2"]),
@@ -435,6 +436,28 @@ class SysopFlagsTest(CreateFlagsBase):
     def test_an_invalid_value_in_the_file_stops_create_flags(self):
         self.assertEqual(self.cf(cfg="sysop.autonomy=yolo\n").returncode, 2)
         self.assertEqual(self.cf(cfg="sysop.panel=sometimes\n").returncode, 2)
+
+
+class MuxFlagTest(CreateFlagsBase):
+    """MUX=tmux is the default and passes nothing (preserving existing box fingerprints); MUX=herdr passes SWARMBOX_MUX=herdr and changes the fingerprint."""
+
+    def mux(self, flags):
+        return [flags[i + 1] for i, f in enumerate(flags) if f == "-e" and flags[i + 1].startswith("SWARMBOX_MUX=")]
+
+    def test_default_and_explicit_tmux_pass_nothing_and_keep_fingerprint(self):
+        base = self.fp()
+        self.assertEqual(self.mux(self.flags()), [])
+        self.assertEqual(self.mux(self.flags(cfg="MUX=tmux\n")), [])
+        self.assertEqual(self.fp(cfg="MUX=tmux\n"), base)
+
+    def test_herdr_passes_env_and_changes_fingerprint(self):
+        base = self.fp()
+        self.assertEqual(self.mux(self.flags(cfg="MUX=herdr\n")), ["SWARMBOX_MUX=herdr"])
+        self.assertEqual(self.mux(self.flags(env={"SWARMBOX_MUX": "herdr"})), ["SWARMBOX_MUX=herdr"])
+        self.assertNotEqual(self.fp(cfg="MUX=herdr\n"), base)
+
+    def test_invalid_mux_stops_create_flags(self):
+        self.assertEqual(self.cf(cfg="MUX=screen\n").returncode, 2)
 
 
 if __name__ == "__main__":
