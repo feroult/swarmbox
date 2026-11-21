@@ -929,6 +929,35 @@ class Toast(StripCase):
         self.t.type("clear\r")
         self.assertTrue(wait_until(lambda: self.state()[0] == "1" and self.state()[5] == "0", 6, 0.1), "no panel: back to the bar alone: %r" % (self.state(),))
 
+    def test_scrolling_history_or_single_space_sysop_prose_does_not_flash_the_sysop_button(self):
+        self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX)
+        time.sleep(1.0)
+        self.t.tmux("set-option", "-g", "@sysop_line", "sysop:idle:")
+        self.assertTrue(wait_until(lambda: self.state()[:3] == ["1", False, True], 6, 0.1))
+        # bold colored prose with one space ("SYSOP idle") is not a panel header
+        self.t.type("clear; printf '\\033[1;38;2;167;139;250mSYSOP\\033[0m idle\\n'\r")
+        time.sleep(0.9)
+        self.assertEqual(self.state()[5], "0", "single-space prose must not light up the Sysop button: %r" % (self.state(),))
+        # old two-space SYSOP header scrolled back into view in tmux copy mode leaves the closed button off
+        self.t.type("clear; printf '\\033[1;38;2;167;139;250mSYSOP\\033[0m  idle\\n'; seq 1 80\r")
+        self.assertTrue(self.t.wait_screen("80", 10))
+        self.assertTrue(wait_until(lambda: self.state()[5] == "0", 6, 0.1))
+        self.t.tmux("copy-mode", "-t", "t:")
+        self.t.tmux("send-keys", "-t", "t:", "-X", "history-top")
+        self.assertTrue(self.t.wait_screen("SYSOP  idle", 6))
+        time.sleep(0.9)
+        self.assertEqual(self.state()[0], "1", "copy mode scrollback must not pop the key row open: %r" % (self.state(),))
+        self.assertEqual(self.state()[5], "0", "copy mode scrollback must not light up the Sysop button: %r" % (self.state(),))
+        # touch screens have hover: none, so :hover must not tint .sb-sysop's border
+        hover_matches = self.page.js("matchMedia('(hover: hover)').matches")
+        self.assertFalse(hover_matches, "phone viewport emulates hover: none")
+        base_border = self.page.js("getComputedStyle(document.querySelector('#swarmbox-strip .sb-sysop')).borderTopColor")
+        self.page.call("DOM.enable")
+        self.page.call("CSS.enable")
+        self.page.call("CSS.forcePseudoState", nodeId=self.page.call("DOM.querySelector", nodeId=self.page.call("DOM.getDocument")["root"]["nodeId"], selector="#swarmbox-strip .sb-sysop")["nodeId"], forcedPseudoClasses=["hover"])
+        hover_border = self.page.js("getComputedStyle(document.querySelector('#swarmbox-strip .sb-sysop')).borderTopColor")
+        self.assertEqual(hover_border, base_border, "touch :hover must not change the Sysop button border: %r -> %r" % (base_border, hover_border))
+
     def test_the_page_starts_with_the_banner_of_the_box_and_it_goes_when_the_page_has_settled(self):
         self.open(viewport="phone-portrait", command="bash --norc", tmux_conf=TITLES_TMUX,
                   init_script="document.addEventListener('DOMContentLoaded', () => { const b = document.getElementById('sb-boot'); window.__boot = b ? { text: b.textContent, colors: new Set(Array.from(b.querySelectorAll('rect')).map(r => r.getAttribute('fill'))).size, rects: b.querySelectorAll('rect').length, bg: getComputedStyle(b).backgroundColor, w: Math.round(b.querySelector('svg').getBoundingClientRect().width), vw: innerWidth } : null; });")

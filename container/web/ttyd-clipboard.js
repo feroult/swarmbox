@@ -232,7 +232,7 @@
   // The panel of the sysop is part of the terminal, so the page reads its head line off the screen: `SYSOP  allow?` (it needs a yes or a no), `SYSOP  sending`
   // (a countdown: only a no), `SYSOP  working` or `queued` (a no stops it). Anything else, or no panel: both are off and a tap does nothing. Text on a screen can
   // say these words too, and all that costs is a button that is on: Allow and Cancel only type keys that do nothing when the sysop waits for nothing.
-  var answers = {}, SYSOP_HEAD = /SYSOP\s+(allow\?|sending|working|queued|idle|done|failed|stopped|off)/, ACTIVE = /^(allow\?|sending|working|queued)$/;
+  var answers = {}, SYSOP_HEAD = /^SYSOP  (allow\?|sending|working|queued|idle|done|failed|stopped|off)(?:\s|$)/, ACTIVE = /^(allow\?|sending|working|queued)$/;
   // the state of the panel as the screen shows it: {up: whether a panel is on the screen, state: what it waits for, '' when it is idle or finished}
   function sysopState() {
     var t = window.term;
@@ -242,10 +242,12 @@
       var line = buf.getLine(buf.viewportY + r);
       if (!line) continue;
       var text = line.translateToString(true);
-      var at = text.indexOf('SYSOP');
-      if (at < 0 || !panelInk(line, at)) continue;
-      var m = SYSOP_HEAD.exec(text);
-      if (m) return { up: true, state: ACTIVE.test(m[1]) ? m[1] : '', row: r, col: at, word: m[1] };
+      for (var at = text.indexOf('SYSOP  '); at >= 0; at = text.indexOf('SYSOP  ', at + 1)) {
+        if (at > 0 && !/[\s\u2502\u2503]/.test(text.charAt(at - 1))) continue;
+        if (!panelInk(line, at)) continue;
+        var m = SYSOP_HEAD.exec(text.slice(at));
+        if (m) return { up: true, state: ACTIVE.test(m[1]) ? m[1] : '', row: r, col: at, word: m[1] };
+      }
     }
     return { up: false, state: '', row: -1, col: -1, word: '' };
   }
@@ -1030,7 +1032,7 @@
   // when it is closed. What needs a yes or a no is not here: the sysop opens its own small approval panel for that. A finished goal (done, failed, stopped) stays
   // 10 s on the line, and the sysop itself says idle after that. Without a sysop, or on a computer, the strip is the one with all the keys.
   var SYSOP_TITLE = /^sysop:(idle|working|sending|allow\?|queued|done|failed|stopped):([\s\S]*)$/, TOAST_HOLD = 10000;
-  var toastEl = null, pillEl = null, pillText = null, keyBtn = null, toastState = '', toastText = '', toastTimer = 0, sysopSeen = false, keysShown = false;
+  var toastEl = null, pillEl = null, pillText = null, keyBtn = null, toastState = '', toastText = '', toastTimer = 0, sysopSeen = false, keysShown = false, panelUp = false;
   function phone() { return coarse.matches || window.innerWidth <= PHONE_WIDTH; }
   function buildToast() {
     pillEl = el('button', 'sb-btn sb-sysop');
@@ -1064,8 +1066,11 @@
   function showToast() {
     if (!strip) return;
     if (!toastEl) buildToast();
-    var up = false;
-    try { up = sysopState().up; } catch (e) { /* the screen cannot be read yet */ }
+    // keep the last known panel state while a tab is scrolled back in tmux copy mode, just like answers.panel
+    if (!inCopyMode()) {
+      try { panelUp = sysopState().up; } catch (e) { /* the screen cannot be read yet */ }
+    }
+    var up = panelUp;
     var compact = sysopSeen && phone();
     var shape = compact ? (keysShown || up ? 'keys' : '1') : '0';
     if (strip.getAttribute('data-compact') !== shape) { strip.setAttribute('data-compact', shape); refit(); }      // the strip changed height: the terminal is fitted again

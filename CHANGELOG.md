@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Fixed: on touch screens (such as iPhone), scrolling the web terminal no longer flashes the Sysop button's border or highlight. Button `:hover` border rules are now scoped to `@media (hover: hover)` so touch gestures do not trigger sticky hover highlights, `showToast()` preserves the panel state while scrolled back in tmux copy mode, and `sysopState()` only matches the exact two-space `SYSOP  <state>` panel header at a word/pane boundary.
+
 ## [2.0.23] - 2026-11-20
 
 - Changed: modernized the web terminal's mobile controls strip and desktop Sysop microphone bar. On a phone, the Sysop toggle and live status line are now one full-width glass capsule with an SVG chevron; the microphone button uses a violet gradient and hides its status dot while idle; the touch-key row is slimmer with grouped SVG arrows; and the keyboard button now lights up with a hide-keyboard chevron only when the phone keyboard is actually open (never falsely lit when only the Sysop drawer is open) without shrinking the Sysop capsule when the keyboard reduces viewport height. On desktop, the docked Sysop panel's microphone is now a `Speak` pill.
