@@ -172,6 +172,7 @@ COPY container/config/starship.toml /etc/swarmbox/starship.toml
 COPY container/config/bashrc.sh /etc/swarmbox/bashrc.sh
 COPY container/config/ssh-swarmbox.conf /etc/ssh/ssh_config.d/swarmbox.conf
 COPY container/scripts/dirs.sh /usr/local/lib/swarmbox/dirs.sh
+COPY container/scripts/mux/ /usr/local/lib/swarmbox/mux/
 COPY container/scripts/starship-init.sh /etc/swarmbox/scripts/starship-init.sh
 COPY container/scripts/messages.sh /etc/swarmbox/scripts/messages.sh
 COPY container/scripts/banner.sh /usr/local/bin/banner.sh
@@ -203,7 +204,7 @@ RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/starship.
     chmod 755 /usr/local/share/swarmbox/host/swarmbox-host && \
     chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py /usr/local/share/swarmbox/host/VERSION /usr/local/share/swarmbox/host/DEFAULTS && \
     chmod -R a+rX /usr/local/share/swarmbox/host && \
-    chmod -R a+rX /etc/swarmbox/mcp /usr/local/lib/swarmbox/addons && \
+    chmod -R a+rX /etc/swarmbox/mcp /usr/local/lib/swarmbox/addons /usr/local/lib/swarmbox/mux && \
     find /usr/local/lib/swarmbox/addons -name '*.sh' -exec chmod 755 {} + && \
     swarmbox-addon link --system
 

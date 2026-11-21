@@ -99,8 +99,8 @@ log_trimmer() {
     done
 }
 
-# stop_children: the ttyd and bus supervisors (which stop ttyd and the broker), the installer job, the nested Podman service. The
-# tmux server is left to end with the container.
+# stop_children: the web and bus supervisors (which stop the web server and the broker), the installer job, the nested Podman service.
+# The multiplexer backend is left to end with the container.
 stop_children() {
     local p
     for p in "$SUP" "$BUSSUP" "$INST" "$JANITOR"; do
@@ -118,13 +118,28 @@ stop_children() {
     return 0
 }
 
+load_mux() {
+    local cand
+    for cand in "${SWARMBOX_TEST_MUX_DIR:-}" "$SB_LIB/mux" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/mux"; do
+        [ -n "$cand" ] || continue
+        if [ -r "$cand/mux.sh" ]; then
+            # shellcheck source=/dev/null
+            . "$cand/mux.sh"
+            return $?
+        fi
+    done
+    return 1
+}
+
 on_signal() {
     # $1 signal name, $2 exit status (128 + signal number)
     if [ "$STOPPING" = 0 ]; then
         STOPPING=1
         log "received SIG$1, stopping children"
         stop_children
-        log "leaving the tmux server to end with the container"
+        if declare -F mux_serve_shutdown_note >/dev/null 2>&1; then
+            mux_serve_shutdown_note
+        fi
     fi
     exit "$2"
 }
@@ -420,13 +435,11 @@ serve() {
         fi
     fi
 
-    # step 9 [W]: the tmux server with the session main and one idle window
-    log "step 9: starting tmux, session main"
-    if have tmux; then
-        run_logged env -u TMUX tmux new-session -d -s main -n idle; rc=$?
-        [ "$rc" = 0 ] || warn "tmux did not start the session main (exit $rc); see serve.log"
+    # step 9 [W]: start the multiplexer backend's session/daemon (default: tmux)
+    if load_mux; then
+        mux_serve_init
     else
-        warn "tmux not found; the session main was not created"
+        warn "multiplexer backend '${SWARMBOX_MUX:-tmux}' could not be loaded; see serve.log"
     fi
 
     # step 10 [W]: start and supervise ttyd, when the web terminal is on

@@ -210,7 +210,21 @@ done
 if command -v swarmbox-attach > /dev/null 2>&1; then
     TTYD_ARGS+=(swarmbox-attach --web)
 else
-    TTYD_ARGS+=(tmux attach -t main)
+    MUX_WEB_FALLBACK_CMD=()
+    for _sb_mc in "${SWARMBOX_TEST_MUX_DIR:-}" "$SB_LIB/mux" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/mux"; do
+        [ -n "$_sb_mc" ] || continue
+        if [ -r "$_sb_mc/mux.sh" ]; then
+            # shellcheck source=/dev/null
+            . "$_sb_mc/mux.sh" && mux_web_fallback
+            break
+        fi
+    done
+    unset _sb_mc
+    if [ "${#MUX_WEB_FALLBACK_CMD[@]}" -gt 0 ]; then
+        TTYD_ARGS+=("${MUX_WEB_FALLBACK_CMD[@]}")
+    else
+        TTYD_ARGS+=(bash -l)
+    fi
 fi
 command -v ttyd > /dev/null 2>&1 || die "ttyd not found on PATH" 127
 if [ -n "$VOICE_BIN" ]; then
