@@ -369,6 +369,19 @@ export function createGateway(options = {}) {
 
   const wss = new WebSocketServer({ noServer: true });
 
+  // WebSocket ping/pong keepalive (prevents tunnels/proxies from dropping idle PTY connections)
+  const wsPingTimer = setInterval(() => {
+    for (const client of wss.clients) {
+      if (client.isAlive === false) {
+        try { client.terminate(); } catch (_) {}
+        continue;
+      }
+      client.isAlive = false;
+      try { client.ping(); } catch (_) {}
+    }
+  }, 25000);
+  if (wsPingTimer.unref) wsPingTimer.unref();
+
   server.on('upgrade', (req, socket, head) => {
     if (!checkSameOrigin(req)) {
       socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
@@ -386,6 +399,9 @@ export function createGateway(options = {}) {
   });
 
   wss.on('connection', async (ws, _req, url) => {
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+
     if (url.pathname === '/ws/events') {
       eventClients.add(ws);
       ws.send(JSON.stringify(buildSnapshot({ type: 'snapshot' })));
@@ -457,6 +473,7 @@ export function createGateway(options = {}) {
 
   function shutdown() {
     clearInterval(sysopTimer);
+    clearInterval(wsPingTimer);
     for (const ws of eventClients) {
       try { ws.close(); } catch (_) {}
     }

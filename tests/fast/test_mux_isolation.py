@@ -383,10 +383,10 @@ class SysopMuxAgnostic(unittest.TestCase):
     def test_ui_host_headless_and_unknown_mux_never_start_tmux_ui(self):
         cfg = config.load({})
         logs = []
-        for mux in ("none", "herdr"):
+        for mux in ("none", "custom-mux"):
             sess = ui_host.start_ui(self.pth, cfg, log=logs.append, enabled=True, mux=mux)
             sess.shutdown(unset=True)
-        self.assertTrue(any("herdr" in m for m in logs))
+        self.assertTrue(any("custom-mux" in m for m in logs))
 
 
 if __name__ == "__main__":

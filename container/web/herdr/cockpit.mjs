@@ -4,11 +4,10 @@
 // Provides full terminal parity with the SwarmBox Web UI on top of herdr-core (`hc connect`):
 //   - Collapsible left sidebar with live OSC 7501 status dots (filters swarmbox.role=sysop)
 //   - Full 24-bit TrueColor center terminal viewport backed by @xterm/headless
-//   - Collapsible right Sysop panel with real-time state, ALLOW?/VETO cards, and goal input
+//   - Collapsible right Sysop panel with real-time state, ALLOW?/VETO cards, and framed goal composer
 //   - Five synchronized themes persisted in ~/.config/swarmbox/herdr-web-theme
 //   - Ctrl+A prefix + Alt shortcuts + SGR 1006 mouse support, zero host dependencies
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import xtermHeadless from '@xterm/headless';
@@ -32,12 +31,13 @@ import {
 const HeadlessTerminal = xtermHeadless.Terminal || xtermHeadless.default?.Terminal;
 
 // ---------------------------------------------------------------------------
-// ANSI 24-bit helpers & pure layout engine (exported for fast unit tests)
+// ANSI 24-bit helpers, exact cell-width math & pure layout engine
 // ---------------------------------------------------------------------------
 const ESC = '\x1b';
 const RESET = '\x1b[0m';
 const SYNC_START = '\x1b[?2026h';
 const SYNC_END = '\x1b[?2026l';
+const ANSI_RE = /\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[()][0-9A-B]|[@-Z\\-_=>])/g;
 
 export function hexToRgb(hex) {
   const m = String(hex || '').trim().match(/^#?([0-9a-f]{6})$/i);
@@ -56,55 +56,19 @@ export function bgHex(hex) {
   return `\x1b[48;2;${r};${g};${b}m`;
 }
 
-export function computeLayout(cols, rows, opts = {}) {
-  const W = Math.max(40, Number(cols) || 80);
-  const H = Math.max(12, Number(rows) || 24);
-  const wantSidebar = opts.sidebarOpen ?? (W >= 100);
-  const wantSysop = opts.sysopOpen ?? (W >= 124);
-
-  let sidebarW = wantSidebar && W >= 72 ? Math.min(24, Math.max(18, Math.floor(W * 0.2))) : 0;
-  let sysopW = wantSysop && W >= 78 ? Math.min(34, Math.max(24, Math.floor(W * 0.28))) : 0;
-
-  // Always preserve at least 30 columns for the center terminal viewport
-  const minCenter = 30;
-  const divLeft = sidebarW > 0 ? 1 : 0;
-  const divRight = sysopW > 0 ? 1 : 0;
-  if (W - sidebarW - divLeft - sysopW - divRight < minCenter) {
-    if (opts.priority === 'sysop' && sysopW > 0) {
-      sidebarW = 0;
-    } else if (opts.priority === 'sidebar' && sidebarW > 0) {
-      sysopW = 0;
-    } else {
-      sysopW = 0;
-      if (W - sidebarW - (sidebarW > 0 ? 1 : 0) < minCenter) sidebarW = 0;
-    }
-  }
-
-  const leftDiv = sidebarW > 0 ? 1 : 0;
-  const rightDiv = sysopW > 0 ? 1 : 0;
-  const bodyY = 1;
-  const bodyH = Math.max(4, H - 2);
-  const paneX = sidebarW + leftDiv;
-  const paneW = Math.max(20, W - sidebarW - leftDiv - sysopW - rightDiv);
-  const sysopX = paneX + paneW + rightDiv;
-
-  return {
-    W,
-    H,
-    bodyY,
-    bodyH,
-    sidebar: sidebarW > 0 ? { x: 0, y: bodyY, w: sidebarW, h: bodyH } : null,
-    leftDivX: sidebarW > 0 ? sidebarW : -1,
-    pane: { x: paneX, y: bodyY, w: paneW, h: bodyH },
-    rightDivX: sysopW > 0 ? paneX + paneW : -1,
-    sysop: sysopW > 0 ? { x: sysopX, y: bodyY, w: sysopW, h: bodyH } : null,
-    footerY: H - 1,
-  };
-}
-
-function charDisplayWidth(ch) {
+export function charDisplayWidth(ch) {
   const cp = ch.codePointAt(0);
   if (cp === undefined || cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) return 0;
+  // Combining marks
+  if (
+    (cp >= 0x0300 && cp <= 0x036f) ||
+    (cp >= 0x1ab0 && cp <= 0x1aff) ||
+    (cp >= 0x20d0 && cp <= 0x20ff) ||
+    (cp >= 0xfe00 && cp <= 0xfe0f) ||
+    (cp >= 0xfe20 && cp <= 0xfe2f)
+  ) {
+    return 0;
+  }
   if (
     cp >= 0x1100 &&
     (cp <= 0x115f ||
@@ -124,28 +88,113 @@ function charDisplayWidth(ch) {
   return 1;
 }
 
-export function fitText(text, width) {
-  const maxW = Math.max(0, width);
+export function visibleWidth(str) {
+  const plain = String(str || '').replace(ANSI_RE, '');
+  let w = 0;
+  for (const ch of plain) w += charDisplayWidth(ch);
+  return w;
+}
+
+export function clipText(text, maxWidth) {
+  const maxW = Math.max(0, maxWidth);
   if (maxW === 0) return '';
   const clean = String(text || '').replace(/[\r\n\t\x00-\x1f\x7f]/g, ' ');
+  const chars = Array.from(clean);
+  let total = 0;
+  for (const ch of chars) total += charDisplayWidth(ch);
+  if (total <= maxW) return clean;
+  if (maxW === 1) return '…';
   let out = '';
   let w = 0;
-  for (const ch of clean) {
+  for (const ch of chars) {
     const cw = charDisplayWidth(ch);
-    if (w + cw > maxW) {
-      if (maxW >= 2 && w < maxW) {
-        out += '…';
-        w += 1;
-      } else if (out.length > 0 && maxW >= 2) {
-        out = out.slice(0, -1) + '…';
-      }
-      break;
-    }
+    if (w + cw > maxW - 1) break;
     out += ch;
     w += cw;
   }
-  if (w < maxW) out += ' '.repeat(maxW - w);
-  return out;
+  return out + '…';
+}
+
+export function fitText(text, width) {
+  const maxW = Math.max(0, width);
+  if (maxW === 0) return '';
+  const clipped = clipText(text, maxW);
+  const w = visibleWidth(clipped);
+  return w < maxW ? clipped + ' '.repeat(maxW - w) : clipped;
+}
+
+// Build a guaranteed exact-width row from styled segments: [{ text, style }]
+// Truncates/pads cleanly so the resulting visible width is ALWAYS strictly `width`.
+function buildRow(width, baseBg, segments) {
+  const target = Math.max(0, width);
+  let out = baseBg;
+  let used = 0;
+  for (const seg of segments) {
+    if (used >= target) break;
+    const remain = target - used;
+    const raw = String(seg.text || '').replace(/[\r\n\t\x00-\x1f\x7f]/g, ' ');
+    let piece = '';
+    let pw = 0;
+    for (const ch of raw) {
+      const cw = charDisplayWidth(ch);
+      if (pw + cw > remain) break;
+      piece += ch;
+      pw += cw;
+    }
+    if (piece) {
+      out += (seg.style || '') + piece + RESET + baseBg;
+      used += pw;
+    }
+  }
+  if (used < target) out += ' '.repeat(target - used);
+  return out + RESET;
+}
+
+export function computeLayout(cols, rows, opts = {}) {
+  const W = Math.max(40, Number(cols) || 80);
+  const H = Math.max(12, Number(rows) || 24);
+  const wantSidebar = opts.sidebarOpen ?? (W >= 100);
+  const wantSysop = opts.sysopOpen ?? (W >= 124);
+
+  let sidebarW = wantSidebar && W >= 72 ? Math.min(25, Math.max(19, Math.floor(W * 0.2))) : 0;
+  let sysopW = wantSysop && W >= 78 ? Math.min(36, Math.max(26, Math.floor(W * 0.28))) : 0;
+
+  // Always preserve at least 30 columns for the center terminal viewport
+  const minCenter = 30;
+  const divLeft = sidebarW > 0 ? 1 : 0;
+  const divRight = sysopW > 0 ? 1 : 0;
+  if (W - sidebarW - divLeft - sysopW - divRight < minCenter) {
+    if (opts.priority === 'sysop' && sysopW > 0) {
+      sidebarW = 0;
+    } else if (opts.priority === 'sidebar' && sidebarW > 0) {
+      sysopW = 0;
+    } else {
+      sysopW = 0;
+      if (W - sidebarW - (sidebarW > 0 ? 1 : 0) < minCenter) sidebarW = 0;
+    }
+  }
+
+  const leftDiv = sidebarW > 0 ? 1 : 0;
+  const rightDiv = sysopW > 0 ? 1 : 0;
+  const bodyY = 1;
+  const bodyH = Math.max(6, H - 2);
+  const paneX = sidebarW + leftDiv;
+  const paneW = Math.max(20, W - sidebarW - leftDiv - sysopW - rightDiv);
+  const panePad = paneW >= 46 ? 1 : 0;
+  const sysopX = paneX + paneW + rightDiv;
+
+  return {
+    W,
+    H,
+    bodyY,
+    bodyH,
+    sidebar: sidebarW > 0 ? { x: 0, y: bodyY, w: sidebarW, h: bodyH } : null,
+    leftDivX: sidebarW > 0 ? sidebarW : -1,
+    pane: { x: paneX, y: bodyY, w: paneW, h: bodyH, pad: panePad, innerW: paneW - panePad * 2 },
+    rightDivX: sysopW > 0 ? paneX + paneW : -1,
+    sysop: sysopW > 0 ? { x: sysopX, y: bodyY, w: sysopW, h: bodyH } : null,
+    footerY: H - 1,
+  };
 }
 
 function wrapText(text, width, maxLines = 4) {
@@ -154,24 +203,40 @@ function wrapText(text, width, maxLines = 4) {
   if (words.length === 0) return [];
   const lines = [];
   let cur = '';
+  let curW = 0;
   for (const word of words) {
+    const ww = visibleWidth(word);
     if (!cur) {
-      if (word.length <= w) {
+      if (ww <= w) {
         cur = word;
+        curW = ww;
       } else {
         let rest = word;
-        while (rest.length > w && lines.length < maxLines) {
-          lines.push(rest.slice(0, w));
-          rest = rest.slice(w);
+        while (visibleWidth(rest) > w && lines.length < maxLines) {
+          let chunk = '';
+          let cw = 0;
+          let i = 0;
+          const arr = Array.from(rest);
+          for (; i < arr.length; i++) {
+            const chW = charDisplayWidth(arr[i]);
+            if (cw + chW > w) break;
+            chunk += arr[i];
+            cw += chW;
+          }
+          lines.push(chunk);
+          rest = arr.slice(i).join('');
         }
         cur = rest;
+        curW = visibleWidth(rest);
       }
-    } else if (cur.length + 1 + word.length <= w) {
+    } else if (curW + 1 + ww <= w) {
       cur += ' ' + word;
+      curW += 1 + ww;
     } else {
       lines.push(cur);
       if (lines.length >= maxLines) return lines.slice(0, maxLines);
-      cur = word.slice(0, w);
+      cur = clipText(word, w);
+      curW = visibleWidth(cur);
     }
   }
   if (cur && lines.length < maxLines) lines.push(cur);
@@ -223,6 +288,7 @@ export class Cockpit {
     this.layoutPriority = 'sidebar';
     this.focus = 'terminal'; // 'terminal' | 'goal'
     this.goalDraft = '';
+    this.goalCursor = 0;     // character index inside Array.from(this.goalDraft)
     this.prefixMode = false;
     this.prefixTimer = null;
     this.helpOpen = false;
@@ -240,6 +306,7 @@ export class Cockpit {
     // Frame cache for flicker-free row diffing + clickable regions
     this.prevRows = [];
     this.hitboxes = [];
+    this.goalCursorPos = null; // { x, y } 0-indexed coordinates computed during render
     this.renderQueued = false;
     this.closed = false;
     this.pollTimer = null;
@@ -301,7 +368,7 @@ export class Cockpit {
     this.terminals = this.hc.listSnapshot();
     await this._ensureActiveAttached();
 
-    // Poll real swarmbox-sysop state + shared theme file (stays synced with Web UI!)
+    // Poll real swarmbox-sysop state + shared theme file (stays synced with Web UI)
     this.pollTimer = setInterval(() => {
       if (this.closed) return;
       const diskTheme = readSavedTheme();
@@ -375,7 +442,7 @@ export class Cockpit {
 
   _syncPaneSize() {
     const L = this.layout();
-    const c = L.pane.w;
+    const c = L.pane.innerW;
     const r = L.pane.h;
     if (this.xterm && (this.xtermCols !== c || this.xtermRows !== r)) {
       this.xtermCols = c;
@@ -444,7 +511,7 @@ export class Cockpit {
     writeActiveTab(addr);
 
     const L = this.layout();
-    this.xtermCols = L.pane.w;
+    this.xtermCols = L.pane.innerW;
     this.xtermRows = L.pane.h;
     const term = new HeadlessTerminal({
       cols: this.xtermCols,
@@ -507,7 +574,7 @@ export class Cockpit {
       });
       const addr = created?.terminal?.address;
       if (addr) {
-        this.setToast(`Opened ${preset} (${addr})`);
+        this.setToast(`Opened ${created.terminal.name || preset}`);
         await this._attachTo(addr);
       }
     } catch (err) {
@@ -578,6 +645,7 @@ export class Cockpit {
     this.sysopPref = true;
     this.layoutPriority = 'sysop';
     this.focus = 'goal';
+    this.goalCursor = Array.from(this.goalDraft).length;
     this.prevRows = [];
     this._syncPaneSize();
     this.scheduleRender(true);
@@ -586,6 +654,7 @@ export class Cockpit {
   async _submitGoal() {
     const goal = this.goalDraft.trim();
     this.goalDraft = '';
+    this.goalCursor = 0;
     this.focus = 'terminal';
     this.scheduleRender();
     if (!goal) return;
@@ -634,7 +703,6 @@ export class Cockpit {
     if (this.closed) return;
     let buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
 
-    // Strip & handle SGR mouse packets first
     while (buf.length > 0) {
       const str = buf.toString('utf8');
       const m = str.match(SGR_MOUSE_RE);
@@ -652,13 +720,11 @@ export class Cockpit {
         return;
       }
 
-      // Goal input box mode
       if (this.focus === 'goal') {
         this._handleGoalKey(buf);
         return;
       }
 
-      // Prefix mode (after Ctrl+A)
       if (this.prefixMode) {
         this._clearPrefix();
         const byte = buf[0];
@@ -668,7 +734,6 @@ export class Cockpit {
         continue;
       }
 
-      // Shift+PgUp / Shift+PgDn for scrollback
       if (str.startsWith('\x1b[5;2~')) {
         this._scroll(Math.max(3, Math.floor(this.layout().pane.h / 2)));
         buf = buf.subarray(6);
@@ -680,20 +745,17 @@ export class Cockpit {
         continue;
       }
 
-      // Direct Alt shortcuts (ESC + single printable ASCII key)
       if (buf.length === 2 && buf[0] === 0x1b) {
         const ch = String.fromCharCode(buf[1]);
         if (this._handleAltKey(ch)) return;
       }
 
-      // Ctrl+A enters prefix mode
       if (buf[0] === 0x01) {
         this._enterPrefix();
         buf = buf.subarray(1);
         continue;
       }
 
-      // Normal terminal pass-through (reset scrollback on typing)
       if (this.scrollOffset > 0) {
         this.scrollOffset = 0;
         this.scheduleRender();
@@ -727,7 +789,6 @@ export class Cockpit {
 
   _handlePrefixKey(byte) {
     if (byte === 0x01) {
-      // Ctrl+A Ctrl+A -> literal Ctrl+A to terminal
       if (this.stream) this.stream.write(Buffer.from([0x01]));
       this.scheduleRender();
       return;
@@ -780,31 +841,19 @@ export class Cockpit {
       return true;
     }
     const low = ch.toLowerCase();
-    if (low === 'n') {
-      this._createTab('shell');
-      return true;
-    }
-    if (low === 'b') {
-      this._toggleSidebar();
-      return true;
-    }
-    if (low === 's') {
-      this._toggleSysop();
-      return true;
-    }
-    if (low === 'g') {
-      this._focusGoal();
-      return true;
-    }
-    if (low === 't') {
-      this._cycleTheme();
-      return true;
-    }
+    if (low === 'n') { this._createTab('shell'); return true; }
+    if (low === 'b') { this._toggleSidebar(); return true; }
+    if (low === 's') { this._toggleSysop(); return true; }
+    if (low === 'g') { this._focusGoal(); return true; }
+    if (low === 't') { this._cycleTheme(); return true; }
     return false;
   }
 
   _handleGoalKey(buf) {
     const s = buf.toString('utf8');
+    const chars = Array.from(this.goalDraft);
+    this.goalCursor = Math.max(0, Math.min(chars.length, this.goalCursor));
+
     if (s === '\x1b' || s === '\x03') {
       this.focus = 'terminal';
       this.scheduleRender();
@@ -814,38 +863,65 @@ export class Cockpit {
       this._submitGoal();
       return;
     }
-    if (s === '\x7f' || s === '\x08') {
-      this.goalDraft = Array.from(this.goalDraft).slice(0, -1).join('');
+    if (s === '\x1b[D') { // Left arrow
+      if (this.goalCursor > 0) this.goalCursor -= 1;
       this.scheduleRender();
       return;
     }
-    if (s === '\x15') {
+    if (s === '\x1b[C') { // Right arrow
+      if (this.goalCursor < chars.length) this.goalCursor += 1;
+      this.scheduleRender();
+      return;
+    }
+    if (s === '\x1b[H' || s === '\x01') { // Home / Ctrl+A
+      this.goalCursor = 0;
+      this.scheduleRender();
+      return;
+    }
+    if (s === '\x1b[F' || s === '\x05') { // End / Ctrl+E
+      this.goalCursor = chars.length;
+      this.scheduleRender();
+      return;
+    }
+    if (s === '\x7f' || s === '\x08') { // Backspace
+      if (this.goalCursor > 0) {
+        chars.splice(this.goalCursor - 1, 1);
+        this.goalDraft = chars.join('');
+        this.goalCursor -= 1;
+        this.scheduleRender();
+      }
+      return;
+    }
+    if (s === '\x1b[3~') { // Delete
+      if (this.goalCursor < chars.length) {
+        chars.splice(this.goalCursor, 1);
+        this.goalDraft = chars.join('');
+        this.scheduleRender();
+      }
+      return;
+    }
+    if (s === '\x15') { // Ctrl+U
       this.goalDraft = '';
+      this.goalCursor = 0;
       this.scheduleRender();
       return;
     }
-    // Strip control sequences, append printable UTF-8 text
     const printable = s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x1f\x7f]/g, '');
     if (printable) {
-      this.goalDraft += printable;
+      const ins = Array.from(printable);
+      chars.splice(this.goalCursor, 0, ...ins);
+      this.goalDraft = chars.join('');
+      this.goalCursor += ins.length;
       this.scheduleRender();
     }
   }
 
   _handleMouse(btn, x, y, press) {
     if (!press) return;
-    // Wheel up (64) / down (65)
-    if (btn === 64) {
-      this._scroll(3);
-      return;
-    }
-    if (btn === 65) {
-      this._scroll(-3);
-      return;
-    }
+    if (btn === 64) { this._scroll(3); return; }
+    if (btn === 65) { this._scroll(-3); return; }
     if (btn !== 0) return;
 
-    // Check clickable UI hitboxes
     for (const hb of this.hitboxes) {
       if (y >= hb.y1 && y <= hb.y2 && x >= hb.x1 && x <= hb.x2) {
         hb.onClick();
@@ -853,7 +929,6 @@ export class Cockpit {
       }
     }
 
-    // Clicking inside center pane returns focus to terminal
     const L = this.layout();
     if (x >= L.pane.x && x < L.pane.x + L.pane.w && y >= L.pane.y && y < L.pane.y + L.pane.h) {
       if (this.focus !== 'terminal') {
@@ -864,7 +939,7 @@ export class Cockpit {
   }
 
   // -------------------------------------------------------------------------
-  // Compositor (24-bit TrueColor, synchronized output, row diffing)
+  // Compositor (24-bit TrueColor, synchronized output, exact cell-width rows)
   // -------------------------------------------------------------------------
   scheduleRender(forceFull = false) {
     if (forceFull) this.prevRows = [];
@@ -876,38 +951,41 @@ export class Cockpit {
     });
   }
 
-  render() {
+  buildFrame() {
     const L = this.layout();
     const pal = this.palette();
     this.hitboxes = [];
+    this.goalCursorPos = null;
     const rows = new Array(L.H);
 
-    // 1. Top bar
     rows[0] = this._renderTopBar(L, pal);
 
-    // 2. Sidebar rows + Center terminal rows + Sysop panel rows
     const sidebarLines = L.sidebar ? this._renderSidebar(L.sidebar, pal) : null;
     const paneLines = this._renderTerminalPane(L.pane, pal);
     const sysopLines = L.sysop ? this._renderSysopPanel(L.sysop, pal) : null;
-    const divStr = `${bgHex(pal.bg)}${fgHex(pal.border)}│`;
+    const divLeft = `${bgHex(pal.bg)}${fgHex(pal.border)}│${RESET}`;
+    const divRight = `${bgHex(pal.bg)}${fgHex(this.focus === 'goal' ? pal.borderStrong : pal.border)}│${RESET}`;
 
     for (let i = 0; i < L.bodyH; i++) {
       let line = '';
-      if (sidebarLines) line += sidebarLines[i] + divStr;
+      if (sidebarLines) line += sidebarLines[i] + divLeft;
       line += paneLines[i];
-      if (sysopLines) line += divStr + sysopLines[i];
+      if (sysopLines) line += divRight + sysopLines[i];
       rows[L.bodyY + i] = line + RESET;
     }
 
-    // 3. Bottom status / shortcut bar
     rows[L.footerY] = this._renderFooter(L, pal);
 
-    // 4. Optional help overlay
     if (this.helpOpen) {
       this._overlayHelp(rows, L, pal);
     }
 
-    // Flush only changed rows inside synchronized update frame
+    return { L, rows };
+  }
+
+  render() {
+    const { L, rows } = this.buildFrame();
+
     let out = SYNC_START + `${ESC}[?25l`;
     for (let r = 0; r < L.H; r++) {
       if (this.prevRows[r] !== rows[r]) {
@@ -916,17 +994,15 @@ export class Cockpit {
       }
     }
 
-    // Position real cursor
+    // Position real 1-indexed terminal cursor accurately
     if (!this.helpOpen) {
-      if (this.focus === 'goal' && L.sysop) {
-        const gx = L.sysop.x + 1 + Math.min(L.sysop.w - 3, 2 + this.goalDraft.length);
-        const gy = L.sysop.y + L.sysop.h - 1;
-        out += `${ESC}[${gy};${gx + 1}H${ESC}[?25h`;
+      if (this.focus === 'goal' && this.goalCursorPos) {
+        out += `${ESC}[${this.goalCursorPos.y + 1};${this.goalCursorPos.x + 1}H${ESC}[?25h`;
       } else if (this.xterm && this.scrollOffset === 0) {
         const b = this.xterm.buffer.active;
-        const cx = Math.min(L.pane.w - 1, Math.max(0, b.cursorX));
+        const cx = Math.min(L.pane.innerW - 1, Math.max(0, b.cursorX));
         const cy = Math.min(L.pane.h - 1, Math.max(0, b.cursorY));
-        out += `${ESC}[${L.pane.y + cy + 1};${L.pane.x + cx + 1}H${ESC}[?25h`;
+        out += `${ESC}[${L.pane.y + cy + 1};${L.pane.x + L.pane.pad + cx + 1}H${ESC}[?25h`;
       }
     }
 
@@ -935,27 +1011,81 @@ export class Cockpit {
   }
 
   _renderTopBar(L, pal) {
+    const bgS = bgHex(pal.surface);
     const active = this.terminals.find((t) => t.address === this.activeAddr);
     const activeName = active ? (active.name || active.address) : 'no tab';
     const sm = statusMeta(active, pal);
     const ss = sysopStyle(this.sysop.state, pal);
     const themeLabel = (HERDR_THEMES[this.themeName] || HERDR_THEMES['purple-glow']).label;
 
-    const leftPlain = ` ● SWARMBOX · herdr  ›  ${activeName} (${sm.label})`;
-    const rightPlain = `SYSOP:${ss.pill}  ·  ${themeLabel}  ·  ^A? `;
-    const gap = Math.max(1, L.W - leftPlain.length - rightPlain.length);
+    const rightSegments = [];
+    let rightW = 0;
+    const urgentSysop = this.sysop.state === 'allow?' || this.sysop.state === 'sending';
+    const showTopSysop = !L.sysop || urgentSysop;
+    const sysopSeg = urgentSysop
+      ? [
+          { text: '◆ ', style: fgHex(ss.color) },
+          { text: `SYSOP · ${ss.pill}`, style: `${fgHex(ss.color)}\x1b[1m` },
+        ]
+      : [
+          { text: '● ', style: fgHex(ss.color) },
+          { text: 'SYSOP', style: fgHex(pal.muted) },
+          { text: ' · ', style: fgHex(pal.dim) },
+          { text: ss.pill, style: `${fgHex(ss.color)}\x1b[1m` },
+        ];
+    if (L.W >= 96) {
+      if (showTopSysop) {
+        rightSegments.push(...sysopSeg, { text: '  ·  ', style: fgHex(pal.dim) });
+      }
+      rightSegments.push(
+        { text: '◐ ', style: fgHex(pal.accent) },
+        { text: themeLabel, style: fgHex(pal.muted) },
+        { text: '  ·  ', style: fgHex(pal.dim) },
+        { text: '^A?', style: fgHex(pal.accent) },
+        { text: ' ', style: '' },
+      );
+    } else if (L.W >= 68) {
+      rightSegments.push(
+        ...sysopSeg,
+        { text: '  ·  ', style: fgHex(pal.dim) },
+        { text: '^A? ', style: fgHex(pal.accent) },
+      );
+    } else {
+      rightSegments.push(...sysopSeg, { text: ' ', style: '' });
+    }
+    for (const seg of rightSegments) rightW += visibleWidth(seg.text);
 
-    let s = bgHex(pal.surface);
-    s += `${fgHex(pal.accentBright)}\x1b[1m ● SWARMBOX${RESET}${bgHex(pal.surface)}${fgHex(pal.dim)} · ${fgHex(pal.accent)}herdr`;
-    s += `${fgHex(pal.dim)}  ›  ${fgHex(pal.text)}\x1b[1m${activeName}${RESET}${bgHex(pal.surface)} ${fgHex(sm.color)}(${sm.label})`;
-    s += ' '.repeat(gap);
-    s += `${fgHex(ss.color)}\x1b[1mSYSOP:${ss.pill}${RESET}${bgHex(pal.surface)}`;
-    s += `${fgHex(pal.dim)}  ·  ${fgHex(pal.muted)}${themeLabel}  ·  ${fgHex(pal.accent)}^A? `;
+    const maxLeft = Math.max(12, L.W - rightW - 1);
+    const leftSegments = [
+      { text: ' ● ', style: `${fgHex(pal.accentBright)}\x1b[1m` },
+      { text: 'SWARMBOX', style: `${fgHex(pal.text)}\x1b[1m` },
+      { text: ' · ', style: fgHex(pal.dim) },
+      { text: 'herdr', style: fgHex(pal.accent) },
+    ];
+    let leftW = leftSegments.reduce((a, s) => a + visibleWidth(s.text), 0);
 
-    // Top bar click on right toggles sysop / theme
+    const crumbBudget = maxLeft - leftW;
+    if (crumbBudget > 8) {
+      const statusSuffix = ` (${sm.label})`;
+      const nameRoom = Math.max(4, crumbBudget - 5 - visibleWidth(statusSuffix));
+      const shownName = clipText(activeName, nameRoom);
+      leftSegments.push(
+        { text: '  ›  ', style: fgHex(pal.dim) },
+        { text: shownName, style: `${fgHex(pal.text)}\x1b[1m` },
+      );
+      leftW += 5 + visibleWidth(shownName);
+      if (leftW + visibleWidth(statusSuffix) <= maxLeft) {
+        leftSegments.push({ text: statusSuffix, style: fgHex(sm.color) });
+        leftW += visibleWidth(statusSuffix);
+      }
+    }
+
+    const gap = Math.max(1, L.W - leftW - rightW);
+    const allSegments = [...leftSegments, { text: ' '.repeat(gap), style: '' }, ...rightSegments];
+
     this.hitboxes.push({
-      x1: Math.max(0, L.W - rightPlain.length),
-      x2: Math.max(0, L.W - themeLabel.length - 8),
+      x1: Math.max(0, L.W - rightW),
+      x2: Math.max(0, L.W - 1),
       y1: 0,
       y2: 0,
       onClick: () => this._toggleSysop(),
@@ -967,7 +1097,7 @@ export class Cockpit {
       y2: 0,
       onClick: () => this._toggleSidebar(),
     });
-    return s + RESET;
+    return buildRow(L.W, bgS, allSegments);
   }
 
   _renderSidebar(box, pal) {
@@ -976,22 +1106,33 @@ export class Cockpit {
     const bgBand = bgHex(pal.band);
     const bgBtn = bgHex(pal.surface2);
 
-    // Header
-    out.push(`${bgS}${fgHex(pal.dim)} ${fitText(`TERMINALS (${this.terminals.length})`, box.w - 1)}`);
+    // Header: " TERMINALS" left + count pill right + subtle hairline divider
+    const countStr = String(this.terminals.length);
+    const headLeft = ' TERMINALS';
+    const headGap = Math.max(1, box.w - visibleWidth(headLeft) - countStr.length - 1);
+    out.push(
+      buildRow(box.w, bgS, [
+        { text: headLeft, style: `${fgHex(pal.dim)}\x1b[1m` },
+        { text: ' '.repeat(headGap), style: '' },
+        { text: countStr, style: `${fgHex(pal.accent)}\x1b[1m` },
+        { text: ' ', style: '' },
+      ]),
+    );
+    out.push(buildRow(box.w, bgS, [{ text: '─'.repeat(box.w), style: fgHex(pal.border) }]));
 
-    const footerRows = 4; // spacer + [+ Shell] + [+ Agent] + [Theme]
-    const listMax = Math.max(1, box.h - 1 - footerRows);
+    const footerRows = 4; // hairline + [+ Shell] + [+ Agent] + [Theme]
+    const listMax = Math.max(1, box.h - 2 - footerRows);
 
     for (let i = 0; i < listMax; i++) {
       const t = this.terminals[i];
       if (!t) {
-        out.push(`${bgS}${' '.repeat(box.w)}`);
+        out.push(buildRow(box.w, bgS, []));
         continue;
       }
       const isAct = t.address === this.activeAddr;
       const sm = statusMeta(t, pal);
       const name = t.name || t.address;
-      const rowY = box.y + 1 + i;
+      const rowY = box.y + 2 + i;
       this.hitboxes.push({
         x1: box.x,
         x2: box.x + box.w - 1,
@@ -1000,62 +1141,71 @@ export class Cockpit {
         onClick: () => this._attachTo(t.address).catch(() => {}),
       });
 
-      const prefix = isAct ? `${fgHex(pal.accentBright)}▌` : ' ';
-      const num = i < 9 ? `${i + 1}` : '·';
-      const label = fitText(`${num} ${name}`, box.w - 4);
+      const idxStr = i < 9 ? `${i + 1}` : '·';
+      const pctStr = t.status && t.status.state === 'working' && typeof t.status.progress === 'number'
+        ? `${t.status.progress}% `
+        : '';
       const rowBg = isAct ? bgBand : bgS;
-      const txtCol = isAct ? `${fgHex(pal.text)}\x1b[1m` : fgHex(pal.muted);
-      out.push(`${rowBg}${prefix}${fgHex(sm.color)}${sm.dot} ${txtCol}${label}${RESET}${rowBg}`);
+      const rightMetaW = visibleWidth(pctStr) + visibleWidth(idxStr) + 2; // ' ' + pct + idx + ' '
+      const nameBudget = Math.max(4, box.w - 4 - rightMetaW);
+      const shown = fitText(name, nameBudget);
+
+      out.push(
+        buildRow(box.w, rowBg, [
+          { text: isAct ? '▌' : ' ', style: isAct ? fgHex(pal.accentBright) : '' },
+          { text: ' ', style: '' },
+          { text: sm.dot, style: fgHex(sm.color) },
+          { text: ' ', style: '' },
+          { text: shown, style: isAct ? `${fgHex(pal.text)}\x1b[1m` : fgHex(pal.muted) },
+          { text: ' ', style: '' },
+          ...(pctStr ? [{ text: pctStr, style: fgHex(pal.accent) }] : []),
+          { text: idxStr, style: isAct ? fgHex(pal.accent) : fgHex(pal.dim) },
+          { text: ' ', style: '' },
+        ]),
+      );
     }
 
-    // Bottom pinned actions
-    const actY = box.y + 1 + listMax;
-    out.push(`${bgS}${fgHex(pal.border)}${'─'.repeat(box.w)}`);
+    const actY = box.y + 2 + listMax;
+    out.push(buildRow(box.w, bgS, [{ text: '─'.repeat(box.w), style: fgHex(pal.border) }]));
 
-    // [+ Shell]
-    out.push(`${bgBtn}${fgHex(pal.accentBright)} ${fitText('+ Shell        ^A c', box.w - 1)}`);
-    this.hitboxes.push({
-      x1: box.x,
-      x2: box.x + box.w - 1,
-      y1: actY + 1,
-      y2: actY + 1,
-      onClick: () => this._createTab('shell'),
-    });
+    const actionRow = (bg, iconCol, leftTxt, hintTxt) => {
+      const rightW = visibleWidth(hintTxt) + 1;
+      const leftBudget = Math.max(4, box.w - rightW - 1);
+      const leftFit = fitText(leftTxt, leftBudget);
+      return buildRow(box.w, bg, [
+        { text: ' ', style: '' },
+        { text: leftFit, style: iconCol },
+        { text: hintTxt, style: fgHex(pal.dim) },
+        { text: ' ', style: '' },
+      ]);
+    };
 
-    // [+ Agent]
-    out.push(`${bgBtn}${fgHex(pal.accent)} ${fitText('+ Agent        ^A C', box.w - 1)}`);
-    this.hitboxes.push({
-      x1: box.x,
-      x2: box.x + box.w - 1,
-      y1: actY + 2,
-      y2: actY + 2,
-      onClick: () => this._createTab('agent'),
-    });
+    out.push(actionRow(bgBtn, `${fgHex(pal.accentBright)}\x1b[1m`, '+ Shell', '^Ac'));
+    this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: actY + 1, y2: actY + 1, onClick: () => this._createTab('shell') });
 
-    // [Theme]
+    out.push(actionRow(bgBtn, fgHex(pal.accent), '+ Agent', '^AC'));
+    this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: actY + 2, y2: actY + 2, onClick: () => this._createTab('agent') });
+
     const tLabel = (HERDR_THEMES[this.themeName] || HERDR_THEMES['purple-glow']).label;
-    out.push(`${bgS}${fgHex(pal.muted)} ${fitText(`◐ ${tLabel} (^A t)`, box.w - 1)}`);
-    this.hitboxes.push({
-      x1: box.x,
-      x2: box.x + box.w - 1,
-      y1: actY + 3,
-      y2: actY + 3,
-      onClick: () => this._cycleTheme(),
-    });
+    out.push(actionRow(bgS, fgHex(pal.muted), `◐ ${tLabel}`, '^At'));
+    this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: actY + 3, y2: actY + 3, onClick: () => this._cycleTheme() });
 
-    while (out.length < box.h) out.push(`${bgS}${' '.repeat(box.w)}`);
+    while (out.length < box.h) out.push(buildRow(box.w, bgS, []));
     return out.slice(0, box.h);
   }
 
   _renderTerminalPane(box, pal) {
     const bgDefault = bgHex(pal.bg);
     const fgDefault = fgHex(pal.termFg);
-    const emptyRow = `${bgDefault}${fgDefault}${' '.repeat(box.w)}`;
+    const padStr = box.pad > 0 ? `${bgDefault}${' '.repeat(box.pad)}` : '';
+    const emptyRow = `${bgDefault}${fgDefault}${' '.repeat(box.w)}${RESET}`;
 
     if (!this.xterm) {
       const lines = new Array(box.h).fill(emptyRow);
       if (box.h > 2) {
-        lines[Math.floor(box.h / 2)] = `${bgDefault}${fgHex(pal.dim)}${fitText('  Connecting to herdr-core…', box.w)}`;
+        lines[Math.floor(box.h / 2)] = buildRow(box.w, bgDefault, [
+          { text: '  Connecting to herdr-core…', style: fgHex(pal.dim) },
+        ]);
       }
       return lines;
     }
@@ -1072,11 +1222,11 @@ export class Cockpit {
         continue;
       }
 
-      let rowStr = '';
+      let rowStr = padStr;
       let lastStyle = '';
       let col = 0;
 
-      while (col < box.w) {
+      while (col < box.innerW) {
         line.getCell(col, cell);
         const w = cell.getWidth();
         if (w === 0) {
@@ -1085,7 +1235,6 @@ export class Cockpit {
         }
         let ch = cell.getChars();
         if (!ch || cell.isInvisible()) ch = ' ';
-        // Prevent raw control chars from corrupting the outer terminal
         if (ch.length === 1 && ch.charCodeAt(0) < 0x20) ch = ' ';
 
         const style = this._cellSgr(cell, pal);
@@ -1093,7 +1242,7 @@ export class Cockpit {
           rowStr += style;
           lastStyle = style;
         }
-        if (w === 2 && col + 1 >= box.w) {
+        if (w === 2 && col + 1 >= box.innerW) {
           rowStr += ' ';
           col += 1;
         } else {
@@ -1101,6 +1250,7 @@ export class Cockpit {
           col += w;
         }
       }
+      if (box.pad > 0) rowStr += padStr;
       out.push(rowStr + RESET);
     }
     return out;
@@ -1143,118 +1293,227 @@ export class Cockpit {
     const ss = sysopStyle(this.sysop.state, pal);
     const out = [];
 
-    // Header row
+    // Header row + subtle hairline divider (matching left sidebar & Web UI)
     const headLeft = ' ● SYSOP';
     const headRight = `${ss.pill} `;
-    const pad = Math.max(1, box.w - headLeft.length - headRight.length);
+    const hGap = Math.max(1, box.w - visibleWidth(headLeft) - visibleWidth(headRight));
     out.push(
-      `${bgS}${fgHex(ss.color)}\x1b[1m${headLeft}${RESET}${bgS}${' '.repeat(pad)}${fgHex(ss.color)}\x1b[1m${headRight}${RESET}${bgS}`,
+      buildRow(box.w, bgS, [
+        { text: headLeft, style: `${fgHex(ss.color)}\x1b[1m` },
+        { text: ' '.repeat(hGap), style: '' },
+        { text: headRight, style: `${fgHex(ss.color)}\x1b[1m` },
+      ]),
     );
+    out.push(buildRow(box.w, bgS, [{ text: '─'.repeat(box.w), style: fgHex(pal.border) }]));
 
-    const inputRows = 2; // divider + goal input row
-    const feedArea = Math.max(2, box.h - 1 - inputRows);
+    // 3-row framed Goal Composer pinned cleanly at bottom of Sysop panel
+    const composerRows = 3;
+    const feedArea = Math.max(1, box.h - 2 - composerRows);
     const body = [];
 
-    // Pending approval / veto card OR OSC 7501 blocked card
+    const makeDecisionButtonsRow = (denyLabel) => {
+      const allowLbl = box.w >= 28 ? ' Allow ^Aa ' : ' Allow ';
+      const vetoLbl = box.w >= 28 ? ` ${denyLabel} ^Av ` : ` ${denyLabel} `;
+      const rowStr = buildRow(box.w, bgBand, [
+        { text: '▌', style: fgHex(pal.amber) },
+        { text: ' ', style: '' },
+        { text: allowLbl, style: `${bgHex(pal.accentDeep)}${fgHex(pal.text)}\x1b[1m` },
+        { text: ' ', style: '' },
+        { text: vetoLbl, style: `${bgHex(pal.surface2)}${fgHex(pal.red)}` },
+      ]);
+      const allowStart = 2;
+      const allowEnd = allowStart + visibleWidth(allowLbl) - 1;
+      const vetoStart = allowEnd + 2;
+      const vetoEnd = vetoStart + visibleWidth(vetoLbl) - 1;
+      return {
+        raw: rowStr,
+        onHit: (rowY) => {
+          this.hitboxes.push({ x1: box.x + allowStart, x2: box.x + allowEnd, y1: rowY, y2: rowY, onClick: () => this._sysopAction('approve') });
+          this.hitboxes.push({ x1: box.x + vetoStart, x2: box.x + vetoEnd, y1: rowY, y2: rowY, onClick: () => this._sysopAction('veto') });
+        },
+      };
+    };
+
     if (this.sysop.pending) {
       const p = this.sysop.pending;
       const secs = typeof p.deadline === 'number' ? Math.max(0, Math.ceil(p.deadline - Date.now() / 1000)) : null;
-      const title = p.mode === 'veto' ? `SENDING${secs !== null ? ` (${secs}s)` : ''}` : `ALLOW?${secs !== null ? ` (${secs}s)` : ''}`;
-      body.push({ bg: bgBand, fg: pal.amber, bold: true, text: ` ◆ ${title}` });
-      for (const ln of wrapText(p.text || 'pending action', box.w - 3, 3)) {
-        body.push({ bg: bgBand, fg: pal.text, text: `  ${ln}` });
-      }
-      const btnRowIdx = body.length;
+      const tabObj = p.tab ? this.terminals.find((t) => t.address === p.tab) : null;
+      const tabTag = tabObj ? (tabObj.name || p.tab) : (p.tab || '');
+      const title = p.mode === 'veto' ? `SENDING${secs !== null ? ` · ${secs}s` : ''}` : `ALLOW?${secs !== null ? ` · ${secs}s` : ''}`;
+      const rightTag = tabTag ? `${tabTag} ` : '';
+      const tGap = Math.max(1, box.w - 3 - visibleWidth(title) - visibleWidth(rightTag));
       body.push({
-        bg: bgBand,
-        raw: `${bgBand} ${bgHex(pal.accentDeep)}${fgHex(pal.text)}\x1b[1m Allow (^Aa) ${RESET}${bgBand} ${bgHex(pal.surface2)}${fgHex(pal.red)} Veto (^Av) ${RESET}${bgBand}${' '.repeat(Math.max(0, box.w - 27))}`,
-        onHit: (rowY) => {
-          this.hitboxes.push({ x1: box.x + 1, x2: box.x + 13, y1: rowY, y2: rowY, onClick: () => this._sysopAction('approve') });
-          this.hitboxes.push({ x1: box.x + 15, x2: box.x + 26, y1: rowY, y2: rowY, onClick: () => this._sysopAction('veto') });
-        },
-        btnRowIdx,
+        raw: buildRow(box.w, bgBand, [
+          { text: '▌ ', style: fgHex(pal.amber) },
+          { text: '◆ ', style: fgHex(pal.amber) },
+          { text: title, style: `${fgHex(pal.amber)}\x1b[1m` },
+          { text: ' '.repeat(Math.max(1, tGap - 1)), style: '' },
+          { text: rightTag, style: fgHex(pal.muted) },
+        ]),
       });
-      body.push({ bg: bgS, fg: pal.border, text: '─'.repeat(box.w) });
+      for (const ln of wrapText(p.text || 'pending action', box.w - 4, 3)) {
+        body.push({
+          raw: buildRow(box.w, bgBand, [
+            { text: '▌ ', style: fgHex(pal.amber) },
+            { text: ln, style: fgHex(pal.text) },
+          ]),
+        });
+      }
+      body.push(makeDecisionButtonsRow('Veto'));
+      body.push({ raw: buildRow(box.w, bgS, [{ text: '─'.repeat(box.w), style: fgHex(pal.border) }]) });
+      body.push({ raw: buildRow(box.w, bgS, []) });
     } else if (this.sysop.blocked.length > 0) {
       const b = this.sysop.blocked[0];
-      body.push({ bg: bgBand, fg: pal.amber, bold: true, text: ` ◆ BLOCKED: ${b.name}` });
-      for (const ln of wrapText(b.msg, box.w - 3, 2)) {
-        body.push({ bg: bgBand, fg: pal.text, text: `  ${ln}` });
-      }
       body.push({
-        bg: bgBand,
-        raw: `${bgBand} ${bgHex(pal.accentDeep)}${fgHex(pal.text)}\x1b[1m Allow (^Aa) ${RESET}${bgBand} ${bgHex(pal.surface2)}${fgHex(pal.red)} Deny (^Av) ${RESET}${bgBand}${' '.repeat(Math.max(0, box.w - 27))}`,
-        onHit: (rowY) => {
-          this.hitboxes.push({ x1: box.x + 1, x2: box.x + 13, y1: rowY, y2: rowY, onClick: () => this._sysopAction('approve') });
-          this.hitboxes.push({ x1: box.x + 15, x2: box.x + 26, y1: rowY, y2: rowY, onClick: () => this._sysopAction('veto') });
-        },
+        raw: buildRow(box.w, bgBand, [
+          { text: '▌ ', style: fgHex(pal.amber) },
+          { text: `◆ BLOCKED · ${b.name}`, style: `${fgHex(pal.amber)}\x1b[1m` },
+        ]),
       });
-      body.push({ bg: bgS, fg: pal.border, text: '─'.repeat(box.w) });
+      for (const ln of wrapText(b.msg, box.w - 4, 2)) {
+        body.push({
+          raw: buildRow(box.w, bgBand, [
+            { text: '▌ ', style: fgHex(pal.amber) },
+            { text: ln, style: fgHex(pal.text) },
+          ]),
+        });
+      }
+      body.push(makeDecisionButtonsRow('Deny'));
+      body.push({ raw: buildRow(box.w, bgS, [{ text: '─'.repeat(box.w), style: fgHex(pal.border) }]) });
+      body.push({ raw: buildRow(box.w, bgS, []) });
     }
 
-    // Steps feed
+    // Activity feed
     const stepLines = [];
     if (!this.sysop.up) {
-      stepLines.push({ bg: bgS, fg: pal.dim, text: ' Sysop service is off.' });
-      stepLines.push({ bg: bgS, fg: pal.dim, text: ' Enable with: swarmbox-addon' });
-      stepLines.push({ bg: bgS, fg: pal.dim, text: ' install sysop' });
+      stepLines.push({ raw: buildRow(box.w, bgS, [{ text: ' Sysop service is offline.', style: fgHex(pal.dim) }]) });
+      stepLines.push({ raw: buildRow(box.w, bgS, [{ text: ' Install with:', style: fgHex(pal.dim) }]) });
+      stepLines.push({ raw: buildRow(box.w, bgS, [{ text: ' swarmbox addon install sysop', style: fgHex(pal.muted) }]) });
     } else if (this.sysop.steps.length === 0) {
-      stepLines.push({ bg: bgS, fg: pal.muted, text: ' Ready for a goal.' });
-      stepLines.push({ bg: bgS, fg: pal.dim, text: ' Press ^A g (or Alt+G) to' });
-      stepLines.push({ bg: bgS, fg: pal.dim, text: ' type a goal for the active' });
-      stepLines.push({ bg: bgS, fg: pal.dim, text: ' tab or any terminal.' });
+      stepLines.push({ raw: buildRow(box.w, bgS, [{ text: ' Ready for goals.', style: fgHex(pal.muted) }]) });
+      for (const ln of wrapText('Press ^A g or Alt+G to ask Sysop to work on the active tab or route to your agent.', box.w - 2, 4)) {
+        stepLines.push({ raw: buildRow(box.w, bgS, [{ text: ` ${ln}`, style: fgHex(pal.dim) }]) });
+      }
     } else {
       for (const st of this.sysop.steps) {
-        const icon = st.kind === 'goal' ? '›' : st.kind === 'ok' ? '✓' : st.kind === 'err' ? '!' : '·';
+        const icon = st.kind === 'goal' ? '❯' : st.kind === 'ok' ? '✓' : st.kind === 'err' ? '!' : '·';
         const col = st.kind === 'goal' ? pal.accentBright : st.kind === 'ok' ? pal.green : st.kind === 'err' ? pal.red : pal.muted;
         const wrapped = wrapText(st.text, box.w - 4, 3);
         wrapped.forEach((ln, idx) => {
           stepLines.push({
-            bg: bgS,
-            fg: col,
-            bold: st.kind === 'goal' && idx === 0,
-            text: ` ${idx === 0 ? icon : ' '} ${ln}`,
+            raw: buildRow(box.w, bgS, [
+              { text: ` ${idx === 0 ? icon : ' '} `, style: fgHex(col) },
+              { text: ln, style: `${fgHex(col)}${st.kind === 'goal' && idx === 0 ? '\x1b[1m' : ''}` },
+            ]),
           });
         });
       }
     }
 
     const availFeed = Math.max(0, feedArea - body.length);
-    const tail = stepLines.slice(-availFeed);
-    const combined = [...body, ...tail];
+    const combined = [...body, ...stepLines.slice(-availFeed)];
 
     for (let i = 0; i < feedArea; i++) {
       const item = combined[i];
-      const rowY = box.y + 1 + i;
+      const rowY = box.y + 2 + i;
       if (!item) {
-        out.push(`${bgS}${' '.repeat(box.w)}`);
-      } else if (item.raw) {
+        out.push(buildRow(box.w, bgS, []));
+      } else {
         out.push(item.raw);
         if (item.onHit) item.onHit(rowY);
-      } else {
-        out.push(`${item.bg}${fgHex(item.fg)}${item.bold ? '\x1b[1m' : ''}${fitText(item.text, box.w)}${RESET}${item.bg}`);
       }
     }
 
-    // Bottom goal input box
-    const inpY = box.y + 1 + feedArea;
+    // Framed 3-row Goal Composer (outer │ keeps panel bgS so rounded corners are razor-clean!)
     const isGoal = this.focus === 'goal';
-    out.push(`${bgS}${fgHex(isGoal ? pal.accentBright : pal.border)}${'─'.repeat(box.w)}`);
+    const borderCol = isGoal ? pal.accentBright : pal.border;
+    const innerBg = isGoal ? bgBand : bg2;
+    const frameW = Math.max(10, box.w - 2); // 1-col margin left + right
+    const innerW = frameW - 2;              // inside │ ... │
+    const composerTopY = box.y + 2 + feedArea;
 
-    const visibleDraft = this.goalDraft.length > box.w - 4
-      ? '…' + this.goalDraft.slice(-(box.w - 5))
-      : this.goalDraft;
-    const promptTxt = isGoal
-      ? ` › ${visibleDraft}`
-      : ' › Ask sysop… (^A g)';
-    const inpBg = isGoal ? bgBand : bg2;
-    const inpFg = isGoal ? pal.text : pal.dim;
-    out.push(`${inpBg}${fgHex(inpFg)}${fitText(promptTxt, box.w)}`);
+    // Top border: " ╭─ Goal ────────╮ "
+    const topLabel = isGoal ? '─ Goal ' : '─ Ask Sysop ';
+    const topFill = Math.max(0, innerW - visibleWidth(topLabel));
+    out.push(
+      buildRow(box.w, bgS, [
+        { text: ' ', style: '' },
+        { text: '╭', style: fgHex(borderCol) },
+        { text: topLabel, style: isGoal ? `${fgHex(pal.accentBright)}\x1b[1m` : fgHex(pal.dim) },
+        { text: '─'.repeat(topFill), style: fgHex(borderCol) },
+        { text: '╮', style: fgHex(borderCol) },
+        { text: ' ', style: '' },
+      ]),
+    );
+
+    // Input row: " │ ❯ <draft> │ " (symmetric 1-col left & right inner padding)
+    const textAreaW = Math.max(3, innerW - 4); // ' ❯ '(3) + textAreaW + ' '(1)
+    const draftChars = Array.from(this.goalDraft);
+    const curIdx = Math.max(0, Math.min(draftChars.length, this.goalCursor));
+
+    let shownDraft = '';
+    let cursorOffsetCols = 0;
+    if (!isGoal && draftChars.length === 0) {
+      shownDraft = fitText('Type a goal…', textAreaW);
+    } else {
+      // Scroll window around cursor so typing never clips past right border
+      let start = 0;
+      let widthToCursor = 0;
+      for (let k = 0; k < curIdx; k++) widthToCursor += charDisplayWidth(draftChars[k]);
+      while (widthToCursor > Math.max(0, textAreaW - 1) && start < curIdx) {
+        widthToCursor -= charDisplayWidth(draftChars[start]);
+        start += 1;
+      }
+      let slice = '';
+      let sw = 0;
+      for (let k = start; k < draftChars.length; k++) {
+        const cw = charDisplayWidth(draftChars[k]);
+        if (sw + cw > textAreaW) break;
+        slice += draftChars[k];
+        sw += cw;
+      }
+      shownDraft = fitText(slice, textAreaW);
+      cursorOffsetCols = widthToCursor;
+    }
+
+    out.push(
+      buildRow(box.w, bgS, [
+        { text: ' ', style: '' },
+        { text: '│', style: fgHex(borderCol) },
+        { text: ' ❯ ', style: `${innerBg}${isGoal ? fgHex(pal.accentBright) : fgHex(pal.dim)}` },
+        { text: shownDraft, style: `${innerBg}${isGoal ? fgHex(pal.text) : fgHex(pal.dim)}` },
+        { text: ' ', style: innerBg },
+        { text: '│', style: fgHex(borderCol) },
+        { text: ' ', style: '' },
+      ]),
+    );
+
+    if (isGoal) {
+      this.goalCursorPos = {
+        x: box.x + 1 + 1 + 3 + Math.min(textAreaW - 1, cursorOffsetCols),
+        y: composerTopY + 1,
+      };
+    }
+
+    // Bottom border: " ╰─ Enter · Esc ─╯ "
+    const botLabel = isGoal ? '─ ↵ send · Esc ' : '─ ^A g · Alt+G ';
+    const botFill = Math.max(0, innerW - visibleWidth(botLabel));
+    out.push(
+      buildRow(box.w, bgS, [
+        { text: ' ', style: '' },
+        { text: '╰', style: fgHex(borderCol) },
+        { text: botLabel, style: fgHex(pal.dim) },
+        { text: '─'.repeat(botFill), style: fgHex(borderCol) },
+        { text: '╯', style: fgHex(borderCol) },
+        { text: ' ', style: '' },
+      ]),
+    );
+
     this.hitboxes.push({
       x1: box.x,
       x2: box.x + box.w - 1,
-      y1: inpY + 1,
-      y2: inpY + 1,
+      y1: composerTopY,
+      y2: composerTopY + 2,
       onClick: () => this._focusGoal(),
     });
 
@@ -1264,19 +1523,50 @@ export class Cockpit {
   _renderFooter(L, pal) {
     const bgS = bgHex(pal.surface);
     if (this.prefixMode) {
-      return `${bgHex(pal.accentDeep)}${fgHex(pal.text)}\x1b[1m${fitText(' ^A PREFIX: 1-9 tab · n/p next/prev · c shell · C agent · b sidebar · s sysop · g goal · a allow · v veto · t theme · d detach · ? help', L.W)}${RESET}`;
+      return buildRow(L.W, bgHex(pal.accentDeep), [
+        { text: ' ^A PREFIX ', style: `${fgHex(pal.text)}\x1b[1m` },
+        { text: ' 1-9 tab · n/p cycle · c shell · C agent · x close · b sidebar · s sysop · g goal · a allow · v veto · t theme · d detach · ? help', style: fgHex(pal.text) },
+      ]);
     }
     if (this.focus === 'goal') {
-      return `${bgHex(pal.band)}${fgHex(pal.accentBright)}${fitText(' SYSOP GOAL: Type goal and press Enter to send · Esc to return to terminal · Ctrl+U clear', L.W)}${RESET}`;
+      return buildRow(L.W, bgHex(pal.band), [
+        { text: ' SYSOP GOAL ', style: `${fgHex(pal.accentBright)}\x1b[1m` },
+        { text: ' Enter send · Esc return to terminal · ←/→ edit · Ctrl+U clear', style: fgHex(pal.muted) },
+      ]);
     }
     if (this.toast) {
-      return `${bgHex(pal.band)}${fgHex(pal.accentBright)}${fitText(` ✦ ${this.toast}`, L.W)}${RESET}`;
+      return buildRow(L.W, bgHex(pal.band), [
+        { text: ` ✦ ${this.toast}`, style: fgHex(pal.accentBright) },
+      ]);
     }
     if (this.scrollOffset > 0) {
-      return `${bgHex(pal.band)}${fgHex(pal.amber)}${fitText(` SCROLL +${this.scrollOffset} lines · Shift+PgUp/PgDn or wheel · type any key to return to live`, L.W)}${RESET}`;
+      return buildRow(L.W, bgHex(pal.band), [
+        { text: ` SCROLL +${this.scrollOffset} lines · Shift+PgUp/PgDn or wheel · press any key to return live`, style: fgHex(pal.amber) },
+      ]);
     }
-    const hint = ' ^A prefix · Alt+1-9 tabs · Alt+N shell · Alt+B sidebar · Alt+S sysop · Alt+G goal · Alt+T theme · ^A d detach';
-    return `${bgS}${fgHex(pal.dim)}${fitText(hint, L.W)}${RESET}`;
+    const hints = [
+      ['^A', ' prefix'],
+      ['Alt+1-9', ' tabs'],
+      ['Alt+N', ' shell'],
+      ['Alt+B', ' sidebar'],
+      ['Alt+S', ' sysop'],
+      ['Alt+G', ' goal'],
+      ['Alt+T', ' theme'],
+      ['^A d', ' detach'],
+    ];
+    const segs = [{ text: ' ', style: '' }];
+    let used = 1;
+    for (let i = 0; i < hints.length; i++) {
+      const [key, desc] = hints[i];
+      const sep = i === 0 ? '' : ' · ';
+      const needed = visibleWidth(sep) + visibleWidth(key) + visibleWidth(desc);
+      if (used + needed > L.W - 1) break;
+      if (sep) segs.push({ text: sep, style: fgHex(pal.dim) });
+      segs.push({ text: key, style: i === 0 ? fgHex(pal.accent) : fgHex(pal.muted) });
+      segs.push({ text: desc, style: fgHex(pal.dim) });
+      used += needed;
+    }
+    return buildRow(L.W, bgS, segs);
   }
 
   _overlayHelp(rows, L, pal) {
@@ -1285,7 +1575,7 @@ export class Cockpit {
       '',
       'Ctrl+A c / Alt+N    New shell tab',
       'Ctrl+A C            New agent tab',
-      'Ctrl+A 1..9 / Alt+N Switch tab',
+      'Ctrl+A 1..9 / Alt+# Switch tab',
       'Ctrl+A n / p        Next / previous tab',
       'Ctrl+A x            Close active tab',
       'Ctrl+A b / Alt+B    Toggle left sidebar',
@@ -1299,21 +1589,36 @@ export class Cockpit {
       '',
       'Press any key to close',
     ];
-    const boxW = Math.min(L.W - 4, 50);
+    const boxW = Math.min(L.W - 4, 52);
     const boxH = Math.min(L.H - 2, lines.length + 2);
     const top = Math.max(1, Math.floor((L.H - boxH) / 2));
     const left = Math.max(1, Math.floor((L.W - boxW) / 2));
-    const padL = ' '.repeat(left);
+    const right = Math.max(0, L.W - left - boxW);
+    const bgOuter = bgHex(pal.bg);
     const bgB = bgHex(pal.surface2);
     const bd = fgHex(pal.accent);
 
-    rows[top] = `${bgHex(pal.bg)}${padL}${bgB}${bd}╭${'─'.repeat(boxW - 2)}╮${RESET}`;
+    rows[top] = buildRow(L.W, bgOuter, [
+      { text: ' '.repeat(left), style: '' },
+      { text: `╭${'─'.repeat(boxW - 2)}╮`, style: `${bgB}${bd}` },
+      { text: ' '.repeat(right), style: '' },
+    ]);
     for (let i = 0; i < boxH - 2; i++) {
       const txt = lines[i] || '';
-      const col = i === 0 ? `${fgHex(pal.accentBright)}\x1b[1m` : fgHex(pal.text);
-      rows[top + 1 + i] = `${bgHex(pal.bg)}${padL}${bgB}${bd}│${col} ${fitText(txt, boxW - 4)} ${RESET}${bgB}${bd}│${RESET}`;
+      const col = i === 0 ? `${bgB}${fgHex(pal.accentBright)}\x1b[1m` : `${bgB}${fgHex(pal.text)}`;
+      rows[top + 1 + i] = buildRow(L.W, bgOuter, [
+        { text: ' '.repeat(left), style: '' },
+        { text: '│', style: `${bgB}${bd}` },
+        { text: ` ${fitText(txt, boxW - 4)} `, style: col },
+        { text: '│', style: `${bgB}${bd}` },
+        { text: ' '.repeat(right), style: '' },
+      ]);
     }
-    rows[top + boxH - 1] = `${bgHex(pal.bg)}${padL}${bgB}${bd}╰${'─'.repeat(boxW - 2)}╯${RESET}`;
+    rows[top + boxH - 1] = buildRow(L.W, bgOuter, [
+      { text: ' '.repeat(left), style: '' },
+      { text: `╰${'─'.repeat(boxW - 2)}╯`, style: `${bgB}${bd}` },
+      { text: ' '.repeat(right), style: '' },
+    ]);
   }
 }
 

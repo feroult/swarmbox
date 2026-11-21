@@ -43,6 +43,8 @@ def start_ui(pth, cfg, log=None, enabled=True, mux=None):
         return UiSession(_stop)
     if name == "herdr":
         from . import agent
+        if log:
+            log("sysop ui: starting herdr agent bridge")
         bridge = agent.HerdrBridge(pth, log=log).start()
         return UiSession(lambda unset=True: bridge.shutdown())
     if log:

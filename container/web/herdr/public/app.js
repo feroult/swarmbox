@@ -325,6 +325,10 @@
   let terminals = [];
   let activeId = null;
   let ptyWs = null;
+  let eventsWs = null;
+  let ptyReconnectTimer = null;
+  let ptyReconnectDelay = 400;
+  let pendingInput = [];
   let ttsEnabled = false;
   let lastSpokenKey = '';
   let currentApproval = null;
@@ -413,9 +417,7 @@
     if (ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key.toLowerCase() === 'v') {
       if (navigator.clipboard?.readText) {
         navigator.clipboard.readText().then((txt) => {
-          if (txt && ptyWs && ptyWs.readyState === 1) {
-            ptyWs.send(JSON.stringify({ type: 'input', data: txt }));
-          }
+          if (txt) sendPtyInput(txt);
         }).catch(() => {});
         return false;
       }
@@ -473,7 +475,7 @@
     try { return localStorage.getItem('swarmbox-herdr-theme') || 'purple-glow'; } catch (_) { return 'purple-glow'; }
   })();
   applyTheme(savedTheme, false);
-  themeSelectEl.addEventListener('change', (e) => applyTheme(e.target.value, true));
+  themeSelectEl.addEventListener('change', (e) => { applyTheme(e.target.value, true); focusTerminalIfDesktop(); });
   themeSelectMobileEl.addEventListener('change', (e) => applyTheme(e.target.value, true));
 
   function fitAndResize() {
@@ -503,13 +505,64 @@
     window.visualViewport.addEventListener('resize', syncViewport);
   }
 
-  term.onData((data) => {
+  function focusTerminalIfDesktop() {
+    if (window.innerWidth > 860 && document.activeElement !== goalInputEl) {
+      term.focus();
+    }
+  }
+
+  function sendPtyInput(data) {
+    if (!data) return;
     if (ptyWs && ptyWs.readyState === 1) {
       ptyWs.send(JSON.stringify({ type: 'input', data }));
+      return;
+    }
+    // Never silently drop keystrokes when the PTY socket dipped or is reconnecting:
+    // buffer the input and immediately re-attach to the active terminal.
+    pendingInput.push(data);
+    if (pendingInput.length > 64) pendingInput = pendingInput.slice(-64);
+    if (activeId && (!ptyWs || ptyWs.readyState === 2 || ptyWs.readyState === 3)) {
+      connectPty(activeId, { silent: true });
+    }
+  }
+
+  term.onData((data) => {
+    sendPtyInput(data);
+  });
+
+  // Clicking anywhere on the terminal canvas (without a drag selection) restores keyboard focus
+  // and recovers a dropped PTY socket immediately.
+  termWrapEl.addEventListener('mouseup', () => {
+    if (window.innerWidth <= 860) return;
+    if (term.hasSelection() || (window.getSelection && window.getSelection().toString())) return;
+    term.focus();
+    if (activeId && (!ptyWs || ptyWs.readyState === 2 || ptyWs.readyState === 3)) {
+      connectPty(activeId, { silent: true });
     }
   });
 
-  // Desktop keyboard shortcuts (Alt+1..9 tabs, Alt+N new shell, Alt+S Sysop, Alt+B sidebar)
+  // Auto-heal dropped WebSockets when returning to the browser tab or waking from sleep
+  function ensureConnectionsAlive() {
+    if (!eventsWs || eventsWs.readyState === 2 || eventsWs.readyState === 3) {
+      connectEvents();
+    }
+    if (activeId && (!ptyWs || ptyWs.readyState === 2 || ptyWs.readyState === 3)) {
+      connectPty(activeId, { silent: true });
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') ensureConnectionsAlive();
+  });
+  window.addEventListener('focus', () => {
+    ensureConnectionsAlive();
+  });
+  window.addEventListener('online', () => {
+    ensureConnectionsAlive();
+  });
+
+  // Desktop keyboard shortcuts (100% aligned with Terminal Cockpit:
+  // Alt+1..9 tabs, Alt+N shell, Alt+B sidebar, Alt+S Sysop, Alt+G goal, Alt+T cycle theme)
+  const THEME_KEYS = Object.keys(THEMES);
   window.addEventListener('keydown', (e) => {
     if (!e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
@@ -518,6 +571,7 @@
       if (terminals[idx]) {
         e.preventDefault();
         if (activeId !== terminals[idx].address) connectPty(terminals[idx].address);
+        else focusTerminalIfDesktop();
       }
       return;
     }
@@ -525,6 +579,17 @@
     if (low === 'n') { e.preventDefault(); spawnTab('shell'); }
     else if (low === 's') { e.preventDefault(); toggleDesktopSysop(); }
     else if (low === 'b') { e.preventDefault(); toggleSidebar(); }
+    else if (low === 'g') {
+      e.preventDefault();
+      if (window.innerWidth > 860 && appEl.dataset.sysopOpen !== '1') toggleDesktopSysop();
+      else if (window.innerWidth <= 860) setMobileSysop(true);
+      goalInputEl.focus();
+    } else if (low === 't') {
+      e.preventDefault();
+      const idx = THEME_KEYS.indexOf(themeSelectEl.value);
+      applyTheme(THEME_KEYS[(idx + 1) % THEME_KEYS.length], true);
+      focusTerminalIfDesktop();
+    }
   });
 
   function tabState(t) {
@@ -545,15 +610,70 @@
     return (t && t.title) || cwd || (t && t.address) || '';
   }
 
-  function connectPty(address) {
-    if (!address) return;
-    if (ptyWs) {
-      try { ptyWs.close(); } catch (_) {}
-      ptyWs = null;
+  function concatChunks(chunks) {
+    let total = 0;
+    for (const c of chunks) total += c.byteLength;
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) {
+      out.set(c, off);
+      off += c.byteLength;
     }
+    return out;
+  }
+
+  function connectPty(address, opts = {}) {
+    if (!address) return;
+    if (ptyReconnectTimer) {
+      clearTimeout(ptyReconnectTimer);
+      ptyReconnectTimer = null;
+    }
+    const prevWs = ptyWs;
+    ptyWs = null;
+    if (prevWs) {
+      prevWs.onclose = null;
+      prevWs.onerror = null;
+      try { prevWs.close(); } catch (_) {}
+    }
+
+    const switching = activeId !== address;
     activeId = address;
+    if (switching) pendingInput = [];
+
+    // Hide terminal canvas while initial history burst hydrates so users never see
+    // a chaotic 500-line scroll-to-bottom replay animation on load, tab switch, or reconnect.
+    let hydrating = true;
+    let hydrationChunks = [];
+    let settleTimer = null;
+    let capTimer = null;
+
+    termWrapEl.classList.add('term-loading');
     term.reset();
     fitAndResize();
+
+    const finishHydration = () => {
+      if (!hydrating) return;
+      hydrating = false;
+      if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+      if (capTimer) { clearTimeout(capTimer); capTimer = null; }
+      const batch = hydrationChunks;
+      hydrationChunks = [];
+      const reveal = () => {
+        if (ptyWs !== ws) return;
+        try { term.scrollToBottom(); } catch (_) {}
+        markBlockRows();
+        requestAnimationFrame(() => {
+          termWrapEl.classList.remove('term-loading');
+          dismissBoot();
+          focusTerminalIfDesktop();
+        });
+      };
+      if (batch.length > 0) {
+        term.write(concatChunks(batch), reveal);
+      } else {
+        reveal();
+      }
+    };
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(address)}?cols=${term.cols}&rows=${term.rows}`;
@@ -561,27 +681,83 @@
     ws.binaryType = 'arraybuffer';
     ptyWs = ws;
 
+    if (hydrating) {
+      // Fallback cap in case the terminal has no initial output at all
+      capTimer = setTimeout(finishHydration, 360);
+    }
+
     ws.onopen = () => {
       if (ptyWs !== ws) return;
+      ptyReconnectDelay = 400;
       ws.send(JSON.stringify({ type: 'focus', focused: true }));
       fitAndResize();
-      if (window.innerWidth > 860) term.focus();
+      if (pendingInput.length > 0) {
+        const queued = pendingInput;
+        pendingInput = [];
+        for (const chunk of queued) {
+          ws.send(JSON.stringify({ type: 'input', data: chunk }));
+        }
+      }
+      if (!hydrating) focusTerminalIfDesktop();
     };
+
     ws.onmessage = (ev) => {
       if (ptyWs !== ws) return;
       if (ev.data instanceof ArrayBuffer) {
-        term.write(new Uint8Array(ev.data), () => dismissBoot());
+        const bytes = new Uint8Array(ev.data);
+        if (hydrating) {
+          hydrationChunks.push(bytes);
+          if (settleTimer) clearTimeout(settleTimer);
+          // Once chunks arrive, wait 45ms of quiet for the history burst to finish
+          settleTimer = setTimeout(finishHydration, 45);
+          // Tighten max cap to 220ms after first byte so reveal is always snappy
+          if (!ws._firstByteSeen) {
+            ws._firstByteSeen = true;
+            if (capTimer) clearTimeout(capTimer);
+            capTimer = setTimeout(finishHydration, 220);
+          }
+          return;
+        }
+        term.write(bytes, () => dismissBoot());
       } else if (typeof ev.data === 'string') {
+        finishHydration();
         try {
           const msg = JSON.parse(ev.data);
           if (msg.type === 'error') term.writeln(`\r\n\x1b[31m[error] ${msg.message}\x1b[0m`);
-          if (msg.type === 'closed') term.writeln(`\r\n\x1b[2m[terminal closed]\x1b[0m`);
+          if (msg.type === 'closed') {
+            ws._terminalClosed = true;
+            term.writeln(`\r\n\x1b[2m[terminal closed]\x1b[0m`);
+          }
         } catch (_) {
           term.write(ev.data);
         }
         dismissBoot();
       }
     };
+
+    ws.onerror = () => {
+      if (ptyWs !== ws) return;
+      finishHydration();
+    };
+
+    ws.onclose = () => {
+      if (ptyWs !== ws) return;
+      finishHydration();
+      ptyWs = null;
+      if (ws._terminalClosed) return;
+      // Auto-reconnect silently if this tab is still live so keyboard input never freezes
+      if (activeId === address && terminals.some((t) => t.address === address)) {
+        const delay = ptyReconnectDelay;
+        ptyReconnectDelay = Math.min(Math.round(ptyReconnectDelay * 1.6), 3000);
+        ptyReconnectTimer = setTimeout(() => {
+          ptyReconnectTimer = null;
+          if (activeId === address && !ptyWs) {
+            connectPty(address, { silent: true });
+          }
+        }, delay);
+      }
+    };
+
     renderTabs();
   }
 
@@ -641,6 +817,7 @@
       }
       btn.addEventListener('click', () => {
         if (activeId !== t.address) connectPty(t.address);
+        else focusTerminalIfDesktop();
       });
       sidebarTabsEl.appendChild(btn);
 
@@ -707,7 +884,10 @@
       const badge = isVeto ? 'SENDING' : 'ALLOW?';
       approvalBadgeEl.textContent = badge;
       mobileApprovalBadgeEl.textContent = badge;
-      approvalTabEl.textContent = pending.tab || pending.risk || 'sysop';
+      const pendingTabObj = pending.tab ? terminals.find((t) => t.address === pending.tab) : null;
+      approvalTabEl.textContent = pendingTabObj
+        ? `${pendingTabObj.name || pending.tab} · ${pending.tab}`
+        : (pending.tab || pending.risk || 'sysop');
       approvalTextEl.textContent = pending.text || 'Pending action';
       mobileApprovalMsgEl.textContent = pending.text || 'Pending action';
 
@@ -796,7 +976,8 @@
         <div class="shortcut-hints">
           <span class="kbd-chip"><b>Alt+1..9</b> tabs</span>
           <span class="kbd-chip"><b>Alt+N</b> shell</span>
-          <span class="kbd-chip"><b>Alt+S</b> sysop</span>
+          <span class="kbd-chip"><b>Alt+G</b> goal</span>
+          <span class="kbd-chip"><b>Alt+T</b> theme</span>
         </div>
       `;
       sysopFeedEl.appendChild(box);
@@ -835,19 +1016,25 @@
   }
 
   function connectEvents() {
+    if (eventsWs && (eventsWs.readyState === 0 || eventsWs.readyState === 1)) return;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${proto}//${location.host}/ws/events`);
+    eventsWs = ws;
 
     ws.onopen = () => {
+      if (eventsWs !== ws) return;
       connPillEl.className = 'conn-pill ok';
       connTextEl.textContent = 'herdr-core live';
     };
     ws.onclose = () => {
+      if (eventsWs !== ws) return;
+      eventsWs = null;
       connPillEl.className = 'conn-pill err';
       connTextEl.textContent = 'reconnecting…';
       setTimeout(connectEvents, 1200);
     };
     ws.onmessage = (ev) => {
+      if (eventsWs !== ws) return;
       let msg;
       try { msg = JSON.parse(ev.data); } catch (_) { return; }
       if (msg.theme && THEMES[msg.theme] && msg.theme !== themeSelectEl.value) {
@@ -862,7 +1049,12 @@
           if (preferred) connectPty(preferred);
           else { activeId = null; renderTabs(); dismissBoot(); }
         } else {
-          renderTabs();
+          // If events reconnected after a brief blip and PTY socket died, heal PTY automatically
+          if (!ptyWs || ptyWs.readyState === 2 || ptyWs.readyState === 3) {
+            connectPty(activeId, { silent: true });
+          } else {
+            renderTabs();
+          }
         }
       }
       if (msg.sysop) renderSysop(msg.sysop);
@@ -1085,13 +1277,13 @@
   // ---- Layout Controls ----------------------------------------------------------------------
   function toggleSidebar() {
     appEl.dataset.sidebarOpen = appEl.dataset.sidebarOpen === '1' ? '0' : '1';
-    requestAnimationFrame(fitAndResize);
+    requestAnimationFrame(() => { fitAndResize(); focusTerminalIfDesktop(); });
   }
   function toggleDesktopSysop() {
     const next = appEl.dataset.sysopOpen === '1' ? '0' : '1';
     appEl.dataset.sysopOpen = next;
     btnToggleSysop.dataset.on = next;
-    requestAnimationFrame(fitAndResize);
+    requestAnimationFrame(() => { fitAndResize(); focusTerminalIfDesktop(); });
   }
   function setMobileSysop(open) {
     const val = open ? '1' : '0';
@@ -1108,15 +1300,15 @@
     requestAnimationFrame(fitAndResize);
   }
 
-  document.getElementById('btn-new-shell').addEventListener('click', () => spawnTab('shell'));
-  document.getElementById('btn-new-agent').addEventListener('click', () => spawnTab('agent'));
+  document.getElementById('btn-new-shell').addEventListener('click', () => { spawnTab('shell'); focusTerminalIfDesktop(); });
+  document.getElementById('btn-new-agent').addEventListener('click', () => { spawnTab('agent'); focusTerminalIfDesktop(); });
   document.getElementById('btn-sidebar-close').addEventListener('click', () => {
     appEl.dataset.sidebarOpen = '0';
-    requestAnimationFrame(fitAndResize);
+    requestAnimationFrame(() => { fitAndResize(); focusTerminalIfDesktop(); });
   });
   document.getElementById('btn-sidebar-open').addEventListener('click', () => {
     appEl.dataset.sidebarOpen = '1';
-    requestAnimationFrame(fitAndResize);
+    requestAnimationFrame(() => { fitAndResize(); focusTerminalIfDesktop(); });
   });
   btnToggleSysop.addEventListener('click', toggleDesktopSysop);
   document.getElementById('btn-sysop-close').addEventListener('click', () => {
@@ -1141,6 +1333,7 @@
   document.getElementById('btn-interrupt').addEventListener('click', async () => {
     if (!activeId) return;
     await fetch(`/api/tabs/${encodeURIComponent(activeId)}/interrupt`, { method: 'POST' });
+    focusTerminalIfDesktop();
   });
 
   const btnSendGoal = document.getElementById('btn-send-goal');
@@ -1151,15 +1344,22 @@
   goalInputEl.addEventListener('input', syncSendReady);
   btnSendGoal.addEventListener('click', () => { sendGoal(); syncSendReady(); });
   goalInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      goalInputEl.blur();
+      focusTerminalIfDesktop();
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendGoal();
       syncSendReady();
+      focusTerminalIfDesktop();
     }
   });
 
-  document.getElementById('btn-allow').addEventListener('click', () => handleApproval('allow'));
-  document.getElementById('btn-cancel').addEventListener('click', () => handleApproval('cancel'));
+  document.getElementById('btn-allow').addEventListener('click', () => { handleApproval('allow'); focusTerminalIfDesktop(); });
+  document.getElementById('btn-cancel').addEventListener('click', () => { handleApproval('cancel'); focusTerminalIfDesktop(); });
   document.getElementById('btn-mobile-allow').addEventListener('click', () => handleApproval('allow'));
   document.getElementById('btn-mobile-cancel').addEventListener('click', () => handleApproval('cancel'));
 
