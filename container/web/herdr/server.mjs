@@ -175,12 +175,18 @@ export function createGateway(options = {}) {
     broadcast(snap);
   });
 
-  // Poll real swarmbox-sysop state files & shared theme file; broadcast only on actual changes
+  // Poll real swarmbox-sysop state files & shared theme file; broadcast only on actual changes.
+  // Every 4th tick (~2.4s) when a browser is open, also refresh live foreground cwd/metadata.
+  let pollTick = 0;
   const sysopTimer = setInterval(() => {
     const diskTheme = readSavedTheme();
     const themeChanged = diskTheme !== currentTheme;
     if (themeChanged) currentTheme = diskTheme;
     if (eventClients.size === 0) return;
+    pollTick = (pollTick + 1) % 4;
+    if (pollTick === 0 && typeof hc.refreshTerminals === 'function') {
+      hc.refreshTerminals();
+    }
     const snap = buildSnapshot({ type: themeChanged ? 'theme' : 'sysop' });
     const h = JSON.stringify({ sysop: snap.sysop, theme: snap.theme });
     if (h !== lastBroadcastHash) {
@@ -405,6 +411,7 @@ export function createGateway(options = {}) {
     if (url.pathname === '/ws/events') {
       eventClients.add(ws);
       ws.send(JSON.stringify(buildSnapshot({ type: 'snapshot' })));
+      if (typeof hc.refreshTerminals === 'function') hc.refreshTerminals();
       ws.on('close', () => eventClients.delete(ws));
       return;
     }
@@ -413,6 +420,7 @@ export function createGateway(options = {}) {
     const cols = Number(url.searchParams.get('cols') || 100);
     const rows = Number(url.searchParams.get('rows') || 30);
     writeActiveTab(termId);
+    if (typeof hc.refreshTerminals === 'function') hc.refreshTerminals();
 
     let stream = null;
     try {

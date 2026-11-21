@@ -369,6 +369,8 @@ export class Cockpit {
     await this._ensureActiveAttached();
 
     // Poll real swarmbox-sysop state + shared theme file (stays synced with Web UI)
+    let pollTick = 0;
+    let lastClockMin = new Date().getMinutes();
     this.pollTimer = setInterval(() => {
       if (this.closed) return;
       const diskTheme = readSavedTheme();
@@ -377,6 +379,15 @@ export class Cockpit {
         this.themeName = diskTheme;
         this.prevRows = [];
         dirty = true;
+      }
+      const curMin = new Date().getMinutes();
+      if (curMin !== lastClockMin) {
+        lastClockMin = curMin;
+        dirty = true;
+      }
+      pollTick = (pollTick + 1) % 5;
+      if (pollTick === 0 && typeof this.hc.refreshTerminals === 'function') {
+        this.hc.refreshTerminals();
       }
       const nextSysop = readSysopSnapshot(this.terminals);
       const prevKey = JSON.stringify({
@@ -1017,6 +1028,8 @@ export class Cockpit {
     const sm = statusMeta(active, pal);
     const ss = sysopStyle(this.sysop.state, pal);
     const themeLabel = (HERDR_THEMES[this.themeName] || HERDR_THEMES['purple-glow']).label;
+    const now = new Date();
+    const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
     const rightSegments = [];
     let rightW = 0;
@@ -1040,6 +1053,14 @@ export class Cockpit {
       rightSegments.push(
         { text: '◐ ', style: fgHex(pal.accent) },
         { text: themeLabel, style: fgHex(pal.muted) },
+      );
+      if (L.W >= 112) {
+        rightSegments.push(
+          { text: '  ·  ', style: fgHex(pal.dim) },
+          { text: clock, style: fgHex(pal.dim) },
+        );
+      }
+      rightSegments.push(
         { text: '  ·  ', style: fgHex(pal.dim) },
         { text: '^A?', style: fgHex(pal.accent) },
         { text: ' ', style: '' },
@@ -1066,17 +1087,23 @@ export class Cockpit {
 
     const crumbBudget = maxLeft - leftW;
     if (crumbBudget > 8) {
-      const statusSuffix = ` (${sm.label})`;
-      const nameRoom = Math.max(4, crumbBudget - 5 - visibleWidth(statusSuffix));
+      const rawCwd = String((active && active.foreground && active.foreground.cwd) || (active && active.cwd) || '');
+      const shortCwd = rawCwd === HOME ? '~' : (rawCwd.startsWith(HOME + '/') ? '~' + rawCwd.slice(HOME.length) : rawCwd);
+      const hasRichStatus = active && active.status && typeof active.status === 'object' && active.status.state;
+      const suffixText = hasRichStatus
+        ? ` · ${sm.label}`
+        : (shortCwd && shortCwd !== activeName ? ` · ${clipText(shortCwd, 22)}` : '');
+      const suffixStyle = hasRichStatus ? fgHex(sm.color) : fgHex(pal.dim);
+      const nameRoom = Math.max(4, crumbBudget - 5 - visibleWidth(suffixText));
       const shownName = clipText(activeName, nameRoom);
       leftSegments.push(
         { text: '  ›  ', style: fgHex(pal.dim) },
         { text: shownName, style: `${fgHex(pal.text)}\x1b[1m` },
       );
       leftW += 5 + visibleWidth(shownName);
-      if (leftW + visibleWidth(statusSuffix) <= maxLeft) {
-        leftSegments.push({ text: statusSuffix, style: fgHex(sm.color) });
-        leftW += visibleWidth(statusSuffix);
+      if (suffixText && leftW + visibleWidth(suffixText) <= maxLeft) {
+        leftSegments.push({ text: suffixText, style: suffixStyle });
+        leftW += visibleWidth(suffixText);
       }
     }
 
@@ -1122,35 +1149,29 @@ export class Cockpit {
 
     const footerRows = 4; // hairline + [+ Shell] + [+ Agent] + [Theme]
     const listMax = Math.max(1, box.h - 2 - footerRows);
+    const renderedTabRows = [];
+    const allowSubRows = listMax >= this.terminals.length * 2;
 
-    for (let i = 0; i < listMax; i++) {
+    for (let i = 0; i < this.terminals.length && renderedTabRows.length < listMax; i++) {
       const t = this.terminals[i];
-      if (!t) {
-        out.push(buildRow(box.w, bgS, []));
-        continue;
-      }
       const isAct = t.address === this.activeAddr;
       const sm = statusMeta(t, pal);
       const name = t.name || t.address;
-      const rowY = box.y + 2 + i;
-      this.hitboxes.push({
-        x1: box.x,
-        x2: box.x + box.w - 1,
-        y1: rowY,
-        y2: rowY,
-        onClick: () => this._attachTo(t.address).catch(() => {}),
-      });
+      const rowY = box.y + 2 + renderedTabRows.length;
+      const onSelect = () => this._attachTo(t.address).catch(() => {});
 
       const idxStr = i < 9 ? `${i + 1}` : '·';
-      const pctStr = t.status && t.status.state === 'working' && typeof t.status.progress === 'number'
-        ? `${t.status.progress}% `
-        : '';
+      const pct = t.status && t.status.state === 'working' && typeof t.status.progress === 'number'
+        ? Math.max(0, Math.min(100, Math.round(t.status.progress)))
+        : null;
+      const pctStr = pct !== null ? `${pct}% ` : '';
       const rowBg = isAct ? bgBand : bgS;
-      const rightMetaW = visibleWidth(pctStr) + visibleWidth(idxStr) + 2; // ' ' + pct + idx + ' '
+      const rightMetaW = visibleWidth(pctStr) + visibleWidth(idxStr) + 2;
       const nameBudget = Math.max(4, box.w - 4 - rightMetaW);
       const shown = fitText(name, nameBudget);
 
-      out.push(
+      this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: rowY, y2: rowY, onClick: onSelect });
+      renderedTabRows.push(
         buildRow(box.w, rowBg, [
           { text: isAct ? '▌' : ' ', style: isAct ? fgHex(pal.accentBright) : '' },
           { text: ' ', style: '' },
@@ -1163,7 +1184,46 @@ export class Cockpit {
           { text: ' ', style: '' },
         ]),
       );
+
+      // Optional rich OSC 7501 sub-row (SwarmBox ▰▱ progress bar or blocked message) when space allows
+      if (allowSubRows && renderedTabRows.length < listMax && t.status && typeof t.status === 'object') {
+        const subY = box.y + 2 + renderedTabRows.length;
+        if (t.status.state === 'working' && (pct !== null || t.status.msg)) {
+          const barLen = 6;
+          const filled = pct !== null ? Math.round((pct / 100) * barLen) : 3;
+          const barSegs = pct !== null
+            ? [
+                { text: '▰'.repeat(filled), style: fgHex(pal.accent) },
+                { text: '▱'.repeat(barLen - filled), style: fgHex(pal.border) },
+                { text: ' ', style: '' },
+              ]
+            : [];
+          const msgBudget = Math.max(4, box.w - 5 - (pct !== null ? barLen + 1 : 0));
+          const msgTxt = t.status.msg ? clipText(t.status.msg, msgBudget) : '';
+          this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: subY, y2: subY, onClick: onSelect });
+          renderedTabRows.push(
+            buildRow(box.w, rowBg, [
+              { text: isAct ? '▌' : ' ', style: isAct ? fgHex(pal.accent) : '' },
+              { text: '   ', style: '' },
+              ...barSegs,
+              { text: msgTxt, style: fgHex(pal.dim) },
+            ]),
+          );
+        } else if (t.status.state === 'blocked' && t.status.msg) {
+          this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: subY, y2: subY, onClick: onSelect });
+          renderedTabRows.push(
+            buildRow(box.w, rowBg, [
+              { text: isAct ? '▌' : ' ', style: isAct ? fgHex(pal.amber) : '' },
+              { text: '   ↳ ', style: fgHex(pal.amber) },
+              { text: clipText(t.status.msg, Math.max(4, box.w - 6)), style: fgHex(pal.amber) },
+            ]),
+          );
+        }
+      }
     }
+
+    while (renderedTabRows.length < listMax) renderedTabRows.push(buildRow(box.w, bgS, []));
+    out.push(...renderedTabRows);
 
     const actY = box.y + 2 + listMax;
     out.push(buildRow(box.w, bgS, [{ text: '─'.repeat(box.w), style: fgHex(pal.border) }]));
@@ -1259,13 +1319,15 @@ export class Cockpit {
   _cellSgr(cell, pal) {
     let fg = '';
     let bg = '';
+    const ansi16 = pal.ansi16;
     if (cell.isFgDefault()) {
       fg = fgHex(pal.termFg);
     } else if (cell.isFgRGB()) {
       const c = cell.getFgColor();
       fg = `\x1b[38;2;${(c >> 16) & 255};${(c >> 8) & 255};${c & 255}m`;
     } else {
-      fg = `\x1b[38;5;${cell.getFgColor()}m`;
+      const idx = cell.getFgColor();
+      fg = ansi16 && idx >= 0 && idx < 16 ? fgHex(ansi16[idx]) : `\x1b[38;5;${idx}m`;
     }
 
     if (cell.isBgDefault()) {
@@ -1274,7 +1336,8 @@ export class Cockpit {
       const c = cell.getBgColor();
       bg = `\x1b[48;2;${(c >> 16) & 255};${(c >> 8) & 255};${c & 255}m`;
     } else {
-      bg = `\x1b[48;5;${cell.getBgColor()}m`;
+      const idx = cell.getBgColor();
+      bg = ansi16 && idx >= 0 && idx < 16 ? bgHex(ansi16[idx]) : `\x1b[48;5;${idx}m`;
     }
 
     let attr = '\x1b[0m';
@@ -1359,6 +1422,18 @@ export class Cockpit {
           ]),
         });
       }
+      if (secs !== null) {
+        const barW = Math.max(8, Math.min(24, box.w - 4));
+        const ratio = Math.max(0, Math.min(1, secs / Math.max(secs, 30)));
+        const fill = Math.max(1, Math.round(ratio * barW));
+        body.push({
+          raw: buildRow(box.w, bgBand, [
+            { text: '▌ ', style: fgHex(pal.amber) },
+            { text: '▰'.repeat(fill), style: fgHex(pal.amber) },
+            { text: '▱'.repeat(barW - fill), style: fgHex(pal.border) },
+          ]),
+        });
+      }
       body.push(makeDecisionButtonsRow('Veto'));
       body.push({ raw: buildRow(box.w, bgS, [{ text: '─'.repeat(box.w), style: fgHex(pal.border) }]) });
       body.push({ raw: buildRow(box.w, bgS, []) });
@@ -1411,7 +1486,10 @@ export class Cockpit {
     }
 
     const availFeed = Math.max(0, feedArea - body.length);
-    const combined = [...body, ...stepLines.slice(-availFeed)];
+    const leadingSpacer = body.length === 0 && stepLines.length > 0 && availFeed > stepLines.length
+      ? [{ raw: buildRow(box.w, bgS, []) }]
+      : [];
+    const combined = [...body, ...leadingSpacer, ...stepLines.slice(-Math.max(0, availFeed - leadingSpacer.length))];
 
     for (let i = 0; i < feedArea; i++) {
       const item = combined[i];
@@ -1570,50 +1648,80 @@ export class Cockpit {
   }
 
   _overlayHelp(rows, L, pal) {
-    const lines = [
-      'SwarmBox Terminal Cockpit (herdr-core)',
-      '',
-      'Ctrl+A c / Alt+N    New shell tab',
-      'Ctrl+A C            New agent tab',
-      'Ctrl+A 1..9 / Alt+# Switch tab',
-      'Ctrl+A n / p        Next / previous tab',
-      'Ctrl+A x            Close active tab',
-      'Ctrl+A b / Alt+B    Toggle left sidebar',
-      'Ctrl+A s / Alt+S    Toggle Sysop panel',
-      'Ctrl+A g / Alt+G    Ask Sysop (goal input)',
-      'Ctrl+A a / v / X    Sysop Allow / Veto / Stop',
-      'Ctrl+A t / Alt+T    Cycle 5 synced themes',
-      'Ctrl+A Ctrl+A       Send literal Ctrl+A',
-      'Ctrl+A d            Detach (keeps terminals)',
-      'Shift+PgUp / PgDn   Scroll terminal history',
-      '',
-      'Press any key to close',
+    const entries = [
+      ['Ctrl+A c / Alt+N', 'New shell tab'],
+      ['Ctrl+A C', 'New agent tab'],
+      ['Ctrl+A 1..9 / Alt+#', 'Switch tab'],
+      ['Ctrl+A n / p', 'Next / previous tab'],
+      ['Ctrl+A x', 'Close active tab'],
+      ['Ctrl+A b / Alt+B', 'Toggle left sidebar'],
+      ['Ctrl+A s / Alt+S', 'Toggle Sysop panel'],
+      ['Ctrl+A g / Alt+G', 'Ask Sysop (goal input)'],
+      ['Ctrl+A a / v / X', 'Sysop Allow / Veto / Stop'],
+      ['Ctrl+A t / Alt+T', 'Cycle 5 synced themes'],
+      ['Ctrl+A Ctrl+A', 'Send literal Ctrl+A'],
+      ['Ctrl+A d', 'Detach (keeps terminals)'],
+      ['Shift+PgUp / PgDn', 'Scroll terminal history'],
     ];
-    const boxW = Math.min(L.W - 4, 52);
-    const boxH = Math.min(L.H - 2, lines.length + 2);
+    const boxW = Math.min(L.W - 4, 54);
+    const innerW = boxW - 4;
+    const boxH = Math.min(L.H - 2, entries.length + 6);
     const top = Math.max(1, Math.floor((L.H - boxH) / 2));
     const left = Math.max(1, Math.floor((L.W - boxW) / 2));
     const right = Math.max(0, L.W - left - boxW);
     const bgOuter = bgHex(pal.bg);
     const bgB = bgHex(pal.surface2);
+    const bgHead = bgHex(pal.band);
     const bd = fgHex(pal.accent);
 
     rows[top] = buildRow(L.W, bgOuter, [
       { text: ' '.repeat(left), style: '' },
-      { text: `╭${'─'.repeat(boxW - 2)}╮`, style: `${bgB}${bd}` },
+      { text: `╭${'─'.repeat(boxW - 2)}╮`, style: `${bgHead}${bd}` },
       { text: ' '.repeat(right), style: '' },
     ]);
-    for (let i = 0; i < boxH - 2; i++) {
-      const txt = lines[i] || '';
-      const col = i === 0 ? `${bgB}${fgHex(pal.accentBright)}\x1b[1m` : `${bgB}${fgHex(pal.text)}`;
-      rows[top + 1 + i] = buildRow(L.W, bgOuter, [
+    rows[top + 1] = buildRow(L.W, bgOuter, [
+      { text: ' '.repeat(left), style: '' },
+      { text: '│', style: `${bgHead}${bd}` },
+      { text: ` ${fitText('● SWARMBOX Terminal Cockpit · Shortcuts', innerW)} `, style: `${bgHead}${fgHex(pal.accentBright)}\x1b[1m` },
+      { text: '│', style: `${bgHead}${bd}` },
+      { text: ' '.repeat(right), style: '' },
+    ]);
+    rows[top + 2] = buildRow(L.W, bgOuter, [
+      { text: ' '.repeat(left), style: '' },
+      { text: '├', style: `${bgB}${bd}` },
+      { text: '─'.repeat(boxW - 2), style: `${bgB}${fgHex(pal.border)}` },
+      { text: '┤', style: `${bgB}${bd}` },
+      { text: ' '.repeat(right), style: '' },
+    ]);
+    const keyW = Math.min(21, Math.floor(innerW * 0.45));
+    const descW = Math.max(8, innerW - keyW - 1);
+    const maxItems = Math.max(1, boxH - 6);
+    for (let i = 0; i < maxItems; i++) {
+      const pair = entries[i];
+      if (!pair) continue;
+      rows[top + 3 + i] = buildRow(L.W, bgOuter, [
         { text: ' '.repeat(left), style: '' },
         { text: '│', style: `${bgB}${bd}` },
-        { text: ` ${fitText(txt, boxW - 4)} `, style: col },
+        { text: ` ${fitText(pair[0], keyW)} `, style: `${bgB}${fgHex(pal.accentBright)}` },
+        { text: `${fitText(pair[1], descW)} `, style: `${bgB}${fgHex(pal.text)}` },
         { text: '│', style: `${bgB}${bd}` },
         { text: ' '.repeat(right), style: '' },
       ]);
     }
+    rows[top + boxH - 3] = buildRow(L.W, bgOuter, [
+      { text: ' '.repeat(left), style: '' },
+      { text: '├', style: `${bgB}${bd}` },
+      { text: '─'.repeat(boxW - 2), style: `${bgB}${fgHex(pal.border)}` },
+      { text: '┤', style: `${bgB}${bd}` },
+      { text: ' '.repeat(right), style: '' },
+    ]);
+    rows[top + boxH - 2] = buildRow(L.W, bgOuter, [
+      { text: ' '.repeat(left), style: '' },
+      { text: '│', style: `${bgB}${bd}` },
+      { text: ` ${fitText('Press any key to close', innerW)} `, style: `${bgB}${fgHex(pal.dim)}` },
+      { text: '│', style: `${bgB}${bd}` },
+      { text: ' '.repeat(right), style: '' },
+    ]);
     rows[top + boxH - 1] = buildRow(L.W, bgOuter, [
       { text: ' '.repeat(left), style: '' },
       { text: `╰${'─'.repeat(boxW - 2)}╯`, style: `${bgB}${bd}` },

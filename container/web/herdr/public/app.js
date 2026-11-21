@@ -321,11 +321,14 @@
   const btnMic = document.getElementById('btn-mic');
   const btnMobileMic = document.getElementById('btn-mobile-mic');
   const termWrapEl = document.getElementById('term-wrap');
+  const btnJumpLive = document.getElementById('btn-jump-live');
 
   let terminals = [];
   let activeId = null;
   let ptyWs = null;
   let eventsWs = null;
+  let eventsConnected = false;
+  let ptyConnected = false;
   let ptyReconnectTimer = null;
   let ptyReconnectDelay = 400;
   let pendingInput = [];
@@ -334,6 +337,19 @@
   let currentApproval = null;
   let voiceAddonAvailable = false;
   let countdownTimer = null;
+
+  function syncConnPill() {
+    if (!eventsConnected) {
+      connPillEl.className = 'conn-pill err';
+      connTextEl.textContent = 'reconnecting…';
+    } else if (activeId && !ptyConnected) {
+      connPillEl.className = 'conn-pill warn';
+      connTextEl.textContent = 'reconnecting terminal…';
+    } else {
+      connPillEl.className = 'conn-pill ok';
+      connTextEl.textContent = 'herdr-core live';
+    }
+  }
 
   // Dynamic column-aware font sizing:
   // On phones (<= 860px), pick the exact font size so >= 56 columns fit upright (keeping the
@@ -362,6 +378,31 @@
     term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
   }
   term.open(document.getElementById('terminal'));
+
+  // Show sleek floating "Jump to live" pill whenever user scrolls up into history
+  const xtermViewportEl = document.querySelector('#terminal .xterm-viewport');
+  function syncJumpLive() {
+    if (!btnJumpLive) return;
+    const buf = term.buffer && term.buffer.active;
+    const vp = xtermViewportEl || document.querySelector('#terminal .xterm-viewport');
+    const bufUp = Boolean(buf && buf.baseY - buf.viewportY > 2);
+    const domUp = Boolean(vp && vp.scrollHeight > vp.clientHeight + 48 && (vp.scrollHeight - vp.scrollTop - vp.clientHeight) > 36);
+    btnJumpLive.classList.toggle('visible', bufUp || domUp);
+  }
+  term.onScroll(syncJumpLive);
+  term.onRender(syncJumpLive);
+  if (xtermViewportEl) {
+    xtermViewportEl.addEventListener('scroll', syncJumpLive, { passive: true });
+  }
+  if (btnJumpLive) {
+    btnJumpLive.addEventListener('click', () => {
+      term.scrollToBottom();
+      const vp = xtermViewportEl || document.querySelector('#terminal .xterm-viewport');
+      if (vp) vp.scrollTop = vp.scrollHeight;
+      syncJumpLive();
+      focusTerminalIfDesktop();
+    });
+  }
 
   // Eliminate faint horizontal hairline seams on block-drawing rows (banner.sh half-blocks)
   const BLOCK_RE = /[\u2580-\u259f]/;
@@ -562,33 +603,47 @@
 
   // Desktop keyboard shortcuts (100% aligned with Terminal Cockpit:
   // Alt+1..9 tabs, Alt+N shell, Alt+B sidebar, Alt+S Sysop, Alt+G goal, Alt+T cycle theme)
+  // Plus gentle desktop focus-rescue: typing when focus landed on <body> routes cleanly into xterm.
   const THEME_KEYS = Object.keys(THEMES);
   window.addEventListener('keydown', (e) => {
-    if (!e.altKey || e.ctrlKey || e.metaKey) return;
-    if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
-    if (e.key >= '1' && e.key <= '9') {
-      const idx = Number(e.key) - 1;
-      if (terminals[idx]) {
+    const tag = e.target && e.target.tagName;
+    const inField = tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT';
+    if (e.altKey && !e.ctrlKey && !e.metaKey) {
+      if (inField) return;
+      if (e.key >= '1' && e.key <= '9') {
+        const idx = Number(e.key) - 1;
+        if (terminals[idx]) {
+          e.preventDefault();
+          if (activeId !== terminals[idx].address) connectPty(terminals[idx].address);
+          else focusTerminalIfDesktop();
+        }
+        return;
+      }
+      const low = e.key.toLowerCase();
+      if (low === 'n') { e.preventDefault(); spawnTab('shell'); }
+      else if (low === 's') { e.preventDefault(); toggleDesktopSysop(); }
+      else if (low === 'b') { e.preventDefault(); toggleSidebar(); }
+      else if (low === 'g') {
         e.preventDefault();
-        if (activeId !== terminals[idx].address) connectPty(terminals[idx].address);
-        else focusTerminalIfDesktop();
+        if (window.innerWidth > 860 && appEl.dataset.sysopOpen !== '1') toggleDesktopSysop();
+        else if (window.innerWidth <= 860) setMobileSysop(true);
+        goalInputEl.focus();
+      } else if (low === 't') {
+        e.preventDefault();
+        const idx = THEME_KEYS.indexOf(themeSelectEl.value);
+        applyTheme(THEME_KEYS[(idx + 1) % THEME_KEYS.length], true);
+        focusTerminalIfDesktop();
       }
       return;
     }
-    const low = e.key.toLowerCase();
-    if (low === 'n') { e.preventDefault(); spawnTab('shell'); }
-    else if (low === 's') { e.preventDefault(); toggleDesktopSysop(); }
-    else if (low === 'b') { e.preventDefault(); toggleSidebar(); }
-    else if (low === 'g') {
-      e.preventDefault();
-      if (window.innerWidth > 860 && appEl.dataset.sysopOpen !== '1') toggleDesktopSysop();
-      else if (window.innerWidth <= 860) setMobileSysop(true);
-      goalInputEl.focus();
-    } else if (low === 't') {
-      e.preventDefault();
-      const idx = THEME_KEYS.indexOf(themeSelectEl.value);
-      applyTheme(THEME_KEYS[(idx + 1) % THEME_KEYS.length], true);
-      focusTerminalIfDesktop();
+
+    // Gentle focus-rescue on desktop: if focus slipped to document.body (e.g. clicked empty chrome),
+    // rescue regular typing straight back into the terminal without losing the keystroke.
+    if (window.innerWidth > 860 && !inField && !e.metaKey && !e.altKey && document.activeElement === document.body) {
+      if (e.ctrlKey && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v')) return;
+      if (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace') {
+        term.focus();
+      }
     }
   });
 
@@ -605,7 +660,7 @@
     }
     if (st && st.state === 'done' && st.msg) return `✓ ${st.msg}`;
     if (st && st.state === 'error' && st.msg) return `✕ ${st.msg}`;
-    const cwd = (t && t.cwd) || '';
+    const cwd = (t && t.foreground && t.foreground.cwd) || (t && t.cwd) || '';
     if (cwd.startsWith('/home/agent')) return '~' + cwd.slice('/home/agent'.length);
     return (t && t.title) || cwd || (t && t.address) || '';
   }
@@ -638,6 +693,8 @@
 
     const switching = activeId !== address;
     activeId = address;
+    ptyConnected = false;
+    syncConnPill();
     if (switching) pendingInput = [];
 
     // Hide terminal canvas while initial history burst hydrates so users never see
@@ -688,7 +745,9 @@
 
     ws.onopen = () => {
       if (ptyWs !== ws) return;
+      ptyConnected = true;
       ptyReconnectDelay = 400;
+      syncConnPill();
       ws.send(JSON.stringify({ type: 'focus', focused: true }));
       fitAndResize();
       if (pendingInput.length > 0) {
@@ -744,6 +803,8 @@
       if (ptyWs !== ws) return;
       finishHydration();
       ptyWs = null;
+      ptyConnected = false;
+      syncConnPill();
       if (ws._terminalClosed) return;
       // Auto-reconnect silently if this tab is still live so keyboard input never freezes
       if (activeId === address && terminals.some((t) => t.address === address)) {
@@ -837,7 +898,7 @@
     });
 
     const mPlus = document.createElement('button');
-    mPlus.className = 'm-tab';
+    mPlus.className = 'm-tab m-tab-add';
     mPlus.textContent = '+ Shell';
     mPlus.addEventListener('click', () => spawnTab('shell'));
     mobileTabsEl.appendChild(mPlus);
@@ -946,6 +1007,7 @@
     if (!sysop) return;
     const st = sysop.state || 'off';
     sysopDotEl.dataset.state = st;
+    sysopStateEl.dataset.state = st;
     sysopStateEl.textContent = st;
     mobileSysopDotEl.dataset.state = st;
     mobileSysopBtn.dataset.state = st;
@@ -1023,14 +1085,14 @@
 
     ws.onopen = () => {
       if (eventsWs !== ws) return;
-      connPillEl.className = 'conn-pill ok';
-      connTextEl.textContent = 'herdr-core live';
+      eventsConnected = true;
+      syncConnPill();
     };
     ws.onclose = () => {
       if (eventsWs !== ws) return;
       eventsWs = null;
-      connPillEl.className = 'conn-pill err';
-      connTextEl.textContent = 'reconnecting…';
+      eventsConnected = false;
+      syncConnPill();
       setTimeout(connectEvents, 1200);
     };
     ws.onmessage = (ev) => {

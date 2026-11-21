@@ -111,6 +111,10 @@ export const HERDR_THEMES = {
       amber: '#fbbf24',
       red: '#ff6b78',
       termFg: '#d4d4d8',
+      ansi16: [
+        '#1c1a24', '#e5484d', '#3dba7a', '#d9a441', '#8b5cf6', '#d946ef', '#5eb5c9', '#d4d4d8',
+        '#71717a', '#ff6b78', '#4ade80', '#fbbf24', '#a78bfa', '#e879f9', '#8ad7e6', '#fafafa',
+      ],
     },
   },
   catppuccin: {
@@ -135,6 +139,10 @@ export const HERDR_THEMES = {
       amber: '#f9e2af',
       red: '#f38ba8',
       termFg: '#cdd6f4',
+      ansi16: [
+        '#45475a', '#f38ba8', '#a6e3a1', '#f9e2af', '#89b4fa', '#f5c2e7', '#94e2d5', '#bac2de',
+        '#585b70', '#f38ba8', '#a6e3a1', '#f9e2af', '#89b4fa', '#f5c2e7', '#94e2d5', '#cdd6f4',
+      ],
     },
   },
   'tokyo-night': {
@@ -159,6 +167,10 @@ export const HERDR_THEMES = {
       amber: '#e0af68',
       red: '#f7768e',
       termFg: '#c0caf5',
+      ansi16: [
+        '#15161e', '#f7768e', '#9ece6a', '#e0af68', '#7aa2f7', '#bb9af7', '#7dcfff', '#a9b1d6',
+        '#414868', '#f7768e', '#9ece6a', '#e0af68', '#7aa2f7', '#bb9af7', '#7dcfff', '#c0caf5',
+      ],
     },
   },
   nord: {
@@ -183,6 +195,10 @@ export const HERDR_THEMES = {
       amber: '#ebcb8b',
       red: '#bf616a',
       termFg: '#eceff4',
+      ansi16: [
+        '#3b4252', '#bf616a', '#a3be8c', '#ebcb8b', '#81a1c1', '#b48ead', '#88c0d0', '#e5e9f0',
+        '#4c566a', '#bf616a', '#a3be8c', '#ebcb8b', '#81a1c1', '#b48ead', '#8fbcbb', '#eceff4',
+      ],
     },
   },
   'rose-pine': {
@@ -207,6 +223,10 @@ export const HERDR_THEMES = {
       amber: '#f6c177',
       red: '#eb6f92',
       termFg: '#e0def4',
+      ansi16: [
+        '#26233a', '#eb6f92', '#31748f', '#f6c177', '#9ccfd8', '#c4a7e7', '#ebbcba', '#e0def4',
+        '#6e6a86', '#eb6f92', '#31748f', '#f6c177', '#9ccfd8', '#c4a7e7', '#ebbcba', '#e0def4',
+      ],
     },
   },
 };
@@ -603,6 +623,42 @@ export class HerdrClient extends EventEmitter {
     return Array.from(this.terminals.values())
       .filter((t) => t.state === 'live' && !isHiddenTerminal(t))
       .sort((a, b) => (a.created_ms || 0) - (b.created_ms || 0));
+  }
+
+  _snapshotFingerprint(list) {
+    return list
+      .map((t) => [
+        t.address,
+        t.name || '',
+        t.title || '',
+        (t.foreground && t.foreground.cwd) || t.cwd || '',
+        (t.status && t.status.state) || '',
+        (t.status && t.status.msg) || '',
+        (t.status && t.status.progress) ?? '',
+      ].join('\x1f'))
+      .join('\x1e');
+  }
+
+  refreshTerminals() {
+    if (this._refreshing || !this.proc || !this.proc.stdin.writable) return Promise.resolve(false);
+    this._refreshing = true;
+    const before = this._snapshotFingerprint(this.listSnapshot());
+    return this.call('terminal.list', { all: false })
+      .then((res) => {
+        if (!res || !Array.isArray(res.terminals)) return false;
+        this.terminals.clear();
+        for (const t of res.terminals) this.terminals.set(t.address, t);
+        const list = this.listSnapshot();
+        if (this._snapshotFingerprint(list) !== before) {
+          this.emit('snapshot', list);
+          return true;
+        }
+        return false;
+      })
+      .catch(() => false)
+      .finally(() => {
+        this._refreshing = false;
+      });
   }
 
   sendFrame(channel, kind, payload = Buffer.alloc(0)) {
