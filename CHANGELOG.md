@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.0.24] - 2026-11-20
+
 - Fixed: on touch screens (such as iPhone), scrolling the web terminal no longer flashes the Sysop button's border or highlight. Button `:hover` border rules are now scoped to `@media (hover: hover)` so touch gestures do not trigger sticky hover highlights, `showToast()` preserves the panel state while scrolled back in tmux copy mode, and `sysopState()` only matches the exact two-space `SYSOP  <state>` panel header at a word/pane boundary.
 
 ## [2.0.23] - 2026-11-20
@@ -272,6 +274,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.0.24]: https://github.com/feroult/swarmbox/releases/tag/v2.0.24
 [2.0.23]: https://github.com/feroult/swarmbox/releases/tag/v2.0.23
 [2.0.22]: https://github.com/feroult/swarmbox/releases/tag/v2.0.22
 [2.0.21]: https://github.com/feroult/swarmbox/releases/tag/v2.0.21
