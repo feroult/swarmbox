@@ -437,7 +437,7 @@ html.swarmbox-ready #sb-boot {
 
 .spawn-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 6px;
   padding-top: 10px;
   margin-top: 8px;

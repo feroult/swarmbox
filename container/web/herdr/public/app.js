@@ -813,13 +813,28 @@
     opencode: 'opencode',
     gemini: 'gemini',
   };
+  const SHELL_NAMES = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
 
-  function tabAgentBadge(t) {
-    const app = String((t && t.status && t.status.app) || '').toLowerCase();
+  function tabDisplayName(t) {
+    if (!t) return 'shell';
+    const rawName = String(t.name || '').trim();
+    const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);
+    if (!isGenericShell) return rawName;
+
+    const app = String((t.status && t.status.app) || '').toLowerCase();
     if (AGENT_APP_LABELS[app]) return AGENT_APP_LABELS[app];
-    const fg = String((t && t.foreground && t.foreground.name) || '').toLowerCase();
-    if (AGENT_APP_LABELS[fg]) return AGENT_APP_LABELS[fg];
-    return '';
+
+    const fg = String((t.foreground && t.foreground.name) || '').trim();
+    const fgLow = fg.toLowerCase();
+    if (AGENT_APP_LABELS[fgLow]) return AGENT_APP_LABELS[fgLow];
+    if (fg && !SHELL_NAMES.has(fgLow)) return fg;
+
+    const cwd = String((t.foreground && t.foreground.cwd) || t.cwd || '').replace(/\/+$/, '');
+    if (cwd && cwd !== '/home/agent' && cwd !== '/') {
+      const base = cwd.slice(cwd.lastIndexOf('/') + 1);
+      if (base) return base;
+    }
+    return 'shell';
   }
 
   function tabState(t) {
@@ -831,15 +846,12 @@
     if (st && st.state === 'blocked') return `blocked · ${st.msg || st.kind || 'needs input'}`;
     if (st && st.state === 'working') {
       const pct = typeof st.progress === 'number' ? `${st.progress}% ` : '';
-      return st.msg ? `working · ${pct}${st.msg}` : (pct ? `working · ${pct.trim()}` : 'working…');
+      return `${pct}${st.msg || 'working…'}`;
     }
     if (st && st.state === 'done') return st.msg ? `✓ ${st.msg}` : '✓ done';
     if (st && st.state === 'error') return `✕ ${st.msg || 'error'}`;
     const cwd = (t && t.foreground && t.foreground.cwd) || (t && t.cwd) || '';
     const shortCwd = cwd.startsWith('/home/agent') ? '~' + cwd.slice('/home/agent'.length) : cwd;
-    if (st && st.state === 'idle' && st.app) {
-      return st.msg ? `idle · ${st.msg}` : (shortCwd ? `idle · ${shortCwd}` : 'idle');
-    }
     if (shortCwd) return shortCwd;
     return (t && t.title) || (t && t.address) || '';
   }
@@ -1221,7 +1233,7 @@
 
     terminals.forEach((t, idx) => {
       const state = tabState(t);
-      const label = t.name || t.address;
+      const label = tabDisplayName(t);
       const isActive = t.address === activeId;
 
       const btn = document.createElement('div');
@@ -1241,13 +1253,6 @@
       titleText.className = 'tab-title-text';
       titleText.textContent = label;
       titleEl.appendChild(titleText);
-      const badge = tabAgentBadge(t);
-      if (badge && !label.toLowerCase().includes(badge)) {
-        const tagEl = document.createElement('span');
-        tagEl.className = 'tab-agent-tag';
-        tagEl.textContent = badge;
-        titleEl.appendChild(tagEl);
-      }
       const subEl = document.createElement('div');
       subEl.className = 'tab-sub';
       subEl.textContent = tabSubtitle(t);
@@ -1301,14 +1306,14 @@
 
     const mPlus = document.createElement('button');
     mPlus.className = 'm-tab m-tab-add';
-    mPlus.textContent = '+ Shell';
+    mPlus.textContent = '+ New';
     mPlus.addEventListener('click', () => spawnTab('shell'));
     mobileTabsEl.appendChild(mPlus);
 
     const active = terminals.find((t) => t.address === activeId);
     if (active) {
       activeDotEl.dataset.state = tabState(active);
-      activeNameEl.textContent = active.name || active.address;
+      activeNameEl.textContent = tabDisplayName(active);
       activeStatusEl.textContent = tabSubtitle(active);
     } else {
       activeDotEl.dataset.state = 'idle';
@@ -1349,7 +1354,7 @@
       mobileApprovalBadgeEl.textContent = badge;
       const pendingTabObj = pending.tab ? terminals.find((t) => t.address === pending.tab) : null;
       approvalTabEl.textContent = pendingTabObj
-        ? `${pendingTabObj.name || pending.tab} · ${pending.tab}`
+        ? `${tabDisplayName(pendingTabObj)} · ${pending.tab}`
         : (pending.tab || pending.risk || 'sysop');
       approvalTextEl.textContent = pending.text || 'Pending action';
       mobileApprovalMsgEl.textContent = pending.text || 'Pending action';
@@ -1772,8 +1777,8 @@
     requestAnimationFrame(fitAndResize);
   }
 
-  document.getElementById('btn-new-shell').addEventListener('click', () => { spawnTab('shell'); focusTerminalIfDesktop(); });
-  document.getElementById('btn-new-agent').addEventListener('click', () => { spawnTab('agent'); focusTerminalIfDesktop(); });
+  const btnNewShell = document.getElementById('btn-new-shell');
+  if (btnNewShell) btnNewShell.addEventListener('click', () => { spawnTab('shell'); focusTerminalIfDesktop(); });
   document.getElementById('btn-sidebar-close').addEventListener('click', () => {
     appEl.dataset.sidebarOpen = '0';
     requestAnimationFrame(() => { fitAndResize(); focusTerminalIfDesktop(); });

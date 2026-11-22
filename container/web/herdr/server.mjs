@@ -274,7 +274,7 @@ export function createGateway(options = {}) {
         if (preset === 'agent') {
           const requested = String(body.agent || process.env.SWARMBOX_AGENT || 'yolo').trim();
           const cmd = ALLOWED_AGENT_CMDS.has(requested) ? requested : 'yolo';
-          argv = ['/bin/bash', '-lc', `exec ${cmd}`];
+          argv = ['/bin/bash', '-lic', `${cmd}; exec /bin/bash -l`];
           prefix = cmd === 'yolo' ? 'agent' : cmd;
         }
         const name = uniqueTabName(body.name, prefix, Array.from(hc.terminals.values()));

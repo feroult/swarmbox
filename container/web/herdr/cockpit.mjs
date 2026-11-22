@@ -243,6 +243,38 @@ function wrapText(text, width, maxLines = 4) {
   return lines.slice(0, maxLines);
 }
 
+const AGENT_APP_LABELS = {
+  antigravity: 'agy',
+  agy: 'agy',
+  claude: 'claude',
+  codex: 'codex',
+  opencode: 'opencode',
+  gemini: 'gemini',
+};
+const SHELL_NAMES = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
+
+function smartTabName(t) {
+  if (!t) return 'no tab';
+  const rawName = String(t.name || '').trim();
+  const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);
+  if (!isGenericShell) return rawName;
+
+  const app = String((t.status && t.status.app) || '').toLowerCase();
+  if (AGENT_APP_LABELS[app]) return AGENT_APP_LABELS[app];
+
+  const fg = String((t.foreground && t.foreground.name) || '').trim();
+  const fgLow = fg.toLowerCase();
+  if (AGENT_APP_LABELS[fgLow]) return AGENT_APP_LABELS[fgLow];
+  if (fg && !SHELL_NAMES.has(fgLow)) return fg;
+
+  const cwd = String((t.foreground && t.foreground.cwd) || t.cwd || '').replace(/\/+$/, '');
+  if (cwd && cwd !== HOME && cwd !== '/') {
+    const base = cwd.slice(cwd.lastIndexOf('/') + 1);
+    if (base) return base;
+  }
+  return 'shell';
+}
+
 function statusMeta(term, pal) {
   const st = term && term.status && typeof term.status === 'object' ? term.status.state : null;
   if (st === 'working') return { dot: '◉', color: pal.accentBright, label: 'working' };
@@ -572,7 +604,7 @@ export class Cockpit {
     if (preset === 'agent') {
       const requested = String(process.env.SWARMBOX_AGENT || 'yolo').trim();
       const cmd = ALLOWED_AGENT_CMDS.has(requested) ? requested : 'yolo';
-      argv = ['/bin/bash', '-lc', `exec ${cmd}`];
+      argv = ['/bin/bash', '-lic', `${cmd}; exec /bin/bash -l`];
       prefix = cmd === 'yolo' ? 'agent' : cmd;
     }
     try {
@@ -1024,7 +1056,7 @@ export class Cockpit {
   _renderTopBar(L, pal) {
     const bgS = bgHex(pal.surface);
     const active = this.terminals.find((t) => t.address === this.activeAddr);
-    const activeName = active ? (active.name || active.address) : 'no tab';
+    const activeName = smartTabName(active);
     const sm = statusMeta(active, pal);
     const ss = sysopStyle(this.sysop.state, pal);
     const themeLabel = (HERDR_THEMES[this.themeName] || HERDR_THEMES['purple-glow']).label;
@@ -1147,7 +1179,7 @@ export class Cockpit {
     );
     out.push(buildRow(box.w, bgS, [{ text: '─'.repeat(box.w), style: fgHex(pal.border) }]));
 
-    const footerRows = 4; // hairline + [+ Shell] + [+ Agent] + [Theme]
+    const footerRows = 3; // hairline + [+ New tab] + [Theme]
     const listMax = Math.max(1, box.h - 2 - footerRows);
     const renderedTabRows = [];
     const allowSubRows = listMax >= this.terminals.length * 2;
@@ -1156,7 +1188,7 @@ export class Cockpit {
       const t = this.terminals[i];
       const isAct = t.address === this.activeAddr;
       const sm = statusMeta(t, pal);
-      const name = t.name || t.address;
+      const name = smartTabName(t);
       const rowY = box.y + 2 + renderedTabRows.length;
       const onSelect = () => this._attachTo(t.address).catch(() => {});
 
@@ -1199,8 +1231,7 @@ export class Cockpit {
               ]
             : [];
           const msgBudget = Math.max(4, box.w - 5 - (pct !== null ? barLen + 1 : 0));
-          const rawMsg = t.status.msg ? (pct !== null ? t.status.msg : `working · ${t.status.msg}`) : 'working…';
-          const msgTxt = clipText(rawMsg, msgBudget);
+          const msgTxt = clipText(t.status.msg || 'working…', msgBudget);
           this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: subY, y2: subY, onClick: onSelect });
           renderedTabRows.push(
             buildRow(box.w, rowBg, [
@@ -1241,15 +1272,12 @@ export class Cockpit {
       ]);
     };
 
-    out.push(actionRow(bgBtn, `${fgHex(pal.accentBright)}\x1b[1m`, '+ Shell', '^Ac'));
+    out.push(actionRow(bgBtn, `${fgHex(pal.accentBright)}\x1b[1m`, '+ New tab', '^Ac'));
     this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: actY + 1, y2: actY + 1, onClick: () => this._createTab('shell') });
-
-    out.push(actionRow(bgBtn, fgHex(pal.accent), '+ Agent', '^AC'));
-    this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: actY + 2, y2: actY + 2, onClick: () => this._createTab('agent') });
 
     const tLabel = (HERDR_THEMES[this.themeName] || HERDR_THEMES['purple-glow']).label;
     out.push(actionRow(bgS, fgHex(pal.muted), `◐ ${tLabel}`, '^At'));
-    this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: actY + 3, y2: actY + 3, onClick: () => this._cycleTheme() });
+    this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: actY + 2, y2: actY + 2, onClick: () => this._cycleTheme() });
 
     while (out.length < box.h) out.push(buildRow(box.w, bgS, []));
     return out.slice(0, box.h);
