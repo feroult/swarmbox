@@ -739,60 +739,89 @@
   });
 
   // Desktop keyboard shortcuts (100% aligned with Terminal Cockpit:
-  // Alt+1..9 tabs, Alt+N shell, Alt+B sidebar, Alt+S Sysop, Alt+G goal, Alt+T cycle theme)
-  // Plus gentle desktop focus-rescue: typing when focus landed on <body> routes cleanly into xterm.
+  // Alt+1..9 tabs, Alt+N shell, Alt+B sidebar, Alt+S Sysop, Alt+G goal, Alt+T cycle theme, Alt+-/=/0 font)
+  // Matches e.code first so macOS Option symbols (¡™£˜∫ß©†) and non-US layouts work reliably.
   const THEME_KEYS = Object.keys(THEMES);
-  window.addEventListener('keydown', (e) => {
-    const tag = e.target && e.target.tagName;
-    const inField = tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT';
-    if (e.altKey && !e.ctrlKey && !e.metaKey) {
-      if (inField) return;
-      if (e.key >= '1' && e.key <= '9') {
-        const idx = Number(e.key) - 1;
-        if (terminals[idx]) {
-          e.preventDefault();
-          if (activeId !== terminals[idx].address) connectPty(terminals[idx].address);
-          else focusTerminalIfDesktop();
-        }
-        return;
+
+  function matchAltShortcut(e) {
+    if (!e || !e.altKey || e.ctrlKey || e.metaKey) return null;
+    const code = e.code || '';
+    const key = e.key || '';
+    const low = key.toLowerCase();
+
+    if (/^Digit[1-9]$/.test(code)) return { action: 'tab', idx: Number(code.slice(5)) - 1 };
+    if (/^Numpad[1-9]$/.test(code)) return { action: 'tab', idx: Number(code.slice(6)) - 1 };
+    if (key >= '1' && key <= '9') return { action: 'tab', idx: Number(key) - 1 };
+
+    if (code === 'KeyN' || low === 'n') return { action: 'new-shell' };
+    if (code === 'KeyS' || low === 's') return { action: 'sysop' };
+    if (code === 'KeyB' || low === 'b') return { action: 'sidebar' };
+    if (code === 'KeyG' || low === 'g') return { action: 'goal' };
+    if (code === 'KeyT' || low === 't') return { action: 'theme' };
+    if (code === 'Equal' || code === 'NumpadAdd' || key === '=' || key === '+') return { action: 'font', delta: 1 };
+    if (code === 'Minus' || code === 'NumpadSubtract' || key === '-' || key === '_') return { action: 'font', delta: -1 };
+    if (code === 'Digit0' || code === 'Numpad0' || key === '0') return { action: 'font', delta: 0 };
+    return null;
+  }
+
+  function runAltShortcut(sc) {
+    if (!sc) return;
+    if (sc.action === 'tab') {
+      if (terminals[sc.idx]) {
+        if (activeId !== terminals[sc.idx].address) connectPty(terminals[sc.idx].address);
+        else focusTerminalIfDesktop();
       }
-      const low = e.key.toLowerCase();
-      if (low === 'n') { e.preventDefault(); spawnTab('shell'); }
-      else if (low === 's') { e.preventDefault(); toggleDesktopSysop(); }
-      else if (low === 'b') { e.preventDefault(); toggleSidebar(); }
-      else if (low === 'g') {
+      return;
+    }
+    if (sc.action === 'new-shell') { spawnTab('shell'); return; }
+    if (sc.action === 'sysop') { toggleDesktopSysop(); return; }
+    if (sc.action === 'sidebar') { toggleSidebar(); return; }
+    if (sc.action === 'goal') {
+      if (window.innerWidth > 860 && appEl.dataset.sysopOpen !== '1') toggleDesktopSysop();
+      else if (window.innerWidth <= 860) setMobileSysop(true);
+      goalInputEl.focus();
+      return;
+    }
+    if (sc.action === 'theme') {
+      const idx = THEME_KEYS.indexOf(themeSelectEl.value);
+      applyTheme(THEME_KEYS[(idx + 1) % THEME_KEYS.length], true);
+      focusTerminalIfDesktop();
+      return;
+    }
+    if (sc.action === 'font') {
+      adjustFontOffset(sc.delta);
+    }
+  }
+
+  function isRealFormField(el) {
+    if (!el || !el.tagName) return false;
+    if (el.tagName === 'TEXTAREA') return !el.classList?.contains('xterm-helper-textarea');
+    return el.tagName === 'INPUT' || el.tagName === 'SELECT';
+  }
+
+  window.addEventListener('keydown', (e) => {
+    const inUiField = isRealFormField(e.target);
+    if (e.altKey && !e.ctrlKey && !e.metaKey) {
+      if (inUiField) return;
+      const sc = matchAltShortcut(e);
+      if (sc) {
         e.preventDefault();
-        if (window.innerWidth > 860 && appEl.dataset.sysopOpen !== '1') toggleDesktopSysop();
-        else if (window.innerWidth <= 860) setMobileSysop(true);
-        goalInputEl.focus();
-      } else if (low === 't') {
-        e.preventDefault();
-        const idx = THEME_KEYS.indexOf(themeSelectEl.value);
-        applyTheme(THEME_KEYS[(idx + 1) % THEME_KEYS.length], true);
-        focusTerminalIfDesktop();
-      } else if (e.key === '=' || e.key === '+') {
-        e.preventDefault();
-        adjustFontOffset(1);
-      } else if (e.key === '-' || e.key === '_') {
-        e.preventDefault();
-        adjustFontOffset(-1);
-      } else if (e.key === '0') {
-        e.preventDefault();
-        adjustFontOffset(0);
+        e.stopPropagation();
+        runAltShortcut(sc);
       }
       return;
     }
 
     // Gentle focus-rescue on desktop: if focus slipped to document.body (e.g. clicked empty chrome),
     // rescue regular typing straight back into the terminal without losing the keystroke.
-    if (window.innerWidth > 860 && !inField && !e.metaKey && !e.altKey && document.activeElement === document.body) {
+    if (window.innerWidth > 860 && !inUiField && !e.metaKey && !e.altKey && document.activeElement === document.body) {
       if (e.ctrlKey && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v')) return;
       if (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace') {
         const sess = activeSession();
         if (sess) sess.term.focus();
       }
     }
-  });
+  }, true);
 
   function tabState(t) {
     return (t && t.status && t.status.state) || 'idle';
@@ -920,9 +949,10 @@
       });
     }
 
-    // Ctrl+C copies when text is selected; Ctrl+V pastes from clipboard
+    // Ctrl+C copies when text is selected; Ctrl+V pastes from clipboard; Alt shortcuts stay in Web UI
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
+      if (matchAltShortcut(ev)) return false;
       if (ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key.toLowerCase() === 'c' && term.hasSelection()) {
         navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
         term.clearSelection();
