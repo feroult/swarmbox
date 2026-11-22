@@ -825,37 +825,38 @@
     return '';
   }
 
+  function cleanStatusText(raw) {
+    return String(raw || '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function tabTitleParts(t) {
-    if (!t) return { title: 'shell', pill: '', usedMsgAsTitle: false };
+    if (!t) return { title: 'shell', pill: '' };
     const rawName = String(t.name || '').trim();
     const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);
     const badge = tabAgentBadge(t);
     const pill = badge && (isGenericShell || !rawName.toLowerCase().includes(badge)) ? badge : '';
 
     if (!isGenericShell) {
-      return { title: rawName, pill, usedMsgAsTitle: false };
-    }
-
-    // For agy (antigravity), status.msg holds the live session title (e.g. "Understand This Repo"):
-    // surface it directly as the truncated tab title followed by the [agy] pill!
-    const stMsg = String((t.status && t.status.msg) || '').trim();
-    if (badge === 'agy' && stMsg) {
-      return { title: stMsg, pill: 'agy', usedMsgAsTitle: true };
+      return { title: rawName, pill };
     }
 
     const cwd = String((t.foreground && t.foreground.cwd) || t.cwd || '').replace(/\/+$/, '');
     if (cwd && cwd !== '/home/agent' && cwd !== '/') {
       const base = cwd.slice(cwd.lastIndexOf('/') + 1);
-      if (base) return { title: base, pill, usedMsgAsTitle: false };
+      if (base) return { title: base, pill };
     }
 
     const fg = String((t.foreground && t.foreground.name) || '').trim();
     const fgLow = fg.toLowerCase();
     if (fg && !SHELL_NAMES.has(fgLow) && fgLow !== pill) {
-      return { title: fg, pill, usedMsgAsTitle: false };
+      return { title: fg, pill };
     }
 
-    return { title: 'shell', pill, usedMsgAsTitle: false };
+    return { title: rawName || 'shell', pill };
   }
 
   function tabDisplayName(t) {
@@ -868,21 +869,17 @@
 
   function tabSubtitle(t) {
     const st = t && t.status;
-    const parts = tabTitleParts(t);
+    const msg = cleanStatusText(st && st.msg);
     const cwd = (t && t.foreground && t.foreground.cwd) || (t && t.cwd) || '';
     const shortCwd = cwd.startsWith('/home/agent') ? '~' + cwd.slice('/home/agent'.length) : cwd;
 
-    if (st && st.state === 'blocked') return `blocked · ${st.msg || st.kind || 'needs input'}`;
+    if (st && st.state === 'blocked') return `blocked · ${msg || st.kind || 'needs input'}`;
     if (st && st.state === 'working') {
       const pct = typeof st.progress === 'number' ? `${st.progress}% ` : '';
-      if (parts.usedMsgAsTitle) return shortCwd || (pct ? pct.trim() : 'working…');
-      return `${pct}${st.msg || shortCwd || 'working…'}`;
+      return `${pct}${msg || shortCwd || 'working…'}`;
     }
-    if (st && st.state === 'done') {
-      if (parts.usedMsgAsTitle) return shortCwd ? `✓ ${shortCwd}` : '✓ done';
-      return st.msg ? `✓ ${st.msg}` : '✓ done';
-    }
-    if (st && st.state === 'error') return `✕ ${st.msg || 'error'}`;
+    if (st && st.state === 'done') return msg ? `✓ ${msg}` : '✓ done';
+    if (st && st.state === 'error') return `✕ ${msg || 'error'}`;
     if (shortCwd) return shortCwd;
     return (t && t.title) || (t && t.address) || '';
   }

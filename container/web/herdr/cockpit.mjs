@@ -253,8 +253,16 @@ const AGENT_APP_LABELS = {
 };
 const SHELL_NAMES = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
 
+function cleanStatusText(raw) {
+  return String(raw || '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function smartTabParts(t) {
-  if (!t) return { title: 'no tab', pill: '', usedMsgAsTitle: false };
+  if (!t) return { title: 'no tab', pill: '' };
   const rawName = String(t.name || '').trim();
   const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);
   const app = String((t.status && t.status.app) || '').toLowerCase();
@@ -263,22 +271,17 @@ function smartTabParts(t) {
   const badge = AGENT_APP_LABELS[app] || AGENT_APP_LABELS[fgLow] || '';
   const pill = badge && (isGenericShell || !rawName.toLowerCase().includes(badge)) ? badge : '';
 
-  if (!isGenericShell) return { title: rawName, pill, usedMsgAsTitle: false };
-
-  const stMsg = String((t.status && t.status.msg) || '').trim();
-  if (badge === 'agy' && stMsg) {
-    return { title: stMsg, pill: 'agy', usedMsgAsTitle: true };
-  }
+  if (!isGenericShell) return { title: rawName, pill };
 
   const cwd = String((t.foreground && t.foreground.cwd) || t.cwd || '').replace(/\/+$/, '');
   if (cwd && cwd !== HOME && cwd !== '/') {
     const base = cwd.slice(cwd.lastIndexOf('/') + 1);
-    if (base) return { title: base, pill, usedMsgAsTitle: false };
+    if (base) return { title: base, pill };
   }
   if (fg && !SHELL_NAMES.has(fgLow) && fgLow !== pill) {
-    return { title: fg, pill, usedMsgAsTitle: false };
+    return { title: fg, pill };
   }
-  return { title: 'shell', pill, usedMsgAsTitle: false };
+  return { title: rawName || 'shell', pill };
 }
 
 function smartTabName(t) {
@@ -1199,7 +1202,7 @@ export class Cockpit {
       const t = this.terminals[i];
       const isAct = t.address === this.activeAddr;
       const sm = statusMeta(t, pal);
-      const { title: tabTitle, pill, usedMsgAsTitle } = smartTabParts(t);
+      const { title: tabTitle, pill } = smartTabParts(t);
       const rowY = box.y + 2 + renderedTabRows.length;
       const onSelect = () => this._attachTo(t.address).catch(() => {});
 
@@ -1234,7 +1237,8 @@ export class Cockpit {
       // Optional rich OSC 7501 sub-row (SwarmBox ▰▱ progress bar or blocked message) when space allows
       if (allowSubRows && renderedTabRows.length < listMax && t.status && typeof t.status === 'object') {
         const subY = box.y + 2 + renderedTabRows.length;
-        if (t.status.state === 'working' && !usedMsgAsTitle && (pct !== null || t.status.msg)) {
+        const cleanMsg = cleanStatusText(t.status.msg);
+        if (t.status.state === 'working' && (pct !== null || cleanMsg)) {
           const barLen = 6;
           const filled = pct !== null ? Math.round((pct / 100) * barLen) : 3;
           const barSegs = pct !== null
@@ -1245,7 +1249,7 @@ export class Cockpit {
               ]
             : [];
           const msgBudget = Math.max(4, box.w - 5 - (pct !== null ? barLen + 1 : 0));
-          const msgTxt = clipText(t.status.msg || 'working…', msgBudget);
+          const msgTxt = clipText(cleanMsg || 'working…', msgBudget);
           this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: subY, y2: subY, onClick: onSelect });
           renderedTabRows.push(
             buildRow(box.w, rowBg, [
@@ -1255,13 +1259,13 @@ export class Cockpit {
               { text: msgTxt, style: fgHex(pal.dim) },
             ]),
           );
-        } else if (t.status.state === 'blocked' && t.status.msg) {
+        } else if (t.status.state === 'blocked' && cleanMsg) {
           this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: subY, y2: subY, onClick: onSelect });
           renderedTabRows.push(
             buildRow(box.w, rowBg, [
               { text: isAct ? '▌' : ' ', style: isAct ? fgHex(pal.amber) : '' },
               { text: '   ↳ ', style: fgHex(pal.amber) },
-              { text: clipText(t.status.msg, Math.max(4, box.w - 6)), style: fgHex(pal.amber) },
+              { text: clipText(cleanMsg, Math.max(4, box.w - 6)), style: fgHex(pal.amber) },
             ]),
           );
         }
