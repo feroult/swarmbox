@@ -53,27 +53,16 @@
     </div>
 
     <div class="sidebar-foot">
-      <label class="theme-picker">
-        <span class="theme-label">
-          <span class="theme-swatch" id="theme-swatch" aria-hidden="true"></span>
-          <span>Theme</span>
+      <button type="button" class="settings-launch-btn" id="btn-sidebar-settings" title="Open Settings (Alt+,)">
+        <span class="settings-launch-left">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+          <span>Settings</span>
         </span>
-        <select id="theme-select" aria-label="Select theme">
-          <option value="purple-glow">Purple Glow</option>
-          <option value="catppuccin">Catppuccin Mocha</option>
-          <option value="tokyo-night">Tokyo Night</option>
-          <option value="nord">Nord</option>
-          <option value="rose-pine">Rosé Pine</option>
-        </select>
-      </label>
-      <div class="font-picker">
-        <span class="theme-label"><span>Font</span></span>
-        <div class="font-stepper">
-          <button type="button" class="font-btn" id="btn-font-dec" title="Smaller text (Alt+-)" aria-label="Decrease font size">−</button>
-          <button type="button" class="font-val" id="btn-font-reset" title="Reset default font size (Alt+0)">16.5</button>
-          <button type="button" class="font-btn" id="btn-font-inc" title="Larger text (Alt+=)" aria-label="Increase font size">+</button>
-        </div>
-      </div>
+        <span class="settings-launch-right">
+          <span class="theme-swatch" id="theme-swatch" aria-hidden="true"></span>
+          <span class="settings-kbd">Alt+,</span>
+        </span>
+      </button>
       <div class="conn-pill" id="conn-pill">
         <span class="dot"></span>
         <span id="conn-text">connecting…</span>
@@ -98,13 +87,6 @@
       </div>
 
       <div class="topbar-right">
-        <select class="mobile-theme-select mobile-only" id="theme-select-mobile" aria-label="Theme">
-          <option value="purple-glow">Purple Glow</option>
-          <option value="catppuccin">Catppuccin</option>
-          <option value="tokyo-night">Tokyo Night</option>
-          <option value="nord">Nord</option>
-          <option value="rose-pine">Rosé Pine</option>
-        </select>
         <button class="chip-btn" id="btn-interrupt" title="Interrupt active terminal (Ctrl+C / Esc)">
           <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>
           <span>Stop</span>
@@ -112,6 +94,9 @@
         <button class="chip-btn chip-toggle desktop-only" id="btn-toggle-sysop" data-on="1" title="Toggle Sysop panel (Alt+S)">
           <span class="toggle-dot" aria-hidden="true"></span>
           <span>Sysop</span>
+        </button>
+        <button class="icon-btn" id="btn-topbar-settings" title="Settings (Alt+,)" aria-label="Open settings">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
         </button>
       </div>
     </header>
@@ -237,6 +222,78 @@
       </div>
     </div>
   </aside>
+</div>
+
+<!-- First-Class Studio Settings Modal (Desktop Dialog / Mobile Bottom Sheet) -->
+<div class="settings-overlay" id="settings-overlay" aria-hidden="true">
+  <div class="settings-dialog" id="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="settings-handle mobile-only" id="settings-handle" aria-hidden="true"><span></span></div>
+
+    <div class="settings-shell">
+      <!-- Left Navigation Rail (Desktop) / Pill Tab Bar (Mobile) -->
+      <nav class="settings-nav" id="settings-nav" aria-label="Settings sections">
+        <div class="settings-nav-brand desktop-only">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>Preferences</span>
+        </div>
+        <div class="settings-nav-list">
+          <button type="button" class="snav-item active" data-section="appearance">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2Z"/></svg>
+            <span>Appearance</span>
+          </button>
+          <button type="button" class="snav-item" data-section="box">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+            <span>SwarmBox</span>
+          </button>
+          <button type="button" class="snav-item" data-section="sysop">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><path d="M8 16h.01M16 16h.01"/></svg>
+            <span>Sysop</span>
+          </button>
+          <button type="button" class="snav-item" data-section="voice">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            <span>Voice</span>
+          </button>
+          <button type="button" class="snav-item" data-section="system">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>
+            <span>Addons &amp; System</span>
+          </button>
+        </div>
+        <div class="settings-nav-foot desktop-only">
+          <span class="settings-ver" id="settings-version">SwarmBox</span>
+        </div>
+      </nav>
+
+      <!-- Main Content Pane -->
+      <div class="settings-main">
+        <header class="settings-head">
+          <div class="settings-head-left">
+            <h2 class="settings-title" id="settings-title">Appearance</h2>
+            <span class="settings-sub" id="settings-sub">Themes, typography &amp; terminal canvas</span>
+          </div>
+          <button type="button" class="icon-btn" id="btn-settings-close" title="Close settings (Esc)" aria-label="Close settings">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </header>
+
+        <div class="settings-body" id="settings-body"></div>
+
+        <!-- Sticky Host Apply Bar (slides in whenever host-managed keys are modified) -->
+        <div class="settings-host-bar hidden" id="settings-host-bar">
+          <div class="host-bar-head">
+            <div class="host-bar-title">
+              <span class="host-bar-badge" id="host-bar-count">1 change</span>
+              <span>Run on your host to persist &amp; restart the box</span>
+            </div>
+            <div class="host-bar-actions">
+              <button type="button" class="sbtn-ghost" id="btn-host-discard">Discard</button>
+              <button type="button" class="sbtn-primary" id="btn-host-copy">Copy command</button>
+            </div>
+          </div>
+          <pre class="host-bar-cmd" id="host-bar-cmd"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="/vendor/xterm.js"></script>

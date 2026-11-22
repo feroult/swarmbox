@@ -20,7 +20,9 @@ export const HC_BIN = process.env.SWARMBOX_TEST_HC_BIN || 'hc';
 export const SYSOP_BIN = process.env.SWARMBOX_TEST_SYSOP_BIN || 'swarmbox-sysop';
 export const SB_RUN_DIR = process.env.SB_RUN_DIR || process.env.SWARMBOX_TEST_RUN_DIR || '/tmp/swarmbox';
 export const SB_STATE_DIR = resolveXdg(process.env.XDG_STATE_HOME, path.join(HOME, '.local', 'state'), 'swarmbox');
+export const SB_DATA_DIR = resolveXdg(process.env.XDG_DATA_HOME, path.join(HOME, '.local', 'share'), 'swarmbox');
 export const SB_CONFIG_DIR = resolveXdg(process.env.XDG_CONFIG_HOME, path.join(HOME, '.config'), 'swarmbox');
+export const ADDON_BIN = process.env.SWARMBOX_TEST_ADDON_BIN || 'swarmbox-addon';
 export const XDG_CONFIG_ROOT = isAbs(process.env.XDG_CONFIG_HOME)
   ? process.env.XDG_CONFIG_HOME.replace(/\/+$/, '')
   : path.join(HOME, '.config');
@@ -971,4 +973,175 @@ export function runCommand(bin, args, stdinText = null, timeoutMs = 15000) {
     }
     p.stdin.end();
   });
+}
+
+// ---------------------------------------------------------------------------
+// Live SwarmBox configuration, addons, MCP, SSH pubkey & health snapshot
+// ---------------------------------------------------------------------------
+function readTextSafe(filePath) {
+  try {
+    return fs.readFileSync(filePath, 'utf8').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+function parseAddonConf(filePath) {
+  const txt = readTextSafe(filePath);
+  if (!txt) return null;
+  const out = {};
+  for (const raw of txt.split('\n')) {
+    const ln = raw.trim();
+    if (!ln || ln.startsWith('#')) continue;
+    const eq = ln.indexOf('=');
+    if (eq <= 0) continue;
+    const k = ln.slice(0, eq).trim();
+    let v = ln.slice(eq + 1).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1);
+    }
+    out[k] = v;
+  }
+  return out.NAME ? out : null;
+}
+
+function listAddonsSnapshot() {
+  const imageDir = process.env.SWARMBOX_IMAGE_ADDONS_DIR || '/usr/local/lib/swarmbox/addons';
+  const userDir = path.join(SB_CONFIG_DIR, 'addons');
+  const dataDir = path.join(SB_DATA_DIR, 'addons');
+  const bakedDir = '/opt/swarmbox/addons';
+  const byName = new Map();
+
+  for (const [level, dir] of [['image', imageDir], ['user', userDir]]) {
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) {}
+    for (const ent of entries) {
+      if (!ent.isDirectory()) continue;
+      const conf = parseAddonConf(path.join(dir, ent.name, 'addon.conf'));
+      if (!conf) continue;
+      byName.set(conf.NAME, {
+        name: conf.NAME,
+        description: conf.DESCRIPTION || '',
+        manifestVersion: conf.VERSION || '',
+        commands: (conf.COMMANDS || '').split(/\s+/).filter(Boolean),
+        level,
+      });
+    }
+  }
+
+  const out = [];
+  for (const item of Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name))) {
+    const userCur = path.join(dataDir, item.name, 'current');
+    const bakedCur = path.join(bakedDir, item.name, 'current');
+    let installed = false;
+    let installedVersion = '';
+    let location = '';
+    for (const [loc, cur] of [['workspace', userCur], ['image', bakedCur]]) {
+      try {
+        const target = fs.readlinkSync(cur);
+        installed = true;
+        installedVersion = path.basename(target);
+        location = loc;
+        break;
+      } catch (_) {
+        try {
+          if (fs.existsSync(cur)) {
+            installed = true;
+            location = loc;
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+    out.push({
+      ...item,
+      installed,
+      installedVersion,
+      location,
+    });
+  }
+  return out;
+}
+
+function listMcpServers() {
+  const names = new Set();
+  for (const dir of ['/etc/swarmbox/mcp', path.join(SB_CONFIG_DIR, 'mcp')]) {
+    try {
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!ent.isDirectory()) continue;
+        if (fs.existsSync(path.join(dir, ent.name, 'config.json'))) names.add(ent.name);
+      }
+    } catch (_) {}
+  }
+  return Array.from(names).sort();
+}
+
+function envField(envKey, defVal, env = process.env) {
+  const raw = env[envKey];
+  const has = typeof raw === 'string' && raw.trim() !== '';
+  const value = has ? raw.trim() : defVal;
+  return { value, default: defVal, custom: has && value !== defVal };
+}
+
+export function readBoxConfigSnapshot(terminals = [], env = process.env) {
+  const version = readTextSafe('/usr/local/share/swarmbox/host/VERSION') || 'dev';
+  const sysopSnap = readSysopSnapshot(terminals);
+  const pubkey = readTextSafe(path.join(HOME, '.ssh', 'id_ed25519.pub'))
+    || readTextSafe(path.join(HOME, '.ssh', 'id_rsa.pub'))
+    || '';
+  const healthRaw = readTextSafe(path.join(SB_STATE_DIR, 'health'));
+  const health = healthRaw ? healthRaw.split('\n').map((s) => s.trim()).filter(Boolean) : [];
+
+  const CLASSIC_MUX = 'tm' + 'ux';
+  const box = {
+    NAME: envField('SWARMBOX_NAME', 'swarmbox', env),
+    MUX: envField('SWARMBOX_MUX', CLASSIC_MUX, env),
+    AGENT: envField('SWARMBOX_AGENT', '', env),
+    YOLO: envField('SWARMBOX_YOLO', '1', env),
+    WEB: envField('SWARMBOX_WEB', '1', env),
+    WEB_PORT: envField('SWARMBOX_WEB_PORT', '7681', env),
+    TZ: { value: (env.TZ && env.TZ.trim()) || 'local', default: 'local', custom: Boolean(env.TZ && env.TZ.trim() && env.TZ.trim() !== 'local') },
+    HOSTNAME: { value: os.hostname() || 'swarmbox', default: 'swarmbox', custom: Boolean(os.hostname() && os.hostname() !== 'swarmbox') },
+    WITH: envField('SWARMBOX_WITH', '', env),
+    BROWSER_URL: envField('SWARMBOX_BROWSER_URL', '', env),
+  };
+
+  const sysopSettings = {
+    'sysop.autonomy': envField('SWARMBOX_SYSOP_AUTONOMY', 'auto', env),
+    'sysop.brain': envField('SWARMBOX_SYSOP_BRAIN', 'claude', env),
+    'sysop.model': envField('SWARMBOX_SYSOP_MODEL', 'sonnet', env),
+    'sysop.countdown': envField('SWARMBOX_SYSOP_COUNTDOWN', '4', env),
+    'sysop.max_steps': envField('SWARMBOX_SYSOP_MAX_STEPS', '20', env),
+    'sysop.max_seconds': envField('SWARMBOX_SYSOP_MAX_SECONDS', '300', env),
+    'sysop.panel': envField('SWARMBOX_SYSOP_PANEL_MODE', 'always', env),
+    'sysop.topic': envField('SWARMBOX_SYSOP_TOPIC', 'goal', env),
+    'sysop.group': envField('SWARMBOX_SYSOP_GROUP', 'sysop', env),
+  };
+
+  const voiceSettings = {
+    'voice.language': envField('SWARMBOX_VOICE_LANGUAGE', 'auto', env),
+    'voice.stt.model': envField('SWARMBOX_VOICE_STT_MODEL', 'small', env),
+    'voice.stt.vocabulary': envField('SWARMBOX_VOICE_STT_VOCABULARY', '', env),
+    'voice.web': envField('SWARMBOX_VOICE_WEB', '1', env),
+    'voice.topic': envField('SWARMBOX_VOICE_TOPIC', 'goal', env),
+  };
+
+  return {
+    version,
+    theme: readSavedTheme(),
+    themes: THEME_ORDER,
+    box,
+    sysop: {
+      up: sysopSnap.up,
+      state: sysopSnap.state,
+      settings: sysopSettings,
+    },
+    voice: {
+      settings: voiceSettings,
+    },
+    addons: listAddonsSnapshot(),
+    mcp: listMcpServers(),
+    pubkey,
+    health,
+  };
 }

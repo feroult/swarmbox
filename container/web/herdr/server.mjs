@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import {
+  ADDON_BIN,
   ALLOWED_AGENT_CMDS,
   HC_BIN,
   HERDR_THEMES,
@@ -23,6 +24,7 @@ import {
   SYSOP_BIN,
   isHiddenTerminal,
   readActiveTab,
+  readBoxConfigSnapshot,
   readSavedTheme,
   readSysopSnapshot,
   runCommand,
@@ -252,6 +254,37 @@ export function createGateway(options = {}) {
         saveTheme(name);
         broadcast(buildSnapshot({ type: 'theme' }));
         return sendJson(res, 200, { ok: true, theme: currentTheme });
+      }
+
+      if (pathname === '/api/config' && req.method === 'GET') {
+        currentTheme = readSavedTheme();
+        const cfg = readBoxConfigSnapshot(hc.listSnapshot());
+        cfg.theme = currentTheme;
+        return sendJson(res, 200, cfg);
+      }
+
+      const addonMatch = pathname.match(/^\/api\/addons\/([a-z0-9][a-z0-9_-]{0,40})\/install$/);
+      if (addonMatch && req.method === 'POST') {
+        const addonName = addonMatch[1];
+        const curCfg = readBoxConfigSnapshot(hc.listSnapshot());
+        if (!curCfg.addons.some((a) => a.name === addonName)) {
+          return sendJson(res, 404, { error: 'unknown_addon', message: `Addon "${addonName}" not found` });
+        }
+        const r = await runCommand(ADDON_BIN, ['install', addonName], null, 180000);
+        if (!r.ok) {
+          return sendJson(res, 502, {
+            error: 'addon_install_failed',
+            message: r.stderr || r.stdout || `swarmbox-addon install ${addonName} failed`,
+          });
+        }
+        await runCommand(ADDON_BIN, ['prepare'], null, 60000);
+        broadcast(buildSnapshot({ type: 'sysop' }));
+        return sendJson(res, 200, {
+          ok: true,
+          addon: addonName,
+          message: r.stdout || `${addonName} installed`,
+          config: readBoxConfigSnapshot(hc.listSnapshot()),
+        });
       }
 
       if (pathname === '/api/tabs' && req.method === 'GET') {

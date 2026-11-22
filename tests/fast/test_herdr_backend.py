@@ -632,18 +632,26 @@ class HerdrSysopAndAssetsTest(unittest.TestCase):
         # Exercise hc-client.mjs pure helpers directly in Node (no external npm deps needed)
         check_js = """
 import assert from 'node:assert/strict';
-import { isHiddenTerminal, sanitizeTabName, uniqueTabName, THEME_ORDER } from %r;
+import { isHiddenTerminal, sanitizeTabName, uniqueTabName, THEME_ORDER, readBoxConfigSnapshot } from %r;
 assert.equal(isHiddenTerminal({ labels: { 'swarmbox.role': 'sysop' } }), true);
 assert.equal(isHiddenTerminal({ labels: {} }), false);
 assert.equal(isHiddenTerminal({}), false);
 assert.ok(!/^t\\d+$/.test(sanitizeTabName('t1', 'shell')));
 assert.equal(uniqueTabName('shell', 'shell', [{ name: 'shell' }, { name: 'shell-2' }]), 'shell-3');
 assert.equal(THEME_ORDER.length, 5);
+const cfg = readBoxConfigSnapshot([], { SWARMBOX_MUX: 'herdr', SWARMBOX_WEB_PORT: '7699', SWARMBOX_SYSOP_AUTONOMY: 'confirm-all', SWARMBOX_VOICE_LANGUAGE: 'pt' });
+assert.equal(cfg.box.MUX.value, 'herdr');
+assert.equal(cfg.box.WEB_PORT.value, '7699');
+assert.equal(cfg.box.WEB_PORT.custom, true);
+assert.equal(cfg.sysop.settings['sysop.autonomy'].value, 'confirm-all');
+assert.equal(cfg.voice.settings['voice.language'].value, 'pt');
+assert.ok(Array.isArray(cfg.addons));
+assert.ok(Array.isArray(cfg.mcp));
 """ % (HERDR_CLIENT,)
         p2 = subprocess.run(["node", "--input-type=module", "-e", check_js], capture_output=True, text=True)
         self.assertEqual(p2.returncode, 0, p2.stderr)
 
-        # Verify app.js syntax, per-tab live sessions, zero-scroll hydration, reconnect resilience, and mobile inertia scroll
+        # Verify app.js syntax, per-tab live sessions, zero-scroll hydration, reconnect resilience, mobile inertia scroll, and Settings panel
         app_js = os.path.join(ROOT, "container", "web", "herdr", "public", "app.js")
         p3 = subprocess.run(["node", "--check", app_js], capture_output=True, text=True)
         self.assertEqual(p3.returncode, 0, p3.stderr)
@@ -658,10 +666,16 @@ assert.equal(THEME_ORDER.length, 5);
             "ws.onclose",
             "startTouchCoast",
             "TOUCH_FRICTION",
+            "openSettings",
+            "stagedHostConfig",
+            "buildHostApplyCommand",
+            "installAddonLive",
         ):
             self.assertIn(token, app_src)
         self.assertIn("wsPingTimer", server_src)
         self.assertIn("type: 'hydrated'", server_src)
+        self.assertIn("/api/config", server_src)
+        self.assertIn("api\\/addons\\/", server_src)
         self.assertIn("jetbrains-mono-latin.woff2", server_src)
         self.assertIn("nerd-symbols.woff2", server_src)
         self.assertIn("JetBrains Mono", app_src)

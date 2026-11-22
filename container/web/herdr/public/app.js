@@ -3,6 +3,7 @@
   // Default: SwarmBox Purple Glow (exact palette from docs/theme.md).
   const THEMES = {
     'purple-glow': {
+      label: 'Purple Glow',
       css: {
         '--bg': '#0c0b10',
         '--surface': '#12101a',
@@ -52,6 +53,7 @@
       },
     },
     catppuccin: {
+      label: 'Catppuccin',
       css: {
         '--bg': '#11111b',
         '--surface': '#181825',
@@ -91,6 +93,7 @@
       },
     },
     'tokyo-night': {
+      label: 'Tokyo Night',
       css: {
         '--bg': '#16161e',
         '--surface': '#1a1b26',
@@ -130,6 +133,7 @@
       },
     },
     nord: {
+      label: 'Nord',
       css: {
         '--bg': '#242933',
         '--surface': '#2e3440',
@@ -169,6 +173,7 @@
       },
     },
     'rose-pine': {
+      label: 'Rosé Pine',
       css: {
         '--bg': '#191724',
         '--surface': '#1f1d2e',
@@ -291,13 +296,23 @@
   const voiceHintEl = document.getElementById('voice-hint');
   const micLabelEl = document.getElementById('mic-label');
   const goalInputEl = document.getElementById('goal-input');
-  const themeSelectEl = document.getElementById('theme-select');
-  const themeSelectMobileEl = document.getElementById('theme-select-mobile');
+  const themeSwatchEl = document.getElementById('theme-swatch');
   const btnTts = document.getElementById('btn-tts');
   const btnMic = document.getElementById('btn-mic');
   const btnMobileMic = document.getElementById('btn-mobile-mic');
   const termWrapEl = document.getElementById('term-wrap');
   const btnJumpLive = document.getElementById('btn-jump-live');
+  const settingsOverlayEl = document.getElementById('settings-overlay');
+  const settingsNavEl = document.getElementById('settings-nav');
+  const settingsVersionEl = document.getElementById('settings-version');
+  const settingsTitleEl = document.getElementById('settings-title');
+  const settingsSubEl = document.getElementById('settings-sub');
+  const settingsBodyEl = document.getElementById('settings-body');
+  const settingsHostBarEl = document.getElementById('settings-host-bar');
+  const hostBarCountEl = document.getElementById('host-bar-count');
+  const hostBarCmdEl = document.getElementById('host-bar-cmd');
+  const btnHostCopy = document.getElementById('btn-host-copy');
+  const btnHostDiscard = document.getElementById('btn-host-discard');
 
   const terminalHostEl = document.getElementById('terminal');
   const MAX_TAB_SESSIONS = 8;
@@ -314,6 +329,14 @@
   let currentApproval = null;
   let voiceAddonAvailable = false;
   let countdownTimer = null;
+  let settingsOpen = false;
+  let settingsSection = 'appearance';
+  let boxConfig = null;
+  let boxConfigLoading = false;
+  let boxConfigError = '';
+  const stagedHostConfig = new Map();
+  const installingAddons = new Set();
+  const addonMessages = new Map();
 
   function activeSession() {
     return activeId ? (tabSessions.get(activeId) || null) : null;
@@ -332,9 +355,9 @@
     }
   }
 
-  const btnFontDec = document.getElementById('btn-font-dec');
-  const btnFontReset = document.getElementById('btn-font-reset');
-  const btnFontInc = document.getElementById('btn-font-inc');
+  const LINE_HEIGHT_PRESETS = { compact: 1.15, studio: 1.26, airy: 1.38 };
+  const CURSOR_STYLES = ['block', 'bar', 'underline'];
+  const SCROLLBACK_OPTIONS = [1500, 3000, 6000, 10000];
 
   let fontOffset = (() => {
     try {
@@ -343,10 +366,52 @@
     } catch (_) { return 0; }
   })();
 
+  let lineHeightPreset = (() => {
+    try {
+      const v = localStorage.getItem('swarmbox-herdr-lh');
+      if (v && LINE_HEIGHT_PRESETS[v]) return v;
+    } catch (_) {}
+    return '';
+  })();
+
+  let cursorStyle = (() => {
+    try {
+      const v = localStorage.getItem('swarmbox-herdr-cursor-style');
+      if (CURSOR_STYLES.includes(v)) return v;
+    } catch (_) {}
+    return 'block';
+  })();
+
+  let cursorBlink = (() => {
+    try {
+      const v = localStorage.getItem('swarmbox-herdr-cursor-blink');
+      if (v === '0') return false;
+      if (v === '1') return true;
+    } catch (_) {}
+    return true;
+  })();
+
+  let scrollbackLines = (() => {
+    try {
+      const v = Number(localStorage.getItem('swarmbox-herdr-scrollback') || '3000');
+      if (SCROLLBACK_OPTIONS.includes(v)) return v;
+    } catch (_) {}
+    return 3000;
+  })();
+
+  function effectiveLineHeightKey() {
+    if (lineHeightPreset && LINE_HEIGHT_PRESETS[lineHeightPreset]) return lineHeightPreset;
+    return window.innerWidth <= 860 ? 'compact' : 'studio';
+  }
+
+  function computeLineHeight() {
+    return LINE_HEIGHT_PRESETS[effectiveLineHeightKey()] || 1.26;
+  }
+
   // Dynamic column-aware font sizing:
-  // Desktop defaults to a comfortable 16.5px (adjustable via sidebar stepper or Alt+-/=/0).
+  // Desktop defaults to a comfortable 16.5px (adjustable via Settings or Alt+-/=/0).
   // On phones (<= 860px), pick the exact font size so >= 51 columns fit upright (keeping the
-  // 49-col SwarmBox banner & single-line Starship prompt completely unbroken).
+  // single-line Starship prompt completely unbroken).
   function computeFontSize() {
     const w = window.innerWidth;
     let base;
@@ -361,23 +426,50 @@
     return Math.max(9.5, Math.min(26, Math.round((base + fontOffset) * 2) / 2));
   }
 
-  function syncFontLabel() {
-    if (!btnFontReset) return;
-    const sz = computeFontSize();
-    btnFontReset.textContent = Number.isInteger(sz) ? `${sz}px` : `${sz.toFixed(1)}px`;
+  function formatFontPx(sz) {
+    return Number.isInteger(sz) ? `${sz}px` : `${sz.toFixed(1)}px`;
   }
-  syncFontLabel();
+
+  function syncAppearanceControls() {
+    if (!settingsOpen || settingsSection !== 'appearance') return;
+    const sz = computeFontSize();
+    const valEl = settingsBodyEl.querySelector('#s-font-val');
+    if (valEl) valEl.textContent = formatFontPx(sz);
+    const rangeEl = settingsBodyEl.querySelector('#s-font-range');
+    if (rangeEl) rangeEl.value = String(fontOffset);
+    const prevEl = settingsBodyEl.querySelector('#s-font-preview');
+    if (prevEl) {
+      prevEl.style.fontSize = `${Math.min(22, Math.max(11, sz))}px`;
+      prevEl.style.lineHeight = String(computeLineHeight());
+    }
+    settingsBodyEl.querySelectorAll('.theme-card').forEach((el) => {
+      el.classList.toggle('active', el.dataset.theme === currentThemeKey);
+    });
+  }
+
+  function setFontOffset(next) {
+    fontOffset = Math.max(-4, Math.min(8, Math.round(next * 2) / 2));
+    try { localStorage.setItem('swarmbox-herdr-font-offset', String(fontOffset)); } catch (_) {}
+    fitAndResize();
+    syncAppearanceControls();
+  }
 
   function adjustFontOffset(delta) {
-    fontOffset = delta === 0 ? 0 : Math.max(-4, Math.min(8, fontOffset + delta));
-    try { localStorage.setItem('swarmbox-herdr-font-offset', String(fontOffset)); } catch (_) {}
-    syncFontLabel();
-    fitAndResize();
+    setFontOffset(delta === 0 ? 0 : fontOffset + delta);
     focusTerminalIfDesktop();
   }
-  if (btnFontDec) btnFontDec.addEventListener('click', () => adjustFontOffset(-1));
-  if (btnFontReset) btnFontReset.addEventListener('click', () => adjustFontOffset(0));
-  if (btnFontInc) btnFontInc.addEventListener('click', () => adjustFontOffset(1));
+
+  function applyTerminalPrefs() {
+    const lh = computeLineHeight();
+    for (const sess of tabSessions.values()) {
+      sess.term.options.lineHeight = lh;
+      sess.term.options.cursorStyle = cursorStyle;
+      sess.term.options.cursorBlink = cursorBlink;
+      sess.term.options.scrollback = scrollbackLines;
+    }
+    fitAndResize();
+    syncAppearanceControls();
+  }
 
   // Eliminate faint horizontal hairline seams on block-drawing rows (banner.sh half-blocks)
   const BLOCK_RE = /[\u2580-\u259f]/;
@@ -599,9 +691,12 @@
     }
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', t.css['--bg']);
-    themeSelectEl.value = key;
-    themeSelectMobileEl.value = key;
+    if (themeSwatchEl) {
+      themeSwatchEl.style.background = t.css['--accent'];
+      themeSwatchEl.style.boxShadow = `0 0 8px ${t.css['--accent-glow']}`;
+    }
     try { localStorage.setItem('swarmbox-herdr-theme', key); } catch (_) {}
+    syncAppearanceControls();
     if (persist) {
       fetch('/api/theme', {
         method: 'POST',
@@ -615,14 +710,12 @@
     try { return localStorage.getItem('swarmbox-herdr-theme') || 'purple-glow'; } catch (_) { return 'purple-glow'; }
   })();
   applyTheme(savedTheme, false);
-  themeSelectEl.addEventListener('change', (e) => { applyTheme(e.target.value, true); focusTerminalIfDesktop(); });
-  themeSelectMobileEl.addEventListener('change', (e) => applyTheme(e.target.value, true));
 
   function fitSession(sess, sendResize = true) {
     if (!sess) return;
     try {
       const nextFont = computeFontSize();
-      const nextLH = window.innerWidth <= 860 ? 1.15 : 1.26;
+      const nextLH = computeLineHeight();
       if (sess.term.options.fontSize !== nextFont) sess.term.options.fontSize = nextFont;
       if (sess.term.options.lineHeight !== nextLH) sess.term.options.lineHeight = nextLH;
       updateBlockScale();
@@ -639,7 +732,7 @@
   }
 
   function fitAndResize() {
-    syncFontLabel();
+    syncAppearanceControls();
     const active = activeSession();
     for (const sess of tabSessions.values()) {
       if (sess === active) fitSession(sess, true);
@@ -667,6 +760,7 @@
   }
 
   function focusTerminalIfDesktop() {
+    if (settingsOpen) return;
     const sess = activeSession();
     if (sess && window.innerWidth > 860 && document.activeElement !== goalInputEl) {
       sess.term.focus();
@@ -692,6 +786,7 @@
   // Clicking anywhere on the terminal canvas (without a drag selection) restores keyboard focus
   // and recovers a dropped PTY socket immediately.
   termWrapEl.addEventListener('mouseup', () => {
+    if (settingsOpen) return;
     const sess = activeSession();
     if (!sess || window.innerWidth <= 860) return;
     if (sess.term.hasSelection() || (window.getSelection && window.getSelection().toString())) return;
@@ -741,6 +836,7 @@
     if (code === 'KeyB' || low === 'b') return { action: 'sidebar' };
     if (code === 'KeyG' || low === 'g') return { action: 'goal' };
     if (code === 'KeyT' || low === 't') return { action: 'theme' };
+    if (code === 'Comma' || key === ',') return { action: 'settings' };
     if (code === 'Equal' || code === 'NumpadAdd' || key === '=' || key === '+') return { action: 'font', delta: 1 };
     if (code === 'Minus' || code === 'NumpadSubtract' || key === '-' || key === '_') return { action: 'font', delta: -1 };
     if (code === 'Digit0' || code === 'Numpad0' || key === '0') return { action: 'font', delta: 0 };
@@ -749,6 +845,8 @@
 
   function runAltShortcut(sc) {
     if (!sc) return;
+    if (sc.action === 'settings') { toggleSettings(); return; }
+    if (settingsOpen) return;
     if (sc.action === 'tab') {
       if (terminals[sc.idx]) {
         if (activeId !== terminals[sc.idx].address) connectPty(terminals[sc.idx].address);
@@ -766,7 +864,7 @@
       return;
     }
     if (sc.action === 'theme') {
-      const idx = THEME_KEYS.indexOf(themeSelectEl.value);
+      const idx = THEME_KEYS.indexOf(currentThemeKey);
       applyTheme(THEME_KEYS[(idx + 1) % THEME_KEYS.length], true);
       focusTerminalIfDesktop();
       return;
@@ -783,6 +881,24 @@
   }
 
   window.addEventListener('keydown', (e) => {
+    if (settingsOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeSettings();
+        return;
+      }
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        const sc = matchAltShortcut(e);
+        if (sc && sc.action === 'settings') {
+          e.preventDefault();
+          e.stopPropagation();
+          closeSettings();
+        }
+      }
+      return;
+    }
+
     const inUiField = isRealFormField(e.target);
     if (e.altKey && !e.ctrlKey && !e.metaKey) {
       if (inUiField) return;
@@ -941,11 +1057,12 @@
     const term = new window.Terminal({
       fontFamily: "'JetBrains Mono', 'JetBrainsMono Nerd Font', 'PureNerdFont', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
       fontSize: computeFontSize(),
-      lineHeight: window.innerWidth <= 860 ? 1.15 : 1.26,
+      lineHeight: computeLineHeight(),
       fontWeight: '400',
       fontWeightBold: '600',
-      cursorBlink: true,
-      scrollback: 3000,
+      cursorStyle,
+      cursorBlink,
+      scrollback: scrollbackLines,
       macOptionIsMeta: true,
       allowProposedApi: true,
       theme: (THEMES[currentThemeKey] || THEMES['purple-glow']).xterm,
@@ -1492,9 +1609,9 @@
         <div>Speak or type what you want done — Sysop reads the active tab, routes to your agent, and holds risky actions for your approval.</div>
         <div class="shortcut-hints">
           <span class="kbd-chip"><b>Alt+1..9</b> tabs</span>
-          <span class="kbd-chip"><b>Alt+N</b> shell</span>
+          <span class="kbd-chip"><b>Alt+N</b> new tab</span>
           <span class="kbd-chip"><b>Alt+G</b> goal</span>
-          <span class="kbd-chip"><b>Alt+T</b> theme</span>
+          <span class="kbd-chip"><b>Alt+,</b> settings</span>
         </div>
       `;
       sysopFeedEl.appendChild(box);
@@ -1554,7 +1671,7 @@
       if (eventsWs !== ws) return;
       let msg;
       try { msg = JSON.parse(ev.data); } catch (_) { return; }
-      if (msg.theme && THEMES[msg.theme] && msg.theme !== themeSelectEl.value) {
+      if (msg.theme && THEMES[msg.theme] && msg.theme !== currentThemeKey) {
         applyTheme(msg.theme, false);
       }
       if (Array.isArray(msg.terminals)) {
@@ -1849,6 +1966,7 @@
     ttsEnabled = !ttsEnabled;
     btnTts.classList.toggle('active', ttsEnabled);
     if (ttsEnabled) speak('Sysop voice feedback enabled.');
+    if (settingsOpen && settingsSection === 'sysop') renderSettingsBody();
   });
 
   btnSysopStop.addEventListener('click', () => {
@@ -1897,6 +2015,891 @@
       body: JSON.stringify({ keys: [btn.dataset.key] }),
     });
   });
+
+  // ---- First-Class Settings Panel (Appearance + All SwarmBox Configs) ----------------------
+  const SECTION_META = {
+    appearance: { title: 'Appearance', sub: 'Themes, typography & terminal canvas (applies live)' },
+    box: { title: 'SwarmBox', sub: 'Container runtime, multiplexer & host integration' },
+    sysop: { title: 'Sysop', sub: 'Autonomous operator policy, model & safety guardrails' },
+    voice: { title: 'Voice', sub: 'Local Whisper speech-to-text & microphone routing' },
+    system: { title: 'Addons & System', sub: 'Installed addons, MCP servers, SSH identity & shortcuts' },
+  };
+
+  function el(tag, attrs = null, children = []) {
+    const node = document.createElement(tag);
+    if (attrs) {
+      for (const [k, v] of Object.entries(attrs)) {
+        if (v === undefined || v === null) continue;
+        if (k === 'class') node.className = v;
+        else if (k === 'text') node.textContent = String(v);
+        else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
+        else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2).toLowerCase(), v);
+        else node.setAttribute(k, String(v));
+      }
+    }
+    for (const c of Array.isArray(children) ? children : [children]) {
+      if (c === null || c === undefined || c === false) continue;
+      node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return node;
+  }
+
+  function shellQuote(val) {
+    const s = String(val ?? '');
+    if (s === '') return '""';
+    if (/^[A-Za-z0-9_./:@+-]+$/.test(s)) return s;
+    return "'" + s.replace(/'/g, "'\\''") + "'";
+  }
+
+  function currentHostField(group, key) {
+    if (!boxConfig) return { value: '', default: '', custom: false };
+    const src = group === 'box'
+      ? boxConfig.box
+      : group === 'sysop'
+        ? (boxConfig.sysop && boxConfig.sysop.settings)
+        : (boxConfig.voice && boxConfig.voice.settings);
+    return (src && src[key]) || { value: '', default: '', custom: false };
+  }
+
+  function effectiveHostValue(group, key) {
+    if (stagedHostConfig.has(key)) return stagedHostConfig.get(key);
+    return currentHostField(group, key).value;
+  }
+
+  function stageHostSetting(group, key, nextVal) {
+    const val = String(nextVal ?? '').trim();
+    const live = currentHostField(group, key).value;
+    if (val === live) stagedHostConfig.delete(key);
+    else stagedHostConfig.set(key, val);
+    syncHostBar();
+  }
+
+  function buildHostApplyCommand() {
+    if (stagedHostConfig.size === 0) return '';
+    const parts = [];
+    for (const [k, v] of stagedHostConfig.entries()) {
+      parts.push(`swarmbox config set ${k} ${shellQuote(v)}`);
+    }
+    parts.push('swarmbox reset');
+    return parts.join(' && \\\n  ');
+  }
+
+  function syncHostBar() {
+    if (!settingsHostBarEl) return;
+    const n = stagedHostConfig.size;
+    settingsHostBarEl.classList.toggle('hidden', n === 0);
+    if (n === 0) return;
+    hostBarCountEl.textContent = n === 1 ? '1 pending change' : `${n} pending changes`;
+    hostBarCmdEl.textContent = buildHostApplyCommand();
+  }
+
+  async function copyTextWithFeedback(text, btn, idleLabel) {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (_e) {}
+      document.body.removeChild(ta);
+    }
+    if (btn) {
+      btn.textContent = '✓ Copied';
+      setTimeout(() => { btn.textContent = idleLabel; }, 1600);
+    }
+  }
+
+  async function loadBoxConfig(force = false) {
+    if (boxConfigLoading && !force) return;
+    boxConfigLoading = true;
+    boxConfigError = '';
+    try {
+      const r = await fetch('/api/config', { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      boxConfig = await r.json();
+      if (settingsVersionEl && boxConfig.version) {
+        settingsVersionEl.textContent = `SwarmBox v${boxConfig.version}`;
+      }
+    } catch (err) {
+      boxConfigError = err.message || 'Could not load box config';
+    } finally {
+      boxConfigLoading = false;
+      if (settingsOpen && settingsSection !== 'appearance') renderSettingsBody();
+    }
+  }
+
+  function makeGroup(label, rightNode, contentNode) {
+    return el('section', { class: 's-group' }, [
+      el('div', { class: 's-group-head' }, [
+        el('span', { class: 's-group-label', text: label }),
+        rightNode || null,
+      ]),
+      contentNode,
+    ]);
+  }
+
+  function makeSettingRow({ title, keyBadge, desc, badge, control, stacked = false }) {
+    const titleChildren = [el('span', { text: title })];
+    if (keyBadge) titleChildren.push(el('span', { class: 's-row-key', text: keyBadge }));
+    if (badge) titleChildren.push(el('span', { class: `s-badge ${badge.tone || ''}`.trim(), text: badge.text }));
+    return el('div', { class: `s-row${stacked ? ' s-row-col' : ''}` }, [
+      el('div', { class: 's-row-info' }, [
+        el('div', { class: 's-row-title' }, titleChildren),
+        desc ? el('div', { class: 's-row-desc', text: desc }) : null,
+      ]),
+      control,
+    ]);
+  }
+
+  function makeSegmented(options, current, onSelect) {
+    const wrap = el('div', { class: 's-seg' });
+    for (const opt of options) {
+      const val = typeof opt === 'object' ? opt.value : opt;
+      const lbl = typeof opt === 'object' ? opt.label : String(opt);
+      const btn = el('button', {
+        type: 'button',
+        class: String(val) === String(current) ? 'active' : '',
+        text: lbl,
+        onClick: () => onSelect(val),
+      });
+      wrap.appendChild(btn);
+    }
+    return wrap;
+  }
+
+  function makeSwitch(checked, ariaLabel, onToggle) {
+    const btn = el('button', {
+      type: 'button',
+      class: 's-switch',
+      role: 'switch',
+      'aria-checked': checked ? 'true' : 'false',
+      'aria-label': ariaLabel,
+      onClick: () => onToggle(!checked),
+    });
+    return btn;
+  }
+
+  function makeHostFieldBadge(group, key) {
+    if (stagedHostConfig.has(key)) return { text: 'edited', tone: '' };
+    const f = currentHostField(group, key);
+    if (f.custom) return { text: 'custom', tone: 'ok' };
+    return null;
+  }
+
+  function makeHostSelectRow(group, key, { title, desc, options }) {
+    const cur = effectiveHostValue(group, key);
+    const hasCur = options.some((o) => o.value === cur);
+    const list = hasCur ? options : [{ value: cur, label: cur || 'default' }, ...options];
+    const sel = el('select', {
+      class: 's-select',
+      'aria-label': title,
+      onChange: (e) => {
+        stageHostSetting(group, key, e.target.value);
+        renderSettingsBody();
+      },
+    }, list.map((o) => {
+      const opt = el('option', { value: o.value, text: o.label });
+      if (o.value === cur) opt.selected = true;
+      return opt;
+    }));
+    return makeSettingRow({
+      title,
+      keyBadge: key,
+      desc,
+      badge: makeHostFieldBadge(group, key),
+      control: sel,
+    });
+  }
+
+  function makeHostToggleRow(group, key, { title, desc }) {
+    const on = effectiveHostValue(group, key) === '1';
+    return makeSettingRow({
+      title,
+      keyBadge: key,
+      desc,
+      badge: makeHostFieldBadge(group, key),
+      control: makeSwitch(on, title, (next) => {
+        stageHostSetting(group, key, next ? '1' : '0');
+        renderSettingsBody();
+      }),
+    });
+  }
+
+  function makeHostInputRow(group, key, { title, desc, placeholder = '', type = 'text', wide = false }) {
+    const cur = effectiveHostValue(group, key);
+    const inp = el('input', {
+      class: `s-input${wide ? ' wide' : ''}`,
+      type,
+      value: cur,
+      placeholder,
+      'aria-label': title,
+      onInput: (e) => {
+        stageHostSetting(group, key, e.target.value);
+      },
+    });
+    return makeSettingRow({
+      title,
+      keyBadge: key,
+      desc,
+      badge: makeHostFieldBadge(group, key),
+      control: inp,
+      stacked: wide,
+    });
+  }
+
+  function renderAppearanceSection() {
+    const frag = document.createDocumentFragment();
+
+    // 1. Visual 5-theme mini-terminal cards
+    const themeGrid = el('div', { class: 'theme-grid' });
+    for (const key of THEME_KEYS) {
+      const t = THEMES[key];
+      const mini = el('div', {
+        class: 'theme-mini',
+        style: { background: t.css['--bg'], color: t.css['--text'] },
+      }, [
+        el('div', { class: 'theme-mini-side', style: { background: t.css['--surface'] } }, [
+          el('span', { class: 'theme-mini-bar', style: { background: t.css['--accent'], width: '85%' } }),
+          el('span', { class: 'theme-mini-bar', style: { background: t.css['--band'], width: '70%' } }),
+          el('span', { class: 'theme-mini-bar', style: { background: t.css['--band'], width: '58%' } }),
+        ]),
+        el('div', { class: 'theme-mini-main' }, [
+          el('div', { class: 'theme-mini-dots' }, [
+            el('i', { style: { background: t.xterm.red } }),
+            el('i', { style: { background: t.xterm.yellow } }),
+            el('i', { style: { background: t.xterm.green } }),
+          ]),
+          el('div', { class: 'theme-mini-prompt', style: { color: t.css['--accent-bright'] }, text: '❯ swarmbox' }),
+        ]),
+      ]);
+      const card = el('button', {
+        type: 'button',
+        class: `theme-card${key === currentThemeKey ? ' active' : ''}`,
+        'data-theme': key,
+        onClick: () => applyTheme(key, true),
+      }, [
+        mini,
+        el('div', { class: 'theme-card-foot' }, [
+          el('span', { class: 'theme-card-name', text: t.label || key }),
+          el('span', { class: 'theme-card-check', text: '✓' }),
+        ]),
+      ]);
+      themeGrid.appendChild(card);
+    }
+    frag.appendChild(makeGroup(
+      'Theme Palette',
+      el('span', { class: 's-badge', text: 'Synced with Cockpit' }),
+      themeGrid,
+    ));
+
+    // 2. Typography card: Font size slider + stepper + live JetBrains Mono preview + line height
+    const sz = computeFontSize();
+    const rangeEl = el('input', {
+      id: 's-font-range',
+      class: 's-range',
+      type: 'range',
+      min: '-4',
+      max: '8',
+      step: '0.5',
+      value: String(fontOffset),
+      'aria-label': 'Terminal font size offset',
+      onInput: (e) => setFontOffset(Number(e.target.value)),
+    });
+    const stepper = el('div', { class: 's-stepper' }, [
+      el('button', { type: 'button', class: 's-step-btn', text: '−', title: 'Smaller (Alt+-)', onClick: () => setFontOffset(fontOffset - 0.5) }),
+      el('button', { id: 's-font-val', type: 'button', class: 's-step-val', text: formatFontPx(sz), title: 'Reset font size (Alt+0)', onClick: () => setFontOffset(0) }),
+      el('button', { type: 'button', class: 's-step-btn', text: '+', title: 'Larger (Alt+=)', onClick: () => setFontOffset(fontOffset + 0.5) }),
+    ]);
+    const preview = el('div', {
+      id: 's-font-preview',
+      class: 'font-preview',
+      style: { fontSize: `${Math.min(22, Math.max(11, sz))}px`, lineHeight: String(computeLineHeight()) },
+    }, [
+      el('span', { class: 'fp-band', text: '~/swarmbox' }),
+      el('span', { class: 'fp-branch', text: 'main ' }),
+      el('span', { class: 'fp-dirty', text: '● ' }),
+      el('span', { text: '❯ ' }),
+      el('span', { class: 'fp-dim', text: 'JetBrains Mono + Nerd Font glyphs' }),
+    ]);
+
+    const fontRow = el('div', { class: 's-row s-row-col' }, [
+      el('div', { class: 's-row-info' }, [
+        el('div', { class: 's-row-title' }, [
+          el('span', { text: 'Terminal Font Size' }),
+          el('span', { class: 's-row-key', text: 'JetBrains Mono' }),
+        ]),
+        el('div', { class: 's-row-desc', text: 'Adjusts live across every open terminal tab (Alt+- / Alt+= / Alt+0).' }),
+      ]),
+      el('div', { class: 'font-control-row' }, [rangeEl, stepper]),
+      preview,
+    ]);
+
+    const lhRow = makeSettingRow({
+      title: 'Line Height Density',
+      desc: 'Controls vertical breathing room between terminal lines.',
+      control: makeSegmented(
+        [
+          { value: 'compact', label: 'Compact' },
+          { value: 'studio', label: 'Studio' },
+          { value: 'airy', label: 'Airy' },
+        ],
+        effectiveLineHeightKey(),
+        (val) => {
+          lineHeightPreset = val;
+          try { localStorage.setItem('swarmbox-herdr-lh', val); } catch (_) {}
+          applyTerminalPrefs();
+          renderSettingsBody();
+        },
+      ),
+    });
+
+    frag.appendChild(makeGroup('Typography', null, el('div', { class: 's-card' }, [fontRow, lhRow])));
+
+    // 3. Terminal Canvas card: Cursor style, cursor blink, scrollback buffer
+    const resetBtn = el('button', {
+      type: 'button',
+      class: 'sbtn-ghost',
+      text: 'Reset appearance',
+      onClick: () => {
+        fontOffset = 0;
+        lineHeightPreset = '';
+        cursorStyle = 'block';
+        cursorBlink = true;
+        scrollbackLines = 3000;
+        try {
+          localStorage.removeItem('swarmbox-herdr-font-offset');
+          localStorage.removeItem('swarmbox-herdr-lh');
+          localStorage.removeItem('swarmbox-herdr-cursor-style');
+          localStorage.removeItem('swarmbox-herdr-cursor-blink');
+          localStorage.removeItem('swarmbox-herdr-scrollback');
+        } catch (_) {}
+        applyTheme('purple-glow', true);
+        applyTerminalPrefs();
+        renderSettingsBody();
+      },
+    });
+
+    const canvasCard = el('div', { class: 's-card' }, [
+      makeSettingRow({
+        title: 'Cursor Style',
+        desc: 'Shape of the active terminal cursor.',
+        control: makeSegmented(
+          [
+            { value: 'block', label: 'Block' },
+            { value: 'bar', label: 'Bar' },
+            { value: 'underline', label: 'Line' },
+          ],
+          cursorStyle,
+          (val) => {
+            cursorStyle = val;
+            try { localStorage.setItem('swarmbox-herdr-cursor-style', val); } catch (_) {}
+            applyTerminalPrefs();
+            renderSettingsBody();
+          },
+        ),
+      }),
+      makeSettingRow({
+        title: 'Cursor Blink',
+        desc: 'Pulse the terminal cursor when focused.',
+        control: makeSwitch(cursorBlink, 'Cursor blink', (next) => {
+          cursorBlink = next;
+          try { localStorage.setItem('swarmbox-herdr-cursor-blink', next ? '1' : '0'); } catch (_) {}
+          applyTerminalPrefs();
+          renderSettingsBody();
+        }),
+      }),
+      makeSettingRow({
+        title: 'Scrollback Buffer',
+        desc: 'Lines retained in browser scroll history per tab.',
+        control: makeSegmented(
+          SCROLLBACK_OPTIONS.map((n) => ({ value: n, label: n >= 1000 ? `${n / 1000}k` : String(n) })),
+          scrollbackLines,
+          (val) => {
+            scrollbackLines = Number(val);
+            try { localStorage.setItem('swarmbox-herdr-scrollback', String(scrollbackLines)); } catch (_) {}
+            applyTerminalPrefs();
+            renderSettingsBody();
+          },
+        ),
+      }),
+    ]);
+
+    frag.appendChild(makeGroup('Terminal Canvas', resetBtn, canvasCard));
+    return frag;
+  }
+
+  function renderLoadingOrError() {
+    if (boxConfigError) {
+      return el('div', { class: 's-note' }, [
+        el('span', { class: 'status-dot', 'data-state': 'error' }),
+        el('span', { text: `Could not read box config (${boxConfigError}).` }),
+        el('button', { type: 'button', class: 'sbtn-ghost', text: 'Retry', onClick: () => loadBoxConfig(true) }),
+      ]);
+    }
+    return el('div', { class: 's-note', text: 'Loading live SwarmBox configuration…' });
+  }
+
+  function renderBoxSection() {
+    if (!boxConfig) return renderLoadingOrError();
+    const frag = document.createDocumentFragment();
+    const healthCount = Array.isArray(boxConfig.health) ? boxConfig.health.length : 0;
+
+    const stats = el('div', { class: 's-stat-grid' }, [
+      el('div', { class: 's-stat' }, [
+        el('span', { class: 's-stat-k', text: 'Version' }),
+        el('span', { class: 's-stat-v', text: `v${boxConfig.version || 'dev'}` }),
+      ]),
+      el('div', { class: 's-stat' }, [
+        el('span', { class: 's-stat-k', text: 'Multiplexer' }),
+        el('span', { class: 's-stat-v', text: currentHostField('box', 'MUX').value || 'herdr' }),
+      ]),
+      el('div', { class: 's-stat' }, [
+        el('span', { class: 's-stat-k', text: 'Health' }),
+        el('span', { class: 's-stat-v', text: healthCount === 0 ? '✓ All green' : `${healthCount} notice${healthCount > 1 ? 's' : ''}` }),
+      ]),
+    ]);
+    frag.appendChild(makeGroup('Environment Summary', el('span', { class: 's-badge muted', text: `box: ${currentHostField('box', 'NAME').value}` }), stats));
+
+    if (healthCount > 0) {
+      frag.appendChild(el('div', { class: 's-note' }, [
+        el('span', { class: 'status-dot', 'data-state': 'blocked' }),
+        el('span', { text: boxConfig.health.join(' · ') }),
+      ]));
+    }
+
+    const CLASSIC_MUX = 'tm' + 'ux';
+    const coreCard = el('div', { class: 's-card' }, [
+      makeHostSelectRow('box', 'MUX', {
+        title: 'Terminal Multiplexer',
+        desc: 'Backend powering tabs, Cockpit and Web UI.',
+        options: [
+          { value: 'herdr', label: 'herdr (native studio)' },
+          { value: CLASSIC_MUX, label: `${CLASSIC_MUX} (classic)` },
+        ],
+      }),
+      makeHostSelectRow('box', 'AGENT', {
+        title: 'Default Agent',
+        desc: 'Agent launched automatically when running swarmbox.',
+        options: [
+          { value: '', label: 'None (interactive shell)' },
+          { value: 'claude', label: 'Claude Code (claude)' },
+          { value: 'codex', label: 'OpenAI Codex (codex)' },
+          { value: 'opencode', label: 'OpenCode (opencode)' },
+          { value: 'agy', label: 'Antigravity (agy)' },
+        ],
+      }),
+      makeHostToggleRow('box', 'YOLO', {
+        title: 'YOLO Mode',
+        desc: 'Run agents with full sandbox autonomy (skip container confirmation prompts).',
+      }),
+      makeHostToggleRow('box', 'WEB', {
+        title: 'Web Terminal Gateway',
+        desc: 'Expose the browser UI on the configured local port.',
+      }),
+      makeHostInputRow('box', 'WEB_PORT', {
+        title: 'Web Port',
+        desc: 'Host loopback port mapped to the web gateway.',
+        placeholder: '7681',
+      }),
+    ]);
+    frag.appendChild(makeGroup('Runtime & Web', null, coreCard));
+
+    const envCard = el('div', { class: 's-card' }, [
+      makeHostInputRow('box', 'TZ', {
+        title: 'Timezone',
+        desc: 'IANA timezone name or "local" to mirror host clock.',
+        placeholder: 'local',
+      }),
+      makeHostInputRow('box', 'HOSTNAME', {
+        title: 'Container Hostname',
+        desc: 'Hostname reported inside the sandbox.',
+        placeholder: 'swarmbox',
+      }),
+      makeHostInputRow('box', 'WITH', {
+        title: 'Provisioned Addons',
+        desc: 'Comma-separated addon list installed automatically on startup.',
+        placeholder: 'sysop,voice,agy',
+      }),
+      makeHostInputRow('box', 'BROWSER_URL', {
+        title: 'Host Browser CDP URL',
+        desc: 'Optional remote debugging URL for browser automation.',
+        placeholder: 'http://host.containers.internal:9222',
+        wide: true,
+      }),
+    ]);
+    frag.appendChild(makeGroup('Host Integration', null, envCard));
+
+    return frag;
+  }
+
+  function renderSysopSection() {
+    if (!boxConfig) return renderLoadingOrError();
+    const frag = document.createDocumentFragment();
+    const up = Boolean(boxConfig.sysop && boxConfig.sysop.up);
+    const st = (boxConfig.sysop && boxConfig.sysop.state) || 'off';
+
+    const statusBanner = el('div', { class: 's-note' }, [
+      el('span', { class: 'status-dot', 'data-state': up ? (st === 'idle' ? 'done' : st) : 'off' }),
+      el('span', {
+        text: up
+          ? `Sysop daemon is live (state: ${st}). Goal routing & safety approvals active.`
+          : 'Sysop daemon is currently offline. Install the sysop addon in Addons & System to enable it.',
+      }),
+    ]);
+    frag.appendChild(statusBanner);
+
+    // Live browser TTS toggle (instant)
+    const liveCard = el('div', { class: 's-card' }, [
+      makeSettingRow({
+        title: 'Spoken Feedback (TTS)',
+        desc: 'Read approval prompts and blocked agent notices aloud in this browser.',
+        badge: { text: 'live', tone: 'ok' },
+        control: makeSwitch(ttsEnabled, 'Spoken feedback', (next) => {
+          ttsEnabled = next;
+          btnTts.classList.toggle('active', ttsEnabled);
+          if (ttsEnabled) speak('Sysop voice feedback enabled.');
+          renderSettingsBody();
+        }),
+      }),
+    ]);
+    frag.appendChild(makeGroup('Browser Controls', null, liveCard));
+
+    // Visual 3-card Autonomy selector
+    const curAuto = effectiveHostValue('sysop', 'sysop.autonomy') || 'auto';
+    const policies = [
+      { value: 'auto', title: 'auto', desc: 'Safe commands run right away; risky ones wait for Allow.' },
+      { value: 'confirm-risky', title: 'confirm-risky', desc: 'Medium & high risk actions pause with countdown or Allow.' },
+      { value: 'confirm-all', title: 'confirm-all', desc: 'Every shell command waits for your explicit Allow click.' },
+    ];
+    const policyGrid = el('div', { class: 'policy-grid' }, policies.map((p) => el('button', {
+      type: 'button',
+      class: `policy-card${curAuto === p.value ? ' active' : ''}`,
+      onClick: () => {
+        stageHostSetting('sysop', 'sysop.autonomy', p.value);
+        renderSettingsBody();
+      },
+    }, [
+      el('span', { class: 'policy-card-title', text: p.title }),
+      el('span', { class: 'policy-card-desc', text: p.desc }),
+    ])));
+    frag.appendChild(makeGroup(
+      'Autonomy Policy',
+      stagedHostConfig.has('sysop.autonomy') ? el('span', { class: 's-badge', text: 'edited' }) : null,
+      policyGrid,
+    ));
+
+    // Brain, model & guardrails
+    const guardCard = el('div', { class: 's-card' }, [
+      makeHostInputRow('sysop', 'sysop.brain', {
+        title: 'Operator Brain',
+        desc: 'CLI brain used to plan actions (e.g. claude or custom command).',
+        placeholder: 'claude',
+      }),
+      makeHostSelectRow('sysop', 'sysop.model', {
+        title: 'Operator Model',
+        desc: 'Model alias forwarded to the brain.',
+        options: [
+          { value: 'haiku', label: 'haiku (fast)' },
+          { value: 'sonnet', label: 'sonnet (balanced)' },
+          { value: 'opus', label: 'opus (deep)' },
+        ],
+      }),
+      makeHostSelectRow('sysop', 'sysop.panel', {
+        title: 'Panel Visibility',
+        desc: 'When to show the operator panel automatically.',
+        options: [
+          { value: 'always', label: 'always' },
+          { value: 'auto', label: 'auto (on goal)' },
+          { value: 'off', label: 'off' },
+        ],
+      }),
+      makeHostInputRow('sysop', 'sysop.countdown', {
+        title: 'Veto Countdown (sec)',
+        desc: 'Seconds to cancel before a countdown action fires.',
+        type: 'number',
+        placeholder: '4',
+      }),
+      makeHostInputRow('sysop', 'sysop.max_steps', {
+        title: 'Max Steps per Goal',
+        desc: 'Upper bound on operator turns for a single goal.',
+        type: 'number',
+        placeholder: '20',
+      }),
+      makeHostInputRow('sysop', 'sysop.max_seconds', {
+        title: 'Goal Time Budget (sec)',
+        desc: 'Maximum runtime per goal before automatic stop.',
+        type: 'number',
+        placeholder: '300',
+      }),
+      makeHostInputRow('sysop', 'sysop.topic', {
+        title: 'Bus Topic',
+        desc: 'Event bus topic Sysop subscribes to for goals.',
+        placeholder: 'goal',
+      }),
+      makeHostInputRow('sysop', 'sysop.group', {
+        title: 'Consumer Group',
+        desc: 'Bus consumer group name.',
+        placeholder: 'sysop',
+      }),
+    ]);
+    frag.appendChild(makeGroup('Brain & Guardrails', null, guardCard));
+    return frag;
+  }
+
+  function renderVoiceSection() {
+    if (!boxConfig) return renderLoadingOrError();
+    const frag = document.createDocumentFragment();
+
+    frag.appendChild(el('div', { class: 's-note' }, [
+      el('span', { class: 'status-dot', 'data-state': voiceAddonAvailable ? 'done' : 'off' }),
+      el('span', {
+        text: voiceAddonAvailable
+          ? 'Local Whisper service is online — hold the mic button to transcribe straight to Sysop.'
+          : 'Local Whisper service is not active. Install the voice addon (Addons & System) for offline Whisper transcription.',
+      }),
+    ]));
+
+    const card = el('div', { class: 's-card' }, [
+      makeHostToggleRow('voice', 'voice.web', {
+        title: 'Web Voice Front',
+        desc: 'Proxy the web UI through swarmbox-voice for local WAV upload.',
+      }),
+      makeHostSelectRow('voice', 'voice.stt.model', {
+        title: 'Whisper Model',
+        desc: 'Larger models improve accuracy at the cost of RAM & latency.',
+        options: [
+          { value: 'tiny', label: 'tiny (fastest)' },
+          { value: 'base', label: 'base' },
+          { value: 'small', label: 'small (default)' },
+          { value: 'medium', label: 'medium' },
+          { value: 'large-v3', label: 'large-v3 (highest accuracy)' },
+        ],
+      }),
+      makeHostInputRow('voice', 'voice.language', {
+        title: 'Spoken Language',
+        desc: 'ISO-639-1 code (e.g. en, pt, es) or "auto" for automatic detection.',
+        placeholder: 'auto',
+      }),
+      makeHostInputRow('voice', 'voice.topic', {
+        title: 'Publish Topic',
+        desc: 'Event bus topic where transcribed voice goals are sent.',
+        placeholder: 'goal',
+      }),
+      makeHostInputRow('voice', 'voice.stt.vocabulary', {
+        title: 'Custom Vocabulary Hint',
+        desc: 'Optional domain terms (repo names, commands, acronyms) to bias Whisper.',
+        placeholder: 'SwarmBox, herdr, Sysop, Podman',
+        wide: true,
+      }),
+    ]);
+    frag.appendChild(makeGroup('Whisper Speech-to-Text', null, card));
+    return frag;
+  }
+
+  async function installAddonLive(name) {
+    if (installingAddons.has(name)) return;
+    installingAddons.add(name);
+    addonMessages.set(name, { tone: '', text: 'Installing…' });
+    renderSettingsBody();
+    try {
+      const r = await fetch(`/api/addons/${encodeURIComponent(name)}/install`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.ok) {
+        if (d.config) boxConfig = d.config;
+        addonMessages.set(name, { tone: 'ok', text: 'Installed!' });
+      } else {
+        addonMessages.set(name, { tone: 'warn', text: d.stderr || d.error || 'Install failed' });
+      }
+    } catch (err) {
+      addonMessages.set(name, { tone: 'warn', text: err.message || 'Network error' });
+    } finally {
+      installingAddons.delete(name);
+      renderSettingsBody();
+    }
+  }
+
+  function renderSystemSection() {
+    if (!boxConfig) return renderLoadingOrError();
+    const frag = document.createDocumentFragment();
+
+    // 1. Addons list with live 1-click install
+    const addons = Array.isArray(boxConfig.addons) ? boxConfig.addons : [];
+    const addonList = el('div', { class: 's-card addon-list' });
+    if (addons.length === 0) {
+      addonList.appendChild(el('div', { class: 'addon-row' }, [
+        el('div', { class: 'addon-desc', text: 'No addon manifests found in this image.' }),
+      ]));
+    } else {
+      for (const a of addons) {
+        const busy = installingAddons.has(a.name);
+        const msg = addonMessages.get(a.name);
+        const actions = [];
+        if (msg && msg.text && !busy) {
+          actions.push(el('span', { class: `s-badge ${msg.tone || 'muted'}`.trim(), text: msg.text.slice(0, 32) }));
+        }
+        if (a.installed) {
+          actions.push(el('span', { class: 's-badge ok', text: a.installedVersion ? `installed · ${a.installedVersion}` : 'installed' }));
+        } else {
+          actions.push(el('button', {
+            type: 'button',
+            class: 'sbtn-primary',
+            text: busy ? 'Installing…' : 'Install',
+            disabled: busy ? 'disabled' : null,
+            onClick: () => installAddonLive(a.name),
+          }));
+        }
+        addonList.appendChild(el('div', { class: 'addon-row' }, [
+          el('div', { class: 's-row-info' }, [
+            el('div', { class: 's-row-title' }, [
+              el('span', { class: 'addon-name', text: a.name }),
+              a.level === 'user' ? el('span', { class: 's-badge muted', text: 'user' }) : null,
+            ]),
+            a.description ? el('div', { class: 'addon-desc', text: a.description }) : null,
+          ]),
+          el('div', { class: 'addon-actions' }, actions),
+        ]));
+      }
+    }
+    frag.appendChild(makeGroup('Addons & Agents', el('span', { class: 's-badge muted', text: `${addons.filter((a) => a.installed).length}/${addons.length} active` }), addonList));
+
+    // 2. MCP Servers
+    const mcps = Array.isArray(boxConfig.mcp) ? boxConfig.mcp : [];
+    const mcpCard = el('div', { class: 's-card' }, [
+      el('div', { class: 's-row' }, [
+        el('div', { class: 's-row-info' }, [
+          el('div', { class: 's-row-title', text: 'Configured MCP Servers' }),
+          el('div', { class: 's-row-desc', text: mcps.length ? mcps.join(', ') : 'None configured yet (add under ~/.config/swarmbox/mcp/<name>/config.json).' }),
+        ]),
+        el('span', { class: `s-badge ${mcps.length ? 'ok' : 'muted'}`, text: `${mcps.length} active` }),
+      ]),
+    ]);
+    frag.appendChild(makeGroup('MCP Integrations', null, mcpCard));
+
+    // 3. Git SSH public key
+    const pubkey = boxConfig.pubkey || '';
+    const copyKeyBtn = pubkey
+      ? el('button', {
+          type: 'button',
+          class: 'sbtn-ghost',
+          text: 'Copy public key',
+          onClick: (e) => copyTextWithFeedback(pubkey, e.currentTarget, 'Copy public key'),
+        })
+      : null;
+    const keyCard = el('div', { class: 's-card' }, [
+      el('div', { class: 's-row s-row-col' }, [
+        el('div', { class: 's-row-desc', text: pubkey ? 'Add this SSH public key to GitHub / GitLab for keyless push from the box.' : 'No SSH keypair generated yet inside ~/.ssh.' }),
+        pubkey ? el('pre', { class: 'code-box', text: pubkey }) : null,
+      ]),
+    ]);
+    frag.appendChild(makeGroup('Git SSH Identity', copyKeyBtn, keyCard));
+
+    // 4. Keyboard shortcuts cheat sheet
+    const shortcuts = [
+      ['Switch terminal tab', 'Alt+1..9'],
+      ['Open new terminal tab', 'Alt+N'],
+      ['Open / close Settings', 'Alt+,'],
+      ['Toggle left sidebar', 'Alt+B'],
+      ['Toggle Sysop panel', 'Alt+S'],
+      ['Focus Sysop goal box', 'Alt+G'],
+      ['Cycle color theme', 'Alt+T'],
+      ['Font size − / + / reset', 'Alt+- / = / 0'],
+    ];
+    const kbdCard = el('div', { class: 's-card' }, [
+      el('div', { class: 'kbd-grid' }, shortcuts.map(([lbl, keys]) => el('div', { class: 'kbd-row' }, [
+        el('span', { text: lbl }),
+        el('kbd', { text: keys }),
+      ]))),
+    ]);
+    frag.appendChild(makeGroup('Keyboard Shortcuts', null, kbdCard));
+
+    return frag;
+  }
+
+  function renderSettingsBody() {
+    if (!settingsBodyEl) return;
+    const meta = SECTION_META[settingsSection] || SECTION_META.appearance;
+    if (settingsTitleEl) settingsTitleEl.textContent = meta.title;
+    if (settingsSubEl) settingsSubEl.textContent = meta.sub;
+    if (settingsNavEl) {
+      settingsNavEl.querySelectorAll('.snav-item').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.section === settingsSection);
+      });
+    }
+    settingsBodyEl.innerHTML = '';
+    if (settingsSection === 'appearance') settingsBodyEl.appendChild(renderAppearanceSection());
+    else if (settingsSection === 'box') settingsBodyEl.appendChild(renderBoxSection());
+    else if (settingsSection === 'sysop') settingsBodyEl.appendChild(renderSysopSection());
+    else if (settingsSection === 'voice') settingsBodyEl.appendChild(renderVoiceSection());
+    else settingsBodyEl.appendChild(renderSystemSection());
+    syncHostBar();
+  }
+
+  function openSettings(section = null) {
+    if (section && SECTION_META[section]) settingsSection = section;
+    if (appEl.dataset.mobileSysop === '1') setMobileSysop(false);
+    settingsOpen = true;
+    settingsOverlayEl.classList.add('open');
+    settingsOverlayEl.setAttribute('aria-hidden', 'false');
+    renderSettingsBody();
+    loadBoxConfig(true);
+  }
+
+  function closeSettings() {
+    if (!settingsOpen) return;
+    settingsOpen = false;
+    settingsOverlayEl.classList.remove('open');
+    settingsOverlayEl.setAttribute('aria-hidden', 'true');
+    focusTerminalIfDesktop();
+  }
+
+  function toggleSettings() {
+    if (settingsOpen) closeSettings();
+    else openSettings();
+  }
+
+  const btnSidebarSettings = document.getElementById('btn-sidebar-settings');
+  const btnTopbarSettings = document.getElementById('btn-topbar-settings');
+  const btnSettingsClose = document.getElementById('btn-settings-close');
+  const settingsHandleEl = document.getElementById('settings-handle');
+  if (btnSidebarSettings) btnSidebarSettings.addEventListener('click', () => openSettings());
+  if (btnTopbarSettings) btnTopbarSettings.addEventListener('click', () => openSettings());
+  if (btnSettingsClose) btnSettingsClose.addEventListener('click', closeSettings);
+  if (settingsHandleEl) settingsHandleEl.addEventListener('click', closeSettings);
+  if (settingsOverlayEl) {
+    settingsOverlayEl.addEventListener('click', (e) => {
+      if (e.target === settingsOverlayEl) closeSettings();
+    });
+  }
+  if (settingsNavEl) {
+    settingsNavEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.snav-item[data-section]');
+      if (!btn) return;
+      settingsSection = btn.dataset.section;
+      settingsBodyEl.scrollTop = 0;
+      renderSettingsBody();
+      if (settingsSection !== 'appearance' && !boxConfig) loadBoxConfig(true);
+    });
+  }
+  if (btnHostCopy) {
+    btnHostCopy.addEventListener('click', () => {
+      copyTextWithFeedback(buildHostApplyCommand(), btnHostCopy, 'Copy command');
+    });
+  }
+  if (btnHostDiscard) {
+    btnHostDiscard.addEventListener('click', () => {
+      stagedHostConfig.clear();
+      syncHostBar();
+      renderSettingsBody();
+    });
+  }
 
   connectEvents();
 })();
