@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#herdr-mode-cockpit--web-studio">Herdr mode</a> ·
   <a href="#sysop-and-voice">Sysop &amp; Voice</a> ·
   <a href="#pre-configured-addons">Addons</a> ·
   <a href="#remote-access">Remote access</a> ·
@@ -16,14 +17,14 @@
   <a href="#documentation">Docs</a>
 </p>
 
-Give your coding agent (**Claude Code**, **Antigravity CLI (`agy`)**, **OpenCode**, or **Gemini CLI**) a box of its own. Inside it, the agent runs in auto-approve mode: it installs packages, drives Chromium through Chrome DevTools MCP, and spins up nested Podman containers — while you step into the exact same tmux session from any terminal tab or from a browser, on your machine or from your phone.
+Give your coding agent (**Claude Code**, **Antigravity CLI (`agy`)**, **OpenCode**, or **Gemini CLI**) a box of its own. Inside it, the agent runs in auto-approve mode: it installs packages, drives Chromium through Chrome DevTools MCP, and spins up nested Podman containers — while you step into the exact same live workspace from any terminal tab or from a browser, on your machine or from your phone.
 
 ## Why SwarmBox
 
 - **Freedom without babysitting.** Agents start in auto-approve mode inside a rootless Podman container, with `sudo`, nested rootless Podman ([docs/nested-podman.md](docs/nested-podman.md)), and a pinned headless Chromium + `chrome-devtools-mcp`.
-- **One shared session, everywhere.** Every host terminal tab (`swarmbox`) and the built-in browser terminal (`ttyd`) share the same tmux session (`main`), with tab order preserved, browser clipboard sync, and a custom [Purple Glow](docs/theme.md) palette.
+- **Two multiplexer backends (`tmux` default, `herdr` opt-in).** Keep the battle-tested `tmux` + `ttyd` session by default, or opt into **`herdr`** (`swarmbox config set MUX herdr`) for a native 3-pane **Terminal Cockpit**, a 5-theme **Herdr Web Studio** with self-hosted JetBrains Mono + Nerd Font, native OSC 7501 agent status dots, and `herdr-app` Agent Inbox integration ([docs/mux-architecture.md](docs/mux-architecture.md), [docs/herdr-cockpit-design.md](docs/herdr-cockpit-design.md)).
 - **Persistent workspace.** Projects, agent logins, SSH keys, and installed addons live in one host folder (`~/swarmbox`). Recreate or upgrade the box (`swarmbox reset`, `swarmbox update`) and lose nothing.
-- **Talk to your box (`sysop` + `voice`).** Type or speak a goal from desktop or phone; the optional **Sysop** addon inspects your tmux tabs, drives your agents, remembers the conversation, and holds risky actions for one-tap approval ([docs/sysop.md](docs/sysop.md), [docs/voice.md](docs/voice.md)).
+- **Talk to your box (`sysop` + `voice`).** Type or speak a goal from desktop or phone; the optional **Sysop** addon inspects your tabs, drives your agents, remembers the conversation, and holds risky actions for one-tap approval ([docs/sysop.md](docs/sysop.md), [docs/voice.md](docs/voice.md)).
 - **Pre-configured addons on demand.** The image stays neutral and lean — agents and CLIs install into your workspace on first use through lightweight shims.
 - **Remote access without exposing secrets.** One command wires Cloudflare Tunnel + email one-time-code Access on the host; tunnel credentials never enter the box ([docs/cloudflare.md](docs/cloudflare.md)).
 - **No telemetry.** SwarmBox makes no network call of its own beyond pulling the image, installing/checking addons you ask for, and Cloudflare when you configure `remote`.
@@ -40,9 +41,27 @@ claude            # inside the box: installs Claude Code on first use, asks you 
 
 Want a different coding agent? Pass `--with antigravity` (then run `agy`) or `--with opencode`, or install any addon later with `swarmbox addon install <name>`.
 
-- **Second terminal tab:** run `swarmbox` again to open another window in the same shared tmux session.
+- **Second terminal tab:** run `swarmbox` again to open another window in the same shared session.
 - **Web terminal:** run `swarmbox url` and open `http://127.0.0.1:7681` in your browser.
 - **API key instead of interactive login:** export it on your host (for example `export ANTHROPIC_API_KEY=...`), then run `swarmbox env add ANTHROPIC_API_KEY` and `swarmbox reset`.
+
+## Herdr Mode (Cockpit & Web Studio)
+
+Opt in to the `herdr-core` multiplexer backend for a unified desktop, phone, and SSH terminal experience without changing your workspace:
+
+```bash
+swarmbox config set MUX herdr
+swarmbox reset
+swarmbox          # opens the 3-pane Terminal Cockpit (`SWARMBOX_HERDR_RAW=1` for raw attach)
+```
+
+<p align="center"><img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Herdr Web Studio showing JetBrains Mono + Nerd Font, live OSC 7501 working progress bar in the sidebar, redesigned Purple Glow Starship prompt, and docked Sysop panel" width="760"></p>
+
+- **Herdr Web Studio (`http://127.0.0.1:7681`):** 3-pane responsive desktop + mobile interface with self-hosted **JetBrains Mono + Nerd Font** (zero CDN), BBS ANSI-art boot splash, 5 synchronized themes (**Purple Glow**, Catppuccin Mocha, Tokyo Night, Nord, Rosé Pine), live per-tab `xterm.js` sessions (instant tab switching with preserved scroll position), native-feel mobile inertia touch scroll, automatic WebSocket PTY recovery, persistent font-size stepper, and full keyboard parity (`Alt+1..9`, `Alt+N`, `Alt+B`, `Alt+S`, `Alt+G`, `Alt+T`, `Alt+-/=/0`).
+- **Terminal Cockpit (`sx` / `swarmbox`):** 24-bit TrueColor terminal UI mirroring the Web Studio over SSH — exact-width left tab sidebar with OSC 7501 status dots and `▰▱` progress bars, inset terminal pane, right Sysop feed with framed `Ctrl+A g` Goal Composer, `Ctrl+A ?` shortcut modal, and SGR mouse support.
+- **Native Sysop Agent Bridge (`herdr-app`):** When `sysop` is installed under `MUX=herdr`, Sysop registers as a native OSC 7501 agent (`swarmbox.role=sysop`) visible in `herdr-app`'s Agent Inbox while staying automatically filtered out of your regular tab list.
+
+Switch back to the default `tmux` backend any time with `swarmbox config set MUX tmux && swarmbox reset`.
 
 ## Sysop and Voice
 
@@ -83,7 +102,7 @@ The base image stays small and neutral; every addon installs on demand into your
 | **`poetry`** | `poetry` | Pinned Python dependency manager installed isolated in the workspace |
 
 - **Default agent shortcut:** run `yolo` inside the box to launch your default agent (`AGENT`, or the first addon in `WITH`) in auto-approve mode; set `YOLO=0` to turn auto-approve off.
-- **Included in the base image (always ready):** Node 24, Python 3 + `uv` + `/opt/flow` venv, nested rootless Podman (`netavark` + `aardvark-dns`), Chromium + pinned `chrome-devtools-mcp`, `tmux 3.7c` with browser-friendly `Alt` keybindings, `ttyd`, Starship prompt, `swarmbox-bus`, `swarmbox-tabs`, `git`, `jq`, `sqlite3`, and `build-essential`.
+- **Included in the base image (always ready):** Node 24, Python 3 + `uv` + `/opt/flow` venv, nested rootless Podman (`netavark` + `aardvark-dns`), Chromium + pinned `chrome-devtools-mcp`, `tmux 3.7c` + `ttyd` (default mux) and `herdr-core` + `herdr` + Herdr Web Studio & Terminal Cockpit (opt-in mux), architectural Purple Glow Starship prompt, `swarmbox-bus`, `swarmbox-tabs`, `git`, `jq`, `sqlite3`, and `build-essential`.
 - **Add your own:** `swarmbox addon new NAME` scaffolds a custom workspace addon; `swarmbox addon doctor` and `swarmbox addon use NAME VERSION` handle health checks and rollbacks.
 
 ## Remote access
@@ -123,6 +142,7 @@ SwarmBox runs in a rootless Podman container, and a container is **not complete 
 | Guide | What it covers |
 |---|---|
 | [Web terminal](docs/web-terminal.md) | Browser shortcuts, clipboard sync, mobile controls strip, font sizing, and customization |
+| [Herdr & Cockpit](docs/herdr-cockpit-design.md) · [Mux architecture](docs/mux-architecture.md) | Opt-in `herdr` backend, Terminal Cockpit, Herdr Web Studio, and native OSC 7501 Sysop bridge |
 | [Sysop](docs/sysop.md) | Autonomous tab operator, MCP brain presets/templates, risk policy, panel modes, and audit log |
 | [Voice control](docs/voice.md) | Local Whisper setup, language/model settings, `/voice/` proxy, and troubleshooting |
 | [Remote access](docs/cloudflare.md) | Cloudflare Tunnel + Access setup, token handling, and multi-box hostnames |
