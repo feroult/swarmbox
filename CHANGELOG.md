@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-22
+
 - Added: opt-in `herdr` multiplexer backend (`swarmbox config set MUX herdr` / `SWARMBOX_MUX=herdr`) running in parallel to the default `tmux` backend with zero regression:
   - Pinned SHA-256 `herdr-core` (`hc` 0.1.21) and `herdr` TUI (0.9.5) binaries in the image with SwarmBox Purple Glow default theme (`container/config/herdr.toml`).
   - Shell backend `container/scripts/mux/herdr.sh` and `HerdrBackend(TabsBackend)` in `swarmbox-tabs` with framed `hc connect` literal UTF-8 delivery and native OSC 7501 `tab_state()` (falling back to screen heuristics when unreported).
@@ -284,6 +286,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.1.0]: https://github.com/feroult/swarmbox/releases/tag/v2.1.0
 [2.0.24]: https://github.com/feroult/swarmbox/releases/tag/v2.0.24
 [2.0.23]: https://github.com/feroult/swarmbox/releases/tag/v2.0.23
 [2.0.22]: https://github.com/feroult/swarmbox/releases/tag/v2.0.22
