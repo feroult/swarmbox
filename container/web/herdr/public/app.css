@@ -1,35 +1,35 @@
-/* Self-hosted Geist Mono variable font (zero CDN dependency, OFL-1.1) */
+/* Self-hosted JetBrains Mono variable font (OFL-1.1) + Nerd Font symbols (MIT), zero CDN */
 @font-face {
-  font-family: "Geist Mono";
+  font-family: "JetBrains Mono";
   font-style: normal;
   font-display: swap;
-  font-weight: 100 900;
-  src: url("/vendor/fonts/geist-mono-symbols2.woff2") format("woff2-variations");
-  unicode-range: U+2190-21FF, U+2500-259F, U+25A0-25FF, U+2600-27BF, U+2B00-2BFF;
-}
-@font-face {
-  font-family: "Geist Mono";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url("/vendor/fonts/geist-mono-latin-ext.woff2") format("woff2-variations");
+  font-weight: 100 800;
+  src: url("/vendor/fonts/jetbrains-mono-latin-ext.woff2") format("woff2-variations");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: "Geist Mono";
+  font-family: "JetBrains Mono";
   font-style: normal;
   font-display: swap;
-  font-weight: 100 900;
-  src: url("/vendor/fonts/geist-mono-latin.woff2") format("woff2-variations");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  font-weight: 100 800;
+  src: url("/vendor/fonts/jetbrains-mono-latin.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+2500-259F, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: "Geist Mono";
+  font-family: "JetBrains Mono";
   font-style: italic;
   font-display: swap;
-  font-weight: 100 900;
-  src: url("/vendor/fonts/geist-mono-latin-italic.woff2") format("woff2-variations");
+  font-weight: 100 800;
+  src: url("/vendor/fonts/jetbrains-mono-latin-italic.woff2") format("woff2-variations");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "PureNerdFont";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("/vendor/fonts/nerd-symbols.woff2") format("woff2");
+  unicode-range: U+E000-E00A, U+E0A0-E0D7, U+E200-E2A9, U+E300-E3E3, U+E5FA-E6B7, U+E700-E8EF, U+EA60-EC1E, U+ED00-EFC1, U+F000-F2FF, U+F300-F381, U+F400-F533, U+F0001-F1AF0;
 }
 
 :root {
@@ -59,7 +59,7 @@
   --amber: #fbbf24;
   --red: #ff6b78;
   --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --mono: "Geist Mono", "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --mono: "JetBrains Mono", "JetBrainsMono Nerd Font", "PureNerdFont", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -80,7 +80,7 @@ html, body {
 .hidden { display: none !important; }
 .mobile-only { display: none; }
 
-/* Architectural Minimalist Boot Splash (fades out once herdr-core paints) */
+/* Lightweight BBS ANSI-Art Boot Splash (alternating font colors, zero heavy chrome) */
 #sb-boot {
   position: fixed;
   inset: 0;
@@ -89,97 +89,88 @@ html, body {
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  background:
-    radial-gradient(480px 300px at 50% 44%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 72%),
-    var(--bg);
+  background: var(--bg);
   opacity: 1;
-  transform: scale(1);
-  filter: blur(0);
-  transition:
-    opacity 320ms cubic-bezier(.22, 1, .36, 1),
-    transform 320ms cubic-bezier(.22, 1, .36, 1),
-    filter 320ms ease,
-    visibility 0s linear 320ms;
+  transition: opacity 220ms ease-out, visibility 0s linear 220ms;
   animation: sb-boot-out 0s linear 8s forwards;
 }
-.boot-stage {
+.boot-bbs-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
+  padding: 0 16px;
+  max-width: 100%;
 }
-.boot-mark {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)), var(--surface);
-  border: 1px solid var(--border-strong);
-  box-shadow:
-    0 20px 56px rgba(0, 0, 0, 0.55),
-    0 0 40px color-mix(in srgb, var(--accent) 18%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.09);
-  animation: sb-mark-breathe 2.6s ease-in-out infinite;
-}
-.boot-wordmark {
+.boot-bbs {
+  margin: 0;
   font-family: var(--mono);
-  font-size: 14.5px;
-  font-weight: 600;
-  letter-spacing: 0.3em;
-  padding-left: 0.3em;
-  background: linear-gradient(110deg, var(--text-muted) 0%, var(--text) 38%, var(--accent-bright) 50%, var(--text) 62%, var(--text-muted) 100%);
-  background-size: 240% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: sb-sheen 2.4s ease-in-out infinite;
+  font-size: clamp(7px, 1.48vw, 13.5px);
+  line-height: 1.08;
+  letter-spacing: 0;
+  color: var(--accent);
+  white-space: pre;
+  user-select: none;
 }
-.boot-track {
-  position: relative;
-  width: 120px;
-  height: 1.5px;
-  border-radius: 999px;
-  background: var(--border);
-  overflow: hidden;
-}
-.boot-beam {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 44%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, var(--accent-bright), var(--accent), transparent);
-  box-shadow: 0 0 10px var(--accent-glow);
-  animation: sb-beam 1.25s cubic-bezier(.4, 0, .2, 1) infinite;
-}
-.boot-sub {
+/* Alternating BBS ANSI ink shades across the SWARMBOX letters + recessed bevel shadow */
+.boot-bbs .c0 { color: var(--accent-bright); animation: sb-bbs-a 1.8s steps(2, end) infinite; }
+.boot-bbs .c1 { color: var(--text); animation: sb-bbs-b 1.8s steps(2, end) infinite; }
+.boot-bbs .c2 { color: var(--accent); animation: sb-bbs-c 1.8s steps(2, end) infinite; }
+.boot-bbs .cs { color: var(--hair-1); opacity: 0.72; }
+
+.boot-bbs-rule {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--hair-1);
+}
+.boot-bbs-rule i {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--hair-1), var(--accent) 50%, var(--hair-1));
+  opacity: 0.5;
+}
+.boot-bbs-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
   letter-spacing: 0.14em;
   color: var(--text-dim);
-  margin-top: -4px;
+}
+.boot-bbs-sep { color: var(--accent); opacity: 0.7; }
+.boot-bbs-cur {
+  color: var(--accent-bright);
+  animation: sb-bbs-blink 0.9s steps(2, start) infinite;
 }
 html.swarmbox-ready #sb-boot {
   opacity: 0;
-  transform: scale(1.018);
-  filter: blur(4px);
   visibility: hidden;
 }
-@keyframes sb-mark-breathe {
-  0%, 100% { box-shadow: 0 20px 56px rgba(0, 0, 0, 0.55), 0 0 32px color-mix(in srgb, var(--accent) 16%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.09); }
-  50% { box-shadow: 0 20px 56px rgba(0, 0, 0, 0.55), 0 0 52px color-mix(in srgb, var(--accent) 28%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.13); }
+@keyframes sb-bbs-a {
+  0% { color: var(--accent-bright); }
+  50% { color: var(--text); }
 }
-@keyframes sb-sheen {
-  0% { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
+@keyframes sb-bbs-b {
+  0% { color: var(--text); }
+  50% { color: var(--accent); }
 }
-@keyframes sb-beam {
-  0% { transform: translateX(-110%); }
-  100% { transform: translateX(330%); }
+@keyframes sb-bbs-c {
+  0% { color: var(--accent); }
+  50% { color: var(--accent-bright); }
+}
+@keyframes sb-bbs-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 @keyframes sb-boot-out { to { opacity: 0; visibility: hidden; } }
 @media (prefers-reduced-motion: reduce) {
-  .boot-mark, .boot-wordmark, .boot-beam { animation: none !important; }
+  .boot-bbs .c0, .boot-bbs .c1, .boot-bbs .c2, .boot-bbs-cur { animation: none !important; }
 }
 
 /* Themed Scrollbars */

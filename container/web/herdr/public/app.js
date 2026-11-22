@@ -209,6 +209,48 @@
     },
   };
 
+  // Colorize the BBS ANSI-art SWARMBOX boot splash with alternating per-letter shades + bevel shadow
+  (function colorizeBootBbs() {
+    const pre = document.getElementById('boot-bbs');
+    if (!pre) return;
+    // Column end-offsets for the 8 ANSI Shadow letters: S, W, A, R, M, B, O, X
+    const stops = [8, 18, 26, 34, 45, 53, 62, 70];
+    const lines = (pre.textContent || '').split('\n');
+    const frag = document.createDocumentFragment();
+    lines.forEach((line, r) => {
+      if (r > 0) frag.appendChild(document.createTextNode('\n'));
+      let curCls = '';
+      let run = '';
+      const flush = () => {
+        if (!run) return;
+        if (!curCls) frag.appendChild(document.createTextNode(run));
+        else {
+          const sp = document.createElement('span');
+          sp.className = curCls;
+          sp.textContent = run;
+          frag.appendChild(sp);
+        }
+        run = '';
+      };
+      for (let c = 0; c < line.length; c++) {
+        const ch = line[c];
+        let cls = '';
+        if (ch === '█') {
+          let letterIdx = stops.findIndex((s) => c < s);
+          if (letterIdx < 0) letterIdx = stops.length - 1;
+          cls = `c${letterIdx % 3}`;
+        } else if (ch !== ' ') {
+          cls = 'cs';
+        }
+        if (cls !== curCls) { flush(); curCls = cls; }
+        run += ch;
+      }
+      flush();
+    });
+    pre.textContent = '';
+    pre.appendChild(frag);
+  })();
+
   let bootDismissed = false;
   function dismissBoot() {
     if (bootDismissed) return;
@@ -579,7 +621,7 @@
     if (!sess) return;
     try {
       const nextFont = computeFontSize();
-      const nextLH = window.innerWidth <= 860 ? 1.15 : 1.28;
+      const nextLH = window.innerWidth <= 860 ? 1.15 : 1.26;
       if (sess.term.options.fontSize !== nextFont) sess.term.options.fontSize = nextFont;
       if (sess.term.options.lineHeight !== nextLH) sess.term.options.lineHeight = nextLH;
       updateBlockScale();
@@ -604,7 +646,7 @@
     }
   }
 
-  // Re-measure terminal cell geometry as soon as self-hosted Geist Mono finishes loading
+  // Re-measure terminal cell geometry as soon as self-hosted JetBrains Mono finishes loading
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(() => {
       requestAnimationFrame(() => fitAndResize());
@@ -857,9 +899,9 @@
     terminalHostEl.appendChild(paneEl);
 
     const term = new window.Terminal({
-      fontFamily: "'Geist Mono', 'JetBrainsMono Nerd Font', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      fontFamily: "'JetBrains Mono', 'JetBrainsMono Nerd Font', 'PureNerdFont', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
       fontSize: computeFontSize(),
-      lineHeight: window.innerWidth <= 860 ? 1.15 : 1.28,
+      lineHeight: window.innerWidth <= 860 ? 1.15 : 1.26,
       fontWeight: '400',
       fontWeightBold: '600',
       cursorBlink: true,

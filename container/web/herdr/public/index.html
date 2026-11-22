@@ -5,34 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0c0b10">
 <title>SwarmBox</title>
-<link rel="preload" href="/vendor/fonts/geist-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/vendor/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/vendor/xterm.css">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-<!-- SwarmBox architectural boot splash (zero-delay HTML/CSS, dissolves once herdr-core paints) -->
+<!-- SwarmBox lightweight BBS ANSI-art boot splash (dissolves once herdr-core paints) -->
 <div id="sb-boot" aria-hidden="true">
-  <div class="boot-stage">
-    <div class="boot-mark">
-      <svg viewBox="0 0 40 40" width="38" height="38" fill="none" aria-hidden="true">
-        <defs>
-          <linearGradient id="sb-prism" x1="6" y1="4" x2="34" y2="36" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stop-color="#e9d5ff"/>
-            <stop offset="52%" stop-color="#a78bfa"/>
-            <stop offset="100%" stop-color="#6d28d9"/>
-          </linearGradient>
-        </defs>
-        <path d="M20 4.5L33.4 12.25V27.75L20 35.5L6.6 27.75V12.25L20 4.5Z" stroke="url(#sb-prism)" stroke-width="1.5" stroke-linejoin="round"/>
-        <path d="M20 4.5V20M20 20L33.4 12.25M20 20L6.6 12.25M20 20V35.5" stroke="url(#sb-prism)" stroke-width="1.2" stroke-opacity="0.55" stroke-linecap="round"/>
-        <circle cx="20" cy="20" r="2.6" fill="#c4b5fd"/>
-        <circle cx="20" cy="4.5" r="1.75" fill="#e9d5ff"/>
-        <circle cx="33.4" cy="27.75" r="1.75" fill="#a78bfa"/>
-        <circle cx="6.6" cy="27.75" r="1.75" fill="#a78bfa"/>
-      </svg>
-    </div>
-    <div class="boot-wordmark">SWARMBOX</div>
-    <div class="boot-track"><span class="boot-beam"></span></div>
-    <div class="boot-sub">herdr-core</div>
+  <div class="boot-bbs-wrap">
+    <pre class="boot-bbs" id="boot-bbs">███████╗██╗    ██╗ █████╗ ██████╗ ███╗   ███╗██████╗  ██████╗ ██╗  ██╗
+██╔════╝██║    ██║██╔══██╗██╔══██╗████╗ ████║██╔══██╗██╔═══██╗╚██╗██╔╝
+███████╗██║ █╗ ██║███████║██████╔╝██╔████╔██║██████╔╝██║   ██║ ╚███╔╝ 
+╚════██║██║███╗██║██╔══██║██╔══██╗██║╚██╔╝██║██╔══██╗██║   ██║ ██╔██╗ 
+███████║╚███╔███╔╝██║  ██║██║  ██║██║ ╚═╝ ██║██████╔╝╚██████╔╝██╔╝ ██╗
+╚══════╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝</pre>
+    <div class="boot-bbs-rule"><span>░▒▓</span><i></i><span>▓▒░</span></div>
+    <div class="boot-bbs-line"><span>HERDR-CORE</span><span class="boot-bbs-sep">::</span><span>CONNECTING PTY</span><span class="boot-bbs-cur">█</span></div>
   </div>
 </div>
 

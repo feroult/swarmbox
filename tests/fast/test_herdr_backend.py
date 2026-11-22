@@ -662,8 +662,9 @@ assert.equal(THEME_ORDER.length, 5);
             self.assertIn(token, app_src)
         self.assertIn("wsPingTimer", server_src)
         self.assertIn("type: 'hydrated'", server_src)
-        self.assertIn("geist-mono-latin.woff2", server_src)
-        self.assertIn("Geist Mono", app_src)
+        self.assertIn("jetbrains-mono-latin.woff2", server_src)
+        self.assertIn("nerd-symbols.woff2", server_src)
+        self.assertIn("JetBrains Mono", app_src)
 
     def test_attach_interactive_launches_cockpit_and_respects_raw_override(self):
         tmp = tempfile.mkdtemp(prefix="swarmbox-test-cockpit-sh.")
