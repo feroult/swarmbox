@@ -1111,22 +1111,29 @@
       });
     }
 
-    // Ctrl+C copies when text is selected; Ctrl+V pastes from clipboard; Alt shortcuts stay in Web UI
+    // Copy/paste & Alt shortcuts:
+    // - Ctrl+C / Ctrl+Shift+C copies when text is selected.
+    // - Ctrl+V lets the browser fire its native `paste` event on xterm-helper-textarea so xterm.js
+    //   runs term.paste() with full Bracketed Paste (\x1b[200~ ... \x1b[201~) and zero double-paste.
+    // - Ctrl+Shift+V prevents duplicate native paste and invokes term.paste() directly via Clipboard API.
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
       if (matchAltShortcut(ev)) return false;
-      if (ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key.toLowerCase() === 'c' && term.hasSelection()) {
+      const key = ev.key.toLowerCase();
+      if (ev.ctrlKey && !ev.altKey && !ev.metaKey && key === 'c' && term.hasSelection()) {
+        ev.preventDefault();
         navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
         term.clearSelection();
         return false;
       }
-      if (ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key.toLowerCase() === 'v') {
-        if (navigator.clipboard?.readText) {
+      if (ev.ctrlKey && !ev.altKey && !ev.metaKey && key === 'v') {
+        if (ev.shiftKey && navigator.clipboard?.readText) {
+          ev.preventDefault();
           navigator.clipboard.readText().then((txt) => {
-            if (txt) sendPtyInput(txt, sess);
+            if (txt) term.paste(txt);
           }).catch(() => {});
-          return false;
         }
+        return false;
       }
       return true;
     });

@@ -670,8 +670,10 @@ assert.ok(Array.isArray(cfg.mcp));
             "stagedHostConfig",
             "buildHostApplyCommand",
             "installAddonLive",
+            "term.paste(",
         ):
             self.assertIn(token, app_src)
+        self.assertNotIn("sendPtyInput(txt", app_src)
         self.assertIn("wsPingTimer", server_src)
         self.assertIn("type: 'hydrated'", server_src)
         self.assertIn("/api/config", server_src)
