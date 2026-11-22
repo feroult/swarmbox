@@ -323,20 +323,25 @@
   const termWrapEl = document.getElementById('term-wrap');
   const btnJumpLive = document.getElementById('btn-jump-live');
 
+  const terminalHostEl = document.getElementById('terminal');
+  const MAX_TAB_SESSIONS = 8;
+
   let terminals = [];
   let activeId = null;
-  let ptyWs = null;
+  let currentThemeKey = 'purple-glow';
+  const tabSessions = new Map();
   let eventsWs = null;
   let eventsConnected = false;
   let ptyConnected = false;
-  let ptyReconnectTimer = null;
-  let ptyReconnectDelay = 400;
-  let pendingInput = [];
   let ttsEnabled = false;
   let lastSpokenKey = '';
   let currentApproval = null;
   let voiceAddonAvailable = false;
   let countdownTimer = null;
+
+  function activeSession() {
+    return activeId ? (tabSessions.get(activeId) || null) : null;
+  }
 
   function syncConnPill() {
     if (!eventsConnected) {
@@ -363,51 +368,12 @@
     return Math.max(9.5, Math.min(13.5, Math.round(raw * 2) / 2));
   }
 
-  const term = new window.Terminal({
-    fontFamily: "'JetBrainsMono Nerd Font', 'JetBrains Mono', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace",
-    fontSize: computeFontSize(),
-    lineHeight: window.innerWidth <= 860 ? 1.12 : 1.24,
-    cursorBlink: true,
-    scrollback: 3000,
-    macOptionIsMeta: true,
-    allowProposedApi: true,
-  });
-  const fitAddon = new window.FitAddon.FitAddon();
-  term.loadAddon(fitAddon);
-  if (window.WebLinksAddon) {
-    term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
-  }
-  term.open(document.getElementById('terminal'));
-
-  // Show sleek floating "Jump to live" pill whenever user scrolls up into history
-  const xtermViewportEl = document.querySelector('#terminal .xterm-viewport');
-  function syncJumpLive() {
-    if (!btnJumpLive) return;
-    const buf = term.buffer && term.buffer.active;
-    const vp = xtermViewportEl || document.querySelector('#terminal .xterm-viewport');
-    const bufUp = Boolean(buf && buf.baseY - buf.viewportY > 2);
-    const domUp = Boolean(vp && vp.scrollHeight > vp.clientHeight + 48 && (vp.scrollHeight - vp.scrollTop - vp.clientHeight) > 36);
-    btnJumpLive.classList.toggle('visible', bufUp || domUp);
-  }
-  term.onScroll(syncJumpLive);
-  term.onRender(syncJumpLive);
-  if (xtermViewportEl) {
-    xtermViewportEl.addEventListener('scroll', syncJumpLive, { passive: true });
-  }
-  if (btnJumpLive) {
-    btnJumpLive.addEventListener('click', () => {
-      term.scrollToBottom();
-      const vp = xtermViewportEl || document.querySelector('#terminal .xterm-viewport');
-      if (vp) vp.scrollTop = vp.scrollHeight;
-      syncJumpLive();
-      focusTerminalIfDesktop();
-    });
-  }
-
   // Eliminate faint horizontal hairline seams on block-drawing rows (banner.sh half-blocks)
   const BLOCK_RE = /[\u2580-\u259f]/;
-  function markBlockRows() {
-    const rows = document.querySelectorAll('#terminal .xterm-rows > div');
+  function markBlockRows(rootEl) {
+    const scope = rootEl || terminalHostEl;
+    if (!scope) return;
+    const rows = scope.querySelectorAll('.xterm-rows > div');
     for (const row of rows) {
       const hasBlk = BLOCK_RE.test(row.textContent || '');
       if (hasBlk !== row.classList.contains('sb-blk')) {
@@ -415,89 +381,211 @@
       }
     }
   }
-  const rowsRoot = document.querySelector('#terminal .xterm-rows');
-  if (rowsRoot && window.MutationObserver) {
-    let blkRaf = 0;
-    const scheduleBlk = () => {
-      if (blkRaf) return;
-      blkRaf = requestAnimationFrame(() => { blkRaf = 0; markBlockRows(); });
-    };
-    new MutationObserver(scheduleBlk).observe(rowsRoot, { childList: true, subtree: true, characterData: true });
-  }
   function updateBlockScale() {
     const scale = window.innerWidth <= 860 ? 1.18 : 1.28;
     document.documentElement.style.setProperty('--sb-blk-s', String(scale));
   }
   updateBlockScale();
 
-  // OSC 52 clipboard write support (read "?" refused for security, matching ttyd-clipboard.js)
-  if (term.parser && term.parser.registerOscHandler) {
-    term.parser.registerOscHandler(52, (data) => {
-      const i = data.indexOf(';');
-      const payload = i >= 0 ? data.slice(i + 1) : '';
-      if (!payload || payload === '?') return true;
-      try {
-        const bin = atob(payload);
-        const bytes = new Uint8Array(bin.length);
-        for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
-        const text = new TextDecoder().decode(bytes);
-        navigator.clipboard?.writeText(text).catch(() => {});
-      } catch (_) {}
-      return true;
+  // Show sleek floating "Jump to live" pill whenever user scrolls up into history
+  function syncJumpLive() {
+    if (!btnJumpLive) return;
+    const sess = activeSession();
+    if (!sess || sess.hydrating) {
+      btnJumpLive.classList.remove('visible');
+      return;
+    }
+    const buf = sess.term.buffer && sess.term.buffer.active;
+    const vp = sess.paneEl.querySelector('.xterm-viewport');
+    const bufUp = Boolean(buf && buf.baseY - buf.viewportY > 2);
+    const domUp = Boolean(vp && vp.scrollHeight > vp.clientHeight + 48 && (vp.scrollHeight - vp.scrollTop - vp.clientHeight) > 36);
+    btnJumpLive.classList.toggle('visible', bufUp || domUp);
+  }
+  if (btnJumpLive) {
+    btnJumpLive.addEventListener('click', () => {
+      const sess = activeSession();
+      if (!sess) return;
+      stopTouchCoast();
+      sess.term.scrollToBottom();
+      const vp = sess.paneEl.querySelector('.xterm-viewport');
+      if (vp) vp.scrollTop = vp.scrollHeight;
+      syncJumpLive();
+      focusTerminalIfDesktop();
     });
   }
 
-  // Ctrl+C copies when text is selected; Ctrl+V pastes from clipboard
-  term.attachCustomKeyEventHandler((ev) => {
-    if (ev.type !== 'keydown') return true;
-    if (ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key.toLowerCase() === 'c' && term.hasSelection()) {
-      navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
-      term.clearSelection();
-      return false;
+  // Native-feel mobile touch drag + iOS-calibrated momentum inertia scroll
+  // (tracks finger directly 1.15:1 while touching so text stays anchored to your thumb, then
+  // glides smoothly with UIScrollView-like exponential inertia on flick, stops instantly on touch-catch).
+  const TOUCH_DRAG_PX = 6;
+  const TOUCH_DRAG_GAIN = 1.15;
+  const TOUCH_COAST_GAIN = 1.2;
+  const TOUCH_FLICK_MIN = 0.12;   // px/ms
+  const TOUCH_FRICTION = 0.955;   // per 16.67ms frame (silky iOS UIScrollView glide)
+  const TOUCH_STOP_VEL = 0.02;    // px/ms
+
+  let touchId = null;
+  let touchStartY = 0;
+  let touchLastY = 0;
+  let touchLastX = 0;
+  let touchLastT = 0;
+  let touchMoved = false;
+  let touchVel = 0;
+  let touchRaf = 0;
+  let touchAltAccum = 0;
+
+  function nowMs() {
+    return window.performance ? performance.now() : Date.now();
+  }
+
+  function sessionRowHeight(sess) {
+    try {
+      const h = sess.term._core?._renderService?.dimensions?.css?.cell?.height;
+      if (h && h > 4) return h;
+    } catch (_) {}
+    return Math.max(10, (sess.term.options.fontSize || 12) * (sess.term.options.lineHeight || 1.15));
+  }
+
+  function applyTouchScrollPx(deltaPx) {
+    const sess = activeSession();
+    if (!sess || !deltaPx) return false;
+    const vp = sess.paneEl.querySelector('.xterm-viewport');
+    const buf = sess.term.buffer && sess.term.buffer.active;
+    const maxScroll = vp ? Math.max(0, vp.scrollHeight - vp.clientHeight) : 0;
+
+    if (vp && maxScroll > 2 && (!buf || buf.type === 'normal')) {
+      const prev = vp.scrollTop;
+      const next = Math.max(0, Math.min(maxScroll, prev + deltaPx));
+      vp.scrollTop = next;
+      syncJumpLive();
+      return Math.abs(next - prev) > 0.25;
     }
-    if (ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key.toLowerCase() === 'v') {
-      if (navigator.clipboard?.readText) {
-        navigator.clipboard.readText().then((txt) => {
-          if (txt) sendPtyInput(txt);
-        }).catch(() => {});
-        return false;
+
+    // Alternate screen (vim, less, htop, fullscreen TUI): emit smooth wheel/line steps
+    const rh = sessionRowHeight(sess);
+    touchAltAccum += deltaPx / rh;
+    const lines = Math.trunc(touchAltAccum);
+    if (lines !== 0) {
+      touchAltAccum -= lines;
+      const screenEl = sess.paneEl.querySelector('.xterm-screen');
+      if (screenEl && typeof WheelEvent === 'function') {
+        screenEl.dispatchEvent(new WheelEvent('wheel', {
+          deltaY: lines * rh,
+          deltaMode: 0,
+          clientX: touchLastX,
+          clientY: touchLastY,
+          bubbles: true,
+          cancelable: true,
+        }));
+      } else {
+        sess.term.scrollLines(lines);
       }
     }
     return true;
-  });
+  }
 
-  // Smooth touch drag-scroll over the terminal canvas on phones (leaving pinch-zoom intact)
-  let touchStartY = null;
-  let touchAccum = 0;
+  function stopTouchCoast() {
+    if (touchRaf) {
+      cancelAnimationFrame(touchRaf);
+      touchRaf = 0;
+    }
+    touchVel = 0;
+    touchAltAccum = 0;
+  }
+
+  function startTouchCoast() {
+    if (touchRaf) return;
+    let prevT = nowMs();
+    const step = () => {
+      touchRaf = 0;
+      if (touchId !== null) return;
+      const t = nowMs();
+      const dt = Math.min(48, Math.max(4, t - prevT));
+      prevT = t;
+      const deltaPx = touchVel * dt * TOUCH_COAST_GAIN;
+      const progressed = applyTouchScrollPx(deltaPx);
+      touchVel *= Math.pow(TOUCH_FRICTION, dt / 16.67);
+      if (progressed && Math.abs(touchVel) >= TOUCH_STOP_VEL) {
+        touchRaf = requestAnimationFrame(step);
+      } else {
+        touchVel = 0;
+        touchAltAccum = 0;
+      }
+    };
+    touchRaf = requestAnimationFrame(step);
+  }
+
+  function findTouchById(list, id) {
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].identifier === id) return list[i];
+    }
+    return null;
+  }
+
   termWrapEl.addEventListener('touchstart', (e) => {
+    stopTouchCoast();
     if (e.touches.length === 1) {
-      touchStartY = e.touches[0].clientY;
-      touchAccum = 0;
+      const t = e.touches[0];
+      touchId = t.identifier;
+      touchStartY = t.clientY;
+      touchLastY = t.clientY;
+      touchLastX = t.clientX;
+      touchLastT = nowMs();
+      touchMoved = false;
+      touchVel = 0;
+      touchAltAccum = 0;
     } else {
-      touchStartY = null;
+      touchId = null;
+      touchMoved = false;
     }
   }, { passive: true });
+
   termWrapEl.addEventListener('touchmove', (e) => {
-    if (e.touches.length !== 1 || touchStartY === null) return;
-    const y = e.touches[0].clientY;
-    const dy = touchStartY - y;
-    touchStartY = y;
-    touchAccum += dy;
-    const lines = Math.trunc(touchAccum / 18);
-    if (lines !== 0) {
-      touchAccum -= lines * 18;
-      term.scrollLines(lines);
+    if (touchId === null || e.touches.length !== 1) {
+      touchId = null;
+      return;
     }
+    const t = findTouchById(e.touches, touchId);
+    if (!t) return;
+    if (!touchMoved && Math.abs(t.clientY - touchStartY) < TOUCH_DRAG_PX) return;
+    touchMoved = true;
+    const tt = nowMs();
+    const dt = Math.max(1, tt - touchLastT);
+    const dy = touchLastY - t.clientY;
+    const instV = dy / dt;
+    touchVel = touchVel === 0 ? instV : 0.55 * touchVel + 0.45 * instV;
+    applyTouchScrollPx(dy * TOUCH_DRAG_GAIN);
+    touchLastY = t.clientY;
+    touchLastX = t.clientX;
+    touchLastT = tt;
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  termWrapEl.addEventListener('touchcancel', () => {
+    touchId = null;
+    touchMoved = false;
+    stopTouchCoast();
   }, { passive: true });
-  termWrapEl.addEventListener('touchend', () => { touchStartY = null; }, { passive: true });
+
+  termWrapEl.addEventListener('touchend', (e) => {
+    if (touchMoved && e.cancelable) e.preventDefault();
+    const flick = touchMoved && Math.abs(touchVel) >= TOUCH_FLICK_MIN && (nowMs() - touchLastT) < 90;
+    touchId = null;
+    touchMoved = false;
+    if (flick) startTouchCoast();
+    else touchVel = 0;
+  }, { passive: false });
 
   function applyTheme(name, persist = false) {
     const key = THEMES[name] ? name : 'purple-glow';
+    currentThemeKey = key;
     const t = THEMES[key];
     for (const [k, v] of Object.entries(t.css)) {
       document.documentElement.style.setProperty(k, v);
     }
-    term.options.theme = t.xterm;
+    for (const sess of tabSessions.values()) {
+      sess.term.options.theme = t.xterm;
+    }
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', t.css['--bg']);
     themeSelectEl.value = key;
@@ -519,19 +607,32 @@
   themeSelectEl.addEventListener('change', (e) => { applyTheme(e.target.value, true); focusTerminalIfDesktop(); });
   themeSelectMobileEl.addEventListener('change', (e) => applyTheme(e.target.value, true));
 
-  function fitAndResize() {
+  function fitSession(sess, sendResize = true) {
+    if (!sess) return;
     try {
       const nextFont = computeFontSize();
       const nextLH = window.innerWidth <= 860 ? 1.12 : 1.24;
-      if (term.options.fontSize !== nextFont) term.options.fontSize = nextFont;
-      if (term.options.lineHeight !== nextLH) term.options.lineHeight = nextLH;
+      if (sess.term.options.fontSize !== nextFont) sess.term.options.fontSize = nextFont;
+      if (sess.term.options.lineHeight !== nextLH) sess.term.options.lineHeight = nextLH;
       updateBlockScale();
-      fitAddon.fit();
-      markBlockRows();
-      if (ptyWs && ptyWs.readyState === 1) {
-        ptyWs.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+      sess.fitAddon.fit();
+      markBlockRows(sess.paneEl);
+      sess.needsFit = false;
+      const changed = sess.term.cols !== sess.lastCols || sess.term.rows !== sess.lastRows;
+      if (sendResize && changed && sess.ws && sess.ws.readyState === 1) {
+        sess.lastCols = sess.term.cols;
+        sess.lastRows = sess.term.rows;
+        sess.ws.send(JSON.stringify({ type: 'resize', cols: sess.term.cols, rows: sess.term.rows }));
       }
     } catch (_) {}
+  }
+
+  function fitAndResize() {
+    const active = activeSession();
+    for (const sess of tabSessions.values()) {
+      if (sess === active) fitSession(sess, true);
+      else sess.needsFit = true;
+    }
   }
 
   const ro = new ResizeObserver(() => requestAnimationFrame(fitAndResize));
@@ -547,38 +648,37 @@
   }
 
   function focusTerminalIfDesktop() {
-    if (window.innerWidth > 860 && document.activeElement !== goalInputEl) {
-      term.focus();
+    const sess = activeSession();
+    if (sess && window.innerWidth > 860 && document.activeElement !== goalInputEl) {
+      sess.term.focus();
     }
   }
 
-  function sendPtyInput(data) {
-    if (!data) return;
-    if (ptyWs && ptyWs.readyState === 1) {
-      ptyWs.send(JSON.stringify({ type: 'input', data }));
+  function sendPtyInput(data, targetSession = null) {
+    const sess = targetSession || activeSession();
+    if (!data || !sess) return;
+    if (sess.ws && sess.ws.readyState === 1) {
+      sess.ws.send(JSON.stringify({ type: 'input', data }));
       return;
     }
     // Never silently drop keystrokes when the PTY socket dipped or is reconnecting:
     // buffer the input and immediately re-attach to the active terminal.
-    pendingInput.push(data);
-    if (pendingInput.length > 64) pendingInput = pendingInput.slice(-64);
-    if (activeId && (!ptyWs || ptyWs.readyState === 2 || ptyWs.readyState === 3)) {
-      connectPty(activeId, { silent: true });
+    sess.pendingInput.push(data);
+    if (sess.pendingInput.length > 64) sess.pendingInput = sess.pendingInput.slice(-64);
+    if (!sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3) {
+      openSessionSocket(sess, { silent: true, reset: true });
     }
   }
-
-  term.onData((data) => {
-    sendPtyInput(data);
-  });
 
   // Clicking anywhere on the terminal canvas (without a drag selection) restores keyboard focus
   // and recovers a dropped PTY socket immediately.
   termWrapEl.addEventListener('mouseup', () => {
-    if (window.innerWidth <= 860) return;
-    if (term.hasSelection() || (window.getSelection && window.getSelection().toString())) return;
-    term.focus();
-    if (activeId && (!ptyWs || ptyWs.readyState === 2 || ptyWs.readyState === 3)) {
-      connectPty(activeId, { silent: true });
+    const sess = activeSession();
+    if (!sess || window.innerWidth <= 860) return;
+    if (sess.term.hasSelection() || (window.getSelection && window.getSelection().toString())) return;
+    sess.term.focus();
+    if (!sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3) {
+      openSessionSocket(sess, { silent: true, reset: true });
     }
   });
 
@@ -587,8 +687,9 @@
     if (!eventsWs || eventsWs.readyState === 2 || eventsWs.readyState === 3) {
       connectEvents();
     }
-    if (activeId && (!ptyWs || ptyWs.readyState === 2 || ptyWs.readyState === 3)) {
-      connectPty(activeId, { silent: true });
+    const sess = activeSession();
+    if (sess && (!sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3)) {
+      openSessionSocket(sess, { silent: true, reset: true });
     }
   }
   document.addEventListener('visibilitychange', () => {
@@ -642,7 +743,8 @@
     if (window.innerWidth > 860 && !inField && !e.metaKey && !e.altKey && document.activeElement === document.body) {
       if (e.ctrlKey && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'v')) return;
       if (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace') {
-        term.focus();
+        const sess = activeSession();
+        if (sess) sess.term.focus();
       }
     }
   });
@@ -677,147 +779,357 @@
     return out;
   }
 
-  function connectPty(address, opts = {}) {
-    if (!address) return;
-    if (ptyReconnectTimer) {
-      clearTimeout(ptyReconnectTimer);
-      ptyReconnectTimer = null;
+  function disposeSession(address) {
+    const sess = tabSessions.get(address);
+    if (!sess) return;
+    tabSessions.delete(address);
+    if (sess.reconnectTimer) { clearTimeout(sess.reconnectTimer); sess.reconnectTimer = null; }
+    if (sess.fallbackTimer) { clearTimeout(sess.fallbackTimer); sess.fallbackTimer = null; }
+    if (sess.ws) {
+      sess.ws.onclose = null;
+      sess.ws.onerror = null;
+      try { sess.ws.close(); } catch (_) {}
+      sess.ws = null;
     }
-    const prevWs = ptyWs;
-    ptyWs = null;
+    if (sess.blkObserver) {
+      try { sess.blkObserver.disconnect(); } catch (_) {}
+    }
+    try { sess.term.dispose(); } catch (_) {}
+    if (sess.paneEl && sess.paneEl.parentNode) sess.paneEl.parentNode.removeChild(sess.paneEl);
+  }
+
+  function evictOldestSessionIfNeeded() {
+    while (tabSessions.size >= MAX_TAB_SESSIONS) {
+      let oldestAddr = null;
+      let oldestTs = Infinity;
+      for (const [addr, sess] of tabSessions.entries()) {
+        if (addr === activeId) continue;
+        if (sess.lastUsed < oldestTs) {
+          oldestTs = sess.lastUsed;
+          oldestAddr = addr;
+        }
+      }
+      if (!oldestAddr) break;
+      disposeSession(oldestAddr);
+    }
+  }
+
+  function createTabSession(address) {
+    evictOldestSessionIfNeeded();
+    const paneEl = document.createElement('div');
+    paneEl.className = 'term-pane hydrating';
+    paneEl.dataset.addr = address;
+    terminalHostEl.appendChild(paneEl);
+
+    const term = new window.Terminal({
+      fontFamily: "'JetBrainsMono Nerd Font', 'JetBrains Mono', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace",
+      fontSize: computeFontSize(),
+      lineHeight: window.innerWidth <= 860 ? 1.12 : 1.24,
+      cursorBlink: true,
+      scrollback: 3000,
+      macOptionIsMeta: true,
+      allowProposedApi: true,
+      theme: (THEMES[currentThemeKey] || THEMES['purple-glow']).xterm,
+    });
+    const fitAddon = new window.FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    if (window.WebLinksAddon) {
+      term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
+    }
+    term.open(paneEl);
+
+    const sess = {
+      address,
+      paneEl,
+      term,
+      fitAddon,
+      blkObserver: null,
+      ws: null,
+      connected: false,
+      hydrating: true,
+      hydrationChunks: [],
+      fallbackTimer: null,
+      reconnectTimer: null,
+      reconnectDelay: 400,
+      pendingInput: [],
+      lastCols: 0,
+      lastRows: 0,
+      needsFit: false,
+      lastUsed: Date.now(),
+    };
+
+    // OSC 52 clipboard write support (read "?" refused for security, matching ttyd-clipboard.js)
+    if (term.parser && term.parser.registerOscHandler) {
+      term.parser.registerOscHandler(52, (data) => {
+        const i = data.indexOf(';');
+        const payload = i >= 0 ? data.slice(i + 1) : '';
+        if (!payload || payload === '?') return true;
+        try {
+          const bin = atob(payload);
+          const bytes = new Uint8Array(bin.length);
+          for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+          const text = new TextDecoder().decode(bytes);
+          navigator.clipboard?.writeText(text).catch(() => {});
+        } catch (_) {}
+        return true;
+      });
+    }
+
+    // Ctrl+C copies when text is selected; Ctrl+V pastes from clipboard
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== 'keydown') return true;
+      if (ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key.toLowerCase() === 'c' && term.hasSelection()) {
+        navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
+        term.clearSelection();
+        return false;
+      }
+      if (ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key.toLowerCase() === 'v') {
+        if (navigator.clipboard?.readText) {
+          navigator.clipboard.readText().then((txt) => {
+            if (txt) sendPtyInput(txt, sess);
+          }).catch(() => {});
+          return false;
+        }
+      }
+      return true;
+    });
+
+    term.onData((data) => {
+      sendPtyInput(data, sess);
+    });
+
+    const onScrollMaybe = () => {
+      if (activeId === sess.address) syncJumpLive();
+    };
+    term.onScroll(onScrollMaybe);
+    term.onRender(onScrollMaybe);
+    const vp = paneEl.querySelector('.xterm-viewport');
+    if (vp) vp.addEventListener('scroll', onScrollMaybe, { passive: true });
+
+    const rowsRoot = paneEl.querySelector('.xterm-rows');
+    if (rowsRoot && window.MutationObserver) {
+      let blkRaf = 0;
+      const scheduleBlk = () => {
+        if (blkRaf) return;
+        blkRaf = requestAnimationFrame(() => { blkRaf = 0; markBlockRows(paneEl); });
+      };
+      const obs = new MutationObserver(scheduleBlk);
+      obs.observe(rowsRoot, { childList: true, subtree: true, characterData: true });
+      sess.blkObserver = obs;
+    }
+
+    tabSessions.set(address, sess);
+    return sess;
+  }
+
+  function openSessionSocket(sess, opts = {}) {
+    if (!sess) return;
+    if (sess.reconnectTimer) {
+      clearTimeout(sess.reconnectTimer);
+      sess.reconnectTimer = null;
+    }
+    if (sess.fallbackTimer) {
+      clearTimeout(sess.fallbackTimer);
+      sess.fallbackTimer = null;
+    }
+    const prevWs = sess.ws;
+    sess.ws = null;
     if (prevWs) {
       prevWs.onclose = null;
       prevWs.onerror = null;
       try { prevWs.close(); } catch (_) {}
     }
 
-    const switching = activeId !== address;
-    activeId = address;
-    ptyConnected = false;
-    syncConnPill();
-    if (switching) pendingInput = [];
+    sess.connected = false;
+    if (activeId === sess.address) {
+      ptyConnected = false;
+      syncConnPill();
+    }
 
-    // Hide terminal canvas while initial history burst hydrates so users never see
-    // a chaotic 500-line scroll-to-bottom replay animation on load, tab switch, or reconnect.
-    let hydrating = true;
-    let hydrationChunks = [];
-    let settleTimer = null;
-    let capTimer = null;
+    // Keep pane invisible while server-coalesced initial history burst hydrates so users never
+    // see a fast scroll-from-top-to-bottom replay on initial load, first visit, or reconnect.
+    sess.hydrating = true;
+    sess.hydrationChunks = [];
+    sess.paneEl.classList.add('hydrating');
+    if (activeId === sess.address) termWrapEl.classList.add('term-loading');
 
-    termWrapEl.classList.add('term-loading');
-    term.reset();
-    fitAndResize();
+    if (opts.reset) {
+      sess.term.reset();
+    }
+    fitSession(sess, false);
+    const initCols = sess.term.cols || 100;
+    const initRows = sess.term.rows || 30;
+    sess.lastCols = initCols;
+    sess.lastRows = initRows;
+
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(sess.address)}?cols=${initCols}&rows=${initRows}`;
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+    sess.ws = ws;
 
     const finishHydration = () => {
-      if (!hydrating) return;
-      hydrating = false;
-      if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
-      if (capTimer) { clearTimeout(capTimer); capTimer = null; }
-      const batch = hydrationChunks;
-      hydrationChunks = [];
+      if (!sess.hydrating) return;
+      sess.hydrating = false;
+      if (sess.fallbackTimer) {
+        clearTimeout(sess.fallbackTimer);
+        sess.fallbackTimer = null;
+      }
+      const batch = sess.hydrationChunks;
+      sess.hydrationChunks = [];
       const reveal = () => {
-        if (ptyWs !== ws) return;
-        try { term.scrollToBottom(); } catch (_) {}
-        markBlockRows();
+        if (sess.ws !== ws) return;
+        const vp = sess.paneEl.querySelector('.xterm-viewport');
+        try { sess.term.scrollToBottom(); } catch (_) {}
+        if (vp) vp.scrollTop = vp.scrollHeight;
+        markBlockRows(sess.paneEl);
+        // Two rAFs guarantee xterm.js Viewport._sync() finishes painting at the bottom BEFORE reveal
         requestAnimationFrame(() => {
-          termWrapEl.classList.remove('term-loading');
-          dismissBoot();
-          focusTerminalIfDesktop();
+          if (sess.ws !== ws) return;
+          try { sess.term.scrollToBottom(); } catch (_) {}
+          if (vp) vp.scrollTop = vp.scrollHeight;
+          requestAnimationFrame(() => {
+            if (sess.ws !== ws) return;
+            sess.paneEl.classList.remove('hydrating');
+            if (activeId === sess.address) {
+              termWrapEl.classList.remove('term-loading');
+              syncJumpLive();
+              focusTerminalIfDesktop();
+            }
+            dismissBoot();
+          });
         });
       };
       if (batch.length > 0) {
-        term.write(concatChunks(batch), reveal);
+        sess.term.write(concatChunks(batch), reveal);
       } else {
         reveal();
       }
     };
 
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(address)}?cols=${term.cols}&rows=${term.rows}`;
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = 'arraybuffer';
-    ptyWs = ws;
-
-    if (hydrating) {
-      // Fallback cap in case the terminal has no initial output at all
-      capTimer = setTimeout(finishHydration, 360);
-    }
+    // Safety fallback in case a proxy delays or drops the hydrated control message
+    sess.fallbackTimer = setTimeout(finishHydration, 1500);
 
     ws.onopen = () => {
-      if (ptyWs !== ws) return;
-      ptyConnected = true;
-      ptyReconnectDelay = 400;
-      syncConnPill();
-      ws.send(JSON.stringify({ type: 'focus', focused: true }));
-      fitAndResize();
-      if (pendingInput.length > 0) {
-        const queued = pendingInput;
-        pendingInput = [];
+      if (sess.ws !== ws) return;
+      sess.connected = true;
+      sess.reconnectDelay = 400;
+      if (activeId === sess.address) {
+        ptyConnected = true;
+        syncConnPill();
+        ws.send(JSON.stringify({ type: 'focus', focused: true }));
+      }
+      // Only resize if viewport dimensions changed while the WebSocket was opening
+      fitSession(sess, true);
+      if (sess.pendingInput.length > 0) {
+        const queued = sess.pendingInput;
+        sess.pendingInput = [];
         for (const chunk of queued) {
           ws.send(JSON.stringify({ type: 'input', data: chunk }));
         }
       }
-      if (!hydrating) focusTerminalIfDesktop();
+      if (!sess.hydrating && activeId === sess.address) focusTerminalIfDesktop();
     };
 
     ws.onmessage = (ev) => {
-      if (ptyWs !== ws) return;
+      if (sess.ws !== ws) return;
       if (ev.data instanceof ArrayBuffer) {
         const bytes = new Uint8Array(ev.data);
-        if (hydrating) {
-          hydrationChunks.push(bytes);
-          if (settleTimer) clearTimeout(settleTimer);
-          // Once chunks arrive, wait 45ms of quiet for the history burst to finish
-          settleTimer = setTimeout(finishHydration, 45);
-          // Tighten max cap to 220ms after first byte so reveal is always snappy
-          if (!ws._firstByteSeen) {
-            ws._firstByteSeen = true;
-            if (capTimer) clearTimeout(capTimer);
-            capTimer = setTimeout(finishHydration, 220);
-          }
+        if (sess.hydrating) {
+          sess.hydrationChunks.push(bytes);
           return;
         }
-        term.write(bytes, () => dismissBoot());
+        sess.term.write(bytes, () => dismissBoot());
       } else if (typeof ev.data === 'string') {
-        finishHydration();
         try {
           const msg = JSON.parse(ev.data);
-          if (msg.type === 'error') term.writeln(`\r\n\x1b[31m[error] ${msg.message}\x1b[0m`);
+          if (msg.type === 'hydrated') {
+            finishHydration();
+            return;
+          }
+          finishHydration();
+          if (msg.type === 'error') sess.term.writeln(`\r\n\x1b[31m[error] ${msg.message}\x1b[0m`);
           if (msg.type === 'closed') {
             ws._terminalClosed = true;
-            term.writeln(`\r\n\x1b[2m[terminal closed]\x1b[0m`);
+            sess.term.writeln(`\r\n\x1b[2m[terminal closed]\x1b[0m`);
           }
         } catch (_) {
-          term.write(ev.data);
+          finishHydration();
+          sess.term.write(ev.data);
         }
         dismissBoot();
       }
     };
 
     ws.onerror = () => {
-      if (ptyWs !== ws) return;
+      if (sess.ws !== ws) return;
       finishHydration();
     };
 
     ws.onclose = () => {
-      if (ptyWs !== ws) return;
+      if (sess.ws !== ws) return;
       finishHydration();
-      ptyWs = null;
-      ptyConnected = false;
-      syncConnPill();
+      sess.ws = null;
+      sess.connected = false;
+      if (activeId === sess.address) {
+        ptyConnected = false;
+        syncConnPill();
+      }
       if (ws._terminalClosed) return;
       // Auto-reconnect silently if this tab is still live so keyboard input never freezes
-      if (activeId === address && terminals.some((t) => t.address === address)) {
-        const delay = ptyReconnectDelay;
-        ptyReconnectDelay = Math.min(Math.round(ptyReconnectDelay * 1.6), 3000);
-        ptyReconnectTimer = setTimeout(() => {
-          ptyReconnectTimer = null;
-          if (activeId === address && !ptyWs) {
-            connectPty(address, { silent: true });
+      if (tabSessions.get(sess.address) === sess && terminals.some((t) => t.address === sess.address)) {
+        const delay = sess.reconnectDelay;
+        sess.reconnectDelay = Math.min(Math.round(sess.reconnectDelay * 1.6), 3000);
+        sess.reconnectTimer = setTimeout(() => {
+          sess.reconnectTimer = null;
+          if (tabSessions.get(sess.address) === sess && !sess.ws) {
+            openSessionSocket(sess, { silent: true, reset: true });
           }
         }, delay);
       }
     };
+  }
+
+  function connectPty(address, opts = {}) {
+    if (!address) return;
+    stopTouchCoast();
+
+    const prevSess = activeSession();
+    if (prevSess && prevSess.address !== address) {
+      prevSess.paneEl.classList.remove('active');
+      if (prevSess.ws && prevSess.ws.readyState === 1) {
+        prevSess.ws.send(JSON.stringify({ type: 'focus', focused: false }));
+      }
+    }
+
+    activeId = address;
+    let sess = tabSessions.get(address);
+    const isNew = !sess;
+    if (!sess) {
+      sess = createTabSession(address);
+    }
+
+    sess.lastUsed = Date.now();
+    sess.paneEl.classList.add('active');
+
+    if (isNew || opts.forceReconnect || !sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3) {
+      openSessionSocket(sess, { silent: Boolean(opts.silent), reset: !isNew });
+    } else {
+      // Instant 0ms tab switch: live terminal & exact scroll position preserved!
+      ptyConnected = sess.connected;
+      syncConnPill();
+      if (!sess.hydrating) {
+        termWrapEl.classList.remove('term-loading');
+      } else {
+        termWrapEl.classList.add('term-loading');
+      }
+      if (sess.needsFit) fitSession(sess, true);
+      if (sess.ws && sess.ws.readyState === 1) {
+        sess.ws.send(JSON.stringify({ type: 'focus', focused: true }));
+      }
+      syncJumpLive();
+      focusTerminalIfDesktop();
+    }
 
     renderTabs();
   }
@@ -1104,16 +1416,21 @@
       }
       if (Array.isArray(msg.terminals)) {
         terminals = msg.terminals;
-        if (!activeId || !terminals.some((t) => t.address === activeId)) {
-          const preferred = msg.active && terminals.some((t) => t.address === msg.active)
+        const liveAddrs = new Set(terminals.map((t) => t.address));
+        for (const addr of Array.from(tabSessions.keys())) {
+          if (!liveAddrs.has(addr)) disposeSession(addr);
+        }
+        if (!activeId || !liveAddrs.has(activeId)) {
+          const preferred = msg.active && liveAddrs.has(msg.active)
             ? msg.active
             : (terminals[0] && terminals[0].address);
           if (preferred) connectPty(preferred);
-          else { activeId = null; renderTabs(); dismissBoot(); }
+          else { activeId = null; ptyConnected = false; syncConnPill(); renderTabs(); dismissBoot(); }
         } else {
-          // If events reconnected after a brief blip and PTY socket died, heal PTY automatically
-          if (!ptyWs || ptyWs.readyState === 2 || ptyWs.readyState === 3) {
-            connectPty(activeId, { silent: true });
+          // If events reconnected after a brief blip and the active PTY socket died, heal it automatically
+          const sess = activeSession();
+          if (!sess || !sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3) {
+            connectPty(activeId, { silent: true, forceReconnect: true });
           } else {
             renderTabs();
           }
@@ -1357,8 +1674,11 @@
     appEl.dataset.mobileKeys = val;
     mobileKbBtn.dataset.on = val;
     mobileKbBtn.setAttribute('aria-pressed', open ? 'true' : 'false');
-    if (open) term.focus();
-    else term.blur();
+    const sess = activeSession();
+    if (sess) {
+      if (open) sess.term.focus();
+      else sess.term.blur();
+    }
     requestAnimationFrame(fitAndResize);
   }
 

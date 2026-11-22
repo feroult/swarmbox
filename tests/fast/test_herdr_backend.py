@@ -643,15 +643,25 @@ assert.equal(THEME_ORDER.length, 5);
         p2 = subprocess.run(["node", "--input-type=module", "-e", check_js], capture_output=True, text=True)
         self.assertEqual(p2.returncode, 0, p2.stderr)
 
-        # Verify app.js syntax, reconnect resilience, and zero-scroll hydration
+        # Verify app.js syntax, per-tab live sessions, zero-scroll hydration, reconnect resilience, and mobile inertia scroll
         app_js = os.path.join(ROOT, "container", "web", "herdr", "public", "app.js")
         p3 = subprocess.run(["node", "--check", app_js], capture_output=True, text=True)
         self.assertEqual(p3.returncode, 0, p3.stderr)
         with open(app_js, encoding="utf-8") as f:
             app_src = f.read()
-        for token in ("term-loading", "finishHydration", "pendingInput", "ensureConnectionsAlive", "ws.onclose"):
+        for token in (
+            "term-loading",
+            "finishHydration",
+            "tabSessions",
+            "pendingInput",
+            "ensureConnectionsAlive",
+            "ws.onclose",
+            "startTouchCoast",
+            "TOUCH_FRICTION",
+        ):
             self.assertIn(token, app_src)
         self.assertIn("wsPingTimer", server_src)
+        self.assertIn("type: 'hydrated'", server_src)
 
     def test_attach_interactive_launches_cockpit_and_respects_raw_override(self):
         tmp = tempfile.mkdtemp(prefix="swarmbox-test-cockpit-sh.")

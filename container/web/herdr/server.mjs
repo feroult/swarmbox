@@ -423,12 +423,45 @@ export function createGateway(options = {}) {
     if (typeof hc.refreshTerminals === 'function') hc.refreshTerminals();
 
     let stream = null;
+    let hydrating = true;
+    let initChunks = [];
+    let flushTimer = null;
+    let capTimer = null;
+
+    const clearHydrationTimers = () => {
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      if (capTimer) { clearTimeout(capTimer); capTimer = null; }
+    };
+
+    const flushInitial = () => {
+      if (!hydrating) return;
+      hydrating = false;
+      clearHydrationTimers();
+      if (ws.readyState !== 1) {
+        initChunks = [];
+        return;
+      }
+      if (initChunks.length > 0) {
+        const merged = initChunks.length === 1 ? initChunks[0] : Buffer.concat(initChunks);
+        initChunks = [];
+        ws.send(merged);
+      }
+      ws.send(JSON.stringify({ type: 'hydrated' }));
+    };
+
     try {
       stream = await hc.attach(termId, cols, rows, {
         onData: (buf) => {
+          if (hydrating) {
+            initChunks.push(Buffer.from(buf));
+            if (flushTimer) clearTimeout(flushTimer);
+            flushTimer = setTimeout(flushInitial, 55);
+            return;
+          }
           if (ws.readyState === 1) ws.send(buf);
         },
         onClose: (info) => {
+          flushInitial();
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'closed', info }));
             ws.close();
@@ -436,11 +469,18 @@ export function createGateway(options = {}) {
         },
       });
     } catch (err) {
+      clearHydrationTimers();
       if (ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'error', message: err.message }));
         ws.close();
       }
       return;
+    }
+
+    // If the terminal has no initial output, finish hydration promptly; otherwise cap burst at 350ms
+    if (hydrating) {
+      if (!flushTimer) flushTimer = setTimeout(flushInitial, 110);
+      capTimer = setTimeout(flushInitial, 350);
     }
 
     ws.on('message', (data, isBinary) => {
@@ -472,6 +512,9 @@ export function createGateway(options = {}) {
     });
 
     ws.on('close', () => {
+      clearHydrationTimers();
+      initChunks = [];
+      hydrating = false;
       if (stream) {
         stream.close();
         stream = null;

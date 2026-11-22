@@ -600,10 +600,25 @@ html.swarmbox-ready #sb-boot { opacity: 0; visibility: hidden; }
 #terminal {
   width: 100%;
   height: 100%;
-  opacity: 1;
-  transition: opacity 150ms cubic-bezier(.22, 1, .36, 1);
+  position: relative;
 }
-.term-wrap.term-loading #terminal {
+.term-pane {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.term-pane.active {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 1;
+  transition: opacity 110ms cubic-bezier(.22, 1, .36, 1);
+}
+.term-wrap.term-loading .term-pane.active,
+.term-pane.hydrating {
   opacity: 0;
   transition: none;
 }
