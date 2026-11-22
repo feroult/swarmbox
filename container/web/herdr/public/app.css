@@ -408,6 +408,50 @@ html.swarmbox-ready #sb-boot { opacity: 0; visibility: hidden; }
 }
 .theme-picker select:focus, .mobile-theme-select:focus { border-color: var(--accent); }
 
+.font-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.font-stepper {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.font-btn, .font-val {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  height: 24px;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.font-btn {
+  width: 24px;
+  font-size: 13px;
+  line-height: 1;
+}
+.font-val {
+  min-width: 36px;
+  padding: 0 4px;
+  color: var(--text);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+@media (hover: hover) {
+  .font-btn:hover, .font-val:hover { background: var(--surface-hover); color: var(--accent-bright); }
+}
+
 .conn-pill {
   display: flex;
   align-items: center;

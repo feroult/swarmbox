@@ -356,17 +356,52 @@
     }
   }
 
+  const btnFontDec = document.getElementById('btn-font-dec');
+  const btnFontReset = document.getElementById('btn-font-reset');
+  const btnFontInc = document.getElementById('btn-font-inc');
+
+  let fontOffset = (() => {
+    try {
+      const v = Number(localStorage.getItem('swarmbox-herdr-font-offset') || '0');
+      return Number.isFinite(v) ? Math.max(-4, Math.min(8, v)) : 0;
+    } catch (_) { return 0; }
+  })();
+
   // Dynamic column-aware font sizing:
-  // On phones (<= 860px), pick the exact font size so >= 56 columns fit upright (keeping the
-  // 49-col SwarmBox banner & Starship prompt completely unbroken, mirroring ttyd-clipboard.js).
+  // Desktop defaults to a comfortable 16.5px (adjustable via sidebar stepper or Alt+-/=/0).
+  // On phones (<= 860px), pick the exact font size so >= 51 columns fit upright (keeping the
+  // 49-col SwarmBox banner & single-line Starship prompt completely unbroken).
   function computeFontSize() {
     const w = window.innerWidth;
-    if (w > 860) return 15;
-    const usable = Math.max(240, (termWrapEl.clientWidth || w) - 18);
-    const targetCols = w < window.innerHeight ? 56 : 104;
-    const raw = usable / (targetCols * 0.605);
-    return Math.max(9.5, Math.min(13.5, Math.round(raw * 2) / 2));
+    let base;
+    if (w > 860) {
+      base = 16.5;
+    } else {
+      const usable = Math.max(240, (termWrapEl.clientWidth || w) - 18);
+      const targetCols = w < window.innerHeight ? 51 : 94;
+      const raw = usable / (targetCols * 0.605);
+      base = Math.max(10.5, Math.min(15, Math.round(raw * 2) / 2));
+    }
+    return Math.max(9.5, Math.min(26, Math.round((base + fontOffset) * 2) / 2));
   }
+
+  function syncFontLabel() {
+    if (!btnFontReset) return;
+    const sz = computeFontSize();
+    btnFontReset.textContent = Number.isInteger(sz) ? `${sz}px` : `${sz.toFixed(1)}px`;
+  }
+  syncFontLabel();
+
+  function adjustFontOffset(delta) {
+    fontOffset = delta === 0 ? 0 : Math.max(-4, Math.min(8, fontOffset + delta));
+    try { localStorage.setItem('swarmbox-herdr-font-offset', String(fontOffset)); } catch (_) {}
+    syncFontLabel();
+    fitAndResize();
+    focusTerminalIfDesktop();
+  }
+  if (btnFontDec) btnFontDec.addEventListener('click', () => adjustFontOffset(-1));
+  if (btnFontReset) btnFontReset.addEventListener('click', () => adjustFontOffset(0));
+  if (btnFontInc) btnFontInc.addEventListener('click', () => adjustFontOffset(1));
 
   // Eliminate faint horizontal hairline seams on block-drawing rows (banner.sh half-blocks)
   const BLOCK_RE = /[\u2580-\u259f]/;
@@ -628,6 +663,7 @@
   }
 
   function fitAndResize() {
+    syncFontLabel();
     const active = activeSession();
     for (const sess of tabSessions.values()) {
       if (sess === active) fitSession(sess, true);
@@ -734,6 +770,15 @@
         const idx = THEME_KEYS.indexOf(themeSelectEl.value);
         applyTheme(THEME_KEYS[(idx + 1) % THEME_KEYS.length], true);
         focusTerminalIfDesktop();
+      } else if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        adjustFontOffset(1);
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        adjustFontOffset(-1);
+      } else if (e.key === '0') {
+        e.preventDefault();
+        adjustFontOffset(0);
       }
       return;
     }
