@@ -66,7 +66,7 @@ The three area ledgers in this folder say where each old test went; this file sa
 | a bus supervisor that ended by itself left a pid file whose USR1 kills; crash loops of ttyd and the bus give up after five exits | `fast/test_serve_steps.py::BusStep`, `fast/test_serve_steps.py::Supervisor` | fast |
 | exit in a host terminal tab jumped to the window of another tab; the grouped session of a finished call stayed; a returning tab lost its place | `slow/test_attach_real.py::RealTmuxCase` | slow |
 | the web terminal attaches to the session itself so the status bar (the tabs) stays | `fast/test_attach_command.py::InteractiveAttachFakeTests::test_web_attaches_to_the_session_itself_so_the_status_bar_stays`, `fast/test_web_build.py::Run::test_the_session_is_swarmbox_attach_when_it_exists_else_tmux_attach` | fast |
-| the glint of the banner left letters behind and rewrote whole rows | `slow/test_banner_glint.py::Glint` | slow |
+| the glint of the banner left letters behind and rewrote whole rows | *(retired — `banner.sh` was removed)* | — |
 | security review SR-01: an image reference that starts with `-` | `fast/test_security_review.py::ImageReferenceTest` | fast |
 | SR-02, SR-03: private folders, no write through a planted symlink at a predictable temporary name, a lock released by a signal | `fast/test_security_review.py::TempFileTest`, `fast/test_security_review.py::ModeTest`, `fast/test_security_review.py::CleanupTest` | fast |
 | SR-04: `cloudflare.json` with mode 600, written to a new file renamed over the old one | `fast/test_cloudflare_setup.py::TestSafetyAndErrors`, `fast/test_security_review.py::TokenTest` | fast |

@@ -216,12 +216,12 @@ in the image, where they were installed.
 - Source: https://github.com/herdrdev/herdr
 - [verified: GitHub release v0.9.5 and repository license; 2026-11-21]
 
-### Herdr Web Gateway & Terminal Cockpit npm packages (`ws`, `@xterm/xterm`, `@xterm/headless`, `@xterm/addon-fit`, `@xterm/addon-web-links`)
+### Herdr Web Gateway & Terminal Cockpit npm packages (`ws`, `@xterm/xterm`, `@xterm/headless`, `@xterm/addon-fit`, `@xterm/addon-web-links`, `@fontsource-variable/geist-mono`)
 
-- Versions: `ws` 8.23.0, `@xterm/xterm` 5.5.0, `@xterm/headless` 5.5.0, `@xterm/addon-fit` 0.10.0, `@xterm/addon-web-links` 0.11.0 (pinned in `container/web/herdr/package.json`)
-- License: MIT
-- Source: https://github.com/websockets/ws and https://github.com/xtermjs/xterm.js
-- [verified: `package.json` license and repository fields in installed packages and `npm view @xterm/headless@5.5.0 license`; 2026-11-21]
+- Versions: `ws` 8.23.0, `@xterm/xterm` 5.5.0, `@xterm/headless` 5.5.0, `@xterm/addon-fit` 0.10.0, `@xterm/addon-web-links` 0.11.0, `@fontsource-variable/geist-mono` 5.3.0 (pinned in `container/web/herdr/package.json`)
+- License: MIT (`ws`, `@xterm/*`); OFL-1.1 (`@fontsource-variable/geist-mono`, Vercel Geist Mono)
+- Source: https://github.com/websockets/ws, https://github.com/xtermjs/xterm.js, and https://github.com/vercel/geist-font
+- [verified: `package.json` license and repository fields in installed packages, `npm view @xterm/headless@5.5.0 license`, and `npm view @fontsource-variable/geist-mono@5.3.0 license`; 2026-11-21]
 
 ### cloudflared (connector image, not in the SwarmBox image)
 

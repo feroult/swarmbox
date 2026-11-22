@@ -209,73 +209,6 @@
     },
   };
 
-  // ---- Crisp SVG Boot Splash (exact half-block lettering from container/scripts/banner.sh) ---
-  function buildBootSplash() {
-    const host = document.getElementById('sb-boot');
-    if (!host) return;
-    const FONT = [
-      '▄▀▀▀▀ █   █ ▄▀▀▀▄ █▀▀▀▄ █▄ ▄█ █▀▀▀▄ ▄▀▀▀▄ ▀▄ ▄▀',
-      ' ▀▀▀▄ █▄▀▄█ █▀▀▀█ █▀▀█  █ ▀ █ █▀▀▀▄ █   █  ▄▀▄ ',
-      '▀▀▀▀  ▀   ▀ ▀   ▀ ▀   ▀ ▀   ▀ ▀▀▀▀   ▀▀▀  ▀   ▀',
-    ];
-    const STOPS = [0x3f3f46, 0x6d28d9, 0xa78bfa, 0xffffff, 0xa78bfa, 0x6d28d9, 0x3f3f46];
-    const W = FONT[0].length;
-    const cellW = 7;
-    const cellH = 14;
-    const halfH = 7;
-    const svgW = W * cellW;
-    const svgH = FONT.length * cellH + 14;
-    const colorAt = (col) => {
-      const segs = STOPS.length - 1;
-      const pos = (col / (W - 1)) * segs;
-      const s = Math.min(segs - 1, Math.floor(pos));
-      const f = pos - s;
-      const a = STOPS[s];
-      const b = STOPS[s + 1];
-      const r = Math.round(((a >> 16) & 255) + (((b >> 16) & 255) - ((a >> 16) & 255)) * f);
-      const g = Math.round(((a >> 8) & 255) + (((b >> 8) & 255) - ((a >> 8) & 255)) * f);
-      const bl = Math.round((a & 255) + ((b & 255) - (a & 255)) * f);
-      return `rgb(${r},${g},${bl})`;
-    };
-    const NS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(NS, 'svg');
-    const dispW = Math.min(340, Math.round(window.innerWidth * 0.64));
-    svg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
-    svg.setAttribute('width', String(dispW));
-    svg.setAttribute('height', String(Math.round((dispW * svgH) / svgW)));
-    const rect = (x, y, w, h, fill) => {
-      const el = document.createElementNS(NS, 'rect');
-      el.setAttribute('x', String(x));
-      el.setAttribute('y', String(y));
-      el.setAttribute('width', String(w));
-      el.setAttribute('height', String(h));
-      el.setAttribute('fill', fill);
-      svg.appendChild(el);
-    };
-    for (let row = 0; row < FONT.length; row++) {
-      for (let col = 0; col < W; col++) {
-        const ch = FONT[row][col];
-        if (ch === ' ') continue;
-        const fill = colorAt(col);
-        const x = col * cellW;
-        const y = row * cellH;
-        if (ch === '█') rect(x, y, cellW, cellH, fill);
-        else if (ch === '▀') rect(x, y, cellW, halfH, fill);
-        else if (ch === '▄') rect(x, y + halfH, cellW, halfH, fill);
-      }
-    }
-    // Segmented gradient underline matching banner.sh
-    let bc = 0;
-    for (const seg of [14, 8, 4, 2]) {
-      for (let j = 0; j < seg; j++) {
-        rect((bc + j) * cellW, FONT.length * cellH + 9, cellW, 2, colorAt(bc + j));
-      }
-      bc += seg + 1;
-    }
-    host.appendChild(svg);
-  }
-  buildBootSplash();
-
   let bootDismissed = false;
   function dismissBoot() {
     if (bootDismissed) return;
@@ -646,7 +579,7 @@
     if (!sess) return;
     try {
       const nextFont = computeFontSize();
-      const nextLH = window.innerWidth <= 860 ? 1.12 : 1.24;
+      const nextLH = window.innerWidth <= 860 ? 1.15 : 1.28;
       if (sess.term.options.fontSize !== nextFont) sess.term.options.fontSize = nextFont;
       if (sess.term.options.lineHeight !== nextLH) sess.term.options.lineHeight = nextLH;
       updateBlockScale();
@@ -669,6 +602,13 @@
       if (sess === active) fitSession(sess, true);
       else sess.needsFit = true;
     }
+  }
+
+  // Re-measure terminal cell geometry as soon as self-hosted Geist Mono finishes loading
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      requestAnimationFrame(() => fitAndResize());
+    }).catch(() => {});
   }
 
   const ro = new ResizeObserver(() => requestAnimationFrame(fitAndResize));
@@ -917,9 +857,11 @@
     terminalHostEl.appendChild(paneEl);
 
     const term = new window.Terminal({
-      fontFamily: "'JetBrainsMono Nerd Font', 'JetBrains Mono', 'CaskaydiaCove Nerd Font', 'Cascadia Code', Consolas, Menlo, 'Liberation Mono', monospace",
+      fontFamily: "'Geist Mono', 'JetBrainsMono Nerd Font', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
       fontSize: computeFontSize(),
-      lineHeight: window.innerWidth <= 860 ? 1.12 : 1.24,
+      lineHeight: window.innerWidth <= 860 ? 1.15 : 1.28,
+      fontWeight: '400',
+      fontWeightBold: '600',
       cursorBlink: true,
       scrollback: 3000,
       macOptionIsMeta: true,

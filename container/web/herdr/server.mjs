@@ -73,6 +73,7 @@ const MIME = {
   '.mjs': 'application/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
 };
 
 export function checkSameOrigin(req) {
@@ -208,11 +209,23 @@ export function createGateway(options = {}) {
         }
       }
 
-      // Local xterm.js vendor bundles (zero CDN dependency)
+      // Local xterm.js & Geist Mono variable font vendor bundles (zero CDN dependency)
       if (pathname === '/vendor/xterm.js') return serveFile(res, path.join(NODE_MODULES, '@xterm/xterm/lib/xterm.js'), true);
       if (pathname === '/vendor/xterm.css') return serveFile(res, path.join(NODE_MODULES, '@xterm/xterm/css/xterm.css'), true);
       if (pathname === '/vendor/addon-fit.js') return serveFile(res, path.join(NODE_MODULES, '@xterm/addon-fit/lib/addon-fit.js'), true);
       if (pathname === '/vendor/addon-web-links.js') return serveFile(res, path.join(NODE_MODULES, '@xterm/addon-web-links/lib/addon-web-links.js'), true);
+      if (pathname === '/vendor/fonts/geist-mono-latin.woff2') {
+        return serveFile(res, path.join(NODE_MODULES, '@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2'), true);
+      }
+      if (pathname === '/vendor/fonts/geist-mono-latin-ext.woff2') {
+        return serveFile(res, path.join(NODE_MODULES, '@fontsource-variable/geist-mono/files/geist-mono-latin-ext-wght-normal.woff2'), true);
+      }
+      if (pathname === '/vendor/fonts/geist-mono-symbols2.woff2') {
+        return serveFile(res, path.join(NODE_MODULES, '@fontsource-variable/geist-mono/files/geist-mono-symbols2-wght-normal.woff2'), true);
+      }
+      if (pathname === '/vendor/fonts/geist-mono-latin-italic.woff2') {
+        return serveFile(res, path.join(NODE_MODULES, '@fontsource-variable/geist-mono/files/geist-mono-latin-wght-italic.woff2'), true);
+      }
 
       // Health & state
       if (pathname === '/api/health' && req.method === 'GET') {

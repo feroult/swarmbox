@@ -69,13 +69,12 @@ class FragmentInContainer(unittest.TestCase):
         self.assertIn("alias ll=", out)
         self.assertIn("yolo is a function", out)
 
-    def test_banner_health_lines_and_the_stale_image_line(self):
+    def test_health_lines_and_the_stale_image_line(self):
         state = os.path.join(self.ws, ".local", "state", "swarmbox")
         os.makedirs(state, exist_ok=True)
         with open(os.path.join(state, "health"), "w") as f:
             f.write("web terminal keeps crashing; see web-terminal.log\nthe local image has been replaced; run swarmbox reset\n")
         out = self.interactive("true")
-        self.assertIn(BANNER_MARK, plain(out))
         self.assertIn("web terminal keeps crashing", out)
         self.assertIn("the local image has been replaced", out)
 

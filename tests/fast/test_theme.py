@@ -1,7 +1,7 @@
-"""One look for the three places that draw: the banner, the Starship prompt and the tmux theme.
+"""One look for the places that draw: the Starship prompt, the Purple Glow studio theme, and tmux.
 
-Every color of the tmux theme must come from the palette that the prompt and the banner already use (plus two neutral inks for text),
-so the three cannot drift apart: change a color in one and this says which of the others has to follow.
+Every color of the tmux theme must come from the shared Purple Glow palette (the prompt palette plus
+the deep accent / zinc hairline and two neutral inks), so the themes cannot drift apart.
 Run: python3 tests/fast/test_theme.py
 """
 import json
@@ -17,8 +17,9 @@ from helpers import ROOT  # noqa: E402
 
 CONFIG = os.path.join(ROOT, "container", "config")
 HEX = re.compile(r"#[0-9a-fA-F]{6}\b")
-# the dark and the light ink for text on a colored background: not part of the palette, shared by the three
+# the dark and the light ink for text on a colored background, plus the deep violet accent & zinc hairline from docs/theme.md
 INKS = {"#fafafa", "#111111"}
+BRAND_SURFACES = {"#3f3f46", "#6d28d9"}
 
 
 def read(*parts):
@@ -35,22 +36,15 @@ def prompt_palette():
     return {v.lower() for v in tomllib.loads(read("container", "config", "starship.toml"))["palettes"]["swarmbox"].values()}
 
 
-def banner_palette():
-    m = re.search(r"^gradient COLS \$\{#FONT\[0\]\} ([0-9a-f ]+)$", read("container", "scripts", "banner.sh"), re.M)   # the one of the letters
-    assert m, "the gradient line of banner.sh was not found"
-    return {"#" + h for h in m.group(1).split()}
-
-
 class OneLook(unittest.TestCase):
     def test_the_palettes_are_not_empty(self):
         self.assertGreaterEqual(len(prompt_palette()), 8)
-        self.assertGreaterEqual(len(banner_palette()), 4)
 
-    def test_every_color_of_the_tmux_theme_comes_from_the_prompt_or_the_banner(self):
-        allowed = prompt_palette() | banner_palette() | INKS
+    def test_every_color_of_the_tmux_theme_comes_from_the_shared_palette(self):
+        allowed = prompt_palette() | BRAND_SURFACES | INKS
         for name in ("tmux.conf", "tmux-browser-keys.conf"):
             used = {c.lower() for c in HEX.findall(config_lines(name))}
-            self.assertEqual(sorted(used - allowed), [], "%s uses colors that the prompt and the banner do not have" % name)
+            self.assertEqual(sorted(used - allowed), [], "%s uses colors outside the shared SwarmBox palette" % name)
 
     def test_the_old_pastel_theme_is_gone(self):
         text = config_lines("tmux.conf") + config_lines("tmux-browser-keys.conf")

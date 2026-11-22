@@ -8,7 +8,7 @@
 # muted runtime context only when relevant, warm amber command duration (>= 2s), compact non-zero
 # exit status, and a clean violet "❯". Zero Nerd Font glyphs so every terminal renders identically.
 #
-# Every color lives in [palettes.swarmbox] (shared with tmux and banner via tests/fast/test_theme.py).
+# Every color lives in [palettes.swarmbox] (shared with tmux via tests/fast/test_theme.py).
 # Your own ~/.config/starship.toml, if it exists, is used instead of this file.
 
 add_newline = true   # a blank line above every prompt, so one command does not stick to the output of the one before

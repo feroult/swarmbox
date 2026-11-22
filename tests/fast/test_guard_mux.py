@@ -22,7 +22,6 @@ TMUX_ADAPTER_FILES = {
     "container/scripts/swarmbox-tabs.py": "TmuxBackend class implementing the TabsBackend contract",
     "container/config/tmux.conf": "tmux server configuration and keybindings",
     "container/config/tmux-browser-keys.conf": "browser keybinding table for tmux",
-    "container/scripts/banner.sh": "optional background banner glint when running inside a tmux pane",
     "container/web/ttyd-clipboard.js": "browser bridge for ttyd/tmux copy mode and strip controls",
     "container/web/ttyd-style.css": "browser stylesheet for ttyd/tmux strip controls",
     "container/addons/sysop/lib/swarmbox_sysop/dock.py": "tmux pane docking and Follower adapter",

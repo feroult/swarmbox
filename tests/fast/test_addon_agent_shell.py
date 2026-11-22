@@ -161,12 +161,11 @@ class ThroughTheFragment(Base):
 
     def frag(self, commands, **extra):
         d = self.d
-        write(os.path.join(d, "banner.sh"), "#!/bin/sh\n", 0o755)
         env = {"PATH": os.path.join(d, "bin") + ":/usr/bin:/bin", "HOME": d, "XDG_CONFIG_HOME": os.path.join(d, "c"),
                "XDG_DATA_HOME": os.path.join(d, "d"), "XDG_STATE_HOME": os.path.join(d, "s"),
                "SWARMBOX_IMAGE_ADDONS_DIR": REAL_ADDONS, "SWARMBOX_IMAGE_SHIMS_DIR": os.path.join(d, "shims"),
                "SWARMBOX_VENV": os.path.join(d, "no-venv"), "SWARMBOX_DIRS_SH": os.path.join(LIB, "dirs.sh"),
-               "SWARMBOX_BANNER_SCRIPT": os.path.join(d, "banner.sh"), "SWARMBOX_STARSHIP_INIT": os.path.join(d, "none"),
+               "SWARMBOX_STARSHIP_INIT": os.path.join(d, "none"),
                "TERM": "dumb"}
         env.update(extra)
         os.makedirs(os.path.join(d, "s", "swarmbox"), exist_ok=True)

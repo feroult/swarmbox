@@ -109,13 +109,11 @@ yolo() {
     SWARMBOX_YOLO=1 "$_sb_agent" "$@"
 }
 
-# --- Interactive only: the banner with the startup-health lines, then the prompt ---
-# Not for a shell started with -c (the command window of `swarmbox <command>` runs `bash -ic`): the banner would
-# precede the command's own output. Once per shell: a second sourcing prints nothing.
+# --- Interactive only: startup-health warnings, then the Starship prompt ---
+# Not for a shell started with -c (the command window of `swarmbox <command>` runs `bash -ic`).
+# Once per shell: a second sourcing prints nothing.
 if [ -z "${SWARMBOX_CMD:-}" ] && [ -z "${BASH_EXECUTION_STRING:-}" ] && [ -z "${_sb_fragment_done:-}" ]; then
     _sb_fragment_done=1
-    _sb_banner=${SWARMBOX_BANNER_SCRIPT:-/usr/local/bin/banner.sh}
-    [ -x "$_sb_banner" ] && "$_sb_banner"
     # Lines of <state>/health (written by `serve` and by the host helper, including the stale-image line), one per
     # failed step or warning. Control characters are dropped so a line cannot repaint the terminal.
     if [ -s "$SB_HEALTH_FILE" ]; then
@@ -124,7 +122,7 @@ if [ -z "${SWARMBOX_CMD:-}" ] && [ -z "${BASH_EXECUTION_STRING:-}" ] && [ -z "${
             [ -n "$_sb_line" ] && printf '  \033[0;33m!\033[0m %s\n' "$_sb_line"
         done < "$SB_HEALTH_FILE"
     fi
-    unset _sb_banner _sb_line
+    unset _sb_line
     # Starship redefines PS1, so it comes last.
     _sb_starship=${SWARMBOX_STARSHIP_INIT:-/etc/swarmbox/scripts/starship-init.sh}
     # shellcheck source=/dev/null

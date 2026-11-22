@@ -47,14 +47,12 @@ class Base(unittest.TestCase):
         self.user_addons = os.path.join(self.cfg, "swarmbox", "addons")
         self.state_dir = os.path.join(self.state, "swarmbox")
         os.makedirs(self.state_dir)
-        self.banner = os.path.join(t, "banner.sh")
-        write(self.banner, "#!/bin/sh\necho BANNER-ART\n", 0o755)
 
     def env(self, **extra):
         e = {"HOME": self.home, "XDG_CONFIG_HOME": self.cfg, "XDG_DATA_HOME": self.data, "XDG_STATE_HOME": self.state,
              "PATH": self.bin + ":/usr/bin:/bin", "SWARMBOX_IMAGE_ADDONS_DIR": self.imgaddons,
              "SWARMBOX_IMAGE_SHIMS_DIR": self.imgshims, "SWARMBOX_VENV": os.path.join(self.tmp, "no-venv"),
-             "SWARMBOX_DIRS_SH": os.path.join(ROOT, "container", "scripts", "dirs.sh"), "SWARMBOX_BANNER_SCRIPT": self.banner,
+             "SWARMBOX_DIRS_SH": os.path.join(ROOT, "container", "scripts", "dirs.sh"),
              "SWARMBOX_STARSHIP_INIT": os.path.join(self.tmp, "none-starship-init.sh"), "TERM": "dumb"}
         e.update(extra)
         return {k: v for k, v in e.items() if v is not None}
@@ -193,14 +191,12 @@ class CommandMode(Base):
         self.assertEqual(r.stderr, "")
         self.assertIn(os.path.join(self.data, "swarmbox", "shims"), r.stdout)
 
-class Banner(Base):
-    def test_the_banner_and_the_health_lines_are_shown(self):
+class HealthAndPrompt(Base):
+    def test_the_health_lines_are_shown_cleanly(self):
         self.health("step 5 failed: ssh key\nweb terminal keeps crashing; see web-terminal.log\n")
         out = self.interactive("true").stdout
-        self.assertIn("BANNER-ART", out)
         self.assertIn("step 5 failed: ssh key", out)
         self.assertIn("web terminal keeps crashing; see web-terminal.log", out)
-        self.assertLess(out.index("BANNER-ART"), out.index("step 5 failed"))
 
     def test_the_stale_image_line_is_shown(self):
         line = "the local image has been replaced since this box was created; run `swarmbox reset`"
@@ -232,11 +228,12 @@ class PathAndEnvironment(Base):
         self.assertIn("yes", r.stdout)
 
     def test_starship_is_initialised_last_when_present(self):
+        self.health("health-line-first\n")
         init = os.path.join(self.tmp, "starship-init-fake.sh")
         write(init, 'echo STARSHIP-INIT-RAN\n')
         out = self.interactive("true", SWARMBOX_STARSHIP_INIT=init).stdout
         self.assertIn("STARSHIP-INIT-RAN", out)
-        self.assertLess(out.index("BANNER-ART"), out.index("STARSHIP-INIT-RAN"))
+        self.assertLess(out.index("health-line-first"), out.index("STARSHIP-INIT-RAN"))
 
 
 # (the fragment over the real agent addons, their flags and SWARMBOX_YOLO=0: tests/fast/test_addon_agent_shell.py)
