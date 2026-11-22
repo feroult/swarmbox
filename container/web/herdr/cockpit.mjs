@@ -253,26 +253,37 @@ const AGENT_APP_LABELS = {
 };
 const SHELL_NAMES = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
 
-function smartTabName(t) {
-  if (!t) return 'no tab';
+function smartTabParts(t) {
+  if (!t) return { title: 'no tab', pill: '', usedMsgAsTitle: false };
   const rawName = String(t.name || '').trim();
   const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);
-  if (!isGenericShell) return rawName;
-
   const app = String((t.status && t.status.app) || '').toLowerCase();
-  if (AGENT_APP_LABELS[app]) return AGENT_APP_LABELS[app];
-
   const fg = String((t.foreground && t.foreground.name) || '').trim();
   const fgLow = fg.toLowerCase();
-  if (AGENT_APP_LABELS[fgLow]) return AGENT_APP_LABELS[fgLow];
-  if (fg && !SHELL_NAMES.has(fgLow)) return fg;
+  const badge = AGENT_APP_LABELS[app] || AGENT_APP_LABELS[fgLow] || '';
+  const pill = badge && (isGenericShell || !rawName.toLowerCase().includes(badge)) ? badge : '';
+
+  if (!isGenericShell) return { title: rawName, pill, usedMsgAsTitle: false };
+
+  const stMsg = String((t.status && t.status.msg) || '').trim();
+  if (badge === 'agy' && stMsg) {
+    return { title: stMsg, pill: 'agy', usedMsgAsTitle: true };
+  }
 
   const cwd = String((t.foreground && t.foreground.cwd) || t.cwd || '').replace(/\/+$/, '');
   if (cwd && cwd !== HOME && cwd !== '/') {
     const base = cwd.slice(cwd.lastIndexOf('/') + 1);
-    if (base) return base;
+    if (base) return { title: base, pill, usedMsgAsTitle: false };
   }
-  return 'shell';
+  if (fg && !SHELL_NAMES.has(fgLow) && fgLow !== pill) {
+    return { title: fg, pill, usedMsgAsTitle: false };
+  }
+  return { title: 'shell', pill, usedMsgAsTitle: false };
+}
+
+function smartTabName(t) {
+  const p = smartTabParts(t);
+  return p.pill ? `${p.title} [${p.pill}]` : p.title;
 }
 
 function statusMeta(term, pal) {
@@ -1188,7 +1199,7 @@ export class Cockpit {
       const t = this.terminals[i];
       const isAct = t.address === this.activeAddr;
       const sm = statusMeta(t, pal);
-      const name = smartTabName(t);
+      const { title: tabTitle, pill, usedMsgAsTitle } = smartTabParts(t);
       const rowY = box.y + 2 + renderedTabRows.length;
       const onSelect = () => this._attachTo(t.address).catch(() => {});
 
@@ -1197,10 +1208,12 @@ export class Cockpit {
         ? Math.max(0, Math.min(100, Math.round(t.status.progress)))
         : null;
       const pctStr = pct !== null ? `${pct}% ` : '';
+      const pillStr = pill ? ` ${pill}` : '';
       const rowBg = isAct ? bgBand : bgS;
-      const rightMetaW = visibleWidth(pctStr) + visibleWidth(idxStr) + 2;
-      const nameBudget = Math.max(4, box.w - 4 - rightMetaW);
-      const shown = fitText(name, nameBudget);
+      const rightMetaW = visibleWidth(pillStr) + visibleWidth(pctStr) + visibleWidth(idxStr) + 2;
+      const nameBudget = Math.max(3, box.w - 4 - rightMetaW);
+      const shown = pill ? clipText(tabTitle, nameBudget) : fitText(tabTitle, nameBudget);
+      const padAfterPill = pill ? ' '.repeat(Math.max(0, nameBudget - visibleWidth(shown))) : '';
 
       this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: rowY, y2: rowY, onClick: onSelect });
       renderedTabRows.push(
@@ -1210,6 +1223,7 @@ export class Cockpit {
           { text: sm.dot, style: fgHex(sm.color) },
           { text: ' ', style: '' },
           { text: shown, style: isAct ? `${fgHex(pal.text)}\x1b[1m` : fgHex(pal.muted) },
+          ...(pill ? [{ text: pillStr, style: fgHex(pal.accent) }, { text: padAfterPill, style: '' }] : []),
           { text: ' ', style: '' },
           ...(pctStr ? [{ text: pctStr, style: fgHex(pal.accent) }] : []),
           { text: idxStr, style: isAct ? fgHex(pal.accent) : fgHex(pal.dim) },
@@ -1220,7 +1234,7 @@ export class Cockpit {
       // Optional rich OSC 7501 sub-row (SwarmBox ▰▱ progress bar or blocked message) when space allows
       if (allowSubRows && renderedTabRows.length < listMax && t.status && typeof t.status === 'object') {
         const subY = box.y + 2 + renderedTabRows.length;
-        if (t.status.state === 'working' && (pct !== null || t.status.msg)) {
+        if (t.status.state === 'working' && !usedMsgAsTitle && (pct !== null || t.status.msg)) {
           const barLen = 6;
           const filled = pct !== null ? Math.round((pct / 100) * barLen) : 3;
           const barSegs = pct !== null

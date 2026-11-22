@@ -265,6 +265,7 @@
   const tabCountEl = document.getElementById('tab-count');
   const activeDotEl = document.getElementById('active-dot');
   const activeNameEl = document.getElementById('active-name');
+  const activeAgentEl = document.getElementById('active-agent');
   const activeStatusEl = document.getElementById('active-status');
   const connPillEl = document.getElementById('conn-pill');
   const connTextEl = document.getElementById('conn-text');
@@ -815,26 +816,50 @@
   };
   const SHELL_NAMES = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
 
-  function tabDisplayName(t) {
-    if (!t) return 'shell';
-    const rawName = String(t.name || '').trim();
-    const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);
-    if (!isGenericShell) return rawName;
-
+  function tabAgentBadge(t) {
+    if (!t) return '';
     const app = String((t.status && t.status.app) || '').toLowerCase();
     if (AGENT_APP_LABELS[app]) return AGENT_APP_LABELS[app];
+    const fg = String((t.foreground && t.foreground.name) || '').toLowerCase();
+    if (AGENT_APP_LABELS[fg]) return AGENT_APP_LABELS[fg];
+    return '';
+  }
 
-    const fg = String((t.foreground && t.foreground.name) || '').trim();
-    const fgLow = fg.toLowerCase();
-    if (AGENT_APP_LABELS[fgLow]) return AGENT_APP_LABELS[fgLow];
-    if (fg && !SHELL_NAMES.has(fgLow)) return fg;
+  function tabTitleParts(t) {
+    if (!t) return { title: 'shell', pill: '', usedMsgAsTitle: false };
+    const rawName = String(t.name || '').trim();
+    const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);
+    const badge = tabAgentBadge(t);
+    const pill = badge && (isGenericShell || !rawName.toLowerCase().includes(badge)) ? badge : '';
+
+    if (!isGenericShell) {
+      return { title: rawName, pill, usedMsgAsTitle: false };
+    }
+
+    // For agy (antigravity), status.msg holds the live session title (e.g. "Understand This Repo"):
+    // surface it directly as the truncated tab title followed by the [agy] pill!
+    const stMsg = String((t.status && t.status.msg) || '').trim();
+    if (badge === 'agy' && stMsg) {
+      return { title: stMsg, pill: 'agy', usedMsgAsTitle: true };
+    }
 
     const cwd = String((t.foreground && t.foreground.cwd) || t.cwd || '').replace(/\/+$/, '');
     if (cwd && cwd !== '/home/agent' && cwd !== '/') {
       const base = cwd.slice(cwd.lastIndexOf('/') + 1);
-      if (base) return base;
+      if (base) return { title: base, pill, usedMsgAsTitle: false };
     }
-    return 'shell';
+
+    const fg = String((t.foreground && t.foreground.name) || '').trim();
+    const fgLow = fg.toLowerCase();
+    if (fg && !SHELL_NAMES.has(fgLow) && fgLow !== pill) {
+      return { title: fg, pill, usedMsgAsTitle: false };
+    }
+
+    return { title: 'shell', pill, usedMsgAsTitle: false };
+  }
+
+  function tabDisplayName(t) {
+    return tabTitleParts(t).title;
   }
 
   function tabState(t) {
@@ -843,15 +868,21 @@
 
   function tabSubtitle(t) {
     const st = t && t.status;
+    const parts = tabTitleParts(t);
+    const cwd = (t && t.foreground && t.foreground.cwd) || (t && t.cwd) || '';
+    const shortCwd = cwd.startsWith('/home/agent') ? '~' + cwd.slice('/home/agent'.length) : cwd;
+
     if (st && st.state === 'blocked') return `blocked · ${st.msg || st.kind || 'needs input'}`;
     if (st && st.state === 'working') {
       const pct = typeof st.progress === 'number' ? `${st.progress}% ` : '';
-      return `${pct}${st.msg || 'working…'}`;
+      if (parts.usedMsgAsTitle) return shortCwd || (pct ? pct.trim() : 'working…');
+      return `${pct}${st.msg || shortCwd || 'working…'}`;
     }
-    if (st && st.state === 'done') return st.msg ? `✓ ${st.msg}` : '✓ done';
+    if (st && st.state === 'done') {
+      if (parts.usedMsgAsTitle) return shortCwd ? `✓ ${shortCwd}` : '✓ done';
+      return st.msg ? `✓ ${st.msg}` : '✓ done';
+    }
     if (st && st.state === 'error') return `✕ ${st.msg || 'error'}`;
-    const cwd = (t && t.foreground && t.foreground.cwd) || (t && t.cwd) || '';
-    const shortCwd = cwd.startsWith('/home/agent') ? '~' + cwd.slice('/home/agent'.length) : cwd;
     if (shortCwd) return shortCwd;
     return (t && t.title) || (t && t.address) || '';
   }
@@ -1233,13 +1264,14 @@
 
     terminals.forEach((t, idx) => {
       const state = tabState(t);
-      const label = tabDisplayName(t);
+      const { title: label, pill } = tabTitleParts(t);
       const isActive = t.address === activeId;
 
       const btn = document.createElement('div');
       btn.className = `tab-item${isActive ? ' active' : ''}${state === 'blocked' ? ' is-blocked' : ''}${state === 'working' ? ' is-working' : ''}`;
       btn.setAttribute('role', 'tab');
       btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      btn.title = pill ? `${label} (${pill})` : label;
 
       const dot = document.createElement('span');
       dot.className = 'status-dot';
@@ -1253,6 +1285,12 @@
       titleText.className = 'tab-title-text';
       titleText.textContent = label;
       titleEl.appendChild(titleText);
+      if (pill) {
+        const pillEl = document.createElement('span');
+        pillEl.className = 'tab-agent-tag';
+        pillEl.textContent = pill;
+        titleEl.appendChild(pillEl);
+      }
       const subEl = document.createElement('div');
       subEl.className = 'tab-sub';
       subEl.textContent = tabSubtitle(t);
@@ -1296,8 +1334,15 @@
       mDot.className = 'status-dot';
       mDot.dataset.state = state;
       const mName = document.createElement('span');
-      mName.textContent = label;
+      mName.className = 'm-tab-name';
+      mName.textContent = label.length > 14 ? label.slice(0, 13) + '…' : label;
       m.append(mDot, mName);
+      if (pill) {
+        const mPill = document.createElement('span');
+        mPill.className = 'tab-agent-tag';
+        mPill.textContent = pill;
+        m.appendChild(mPill);
+      }
       m.addEventListener('click', () => {
         if (activeId !== t.address) connectPty(t.address);
       });
@@ -1312,12 +1357,18 @@
 
     const active = terminals.find((t) => t.address === activeId);
     if (active) {
+      const aParts = tabTitleParts(active);
       activeDotEl.dataset.state = tabState(active);
-      activeNameEl.textContent = tabDisplayName(active);
+      activeNameEl.textContent = aParts.title;
+      if (activeAgentEl) {
+        activeAgentEl.textContent = aParts.pill;
+        activeAgentEl.classList.toggle('hidden', !aParts.pill);
+      }
       activeStatusEl.textContent = tabSubtitle(active);
     } else {
       activeDotEl.dataset.state = 'idle';
       activeNameEl.textContent = 'No active tab';
+      if (activeAgentEl) activeAgentEl.classList.add('hidden');
       activeStatusEl.textContent = 'idle';
     }
   }
