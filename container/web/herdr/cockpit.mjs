@@ -1199,7 +1199,8 @@ export class Cockpit {
               ]
             : [];
           const msgBudget = Math.max(4, box.w - 5 - (pct !== null ? barLen + 1 : 0));
-          const msgTxt = t.status.msg ? clipText(t.status.msg, msgBudget) : '';
+          const rawMsg = t.status.msg ? (pct !== null ? t.status.msg : `working · ${t.status.msg}`) : 'working…';
+          const msgTxt = clipText(rawMsg, msgBudget);
           this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: subY, y2: subY, onClick: onSelect });
           renderedTabRows.push(
             buildRow(box.w, rowBg, [

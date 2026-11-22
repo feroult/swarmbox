@@ -243,12 +243,31 @@ html.swarmbox-ready #sb-boot { opacity: 0; visibility: hidden; }
   gap: 2px;
 }
 .tab-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-family: var(--mono);
   font-size: 12.5px;
   font-weight: 500;
+}
+.tab-title-text {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.tab-agent-tag {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--accent-bright);
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0 5px;
+  line-height: 15px;
 }
 .tab-item.active .tab-title { color: var(--accent-bright); font-weight: 600; }
 .tab-sub {
@@ -259,6 +278,7 @@ html.swarmbox-ready #sb-boot { opacity: 0; visibility: hidden; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.tab-item.is-working .tab-sub { color: var(--accent); }
 .tab-item.is-blocked .tab-sub { color: var(--amber); }
 
 .tab-progress {

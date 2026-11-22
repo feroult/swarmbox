@@ -823,6 +823,23 @@
     }
   }, true);
 
+  const AGENT_APP_LABELS = {
+    antigravity: 'agy',
+    agy: 'agy',
+    claude: 'claude',
+    codex: 'codex',
+    opencode: 'opencode',
+    gemini: 'gemini',
+  };
+
+  function tabAgentBadge(t) {
+    const app = String((t && t.status && t.status.app) || '').toLowerCase();
+    if (AGENT_APP_LABELS[app]) return AGENT_APP_LABELS[app];
+    const fg = String((t && t.foreground && t.foreground.name) || '').toLowerCase();
+    if (AGENT_APP_LABELS[fg]) return AGENT_APP_LABELS[fg];
+    return '';
+  }
+
   function tabState(t) {
     return (t && t.status && t.status.state) || 'idle';
   }
@@ -832,13 +849,17 @@
     if (st && st.state === 'blocked') return `blocked · ${st.msg || st.kind || 'needs input'}`;
     if (st && st.state === 'working') {
       const pct = typeof st.progress === 'number' ? `${st.progress}% ` : '';
-      return `${pct}${st.msg || 'working…'}`;
+      return st.msg ? `working · ${pct}${st.msg}` : (pct ? `working · ${pct.trim()}` : 'working…');
     }
-    if (st && st.state === 'done' && st.msg) return `✓ ${st.msg}`;
-    if (st && st.state === 'error' && st.msg) return `✕ ${st.msg}`;
+    if (st && st.state === 'done') return st.msg ? `✓ ${st.msg}` : '✓ done';
+    if (st && st.state === 'error') return `✕ ${st.msg || 'error'}`;
     const cwd = (t && t.foreground && t.foreground.cwd) || (t && t.cwd) || '';
-    if (cwd.startsWith('/home/agent')) return '~' + cwd.slice('/home/agent'.length);
-    return (t && t.title) || cwd || (t && t.address) || '';
+    const shortCwd = cwd.startsWith('/home/agent') ? '~' + cwd.slice('/home/agent'.length) : cwd;
+    if (st && st.state === 'idle' && st.app) {
+      return st.msg ? `idle · ${st.msg}` : (shortCwd ? `idle · ${shortCwd}` : 'idle');
+    }
+    if (shortCwd) return shortCwd;
+    return (t && t.title) || (t && t.address) || '';
   }
 
   function concatChunks(chunks) {
@@ -1220,7 +1241,7 @@
       const isActive = t.address === activeId;
 
       const btn = document.createElement('div');
-      btn.className = `tab-item${isActive ? ' active' : ''}${state === 'blocked' ? ' is-blocked' : ''}`;
+      btn.className = `tab-item${isActive ? ' active' : ''}${state === 'blocked' ? ' is-blocked' : ''}${state === 'working' ? ' is-working' : ''}`;
       btn.setAttribute('role', 'tab');
       btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
 
@@ -1232,7 +1253,17 @@
       info.className = 'tab-info';
       const titleEl = document.createElement('div');
       titleEl.className = 'tab-title';
-      titleEl.textContent = label;
+      const titleText = document.createElement('span');
+      titleText.className = 'tab-title-text';
+      titleText.textContent = label;
+      titleEl.appendChild(titleText);
+      const badge = tabAgentBadge(t);
+      if (badge && !label.toLowerCase().includes(badge)) {
+        const tagEl = document.createElement('span');
+        tagEl.className = 'tab-agent-tag';
+        tagEl.textContent = badge;
+        titleEl.appendChild(tagEl);
+      }
       const subEl = document.createElement('div');
       subEl.className = 'tab-sub';
       subEl.textContent = tabSubtitle(t);

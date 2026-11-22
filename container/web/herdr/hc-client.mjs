@@ -585,8 +585,12 @@ export class HerdrClient extends EventEmitter {
       const t = this.terminals.get(addr);
       if (t) {
         if (type === 'status') {
-          t.status = data?.status ?? data ?? null;
-          t.reported = true;
+          if (data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'status')) {
+            t.status = data.status;
+          } else {
+            t.status = data ?? null;
+          }
+          t.reported = Boolean(t.status);
           t.status_ms = Date.now();
         } else if (type === 'title') {
           t.title = typeof data === 'string' ? data : (data?.title ?? t.title);
@@ -631,7 +635,9 @@ export class HerdrClient extends EventEmitter {
         t.address,
         t.name || '',
         t.title || '',
+        (t.foreground && t.foreground.name) || '',
         (t.foreground && t.foreground.cwd) || t.cwd || '',
+        (t.status && t.status.app) || '',
         (t.status && t.status.state) || '',
         (t.status && t.status.msg) || '',
         (t.status && t.status.progress) ?? '',
