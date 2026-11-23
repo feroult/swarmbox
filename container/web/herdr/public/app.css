@@ -233,6 +233,7 @@ html.swarmbox-ready #sb-boot {
 .app[data-sidebar-open="1"] .topbar-settings-btn { display: none; }
 .app[data-sidebar-open="1"] .topbar-tabs { display: none; }
 .app[data-sidebar-open="0"] .topbar-ctx { display: none; }
+.app[data-sysop-open="1"] #btn-toggle-sysop { display: none; }
 
 .sidebar-head {
   height: 42px;
