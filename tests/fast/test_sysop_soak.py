@@ -1,6 +1,6 @@
-"""Regression tests for what the soak and fault test (tests/e2e/soak_v1.py) found in the sysop: the audit file's limit and its rotation with several writers, an audit
+"""Regression tests for what the soak and fault test of version 1 (tests/e2e/soak_v1.py, removed with tmux) found in the sysop: the audit file's limit and its rotation with several writers, an audit
 line that cannot be written, a service that must not die on a full disk, the reconnect delay, the words of a brain that was killed.
-No model, no tmux. Run with: python3 -W error tests/fast/test_sysop_soak.py
+No model, no multiplexer. Run with: python3 -W error tests/fast/test_sysop_soak.py
 """
 import errno
 import gc
@@ -20,7 +20,7 @@ import sysop_support as ss  # noqa: E402
 import test_sysop_mcp as tm  # noqa: E402
 import test_sysop_service as tss  # noqa: E402
 
-from swarmbox_sysop import audit, brain, busclient, dock, ipc, keys, mcpserver, service, watch  # noqa: E402
+from swarmbox_sysop import audit, brain, busclient, cli, ipc, mcpserver, service, watch  # noqa: E402
 
 WRITER = r"""
 import sys
@@ -295,92 +295,6 @@ class BrainClock(unittest.TestCase):
         self.assertIn("time budget", res.error)
 
 
-class RedockCoalescing(unittest.TestCase):
-    """the hook of a resize runs once per event (dozens a second while a browser window is dragged): the runs must not queue up as processes"""
-
-    def setUp(self):
-        self.e = ss.Env()
-        self.addCleanup(self.e.cleanup)
-        self.lock = os.path.join(self.e.dir, "dock.lock")
-
-    def dock(self, work):
-        class D(dock.Dock):
-            def _redock_now(self, window=None):
-                return work(window)
-        return D(dock.Tmux(argv=["true"]), lock_path=self.lock)
-
-    def test_a_run_that_finds_another_one_working_leaves_its_mark_and_ends_and_the_worker_serves_it(self):
-        started, release, calls = threading.Event(), threading.Event(), []
-
-        def work(window):
-            calls.append(window)
-            if window == "@1":
-                started.set()
-                release.wait(10)
-            return "moved"
-        d = self.dock(work)
-        first = []
-        t = threading.Thread(target=lambda: first.append(d.redock("@1")), daemon=True)
-        t.start()
-        self.assertTrue(started.wait(10))
-        t0 = time.monotonic()
-        self.assertEqual(self.dock(work).redock("@2"), "queued", "the second run does not wait for the first")
-        self.assertEqual(self.dock(work).redock("@2"), "queued")
-        self.assertLess(time.monotonic() - t0, 3.0)
-        self.assertEqual(calls, ["@1"])
-        release.set()
-        t.join(10)
-        self.assertEqual(calls, ["@1", "@2"], "the worker served the mark that came in while it worked, once")
-        self.assertEqual(first, ["moved"])
-        self.assertEqual([n for n in os.listdir(self.e.dir) if ".redock." in n], [], "no mark is left")
-
-    def test_a_burst_of_events_is_a_few_runs_not_one_each(self):
-        """no timing: the first run is held while the 59 others come in, so they all find the lock taken"""
-        started, release, calls = threading.Event(), threading.Event(), []
-
-        def work(window):
-            calls.append(window)
-            started.set()
-            release.wait(10)
-            return "unchanged"
-        results = []
-        threads = [threading.Thread(target=lambda: results.append(self.dock(work).redock("@3")), daemon=True) for _ in range(60)]
-        threads[0].start()
-        self.assertTrue(started.wait(10))
-        for th in threads[1:]:
-            th.start()
-        for th in threads[1:]:
-            th.join(20)
-        self.assertEqual(results.count("queued"), 59, "a run that finds the lock taken ends at once")
-        release.set()
-        threads[0].join(20)
-        self.assertEqual(len(results), 60)
-        self.assertLessEqual(len(calls), 2, "60 events made %d redocks" % len(calls))
-        self.assertEqual([n for n in os.listdir(self.e.dir) if ".redock." in n], [])
-
-    def test_the_last_event_is_never_lost(self):
-        """an event that comes in while the worker is past its last look but before it lets go of the lock is served by the worker's second look"""
-        seen, calls = threading.Event(), []
-
-        def work(window):
-            calls.append(window)
-            return "unchanged"
-        d = self.dock(work)
-        real = d._redock_marks
-        state = {"n": 0}
-
-        def marks():
-            r = real()
-            state["n"] += 1
-            if state["n"] == 2 and not seen.is_set():      # after the work, before the unlock: a resize event arrives and finds the lock taken
-                seen.set()
-                self.assertEqual(self.dock(work).redock("@9"), "queued")
-            return r
-        d._redock_marks = marks
-        d.redock("@8")
-        self.assertEqual(calls, ["@8", "@9"])
-
-
 class Words(unittest.TestCase):
     def test_a_goal_that_was_not_sent_is_said_in_words_not_codes_or_paths(self):
         for code, text in (("no_subscriber", "sysop is not running"), ("bus_down", "starts it again within seconds"), ("bus_closed", "starts it again within seconds"),
@@ -397,7 +311,7 @@ class Words(unittest.TestCase):
             def pub(self, *a, **k):
                 raise busclient.BusError("bus_down", "the bus is not running (/tmp/swarmbox/bus.sock)")
         out = io.StringIO()
-        rc = keys.prompt(Down(), "panel", inp=io.StringIO("list the tabs\n\n"), out=out, topic="goal")
+        rc = cli.prompt_goal(Down(), "panel", inp=io.StringIO("list the tabs\n\n"), out=out, topic="goal")
         self.assertEqual(rc, 3)
         self.assertIn("the goal was not sent: the bus is not answering (the box starts it again within seconds). Press Enter.", out.getvalue())
 
@@ -477,40 +391,6 @@ class LogOnAFullDisk(tss.Base):
     def test_the_watcher_logs_the_same_way(self):
         with mock.patch.object(sys, "stderr", FullStream()):
             watch.Watcher.stderr_log("a line that cannot be written")
-
-
-FAST = r"""
-import sys
-sys.path.insert(0, %(lib)r)
-from swarmbox_sysop import __main__ as m
-rc = m._redock(%(argv)r)
-print(rc, "swarmbox_sysop.cli" in sys.modules, "swarmbox_sysop.panel" in sys.modules, "swarmbox_sysop.mcpserver" in sys.modules)
-"""
-
-
-class RedockFastPath(unittest.TestCase):
-    def run_fast(self, argv):
-        e = ss.Env()
-        self.addCleanup(e.cleanup)
-        env = dict(os.environ, **e.env)
-        r = subprocess.run([sys.executable, "-B", "-c", FAST % {"lib": ss.LIB, "argv": argv}], env=env, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        return r.stdout.split(), r.stderr
-
-    def test_the_hook_of_a_resize_does_not_import_the_whole_command_line(self):
-        out, err = self.run_fast(["dock", "redock", "--socket", "/nonexistent/tmux.sock", "--window", "@3"])
-        self.assertEqual(out, ["1", "False", "False", "False"], "no tmux there: the dock says so (exit 1), and cli, panel and mcpserver were not imported")
-        self.assertIn("the tmux session 'main' is not available", err)
-
-    def test_a_bad_window_is_refused_as_before(self):
-        out, err = self.run_fast(["dock", "redock", "--window", "bad"])
-        self.assertEqual(out[0], "2")
-        self.assertIn("--window must be a tmux window id", err)
-
-    def test_anything_else_is_left_to_the_command_line(self):
-        for argv in (["dock", "redock", "--bogus", "x"], ["dock", "sync"], ["dock", "redock", "--window"], ["status"], ["dock", "redock", "--window", "@1", "--window", "@2"], []):
-            out, err = self.run_fast(argv)
-            self.assertEqual(out[0], "None", argv)
 
 
 class FullDiskEnds(tss.Base):

@@ -1,8 +1,8 @@
-"""Mux-selectable UI host for the resident sysop service and key feedback.
+"""UI host of the resident sysop service.
 
-When SWARMBOX_MUX is `tmux` (the default) and docking is enabled, `start_ui` starts dock.Follower and line.Toaster.
-When SWARMBOX_MUX is `none` (or another headless backend that drives its own UI from state.py / actions.py), `start_ui`
-never imports or invokes tmux.
+herdr is the only multiplexer of the box (`SWARMBOX_MUX`, default `herdr`): its UI is the Herdr Web Studio panel and the terminal cockpit, which read
+state.py / actions.py themselves; `start_ui` only starts the OSC 7501 agent bridge (agent.HerdrBridge). `SWARMBOX_MUX=none` (or any other name)
+runs headless.
 """
 import os
 import sys
@@ -10,7 +10,7 @@ import sys
 
 def mux_name(env=None):
     e = os.environ if env is None else env
-    return (e.get("SWARMBOX_MUX") or "tmux").strip() or "tmux"
+    return (e.get("SWARMBOX_MUX") or "herdr").strip() or "herdr"
 
 
 class UiSession:
@@ -25,50 +25,21 @@ class UiSession:
 
 
 def start_ui(pth, cfg, log=None, enabled=True, mux=None):
-    """Start the multiplexer-specific UI helpers for `serve`. Returns a UiSession whose shutdown() stops them cleanly."""
+    """Start the UI helpers for `serve`. Returns a UiSession whose shutdown() stops them cleanly."""
     if not enabled:
         return UiSession()
     name = mux if mux is not None else mux_name()
-    if name == "none":
-        return UiSession()
-    if name == "tmux":
-        from . import dock, line
-        follower = dock.Follower(pth, log=log, mode=cfg.panel_mode).start()
-        toaster = line.Toaster(pth, log=log).start()
-
-        def _stop(unset=True):
-            follower.shutdown()
-            toaster.shutdown(unset=unset)
-
-        return UiSession(_stop)
     if name == "herdr":
         from . import agent
         if log:
             log("sysop ui: starting herdr agent bridge")
         bridge = agent.HerdrBridge(pth, log=log).start()
         return UiSession(lambda unset=True: bridge.shutdown())
-    if log:
-        log("sysop ui: no built-in dock for multiplexer %r; running headless" % (name,))
+    if log and name != "none":
+        log("sysop ui: no built-in UI for multiplexer %r; running headless" % (name,))
     return UiSession()
 
 
-def notify(msg, socket="", client="", mux=None):
-    """Print feedback to stderr and, when running under tmux with a client name, show it in that client's status line."""
+def notify(msg):
+    """Feedback of a key command (veto, approve, stop) on stderr."""
     print("swarmbox-sysop: %s" % msg, file=sys.stderr)
-    name = mux if mux is not None else mux_name()
-    if name == "tmux" and client:
-        from . import dock
-        tm = dock.Tmux(argv=["tmux", "-S", socket]) if socket else dock.Tmux()
-        tm.run("display-message", "-c", client, "sysop: " + msg)
-
-
-def run_panel():
-    """Run the terminal panel UI."""
-    from . import panel
-    return panel.run()
-
-
-def run_dock(action, socket="", window=None):
-    """Run a tmux dock subcommand (`open`, `close`, `toggle`, `redock`, `sync`)."""
-    from . import dock
-    return dock.run(action, socket, window)

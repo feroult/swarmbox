@@ -1195,10 +1195,8 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
   const healthRaw = readTextSafe(path.join(SB_STATE_DIR, 'health'));
   const health = healthRaw ? healthRaw.split('\n').map((s) => s.trim()).filter(Boolean) : [];
 
-  const CLASSIC_MUX = 'tm' + 'ux';
   const box = {
     NAME: envField('SWARMBOX_NAME', 'swarmbox', env),
-    MUX: envField('SWARMBOX_MUX', CLASSIC_MUX, env),
     AGENT: envField('SWARMBOX_AGENT', '', env),
     YOLO: envField('SWARMBOX_YOLO', '1', env),
     WEB: envField('SWARMBOX_WEB', '1', env),
@@ -1216,7 +1214,6 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
     'sysop.countdown': envField('SWARMBOX_SYSOP_COUNTDOWN', '4', env),
     'sysop.max_steps': envField('SWARMBOX_SYSOP_MAX_STEPS', '20', env),
     'sysop.max_seconds': envField('SWARMBOX_SYSOP_MAX_SECONDS', '300', env),
-    'sysop.panel': envField('SWARMBOX_SYSOP_PANEL_MODE', 'always', env),
     'sysop.topic': envField('SWARMBOX_SYSOP_TOPIC', 'goal', env),
     'sysop.group': envField('SWARMBOX_SYSOP_GROUP', 'sysop', env),
   };

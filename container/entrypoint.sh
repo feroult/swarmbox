@@ -2,7 +2,7 @@
 # swarmbox-entrypoint: the image's entry point.
 #
 #   serve     the box's main process: the ordered startup, the readiness marker and health file,
-#             PID 1 signal handling, and the supervisors of the bus broker and of ttyd
+#             PID 1 signal handling, and the supervisors of the bus broker and of the web server
 #   attach    forwards to swarmbox-attach (the session of each tab, the idle window, `swarmbox <command>`)
 #   install   forwards to swarmbox-install
 #   pubkey    forwards to swarmbox-pubkey (the SSH key; `serve` calls it with --ensure at step 5)
@@ -85,7 +85,7 @@ trim_log() {
 }
 
 # log_trimmer: runs in a subshell. The logs of the box (serve.log, bus.log, web-terminal.log, podman-service.log) are written by `>>` redirections of processes that
-# stay up for weeks (ttyd logs every connection of a browser), so nothing else would ever shorten them.
+# stay up for weeks (the web server logs every connection of a browser), so nothing else would ever shorten them.
 log_trimmer() {
     local sp=0 f
     trap '[ "$sp" -gt 0 ] && kill "$sp" 2>/dev/null; exit 0' TERM
@@ -158,7 +158,7 @@ run_logged() {
 }
 
 # supervise_one NAME HEALTH-LINE LOGFILE RESTART-COMMAND STOP-STATUS COMMAND [ARGS...]: the restart policy of a long-running child
-# (ttyd, the bus broker). Runs in a subshell. Restarts it after 1, 2, 4 ... 30 s; after 5 exits within 60 s it records HEALTH-LINE and
+# (the web server, the bus broker). Runs in a subshell. Restarts it after 1, 2, 4 ... 30 s; after 5 exits within 60 s it records HEALTH-LINE and
 # idles (alive) until RESTART-COMMAND sends USR1; TERM stops it. A child that exits with STOP-STATUS (empty: none) is not restarted and
 # the supervisor ends: someone else runs that service.
 supervise_one() {
@@ -280,7 +280,7 @@ serve() {
     trap 'on_signal INT 130' INT
 
     # step 0 [-]: delete the readiness marker and every exit.* file, before anything else (second defense after the tmpfs)
-    # After a host reboot the run folder has come back as a folder the agent cannot write: no ready marker, no ttyd pid file, and
+    # After a host reboot the run folder has come back as a folder the agent cannot write: no ready marker, no web supervisor pid file, and
     # `swarmbox` waited for a marker that could not appear. The agent has sudo without a password, so make the folder writable first.
     if [ -d "$SB_RUN_DIR" ] && [ ! -w "$SB_RUN_DIR" ] && have sudo; then
         if sudo -n chmod 1777 "$SB_RUN_DIR" 2>/dev/null; then
@@ -333,7 +333,7 @@ serve() {
     [ "$rc" = 0 ] || warn "linking the user addons failed (swarmbox-addon link exit $rc); see serve.log"
 
     # step 6b [W]: the bus broker, supervised, before step 7 because the prepare.sh of an addon may start subscribers and publishers.
-    # It needs only the run folder (step 3): the bus knows nothing about tmux. Nothing of the box depends on it.
+    # It needs only the run folder (step 3): the bus knows nothing about the multiplexer. Nothing of the box depends on it.
     if ! have swarmbox-bus; then
         warn "the bus was not started: swarmbox-bus not found"
     else
@@ -435,19 +435,19 @@ serve() {
         fi
     fi
 
-    # step 9 [W]: start the multiplexer backend's session/daemon (default: tmux)
+    # step 9 [W]: start the multiplexer daemon (herdr-core)
     if load_mux; then
         mux_serve_init
     else
-        warn "multiplexer backend '${SWARMBOX_MUX:-tmux}' could not be loaded; see serve.log"
+        warn "multiplexer backend '${SWARMBOX_MUX:-herdr}' could not be loaded; see serve.log"
     fi
 
-    # step 10 [W]: start and supervise ttyd, when the web terminal is on
+    # step 10 [W]: start and supervise the web server (the herdr Web Studio), when the web terminal is on
     if [ "${SWARMBOX_WEB:-1}" = 0 ]; then
         log "step 10: WEB=0, no web terminal and no supervisor"
     else
-        log "step 10: starting the ttyd supervisor"
-        supervise_one ttyd "web terminal keeps crashing; see web-terminal.log" "$SB_STATE_DIR/web-terminal.log" "swarmbox-web restart" "" \
+        log "step 10: starting the web supervisor"
+        supervise_one web "web terminal keeps crashing; see web-terminal.log" "$SB_STATE_DIR/web-terminal.log" "swarmbox-web restart" "" \
             swarmbox-web run &
         SUP=$!
         printf '%s\n' "$SUP" > "$SB_RUN_DIR/web-supervisor.pid"

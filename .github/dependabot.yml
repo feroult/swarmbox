@@ -9,7 +9,7 @@
 #
 # What it CANNOT bump (a human does, by the table in CONTRIBUTING.md "Bumping pinned versions"):
 #   - VERSION in container/addons/*/addon.conf (a shell-style file, no Dependabot manager reads it);
-#   - the ARG *_VERSION pins of the Dockerfile (ttyd, starship, uv, chrome-devtools-mcp, Node);
+#   - the ARG *_VERSION pins of the Dockerfile (starship, uv, chrome-devtools-mcp, Node);
 #   - the pinned cloudflared image in container/host/swarmbox-host and cloudflare-setup.py.
 #   A Renovate regex manager could read these; it was not added because it cannot be tested here.
 #

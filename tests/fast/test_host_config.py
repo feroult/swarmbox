@@ -34,7 +34,6 @@ KEYS = {
     "BROWSER_URL": (None, "9222", "host.example:1234", ["a b", "ftp://x", "99999", "nohostport", ":1234"]),
     "WEB": ("1", "0", "1", ["yes", "2"]),
     "WEB_PORT": ("7681", "8000", "8001", ["0", "65536", "abc", "-1"]),
-    "MUX": ("tmux", "herdr", "tmux", ["screen", "zellij", "HERDR", "a b"]),
     "WITH": (None, "claude,gcloud", "claude", ["Claude", "a b", "a,,b", ",a", "a,"]),
     "AGENT": (None, "claude", "opencode", ["a,b", "A B", "yolo"]),
     "YOLO": ("1", "0", "1", ["yes", "2"]),
@@ -52,14 +51,12 @@ KEYS = {
     "sysop.countdown": ("4", "0", "30", ["31", "-1", "1.5", "abc", "04", "+3"]),
     "sysop.max_steps": ("20", "1", "100", ["0", "101", "x", "010"]),
     "sysop.max_seconds": ("300", "10", "3600", ["9", "3601", "1e3", "0"]),
-    "sysop.panel": ("always", "auto", "off", ["Always", "on", "yes", "never", "0"]),
     "IMAGE": (None, "localhost:5000/sb:2.0.1", "swarmbox:dev", ["a b", "x\ty"]),
 }
 
 
 def ENVNAME(key):
-    name = "SWARMBOX_" + key.upper().replace(".", "_")
-    return "SWARMBOX_SYSOP_PANEL_MODE" if name == "SWARMBOX_SYSOP_PANEL" else name   # SWARMBOX_SYSOP_PANEL=1 is the marker of a panel pane
+    return "SWARMBOX_" + key.upper().replace(".", "_")
 
 
 def slurp(path):
@@ -426,38 +423,43 @@ class SysopFlagsTest(CreateFlagsBase):
             "SWARMBOX_SYSOP_COUNTDOWN=0", "SWARMBOX_SYSOP_MAX_STEPS=5", "SWARMBOX_SYSOP_MAX_SECONDS=60"])
         self.assertNotEqual(self.fp(cfg=cfg), base)
 
-    def test_panel_mode_reaches_the_box_as_panel_mode_never_as_the_marker(self):
-        base = self.fp()
-        self.assertEqual(self.sysop(self.flags(cfg="sysop.panel=always\n")), [])
-        self.assertEqual(self.sysop(self.flags(cfg="sysop.panel=auto\n")), ["SWARMBOX_SYSOP_PANEL_MODE=auto"])
-        self.assertEqual(self.sysop(self.flags(cfg="sysop.panel=off\n")), ["SWARMBOX_SYSOP_PANEL_MODE=off"])
-        self.assertNotEqual(self.fp(cfg="sysop.panel=off\n"), base)
-
     def test_an_invalid_value_in_the_file_stops_create_flags(self):
         self.assertEqual(self.cf(cfg="sysop.autonomy=yolo\n").returncode, 2)
-        self.assertEqual(self.cf(cfg="sysop.panel=sometimes\n").returncode, 2)
 
 
-class MuxFlagTest(CreateFlagsBase):
-    """MUX=tmux is the default and passes nothing (preserving existing box fingerprints); MUX=herdr passes SWARMBOX_MUX=herdr and changes the fingerprint."""
+class RemovedKeysTest(CreateFlagsBase):
+    """MUX (herdr is the only multiplexer) and sysop.panel (it set the tmux panel) were removed: a config that still has them keeps working,
+    with one warning each, and nothing of them reaches the box or its fingerprint."""
 
-    def mux(self, flags):
-        return [flags[i + 1] for i, f in enumerate(flags) if f == "-e" and flags[i + 1].startswith("SWARMBOX_MUX=")]
+    def passed(self, flags, prefix):
+        return [flags[i + 1] for i, f in enumerate(flags) if f == "-e" and flags[i + 1].startswith(prefix)]
 
-    def test_default_and_explicit_tmux_pass_nothing_and_keep_fingerprint(self):
+    def test_mux_in_the_file_is_ignored_with_a_warning(self):
         base = self.fp()
-        self.assertEqual(self.mux(self.flags()), [])
-        self.assertEqual(self.mux(self.flags(cfg="MUX=tmux\n")), [])
-        self.assertEqual(self.fp(cfg="MUX=tmux\n"), base)
+        for value in ("tmux", "herdr", "screen"):
+            p = self.cf(cfg="MUX=%s\n" % value)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertEqual(p.stderr.count("MUX was removed, herdr is the only multiplexer"), 1, p.stderr)
+            self.assertNotIn("unknown key", p.stderr)
+            self.assertEqual(self.passed(p.stdout.split("\n"), "SWARMBOX_MUX="), [])
+            self.assertEqual(self.fp(cfg="MUX=%s\n" % value), base)
 
-    def test_herdr_passes_env_and_changes_fingerprint(self):
+    def test_mux_in_the_environment_is_not_passed(self):
+        self.assertEqual(self.passed(self.flags(env={"SWARMBOX_MUX": "herdr"}), "SWARMBOX_MUX="), [])
+        self.assertEqual(self.fp(env={"SWARMBOX_MUX": "herdr"}), self.fp())
+
+    def test_sysop_panel_in_the_file_is_ignored_with_a_warning(self):
         base = self.fp()
-        self.assertEqual(self.mux(self.flags(cfg="MUX=herdr\n")), ["SWARMBOX_MUX=herdr"])
-        self.assertEqual(self.mux(self.flags(env={"SWARMBOX_MUX": "herdr"})), ["SWARMBOX_MUX=herdr"])
-        self.assertNotEqual(self.fp(cfg="MUX=herdr\n"), base)
+        p = self.cf(cfg="sysop.panel=off\n")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stderr.count("ignoring sysop.panel"), 1, p.stderr)
+        self.assertEqual(self.passed(p.stdout.split("\n"), "SWARMBOX_SYSOP_PANEL"), [])
+        self.assertEqual(self.fp(cfg="sysop.panel=off\n"), base)
 
-    def test_invalid_mux_stops_create_flags(self):
-        self.assertEqual(self.cf(cfg="MUX=screen\n").returncode, 2)
+    def test_they_are_not_keys_of_config_get_or_set(self):
+        for key in ("MUX", "sysop.panel"):
+            self.assertEqual(self.run_h("config", "get", key).returncode, 2, key)
+            self.assertEqual(self.run_h("config", "set", key, "x").returncode, 2, key)
 
 
 if __name__ == "__main__":

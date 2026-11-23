@@ -1,5 +1,5 @@
 """The `sysop` addon as the box handles it: the manifest, install.sh and prepare.sh, run by the REAL swarmbox-addon.sh in a temporary tree (home,
-image addons, lock): install, where, prepare, the detached service, idempotence, the refresh of the library. No network, no model, no tmux.
+image addons, lock): install, where, prepare, the detached service, idempotence, the refresh of the library. No network, no model, no herdr-core.
 Run with: python3 -W error tests/fast/test_sysop_addon.py
 """
 import os
@@ -82,9 +82,8 @@ class Tree(unittest.TestCase):
                     "SWARMBOX_TEST_LIB": os.path.join(ROOT, "container", "scripts"), "SWARMBOX_TEST_IMAGE_ADDONS": self.image,
                     "SWARMBOX_TEST_USER_ADDONS": self.user, "SWARMBOX_TEST_HOST_DIR": j("host"),
                     "SWARMBOX_TEST_IMAGE_SHIMS": j("out", "shims"), "SWARMBOX_TEST_USER_SHIMS": j("out", "ushims"), "SWARMBOX_TEST_LOCK": j("lock"),
-                    # a dock that finds no tmux of its own would split the panel into the tmux server of whoever runs the suite
-                    "SB_TABS_SOCKET": "sbtl-%d" % os.getpid(), "TMUX_TMPDIR": j("tmx"), "TMPDIR": j("tmp")}
-        os.mkdir(j("tmx"))
+                    # `serve --dock` would open the sysop's agent terminal in the herdr-core of whoever runs the suite: headless, and no hc
+                    "SWARMBOX_MUX": "none", "SWARMBOX_TEST_HC_BIN": j("no-hc"), "TMPDIR": j("tmp")}
         os.mkdir(j("tmp"))
         with open(os.path.join(self.fbin, "swarmbox-addon"), "w") as f:
             f.write('#!/bin/sh\nexec bash "%s" "$@"\n' % ADDON_SH)

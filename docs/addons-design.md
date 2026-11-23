@@ -1,9 +1,11 @@
 # Addons and the bus (design)
 
-Status: **version 1 is built and proven end to end with a real Claude Code** (see "Version 1"): the addon model, the bus (topics as settings, groups), the `tabs` capability (`swarmbox-tabs`), the `sysop`, the `voice` input, the controls strip and the panel modes. **Not built:** the image of a tab, delivery with acknowledgement, state of addons and other capabilities of the host.
-What is in the box is described in [design.md](design.md) (sections 6 and 8), [sysop.md](sysop.md) and [voice.md](voice.md).
+Status: **version 1 is built and proven end to end with a real Claude Code** (see "Version 1"): the addon model, the bus (topics as settings, groups), the `tabs` capability (`swarmbox-tabs`), the `sysop`, the `voice` input. **Not built:** the image of a tab, delivery with acknowledgement, state of addons and other capabilities of the host.
+What is in the box is described in [design.md](design.md) (sections 6 and 8), [sysop.md](sysop.md) and [voice.md](voice.md). Version 1 was built and proven on tmux;
+since version 2.3 herdr-core is the only multiplexer ([mux-architecture.md](mux-architecture.md)), and the tmux panel of the sysop, the controls strip of the ttyd page and the
+end-to-end harnesses that drove tmux are gone. The measurements below that name tmux are the record of how version 1 was decided.
 
-An **addon** is anything installed on demand in the box, from an AI agent (`claude`) to a program (`go`) to a piece of SwarmBox itself (`voice`, `sysop`). A small **bus** (publish and subscribe) lets addons talk without knowing each other, and the **capabilities of the host** (the first is the tabs of tmux) let them read or act on the box. `voice` and `sysop` are two separate pieces.
+An **addon** is anything installed on demand in the box, from an AI agent (`claude`) to a program (`go`) to a piece of SwarmBox itself (`voice`, `sysop`). A small **bus** (publish and subscribe) lets addons talk without knowing each other, and the **capabilities of the host** (the first is the tabs of herdr-core) let them read or act on the box. `voice` and `sysop` are two separate pieces.
 
 Two rules guide the choices below. **An attribute is in the manifest only if the host acts on it for the addon.** **The bus is plumbing and has no policy**: what to confirm, what is risky and what to refuse belongs to the addon that acts (the sysop).
 
@@ -11,9 +13,9 @@ Two rules guide the choices below. **An attribute is in the manifest only if the
 
 1. **Addons** are what is installed in the box (below).
 2. **The bus** is a publish and subscribe system of the host: addons that do not know each other exchange messages through topics. A topic is a free name that each addon
-   takes from its own settings. The bus knows nothing about tmux, tabs, goals or what a message means; it carries them.
+   takes from its own settings. The bus knows nothing about the multiplexer, tabs, goals or what a message means; it carries them.
 3. **Capabilities of the host** are things the host lets an addon read or do, each with its own command, used **directly and never through a topic**. The first one is `tabs`: list the
-   tmux windows, say which is active, read a screen, type into one. A message on the bus does nothing by itself; a capability acts.
+   terminals, say which is active, open, focus or close one, read a screen, type into one. A message on the bus does nothing by itself; a capability acts.
 
 Two addons connect by one thing only: the same topic name in their settings. `voice` publishes where `voice.topic` says; the `sysop` listens where `sysop.topic` says; both default to
 `goal`. Neither names the other, and either one can be replaced or absent.
@@ -66,14 +68,14 @@ Rules: `VERSION` is `latest` (the newest release when the addon is installed) or
   function that adds `--auto` only for `opencode` and `opencode run`, as the `clasp` function adds a port only to `login`). The host already sets
   `SWARMBOX_YOLO` (`0` turns auto-approve off) and a `shell.sh` reads it. `yolo` runs the default agent (`$SWARMBOX_AGENT`, whose alias or function already starts it in auto-approve mode; the host records it when the
   box is created: the setting `AGENT`, else the first item of `WITH`; with neither, `yolo` says there is no default agent; when the default is not a command, because the first item of `WITH` is an addon that is not an agent, it says that too).
-- Services, tmux keys, web page assets, MCP servers an addon offers: the addon starts or installs them in `prepare.sh`.
+- Services, MCP servers an addon offers: the addon starts or installs them in `prepare.sh`.
 - Which topics an addon uses: it just uses them (below).
 - A `REQUIRES` key and any handler declaration: with the bus no addon needs to name another.
 
 ## The bus
 
 A small service of the host, in the image, started with the box: `swarmbox-bus` on a unix socket in the run folder, with a command line, the same `swarmbox-bus`, that works in shell.
-It is not an addon, because everything else may depend on it; and nothing of the host (entrypoint, ttyd) depends on it either: components publish when it is useful.
+It is not an addon, because everything else may depend on it; and nothing of the host (entrypoint, web server) depends on it either: components publish when it is useful.
 
 ```
 swarmbox-bus pub <topic> [message]            publish (JSON of one line, or plain text; '-' reads stdin)
@@ -86,15 +88,15 @@ swarmbox-bus watch                            every message that passes (to debu
 - **Delivery.** A message goes to every subscriber that is listening at that moment (broadcast). Subscribers that gave the same `--group` share the work: each message goes to **one**
   member of the group, round robin, so a goal is handled once even if two sysops run. Nothing is kept: no buffer, no acknowledgement.
 - **`pub` says how many received it.** With nobody listening it exits 3 (so a microphone can tell "nobody is listening"); a caller that does not care passes `--allow-none`.
-- **No state, no reads.** The bus does not answer questions about the box. Reading tmux is a capability (next section).
+- **No state, no reads.** The bus does not answer questions about the box. Reading a tab is a capability (next section).
 - **Envelope** `{v, id, topic, source, peer, time, body}`; `id`, `time` and `peer` are set by the broker; `source` is a label the publisher declares, for display and audit only, never for
   authorization. The body is free: the addons agree on its shape (`goal` uses `{"text": ...}`).
-- **Trust.** Any process in the box can publish and subscribe, which is the trust it already has with `tmux send-keys`. The web tunnel does not reach the bus: only the audio entry of `voice`
+- **Trust.** Any process in the box can publish and subscribe, which is the trust it already has with `hc keys`. The web tunnel does not reach the bus: only the audio entry of `voice`
   is exposed (see below).
 
 ## Capabilities of the host: tabs
 
-A capability is a command of the host that an addon calls directly. `tabs` has no daemon: a call reads or acts on tmux and ends, and calls to the same tab are serialized by a lock.
+A capability is a command of the host that an addon calls directly. `tabs` has no daemon: a call reads or acts on herdr-core and ends, and calls to the same tab are serialized by a lock.
 
 ```
 swarmbox-tabs list                     the tabs as JSON: id, label, directory, running command, and which one is active
@@ -102,35 +104,33 @@ swarmbox-tabs active                   the active tab
 swarmbox-tabs screen <tab> [--lines N] the text on the tab now
 swarmbox-tabs send <tab> --run TEXT    type TEXT and press Enter
 swarmbox-tabs send <tab> --input TEXT  type TEXT as it is, without Enter ({Esc} {C-c} {Enter} {Up}... are keys)
+swarmbox-tabs open|focus|close ...     open a shell or an allowlisted agent, make a tab active, close one
 ```
 
-- **A tab is a tmux window.** Its canonical address is the tmux window id (`@3`, stable, never reused), shown as `index:name`; the pane it means is the active one; a name used by two windows
-  is an error that lists the candidates. The **active** tab is the window of the client with the latest activity (see "Decisions from the spikes"). The panels of the sysop and of voice are
+- **A tab is a herdr-core terminal.** Its canonical address is the terminal address (`t3`, stable, never reused), shown as `index:name`; a name used by two tabs
+  is an error that lists the candidates. The **active** tab is the one the Web Studio, the cockpit or `focus` last made active. The terminal of the sysop (`swarmbox.role=sysop`) is
   never listed.
 - **The screen** is the text **after the secrets are removed**, with the cursor position and markers for what the terminal shows highlighted (`[sel]option 2[/sel]` for reverse video, `[bg]`,
-  `[err]`), made from `capture-pane -e`. Text comes first because it is exact (a hash, a path or a number must be copied right), cheap, testable, and the filter that removes secrets works
+  `[err]`), made from the text of the terminal. Text comes first because it is exact (a hash, a path or a number must be copied right), cheap, testable, and the filter that removes secrets works
   on text.
 - **`send` is plain.** It sends the typed text and then each key or the Enter as **separate steps with a short pause** (150 ms, confirmed with the real Claude Code; 50 ms was the smallest
   passing value), because a terminal program such as Claude Code treats a fast burst as a paste and an Enter in the same burst becomes a line break. It refuses a dialog or a busy agent unless
   asked to queue, and text that starts with `/` or `!` for an agent unless asked, and it checks that the text left the input box. It does not know what program runs in the tab and does not
   judge the message: the addon that decides what to send (the sysop) knows what it is doing. A smarter driver for one program could exist later.
 - **Errors** are JSON `{"err": code, "msg": text}` and a non-zero exit, so a caller can read `dialog_open`, `busy_tab`, `no_such_tab`, `slash_refused`.
-- **Trust** is the one of `tmux send-keys`: any process of the box can call it. The policy of what to send and what to ask belongs to the addon, never to the capability.
+- **Trust** is the one of `hc keys`: any process of the box can call it. The policy of what to send and what to ask belongs to the addon, never to the capability.
 
 Other capabilities can come later (for example a notification to the user), each with its own command; none of them is a topic.
-
-**The controls strip is a feature of the web page, not an addon and not a topic.** The page of the box has a slim bar under the terminal with key buttons for a phone (`Esc`, `Tab`, `^C`, arrows, and `Panel`, which types the prefix and `S` of tmux, so it needs no addon) and one small API, `window.swarmboxStrip` (`add`, `note`, `remove`), by which an addon that lives in the page asks for a control at the right end.
-The host page knows no addon by name; `voice` puts its microphone and its state sentences there and nothing else. It is configured in `web-terminal.conf` (`strip`, `stripKeys`; see [web-terminal.md](web-terminal.md)).
 
 ## Voice and sysop
 
 ```
-voice (input) --pub--> topic (voice.topic) ...... topic (sysop.topic, same name) --sub--> sysop --tabs list/screen/send--> tmux
+voice (input) --pub--> topic (voice.topic) ...... topic (sysop.topic, same name) --sub--> sysop --tabs list/screen/send--> herdr-core
 ```
 
 - **`voice` only hears.** Microphone page, audio entry on the web terminal port, Whisper and its models. It turns audio into text and publishes it on the topic of `voice.topic`
   (default `goal`). It never executes anything and does not know who listens; with no listener `pub` exits 3 and the page shows "nobody is listening".
-- **`sysop` handles goals and operates the box.** It subscribes to the topic of `sysop.topic` (default `goal`) with the group `sysop`, and it has its own panel, where what you type becomes the
+- **`sysop` handles goals and operates the box.** It subscribes to the topic of `sysop.topic` (default `goal`) with the group `sysop`, and it has its own panel in the Web Studio and the cockpit, where what you type becomes the
   same goal with `source` `panel`. It knows the `tabs` capability and nothing about the other addons. It is an agent loop: it looks at the tabs, acts, looks again.
 - **Its tools**, served to the brain over MCP and validated by the sysop: `list_tabs`, `read_tab`, `run`, `input`, `wait`, `say`, `done` (`ask` and `look_tab` later). They call the `tabs` capability:
   there is no hidden channel, and whatever it does you see in a tab.
@@ -144,8 +144,8 @@ voice (input) --pub--> topic (voice.topic) ...... topic (sysop.topic, same name)
 
 ### Why an input only
 
-`voice` had a planner, a plan, a panel and an executor of its own, which the sysop would have had to repeat. With the split, one place decides what is allowed (the sysop and its policy), voice has no code that touches tmux (so there is nothing in the path from the tunnel to a tab but a goal on a topic), and
-anything else that can write a line of text (the panel of the sysop, `swarmbox-sysop goal`, a script, a future chat input) is an input too. The price is that the page of the microphone cannot show a plan; it shows a state, and the sysop panel in tmux shows the rest.
+`voice` had a planner, a plan, a panel and an executor of its own, which the sysop would have had to repeat. With the split, one place decides what is allowed (the sysop and its policy), voice has no code that touches a tab (so there is nothing in the path from the tunnel to a tab but a goal on a topic), and
+anything else that can write a line of text (the panel of the sysop, `swarmbox-sysop goal`, a script, a future chat input) is an input too. The price is that the page of the microphone cannot show a plan; it shows a state, and the sysop panel shows the rest.
 
 ## The addons
 
@@ -155,7 +155,7 @@ anything else that can write a line of text (the panel of the sysop, `swarmbox-s
 | `antigravity` | `latest`, `UPDATE=self` | `install.sh`, `shell.sh`, `prepare.sh`, `statusline.sh` | nothing |
 | `gemini`, `opencode` | `latest`, managed | `install.sh`, `shell.sh` (opencode also `prepare.sh`) | nothing |
 | `gcloud`, `poetry`, `go`, `clasp` | pinned (`clasp` has `PORTS`) | `install.sh` (`go`, `clasp` also `shell.sh`) | nothing |
-| `voice` | pinned (whisper.cpp release) | `install.sh`, `prepare.sh`, the library, the page | publishes on `voice.topic` |
+| `voice` | pinned (whisper.cpp release) | `install.sh`, `prepare.sh`, the library | publishes on `voice.topic` |
 | `sysop` | pinned | `install.sh`, `prepare.sh`, the library, the panel | subscribes on `sysop.topic`; uses the `tabs` capability |
 
 ```
@@ -177,7 +177,7 @@ The path that version 1 had to do: you send audio from the browser; the sysop un
 | the sysop receives the goal on `sysop.topic`, lists the tabs, reads the active one and recognizes Claude Code | built; it is a judgment of the model over `list_tabs` and the screen, with no special code |
 | it types the prompt and presses Enter | built, in `swarmbox-tabs send`, with the separate steps above |
 
-**Implemented**
+**Implemented** (in version 1, on tmux; the panel, its keys and the strip were removed in version 2.3, when the panel moved to the Web Studio and the cockpit)
 
 - the addon model: the folder and manifest above, `swarmbox-addon`, and the `shell.sh` of every agent addon (auto-approve and the MCP file), so the host builds no alias;
 - the bus (publish, subscribe with groups, `topics`, `watch`, `ping`, `restart`; `pub` counts receivers and exits 3 for none) and the `tabs` capability (`list`, `active`, `screen`, `send`, with the lock per tab);
@@ -192,22 +192,22 @@ The path that version 1 had to do: you send audio from the browser; the sysop un
 - an image of a tab (`look_tab`, `swarmbox-tabs image`), state of addons, permissions per topic, and delivery with acknowledgement (a message handed to a subscriber that dies before it reads it is lost);
 - starting the sysop on demand, `ask` (the brain cannot put a question to you), a host command that records the microphone of a terminal tab (`swarmbox listen`).
 
-**Proven** (`tests/e2e/e2e_voice.sh`, Podman, tmux 3.5a and 3.7c, the real login): the path from the microphone button of a browser to the answer of a real Claude Code in the active tab, with every piece real
+**Proven** (version 1: the harness `tests/e2e/e2e_voice.sh`, removed in version 2.3 with tmux; Podman, tmux 3.5a and 3.7c, the real login): the path from the microphone button of a browser to the answer of a real Claude Code in the active tab, with every piece real
 (the voice addon built by `swarmbox-addon`, the web terminal as `swarmbox-web run` starts it, the bus, the sysop, `swarmbox-tabs`, haiku as the brain; a headless Chromium with a fake microphone that plays speech
 made with espeak-ng). Hold, speak, release: the light goes `sending` then `sent`, the goal reaches the sysop (source `voice`), its panel opens in the window without taking the focus, the countdown runs, the prompt is
 typed in the Claude Code tab and submitted, and the answer appears; release to answer is about 12 s (Whisper small 2 to 4 s, the 4 s countdown, the brain and Claude Code about 5 s). The same harness checks the topics as settings (a
 changed topic, a mismatch, two sysops in a group, a plain watcher), the states with no sysop and with the bus down, the panel and its keys inside the browser terminal (landscape and portrait), the four routes through another host name, an
 approval that only the panel can give, and that no screen reaches the bus. It found two bugs, now fixed with tests: Whisper turns silence into a word (`you`) that became a goal (voice), and a goal that is a request for the agent
-of the active tab was answered by the brain itself (sysop prompt). The 11 scenarios of the sysop on its own are `tests/e2e/e2e_sysop.sh`; the real-tmux tests of `swarmbox-tabs` are `tests/slow/test_tabs_real.py` (gated by `SWARMBOX_TEST_REAL_TMUX=1`, run in Podman).
+of the active tab was answered by the brain itself (sysop prompt). The 11 scenarios of the sysop on its own were `tests/e2e/e2e_sysop.sh`, and the real-tmux tests of `swarmbox-tabs` were `tests/slow/test_tabs_real.py`; both went with tmux in version 2.3, and no harness drives a real herdr-core yet.
 
-**Walked through as a new reader** (the docs followed command by command, Podman, the image built for the previous round with the files of this checkout laid over it, the real `entrypoint.sh serve`, tmux 3.7c, Claude Code 2.1.325, Whisper small built by `swarmbox-addon install voice`): the sysop installed with `swarmbox-addon install` (its service starts at once), the first goal from a shell (`done`, the command typed in the second tab), from the `Ctrl+A g` popup and an approval with `Ctrl+A a` then `run` in a client of 130 columns (the panel at the right, 40 columns), the panel at the bottom in 80 columns, `sysop.panel` `auto` (opens on a goal, closes a few seconds after it),
+**Walked through as a new reader** (version 1, on tmux; the docs followed command by command, Podman, the image built for the previous round with the files of this checkout laid over it, the real `entrypoint.sh serve`, tmux 3.7c, Claude Code 2.1.325, Whisper small built by `swarmbox-addon install voice`): the sysop installed with `swarmbox-addon install` (its service starts at once), the first goal from a shell (`done`, the command typed in the second tab), from the `Ctrl+A g` popup and an approval with `Ctrl+A a` then `run` in a client of 130 columns (the panel at the right, 40 columns), the panel at the bottom in 80 columns, `sysop.panel` `auto` (opens on a goal, closes a few seconds after it),
 the voice front on the web port (`/voice/health`, the page files, 404 for another path, 415 for a wrong content type, a silent WAV answered `nothing_heard`), `swarmbox-voice say` with and without a listener, the key buttons and the microphone in a headless Chromium with touch emulation (every button 44 px; `Panel` toggled the panel and `^C` interrupted a `sleep` in the active tab), and the failures of the Troubleshooting sections with their exact messages (no `claude`, not logged in, no listener, no tmux session, the time and step budgets). It found three documentation errors (the nested-tmux key, `confirm-all` in the first example that waits for an approval, and the `claude` prerequisite), now fixed.
 
 **Not proven yet**: a real microphone and a human voice (espeak's Portuguese is heard badly by Whisper small: the transcripts vary between runs, see `docs/voice.md`), nested Podman in that walk-through (no `/dev/net/tun` here; it is `SWARMBOX_TEST_NO_NESTED=1`), a real tunnel (only a second host name), a real phone browser (touch is emulated), and other versions of Claude Code (this is 2.1.325, the texts of its interface are signals).
 
 ### Decisions from the spikes
 
-Four spikes (reports in [spikes/](spikes/README.md), code in `dev/spikes/`) tested the unknowns. Confirmed values, to be followed by the build:
+Four spikes (reports in [spikes/](spikes/README.md), code in `dev/spikes/`) tested the unknowns, on tmux. Confirmed values, followed by the build of version 1; the herdr backend of version 2.3 keeps the rules (separate steps, the pause, the checks before and after the Enter, the keys in braces, the markers) and drops the tmux mechanics (window ids, `capture-pane`, copy mode, the panel):
 
 **Enter into Claude Code.**
 - Text with `tmux send-keys -t %pane -l -- "$text"`, then `sleep 0.15`, then a separate `send-keys Enter`: two tmux processes, never one burst. A burst of 600
@@ -263,7 +263,7 @@ Claude Code runs in the alternate screen: only the visible screen exists, no scr
 
 1. Done: the first form (the bus with the tabs inside it, the tab driver, the sysop, the voice publishing, the real end-to-end tests with Claude Code).
 2. Done: the two separations of this design: topics as settings with groups (`voice.topic`, `sysop.topic`, `sysop.group`, `--group`, `topics`, `pub` counting receivers) and the `tabs` capability (`swarmbox-tabs`) taken out of the bus; the sysop and its MCP server call `swarmbox-tabs`; `voice`
-   reduced to an input; the tests moved with the code; the end-to-end tests ran again (`tests/e2e/e2e_voice.sh`, `tests/e2e/e2e_sysop.sh`).
+   reduced to an input; the tests moved with the code; the end-to-end tests ran again (the version 1 harnesses `e2e_voice` and `e2e_sysop`, removed with tmux in version 2.3).
 3. Done: the addon model: the manifest, `shell.sh` for the agents, `swarmbox-addon`, `swarmbox addon` on the host.
 4. Later, if it is needed: delivery with acknowledgement, addon state, permissions per topic, smarter drivers for one program, other capabilities, and an image of a tab (next section).
 
@@ -283,7 +283,7 @@ image of the README is too heavy to run in the box). Until then, only the text w
 Answered and removed: the consumer of `goal` (a group), the active tab and the pane, the pause, the keys, the message envelope, the markers, `watch`, where the tabs live, whether `voice` keeps a plan.
 
 - With no subscriber, `pub` fails at once (exit 3). Starting the sysop on demand would need a manifest attribute; left out until it hurts. The same gap appears for 1 to 30 s while the sysop restarts (the voice page says "Nobody is listening").
-- Whether the pause of `swarmbox-tabs send` depends on the program or on the load (the slow ttyd path, other sizes, other Claude Code versions); the UI strings of Claude Code 2.1.325 that mark a dialog or a busy agent can change.
+- Whether the pause of `swarmbox-tabs send` depends on the program or on the load (the web path, other sizes, other Claude Code versions); the UI strings of Claude Code 2.1.325 that mark a dialog or a busy agent can change.
 - The sysop's policy defaults (autonomy, limits) after use by people: today `auto` (harmless actions at once, medium risk a countdown, high risk Allow), a 4 s countdown, 20 steps, 300 s.
 - A message is lost when its subscriber dies after receiving it (no acknowledgement). Does a spoken goal need one, or is "say it again" enough?
 - A goal with a transcription error (a spoken goal can contain wrong words, mostly in a language other than English with `auto`): is the sysop prompt ("a spoken goal can contain errors") and the veto countdown enough, or does it need `ask` to confirm what it understood?

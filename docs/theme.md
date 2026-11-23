@@ -1,7 +1,7 @@
 # The purple glow
 
 One look for everything SwarmBox draws: near-black, violet and gray, with a glow that lights up in the middle. The letters of the banner run from dark gray
-through violet to white and back; the prompt, the tmux bar, the progress line of a pull, the colors of `ls` and `grep`, and the terminal in the browser use the same few colors.
+through violet to white and back; the prompt, the tab bar of the Web Studio and the cockpit, the progress line of a pull, the colors of `ls` and `grep`, and the terminal in the browser use the same few colors.
 
 ## The palette
 
@@ -13,7 +13,7 @@ through violet to white and back; the prompt, the tmux bar, the progress line of
 | Deep violet | `#6d28d9` | a selection, the active pane border, the marks of the prompt |
 | Lavender | `#c4b5fd` | the cursor, `ls` links (`183`), what `grep` finds |
 | Grays | `#52525b` `#71717a` `#a1a1aa` | separators, dim text, words |
-| The band | `#27222f` | what is "selected" in tmux (the current window) and the directory of the prompt |
+| The band | `#27222f` | what is "selected" (the current tab) and the directory of the prompt |
 | Signals | `#ff6b78` red, `#4ade80` green, `#fbbf24` amber, `#e879f9` fuchsia | errors, success, warnings, the bash mode of Claude Code: the usual hues, kept, in tones of the same family |
 
 ## Where each piece lives
@@ -22,10 +22,9 @@ through violet to white and back; the prompt, the tmux bar, the progress line of
 |---|---|
 | The banner and its glint | `container/scripts/banner.sh` |
 | The prompt | `container/config/starship.toml` |
-| The tmux bar, borders and selection | `container/config/tmux.conf`, `container/config/tmux-browser-keys.conf` |
+| The Web Studio and the cockpit (Purple Glow and the four other themes) | `container/web/herdr/public/app.js`, `container/web/herdr/hc-client.mjs`, `container/config/herdr.toml` |
 | The line of a pull (`swarmbox update`) | `ui_c` in `container/host/swarmbox-host` |
-| The 16 colors, the cursor and the selection of the browser terminal | the default `theme` in `container/scripts/swarmbox-web.sh` (`theme=` in `web-terminal.conf` replaces it) |
-| The scrollbar of the browser terminal | `container/web/ttyd-style.css` |
+| The 16 colors, the cursor and the selection of the browser terminal | the Purple Glow theme in `container/web/herdr/public/app.js` (Settings of the Web Studio picks another) |
 | `ls` and `grep` | `LS_COLORS` and `GREP_COLORS` in `container/config/bashrc.sh`, in 256-colour numbers so they look the same in any terminal scheme |
 | The messages of the scripts | `container/scripts/messages.sh` |
 
@@ -48,8 +47,6 @@ palette as the browser terminal (`tests/fast/test_theme.py` checks that they agr
 - **The status line** is a line you configure: Claude Code runs a command and prints what it prints. `container/scripts/swarmbox-statusline.sh` (installed as `swarmbox-statusline`) is one in the style of the box,
   `╶─ …/swarmbox ─ main ! ─ Sonnet 5.5 ─ ▰▰▰▱▱▱▱▱▱▱ 34% ─ 5h 71%`: the directory in violet, the branch, the model, and the context as a bar that is violet, fuchsia from 70% and rose from 90% (no orange), with the usage
   limits when Claude Code reports them. Turn it on with `"statusLine": {"type": "command", "command": "swarmbox-statusline"}` in `~/.claude/settings.json`.
-- **Exact colors inside tmux.** Claude Code caps itself at 256 colors inside tmux, even with `COLORTERM=truecolor`, and turns each exact color of a theme into the nearest of 256 with a rough formula (the rose `#ff6b78` came out as the salmon
-  `#ff8787`). The shell of the box sets `CLAUDE_CODE_TMUX_TRUECOLOR=1`, which lifts the cap, because the tmux of the box declares RGB; set it empty in your `~/.bashrc` to go back.
 
 ## Antigravity CLI (`agy`)
 

@@ -14,7 +14,7 @@ THE RISK of an action (assess_run / assess_input), low, medium or high, plus `bl
   * shell: classify_command(the whole line; for `run` the text already on the command line of the screen is part of it) from risk.py. The line is what is already typed plus the new text, because a command can be typed in
     several parts (input "r", input "m -rf ~", input "{Enter}"): the policy keeps what it typed in each tab since the last Enter or {C-c}. Keys
     that edit the line ({Up}, {Left}, {Tab}...) make that text unreliable: an Enter then is at least medium. An Enter with nothing known on the
-    line runs whatever is there (medium). {C-j}, {C-m} and {C-o} end a line like {Enter}. A command that mentions tmux, the bus, the sysop commands or the
+    line runs whatever is there (medium). {C-j}, {C-m} and {C-o} end a line like {Enter}. A command that drives herdr-core (hc), the bus, the sysop commands or the
     sysop's own files is high (risk.py): an approval is a file, and those commands type into any tab.
   * control characters in a text (ESC, C-c, a carriage return...) are blocked: keys are written {Key}. Text longer than MAX_TEXT is blocked.
   * `{Key}` words follow swarmbox-tabs (parse_keys): only the known names are keys; an unknown {word} is an error for the brain, {{ and }}
@@ -252,7 +252,7 @@ class Policy:
         kind = tab_kind(tab.get("cmd"))
         v = Verdict()
         buf, dirty = self.buf(tab["tab"]).text, self.buf(tab["tab"]).dirty
-        # the screen decides, not the name of the process: Claude Code started through `tmux new-window CMD`, `env`, `ssh` or `bash -c` shows as sh,
+        # the screen decides, not the name of the process: Claude Code started through `hc run -- CMD`, `env`, `ssh` or `bash -c` shows as sh,
         # ssh or node. A screen with a dialog is a dialog whatever runs: it is rated as an agent's (the safe side)
         dialog = bool(_DIALOG.search("\n".join([x for x in screen.split("\n") if x.strip()][-14:])))
         if dialog:

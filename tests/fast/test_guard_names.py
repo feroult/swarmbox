@@ -101,16 +101,12 @@ LEGIT_PHRASES = [
 
 # Files where the word only ever means the tools an LLM calls (or a test that exercises them). The old names above still apply there.
 LEGIT_FILES = [
-    ("container/addons/sysop/lib/**", "the sysop serves tools to an LLM over MCP: mcpserver.py, brain.py, policy.py, audit.py, service.py, ipc.py, panel.py"),
+    ("container/addons/sysop/lib/**", "the sysop serves tools to an LLM over MCP: mcpserver.py, brain.py, policy.py, audit.py, service.py, ipc.py"),
     ("container/addons/sysop/README.md", "the tools of the sysop's brain"),
     ("docs/sysop.md", "the tools of the sysop's brain, their table, budget and errors"),
     ("tests/support/sysop_support.py", "support of the sysop tests"),
     ("tests/*/test_sysop_*.py", "tests of the sysop: the tools of its brain, the records of their calls ({\"tool\": ...})"),
     ("tests/support/fixtures/sysop/**", "the fake `claude` that calls the sysop's MCP tools from a script"),
-    ("tests/support/fixtures/soak/brain.py", "the scripted brain of the soak test: steps that call the sysop's tools"),
-    ("tests/e2e/e2e_sysop.py", "the real-model test of the sysop: goals that tell the brain which tool to call, and the records of the calls"),
-    ("tests/e2e/e2e_voice.py", "the real-model test of voice and sysop: the records of the tools the brain called"),
-    ("tests/e2e/soak_v1.py", "the soak test: the records of the tools the brain called"),
     ("dev/spikes/**", "records of experiments with the MCP tools of an LLM and with the Claude Code screens"),
 ]
 

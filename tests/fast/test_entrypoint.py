@@ -106,14 +106,13 @@ class AnyOtherCommand(Base):
         r = self.run_ep("swarmbox-no-such-program-xyz")
         self.assertEqual(r.returncode, 127)
 
-class AttachAgainstFakeTmux(Base):
-    """`attach false` fails and `attach true` succeeds with the real swarmbox-attach and a fake tmux on PATH."""
+class AttachForwarding(Base):
+    """`attach false` fails and `attach true` succeeds with the real swarmbox-attach (no terminal: the command runs directly)."""
 
     def test_attach_false_fails_and_attach_true_succeeds(self):
         bindir = os.path.join(self.base, "bin")
         os.mkdir(bindir)
         os.symlink(ATTACH, os.path.join(bindir, "swarmbox-attach"))
-        write_exec(os.path.join(bindir, "tmux"), '#!/bin/sh\necho "$@" >> "$FAKE_DIR/tmux.log"\nexit 0\n')
         run = os.path.join(self.base, "run")
         os.mkdir(run)
         open(os.path.join(run, "ready"), "w").write("ok\n")

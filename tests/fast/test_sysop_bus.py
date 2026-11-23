@@ -1,6 +1,6 @@
 """The bus client of the sysop against the REAL broker (swarmbox-bus.py, in a thread): the protocol is repeated in busclient.py, so a change of the
 broker breaks a test here. Then the whole path goal -> service -> fake claude -> MCP server -> swarmbox-tabs (a stub, tests/support/sysop_support.py FakeTabs),
-with the topic and the group taken from the settings. No tmux, no model; the real tmux is tests/slow/test_sysop_real.py.
+with the topic and the group taken from the settings. No multiplexer, no model.
 Run with: python3 -W error tests/fast/test_sysop_bus.py
 """
 import json

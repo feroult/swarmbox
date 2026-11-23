@@ -12,8 +12,8 @@
   swarmbox-bus ping                                     exit 0 when the broker answers
   swarmbox-bus restart                                  ask the entrypoint's supervisor to start the broker again (SIGUSR1)
 
-The bus is plain publish and subscribe. It knows nothing about tmux, tabs or what a message means, keeps no state and answers no questions
-about the box (reading and typing into tmux tabs is the command swarmbox-tabs, a capability of the host, never a topic).
+The bus is plain publish and subscribe. It knows nothing about the multiplexer, tabs or what a message means, keeps no state and answers no questions
+about the box (reading and typing into the tabs is the command swarmbox-tabs, a capability of the host, never a topic).
 
 Exit codes: 0 ok, 1 other error, 2 usage, 3 nobody received the message (pub; --allow-none accepts it), 4 the broker is not running (or went
 away), 5 message too large, 6 bad topic, group or request, 7 busy (a share of the message was not delivered: see Delivery),

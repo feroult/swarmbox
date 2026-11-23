@@ -1,5 +1,5 @@
 """Shared by tests/fast/test_bus.py, tests/fast/test_bus_cli.py and the tests of the addons: load swarmbox-bus.py as a module, run a broker in a thread
-or as a process, and a raw protocol client. Nothing here needs tmux, a network or a model."""
+or as a process, and a raw protocol client. Nothing here needs a multiplexer, a network or a model."""
 import importlib.util
 import json
 import os

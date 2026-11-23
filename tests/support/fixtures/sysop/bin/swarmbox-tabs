@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -S
 """Stand-in for `swarmbox-tabs` in the sysop tests: it records nothing itself, it hands its arguments and its stdin to FakeTabs
 (tests/support/sysop_support.py) over the unix socket named by `--fake-socket PATH` (the first two arguments) and prints what that answers, with its exit code.
-When nobody listens it prints what the real command prints when tmux is gone."""
+When nobody listens it prints what the real command prints when herdr-core is gone."""
 import json
 import socket
 import sys
@@ -18,7 +18,7 @@ try:
     s.sendall((json.dumps({"argv": argv, "stdin": stdin}) + "\n").encode())
     rep = json.loads(s.makefile("rb").readline())
 except (OSError, ValueError, TypeError):
-    print(json.dumps({"err": "no_tmux", "msg": "fake tabs: nobody listens"}))
+    print(json.dumps({"err": "no_backend", "msg": "fake tabs: nobody listens"}))
     sys.exit(4)
 print(json.dumps(rep["out"]))
 sys.exit(rep["rc"])

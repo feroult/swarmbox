@@ -1,6 +1,6 @@
 """Mux-agnostic control actions of the sysop: reading a pending action, writing veto/approve decisions, requesting stop, and publishing goals.
 
-Any front-end (terminal keybindings, panel, web gateway, mobile client, CLI) calls these directly without depending on tmux or dock.
+Any front-end (terminal keybindings, panel, web gateway, mobile client, CLI) calls these directly without depending on the multiplexer.
 """
 import os
 import time

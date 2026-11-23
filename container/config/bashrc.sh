@@ -54,11 +54,6 @@ unset -f _sb_path_add
 export LS_COLORS='rs=0:di=1;38;5;141:ln=38;5;183:mh=00:pi=38;5;179:so=1;38;5;176:do=1;38;5;176:bd=38;5;179;48;5;236:cd=38;5;179;48;5;236:or=1;38;5;203;48;5;236:mi=00:su=1;38;5;255;48;5;88:sg=1;38;5;16;48;5;179:ca=1;38;5;16;48;5;203:tw=1;38;5;141;48;5;236:ow=38;5;141;48;5;236:st=1;38;5;255;48;5;54:ex=1;38;5;78:'
 # grep: the match in bold lavender, the file names violet, the line numbers and the separators gray
 export GREP_COLORS='mt=1;38;5;183:fn=38;5;141:ln=38;5;243:bn=38;5;243:se=38;5;240'
-# Claude Code limits itself to 256 colors inside tmux, even with COLORTERM=truecolor, unless this variable is set: it turns every exact color of a
-# theme into the nearest of 256 with a rough formula (the rose of an error, #ff6b78, came out as a salmon, #ff8787). The tmux of the box declares RGB
-# (tmux.conf), so Claude Code may send exact colors. Set it empty in your ~/.bashrc to go back to 256.
-: "${CLAUDE_CODE_TMUX_TRUECOLOR=1}"
-export CLAUDE_CODE_TMUX_TRUECOLOR
 alias ls='ls --color=auto'
 alias ll='ls -alF --color=auto'
 alias la='ls -A --color=auto'

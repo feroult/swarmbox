@@ -1267,7 +1267,7 @@
       lastUsed: Date.now(),
     };
 
-    // OSC 52 clipboard write support (read "?" refused for security, matching ttyd-clipboard.js)
+    // OSC 52 clipboard write support (read "?" refused for security)
     if (term.parser && term.parser.registerOscHandler) {
       term.parser.registerOscHandler(52, (data) => {
         const i = data.indexOf(';');
@@ -3698,7 +3698,7 @@
       ]),
       el('div', { class: 's-stat' }, [
         el('span', { class: 's-stat-k', text: 'Multiplexer' }),
-        el('span', { class: 's-stat-v', text: currentHostField('box', 'MUX').value || 'herdr' }),
+        el('span', { class: 's-stat-v', text: 'herdr' }),
       ]),
       el('div', { class: 's-stat' }, [
         el('span', { class: 's-stat-k', text: 'Health' }),
@@ -3714,16 +3714,7 @@
       ]));
     }
 
-    const CLASSIC_MUX = 'tm' + 'ux';
     const coreCard = el('div', { class: 's-card' }, [
-      makeHostSelectRow('box', 'MUX', {
-        title: 'Terminal Multiplexer',
-        desc: 'Backend powering tabs, Cockpit and Web UI.',
-        options: [
-          { value: 'herdr', label: 'herdr (native studio)' },
-          { value: CLASSIC_MUX, label: `${CLASSIC_MUX} (classic)` },
-        ],
-      }),
       makeHostSelectRow('box', 'AGENT', {
         title: 'Default Agent',
         desc: 'Agent launched automatically when running swarmbox.',
@@ -3833,15 +3824,6 @@
           { value: 'haiku', label: 'haiku (fast)' },
           { value: 'sonnet', label: 'sonnet (balanced)' },
           { value: 'opus', label: 'opus (deep)' },
-        ],
-      }),
-      makeHostSelectRow('sysop', 'sysop.panel', {
-        title: 'Panel Visibility',
-        desc: 'When to show the operator panel automatically.',
-        options: [
-          { value: 'always', label: 'always' },
-          { value: 'auto', label: 'auto (on goal)' },
-          { value: 'off', label: 'off' },
         ],
       }),
       makeHostInputRow('sysop', 'sysop.countdown', {

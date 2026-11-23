@@ -2,7 +2,7 @@
 """Image smoke test.
 
 Builds (or reuses) the image and checks it in throwaway containers: `serve` reaches readiness, `box:/tmp/swarmbox` is empty
-after a stop and a start, the ttyd page is built, `swarmbox-addon validate` passes on the shipped manifests, the claude shim, index and addon-ports are there, two `attach` calls give each tab a session of its own with its window linked into main, the
+after a stop and a start, the herdr Web Studio is served, `swarmbox-addon validate` passes on the shipped manifests, the claude shim, index and addon-ports are there, `attach` runs a command with its exit code and herdr-core has a terminal, the
 image holds no agent, the `swarmbox` script installs from the image (twice) and its up, reset and stop work against a real throwaway box, and (full mode only) a nested Podman runs a container.
 
 Two modes:
@@ -25,7 +25,6 @@ Run: SWARMBOX_IMAGE_BUILD=1 python3 tests/slow/smoke_image.py            (reduce
 """
 import os
 import random
-import re
 import shutil
 import socket
 import string
@@ -87,7 +86,7 @@ class Ctx:
     def __init__(self, tag, full):
         self.tag, self.full = tag, full
         self.containers, self.volumes, self.dirs = [], [], []
-        # ttyd listens on a random high port of the throwaway box's OWN network namespace (loopback only, nothing published)
+        # the web server listens on a random high port of the throwaway box's OWN network namespace (loopback only, nothing published)
         self.port = random.randrange(20000, 40000)
 
     def box(self, *extra_env, init=False):
@@ -156,10 +155,10 @@ def step_ready(ctx):
     ctx.expected_marker_ok(marker)
     cmd = ctx.sh(name, "tr '\\0' ' ' < /proc/1/cmdline")
     assert "swarmbox-entrypoint" in cmd and "serve" in cmd, "PID 1 is %r" % cmd
-    assert "main:" in ctx.sh(name, "tmux ls"), "no tmux session main"
+    assert podman("exec", name, "hc", "server", "status", "--json").returncode == 0, "herdr-core is not answering"
     assert ctx.sh(name, "id -un; id -u").split() == ["agent", "1000"], "user is not agent 1000"
     assert wait_for(lambda: ctx.http(name, code=True) == "200", 30), \
-        "ttyd does not answer inside the box"   # the box's own network namespace, not this one
+        "the web server does not answer inside the box"   # the box's own network namespace, not this one
 
 
 def step_tmpfs_restart(ctx):
@@ -181,32 +180,16 @@ def step_tmpfs_restart(ctx):
     assert "received SIGTERM" in log, "serve.log has no SIGTERM line"
 
 
-def step_tmux_scrollbar(ctx):
-    """The tmux of the image is the pinned backport, and our configuration turns its scrollbar `off`: the pane keeps the whole width (80 of 80),
-    in and out of copy mode. (The tmux of Debian 13 has no such option.)"""
-    with open(os.path.join(ROOT, "Dockerfile")) as f:
-        want = re.search(r"^ARG TMUX_VERSION=(\S+)", f.read(), re.M).group(1).split("-")[0]
-    r = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
-               "tmux -V; K=sbchk; tmux -L $K -f /etc/tmux.conf new-session -d -x 80 -y 24 -s x 'sleep 30' && "
-               "tmux -L $K show-options -gqv pane-scrollbars && tmux -L $K display-message -p -t x '#{pane_width}' && "
-               "tmux -L $K copy-mode -t x && sleep 0.3 && tmux -L $K display-message -p -t x '#{pane_width}'; tmux -L $K kill-server")
-    assert r.stdout.split() == ["tmux", want, "off", "80", "80"], "tmux in the image: %r %r" % (r.stdout, r.stderr)
-    assert r.stderr.strip() == "", "the configuration did not load cleanly: " + r.stderr
-
-
 def step_page_built(ctx):
-    built = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
-                   "grep -o '__SWARMBOX_[A-Z_]*__' /usr/local/share/swarmbox/web/index.html | sort -u")
-    assert sorted(built.stdout.split()) == sorted(["__SWARMBOX_CTRL_C__", "__SWARMBOX_CTRL_V__", "__SWARMBOX_PADDING__",
-                                                   "__SWARMBOX_SCROLLBAR__", "__SWARMBOX_SCROLLBAR_FF__", "__SWARMBOX_STRIP__",
-                                                   "__SWARMBOX_STRIP_CUSTOM__", "__SWARMBOX_STRIP_KEYS__"]), \
-        "the built page has no placeholders: " + built.stdout + built.stderr
+    """The image ships the Web Studio and the box serves it (no ttyd page any more)."""
+    r = podman("run", "--rm", "--entrypoint", "sh", ctx.tag, "-c",
+               "test -x /usr/local/share/swarmbox/herdr-web/server.mjs && test -s /usr/local/share/swarmbox/herdr-web/public/index.html && "
+               "! command -v tmux && ! command -v ttyd && echo ok")
+    assert r.stdout.strip().endswith("ok"), "the Web Studio is missing or tmux/ttyd are in the image: " + r.stdout + r.stderr
     name = ctx.box()
     assert ctx.ready(name), ctx.logs(name)
     assert wait_for(lambda: ctx.http(name, code=True) == "200", 30)
-    page = ctx.http(name)
-    assert "__SWARMBOX_" not in page, "a placeholder is left in the served page"
-    assert "--swarmbox-padding:" in page and "window.__swarmboxClipboard=" in page, "the served page is not the built page"
+    assert "<title>SwarmBox</title>" in ctx.http(name), "the served page is not the Web Studio"
 
 
 # The ten addons of the repository and the commands they provide (the order of the index is the sort of `link`).
@@ -277,34 +260,12 @@ def step_mcp_generated(ctx):
 
 
 def step_attach_session(ctx):
-    from attach_support import PtyProc
-    from waiting import wait_until
     name = ctx.box("SWARMBOX_WEB=0")
     assert ctx.ready(name), ctx.logs(name)
     assert podman("exec", name, "swarmbox-entrypoint", "attach", "false").returncode == 1
     assert podman("exec", name, "swarmbox-entrypoint", "attach", "true").returncode == 0
-
-    def windows():
-        return [w for w in ctx.sh(name, "tmux list-windows -t =main -F '#{window_name}'").splitlines() if w]
-    assert windows() == ["idle"], "windows before attach: %r" % windows()
-    tabs = []
-    try:
-        for _ in range(2):
-            p = PtyProc(["podman", "exec", "-it", name, "swarmbox-entrypoint", "attach"], dict(os.environ, TERM="xterm-256color"))
-            tabs.append(p)
-            want = 1 + len(tabs)
-            assert wait_until(lambda: len(ctx.sh(name, "tmux list-sessions -F x").split()) == want, 30), p.out
-        assert len(windows()) == 2 and "idle" not in windows(), "windows after two attaches: %r" % windows()
-        # each terminal tab has a session of its own (no status bar) and its window is linked into main, which is what the browser shows
-        main_ids = set(ctx.sh(name, "tmux list-windows -t =main -F '#{window_id}'").split())
-        tab_ids = set(ctx.sh(name, "for s in $(tmux list-sessions -F '#{session_name}' | grep '^swarmbox-tab-'); do tmux display-message -p -t \"=$s:\" '#{window_id}'; done").split())
-        assert len(tab_ids) == 2 and tab_ids == main_ids, "the windows of the tabs are not the windows of main: tabs %r, main %r" % (tab_ids, main_ids)
-        for p in tabs:
-            p.write(b"\x01d")   # the tmux detach key (prefix C-a, d)
-            assert p.wait(30) == 0, p.out
-    finally:
-        for p in tabs:
-            p.close()
+    # step 9 of serve opened the first terminal of herdr-core
+    assert '"live"' in ctx.sh(name, "hc ls --json"), "herdr-core has no live terminal: " + ctx.sh(name, "hc ls --json")
 
 
 def step_no_agent(ctx):
@@ -540,16 +501,15 @@ def step_up_busy_port_and_foreign(ctx):
 
 
 STEPS = [
-    Step("ready", "serve reaches readiness (marker, PID 1, session main, user agent, ttyd)", False, step_ready),
+    Step("ready", "serve reaches readiness (marker, PID 1, herdr-core, user agent, web server)", False, step_ready),
     Step("tmpfs-restart", "stop is prompt (exit 143), start empties box:/tmp/swarmbox, workspace survives", False, step_tmpfs_restart),
-    Step("tmux-scrollbar", "the pinned tmux is in the image and has the scrollbar off (80 of 80 columns, in and out of copy mode)", False, step_tmux_scrollbar),
-    Step("page-built", "the ttyd page is built into the image and served with the three settings", False, step_page_built),
+    Step("page-built", "the Web Studio is in the image (no tmux, no ttyd) and the box serves it", False, step_page_built),
     Step("addon-validate", "swarmbox-addon validate passes on the shipped manifests (the real validate)", False, step_addon_validate),
     Step("box-commands", "swarmbox-bus and swarmbox-tabs are executable in the image and answer --help", False, step_box_commands),
     Step("addon-shim", "the shims of all ten addons are links to swarmbox-shim found on PATH; nothing is installed", False, step_addon_shim),
     Step("addon-index-ports", "the index lists the commands of all ten addons and addon-ports is exactly clasp 43323", False, step_addon_index_ports),
     Step("mcp-generated", "swarmbox-mcp generates mcp-servers.json with chrome-devtools and no npx", False, step_mcp_generated),
-    Step("attach-session", "two attach calls give each tab a session of its own with its window linked into main, the idle window is gone, exit codes", False, step_attach_session),
+    Step("attach-session", "attach gives the exit code of a command and herdr-core has the first terminal", False, step_attach_session),
     Step("no-agent", "a default build holds no agent, gcloud, clasp, Go, Poetry or voice and /opt/swarmbox/addons is empty", False, step_no_agent),
     Step("install-script", "the image's installer writes one script and the config, twice, warns about an old function, edits no rc file", False, step_install_script),
     Step("up-lifecycle", "the script: up creates, a second up takes the fast path, reset replaces, stop and up again (3.7.2)", False, step_up_lifecycle),

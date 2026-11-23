@@ -188,7 +188,7 @@ s_home() {
   : >"$WS/host-marker" && [ "$(IN sh -c 'echo $HOME')" = /home/agent ] && IN test -e /home/agent/host-marker || fail "the workspace is not /home/agent"
   IN sh -c 'touch /home/agent/box-marker' && [ -e "$WS/box-marker" ] || fail "a file made in the box is not in the workspace"
 }
-s_tmux() { IN tmux has-session -t =main || fail "no tmux session main"; }
+s_mux() { IN hc server status --json > /dev/null || fail "herdr-core (hc) is not answering"; }
 s_web() {
   n=0
   while [ $n -lt 20 ]; do
@@ -245,7 +245,7 @@ step "build image" s_build
 step "install script from the image, twice" onimg s_install
 step "up creates the box" onimg s_up
 for t in "box running, name, labels:s_labels" "config get/set:s_config" "env add/list/rm:s_env" "pubkey prints a key:s_pubkey" \
-  "user is agent uid 1000:s_user" "workspace is home:s_home" "tmux session main:s_tmux" "ttyd answers 200:s_web" "git installed:s_git" "swarmbox <command> runs in the box:s_run" \
+  "user is agent uid 1000:s_user" "workspace is home:s_home" "herdr-core answers:s_mux" "web answers 200:s_web" "git installed:s_git" "swarmbox <command> runs in the box:s_run" \
   "nested podman run:s_nested" "/dev/net/tun:s_tun" "addon list:s_addonlist" "addon install go:s_addongo" "second up is harmless:s_up2" \
   "stop:s_stop" "up again, web answers:s_restart" "reset keeps workspace and key:s_reset" "url local only:s_url" "help lists commands:s_help"; do
   step "${t%:*}" onbox "${t##*:}"

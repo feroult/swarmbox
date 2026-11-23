@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -S
-"""swarmbox-tabs: the tabs of the box (the windows of the tmux session), a capability of the host. One file, standard library only: it is a
-command line and, at the same time, the library the addons can import by path. No daemon: a call reads or acts on tmux and ends.
+"""swarmbox-tabs: the tabs of the box (the terminals of herdr-core, `hc`), a capability of the host. One file, standard library only: it is
+a command line and, at the same time, the library the addons can import by path. No daemon: a call reads or acts on herdr-core and ends.
 
   swarmbox-tabs list                                     the tabs, a JSON list
   swarmbox-tabs active                                   the active tab, a JSON object
@@ -10,51 +10,56 @@ command line and, at the same time, the library the addons can import by path. N
                                                          ({Esc} {C-c} {Enter} {Up} ... are keys, see KEYS). TEXT "-" reads stdin (long or
                                                          multi-line text: one trailing newline is dropped). --queue types although the agent in
                                                          the tab is busy; --slash allows a first character "/" or "!" for an agent.
+  swarmbox-tabs open [--name NAME] [--cwd DIR] [--agent AGENT]
+                                                         open a tab: a login shell, or an agent of ALLOWED_OPEN_AGENTS; it becomes the active tab
+  swarmbox-tabs focus TAB                                make TAB the active tab
+  swarmbox-tabs close TAB                                end the program of TAB and remove the tab
 
-Output: JSON on stdout, always. Success: the object or list above; send answers {"ok":true,"tab":"@3","pane":"%3","submitted":BOOL}. A
+Output: JSON on stdout, always. Success: the object or list above; send answers {"ok":true,"tab":"t3","pane":"t3","submitted":BOOL}. A
 failure is {"err":CODE,"msg":TEXT} (also on stdout, so a program has one place to read) and a non-zero exit.
 Exit codes: 0 ok; 1 the call was understood and refused or failed: no_such_tab ambiguous_tab dialog_open busy_tab slash_refused
-not_submitted tmux_error lock_error; 2 usage or a text that cannot be typed (usage, bad_body); 4 tmux is not there: no_tmux, or no_session
-(no server, or no session of that name); 5 timeout (tmux, or an earlier send to the same tab still running).
+not_submitted backend_error lock_error unsupported; 2 usage or a text that cannot be typed (usage, bad_body); 4 herdr-core is not there:
+no_backend (no `hc` program, or an unknown SB_TABS_BACKEND), or no_session (the herdr-core server does not answer); 5 timeout (an `hc`
+call, or an earlier send to the same tab still running).
 
-Tabs.  A tab is a tmux window of the session "main" (SB_TABS_SESSION). The address is the window id "@3" (stable, never reused), and the
-label "index:name" is accepted too, as is a bare index or a bare name; a name used by two windows is the error ambiguous_tab that lists the
-candidates. The tmux target of every call is the pane id "%7", never the window. Panes that carry one of the pane options in HIDDEN_OPTIONS
-(the panels of the sysop and of voice) are never listed, never a target, and a window with only such panes is not a tab. The pane of a tab is
-its active pane, or, when the focus is in a panel, the pane that had it before (pane_last), or the first one.
-The active tab is the window shown by the non-control client with the latest client_activity (1 s resolution, a tie is arbitrary); the
-current window of the session when no client shows a tab.
-  list:    one object per tab: tab "@3" (the address), label "1:name", index, name, dir, cmd, pane, panes, active (true for exactly one)
-  screen:  {"tab", "pane", "text", "cursor", "alternate", "in_mode", "mode", "size", "lines"}; text is made from the plain text of the pane:
+Tabs.  A tab is a live terminal of herdr-core. The address is its terminal address "t3" (stable, never reused), and the label
+"index:name" is accepted too, as is a bare index (1, 2 ... in the order the terminals were created) or a bare name; a name used by two
+tabs is the error ambiguous_tab that lists the candidates. Terminals labelled swarmbox.role=sysop (HIDDEN_HERDR_ROLES) are never listed and
+never a target. The active tab is the one named in <run folder>/herdr-active-tab (written by whoever opens or focuses a tab: the web
+studio, the cockpit, `open` and `focus` here), or the first tab when that file names none of them.
+  list:    one object per tab: tab "t3" (the address), label "1:name", index, name, dir, cmd, pane (the address again), panes, active (true
+           for exactly one), and status when the program reported one (OSC 7501: state, progress, msg, app)
+  screen:  {"tab", "pane", "text", "cursor", "alternate", "in_mode", "mode", "size", "lines"}; text is made from the text of the terminal:
            the last `lines` lines, the secrets removed (on whole lines, whatever the colours), then the markers written and a line longer
-           than 1000 characters cut. Text of the pane that looks like a marker has one more `[` (see to_marked)
+           than 1000 characters cut. Text of the terminal that looks like a marker has one more `[` (see to_marked)
 
-Environment.  SB_TABS_SESSION (default main), SB_TABS_SOCKET (a tmux server with -L, for tests), SB_TABS_BIN (the tmux program, default tmux),
-SB_RUN_DIR (the run folder: the locks are in its subfolder tabs/, default /tmp/swarmbox); TMUX_TMPDIR passes on to tmux as it is. TMUX is
-removed from the environment of every call so a nested shell never changes the server. Every tmux call has a timeout.
+Environment.  SB_TABS_HC_BIN or SB_TABS_BIN (the hc program, default hc), SB_RUN_DIR (the run folder: the locks are in its subfolder tabs/
+and the active tab in herdr-active-tab, default /tmp/swarmbox), SB_TABS_BACKEND (herdr, the only backend; a test seam). Every hc call has a
+timeout.
 
-Typing.  The text goes as `send-keys -l -- piece` calls of CHUNK characters (a `;` at the end of a piece as the key 0x3b: tmux would take
-it for the end of the command), then, after PAUSE seconds, each key (the Enter of --run too) as its own tmux call:
-two processes, never one burst, because a terminal program that sees text and Enter in one burst treats it as a paste and the Enter
-becomes a line break (docs/spikes/enter.md: 0 of 4 at 600 characters). A pane in copy mode gets `-X cancel` first.
-When the pane runs an agent (Claude Code: the input box between two rules, a dialog, "esc to interrupt"; or the command is a known agent) and
-the message submits text (text followed by Enter): a dialog is refused (dialog_open), a busy agent is refused unless --queue, a text that
-starts with "/" or "!" is refused unless --slash (it would open a menu or run a shell command; every text that is submitted is checked, not
-only the first, and a body that submits more than one text to an agent needs --queue, because the agent is busy after the first), and after the Enter the
-call checks that the end of the text left the input box, pressing Enter once more only when it did not (not_submitted when it still did not).
+Typing.  The text goes as literal UTF-8 over `hc connect` (a framed terminal.attach, in pieces of CHUNK bytes, no Enter), then, after
+PAUSE seconds, each key (the Enter of --run too) as its own `hc keys` call: never one burst, because a terminal program that sees text and
+Enter in one burst treats it as a paste and the Enter becomes a line break (docs/spikes/enter.md: 0 of 4 at 600 characters).
+When the tab runs an agent (the state it reports with OSC 7501; else Claude Code's screen: the input box between two rules, a dialog, "esc
+to interrupt"; or the command is a known agent) and the message submits text (text followed by Enter): a dialog is refused (dialog_open), a
+busy agent is refused unless --queue, a text that starts with "/" or "!" is refused unless --slash (it would open a menu or run a shell
+command; every text that is submitted is checked, not only the first, and a body that submits more than one text to an agent needs
+--queue, because the agent is busy after the first), and after the Enter the call checks that the end of the text left the input box,
+pressing Enter once more only when it did not (not_submitted when it still did not).
 Plain --input (keys, or text without Enter) is not judged: it is how a dialog is answered and a busy agent interrupted.
 
-The lock.  A send holds an flock on <run folder>/tabs/<window id>.lock for as long as it types (the kernel drops it however the process
+The lock.  A send holds an flock on <run folder>/tabs/tab-<address>.lock for as long as it types (the kernel drops it however the process
 dies), so two sends to one tab, from any processes, never interleave; the second waits up to LOCK_TIMEOUT seconds and then fails with timeout,
 nothing typed. Reads (list, active, screen) take no lock. The lock files of tabs that are gone are deleted when there are more than LOCK_KEEP (64) of them.
 No other state is kept.
 
 The library.  Importing this file by path (importlib.util.spec_from_file_location) gives the class Tabs, the same calls without
-a process: list_tabs(), active(), screen(tab, lines=None), send(tab, run=None, input=None, queue=False, slash=False); failures are raised as
-TabsError(code, message). The pure functions (redact, to_marked, parse_keys, agent_state, input_box) are importable too. Recommended for an
-addon: run the command, not the library. The command is the contract (JSON, exit codes, the lock, the timeouts, the same code path as every
-other caller, nothing to import from the host's files, a failure that cannot take the addon's process down); the library is for tests and
-for this file's own main(). The cost is one Python start-up (about 15 ms) per call.
+a process: list_tabs(), active(), screen(tab, lines=None), send(tab, run=None, input=None, queue=False, slash=False), open_tab(name, cwd,
+agent), focus_tab(tab), close_tab(tab); failures are raised as TabsError(code, message). Tabs(backend=...) takes any TabsBackend (the
+contract between the facade and the multiplexer; HerdrBackend is the one of the box). The pure functions (redact, to_marked, parse_keys,
+agent_state, input_box) are importable too. Recommended for an addon: run the command, not the library. The command is the contract (JSON,
+exit codes, the lock, the timeouts, the same code path as every other caller, nothing to import from the host's files, a failure that cannot
+take the addon's process down); the library is for tests and for this file's own main(). The cost is one Python start-up (about 15 ms) per call.
 """
 import contextlib
 import fcntl
@@ -67,17 +72,14 @@ import sys
 import time
 from collections import namedtuple
 
-SEP = "@@sb@@"     # never a tab: tmux 3.6+ prints control characters of a list as `_` when it has no terminal
-HIDDEN_OPTIONS = ("@swarmbox_sysop_panel",)
-HIDDEN_MARKERS = ("SWARMBOX_SYSOP_PANEL=1",)      # in the start command of a panel pane (container/addons/sysop/lib/swarmbox_sysop/dock.py PANEL_COMMAND)
 HIDDEN_HERDR_ROLES = ("sysop",)                   # herdr-core labels["swarmbox.role"] values hidden from normal tab lists
 PAUSE = 0.15
-MAX_STEPS = 100          # steps (texts and keys) of one send: each key costs PAUSE plus a tmux process (about 0.15 s)
+MAX_STEPS = 100          # steps (texts and keys) of one send: each key costs PAUSE plus an hc process (about 0.15 s)
 LOCK_TIMEOUT = 30.0      # seconds a send waits for an earlier send to the same tab
 LOCK_KEEP = 64           # lock files of tabs that are gone are deleted past this many (see Tabs._sweep_locks)
 MAX_STDIN = 1 << 20      # bytes of a text read from stdin
-CHUNK = 1024             # characters of one send-keys word (4 KiB at most in UTF-8, far below the 16 KB that tmux accepts in a command)
-TMUX_TIMEOUT = 5.0
+CHUNK = 1024             # bytes of one DATA frame of `hc connect` when text is typed
+TIMEOUT = 5.0            # seconds of one hc call
 MAX_LINE = 1000          # characters of one line of a screen, cut after the secrets filter (see _render)
 VERIFY_TIMEOUT = 5.0     # seconds to see the text leave the input box after an Enter
 AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex", "agy")
@@ -87,7 +89,7 @@ Tab = namedtuple("Tab", "id index name cwd command pane panes active label")
 ScreenCapture = namedtuple("ScreenCapture", "raw cursor alternate in_mode mode size lines")
 
 # exit code of the command for each error code (the others are 1); see the docstring
-EXIT = {"usage": 2, "bad_body": 2, "no_tmux": 4, "no_session": 4, "no_backend": 4, "timeout": 5}
+EXIT = {"usage": 2, "bad_body": 2, "no_session": 4, "no_backend": 4, "timeout": 5}
 
 
 class TabsError(Exception):
@@ -328,7 +330,7 @@ _LOOKALIKE = re.compile(r"(?<!\[)\[+(?=/?(?:sel|bg|err|REDACTED)\])")
 
 
 def _parse(raw):
-    """`capture-pane -e` output -> (text, styles): the plain text (every escape sequence removed, trailing blank lines and the spaces
+    """the text of a terminal, with its escape sequences -> (text, styles): the plain text (every escape sequence removed, trailing blank lines and the spaces
     at the ends of the lines dropped later by _render) and one tuple of tags per character, ("sel",), ("bg", "err") and so on, () for none.
     Text that looks like a marker (`[sel]`, `[/err]`, `[REDACTED]`...) gets one more `[` in front of it, so that program output cannot forge
     a marker (see to_marked)."""
@@ -393,7 +395,7 @@ def _render(text, styles, max_line=0):
 
 
 def to_marked(raw):
-    """`capture-pane -e` output -> text with spans written [sel]text[/sel], [bg]text[/bg], [err]text[/err] (see _render). Literal text of the
+    """the text of a terminal, with its escape sequences -> text with spans written [sel]text[/sel], [bg]text[/bg], [err]text[/err] (see _render). Literal text of the
     pane that looks like a marker is escaped by one more `[`: `[sel]` in the pane reads `[[sel]`, `[[sel]` reads `[[[sel]`; a marker is a tag
     with a single `[`. The secrets filter is NOT applied here: the screen runs it on the plain text between _parse and _render, so that a
     marker in the middle of a secret cannot hide it."""
@@ -407,7 +409,7 @@ _TOKEN = re.compile(r"\{\{|\}\}|(?<!\$)\{([A-Za-z][A-Za-z0-9-]*)\}")
 
 
 def parse_keys(text):
-    """text with {Key} tokens -> [("text", str) | ("key", tmuxname)]. {{ and }} are a literal brace. A {word} that is not a known key stays
+    """text with {Key} tokens -> [("text", str) | ("key", name)] (name: a value of KEYS, C-x, M-x or F1..F12, mapped to the spelling of `hc keys` by _hc_key_name). {{ and }} are a literal brace. A {word} that is not a known key stays
     the literal text it is ({"a": 1} is typed as it is). Names are CASE SENSITIVE and a `{` right after `$` is never a key, so `${Home}` and
     `${HOME}` stay shell variables. Known: the names in KEYS, C-a..C-z, M-<char>, F1..F12."""
     steps, pos, buf = [], 0, []
@@ -534,7 +536,7 @@ class TabsBackend:
         raise NotImplementedError
 
     def prepare_send(self, tab):
-        """Run any backend-specific preparation before typing (e.g. exiting copy mode)."""
+        """Run any backend-specific preparation before typing (nothing for herdr-core)."""
 
     def send_text(self, tab, text):
         """Type literal `text` into `tab`."""
@@ -580,168 +582,6 @@ ALLOWED_OPEN_AGENTS = {
 }
 
 
-class TmuxBackend(TabsBackend):
-    """Concrete TabsBackend talking to a tmux server."""
-
-    name = "tmux"
-
-    def __init__(self, session=None, socket=None, binary=None, timeout=TMUX_TIMEOUT):
-        self.session = session or os.environ.get("SB_TABS_SESSION") or "main"
-        self.socket = socket if socket is not None else os.environ.get("SB_TABS_SOCKET")
-        self.binary = binary or os.environ.get("SB_TABS_BIN") or "tmux"
-        self.timeout = timeout
-
-    def tmux(self, *args, check=True):
-        argv = [self.binary] + (["-L", self.socket] if self.socket else []) + [str(a) for a in args]
-        env = {k: v for k, v in os.environ.items() if k != "TMUX"}
-        try:
-            p = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=self.timeout)
-        except subprocess.TimeoutExpired:
-            raise TabsError("timeout", "tmux %s did not answer in %g s" % (args[0], self.timeout))
-        except FileNotFoundError:
-            raise TabsError("no_tmux", "tmux is not installed")
-        except OSError as e:
-            raise TabsError("no_tmux", "cannot run tmux: %s" % (e.strerror or e))
-        out = p.stdout.decode("utf-8", "replace")
-        if check and p.returncode != 0:
-            msg = p.stderr.decode("utf-8", "replace").strip() or "tmux %s failed" % args[0]
-            if "no server running" in msg or "can't find session" in msg or "error connecting" in msg:
-                raise TabsError("no_session", "no tmux session %s (%s); opening a tab (the web terminal, or `swarmbox attach`) starts it again" % (self.session, msg))
-            if "can't find pane" in msg or "can't find window" in msg:
-                raise TabsError("no_such_tab", "the tab closed (%s)" % msg)
-            raise TabsError("tmux_error", msg)
-        return out
-
-    def list_tabs_raw(self):
-        """[Tab] of the session, panels hidden, in window order (the `active` flag is not set)."""
-        # Names, paths and commands are text that a program can choose (a window name, a directory, the name of a process), so each of them
-        # is asked in a call of its own, as the LAST field of its lines and cut with a limit: whatever it holds, even SEP, it cannot move the
-        # other fields. The fields before it are ids, numbers and flags.
-        def ask(*fields):
-            fmt = SEP.join(fields)
-            try:
-                listing = self.tmux("list-panes", "-s", "-t", "=" + self.session, "-F", fmt)
-            except TabsError as e:
-                if e.code == "no_such_tab":         # the target of this call is the session: "can't find window" means it is not there
-                    raise TabsError("no_session", "no tmux session %s (%s); opening a tab (the web terminal, or `swarmbox attach`) starts it again" % (self.session, e.message))
-                raise
-            return [line.split(SEP, len(fields) - 1) for line in listing.splitlines()]
-        flags = ["#{?#{%s},1,0}" % o for o in HIDDEN_OPTIONS]
-        wins, order, panes = {}, [], {}
-        first = ask("#{window_id}", "#{window_index}", "#{pane_id}", "#{pane_active}", "#{pane_last}", *flags, "#{window_name}")
-
-        def column(field):
-            # a value with a newline in it (a directory can be named so) would add lines, even lines that look like another pane's: when the
-            # pane ids of the answer are not exactly those of the first call, the values are not trusted at all
-            rows = ask("#{pane_id}", field)
-            ok = [p[0] for p in rows] == [p[2] for p in first if len(p) > 2] and all(len(p) == 2 for p in rows)
-            return {p[0]: p[1] for p in rows} if ok else {}
-        starts = column("#{pane_start_command}")      # in a call of its own: a start command can hold SEP (`sleep 99 # @@sb@@x`)
-        for p in first:
-            n = len(HIDDEN_OPTIONS)
-            if len(p) != 6 + n or any(f == "1" for f in p[5:5 + n]):
-                continue
-            # a panel pane is also known by the marker in its start command: split-window makes the pane before the option can be set on it
-            if any(m in starts.get(p[2], "") for m in HIDDEN_MARKERS):
-                continue
-            if p[0] not in wins:
-                try:
-                    idx = int(p[1])
-                except ValueError:
-                    continue
-                wins[p[0]] = {"index": idx, "name": p[-1], "rows": []}
-                order.append(p[0])
-            wins[p[0]]["rows"].append(p)
-            panes[p[2]] = p
-        cwds, cmds = column("#{pane_current_path}"), column("#{pane_current_command}")
-        home = os.path.expanduser("~")
-        tabs = []
-        for wid in order:
-            w = wins[wid]
-            rows = w["rows"]
-            # the active pane; when the focus is in a panel (not in `rows`) the pane that had it before it, else the first
-            row = next((r for r in rows if r[3] == "1"), None) or next((r for r in rows if r[4] == "1"), rows[0])
-            cwd = cwds.get(row[2], "")
-            if home != "/" and (cwd == home or cwd.startswith(home + "/")):
-                cwd = "~" + cwd[len(home):]
-            tabs.append(Tab(wid, w["index"], w["name"], cwd, cmds.get(row[2], ""), row[2], [r[2] for r in rows], False, "%d:%s" % (w["index"], w["name"])))
-        return tabs
-
-    def active_tab_id(self, tab_ids):
-        """The window id of the active tab: the window of the non-control client with the latest activity among those that show a tab,
-        else the current window of the session, else the first tab."""
-        fmt = SEP.join(["#{client_activity}", "#{window_id}", "#{client_control_mode}"])
-        rows = []
-        for line in self.tmux("list-clients", "-F", fmt, check=False).splitlines():
-            p = line.split(SEP)
-            if len(p) == 3 and p[2] != "1" and p[1] in tab_ids:
-                try:
-                    rows.append((int(p[0] or 0), p[1]))
-                except ValueError:
-                    pass
-        if rows:
-            return max(rows, key=lambda r: r[0])[1]
-        cur = self.tmux("display-message", "-p", "-t", "=%s:" % self.session, "#{window_id}", check=False).strip()
-        return cur if cur in tab_ids else (next(iter(tab_ids)) if tab_ids else None)
-
-    def capture_plain_rows(self, tab):
-        raw = self.tmux("capture-pane", "-p", "-J", "-t", tab.pane)
-        return [x.rstrip() for x in raw.split("\n")]
-
-    def capture_screen(self, tab, lines):
-        fmt = SEP.join(["#{cursor_x}", "#{cursor_y}", "#{pane_in_mode}", "#{alternate_on}", "#{pane_width}", "#{pane_height}", "#{pane_mode}"])
-        meta = self.tmux("display-message", "-p", "-t", tab.pane, fmt).rstrip("\n").split(SEP)
-        if len(meta) != 7:
-            raise TabsError("tmux_error", "unexpected answer of display-message")
-        alternate = meta[3] == "1"
-        n = None if alternate else lines     # a full-screen program has no scrollback: only the visible screen exists
-        args = ["capture-pane", "-p", "-J", "-e", "-t", tab.pane]
-        if n:
-            args += ["-S", "-%d" % int(n)]
-        raw = self.tmux(*args)
-        return ScreenCapture(raw, [int(meta[0]), int(meta[1])], alternate, meta[2] == "1", meta[6], [int(meta[4]), int(meta[5])], n)
-
-    def prepare_send(self, tab):
-        if self.tmux("display-message", "-p", "-t", tab.pane, "#{pane_in_mode}").strip() == "1":
-            self.tmux("send-keys", "-t", tab.pane, "-X", "cancel")
-
-    def send_text(self, tab, text):
-        """Type a text literally, in pieces of CHUNK characters (one word of send-keys must stay small: tmux refuses a command over 16 KB and
-        the kernel an argument over 128 KB). tmux reads a word that ends in `;` as the end of the command and drops the `;` (and turns a
-        final `\\;` into `;`), so the semicolons at the end of a piece are sent as the key 0x3b (send-keys -H) instead."""
-        for i in range(0, len(text), CHUNK):
-            piece = text[i:i + CHUNK]
-            body = piece.rstrip(";")
-            if body:
-                self.tmux("send-keys", "-t", tab.pane, "-l", "--", body)
-            if len(body) != len(piece):
-                self.tmux("send-keys", "-t", tab.pane, "-H", *["3b"] * (len(piece) - len(body)))
-
-    def send_key(self, tab, key):
-        self.tmux("send-keys", "-t", tab.pane, key)
-
-    def live_tab_ids(self):
-        return set(self.tmux("list-panes", "-s", "-t", "=" + self.session, "-F", "#{window_id}").split())
-
-    def open_tab(self, name=None, cwd=None, agent=None):
-        argv = ["new-window", "-P", "-F", "#{window_id}", "-t", "=" + self.session]
-        if name:
-            argv += ["-n", name]
-        if cwd:
-            argv += ["-c", cwd]
-        cmd = ALLOWED_OPEN_AGENTS.get(agent or "shell")
-        if cmd:
-            argv += cmd
-        wid = self.tmux(*argv).strip().splitlines()[:1]
-        return wid[0] if wid else ""
-
-    def focus_tab(self, tab):
-        self.tmux("select-window", "-t", tab.id)
-
-    def close_tab(self, tab):
-        self.tmux("kill-window", "-t", tab.id)
-
-
 _HC_KEYS = {
     "Escape": "esc", "Enter": "enter", "Tab": "tab", "BTab": "shift+tab", "Space": "space", "BSpace": "backspace",
     "Up": "up", "Down": "down", "Left": "left", "Right": "right", "Home": "home", "End": "end",
@@ -771,7 +611,7 @@ class HerdrBackend(TabsBackend):
 
     name = "herdr"
 
-    def __init__(self, binary=None, timeout=TMUX_TIMEOUT, run_dir=None):
+    def __init__(self, binary=None, timeout=TIMEOUT, run_dir=None):
         self.binary = binary or os.environ.get("SB_TABS_HC_BIN") or os.environ.get("SB_TABS_BIN") or "hc"
         self.timeout = timeout
         self.run_dir = run_dir or os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox"
@@ -1092,40 +932,29 @@ class HerdrBackend(TabsBackend):
         return None
 
 
-BACKENDS = {"tmux": TmuxBackend, "herdr": HerdrBackend}
+BACKENDS = {"herdr": HerdrBackend}
 
 
-def make_backend(name=None, session=None, socket=None, binary=None, timeout=TMUX_TIMEOUT, run_dir=None):
+def make_backend(name=None, binary=None, timeout=TIMEOUT, run_dir=None):
+    """the backend: a TabsBackend given as it is, else the class of BACKENDS named by `name` or SB_TABS_BACKEND (default herdr)"""
     if isinstance(name, TabsBackend):
         return name
-    chosen = name or os.environ.get("SB_TABS_BACKEND") or os.environ.get("SWARMBOX_MUX") or "tmux"
+    chosen = name or os.environ.get("SB_TABS_BACKEND") or "herdr"
     cls = BACKENDS.get(chosen)
     if cls is None:
         raise TabsError("no_backend", "unknown tabs backend %r (known: %s)" % (chosen, ", ".join(sorted(BACKENDS))))
-    if cls is TmuxBackend:
-        return cls(session=session, socket=socket, binary=binary, timeout=timeout)
-    if cls is HerdrBackend:
-        return cls(binary=binary, timeout=timeout, run_dir=run_dir)
-    return cls(timeout=timeout)
+    return cls(binary=binary, timeout=timeout, run_dir=run_dir)
 
 
 class Tabs:
-    """Mux-agnostic tab facade (redaction, markers, key parsing, locking, agent rules) over a TabsBackend (default: TmuxBackend)."""
+    """Mux-agnostic tab facade (redaction, markers, key parsing, locking, agent rules) over a TabsBackend (default: HerdrBackend)."""
 
-    def __init__(self, session=None, socket=None, binary=None, run_dir=None, pause=PAUSE, timeout=TMUX_TIMEOUT, verify_timeout=VERIFY_TIMEOUT,
-                 lock_timeout=LOCK_TIMEOUT, backend=None):
+    def __init__(self, binary=None, run_dir=None, pause=PAUSE, timeout=TIMEOUT, verify_timeout=VERIFY_TIMEOUT, lock_timeout=LOCK_TIMEOUT,
+                 backend=None):
         self.run_dir = run_dir or os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox"
-        self.backend = make_backend(backend, session=session, socket=socket, binary=binary, timeout=timeout, run_dir=self.run_dir)
-        self.session = getattr(self.backend, "session", session or os.environ.get("SB_TABS_SESSION") or "main")
-        self.socket = getattr(self.backend, "socket", socket if socket is not None else os.environ.get("SB_TABS_SOCKET"))
-        self.binary = getattr(self.backend, "binary", binary or os.environ.get("SB_TABS_BIN") or "tmux")
+        self.backend = make_backend(backend, binary=binary, timeout=timeout, run_dir=self.run_dir)
+        self.binary = getattr(self.backend, "binary", binary)
         self.pause, self.timeout, self.verify_timeout, self.lock_timeout = pause, timeout, verify_timeout, lock_timeout
-
-    def tmux(self, *args, check=True):
-        """Backwards-compatible pass-through for callers/tests on the tmux backend."""
-        if not hasattr(self.backend, "tmux"):
-            raise TabsError("no_tmux", "active backend %r is not tmux" % getattr(self.backend, "name", type(self.backend).__name__))
-        return self.backend.tmux(*args, check=check)
 
     # ---- tabs
     def _windows(self):
@@ -1156,7 +985,7 @@ class Tabs:
             raise usage_error("unknown agent %r (known: %s)" % (ag, ", ".join(sorted(ALLOWED_OPEN_AGENTS))))
         clean_name = None
         if name:
-            # the rule of `hc run --name` (1-32 of a-z 0-9 - _), the stricter of the two backends
+            # the rule of `hc run --name` (1-32 of a-z 0-9 - _)
             clean_name = re.sub(r"[^a-z0-9_-]", "-", str(name).strip().lower())[:32].strip("-") or None
         clean_cwd = None
         if cwd:
@@ -1178,14 +1007,14 @@ class Tabs:
         return {"ok": True, "tab": t.id, "label": t.label}
 
     def active(self):
-        """the dict of list_tabs() of the active tab; no_such_tab when the session has no tab"""
+        """the dict of list_tabs() of the active tab; no_such_tab when the box has no tab"""
         for t in self.list_tabs():
             if t["active"]:
                 return t
-        raise TabsError("no_such_tab", "the session %s has no tab" % self.session)
+        raise TabsError("no_such_tab", "the box has no tab")
 
     def resolve(self, tab):
-        """Tab for "@3", "1:name" (the label), "1" (the index) or "name". no_such_tab, or ambiguous_tab with the candidates."""
+        """Tab for "t3" (the address), "1:name" (the label), "1" (the index) or "name". no_such_tab, or ambiguous_tab with the candidates."""
         tabs = self._windows()
         s = str(tab)
         hit = [t for t in tabs if t.id == s] or [t for t in tabs if t.label == s] or [t for t in tabs if s.isdigit() and t.index == int(s)] \
@@ -1205,7 +1034,7 @@ class Tabs:
         cap = self.backend.capture_screen(t, lines)
         text, styles = _parse(cap.raw)
         n = cap.lines
-        if n:       # -S -N counts N lines above the top of the screen, so the capture has N + height lines: keep the last N
+        if n:       # the capture may hold more than N lines (history and the screen): keep the last N
             rows = text.split("\n")
             if len(rows) > int(n):
                 cut = len("\n".join(rows[:-int(n)])) + 1
@@ -1220,7 +1049,7 @@ class Tabs:
     # ---- typing
     @contextlib.contextmanager
     def _lock(self, wid):
-        """flock on <run folder>/tabs/<window id>.lock: one send at a time per tab, across processes; waits up to lock_timeout"""
+        """flock on <run folder>/tabs/tab-<address>.lock: one send at a time per tab, across processes; waits up to lock_timeout"""
         d = os.path.join(self.run_dir, "tabs")
         path = os.path.join(d, "tab-%s.lock" % re.sub(r"[^0-9A-Za-z]", "", wid))
         end = time.monotonic() + self.lock_timeout
@@ -1253,8 +1082,8 @@ class Tabs:
                 os.close(fd)        # closing drops the lock
 
     def _sweep_locks(self):
-        """Delete the lock files of tabs that are gone. A window id is never reused, so the files of a box that opens and closes tabs for weeks would only
-        pile up (empty files, in the run folder, which is gone at every start): past LOCK_KEEP files, those of windows that no longer exist and that nobody
+        """Delete the lock files of tabs that are gone. An address is never reused, so the files of a box that opens and closes tabs for weeks would only
+        pile up (empty files, in the run folder, which is gone at every start): past LOCK_KEEP files, those of tabs that no longer exist and that nobody
         holds are removed. Never fails."""
         d = os.path.join(self.run_dir, "tabs")
         try:
@@ -1444,7 +1273,7 @@ def parse_args(a, takes, flags):
 def run(argv, tabs=None):
     """the command: a JSON-able result, or TabsError"""
     if not argv:
-        raise usage_error("a command is needed: list, active, screen, send")
+        raise usage_error("a command is needed: list, active, screen, send, open, focus, close")
     cmd, a = argv[0], argv[1:]
     tabs = tabs or Tabs()
     if cmd in ("list", "active"):

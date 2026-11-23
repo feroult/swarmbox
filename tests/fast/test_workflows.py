@@ -106,7 +106,7 @@ class Ci(unittest.TestCase):
         self.assertIn('SWARMBOX_REAL_VOICE_INSTALL: "1"', body)
         self.assertIn("python3 tests/fast/test_addon_voice.py", body)
         self.assertIn("grep -q 'skipped'", body, "a skipped real install is a failure")
-        self.assertIn("SWARMBOX_TEST_REAL_TMUX=1 sh tests/run.sh slow", self.job("browser"))
+        self.assertIn("SWARMBOX_TEST_REAL=1 sh tests/run.sh slow", self.job("browser"))
         for name in ("smoke", "arm64"):
             body = self.job(name)
             self.assertIn("SWARMBOX_SMOKE_FULL=1 python3 tests/slow/smoke_image.py", body)

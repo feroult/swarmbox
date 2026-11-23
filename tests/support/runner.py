@@ -4,8 +4,8 @@
     sh tests/run.sh [fast|slow|all|e2e|macos] [-j N] [--only a.py,b.py] [--list] [--repeat N] [--werror] [options]
 
 Selectors (a folder each, see tests/README.md):
-    fast    tests/fast/test_*.py   no real tmux, browser, podman or network; run in parallel; the default
-    slow    tests/slow/test_*.py   real tmux, pty, ttyd, Chromium, Podman, the image; they skip with a message when a program they need is missing
+    fast    tests/fast/test_*.py   no real multiplexer, browser, podman or network; run in parallel; the default
+    slow    tests/slow/test_*.py   pty, Chromium, Podman, the image; they skip with a message when a program they need is missing
     all     fast, then slow
     e2e     tests/e2e/*.sh         the wrappers that start Podman and run the harnesses with the real claude and the long soak: manual, never part of all
     macos   the fast files named in tests/support/macos.list (the macOS job: /bin/sh is bash 3.2, podman is a fake)
@@ -247,8 +247,8 @@ def main(argv):
     sys.stdout.write("TOTAL %d files, %d tests, %d failed files, %.1f s (wall %.1f s, -j %d)\n" % (
         len(files), sum(r["ran"] for r in results), len(bad), total_s, time.time() - wall0, jobs))
     skipped = sum(r["skipped"] for r in results if r["file"].startswith("slow/"))
-    if skipped and not os.environ.get("SWARMBOX_TEST_REAL_TMUX"):
-        sys.stdout.write("note: %d slow tests were skipped here (a program they need is missing, or SWARMBOX_TEST_REAL_TMUX=1 is not set): "
+    if skipped and not os.environ.get("SWARMBOX_TEST_REAL"):
+        sys.stdout.write("note: %d slow tests were skipped here (a program they need is missing, or SWARMBOX_TEST_REAL=1 is not set): "
                          "sh dev/test-slow.sh runs them in Podman, where the programs are\n" % skipped)
     if o["timing"] and results:
         sys.stdout.write("slowest files:\n")

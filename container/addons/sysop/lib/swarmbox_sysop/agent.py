@@ -8,7 +8,7 @@ with label `swarmbox.role=sysop`:
     OSC 7501 state updates (`idle`, `working`, `blocked:permission`, `done`, `error`) and can send
     goals or approve/veto actions directly.
 
-Pure Python standard library; zero tmux imports.
+Pure Python standard library; no import of any terminal UI.
 """
 import base64
 import json

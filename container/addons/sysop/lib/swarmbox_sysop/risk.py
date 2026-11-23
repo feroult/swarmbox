@@ -41,8 +41,9 @@ _INTERPRETERS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "ash", "python", "p
                  "eval", "source", ".", "sudo", "su", "doas")
 _SENSITIVE_TARGET = re.compile(r"^(/dev/(?!null$|stdout$|stderr$|tty$)|/etc/|/boot/|/usr/|/bin/|/sbin/|/lib|/var/|/sys/|/proc/|/root)")
 _SENSITIVE_NAME = re.compile(r"(^|/)(\.bashrc|\.zshrc|\.profile|\.bash_profile|authorized_keys|\.gitconfig|\.npmrc|\.netrc|\.env)$|(^|/)\.(ssh|gnupg|aws)(/|$)")
-# What reaches the box's own controls: the files of the sysop (an approval is a file any process of the user can write), tmux (it types into
-# any pane, the panel's included, and kills the session), swarmbox-tabs (it types into any tab: `swarmbox tabs send @2 --run ls`), the bus and the sysop commands.
+# What reaches the box's own controls: the files of the sysop (an approval is a file any process of the user can write), herdr-core (`hc send`,
+# `hc keys`, `hc kill` ... type into any terminal, the sysop's hidden one included, and end them; a tmux the user installed by hand, likewise),
+# swarmbox-tabs (it types into any tab: `swarmbox tabs send @2 --run ls`), the bus and the sysop commands.
 # Matched on the text as a whole, quoted or not, so a payload in a quoted argument does not hide.
 _SELF = re.compile(r"(?i)decision\.json|pending_action|events\.jsonl|stop\.request|/sysop\b|\bsysop/|swarmbox[-_ ]?sysop|(?<![\w-])tmux(?![\w-])|"
                    r"(?<![\w-])herdr(?:-core)?(?![\w-])|(?<![\w-])hc\s+(?:send|keys|kill|run|interrupt|connect|server|rm|attach|read|exec|file)\b|"
@@ -498,7 +499,7 @@ def classify_command(text):
         acc.add("high", "a function that calls itself in the background (fork bomb)")
     flat = re.sub(r"\\\r?\n", "", _normalize(text))
     if _SELF.search(flat) or _SELF.search(flat.replace("\\", "").replace("'", "").replace('"', "")):
-        acc.add("high", "touches the controls of the box or of the sysop itself (tmux, the bus, the sysop's files)")
+        acc.add("high", "touches the controls of the box or of the sysop itself (herdr-core, the bus, the sysop's files)")
     if _SECRET_ENV.search(flat):
         acc.add("medium", "names the login of the box (an environment variable that holds a token)")
     if re.search(r"/dev/(tcp|udp)/", flat):

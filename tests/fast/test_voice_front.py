@@ -1,7 +1,7 @@
 """The voice front (container/addons/voice/lib/swarmbox_voice/front.py): routing, the same-origin rules, caps, the terminal pass-through
-and the life of its two children. Fakes: tests/support/fixtures/voice/fake-ttyd.py (a page, a big body, websocket echo, the -O rule) and a stub
+and the life of its two children. Fakes: tests/support/fixtures/voice/fake-web-server.py (a page, a big body, websocket echo, the same-origin rule) and a stub
 service in this process. The process tests run the real command `swarmbox-voice front` (with the real service, whose /voice/health
-needs neither tmux nor a model). The front is an AUDIO ENTRY with a fixed table (page.js, page.css, health, audio): the tests pin that
+needs no model). The front is an AUDIO ENTRY with a fixed table (health, audio): the tests pin that
 table, that every other /voice/ path is refused by the front and never reaches the service, and that the answers are filtered.
 Run with: python3 -W error tests/fast/test_voice_front.py
 """
@@ -24,9 +24,8 @@ from waiting import wait_until  # noqa: E402
 
 from swarmbox_voice import front, stt  # noqa: E402
 
-FAKE_TTYD = os.path.join(voice_support.FIXTURES, "fake-ttyd.py")
+FAKE_SERVER = os.path.join(voice_support.FIXTURES, "fake-web-server.py")
 LIB = os.path.join(voice_support.VOICE, "lib")
-WEB = os.path.join(voice_support.VOICE, "web")
 
 
 def free_port():
@@ -146,30 +145,25 @@ class Stub:
 
 
 class FrontCase(unittest.TestCase):
-    """A Front in this process in front of a fake ttyd (subprocess) and a stub service."""
+    """A Front in this process in front of a fake web server (subprocess) and a stub service."""
 
-    with_ttyd = True
+    with_server = True
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="voice-front-")
         self.addCleanup(subprocess.call, ["rm", "-rf", self.tmp])
-        self.log = os.path.join(self.tmp, "ttyd.log")
+        self.log = os.path.join(self.tmp, "server.log")
         self.stub = Stub()
         self.addCleanup(self.stub.close)
-        self.ttyd_port = free_port()
-        self.ttyd = None
-        if self.with_ttyd:
-            self.ttyd = subprocess.Popen([sys.executable, FAKE_TTYD, "-p", str(self.ttyd_port), "-i", "127.0.0.1", "-O"],
-                                         env=dict(os.environ, FAKE_TTYD_LOG=self.log))
-            self.addCleanup(self.ttyd.wait)
-            self.addCleanup(self.ttyd.kill)
-            self.assertTrue(wait_port(self.ttyd_port))
-        self.web = os.path.join(self.tmp, "web")
-        os.mkdir(self.web)
-        for name, text in (("page.js", "/* js */"), ("page.css", "/* css */")):
-            with open(os.path.join(self.web, name), "w") as f:
-                f.write(text)
-        self.front = front.Front(("127.0.0.1", 0), ("127.0.0.1", self.ttyd_port), ("127.0.0.1", self.stub.port), self.web)
+        self.server_port = free_port()
+        self.server = None
+        if self.with_server:
+            self.server = subprocess.Popen([sys.executable, FAKE_SERVER, "-p", str(self.server_port), "-i", "127.0.0.1", "-O"],
+                                         env=dict(os.environ, FAKE_SERVER_LOG=self.log))
+            self.addCleanup(self.server.wait)
+            self.addCleanup(self.server.kill)
+            self.assertTrue(wait_port(self.server_port))
+        self.front = front.Front(("127.0.0.1", 0), ("127.0.0.1", self.server_port), ("127.0.0.1", self.stub.port))
         self.port = self.front.address[1]
         threading.Thread(target=self.front.serve_forever, daemon=True).start()
         self.addCleanup(self.front.close)
@@ -182,7 +176,7 @@ class FrontCase(unittest.TestCase):
 
 
 class TerminalPath(FrontCase):
-    def test_a_plain_request_reaches_ttyd_with_connection_close_and_nothing_else_changed(self):
+    def test_a_plain_request_reaches_the_server_with_connection_close_and_nothing_else_changed(self):
         status, _, body = get(self.port, "/", extra="Connection: keep-alive\r\nUser-Agent: x\r\nAccept: text/html\r\n")
         self.assertEqual(status, 200)
         self.assertIn(b"fake terminal page", body)
@@ -212,7 +206,7 @@ class TerminalPath(FrontCase):
             got += c.recv(4096)
         self.assertTrue(got.startswith(b"HTTP/1.1 101"), got)
         self.assertIn(b"s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", got)
-        self.assertEqual(self.heads()[-1] + "\r\n\r\n", req, "the head reaches ttyd byte for byte")
+        self.assertEqual(self.heads()[-1] + "\r\n\r\n", req, "the head reaches the server byte for byte")
         payload = os.urandom(300000)
         c.sendall(payload)
         echoed = b""
@@ -220,10 +214,10 @@ class TerminalPath(FrontCase):
         while len(echoed) < len(payload):
             echoed += c.recv(65536)
         self.assertEqual(echoed, payload)
-        c.shutdown(socket.SHUT_WR)   # half close: ttyd sees the end and closes its side, so we see EOF
+        c.shutdown(socket.SHUT_WR)   # half close: the server sees the end and closes its side, so we see EOF
         self.assertEqual(c.recv(10), b"")
 
-    def test_ttyd_origin_rule_sees_the_original_host_and_origin(self):
+    def test_the_server_origin_rule_sees_the_original_host_and_origin(self):
         self.assertEqual(get(self.port, "/", host="a.example", extra="Origin: http://a.example\r\n")[0], 200)
         self.assertEqual(get(self.port, "/", host="a.example", extra="Origin: http://evil.example\r\n")[0], 403)
 
@@ -254,7 +248,7 @@ class TerminalPath(FrontCase):
         self.addCleanup(up.shutdown)
         threading.Thread(target=up.serve_forever, daemon=True).start()
 
-        f = front.Front(("127.0.0.1", 0), ("127.0.0.1", up.server_address[1]), ("127.0.0.1", self.stub.port), self.web)
+        f = front.Front(("127.0.0.1", 0), ("127.0.0.1", up.server_address[1]), ("127.0.0.1", self.stub.port))
         self.addCleanup(f.close)
         threading.Thread(target=f.serve_forever, daemon=True).start()
 
@@ -302,7 +296,7 @@ class TerminalPath(FrontCase):
 
 WAV = voice_support.wav_with("hello")
 UNLISTED = ["/voice/run", "/voice/edit", "/voice/cancel", "/voice/pending", "/voice/pending?wait=5&since=x", "/voice/plan", "/voice/transcribe",
-            "/voice/confirm", "/voice/", "/voice/page.js/", "/voice/health/", "/voice/audio/", "/voice/../voice/run", "/voice/%72un",
+            "/voice/confirm", "/voice/", "/voice/page.js", "/voice/page.css", "/voice/page.js/", "/voice/health/", "/voice/audio/", "/voice/../voice/run", "/voice/%72un",
             "/voice/%61udio", "/voice/run?x=/voice/audio", "/voice/PAGE.JS", "/voice/health;x", "/voice/audio%2f", "/voice/a/../run",
             "/voice/page.js.map", "/voice/run#audio", "/voice/slow", "/voice/teapot"]
 
@@ -316,7 +310,7 @@ class VoicePath(FrontCase):
         self.assertEqual(seen["path"], "/voice/health", "the query is dropped: the front rebuilds what it forwards")
         self.assertEqual(seen["headers"]["Host"], "127.0.0.1:%d" % self.stub.port)
         self.assertNotIn("Origin", seen["headers"])
-        self.assertEqual(self.heads(), [], "ttyd saw nothing")
+        self.assertEqual(self.heads(), [], "the server saw nothing")
         self.assertNotIn(b"claude", body)
 
     def test_a_same_origin_origin_is_rewritten_to_the_service_loopback(self):
@@ -340,9 +334,8 @@ class VoicePath(FrontCase):
         self.assertEqual(exchange(self.port, b"GET /voice/health HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n")[0], 400)
         self.assertEqual(self.stub.seen, [])
 
-    def test_the_table_is_exactly_these_four_routes(self):
-        self.assertEqual(front.ROUTES, {"/voice/page.js": "GET", "/voice/page.css": "GET", "/voice/health": "GET", "/voice/audio": "POST"})
-        self.assertEqual(sorted(front.STATIC), ["/voice/page.css", "/voice/page.js"])
+    def test_the_table_is_exactly_these_two_routes(self):
+        self.assertEqual(front.ROUTES, {"/voice/health": "GET", "/voice/audio": "POST"})
 
     def test_the_front_exposes_only_audio(self):
         """Every other /voice/ path, with every method and with or without a JSON body, is refused by the FRONT: the service never sees it."""
@@ -360,10 +353,10 @@ class VoicePath(FrontCase):
             self.assertEqual(post(self.port, path, b"{}")[0], 404, path)
             self.assertEqual(post(self.port, path, WAV, "audio/wav")[0], 404, path)
         self.assertEqual(self.stub.seen, [], "the service saw nothing at all")
-        self.assertEqual(self.heads(), [], "and neither did ttyd")
+        self.assertEqual(self.heads(), [], "and neither did the server")
 
-    def test_the_four_routes_with_the_wrong_method_are_refused(self):
-        for method, path in (("POST", "/voice/health"), ("GET", "/voice/audio"), ("POST", "/voice/page.js"), ("POST", "/voice/page.css"),
+    def test_the_two_routes_with_the_wrong_method_are_refused(self):
+        for method, path in (("POST", "/voice/health"), ("GET", "/voice/audio"),
                              ("PUT", "/voice/audio"), ("DELETE", "/voice/health"), ("OPTIONS", "/voice/audio"), ("HEAD", "/voice/health")):
             req = ("%s %s HTTP/1.1\r\nHost: h\r\nOrigin: http://h\r\nAccess-Control-Request-Method: POST\r\nContent-Length: 0\r\n\r\n"
                    % (method, path)).encode()
@@ -399,7 +392,7 @@ class VoicePath(FrontCase):
 
     def test_the_answer_filter_is_exactly_the_keys_of_the_new_answer(self):
         self.assertEqual(front.PASS_KEYS, {"/voice/health": ("ok",), "/voice/audio": ("ok", "state", "error", "message")})
-        self.assertEqual(sorted(front.ROUTES), ["/voice/audio", "/voice/health", "/voice/page.css", "/voice/page.js"], "the table of the front did not grow")
+        self.assertEqual(sorted(front.ROUTES), ["/voice/audio", "/voice/health"], "the table of the front did not grow")
 
     def test_the_answer_must_be_a_json_object(self):
         status, _, out = post(self.port, "/voice/audio", b"NOTJSON" + WAV, "audio/wav")
@@ -455,19 +448,6 @@ class VoicePath(FrontCase):
         self.assertLess(time.time() - t0, 3)
         self.assertEqual(self.stub.seen, [])
 
-    def test_the_page_parts_come_from_the_web_folder(self):
-        for path, ctype, text in (("/voice/page.js", "text/javascript", b"/* js */"), ("/voice/page.css", "text/css", b"/* css */")):
-            status, hdrs, body = get(self.port, path)
-            self.assertEqual((status, body), (200, text))
-            self.assertTrue(hdrs["content-type"].startswith(ctype))
-            self.assertEqual(hdrs["cache-control"], "no-store")
-            self.assertEqual(hdrs["x-content-type-options"], "nosniff")
-        self.assertEqual(self.stub.seen, [])
-        os.remove(os.path.join(self.web, "page.js"))
-        self.assertEqual(get(self.port, "/voice/page.js")[0], 404)
-        # a cross-site page may not even read them through the front
-        self.assertEqual(get(self.port, "/voice/page.css", extra="Origin: http://evil.example\r\n")[0], 403)
-
     def test_a_dead_service_is_a_502_and_the_terminal_still_works(self):
         self.stub.close()
         status, _, body = get(self.port, "/voice/health")
@@ -507,34 +487,27 @@ class VoicePath(FrontCase):
         self.assertEqual(self.stub.seen, [])
 
 
-class TtydDown(FrontCase):
-    with_ttyd = False
+class ServerDown(FrontCase):
+    with_server = False
 
-    def test_without_ttyd_the_terminal_is_a_502_and_voice_works(self):
+    def test_without_the_server_the_terminal_is_a_502_and_voice_works(self):
         status, _, body = get(self.port, "/")
         self.assertEqual((status, json.loads(body)["error"]), (502, "terminal_unavailable"))
         self.assertEqual(get(self.port, "/voice/health")[0], 200)
 
 
-class TtydCommand(unittest.TestCase):
+class ServerCommand(unittest.TestCase):
     def test_p_and_i_are_replaced_and_the_rest_kept(self):
-        got = front.ttyd_command(["ttyd", "-p", "7681", "-i", "0.0.0.0", "-W", "-O", "--index", "/x.html", "-t", "fontSize=21",
-                                  "swarmbox-attach", "--web"], 7680)
-        self.assertEqual(got, ["ttyd", "-p", "7680", "-i", "127.0.0.1", "-W", "-O", "--index", "/x.html", "-t", "fontSize=21",
-                               "swarmbox-attach", "--web"])
-
-    def test_the_command_is_never_touched(self):
-        got = front.ttyd_command(["ttyd", "-p", "1", "tmux", "attach", "-t", "main", "-p"], 7680)
-        self.assertEqual(got[-5:], ["tmux", "attach", "-t", "main", "-p"])
-        self.assertEqual(got[:5], ["ttyd", "-p", "7680", "-i", "127.0.0.1"])
+        got = front.server_command(["/srv/server.mjs", "-p", "7681", "-i", "0.0.0.0", "--quiet"], 7680)
+        self.assertEqual(got, ["/srv/server.mjs", "-p", "7680", "-i", "127.0.0.1", "--quiet"])
 
     def test_glued_and_long_forms(self):
-        got = front.ttyd_command(["ttyd", "-p7681", "--interface=lo", "--port", "5", "-W", "sh"], 7680)
-        self.assertEqual(got, ["ttyd", "-p", "7680", "-i", "127.0.0.1", "-W", "sh"])
+        got = front.server_command(["server.mjs", "-p7681", "--interface=lo", "--port", "5", "-W"], 7680)
+        self.assertEqual(got, ["server.mjs", "-p", "7680", "-i", "127.0.0.1", "-W"])
 
     def test_no_command_is_an_error(self):
         with self.assertRaises(ValueError):
-            front.ttyd_command([], 7680)
+            front.server_command([], 7680)
 
 
 def children_of(pid):
@@ -557,21 +530,21 @@ def alive(pid):
 
 
 class Processes(unittest.TestCase):
-    """The real command, with the real service and the fake ttyd."""
+    """The real command, with the real service and the fake web server."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="voice-front-proc-")
         self.addCleanup(subprocess.call, ["rm", "-rf", self.tmp])
-        self.port, self.ttyd_port, self.service_port = free_port(), free_port(), free_port()
+        self.port, self.server_port, self.service_port = free_port(), free_port(), free_port()
         self.procs = []
 
     def start(self, **env):
-        e = {"PATH": os.environ["PATH"], "HOME": self.tmp, "PYTHONPATH": LIB, "FAKE_TTYD_LOG": os.path.join(self.tmp, "t.log"),
-             "FAKE_TTYD_PID": os.path.join(self.tmp, "ttyd.pid")}
+        e = {"PATH": os.environ["PATH"], "HOME": self.tmp, "PYTHONPATH": LIB, "FAKE_SERVER_LOG": os.path.join(self.tmp, "t.log"),
+             "FAKE_SERVER_PID": os.path.join(self.tmp, "server.pid")}
         e.update(env)
         p = subprocess.Popen([sys.executable, "-B", "-m", "swarmbox_voice", "front", "--listen", "127.0.0.1:%d" % self.port,
-                              "--ttyd-port", str(self.ttyd_port), "--service-listen", "127.0.0.1:%d" % self.service_port,
-                              "--web-dir", WEB, "--", FAKE_TTYD, "-p", "7681", "-i", "0.0.0.0", "-O"],
+                              "--server-port", str(self.server_port), "--service-listen", "127.0.0.1:%d" % self.service_port,
+                              "--", FAKE_SERVER, "-p", "7681", "-i", "0.0.0.0", "-O"],
                              env=e, stderr=subprocess.PIPE)
         self.procs.append(p)
         self.addCleanup(self.reap, p)
@@ -579,8 +552,8 @@ class Processes(unittest.TestCase):
         self.assertTrue(wait_port(self.service_port), "the service did not start")
         return p
 
-    def ttyd_pid(self):
-        with open(os.path.join(self.tmp, "ttyd.pid")) as f:
+    def server_pid(self):
+        with open(os.path.join(self.tmp, "server.pid")) as f:
             return int(f.read())
 
     def reap(self, p):
@@ -599,15 +572,15 @@ class Processes(unittest.TestCase):
         status, _, body = get(self.port, "/voice/health", host="voice-test.example:7681", extra="Origin: http://voice-test.example:7681\r\n")
         self.assertEqual(status, 200, body)
         self.assertTrue(json.loads(body)["ok"])
-        self.assertEqual(get(self.port, "/voice/page.js")[0], 200)
+        self.assertEqual(get(self.port, "/voice/page.js")[0], 404, "the old page parts are gone")
         self.assertIn(b"fake terminal page", get(self.port, "/")[2])
         with open(os.path.join(self.tmp, "t.log.argv")) as f:
             argv = json.load(f)
-        self.assertEqual(argv[1:5], ["-p", str(self.ttyd_port), "-i", "127.0.0.1"], argv)
+        self.assertEqual(argv[1:5], ["-p", str(self.server_port), "-i", "127.0.0.1"], argv)
         self.assertEqual(get(self.port, "/voice/health", extra="Origin: http://evil.example\r\n")[0], 403)
 
-    def test_ttyd_exiting_stops_the_service_and_gives_its_status(self):
-        p = self.start(FAKE_TTYD_EXIT_AFTER="0.3", FAKE_TTYD_EXIT_CODE="7")
+    def test_the_server_exiting_stops_the_service_and_gives_its_status(self):
+        p = self.start(FAKE_SERVER_EXIT_AFTER="0.3", FAKE_SERVER_EXIT_CODE="7")
         kids = children_of(p.pid)
         self.assertEqual(len(kids), 2, kids)
         self.assertEqual(p.wait(timeout=15), 7)
@@ -638,7 +611,7 @@ class Processes(unittest.TestCase):
 
     def test_a_dead_service_is_restarted_and_the_terminal_never_noticed(self):
         p = self.start()
-        service = [k for k in children_of(p.pid) if k != self.ttyd_pid()]
+        service = [k for k in children_of(p.pid) if k != self.server_pid()]
         self.assertEqual(len(service), 1)
         os.kill(service[0], signal.SIGKILL)
         self.assertEqual(get(self.port, "/")[0], 200)
@@ -656,20 +629,20 @@ class Processes(unittest.TestCase):
         s.listen(1)
         self.addCleanup(s.close)
         p = subprocess.Popen([sys.executable, "-B", "-m", "swarmbox_voice", "front", "--listen", "127.0.0.1:%d" % self.port, "--",
-                              FAKE_TTYD], env={"PATH": os.environ["PATH"], "PYTHONPATH": LIB}, stderr=subprocess.PIPE)
+                              FAKE_SERVER], env={"PATH": os.environ["PATH"], "PYTHONPATH": LIB}, stderr=subprocess.PIPE)
         err = p.communicate(timeout=15)[1].decode()
         self.assertEqual(p.returncode, 98)
         self.assertIn("cannot listen", err)
 
     def test_bad_arguments(self):
-        for args in (["--listen", "nonsense", "--", "ttyd"], ["--service-listen", "0.0.0.0:1", "--", "ttyd"], ["--listen", "127.0.0.1:0"]):
+        for args in (["--listen", "nonsense", "--", "server"], ["--service-listen", "0.0.0.0:1", "--", "server"], ["--listen", "127.0.0.1:0"]):
             p = subprocess.run([sys.executable, "-B", "-m", "swarmbox_voice", "front"] + args, env={"PATH": os.environ["PATH"], "PYTHONPATH": LIB},
                                capture_output=True, text=True, timeout=15)
             self.assertEqual(p.returncode, 2, args)
 
-    def test_a_missing_ttyd_is_127(self):
+    def test_a_missing_server_is_127(self):
         p = subprocess.run([sys.executable, "-B", "-m", "swarmbox_voice", "front", "--listen", "127.0.0.1:%d" % self.port, "--",
-                            "/nonexistent/ttyd"], env={"PATH": os.environ["PATH"], "PYTHONPATH": LIB}, capture_output=True, text=True, timeout=15)
+                            "/nonexistent/server.mjs"], env={"PATH": os.environ["PATH"], "PYTHONPATH": LIB}, capture_output=True, text=True, timeout=15)
         self.assertEqual(p.returncode, 127)
 
 

@@ -1,5 +1,5 @@
 """Mux isolation tests: prove the SwarmBox core (entrypoint serve, swarmbox-attach, swarmbox-web, swarmbox-tabs,
-and sysop state/actions/ui_host/line) operates cleanly against non-tmux backends with zero tmux binary on PATH.
+and sysop state/actions/ui_host) operates cleanly against a synthetic backend: the multiplexer is only reached through mux/ and TabsBackend.
 
 Run with: python3 -W error tests/fast/test_mux_isolation.py
 """
@@ -22,13 +22,13 @@ import sysop_support as ss  # noqa: E402
 import tabs_support as ts  # noqa: E402
 from helpers import ROOT  # noqa: E402
 
-from swarmbox_sysop import actions, busclient, config, ipc, line, state, ui_host  # noqa: E402
+from swarmbox_sysop import actions, busclient, config, ipc, state, ui_host  # noqa: E402
 
 MUX_SH = os.path.join(ROOT, "container", "scripts", "mux", "mux.sh")
 WEB_SH = os.path.join(ROOT, "container", "scripts", "swarmbox-web.sh")
 
 FAKE_MUX = r'''#!/bin/bash
-# Synthetic non-tmux multiplexer backend for isolation tests.
+# Synthetic multiplexer backend for isolation tests.
 mux_available() {
     [ "${FAKE_MUX_UNAVAILABLE:-0}" = 0 ]
 }
@@ -52,8 +52,9 @@ mux_attach_command() {
     echo "attach_command:$1" >> "$FAKE_MUX_LOG"
     exit "${FAKE_MUX_CMD_RC:-0}"
 }
-mux_web_fallback() {
-    MUX_WEB_FALLBACK_CMD=(fake-mux attach main)
+mux_web_run() {
+    echo "web_run:$1:$2:$3" >> "$FAKE_MUX_LOG"
+    exit 0
 }
 '''
 
@@ -95,12 +96,12 @@ class ShellMuxLoader(unittest.TestCase):
                 )
                 self.assertEqual(r.returncode, rc, r.stderr)
 
-    def test_entrypoint_serve_runs_with_custom_mux_and_no_tmux_on_path(self):
+    def test_entrypoint_serve_runs_with_custom_mux_and_no_hc_on_path(self):
         c = ss_serve.ServeCase()
         c.setUp()
         self.addCleanup(c.doCleanups)
-        # Remove the fake tmux binary so any accidental direct `tmux` call would fail loudly
-        os.unlink(os.path.join(c.fake, "tmux"))
+        # Remove the fake hc so any accidental direct `hc` call would fail loudly
+        os.unlink(os.path.join(c.fake, "hc"))
         env = {
             "PATH": c.fake + os.pathsep + "/usr/bin" + os.pathsep + "/bin",
             "HOME": c.home,
@@ -179,44 +180,27 @@ class ShellMuxLoader(unittest.TestCase):
         self.assertEqual(proc.wait(10), 0)
         self.assertFalse(os.path.exists(self.log_path))
 
-    def test_web_fallback_uses_custom_mux_when_attach_is_absent(self):
-        fake_bin = os.path.join(self.base, "bin")
+    def test_web_run_is_the_backends_web_server(self):
         lib_dir = os.path.join(self.base, "lib")
         run_dir = os.path.join(self.base, "run")
-        os.mkdir(fake_bin)
         os.mkdir(lib_dir)
         os.mkdir(run_dir)
         os.symlink(att.DIRS_SH, os.path.join(lib_dir, "dirs.sh"))
-        ttyd_args = os.path.join(self.base, "ttyd-args.json")
-        write_exec(
-            os.path.join(fake_bin, "ttyd"),
-            '#!/usr/bin/env python3\nimport json, os, sys\nwith open(os.environ["TTYD_ARGS_OUT"], "w") as f:\n    f.write(json.dumps(sys.argv[1:]))\n',
-        )
-        page = os.path.join(self.base, "index.html")
-        write_text(
-            page,
-            "<html><head></head><body>"
-            "__SWARMBOX_PADDING__ __SWARMBOX_CTRL_V__ __SWARMBOX_CTRL_C__ "
-            "__SWARMBOX_SCROLLBAR__ __SWARMBOX_SCROLLBAR_FF__ "
-            "__SWARMBOX_STRIP__ __SWARMBOX_STRIP_CUSTOM__ __SWARMBOX_STRIP_KEYS__"
-            "</body></html>",
-        )
         env = {
-            "PATH": fake_bin + ":/usr/bin:/bin",
+            "PATH": "/usr/bin:/bin",
             "HOME": self.base,
             "SWARMBOX_TEST_LIB": lib_dir,
             "SWARMBOX_TEST_MUX_DIR": self.mux_dir,
             "SWARMBOX_TEST_RUN_DIR": run_dir,
-            "SWARMBOX_TEST_WEB_PAGE": page,
             "SWARMBOX_MUX": "fake",
             "SWARMBOX_VOICE_WEB": "0",
-            "TTYD_ARGS_OUT": ttyd_args,
+            "SWARMBOX_TEST_WEB_PORT": "7799",
+            "FAKE_MUX_LOG": self.log_path,
             "LANG": "C.UTF-8",
         }
         r = subprocess.run(["bash", WEB_SH, "run"], env=env, capture_output=True, text=True, timeout=10)
         self.assertEqual(r.returncode, 0, r.stderr)
-        argv = json.loads(read_text(ttyd_args))
-        self.assertEqual(argv[-3:], ["fake-mux", "attach", "main"])
+        self.assertEqual(read_text(self.log_path).splitlines(), ["web_run:7799:0.0.0.0:"])
 
 
 class TabsCustomBackend(unittest.TestCase):
@@ -369,24 +353,15 @@ class SysopMuxAgnostic(unittest.TestCase):
         env = json.loads(f.readline())
         self.assertEqual((env["source"], env["body"]), ("web", {"text": "run checks"}))
 
-    def test_toaster_with_custom_sink_never_touches_tmux(self):
-        seen = []
-        t = line.Toaster(self.pth, sink=seen.append)
-        t.look()
-        self.assertEqual(seen[-1], "sysop:idle:")
-        self.svc.goal("inspect logs")
-        t.look()
-        self.assertEqual(seen[-1], "sysop:working:inspect logs")
-        t.shutdown(unset=True)
-        self.assertIsNone(seen[-1])
-
-    def test_ui_host_headless_and_unknown_mux_never_start_tmux_ui(self):
+    def test_ui_host_headless_and_unknown_mux_never_start_a_ui(self):
         cfg = config.load({})
         logs = []
         for mux in ("none", "custom-mux"):
             sess = ui_host.start_ui(self.pth, cfg, log=logs.append, enabled=True, mux=mux)
             sess.shutdown(unset=True)
         self.assertTrue(any("custom-mux" in m for m in logs))
+        self.assertFalse(any("herdr" in m for m in logs), "no agent bridge is started")
+        self.assertEqual(ui_host.mux_name({}), "herdr", "herdr is the default (the only multiplexer of the box)")
 
 
 if __name__ == "__main__":

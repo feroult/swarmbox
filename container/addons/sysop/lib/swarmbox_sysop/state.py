@@ -1,7 +1,7 @@
 """Mux-agnostic presentation state of the sysop: reading the files of the service and turning them into clean text,
 a one-line summary (`line_of`, `value_of`) or a structured dictionary (`state_dict`) for any UI (terminal panel, web, mobile).
 
-Zero dependency on tmux, dock, or any terminal emulator.
+Zero dependency on the multiplexer or any terminal emulator.
 """
 import os
 import unicodedata
@@ -128,7 +128,7 @@ def value_of(line):
 
 
 def state_dict(snap, wall=0.0):
-    """JSON-serializable representation of `snap` for non-tmux UIs (web gateway, mobile client, CLI)."""
+    """JSON-serializable representation of `snap` for the UIs (web gateway, cockpit, mobile client, CLI)."""
     ln = line_of(snap, wall)
     return {
         "up": bool(snap.up),

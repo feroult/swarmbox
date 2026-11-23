@@ -9,8 +9,6 @@ default. A wrong value raises ConfigError with a line that names the variable: t
   SWARMBOX_SYSOP_TOPIC             the bus topic the sysop listens on for goals (default goal); voice publishes on its own voice.topic: they meet by
                                    the same name. 1 to 63 characters of a-z 0-9 . _ - (a digit or a letter first)
   SWARMBOX_SYSOP_GROUP             the group the sysop subscribes with (default sysop; same characters): sysops of one group share the goals, one gets each
-  SWARMBOX_SYSOP_PANEL_MODE        always (default) | auto | off: when the panel is in tmux, see dock.py. Not SWARMBOX_SYSOP_PANEL: that name is the marker
-                                   (=1) in the start command of a panel pane, which swarmbox-tabs hides
   SWARMBOX_SYSOP_MODEL             model name for the brain (default sonnet)
   SWARMBOX_SYSOP_AUTONOMY          confirm-all | confirm-risky | auto (default), see policy.py
   SWARMBOX_SYSOP_COUNTDOWN         seconds a low-risk action waits for a veto (default 4; 0 = none)
@@ -25,7 +23,6 @@ from collections import namedtuple
 DEFAULTS = {
     "topic": "goal",
     "group": "sysop",
-    "panel_mode": "always",
     "brain": "claude",
     "model": "sonnet",
     "autonomy": "auto",
@@ -37,7 +34,6 @@ DEFAULTS = {
 }
 ENV = {k: "SWARMBOX_SYSOP_" + k.upper() for k in DEFAULTS}
 AUTONOMY = ("confirm-all", "confirm-risky", "auto")
-PANEL_MODES = ("always", "auto", "off")
 PRESETS = ("claude",)
 MAX_BRAIN = 2000
 
@@ -60,24 +56,13 @@ def _number(name, raw, lo, hi, integer):
 
 def goal_topic(env=None):
     """The topic goals are published on (what the service listens to): SWARMBOX_SYSOP_TOPIC, default `goal`. Raises ConfigError. For the publishers
-    (the panel, the key g, `swarmbox-sysop goal`), which read one setting and not all of them."""
+    (the web panel, the key g, `swarmbox-sysop goal`), which read one setting and not all of them."""
     import os
     env = os.environ if env is None else env
     raw = env.get(ENV["topic"], "")
     raw = raw if raw.strip() != "" else DEFAULTS["topic"]
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,62}", raw):
         raise ConfigError("%s: a name of 1 to 63 characters (a-z 0-9 . _ -, a letter or a digit first)" % ENV["topic"])
-    return raw
-
-
-def panel_mode(env=None):
-    """When the panel is in tmux: SWARMBOX_SYSOP_PANEL_MODE, default `always`. Raises ConfigError. For the dock commands and the panel, which read one setting."""
-    import os
-    env = os.environ if env is None else env
-    raw = env.get(ENV["panel_mode"], "")
-    raw = raw if raw.strip() != "" else DEFAULTS["panel_mode"]
-    if raw not in PANEL_MODES:
-        raise ConfigError("%s: one of %s" % (ENV["panel_mode"], ", ".join(PANEL_MODES)))
     return raw
 
 
@@ -94,7 +79,6 @@ def load(env):
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,62}", raw[key]):
             raise ConfigError("%s: a name of 1 to 63 characters (a-z 0-9 . _ -, a letter or a digit first)" % ENV[key])
         v[key] = raw[key]
-    v["panel_mode"] = panel_mode(env)
     brain = raw["brain"].strip()
     if len(brain) > MAX_BRAIN:
         raise ConfigError("%s: at most %d characters" % (ENV["brain"], MAX_BRAIN))

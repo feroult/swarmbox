@@ -13,7 +13,7 @@ This file has not been reviewed by a lawyer.
 
 The default image is slim: `ARG WITH_ADDONS=""`, so **no agent and no addon is baked in**. What the image
 contains: Debian packages (the base `node:24-trixie-slim`, which is Debian 13, plus the packages of the `Dockerfile`), Node.js and
-Yarn from the base image, `chrome-devtools-mcp` (npm, pinned), `uv`, `ttyd` and `starship` (pinned release binaries), the
+Yarn from the base image, `chrome-devtools-mcp` (npm, pinned), `uv` and `starship` (pinned release binaries), the
 Python virtual environment `/opt/flow` (pip and setuptools), and SwarmBox's own scripts. The licenses of all of them are
 below. Everything under "Not shipped in the image" is downloaded on the user's machine, on first use, by the user's own box;
 SwarmBox does not distribute those files. A build with `WITH_ADDONS=<names>` bakes the named addons in; an image built
@@ -77,7 +77,6 @@ read in the image and the cell is the identifier I took from it. Source links po
 | `sqlite3` | GPL-2+, public-domain | 3.46.1-7+deb13u2 | https://sources.debian.org/src/sqlite3/ |
 | `sudo` | 7 identifiers, among them BSD-2-Clause, BSD-3-Clause, GPL-2+, ISC (complete list in docs/debian-packages.tsv) | 1.9.16p2-3+deb13u2 | https://sources.debian.org/src/sudo/ |
 | `tar` | GPL-2+, GPL-3+, GPL-3+ with Bison exception, LGPL-2.1+, LGPL-3+ | 1.35+dfsg-3.1 | https://sources.debian.org/src/tar/ |
-| `tmux` | BSD-2-clause, BSD-2-clause or ISC, BSD-2-clause-NetBSD, BSD-3-clause, ISC | 3.7c-1~bpo13+1 | https://sources.debian.org/src/tmux/ |
 | `tree` | GPL-2+, LGPL-2.1+ | 2.2.1-1 | https://sources.debian.org/src/tree/ |
 | `uidmap` | BSD-3-clause, GPL-1, GPL-2+ | 1:4.17.4-2 | https://sources.debian.org/src/shadow/ |
 | `unzip` | Info-ZIP license (BSD-style; old-style file, read by hand) | 6.0-29+deb13u1 | https://sources.debian.org/src/unzip/ |
@@ -91,13 +90,6 @@ packages also contain the vendored Rust crates the programs were built with, whi
 that the copyright file lists in its own paragraphs; `iptables`; `uidmap`, built from `shadow`; `libcap2-bin`, built from
 `libcap2`) are in the table with the identifiers of their copyright files, which is the check the first version of this file
 lacked.
-
-### tmux
-
-- Version: the Debian 13 backport 3.7c-1~bpo13+1, pinned by SHA-256 in the Dockerfile (Debian 13 itself has 3.5a, which has no pane scrollbar)
-- License: ISC (the source files carry ISC and BSD notices; the copyright file of the package lists ISC, BSD-2-clause, BSD-2-clause-NetBSD and BSD-3-clause for some files)
-- Source: https://github.com/tmux/tmux
-- [verified: /usr/share/doc/tmux/copyright read from the .deb of 3.7c-1~bpo13+1 (amd64) on 2026-11-12, extracted, not from a built image; the arm64 .deb is the same source package; the license text of upstream tag 3.7c was not re-read]
 
 ### Podman and its helpers
 
@@ -137,7 +129,7 @@ the corresponding source of any package of the image:
    source of the GPL and LGPL parts is available on request, at cost of the physical distribution, from
    feroult@gmail.com. The offer is here so
    that the pointer above is not the only means.
-4. **The programs SwarmBox downloads itself** (`ttyd` MIT, `starship` ISC, `uv` Apache-2.0 or MIT, `chrome-devtools-mcp`
+4. **The programs SwarmBox downloads itself** (`starship` ISC, `uv` Apache-2.0 or MIT, `chrome-devtools-mcp`
    Apache-2.0, `herdr-core` Apache-2.0, `herdr` Apache-2.0) are not copyleft; their source is at the URLs in their sections.
 
 [owner-check: whether a pointer to Debian's archive plus the written offer satisfies the GPL and LGPL for an image the owner
@@ -173,13 +165,6 @@ in the image, where they were installed.
 - [owner-check: the setuptools license text was not read in the image; its MIT license is from its project page, so the owner may confirm it]
 
 ## Programs downloaded at a pinned version during the image build
-
-### ttyd
-
-- Version: 1.7.7 (`ARG TTYD_VERSION`, release binary with its SHA-256 checked)
-- License: MIT
-- Source: https://github.com/tsl0922/ttyd
-- [verified: LICENSE of tag 1.7.7 read from raw.githubusercontent.com, "MIT License, Copyright (c) 2016-2022 Shuanglei Tao"; 2026-11-08]
 
 ### Starship
 

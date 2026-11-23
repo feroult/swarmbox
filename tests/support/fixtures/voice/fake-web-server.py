@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""A fake ttyd for the front tests: serves a page, a big body, and echoes websocket bytes after a 101. Listens on -p/-i.
+"""A fake web server (the herdr Web Studio) for the front tests: serves a page, a big body, and echoes websocket bytes after a 101. Listens on -p/-i.
 
-FAKE_TTYD_LOG      file that gets one JSON line per request head received (the head as latin-1 text), and FAKE_TTYD_LOG.argv the argv
-FAKE_TTYD_PID      file that gets the pid
-FAKE_TTYD_EXIT_AFTER / FAKE_TTYD_EXIT_CODE   exit with that code after that many seconds
--O in the arguments makes it refuse (403) a request whose Origin is not its Host, like ttyd -O.
+FAKE_SERVER_LOG      file that gets one JSON line per request head received (the head as latin-1 text), and FAKE_SERVER_LOG.argv the argv
+FAKE_SERVER_PID      file that gets the pid
+FAKE_SERVER_EXIT_AFTER / FAKE_SERVER_EXIT_CODE   exit with that code after that many seconds
+-O in the arguments makes it refuse (403) a request whose Origin is not its Host, like the same-origin rule of server.mjs.
 """
 import base64
 import hashlib
@@ -19,13 +19,13 @@ from urllib.parse import urlsplit
 args = sys.argv[1:]
 port = int(args[args.index("-p") + 1])
 iface = args[args.index("-i") + 1]
-log = os.environ.get("FAKE_TTYD_LOG")
+log = os.environ.get("FAKE_SERVER_LOG")
 if log:
     open(log + ".argv", "w").write(json.dumps(sys.argv))
-if os.environ.get("FAKE_TTYD_PID"):
-    open(os.environ["FAKE_TTYD_PID"], "w").write(str(os.getpid()))
-if os.environ.get("FAKE_TTYD_EXIT_AFTER"):
-    threading.Timer(float(os.environ["FAKE_TTYD_EXIT_AFTER"]), lambda: os._exit(int(os.environ.get("FAKE_TTYD_EXIT_CODE", "0")))).start()
+if os.environ.get("FAKE_SERVER_PID"):
+    open(os.environ["FAKE_SERVER_PID"], "w").write(str(os.getpid()))
+if os.environ.get("FAKE_SERVER_EXIT_AFTER"):
+    threading.Timer(float(os.environ["FAKE_SERVER_EXIT_AFTER"]), lambda: os._exit(int(os.environ.get("FAKE_SERVER_EXIT_CODE", "0")))).start()
 LOCK = threading.Lock()
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 

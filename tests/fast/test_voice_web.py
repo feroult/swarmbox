@@ -1,6 +1,7 @@
-"""How the web terminal decides on the voice front, and how the addon follows `swarmbox update`.
+"""How the web server decides on the voice front, and how the addon follows `swarmbox update`.
 
-Real programs: container/scripts/swarmbox-web.sh (with a fake ttyd and a fake `swarmbox-voice` that record their arguments), the real
+Real programs: container/scripts/swarmbox-web.sh with the real herdr backend (container/scripts/mux/herdr.sh) over a fake hc, a fake web
+server and a fake `swarmbox-voice` that record their arguments, the real
 swarmbox-addon.sh (its `where` command and `prepare`) over the real manifests of container/addons, and the real voice prepare.sh. Everything
 lives in a mktemp tree; nothing is served. Run with: python3 -W error tests/fast/test_voice_web.py
 """
@@ -16,9 +17,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 import voice_support  # noqa: E402
 from helpers import ROOT  # noqa: E402
-import test_web_build as wb  # noqa: E402  (only its helpers: its test class is not imported by name)
 
 ADDON_SH = os.path.join(ROOT, "container", "scripts", "swarmbox-addon.sh")
+WEB = os.path.join(ROOT, "container", "scripts", "swarmbox-web.sh")
+DIRS_SH = os.path.join(ROOT, "container", "scripts", "dirs.sh")
+MUX_DIR = os.path.join(ROOT, "container", "scripts", "mux")
 ADDONS = os.path.join(ROOT, "container", "addons")
 VOICE = voice_support.VOICE
 FAKE_VOICE = '#!/bin/sh\nprintf "%s\\n" "$@" > "$FAKE_DIR/voice.argv"\n'
@@ -29,6 +32,17 @@ def read(path):
         return f.read()
 
 
+def write_exec(path, text):
+    with open(path, "w") as f:
+        f.write(text)
+    os.chmod(path, 0o755)
+
+
+# a herdr-core that is up with one live terminal, and a web server that records its arguments
+FAKE_HC = '#!/bin/sh\ncase "$1" in server) exit 0 ;; ls) echo \'[{"address":"t1","state":"live"}]\' ;; *) echo \'{"address":"t1"}\' ;; esac\n'
+FAKE_SERVER = '#!/bin/sh\nprintf "%s\\n" "$@" > "$FAKE_DIR/server.argv"\n'
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="voice-web-")
@@ -37,17 +51,21 @@ class Base(unittest.TestCase):
         self.home, self.fake, self.lib, self.run_dir = j("home"), j("fake"), j("lib"), j("run")
         for d in (self.home, self.fake, self.lib, self.run_dir):
             os.makedirs(d)
-        os.symlink(wb.DIRS_SH, os.path.join(self.lib, "dirs.sh"))
-        wb.write_exec(os.path.join(self.fake, "ttyd"), wb.FAKE_TTYD)
-        wb.write_exec(os.path.join(self.fake, "swarmbox-addon"), '#!/bin/sh\nexec bash "%s" "$@"\n' % ADDON_SH)
-        self.page = wb.build_page(self.tmp)
+        os.symlink(DIRS_SH, os.path.join(self.lib, "dirs.sh"))
+        os.symlink(MUX_DIR, os.path.join(self.lib, "mux"))
+        write_exec(os.path.join(self.fake, "hc"), FAKE_HC)
+        self.server = os.path.join(self.fake, "server.mjs")
+        write_exec(self.server, FAKE_SERVER)
+        write_exec(os.path.join(self.fake, "swarmbox-addon"), '#!/bin/sh\nexec bash "%s" "$@"\n' % ADDON_SH)
         self.addons = os.path.join(self.home, ".local", "share", "swarmbox", "addons")
         self.prefix = os.path.join(self.addons, "voice", "1.9.5")
 
     def env(self, **extra):
         e = {"PATH": self.fake + ":/usr/bin:/bin", "HOME": self.home, "FAKE_DIR": self.tmp, "SWARMBOX_TEST_LIB": self.lib,
-             "SWARMBOX_TEST_RUN_DIR": self.run_dir, "SWARMBOX_TEST_WEB_PAGE": self.page, "SWARMBOX_TEST_WEB_PORT": "29541",
+             "SWARMBOX_TEST_RUN_DIR": self.run_dir, "SWARMBOX_TEST_WEB_PORT": "29541",
              "SWARMBOX_TEST_WEB_IFACE": "lo", "LANG": "C.UTF-8", "SWARMBOX_TEST_IMAGE_ADDONS": ADDONS,
+             "SWARMBOX_TEST_HC_BIN": os.path.join(self.fake, "hc"), "SWARMBOX_TEST_HERDR_WEB": self.server,
+             "SWARMBOX_TEST_HERDR_CONFIG": os.path.join(self.tmp, "no-herdr.toml"),
              "SWARMBOX_TEST_IMAGE_STATE": os.path.join(self.tmp, "image-state"), "SWARMBOX_TEST_HOST_DIR": os.path.join(self.tmp, "host"),
              "SWARMBOX_TEST_USER_ADDONS": os.path.join(self.tmp, "user-addons"), "SWARMBOX_TEST_LOCK": os.path.join(self.tmp, "addons.lock"),
              "SWARMBOX_TEST_ARCH": "amd64", "TMPDIR": self.tmp}
@@ -55,17 +73,17 @@ class Base(unittest.TestCase):
         return e
 
     def web(self, mode, **extra):
-        return subprocess.run(["bash", wb.WEB, mode], env=self.env(**extra), capture_output=True, text=True, timeout=60, cwd=self.tmp)
+        return subprocess.run(["bash", WEB, mode], env=self.env(**extra), capture_output=True, text=True, timeout=60, cwd=self.tmp)
 
     def addon(self, *args, **extra):
         return subprocess.run(["bash", ADDON_SH, *args], env=self.env(**extra), capture_output=True, text=True, timeout=60, cwd=self.tmp)
 
-    def install_fake(self, root=None, with_front=True, old=False):
-        """A complete install of voice (.swarmbox-env, current link, launcher) with the page parts and, unless old, the front."""
+    def install_fake(self, root=None, with_front=True):
+        """A complete install of voice (.swarmbox-env, current link, launcher) with, unless with_front is False, the front."""
         prefix = self.prefix if root is None else os.path.join(root, "voice", "1.9.5")
         shutil.copytree(VOICE, prefix, ignore=shutil.ignore_patterns("__pycache__", "install.sh", "prepare.sh", "addon.conf"))
         os.makedirs(os.path.join(prefix, "bin"))
-        wb.write_exec(os.path.join(prefix, "bin", "swarmbox-voice"), FAKE_VOICE)
+        write_exec(os.path.join(prefix, "bin", "swarmbox-voice"), FAKE_VOICE)
         with open(os.path.join(prefix, ".swarmbox-env"), "w") as f:
             f.write("ARCH=amd64\nVERSION=1.9.5\n")
         if not with_front:
@@ -73,12 +91,11 @@ class Base(unittest.TestCase):
         os.symlink("1.9.5", os.path.join(os.path.dirname(prefix), "current"))
         return prefix
 
-    def index(self):
-        return read(os.path.join(self.run_dir, "index.html"))
+    def server_argv(self):
+        return read(os.path.join(self.tmp, "server.argv")).splitlines()
 
-    def ttyd_argv(self):
-        with open(os.path.join(self.tmp, "ttyd.json")) as f:
-            return json.load(f)["argv"]
+    def voice_argv(self):
+        return read(os.path.join(self.tmp, "voice.argv")).splitlines()
 
 
 class WhereTests(Base):
@@ -110,14 +127,12 @@ class WhereTests(Base):
 
 
 class Disabled(Base):
-    """swarmbox-web behaves exactly as before: tags absent, ttyd on the web port."""
+    """No front: the web server itself is on the web port."""
 
     def check_plain(self, **extra):
         r = self.web("run", **extra)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertNotIn("/voice/", self.index())
-        argv = self.ttyd_argv()
-        self.assertEqual(argv[:4], ["-p", "29541", "-i", "lo"])
+        self.assertEqual(self.server_argv(), ["-p", "29541", "-i", "lo"])
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "voice.argv")))
 
     def test_not_installed(self):
@@ -136,20 +151,8 @@ class Disabled(Base):
         os.remove(os.path.join(self.fake, "swarmbox-addon"))
         self.check_plain()
 
-    def test_render_alone_is_the_same(self):
-        self.install_fake()
-        self.assertEqual(self.web("render", SWARMBOX_VOICE_WEB="0").returncode, 0)
-        self.assertNotIn("/voice/", self.index())
-        self.assertEqual(self.web("render", SWARMBOX_VOICE_WEB="1").returncode, 0)
-        self.assertIn("/voice/page.js", self.index())
-
-    def test_the_page_without_the_tags_is_byte_identical_to_the_one_before_this_feature(self):
-        r = self.web("render")
-        self.assertEqual(r.returncode, 0, r.stderr)
-        plain = self.index()
-        self.install_fake()
-        self.assertEqual(self.web("render", SWARMBOX_VOICE_WEB="0").returncode, 0)
-        self.assertEqual(self.index(), plain)
+    def test_render_is_gone(self):
+        self.assertEqual(self.web("render").returncode, 64)
 
 
 class Enabled(Base):
@@ -157,56 +160,28 @@ class Enabled(Base):
         super().setUp()
         self.install_fake()
 
-    def test_render_adds_the_two_tags_in_the_right_places(self):
-        self.assertEqual(self.web("render").returncode, 0)
-        page = self.index()
-        css, js = '<link rel="stylesheet" href="/voice/page.css">', '<script src="/voice/page.js" defer></script>'
-        self.assertEqual(page.count(css), 1)
-        self.assertEqual(page.count(js), 1)
-        self.assertTrue(page.index(css) < page.index("</head>") < page.index("<body") < page.index(js) < page.index("</body>"))
-        self.assertTrue(page.rstrip().endswith("</body></html>") or page.index(js) + len(js) == page.index("</body>"))
-        self.assertEqual(page.count("</head>"), 1)
-        self.assertEqual(page.count("</body>"), 1)
-        self.assertNotIn("__SWARMBOX_", page)
-
-    def test_run_execs_the_front_with_the_ttyd_command_after_the_dashes(self):
+    def test_run_execs_the_front_with_the_web_server_command_after_the_dashes(self):
         r = self.web("run")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, "ttyd.json")), "ttyd is started by the front, not exec'd")
-        argv = read(os.path.join(self.tmp, "voice.argv")).splitlines()
-        self.assertEqual(argv[:6], ["front", "--listen", "lo:29541", "--ttyd-port", "7680", "--"])
-        self.assertEqual(argv[6:9], ["ttyd", "-p", "29541"])
-        self.assertIn("-W", argv)
-        self.assertIn("-O", argv)
-        self.assertEqual(argv[argv.index("--index") + 1], os.path.join(self.run_dir, "index.html"))
-        self.assertNotIn("--service-listen", argv)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "server.argv")), "the server is started by the front, not exec'd")
+        argv = self.voice_argv()
+        self.assertEqual(argv, ["front", "--listen", "lo:29541", "--server-port", "7680", "--", self.server, "-p", "29541", "-i", "lo"])
 
     def test_the_default_front_address_is_every_interface_on_7681(self):
-        r = subprocess.run(["bash", wb.WEB, "run"], env={k: v for k, v in self.env().items() if k not in ("SWARMBOX_TEST_WEB_PORT", "SWARMBOX_TEST_WEB_IFACE")},
+        r = subprocess.run(["bash", WEB, "run"], env={k: v for k, v in self.env().items() if k not in ("SWARMBOX_TEST_WEB_PORT", "SWARMBOX_TEST_WEB_IFACE")},
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
-        argv = read(os.path.join(self.tmp, "voice.argv")).splitlines()
-        self.assertEqual(argv[:3], ["front", "--listen", "0.0.0.0:7681"])
+        self.assertEqual(self.voice_argv()[:3], ["front", "--listen", "0.0.0.0:7681"])
 
     def test_test_ports_are_passed(self):
-        self.web("run", SWARMBOX_TEST_WEB_TTYD_PORT="29542", SWARMBOX_TEST_VOICE_PORT="29543")
-        argv = read(os.path.join(self.tmp, "voice.argv")).splitlines()
-        self.assertEqual(argv[argv.index("--ttyd-port") + 1], "29542")
+        self.web("run", SWARMBOX_TEST_WEB_SERVER_PORT="29542", SWARMBOX_TEST_VOICE_PORT="29543")
+        argv = self.voice_argv()
+        self.assertEqual(argv[argv.index("--server-port") + 1], "29542")
         self.assertEqual(argv[argv.index("--service-listen") + 1], "127.0.0.1:29543")
 
     def test_explicit_on_is_enabled_too(self):
-        self.assertEqual(self.web("render", SWARMBOX_VOICE_WEB="1").returncode, 0)
-        self.assertIn("/voice/page.js", self.index())
-
-    def test_the_other_settings_still_apply(self):
-        conf = os.path.join(self.home, ".config", "swarmbox")
-        os.makedirs(conf)
-        with open(os.path.join(conf, "web-terminal.conf"), "w") as f:
-            f.write("padding=12\nfontSize=18\n")
-        self.web("run")
-        argv = read(os.path.join(self.tmp, "voice.argv")).splitlines()
-        self.assertIn("fontSize=18", argv)
-        self.assertIn("--swarmbox-padding:12px", self.index())
+        self.assertEqual(self.web("run", SWARMBOX_VOICE_WEB="1").returncode, 0)
+        self.assertEqual(self.voice_argv()[0], "front")
 
 
 class PrepareTests(Base):
@@ -218,23 +193,26 @@ class PrepareTests(Base):
         self.old_lib = os.path.join(self.prefix, "lib", "swarmbox_voice")
 
     def staleness(self):
-        # an old service: no front, an old server, an old page, the planners folder of an install from before voice became an input
+        # an old service: no front, an old server, the page parts of the old ttyd web terminal, the planners folder of an install from
+        # before voice became an input
         os.remove(os.path.join(self.old_lib, "front.py"))
         with open(os.path.join(self.old_lib, "server.py"), "a") as f:
             f.write("# old\n")
+        os.makedirs(os.path.join(self.prefix, "web"))
         with open(os.path.join(self.prefix, "web", "page.js"), "w") as f:
             f.write("old page")
         os.makedirs(os.path.join(self.prefix, "planners"))
         with open(os.path.join(self.prefix, "planners", "planner-gone"), "w") as f:
             f.write("x")
 
-    def test_prepare_refreshes_lib_and_web_from_the_image_copy_and_drops_the_old_planners(self):
+    def test_prepare_refreshes_lib_from_the_image_copy_and_drops_the_old_planners_and_page(self):
         self.staleness()
         r = self.addon("prepare")
         self.assertEqual(r.returncode, 0, r.stderr)
-        for d in ("lib", "web"):
-            same = subprocess.run(["diff", "-rq", "-x", "__pycache__", os.path.join(VOICE, d), os.path.join(self.prefix, d)], capture_output=True, text=True)
-            self.assertEqual(same.stdout, "", d)
+        same = subprocess.run(["diff", "-rq", "-x", "__pycache__", os.path.join(VOICE, "lib"), os.path.join(self.prefix, "lib")], capture_output=True, text=True)
+        self.assertEqual(same.stdout, "")
+        self.assertFalse(os.path.exists(os.path.join(self.prefix, "web")), "the page parts of an old install are removed")
+        self.assertFalse(os.path.exists(os.path.join(VOICE, "web")), "and the image has none")
         self.assertFalse(os.path.exists(os.path.join(self.prefix, "planners")), "the planners of an old install are removed")
         self.assertFalse(os.path.exists(os.path.join(VOICE, "planners")), "and the image has none")
         self.assertEqual(sorted(f for f in os.listdir(self.prefix) if f.startswith(".")), [".swarmbox-env"], "no scratch folder is left")
@@ -273,31 +251,31 @@ class PrepareTests(Base):
         self.assertEqual((r.returncode, r.stderr), (0, ""))
         self.assertFalse(os.path.exists(os.path.join(self.prefix, "lib", "swarmbox_voice", "front.py.new")))
 
-    def web_restart_world(self, ttyd=True, front=False):
+    def web_restart_world(self, server=True, front=False):
         """Fake pgrep (which processes 'run') and a fake swarmbox-web that records its arguments."""
-        wb.write_exec(os.path.join(self.fake, "pgrep"), '#!/bin/sh\nfor a in "$@"; do case "$a" in ttyd) [ "$FAKE_TTYD" = 1 ] && exit 0 ;; '
-                      '"swarmbox_voice front") [ "$FAKE_FRONT" = 1 ] && exit 0 ;; esac; done\nexit 1\n')
-        wb.write_exec(os.path.join(self.fake, "swarmbox-web"), '#!/bin/sh\nprintf "%s\\n" "$@" >> "$FAKE_DIR/web.calls"\n')
-        return dict(FAKE_TTYD="1" if ttyd else "0", FAKE_FRONT="1" if front else "0")
+        write_exec(os.path.join(self.fake, "pgrep"), '#!/bin/sh\nfor a in "$@"; do case "$a" in herdr-web/server.mjs) [ "$FAKE_SERVER" = 1 ] && exit 0 ;; '
+                   '"swarmbox_voice front") [ "$FAKE_FRONT" = 1 ] && exit 0 ;; esac; done\nexit 1\n')
+        write_exec(os.path.join(self.fake, "swarmbox-web"), '#!/bin/sh\nprintf "%s\\n" "$@" >> "$FAKE_DIR/web.calls"\n')
+        return dict(FAKE_SERVER="1" if server else "0", FAKE_FRONT="1" if front else "0")
 
     def web_calls(self):
         p = os.path.join(self.tmp, "web.calls")
         return read(p).split() if os.path.exists(p) else []
 
-    def test_installed_while_the_web_terminal_runs_without_the_front_it_asks_for_a_restart_once(self):
-        extra = self.web_restart_world(ttyd=True, front=False)
+    def test_installed_while_the_web_server_runs_without_the_front_it_asks_for_a_restart_once(self):
+        extra = self.web_restart_world(server=True, front=False)
         r = self.addon("prepare", **extra)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(self.web_calls(), ["restart"])
         self.assertIn("microphone", r.stderr)
 
     def test_no_restart_when_the_front_runs_when_there_is_no_web_terminal_or_voice_web_is_off(self):
-        for what, extra in (("the front runs", dict(ttyd=True, front=True)), ("no web terminal", dict(ttyd=False, front=False))):
+        for what, extra in (("the front runs", dict(server=True, front=True)), ("no web server", dict(server=False, front=False))):
             with self.subTest(what):
                 env = self.web_restart_world(**extra)
                 self.assertEqual(self.addon("prepare", **env).returncode, 0)
                 self.assertEqual(self.web_calls(), [], what)
-        env = self.web_restart_world(ttyd=True, front=False)
+        env = self.web_restart_world(server=True, front=False)
         self.assertEqual(self.addon("prepare", SWARMBOX_VOICE_WEB="0", **env).returncode, 0)
         self.assertEqual(self.web_calls(), [], "voice.web is 0")
 
@@ -310,21 +288,21 @@ class PrepareTests(Base):
         r = self.addon("prepare")
         self.assertEqual(r.returncode, 1)
         self.assertEqual([l for l in r.stderr.splitlines() if l.startswith("prepare-failed: ")], ["prepare-failed: voice: prepare.sh failed (exit 1)"])
-        self.assertIn("old page", read(os.path.join(self.prefix, "web", "page.js")))
+        self.assertIn("# old", read(os.path.join(self.old_lib, "server.py")))
 
-    def test_after_the_refresh_the_web_terminal_takes_the_front(self):
+    def test_after_the_refresh_the_web_server_takes_the_front(self):
         self.staleness()
-        self.assertEqual(self.web("render").returncode, 0)
-        self.assertNotIn("/voice/", self.index(), "an install from before the front is not used")
+        self.assertEqual(self.web("run").returncode, 0)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "voice.argv")), "an install from before the front is not used")
         self.assertEqual(self.addon("prepare").returncode, 0)
-        self.assertEqual(self.web("render").returncode, 0)
-        self.assertIn("/voice/page.js", self.index())
+        self.assertEqual(self.web("run").returncode, 0)
+        self.assertEqual(self.voice_argv()[0], "front")
 
     def test_the_prepare_script_is_where_swarmbox_addon_looks_for_it(self):
         self.assertTrue(os.path.isfile(os.path.join(VOICE, "prepare.sh")))
         entry = read(os.path.join(ROOT, "container", "entrypoint.sh"))
         self.assertIn("swarmbox-addon prepare", entry)
-        self.assertLess(entry.index("step 7"), entry.index("step 10"), "prepare runs before the web terminal starts")
+        self.assertLess(entry.index("step 7"), entry.index("step 10"), "prepare runs before the web server starts")
 
 
 if __name__ == "__main__":

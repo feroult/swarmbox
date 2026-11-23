@@ -12,7 +12,7 @@
 # $HOME applies in both cases. One trailing slash is removed. Paths may contain spaces: always quote the variables.
 #
 # Variable                 Value (defaults shown)
-# SB_CONFIG_DIR            ${XDG_CONFIG_HOME:-$HOME/.config}/swarmbox            you edit (web-terminal.conf, manifests)
+# SB_CONFIG_DIR            ${XDG_CONFIG_HOME:-$HOME/.config}/swarmbox            you edit (config, manifests)
 # SB_DATA_DIR              ${XDG_DATA_HOME:-$HOME/.local/share}/swarmbox         installed things
 # SB_ADDONS_DIR            $SB_DATA_DIR/addons
 # SB_SHIMS_DIR             $SB_DATA_DIR/shims

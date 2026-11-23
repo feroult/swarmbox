@@ -54,15 +54,15 @@ jobs:
       - name: Install test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends tmux busybox-static dash shellcheck
+          sudo apt-get install -y --no-install-recommends busybox-static dash shellcheck
       - name: The shells the script tests need must exist (a missing shell fails the job, it is not skipped)
         run: |
           command -v bash dash busybox
           bash --version | head -n 1
       - name: Shellcheck the new shell files
         run: |
-          shellcheck -s sh install.sh container/host/swarmbox-host container/scripts/swarmbox-install.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh container/web/build-index.sh dev/dev-build.sh dev/gen-notices.sh dev/release-version.sh dev/release-check.sh dev/name-check.sh dev/check.sh dev/hooks/pre-push dev/release.sh dev/local-up.sh dev/test-slow.sh tests/run.sh
-          shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-addon.sh container/scripts/swarmbox-statusline.sh container/scripts/mux/mux.sh container/scripts/mux/tmux.sh container/scripts/mux/herdr.sh container/config/bashrc.sh container/addons/antigravity/prepare.sh container/addons/antigravity/statusline.sh
+          shellcheck -s sh install.sh container/host/swarmbox-host container/scripts/swarmbox-install.sh container/scripts/dirs.sh container/scripts/swarmbox-shim.sh dev/dev-build.sh dev/gen-notices.sh dev/release-version.sh dev/release-check.sh dev/name-check.sh dev/check.sh dev/hooks/pre-push dev/release.sh dev/local-up.sh dev/test-slow.sh tests/run.sh
+          shellcheck -s bash container/entrypoint.sh container/scripts/swarmbox-attach.sh container/scripts/swarmbox-web.sh container/scripts/swarmbox-addon.sh container/scripts/swarmbox-statusline.sh container/scripts/mux/mux.sh container/scripts/mux/herdr.sh container/config/bashrc.sh container/addons/antigravity/prepare.sh container/addons/antigravity/statusline.sh
       - name: Validate the addon manifests (swarmbox-addon validate, no container)
         run: container/scripts/swarmbox-addon.sh validate container/addons
       - name: The swarmbox script under dash and busybox sh
@@ -70,9 +70,9 @@ jobs:
           command -v dash
           command -v busybox
           busybox sh -c 'echo busybox sh works'
-      - name: Fast tests (tests/run.sh fast, no real tmux, browser, podman or network, in parallel)
+      - name: Fast tests (tests/run.sh fast, no real multiplexer, browser, podman or network, in parallel)
         run: sh tests/run.sh fast --github
-      - name: Slow tests that need no gate (tests/run.sh slow, the panel on a pty runs, the real tmux and browser and Podman parts skip here and the browser job runs them)
+      - name: Slow tests that need no gate (tests/run.sh slow, the browser and Podman parts skip here and the browser job runs them)
         run: sh tests/run.sh slow --github
 
   # The image smoke test in full mode: the runner is level 1, the throwaway box level 2 and the
@@ -148,7 +148,7 @@ jobs:
       - name: The shell-level tests under /bin/sh with a fake podman (the list is tests/support/macos.list)
         run: sh tests/run.sh macos --github
 
-  # The slow tests (tests/slow) need chromium, ttyd and a real tmux: the part that the linux job cannot run goes here, on the weekly schedule
+  # The slow tests (tests/slow) that need chromium and a container: the part that the linux job cannot run goes here, on the weekly schedule
   # (and by hand), in a Debian container so that "chromium" is a real binary (on Ubuntu it is a snap stub). dev/test-slow.sh runs the same
   # files in Podman, in the image of dev/test-image/Containerfile.
   browser:
@@ -162,16 +162,10 @@ jobs:
       - name: Install browser test tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends ca-certificates curl git python3 tmux chromium procps jq nodejs dash busybox-static openssh-client
-          # ttyd is not in Debian 13: fetch the same pinned release as the Dockerfile and verify its checksum.
-          base=https://github.com/tsl0922/ttyd/releases/download/1.7.7
-          curl -fsSL -o /tmp/ttyd.x86_64 "$base/ttyd.x86_64"
-          curl -fsSL -o /tmp/ttyd.SHA256SUMS "$base/SHA256SUMS"
-          (cd /tmp && grep ' ttyd.x86_64$' ttyd.SHA256SUMS | sha256sum -c -)
-          install -m 755 /tmp/ttyd.x86_64 /usr/local/bin/ttyd
+          apt-get install -y --no-install-recommends ca-certificates curl git python3 chromium procps jq nodejs dash busybox-static openssh-client
       - uses: actions/checkout@v4
-      - name: Slow tests (tests/run.sh slow, SWARMBOX_TEST_REAL_TMUX=1 lets the real-tmux and browser files run, and only a container sets it)
-        run: SWARMBOX_TEST_REAL_TMUX=1 sh tests/run.sh slow --github
+      - name: Slow tests (tests/run.sh slow, SWARMBOX_TEST_REAL=1 lets the browser and real-process files run, and only a container sets it)
+        run: SWARMBOX_TEST_REAL=1 sh tests/run.sh slow --github
 
   # The real-installer tests: every addon of container/addons is installed for real in a throwaway container
   # ("no side effects", "survives a reset"). They download several hundred MB, so they run on the weekly schedule and by hand,

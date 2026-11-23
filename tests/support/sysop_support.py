@@ -1,5 +1,5 @@
 """Shared bits of the sysop tests: the library path, a scriptable fake of the bus (the socket protocol of swarmbox-bus, in a thread), private
-folders for a service, and the fake claude. Nothing here needs tmux, a network or a model."""
+folders for a service, and the fake claude. Nothing here needs herdr-core, a network or a model."""
 import json
 import os
 import shutil
@@ -52,10 +52,10 @@ class Env:
         self.env = {"SB_RUN_DIR": os.path.join(self.dir, "run"), "SB_STATE_DIR": os.path.join(self.dir, "state"),
                     "SB_BUS_SOCKET": os.path.join(self.dir, "bus.sock"), "HOME": os.path.join(self.dir, "home"),
                     "PATH": FAKE_BIN + ":" + os.environ.get("PATH", "/usr/bin:/bin"),
-                    # never the tmux server of whoever runs the suite: a dock of a service started here finds its own, empty one
-                    "SB_TABS_SOCKET": "sbsy-%d" % os.getpid(), "TMUX_TMPDIR": os.path.join(self.dir, "sb-tmux"), "TMPDIR": os.path.join(self.dir, "sb-tmp")}
+                    # never the herdr-core of whoever runs the suite: a service started here with --dock runs headless, and an hc it might
+                    # still call does not exist
+                    "SWARMBOX_MUX": "none", "SWARMBOX_TEST_HC_BIN": os.path.join(self.dir, "no-hc"), "TMPDIR": os.path.join(self.dir, "sb-tmp")}
         os.makedirs(self.env["HOME"])
-        os.makedirs(self.env["TMUX_TMPDIR"])
         os.makedirs(self.env["TMPDIR"])
         self.env.update(extra)
 
@@ -273,7 +273,7 @@ class FakeTabs:
         self.thread.start()
 
     def stop(self):
-        """the command cannot reach the fake any more: it answers no_tmux, as the real one does when tmux is gone"""
+        """the command cannot reach the fake any more: it answers no_backend, as the real one does when herdr-core is gone"""
         self.up = False
         close_listener(self.srv, self.thread)
         try:

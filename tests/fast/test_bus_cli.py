@@ -1,5 +1,5 @@
 """swarmbox-bus as programs: the broker as a process and the command line against it, with the exit codes, stdin, streams, a stale socket
-after kill -9, groups, many clients and 100 messages per second. No tmux, no network, no model. Run with: python3 tests/fast/test_bus_cli.py
+after kill -9, groups, many clients and 100 messages per second. No multiplexer, no network, no model. Run with: python3 tests/fast/test_bus_cli.py
 """
 import json
 import os

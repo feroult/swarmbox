@@ -5,14 +5,14 @@
   send(tab, run=T | input=T)   -> {"ok": true, "tab", "pane", "submitted"}
 
 A failure is TabsError(code, msg), with the words of the command ({"err", "msg"} on its stdout: dialog_open, busy_tab, slash_refused, no_such_tab,
-ambiguous_tab, not_submitted, tmux_error, lock_error, no_tmux, no_session, timeout, bad_body, usage) or one of these of this file:
+ambiguous_tab, not_submitted, backend_error, unsupported, lock_error, no_backend, no_session, timeout, bad_body, usage) or one of these of this file:
 tabs_unavailable (the command cannot be started: nothing was typed), tabs_timeout (it did not answer in time: it may have typed part of the text),
 tabs_protocol (it printed something that is not its JSON).
 
 Command or library.  container/scripts/swarmbox-tabs.py can be run, or imported by path. This runs it, as its docstring recommends:
   * the command is the contract: its JSON, its exit codes, its lock per tab and its timeouts are the same for every caller, and nothing here
     imports a file of the host (a rename or a move of it cannot break the import of the sysop);
-  * a failure stays in a child: the MCP server of a goal is a long-lived process that holds the policy's state, and a bug or a hang in tmux
+  * a failure stays in a child: the MCP server of a goal is a long-lived process that holds the policy's state, and a bug or a hang in herdr-core
     code must not take it down (a hung call is killed at the timeout and becomes an error the model can read);
   * the cost is one Python start (15 to 25 ms) per call. The settled-screen polling reads every 0.1 s, so a poll costs a fifth of its period;
     that is cheaper than the 0.5 s of quiet it waits for. Sending text puts the text on stdin (`--run -`, `--input -`), never in the command line:
@@ -25,7 +25,7 @@ import os
 import shlex
 import subprocess
 
-READ_TIMEOUT = 20.0        # list, screen: tmux calls have a timeout of 5 s each inside the command
+READ_TIMEOUT = 20.0        # list, screen: hc calls have a timeout of 5 s each inside the command
 SEND_TIMEOUT = 120.0       # send: the lock wait (30 s), the pauses between keys and the check that the text left the input box
 MAX_OUT = 4 << 20
 ENV_CMD = "SWARMBOX_SYSOP_TABS_CMD"

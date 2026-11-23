@@ -1,7 +1,7 @@
 """The fake world of `swarmbox-entrypoint serve`, shared by the tests of the entrypoint (test_serve_steps, test_serve_logs, test_bus_serve).
 
-Nothing here touches the live box: tmux, ttyd, podman, swarmbox-pubkey and swarmbox-addon are fakes in a scratch folder that comes first on
-PATH (the test refuses to run when tmux or podman would resolve elsewhere); HOME, the run folder and every XDG folder are mktemp directories;
+Nothing here touches the live box: hc (herdr-core), swarmbox-web, podman, swarmbox-pubkey and swarmbox-addon are fakes in a scratch folder that
+comes first on PATH (the test refuses to run when hc or podman would resolve elsewhere); HOME, the run folder and every XDG folder are mktemp directories;
 `serve` is started by the test and only that PID is ever signalled. The test-only variables SWARMBOX_TEST_* are the ones decided in
 docs/history/decision-log.md ([2.2] test-only switches).
 """
@@ -55,18 +55,21 @@ def alive(pid):
         return False
 
 
-FAKE_TMUX = """#!/bin/bash
-echo "tmux $*" >> "$FAKE_DIR/calls.log"
-[ -f "$FAKE_DIR/tmux.exit" ] && exit "$(cat "$FAKE_DIR/tmux.exit")"
+# the fake herdr-core: records the call; exits with the status in hc.exit; `ls` lists no terminal and `run` answers an address
+FAKE_HC = """#!/bin/bash
+echo "hc $*" >> "$FAKE_DIR/calls.log"
+[ -f "$FAKE_DIR/hc.exit" ] && exit "$(cat "$FAKE_DIR/hc.exit")"
+case $1 in ls) echo '[]' ;; run) echo '{"address":"t1"}' ;; esac
 exit 0
 """
 
-FAKE_TTYD = """#!/bin/bash
-echo "ttyd $*" >> "$FAKE_DIR/calls.log"
-echo start >> "$FAKE_DIR/ttyd.starts"
-echo $$ > "$FAKE_DIR/ttyd.pid"
+# the fake web server (what the web supervisor runs): records itself and runs, or exits 1 when web.mode is crash
+FAKE_WEB = """#!/bin/bash
+echo "swarmbox-web $*" >> "$FAKE_DIR/calls.log"
+echo start >> "$FAKE_DIR/web.starts"
+echo $$ > "$FAKE_DIR/web.pid"
 mode=run
-[ -f "$FAKE_DIR/ttyd.mode" ] && mode=$(cat "$FAKE_DIR/ttyd.mode")
+[ -f "$FAKE_DIR/web.mode" ] && mode=$(cat "$FAKE_DIR/web.mode")
 [ "$mode" = crash ] && exit 1
 exec sleep 1000
 """
@@ -135,8 +138,8 @@ class ServeCase(unittest.TestCase):
             os.mkdir(d)
         os.symlink(DIRS_SH, os.path.join(self.lib, "dirs.sh"))
         open(self.tun, "w").close()
-        write_exec(os.path.join(self.fake, "tmux"), FAKE_TMUX)
-        write_exec(os.path.join(self.fake, "swarmbox-web"), FAKE_TTYD)
+        write_exec(os.path.join(self.fake, "hc"), FAKE_HC)
+        write_exec(os.path.join(self.fake, "swarmbox-web"), FAKE_WEB)
         write_exec(os.path.join(self.fake, "podman"), FAKE_PODMAN)
         write_exec(os.path.join(self.fake, "swarmbox-bus"), FAKE_BUS)
         for p in self.PROGRAMS:
@@ -156,12 +159,13 @@ class ServeCase(unittest.TestCase):
                "SWARMBOX_TEST_PODMAN_RUNROOT": os.path.join(self.base, "storage-run"),
                "SWARMBOX_TEST_PODMAN_LIBPOD_RUN": os.path.join(self.base, "podman-run"),
                "SWARMBOX_TEST_FALLBACK_SOCK": os.path.join(self.base, "fallback.sock"),
+               "SWARMBOX_TEST_HERDR_CONFIG": os.path.join(self.base, "no-herdr.toml"),
                "SWARMBOX_TEST_BACKOFF_SCALE": "0", "SWARMBOX_TEST_SERVICE_WAIT": "2", "SWARMBOX_TEST_BUS_WAIT": "1", "LANG": "C.UTF-8"}
         env.update({k: v for k, v in extra.items() if v is not None})
         for k, v in extra.items():
             if v is None:
                 env.pop(k, None)
-        for prog in ("tmux", "podman"):  # a real tmux or podman must never run from these tests
+        for prog in ("hc", "podman"):  # a real herdr-core or podman must never run from these tests
             self.assertEqual(shutil.which(prog, path=env["PATH"]), os.path.join(self.fake, prog))
         return env
 
@@ -180,14 +184,14 @@ class ServeCase(unittest.TestCase):
                 except Exception:
                     p.kill()
                     p.wait()
-            try:  # serve is the leader of its own session: end what it left behind (its `sleep infinity`, fake ttyd)
+            try:  # serve is the leader of its own session: end what it left behind (its `sleep infinity`, fake web server)
                 os.killpg(p.pid, signal.SIGKILL)
             except OSError:
                 pass
             for f in (p.stdout, p.stderr):
                 if f:
                     f.close()
-        for name in ("ttyd.pid", "service.pid", "bus.pid", "web-supervisor.pid", "bus-supervisor.pid"):
+        for name in ("web.pid", "service.pid", "bus.pid", "web-supervisor.pid", "bus-supervisor.pid"):
             for base in (self.fake, self.run_dir):
                 s = read(os.path.join(base, name)).strip()
                 if s.isdigit() and alive(int(s)):

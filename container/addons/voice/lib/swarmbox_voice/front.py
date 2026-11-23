@@ -1,14 +1,14 @@
-"""The front: one listener on the web terminal port that serves the microphone button and takes its audio, next to ttyd. Stdlib only.
+"""The front: one listener on the web port that takes the audio of the microphone, in front of the web server of the box (the herdr Web
+Studio, container/web/herdr/server.mjs). Stdlib only.
 
-                     browser --> front (0.0.0.0:7681 in the box) --+--> /voice/*   a FIXED table, below (four routes, nothing else)
-                                                                    +--> the rest  raw pipe to ttyd (127.0.0.1:7680), websockets included
+                     browser --> front (0.0.0.0:7681 in the box) --+--> /voice/*   a FIXED table, below (two routes, nothing else)
+                                                                    +--> the rest  raw pipe to the web server (127.0.0.1:7680), websockets included
 
-`swarmbox-voice front [--listen HOST:PORT] [--ttyd-port N] [--service-port N] -- ttyd ARGS...` starts ttyd and the voice service as
-children and routes each connection by its FIRST request head. The browser only captures the microphone, so this is an audio entry, not a
-router; what happens to the goal that the audio becomes is decided on the box (by whoever subscribes to the topic) and never crosses the tunnel. The table of /voice/:
+`swarmbox-voice front [--listen HOST:PORT] [--server-port N] [--service-listen HOST:PORT] -- SERVER ARGS...` starts the web server (its
+-p/-i replaced by 127.0.0.1 and --server-port) and the voice service as children and routes each connection by its FIRST request head. The
+browser only captures the microphone, so this is an audio entry, not a router; what happens to the goal that the audio becomes is decided on
+the box (by whoever subscribes to the topic) and never crosses the tunnel. The table of /voice/:
 
-   GET  /voice/page.js     the script of the microphone button, from the addon's web/ folder (no-store)
-   GET  /voice/page.css    its style
    GET  /voice/health      forwarded to the service; only {"ok": ...} is passed back (no language or model)
    POST /voice/audio       16 kHz mono 16-bit WAV (audio/wav), forwarded to the service; only {"ok", "state", "message"} or {"error", "message"} comes back
                            (short strings and booleans: no object, no list, nothing else of what the service says)
@@ -18,14 +18,14 @@ or Origin are even looked at, and never reaches the service (which has only heal
 loopback address of the service, which keeps its own loopback-only guard), and the answer is filtered, so even a faulty service could not
 hand a transcript to the browser.
 
-Rules kept for the four routes: an `Origin`, when there is one, must name the `Host` (else 403), as ttyd's -O does for the terminal; a POST
+Rules kept for the two routes: an `Origin`, when there is one, must name the `Host` (else 403), as the web server does for its own routes; a POST
 needs the WAV content type and a Content-Length (a cross-site form cannot send that type), no chunked bodies; the body is capped (8 MiB);
 at most 16 voice requests at a time (a 503 beyond that, never a queue on the terminal); a failure is a JSON error for that request only.
-Anything that is not /voice/ is piped to ttyd byte for byte (the answer to a plain request gets the frame headers, FRAME_GUARD). A request without `Upgrade: websocket` gets `Connection: close` (one connection
-is one request, so the first head is the only one this front ever reads); a websocket upgrade keeps its head untouched, since ttyd -O needs
-the original Host and Origin.
+Anything that is not /voice/ is piped to the web server byte for byte (the answer to a plain request gets the frame headers, FRAME_GUARD). A request without `Upgrade: websocket` gets `Connection: close` (one connection
+is one request, so the first head is the only one this front ever reads); a websocket upgrade keeps its head untouched, since the server's
+same-origin check needs the original Host and Origin.
 
-When ttyd exits the front stops the service and exits with the status of ttyd, so the supervisor of the box keeps its restart policy.
+When the web server exits the front stops the service and exits with the status of the server, so the supervisor of the box keeps its restart policy.
 SIGTERM and SIGINT stop both children and exit 0. The service is restarted (with a back-off) if it dies: voice trouble never touches
 the terminal path. Security: what the tunnel can do is send audio, which makes at most a goal on the bus (what a subscriber does with it is its own policy: risk, confirmation); it is as reachable as the terminal itself (whoever reaches the web port), and the front is the one place that sees the public Host.
 """
@@ -56,49 +56,35 @@ GRACE = 30.0                   # after one side closed its end, the other side h
 MAX_CONNECTIONS = 512
 MAX_VOICE = 8
 AUDIO_TYPES = ("audio/wav", "audio/x-wav", "audio/wave")
-# THE table of what the web can reach under /voice/: path -> (method, what). Nothing else is served or forwarded, whatever the service has.
-STATIC = {"/voice/page.js": ("page.js", "text/javascript; charset=utf-8"), "/voice/page.css": ("page.css", "text/css; charset=utf-8")}
-ROUTES = {"/voice/page.js": "GET", "/voice/page.css": "GET", "/voice/health": "GET", "/voice/audio": "POST"}
+# THE table of what the web can reach under /voice/: path -> method. Nothing else is served or forwarded, whatever the service has.
+ROUTES = {"/voice/health": "GET", "/voice/audio": "POST"}
 PASS_KEYS = {"/voice/health": ("ok",), "/voice/audio": ("ok", "state", "error", "message")}   # what is passed back of the service's answer
 MAX_FIELD = 200
-# options of ttyd that take a value (ttyd --help); every other dash word is a flag
-TTYD_VALUE_OPTS = frozenset("piUcHugswIbPTtmCKAd")
-TTYD_LONG_VALUE_OPTS = frozenset(("--port", "--interface", "--socket-owner", "--credential", "--auth-header", "--uid", "--gid", "--signal",
-                                  "--cwd", "--index", "--base-path", "--ping-interval", "--terminal-type", "--client-option",
-                                  "--max-clients", "--ssl-cert", "--ssl-key", "--ssl-ca", "--debug"))
 REASONS = {200: "OK", 400: "Bad Request", 403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed", 411: "Length Required",
            413: "Payload Too Large", 415: "Unsupported Media Type", 431: "Request Header Fields Too Large", 500: "Internal Server Error",
            502: "Bad Gateway", 503: "Service Unavailable", 504: "Gateway Timeout", 408: "Request Timeout"}
 
 
-def ttyd_command(argv, port, iface="127.0.0.1"):
-    """The ttyd command line with its own -p/-i replaced: [exe, -p PORT, -i IFACE, other options..., command...]."""
+def server_command(argv, port, iface="127.0.0.1"):
+    """The web server's command line with its own -p/-i (--port/--interface) replaced: [exe, -p PORT, -i IFACE, other arguments...]."""
     if not argv:
-        raise ValueError("no ttyd command after --")
+        raise ValueError("no web server command after --")
     exe, rest, out, i = argv[0], list(argv[1:]), [], 0
     while i < len(rest):
         a = rest[i]
-        if a == "--" or not a.startswith("-") or a == "-":
-            break
-        if a.startswith("--"):
-            name = a.split("=", 1)[0]
-            n = 1 if "=" in a or name not in TTYD_LONG_VALUE_OPTS else 2
-            if name not in ("--port", "--interface"):
-                out += rest[i:i + n]
-            i += n
+        if a in ("-p", "-i", "--port", "--interface"):
+            i += 2
             continue
-        flag = a[1]
-        if flag in "pi":
-            i += 1 if len(a) > 2 else 2
+        if a.startswith(("--port=", "--interface=")) or (len(a) > 2 and a[:2] in ("-p", "-i")):
+            i += 1
             continue
-        n = 1 if len(a) > 2 or flag not in TTYD_VALUE_OPTS else 2
-        out += rest[i:i + n]
-        i += n
-    return [exe, "-p", str(port), "-i", iface] + out + rest[i:]
+        out.append(a)
+        i += 1
+    return [exe, "-p", str(port), "-i", iface] + out
 
 
 def pdeathsig():
-    """Child setup: SIGTERM when this process dies, so a killed front never leaves ttyd or the service behind (Linux; best effort)."""
+    """Child setup: SIGTERM when this process dies, so a killed front never leaves the web server or the service behind (Linux; best effort)."""
     try:
         ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGTERM)
     except Exception:
@@ -106,18 +92,18 @@ def pdeathsig():
 
 
 class Children:
-    """ttyd and the voice service as children of the front."""
+    """The web server and the voice service as children of the front."""
 
-    def __init__(self, ttyd_argv, service_argv, env):
-        self.ttyd_argv, self.service_argv, self.env = ttyd_argv, service_argv, env
-        self.ttyd = None
+    def __init__(self, server_argv, service_argv, env):
+        self.server_argv, self.service_argv, self.env = server_argv, service_argv, env
+        self.server = None
         self.service = None
         self.stop = threading.Event()
         self.lock = threading.Lock()
         self.thread = None
 
-    def start_ttyd(self):
-        self.ttyd = subprocess.Popen(self.ttyd_argv, preexec_fn=pdeathsig)
+    def start_server(self):
+        self.server = subprocess.Popen(self.server_argv, preexec_fn=pdeathsig)
 
     def _spawn_service(self):
         return subprocess.Popen(self.service_argv, env=self.env, stdin=subprocess.DEVNULL)
@@ -177,7 +163,7 @@ class Children:
 
     def stop_all(self):
         self.stop_service()
-        self._end(self.ttyd)
+        self._end(self.server)
 
 
 # ---------------------------------------------------------------------------------------------------------------------- HTTP helpers
@@ -241,8 +227,7 @@ def read_head(conn, deadline):
     return Head(buf[:i], buf[i:])
 
 
-# No other origin may frame the terminal page: a click in a frame would press a key button of the controls strip. ttyd cannot set headers, so
-# the front adds these to every plain HTTP response (a websocket upgrade is not a page and is piped untouched).
+# No other origin may frame the terminal page: a click in a frame would press a button of the page. The front adds these to every plain HTTP response (a websocket upgrade is not a page and is piped untouched).
 FRAME_GUARD = ("Content-Security-Policy: frame-ancestors 'self'", "X-Frame-Options: SAMEORIGIN")
 
 
@@ -259,7 +244,7 @@ def _apply_frame_guard(buf):
 
 
 def guard_response(up, conn, limit=16384, wait=10.0):
-    """Read the response head from ttyd, add FRAME_GUARD to it (once; the ones ttyd sent are kept out) and send it on. Anything that is
+    """Read the response head from the web server, add FRAME_GUARD to it (once; the ones the server sent are kept out) and send it on. Anything that is
     not a readable head is handed on as it came."""
     buf = b""
     deadline = time.monotonic() + wait
@@ -295,8 +280,8 @@ def _host_of(netloc):
 
 
 class Front:
-    def __init__(self, listen, ttyd_addr, service_addr, web_dir):
-        self.ttyd_addr, self.service_addr, self.web_dir = ttyd_addr, service_addr, web_dir
+    def __init__(self, listen, server_addr, service_addr):
+        self.server_addr, self.service_addr = server_addr, service_addr
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(listen)
@@ -356,7 +341,7 @@ class Front:
     # ------------------------------------------------------------------------------------------------------------- the terminal path
     def _terminal(self, conn, head):
         try:
-            up = socket.create_connection(self.ttyd_addr, timeout=5)
+            up = socket.create_connection(self.server_addr, timeout=5)
         except OSError:
             try:
                 send_error(conn, 502, "terminal_unavailable", "the terminal is not answering")
@@ -407,15 +392,6 @@ class Front:
         origins = head.headers.get("origin", [])
         if len(origins) > 1 or (origins and urlsplit(origins[0]).netloc.lower() != _host_of(host)):
             raise BadRequest(403, "bad_origin", "cross-origin calls are not allowed")
-        if head.method == "GET" and path in STATIC:
-            name, ctype = STATIC[path]
-            try:
-                with open(os.path.join(self.web_dir, name), "rb") as f:
-                    body = f.read()
-            except OSError:
-                raise BadRequest(404, "not_found", "the voice page is not installed") from None
-            send(conn, 200, body, ctype)
-            return
         body = b""
         if head.method == "POST":
             if "transfer-encoding" in head.headers:
@@ -557,23 +533,19 @@ def parse_addr(text, what):
     return (host or "127.0.0.1", int(port))
 
 
-def default_web_dir():
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "web")
-
-
-def run(args, ttyd_args):
+def run(args, server_args):
     try:
         listen = parse_addr(args.listen, "--listen")
         service = parse_addr(args.service_listen, "--service-listen")
         if service[0] not in ("127.0.0.1", "localhost"):
             raise ValueError("--service-listen must be a loopback address")
         service = ("127.0.0.1", service[1])
-        ttyd = ttyd_command(ttyd_args, args.ttyd_port)
+        server = server_command(server_args, args.server_port)
     except ValueError as e:
         print("swarmbox-voice front: %s" % e, file=sys.stderr)
         return 2
     try:
-        front = Front(listen, ("127.0.0.1", args.ttyd_port), service, args.web_dir or default_web_dir())
+        front = Front(listen, ("127.0.0.1", args.server_port), service)
     except OSError as e:
         print("swarmbox-voice front: cannot listen on %s: %s" % (args.listen, e), file=sys.stderr)
         return 98
@@ -581,23 +553,23 @@ def run(args, ttyd_args):
     env = dict(os.environ)
     env["PYTHONPATH"] = lib + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     service_argv = [sys.executable, "-B", "-m", "swarmbox_voice", "serve", "--listen", "%s:%d" % service, "--die-with-parent"]
-    children = Children(ttyd, service_argv, env)
+    children = Children(server, service_argv, env)
     stopping = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stopping.set())
     try:
         try:
-            children.start_ttyd()
+            children.start_server()
         except OSError as e:
-            print("swarmbox-voice front: cannot start ttyd: %s" % e, file=sys.stderr)
+            print("swarmbox-voice front: cannot start the web server: %s" % e, file=sys.stderr)
             return 127
         children.start_service()
         threading.Thread(target=front.serve_forever, daemon=True).start()
-        print("swarmbox-voice front: listening on %s:%d, ttyd on 127.0.0.1:%d, voice service on 127.0.0.1:%d"
-              % (front.address[0], front.address[1], args.ttyd_port, service[1]), file=sys.stderr, flush=True)
-        while not stopping.is_set() and children.ttyd.poll() is None:
+        print("swarmbox-voice front: listening on %s:%d, web server on 127.0.0.1:%d, voice service on 127.0.0.1:%d"
+              % (front.address[0], front.address[1], args.server_port, service[1]), file=sys.stderr, flush=True)
+        while not stopping.is_set() and children.server.poll() is None:
             stopping.wait(0.2)
-        rc = 0 if stopping.is_set() else children.ttyd.returncode
+        rc = 0 if stopping.is_set() else children.server.returncode
         if rc is not None and rc < 0:
             rc = 128 - rc
         return rc
@@ -608,9 +580,8 @@ def run(args, ttyd_args):
 
 def add_arguments(p):
     p.add_argument("--listen", default="0.0.0.0:7681", help="the web terminal port (what the browser reaches)")
-    p.add_argument("--ttyd-port", type=int, default=7680)
+    p.add_argument("--server-port", type=int, default=7680, help="the loopback port of the web server behind the front")
     p.add_argument("--service-listen", default="127.0.0.1:17682")
-    p.add_argument("--web-dir", default="")
 
 
 def split_command(argv):

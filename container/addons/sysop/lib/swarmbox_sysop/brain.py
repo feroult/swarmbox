@@ -40,8 +40,7 @@ PRESETS = {
               "--permission-mode dontAsk --no-session-persistence --max-turns {max_turns} --system-prompt {system_prompt} "
               "--output-format stream-json --verbose",
 }
-TABS_ENV = ("HOME", "PATH", "TMUX_TMPDIR", "SB_TABS_SESSION", "SB_TABS_SOCKET", "SB_TABS_BIN",
-            "SWARMBOX_MUX", "SB_TABS_BACKEND", "SB_TABS_HC_BIN", "HC_SESSION", "SWARMBOX_SYSOP_TABS_CMD")
+TABS_ENV = ("HOME", "PATH", "SB_TABS_BIN", "SB_TABS_BACKEND", "SB_TABS_HC_BIN", "HC_SESSION", "SWARMBOX_SYSOP_TABS_CMD")
 PLACEHOLDERS = ("mcp_config", "model", "system_prompt", "system_prompt_file", "max_turns", "goal_dir")
 _TOKEN = re.compile(r"\{\{|\}\}|\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
@@ -49,7 +48,7 @@ GRACE_AFTER_DONE = 2.0
 KILL_GRACE = 2.0
 LOGIN_FAILURE = re.compile(r"Not logged in|Please run /login|Invalid API key|OAuth token has expired|authentication_error|Credit balance is too low")
 
-SYSTEM_PROMPT = """You are the sysop, the system operator of a SwarmBox: a persistent box whose TABS are terminals (a tmux window or a herdr terminal), each with a shell, an editor or a coding agent (Claude Code, Antigravity agy, OpenCode, Codex, Gemini) running in it, and the user switches between them. You operate the box only through these tools:
+SYSTEM_PROMPT = """You are the sysop, the system operator of a SwarmBox: a persistent box whose TABS are terminals (herdr terminals), each with a shell, an editor or a coding agent (Claude Code, Antigravity agy, OpenCode, Codex, Gemini) running in it, and the user switches between them. You operate the box only through these tools:
 - Look (read-only): list_tabs (the tabs: id, name, label, dir, cmd, active, and the live status an agent reports), read_tab (the text on a tab's screen), box_info (disk, memory, addons, nested containers).
 - Tabs: focus_tab (switch the active tab), open_tab (a new tab with a shell or an agent), close_tab (close a tab; the user is asked first).
 - Act: run and input (type into a tab), wait.
@@ -145,7 +144,7 @@ def write_mcp_config(path, ctx_path, paths, libdir):
     """The MCP config file: the server is this library, run by the python that runs the service (no PATH, no launcher)."""
     env = {"PYTHONPATH": libdir, "PYTHONDONTWRITEBYTECODE": "1", "SWARMBOX_SYSOP_CONTEXT": ctx_path,
            "SB_RUN_DIR": os.path.dirname(paths.run), "SB_STATE_DIR": os.path.dirname(paths.state)}
-    # what the server needs to run `swarmbox-tabs` as the service would (the command finds its tmux and its locks by these): only what is set
+    # what the server needs to run `swarmbox-tabs` as the service would (the command finds herdr-core and its locks by these): only what is set
     for k in TABS_ENV:
         if os.environ.get(k):
             env[k] = os.environ[k]
@@ -253,7 +252,6 @@ def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline
     if prog is None:
         return Result("failed", "the brain program %r was not found: install it (swarmbox addon install %s) or set SWARMBOX_SYSOP_BRAIN" % (argv[0], os.path.basename(argv[0])))
     env = dict(os.environ)
-    env.pop("TMUX", None)
     env.update(env_extra)
     wrap = []
     if shutil.which("timeout"):

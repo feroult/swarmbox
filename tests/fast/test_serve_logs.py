@@ -1,6 +1,6 @@
 """The log trimmer of `swarmbox-entrypoint serve`: the logs of the box (serve.log, bus.log, web-terminal.log) are written for weeks by `>>` redirections, so
 the entrypoint cuts each one to its last quarter when it passes SWARMBOX_TEST_LOG_MAX (4 MiB in the box), looking every SWARMBOX_TEST_LOG_EVERY seconds (300),
-and it ends with the box. The fakes of tests/support/serve_support.py (no real tmux, ttyd, podman or bus). Run with: python3 -W error tests/fast/test_serve_logs.py
+and it ends with the box. The fakes of tests/support/serve_support.py (no real herdr-core, web server, podman or bus). Run with: python3 -W error tests/fast/test_serve_logs.py
 """
 import os
 import sys

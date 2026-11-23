@@ -119,7 +119,7 @@ class Template(unittest.TestCase):
         p = " ".join(brain.system_prompt("voice", 20, 300).split())
         needs = {
             "the tools": ("list_tabs", "read_tab", "box_info", "focus_tab", "open_tab", "close_tab", "run", "input", "wait", "say", "done"),
-            "tabs, never the bus": ("TABS", "a tmux window or a herdr terminal"),
+            "tabs, never the bus": ("TABS", "herdr terminals"),
             # 'reply with exactly banana nine' with Claude Code in the active tab was answered by the brain itself and nothing was typed
             # the user talks to the sysop to reach the agents: they never say "send it to Claude", and the target is inferred
             "a goal is a message for an agent by default": ("THE USER IS TALKING TO YOU TO REACH THEIR AGENTS", "never has to say", "clearly an operation on the box",
@@ -150,19 +150,19 @@ class Template(unittest.TestCase):
             self.assertNotIn(word, p.lower(), "the model never sees the bus (or the command behind its tools)")
 
     def test_the_mcp_config_carries_what_the_server_needs_for_the_tabs_and_not_the_bus(self):
-        env_keys = ("TMUX_TMPDIR", "SB_TABS_SESSION", "SB_TABS_SOCKET", "SB_TABS_BIN", "SWARMBOX_SYSOP_TABS_CMD", "PATH")
+        env_keys = ("SB_TABS_BIN", "SB_TABS_HC_BIN", "SB_TABS_BACKEND", "SWARMBOX_SYSOP_TABS_CMD", "PATH")
         saved = dict(os.environ)
         self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
         for k in env_keys:
             os.environ.pop(k, None)
-        os.environ.update({"SB_TABS_SESSION": "box", "SB_TABS_SOCKET": "tt", "TMUX_TMPDIR": "/x/y", "SB_BUS_SOCKET": "/x/bus.sock", "PATH": "/a:/b"})
+        os.environ.update({"SB_TABS_HC_BIN": "/x/hc", "SB_TABS_BACKEND": "herdr", "SB_BUS_SOCKET": "/x/bus.sock", "PATH": "/a:/b"})
         e = ss.Env()
         self.addCleanup(e.cleanup)
         out = os.path.join(e.dir, "mcp.json")
         brain.write_mcp_config(out, "/c.json", e.paths, ss.LIB)
         env = ipc.read_json(out)["mcpServers"]["sysop"]["env"]
-        self.assertEqual({k: env[k] for k in ("SB_TABS_SESSION", "SB_TABS_SOCKET", "TMUX_TMPDIR", "PATH")},
-                         {"SB_TABS_SESSION": "box", "SB_TABS_SOCKET": "tt", "TMUX_TMPDIR": "/x/y", "PATH": "/a:/b"})
+        self.assertEqual({k: env[k] for k in ("SB_TABS_HC_BIN", "SB_TABS_BACKEND", "PATH")},
+                         {"SB_TABS_HC_BIN": "/x/hc", "SB_TABS_BACKEND": "herdr", "PATH": "/a:/b"})
         self.assertNotIn("SB_TABS_BIN", env)
         self.assertNotIn("SB_BUS_SOCKET", env)
 
@@ -344,14 +344,11 @@ class RunBrain(unittest.TestCase):
         r = self.go(mode="badjson")
         self.assertEqual(r.outcome, "done")
 
-    def test_the_tmux_variable_is_not_passed_and_credentials_are(self):
+    def test_credentials_are_passed(self):
         self.script([{"tool": "done", "args": {"summary": "x"}}])
-        os.environ["TMUX"] = "/tmp/tmux-1000/default,1,0"
-        self.addCleanup(os.environ.pop, "TMUX", None)
         self.env_extra["FOO_TEST"] = "bar"
         self.go()
         env = self.logged()["env"]
-        self.assertNotIn("TMUX", env)
         self.assertEqual(env.get("FOO_TEST"), "bar")
 
     def test_a_program_that_cannot_start(self):

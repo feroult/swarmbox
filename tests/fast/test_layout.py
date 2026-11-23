@@ -52,13 +52,10 @@ class Layout(unittest.TestCase):
         self.assertEqual(sorted(set(listed)), sorted(listed), "a name twice")
         self.assertEqual([x for x in listed if x not in names("fast")], [])
 
-    def test_the_test_image_pins_what_the_product_image_pins(self):
-        docker, recipe = read("Dockerfile"), read("dev", "test-image", "Containerfile")
-        for arg in ("TMUX_VERSION", "TMUX_SHA256_AMD64", "TMUX_SHA256_ARM64", "TMUX_SHA1_AMD64", "TMUX_SHA1_ARM64", "TTYD_VERSION"):
-            a = re.search(r"(?m)^ARG %s=(\S+)" % arg, docker)
-            b = re.search(r"(?m)^ARG %s=(\S+)" % arg, recipe)
-            self.assertTrue(a and b, arg)
-            self.assertEqual(a.group(1), b.group(1), "%s differs between Dockerfile and dev/test-image/Containerfile" % arg)
+    def test_the_test_image_has_no_tmux_or_ttyd_either(self):
+        recipe = read("dev", "test-image", "Containerfile")
+        self.assertNotRegex(recipe, r"(?i)\btmux\b")
+        self.assertNotRegex(recipe, r"(?i)\bttyd\b")
 
     def test_every_test_the_regression_ledger_names_exists(self):
         # docs/history/test-suite-review/regressions.md: bug -> test id -> layer. An id is `layer/test_file.py::Class` or `::Class::test_name`;

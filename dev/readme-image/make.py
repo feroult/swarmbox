@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """make.py: regenerates docs/img/swarmbox-banner.gif and .png (the image at the top of the README).
 
-Runs the real banner and the real prompt of this checkout in a tmux of its own, captures the pane while the glint crosses the letters, draws
+Runs the real banner and the real prompt of this checkout in a private tmux of the machine (used here only to capture the screen: the box has no tmux), captures the pane while the glint crosses the letters, draws
 every frame inside a dark browser window (render.py, plain CSS) and joins them. Needs tmux, starship, chromium (or google-chrome) and Pillow
 (`python3 -m venv /tmp/v && /tmp/v/bin/pip install pillow`, then run this with /tmp/v/bin/python). Run: python3 dev/readme-image/make.py
 """
@@ -47,7 +47,7 @@ def capture(tmp):
 
     def tm(*a):
         return subprocess.run(["tmux", "-L", sock] + list(a), env=env, capture_output=True, text=True).stdout
-    tm("-f", os.path.join(ROOT, "container/config/tmux.conf"), "new-session", "-d", "-s", "x", "-x", str(COLS), "-y", str(ROWS), "bash --rcfile %s -i" % rc)
+    tm("-f", "/dev/null", "new-session", "-d", "-s", "x", "-x", str(COLS), "-y", str(ROWS), "bash --rcfile %s -i" % rc)
     try:
         time.sleep(2.5)
         tm("send-keys", "-t", "x", "ls", "Enter")

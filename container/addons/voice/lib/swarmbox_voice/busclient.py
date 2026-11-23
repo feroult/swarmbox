@@ -3,7 +3,7 @@
 Protocol (the docstring of container/scripts/swarmbox-bus.py is the specification): line-delimited JSON, one request line per connection,
 one reply line {"ok": true, "id": ...} or {"ok": false, "err": CODE, "msg": TEXT}. The topic is a free name from the setting voice.topic
 (SWARMBOX_VOICE_TOPIC, default goal); a message goes to every subscriber, and with none the answer is no_subscriber at once (the exit 3 of `pub`). The envelope's `source` is a label for display (the bus never uses it to authorize), so voice has no
-secret to add: any process of the box can publish, which is the trust it already has with `tmux send-keys`.
+secret to add: any process of the box can publish, which is the trust it already has with typing into a terminal.
 
 publish() returns one of the fixed states the service tells the browser: "sent", "no_listener", "busy", "bus_down". Nothing of the bus's
 own text (the `msg`) is returned.

@@ -12,8 +12,8 @@ Contents: 1 Purpose, 2 The box model, 3 Directories and paths, 4 Commands, 5 The
 
 SwarmBox is a persistent sandbox for running AI coding agents (Claude Code, Gemini CLI, OpenCode) in auto-approve mode
 on your own machine. It is one long-lived, rootless Podman container, the **box**, with one folder of your machine, the
-**workspace**, mounted as its home. You enter it from any terminal tab or from a browser, and every entry lands in the same
-tmux session. The aim is that a mistake of the agent is limited to one folder, not that untrusted code becomes safe (section 12).
+**workspace**, mounted as its home. You enter it from any terminal tab or from a browser, and every entry sees the same
+terminals, those of one herdr-core daemon. The aim is that a mistake of the agent is limited to one folder, not that untrusted code becomes safe (section 12).
 
 Goals: one command to start (`swarmbox`); one shared session for every client; a small neutral image with addons installed
 when first used; everything that must survive in one folder; no telemetry; remote access without putting credentials in the box.
@@ -28,7 +28,7 @@ Podman 4.3 or newer.
 
 ```
  HOST (your machine)                                             IMAGE  ghcr.io/feroult/swarmbox:X.Y.Z
- +-------------------------------------------+                   neutral: shell environment, tmux, ttyd,
+ +-------------------------------------------+                   neutral: shell environment, herdr-core,
  | script `swarmbox`  (a file on your PATH)  |   podman run/     Podman, Node, swarmbox-addon, addon manifests
  | support files host:~/.local/share/        |   exec            (no agent inside)
  |              swarmbox/host/               | ------------------------+
@@ -37,8 +37,8 @@ Podman 4.3 or newer.
  +----------+--------------------------------+          BOX  one container named `swarmbox`
             |  127.0.0.1:7681                           +----------------------------------------------+
             +------------------------------------------>| serve  (the box's main process, PID 1)       |
-                                                        |  +- tmux server, session `main`  <- every tab |
- WORKSPACE  host:~/swarmbox   ===== mounted as =======> |  +- ttyd -> tmux   (the web terminal)         |
+                                                        |  +- herdr-core daemon (`hc`)     <- every tab |
+ WORKSPACE  host:~/swarmbox   ===== mounted as =======> |  +- Herdr Web Studio (the web terminal)      |
  (projects, .ssh, .claude, addons, in-box config)        |  +- nested Podman service                     |
                   /home/agent  (the home)               |  +- addons, reached through shims, installed   |
                                                         |     into the workspace on first use           |
@@ -72,7 +72,7 @@ host:~/swarmbox/                       # the workspace = /home/agent in the box 
 ├── my-project/                        # your projects
 ├── .ssh/                              # the box's SSH key (id_ed25519, id_ed25519.pub)
 ├── .claude/, .claude.json             # Claude Code: login, settings, history
-├── .config/swarmbox/                  # you edit: web-terminal.conf, user-level addon manifests, mcp/<name>/config.json
+├── .config/swarmbox/                  # you edit: user-level addon manifests, mcp/<name>/config.json; herdr-web-theme
 ├── .local/share/swarmbox/             # installed: addons/<name>/..., shims/, index
 ├── .local/state/swarmbox/             # logs (serve.log, podman-service.log, web-terminal.log), health, podman.sock
 └── .local/share/containers/           # empty here: the nested Podman storage is a volume
@@ -81,7 +81,7 @@ host:~/.config/swarmbox/config                 # host configuration (second box:
 host:~/.local/bin/swarmbox                     # the script ($SWARMBOX_BIN_DIR to change the folder); mode 755
 host:~/.local/share/swarmbox/host/             # the support files, extracted from the image
 host:~/.local/state/swarmbox/                  # lock folders, `notices`, and <name>.sock-dir when the workspace path is long
-box:/tmp/swarmbox/                             # tmpfs, empty at every start: ready marker, rendered web page, locks, exit.<id>
+box:/tmp/swarmbox/                             # tmpfs, empty at every start: ready marker, locks, herdr-active-tab, herdr-exit.<id>
 volume <name>-containers                       # nested Podman storage, mounted at <workspace>/.local/share/containers
 ```
 
@@ -92,7 +92,7 @@ was installed in `.local/share`, logs and the one socket the host needs in `.loc
 the host one is read before the box exists.
 
 What a reset or an image update keeps: the workspace (yes), the volume `<name>-containers` (yes), the container's own filesystem
-(no: `apt` installs, files in `/usr`, `/etc`, `/opt`, running processes, tmux sessions).
+(no: `apt` installs, files in `/usr`, `/etc`, `/opt`, running processes, the terminals of herdr-core).
 
 Workspace rules. The folder is created on first start. A workspace that is not writable exits 4. A workspace under `/mnt/<letter>/`
 on WSL is refused (exit 4): permissions and `keep-id` do not behave on a Windows drive. On macOS a folder not shared with the Podman
@@ -113,9 +113,9 @@ terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a r
 
 | Command | What it does |
 |---|---|
-| `swarmbox` | create and start the box if needed, then open a new window of tmux session `main` in it |
-| `swarmbox <command> [args]` | run a command in the box in a new tmux window, return with its exit status; the aliases and `PATH` of an interactive shell apply |
-| `swarmbox --plain [command]` | the same without tmux: plain bash, or the command directly |
+| `swarmbox` | create and start the box if needed, then open the terminal cockpit of herdr-core in it |
+| `swarmbox <command> [args]` | run a command in the box in a new herdr-core terminal, return with its exit status; the aliases and `PATH` of an interactive shell apply |
+| `swarmbox --plain [command]` | the same without the multiplexer: plain bash, or the command directly |
 | `up`, `stop`, `reset` | start without a shell; stop (nothing deleted); remove and recreate the box and wait until ready (workspace and volume kept, sessions end) |
 | `url` | the web terminal address, and the public one when this box was set up for remote access |
 | `update [--to TAG]` | pull a newer image, record it as `IMAGE`, refresh the support files and the script itself (never by an older one), tell you to `reset` |
@@ -124,7 +124,7 @@ terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a r
 | `pubkey` | the box's git SSH public key |
 | `addon list\|install\|update\|use\|remove\|doctor\|new\|validate` | addons inside the box (section 8) |
 | `bus pub\|sub\|topics\|watch\|ping\|restart` | the message bus of the box (section 6); `swarmbox-bus --help` in the box |
-| `tabs list\|active\|screen\|send` | the tmux tabs of the box, a capability of the host (section 6); `swarmbox-tabs --help` in the box |
+| `tabs list\|active\|screen\|send\|open\|focus\|close` | the tabs (herdr-core terminals) of the box, a capability of the host (section 6); `swarmbox-tabs --help` in the box |
 | `remote setup\|status\|off\|token` | remote access through Cloudflare (`--dry-run` shows changes) |
 | `version`, `fingerprint`, `help` | script version; creation fingerprint (`--explain` lists differences); the command list |
 
@@ -191,28 +191,24 @@ and must be your choice. It also warns when the box's image is not the one the c
 
 ## 5. The shared session
 
-- `serve` creates tmux session `main` with one idle window named `idle`, so the session exists before the first tab.
-- Entering (`swarmbox-attach`, run through `podman exec`) makes a session of its own for the tab, named `swarmbox-tab-*`, with one window, and **links that
-  window into `main`**, so the browser lists it as a tab. (Not a grouped session: a group shares the window list of every tab, so when the window
-  of a tab ended its client was moved to the window of another tab instead of ending.) `exit` in a tab ends its window, its session (which has no
-  window left) and its client: the user is back at the host shell. Closing the tab only detaches: its session ends (`destroy-unattached`), the window
-  stays in `main` until its shell exits. The window goes to the place its host tab had: the host script passes `SWARMBOX_TAB`, the `tty` of the terminal (the
-  same for as long as the tab lives, in any terminal or over ssh; only with a terminal on both ends), the window keeps it in the window option `@sb_tab`, and the
-  server keeps the keys in the order they first appeared in the global option `@sb_order` (the newest 64; the key is cleaned to `A-Za-z0-9._/-`, at most 80
-  characters). The window is linked before the first window of `main` whose tab comes later in that order, else at the end, and the target is written
-  `=main:@id`: a bare window id is looked up in the first session that has the window, which is the session of the tab that owns it, not `main`. Windows with no
-  key (opened from the browser) are not in the order: nothing records on which side of a returning tab they were. When the only other window is the
-  untouched idle one (named `idle`, one pane, a shell), it is closed. A host tab has no tmux status bar. The browser (`swarmbox-attach --web`, what ttyd runs) attaches to `main` itself and keeps the bar, so it lists every window, the ones opened from host tabs too.
+The multiplexer of the box is herdr-core (`hc`, pinned in the `Dockerfile`), the only one since version 2.3; its backend is
+`container/scripts/mux/herdr.sh`, loaded by `container/scripts/mux/mux.sh` ([mux-architecture.md](mux-architecture.md)).
+
+- `serve` starts the herdr-core daemon and, when it has no terminal, opens one login shell named `shell`, so there is always a tab.
+- Entering (`swarmbox-attach`, run through `podman exec`) opens the terminal cockpit (`container/web/herdr/cockpit.mjs`,
+  [herdr-cockpit-design.md](herdr-cockpit-design.md)): the tabs of the daemon, the active terminal and the panel of the sysop in your host terminal.
+  `SWARMBOX_HERDR_RAW=1` gives a new terminal and `hc attach` instead. Detaching (`Ctrl+A d`) or closing the host tab leaves every terminal running.
+  The browser (the Web Studio, section 7) shows the same terminals.
 - Closing every tab or the browser stops nothing; `swarmbox stop` does.
 - `attach` waits for the readiness marker (60 s, then exit 6 and a message naming `podman logs`).
-- **`swarmbox <command>`** with a terminal: the command runs in a new window through `bash -ic` (so the agent aliases and `PATH` apply) as a
-  background job that writes its status to `box:/tmp/swarmbox/exit.<id>` and signals `tmux wait-for`; the call returns that status (a signal
-  gives 128+signal; a lost status gives 1). Arguments are quoted with `printf %q`, so spaces, quotes and `$` arrive unchanged. The idle
-  window is not closed on this path, or the session would end with the last window. Without a terminal on stdin and stdout (`swarmbox pubkey > file`),
-  or with `--plain`, the command runs directly, through `bash -c` with the shell fragment sourced, not an interactive shell, so standard error stays clean.
-  Measured with a spike and real tmux 3.3a: exit codes, 17 awkward arguments byte for byte.
+- **`swarmbox <command>`** with a terminal: the command runs in a new herdr-core terminal through `bash -ic` (so the agent aliases and `PATH` apply)
+  under a wrapper that writes its status to `box:/tmp/swarmbox/herdr-exit.<id>`; the call attaches to that terminal, returns that status (a signal
+  gives 128+signal; a lost status gives 1) and removes the terminal. Detaching first leaves the command running in its terminal. Arguments are
+  quoted with `printf %q`, so spaces, quotes and `$` arrive unchanged. Without a terminal on stdin and stdout (`swarmbox pubkey > file`), or with
+  `--plain`, the command runs directly, through `bash -c` with the shell fragment sourced, not an interactive shell, so standard error stays clean.
 - A command named like a host word cannot be run this way: use `swarmbox bash -c '<command>'`.
-- tmux config: `container/config/tmux.conf` (prefix `Ctrl+A`, mouse, history, true colour, and the prefix keys `S`, `V`, `X`, `a`, `g` of the `sysop` addon: show or hide its panel, veto, stop, approve, type a goal); your `~/.tmux.conf` is read after it.
+- herdr config: `container/config/herdr.toml` (the Purple Glow theme) is copied to `~/.config/herdr/config.toml` once, and
+  `~/.config/herdr-core/config.toml` is written once with the defaults of the box; neither is ever overwritten, so edit them freely.
 
 ## 6. Startup of the box
 
@@ -230,15 +226,15 @@ and must be your choice. It also warns when the box's image is not the one the c
 | 6b | start and supervise the bus broker (`swarmbox-bus serve`), wait up to 2 s for it to answer | W |
 | 7 | generate the MCP file (`swarmbox-mcp`), then run `prepare.sh` of every addon that is installed or in `WITH` | W per addon |
 | 8 | clear the runtime state of the previous nested Podman and, when `/dev/fuse` is not usable, the stale `fuse-overlayfs` marker (`overlay/.has-mount-program`) of the graph root; start the nested Podman service on `<state>/podman.sock` and check that it answers (10 s) | W |
-| 9 | start tmux with session `main` and the idle window | W |
-| 10 | start and supervise ttyd when `WEB=1` | W |
+| 9 | start the herdr-core daemon and its first terminal | W |
+| 10 | start and supervise the web server (the Web Studio) when `WEB=1` | W |
 | 11 | write the ready marker: `ok` or `warnings=<n>` | W |
 | 12 | in the background, install the addons of `WITH`, one after another, output to `serve.log` | W per addon |
 
 A log trimmer (a background job of `serve`, not a numbered step) looks every 5 minutes at `serve.log`, `bus.log`, `web-terminal.log` and `podman-service.log` and cuts one that is past 4 MiB to its last 1 MiB (the writers append with `>>`, so they go on at the new end), with a line that says so; it never fails. Addons of `WITH` install after the marker, so a slow download never blocks the door. `serve` handles SIGTERM and SIGINT (it sleeps in `wait`
 on a background `sleep infinity`), stops its children and exits, so `podman stop` is prompt (0.14 s measured, with and without `--init`).
-One supervisor function, `supervise_one`, serves ttyd and the bus broker. It restarts the child with a backoff of 1, 2, 4 ... 30 s; after 5 exits within 60 s it records a health line and stays idle, so that
-`swarmbox-web restart` (or `swarmbox-bus restart`) can still restart it by hand; the box does not stop when ttyd or the bus does. A broker that exits 8 (another one holds the lock) is not restarted. The box is created without `--restart`: after a host
+One supervisor function, `supervise_one`, serves the web server and the bus broker. It restarts the child with a backoff of 1, 2, 4 ... 30 s; after 5 exits within 60 s it records a health line and stays idle, so that
+`swarmbox-web restart` (or `swarmbox-bus restart`) can still restart it by hand; the box does not stop when the web server or the bus does. A broker that exits 8 (another one holds the lock) is not restarted. The box is created without `--restart`: after a host
 reboot it is stopped and the next `swarmbox` starts it (the connector, by contrast, is created with `--restart=always`).
 The entry banner shows the health lines. The test-only switches are `SWARMBOX_TEST_*` variables; they are not settings.
 
@@ -246,7 +242,7 @@ The entry banner shows the health lines. The test-only switches are `SWARMBOX_TE
 
 `swarmbox-bus` (source `container/scripts/swarmbox-bus.py`, one file, standard library only) is the broker and its command line. Rationale and the
 spikes behind it are in [addons-design.md](addons-design.md). Nothing of the box depends on it; step 6b starts it and a failure is only a warning. The bus is plain publish
-and subscribe: it knows nothing about tmux, tabs or what a message means, keeps no state and answers no question about the box (the tabs are a separate command, below).
+and subscribe: it knows nothing about the multiplexer, tabs or what a message means, keeps no state and answers no question about the box (the tabs are a separate command, below).
 
 - **Where.** A unix socket `box:/tmp/swarmbox/bus.sock` (`SB_BUS_SOCK` in `dirs.sh`; `SB_BUS_SOCKET` overrides it for the client and the broker), mode 0600, and the broker refuses
   any uid that is not its own or root (`SO_PEERCRED`). One broker per socket, by `flock` on `bus.sock.lock`; a socket left by a crashed broker is removed by the next one.
@@ -268,21 +264,20 @@ and subscribe: it knows nothing about tmux, tabs or what a message means, keeps 
 ### The tabs
 
 `swarmbox-tabs` (source `container/scripts/swarmbox-tabs.py`, in the image as `/usr/local/bin/swarmbox-tabs`; from the host `swarmbox tabs ...`) is a **capability of the host**, used directly and never through a bus topic. It has no daemon:
-a call delegates to its active `TabsBackend` (`TmuxBackend` by default, selected by `SB_TABS_BACKEND` or `SWARMBOX_MUX`; see [mux-architecture.md](mux-architecture.md)) and ends, and it imports nothing from any addon. The file is a command line and a library at once; the full text is its docstring.
+a call delegates to its `TabsBackend`, `HerdrBackend` (herdr-core, the only one; see [mux-architecture.md](mux-architecture.md)), and ends, and it imports nothing from any addon. The file is a command line and a library at once; the full text is its docstring.
 
-- **Commands.** `list` (JSON list of the tabs), `active`, `screen TAB [--lines N]`, `send TAB (--run TEXT | --input TEXT) [--queue] [--slash]`; `-` as TEXT reads stdin (long or multi-line text). Everything is JSON on stdout; a failure is
-  `{"err":CODE,"msg":TEXT}` on stdout too, with an exit code: 0 ok; 1 refused or failed (`no_such_tab`, `ambiguous_tab`, `dialog_open`, `busy_tab`, `slash_refused`, `not_submitted`, `tmux_error`, `lock_error`); 2 usage or a text that cannot be typed (`usage`, `bad_body`);
-  4 tmux is not there (`no_tmux`, `no_session`); 5 `timeout`.
-- **Environment.** `SB_TABS_SESSION` (default `main`), `SB_TABS_SOCKET` (adds `-L name`, for tests), `SB_TABS_BIN` (the tmux program), `SB_RUN_DIR` (locks); `TMUX_TMPDIR` passes through and `TMUX` is removed. Every tmux call has a 5 s timeout.
-- **The lock.** A send holds an `flock` on `<run folder>/tabs/<window id>.lock` while it types, so two sends to one tab never interleave, from any processes (the kernel drops the lock however the process dies); the second waits up to 30 s, then fails with `timeout` and types nothing. Reads take no lock.
-- **For an addon**, run the command rather than import the file: the command is the contract (JSON, exit codes, lock, timeouts) and costs one Python start-up (about 15 ms); the library (`Tabs`, with `list_tabs()`, `active()`, `screen()`, `send()`, errors as `TabsError`) exists for tests and for the command itself.
-- *Tabs.* A tab is a window of `main`. The address is the window id (`@3`); `index:name`, the index and the name are accepted too, and a name used twice is `ambiguous_tab` with the candidates. Every tmux call targets
-  the pane id. Panes with the option `@swarmbox_sysop_panel`, or with `SWARMBOX_SYSOP_PANEL=1` in their start command (a pane exists for an instant before its option is set), are never listed or targeted. `active` is the window of the non-control client with the latest activity, else the current window of `main`.
-- *Screen.* `capture-pane -p -J -e`, turned into the plain text of the pane plus the style of each character, then the last `lines` lines, then the secrets filter (on the plain text, whole lines, whatever the colours), then the text written with `[sel]` (reverse video), `[bg]` (background colour)
-  and `[err]` (red) spans and each line cut to 1000 characters (so no secret is cut in half and no colour hides one). Text of the pane that looks like a marker (`[sel]`, `[/err]`, `[REDACTED]`) gets one more `[` (`[[sel]`), so program output cannot forge one. A full-screen program (alternate screen) has no scrollback, so `lines` is ignored for it (`"lines": null` in the answer).
+- **Commands.** `list` (JSON list of the tabs), `active`, `screen TAB [--lines N]`, `send TAB (--run TEXT | --input TEXT) [--queue] [--slash]`, `open [--name NAME] [--cwd DIR] [--agent AGENT]`, `focus TAB`, `close TAB`; `-` as TEXT reads stdin (long or multi-line text). Everything is JSON on stdout; a failure is
+  `{"err":CODE,"msg":TEXT}` on stdout too, with an exit code: 0 ok; 1 refused or failed (`no_such_tab`, `ambiguous_tab`, `dialog_open`, `busy_tab`, `slash_refused`, `not_submitted`, `backend_error`, `lock_error`, `unsupported`); 2 usage or a text that cannot be typed (`usage`, `bad_body`);
+  4 herdr-core is not there (`no_backend`: no `hc` program; `no_session`: the daemon does not answer); 5 `timeout`.
+- **Environment.** `SB_TABS_HC_BIN` or `SB_TABS_BIN` (the `hc` program), `SB_RUN_DIR` (locks and the active tab); `SB_TABS_BACKEND` is a seam for tests. Every `hc` call has a timeout.
+- **The lock.** A send holds an `flock` on `<run folder>/tabs/tab-<address>.lock` while it types, so two sends to one tab never interleave, from any processes (the kernel drops the lock however the process dies); the second waits up to 30 s, then fails with `timeout` and types nothing. Reads take no lock.
+- **For an addon**, run the command rather than import the file: the command is the contract (JSON, exit codes, lock, timeouts) and costs one Python start-up (about 15 ms); the library (`Tabs`, with `list_tabs()`, `active()`, `screen()`, `send()`, `open_tab()`, `focus_tab()`, `close_tab()`, errors as `TabsError`) exists for tests and for the command itself.
+- *Tabs.* A tab is a live herdr-core terminal. The address is its terminal address (`t3`, never reused); the label `index:name` (numbered from 1 in the order the terminals were created), the index and the name are accepted too, and a name used twice is `ambiguous_tab` with the candidates. Terminals labelled `swarmbox.role=sysop` are never listed or targeted. `active` is the tab named in `<run folder>/herdr-active-tab` (written by the Studio, the cockpit, `open` and `focus`), else the first tab. `list` carries the OSC 7501 status a program reported (state, progress, message).
+- *Screen.* The text of the terminal, then the last `lines` lines, then the secrets filter (on the plain text, whole lines, whatever the colours), then the text written with `[sel]` (reverse video), `[bg]` (background colour)
+  and `[err]` (red) spans and each line cut to 1000 characters (so no secret is cut in half and no colour hides one). Text that looks like a marker (`[sel]`, `[/err]`, `[REDACTED]`) gets one more `[` (`[[sel]`), so program output cannot forge one. A full-screen program (alternate screen) has no scrollback, so `lines` is ignored for it (`"lines": null` in the answer).
   The secrets filter is the one of the box, tested in `tests/fast/test_tabs.py` and `tests/fast/test_tabs_redact_dos.py`.
-- *Typing.* `--run` types the text literally and presses Enter; `--input` types text with keys in braces (`{Esc}`, `{Enter}`, `{C-c}`, `{Up}`, ... any other `{word}` is text, `{{` is a brace). The text goes in pieces of 1024 characters (a `;` at the end of a piece as the key 0x3b: tmux would take it for the end of the command) and each key
-  is a separate tmux call 150 ms apart; a send has at most 100 steps (texts and keys). A pane in copy mode is cancelled first. When a send submits text (text, then Enter) to a pane that runs an agent (Claude Code, seen on the screen), a dialog is refused (`dialog_open`),
+- *Typing.* `--run` types the text literally and presses Enter; `--input` types text with keys in braces (`{Esc}`, `{Enter}`, `{C-c}`, `{Up}`, ... any other `{word}` is text, `{{` is a brace). The text goes as literal UTF-8 over `hc connect`, in pieces, and each key
+  is a separate `hc keys` call 150 ms apart (never one burst: a program that sees text and Enter together takes it for a paste); a send has at most 100 steps (texts and keys). When a send submits text (text, then Enter) to a tab that runs an agent (the OSC 7501 state it reports, else Claude Code's screen), a dialog is refused (`dialog_open`),
   a busy agent is refused unless `--queue` (`busy_tab`), text starting with `/` or `!` is refused unless `--slash` (`slash_refused`; every submitted text is checked, and a send that submits more than one text to an agent needs `--queue`), and after the Enter the command checks that the text left
   the input box and presses Enter once more if it did not (`not_submitted` if it still did not). `--input` without a submission is never judged, so a dialog can be answered and a busy agent interrupted.
 
@@ -290,31 +285,30 @@ a call delegates to its active `TabsBackend` (`TmuxBackend` by default, selected
 
 The `sysop` addon (`swarmbox addon install sysop`; user guide in [sysop.md](sysop.md), design in [addons-design.md](addons-design.md)) is a resident process that subscribes to the bus topic of `sysop.topic` (default `goal`) in the group `sysop.group` and, for each goal, runs
 a **brain** (`claude -p` by default, any command that speaks MCP) with a few tools served by `swarmbox-sysop mcp`: `list_tabs`, `read_tab`, `box_info`, `focus_tab`, `open_tab`, `close_tab`, `run`, `input`, `wait`, `say`, `done`. The tools call `swarmbox-tabs` (`list`, `screen`, `send`, `open`, `focus`, `close`) as a child process and never the bus,
-so everything the sysop does is typed in a tmux tab you can see. The host side of the addon, not the brain, rates each `run` and `input` (low, medium, high or blocked, from the text and from what the tab runs) and routes it by the autonomy level:
-a countdown the user can veto, an approval (a tap on Allow in the panel or on the web strip), or a refusal. The default level is `auto`: a harmless action goes at once. Budgets (`sysop.max_steps`, `sysop.max_seconds`), the stop command and the audit file (`<state>/sysop/events.jsonl`, append-only, mode 0600) apply to every goal.
-The panel is one pane per window beside the tab (at the right in a wide window, at the bottom in a narrow or portrait one) and never takes the focus by itself; `sysop.panel` says when it exists: `always` (the service, started with `serve --dock`, puts it in every window and follows new windows and resizes through tmux hooks, with a look every 4 seconds as a safety net), `auto` (opened in the window you look at when a goal arrives, closed a few seconds after the last) or `off`. Cancel, stop, allow and goal are tmux prefix keys (`Ctrl+A` then `V`, `X`, `a`, `g`; `S` shows or hides the panel), plain bindings of `tmux.conf` that call `swarmbox-sysop`. A key typed while a dialog of an agent is on the screen is always a high risk.
-The addon is code of this repository (standard library Python, nothing downloaded); like `voice`, its `prepare.sh` refreshes its library at every box start and starts the subscriber under a small watcher (`serve --log --dock --watch`) that starts it again after 1, 2, 4 ... 30 s when it dies and gives up after five abnormal exits in a minute (`swarmbox-addon prepare` wakes it); the entrypoint knows nothing of it. Its settings are the nine `sysop.*` keys of section 9,
+so everything the sysop does is typed in a tab you can see. The host side of the addon, not the brain, rates each `run` and `input` (low, medium, high or blocked, from the text and from what the tab runs) and routes it by the autonomy level:
+a countdown the user can veto, an approval (Allow in the panel of the Web Studio or of the cockpit), or a refusal. The default level is `auto`: a harmless action goes at once. Budgets (`sysop.max_steps`, `sysop.max_seconds`), the stop command and the audit file (`<state>/sysop/events.jsonl`, append-only, mode 0600) apply to every goal.
+The panel of the sysop is part of the Web Studio and of the cockpit (state, steps, the pending action with Allow, Cancel and Stop, the goal input); the sysop also keeps one herdr-core terminal of its own, labelled `swarmbox.role=sysop`, that reports its state with OSC 7501 and is hidden from every tab list. A key typed while a dialog of an agent is on the screen is always a high risk.
+The addon is code of this repository (standard library Python, nothing downloaded); like `voice`, its `prepare.sh` refreshes its library at every box start and starts the subscriber under a small watcher (`serve --log --dock --watch`; `--dock` starts the herdr bridge of the sysop) that starts it again after 1, 2, 4 ... 30 s when it dies and gives up after five abnormal exits in a minute (`swarmbox-addon prepare` wakes it); the entrypoint knows nothing of it. Its settings are the eight `sysop.*` keys of section 9,
 passed to the box as `SWARMBOX_SYSOP_*` only when they differ from the default.
 
 ### The voice addon
 
-The `voice` addon (`swarmbox addon install voice`; [voice.md](voice.md)) is an input and nothing more. It builds whisper.cpp inside the box, and `swarmbox-web` puts its front on the web terminal port: the microphone page and an audio entry with a fixed table of four routes under `/voice/`, next to ttyd.
-Audio becomes text with Whisper and the text is published as `{"text": ...}` with source `voice` on the bus topic of `voice.topic` (default `goal`), through the socket of the bus. It has no planner, no panel and no code that reads or types into tmux. With nobody on the topic the page says so;
+The `voice` addon (`swarmbox addon install voice`; [voice.md](voice.md)) is an input and nothing more. It builds whisper.cpp inside the box, and `swarmbox-web` puts its front on the web terminal port: two routes, `/voice/health` and `/voice/audio` (the microphone of the Web Studio), and everything else passed to the web server.
+Audio becomes text with Whisper and the text is published as `{"text": ...}` with source `voice` on the bus topic of `voice.topic` (default `goal`), through the socket of the bus. It has no planner, no panel and no code that reads or types into a tab. With nobody on the topic the page says so;
 the sysop hears it when `sysop.topic` is the same name. Settings: `voice.language`, `voice.stt.model`, `voice.stt.vocabulary`, `voice.web` and `voice.topic` (section 9).
 
 ## 7. Web terminal and remote access
 
 ```
-browser -> https://swarmbox.example.com -> Cloudflare Access (e-mail code) -> cloudflared (host) -> 127.0.0.1:7681 -> ttyd -> tmux (box)
+browser -> https://swarmbox.example.com -> Cloudflare Access (e-mail code) -> cloudflared (host) -> 127.0.0.1:7681 -> Web Studio -> herdr-core (box)
 ```
 
-**Inside the box.** ttyd (pinned, checksummed) runs tmux attached to `main`. It is on by default, listens only on `127.0.0.1:<WEB_PORT>` of the host
-(always 7681 inside) and has no login of its own. The page is built at image build by `container/web/build-index.sh`, which joins ttyd's own page,
-the clipboard bridge and the style into one file (ttyd serves a single file, measured). At start `swarmbox-web run` copies it to `box:/tmp/swarmbox/index.html` substituting
-`padding`, `ctrlVPaste`, `ctrlCCopy`, `scrollbar`, `strip` and `stripKeys` from `<workspace>/.config/swarmbox/web-terminal.conf`; every other key goes to ttyd as `-t key=value`.
-`swarmbox-web restart` applies a change without ending the box. Details: [web-terminal.md](web-terminal.md).
-
-**The controls strip.** The page has a slim bar under the terminal (`ttyd-clipboard.js`, `ttyd-style.css`; configured by `strip` and `stripKeys`). The terminal ends where the bar begins and xterm is refitted to what is left, so tmux sees the smaller window and the bar covers no cell, the status bar included. It holds key buttons that type tmux key names into the terminal (default `Esc`, `Tab`, `^C`, the arrows, `Panel` (`C-a S`), `Allow` (`C-a a`) and `Cancel` (`C-a V`), the sysop bindings of `tmux.conf`, so it needs no addon; a tap is sent on release, a held arrow repeats, the terminal keeps the focus) and, at the right end, the controls that an addon adds through `window.swarmboxStrip` (`add`, `note`, `remove`), which knows no addon by name: the `voice` addon puts its microphone and its state sentences there. The key buttons show on a touch screen (`pointer: coarse`) or when `stripKeys` is listed, the strip itself on a touch screen or with keys, and on a desktop with only an addon control (the microphone) a floating control in the top right corner instead of a bar; the page has a viewport meta tag and, on iOS, follows `visualViewport` so the strip stays above the keyboard. With the strip hidden the page is ttyd's own.
+**Inside the box.** The Herdr Web Studio (`container/web/herdr/server.mjs`, Node) is a client of herdr-core over one `hc connect`: the terminals
+as websockets (`/ws/pty/<address>`), the OSC 7501 states and the sysop state (`/ws/events`), and a small API for tabs, theme, the
+configuration and the sysop (`/api/*`). It is on by default, listens only on `127.0.0.1:<WEB_PORT>` of the host (always 7681 inside) and has
+no login of its own; it refuses cross-origin websockets and mutating calls and forbids framing by another origin. `swarmbox-web run` starts it
+(behind the voice front when that addon is installed); `swarmbox-web restart` restarts it without ending the box or its terminals. Details:
+[web-terminal.md](web-terminal.md).
 
 **Remote access.** `swarmbox remote` is a wrapper that runs `cloudflare-setup.py` (the only part that needs `python3`, stdlib only, in the support folder) with
 the box name and web port. `setup` asks for a domain, an e-mail and an API token (hidden input, never stored) and provisions the Access application with
@@ -379,7 +373,6 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `HOST_ACCESS` | `0` | adds `host.containers.internal:host-gateway` |
 | `BROWSER_URL` | empty | remote Chrome for chrome-devtools; a bare number or `HOST:PORT` |
 | `WEB`, `WEB_PORT` | `1`, `7681` | the web terminal and its host port (on `127.0.0.1`) |
-| `MUX` | `tmux` | terminal multiplexer backend (`tmux` default, or `herdr` opt-in; passed as `SWARMBOX_MUX` when non-default; see [mux-architecture.md](mux-architecture.md)) |
 | `WITH` | empty | addons to install at start |
 | `AGENT`, `YOLO` | first item of `WITH`, `1` | the agent `yolo` starts (none when `WITH` is empty); `0` turns off the auto-approve of the agents |
 | `ENV_KEYS` | empty | names of host variables passed at creation (section 10) |
@@ -388,7 +381,7 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `voice.language` | `auto` | Whisper language of the `voice` addon: `auto` or a code such as `pt` (no `pt-br`); passed as `SWARMBOX_VOICE_LANGUAGE` |
 | `voice.stt.model` | `small` | multilingual Whisper model (`tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo`), never `.en`; `SWARMBOX_VOICE_STT_MODEL` |
 | `voice.stt.vocabulary` | empty | words given to Whisper as its initial prompt (at most 500 characters); `SWARMBOX_VOICE_STT_VOCABULARY` |
-| `voice.web` | `1` | `0` keeps the voice front off: the web terminal port then goes straight to ttyd, with no voice button; `SWARMBOX_VOICE_WEB` |
+| `voice.web` | `1` | `0` keeps the voice front off: the web terminal port then goes straight to the Web Studio, with no microphone; `SWARMBOX_VOICE_WEB` |
 | `voice.topic` | `goal` | the bus topic the voice addon publishes its goals to (a topic name: `[a-z0-9][a-z0-9._-]{0,62}`); passed as `SWARMBOX_VOICE_TOPIC` |
 | `sysop.brain` | `claude` | the brain of the `sysop` addon: a preset name or a command template (no line break; [sysop.md](sysop.md)); `SWARMBOX_SYSOP_BRAIN` |
 | `sysop.model` | `sonnet` | the model the `claude` preset asks for; `SWARMBOX_SYSOP_MODEL` |
@@ -398,10 +391,12 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600; `SWARMBOX_SYSOP_MAX_SECONDS` |
 | `sysop.topic` | `goal` | the bus topic the sysop listens on (same charset as `voice.topic`; both default to `goal`, which is the only link between the two addons); `SWARMBOX_SYSOP_TOPIC` |
 | `sysop.group` | `sysop` | the group the sysop subscribes with, so several sysops share the goals; `SWARMBOX_SYSOP_GROUP` |
-| `sysop.panel` | `always` | when the panel of the sysop is in tmux: `always` (every window, from the start of the box), `auto` (while a goal runs) or `off`; passed as `SWARMBOX_SYSOP_PANEL_MODE` (`SWARMBOX_SYSOP_PANEL=1` marks the start command of a panel pane) |
 
 The `voice.*` and `sysop.*` keys are lower case with dots (`sysop.max_steps` keeps its underscore); the environment variable of a key is `SWARMBOX_` plus the key in upper case with `.` turned into `_`. They are creation settings like the others (applied by `swarmbox reset`), but
 they are passed to the box, and enter the fingerprint, only when they differ from the default.
+
+`MUX` and `sysop.panel` were removed in version 2.3 (herdr-core is the only multiplexer, and the tmux panel of the sysop is gone): a config
+file that still has them is accepted, each is ignored with one warning, and `config get` or `config set` of them exits 2.
 
 Also environment only: `SWARMBOX_WEB_DOMAIN`, `SWARMBOX_WEB_HOSTNAME` (public address printed by `url`), `SWARMBOX_CLOUDFLARED_IMAGE`; in the box `SWARMBOX_STARSHIP=0` (plain prompt),
 `SWARMBOX_UPDATE_CHECK=0`. `config set` writes under `umask 077`, replaces the file by `mv`, and refuses to write if `chmod 600` fails. `config list` shows each key with its source
@@ -464,10 +459,10 @@ listens only on `127.0.0.1` and has no login on its own port; the Cloudflare cre
 ## 13. Image and updates
 
 The image is the root `Dockerfile` (about 1.75 GB built; no agent inside): `node:24-trixie-slim` (Debian 13), user `agent` UID/GID 1000 (the base user renamed, passwordless `sudo` on purpose), git, curl, python3 and venv,
-build tools, jq, tmux, vim, openssh-client and similar, Podman and its network packages, Chromium, `chrome-devtools-mcp` (pinned), `uv`, ttyd and Starship (pinned, checksummed), a Python venv at `/opt/flow`,
+build tools, jq, vim, openssh-client and similar, Podman and its network packages, Chromium, `chrome-devtools-mcp` (pinned), `uv`, herdr-core, herdr and Starship (pinned, checksummed), the Web Studio, a Python venv at `/opt/flow`,
 `container/` scripts and configuration (including `swarmbox-bus` and `swarmbox-tabs`, one Python file each), `cloudflare-setup.py`, and the addon manifests with their shims. The `voice` and `sysop` addons are in the image as source, and nothing of them is installed or running until you install them. `ENTRYPOINT swarmbox-entrypoint`, `CMD serve`. Subcommands of the entrypoint: `serve`, `attach`, `install`,
 `pubkey`, `addon`, `bus`, `tabs`, `host-helper` (the archive of the script and support files on stdout), anything else is run as given. Layers: stable first, volatile last; every `RUN` that downloads cleans up in the same `RUN`; `NPM_CONFIG_CACHE` is
-`/opt/npm-cache`, owned by `agent`. Every version is an `ARG` with a default; `CONTRIBUTING.md` says how they are bumped. A program the image needs that is not in Debian is fetched with its published checksum verified. **tmux is the one exception to "the Debian package"**: Debian 13 has 3.5a, which has no pane scrollbar (tmux 3.6 added it), so the image installs one exact backport, `TMUX_VERSION` (3.7c-1~bpo13+1), pinned by SHA-256 for amd64 and arm64 and fetched from the archive or, when backports has moved on, from `snapshot.debian.org` by SHA-1; each source is checked against the SHA-256 before the file is installed. `container/config/tmux.conf` enables `pane-scrollbars on` with `set -gq`, so the same file loads on the older tmux of a development machine, which ignores it. `on` and not `modal`: with `modal` the pane is resized (one column) each time copy mode starts and ends, and the program in it gets a resize and redraws while you read its output [verified: tmux 3.7c with a program that logs SIGWINCH: 80 -> 79 -> 80 with `modal`, 79 throughout with `on`]; a program on the alternate screen gets the whole width and no bar, and one that asks for the mouse gets the wheel and tmux does not enter copy mode [verified: same tmux, a program that enables mouse tracking received the three wheel events].
+`/opt/npm-cache`, owned by `agent`. Every version is an `ARG` with a default; `CONTRIBUTING.md` says how they are bumped. A program the image needs that is not in Debian is fetched with its published checksum verified.
 
 **Distribution.** Image `ghcr.io/feroult/swarmbox`, multi-arch (amd64, arm64), tags `X.Y.Z`, `X.Y` and `latest`, published with each release. `.github/workflows/release.yml` runs the tests, a native build per architecture, a check that the
 script in the image reports the tag's version, a vulnerability scan (grype), the manifest list, keyless signing (cosign), and the SBOM (syft). To build it yourself, see CONTRIBUTING.md (`dev/dev-build.sh` inside a development box). A missing image is pulled by `up`, never built.
@@ -484,12 +479,12 @@ An `IMAGE` with no `X.Y` series (a digest, `latest`, `dev`) needs `--to`.
 ```
 Dockerfile                  the image
 container/entrypoint.sh     serve, attach, install, pubkey, addon, bus, tabs, host-helper
-container/scripts/          dirs, banner, messages, ssh-key, starship-init, swarmbox-{attach,bus,tabs,install,mcp,shim,addon,web}
+container/scripts/          dirs, banner, messages, ssh-key, starship-init, swarmbox-{attach,bus,tabs,install,mcp,shim,addon,web}, mux/ (mux.sh, herdr.sh)
 container/host/             swarmbox-host (the `swarmbox` script), VERSION, DEFAULTS   (the archive of `host-helper`)
 install.sh                  the release installer (downloads swarmbox, checks its sha256)
-container/config/           tmux.conf, tmux-browser-keys.conf, starship.toml, bashrc.sh (the shell fragment), ssh-swarmbox.conf
+container/config/           herdr.toml, starship.toml, bashrc.sh (the shell fragment), ssh-swarmbox.conf
 container/addons/<name>/     addon manifests and installers;  container/mcp/<name>/  MCP server descriptions
-container/web/              ttyd page parts and build-index.sh
+container/web/herdr/        the Web Studio (server.mjs, public/), the cockpit (cockpit.mjs), hc-client.mjs
 cloudflare-setup.py         the back end of `swarmbox remote`
 dev/                        dev-build, name-check, release-check, release-version, record-checksums, gen-notices, kata-probe
 tests/                      unittest scripts (stdlib only); run `sh tests/run.sh`
@@ -503,7 +498,7 @@ Decisions that are still true. The full reasoning of D1 to D40 is in [history/de
 
 | Id | Decision | Reason |
 |---|---|---|
-| D1 | One persistent box; every tab and the browser share tmux session `main` | one environment, nothing to reconcile |
+| D1 | One persistent box; every tab and the browser share the terminals of one herdr-core daemon (the only multiplexer since version 2.3) | one environment, nothing to reconcile |
 | D2 | Neutral image, addons and agents installed on demand through shims | small image, independent versions |
 | D3 | Claude Code updates itself (`UPDATE=self`) | npm install cannot self-update; vendor path works |
 | D4 | OpenCode is a shim like Claude Code; local-LLM setup lives in its addon directory | no special case in the core |
@@ -513,7 +508,7 @@ Decisions that are still true. The full reasoning of D1 to D40 is in [history/de
 | D10 | XDG layout in the workspace; regenerated files in `box:/tmp/swarmbox` | one rule per file |
 | D11 | Workspace chosen in the host config (`swarmbox config set WORKSPACE DIR`), default `~/swarmbox` | where you run `swarmbox` does not matter |
 | D12 | Variables are passed only at creation; names in config, values from the host environment | no value on disk or on a command line |
-| D13 | The ttyd page is built into the image | versioned, tested, signed |
+| D13 | The Web Studio is built into the image | versioned, tested, signed |
 | D14 | Cloudflare credentials and connector stay on the host | the agent never sees the tunnel |
 | D15 | One script on the `PATH`, not a shell function or an alias | works from any shell and from scripts; no startup file to edit |
 | D16 | The script is POSIX `sh`; only `remote` is Python | runs on a bare host |
@@ -547,5 +542,4 @@ Decisions that are still true. The full reasoning of D1 to D40 is in [history/de
 - A human review of the host script and the security review; the licence checks of `THIRD_PARTY_NOTICES.md`.
 - Stronger isolation (a microVM runtime): untested, see [microvm.md](microvm.md). A credential proxy on the host, a separately signed script asset and restart of the box after a reboot are not built.
 - After `remote setup` for a second box, `cloudflare.json` keeps one name, so the first box prints no public address until its setup is run again.
-- `swarmbox <command>` prints tmux's own `[exited]` line before the command's output; accepted.
 - Code comments still cite section numbers of an earlier version of this file; the names of the functions and files they cite are right.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# herdr.sh: the herdr-core (hc) multiplexer backend for SwarmBox (loaded by mux.sh when SWARMBOX_MUX=herdr).
+# herdr.sh: the herdr-core (hc) multiplexer backend for SwarmBox (loaded by mux.sh; the only backend).
 #
 # All herdr-core lifecycle, config seeding, terminal attach, command wrapper and native web gateway
 # dispatch live here so the core scripts never invoke hc or herdr directly.
@@ -107,11 +107,6 @@ mux_serve_shutdown_note() {
     log "leaving the herdr-core daemon to end with the container"
 }
 
-mux_web_fallback() {
-    # shellcheck disable=SC2034  # consumed by swarmbox-web.sh
-    MUX_WEB_FALLBACK_CMD=("$_SB_HERDR_HC" attach)
-}
-
 # mux_web_run PORT IFACE VOICE_BIN: launch the native SwarmBox × herdr-core Web Gateway.
 # When the voice addon is installed, swarmbox-voice front sits in front of server.mjs,
 # serving /voice/* and piping all other HTTP and WebSocket traffic byte-for-byte.
@@ -122,7 +117,7 @@ mux_web_run() {
     _herdr_ensure_initial_tab
     [ -x "$_SB_HERDR_WEB" ] || die "herdr web gateway not found or not executable at $_SB_HERDR_WEB" 127
     if [ -n "$voice_bin" ]; then
-        local -a front_args=(front --listen "$iface:$port" --ttyd-port "${SWARMBOX_TEST_WEB_TTYD_PORT:-7680}")
+        local -a front_args=(front --listen "$iface:$port" --server-port "${SWARMBOX_TEST_WEB_SERVER_PORT:-7680}")
         [ -n "${SWARMBOX_TEST_VOICE_PORT:-}" ] && front_args+=(--service-listen "127.0.0.1:$SWARMBOX_TEST_VOICE_PORT")
         exec "$voice_bin" "${front_args[@]}" -- "$_SB_HERDR_WEB" -p "$port" -i "$iface"
     fi

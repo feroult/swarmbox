@@ -1,5 +1,5 @@
-"""`swarmbox-entrypoint serve`: the ordered steps, failures, readiness marker, health file, PID 1 signals and the two supervisors (ttyd, the
-bus broker), all against the fake environment of tests/support/serve_support.py.
+"""`swarmbox-entrypoint serve`: the ordered steps, failures, readiness marker, health file, PID 1 signals and the two supervisors (the web
+server, the bus broker), all against the fake environment of tests/support/serve_support.py.
 
 A start of `serve` costs a fraction of a second, so the checks of one ordinary start share it (DefaultRun) and the other classes start
 it again only with the one thing that is different.
@@ -47,12 +47,12 @@ class DefaultRun(unittest.TestCase):
         # a sudo that would be recorded (and fail): a run folder the agent can write must never call it
         write_exec(os.path.join(cls.c.fake, "sudo"), '#!/bin/bash\necho "sudo $*" >> "$FAKE_DIR/calls.log"\nexit 1\n')
         p = cls.c.run_ready()
-        wait_for(lambda: read(os.path.join(cls.c.fake, "ttyd.pid")).strip())
+        wait_for(lambda: read(os.path.join(cls.c.fake, "web.pid")).strip())
         cls.bus_pid = int(wait_for(lambda: read(os.path.join(cls.c.fake, "bus.pid")).strip()))
         cls.bus_sup = int(read(os.path.join(cls.c.run_dir, "bus-supervisor.pid")).strip())
         cls.marker = cls.c.marker()
         cls.health = cls.c.health_lines()
-        cls.live_pids = [int(read(os.path.join(cls.c.fake, n)).strip()) for n in ("ttyd.pid", "service.pid")]
+        cls.live_pids = [int(read(os.path.join(cls.c.fake, n)).strip()) for n in ("web.pid", "service.pid")]
         cls.t0 = time.time()
         cls.rc = cls.c.stop(p, signal.SIGTERM)
         cls.stop_seconds = time.time() - cls.t0
@@ -70,13 +70,13 @@ class DefaultRun(unittest.TestCase):
         self.assertEqual(self.health, [])
         self.assertIn("swarmbox-bus serve [%s]" % os.path.join(self.c.run_dir, "bus.sock"), self.calls)
 
-    def test_the_steps_run_in_order_and_the_broker_does_not_wait_for_tmux(self):
+    def test_the_steps_run_in_order_and_the_broker_does_not_wait_for_the_multiplexer(self):
         order = [self.first("swarmbox-pubkey --ensure"), self.first("swarmbox-addon link --user"), self.first("swarmbox-bus serve"),
-                 self.first("swarmbox-addon prepare"), self.first("podman system service"), self.first("tmux new-session"), self.first("ttyd ")]
+                 self.first("swarmbox-addon prepare"), self.first("podman system service"), self.first("hc server start"),
+                 self.first("swarmbox-web run")]
         self.assertEqual(order, sorted(order), self.calls)
-        new = self.calls[self.first("tmux new-session")].split()
-        self.assertIn("-d", new)
-        self.assertIn("main", new)
+        # with no terminal yet, step 9 opens the first one (a login shell)
+        self.assertIn("/bin/bash -l", self.calls[self.first("hc run")])
 
     def test_the_serve_log_records_the_steps(self):
         for n in (1, 2, 3, 5, 6, "6b", 7, 8, 9, 10, 11):
@@ -206,7 +206,7 @@ class WarnSteps(ServeCase):
         cases = [
             ("step 5 ssh key", lambda: put(os.path.join(self.fake, "swarmbox-pubkey.exit"), "1"), "ssh"),
             ("step 8 service", lambda: put(os.path.join(self.fake, "service.mode"), "fail"), "podman"),
-            ("step 9 tmux", lambda: put(os.path.join(self.fake, "tmux.exit"), "1"), "tmux"),
+            ("step 9 herdr-core", lambda: put(os.path.join(self.fake, "hc.exit"), "1"), "herdr"),
         ]
         for label, setup, word in cases:
             with self.subTest(label):
@@ -217,8 +217,8 @@ class WarnSteps(ServeCase):
                 lines = self.health_lines()
                 self.assertEqual(len(lines), 1, lines)
                 self.assertIn(word, lines[0].lower())
-                # ttyd is started by its supervisor in the background, about when the marker appears: wait for the call
-                self.assertTrue(wait_for(lambda: any(c.startswith("ttyd ") for c in self.calls())), "ttyd must still start: %s" % label)
+                # the web server is started by its supervisor in the background, about when the marker appears: wait for the call
+                self.assertTrue(wait_for(lambda: any(c.startswith("swarmbox-web ") for c in self.calls())), "the web server must still start: %s" % label)
                 self.stop(p)
 
     def test_with_installs_run_after_the_marker_in_order(self):
@@ -232,7 +232,7 @@ class WarnSteps(ServeCase):
 
 class SupervisorCase(ServeCase):
     """The policy both supervisors share (supervise_one): five exits within a minute and it gives up, idle, until USR1 restarts it by hand."""
-    NAME = ""      # the fake's file prefix: ttyd or bus
+    NAME = ""      # the fake's file prefix: web or bus
 
     def starts(self):
         return len(read(os.path.join(self.fake, self.NAME + ".starts")).split())
@@ -243,12 +243,12 @@ class SupervisorCase(ServeCase):
 
 
 class Supervisor(SupervisorCase):
-    """The ttyd supervisor."""
-    NAME = "ttyd"
+    """The web supervisor."""
+    NAME = "web"
     SUP_PID = "web-supervisor.pid"
 
     def test_crash_loop_gives_up_after_five_exits_stays_alive_and_a_restart_by_hand_starts_it_again(self):
-        put(os.path.join(self.fake, "ttyd.mode"), "crash")
+        put(os.path.join(self.fake, "web.mode"), "crash")
         p = self.run_ready()
         self.assertTrue(wait_for(lambda: any("keeps crashing" in l for l in self.health_lines()), 10), self.health_lines())
         time.sleep(0.3)
@@ -258,14 +258,14 @@ class Supervisor(SupervisorCase):
         self.assertTrue(alive(self.sup_pid()), "the supervisor must stay alive, idle")
         self.assertEqual(self.starts(), 5, "no restart while idle")
         # fix the cause, then `swarmbox-web restart` (which sends USR1 to the supervisor)
-        put(os.path.join(self.fake, "ttyd.mode"), "run")
+        put(os.path.join(self.fake, "web.mode"), "run")
         os.kill(self.sup_pid(), signal.SIGUSR1)
-        self.assertTrue(wait_for(lambda: self.starts() == 6), "ttyd was not restarted")
+        self.assertTrue(wait_for(lambda: self.starts() == 6), "the web server was not restarted")
         self.assertTrue(wait_for(lambda: not any("keeps crashing" in l for l in self.health_lines()), 3), self.health_lines())
-        self.assertTrue(wait_for(lambda: read(os.path.join(self.fake, "ttyd.pid")).strip().isdigit(), 3), "ttyd.pid was not written")
-        self.assertTrue(alive(int(read(os.path.join(self.fake, "ttyd.pid")).strip())))
+        self.assertTrue(wait_for(lambda: read(os.path.join(self.fake, "web.pid")).strip().isdigit(), 3), "web.pid was not written")
+        self.assertTrue(alive(int(read(os.path.join(self.fake, "web.pid")).strip())))
         # the count was reset: five more quick exits are needed before it gives up again
-        put(os.path.join(self.fake, "ttyd.mode"), "crash")
+        put(os.path.join(self.fake, "web.mode"), "crash")
         os.kill(self.sup_pid(), signal.SIGUSR1)
         self.assertTrue(wait_for(lambda: any("keeps crashing" in l for l in self.health_lines()), 10))
         time.sleep(0.3)
@@ -274,7 +274,7 @@ class Supervisor(SupervisorCase):
 
 
 class BusStep(SupervisorCase):
-    """Step 6b: the bus broker under supervise_one (the same policy as ttyd's), a W step."""
+    """Step 6b: the bus broker under supervise_one (the same policy as the web server's), a W step."""
     NAME = "bus"
     SUP_PID = "bus-supervisor.pid"
 
@@ -284,7 +284,7 @@ class BusStep(SupervisorCase):
         self.assertEqual(self.marker(), "warnings=1")
         self.assertEqual(len(self.health_lines()), 1, self.health_lines())
         self.assertIn("the bus did not answer", self.health_lines()[0])
-        self.assertTrue(wait_for(lambda: any(c.startswith("ttyd ") for c in self.calls())), "ttyd must still start")
+        self.assertTrue(wait_for(lambda: any(c.startswith("swarmbox-web ") for c in self.calls())), "the web server must still start")
         self.stop(p)
 
     def test_a_missing_program_is_one_warning(self):

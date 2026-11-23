@@ -3,19 +3,16 @@
   swarmbox-sysop serve [--log] [--dock] [--watch]   the resident service: reads goals from the bus and runs them, one at a time (prepare.sh starts it).
                                                --watch: it runs as a child of a watcher that starts it again when it dies (a kill, a crash), with a back-off and a
                                                stop after five crashes in a minute (watch.py); a second `serve --watch` tells the first to start it now
-                                               --dock: start the multiplexer UI helpers (for tmux: panel Follower + status Toaster; skipped when SWARMBOX_MUX=none)
+                                               --dock: start the UI helpers (the herdr agent bridge; skipped when SWARMBOX_MUX=none)
   swarmbox-sysop goal [--source S] [--wait] [--timeout N] TEXT...    publish a goal on the bus (topic goal); `-` reads the text from stdin;
                                                prints the goal id. --wait follows the goal to its end (exit 0 done, 1 failed or stopped)
-  swarmbox-sysop goal              with no text, on a terminal: asks for the goal on one line
-  swarmbox-sysop veto [KEY OPTIONS]            the veto key: refuses what waits (a countdown is vetoed, an approval is refused)
-  swarmbox-sysop approve [KEY OPTIONS]         allow what waits
-                                               KEY OPTIONS (veto, approve, stop): --socket PATH --window ID --client NAME
+  swarmbox-sysop goal              with no text, on a terminal: asks for the goal on one line (the popup of Ctrl+A then g in herdr)
+  swarmbox-sysop veto                          the veto key: refuses what waits (a countdown is vetoed, an approval is refused)
+  swarmbox-sysop approve                       allow what waits
   swarmbox-sysop status [--json] [-q]          the service and its goals; exit 0 when it runs, 1 when it does not
   swarmbox-sysop stop [GOAL_ID]                the stop key: ends the running goal (and drops the queue), or just GOAL_ID
   swarmbox-sysop mcp                           the MCP server of a goal (the brain's MCP config runs this; SWARMBOX_SYSOP_CONTEXT names the goal)
-  swarmbox-sysop panel                         the terminal panel: the goal, the log, the countdown, the approval; g types a goal
   swarmbox-sysop agent                         interactive OSC 7501 agent bridge for herdr-core / herdr-app (hidden from normal tabs)
-  swarmbox-sysop dock open|close|toggle|redock|sync [--socket PATH] [--window ID]   the panel dock (tmux backend)
   swarmbox-sysop --self-test                   checks the install without a model
 
 Settings: SWARMBOX_SYSOP_* (config.py). Exit codes of `goal` follow swarmbox-bus: 3 nobody listens (the service is not running), 4 the bus is not
@@ -32,7 +29,6 @@ import time
 from . import actions, brain, busclient, config, ipc, mcpserver, paths, policy, service, state, ui_host, watch
 
 EXIT = {"no_subscriber": 3, "bus_down": 4, "bus_closed": 4, "too_large": 5, "bad_topic": 6, "bad_request": 6, "bad_body": 6, "busy": 7}
-DOCK_ACTIONS = ("open", "close", "toggle", "redock", "sync")
 
 
 def _cfg():
@@ -125,14 +121,36 @@ def cmd_serve(args):
     return rc
 
 
+def prompt_goal(bus, source="panel", inp=None, out=None, topic=None):
+    """`goal` with no text on a terminal (the popup of Ctrl+A then g in herdr): ask for a goal on one line and publish it. 0 sent, 1 empty (cancel),
+    2 too long, 3 not sent."""
+    inp, out = inp or sys.stdin, out or sys.stderr
+    out.write("Goal for the sysop (Enter sends it, empty cancels): ")
+    out.flush()
+    text = inp.readline().strip()
+    if not text:
+        return 1
+    if len(text) > service.MAX_GOAL_TEXT:
+        out.write("too long: %d characters, at most %d. Press Enter." % (len(text), service.MAX_GOAL_TEXT))
+        inp.readline()
+        return 2
+    try:
+        actions.publish_goal(bus, text, source=source, topic=topic)
+    except (busclient.BusError, config.ConfigError) as e:
+        out.write("the goal was not sent: %s. Press Enter." % busclient.words(e))
+        out.flush()
+        inp.readline()
+        return 3
+    return 0
+
+
 def cmd_goal(args):
     text = " ".join(args.text)
     if not args.text:
         if not sys.stdin.isatty():
             print("swarmbox-sysop: goal: no text", file=sys.stderr)
             return 2
-        from . import keys
-        return keys.prompt(busclient.Bus(), "panel")
+        return prompt_goal(busclient.Bus(), "panel")
     if text == "-":
         text = sys.stdin.read().rstrip("\n")
     if not text.strip():
@@ -204,14 +222,11 @@ def cmd_status(args):
 
 
 def cmd_stop(args):
-    pth = paths.Paths()
-    sock = getattr(args, "socket", "")
-    client = getattr(args, "client", "")
-    res = actions.stop(pth, goal_id=args.goal)
-    if res.ok and not client:
+    res = actions.stop(paths.Paths(), goal_id=args.goal)
+    if res.ok:
         print("swarmbox-sysop: " + res.message)
     else:
-        ui_host.notify(res.message, socket=sock, client=client)
+        ui_host.notify(res.message)
     return res.rc
 
 
@@ -223,30 +238,19 @@ def cmd_veto(args):
         args.goal = None
         return cmd_stop(args)
     res = actions.veto(pth, by="key")
-    ui_host.notify(res.message, socket=getattr(args, "socket", ""), client=getattr(args, "client", ""))
+    ui_host.notify(res.message)
     return res.rc
 
 
-def cmd_approve(args):
-    if args.window is not None and not re.fullmatch(r"@[0-9]{1,9}", args.window):
-        print("swarmbox-sysop: approve: --window must be a window id such as @3", file=sys.stderr)
-        return 2
+def cmd_approve(_args):
     res = actions.approve(paths.Paths(), by="key")
-    ui_host.notify(res.message, socket=getattr(args, "socket", ""), client=getattr(args, "client", ""))
+    ui_host.notify(res.message)
     return res.rc
-
-
-def _cmd_panel(_args):
-    return ui_host.run_panel()
 
 
 def _cmd_agent(_args):
     from . import agent
     return agent.run_agent()
-
-
-def _cmd_dock(args):
-    return ui_host.run_dock(args.action, args.socket, args.window)
 
 
 def self_test():
@@ -270,7 +274,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd")
     s = sub.add_parser("serve")
     s.add_argument("--log", action="store_true", help="detached mode: output to serve.log")
-    s.add_argument("--dock", action="store_true", help="start multiplexer UI helpers (for tmux: panel dock + status line)")
+    s.add_argument("--dock", action="store_true", help="start the UI helpers (the herdr agent bridge)")
     s.add_argument("--watch", action="store_true", help="run the service as a child and start it again when it dies (what the box does)")
     s.set_defaults(fn=cmd_serve)
     g = sub.add_parser("goal")
@@ -289,18 +293,8 @@ def main(argv=None):
     for name, fn in (("veto", cmd_veto), ("approve", cmd_approve)):
         k = sub.add_parser(name)
         k.set_defaults(fn=fn)
-    for k in (p, sub.choices["veto"], sub.choices["approve"]):
-        k.add_argument("--socket", default="")
-        k.add_argument("--window", default=None)
-        k.add_argument("--client", default="")
     sub.add_parser("mcp").set_defaults(fn=lambda a: mcpserver.main())
-    sub.add_parser("panel").set_defaults(fn=_cmd_panel)
     sub.add_parser("agent").set_defaults(fn=_cmd_agent)
-    d = sub.add_parser("dock")
-    d.add_argument("action", choices=DOCK_ACTIONS)
-    d.add_argument("--socket", default="")
-    d.add_argument("--window", default=None)
-    d.set_defaults(fn=_cmd_dock)
     args = ap.parse_args(sys.argv[1:] if argv is None else list(argv))
     if args.self_test:
         return self_test()

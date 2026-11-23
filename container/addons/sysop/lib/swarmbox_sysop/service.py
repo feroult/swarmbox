@@ -149,7 +149,7 @@ class Service:
     def acquire(self, wait=None):
         """Take the single-instance lock. `running()` (the panel every 0.2 s, `swarmbox-sysop status`, prepare.sh) probes the same lock with a
         non-blocking flock that holds it for an instant when it is free: a start that lands on such an instant used to find the lock taken, say
-        "already running" and exit 0, leaving NO service until the next start of the box (seen once by tests/e2e/e2e_sysop.py). So a taken lock is tried
+        "already running" and exit 0, leaving NO service until the next start of the box (seen once by the end-to-end test of version 1). So a taken lock is tried
         again for LOCK_WAIT seconds: a probe is gone by then, a live service is not."""
         self.paths.make()
         fd = os.open(self.paths.lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
@@ -385,7 +385,7 @@ class Service:
 
     def status(self, final=False):
         """Write status.json. The state is read AND written under one lock: two threads call this (the reader when a goal arrives, the main thread when
-        it starts it), and a state read first but written last would leave an old file (found by tests/e2e/e2e_sysop.py: the panel showed `1 queued, idle`
+        it starts it), and a state read first but written last would leave an old file (found by the end-to-end test of version 1: the panel showed `1 queued, idle`
         for the whole goal, so the countdown and the approval were never shown and the veto key had nothing to act on)."""
         with self.status_lock:
             with self.cond:
@@ -393,7 +393,7 @@ class Service:
             st = {"pid": os.getpid(), "version": __version__, "started": self.started, "updated": self.clock(),
                   "bus": "stopped" if final else self.bus_state, "current": self.current.id if self.current else None, "queue": queue,
                   "rejected": self.rejected,
-                  "settings": {"topic": self.cfg.topic, "group": self.cfg.group, "autonomy": self.cfg.autonomy, "panel": self.cfg.panel_mode, "countdown": self.cfg.countdown, "brain": self.cfg.brain.split()[0], "model": self.cfg.model,
+                  "settings": {"topic": self.cfg.topic, "group": self.cfg.group, "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "brain": self.cfg.brain.split()[0], "model": self.cfg.model,
                                "max_steps": self.cfg.max_steps, "max_seconds": self.cfg.max_seconds, "max_goals": self.cfg.max_goals}}
             key = json.dumps({k: v for k, v in st.items() if k != "updated"}, sort_keys=True)
             if key == self._last_status and not final:
@@ -466,7 +466,7 @@ class Service:
             deadline = goal.started + self.cfg.max_seconds
             ctx = os.path.join(gdir, "context.json")
             ipc.write_json(ctx, {"goal": goal.id, "source": goal.source, "goal_dir": gdir, "audit": self.paths.audit,
-                                 "autonomy": self.cfg.autonomy, "panel": self.cfg.panel_mode, "countdown": self.cfg.countdown, "approval_timeout": self.cfg.approval_timeout,
+                                 "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "approval_timeout": self.cfg.approval_timeout,
                                  "max_steps": self.cfg.max_steps, "deadline": deadline})
             mcp = os.path.join(gdir, "mcp.json")
             brain.write_mcp_config(mcp, ctx, self.paths, self.libdir)

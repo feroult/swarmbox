@@ -6,19 +6,20 @@ runs a brain (a command that speaks MCP, `claude -p` by default) with eleven too
 `swarmbox-tabs` (the bus is for goals only). The host rates every action first (countdown, approval, block), keeps budgets, and writes an audit file.
 
 ```
-swarmbox-sysop serve [--log]     the resident service (prepare.sh starts it, detached, at every start of the box)
+swarmbox-sysop serve [--log] [--dock] [--watch]   the resident service (prepare.sh starts it, detached, at every start of the box;
+                                 --dock starts the herdr agent bridge, --watch starts the service again when it dies)
 swarmbox-sysop goal "text"       publish a goal (--source panel|voice|cli, --wait follows it)
 swarmbox-sysop status [--json]   the service and its goals (exit 1 when it is not running)
 swarmbox-sysop stop [GOAL_ID]    the stop key: kills the brain's process group, ends the goal, drops the queue
 swarmbox-sysop mcp               the MCP server of a goal (the brain's MCP config runs it)
-swarmbox-sysop panel             the panel (goal, log, countdown, approval; g types a goal), in a tmux pane
-swarmbox-sysop dock open|close|toggle|redock|sync   the panel in tmux, one per window; Ctrl+A then S shows or hides it; `serve --dock` keeps it as `sysop.panel` says: up in every window (always, the default), open while a goal runs (auto) or never (off); it never takes the focus
-swarmbox-sysop veto | approve       the keys of any tab: Ctrl+A then V veto, X stop, a approve (opens the approval prompt and focuses the panel), g goal
+swarmbox-sysop agent             the OSC 7501 agent bridge in a hidden herdr terminal (`serve --dock` starts it)
+swarmbox-sysop veto | approve    the keys of herdr (container/config/herdr.toml): Ctrl+A then a approve, Shift+V veto; Ctrl+A then g asks for a goal (`goal` with no text)
 ```
 
 Settings (environment, `SWARMBOX_SYSOP_*`, see `lib/swarmbox_sysop/config.py`): `TOPIC` (goal), `GROUP` (sysop), `BRAIN` (preset `claude` or a command template, never run by a shell),
 `MODEL` (sonnet), `AUTONOMY` (`confirm-all` | `confirm-risky` | `auto`, default `auto`), `COUNTDOWN` (4 s, 0 = none), `APPROVAL_TIMEOUT` (60 s), `MAX_STEPS` (20),
-`MAX_SECONDS` (300), `MAX_GOALS` (5), `PANEL_MODE` (`always` | `auto` | `off`: when the panel is in tmux; not `SWARMBOX_SYSOP_PANEL`, which marks a panel pane).
+`MAX_SECONDS` (300), `MAX_GOALS` (5).
+The panel of the sysop is the one of the Herdr Web Studio and of the terminal cockpit (`container/web/herdr/`): they read the files below.
 
 Files (all private, folders 0700 and files 0600; `lib/swarmbox_sysop/paths.py`):
 

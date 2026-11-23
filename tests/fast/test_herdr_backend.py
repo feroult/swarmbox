@@ -9,7 +9,7 @@
   - container/config/herdr.toml (valid TOML using SwarmBox Purple Glow palette)
   - container/web/herdr/server.mjs (CLI arg parsing and Origin security check via Node)
 
-Zero real `hc` daemon, zero `tmux`, zero network.
+Zero real `hc` daemon, zero network.
 Run: python3 tests/fast/test_herdr_backend.py
 """
 import importlib.util
@@ -470,12 +470,13 @@ class HerdrTabsTest(unittest.TestCase):
             self.tabs().screen("t99", None)
         self.assertEqual(ctx3.exception.code, "no_such_tab")
 
-    def test_cli_selects_herdr_via_swarmbox_mux(self):
+    def test_cli_uses_herdr_without_any_selection(self):
         self.write_state({
             "terminals": [{"address": "t1", "name": "shell", "agent": "bash", "cwd": "/tmp", "state": "live", "cols": 80, "rows": 24, "created_ms": 1}],
             "screens": {"t1": "$ "},
         })
-        env = dict(os.environ, SWARMBOX_MUX="herdr", SB_TABS_HC_BIN=self.hc_bin, SB_RUN_DIR=self.run_dir)
+        env = {k: v for k, v in os.environ.items() if k not in ("SWARMBOX_MUX", "SB_TABS_BACKEND")}
+        env.update(SB_TABS_HC_BIN=self.hc_bin, SB_RUN_DIR=self.run_dir)
         p = subprocess.run([sys.executable, TABS_PATH, "list"], env=env, capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stderr)
         data = json.loads(p.stdout)
@@ -581,9 +582,9 @@ class HerdrShellBackendTest(unittest.TestCase):
         self.assertIn("detached; the command keeps running", err2)
 
     def test_swarmbox_web_dispatches_to_herdr_gateway_and_voice_front(self):
-        # Render is a clean no-op under herdr (does not require ttyd-stock.html)
+        # there is no page to render any more: run and restart are the only modes
         p_render = subprocess.run(["bash", WEB_PATH, "render"], env=self.env({"SWARMBOX_VOICE_WEB": "0"}), capture_output=True, text=True)
-        self.assertEqual(p_render.returncode, 0, p_render.stderr)
+        self.assertEqual(p_render.returncode, 64, p_render.stderr)
 
         # Direct run without voice addon
         p_run = subprocess.run(
@@ -599,8 +600,7 @@ class HerdrShellBackendTest(unittest.TestCase):
         voice_prefix = os.path.join(self.tmp, "voice-addon")
         os.makedirs(os.path.join(voice_prefix, "bin"))
         os.makedirs(os.path.join(voice_prefix, "lib", "swarmbox_voice"))
-        os.makedirs(os.path.join(voice_prefix, "web"))
-        for rel in ("lib/swarmbox_voice/front.py", "web/page.js", "web/page.css"):
+        for rel in ("lib/swarmbox_voice/front.py",):
             open(os.path.join(voice_prefix, rel), "w").close()
         voice_log = os.path.join(self.tmp, "voice-front.log")
         voice_bin = os.path.join(voice_prefix, "bin", "swarmbox-voice")
@@ -614,7 +614,7 @@ class HerdrShellBackendTest(unittest.TestCase):
         self.assertEqual(p_voice.returncode, 0, p_voice.stderr)
         with open(voice_log, encoding="utf-8") as f:
             line = f.read()
-        self.assertIn("FRONT front --listen 127.0.0.1:7789 --ttyd-port 7680 -- %s -p 7789 -i 127.0.0.1" % self.fake_web, line)
+        self.assertIn("FRONT front --listen 127.0.0.1:7789 --server-port 7680 -- %s -p 7789 -i 127.0.0.1" % self.fake_web, line)
 
 
 class HerdrSysopAndAssetsTest(unittest.TestCase):
@@ -638,7 +638,7 @@ class HerdrSysopAndAssetsTest(unittest.TestCase):
         self.assertFalse(cfg["ui"]["pane_scrollbars"])
         self.assertEqual(cfg["ui"]["accent"], "#a78bfa")
 
-    def test_sysop_brain_forwards_mux_env_and_web_source_note(self):
+    def test_sysop_brain_forwards_tabs_env_and_web_source_note(self):
         tmp = tempfile.mkdtemp(prefix="swarmbox-test-herdr-sysop.")
         self.addCleanup(shutil.rmtree, tmp, True)
         pth = sysop_paths.Paths({"SB_RUN_DIR": os.path.join(tmp, "run"), "SB_STATE_DIR": os.path.join(tmp, "state")})
@@ -658,7 +658,7 @@ class HerdrSysopAndAssetsTest(unittest.TestCase):
         with open(mcp_path, encoding="utf-8") as f:
             doc = json.load(f)
         env = doc["mcpServers"]["sysop"]["env"]
-        self.assertEqual(env["SWARMBOX_MUX"], "herdr")
+        self.assertNotIn("SWARMBOX_MUX", env)
         self.assertEqual(env["SB_TABS_BACKEND"], "herdr")
         self.assertEqual(env["SB_TABS_HC_BIN"], "/usr/local/bin/hc")
         self.assertIn("web", sysop_brain.SOURCE_NOTES)
@@ -791,8 +791,9 @@ assert.equal(isHiddenTerminal({}), false);
 assert.ok(!/^t\\d+$/.test(sanitizeTabName('t1', 'shell')));
 assert.equal(uniqueTabName('shell', 'shell', [{ name: 'shell' }, { name: 'shell-2' }]), 'shell-3');
 assert.equal(THEME_ORDER.length, 5);
-const cfg = readBoxConfigSnapshot([], { SWARMBOX_MUX: 'herdr', SWARMBOX_WEB_PORT: '7699', SWARMBOX_SYSOP_AUTONOMY: 'confirm-all', SWARMBOX_VOICE_LANGUAGE: 'pt' });
-assert.equal(cfg.box.MUX.value, 'herdr');
+const cfg = readBoxConfigSnapshot([], { SWARMBOX_MUX: 'tmux', SWARMBOX_WEB_PORT: '7699', SWARMBOX_SYSOP_AUTONOMY: 'confirm-all', SWARMBOX_VOICE_LANGUAGE: 'pt' });
+assert.equal(cfg.box.MUX, undefined);
+assert.equal(cfg.sysop.settings['sysop.panel'], undefined);
 assert.equal(cfg.box.WEB_PORT.value, '7699');
 assert.equal(cfg.box.WEB_PORT.custom, true);
 assert.equal(cfg.sysop.settings['sysop.autonomy'].value, 'confirm-all');

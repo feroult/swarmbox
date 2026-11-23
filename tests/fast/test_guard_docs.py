@@ -206,7 +206,7 @@ class Notices(unittest.TestCase):
 
     def test_every_downloaded_program_and_addon_has_a_section_with_a_license_and_a_source(self):
         d, low = self.dockerfile, self.text.lower()
-        programs = {"ttyd", "starship", "tmux"}
+        programs = {"starship"}
         for arg in re.findall(r"^ARG (\w+)_VERSION=", d, re.M):
             if arg not in ("CLAUDE_CODE", "OPENCODE", "NODE"):   # the agents are addons; node is the base image tag, not a download
                 programs.add(arg.lower().replace("_", "-"))
@@ -216,7 +216,7 @@ class Notices(unittest.TestCase):
         self.assertIn("chrome-devtools-mcp", programs)
         for name in sorted(programs | {"google-cloud-cli" if a == "gcloud" else a for a in addons}):
             self.assertIn(name.lower(), low, "%s is installed by the image but is not in the notices" % name)
-        for name in ("ttyd", "starship", "tmux") + tuple("google cloud cli" if a == "gcloud" else a for a in addons):
+        for name in ("starship",) + tuple("google cloud cli" if a == "gcloud" else a for a in addons):
             with self.subTest(section=name):
                 s = notice_section(self.text, name)
                 self.assertRegex(s, r"(?i)license:")

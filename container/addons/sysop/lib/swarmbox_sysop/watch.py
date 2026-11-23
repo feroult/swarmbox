@@ -10,7 +10,7 @@ supervisors in the entrypoint; the sysop is an addon, so its supervisor is the a
   * Five abnormal exits within 60 s: the watcher gives up (it says so in serve.log and in the file crashloop of the run folder, which the panel shows),
     and idles, alive, until SIGUSR1 (a second watcher, so `swarmbox-addon prepare` or `swarmbox-sysop serve --log --watch` by hand) or SIGTERM.
   * SIGTERM and SIGINT: the child gets SIGTERM, the watcher ends when it did (SIGKILL after 10 s).
-  * The watcher does not touch tmux, the bus or any goal: the service itself marks the goals that a death left in flight as lost when it starts again.
+  * The watcher does not touch the multiplexer, the bus or any goal: the service itself marks the goals that a death left in flight as lost when it starts again.
 """
 import fcntl
 import os

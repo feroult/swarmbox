@@ -11,7 +11,7 @@
 #                           without a terminal prints job-control errors
 #
 # First it waits up to 60 s for the readiness marker of `serve` and exits 6 when it does not appear.
-# Multiplexer-specific logic lives in container/scripts/mux/<backend>.sh (default: tmux).
+# Multiplexer-specific logic lives in container/scripts/mux/<backend>.sh (herdr.sh).
 #
 # Test-only variables (not in the configuration table): SWARMBOX_TEST_LIB (folder with
 # dirs.sh), SWARMBOX_TEST_MUX_DIR (folder with mux.sh and <backend>.sh), SWARMBOX_TEST_RUN_DIR (replaces /tmp/swarmbox),

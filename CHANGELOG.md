@@ -5,6 +5,13 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Removed: **tmux and ttyd**. herdr-core is the only multiplexer of the box: `swarmbox` opens the Terminal Cockpit, the web port always serves the Herdr Web Studio, and `swarmbox-tabs`, the sysop and the voice front all work on herdr-core terminals. The image no longer ships tmux, ttyd, `/etc/tmux.conf`, `/etc/tmux-browser-keys.conf` or the ttyd page (clipboard bridge, controls strip, style), and the shell no longer sets `CLAUDE_CODE_TMUX_TRUECOLOR`.
+- Removed: the config keys `MUX` and `sysop.panel`. A config that still has them keeps working: each is ignored with a one-line warning and never passed to the box; `swarmbox config get|set` of them exits 2. The Studio's Settings lose the Multiplexer and Panel Visibility choices.
+- Removed: `web-terminal.conf` and `swarmbox-web render` (`swarmbox-web` is `run` and `restart`); the voice addon's page files (`/voice/page.js`, `/voice/page.css`): its front serves only `/voice/health` and `/voice/audio` in front of the Web Studio (`--ttyd-port` is now `--server-port`), and `prepare.sh` removes the old `web/` folder of an install.
+- Removed: the tmux panel of the sysop (`dock.py`, `panel.py`, `line.py`, `keys.py`), the commands `swarmbox-sysop panel` and `swarmbox-sysop dock ...`, the `--socket/--window/--client` options of `veto`, `approve` and `stop`, and `SWARMBOX_SYSOP_PANEL_MODE`; the panel is the one of the Web Studio and the cockpit, and `serve --dock` starts the OSC 7501 agent bridge.
+- Changed: `swarmbox-tabs` has one backend, `HerdrBackend`: the error codes `no_tmux` and `tmux_error` are now `no_backend` and `backend_error`, `SB_TABS_SESSION`, `SB_TABS_SOCKET` and `TMUX`/`TMUX_TMPDIR` are gone, and `SWARMBOX_MUX` is not read. The tests of its facade run on a fake `hc` (`tests/support/tabs_support.py`).
+- Removed: the tests that only exercised tmux or ttyd (the real-tmux, browser-strip, clipboard and sysop dock tests, `slow/test_tabs_real.py`) and the e2e harnesses `e2e_sysop`, `e2e_voice` and `soak_v1`, which drove a real tmux; the slow gate `SWARMBOX_TEST_REAL_TMUX` is now `SWARMBOX_TEST_REAL`, and `dev/test-slow.sh` lost `--tmux`. `tests/fast/test_guard_mux.py` now fails if anything under `container/` runs tmux or ttyd again.
+
 ## [2.2.3] - 2026-11-23
 
 - Added: Sysop tools `box_info` (read-only disk, memory, mux, addons and nested containers), `focus_tab`, `open_tab` (a shell or an allowlisted agent, rated by the policy) and `close_tab` (always approved), backed by new `swarmbox-tabs open|focus|close` commands for the tmux and herdr backends; `list_tabs` now carries the live OSC 7501 status of each tab.

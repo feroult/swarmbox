@@ -172,10 +172,10 @@ class InstallTests(unittest.TestCase):
         p = self.install()
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(p.stdout, "", "progress goes to stderr")
-        for rel in ("bin/swarmbox-voice", "libexec/whisper-cli", "models/ggml-small.bin", "lib/swarmbox_voice/__init__.py",
-                    "web/page.js", "web/page.css"):
+        for rel in ("bin/swarmbox-voice", "libexec/whisper-cli", "models/ggml-small.bin", "lib/swarmbox_voice/__init__.py"):
             self.assertTrue(os.path.exists(os.path.join(self.prefix, rel)), rel)
         self.assertFalse(os.path.exists(os.path.join(self.prefix, "planners")))
+        self.assertFalse(os.path.exists(os.path.join(self.prefix, "web")), "the page parts of the old ttyd web terminal are gone")
         for rel in ("bin/swarmbox-voice", "libexec/whisper-cli"):
             self.assertTrue(os.access(os.path.join(self.prefix, rel), os.X_OK), rel)
         self.assertEqual(os.listdir(self.home), [], "nothing in the home")

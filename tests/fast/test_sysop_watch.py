@@ -1,6 +1,6 @@
 """The watcher of the resident sysop service (swarmbox_sysop/watch.py, `serve --watch`): it starts the service again when it is killed or crashes, and only
 then. REAL processes: the Watcher runs in a child python (signals need a main thread) with a scripted child command, and the real `swarmbox-sysop serve
---watch` runs with the real service under it. No tmux, no model; the bus is not there (the service says `bus down` and goes on).
+--watch` runs with the real service under it. No multiplexer, no model; the bus is not there (the service says `bus down` and goes on).
 Run with: python3 -W error tests/fast/test_sysop_watch.py
 """
 import os

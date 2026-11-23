@@ -1,8 +1,8 @@
 """The MCP server of the sysop (stdio, JSON-RPC 2.0, one JSON object per line, standard library only). The brain starts it from its MCP config
 (`swarmbox-sysop mcp`, one process per goal) and talks to it; every tool acts on the box through the TABS (the command swarmbox-tabs, see
-tabsclient.py), never through tmux directly. The model never sees the bus.
+tabsclient.py), never through herdr-core directly. The model never sees the bus.
 
-Tools (tab is the `tab` of list_tabs, an @window id; the label 1:name, a bare index or a unique name are accepted; omitted = the active tab):
+Tools (tab is the `tab` of list_tabs, a herdr terminal address such as t3; the label 1:name, a bare index or a unique name are accepted; omitted = the active tab):
   list_tabs                      the tabs: tab, label, dir, cmd, active
   read_tab(tab?, lines?)         the text on the screen now, with markers [sel] [bg] [err] and the cursor; UNTRUSTED data
   run(tab?, command)             type the command and press Enter; answers with the settled screen
@@ -50,18 +50,17 @@ HINTS = {
     "busy_tab": "the agent in the tab is busy; wait, or interrupt it with input {Esc}; nothing was typed",
     "slash_refused": "text that starts with / or ! is not a prompt: nothing was typed",
     "no_such_tab": "list the tabs again with list_tabs",
-    "ambiguous_tab": "use the @ id of the tab",
+    "ambiguous_tab": "use the tab value of list_tabs",
     "tabs_unavailable": "swarmbox-tabs cannot be run: the goal cannot act on the box",
     "tabs_timeout": "swarmbox-tabs did not answer: read the tab before doing anything else",
-    "no_tmux": "tmux is not available: the goal cannot act on the box",
-    "no_backend": "the configured multiplexer backend is not available: the goal cannot act on the box",
-    "no_session": "there is no tmux session: the goal cannot act on the box",
+    "no_backend": "herdr-core is not available: the goal cannot act on the box",
+    "no_session": "herdr-core is not running: the goal cannot act on the box",
     "lock_error": "another action is typing in the tab: try again",
     "not_submitted": "the text may still be in the input box of the tab: read the tab before doing anything else",
 }
 # errors of swarmbox-tabs after which nothing was typed (the buffer of the policy stays as it was); any other error may have typed part of the text
 NOT_TYPED = ("dialog_open", "busy_tab", "slash_refused", "no_such_tab", "ambiguous_tab", "bad_body", "usage", "tabs_unavailable",
-             "no_session", "no_tmux", "no_backend", "lock_error")
+             "no_session", "no_backend", "lock_error")
 
 
 PROMPT_ENDS = ("$ ", "# ", "% ", "> ", "\u276f ", "\u00bb ")
@@ -225,7 +224,7 @@ class Server:
         if not hit:
             raise ToolError("error: no_such_tab: no tab %r; the tabs are: %s" % (s, ", ".join("%s (%s)" % (t.get("label", t["tab"]), t["tab"]) for t in tabs)))
         if len(hit) > 1:
-            raise ToolError("error: ambiguous_tab: %r is used by %s; use the @ id" % (s, ", ".join("%s (%s)" % (t.get("label"), t["tab"]) for t in hit)))
+            raise ToolError("error: ambiguous_tab: %r is used by %s; use the tab value of list_tabs" % (s, ", ".join("%s (%s)" % (t.get("label"), t["tab"]) for t in hit)))
         return hit[0]
 
     @staticmethod
@@ -382,7 +381,7 @@ class Server:
 
     def t_box_info(self, args):
         home = os.path.expanduser("~")
-        info = {"mux": os.environ.get("SWARMBOX_MUX") or "tmux"}
+        info = {"mux": os.environ.get("SWARMBOX_MUX") or "herdr"}
         try:
             du = shutil.disk_usage(home)
             info["disk"] = {

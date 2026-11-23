@@ -9,8 +9,8 @@ Tests and experiments run on a machine where someone may have a real SwarmBox ru
 
 - Create only containers, volumes, networks and images whose names start with `swarmbox-test-` and remove them by their exact name.
   Never use `podman system prune`, `rm -a`, `stop -a` or a similar command that matches by anything but a name.
-- Never run `tmux kill-server` or any other tmux command against the running server. Use a private socket
-  (`unset TMUX; tmux -L swarmbox-test-<id> -f /dev/null`) and stop it by that exact name.
+- Never run `hc` (herdr-core) against the running daemon: no `hc server stop`, `hc kill` or `hc rm` from a test. The fast tests use a fake `hc`
+  (`tests/support/tabs_support.py`, `tests/support/serve_support.py`).
 - Never kill processes by name or pattern (`pkill`, `killall`). Test services bind `127.0.0.1` on a random high port, never on `0.0.0.0`.
 - Use `mktemp -d` directories for workspaces, `HOME` and the `XDG_*` variables. Never write to `~/.config/swarmbox`,
   `~/.local/share/swarmbox`, `~/.swarmbox` or the default workspace.
@@ -21,18 +21,17 @@ Tests are Python `unittest` scripts that need only Python 3 and the standard lib
 behaviour or branch, no copies of the same case, no tests of wording in docs. They live in three folders by what they need
 (`tests/README.md` has the layout, the gating rules and how to add a test):
 
-- `tests/fast/`: no real tmux, browser, Podman or network, no long waits; fakes and a `mktemp` world. The default, and what `dev/check.sh` and the pre-push hook run.
-- `tests/slow/`: integration tests with real tmux, a pty, ttyd, Chromium, Podman or the image. They skip with a message when a program is missing. `sh dev/test-slow.sh` runs them in Podman.
-- `tests/e2e/`: the harnesses with the real `claude` and the long soak. Manual, never in a default run.
+- `tests/fast/`: no real herdr-core, browser, Podman or network, no long waits; fakes and a `mktemp` world. The default, and what `dev/check.sh` and the pre-push hook run.
+- `tests/slow/`: integration tests with a pty, Podman or the image. They skip with a message when a program is missing. `sh dev/test-slow.sh` runs them in Podman.
+- `tests/e2e/`: harnesses with the real `claude`. Manual, never in a default run (empty since the tmux removal; see its README).
 
 ```
 python3 tests/fast/test_host_up.py   # one file
 sh tests/run.sh                      # the fast tests, in parallel, one line per file, the slowest files at the end
 sh tests/run.sh macos                # the fast files of tests/support/macos.list: what the macOS job runs
-sh tests/run.sh slow                 # the slow ones (use dev/test-slow.sh: real tmux belongs in a container)
+sh tests/run.sh slow                 # the slow ones (use dev/test-slow.sh: real processes belong in a container)
 sh dev/test-slow.sh                  # the slow ones in Podman, in the image of dev/test-image/Containerfile (built when missing)
 sh dev/test-slow.sh fast             # the fast ones in the same container, offline with a read-only root file system: the world of a CI runner
-sh dev/test-slow.sh --tmux 37        # the slow ones with tmux 3.7c, the version of the product image (the default is 3.5a)
 ```
 
 On a 32-core machine the fast tests take about 20 seconds (150 s of file time, run 8 files at a time) and the slow ones about two minutes in
@@ -47,7 +46,7 @@ suites in the background.
 
 To see whether a change to the tests lost coverage, `dev/mutate.py` applies about 250 small mutations to the product code (a comparison
 flipped, a condition negated, an exit code changed, a call dropped, ...) and runs the tests that cover each one: a mutant that no test
-kills is behaviour that nothing checks. `python3 dev/mutate.py --help`; run it in the test image (`tests/README.md`), never on a machine whose tmux you use.
+kills is behaviour that nothing checks. `python3 dev/mutate.py --help`; run it in the test image (`tests/README.md`), never on a machine with a SwarmBox you use.
 
 What each group covers (a file name tells the rest):
 
@@ -55,14 +54,13 @@ What each group covers (a file name tells the rest):
 |---|---|
 | `test_host_*.py`, `test_security_review.py`, `test_cloudflare_setup.py` | the script `container/host/swarmbox-host` (installed as `swarmbox`) against a fake `podman` (`tests/support/helpers.py`): `up`, `reset`, `stop`, `url`, `update`, `config`, `env`, `remote`, create flags with golden files in `tests/support/fixtures/`, the host connection, the connector, hostile input; `cloudflare-setup.py` against a fake Cloudflare API on loopback |
 | `test_swarmbox_command.py`, `test_install.py`, `test_host_shells.py` | the `swarmbox` script as a program: which words it handles and which go to the box, `podman exec` forwarding and the `-t` rule; the two installers (`container/scripts/swarmbox-install.sh`, `install.sh`): idempotence, atomic write, PATH advice, old-function warning, the Podman version check; the script under dash, bash and busybox |
-| `test_serve_steps.py`, `test_entrypoint.py`, `test_attach_command.py`, `test_web_build.py`, `test_bashrc_fragment.py`, `test_starship.py`, `test_ssh_key.py`, `test_mcp_registry.py`, `test_dirs.py` | what runs inside the box: `serve` steps and signals with fakes on `PATH`, `swarmbox-attach` (a fake tmux in `test_attach_command.py`, a real one on a private `-L swarmbox-test-<random>` socket in `tests/slow/test_attach_real.py`), `swarmbox-web`, the shell fragment, the key, the MCP registry, the XDG paths, the web page build |
-| `test_bus*.py`, `test_mcp_*.py`, `test_tabs*.py`, `test_sysop_*.py`, `test_voice_*.py` (fast); `slow/test_tabs_real.py`, `slow/test_attach_real.py`, `slow/test_sysop_{dock,always,real,panel_pty,web}.py` (slow) | the version 1 core by prefix: `bus` the broker and its CLI, `tabs` swarmbox-tabs, `sysop` the sysop addon (policy, brain, service, panel, dock, keys); `mcp` the registry of MCP servers, `voice` the voice addon. Fast ones use fakes of the bus and of tmux (`tests/support/sysop_support.py`, `tests/support/bus_support.py`, `tests/support/voice_support.py`); the slow ones run the real tmux, pty and browser |
+| `test_serve_steps.py`, `test_entrypoint.py`, `test_attach_command.py`, `test_web_server.py`, `test_bashrc_fragment.py`, `test_starship.py`, `test_ssh_key.py`, `test_mcp_registry.py`, `test_dirs.py` | what runs inside the box: `serve` steps and signals with fakes on `PATH`, `swarmbox-attach` (a recording fake backend in `test_attach_command.py`), `swarmbox-web`, the shell fragment, the key, the MCP registry, the XDG paths |
+| `test_bus*.py`, `test_mcp_*.py`, `test_tabs*.py`, `test_sysop_*.py`, `test_voice_*.py`, `test_herdr_backend.py` | the version 1 core by prefix: `bus` the broker and its CLI, `tabs` swarmbox-tabs, `sysop` the sysop addon (policy, brain, service, MCP server); `mcp` the registry of MCP servers, `voice` the voice addon, `herdr` the multiplexer backend, the Web Studio and the cockpit. They use fakes of the bus and of `hc` (`tests/support/sysop_support.py`, `tests/support/bus_support.py`, `tests/support/tabs_support.py`, `tests/support/voice_support.py`) |
 | `test_banner.py`, `test_theme.py`, `test_statusline.py`, `test_pull_ui.py`, `test_local_*.py`, `test_dirs.py`, `slow/test_banner_glint.py`, `slow/test_nested_fuse_real.py` | the smaller pieces by name: the banner, the theme, the statusline, the pull progress line, `dev/local-up.sh`, the state folders, the nested Podman marker |
 | `test_addon_*.py` | the addon machinery `swarmbox-addon` and `swarmbox-shim` (manifests, link, install, run, prepare, use, remove, doctor, image level, the per-addon installers; the shared fake world is `tests/support/addon_support.py`); `test_addon_real.py` also installs for real in throwaway containers, only with `SWARMBOX_TEST_NETWORK=1` and `SWARMBOX_IMAGE_BUILD=1` |
 | `test_dockerfile.py`, `test_dev_build.py`, `test_image_build.py`, `test_image_with_addons.py`, `test_bashrc_container.py` | the `Dockerfile` (static: pins, checksums, the user, the order of the addon wiring, the data of the smoke test) and the built image (skipped unless `SWARMBOX_IMAGE_BUILD=1`; the image comes from `dev/dev-build.sh` or `SWARMBOX_IMAGE_TAG`, shared by `tests/support/image_support.py`). `tests/slow/smoke_image.py` is the image smoke test (not a `test_*.py`): `SWARMBOX_IMAGE_BUILD=1 python3 tests/slow/smoke_image.py` is the reduced run for a development box, `SWARMBOX_SMOKE_FULL=1` the full run for CI |
 | `test_workflows.py`, `test_release_check.py`, `test_release_script.py`, `test_release_version.py`, `test_gen_notices.py`, `test_record_checksums.py`, `test_name_check.py` | the repository machinery: text checks of the two workflows, the release scripts under `dev/` on fixture repositories (with a fake `curl` and a fake `podman`), the notices generator, the checksum recorder |
 | `test_guard_names.py`, `test_guard_docs.py`, `test_runner.py`, `test_dev_check.py`, `test_layout.py`, `test_helpers.py` | guards: no old name of the addon concept anywhere (the allowlist of legitimate uses of the old word is in the test) and no default name or image repository written as a literal (read `container/host/DEFAULTS`), both through one read of the repository (`tests/support/repo_scan.py`); the README commands exist and its links resolve, the policy files exist, the notices list what the image installs; the runner and the gate (`dev/check.sh`, the pre-push hook) themselves, the fake `podman` |
-| `test_web_build.py`, `test_web_strip_script.py` (fast), `test_clipboard_bridge.py`, `test_web_style.py`, `test_web_strip.py`, `test_tmux_browser_keys.py`, `test_voice_page_browser.py` (slow) | the page of the web terminal (build and settings, the strip's script and key notation) and, in a real browser, the clipboard bridge, the style, the controls strip, the tmux keys and the microphone (`tests/support/browser_support.py`: one Chromium per file, a ttyd and a tmux per terminal). They need chromium, ttyd and tmux and `SWARMBOX_TEST_REAL_TMUX=1`, which only a container run sets (`sh dev/test-slow.sh`; never on a machine whose tmux you use). `tests/e2e/e2e_sysop.sh`, `tests/e2e/e2e_voice.sh` and `tests/e2e/soak_v1.sh` are development harnesses for Podman with a Claude login: not part of any gate |
 
 Shared helpers (the fake `podman`, the helper archive of an image, a pseudo terminal) are in `tests/support/helpers.py`. Write a test first, with fakes; use a real
 container only for a smoke test, with a `swarmbox-test-` name.
@@ -106,7 +104,7 @@ architectures. A failure after the bump puts the files back (your CHANGELOG text
 ## Smoke test on a host
 
 `dev/host-smoke.sh` builds the image and checks the product end to end on a real host (not inside a box): it installs the `swarmbox` script of its own image into a temporary folder (twice) and puts it on `PATH` for the run, then checks `up`, labels, `config`,
-`env`, `pubkey`, the user and workspace, tmux, the web terminal, nested Podman, `stop`, `reset`, `url` and `help`. It prints one
+`env`, `pubkey`, the user and workspace, herdr-core, the web terminal, nested Podman, `stop`, `reset`, `url` and `help`. It prints one
 `OK`, `FAIL` or `SKIP` line per step and `RESULT: N ok, M fail, K skip`; paste that when you report a failure. It uses only
 `swarmbox-test-*` names, a temporary workspace, a private config folder, a private install folder and a random port on `127.0.0.1`, and removes them on exit
 (`--keep` leaves them, `--with-addons` also installs Go, `--no-cache` builds from scratch, `--dry-run` prints the commands only).
@@ -144,8 +142,6 @@ managers can read: the `uses:` lines of the workflows and a literal `FROM` line.
 |---|---|---|
 | `NODE_VERSION` | by hand | the base image is `FROM node:${NODE_VERSION}-slim`, which Dependabot does not read; change the `ARG` (and `ARG NODE_VERSION` in the test) and rebuild |
 | `node:${NODE_VERSION}-slim` | by hand | the same line as `NODE_VERSION` (a FROM built from an ARG is not read by Dependabot) |
-| `TMUX_VERSION` and its four hashes | by hand, with the commands below | a Debian 13 backport (3.5a of Debian 13 has no pane scrollbar), pinned by SHA-256; see "Bumping tmux" |
-| `TTYD_VERSION` | by hand | change the `ARG`; the build checks the release's `SHA256SUMS` |
 | `STARSHIP_VERSION` | by hand | change the `ARG`; the build checks the release's `.sha256` file |
 | `UV_VERSION` | by hand | change the `ARG` |
 | `CHROME_DEVTOOLS_MCP_VERSION` | by hand | change the `ARG` and check its Node range against the base image |
@@ -158,26 +154,6 @@ managers can read: the `uses:` lines of the workflows and a literal `FROM` line.
 | `container/addons/antigravity/addon.conf` | floating (nothing to bump) | `VERSION=latest`; the program updates itself (the installer reads the vendor's manifest, which is always the newest release) |
 | `container/addons/gemini/addon.conf` | floating (nothing to bump) | `VERSION=latest` |
 | `container/addons/opencode/addon.conf` | floating (nothing to bump) | `VERSION=latest` |
-
-**Bumping tmux.** The image installs one exact package of `trixie-backports`, `TMUX_VERSION` (for example `3.7c-1~bpo13+1`), checked against `TMUX_SHA256_AMD64` and
-`TMUX_SHA256_ARM64`; the `.deb` is fetched from the archive and, when backports has moved on and the archive no longer has it, from `snapshot.debian.org` by `TMUX_SHA1_AMD64` / `TMUX_SHA1_ARM64`.
-To move to another version, get the four hashes and check them against two independent sources:
-
-```bash
-V='3.8-1~bpo13+1'                                     # a version that trixie-backports has: https://sources.debian.org/src/tmux/
-for A in amd64 arm64; do
-  echo "== $A: what the archive's own index declares"
-  curl -fsSL https://deb.debian.org/debian/dists/trixie-backports/main/binary-$A/Packages.xz | xz -dc | awk -v RS= '/^Package: tmux\n/' | grep -E '^(Version|SHA256):'
-  curl -fsSLO "https://deb.debian.org/debian/pool/main/t/tmux/tmux_${V}_$A.deb"
-  echo "sha256 $(sha256sum tmux_${V}_$A.deb | cut -d' ' -f1)"   # must be the SHA256 above
-  echo "sha1   $(sha1sum tmux_${V}_$A.deb | cut -d' ' -f1)"
-done
-curl -sI "https://snapshot.debian.org/file/<the sha1>" | head -1   # HTTP 200: the fallback has it (it can take a day for a new package)
-```
-
-Put the version and the four hashes in the `Dockerfile`, the version in `docs/debian-packages.tsv` and `THIRD_PARTY_NOTICES.md` (the licenses from `/usr/share/doc/tmux/copyright` of the package:
-`dpkg-deb -x tmux_*.deb x; grep '^License:' x/usr/share/doc/tmux/copyright`); `tests/fast/test_dockerfile.py` fails when the lists and the `ARG` disagree. A newer tmux can change what our
-configuration assumes: run `sh tests/run.sh slow --only test_tmux_browser_keys.py,test_attach_real.py` against it too, putting the extracted binary first in `PATH`.
 
 A go or gcloud bump without the checksum step leaves the old checksums in the file and the installer refuses the new
 archive; the pull request template reminds you.

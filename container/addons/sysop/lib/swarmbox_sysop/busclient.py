@@ -1,7 +1,7 @@
 """A client of swarmbox-bus that speaks its socket protocol directly (standard library only): publish, and subscribe with a group.
 
 The bus is plain publish/subscribe (container/scripts/swarmbox-bus.py, its docstring is the specification): it keeps no state, answers no
-questions and knows nothing about tmux. The sysop uses it for one thing, goals: the service subscribes to the topic of `sysop.topic` with the
+questions and knows nothing about the multiplexer. The sysop uses it for one thing, goals: the service subscribes to the topic of `sysop.topic` with the
 group of `sysop.group`, and the panel, the key g and `swarmbox-sysop goal` publish there. Reading and typing into the tabs of the box does NOT
 go through here: that is the capability swarmbox-tabs (tabsclient.py).
 

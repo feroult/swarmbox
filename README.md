@@ -46,7 +46,7 @@ swarmbox          # pulls the image, creates the box, and opens a shell (shortcu
 claude            # inside the box: installs Claude Code on first use and runs in auto-approve mode
 ```
 
-- **Switch to Herdr Web Studio &amp; Terminal Cockpit:** `tmux` + `ttyd` is the default mux; opt into `herdr` any time with `swarmbox config set MUX herdr && swarmbox reset` (revert anytime with `MUX tmux`).
+- **Herdr Web Studio &amp; Terminal Cockpit:** every box runs on `herdr-core`; `swarmbox` opens the Terminal Cockpit and the web port serves the Web Studio, both on the same live terminals.
 - **Open the Web Studio:** run `swarmbox url` and visit `http://127.0.0.1:7681`, or run `swarmbox` again in another terminal to share the live session.
 - **Other agents &amp; API keys:** pass `--with antigravity` (`agy`) or `--with opencode`, install later with `swarmbox addon install <name>`, or forward a host key via `export ANTHROPIC_API_KEY=...` and `swarmbox env add ANTHROPIC_API_KEY && swarmbox reset`.
 
@@ -54,7 +54,7 @@ claude            # inside the box: installs Claude Code on first use and runs i
 
 ## Web Studio & Settings
 
-Opt into `MUX=herdr` for a cohesive browser studio, responsive phone UI, and matching 24-bit SSH Terminal Cockpit — all attached to the same live `herdr-core` daemon with zero extra host installs.
+A cohesive browser studio, responsive phone UI, and matching 24-bit Terminal Cockpit — all attached to the same live `herdr-core` daemon with zero extra host installs.
 
 <p align="center">
   <img src="docs/img/swarmbox-web-settings.png" alt="SwarmBox Studio Settings on desktop and mobile — 5 visual theme cards synced with Terminal Cockpit, JetBrains Mono font slider with live preview, line-height density, cursor, scrollback, and 5-section navigation" width="880">
@@ -107,7 +107,7 @@ Addons install on demand inside your persistent workspace — keeping the base i
 | **`poetry`** | `poetry` | Pinned Python dependency manager installed isolated in the workspace |
 
 - **Agent shortcut &amp; custom addons:** Run `yolo` inside the box to launch your default agent (`YOLO=0` disables auto-approve); scaffold custom workspace addons with `swarmbox addon new NAME`, inspect with `swarmbox addon doctor`, and roll back with `swarmbox addon use NAME VERSION`.
-- **Included in the base image:** Node 24, Python 3 + `uv`, nested rootless Podman (`netavark` + `aardvark-dns`, [docs/nested-podman.md](docs/nested-podman.md)), pinned headless Chromium + `chrome-devtools-mcp`, both mux backends (`tmux 3.7c` + `ttyd` default; `herdr-core` + Herdr Web Studio &amp; Terminal Cockpit opt-in), Starship prompt, `swarmbox-bus`, `swarmbox-tabs`, `git`, `jq`, `sqlite3`, and `build-essential`.
+- **Included in the base image:** Node 24, Python 3 + `uv`, nested rootless Podman (`netavark` + `aardvark-dns`, [docs/nested-podman.md](docs/nested-podman.md)), pinned headless Chromium + `chrome-devtools-mcp`, `herdr-core` with the Herdr Web Studio &amp; Terminal Cockpit, Starship prompt, `swarmbox-bus`, `swarmbox-tabs`, `git`, `jq`, `sqlite3`, and `build-essential`.
 
 ---
 

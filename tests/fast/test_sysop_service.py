@@ -1,12 +1,13 @@
 """The resident subscriber of the sysop and the CLI around it: goals from the bus, the queue and its limit, the states, the stop, a brain that
 crashes, a bus that restarts, a service that is killed and started again, the private folders, swarmbox-sysop goal | status | stop.
-A fake bus and the fake claude (tests/support/fixtures/sysop); no model, no tmux.
+A fake bus and the fake claude (tests/support/fixtures/sysop); no model, no multiplexer.
 Run with: python3 -W error tests/fast/test_sysop_service.py
 """
 import contextlib
 import io
 import json
 import os
+import re
 import signal
 import stat
 import subprocess
@@ -127,7 +128,7 @@ class Base(unittest.TestCase):
 class SingleInstance(Base):
     def test_a_probe_of_the_lock_at_the_moment_of_the_start_does_not_cost_the_service(self):
         """`running()` (the panel, status, prepare.sh) takes the lock for an instant when it is free. A start that met it said "already running" and left no
-        service at all (seen once in tests/e2e/e2e_sysop.py). The start tries again for a moment; a live service still refuses a second one."""
+        service at all (seen once in the end-to-end test of version 1). The start tries again for a moment; a live service still refuses a second one."""
         svc = service.Service(self.e.cfg(countdown=0), self.e.paths, log=lambda m: None)
         svc.paths.make()
         probe = os.open(svc.paths.lock, os.O_RDWR | os.O_CREAT, 0o600)
@@ -152,7 +153,7 @@ class SingleInstance(Base):
 
 class StatusFile(Base):
     def test_two_threads_writing_status_json_leave_the_newest_state(self):
-        """Found by tests/e2e/e2e_sysop.py: the reader thread writes status.json when a goal arrives, the main thread when it starts the goal. The state was read
+        """Found by the end-to-end test of version 1: the reader thread writes status.json when a goal arrives, the main thread when it starts the goal. The state was read
         before the lock-less write, so a slow writer could land LAST with the OLD state (queue 1, no current goal) and the panel showed `1 queued, idle`
         for the whole goal: no countdown, no approval prompt, nothing for the veto key to act on."""
         svc = service.Service(self.e.cfg(countdown=0), self.e.paths, log=lambda m: None)
@@ -745,7 +746,7 @@ class Settings(unittest.TestCase):
 class Cli(Base):
     def run_cli(self, *args, env=None, stdin=None):
         e = dict(os.environ, PYTHONPATH=ss.LIB, **(env or {}))
-        # no input means no terminal either: `panel` asks isatty(0), and on a developer's terminal it started a real full-screen panel and left it in raw mode
+        # no input means no terminal either: `goal` with no text asks isatty(0), and on a developer's terminal it would wait for a line
         feed = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
         return subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop"] + list(args), env=e, capture_output=True, text=True, timeout=60, **feed)
 
@@ -816,21 +817,20 @@ class Cli(Base):
         self.assertEqual(p.returncode, 1)
         self.assertIn("not running", p.stderr)
 
-    def test_panel_and_dock_entry_points_keep_their_shape(self):
-        p = self.run_cli("panel")
-        self.assertEqual(p.returncode, 2)
-        self.assertIn("needs a terminal", p.stderr)
-        for action in ("open", "close", "toggle", "redock"):        # a socket that does not exist: no tmux server is ever touched here
-            p = self.run_cli("dock", action, "--window", "@3", "--socket", "/nonexistent/sbsysop.sock")
-            self.assertEqual(p.returncode, 1, action)
-            self.assertIn("swarmbox-sysop: dock:", p.stderr)
-        self.assertEqual(self.run_cli("dock", "nonsense").returncode, 2)
-        self.assertEqual(self.run_cli("dock", "open", "--window", "x").returncode, 2)
+    def test_the_tmux_panel_and_dock_are_gone(self):
+        """herdr is the only multiplexer: the panel is the web studio's and the cockpit's, and the key commands take no tmux socket, window or client"""
+        for argv in (("panel",), ("dock", "open"), ("approve", "--window", "@3"), ("veto", "--socket", "/x"), ("stop", "--client", "c")):
+            p = self.run_cli(*argv)
+            self.assertEqual(p.returncode, 2, argv)
+            self.assertIn("usage:", p.stderr)
 
     def test_the_command_shape_and_self_test(self):
         h = self.run_cli("--help")
-        for word in ("serve", "goal", "status", "stop", "mcp", "panel", "dock"):
+        for word in ("serve", "goal", "status", "stop", "mcp", "agent", "veto", "approve"):
             self.assertIn(word, h.stdout)
+        commands = re.search(r"\{([a-z,]+)\}", h.stdout).group(1).split(",")
+        self.assertNotIn("panel", commands)
+        self.assertNotIn("dock", commands)
         p = self.run_cli("--self-test")
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("self-test ok", p.stderr)

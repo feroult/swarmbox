@@ -1,5 +1,5 @@
 """The policy of the sysop: the risk of a text (the table of the voice addon plus the new patterns), bypass attempts, what the tab runs, text
-typed in several parts, keys, the autonomy table, the budgets. Pure functions: no bus, no model, no tmux.
+typed in several parts, keys, the autonomy table, the budgets. Pure functions: no bus, no model, no multiplexer.
 Run with: python3 -W error tests/fast/test_sysop_policy.py
 """
 import os
@@ -118,14 +118,14 @@ EXTRA_CASES = [
     ('tar xf x.tar -C /', 'high'), ('cp -r x /usr/local', 'high'), ('mv x /dev/null; echo', 'medium'), ('ln -s /etc/passwd x; cat x > y', 'high'),
     ('RM -RF ~', 'high'), ('r\u200bm -rf ~', 'high'), ('ｒｍ -rf ~', 'high'), ('rm\xa0-rf\xa0~', 'high'), ('rм -rf ~', 'high'),
     # SelfControls: commands that type into other tabs or forge an approval
-    ("tmux send-keys -t main:two 'rm -rf X' Enter", 'high'), ("swarmbox-tabs send @2 --run 'rm -rf ~'", 'high'),
+    ("hc send t2 'rm -rf X'", 'high'), ("hc keys t2 Enter", 'high'), ("tmux send-keys -t main:two 'rm -rf X' Enter", 'high'), ("swarmbox-tabs send @2 --run 'rm -rf ~'", 'high'),
     ("swarmbox tabs send @2 --input '{Enter}'", 'high'), ('swarmbox-tabs screen @2', 'high'), ('SB_TABS_SOCKET=x swarmbox-tabs list', 'high'),
     ("swarmbox-bus pub goal 'rm -rf ~'", 'high'), ('swarmbox bus pub goal ls', 'high'),
     ("watch -n0.2 'printf x > /home/u/.local/state/swarmbox/sysop/goals/g1/decision.json'", 'high'),
-    ("echo '{}' > $HOME/.local/state/swarmbox/sysop/goals/g1/decision.json", 'high'), ("tmux run-shell 'x'", 'high'),
+    ("echo '{}' > $HOME/.local/state/swarmbox/sysop/goals/g1/decision.json", 'high'), ("herdr-core run -- x", 'high'),
     ('python3 -c \'import socket; socket.socket().connect("/tmp/swarmbox/bus.sock")\'', 'high'), ('swarmbox-sysop stop', 'high'),
     # SelfControls: commands that end the box
-    ('tmux kill-server', 'high'), ('tmux kill-session', 'high'), ('tmux kill-window -t 1', 'high'), ('swarmbox-bus stop', 'high'),
+    ('hc server stop', 'high'), ('hc kill t1', 'high'), ('hc rm t1', 'high'), ('swarmbox-bus stop', 'high'),
     # SelfControls: a plain command is still low
     ('echo hello', 'low'), ('watch -n2 df -h', 'low'), ('vim notes.txt', 'low'),
     # NestedShapes: commands inside one quoted string or a wrapper

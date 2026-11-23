@@ -4,7 +4,7 @@
 # 1. install.sh copies lib/ into the install, and swarmbox-addon skips the installer when that version folder exists, so after `swarmbox update`
 #    (a new image, the same VERSION) the install would keep the OLD library. Like the voice addon's, this makes the files of the image (next to
 #    this script) the ones in use: when lib differs it is replaced by a fresh copy (copy beside it, then two renames). Idempotent.
-# 2. It starts the resident subscriber, detached: `setsid nohup ... serve --log --dock --watch &` (--dock: the service keeps the panel in tmux; --watch: a watcher (watch.py) starts the service again when it
+# 2. It starts the resident subscriber, detached: `setsid nohup ... serve --log --dock --watch &` (--dock: the service starts the herdr agent bridge; --watch: a watcher (watch.py) starts the service again when it
 #    dies, so a kill or a crash is not the end of the sysop until the next box start; when the watcher is already there, this start only tells it to start the service now), with its three standard streams and every other descriptor
 #    away from this script (the caller captures our output and kills our children when the timeout ends, so the service must not be one of
 #    them). Starting is idempotent: when a service already runs (`status -q`), nothing starts; and two starts at once end with one service

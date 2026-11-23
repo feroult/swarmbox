@@ -10,16 +10,15 @@ through the bus. Everything the brain does is rated by the host (policy.py) befo
     tabsclient   the command swarmbox-tabs (list, screen, send), run as a child, its JSON parsed: the tools' only way to the tabs
     risk, policy host-computed risk, autonomy levels, countdown and approval, budgets
     audit        events.jsonl, append-only
-    ipc          the files the panel and the sysop share (pending action, decision, stop request, goal state)
+    ipc          the files the panels (web, cockpit) and the sysop share (pending action, decision, stop request, goal state)
     mcpserver    the MCP server the brain talks to (stdio JSON-RPC): list_tabs read_tab run input wait say done
     brain        the command template and the run of the brain (own process group, timeout, stream-json kept)
     service      the resident subscriber: goal queue, one goal at a time, state files, reconnect
     state        mux-agnostic presentation state: snapshot, clean, one_line, step_text, line_of, value_of, state_dict
     actions      mux-agnostic control actions: pending_of, is_live, veto, approve, stop, publish_goal
-    ui_host      mux-selectable UI lifecycle host (tmux Follower + Toaster, or headless when SWARMBOX_MUX=none)
-    panel, dock  the terminal panel (goal, log, countdown, approval, typing a goal) and its docking in tmux (one per window, the hook, the Follower)
-    line, keys   the tmux status-line toaster and prefix-key wrappers over state.py and actions.py
-    cli          swarmbox-sysop serve | goal | status | stop | mcp | panel | dock
+    agent        the OSC 7501 agent bridge for herdr-core (the Sysop as a hidden agent terminal)
+    ui_host      UI lifecycle host of `serve --dock` (the herdr agent bridge, or headless when SWARMBOX_MUX=none)
+    cli          swarmbox-sysop serve | goal | veto | approve | status | stop | mcp | agent
 """
 
 __version__ = "1.0.0"      # equal to VERSION of addon.conf (tests/fast/test_sysop_addon.py checks it)

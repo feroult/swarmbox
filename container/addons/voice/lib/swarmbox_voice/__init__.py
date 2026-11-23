@@ -4,7 +4,7 @@ Stable API (other parts of the addon import only these names):
     stt.transcribe / stt.SttError / stt.check_wav          the ONE recognizer function (whisper.cpp)
     busclient.publish                                      a message on the topic of voice.topic, source `voice`
     server.Service / server.make_server                    the loopback HTTP service (health, audio)
-    front.run                                              the web terminal port: page, health and audio next to ttyd
+    front.run                                              the web port: health and audio in front of the web server
     models.fetch / models.MODELS                           pinned multilingual Whisper models
     config.load / config.Config / config.ConfigError
 

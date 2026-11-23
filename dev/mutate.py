@@ -11,7 +11,7 @@ a private copy of the repository, runs the test files that cover that product fi
     no-tests   no test file refers to the product file
 
 Standard library only (Python 3.9+). It starts nothing but the test files and never touches the working tree: the mutants live in
-copies under $TMPDIR. A test that needs real tmux must be run where tmux is (see "Where to run it").
+copies under $TMPDIR. A test that needs a real browser must be run in a container (see "Where to run it").
 
 Commands
     mutate.py plan   [--count N] [--seed S] [--file F ...] [--out plan.json]   choose the mutants, write the plan, print a summary
@@ -24,7 +24,7 @@ Commands
 
 Choice of mutants: ~250 by default, spread over the product files in TARGETS in proportion to the weight of each (the logic that can
 regress: risk classifier and policy, the bus, tabs guards and redaction, the host settings and create-flags, the addon manager, the
-entrypoint, the web strip, the voice routing, the release scripts), by a seeded random choice: the same seed and the same sources give
+entrypoint, the voice routing, the release scripts), by a seeded random choice: the same seed and the same sources give
 the same plan. A plan file records each mutant as an exact text replacement, so `run --plan plan.json` replays the SAME mutants later
 (after the suite was reorganised): a mutant whose original text is no longer in the file is reported as stale and skipped.
 
@@ -34,12 +34,12 @@ Which tests cover a product file: the test files (tests/**/test_*.py, never test
 By default the files of one mutant run in the order of --durations (a baseline JSON of seconds per file) or file size, and the mutant
 stops at the first failing file; --all-tests runs every selected file (needed for the kill matrix).
 
-Where to run it: tests that start tmux, ttyd or Chromium must not run on a machine whose tmux server matters. Run the harness in the
+Where to run it: tests that start Chromium or long-lived servers must not run on a machine you work on. Run the harness in the
 test image, offline (the same pattern as dev/test-slow.sh):
     podman run --rm --init --pids-limit 0 --network none --userns=keep-id:uid=1000,gid=1000 -v "$PWD":/src:ro -v /some/out:/out \\
         --tmpfs /work:rw,exec,mode=1777,size=6g IMAGE sh -c 'cp -r /src /work/repo && mkdir -p /work/home && cd /work/repo && HOME=/work/home \\
         python3 dev/mutate.py run -j 12 --all-tests --results /out/r.jsonl --plan /out/plan.json'
-Use --init: the tests leave orphans (tmux servers) that the harness kills, and without a reaper as PID 1 they pile up as zombies.
+Use --init: the tests leave orphans (servers) that the harness kills, and without a reaper as PID 1 they pile up as zombies.
 The tests of one mutant get a private TMPDIR and HOME; processes they leave behind are found by that TMPDIR in their environment and
 killed (never by a name pattern).
 """
@@ -69,15 +69,14 @@ VOICE = "container/addons/voice/lib/swarmbox_voice/"
 # (product file, weight). The number of mutants of a file is count * weight / sum(weights), at most the number of sites it has.
 TARGETS = [
     (SYSOP + "risk.py", 30), (SYSOP + "policy.py", 20), (SYSOP + "brain.py", 8), (SYSOP + "service.py", 10),
-    (SYSOP + "mcpserver.py", 10), (SYSOP + "panel.py", 10), (SYSOP + "dock.py", 8), (SYSOP + "watch.py", 6),
-    (SYSOP + "audit.py", 8), (SYSOP + "ipc.py", 3), (SYSOP + "keys.py", 6), (SYSOP + "config.py", 3),
+    (SYSOP + "mcpserver.py", 10), (SYSOP + "watch.py", 6),
+    (SYSOP + "audit.py", 8), (SYSOP + "ipc.py", 3), (SYSOP + "config.py", 3),
     (SYSOP + "busclient.py", 3), (SYSOP + "tabsclient.py", 3), (SYSOP + "cli.py", 4),
     ("container/scripts/swarmbox-bus.py", 25), ("container/scripts/swarmbox-tabs.py", 35),
     ("container/host/swarmbox-host", 28), ("container/scripts/swarmbox-addon.sh", 25), ("container/entrypoint.sh", 22),
     ("container/scripts/swarmbox-web.sh", 7), ("container/scripts/swarmbox-attach.sh", 6), ("container/scripts/swarmbox-shim.sh", 2),
     ("container/scripts/swarmbox-install.sh", 3), ("container/scripts/swarmbox-mcp.sh", 3), ("container/scripts/banner.sh", 2),
-    ("container/scripts/swarmbox-statusline.sh", 2), ("container/web/build-index.sh", 2),
-    ("container/web/ttyd-clipboard.js", 3), ("container/addons/voice/web/page.js", 4),
+    ("container/scripts/swarmbox-statusline.sh", 2),
     (VOICE + "front.py", 15), (VOICE + "server.py", 8), (VOICE + "stt.py", 5), (VOICE + "config.py", 2),
     ("dev/release.sh", 5), ("dev/release-check.sh", 4), ("dev/release-version.sh", 2), ("dev/record-checksums.sh", 2),
     ("install.sh", 4), ("cloudflare-setup.py", 5),

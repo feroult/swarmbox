@@ -90,8 +90,7 @@ class Image(unittest.TestCase):
 
 
 class Pins(unittest.TestCase):
-    """ttyd and starship are fetched by checksum; tmux is a pinned Debian backport (3.5a of Debian 13 has no pane scrollbar), fetched by checksum
-    from a copy that never goes away."""
+    """starship and herdr are fetched by checksum; herdr (herdr-core) is the only multiplexer, so neither tmux nor ttyd is in the image."""
 
     def arg(self, name):
         m = re.search(r"^ARG %s=(\S+)" % name, D, re.M)
@@ -99,36 +98,17 @@ class Pins(unittest.TestCase):
         return m.group(1)
 
     def test_downloads_are_pinned_and_checksummed(self):
-        for prog in ("ttyd", "starship"):
-            self.assertRegex(D, r"ARG %s_VERSION=\d" % prog.upper())
-        self.assertGreaterEqual(CODE.count("sha256sum -c"), 2)
-
-    def test_tmux_is_pinned_for_both_architectures_and_not_the_one_of_the_package_list(self):
-        first = next(i for i in INS if i.startswith("RUN apt-get update") and re.search(r"\sgit\s", i) and re.search(r"\scurl\s", i))
-        self.assertNotRegex(first, r"(^|\s)tmux(\s|$)", "the Debian 13 tmux (3.5a) must not be the one in the image")
-        self.assertRegex(self.arg("TMUX_VERSION"), r"^\d+\.\d+[a-z]?-\d+~bpo13\+\d+$")
+        for prog in ("STARSHIP", "HERDR_CORE", "HERDR"):
+            self.assertRegex(self.arg(prog + "_VERSION"), r"^\d")
         for a in ("AMD64", "ARM64"):
-            self.assertRegex(self.arg("TMUX_SHA256_" + a), r"^[0-9a-f]{64}$")
-            self.assertRegex(self.arg("TMUX_SHA1_" + a), r"^[0-9a-f]{40}$")
-        self.assertNotEqual(self.arg("TMUX_SHA256_AMD64"), self.arg("TMUX_SHA256_ARM64"))
+            self.assertRegex(self.arg("HERDR_CORE_SHA256_" + a), r"^[0-9a-f]{64}$")
+            self.assertRegex(self.arg("HERDR_SHA256_" + a), r"^[0-9a-f]{64}$")
+        self.assertGreaterEqual(CODE.count("sha256sum -c"), 3)
 
-    def test_the_tmux_install_checks_every_source_before_installing_and_falls_back_to_the_snapshot(self):
-        run = next(i for i in INS if i.startswith("RUN") and "TMUX_VERSION" in i)
-        self.assertIn("https://deb.debian.org/debian/pool/main/t/tmux/", run)
-        self.assertIn("https://snapshot.debian.org/file/$SHA1", run, "the archive drops the file when backports moves on; the snapshot keeps it")
-        self.assertIn('apt-get install -y --no-install-recommends "/tmp/$F"', run, "dependencies come from Debian 13")
-        self.assertRegex(run, r"unsupported architecture")
-        self.assertTrue(run.rstrip().endswith("tmux -V"), "the build prints the version it installed")
-        # the checksum is checked in the loop, for each source, before the file is kept: a wrong file is never installed
-        self.assertLess(run.index("sha256sum -c"), run.index("apt-get install"))
-
-    def test_the_tmux_version_in_the_third_party_lists_is_the_one_pinned(self):
-        pinned = self.arg("TMUX_VERSION")
-        rows = [l.split("\t") for l in read("docs/debian-packages.tsv").splitlines() if l.startswith("tmux\t")]
-        self.assertEqual([r[1] for r in rows], [pinned], "docs/debian-packages.tsv")
-        notice = [l for l in read("THIRD_PARTY_NOTICES.md").splitlines() if l.startswith("| `tmux` |")]
-        self.assertEqual(len(notice), 1)
-        self.assertIn("| %s |" % pinned, notice[0], "THIRD_PARTY_NOTICES.md")
+    def test_neither_tmux_nor_ttyd_is_installed(self):
+        self.assertNotRegex(D, r"(?i)\btmux\b")
+        self.assertNotRegex(D, r"(?i)\bttyd\b")
+        self.assertIn("ln -sf /usr/local/bin/herdr-core /usr/local/bin/hc", CODE)
 
 
 class Addons(unittest.TestCase):

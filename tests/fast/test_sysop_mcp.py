@@ -1,5 +1,5 @@
 """The MCP server of the sysop: the protocol, every tool, the settled screen, the countdown and the approval with a fake panel, the budgets,
-the stop, the audit lines. A fake swarmbox-tabs (tests/support/sysop_support.py FakeTabs, a stub command) stands in for the tabs; no model, no tmux.
+the stop, the audit lines. A fake swarmbox-tabs (tests/support/sysop_support.py FakeTabs, a stub command) stands in for the tabs; no model, no multiplexer.
 Run with: python3 -W error tests/fast/test_sysop_mcp.py
 """
 import json
@@ -265,18 +265,18 @@ class Reading(Rig):
         self.assertIn("[cut: ", t)
 
     def test_errors_of_the_tabs_are_results_with_their_words(self):
-        self.tabs.get_error = ("tmux_error", "boom")
+        self.tabs.get_error = ("backend_error", "boom")
         t = self.fail("read_tab")
-        self.assertIn("tmux_error", t)
+        self.assertIn("backend_error", t)
         self.assertIn("boom", t)
         self.tabs.get_error = None
-        self.tabs.ls_error = ("no_session", "no tmux session main")
+        self.tabs.ls_error = ("no_session", "herdr-core is not running")
         self.assertIn("no_session", self.fail("list_tabs"))
 
-    def test_tmux_gone_is_an_error_the_model_can_read(self):
+    def test_herdr_gone_is_an_error_the_model_can_read(self):
         self.tabs.stop()
         t = self.fail("list_tabs")
-        self.assertIn("no_tmux", t)
+        self.assertIn("no_backend", t)
         self.assertIn("cannot act on the box", t)
 
 
@@ -355,7 +355,7 @@ class Typing(Rig):
     def test_errors_of_the_driver_become_results_with_a_hint(self):
         for code, msg, hint in (("dialog_open", "a dialog is open in the tab", "the user's decision"), ("busy_tab", "the agent is busy", "interrupt"),
                                 ("slash_refused", "text that starts with /", "not a prompt"), ("not_submitted", "still in the box", "read the tab"),
-                                ("timeout", "swarmbox-tabs did not finish", None), ("tmux_error", "tmux failed", None)):
+                                ("timeout", "swarmbox-tabs did not finish", None), ("backend_error", "hc failed", None)):
             with self.subTest(code=code):
                 self.tabs.errors["@2"] = (code, msg)
                 t = self.fail("run", tab="@2", command="hello")
@@ -518,7 +518,7 @@ class Countdown(Rig):
         self.assertFalse(os.path.exists(os.path.join(self.gdir, "decision.json")))
 
     def test_a_dialog_in_a_tab_that_is_not_called_claude_needs_an_approval(self):
-        # Claude Code started through `tmux new-window CMD` shows as sh: the screen, not the name of the process, says it is a dialog
+        # Claude Code started through `hc run -- CMD` shows as sh: the screen, not the name of the process, says it is a dialog
         self.tabs.tabs["@1"]["cmd"] = "sh"
         self.tabs.set_screen("@1", "\n".join(["\u2500" * 40, " Bash command", " Do you want to proceed?", " \u276f 1. Yes", "   2. No", "", " Esc to cancel"]))
         seen = []

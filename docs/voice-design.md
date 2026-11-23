@@ -15,19 +15,19 @@ browser (microphone) --audio--> web terminal port --> voice service (Whisper) --
 ```
 
 - **The `voice` addon.** Installed on demand (`swarmbox addon install voice`), inside the box. It holds `whisper.cpp` (built at install, CPU only), one multilingual Whisper model and a small service. Nothing is in the image, no nested Podman and no login are needed.
-- **The microphone page.** `getUserMedia` with push-to-talk: a button and a state light added to the ttyd page by `swarmbox-web` (`/voice/page.js` and `/voice/page.css`). `getUserMedia` works on `localhost` and through the Cloudflare tunnel, since both are secure contexts. The page records and sends
-  the audio; it shows only a state (recording, sending, sent, nothing heard, nobody is listening, busy, error). No transcript, no plan, no confirmation: nothing on it can make the box do anything.
-- **The audio entry.** The box publishes one port, the web terminal's, so `swarmbox-voice front` listens on it and starts ttyd and the service behind it. Under `/voice/` it has a **fixed table of four routes**: the two page files, `GET /voice/health` and `POST /voice/audio`. Any other path
-  under `/voice/` is a 404 from the front and never reaches the service; anything else is piped to ttyd unchanged, websockets included. The answers are filtered, so only a few booleans and short fixed strings come back. Details and limits are in [voice.md](voice.md).
+- **The microphone.** Part of the Web Studio, not of the addon (until version 2.3 the addon added its own page files to the ttyd page): `getUserMedia`, tap Speak, then Send or discard, under the goal input of the sysop panel. `getUserMedia` works on `localhost` and through the Cloudflare tunnel, since both are secure contexts. The Studio records and sends
+  the audio; it shows only a short note (sent, nothing heard, nobody is listening, busy, error). No transcript, no plan, no confirmation: nothing on the voice path can make the box do anything.
+- **The audio entry.** The box publishes one port, the web terminal's, so `swarmbox-voice front` listens on it and starts the Web Studio and the service behind it. Under `/voice/` it has a **fixed table of two routes**: `GET /voice/health` and `POST /voice/audio`. Any other path
+  under `/voice/` is a 404 from the front and never reaches the service; anything else is piped to the Web Studio unchanged, websockets included. The answers are filtered, so only a few booleans and short fixed strings come back. Details and limits are in [voice.md](voice.md).
 - **Whisper, fixed.** The recognizer is always Whisper, called through one function (`stt.transcribe`). Settings: `voice.stt.model` (`small` by default, multilingual only, never `.en`), `voice.language` (`auto` or a code such as `pt`; `auto` is passed as `-l auto`, because `whisper-cli` assumes English
   without `-l`) and `voice.stt.vocabulary` (optional words given as the prompt). A recording that is quiet (no speech) is not given to Whisper, and a transcript of notes only (`[BLANK_AUDIO]`) is dropped, because Whisper turns silence into words and each would become a goal.
-- **The publication.** The service publishes `{"text": ...}` with `source` `voice` on the topic of `voice.topic` (default `goal`), speaking the socket of the bus directly. `pub` says how many received it: none is "nobody is listening" on the page, and a subscriber that is behind is "busy". `swarmbox-voice say TEXT`
+- **The publication.** The service publishes `{"text": ...}` with `source` `voice` on the topic of `voice.topic` (default `goal`), speaking the socket of the bus directly. `pub` says how many received it: none is "nobody is listening" in the Studio, and a subscriber that is behind is "busy". `swarmbox-voice say TEXT`
   publishes the same goal without a microphone.
 
 ## What it does not do
 
-- It does not plan, rate risk, show a plan, ask for a confirmation or type into a tab: it has no tmux code and no call on the tabs. A goal is a request, not a command; the sysop reads it as text and decides.
-- It does not know who listens. The only link with any other addon is the topic name in the settings: the sysop hears voice when `sysop.topic` equals `voice.topic`. Any other subscriber of the topic gets the goal too, and without one the page says so.
+- It does not plan, rate risk, show a plan, ask for a confirmation or type into a tab: it has no code that types into a tab and no call on the tabs. A goal is a request, not a command; the sysop reads it as text and decides.
+- It does not know who listens. The only link with any other addon is the topic name in the settings: the sysop hears voice when `sysop.topic` equals `voice.topic`. Any other subscriber of the topic gets the goal too, and without one the Studio says so.
 - It does not keep the audio (a private temporary folder while Whisper runs) or log the transcript, and it never sends the transcript back to the browser.
 - It does not read screens, so it has no use for the secrets filter (that one belongs to `swarmbox-tabs`).
 
@@ -35,7 +35,7 @@ browser (microphone) --audio--> web terminal port --> voice service (Whisper) --
 
 - Only audio crosses the tunnel, and what it can cause is a goal on a topic. The route table is fixed, the `Origin` of a `/voice/` request must name its `Host`, a POST needs the WAV content type, the body is limited, and the service behind the front listens on loopback and checks its own `Host` and `Origin`.
 - The risk of what a goal leads to is rated by the sysop, from the action and not from the text of the goal, and a high risk waits for you in a session that is yours. Anyone who can already open the terminal can type any command, so the path adds no way to run things.
-- `voice.web` at `0` removes the button and the front: the web port then goes straight to ttyd.
+- `voice.web` at `0` removes the front: the web port then goes straight to the Web Studio.
 
 ## Configuration
 
@@ -43,11 +43,11 @@ browser (microphone) --audio--> web terminal port --> voice service (Whisper) --
 
 ## Tests
 
-Unit tests of the config, the service, the front and the page (`tests/fast/test_voice_*.py`, `tests/fast/test_addon_voice.py`), a browser test of the page with a fake service (`tests/slow/test_voice_page_browser.py`), and the end-to-end run in Podman (`tests/e2e/e2e_voice.sh`): the microphone of a headless Chromium
-plays speech made with espeak-ng, and the goal is followed through the real bus and sysop to a real Claude Code in the active tab (see "Version 1" in addons-design.md for what it proved and found).
+Unit tests of the config, the service and the front, the front in front of the Web Studio with a fake `hc` (`tests/fast/test_voice_*.py`, `tests/fast/test_addon_voice.py`). In version 1 an end-to-end run in Podman played speech made with espeak-ng into the microphone of a headless Chromium and followed
+the goal through the real bus and sysop to a real Claude Code in the active tab (see "Version 1" in addons-design.md for what it proved and found); that harness drove tmux and ttyd and was removed in version 2.3.
 
 ## Open questions
 
 - Whether the latency of `small` on CPU is acceptable (2 to 4 s on a short phrase in the tests), and whether `medium` is needed; and how Whisper hears real speech in the language you use (the tests only had a synthetic voice).
 - A host command that records the microphone of the host terminal (`swarmbox listen`): a terminal tab has no microphone in the box. Not built.
-- Whether the page should show a preview of the text next to the button. Decided no: the transcript is not shown anywhere on the page, and nothing of it crosses the tunnel.
+- Whether the Studio should show a preview of the text next to the button. Decided no: the transcript is not shown anywhere, and nothing of it crosses the tunnel.

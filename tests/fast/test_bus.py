@@ -2,7 +2,7 @@
 
 Topics, broadcast, groups (one member gets each message, round robin; a member that dies, is slow or all are slow), the count of receivers
 and --allow-none, topics, watch, big messages, bad names and requests, permissions, a stale socket, two brokers. A goal still works end to
-end on a topic that the test chooses. No tmux, no network, no model. Run with: python3 tests/fast/test_bus.py
+end on a topic that the test chooses. No multiplexer, no network, no model. Run with: python3 tests/fast/test_bus.py
 """
 import os
 import socket
@@ -632,11 +632,11 @@ class Watch(Base):
 
 
 class NoTabs(unittest.TestCase):
-    def test_the_bus_has_no_trace_of_tmux_or_tabs(self):
+    def test_the_bus_has_no_trace_of_the_multiplexer_or_tabs(self):
         with open(bus_support.BUS_PATH) as f:
             code = f.read()
         code = code.split('"""', 2)[2]                    # the docstring may say that there are none
-        for word in ("tmux", "tab/", "Driver", "driver", "no_screen", "DriverError", "make_driver", "executor", "ThreadPool"):
+        for word in ("tmux", "herdr", "tab/", "Driver", "driver", "no_screen", "DriverError", "make_driver", "executor", "ThreadPool"):
             self.assertNotIn(word, code, word)
         for name in ("Driver", "StubDriver", "make_driver", "load_tmux_module", "DriverError", "pub_topic_ok", "tab_topic"):
             self.assertFalse(hasattr(bus, name), name)

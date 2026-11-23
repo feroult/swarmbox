@@ -1,6 +1,6 @@
 """Step 6b of `swarmbox-entrypoint serve` with the REAL broker (everything else of serve is the fakes of tests/fast/test_serve_steps.py):
 the step starts the broker, which answers on <run folder>/bus.sock; killed with -9 it is started again after the backoff of 1 s and takes
-over the stale socket; SIGTERM of serve removes the socket. No tmux, no network. Run with: python3 tests/fast/test_bus_serve.py
+over the stale socket; SIGTERM of serve removes the socket. No multiplexer, no network. Run with: python3 tests/fast/test_bus_serve.py
 """
 import os
 import signal

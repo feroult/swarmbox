@@ -55,7 +55,7 @@ class Runner(unittest.TestCase):
             self.assertEqual(p.stdout.split(), want, sel)
         self.assertEqual(run("--list").stdout.split(), on_disk("fast"), "fast is the default")
         e2e = run("e2e", "--list").stdout.split()
-        self.assertTrue(e2e and all(x.startswith("e2e/") and x.endswith(".sh") for x in e2e), "e2e runs the wrappers that start the container: %s" % e2e)
+        self.assertTrue(all(x.startswith("e2e/") and x.endswith(".sh") for x in e2e), "e2e runs only the wrappers that start the container: %s" % e2e)
         self.assertFalse([x for x in run("all", "--list").stdout.split() if x.startswith("e2e/")], "the e2e harnesses are never part of all")
 
     def test_shuffle_prints_its_seed_and_the_same_seed_gives_the_same_order(self):

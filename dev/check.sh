@@ -14,7 +14,7 @@
 #               ${XDG_CACHE_HOME:-~/.cache}/swarmbox-dev (set SWARMBOX_SHELLCHECK to use a binary of your own).
 #   Tests       a CI runner has no TERM, no COLORTERM, no STARSHIP_SHELL: a test that only passes with the variables of your terminal
 #               passes here and fails there. The tests run under `env -i` with PATH, HOME and a UTF-8 LANG only.
-# What it cannot cover: the slow tests (real tmux, browser, image: dev/test-slow.sh runs them in Podman), the macOS job (bash 3.2), the
+# What it cannot cover: the slow tests (browser, real processes, image: dev/test-slow.sh runs them in Podman), the macOS job (bash 3.2), the
 # arm64 job and the image smoke test exist only in CI.
 # Exit: 0 when everything that ran passed, 1 otherwise.
 set -u

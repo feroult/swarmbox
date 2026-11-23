@@ -1,7 +1,7 @@
 """swarmbox-voice: the command of the voice addon. Voice is an input: it turns audio into a goal on the bus and does nothing else.
 
   swarmbox-voice serve [--listen 127.0.0.1:17682] [--allow-host NAME ...]   the HTTP service (loopback only)
-  swarmbox-voice front [--listen 0.0.0.0:7681] -- ttyd ARGS...              the page and the service on the web terminal port, ttyd behind
+  swarmbox-voice front [--listen 0.0.0.0:7681] -- SERVER ARGS...            health and audio on the web port, the web server behind
   swarmbox-voice model list | fetch NAME                                    the multilingual Whisper models
   swarmbox-voice say TEXT...                                                publish a goal on the bus, as if it was spoken (no microphone)
   swarmbox-voice --self-test                                                checks the install without a model
@@ -27,8 +27,8 @@ def _cfg():
         raise SystemExit(2)
 
 
-def cmd_front(args, ttyd_args):
-    return front.run(args, ttyd_args)
+def cmd_front(args, server_args):
+    return front.run(args, server_args)
 
 
 def _on_term(*_):
@@ -118,14 +118,14 @@ def main(argv=None):
     m.add_argument("action", choices=("list", "fetch"))
     m.add_argument("name", nargs="?")
     m.set_defaults(fn=cmd_model)
-    f = sub.add_parser("front", help="serve the page and the service on the web terminal port, with ttyd after --")
+    f = sub.add_parser("front", help="serve the voice routes on the web port, with the web server command after --")
     front.add_arguments(f)
     sy = sub.add_parser("say", help="publish a goal on the bus, as if it was spoken",
                         description="Publish TEXT as a goal on the bus (the topic of voice.topic, source voice), as a spoken request would; no microphone needed.")
     sy.add_argument("text", nargs="+")
     sy.set_defaults(fn=cmd_say)
     argv = sys.argv[1:] if argv is None else list(argv)
-    argv, ttyd_args = front.split_command(argv) if "front" in argv[:1] else (argv, [])
+    argv, server_args = front.split_command(argv) if "front" in argv[:1] else (argv, [])
     args = ap.parse_args(argv)
     if args.self_test:
         return self_test()
@@ -133,7 +133,7 @@ def main(argv=None):
         ap.print_help(sys.stderr)
         return 2
     if args.cmd == "front":
-        return cmd_front(args, ttyd_args)
+        return cmd_front(args, server_args)
     return args.fn(args)
 
 

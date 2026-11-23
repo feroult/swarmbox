@@ -39,29 +39,6 @@ RUN apt-get update && apt-get install -y \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# tmux, PINNED to a Debian backport. Debian 13 ships 3.5a, which has no pane scrollbar (tmux 3.6 added it); trixie-backports has 3.7c. The exact
-# package is fixed by its SHA-256, the one the trixie-backports index declares. The archive keeps only the newest backport, so the copy there goes
-# when backports moves on: the same file is also fetched from snapshot.debian.org by its SHA-1, which keeps every file forever. Each source is
-# checked against the SHA-256, so a wrong file is never installed. apt-get installs the local file and takes its dependencies from Debian 13.
-ARG TMUX_VERSION=3.7c-1~bpo13+1
-ARG TMUX_SHA256_AMD64=c8b53f52cd26492bde59118aaaf06a21e38faa9b20621327546532efa2805174
-ARG TMUX_SHA256_ARM64=4cadcd17d6d7f11b0cc8707109cf8ab38632e194bb2e94d0f066e962d99b1fc2
-ARG TMUX_SHA1_AMD64=34937ad9ce3d0daa60b4b76debffd5c3631ff026
-ARG TMUX_SHA1_ARM64=6ef9eb31079987a468a23104fe2eabc9ed4bc70b
-RUN case "$(dpkg --print-architecture)" in \
-        amd64) A=amd64; SHA256=$TMUX_SHA256_AMD64; SHA1=$TMUX_SHA1_AMD64 ;; \
-        arm64) A=arm64; SHA256=$TMUX_SHA256_ARM64; SHA1=$TMUX_SHA1_ARM64 ;; \
-        *) echo "tmux: unsupported architecture $(dpkg --print-architecture)" >&2; exit 1 ;; \
-    esac && \
-    F="tmux_${TMUX_VERSION}_${A}.deb" && \
-    for URL in "https://deb.debian.org/debian/pool/main/t/tmux/$F" "https://snapshot.debian.org/file/$SHA1"; do \
-        if curl -fsSL -o "/tmp/$F" "$URL" && echo "$SHA256  /tmp/$F" | sha256sum -c -; then break; fi; \
-        rm -f "/tmp/$F"; \
-    done && \
-    test -f "/tmp/$F" && \
-    apt-get update && apt-get install -y --no-install-recommends "/tmp/$F" && \
-    rm -f "/tmp/$F" && rm -rf /var/lib/apt/lists/* && tmux -V
-
 # Nested rootless Podman: no host socket is ever mounted.
 # netavark + aardvark-dns give nested networks DNS by container name (netavark needs iptables for its firewall
 # driver, which Debian only lists as a hidden requirement); uidmap provides newuidmap/newgidmap; libcap2-bin setcap.
@@ -121,20 +98,6 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Web terminal: ttyd is not in Debian 13, so fetch the pinned release and verify its published checksum.
-ARG TTYD_VERSION=1.7.7
-RUN case "$(dpkg --print-architecture)" in \
-        amd64) T=ttyd.x86_64 ;; \
-        arm64) T=ttyd.aarch64 ;; \
-        *) echo "ttyd: unsupported architecture $(dpkg --print-architecture)" >&2; exit 1 ;; \
-    esac && \
-    BASE="https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}" && \
-    curl -fsSL -o "/tmp/$T" "$BASE/$T" && \
-    curl -fsSL -o /tmp/ttyd.SHA256SUMS "$BASE/SHA256SUMS" && \
-    (cd /tmp && grep " $T\$" ttyd.SHA256SUMS | sha256sum -c -) && \
-    install -m 755 "/tmp/$T" /usr/local/bin/ttyd && \
-    rm -f "/tmp/$T" /tmp/ttyd.SHA256SUMS
-
 # Starship prompt: a pinned release with its published SHA-256 verified (static musl binaries)
 ARG STARSHIP_VERSION=1.27.0
 RUN case "$(dpkg --print-architecture)" in \
@@ -148,7 +111,7 @@ RUN case "$(dpkg --print-architecture)" in \
     tar -xzf "$T" -C /usr/local/bin starship && chmod 755 /usr/local/bin/starship && \
     rm -f "/tmp/$T" "/tmp/$T.sha256"
 
-# Optional multiplexer backend: herdr-core (hc daemon, OpenRPC + OSC 7501) and herdr TUI, both pinned by SHA-256.
+# The multiplexer: herdr-core (hc daemon, OpenRPC + OSC 7501) and herdr TUI, both pinned by SHA-256.
 ARG HERDR_CORE_VERSION=0.1.21
 ARG HERDR_CORE_SHA256_AMD64=78424755c10a40dde38a0bdb55c20ac19706e9ae05ed68fc2acf1fcff0d941c1
 ARG HERDR_CORE_SHA256_ARM64=e844a2bfab48a226097679d076bc83042fe57fccef5387ef802e5b24e78b529a
@@ -189,20 +152,7 @@ USER agent
 RUN python3 -m venv --prompt swarmbox /opt/flow && /opt/flow/bin/pip install --no-cache-dir --upgrade pip
 USER root
 
-# --- Volatile layers: scripts, configuration, the web page ---
-# ttyd's own page, the clipboard bridge and the style: build-index.sh assembles the page at image build
-COPY container/web/ttyd-clipboard.js container/web/ttyd-style.css container/web/build-index.sh /usr/local/share/swarmbox/
-RUN chmod 644 /usr/local/share/swarmbox/ttyd-clipboard.js /usr/local/share/swarmbox/ttyd-style.css && \
-    chmod 755 /usr/local/share/swarmbox/build-index.sh && \
-    (ttyd -p 17681 -i lo true >/dev/null 2>&1 & TTYD_PID=$!; \
-     for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do \
-         curl -fsS -o /usr/local/share/swarmbox/ttyd-stock.html http://127.0.0.1:17681/ && break; sleep 0.3; \
-     done; kill $TTYD_PID) && \
-    test -s /usr/local/share/swarmbox/ttyd-stock.html && \
-    sh /usr/local/share/swarmbox/build-index.sh
-
-COPY container/config/tmux.conf /etc/tmux.conf
-COPY container/config/tmux-browser-keys.conf /etc/tmux-browser-keys.conf
+# --- Volatile layers: scripts, configuration, the web server ---
 COPY container/config/herdr.toml /etc/swarmbox/herdr.toml
 COPY container/config/starship.toml /etc/swarmbox/starship.toml
 COPY container/config/bashrc.sh /etc/swarmbox/bashrc.sh
@@ -234,7 +184,7 @@ COPY container/scripts/swarmbox-install.sh /usr/local/bin/swarmbox-install
 COPY container/host/ /usr/local/share/swarmbox/host/
 COPY cloudflare-setup.py /usr/local/share/swarmbox/host/cloudflare-setup.py
 COPY container/entrypoint.sh /usr/local/bin/swarmbox-entrypoint
-RUN chmod 644 /etc/tmux.conf /etc/tmux-browser-keys.conf /etc/swarmbox/herdr.toml /etc/swarmbox/starship.toml /etc/swarmbox/bashrc.sh /etc/ssh/ssh_config.d/swarmbox.conf \
+RUN chmod 644 /etc/swarmbox/herdr.toml /etc/swarmbox/starship.toml /etc/swarmbox/bashrc.sh /etc/ssh/ssh_config.d/swarmbox.conf \
         /usr/local/lib/swarmbox/dirs.sh /etc/swarmbox/scripts/starship-init.sh /etc/swarmbox/scripts/messages.sh && \
     chmod 755 /usr/local/bin/swarmbox-statusline /usr/local/bin/swarmbox-pubkey \
         /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-addon /usr/local/bin/swarmbox-bus /usr/local/bin/swarmbox-tabs /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-mcp /usr/local/bin/swarmbox-install /usr/local/bin/swarmbox-entrypoint && \

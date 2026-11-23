@@ -1,13 +1,13 @@
 #!/bin/bash
 # Voice installer. Builds whisper.cpp (CPU only, static) from the pinned release tarball, fetches ONE multilingual Whisper model,
-# and copies the addon's own files (the Python library and the web page parts) into $ADDON_PREFIX.
+# and copies the addon's own files (the Python library) into $ADDON_PREFIX.
 #
 # Called by `swarmbox-addon install voice` with ADDON_PREFIX, ADDON_VERSION (the whisper.cpp release) and ADDON_ARCH. Progress goes to
 # stderr only. Needs network, a C++ compiler (the image has build-essential) and python3 with venv; cmake comes from a pinned
 # PyPI wheel in a scratch venv, because the installer may not use apt. Both downloads are verified with SHA-256 BEFORE use.
 #
 # The model is $SWARMBOX_VOICE_STT_MODEL (default small; never an `.en` model: those only know English). Another model later:
-# `swarmbox-voice model fetch NAME`. Result: bin/swarmbox-voice, libexec/whisper-cli, models/ggml-<model>.bin, lib/, web/.
+# `swarmbox-voice model fetch NAME`. Result: bin/swarmbox-voice, libexec/whisper-cli, models/ggml-<model>.bin, lib/.
 set -euo pipefail
 
 : "${ADDON_PREFIX:?ADDON_PREFIX is not set}"
@@ -88,7 +88,6 @@ verify "$scratch/model.bin" "${MODEL_SHA256[$model]}" "model $model"
 mv "$scratch/model.bin" "$ADDON_PREFIX/models/ggml-$model.bin"
 
 cp -R "$here/lib" "$ADDON_PREFIX/lib"
-if [ -d "$here/web" ]; then cp -R "$here/web" "$ADDON_PREFIX/web"; fi
 find "$ADDON_PREFIX/lib" -name __pycache__ -prune -exec rm -rf {} +
 
 cat > "$ADDON_PREFIX/bin/swarmbox-voice" << 'LAUNCHER'

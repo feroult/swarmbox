@@ -4,7 +4,7 @@ This document specifies SwarmBox's native terminal experience and remote `herdr-
 
 ## Goals
 
-1. **Terminal parity with the Web UI (`sx` / `swarmbox`):** running `swarmbox` (or `sx`) with `MUX=herdr` opens a 3-pane SwarmBox Terminal Cockpit directly inside the user's host terminal — sidebar with live OSC 7501 status dots, full 24-bit center PTY, right-hand Sysop panel with live approvals and goal input, and the 5 synchronized themes — with zero extra software installed on the host.
+1. **Terminal parity with the Web UI (`sx` / `swarmbox`):** running `swarmbox` (or `sx`) opens a 3-pane SwarmBox Terminal Cockpit directly inside the user's host terminal — sidebar with live OSC 7501 status dots, full 24-bit center PTY, right-hand Sysop panel with live approvals and goal input, and the 5 synchronized themes — with zero extra software installed on the host.
 2. **Single source of truth (`herdr-core`):** the Web UI, the Terminal Cockpit (`cockpit.mjs`), `swarmbox-tabs`, and any external `herdr-app` client all attach to the exact same `herdr-core` daemon and see the exact same live terminals.
 3. **Sysop as a native OSC 7501 agent for `herdr-app` without UI duplication:** Sysop publishes a persistent `herdr-core` terminal labeled `swarmbox.role=sysop` that speaks native OSC 7501 (`idle`, `working`, `blocked:permission`, `done`, `error`) so remote `herdr-app` users can monitor and interact with Sysop in their Agent Inbox, while the SwarmBox Web UI, Terminal Cockpit, and `swarmbox-tabs` filter out `swarmbox.role=sysop` so Sysop appears only in its dedicated panel and never as a duplicate tab.
 4. **Remote `herdr-app` readiness:** external `herdr-app` clients connect over the existing Podman/SSH transport (`hc machine add <name> --via 'podman exec -i <box> hc connect'`) without exposing any extra TCP port.
@@ -45,7 +45,7 @@ Launched by `mux_attach_interactive` in `container/scripts/mux/herdr.sh` (with f
 ### Keyboard & Mouse Ergonomics
 
 - All normal keystrokes pass straight to the active `herdr-core` terminal PTY.
-- **`Ctrl+A` prefix** (matching SwarmBox's `tmux.conf` muscle memory):
+- **`Ctrl+A` prefix** (the prefix SwarmBox always used):
   - `Ctrl+A Ctrl+A`: send literal `Ctrl+A` to the active terminal
   - `Ctrl+A 1..9` / `n` / `p`: switch tabs
   - `Ctrl+A c` / `Ctrl+A C`: open new Shell / Agent tab
@@ -63,7 +63,7 @@ Launched by `mux_attach_interactive` in `container/scripts/mux/herdr.sh` (with f
 
 ## Component 3: Sysop Native OSC 7501 Agent (`swarmbox-sysop agent`)
 
-Implemented in `container/addons/sysop/lib/swarmbox_sysop/agent.py` (pure Python stdlib, zero `tmux` coupling) and wired into `cli.py` and `ui_host.py`.
+Implemented in `container/addons/sysop/lib/swarmbox_sysop/agent.py` (pure Python stdlib) and wired into `cli.py` and `ui_host.py`.
 
 ### OSC 7501 Protocol (Verified Against `herdr-core 0.1.21`)
 
@@ -89,9 +89,9 @@ Implemented in `container/addons/sysop/lib/swarmbox_sysop/agent.py` (pure Python
 
 ### Lifecycle & Template Seeding (`ui_host.py`)
 
-When `SWARMBOX_MUX=herdr` and `swarmbox-sysop serve --dock` runs:
+When `swarmbox-sysop serve --dock` runs:
 
-1. `ui_host.start_ui()` starts `HerdrBridge` (a lightweight background watcher thread in `agent.py`, zero `tmux` imports).
+1. `ui_host.start_ui()` starts `HerdrBridge` (a lightweight background watcher thread in `agent.py`).
 2. `HerdrBridge` seeds `~/.config/herdr-core/templates/sysop.md` once (never overwriting user edits) so `hc templates` and `herdr-app` expose the Sysop template.
 3. `HerdrBridge` checks `hc ls --json` for a live terminal with label `swarmbox.role=sysop`; if none exists and `herdr-core` is up, it spawns one (`hc run --bg --keep --no-parent --name sysop --label swarmbox.role=sysop -- swarmbox-sysop agent`).
 4. In `container/scripts/swarmbox-tabs.py`, `HerdrBackend.list_tabs_raw()` excludes any terminal whose `labels.get("swarmbox.role") == "sysop"`, keeping `swarmbox-tabs` and the Sysop brain cleanly isolated from the bridge terminal.
