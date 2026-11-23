@@ -10,17 +10,45 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-<!-- SwarmBox lightweight BBS ANSI-art boot splash (dissolves once herdr-core paints) -->
+<!-- SwarmBox pixel-perfect loading splash (dissolves smoothly once herdr-core paints) -->
 <div id="sb-boot" aria-hidden="true">
-  <div class="boot-bbs-wrap">
-    <pre class="boot-bbs" id="boot-bbs">███████╗██╗    ██╗ █████╗ ██████╗ ███╗   ███╗██████╗  ██████╗ ██╗  ██╗
-██╔════╝██║    ██║██╔══██╗██╔══██╗████╗ ████║██╔══██╗██╔═══██╗╚██╗██╔╝
-███████╗██║ █╗ ██║███████║██████╔╝██╔████╔██║██████╔╝██║   ██║ ╚███╔╝ 
-╚════██║██║███╗██║██╔══██║██╔══██╗██║╚██╔╝██║██╔══██╗██║   ██║ ██╔██╗ 
-███████║╚███╔███╔╝██║  ██║██║  ██║██║ ╚═╝ ██║██████╔╝╚██████╔╝██╔╝ ██╗
-╚══════╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝</pre>
-    <div class="boot-bbs-rule"><span>░▒▓</span><i></i><span>▓▒░</span></div>
-    <div class="boot-bbs-line"><span>HERDR-CORE</span><span class="boot-bbs-sep">::</span><span>CONNECTING PTY</span><span class="boot-bbs-cur">█</span></div>
+  <div class="boot-wrap">
+    <div class="boot-emblem">
+      <svg viewBox="0 0 24 24" shape-rendering="crispEdges" aria-hidden="true">
+        <rect class="sb-sp-1" x="2" y="5" width="1" height="1" fill="#a78bfa"/>
+        <rect class="sb-sp-2" x="21" y="7" width="1" height="1" fill="#67e8f9"/>
+        <rect class="sb-sp-3" x="20" y="19" width="1" height="1" fill="#c4b5fd"/>
+        <rect class="sb-sp-2" x="3" y="18" width="1" height="1" fill="#8b5cf6"/>
+        <rect x="11" y="4" width="2" height="1" fill="#ede9fe"/>
+        <rect x="9" y="5" width="6" height="1" fill="#ddd6fe"/>
+        <rect x="7" y="6" width="10" height="1" fill="#c4b5fd"/>
+        <rect x="5" y="7" width="14" height="1" fill="#a78bfa"/>
+        <rect x="7" y="8" width="10" height="1" fill="#8b5cf6"/>
+        <rect x="9" y="9" width="6" height="1" fill="#7c3aed"/>
+        <rect x="11" y="10" width="2" height="1" fill="#6d28d9"/>
+        <rect x="10" y="6" width="4" height="2" fill="#161124"/>
+        <rect class="sb-core" x="11" y="6" width="2" height="1" fill="#67e8f9"/>
+        <rect x="10" y="7" width="1" height="1" fill="#e9d5ff"/>
+        <rect x="13" y="7" width="1" height="1" fill="#e9d5ff"/>
+        <rect x="5" y="8" width="2" height="8" fill="#5b21b6"/>
+        <rect x="7" y="9" width="2" height="8" fill="#6d28d9"/>
+        <rect x="9" y="10" width="2" height="8" fill="#7c3aed"/>
+        <rect x="11" y="11" width="1" height="9" fill="#4c1d95"/>
+        <rect x="12" y="11" width="1" height="9" fill="#3b2763"/>
+        <rect x="13" y="10" width="2" height="8" fill="#4c1d95"/>
+        <rect x="15" y="9" width="2" height="8" fill="#3b2763"/>
+        <rect x="17" y="8" width="2" height="8" fill="#2e1f4d"/>
+        <rect class="sb-core" x="14" y="13" width="1" height="1" fill="#67e8f9"/>
+        <rect x="16" y="12" width="1" height="1" fill="#c4b5fd"/>
+        <rect x="7" y="12" width="1" height="1" fill="#a78bfa"/>
+      </svg>
+    </div>
+    <div class="boot-wordmark">SWARMBOX</div>
+    <div class="boot-track"><i></i></div>
+    <div class="boot-status">
+      <span class="boot-dot"></span>
+      <span>herdr-core · connecting</span>
+    </div>
   </div>
 </div>
 
@@ -165,7 +193,7 @@
 
       <div class="mobile-capsule">
         <button class="capsule-main" id="btn-mobile-sysop" data-state="idle" data-on="0">
-          <span class="status-dot" id="mobile-sysop-dot" data-state="idle"></span>
+          <span class="sysop-mini" id="mobile-sysop-dot" data-state="idle" aria-hidden="true"></span>
           <span class="capsule-text" id="mobile-sysop-text">Sysop</span>
           <span class="capsule-chevron" aria-hidden="true">
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4-4 4 4"/></svg>
@@ -195,7 +223,7 @@
     <div class="sheet-handle mobile-only" id="sheet-handle" aria-hidden="true"><span></span></div>
     <div class="sysop-head">
       <div class="sysop-title">
-        <span class="status-dot" id="sysop-dot" data-state="idle"></span>
+        <span class="sysop-mini" id="sysop-dot" data-state="idle" aria-hidden="true"></span>
         <span class="sysop-word">SYSOP</span>
         <span class="sysop-state-pill" id="sysop-state">idle</span>
       </div>
@@ -209,6 +237,21 @@
         <button class="icon-btn" id="btn-sysop-close" title="Close Sysop panel (Alt+S)" aria-label="Close">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
+      </div>
+    </div>
+
+    <!-- Pixel-Art Sysop Operator Hero Card (mirrors left AGENTS cards) -->
+    <div class="sysop-card" id="sysop-card" data-state="idle">
+      <div class="pixel-stage sysop-stage" id="sysop-stage">
+        <span class="pixel-corner" id="sysop-corner">Z</span>
+      </div>
+      <div class="sysop-card-info">
+        <div class="sysop-card-top">
+          <span class="agent-state-box sysop-card-badge" id="sysop-card-badge">READY</span>
+          <span class="sysop-card-meta" id="sysop-card-meta">operator</span>
+        </div>
+        <div class="sysop-card-title" id="sysop-card-title">Sysop Operator</div>
+        <div class="sysop-card-sub" id="sysop-card-sub">Routes goals &amp; guards risky actions</div>
       </div>
     </div>
 

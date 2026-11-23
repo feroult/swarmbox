@@ -214,48 +214,6 @@
     },
   };
 
-  // Colorize the BBS ANSI-art SWARMBOX boot splash with alternating per-letter shades + bevel shadow
-  (function colorizeBootBbs() {
-    const pre = document.getElementById('boot-bbs');
-    if (!pre) return;
-    // Column end-offsets for the 8 ANSI Shadow letters: S, W, A, R, M, B, O, X
-    const stops = [8, 18, 26, 34, 45, 53, 62, 70];
-    const lines = (pre.textContent || '').split('\n');
-    const frag = document.createDocumentFragment();
-    lines.forEach((line, r) => {
-      if (r > 0) frag.appendChild(document.createTextNode('\n'));
-      let curCls = '';
-      let run = '';
-      const flush = () => {
-        if (!run) return;
-        if (!curCls) frag.appendChild(document.createTextNode(run));
-        else {
-          const sp = document.createElement('span');
-          sp.className = curCls;
-          sp.textContent = run;
-          frag.appendChild(sp);
-        }
-        run = '';
-      };
-      for (let c = 0; c < line.length; c++) {
-        const ch = line[c];
-        let cls = '';
-        if (ch === '█') {
-          let letterIdx = stops.findIndex((s) => c < s);
-          if (letterIdx < 0) letterIdx = stops.length - 1;
-          cls = `c${letterIdx % 3}`;
-        } else if (ch !== ' ') {
-          cls = 'cs';
-        }
-        if (cls !== curCls) { flush(); curCls = cls; }
-        run += ch;
-      }
-      flush();
-    });
-    pre.textContent = '';
-    pre.appendChild(frag);
-  })();
-
   let bootDismissed = false;
   function dismissBoot() {
     if (bootDismissed) return;
@@ -284,6 +242,13 @@
   const connTextEl = document.getElementById('conn-text');
   const sysopDotEl = document.getElementById('sysop-dot');
   const sysopStateEl = document.getElementById('sysop-state');
+  const sysopCardEl = document.getElementById('sysop-card');
+  const sysopStageEl = document.getElementById('sysop-stage');
+  const sysopCornerEl = document.getElementById('sysop-corner');
+  const sysopCardBadgeEl = document.getElementById('sysop-card-badge');
+  const sysopCardMetaEl = document.getElementById('sysop-card-meta');
+  const sysopCardTitleEl = document.getElementById('sysop-card-title');
+  const sysopCardSubEl = document.getElementById('sysop-card-sub');
   const mobileSysopBtn = document.getElementById('btn-mobile-sysop');
   const mobileSysopDotEl = document.getElementById('mobile-sysop-dot');
   const mobileSysopTextEl = document.getElementById('mobile-sysop-text');
@@ -1935,7 +1900,39 @@
       '<rect x="8" y="9" width="4" height="1" fill="#a1a1aa"/>' +
       '<rect x="5" y="13" width="6" height="1" fill="#3f3a4d"/>' +
       '</svg>',
+
+    // Sysop: Autonomous mission-control operator bot with headset, radar antenna & reactive visor
+    sysop: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
+      '<rect x="2" y="2" width="1" height="1" fill="#c4b5fd" opacity=".45"/>' +
+      '<rect x="13" y="1" width="1" height="1" fill="#67e8f9" opacity=".55"/>' +
+      '<rect class="sys-ant" x="7" y="0" width="2" height="1"/>' +
+      '<rect x="7" y="1" width="1" height="2" fill="#7c3aed"/>' +
+      '<rect x="5" y="3" width="6" height="1" fill="#c4b5fd"/>' +
+      '<rect x="4" y="4" width="8" height="5" fill="#6d28d9"/>' +
+      '<rect x="2" y="5" width="2" height="3" fill="#a78bfa"/>' +
+      '<rect x="12" y="5" width="2" height="3" fill="#a78bfa"/>' +
+      '<rect x="3" y="8" width="2" height="1" fill="#67e8f9"/>' +
+      '<rect x="5" y="5" width="6" height="3" fill="#120e21"/>' +
+      '<rect class="sys-eye" x="6" y="6" width="1" height="1"/>' +
+      '<rect class="sys-eye" x="9" y="6" width="1" height="1"/>' +
+      '<rect class="sys-wave" x="7" y="7" width="2" height="1"/>' +
+      '<rect x="4" y="9" width="8" height="3" fill="#4c1d95"/>' +
+      '<rect x="6" y="9" width="4" height="1" fill="#a78bfa"/>' +
+      '<rect class="sys-led" x="6" y="10" width="1" height="1"/>' +
+      '<rect x="9" y="10" width="1" height="1" fill="#c4b5fd"/>' +
+      '<rect x="1" y="12" width="14" height="2" fill="#2b1f47"/>' +
+      '<rect x="4" y="12" width="8" height="1" fill="#5b21b6"/>' +
+      '<rect x="2" y="14" width="2" height="2" fill="#1a132c"/>' +
+      '<rect x="12" y="14" width="2" height="2" fill="#1a132c"/>' +
+      '</svg>',
   };
+
+  // Mount crisp pixel-art Sysop mascot in header, mobile capsule & operator hero card
+  if (sysopDotEl) sysopDotEl.innerHTML = PIXEL_SVG.sysop;
+  if (mobileSysopDotEl) mobileSysopDotEl.innerHTML = PIXEL_SVG.sysop;
+  if (sysopStageEl) {
+    sysopStageEl.insertAdjacentHTML('afterbegin', PIXEL_SVG.sysop);
+  }
 
   function tabAgentKind(t) {
     const b = tabAgentBadge(t);
@@ -2358,10 +2355,10 @@
   function renderSysop(sysop) {
     if (!sysop) return;
     const st = sysop.state || 'off';
-    sysopDotEl.dataset.state = st;
+    if (sysopDotEl) sysopDotEl.dataset.state = st;
     sysopStateEl.dataset.state = st;
     sysopStateEl.textContent = st;
-    mobileSysopDotEl.dataset.state = st;
+    if (mobileSysopDotEl) mobileSysopDotEl.dataset.state = st;
     mobileSysopBtn.dataset.state = st;
     if (btnToggleSysop) btnToggleSysop.dataset.state = st;
     mobileSysopTextEl.textContent = st === 'idle' || st === 'off' ? 'Sysop' : (sysop.sentence || `Sysop · ${st}`);
@@ -2369,24 +2366,65 @@
     const running = st === 'working' || st === 'allow?' || st === 'sending' || st === 'queued';
     btnSysopStop.classList.toggle('hidden', !running);
 
+    if (sysopCardEl) {
+      sysopCardEl.dataset.state = st;
+      if (sysopCornerEl) {
+        sysopCornerEl.textContent =
+          (st === 'working' || st === 'queued') ? '⚡' :
+          (st === 'allow?' || st === 'sending') ? '!' :
+          st === 'done' ? '✓' :
+          (st === 'failed' || st === 'stopped') ? '✕' : 'Z';
+      }
+      if (sysopCardBadgeEl) {
+        sysopCardBadgeEl.textContent =
+          st === 'off' ? 'OFFLINE' :
+          st === 'working' ? 'WORKING' :
+          st === 'queued' ? 'QUEUED' :
+          (st === 'allow?' || st === 'sending') ? 'APPROVAL' :
+          st === 'done' ? 'DONE' :
+          st === 'failed' ? 'FAILED' :
+          st === 'stopped' ? 'STOPPED' : 'READY';
+      }
+      if (sysopCardMetaEl) {
+        const policy = (sysop.settings && sysop.settings.autonomy) || '';
+        sysopCardMetaEl.textContent = sysop.up ? (policy ? `policy: ${policy}` : 'operator') : 'addon off';
+      }
+      if (sysopCardTitleEl) {
+        sysopCardTitleEl.textContent = !sysop.up
+          ? 'Sysop offline'
+          : (st === 'allow?' || st === 'sending') ? 'Approval required'
+          : (sysop.sentence && st !== 'idle' ? sysop.sentence : 'Sysop Operator');
+      }
+      if (sysopCardSubEl) {
+        sysopCardSubEl.textContent = !sysop.up
+          ? 'Install sysop addon in Settings'
+          : st === 'working' ? 'Routing actions across your tabs'
+          : (st === 'allow?' || st === 'sending') ? 'Confirm or cancel action below'
+          : st === 'done' ? 'Goal complete · ready for next'
+          : 'Routes goals & guards risky actions';
+      }
+    }
+
     renderApprovalCard(sysop);
 
     sysopFeedEl.innerHTML = '';
     const steps = Array.isArray(sysop.steps) ? sysop.steps : [];
     if (!sysop.up) {
       const box = document.createElement('div');
-      box.className = 'feed-empty';
+      box.className = 'sysop-hints';
       box.innerHTML = `
-        <div class="feed-empty-title"><span class="status-dot" data-state="off"></span><span>Sysop offline</span></div>
-        <div>Install the operator addon from Settings or run <code>swarmbox addon install sysop</code>.</div>
+        <div>Enable autonomous tab routing and voice goals from Settings or run <code>swarmbox addon install sysop</code>.</div>
       `;
       sysopFeedEl.appendChild(box);
     } else if (steps.length === 0) {
       const box = document.createElement('div');
-      box.className = 'feed-empty';
+      box.className = 'sysop-hints';
       box.innerHTML = `
-        <div class="feed-empty-title"><span class="status-dot" data-state="done"></span><span>Ready</span></div>
-        <div>Speak or type a goal — Sysop routes to your active tab and pauses risky actions for approval.</div>
+        <div>Speak or type a goal below — Sysop infers your active agent tab and pauses risky actions behind one-tap approval.</div>
+        <div class="shortcut-hints">
+          <span class="kbd-chip"><b>Alt+G</b> focus</span>
+          <span class="kbd-chip"><b>Alt+S</b> toggle</span>
+        </div>
       `;
       sysopFeedEl.appendChild(box);
     } else {
