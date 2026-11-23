@@ -671,6 +671,8 @@ assert.ok(Array.isArray(cfg.mcp));
             "buildHostApplyCommand",
             "installAddonLive",
             "term.paste(",
+            "getSmartSelection",
+            "looksLikeMidTokenWrap",
         ):
             self.assertIn(token, app_src)
         self.assertNotIn("sendPtyInput(txt", app_src)

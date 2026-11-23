@@ -1111,8 +1111,271 @@
       });
     }
 
+    // Smart terminal selection copy:
+    // Rejoins lines that were soft-wrapped by xterm, herdr-core attach hydration (\r\n at col N),
+    // or AI TUI padded/bordered/shaded code blocks (agy, claude, codex, opencode), while preserving
+    // intentional multi-line scripts, blank lines, lists, prompts, and explicit `\` continuations.
+    const RULE_LINE_RE = /^[\s─━═┄┅┈┉\-=_·•]+$/;
+    const LIST_OR_PROMPT_RE = /^(?:[-*+•]\s|\d+[.)]\s|#{1,6}\s|>\s|\$\s|❯\s|>>>\s)/;
+    const RIGHT_BORDER_RE = /[│┃║▕]/;
+    const UNIFORM_LEFT_GUTTER_RE = /^(\s*[│┃║▎▏]\s?)/;
+    const UNIFORM_RIGHT_GUTTER_RE = /(\s?[│┃║▕]\s*)$/;
+
+    function countLeadSpaces(s) {
+      let n = 0;
+      while (n < s.length && s[n] === ' ') n++;
+      return n;
+    }
+
+    function detectRowVisualRight(line, cols, contentEndCol) {
+      if (!line) return cols;
+      const full = line.translateToString(false);
+      // 1. Right-side box border (│ ┃ ║ ▕) at or past content end
+      for (let c = Math.max(20, contentEndCol - 1); c < full.length; c++) {
+        if (RIGHT_BORDER_RE.test(full[c])) {
+          return Math.max(20, c - 1);
+        }
+      }
+      // 2. Shaded code-box background ending cleanly before terminal edge
+      if (typeof line.getCell === 'function' && contentEndCol >= 20) {
+        try {
+          const sampleCell = line.getCell(Math.max(0, contentEndCol - 1));
+          if (sampleCell && typeof sampleCell.isBgDefault === 'function' && !sampleCell.isBgDefault()) {
+            let bgEnd = contentEndCol;
+            for (let c = cols - 1; c >= contentEndCol; c--) {
+              const cell = line.getCell(c);
+              if (cell && !cell.isBgDefault()) {
+                bgEnd = c + 1;
+                break;
+              }
+            }
+            if (bgEnd >= 40 && bgEnd < cols - 1) return bgEnd;
+          }
+        } catch (_) {}
+      }
+      return cols;
+    }
+
+    function detectNearbyTuiWrapCol(buf, startY, endY, cols) {
+      const lo = Math.max(0, startY - 12);
+      const hi = Math.min(buf.length - 1, endY + 12);
+      const lens = [];
+      let maxLen = 0;
+      for (let y = lo; y <= hi; y++) {
+        const ln = buf.getLine(y);
+        if (!ln) continue;
+        const t = ln.translateToString(true);
+        if (!t || RULE_LINE_RE.test(t)) continue;
+        lens.push(t.length);
+        if (t.length > maxLen) maxLen = t.length;
+      }
+      if (maxLen >= 50 && maxLen < cols - 12) {
+        const nearMax = lens.filter((n) => n >= maxLen - 4).length;
+        if (nearMax >= 3) return maxLen + 1;
+      }
+      return cols;
+    }
+
+    function looksLikeMidTokenWrap(curText, nextCore) {
+      if (!curText || !nextCore) return false;
+      if (/\s$/.test(curText)) return false;
+      // Don't glue onto explicit flags or shell operators
+      if (/^(?:--?[A-Za-z0-9]|\||&&|\|\||;|>|>>|<)/.test(nextCore)) return false;
+      // Ends with path/assignment/punctuation continuation (but not " -" or " --")
+      if (/(?:\/|:=|=|:|_|@)$/.test(curText)) return true;
+      if (/(?<!\s)-$/.test(curText)) return true;
+      // Long unbroken URL / path / identifier reaching right to the wrap edge
+      const lastTok = (curText.match(/\S+$/) || [''])[0];
+      if ((/(?:https?:\/\/|\/[^\s/]+\/)/.test(lastTok) || lastTok.length >= 22) && /^[A-Za-z0-9._/~:?#&=+-]/.test(nextCore)) {
+        return true;
+      }
+      return false;
+    }
+
+    function getSmartSelection(termObj) {
+      const fallback = termObj.getSelection();
+      if (!fallback || !fallback.includes('\n')) return fallback;
+      const pos = typeof termObj.getSelectionPosition === 'function' ? termObj.getSelectionPosition() : null;
+      const buf = termObj.buffer && termObj.buffer.active;
+      if (!pos || !buf) return fallback;
+
+      let s = pos.start;
+      let e = pos.end;
+      if (s.y > e.y || (s.y === e.y && s.x > e.x)) {
+        const tmp = s; s = e; e = tmp;
+      }
+      let endY = e.y;
+      let endX = e.x;
+      if (endY > s.y && endX === 0) {
+        endY -= 1;
+        endX = termObj.cols;
+      }
+      if (s.y >= endY) return fallback;
+
+      const cols = termObj.cols || 80;
+      const rows = [];
+      for (let y = s.y; y <= endY; y++) {
+        const line = buf.getLine(y);
+        if (!line) continue;
+        const full = line.translateToString(false);
+        const fullTrimLen = line.translateToString(true).length;
+        const x0 = y === s.y ? s.x : 0;
+        const x1 = y === endY ? Math.min(endX, full.length) : full.length;
+        const rawSlice = full.slice(x0, x1);
+        const trimmedSlice = rawSlice.replace(/\s+$/, '');
+        const contentEndCol = x0 + trimmedSlice.length;
+        const visualRightCol = detectRowVisualRight(line, cols, contentEndCol);
+        rows.push({
+          y,
+          isWrapped: Boolean(line.isWrapped),
+          x0,
+          x1,
+          rawSlice,
+          trimmedSlice,
+          contentEndCol,
+          visualRightCol,
+          fullTrimLen,
+          indent: x0 + countLeadSpaces(rawSlice),
+        });
+      }
+      if (rows.length < 2) return fallback;
+
+      // If every non-empty selected row starts with a uniform Unicode box border (│/┃/║/▎/▏), strip the box gutter
+      const nonEmpty = rows.filter((r) => r.trimmedSlice.length > 0);
+      if (nonEmpty.length >= 2 && nonEmpty.every((r) => UNIFORM_LEFT_GUTTER_RE.test(r.trimmedSlice))) {
+        const allRightBar = nonEmpty.every((r) => UNIFORM_RIGHT_GUTTER_RE.test(r.trimmedSlice));
+        for (const r of rows) {
+          const m = r.rawSlice.match(UNIFORM_LEFT_GUTTER_RE);
+          if (m) {
+            r.x0 += m[1].length;
+            r.rawSlice = r.rawSlice.slice(m[1].length);
+          }
+          if (allRightBar) {
+            r.rawSlice = r.rawSlice.replace(UNIFORM_RIGHT_GUTTER_RE, '');
+            r.visualRightCol = Math.max(20, r.x0 + r.rawSlice.length);
+          }
+          r.trimmedSlice = r.rawSlice.replace(/\s+$/, '');
+          r.contentEndCol = r.x0 + r.trimmedSlice.length;
+          r.indent = r.x0 + countLeadSpaces(r.rawSlice);
+        }
+      }
+
+      const nearbyWrapCol = detectNearbyTuiWrapCol(buf, s.y, endY, cols);
+      let blockMaxEnd = 0;
+      for (const r of rows) {
+        if (r.contentEndCol > blockMaxEnd) blockMaxEnd = r.contentEndCol;
+      }
+
+      const out = [];
+      let current = rows[0].isWrapped ? rows[0].rawSlice : rows[0].trimmedSlice;
+      let curRow = rows[0];
+
+      for (let i = 1; i < rows.length; i++) {
+        const next = rows[i];
+        const curText = curRow.trimmedSlice;
+        const nextText = next.trimmedSlice;
+        const nextCore = nextText.trimStart();
+
+        // 1. Native xterm.js soft-wrap
+        if (next.isWrapped) {
+          // Preserve spaces up to terminal edge on wrapped previous row
+          if (curRow.x1 >= cols && curRow.rawSlice.length > curRow.trimmedSlice.length) {
+            current += curRow.rawSlice.slice(curRow.trimmedSlice.length);
+          }
+          current += next.rawSlice.replace(/\s+$/, '');
+          curRow = next;
+          continue;
+        }
+
+        // 2. Full-width terminal wrap (e.g. herdr-core hydration emitting \r\n at column `cols`)
+        if (
+          curRow.x1 >= cols &&
+          curRow.fullTrimLen >= cols - 1 &&
+          next.x0 === 0 &&
+          curText.length > 0 &&
+          nextText.length > 0 &&
+          !RULE_LINE_RE.test(curText) &&
+          !RULE_LINE_RE.test(nextText)
+        ) {
+          if (curRow.fullTrimLen === cols) {
+            current += next.rawSlice.replace(/\s+$/, '');
+          } else {
+            // Trailing space fell on column `cols - 1` before \r\n
+            const nextStartsSpace = /^\s/.test(next.rawSlice);
+            current += (nextStartsSpace ? '' : ' ') + next.rawSlice.replace(/\s+$/, '');
+          }
+          curRow = next;
+          continue;
+        }
+
+        // 3. AI TUI padded / bordered / shaded soft-wrap (agy, claude, codex, opencode)
+        const boxRight = Math.min(curRow.visualRightCol, nearbyWrapCol);
+        const effectiveWrap =
+          blockMaxEnd >= boxRight - 8 && blockMaxEnd < boxRight
+            ? Math.min(boxRight, Math.max(blockMaxEnd + 1, boxRight - 6))
+            : Math.max(40, boxRight - 2);
+
+        const curStartsPrompt = /^(?:\$|❯|#)\s/.test(curText.trimStart());
+        const sameIndent = Math.abs(next.indent - curRow.indent) <= 2 || (curStartsPrompt && next.indent <= curRow.indent + 4);
+        const nextFirstToken = (nextCore.match(/^\S+/) || [''])[0];
+        const endsHardBreak = /(?:\\|;|{|})$/.test(curText) && curRow.contentEndCol < effectiveWrap - 1;
+
+        const tuiWrapped =
+          curText.length > 0 &&
+          nextCore.length > 0 &&
+          !RULE_LINE_RE.test(curText) &&
+          !RULE_LINE_RE.test(nextCore) &&
+          sameIndent &&
+          !LIST_OR_PROMPT_RE.test(nextCore) &&
+          !endsHardBreak &&
+          curRow.contentEndCol >= 36 &&
+          (curRow.contentEndCol + 1 + nextFirstToken.length) > effectiveWrap;
+
+        if (tuiWrapped) {
+          const hitEdge = curRow.contentEndCol >= effectiveWrap - 1;
+          const joiner = hitEdge && looksLikeMidTokenWrap(curText, nextCore) ? '' : ' ';
+          current += joiner + nextCore;
+          curRow = next;
+          continue;
+        }
+
+        out.push(current);
+        current = next.trimmedSlice;
+        curRow = next;
+      }
+      out.push(current);
+      return out.join('\n');
+    }
+
+    function copyTextSilently(text) {
+      if (!text) return;
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).catch(() => {});
+        return;
+      }
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(ta);
+    }
+
+    // Intercept Cmd+C / right-click Copy on the terminal so smart unwrap applies everywhere
+    paneEl.addEventListener('copy', (ev) => {
+      if (!term.hasSelection()) return;
+      const text = getSmartSelection(term);
+      if (ev.clipboardData) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.clipboardData.setData('text/plain', text);
+      }
+    }, true);
+
     // Copy/paste & Alt shortcuts:
-    // - Ctrl+C / Ctrl+Shift+C copies when text is selected.
+    // - Ctrl+C / Ctrl+Shift+C copies with smart wrapped-line unwrapping when text is selected.
     // - Ctrl+V lets the browser fire its native `paste` event on xterm-helper-textarea so xterm.js
     //   runs term.paste() with full Bracketed Paste (\x1b[200~ ... \x1b[201~) and zero double-paste.
     // - Ctrl+Shift+V prevents duplicate native paste and invokes term.paste() directly via Clipboard API.
@@ -1122,7 +1385,7 @@
       const key = ev.key.toLowerCase();
       if (ev.ctrlKey && !ev.altKey && !ev.metaKey && key === 'c' && term.hasSelection()) {
         ev.preventDefault();
-        navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
+        copyTextSilently(getSmartSelection(term));
         term.clearSelection();
         return false;
       }
