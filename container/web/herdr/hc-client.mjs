@@ -1208,7 +1208,7 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
   };
 
   const sysopSettings = {
-    'sysop.autonomy': envField('SWARMBOX_SYSOP_AUTONOMY', 'auto', env),
+    'sysop.autonomy': envField('SWARMBOX_SYSOP_AUTONOMY', 'full-auto', env),
     'sysop.brain': envField('SWARMBOX_SYSOP_BRAIN', 'claude', env),
     'sysop.model': envField('SWARMBOX_SYSOP_MODEL', 'sonnet', env),
     'sysop.countdown': envField('SWARMBOX_SYSOP_COUNTDOWN', '4', env),

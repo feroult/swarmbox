@@ -284,7 +284,7 @@ Answered and removed: the consumer of `goal` (a group), the active tab and the p
 
 - With no subscriber, `pub` fails at once (exit 3). Starting the sysop on demand would need a manifest attribute; left out until it hurts. The same gap appears for 1 to 30 s while the sysop restarts (the voice page says "Nobody is listening").
 - Whether the pause of `swarmbox-tabs send` depends on the program or on the load (the web path, other sizes, other Claude Code versions); the UI strings of Claude Code 2.1.325 that mark a dialog or a busy agent can change.
-- The sysop's policy defaults (autonomy, limits) after use by people: today `auto` (harmless actions at once, medium risk a countdown, high risk Allow), a 4 s countdown, 20 steps, 300 s.
+- The sysop's policy defaults (autonomy, limits) after use by people: today `full-auto` (every action at once; `auto` keeps harmless actions at once, medium risk a countdown, high risk Allow), a 4 s countdown, 20 steps, 300 s.
 - A message is lost when its subscriber dies after receiving it (no acknowledgement). Does a spoken goal need one, or is "say it again" enough?
 - A goal with a transcription error (a spoken goal can contain wrong words, mostly in a language other than English with `auto`): is the sysop prompt ("a spoken goal can contain errors") and the veto countdown enough, or does it need `ask` to confirm what it understood?
 - Two inputs on one topic and two sysops on different groups: each sysop in its own group gets every goal and both act. Only `sysop.group` prevents it; whether the box should warn (`swarmbox bus topics` shows it) is open.

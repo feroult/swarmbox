@@ -10,7 +10,7 @@ default. A wrong value raises ConfigError with a line that names the variable: t
                                    the same name. 1 to 63 characters of a-z 0-9 . _ - (a digit or a letter first)
   SWARMBOX_SYSOP_GROUP             the group the sysop subscribes with (default sysop; same characters): sysops of one group share the goals, one gets each
   SWARMBOX_SYSOP_MODEL             model name for the brain (default sonnet)
-  SWARMBOX_SYSOP_AUTONOMY          confirm-all | confirm-risky | auto (default), see policy.py
+  SWARMBOX_SYSOP_AUTONOMY          full-auto (default) | auto | confirm-risky | confirm-all, see policy.py
   SWARMBOX_SYSOP_COUNTDOWN         seconds a low-risk action waits for a veto (default 4; 0 = none)
   SWARMBOX_SYSOP_APPROVAL_TIMEOUT  seconds a high-risk action waits for the word `run` before it is refused (default 60)
   SWARMBOX_SYSOP_MAX_STEPS         tool calls (not say/done) per goal (default 20)
@@ -25,7 +25,7 @@ DEFAULTS = {
     "group": "sysop",
     "brain": "claude",
     "model": "sonnet",
-    "autonomy": "auto",
+    "autonomy": "full-auto",
     "countdown": "4",
     "approval_timeout": "60",
     "max_steps": "20",
@@ -33,7 +33,7 @@ DEFAULTS = {
     "max_goals": "5",
 }
 ENV = {k: "SWARMBOX_SYSOP_" + k.upper() for k in DEFAULTS}
-AUTONOMY = ("confirm-all", "confirm-risky", "auto")
+AUTONOMY = ("confirm-all", "confirm-risky", "auto", "full-auto")
 PRESETS = ("claude",)
 MAX_BRAIN = 2000
 

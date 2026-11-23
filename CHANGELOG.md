@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Changed: the Sysop's default autonomy is the new level **`full-auto`**: what you ask, it does, with no approval or countdown for any action (the risk is still rated and written in the log and the audit, and a blocked action, such as control characters or a `/` command for an agent, is still refused). The brain's system prompt now depends on the level and, under `full-auto`, tells it to act directly and to ask only when it cannot tell what you want. The previous default `auto`, and `confirm-risky` and `confirm-all`, stay selectable (`swarmbox config set sysop.autonomy auto`, or **Settings → Sysop**).
+
 ## [2.3.0] - 2026-11-23
 
 - Removed: **tmux and ttyd**. herdr-core is the only multiplexer of the box: `swarmbox` opens the Terminal Cockpit, the web port always serves the Herdr Web Studio, and `swarmbox-tabs`, the sysop and the voice front all work on herdr-core terminals. The image no longer ships tmux, ttyd, `/etc/tmux.conf`, `/etc/tmux-browser-keys.conf` or the ttyd page (clipboard bridge, controls strip, style), and the shell no longer sets `CLAUDE_CODE_TMUX_TRUECOLOR`.

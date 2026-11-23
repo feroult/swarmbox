@@ -17,7 +17,7 @@ swarmbox-sysop veto | approve    the keys of herdr (container/config/herdr.toml)
 ```
 
 Settings (environment, `SWARMBOX_SYSOP_*`, see `lib/swarmbox_sysop/config.py`): `TOPIC` (goal), `GROUP` (sysop), `BRAIN` (preset `claude` or a command template, never run by a shell),
-`MODEL` (sonnet), `AUTONOMY` (`confirm-all` | `confirm-risky` | `auto`, default `auto`), `COUNTDOWN` (4 s, 0 = none), `APPROVAL_TIMEOUT` (60 s), `MAX_STEPS` (20),
+`MODEL` (sonnet), `AUTONOMY` (`full-auto` | `auto` | `confirm-risky` | `confirm-all`, default `full-auto`), `COUNTDOWN` (4 s, 0 = none), `APPROVAL_TIMEOUT` (60 s), `MAX_STEPS` (20),
 `MAX_SECONDS` (300), `MAX_GOALS` (5).
 The panel of the sysop is the one of the Herdr Web Studio and of the terminal cockpit (`container/web/herdr/`): they read the files below.
 

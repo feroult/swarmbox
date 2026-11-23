@@ -90,7 +90,7 @@ class Context:
         self.source = str(d.get("source") or "unknown")
         self.goal_dir = d["goal_dir"]
         self.audit_path = d.get("audit") or os.path.join(os.path.dirname(os.path.dirname(self.goal_dir)), "events.jsonl")
-        self.autonomy = d.get("autonomy", "auto")
+        self.autonomy = d.get("autonomy", "full-auto")
         self.countdown = float(d.get("countdown", 4))
         self.approval_timeout = float(d.get("approval_timeout", 60))
         self.max_steps = int(d.get("max_steps", 20))
@@ -181,7 +181,7 @@ class Server:
             "open_tab": (self.t_open_tab, "Open a new terminal tab running a shell or an allowlisted coding agent (shell, claude, agy, opencode, codex, gemini).",
                          {"name": ("string", "optional short tab name"), "cwd": ("string", "optional working directory"),
                           "agent": ("string", "shell (default), claude, agy, opencode, codex, or gemini")}),
-            "close_tab": (self.t_close_tab, "Close a terminal tab and end its program. Always gated by user confirmation policy.",
+            "close_tab": (self.t_close_tab, "Close a terminal tab and end its program. The host may ask the user first, depending on the autonomy.",
                           {"tab": ("string!", "tab id, label, index, or unique name")}),
             "run": (self.t_run, "Type a command (or a prompt for an agent) in a tab and press Enter; returns the screen once it settled. "
                                 "The host may ask the user first.",

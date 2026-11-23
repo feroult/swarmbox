@@ -114,6 +114,20 @@ class Template(unittest.TestCase):
             for must in ("untrusted DATA", "ONE tool at a time", "never start the text with / or !", "do NOT retry", "at most 20 tool calls", "300 seconds"):
                 self.assertIn(must, p)
 
+    def test_the_prompt_follows_the_autonomy(self):
+        """full-auto (the default) tells the brain to act and to ask only when it cannot tell what the user wants; the gated levels say the host asks"""
+        full = " ".join(brain.system_prompt("panel", 20, 300).split())
+        self.assertEqual(full, " ".join(brain.system_prompt("panel", 20, 300, "full-auto").split()))
+        for phrase in ("autonomy full-auto", "execute the goal directly", "Never ask for permission or confirmation",
+                       "ONLY when you genuinely cannot tell what the user wants"):
+            self.assertIn(phrase, full)
+        for level in ("auto", "confirm-risky", "confirm-all"):
+            p = " ".join(brain.system_prompt("panel", 20, 300, level).split())
+            self.assertIn("autonomy " + level, p)
+            self.assertIn("do not ask for permission yourself", p)
+            self.assertNotIn("autonomy full-auto", p)
+        self.assertIn("autonomy confirm-all", brain.system_prompt("panel", 20, 300, "nonsense"), "an unknown level gets the careful words")
+
     def test_the_prompt_carries_what_the_e2e_runs_found_the_model_needed(self):
         """every phrase is a behaviour that a real model got wrong without it (tests/e2e/e2e_voice.py, e2e_sysop.py)"""
         p = " ".join(brain.system_prompt("voice", 20, 300).split())

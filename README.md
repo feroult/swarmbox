@@ -84,7 +84,7 @@ swarmbox addon install voice      # local whisper.cpp speech-to-text microphone
 ```
 
 - **Context-aware operator:** Sysop remembers recent goals, infers the active agent tab, queues messages when an agent is working, and keeps a full audit log.
-- **Host-enforced safety policy:** Low-risk actions run directly under `auto`; medium-risk actions pause on a veto countdown; high-risk commands and open agent dialogs always wait for **Allow** (`confirm-risky` and `confirm-all` tighten further via **Settings → Sysop**).
+- **Host-rated actions, your choice of autonomy:** by default (`full-auto`) the Sysop does what you ask with no approval prompts; under `auto` low-risk actions run directly, medium-risk ones pause on a veto countdown and high-risk commands and open agent dialogs wait for **Allow** (`confirm-risky` and `confirm-all` tighten further via **Settings → Sysop**).
 - **Private local voice:** Tap **Speak** on desktop or phone to capture audio with a live waveform and timer, then tap **Send** (or **×** to discard) — transcribed locally through `whisper.cpp` straight to Sysop without audio ever leaving your machine, and `swarmbox-voice say "..."` works from any shell ([docs/sysop.md](docs/sysop.md), [docs/voice.md](docs/voice.md)).
 
 ---
