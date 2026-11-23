@@ -38,19 +38,6 @@
     </div>
 
     <div class="sidebar-body">
-      <div class="sidebar-section sidebar-terminals">
-        <div class="section-label">
-          <div class="section-label-left">
-            <span>Terminals</span>
-            <span class="count-pill" id="tab-count">0</span>
-          </div>
-          <button type="button" class="icon-btn icon-btn-sm" id="btn-new-shell" title="New terminal tab (Alt+N)" aria-label="New terminal tab">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
-          </button>
-        </div>
-        <div class="tab-list" id="sidebar-tabs" role="tablist" aria-label="Terminals"></div>
-      </div>
-
       <div class="sidebar-section sidebar-agents" id="sidebar-agents-section">
         <div class="section-label">
           <div class="section-label-left">
@@ -59,6 +46,19 @@
           <span class="busy-pill" id="agents-busy-count">0 busy</span>
         </div>
         <div class="agent-cards" id="sidebar-agents"></div>
+      </div>
+
+      <div class="sidebar-section sidebar-shells" id="sidebar-shells-section">
+        <div class="section-label">
+          <div class="section-label-left">
+            <span>Shells</span>
+            <span class="count-pill" id="tab-count">0</span>
+          </div>
+          <button type="button" class="icon-btn icon-btn-sm" id="btn-new-shell" title="New terminal tab (Alt+N)" aria-label="New terminal tab">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+          </button>
+        </div>
+        <div class="tab-list" id="sidebar-tabs" role="tablist" aria-label="Shells"></div>
       </div>
     </div>
 
@@ -84,6 +84,13 @@
         <button class="icon-btn desktop-only" id="btn-sidebar-open" title="Show sidebar (Alt+B)" aria-label="Show sidebar">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         </button>
+        <div class="topbar-ctx desktop-only" id="topbar-ctx">
+          <span class="term-ctx-icon" id="term-ctx-icon" aria-hidden="true"></span>
+          <span class="term-ctx-title" id="term-ctx-title">—</span>
+          <span class="term-ctx-sep" aria-hidden="true">·</span>
+          <span class="term-ctx-sub" id="active-status">idle</span>
+          <span class="term-ctx-state" id="term-ctx-state" data-state="idle">IDLE</span>
+        </div>
         <div class="topbar-tabs desktop-only" id="topbar-tabs" role="tablist" aria-label="Open tabs"></div>
         <div class="active-meta mobile-only">
           <span class="status-dot" id="active-dot" data-state="idle"></span>
@@ -109,41 +116,26 @@
     <!-- Mobile Tab Strip -->
     <div class="mobile-tabs mobile-only" id="mobile-tabs"></div>
 
-    <!-- Framed Terminal Stage -->
-    <div class="term-frame">
-      <div class="term-ctx-bar desktop-only" id="term-ctx-bar">
-        <div class="term-ctx-left">
-          <span class="term-ctx-icon" id="term-ctx-icon" aria-hidden="true"></span>
-          <span class="term-ctx-title" id="term-ctx-title">—</span>
-          <span class="term-ctx-sep" aria-hidden="true">·</span>
-          <span class="term-ctx-sub" id="active-status">idle</span>
-        </div>
-        <div class="term-ctx-right">
-          <span class="term-ctx-state" id="term-ctx-state" data-state="idle">IDLE</span>
+    <!-- Terminal Canvas -->
+    <div class="term-wrap" id="term-wrap">
+      <div id="terminal"></div>
+      <div class="term-drop-overlay" id="term-drop-overlay" aria-hidden="true">
+        <div class="term-drop-card">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+          <span>Drop image to attach to active terminal</span>
         </div>
       </div>
-
-      <!-- Terminal Canvas -->
-      <div class="term-wrap" id="term-wrap">
-        <div id="terminal"></div>
-        <div class="term-drop-overlay" id="term-drop-overlay" aria-hidden="true">
-          <div class="term-drop-card">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-            <span>Drop image to attach to active terminal</span>
-          </div>
-        </div>
-        <div class="term-toast" id="term-toast" role="status" aria-live="polite"></div>
-        <button class="jump-live-btn" id="btn-jump-live" type="button" title="Jump to bottom">
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10m0 0l-4-4m4 4l4-4"/></svg>
-          <span>Jump to live</span>
-        </button>
-      </div>
+      <div class="term-toast" id="term-toast" role="status" aria-live="polite"></div>
+      <button class="jump-live-btn" id="btn-jump-live" type="button" title="Jump to bottom">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10m0 0l-4-4m4 4l4-4"/></svg>
+        <span>Jump to live</span>
+      </button>
     </div>
 
     <!-- Slim Bottom Status Bar (Desktop) -->
     <footer class="stage-statusbar desktop-only" id="stage-statusbar">
       <div class="sb-left" id="statusbar-summary">SwarmBox</div>
-      <div class="sb-right">Alt+1..9 tabs · Alt+N new · Alt+, settings</div>
+      <div class="sb-right">Alt+1..9 tabs · Alt+B sidebar · Alt+N new · Alt+, settings</div>
     </footer>
 
     <!-- Mobile Bottom Dock (SwarmBox v2.0.24 compact glass dock: collapsible keys + Sysop capsule + Keyboard + Mic) -->

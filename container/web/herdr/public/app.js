@@ -266,6 +266,7 @@
 
   const appEl = document.getElementById('app');
   const sidebarTabsEl = document.getElementById('sidebar-tabs');
+  const sidebarAgentsSectionEl = document.getElementById('sidebar-agents-section');
   const sidebarAgentsEl = document.getElementById('sidebar-agents');
   const agentsBusyCountEl = document.getElementById('agents-busy-count');
   const topbarTabsEl = document.getElementById('topbar-tabs');
@@ -1976,13 +1977,13 @@
   }
 
   function renderTabs() {
-    tabCountEl.textContent = String(terminals.length);
     sidebarTabsEl.innerHTML = '';
     if (topbarTabsEl) topbarTabsEl.innerHTML = '';
     if (sidebarAgentsEl) sidebarAgentsEl.innerHTML = '';
     mobileTabsEl.innerHTML = '';
 
     let agentCount = 0;
+    let shellCount = 0;
     let busyCount = 0;
 
     terminals.forEach((t, idx) => {
@@ -1993,71 +1994,16 @@
       const isActive = t.address === activeId;
       const subText = tabSubtitle(t);
 
-      // 1. Sidebar compact terminal row
-      const btn = document.createElement('div');
-      btn.className = `tab-item${isActive ? ' active' : ''}${state === 'blocked' ? ' is-blocked' : ''}${state === 'working' ? ' is-working' : ''}`;
-      btn.setAttribute('role', 'tab');
-      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-      btn.title = pill ? `${label} (${pill})` : label;
-
-      const info = document.createElement('div');
-      info.className = 'tab-info';
-      const titleEl = document.createElement('div');
-      titleEl.className = 'tab-title';
-      const titleText = document.createElement('span');
-      titleText.className = 'tab-title-text';
-      titleText.textContent = label;
-      titleEl.appendChild(titleText);
-      if (pill) {
-        const pillEl = document.createElement('span');
-        pillEl.className = 'tab-agent-tag';
-        pillEl.textContent = pill;
-        titleEl.appendChild(pillEl);
-      }
-      const subEl = document.createElement('div');
-      subEl.className = 'tab-sub';
-      subEl.textContent = subText;
-      info.append(titleEl, subEl);
-
-      const right = document.createElement('div');
-      right.className = 'tab-right';
-      const idxEl = document.createElement('span');
-      idxEl.className = 'tab-idx';
-      idxEl.textContent = idx < 9 ? String(idx + 1) : '';
-      const closeBtn = document.createElement('button');
-      closeBtn.className = 'tab-close';
-      closeBtn.title = 'Close tab';
-      closeBtn.setAttribute('aria-label', `Close ${label}`);
-      closeBtn.textContent = '✕';
-      closeBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
-      });
-      right.append(idxEl, closeBtn);
-
-      btn.append(makeMiniPixelIcon(iconKind), info, right);
-      if (state === 'working' && t.status && typeof t.status.progress === 'number') {
-        const bar = document.createElement('span');
-        bar.className = 'tab-progress';
-        const fill = document.createElement('i');
-        fill.style.width = `${Math.max(4, Math.min(100, t.status.progress))}%`;
-        bar.appendChild(fill);
-        btn.appendChild(bar);
-      }
-      btn.addEventListener('click', () => {
-        if (activeId !== t.address) connectPty(t.address);
-        else focusTerminalIfDesktop();
-      });
-      sidebarTabsEl.appendChild(btn);
-
-      // 2. Sidebar Pixel-Art Agent Card (for every active agent tab!)
+      // 1. Sidebar: zero duplication — agents live in rich Pixel-Art Agent Cards; plain shells live in Shells list
       if (agentKind && sidebarAgentsEl) {
         agentCount += 1;
         if (state === 'working' || state === 'blocked') busyCount += 1;
 
-        const card = document.createElement('button');
-        card.type = 'button';
+        const card = document.createElement('div');
         card.className = `agent-card${isActive ? ' active' : ''}`;
+        card.setAttribute('role', 'tab');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-selected', isActive ? 'true' : 'false');
         card.dataset.agent = agentKind;
         card.dataset.state = state;
         card.title = `${label} — ${AGENT_FULL_NAMES[agentKind] || agentKind} (${state})`;
@@ -2080,10 +2026,24 @@
         const cBadge = document.createElement('span');
         cBadge.className = 'agent-state-box';
         cBadge.textContent = stateBadgeText(state, t.status);
+
+        const cRight = document.createElement('div');
+        cRight.className = 'agent-card-right';
         const cIdx = document.createElement('span');
         cIdx.className = 'agent-card-idx';
         cIdx.textContent = `tab ${idx + 1}`;
-        cTop.append(cBadge, cIdx);
+        const cClose = document.createElement('button');
+        cClose.type = 'button';
+        cClose.className = 'agent-card-close';
+        cClose.title = 'Close tab';
+        cClose.setAttribute('aria-label', `Close ${label}`);
+        cClose.textContent = '✕';
+        cClose.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
+        });
+        cRight.append(cIdx, cClose);
+        cTop.append(cBadge, cRight);
 
         const cName = document.createElement('div');
         cName.className = 'agent-card-name';
@@ -2115,14 +2075,64 @@
           card.appendChild(pBar);
         }
 
-        card.addEventListener('click', () => {
+        const activateCard = () => {
+          if (activeId !== t.address) connectPty(t.address);
+          else focusTerminalIfDesktop();
+        };
+        card.addEventListener('click', activateCard);
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            activateCard();
+          }
+        });
+        sidebarAgentsEl.appendChild(card);
+      } else {
+        shellCount += 1;
+        const btn = document.createElement('div');
+        btn.className = `tab-item${isActive ? ' active' : ''}${state === 'blocked' ? ' is-blocked' : ''}${state === 'working' ? ' is-working' : ''}`;
+        btn.setAttribute('role', 'tab');
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        btn.title = label;
+
+        const info = document.createElement('div');
+        info.className = 'tab-info';
+        const titleEl = document.createElement('div');
+        titleEl.className = 'tab-title';
+        const titleText = document.createElement('span');
+        titleText.className = 'tab-title-text';
+        titleText.textContent = label;
+        titleEl.appendChild(titleText);
+        const subEl = document.createElement('div');
+        subEl.className = 'tab-sub';
+        subEl.textContent = subText;
+        info.append(titleEl, subEl);
+
+        const right = document.createElement('div');
+        right.className = 'tab-right';
+        const idxEl = document.createElement('span');
+        idxEl.className = 'tab-idx';
+        idxEl.textContent = idx < 9 ? String(idx + 1) : '';
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'tab-close';
+        closeBtn.title = 'Close tab';
+        closeBtn.setAttribute('aria-label', `Close ${label}`);
+        closeBtn.textContent = '✕';
+        closeBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
+        });
+        right.append(idxEl, closeBtn);
+
+        btn.append(makeMiniPixelIcon(iconKind), info, right);
+        btn.addEventListener('click', () => {
           if (activeId !== t.address) connectPty(t.address);
           else focusTerminalIfDesktop();
         });
-        sidebarAgentsEl.appendChild(card);
+        sidebarTabsEl.appendChild(btn);
       }
 
-      // 3. Informative Horizontal Topbar Tab (Desktop)
+      // 2. Informative Horizontal Topbar Tab (Desktop — auto-shown when sidebar is collapsed via Alt+B)
       if (topbarTabsEl) {
         const tt = document.createElement('div');
         tt.className = `top-tab${isActive ? ' active' : ''}`;
@@ -2162,7 +2172,7 @@
         topbarTabsEl.appendChild(tt);
       }
 
-      // 4. Mobile tab chip (with mini pixel icon!)
+      // 3. Mobile tab chip (with mini pixel icon!)
       const m = document.createElement('button');
       m.className = `m-tab${isActive ? ' active' : ''}`;
       const mName = document.createElement('span');
@@ -2181,6 +2191,8 @@
       mobileTabsEl.appendChild(m);
     });
 
+    tabCountEl.textContent = String(shellCount);
+
     if (topbarTabsEl) {
       const tPlus = document.createElement('button');
       tPlus.type = 'button';
@@ -2196,10 +2208,13 @@
       agentsBusyCountEl.textContent = `${busyCount} busy`;
       agentsBusyCountEl.classList.toggle('has-busy', busyCount > 0);
     }
+    if (sidebarAgentsSectionEl) {
+      sidebarAgentsSectionEl.classList.toggle('is-empty', agentCount === 0);
+    }
     if (sidebarAgentsEl && agentCount === 0) {
       const empty = document.createElement('div');
       empty.className = 'agents-empty';
-      empty.textContent = 'No active agents yet — run claude, agy, codex, or opencode in any tab.';
+      empty.textContent = 'Run claude, agy, codex, or opencode in a shell to spawn an agent card.';
       sidebarAgentsEl.appendChild(empty);
     }
 

@@ -207,6 +207,8 @@ html.swarmbox-ready #sb-boot {
 .app[data-sidebar-open="0"] .sidebar { border-right: none; }
 .app[data-sidebar-open="1"] #btn-sidebar-open { display: none; }
 .app[data-sidebar-open="1"] .topbar-settings-btn { display: none; }
+.app[data-sidebar-open="1"] .topbar-tabs { display: none; }
+.app[data-sidebar-open="0"] .topbar-ctx { display: none; }
 
 .sidebar-head {
   height: 42px;
@@ -251,11 +253,24 @@ html.swarmbox-ready #sb-boot {
   flex-direction: column;
   min-height: 0;
 }
-.sidebar-terminals { flex: 0 0 auto; }
 .sidebar-agents {
-  flex: 1 0 auto;
+  order: 1;
+  flex: 0 0 auto;
+}
+.sidebar-shells {
+  order: 2;
+  flex: 0 0 auto;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+.sidebar-agents.is-empty {
+  order: 3;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-agents.is-empty + .sidebar-shells {
+  padding-top: 0;
+  border-top: none;
 }
 
 .busy-pill {
@@ -453,10 +468,41 @@ html.swarmbox-ready #sb-boot {
 .agent-card[data-state="working"] .agent-state-box { color: var(--ac-accent, var(--accent-bright)); }
 .agent-card[data-state="blocked"] .agent-state-box { color: var(--amber); border-color: rgba(251, 191, 36, 0.55); }
 .agent-card[data-state="done"] .agent-state-box { color: var(--green); border-color: rgba(74, 222, 128, 0.42); }
+.agent-card-right {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 34px;
+  height: 18px;
+}
 .agent-card-idx {
   font-family: var(--mono);
   font-size: 9.5px;
   color: var(--text-dim);
+  transition: opacity .12s ease;
+}
+.agent-card-close {
+  position: absolute;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+@media (hover: hover) {
+  .agent-card:hover .agent-card-idx { opacity: 0; }
+  .agent-card:hover .agent-card-close { opacity: 1; }
+  .agent-card-close:hover { color: var(--red); background: rgba(255, 107, 120, 0.16); }
 }
 .agent-card-name {
   font-family: var(--mono);
@@ -577,36 +623,14 @@ html.swarmbox-ready #sb-boot {
   color: var(--text-dim);
 }
 
-/* Framed Terminal Viewport + Mini Context Header + Slim Bottom Statusbar (Desktop) */
-.term-frame {
-  flex: 1;
-  min-height: 0;
-  margin: 8px 10px 6px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.term-ctx-bar {
-  height: 30px;
-  flex-shrink: 0;
+/* Active Tab Context in Topbar (Desktop when sidebar is open — zero redundancy) */
+.topbar-ctx {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 0 12px;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid var(--border);
-  font-family: var(--mono);
-  font-size: 11px;
-}
-.term-ctx-left, .term-ctx-right {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
 }
 .term-ctx-icon {
   width: 15px;
@@ -618,9 +642,10 @@ html.swarmbox-ready #sb-boot {
 }
 .term-ctx-icon svg { width: 15px; height: 15px; display: block; image-rendering: pixelated; }
 .term-ctx-title { font-weight: 600; color: var(--text); white-space: nowrap; }
-.term-ctx-sep { color: var(--text-dim); opacity: 0.5; }
-.term-ctx-sub { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
+.term-ctx-sep { color: var(--text-dim); opacity: 0.45; }
+.term-ctx-sub { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 460px; }
 .term-ctx-state {
+  flex-shrink: 0;
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -634,7 +659,7 @@ html.swarmbox-ready #sb-boot {
 .term-ctx-state[data-state="done"] { color: var(--green); border-color: rgba(74, 222, 128, 0.35); background: rgba(74, 222, 128, 0.1); }
 
 .stage-statusbar {
-  height: 25px;
+  height: 24px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1600,11 +1625,6 @@ html.swarmbox-ready #sb-boot {
     border: 1px solid var(--border);
   }
 
-  .term-frame {
-    margin: 0;
-    border: none;
-    border-radius: 0;
-  }
   .term-wrap { padding: 6px 6px 4px 8px; }
 
   /* Mobile Dock: clean surface + subtle hairline */
