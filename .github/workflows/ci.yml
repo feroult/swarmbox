@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Podman version guard (needs 4.3 or newer; ubuntu-24.04 ships 4.9)
         run: |
           podman --version
@@ -85,7 +85,7 @@ jobs:
     env:
       SWARMBOX_IMAGE_TAG: swarmbox-test-img-ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Podman version
         run: podman --version
       - name: Build the image (not pushed)
@@ -112,7 +112,7 @@ jobs:
     env:
       SWARMBOX_IMAGE_TAG: swarmbox-test-img-ci-arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Runner architecture and Podman version (must be aarch64)
         run: |
           uname -m
@@ -133,7 +133,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Probe what the macOS runner provides
         run: |
           /bin/bash --version
@@ -163,7 +163,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends ca-certificates curl git python3 chromium procps jq nodejs dash busybox-static openssh-client
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Slow tests (tests/run.sh slow, SWARMBOX_TEST_REAL=1 lets the browser and real-process files run, and only a container sets it)
         run: SWARMBOX_TEST_REAL=1 sh tests/run.sh slow --github
 
@@ -181,7 +181,7 @@ jobs:
       SWARMBOX_IMAGE_BUILD: "1"
       SWARMBOX_REAL_VOICE_INSTALL: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Podman version
         run: podman --version
       - name: Build the image (not pushed)
