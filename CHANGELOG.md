@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-23
+
 - Removed: **tmux and ttyd**. herdr-core is the only multiplexer of the box: `swarmbox` opens the Terminal Cockpit, the web port always serves the Herdr Web Studio, and `swarmbox-tabs`, the sysop and the voice front all work on herdr-core terminals. The image no longer ships tmux, ttyd, `/etc/tmux.conf`, `/etc/tmux-browser-keys.conf` or the ttyd page (clipboard bridge, controls strip, style), and the shell no longer sets `CLAUDE_CODE_TMUX_TRUECOLOR`.
 - Removed: the config keys `MUX` and `sysop.panel`. A config that still has them keeps working: each is ignored with a one-line warning and never passed to the box; `swarmbox config get|set` of them exits 2. The Studio's Settings lose the Multiplexer and Panel Visibility choices.
 - Removed: `web-terminal.conf` and `swarmbox-web render` (`swarmbox-web` is `run` and `restart`); the voice addon's page files (`/voice/page.js`, `/voice/page.css`): its front serves only `/voice/health` and `/voice/audio` in front of the Web Studio (`--ttyd-port` is now `--server-port`), and `prepare.sh` removes the old `web/` folder of an install.
@@ -334,6 +336,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.3.0]: https://github.com/feroult/swarmbox/releases/tag/v2.3.0
 [2.2.3]: https://github.com/feroult/swarmbox/releases/tag/v2.2.3
 [2.2.2]: https://github.com/feroult/swarmbox/releases/tag/v2.2.2
 [2.2.1]: https://github.com/feroult/swarmbox/releases/tag/v2.2.1
