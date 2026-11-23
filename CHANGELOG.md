@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.3] - 2026-11-23
+
 - Added: Sysop tools `box_info` (read-only disk, memory, mux, addons and nested containers), `focus_tab`, `open_tab` (a shell or an allowlisted agent, rated by the policy) and `close_tab` (always approved), backed by new `swarmbox-tabs open|focus|close` commands for the tmux and herdr backends; `list_tabs` now carries the live OSC 7501 status of each tab.
 - Changed: the Sysop answers questions about the state of the box itself (what runs, what failed, what an agent answered) instead of forwarding them to an agent, replies in the user's language, and may reply in a few `- ` lines (`done` limit 240 → 1200 characters); the system prompt is mux-agnostic and keeps every behaviour the e2e runs found necessary.
 - Changed: Sysop panel redesign V2 in the Herdr Web Studio (airy, borderless, calm confirmation): the conversation of the last 12 hours of goals (`turns` in the snapshot) with the user's words in a bubble, the reply as plain text under a `Sysop · ▸ N actions` line (collapsible steps), `- ` lines as rows with the tab's pixel icon and a clickable tab name, relative times and a mic mark for spoken goals; a light first screen with three suggestion prompts; the confirmation card inside the conversation (peach rail, command in a code block, violet Allow) instead of an amber card above it; the hero card is gone and the header shows the state as a word (`ready`, `working`, `confirm`). The panel also follows an active tab changed elsewhere (the Sysop's `focus_tab`, the cockpit).
@@ -325,6 +327,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.2.3]: https://github.com/feroult/swarmbox/releases/tag/v2.2.3
 [2.2.2]: https://github.com/feroult/swarmbox/releases/tag/v2.2.2
 [2.2.1]: https://github.com/feroult/swarmbox/releases/tag/v2.2.1
 [2.2.0]: https://github.com/feroult/swarmbox/releases/tag/v2.2.0
