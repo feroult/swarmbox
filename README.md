@@ -24,7 +24,7 @@
 
 <br>
 
-<img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Herdr Web Studio — 3-pane browser workspace with JetBrains Mono + Nerd Font, live OSC 7501 agent status pills, inline progress bar, Purple Glow Starship prompt, Settings launcher, and docked Sysop drawer" width="880">
+<img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Herdr Web Studio v2.2 — 3-pane browser workspace with pixel-art Agent Mascot Cards (Antigravity, Claude Code 74% working, OpenAI Codex, OpenCode), zero-redundancy adaptive topbar, JetBrains Mono + Nerd Font, Purple Glow Starship prompt, and docked Sysop drawer" width="880">
 
 </div>
 
@@ -32,7 +32,7 @@
 
 | Persistent Sandbox | Native Web Studio &amp; Mobile | Sysop Operator &amp; Local Voice |
 | :--- | :--- | :--- |
-| Run **Claude Code**, **Antigravity (`agy`)**, **OpenCode**, or **Gemini CLI** in auto-approve mode with `sudo`, nested rootless Podman, and headless Chromium — with projects, logins, SSH keys, and addons persisted in one host folder (`~/swarmbox`). | Live per-tab terminals, 5 synced themes, bundled **JetBrains Mono + Nerd Font**, studio **Settings** (`Alt+,`), smart wrapped-line copy, instant bracketed paste, and a 3-pane 24-bit **Terminal Cockpit** over SSH. | Type or speak a goal from desktop or phone. **Sysop** reads your tabs, routes to the active agent, and pauses risky actions behind one-tap **Allow / Cancel** cards — backed by local `whisper.cpp` speech-to-text. |
+| Run **Claude Code**, **Antigravity (`agy`)**, **OpenCode**, or **Gemini CLI** in auto-approve mode with `sudo`, nested rootless Podman, and headless Chromium — with projects, logins, SSH keys, and addons persisted in one host folder (`~/swarmbox`). | Pixel-art **Agent Mascot Cards** with live OSC 7501 status, adaptive Focus Mode (`Alt+B`), 5 synced themes, bundled **JetBrains Mono + Nerd Font**, studio **Settings** (`Alt+,`), smart wrapped-line copy, instant bracketed &amp; **clipboard image paste (`Ctrl+V` / drag-and-drop)**, and a 3-pane 24-bit **Terminal Cockpit** over SSH. | Type or speak a goal from desktop or phone. **Sysop** reads your tabs, routes to the active agent, and pauses risky actions behind one-tap **Allow / Cancel** cards — backed by local `whisper.cpp` speech-to-text. |
 
 ---
 
@@ -62,10 +62,10 @@ Opt into `MUX=herdr` for a cohesive browser studio, responsive phone UI, and mat
 
 | Capability | What you get out of the box |
 | :--- | :--- |
+| **Pixel-Art Agent Cards &amp; Focus Mode** | Active coding agents (`agy`, `claude`, `codex`, `opencode`, `gemini`) get color-coded **Pixel-Art Mascot Cards** in the sidebar with live OSC 7501 badges (`IDLE`, `WORKING 74%`, `BLOCKED`, `DONE`), inline progress bars, and `Alt+1..9` switching — while plain shells stay cleanly grouped under `SHELLS`. Collapse the sidebar (`Alt+B`) and informative horizontal pixel-icon tabs automatically take over the topbar for distraction-free full-width focus; Sysop also opens responsively by viewport width (`>= 1360px`). |
 | **Studio Settings (`Alt+,`)** | Desktop dialog + mobile bottom sheet across 5 live sections — **Appearance**, **SwarmBox**, **Sysop** (3-card autonomy policy + live TTS), **Voice**, and **Addons &amp; System** (one-click live addon install, MCP servers, Git SSH public key copy, shortcuts). Editing host-managed keys stages a sticky **Apply on host** bar (`swarmbox config set ... && swarmbox reset`) with one-click copy. |
 | **5 Synced Themes &amp; Offline Fonts** | **Purple Glow** (default), **Catppuccin Mocha**, **Tokyo Night**, **Nord**, and **Rosé Pine** — synchronized across Web UI, Terminal Cockpit, and `herdr.toml` — paired with self-hosted **JetBrains Mono + Nerd Font** (zero CDN) and a Purple Glow Starship prompt. |
-| **Live OSC 7501 Agent Status** | Real-time working, blocked, and done status pills with inline progress bars in the sidebar, plus native `herdr-app` Agent Inbox integration for Sysop (`swarmbox.role=sysop`, filtered out of your tab list). |
-| **Smart Copy &amp; Instant Paste** | **Copy** (`Ctrl+C` / `Cmd+C` / context menu) inspects the terminal buffer to rejoin soft-wrapped, shaded, or bordered AI commands into one clean line while preserving real multi-line scripts. **Paste** (`Ctrl+V` / `Ctrl+Shift+V`) uses native Bracketed Paste (`\x1b[200~...\x1b[201~`) with zero double-paste or slow character-by-character TUI redraws. |
+| **Smart Copy, Bracketed &amp; Image Paste** | **Copy** (`Ctrl+C` / `Cmd+C` / context menu) inspects the terminal buffer to rejoin soft-wrapped, shaded, or bordered AI commands into one clean line while preserving real multi-line scripts. **Text paste** (`Ctrl+V` / `Ctrl+Shift+V`) uses native Bracketed Paste (`\x1b[200~...\x1b[201~`) with zero double-paste. **Image paste** (`Ctrl+V` / `Cmd+V` or drag-and-drop PNG/JPEG/WebP/GIF/BMP) uploads directly to `/tmp/swarmbox/paste/` (`0600`, rolling prune) and injects the local file path straight into the active agent (`claude`, `agy`, `codex`, `opencode`). |
 | **Zero-Scroll Hydration &amp; Cockpit** | Per-tab live `xterm.js` sessions open already anchored at the bottom, switch in 0 ms preserving scrollback (with a floating **Jump to live** pill), auto-heal WebSockets on wake, and match the 3-pane SSH **Terminal Cockpit** (`Alt+1..9`, `Alt+N`, `Alt+B`, `Alt+S`, `Alt+G`, `Alt+T`, `Alt+,`, `Alt+-/=/0`). |
 
 ---
@@ -75,7 +75,7 @@ Opt into `MUX=herdr` for a cohesive browser studio, responsive phone UI, and mat
 Operate long-running agents comfortably from your phone with iOS-calibrated momentum touch scrolling, a floating glass dock, one-tap approvals, and local offline Whisper dictation.
 
 <p align="center">
-  <img src="docs/img/swarmbox-mobile.png" alt="SwarmBox Herdr Web Studio on mobile — left phone shows live agent tabs, 1-line Starship prompt, floating ALLOW? approval card, and glass dock; right phone shows the Sysop bottom sheet with countdown bar, live steps, and voice composer" width="740">
+  <img src="docs/img/swarmbox-mobile.png" alt="SwarmBox Herdr Web Studio on mobile — left phone shows live agent tabs with pixel-art mascot icons, 1-line Starship prompt, floating ALLOW? approval card, and glass dock; right phone shows the Sysop bottom sheet with countdown bar, live steps, and voice composer" width="740">
 </p>
 
 ```bash
