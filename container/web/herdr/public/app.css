@@ -1142,7 +1142,8 @@ html.swarmbox-ready #sb-boot {
   transition: opacity 110ms cubic-bezier(.22, 1, .36, 1);
 }
 .term-wrap.term-loading .term-pane.active,
-.term-pane.hydrating {
+.term-pane.hydrating,
+.term-pane.resizing {
   opacity: 0;
   transition: none;
 }

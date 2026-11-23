@@ -685,6 +685,62 @@
   })();
   applyTheme(savedTheme, false);
 
+  function isSessionAtBottom(sess) {
+    if (!sess) return true;
+    try {
+      const buf = sess.term.buffer && sess.term.buffer.active;
+      if (buf && typeof buf.baseY === 'number' && typeof buf.viewportY === 'number') {
+        return (buf.baseY - buf.viewportY) <= 1;
+      }
+    } catch (_) {}
+    return true;
+  }
+
+  function finishResizeCycle(sess) {
+    if (!sess || !sess.resizing) return;
+    sess.resizing = false;
+    if (sess.resizeFallbackTimer) {
+      clearTimeout(sess.resizeFallbackTimer);
+      sess.resizeFallbackTimer = null;
+    }
+    const batch = sess.resizeChunks || [];
+    sess.resizeChunks = [];
+    const keepBottom = sess.resizeWasAtBottom !== false;
+    const reveal = () => {
+      const vp = sess.paneEl.querySelector('.xterm-viewport');
+      if (keepBottom) {
+        try { sess.term.scrollToBottom(); } catch (_) {}
+        if (vp) vp.scrollTop = vp.scrollHeight;
+      }
+      markBlockRows(sess.paneEl);
+      requestAnimationFrame(() => {
+        if (keepBottom) {
+          try { sess.term.scrollToBottom(); } catch (_) {}
+          if (vp) vp.scrollTop = vp.scrollHeight;
+        }
+        sess.paneEl.classList.remove('resizing');
+        if (activeId === sess.address) syncJumpLive();
+      });
+    };
+    if (batch.length > 0) {
+      sess.term.write(concatChunks(batch), reveal);
+    } else {
+      reveal();
+    }
+  }
+
+  function beginResizeCycle(sess) {
+    if (!sess || sess.hydrating) return;
+    if (!sess.resizing) {
+      sess.resizeWasAtBottom = isSessionAtBottom(sess);
+      sess.resizeChunks = [];
+      sess.resizing = true;
+      sess.paneEl.classList.add('resizing');
+    }
+    if (sess.resizeFallbackTimer) clearTimeout(sess.resizeFallbackTimer);
+    sess.resizeFallbackTimer = setTimeout(() => finishResizeCycle(sess), 450);
+  }
+
   function fitSession(sess, sendResize = true) {
     if (!sess) return;
     try {
@@ -693,6 +749,7 @@
       if (sess.term.options.fontSize !== nextFont) sess.term.options.fontSize = nextFont;
       if (sess.term.options.lineHeight !== nextLH) sess.term.options.lineHeight = nextLH;
       updateBlockScale();
+      const wasAtBottom = isSessionAtBottom(sess);
       sess.fitAddon.fit();
       markBlockRows(sess.paneEl);
       sess.needsFit = false;
@@ -700,11 +757,16 @@
       if (sendResize && changed && sess.ws && sess.ws.readyState === 1) {
         sess.lastCols = sess.term.cols;
         sess.lastRows = sess.term.rows;
+        if (!sess.hydrating) {
+          sess.resizeWasAtBottom = wasAtBottom;
+          beginResizeCycle(sess);
+        }
         sess.ws.send(JSON.stringify({ type: 'resize', cols: sess.term.cols, rows: sess.term.rows }));
       }
     } catch (_) {}
   }
 
+  let fitRaf = 0;
   function fitAndResize() {
     syncAppearanceControls();
     const active = activeSession();
@@ -713,17 +775,24 @@
       else sess.needsFit = true;
     }
   }
+  function scheduleFit() {
+    if (fitRaf) return;
+    fitRaf = requestAnimationFrame(() => {
+      fitRaf = 0;
+      fitAndResize();
+    });
+  }
 
   // Re-measure terminal cell geometry as soon as self-hosted JetBrains Mono finishes loading
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(() => {
-      requestAnimationFrame(() => fitAndResize());
+      scheduleFit();
     }).catch(() => {});
   }
 
-  const ro = new ResizeObserver(() => requestAnimationFrame(fitAndResize));
+  const ro = new ResizeObserver(scheduleFit);
   ro.observe(termWrapEl);
-  window.addEventListener('resize', () => requestAnimationFrame(fitAndResize));
+  window.addEventListener('resize', scheduleFit);
 
   if (window.visualViewport) {
     let baseMobileH = Math.max(window.innerHeight, window.visualViewport.height);
@@ -737,7 +806,7 @@
       } else {
         appEl.dataset.mobileKeys = '0';
       }
-      requestAnimationFrame(fitAndResize);
+      scheduleFit();
     };
     window.visualViewport.addEventListener('resize', syncViewport);
   }
@@ -1125,6 +1194,7 @@
     tabSessions.delete(address);
     if (sess.reconnectTimer) { clearTimeout(sess.reconnectTimer); sess.reconnectTimer = null; }
     if (sess.fallbackTimer) { clearTimeout(sess.fallbackTimer); sess.fallbackTimer = null; }
+    if (sess.resizeFallbackTimer) { clearTimeout(sess.resizeFallbackTimer); sess.resizeFallbackTimer = null; }
     if (sess.ws) {
       sess.ws.onclose = null;
       sess.ws.onerror = null;
@@ -1192,6 +1262,10 @@
       hydrating: true,
       hydrationChunks: [],
       fallbackTimer: null,
+      resizing: false,
+      resizeChunks: [],
+      resizeFallbackTimer: null,
+      resizeWasAtBottom: true,
       reconnectTimer: null,
       reconnectDelay: 400,
       pendingInput: [],
@@ -1697,6 +1771,10 @@
           sess.hydrationChunks.push(bytes);
           return;
         }
+        if (sess.resizing) {
+          sess.resizeChunks.push(bytes);
+          return;
+        }
         sess.term.write(bytes, () => dismissBoot());
       } else if (typeof ev.data === 'string') {
         try {
@@ -1705,7 +1783,12 @@
             finishHydration();
             return;
           }
+          if (msg.type === 'resized') {
+            finishResizeCycle(sess);
+            return;
+          }
           finishHydration();
+          finishResizeCycle(sess);
           if (msg.type === 'error') sess.term.writeln(`\r\n\x1b[31m[error] ${msg.message}\x1b[0m`);
           if (msg.type === 'closed') {
             ws._terminalClosed = true;
@@ -1713,6 +1796,7 @@
           }
         } catch (_) {
           finishHydration();
+          finishResizeCycle(sess);
           sess.term.write(ev.data);
         }
         dismissBoot();
@@ -1722,11 +1806,13 @@
     ws.onerror = () => {
       if (sess.ws !== ws) return;
       finishHydration();
+      finishResizeCycle(sess);
     };
 
     ws.onclose = () => {
       if (sess.ws !== ws) return;
       finishHydration();
+      finishResizeCycle(sess);
       sess.ws = null;
       sess.connected = false;
       if (activeId === sess.address) {
@@ -2855,14 +2941,16 @@
 
   function toggleSidebar() {
     appEl.dataset.sidebarOpen = appEl.dataset.sidebarOpen === '1' ? '0' : '1';
-    requestAnimationFrame(() => { fitAndResize(); focusTerminalIfDesktop(); });
+    scheduleFit();
+    requestAnimationFrame(focusTerminalIfDesktop);
   }
   function toggleDesktopSysop() {
     sysopUserToggled = true;
     const next = appEl.dataset.sysopOpen === '1' ? '0' : '1';
     appEl.dataset.sysopOpen = next;
     btnToggleSysop.dataset.on = next;
-    requestAnimationFrame(() => { fitAndResize(); focusTerminalIfDesktop(); });
+    scheduleFit();
+    requestAnimationFrame(focusTerminalIfDesktop);
   }
   function setMobileSysop(open) {
     const val = open ? '1' : '0';
@@ -2874,11 +2962,13 @@
   if (btnNewShell) btnNewShell.addEventListener('click', () => { spawnTab('shell'); focusTerminalIfDesktop(); });
   document.getElementById('btn-sidebar-close').addEventListener('click', () => {
     appEl.dataset.sidebarOpen = '0';
-    requestAnimationFrame(() => { fitAndResize(); focusTerminalIfDesktop(); });
+    scheduleFit();
+    requestAnimationFrame(focusTerminalIfDesktop);
   });
   document.getElementById('btn-sidebar-open').addEventListener('click', () => {
     appEl.dataset.sidebarOpen = '1';
-    requestAnimationFrame(() => { fitAndResize(); focusTerminalIfDesktop(); });
+    scheduleFit();
+    requestAnimationFrame(focusTerminalIfDesktop);
   });
   btnToggleSysop.addEventListener('click', toggleDesktopSysop);
   document.getElementById('btn-sysop-close').addEventListener('click', () => {

@@ -586,10 +586,19 @@ export function createGateway(options = {}) {
     let initChunks = [];
     let flushTimer = null;
     let capTimer = null;
+    let resizing = false;
+    let resizeChunks = [];
+    let resizeQuietTimer = null;
+    let resizeCapTimer = null;
 
     const clearHydrationTimers = () => {
       if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
       if (capTimer) { clearTimeout(capTimer); capTimer = null; }
+    };
+
+    const clearResizeTimers = () => {
+      if (resizeQuietTimer) { clearTimeout(resizeQuietTimer); resizeQuietTimer = null; }
+      if (resizeCapTimer) { clearTimeout(resizeCapTimer); resizeCapTimer = null; }
     };
 
     const flushInitial = () => {
@@ -608,6 +617,22 @@ export function createGateway(options = {}) {
       ws.send(JSON.stringify({ type: 'hydrated' }));
     };
 
+    const flushResize = () => {
+      if (!resizing) return;
+      resizing = false;
+      clearResizeTimers();
+      if (ws.readyState !== 1) {
+        resizeChunks = [];
+        return;
+      }
+      if (resizeChunks.length > 0) {
+        const merged = resizeChunks.length === 1 ? resizeChunks[0] : Buffer.concat(resizeChunks);
+        resizeChunks = [];
+        ws.send(merged);
+      }
+      ws.send(JSON.stringify({ type: 'resized' }));
+    };
+
     try {
       stream = await hc.attach(termId, cols, rows, {
         onData: (buf) => {
@@ -617,10 +642,17 @@ export function createGateway(options = {}) {
             flushTimer = setTimeout(flushInitial, 55);
             return;
           }
+          if (resizing) {
+            resizeChunks.push(Buffer.from(buf));
+            if (resizeQuietTimer) clearTimeout(resizeQuietTimer);
+            resizeQuietTimer = setTimeout(flushResize, 55);
+            return;
+          }
           if (ws.readyState === 1) ws.send(buf);
         },
         onClose: (info) => {
           flushInitial();
+          flushResize();
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'closed', info }));
             ws.close();
@@ -629,6 +661,7 @@ export function createGateway(options = {}) {
       });
     } catch (err) {
       clearHydrationTimers();
+      clearResizeTimers();
       if (ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'error', message: err.message }));
         ws.close();
@@ -653,6 +686,13 @@ export function createGateway(options = {}) {
         try {
           const msg = JSON.parse(text);
           if (msg.type === 'resize') {
+            // Coalesce SIGWINCH full-screen TUI repaint bursts into one atomic frame
+            if (!hydrating) {
+              clearResizeTimers();
+              resizing = true;
+              resizeQuietTimer = setTimeout(flushResize, 85);
+              resizeCapTimer = setTimeout(flushResize, 320);
+            }
             stream.resize(msg.cols, msg.rows);
             return;
           }
@@ -662,18 +702,23 @@ export function createGateway(options = {}) {
             return;
           }
           if (msg.type === 'input' && typeof msg.data === 'string') {
+            if (resizing) flushResize();
             stream.write(Buffer.from(msg.data, 'utf8'));
             return;
           }
         } catch (_) {}
       }
+      if (resizing) flushResize();
       stream.write(Buffer.from(text, 'utf8'));
     });
 
     ws.on('close', () => {
       clearHydrationTimers();
+      clearResizeTimers();
       initChunks = [];
+      resizeChunks = [];
       hydrating = false;
+      resizing = false;
       if (stream) {
         stream.close();
         stream = null;
