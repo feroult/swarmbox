@@ -5,6 +5,15 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-11-23
+
+- Added: bespoke pixel-art **SwarmBox Boot Splash** (`#sb-boot`) and reactive **Sysop Operator Mascot** in the Herdr Web Studio (`container/web/herdr/public/`):
+  - Replaced the legacy ASCII BBS boot screen with a crisp 24×24 inline pixel-art isometric SwarmBox cube emblem, refined letter-spaced `SWARMBOX` wordmark, luminous hairline progress sweep, and subtle connection status.
+  - Added a 16×16 state-reactive pixel-art Sysop mascot (headset, radar antenna, and expression-changing visor across `idle`, `working`, `allow?`, `done`, `failed`, and `off`) featured in a new Sysop hero card mirroring the left `AGENTS` cards, the Sysop header, and the mobile Sysop capsule.
+- Added: WhatsApp-style **tap-to-record Voice Bar** on both mobile and desktop (`Speak` → borderless live recording bar with discard `×`, pulsing indicator, timer, real-time audio-reactive waveform, and `Send`), replacing press-and-hold and eliminating accidental mobile text selection (`user-select: none` / `-webkit-touch-callout: none` on UI chrome).
+- Changed: simplified the mobile dock by removing the confusing manual keyboard toggle button so tapping the terminal uses the phone's native keyboard naturally (while still auto-revealing the `Esc`/`Tab`/`^C`/arrow accessory strip via `visualViewport` when the soft keyboard is open) and widening **Speak** into a generous 48 px primary pill.
+- Fixed: mirrored the Sysop panel collapse button to a matching `>` chevron on desktop (`⌄` on mobile sheet) and hid the redundant `Sysop` toggle pill from the main topbar whenever the Sysop panel is already open.
+
 ## [2.2.0] - 2026-11-23
 
 - Added: **Pixel-Art Agent Mascot Cards** and a zero-redundancy adaptive topbar in the Herdr Web Studio (`container/web/herdr/public/`):
@@ -303,6 +312,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.2.1]: https://github.com/feroult/swarmbox/releases/tag/v2.2.1
 [2.2.0]: https://github.com/feroult/swarmbox/releases/tag/v2.2.0
 [2.1.1]: https://github.com/feroult/swarmbox/releases/tag/v2.1.1
 [2.1.0]: https://github.com/feroult/swarmbox/releases/tag/v2.1.0
