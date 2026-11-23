@@ -182,48 +182,37 @@ html.swarmbox-ready #sb-boot {
 /* Main 3-Pane Studio Grid */
 .app {
   display: grid;
-  grid-template-columns: 252px minmax(0, 1fr) 340px;
+  grid-template-columns: 228px minmax(0, 1fr) 316px;
   width: 100%;
   height: 100dvh;
   background: var(--bg);
   position: relative;
 }
-.app[data-sidebar-open="0"] { grid-template-columns: 0px minmax(0, 1fr) 340px; }
-.app[data-sysop-open="0"] { grid-template-columns: 252px minmax(0, 1fr) 0px; }
+.app[data-sidebar-open="0"] { grid-template-columns: 0px minmax(0, 1fr) 316px; }
+.app[data-sysop-open="0"] { grid-template-columns: 228px minmax(0, 1fr) 0px; }
 .app[data-sidebar-open="0"][data-sysop-open="0"] { grid-template-columns: 0px minmax(0, 1fr) 0px; }
 
 /* ---- Left Sidebar ------------------------------------------------------------------------- */
 .sidebar {
   display: flex;
   flex-direction: column;
-  background:
-    radial-gradient(240px 140px at 0% 0%, var(--accent-bg), transparent 72%),
-    var(--surface);
+  background: var(--surface);
   border-right: 1px solid var(--border);
   overflow: hidden;
   min-width: 0;
 }
 .app[data-sidebar-open="0"] .sidebar { border-right: none; }
 .app[data-sidebar-open="1"] #btn-sidebar-open { display: none; }
+.app[data-sidebar-open="1"] .topbar-settings-btn { display: none; }
 
 .sidebar-head {
-  height: 46px;
+  height: 42px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
-  position: relative;
-}
-.sidebar-head::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
-  background: linear-gradient(90deg, var(--hair-1) 0%, var(--hair-2) 42%, transparent 100%);
-  opacity: 0.55;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--border);
 }
 
 .brand {
@@ -231,34 +220,24 @@ html.swarmbox-ready #sb-boot {
   align-items: center;
   gap: 8px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.11em;
+  color: var(--text);
 }
 .brand-mark {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--accent-bright);
-  box-shadow: 0 0 10px var(--accent), 0 0 20px var(--accent-glow);
-}
-.brand-tag {
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  color: var(--accent-bright);
-  background: var(--accent-bg);
-  border: 1px solid var(--border-strong);
-  padding: 1px 6px;
-  border-radius: 999px;
-  text-transform: lowercase;
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 
 .sidebar-section {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 12px 10px 10px;
+  padding: 10px 8px 8px;
   overflow: hidden;
 }
 
@@ -266,59 +245,59 @@ html.swarmbox-ready #sb-boot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 8px 8px;
+  padding: 0 4px 6px 8px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.1em;
   color: var(--text-dim);
 }
+.section-label-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .count-pill {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  padding: 0 7px;
-  height: 18px;
-  line-height: 16px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  color: var(--text-muted);
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: 0.8;
 }
 
 .tab-list {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   overflow-y: auto;
   flex: 1;
   padding-right: 2px;
 }
 
-/* Tab Row — echoes SwarmBox's signature ▒ #I #W ▒ soft band */
+/* Tab Row — quiet minimalist selection */
 .tab-item {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 10px 8px 12px;
-  border-radius: 10px;
+  gap: 8px;
+  padding: 7px 8px 7px 11px;
+  border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   text-align: left;
   width: 100%;
-  transition: background .14s ease, border-color .14s ease, color .14s ease;
+  transition: background .12s ease, color .12s ease;
   position: relative;
 }
 .tab-item::before {
   content: "";
   position: absolute;
   left: 3px;
-  top: 9px;
-  bottom: 9px;
-  width: 2.5px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
   border-radius: 2px;
   background: transparent;
-  transition: background .14s ease, box-shadow .14s ease;
+  transition: background .12s ease;
 }
 @media (hover: hover) {
   .tab-item:hover { background: rgba(255, 255, 255, 0.035); color: var(--text); }
@@ -326,14 +305,11 @@ html.swarmbox-ready #sb-boot {
   .tab-item:hover .tab-idx { opacity: 0; }
 }
 .tab-item.active {
-  background: linear-gradient(90deg, var(--band), rgba(255, 255, 255, 0.025));
-  border-color: var(--border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: var(--band);
   color: var(--text);
 }
 .tab-item.active::before {
   background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
 }
 
 .tab-info {
@@ -438,58 +414,12 @@ html.swarmbox-ready #sb-boot {
   .tab-close:hover { color: var(--red); background: rgba(255, 107, 120, 0.14); }
 }
 
-.spawn-row {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px;
-  padding-top: 10px;
-  margin-top: 8px;
-  position: relative;
-}
-.spawn-row::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 6px;
-  right: 6px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border-strong) 50%, transparent);
-}
-.spawn-btn {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 11.5px;
-  font-weight: 500;
-  padding: 7px 8px;
-  border-radius: 9px;
-  cursor: pointer;
-  transition: background .14s, border-color .14s, color .14s, transform .08s;
-}
-.spawn-btn:active { transform: scale(0.97); }
-@media (hover: hover) {
-  .spawn-btn:hover { background: var(--surface-hover); border-color: var(--border-strong); color: var(--text); }
-}
-.spawn-accent {
-  background: linear-gradient(180deg, var(--accent-bg), rgba(255, 255, 255, 0.02));
-  border-color: var(--border-strong);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  color: var(--accent-bright);
-}
-
 .sidebar-foot {
-  padding: 10px 12px 12px;
+  padding: 8px;
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.14);
+  gap: 6px;
 }
 
 .settings-launch-btn {
@@ -500,57 +430,55 @@ html.swarmbox-ready #sb-boot {
   justify-content: space-between;
   gap: 8px;
   padding: 7px 10px;
-  border-radius: 9px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: 11.5px;
+  font-family: var(--sans);
+  font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: background .14s, border-color .14s, color .14s, transform .08s;
+  transition: background .12s, color .12s;
 }
 .settings-launch-btn:active { transform: scale(0.98); }
 @media (hover: hover) {
-  .settings-launch-btn:hover { background: var(--surface-hover); border-color: var(--border-strong); color: var(--text); }
+  .settings-launch-btn:hover { background: rgba(255, 255, 255, 0.045); color: var(--text); }
 }
-.settings-launch-left, .settings-launch-right {
+.settings-launch-left {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-}
-.settings-kbd {
-  font-size: 10px;
-  color: var(--text-dim);
-  padding: 1px 5px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.22);
+  gap: 8px;
 }
 .theme-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: linear-gradient(135deg, var(--hair-1), var(--accent-bright));
-  box-shadow: 0 0 6px var(--accent-glow);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
+/* Connection status: invisible when healthy; only surfaces quietly on reconnect/disconnect */
 .conn-pill {
   display: flex;
   align-items: center;
   gap: 7px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
   font-family: var(--mono);
   font-size: 10.5px;
-  color: var(--text-dim);
+  color: var(--text-muted);
 }
+.conn-pill.ok { display: none; }
 .conn-pill .dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--amber);
 }
-.conn-pill.ok .dot { background: var(--green); box-shadow: 0 0 7px var(--green); }
-.conn-pill.warn .dot { background: var(--amber); box-shadow: 0 0 7px var(--amber); animation: sb-pulse 1.1s ease-in-out infinite; }
+.conn-pill.warn { border-color: rgba(251, 191, 36, 0.3); color: var(--amber); }
+.conn-pill.warn .dot { background: var(--amber); animation: sb-pulse 1.1s ease-in-out infinite; }
+.conn-pill.err { border-color: rgba(255, 107, 120, 0.32); color: var(--red); }
 .conn-pill.err .dot { background: var(--red); }
 
 /* Status Dots (OSC 7501 & Sysop) */
@@ -600,30 +528,20 @@ html.swarmbox-ready #sb-boot {
 }
 
 .topbar {
-  height: 46px;
+  height: 42px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
+  padding: 0 12px;
   background: var(--surface);
+  border-bottom: 1px solid var(--border);
   gap: 10px;
-  position: relative;
-}
-.topbar::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--hair-1) 18%, var(--hair-2) 50%, var(--hair-1) 82%, transparent);
-  opacity: 0.52;
 }
 .topbar-left, .topbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -635,7 +553,7 @@ html.swarmbox-ready #sb-boot {
 }
 .active-name {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
@@ -647,12 +565,12 @@ html.swarmbox-ready #sb-boot {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text-dim);
-  opacity: 0.55;
+  opacity: 0.45;
 }
 .active-status {
   font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--text-muted);
+  font-size: 11px;
+  color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -666,56 +584,74 @@ html.swarmbox-ready #sb-boot {
   color: var(--text-muted);
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: 7px;
   display: grid;
   place-items: center;
   cursor: pointer;
-  transition: background .12s, color .12s, border-color .12s;
+  transition: background .12s, color .12s;
 }
+.icon-btn-sm { width: 22px; height: 22px; border-radius: 6px; }
 @media (hover: hover) {
-  .icon-btn:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border); }
+  .icon-btn:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
 }
-.icon-btn.active { background: var(--accent-bg); color: var(--accent-bright); border-color: var(--border-strong); }
+.icon-btn.active { background: var(--accent-bg); color: var(--accent-bright); }
 
 .chip-btn {
   appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.035);
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 500;
-  padding: 5px 10px;
-  border-radius: 8px;
+  padding: 4px 10px;
+  border-radius: 7px;
   cursor: pointer;
   transition: border-color .14s, color .14s, background .14s, transform .08s;
 }
 .chip-btn:active { transform: scale(0.96); }
 @media (hover: hover) {
-  .chip-btn:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-hover); }
+  .chip-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.07); }
 }
-.chip-toggle { border-radius: 999px; padding: 5px 12px 5px 10px; }
+.chip-toggle { border-radius: 999px; padding: 4px 11px 4px 9px; border-color: var(--border); }
 .chip-toggle .toggle-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  border: 1.5px solid var(--text-dim);
-  background: transparent;
-  transition: background .15s, border-color .15s, box-shadow .15s;
+  background: var(--text-dim);
+  opacity: 0.65;
+  transition: background .15s, box-shadow .15s, opacity .15s;
 }
 .chip-toggle[data-on="1"] {
-  background: linear-gradient(180deg, var(--accent-bg), rgba(255, 255, 255, 0.02));
+  background: var(--accent-bg);
   border-color: var(--border-strong);
   color: var(--accent-bright);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 .chip-toggle[data-on="1"] .toggle-dot {
-  border-color: var(--accent-bright);
+  opacity: 1;
   background: var(--accent-bright);
-  box-shadow: 0 0 8px var(--accent-glow);
+}
+.chip-toggle[data-state="working"] .toggle-dot {
+  opacity: 1;
+  background: var(--accent);
+  box-shadow: 0 0 7px var(--accent);
+  animation: sb-pulse 1.4s ease-in-out infinite;
+}
+.chip-toggle[data-state="allow?"],
+.chip-toggle[data-state="sending"] {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--amber);
+}
+.chip-toggle[data-state="allow?"] .toggle-dot,
+.chip-toggle[data-state="sending"] .toggle-dot {
+  opacity: 1;
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+  animation: sb-pulse 0.95s ease-in-out infinite;
 }
 
 .term-wrap {
@@ -791,13 +727,11 @@ html.swarmbox-ready #sb-boot {
 /* Eliminate faint horizontal hairline seams between block-drawing rows (banner.sh half-blocks) */
 .xterm-rows > div.sb-blk { transform: scaleY(var(--sb-blk-s, 1.26)); transform-origin: 50% 50%; }
 
-/* ---- Right Sysop Panel (SwarmBox tinted drawer) ------------------------------------------- */
+/* ---- Right Sysop Panel (Minimalist quiet drawer) ------------------------------------------ */
 .sysop-panel {
   display: flex;
   flex-direction: column;
-  background:
-    radial-gradient(280px 180px at 100% 0%, var(--accent-bg), transparent 72%),
-    var(--sheet);
+  background: var(--sheet);
   border-left: 1px solid var(--border);
   min-width: 0;
   overflow: hidden;
@@ -805,23 +739,13 @@ html.swarmbox-ready #sb-boot {
 .app[data-sysop-open="0"] .sysop-panel { border-left: none; }
 
 .sysop-head {
-  height: 46px;
+  height: 42px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
-  position: relative;
-}
-.sysop-head::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--hair-1) 20%, var(--hair-2) 55%, transparent);
-  opacity: 0.45;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--border);
 }
 .sysop-title {
   display: flex;
@@ -1050,27 +974,17 @@ html.swarmbox-ready #sb-boot {
 
 /* Goal Composer */
 .sysop-composer {
-  padding: 10px 12px 12px;
-  position: relative;
-  background: rgba(0, 0, 0, 0.18);
-}
-.sysop-composer::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border-strong) 50%, transparent);
+  padding: 10px 10px 10px;
+  border-top: 1px solid var(--border);
 }
 .goal-box {
   background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: 13px;
-  padding: 9px 11px 8px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 8px 10px 7px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   transition: border-color .15s, box-shadow .15s;
 }
 .goal-box:focus-within {
@@ -1172,17 +1086,17 @@ html.swarmbox-ready #sb-boot {
   .sidebar { display: none; }
 
   .topbar {
-    height: 44px;
+    height: 40px;
     padding: 0 10px;
   }
-  .topbar::after { opacity: 0.35; }
+  .topbar-settings-btn { display: grid !important; }
   .active-name { font-size: 12.5px; }
 
   .mobile-tabs {
     flex-shrink: 0;
     align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
+    gap: 5px;
+    padding: 5px 10px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
@@ -1192,12 +1106,12 @@ html.swarmbox-ready #sb-boot {
   .m-tab {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    min-height: 30px;
-    padding: 4px 10px;
+    gap: 5px;
+    min-height: 28px;
+    padding: 3px 9px;
     border-radius: 999px;
-    border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.035);
     color: var(--text-muted);
     font-family: var(--mono);
     font-size: 11px;
@@ -1207,29 +1121,27 @@ html.swarmbox-ready #sb-boot {
   }
   .m-tab.active {
     background: var(--band);
-    border-color: var(--border-strong);
+    border-color: var(--border);
     color: var(--accent-bright);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
   }
   .m-tab.m-tab-add {
-    border-style: dashed;
-    border-color: var(--border-strong);
-    color: var(--accent-bright);
+    min-width: 28px;
+    justify-content: center;
+    padding: 3px 8px;
+    color: var(--text-muted);
     background: transparent;
+    border: 1px solid var(--border);
   }
 
   .term-wrap { padding: 6px 6px 4px 8px; }
 
-  /* Mobile Dock: SwarmBox sheet surface + signature fading gradient hairline */
+  /* Mobile Dock: clean surface + subtle hairline */
   .mobile-dock {
     flex-direction: column;
     gap: 7px;
     padding: 8px calc(10px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) calc(10px + env(safe-area-inset-left, 0px));
     background-color: var(--sheet);
-    background-repeat: no-repeat;
-    background-position: top;
-    background-size: 100% 1px;
-    background-image: linear-gradient(90deg, transparent, var(--hair-1) 18%, var(--hair-2) 50%, var(--hair-1) 82%, transparent);
+    border-top: 1px solid var(--border);
   }
 
   .mobile-approval {

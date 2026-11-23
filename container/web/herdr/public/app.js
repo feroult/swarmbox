@@ -1735,7 +1735,9 @@
 
     const mPlus = document.createElement('button');
     mPlus.className = 'm-tab m-tab-add';
-    mPlus.textContent = '+ New';
+    mPlus.textContent = '+';
+    mPlus.title = 'New terminal tab';
+    mPlus.setAttribute('aria-label', 'New terminal tab');
     mPlus.addEventListener('click', () => spawnTab('shell'));
     mobileTabsEl.appendChild(mPlus);
 
@@ -1853,6 +1855,7 @@
     sysopStateEl.textContent = st;
     mobileSysopDotEl.dataset.state = st;
     mobileSysopBtn.dataset.state = st;
+    if (btnToggleSysop) btnToggleSysop.dataset.state = st;
     mobileSysopTextEl.textContent = st === 'idle' || st === 'off' ? 'Sysop' : (sysop.sentence || `Sysop · ${st}`);
 
     const running = st === 'working' || st === 'allow?' || st === 'sending' || st === 'queued';
@@ -1867,22 +1870,15 @@
       box.className = 'feed-empty';
       box.innerHTML = `
         <div class="feed-empty-title"><span class="status-dot" data-state="off"></span><span>Sysop offline</span></div>
-        <div>Install &amp; start the operator addon to drive terminals by goal or voice:</div>
-        <div><code>swarmbox addon install sysop</code></div>
+        <div>Install the operator addon from Settings or run <code>swarmbox addon install sysop</code>.</div>
       `;
       sysopFeedEl.appendChild(box);
     } else if (steps.length === 0) {
       const box = document.createElement('div');
       box.className = 'feed-empty';
       box.innerHTML = `
-        <div class="feed-empty-title"><span class="status-dot" data-state="done"></span><span>Ready for goals</span></div>
-        <div>Speak or type what you want done — Sysop reads the active tab, routes to your agent, and holds risky actions for your approval.</div>
-        <div class="shortcut-hints">
-          <span class="kbd-chip"><b>Alt+1..9</b> tabs</span>
-          <span class="kbd-chip"><b>Alt+N</b> new tab</span>
-          <span class="kbd-chip"><b>Alt+G</b> goal</span>
-          <span class="kbd-chip"><b>Alt+,</b> settings</span>
-        </div>
+        <div class="feed-empty-title"><span class="status-dot" data-state="done"></span><span>Ready</span></div>
+        <div>Speak or type a goal — Sysop routes to your active tab and pauses risky actions for approval.</div>
       `;
       sysopFeedEl.appendChild(box);
     } else {
@@ -2184,11 +2180,32 @@
     .catch(() => { voiceHintEl.textContent = ''; });
 
   // ---- Layout Controls ----------------------------------------------------------------------
+  // Responsive default: keep Sysop closed on narrower desktop/laptop widths (< 1360px) so the
+  // terminal gets full room; open automatically on wide screens unless user manually toggled it.
+  const SYSOP_WIDE_PX = 1360;
+  let sysopUserToggled = false;
+
+  function applyResponsiveSysopDefault() {
+    if (sysopUserToggled || window.innerWidth <= 860) return;
+    const want = window.innerWidth >= SYSOP_WIDE_PX ? '1' : '0';
+    if (appEl.dataset.sysopOpen !== want) {
+      appEl.dataset.sysopOpen = want;
+      btnToggleSysop.dataset.on = want;
+    }
+  }
+  applyResponsiveSysopDefault();
+  window.addEventListener('resize', () => {
+    const before = appEl.dataset.sysopOpen;
+    applyResponsiveSysopDefault();
+    if (appEl.dataset.sysopOpen !== before) requestAnimationFrame(fitAndResize);
+  });
+
   function toggleSidebar() {
     appEl.dataset.sidebarOpen = appEl.dataset.sidebarOpen === '1' ? '0' : '1';
     requestAnimationFrame(() => { fitAndResize(); focusTerminalIfDesktop(); });
   }
   function toggleDesktopSysop() {
+    sysopUserToggled = true;
     const next = appEl.dataset.sysopOpen === '1' ? '0' : '1';
     appEl.dataset.sysopOpen = next;
     btnToggleSysop.dataset.on = next;

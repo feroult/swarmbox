@@ -24,14 +24,13 @@
   </div>
 </div>
 
-<div id="app" class="app" data-sysop-open="1" data-sidebar-open="1" data-mobile-keys="0" data-mobile-sysop="0">
+<div id="app" class="app" data-sysop-open="0" data-sidebar-open="1" data-mobile-keys="0" data-mobile-sysop="0">
   <!-- Left Sidebar (Desktop) -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-name">SWARMBOX</span>
-        <span class="brand-tag">herdr</span>
       </div>
       <button class="icon-btn" id="btn-sidebar-close" title="Collapse sidebar (Alt+B)" aria-label="Collapse sidebar">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -40,33 +39,29 @@
 
     <div class="sidebar-section">
       <div class="section-label">
-        <span>Terminals</span>
-        <span class="count-pill" id="tab-count">0</span>
-      </div>
-      <div class="tab-list" id="sidebar-tabs" role="tablist" aria-label="Terminals"></div>
-      <div class="spawn-row">
-        <button class="spawn-btn spawn-accent" id="btn-new-shell" title="Open a new terminal tab (Alt+N)">
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
-          <span>New tab</span>
+        <div class="section-label-left">
+          <span>Terminals</span>
+          <span class="count-pill" id="tab-count">0</span>
+        </div>
+        <button type="button" class="icon-btn icon-btn-sm" id="btn-new-shell" title="New terminal tab (Alt+N)" aria-label="New terminal tab">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
         </button>
       </div>
+      <div class="tab-list" id="sidebar-tabs" role="tablist" aria-label="Terminals"></div>
     </div>
 
     <div class="sidebar-foot">
-      <button type="button" class="settings-launch-btn" id="btn-sidebar-settings" title="Open Settings (Alt+,)">
+      <div class="conn-pill ok" id="conn-pill" role="status">
+        <span class="dot"></span>
+        <span id="conn-text">connecting…</span>
+      </div>
+      <button type="button" class="settings-launch-btn" id="btn-sidebar-settings" title="Settings (Alt+,)">
         <span class="settings-launch-left">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
           <span>Settings</span>
         </span>
-        <span class="settings-launch-right">
-          <span class="theme-swatch" id="theme-swatch" aria-hidden="true"></span>
-          <span class="settings-kbd">Alt+,</span>
-        </span>
+        <span class="theme-swatch" id="theme-swatch" aria-hidden="true"></span>
       </button>
-      <div class="conn-pill" id="conn-pill">
-        <span class="dot"></span>
-        <span id="conn-text">connecting…</span>
-      </div>
     </div>
   </aside>
 
@@ -81,21 +76,20 @@
           <span class="status-dot" id="active-dot" data-state="idle"></span>
           <span class="active-name" id="active-name">—</span>
           <span class="tab-agent-tag hidden" id="active-agent"></span>
-          <span class="active-sep desktop-only" aria-hidden="true">─</span>
+          <span class="active-sep desktop-only" aria-hidden="true">·</span>
           <span class="active-status desktop-only" id="active-status">idle</span>
         </div>
       </div>
 
       <div class="topbar-right">
-        <button class="chip-btn" id="btn-interrupt" title="Interrupt active terminal (Ctrl+C / Esc)">
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>
-          <span>Stop</span>
+        <button class="icon-btn" id="btn-interrupt" title="Interrupt active terminal (Ctrl+C)" aria-label="Interrupt active terminal">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>
         </button>
-        <button class="chip-btn chip-toggle desktop-only" id="btn-toggle-sysop" data-on="1" title="Toggle Sysop panel (Alt+S)">
+        <button class="chip-btn chip-toggle desktop-only" id="btn-toggle-sysop" data-on="0" data-state="idle" title="Toggle Sysop panel (Alt+S)">
           <span class="toggle-dot" aria-hidden="true"></span>
           <span>Sysop</span>
         </button>
-        <button class="icon-btn" id="btn-topbar-settings" title="Settings (Alt+,)" aria-label="Open settings">
+        <button class="icon-btn topbar-settings-btn" id="btn-topbar-settings" title="Settings (Alt+,)" aria-label="Open settings">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
         </button>
       </div>
