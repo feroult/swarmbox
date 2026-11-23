@@ -252,7 +252,6 @@
   const mobileSysopBtn = document.getElementById('btn-mobile-sysop');
   const mobileSysopDotEl = document.getElementById('mobile-sysop-dot');
   const mobileSysopTextEl = document.getElementById('mobile-sysop-text');
-  const mobileKbBtn = document.getElementById('btn-mobile-kb');
   const btnToggleSysop = document.getElementById('btn-toggle-sysop');
   const sysopFeedEl = document.getElementById('sysop-feed');
   const btnSysopStop = document.getElementById('btn-sysop-stop');
@@ -727,8 +726,17 @@
   window.addEventListener('resize', () => requestAnimationFrame(fitAndResize));
 
   if (window.visualViewport) {
+    let baseMobileH = Math.max(window.innerHeight, window.visualViewport.height);
     const syncViewport = () => {
-      appEl.style.height = `${Math.round(window.visualViewport.height)}px`;
+      const vvH = Math.round(window.visualViewport.height);
+      appEl.style.height = `${vvH}px`;
+      if (window.innerWidth <= 860) {
+        if (vvH > baseMobileH) baseMobileH = vvH;
+        const kbOpen = (baseMobileH - vvH) > 110 && document.activeElement !== goalInputEl;
+        appEl.dataset.mobileKeys = kbOpen ? '1' : '0';
+      } else {
+        appEl.dataset.mobileKeys = '0';
+      }
       requestAnimationFrame(fitAndResize);
     };
     window.visualViewport.addEventListener('resize', syncViewport);
@@ -2552,10 +2560,78 @@
     await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   }
 
-  // ---- Real Voice Addon (16 kHz mono 16-bit PCM WAV -> /voice/audio) ------------------------
+  // ---- Real Voice Addon — WhatsApp-style Tap-to-Record -> Live Waveform -> Send / Discard ----
   const VOICE_RATE = 16000;
   let wavRec = null;
   let speechRec = null;
+  let recTimerHandle = null;
+  let recStartMs = 0;
+
+  const mobileVoiceTimerEl = document.getElementById('mobile-voice-timer');
+  const desktopVoiceTimerEl = document.getElementById('desktop-voice-timer');
+  const mobileVoiceBars = Array.from(document.querySelectorAll('#mobile-voice-bars > i'));
+  const desktopVoiceBars = Array.from(document.querySelectorAll('#desktop-voice-bars > i'));
+  const btnMobileRecCancel = document.getElementById('btn-mobile-rec-cancel');
+  const btnMobileRecSend = document.getElementById('btn-mobile-rec-send');
+  const btnDesktopRecCancel = document.getElementById('btn-desktop-rec-cancel');
+  const btnDesktopRecSend = document.getElementById('btn-desktop-rec-send');
+
+  function formatRecTime(ms) {
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  function updateVoiceTimers(text) {
+    if (mobileVoiceTimerEl) mobileVoiceTimerEl.textContent = text;
+    if (desktopVoiceTimerEl) desktopVoiceTimerEl.textContent = text;
+  }
+
+  function updateVoiceBars(level) {
+    const norm = Math.max(0, Math.min(1, level));
+    const now = Date.now() / 160;
+    const paint = (bars, maxH) => {
+      const mid = (bars.length - 1) / 2;
+      bars.forEach((bar, i) => {
+        const dist = 1 - Math.abs(i - mid) / (mid + 0.8);
+        const wave = 0.55 + 0.45 * Math.sin(now + i * 0.9);
+        const h = Math.round(4 + (maxH - 4) * dist * Math.max(0.16, norm * 0.9 + 0.14) * wave);
+        bar.style.height = `${h}px`;
+      });
+    };
+    paint(mobileVoiceBars, 22);
+    paint(desktopVoiceBars, 18);
+  }
+
+  function resetVoiceBars() {
+    for (const b of mobileVoiceBars) b.style.height = '5px';
+    for (const b of desktopVoiceBars) b.style.height = '5px';
+  }
+
+  function showVoiceFeedback(msg, tone = '', ms = 3500) {
+    showVoiceNote(msg, tone, ms);
+    const sysopVisible = window.innerWidth <= 860
+      ? appEl.dataset.mobileSysop === '1'
+      : appEl.dataset.sysopOpen === '1';
+    if (!sysopVisible && msg) {
+      showTermToast(msg, tone === 'error' ? 'error' : (tone === 'ok' ? 'ok' : ''), ms || 3500);
+    }
+  }
+
+  function setVoiceState(state) {
+    appEl.dataset.voiceState = state;
+    const isRec = state === 'recording';
+    btnMic.classList.toggle('recording', isRec);
+    btnMobileMic.classList.toggle('recording', isRec);
+    if (micLabelEl) micLabelEl.textContent = isRec ? 'Listening' : 'Speak';
+    if (!isRec) {
+      clearInterval(recTimerHandle);
+      recTimerHandle = null;
+      resetVoiceBars();
+    }
+    requestAnimationFrame(fitAndResize);
+  }
 
   function downsample(chunks, total, from, to) {
     const all = new Float32Array(total);
@@ -2590,18 +2666,20 @@
     return new Blob([buf], { type: 'audio/wav' });
   }
 
-  function setMicRecording(on) {
-    btnMic.classList.toggle('recording', on);
-    btnMobileMic.classList.toggle('recording', on);
-    if (micLabelEl) micLabelEl.textContent = on ? 'Listening' : 'Speak';
+  function releaseWavHandle(rec) {
+    if (!rec) return;
+    try { rec.src.disconnect(); rec.proc.disconnect(); } catch (_) {}
+    rec.proc.onaudioprocess = null;
+    try { rec.stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+    try { rec.ctx.close(); } catch (_) {}
   }
 
   async function startWavRecording() {
-    if (wavRec) return;
+    if (wavRec || appEl.dataset.voiceState === 'sending') return;
     const md = navigator.mediaDevices;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!md || !md.getUserMedia || !AC) {
-      showVoiceNote(window.isSecureContext === false ? 'Microphone needs HTTPS or localhost.' : 'Browser cannot record audio.', 'error', 6000);
+      showVoiceFeedback(window.isSecureContext === false ? 'Microphone needs HTTPS or localhost.' : 'Browser cannot record audio.', 'error', 6000);
       return;
     }
     try {
@@ -2610,39 +2688,54 @@
       if (ctx.state === 'suspended') await ctx.resume();
       const src = ctx.createMediaStreamSource(stream);
       const proc = ctx.createScriptProcessor(4096, 1, 1);
-      const rec = { stream, ctx, src, proc, chunks: [], samples: 0 };
+      const rec = { stream, ctx, src, proc, chunks: [], samples: 0, lastPaint: 0 };
       proc.onaudioprocess = (e) => {
         const ch = e.inputBuffer.getChannelData(0);
         rec.chunks.push(new Float32Array(ch));
         rec.samples += ch.length;
-        if (rec.samples / ctx.sampleRate >= 60) finishWavRecording();
+        const now = performance.now();
+        if (now - rec.lastPaint >= 55) {
+          rec.lastPaint = now;
+          let sumSq = 0;
+          for (let i = 0; i < ch.length; i += 4) sumSq += ch[i] * ch[i];
+          const rms = Math.sqrt(sumSq / Math.max(1, ch.length / 4));
+          updateVoiceBars(Math.min(1, rms * 5.2));
+        }
+        if (rec.samples / ctx.sampleRate >= 60) finishWavRecording(true);
       };
       src.connect(proc);
       proc.connect(ctx.destination);
       wavRec = rec;
-      setMicRecording(true);
-      showVoiceNote('Listening… release to send', '', 0);
+      recStartMs = Date.now();
+      updateVoiceTimers('0:00');
+      setVoiceState('recording');
+      recTimerHandle = setInterval(() => {
+        updateVoiceTimers(formatRecTime(Date.now() - recStartMs));
+      }, 250);
     } catch (err) {
-      showVoiceNote(`Microphone error: ${err.name || err.message}`, 'error', 6000);
+      setVoiceState('idle');
+      showVoiceFeedback(`Microphone error: ${err.name || err.message}`, 'error', 6000);
     }
   }
 
-  async function finishWavRecording() {
+  async function finishWavRecording(shouldSend = true) {
     const rec = wavRec;
     if (!rec) return;
     wavRec = null;
-    setMicRecording(false);
-    try { rec.src.disconnect(); rec.proc.disconnect(); } catch (_) {}
-    rec.proc.onaudioprocess = null;
-    try { rec.stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
     const rate = rec.ctx.sampleRate;
-    try { rec.ctx.close(); } catch (_) {}
-    if (rec.samples / rate < 0.3) {
-      showVoiceNote('Too short — hold the mic while speaking.', 'warn', 3000);
+    releaseWavHandle(rec);
+    if (!shouldSend) {
+      setVoiceState('idle');
+      showVoiceFeedback('Recording discarded.', '', 1800);
       return;
     }
+    if (rec.samples / rate < 0.25) {
+      setVoiceState('idle');
+      showVoiceFeedback('Too short — tap Speak, talk, then tap Send.', 'warn', 3200);
+      return;
+    }
+    setVoiceState('sending');
     const wav = encodeWav(downsample(rec.chunks, rec.samples, rate, VOICE_RATE), VOICE_RATE);
-    showVoiceNote('Transcribing via local Whisper…', '', 0);
     try {
       const r = await fetch('/voice/audio', {
         method: 'POST',
@@ -2652,73 +2745,87 @@
         body: wav,
       });
       const d = await r.json().catch(() => ({}));
-      if (d.ok === true && d.state === 'sent') showVoiceNote('Voice goal sent to Sysop.', 'ok', 2500);
-      else if (d.state === 'nothing_heard') showVoiceNote('Nothing heard.', 'warn', 3500);
-      else if (d.state === 'no_listener') showVoiceNote('Nobody is listening (is Sysop running?).', 'warn', 6000);
-      else showVoiceNote(d.message || d.error || 'Voice service failed.', 'error', 6000);
+      setVoiceState('idle');
+      if (d.ok === true && d.state === 'sent') showVoiceFeedback('Voice goal sent to Sysop.', 'ok', 2800);
+      else if (d.state === 'nothing_heard') showVoiceFeedback('Nothing heard.', 'warn', 3500);
+      else if (d.state === 'no_listener') showVoiceFeedback('Nobody is listening (is Sysop running?).', 'warn', 6000);
+      else showVoiceFeedback(d.message || d.error || 'Voice service failed.', 'error', 6000);
     } catch (e) {
-      showVoiceNote(e.message || 'Voice request failed.', 'error', 6000);
+      setVoiceState('idle');
+      showVoiceFeedback(e.message || 'Voice request failed.', 'error', 6000);
     }
   }
 
-  function toggleBrowserSpeech() {
+  function startBrowserSpeech() {
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRec) {
-      showVoiceNote('Install the voice addon (`swarmbox addon install voice`) for local Whisper.', 'warn', 6000);
-      goalInputEl.focus();
+      showVoiceFeedback('Install the voice addon (`swarmbox addon install voice`) for local Whisper.', 'warn', 5500);
+      if (window.innerWidth > 860) goalInputEl.focus();
       return;
     }
-    if (speechRec) {
-      try { speechRec.stop(); } catch (_) {}
-      speechRec = null;
-      setMicRecording(false);
-      return;
-    }
+    if (speechRec) return;
     speechRec = new SpeechRec();
     speechRec.lang = navigator.language || 'en-US';
     speechRec.interimResults = false;
-    setMicRecording(true);
-    showVoiceNote('Listening (browser speech)…', '', 0);
+    speechRec._discard = false;
+    recStartMs = Date.now();
+    updateVoiceTimers('0:00');
+    setVoiceState('recording');
+    recTimerHandle = setInterval(() => {
+      updateVoiceTimers(formatRecTime(Date.now() - recStartMs));
+      updateVoiceBars(0.35 + Math.random() * 0.35);
+    }, 180);
     speechRec.onresult = (ev) => {
+      if (speechRec && speechRec._discard) return;
       const txt = ev.results && ev.results[0] && ev.results[0][0] ? ev.results[0][0].transcript : '';
-      if (txt) sendGoal(txt);
+      if (txt) {
+        sendGoal(txt);
+        showVoiceFeedback('Voice goal sent to Sysop.', 'ok', 2600);
+      }
     };
-    speechRec.onend = () => { setMicRecording(false); speechRec = null; voiceNoteEl.classList.add('hidden'); };
-    speechRec.onerror = () => { setMicRecording(false); speechRec = null; showVoiceNote('Speech recognition unavailable.', 'warn', 4000); };
+    speechRec.onend = () => { setVoiceState('idle'); speechRec = null; };
+    speechRec.onerror = () => { setVoiceState('idle'); speechRec = null; showVoiceFeedback('Speech recognition unavailable.', 'warn', 4000); };
     speechRec.start();
   }
 
-  function wireMicButton(btn) {
-    btn.addEventListener('pointerdown', (e) => {
-      if (e.button !== undefined && e.button !== 0) return;
-      if (voiceAddonAvailable) {
-        e.preventDefault();
-        try { btn.setPointerCapture(e.pointerId); } catch (_) {}
-        startWavRecording();
-      }
-    });
-    const release = (e) => {
-      if (voiceAddonAvailable && wavRec) {
-        e.preventDefault();
-        finishWavRecording();
-      }
-    };
-    btn.addEventListener('pointerup', release);
-    btn.addEventListener('pointercancel', release);
-    btn.addEventListener('click', () => {
-      if (!voiceAddonAvailable) toggleBrowserSpeech();
-    });
+  function finishBrowserSpeech(shouldSend = true) {
+    if (!speechRec) return;
+    speechRec._discard = !shouldSend;
+    try {
+      if (shouldSend) speechRec.stop();
+      else speechRec.abort();
+    } catch (_) {}
+    if (!shouldSend) {
+      speechRec = null;
+      setVoiceState('idle');
+      showVoiceFeedback('Recording discarded.', '', 1800);
+    }
   }
 
-  wireMicButton(btnMic);
-  wireMicButton(btnMobileMic);
+  function startVoiceCapture() {
+    if (voiceAddonAvailable) startWavRecording();
+    else startBrowserSpeech();
+  }
+
+  function stopVoiceCapture(shouldSend) {
+    if (wavRec) finishWavRecording(shouldSend);
+    else if (speechRec) finishBrowserSpeech(shouldSend);
+    else setVoiceState('idle');
+  }
+
+  btnMic.addEventListener('click', () => startVoiceCapture());
+  btnMobileMic.addEventListener('click', () => startVoiceCapture());
+  if (btnMobileRecCancel) btnMobileRecCancel.addEventListener('click', () => stopVoiceCapture(false));
+  if (btnMobileRecSend) btnMobileRecSend.addEventListener('click', () => stopVoiceCapture(true));
+  if (btnDesktopRecCancel) btnDesktopRecCancel.addEventListener('click', () => stopVoiceCapture(false));
+  if (btnDesktopRecSend) btnDesktopRecSend.addEventListener('click', () => stopVoiceCapture(true));
 
   // Probe local swarmbox-voice service quietly (no ugly "off" label when absent)
   fetch('/voice/health', { credentials: 'same-origin', cache: 'no-store' })
     .then((r) => {
       if (r.ok) {
         voiceAddonAvailable = true;
-        voiceHintEl.textContent = 'hold · whisper';
+        voiceHintEl.textContent = 'tap · whisper';
       } else {
         voiceHintEl.textContent = '';
       }
@@ -2762,18 +2869,6 @@
     appEl.dataset.mobileSysop = val;
     mobileSysopBtn.dataset.on = val;
   }
-  function setMobileKeys(open) {
-    const val = open ? '1' : '0';
-    appEl.dataset.mobileKeys = val;
-    mobileKbBtn.dataset.on = val;
-    mobileKbBtn.setAttribute('aria-pressed', open ? 'true' : 'false');
-    const sess = activeSession();
-    if (sess) {
-      if (open) sess.term.focus();
-      else sess.term.blur();
-    }
-    requestAnimationFrame(fitAndResize);
-  }
 
   const btnNewShell = document.getElementById('btn-new-shell');
   if (btnNewShell) btnNewShell.addEventListener('click', () => { spawnTab('shell'); focusTerminalIfDesktop(); });
@@ -2793,7 +2888,6 @@
   mobileSysopBtn.addEventListener('click', () => setMobileSysop(appEl.dataset.mobileSysop !== '1'));
   document.getElementById('sheet-backdrop').addEventListener('click', () => setMobileSysop(false));
   document.getElementById('sheet-handle').addEventListener('click', () => setMobileSysop(false));
-  mobileKbBtn.addEventListener('click', () => setMobileKeys(appEl.dataset.mobileKeys !== '1'));
 
   btnTts.addEventListener('click', () => {
     ttsEnabled = !ttsEnabled;
