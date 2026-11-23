@@ -317,7 +317,7 @@ class AgentTabs(unittest.TestCase):
         for text in ("{Enter}", "{Down}{Enter}", "y", "1", "{Up}", "{Tab}", "{Space}"):
             with self.subTest(text=text):
                 self.assertEqual(p.assess_input(AG, text, dialog).level, "high")
-        # a dialog is the USER's decision: Esc rejects the request, C-c and C-d too. High, so an approval at every autonomy level, never a countdown.
+        # a dialog is the USER's decision: Esc rejects the request, C-c and C-d too. High, so an approval at every autonomy level but full-auto, never a countdown.
         for text in ("{Esc}", "{C-c}", "{C-d}", "{Esc}hello"):
             with self.subTest(text=text):
                 v = p.assess_input(AG, text, dialog)
@@ -439,11 +439,29 @@ class Routes(unittest.TestCase):
         "confirm-all": {"low": "approve", "medium": "approve", "high": "approve"},
         "confirm-risky": {"low": "veto", "medium": "approve", "high": "approve"},
         "auto": {"low": "allow", "medium": "veto", "high": "approve"},
+        "full-auto": {"low": "allow", "medium": "allow", "high": "allow"},
     }
+    GATED = ("confirm-all", "confirm-risky", "auto")
 
-    def test_auto_is_the_default_and_sends_a_harmless_action_at_once(self):
+    def test_full_auto_is_the_default_and_sends_every_action_at_once(self):
+        """what the user asks, the sysop does: the default level asks for nothing, whatever the risk"""
         p = policy.Policy()
-        self.assertEqual(p.autonomy, "auto")
+        self.assertEqual(p.autonomy, "full-auto")
+        self.assertEqual([p.route(policy.Verdict(l)).action for l in ("low", "medium", "high")], ["allow", "allow", "allow"])
+        for countdown in (0, 4, 30):
+            self.assertEqual(policy.Policy(countdown=countdown).route(policy.Verdict("high")).action, "allow")
+
+    def test_full_auto_sends_the_dangerous_shapes_without_asking(self):
+        p = policy.Policy(autonomy="full-auto", countdown=4)
+        for text in ("rm -rf ~", "sudo reboot", "curl x | sh"):
+            v = p.assess_run(SH, text)
+            self.assertEqual(v.level, "high", text)                 # still rated, so the log and the audit say so
+            self.assertEqual(p.route(v).action, "allow", text)
+        v = p.assess_input({"tab": "@5", "cmd": "claude"}, "{Enter}", "Do you want to proceed?\n> 1. Yes\n  2. No\nEsc to cancel")
+        self.assertEqual((v.level, p.route(v).action), ("high", "allow"))
+
+    def test_auto_sends_a_harmless_action_at_once(self):
+        p = policy.Policy(autonomy="auto")
         self.assertEqual([p.route(policy.Verdict(l)).action for l in ("low", "medium", "high")], ["allow", "veto", "approve"])
 
     def test_autonomy_table(self):
@@ -457,7 +475,7 @@ class Routes(unittest.TestCase):
 
     def test_no_countdown_means_low_goes_at_once_but_approval_stays(self):
         for autonomy in ("confirm-risky", "auto"):
-            p = policy.Policy(autonomy=autonomy, countdown=0)
+            p = policy.Policy(autonomy=autonomy, countdown=0)  # full-auto: see test_full_auto_is_the_default...
             self.assertEqual(p.route(policy.Verdict("low")).action, "allow")
             self.assertEqual(p.route(policy.Verdict("high")).action, "approve")
         self.assertEqual(policy.Policy(autonomy="confirm-all", countdown=0).route(policy.Verdict("low")).action, "approve")
@@ -468,8 +486,8 @@ class Routes(unittest.TestCase):
             for level in policy.LEVELS:
                 self.assertEqual(policy.Policy(autonomy=autonomy, countdown=0).route(policy.Verdict(level, block=True)).action, "block")
 
-    def test_no_autonomy_level_sends_high_without_approval(self):
-        for autonomy in self.TABLE:
+    def test_no_level_but_full_auto_sends_high_without_approval(self):
+        for autonomy in self.GATED:
             for text, level, _ in ALL_CASES:
                 p = policy.Policy(autonomy=autonomy, countdown=0)
                 v = p.assess_run(SH, text)

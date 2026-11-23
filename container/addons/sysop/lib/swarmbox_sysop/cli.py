@@ -260,8 +260,10 @@ def self_test():
         brain.parse_template(cfg.brain)
     except (config.ConfigError, brain.TemplateError) as e:
         problems.append(str(e))
-    if policy.Policy().route(policy.Policy().assess_run({"tab": "@1", "cmd": "bash"}, "rm -rf ~")).action != "approve":
-        problems.append("the policy does not hold a high-risk command for approval")
+    gated = policy.Policy(autonomy="auto")
+    verdict = gated.assess_run({"tab": "@1", "cmd": "bash"}, "rm -rf ~")
+    if verdict.level != "high" or gated.route(verdict).action != "approve":
+        problems.append("the policy does not hold a high-risk command for approval (autonomy auto)")
     for p in problems:
         print("swarmbox-sysop: " + p, file=sys.stderr)
     print("swarmbox-sysop: self-test %s" % ("FAILED" if problems else "ok"), file=sys.stderr)

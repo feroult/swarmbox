@@ -37,19 +37,26 @@ The **active** tab is the one the goal means when it names none: the window of t
 ## Autonomy
 
 The host computes a risk for each `run` and `input` from the text and from what the target tab runs; the brain cannot change it. In a shell tab the whole line is analysed (`rm`, `sudo`, `dd`, redirects to system paths, `ssh`, `curl | sh` and the like raise it); a line typed in several parts is judged as one.
-In a tab that runs an agent, a prompt is low; **any key while a dialog of the agent is on the screen is high**, Esc included: a permission dialog is the user's decision (Enter or a letter may grant it, Esc rejects the request), so it always needs approval, at every autonomy level, never a countdown. The system prompt also tells the brain not to touch a dialog: it reports it with `say` and finishes, unless the goal itself asks it to answer. A text that starts with `/` or `!` is **blocked** (a slash command or a shell escape). A tab that runs something else (an editor, `python`, `ssh`) is at least medium. Control characters are blocked, and long texts too.
+In a tab that runs an agent, a prompt is low; **any key while a dialog of the agent is on the screen is high**, Esc included: a permission dialog is the user's decision (Enter or a letter may grant it, Esc rejects the request), so it needs approval at every autonomy level but `full-auto`, never a countdown. The system prompt also tells the brain not to touch a dialog: it reports it with `say` and finishes, unless the goal itself asks it to answer. A text that starts with `/` or `!` is **blocked** (a slash command or a shell escape). A tab that runs something else (an editor, `python`, `ssh`) is at least medium. Control characters are blocked, and long texts too.
 
 `sysop.autonomy` chooses what each risk costs:
 
 | Level | low | medium | high |
 |---|---|---|---|
-| `confirm-all` | approval | approval | approval |
+| `full-auto` (default) | at once | at once | at once |
+| `auto` | at once | countdown | approval |
 | `confirm-risky` | countdown | approval | approval |
-| `auto` (default) | at once | countdown | approval |
+| `confirm-all` | approval | approval | approval |
 
-A **blocked** action is refused at once at every level, and no level lets a high risk go without your approval.
+`full-auto` is the default: what you ask the sysop, it does, without asking for permission. The risk is still computed and written in
+the log and the audit, but nothing waits for you; the system prompt tells the brain to act and to ask (in its reply, without acting)
+only when it cannot tell what you want. Choose `auto` or a stricter level to have risky actions wait for you.
 
-- **At once.** In `auto`, a harmless action (a prompt for an agent, `ls`, `git status`) is typed without waiting: that is the point of speaking a goal.
+A **blocked** action is refused at once at every level, `full-auto` included: a block is not a question for you but something the host
+cannot type as it reads (control characters, a Tab or a history reference in a shell, a text for an agent that starts with `/` or `!`),
+and the error tells the brain how to write it. Below `full-auto`, no level lets a high risk go without your approval.
+
+- **At once.** In `full-auto` every action, and in `auto` a harmless one (a prompt for an agent, `ls`, `git status`), is typed without waiting: that is the point of speaking a goal.
 - **Countdown.** The panel shows the action in an amber bar ("sending in 4 s") and sends it after `sysop.countdown` seconds (default 4; `0` sends at once) unless you cancel it: the **Cancel** button of the panel or of the web strip, or `Ctrl+A V`.
 - **Approval.** The action is shown in a red or amber bar ("allow? high risk") with two buttons, **Allow** and **Cancel**. It is not sent until you press Allow (in the panel, on the web strip, or `Ctrl+A a`): one tap, no word to type. If you do not answer within 60 seconds it is refused. A refusal, a veto or a block goes back to the brain as an error; it is told not to try another way round it.
 
@@ -129,7 +136,7 @@ swarmbox                                 # a tab of the box; open a second one (
 swarmbox-sysop goal --wait "run echo hello in the second tab"
 ```
 
-With the default autonomy the goal runs by itself: `echo hello` is typed at once (in `auto` a harmless action does not wait), it is typed in the second tab, and the command ends with `done: ...` (exit 0; `--wait` exits 1 when the goal failed or was stopped).
+With the default autonomy the goal runs by itself: `echo hello` is typed at once (in `full-auto` nothing waits), it is typed in the second tab, and the command ends with `done: ...` (exit 0; `--wait` exits 1 when the goal failed or was stopped).
 A setting is learned by the box when it is created, so to be asked about every action: `swarmbox config set sysop.autonomy confirm-all` and `swarmbox reset`: the goal then waits for you, so press Allow (the strip button, a click on the panel, or `Ctrl+A a`). You can also type the goal with `Ctrl+A g`, or speak it ([voice.md](voice.md)).
 
 Check the service with `swarmbox-sysop status` (it runs from `prepare.sh` at every start of the box); `swarmbox-sysop --self-test` checks the install without a model, and `swarmbox tabs list` shows the tabs the sysop sees (`swarmbox bus topics` shows who listens on which topic). `swarmbox-sysop goal` exits with 3 when nobody listens (the service is not running) and 4 when the bus is not.
@@ -139,7 +146,7 @@ The brain needs a login: the `claude` preset uses the one already in the box.
 |---|---|---|
 | `sysop.brain` | `claude` | a preset name or a command template (no line break) |
 | `sysop.model` | `sonnet` | the model the `claude` preset asks for, and `{model}` |
-| `sysop.autonomy` | `auto` | `confirm-all`, `confirm-risky` or `auto` |
+| `sysop.autonomy` | `full-auto` | `full-auto`, `auto`, `confirm-risky` or `confirm-all` |
 | `sysop.countdown` | `4` | seconds an action waits for your veto, 0 to 30 (`0` sends at once) |
 | `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100 |
 | `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600 |

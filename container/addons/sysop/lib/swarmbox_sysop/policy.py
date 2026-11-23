@@ -1,7 +1,8 @@
 """The policy of the sysop: what each `run` and `input` of the brain is worth, and what has to happen before it is sent.
 
 Everything here is computed by the host from the text and from what the tab runs, never from what the brain claims. The brain cannot lower a
-risk, pick the autonomy or skip the countdown.
+risk, pick the autonomy or skip the countdown. (Under `full-auto`, the default, the risk is still computed and shown in the log and the audit,
+but nothing waits for the user.)
 
 THE RISK of an action (assess_run / assess_input), low, medium or high, plus `block`:
   * the target tab runs an AGENT (claude, gemini, opencode, codex, agy, aider), a SHELL (bash, zsh, ...) or something ELSE (python, vim, ssh,
@@ -25,10 +26,13 @@ WHAT HAPPENS (route) depends on the autonomy level and on the risk:
                     low          medium       high
   confirm-all       approve      approve      approve
   confirm-risky     countdown    approve      approve
-  auto              at once      countdown    approve        (the default)
+  auto              at once      countdown    approve
+  full-auto         at once      at once      at once        (the default: what the user asks, the sysop does)
   `countdown` = the action is shown in the panel and sent after SWARMBOX_SYSOP_COUNTDOWN seconds unless the user vetoes it (0 = sent at once);
   `approve` = it is NOT sent unless the user allows it (a tap on Allow in the panel or on the strip, or Ctrl+A a), and after SWARMBOX_SYSOP_APPROVAL_TIMEOUT seconds it is
-  refused. No autonomy level sends a high-risk action without that approval. A blocked action is refused outright.
+  refused. Only `full-auto` sends a high-risk action (a dialog answer, a close_tab, rm -rf) without that approval. A blocked action is refused
+  outright at every level: a block is not a question for the user but an action the host cannot type as it reads (control characters, a
+  Tab or a history reference in a shell, a slash command or shell escape for an agent), and the error tells the brain how to write it.
 
 THE BUDGETS (Budget): at most max_steps tool calls (say and done do not count) and until a deadline; past either, every tool but say and
 done answers with an error. (The service also kills the brain at the deadline.)
@@ -170,7 +174,7 @@ class Buffer:
 
 
 class Policy:
-    def __init__(self, autonomy="auto", countdown=4.0, approval_timeout=60.0, max_steps=20, deadline=None, clock=time.time):
+    def __init__(self, autonomy="full-auto", countdown=4.0, approval_timeout=60.0, max_steps=20, deadline=None, clock=time.time):
         self.autonomy, self.countdown, self.approval_timeout = autonomy, float(countdown), float(approval_timeout)
         self.budget = Budget(max_steps, deadline, clock)
         self.buffers = {}
@@ -331,6 +335,8 @@ class Policy:
         if verdict.block:
             return Route("block")
         level = verdict.level
+        if self.autonomy == "full-auto":
+            return Route("allow")
         if self.autonomy == "confirm-all" or level == "high" or (level == "medium" and self.autonomy == "confirm-risky"):
             return Route("approve", self.approval_timeout)
         if self.countdown <= 0 or (self.autonomy == "auto" and level == "low"):

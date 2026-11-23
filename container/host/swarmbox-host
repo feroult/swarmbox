@@ -117,7 +117,7 @@ default_of() {
         sysop.group) printf 'sysop' ;;
         sysop.brain) printf 'claude' ;;
         sysop.model) printf 'sonnet' ;;
-        sysop.autonomy) printf 'auto' ;;
+        sysop.autonomy) printf 'full-auto' ;;
         sysop.countdown) printf '4' ;;
         sysop.max_steps) printf '20' ;;
         sysop.max_seconds) printf '300' ;;
@@ -671,8 +671,8 @@ validate_value() {
             ;;
         sysop.autonomy)
             case $V_OUT in
-                confirm-all|confirm-risky|auto) ;;
-                *) _bad "it must be confirm-all, confirm-risky or auto."; return 1 ;;
+                full-auto|auto|confirm-risky|confirm-all) ;;
+                *) _bad "it must be full-auto, auto, confirm-risky or confirm-all."; return 1 ;;
             esac
             ;;
         sysop.countdown)

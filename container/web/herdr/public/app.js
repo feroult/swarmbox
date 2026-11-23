@@ -2809,8 +2809,10 @@
       desc.innerHTML = 'Install it from Settings › Addons, or run <code>swarmbox addon install sysop</code>.';
       return box;
     }
-    desc.textContent = "Ask what's happening in your box or direct your agents — risky actions always pause for you.";
     const policy = (sysop.settings && sysop.settings.autonomy) || '';
+    desc.textContent = policy === 'full-auto'
+      ? "Ask what's happening in your box or direct your agents — what you ask, it does."
+      : "Ask what's happening in your box or direct your agents — risky actions pause for you.";
     if (policy) {
       const pol = document.createElement('div');
       pol.className = 'sysop-empty-policy';
@@ -3914,9 +3916,10 @@
     ]);
     frag.appendChild(statusBanner);
 
-    // Visual 3-card Autonomy selector
-    const curAuto = effectiveHostValue('sysop', 'sysop.autonomy') || 'auto';
+    // Visual 4-card Autonomy selector (full-auto is the default)
+    const curAuto = effectiveHostValue('sysop', 'sysop.autonomy') || 'full-auto';
     const policies = [
+      { value: 'full-auto', title: 'full-auto', desc: 'Everything you ask runs right away, nothing waits for Allow (default).' },
       { value: 'auto', title: 'auto', desc: 'Safe commands run right away; risky ones wait for Allow.' },
       { value: 'confirm-risky', title: 'confirm-risky', desc: 'Medium & high risk actions pause with countdown or Allow.' },
       { value: 'confirm-all', title: 'confirm-all', desc: 'Every shell command waits for your explicit Allow click.' },

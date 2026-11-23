@@ -228,7 +228,7 @@ class Flow(Base):
         st = self.status()
         self.assertEqual(st["pid"], os.getpid())
         self.assertEqual((st["bus"], st["current"], st["queue"]), ("connected", None, []))
-        self.assertEqual(st["settings"]["autonomy"], "auto")
+        self.assertEqual(st["settings"]["autonomy"], "full-auto")
         self.assertEqual(st["settings"]["max_goals"], 5)
         self.assertEqual(st["version"], "1.0.0")
 
@@ -251,7 +251,7 @@ class Flow(Base):
     def test_the_state_waiting_approval_with_the_pending_action(self):
         self.script([{"tool": "run", "args": {"tab": "@1", "command": "rm -rf build"}}, {"tool": "say", "args": {"text": "not allowed"}},
                      {"tool": "done", "args": {"summary": "refused"}}])
-        self.start(approval_timeout=0.5)
+        self.start(approval_timeout=0.5, autonomy="auto")
         gid = self.goal("clean the build folder")
         st = self.wait_state(gid, ("waiting_approval",))
         self.assertEqual((st["pending"]["risk"], st["pending"]["mode"], st["pending"]["text"], st["pending"]["tab"]), ("high", "approve", "rm -rf build", "@1"))
@@ -261,9 +261,23 @@ class Flow(Base):
         self.assertEqual(self.tabs.sent, [], "never approved, never typed")
         self.assertEqual([c["is_error"] for c in end["calls"]], [True, False, False])
 
-    def test_a_high_risk_goal_with_a_panel_that_approves(self):
+    def test_by_default_a_high_risk_action_is_sent_without_asking(self):
+        """full-auto, the default: what the user asks, the sysop does; the risk is still in the call log"""
         self.script([{"tool": "run", "args": {"tab": "@1", "command": "rm -rf build"}}, {"tool": "done", "args": {"summary": "removed"}}])
         self.start(approval_timeout=20)
+        gid = self.goal("clean")
+        end = self.wait_state(gid)
+        self.assertEqual(end["state"], "done")
+        self.assertIsNone(end["pending"])
+        self.assertEqual(end["calls"][0]["verdict"]["level"], "high")
+        self.assertFalse(end["calls"][0]["is_error"])
+        self.assertTrue(self.tabs.sent, "typed without an approval")
+        with open(os.path.join(self.e.paths.goals, gid, "system-prompt.txt"), encoding="utf-8") as f:
+            self.assertIn("autonomy full-auto", f.read())
+
+    def test_a_high_risk_goal_with_a_panel_that_approves(self):
+        self.script([{"tool": "run", "args": {"tab": "@1", "command": "rm -rf build"}}, {"tool": "done", "args": {"summary": "removed"}}])
+        self.start(approval_timeout=20, autonomy="auto")
         gid = self.goal("clean")
         st = self.wait_state(gid, ("waiting_approval",))
         gdir = os.path.join(self.e.paths.goals, gid)
@@ -779,7 +793,7 @@ class Cli(Base):
         self.assertEqual(s.returncode, 0)
         self.assertIn("running (pid %d)" % os.getpid(), s.stdout)
         self.assertIn("current: %s" % gid, s.stdout)
-        self.assertIn("autonomy auto", s.stdout)
+        self.assertIn("autonomy full-auto", s.stdout)
         j = json.loads(self.run_cli("status", "--json").stdout)
         self.assertTrue(j["running"])
         self.assertEqual(j["recent"][0]["id"], gid)

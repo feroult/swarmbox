@@ -472,7 +472,7 @@ class Service:
             brain.write_mcp_config(mcp, ctx, self.paths, self.libdir)
             pfile = os.path.join(gdir, "system-prompt.txt")
             with open(pfile, "w", encoding="utf-8") as f:
-                f.write(brain.system_prompt(goal.source, self.cfg.max_steps, self.cfg.max_seconds))
+                f.write(brain.system_prompt(goal.source, self.cfg.max_steps, self.cfg.max_seconds, self.cfg.autonomy))
             os.chmod(pfile, 0o600)
             argv, env = brain.build(self.cfg, gdir, mcp, goal.source, pfile)
             kw = {"popen": self.popen} if self.popen else {}

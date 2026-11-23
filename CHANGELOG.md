@@ -6,6 +6,7 @@ project follows [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 - Fixed: dragging a terminal of the Herdr Web Studio with a finger moved in whole-row jumps (xterm scrolls by rows); the normal buffer now follows the finger pixel by pixel (whole rows through `scrollToLine`, the rest as a transform of `.xterm-screen` painted with the new rows), moves are coalesced to one per frame, the flick speed is measured over the last 100 ms of the drag, and the text comes to rest on a row, forward in the direction of the glide. The alternate screen (vim, less, TUIs) still gets wheel steps.
+- Changed: the Sysop's default autonomy is the new level **`full-auto`**: what you ask, it does, with no approval or countdown for any action (the risk is still rated and written in the log and the audit, and a blocked action, such as control characters or a `/` command for an agent, is still refused). The brain's system prompt now depends on the level and, under `full-auto`, tells it to act directly and to ask only when it cannot tell what you want. The previous default `auto`, and `confirm-risky` and `confirm-all`, stay selectable (`swarmbox config set sysop.autonomy auto`, or **Settings → Sysop**).
 
 ## [2.3.0] - 2026-11-23
 
