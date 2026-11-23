@@ -1243,6 +1243,14 @@ html.swarmbox-ready #sb-boot {
 .term-toast[data-tone="error"] { border-color: rgba(255, 107, 120, 0.45); color: var(--red); }
 .xterm { height: 100%; overflow: hidden; } /* clips the sub-row touch-scroll offset of .xterm-screen */
 .xterm-viewport { background-color: transparent !important; }
+/* The terminal scrollbar is an overlay: hidden at the live bottom, shown by .sb-show (see syncScrollbar in app.js) */
+.term-pane .xterm-viewport::-webkit-scrollbar-thumb { background: transparent; }
+.term-pane.sb-show .xterm-viewport::-webkit-scrollbar-thumb { background: var(--border-strong); }
+.term-pane.sb-show .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+@supports not selector(::-webkit-scrollbar) {
+  .term-pane .xterm-viewport { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  .term-pane.sb-show .xterm-viewport { scrollbar-color: var(--border-strong) transparent; }
+}
 /* Eliminate faint horizontal hairline seams between block-drawing rows (banner.sh half-blocks) */
 .xterm-rows > div.sb-blk { transform: scaleY(var(--sb-blk-s, 1.26)); transform-origin: 50% 50%; }
 
