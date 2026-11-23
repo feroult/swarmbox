@@ -1241,7 +1241,7 @@ html.swarmbox-ready #sb-boot {
 .term-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 .term-toast[data-tone="ok"] { border-color: rgba(74, 222, 128, 0.42); color: var(--green); }
 .term-toast[data-tone="error"] { border-color: rgba(255, 107, 120, 0.45); color: var(--red); }
-.xterm { height: 100%; }
+.xterm { height: 100%; overflow: hidden; } /* clips the sub-row touch-scroll offset of .xterm-screen */
 .xterm-viewport { background-color: transparent !important; }
 /* Eliminate faint horizontal hairline seams between block-drawing rows (banner.sh half-blocks) */
 .xterm-rows > div.sb-blk { transform: scaleY(var(--sb-blk-s, 1.26)); transform-origin: 50% 50%; }

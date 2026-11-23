@@ -5,6 +5,8 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Fixed: dragging a terminal of the Herdr Web Studio with a finger moved in whole-row jumps (xterm scrolls by rows); the normal buffer now follows the finger pixel by pixel (whole rows through `scrollToLine`, the rest as a transform of `.xterm-screen` painted with the new rows), moves are coalesced to one per frame, the flick speed is measured over the last 100 ms of the drag, and the text comes to rest on a row, forward in the direction of the glide. The alternate screen (vim, less, TUIs) still gets wheel steps.
+
 ## [2.3.0] - 2026-11-23
 
 - Removed: **tmux and ttyd**. herdr-core is the only multiplexer of the box: `swarmbox` opens the Terminal Cockpit, the web port always serves the Herdr Web Studio, and `swarmbox-tabs`, the sysop and the voice front all work on herdr-core terminals. The image no longer ships tmux, ttyd, `/etc/tmux.conf`, `/etc/tmux-browser-keys.conf` or the ttyd page (clipboard bridge, controls strip, style), and the shell no longer sets `CLAUDE_CODE_TMUX_TRUECOLOR`.
