@@ -162,6 +162,13 @@ class ConnectorTest(ConnectorBase):
         self.assertEqual(self.fp.envs()[self.calls().index(self.run_calls()[0])].get("TUNNEL_TOKEN"), TOK)
         self.assert_token_never_in_argv()
 
+    def test_reset_also_ensures_the_connector_is_running(self):
+        self.with_connector({"stdout": cn_line(False)})
+        r = self.run_h("reset", env=self.env(**self.tok_env()))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.subs("start"), [["start", CN]], self.calls())
+        self.assert_token_never_in_argv()
+
 
 if __name__ == "__main__":
     unittest.main()

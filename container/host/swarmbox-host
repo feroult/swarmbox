@@ -2245,6 +2245,7 @@ cmd_reset() {
     [ $# -eq 0 ] || usage
     up_main 1
     host_connection "$C_WORKSPACE"
+    connector_ensure
 }
 
 # shellcheck disable=SC2016  # the backticks in the message are literal
