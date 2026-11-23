@@ -266,12 +266,19 @@
 
   const appEl = document.getElementById('app');
   const sidebarTabsEl = document.getElementById('sidebar-tabs');
+  const sidebarAgentsEl = document.getElementById('sidebar-agents');
+  const agentsBusyCountEl = document.getElementById('agents-busy-count');
+  const topbarTabsEl = document.getElementById('topbar-tabs');
   const mobileTabsEl = document.getElementById('mobile-tabs');
   const tabCountEl = document.getElementById('tab-count');
   const activeDotEl = document.getElementById('active-dot');
   const activeNameEl = document.getElementById('active-name');
   const activeAgentEl = document.getElementById('active-agent');
   const activeStatusEl = document.getElementById('active-status');
+  const termCtxIconEl = document.getElementById('term-ctx-icon');
+  const termCtxTitleEl = document.getElementById('term-ctx-title');
+  const termCtxStateEl = document.getElementById('term-ctx-state');
+  const statusbarSummaryEl = document.getElementById('statusbar-summary');
   const connPillEl = document.getElementById('conn-pill');
   const connTextEl = document.getElementById('conn-text');
   const sysopDotEl = document.getElementById('sysop-dot');
@@ -1811,25 +1818,187 @@
     renderTabs();
   }
 
+  // Hand-crafted 16x16 crisp pixel-art mascots for agents & shells (inline SVG, zero external assets)
+  const AGENT_FULL_NAMES = {
+    agy: 'Antigravity',
+    claude: 'Claude Code',
+    codex: 'OpenAI Codex',
+    opencode: 'OpenCode',
+    gemini: 'Gemini CLI',
+    shell: 'Shell',
+  };
+
+  const PIXEL_SVG = {
+    // Antigravity (agy): Cosmic violet space-owl / visor bot floating over a dark desk
+    agy: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
+      '<rect x="2" y="2" width="1" height="1" fill="#c4b5fd" opacity=".55"/>' +
+      '<rect x="13" y="3" width="1" height="1" fill="#8ad7e6" opacity=".65"/>' +
+      '<rect x="7" y="1" width="2" height="1" fill="#c4b5fd"/>' +
+      '<rect x="5" y="2" width="6" height="1" fill="#a78bfa"/>' +
+      '<rect x="4" y="3" width="8" height="2" fill="#8b5cf6"/>' +
+      '<rect x="3" y="5" width="10" height="4" fill="#7c3aed"/>' +
+      '<rect x="5" y="5" width="6" height="3" fill="#18122b"/>' +
+      '<rect x="6" y="6" width="1" height="1" fill="#67e8f9"/>' +
+      '<rect x="9" y="6" width="1" height="1" fill="#67e8f9"/>' +
+      '<rect x="4" y="9" width="8" height="2" fill="#a78bfa"/>' +
+      '<rect x="2" y="7" width="1" height="3" fill="#c4b5fd"/>' +
+      '<rect x="13" y="7" width="1" height="3" fill="#c4b5fd"/>' +
+      '<rect x="5" y="11" width="2" height="1" fill="#6d28d9"/>' +
+      '<rect x="9" y="11" width="2" height="1" fill="#6d28d9"/>' +
+      '<rect x="1" y="12" width="14" height="2" fill="#3b2763"/>' +
+      '<rect x="2" y="14" width="2" height="2" fill="#261842"/>' +
+      '<rect x="12" y="14" width="2" height="2" fill="#261842"/>' +
+      '</svg>',
+
+    // Claude Code: Iconic warm terracotta blocky pixel critter at a cozy desk
+    claude: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
+      '<rect x="2" y="2" width="1" height="1" fill="#fbbf24" opacity=".5"/>' +
+      '<rect x="4" y="3" width="8" height="1" fill="#e89274"/>' +
+      '<rect x="3" y="4" width="10" height="5" fill="#d97757"/>' +
+      '<rect x="2" y="6" width="1" height="2" fill="#d97757"/>' +
+      '<rect x="13" y="6" width="1" height="2" fill="#d97757"/>' +
+      '<rect x="5" y="5" width="1" height="2" fill="#1a1110"/>' +
+      '<rect x="10" y="5" width="1" height="2" fill="#1a1110"/>' +
+      '<rect x="4" y="9" width="8" height="1" fill="#b85c3e"/>' +
+      '<rect x="4" y="10" width="1" height="2" fill="#d97757"/>' +
+      '<rect x="6" y="10" width="1" height="2" fill="#d97757"/>' +
+      '<rect x="9" y="10" width="1" height="2" fill="#d97757"/>' +
+      '<rect x="11" y="10" width="1" height="2" fill="#d97757"/>' +
+      '<rect x="1" y="12" width="14" height="2" fill="#5c3626"/>' +
+      '<rect x="2" y="14" width="2" height="2" fill="#3d2217"/>' +
+      '<rect x="12" y="14" width="2" height="2" fill="#3d2217"/>' +
+      '</svg>',
+
+    // OpenAI Codex: Charming mint pixel frog at a dark desk
+    codex: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
+      '<rect x="3" y="2" width="3" height="2" fill="#4ade80"/>' +
+      '<rect x="10" y="2" width="3" height="2" fill="#4ade80"/>' +
+      '<rect x="4" y="3" width="1" height="1" fill="#ffffff"/>' +
+      '<rect x="5" y="3" width="1" height="1" fill="#0c1a12"/>' +
+      '<rect x="10" y="3" width="1" height="1" fill="#ffffff"/>' +
+      '<rect x="11" y="3" width="1" height="1" fill="#0c1a12"/>' +
+      '<rect x="3" y="4" width="10" height="4" fill="#4ade80"/>' +
+      '<rect x="4" y="6" width="1" height="1" fill="#166534"/>' +
+      '<rect x="11" y="6" width="1" height="1" fill="#166534"/>' +
+      '<rect x="5" y="7" width="6" height="1" fill="#14532d"/>' +
+      '<rect x="4" y="8" width="8" height="3" fill="#22c55e"/>' +
+      '<rect x="6" y="8" width="4" height="3" fill="#bbf7d0"/>' +
+      '<rect x="3" y="10" width="2" height="2" fill="#4ade80"/>' +
+      '<rect x="11" y="10" width="2" height="2" fill="#4ade80"/>' +
+      '<rect x="1" y="12" width="14" height="2" fill="#1f4d3a"/>' +
+      '<rect x="2" y="14" width="2" height="2" fill="#133326"/>' +
+      '<rect x="12" y="14" width="2" height="2" fill="#133326"/>' +
+      '</svg>',
+
+    // OpenCode: Cozy golden pixel duck at a warm desk
+    opencode: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
+      '<rect x="6" y="2" width="4" height="1" fill="#fde047"/>' +
+      '<rect x="5" y="3" width="6" height="4" fill="#facc15"/>' +
+      '<rect x="6" y="4" width="1" height="1" fill="#18181b"/>' +
+      '<rect x="3" y="5" width="2" height="1" fill="#fb923c"/>' +
+      '<rect x="4" y="6" width="1" height="1" fill="#f97316"/>' +
+      '<rect x="4" y="7" width="8" height="4" fill="#eab308"/>' +
+      '<rect x="6" y="8" width="4" height="2" fill="#fde047"/>' +
+      '<rect x="12" y="8" width="1" height="2" fill="#facc15"/>' +
+      '<rect x="6" y="11" width="2" height="1" fill="#f97316"/>' +
+      '<rect x="9" y="11" width="2" height="1" fill="#f97316"/>' +
+      '<rect x="1" y="12" width="14" height="2" fill="#6b4423"/>' +
+      '<rect x="2" y="14" width="2" height="2" fill="#422915"/>' +
+      '<rect x="12" y="14" width="2" height="2" fill="#422915"/>' +
+      '</svg>',
+
+    // Gemini CLI: Sky-blue twin-star pixel fox
+    gemini: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
+      '<rect x="3" y="2" width="2" height="2" fill="#7aa2f7"/>' +
+      '<rect x="11" y="2" width="2" height="2" fill="#7aa2f7"/>' +
+      '<rect x="4" y="4" width="8" height="4" fill="#60a5fa"/>' +
+      '<rect x="5" y="5" width="1" height="1" fill="#ffffff"/>' +
+      '<rect x="10" y="5" width="1" height="1" fill="#ffffff"/>' +
+      '<rect x="6" y="7" width="4" height="1" fill="#dbeafe"/>' +
+      '<rect x="5" y="8" width="6" height="3" fill="#818cf8"/>' +
+      '<rect x="7" y="9" width="2" height="1" fill="#e0f2fe"/>' +
+      '<rect x="1" y="12" width="14" height="2" fill="#273966"/>' +
+      '<rect x="2" y="14" width="2" height="2" fill="#182442"/>' +
+      '<rect x="12" y="14" width="2" height="2" fill="#182442"/>' +
+      '</svg>',
+
+    // Plain shell: Crisp retro pixel >_ CRT icon
+    shell: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
+      '<rect x="1" y="2" width="14" height="11" fill="#27222f"/>' +
+      '<rect x="2" y="3" width="12" height="9" fill="#0c0b10"/>' +
+      '<rect x="4" y="5" width="1" height="1" fill="#a78bfa"/>' +
+      '<rect x="5" y="6" width="1" height="1" fill="#a78bfa"/>' +
+      '<rect x="6" y="7" width="1" height="1" fill="#c4b5fd"/>' +
+      '<rect x="5" y="8" width="1" height="1" fill="#a78bfa"/>' +
+      '<rect x="4" y="9" width="1" height="1" fill="#a78bfa"/>' +
+      '<rect x="8" y="9" width="4" height="1" fill="#a1a1aa"/>' +
+      '<rect x="5" y="13" width="6" height="1" fill="#3f3a4d"/>' +
+      '</svg>',
+  };
+
+  function tabAgentKind(t) {
+    const b = tabAgentBadge(t);
+    if (b) return b;
+    const raw = String((t && t.name) || '').toLowerCase();
+    for (const key of Object.keys(AGENT_APP_LABELS)) {
+      if (raw === key || raw.startsWith(key + '-')) return AGENT_APP_LABELS[key];
+    }
+    return '';
+  }
+
+  function pixelIconHtml(kind) {
+    return PIXEL_SVG[kind] || PIXEL_SVG.shell;
+  }
+
+  function makeMiniPixelIcon(kind) {
+    const sp = document.createElement('span');
+    sp.className = 'px-mini';
+    sp.innerHTML = pixelIconHtml(kind);
+    return sp;
+  }
+
+  function stateBadgeText(state, status) {
+    if (state === 'working') {
+      return status && typeof status.progress === 'number' ? `WORKING ${status.progress}%` : 'WORKING';
+    }
+    if (state === 'blocked') return 'BLOCKED';
+    if (state === 'done') return 'DONE';
+    if (state === 'error') return 'ERROR';
+    return 'IDLE';
+  }
+
+  function stateCornerGlyph(state) {
+    if (state === 'working') return '⚡';
+    if (state === 'blocked') return '!';
+    if (state === 'done') return '✓';
+    if (state === 'error') return '✕';
+    return 'Z';
+  }
+
   function renderTabs() {
     tabCountEl.textContent = String(terminals.length);
     sidebarTabsEl.innerHTML = '';
+    if (topbarTabsEl) topbarTabsEl.innerHTML = '';
+    if (sidebarAgentsEl) sidebarAgentsEl.innerHTML = '';
     mobileTabsEl.innerHTML = '';
+
+    let agentCount = 0;
+    let busyCount = 0;
 
     terminals.forEach((t, idx) => {
       const state = tabState(t);
       const { title: label, pill } = tabTitleParts(t);
+      const agentKind = tabAgentKind(t);
+      const iconKind = agentKind || 'shell';
       const isActive = t.address === activeId;
+      const subText = tabSubtitle(t);
 
+      // 1. Sidebar compact terminal row
       const btn = document.createElement('div');
       btn.className = `tab-item${isActive ? ' active' : ''}${state === 'blocked' ? ' is-blocked' : ''}${state === 'working' ? ' is-working' : ''}`;
       btn.setAttribute('role', 'tab');
       btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
       btn.title = pill ? `${label} (${pill})` : label;
-
-      const dot = document.createElement('span');
-      dot.className = 'status-dot';
-      dot.dataset.state = state;
 
       const info = document.createElement('div');
       info.className = 'tab-info';
@@ -1847,7 +2016,7 @@
       }
       const subEl = document.createElement('div');
       subEl.className = 'tab-sub';
-      subEl.textContent = tabSubtitle(t);
+      subEl.textContent = subText;
       info.append(titleEl, subEl);
 
       const right = document.createElement('div');
@@ -1866,7 +2035,7 @@
       });
       right.append(idxEl, closeBtn);
 
-      btn.append(dot, info, right);
+      btn.append(makeMiniPixelIcon(iconKind), info, right);
       if (state === 'working' && t.status && typeof t.status.progress === 'number') {
         const bar = document.createElement('span');
         bar.className = 'tab-progress';
@@ -1881,27 +2050,158 @@
       });
       sidebarTabsEl.appendChild(btn);
 
-      // Mobile tab chip
+      // 2. Sidebar Pixel-Art Agent Card (for every active agent tab!)
+      if (agentKind && sidebarAgentsEl) {
+        agentCount += 1;
+        if (state === 'working' || state === 'blocked') busyCount += 1;
+
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = `agent-card${isActive ? ' active' : ''}`;
+        card.dataset.agent = agentKind;
+        card.dataset.state = state;
+        card.title = `${label} — ${AGENT_FULL_NAMES[agentKind] || agentKind} (${state})`;
+
+        const main = document.createElement('div');
+        main.className = 'agent-card-main';
+
+        const stage = document.createElement('div');
+        stage.className = 'pixel-stage';
+        stage.innerHTML = pixelIconHtml(agentKind);
+        const corner = document.createElement('span');
+        corner.className = 'pixel-corner';
+        corner.textContent = stateCornerGlyph(state);
+        stage.appendChild(corner);
+
+        const cInfo = document.createElement('div');
+        cInfo.className = 'agent-card-info';
+        const cTop = document.createElement('div');
+        cTop.className = 'agent-card-top';
+        const cBadge = document.createElement('span');
+        cBadge.className = 'agent-state-box';
+        cBadge.textContent = stateBadgeText(state, t.status);
+        const cIdx = document.createElement('span');
+        cIdx.className = 'agent-card-idx';
+        cIdx.textContent = `tab ${idx + 1}`;
+        cTop.append(cBadge, cIdx);
+
+        const cName = document.createElement('div');
+        cName.className = 'agent-card-name';
+        cName.textContent = label;
+
+        const cMsg = document.createElement('div');
+        cMsg.className = 'agent-card-msg';
+        cMsg.textContent = subText || (t.address || '');
+
+        cInfo.append(cTop, cName, cMsg);
+        main.append(stage, cInfo);
+        card.appendChild(main);
+
+        const foot = document.createElement('div');
+        foot.className = 'agent-card-foot';
+        const footL = document.createElement('span');
+        footL.textContent = `└ ${AGENT_FULL_NAMES[agentKind] || agentKind}`;
+        const footR = document.createElement('span');
+        footR.textContent = idx < 9 ? `Alt+${idx + 1}` : '';
+        foot.append(footL, footR);
+        card.appendChild(foot);
+
+        if (state === 'working' && t.status && typeof t.status.progress === 'number') {
+          const pBar = document.createElement('div');
+          pBar.className = 'agent-card-bar';
+          const pFill = document.createElement('i');
+          pFill.style.width = `${Math.max(5, Math.min(100, t.status.progress))}%`;
+          pBar.appendChild(pFill);
+          card.appendChild(pBar);
+        }
+
+        card.addEventListener('click', () => {
+          if (activeId !== t.address) connectPty(t.address);
+          else focusTerminalIfDesktop();
+        });
+        sidebarAgentsEl.appendChild(card);
+      }
+
+      // 3. Informative Horizontal Topbar Tab (Desktop)
+      if (topbarTabsEl) {
+        const tt = document.createElement('div');
+        tt.className = `top-tab${isActive ? ' active' : ''}`;
+        tt.setAttribute('role', 'tab');
+        tt.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        tt.title = `${label} — ${subText || state}`;
+
+        const ttName = document.createElement('span');
+        ttName.className = 'top-tab-name';
+        ttName.textContent = label;
+        const ttNum = document.createElement('span');
+        ttNum.className = 'top-tab-num';
+        ttNum.textContent = idx < 9 ? String(idx + 1) : '';
+        const ttClose = document.createElement('button');
+        ttClose.type = 'button';
+        ttClose.className = 'top-tab-close';
+        ttClose.title = 'Close tab';
+        ttClose.setAttribute('aria-label', `Close ${label}`);
+        ttClose.textContent = '×';
+        ttClose.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
+        });
+
+        tt.append(makeMiniPixelIcon(iconKind), ttName, ttNum);
+        if (state === 'working' || state === 'blocked' || state === 'done') {
+          const td = document.createElement('span');
+          td.className = 'status-dot';
+          td.dataset.state = state;
+          tt.appendChild(td);
+        }
+        tt.appendChild(ttClose);
+        tt.addEventListener('click', () => {
+          if (activeId !== t.address) connectPty(t.address);
+          else focusTerminalIfDesktop();
+        });
+        topbarTabsEl.appendChild(tt);
+      }
+
+      // 4. Mobile tab chip (with mini pixel icon!)
       const m = document.createElement('button');
       m.className = `m-tab${isActive ? ' active' : ''}`;
-      const mDot = document.createElement('span');
-      mDot.className = 'status-dot';
-      mDot.dataset.state = state;
       const mName = document.createElement('span');
       mName.className = 'm-tab-name';
       mName.textContent = label.length > 14 ? label.slice(0, 13) + '…' : label;
-      m.append(mDot, mName);
-      if (pill) {
-        const mPill = document.createElement('span');
-        mPill.className = 'tab-agent-tag';
-        mPill.textContent = pill;
-        m.appendChild(mPill);
+      m.append(makeMiniPixelIcon(iconKind), mName);
+      if (state === 'working' || state === 'blocked' || state === 'done') {
+        const mDot = document.createElement('span');
+        mDot.className = 'status-dot';
+        mDot.dataset.state = state;
+        m.appendChild(mDot);
       }
       m.addEventListener('click', () => {
         if (activeId !== t.address) connectPty(t.address);
       });
       mobileTabsEl.appendChild(m);
     });
+
+    if (topbarTabsEl) {
+      const tPlus = document.createElement('button');
+      tPlus.type = 'button';
+      tPlus.className = 'top-tab top-tab-add';
+      tPlus.textContent = '+';
+      tPlus.title = 'New terminal tab (Alt+N)';
+      tPlus.setAttribute('aria-label', 'New terminal tab');
+      tPlus.addEventListener('click', () => { spawnTab('shell'); focusTerminalIfDesktop(); });
+      topbarTabsEl.appendChild(tPlus);
+    }
+
+    if (agentsBusyCountEl) {
+      agentsBusyCountEl.textContent = `${busyCount} busy`;
+      agentsBusyCountEl.classList.toggle('has-busy', busyCount > 0);
+    }
+    if (sidebarAgentsEl && agentCount === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'agents-empty';
+      empty.textContent = 'No active agents yet — run claude, agy, codex, or opencode in any tab.';
+      sidebarAgentsEl.appendChild(empty);
+    }
 
     const mPlus = document.createElement('button');
     mPlus.className = 'm-tab m-tab-add';
@@ -1914,18 +2214,41 @@
     const active = terminals.find((t) => t.address === activeId);
     if (active) {
       const aParts = tabTitleParts(active);
-      activeDotEl.dataset.state = tabState(active);
+      const aState = tabState(active);
+      const aKind = tabAgentKind(active) || 'shell';
+      const aSub = tabSubtitle(active);
+      activeDotEl.dataset.state = aState;
       activeNameEl.textContent = aParts.title;
       if (activeAgentEl) {
         activeAgentEl.textContent = aParts.pill;
         activeAgentEl.classList.toggle('hidden', !aParts.pill);
       }
-      activeStatusEl.textContent = tabSubtitle(active);
+      if (activeStatusEl) activeStatusEl.textContent = aSub;
+      if (termCtxIconEl) termCtxIconEl.innerHTML = pixelIconHtml(aKind);
+      if (termCtxTitleEl) termCtxTitleEl.textContent = aParts.pill ? `${aParts.title} (${AGENT_FULL_NAMES[aParts.pill] || aParts.pill})` : aParts.title;
+      if (termCtxStateEl) {
+        termCtxStateEl.dataset.state = aState;
+        termCtxStateEl.textContent = stateBadgeText(aState, active.status);
+      }
     } else {
       activeDotEl.dataset.state = 'idle';
       activeNameEl.textContent = 'No active tab';
       if (activeAgentEl) activeAgentEl.classList.add('hidden');
-      activeStatusEl.textContent = 'idle';
+      if (activeStatusEl) activeStatusEl.textContent = 'idle';
+      if (termCtxIconEl) termCtxIconEl.innerHTML = pixelIconHtml('shell');
+      if (termCtxTitleEl) termCtxTitleEl.textContent = 'No active tab';
+      if (termCtxStateEl) {
+        termCtxStateEl.dataset.state = 'idle';
+        termCtxStateEl.textContent = 'IDLE';
+      }
+    }
+
+    if (statusbarSummaryEl) {
+      const tabLabel = terminals.length === 1 ? '1 tab' : `${terminals.length} tabs`;
+      const agLabel = agentCount === 1 ? '1 agent' : `${agentCount} agents`;
+      const parts = [tabLabel, agLabel];
+      if (busyCount > 0) parts.push(`${busyCount} busy`);
+      statusbarSummaryEl.textContent = parts.join(' · ');
     }
   }
 
