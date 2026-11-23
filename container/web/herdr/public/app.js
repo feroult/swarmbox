@@ -2843,7 +2843,8 @@
     const steps = Array.isArray(sysop.steps) ? sysop.steps : [];
     const empty = turns ? turns.length === 0 : steps.length === 0;
     sysopFeedEl.classList.toggle('is-empty', empty || !sysop.up);
-    goalInputEl.placeholder = empty ? 'Ask Sysop or direct an agent… (Alt+G)' : 'Ask a follow-up… (Alt+G)';
+    const keyHint = window.innerWidth <= 860 ? '' : ' (Alt+G)';
+    goalInputEl.placeholder = (empty ? 'Ask Sysop or direct an agent…' : 'Ask a follow-up…') + keyHint;
     btnSysopNew.classList.toggle('hidden', empty || !sysop.up);
     // the snapshot comes every 600 ms: rebuild only when something shown changed (the minute keeps "3m ago" true)
     const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns, turns ? null : steps,
@@ -2979,6 +2980,7 @@
     const goal = (text !== undefined ? text : goalInputEl.value).trim();
     if (!goal) return;
     if (text === undefined) goalInputEl.value = '';
+    showSysopReplyOnMobile();
     const r = await fetch('/api/sysop/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3179,6 +3181,7 @@
       return;
     }
     setVoiceState('sending');
+    showSysopReplyOnMobile();
     const wav = encodeWav(downsample(rec.chunks, rec.samples, rate, VOICE_RATE), VOICE_RATE);
     try {
       const r = await fetch('/voice/audio', {
@@ -3316,6 +3319,41 @@
     mobileSysopBtn.dataset.on = val;
   }
 
+  // Mobile: one Sysop composer in both states. The goal box (field, Speak, Send and the recording bar)
+  // moves into the bottom dock, next to the Sysop toggle, and the sheet opens above the dock, so the bar
+  // you type and speak in is the same element whether the sheet is open or closed.
+  const mobileMq = window.matchMedia('(max-width: 860px)');
+  const goalBoxEl = goalInputEl.closest('.goal-box');
+  const composerHomeEl = document.querySelector('.sysop-composer');
+  const mobileCapsuleEl = document.getElementById('mobile-capsule');
+  const mobileDockEl = document.getElementById('mobile-dock');
+  function isMobileLayout() { return mobileMq.matches; }
+  function autosizeGoalInput() {
+    if (!isMobileLayout()) { goalInputEl.style.height = ''; return; }
+    goalInputEl.style.height = 'auto';
+    goalInputEl.style.height = `${Math.min(goalInputEl.scrollHeight, 120)}px`;
+  }
+  function placeGoalComposer() {
+    if (!goalBoxEl || !composerHomeEl || !mobileCapsuleEl) return;
+    const target = isMobileLayout() ? mobileCapsuleEl : composerHomeEl;
+    if (goalBoxEl.parentElement !== target) target.appendChild(goalBoxEl);
+    goalInputEl.rows = isMobileLayout() ? 1 : 2;
+    autosizeGoalInput();
+  }
+  placeGoalComposer();
+  if (mobileMq.addEventListener) mobileMq.addEventListener('change', () => { placeGoalComposer(); scheduleFit(); });
+  if (mobileDockEl && window.ResizeObserver) {
+    new ResizeObserver(() => {
+      appEl.style.setProperty('--dock-h', `${Math.round(mobileDockEl.getBoundingClientRect().height)}px`);
+    }).observe(mobileDockEl);
+  }
+  // On mobile a goal sent by text or voice opens the sheet, so the reply shows in full; the keyboard drops.
+  function showSysopReplyOnMobile() {
+    if (!isMobileLayout()) return;
+    if (document.activeElement === goalInputEl) goalInputEl.blur();
+    setMobileSysop(true);
+  }
+
   const btnNewShell = document.getElementById('btn-new-shell');
   if (btnNewShell) btnNewShell.addEventListener('click', () => { spawnTab('shell'); focusTerminalIfDesktop(); });
   document.getElementById('btn-sidebar-close').addEventListener('click', () => {
@@ -3357,8 +3395,8 @@
     btnSendGoal.dataset.ready = goalInputEl.value.trim() ? '1' : '0';
   }
   syncSendReady();
-  goalInputEl.addEventListener('input', syncSendReady);
-  btnSendGoal.addEventListener('click', () => { sendGoal(); syncSendReady(); });
+  goalInputEl.addEventListener('input', () => { syncSendReady(); autosizeGoalInput(); });
+  btnSendGoal.addEventListener('click', () => { sendGoal(); syncSendReady(); autosizeGoalInput(); });
   goalInputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -3370,6 +3408,7 @@
       e.preventDefault();
       sendGoal();
       syncSendReady();
+      autosizeGoalInput();
       focusTerminalIfDesktop();
     }
   });

@@ -1290,7 +1290,14 @@ html.swarmbox-ready #sb-boot {
 .sysop-state-pill[data-state="allow?"],
 .sysop-state-pill[data-state="sending"] { color: var(--peach); }
 .sysop-state-pill[data-state="failed"] { color: var(--red); }
-.sysop-head-actions { display: flex; gap: 3px; align-items: center; }
+.sysop-head-actions { display: flex; gap: 4px; align-items: center; }
+/* The close button sits apart from New and Stop, behind a thin divider, so a tap on one never lands on the other. */
+.sysop-head-sep { width: 1px; height: 16px; background: var(--border); margin: 0 6px 0 8px; flex-shrink: 0; }
+.sysop-head-actions:not(:has(.sysop-new-btn:not(.hidden), #btn-sysop-stop:not(.hidden))) .sysop-head-sep { display: none; }
+@media (max-width: 860px) {
+  .sysop-head-sep { margin: 0 8px 0 10px; }
+  .sysop-close-btn { width: 34px; height: 34px; }
+}
 .sysop-new-btn {
   appearance: none;
   font-family: var(--mono);
@@ -1299,8 +1306,10 @@ html.swarmbox-ready #sb-boot {
   background: rgba(255, 255, 255, 0.04);
   border: 0;
   border-radius: 7px;
-  padding: 4px 9px;
-  margin-right: 2px;
+  padding: 4px 9px 4px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   cursor: pointer;
 }
 .sysop-new-btn:hover { color: var(--text); background: var(--accent-bg); }
@@ -2934,4 +2943,103 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   .s-seg { align-self: flex-start; }
   .s-input, .s-select { max-width: none; width: 100%; }
   .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---- Mobile Sysop composer: one bar, the same open or closed ----------------------------------
+   app.js moves the goal box into the dock (#mobile-capsule, after the Sysop toggle) and the sheet opens
+   above the dock, so the field, the mic and Send keep their place and size in both states. */
+@media (max-width: 860px) {
+  .sysop-composer { display: none; }
+  .capsule-mic, .mobile-voice-bar { display: none !important; }
+  .app[data-voice-state="recording"] .mobile-capsule,
+  .app[data-voice-state="sending"] .mobile-capsule { display: flex; }
+
+  .mobile-capsule { align-items: flex-end; gap: 8px; }
+  .capsule-main {
+    flex: 0 0 auto;
+    width: 48px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+    border-radius: 999px;
+    position: relative;
+  }
+  .capsule-main .capsule-text { display: none; }
+  .capsule-main .capsule-chevron {
+    position: absolute;
+    right: 1px;
+    top: 1px;
+    width: 15px;
+    height: 15px;
+    border-radius: 999px;
+    background: var(--sheet);
+  }
+  .capsule-main .capsule-chevron svg { width: 11px; height: 11px; }
+
+  .mobile-capsule .goal-box {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 48px;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 4px 4px 4px 16px;
+    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.045);
+  }
+  .mobile-capsule #goal-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    align-self: center;
+    font-size: 16px;            /* 16px: iOS does not zoom the page on focus */
+    line-height: 1.35;
+    padding: 8px 0;
+    max-height: 120px;
+  }
+  .mobile-capsule .goal-actions { flex: 0 0 auto; gap: 0; }
+  .mobile-capsule .voice-hint, .mobile-capsule .mic-label, .mobile-capsule .send-label { display: none; }
+
+  /* Speak: a transparent round mic, always at the right end of the field; Send takes its place once there is text */
+  .mobile-capsule .mic-btn,
+  .mobile-capsule .send-btn {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mobile-capsule .mic-btn {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--accent-bright);
+  }
+  .mobile-capsule .mic-btn svg { width: 21px; height: 21px; }
+  .mobile-capsule .send-btn:not([data-ready="1"]) { display: none; }
+  .mobile-capsule .goal-actions:has(.send-btn[data-ready="1"]) .mic-btn { display: none; }
+
+  /* Recording: the bar replaces the field inside the same pill */
+  .app[data-voice-state="recording"] .mobile-capsule #goal-input,
+  .app[data-voice-state="sending"] .mobile-capsule #goal-input { display: none; }
+  .mobile-capsule .desktop-voice-bar { flex: 1 1 auto; min-height: 40px; }
+  .mobile-capsule .desktop-voice-bar .voice-meter { flex: 1 1 auto; }
+  .mobile-capsule .voice-cancel-btn, .mobile-capsule .voice-send-btn { width: 40px; height: 40px; padding: 0; border-radius: 999px; }
+  .mobile-capsule .voice-send-btn span { display: none; }
+  .mobile-capsule .voice-cancel-btn svg, .mobile-capsule .voice-send-btn svg { width: 18px; height: 18px; }
+
+  /* The sheet opens above the dock; the dock (and its composer) stays where it is */
+  .sysop-panel {
+    bottom: var(--dock-h, 64px);
+    height: min(70dvh, calc(100dvh - var(--dock-h, 64px) - 48px));
+    border-radius: 20px 20px 0 0;
+    transform: translateY(calc(100% + var(--dock-h, 64px) + 24px));
+  }
+  .sheet-backdrop { bottom: var(--dock-h, 64px); }
+  .app[data-mobile-sysop="1"] .touch-keys,
+  .app[data-mobile-sysop="1"] .mobile-approval { display: none !important; }
+}
+@media (min-width: 861px) {
+  .send-ico { display: none; }
 }
