@@ -5,6 +5,15 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-23
+
+- Added: **Pixel-Art Agent Mascot Cards** and a zero-redundancy adaptive topbar in the Herdr Web Studio (`container/web/herdr/public/`):
+  - Active agent tabs (`agy`, `claude`, `codex`, `opencode`, `gemini`) render as color-coded cards in the `AGENTS` sidebar section with hand-crafted 16×16 inline crisp-pixel SVG mascots (zero external assets), corner status tiles (`Z` / `⚡` / `!` / `✓`), subtle step-bob working/blocked animations, live OSC 7501 state badges (`IDLE`, `WORKING 74%`, `BLOCKED`, `DONE`), inline progress bars, hover close controls, and `Alt+1..9` shortcuts; plain shell tabs live cleanly under `SHELLS` with zero duplication, and mobile tab pills display matching 15×15 pixel icons.
+  - Adaptive Focus Mode: when the sidebar is open, the single 42 px topbar displays the active session context (pixel icon, title, live status, and state badge) over a full-bleed terminal canvas and slim bottom status bar; collapsing the sidebar (`Alt+B`) automatically swaps in horizontal informative tabs with pixel icons, status dots, and `+`.
+- Added: clipboard image paste (`Ctrl+V` / `Cmd+V` / `Ctrl+Shift+V`) and image drag-and-drop in the Herdr Web Studio (`POST /api/paste-image`), validating PNG, JPEG, WebP, GIF, and BMP magic bytes up to 20 MiB with same-origin enforcement, writing `0600` files to `/tmp/swarmbox/paste/` with rolling 40-file pruning, and injecting the saved container path into the active agent terminal via Bracketed Paste (with async `navigator.clipboard.read()` fallback when browsers omit image `clipboardData` items).
+- Changed: minimalist chrome polish and responsive Sysop drawer default in the Herdr Web Studio — Sysop opens automatically on wide viewports (`>= 1360px`) and starts collapsed on narrower screens (`< 1360px`) while respecting manual toggles, hides the redundant healthy `herdr-core live` badge and duplicate topbar settings button when the sidebar is open, and trims header hairlines.
+- Fixed: eliminated an HTTP proxy deadlock in `swarmbox-voice front` (`container/addons/voice/lib/swarmbox_voice/front.py` `_terminal()`) where buffering upstream response headers before forwarding the client request body stalled large `POST` requests (including `/api/paste-image`) larger than one TCP packet; bidirectional pumping now injects `FRAME_GUARD` in flight (`tests/fast/test_voice_front.py`).
+
 ## [2.1.1] - 2026-11-22
 
 - Added: studio Settings panel in the Herdr Web UI (`Alt+,`, sidebar Settings button, and topbar gear icon), rendered as a desktop dialog with left navigation rail and a responsive mobile bottom sheet with horizontal section pills:
@@ -294,6 +303,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.2.0]: https://github.com/feroult/swarmbox/releases/tag/v2.2.0
 [2.1.1]: https://github.com/feroult/swarmbox/releases/tag/v2.1.1
 [2.1.0]: https://github.com/feroult/swarmbox/releases/tag/v2.1.0
 [2.0.24]: https://github.com/feroult/swarmbox/releases/tag/v2.0.24
