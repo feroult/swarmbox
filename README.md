@@ -1,13 +1,20 @@
+<div align="center">
+
 # SwarmBox
 
-<p align="center">
-  <strong>Give your AI coding agents a persistent Podman box of their own — and operate them from a native Web Studio, your phone, or SSH.</strong>
+**Give your AI coding agents a persistent Podman box of their own —<br>operated from a native Web Studio, your phone, or SSH.**
+
+<p>
+  <a href="https://github.com/feroult/swarmbox/releases/latest"><img src="https://img.shields.io/github/v/release/feroult/swarmbox?color=7c3aed&labelColor=1b1726&style=flat-square" alt="Latest release"></a>
+  <a href="#security"><img src="https://img.shields.io/badge/Podman-4.3%2B%20rootless-6d28d9?labelColor=1b1726&style=flat-square" alt="Podman 4.3+ rootless"></a>
+  <a href="#security"><img src="https://img.shields.io/badge/telemetry-zero-3dba7a?labelColor=1b1726&style=flat-square" alt="Zero telemetry"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-a78bfa?labelColor=1b1726&style=flat-square" alt="Apache-2.0"></a>
 </p>
 
-<p align="center">
+<p>
   <a href="#quick-start">Quick start</a> ·
-  <a href="#herdr-web-studio--mobile">Web Studio &amp; Mobile</a> ·
-  <a href="#sysop--voice">Sysop &amp; Voice</a> ·
+  <a href="#web-studio--settings">Web Studio &amp; Settings</a> ·
+  <a href="#mobile-sysop--voice">Mobile, Sysop &amp; Voice</a> ·
   <a href="#agents-addons--base-image">Addons</a> ·
   <a href="#remote-access">Remote access</a> ·
   <a href="#everyday-commands">Commands</a> ·
@@ -15,11 +22,19 @@
   <a href="#documentation">Docs</a>
 </p>
 
-<p align="center">
-  <img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Herdr Web Studio showing JetBrains Mono + Nerd Font, live OSC 7501 working progress bar in the sidebar, Purple Glow Starship prompt, and docked Sysop panel" width="800">
-</p>
+<br>
 
-Run **Claude Code**, **Antigravity CLI (`agy`)**, **OpenCode**, or **Gemini CLI** in auto-approve mode inside a rootless Podman container with `sudo`, nested rootless Podman, and headless Chromium + `chrome-devtools-mcp`. Your projects, logins, SSH keys, and addons persist in one host folder (`~/swarmbox`) across resets and upgrades — with zero telemetry and instant access from desktop, browser, or phone.
+<img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Herdr Web Studio — 3-pane browser workspace with JetBrains Mono + Nerd Font, live OSC 7501 agent status pills, inline progress bar, Purple Glow Starship prompt, Settings launcher, and docked Sysop drawer" width="880">
+
+</div>
+
+<br>
+
+| Persistent Sandbox | Native Web Studio &amp; Mobile | Sysop Operator &amp; Local Voice |
+| :--- | :--- | :--- |
+| Run **Claude Code**, **Antigravity (`agy`)**, **OpenCode**, or **Gemini CLI** in auto-approve mode with `sudo`, nested rootless Podman, and headless Chromium — with projects, logins, SSH keys, and addons persisted in one host folder (`~/swarmbox`). | Live per-tab terminals, 5 synced themes, bundled **JetBrains Mono + Nerd Font**, studio **Settings** (`Alt+,`), smart wrapped-line copy, instant bracketed paste, and a 3-pane 24-bit **Terminal Cockpit** over SSH. | Type or speak a goal from desktop or phone. **Sysop** reads your tabs, routes to the active agent, and pauses risky actions behind one-tap **Allow / Cancel** cards — backed by local `whisper.cpp` speech-to-text. |
+
+---
 
 ## Quick start
 
@@ -31,71 +46,70 @@ swarmbox          # pulls the image, creates the box, and opens a shell (shortcu
 claude            # inside the box: installs Claude Code on first use and runs in auto-approve mode
 ```
 
-- **Enable Herdr Web Studio & Terminal Cockpit:** `tmux` + `ttyd` is the default mux; opt into `herdr` any time with `swarmbox config set MUX herdr && swarmbox reset` (switch back with `MUX tmux`).
-- **Open the Web UI or another tab:** run `swarmbox url` and visit `http://127.0.0.1:7681`, or run `swarmbox` again to open another window in the same live session.
-- **Other agents or API keys:** pass `--with antigravity` (`agy`) or `--with opencode`, install later with `swarmbox addon install <name>`, or pass a host key with `export ANTHROPIC_API_KEY=...` then `swarmbox env add ANTHROPIC_API_KEY && swarmbox reset`.
+- **Switch to Herdr Web Studio &amp; Terminal Cockpit:** `tmux` + `ttyd` is the default mux; opt into `herdr` any time with `swarmbox config set MUX herdr && swarmbox reset` (revert anytime with `MUX tmux`).
+- **Open the Web Studio:** run `swarmbox url` and visit `http://127.0.0.1:7681`, or run `swarmbox` again in another terminal to share the live session.
+- **Other agents &amp; API keys:** pass `--with antigravity` (`agy`) or `--with opencode`, install later with `swarmbox addon install <name>`, or forward a host key via `export ANTHROPIC_API_KEY=...` and `swarmbox env add ANTHROPIC_API_KEY && swarmbox reset`.
 
-## Herdr Web Studio & Mobile
+---
 
-Opt into `MUX=herdr` for a cohesive browser studio, phone interface, and 24-bit SSH Terminal Cockpit — all attached to the same live `herdr-core` session with zero extra host installs.
+## Web Studio & Settings
 
-```bash
-swarmbox config set MUX herdr
-swarmbox reset
-swarmbox          # opens the 3-pane Terminal Cockpit (SWARMBOX_HERDR_RAW=1 for raw attach)
-```
+Opt into `MUX=herdr` for a cohesive browser studio, responsive phone UI, and matching 24-bit SSH Terminal Cockpit — all attached to the same live `herdr-core` daemon with zero extra host installs.
 
 <p align="center">
-  <img src="docs/img/swarmbox-web-settings.png" alt="SwarmBox Herdr Web Studio Settings dialog on desktop showing 5 synced themes, live JetBrains Mono + Nerd Font preview, line-height density, cursor, and scrollback controls" height="340">
-  &nbsp;
-  <img src="docs/img/swarmbox-web-settings-mobile.png" alt="SwarmBox Herdr Web Studio Settings responsive mobile bottom sheet with horizontal section pills and live appearance controls" height="340">
+  <img src="docs/img/swarmbox-web-settings.png" alt="SwarmBox Studio Settings on desktop and mobile — 5 visual theme cards synced with Terminal Cockpit, JetBrains Mono font slider with live preview, line-height density, cursor, scrollback, and 5-section navigation" width="880">
 </p>
 
-- **Studio Settings (`Alt+,`):** Desktop dialog with a 5-section rail and a responsive mobile bottom sheet with horizontal pills — **Appearance** (5 visual mini-terminal theme cards synced live with Terminal Cockpit, font-size slider/stepper, `Compact` / `Studio` / `Airy` line height, cursor style/blink, `1.5k`–`10k` scrollback), **SwarmBox**, **Sysop** (3-card autonomy policy + live browser TTS toggle), **Voice**, and **Addons & System** (one-click live addon install, configured MCP servers, Git SSH public key copy, shortcuts cheat sheet) — complete with a sticky host-apply bar (`swarmbox config set ... && swarmbox reset`) whenever host-managed keys change.
-- **5 synchronized themes & bundled typography:** **Purple Glow** (default), Catppuccin Mocha, Tokyo Night, Nord, and Rosé Pine, paired with self-hosted **JetBrains Mono + Nerd Font** (zero CDN) and a redesigned Purple Glow Starship prompt.
-- **Live OSC 7501 agent status:** Real-time working, blocked, and done status pills with inline progress bars in the sidebar, plus native `herdr-app` Agent Inbox integration for Sysop (`swarmbox.role=sysop`, automatically filtered out of your tab list).
-- **Zero-friction terminal ergonomics:** Per-tab live `xterm.js` sessions with server-coalesced **zero-scroll hydration** (instant tab switching with preserved scrollback and floating "Jump to live" pill), **smart wrapped-line copy** (rejoins soft-wrapped and bordered agent commands while preserving multi-line scripts), **instant bracketed paste** (`Ctrl+V` / `Ctrl+Shift+V` via native `term.paste()` with zero double-paste or slow TUI redraws), and automatic WebSocket PTY recovery.
-- **Mobile-first controls & keyboard parity:** iOS-calibrated momentum inertia touch scroll, compact touch-key strip (`Esc`, `Tab`, `^C`, arrows), pull-up Sysop drawer, and full desktop shortcuts (`Alt+1..9`, `Alt+N`, `Alt+,`, `Alt+B`, `Alt+S`, `Alt+G`, `Alt+T`, `Alt+-/=/0`).
-- **Terminal Cockpit (`sx` / `swarmbox`):** 24-bit TrueColor 3-pane terminal UI mirroring the Web Studio over SSH — exact-width sidebar with OSC 7501 dots, inset PTY, right Sysop feed with `Ctrl+A g` Goal Composer, `Ctrl+A ?` shortcut modal, and SGR mouse support ([docs/herdr-cockpit-design.md](docs/herdr-cockpit-design.md), [docs/mux-architecture.md](docs/mux-architecture.md)).
+| Capability | What you get out of the box |
+| :--- | :--- |
+| **Studio Settings (`Alt+,`)** | Desktop dialog + mobile bottom sheet across 5 live sections — **Appearance**, **SwarmBox**, **Sysop** (3-card autonomy policy + live TTS), **Voice**, and **Addons &amp; System** (one-click live addon install, MCP servers, Git SSH public key copy, shortcuts). Editing host-managed keys stages a sticky **Apply on host** bar (`swarmbox config set ... && swarmbox reset`) with one-click copy. |
+| **5 Synced Themes &amp; Offline Fonts** | **Purple Glow** (default), **Catppuccin Mocha**, **Tokyo Night**, **Nord**, and **Rosé Pine** — synchronized across Web UI, Terminal Cockpit, and `herdr.toml` — paired with self-hosted **JetBrains Mono + Nerd Font** (zero CDN) and a Purple Glow Starship prompt. |
+| **Live OSC 7501 Agent Status** | Real-time working, blocked, and done status pills with inline progress bars in the sidebar, plus native `herdr-app` Agent Inbox integration for Sysop (`swarmbox.role=sysop`, filtered out of your tab list). |
+| **Smart Copy &amp; Instant Paste** | **Copy** (`Ctrl+C` / `Cmd+C` / context menu) inspects the terminal buffer to rejoin soft-wrapped, shaded, or bordered AI commands into one clean line while preserving real multi-line scripts. **Paste** (`Ctrl+V` / `Ctrl+Shift+V`) uses native Bracketed Paste (`\x1b[200~...\x1b[201~`) with zero double-paste or slow character-by-character TUI redraws. |
+| **Zero-Scroll Hydration &amp; Cockpit** | Per-tab live `xterm.js` sessions open already anchored at the bottom, switch in 0 ms preserving scrollback (with a floating **Jump to live** pill), auto-heal WebSockets on wake, and match the 3-pane SSH **Terminal Cockpit** (`Alt+1..9`, `Alt+N`, `Alt+B`, `Alt+S`, `Alt+G`, `Alt+T`, `Alt+,`, `Alt+-/=/0`). |
 
-## Sysop & Voice
+---
 
-Direct your box in plain words — typed or spoken — from desktop or phone, with host-enforced guardrails over anything risky.
+## Mobile, Sysop & Voice
+
+Operate long-running agents comfortably from your phone with iOS-calibrated momentum touch scrolling, a floating glass dock, one-tap approvals, and local offline Whisper dictation.
 
 <p align="center">
-  <img src="docs/img/swarmbox-mobile.png" alt="SwarmBox on mobile: left phone shows the expanded Sysop drawer, touch-key strip, and Whisper microphone; right phone shows the one-tap Allow and Cancel approval card" width="760">
+  <img src="docs/img/swarmbox-mobile.png" alt="SwarmBox Herdr Web Studio on mobile — left phone shows live agent tabs, 1-line Starship prompt, floating ALLOW? approval card, and glass dock; right phone shows the Sysop bottom sheet with countdown bar, live steps, and voice composer" width="740">
 </p>
 
-- **Autonomous tab operator (`sysop`):** Inspects your live tabs through `swarmbox-tabs` (secrets redacted from every screen read), remembers recent goals so follow-ups land cleanly, routes prompts to the right agent, and never steals focus from what you are typing.
-- **Host-side risk policy:** Every command and keystroke is rated outside the model. In default `auto` mode, safe actions run immediately, medium-risk actions show a 4-second veto countdown, and high-risk actions — plus any key while an agent dialog is open — wait for your explicit **Allow** (`Ctrl+A a`, panel click, or mobile thumb button). Switch to `confirm-risky` or `confirm-all` any time, halt everything with `Ctrl+A X`, and review every step in the append-only audit log.
-- **Local Whisper voice (`voice`):** `whisper.cpp` runs locally inside the box (only audio crosses the tunnel), powering the push-to-talk microphone across desktop and mobile.
-
 ```bash
-swarmbox addon install sysop        # autonomous tab operator + docked panel
-swarmbox addon install voice        # local whisper.cpp speech-to-text + web mic
+swarmbox addon install sysop      # autonomous operator + approval cards
+swarmbox addon install voice      # local whisper.cpp speech-to-text microphone
 ```
 
-Hold the microphone button in the Web UI, press `Alt+G` / `Ctrl+A g`, or run `swarmbox-sysop goal "run the tests in tab 2"`. Full guides: [docs/sysop.md](docs/sysop.md) and [docs/voice.md](docs/voice.md).
+- **Context-aware operator:** Sysop remembers recent goals, infers the active agent tab, queues messages when an agent is working, and keeps a full audit log.
+- **Host-enforced safety policy:** Low-risk actions run directly under `auto`; medium-risk actions pause on a veto countdown; high-risk commands and open agent dialogs always wait for **Allow** (`confirm-risky` and `confirm-all` tighten further via **Settings → Sysop**).
+- **Private local voice:** Hold the violet mic button to transcribe through local `whisper.cpp` straight to Sysop — audio never leaves your machine, and `swarmbox-voice say "..."` works from any shell ([docs/sysop.md](docs/sysop.md), [docs/voice.md](docs/voice.md)).
+
+---
 
 ## Agents, Addons & Base Image
 
-The base image stays lean and neutral; every addon installs on demand into your workspace (`~/.local/share/swarmbox/addons/`) on first command or via `swarmbox addon install <name>` (or one-click in Web Studio Settings).
+Addons install on demand inside your persistent workspace — keeping the base image lean while preserving versions across resets and upgrades.
 
-| Addon | Commands | What is pre-configured |
-|---|---|---|
-| **`claude`** | `claude` | Claude Code in auto-approve mode wired to `chrome-devtools-mcp`; self-updating (`claude update`) |
-| **`antigravity`** | `agy` | Antigravity CLI (Google's coding agent, successor to Gemini CLI) in auto-approve mode with Purple Glow status line; self-updating (`agy update`) |
-| **`opencode`** | `opencode` | OpenCode in auto-approve mode, mirrored MCP config, and optional `LOCAL_LLM_*` endpoint setup |
-| **`gemini`** | `gemini` | Gemini CLI in `--yolo` mode *(deprecated: paid API key only; use `antigravity`)* |
-| **`sysop`** | `swarmbox-sysop` | Tab-operating agent loop, docked panel, host risk policy, approvals, memory, and audit log |
-| **`voice`** | `swarmbox-voice` | Local `whisper.cpp` + multilingual Whisper model + `/voice/` proxy and microphone button |
-| **`go`** | `go`, `gofmt` | Pinned official Go release (SHA-256 verified) with workspace `GOPATH` |
+| Addon | Commands | Notes |
+| :--- | :--- | :--- |
+| **`claude`** | `claude` | Claude Code (`--dangerously-skip-permissions` interactive default) + Purple Glow statusline |
+| **`antigravity`** | `agy` | Google Antigravity CLI (`--dangerously-skip-permissions` interactive default) + isolated statusline |
+| **`opencode`** | `opencode` | Open-source terminal coding agent |
+| **`gemini`** | `gemini` | Gemini CLI *(deprecated; paid API key only — use `antigravity`)* |
+| **`sysop`** | `swarmbox-sysop` | Autonomous goal operator, live activity panel, and risk-gated approval host |
+| **`voice`** | `swarmbox-voice` | Local `whisper.cpp` speech-to-text web front and goal publisher |
+| **`go`** | `go`, `gofmt` | Pinned Go toolchain (SHA-256 verified) with workspace `GOPATH` |
 | **`gcloud`** | `gcloud`, `gsutil`, `bq` | Pinned Google Cloud CLI (SHA-256 verified) |
 | **`clasp`** | `clasp` | Pinned Google Apps Script CLI with OAuth callback port (`43323`) published |
 | **`poetry`** | `poetry` | Pinned Python dependency manager installed isolated in the workspace |
 
-- **Default agent shortcut & custom addons:** run `yolo` inside the box to launch your default agent (`YOLO=0` disables auto-approve); scaffold workspace addons with `swarmbox addon new NAME`, check health with `swarmbox addon doctor`, and roll back with `swarmbox addon use NAME VERSION`.
-- **Always ready in the base image:** Node 24, Python 3 + `uv`, nested rootless Podman (`netavark` + `aardvark-dns`, [docs/nested-podman.md](docs/nested-podman.md)), pinned headless Chromium + `chrome-devtools-mcp`, both mux backends (`tmux 3.7c` + `ttyd` default; `herdr-core` + Herdr Web Studio & Terminal Cockpit opt-in), Starship prompt, `swarmbox-bus`, `swarmbox-tabs`, `git`, `jq`, `sqlite3`, and `build-essential`.
+- **Agent shortcut &amp; custom addons:** Run `yolo` inside the box to launch your default agent (`YOLO=0` disables auto-approve); scaffold custom workspace addons with `swarmbox addon new NAME`, inspect with `swarmbox addon doctor`, and roll back with `swarmbox addon use NAME VERSION`.
+- **Included in the base image:** Node 24, Python 3 + `uv`, nested rootless Podman (`netavark` + `aardvark-dns`, [docs/nested-podman.md](docs/nested-podman.md)), pinned headless Chromium + `chrome-devtools-mcp`, both mux backends (`tmux 3.7c` + `ttyd` default; `herdr-core` + Herdr Web Studio &amp; Terminal Cockpit opt-in), Starship prompt, `swarmbox-bus`, `swarmbox-tabs`, `git`, `jq`, `sqlite3`, and `build-essential`.
+
+---
 
 ## Remote access
 
@@ -108,6 +122,8 @@ swarmbox url
 
 `cloudflared` runs in a separate container **on your host**, never inside the box — no open router ports, no public IP, and no tunnel secrets inside the agent's environment ([docs/cloudflare.md](docs/cloudflare.md), [docs/web-terminal.md](docs/web-terminal.md)).
 
+---
+
 ## Everyday commands
 
 ```bash
@@ -115,7 +131,7 @@ swarmbox                        # attach to the shared session (starts the box i
 swarmbox --plain                # open a plain bash shell without a multiplexer
 swarmbox url                    # print local and remote web terminal addresses
 swarmbox config list            # show all settings and where each comes from
-swarmbox config set MUX herdr   # switch to the Herdr Web Studio & Terminal Cockpit backend
+swarmbox config set MUX herdr   # enable Herdr Web Studio & Terminal Cockpit
 swarmbox env add NAME           # pass a host environment variable into the box
 swarmbox addon list             # show available and installed addons
 swarmbox addon install NAME     # install an addon (e.g. sysop, voice, antigravity, go)
@@ -126,22 +142,26 @@ swarmbox pubkey                 # print the box's Git SSH public key
 swarmbox remote setup           # set up Cloudflare Tunnel + email-code Access
 ```
 
+---
+
 ## Security
 
 SwarmBox runs in a rootless Podman container, which is **not complete isolation**: it shares the kernel with your host and carries the known limits of containers (and nested Podman requires `/dev/net/tun` and an unmasked `/proc`). It confines agent mistakes to one workspace folder (`~/swarmbox`), keeps your host Podman socket and Cloudflare credentials outside the box, binds the web gateway to `127.0.0.1`, and makes no telemetry calls. For untrusted code or a stronger boundary, run SwarmBox inside a virtual machine ([docs/microvm.md](docs/microvm.md)). More in [SECURITY.md](SECURITY.md) and [docs/security-review.md](docs/security-review.md).
 
+---
+
 ## Documentation
 
 | Guide | What it covers |
-|---|---|
+| :--- | :--- |
 | [Web terminal](docs/web-terminal.md) | Browser shortcuts, clipboard sync, mobile controls strip, font sizing, and customization |
-| [Herdr & Cockpit](docs/herdr-cockpit-design.md) · [Mux architecture](docs/mux-architecture.md) | Opt-in `herdr` backend, Terminal Cockpit, Herdr Web Studio, and native OSC 7501 Sysop bridge |
+| [Herdr &amp; Cockpit](docs/herdr-cockpit-design.md) · [Mux architecture](docs/mux-architecture.md) | Opt-in `herdr` backend, Terminal Cockpit, Herdr Web Studio, and native OSC 7501 Sysop bridge |
 | [Sysop](docs/sysop.md) | Autonomous tab operator, MCP brain presets/templates, risk policy, panel modes, and audit log |
 | [Voice control](docs/voice.md) | Local Whisper setup, language/model settings, `/voice/` proxy, and troubleshooting |
 | [Remote access](docs/cloudflare.md) | Cloudflare Tunnel + Access setup, token handling, and multi-box hostnames |
 | [Nested Podman](docs/nested-podman.md) | Running containers inside the box, host `podman -c` connection, and port forwarding |
 | [Theme](docs/theme.md) | The Purple Glow palette for Windows Terminal, Ghostty, and Claude Code + statusline |
-| [Addons & Bus](docs/addons-design.md) | Addon manifest model, `swarmbox-bus` pub/sub, and `swarmbox-tabs` capability |
+| [Addons &amp; Bus](docs/addons-design.md) | Addon manifest model, `swarmbox-bus` pub/sub, and `swarmbox-tabs` capability |
 | [Architecture](docs/design.md) | Complete system design, configuration reference, and design decisions |
 | [MicroVM](docs/microvm.md) · [Uninstall](docs/uninstall.md) | Running inside a VM boundary; clean removal steps |
 
