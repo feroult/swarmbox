@@ -5,6 +5,14 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-22
+
+- Added: studio Settings panel in the Herdr Web UI (`Alt+,`, sidebar Settings button, and topbar gear icon), rendered as a desktop dialog with left navigation rail and a responsive mobile bottom sheet with horizontal section pills:
+  - **Appearance** (live across all open tabs): 5 visual mini-terminal theme preview cards synced with `/api/theme` and Terminal Cockpit, terminal font size slider and stepper with live `JetBrains Mono` preview, line height density (`Compact` / `Studio` / `Airy`), cursor style (`Block` / `Bar` / `Line`), cursor blink toggle, scrollback buffer selector (`1.5k`–`10k`), and appearance reset.
+  - **SwarmBox, Sysop, Voice, and Addons & System:** backed by `GET /api/config` and same-origin-guarded `POST /api/addons/:name/install` (`container/web/herdr/server.mjs` and `hc-client.mjs`), surfacing live container health, all host-managed SwarmBox/Sysop/Voice settings with a sticky bottom "Apply on host" command bar (`swarmbox config set ... && swarmbox reset` with one-click Copy and Discard), live browser TTS toggle, 3-card Sysop autonomy policy picker, one-click live addon installation, configured MCP servers, Git SSH public key copy box, and keyboard shortcuts cheat sheet.
+- Fixed: pasting into the Herdr Web terminal (`Ctrl+V` / `Ctrl+Shift+V`) now uses `xterm.js` native Bracketed Paste (`\x1b[200~ ... \x1b[201~`) via `term.paste()` with zero duplicate paste, eliminating slow character-by-character redraws and premature newline execution inside TUI coding agents (`agy`, `claude`, `codex`, `opencode`).
+- Added: smart wrapped-line unwrapping on copy (`Ctrl+C`, `Ctrl+Shift+C`, `Cmd+C`, and context-menu Copy) in the Herdr Web terminal (`getSmartSelection()`), inspecting `term.buffer.active` to rejoin native soft-wraps, full-width `herdr-core` wraps, and AI TUI padded/shaded/bordered code blocks back into single-line commands while preserving intentional multi-line scripts, blank lines, lists, prompts, and explicit `\` continuations.
+
 ## [2.1.0] - 2026-11-22
 
 - Added: opt-in `herdr` multiplexer backend (`swarmbox config set MUX herdr` / `SWARMBOX_MUX=herdr`) running in parallel to the default `tmux` backend with zero regression:
@@ -286,6 +294,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.1.1]: https://github.com/feroult/swarmbox/releases/tag/v2.1.1
 [2.1.0]: https://github.com/feroult/swarmbox/releases/tag/v2.1.0
 [2.0.24]: https://github.com/feroult/swarmbox/releases/tag/v2.0.24
 [2.0.23]: https://github.com/feroult/swarmbox/releases/tag/v2.0.23
