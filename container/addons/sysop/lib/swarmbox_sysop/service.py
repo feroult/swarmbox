@@ -492,7 +492,7 @@ class Service:
             # the brain starts with no memory: the goals before this one go in front of it (history.py), so a follow-up is understood
             heard = goal.text
             try:
-                before = history.conversation(history.load(self.paths), goal.id, self.clock())
+                before = history.conversation(history.load(self.paths), goal.id, self.clock(), since=history.since(self.paths))
             except Exception as e:      # a damaged folder of an old goal must not stop this one
                 self.log("goal %s: no conversation so far (%r)" % (goal.id, e))
                 before = ""

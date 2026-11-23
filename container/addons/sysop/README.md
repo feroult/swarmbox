@@ -2,7 +2,7 @@
 
 An agent loop that operates the box from a goal ([docs/addons-design.md](../../../docs/addons-design.md)). It subscribes to the topic of
 `sysop.topic` (default `goal`) of `swarmbox-bus`, in the group `sysop.group` (default `sysop`: two sysops of a group handle a goal once between them),
-runs a brain (a command that speaks MCP, `claude -p` by default) with seven tools, and the tools read and type into the tabs through the command
+runs a brain (a command that speaks MCP, `claude -p` by default) with eleven tools, and the tools read and type into the tabs through the command
 `swarmbox-tabs` (the bus is for goals only). The host rates every action first (countdown, approval, block), keeps budgets, and writes an audit file.
 
 ```

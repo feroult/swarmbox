@@ -118,8 +118,8 @@ class Template(unittest.TestCase):
         """every phrase is a behaviour that a real model got wrong without it (tests/e2e/e2e_voice.py, e2e_sysop.py)"""
         p = " ".join(brain.system_prompt("voice", 20, 300).split())
         needs = {
-            "the tools": ("list_tabs", "read_tab", "run", "input", "wait", "say", "done"),
-            "tabs, never the bus": ("TABS", "window of a tmux session"),
+            "the tools": ("list_tabs", "read_tab", "box_info", "focus_tab", "open_tab", "close_tab", "run", "input", "wait", "say", "done"),
+            "tabs, never the bus": ("TABS", "a tmux window or a herdr terminal"),
             # 'reply with exactly banana nine' with Claude Code in the active tab was answered by the brain itself and nothing was typed
             # the user talks to the sysop to reach the agents: they never say "send it to Claude", and the target is inferred
             "a goal is a message for an agent by default": ("THE USER IS TALKING TO YOU TO REACH THEIR AGENTS", "never has to say", "clearly an operation on the box",
@@ -134,7 +134,13 @@ class Template(unittest.TestCase):
                                                   "never press Esc or interrupt it", "type the message with run anyway", "The only exception is a dialog"),
             # 'delete the build folder' made it type `pwd; ls -la; ls -la build | head`: the user was asked to approve a look before the command that mattered
             "one simple command per run": ("ONE simple command per run", "no `;`, `&&`, `||` or pipes", "the host holds a chained line for the user's approval"),
-            "a dialog is the user's decision": ("is the USER's decision", "do not answer it", "do not press Esc", "do not type a prompt over it", "Report it with say",
+            # the operator answers what the screens show, and only that: a question for an agent's thinking still goes to the agent
+            "a question about the box is answered, not forwarded": ("A question about the STATE of the box, answered from what is on the screens", "never type such a question into an agent",
+                                                                     "When a question asks an agent to think or to do something", "reply with exactly ok"),
+            # the panel draws every tab as a chip with its icon: an id (t3) or a numbered label (1:shell) said to the user read as noise
+            "a tab is named by its name": ("ONLY by its name from list_tabs, in backticks", "never by its id (t3, @3) or its numbered label"),
+            "the reply is short and in the user's language": ("in the language the user spoke", "never repeat in done what you said with say", "At most 1000 characters"),
+            "a dialog is the user's decision": ("is the USER's decision", "do not answer it", "do not press Esc", "do not type a prompt over it", "Report it in your reply",
                                                 "unless the goal itself asks you to answer that dialog"),
         }
         for why, phrases in needs.items():

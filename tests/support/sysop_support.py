@@ -231,6 +231,7 @@ class FakeTabs:
     tabs        {id: {"tab", "label", "index", "name", "dir", "cmd", "active", "pane", "panes"}}
     screens     {id: text or callable(fake, id) -> text}
     sent        [(tab, {"run": text} | {"input": text})] of every accepted send
+    ops         [("open", {opt: value}) | ("focus", tab) | ("close", tab)] of every accepted open, focus and close
     calls       [(argv, stdin)] of every call
     reads       the tab of every screen call
     errors      {tab: (code, msg)}: a send to that tab fails; `ls_error` and `get_error` do the same for list and screen
@@ -246,6 +247,7 @@ class FakeTabs:
         self.screens = {"@1": "$ ", "@2": "> "}
         self.sent, self.calls, self.reads, self.errors, self.ls_error, self.get_error = [], [], [], {}, None, None
         self.on_send, self.send_delay = None, 0.0
+        self.ops = []           # [("open", {opt: value}) | ("focus", tab) | ("close", tab)] of every accepted tab operation
         self.up = False
         self.srv = None
         self.start()
@@ -334,6 +336,25 @@ class FakeTabs:
             if self.on_send:
                 self.on_send(self, tab, body)
             return {"ok": True, "tab": tab, "pane": "%1", "submitted": key == "--run"}, 0
+        if cmd == "open":
+            opts = dict(zip(argv[1::2], argv[2::2]))
+            tid = "@%d" % (len(self.tabs) + 1)
+            agent = opts.get("--agent", "shell")
+            self.tabs[tid] = dict(tab=tid, label="%d:%s" % (len(self.tabs), opts.get("--name", agent)), index=len(self.tabs), name=opts.get("--name", agent),
+                                  dir=opts.get("--cwd", "/work"), cmd="bash" if agent == "shell" else agent, active=False, pane="%9", panes=1)
+            self.ops.append(("open", opts))
+            return {"ok": True, "tab": tid, "name": opts.get("--name", agent), "agent": agent}, 0
+        if cmd in ("focus", "close"):
+            tab = argv[1]
+            if tab not in self.tabs:
+                return self._err("no_such_tab", "no tab %s" % tab)
+            self.ops.append((cmd, tab))
+            if cmd == "close":
+                del self.tabs[tab]
+            else:
+                for t in self.tabs.values():
+                    t["active"] = t["tab"] == tab
+            return {"ok": True, "tab": tab, "label": tab}, 0
         return self._err("usage", "unknown command %s" % cmd)
 
     def set_screen(self, tab, text):

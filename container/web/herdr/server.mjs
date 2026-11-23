@@ -29,6 +29,7 @@ import {
   readBoxConfigSnapshot,
   readSavedTheme,
   readSysopSnapshot,
+  startNewConversation,
   runCommand,
   saveTheme,
   uniqueTabName,
@@ -286,7 +287,7 @@ export function createGateway(options = {}) {
       hc.refreshTerminals();
     }
     const snap = buildSnapshot({ type: themeChanged ? 'theme' : 'sysop' });
-    const h = JSON.stringify({ sysop: snap.sysop, theme: snap.theme });
+    const h = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active });
     if (h !== lastBroadcastHash) {
       lastBroadcastHash = h;
       broadcast(snap);
@@ -509,6 +510,12 @@ export function createGateway(options = {}) {
         broadcast(buildSnapshot({ type: 'sysop' }));
         if (!r.ok) return sendJson(res, 409, { error: 'veto_failed', message: r.stderr || r.stdout || 'nothing waiting' });
         return sendJson(res, 200, { ok: true, message: r.stdout || 'cancelled' });
+      }
+
+      if (pathname === '/api/sysop/new' && req.method === 'POST') {
+        startNewConversation();
+        broadcast(buildSnapshot({ type: 'sysop' }));
+        return sendJson(res, 200, { ok: true });
       }
 
       if (pathname === '/api/sysop/stop' && req.method === 'POST') {

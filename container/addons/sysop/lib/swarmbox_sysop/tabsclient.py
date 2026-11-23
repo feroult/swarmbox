@@ -92,3 +92,19 @@ class Tabs:
         # the command drops ONE trailing newline of stdin: add one so the text is typed as it is
         args = ["send", tab, "--run" if run is not None else "--input", "-"] + (["--queue"] if run is not None else [])
         return self.call(args, stdin=text + "\n", timeout=self.send_timeout)
+
+    def open_tab(self, name=None, cwd=None, agent=None):
+        args = ["open"]
+        if name:
+            args += ["--name", str(name)]
+        if cwd:
+            args += ["--cwd", str(cwd)]
+        if agent:
+            args += ["--agent", str(agent)]
+        return self.call(args)
+
+    def focus_tab(self, tab):
+        return self.call(["focus", str(tab)])
+
+    def close_tab(self, tab):
+        return self.call(["close", str(tab)])

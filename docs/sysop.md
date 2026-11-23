@@ -13,20 +13,24 @@ brain -> tool calls (MCP) -> host policy -> swarmbox-tabs -> tmux tab         th
 
 1. A goal is a line of text published on the topic of `sysop.topic` (default `goal`) of the bus ([design.md](design.md), section 6, "The bus"). Today that is `swarmbox-sysop goal "text"` in the box, the key `g`, the panel, or any program that runs `swarmbox bus pub goal` (with the topic of the setting). The `voice` addon publishes where `voice.topic` says (`source` `voice`): when that is the same name as `sysop.topic`, what you say into the microphone of the web terminal arrives as a goal. The two addons know nothing of each other; the shared name is the only connection. The sysop subscribes as a member of the group `sysop.group` (default `sysop`): two sysops in one group handle a goal once between them, one each in turn. Each goal carries a `source`, a label such as `panel`, `voice` or `cli`.
 2. The resident `swarmbox-sysop serve` takes one goal at a time (up to five wait; the next is dropped and audited). It starts the brain, which gets the goal on its standard input and a list of tools.
-3. The brain looks first (`list_tabs`, `read_tab`), then acts (`run`, `input`), checks the screen that comes back, and ends with `done`. The tools are served over MCP by `swarmbox-sysop mcp`, which acts on the box only through `swarmbox-tabs` (the tabs of the box: list, screen, send). The bus is for goals only, and the brain never sees it.
+3. The brain looks first (`list_tabs`, `read_tab`, `box_info`), then acts (`run`, `input`, `open_tab`, `focus_tab`, `close_tab`), checks the screen that comes back, and ends with `done`. A question about the state of the box (what runs, what failed, what an agent answered, the disk) is answered by the sysop from the screens; everything else said in plain words is a message for an agent and is passed on. The tools are served over MCP by `swarmbox-sysop mcp`, which acts on the box only through `swarmbox-tabs` (the tabs of the box: list, screen, send, open, focus, close). The bus is for goals only, and the brain never sees it.
 4. Before an action is typed, the host rates it and decides what must happen (autonomy levels, below). The panel, a pane of the shared tmux session that is up in every window (`sysop.panel`, below), shows the goal, the log, the countdown and the approval prompt, and an idle screen when there is no goal.
 
 ## The tools
 
 | Tool | What it does |
 |---|---|
-| `list_tabs` | the tabs (tmux windows) with their `@` id, label, directory, the program running and which one is active |
+| `list_tabs` | the tabs (tmux windows or herdr terminals) with their id (`@3`, `t3`), label, directory, the program running, which one is active, and the live status an agent reports (OSC 7501) |
 | `read_tab` | the text on a tab's screen now, with secrets removed and the highlighted parts marked `[sel]`, `[bg]`, `[err]` |
+| `box_info` | read-only: free disk, memory, the mux, the installed addons and the running nested Podman containers; types nothing |
+| `focus_tab` | makes a tab the active one (the web studio follows it) |
+| `open_tab` | opens a tab with a shell or an agent of a fixed list (`claude`, `agy`, `opencode`, `codex`, `gemini`), with an optional name and directory; rated low, so `confirm-all` asks first |
+| `close_tab` | closes a tab and ends its program; rated high, so it always needs approval, at every autonomy level |
 | `run` | types text in a tab and presses Enter (a shell command, or a prompt for an agent such as Claude Code); returns the settled screen |
 | `input` | types text or keys written in braces (`{Esc}`, `{C-c}`, `{Enter}`, `{Up}`) without Enter, to answer a program or interrupt it |
 | `wait` | waits some seconds, or until a text shows on a tab |
 | `say` | shows a message to you in the panel; it does not count as a step |
-| `done` | ends the goal with a one-line summary |
+| `done` | ends the goal with the reply: one or two sentences for an action, a few `- ` lines for a question about the box (at most 1200 characters; a longer one is sent back once to be written again) |
 
 The **active** tab is the one the goal means when it names none: the window of the client that was used last. The panel pane of the sysop is never listed or targeted.
 

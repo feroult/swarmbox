@@ -223,11 +223,9 @@
         <span class="sysop-state-pill" id="sysop-state">idle</span>
       </div>
       <div class="sysop-head-actions">
+        <button type="button" class="sysop-new-btn hidden" id="btn-sysop-new" title="Start a new conversation: Sysop forgets the goals before it" aria-label="New conversation">New</button>
         <button class="icon-btn hidden" id="btn-sysop-stop" title="Stop running goal" aria-label="Stop running goal">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-        </button>
-        <button class="icon-btn" id="btn-tts" title="Toggle spoken feedback" aria-label="Toggle spoken feedback">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
         </button>
         <button class="icon-btn" id="btn-sysop-close" title="Collapse Sysop panel (Alt+S)" aria-label="Collapse Sysop panel">
           <svg class="desktop-only" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
@@ -236,25 +234,10 @@
       </div>
     </div>
 
-    <!-- Pixel-Art Sysop Operator Hero Card (mirrors left AGENTS cards) -->
-    <div class="sysop-card" id="sysop-card" data-state="idle">
-      <div class="pixel-stage sysop-stage" id="sysop-stage">
-        <span class="pixel-corner" id="sysop-corner">Z</span>
-      </div>
-      <div class="sysop-card-info">
-        <div class="sysop-card-top">
-          <span class="agent-state-box sysop-card-badge" id="sysop-card-badge">READY</span>
-          <span class="sysop-card-meta" id="sysop-card-meta">operator</span>
-        </div>
-        <div class="sysop-card-title" id="sysop-card-title">Sysop Operator</div>
-        <div class="sysop-card-sub" id="sysop-card-sub">Routes goals &amp; guards risky actions</div>
-      </div>
-    </div>
-
     <!-- Live Approval / Countdown Card -->
     <div class="approval-card hidden" id="approval-card">
       <div class="approval-card-head">
-        <span class="approval-badge" id="approval-badge">ALLOW?</span>
+        <span class="approval-badge"><i class="approval-dot" aria-hidden="true"></i><span id="approval-badge">Confirm action</span></span>
         <span class="approval-tab" id="approval-tab"></span>
       </div>
       <p class="approval-text" id="approval-text"></p>
@@ -274,7 +257,7 @@
     <!-- Goal Composer -->
     <div class="sysop-composer">
       <div class="goal-box">
-        <textarea id="goal-input" rows="2" placeholder="Describe a goal for Sysop… (Alt+G)"></textarea>
+        <textarea id="goal-input" rows="2" placeholder="Ask Sysop or direct an agent… (Alt+G)"></textarea>
         <div class="goal-actions" id="goal-actions">
           <button type="button" class="mic-btn" id="btn-mic" title="Tap to record a voice goal" aria-label="Record a voice goal">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
@@ -380,6 +363,7 @@
 <script src="/vendor/xterm.js"></script>
 <script src="/vendor/addon-fit.js"></script>
 <script src="/vendor/addon-web-links.js"></script>
+<script src="/tabrefs.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

@@ -242,19 +242,13 @@
   const connTextEl = document.getElementById('conn-text');
   const sysopDotEl = document.getElementById('sysop-dot');
   const sysopStateEl = document.getElementById('sysop-state');
-  const sysopCardEl = document.getElementById('sysop-card');
-  const sysopStageEl = document.getElementById('sysop-stage');
-  const sysopCornerEl = document.getElementById('sysop-corner');
-  const sysopCardBadgeEl = document.getElementById('sysop-card-badge');
-  const sysopCardMetaEl = document.getElementById('sysop-card-meta');
-  const sysopCardTitleEl = document.getElementById('sysop-card-title');
-  const sysopCardSubEl = document.getElementById('sysop-card-sub');
   const mobileSysopBtn = document.getElementById('btn-mobile-sysop');
   const mobileSysopDotEl = document.getElementById('mobile-sysop-dot');
   const mobileSysopTextEl = document.getElementById('mobile-sysop-text');
   const btnToggleSysop = document.getElementById('btn-toggle-sysop');
   const sysopFeedEl = document.getElementById('sysop-feed');
   const btnSysopStop = document.getElementById('btn-sysop-stop');
+  const btnSysopNew = document.getElementById('btn-sysop-new');
   const approvalCardEl = document.getElementById('approval-card');
   const approvalBadgeEl = document.getElementById('approval-badge');
   const approvalTabEl = document.getElementById('approval-tab');
@@ -269,7 +263,6 @@
   const micLabelEl = document.getElementById('mic-label');
   const goalInputEl = document.getElementById('goal-input');
   const themeSwatchEl = document.getElementById('theme-swatch');
-  const btnTts = document.getElementById('btn-tts');
   const btnMic = document.getElementById('btn-mic');
   const btnMobileMic = document.getElementById('btn-mobile-mic');
   const termWrapEl = document.getElementById('term-wrap');
@@ -293,13 +286,12 @@
 
   let terminals = [];
   let activeId = null;
+  let lastServerActive = null;   // the active tab the gateway reported last (the herdr-active-tab marker)
   let currentThemeKey = 'purple-glow';
   const tabSessions = new Map();
   let eventsWs = null;
   let eventsConnected = false;
   let ptyConnected = false;
-  let ttsEnabled = false;
-  let lastSpokenKey = '';
   let currentApproval = null;
   let voiceAddonAvailable = false;
   let countdownTimer = null;
@@ -2024,9 +2016,6 @@
   // Mount crisp pixel-art Sysop mascot in header, mobile capsule & operator hero card
   if (sysopDotEl) sysopDotEl.innerHTML = PIXEL_SVG.sysop;
   if (mobileSysopDotEl) mobileSysopDotEl.innerHTML = PIXEL_SVG.sysop;
-  if (sysopStageEl) {
-    sysopStageEl.insertAdjacentHTML('afterbegin', PIXEL_SVG.sysop);
-  }
 
   function tabAgentKind(t) {
     const b = tabAgentBadge(t);
@@ -2358,16 +2347,6 @@
     }
   }
 
-  function speak(text) {
-    if (!ttsEnabled || !('speechSynthesis' in window) || !text) return;
-    try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.05;
-      window.speechSynthesis.speak(u);
-    } catch (_) {}
-  }
-
   function stopCountdownTimer() {
     if (countdownTimer) {
       clearInterval(countdownTimer);
@@ -2385,13 +2364,11 @@
       currentApproval = { kind: 'sysop', deadline: pending.deadline };
       approvalCardEl.classList.remove('hidden');
       mobileApprovalEl.classList.remove('hidden');
-      const badge = isVeto ? 'SENDING' : 'ALLOW?';
+      const badge = isVeto ? 'Sending…' : 'Confirm action';
       approvalBadgeEl.textContent = badge;
       mobileApprovalBadgeEl.textContent = badge;
       const pendingTabObj = pending.tab ? terminals.find((t) => t.address === pending.tab) : null;
-      approvalTabEl.textContent = pendingTabObj
-        ? `${tabDisplayName(pendingTabObj)} · ${pending.tab}`
-        : (pending.tab || pending.risk || 'sysop');
+      approvalTabEl.textContent = pendingTabObj ? tabDisplayName(pendingTabObj) : (pending.label || pending.tab || 'sysop');
       approvalTextEl.textContent = pending.text || 'Pending action';
       mobileApprovalMsgEl.textContent = pending.text || 'Pending action';
 
@@ -2410,11 +2387,6 @@
         approvalBarEl.classList.add('hidden');
       }
 
-      const key = `sysop:${pending.id}`;
-      if (key !== lastSpokenKey) {
-        lastSpokenKey = key;
-        speak(`${isVeto ? 'Sending' : 'Approval required'}: ${pending.text}`);
-      }
       requestAnimationFrame(fitAndResize);
       return;
     }
@@ -2424,16 +2396,11 @@
       approvalCardEl.classList.remove('hidden');
       mobileApprovalEl.classList.remove('hidden');
       approvalBarEl.classList.add('hidden');
-      approvalBadgeEl.textContent = 'ALLOW?';
+      approvalBadgeEl.textContent = 'Agent asks';
       mobileApprovalBadgeEl.textContent = 'ALLOW?';
       approvalTabEl.textContent = oscBlocked.name;
       approvalTextEl.textContent = oscBlocked.msg;
       mobileApprovalMsgEl.textContent = `${oscBlocked.name}: ${oscBlocked.msg}`;
-      const key = `osc:${oscBlocked.terminal}:${oscBlocked.msg}`;
-      if (key !== lastSpokenKey) {
-        lastSpokenKey = key;
-        speak(`Input needed on ${oscBlocked.name}. ${oscBlocked.msg}`);
-      }
       requestAnimationFrame(fitAndResize);
       return;
     }
@@ -2446,12 +2413,343 @@
     if (wasVisible) requestAnimationFrame(fitAndResize);
   }
 
+  // ---- Sysop conversation (V2): one turn per goal, no nested boxes. The user's words in a bubble, the sysop's reply as plain text under a
+  // "Sysop · N actions" line, and an action that waits for the user as a calm confirmation card inside the conversation.
+  const openTurnActions = new Set();   // turn ids whose action list the user expanded (survives the 600 ms re-renders)
+  let lastFeedKey = '';
+  const SYSOP_SUGGESTIONS = ["What's running across my tabs?", 'Summarize the active agent', 'Check git status & tests'];
+  const STATE_WORDS = { idle: 'ready', 'allow?': 'confirm', sending: 'sending', working: 'working', queued: 'queued', done: 'ready', failed: 'failed', stopped: 'ready', off: 'off' };
+  const MIC_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>';
+
+  // Every tab a reply names (`shop-api`, t3, 1:shop-api, "shop-api (t3)") becomes the same chip: the agent's pixel icon and the tab's name.
+  // tabrefs.js finds them; a tab that has closed since keeps its name (the page remembers the tabs it saw) and is drawn dimmed, without a link.
+  const KNOWN_TABS_KEY = 'sb.sysop.knownTabs';
+  let knownTabs = {};
+  try { knownTabs = JSON.parse(localStorage.getItem(KNOWN_TABS_KEY) || '{}') || {}; } catch (_) { knownTabs = {}; }
+
+  function rememberTabs() {
+    let changed = false;
+    for (const t of terminals) {
+      if (!t || !t.address) continue;
+      const rec = { name: tabDisplayName(t), alias: String(t.name || ''), kind: tabAgentKind(t) || 'shell' };
+      const old = knownTabs[t.address];
+      if (!old || old.name !== rec.name || old.kind !== rec.kind || old.alias !== rec.alias) {
+        knownTabs[t.address] = rec;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    const keys = Object.keys(knownTabs);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 80))) delete knownTabs[k];
+    try { localStorage.setItem(KNOWN_TABS_KEY, JSON.stringify(knownTabs)); } catch (_) {}
+  }
+
+  function tabRefContext() {
+    const live = new Set();
+    const out = [];
+    for (const t of terminals) {
+      if (!t || !t.address) continue;
+      live.add(t.address);
+      out.push({ address: t.address, name: tabDisplayName(t), aliases: t.name ? [String(t.name)] : [], kind: tabAgentKind(t) || 'shell', live: true });
+    }
+    for (const [address, rec] of Object.entries(knownTabs)) {
+      if (!live.has(address)) out.push({ address, name: rec.name, aliases: rec.alias ? [rec.alias] : [], kind: rec.kind, live: false });
+    }
+    return out;
+  }
+
+  function tabChip(tab) {
+    const chip = document.createElement('span');
+    chip.className = `tab-ref${tab.live ? '' : ' closed'}`;
+    chip.appendChild(makeMiniPixelIcon(tab.kind || 'shell'));
+    const name = document.createElement('span');
+    name.className = 'tab-ref-name';
+    name.textContent = tab.name;
+    chip.appendChild(name);
+    if (!tab.live) {
+      chip.title = tab.unknown ? 'Tab no longer open' : `${tab.name} is closed`;
+      return chip;
+    }
+    chip.title = `Switch to ${tab.name}`;
+    chip.setAttribute('role', 'button');
+    chip.tabIndex = 0;
+    const go = () => {
+      if (activeId !== tab.address) connectPty(tab.address);
+      else focusTerminalIfDesktop();
+    };
+    chip.addEventListener('click', go);
+    chip.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        go();
+      }
+    });
+    return chip;
+  }
+
+  function linkTabs(text) {
+    const frag = document.createDocumentFragment();
+    const segs = window.SbTabRefs ? window.SbTabRefs.parse(text, tabRefContext()) : [{ t: 'text', v: String(text || '') }];
+    for (let i = 0; i < segs.length; i++) {
+      const seg = segs[i];
+      if (seg.t === 'tab') {
+        // a parenthesis around a chip stays on its line: "(" + chip + ")" never breaks apart
+        const prev = frag.lastChild;
+        const next = segs[i + 1];
+        const glue = document.createElement('span');
+        glue.className = 'tab-ref-glue';
+        if (prev && prev.nodeType === 3 && /\($/.test(prev.data)) {
+          prev.data = prev.data.slice(0, -1);
+          glue.append('(');
+        }
+        glue.appendChild(tabChip(seg.tab));
+        if (next && next.t === 'text' && /^[),.;:]/.test(next.v)) {
+          glue.append(next.v[0]);
+          next.v = next.v.slice(1);
+        }
+        frag.appendChild(glue.childNodes.length > 1 ? glue : glue.firstChild);
+      } else if (seg.t === 'text') frag.append(seg.v);
+      else {
+        const el = document.createElement(seg.t === 'code' ? 'code' : 'span');
+        if (seg.t !== 'code') el.className = `tr-${seg.t}`;
+        el.textContent = seg.v;
+        frag.appendChild(el);
+      }
+    }
+    return frag;
+  }
+
+  // "- item" lines become rows (a tab named first gets its agent's pixel icon); any other line is a paragraph
+  function renderReplyText(text) {
+    const wrap = document.createElement('div');
+    wrap.className = 'turn-reply';
+    let list = null;
+    for (const raw of String(text || '').split('\n')) {
+      const line = raw.trim();
+      if (!line) {
+        list = null;
+        continue;
+      }
+      const bullet = /^[-•*]\s+(.*)$/.exec(line);
+      if (bullet) {
+        if (!list) {
+          list = document.createElement('ul');
+          wrap.appendChild(list);
+        }
+        const li = document.createElement('li');
+        const frag = linkTabs(bullet[1].replace(/^(`[^`]+`|[t@]\d+|\d+:[\w.-]+)\s*:\s*/, '$1 '));
+        let first = frag.firstChild;
+        if (first && first.nodeType === 1 && first.classList.contains('tab-ref-glue') && first.firstChild && first.firstChild.nodeType === 1
+          && first.firstChild.classList.contains('tab-ref') && /^[:–—-]?$/.test(first.textContent.slice(first.firstChild.textContent.length))) {
+          const chip = first.firstChild;
+          frag.replaceChild(chip, first);       // "chip:" at the head of a row: the row is the chip, the colon goes
+          first = chip;
+        }
+        const lead = first && first.nodeType === 1 && first.classList.contains('tab-ref') ? first : null;
+        const rest = document.createElement('span');     // one flex item, so inline code in it flows with the text
+        if (lead) {
+          li.appendChild(lead);
+          // "`name` (t3): text" left a colon behind the chip: the row already says whose it is
+          const t0 = frag.firstChild;
+          if (t0 && t0.nodeType === 3) t0.data = t0.data.replace(/^\s*[:–—-]\s*/, ' ').replace(/^\s+/, '');
+        }
+        rest.appendChild(frag);
+        li.appendChild(rest);
+        list.appendChild(li);
+      } else {
+        list = null;
+        const pEl = document.createElement('p');
+        pEl.appendChild(linkTabs(line));
+        wrap.appendChild(pEl);
+      }
+    }
+    return wrap;
+  }
+
+  function fmtAgo(ms) {
+    if (!ms) return '';
+    const m = Math.floor((Date.now() - ms) / 60000);
+    if (m < 1) return 'now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
+  }
+
+  function renderTurn(turn) {
+    const el = document.createElement('div');
+    el.className = `turn${turn.running ? ' running' : ''}`;
+    el.dataset.state = turn.state || '';
+
+    if (turn.prompt) {
+      const ask = document.createElement('div');
+      ask.className = 'turn-ask';
+      const bubble = document.createElement('div');
+      bubble.className = 'turn-ask-bubble';
+      bubble.textContent = turn.prompt;
+      const meta = document.createElement('div');
+      meta.className = 'turn-meta';
+      if (turn.source === 'voice') meta.insertAdjacentHTML('beforeend', MIC_SVG);
+      meta.append(fmtAgo(turn.started));
+      ask.append(bubble, meta);
+      el.appendChild(ask);
+    }
+
+    const said = document.createElement('div');
+    said.className = 'turn-sysop';
+    const head = document.createElement('div');
+    head.className = 'turn-sysop-head';
+    head.appendChild(makeMiniPixelIcon('sysop'));
+    const who = document.createElement('span');
+    who.className = 'turn-who';
+    who.textContent = 'Sysop';
+    head.appendChild(who);
+    const acts = Array.isArray(turn.actions) ? turn.actions : [];
+    let list = null;
+    if (acts.length) {
+      const failed = acts.filter((a) => !a.ok).length;
+      const open = openTurnActions.has(turn.id);
+      const tog = document.createElement('button');
+      tog.type = 'button';
+      tog.className = 'turn-acts-toggle';
+      tog.setAttribute('aria-expanded', String(open));
+      tog.textContent = `${open ? '▾' : '▸'} ${acts.length} action${acts.length === 1 ? '' : 's'}${failed ? ` · ${failed} failed` : ''}`;
+      list = document.createElement('ol');
+      list.className = 'turn-acts';
+      list.hidden = !open;
+      for (const a of acts) {
+        const li = document.createElement('li');
+        li.className = a.ok ? 'ok' : 'err';
+        const mark = document.createElement('span');
+        mark.className = 'turn-act-mark';
+        mark.textContent = a.ok ? '✓' : '✕';
+        li.append(mark, a.label || a.fn || 'step');
+        list.appendChild(li);
+      }
+      tog.addEventListener('click', () => {
+        const now = list.hidden;
+        list.hidden = !now;
+        if (now) openTurnActions.add(turn.id);
+        else openTurnActions.delete(turn.id);
+        tog.setAttribute('aria-expanded', String(now));
+        tog.textContent = tog.textContent.replace(/^[▸▾]/, now ? '▾' : '▸');
+      });
+      const dot = document.createElement('span');
+      dot.className = 'turn-sep';
+      dot.textContent = '·';
+      head.append(dot, tog);
+    }
+    said.appendChild(head);
+    if (list) said.appendChild(list);
+
+    for (const n of Array.isArray(turn.notes) ? turn.notes : []) {
+      const note = document.createElement('div');
+      note.className = 'turn-note';
+      note.appendChild(linkTabs(String(n)));
+      said.appendChild(note);
+    }
+    if (turn.running) {
+      const live = document.createElement('div');
+      live.className = 'turn-live';
+      const dot = document.createElement('span');
+      dot.className = 'turn-live-dot';
+      const txt = document.createElement('span');
+      txt.textContent = turn.live_action || 'Thinking…';
+      live.append(dot, txt);
+      said.appendChild(live);
+    } else if (turn.reply) {
+      const rep = renderReplyText(turn.reply);
+      rep.dataset.state = turn.state || 'done';
+      said.appendChild(rep);
+    }
+    el.appendChild(said);
+    return el;
+  }
+
+  function renderSysopEmpty(sysop) {
+    const box = document.createElement('div');
+    box.className = 'sysop-empty';
+    const icon = document.createElement('div');
+    icon.className = 'sysop-empty-icon';
+    icon.innerHTML = pixelIconHtml('sysop');
+    const title = document.createElement('div');
+    title.className = 'sysop-empty-title';
+    title.textContent = sysop.up ? 'Sysop Operator' : 'Sysop is offline';
+    const desc = document.createElement('p');
+    desc.className = 'sysop-empty-desc';
+    box.append(icon, title, desc);
+    if (!sysop.up) {
+      desc.innerHTML = 'Install it from Settings › Addons, or run <code>swarmbox addon install sysop</code>.';
+      return box;
+    }
+    desc.textContent = "Ask what's happening in your box or direct your agents — risky actions always pause for you.";
+    const policy = (sysop.settings && sysop.settings.autonomy) || '';
+    if (policy) {
+      const pol = document.createElement('div');
+      pol.className = 'sysop-empty-policy';
+      pol.textContent = `policy · ${policy}`;
+      box.appendChild(pol);
+    }
+    const sugg = document.createElement('div');
+    sugg.className = 'sysop-suggest';
+    for (const text of SYSOP_SUGGESTIONS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sysop-suggest-btn';
+      const label = document.createElement('span');
+      label.textContent = text;
+      const ret = document.createElement('span');
+      ret.className = 'sysop-suggest-ret';
+      ret.textContent = '↵';
+      b.append(label, ret);
+      b.addEventListener('click', () => sendGoal(text));
+      sugg.appendChild(b);
+    }
+    box.appendChild(sugg);
+    return box;
+  }
+
+  function renderSysopFeed(sysop) {
+    const turns = Array.isArray(sysop.turns) ? sysop.turns : null;
+    const steps = Array.isArray(sysop.steps) ? sysop.steps : [];
+    const empty = turns ? turns.length === 0 : steps.length === 0;
+    sysopFeedEl.classList.toggle('is-empty', empty || !sysop.up);
+    goalInputEl.placeholder = empty ? 'Ask Sysop or direct an agent… (Alt+G)' : 'Ask a follow-up… (Alt+G)';
+    btnSysopNew.classList.toggle('hidden', empty || !sysop.up);
+    // the snapshot comes every 600 ms: rebuild only when something shown changed (the minute keeps "3m ago" true)
+    const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns, turns ? null : steps,
+      terminals.map((t) => [t.address, tabDisplayName(t), tabAgentKind(t)]), Math.floor(Date.now() / 60000)]);
+    if (key !== lastFeedKey) {
+      lastFeedKey = key;
+      const nearBottom = sysopFeedEl.scrollHeight - sysopFeedEl.scrollTop - sysopFeedEl.clientHeight < 48;
+      sysopFeedEl.innerHTML = '';
+      if (!sysop.up || empty) {
+        sysopFeedEl.appendChild(renderSysopEmpty(sysop));
+      } else if (turns) {
+        for (const t of turns) sysopFeedEl.appendChild(renderTurn(t));
+      } else {
+        // an older gateway without turns: the flat steps of the current goal
+        for (const s of steps) {
+          const div = document.createElement('div');
+          div.className = `step ${s.kind || 'info'}`;
+          div.textContent = s.text || '';
+          sysopFeedEl.appendChild(div);
+        }
+      }
+      if (nearBottom || !sysopFeedEl.dataset.seen) sysopFeedEl.scrollTop = sysopFeedEl.scrollHeight;
+      sysopFeedEl.dataset.seen = '1';
+    }
+    // the confirmation lives in the conversation, right under the turn that waits for it
+    const host = sysopFeedEl.querySelector('.turn.running .turn-sysop') || sysopFeedEl;
+    if (approvalCardEl.parentNode !== host) host.appendChild(approvalCardEl);
+    if (!approvalCardEl.classList.contains('hidden')) sysopFeedEl.scrollTop = sysopFeedEl.scrollHeight;
+  }
+
   function renderSysop(sysop) {
     if (!sysop) return;
     const st = sysop.state || 'off';
     if (sysopDotEl) sysopDotEl.dataset.state = st;
     sysopStateEl.dataset.state = st;
-    sysopStateEl.textContent = st;
+    sysopStateEl.textContent = STATE_WORDS[st] || st;
     if (mobileSysopDotEl) mobileSysopDotEl.dataset.state = st;
     mobileSysopBtn.dataset.state = st;
     if (btnToggleSysop) btnToggleSysop.dataset.state = st;
@@ -2460,86 +2758,8 @@
     const running = st === 'working' || st === 'allow?' || st === 'sending' || st === 'queued';
     btnSysopStop.classList.toggle('hidden', !running);
 
-    if (sysopCardEl) {
-      sysopCardEl.dataset.state = st;
-      if (sysopCornerEl) {
-        sysopCornerEl.textContent =
-          (st === 'working' || st === 'queued') ? '⚡' :
-          (st === 'allow?' || st === 'sending') ? '!' :
-          st === 'done' ? '✓' :
-          (st === 'failed' || st === 'stopped') ? '✕' : 'Z';
-      }
-      if (sysopCardBadgeEl) {
-        sysopCardBadgeEl.textContent =
-          st === 'off' ? 'OFFLINE' :
-          st === 'working' ? 'WORKING' :
-          st === 'queued' ? 'QUEUED' :
-          (st === 'allow?' || st === 'sending') ? 'APPROVAL' :
-          st === 'done' ? 'DONE' :
-          st === 'failed' ? 'FAILED' :
-          st === 'stopped' ? 'STOPPED' : 'READY';
-      }
-      if (sysopCardMetaEl) {
-        const policy = (sysop.settings && sysop.settings.autonomy) || '';
-        sysopCardMetaEl.textContent = sysop.up ? (policy ? `policy: ${policy}` : 'operator') : 'addon off';
-      }
-      if (sysopCardTitleEl) {
-        sysopCardTitleEl.textContent = !sysop.up
-          ? 'Sysop offline'
-          : (st === 'allow?' || st === 'sending') ? 'Approval required'
-          : (sysop.sentence && st !== 'idle' ? sysop.sentence : 'Sysop Operator');
-      }
-      if (sysopCardSubEl) {
-        sysopCardSubEl.textContent = !sysop.up
-          ? 'Install sysop addon in Settings'
-          : st === 'working' ? 'Routing actions across your tabs'
-          : (st === 'allow?' || st === 'sending') ? 'Confirm or cancel action below'
-          : st === 'done' ? 'Goal complete · ready for next'
-          : 'Routes goals & guards risky actions';
-      }
-    }
-
     renderApprovalCard(sysop);
-
-    sysopFeedEl.innerHTML = '';
-    const steps = Array.isArray(sysop.steps) ? sysop.steps : [];
-    if (!sysop.up) {
-      const box = document.createElement('div');
-      box.className = 'sysop-hints';
-      box.innerHTML = `
-        <div>Enable autonomous tab routing and voice goals from Settings or run <code>swarmbox addon install sysop</code>.</div>
-      `;
-      sysopFeedEl.appendChild(box);
-    } else if (steps.length === 0) {
-      const box = document.createElement('div');
-      box.className = 'sysop-hints';
-      box.innerHTML = `
-        <div>Speak or type a goal below — Sysop infers your active agent tab and pauses risky actions behind one-tap approval.</div>
-        <div class="shortcut-hints">
-          <span class="kbd-chip"><b>Alt+G</b> focus</span>
-          <span class="kbd-chip"><b>Alt+S</b> toggle</span>
-        </div>
-      `;
-      sysopFeedEl.appendChild(box);
-    } else {
-      for (const s of steps) {
-        const div = document.createElement('div');
-        div.className = `step ${s.kind || 'info'}`;
-        const iconEl = document.createElement('span');
-        iconEl.className = 'step-icon';
-        iconEl.textContent =
-          s.kind === 'ok' ? '✓' :
-          s.kind === 'goal' ? '❯' :
-          s.kind === 'warn' ? '!' :
-          s.kind === 'err' ? '✕' : '·';
-        const textEl = document.createElement('span');
-        textEl.className = 'step-text';
-        textEl.textContent = s.text || '';
-        div.append(iconEl, textEl);
-        sysopFeedEl.appendChild(div);
-      }
-      sysopFeedEl.scrollTop = sysopFeedEl.scrollHeight;
-    }
+    renderSysopFeed(sysop);
   }
 
   let noteTimer = null;
@@ -2582,6 +2802,7 @@
       }
       if (Array.isArray(msg.terminals)) {
         terminals = msg.terminals;
+        rememberTabs();
         const liveAddrs = new Set(terminals.map((t) => t.address));
         for (const addr of Array.from(tabSessions.keys())) {
           if (!liveAddrs.has(addr)) disposeSession(addr);
@@ -2601,6 +2822,13 @@
             renderTabs();
           }
         }
+      }
+      // The active tab moved elsewhere (the Sysop's focus_tab, the cockpit, another browser): follow it. Only a CHANGE of the server's
+      // active tab counts, so a snapshot sent before this browser's own click (still naming the old tab) never pulls it back.
+      if (typeof msg.active === 'string' && msg.active) {
+        const changed = lastServerActive !== null && msg.active !== lastServerActive;
+        lastServerActive = msg.active;
+        if (changed && msg.active !== activeId && terminals.some((t) => t.address === msg.active)) connectPty(msg.active);
       }
       if (msg.sysop) renderSysop(msg.sysop);
     };
@@ -2979,11 +3207,9 @@
   document.getElementById('sheet-backdrop').addEventListener('click', () => setMobileSysop(false));
   document.getElementById('sheet-handle').addEventListener('click', () => setMobileSysop(false));
 
-  btnTts.addEventListener('click', () => {
-    ttsEnabled = !ttsEnabled;
-    btnTts.classList.toggle('active', ttsEnabled);
-    if (ttsEnabled) speak('Sysop voice feedback enabled.');
-    if (settingsOpen && settingsSection === 'sysop') renderSettingsBody();
+  btnSysopNew.addEventListener('click', async () => {
+    openTurnActions.clear();
+    await fetch('/api/sysop/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
   });
 
   btnSysopStop.addEventListener('click', () => {
@@ -3568,22 +3794,6 @@
       }),
     ]);
     frag.appendChild(statusBanner);
-
-    // Live browser TTS toggle (instant)
-    const liveCard = el('div', { class: 's-card' }, [
-      makeSettingRow({
-        title: 'Spoken Feedback (TTS)',
-        desc: 'Read approval prompts and blocked agent notices aloud in this browser.',
-        badge: { text: 'live', tone: 'ok' },
-        control: makeSwitch(ttsEnabled, 'Spoken feedback', (next) => {
-          ttsEnabled = next;
-          btnTts.classList.toggle('active', ttsEnabled);
-          if (ttsEnabled) speak('Sysop voice feedback enabled.');
-          renderSettingsBody();
-        }),
-      }),
-    ]);
-    frag.appendChild(makeGroup('Browser Controls', null, liveCard));
 
     // Visual 3-card Autonomy selector
     const curAuto = effectiveHostValue('sysop', 'sysop.autonomy') || 'auto';

@@ -91,7 +91,7 @@ LEGIT_PHRASES = [
     (r"tool(chain|bar|tip)s?|ToolError", "ordinary English and words of the web page: the toolchain (a language's compiler), the strip's toolbar and tooltip, the error of a sysop tool call"),
     (r"itertools|imagetools|setuptools|libtool|autotools|mailtools",
      "names of third-party software: Python itertools and setuptools, docker buildx imagetools, GNU libtool, Debian libmailtools-perl"),
-    (r"\btools?\b(?=[^`.]{0,6}`(list_tabs|read_tab|look_tab|run|input|wait|say|done)`)", "the tools of the sysop's brain, named right after (`list_tabs`, `look_tab`...)"),
+    (r"\btools?\b(?=[^`.]{0,6}`(list_tabs|read_tab|look_tab|box_info|focus_tab|open_tab|close_tab|run|input|wait|say|done)`)", "the tools of the sysop's brain, named right after (`list_tabs`, `look_tab`...)"),
     (r"\*\*Its tools\*\*", "the tools of the sysop's brain (heading of a list in the design page of the addons)"),
     (r"dev-?tools", "Chrome DevTools (the protocol, the MCP server chrome-devtools-mcp): a third-party name"),
     (r"Command Line Tools", "the Xcode Command Line Tools of macOS: a third-party name"),

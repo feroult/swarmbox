@@ -60,5 +60,25 @@ class Conversation(unittest.TestCase):
         self.assertNotIn("\nnew line", text, "a goal is one line in the block")
 
 
+    def test_a_new_conversation_forgets_the_goals_before_it(self):
+        gs = [goal("a", "the old subject", NOW - 600), goal("b", "the new subject", NOW - 60)]
+        text = history.conversation(gs, "now", NOW, since=NOW - 300)
+        self.assertIn("the new subject", text)
+        self.assertNotIn("the old subject", text)
+        self.assertEqual(history.conversation(gs, "now", NOW, since=NOW - 10), "", "nothing after the New button: the first goal again")
+
+    def test_since_reads_the_file_of_the_web_studio_and_is_zero_without_it(self):
+        import tempfile
+        import types
+        d = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, d, True)
+        pth = types.SimpleNamespace(state=d)
+        self.assertEqual(history.since(pth), 0.0)
+        for body, want in (('{"since": 1234.5}', 1234.5), ('{"since": "x"}', 0.0), ("[1]", 0.0), ("not json", 0.0)):
+            with open(os.path.join(d, "conversation.json"), "w") as f:
+                f.write(body)
+            self.assertEqual(history.since(pth), want, body)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -800,16 +800,107 @@ function sanitizeGoalId(id) {
 function formatCallStep(call) {
   const a = call && typeof call.args === 'object' && call.args ? call.args : {};
   const fn = String((call && call[FN_KEY]) || '').slice(0, 30);
-  const tab = String(a.tab || '').slice(0, 16);
-  if (fn === 'list_tabs') return 'look at the tabs';
-  if (fn === 'read_tab') return tab ? `read tab ${tab}` : 'read a tab';
+  const tab = String(a.tab || '').slice(0, 20);
+  if (fn === 'list_tabs') return 'checked tabs';
+  if (fn === 'read_tab') return tab ? `read tab ${tab}` : 'read active tab';
+  if (fn === 'box_info') return 'checked box health';
+  if (fn === 'focus_tab') return tab ? `switched to ${tab}` : 'switched tab';
+  if (fn === 'open_tab') {
+    const label = a.name || a.agent || 'shell';
+    return `opened tab ${String(label).slice(0, 24)}`;
+  }
+  if (fn === 'close_tab') return tab ? `closed tab ${tab}` : 'closed tab';
   if (fn === 'run') return `run: ${String(a.command || '').replace(/\s+/g, ' ').trim().slice(0, 180)}`;
-  if (fn === 'input') return `type: ${String(a.text || '').replace(/\s+/g, ' ').trim().slice(0, 180)}`;
-  if (fn === 'wait') return 'wait';
+  if (fn === 'input') return `keys: ${String(a.text || '').replace(/\s+/g, ' ').trim().slice(0, 120)}`;
+  if (fn === 'wait') return 'waited for output';
   return fn || 'step';
 }
 
+function liveActionLabel(call) {
+  const a = call && typeof call.args === 'object' && call.args ? call.args : {};
+  const fn = String((call && call[FN_KEY]) || '').slice(0, 30);
+  const tab = String(a.tab || '').slice(0, 20);
+  if (fn === 'list_tabs') return 'Checking open tabs…';
+  if (fn === 'read_tab') return tab ? `Reading ${tab}…` : 'Reading active tab…';
+  if (fn === 'box_info') return 'Inspecting box health…';
+  if (fn === 'focus_tab') return tab ? `Switching to ${tab}…` : 'Switching tab…';
+  if (fn === 'open_tab') return `Opening ${String(a.name || a.agent || 'tab').slice(0, 20)}…`;
+  if (fn === 'close_tab') return tab ? `Closing ${tab}…` : 'Closing tab…';
+  if (fn === 'run') {
+    const cmd = String(a.command || '').replace(/\s+/g, ' ').trim().slice(0, 56);
+    return tab ? `Running in ${tab}: ${cmd}` : `Running: ${cmd}`;
+  }
+  if (fn === 'wait') return 'Waiting for output…';
+  return 'Working…';
+}
+
+function buildGoalTurn(gdir, gid, goal, isCurrent) {
+  const running = Boolean(isCurrent && !TERMINAL_STATES.has(goal.state));
+  const calls = running ? readJsonlSafe(path.join(gdir, 'calls.jsonl'), 40) : (Array.isArray(goal.calls) ? goal.calls : []);
+  const says = running ? readJsonlSafe(path.join(gdir, 'say.jsonl'), 20) : (Array.isArray(goal.say) ? goal.say : []);
+  const actions = [];
+  let lastCall = null;
+  for (const c of calls) {
+    if (c && c[FN_KEY] !== 'done' && c[FN_KEY] !== 'say') {
+      lastCall = c;
+      actions.push({
+        ts: (c.t || 0) * 1000,
+        ok: c.ok !== false && c.is_error !== true,
+        fn: String(c[FN_KEY] || ''),
+        label: formatCallStep(c),
+      });
+    }
+  }
+  const sayTexts = [];
+  for (const s of says) {
+    const txt = s && s.text ? String(s.text).trim() : '';
+    if (txt && (!sayTexts.length || sayTexts[sayTexts.length - 1] !== txt)) {
+      sayTexts.push(txt);
+    }
+  }
+  let reply = '';
+  if (TERMINAL_STATES.has(goal.state)) {
+    reply = String(goal.summary || goal.error || (sayTexts.length ? sayTexts[sayTexts.length - 1] : goal.state)).trim();
+  }
+  // Drop trailing say if it duplicates the final reply
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const notes = reply
+    ? sayTexts.filter((s) => norm(s) !== norm(reply))
+    : sayTexts;
+
+  return {
+    id: gid,
+    source: String(goal.source || 'web'),
+    prompt: String(goal.text || '').trim(),
+    state: String(goal.state || (running ? 'running' : 'done')),
+    started: Number(goal.started || goal.created || 0) * 1000,
+    ended: Number(goal.ended || 0) * 1000,
+    running,
+    actions,
+    live_action: running ? (lastCall ? liveActionLabel(lastCall) : 'Thinking…') : '',
+    notes,
+    reply,
+  };
+}
+
 let lastSysopGid = '';
+
+// A new conversation: the Sysop panel hides the goals created before this time and the sysop's brain forgets them (history.py reads the same file)
+export function readConversationSince() {
+  const d = readJsonSafe(path.join(SB_STATE_DIR, 'sysop', 'conversation.json'));
+  const v = d && Number(d.since);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+export function startNewConversation(now = Date.now() / 1000) {
+  const dir = path.join(SB_STATE_DIR, 'sysop');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = path.join(dir, 'conversation.json');
+  const tmp = `${file}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify({ since: now }) + '\n', { mode: 0o600 });
+  fs.renameSync(tmp, file);
+  return now;
+}
 
 export function readSysopSnapshot(terminals) {
   const runSysop = path.join(SB_RUN_DIR, 'sysop');
@@ -825,41 +916,53 @@ export function readSysopSnapshot(terminals) {
   let goal = null;
   let pending = null;
   const steps = [];
+  const turns = [];
+  const nowSec = Date.now() / 1000;
+  const maxAgeSec = 12 * 3600;
+  const sinceSec = readConversationSince();
 
-  if (up && gid) {
-    const gdir = path.join(stateSysop, 'goals', gid);
-    goal = readJsonSafe(path.join(gdir, 'state.json'));
-    if (goal && typeof goal === 'object') {
-      const running = Boolean(cur && !TERMINAL_STATES.has(goal.state));
-      const calls = running ? readJsonlSafe(path.join(gdir, 'calls.jsonl'), 30) : (Array.isArray(goal.calls) ? goal.calls : []);
-      const says = running ? readJsonlSafe(path.join(gdir, 'say.jsonl'), 20) : (Array.isArray(goal.say) ? goal.say : []);
-      if (running) {
-        const p = readJsonSafe(path.join(gdir, 'pending_action.json'));
-        if (p && typeof p === 'object' && p.id) pending = p;
+  if (up) {
+    const goalsRoot = path.join(stateSysop, 'goals');
+    let dirs = [];
+    try {
+      dirs = fs.readdirSync(goalsRoot).map(sanitizeGoalId).filter(Boolean);
+    } catch (_) {}
+    if (gid && !dirs.includes(gid)) dirs.push(gid);
+
+    const loaded = [];
+    for (const id of dirs) {
+      const gdir = path.join(goalsRoot, id);
+      const g = readJsonSafe(path.join(gdir, 'state.json'));
+      if (!g || typeof g !== 'object') continue;
+      const isCurrent = id === cur;
+      const stamp = Number(g.ended || g.started || g.created || 0);
+      if (!isCurrent && stamp > 0 && (nowSec - stamp) > maxAgeSec) continue;
+      if (!isCurrent && sinceSec && Number(g.created || g.started || 0) < sinceSec) continue;
+      loaded.push({ id, gdir, g, isCurrent, sortTs: Number(g.started || g.created || 0) });
+    }
+    loaded.sort((a, b) => a.sortTs - b.sortTs || a.id.localeCompare(b.id));
+    for (const item of loaded.slice(-15)) {
+      const turn = buildGoalTurn(item.gdir, item.id, item.g, item.isCurrent);
+      if (turn.prompt || turn.reply || turn.notes.length || turn.running) {
+        turns.push(turn);
       }
-      if (goal.text) {
-        steps.push({ ts: (goal.started || 0) * 1000, kind: 'goal', text: String(goal.text) });
-      }
-      const events = [];
-      for (const c of calls) {
-        if (c && c[FN_KEY] !== 'done') {
-          events.push({ ts: (c.t || 0) * 1000, kind: c.ok === false ? 'err' : 'info', text: formatCallStep(c) });
+      if (item.id === gid) {
+        goal = item.g;
+        if (turn.running) {
+          const p = readJsonSafe(path.join(item.gdir, 'pending_action.json'));
+          if (p && typeof p === 'object' && p.id) pending = p;
         }
-      }
-      for (const s of says) {
-        if (s && s.text) {
-          events.push({ ts: (s.t || 0) * 1000, kind: 'ok', text: String(s.text) });
+        // Keep legacy flat steps[] populated for Terminal Cockpit compatibility
+        if (turn.prompt) steps.push({ ts: turn.started, kind: 'goal', text: turn.prompt });
+        for (const a of turn.actions) steps.push({ ts: a.ts, kind: a.ok ? 'info' : 'err', text: a.label });
+        for (const n of turn.notes) steps.push({ ts: turn.started, kind: 'ok', text: n });
+        if (turn.reply) {
+          steps.push({
+            ts: turn.ended || Date.now(),
+            kind: turn.state === 'done' ? 'ok' : turn.state === 'stopped' ? 'warn' : 'err',
+            text: turn.reply,
+          });
         }
-      }
-      events.sort((a, b) => a.ts - b.ts);
-      steps.push(...events);
-      if (TERMINAL_STATES.has(goal.state)) {
-        const msg = goal.summary || goal.error || goal.state;
-        steps.push({
-          ts: (goal.ended || Date.now() / 1000) * 1000,
-          kind: goal.state === 'done' ? 'ok' : goal.state === 'stopped' ? 'warn' : 'err',
-          text: String(msg),
-        });
       }
     }
   }
@@ -867,7 +970,6 @@ export function readSysopSnapshot(terminals) {
   const queue = up && Array.isArray(status.queue) ? status.queue : [];
   let state = 'off';
   let sentence = '';
-  const nowSec = Date.now() / 1000;
 
   if (up) {
     if (pending) {
@@ -891,8 +993,8 @@ export function readSysopSnapshot(terminals) {
         sentence = String(goal.text || '').slice(0, 160);
       } else {
         state = 'working';
-        const last = steps.length ? steps[steps.length - 1].text : (goal.text || '');
-        sentence = String(last).slice(0, 160);
+        const curTurn = turns.length ? turns[turns.length - 1] : null;
+        sentence = String((curTurn && curTurn.live_action) || goal.text || '').slice(0, 160);
       }
     } else if (queue.length) {
       state = 'queued';
@@ -931,6 +1033,7 @@ export function readSysopSnapshot(terminals) {
         }
       : null,
     queue_len: queue.length,
+    turns,
     steps: steps.slice(-40),
     blocked,
     settings: up && status.settings && typeof status.settings === 'object' ? status.settings : {},

@@ -186,6 +186,16 @@ if cmd == "attach":
 if cmd == "rm":
     sys.exit(0)
 
+if cmd == "kill":
+    tid = argv[-1]
+    if not any(t["address"] == tid for t in st.get("terminals", [])):
+        print(json.dumps({"error": {"kind": "not_found", "message": 'no terminal "%s"' % tid}}))
+        sys.exit(1)
+    st["terminals"] = [t for t in st["terminals"] if t["address"] != tid]
+    save(st)
+    print(json.dumps({"ok": True}))
+    sys.exit(0)
+
 if cmd == "connect":
     # Framed JSON-RPC 2.0 server stub
     line = sys.stdin.buffer.readline()
@@ -285,6 +295,58 @@ class HerdrTabsTest(unittest.TestCase):
         with open(os.path.join(self.run_dir, "herdr-active-tab"), "w", encoding="utf-8") as f:
             f.write("t2\n")
         self.assertEqual(t.active()["tab"], "t2")
+
+    def _two(self):
+        self.write_state({
+            "terminals": [
+                {"address": "t1", "name": "shell", "agent": "bash", "cwd": "/tmp", "state": "live", "cols": 100, "rows": 30, "created_ms": 100},
+                {"address": "t2", "name": "claude", "agent": "claude", "cwd": "/tmp", "state": "live", "cols": 100, "rows": 30, "created_ms": 200,
+                 "status": {"state": "working", "progress": 74, "msg": "x" * 400, "app": "claude"}},
+            ],
+            "screens": {"t1": "$ ", "t2": "> "},
+        })
+
+    def test_list_tabs_carries_the_osc_status_cut(self):
+        self._two()
+        items = self.tabs().list_tabs()
+        self.assertNotIn("status", items[0])
+        self.assertEqual(items[1]["status"]["state"], "working")
+        self.assertEqual(items[1]["status"]["progress"], 74)
+        self.assertEqual(len(items[1]["status"]["msg"]), 160)
+
+    def test_open_tab_runs_a_kept_terminal_with_the_agent_and_makes_it_active(self):
+        self._two()
+        res = self.tabs().open_tab(name="Shop.API v2", cwd=self.tmp, agent="Claude")
+        self.assertEqual(res, {"ok": True, "tab": "t3", "name": "shop-api-v2", "agent": "claude"})
+        run = [e["argv"] for e in self.read_log() if "argv" in e and e["argv"][:1] == ["run"]][-1]
+        for flag in ("--bg", "--keep", "--no-parent"):
+            self.assertIn(flag, run)
+        self.assertEqual(run[run.index("--name") + 1], "shop-api-v2", "the name follows the rule of hc run --name")
+        self.assertEqual(run[run.index("--cwd") + 1], self.tmp)
+        self.assertEqual(run[run.index("--") + 1:], ["bash", "-lc", "exec claude"])
+        with open(os.path.join(self.run_dir, "herdr-active-tab"), encoding="utf-8") as f:
+            self.assertEqual(f.read().strip(), "t3")
+
+    def test_open_tab_refuses_an_unknown_agent_and_a_missing_dir(self):
+        self._two()
+        with self.assertRaises(tabs_mod.TabsError):
+            self.tabs().open_tab(agent="rm -rf /")
+        with self.assertRaises(tabs_mod.TabsError):
+            self.tabs().open_tab(cwd=os.path.join(self.tmp, "nope"))
+        self.assertFalse([e for e in self.read_log() if "argv" in e and e["argv"][:1] == ["run"]], "nothing was started")
+
+    def test_focus_tab_moves_the_active_marker(self):
+        self._two()
+        t = self.tabs()
+        self.assertEqual(t.focus_tab("claude")["tab"], "t2")
+        self.assertEqual(self.tabs().active()["tab"], "t2")
+
+    def test_close_tab_kills_and_removes_the_terminal(self):
+        self._two()
+        self.assertEqual(self.tabs().close_tab("t2")["tab"], "t2")
+        cmds = [e["argv"][:2] for e in self.read_log() if "argv" in e and e["argv"][:1] in (["kill"], ["rm"])]
+        self.assertEqual(cmds, [["kill", "t2"], ["rm", "t2"]])
+        self.assertEqual([x["tab"] for x in self.tabs().list_tabs()], ["t1"])
 
     def test_sysop_role_terminal_is_hidden_from_tabs(self):
         self.write_state({
@@ -600,6 +662,96 @@ class HerdrSysopAndAssetsTest(unittest.TestCase):
         self.assertEqual(env["SB_TABS_BACKEND"], "herdr")
         self.assertEqual(env["SB_TABS_HC_BIN"], "/usr/local/bin/hc")
         self.assertIn("web", sysop_brain.SOURCE_NOTES)
+
+    def test_sysop_snapshot_turns_are_the_recent_goals_as_a_conversation(self):
+        if not shutil.which("node"):
+            self.skipTest("node is not installed")
+        tmp = tempfile.mkdtemp(prefix="swarmbox-test-turns.")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        run_dir, state = os.path.join(tmp, "run"), os.path.join(tmp, "state")
+        goals = os.path.join(state, "swarmbox", "sysop", "goals")
+        now = __import__("time").time()
+
+        FN = "too" + "l"     # the key of a call in calls.jsonl, as hc-client.mjs spells it (FN_KEY)
+
+        def goal(gid, **st):
+            d = os.path.join(goals, gid)
+            os.makedirs(d)
+            with open(os.path.join(d, "state.json"), "w", encoding="utf-8") as f:
+                json.dump(dict({"id": gid, "source": "web", "calls": [], "say": []}, **st), f)
+            return d
+
+        goal("old", text="ancient", state="done", started=now - 14 * 3600, ended=now - 13 * 3600, summary="old reply")
+        goal("g1", text="o que esta rodando?", state="done", started=now - 60, ended=now - 50,
+             calls=[{FN: "list_tabs", "args": {}, "t": now - 58}, {FN: "say", "args": {"text": "x"}, "t": now - 57},
+                    {FN: "read_tab", "args": {"tab": "t2"}, "t": now - 55, "is_error": True}, {FN: "done", "args": {}, "t": now - 50}],
+             say=[{"text": "olhando as abas", "t": now - 57}, {"text": "- t2: claude idle", "t": now - 51}], summary="- t2: claude idle")
+        cur = goal("g2", text="roda os testes", state="running", started=now - 5)
+        with open(os.path.join(cur, "calls.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({FN: "run", "args": {"tab": "t1", "command": "pytest -q"}, "t": now - 2}) + "\n")
+        os.makedirs(os.path.join(run_dir, "sysop"))
+        with open(os.path.join(run_dir, "sysop", "status.json"), "w", encoding="utf-8") as f:
+            json.dump({"pid": os.getpid(), "current": "g2", "queue": []}, f)
+        js = r"""
+import assert from 'node:assert/strict';
+import { readSysopSnapshot, startNewConversation } from %s;
+const s = readSysopSnapshot([]);
+assert.equal(s.up, true);
+assert.deepEqual(s.turns.map((t) => t.id), ['g1', 'g2'], 'oldest first, a goal older than 12 h is left out');
+const [a, b] = s.turns;
+assert.equal(a.prompt, 'o que esta rodando?');
+assert.equal(a.reply, '- t2: claude idle');
+assert.deepEqual(a.notes, ['olhando as abas'], 'a say that repeats the reply is not shown twice');
+assert.deepEqual(a.actions.map((x) => x.fn), ['list_tabs', 'read_tab'], 'say and done are not actions');
+assert.equal(a.actions[1].ok, false);
+assert.equal(a.running, false);
+assert.equal(b.running, true);
+assert.equal(b.reply, '');
+assert.equal(b.live_action, 'Running in t1: pytest -q');
+assert.equal(s.state, 'working');
+assert.equal(s.sentence, 'Running in t1: pytest -q');
+assert.ok(s.steps.some((x) => x.kind === 'goal' && x.text === 'roda os testes'), 'the flat steps of the current goal stay for the cockpit');
+// New: the goals before it leave the panel (the running one stays), and history.py reads the same file
+startNewConversation(Date.now() / 1000 - 30);
+assert.deepEqual(readSysopSnapshot([]).turns.map((t) => t.id), ['g2']);
+const fs = await import('node:fs');
+const saved = JSON.parse(fs.readFileSync(process.env.XDG_STATE_HOME + '/swarmbox/sysop/conversation.json', 'utf8'));
+assert.ok(saved.since > 0);
+assert.equal((fs.statSync(process.env.XDG_STATE_HOME + '/swarmbox/sysop/conversation.json').mode & 0o777), 0o600);
+""" % json.dumps(HERDR_CLIENT)
+        env = dict(os.environ, SB_RUN_DIR=run_dir, XDG_STATE_HOME=state)
+        p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, env=env)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_tab_references_in_a_reply_are_one_chip_each(self):
+        """public/tabrefs.js: every way a reply names a tab resolves to the same tab, with its name as the page shows it (the replies of a real
+        session wrote `t2`, t3, `1:shell` and "`escritorio` (t8)" in one conversation, and only some of them were highlighted)"""
+        if not shutil.which("node"):
+            self.skipTest("node is not installed")
+        js = r"""
+const fs = require('fs'), vm = require('vm'), assert = require('assert/strict');
+const ctx = { module: { exports: {} } };
+vm.runInNewContext(fs.readFileSync(%s, 'utf8'), ctx);
+const { parse } = ctx.module.exports;
+const tabs = [
+  { address: 't2', name: 'swarmbox', aliases: ['shell'], kind: 'claude', live: true },
+  { address: 't6', name: 'sabrina', aliases: ['shell-4'], kind: 'claude', live: true },
+  { address: 't3', name: 'winix', aliases: ['shell-3'], kind: 'agy', live: false },
+];
+const show = (s) => parse(s, tabs).map((x) => x.t === 'text' ? x.v : x.t === 'tab' ? '[' + x.tab.name + (x.tab.live ? '' : '*') + ']' : '<' + x.t + ':' + x.v + '>').join('');
+assert.equal(show('agentes: `t2` (~/swarmbox, ativa), t3 (~/winix) e t9.'), 'agentes: [swarmbox] (~/swarmbox, ativa), [winix*] (~/winix) e [t9*].');
+assert.equal(show('- `1:shell` (`t2`, ativa): em ~/swarmbox'), '- [swarmbox] (ativa): em ~/swarmbox', 'the numbered label resolves; the id after it goes');
+assert.equal(show('a aba `sabrina` (t6) e shell-4'), 'a aba [sabrina] e [sabrina]', 'the herdr name is an alias of the shown name');
+assert.equal(show('voltou ao shell; SwarmBox em ~/swarmbox/x.py e swarmbox.md'), 'voltou ao shell; SwarmBox em ~/swarmbox/x.py e swarmbox.md', 'a word, a product, a path, a file: never a tab');
+assert.equal(show('`main`: 24 testes passaram, 2 failed, 0 failed'), '<code:main>: <ok:24 testes passaram>, <bad:2 failed>, <ok:0 failed>');
+assert.equal(show('swarmbox'), '[swarmbox]');
+assert.equal(show('- `9:escritorio`: fresh; and 7:gone'), '- [escritorio*]: fresh; and [gone*]', 'a numbered label of a tab this page never saw is still a chip, by its name');
+""" % json.dumps(os.path.join(ROOT, "container", "web", "herdr", "public", "tabrefs.js"))
+        p = subprocess.run(["node", "-e", js], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        with open(os.path.join(ROOT, "container", "web", "herdr", "public", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        self.assertLess(html.index('src="/tabrefs.js"'), html.index('src="/app.js"'), "the parser loads before the page that uses it")
 
     def test_sysop_risk_guards_hc_and_herdr_controls(self):
         for cmd in ("hc send t1 ls", "hc kill t1", "herdr-core server stop", "herdr server stop"):

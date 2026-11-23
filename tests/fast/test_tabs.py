@@ -51,6 +51,35 @@ class TestTabs(Base):
         t = tabs[1]
         self.assertEqual((t["label"], t["index"], t["name"], t["dir"], t["cmd"], t["pane"]), ("1:build", 1, "build", "~/proj", "make", "%2"))
 
+    def test_open_tab_is_a_new_window_of_the_session_with_the_allowlisted_agent(self):
+        ft = self.three().save()
+        d = ft.driver()
+        res = d.open_tab(name="api", cwd=ft.dir, agent="claude")
+        self.assertEqual(res, {"ok": True, "tab": "@4", "name": "api", "agent": "claude"})
+        _, a = ft.calls("new-window")[-1]
+        self.assertEqual(a, ["new-window", "-P", "-F", "#{window_id}", "-t", "=main", "-n", "api", "-c", ft.dir, "claude"])
+        d.open_tab()
+        self.assertEqual(ft.calls("new-window")[-1][1][-2:], ["-t", "=main"], "a shell: no program after the options")
+        self.assertEqual(self.code(d.open_tab, None, None, "vim")[0], "usage")
+
+    def test_focus_and_close_are_select_and_kill_window(self):
+        ft = self.three().save()
+        d = ft.driver()
+        self.assertEqual(d.focus_tab("build")["tab"], "@2")
+        self.assertEqual(ft.calls("select-window")[-1][1], ["select-window", "-t", "@2"])
+        self.assertEqual(d.close_tab("2")["tab"], "@3")
+        self.assertEqual(ft.calls("kill-window")[-1][1], ["kill-window", "-t", "@3"])
+        self.assertEqual([t["tab"] for t in d.list_tabs()], ["@1", "@2"])
+
+    def test_the_command_line_has_open_focus_and_close(self):
+        ft = self.three().save()
+        d = ft.driver()
+        self.assertEqual(mod.run(["focus", "@1"], tabs=d)["tab"], "@1")
+        self.assertEqual(mod.run(["open", "--agent", "shell", "--name", "x"], tabs=d)["tab"], "@4")
+        self.assertEqual(mod.run(["close", "@4"], tabs=d)["tab"], "@4")
+        for bad in (["focus"], ["close", "@1", "@2"], ["open", "extra"]):
+            self.assertEqual(self.code(mod.run, bad, d)[0], "usage")
+
     def test_control_mode_clients_and_clients_on_other_windows_do_not_count(self):
         ft = self.three()
         ft.client("@1", 100)

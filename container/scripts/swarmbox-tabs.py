@@ -553,6 +553,32 @@ class TabsBackend:
         Return None to fall back to screen-based agent_state() heuristics."""
         return None
 
+    def tab_status(self, tab):
+        """Optional native status dict (e.g. OSC 7501 state/progress/msg/app) for list_tabs()."""
+        return None
+
+    def open_tab(self, name=None, cwd=None, agent=None):
+        """Open a new terminal tab (allowlisted agent or shell) and return its id."""
+        raise TabsError("unsupported", "backend %s cannot open tabs" % self.name)
+
+    def focus_tab(self, tab):
+        """Switch the active tab to `tab`."""
+        raise TabsError("unsupported", "backend %s cannot focus tabs" % self.name)
+
+    def close_tab(self, tab):
+        """Close `tab` and end its program."""
+        raise TabsError("unsupported", "backend %s cannot close tabs" % self.name)
+
+
+ALLOWED_OPEN_AGENTS = {
+    "shell": None,
+    "claude": ["claude"],
+    "agy": ["agy"],
+    "opencode": ["opencode"],
+    "codex": ["codex"],
+    "gemini": ["gemini"],
+}
+
 
 class TmuxBackend(TabsBackend):
     """Concrete TabsBackend talking to a tmux server."""
@@ -696,6 +722,24 @@ class TmuxBackend(TabsBackend):
 
     def live_tab_ids(self):
         return set(self.tmux("list-panes", "-s", "-t", "=" + self.session, "-F", "#{window_id}").split())
+
+    def open_tab(self, name=None, cwd=None, agent=None):
+        argv = ["new-window", "-P", "-F", "#{window_id}", "-t", "=" + self.session]
+        if name:
+            argv += ["-n", name]
+        if cwd:
+            argv += ["-c", cwd]
+        cmd = ALLOWED_OPEN_AGENTS.get(agent or "shell")
+        if cmd:
+            argv += cmd
+        wid = self.tmux(*argv).strip().splitlines()[:1]
+        return wid[0] if wid else ""
+
+    def focus_tab(self, tab):
+        self.tmux("select-window", "-t", tab.id)
+
+    def close_tab(self, tab):
+        self.tmux("kill-window", "-t", tab.id)
 
 
 _HC_KEYS = {
@@ -975,6 +1019,61 @@ class HerdrBackend(TabsBackend):
     def live_tab_ids(self):
         return {t.id for t in self.list_tabs_raw()}
 
+    def tab_status(self, tab):
+        meta = self._meta.get(tab.id)
+        if not isinstance(meta, dict):
+            return None
+        st = meta.get("status")
+        if not isinstance(st, dict) or not st.get("state"):
+            return None
+        out = {"state": str(st["state"])}
+        if isinstance(st.get("progress"), (int, float)):
+            out["progress"] = int(st["progress"])
+        if st.get("msg"):
+            out["msg"] = str(st["msg"])[:160]
+        if st.get("app"):
+            out["app"] = str(st["app"])[:32]
+        return out
+
+    def _write_active(self, tab_id):
+        try:
+            os.makedirs(self.run_dir, mode=0o700, exist_ok=True)
+            marker = os.path.join(self.run_dir, "herdr-active-tab")
+            tmp = marker + ".tmp.%d" % os.getpid()
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(str(tab_id))
+            os.replace(tmp, marker)
+        except OSError:
+            pass
+
+    def open_tab(self, name=None, cwd=None, agent=None):
+        # --keep like every other terminal the box opens (mux/herdr.sh): an agent that exits leaves a shell in its place
+        args = ["run", "--bg", "--keep", "--no-parent", "--json"]
+        if name:
+            args += ["--name", name]
+        if cwd:
+            args += ["--cwd", cwd]
+        cmd = ALLOWED_OPEN_AGENTS.get(agent or "shell")
+        if cmd:
+            args += ["--", "bash", "-lc", "exec " + " ".join(cmd)]
+        else:
+            args += ["--", "bash", "-l"]
+        res = self.hc(*args)
+        addr = ""
+        if isinstance(res, dict):
+            addr = str(res.get("address") or (res.get("terminal") or {}).get("address") or "")
+        if addr:
+            self._write_active(addr)
+        return addr
+
+    def focus_tab(self, tab):
+        self._write_active(tab.id)
+
+    def close_tab(self, tab):
+        # as the web studio closes a tab (DELETE /api/tabs/:id): end the program, then remove the finished terminal so it leaves no row behind
+        self.hc("kill", tab.id)
+        self.hc("rm", tab.id, check=False)
+
     def tab_state(self, tab):
         """Return native OSC 7501 `(True, dialog|busy|idle)` when the program reported status, else None for heuristic fallback."""
         meta = self._get_meta(tab.id, fresh=True)
@@ -1041,8 +1140,42 @@ class Tabs:
         return [t._replace(active=t.id == shown) for t in tabs]
 
     def list_tabs(self):
-        return [{"tab": t.id, "label": t.label, "index": t.index, "name": t.name, "dir": t.cwd, "cmd": t.command, "pane": t.pane,
-                 "panes": t.panes, "active": t.active} for t in self.tabs()]
+        out = []
+        for t in self.tabs():
+            row = {"tab": t.id, "label": t.label, "index": t.index, "name": t.name, "dir": t.cwd, "cmd": t.command, "pane": t.pane,
+                   "panes": t.panes, "active": t.active}
+            st = self.backend.tab_status(t)
+            if st:
+                row["status"] = st
+            out.append(row)
+        return out
+
+    def open_tab(self, name=None, cwd=None, agent=None):
+        ag = (agent or "shell").strip().lower()
+        if ag not in ALLOWED_OPEN_AGENTS:
+            raise usage_error("unknown agent %r (known: %s)" % (ag, ", ".join(sorted(ALLOWED_OPEN_AGENTS))))
+        clean_name = None
+        if name:
+            # the rule of `hc run --name` (1-32 of a-z 0-9 - _), the stricter of the two backends
+            clean_name = re.sub(r"[^a-z0-9_-]", "-", str(name).strip().lower())[:32].strip("-") or None
+        clean_cwd = None
+        if cwd:
+            expanded = os.path.expanduser(str(cwd).strip())
+            if not os.path.isdir(expanded):
+                raise TabsError("bad_body", "directory does not exist: %s" % cwd)
+            clean_cwd = expanded
+        tid = self.backend.open_tab(name=clean_name, cwd=clean_cwd, agent=ag)
+        return {"ok": True, "tab": tid, "name": clean_name or ag, "agent": ag}
+
+    def focus_tab(self, tab):
+        t = self.resolve(tab)
+        self.backend.focus_tab(t)
+        return {"ok": True, "tab": t.id, "label": t.label}
+
+    def close_tab(self, tab):
+        t = self.resolve(tab)
+        self.backend.close_tab(t)
+        return {"ok": True, "tab": t.id, "label": t.label}
 
     def active(self):
         """the dict of list_tabs() of the active tab; no_such_tab when the session has no tab"""
@@ -1340,6 +1473,21 @@ def run(argv, tabs=None):
         text = read_stdin() if opts[key] == "-" else opts[key]
         return tabs.send(rest[0], run=text if key == "--run" else None, input=text if key == "--input" else None,
                          queue="--queue" in opts, slash="--slash" in opts)
+    if cmd == "open":
+        opts, rest = parse_args(a, ("--name", "--cwd", "--agent"), ())
+        if rest:
+            raise usage_error("usage: open [--name NAME] [--cwd DIR] [--agent AGENT]")
+        return tabs.open_tab(name=opts.get("--name"), cwd=opts.get("--cwd"), agent=opts.get("--agent"))
+    if cmd == "focus":
+        opts, rest = parse_args(a, (), ())
+        if len(rest) != 1:
+            raise usage_error("usage: focus TAB")
+        return tabs.focus_tab(rest[0])
+    if cmd == "close":
+        opts, rest = parse_args(a, (), ())
+        if len(rest) != 1:
+            raise usage_error("usage: close TAB")
+        return tabs.close_tab(rest[0])
     raise usage_error("unknown command %s" % cmd)
 
 

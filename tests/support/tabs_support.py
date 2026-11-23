@@ -160,6 +160,23 @@ elif cmd == "send-keys":
                 c["mode"] = c.get("after_enter", c["mode"])
         elif c and key == "Escape" and c["mode"] == "busy":
             c["mode"] = "idle"
+elif cmd == "new-window":
+    if opt("-t") != "=" + st["session"]:
+        die("can't find session: " + str(opt("-t")))
+    wid = "@%d" % (max([int(w["id"][1:]) for w in st["windows"]] + [0]) + 1)
+    rest = [a for i, a in enumerate(args[1:], 1) if not a.startswith("-") and args[i - 1] not in ("-t", "-n", "-c", "-F")]
+    st["windows"].append({"id": wid, "index": len(st["windows"]), "name": opt("-n") or (rest[0] if rest else "bash"),
+                          "panes": [{"id": "%" + wid[1:], "active": True, "cwd": opt("-c") or "/work", "cmd": rest[0] if rest else "bash", "screen": ""}]})
+    if "-P" in args:
+        print(wid)
+elif cmd in ("select-window", "kill-window"):
+    t = opt("-t")
+    if not any(w["id"] == t for w in st["windows"]):
+        die("can't find window: " + str(t))
+    if cmd == "select-window":
+        st["current"] = t
+    else:
+        st["windows"] = [w for w in st["windows"] if w["id"] != t]
 else:
     die("fake tmux: unsupported command " + cmd)
 save()

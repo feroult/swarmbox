@@ -5,6 +5,13 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added: Sysop tools `box_info` (read-only disk, memory, mux, addons and nested containers), `focus_tab`, `open_tab` (a shell or an allowlisted agent, rated by the policy) and `close_tab` (always approved), backed by new `swarmbox-tabs open|focus|close` commands for the tmux and herdr backends; `list_tabs` now carries the live OSC 7501 status of each tab.
+- Changed: the Sysop answers questions about the state of the box itself (what runs, what failed, what an agent answered) instead of forwarding them to an agent, replies in the user's language, and may reply in a few `- ` lines (`done` limit 240 → 1200 characters); the system prompt is mux-agnostic and keeps every behaviour the e2e runs found necessary.
+- Changed: Sysop panel redesign V2 in the Herdr Web Studio (airy, borderless, calm confirmation): the conversation of the last 12 hours of goals (`turns` in the snapshot) with the user's words in a bubble, the reply as plain text under a `Sysop · ▸ N actions` line (collapsible steps), `- ` lines as rows with the tab's pixel icon and a clickable tab name, relative times and a mic mark for spoken goals; a light first screen with three suggestion prompts; the confirmation card inside the conversation (peach rail, command in a code block, violet Allow) instead of an amber card above it; the hero card is gone and the header shows the state as a word (`ready`, `working`, `confirm`). The panel also follows an active tab changed elsewhere (the Sysop's `focus_tab`, the cockpit).
+- Changed: every tab a Sysop reply names (`shop-api`, `t3`, `1:shell`, "shop-api (t3)") is drawn as the same chip, with the agent's pixel icon and the name the sidebar shows, and a tab that has closed since keeps its name, dimmed (`public/tabrefs.js`); `list_tabs` gives the brain that same name, and the prompt asks it to name tabs only by it. Test results in a reply ("24 passed", "2 failed") get a quiet colour.
+- Added: **New** in the Sysop header starts a new conversation (`POST /api/sysop/new` writes `conversation.json`): the panel hides the goals before it and the sysop's brain forgets them (`history.py`).
+- Removed: the browser spoken feedback (TTS) toggle of the Sysop panel and Settings; voice input (local Whisper) is unchanged.
+
 ## [2.2.2] - 2026-11-23
 
 - Added: unified transparent 4-agent isometric cube brand mark as the Herdr Web Studio SVG favicon (`/favicon.svg`, with `/favicon.ico` fallback in `container/web/herdr/server.mjs`) and matching boot splash emblem (`container/web/herdr/public/index.html`).
