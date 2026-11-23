@@ -673,12 +673,16 @@ assert.ok(Array.isArray(cfg.mcp));
             "term.paste(",
             "getSmartSelection",
             "looksLikeMidTokenWrap",
+            "uploadAndPasteImages",
+            "/api/paste-image",
         ):
             self.assertIn(token, app_src)
         self.assertNotIn("sendPtyInput(txt", app_src)
         self.assertIn("wsPingTimer", server_src)
         self.assertIn("type: 'hydrated'", server_src)
         self.assertIn("/api/config", server_src)
+        self.assertIn("/api/paste-image", server_src)
+        self.assertIn("detectImageFormat", server_src)
         self.assertIn("api\\/addons\\/", server_src)
         self.assertIn("jetbrains-mono-latin.woff2", server_src)
         self.assertIn("nerd-symbols.woff2", server_src)

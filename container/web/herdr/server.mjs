@@ -10,6 +10,7 @@
 // of it when the voice addon is installed, handling /voice/* and proxying everything else.
 
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,7 @@ import {
   HERDR_THEMES,
   HOME,
   HerdrClient,
+  SB_RUN_DIR,
   SYSOP_BIN,
   isHiddenTerminal,
   readActiveTab,
@@ -119,6 +121,99 @@ function readBody(req, limit = 256 * 1024) {
     });
     req.on('error', reject);
   });
+}
+
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_PASTED_IMAGES = 40;
+
+export function detectImageFormat(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 12) return null;
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
+    buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a
+  ) return { ext: 'png', mime: 'image/png' };
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return { ext: 'jpg', mime: 'image/jpeg' };
+  }
+  // GIF: GIF87a / GIF89a
+  if (
+    buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38 &&
+    (buf[4] === 0x37 || buf[4] === 0x39) && buf[5] === 0x61
+  ) return { ext: 'gif', mime: 'image/gif' };
+  // WebP: RIFF....WEBP
+  if (
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+  ) return { ext: 'webp', mime: 'image/webp' };
+  // BMP: BM
+  if (buf[0] === 0x42 && buf[1] === 0x4d) {
+    return { ext: 'bmp', mime: 'image/bmp' };
+  }
+  return null;
+}
+
+function readBinaryBody(req, limit = MAX_IMAGE_BYTES) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    let aborted = false;
+    req.on('data', (chunk) => {
+      if (aborted) return;
+      total += chunk.length;
+      if (total > limit) {
+        aborted = true;
+        const err = new Error('image exceeds 20 MB limit');
+        err.status = 413;
+        reject(err);
+        req.resume();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (!aborted) resolve(Buffer.concat(chunks, total));
+    });
+    req.on('error', (err) => {
+      if (!aborted) reject(err);
+    });
+  });
+}
+
+function pruneOldPastedImages(dir) {
+  try {
+    const entries = fs.readdirSync(dir)
+      .filter((n) => n.startsWith('img-'))
+      .map((name) => {
+        const full = path.join(dir, name);
+        let mtimeMs = 0;
+        try { mtimeMs = fs.statSync(full).mtimeMs; } catch (_) {}
+        return { full, mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const old of entries.slice(MAX_PASTED_IMAGES)) {
+      try { fs.unlinkSync(old.full); } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+function savePastedImage(buf, pasteDir = path.join(SB_RUN_DIR, 'paste')) {
+  const fmt = detectImageFormat(buf);
+  if (!fmt) return null;
+  fs.mkdirSync(pasteDir, { recursive: true, mode: 0o700 });
+  const now = new Date();
+  const stamp = [
+    String(now.getHours()).padStart(2, '0'),
+    String(now.getMinutes()).padStart(2, '0'),
+    String(now.getSeconds()).padStart(2, '0'),
+  ].join('');
+  const rand = crypto.randomBytes(2).toString('hex');
+  const name = `img-${stamp}-${rand}.${fmt.ext}`;
+  const filePath = path.join(pasteDir, name);
+  fs.writeFileSync(filePath, buf, { mode: 0o600 });
+  pruneOldPastedImages(pasteDir);
+  return { path: filePath, name, bytes: buf.length, mime: fmt.mime };
 }
 
 function serveFile(res, filePath, cacheable = false) {
@@ -254,6 +349,23 @@ export function createGateway(options = {}) {
         saveTheme(name);
         broadcast(buildSnapshot({ type: 'theme' }));
         return sendJson(res, 200, { ok: true, theme: currentTheme });
+      }
+
+      if (pathname === '/api/paste-image' && req.method === 'POST') {
+        let buf;
+        try {
+          buf = await readBinaryBody(req, MAX_IMAGE_BYTES);
+        } catch (err) {
+          return sendJson(res, err.status || 400, { error: 'upload_failed', message: err.message });
+        }
+        if (!buf || buf.length === 0) {
+          return sendJson(res, 400, { error: 'empty_image', message: 'no image data received' });
+        }
+        const saved = savePastedImage(buf);
+        if (!saved) {
+          return sendJson(res, 415, { error: 'unsupported_image', message: 'supported formats: PNG, JPEG, WebP, GIF, BMP' });
+        }
+        return sendJson(res, 200, { ok: true, ...saved });
       }
 
       if (pathname === '/api/config' && req.method === 'GET') {

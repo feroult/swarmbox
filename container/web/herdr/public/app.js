@@ -301,6 +301,8 @@
   const btnMic = document.getElementById('btn-mic');
   const btnMobileMic = document.getElementById('btn-mobile-mic');
   const termWrapEl = document.getElementById('term-wrap');
+  const termDropOverlayEl = document.getElementById('term-drop-overlay');
+  const termToastEl = document.getElementById('term-toast');
   const btnJumpLive = document.getElementById('btn-jump-live');
   const settingsOverlayEl = document.getElementById('settings-overlay');
   const settingsNavEl = document.getElementById('settings-nav');
@@ -794,6 +796,127 @@
     if (!sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3) {
       openSessionSocket(sess, { silent: true, reset: true });
     }
+  });
+
+  let termToastTimer = null;
+  function showTermToast(msg, tone = '', ms = 2600) {
+    if (!termToastEl) return;
+    clearTimeout(termToastTimer);
+    if (!msg) {
+      termToastEl.classList.remove('visible');
+      return;
+    }
+    termToastEl.textContent = msg;
+    termToastEl.dataset.tone = tone;
+    termToastEl.classList.add('visible');
+    if (ms > 0) {
+      termToastTimer = setTimeout(() => termToastEl.classList.remove('visible'), ms);
+    }
+  }
+
+  const IMAGE_EXT_RE = /\.(?:png|jpe?g|webp|gif|bmp)$/i;
+  function isImageBlob(item) {
+    if (!item) return false;
+    if (typeof item.type === 'string' && item.type.startsWith('image/')) return true;
+    if (typeof item.name === 'string' && IMAGE_EXT_RE.test(item.name)) return true;
+    return false;
+  }
+
+  function extractClipboardImages(dt) {
+    if (!dt) return [];
+    const blobs = [];
+    if (dt.items && dt.items.length) {
+      for (const item of dt.items) {
+        if (item.kind === 'file' && (item.type.startsWith('image/') || !item.type)) {
+          const f = item.getAsFile();
+          if (f && isImageBlob(f)) blobs.push(f);
+        }
+      }
+    }
+    if (blobs.length === 0 && dt.files && dt.files.length) {
+      for (const f of dt.files) {
+        if (isImageBlob(f)) blobs.push(f);
+      }
+    }
+    return blobs;
+  }
+
+  async function uploadAndPasteImages(blobs, targetSession = null) {
+    const sess = targetSession || activeSession();
+    if (!sess || !blobs || blobs.length === 0) return;
+    showTermToast(blobs.length === 1 ? 'Attaching image…' : `Attaching ${blobs.length} images…`, '', 0);
+    const paths = [];
+    const names = [];
+    try {
+      for (const blob of blobs) {
+        const r = await fetch('/api/paste-image', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+          body: blob,
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.path) {
+          throw new Error(d.message || d.error || `HTTP ${r.status}`);
+        }
+        paths.push(d.path);
+        names.push(d.name || d.path);
+      }
+      if (paths.length > 0) {
+        sess.term.paste(paths.join(' ') + ' ');
+        focusTerminalIfDesktop();
+        showTermToast(
+          names.length === 1 ? `✓ Attached ${names[0]}` : `✓ Attached ${names.length} images`,
+          'ok',
+          2600,
+        );
+      }
+    } catch (err) {
+      showTermToast(`Image attach failed: ${err.message || 'error'}`, 'error', 4200);
+    }
+  }
+
+  // Drag & drop images directly onto the terminal canvas
+  let dragDepth = 0;
+  function hasDraggedFiles(e) {
+    const types = e.dataTransfer && e.dataTransfer.types;
+    if (!types) return false;
+    return Array.from(types).includes('Files');
+  }
+  termWrapEl.addEventListener('dragenter', (e) => {
+    if (!hasDraggedFiles(e)) return;
+    e.preventDefault();
+    dragDepth += 1;
+    if (termDropOverlayEl) termDropOverlayEl.classList.add('visible');
+  });
+  termWrapEl.addEventListener('dragover', (e) => {
+    if (!hasDraggedFiles(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  });
+  termWrapEl.addEventListener('dragleave', (e) => {
+    if (!hasDraggedFiles(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0 && termDropOverlayEl) termDropOverlayEl.classList.remove('visible');
+  });
+  termWrapEl.addEventListener('drop', (e) => {
+    dragDepth = 0;
+    if (termDropOverlayEl) termDropOverlayEl.classList.remove('visible');
+    const imgs = extractClipboardImages(e.dataTransfer);
+    if (imgs.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    uploadAndPasteImages(imgs, activeSession());
+  });
+
+  // Fallback paste listener when focus slipped to document.body while pasting a screenshot
+  document.addEventListener('paste', (e) => {
+    if (settingsOpen || isRealFormField(e.target)) return;
+    const imgs = extractClipboardImages(e.clipboardData);
+    if (imgs.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    uploadAndPasteImages(imgs, activeSession());
   });
 
   // Auto-heal dropped WebSockets when returning to the browser tab or waking from sleep
@@ -1374,11 +1497,22 @@
       }
     }, true);
 
+    // Intercept image paste (Ctrl+V / Cmd+V / right-click Paste): upload binary image to container
+    // and paste its path via Bracketed Paste so Claude Code, agy, OpenCode, Codex, and bash attach it.
+    paneEl.addEventListener('paste', (ev) => {
+      const imgs = extractClipboardImages(ev.clipboardData);
+      if (imgs.length === 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      uploadAndPasteImages(imgs, sess);
+    }, true);
+
     // Copy/paste & Alt shortcuts:
     // - Ctrl+C / Ctrl+Shift+C copies with smart wrapped-line unwrapping when text is selected.
     // - Ctrl+V lets the browser fire its native `paste` event on xterm-helper-textarea so xterm.js
-    //   runs term.paste() with full Bracketed Paste (\x1b[200~ ... \x1b[201~) and zero double-paste.
-    // - Ctrl+Shift+V prevents duplicate native paste and invokes term.paste() directly via Clipboard API.
+    //   runs term.paste() with full Bracketed Paste (\x1b[200~ ... \x1b[201~) — and our capture
+    //   paste listener above intercepts clipboard images cleanly with zero double-paste.
+    // - Ctrl+Shift+V checks Clipboard API for images first, otherwise pastes text via term.paste().
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
       if (matchAltShortcut(ev)) return false;
@@ -1390,11 +1524,28 @@
         return false;
       }
       if (ev.ctrlKey && !ev.altKey && !ev.metaKey && key === 'v') {
-        if (ev.shiftKey && navigator.clipboard?.readText) {
+        if (ev.shiftKey && (navigator.clipboard?.read || navigator.clipboard?.readText)) {
           ev.preventDefault();
-          navigator.clipboard.readText().then((txt) => {
-            if (txt) term.paste(txt);
-          }).catch(() => {});
+          (async () => {
+            try {
+              if (navigator.clipboard?.read) {
+                const items = await navigator.clipboard.read();
+                const blobs = [];
+                for (const it of items) {
+                  const imgType = it.types.find((t) => t.startsWith('image/'));
+                  if (imgType) blobs.push(await it.getType(imgType));
+                }
+                if (blobs.length > 0) {
+                  await uploadAndPasteImages(blobs, sess);
+                  return;
+                }
+              }
+            } catch (_) {}
+            try {
+              const txt = await navigator.clipboard?.readText?.();
+              if (txt) term.paste(txt);
+            } catch (_) {}
+          })();
         }
         return false;
       }
