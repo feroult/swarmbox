@@ -24,7 +24,7 @@
 
 <br>
 
-<img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Herdr Web Studio v2.2 — 3-pane browser workspace with pixel-art Agent Mascot Cards (Antigravity, Claude Code 74% working, OpenAI Codex, OpenCode), zero-redundancy adaptive topbar, JetBrains Mono + Nerd Font, Purple Glow Starship prompt, and docked Sysop drawer" width="880">
+<img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Herdr Web Studio v2.2 — 3-pane browser workspace with pixel-art Agent Mascot Cards, symmetric panel chevrons, zero-redundancy adaptive topbar, JetBrains Mono + Nerd Font, Purple Glow Starship prompt, and docked Sysop drawer with its reactive pixel-art operator mascot" width="880">
 
 </div>
 
@@ -85,7 +85,7 @@ swarmbox addon install voice      # local whisper.cpp speech-to-text microphone
 
 - **Context-aware operator:** Sysop remembers recent goals, infers the active agent tab, queues messages when an agent is working, and keeps a full audit log.
 - **Host-enforced safety policy:** Low-risk actions run directly under `auto`; medium-risk actions pause on a veto countdown; high-risk commands and open agent dialogs always wait for **Allow** (`confirm-risky` and `confirm-all` tighten further via **Settings → Sysop**).
-- **Private local voice:** Hold the violet mic button to transcribe through local `whisper.cpp` straight to Sysop — audio never leaves your machine, and `swarmbox-voice say "..."` works from any shell ([docs/sysop.md](docs/sysop.md), [docs/voice.md](docs/voice.md)).
+- **Private local voice:** Tap **Speak** on desktop or phone to capture audio with a live waveform and timer, then tap **Send** (or **×** to discard) — transcribed locally through `whisper.cpp` straight to Sysop without audio ever leaving your machine, and `swarmbox-voice say "..."` works from any shell ([docs/sysop.md](docs/sysop.md), [docs/voice.md](docs/voice.md)).
 
 ---
 
