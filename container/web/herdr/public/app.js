@@ -562,6 +562,7 @@
     const buf = sess.term.buffer && sess.term.buffer.active;
 
     if (buf && buf.type === 'normal' && buf.baseY > 0) {
+      if (sess.pokeScrollbar) sess.pokeScrollbar();
       const rh = sessionRowHeight(sess);
       const maxPx = buf.baseY * rh;
       const frac = buf.viewportY === sess.touchLine ? (sess.touchFrac || 0) : 0;
@@ -1751,11 +1752,39 @@
     const onScrollMaybe = () => {
       if (activeId === sess.address) syncJumpLive();
     };
-    term.onScroll((ydisp) => { touchOffsetOnScroll(sess, ydisp); onScrollMaybe(); });
+    // The scrollbar is an overlay: its thumb shows while you look back through history, for a moment after you
+    // scroll, and while the mouse is at the right edge (to grab it); at the live bottom it is hidden. A program that
+    // draws inline (AGY) keeps scrollback, so its bar used to be always on, while one in the alternate screen
+    // (Claude Code) has no scrollback and never had one: now both rest without a bar.
+    let sbLinger = 0;
+    let sbEdge = false;
+    const syncScrollbar = () => {
+      let back = false;
+      try {
+        const buf = term.buffer.active;
+        back = buf.type === 'normal' && buf.baseY - buf.viewportY > 0;
+      } catch (_) {}
+      paneEl.classList.toggle('sb-show', back || sbEdge || sbLinger !== 0);
+    };
+    sess.pokeScrollbar = () => {
+      const buf = term.buffer.active;
+      if (buf.type !== 'normal' || buf.baseY <= 0) return;
+      clearTimeout(sbLinger);
+      sbLinger = setTimeout(() => { sbLinger = 0; syncScrollbar(); }, 1200);
+      syncScrollbar();
+    };
+    paneEl.addEventListener('wheel', sess.pokeScrollbar, { passive: true, capture: true });
+    paneEl.addEventListener('mousemove', (e) => {
+      const edge = e.clientX >= paneEl.getBoundingClientRect().right - 16;
+      if (edge !== sbEdge) { sbEdge = edge; syncScrollbar(); }
+    }, { passive: true });
+    paneEl.addEventListener('mouseleave', () => { if (sbEdge) { sbEdge = false; syncScrollbar(); } });
+
+    term.onScroll((ydisp) => { touchOffsetOnScroll(sess, ydisp); onScrollMaybe(); syncScrollbar(); });
     term.onRender(() => { touchOffsetOnRender(sess); onScrollMaybe(); });
     term.onResize(() => clearTouchOffset(sess));
     const vp = paneEl.querySelector('.xterm-viewport');
-    if (vp) vp.addEventListener('scroll', onScrollMaybe, { passive: true });
+    if (vp) vp.addEventListener('scroll', () => { onScrollMaybe(); syncScrollbar(); }, { passive: true });
 
     const rowsRoot = paneEl.querySelector('.xterm-rows');
     if (rowsRoot && window.MutationObserver) {
