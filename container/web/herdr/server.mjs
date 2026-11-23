@@ -519,6 +519,7 @@ export function createGateway(options = {}) {
       }
 
       // Static frontend assets
+      if (pathname === '/favicon.ico') return serveFile(res, path.join(PUBLIC_DIR, 'favicon.svg'), true);
       const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
       const safePath = path.normalize(path.join(PUBLIC_DIR, rel));
       if (safePath !== PUBLIC_DIR && !safePath.startsWith(PUBLIC_DIR + path.sep)) {
