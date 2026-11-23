@@ -262,6 +262,7 @@ class Supervisor(SupervisorCase):
         os.kill(self.sup_pid(), signal.SIGUSR1)
         self.assertTrue(wait_for(lambda: self.starts() == 6), "ttyd was not restarted")
         self.assertTrue(wait_for(lambda: not any("keeps crashing" in l for l in self.health_lines()), 3), self.health_lines())
+        self.assertTrue(wait_for(lambda: read(os.path.join(self.fake, "ttyd.pid")).strip().isdigit(), 3), "ttyd.pid was not written")
         self.assertTrue(alive(int(read(os.path.join(self.fake, "ttyd.pid")).strip())))
         # the count was reset: five more quick exits are needed before it gives up again
         put(os.path.join(self.fake, "ttyd.mode"), "crash")
