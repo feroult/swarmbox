@@ -822,14 +822,16 @@
     return false;
   }
 
+  let lastNativePasteTs = 0;
+
   function extractClipboardImages(dt) {
     if (!dt) return [];
     const blobs = [];
     if (dt.items && dt.items.length) {
       for (const item of dt.items) {
-        if (item.kind === 'file' && (item.type.startsWith('image/') || !item.type)) {
+        if (item.kind === 'file') {
           const f = item.getAsFile();
-          if (f && isImageBlob(f)) blobs.push(f);
+          if (f && (item.type.startsWith('image/') || isImageBlob(f))) blobs.push(f);
         }
       }
     }
@@ -911,6 +913,7 @@
 
   // Fallback paste listener when focus slipped to document.body while pasting a screenshot
   document.addEventListener('paste', (e) => {
+    lastNativePasteTs = Date.now();
     if (settingsOpen || isRealFormField(e.target)) return;
     const imgs = extractClipboardImages(e.clipboardData);
     if (imgs.length === 0) return;
@@ -1500,6 +1503,7 @@
     // Intercept image paste (Ctrl+V / Cmd+V / right-click Paste): upload binary image to container
     // and paste its path via Bracketed Paste so Claude Code, agy, OpenCode, Codex, and bash attach it.
     paneEl.addEventListener('paste', (ev) => {
+      lastNativePasteTs = Date.now();
       const imgs = extractClipboardImages(ev.clipboardData);
       if (imgs.length === 0) return;
       ev.preventDefault();
@@ -1507,11 +1511,28 @@
       uploadAndPasteImages(imgs, sess);
     }, true);
 
+    async function readClipboardImagesViaApi() {
+      if (!navigator.clipboard?.read) return [];
+      try {
+        const items = await navigator.clipboard.read();
+        const blobs = [];
+        for (const it of items) {
+          const imgType = it.types.find((t) => t.startsWith('image/'));
+          if (imgType) blobs.push(await it.getType(imgType));
+        }
+        return blobs;
+      } catch (_) {
+        return [];
+      }
+    }
+
     // Copy/paste & Alt shortcuts:
     // - Ctrl+C / Ctrl+Shift+C copies with smart wrapped-line unwrapping when text is selected.
     // - Ctrl+V lets the browser fire its native `paste` event on xterm-helper-textarea so xterm.js
     //   runs term.paste() with full Bracketed Paste (\x1b[200~ ... \x1b[201~) — and our capture
-    //   paste listener above intercepts clipboard images cleanly with zero double-paste.
+    //   paste listener above intercepts clipboard images cleanly with zero double-paste. If a browser
+    //   suppresses native `paste` on <textarea> for image-only clipboards, a 70ms fallback checks
+    //   navigator.clipboard.read() for images.
     // - Ctrl+Shift+V checks Clipboard API for images first, otherwise pastes text via term.paste().
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
@@ -1527,25 +1548,23 @@
         if (ev.shiftKey && (navigator.clipboard?.read || navigator.clipboard?.readText)) {
           ev.preventDefault();
           (async () => {
-            try {
-              if (navigator.clipboard?.read) {
-                const items = await navigator.clipboard.read();
-                const blobs = [];
-                for (const it of items) {
-                  const imgType = it.types.find((t) => t.startsWith('image/'));
-                  if (imgType) blobs.push(await it.getType(imgType));
-                }
-                if (blobs.length > 0) {
-                  await uploadAndPasteImages(blobs, sess);
-                  return;
-                }
-              }
-            } catch (_) {}
+            const blobs = await readClipboardImagesViaApi();
+            if (blobs.length > 0) {
+              await uploadAndPasteImages(blobs, sess);
+              return;
+            }
             try {
               const txt = await navigator.clipboard?.readText?.();
               if (txt) term.paste(txt);
             } catch (_) {}
           })();
+        } else if (navigator.clipboard?.read) {
+          const pressTs = Date.now();
+          setTimeout(async () => {
+            if (lastNativePasteTs >= pressTs) return;
+            const blobs = await readClipboardImagesViaApi();
+            if (blobs.length > 0) await uploadAndPasteImages(blobs, sess);
+          }, 70);
         }
         return false;
       }

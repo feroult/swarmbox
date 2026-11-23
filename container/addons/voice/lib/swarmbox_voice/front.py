@@ -246,6 +246,18 @@ def read_head(conn, deadline):
 FRAME_GUARD = ("Content-Security-Policy: frame-ancestors 'self'", "X-Frame-Options: SAMEORIGIN")
 
 
+def _apply_frame_guard(buf):
+    """Add FRAME_GUARD once to an HTTP/1.x response head; leave anything else unchanged."""
+    i = buf.find(b"\r\n\r\n")
+    if i < 0 or not buf.startswith(b"HTTP/1."):
+        return buf
+    lines = buf[:i].split(b"\r\n")
+    drop = (b"content-security-policy", b"x-frame-options")
+    keep = [l for l in lines[1:] if l.partition(b":")[0].strip().lower() not in drop]
+    head = b"\r\n".join([lines[0]] + keep + [h.encode("latin-1") for h in FRAME_GUARD]) + b"\r\n\r\n"
+    return head + buf[i + 4:]
+
+
 def guard_response(up, conn, limit=16384, wait=10.0):
     """Read the response head from ttyd, add FRAME_GUARD to it (once; the ones ttyd sent are kept out) and send it on. Anything that is
     not a readable head is handed on as it came."""
@@ -263,15 +275,7 @@ def guard_response(up, conn, limit=16384, wait=10.0):
         if not data:
             break
         buf += data
-    i = buf.find(b"\r\n\r\n")
-    if i < 0 or not buf.startswith(b"HTTP/1."):
-        conn.sendall(buf)
-        return
-    lines = buf[:i].split(b"\r\n")
-    drop = (b"content-security-policy", b"x-frame-options")
-    keep = [l for l in lines[1:] if l.partition(b":")[0].strip().lower() not in drop]
-    head = b"\r\n".join([lines[0]] + keep + [h.encode("latin-1") for h in FRAME_GUARD]) + b"\r\n\r\n"
-    conn.sendall(head + buf[i + 4:])
+    conn.sendall(_apply_frame_guard(buf))
 
 
 def send(conn, status, body=b"", ctype="application/json; charset=utf-8", extra=()):
@@ -362,9 +366,9 @@ class Front:
         try:
             upgrade = head.is_upgrade()
             up.sendall((head.raw if upgrade else head.with_connection_close()) + head.extra)
-            if not upgrade:
-                guard_response(up, conn)
-            pump(conn, up, None if upgrade else IDLE)
+            # Pump both directions concurrently while guarding the first HTTP response head so
+            # large POST bodies (e.g. /api/paste-image) never deadlock waiting for an upstream reply.
+            pump(conn, up, None if upgrade else IDLE, guard_src=None if upgrade else up)
         except OSError:
             pass
         finally:
@@ -492,9 +496,10 @@ def read_body(conn, extra, length):
     return b"".join(parts)
 
 
-def pump(a, b, idle):
+def pump(a, b, idle, guard_src=None, guard_limit=16384):
     """Copy both ways between two sockets until both ends are done. EOF on one side half-closes the other; `idle` seconds without a
-    byte (None: never) ends it, and after one side closed the other has GRACE seconds. Nothing is left open."""
+    byte (None: never) ends it, and after one side closed the other has GRACE seconds. When `guard_src` is set, its initial HTTP response
+    head gets FRAME_GUARD injected before forwarding while request bytes keep flowing in the opposite direction. Nothing is left open."""
     for s in (a, b):
         s.setblocking(True)
         s.settimeout(60)
@@ -505,6 +510,8 @@ def pump(a, b, idle):
     live = {a: b, b: a}          # source -> destination
     last = time.monotonic()
     ended = None
+    guard_buf = bytearray()
+    guard_done = guard_src is None
     try:
         while live:
             limit = GRACE if ended is not None else idle
@@ -516,6 +523,10 @@ def pump(a, b, idle):
                 data = s.recv(65536)
                 if not data:
                     dst = live.pop(s)
+                    if s is guard_src and not guard_done and guard_buf:
+                        dst.sendall(_apply_frame_guard(bytes(guard_buf)))
+                        guard_buf.clear()
+                        guard_done = True
                     if ended is None:
                         ended = time.monotonic()
                     try:
@@ -524,7 +535,15 @@ def pump(a, b, idle):
                         pass
                     continue
                 last = time.monotonic()
-                live[s].sendall(data)
+                dst = live[s]
+                if s is guard_src and not guard_done:
+                    guard_buf.extend(data)
+                    if b"\r\n\r\n" in guard_buf or len(guard_buf) >= guard_limit:
+                        dst.sendall(_apply_frame_guard(bytes(guard_buf)))
+                        guard_buf.clear()
+                        guard_done = True
+                else:
+                    dst.sendall(data)
     except OSError:
         pass
 

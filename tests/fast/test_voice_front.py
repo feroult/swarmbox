@@ -231,6 +231,43 @@ class TerminalPath(FrontCase):
         status, _, body = get(self.port, "/big")
         self.assertEqual((status, len(body)), (200, 5 * 1024 * 1024))
 
+    def test_a_large_post_body_to_terminal_does_not_deadlock(self):
+        # Upstream HTTP server waits to read the full 256 KiB POST body before answering:
+        # front._terminal must pump request bytes concurrently while guarding the response head.
+        import http.server
+        received = []
+
+        class PostHandler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length", "0"))
+                received.append(len(self.rfile.read(n)))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+
+            def log_message(self, *args):
+                pass
+
+        up = http.server.HTTPServer(("127.0.0.1", 0), PostHandler)
+        self.addCleanup(up.server_close)
+        self.addCleanup(up.shutdown)
+        threading.Thread(target=up.serve_forever, daemon=True).start()
+
+        f = front.Front(("127.0.0.1", 0), ("127.0.0.1", up.server_address[1]), ("127.0.0.1", self.stub.port), self.web)
+        self.addCleanup(f.close)
+        threading.Thread(target=f.serve_forever, daemon=True).start()
+
+        payload = b"P" * (256 * 1024)
+        t0 = time.monotonic()
+        status, hdrs, body = post(f.address[1], "/api/paste-image", payload, "image/png")
+        self.assertLess(time.monotonic() - t0, 3.0)
+        self.assertEqual(status, 200)
+        self.assertEqual(received, [len(payload)])
+        self.assertEqual(json.loads(body), {"ok": True})
+        self.assertEqual(hdrs.get("x-frame-options"), "SAMEORIGIN")
+        self.assertIn("frame-ancestors 'self'", hdrs.get("content-security-policy", ""))
+
     def test_half_closing_the_request_still_gets_the_answer(self):
         status, _, body = exchange(self.port, b"GET / HTTP/1.1\r\nHost: x\r\n\r\n", half_close=True)
         self.assertEqual(status, 200)
