@@ -5,6 +5,12 @@ project follows [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-11-23
+
+- Added: unified transparent 4-agent isometric cube brand mark as the Herdr Web Studio SVG favicon (`/favicon.svg`, with `/favicon.ico` fallback in `container/web/herdr/server.mjs`) and matching boot splash emblem (`container/web/herdr/public/index.html`).
+- Fixed: `swarmbox reset` (`cmd_reset` in `container/host/swarmbox-host`) now calls `connector_ensure` so the Cloudflare tunnel connector (`swarmbox-cloudflared`) starts automatically on reset as well as `up`, with regression coverage in `tests/fast/test_host_connector.py`.
+- Fixed: eliminated visible scrolling text cascades when toggling the left sidebar or right Sysop drawer in the Herdr Web Studio by coalescing `SIGWINCH` resize repaint bursts into a single atomic WebSocket frame (`container/web/herdr/server.mjs`) and painting atomically with deduplicated `scheduleFit()` (`container/web/herdr/public/app.js`, `app.css`).
+
 ## [2.2.1] - 2026-11-23
 
 - Added: bespoke pixel-art **SwarmBox Boot Splash** (`#sb-boot`) and reactive **Sysop Operator Mascot** in the Herdr Web Studio (`container/web/herdr/public/`):
@@ -312,6 +318,7 @@ First public prerelease of 2.0.0, for testing before the final release. The imag
 `node:24-trixie-slim` (Debian 13) with Podman 5.4; `criu` and its `python3-protobuf` are removed from the image; the Go
 standard library findings that Debian 13 has not fixed yet are listed, with the reasons, in `.grype.yaml`.
 
+[2.2.2]: https://github.com/feroult/swarmbox/releases/tag/v2.2.2
 [2.2.1]: https://github.com/feroult/swarmbox/releases/tag/v2.2.1
 [2.2.0]: https://github.com/feroult/swarmbox/releases/tag/v2.2.0
 [2.1.1]: https://github.com/feroult/swarmbox/releases/tag/v2.1.1
