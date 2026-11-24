@@ -124,7 +124,9 @@ terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a r
 | `pubkey` | the box's git SSH public key |
 | `addon list\|install\|update\|use\|remove\|doctor\|new\|validate` | addons inside the box (section 8) |
 | `bus pub\|sub\|topics\|watch\|ping\|restart` | the message bus of the box (section 6); `swarmbox-bus --help` in the box |
-| `tabs list\|active\|screen\|send\|open\|focus\|close` | the tabs (herdr-core terminals) of the box, a capability of the host (section 6); `swarmbox-tabs --help` in the box |
+| `tabs list\|active\|screen\|send\|open\|rename\|focus\|close` | the tabs (herdr-core terminals) of the box, a capability of the host (section 6); `swarmbox-tabs --help` in the box |
+| `pins list\|add\|update\|rm\|restore` | persistent pinned sessions in `<workspace>/.config/swarmbox/pins.json` ([pins-design.md](pins-design.md)) |
+| `worktree inspect\|list\|create\|status\|merge\|remove\|prefs` | isolated Git worktrees under `<workspace>/.local/share/swarmbox/worktrees/` ([worktrees-design.md](worktrees-design.md)) |
 | `remote setup\|status\|off\|token` | remote access through Cloudflare (`--dry-run` shows changes) |
 | `version`, `fingerprint`, `help` | script version; creation fingerprint (`--explain` lists differences); the command list |
 
@@ -386,6 +388,7 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `sysop.brain` | `claude` | the brain of the `sysop` addon: a preset name or a command template (no line break; [sysop.md](sysop.md)); `SWARMBOX_SYSOP_BRAIN` |
 | `sysop.model` | `sonnet` | the model the `claude` preset asks for; `SWARMBOX_SYSOP_MODEL` |
 | `sysop.autonomy` | `full-auto` | `full-auto`, `auto`, `confirm-risky` or `confirm-all`; `SWARMBOX_SYSOP_AUTONOMY` |
+| `sysop.autoname` | `1` | `1` enables event-driven automatic tab naming via `tab.events` (never overwrites manual renames); `SWARMBOX_SYSOP_AUTONAME` |
 | `sysop.countdown` | `4` | seconds an action waits for a veto, 0 to 30; `SWARMBOX_SYSOP_COUNTDOWN` |
 | `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100; `SWARMBOX_SYSOP_MAX_STEPS` |
 | `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600; `SWARMBOX_SYSOP_MAX_SECONDS` |
