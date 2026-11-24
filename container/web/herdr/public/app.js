@@ -476,25 +476,31 @@
   }
   updateBlockScale();
 
-  // Show sleek floating "Jump to live" pill whenever user scrolls up into history
+  // Show sleek floating "Jump to live" pill whenever user scrolls up into history.
+  // Avoid DOM layout reads (scrollHeight/clientHeight/scrollTop) on every scroll frame!
+  let lastJumpVisible = false;
   function syncJumpLive() {
     if (!btnJumpLive) return;
     const sess = activeSession();
     if (!sess || sess.hydrating) {
-      btnJumpLive.classList.remove('visible');
+      if (lastJumpVisible) {
+        lastJumpVisible = false;
+        btnJumpLive.classList.remove('visible');
+      }
       return;
     }
     const buf = sess.term.buffer && sess.term.buffer.active;
-    const vp = sess.paneEl.querySelector('.xterm-viewport');
-    const bufUp = Boolean(buf && buf.baseY - buf.viewportY > 2);
-    const domUp = Boolean(vp && vp.scrollHeight > vp.clientHeight + 48 && (vp.scrollHeight - vp.scrollTop - vp.clientHeight) > 36);
-    btnJumpLive.classList.toggle('visible', bufUp || domUp);
+    const up = Boolean(buf && buf.type === 'normal' && buf.baseY - buf.viewportY > 2);
+    if (up !== lastJumpVisible) {
+      lastJumpVisible = up;
+      btnJumpLive.classList.toggle('visible', up);
+    }
   }
   if (btnJumpLive) {
     btnJumpLive.addEventListener('click', () => {
       const sess = activeSession();
       if (!sess) return;
-      stopTouchCoast();
+      stopTouchCoast('jumpLive');
       clearTouchOffset(sess);
       sess.term.scrollToBottom();
       const vp = sess.paneEl.querySelector('.xterm-viewport');
@@ -504,21 +510,17 @@
     });
   }
 
-  // Native-feel mobile touch drag + momentum scroll.
-  // xterm scrolls by whole rows, which made a finger drag step in ~17px jumps. In the normal buffer the
-  // touch position is kept in pixels: whole rows go to term.scrollToLine and the remainder is a GPU
-  // transform on .xterm-screen, applied when xterm has drawn the new rows so the two never disagree.
-  // Moves are coalesced to one per frame, the flick speed is measured over the last 100ms of the drag,
-  // and the content settles on a row boundary when it stops. The alternate screen (vim, less, TUIs)
-  // still gets wheel line steps, since the program draws its own scrolling.
+  // Responsive mobile touch drag + iOS-like momentum scroll.
+  // Uses a sub-row pixel accumulator feeding relative term.scrollLines() (zero translate3d/onRender
+  // phase-mismatch jitter, zero bottom blank-gap flicker, and immune to ring-buffer baseY churn).
   const TOUCH_DRAG_PX = 4;
-  const TOUCH_DRAG_GAIN = 1.25;
-  const TOUCH_COAST_GAIN = 1.25;
+  const TOUCH_DRAG_GAIN = 1.8;
+  const TOUCH_COAST_GAIN = 1.8;
   const TOUCH_FLICK_MIN = 0.08;   // px/ms
-  const TOUCH_FRICTION = 0.964;   // per 16.67ms frame (native iOS-like glide)
-  const TOUCH_STOP_VEL = 0.025;   // px/ms
+  const TOUCH_FRICTION = 0.968;   // per 16.67ms frame (silky iOS glide)
+  const TOUCH_STOP_VEL = 0.02;    // px/ms
   const TOUCH_VEL_WINDOW = 70;    // ms of active drag samples used for flick speed
-  const TOUCH_MAX_VEL = 16;       // px/ms cap for chained fast flicks
+  const TOUCH_MAX_VEL = 18;       // px/ms cap for chained fast flicks
 
   let touchId = null;
   let touchStartY = 0;
@@ -550,45 +552,13 @@
     return Math.max(10, (sess.term.options.fontSize || 12) * (sess.term.options.lineHeight || 1.15));
   }
 
-  function paintTouchOffset(sess, px) {
-    const screenEl = sess.paneEl.querySelector('.xterm-screen');
-    if (!screenEl) return;
-    if (px > 0) {
-      screenEl.style.transform = `translate3d(0, ${-px}px, 0)`;
-      screenEl.style.willChange = 'transform';
-    } else {
-      screenEl.style.transform = '';
-      screenEl.style.willChange = '';
-    }
-  }
-
-  // Drop the sub-row offset (another scroll source moved the terminal, it resized, or the gesture ended).
   function clearTouchOffset(sess) {
     if (!sess) return;
-    if (sess.touchFracFallbackRaf) {
-      cancelAnimationFrame(sess.touchFracFallbackRaf);
-      sess.touchFracFallbackRaf = 0;
-    }
-    sess.touchFrac = 0;
-    sess.touchFracPending = null;
-    paintTouchOffset(sess, 0);
+    sess.touchRowAccum = 0;
   }
 
-  // Called from term.onScroll / term.onRender of each session.
-  function touchOffsetOnScroll(sess, ydisp) {
-    if (touchId !== null || touchRaf) return;
-    if (sess.touchFrac && ydisp !== sess.touchLine) clearTouchOffset(sess);
-  }
-  function touchOffsetOnRender(sess) {
-    if (sess.touchFracFallbackRaf) {
-      cancelAnimationFrame(sess.touchFracFallbackRaf);
-      sess.touchFracFallbackRaf = 0;
-    }
-    if (sess.touchFracPending === null || sess.touchFracPending === undefined) return;
-    const px = sess.touchFracPending;
-    sess.touchFracPending = null;
-    paintTouchOffset(sess, px);
-  }
+  function touchOffsetOnScroll() {}
+  function touchOffsetOnRender() {}
 
   // Lightweight mobile touch & optical-zoom diagnostic telemetry (fires only once per gesture / zoom settle).
   let touchDbgGesture = null;
@@ -658,38 +628,21 @@
     const appWantsWheel = mouseMode !== 'NONE' && mouseMode !== 'UNKNOWN';
 
     if (buf && buf.type === 'normal' && buf.baseY > 0 && !appWantsWheel) {
-      if (sess.pokeScrollbar) sess.pokeScrollbar();
       const rh = sessionRowHeight(sess);
-      const maxPx = buf.baseY * rh;
-      const frac = buf.viewportY === sess.touchLine ? (sess.touchFrac || 0) : 0;
-      const prev = Math.min(maxPx, buf.viewportY * rh + frac);
-      const next = Math.max(0, Math.min(maxPx, prev + deltaPx));
-      let line = Math.floor(next / rh);
-      let rest = next - line * rh;
-      if (line >= buf.baseY) { line = buf.baseY; rest = 0; }
-      if (rest < 0.25) rest = 0;
-      sess.touchLine = line;
-      sess.touchFrac = rest;
-      if (line !== buf.viewportY) {
-        sess.touchFracPending = rest;   // painted by onRender, together with the new rows
-        if (!sess.touchFracFallbackRaf) {
-          sess.touchFracFallbackRaf = requestAnimationFrame(() => {
-            sess.touchFracFallbackRaf = 0;
-            if (sess.touchFracPending !== null && sess.touchFracPending !== undefined) {
-              const px = sess.touchFracPending;
-              sess.touchFracPending = null;
-              paintTouchOffset(sess, px);
-            }
-          });
-        }
-        sess.term.scrollToLine(line);
-      } else if (sess.touchFracPending !== null && sess.touchFracPending !== undefined) {
-        sess.touchFracPending = rest;
-      } else {
-        paintTouchOffset(sess, rest);
+      const prevVpY = buf.viewportY;
+      // Boundary check before accumulating so coast terminates cleanly at top/bottom
+      if ((deltaPx < 0 && prevVpY <= 0) || (deltaPx > 0 && prevVpY >= buf.baseY)) {
+        sess.touchRowAccum = 0;
+        return false;
       }
-      syncJumpLive();
-      return Math.abs(next - prev) > 0.25;
+      sess.touchRowAccum = (sess.touchRowAccum || 0) + (deltaPx / rh);
+      const lines = Math.trunc(sess.touchRowAccum);
+      if (lines !== 0) {
+        sess.touchRowAccum -= lines;
+        sess.term.scrollLines(lines);
+        syncJumpLive();
+      }
+      return true;
     }
 
     // Alternate screen or mouse-tracked TUI (agy, Claude Code fullscreen, vim, less, htop):
@@ -751,27 +704,13 @@
     if (d) applyTouchScrollPx(d);
   }
 
-  // Ease the sub-row remainder onto a row so the text rests on the grid: forward in the direction of a coast
-  // that ran out (dir > 0 towards the bottom, < 0 towards the top), else to the nearest row.
-  function settleTouchScroll(dir = 0) {
-    if (touchSettleRaf) return;
-    const step = () => {
-      touchSettleRaf = 0;
-      if (touchId !== null || touchRaf) return;
-      const sess = activeSession();
-      if (!sess || !sess.touchFrac) return;
-      const rh = sessionRowHeight(sess);
-      const down = dir ? dir > 0 : sess.touchFrac > rh / 2;
-      const target = down ? rh - sess.touchFrac : -sess.touchFrac;
-      if (Math.abs(target) < 0.6) {
-        applyTouchScrollPx(target);
-        if (sess.touchFrac) clearTouchOffset(sess);
-        return;
-      }
-      applyTouchScrollPx(target * 0.35);
-      touchSettleRaf = requestAnimationFrame(step);
-    };
-    touchSettleRaf = requestAnimationFrame(step);
+  function settleTouchScroll() {
+    const sess = activeSession();
+    if (sess) {
+      sess.touchRowAccum = 0;
+      if (sess.pokeScrollbar) sess.pokeScrollbar();
+      markBlockRows(sess.paneEl);
+    }
   }
 
   function flushCoastDebug(reason) {
@@ -792,11 +731,11 @@
     });
   }
 
-  function stopTouchCoast() {
+  function stopTouchCoast(caller = 'unknown') {
     if (touchRaf) {
       cancelAnimationFrame(touchRaf);
       touchRaf = 0;
-      flushCoastDebug('interrupted');
+      flushCoastDebug(`interrupted:${caller}`);
     }
     if (touchSettleRaf) {
       cancelAnimationFrame(touchSettleRaf);
@@ -903,7 +842,7 @@
     // Block xterm's built-in touchstart/touchmove handler (which otherwise swallows scrolls and kills pinch).
     e.stopPropagation();
     const wasCoasting = Boolean(touchRaf);
-    stopTouchCoast();
+    stopTouchCoast('touchstart');
     if (e.touches.length >= 2) {
       if (touchMoved) { flushTouchScroll(); settleTouchScroll(); }
       touchId = null;
@@ -1004,7 +943,7 @@
     touchId = null;
     touchMoved = false;
     touchStoppedCoast = false;
-    stopTouchCoast();
+    stopTouchCoast('touchcancel');
     flushTouchScroll();
     settleTouchScroll();
     if (g && g.moves > 0) {
@@ -1059,7 +998,7 @@
       touchCoastDir = dir;
       touchChainT = now;
       const speed = Math.abs(rawVel);
-      const accel = 1 + Math.min(2.0, Math.max(0, speed - 0.25) * 0.9);
+      const accel = 1.2 + Math.min(2.4, Math.max(0, speed - 0.15) * 1.15);
       touchVel = Math.max(-TOUCH_MAX_VEL, Math.min(TOUCH_MAX_VEL, rawVel * accel * touchChainBoost));
       appliedVel = touchVel;
       startTouchCoast();
@@ -2190,13 +2129,18 @@
     // (Claude Code) has no scrollback and never had one: now both rest without a bar.
     let sbLinger = 0;
     let sbEdge = false;
+    let lastSbShow = false;
     const syncScrollbar = () => {
       let back = false;
       try {
         const buf = term.buffer.active;
         back = buf.type === 'normal' && buf.baseY - buf.viewportY > 0;
       } catch (_) {}
-      paneEl.classList.toggle('sb-show', back || sbEdge || sbLinger !== 0);
+      const show = back || sbEdge || sbLinger !== 0;
+      if (show !== lastSbShow) {
+        lastSbShow = show;
+        paneEl.classList.toggle('sb-show', show);
+      }
     };
     sess.pokeScrollbar = () => {
       const buf = term.buffer.active;
@@ -2213,17 +2157,18 @@
     paneEl.addEventListener('mouseleave', () => { if (sbEdge) { sbEdge = false; syncScrollbar(); } });
 
     term.onScroll((ydisp) => { touchOffsetOnScroll(sess, ydisp); onScrollMaybe(); syncScrollbar(); });
-    term.onRender(() => { touchOffsetOnRender(sess); onScrollMaybe(); });
+    term.onRender(() => { touchOffsetOnRender(sess); if (touchId === null && !touchRaf) onScrollMaybe(); });
     term.onResize(() => clearTouchOffset(sess));
     const vp = paneEl.querySelector('.xterm-viewport');
-    if (vp) vp.addEventListener('scroll', () => { onScrollMaybe(); syncScrollbar(); }, { passive: true });
+    if (vp) vp.addEventListener('scroll', () => { if (touchId === null && !touchRaf) { onScrollMaybe(); syncScrollbar(); } }, { passive: true });
 
     const rowsRoot = paneEl.querySelector('.xterm-rows');
     if (rowsRoot && window.MutationObserver) {
       let blkRaf = 0;
       const scheduleBlk = () => {
+        if (touchId !== null || touchRaf) return;
         if (blkRaf) return;
-        blkRaf = requestAnimationFrame(() => { blkRaf = 0; markBlockRows(paneEl); });
+        blkRaf = requestAnimationFrame(() => { blkRaf = 0; if (touchId === null && !touchRaf) markBlockRows(paneEl); });
       };
       const obs = new MutationObserver(scheduleBlk);
       obs.observe(rowsRoot, { childList: true, subtree: true, characterData: true });
@@ -2416,7 +2361,7 @@
 
   function connectPty(address, opts = {}) {
     if (!address) return;
-    stopTouchCoast();
+    stopTouchCoast('connectPty');
 
     const prevSess = activeSession();
     clearTouchOffset(prevSess);
