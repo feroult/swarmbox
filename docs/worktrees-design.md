@@ -32,7 +32,7 @@ When opening a new agent tab in a Git repo, waking a `PARKED` pin whose saved `c
 1. Check whether **another live terminal** is already running on the same Git working tree. (`PARKED` pins do **not** count as collisions.)
 2. **No collision:** opens directly in that directory with zero prompts.
 3. **Collision detected:**
-   - **`ask` (default):** in Web Studio, shows a compact 2-button popover (`New worktree` default focus / `Same folder`); in an interactive shell, `swarmbox-worktree guard` prompts `[W] New worktree / [S] Same folder / [C] Cancel`, switches `cwd` to the new worktree, and labels the terminal tab so the topbar Merge button appears immediately.
+   - **`ask` (default):** in Web Studio, the unified **New agent** popover inspects the folder upfront (`GET /api/worktrees/check`), highlights the active collision inline, and pre-selects **`New worktree`** (toggleable to **`Same folder`** via click or `W`) so picking an agent launches in 1 click with no second popup — and when no collision exists in a Git repo, the same inline toggle lets users opt into a new worktree proactively. (Waking a colliding `PARKED` pin uses a compact 2-button popover, and in an interactive shell `swarmbox-worktree guard` prompts `[W] New worktree / [S] Same folder / [C] Cancel`, switches `cwd` to the new worktree, and labels the terminal tab so the topbar Merge button appears immediately.)
    - **`auto`:** immediately creates the isolated worktree and shows a non-blocking status toast (or one-line shell notice).
    - **`off`:** opens directly in the same folder without prompting.
 

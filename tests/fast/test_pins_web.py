@@ -120,6 +120,29 @@ async function api(method, p, body) {
 }
 
 try {
+  // 0. Pre-flight /api/worktrees/check: non-Git folder vs clean Git repo (no collision)
+  const chkNonGit = await api('GET', `/api/worktrees/check?cwd=${encodeURIComponent(proj2)}`);
+  assert.equal(chkNonGit.status, 200);
+  assert.equal(chkNonGit.data.is_git, false);
+  assert.equal(chkNonGit.data.collision, null);
+  assert.equal(chkNonGit.data.prefs.mode, 'ask');
+
+  const chkClean = await api('GET', `/api/worktrees/check?cwd=${encodeURIComponent(repo)}`);
+  assert.equal(chkClean.status, 200);
+  assert.equal(chkClean.data.is_git, true);
+  assert.equal(chkClean.data.repo_name, 'shop-api');
+  assert.equal(chkClean.data.branch, 'main');
+  assert.equal(chkClean.data.collision, null);
+
+  // 0b. Proactive worktree creation even when there is NO collision (unified New Agent popover)
+  const proactiveWt = await api('POST', '/api/tabs', { preset: 'agent', agent: 'claude', cwd: repo, worktree_choice: 'new', persist: false });
+  assert.equal(proactiveWt.status, 201);
+  assert.ok(proactiveWt.data.worktree && proactiveWt.data.worktree.path);
+  const tProactive = proactiveWt.data.terminal.address;
+  const delProactive = await api('DELETE', `/api/tabs/${tProactive}`);
+  assert.equal(delProactive.status, 200);
+  assert.equal(delProactive.data.auto_cleaned_worktree, true);
+
   // 1. Create an agent tab in repo -> Option 1 auto-persists it with autostart=true by default
   const r1 = await api('POST', '/api/tabs', { preset: 'agent', agent: 'claude', cwd: repo });
   assert.equal(r1.status, 201);
@@ -176,7 +199,15 @@ try {
   liveT1.foreground = { name: 'claude', cwd: repo };
   syncPinsFromTerminals(hc.listSnapshot());
 
-  // 3. Opening a second agent in repo triggers 409 worktree_collision in default `ask` mode
+  // 3. /api/worktrees/check reports live collision upfront, and POST /api/tabs still enforces 409 in `ask` mode
+  const chkCol = await api('GET', `/api/worktrees/check?cwd=${encodeURIComponent(repo)}`);
+  assert.equal(chkCol.status, 200);
+  assert.equal(chkCol.data.is_git, true);
+  assert.ok(chkCol.data.collision, 'expected live collision in check response');
+  assert.equal(chkCol.data.collision.repo_name, 'shop-api');
+  assert.equal(chkCol.data.collision.branch, 'main');
+  assert.equal(chkCol.data.collision.active_tabs.length, 1);
+
   const col = await api('POST', '/api/tabs', { preset: 'agent', agent: 'agy', cwd: repo });
   assert.equal(col.status, 409);
   assert.equal(col.data.error, 'worktree_collision');
