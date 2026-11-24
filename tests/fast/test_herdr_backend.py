@@ -838,9 +838,14 @@ assert.ok(Array.isArray(cfg.mcp));
         self.assertIn("/api/paste-image", server_src)
         self.assertIn("detectImageFormat", server_src)
         self.assertIn("api\\/addons\\/", server_src)
-        self.assertIn("jetbrains-mono-latin.woff2", server_src)
+        self.assertIn("JetBrainsMono-Regular.woff2", server_src)
+        self.assertIn("noto-symbols-braille.woff2", server_src)
+        self.assertIn("addon-canvas.js", server_src)
+        self.assertIn("addon-unicode11.js", server_src)
         self.assertIn("nerd-symbols.woff2", server_src)
         self.assertIn("JetBrains Mono", app_src)
+        self.assertIn("customGlyphs: true", app_src)
+        self.assertIn("attachCanvasRenderer", app_src)
 
     def test_attach_interactive_launches_cockpit_and_respects_raw_override(self):
         tmp = tempfile.mkdtemp(prefix="swarmbox-test-cockpit-sh.")

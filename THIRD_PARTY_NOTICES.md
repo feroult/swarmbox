@@ -201,12 +201,19 @@ in the image, where they were installed.
 - Source: https://github.com/herdrdev/herdr
 - [verified: GitHub release v0.9.5 and repository license; 2026-11-21]
 
-### Herdr Web Gateway & Terminal Cockpit npm packages (`ws`, `@xterm/xterm`, `@xterm/headless`, `@xterm/addon-fit`, `@xterm/addon-web-links`, `@fontsource-variable/jetbrains-mono`, `@azurity/pure-nerd-font`)
+### jetbrains-mono
 
-- Versions: `ws` 8.23.0, `@xterm/xterm` 5.5.0, `@xterm/headless` 5.5.0, `@xterm/addon-fit` 0.10.0, `@xterm/addon-web-links` 0.11.0, `@fontsource-variable/jetbrains-mono` 5.3.0, `@azurity/pure-nerd-font` 3.0.5 (pinned in `container/web/herdr/package.json`)
-- License: MIT (`ws`, `@xterm/*`, `@azurity/pure-nerd-font`); OFL-1.1 (`@fontsource-variable/jetbrains-mono`, JetBrains Mono)
-- Source: https://github.com/websockets/ws, https://github.com/xtermjs/xterm.js, https://github.com/JetBrains/JetBrainsMono, and https://github.com/ryanoasis/nerd-fonts
-- [verified: `package.json` license and repository fields in installed packages and `npm view` for `@xterm/headless@5.5.0`, `@fontsource-variable/jetbrains-mono@5.3.0`, and `@azurity/pure-nerd-font@3.0.5`; 2026-11-21]
+- Version: 2.304 (`ARG JETBRAINS_MONO_VERSION`, official WOFF2 webfonts with SHA-256 verified)
+- License: OFL-1.1
+- Source: https://github.com/JetBrains/JetBrainsMono
+- [verified: GitHub release v2.304 and repository OFL.txt; 2026-11-24]
+
+### Herdr Web Gateway & Terminal Cockpit npm packages (`ws`, `@xterm/xterm`, `@xterm/headless`, `@xterm/addon-canvas`, `@xterm/addon-fit`, `@xterm/addon-unicode11`, `@xterm/addon-web-links`, `@fontsource/noto-sans-symbols-2`, `@azurity/pure-nerd-font`)
+
+- Versions: `ws` 8.23.0, `@xterm/xterm` 5.5.0, `@xterm/headless` 5.5.0, `@xterm/addon-canvas` 0.7.0, `@xterm/addon-fit` 0.10.0, `@xterm/addon-unicode11` 0.9.0, `@xterm/addon-web-links` 0.11.0, `@fontsource/noto-sans-symbols-2` 5.3.0, `@azurity/pure-nerd-font` 3.0.5 (pinned in `container/web/herdr/package.json`)
+- License: MIT (`ws`, `@xterm/*`, `@azurity/pure-nerd-font`); OFL-1.1 (`@fontsource/noto-sans-symbols-2`, Noto Sans Symbols 2)
+- Source: https://github.com/websockets/ws, https://github.com/xtermjs/xterm.js, https://github.com/notofonts/noto-fonts, and https://github.com/ryanoasis/nerd-fonts
+- [verified: `package.json` license and repository fields in installed packages and `npm view` for `@xterm/addon-canvas@0.7.0`, `@xterm/addon-unicode11@0.9.0`, `@fontsource/noto-sans-symbols-2@5.3.0`, and `@azurity/pure-nerd-font@3.0.5`; 2026-11-24]
 
 ### cloudflared (connector image, not in the SwarmBox image)
 

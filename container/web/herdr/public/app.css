@@ -1,27 +1,55 @@
-/* Self-hosted JetBrains Mono variable font (OFL-1.1) + Nerd Font symbols (MIT), zero CDN */
+/* Self-hosted full JetBrains Mono v2.304 (OFL-1.1) + Noto Sans Symbols 2 (OFL-1.1) + Nerd Font symbols (MIT), zero CDN */
 @font-face {
   font-family: "JetBrains Mono";
   font-style: normal;
   font-display: swap;
-  font-weight: 100 800;
-  src: url("/vendor/fonts/jetbrains-mono-latin-ext.woff2") format("woff2-variations");
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  font-weight: 400;
+  src: url("/vendor/fonts/JetBrainsMono-Regular.woff2") format("woff2");
 }
 @font-face {
   font-family: "JetBrains Mono";
   font-style: normal;
   font-display: swap;
-  font-weight: 100 800;
-  src: url("/vendor/fonts/jetbrains-mono-latin.woff2") format("woff2-variations");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+2500-259F, U+FEFF, U+FFFD;
+  font-weight: 600;
+  src: url("/vendor/fonts/JetBrainsMono-SemiBold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url("/vendor/fonts/JetBrainsMono-Bold.woff2") format("woff2");
 }
 @font-face {
   font-family: "JetBrains Mono";
   font-style: italic;
   font-display: swap;
-  font-weight: 100 800;
-  src: url("/vendor/fonts/jetbrains-mono-latin-italic.woff2") format("woff2-variations");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+FEFF, U+FFFD;
+  font-weight: 400;
+  src: url("/vendor/fonts/JetBrainsMono-Italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "SwarmBox Symbols";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("/vendor/fonts/noto-symbols-braille.woff2") format("woff2");
+  unicode-range: U+2800-28FF;
+}
+@font-face {
+  font-family: "SwarmBox Symbols";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("/vendor/fonts/noto-symbols-math.woff2") format("woff2");
+  unicode-range: U+2123-214F, U+2200-22FF, U+27C0-27FF, U+2900-2AFF;
+}
+@font-face {
+  font-family: "SwarmBox Symbols";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("/vendor/fonts/noto-symbols.woff2") format("woff2");
+  unicode-range: U+2150-21FF, U+2300-24FF, U+25A0-27BF, U+2B00-2BFF, U+1FB00-1FBFF;
 }
 @font-face {
   font-family: "PureNerdFont";
@@ -60,7 +88,7 @@
   --red: #ff6b78;
   --peach: #f6a77a;
   --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --mono: "JetBrains Mono", "JetBrainsMono Nerd Font", "PureNerdFont", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --mono: "JetBrains Mono", "SwarmBox Symbols", "PureNerdFont", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -1260,13 +1288,11 @@ html.swarmbox-ready #sb-boot {
   touch-action: pan-x pan-y;
   touch-action: pan-x pan-y pinch-zoom;
 }
-/* CRITICAL (W3C Touch Events + xterm DOM renderer):
-   xterm's DOM renderer detaches/replaces <span> nodes inside .xterm-rows on the very first
-   scrolled line. If touchstart targets a volatile <span>, browsers silently drop ALL subsequent
-   touchmove/touchend events for that finger (breaking both scrolling and 2-finger pinch!).
-   Routing touch hit-testing to permanent .xterm-screen keeps 100% of touch streams attached. */
+/* CRITICAL (W3C Touch Events + xterm renderers):
+   Routing touch hit-testing to permanent .xterm-screen prevents detached DOM fallback <span>s
+   or inner canvas layers from intercepting or dropping active touch streams on mobile. */
 @media (max-width: 860px), (pointer: coarse), (hover: none) {
-  .xterm-rows, .xterm-rows * { pointer-events: none; }
+  .xterm-rows, .xterm-rows *, .xterm-screen canvas { pointer-events: none; }
 }
 .xterm-viewport { background-color: transparent !important; }
 /* The terminal scrollbar is an overlay: hidden at the live bottom, shown by .sb-show (see syncScrollbar in app.js) */
@@ -1277,8 +1303,6 @@ html.swarmbox-ready #sb-boot {
   .term-pane .xterm-viewport { scrollbar-width: thin; scrollbar-color: transparent transparent; }
   .term-pane.sb-show .xterm-viewport { scrollbar-color: var(--border-strong) transparent; }
 }
-/* Eliminate faint horizontal hairline seams between block-drawing rows (banner.sh half-blocks) */
-.xterm-rows > div.sb-blk { transform: scaleY(var(--sb-blk-s, 1.26)); transform-origin: 50% 50%; }
 
 /* ---- Right Sysop Panel (Minimalist quiet drawer) ------------------------------------------ */
 .sysop-panel {

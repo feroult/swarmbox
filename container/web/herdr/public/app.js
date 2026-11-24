@@ -457,24 +457,33 @@
     syncAppearanceControls();
   }
 
-  // Eliminate faint horizontal hairline seams on block-drawing rows (banner.sh half-blocks)
-  const BLOCK_RE = /[\u2580-\u259f]/;
-  function markBlockRows(rootEl) {
-    const scope = rootEl || terminalHostEl;
-    if (!scope) return;
-    const rows = scope.querySelectorAll('.xterm-rows > div');
-    for (const row of rows) {
-      const hasBlk = BLOCK_RE.test(row.textContent || '');
-      if (hasBlk !== row.classList.contains('sb-blk')) {
-        row.classList.toggle('sb-blk', hasBlk);
+  // Pixel-perfect block-drawing & box-drawing glyphs are rendered procedurally by
+  // @xterm/addon-canvas (customGlyphs: true) across full cell height (including lineHeight).
+  function attachCanvasRenderer(term) {
+    if (!window.CanvasAddon) return null;
+    try {
+      const addon = new window.CanvasAddon.CanvasAddon();
+      term.loadAddon(addon);
+      // Guard against Chromium/Android ResizeObserver devicePixelContentBoxSize disagreeing with
+      // window.devicePixelRatio (e.g. during optical pinch-zoom or CDP DPR emulation), which
+      // would otherwise shrink canvas backing pixels while leaving device.cell scaled and clip.
+      const renderer = addon._renderer;
+      if (renderer && typeof renderer._setCanvasDevicePixelDimensions === 'function') {
+        const origSet = renderer._setCanvasDevicePixelDimensions.bind(renderer);
+        renderer._setCanvasDevicePixelDimensions = (w, h) => {
+          const dims = renderer.dimensions;
+          const expectedW = (term.cols || 0) * (dims?.device?.cell?.width || 0);
+          const expectedH = (term.rows || 0) * (dims?.device?.cell?.height || 0);
+          if (expectedW > 0 && Math.abs(w - expectedW) > Math.max(8, expectedW * 0.06)) return;
+          if (expectedH > 0 && Math.abs(h - expectedH) > Math.max(8, expectedH * 0.06)) return;
+          return origSet(w, h);
+        };
       }
+      return addon;
+    } catch (_) {
+      return null;
     }
   }
-  function updateBlockScale() {
-    const scale = window.innerWidth <= 860 ? 1.18 : 1.28;
-    document.documentElement.style.setProperty('--sb-blk-s', String(scale));
-  }
-  updateBlockScale();
 
   // Show sleek floating "Jump to live" pill whenever user scrolls up into history.
   // Avoid DOM layout reads (scrollHeight/clientHeight/scrollTop) on every scroll frame!
@@ -719,7 +728,6 @@
     if (sess) {
       sess.touchRowAccum = 0;
       if (sess.pokeScrollbar) sess.pokeScrollbar();
-      markBlockRows(sess.paneEl);
     }
   }
 
@@ -1110,7 +1118,6 @@
     };
     const reveal = () => {
       restoreScroll();
-      markBlockRows(sess.paneEl);
       requestAnimationFrame(() => {
         restoreScroll();
         sess.paneEl.classList.remove('resizing');
@@ -1146,14 +1153,12 @@
       const nextLH = computeLineHeight();
       if (sess.term.options.fontSize !== nextFont) sess.term.options.fontSize = nextFont;
       if (sess.term.options.lineHeight !== nextLH) sess.term.options.lineHeight = nextLH;
-      updateBlockScale();
       const wasAtBottom = isSessionAtBottom(sess);
       const bufBefore = sess.term.buffer && sess.term.buffer.active;
       const linesFromBottom = (bufBefore && bufBefore.type === 'normal')
         ? Math.max(0, bufBefore.baseY - bufBefore.viewportY)
         : 0;
       sess.fitAddon.fit();
-      markBlockRows(sess.paneEl);
       sess.needsFit = false;
       const changed = sess.term.cols !== sess.lastCols || sess.term.rows !== sess.lastRows;
       if (sendResize && changed && sess.ws && sess.ws.readyState === 1) {
@@ -1211,11 +1216,22 @@
     });
   }
 
-  // Re-measure terminal cell geometry as soon as self-hosted JetBrains Mono finishes loading
+  // Re-measure terminal cell geometry and refresh Canvas glyph atlas once self-hosted fonts load
+  function flushAllTextureAtlases() {
+    for (const s of tabSessions.values()) {
+      try { s.term.clearTextureAtlas(); } catch (_) {}
+    }
+  }
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(() => {
+      flushAllTextureAtlases();
       scheduleFit();
     }).catch(() => {});
+    if (typeof document.fonts.addEventListener === 'function') {
+      document.fonts.addEventListener('loadingdone', () => {
+        flushAllTextureAtlases();
+      });
+    }
   }
 
   const ro = new ResizeObserver(scheduleFit);
@@ -1714,9 +1730,6 @@
       try { sess.ws.close(); } catch (_) {}
       sess.ws = null;
     }
-    if (sess.blkObserver) {
-      try { sess.blkObserver.disconnect(); } catch (_) {}
-    }
     try { sess.term.dispose(); } catch (_) {}
     if (sess.paneEl && sess.paneEl.parentNode) sess.paneEl.parentNode.removeChild(sess.paneEl);
   }
@@ -1745,11 +1758,12 @@
     terminalHostEl.appendChild(paneEl);
 
     const term = new window.Terminal({
-      fontFamily: "'JetBrains Mono', 'JetBrainsMono Nerd Font', 'PureNerdFont', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      fontFamily: "'JetBrains Mono', 'SwarmBox Symbols', 'PureNerdFont', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
       fontSize: computeFontSize(),
       lineHeight: computeLineHeight(),
       fontWeight: '400',
       fontWeightBold: '600',
+      customGlyphs: true,
       cursorStyle,
       cursorBlink,
       scrollback: scrollbackLines,
@@ -1762,14 +1776,20 @@
     if (window.WebLinksAddon) {
       term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
     }
+    if (window.Unicode11Addon) {
+      try {
+        term.loadAddon(new window.Unicode11Addon.Unicode11Addon());
+        term.unicode.activeVersion = '11';
+      } catch (_) {}
+    }
     term.open(paneEl);
+    attachCanvasRenderer(term);
 
     const sess = {
       address,
       paneEl,
       term,
       fitAddon,
-      blkObserver: null,
       ws: null,
       connected: false,
       hydrating: true,
@@ -2185,19 +2205,6 @@
     const vp = paneEl.querySelector('.xterm-viewport');
     if (vp) vp.addEventListener('scroll', () => { if (touchId === null && !touchRaf) { onScrollMaybe(); syncScrollbar(); } }, { passive: true });
 
-    const rowsRoot = paneEl.querySelector('.xterm-rows');
-    if (rowsRoot && window.MutationObserver) {
-      let blkRaf = 0;
-      const scheduleBlk = () => {
-        if (touchId !== null || touchRaf) return;
-        if (blkRaf) return;
-        blkRaf = requestAnimationFrame(() => { blkRaf = 0; if (touchId === null && !touchRaf) markBlockRows(paneEl); });
-      };
-      const obs = new MutationObserver(scheduleBlk);
-      obs.observe(rowsRoot, { childList: true, subtree: true, characterData: true });
-      sess.blkObserver = obs;
-    }
-
     tabSessions.set(address, sess);
     return sess;
   }
@@ -2262,7 +2269,6 @@
         const vp = sess.paneEl.querySelector('.xterm-viewport');
         try { sess.term.scrollToBottom(); } catch (_) {}
         if (vp) vp.scrollTop = vp.scrollHeight;
-        markBlockRows(sess.paneEl);
         // Two rAFs guarantee xterm.js Viewport._sync() finishes painting at the bottom BEFORE reveal
         requestAnimationFrame(() => {
           if (sess.ws !== ws) return;

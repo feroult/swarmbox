@@ -57,6 +57,7 @@ export { HerdrClient };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const FONTS_DIR = path.join(__dirname, 'fonts');
 const NODE_MODULES = path.join(__dirname, 'node_modules');
 
 export function parseCliArgs(argv) {
@@ -473,19 +474,33 @@ export function createGateway(options = {}) {
         }
       }
 
-      // Local xterm.js & JetBrains Mono + Nerd Font vendor bundles (zero CDN dependency)
+      // Local xterm.js & full JetBrains Mono + Noto Symbols + Nerd Font vendor bundles (zero CDN dependency)
       if (pathname === '/vendor/xterm.js') return serveFile(res, path.join(NODE_MODULES, '@xterm/xterm/lib/xterm.js'), true);
       if (pathname === '/vendor/xterm.css') return serveFile(res, path.join(NODE_MODULES, '@xterm/xterm/css/xterm.css'), true);
       if (pathname === '/vendor/addon-fit.js') return serveFile(res, path.join(NODE_MODULES, '@xterm/addon-fit/lib/addon-fit.js'), true);
       if (pathname === '/vendor/addon-web-links.js') return serveFile(res, path.join(NODE_MODULES, '@xterm/addon-web-links/lib/addon-web-links.js'), true);
-      if (pathname === '/vendor/fonts/jetbrains-mono-latin.woff2') {
-        return serveFile(res, path.join(NODE_MODULES, '@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2'), true);
+      if (pathname === '/vendor/addon-canvas.js') return serveFile(res, path.join(NODE_MODULES, '@xterm/addon-canvas/lib/addon-canvas.js'), true);
+      if (pathname === '/vendor/addon-unicode11.js') return serveFile(res, path.join(NODE_MODULES, '@xterm/addon-unicode11/lib/addon-unicode11.js'), true);
+      if (pathname === '/vendor/fonts/JetBrainsMono-Regular.woff2') {
+        return serveFile(res, path.join(FONTS_DIR, 'JetBrainsMono-Regular.woff2'), true);
       }
-      if (pathname === '/vendor/fonts/jetbrains-mono-latin-ext.woff2') {
-        return serveFile(res, path.join(NODE_MODULES, '@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-ext-wght-normal.woff2'), true);
+      if (pathname === '/vendor/fonts/JetBrainsMono-SemiBold.woff2') {
+        return serveFile(res, path.join(FONTS_DIR, 'JetBrainsMono-SemiBold.woff2'), true);
       }
-      if (pathname === '/vendor/fonts/jetbrains-mono-latin-italic.woff2') {
-        return serveFile(res, path.join(NODE_MODULES, '@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-italic.woff2'), true);
+      if (pathname === '/vendor/fonts/JetBrainsMono-Bold.woff2') {
+        return serveFile(res, path.join(FONTS_DIR, 'JetBrainsMono-Bold.woff2'), true);
+      }
+      if (pathname === '/vendor/fonts/JetBrainsMono-Italic.woff2') {
+        return serveFile(res, path.join(FONTS_DIR, 'JetBrainsMono-Italic.woff2'), true);
+      }
+      if (pathname === '/vendor/fonts/noto-symbols-braille.woff2') {
+        return serveFile(res, path.join(NODE_MODULES, '@fontsource/noto-sans-symbols-2/files/noto-sans-symbols-2-braille-400-normal.woff2'), true);
+      }
+      if (pathname === '/vendor/fonts/noto-symbols-math.woff2') {
+        return serveFile(res, path.join(NODE_MODULES, '@fontsource/noto-sans-symbols-2/files/noto-sans-symbols-2-math-400-normal.woff2'), true);
+      }
+      if (pathname === '/vendor/fonts/noto-symbols.woff2') {
+        return serveFile(res, path.join(NODE_MODULES, '@fontsource/noto-sans-symbols-2/files/noto-sans-symbols-2-symbols-400-normal.woff2'), true);
       }
       if (pathname === '/vendor/fonts/nerd-symbols.woff2') {
         return serveFile(res, path.join(NODE_MODULES, '@azurity/pure-nerd-font/PureNerdFont.woff2'), true);

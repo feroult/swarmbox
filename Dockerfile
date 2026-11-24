@@ -140,11 +140,27 @@ RUN case "$(dpkg --print-architecture)" in \
     install -m 755 "/tmp/$T" /usr/local/bin/herdr && \
     rm -f "/tmp/$T" && herdr --version
 
-# Dependencies for the herdr web gateway (ws + local xterm.js bundles, zero runtime CDN calls).
+# Dependencies for the herdr web gateway (ws + local xterm.js & symbol font bundles, zero runtime CDN calls).
 COPY container/web/herdr/package.json /usr/local/share/swarmbox/herdr-web/package.json
 RUN cd /usr/local/share/swarmbox/herdr-web && \
     npm install --omit=dev --no-audit --no-fund --cache /tmp/npm-build-cache && \
     rm -rf /tmp/npm-build-cache
+
+# Full upstream JetBrains Mono WOFF2 webfonts (OFL-1.1, pinned by SHA-256) with complete box-drawing,
+# block-element, geometric-shape, arrow, and Powerline glyph coverage (no Google Fonts subsetting).
+ARG JETBRAINS_MONO_VERSION=2.304
+ARG JETBRAINS_MONO_SHA256=6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf
+RUN curl -fsSL -o /tmp/JetBrainsMono.zip \
+        "https://github.com/JetBrains/JetBrainsMono/releases/download/v${JETBRAINS_MONO_VERSION}/JetBrainsMono-${JETBRAINS_MONO_VERSION}.zip" && \
+    echo "${JETBRAINS_MONO_SHA256}  /tmp/JetBrainsMono.zip" | sha256sum -c - && \
+    mkdir -p /usr/local/share/swarmbox/herdr-web/fonts && \
+    unzip -q -j /tmp/JetBrainsMono.zip \
+        fonts/webfonts/JetBrainsMono-Regular.woff2 \
+        fonts/webfonts/JetBrainsMono-SemiBold.woff2 \
+        fonts/webfonts/JetBrainsMono-Bold.woff2 \
+        fonts/webfonts/JetBrainsMono-Italic.woff2 \
+        -d /usr/local/share/swarmbox/herdr-web/fonts && \
+    rm -f /tmp/JetBrainsMono.zip
 
 # Python virtual environment at /opt/flow (the "(swarmbox)" prompt); the directory is created with agent as owner (no chown -R)
 RUN install -d -o agent -g agent -m 755 /opt/flow
