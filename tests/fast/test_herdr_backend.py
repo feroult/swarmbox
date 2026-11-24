@@ -846,6 +846,13 @@ assert.ok(Array.isArray(cfg.mcp));
         self.assertIn("JetBrains Mono", app_src)
         self.assertIn("customGlyphs: true", app_src)
         self.assertIn("attachCanvasRenderer", app_src)
+        self.assertIn("term-stage-loader", app_src)
+        self.assertIn("syncStageLoader", app_src)
+        self.assertIn("fontsReadyPromise", app_src)
+        self.assertIn("setDesktopSidebar", app_src)
+        self.assertIn("setDesktopSysop", app_src)
+        self.assertIn("isInteractiveTuiTerminal", server_src)
+        self.assertIn("type: 'resized', seq: doneSeq", server_src)
 
     def test_attach_interactive_launches_cockpit_and_respects_raw_override(self):
         tmp = tempfile.mkdtemp(prefix="swarmbox-test-cockpit-sh.")

@@ -219,8 +219,9 @@
     if (bootDismissed) return;
     bootDismissed = true;
     document.documentElement.classList.add('swarmbox-ready');
+    if (typeof syncStageLoader === 'function') syncStageLoader();
   }
-  setTimeout(dismissBoot, 3000);
+  setTimeout(dismissBoot, 4500);
 
   const appEl = document.getElementById('app');
   const sidebarTabsEl = document.getElementById('sidebar-tabs');
@@ -278,6 +279,7 @@
   const btnMic = document.getElementById('btn-mic');
   const btnMobileMic = document.getElementById('btn-mobile-mic');
   const termWrapEl = document.getElementById('term-wrap');
+  const termStageLoaderEl = document.getElementById('term-stage-loader');
   const termDropOverlayEl = document.getElementById('term-drop-overlay');
   const termToastEl = document.getElementById('term-toast');
   const btnJumpLive = document.getElementById('btn-jump-live');
@@ -1092,9 +1094,38 @@
     return true;
   }
 
-  function finishResizeCycle(sess) {
+  function syncStageLoader() {
+    if (!termStageLoaderEl) return;
+    const sess = activeSession();
+    const busy = Boolean(sess && (sess.resizing || sess.hydrating || sess.revealPending));
+    // During initial page load, #sb-boot already covers the viewport; once dismissed,
+    // use the stage-scoped SwarmBox loader whenever a resize or cold tab hydration runs.
+    const show = bootDismissed && (busy || termWrapEl.classList.contains('term-loading'));
+    termStageLoaderEl.classList.toggle('visible', show);
+  }
+
+  function isSessionTui(sess) {
+    if (!sess) return false;
+    try {
+      const buf = sess.term && sess.term.buffer && sess.term.buffer.active;
+      if (buf && buf.type === 'alternate') return true;
+    } catch (_) {}
+    const t = terminals.find((x) => x.address === sess.address);
+    if (!t) return false;
+    if (tabAgentBadge(t)) return true;
+    const fg = String((t.foreground && t.foreground.name) || '').toLowerCase().trim();
+    if (fg && !SHELL_NAMES.has(fg)) return true;
+    const nm = String(t.name || '').toLowerCase();
+    if (/^(?:claude|agy|antigravity|opencode|gemini|codex)\b/.test(nm)) return true;
+    return false;
+  }
+
+  function finishResizeCycle(sess, seq = null) {
     if (!sess || !sess.resizing) return;
+    if (seq !== null && seq > 0 && sess.resizeSeq > 0 && seq < sess.resizeSeq) return;
     sess.resizing = false;
+    sess.resizeAwaitingServer = false;
+    sess.revealPending = true;
     if (sess.resizeFallbackTimer) {
       clearTimeout(sess.resizeFallbackTimer);
       sess.resizeFallbackTimer = null;
@@ -1118,11 +1149,20 @@
       }
     };
     const reveal = () => {
+      if (sess.resizing) return;
       restoreScroll();
       requestAnimationFrame(() => {
+        if (sess.resizing) return;
         restoreScroll();
-        sess.paneEl.classList.remove('resizing');
-        if (activeId === sess.address) syncJumpLive();
+        requestAnimationFrame(() => {
+          if (sess.resizing) return;
+          sess.revealPending = false;
+          sess.paneEl.classList.remove('resizing');
+          if (activeId === sess.address) {
+            syncStageLoader();
+            syncJumpLive();
+          }
+        });
       });
     };
     if (batch.length > 0) {
@@ -1138,10 +1178,13 @@
       sess.resizeWasAtBottom = isSessionAtBottom(sess);
       sess.resizeChunks = [];
       sess.resizing = true;
+      sess.revealPending = false;
       sess.paneEl.classList.add('resizing');
     }
+    if (activeId === sess.address) syncStageLoader();
     if (sess.resizeFallbackTimer) clearTimeout(sess.resizeFallbackTimer);
-    sess.resizeFallbackTimer = setTimeout(() => finishResizeCycle(sess), 450);
+    const fallbackMs = isSessionTui(sess) ? 1800 : 600;
+    sess.resizeFallbackTimer = setTimeout(() => finishResizeCycle(sess), fallbackMs);
   }
 
   function fitSession(sess, sendResize = true) {
@@ -1167,9 +1210,12 @@
         const prevRows = sess.lastRows;
         sess.lastCols = sess.term.cols;
         sess.lastRows = sess.term.rows;
+        const isTui = isSessionTui(sess);
+        sess.resizeSeq = (sess.resizeSeq || 0) + 1;
         if (!sess.hydrating) {
           sess.resizeWasAtBottom = wasAtBottom;
           sess.resizeLinesFromBottom = linesFromBottom;
+          sess.resizeAwaitingServer = true;
           beginResizeCycle(sess);
           logTouchDebug('resize_sent', {
             prevCols,
@@ -1180,7 +1226,16 @@
             vvLeft: window.visualViewport ? Math.round(window.visualViewport.offsetLeft || 0) : 0,
           });
         }
-        sess.ws.send(JSON.stringify({ type: 'resize', cols: sess.term.cols, rows: sess.term.rows }));
+        sess.ws.send(JSON.stringify({
+          type: 'resize',
+          cols: sess.term.cols,
+          rows: sess.term.rows,
+          seq: sess.resizeSeq,
+          tui: isTui,
+        }));
+      } else if (sendResize && !changed && sess.resizing && !sess.resizeAwaitingServer) {
+        // Pre-armed resize cycle (e.g. panel toggle) produced identical cols/rows: reveal cleanly.
+        finishResizeCycle(sess);
       }
     } catch (_) {}
   }
@@ -1217,22 +1272,32 @@
     });
   }
 
-  // Re-measure terminal cell geometry and refresh Canvas glyph atlas once self-hosted fonts load
+  // Wait for self-hosted JetBrains Mono before the first PTY attach so initial cols/rows
+  // match exact glyph metrics on frame 0 (eliminating post-boot font-metric reflow).
+  let fontsSettled = false;
   function flushAllTextureAtlases() {
     for (const s of tabSessions.values()) {
       try { s.term.clearTextureAtlas(); } catch (_) {}
     }
   }
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(() => {
-      flushAllTextureAtlases();
-      scheduleFit();
-    }).catch(() => {});
-    if (typeof document.fonts.addEventListener === 'function') {
-      document.fonts.addEventListener('loadingdone', () => {
+  const fontsReadyPromise = (document.fonts && document.fonts.ready)
+    ? Promise.race([
+        Promise.all([
+          typeof document.fonts.load === 'function'
+            ? document.fonts.load('400 16px "JetBrains Mono"').catch(() => {})
+            : Promise.resolve(),
+          document.fonts.ready.catch(() => {}),
+        ]),
+        new Promise((r) => setTimeout(r, 1200)),
+      ]).then(() => {
+        fontsSettled = true;
         flushAllTextureAtlases();
-      });
-    }
+      })
+    : Promise.resolve().then(() => { fontsSettled = true; });
+  if (document.fonts && typeof document.fonts.addEventListener === 'function') {
+    document.fonts.addEventListener('loadingdone', () => {
+      flushAllTextureAtlases();
+    });
   }
 
   const ro = new ResizeObserver(scheduleFit);
@@ -1333,9 +1398,14 @@
     }
   }
 
+  const MOUSE_MOTION_INPUT_RE = /^(?:\x1b\[<[0-9;]+[Mm]|\x1b\[M[\s\S]{3})+$/;
+
   function sendPtyInput(data, targetSession = null) {
     const sess = targetSession || activeSession();
     if (!data || !sess) return;
+    if ((sess.resizing || sess.hydrating || sess.revealPending) && MOUSE_MOTION_INPUT_RE.test(data)) {
+      return;
+    }
     if (sess.ws && sess.ws.readyState === 1) {
       sess.ws.send(JSON.stringify({ type: 'input', data }));
       return;
@@ -1630,6 +1700,7 @@
     antigravity: 'agy',
     agy: 'agy',
     claude: 'claude',
+    'claude-code': 'claude',
     codex: 'codex',
     opencode: 'opencode',
     gemini: 'gemini',
@@ -1800,9 +1871,12 @@
       hydrationChunks: [],
       fallbackTimer: null,
       resizing: false,
+      resizeSeq: 0,
+      resizeAwaitingServer: false,
       resizeChunks: [],
       resizeFallbackTimer: null,
       resizeWasAtBottom: true,
+      socketGen: 0,
       reconnectTimer: null,
       reconnectDelay: 400,
       pendingInput: [],
@@ -2242,154 +2316,174 @@
     sess.hydrating = true;
     sess.hydrationChunks = [];
     sess.paneEl.classList.add('hydrating');
-    if (activeId === sess.address) termWrapEl.classList.add('term-loading');
+    if (activeId === sess.address) {
+      termWrapEl.classList.add('term-loading');
+      syncStageLoader();
+    }
 
     if (opts.reset) {
       sess.term.reset();
     }
-    fitSession(sess, false);
-    const initCols = sess.term.cols || 100;
-    const initRows = sess.term.rows || 30;
-    sess.lastCols = initCols;
-    sess.lastRows = initRows;
+    const gen = (sess.socketGen || 0) + 1;
+    sess.socketGen = gen;
 
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(sess.address)}?cols=${initCols}&rows=${initRows}`;
-    const ws = new WebSocket(wsUrl);
-    ws.binaryType = 'arraybuffer';
-    sess.ws = ws;
+    const startAttach = () => {
+      if (sess.socketGen !== gen || tabSessions.get(sess.address) !== sess) return;
+      try { sess.term.clearTextureAtlas(); } catch (_) {}
+      fitSession(sess, false);
+      const initCols = sess.term.cols || 100;
+      const initRows = sess.term.rows || 30;
+      sess.lastCols = initCols;
+      sess.lastRows = initRows;
 
-    const finishHydration = () => {
-      if (!sess.hydrating) return;
-      sess.hydrating = false;
-      if (sess.fallbackTimer) {
-        clearTimeout(sess.fallbackTimer);
-        sess.fallbackTimer = null;
-      }
-      const batch = sess.hydrationChunks;
-      sess.hydrationChunks = [];
-      const reveal = () => {
-        if (sess.ws !== ws) return;
-        const vp = sess.paneEl.querySelector('.xterm-viewport');
-        try { sess.term.scrollToBottom(); } catch (_) {}
-        if (vp) vp.scrollTop = vp.scrollHeight;
-        // Two rAFs guarantee xterm.js Viewport._sync() finishes painting at the bottom BEFORE reveal
-        requestAnimationFrame(() => {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const tuiFlag = isSessionTui(sess) ? '&tui=1' : '';
+      const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(sess.address)}?cols=${initCols}&rows=${initRows}${tuiFlag}`;
+      const ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
+      sess.ws = ws;
+
+      const finishHydration = () => {
+        if (!sess.hydrating) return;
+        sess.hydrating = false;
+        sess.revealPending = true;
+        if (sess.fallbackTimer) {
+          clearTimeout(sess.fallbackTimer);
+          sess.fallbackTimer = null;
+        }
+        const batch = sess.hydrationChunks;
+        sess.hydrationChunks = [];
+        const reveal = () => {
           if (sess.ws !== ws) return;
+          const vp = sess.paneEl.querySelector('.xterm-viewport');
           try { sess.term.scrollToBottom(); } catch (_) {}
           if (vp) vp.scrollTop = vp.scrollHeight;
+          // Two rAFs guarantee xterm.js Viewport._sync() & Canvas2D finish painting BEFORE reveal
           requestAnimationFrame(() => {
             if (sess.ws !== ws) return;
-            sess.paneEl.classList.remove('hydrating');
-            if (activeId === sess.address) {
-              termWrapEl.classList.remove('term-loading');
-              syncJumpLive();
-              focusTerminalIfDesktop();
-            }
-            dismissBoot();
+            try { sess.term.scrollToBottom(); } catch (_) {}
+            if (vp) vp.scrollTop = vp.scrollHeight;
+            requestAnimationFrame(() => {
+              if (sess.ws !== ws) return;
+              sess.revealPending = false;
+              sess.paneEl.classList.remove('hydrating');
+              if (activeId === sess.address) {
+                termWrapEl.classList.remove('term-loading');
+                syncStageLoader();
+                syncJumpLive();
+                focusTerminalIfDesktop();
+              }
+              dismissBoot();
+            });
           });
-        });
+        };
+        if (batch.length > 0) {
+          sess.term.write(concatChunks(batch), reveal);
+        } else {
+          reveal();
+        }
       };
-      if (batch.length > 0) {
-        sess.term.write(concatChunks(batch), reveal);
-      } else {
-        reveal();
-      }
-    };
 
-    // Safety fallback in case a proxy delays or drops the hydrated control message
-    sess.fallbackTimer = setTimeout(finishHydration, 1500);
+      // Safety fallback in case a proxy delays or drops the hydrated control message
+      sess.fallbackTimer = setTimeout(finishHydration, 2600);
 
-    ws.onopen = () => {
-      if (sess.ws !== ws) return;
-      sess.connected = true;
-      sess.reconnectDelay = 400;
-      if (activeId === sess.address) {
-        ptyConnected = true;
-        syncConnPill();
-        ws.send(JSON.stringify({ type: 'focus', focused: true }));
-      }
-      // Only resize if viewport dimensions changed while the WebSocket was opening
-      fitSession(sess, true);
-      if (sess.pendingInput.length > 0) {
-        const queued = sess.pendingInput;
-        sess.pendingInput = [];
-        for (const chunk of queued) {
-          ws.send(JSON.stringify({ type: 'input', data: chunk }));
+      ws.onopen = () => {
+        if (sess.ws !== ws) return;
+        sess.connected = true;
+        sess.reconnectDelay = 400;
+        if (activeId === sess.address) {
+          ptyConnected = true;
+          syncConnPill();
+          ws.send(JSON.stringify({ type: 'focus', focused: true }));
         }
-      }
-      if (!sess.hydrating && activeId === sess.address) focusTerminalIfDesktop();
-    };
+        // Only resize if viewport dimensions changed while the WebSocket was opening
+        fitSession(sess, true);
+        if (sess.pendingInput.length > 0) {
+          const queued = sess.pendingInput;
+          sess.pendingInput = [];
+          for (const chunk of queued) {
+            ws.send(JSON.stringify({ type: 'input', data: chunk }));
+          }
+        }
+        if (!sess.hydrating && activeId === sess.address) focusTerminalIfDesktop();
+      };
 
-    ws.onmessage = (ev) => {
-      if (sess.ws !== ws) return;
-      if (ev.data instanceof ArrayBuffer) {
-        const bytes = new Uint8Array(ev.data);
-        if (sess.hydrating) {
-          sess.hydrationChunks.push(bytes);
-          return;
-        }
-        if (sess.resizing) {
-          sess.resizeChunks.push(bytes);
-          return;
-        }
-        sess.term.write(bytes, () => dismissBoot());
-      } else if (typeof ev.data === 'string') {
-        try {
-          const msg = JSON.parse(ev.data);
-          if (msg.type === 'hydrated') {
+      ws.onmessage = (ev) => {
+        if (sess.ws !== ws) return;
+        if (ev.data instanceof ArrayBuffer) {
+          const bytes = new Uint8Array(ev.data);
+          if (sess.hydrating) {
+            sess.hydrationChunks.push(bytes);
+            return;
+          }
+          if (sess.resizing) {
+            sess.resizeChunks.push(bytes);
+            return;
+          }
+          sess.term.write(bytes, () => dismissBoot());
+        } else if (typeof ev.data === 'string') {
+          try {
+            const msg = JSON.parse(ev.data);
+            if (msg.type === 'hydrated') {
+              finishHydration();
+              return;
+            }
+            if (msg.type === 'resized') {
+              finishResizeCycle(sess, msg.seq || null);
+              return;
+            }
             finishHydration();
-            return;
-          }
-          if (msg.type === 'resized') {
             finishResizeCycle(sess);
-            return;
+            if (msg.type === 'error') sess.term.writeln(`\r\n\x1b[31m[error] ${msg.message}\x1b[0m`);
+            if (msg.type === 'closed') {
+              ws._terminalClosed = true;
+              sess.term.writeln(`\r\n\x1b[2m[terminal closed]\x1b[0m`);
+            }
+          } catch (_) {
+            finishHydration();
+            finishResizeCycle(sess);
+            sess.term.write(ev.data);
           }
-          finishHydration();
-          finishResizeCycle(sess);
-          if (msg.type === 'error') sess.term.writeln(`\r\n\x1b[31m[error] ${msg.message}\x1b[0m`);
-          if (msg.type === 'closed') {
-            ws._terminalClosed = true;
-            sess.term.writeln(`\r\n\x1b[2m[terminal closed]\x1b[0m`);
-          }
-        } catch (_) {
-          finishHydration();
-          finishResizeCycle(sess);
-          sess.term.write(ev.data);
+          dismissBoot();
         }
-        dismissBoot();
-      }
+      };
+
+      ws.onerror = () => {
+        if (sess.ws !== ws) return;
+        finishHydration();
+        finishResizeCycle(sess);
+      };
+
+      ws.onclose = () => {
+        if (sess.ws !== ws) return;
+        finishHydration();
+        finishResizeCycle(sess);
+        sess.ws = null;
+        sess.connected = false;
+        if (activeId === sess.address) {
+          ptyConnected = false;
+          syncConnPill();
+        }
+        if (ws._terminalClosed) return;
+        // Auto-reconnect silently if this tab is still live so keyboard input never freezes
+        if (tabSessions.get(sess.address) === sess && terminals.some((t) => t.address === sess.address)) {
+          const delay = sess.reconnectDelay;
+          sess.reconnectDelay = Math.min(Math.round(sess.reconnectDelay * 1.6), 3000);
+          sess.reconnectTimer = setTimeout(() => {
+            sess.reconnectTimer = null;
+            if (tabSessions.get(sess.address) === sess && !sess.ws) {
+              openSessionSocket(sess, { silent: true, reset: true });
+            }
+          }, delay);
+        }
+      };
     };
 
-    ws.onerror = () => {
-      if (sess.ws !== ws) return;
-      finishHydration();
-      finishResizeCycle(sess);
-    };
-
-    ws.onclose = () => {
-      if (sess.ws !== ws) return;
-      finishHydration();
-      finishResizeCycle(sess);
-      sess.ws = null;
-      sess.connected = false;
-      if (activeId === sess.address) {
-        ptyConnected = false;
-        syncConnPill();
-      }
-      if (ws._terminalClosed) return;
-      // Auto-reconnect silently if this tab is still live so keyboard input never freezes
-      if (tabSessions.get(sess.address) === sess && terminals.some((t) => t.address === sess.address)) {
-        const delay = sess.reconnectDelay;
-        sess.reconnectDelay = Math.min(Math.round(sess.reconnectDelay * 1.6), 3000);
-        sess.reconnectTimer = setTimeout(() => {
-          sess.reconnectTimer = null;
-          if (tabSessions.get(sess.address) === sess && !sess.ws) {
-            openSessionSocket(sess, { silent: true, reset: true });
-          }
-        }, delay);
-      }
-    };
+    if (fontsSettled) {
+      startAttach();
+    } else {
+      fontsReadyPromise.then(startAttach);
+    }
   }
 
   function connectPty(address, opts = {}) {
@@ -2427,6 +2521,7 @@
         termWrapEl.classList.add('term-loading');
       }
       if (sess.needsFit) fitSession(sess, true);
+      syncStageLoader();
       if (sess.ws && sess.ws.readyState === 1) {
         sess.ws.send(JSON.stringify({ type: 'focus', focused: true }));
       }
@@ -2643,8 +2738,7 @@
   function startInlineRename(address) {
     if (!address || !terminals.some((t) => t.address === address)) return;
     if (window.innerWidth > 860 && appEl.dataset.sidebarOpen !== '1') {
-      appEl.dataset.sidebarOpen = '1';
-      scheduleFit();
+      setDesktopSidebar(true);
     }
     editingTabId = address;
     renderTabs();
@@ -4720,8 +4814,26 @@
   // ---- Layout Controls ----------------------------------------------------------------------
   // Responsive default: keep Sysop closed on narrower desktop/laptop widths (< 1360px) so the
   // terminal gets full room; open automatically on wide screens unless user manually toggled it.
+  // Persist explicit desktop panel visibility across reloads so refresh keeps exact PTY width.
   const SYSOP_WIDE_PX = 1360;
+  const SIDEBAR_OPEN_KEY = 'swarmbox-herdr-sidebar-open';
+  const SYSOP_OPEN_KEY = 'swarmbox-herdr-sysop-open';
   let sysopUserToggled = false;
+
+  (() => {
+    try {
+      const savedSb = localStorage.getItem(SIDEBAR_OPEN_KEY);
+      if (savedSb === '0' || savedSb === '1') {
+        appEl.dataset.sidebarOpen = savedSb;
+      }
+      const savedSys = localStorage.getItem(SYSOP_OPEN_KEY);
+      if (savedSys === '0' || savedSys === '1') {
+        sysopUserToggled = true;
+        appEl.dataset.sysopOpen = savedSys;
+        if (btnToggleSysop) btnToggleSysop.dataset.on = savedSys;
+      }
+    } catch (_) {}
+  })();
 
   function applyResponsiveSysopDefault() {
     if (sysopUserToggled || window.innerWidth <= 860) return;
@@ -4738,18 +4850,59 @@
     if (appEl.dataset.sysopOpen !== before) requestAnimationFrame(fitAndResize);
   });
 
-  function toggleSidebar() {
-    appEl.dataset.sidebarOpen = appEl.dataset.sidebarOpen === '1' ? '0' : '1';
-    scheduleFit();
+  function applyDesktopPanelToggle(applyDomChange) {
+    const active = activeSession();
+    const canMask = Boolean(
+      active &&
+      !active.hydrating &&
+      window.innerWidth > 860 &&
+      active.ws &&
+      active.ws.readyState === 1
+    );
+    if (canMask) {
+      // Instant 0ms SwarmBox stage loader BEFORE changing grid columns so zero stale-width frames paint
+      beginResizeCycle(active);
+    }
+    applyDomChange();
+    if (canMask) {
+      // Synchronously lay out & dispatch resize on the exact same click tick (zero 1-frame gap)
+      void termWrapEl.offsetWidth;
+      fitAndResize();
+    } else {
+      scheduleFit();
+    }
     requestAnimationFrame(focusTerminalIfDesktop);
   }
-  function toggleDesktopSysop() {
+
+  function setDesktopSidebar(open) {
+    const next = open ? '1' : '0';
+    if (appEl.dataset.sidebarOpen === next) {
+      requestAnimationFrame(focusTerminalIfDesktop);
+      return;
+    }
+    try { localStorage.setItem(SIDEBAR_OPEN_KEY, next); } catch (_) {}
+    applyDesktopPanelToggle(() => {
+      appEl.dataset.sidebarOpen = next;
+    });
+  }
+  function toggleSidebar() {
+    setDesktopSidebar(appEl.dataset.sidebarOpen !== '1');
+  }
+  function setDesktopSysop(open) {
     sysopUserToggled = true;
-    const next = appEl.dataset.sysopOpen === '1' ? '0' : '1';
-    appEl.dataset.sysopOpen = next;
-    btnToggleSysop.dataset.on = next;
-    scheduleFit();
-    requestAnimationFrame(focusTerminalIfDesktop);
+    const next = open ? '1' : '0';
+    if (appEl.dataset.sysopOpen === next) {
+      requestAnimationFrame(focusTerminalIfDesktop);
+      return;
+    }
+    try { localStorage.setItem(SYSOP_OPEN_KEY, next); } catch (_) {}
+    applyDesktopPanelToggle(() => {
+      appEl.dataset.sysopOpen = next;
+      btnToggleSysop.dataset.on = next;
+    });
+  }
+  function toggleDesktopSysop() {
+    setDesktopSysop(appEl.dataset.sysopOpen !== '1');
   }
   function setMobileSysop(open) {
     const val = open ? '1' : '0';
@@ -4818,14 +4971,10 @@
     });
   }
   document.getElementById('btn-sidebar-close').addEventListener('click', () => {
-    appEl.dataset.sidebarOpen = '0';
-    scheduleFit();
-    requestAnimationFrame(focusTerminalIfDesktop);
+    setDesktopSidebar(false);
   });
   document.getElementById('btn-sidebar-open').addEventListener('click', () => {
-    appEl.dataset.sidebarOpen = '1';
-    scheduleFit();
-    requestAnimationFrame(focusTerminalIfDesktop);
+    setDesktopSidebar(true);
   });
   btnToggleSysop.addEventListener('click', toggleDesktopSysop);
   document.getElementById('btn-sysop-close').addEventListener('click', () => {

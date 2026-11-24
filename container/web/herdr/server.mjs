@@ -252,6 +252,22 @@ function serveFile(res, filePath, cacheable = false) {
   });
 }
 
+const PLAIN_SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
+
+// Terminal protocol replies & mouse-tracking motion/hover reports that xterm.js emits
+// automatically (not user keystrokes) — these must never abort an active resize mask.
+const NON_TYPING_INPUT_RE = /^(?:\x1b\[<[0-9;]+[Mm]|\x1b\[M[\s\S]{3}|\x1b\[[IO]|\x1b\[[0-9;]*R|\x1b\[\?[0-9;]*c|\x1b\](?:10|11);[^\x07\x1b]*(?:\x07|\x1b\\))+$/;
+
+function isInteractiveTuiTerminal(term) {
+  if (!term) return false;
+  if (detectTerminalAgent(term)) return true;
+  const fg = String((term.foreground && term.foreground.name) || '').toLowerCase().trim();
+  if (fg && !PLAIN_SHELLS.has(fg)) return true;
+  const name = String(term.name || '').toLowerCase();
+  if (/^(?:claude|agy|antigravity|opencode|gemini|codex)\b/.test(name)) return true;
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Server factory (also exported for fast unit tests)
 // ---------------------------------------------------------------------------
@@ -1382,15 +1398,23 @@ export function createGateway(options = {}) {
     const termId = decodeURIComponent(url.pathname.slice('/ws/pty/'.length));
     const cols = Number(url.searchParams.get('cols') || 100);
     const rows = Number(url.searchParams.get('rows') || 30);
+    const attachIsTui = url.searchParams.get('tui') === '1' || isInteractiveTuiTerminal(hc.terminals.get(termId));
     writeActiveTab(termId);
     if (typeof hc.refreshTerminals === 'function') hc.refreshTerminals();
 
     let stream = null;
     let hydrating = true;
+    const attachStartMs = Date.now();
+    let initLastChunkMs = 0;
+    let initPostReplayBytes = 0;
+    let initSawPostReplay = false;
     let initChunks = [];
     let flushTimer = null;
     let capTimer = null;
     let resizing = false;
+    let resizeSeq = 0;
+    let resizeBytes = 0;
+    let resizeIsTui = false;
     let resizeChunks = [];
     let resizeQuietTimer = null;
     let resizeCapTimer = null;
@@ -1424,6 +1448,7 @@ export function createGateway(options = {}) {
     const flushResize = () => {
       if (!resizing) return;
       resizing = false;
+      const doneSeq = resizeSeq;
       clearResizeTimers();
       if (ws.readyState !== 1) {
         resizeChunks = [];
@@ -1434,22 +1459,41 @@ export function createGateway(options = {}) {
         resizeChunks = [];
         ws.send(merged);
       }
-      ws.send(JSON.stringify({ type: 'resized' }));
+      ws.send(JSON.stringify({ type: 'resized', seq: doneSeq }));
     };
 
     try {
       stream = await hc.attach(termId, cols, rows, {
         onData: (buf) => {
           if (hydrating) {
+            const now = Date.now();
             initChunks.push(Buffer.from(buf));
-            if (flushTimer) clearTimeout(flushTimer);
-            flushTimer = setTimeout(flushInitial, 55);
+            if (attachIsTui) {
+              const elapsed = now - attachStartMs;
+              const gap = initLastChunkMs > 0 ? now - initLastChunkMs : 0;
+              // Distinguish the initial history replay from the post-attach SIGWINCH TUI redraw:
+              // require an actual inter-burst pause (not just a large replay taking >65ms) and
+              // substantial redraw bytes so a tiny spinner/status tick never ends hydration early.
+              if (gap >= 60 || (elapsed >= 160 && gap >= 40)) {
+                initPostReplayBytes += buf.length;
+                if (initPostReplayBytes >= 256) initSawPostReplay = true;
+              }
+              initLastChunkMs = now;
+              if (flushTimer) clearTimeout(flushTimer);
+              flushTimer = setTimeout(flushInitial, initSawPostReplay ? 160 : 460);
+            } else {
+              initLastChunkMs = now;
+              if (flushTimer) clearTimeout(flushTimer);
+              flushTimer = setTimeout(flushInitial, 75);
+            }
             return;
           }
           if (resizing) {
             resizeChunks.push(Buffer.from(buf));
+            resizeBytes += buf.length;
             if (resizeQuietTimer) clearTimeout(resizeQuietTimer);
-            resizeQuietTimer = setTimeout(flushResize, 55);
+            const quietMs = (resizeIsTui && resizeBytes < 256) ? 420 : (resizeIsTui ? 160 : 85);
+            resizeQuietTimer = setTimeout(flushResize, quietMs);
             return;
           }
           if (ws.readyState === 1) ws.send(buf);
@@ -1473,10 +1517,10 @@ export function createGateway(options = {}) {
       return;
     }
 
-    // If the terminal has no initial output, finish hydration promptly; otherwise cap burst at 350ms
+    // Coalesce initial replay + post-attach TUI SIGWINCH redraw into one atomic hydrated frame.
     if (hydrating) {
-      if (!flushTimer) flushTimer = setTimeout(flushInitial, 110);
-      capTimer = setTimeout(flushInitial, 350);
+      if (!flushTimer) flushTimer = setTimeout(flushInitial, attachIsTui ? 460 : 110);
+      capTimer = setTimeout(flushInitial, attachIsTui ? 1400 : 350);
     }
 
     ws.on('message', (data, isBinary) => {
@@ -1491,11 +1535,15 @@ export function createGateway(options = {}) {
           const msg = JSON.parse(text);
           if (msg.type === 'resize') {
             // Coalesce SIGWINCH full-screen TUI repaint bursts into one atomic frame
+            // (covering debounced & multi-pass TUIs such as OpenCode, Claude, AGY, and Gemini).
             if (!hydrating) {
               clearResizeTimers();
               resizing = true;
-              resizeQuietTimer = setTimeout(flushResize, 85);
-              resizeCapTimer = setTimeout(flushResize, 320);
+              resizeSeq = Number(msg.seq) || (resizeSeq + 1);
+              resizeBytes = 0;
+              resizeIsTui = Boolean(msg.tui) || isInteractiveTuiTerminal(hc.terminals.get(termId));
+              resizeQuietTimer = setTimeout(flushResize, resizeIsTui ? 580 : 110);
+              resizeCapTimer = setTimeout(flushResize, resizeIsTui ? 1400 : 350);
             }
             stream.resize(msg.cols, msg.rows);
             return;
@@ -1506,7 +1554,7 @@ export function createGateway(options = {}) {
             return;
           }
           if (msg.type === 'input' && typeof msg.data === 'string') {
-            if (resizing) flushResize();
+            if (resizing && !NON_TYPING_INPUT_RE.test(msg.data)) flushResize();
             stream.write(Buffer.from(msg.data, 'utf8'));
             return;
           }
