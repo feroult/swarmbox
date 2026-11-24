@@ -593,7 +593,17 @@
     }
   }
 
+  const TOUCH_DEBUG_ENABLED = (() => {
+    try {
+      return new URLSearchParams(window.location.search).get('debug_touch') === '1'
+        || localStorage.getItem('swarmbox-debug-touch') === '1';
+    } catch (_) {
+      return false;
+    }
+  })();
+
   function logTouchDebug(kind, data) {
+    if (!TOUCH_DEBUG_ENABLED) return;
     if (window.innerWidth > 960 && !(navigator.maxTouchPoints > 0)) return;
     touchDbgSeq += 1;
     const dockEl = document.querySelector('.mobile-dock');
