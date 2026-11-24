@@ -243,11 +243,10 @@
   const sysopDotEl = document.getElementById('sysop-dot');
   const sysopStateEl = document.getElementById('sysop-state');
   const mobileSysopBtn = document.getElementById('btn-mobile-sysop');
-  const mobileSysopDotEl = document.getElementById('mobile-sysop-dot');
+  const mobileSysopTextEl = document.getElementById('mobile-sysop-text');
   const btnMobileKeys = document.getElementById('btn-mobile-keys');
-  const mobileWaBarEl = document.getElementById('mobile-wa-bar');
-  const mobileGoalSlotEl = document.getElementById('mobile-goal-slot');
-  const btnMobileSend = document.getElementById('btn-mobile-send');
+  const btnSheetMic = document.getElementById('btn-sheet-mic');
+  const btnSheetSend = document.getElementById('btn-sheet-send');
   const btnToggleSysop = document.getElementById('btn-toggle-sysop');
   const sysopFeedEl = document.getElementById('sysop-feed');
   const btnSysopStop = document.getElementById('btn-sysop-stop');
@@ -2209,7 +2208,6 @@
 
   // Mount crisp pixel-art Sysop mascot in header, mobile capsule & operator hero card
   if (sysopDotEl) sysopDotEl.innerHTML = PIXEL_SVG.sysop;
-  if (mobileSysopDotEl) mobileSysopDotEl.innerHTML = PIXEL_SVG.sysop;
 
   function tabAgentKind(t) {
     const b = tabAgentBadge(t);
@@ -2948,8 +2946,8 @@
     if (sysopDotEl) sysopDotEl.dataset.state = st;
     sysopStateEl.dataset.state = st;
     sysopStateEl.textContent = STATE_WORDS[st] || st;
-    if (mobileSysopDotEl) mobileSysopDotEl.dataset.state = st;
     if (mobileSysopBtn) mobileSysopBtn.dataset.state = st;
+    if (mobileSysopTextEl) mobileSysopTextEl.textContent = st === 'idle' || st === 'off' ? 'Sysop' : (sysop.sentence || `Sysop · ${st}`);
     if (btnToggleSysop) btnToggleSysop.dataset.state = st;
 
     const running = st === 'working' || st === 'allow?' || st === 'sending' || st === 'queued';
@@ -3080,11 +3078,15 @@
   let recStartMs = 0;
 
   const mobileVoiceTimerEl = document.getElementById('mobile-voice-timer');
+  const sheetVoiceTimerEl = document.getElementById('sheet-voice-timer');
   const desktopVoiceTimerEl = document.getElementById('desktop-voice-timer');
   const mobileVoiceBars = Array.from(document.querySelectorAll('#mobile-voice-bars > i'));
+  const sheetVoiceBars = Array.from(document.querySelectorAll('#sheet-voice-bars > i'));
   const desktopVoiceBars = Array.from(document.querySelectorAll('#desktop-voice-bars > i'));
   const btnMobileRecCancel = document.getElementById('btn-mobile-rec-cancel');
   const btnMobileRecSend = document.getElementById('btn-mobile-rec-send');
+  const btnSheetRecCancel = document.getElementById('btn-sheet-rec-cancel');
+  const btnSheetRecSend = document.getElementById('btn-sheet-rec-send');
   const btnDesktopRecCancel = document.getElementById('btn-desktop-rec-cancel');
   const btnDesktopRecSend = document.getElementById('btn-desktop-rec-send');
 
@@ -3097,6 +3099,7 @@
 
   function updateVoiceTimers(text) {
     if (mobileVoiceTimerEl) mobileVoiceTimerEl.textContent = text;
+    if (sheetVoiceTimerEl) sheetVoiceTimerEl.textContent = text;
     if (desktopVoiceTimerEl) desktopVoiceTimerEl.textContent = text;
   }
 
@@ -3114,11 +3117,13 @@
       });
     };
     paint(mobileVoiceBars, 24);
+    paint(sheetVoiceBars, 24);
     paint(desktopVoiceBars, 18);
   }
 
   function resetVoiceBars() {
     for (const b of mobileVoiceBars) b.style.height = '5px';
+    for (const b of sheetVoiceBars) b.style.height = '5px';
     for (const b of desktopVoiceBars) b.style.height = '5px';
   }
 
@@ -3328,9 +3333,12 @@
   }
 
   btnMic.addEventListener('click', () => startVoiceCapture());
-  btnMobileMic.addEventListener('click', () => startVoiceCapture());
+  if (btnMobileMic) btnMobileMic.addEventListener('click', () => startVoiceCapture());
+  if (btnSheetMic) btnSheetMic.addEventListener('click', () => startVoiceCapture());
   if (btnMobileRecCancel) btnMobileRecCancel.addEventListener('click', () => stopVoiceCapture(false));
   if (btnMobileRecSend) btnMobileRecSend.addEventListener('click', () => stopVoiceCapture(true));
+  if (btnSheetRecCancel) btnSheetRecCancel.addEventListener('click', () => stopVoiceCapture(false));
+  if (btnSheetRecSend) btnSheetRecSend.addEventListener('click', () => stopVoiceCapture(true));
   if (btnDesktopRecCancel) btnDesktopRecCancel.addEventListener('click', () => stopVoiceCapture(false));
   if (btnDesktopRecSend) btnDesktopRecSend.addEventListener('click', () => stopVoiceCapture(true));
 
@@ -3390,36 +3398,26 @@
     requestAnimationFrame(scheduleFit);
   }
 
-  // Mobile V4: ONE persistent WhatsApp-style Sysop bar (input pill + 48x48 mic/send circle),
-  // identical whether the sheet is closed or open. Sending text or voice opens the sheet above it.
+  // Mobile V5: Terminal dock keeps [Sysop ⌃] + [Speak] (unmistakably Sysop, never confused with the
+  // active agent prompt); pulling Sysop up covers the dock to bottom: 0 with a WhatsApp-style composer.
   const mobileMq = window.matchMedia('(max-width: 860px)');
   const composerEl = document.getElementById('sysop-composer');
-  const goalBoxEl = document.getElementById('goal-box');
-  const mobileDockEl = document.getElementById('mobile-dock');
   function isMobileLayout() { return mobileMq.matches; }
   function autosizeGoalInput() {
     if (!isMobileLayout()) { goalInputEl.style.height = ''; return; }
     goalInputEl.style.height = 'auto';
     goalInputEl.style.height = `${Math.min(goalInputEl.scrollHeight, 108)}px`;
   }
-  function placeGoalComposer() {
-    if (!goalBoxEl || !composerEl || !mobileGoalSlotEl) return;
-    const target = isMobileLayout() ? mobileGoalSlotEl : composerEl;
-    if (goalBoxEl.parentElement !== target) target.appendChild(goalBoxEl);
+  function syncComposerLayout() {
     goalInputEl.rows = isMobileLayout() ? 1 : 2;
     autosizeGoalInput();
     syncMobileKeys();
   }
-  placeGoalComposer();
-  if (mobileMq.addEventListener) mobileMq.addEventListener('change', () => { placeGoalComposer(); scheduleFit(); });
+  syncComposerLayout();
+  if (mobileMq.addEventListener) mobileMq.addEventListener('change', () => { syncComposerLayout(); scheduleFit(); });
   goalInputEl.addEventListener('focus', () => syncViewport());
   goalInputEl.addEventListener('blur', () => setTimeout(syncViewport, 60));
-  if (mobileDockEl && window.ResizeObserver) {
-    new ResizeObserver(() => {
-      appEl.style.setProperty('--dock-h', `${Math.round(mobileDockEl.getBoundingClientRect().height)}px`);
-    }).observe(mobileDockEl);
-  }
-  // On mobile a goal sent by text or voice opens the sheet above the same bar; the keyboard drops.
+  // On mobile a goal sent by text or voice opens the sheet in full; the keyboard drops.
   function showSysopReplyOnMobile() {
     if (!isMobileLayout()) return;
     if (document.activeElement === goalInputEl) goalInputEl.blur();
@@ -3485,14 +3483,14 @@
   function syncSendReady() {
     const ready = goalInputEl.value.trim() ? '1' : '0';
     btnSendGoal.dataset.ready = ready;
-    if (mobileWaBarEl) mobileWaBarEl.dataset.ready = ready;
+    if (composerEl) composerEl.dataset.ready = ready;
   }
   syncSendReady();
   goalInputEl.addEventListener('input', () => { syncSendReady(); autosizeGoalInput(); });
   btnSendGoal.addEventListener('click', () => { sendGoal(); syncSendReady(); autosizeGoalInput(); });
-  if (btnMobileSend) {
-    btnMobileSend.addEventListener('pointerdown', (e) => e.preventDefault());
-    btnMobileSend.addEventListener('click', () => { sendGoal(); syncSendReady(); autosizeGoalInput(); });
+  if (btnSheetSend) {
+    btnSheetSend.addEventListener('pointerdown', (e) => e.preventDefault());
+    btnSheetSend.addEventListener('click', () => { sendGoal(); syncSendReady(); autosizeGoalInput(); });
   }
   goalInputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {

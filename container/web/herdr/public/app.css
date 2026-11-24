@@ -1840,43 +1840,16 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   }
   .topbar-right { gap: 3px; }
   .topbar-settings-btn { display: grid !important; }
-  .mobile-topbar-sysop,
   .mobile-topbar-keys {
     display: inline-grid !important;
     place-items: center;
-    position: relative;
     width: 32px;
     height: 32px;
     border-radius: 8px;
   }
-  .mobile-topbar-sysop[data-on="1"],
   .mobile-topbar-keys[data-on="1"] {
     background: var(--accent-bg);
     color: var(--accent-bright);
-  }
-  .sysop-topbar-pip {
-    display: none;
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    pointer-events: none;
-  }
-  .mobile-topbar-sysop[data-state="working"] .sysop-topbar-pip,
-  .mobile-topbar-sysop[data-state="queued"] .sysop-topbar-pip {
-    display: block;
-    background: #67e8f9;
-    box-shadow: 0 0 7px #67e8f9;
-    animation: sb-pulse 1.1s ease-in-out infinite;
-  }
-  .mobile-topbar-sysop[data-state="allow?"] .sysop-topbar-pip,
-  .mobile-topbar-sysop[data-state="sending"] .sysop-topbar-pip {
-    display: block;
-    background: var(--peach);
-    box-shadow: 0 0 7px var(--peach);
-    animation: sb-pulse 0.95s ease-in-out infinite;
   }
   .active-name { font-size: 12.5px; }
 
@@ -2001,66 +1974,82 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
     color: #fff;
   }
 
-  /* ONE persistent WhatsApp-style Sysop bar (identical open or closed): input pill + 48x48 mic/send circle */
-  .mobile-wa-bar {
+  /* Terminal-mode dock row: clean [Sysop ⌃] capsule + primary [Speak] pill */
+  .mobile-capsule {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 9px;
   }
-  .app[data-voice-state="recording"] .mobile-wa-bar,
-  .app[data-voice-state="sending"] .mobile-wa-bar { display: none; }
-  .app[data-kb-term="1"][data-voice-state="idle"] .mobile-wa-bar { display: none; }
-  .wa-input-slot {
+  .app[data-voice-state="recording"] .mobile-capsule,
+  .app[data-voice-state="sending"] .mobile-capsule { display: none; }
+  .app[data-kb-term="1"][data-voice-state="idle"] .mobile-capsule { display: none; }
+
+  .capsule-main {
     flex: 1 1 0;
     min-width: 0;
-  }
-  .mobile-wa-bar .goal-box {
-    flex-direction: row;
-    align-items: center;
-    min-height: 48px;
-    padding: 8px 16px;
-    border-radius: 24px;
-    background: var(--bg);
-    border: 1px solid rgba(167, 139, 250, 0.22);
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
-    gap: 0;
-  }
-  .mobile-wa-bar .goal-box:focus-within {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-bg);
-  }
-  .mobile-wa-bar #goal-input {
-    flex: 1 1 auto;
-    min-width: 0;
-    font-size: 16px;            /* 16px: iOS does not zoom the page on focus */
-    line-height: 1.38;
-    padding: 4px 0;
-    max-height: 108px;
-  }
-  .mobile-wa-bar .goal-actions,
-  .mobile-wa-bar .desktop-voice-bar { display: none !important; }
-
-  /* 48x48 WhatsApp-standard circular thumb button: mic when empty, send arrow when typing */
-  .wa-fab {
-    appearance: none;
-    flex: 0 0 auto;
-    width: 48px;
     height: 48px;
-    padding: 0;
-    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 14px 0 16px;
+    border-radius: 15px;
+    border: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform .08s ease, border-color .15s ease, background .15s ease;
+  }
+  .capsule-main:active, .capsule-mic:active { transform: scale(0.96); }
+  .capsule-main[data-state="working"],
+  .capsule-main[data-state="queued"] { border-color: var(--border-strong); }
+  .capsule-main[data-state="allow?"],
+  .capsule-main[data-state="sending"] { border-color: rgba(246, 167, 122, 0.42); }
+  .capsule-text {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    color: var(--text);
+  }
+  .capsule-main[data-state="idle"] .capsule-text { color: var(--accent-bright); opacity: 0.9; }
+  .capsule-main[data-state="allow?"] .capsule-text,
+  .capsule-main[data-state="sending"] .capsule-text { color: var(--peach); }
+  .capsule-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-bright);
+    opacity: 0.72;
+  }
+
+  .capsule-mic {
+    flex: 0 0 auto;
+    min-width: 114px;
+    height: 48px;
+    padding: 0 18px;
+    border-radius: 15px;
     border: 1px solid var(--accent-bright);
     background: linear-gradient(180deg, var(--btn-grad-1), var(--btn-grad-2));
-    box-shadow: 0 4px 16px rgba(109, 40, 217, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    box-shadow: 0 4px 16px rgba(109, 40, 217, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.24);
     color: var(--btn-text);
-    display: inline-grid;
-    place-items: center;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     cursor: pointer;
     touch-action: manipulation;
     transition: transform .08s ease, filter .14s ease;
   }
-  .wa-fab:active { transform: scale(0.94); }
-  .mobile-wa-bar[data-ready="0"] .wa-fab-send { display: none; }
-  .mobile-wa-bar[data-ready="1"] .wa-fab-mic { display: none; }
 
   .app[data-voice-state="recording"] .mobile-voice-bar,
   .app[data-voice-state="sending"] .mobile-voice-bar {
@@ -2072,19 +2061,20 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
     border: none;
     background: transparent;
   }
-  .mobile-voice-bar .voice-meter {
+  .mobile-voice-bar .voice-meter,
+  .sheet-voice-bar .voice-meter {
     height: 46px;
     padding: 0 14px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.045);
   }
 
-  /* Sheet backdrop + bottom drawer (anchored inside .app so visualViewport stays exact) */
+  /* Sheet backdrop + full-bottom Sysop drawer (covers dock completely — zero double bar!) */
   .sheet-backdrop {
     position: absolute;
-    inset: 0 0 var(--dock-h, 72px) 0;
-    z-index: 35;
-    background: rgba(0, 0, 0, 0.48);
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(2px);
     opacity: 0;
     pointer-events: none;
@@ -2111,18 +2101,18 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
     position: absolute;
     left: 0;
     right: 0;
-    bottom: var(--dock-h, 72px);
-    height: min(76%, calc(var(--vv-h, 100dvh) - var(--dock-h, 72px) - 24px));
-    z-index: 40;
+    bottom: 0;
+    height: min(84%, calc(var(--vv-h, 100dvh) - 24px));
+    z-index: 60;
     border-left: none;
     border-top: 1px solid var(--border-strong);
     border-radius: 22px 22px 0 0;
-    box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.65);
-    transform: translateY(calc(100% + var(--dock-h, 72px) + 24px));
+    box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.72);
+    transform: translateY(calc(100% + 24px));
     transition: transform .24s cubic-bezier(.22, 1, .36, 1);
   }
   .app[data-kb-sysop="1"] .sysop-panel {
-    height: calc(var(--vv-h, 100dvh) - var(--dock-h, 72px) - 10px);
+    height: calc(var(--vv-h, 100dvh) - 10px);
     border-radius: 18px 18px 0 0;
   }
   .app[data-mobile-sysop="1"] .sysop-panel {
@@ -2130,7 +2120,86 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   }
   .app[data-mobile-sysop="1"] .touch-keys,
   .app[data-mobile-sysop="1"] .mobile-approval { display: none !important; }
-  .sysop-composer { display: none; }
+
+  /* Open Sysop sheet composer: WhatsApp-style input pill + 48x48 mic/send circle + sinusoidal voice bar */
+  .sysop-composer {
+    display: flex;
+    align-items: flex-end;
+    gap: 9px;
+    padding: 11px calc(12px + env(safe-area-inset-right, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
+    border-top: 1px solid var(--border);
+    background: var(--sheet);
+    flex-shrink: 0;
+  }
+  .app[data-kb-sysop="1"] .sysop-composer {
+    padding-bottom: 10px;
+  }
+  .sysop-composer .goal-box {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: row;
+    align-items: center;
+    min-height: 48px;
+    padding: 8px 16px;
+    border-radius: 24px;
+    background: var(--bg);
+    border: 1px solid rgba(167, 139, 250, 0.22);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+    gap: 0;
+  }
+  .sysop-composer .goal-box:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-bg);
+  }
+  .sysop-composer #goal-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 16px;            /* 16px: iOS does not zoom the page on focus */
+    line-height: 1.38;
+    padding: 4px 0;
+    max-height: 108px;
+  }
+  .sysop-composer .goal-actions,
+  .sysop-composer .desktop-voice-bar { display: none !important; }
+
+  .wa-fab {
+    appearance: none;
+    flex: 0 0 auto;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--accent-bright);
+    background: linear-gradient(180deg, var(--btn-grad-1), var(--btn-grad-2));
+    box-shadow: 0 4px 16px rgba(109, 40, 217, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    color: var(--btn-text);
+    display: inline-grid !important;
+    place-items: center;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform .08s ease, filter .14s ease;
+  }
+  .wa-fab:active { transform: scale(0.94); }
+  .sysop-composer[data-ready="0"] .wa-fab-send { display: none !important; }
+  .sysop-composer[data-ready="1"] .wa-fab-mic { display: none !important; }
+
+  .sheet-voice-bar { display: none !important; }
+  .app[data-voice-state="recording"] .sysop-composer .goal-box,
+  .app[data-voice-state="sending"] .sysop-composer .goal-box,
+  .app[data-voice-state="recording"] .sysop-composer .wa-fab,
+  .app[data-voice-state="sending"] .sysop-composer .wa-fab { display: none !important; }
+  .app[data-voice-state="recording"] .sheet-voice-bar,
+  .app[data-voice-state="sending"] .sheet-voice-bar {
+    display: flex !important;
+    flex: 1 1 0;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+    height: 48px;
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
 }
 
 /* ---- First-Class Settings Modal (Desktop Dialog & Mobile Responsive Sheet) ---------------- */
