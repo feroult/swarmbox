@@ -511,14 +511,14 @@
   // Moves are coalesced to one per frame, the flick speed is measured over the last 100ms of the drag,
   // and the content settles on a row boundary when it stops. The alternate screen (vim, less, TUIs)
   // still gets wheel line steps, since the program draws its own scrolling.
-  const TOUCH_DRAG_PX = 4;
-  const TOUCH_DRAG_GAIN = 1.15;
-  const TOUCH_COAST_GAIN = 1;
-  const TOUCH_FLICK_MIN = 0.1;    // px/ms
+  const TOUCH_DRAG_PX = 6;
+  const TOUCH_DRAG_GAIN = 1.65;
+  const TOUCH_COAST_GAIN = 1.65;
+  const TOUCH_FLICK_MIN = 0.08;   // px/ms
   const TOUCH_FRICTION = 0.968;   // per 16.67ms frame (native iOS-like glide)
   const TOUCH_STOP_VEL = 0.025;   // px/ms
-  const TOUCH_VEL_WINDOW = 85;    // ms of drag samples used for the flick speed
-  const TOUCH_MAX_VEL = 14;       // px/ms cap for chained fast flicks
+  const TOUCH_VEL_WINDOW = 70;    // ms of active drag samples used for flick speed
+  const TOUCH_MAX_VEL = 18;       // px/ms cap for chained fast flicks
 
   let touchId = null;
   let touchStartY = 0;
@@ -852,7 +852,8 @@
     return null;
   }
 
-  // Speed (px/ms, positive = towards the bottom) over the last TOUCH_VEL_WINDOW ms of the drag.
+  // Speed (px/ms, positive = towards the bottom) over the last TOUCH_VEL_WINDOW ms of active drag,
+  // resisting stationary touchstart dwell and final thumb-lift micro-slowdown.
   function touchFlickVelocity() {
     if (touchSamples.length < 2) return 0;
     const last = touchSamples[touchSamples.length - 1];
@@ -862,7 +863,22 @@
       first = touchSamples[i];
     }
     const dt = last.t - first.t;
-    return dt > 0 ? (first.y - last.y) / dt : 0;
+    const winVel = dt > 0 ? (first.y - last.y) / dt : 0;
+    // Also inspect the sharpest recent segment in the same direction (in case thumb slowed on lift)
+    let peakVel = winVel;
+    const dir = Math.sign(winVel);
+    for (let i = touchSamples.length - 1; i >= Math.max(1, touchSamples.length - 3); i--) {
+      const a = touchSamples[i - 1];
+      const b = touchSamples[i];
+      const sdt = b.t - a.t;
+      if (sdt >= 4 && sdt <= 65) {
+        const sv = (a.y - b.y) / sdt;
+        if ((dir === 0 || Math.sign(sv) === dir) && Math.abs(sv) > Math.abs(peakVel)) {
+          peakVel = sv;
+        }
+      }
+    }
+    return Math.abs(peakVel) > Math.abs(winVel) ? (winVel * 0.45 + peakVel * 0.55) : winVel;
   }
 
   // Two-finger pinch-to-zoom is left completely to the browser's native optical compositor
@@ -948,14 +964,20 @@
       touchDbgGesture.moves += 1;
       if (!e.cancelable) touchDbgGesture.nonCancelable += 1;
     }
+    // Wait until vertical motion exceeds TOUCH_DRAG_PX BEFORE calling preventDefault() so
+    // finger-1 micro-jitter while finger-2 lands (15-45ms later) never aborts native iOS pinch-zoom!
+    if (!touchMoved) {
+      if (Math.abs(t.clientY - touchStartY) < TOUCH_DRAG_PX) return;
+      touchMoved = true;
+      // Start velocity sampling from active motion (exclude stationary touchstart dwell time).
+      touchSamples = [{ t: touchLastT, y: touchLastY }];
+    }
     if (e.cancelable) e.preventDefault();
-    if (!touchMoved && Math.abs(t.clientY - touchStartY) < TOUCH_DRAG_PX) return;
-    touchMoved = true;
     const tt = nowMs();
     const dy = touchLastY - t.clientY;
     touchSamples.push({ t: tt, y: t.clientY });
     while (touchSamples.length > 2 && tt - touchSamples[0].t > TOUCH_VEL_WINDOW * 2) touchSamples.shift();
-    queueTouchScrollPx(dy * TOUCH_DRAG_GAIN);
+    applyTouchScrollPx(dy * TOUCH_DRAG_GAIN);
     touchLastY = t.clientY;
     touchLastX = t.clientX;
     touchLastT = tt;
@@ -1006,16 +1028,16 @@
     let appliedVel = 0;
     if (flick) {
       const dir = Math.sign(rawVel);
-      // Chained flicks in the same direction within 650ms build speed naturally (like iOS/Android)
-      if (dir === touchCoastDir && (now - touchChainT) < 650) {
-        touchChainBoost = Math.min(2.4, touchChainBoost + 0.45);
+      // Chained flicks in the same direction within 700ms build speed naturally (like iOS/Android)
+      if (dir === touchCoastDir && (now - touchChainT) < 700) {
+        touchChainBoost = Math.min(2.5, touchChainBoost + 0.45);
       } else {
         touchChainBoost = 1;
       }
       touchCoastDir = dir;
       touchChainT = now;
       const speed = Math.abs(rawVel);
-      const accel = 1 + Math.min(1.6, Math.max(0, speed - 0.35) * 0.75);
+      const accel = 1.25 + Math.min(2.2, Math.max(0, speed - 0.15) * 1.15);
       touchVel = Math.max(-TOUCH_MAX_VEL, Math.min(TOUCH_MAX_VEL, rawVel * accel * touchChainBoost));
       appliedVel = touchVel;
       startTouchCoast();
@@ -1225,6 +1247,7 @@
   let baseMobileH = document.documentElement.clientHeight || window.innerHeight || 0;
   let lastAppliedVvH = 0;
   let lastLoggedZoomScale = 1;
+  let mobileFitTimer = 0;
   function syncViewport(fromScroll = false) {
     if (!window.visualViewport) {
       syncMobileKeys();
@@ -1282,7 +1305,16 @@
     const hChanged = Math.abs(vvH - lastAppliedVvH) >= 2;
     lastAppliedVvH = vvH;
     if (!fromScroll && hChanged && Date.now() >= zoomCooldownUntil) {
-      scheduleFit();
+      if (window.innerWidth <= 860) {
+        clearTimeout(mobileFitTimer);
+        mobileFitTimer = setTimeout(() => {
+          if (!isViewportPinchingOrBouncing() && !multiTouchActive && Date.now() >= zoomCooldownUntil) {
+            scheduleFit();
+          }
+        }, 140);
+      } else {
+        scheduleFit();
+      }
     }
   }
   if (window.visualViewport) {
