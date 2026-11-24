@@ -1372,13 +1372,53 @@ html.swarmbox-ready #sb-boot {
   opacity: 1;
   pointer-events: auto;
   z-index: 1;
-  transition: opacity 110ms cubic-bezier(.22, 1, .36, 1);
 }
 .term-wrap.term-loading .term-pane.active,
 .term-pane.hydrating,
 .term-pane.resizing {
   opacity: 0;
   transition: none;
+}
+
+/* Stage-scoped SwarmBox loading mask: instant 0ms cover on panel resize / cold hydration
+   so zero stale-width frames or TUI reflows ever appear, then smooth dissolve once painted. */
+.term-stage-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 14;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--accent) 8%, var(--bg)) 0%, var(--bg) 56%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 150ms cubic-bezier(.22, 1, .36, 1), visibility 0s linear 150ms;
+}
+.term-stage-loader.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: none;
+}
+.stage-loader-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  user-select: none;
+}
+.stage-loader-emblem {
+  width: 54px;
+  height: 54px;
+  border-radius: 13px;
+}
+.stage-loader-emblem svg {
+  width: 38px;
+  height: 38px;
+}
+.stage-loader-track {
+  width: 112px;
 }
 .jump-live-btn {
   position: absolute;
