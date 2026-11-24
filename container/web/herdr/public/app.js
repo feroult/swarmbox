@@ -712,9 +712,34 @@
     return dt > 0 ? (first.y - last.y) / dt : 0;
   }
 
+  // Two-finger pinch-to-zoom on the terminal adjusts terminal font size natively (like Termius/Blink)
+  // instead of browser-zooming the whole page and distorting the Sysop bar.
+  let pinchActive = false;
+  let pinchStartDist = 0;
+  let pinchStartSize = 0;
+  let pinchStartOffset = 0;
+  let pinchChanged = false;
+  const touchDist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+  // Prevent iOS Safari proprietary page-level pinch gestures from warping the studio shell / Sysop dock.
+  document.addEventListener('gesturestart', (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+  document.addEventListener('gesturechange', (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+
   termWrapEl.addEventListener('touchstart', (e) => {
     stopTouchCoast();
-    if (e.touches.length === 1) {
+    if (e.touches.length === 2) {
+      if (touchMoved) { flushTouchScroll(); settleTouchScroll(); }
+      touchId = null;
+      touchMoved = false;
+      pinchActive = true;
+      pinchChanged = false;
+      pinchStartDist = Math.max(16, touchDist(e.touches[0], e.touches[1]));
+      pinchStartSize = computeFontSize();
+      pinchStartOffset = fontOffset;
+      if (e.cancelable) e.preventDefault();
+      return;
+    }
+    if (e.touches.length === 1 && !pinchActive) {
       const t = e.touches[0];
       touchId = t.identifier;
       touchStartY = t.clientY;
@@ -729,9 +754,22 @@
       touchId = null;
       touchMoved = false;
     }
-  }, { passive: true });
+  }, { passive: false });
 
   termWrapEl.addEventListener('touchmove', (e) => {
+    if (pinchActive) {
+      if (e.cancelable) e.preventDefault();
+      if (e.touches.length !== 2) return;
+      const dist = touchDist(e.touches[0], e.touches[1]);
+      const targetSize = pinchStartSize * (dist / pinchStartDist);
+      const nextOffset = Math.max(-4, Math.min(8, Math.round((pinchStartOffset + (targetSize - pinchStartSize)) * 2) / 2));
+      if (nextOffset !== fontOffset) {
+        pinchChanged = true;
+        setFontOffset(nextOffset);
+        showTermToast(`Font ${formatFontPx(computeFontSize())}`, '', 900);
+      }
+      return;
+    }
     if (touchId === null || e.touches.length !== 1) {
       touchId = null;
       return;
@@ -752,6 +790,8 @@
   }, { passive: false });
 
   termWrapEl.addEventListener('touchcancel', () => {
+    pinchActive = false;
+    pinchChanged = false;
     touchId = null;
     touchMoved = false;
     stopTouchCoast();
@@ -760,6 +800,14 @@
   }, { passive: true });
 
   termWrapEl.addEventListener('touchend', (e) => {
+    if (pinchActive) {
+      if (e.cancelable) e.preventDefault();
+      if (e.touches.length === 0) {
+        pinchActive = false;
+        pinchChanged = false;
+      }
+      return;
+    }
     if (touchMoved && e.cancelable) e.preventDefault();
     const moved = touchMoved;
     touchVel = moved ? touchFlickVelocity() : 0;
@@ -940,6 +988,9 @@
       syncMobileKeys();
       return;
     }
+    // If browser-level pinch zoom is active (accessibility zoom), never mistake the shrunk
+    // visualViewport height for a virtual keyboard or crush #app / the Sysop dock inside it.
+    if ((window.visualViewport.scale || 1) > 1.02) return;
     const vvH = Math.round(window.visualViewport.height);
     const vvTop = Math.max(0, Math.round(window.visualViewport.offsetTop || 0));
     appEl.style.setProperty('--vv-h', `${vvH}px`);
