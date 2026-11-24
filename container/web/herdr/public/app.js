@@ -305,6 +305,7 @@
   let installedAgents = [];
   let editingTabId = null;
   let popoverOpen = false;
+  let popoverKeyHandler = null;
   let activeId = null;
   let lastServerActive = null;   // the active tab the gateway reported last (the herdr-active-tab marker)
   let currentThemeKey = 'purple-glow';
@@ -1563,6 +1564,9 @@
         closePopover();
         return;
       }
+      if (popoverKeyHandler && popoverKeyHandler(e) === true) {
+        return;
+      }
       return;
     }
     if (settingsOpen) {
@@ -2697,73 +2701,205 @@
   function closePopover() {
     if (!popoverBackdropEl) return;
     popoverOpen = false;
+    popoverKeyHandler = null;
     popoverBackdropEl.classList.add('hidden');
     popoverBackdropEl.setAttribute('aria-hidden', 'true');
     if (popoverEl) popoverEl.innerHTML = '';
     focusTerminalIfDesktop();
   }
 
-  function openPopover(node) {
+  function openPopover(node, onKeyDown = null) {
     if (!popoverBackdropEl || !popoverEl) return;
     popoverEl.innerHTML = '';
     popoverEl.appendChild(node);
     popoverOpen = true;
+    popoverKeyHandler = typeof onKeyDown === 'function' ? onKeyDown : null;
     popoverBackdropEl.classList.remove('hidden');
     popoverBackdropEl.setAttribute('aria-hidden', 'false');
     requestAnimationFrame(() => {
-      const primary = popoverEl.querySelector('.spop-btn.primary, .spop-btn.green, .spop-btn.amber, .agent-pick-btn');
+      const primary = popoverEl.querySelector('.agent-pick-btn.is-default, .spop-btn.primary, .spop-btn.green, .spop-btn.amber, .agent-pick-btn');
       if (primary) primary.focus();
     });
   }
 
   async function openNewAgentPopover(includeShell = false) {
+    const cur = terminals.find((t) => t.address === activeId);
+    const curCwd = (cur && cur.foreground && cur.foreground.cwd) || (cur && cur.cwd) || '';
+
     let list = Array.isArray(installedAgents) ? installedAgents : [];
-    if (list.length === 0) {
-      try {
-        const r = await fetch('/api/config', { cache: 'no-store' });
-        if (r.ok) {
-          const cfg = await r.json();
-          if (cfg && Array.isArray(cfg.installed_agents)) {
-            installedAgents = cfg.installed_agents;
-            list = installedAgents;
-          }
-        }
-      } catch (_) {}
+    const checkUrl = curCwd && curCwd.startsWith('/')
+      ? `/api/worktrees/check?cwd=${encodeURIComponent(curCwd)}`
+      : '/api/worktrees/check';
+
+    const [cfgData, wtInfo] = await Promise.all([
+      list.length === 0
+        ? fetch('/api/config', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+        : Promise.resolve(null),
+      fetch(checkUrl, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
+
+    if (cfgData && Array.isArray(cfgData.installed_agents)) {
+      installedAgents = cfgData.installed_agents;
+      list = installedAgents;
     }
+    if (wtInfo && wtInfo.prefs) {
+      worktreePrefs = wtInfo.prefs;
+    }
+
+    const isGit = Boolean(wtInfo && wtInfo.is_git);
+    const col = (wtInfo && wtInfo.collision) || null;
+    const hasCollision = Boolean(col);
+    const prefs = (wtInfo && wtInfo.prefs) || worktreePrefs || { mode: 'ask', copy_env: true };
+    const branch = (wtInfo && wtInfo.branch) || (col && col.branch) || 'HEAD';
+
     if (!includeShell && list.length === 0) {
       spawnTab('agent');
       return;
     }
-    if (!includeShell && list.length === 1) {
-      spawnTab('agent', { agent: list[0].id });
+    if (!includeShell && list.length === 1 && (!hasCollision || prefs.mode !== 'ask')) {
+      spawnTab('agent', { agent: list[0].id, cwd: curCwd || undefined });
       return;
     }
-    const cur = terminals.find((t) => t.address === activeId);
-    const curCwd = (cur && cur.foreground && cur.foreground.cwd) || (cur && cur.cwd) || '';
+
     const folderLabel = shortDisplayPath(curCwd) || '~';
+    let wtChoice = hasCollision ? (prefs.mode === 'off' ? 'same' : 'new') : 'same';
 
     const frag = document.createDocumentFragment();
     const head = document.createElement('div');
     head.className = 'spop-head';
     const titleSpan = document.createElement('span');
     titleSpan.textContent = includeShell ? 'New tab' : 'New agent';
+    const headRight = document.createElement('span');
+    headRight.className = 'spop-head-right';
     const cwdBadge = document.createElement('span');
     cwdBadge.className = 'spop-badge';
     cwdBadge.textContent = folderLabel;
-    head.append(titleSpan, cwdBadge);
+    headRight.appendChild(cwdBadge);
+    if (isGit && branch) {
+      const brBadge = document.createElement('span');
+      brBadge.className = 'spop-badge branch';
+      brBadge.innerHTML = `${ICO_BRANCH_SVG}<span></span>`;
+      brBadge.querySelector('span').textContent = branch;
+      headRight.appendChild(brBadge);
+    }
+    head.append(titleSpan, headRight);
+    frag.appendChild(head);
 
-    const sub = document.createElement('div');
-    sub.className = 'spop-sub';
-    sub.textContent = includeShell
-      ? 'Launch an installed coding agent or a fresh shell.'
-      : 'Pick an installed coding agent to launch in this folder.';
+    let updateWtUi = null;
+    if (isGit) {
+      const nActive = (col && col.active_tabs && col.active_tabs.length) || 0;
+      const wtBox = document.createElement('div');
+      wtBox.className = `wt-box${hasCollision ? ' is-collision' : ''}`;
+
+      const wtHead = document.createElement('div');
+      wtHead.className = 'wt-box-head';
+      if (hasCollision) {
+        const note = document.createElement('span');
+        note.className = 'wt-collision-note';
+        const dot = document.createElement('span');
+        dot.className = 'wt-collision-dot';
+        const txt = document.createElement('span');
+        txt.textContent = `${nActive} active agent${nActive === 1 ? '' : 's'} already on ${branch}`;
+        note.append(dot, txt);
+        wtHead.appendChild(note);
+      } else {
+        const note = document.createElement('span');
+        note.className = 'wt-clean-note';
+        note.textContent = 'Workspace';
+        wtHead.appendChild(note);
+      }
+      const kbd = document.createElement('span');
+      kbd.className = 'wt-kbd desktop-only';
+      kbd.title = 'Press W to toggle workspace';
+      kbd.textContent = 'W';
+      wtHead.appendChild(kbd);
+
+      const seg = document.createElement('div');
+      seg.className = 'wt-seg';
+      seg.setAttribute('role', 'radiogroup');
+      seg.setAttribute('aria-label', 'Workspace isolation');
+
+      const btnNew = document.createElement('button');
+      btnNew.type = 'button';
+      btnNew.setAttribute('role', 'radio');
+      btnNew.className = 'wt-seg-btn';
+      btnNew.dataset.choice = 'new';
+      btnNew.innerHTML = `${ICO_BRANCH_SVG}<span>New worktree</span>`;
+
+      const btnSame = document.createElement('button');
+      btnSame.type = 'button';
+      btnSame.setAttribute('role', 'radio');
+      btnSame.className = 'wt-seg-btn';
+      btnSame.dataset.choice = 'same';
+      btnSame.textContent = 'Same folder';
+
+      seg.append(btnNew, btnSame);
+
+      const meta = document.createElement('div');
+      meta.className = 'wt-meta';
+
+      updateWtUi = () => {
+        const isNew = wtChoice === 'new';
+        btnNew.classList.toggle('active-wt', isNew);
+        btnNew.setAttribute('aria-checked', isNew ? 'true' : 'false');
+        btnSame.classList.toggle('active-same', !isNew);
+        btnSame.setAttribute('aria-checked', !isNew ? 'true' : 'false');
+        if (isNew) {
+          meta.innerHTML = '';
+          const sp = document.createElement('span');
+          sp.append('isolated branch from ');
+          const st = document.createElement('strong');
+          st.textContent = branch;
+          sp.append(st);
+          if (prefs.copy_env) sp.append(' · copies .env');
+          meta.appendChild(sp);
+        } else if (hasCollision) {
+          meta.textContent = `shares working tree with ${nActive} active agent${nActive === 1 ? '' : 's'}`;
+        } else {
+          meta.textContent = `opens directly in ${folderLabel} · no active collision`;
+        }
+      };
+
+      btnNew.addEventListener('click', () => {
+        wtChoice = 'new';
+        updateWtUi();
+      });
+      btnSame.addEventListener('click', () => {
+        wtChoice = 'same';
+        updateWtUi();
+      });
+
+      updateWtUi();
+      wtBox.append(wtHead, seg, meta);
+      frag.appendChild(wtBox);
+
+      const secHead = document.createElement('div');
+      secHead.className = 'pick-section-head';
+      const secLeft = document.createElement('span');
+      secLeft.textContent = 'Launch agent';
+      const secRight = document.createElement('span');
+      secRight.className = 'desktop-only';
+      secRight.textContent = '1 click · Enter ↵';
+      secHead.append(secLeft, secRight);
+      frag.appendChild(secHead);
+    } else {
+      const sub = document.createElement('div');
+      sub.className = 'spop-sub';
+      sub.textContent = includeShell
+        ? 'Launch an installed coding agent or a fresh shell.'
+        : 'Pick an installed coding agent to launch in this folder.';
+      frag.appendChild(sub);
+    }
 
     const pickList = document.createElement('div');
     pickList.className = 'agent-pick-list';
-    for (const ag of list) {
+    const hasDefault = list.some((a) => a.default);
+    for (let i = 0; i < list.length; i += 1) {
+      const ag = list[i];
+      const isPrimary = ag.default || (!hasDefault && i === 0);
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = `agent-pick-btn${ag.default ? ' is-default' : ''}`;
+      btn.className = `agent-pick-btn${isPrimary ? ' is-default' : ''}`;
       btn.dataset.agent = ag.id;
       const ico = document.createElement('span');
       ico.className = 'agent-pick-ico';
@@ -2778,15 +2914,31 @@
       cmd.textContent = ag.id;
       info.append(nm, cmd);
       btn.append(ico, info);
-      if (ag.default) {
-        const def = document.createElement('span');
-        def.className = 'agent-pick-def';
-        def.textContent = 'default';
-        btn.appendChild(def);
+      if (ag.default || isPrimary) {
+        const right = document.createElement('span');
+        right.className = 'agent-pick-right';
+        if (ag.default) {
+          const def = document.createElement('span');
+          def.className = 'agent-pick-def';
+          def.textContent = 'default';
+          right.appendChild(def);
+        }
+        if (isPrimary) {
+          const ent = document.createElement('span');
+          ent.className = 'agent-pick-enter desktop-only';
+          ent.textContent = '↵';
+          right.appendChild(ent);
+        }
+        btn.appendChild(right);
       }
       btn.addEventListener('click', () => {
+        const chosenWt = isGit ? wtChoice : '';
         closePopover();
-        spawnTab('agent', { agent: ag.id });
+        spawnTab('agent', {
+          agent: ag.id,
+          cwd: curCwd || undefined,
+          worktree_choice: chosenWt || undefined,
+        });
       });
       pickList.appendChild(btn);
     }
@@ -2794,7 +2946,7 @@
     if (includeShell) {
       const shBtn = document.createElement('button');
       shBtn.type = 'button';
-      shBtn.className = 'agent-pick-btn';
+      shBtn.className = `agent-pick-btn${isGit ? ' is-shell' : ''}`;
       shBtn.dataset.agent = 'shell';
       const ico = document.createElement('span');
       ico.className = 'agent-pick-ico';
@@ -2809,6 +2961,12 @@
       cmd.textContent = 'bash';
       info.append(nm, cmd);
       shBtn.append(ico, info);
+      if (isGit) {
+        const tag = document.createElement('span');
+        tag.className = 'shell-tag';
+        tag.textContent = 'same folder';
+        shBtn.appendChild(tag);
+      }
       shBtn.addEventListener('click', () => {
         closePopover();
         spawnTab('shell');
@@ -2816,8 +2974,48 @@
       pickList.appendChild(shBtn);
     }
 
-    frag.append(head, sub, pickList);
-    openPopover(frag);
+    frag.appendChild(pickList);
+
+    if (isGit) {
+      const links = document.createElement('div');
+      links.className = 'spop-links';
+      const modeSpan = document.createElement('span');
+      modeSpan.append('Mode: ');
+      const modeStrong = document.createElement('strong');
+      modeStrong.textContent = prefs.mode || 'ask';
+      modeSpan.appendChild(modeStrong);
+      const cfgLink = document.createElement('button');
+      cfgLink.type = 'button';
+      cfgLink.className = 'spop-link-btn';
+      cfgLink.textContent = 'Change in Settings';
+      cfgLink.addEventListener('click', () => { closePopover(); openSettings('box'); });
+      links.append(modeSpan, cfgLink);
+      frag.appendChild(links);
+    }
+
+    openPopover(frag, (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return false;
+      if (isGit && updateWtUi && (e.key === 'w' || e.key === 'W')) {
+        e.preventDefault();
+        e.stopPropagation();
+        wtChoice = wtChoice === 'new' ? 'same' : 'new';
+        updateWtUi();
+        return true;
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const btns = Array.from(popoverEl.querySelectorAll('.agent-pick-btn'));
+        if (btns.length === 0) return false;
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = btns.indexOf(document.activeElement);
+        const next = e.key === 'ArrowDown'
+          ? (idx < 0 ? 0 : (idx + 1) % btns.length)
+          : (idx <= 0 ? btns.length - 1 : idx - 1);
+        btns[next].focus();
+        return true;
+      }
+      return false;
+    });
   }
 
   function openCollisionPopover(ctx) {

@@ -381,16 +381,29 @@ export function createGateway(options = {}) {
     }
   }
 
-  async function detectWorkingTreeCollision(targetCwd, terminals, excludeAddr = null) {
-    if (!targetCwd || !fs.existsSync(targetCwd)) return null;
+  async function inspectWorkingTreeForCwd(targetCwd, terminals, excludeAddr = null) {
+    const prefs = readWorktreePrefs();
+    const empty = {
+      cwd: targetCwd || '',
+      is_git: false,
+      repo_root: null,
+      repo_name: null,
+      branch: null,
+      worktree_path: null,
+      dirty: false,
+      collision: null,
+      prefs,
+    };
+    if (!targetCwd || !fs.existsSync(targetCwd)) return empty;
     let targetInfo;
     try {
       targetInfo = await runWorktreeCmd(['inspect', targetCwd]);
     } catch (_) {
-      return null;
+      return empty;
     }
-    if (!targetInfo || !targetInfo.is_git) return null;
+    if (!targetInfo || !targetInfo.is_git) return empty;
     const targetWt = targetInfo.worktree_path;
+    const branch = targetInfo.branch || targetInfo.base || 'HEAD';
     const colliding = [];
     for (const t of terminals || []) {
       if (excludeAddr && t.address === excludeAddr) continue;
@@ -408,15 +421,30 @@ export function createGateway(options = {}) {
         });
       }
     }
-    if (colliding.length === 0) return null;
-    return {
+    const collision = colliding.length > 0 ? {
       repo_root: targetInfo.repo_root,
       repo_name: targetInfo.repo_name,
-      branch: targetInfo.branch || targetInfo.base || 'HEAD',
+      branch,
       worktree_path: targetWt,
       dirty: Boolean(targetInfo.dirty),
       active_tabs: colliding,
+    } : null;
+    return {
+      cwd: targetCwd,
+      is_git: true,
+      repo_root: targetInfo.repo_root,
+      repo_name: targetInfo.repo_name,
+      branch,
+      worktree_path: targetWt,
+      dirty: Boolean(targetInfo.dirty),
+      collision,
+      prefs,
     };
+  }
+
+  async function detectWorkingTreeCollision(targetCwd, terminals, excludeAddr = null) {
+    const info = await inspectWorkingTreeForCwd(targetCwd, terminals, excludeAddr);
+    return info.collision;
   }
 
   hc.on('snapshot', () => {
@@ -1099,6 +1127,13 @@ export function createGateway(options = {}) {
         } catch (err) {
           return sendJson(res, 500, { error: err.code || 'worktree_error', message: err.message });
         }
+      }
+
+      if (pathname === '/api/worktrees/check' && req.method === 'GET') {
+        const rawCwd = url.searchParams.get('cwd') || '';
+        const cwd = rawCwd && rawCwd.startsWith('/') ? rawCwd : HOME;
+        const info = await inspectWorkingTreeForCwd(cwd, hc.listSnapshot());
+        return sendJson(res, 200, info);
       }
 
       if (pathname === '/api/worktrees/prefs' && req.method === 'PATCH') {
