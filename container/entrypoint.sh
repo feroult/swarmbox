@@ -527,7 +527,7 @@ case "${1:-}" in
     serve)
         serve
         ;;
-    attach|install|pubkey|addon|bus|tabs)
+    attach|install|pubkey|addon|bus|tabs|pins|worktree)
         sub=$1
         shift
         case "$sub" in
@@ -537,6 +537,8 @@ case "${1:-}" in
             addon) forward swarmbox-addon "$@" ;;
             bus) forward swarmbox-bus "$@" ;;
             tabs) forward swarmbox-tabs "$@" ;;
+            pins) forward swarmbox-pins "$@" ;;
+            worktree) forward swarmbox-worktree "$@" ;;
         esac
         ;;
     host-helper)

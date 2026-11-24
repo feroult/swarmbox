@@ -82,7 +82,7 @@ is_file_key() {
     case $1 in
         WORKSPACE|HOSTNAME|TZ|INIT|PORTS|HOST_ACCESS|BROWSER_URL|WEB|WEB_PORT|WITH|AGENT|YOLO|ENV_KEYS|IMAGE|CLOUDFLARE_TUNNEL_TOKEN) return 0 ;;
         voice.language|voice.stt.model|voice.stt.vocabulary|voice.web|voice.topic) return 0 ;;
-        sysop.brain|sysop.model|sysop.autonomy|sysop.countdown|sysop.max_steps|sysop.max_seconds|sysop.topic|sysop.group) return 0 ;;
+        sysop.brain|sysop.model|sysop.autonomy|sysop.autoname|sysop.countdown|sysop.max_steps|sysop.max_seconds|sysop.topic|sysop.group) return 0 ;;
     esac
     return 1
 }
@@ -94,12 +94,12 @@ env_of() {
     ENV_OF=SWARMBOX_$ENV_OF
 }
 VOICE_KEYS='voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic'
-SYSOP_KEYS='sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group'
+SYSOP_KEYS='sysop.brain sysop.model sysop.autonomy sysop.autoname sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group'
 ADDON_KEYS="$VOICE_KEYS $SYSOP_KEYS"   # the keys passed to the box only when they differ from its defaults
 
 is_key() { [ "$1" = NAME ] || is_file_key "$1"; }
 
-ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic sysop.brain sysop.model sysop.autonomy sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group'
+ALL_KEYS='NAME WORKSPACE HOSTNAME TZ INIT PORTS HOST_ACCESS BROWSER_URL WEB WEB_PORT WITH AGENT YOLO ENV_KEYS IMAGE CLOUDFLARE_TUNNEL_TOKEN voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic sysop.brain sysop.model sysop.autonomy sysop.autoname sysop.countdown sysop.max_steps sysop.max_seconds sysop.topic sysop.group'
 
 # Built-in default; empty means "no default" (the key is unset). AGENT has none here: the box records the first addon of WITH.
 default_of() {
@@ -120,6 +120,7 @@ default_of() {
         sysop.brain) printf 'claude' ;;
         sysop.model) printf 'sonnet' ;;
         sysop.autonomy) printf 'full-auto' ;;
+        sysop.autoname) printf '1' ;;
         sysop.countdown) printf '4' ;;
         sysop.max_steps) printf '20' ;;
         sysop.max_seconds) printf '300' ;;
@@ -675,6 +676,12 @@ validate_value() {
             case $V_OUT in
                 full-auto|auto|confirm-risky|confirm-all) ;;
                 *) _bad "it must be full-auto, auto, confirm-risky or confirm-all."; return 1 ;;
+            esac
+            ;;
+        sysop.autoname)
+            case $V_OUT in
+                0|1) ;;
+                *) _bad "it must be 0 or 1."; return 1 ;;
             esac
             ;;
         sysop.countdown)
@@ -2865,7 +2872,7 @@ attach_main() {
     a_t=-i
     if [ -t 0 ] && [ -t 1 ]; then a_t=-it; fi
     case ${1-} in
-        pubkey|addon|bus|tabs) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
+        pubkey|addon|bus|tabs|pins|worktree) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
         attach) shift ;;
     esac
     # The pty of this terminal tab names the tab: it is the same for as long as the tab lives, in any terminal or over ssh, so after `exit`

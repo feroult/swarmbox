@@ -559,7 +559,15 @@ class TabsBackend:
         """Optional native status dict (e.g. OSC 7501 state/progress/msg/app) for list_tabs()."""
         return None
 
-    def open_tab(self, name=None, cwd=None, agent=None):
+    def tab_labels(self, tab):
+        """Optional labels dict for `tab` (e.g. swarmbox.title, swarmbox.pin_id, swarmbox.worktree)."""
+        return {}
+
+    def rename_tab(self, tab, title, source="user"):
+        """Set display title metadata on `tab`."""
+        raise TabsError("unsupported", "backend %s cannot rename tabs" % self.name)
+
+    def open_tab(self, name=None, cwd=None, agent=None, labels=None):
         """Open a new terminal tab (allowlisted agent or shell) and return its id."""
         raise TabsError("unsupported", "backend %s cannot open tabs" % self.name)
 
@@ -875,6 +883,23 @@ class HerdrBackend(TabsBackend):
             out["app"] = str(st["app"])[:32]
         return out
 
+    def tab_labels(self, tab):
+        meta = self._meta.get(tab.id)
+        if isinstance(meta, dict) and isinstance(meta.get("labels"), dict):
+            return meta["labels"]
+        full = self._get_meta(tab.id, fresh=True)
+        lbls = full.get("labels") if isinstance(full, dict) else None
+        return lbls if isinstance(lbls, dict) else {}
+
+    def rename_tab(self, tab, title, source="user"):
+        self.hc("label", tab.id, "swarmbox.title=%s" % title, "swarmbox.title_source=%s" % source)
+        meta = self._meta.get(tab.id)
+        if isinstance(meta, dict):
+            lbls = dict(meta.get("labels") or {})
+            lbls["swarmbox.title"] = title
+            lbls["swarmbox.title_source"] = source
+            meta["labels"] = lbls
+
     def _write_active(self, tab_id):
         try:
             os.makedirs(self.run_dir, mode=0o700, exist_ok=True)
@@ -886,13 +911,17 @@ class HerdrBackend(TabsBackend):
         except OSError:
             pass
 
-    def open_tab(self, name=None, cwd=None, agent=None):
+    def open_tab(self, name=None, cwd=None, agent=None, labels=None):
         # --keep like every other terminal the box opens (mux/herdr.sh): an agent that exits leaves a shell in its place
         args = ["run", "--bg", "--keep", "--no-parent", "--json"]
         if name:
             args += ["--name", name]
         if cwd:
             args += ["--cwd", cwd]
+        if isinstance(labels, dict):
+            for k, v in sorted(labels.items()):
+                if k and v is not None and str(v) != "":
+                    args += ["--label", "%s=%s" % (k, v)]
         cmd = ALLOWED_OPEN_AGENTS.get(agent or "shell")
         if cmd:
             args += ["--", "bash", "-lc", "exec " + " ".join(cmd)]
@@ -976,10 +1005,55 @@ class Tabs:
             st = self.backend.tab_status(t)
             if st:
                 row["status"] = st
+            lbls = self.backend.tab_labels(t) or {}
+            if lbls.get("swarmbox.title"):
+                row["title"] = str(lbls["swarmbox.title"])[:60]
+            if lbls.get("swarmbox.title_source") in ("user", "auto"):
+                row["title_source"] = lbls["swarmbox.title_source"]
+            if lbls.get("swarmbox.pin_id"):
+                row["pin_id"] = str(lbls["swarmbox.pin_id"])
+                row["pinned"] = True
+            if lbls.get("swarmbox.worktree"):
+                row["worktree"] = {
+                    "path": str(lbls["swarmbox.worktree"]),
+                    "branch": str(lbls.get("swarmbox.branch") or ""),
+                    "base": str(lbls.get("swarmbox.base") or ""),
+                    "repo": str(lbls.get("swarmbox.repo") or ""),
+                }
             out.append(row)
         return out
 
-    def open_tab(self, name=None, cwd=None, agent=None):
+    @staticmethod
+    def _sibling_bin(name, script_name):
+        here = os.path.dirname(os.path.abspath(__file__))
+        cand = os.path.join(here, script_name)
+        if os.path.isfile(cand):
+            return [sys.executable, cand]
+        return [name]
+
+    def rename_tab(self, tab, title, source="user"):
+        src = str(source or "user").strip().lower()
+        if src not in ("user", "auto"):
+            raise usage_error("--source must be user or auto")
+        clean = re.sub(r"\s+", " ", "".join(c if c.isprintable() else " " for c in str(title or ""))).strip()[:60]
+        if not clean:
+            raise TabsError("bad_body", "title cannot be empty")
+        t = self.resolve(tab)
+        lbls = self.backend.tab_labels(t) or {}
+        old_title = str(lbls.get("swarmbox.title") or t.name)
+        self.backend.rename_tab(t, clean, source=src)
+        pin_id = lbls.get("swarmbox.pin_id")
+        if pin_id:
+            try:
+                cmd = self._sibling_bin("swarmbox-pins", "swarmbox-pins.py") + [
+                    "update", str(pin_id), "--title", clean, "--title-source", src,
+                ]
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5.0)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        return {"ok": True, "tab": t.id, "title": clean, "old_title": old_title, "source": src}
+
+    def open_tab(self, name=None, cwd=None, agent=None, worktree=False, title=None):
         ag = (agent or "shell").strip().lower()
         if ag not in ALLOWED_OPEN_AGENTS:
             raise usage_error("unknown agent %r (known: %s)" % (ag, ", ".join(sorted(ALLOWED_OPEN_AGENTS))))
@@ -993,8 +1067,47 @@ class Tabs:
             if not os.path.isdir(expanded):
                 raise TabsError("bad_body", "directory does not exist: %s" % cwd)
             clean_cwd = expanded
-        tid = self.backend.open_tab(name=clean_name, cwd=clean_cwd, agent=ag)
-        return {"ok": True, "tab": tid, "name": clean_name or ag, "agent": ag}
+        labels = {}
+        wt_info = None
+        if worktree:
+            src_dir = clean_cwd or os.getcwd()
+            cmd = self._sibling_bin("swarmbox-worktree", "swarmbox-worktree.py") + ["create", src_dir]
+            try:
+                p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20.0)
+                data = json.loads(p.stdout) if p.stdout.strip() else {}
+            except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                raise TabsError("backend_error", "worktree creation failed: %s" % exc)
+            if p.returncode != 0 or not data.get("ok"):
+                raise TabsError(str(data.get("err") or "backend_error"), str(data.get("msg") or "worktree creation failed"))
+            clean_cwd = data["path"]
+            wt_info = {
+                "path": data["path"],
+                "branch": data["branch"],
+                "base": data["base"],
+                "repo": data["repo_root"],
+            }
+            labels.update({
+                "swarmbox.worktree": data["path"],
+                "swarmbox.branch": data["branch"],
+                "swarmbox.base": data["base"],
+                "swarmbox.repo": data["repo_root"],
+            })
+        if title:
+            clean_t = re.sub(r"\s+", " ", "".join(c if c.isprintable() else " " for c in str(title))).strip()[:60]
+            if clean_t:
+                labels["swarmbox.title"] = clean_t
+                labels["swarmbox.title_source"] = "user"
+        if labels:
+            labels["swarmbox.agent"] = ag
+            tid = self.backend.open_tab(name=clean_name, cwd=clean_cwd, agent=ag, labels=labels)
+        else:
+            tid = self.backend.open_tab(name=clean_name, cwd=clean_cwd, agent=ag)
+        res = {"ok": True, "tab": tid, "name": clean_name or ag, "agent": ag}
+        if wt_info:
+            res["worktree"] = wt_info
+        if labels.get("swarmbox.title"):
+            res["title"] = labels["swarmbox.title"]
+        return res
 
     def focus_tab(self, tab):
         t = self.resolve(tab)
@@ -1019,6 +1132,9 @@ class Tabs:
         s = str(tab)
         hit = [t for t in tabs if t.id == s] or [t for t in tabs if t.label == s] or [t for t in tabs if s.isdigit() and t.index == int(s)] \
             or [t for t in tabs if t.name == s]
+        if not hit:
+            low = s.strip().lower()
+            hit = [t for t in tabs if str((self.backend.tab_labels(t) or {}).get("swarmbox.title") or "").strip().lower() == low]
         if not hit:
             raise TabsError("no_such_tab", "no tab %s; the tabs are: %s" % (s, ", ".join("%s (%s)" % (t.label, t.id) for t in tabs) or "none"))
         if len(hit) > 1:
@@ -1303,10 +1419,16 @@ def run(argv, tabs=None):
         return tabs.send(rest[0], run=text if key == "--run" else None, input=text if key == "--input" else None,
                          queue="--queue" in opts, slash="--slash" in opts)
     if cmd == "open":
-        opts, rest = parse_args(a, ("--name", "--cwd", "--agent"), ())
+        opts, rest = parse_args(a, ("--name", "--cwd", "--agent", "--title"), ("--worktree",))
         if rest:
-            raise usage_error("usage: open [--name NAME] [--cwd DIR] [--agent AGENT]")
-        return tabs.open_tab(name=opts.get("--name"), cwd=opts.get("--cwd"), agent=opts.get("--agent"))
+            raise usage_error("usage: open [--name NAME] [--cwd DIR] [--agent AGENT] [--title TITLE] [--worktree]")
+        return tabs.open_tab(name=opts.get("--name"), cwd=opts.get("--cwd"), agent=opts.get("--agent"),
+                             worktree="--worktree" in opts, title=opts.get("--title"))
+    if cmd == "rename":
+        opts, rest = parse_args(a, ("--source",), ())
+        if len(rest) != 2:
+            raise usage_error("usage: rename TAB TITLE [--source user|auto]")
+        return tabs.rename_tab(rest[0], rest[1], source=opts.get("--source", "user"))
     if cmd == "focus":
         opts, rest = parse_args(a, (), ())
         if len(rest) != 1:

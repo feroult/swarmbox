@@ -172,6 +172,8 @@ COPY container/scripts/swarmbox-addon.sh /usr/local/bin/swarmbox-addon
 COPY container/scripts/swarmbox-bus.py /usr/local/bin/swarmbox-bus
 # The tabs of the box (list, active, screen, send): a capability of the host with its own command, separate from the bus.
 COPY container/scripts/swarmbox-tabs.py /usr/local/bin/swarmbox-tabs
+COPY container/scripts/swarmbox-pins.py /usr/local/bin/swarmbox-pins
+COPY container/scripts/swarmbox-worktree.py /usr/local/bin/swarmbox-worktree
 COPY container/scripts/swarmbox-shim.sh /usr/local/bin/swarmbox-shim
 COPY container/addons/ /usr/local/lib/swarmbox/addons/
 COPY container/scripts/swarmbox-mcp.sh /usr/local/bin/swarmbox-mcp
@@ -187,7 +189,7 @@ COPY container/entrypoint.sh /usr/local/bin/swarmbox-entrypoint
 RUN chmod 644 /etc/swarmbox/herdr.toml /etc/swarmbox/starship.toml /etc/swarmbox/bashrc.sh /etc/ssh/ssh_config.d/swarmbox.conf \
         /usr/local/lib/swarmbox/dirs.sh /etc/swarmbox/scripts/starship-init.sh /etc/swarmbox/scripts/messages.sh && \
     chmod 755 /usr/local/bin/swarmbox-statusline /usr/local/bin/swarmbox-pubkey \
-        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-addon /usr/local/bin/swarmbox-bus /usr/local/bin/swarmbox-tabs /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-mcp /usr/local/bin/swarmbox-install /usr/local/bin/swarmbox-entrypoint && \
+        /usr/local/bin/swarmbox-attach /usr/local/bin/swarmbox-web /usr/local/bin/swarmbox-addon /usr/local/bin/swarmbox-bus /usr/local/bin/swarmbox-tabs /usr/local/bin/swarmbox-pins /usr/local/bin/swarmbox-worktree /usr/local/bin/swarmbox-shim /usr/local/bin/swarmbox-mcp /usr/local/bin/swarmbox-install /usr/local/bin/swarmbox-entrypoint && \
     chmod 755 /usr/local/share/swarmbox/host/swarmbox-host /usr/local/share/swarmbox/herdr-web/server.mjs /usr/local/share/swarmbox/herdr-web/cockpit.mjs && \
     chmod 644 /usr/local/share/swarmbox/host/cloudflare-setup.py /usr/local/share/swarmbox/host/VERSION /usr/local/share/swarmbox/host/DEFAULTS && \
     chmod -R a+rX /usr/local/share/swarmbox/host /usr/local/share/swarmbox/herdr-web && \
