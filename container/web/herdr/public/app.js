@@ -511,14 +511,14 @@
   // Moves are coalesced to one per frame, the flick speed is measured over the last 100ms of the drag,
   // and the content settles on a row boundary when it stops. The alternate screen (vim, less, TUIs)
   // still gets wheel line steps, since the program draws its own scrolling.
-  const TOUCH_DRAG_PX = 6;
-  const TOUCH_DRAG_GAIN = 1.65;
-  const TOUCH_COAST_GAIN = 1.65;
+  const TOUCH_DRAG_PX = 4;
+  const TOUCH_DRAG_GAIN = 1.25;
+  const TOUCH_COAST_GAIN = 1.25;
   const TOUCH_FLICK_MIN = 0.08;   // px/ms
-  const TOUCH_FRICTION = 0.968;   // per 16.67ms frame (native iOS-like glide)
+  const TOUCH_FRICTION = 0.964;   // per 16.67ms frame (native iOS-like glide)
   const TOUCH_STOP_VEL = 0.025;   // px/ms
   const TOUCH_VEL_WINDOW = 70;    // ms of active drag samples used for flick speed
-  const TOUCH_MAX_VEL = 18;       // px/ms cap for chained fast flicks
+  const TOUCH_MAX_VEL = 16;       // px/ms cap for chained fast flicks
 
   let touchId = null;
   let touchStartY = 0;
@@ -526,6 +526,7 @@
   let touchLastX = 0;
   let touchLastT = 0;
   let touchMoved = false;
+  let touchStoppedCoast = false;
   let touchVel = 0;
   let touchCoastDir = 0;
   let touchChainBoost = 1;
@@ -881,9 +882,15 @@
     return Math.abs(peakVel) > Math.abs(winVel) ? (winVel * 0.45 + peakVel * 0.55) : winVel;
   }
 
-  // Two-finger pinch-to-zoom is left completely to the browser's native optical compositor
-  // (no font-size mutation or terminal reflow). When zoomed in optically (scale > 1.02),
-  // 1-finger panning is also handed straight to the browser.
+  // Capture-phase touch interception on termWrapEl:
+  // xterm.js registers its own bubble-phase touchstart/touchmove handlers on `.xterm` that call
+  // stopPropagation() (swallowing 1-finger momentum scrolls in the middle of scrollback) and
+  // preventDefault() without checking touches.length === 1 (killing iOS 2-finger pinch-zoom!).
+  // Intercepting in CAPTURE phase and calling stopPropagation() completely bypasses xterm's
+  // primitive touch handler so:
+  //   - 2-finger pinch-zoom & zoomed 1-finger pans go 100% natively to the browser compositor
+  //   - 1-finger scrolls run our sub-row GPU + iOS momentum engine everywhere in the buffer
+  //   - single taps still open the keyboard (except tapping to stop an active coast!)
   window.addEventListener('touchend', (e) => {
     if (e.touches.length === 0) multiTouchActive = false;
   }, { passive: true });
@@ -893,11 +900,15 @@
 
   termWrapEl.addEventListener('touchstart', (e) => {
     if (e.target && e.target.closest && e.target.closest('button, a, input, textarea')) return;
+    // Block xterm's built-in touchstart/touchmove handler (which otherwise swallows scrolls and kills pinch).
+    e.stopPropagation();
+    const wasCoasting = Boolean(touchRaf);
     stopTouchCoast();
     if (e.touches.length >= 2) {
       if (touchMoved) { flushTouchScroll(); settleTouchScroll(); }
       touchId = null;
       touchMoved = false;
+      touchStoppedCoast = false;
       multiTouchActive = true;
       zoomCooldownUntil = Date.now() + 650;
       touchDbgGesture = null;
@@ -905,6 +916,7 @@
     }
     // Fresh 1-finger touch: never allow a stale multiTouchActive flag from a Safari pinch to stick.
     multiTouchActive = false;
+    touchStoppedCoast = wasCoasting;
     if (isOpticalZoomed() || isViewportPinchingOrBouncing()) {
       touchId = null;
       touchMoved = false;
@@ -941,9 +953,12 @@
       touchId = null;
       touchMoved = false;
     }
-  }, { passive: true });
+  }, { capture: true, passive: true });
 
   termWrapEl.addEventListener('touchmove', (e) => {
+    if (e.target && e.target.closest && e.target.closest('button, a, input, textarea')) return;
+    // Always stop propagation so xterm's built-in handleTouchMove NEVER runs (neither on scroll nor on pinch!).
+    e.stopPropagation();
     if (e.touches.length >= 2) {
       multiTouchActive = true;
       zoomCooldownUntil = Date.now() + 650;
@@ -965,11 +980,10 @@
       if (!e.cancelable) touchDbgGesture.nonCancelable += 1;
     }
     // Wait until vertical motion exceeds TOUCH_DRAG_PX BEFORE calling preventDefault() so
-    // finger-1 micro-jitter while finger-2 lands (15-45ms later) never aborts native iOS pinch-zoom!
+    // finger-1 micro-jitter while finger-2 lands never aborts native iOS pinch-zoom!
     if (!touchMoved) {
       if (Math.abs(t.clientY - touchStartY) < TOUCH_DRAG_PX) return;
       touchMoved = true;
-      // Start velocity sampling from active motion (exclude stationary touchstart dwell time).
       touchSamples = [{ t: touchLastT, y: touchLastY }];
     }
     if (e.cancelable) e.preventDefault();
@@ -981,7 +995,7 @@
     touchLastY = t.clientY;
     touchLastX = t.clientX;
     touchLastT = tt;
-  }, { passive: false });
+  }, { capture: true, passive: false });
 
   termWrapEl.addEventListener('touchcancel', () => {
     const g = touchDbgGesture;
@@ -989,6 +1003,7 @@
     multiTouchActive = false;
     touchId = null;
     touchMoved = false;
+    touchStoppedCoast = false;
     stopTouchCoast();
     flushTouchScroll();
     settleTouchScroll();
@@ -1008,14 +1023,21 @@
         dt: Math.round(nowMs() - g.startT),
       });
     }
-  }, { passive: true });
+  }, { capture: true, passive: true });
 
   termWrapEl.addEventListener('touchend', (e) => {
+    if (e.target && e.target.closest && e.target.closest('button, a, input, textarea')) return;
     if (multiTouchActive) {
+      e.stopPropagation();
       if (e.touches.length === 0) multiTouchActive = false;
       return;
     }
-    if (touchMoved && e.cancelable) e.preventDefault();
+    const stoppedCoast = touchStoppedCoast;
+    touchStoppedCoast = false;
+    if ((touchMoved || stoppedCoast) && e.cancelable) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const moved = touchMoved;
     const now = nowMs();
     const rawVel = moved ? touchFlickVelocity() : 0;
@@ -1037,7 +1059,7 @@
       touchCoastDir = dir;
       touchChainT = now;
       const speed = Math.abs(rawVel);
-      const accel = 1.25 + Math.min(2.2, Math.max(0, speed - 0.15) * 1.15);
+      const accel = 1 + Math.min(2.0, Math.max(0, speed - 0.25) * 0.9);
       touchVel = Math.max(-TOUCH_MAX_VEL, Math.min(TOUCH_MAX_VEL, rawVel * accel * touchChainBoost));
       appliedVel = touchVel;
       startTouchCoast();
@@ -1067,7 +1089,7 @@
         wheelSent: g.wheelSent,
       });
     }
-  }, { passive: false });
+  }, { capture: true, passive: false });
 
   function applyTheme(name, persist = false) {
     const key = THEMES[name] ? name : 'purple-glow';
@@ -1196,6 +1218,7 @@
   }
 
   let fitRaf = 0;
+  let mobileFitDebounce = 0;
   function fitAndResize() {
     if (isViewportPinchingOrBouncing() || multiTouchActive || Date.now() < zoomCooldownUntil) return;
     syncAppearanceControls();
@@ -1207,6 +1230,18 @@
   }
   function scheduleFit() {
     if (isViewportPinchingOrBouncing() || multiTouchActive || Date.now() < zoomCooldownUntil) return;
+    if (window.innerWidth <= 860) {
+      // Debounce all mobile fit triggers (ResizeObserver, window.resize, keyboard slide animation)
+      // so a 250ms iOS keyboard slide sends 1 clean final SIGWINCH instead of 5 intermediate ones.
+      clearTimeout(mobileFitDebounce);
+      mobileFitDebounce = setTimeout(() => {
+        mobileFitDebounce = 0;
+        if (!isViewportPinchingOrBouncing() && !multiTouchActive && Date.now() >= zoomCooldownUntil) {
+          fitAndResize();
+        }
+      }, 160);
+      return;
+    }
     if (fitRaf) return;
     fitRaf = requestAnimationFrame(() => {
       fitRaf = 0;
@@ -1247,7 +1282,6 @@
   let baseMobileH = document.documentElement.clientHeight || window.innerHeight || 0;
   let lastAppliedVvH = 0;
   let lastLoggedZoomScale = 1;
-  let mobileFitTimer = 0;
   function syncViewport(fromScroll = false) {
     if (!window.visualViewport) {
       syncMobileKeys();
@@ -1271,11 +1305,9 @@
     }
     if (pinchingOrBouncing) {
       // Optical browser pinch-zoom or iOS pinch-out rubber-band bounce:
-      // NEVER mutate #app height, NEVER poison baseMobileH, and NEVER trigger fitAndResize()/SIGWINCH!
+      // Freeze #app at its pre-zoom pixel height (NEVER switch to 100dvh mid-pinch, which shifts
+      // Safari's toolbar/dock height!), NEVER poison baseMobileH, and NEVER trigger SIGWINCH.
       zoomCooldownUntil = Date.now() + 650;
-      appEl.style.setProperty('--vv-h', '100dvh');
-      appEl.style.setProperty('--vv-top', '0px');
-      appEl.style.height = '';
       mobileKbOpen = false;
       syncMobileKeys();
       clearTimeout(zoomCooldownTimer);
@@ -1305,16 +1337,7 @@
     const hChanged = Math.abs(vvH - lastAppliedVvH) >= 2;
     lastAppliedVvH = vvH;
     if (!fromScroll && hChanged && Date.now() >= zoomCooldownUntil) {
-      if (window.innerWidth <= 860) {
-        clearTimeout(mobileFitTimer);
-        mobileFitTimer = setTimeout(() => {
-          if (!isViewportPinchingOrBouncing() && !multiTouchActive && Date.now() >= zoomCooldownUntil) {
-            scheduleFit();
-          }
-        }, 140);
-      } else {
-        scheduleFit();
-      }
+      scheduleFit();
     }
   }
   if (window.visualViewport) {
