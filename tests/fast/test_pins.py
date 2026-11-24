@@ -71,6 +71,9 @@ if cmd == "label":
             print(json.dumps(t))
             sys.exit(0)
     sys.exit(1)
+if cmd == "keep":
+    print(json.dumps({"ok": True}))
+    sys.exit(0)
 if cmd in ("kill", "rm"):
     tid = argv[-1]
     before = len(st.get("terminals", []))
@@ -321,30 +324,28 @@ class PinsTest(unittest.TestCase):
         p_auto = pins_mod.add_pin(self.proj1, agent="agy", title="swarmbox", autostart=True, env=env)
         p_park = pins_mod.add_pin(self.proj2, agent="claude", title="api-pay", autostart=False, env=env)
 
-        # Simulate state right after `hc server start` on `swarmbox reset`:
-        # herdr-core restored 3 kept terminals as bare login shells (including an unpinned shell).
+        # Simulate state right after `hc server start` on `swarmbox reset` (herdr-core 0.1.21):
+        # During the 1.5s grace delay, kept terminals have `pid: null`, `reason: "stopped_by_restart"`,
+        # no `foreground`, and STILL retain their previous `argv` (`-lic ... agy --continue`).
         with open(hc_state, "w", encoding="utf-8") as f:
             json.dump({
                 "terminals": [
                     {
-                        "address": "t3", "name": "shell-2", "cwd": self.proj1, "state": "live",
-                        "argv": ["/bin/bash", "-l"],
-                        "foreground": {"name": "bash", "argv": ["/bin/bash", "-l"], "cwd": self.proj1},
-                        "status": None,
+                        "address": "t3", "name": "my-agy", "cwd": self.proj1, "state": "live",
+                        "argv": ["/bin/bash", "-lic", "_sb_t0=$(date +%s); agy --continue; exec /bin/bash -l"],
+                        "pid": None, "reason": "stopped_by_restart", "status": None,
                         "labels": {"swarmbox.pin_id": p_auto["id"], "swarmbox.agent": "agy", "swarmbox.title": "swarmbox"},
                     },
                     {
                         "address": "t4", "name": "claude-1", "cwd": self.proj2, "state": "live",
-                        "argv": ["/bin/bash", "-l"],
-                        "foreground": {"name": "bash", "argv": ["/bin/bash", "-l"], "cwd": self.proj2},
-                        "status": None,
+                        "argv": ["/bin/bash", "-lic", "_sb_t0=$(date +%s); claude --continue; exec /bin/bash -l"],
+                        "pid": None, "reason": "stopped_by_restart", "status": None,
                         "labels": {"swarmbox.pin_id": p_park["id"], "swarmbox.agent": "claude", "swarmbox.title": "api-pay"},
                     },
                     {
                         "address": "t5", "name": "shell", "cwd": self.home, "state": "live",
                         "argv": ["/bin/bash", "-l"],
-                        "foreground": {"name": "bash", "argv": ["/bin/bash", "-l"], "cwd": self.home},
-                        "status": None,
+                        "pid": None, "reason": "stopped_by_restart", "status": None,
                         "labels": {},
                     },
                 ],

@@ -2320,6 +2320,15 @@
   function tabAgentKind(t) {
     const b = tabAgentBadge(t);
     if (b) return b;
+    const lblAg = String((t && t.labels && t.labels['swarmbox.agent']) || '').toLowerCase();
+    if (AGENT_APP_LABELS[lblAg]) {
+      // Only trust the sticky swarmbox.agent label if the terminal was launched with an agent argv
+      // (not an unpinned tab replaced with a bare login shell by herdr-core --keep recovery).
+      const argv = Array.isArray(t && t.argv) ? t.argv : [];
+      const fg = String((t && t.foreground && t.foreground.name) || '').toLowerCase();
+      const bareShell = argv.length <= 2 && (!fg || SHELL_NAMES.has(fg));
+      if (!bareShell) return AGENT_APP_LABELS[lblAg];
+    }
     const raw = String((t && t.name) || '').toLowerCase();
     for (const key of Object.keys(AGENT_APP_LABELS)) {
       if (raw === key || raw.startsWith(key + '-')) return AGENT_APP_LABELS[key];
@@ -2685,7 +2694,7 @@
           body: JSON.stringify({ path: w.path }),
         });
         const d = await r.json().catch(() => ({}));
-        const addr = d && d.terminal && d.terminal.address;
+        const addr = (d && d.terminal && d.terminal.address) || (d && d.address);
         if (addr) setTimeout(() => connectPty(addr), 100);
       });
       const bRm = document.createElement('button');
@@ -2733,7 +2742,7 @@
       showTermToast(data.message || 'Could not wake pinned session');
       return;
     }
-    const addr = data && data.terminal && data.terminal.address;
+    const addr = (data && data.terminal && data.terminal.address) || (data && data.address);
     if (addr) setTimeout(() => connectPty(addr), 100);
     if (data.worktree) {
       showTermToast(`Opened in worktree ${data.worktree.branch}`);
@@ -3779,7 +3788,7 @@
       });
       return;
     }
-    const addr = data && data.terminal && data.terminal.address;
+    const addr = (data && data.terminal && data.terminal.address) || (data && data.address);
     if (addr) setTimeout(() => connectPty(addr), 100);
     if (data && data.worktree) {
       const note = data.worktree.uncommitted_in_source ? ' (uncommitted edits stayed in source folder)' : '';

@@ -215,9 +215,14 @@ SHELL_NAMES = frozenset({"bash", "sh", "zsh", "dash", "fish", "ash", "ksh", "nu"
 
 
 def _is_shell_only(term):
-    """Return True when a live herdr-core terminal is only running a bare login shell
-    (e.g. a `--keep` recovery shell resurrected by `hc server start` after `swarmbox reset`)."""
+    """Return True when a live herdr-core terminal is not running an active agent:
+    either it is pending `--keep` recovery after `swarmbox reset` (`reason == "stopped_by_restart"`
+    or `pid is None`), or it is only running a bare login shell."""
     if not isinstance(term, dict):
+        return True
+    if str(term.get("reason") or "") == "stopped_by_restart":
+        return True
+    if "pid" in term and term.get("pid") is None:
         return True
     st = term.get("status")
     if isinstance(st, dict) and str(st.get("app") or "").strip():
@@ -236,10 +241,11 @@ def _is_shell_only(term):
 
 
 def _close_terminal(hc, addr, env):
-    """End and remove a live terminal (explicit kill closes `--keep` terminals cleanly)."""
+    """Cancel `--keep` recovery, end, and remove a terminal cleanly."""
     if not addr:
         return False
     try:
+        subprocess.run([hc, "keep", "--off", str(addr)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5.0, env=env)
         subprocess.run([hc, "kill", str(addr)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5.0, env=env)
         subprocess.run([hc, "rm", str(addr)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5.0, env=env)
         return True

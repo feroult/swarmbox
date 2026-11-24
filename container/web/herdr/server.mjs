@@ -640,14 +640,17 @@ export function createGateway(options = {}) {
         };
         if (Object.keys(labels).length > 0) runParams.labels = labels;
         const created = await hc.call('terminal.run', runParams);
-        const addr = created && created.terminal && created.terminal.address;
+        const createdTerm = (created && created.terminal) || created;
+        const addr = createdTerm && createdTerm.address;
         if (addr) {
           writeActiveTab(addr);
-          if (created.terminal) hc.terminals.set(addr, created.terminal);
+          hc.terminals.set(addr, createdTerm);
         }
         if (createdWorktree) refreshPendingWorktrees();
         broadcast(buildSnapshot({ type: 'snapshot' }));
-        return sendJson(res, 201, createdWorktree ? { ...created, worktree: createdWorktree } : created);
+        const resp = { ...(createdTerm || {}), terminal: createdTerm };
+        if (createdWorktree) resp.worktree = createdWorktree;
+        return sendJson(res, 201, resp);
       }
 
       const tabMatch = pathname.match(/^\/api\/tabs\/([^/]+)(?:\/(focus|send|keys|interrupt|answer|worktree))?$/);
@@ -691,7 +694,8 @@ export function createGateway(options = {}) {
           const lbls = (t && t.labels) || {};
           const isPinned = Boolean(lbls['swarmbox.pin_id']);
           const wtPath = lbls['swarmbox.worktree'] || '';
-          await hc.call('terminal.kill', { terminal: termId });
+          await hc.call('terminal.keep', { terminal: termId, keep: false }).catch(() => {});
+          await hc.call('terminal.kill', { terminal: termId }).catch(() => {});
           hc.call('terminal.rm', { terminal: termId }).catch(() => {});
           hc.terminals.delete(termId);
           let autoCleaned = false;
@@ -971,14 +975,17 @@ export function createGateway(options = {}) {
             no_parent: true,
             labels,
           });
-          const addr = created && created.terminal && created.terminal.address;
+          const createdTerm = (created && created.terminal) || created;
+          const addr = createdTerm && createdTerm.address;
           if (addr) {
             writeActiveTab(addr);
-            if (created.terminal) hc.terminals.set(addr, created.terminal);
+            hc.terminals.set(addr, createdTerm);
           }
           if (createdWorktree) refreshPendingWorktrees();
           broadcast(buildSnapshot({ type: 'snapshot' }));
-          return sendJson(res, 201, createdWorktree ? { ...created, worktree: createdWorktree } : created);
+          const resp = { ...(createdTerm || {}), terminal: createdTerm };
+          if (createdWorktree) resp.worktree = createdWorktree;
+          return sendJson(res, 201, resp);
         }
       }
 
@@ -1103,14 +1110,15 @@ export function createGateway(options = {}) {
         }
         const name = uniqueTabName(st && st.branch ? st.branch.replace(/^sb\//, '') : path.basename(wtPath), cmd, Array.from(hc.terminals.values()));
         const created = await hc.call('terminal.run', { argv, name, cwd: wtPath, keep: true, no_parent: true, labels });
-        const addr = created && created.terminal && created.terminal.address;
+        const createdTerm = (created && created.terminal) || created;
+        const addr = createdTerm && createdTerm.address;
         if (addr) {
           writeActiveTab(addr);
-          if (created.terminal) hc.terminals.set(addr, created.terminal);
+          hc.terminals.set(addr, createdTerm);
         }
         refreshPendingWorktrees();
         broadcast(buildSnapshot({ type: 'snapshot' }));
-        return sendJson(res, 201, created);
+        return sendJson(res, 201, { ...(createdTerm || {}), terminal: createdTerm });
       }
 
       if ((pathname === '/api/worktrees/commit' || pathname === '/api/worktrees/resolve-conflict') && req.method === 'POST') {
