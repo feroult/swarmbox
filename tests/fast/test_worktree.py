@@ -218,6 +218,162 @@ class WorktreeTest(unittest.TestCase):
         p = subprocess.run([sys.executable, WT_SCRIPT, "prefs", "get"], env=self.env, capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(p.stdout), {"mode": "auto", "copy_env": False})
 
+    def test_shell_guard_ask_auto_off_cancel_and_labels(self):
+        # Fake swarmbox-tabs returning one active agent (t1) in self.repo and logging label calls
+        label_log = os.path.join(self.tmp, "labels.log")
+        fake_tabs = os.path.join(self.tmp, "fake-tabs")
+        with open(fake_tabs, "w", encoding="utf-8") as f:
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import json, os, sys\n"
+                "if sys.argv[1] == 'list':\n"
+                f"    print(json.dumps([{{'tab': 't1', 'name': 'fix-auth', 'title': 'Fix Auth', 'dir': '~/shop-api', 'cmd': 'antigravity'}}]))\n"
+                "elif sys.argv[1] == 'label':\n"
+                f"    with open({label_log!r}, 'a', encoding='utf-8') as lf:\n"
+                "        lf.write(' '.join(sys.argv[2:]) + '\\n')\n"
+                "    print(json.dumps({'ok': True}))\n"
+            )
+        os.chmod(fake_tabs, 0o755)
+        genv = {
+            **self.env,
+            "SWARMBOX_TEST_TABS_BIN": fake_tabs,
+            "SWARMBOX_TEST_GUARD_STDIN": "1",
+            "HC_TERMINAL_ID": "t2",
+        }
+
+        # Excluding the only colliding tab -> no collision
+        r_self = subprocess.run(
+            [sys.executable, WT_SCRIPT, "guard", "--shell", "--agent", "agy", "--exclude", "t1", self.repo],
+            env=genv, capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(r_self.stdout.strip(), "")
+
+        # Mode off -> no prompt, no worktree
+        wt.write_prefs(mode="off", env=genv)
+        r_off = subprocess.run(
+            [sys.executable, WT_SCRIPT, "guard", "--shell", "--agent", "agy", self.repo],
+            env=genv, capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(r_off.stdout.strip(), "")
+
+        # Mode ask + 'c' -> exit 130 (cancel)
+        wt.write_prefs(mode="ask", env=genv)
+        r_cancel = subprocess.run(
+            [sys.executable, WT_SCRIPT, "guard", "--shell", "--agent", "agy", self.repo],
+            input="c\n", env=genv, capture_output=True, text=True,
+        )
+        self.assertEqual(r_cancel.returncode, 130)
+        self.assertIn("Collision in shop-api", r_cancel.stderr)
+
+        # Mode ask + 's' -> same folder (exit 0, empty stdout)
+        r_same = subprocess.run(
+            [sys.executable, WT_SCRIPT, "guard", "--shell", "--agent", "agy", self.repo],
+            input="s\n", env=genv, capture_output=True, text=True, check=True,
+        )
+        self.assertEqual(r_same.stdout.strip(), "")
+
+        # Mode ask + Enter (default W) -> creates isolated worktree AND labels current tab t2
+        r_wt = subprocess.run(
+            [sys.executable, WT_SCRIPT, "guard", "--shell", "--agent", "agy", self.repo],
+            input="\n", env=genv, capture_output=True, text=True, check=True,
+        )
+        wt_path = r_wt.stdout.strip()
+        self.assertTrue(os.path.isdir(wt_path), wt_path)
+        self.assertNotEqual(os.path.realpath(wt_path), os.path.realpath(self.repo))
+        with open(label_log, encoding="utf-8") as f:
+            lbl_lines = f.read().splitlines()
+        self.assertTrue(any(ln.startswith("t2 ") and "swarmbox.worktree=" in ln and "swarmbox.agent=agy" in ln for ln in lbl_lines), lbl_lines)
+
+        # Mode auto -> creates worktree without prompting
+        wt.write_prefs(mode="auto", env=genv)
+        r_auto = subprocess.run(
+            [sys.executable, WT_SCRIPT, "guard", "--shell", "--agent", "claude", self.repo],
+            env=genv, capture_output=True, text=True, check=True,
+        )
+        wt_path2 = r_auto.stdout.strip()
+        self.assertTrue(os.path.isdir(wt_path2), wt_path2)
+        self.assertNotEqual(wt_path2, wt_path)
+
+    def test_bashrc_interactive_tty_guard_isolates_manual_agy_and_skips_print_mode(self):
+        import pty
+        import select
+        import time
+
+        fake_bin = os.path.join(self.tmp, "bin")
+        os.makedirs(fake_bin, exist_ok=True)
+        run_log = os.path.join(self.tmp, "agy-runs.log")
+        with open(os.path.join(fake_bin, "agy"), "w", encoding="utf-8") as f:
+            f.write(f"#!/bin/sh\necho \"cwd=$(pwd) args=$*\" >> {run_log}\n")
+        os.chmod(os.path.join(fake_bin, "agy"), 0o755)
+
+        fake_tabs = os.path.join(self.tmp, "fake-tabs-tty")
+        with open(fake_tabs, "w", encoding="utf-8") as f:
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "if sys.argv[1] == 'list':\n"
+                f"    print(json.dumps([{{'tab': 't1', 'name': 'active-agy', 'dir': '~/shop-api', 'cmd': 'antigravity'}}]))\n"
+                "else:\n"
+                "    print(json.dumps({'ok': True}))\n"
+            )
+        os.chmod(fake_tabs, 0o755)
+
+        wt.write_prefs(mode="auto", env=self.env)
+        env = {
+            **self.env,
+            "PATH": fake_bin + ":" + os.environ.get("PATH", "/usr/bin:/bin"),
+            "SWARMBOX_DIRS_SH": os.path.join(ROOT, "container", "scripts", "dirs.sh"),
+            "SWARMBOX_IMAGE_ADDONS_DIR": os.path.join(ROOT, "container", "addons"),
+            "SWARMBOX_IMAGE_SHIMS_DIR": fake_bin,
+            "SWARMBOX_STARSHIP_INIT": "/nonexistent",
+            "SWARMBOX_VENV": "/nonexistent",
+            "SWARMBOX_TEST_WORKTREE_BIN": WT_SCRIPT,
+            "SWARMBOX_TEST_TABS_BIN": fake_tabs,
+            "HC_TERMINAL_ID": "t2",
+        }
+        bashrc = os.path.join(ROOT, "container", "config", "bashrc.sh")
+
+        # Run bash -i on a real PTY:
+        # 1) `agy -p hi` skips the guard and stays in self.repo
+        # 2) `agy` triggers auto-worktree guard and runs inside the newly created worktree!
+        master, slave = pty.openpty()
+        proc = subprocess.Popen(
+            ["/bin/bash", "--norc", "-i"],
+            cwd=self.repo,
+            env=env,
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            close_fds=True,
+        )
+        os.close(slave)
+        try:
+            cmds = f"source {bashrc}\nagy -p hi\nSWARMBOX_WORKTREE_GUARD=0 agy\nagy\nexit\n".encode()
+            os.write(master, cmds)
+            deadline = time.time() + 10.0
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    break
+                r, _, _ = select.select([master], [], [], 0.1)
+                if r:
+                    try:
+                        os.read(master, 4096)
+                    except OSError:
+                        break
+            proc.wait(timeout=5.0)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(timeout=2.0)
+            os.close(master)
+
+        with open(run_log, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        self.assertEqual(len(lines), 3, lines)
+        self.assertTrue(lines[0].startswith(f"cwd={os.path.realpath(self.repo)} "), lines)
+        self.assertTrue(lines[1].startswith(f"cwd={os.path.realpath(self.repo)} "), lines)
+        self.assertIn("/worktrees/shop-api/sb-wt-", lines[2], lines)
+
 
 if __name__ == "__main__":
     unittest.main()

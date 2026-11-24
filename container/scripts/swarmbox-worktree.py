@@ -11,6 +11,7 @@ so multiple coding agents can work concurrently on the same repository without c
   swarmbox-worktree merge PATH [--base REF] [--squash] [--clean]
   swarmbox-worktree remove PATH [--force] [--keep-branch]
   swarmbox-worktree prefs [get | set [--mode ask|auto|off] [--copy-env 0|1]]
+  swarmbox-worktree guard [DIR] [--agent NAME] [--exclude TAB] [--shell]
 
 Output: JSON on stdout. Failures print {"err": CODE, "msg": TEXT} and exit non-zero (1 failure, 2 usage).
 """
@@ -589,6 +590,239 @@ def remove_worktree(target_path, force=False, keep_branch=False, env=None):
     }
 
 
+AGENT_CMDS = frozenset({"claude", "claude-code", "agy", "antigravity", "opencode", "gemini", "codex"})
+
+
+def _tabs_cmd(env=None):
+    e = os.environ if env is None else env
+    override = (e.get("SWARMBOX_TEST_TABS_BIN") or "").strip()
+    if override:
+        return [override]
+    here = os.path.dirname(os.path.abspath(__file__))
+    sib = os.path.join(here, "swarmbox-tabs.py")
+    if os.path.isfile(sib):
+        return [sys.executable, sib]
+    return ["swarmbox-tabs"]
+
+
+def _tab_agent_kind(row):
+    """Identify if a swarmbox-tabs list row is running a coding agent."""
+    if not isinstance(row, dict):
+        return ""
+    st = row.get("status")
+    if isinstance(st, dict):
+        app = str(st.get("app") or "").strip().lower()
+        if app in AGENT_CMDS:
+            return "agy" if app == "antigravity" else ("claude" if app == "claude-code" else app)
+    cmd = os.path.basename(str(row.get("cmd") or row.get("command") or "")).lower().lstrip("-")
+    if cmd in AGENT_CMDS:
+        return "agy" if cmd == "antigravity" else ("claude" if cmd == "claude-code" else cmd)
+    if row.get("agent") is True:
+        nm = str(row.get("name") or "").lower()
+        for k in ("agy", "claude", "opencode", "gemini", "codex"):
+            if nm == k or nm.startswith(k + "-"):
+                return k
+        return "agent"
+    return ""
+
+
+def _expand_tab_dir(raw_dir, env=None):
+    s = str(raw_dir or "").strip()
+    if not s:
+        return ""
+    e = os.environ if env is None else env
+    home = (e.get("HOME") or os.path.expanduser("~")).rstrip("/")
+    if s == "~":
+        return home
+    if s.startswith("~/"):
+        return home + s[1:]
+    return s
+
+
+def find_working_tree_collisions(target_dir, exclude_tab=None, env=None):
+    """Return collision info if another live agent tab occupies the same Git working tree."""
+    e = os.environ if env is None else env
+    info = inspect_dir(target_dir, env=e)
+    if not info.get("is_git"):
+        return None
+    target_wt = os.path.realpath(info["worktree_path"])
+    excl = str(exclude_tab if exclude_tab is not None else (e.get("HC_TERMINAL_ID") or "")).strip()
+    try:
+        r = subprocess.run(
+            _tabs_cmd(e) + ["list"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5.0,
+            env=e,
+        )
+        if r.returncode != 0 or not r.stdout.strip():
+            return None
+        tabs = json.loads(r.stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+    if not isinstance(tabs, list):
+        return None
+    colliding = []
+    for row in tabs:
+        if not isinstance(row, dict):
+            continue
+        tid = str(row.get("tab") or row.get("id") or "")
+        if excl and tid == excl:
+            continue
+        ag = _tab_agent_kind(row)
+        if not ag:
+            continue
+        tcwd = _expand_tab_dir(row.get("dir") or row.get("cwd") or "", env=e)
+        if not tcwd or not os.path.isdir(tcwd):
+            continue
+        treal = os.path.realpath(tcwd)
+        if treal == target_wt or treal.startswith(target_wt + os.sep):
+            colliding.append({
+                "id": tid,
+                "name": str(row.get("title") or row.get("name") or tid),
+                "agent": ag,
+            })
+    if not colliding:
+        return None
+    return {
+        "repo_root": info["repo_root"],
+        "repo_name": info["repo_name"],
+        "branch": info.get("branch") or info.get("base") or "HEAD",
+        "worktree_path": target_wt,
+        "dirty": bool(info.get("dirty")),
+        "active_tabs": colliding,
+    }
+
+
+def _apply_worktree_labels(tab_id, wt, agent="", env=None):
+    """Best-effort attach worktree metadata labels to the current terminal tab so Web Studio
+    immediately displays the branch chip and topbar Merge button."""
+    if not tab_id or not isinstance(wt, dict):
+        return
+    e = os.environ if env is None else env
+    pairs = []
+    if wt.get("path"):
+        pairs.append("swarmbox.worktree=%s" % wt["path"])
+    if wt.get("branch"):
+        pairs.append("swarmbox.branch=%s" % wt["branch"])
+    if wt.get("base"):
+        pairs.append("swarmbox.base=%s" % wt["base"])
+    if wt.get("repo_root"):
+        pairs.append("swarmbox.repo=%s" % wt["repo_root"])
+    if agent:
+        pairs.append("swarmbox.agent=%s" % agent)
+    if not pairs:
+        return
+    try:
+        subprocess.run(
+            _tabs_cmd(e) + ["label", str(tab_id)] + pairs,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=4.0,
+            env=e,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def guard_shell_launch(target_dir, agent="", exclude_tab=None, env=None):
+    """Interactive shell collision guard invoked before launching an agent in a terminal.
+
+    Honors worktree-prefs.json (`ask` | `auto` | `off`):
+    - `off` or no collision -> {"action": "same", ...}
+    - `auto` -> creates an isolated worktree, labels the current tab, returns {"action": "worktree", "path": ...}
+    - `ask` -> prompts on /dev/tty (or stdin in tests) with [W] New worktree / [S] Same folder / [C] Cancel
+    """
+    e = os.environ if env is None else env
+    prefs = read_prefs(env=e)
+    if prefs.get("mode") == "off":
+        return {"action": "same", "reason": "mode_off"}
+    col = find_working_tree_collisions(target_dir, exclude_tab=exclude_tab, env=e)
+    if not col:
+        return {"action": "same", "reason": "no_collision"}
+
+    tab_id = str(exclude_tab if exclude_tab is not None else (e.get("HC_TERMINAL_ID") or "")).strip()
+    names = ", ".join("%s (%s)" % (x["name"], x["agent"]) for x in col["active_tabs"][:3])
+    n = len(col["active_tabs"])
+
+    if prefs.get("mode") == "auto":
+        wt = create_worktree(target_dir, env=e)
+        _apply_worktree_labels(tab_id, wt, agent=agent, env=e)
+        sys.stderr.write(
+            "\n  \033[1;35mworktree\033[0m: isolated \033[1;36m%s\033[0m into \033[1;36m%s\033[0m (%d active agent in %s)\n"
+            % (col["repo_name"], wt["branch"], n, col["branch"])
+        )
+        sys.stderr.flush()
+        return {"action": "worktree", "path": wt["path"], "branch": wt["branch"], "collision": col}
+
+    # Interactive prompt (`ask` mode) — write and read via /dev/tty so stdout stays pure for `--shell`
+    use_stdio = e.get("SWARMBOX_TEST_GUARD_STDIN") == "1"
+    tty_in = None
+    tty_out = None
+    try:
+        if use_stdio:
+            tty_in = sys.stdin
+            tty_out = sys.stderr
+        else:
+            tty_in = open("/dev/tty", "r", encoding="utf-8", errors="replace")
+            tty_out = open("/dev/tty", "w", encoding="utf-8", errors="replace")
+    except OSError:
+        return {"action": "same", "reason": "no_tty", "collision": col}
+
+    try:
+        env_note = ", copies .env" if prefs.get("copy_env", True) else ""
+        tty_out.write(
+            "\n  \033[1;35mCollision in %s (%s)\033[0m — %d active agent%s already here: %s\n"
+            "  \033[1;36m[W]\033[0m New worktree (isolated branch%s)   "
+            "\033[1m[S]\033[0m Same folder   "
+            "\033[2m[C]\033[0m Cancel\n"
+            "  Choice [W/s/c]: "
+            % (col["repo_name"], col["branch"], n, "s" if n > 1 else "", names, env_note)
+        )
+        tty_out.flush()
+        line = tty_in.readline()
+    except KeyboardInterrupt:
+        try:
+            tty_out.write("\n")
+            tty_out.flush()
+        except OSError:
+            pass
+        return {"action": "cancel", "reason": "interrupted", "collision": col}
+    finally:
+        if not use_stdio:
+            try:
+                tty_in.close()
+            except OSError:
+                pass
+            try:
+                tty_out.close()
+            except OSError:
+                pass
+
+    if line == "":
+        return {"action": "cancel", "reason": "eof", "collision": col}
+    ans = line.strip().lower()
+    if ans in ("c", "cancel", "q", "quit"):
+        return {"action": "cancel", "reason": "user_cancel", "collision": col}
+    if ans in ("s", "same"):
+        return {"action": "same", "reason": "user_same", "collision": col}
+    # Default (Enter or w/worktree/y/yes): create isolated worktree
+    wt = create_worktree(target_dir, env=e)
+    _apply_worktree_labels(tab_id, wt, agent=agent, env=e)
+    try:
+        if use_stdio:
+            sys.stderr.write("  Isolated in worktree %s (%s)\n" % (wt["branch"], wt["path"]))
+            sys.stderr.flush()
+        else:
+            with open("/dev/tty", "w", encoding="utf-8", errors="replace") as f:
+                f.write("  \033[1;32m✓\033[0m Isolated in worktree \033[1;36m%s\033[0m\n" % wt["branch"])
+                f.flush()
+    except OSError:
+        pass
+    return {"action": "worktree", "path": wt["path"], "branch": wt["branch"], "collision": col}
+
+
 def _parse_args(argv, takes=(), flags=()):
     opts, rest, i = {}, [], 0
     while i < len(argv):
@@ -667,6 +901,20 @@ def run_cli(argv, env=None):
                     raise WorktreeError("bad_arg", "--copy-env expects 0 or 1")
             return write_prefs(mode=opts.get("--mode"), copy_env=ce, env=env)
         raise WorktreeError("usage", "usage: prefs [get | set ...]")
+    if cmd == "guard":
+        opts, rest = _parse_args(a, ("--agent", "--exclude"), ("--shell",))
+        if len(rest) > 1:
+            raise WorktreeError("usage", "usage: guard [DIR] [--agent NAME] [--exclude TAB] [--shell]")
+        target = rest[0] if rest else os.getcwd()
+        res = guard_shell_launch(
+            target,
+            agent=opts.get("--agent", ""),
+            exclude_tab=opts.get("--exclude"),
+            env=env,
+        )
+        if "--shell" in opts:
+            return ("__shell__", res)
+        return res
     raise WorktreeError("usage", "unknown command %s" % cmd)
 
 
@@ -680,6 +928,13 @@ def main(argv):
         out = {"err": e.code, "msg": e.message}
         out.update(e.extra)
         rc = EXIT.get(e.code, 1)
+    if isinstance(out, tuple) and len(out) == 2 and out[0] == "__shell__":
+        res = out[1]
+        if res.get("action") == "cancel":
+            return 130
+        if res.get("action") == "worktree" and res.get("path"):
+            print(res["path"])
+        return 0
     print(json.dumps(out, ensure_ascii=False))
     return rc
 

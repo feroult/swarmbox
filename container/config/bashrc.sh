@@ -62,6 +62,37 @@ alias grep='grep --color=auto'
 alias fgrep='fgrep --color=auto'
 alias egrep='egrep --color=auto'
 
+# --- Worktree collision guard for manual agent launches in interactive shells ---
+# Checks whether another live agent tab occupies the current Git working tree before starting
+# agy, claude, opencode, gemini, or codex interactively. Honors worktree-prefs.json (ask|auto|off)
+# and stays silent in non-TTY scripts, print mode (-p/--print), and when launched via Web Studio
+# (SWARMBOX_WORKTREE_GUARD=0, where the gateway popover already ran the guard).
+_sb_worktree_guard() {
+    [ -t 0 ] && [ -t 1 ] || return 0
+    [ "${SWARMBOX_WORKTREE_GUARD:-1}" != 0 ] || return 0
+    [ -z "${SWARMBOX_CMD:-}" ] || return 0
+    local _sb_ag=$1
+    shift || true
+    local _sb_a
+    for _sb_a in "$@"; do
+        case "$_sb_a" in
+            -h|--help|-v|--version|-p|--print|--output-format|--input-format) return 0 ;;
+        esac
+    done
+    local _sb_wt_bin=${SWARMBOX_TEST_WORKTREE_BIN:-swarmbox-worktree}
+    command -v "$_sb_wt_bin" > /dev/null 2>&1 || return 0
+    local _sb_wt_dir _sb_rc
+    _sb_wt_dir=$("$_sb_wt_bin" guard --shell --agent "$_sb_ag" --exclude "${HC_TERMINAL_ID:-}" "$PWD")
+    _sb_rc=$?
+    if [ "$_sb_rc" -eq 130 ]; then
+        return 130
+    fi
+    if [ "$_sb_rc" -eq 0 ] && [ -n "$_sb_wt_dir" ] && [ -d "$_sb_wt_dir" ]; then
+        cd "$_sb_wt_dir" || return 1
+    fi
+    return 0
+}
+
 # --- The addons ---
 # The shell.sh of every addon is sourced: what an addon wants in the shell (the auto-approve function of an agent, a port for
 # `clasp login`, the path of Go) is in its own file; this fragment reads no manifest. The user level (<config>/addons) wins over the
@@ -80,6 +111,17 @@ for _sb_base in "$SB_CONFIG_DIR/addons" "$_sb_image_addons"; do
     done
 done
 unset _sb_seen _sb_base _sb_d _sb_name
+
+# Wrap codex with the worktree collision guard too when installed without its own shell.sh.
+if ! declare -f codex > /dev/null 2>&1 && command -v codex > /dev/null 2>&1; then
+    codex() {
+        case "${1:-}" in
+            -h|--help|-v|--version|exec|login|logout|mcp|completion|help) command codex "$@"; return ;;
+        esac
+        _sb_worktree_guard codex "$@" || return $?
+        command codex "$@"
+    }
+fi
 
 # yolo: run the default agent, $SWARMBOX_AGENT (the host records it when the box is created: the AGENT setting, else the first addon
 # of WITH). The agent's own function (its shell.sh) starts it in auto-approve mode; yolo asks for that mode even when SWARMBOX_YOLO=0.

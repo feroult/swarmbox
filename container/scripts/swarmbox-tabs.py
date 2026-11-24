@@ -567,6 +567,10 @@ class TabsBackend:
         """Set display title metadata on `tab`."""
         raise TabsError("unsupported", "backend %s cannot rename tabs" % self.name)
 
+    def set_labels(self, tab, labels):
+        """Set arbitrary key=value labels on `tab`."""
+        raise TabsError("unsupported", "backend %s cannot label tabs" % self.name)
+
     def open_tab(self, name=None, cwd=None, agent=None, labels=None):
         """Open a new terminal tab (allowlisted agent or shell) and return its id."""
         raise TabsError("unsupported", "backend %s cannot open tabs" % self.name)
@@ -892,12 +896,23 @@ class HerdrBackend(TabsBackend):
         return lbls if isinstance(lbls, dict) else {}
 
     def rename_tab(self, tab, title, source="user"):
-        self.hc("label", tab.id, "swarmbox.title=%s" % title, "swarmbox.title_source=%s" % source)
+        self.set_labels(tab, {"swarmbox.title": title, "swarmbox.title_source": source})
+
+    def set_labels(self, tab, labels):
+        pairs = ["%s=%s" % (k, "" if v is None else v) for k, v in sorted((labels or {}).items()) if k]
+        if not pairs:
+            return
+        self.hc("label", tab.id, *pairs)
         meta = self._meta.get(tab.id)
         if isinstance(meta, dict):
             lbls = dict(meta.get("labels") or {})
-            lbls["swarmbox.title"] = title
-            lbls["swarmbox.title_source"] = source
+            for k, v in (labels or {}).items():
+                if not k:
+                    continue
+                if v is None or v == "":
+                    lbls.pop(k, None)
+                else:
+                    lbls[k] = str(v)
             meta["labels"] = lbls
 
     def _write_active(self, tab_id):
@@ -1052,6 +1067,19 @@ class Tabs:
             except (OSError, subprocess.TimeoutExpired):
                 pass
         return {"ok": True, "tab": t.id, "title": clean, "old_title": old_title, "source": src}
+
+    def label_tab(self, tab, labels):
+        if not isinstance(labels, dict) or not labels:
+            raise usage_error("at least one KEY=VALUE label is required")
+        clean = {}
+        for k, v in labels.items():
+            key = str(k or "").strip()
+            if not re.fullmatch(r"[a-zA-Z0-9._-]{1,64}", key):
+                raise usage_error("invalid label key %r" % key)
+            clean[key] = "" if v is None else str(v)[:512]
+        t = self.resolve(tab)
+        self.backend.set_labels(t, clean)
+        return {"ok": True, "tab": t.id, "labels": clean}
 
     def open_tab(self, name=None, cwd=None, agent=None, worktree=False, title=None):
         ag = (agent or "shell").strip().lower()
@@ -1429,6 +1457,17 @@ def run(argv, tabs=None):
         if len(rest) != 2:
             raise usage_error("usage: rename TAB TITLE [--source user|auto]")
         return tabs.rename_tab(rest[0], rest[1], source=opts.get("--source", "user"))
+    if cmd == "label":
+        _, rest = parse_args(a, (), ())
+        if len(rest) < 2:
+            raise usage_error("usage: label TAB KEY=VALUE [KEY=VALUE ...]")
+        pairs = {}
+        for item in rest[1:]:
+            if "=" not in item:
+                raise usage_error("label must be KEY=VALUE, got %r" % item)
+            k, v = item.split("=", 1)
+            pairs[k] = v
+        return tabs.label_tab(rest[0], pairs)
     if cmd == "focus":
         opts, rest = parse_args(a, (), ())
         if len(rest) != 1:

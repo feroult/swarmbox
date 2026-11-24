@@ -28,14 +28,12 @@ Settings persisted in `$SB_CONFIG_DIR/worktree-prefs.json` (live-editable in Web
 - `mode`: `"ask"` (default) | `"auto"` | `"off"`
 - `copy_env`: `true` (default) | `false`
 
-When opening a new agent tab in a Git repo — or waking a `PARKED` pin whose saved `cwd` points to a Git repo:
+When opening a new agent tab in a Git repo, waking a `PARKED` pin whose saved `cwd` points to a Git repo, or launching an agent (`agy`, `claude`, `opencode`, `gemini`, `codex`) manually inside an interactive shell:
 1. Check whether **another live terminal** is already running on the same Git working tree. (`PARKED` pins do **not** count as collisions.)
 2. **No collision:** opens directly in that directory with zero prompts.
 3. **Collision detected:**
-   - **`ask` (default):** shows a compact 2-button popover (no text fields):
-     - **`New worktree`** *(default focus, `Enter` creates immediately)*
-     - **`Same folder`** *(1 click to share the working tree, e.g. for reviewing uncommitted edits)*
-   - **`auto`:** immediately creates the isolated worktree and shows a non-blocking status toast.
+   - **`ask` (default):** in Web Studio, shows a compact 2-button popover (`New worktree` default focus / `Same folder`); in an interactive shell, `swarmbox-worktree guard` prompts `[W] New worktree / [S] Same folder / [C] Cancel`, switches `cwd` to the new worktree, and labels the terminal tab so the topbar Merge button appears immediately.
+   - **`auto`:** immediately creates the isolated worktree and shows a non-blocking status toast (or one-line shell notice).
    - **`off`:** opens directly in the same folder without prompting.
 
 When a `PARKED` pin collides and the user chooses **New worktree**, the new isolated worktree starts a fresh agent session (since `--continue` keys on directory path) while leaving the original folder untouched.

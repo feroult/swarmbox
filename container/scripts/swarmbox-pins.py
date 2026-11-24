@@ -203,12 +203,12 @@ def build_agent_argv(agent, resume="continue"):
         # which indicates no prior conversation exists in this directory.
         script = (
             "_sb_t0=$(date +%s); "
-            f"{ag} --continue; _sb_rc=$?; "
+            f"SWARMBOX_WORKTREE_GUARD=0 {ag} --continue; _sb_rc=$?; "
             "if [ \"$_sb_rc\" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt 4 ]; then "
-            f"{ag}; fi; exec /bin/bash -l"
+            f"SWARMBOX_WORKTREE_GUARD=0 {ag}; fi; exec /bin/bash -l"
         )
         return ["/bin/bash", "-lic", script]
-    return ["/bin/bash", "-lic", f"{ag}; exec /bin/bash -l"]
+    return ["/bin/bash", "-lic", f"SWARMBOX_WORKTREE_GUARD=0 {ag}; exec /bin/bash -l"]
 
 
 SHELL_NAMES = frozenset({"bash", "sh", "zsh", "dash", "fish", "ash", "ksh", "nu", "nushell", ""})

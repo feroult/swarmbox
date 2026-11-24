@@ -7,6 +7,14 @@ export OPENCODE_CONFIG=/tmp/swarmbox/opencode.json
 # and the like. SWARMBOX_YOLO=0 (set by the host, `swarmbox config set YOLO 0`) turns it off. `command opencode` reaches the program
 # (or its shim) on PATH, not this function.
 opencode() {
+    case "${1:-}" in
+        -h | --help | -v | --version | run | completion | acp | mcp | attach | debug | auth | agent | upgrade | uninstall | serve | web | models | stats | export | import | github | pr | session | db | generate) ;;
+        *)
+            if [ -z "${1:-}" ] || [ "${1#-}" != "$1" ] || [ -d "$1" ]; then
+                type _sb_worktree_guard >/dev/null 2>&1 && { _sb_worktree_guard opencode "$@" || return $?; }
+            fi
+            ;;
+    esac
     if [ "${SWARMBOX_YOLO:-1}" = 0 ]; then
         command opencode "$@"
         return

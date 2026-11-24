@@ -1346,11 +1346,11 @@ export function buildAgentArgv(agent, resume = 'continue') {
   }
   if (resume === 'continue' && CONTINUE_AGENTS.has(ag)) {
     const script =
-      `_sb_t0=$(date +%s); ${ag} --continue; _sb_rc=$?; ` +
-      `if [ "$_sb_rc" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt 4 ]; then ${ag}; fi; exec /bin/bash -l`;
+      `_sb_t0=$(date +%s); SWARMBOX_WORKTREE_GUARD=0 ${ag} --continue; _sb_rc=$?; ` +
+      `if [ "$_sb_rc" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt 4 ]; then SWARMBOX_WORKTREE_GUARD=0 ${ag}; fi; exec /bin/bash -l`;
     return ['/bin/bash', '-lic', script];
   }
-  return ['/bin/bash', '-lic', `${ag}; exec /bin/bash -l`];
+  return ['/bin/bash', '-lic', `SWARMBOX_WORKTREE_GUARD=0 ${ag}; exec /bin/bash -l`];
 }
 
 export function readPins() {

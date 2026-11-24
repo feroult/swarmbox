@@ -9,6 +9,7 @@ agy() {
             return
             ;;
     esac
+    type _sb_worktree_guard >/dev/null 2>&1 && { _sb_worktree_guard agy "$@" || return $?; }
     if [ "${SWARMBOX_YOLO:-1}" = 0 ]; then
         command agy "$@"
     else
