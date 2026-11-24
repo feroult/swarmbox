@@ -5,8 +5,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+
+const __clientDir = path.dirname(fileURLToPath(import.meta.url));
 
 // Frame kinds from the herdr-core framed binary JSON-RPC 2.0 protocol
 export const FRAME_DATA = 0;
@@ -23,6 +27,11 @@ export const SB_STATE_DIR = resolveXdg(process.env.XDG_STATE_HOME, path.join(HOM
 export const SB_DATA_DIR = resolveXdg(process.env.XDG_DATA_HOME, path.join(HOME, '.local', 'share'), 'swarmbox');
 export const SB_CONFIG_DIR = resolveXdg(process.env.XDG_CONFIG_HOME, path.join(HOME, '.config'), 'swarmbox');
 export const ADDON_BIN = process.env.SWARMBOX_TEST_ADDON_BIN || 'swarmbox-addon';
+export const BUS_BIN = process.env.SWARMBOX_TEST_BUS_BIN || 'swarmbox-bus';
+export const WORKTREE_BIN = process.env.SWARMBOX_TEST_WORKTREE_BIN || '';
+export const PINS_FILE = path.join(SB_CONFIG_DIR, 'pins.json');
+export const WORKTREE_PREFS_FILE = path.join(SB_CONFIG_DIR, 'worktree-prefs.json');
+export const CONTINUE_AGENTS = new Set(['claude', 'agy', 'opencode']);
 export const XDG_CONFIG_ROOT = isAbs(process.env.XDG_CONFIG_HOME)
   ? process.env.XDG_CONFIG_HOME.replace(/\/+$/, '')
   : path.join(HOME, '.config');
@@ -643,6 +652,11 @@ export class HerdrClient extends EventEmitter {
         (t.status && t.status.state) || '',
         (t.status && t.status.msg) || '',
         (t.status && t.status.progress) ?? '',
+        (t.labels && t.labels['swarmbox.title']) || '',
+        (t.labels && t.labels['swarmbox.title_source']) || '',
+        (t.labels && t.labels['swarmbox.pin_id']) || '',
+        (t.labels && t.labels['swarmbox.worktree']) || '',
+        (t.labels && t.labels['swarmbox.branch']) || '',
       ].join('\x1f'))
       .join('\x1e');
   }
@@ -1015,6 +1029,29 @@ export function readSysopSnapshot(terminals) {
       kind: t.status.kind || 'permission',
     }));
 
+  // System events (e.g. automatic tab renames by Sysop) shown inline in the visual feed
+  // without consuming the 8-goal user conversation memory window in history.py.
+  const systemEvents = [];
+  if (up) {
+    const rawEv = readJsonlSafe(path.join(stateSysop, 'system_events.jsonl'), 60);
+    for (const ev of rawEv) {
+      const ts = Number(ev && ev.ts ? ev.ts : 0);
+      if (ts > 0 && (nowSec - ts) > maxAgeSec) continue;
+      if (sinceSec && ts > 0 && ts < sinceSec) continue;
+      if (ev && ev.kind) {
+        systemEvents.push({
+          id: String(ev.id || `ev-${Math.round(ts * 1000)}`),
+          kind: String(ev.kind),
+          ts: ts * 1000,
+          tab: String(ev.tab || ''),
+          old_title: String(ev.old_title || ''),
+          new_title: String(ev.new_title || ''),
+          text: String(ev.text || ''),
+        });
+      }
+    }
+  }
+
   return {
     up,
     bus: up ? String(status.bus || '') : '',
@@ -1034,6 +1071,7 @@ export function readSysopSnapshot(terminals) {
       : null,
     queue_len: queue.length,
     turns,
+    system_events: systemEvents.slice(-30),
     steps: steps.slice(-40),
     blocked,
     settings: up && status.settings && typeof status.settings === 'object' ? status.settings : {},
@@ -1209,6 +1247,7 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
 
   const sysopSettings = {
     'sysop.autonomy': envField('SWARMBOX_SYSOP_AUTONOMY', 'full-auto', env),
+    'sysop.autoname': envField('SWARMBOX_SYSOP_AUTONAME', '1', env),
     'sysop.brain': envField('SWARMBOX_SYSOP_BRAIN', 'claude', env),
     'sysop.model': envField('SWARMBOX_SYSOP_MODEL', 'sonnet', env),
     'sysop.countdown': envField('SWARMBOX_SYSOP_COUNTDOWN', '4', env),
@@ -1243,5 +1282,239 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
     mcp: listMcpServers(),
     pubkey,
     health,
+    worktree_prefs: readWorktreePrefs(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Persistent Pinned Sessions (pins.json), Worktree Prefs & tab.events Bus
+// ---------------------------------------------------------------------------
+const AGENT_NAME_MAP = {
+  claude: 'claude',
+  'claude-code': 'claude',
+  agy: 'agy',
+  antigravity: 'agy',
+  opencode: 'opencode',
+  gemini: 'gemini',
+  codex: 'codex',
+};
+
+export function cleanSessionTitle(raw) {
+  return String(raw || '')
+    .replace(/[\x00-\x1f\x7f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
+
+export function defaultTitleForPath(cwd, agent = 'shell') {
+  const clean = String(cwd || '').replace(/\/+$/, '');
+  const home = HOME.replace(/\/+$/, '');
+  if (clean && clean !== '/' && clean !== home) {
+    const base = path.basename(clean);
+    if (base) return cleanSessionTitle(base);
+  }
+  return agent && agent !== 'shell' ? agent : 'shell';
+}
+
+export function terminalCwd(term) {
+  const c = (term && term.foreground && term.foreground.cwd) || (term && term.cwd) || HOME;
+  return typeof c === 'string' && c.startsWith('/') ? c : HOME;
+}
+
+export function detectTerminalAgent(term) {
+  if (!term || typeof term !== 'object') return '';
+  const app = String((term.status && term.status.app) || '').toLowerCase().trim();
+  if (AGENT_NAME_MAP[app]) return AGENT_NAME_MAP[app];
+  const fg = path.basename(String((term.foreground && term.foreground.name) || '')).toLowerCase();
+  if (AGENT_NAME_MAP[fg]) return AGENT_NAME_MAP[fg];
+  const ag = path.basename(String(term.agent || '')).toLowerCase();
+  if (AGENT_NAME_MAP[ag]) return AGENT_NAME_MAP[ag];
+  const lbl = String((term.labels && term.labels['swarmbox.agent']) || '').toLowerCase().trim();
+  if (AGENT_NAME_MAP[lbl]) return AGENT_NAME_MAP[lbl];
+  const nm = String(term.name || '').toLowerCase();
+  for (const [k, v] of Object.entries(AGENT_NAME_MAP)) {
+    if (nm === k || nm.startsWith(k + '-')) return v;
+  }
+  return '';
+}
+
+export function buildAgentArgv(agent, resume = 'continue') {
+  const ag = String(agent || 'shell').trim().toLowerCase();
+  if (ag === 'shell' || !ALLOWED_AGENT_CMDS.has(ag)) {
+    return ['/bin/bash', '-l'];
+  }
+  if (resume === 'continue' && CONTINUE_AGENTS.has(ag)) {
+    const script =
+      `_sb_t0=$(date +%s); ${ag} --continue; _sb_rc=$?; ` +
+      `if [ "$_sb_rc" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt 4 ]; then ${ag}; fi; exec /bin/bash -l`;
+    return ['/bin/bash', '-lic', script];
+  }
+  return ['/bin/bash', '-lic', `${ag}; exec /bin/bash -l`];
+}
+
+export function readPins() {
+  const d = readJsonSafe(PINS_FILE);
+  if (!d || !Array.isArray(d.pins)) return [];
+  return d.pins.filter((p) => p && typeof p === 'object' && typeof p.id === 'string' && p.id);
+}
+
+export function writePins(pins) {
+  fs.mkdirSync(SB_CONFIG_DIR, { recursive: true, mode: 0o700 });
+  const tmp = `${PINS_FILE}.tmp.${process.pid}.${crypto.randomBytes(2).toString('hex')}`;
+  fs.writeFileSync(tmp, JSON.stringify({ schema: 1, pins }, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(tmp, PINS_FILE);
+  return pins;
+}
+
+export function makePinId(existing = []) {
+  const used = new Set(existing.map((p) => p && p.id));
+  for (let i = 0; i < 32; i++) {
+    const id = 'p_' + crypto.randomBytes(3).toString('hex');
+    if (!used.has(id)) return id;
+  }
+  return 'p_' + Date.now().toString(36);
+}
+
+// Live auto-follow: keep pinned tabs' cwd, active agent (never downgrading an agent pin to shell),
+// title, and worktree metadata synchronized in pins.json whenever they change.
+export function syncPinsFromTerminals(terminals) {
+  if (!Array.isArray(terminals) || terminals.length === 0) return false;
+  const pins = readPins();
+  if (pins.length === 0) return false;
+  const byPinId = new Map();
+  for (const t of terminals) {
+    const pid = t && t.labels && t.labels['swarmbox.pin_id'];
+    if (pid) byPinId.set(String(pid), t);
+  }
+  let changed = false;
+  const nowSec = Math.floor(Date.now() / 1000);
+  for (const pin of pins) {
+    const t = byPinId.get(pin.id);
+    if (!t) continue;
+    const cwd = terminalCwd(t);
+    if (cwd && cwd !== pin.cwd && fs.existsSync(cwd)) {
+      pin.cwd = cwd;
+      pin.updated_at = nowSec;
+      changed = true;
+    }
+    // Upgrade or switch agent when a known agent is active; never downgrade an agent pin to shell on temporary exit
+    const liveAgent = detectTerminalAgent(t);
+    if (liveAgent && liveAgent !== pin.agent) {
+      pin.agent = liveAgent;
+      pin.updated_at = nowSec;
+      changed = true;
+    }
+    const lblTitle = cleanSessionTitle(t.labels && t.labels['swarmbox.title']);
+    const lblSrc = String((t.labels && t.labels['swarmbox.title_source']) || '');
+    if (lblTitle && lblTitle !== pin.title) {
+      pin.title = lblTitle;
+      if (lblSrc === 'user' || lblSrc === 'auto') pin.title_source = lblSrc;
+      pin.updated_at = nowSec;
+      changed = true;
+    } else if ((lblSrc === 'user' || lblSrc === 'auto') && lblSrc !== pin.title_source) {
+      pin.title_source = lblSrc;
+      pin.updated_at = nowSec;
+      changed = true;
+    }
+    const wtPath = t.labels && t.labels['swarmbox.worktree'];
+    if (wtPath && (!pin.worktree || pin.worktree.path !== wtPath)) {
+      pin.worktree = {
+        path: String(wtPath),
+        branch: String((t.labels && t.labels['swarmbox.branch']) || ''),
+        base: String((t.labels && t.labels['swarmbox.base']) || ''),
+        repo: String((t.labels && t.labels['swarmbox.repo']) || ''),
+      };
+      pin.updated_at = nowSec;
+      changed = true;
+    }
+  }
+  if (changed) {
+    try { writePins(pins); } catch (_) {}
+  }
+  return changed;
+}
+
+export function buildPinsSnapshot(terminals) {
+  const pins = readPins();
+  const liveByPin = new Map();
+  for (const t of terminals || []) {
+    const pid = t && t.labels && t.labels['swarmbox.pin_id'];
+    if (pid) liveByPin.set(String(pid), t);
+  }
+  return pins.map((p) => {
+    const liveTerm = liveByPin.get(p.id) || null;
+    const cwd = String(p.cwd || '');
+    let missingCwd = false;
+    try { missingCwd = !cwd || !fs.existsSync(cwd); } catch (_) { missingCwd = true; }
+    return {
+      ...p,
+      live: Boolean(liveTerm),
+      parked: !liveTerm,
+      live_address: liveTerm ? liveTerm.address : null,
+      missing_cwd: missingCwd,
+    };
+  });
+}
+
+const VALID_WT_MODES = new Set(['ask', 'auto', 'off']);
+
+export function readWorktreePrefs() {
+  const d = readJsonSafe(WORKTREE_PREFS_FILE);
+  return {
+    mode: d && VALID_WT_MODES.has(d.mode) ? d.mode : 'ask',
+    copy_env: d && typeof d.copy_env === 'boolean' ? d.copy_env : true,
+  };
+}
+
+export function writeWorktreePrefs(patch = {}) {
+  const cur = readWorktreePrefs();
+  if (patch.mode !== undefined) {
+    if (!VALID_WT_MODES.has(patch.mode)) throw new Error('mode must be ask, auto, or off');
+    cur.mode = patch.mode;
+  }
+  if (patch.copy_env !== undefined) {
+    cur.copy_env = Boolean(patch.copy_env);
+  }
+  fs.mkdirSync(SB_CONFIG_DIR, { recursive: true, mode: 0o700 });
+  const tmp = `${WORKTREE_PREFS_FILE}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(cur, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(tmp, WORKTREE_PREFS_FILE);
+  return cur;
+}
+
+function resolveWorktreeCommand() {
+  if (WORKTREE_BIN) return [WORKTREE_BIN, []];
+  const sibling = path.resolve(__clientDir, '..', '..', 'scripts', 'swarmbox-worktree.py');
+  if (fs.existsSync(sibling)) return ['python3', [sibling]];
+  return ['swarmbox-worktree', []];
+}
+
+export async function runWorktreeCmd(args, timeoutMs = 20000) {
+  const [bin, prefix] = resolveWorktreeCommand();
+  const r = await runCommand(bin, [...prefix, ...args], null, timeoutMs);
+  let data = null;
+  if (r.stdout) {
+    try { data = JSON.parse(r.stdout); } catch (_) {}
+  }
+  if (!r.ok) {
+    const err = new Error((data && data.msg) || r.stderr || r.stdout || `worktree ${args[0] || ''} failed`);
+    err.code = (data && data.err) || 'worktree_error';
+    err.data = data || {};
+    throw err;
+  }
+  return data;
+}
+
+export function publishTabEvent(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  try {
+    const p = spawn(BUS_BIN, ['pub', '--allow-none', '--source', 'gateway', 'tab.events', '-'], {
+      stdio: ['pipe', 'ignore', 'ignore'],
+      env: process.env,
+    });
+    p.on('error', () => {});
+    p.stdin.on('error', () => {});
+    p.stdin.end(JSON.stringify(payload) + '\n');
+  } catch (_) {}
 }

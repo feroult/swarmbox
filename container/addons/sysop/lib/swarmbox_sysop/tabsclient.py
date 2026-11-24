@@ -29,6 +29,7 @@ READ_TIMEOUT = 20.0        # list, screen: hc calls have a timeout of 5 s each i
 SEND_TIMEOUT = 120.0       # send: the lock wait (30 s), the pauses between keys and the check that the text left the input box
 MAX_OUT = 4 << 20
 ENV_CMD = "SWARMBOX_SYSOP_TABS_CMD"
+ENV_WORKTREE_CMD = "SWARMBOX_SYSOP_WORKTREE_CMD"
 
 
 class TabsError(Exception):
@@ -93,7 +94,7 @@ class Tabs:
         args = ["send", tab, "--run" if run is not None else "--input", "-"] + (["--queue"] if run is not None else [])
         return self.call(args, stdin=text + "\n", timeout=self.send_timeout)
 
-    def open_tab(self, name=None, cwd=None, agent=None):
+    def open_tab(self, name=None, cwd=None, agent=None, worktree=False):
         args = ["open"]
         if name:
             args += ["--name", str(name)]
@@ -101,7 +102,38 @@ class Tabs:
             args += ["--cwd", str(cwd)]
         if agent:
             args += ["--agent", str(agent)]
+        if worktree:
+            args += ["--worktree"]
         return self.call(args)
+
+    def rename_tab(self, tab, title, source="auto"):
+        return self.call(["rename", str(tab), str(title), "--source", str(source)])
+
+    def worktree(self, action, path, clean=False, force=False):
+        wt_cmd = shlex.split(self.env.get(ENV_WORKTREE_CMD) or "swarmbox-worktree")
+        args = [str(action), str(path)]
+        if action == "merge" and clean:
+            args.append("--clean")
+        if action == "remove" and force:
+            args.append("--force")
+        try:
+            p = subprocess.run(wt_cmd + args, input=b"", env=self.env,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=self.read_timeout)
+        except subprocess.TimeoutExpired:
+            raise TabsError("tabs_timeout", "swarmbox-worktree did not answer in %g s" % self.read_timeout)
+        except OSError as e:
+            raise TabsError("tabs_unavailable", "cannot run %s: %s" % (wt_cmd[0], e.strerror or e))
+        out = p.stdout[:MAX_OUT]
+        try:
+            obj = json.loads(out.decode("utf-8", "replace"))
+        except ValueError:
+            tail = p.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or ["no output"]
+            raise TabsError("tabs_protocol", "swarmbox-worktree exited %d (%s)" % (p.returncode, tail[0][:200]))
+        if isinstance(obj, dict) and "err" in obj:
+            raise TabsError(str(obj["err"]), str(obj.get("msg", "")))
+        if p.returncode != 0:
+            raise TabsError("tabs_protocol", "swarmbox-worktree exited %d without an error object" % p.returncode)
+        return obj
 
     def focus_tab(self, tab):
         return self.call(["focus", str(tab)])

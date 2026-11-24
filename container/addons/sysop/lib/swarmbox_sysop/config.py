@@ -26,6 +26,7 @@ DEFAULTS = {
     "brain": "claude",
     "model": "sonnet",
     "autonomy": "full-auto",
+    "autoname": "1",
     "countdown": "4",
     "approval_timeout": "60",
     "max_steps": "20",
@@ -94,6 +95,10 @@ def load(env):
     if raw["autonomy"] not in AUTONOMY:
         raise ConfigError("%s: one of %s" % (ENV["autonomy"], ", ".join(AUTONOMY)))
     v["autonomy"] = raw["autonomy"]
+    an = raw["autoname"].strip().lower()
+    if an not in ("0", "1", "true", "false"):
+        raise ConfigError("%s: 0 or 1 expected, got %r" % (ENV["autoname"], raw["autoname"]))
+    v["autoname"] = an in ("1", "true")
     v["countdown"] = _number(ENV["countdown"], raw["countdown"], 0, 60, False)
     v["approval_timeout"] = _number(ENV["approval_timeout"], raw["approval_timeout"], 1, 3600, False)
     v["max_steps"] = _number(ENV["max_steps"], raw["max_steps"], 1, 500, True)

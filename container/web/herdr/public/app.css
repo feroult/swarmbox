@@ -2929,3 +2929,406 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
 @media (min-width: 861px) {
   .send-ico { display: none; }
 }
+
+/* ---- Pinned Sessions, Inline Rename, Git Worktrees & Sysop System Events ---- */
+.section-label-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-card.is-parked {
+  background: rgba(20, 17, 30, 0.56);
+  border-style: dashed;
+  border-color: rgba(167, 139, 250, 0.28);
+}
+.agent-card.is-parked .pixel-stage {
+  opacity: 0.58;
+  filter: saturate(0.55);
+}
+.agent-card.is-parked:hover {
+  border-color: var(--border-strong);
+  background: rgba(36, 30, 51, 0.72);
+}
+.agent-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.card-act-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.72;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.card-act-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.card-act-btn.is-pinned {
+  color: var(--accent-bright);
+  opacity: 1;
+}
+.card-act-btn.is-autostart {
+  color: var(--amber);
+  opacity: 1;
+}
+.auto-name-badge {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 0.5px 4px;
+  border-radius: 4px;
+  background: rgba(103, 232, 249, 0.12);
+  color: #67e8f9;
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  margin-left: 5px;
+  vertical-align: middle;
+}
+.inline-rename-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1.5px solid var(--accent);
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.22);
+}
+.wt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(103, 232, 249, 0.11);
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  color: #a5f3fc;
+  cursor: pointer;
+  max-width: 125px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wt-chip:hover {
+  background: rgba(103, 232, 249, 0.2);
+}
+.wake-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: rgba(124, 58, 237, 0.25);
+  border: 1px solid rgba(167, 139, 250, 0.48);
+  color: #e9d5ff;
+  cursor: pointer;
+}
+.wake-pill.is-missing {
+  background: rgba(251, 191, 36, 0.14);
+  border-color: rgba(251, 191, 36, 0.42);
+  color: #fde68a;
+}
+.topbar-wt-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 7px;
+  background: rgba(103, 232, 249, 0.13);
+  border: 1px solid rgba(103, 232, 249, 0.4);
+  color: #cffafe;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topbar-wt-btn:hover {
+  background: rgba(103, 232, 249, 0.22);
+}
+.topbar-wt-btn.is-warn {
+  background: rgba(251, 191, 36, 0.16);
+  border-color: rgba(251, 191, 36, 0.48);
+  color: #fef08a;
+}
+.topbar-wt-btn-sm {
+  font-size: 10px;
+  padding: 2px 7px;
+  max-width: 130px;
+}
+.pending-wt-pill {
+  appearance: none;
+  width: 100%;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fde68a;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.pending-wt-pill:hover {
+  background: rgba(251, 191, 36, 0.16);
+}
+.pending-wt-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pending-wt-count {
+  background: rgba(251, 191, 36, 0.22);
+  padding: 1px 6px;
+  border-radius: 99px;
+  font-weight: 800;
+}
+.m-tab.is-parked {
+  border-style: dashed;
+  opacity: 0.82;
+}
+
+/* Compact Popover Dialog */
+.studio-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(7, 6, 10, 0.56);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.studio-popover-backdrop.hidden { display: none; }
+.studio-popover {
+  width: 100%;
+  max-width: 370px;
+  background: #171324;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.72);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.spop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.spop-badge {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(167, 139, 250, 0.16);
+  color: var(--accent-bright);
+}
+.spop-badge.ok { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+.spop-badge.warn { background: rgba(251, 191, 36, 0.16); color: #fbbf24; }
+.spop-sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.spop-btn {
+  appearance: none;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text);
+}
+.spop-btn.primary {
+  background: linear-gradient(135deg, var(--btn-grad-1), var(--btn-grad-2));
+  border-color: rgba(196, 181, 253, 0.45);
+  color: #fff;
+}
+.spop-btn.green {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  border-color: rgba(134, 239, 172, 0.45);
+  color: #fff;
+}
+.spop-btn.amber {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  border-color: rgba(253, 230, 138, 0.45);
+  color: #fff;
+}
+.spop-btn.secondary {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.spop-btn.secondary:hover { background: var(--surface-hover); }
+.spop-btn.danger {
+  background: rgba(229, 72, 77, 0.14);
+  border-color: rgba(255, 107, 120, 0.4);
+  color: #fda4af;
+}
+.spop-hint {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  opacity: 0.82;
+}
+.spop-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  margin-top: -4px;
+}
+.spop-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.spop-link-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--accent-bright);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.spop-link-btn:hover { text-decoration: underline; }
+.spop-wt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.spop-wt-row {
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.spop-wt-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+}
+.spop-wt-row-btns {
+  display: flex;
+  gap: 6px;
+}
+.spop-wt-row-btns button {
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Sysop Feed Inline Auto-Rename System Event Row */
+.sysop-sysev {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(103, 232, 249, 0.07);
+  border: 1px dashed rgba(103, 232, 249, 0.3);
+  font-size: 11.5px;
+  color: #cffafe;
+  line-height: 1.35;
+}
+.sysop-sysev-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.sysop-sysev-time {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+.sysop-sysev-edit {
+  appearance: none;
+  border: none;
+  background: rgba(167, 139, 250, 0.16);
+  color: var(--accent-bright);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sysop-sysev-edit:hover {
+  background: rgba(167, 139, 250, 0.28);
+}
+
+@media (max-width: 860px) {
+  .studio-popover-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .studio-popover {
+    max-width: none;
+    border-radius: 20px 20px 0 0;
+    padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+  }
+}

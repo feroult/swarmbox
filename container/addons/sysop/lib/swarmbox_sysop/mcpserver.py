@@ -33,7 +33,7 @@ import sys
 import time
 
 from . import audit as auditmod
-from . import ipc, paths, policy, tabsclient
+from . import autoname, ipc, paths, policy, tabsclient
 
 SUPPORTED = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
 SERVER_NAME = "sysop"
@@ -145,7 +145,10 @@ _SHELL_CMDS = ("bash", "sh", "zsh", "dash", "fish", "-bash", "-sh", "-zsh")
 
 def display_name(t):
     """The name of a tab as the web studio shows it (tabTitleParts in public/app.js), so the user and the sysop call a tab the same: a tab with
-    a name of its own keeps it; a generic one (shell, shell-4) is called by its folder, else by the program it runs."""
+    a custom or auto title uses it; a name of its own keeps it; a generic one (shell, shell-4) is called by its folder, else by the program it runs."""
+    title = str(t.get("title") or "").strip()
+    if title:
+        return title
     raw = str(t.get("name") or "").strip()
     if raw and not _GENERIC_SHELL.fullmatch(raw):
         return raw
@@ -178,9 +181,16 @@ class Server:
                          {"tab": ("string", "tab id; default: the active tab"), "lines": ("integer", "also this many lines of history (not for full-screen programs)")}),
             "box_info": (self.t_box_info, "Read-only box health snapshot: disk free, memory, mux, installed addons, and running nested Podman containers.", {}),
             "focus_tab": (self.t_focus_tab, "Switch the active tab in the UI to the given tab.", {"tab": ("string!", "tab id, label, index, or unique name")}),
-            "open_tab": (self.t_open_tab, "Open a new terminal tab running a shell or an allowlisted coding agent (shell, claude, agy, opencode, codex, gemini).",
+            "open_tab": (self.t_open_tab, "Open a new terminal tab running a shell or an allowlisted coding agent (shell, claude, agy, opencode, codex, gemini). Pass worktree=true to isolate it in a new git worktree.",
                          {"name": ("string", "optional short tab name"), "cwd": ("string", "optional working directory"),
-                          "agent": ("string", "shell (default), claude, agy, opencode, codex, or gemini")}),
+                          "agent": ("string", "shell (default), claude, agy, opencode, codex, or gemini"),
+                          "worktree": ("boolean", "true to create an isolated git worktree from cwd")}),
+            "rename_tab": (self.t_rename_tab, "Give a tab a concise display title (2 to 4 words). Never overwrites a title set manually by the user unless asked.",
+                           {"tab": ("string", "tab id; default: the active tab"), "title": ("string!", "concise display title")}),
+            "worktree": (self.t_worktree, "Inspect, cleanly merge, or remove the git worktree of a tab (action: status | merge | remove).",
+                         {"tab": ("string", "tab id; default: the active tab"),
+                          "action": ("string!", "status (read-only), merge (clean merge into base), or remove"),
+                          "clean": ("boolean", "for merge: also close the tab and remove the worktree after merging")}),
             "close_tab": (self.t_close_tab, "Close a terminal tab and end its program. The host may ask the user first, depending on the autonomy.",
                           {"tab": ("string!", "tab id, label, index, or unique name")}),
             "run": (self.t_run, "Type a command (or a prompt for an agent) in a tab and press Enter; returns the screen once it settled. "
@@ -242,6 +252,8 @@ class Server:
             raise ToolError("error: bad arguments: %s must be a whole number" % name)
         if typ == "number" and (isinstance(v, bool) or not isinstance(v, (int, float))):
             raise ToolError("error: bad arguments: %s must be a number" % name)
+        if typ == "boolean" and not isinstance(v, bool):
+            raise ToolError("error: bad arguments: %s must be a boolean" % name)
         return v
 
     def screen_text(self, tab, lines=None):
@@ -360,6 +372,14 @@ class Server:
         for t in tabs:
             row = {"tab": t["tab"], "name": _name(display_name(t), MAX_NAME), "label": _name(t.get("label"), MAX_NAME), "dir": _name(t.get("dir"), MAX_DIR),
                    "cmd": _name(t.get("cmd"), MAX_NAME), "active": bool(t.get("active"))}
+            if t.get("pinned"):
+                row["pinned"] = True
+            if isinstance(t.get("worktree"), dict) and t["worktree"].get("branch"):
+                row["worktree"] = {
+                    "branch": _name(t["worktree"].get("branch"), 48),
+                    "base": _name(t["worktree"].get("base"), 32),
+                    "repo": _name(t["worktree"].get("repo"), MAX_DIR),
+                }
             if isinstance(t.get("status"), dict) and t["status"].get("state"):
                 st = {"state": _name(t["status"].get("state"), 24)}
                 if isinstance(t["status"].get("progress"), (int, float)):
@@ -448,14 +468,60 @@ class Server:
         name = self.arg(args, "name", "string")
         cwd = self.arg(args, "cwd", "string")
         agent = self.arg(args, "agent", "string") or "shell"
+        worktree = bool(self.arg(args, "worktree", "boolean"))
         # a new tab starts a program (an agent in auto-approve mode): the policy routes it like any other action (confirm-all asks)
-        what = "open tab %s (%s%s)" % (name or agent, agent, ", in " + cwd if cwd else "")
+        what = "open tab %s (%s%s%s)" % (name or agent, agent, ", in " + cwd if cwd else "", ", new worktree" if worktree else "")
         verdict = policy.Verdict(level="low", block=False, reasons=["opens a new tab running " + agent])
         route = self.policy.route(verdict)
         self.last_verdict = verdict.as_dict()
         self.gate("open_tab", {"tab": "new", "label": name or agent}, what, verdict, route)
-        res = self.tabs_call(self.tabs.open_tab, name=name, cwd=cwd, agent=agent)
-        return "opened tab %s (%s, agent=%s)" % (res.get("tab") or "?", res.get("name") or agent, res.get("agent") or agent)
+        if worktree:
+            res = self.tabs_call(self.tabs.open_tab, name=name, cwd=cwd, agent=agent, worktree=True)
+        else:
+            res = self.tabs_call(self.tabs.open_tab, name=name, cwd=cwd, agent=agent)
+        extra = ""
+        if isinstance(res.get("worktree"), dict) and res["worktree"].get("branch"):
+            extra = ", worktree=" + str(res["worktree"]["branch"])
+        return "opened tab %s (%s, agent=%s%s)" % (res.get("tab") or "?", res.get("name") or agent, res.get("agent") or agent, extra)
+
+    def t_rename_tab(self, args):
+        tab = self.resolve(self.arg(args, "tab", "string"))
+        title = self.arg(args, "title", "string", True).strip()[:60]
+        if not title:
+            raise ToolError("error: bad arguments: title cannot be empty")
+        res = self.tabs_call(self.tabs.rename_tab, tab["tab"], title, source="auto")
+        old_title = str(res.get("old_title") or display_name(tab))
+        self.audit.append("tab", op="rename", tab=tab["tab"], old_title=old_title, new_title=title)
+        sys_ev = os.path.join(os.path.dirname(self.ctx.audit_path), "system_events.jsonl")
+        autoname.append_system_event(sys_ev, "autoname", clock=self.clock, tab=tab["tab"], old_title=old_title, new_title=title)
+        return "renamed %s -> %s" % (old_title, title)
+
+    def t_worktree(self, args):
+        tab = self.resolve(self.arg(args, "tab", "string"))
+        action = self.arg(args, "action", "string", True).strip().lower()
+        clean = bool(self.arg(args, "clean", "boolean"))
+        if action not in ("status", "merge", "remove"):
+            raise ToolError("error: bad arguments: action must be status, merge, or remove")
+        wt = tab.get("worktree") if isinstance(tab.get("worktree"), dict) else {}
+        target = wt.get("path") or os.path.expanduser(str(tab.get("dir") or ""))
+        if not target:
+            raise ToolError("error: not_a_worktree: tab has no directory")
+        if action == "status":
+            res = self.tabs_call(self.tabs.worktree, "status", target)
+            return json.dumps(res)
+        level = "medium" if action == "merge" else "high"
+        desc = "%s worktree of %s (%s)" % (action, display_name(tab), wt.get("branch") or target)
+        verdict = policy.Verdict(level=level, block=False, reasons=["git worktree %s" % action])
+        route = self.policy.route(verdict)
+        self.last_verdict = verdict.as_dict()
+        self.gate("worktree_" + action, tab, desc, verdict, route)
+        res = self.tabs_call(self.tabs.worktree, action, target, clean=clean)
+        if action == "merge" and clean and res.get("ok"):
+            try:
+                self.tabs.close_tab(tab["tab"])
+            except tabsclient.TabsError:
+                pass
+        return json.dumps(res)
 
     def t_close_tab(self, args):
         tab = self.resolve(self.arg(args, "tab", "string", True))

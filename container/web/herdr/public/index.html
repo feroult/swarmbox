@@ -55,9 +55,24 @@
           <div class="section-label-left">
             <span>Agents</span>
           </div>
-          <span class="busy-pill" id="agents-busy-count">0 busy</span>
+          <div class="section-label-right">
+            <span class="busy-pill" id="agents-busy-count">0 busy</span>
+            <button type="button" class="icon-btn icon-btn-sm" id="btn-new-agent" title="New agent tab in current folder" aria-label="New agent tab">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+            </button>
+          </div>
         </div>
         <div class="agent-cards" id="sidebar-agents"></div>
+      </div>
+
+      <div class="sidebar-section sidebar-parked hidden" id="sidebar-parked-section">
+        <div class="section-label">
+          <div class="section-label-left">
+            <span>Pinned · Parked</span>
+            <span class="count-pill" id="parked-count">0</span>
+          </div>
+        </div>
+        <div class="agent-cards" id="sidebar-parked"></div>
       </div>
 
       <div class="sidebar-section sidebar-shells" id="sidebar-shells-section">
@@ -72,6 +87,14 @@
         </div>
         <div class="tab-list" id="sidebar-tabs" role="tablist" aria-label="Shells"></div>
       </div>
+
+      <button type="button" class="pending-wt-pill hidden" id="sidebar-pending-wt" title="View pending Git worktrees">
+        <span class="pending-wt-left">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.5-7 1.8-7 3.4"/></svg>
+          <span>Pending worktrees</span>
+        </span>
+        <span class="pending-wt-count" id="pending-wt-count">0</span>
+      </button>
     </div>
 
     <div class="sidebar-foot">
@@ -99,6 +122,7 @@
         <div class="topbar-ctx desktop-only" id="topbar-ctx">
           <span class="term-ctx-icon" id="term-ctx-icon" aria-hidden="true"></span>
           <span class="term-ctx-title" id="term-ctx-title">—</span>
+          <button type="button" class="topbar-wt-btn hidden" id="topbar-wt-btn" title="Worktree status &amp; merge"></button>
           <span class="term-ctx-sep" aria-hidden="true">·</span>
           <span class="term-ctx-sub" id="active-status">idle</span>
           <span class="term-ctx-state" id="term-ctx-state" data-state="idle">IDLE</span>
@@ -108,6 +132,7 @@
           <span class="status-dot" id="active-dot" data-state="idle"></span>
           <span class="active-name" id="active-name">—</span>
           <span class="tab-agent-tag hidden" id="active-agent"></span>
+          <button type="button" class="topbar-wt-btn topbar-wt-btn-sm hidden" id="mobile-wt-btn" title="Worktree status &amp; merge"></button>
         </div>
       </div>
 
@@ -150,7 +175,7 @@
     <!-- Slim Bottom Status Bar (Desktop) -->
     <footer class="stage-statusbar desktop-only" id="stage-statusbar">
       <div class="sb-left" id="statusbar-summary">SwarmBox</div>
-      <div class="sb-right">Alt+1..9 tabs · Alt+B sidebar · Alt+N new · Alt+, settings</div>
+      <div class="sb-right">Alt+1..9 tabs · Alt+R rename · Alt+B sidebar · Alt+N new · Alt+, settings</div>
     </footer>
 
     <!-- Mobile Bottom Dock (SwarmBox v2.0.24 compact glass dock: collapsible keys + Sysop capsule + Keyboard + Mic) -->
@@ -313,6 +338,11 @@
       </div>
     </div>
   </aside>
+</div>
+
+<!-- Compact Floating Popover (Worktree Collision / Merge / Pending Worktrees) -->
+<div class="studio-popover-backdrop hidden" id="studio-popover-backdrop" aria-hidden="true">
+  <div class="studio-popover" id="studio-popover" role="dialog" aria-modal="true"></div>
 </div>
 
 <!-- First-Class Studio Settings Modal (Desktop Dialog / Mobile Bottom Sheet) -->

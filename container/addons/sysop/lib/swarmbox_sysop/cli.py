@@ -26,7 +26,7 @@ import signal
 import sys
 import time
 
-from . import actions, brain, busclient, config, ipc, mcpserver, paths, policy, service, state, ui_host, watch
+from . import actions, autoname, brain, busclient, config, ipc, mcpserver, paths, policy, service, state, ui_host, watch
 
 EXIT = {"no_subscriber": 3, "bus_down": 4, "bus_closed": 4, "too_large": 5, "bad_topic": 6, "bad_request": 6, "bad_body": 6, "busy": 7}
 
@@ -107,6 +107,16 @@ def cmd_serve(args):
     if args.log:
         svc.housekeeping = lambda: rotate_log(pth)
     ui = ui_host.start_ui(pth, cfg, log=svc.log, enabled=args.dock)
+    namer = None
+    if args.dock and getattr(cfg, "autoname", True) and os.environ.get("SWARMBOX_SYSOP_NO_AUTONAME") != "1":
+        namer = autoname.AutoNamer(
+            svc.bus,
+            pth,
+            audit=svc.audit,
+            is_busy=lambda: svc.current is not None,
+            log=svc.log,
+        )
+        namer.start()
     for sg in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sg, lambda *_: svc.shutdown())
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
@@ -114,6 +124,8 @@ def cmd_serve(args):
     try:
         rc = svc.run()
     finally:
+        if namer is not None:
+            namer.stop()
         ui.shutdown(unset=rc != 9)      # 9: another service is running and keeps the UI state
     if rc == 9:
         print("swarmbox-sysop: already running", file=sys.stderr)

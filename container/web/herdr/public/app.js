@@ -226,6 +226,16 @@
   const sidebarTabsEl = document.getElementById('sidebar-tabs');
   const sidebarAgentsSectionEl = document.getElementById('sidebar-agents-section');
   const sidebarAgentsEl = document.getElementById('sidebar-agents');
+  const sidebarParkedSectionEl = document.getElementById('sidebar-parked-section');
+  const sidebarParkedEl = document.getElementById('sidebar-parked');
+  const parkedCountEl = document.getElementById('parked-count');
+  const sidebarPendingWtEl = document.getElementById('sidebar-pending-wt');
+  const pendingWtCountEl = document.getElementById('pending-wt-count');
+  const btnNewAgent = document.getElementById('btn-new-agent');
+  const topbarWtBtnEl = document.getElementById('topbar-wt-btn');
+  const mobileWtBtnEl = document.getElementById('mobile-wt-btn');
+  const popoverBackdropEl = document.getElementById('studio-popover-backdrop');
+  const popoverEl = document.getElementById('studio-popover');
   const agentsBusyCountEl = document.getElementById('agents-busy-count');
   const topbarTabsEl = document.getElementById('topbar-tabs');
   const mobileTabsEl = document.getElementById('mobile-tabs');
@@ -287,6 +297,11 @@
   const MAX_TAB_SESSIONS = 8;
 
   let terminals = [];
+  let pins = [];
+  let pendingWorktrees = [];
+  let worktreePrefs = { mode: 'ask', copy_env: true };
+  let editingTabId = null;
+  let popoverOpen = false;
   let activeId = null;
   let lastServerActive = null;   // the active tab the gateway reported last (the herdr-active-tab marker)
   let currentThemeKey = 'purple-glow';
@@ -1240,6 +1255,7 @@
     if (key >= '1' && key <= '9') return { action: 'tab', idx: Number(key) - 1 };
 
     if (code === 'KeyN' || low === 'n') return { action: 'new-shell' };
+    if (code === 'KeyR' || low === 'r') return { action: 'rename' };
     if (code === 'KeyS' || low === 's') return { action: 'sysop' };
     if (code === 'KeyB' || low === 'b') return { action: 'sidebar' };
     if (code === 'KeyG' || low === 'g') return { action: 'goal' };
@@ -1263,6 +1279,7 @@
       return;
     }
     if (sc.action === 'new-shell') { spawnTab('shell'); return; }
+    if (sc.action === 'rename') { if (activeId) startInlineRename(activeId); return; }
     if (sc.action === 'sysop') { toggleDesktopSysop(); return; }
     if (sc.action === 'sidebar') { toggleSidebar(); return; }
     if (sc.action === 'goal') {
@@ -1289,6 +1306,15 @@
   }
 
   window.addEventListener('keydown', (e) => {
+    if (popoverOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closePopover();
+        return;
+      }
+      return;
+    }
     if (settingsOpen) {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -1359,9 +1385,14 @@
 
   function tabTitleParts(t) {
     if (!t) return { title: 'shell', pill: '' };
+    const customTitle = String((t.labels && t.labels['swarmbox.title']) || '').trim();
     const rawName = String(t.name || '').trim();
     const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);
     const badge = tabAgentBadge(t);
+    if (customTitle) {
+      const pill = badge && !customTitle.toLowerCase().includes(badge) ? badge : '';
+      return { title: customTitle, pill };
+    }
     const pill = badge && (isGenericShell || !rawName.toLowerCase().includes(badge)) ? badge : '';
 
     if (!isGenericShell) {
@@ -2325,6 +2356,390 @@
     return 'Z';
   }
 
+  const ICO_PIN_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M9.8 1.5l4.7 4.7-1.1 1.1-1.3-.3-2.5 2.5.4 2.1-1.1 1.1-2.5-2.5L3 13.6l-.6-.6 3.4-3.4-2.5-2.5 1.1-1.1 2.1.4L9 3.9l-.3-1.3 1.1-1.1z"/></svg>';
+  const ICO_BOLT_SVG = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M9.2 1L3 9h4.4l-.8 6L13 7H8.6l.6-6z"/></svg>';
+  const ICO_BRANCH_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.5-7 1.8-7 3.4"/></svg>';
+
+  function shortDisplayPath(p) {
+    const s = String(p || '');
+    return s.startsWith('/home/agent') ? '~' + s.slice('/home/agent'.length) : s;
+  }
+
+  function startInlineRename(address) {
+    if (!address || !terminals.some((t) => t.address === address)) return;
+    if (window.innerWidth > 860 && appEl.dataset.sidebarOpen !== '1') {
+      appEl.dataset.sidebarOpen = '1';
+      scheduleFit();
+    }
+    editingTabId = address;
+    renderTabs();
+    requestAnimationFrame(() => {
+      const inp = document.querySelector(`.inline-rename-input[data-tab="${CSS.escape(address)}"]`);
+      if (inp) {
+        inp.focus();
+        inp.select();
+      }
+    });
+  }
+
+  async function commitInlineRename(address, nextTitle) {
+    const clean = String(nextTitle || '').trim();
+    editingTabId = null;
+    renderTabs();
+    if (!clean) {
+      focusTerminalIfDesktop();
+      return;
+    }
+    await fetch(`/api/tabs/${encodeURIComponent(address)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: clean, title_source: 'user' }),
+    }).catch(() => {});
+    focusTerminalIfDesktop();
+  }
+
+  async function togglePinForTab(t) {
+    const pinId = t && t.labels && t.labels['swarmbox.pin_id'];
+    if (pinId) {
+      await fetch(`/api/pins/${encodeURIComponent(pinId)}`, { method: 'DELETE' }).catch(() => {});
+      showTermToast('Unpinned session');
+      return;
+    }
+    const r = await fetch('/api/pins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ terminal: t.address }),
+    }).catch(() => null);
+    if (r && r.ok) showTermToast('Pinned session (auto-follows folder & agent)');
+  }
+
+  async function togglePinAutostart(pin) {
+    if (!pin || !pin.id) return;
+    const next = !pin.autostart;
+    const r = await fetch(`/api/pins/${encodeURIComponent(pin.id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ autostart: next }),
+    }).catch(() => null);
+    if (r && r.ok) showTermToast(next ? 'Autostart on boot enabled' : 'Autostart disabled (parked on boot)');
+  }
+
+  async function unpinById(pinId) {
+    await fetch(`/api/pins/${encodeURIComponent(pinId)}`, { method: 'DELETE' }).catch(() => {});
+    showTermToast('Removed pin');
+  }
+
+  function closePopover() {
+    if (!popoverBackdropEl) return;
+    popoverOpen = false;
+    popoverBackdropEl.classList.add('hidden');
+    popoverBackdropEl.setAttribute('aria-hidden', 'true');
+    if (popoverEl) popoverEl.innerHTML = '';
+    focusTerminalIfDesktop();
+  }
+
+  function openPopover(node) {
+    if (!popoverBackdropEl || !popoverEl) return;
+    popoverEl.innerHTML = '';
+    popoverEl.appendChild(node);
+    popoverOpen = true;
+    popoverBackdropEl.classList.remove('hidden');
+    popoverBackdropEl.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => {
+      const primary = popoverEl.querySelector('.spop-btn.primary, .spop-btn.green, .spop-btn.amber');
+      if (primary) primary.focus();
+    });
+  }
+
+  function openCollisionPopover(ctx) {
+    const col = ctx.collision || {};
+    const frag = document.createDocumentFragment();
+    const head = document.createElement('div');
+    head.className = 'spop-head';
+    head.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px">${ICO_BRANCH_SVG}<span>Collision in ${col.repo_name || 'repo'}</span></span><span class="spop-badge">${col.branch || 'HEAD'}</span>`;
+    const sub = document.createElement('div');
+    sub.className = 'spop-sub';
+    const n = (col.active_tabs && col.active_tabs.length) || 1;
+    sub.textContent = `${n} active agent${n > 1 ? 's' : ''} already using this folder. How should this session open?`;
+
+    const btnWt = document.createElement('button');
+    btnWt.type = 'button';
+    btnWt.className = 'spop-btn primary';
+    btnWt.innerHTML = `<span style="display:inline-flex;align-items:center;gap:7px">${ICO_BRANCH_SVG}<span>New worktree</span></span><span class="spop-hint">Enter ↵</span>`;
+    btnWt.addEventListener('click', () => {
+      closePopover();
+      if (ctx.kind === 'pin') wakePin(ctx.pinId, 'new');
+      else spawnTab(ctx.preset || 'agent', { cwd: ctx.cwd, agent: ctx.agent, worktree_choice: 'new' });
+    });
+
+    const meta = document.createElement('div');
+    meta.className = 'spop-meta';
+    meta.textContent = ctx.kind === 'pin'
+      ? `isolated branch from ${col.branch || 'HEAD'} · starts fresh session`
+      : `isolated branch from ${col.branch || 'HEAD'}${worktreePrefs.copy_env ? ' · copies root .env' : ''}`;
+
+    const btnSame = document.createElement('button');
+    btnSame.type = 'button';
+    btnSame.className = 'spop-btn secondary';
+    btnSame.innerHTML = `<span>Same folder</span><span class="spop-hint">${ctx.kind === 'pin' ? '--continue' : 'share'}</span>`;
+    btnSame.addEventListener('click', () => {
+      closePopover();
+      if (ctx.kind === 'pin') wakePin(ctx.pinId, 'same');
+      else spawnTab(ctx.preset || 'agent', { cwd: ctx.cwd, agent: ctx.agent, worktree_choice: 'same' });
+    });
+
+    const links = document.createElement('div');
+    links.className = 'spop-links';
+    links.innerHTML = `<span>Mode: <strong>${worktreePrefs.mode}</strong></span>`;
+    const cfgLink = document.createElement('button');
+    cfgLink.type = 'button';
+    cfgLink.className = 'spop-link-btn';
+    cfgLink.textContent = 'Change in Settings';
+    cfgLink.addEventListener('click', () => { closePopover(); openSettings('box'); });
+    links.appendChild(cfgLink);
+
+    frag.append(head, sub, btnWt, meta, btnSame, links);
+    openPopover(frag);
+  }
+
+  async function openWorktreePopover(termId) {
+    const t = terminals.find((x) => x.address === termId);
+    if (!t) return;
+    const loading = document.createElement('div');
+    loading.className = 'spop-sub';
+    loading.textContent = 'Checking Git worktree status…';
+    openPopover(loading);
+
+    let st;
+    try {
+      const r = await fetch(`/api/tabs/${encodeURIComponent(termId)}/worktree`);
+      st = await r.json();
+      if (!r.ok) throw new Error(st.message || 'Not a Git worktree');
+    } catch (err) {
+      const box = document.createDocumentFragment();
+      const m = document.createElement('div');
+      m.className = 'spop-sub';
+      m.textContent = err.message || 'Unable to inspect worktree.';
+      const c = document.createElement('button');
+      c.type = 'button';
+      c.className = 'spop-btn secondary';
+      c.textContent = 'Close';
+      c.addEventListener('click', closePopover);
+      box.append(m, c);
+      openPopover(box);
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    const head = document.createElement('div');
+    head.className = 'spop-head';
+    const badgeCls = st.dirty || !st.can_merge || st.main_dirty ? 'warn' : 'ok';
+    const badgeTxt = st.dirty ? 'DIRTY' : !st.can_merge ? 'CONFLICT' : st.ahead > 0 ? 'CLEAN' : 'EMPTY';
+    head.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px">${ICO_BRANCH_SVG}<span>${st.branch} → ${st.base}</span></span><span class="spop-badge ${badgeCls}">${badgeTxt}</span>`;
+
+    const sub = document.createElement('div');
+    sub.className = 'spop-sub';
+    if (st.dirty) {
+      sub.textContent = `${st.uncommitted_count} uncommitted change${st.uncommitted_count === 1 ? '' : 's'} in this worktree.`;
+    } else if (st.ahead === 0) {
+      sub.textContent = `No commits ahead of ${st.base}. Safe to close and remove.`;
+    } else if (!st.can_merge) {
+      sub.textContent = `${st.ahead} commit${st.ahead === 1 ? '' : 's'} ahead · conflict with ${st.base} in ${(st.conflict_files || []).join(', ') || 'files'}.`;
+    } else if (st.main_dirty) {
+      sub.textContent = `${st.ahead} commit${st.ahead === 1 ? '' : 's'} ahead · main repo has uncommitted changes (commit there first or open a PR).`;
+    } else {
+      sub.textContent = `${st.ahead} commit${st.ahead === 1 ? '' : 's'} ahead · 0 conflicts (checked via git merge-tree).`;
+    }
+
+    frag.append(head, sub);
+
+    if (st.dirty) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'spop-btn primary';
+      btn.innerHTML = '<span>Ask agent to commit</span><span class="spop-hint">in this tab</span>';
+      btn.addEventListener('click', async () => {
+        closePopover();
+        await fetch('/api/worktrees/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ terminal: termId }),
+        });
+        showTermToast('Asked agent to commit changes');
+      });
+      frag.appendChild(btn);
+    } else if (st.ahead > 0 && !st.can_merge) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'spop-btn amber';
+      btn.innerHTML = '<span>Resolve conflict with agent</span><span class="spop-hint">in worktree</span>';
+      btn.addEventListener('click', async () => {
+        closePopover();
+        await fetch('/api/worktrees/resolve-conflict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ terminal: termId, base: st.base }),
+        });
+        showTermToast(`Asked agent to merge ${st.base} & resolve conflict inside worktree`);
+      });
+      frag.appendChild(btn);
+    } else if (st.ahead > 0 && st.can_merge && !st.main_dirty) {
+      const btnMerge = document.createElement('button');
+      btnMerge.type = 'button';
+      btnMerge.className = 'spop-btn green';
+      btnMerge.innerHTML = `<span>Merge into ${st.base} &amp; clean</span><span class="spop-hint">1 click</span>`;
+      btnMerge.addEventListener('click', async () => {
+        closePopover();
+        const r = await fetch('/api/worktrees/merge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ terminal: termId, path: st.path, clean: true }),
+        });
+        const d = await r.json().catch(() => ({}));
+        showTermToast(r.ok ? `Merged ${st.branch} into ${st.base} & cleaned worktree` : (d.message || 'Merge failed'));
+      });
+      const btnKeep = document.createElement('button');
+      btnKeep.type = 'button';
+      btnKeep.className = 'spop-btn secondary';
+      btnKeep.innerHTML = `<span>Merge &amp; keep tab</span><span class="spop-hint">${st.base}</span>`;
+      btnKeep.addEventListener('click', async () => {
+        closePopover();
+        const r = await fetch('/api/worktrees/merge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ terminal: termId, path: st.path, clean: false }),
+        });
+        const d = await r.json().catch(() => ({}));
+        showTermToast(r.ok ? `Merged ${st.branch} into ${st.base}` : (d.message || 'Merge failed'));
+      });
+      frag.append(btnMerge, btnKeep);
+    } else if (st.ahead === 0 && !st.dirty) {
+      const btnClean = document.createElement('button');
+      btnClean.type = 'button';
+      btnClean.className = 'spop-btn secondary';
+      btnClean.textContent = 'Close & remove worktree';
+      btnClean.addEventListener('click', async () => {
+        closePopover();
+        await fetch('/api/worktrees/remove', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: st.path, terminal: termId }),
+        });
+        showTermToast('Removed empty worktree');
+      });
+      frag.appendChild(btnClean);
+    }
+
+    const links = document.createElement('div');
+    links.className = 'spop-links';
+    const prBtn = document.createElement('button');
+    prBtn.type = 'button';
+    prBtn.className = 'spop-link-btn';
+    prBtn.textContent = 'Push / Open PR';
+    prBtn.addEventListener('click', async () => {
+      closePopover();
+      await fetch(`/api/tabs/${encodeURIComponent(termId)}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: `Push branch ${st.branch} and open a Pull Request targeting ${st.base}.`, force: true }),
+      });
+      showTermToast('Asked agent to push & open PR');
+    });
+    const closeLink = document.createElement('button');
+    closeLink.type = 'button';
+    closeLink.className = 'spop-link-btn';
+    closeLink.textContent = 'Keep worktree';
+    closeLink.addEventListener('click', closePopover);
+    links.append(prBtn, closeLink);
+    frag.appendChild(links);
+    openPopover(frag);
+  }
+
+  function openPendingWorktreesPopover() {
+    const frag = document.createDocumentFragment();
+    const head = document.createElement('div');
+    head.className = 'spop-head';
+    head.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px">${ICO_BRANCH_SVG}<span>Pending worktrees</span></span><span class="spop-badge warn">${pendingWorktrees.length}</span>`;
+    const sub = document.createElement('div');
+    sub.className = 'spop-sub';
+    sub.textContent = 'Closed worktrees kept safe because they still have uncommitted changes or unmerged commits.';
+    const list = document.createElement('div');
+    list.className = 'spop-wt-list';
+
+    for (const w of pendingWorktrees) {
+      const row = document.createElement('div');
+      row.className = 'spop-wt-row';
+      const top = document.createElement('div');
+      top.className = 'spop-wt-row-top';
+      top.innerHTML = `<span>${w.repo_name} · <strong>${w.branch}</strong></span><span class="spop-badge ${w.dirty || !w.can_merge ? 'warn' : 'ok'}">${w.dirty ? `${w.uncommitted_count} dirty` : `${w.ahead} ahead`}</span>`;
+      const btns = document.createElement('div');
+      btns.className = 'spop-wt-row-btns';
+      const bOpen = document.createElement('button');
+      bOpen.type = 'button';
+      bOpen.textContent = 'Reopen';
+      bOpen.addEventListener('click', async () => {
+        closePopover();
+        const r = await fetch('/api/worktrees/open', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: w.path }),
+        });
+        const d = await r.json().catch(() => ({}));
+        const addr = d && d.terminal && d.terminal.address;
+        if (addr) setTimeout(() => connectPty(addr), 100);
+      });
+      const bRm = document.createElement('button');
+      bRm.type = 'button';
+      bRm.textContent = 'Discard & remove';
+      bRm.addEventListener('click', async () => {
+        await fetch('/api/worktrees/remove', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: w.path, force: true }),
+        });
+        closePopover();
+        showTermToast(`Removed worktree ${w.branch}`);
+      });
+      btns.append(bOpen, bRm);
+      row.append(top, btns);
+      list.appendChild(row);
+    }
+
+    const foot = document.createElement('div');
+    foot.className = 'spop-links';
+    const doneBtn = document.createElement('button');
+    doneBtn.type = 'button';
+    doneBtn.className = 'spop-link-btn';
+    doneBtn.textContent = 'Close';
+    doneBtn.addEventListener('click', closePopover);
+    foot.appendChild(doneBtn);
+    frag.append(head, sub, list, foot);
+    openPopover(frag);
+  }
+
+  async function wakePin(pinId, worktreeChoice = '') {
+    const body = worktreeChoice ? { worktree_choice: worktreeChoice } : {};
+    const r = await fetch(`/api/pins/${encodeURIComponent(pinId)}/wake`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 409 && data.error === 'worktree_collision') {
+      openCollisionPopover({ kind: 'pin', pinId, collision: data.collision });
+      return;
+    }
+    if (!r.ok) {
+      showTermToast(data.message || 'Could not wake pinned session');
+      return;
+    }
+    const addr = data && data.terminal && data.terminal.address;
+    if (addr) setTimeout(() => connectPty(addr), 100);
+    if (data.worktree) {
+      showTermToast(`Opened in worktree ${data.worktree.branch}`);
+    }
+  }
+
   function renderTabs() {
     sidebarTabsEl.innerHTML = '';
     if (topbarTabsEl) topbarTabsEl.innerHTML = '';
@@ -2378,29 +2793,90 @@
 
         const cRight = document.createElement('div');
         cRight.className = 'agent-card-right';
+        const pinId = t.labels && t.labels['swarmbox.pin_id'];
+        const pinObj = pinId ? pins.find((p) => p.id === pinId) : null;
+        if (pinObj) {
+          const cBolt = document.createElement('button');
+          cBolt.type = 'button';
+          cBolt.className = `card-act-btn${pinObj.autostart ? ' is-autostart' : ''}`;
+          cBolt.title = pinObj.autostart ? 'Autostart on boot (click to disable)' : 'Parked on boot (click to enable autostart)';
+          cBolt.innerHTML = ICO_BOLT_SVG;
+          cBolt.addEventListener('click', (e) => { e.stopPropagation(); togglePinAutostart(pinObj); });
+          cRight.appendChild(cBolt);
+        }
+        const cPin = document.createElement('button');
+        cPin.type = 'button';
+        cPin.className = `card-act-btn${pinId ? ' is-pinned' : ''}`;
+        cPin.title = pinId ? 'Unpin session' : 'Pin session (persists across restarts)';
+        cPin.innerHTML = ICO_PIN_SVG;
+        cPin.addEventListener('click', (e) => { e.stopPropagation(); togglePinForTab(t); });
         const cIdx = document.createElement('span');
         cIdx.className = 'agent-card-idx';
         cIdx.textContent = `tab ${idx + 1}`;
         const cClose = document.createElement('button');
         cClose.type = 'button';
         cClose.className = 'agent-card-close';
-        cClose.title = 'Close tab';
+        cClose.title = pinId ? 'Close tab (pin stays parked)' : 'Close tab';
         cClose.setAttribute('aria-label', `Close ${label}`);
         cClose.textContent = '✕';
         cClose.addEventListener('click', async (e) => {
           e.stopPropagation();
           await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
         });
-        cRight.append(cIdx, cClose);
+        cRight.append(cPin, cIdx, cClose);
         cTop.append(cBadge, cRight);
 
         const cName = document.createElement('div');
         cName.className = 'agent-card-name';
-        cName.textContent = label;
+        if (editingTabId === t.address) {
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.className = 'inline-rename-input';
+          inp.dataset.tab = t.address;
+          inp.value = label;
+          inp.maxLength = 60;
+          inp.addEventListener('click', (e) => e.stopPropagation());
+          inp.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') { e.preventDefault(); commitInlineRename(t.address, inp.value); }
+            else if (e.key === 'Escape') { e.preventDefault(); editingTabId = null; renderTabs(); focusTerminalIfDesktop(); }
+          });
+          inp.addEventListener('blur', () => {
+            if (editingTabId === t.address) commitInlineRename(t.address, inp.value);
+          });
+          cName.appendChild(inp);
+        } else {
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = label;
+          cName.appendChild(nameSpan);
+          if (t.labels && t.labels['swarmbox.title_source'] === 'auto') {
+            const ab = document.createElement('span');
+            ab.className = 'auto-name-badge';
+            ab.textContent = 'auto';
+            ab.title = 'Auto-named by Sysop (double-click or Alt+R to rename)';
+            cName.appendChild(ab);
+          }
+          cName.title = 'Double-click or Alt+R to rename';
+          cName.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            startInlineRename(t.address);
+          });
+        }
 
         const cMsg = document.createElement('div');
         cMsg.className = 'agent-card-msg';
-        cMsg.textContent = subText || (t.address || '');
+        const wtBranch = t.labels && t.labels['swarmbox.worktree'] ? (t.labels['swarmbox.branch'] || 'worktree') : '';
+        if (wtBranch) {
+          const wtChip = document.createElement('button');
+          wtChip.type = 'button';
+          wtChip.className = 'wt-chip';
+          wtChip.innerHTML = `${ICO_BRANCH_SVG}<span>${wtBranch}</span>`;
+          wtChip.title = 'Worktree status & merge';
+          wtChip.addEventListener('click', (e) => { e.stopPropagation(); openWorktreePopover(t.address); });
+          cMsg.appendChild(wtChip);
+        } else {
+          cMsg.textContent = subText || (t.address || '');
+        }
 
         cInfo.append(cTop, cName, cMsg);
         main.append(stage, cInfo);
@@ -2448,10 +2924,30 @@
         info.className = 'tab-info';
         const titleEl = document.createElement('div');
         titleEl.className = 'tab-title';
-        const titleText = document.createElement('span');
-        titleText.className = 'tab-title-text';
-        titleText.textContent = label;
-        titleEl.appendChild(titleText);
+        if (editingTabId === t.address) {
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.className = 'inline-rename-input';
+          inp.dataset.tab = t.address;
+          inp.value = label;
+          inp.maxLength = 60;
+          inp.addEventListener('click', (e) => e.stopPropagation());
+          inp.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') { e.preventDefault(); commitInlineRename(t.address, inp.value); }
+            else if (e.key === 'Escape') { e.preventDefault(); editingTabId = null; renderTabs(); focusTerminalIfDesktop(); }
+          });
+          inp.addEventListener('blur', () => {
+            if (editingTabId === t.address) commitInlineRename(t.address, inp.value);
+          });
+          titleEl.appendChild(inp);
+        } else {
+          const titleText = document.createElement('span');
+          titleText.className = 'tab-title-text';
+          titleText.textContent = label;
+          titleText.addEventListener('dblclick', (e) => { e.stopPropagation(); startInlineRename(t.address); });
+          titleEl.appendChild(titleText);
+        }
         const subEl = document.createElement('div');
         subEl.className = 'tab-sub';
         subEl.textContent = subText;
@@ -2459,19 +2955,26 @@
 
         const right = document.createElement('div');
         right.className = 'tab-right';
+        const shPinId = t.labels && t.labels['swarmbox.pin_id'];
+        const shPin = document.createElement('button');
+        shPin.type = 'button';
+        shPin.className = `card-act-btn${shPinId ? ' is-pinned' : ''}`;
+        shPin.title = shPinId ? 'Unpin shell' : 'Pin shell';
+        shPin.innerHTML = ICO_PIN_SVG;
+        shPin.addEventListener('click', (e) => { e.stopPropagation(); togglePinForTab(t); });
         const idxEl = document.createElement('span');
         idxEl.className = 'tab-idx';
         idxEl.textContent = idx < 9 ? String(idx + 1) : '';
         const closeBtn = document.createElement('button');
         closeBtn.className = 'tab-close';
-        closeBtn.title = 'Close tab';
+        closeBtn.title = shPinId ? 'Close tab (pin stays parked)' : 'Close tab';
         closeBtn.setAttribute('aria-label', `Close ${label}`);
         closeBtn.textContent = '✕';
         closeBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
         });
-        right.append(idxEl, closeBtn);
+        right.append(shPin, idxEl, closeBtn);
 
         btn.append(makeMiniPixelIcon(iconKind), info, right);
         btn.addEventListener('click', () => {
@@ -2542,6 +3045,98 @@
 
     tabCountEl.textContent = String(shellCount);
 
+    // 4. Parked Pinned Sessions (desktop sidebar + mobile tab strip)
+    const parkedPins = (Array.isArray(pins) ? pins : []).filter((p) => p && p.parked);
+    if (sidebarParkedSectionEl && sidebarParkedEl) {
+      sidebarParkedSectionEl.classList.toggle('hidden', parkedPins.length === 0);
+      if (parkedCountEl) parkedCountEl.textContent = String(parkedPins.length);
+      sidebarParkedEl.innerHTML = '';
+      for (const pin of parkedPins) {
+        const pKind = pin.agent && PIXEL_SVG[pin.agent] ? pin.agent : 'shell';
+        const card = document.createElement('div');
+        card.className = 'agent-card is-parked';
+        card.dataset.agent = pKind;
+        card.title = pin.missing_cwd
+          ? `Directory missing: ${pin.cwd}`
+          : `Click to wake ${pin.title} (${pin.agent || 'shell'} · ${pin.resume || 'continue'})`;
+
+        const main = document.createElement('div');
+        main.className = 'agent-card-main';
+        const stage = document.createElement('div');
+        stage.className = 'pixel-stage';
+        stage.innerHTML = pixelIconHtml(pKind);
+        const info = document.createElement('div');
+        info.className = 'agent-card-info';
+        const top = document.createElement('div');
+        top.className = 'agent-card-top';
+        const badge = document.createElement('span');
+        badge.className = 'agent-state-box';
+        badge.textContent = pin.missing_cwd ? 'MISSING' : 'PARKED';
+        const right = document.createElement('div');
+        right.className = 'agent-card-right';
+        const bolt = document.createElement('button');
+        bolt.type = 'button';
+        bolt.className = `card-act-btn${pin.autostart ? ' is-autostart' : ''}`;
+        bolt.title = pin.autostart ? 'Autostart on boot (click to disable)' : 'Enable autostart on boot';
+        bolt.innerHTML = ICO_BOLT_SVG;
+        bolt.addEventListener('click', (e) => { e.stopPropagation(); togglePinAutostart(pin); });
+        const unpinBtn = document.createElement('button');
+        unpinBtn.type = 'button';
+        unpinBtn.className = 'card-act-btn is-pinned';
+        unpinBtn.title = 'Unpin session';
+        unpinBtn.innerHTML = ICO_PIN_SVG;
+        unpinBtn.addEventListener('click', (e) => { e.stopPropagation(); unpinById(pin.id); });
+        right.append(bolt, unpinBtn);
+        top.append(badge, right);
+
+        const nm = document.createElement('div');
+        nm.className = 'agent-card-name';
+        nm.textContent = pin.title || shortDisplayPath(pin.cwd) || 'pinned';
+        const msg = document.createElement('div');
+        msg.className = 'agent-card-msg';
+        msg.textContent = pin.worktree && pin.worktree.branch
+          ? `${shortDisplayPath(pin.cwd)} · ${pin.worktree.branch}`
+          : shortDisplayPath(pin.cwd);
+        info.append(top, nm, msg);
+        main.append(stage, info);
+
+        const foot = document.createElement('div');
+        foot.className = 'agent-card-foot';
+        const fl = document.createElement('span');
+        fl.textContent = `${AGENT_FULL_NAMES[pKind] || pKind} · ${pin.resume === 'fresh' ? 'fresh' : '--continue'}`;
+        const wake = document.createElement('span');
+        wake.className = `wake-pill${pin.missing_cwd ? ' is-missing' : ''}`;
+        wake.textContent = pin.missing_cwd ? 'Missing dir' : '▶ Wake';
+        foot.append(fl, wake);
+        card.append(main, foot);
+
+        card.addEventListener('click', () => { if (!pin.missing_cwd) wakePin(pin.id); });
+        sidebarParkedEl.appendChild(card);
+      }
+    }
+
+    // Parked chips on mobile tab strip (1 tap wakes!)
+    for (const pin of parkedPins) {
+      const pKind = pin.agent && PIXEL_SVG[pin.agent] ? pin.agent : 'shell';
+      const mp = document.createElement('button');
+      mp.className = 'm-tab is-parked';
+      const mpName = document.createElement('span');
+      mpName.className = 'm-tab-name';
+      const lbl = pin.title || 'pin';
+      mpName.textContent = (lbl.length > 11 ? lbl.slice(0, 10) + '…' : lbl) + ' ▶';
+      mp.append(makeMiniPixelIcon(pKind), mpName);
+      mp.title = `Wake pinned session ${lbl}`;
+      mp.addEventListener('click', () => wakePin(pin.id));
+      mobileTabsEl.appendChild(mp);
+    }
+
+    // Pending worktrees pill in sidebar
+    if (sidebarPendingWtEl) {
+      const pCount = Array.isArray(pendingWorktrees) ? pendingWorktrees.length : 0;
+      sidebarPendingWtEl.classList.toggle('hidden', pCount === 0);
+      if (pendingWtCountEl) pendingWtCountEl.textContent = String(pCount);
+    }
+
     if (topbarTabsEl) {
       const tPlus = document.createElement('button');
       tPlus.type = 'button';
@@ -2590,6 +3185,16 @@
       if (activeStatusEl) activeStatusEl.textContent = aSub;
       if (termCtxIconEl) termCtxIconEl.innerHTML = pixelIconHtml(aKind);
       if (termCtxTitleEl) termCtxTitleEl.textContent = aParts.pill ? `${aParts.title} (${AGENT_FULL_NAMES[aParts.pill] || aParts.pill})` : aParts.title;
+      const aWtBranch = active.labels && active.labels['swarmbox.worktree'] ? (active.labels['swarmbox.branch'] || 'worktree') : '';
+      const aWtBase = (active.labels && active.labels['swarmbox.base']) || 'main';
+      if (topbarWtBtnEl) {
+        topbarWtBtnEl.classList.toggle('hidden', !aWtBranch);
+        if (aWtBranch) topbarWtBtnEl.innerHTML = `${ICO_BRANCH_SVG}<span>${aWtBranch} → ${aWtBase} ▾</span>`;
+      }
+      if (mobileWtBtnEl) {
+        mobileWtBtnEl.classList.toggle('hidden', !aWtBranch);
+        if (aWtBranch) mobileWtBtnEl.innerHTML = `${ICO_BRANCH_SVG}<span>${aWtBranch.replace(/^sb\//, '')}</span>`;
+      }
       if (termCtxStateEl) {
         termCtxStateEl.dataset.state = aState;
         termCtxStateEl.textContent = stateBadgeText(aState, active.status);
@@ -2598,6 +3203,8 @@
       activeDotEl.dataset.state = 'idle';
       activeNameEl.textContent = 'No active tab';
       if (activeAgentEl) activeAgentEl.classList.add('hidden');
+      if (topbarWtBtnEl) topbarWtBtnEl.classList.add('hidden');
+      if (mobileWtBtnEl) mobileWtBtnEl.classList.add('hidden');
       if (activeStatusEl) activeStatusEl.textContent = 'idle';
       if (termCtxIconEl) termCtxIconEl.innerHTML = pixelIconHtml('shell');
       if (termCtxTitleEl) termCtxTitleEl.textContent = 'No active tab';
@@ -2980,16 +3587,45 @@
     return box;
   }
 
+  function renderSystemEventRow(ev) {
+    const row = document.createElement('div');
+    row.className = 'sysop-sysev';
+    const left = document.createElement('div');
+    left.className = 'sysop-sysev-left';
+    const txt = document.createElement('span');
+    if (ev.kind === 'autoname') {
+      const oldS = ev.old_title || ev.tab || 'tab';
+      const newS = ev.new_title || '';
+      const tm = ev.ts ? new Date(ev.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      txt.innerHTML = `✎ Renamed <strong>${oldS.replace(/[<>&]/g, '')}</strong> → <strong>${newS.replace(/[<>&]/g, '')}</strong>` +
+        (tm ? `<span class="sysop-sysev-time">${tm}</span>` : '');
+    } else {
+      txt.textContent = ev.text || ev.kind;
+    }
+    left.appendChild(txt);
+    row.appendChild(left);
+    if (ev.kind === 'autoname' && ev.tab && terminals.some((t) => t.address === ev.tab)) {
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'sysop-sysev-edit';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', () => startInlineRename(ev.tab));
+      row.appendChild(editBtn);
+    }
+    return row;
+  }
+
   function renderSysopFeed(sysop) {
     const turns = Array.isArray(sysop.turns) ? sysop.turns : null;
+    const sysEvents = Array.isArray(sysop.system_events) ? sysop.system_events : [];
     const steps = Array.isArray(sysop.steps) ? sysop.steps : [];
-    const empty = turns ? turns.length === 0 : steps.length === 0;
+    const empty = turns ? (turns.length === 0 && sysEvents.length === 0) : steps.length === 0;
     sysopFeedEl.classList.toggle('is-empty', empty || !sysop.up);
     const keyHint = window.innerWidth <= 860 ? '' : ' (Alt+G)';
     goalInputEl.placeholder = (empty ? (window.innerWidth <= 860 ? 'Ask Sysop…' : 'Ask Sysop or direct an agent…') : 'Ask a follow-up…') + keyHint;
     btnSysopNew.classList.toggle('hidden', empty || !sysop.up);
     // the snapshot comes every 600 ms: rebuild only when something shown changed (the minute keeps "3m ago" true)
-    const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns, turns ? null : steps,
+    const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns, sysEvents, turns ? null : steps,
       terminals.map((t) => [t.address, tabDisplayName(t), tabAgentKind(t)]), Math.floor(Date.now() / 60000)]);
     if (key !== lastFeedKey) {
       lastFeedKey = key;
@@ -2998,7 +3634,13 @@
       if (!sysop.up || empty) {
         sysopFeedEl.appendChild(renderSysopEmpty(sysop));
       } else if (turns) {
-        for (const t of turns) sysopFeedEl.appendChild(renderTurn(t));
+        const timeline = [
+          ...turns.map((t) => ({ kind: 'turn', ts: t.started || 0, item: t })),
+          ...sysEvents.map((e) => ({ kind: 'sysev', ts: e.ts || 0, item: e })),
+        ].sort((a, b) => a.ts - b.ts);
+        for (const entry of timeline) {
+          sysopFeedEl.appendChild(entry.kind === 'turn' ? renderTurn(entry.item) : renderSystemEventRow(entry.item));
+        }
       } else {
         // an older gateway without turns: the flat steps of the current goal
         for (const s of steps) {
@@ -3072,6 +3714,9 @@
       if (msg.theme && THEMES[msg.theme] && msg.theme !== currentThemeKey) {
         applyTheme(msg.theme, false);
       }
+      if (Array.isArray(msg.pins)) pins = msg.pins;
+      if (Array.isArray(msg.worktrees)) pendingWorktrees = msg.worktrees;
+      if (msg.worktree_prefs && typeof msg.worktree_prefs === 'object') worktreePrefs = msg.worktree_prefs;
       if (Array.isArray(msg.terminals)) {
         terminals = msg.terminals;
         rememberTabs();
@@ -3106,15 +3751,40 @@
     };
   }
 
-  async function spawnTab(preset) {
+  async function spawnTab(preset, opts = {}) {
+    const payload = { preset };
+    if (opts.cwd) {
+      payload.cwd = opts.cwd;
+    } else if (preset === 'agent') {
+      const cur = terminals.find((t) => t.address === activeId);
+      const curCwd = (cur && cur.foreground && cur.foreground.cwd) || (cur && cur.cwd) || '';
+      if (curCwd && curCwd.startsWith('/')) payload.cwd = curCwd;
+    }
+    if (opts.agent) payload.agent = opts.agent;
+    if (opts.worktree_choice) payload.worktree_choice = opts.worktree_choice;
+
     const r = await fetch('/api/tabs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preset }),
+      body: JSON.stringify(payload),
     });
     const data = await r.json().catch(() => ({}));
+    if (r.status === 409 && data.error === 'worktree_collision') {
+      openCollisionPopover({
+        kind: 'tab',
+        preset,
+        agent: data.agent || opts.agent,
+        cwd: data.cwd || payload.cwd,
+        collision: data.collision,
+      });
+      return;
+    }
     const addr = data && data.terminal && data.terminal.address;
     if (addr) setTimeout(() => connectPty(addr), 100);
+    if (data && data.worktree) {
+      const note = data.worktree.uncommitted_in_source ? ' (uncommitted edits stayed in source folder)' : '';
+      showTermToast(`Isolated in worktree ${data.worktree.branch}${note}`);
+    }
   }
 
   async function sendGoal(text) {
@@ -3522,6 +4192,15 @@
 
   const btnNewShell = document.getElementById('btn-new-shell');
   if (btnNewShell) btnNewShell.addEventListener('click', () => { spawnTab('shell'); focusTerminalIfDesktop(); });
+  if (btnNewAgent) btnNewAgent.addEventListener('click', () => { spawnTab('agent'); });
+  if (sidebarPendingWtEl) sidebarPendingWtEl.addEventListener('click', openPendingWorktreesPopover);
+  if (topbarWtBtnEl) topbarWtBtnEl.addEventListener('click', () => { if (activeId) openWorktreePopover(activeId); });
+  if (mobileWtBtnEl) mobileWtBtnEl.addEventListener('click', () => { if (activeId) openWorktreePopover(activeId); });
+  if (popoverBackdropEl) {
+    popoverBackdropEl.addEventListener('click', (e) => {
+      if (e.target === popoverBackdropEl) closePopover();
+    });
+  }
   document.getElementById('btn-sidebar-close').addEventListener('click', () => {
     appEl.dataset.sidebarOpen = '0';
     scheduleFit();
@@ -4177,6 +4856,53 @@
     ]);
     frag.appendChild(makeGroup('Runtime & Web', null, coreCard));
 
+    const wtPrefs = (boxConfig && boxConfig.worktree_prefs) || worktreePrefs;
+    const saveWtPrefs = async (patch) => {
+      const r = await fetch('/api/worktrees/prefs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      }).catch(() => null);
+      if (r && r.ok) {
+        const d = await r.json().catch(() => ({}));
+        if (d.prefs) {
+          worktreePrefs = d.prefs;
+          if (boxConfig) boxConfig.worktree_prefs = d.prefs;
+          renderSettingsBody();
+        }
+      }
+    };
+    const wtModeSeg = el('div', { class: 's-seg' }, ['ask', 'auto', 'off'].map((m) => el('button', {
+      type: 'button',
+      class: `s-seg-btn${(wtPrefs.mode || 'ask') === m ? ' active' : ''}`,
+      text: m,
+      onClick: () => saveWtPrefs({ mode: m }),
+    })));
+    const wtEnvSw = el('button', {
+      type: 'button',
+      class: `s-switch${wtPrefs.copy_env !== false ? ' on' : ''}`,
+      role: 'switch',
+      'aria-checked': wtPrefs.copy_env !== false ? 'true' : 'false',
+      onClick: () => saveWtPrefs({ copy_env: wtPrefs.copy_env === false }),
+    }, [el('i')]);
+    const wtCard = el('div', { class: 's-card' }, [
+      el('div', { class: 's-row' }, [
+        el('div', { class: 's-row-info' }, [
+          el('div', { class: 's-row-title', text: 'Worktree on Repo Collision' }),
+          el('div', { class: 's-row-desc', text: 'Ask (2-button popover), Auto (isolate immediately), or Off (always share folder). Applies live.' }),
+        ]),
+        wtModeSeg,
+      ]),
+      el('div', { class: 's-row' }, [
+        el('div', { class: 's-row-info' }, [
+          el('div', { class: 's-row-title', text: 'Copy Root .env Files' }),
+          el('div', { class: 's-row-desc', text: 'Automatically copy root .env / .env.* (mode 0600, <= 64 KiB) into new worktrees.' }),
+        ]),
+        wtEnvSw,
+      ]),
+    ]);
+    frag.appendChild(makeGroup('Git Worktrees', el('span', { class: 's-badge', text: 'live' }), wtCard));
+
     const envCard = el('div', { class: 's-card' }, [
       makeHostInputRow('box', 'TZ', {
         title: 'Timezone',
@@ -4248,6 +4974,10 @@
 
     // Brain, model & guardrails
     const guardCard = el('div', { class: 's-card' }, [
+      makeHostToggleRow('sysop', 'sysop.autoname', {
+        title: 'Automatic Tab Naming',
+        desc: 'React to tab.events to give unnamed agent tabs concise 2–4 word titles (never overwrites manual renames).',
+      }),
       makeHostInputRow('sysop', 'sysop.brain', {
         title: 'Operator Brain',
         desc: 'CLI brain used to plan actions (e.g. claude or custom command).',
@@ -4449,6 +5179,7 @@
     // 4. Keyboard shortcuts cheat sheet
     const shortcuts = [
       ['Switch terminal tab', 'Alt+1..9'],
+      ['Rename active tab', 'Alt+R'],
       ['Open new terminal tab', 'Alt+N'],
       ['Open / close Settings', 'Alt+,'],
       ['Toggle left sidebar', 'Alt+B'],

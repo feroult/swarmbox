@@ -80,6 +80,7 @@ class Paths:
     watch_pidfile = property(lambda self: os.path.join(self.run, "watch.pid"))
     crashloop = property(lambda self: os.path.join(self.run, "crashloop"))
     audit = property(lambda self: os.path.join(self.state, "events.jsonl"))
+    system_events = property(lambda self: os.path.join(self.state, "system_events.jsonl"))
     log = property(lambda self: os.path.join(self.state, "serve.log"))
 
     def goal_dir(self, goal_id):
