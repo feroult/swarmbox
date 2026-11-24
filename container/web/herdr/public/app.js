@@ -1696,7 +1696,7 @@
     const st = t && t.status;
     const msg = cleanStatusText(st && st.msg);
     const cwd = (t && t.foreground && t.foreground.cwd) || (t && t.cwd) || '';
-    const shortCwd = cwd.startsWith('/home/agent') ? '~' + cwd.slice('/home/agent'.length) : cwd;
+    const shortCwd = shortDisplayPath(cwd);
 
     if (st && st.state === 'blocked') return `blocked · ${msg || st.kind || 'needs input'}`;
     if (st && st.state === 'working') {
@@ -1705,6 +1705,7 @@
     }
     if (st && st.state === 'done') return msg ? `✓ ${msg}` : '✓ done';
     if (st && st.state === 'error') return `✕ ${msg || 'error'}`;
+    if (msg) return msg;
     if (shortCwd) return shortCwd;
     return (t && t.title) || (t && t.address) || '';
   }
@@ -2634,15 +2635,74 @@
   const ICO_PIN_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M9.8 1.5l4.7 4.7-1.1 1.1-1.3-.3-2.5 2.5.4 2.1-1.1 1.1-2.5-2.5L3 13.6l-.6-.6 3.4-3.4-2.5-2.5 1.1-1.1 2.1.4L9 3.9l-.3-1.3 1.1-1.1z"/></svg>';
   const ICO_BOLT_SVG = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M9.2 1L3 9h4.4l-.8 6L13 7H8.6l.6-6z"/></svg>';
   const ICO_BRANCH_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.5-7 1.8-7 3.4"/></svg>';
+  const ICO_PENCIL_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.4a1.6 1.6 0 0 1 2.3 2.3L5.6 12.6 2.5 13.5l.9-3.1 7.8-8Z"/></svg>';
 
   function shortDisplayPath(p) {
     const s = String(p || '');
+    const wtMatch = s.match(/\/\.local\/share\/swarmbox\/worktrees\/([^/]+)\/[^/]+(\/.*)?$/);
+    if (wtMatch) return `~/${wtMatch[1]}${wtMatch[2] || ''}`;
     return s.startsWith('/home/agent') ? '~' + s.slice('/home/agent'.length) : s;
+  }
+
+  function openRenamePopover(address) {
+    const term = terminals.find((t) => t.address === address);
+    if (!term) return;
+    const current = tabDisplayName(term);
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.gap = '10px';
+
+    const head = document.createElement('div');
+    head.className = 'spop-head';
+    head.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px">${ICO_PENCIL_SVG}<span>Rename session</span></span>`;
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'spop-rename-input';
+    inp.value = current;
+    inp.maxLength = 60;
+    inp.placeholder = 'Session title…';
+
+    const actions = document.createElement('div');
+    actions.className = 'spop-rename-actions';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'spop-btn secondary';
+    cancelBtn.textContent = 'Cancel';
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'spop-btn primary';
+    saveBtn.textContent = 'Save';
+
+    const submit = () => {
+      const val = inp.value.trim();
+      closePopover();
+      if (val && val !== current) commitInlineRename(address, val);
+    };
+    cancelBtn.addEventListener('click', closePopover);
+    saveBtn.addEventListener('click', submit);
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closePopover(); }
+    });
+
+    actions.append(cancelBtn, saveBtn);
+    wrap.append(head, inp, actions);
+    openPopover(wrap);
+    requestAnimationFrame(() => {
+      inp.focus();
+      inp.select();
+    });
   }
 
   function startInlineRename(address) {
     if (!address || !terminals.some((t) => t.address === address)) return;
-    if (window.innerWidth > 860 && appEl.dataset.sidebarOpen !== '1') {
+    if (window.innerWidth <= 860) {
+      openRenamePopover(address);
+      return;
+    }
+    if (appEl.dataset.sidebarOpen !== '1') {
       appEl.dataset.sidebarOpen = '1';
       scheduleFit();
     }
@@ -2702,6 +2762,115 @@
   async function unpinById(pinId) {
     await fetch(`/api/pins/${encodeURIComponent(pinId)}`, { method: 'DELETE' }).catch(() => {});
     showTermToast('Removed pin');
+  }
+
+  let openCardMenuEl = null;
+  let openCardMenuCard = null;
+
+  function closeCardMenu() {
+    if (openCardMenuEl) {
+      openCardMenuEl.remove();
+      openCardMenuEl = null;
+    }
+    if (openCardMenuCard) {
+      delete openCardMenuCard.dataset.menuOpen;
+      openCardMenuCard = null;
+    }
+  }
+
+  document.addEventListener('pointerdown', (e) => {
+    if (openCardMenuEl && !openCardMenuEl.contains(e.target)) closeCardMenu();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && openCardMenuEl) {
+      e.stopPropagation();
+      closeCardMenu();
+    }
+  }, true);
+  window.addEventListener('resize', closeCardMenu);
+  if (sidebarAgentsEl && sidebarAgentsEl.parentElement && sidebarAgentsEl.parentElement.parentElement) {
+    sidebarAgentsEl.parentElement.parentElement.addEventListener('scroll', closeCardMenu, { passive: true });
+  }
+
+  function openCardMenu(term, anchor, cardEl = null) {
+    closeCardMenu();
+    if (!term || !term.address) return;
+    const wtBranch = term.labels && term.labels['swarmbox.worktree'] ? (term.labels['swarmbox.branch'] || 'worktree') : '';
+    const wtBase = (term.labels && term.labels['swarmbox.base']) || 'main';
+    const menu = document.createElement('div');
+    menu.className = 'card-ctx-menu';
+    menu.setAttribute('role', 'menu');
+
+    if (wtBranch) {
+      const head = document.createElement('div');
+      head.className = 'card-ctx-head';
+      head.innerHTML = `<span>Worktree</span><span class="card-ctx-branch"></span>`;
+      head.querySelector('.card-ctx-branch').textContent = `${wtBranch} → ${wtBase}`;
+      menu.appendChild(head);
+
+      const mItem = document.createElement('button');
+      mItem.type = 'button';
+      mItem.className = 'card-ctx-item is-wt';
+      mItem.setAttribute('role', 'menuitem');
+      mItem.innerHTML = `<span class="card-ctx-item-l">${ICO_BRANCH_SVG}<span>Merge &amp; status…</span></span><span class="card-ctx-kbd">↵</span>`;
+      mItem.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeCardMenu();
+        openWorktreePopover(term.address);
+      });
+      menu.appendChild(mItem);
+    }
+
+    const rItem = document.createElement('button');
+    rItem.type = 'button';
+    rItem.className = 'card-ctx-item';
+    rItem.setAttribute('role', 'menuitem');
+    rItem.innerHTML = `<span class="card-ctx-item-l">${ICO_PENCIL_SVG}<span>Rename</span></span><span class="card-ctx-kbd">Alt+R</span>`;
+    rItem.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeCardMenu();
+      startInlineRename(term.address);
+    });
+    menu.appendChild(rItem);
+
+    const sep = document.createElement('div');
+    sep.className = 'card-ctx-sep';
+    menu.appendChild(sep);
+
+    const cItem = document.createElement('button');
+    cItem.type = 'button';
+    cItem.className = 'card-ctx-item is-danger';
+    cItem.setAttribute('role', 'menuitem');
+    cItem.innerHTML = `<span class="card-ctx-item-l"><span class="card-ctx-x">✕</span><span>Close tab</span></span>`;
+    cItem.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      closeCardMenu();
+      await fetch(`/api/tabs/${encodeURIComponent(term.address)}`, { method: 'DELETE' });
+    });
+    menu.appendChild(cItem);
+
+    document.body.appendChild(menu);
+    openCardMenuEl = menu;
+    openCardMenuCard = cardEl;
+    if (cardEl) cardEl.dataset.menuOpen = '1';
+
+    const mw = menu.offsetWidth || 214;
+    const mh = menu.offsetHeight || 140;
+    let x = 12;
+    let y = 12;
+    if (anchor && typeof anchor.getBoundingClientRect === 'function') {
+      const rect = anchor.getBoundingClientRect();
+      x = rect.right - mw + 6;
+      y = rect.bottom + 6;
+      if (x < 10) x = rect.left;
+    } else if (anchor && typeof anchor.x === 'number') {
+      x = anchor.x;
+      y = anchor.y;
+    }
+    x = Math.max(8, Math.min(x, window.innerWidth - mw - 8));
+    y = Math.max(8, Math.min(y, window.innerHeight - mh - 8));
+    menu.style.left = `${Math.round(x)}px`;
+    menu.style.top = `${Math.round(y)}px`;
   }
 
   function closePopover() {
@@ -3371,6 +3540,19 @@
         const cIdx = document.createElement('span');
         cIdx.className = 'agent-card-idx';
         cIdx.textContent = `tab ${idx + 1}`;
+        const cTopActs = document.createElement('div');
+        cTopActs.className = 'agent-card-top-acts';
+        const cMore = document.createElement('button');
+        cMore.type = 'button';
+        cMore.className = 'agent-card-more';
+        cMore.title = 'Session actions (Merge, Rename, Close)';
+        cMore.setAttribute('aria-label', `Actions for ${label}`);
+        cMore.textContent = '⋯';
+        cMore.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (openCardMenuCard === card) closeCardMenu();
+          else openCardMenu(t, cMore, card);
+        });
         const cClose = document.createElement('button');
         cClose.type = 'button';
         cClose.className = 'agent-card-close';
@@ -3379,14 +3561,17 @@
         cClose.textContent = '✕';
         cClose.addEventListener('click', async (e) => {
           e.stopPropagation();
+          closeCardMenu();
           await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
         });
-        cRight.append(cIdx, cClose);
+        cTopActs.append(cMore, cClose);
+        cRight.append(cIdx, cTopActs);
         cTop.append(cBadge, cRight);
 
+        const isEditing = editingTabId === t.address;
         const cName = document.createElement('div');
-        cName.className = 'agent-card-name';
-        if (editingTabId === t.address) {
+        cName.className = `agent-card-name${isEditing ? ' is-editing' : ''}`;
+        if (isEditing) {
           const inp = document.createElement('input');
           inp.type = 'text';
           inp.className = 'inline-rename-input';
@@ -3405,16 +3590,13 @@
           cName.appendChild(inp);
         } else {
           const nameSpan = document.createElement('span');
+          nameSpan.className = 'agent-card-name-text';
           nameSpan.textContent = label;
           cName.appendChild(nameSpan);
-          if (t.labels && t.labels['swarmbox.title_source'] === 'auto') {
-            const ab = document.createElement('span');
-            ab.className = 'auto-name-badge';
-            ab.textContent = 'auto';
-            ab.title = 'Auto-named by Sysop (double-click or Alt+R to rename)';
-            cName.appendChild(ab);
-          }
-          cName.title = 'Double-click or Alt+R to rename';
+          const isAutoNamed = t.labels && t.labels['swarmbox.title_source'] === 'auto';
+          cName.title = isAutoNamed
+            ? `${label} (auto-named by Sysop · double-click or Alt+R to rename)`
+            : `${label} (double-click or Alt+R to rename)`;
           cName.addEventListener('dblclick', (e) => {
             e.stopPropagation();
             startInlineRename(t.address);
@@ -3423,18 +3605,7 @@
 
         const cMsg = document.createElement('div');
         cMsg.className = 'agent-card-msg';
-        const wtBranch = t.labels && t.labels['swarmbox.worktree'] ? (t.labels['swarmbox.branch'] || 'worktree') : '';
-        if (wtBranch) {
-          const wtChip = document.createElement('button');
-          wtChip.type = 'button';
-          wtChip.className = 'wt-chip';
-          wtChip.innerHTML = `${ICO_BRANCH_SVG}<span>${wtBranch}</span>`;
-          wtChip.title = 'Worktree status & merge';
-          wtChip.addEventListener('click', (e) => { e.stopPropagation(); openWorktreePopover(t.address); });
-          cMsg.appendChild(wtChip);
-        } else {
-          cMsg.textContent = subText || (t.address || '');
-        }
+        cMsg.textContent = subText || (t.address || '');
 
         cInfo.append(cTop, cName, cMsg);
         main.append(stage, cInfo);
@@ -3442,12 +3613,43 @@
 
         const foot = document.createElement('div');
         foot.className = 'agent-card-foot';
-        const footL = document.createElement('span');
-        footL.textContent = `└ ${AGENT_FULL_NAMES[agentKind] || agentKind}`;
+        const wtBranch = t.labels && t.labels['swarmbox.worktree'] ? (t.labels['swarmbox.branch'] || 'worktree') : '';
+        const wtBase = (t.labels && t.labels['swarmbox.base']) || 'main';
+        const shortBranch = wtBranch ? wtBranch.replace(/^sb\//, '') : '';
+
+        const footL = document.createElement('div');
+        footL.className = 'agent-card-foot-l';
+        const footAg = document.createElement('span');
+        footAg.className = 'agent-card-foot-ag';
+        footAg.textContent = `└ ${AGENT_FULL_NAMES[agentKind] || agentKind}`;
+        footL.appendChild(footAg);
+        if (wtBranch) {
+          const wtSep = document.createElement('span');
+          wtSep.className = 'agent-wt-sep';
+          wtSep.textContent = '·';
+          const wtLink = document.createElement('button');
+          wtLink.type = 'button';
+          wtLink.className = 'agent-wt-link';
+          wtLink.innerHTML = `${ICO_BRANCH_SVG}<span>${shortBranch}</span>`;
+          wtLink.title = `Worktree ${wtBranch} → ${wtBase} · click to merge or inspect`;
+          wtLink.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeCardMenu();
+            openWorktreePopover(t.address);
+          });
+          footL.append(wtSep, wtLink);
+        }
         const footR = document.createElement('span');
+        footR.className = 'agent-card-foot-r';
         footR.textContent = idx < 9 ? `Alt+${idx + 1}` : '';
         foot.append(footL, footR);
         card.appendChild(foot);
+
+        card.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openCardMenu(t, { x: e.clientX, y: e.clientY }, card);
+        });
 
         if (state === 'working' && t.status && typeof t.status.progress === 'number') {
           const pBar = document.createElement('div');
@@ -4028,7 +4230,7 @@
           wrap.appendChild(list);
         }
         const li = document.createElement('li');
-        const frag = linkTabs(bullet[1].replace(/^(`[^`]+`|[t@]\d+|\d+:[\w.-]+)\s*:\s*/, '$1 '));
+        const frag = linkTabs(bullet[1].replace(/^(`[^`]+`|[t@]\d[a-z0-9]{0,3}|\d+:[\w.-]+)\s*:\s*/i, '$1 '));
         let first = frag.firstChild;
         if (first && first.nodeType === 1 && first.classList.contains('tab-ref-glue') && first.firstChild && first.firstChild.nodeType === 1
           && first.firstChild.classList.contains('tab-ref') && /^[:–—-]?$/.test(first.textContent.slice(first.firstChild.textContent.length))) {
@@ -4113,7 +4315,7 @@
         const mark = document.createElement('span');
         mark.className = 'turn-act-mark';
         mark.textContent = a.ok ? '✓' : '✕';
-        li.append(mark, a.label || a.fn || 'step');
+        li.append(mark, linkTabs(a.label || a.fn || 'step'));
         list.appendChild(li);
       }
       tog.addEventListener('click', () => {
@@ -4201,31 +4403,81 @@
     return box;
   }
 
-  function renderSystemEventRow(ev) {
+  function renderSystemEventRow(ev, opts = {}) {
     const row = document.createElement('div');
-    row.className = 'sysop-sysev';
-    const left = document.createElement('div');
-    left.className = 'sysop-sysev-left';
-    const txt = document.createElement('span');
+    const liveTab = ev.tab ? terminals.find((t) => t.address === ev.tab) : null;
+    const isLive = Boolean(liveTab);
+    const canRename = Boolean(ev.kind === 'autoname' && isLive && opts.isLatestForTab);
+    row.className = `sysop-sysev${isLive ? '' : ' is-closed'}`;
+
+    const body = document.createElement('div');
+    body.className = 'sysop-sysev-body';
+
     if (ev.kind === 'autoname') {
-      const oldS = ev.old_title || ev.tab || 'tab';
-      const newS = ev.new_title || '';
-      const tm = ev.ts ? new Date(ev.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-      txt.innerHTML = `✎ Renamed <strong>${oldS.replace(/[<>&]/g, '')}</strong> → <strong>${newS.replace(/[<>&]/g, '')}</strong>` +
-        (tm ? `<span class="sysop-sysev-time">${tm}</span>` : '');
+      const ico = document.createElement('span');
+      ico.className = 'sysop-sysev-ico';
+      ico.innerHTML = ICO_PENCIL_SVG;
+
+      const textWrap = document.createElement('span');
+      textWrap.className = 'sysop-sysev-text';
+      const oldS = String(ev.old_title || ev.tab || 'tab');
+      const newS = String(ev.new_title || '');
+      const known = ev.tab ? knownTabs[ev.tab] : null;
+      const chipKind = (liveTab && (tabAgentKind(liveTab) || 'shell'))
+        || (ev.agent && PIXEL_SVG[ev.agent] ? ev.agent : '')
+        || (known && known.kind)
+        || 'shell';
+      const chipObj = {
+        address: ev.tab || '',
+        name: newS || (liveTab ? tabDisplayName(liveTab) : oldS),
+        kind: chipKind,
+        live: isLive,
+        unknown: !isLive && !known,
+      };
+
+      const oldEl = document.createElement('span');
+      oldEl.className = 'sysop-sysev-old';
+      oldEl.textContent = oldS;
+      const arrow = document.createElement('span');
+      arrow.className = 'sysop-sysev-arrow';
+      arrow.textContent = '→';
+
+      textWrap.append('Renamed ', oldEl, ' ', arrow, ' ', tabChip(chipObj));
+      body.append(ico, textWrap);
     } else {
-      txt.textContent = ev.text || ev.kind;
+      const textWrap = document.createElement('span');
+      textWrap.className = 'sysop-sysev-text';
+      textWrap.textContent = ev.text || ev.kind;
+      body.appendChild(textWrap);
     }
-    left.appendChild(txt);
-    row.appendChild(left);
-    if (ev.kind === 'autoname' && ev.tab && terminals.some((t) => t.address === ev.tab)) {
+
+    const meta = document.createElement('div');
+    meta.className = 'sysop-sysev-meta';
+    if (ev.kind === 'autoname' && !isLive) {
+      const closedTag = document.createElement('span');
+      closedTag.className = 'sysop-sysev-state';
+      closedTag.textContent = 'closed';
+      meta.appendChild(closedTag);
+    }
+    const ago = fmtAgo(ev.ts);
+    if (ago) {
+      const tm = document.createElement('span');
+      tm.className = 'sysop-sysev-time';
+      tm.textContent = ago;
+      meta.appendChild(tm);
+    }
+    if (canRename) {
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'sysop-sysev-edit';
-      editBtn.textContent = 'Edit';
+      editBtn.title = 'Rename this tab';
+      editBtn.setAttribute('aria-label', `Rename ${ev.new_title || ev.tab}`);
+      editBtn.innerHTML = `${ICO_PENCIL_SVG}<span>Rename</span>`;
       editBtn.addEventListener('click', () => startInlineRename(ev.tab));
-      row.appendChild(editBtn);
+      meta.appendChild(editBtn);
     }
+
+    row.append(body, meta);
     return row;
   }
 
@@ -4233,10 +4485,11 @@
     const turns = Array.isArray(sysop.turns) ? sysop.turns : null;
     const sysEvents = Array.isArray(sysop.system_events) ? sysop.system_events : [];
     const steps = Array.isArray(sysop.steps) ? sysop.steps : [];
-    const empty = turns ? (turns.length === 0 && sysEvents.length === 0) : steps.length === 0;
-    sysopFeedEl.classList.toggle('is-empty', empty || !sysop.up);
+    const hasTurns = turns ? turns.length > 0 : steps.length > 0;
+    const empty = !hasTurns && sysEvents.length === 0;
+    sysopFeedEl.classList.toggle('is-empty', !hasTurns || !sysop.up);
     const keyHint = window.innerWidth <= 860 ? '' : ' (Alt+G)';
-    goalInputEl.placeholder = (empty ? (window.innerWidth <= 860 ? 'Ask Sysop…' : 'Ask Sysop or direct an agent…') : 'Ask a follow-up…') + keyHint;
+    goalInputEl.placeholder = (!hasTurns ? (window.innerWidth <= 860 ? 'Ask Sysop…' : 'Ask Sysop or direct an agent…') : 'Ask a follow-up…') + keyHint;
     btnSysopNew.classList.toggle('hidden', empty || !sysop.up);
     // the snapshot comes every 600 ms: rebuild only when something shown changed (the minute keeps "3m ago" true)
     const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns, sysEvents, turns ? null : steps,
@@ -4245,15 +4498,43 @@
       lastFeedKey = key;
       const nearBottom = sysopFeedEl.scrollHeight - sysopFeedEl.scrollTop - sysopFeedEl.clientHeight < 48;
       sysopFeedEl.innerHTML = '';
+      // Track the most recent autoname event per live tab so only the current name offers a Rename button
+      const latestRenameByTab = new Map();
+      for (const ev of sysEvents) {
+        if (ev && ev.kind === 'autoname' && ev.tab) {
+          latestRenameByTab.set(ev.tab, ev.id);
+        }
+      }
       if (!sysop.up || empty) {
         sysopFeedEl.appendChild(renderSysopEmpty(sysop));
+      } else if (turns && !hasTurns) {
+        // Background auto-renames alone never hide Sysop's welcome & starter prompts
+        sysopFeedEl.appendChild(renderSysopEmpty(sysop));
+        const grp = document.createElement('div');
+        grp.className = 'sysop-sysev-group sysop-sysev-recent';
+        for (const ev of sysEvents.slice(-4)) {
+          grp.appendChild(renderSystemEventRow(ev, { isLatestForTab: latestRenameByTab.get(ev.tab) === ev.id }));
+        }
+        sysopFeedEl.appendChild(grp);
       } else if (turns) {
         const timeline = [
           ...turns.map((t) => ({ kind: 'turn', ts: t.started || 0, item: t })),
           ...sysEvents.map((e) => ({ kind: 'sysev', ts: e.ts || 0, item: e })),
         ].sort((a, b) => a.ts - b.ts);
+        let sysevGroup = null;
         for (const entry of timeline) {
-          sysopFeedEl.appendChild(entry.kind === 'turn' ? renderTurn(entry.item) : renderSystemEventRow(entry.item));
+          if (entry.kind === 'turn') {
+            sysevGroup = null;
+            sysopFeedEl.appendChild(renderTurn(entry.item));
+          } else {
+            if (!sysevGroup) {
+              sysevGroup = document.createElement('div');
+              sysevGroup.className = 'sysop-sysev-group';
+              sysopFeedEl.appendChild(sysevGroup);
+            }
+            const ev = entry.item;
+            sysevGroup.appendChild(renderSystemEventRow(ev, { isLatestForTab: latestRenameByTab.get(ev.tab) === ev.id }));
+          }
         }
       } else {
         // an older gateway without turns: the flat steps of the current goal

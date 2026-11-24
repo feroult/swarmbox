@@ -16,7 +16,7 @@ HISTORY_GOALS = 8
 HISTORY_AGE = 12 * 3600      # seconds: older goals are another conversation
 MAX_CHARS = 3600
 TERMINAL = ("done", "stopped", "failed")
-_TAB = re.compile(r"screen of ((?:t|@)\d+) \(([^)]*)\)")
+_TAB = re.compile(r"screen of ((?:t|@)\d[a-z0-9]{0,3}) \(([^)]*)\)", re.I)
 _CTRL = re.compile(r"[\x00-\x1f\x7f]+")
 
 

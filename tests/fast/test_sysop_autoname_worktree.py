@@ -115,6 +115,7 @@ class AutoNamerTest(unittest.TestCase):
             evs = [json.loads(ln) for ln in f if ln.strip()]
         self.assertEqual(len(evs), 1)
         self.assertEqual(evs[0]["kind"], "autoname")
+        self.assertEqual(evs[0]["agent"], "claude")
         self.assertEqual(evs[0]["new_title"], "Fix OAuth Login")
 
         # Cooldown skips second turn in same cwd
@@ -123,7 +124,13 @@ class AutoNamerTest(unittest.TestCase):
         self.now += 30.0
         self.assertIsNone(namer.handle_event({"body": {"event": "turn", "tab": "t1", "cwd": "/home/a/api", "agent": "claude"}}))
 
-        # Changing cwd bypasses cooldown
+        # Even past cooldown, an already auto-named tab in the same cwd does not churn
+        tabs.screens["t1"] += "\nadditional turn output in the same folder after cooldown"
+        self.now += 500.0
+        self.assertIsNone(namer.handle_event({"body": {"event": "turn", "tab": "t1", "cwd": "/home/a/api", "agent": "claude"}}))
+        self.assertEqual(tabs.tabs[0]["title"], "Fix OAuth Login")
+
+        # Changing cwd bypasses cooldown and re-names for the new directory
         got2 = namer.handle_event({"body": {"event": "cwd", "tab": "t1", "cwd": "/home/a/web", "agent": "claude"}})
         self.assertEqual(got2, "Another Name")
 
@@ -173,9 +180,9 @@ class AutoNamerTest(unittest.TestCase):
         self.assertIn("sb/wt-9", opened)
         self.assertTrue(tabs.opened[-1]["worktree"])
 
-        # rename_tab writes system_events without polluting history.py goals
+        # rename_tab locks title as user-owned without duplicating background system_events or polluting history
         srv.t_rename_tab({"tab": "t1", "title": "Cache TTL Fix"})
-        self.assertEqual(tabs.renames[-1], ("t1", "Cache TTL Fix", "auto"))
+        self.assertEqual(tabs.renames[-1], ("t1", "Cache TTL Fix", "user"))
         self.assertEqual(sysop_history.conversation(sysop_history.load(self.paths), "g2", self.now), "")
 
         # worktree status (read-only) & merge with clean=True closes tab

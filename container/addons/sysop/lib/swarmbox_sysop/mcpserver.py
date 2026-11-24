@@ -489,11 +489,10 @@ class Server:
         title = self.arg(args, "title", "string", True).strip()[:60]
         if not title:
             raise ToolError("error: bad arguments: title cannot be empty")
-        res = self.tabs_call(self.tabs.rename_tab, tab["tab"], title, source="auto")
+        # User-requested rename via Sysop locks the title so background AutoNamer does not overwrite it.
+        res = self.tabs_call(self.tabs.rename_tab, tab["tab"], title, source="user")
         old_title = str(res.get("old_title") or display_name(tab))
         self.audit.append("tab", op="rename", tab=tab["tab"], old_title=old_title, new_title=title)
-        sys_ev = os.path.join(os.path.dirname(self.ctx.audit_path), "system_events.jsonl")
-        autoname.append_system_event(sys_ev, "autoname", clock=self.clock, tab=tab["tab"], old_title=old_title, new_title=title)
         return "renamed %s -> %s" % (old_title, title)
 
     def t_worktree(self, args):

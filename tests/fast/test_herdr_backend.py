@@ -735,10 +735,12 @@ vm.runInNewContext(fs.readFileSync(%s, 'utf8'), ctx);
 const { parse } = ctx.module.exports;
 const tabs = [
   { address: 't2', name: 'swarmbox', aliases: ['shell'], kind: 'claude', live: true },
+  { address: 't1x', name: 'Sysop Review', aliases: ['agy-wt-5f3e'], kind: 'agy', live: true },
   { address: 't6', name: 'sabrina', aliases: ['shell-4'], kind: 'claude', live: true },
   { address: 't3', name: 'winix', aliases: ['shell-3'], kind: 'agy', live: false },
 ];
 const show = (s) => parse(s, tabs).map((x) => x.t === 'text' ? x.v : x.t === 'tab' ? '[' + x.tab.name + (x.tab.live ? '' : '*') + ']' : '<' + x.t + ':' + x.v + '>').join('');
+assert.equal(show('read tab t1x and t2'), 'read tab [Sysop Review] and [swarmbox]', 'base-36 herdr-core addresses like t1x resolve to chips');
 assert.equal(show('agentes: `t2` (~/swarmbox, ativa), t3 (~/winix) e t9.'), 'agentes: [swarmbox] (~/swarmbox, ativa), [winix*] (~/winix) e [t9*].');
 assert.equal(show('- `1:shell` (`t2`, ativa): em ~/swarmbox'), '- [swarmbox] (ativa): em ~/swarmbox', 'the numbered label resolves; the id after it goes');
 assert.equal(show('a aba `sabrina` (t6) e shell-4'), 'a aba [sabrina] e [sabrina]', 'the herdr name is an alias of the shown name');

@@ -822,7 +822,15 @@ function formatCallStep(call) {
   if (fn === 'focus_tab') return tab ? `switched to ${tab}` : 'switched tab';
   if (fn === 'open_tab') {
     const label = a.name || a.agent || 'shell';
-    return `opened tab ${String(label).slice(0, 24)}`;
+    return `opened tab ${String(label).slice(0, 24)}${a.worktree ? ' (worktree)' : ''}`;
+  }
+  if (fn === 'rename_tab') {
+    const to = String(a.title || '').replace(/\s+/g, ' ').trim().slice(0, 48);
+    return tab ? `renamed ${tab} → ${to}` : `renamed tab → ${to}`;
+  }
+  if (fn === 'worktree') {
+    const act = String(a.action || 'status').slice(0, 16);
+    return tab ? `worktree ${act} on ${tab}` : `worktree ${act}`;
   }
   if (fn === 'close_tab') return tab ? `closed tab ${tab}` : 'closed tab';
   if (fn === 'run') return `run: ${String(a.command || '').replace(/\s+/g, ' ').trim().slice(0, 180)}`;
@@ -840,6 +848,11 @@ function liveActionLabel(call) {
   if (fn === 'box_info') return 'Inspecting box health…';
   if (fn === 'focus_tab') return tab ? `Switching to ${tab}…` : 'Switching tab…';
   if (fn === 'open_tab') return `Opening ${String(a.name || a.agent || 'tab').slice(0, 20)}…`;
+  if (fn === 'rename_tab') return tab ? `Renaming ${tab}…` : 'Renaming tab…';
+  if (fn === 'worktree') {
+    const act = String(a.action || 'status');
+    return act === 'merge' ? 'Merging worktree…' : act === 'remove' ? 'Removing worktree…' : 'Checking worktree…';
+  }
   if (fn === 'close_tab') return tab ? `Closing ${tab}…` : 'Closing tab…';
   if (fn === 'run') {
     const cmd = String(a.command || '').replace(/\s+/g, ' ').trim().slice(0, 56);
@@ -1045,6 +1058,7 @@ export function readSysopSnapshot(terminals) {
           kind: String(ev.kind),
           ts: ts * 1000,
           tab: String(ev.tab || ''),
+          agent: String(ev.agent || ''),
           old_title: String(ev.old_title || ''),
           new_title: String(ev.new_title || ''),
           text: String(ev.text || ''),

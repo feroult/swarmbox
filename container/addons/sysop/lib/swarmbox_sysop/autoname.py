@@ -24,6 +24,20 @@ COOLDOWN = 180.0
 MIN_SCREEN_CHARS = 40
 MAX_SYSTEM_EVENTS = 200
 GENERIC_TITLES = frozenset({"shell", "bash", "zsh", "terminal", "tab", "claude", "agy", "opencode", "gemini", "codex", "keep", "none", "untitled"})
+_WT_SLUG_RE = re.compile(r"^sb-wt-[a-z0-9]{3,12}$", re.I)
+
+
+def _is_placeholder_title(title, cwd=""):
+    s = str(title or "").strip()
+    if not s:
+        return True
+    low = s.lower()
+    if low in GENERIC_TITLES or _WT_SLUG_RE.match(s):
+        return True
+    base = os.path.basename(str(cwd or "").rstrip("/"))
+    if base and low == base.lower():
+        return True
+    return False
 
 PROMPT_TEMPLATE = (
     "You name terminal tabs in 2 to 4 concise words describing the task being worked on "
@@ -232,18 +246,28 @@ class AutoNamer:
         st["last_hash"] = sig
 
         # Re-check current tab metadata via list_tabs to guarantee we never race a manual user rename
+        # and avoid churning a tab that already has a semantic auto-title in the same working directory.
         cur_title = str(body.get("title") or "")
+        cur_source = str(body.get("title_source") or "")
+        agent_kind = str(body.get("agent") or "shell")
         try:
             for item in self.tabs.list_tabs():
                 if item.get("tab") == tab:
-                    if item.get("title_source") == "user":
+                    cur_source = str(item.get("title_source") or cur_source)
+                    if cur_source == "user":
                         return None
                     cur_title = str(item.get("title") or item.get("name") or cur_title)
+                    if item.get("cmd") and agent_kind == "shell":
+                        agent_kind = str(item.get("cmd"))
                     break
         except tabsclient.TabsError:
             pass
 
-        raw_suggestion = self.namer(cwd, body.get("agent") or "shell", cur_title, text)
+        if cur_source == "auto" and not cwd_changed and not _is_placeholder_title(cur_title, cwd):
+            st["last_cwd"] = cwd
+            return None
+
+        raw_suggestion = self.namer(cwd, agent_kind, cur_title, text)
         new_title = clean_suggested_title(raw_suggestion)
         if not new_title or new_title.lower() == cur_title.strip().lower():
             return None
@@ -264,6 +288,7 @@ class AutoNamer:
             "autoname",
             clock=self.clock,
             tab=tab,
+            agent=agent_kind,
             old_title=old_title,
             new_title=new_title,
         )
