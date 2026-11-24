@@ -294,6 +294,7 @@
   const btnHostDiscard = document.getElementById('btn-host-discard');
 
   const terminalHostEl = document.getElementById('terminal');
+  const stageEmptyEl = document.getElementById('stage-empty');
   const MAX_TAB_SESSIONS = 8;
 
   let terminals = [];
@@ -3209,17 +3210,84 @@
         termCtxStateEl.textContent = stateBadgeText(aState, active.status);
       }
     } else {
+      const hasParked = parkedPins.length > 0;
       activeDotEl.dataset.state = 'idle';
-      activeNameEl.textContent = 'No active tab';
+      activeNameEl.textContent = hasParked ? 'Sessions parked' : 'No active tab';
       if (activeAgentEl) activeAgentEl.classList.add('hidden');
       if (topbarWtBtnEl) topbarWtBtnEl.classList.add('hidden');
       if (mobileWtBtnEl) mobileWtBtnEl.classList.add('hidden');
-      if (activeStatusEl) activeStatusEl.textContent = 'idle';
+      if (activeStatusEl) activeStatusEl.textContent = hasParked ? `${parkedPins.length} parked` : 'idle';
       if (termCtxIconEl) termCtxIconEl.innerHTML = pixelIconHtml('shell');
-      if (termCtxTitleEl) termCtxTitleEl.textContent = 'No active tab';
+      if (termCtxTitleEl) termCtxTitleEl.textContent = hasParked ? 'Sessions parked' : 'No active tab';
       if (termCtxStateEl) {
         termCtxStateEl.dataset.state = 'idle';
-        termCtxStateEl.textContent = 'IDLE';
+        termCtxStateEl.textContent = hasParked ? 'PARKED' : 'IDLE';
+      }
+    }
+
+    if (stageEmptyEl) {
+      if (terminals.length > 0) {
+        stageEmptyEl.classList.add('hidden');
+        stageEmptyEl.innerHTML = '';
+      } else {
+        stageEmptyEl.classList.remove('hidden');
+        stageEmptyEl.innerHTML = '';
+        const card = document.createElement('div');
+        card.className = 'stage-empty-card';
+        const title = document.createElement('div');
+        title.className = 'stage-empty-title';
+        title.textContent = parkedPins.length > 0 ? 'Sessions parked' : 'No active sessions';
+        const sub = document.createElement('div');
+        sub.className = 'stage-empty-sub';
+        sub.textContent = parkedPins.length > 0
+          ? 'Wake a pinned session to resume where you left off, or start a fresh agent or shell.'
+          : 'Open a new agent or shell tab to get started.';
+        card.append(title, sub);
+        if (parkedPins.length > 0) {
+          const list = document.createElement('div');
+          list.className = 'stage-empty-list';
+          for (const pin of parkedPins) {
+            const pKind = pin.agent && PIXEL_SVG[pin.agent] ? pin.agent : 'shell';
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'stage-empty-pin';
+            row.disabled = Boolean(pin.missing_cwd);
+            const left = document.createElement('span');
+            left.className = 'stage-empty-pin-left';
+            const meta = document.createElement('span');
+            meta.className = 'stage-empty-pin-meta';
+            const nm = document.createElement('span');
+            nm.className = 'stage-empty-pin-name';
+            nm.textContent = pin.title || shortDisplayPath(pin.cwd) || 'pinned';
+            const pt = document.createElement('span');
+            pt.className = 'stage-empty-pin-path';
+            pt.textContent = `${AGENT_FULL_NAMES[pKind] || pKind} · ${shortDisplayPath(pin.cwd)}`;
+            meta.append(nm, pt);
+            left.append(makeMiniPixelIcon(pKind), meta);
+            const pill = document.createElement('span');
+            pill.className = `wake-pill${pin.missing_cwd ? ' is-missing' : ''}`;
+            pill.textContent = pin.missing_cwd ? 'Missing dir' : '▶ Wake';
+            row.append(left, pill);
+            row.addEventListener('click', () => { if (!pin.missing_cwd) wakePin(pin.id); });
+            list.appendChild(row);
+          }
+          card.appendChild(list);
+        }
+        const actions = document.createElement('div');
+        actions.className = 'stage-empty-actions';
+        const btnAg = document.createElement('button');
+        btnAg.type = 'button';
+        btnAg.className = 'stage-empty-btn';
+        btnAg.textContent = '+ New agent';
+        btnAg.addEventListener('click', () => spawnTab('agent'));
+        const btnSh = document.createElement('button');
+        btnSh.type = 'button';
+        btnSh.className = 'stage-empty-btn';
+        btnSh.textContent = '+ New shell';
+        btnSh.addEventListener('click', () => spawnTab('shell'));
+        actions.append(btnAg, btnSh);
+        card.appendChild(actions);
+        stageEmptyEl.appendChild(card);
       }
     }
 
@@ -3227,6 +3295,7 @@
       const tabLabel = terminals.length === 1 ? '1 tab' : `${terminals.length} tabs`;
       const agLabel = agentCount === 1 ? '1 agent' : `${agentCount} agents`;
       const parts = [tabLabel, agLabel];
+      if (parkedPins.length > 0) parts.push(`${parkedPins.length} parked`);
       if (busyCount > 0) parts.push(`${busyCount} busy`);
       statusbarSummaryEl.textContent = parts.join(' · ');
     }

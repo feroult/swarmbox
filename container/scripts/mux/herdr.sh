@@ -76,13 +76,23 @@ _herdr_record_active() {
 }
 
 _herdr_ensure_initial_tab() {
-    local count cwd json addr pins_bin
+    local count cwd json addr pins_bin pins_out has_pins=0 boot_flag=${1:-}
     pins_bin=${SWARMBOX_TEST_PINS_BIN:-swarmbox-pins}
     if command -v "$pins_bin" > /dev/null 2>&1; then
-        "$pins_bin" restore --boot > /dev/null 2>&1 || true
+        if [ "$boot_flag" = "--boot" ]; then
+            pins_out=$("$pins_bin" restore --boot 2>/dev/null) || pins_out=""
+        else
+            pins_out=$("$pins_bin" restore 2>/dev/null) || pins_out=""
+        fi
+        case "$pins_out" in
+            *'"total_pins": 0'*|*'"total_pins":0'*|'') ;;
+            *'"total_pins"'*) has_pins=1 ;;
+        esac
     fi
     count=$(_herdr_live_count)
-    if [ "${count:-0}" -eq 0 ]; then
+    # Only spawn a fallback login shell when no terminals are live AND the user has no saved pins
+    # (when pinned sessions exist and are all parked, stay at 0 shells so waking a pin leaves no stray shell).
+    if [ "${count:-0}" -eq 0 ] && [ "$has_pins" -eq 0 ]; then
         cwd=${HOME:-/home/agent}
         json=$("$_SB_HERDR_HC" run --bg --keep --no-parent --name shell --cwd "$cwd" -- /bin/bash -l 2>/dev/null) || true
         addr=$(printf '%s' "$json" | _herdr_extract_address)
@@ -101,7 +111,7 @@ mux_serve_init() {
             warn "herdr-core did not start (exit $rc); see serve.log"
             return 0
         fi
-        _herdr_ensure_initial_tab
+        _herdr_ensure_initial_tab --boot
     else
         warn "hc (herdr-core) not found; background terminal daemon was not started"
     fi

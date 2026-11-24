@@ -292,18 +292,28 @@ class PinsTest(unittest.TestCase):
         self.assertEqual(len(terms), 1)
         self.assertEqual(terms[0]["labels"].get("swarmbox.pin_id"), p_auto["id"])
 
-        # Case 2: only parked (autostart=False) pins exist -> herdr.sh spawns default shell
+        # Case 2: only parked (autostart=False) pins exist -> herdr.sh does NOT spawn a stray shell
         pins_mod.update_pin(p_auto["id"], autostart=False, env=env)
         with open(hc_state, "w", encoding="utf-8") as f:
             json.dump({"terminals": []}, f)
         subprocess.run(
-            ["/bin/bash", "-c", f'source "{herdr_sh}" && _herdr_ensure_initial_tab'],
+            ["/bin/bash", "-c", f'source "{herdr_sh}" && _herdr_ensure_initial_tab --boot'],
             env=env, check=True,
         )
         with open(hc_state, encoding="utf-8") as f:
             terms2 = json.load(f)["terminals"]
-        self.assertEqual(len(terms2), 1)
-        self.assertEqual(terms2[0]["name"], "shell")
+        self.assertEqual(len(terms2), 0)
+
+        # Case 3: no pins at all -> herdr.sh spawns default shell
+        pins_mod.remove_pin(p_auto["id"], env=env)
+        subprocess.run(
+            ["/bin/bash", "-c", f'source "{herdr_sh}" && _herdr_ensure_initial_tab --boot'],
+            env=env, check=True,
+        )
+        with open(hc_state, encoding="utf-8") as f:
+            terms3 = json.load(f)["terminals"]
+        self.assertEqual(len(terms3), 1)
+        self.assertEqual(terms3[0]["name"], "shell")
 
     def test_reset_keep_recovery_restarts_autostart_agent_and_parks_non_autostart(self):
         """Regression test for `swarmbox reset` where herdr-core resurrects `--keep` terminals
@@ -353,7 +363,7 @@ class PinsTest(unittest.TestCase):
 
         # Boot hook must run even though _herdr_live_count > 0!
         subprocess.run(
-            ["/bin/bash", "-c", f'source "{herdr_sh}" && _herdr_ensure_initial_tab'],
+            ["/bin/bash", "-c", f'source "{herdr_sh}" && _herdr_ensure_initial_tab --boot'],
             env=env, check=True,
         )
         with open(hc_state, encoding="utf-8") as f:

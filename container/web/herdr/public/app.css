@@ -3321,6 +3321,120 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   background: rgba(167, 139, 250, 0.28);
 }
 
+/* Stage empty state when all sessions are parked or closed */
+.stage-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 38%, rgba(124, 58, 237, 0.08), transparent 60%), var(--bg);
+}
+.stage-empty.hidden { display: none; }
+.stage-empty-card {
+  width: 100%;
+  max-width: 420px;
+  background: rgba(23, 19, 36, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+}
+.stage-empty-title {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.stage-empty-sub {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.stage-empty-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.stage-empty-pin {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px dashed rgba(167, 139, 250, 0.34);
+  background: rgba(124, 58, 237, 0.08);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.stage-empty-pin:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: rgba(124, 58, 237, 0.18);
+}
+.stage-empty-pin:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.stage-empty-pin-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.stage-empty-pin-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.stage-empty-pin-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-empty-pin-path {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-empty-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 2px;
+}
+.stage-empty-btn {
+  appearance: none;
+  flex: 1;
+  padding: 7px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.stage-empty-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 @media (max-width: 860px) {
   .studio-popover-backdrop {
     align-items: flex-end;

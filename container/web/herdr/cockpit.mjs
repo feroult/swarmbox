@@ -535,7 +535,7 @@ export class Cockpit {
           keep: true,
           no_parent: true,
         });
-        const addr = created?.terminal?.address;
+        const addr = created?.terminal?.address || created?.address;
         if (addr) {
           this.activeAddr = addr;
           this.terminals = this.hc.listSnapshot();
@@ -629,9 +629,9 @@ export class Cockpit {
         keep: true,
         no_parent: true,
       });
-      const addr = created?.terminal?.address;
+      const addr = created?.terminal?.address || created?.address;
       if (addr) {
-        this.setToast(`Opened ${created.terminal.name || preset}`);
+        this.setToast(`Opened ${(created.terminal && created.terminal.name) || created.name || preset}`);
         await this._attachTo(addr);
       }
     } catch (err) {

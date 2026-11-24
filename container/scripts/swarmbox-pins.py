@@ -393,7 +393,7 @@ def restore_autostart_pins(hc_bin=None, run_dir=None, env=None, on_boot=False):
         except OSError:
             pass
 
-    return {"ok": True, "spawned": spawned, "parked": parked, "skipped": skipped}
+    return {"ok": True, "spawned": spawned, "parked": parked, "skipped": skipped, "total_pins": len(pins)}
 
 
 def _parse_args(argv, takes=(), flags=()):
