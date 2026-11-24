@@ -493,13 +493,14 @@
   // Moves are coalesced to one per frame, the flick speed is measured over the last 100ms of the drag,
   // and the content settles on a row boundary when it stops. The alternate screen (vim, less, TUIs)
   // still gets wheel line steps, since the program draws its own scrolling.
-  const TOUCH_DRAG_PX = 6;
-  const TOUCH_DRAG_GAIN = 1;
+  const TOUCH_DRAG_PX = 4;
+  const TOUCH_DRAG_GAIN = 1.15;
   const TOUCH_COAST_GAIN = 1;
-  const TOUCH_FLICK_MIN = 0.12;   // px/ms
-  const TOUCH_FRICTION = 0.95;    // per 16.67ms frame
-  const TOUCH_STOP_VEL = 0.03;    // px/ms
-  const TOUCH_VEL_WINDOW = 100;   // ms of drag samples used for the flick speed
+  const TOUCH_FLICK_MIN = 0.1;    // px/ms
+  const TOUCH_FRICTION = 0.968;   // per 16.67ms frame (native iOS-like glide)
+  const TOUCH_STOP_VEL = 0.025;   // px/ms
+  const TOUCH_VEL_WINDOW = 85;    // ms of drag samples used for the flick speed
+  const TOUCH_MAX_VEL = 14;       // px/ms cap for chained fast flicks
 
   let touchId = null;
   let touchStartY = 0;
@@ -508,6 +509,9 @@
   let touchLastT = 0;
   let touchMoved = false;
   let touchVel = 0;
+  let touchCoastDir = 0;
+  let touchChainBoost = 1;
+  let touchChainT = 0;
   let touchRaf = 0;
   let touchAltAccum = 0;
   let touchSamples = [];
@@ -549,6 +553,7 @@
 
   // Called from term.onScroll / term.onRender of each session.
   function touchOffsetOnScroll(sess, ydisp) {
+    if (touchId !== null || touchRaf) return;
     if (sess.touchFrac && ydisp !== sess.touchLine) clearTouchOffset(sess);
   }
   function touchOffsetOnRender(sess) {
@@ -588,22 +593,28 @@
       return Math.abs(next - prev) > 0.25;
     }
 
-    // Alternate screen (vim, less, htop, fullscreen TUI): emit wheel/line steps
+    // Alternate screen (Claude Code, vim, less, htop, fullscreen TUIs): dispatch one line-mode
+    // WheelEvent per step so mouse-tracked TUIs receive every tick instead of collapsing a fast
+    // flick into a single wheel packet or dropping sub-threshold pixel deltas.
     const rh = sessionRowHeight(sess);
-    touchAltAccum += deltaPx / rh;
+    touchAltAccum += deltaPx / Math.max(10, rh * 0.85);
     const lines = Math.trunc(touchAltAccum);
     if (lines !== 0) {
       touchAltAccum -= lines;
       const screenEl = sess.paneEl.querySelector('.xterm-screen');
+      const dir = Math.sign(lines);
+      const count = Math.min(8, Math.abs(lines));
       if (screenEl && typeof WheelEvent === 'function') {
-        screenEl.dispatchEvent(new WheelEvent('wheel', {
-          deltaY: lines * rh,
-          deltaMode: 0,
-          clientX: touchLastX,
-          clientY: touchLastY,
-          bubbles: true,
-          cancelable: true,
-        }));
+        for (let i = 0; i < count; i++) {
+          screenEl.dispatchEvent(new WheelEvent('wheel', {
+            deltaY: dir * 3,
+            deltaMode: 1,
+            clientX: touchLastX,
+            clientY: touchLastY,
+            bubbles: true,
+            cancelable: true,
+          }));
+        }
       } else {
         sess.term.scrollLines(lines);
       }
@@ -776,6 +787,7 @@
     }
     const t = findTouchById(e.touches, touchId);
     if (!t) return;
+    if (e.cancelable) e.preventDefault();
     if (!touchMoved && Math.abs(t.clientY - touchStartY) < TOUCH_DRAG_PX) return;
     touchMoved = true;
     const tt = nowMs();
@@ -786,7 +798,6 @@
     touchLastY = t.clientY;
     touchLastX = t.clientX;
     touchLastT = tt;
-    if (e.cancelable) e.preventDefault();
   }, { passive: false });
 
   termWrapEl.addEventListener('touchcancel', () => {
@@ -810,14 +821,29 @@
     }
     if (touchMoved && e.cancelable) e.preventDefault();
     const moved = touchMoved;
-    touchVel = moved ? touchFlickVelocity() : 0;
-    const flick = moved && Math.abs(touchVel) >= TOUCH_FLICK_MIN && (nowMs() - touchLastT) < 90;
+    const now = nowMs();
+    const rawVel = moved ? touchFlickVelocity() : 0;
+    const flick = moved && Math.abs(rawVel) >= TOUCH_FLICK_MIN && (now - touchLastT) < 110;
     touchId = null;
     touchMoved = false;
     flushTouchScroll();
-    if (flick) startTouchCoast();
-    else {
+    if (flick) {
+      const dir = Math.sign(rawVel);
+      // Chained flicks in the same direction within 650ms build speed naturally (like iOS/Android)
+      if (dir === touchCoastDir && (now - touchChainT) < 650) {
+        touchChainBoost = Math.min(2.4, touchChainBoost + 0.45);
+      } else {
+        touchChainBoost = 1;
+      }
+      touchCoastDir = dir;
+      touchChainT = now;
+      const speed = Math.abs(rawVel);
+      const accel = 1 + Math.min(1.6, Math.max(0, speed - 0.35) * 0.75);
+      touchVel = Math.max(-TOUCH_MAX_VEL, Math.min(TOUCH_MAX_VEL, rawVel * accel * touchChainBoost));
+      startTouchCoast();
+    } else {
       touchVel = 0;
+      touchChainBoost = 1;
       if (moved) settleTouchScroll();
     }
   }, { passive: false });

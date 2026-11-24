@@ -1242,6 +1242,8 @@ html.swarmbox-ready #sb-boot {
 .term-toast[data-tone="ok"] { border-color: rgba(74, 222, 128, 0.42); color: var(--green); }
 .term-toast[data-tone="error"] { border-color: rgba(255, 107, 120, 0.45); color: var(--red); }
 .xterm { height: 100%; overflow: hidden; } /* clips the sub-row touch-scroll offset of .xterm-screen */
+/* touch-action is NOT inherited: lock every xterm layer so the mobile compositor never hijacks scrolls or pinches */
+.term-pane, .xterm, .xterm-viewport, .xterm-screen { touch-action: none; }
 .xterm-viewport { background-color: transparent !important; }
 /* The terminal scrollbar is an overlay: hidden at the live bottom, shown by .sb-show (see syncScrollbar in app.js) */
 .term-pane .xterm-viewport::-webkit-scrollbar-thumb { background: transparent; }
