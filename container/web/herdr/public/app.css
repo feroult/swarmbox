@@ -1260,6 +1260,14 @@ html.swarmbox-ready #sb-boot {
   touch-action: pan-x pan-y;
   touch-action: pan-x pan-y pinch-zoom;
 }
+/* CRITICAL (W3C Touch Events + xterm DOM renderer):
+   xterm's DOM renderer detaches/replaces <span> nodes inside .xterm-rows on the very first
+   scrolled line. If touchstart targets a volatile <span>, browsers silently drop ALL subsequent
+   touchmove/touchend events for that finger (breaking both scrolling and 2-finger pinch!).
+   Routing touch hit-testing to permanent .xterm-screen keeps 100% of touch streams attached. */
+@media (max-width: 860px), (pointer: coarse), (hover: none) {
+  .xterm-rows, .xterm-rows * { pointer-events: none; }
+}
 .xterm-viewport { background-color: transparent !important; }
 /* The terminal scrollbar is an overlay: hidden at the live bottom, shown by .sb-show (see syncScrollbar in app.js) */
 .term-pane .xterm-viewport::-webkit-scrollbar-thumb { background: transparent; }

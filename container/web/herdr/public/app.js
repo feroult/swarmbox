@@ -1083,18 +1083,26 @@
     const batch = sess.resizeChunks || [];
     sess.resizeChunks = [];
     const keepBottom = sess.resizeWasAtBottom !== false;
-    const reveal = () => {
+    const savedOffset = Number.isFinite(sess.resizeLinesFromBottom) ? sess.resizeLinesFromBottom : 0;
+    const restoreScroll = () => {
       const vp = sess.paneEl.querySelector('.xterm-viewport');
       if (keepBottom) {
         try { sess.term.scrollToBottom(); } catch (_) {}
         if (vp) vp.scrollTop = vp.scrollHeight;
+      } else {
+        try {
+          const b = sess.term.buffer && sess.term.buffer.active;
+          if (b && b.type === 'normal' && b.baseY > 0) {
+            sess.term.scrollToLine(Math.max(0, b.baseY - savedOffset));
+          }
+        } catch (_) {}
       }
+    };
+    const reveal = () => {
+      restoreScroll();
       markBlockRows(sess.paneEl);
       requestAnimationFrame(() => {
-        if (keepBottom) {
-          try { sess.term.scrollToBottom(); } catch (_) {}
-          if (vp) vp.scrollTop = vp.scrollHeight;
-        }
+        restoreScroll();
         sess.paneEl.classList.remove('resizing');
         if (activeId === sess.address) syncJumpLive();
       });
@@ -1130,6 +1138,10 @@
       if (sess.term.options.lineHeight !== nextLH) sess.term.options.lineHeight = nextLH;
       updateBlockScale();
       const wasAtBottom = isSessionAtBottom(sess);
+      const bufBefore = sess.term.buffer && sess.term.buffer.active;
+      const linesFromBottom = (bufBefore && bufBefore.type === 'normal')
+        ? Math.max(0, bufBefore.baseY - bufBefore.viewportY)
+        : 0;
       sess.fitAddon.fit();
       markBlockRows(sess.paneEl);
       sess.needsFit = false;
@@ -1141,6 +1153,7 @@
         sess.lastRows = sess.term.rows;
         if (!sess.hydrating) {
           sess.resizeWasAtBottom = wasAtBottom;
+          sess.resizeLinesFromBottom = linesFromBottom;
           beginResizeCycle(sess);
           logTouchDebug('resize_sent', {
             prevCols,
