@@ -8,7 +8,7 @@ survive `swarmbox stop`, host reboots, `swarmbox reset`, and image updates.
   swarmbox-pins add --cwd DIR [--agent AGENT] [--title TITLE] [--resume continue|fresh] [--autostart]
   swarmbox-pins update PIN_ID [--title TITLE] [--cwd DIR] [--agent AGENT] [--resume continue|fresh] [--autostart 0|1]
   swarmbox-pins rm PIN_ID
-  swarmbox-pins restore                  spawn autostart=true pins into herdr-core (called at box boot)
+  swarmbox-pins restore [--boot]         reconcile autostart=true pins into herdr-core (called at box boot)
 
 Output: JSON on stdout. Failures print {"err": CODE, "msg": TEXT} and exit non-zero.
 """
@@ -211,18 +211,64 @@ def build_agent_argv(agent, resume="continue"):
     return ["/bin/bash", "-lic", f"{ag}; exec /bin/bash -l"]
 
 
-def restore_autostart_pins(hc_bin=None, run_dir=None, env=None):
-    """Spawn pins marked autostart=true into herdr-core. Never fails boot on missing cwd."""
+SHELL_NAMES = frozenset({"bash", "sh", "zsh", "dash", "fish", "ash", "ksh", "nu", "nushell", ""})
+
+
+def _is_shell_only(term):
+    """Return True when a live herdr-core terminal is only running a bare login shell
+    (e.g. a `--keep` recovery shell resurrected by `hc server start` after `swarmbox reset`)."""
+    if not isinstance(term, dict):
+        return True
+    st = term.get("status")
+    if isinstance(st, dict) and str(st.get("app") or "").strip():
+        return False
+    fg = term.get("foreground")
+    if isinstance(fg, dict):
+        fg_name = os.path.basename(str(fg.get("name") or "")).lower().lstrip("-")
+        return fg_name in SHELL_NAMES
+    ag = os.path.basename(str(term.get("agent") or "")).lower().lstrip("-")
+    if ag and ag not in SHELL_NAMES:
+        return False
+    argv = term.get("argv")
+    if isinstance(argv, list) and len(argv) >= 3 and argv[1] in ("-lic", "-lc", "-ic", "-c"):
+        return False
+    return True
+
+
+def _close_terminal(hc, addr, env):
+    """End and remove a live terminal (explicit kill closes `--keep` terminals cleanly)."""
+    if not addr:
+        return False
+    try:
+        subprocess.run([hc, "kill", str(addr)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5.0, env=env)
+        subprocess.run([hc, "rm", str(addr)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5.0, env=env)
+        return True
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def restore_autostart_pins(hc_bin=None, run_dir=None, env=None, on_boot=False):
+    """Reconcile pinned sessions into herdr-core.
+
+    - Spawns pins with autostart=true that have no live terminal.
+    - For autostart=true agent pins whose terminal was resurrected by `herdr-core --keep` as a
+      bare recovery shell after `swarmbox reset` / restart, replaces the empty shell with the
+      configured agent command (e.g. `agy --continue`).
+    - When on_boot=True, parks (closes) bare `--keep` recovery shells belonging to autostart=false
+      pins so they appear cleanly under PINNED · PARKED instead of as empty shells.
+    - Never fails boot on missing cwd and never touches unpinned terminals.
+    """
     e = os.environ if env is None else env
     hc = hc_bin or e.get("SWARMBOX_TEST_HC_BIN") or "hc"
     rdir = run_dir or e.get("SB_RUN_DIR") or e.get("SWARMBOX_TEST_RUN_DIR") or "/tmp/swarmbox"
     pins = load_pins(env=e)
     spawned = []
+    parked = []
     skipped = []
     used_names = set()
 
-    # Read currently live terminals so restore is idempotent
-    existing_pin_ids = set()
+    # Read currently live terminals and full details so restore is idempotent and detects --keep shells
+    existing_by_pin = {}
     try:
         ls = subprocess.run([hc, "ls", "--json"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5.0, env=e)
         if ls.returncode == 0 and ls.stdout.strip():
@@ -232,25 +278,50 @@ def restore_autostart_pins(hc_bin=None, run_dir=None, env=None):
                     if t.get("name"):
                         used_names.add(str(t["name"]).lower())
                     addr = t.get("address")
-                    lbls = t.get("labels") if isinstance(t.get("labels"), dict) else None
-                    if lbls is None and addr:
+                    detail = dict(t)
+                    if addr and (not isinstance(detail.get("labels"), dict) or "foreground" not in detail):
                         gr = subprocess.run([hc, "get", "--json", str(addr)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5.0, env=e)
                         if gr.returncode == 0 and gr.stdout.strip():
                             try:
-                                lbls = json.loads(gr.stdout).get("labels") or {}
+                                gd = json.loads(gr.stdout)
+                                if isinstance(gd, dict):
+                                    detail.update(gd)
                             except ValueError:
-                                lbls = {}
-                    if isinstance(lbls, dict) and lbls.get("swarmbox.pin_id"):
-                        existing_pin_ids.add(str(lbls["swarmbox.pin_id"]))
+                                pass
+                    lbls = detail.get("labels") if isinstance(detail.get("labels"), dict) else {}
+                    if lbls.get("swarmbox.pin_id"):
+                        existing_by_pin[str(lbls["swarmbox.pin_id"])] = detail
     except (OSError, ValueError, subprocess.TimeoutExpired):
         pass
 
+    replaced_addrs = set()
     for pin in pins:
-        if not pin.get("autostart"):
-            continue
         pid = pin["id"]
-        if pid in existing_pin_ids:
+        existing = existing_by_pin.get(pid)
+        if not pin.get("autostart"):
+            if on_boot and existing and _is_shell_only(existing):
+                old_addr = str(existing.get("address") or "")
+                old_name = str(existing.get("name") or "").lower()
+                if old_addr and _close_terminal(hc, old_addr, e):
+                    used_names.discard(old_name)
+                    parked.append({"id": pid, "closed": old_addr})
             continue
+
+        ag = (pin.get("agent") or "shell").strip().lower()
+        replaced = ""
+        if existing:
+            # Already live: keep as-is for shell pins or when the agent is genuinely running.
+            if ag == "shell" or not _is_shell_only(existing):
+                continue
+            # herdr-core --keep resurrected a bare login shell after restart; replace it with the agent.
+            old_addr = str(existing.get("address") or "")
+            old_name = str(existing.get("name") or "").lower()
+            if old_addr:
+                _close_terminal(hc, old_addr, e)
+                used_names.discard(old_name)
+                replaced = old_addr
+                replaced_addrs.add(old_addr)
+
         cwd = pin.get("cwd") or ""
         if not cwd or not os.path.isdir(cwd):
             skipped.append({"id": pid, "reason": "missing_cwd", "cwd": cwd})
@@ -263,7 +334,6 @@ def restore_autostart_pins(hc_bin=None, run_dir=None, env=None):
             n += 1
         used_names.add(name)
 
-        ag = pin.get("agent") or "shell"
         argv = build_agent_argv(ag, pin.get("resume") or "continue")
         cmd = [
             hc, "run", "--bg", "--keep", "--no-parent", "--json",
@@ -294,7 +364,10 @@ def restore_autostart_pins(hc_bin=None, run_dir=None, env=None):
                     addr = str(res.get("address") or (res.get("terminal") or {}).get("address") or "")
                 except ValueError:
                     pass
-                spawned.append({"id": pid, "address": addr, "name": name})
+                rec = {"id": pid, "address": addr, "name": name}
+                if replaced:
+                    rec["replaced"] = replaced
+                spawned.append(rec)
             else:
                 skipped.append({"id": pid, "reason": "hc_failed", "msg": (r.stderr or r.stdout).strip()[:160]})
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -304,13 +377,17 @@ def restore_autostart_pins(hc_bin=None, run_dir=None, env=None):
         try:
             os.makedirs(rdir, mode=0o700, exist_ok=True)
             marker = os.path.join(rdir, "herdr-active-tab")
-            if not os.path.exists(marker):
+            cur_active = ""
+            if os.path.exists(marker):
+                with open(marker, encoding="utf-8") as f:
+                    cur_active = f.read().strip()
+            if not cur_active or cur_active in replaced_addrs:
                 with open(marker, "w", encoding="utf-8") as f:
                     f.write(spawned[0]["address"] + "\n")
         except OSError:
             pass
 
-    return {"ok": True, "spawned": spawned, "skipped": skipped}
+    return {"ok": True, "spawned": spawned, "parked": parked, "skipped": skipped}
 
 
 def _parse_args(argv, takes=(), flags=()):
@@ -384,10 +461,10 @@ def run_cli(argv, env=None):
             raise PinsError("usage", "usage: rm PIN_ID")
         return remove_pin(rest[0], env=env)
     if cmd == "restore":
-        _, rest = _parse_args(a)
+        opts, rest = _parse_args(a, (), ("--boot",))
         if rest:
-            raise PinsError("usage", "restore takes no arguments")
-        return restore_autostart_pins(env=env)
+            raise PinsError("usage", "usage: restore [--boot]")
+        return restore_autostart_pins(env=env, on_boot="--boot" in opts)
     raise PinsError("usage", "unknown command %s" % cmd)
 
 

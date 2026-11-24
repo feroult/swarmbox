@@ -77,14 +77,11 @@ _herdr_record_active() {
 
 _herdr_ensure_initial_tab() {
     local count cwd json addr pins_bin
-    count=$(_herdr_live_count)
-    if [ "${count:-0}" -eq 0 ]; then
-        pins_bin=${SWARMBOX_TEST_PINS_BIN:-swarmbox-pins}
-        if command -v "$pins_bin" > /dev/null 2>&1; then
-            "$pins_bin" restore > /dev/null 2>&1 || true
-            count=$(_herdr_live_count)
-        fi
+    pins_bin=${SWARMBOX_TEST_PINS_BIN:-swarmbox-pins}
+    if command -v "$pins_bin" > /dev/null 2>&1; then
+        "$pins_bin" restore --boot > /dev/null 2>&1 || true
     fi
+    count=$(_herdr_live_count)
     if [ "${count:-0}" -eq 0 ]; then
         cwd=${HOME:-/home/agent}
         json=$("$_SB_HERDR_HC" run --bg --keep --no-parent --name shell --cwd "$cwd" -- /bin/bash -l 2>/dev/null) || true

@@ -71,6 +71,14 @@ if cmd == "label":
             print(json.dumps(t))
             sys.exit(0)
     sys.exit(1)
+if cmd in ("kill", "rm"):
+    tid = argv[-1]
+    before = len(st.get("terminals", []))
+    st["terminals"] = [t for t in st.get("terminals", []) if t["address"] != tid and t.get("name") != tid]
+    with open(STATE, "w", encoding="utf-8") as f:
+        json.dump(st, f)
+    print(json.dumps({"ok": True, "removed": before - len(st["terminals"])}))
+    sys.exit(0)
 if cmd == "run":
     name = argv[argv.index("--name") + 1] if "--name" in argv else "term"
     cwd = argv[argv.index("--cwd") + 1] if "--cwd" in argv else os.getcwd()
@@ -84,7 +92,9 @@ if cmd == "run":
             continue
         i += 1
     cmd_argv = argv[argv.index("--") + 1:] if "--" in argv else []
-    addr = "t%d" % (len(st.get("terminals", [])) + 1)
+    seq = int(st.get("next_id") or (len(st.get("terminals", [])) + 10))
+    st["next_id"] = seq + 1
+    addr = "t%d" % seq
     t = {"address": addr, "name": name, "cwd": cwd, "state": "live", "labels": labels, "argv": cmd_argv}
     st.setdefault("terminals", []).append(t)
     with open(STATE, "w", encoding="utf-8") as f:
@@ -291,6 +301,78 @@ class PinsTest(unittest.TestCase):
             terms2 = json.load(f)["terminals"]
         self.assertEqual(len(terms2), 1)
         self.assertEqual(terms2[0]["name"], "shell")
+
+    def test_reset_keep_recovery_restarts_autostart_agent_and_parks_non_autostart(self):
+        """Regression test for `swarmbox reset` where herdr-core resurrects `--keep` terminals
+        as bare `/bin/bash -l` shells with their original `swarmbox.pin_id` labels intact."""
+        hc_state = os.path.join(self.tmp, "hc-reset.json")
+        hc_bin = os.path.join(self.tmp, "hc-reset")
+        with open(hc_bin, "w", encoding="utf-8") as f:
+            f.write(FAKE_HC)
+        os.chmod(hc_bin, 0o755)
+        herdr_sh = os.path.join(ROOT, "container", "scripts", "mux", "herdr.sh")
+        env = {
+            **self.env,
+            "FAKE_HC_STATE": hc_state,
+            "SWARMBOX_TEST_HC_BIN": hc_bin,
+            "SWARMBOX_TEST_PINS_BIN": PINS_SCRIPT,
+        }
+
+        p_auto = pins_mod.add_pin(self.proj1, agent="agy", title="swarmbox", autostart=True, env=env)
+        p_park = pins_mod.add_pin(self.proj2, agent="claude", title="api-pay", autostart=False, env=env)
+
+        # Simulate state right after `hc server start` on `swarmbox reset`:
+        # herdr-core restored 3 kept terminals as bare login shells (including an unpinned shell).
+        with open(hc_state, "w", encoding="utf-8") as f:
+            json.dump({
+                "terminals": [
+                    {
+                        "address": "t3", "name": "shell-2", "cwd": self.proj1, "state": "live",
+                        "argv": ["/bin/bash", "-l"],
+                        "foreground": {"name": "bash", "argv": ["/bin/bash", "-l"], "cwd": self.proj1},
+                        "status": None,
+                        "labels": {"swarmbox.pin_id": p_auto["id"], "swarmbox.agent": "agy", "swarmbox.title": "swarmbox"},
+                    },
+                    {
+                        "address": "t4", "name": "claude-1", "cwd": self.proj2, "state": "live",
+                        "argv": ["/bin/bash", "-l"],
+                        "foreground": {"name": "bash", "argv": ["/bin/bash", "-l"], "cwd": self.proj2},
+                        "status": None,
+                        "labels": {"swarmbox.pin_id": p_park["id"], "swarmbox.agent": "claude", "swarmbox.title": "api-pay"},
+                    },
+                    {
+                        "address": "t5", "name": "shell", "cwd": self.home, "state": "live",
+                        "argv": ["/bin/bash", "-l"],
+                        "foreground": {"name": "bash", "argv": ["/bin/bash", "-l"], "cwd": self.home},
+                        "status": None,
+                        "labels": {},
+                    },
+                ],
+            }, f)
+
+        # Boot hook must run even though _herdr_live_count > 0!
+        subprocess.run(
+            ["/bin/bash", "-c", f'source "{herdr_sh}" && _herdr_ensure_initial_tab'],
+            env=env, check=True,
+        )
+        with open(hc_state, encoding="utf-8") as f:
+            terms = json.load(f)["terminals"]
+
+        # Unpinned shell (t5) is untouched; parked pin shell (t4) was closed; autostart pin (t3) was replaced with agy --continue!
+        addrs = {t["address"] for t in terms}
+        self.assertIn("t5", addrs)
+        self.assertNotIn("t4", addrs)
+        self.assertNotIn("t3", addrs)
+        agy_terms = [t for t in terms if (t.get("labels") or {}).get("swarmbox.pin_id") == p_auto["id"]]
+        self.assertEqual(len(agy_terms), 1)
+        self.assertEqual(agy_terms[0]["cwd"], self.proj1)
+        self.assertEqual(agy_terms[0]["argv"][:2], ["/bin/bash", "-lic"])
+        self.assertIn("agy --continue", agy_terms[0]["argv"][2])
+
+        # Second restore --boot is idempotent when the agent is running
+        r2 = pins_mod.restore_autostart_pins(env=env, on_boot=True)
+        self.assertEqual(r2["spawned"], [])
+        self.assertEqual(r2["parked"], [])
 
 
 if __name__ == "__main__":
