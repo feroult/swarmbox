@@ -30,6 +30,7 @@ export const ADDON_BIN = process.env.SWARMBOX_TEST_ADDON_BIN || 'swarmbox-addon'
 export const BUS_BIN = process.env.SWARMBOX_TEST_BUS_BIN || 'swarmbox-bus';
 export const WORKTREE_BIN = process.env.SWARMBOX_TEST_WORKTREE_BIN || '';
 export const PINS_FILE = path.join(SB_CONFIG_DIR, 'pins.json');
+export const SESSION_PREFS_FILE = path.join(SB_CONFIG_DIR, 'session-prefs.json');
 export const WORKTREE_PREFS_FILE = path.join(SB_CONFIG_DIR, 'worktree-prefs.json');
 export const CONTINUE_AGENTS = new Set(['claude', 'agy', 'opencode']);
 export const XDG_CONFIG_ROOT = isAbs(process.env.XDG_CONFIG_HOME)
@@ -1232,6 +1233,8 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
     || '';
   const healthRaw = readTextSafe(path.join(SB_STATE_DIR, 'health'));
   const health = healthRaw ? healthRaw.split('\n').map((s) => s.trim()).filter(Boolean) : [];
+  const addons = listAddonsSnapshot();
+  const installedAgents = listInstalledAgents(env, addons);
 
   const box = {
     NAME: envField('SWARMBOX_NAME', 'swarmbox', env),
@@ -1278,11 +1281,13 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
     voice: {
       settings: voiceSettings,
     },
-    addons: listAddonsSnapshot(),
+    addons,
+    installed_agents: installedAgents,
     mcp: listMcpServers(),
     pubkey,
     health,
     worktree_prefs: readWorktreePrefs(),
+    session_prefs: readSessionPrefs(),
   };
 }
 
@@ -1455,6 +1460,79 @@ export function buildPinsSnapshot(terminals) {
       missing_cwd: missingCwd,
     };
   });
+}
+
+const KNOWN_CODING_AGENTS = [
+  { id: 'claude', name: 'Claude Code' },
+  { id: 'agy', name: 'Antigravity' },
+  { id: 'codex', name: 'OpenAI Codex' },
+  { id: 'opencode', name: 'OpenCode' },
+  { id: 'gemini', name: 'Gemini CLI' },
+];
+
+function isCmdOnPath(cmd, env = process.env) {
+  const dirs = String((env && env.PATH) || '/usr/local/bin:/usr/bin:/bin').split(path.delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    try {
+      fs.accessSync(path.join(dir, cmd), fs.constants.X_OK);
+      return true;
+    } catch (_) {}
+  }
+  return false;
+}
+
+export function listInstalledAgents(env = process.env, addons = null) {
+  const addonList = Array.isArray(addons) ? addons : listAddonsSnapshot();
+  const addonCmds = new Set();
+  for (const a of addonList) {
+    if (!a || !a.installed) continue;
+    addonCmds.add(String(a.name || '').toLowerCase());
+    for (const c of a.commands || []) addonCmds.add(String(c || '').toLowerCase());
+  }
+  const defaultAgent = String((env && env.SWARMBOX_AGENT) || '').trim().toLowerCase();
+  const found = [];
+  for (const spec of KNOWN_CODING_AGENTS) {
+    if (isCmdOnPath(spec.id, env) || addonCmds.has(spec.id)) {
+      found.push({ id: spec.id, name: spec.name, default: spec.id === defaultAgent });
+    }
+  }
+  // Put default agent first; if SWARMBOX_AGENT wasn't set, mark the first installed agent as default
+  found.sort((a, b) => (a.default === b.default ? 0 : a.default ? -1 : 1));
+  if (found.length > 0 && !found.some((x) => x.default)) found[0].default = true;
+  return found;
+}
+
+const VALID_BOOT_MODES = new Set(['autostart', 'parked']);
+
+export function readSessionPrefs() {
+  const d = readJsonSafe(SESSION_PREFS_FILE);
+  return {
+    boot_mode: d && VALID_BOOT_MODES.has(d.boot_mode) ? d.boot_mode : 'autostart',
+  };
+}
+
+export function writeSessionPrefs(patch = {}) {
+  const cur = readSessionPrefs();
+  if (patch.boot_mode !== undefined) {
+    if (!VALID_BOOT_MODES.has(patch.boot_mode)) throw new Error('boot_mode must be autostart or parked');
+    cur.boot_mode = patch.boot_mode;
+  }
+  fs.mkdirSync(SB_CONFIG_DIR, { recursive: true, mode: 0o700 });
+  const tmp = `${SESSION_PREFS_FILE}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(cur, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(tmp, SESSION_PREFS_FILE);
+  // Sync autostart flag across all persisted sessions so boot restoration matches the global setting
+  const pins = readPins();
+  const wantAuto = cur.boot_mode === 'autostart';
+  let changed = false;
+  for (const p of pins) {
+    if (Boolean(p.autostart) !== wantAuto) {
+      p.autostart = wantAuto;
+      changed = true;
+    }
+  }
+  if (changed) writePins(pins);
+  return cur;
 }
 
 const VALID_WT_MODES = new Set(['ask', 'auto', 'off']);

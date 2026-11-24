@@ -30,12 +30,14 @@ import {
   defaultTitleForPath,
   detectTerminalAgent,
   isHiddenTerminal,
+  listInstalledAgents,
   makePinId,
   publishTabEvent,
   readActiveTab,
   readBoxConfigSnapshot,
   readPins,
   readSavedTheme,
+  readSessionPrefs,
   readSysopSnapshot,
   readWorktreePrefs,
   runCommand,
@@ -47,6 +49,7 @@ import {
   uniqueTabName,
   writeActiveTab,
   writePins,
+  writeSessionPrefs,
   writeWorktreePrefs,
 } from './hc-client.mjs';
 
@@ -308,6 +311,8 @@ export function createGateway(options = {}) {
     const pins = buildPinsSnapshot(terminals);
     const worktrees = pendingWorktreesFor(terminals, pins);
     const worktree_prefs = readWorktreePrefs();
+    const session_prefs = readSessionPrefs();
+    const installed_agents = listInstalledAgents();
     return {
       ...extra,
       terminals,
@@ -317,6 +322,8 @@ export function createGateway(options = {}) {
       pins,
       worktrees,
       worktree_prefs,
+      session_prefs,
+      installed_agents,
     };
   }
 
@@ -417,7 +424,7 @@ export function createGateway(options = {}) {
     syncPinsFromTerminals(terms);
     emitBusTabEvents(null, terms);
     const snap = buildSnapshot({ type: 'snapshot' });
-    lastBroadcastHash = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active, pins: snap.pins, worktrees: snap.worktrees });
+    lastBroadcastHash = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active, pins: snap.pins, worktrees: snap.worktrees, session_prefs: snap.session_prefs });
     broadcast(snap);
   });
 
@@ -426,7 +433,7 @@ export function createGateway(options = {}) {
     syncPinsFromTerminals(terms);
     emitBusTabEvents(event, terms);
     const snap = buildSnapshot({ type: 'event', event });
-    lastBroadcastHash = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active, pins: snap.pins, worktrees: snap.worktrees });
+    lastBroadcastHash = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active, pins: snap.pins, worktrees: snap.worktrees, session_prefs: snap.session_prefs });
     broadcast(snap);
   });
 
@@ -446,7 +453,7 @@ export function createGateway(options = {}) {
       refreshPendingWorktrees();
     }
     const snap = buildSnapshot({ type: themeChanged ? 'theme' : 'sysop' });
-    const h = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active, pins: snap.pins, worktrees: snap.worktrees });
+    const h = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active, pins: snap.pins, worktrees: snap.worktrees, session_prefs: snap.session_prefs });
     if (h !== lastBroadcastHash) {
       lastBroadcastHash = h;
       broadcast(snap);
@@ -571,6 +578,8 @@ export function createGateway(options = {}) {
           pins,
           worktrees: pendingWorktreesFor(terminals, pins),
           worktree_prefs: readWorktreePrefs(),
+          session_prefs: readSessionPrefs(),
+          installed_agents: listInstalledAgents(),
         });
       }
 
@@ -630,6 +639,41 @@ export function createGateway(options = {}) {
           labels['swarmbox.title_source'] = body.title_source === 'auto' ? 'auto' : 'user';
         }
 
+        // Option 1: auto-persist open agent sessions so they survive restarts/resets automatically
+        // according to the global boot_mode setting (autostart by default; closing with X removes them).
+        let autoPin = null;
+        if (preset === 'agent' && body.persist !== false) {
+          const curPins = readPins();
+          const pinId = makePinId(curPins);
+          const nowSec = Math.floor(Date.now() / 1000);
+          const sprefs = readSessionPrefs();
+          const title = customTitle || defaultTitleForPath(cwd, agentKind);
+          autoPin = {
+            id: pinId,
+            title,
+            title_source: customTitle ? (body.title_source === 'auto' ? 'auto' : 'user') : '',
+            agent: agentKind,
+            cwd,
+            resume: body.resume === 'fresh' ? 'fresh' : 'continue',
+            autostart: sprefs.boot_mode === 'autostart',
+            auto: true,
+            created_at: nowSec,
+            updated_at: nowSec,
+          };
+          if (createdWorktree) {
+            autoPin.worktree = {
+              path: createdWorktree.path,
+              branch: createdWorktree.branch || '',
+              base: createdWorktree.base || '',
+              repo: createdWorktree.repo_root || '',
+            };
+          }
+          labels['swarmbox.pin_id'] = pinId;
+          if (!labels['swarmbox.title']) labels['swarmbox.title'] = title;
+          curPins.push(autoPin);
+          writePins(curPins);
+        }
+
         const name = uniqueTabName(body.name || customTitle, prefix, Array.from(hc.terminals.values()));
         const runParams = {
           argv,
@@ -650,6 +694,7 @@ export function createGateway(options = {}) {
         broadcast(buildSnapshot({ type: 'snapshot' }));
         const resp = { ...(createdTerm || {}), terminal: createdTerm };
         if (createdWorktree) resp.worktree = createdWorktree;
+        if (autoPin) resp.pin = autoPin;
         return sendJson(res, 201, resp);
       }
 
@@ -692,15 +737,26 @@ export function createGateway(options = {}) {
         if (!action && req.method === 'DELETE') {
           const t = hc.terminals.get(termId);
           const lbls = (t && t.labels) || {};
-          const isPinned = Boolean(lbls['swarmbox.pin_id']);
+          const pinId = lbls['swarmbox.pin_id'] || '';
           const wtPath = lbls['swarmbox.worktree'] || '';
+          let pinKept = false;
+          if (pinId) {
+            const pins = readPins();
+            const existingPin = pins.find((p) => p.id === pinId);
+            const dropRequested = url.searchParams.get('drop_pin') === '1';
+            if (existingPin && (existingPin.auto || dropRequested)) {
+              writePins(pins.filter((p) => p.id !== pinId));
+            } else if (existingPin) {
+              pinKept = true;
+            }
+          }
           await hc.call('terminal.keep', { terminal: termId, keep: false }).catch(() => {});
           await hc.call('terminal.kill', { terminal: termId }).catch(() => {});
           hc.call('terminal.rm', { terminal: termId }).catch(() => {});
           hc.terminals.delete(termId);
           let autoCleaned = false;
-          // Auto-clean empty unpinned managed worktrees on close (zero clutter, zero data loss)
-          if (!isPinned && wtPath) {
+          // Auto-clean empty managed worktrees on close when no parked pin holds them
+          if (!pinKept && wtPath) {
             try {
               const st = await runWorktreeCmd(['status', wtPath]);
               if (st && st.managed && st.empty) {
@@ -711,7 +767,7 @@ export function createGateway(options = {}) {
           }
           refreshPendingWorktrees();
           broadcast(buildSnapshot({ type: 'snapshot' }));
-          return sendJson(res, 200, { ok: true, pinned: isPinned, auto_cleaned_worktree: autoCleaned });
+          return sendJson(res, 200, { ok: true, pinned: pinKept, auto_cleaned_worktree: autoCleaned });
         }
         if (action === 'worktree' && req.method === 'GET') {
           const t = hc.terminals.get(termId);
@@ -854,6 +910,45 @@ export function createGateway(options = {}) {
         writePins(pins);
         broadcast(buildSnapshot({ type: 'snapshot' }));
         return sendJson(res, 201, { ok: true, pin: rec, pins: buildPinsSnapshot(hc.listSnapshot()) });
+      }
+
+      if (pathname === '/api/pins/prefs' && req.method === 'GET') {
+        return sendJson(res, 200, { prefs: readSessionPrefs() });
+      }
+      if (pathname === '/api/pins/prefs' && req.method === 'PATCH') {
+        const body = await readBody(req);
+        try {
+          const prefs = writeSessionPrefs(body);
+          broadcast(buildSnapshot({ type: 'snapshot' }));
+          return sendJson(res, 200, { ok: true, prefs, pins: buildPinsSnapshot(hc.listSnapshot()) });
+        } catch (err) {
+          return sendJson(res, 400, { error: 'bad_prefs', message: err.message });
+        }
+      }
+
+      // Lightweight mobile touch/scroll/zoom gesture diagnostic log (bounded to 250 lines in SB_RUN_DIR)
+      const touchLogPath = path.join(SB_RUN_DIR, 'touch-debug.jsonl');
+      if (pathname === '/api/debug/touch' && req.method === 'GET') {
+        let lines = [];
+        try {
+          lines = fs.readFileSync(touchLogPath, 'utf8').split('\n').filter(Boolean).slice(-250).map((l) => {
+            try { return JSON.parse(l); } catch (_) { return { raw: l }; }
+          });
+        } catch (_) {}
+        return sendJson(res, 200, { path: touchLogPath, count: lines.length, events: lines });
+      }
+      if (pathname === '/api/debug/touch' && req.method === 'POST') {
+        const body = await readBody(req, 16 * 1024);
+        try {
+          fs.mkdirSync(SB_RUN_DIR, { recursive: true, mode: 0o700 });
+          const rec = { ts: new Date().toISOString(), ...(body && typeof body === 'object' ? body : {}) };
+          let existing = [];
+          try { existing = fs.readFileSync(touchLogPath, 'utf8').split('\n').filter(Boolean); } catch (_) {}
+          existing.push(JSON.stringify(rec));
+          if (existing.length > 250) existing = existing.slice(-250);
+          fs.writeFileSync(touchLogPath, existing.join('\n') + '\n', { mode: 0o600 });
+        } catch (_) {}
+        return sendJson(res, 200, { ok: true });
       }
 
       const pinMatch = pathname.match(/^\/api\/pins\/([^/]+)(?:\/(wake))?$/);

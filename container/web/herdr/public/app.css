@@ -1119,7 +1119,7 @@ html.swarmbox-ready #sb-boot {
   padding: 12px 14px 12px 16px;
   background: var(--bg);
   position: relative;
-  touch-action: none;
+  touch-action: pinch-zoom;
   cursor: text;
 }
 #terminal {
@@ -1242,8 +1242,14 @@ html.swarmbox-ready #sb-boot {
 .term-toast[data-tone="ok"] { border-color: rgba(74, 222, 128, 0.42); color: var(--green); }
 .term-toast[data-tone="error"] { border-color: rgba(255, 107, 120, 0.45); color: var(--red); }
 .xterm { height: 100%; overflow: hidden; } /* clips the sub-row touch-scroll offset of .xterm-screen */
-/* touch-action is NOT inherited: lock every xterm layer so the mobile compositor never hijacks scrolls or pinches */
-.term-pane, .xterm, .xterm-viewport, .xterm-screen { touch-action: none; }
+/* Allow native optical browser pinch-zoom without letting the compositor hijack 1-finger scroll;
+   when zoomed in (data-zoomed="1"), allow native 1-finger pan across the zoomed viewport. */
+.term-pane, .xterm, .xterm-viewport, .xterm-screen { touch-action: pinch-zoom; }
+.app[data-zoomed="1"] .term-wrap,
+.app[data-zoomed="1"] .term-pane,
+.app[data-zoomed="1"] .xterm,
+.app[data-zoomed="1"] .xterm-viewport,
+.app[data-zoomed="1"] .xterm-screen { touch-action: pan-x pan-y pinch-zoom; }
 .xterm-viewport { background-color: transparent !important; }
 /* The terminal scrollbar is an overlay: hidden at the live bottom, shown by .sb-show (see syncScrollbar in app.js) */
 .term-pane .xterm-viewport::-webkit-scrollbar-thumb { background: transparent; }
@@ -3205,6 +3211,84 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   background: rgba(229, 72, 77, 0.14);
   border-color: rgba(255, 107, 120, 0.4);
   color: #fda4af;
+}
+.agent-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-pick-btn {
+  appearance: none;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.12s ease;
+}
+.agent-pick-btn:hover,
+.agent-pick-btn:focus-visible {
+  background: var(--surface-hover);
+  border-color: rgba(196, 181, 253, 0.55);
+  outline: none;
+}
+.agent-pick-btn.is-default {
+  border-color: rgba(167, 139, 250, 0.45);
+  background: rgba(167, 139, 250, 0.08);
+}
+.agent-pick-ico {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.agent-pick-ico svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+  image-rendering: pixelated;
+}
+.agent-pick-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.agent-pick-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-pick-cmd {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.agent-pick-def {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(167, 139, 250, 0.18);
+  color: var(--accent-bright);
+  flex-shrink: 0;
 }
 .spop-hint {
   font-family: var(--mono);

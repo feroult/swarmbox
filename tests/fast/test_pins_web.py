@@ -120,26 +120,52 @@ async function api(method, p, body) {
 }
 
 try {
-  // 1. Create an agent tab in repo
+  // 1. Create an agent tab in repo -> Option 1 auto-persists it with autostart=true by default
   const r1 = await api('POST', '/api/tabs', { preset: 'agent', agent: 'claude', cwd: repo });
   assert.equal(r1.status, 201);
   const t1 = r1.data.terminal.address;
+  assert.ok(r1.data.pin && r1.data.pin.id, 'agent tab should auto-persist');
+  assert.equal(r1.data.pin.auto, true);
+  assert.equal(r1.data.pin.agent, 'claude');
+  assert.equal(r1.data.pin.title, 'shop-api');
+  assert.equal(r1.data.pin.autostart, true);
 
-  // 2. Pin t1, rename it, and verify live auto-follow (cwd moves, agent never downgrades to shell)
-  const pinRes = await api('POST', '/api/pins', { terminal: t1 });
+  // 1b. Global session prefs: toggle boot_mode -> parked syncs existing pins, then back to autostart
+  const spGet = await api('GET', '/api/pins/prefs');
+  assert.equal(spGet.status, 200);
+  assert.equal(spGet.data.prefs.boot_mode, 'autostart');
+  const spParked = await api('PATCH', '/api/pins/prefs', { boot_mode: 'parked' });
+  assert.equal(spParked.status, 200);
+  assert.equal(spParked.data.prefs.boot_mode, 'parked');
+  assert.equal(readPins()[0].autostart, false);
+  const spAuto = await api('PATCH', '/api/pins/prefs', { boot_mode: 'autostart' });
+  assert.equal(spAuto.status, 200);
+  assert.equal(readPins()[0].autostart, true);
+
+  // 1c. Closing an auto-persisted agent tab deletes its auto pin cleanly (no zombie parked card)
+  const delAuto = await api('DELETE', `/api/tabs/${t1}`);
+  assert.equal(delAuto.status, 200);
+  assert.equal(delAuto.data.pinned, false);
+  assert.equal(readPins().length, 0);
+
+  // 2. Explicit manual pin (persist: false -> POST /api/pins), rename, and live auto-follow
+  const r1m = await api('POST', '/api/tabs', { preset: 'agent', agent: 'claude', cwd: repo, persist: false });
+  assert.equal(r1m.status, 201);
+  const t1m = r1m.data.terminal.address;
+  const pinRes = await api('POST', '/api/pins', { terminal: t1m });
   assert.equal(pinRes.status, 201);
   const pinId = pinRes.data.pin.id;
   assert.equal(pinRes.data.pin.agent, 'claude');
   assert.equal(pinRes.data.pin.title, 'shop-api');
   assert.equal(pinRes.data.pin.autostart, false);
 
-  const ren = await api('PATCH', `/api/tabs/${t1}`, { title: 'Shop Core' });
+  const ren = await api('PATCH', `/api/tabs/${t1m}`, { title: 'Shop Core' });
   assert.equal(ren.status, 200);
   assert.equal(readPins()[0].title, 'Shop Core');
   assert.equal(readPins()[0].title_source, 'user');
 
   // Simulate user cd'ing to proj2 and temporarily exiting claude to bash
-  const liveT1 = hc.terminals.get(t1);
+  const liveT1 = hc.terminals.get(t1m);
   liveT1.foreground = { name: 'bash', cwd: proj2 };
   liveT1.agent = 'bash';
   assert.equal(syncPinsFromTerminals(hc.listSnapshot()), true);
@@ -191,12 +217,12 @@ try {
   assert.ok(fs.existsSync(path.join(repo, 'cache.py')));
   assert.equal(fs.existsSync(wtPath2), false);
 
-  // 5. Close pinned tab t1 -> stays PARKED; wake it -> launches with --continue
-  const delPinTab = await api('DELETE', `/api/tabs/${t1}`);
+  // 5. Close manually pinned tab t1m -> stays PARKED; wake it -> launches with --continue
+  const delPinTab = await api('DELETE', `/api/tabs/${t1m}`);
   assert.equal(delPinTab.status, 200);
   assert.equal(delPinTab.data.pinned, true);
   const pinsAfterClose = await api('GET', '/api/pins');
-  assert.equal(pinsAfterClose.data.pins[0].parked, true);
+  assert.equal(pinsAfterClose.data.pins.find((p) => p.id === pinId).parked, true);
 
   const woken = await api('POST', `/api/pins/${pinId}/wake`, {});
   assert.equal(woken.status, 201);
@@ -207,6 +233,21 @@ try {
   assert.equal(pr.status, 200);
   assert.equal(pr.data.prefs.mode, 'off');
   assert.equal(pr.data.prefs.copy_env, false);
+
+  // 6b. Installed agents + session_prefs surfaced in /api/tabs
+  const tabsSnap = await api('GET', '/api/tabs');
+  assert.equal(tabsSnap.status, 200);
+  assert.ok(Array.isArray(tabsSnap.data.installed_agents));
+  assert.equal(tabsSnap.data.session_prefs.boot_mode, 'autostart');
+
+  // 6c. Mobile touch/zoom diagnostic telemetry endpoint
+  const dbgPost = await api('POST', '/api/debug/touch', { kind: 'scroll_end', agent: 'agy', bufType: 'alternate', dy: 120, wheelSent: 4 });
+  assert.equal(dbgPost.status, 200);
+  assert.equal(dbgPost.data.ok, true);
+  const dbgGet = await api('GET', '/api/debug/touch');
+  assert.equal(dbgGet.status, 200);
+  assert.equal(dbgGet.data.events.length, 1);
+  assert.equal(dbgGet.data.events[0].agent, 'agy');
 
   // 7. System events (autoname) surfaced in Sysop snapshot & filtered by New conversation
   const runSysop = path.join(process.env.SB_RUN_DIR, 'sysop');

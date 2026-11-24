@@ -301,6 +301,8 @@
   let pins = [];
   let pendingWorktrees = [];
   let worktreePrefs = { mode: 'ask', copy_env: true };
+  let sessionPrefs = { boot_mode: 'autostart' };
+  let installedAgents = [];
   let editingTabId = null;
   let popoverOpen = false;
   let activeId = null;
@@ -562,6 +564,10 @@
   // Drop the sub-row offset (another scroll source moved the terminal, it resized, or the gesture ended).
   function clearTouchOffset(sess) {
     if (!sess) return;
+    if (sess.touchFracFallbackRaf) {
+      cancelAnimationFrame(sess.touchFracFallbackRaf);
+      sess.touchFracFallbackRaf = 0;
+    }
     sess.touchFrac = 0;
     sess.touchFracPending = null;
     paintTouchOffset(sess, 0);
@@ -573,10 +579,59 @@
     if (sess.touchFrac && ydisp !== sess.touchLine) clearTouchOffset(sess);
   }
   function touchOffsetOnRender(sess) {
+    if (sess.touchFracFallbackRaf) {
+      cancelAnimationFrame(sess.touchFracFallbackRaf);
+      sess.touchFracFallbackRaf = 0;
+    }
     if (sess.touchFracPending === null || sess.touchFracPending === undefined) return;
     const px = sess.touchFracPending;
     sess.touchFracPending = null;
     paintTouchOffset(sess, px);
+  }
+
+  // Lightweight mobile touch & optical-zoom diagnostic telemetry (fires only once per gesture / zoom settle).
+  let touchDbgGesture = null;
+  let touchDbgCoast = null;
+  let touchDbgZoomTimer = 0;
+  let touchDbgSeq = 0;
+
+  function isOpticalZoomed() {
+    return Boolean(window.visualViewport && Number(window.visualViewport.scale || 1) > 1.02);
+  }
+
+  function sessionMouseMode(sess) {
+    try {
+      const m = sess && sess.term && sess.term._core && sess.term._core.coreMouseService && sess.term._core.coreMouseService.activeProtocol;
+      return m ? String(m) : 'NONE';
+    } catch (_) {
+      return 'UNKNOWN';
+    }
+  }
+
+  function logTouchDebug(kind, data) {
+    if (window.innerWidth > 960 && !(navigator.maxTouchPoints > 0)) return;
+    touchDbgSeq += 1;
+    const dockEl = document.querySelector('.mobile-dock');
+    const vv = window.visualViewport;
+    const payload = {
+      seq: touchDbgSeq,
+      kind,
+      tab: activeId || '',
+      vvScale: vv ? Number((vv.scale || 1).toFixed(3)) : 1,
+      vvH: vv ? Math.round(vv.height) : window.innerHeight,
+      vvW: vv ? Math.round(vv.width) : window.innerWidth,
+      winH: window.innerHeight,
+      dockH: dockEl ? Math.round(dockEl.getBoundingClientRect().height) : 0,
+      ...data,
+    };
+    try {
+      fetch('/api/debug/touch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(() => {});
+    } catch (_) {}
   }
 
   function applyTouchScrollPx(deltaPx) {
@@ -599,6 +654,16 @@
       sess.touchFrac = rest;
       if (line !== buf.viewportY) {
         sess.touchFracPending = rest;   // painted by onRender, together with the new rows
+        if (!sess.touchFracFallbackRaf) {
+          sess.touchFracFallbackRaf = requestAnimationFrame(() => {
+            sess.touchFracFallbackRaf = 0;
+            if (sess.touchFracPending !== null && sess.touchFracPending !== undefined) {
+              const px = sess.touchFracPending;
+              sess.touchFracPending = null;
+              paintTouchOffset(sess, px);
+            }
+          });
+        }
         sess.term.scrollToLine(line);
       } else if (sess.touchFracPending !== null && sess.touchFracPending !== undefined) {
         sess.touchFracPending = rest;
@@ -609,7 +674,7 @@
       return Math.abs(next - prev) > 0.25;
     }
 
-    // Alternate screen (Claude Code, vim, less, htop, fullscreen TUIs): dispatch one line-mode
+    // Alternate screen (Claude Code, agy, vim, less, htop, fullscreen TUIs): dispatch one line-mode
     // WheelEvent per step so mouse-tracked TUIs receive every tick instead of collapsing a fast
     // flick into a single wheel packet or dropping sub-threshold pixel deltas.
     const rh = sessionRowHeight(sess);
@@ -620,6 +685,8 @@
       const screenEl = sess.paneEl.querySelector('.xterm-screen');
       const dir = Math.sign(lines);
       const count = Math.min(8, Math.abs(lines));
+      if (touchDbgGesture) touchDbgGesture.wheelSent += count;
+      if (touchDbgCoast) touchDbgCoast.wheelSent += count;
       if (screenEl && typeof WheelEvent === 'function') {
         for (let i = 0; i < count; i++) {
           screenEl.dispatchEvent(new WheelEvent('wheel', {
@@ -682,10 +749,29 @@
     touchSettleRaf = requestAnimationFrame(step);
   }
 
+  function flushCoastDebug(reason) {
+    if (!touchDbgCoast) return;
+    const sess = activeSession();
+    const buf = sess && sess.term && sess.term.buffer && sess.term.buffer.active;
+    const c = touchDbgCoast;
+    touchDbgCoast = null;
+    logTouchDebug('coast_end', {
+      reason,
+      frames: c.frames,
+      totalPx: Math.round(c.totalPx),
+      wheelSent: c.wheelSent,
+      startVpY: c.startVpY,
+      endVpY: buf ? buf.viewportY : -1,
+      baseY: buf ? buf.baseY : -1,
+      bufType: buf ? buf.type : 'none',
+    });
+  }
+
   function stopTouchCoast() {
     if (touchRaf) {
       cancelAnimationFrame(touchRaf);
       touchRaf = 0;
+      flushCoastDebug('interrupted');
     }
     if (touchSettleRaf) {
       cancelAnimationFrame(touchSettleRaf);
@@ -697,15 +783,30 @@
 
   function startTouchCoast() {
     if (touchRaf) return;
+    const sess0 = activeSession();
+    const buf0 = sess0 && sess0.term && sess0.term.buffer && sess0.term.buffer.active;
+    touchDbgCoast = {
+      frames: 0,
+      totalPx: 0,
+      wheelSent: 0,
+      startVpY: buf0 ? buf0.viewportY : -1,
+    };
     let prevT = nowMs();
     const step = () => {
       touchRaf = 0;
-      if (touchId !== null) return;
+      if (touchId !== null) {
+        flushCoastDebug('new_touch');
+        return;
+      }
       const t = nowMs();
       const dt = Math.min(48, Math.max(4, t - prevT));
       prevT = t;
       const deltaPx = touchVel * dt * TOUCH_COAST_GAIN;
       const progressed = applyTouchScrollPx(deltaPx);
+      if (touchDbgCoast) {
+        touchDbgCoast.frames += 1;
+        touchDbgCoast.totalPx += deltaPx;
+      }
       touchVel *= Math.pow(TOUCH_FRICTION, dt / 16.67);
       if (progressed && Math.abs(touchVel) >= TOUCH_STOP_VEL) {
         touchRaf = requestAnimationFrame(step);
@@ -713,6 +814,7 @@
         const dir = Math.sign(touchVel);
         touchVel = 0;
         touchAltAccum = 0;
+        flushCoastDebug(progressed ? 'stopped' : 'boundary');
         settleTouchScroll(dir);
       }
     };
@@ -739,35 +841,32 @@
     return dt > 0 ? (first.y - last.y) / dt : 0;
   }
 
-  // Two-finger pinch-to-zoom on the terminal adjusts terminal font size natively (like Termius/Blink)
-  // instead of browser-zooming the whole page and distorting the Sysop bar.
-  let pinchActive = false;
-  let pinchStartDist = 0;
-  let pinchStartSize = 0;
-  let pinchStartOffset = 0;
-  let pinchChanged = false;
-  const touchDist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-
-  // Prevent iOS Safari proprietary page-level pinch gestures from warping the studio shell / Sysop dock.
-  document.addEventListener('gesturestart', (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
-  document.addEventListener('gesturechange', (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+  // Two-finger pinch-to-zoom is left completely to the browser's native optical compositor
+  // (no font-size mutation or terminal reflow). When zoomed in optically (scale > 1.02),
+  // 1-finger panning is also handed straight to the browser.
+  let multiTouchActive = false;
 
   termWrapEl.addEventListener('touchstart', (e) => {
     stopTouchCoast();
-    if (e.touches.length === 2) {
+    if (e.touches.length >= 2) {
       if (touchMoved) { flushTouchScroll(); settleTouchScroll(); }
       touchId = null;
       touchMoved = false;
-      pinchActive = true;
-      pinchChanged = false;
-      pinchStartDist = Math.max(16, touchDist(e.touches[0], e.touches[1]));
-      pinchStartSize = computeFontSize();
-      pinchStartOffset = fontOffset;
-      if (e.cancelable) e.preventDefault();
+      multiTouchActive = true;
+      touchDbgGesture = null;
       return;
     }
-    if (e.touches.length === 1 && !pinchActive) {
+    if (isOpticalZoomed()) {
+      touchId = null;
+      touchMoved = false;
+      touchDbgGesture = null;
+      return;
+    }
+    if (e.touches.length === 1 && !multiTouchActive) {
       const t = e.touches[0];
+      const sess = activeSession();
+      const buf = sess && sess.term && sess.term.buffer && sess.term.buffer.active;
+      const curTab = terminals.find((x) => x.address === activeId);
       touchId = t.identifier;
       touchStartY = t.clientY;
       touchLastY = t.clientY;
@@ -777,24 +876,27 @@
       touchVel = 0;
       touchAltAccum = 0;
       touchSamples = [{ t: touchLastT, y: t.clientY }];
+      touchDbgGesture = {
+        startT: touchLastT,
+        startY: t.clientY,
+        moves: 0,
+        nonCancelable: 0,
+        wheelSent: 0,
+        bufType: buf ? buf.type : 'none',
+        baseY: buf ? buf.baseY : -1,
+        startVpY: buf ? buf.viewportY : -1,
+        mouseMode: sessionMouseMode(sess),
+        agent: (curTab && curTab.labels && curTab.labels['swarmbox.agent']) || (curTab && curTab.agent) || '',
+      };
     } else {
       touchId = null;
       touchMoved = false;
     }
-  }, { passive: false });
+  }, { passive: true });
 
   termWrapEl.addEventListener('touchmove', (e) => {
-    if (pinchActive) {
-      if (e.cancelable) e.preventDefault();
-      if (e.touches.length !== 2) return;
-      const dist = touchDist(e.touches[0], e.touches[1]);
-      const targetSize = pinchStartSize * (dist / pinchStartDist);
-      const nextOffset = Math.max(-4, Math.min(8, Math.round((pinchStartOffset + (targetSize - pinchStartSize)) * 2) / 2));
-      if (nextOffset !== fontOffset) {
-        pinchChanged = true;
-        setFontOffset(nextOffset);
-        showTermToast(`Font ${formatFontPx(computeFontSize())}`, '', 900);
-      }
+    if (multiTouchActive || e.touches.length >= 2 || isOpticalZoomed()) {
+      touchId = null;
       return;
     }
     if (touchId === null || e.touches.length !== 1) {
@@ -803,6 +905,10 @@
     }
     const t = findTouchById(e.touches, touchId);
     if (!t) return;
+    if (touchDbgGesture) {
+      touchDbgGesture.moves += 1;
+      if (!e.cancelable) touchDbgGesture.nonCancelable += 1;
+    }
     if (e.cancelable) e.preventDefault();
     if (!touchMoved && Math.abs(t.clientY - touchStartY) < TOUCH_DRAG_PX) return;
     touchMoved = true;
@@ -817,22 +923,35 @@
   }, { passive: false });
 
   termWrapEl.addEventListener('touchcancel', () => {
-    pinchActive = false;
-    pinchChanged = false;
+    const g = touchDbgGesture;
+    touchDbgGesture = null;
+    multiTouchActive = false;
     touchId = null;
     touchMoved = false;
     stopTouchCoast();
     flushTouchScroll();
     settleTouchScroll();
+    if (g && g.moves > 0) {
+      const sess = activeSession();
+      const buf = sess && sess.term && sess.term.buffer && sess.term.buffer.active;
+      logTouchDebug('scroll_cancel', {
+        agent: g.agent,
+        bufType: g.bufType,
+        baseY: g.baseY,
+        startVpY: g.startVpY,
+        endVpY: buf ? buf.viewportY : -1,
+        mouseMode: g.mouseMode,
+        moves: g.moves,
+        nonCancelable: g.nonCancelable,
+        wheelSent: g.wheelSent,
+        dt: Math.round(nowMs() - g.startT),
+      });
+    }
   }, { passive: true });
 
   termWrapEl.addEventListener('touchend', (e) => {
-    if (pinchActive) {
-      if (e.cancelable) e.preventDefault();
-      if (e.touches.length === 0) {
-        pinchActive = false;
-        pinchChanged = false;
-      }
+    if (multiTouchActive) {
+      if (e.touches.length === 0) multiTouchActive = false;
       return;
     }
     if (touchMoved && e.cancelable) e.preventDefault();
@@ -840,9 +959,12 @@
     const now = nowMs();
     const rawVel = moved ? touchFlickVelocity() : 0;
     const flick = moved && Math.abs(rawVel) >= TOUCH_FLICK_MIN && (now - touchLastT) < 110;
+    const g = touchDbgGesture;
+    touchDbgGesture = null;
     touchId = null;
     touchMoved = false;
     flushTouchScroll();
+    let appliedVel = 0;
     if (flick) {
       const dir = Math.sign(rawVel);
       // Chained flicks in the same direction within 650ms build speed naturally (like iOS/Android)
@@ -856,11 +978,33 @@
       const speed = Math.abs(rawVel);
       const accel = 1 + Math.min(1.6, Math.max(0, speed - 0.35) * 0.75);
       touchVel = Math.max(-TOUCH_MAX_VEL, Math.min(TOUCH_MAX_VEL, rawVel * accel * touchChainBoost));
+      appliedVel = touchVel;
       startTouchCoast();
     } else {
       touchVel = 0;
       touchChainBoost = 1;
       if (moved) settleTouchScroll();
+    }
+    if (g && (moved || g.moves > 2)) {
+      const sess = activeSession();
+      const buf = sess && sess.term && sess.term.buffer && sess.term.buffer.active;
+      logTouchDebug('scroll_end', {
+        agent: g.agent,
+        bufType: g.bufType,
+        baseY: g.baseY,
+        startVpY: g.startVpY,
+        endVpY: buf ? buf.viewportY : -1,
+        mouseMode: g.mouseMode,
+        dy: Math.round(g.startY - touchLastY),
+        dt: Math.round(now - g.startT),
+        moves: g.moves,
+        nonCancelable: g.nonCancelable,
+        rawVel: Number(rawVel.toFixed(3)),
+        appliedVel: Number(appliedVel.toFixed(3)),
+        flick,
+        chainBoost: Number(touchChainBoost.toFixed(2)),
+        wheelSent: g.wheelSent,
+      });
     }
   }, { passive: false });
 
@@ -1025,14 +1169,37 @@
   }
 
   let baseMobileH = Math.max(window.innerHeight, (window.visualViewport && window.visualViewport.height) || 0);
+  let lastLoggedZoomScale = 1;
   function syncViewport() {
     if (!window.visualViewport) {
       syncMobileKeys();
       return;
     }
-    // If browser-level pinch zoom is active (accessibility zoom), never mistake the shrunk
-    // visualViewport height for a virtual keyboard or crush #app / the Sysop dock inside it.
-    if ((window.visualViewport.scale || 1) > 1.02) return;
+    const vvScale = Number(window.visualViewport.scale || 1);
+    const zoomed = vvScale > 1.02;
+    const wasZoomed = appEl.dataset.zoomed === '1';
+    appEl.dataset.zoomed = zoomed ? '1' : '0';
+    if (Math.abs(vvScale - lastLoggedZoomScale) > 0.04) {
+      lastLoggedZoomScale = vvScale;
+      clearTimeout(touchDbgZoomTimer);
+      touchDbgZoomTimer = setTimeout(() => {
+        logTouchDebug(zoomed ? 'zoom' : 'zoom_reset', {
+          scale: Number(vvScale.toFixed(3)),
+          vvTop: Math.round(window.visualViewport.offsetTop || 0),
+          vvLeft: Math.round(window.visualViewport.offsetLeft || 0),
+        });
+      }, 220);
+    }
+    if (zoomed) {
+      // Optical browser pinch-zoom: keep #app at the full layout viewport (100dvh) so the browser
+      // scales the terminal and Sysop dock uniformly without squashing or reflowing terminal text.
+      appEl.style.setProperty('--vv-h', '100dvh');
+      appEl.style.setProperty('--vv-top', '0px');
+      appEl.style.height = '';
+      mobileKbOpen = false;
+      syncMobileKeys();
+      return;
+    }
     const vvH = Math.round(window.visualViewport.height);
     const vvTop = Math.max(0, Math.round(window.visualViewport.offsetTop || 0));
     appEl.style.setProperty('--vv-h', `${vvH}px`);
@@ -1051,7 +1218,7 @@
     if (appEl.dataset.kbSysop === '1' && appEl.dataset.mobileSysop === '1') {
       requestAnimationFrame(() => { sysopFeedEl.scrollTop = sysopFeedEl.scrollHeight; });
     }
-    scheduleFit();
+    if (!wasZoomed || !zoomed) scheduleFit();
   }
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', syncViewport);
@@ -2456,9 +2623,113 @@
     popoverBackdropEl.classList.remove('hidden');
     popoverBackdropEl.setAttribute('aria-hidden', 'false');
     requestAnimationFrame(() => {
-      const primary = popoverEl.querySelector('.spop-btn.primary, .spop-btn.green, .spop-btn.amber');
+      const primary = popoverEl.querySelector('.spop-btn.primary, .spop-btn.green, .spop-btn.amber, .agent-pick-btn');
       if (primary) primary.focus();
     });
+  }
+
+  async function openNewAgentPopover(includeShell = false) {
+    let list = Array.isArray(installedAgents) ? installedAgents : [];
+    if (list.length === 0) {
+      try {
+        const r = await fetch('/api/config', { cache: 'no-store' });
+        if (r.ok) {
+          const cfg = await r.json();
+          if (cfg && Array.isArray(cfg.installed_agents)) {
+            installedAgents = cfg.installed_agents;
+            list = installedAgents;
+          }
+        }
+      } catch (_) {}
+    }
+    if (!includeShell && list.length === 0) {
+      spawnTab('agent');
+      return;
+    }
+    if (!includeShell && list.length === 1) {
+      spawnTab('agent', { agent: list[0].id });
+      return;
+    }
+    const cur = terminals.find((t) => t.address === activeId);
+    const curCwd = (cur && cur.foreground && cur.foreground.cwd) || (cur && cur.cwd) || '';
+    const folderLabel = shortDisplayPath(curCwd) || '~';
+
+    const frag = document.createDocumentFragment();
+    const head = document.createElement('div');
+    head.className = 'spop-head';
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = includeShell ? 'New tab' : 'New agent';
+    const cwdBadge = document.createElement('span');
+    cwdBadge.className = 'spop-badge';
+    cwdBadge.textContent = folderLabel;
+    head.append(titleSpan, cwdBadge);
+
+    const sub = document.createElement('div');
+    sub.className = 'spop-sub';
+    sub.textContent = includeShell
+      ? 'Launch an installed coding agent or a fresh shell.'
+      : 'Pick an installed coding agent to launch in this folder.';
+
+    const pickList = document.createElement('div');
+    pickList.className = 'agent-pick-list';
+    for (const ag of list) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `agent-pick-btn${ag.default ? ' is-default' : ''}`;
+      btn.dataset.agent = ag.id;
+      const ico = document.createElement('span');
+      ico.className = 'agent-pick-ico';
+      ico.innerHTML = pixelIconHtml(PIXEL_SVG[ag.id] ? ag.id : 'agent');
+      const info = document.createElement('span');
+      info.className = 'agent-pick-info';
+      const nm = document.createElement('span');
+      nm.className = 'agent-pick-name';
+      nm.textContent = ag.name || AGENT_FULL_NAMES[ag.id] || ag.id;
+      const cmd = document.createElement('span');
+      cmd.className = 'agent-pick-cmd';
+      cmd.textContent = ag.id;
+      info.append(nm, cmd);
+      btn.append(ico, info);
+      if (ag.default) {
+        const def = document.createElement('span');
+        def.className = 'agent-pick-def';
+        def.textContent = 'default';
+        btn.appendChild(def);
+      }
+      btn.addEventListener('click', () => {
+        closePopover();
+        spawnTab('agent', { agent: ag.id });
+      });
+      pickList.appendChild(btn);
+    }
+
+    if (includeShell) {
+      const shBtn = document.createElement('button');
+      shBtn.type = 'button';
+      shBtn.className = 'agent-pick-btn';
+      shBtn.dataset.agent = 'shell';
+      const ico = document.createElement('span');
+      ico.className = 'agent-pick-ico';
+      ico.innerHTML = pixelIconHtml('shell');
+      const info = document.createElement('span');
+      info.className = 'agent-pick-info';
+      const nm = document.createElement('span');
+      nm.className = 'agent-pick-name';
+      nm.textContent = 'Shell';
+      const cmd = document.createElement('span');
+      cmd.className = 'agent-pick-cmd';
+      cmd.textContent = 'bash';
+      info.append(nm, cmd);
+      shBtn.append(ico, info);
+      shBtn.addEventListener('click', () => {
+        closePopover();
+        spawnTab('shell');
+      });
+      pickList.appendChild(shBtn);
+    }
+
+    frag.append(head, sub, pickList);
+    openPopover(frag);
   }
 
   function openCollisionPopover(ctx) {
@@ -2805,35 +3076,20 @@
         cRight.className = 'agent-card-right';
         const pinId = t.labels && t.labels['swarmbox.pin_id'];
         const pinObj = pinId ? pins.find((p) => p.id === pinId) : null;
-        if (pinObj) {
-          const cBolt = document.createElement('button');
-          cBolt.type = 'button';
-          cBolt.className = `card-act-btn${pinObj.autostart ? ' is-autostart' : ''}`;
-          cBolt.title = pinObj.autostart ? 'Autostart on boot (click to disable)' : 'Parked on boot (click to enable autostart)';
-          cBolt.innerHTML = ICO_BOLT_SVG;
-          cBolt.addEventListener('click', (e) => { e.stopPropagation(); togglePinAutostart(pinObj); });
-          cRight.appendChild(cBolt);
-        }
-        const cPin = document.createElement('button');
-        cPin.type = 'button';
-        cPin.className = `card-act-btn${pinId ? ' is-pinned' : ''}`;
-        cPin.title = pinId ? 'Unpin session' : 'Pin session (persists across restarts)';
-        cPin.innerHTML = ICO_PIN_SVG;
-        cPin.addEventListener('click', (e) => { e.stopPropagation(); togglePinForTab(t); });
         const cIdx = document.createElement('span');
         cIdx.className = 'agent-card-idx';
         cIdx.textContent = `tab ${idx + 1}`;
         const cClose = document.createElement('button');
         cClose.type = 'button';
         cClose.className = 'agent-card-close';
-        cClose.title = pinId ? 'Close tab (pin stays parked)' : 'Close tab';
+        cClose.title = (pinObj && !pinObj.auto) ? 'Close tab (pin stays parked)' : 'Close tab';
         cClose.setAttribute('aria-label', `Close ${label}`);
         cClose.textContent = '✕';
         cClose.addEventListener('click', async (e) => {
           e.stopPropagation();
           await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
         });
-        cRight.append(cPin, cIdx, cClose);
+        cRight.append(cIdx, cClose);
         cTop.append(cBadge, cRight);
 
         const cName = document.createElement('div');
@@ -2965,26 +3221,19 @@
 
         const right = document.createElement('div');
         right.className = 'tab-right';
-        const shPinId = t.labels && t.labels['swarmbox.pin_id'];
-        const shPin = document.createElement('button');
-        shPin.type = 'button';
-        shPin.className = `card-act-btn${shPinId ? ' is-pinned' : ''}`;
-        shPin.title = shPinId ? 'Unpin shell' : 'Pin shell';
-        shPin.innerHTML = ICO_PIN_SVG;
-        shPin.addEventListener('click', (e) => { e.stopPropagation(); togglePinForTab(t); });
         const idxEl = document.createElement('span');
         idxEl.className = 'tab-idx';
         idxEl.textContent = idx < 9 ? String(idx + 1) : '';
         const closeBtn = document.createElement('button');
         closeBtn.className = 'tab-close';
-        closeBtn.title = shPinId ? 'Close tab (pin stays parked)' : 'Close tab';
+        closeBtn.title = 'Close tab';
         closeBtn.setAttribute('aria-label', `Close ${label}`);
         closeBtn.textContent = '✕';
         closeBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
         });
-        right.append(shPin, idxEl, closeBtn);
+        right.append(idxEl, closeBtn);
 
         btn.append(makeMiniPixelIcon(iconKind), info, right);
         btn.addEventListener('click', () => {
@@ -3084,19 +3333,14 @@
         badge.textContent = pin.missing_cwd ? 'MISSING' : 'PARKED';
         const right = document.createElement('div');
         right.className = 'agent-card-right';
-        const bolt = document.createElement('button');
-        bolt.type = 'button';
-        bolt.className = `card-act-btn${pin.autostart ? ' is-autostart' : ''}`;
-        bolt.title = pin.autostart ? 'Autostart on boot (click to disable)' : 'Enable autostart on boot';
-        bolt.innerHTML = ICO_BOLT_SVG;
-        bolt.addEventListener('click', (e) => { e.stopPropagation(); togglePinAutostart(pin); });
-        const unpinBtn = document.createElement('button');
-        unpinBtn.type = 'button';
-        unpinBtn.className = 'card-act-btn is-pinned';
-        unpinBtn.title = 'Unpin session';
-        unpinBtn.innerHTML = ICO_PIN_SVG;
-        unpinBtn.addEventListener('click', (e) => { e.stopPropagation(); unpinById(pin.id); });
-        right.append(bolt, unpinBtn);
+        const dismissBtn = document.createElement('button');
+        dismissBtn.type = 'button';
+        dismissBtn.className = 'agent-card-close';
+        dismissBtn.title = 'Dismiss saved session';
+        dismissBtn.setAttribute('aria-label', `Dismiss ${pin.title || 'session'}`);
+        dismissBtn.textContent = '✕';
+        dismissBtn.addEventListener('click', (e) => { e.stopPropagation(); unpinById(pin.id); });
+        right.append(dismissBtn);
         top.append(badge, right);
 
         const nm = document.createElement('div');
@@ -3175,9 +3419,9 @@
     const mPlus = document.createElement('button');
     mPlus.className = 'm-tab m-tab-add';
     mPlus.textContent = '+';
-    mPlus.title = 'New terminal tab';
-    mPlus.setAttribute('aria-label', 'New terminal tab');
-    mPlus.addEventListener('click', () => spawnTab('shell'));
+    mPlus.title = 'New agent or shell tab';
+    mPlus.setAttribute('aria-label', 'New agent or shell tab');
+    mPlus.addEventListener('click', () => openNewAgentPopover(true));
     mobileTabsEl.appendChild(mPlus);
 
     const active = terminals.find((t) => t.address === activeId);
@@ -3279,7 +3523,7 @@
         btnAg.type = 'button';
         btnAg.className = 'stage-empty-btn';
         btnAg.textContent = '+ New agent';
-        btnAg.addEventListener('click', () => spawnTab('agent'));
+        btnAg.addEventListener('click', () => openNewAgentPopover());
         const btnSh = document.createElement('button');
         btnSh.type = 'button';
         btnSh.className = 'stage-empty-btn';
@@ -3795,6 +4039,8 @@
       if (Array.isArray(msg.pins)) pins = msg.pins;
       if (Array.isArray(msg.worktrees)) pendingWorktrees = msg.worktrees;
       if (msg.worktree_prefs && typeof msg.worktree_prefs === 'object') worktreePrefs = msg.worktree_prefs;
+      if (msg.session_prefs && typeof msg.session_prefs === 'object') sessionPrefs = msg.session_prefs;
+      if (Array.isArray(msg.installed_agents)) installedAgents = msg.installed_agents;
       if (Array.isArray(msg.terminals)) {
         terminals = msg.terminals;
         rememberTabs();
@@ -4270,7 +4516,7 @@
 
   const btnNewShell = document.getElementById('btn-new-shell');
   if (btnNewShell) btnNewShell.addEventListener('click', () => { spawnTab('shell'); focusTerminalIfDesktop(); });
-  if (btnNewAgent) btnNewAgent.addEventListener('click', () => { spawnTab('agent'); });
+  if (btnNewAgent) btnNewAgent.addEventListener('click', () => { openNewAgentPopover(); });
   if (sidebarPendingWtEl) sidebarPendingWtEl.addEventListener('click', openPendingWorktreesPopover);
   if (topbarWtBtnEl) topbarWtBtnEl.addEventListener('click', () => { if (activeId) openWorktreePopover(activeId); });
   if (mobileWtBtnEl) mobileWtBtnEl.addEventListener('click', () => { if (activeId) openWorktreePopover(activeId); });
@@ -4556,6 +4802,8 @@
       const r = await fetch('/api/config', { cache: 'no-store' });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       boxConfig = await r.json();
+      if (boxConfig && boxConfig.session_prefs) sessionPrefs = boxConfig.session_prefs;
+      if (boxConfig && Array.isArray(boxConfig.installed_agents)) installedAgents = boxConfig.installed_agents;
       if (settingsVersionEl && boxConfig.version) {
         settingsVersionEl.textContent = `SwarmBox v${boxConfig.version}`;
       }
@@ -4933,6 +5181,42 @@
       }),
     ]);
     frag.appendChild(makeGroup('Runtime & Web', null, coreCard));
+
+    const sessPrefs = (boxConfig && boxConfig.session_prefs) || sessionPrefs;
+    const saveSessPrefs = async (patch) => {
+      const r = await fetch('/api/pins/prefs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      }).catch(() => null);
+      if (r && r.ok) {
+        const d = await r.json().catch(() => ({}));
+        if (d.prefs) {
+          sessionPrefs = d.prefs;
+          if (boxConfig) boxConfig.session_prefs = d.prefs;
+          renderSettingsBody();
+        }
+      }
+    };
+    const bootModeSeg = el('div', { class: 's-seg' }, [
+      { id: 'autostart', label: 'Auto-start' },
+      { id: 'parked', label: 'Parked' },
+    ].map((opt) => el('button', {
+      type: 'button',
+      class: `s-seg-btn${(sessPrefs.boot_mode || 'autostart') === opt.id ? ' active' : ''}`,
+      text: opt.label,
+      onClick: () => saveSessPrefs({ boot_mode: opt.id }),
+    })));
+    const sessCard = el('div', { class: 's-card' }, [
+      el('div', { class: 's-row' }, [
+        el('div', { class: 's-row-info' }, [
+          el('div', { class: 's-row-title', text: 'Restore Sessions on Restart' }),
+          el('div', { class: 's-row-desc', text: 'Open agent tabs persist automatically. Choose whether they auto-start on boot or wait parked until you click Wake.' }),
+        ]),
+        bootModeSeg,
+      ]),
+    ]);
+    frag.appendChild(makeGroup('Sessions', el('span', { class: 's-badge', text: 'live' }), sessCard));
 
     const wtPrefs = (boxConfig && boxConfig.worktree_prefs) || worktreePrefs;
     const saveWtPrefs = async (patch) => {
