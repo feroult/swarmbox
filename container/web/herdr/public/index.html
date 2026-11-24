@@ -112,6 +112,13 @@
       </div>
 
       <div class="topbar-right">
+        <button type="button" class="icon-btn mobile-only mobile-topbar-sysop" id="btn-mobile-sysop" data-state="idle" data-on="0" title="Toggle Sysop chat" aria-label="Toggle Sysop chat">
+          <span class="sysop-mini" id="mobile-sysop-dot" data-state="idle" aria-hidden="true"></span>
+          <span class="sysop-topbar-pip" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="icon-btn mobile-only mobile-topbar-keys" id="btn-mobile-keys" data-on="0" title="Toggle terminal keys (Esc, Tab, Ctrl+C, arrows)" aria-label="Toggle terminal keys">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2.5"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M7 13h10"/></svg>
+        </button>
         <button class="icon-btn" id="btn-interrupt" title="Interrupt active terminal (Ctrl+C)" aria-label="Interrupt active terminal">
           <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="2"/></svg>
         </button>
@@ -175,21 +182,18 @@
         <button data-key="enter" aria-label="Enter">↵</button>
       </div>
 
-      <div class="mobile-capsule" id="mobile-capsule">
-        <button type="button" class="capsule-main" id="btn-mobile-sysop" data-state="idle" data-on="0">
-          <span class="sysop-mini" id="mobile-sysop-dot" data-state="idle" aria-hidden="true"></span>
-          <span class="capsule-text" id="mobile-sysop-text">Sysop</span>
-          <span class="capsule-chevron" aria-hidden="true">
-            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4-4 4 4"/></svg>
-          </span>
+      <!-- One persistent WhatsApp-style Sysop bar (identical open or closed): input pill + 48x48 mic/send circle -->
+      <div class="mobile-wa-bar" id="mobile-wa-bar" data-ready="0">
+        <div class="wa-input-slot" id="mobile-goal-slot"></div>
+        <button type="button" class="wa-fab wa-fab-mic" id="btn-mobile-mic" title="Tap to record a voice goal" aria-label="Record voice goal">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
         </button>
-        <button type="button" class="capsule-mic" id="btn-mobile-mic" title="Tap to record a voice goal" aria-label="Record voice goal">
-          <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-          <span>Speak</span>
+        <button type="button" class="wa-fab wa-fab-send" id="btn-mobile-send" title="Send goal" aria-label="Send goal">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m0 0l-6 6m6-6l6 6"/></svg>
         </button>
       </div>
 
-      <!-- WhatsApp-style Voice Recording Bar (replaces capsule while recording / transcribing) -->
+      <!-- WhatsApp-style Voice Recording Bar (replaces input bar in-place while recording / transcribing) -->
       <div class="voice-bar mobile-voice-bar" id="mobile-voice-bar" role="region" aria-label="Voice recording">
         <button type="button" class="voice-cancel-btn" id="btn-mobile-rec-cancel" title="Discard recording" aria-label="Discard recording">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -198,7 +202,7 @@
           <span class="voice-rec-dot" aria-hidden="true"></span>
           <span class="voice-timer" id="mobile-voice-timer">0:00</span>
           <div class="voice-bars" id="mobile-voice-bars" aria-hidden="true">
-            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
           </div>
           <span class="voice-sending-label">Transcribing…</span>
         </div>
@@ -255,13 +259,9 @@
     <!-- Activity Feed -->
     <div class="sysop-feed" id="sysop-feed"></div>
 
-    <!-- Goal Composer -->
-    <div class="sysop-composer" id="sysop-composer" data-typing="0">
-      <button type="button" class="type-goal-btn" id="btn-type-goal" aria-label="Type a message to Sysop">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/></svg>
-        <span>Type a message</span>
-      </button>
-      <div class="goal-box">
+    <!-- Goal Composer (Desktop: inside panel; Mobile: .goal-box moves into #mobile-goal-slot) -->
+    <div class="sysop-composer" id="sysop-composer">
+      <div class="goal-box" id="goal-box">
         <textarea id="goal-input" rows="2" placeholder="Ask Sysop or direct an agent… (Alt+G)"></textarea>
         <div class="goal-actions" id="goal-actions">
           <button type="button" class="mic-btn" id="btn-mic" title="Tap to record a voice goal" aria-label="Record a voice goal">

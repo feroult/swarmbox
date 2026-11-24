@@ -244,7 +244,10 @@
   const sysopStateEl = document.getElementById('sysop-state');
   const mobileSysopBtn = document.getElementById('btn-mobile-sysop');
   const mobileSysopDotEl = document.getElementById('mobile-sysop-dot');
-  const mobileSysopTextEl = document.getElementById('mobile-sysop-text');
+  const btnMobileKeys = document.getElementById('btn-mobile-keys');
+  const mobileWaBarEl = document.getElementById('mobile-wa-bar');
+  const mobileGoalSlotEl = document.getElementById('mobile-goal-slot');
+  const btnMobileSend = document.getElementById('btn-mobile-send');
   const btnToggleSysop = document.getElementById('btn-toggle-sysop');
   const sysopFeedEl = document.getElementById('sysop-feed');
   const btnSysopStop = document.getElementById('btn-sysop-stop');
@@ -913,21 +916,55 @@
   ro.observe(termWrapEl);
   window.addEventListener('resize', scheduleFit);
 
+  // Mobile keyboard & terminal-keys state: user-pinned keys never disappear mid-tap, and the
+  // open Sysop sheet tracks visualViewport height/offsetTop cleanly when the OS keyboard rises.
+  let mobileKeysPinned = false;
+  let mobileKeysDismissedForKb = false;
+  let mobileKbOpen = false;
+
+  function syncMobileKeys() {
+    const isMob = window.innerWidth <= 860;
+    const sheetOpen = appEl.dataset.mobileSysop === '1';
+    const focusSysop = document.activeElement === goalInputEl;
+    const kbTerm = isMob && mobileKbOpen && !sheetOpen && !focusSysop;
+    const kbSysop = isMob && mobileKbOpen && (sheetOpen || focusSysop);
+    appEl.dataset.kbTerm = kbTerm ? '1' : '0';
+    appEl.dataset.kbSysop = kbSysop ? '1' : '0';
+    const showKeys = isMob && !sheetOpen && (mobileKeysPinned || (kbTerm && !mobileKeysDismissedForKb));
+    appEl.dataset.mobileKeys = showKeys ? '1' : '0';
+    if (btnMobileKeys) btnMobileKeys.dataset.on = showKeys ? '1' : '0';
+  }
+
+  let baseMobileH = Math.max(window.innerHeight, (window.visualViewport && window.visualViewport.height) || 0);
+  function syncViewport() {
+    if (!window.visualViewport) {
+      syncMobileKeys();
+      return;
+    }
+    const vvH = Math.round(window.visualViewport.height);
+    const vvTop = Math.max(0, Math.round(window.visualViewport.offsetTop || 0));
+    appEl.style.setProperty('--vv-h', `${vvH}px`);
+    appEl.style.setProperty('--vv-top', `${vvTop}px`);
+    appEl.style.height = `${vvH}px`;
+    if (window.innerWidth <= 860) {
+      if (vvH > baseMobileH) baseMobileH = vvH;
+      const wasKb = mobileKbOpen;
+      mobileKbOpen = (baseMobileH - vvH) > 110;
+      if (wasKb && !mobileKbOpen) mobileKeysDismissedForKb = false;
+    } else {
+      mobileKbOpen = false;
+      mobileKeysDismissedForKb = false;
+    }
+    syncMobileKeys();
+    if (appEl.dataset.kbSysop === '1' && appEl.dataset.mobileSysop === '1') {
+      requestAnimationFrame(() => { sysopFeedEl.scrollTop = sysopFeedEl.scrollHeight; });
+    }
+    scheduleFit();
+  }
   if (window.visualViewport) {
-    let baseMobileH = Math.max(window.innerHeight, window.visualViewport.height);
-    const syncViewport = () => {
-      const vvH = Math.round(window.visualViewport.height);
-      appEl.style.height = `${vvH}px`;
-      if (window.innerWidth <= 860) {
-        if (vvH > baseMobileH) baseMobileH = vvH;
-        const kbOpen = (baseMobileH - vvH) > 110 && document.activeElement !== goalInputEl;
-        appEl.dataset.mobileKeys = kbOpen ? '1' : '0';
-      } else {
-        appEl.dataset.mobileKeys = '0';
-      }
-      scheduleFit();
-    };
     window.visualViewport.addEventListener('resize', syncViewport);
+    window.visualViewport.addEventListener('scroll', syncViewport);
+    syncViewport();
   }
 
   function focusTerminalIfDesktop() {
@@ -2874,7 +2911,7 @@
     const empty = turns ? turns.length === 0 : steps.length === 0;
     sysopFeedEl.classList.toggle('is-empty', empty || !sysop.up);
     const keyHint = window.innerWidth <= 860 ? '' : ' (Alt+G)';
-    goalInputEl.placeholder = (empty ? 'Ask Sysop or direct an agent…' : 'Ask a follow-up…') + keyHint;
+    goalInputEl.placeholder = (empty ? (window.innerWidth <= 860 ? 'Ask Sysop…' : 'Ask Sysop or direct an agent…') : 'Ask a follow-up…') + keyHint;
     btnSysopNew.classList.toggle('hidden', empty || !sysop.up);
     // the snapshot comes every 600 ms: rebuild only when something shown changed (the minute keeps "3m ago" true)
     const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns, turns ? null : steps,
@@ -2912,9 +2949,8 @@
     sysopStateEl.dataset.state = st;
     sysopStateEl.textContent = STATE_WORDS[st] || st;
     if (mobileSysopDotEl) mobileSysopDotEl.dataset.state = st;
-    mobileSysopBtn.dataset.state = st;
+    if (mobileSysopBtn) mobileSysopBtn.dataset.state = st;
     if (btnToggleSysop) btnToggleSysop.dataset.state = st;
-    mobileSysopTextEl.textContent = st === 'idle' || st === 'off' ? 'Sysop' : (sysop.sentence || `Sysop · ${st}`);
 
     const running = st === 'working' || st === 'allow?' || st === 'sending' || st === 'queued';
     btnSysopStop.classList.toggle('hidden', !running);
@@ -3066,17 +3102,18 @@
 
   function updateVoiceBars(level) {
     const norm = Math.max(0, Math.min(1, level));
-    const now = Date.now() / 160;
+    const now = Date.now() / 135;
     const paint = (bars, maxH) => {
       const mid = (bars.length - 1) / 2;
       bars.forEach((bar, i) => {
-        const dist = 1 - Math.abs(i - mid) / (mid + 0.8);
-        const wave = 0.55 + 0.45 * Math.sin(now + i * 0.9);
-        const h = Math.round(4 + (maxH - 4) * dist * Math.max(0.16, norm * 0.9 + 0.14) * wave);
+        const u = (i - mid) / (mid + 0.6);
+        const bell = Math.exp(-u * u * 1.6);
+        const wave = 0.5 + 0.35 * Math.sin(now + i * 0.65) + 0.15 * Math.sin(now * 1.7 - i * 0.4);
+        const h = Math.round(4 + (maxH - 4) * bell * Math.max(0.22, norm * 0.88 + 0.16) * wave);
         bar.style.height = `${h}px`;
       });
     };
-    paint(mobileVoiceBars, 22);
+    paint(mobileVoiceBars, 24);
     paint(desktopVoiceBars, 18);
   }
 
@@ -3346,55 +3383,66 @@
   function setMobileSysop(open) {
     const val = open ? '1' : '0';
     appEl.dataset.mobileSysop = val;
-    mobileSysopBtn.dataset.on = val;
-    if (!open) {
-      if (document.activeElement === goalInputEl) goalInputEl.blur();
-      if (!goalInputEl.value.trim()) setComposerTyping(false);
-    }
+    if (mobileSysopBtn) mobileSysopBtn.dataset.on = val;
+    if (!open && document.activeElement === goalInputEl) goalInputEl.blur();
+    syncMobileKeys();
+    if (open) requestAnimationFrame(() => { sysopFeedEl.scrollTop = sysopFeedEl.scrollHeight; });
+    requestAnimationFrame(scheduleFit);
   }
 
-  // Mobile: the dock bar (Sysop capsule + Speak) is always there and the sheet opens above it. The sheet's composer
-  // is a quiet "Type a message" row at the end of the conversation; tapped, it becomes a one-line field.
+  // Mobile V4: ONE persistent WhatsApp-style Sysop bar (input pill + 48x48 mic/send circle),
+  // identical whether the sheet is closed or open. Sending text or voice opens the sheet above it.
   const mobileMq = window.matchMedia('(max-width: 860px)');
   const composerEl = document.getElementById('sysop-composer');
-  const btnTypeGoal = document.getElementById('btn-type-goal');
+  const goalBoxEl = document.getElementById('goal-box');
   const mobileDockEl = document.getElementById('mobile-dock');
   function isMobileLayout() { return mobileMq.matches; }
   function autosizeGoalInput() {
     if (!isMobileLayout()) { goalInputEl.style.height = ''; return; }
     goalInputEl.style.height = 'auto';
-    goalInputEl.style.height = `${Math.min(goalInputEl.scrollHeight, 96)}px`;
+    goalInputEl.style.height = `${Math.min(goalInputEl.scrollHeight, 108)}px`;
   }
-  function setComposerTyping(on) {
-    if (!composerEl) return;
-    composerEl.dataset.typing = on ? '1' : '0';
-    if (on) {
-      autosizeGoalInput();
-      goalInputEl.focus();
-    }
-  }
-  function syncComposerLayout() {
+  function placeGoalComposer() {
+    if (!goalBoxEl || !composerEl || !mobileGoalSlotEl) return;
+    const target = isMobileLayout() ? mobileGoalSlotEl : composerEl;
+    if (goalBoxEl.parentElement !== target) target.appendChild(goalBoxEl);
     goalInputEl.rows = isMobileLayout() ? 1 : 2;
     autosizeGoalInput();
+    syncMobileKeys();
   }
-  syncComposerLayout();
-  if (mobileMq.addEventListener) mobileMq.addEventListener('change', () => { syncComposerLayout(); scheduleFit(); });
-  if (btnTypeGoal) btnTypeGoal.addEventListener('click', () => setComposerTyping(true));
-  // an empty field that loses focus goes back to the quiet row
-  goalInputEl.addEventListener('blur', () => {
-    if (isMobileLayout() && !goalInputEl.value.trim()) setTimeout(() => setComposerTyping(false), 120);
-  });
+  placeGoalComposer();
+  if (mobileMq.addEventListener) mobileMq.addEventListener('change', () => { placeGoalComposer(); scheduleFit(); });
+  goalInputEl.addEventListener('focus', () => syncViewport());
+  goalInputEl.addEventListener('blur', () => setTimeout(syncViewport, 60));
   if (mobileDockEl && window.ResizeObserver) {
     new ResizeObserver(() => {
       appEl.style.setProperty('--dock-h', `${Math.round(mobileDockEl.getBoundingClientRect().height)}px`);
     }).observe(mobileDockEl);
   }
-  // On mobile a goal sent by text or voice opens the sheet, so the reply shows in full; the keyboard drops.
+  // On mobile a goal sent by text or voice opens the sheet above the same bar; the keyboard drops.
   function showSysopReplyOnMobile() {
     if (!isMobileLayout()) return;
     if (document.activeElement === goalInputEl) goalInputEl.blur();
-    setComposerTyping(false);
     setMobileSysop(true);
+  }
+
+  // Topbar minimalist keys toggle: pins/unpins Esc·Tab·^C·arrows cleanly without stealing focus.
+  if (btnMobileKeys) {
+    btnMobileKeys.addEventListener('pointerdown', (e) => e.preventDefault());
+    btnMobileKeys.addEventListener('mousedown', (e) => e.preventDefault());
+    btnMobileKeys.addEventListener('click', () => {
+      if (appEl.dataset.mobileSysop === '1') setMobileSysop(false);
+      const currentlyShown = appEl.dataset.mobileKeys === '1';
+      if (currentlyShown) {
+        mobileKeysPinned = false;
+        if (mobileKbOpen) mobileKeysDismissedForKb = true;
+      } else {
+        mobileKeysPinned = true;
+        mobileKeysDismissedForKb = false;
+      }
+      syncMobileKeys();
+      requestAnimationFrame(scheduleFit);
+    });
   }
 
   const btnNewShell = document.getElementById('btn-new-shell');
@@ -3435,15 +3483,21 @@
 
   const btnSendGoal = document.getElementById('btn-send-goal');
   function syncSendReady() {
-    btnSendGoal.dataset.ready = goalInputEl.value.trim() ? '1' : '0';
+    const ready = goalInputEl.value.trim() ? '1' : '0';
+    btnSendGoal.dataset.ready = ready;
+    if (mobileWaBarEl) mobileWaBarEl.dataset.ready = ready;
   }
   syncSendReady();
   goalInputEl.addEventListener('input', () => { syncSendReady(); autosizeGoalInput(); });
   btnSendGoal.addEventListener('click', () => { sendGoal(); syncSendReady(); autosizeGoalInput(); });
+  if (btnMobileSend) {
+    btnMobileSend.addEventListener('pointerdown', (e) => e.preventDefault());
+    btnMobileSend.addEventListener('click', () => { sendGoal(); syncSendReady(); autosizeGoalInput(); });
+  }
   goalInputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      if (isMobileLayout()) { goalInputEl.value = ''; syncSendReady(); setComposerTyping(false); }
+      if (isMobileLayout()) { goalInputEl.value = ''; syncSendReady(); autosizeGoalInput(); }
       goalInputEl.blur();
       focusTerminalIfDesktop();
       return;
@@ -3462,15 +3516,21 @@
   document.getElementById('btn-mobile-allow').addEventListener('click', () => handleApproval('allow'));
   document.getElementById('btn-mobile-cancel').addEventListener('click', () => handleApproval('cancel'));
 
-  document.getElementById('touch-keys').addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-key]');
-    if (!btn || !activeId) return;
-    await fetch(`/api/tabs/${encodeURIComponent(activeId)}/keys`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keys: [btn.dataset.key] }),
+  const touchKeysEl = document.getElementById('touch-keys');
+  if (touchKeysEl) {
+    // Prevent tapping Esc/Tab/^C/arrows from blurring the terminal or collapsing the OS keyboard.
+    touchKeysEl.addEventListener('pointerdown', (e) => e.preventDefault());
+    touchKeysEl.addEventListener('mousedown', (e) => e.preventDefault());
+    touchKeysEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-key]');
+      if (!btn || !activeId) return;
+      await fetch(`/api/tabs/${encodeURIComponent(activeId)}/keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: [btn.dataset.key] }),
+      });
     });
-  });
+  }
 
   // ---- First-Class Settings Panel (Appearance + All SwarmBox Configs) ----------------------
   const SECTION_META = {

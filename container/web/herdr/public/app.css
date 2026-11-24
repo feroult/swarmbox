@@ -1823,16 +1823,61 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   .app[data-sidebar-open="0"],
   .app[data-sysop-open="0"],
   .app[data-sidebar-open="0"][data-sysop-open="0"] {
+    position: fixed;
+    top: var(--vv-top, 0px);
+    left: 0;
+    right: 0;
+    height: var(--vv-h, 100dvh);
+    overflow: hidden;
     grid-template-columns: 1fr;
   }
 
   .sidebar { display: none; }
 
   .topbar {
-    height: 40px;
-    padding: 0 10px;
+    height: 42px;
+    padding: 0 8px 0 12px;
   }
+  .topbar-right { gap: 3px; }
   .topbar-settings-btn { display: grid !important; }
+  .mobile-topbar-sysop,
+  .mobile-topbar-keys {
+    display: inline-grid !important;
+    place-items: center;
+    position: relative;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+  .mobile-topbar-sysop[data-on="1"],
+  .mobile-topbar-keys[data-on="1"] {
+    background: var(--accent-bg);
+    color: var(--accent-bright);
+  }
+  .sysop-topbar-pip {
+    display: none;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .mobile-topbar-sysop[data-state="working"] .sysop-topbar-pip,
+  .mobile-topbar-sysop[data-state="queued"] .sysop-topbar-pip {
+    display: block;
+    background: #67e8f9;
+    box-shadow: 0 0 7px #67e8f9;
+    animation: sb-pulse 1.1s ease-in-out infinite;
+  }
+  .mobile-topbar-sysop[data-state="allow?"] .sysop-topbar-pip,
+  .mobile-topbar-sysop[data-state="sending"] .sysop-topbar-pip {
+    display: block;
+    background: var(--peach);
+    box-shadow: 0 0 7px var(--peach);
+    animation: sb-pulse 0.95s ease-in-out infinite;
+  }
   .active-name { font-size: 12.5px; }
 
   .mobile-tabs {
@@ -1878,13 +1923,19 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
 
   .term-wrap { padding: 6px 6px 4px 8px; }
 
-  /* Mobile Dock: clean surface + subtle hairline */
+  /* Mobile Dock: ONE persistent WhatsApp-style Sysop bar + optional terminal keys */
   .mobile-dock {
+    position: relative;
+    z-index: 50;
     flex-direction: column;
-    gap: 7px;
-    padding: 8px calc(10px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) calc(10px + env(safe-area-inset-left, 0px));
+    gap: 8px;
+    padding: 9px calc(12px + env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
     background-color: var(--sheet);
     border-top: 1px solid var(--border);
+  }
+  .app[data-kb-sysop="1"] .mobile-dock,
+  .app[data-kb-term="1"] .mobile-dock {
+    padding-bottom: 9px;
   }
 
   .mobile-approval {
@@ -1950,14 +2001,67 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
     color: #fff;
   }
 
-  /* One generous 48px button set: [Sysop capsule ⌃] [🎤 Speak] — zero confusing keyboard toggle */
-  .mobile-capsule {
+  /* ONE persistent WhatsApp-style Sysop bar (identical open or closed): input pill + 48x48 mic/send circle */
+  .mobile-wa-bar {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 9px;
   }
-  .app[data-voice-state="recording"] .mobile-capsule,
-  .app[data-voice-state="sending"] .mobile-capsule { display: none; }
+  .app[data-voice-state="recording"] .mobile-wa-bar,
+  .app[data-voice-state="sending"] .mobile-wa-bar { display: none; }
+  .app[data-kb-term="1"][data-voice-state="idle"] .mobile-wa-bar { display: none; }
+  .wa-input-slot {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .mobile-wa-bar .goal-box {
+    flex-direction: row;
+    align-items: center;
+    min-height: 48px;
+    padding: 8px 16px;
+    border-radius: 24px;
+    background: var(--bg);
+    border: 1px solid rgba(167, 139, 250, 0.22);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+    gap: 0;
+  }
+  .mobile-wa-bar .goal-box:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-bg);
+  }
+  .mobile-wa-bar #goal-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 16px;            /* 16px: iOS does not zoom the page on focus */
+    line-height: 1.38;
+    padding: 4px 0;
+    max-height: 108px;
+  }
+  .mobile-wa-bar .goal-actions,
+  .mobile-wa-bar .desktop-voice-bar { display: none !important; }
+
+  /* 48x48 WhatsApp-standard circular thumb button: mic when empty, send arrow when typing */
+  .wa-fab {
+    appearance: none;
+    flex: 0 0 auto;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--accent-bright);
+    background: linear-gradient(180deg, var(--btn-grad-1), var(--btn-grad-2));
+    box-shadow: 0 4px 16px rgba(109, 40, 217, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    color: var(--btn-text);
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform .08s ease, filter .14s ease;
+  }
+  .wa-fab:active { transform: scale(0.94); }
+  .mobile-wa-bar[data-ready="0"] .wa-fab-send { display: none; }
+  .mobile-wa-bar[data-ready="1"] .wa-fab-mic { display: none; }
+
   .app[data-voice-state="recording"] .mobile-voice-bar,
   .app[data-voice-state="sending"] .mobile-voice-bar {
     display: flex;
@@ -1969,85 +2073,18 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
     background: transparent;
   }
   .mobile-voice-bar .voice-meter {
-    height: 44px;
+    height: 46px;
     padding: 0 14px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.045);
   }
-  .capsule-main {
-    flex: 1 1 0;
-    min-width: 0;
-    height: 48px;
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 0 13px 0 14px;
-    border-radius: 15px;
-    border: 1px solid var(--border);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: transform .08s ease, border-color .15s ease, background .15s ease;
-  }
-  .capsule-main:active, .capsule-mic:active { transform: scale(0.96); }
-  .capsule-main[data-on="1"] {
-    background: linear-gradient(180deg, var(--accent-bg), rgba(255, 255, 255, 0.03));
-    border-color: var(--border-strong);
-  }
-  .capsule-text {
-    flex: 1 1 0;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: left;
-    color: var(--text);
-  }
-  .capsule-main[data-state="idle"] .capsule-text { color: var(--accent-bright); opacity: 0.88; }
-  .capsule-chevron {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--accent-bright);
-    opacity: 0.72;
-    transition: transform .2s cubic-bezier(.22, 1, .36, 1);
-  }
-  .capsule-main[data-on="1"] .capsule-chevron { transform: rotate(180deg); opacity: 1; }
 
-  /* Generous, thumb-friendly primary Speak pill (WhatsApp-style tap to start recording) */
-  .capsule-mic {
-    flex: 0 0 auto;
-    min-width: 118px;
-    height: 48px;
-    padding: 0 18px;
-    border-radius: 15px;
-    border: 1px solid var(--accent-bright);
-    background: linear-gradient(180deg, var(--btn-grad-1), var(--btn-grad-2));
-    box-shadow: 0 4px 16px rgba(109, 40, 217, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.24);
-    color: var(--btn-text);
-    font-family: var(--sans);
-    font-size: 14px;
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: transform .08s ease, filter .14s ease;
-  }
-
-  /* Sheet backdrop + bottom drawer */
+  /* Sheet backdrop + bottom drawer (anchored inside .app so visualViewport stays exact) */
   .sheet-backdrop {
-    position: fixed;
-    inset: 0;
+    position: absolute;
+    inset: 0 0 var(--dock-h, 72px) 0;
     z-index: 35;
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.48);
     backdrop-filter: blur(2px);
     opacity: 0;
     pointer-events: none;
@@ -2071,22 +2108,29 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   }
 
   .sysop-panel {
-    position: fixed;
+    position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
-    height: 70dvh;
+    bottom: var(--dock-h, 72px);
+    height: min(76%, calc(var(--vv-h, 100dvh) - var(--dock-h, 72px) - 24px));
     z-index: 40;
     border-left: none;
     border-top: 1px solid var(--border-strong);
-    border-radius: 20px 20px 0 0;
-    box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.62);
-    transform: translateY(105%);
+    border-radius: 22px 22px 0 0;
+    box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.65);
+    transform: translateY(calc(100% + var(--dock-h, 72px) + 24px));
     transition: transform .24s cubic-bezier(.22, 1, .36, 1);
+  }
+  .app[data-kb-sysop="1"] .sysop-panel {
+    height: calc(var(--vv-h, 100dvh) - var(--dock-h, 72px) - 10px);
+    border-radius: 18px 18px 0 0;
   }
   .app[data-mobile-sysop="1"] .sysop-panel {
     transform: translateY(0);
   }
+  .app[data-mobile-sysop="1"] .touch-keys,
+  .app[data-mobile-sysop="1"] .mobile-approval { display: none !important; }
+  .sysop-composer { display: none; }
 }
 
 /* ---- First-Class Settings Modal (Desktop Dialog & Mobile Responsive Sheet) ---------------- */
@@ -2799,75 +2843,6 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* ---- Mobile Sysop: the dock bar is always there; the sheet opens above it ---------------------
-   The dock keeps its capsule (status, open/close) and its purple Speak; recording turns it into the voice bar, in place.
-   The sheet opens above the dock (app.js opens it when a goal is sent), and its composer is only a quiet
-   "Type a message" row at the end of the conversation that becomes a one-line field when tapped. */
-@media (max-width: 860px) {
-  .sysop-panel {
-    bottom: var(--dock-h, 64px);
-    height: min(78dvh, calc(100dvh - var(--dock-h, 64px) - 40px));
-    border-radius: 20px 20px 0 0;
-    transform: translateY(calc(100% + var(--dock-h, 64px) + 24px));
-  }
-  .sheet-backdrop { bottom: var(--dock-h, 64px); }
-  .app[data-mobile-sysop="1"] .touch-keys,
-  .app[data-mobile-sysop="1"] .mobile-approval { display: none !important; }
-
-  .sysop-composer { border-top: 0; padding: 4px 14px 12px; }
-  .app[data-voice-state="recording"] .sysop-composer,
-  .app[data-voice-state="sending"] .sysop-composer { display: none; }
-  .type-goal-btn {
-    appearance: none;
-    width: 100%;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 13px;
-    border-radius: 11px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    background: rgba(255, 255, 255, 0.035);
-    color: var(--text-dim);
-    font-family: var(--sans);
-    font-size: 13.5px;
-    cursor: pointer;
-    touch-action: manipulation;
-    transition: background .12s ease, color .12s ease;
-  }
-  .type-goal-btn:active { background: var(--accent-bg); color: var(--text-muted); }
-  .sysop-composer:not([data-typing="1"]) .goal-box { display: none; }
-  .sysop-composer[data-typing="1"] .type-goal-btn { display: none; }
-  .sysop-composer .goal-box {
-    flex-direction: row;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 5px 4px 12px;
-    border-radius: 12px;
-  }
-  .sysop-composer #goal-input {
-    flex: 1 1 auto;
-    min-width: 0;
-    font-size: 16px;            /* 16px: iOS does not zoom the page on focus */
-    line-height: 1.35;
-    padding: 6px 0;
-    max-height: 96px;
-  }
-  .sysop-composer .goal-actions { flex: 0 0 auto; gap: 0; }
-  .sysop-composer .mic-btn,
-  .sysop-composer .voice-hint,
-  .sysop-composer .desktop-voice-bar,
-  .sysop-composer .send-label { display: none !important; }
-  .sysop-composer .send-btn {
-    width: 34px;
-    height: 34px;
-    padding: 0;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-}
 @media (min-width: 861px) {
-  .send-ico, .type-goal-btn { display: none; }
+  .send-ico { display: none; }
 }
