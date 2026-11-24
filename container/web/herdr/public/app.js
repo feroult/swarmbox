@@ -594,9 +594,23 @@
   let touchDbgCoast = null;
   let touchDbgZoomTimer = 0;
   let touchDbgSeq = 0;
+  let zoomCooldownUntil = 0;
+  let zoomCooldownTimer = 0;
+  let multiTouchActive = false;
 
   function isOpticalZoomed() {
     return Boolean(window.visualViewport && Number(window.visualViewport.scale || 1) > 1.02);
+  }
+
+  function isViewportPinchingOrBouncing() {
+    const vv = window.visualViewport;
+    if (!vv) return false;
+    const scale = Number(vv.scale || 1);
+    if (scale > 1.02 || scale < 0.99) return true;
+    const layoutW = document.documentElement.clientWidth || 0;
+    if ((vv.offsetTop || 0) < -1 || (vv.offsetLeft || 0) < -1) return true;
+    if (layoutW > 0 && vv.width > layoutW + 2) return true;
+    return false;
   }
 
   function sessionMouseMode(sess) {
@@ -621,6 +635,7 @@
       vvH: vv ? Math.round(vv.height) : window.innerHeight,
       vvW: vv ? Math.round(vv.width) : window.innerWidth,
       winH: window.innerHeight,
+      layoutH: document.documentElement.clientHeight || 0,
       dockH: dockEl ? Math.round(dockEl.getBoundingClientRect().height) : 0,
       ...data,
     };
@@ -638,8 +653,10 @@
     const sess = activeSession();
     if (!sess || !deltaPx) return false;
     const buf = sess.term.buffer && sess.term.buffer.active;
+    const mouseMode = sessionMouseMode(sess);
+    const appWantsWheel = mouseMode !== 'NONE' && mouseMode !== 'UNKNOWN';
 
-    if (buf && buf.type === 'normal' && buf.baseY > 0) {
+    if (buf && buf.type === 'normal' && buf.baseY > 0 && !appWantsWheel) {
       if (sess.pokeScrollbar) sess.pokeScrollbar();
       const rh = sessionRowHeight(sess);
       const maxPx = buf.baseY * rh;
@@ -674,26 +691,33 @@
       return Math.abs(next - prev) > 0.25;
     }
 
-    // Alternate screen (Claude Code, agy, vim, less, htop, fullscreen TUIs): dispatch one line-mode
-    // WheelEvent per step so mouse-tracked TUIs receive every tick instead of collapsing a fast
-    // flick into a single wheel packet or dropping sub-threshold pixel deltas.
+    // Alternate screen or mouse-tracked TUI (agy, Claude Code fullscreen, vim, less, htop):
+    // dispatch line-mode WheelEvents with coords clamped inside .xterm-screen so xterm's
+    // CoreMouseService always resolves valid (col, row) coordinates and delivers every tick.
     const rh = sessionRowHeight(sess);
-    touchAltAccum += deltaPx / Math.max(10, rh * 0.85);
+    touchAltAccum += deltaPx / Math.max(8, rh * 0.55);
     const lines = Math.trunc(touchAltAccum);
     if (lines !== 0) {
       touchAltAccum -= lines;
       const screenEl = sess.paneEl.querySelector('.xterm-screen');
       const dir = Math.sign(lines);
-      const count = Math.min(8, Math.abs(lines));
+      const count = Math.min(12, Math.abs(lines));
       if (touchDbgGesture) touchDbgGesture.wheelSent += count;
       if (touchDbgCoast) touchDbgCoast.wheelSent += count;
       if (screenEl && typeof WheelEvent === 'function') {
+        const rect = screenEl.getBoundingClientRect();
+        const cx = rect.width > 16
+          ? Math.max(rect.left + 8, Math.min(rect.right - 8, touchLastX || (rect.left + rect.width * 0.5)))
+          : (rect.left + rect.width * 0.5);
+        const cy = rect.height > 16
+          ? Math.max(rect.top + 8, Math.min(rect.bottom - 8, touchLastY || (rect.top + rect.height * 0.45)))
+          : (rect.top + rect.height * 0.5);
         for (let i = 0; i < count; i++) {
           screenEl.dispatchEvent(new WheelEvent('wheel', {
             deltaY: dir * 3,
             deltaMode: 1,
-            clientX: touchLastX,
-            clientY: touchLastY,
+            clientX: cx,
+            clientY: cy,
             bubbles: true,
             cancelable: true,
           }));
@@ -844,25 +868,34 @@
   // Two-finger pinch-to-zoom is left completely to the browser's native optical compositor
   // (no font-size mutation or terminal reflow). When zoomed in optically (scale > 1.02),
   // 1-finger panning is also handed straight to the browser.
-  let multiTouchActive = false;
+  window.addEventListener('touchend', (e) => {
+    if (e.touches.length === 0) multiTouchActive = false;
+  }, { passive: true });
+  window.addEventListener('touchcancel', () => {
+    multiTouchActive = false;
+  }, { passive: true });
 
   termWrapEl.addEventListener('touchstart', (e) => {
+    if (e.target && e.target.closest && e.target.closest('button, a, input, textarea')) return;
     stopTouchCoast();
     if (e.touches.length >= 2) {
       if (touchMoved) { flushTouchScroll(); settleTouchScroll(); }
       touchId = null;
       touchMoved = false;
       multiTouchActive = true;
+      zoomCooldownUntil = Date.now() + 650;
       touchDbgGesture = null;
       return;
     }
-    if (isOpticalZoomed()) {
+    // Fresh 1-finger touch: never allow a stale multiTouchActive flag from a Safari pinch to stick.
+    multiTouchActive = false;
+    if (isOpticalZoomed() || isViewportPinchingOrBouncing()) {
       touchId = null;
       touchMoved = false;
       touchDbgGesture = null;
       return;
     }
-    if (e.touches.length === 1 && !multiTouchActive) {
+    if (e.touches.length === 1) {
       const t = e.touches[0];
       const sess = activeSession();
       const buf = sess && sess.term && sess.term.buffer && sess.term.buffer.active;
@@ -895,7 +928,13 @@
   }, { passive: true });
 
   termWrapEl.addEventListener('touchmove', (e) => {
-    if (multiTouchActive || e.touches.length >= 2 || isOpticalZoomed()) {
+    if (e.touches.length >= 2) {
+      multiTouchActive = true;
+      zoomCooldownUntil = Date.now() + 650;
+      touchId = null;
+      return;
+    }
+    if (multiTouchActive || isOpticalZoomed() || isViewportPinchingOrBouncing()) {
       touchId = null;
       return;
     }
@@ -985,7 +1024,7 @@
       touchChainBoost = 1;
       if (moved) settleTouchScroll();
     }
-    if (g && (moved || g.moves > 2)) {
+    if (g && (moved || g.moves >= 1)) {
       const sess = activeSession();
       const buf = sess && sess.term && sess.term.buffer && sess.term.buffer.active;
       logTouchDebug('scroll_end', {
@@ -1098,6 +1137,9 @@
 
   function fitSession(sess, sendResize = true) {
     if (!sess) return;
+    if (isViewportPinchingOrBouncing() || multiTouchActive || Date.now() < zoomCooldownUntil) {
+      return;
+    }
     try {
       const nextFont = computeFontSize();
       const nextLH = computeLineHeight();
@@ -1110,11 +1152,21 @@
       sess.needsFit = false;
       const changed = sess.term.cols !== sess.lastCols || sess.term.rows !== sess.lastRows;
       if (sendResize && changed && sess.ws && sess.ws.readyState === 1) {
+        const prevCols = sess.lastCols;
+        const prevRows = sess.lastRows;
         sess.lastCols = sess.term.cols;
         sess.lastRows = sess.term.rows;
         if (!sess.hydrating) {
           sess.resizeWasAtBottom = wasAtBottom;
           beginResizeCycle(sess);
+          logTouchDebug('resize_sent', {
+            prevCols,
+            prevRows,
+            cols: sess.term.cols,
+            rows: sess.term.rows,
+            vvTop: window.visualViewport ? Math.round(window.visualViewport.offsetTop || 0) : 0,
+            vvLeft: window.visualViewport ? Math.round(window.visualViewport.offsetLeft || 0) : 0,
+          });
         }
         sess.ws.send(JSON.stringify({ type: 'resize', cols: sess.term.cols, rows: sess.term.rows }));
       }
@@ -1123,6 +1175,7 @@
 
   let fitRaf = 0;
   function fitAndResize() {
+    if (isViewportPinchingOrBouncing() || multiTouchActive || Date.now() < zoomCooldownUntil) return;
     syncAppearanceControls();
     const active = activeSession();
     for (const sess of tabSessions.values()) {
@@ -1131,6 +1184,7 @@
     }
   }
   function scheduleFit() {
+    if (isViewportPinchingOrBouncing() || multiTouchActive || Date.now() < zoomCooldownUntil) return;
     if (fitRaf) return;
     fitRaf = requestAnimationFrame(() => {
       fitRaf = 0;
@@ -1168,16 +1222,18 @@
     if (btnMobileKeys) btnMobileKeys.dataset.on = showKeys ? '1' : '0';
   }
 
-  let baseMobileH = Math.max(window.innerHeight, (window.visualViewport && window.visualViewport.height) || 0);
+  let baseMobileH = document.documentElement.clientHeight || window.innerHeight || 0;
+  let lastAppliedVvH = 0;
   let lastLoggedZoomScale = 1;
-  function syncViewport() {
+  function syncViewport(fromScroll = false) {
     if (!window.visualViewport) {
       syncMobileKeys();
       return;
     }
-    const vvScale = Number(window.visualViewport.scale || 1);
+    const vv = window.visualViewport;
+    const vvScale = Number(vv.scale || 1);
     const zoomed = vvScale > 1.02;
-    const wasZoomed = appEl.dataset.zoomed === '1';
+    const pinchingOrBouncing = isViewportPinchingOrBouncing();
     appEl.dataset.zoomed = zoomed ? '1' : '0';
     if (Math.abs(vvScale - lastLoggedZoomScale) > 0.04) {
       lastLoggedZoomScale = vvScale;
@@ -1185,28 +1241,33 @@
       touchDbgZoomTimer = setTimeout(() => {
         logTouchDebug(zoomed ? 'zoom' : 'zoom_reset', {
           scale: Number(vvScale.toFixed(3)),
-          vvTop: Math.round(window.visualViewport.offsetTop || 0),
-          vvLeft: Math.round(window.visualViewport.offsetLeft || 0),
+          vvTop: Math.round(vv.offsetTop || 0),
+          vvLeft: Math.round(vv.offsetLeft || 0),
         });
       }, 220);
     }
-    if (zoomed) {
-      // Optical browser pinch-zoom: keep #app at the full layout viewport (100dvh) so the browser
-      // scales the terminal and Sysop dock uniformly without squashing or reflowing terminal text.
+    if (pinchingOrBouncing) {
+      // Optical browser pinch-zoom or iOS pinch-out rubber-band bounce:
+      // NEVER mutate #app height, NEVER poison baseMobileH, and NEVER trigger fitAndResize()/SIGWINCH!
+      zoomCooldownUntil = Date.now() + 650;
       appEl.style.setProperty('--vv-h', '100dvh');
       appEl.style.setProperty('--vv-top', '0px');
       appEl.style.height = '';
       mobileKbOpen = false;
       syncMobileKeys();
+      clearTimeout(zoomCooldownTimer);
+      zoomCooldownTimer = setTimeout(() => syncViewport(false), 680);
       return;
     }
-    const vvH = Math.round(window.visualViewport.height);
-    const vvTop = Math.max(0, Math.round(window.visualViewport.offsetTop || 0));
+    const layoutH = document.documentElement.clientHeight || window.innerHeight || 0;
+    const vvH = layoutH > 0 ? Math.min(layoutH, Math.round(vv.height)) : Math.round(vv.height);
+    const vvTop = Math.max(0, Math.round(vv.offsetTop || 0));
     appEl.style.setProperty('--vv-h', `${vvH}px`);
     appEl.style.setProperty('--vv-top', `${vvTop}px`);
     appEl.style.height = `${vvH}px`;
     if (window.innerWidth <= 860) {
-      if (vvH > baseMobileH) baseMobileH = vvH;
+      if (layoutH > 0 && vvH >= layoutH - 20) baseMobileH = layoutH;
+      else if (vvH > baseMobileH && (layoutH === 0 || vvH <= layoutH)) baseMobileH = vvH;
       const wasKb = mobileKbOpen;
       mobileKbOpen = (baseMobileH - vvH) > 110;
       if (wasKb && !mobileKbOpen) mobileKeysDismissedForKb = false;
@@ -1218,12 +1279,16 @@
     if (appEl.dataset.kbSysop === '1' && appEl.dataset.mobileSysop === '1') {
       requestAnimationFrame(() => { sysopFeedEl.scrollTop = sysopFeedEl.scrollHeight; });
     }
-    if (!wasZoomed || !zoomed) scheduleFit();
+    const hChanged = Math.abs(vvH - lastAppliedVvH) >= 2;
+    lastAppliedVvH = vvH;
+    if (!fromScroll && hChanged && Date.now() >= zoomCooldownUntil) {
+      scheduleFit();
+    }
   }
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', syncViewport);
-    window.visualViewport.addEventListener('scroll', syncViewport);
-    syncViewport();
+    window.visualViewport.addEventListener('resize', () => syncViewport(false));
+    window.visualViewport.addEventListener('scroll', () => syncViewport(true));
+    syncViewport(false);
   }
 
   function focusTerminalIfDesktop() {
