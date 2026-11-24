@@ -5,7 +5,7 @@
  * closed (the page remembers the names of the tabs it has seen), so the panel can draw one chip per reference, dimmed when the tab is gone.
  * It also marks test results ("24 passed", "3 failed") for a quiet colour. Pure: no DOM, so tests run it in Node.
  *
- * parse(text, tabs) -> [{t: 'text', v} | {t: 'tab', tab, raw} | {t: 'code', v} | {t: 'ok', v} | {t: 'bad', v}]
+ * parse(text, tabs) -> [{t: 'text', v} | {t: 'tab', tab, raw} | {t: 'code', v} | {t: 'bold', v} | {t: 'ok', v} | {t: 'bad', v}]
  *   tabs: [{address, name, aliases, kind, live}]: name is what the page shows (the chip), aliases the other names a reply may use (the herdr name)
  */
 (function (root) {
@@ -51,7 +51,7 @@
     names.sort((a, b) => b.length - a.length);
     const ref = [String.raw`[t@]\d{1,4}`, String.raw`\d{1,3}:[\w.-]{1,32}`].concat(names.map(escapeRe)).join('|');
     // a reference stands alone: not inside a path (~/swarmbox), a file name (swarmbox.py) or a longer word
-    return new RegExp('`([^`\\n]{1,80})`|(' + OK_RE + ')|(' + BAD_RE + ')|(^|[^\\w/~.@:-])(' + ref + ')(?![\\w/-])(?!\\.\\w)', 'gi');
+    return new RegExp('`([^`\\n]{1,80})`|\\*\\*([^*\\n]{1,120})\\*\\*|(' + OK_RE + ')|(' + BAD_RE + ')|(^|[^\\w/~.@:-])(' + ref + ')(?![\\w/-])(?!\\.\\w)', 'gi');
   }
 
   // a tab reference that resolves to no tab this page knows (closed before the page saw it): still a chip, dimmed, with what the reply called it
@@ -92,14 +92,22 @@
         const t2 = tab || unknownTab(m[1].trim());
         put(t2 ? { t: 'tab', tab: t2, raw: m[1] } : { t: 'code', v: m[1] });
         last = m.index + m[0].length;
-      } else if (m[2] !== undefined || m[3] !== undefined) {
+      } else if (m[2] !== undefined) {
+        put({ t: 'text', v: src.slice(last, m.index) });
+        const inner = m[2].trim();
+        const unwrapped = inner.startsWith('`') && inner.endsWith('`') && inner.length > 2 ? inner.slice(1, -1) : inner;
+        const tab = resolve(unwrapped);
+        const t2 = (tab && (inner !== unwrapped || isNameCase(unwrapped, tab))) ? tab : unknownTab(unwrapped);
+        put(t2 ? { t: 'tab', tab: t2, raw: unwrapped } : { t: 'bold', v: m[2] });
+        last = m.index + m[0].length;
+      } else if (m[3] !== undefined || m[4] !== undefined) {
         put({ t: 'text', v: src.slice(last, m.index) });
         // "0 failed" is good news: green like a pass
-        put({ t: m[2] !== undefined || /^0\s/.test(m[0]) ? 'ok' : 'bad', v: m[0] });
+        put({ t: m[3] !== undefined || /^0\s/.test(m[0]) ? 'ok' : 'bad', v: m[0] });
         last = m.index + m[0].length;
       } else {
-        const at = m.index + m[4].length;
-        const raw = m[5];
+        const at = m.index + m[5].length;
+        const raw = m[6];
         let tab = resolve(raw);
         if (tab && !isNameCase(raw, tab)) tab = null;
         if (!tab) tab = unknownTab(raw);

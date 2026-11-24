@@ -24,13 +24,13 @@ class Conversation(unittest.TestCase):
         self.assertEqual(history.conversation([goal("g1", "now", NOW - 5, state="running")], "g1", NOW), "", "the goal itself is not before itself")
 
     def test_the_words_the_tab_the_text_typed_and_the_summary_are_there_oldest_first(self):
-        gs = [goal("b", "fix the failing test", NOW - 300, summary="Sent to Claude in tab @2, queued.", calls=[run_call("@2", "2:claude", "fix the failing test")]),
+        gs = [goal("b", "fix the failing test", NOW - 300, summary="Sent to Claude in tab t2, queued.", calls=[run_call("t2", "2:claude", "fix the failing test")]),
               goal("a", "run the tests in tab one", NOW - 3000, summary="Ran them: 3 failed.", calls=[run_call("@1", "1:bash", "pytest -q")])]
         text = history.conversation(gs, "now", NOW)
         self.assertTrue(text.startswith("[conversation so far"), text)
         self.assertTrue(text.rstrip().endswith("[end of the conversation so far]"))
         self.assertLess(text.index("run the tests in tab one"), text.index("fix the failing test"), "oldest first")
-        for must in ('The user said: "fix the failing test"', 'you typed into tab @2 (2:claude): "fix the failing test"', "you said: Sent to Claude in tab @2, queued.",
+        for must in ('The user said: "fix the failing test"', 'you typed into tab t2 (2:claude): "fix the failing test"', "you said: Sent to Claude in tab t2, queued.",
                      'you typed into tab @1 (1:bash): "pytest -q"', "4 min ago", "49 min ago", "by voice"):
             self.assertIn(must, text)
 

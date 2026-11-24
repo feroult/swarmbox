@@ -264,13 +264,13 @@ export function createGateway(options = {}) {
 
   hc.on('snapshot', () => {
     const snap = buildSnapshot({ type: 'snapshot' });
-    lastBroadcastHash = JSON.stringify({ sysop: snap.sysop, theme: snap.theme });
+    lastBroadcastHash = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active });
     broadcast(snap);
   });
 
   hc.on('hc-event', ({ event }) => {
     const snap = buildSnapshot({ type: 'event', event });
-    lastBroadcastHash = JSON.stringify({ sysop: snap.sysop, theme: snap.theme });
+    lastBroadcastHash = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active });
     broadcast(snap);
   });
 

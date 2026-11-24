@@ -2554,7 +2554,7 @@
       mobileApprovalEl.classList.remove('hidden');
       approvalBarEl.classList.add('hidden');
       approvalBadgeEl.textContent = 'Agent asks';
-      mobileApprovalBadgeEl.textContent = 'ALLOW?';
+      mobileApprovalBadgeEl.textContent = 'Agent asks';
       approvalTabEl.textContent = oscBlocked.name;
       approvalTextEl.textContent = oscBlocked.msg;
       mobileApprovalMsgEl.textContent = `${oscBlocked.name}: ${oscBlocked.msg}`;
@@ -2667,8 +2667,9 @@
         frag.appendChild(glue.childNodes.length > 1 ? glue : glue.firstChild);
       } else if (seg.t === 'text') frag.append(seg.v);
       else {
-        const el = document.createElement(seg.t === 'code' ? 'code' : 'span');
-        if (seg.t !== 'code') el.className = `tr-${seg.t}`;
+        const tag = seg.t === 'code' ? 'code' : seg.t === 'bold' ? 'strong' : 'span';
+        const el = document.createElement(tag);
+        if (tag === 'span') el.className = `tr-${seg.t}`;
         el.textContent = seg.v;
         frag.appendChild(el);
       }
@@ -3346,9 +3347,9 @@
     const val = open ? '1' : '0';
     appEl.dataset.mobileSysop = val;
     mobileSysopBtn.dataset.on = val;
-    if (!open && !goalInputEl.value.trim()) {
+    if (!open) {
       if (document.activeElement === goalInputEl) goalInputEl.blur();
-      setComposerTyping(false);
+      if (!goalInputEl.value.trim()) setComposerTyping(false);
     }
   }
 
@@ -4080,7 +4081,7 @@
       el('span', { class: 'status-dot', 'data-state': voiceAddonAvailable ? 'done' : 'off' }),
       el('span', {
         text: voiceAddonAvailable
-          ? 'Local Whisper service is online — hold the mic button to transcribe straight to Sysop.'
+          ? 'Local Whisper service is online — tap Speak to record and send straight to Sysop.'
           : 'Local Whisper service is not active. Install the voice addon (Addons & System) for offline Whisper transcription.',
       }),
     ]));
