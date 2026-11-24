@@ -3346,31 +3346,43 @@
     const val = open ? '1' : '0';
     appEl.dataset.mobileSysop = val;
     mobileSysopBtn.dataset.on = val;
+    if (!open && !goalInputEl.value.trim()) {
+      if (document.activeElement === goalInputEl) goalInputEl.blur();
+      setComposerTyping(false);
+    }
   }
 
-  // Mobile: one Sysop composer in both states. The goal box (field, Speak, Send and the recording bar)
-  // moves into the bottom dock, next to the Sysop toggle, and the sheet opens above the dock, so the bar
-  // you type and speak in is the same element whether the sheet is open or closed.
+  // Mobile: the dock bar (Sysop capsule + Speak) is always there and the sheet opens above it. The sheet's composer
+  // is a quiet "Type a message" row at the end of the conversation; tapped, it becomes a one-line field.
   const mobileMq = window.matchMedia('(max-width: 860px)');
-  const goalBoxEl = goalInputEl.closest('.goal-box');
-  const composerHomeEl = document.querySelector('.sysop-composer');
-  const mobileCapsuleEl = document.getElementById('mobile-capsule');
+  const composerEl = document.getElementById('sysop-composer');
+  const btnTypeGoal = document.getElementById('btn-type-goal');
   const mobileDockEl = document.getElementById('mobile-dock');
   function isMobileLayout() { return mobileMq.matches; }
   function autosizeGoalInput() {
     if (!isMobileLayout()) { goalInputEl.style.height = ''; return; }
     goalInputEl.style.height = 'auto';
-    goalInputEl.style.height = `${Math.min(goalInputEl.scrollHeight, 120)}px`;
+    goalInputEl.style.height = `${Math.min(goalInputEl.scrollHeight, 96)}px`;
   }
-  function placeGoalComposer() {
-    if (!goalBoxEl || !composerHomeEl || !mobileCapsuleEl) return;
-    const target = isMobileLayout() ? mobileCapsuleEl : composerHomeEl;
-    if (goalBoxEl.parentElement !== target) target.appendChild(goalBoxEl);
+  function setComposerTyping(on) {
+    if (!composerEl) return;
+    composerEl.dataset.typing = on ? '1' : '0';
+    if (on) {
+      autosizeGoalInput();
+      goalInputEl.focus();
+    }
+  }
+  function syncComposerLayout() {
     goalInputEl.rows = isMobileLayout() ? 1 : 2;
     autosizeGoalInput();
   }
-  placeGoalComposer();
-  if (mobileMq.addEventListener) mobileMq.addEventListener('change', () => { placeGoalComposer(); scheduleFit(); });
+  syncComposerLayout();
+  if (mobileMq.addEventListener) mobileMq.addEventListener('change', () => { syncComposerLayout(); scheduleFit(); });
+  if (btnTypeGoal) btnTypeGoal.addEventListener('click', () => setComposerTyping(true));
+  // an empty field that loses focus goes back to the quiet row
+  goalInputEl.addEventListener('blur', () => {
+    if (isMobileLayout() && !goalInputEl.value.trim()) setTimeout(() => setComposerTyping(false), 120);
+  });
   if (mobileDockEl && window.ResizeObserver) {
     new ResizeObserver(() => {
       appEl.style.setProperty('--dock-h', `${Math.round(mobileDockEl.getBoundingClientRect().height)}px`);
@@ -3380,6 +3392,7 @@
   function showSysopReplyOnMobile() {
     if (!isMobileLayout()) return;
     if (document.activeElement === goalInputEl) goalInputEl.blur();
+    setComposerTyping(false);
     setMobileSysop(true);
   }
 
@@ -3429,6 +3442,7 @@
   goalInputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
+      if (isMobileLayout()) { goalInputEl.value = ''; syncSendReady(); setComposerTyping(false); }
       goalInputEl.blur();
       focusTerminalIfDesktop();
       return;
