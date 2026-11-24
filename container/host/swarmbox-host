@@ -6,7 +6,7 @@
 #   (no command), attach, any other word   up, then run it in the box: `podman exec -it ... swarmbox-entrypoint attach ...`
 #   pubkey | addon | bus | tabs                 forwarded into the box with `podman exec`
 #   version | help                         the version of this script | the command list
-#   config get|set|list|seed               the settings (the tunnel token is read from the terminal, never argv)
+#   config get|set|unset|list|path|seed    the settings (the tunnel token is read from the terminal, never argv)
 #   env add|rm NAME | env list             the names of host variables passed to the box (ENV_KEYS)
 #   create-flags, fingerprint              the flags of a new box and its fingerprint (no Podman call)
 #   up, reset, stop, url                   the lock, the lookup, creation, readiness, the warnings (`url` does not call Podman)
@@ -63,6 +63,8 @@ usage: swarmbox [--plain] [command [args...]]
   update [--to TAG]     fetch a newer image and refresh this command from it, then run `swarmbox reset`
   version               print the version
   config get|set|list   the settings, for example: swarmbox config set WEB_PORT 7682
+  config unset KEY      remove KEY from the config file (its default applies again)
+  config path           print where the config file is
   env add|rm NAME       pass a variable of yours into the box (env list shows them)
   pubkey                the box's git SSH key
   addon list|install|use|remove NAME  the addons of the box
@@ -391,8 +393,8 @@ cfg_prepare() {
         fi
     done < "$CFG_FILE"
     [ -z "$_unk" ] || warn "ignoring unknown key(s) in $CFG_FILE:$_unk"
-    [ "$_mux" = 0 ] || warn "ignoring MUX in $CFG_FILE: MUX was removed, herdr is the only multiplexer"
-    [ "$_panel" = 0 ] || warn "ignoring sysop.panel in $CFG_FILE: it set the tmux panel of the sysop, which was removed"
+    [ "$_mux" = 0 ] || warn "ignoring MUX in $CFG_FILE: MUX was removed, herdr is the only multiplexer (\`swarmbox config unset MUX\` removes it)"
+    [ "$_panel" = 0 ] || warn "ignoring sysop.panel in $CFG_FILE: it set the tmux panel of the sysop, which was removed (\`swarmbox config unset sysop.panel\` removes it)"
     if [ "$_hastoken" = 1 ]; then
         _mode=$(file_mode "$CFG_FILE") || _mode=
         if [ "$_mode" != 600 ]; then
@@ -712,17 +714,26 @@ resolve_valid() {
 # cfg_write_keys KEY VALUE [KEY VALUE ...]: replaces (or appends) the keys, keeps every other line, writes under umask 077
 # into a temporary file in the same folder, runs chmod 600 on it and renames it over the config. Refuses to write the
 # tunnel token (exit 1) if the chmod fails; for other keys it also writes nothing (exit 1).
+# cfg_write_keys --drop KEY [KEY ...]: the same rewrite, but the lines of the keys are removed and nothing is appended.
 cfg_write_keys() {
     _tok=0
     _ks=
+    _drop=0
+    _step=2
+    if [ "${1:-}" = --drop ]; then
+        _drop=1
+        _step=1
+        shift
+    fi
     _i=1
     while [ "$_i" -le "$#" ]; do
         eval "_wk=\${$_i}"
         # shellcheck disable=SC2154  # _wk is assigned by the eval above
         _ks="$_ks $_wk "
         [ "$_wk" = CLOUDFLARE_TUNNEL_TOKEN ] && _tok=1
-        _i=$((_i + 2))
+        _i=$((_i + _step))
     done
+    [ "$_drop" = 0 ] || set --
     private_dir "$CFG_DIR" || die 1 "cannot create $CFG_DIR."
     [ ! -f "$CFG_FILE" ] || [ -r "$CFG_FILE" ] || die 1 "cannot read the config file $CFG_FILE."
     # the temporary name is predictable: it is removed first (a symlink planted there is deleted, not followed) and then created
@@ -835,6 +846,55 @@ cmd_config_set() {
     fi
     cfg_write_keys "$_key" "$_stored" || exit 1
     notice_clear "$_key"
+}
+
+# config unset KEY: removes the line of KEY from the config file, so the environment or the default applies again. It also takes a
+# key the file holds but the script does not know (a typo, MUX, sysop.panel), which is how a stale key is cleaned up. Exit 0
+# when the key was not in the file (nothing to do), 2 for NAME or a key that is neither known nor in the file.
+cmd_config_unset() {
+    [ $# -eq 1 ] || usage
+    _key=$1
+    [ "$_key" != NAME ] || die 2 "NAME is not a key of the config file: it selects the config folder (SWARMBOX_NAME in the environment)."
+    init_paths
+    _infile=0
+    if [ -f "$CFG_FILE" ]; then
+        [ -r "$CFG_FILE" ] || die 1 "cannot read the config file $CFG_FILE."
+        while IFS= read -r _line || [ -n "$_line" ]; do
+            if parse_line "$_line" && [ "$P_KEY" = "$_key" ]; then
+                _infile=1
+                break
+            fi
+        done < "$CFG_FILE"
+    fi
+    if [ "$_infile" = 0 ]; then
+        case $_key in
+            MUX|sysop.panel) ;;
+            *) is_file_key "$_key" || die 2 "unknown key '$_key'." ;;
+        esac
+        warn "$_key is not in $CFG_FILE; nothing to remove."
+        return 0
+    fi
+    cfg_write_keys --drop "$_key" || exit 1
+    notice_clear "$_key"
+    if is_file_key "$_key"; then
+        env_of "$_key"
+        eval "_e=\${$ENV_OF:-}"
+        if [ -n "$_e" ]; then
+            warn "removed $_key from $CFG_FILE; $ENV_OF in the environment still sets it."
+        else
+            warn "removed $_key from $CFG_FILE; it is back to its default."
+        fi
+    else
+        warn "removed $_key from $CFG_FILE."
+    fi
+}
+
+# config path: prints the path of the config file (the file may not exist yet: it is written by the first `config set`).
+cmd_config_path() {
+    [ $# -eq 0 ] || usage
+    init_paths
+    printf '%s\n' "$CFG_FILE"
+    [ -f "$CFG_FILE" ] || warn "the file does not exist yet; \`swarmbox config set\` creates it."
 }
 
 cmd_config_list() {
@@ -2688,7 +2748,9 @@ cmd_config() {
     case $_sub in
         get) cmd_config_get "$@" ;;
         set) cmd_config_set "$@" ;;
+        unset) cmd_config_unset "$@" ;;
         list) cmd_config_list "$@" ;;
+        path) cmd_config_path "$@" ;;
         seed) cmd_config_seed "$@" ;;
         *) usage ;;
     esac

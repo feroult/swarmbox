@@ -131,7 +131,9 @@ swarmbox                        # attach to the shared session (starts the box i
 swarmbox --plain                # open a plain bash shell without a multiplexer
 swarmbox url                    # print local and remote web terminal addresses
 swarmbox config list            # show all settings and where each comes from
-swarmbox config set MUX herdr   # enable Herdr Web Studio & Terminal Cockpit
+swarmbox config set WEB_PORT 7682  # change a setting (then swarmbox reset)
+swarmbox config unset WEB_PORT  # remove a setting from the file: its default applies again
+swarmbox config path            # print where the config file is
 swarmbox env add NAME           # pass a host environment variable into the box
 swarmbox addon list             # show available and installed addons
 swarmbox addon install NAME     # install an addon (e.g. sysop, voice, antigravity, go)

@@ -275,6 +275,83 @@ class SetTest(Base):
                 self.assertEqual(slurp(self.cfg_file), before, (key, v))
 
 
+class UnsetAndPathTest(Base):
+    """config unset KEY removes the key from the file (the default, or the environment, applies again); config path prints the file."""
+
+    def test_unset_every_key_brings_back_the_default_and_keeps_the_rest(self):
+        for key, (_d, good, _o, _b) in KEYS.items():
+            if os.path.exists(self.cfg_file):
+                os.remove(self.cfg_file)
+            baseline = self.get(key)[:2]                       # what the key resolves to with no file: its default
+            self.write_cfg("# my notes\nWEB=0\n%s=%s\n" % (key, good) if key != "WEB" else "# my notes\nYOLO=0\nWEB=0\n")
+            p = self.run_h("config", "unset", key)
+            self.assertEqual((p.returncode, p.stdout), (0, ""), (key, p.stderr))
+            self.assertIn("removed %s" % key, p.stderr)
+            text = slurp(self.cfg_file)
+            self.assertNotRegex(text, r"(?m)^%s=" % key.replace(".", r"\."), key)
+            self.assertIn("# my notes\n", text, key)
+            self.assertIn("YOLO=0\n" if key == "WEB" else "WEB=0\n", text, key)
+            self.assertEqual(self.mode(), 0o600, key)
+            self.assertEqual(self.get(key)[:2], baseline, key)
+
+    def test_unset_says_when_the_environment_still_sets_the_key(self):
+        self.write_cfg("WEB_PORT=8000\n")
+        p = self.run_h("config", "unset", "WEB_PORT", env={"SWARMBOX_WEB_PORT": "8100"})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("SWARMBOX_WEB_PORT in the environment still sets it", p.stderr)
+        self.assertEqual(slurp(self.cfg_file).count("WEB_PORT="), 0)
+
+    def test_unset_of_a_key_not_in_the_file_changes_nothing(self):
+        p = self.run_h("config", "unset", "WEB_PORT")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("nothing to remove", p.stderr)
+        self.assertFalse(os.path.exists(self.cfg_file), "no file is created")
+        self.write_cfg("# keep\nWEB=0\n")
+        before = slurp(self.cfg_file)
+        self.assertEqual(self.run_h("config", "unset", "TZ").returncode, 0)
+        self.assertEqual(slurp(self.cfg_file), before)
+
+    def test_unset_cleans_stale_and_unknown_keys_of_the_file(self):
+        self.write_cfg("MUX=tmux\nsysop.panel=off\nTYPO_KEY=1\nWEB=0\n")
+        for key in ("MUX", "sysop.panel", "TYPO_KEY"):
+            p = self.run_h("config", "unset", key)
+            self.assertEqual(p.returncode, 0, (key, p.stderr))
+        self.assertEqual(slurp(self.cfg_file), "WEB=0\n")
+        p = self.run_h("config", "list")
+        self.assertNotIn("ignoring", p.stderr)
+
+    def test_unset_refuses_name_and_unknown_keys(self):
+        for key in ("NAME", "NOPE", "web_port"):
+            p = self.run_h("config", "unset", key)
+            self.assertEqual(p.returncode, 2, key)
+            self.assertEqual(p.stdout, "")
+        self.assertEqual(self.run_h("config", "unset").returncode, 2)
+        self.assertEqual(self.run_h("config", "unset", "WEB", "PORT").returncode, 2)
+
+    def test_unset_removes_the_tunnel_token(self):
+        self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\nWEB=1\n" % TOKEN)
+        p = self.run_h("config", "unset", "CLOUDFLARE_TUNNEL_TOKEN")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertNotIn(TOKEN, p.stdout + p.stderr)
+        self.assertNotIn(TOKEN, slurp(self.cfg_file))
+        self.assertEqual(self.get("CLOUDFLARE_TUNNEL_TOKEN")[0], 1)
+
+    def test_path_prints_the_file_with_or_without_it(self):
+        p = self.run_h("config", "path")
+        self.assertEqual((p.returncode, p.stdout), (0, self.cfg_file + "\n"))
+        self.assertIn("does not exist yet", p.stderr)
+        self.write_cfg("WEB=0\n")
+        p = self.run_h("config", "path")
+        self.assertEqual((p.returncode, p.stdout, p.stderr), (0, self.cfg_file + "\n", ""))
+        xdg = os.path.join(self.tmp, "xdg")
+        p = self.run_h("config", "path", env={"XDG_CONFIG_HOME": xdg})
+        self.assertEqual(p.stdout, os.path.join(xdg, "swarmbox", "config") + "\n")
+        p = self.run_h("config", "path", env={"SWARMBOX_NAME": "work"})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("work", p.stdout)
+        self.assertEqual(self.run_h("config", "path", "extra").returncode, 2)
+
+
 class SeedTest(Base):
     def test_creates_the_file_once_with_the_given_seeds(self):
         p = self.run_h("config", "seed", "--with", "claude,gcloud", "--workspace", "/srv/ws", "--image", "x/y:1.2.3")

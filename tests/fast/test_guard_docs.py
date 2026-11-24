@@ -93,7 +93,7 @@ class Readme(unittest.TestCase):
         usage = subprocess.run(["sh", HOST, "help"], capture_output=True, text=True).stdout
         addon_words = set(re.findall(r"^    ([a-z]+)\) cmd_", read("container", "scripts", "swarmbox-addon.sh"), re.M))
         addon_words |= {"validate", "link"}
-        subs = {"config": ["get", "set", "list", "seed"], "env": ["add", "rm", "list"], "remote": ["setup", "status", "off", "token"]}
+        subs = {"config": ["get", "set", "unset", "list", "path", "seed"], "env": ["add", "rm", "list"], "remote": ["setup", "status", "off", "token"]}
         seen = 0
         for block in re.findall(r"^```[a-z]*\n(.*?)^```", README, re.M | re.S):
             for ln in block.splitlines():

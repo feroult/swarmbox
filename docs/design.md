@@ -396,11 +396,15 @@ The `voice.*` and `sysop.*` keys are lower case with dots (`sysop.max_steps` kee
 they are passed to the box, and enter the fingerprint, only when they differ from the default.
 
 `MUX` and `sysop.panel` were removed in version 2.3 (herdr-core is the only multiplexer, and the tmux panel of the sysop is gone): a config
-file that still has them is accepted, each is ignored with one warning, and `config get` or `config set` of them exits 2.
+file that still has them is accepted, each is ignored with one warning, and `config get` or `config set` of them exits 2; `config unset MUX` (or
+`sysop.panel`) removes the line.
 
 Also environment only: `SWARMBOX_WEB_DOMAIN`, `SWARMBOX_WEB_HOSTNAME` (public address printed by `url`), `SWARMBOX_CLOUDFLARED_IMAGE`; in the box `SWARMBOX_STARSHIP=0` (plain prompt),
 `SWARMBOX_UPDATE_CHECK=0`. `config set` writes under `umask 077`, replaces the file by `mv`, and refuses to write if `chmod 600` fails. `config list` shows each key with its source
-and the token only as `set` or `unset`.
+and the token only as `set` or `unset`. `config unset KEY` removes the line of KEY with the same safe rewrite (the comments and the other lines
+are kept; the environment or the default applies again); it also takes a key the file holds that the script does not know, to clean up a typo or
+a removed key, and exits 0 when the key is not in the file. `config path` prints the path of the file (`$XDG_CONFIG_HOME/swarmbox/config`, or
+the folder of `SWARMBOX_NAME`), even before the first `config set` writes it.
 
 Always applied, not configurable: `--userns=keep-id:uid=1000,gid=1000`, `--pids-limit=16384`, `--tmpfs /tmp/swarmbox`, the nested-Podman options (section 11), the web port mapping
 `127.0.0.1:<WEB_PORT>:7681`, `-e TERM -e COLORTERM` on every entry, and `-e SWARMBOX_NAME`, `SWARMBOX_WEB`, `SWARMBOX_YOLO`, `SWARMBOX_WITH`, `SWARMBOX_AGENT`, `SWARMBOX_BROWSER_URL`
