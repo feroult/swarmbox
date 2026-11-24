@@ -3461,8 +3461,95 @@
     else toggleDesktopSysop();
   });
   mobileSysopBtn.addEventListener('click', () => setMobileSysop(appEl.dataset.mobileSysop !== '1'));
-  document.getElementById('sheet-backdrop').addEventListener('click', () => setMobileSysop(false));
-  document.getElementById('sheet-handle').addEventListener('click', () => setMobileSysop(false));
+  const sheetBackdropEl = document.getElementById('sheet-backdrop');
+  const sheetHandleEl = document.getElementById('sheet-handle');
+  const sysopPanelEl = document.getElementById('sysop-panel');
+  const sysopHeadEl = sysopPanelEl ? sysopPanelEl.querySelector('.sysop-head') : null;
+  if (sheetBackdropEl) sheetBackdropEl.addEventListener('click', () => setMobileSysop(false));
+
+  // Native-feeling swipe-to-dismiss on mobile Sysop sheet (from top drag handle or header bar).
+  if (sysopPanelEl && sheetHandleEl) {
+    let drag = null;
+    let suppressHandleClick = false;
+    const grabZones = [sheetHandleEl, sysopHeadEl].filter(Boolean);
+
+    const endDrag = (cancel) => {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      sysopPanelEl.classList.remove('is-dragging');
+      if (sheetBackdropEl) {
+        sheetBackdropEl.classList.remove('is-dragging');
+        sheetBackdropEl.style.opacity = '';
+      }
+      sysopPanelEl.style.transform = '';
+      if (!d.moved) return;
+      suppressHandleClick = true;
+      setTimeout(() => { suppressHandleClick = false; }, 220);
+      const dismissDist = Math.min(130, d.sheetH * 0.28);
+      const freshVy = (performance.now() - d.lastT) < 90 ? d.vy : 0;
+      const shouldClose = !cancel && (d.offset > dismissDist || (freshVy > 0.45 && d.offset > 32));
+      if (shouldClose) setMobileSysop(false);
+    };
+
+    const onDown = (e) => {
+      if (!isMobileLayout() || appEl.dataset.mobileSysop !== '1') return;
+      if (e.button !== undefined && e.button !== 0) return;
+      if (e.target && e.target.closest('button')) return;
+      const now = performance.now();
+      drag = {
+        id: e.pointerId,
+        target: e.currentTarget,
+        startY: e.clientY,
+        lastY: e.clientY,
+        lastT: now,
+        offset: 0,
+        vy: 0,
+        moved: false,
+        sheetH: sysopPanelEl.getBoundingClientRect().height || 500,
+      };
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    };
+
+    const onMove = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dy = e.clientY - drag.startY;
+      if (!drag.moved) {
+        if (Math.abs(dy) < 6) return;
+        drag.moved = true;
+        sysopPanelEl.classList.add('is-dragging');
+        if (sheetBackdropEl) sheetBackdropEl.classList.add('is-dragging');
+      }
+      const now = performance.now();
+      const dt = Math.max(1, now - drag.lastT);
+      drag.vy = (e.clientY - drag.lastY) / dt;
+      drag.lastY = e.clientY;
+      drag.lastT = now;
+      drag.offset = dy >= 0 ? dy : dy * 0.18;
+      sysopPanelEl.style.transform = `translateY(${Math.round(drag.offset)}px)`;
+      if (sheetBackdropEl) {
+        const p = Math.max(0, Math.min(1, drag.offset / Math.max(180, drag.sheetH)));
+        sheetBackdropEl.style.opacity = String(1 - p * 0.85);
+      }
+    };
+
+    const onUp = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      try { drag.target.releasePointerCapture(e.pointerId); } catch (_) {}
+      endDrag(e.type === 'pointercancel');
+    };
+
+    for (const zone of grabZones) {
+      zone.addEventListener('pointerdown', onDown);
+      zone.addEventListener('pointermove', onMove);
+      zone.addEventListener('pointerup', onUp);
+      zone.addEventListener('pointercancel', onUp);
+    }
+    sheetHandleEl.addEventListener('click', () => {
+      if (suppressHandleClick) return;
+      setMobileSysop(false);
+    });
+  }
 
   btnSysopNew.addEventListener('click', async () => {
     openTurnActions.clear();
