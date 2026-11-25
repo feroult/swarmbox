@@ -151,6 +151,16 @@ class NestedPodmanState(ServeCase):
         self.assertTrue([c for c in self.calls() if c.startswith("podman system service") and fb in c], self.calls())
         self.stop(p)
 
+    def test_a_state_folder_on_a_shared_file_system_gets_the_service_on_the_box_disk(self):
+        # the bind probe passes on virtiofs; what fails is a stale socket from an earlier run. The file system type decides, whatever the probe says.
+        stub = self.fake
+        with open(os.path.join(stub, "stat"), "w") as f:
+            f.write('#!/bin/sh\ncase "$*" in "-f -c %T "*) echo fuse ;; *) exec /usr/bin/stat "$@" ;; esac\n')
+        os.chmod(os.path.join(stub, "stat"), 0o755)
+        p = self.run_ready()
+        self.assertIn("cannot hold a unix socket", self.serve_log())
+        self.stop(p)
+
     def test_a_state_folder_that_holds_sockets_keeps_the_service_where_it_was(self):
         p = self.run_ready()
         self.assertNotIn("cannot hold a unix socket", self.serve_log())
