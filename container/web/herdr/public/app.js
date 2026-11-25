@@ -7664,7 +7664,7 @@
     const guardCard = el('div', { class: 's-card' }, [
       makeHostToggleRow('sysop', 'sysop.autoname', {
         title: 'Automatic Tab Naming',
-        desc: 'React to tab.events to give unnamed agent tabs concise 2–4 word titles (never overwrites manual renames).',
+        desc: 'Name agent tabs after your requests in 1–3 short words, renaming as the goal gets clearer (never overwrites manual renames).',
       }),
       makeHostInputRow('sysop', 'sysop.brain', {
         title: 'Operator Brain',

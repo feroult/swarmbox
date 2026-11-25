@@ -389,7 +389,7 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `sysop.brain` | `claude` | the brain of the `sysop` addon: a preset name or a command template (no line break; [sysop.md](sysop.md)); `SWARMBOX_SYSOP_BRAIN` |
 | `sysop.model` | `sonnet` | the model the `claude` preset asks for; `SWARMBOX_SYSOP_MODEL` |
 | `sysop.autonomy` | `full-auto` | `full-auto`, `auto`, `confirm-risky` or `confirm-all`; `SWARMBOX_SYSOP_AUTONOMY` |
-| `sysop.autoname` | `1` | `1` enables event-driven automatic tab naming via `tab.events` (never overwrites manual renames); `SWARMBOX_SYSOP_AUTONAME` |
+| `sysop.autoname` | `1` | `1` enables event-driven automatic tab naming via `tab.events`: titles of at most 18 characters from the user's requests, revised with a per-tab backoff, never over a manual rename ([pins-design.md](pins-design.md) 4.3); `SWARMBOX_SYSOP_AUTONAME` |
 | `sysop.countdown` | `4` | seconds an action waits for a veto, 0 to 30; `SWARMBOX_SYSOP_COUNTDOWN` |
 | `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100; `SWARMBOX_SYSOP_MAX_STEPS` |
 | `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600; `SWARMBOX_SYSOP_MAX_SECONDS` |

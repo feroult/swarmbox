@@ -96,7 +96,7 @@ Rules:
 
 ### 4.1 Three-Layer Naming Model
 1. **Layer 0 — Instant fallback (zero cost, no LLM):** unnamed tabs display the short folder name (e.g. `swarmbox`, `api-payments`) rather than `claude-2`.
-2. **Layer 1 — Event-driven Sysop Auto-Namer (`title_source=auto`):** concise 2–4 word task title assigned automatically by the Sysop addon when real activity happens.
+2. **Layer 1 — Event-driven Sysop Auto-Namer (`title_source=auto`):** short task title (1–3 words, at most 18 characters) assigned automatically by the Sysop addon when real activity happens, and revised while the goal becomes clearer (with a per-tab backoff).
 3. **Layer 2 — Manual rename (`title_source=user`):** inline edit in Web Studio (double-click, `✎`, or `Alt+R`), Cockpit, or `swarmbox tabs rename <tab> <title>`. Locks the title so Layer 1 never overwrites it unless explicitly cleared or re-requested.
 
 ### 4.2 `tab.events` on `swarmbox-bus`
@@ -117,17 +117,23 @@ Aligned with [addons-design.md](addons-design.md):
 - Published from a thin `hc events` bridge (or the gateway with a `WEB=0` fallback) so both Web Studio and SSH Cockpit sessions emit events.
 
 ### 4.3 Sysop Auto-Namer Behavior
-- Subscribes to `tab.events` inside the existing `swarmbox-sysop` daemon (controlled by `sysop.autoname`, default `1`).
-- **Cheap local gate (before any LLM call):**
-  - Skip if `title_source == "user"`.
+- Subscribes to `tab.events` inside the existing `swarmbox-sysop` daemon (controlled by `sysop.autoname`, default `1`); the code is `autoname.py` and `usermsgs.py` of the addon.
+- **Cheap local gates (before any LLM call), in order:**
+  - Skip if `title_source == "user"` (checked on the event and again on `swarmbox-tabs list` just before the call).
   - Skip while an interactive user goal is active in the Sysop queue.
-  - Skip during per-tab cooldown (unless `cwd` changed to a different project).
-  - Trigger on first completed `turn`, `working -> done/idle` transition, or substantial post-cooldown work.
-- **1-shot naming call:**
-  - Reads the already-redacted screen via `swarmbox-tabs screen <tab> --lines 40`.
-  - Runs a lightweight, non-MCP single-shot prompt (fast model, short max output) asking for either a concise 2–4 word task title or `KEEP` when there is not enough context yet.
-  - Applies via `swarmbox-tabs rename <tab> "<Title>" --source auto`.
+  - **Per-tab backoff:** after its 1st, 2nd, 3rd and every later automatic rename a tab keeps its title for 3, 10, 30 and then 60 minutes (`COOLDOWNS`), so a name can follow the goal but settles. A `cwd` change to another folder resets the backoff and names the tab at once.
+  - After a call that answered `KEEP`, no new call for that tab for 2 minutes (`RECHECK`).
+  - No call when the input is the same as on the last call (the same requests, or the same screen tail).
+- **Input: the user's requests first, the screen as the fallback.** `usermsgs.recent(agent, cwd)` reads the last 4 requests the user typed in that folder from the agent's own store, each clipped to 280 characters; slash commands, `!` shell lines and short replies ("ok", "pode sim": fewer than 3 words, while longer ones exist) are left out:
+  - `claude`: `~/.claude/history.jsonl` (`project` = cwd, `sessionId`), the prompt history, not the session transcript (which the output of the agent's commands grows to megabytes).
+  - `agy`: `~/.gemini/antigravity-cli/history.jsonl` (`workspace` = cwd, `conversationId`).
+  - `opencode`: `~/.local/share/opencode/opencode.db`, read-only: the latest top-level `session_v2` of the folder, its `session_message` rows of `type = 'user'`.
+  - An event names the cwd, not the agent session: when two sessions of the same agent were active in the same folder in the last 10 minutes, the reader returns nothing and the redacted screen is used (`swarmbox-tabs screen <tab> --lines 40`, last 1500 characters).
+- **1-shot naming call:** `claude -p --model haiku` with its own short `--system-prompt` (not Claude Code's default one), `--tools ""`, `--strict-mcp-config`, `--setting-sources ""` and `--no-session-persistence` (not `--bare`, which reads no OAuth login). The rules ask for 1 to 3 short words in the language of the requests, the concrete subject rather than the activity, and `KEEP` when there is no clear goal yet (exploring, "understand the repo") or when the current title still fits; the current auto title is sent so the model can keep it. A typical input is about 1500 characters.
+  - The answer is cut to 18 characters on a word boundary (a dangling "of", "de" is dropped); `KEEP`, empty and generic answers change nothing.
+  - Applies via `swarmbox-tabs rename <tab> "<Title>" --source auto`; the audit record says whether the title came from the `requests` or the `screen`.
   - Additionally, the Sysop MCP server exposes `rename_tab(tab, title)` so interactive goals can name tabs opportunistically with zero extra calls.
+- Not measured: the tokens of one real call (the development box had no Claude login for `claude -p`), and the store formats of agent versions other than the ones above (a changed format gives no requests, so the screen is used).
 
 ### 4.4 Visibility in Sysop History (Without Polluting Memory)
 - Auto-renames are recorded in the Sysop audit log (`events.jsonl`) and in a lightweight system-event stream (e.g. `system_events.jsonl`) read by [hc-client.mjs](../container/web/herdr/hc-client.mjs) when assembling `sysop.turns` / timeline entries.
