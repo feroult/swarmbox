@@ -512,6 +512,7 @@ function isInteractiveTuiTerminal(term) {
 // ---------------------------------------------------------------------------
 export function createGateway(options = {}) {
   const hc = options.hc || new HerdrClient(options.hcBin || HC_BIN);
+  const runWt = options.runWorktreeCmd || runWorktreeCmd;
   const eventClients = new Set();
   // Per-terminal viewport ownership so an idle/reconnecting browser on another screen
   // (e.g. an ultrawide left open at home) cannot hijack the active client's PTY resolution.
@@ -565,13 +566,288 @@ export function createGateway(options = {}) {
   let lastBroadcastHash = '';
   let cachedWorktrees = [];
   let wtRefreshing = false;
+  let repoStatusRefreshing = false;
+  const repoStatuses = new Map();
+  const verifyJobs = new Map();
   const lastTabCwd = new Map();
   const lastTabState = new Map();
+
+  function normRealPath(p) {
+    if (!p || typeof p !== 'string') return '';
+    try { return fs.realpathSync(p); } catch (_) { return p.replace(/\/+$/, '') || '/'; }
+  }
+
+  function formatMainAgent(term) {
+    if (!term) return null;
+    return {
+      address: term.address,
+      title: (term.labels && term.labels['swarmbox.title']) || term.name || 'main',
+    };
+  }
+
+  function findMainAgentTerminal(repoRoot, rawTerminals) {
+    const targetReal = normRealPath(repoRoot);
+    if (!targetReal) return null;
+    for (const t of rawTerminals || []) {
+      if (!t || isHiddenTerminal(t)) continue;
+      if (t.state && t.state !== 'live') continue;
+      const lbls = t.labels || {};
+      if (lbls['swarmbox.worktree']) continue;
+      const lblAgent = String(lbls['swarmbox.agent'] || '').toLowerCase().trim();
+      const detected = detectTerminalAgent(t);
+      const hasAgent = Boolean(detected) || (lblAgent && lblAgent !== 'shell' && ALLOWED_AGENT_CMDS.has(lblAgent));
+      if (!hasAgent) continue;
+
+      const cwd = terminalCwd(t);
+      if (cwd) {
+        const info = resolveGitRepoInfo(cwd);
+        if (info) {
+          if (info.is_worktree) continue;
+          if (normRealPath(info.root) === targetReal) return t;
+          continue;
+        }
+      }
+      const lblRepo = lbls['swarmbox.repo'] ? normRealPath(String(lbls['swarmbox.repo'])) : '';
+      if (lblRepo && lblRepo === targetReal) return t;
+      const cwdReal = normRealPath(cwd);
+      if (cwdReal && (cwdReal === targetReal || cwdReal.startsWith(targetReal + path.sep))) {
+        return t;
+      }
+    }
+    return null;
+  }
+
+  async function refreshRepoStatus(repoRoot, opts = {}) {
+    if (!repoRoot) return null;
+    const rawKey = String(repoRoot).replace(/\/+$/, '') || String(repoRoot);
+    try {
+      const st = await runWt(['repo-status', rawKey]);
+      if (!st || typeof st !== 'object') return null;
+      const key = (st.repo_root && String(st.repo_root).replace(/\/+$/, '')) || rawKey;
+      const prev = repoStatuses.get(key);
+      const mainTerm = findMainAgentTerminal(key, hc.listSnapshot());
+      const merged = {
+        ...st,
+        verify_job: verifyJobs.get(key) || verifyJobs.get(rawKey) || null,
+        main_agent: formatMainAgent(mainTerm),
+      };
+      repoStatuses.set(key, merged);
+      if (eventClients.size > 0 && JSON.stringify(prev || null) !== JSON.stringify(merged)) {
+        broadcast(buildSnapshot({ type: 'snapshot' }));
+      }
+      return merged;
+    } catch (err) {
+      if (opts.throwOnError) throw err;
+      return null;
+    }
+  }
+
+  function refreshAllRepoStatuses(rawTerminals, pins) {
+    if (repoStatusRefreshing) return;
+    const roots = new Set();
+    const enriched = enrichTerminalsWithRepo(rawTerminals || []);
+    for (const t of enriched) {
+      const r = (t.repo && t.repo.root) || (t.labels && t.labels['swarmbox.repo']) || '';
+      if (r) roots.add(String(r).replace(/\/+$/, '') || String(r));
+    }
+    for (const pin of pins || []) {
+      const r = (pin && pin.worktree && pin.worktree.repo) || '';
+      if (r) {
+        roots.add(String(r).replace(/\/+$/, '') || String(r));
+      } else if (pin && pin.cwd) {
+        const info = resolveGitRepoInfo(pin.cwd);
+        if (info && info.root) roots.add(String(info.root).replace(/\/+$/, '') || String(info.root));
+      }
+    }
+    for (const w of cachedWorktrees || []) {
+      if (w && w.repo_root) roots.add(String(w.repo_root).replace(/\/+$/, '') || String(w.repo_root));
+    }
+    if (roots.size === 0) return;
+
+    repoStatusRefreshing = true;
+    Promise.allSettled(
+      Array.from(roots).map(async (root) => {
+        const st = await runWt(['repo-status', root]);
+        if (!st || typeof st !== 'object') return false;
+        const key = (st.repo_root && String(st.repo_root).replace(/\/+$/, '')) || root;
+        const prev = repoStatuses.get(key);
+        const mainTerm = findMainAgentTerminal(key, hc.listSnapshot());
+        const merged = {
+          ...st,
+          verify_job: verifyJobs.get(key) || verifyJobs.get(root) || null,
+          main_agent: formatMainAgent(mainTerm),
+        };
+        repoStatuses.set(key, merged);
+        return JSON.stringify(prev || null) !== JSON.stringify(merged);
+      })
+    )
+      .then((results) => {
+        const changed = results.some((r) => r.status === 'fulfilled' && r.value === true);
+        if (changed && eventClients.size > 0) {
+          broadcast(buildSnapshot({ type: 'snapshot' }));
+        }
+      })
+      .finally(() => {
+        repoStatusRefreshing = false;
+      });
+  }
+
+  function buildVerifyHandoffPrompt(context = {}, verifyCmd = '') {
+    const branches = Array.isArray(context.mergedBranches) ? context.mergedBranches.filter(Boolean) : [];
+    const commits = Array.isArray(context.commitsSummary) ? context.commitsSummary.filter(Boolean) : [];
+    const files = Array.isArray(context.files) ? context.files.filter(Boolean) : [];
+    const parts = [];
+    if (branches.length === 1) {
+      parts.push(`Merged branch ${branches[0]} into main.`);
+    } else if (branches.length > 1) {
+      parts.push(`Merged branches ${branches.join(', ')} into main.`);
+    } else {
+      parts.push('Local commits on main are ready for verification.');
+    }
+    if (commits.length > 0) {
+      const sample = commits.slice(0, 6).join('; ');
+      parts.push(`Commits: ${sample}${commits.length > 6 ? ` (+${commits.length - 6} more)` : ''}.`);
+    }
+    if (files.length > 0) {
+      const sample = files.slice(0, 8).join(', ');
+      parts.push(`Changed files: ${sample}${files.length > 8 ? ` (+${files.length - 8} more)` : ''}.`);
+    }
+    const shouldPush = context.push !== undefined ? Boolean(context.push) : true;
+    if (shouldPush) {
+      if (verifyCmd) {
+        parts.push(`Please run the project verification (\`${verifyCmd}\`) and any relevant tests. If everything passes, push main to origin. If anything fails, fix or report the failure before pushing.`);
+      } else {
+        parts.push('Please run the project verification/tests. If everything passes, push main to origin. If anything fails, fix or report the failure before pushing.');
+      }
+    } else if (verifyCmd) {
+      parts.push(`Please run the project verification (\`${verifyCmd}\`) and any relevant tests to confirm integration on main. Do not push yet; report the result (or fix any failure) so the user can review and push when ready.`);
+    } else {
+      parts.push('Please run the project verification/tests to confirm integration on main. Do not push yet; report the result (or fix any failure) so the user can review and push when ready.');
+    }
+    return parts.join(' ');
+  }
+
+  async function runHybridVerifyAndPush(repoRoot, context = {}) {
+    const shouldPush = context.push !== undefined ? Boolean(context.push) : true;
+    const rawKey = String(repoRoot || '').replace(/\/+$/, '') || String(repoRoot || '');
+    const rawTerminals = hc.listSnapshot();
+    const mainTerm = findMainAgentTerminal(rawKey, rawTerminals);
+    let repoSt = repoStatuses.get(rawKey) || null;
+    if (!repoSt && !context.verifyCmd && rawKey) {
+      repoSt = await refreshRepoStatus(rawKey).catch(() => null);
+    }
+    const key = (repoSt && repoSt.repo_root && String(repoSt.repo_root).replace(/\/+$/, '')) || rawKey;
+    const verifyCmd = String(context.verifyCmd || (repoSt && repoSt.verify_cmd) || '').trim();
+
+    if (mainTerm) {
+      const prompt = buildVerifyHandoffPrompt({ ...context, push: shouldPush }, verifyCmd);
+      await hc.call('terminal.send', { terminal: mainTerm.address, text: prompt, force: true });
+      return {
+        mode: 'agent',
+        push: shouldPush,
+        terminal: mainTerm.address,
+        title: (mainTerm.labels && mainTerm.labels['swarmbox.title']) || mainTerm.name || 'main',
+      };
+    }
+
+    if (verifyCmd) {
+      const job = {
+        state: 'running',
+        cmd: verifyCmd,
+        push: shouldPush,
+        started_at: Date.now(),
+        finished_at: null,
+        exit_code: null,
+        output: '',
+        error: null,
+        merged_branches: Array.isArray(context.mergedBranches) ? [...context.mergedBranches] : [],
+      };
+      verifyJobs.set(key, job);
+      if (repoSt) {
+        repoStatuses.set(key, { ...repoSt, verify_job: job });
+      }
+      broadcast(buildSnapshot({ type: 'snapshot' }));
+
+      Promise.resolve()
+        .then(async () => {
+          let verifyRes = null;
+          try {
+            verifyRes = await runWt(['verify', key], 190000);
+          } catch (err) {
+            const d = (err && err.data) || {};
+            verifyJobs.set(key, {
+              ...job,
+              state: 'failed',
+              finished_at: Date.now(),
+              exit_code: d.exit_code != null ? d.exit_code : 1,
+              output: d.output || err.message || '',
+              error: err.message || 'verification failed',
+            });
+            return;
+          }
+
+          if (verifyRes && verifyRes.ok === true) {
+            if (!shouldPush) {
+              verifyJobs.set(key, {
+                ...job,
+                state: 'passed',
+                finished_at: Date.now(),
+                exit_code: verifyRes.exit_code != null ? verifyRes.exit_code : 0,
+                output: verifyRes.output || '',
+                error: null,
+              });
+              return;
+            }
+            try {
+              await runWt(['push', key]);
+              verifyJobs.set(key, {
+                ...job,
+                state: 'pushed',
+                finished_at: Date.now(),
+                exit_code: verifyRes.exit_code != null ? verifyRes.exit_code : 0,
+                output: verifyRes.output || '',
+                error: null,
+              });
+            } catch (pushErr) {
+              verifyJobs.set(key, {
+                ...job,
+                state: 'passed',
+                finished_at: Date.now(),
+                exit_code: verifyRes.exit_code != null ? verifyRes.exit_code : 0,
+                output: verifyRes.output || '',
+                error: pushErr.message || 'push failed',
+              });
+            }
+          } else {
+            verifyJobs.set(key, {
+              ...job,
+              state: 'failed',
+              finished_at: Date.now(),
+              exit_code: (verifyRes && verifyRes.exit_code != null) ? verifyRes.exit_code : 1,
+              output: (verifyRes && verifyRes.output) || '',
+              error: (verifyRes && (verifyRes.msg || verifyRes.error)) || 'verification failed',
+            });
+          }
+        })
+        .finally(async () => {
+          await refreshRepoStatus(key).catch(() => {});
+          broadcast(buildSnapshot({ type: 'snapshot' }));
+        });
+
+      return { mode: 'backend_verify', push: shouldPush, cmd: verifyCmd, state: 'running' };
+    }
+
+    return {
+      mode: 'manual_push',
+      push: shouldPush,
+      message: 'Merged locally. No agent on main or check script detected; verify and push when ready.',
+    };
+  }
 
   function refreshPendingWorktrees() {
     if (wtRefreshing) return;
     wtRefreshing = true;
-    runWorktreeCmd(['list'])
+    runWt(['list'])
       .then((list) => {
         if (Array.isArray(list)) {
           const prev = JSON.stringify(cachedWorktrees);
@@ -648,6 +924,15 @@ export function createGateway(options = {}) {
     const worktree_prefs = readWorktreePrefs();
     const session_prefs = readSessionPrefs();
     const installed_agents = listInstalledAgents();
+    const repo_statuses = {};
+    for (const [k, st] of repoStatuses.entries()) {
+      const mainTerm = findMainAgentTerminal(k, rawTerminals);
+      repo_statuses[k] = {
+        ...st,
+        verify_job: verifyJobs.get(k) || null,
+        main_agent: formatMainAgent(mainTerm),
+      };
+    }
     return {
       ...extra,
       terminals,
@@ -656,6 +941,7 @@ export function createGateway(options = {}) {
       theme: currentTheme,
       pins,
       worktrees,
+      repo_statuses,
       worktree_prefs,
       session_prefs,
       installed_agents,
@@ -733,7 +1019,7 @@ export function createGateway(options = {}) {
     if (!targetCwd || !fs.existsSync(targetCwd)) return empty;
     let targetInfo;
     try {
-      targetInfo = await runWorktreeCmd(['inspect', targetCwd]);
+      targetInfo = await runWt(['inspect', targetCwd]);
     } catch (_) {
       return empty;
     }
@@ -783,12 +1069,24 @@ export function createGateway(options = {}) {
     return info.collision;
   }
 
+  function snapshotHash(snap) {
+    return JSON.stringify({
+      sysop: snap.sysop,
+      theme: snap.theme,
+      active: snap.active,
+      pins: snap.pins,
+      worktrees: snap.worktrees,
+      repo_statuses: snap.repo_statuses,
+      session_prefs: snap.session_prefs,
+    });
+  }
+
   hc.on('snapshot', () => {
     const terms = hc.listSnapshot();
     syncPinsFromTerminals(terms);
     emitBusTabEvents(null, terms);
     const snap = buildSnapshot({ type: 'snapshot' });
-    lastBroadcastHash = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active, pins: snap.pins, worktrees: snap.worktrees, session_prefs: snap.session_prefs });
+    lastBroadcastHash = snapshotHash(snap);
     broadcast(snap);
   });
 
@@ -804,7 +1102,7 @@ export function createGateway(options = {}) {
     syncPinsFromTerminals(terms);
     emitBusTabEvents(event, terms);
     const snap = buildSnapshot({ type: 'event', event });
-    lastBroadcastHash = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active, pins: snap.pins, worktrees: snap.worktrees, session_prefs: snap.session_prefs });
+    lastBroadcastHash = snapshotHash(snap);
     broadcast(snap);
   });
 
@@ -822,9 +1120,10 @@ export function createGateway(options = {}) {
     }
     if (pollTick === 0) {
       refreshPendingWorktrees();
+      refreshAllRepoStatuses(hc.listSnapshot(), readPins());
     }
     const snap = buildSnapshot({ type: themeChanged ? 'theme' : 'sysop' });
-    const h = JSON.stringify({ sysop: snap.sysop, theme: snap.theme, active: snap.active, pins: snap.pins, worktrees: snap.worktrees, session_prefs: snap.session_prefs });
+    const h = snapshotHash(snap);
     if (h !== lastBroadcastHash) {
       lastBroadcastHash = h;
       broadcast(snap);
@@ -1477,7 +1776,7 @@ export function createGateway(options = {}) {
       // ---------------------------------------------------------------------
       if (pathname === '/api/worktrees' && req.method === 'GET') {
         try {
-          const list = await runWorktreeCmd(['list']);
+          const list = await runWt(['list']);
           cachedWorktrees = Array.isArray(list) ? list : [];
           return sendJson(res, 200, {
             worktrees: cachedWorktrees,
@@ -1521,10 +1820,65 @@ export function createGateway(options = {}) {
         }
         if (!target) return sendJson(res, 400, { error: 'bad_arg', message: 'path or terminal required' });
         try {
-          const st = await runWorktreeCmd(['status', target]);
+          const st = await runWt(['status', target]);
           return sendJson(res, 200, st);
         } catch (err) {
           return sendJson(res, 404, { error: err.code || 'not_a_worktree', message: err.message });
+        }
+      }
+
+      if (pathname === '/api/worktrees/repo-status' && req.method === 'GET') {
+        const repo = url.searchParams.get('repo') || '';
+        if (!repo) return sendJson(res, 400, { error: 'bad_arg', message: 'repo required' });
+        try {
+          const st = await refreshRepoStatus(repo, { throwOnError: true });
+          const mainTerm = findMainAgentTerminal((st && st.repo_root) || repo, hc.listSnapshot());
+          return sendJson(res, 200, {
+            ...(st || {}),
+            main_agent: formatMainAgent(mainTerm),
+          });
+        } catch (err) {
+          return sendJson(res, 404, { error: err.code || 'repo_status_error', message: err.message });
+        }
+      }
+
+      if (pathname === '/api/worktrees/diff' && req.method === 'GET') {
+        let wtPath = url.searchParams.get('path') || '';
+        const tid = url.searchParams.get('terminal') || '';
+        if (!wtPath && tid) {
+          const t = hc.terminals.get(tid);
+          if (t) wtPath = (t.labels && t.labels['swarmbox.worktree']) || terminalCwd(t);
+        }
+        if (!wtPath) return sendJson(res, 400, { error: 'bad_arg', message: 'path or terminal required' });
+        const file = url.searchParams.get('file') || '';
+        try {
+          const diffRes = await runWt(['diff', wtPath, ...(file ? ['--file', file] : [])]);
+          return sendJson(res, 200, diffRes);
+        } catch (err) {
+          return sendJson(res, 404, { error: err.code || 'diff_error', message: err.message });
+        }
+      }
+
+      if (pathname === '/api/worktrees/sync' && req.method === 'POST') {
+        const body = await readBody(req);
+        let wtPath = String(body.path || '');
+        const tid = body.terminal ? String(body.terminal) : '';
+        const t = tid ? hc.terminals.get(tid) : null;
+        if (!wtPath && t) {
+          wtPath = (t.labels && t.labels['swarmbox.worktree']) || terminalCwd(t);
+        }
+        if (!wtPath) return sendJson(res, 400, { error: 'bad_arg', message: 'path or terminal required' });
+        const args = ['sync', wtPath];
+        if (body.rebase) args.push('--rebase');
+        try {
+          const resSync = await runWt(args);
+          const repoRoot = (resSync && resSync.repo_root) || (t && t.labels && t.labels['swarmbox.repo']) || '';
+          if (repoRoot) await refreshRepoStatus(repoRoot).catch(() => {});
+          refreshPendingWorktrees();
+          broadcast(buildSnapshot({ type: 'snapshot' }));
+          return sendJson(res, 200, resSync);
+        } catch (err) {
+          return sendJson(res, 409, { error: err.code || 'sync_failed', message: err.message, ...(err.data || {}) });
         }
       }
 
@@ -1532,28 +1886,194 @@ export function createGateway(options = {}) {
         const body = await readBody(req);
         let wtPath = String(body.path || '');
         const tid = body.terminal ? String(body.terminal) : '';
-        if (!wtPath && tid) {
-          const t = hc.terminals.get(tid);
-          if (t) wtPath = (t.labels && t.labels['swarmbox.worktree']) || terminalCwd(t);
+        const t = tid ? hc.terminals.get(tid) : null;
+        if (!wtPath && t) {
+          wtPath = (t.labels && t.labels['swarmbox.worktree']) || terminalCwd(t);
         }
         if (!wtPath) return sendJson(res, 400, { error: 'bad_arg', message: 'path or terminal required' });
         const args = ['merge', wtPath];
         if (body.squash) args.push('--squash');
         if (body.clean) args.push('--clean');
         try {
-          const resMerge = await runWorktreeCmd(args);
+          const resMerge = await runWt(args);
           if (body.clean) {
-            const t = tid ? hc.terminals.get(tid) : null;
             const pinId = (t && t.labels && t.labels['swarmbox.pin_id']) || '';
             purgePinsForWorktree(wtPath, pinId);
             if (tid) await closeTerminalCleanly(tid);
           }
+          const repoRoot = (resMerge && resMerge.repo_root) || (t && t.labels && t.labels['swarmbox.repo']) || '';
+          if (repoRoot) await refreshRepoStatus(repoRoot).catch(() => {});
+          const doVerify = Boolean(body.verify || body.verify_and_push);
+          const doPush = Boolean(body.push || body.verify_and_push);
+          let handoff = null;
+          if (doVerify && repoRoot) {
+            handoff = await runHybridVerifyAndPush(repoRoot, {
+              mergedBranches: resMerge && resMerge.branch ? [resMerge.branch] : [],
+              commitsSummary: (resMerge && Array.isArray(resMerge.commits_list)) ? resMerge.commits_list : [],
+              files: (resMerge && Array.isArray(resMerge.files)) ? resMerge.files : [],
+              push: doPush,
+            });
+          }
           refreshPendingWorktrees();
           broadcast(buildSnapshot({ type: 'snapshot' }));
-          return sendJson(res, 200, resMerge);
+          return sendJson(res, 200, handoff ? { ...resMerge, handoff } : resMerge);
         } catch (err) {
           return sendJson(res, 409, { error: err.code || 'merge_failed', message: err.message, ...(err.data || {}) });
         }
+      }
+
+      if (pathname === '/api/worktrees/merge-all' && req.method === 'POST') {
+        const body = await readBody(req);
+        const repo = String(body.repo || '');
+        if (!repo) return sendJson(res, 400, { error: 'bad_arg', message: 'repo required' });
+        const repoReal = normRealPath(repo);
+        let list = [];
+        try {
+          const rawList = await runWt(['list', repo]);
+          list = Array.isArray(rawList) ? rawList : [];
+        } catch (err) {
+          return sendJson(res, 500, { error: err.code || 'list_failed', message: err.message });
+        }
+
+        const liveTerms = hc.listSnapshot();
+        const termByWtPath = new Map();
+        for (const t of liveTerms) {
+          const p = (t.labels && t.labels['swarmbox.worktree']) || terminalCwd(t);
+          if (p) {
+            const rp = normRealPath(p);
+            if (!termByWtPath.has(rp)) termByWtPath.set(rp, []);
+            termByWtPath.get(rp).push(t);
+          }
+        }
+
+        const candidates = list.filter((w) => {
+          if (!w || !w.path) return false;
+          if (w.repo_root && normRealPath(w.repo_root) !== repoReal) return false;
+          return !w.dirty && Number(w.ahead) > 0 && Boolean(w.can_merge);
+        });
+
+        const merged = [];
+        const failed = [];
+        const mergedBranches = [];
+        const commitsSummary = [];
+        const filesSet = new Set();
+
+        for (const w of candidates) {
+          const args = ['merge', w.path];
+          if (body.squash) args.push('--squash');
+          if (body.clean) args.push('--clean');
+          try {
+            const resMerge = await runWt(args);
+            merged.push({ ...resMerge, path: w.path, branch: (resMerge && resMerge.branch) || w.branch });
+            if ((resMerge && resMerge.branch) || w.branch) {
+              mergedBranches.push((resMerge && resMerge.branch) || w.branch);
+            }
+            if (resMerge && Array.isArray(resMerge.commits_list)) {
+              commitsSummary.push(...resMerge.commits_list);
+            }
+            if (resMerge && Array.isArray(resMerge.files)) {
+              for (const f of resMerge.files) filesSet.add(f);
+            }
+            if (body.clean) {
+              const matchingTerms = termByWtPath.get(normRealPath(w.path)) || [];
+              if (matchingTerms.length > 0) {
+                for (const mt of matchingTerms) {
+                  const pinId = (mt.labels && mt.labels['swarmbox.pin_id']) || '';
+                  purgePinsForWorktree(w.path, pinId);
+                  await closeTerminalCleanly(mt.address);
+                }
+              } else {
+                purgePinsForWorktree(w.path, '');
+              }
+            }
+          } catch (err) {
+            failed.push({
+              path: w.path,
+              branch: w.branch,
+              error: err.code || 'merge_failed',
+              message: err.message,
+              ...(err.data || {}),
+            });
+            break;
+          }
+        }
+
+        await refreshRepoStatus(repo).catch(() => {});
+        const doVerifyAll = Boolean(body.verify || body.verify_and_push);
+        const doPushAll = Boolean(body.push || body.verify_and_push);
+        let handoff = null;
+        if (merged.length > 0 && doVerifyAll) {
+          handoff = await runHybridVerifyAndPush(repo, {
+            mergedBranches,
+            commitsSummary,
+            files: Array.from(filesSet),
+            push: doPushAll,
+          });
+        }
+        refreshPendingWorktrees();
+        broadcast(buildSnapshot({ type: 'snapshot' }));
+        return sendJson(res, 200, { ok: true, merged, failed, handoff });
+      }
+
+      if (pathname === '/api/worktrees/main/action' && req.method === 'POST') {
+        const body = await readBody(req);
+        const repo = String(body.repo || '');
+        const action = String(body.action || '');
+        if (!repo || !action) {
+          return sendJson(res, 400, { error: 'bad_arg', message: 'repo and action required' });
+        }
+        const key = repo.replace(/\/+$/, '') || repo;
+
+        if (action === 'commit') {
+          const mainTerm = findMainAgentTerminal(key, hc.listSnapshot());
+          if (!mainTerm) {
+            return sendJson(res, 409, { error: 'no_main_agent', message: 'No active agent terminal on main for this repository' });
+          }
+          const prompt = 'Review the uncommitted changes on main, run relevant tests if needed, and create a clean git commit.';
+          const r = await hc.call('terminal.send', { terminal: mainTerm.address, text: prompt, force: true });
+          return sendJson(res, 200, { ok: true, action: 'commit', terminal: mainTerm.address, result: r });
+        }
+
+        if (action === 'verify' || action === 'verify_and_push') {
+          await refreshRepoStatus(key).catch(() => {});
+          const handoff = await runHybridVerifyAndPush(key, {
+            mergedBranches: [],
+            push: action === 'verify_and_push',
+          });
+          return sendJson(res, 200, { ok: true, action, handoff });
+        }
+
+        if (action === 'push') {
+          try {
+            const r = await runWt(['push', key]);
+            const curJob = verifyJobs.get(key);
+            if (curJob && curJob.state === 'passed') {
+              verifyJobs.set(key, { ...curJob, state: 'pushed', error: null, finished_at: Date.now() });
+            }
+            await refreshRepoStatus(key).catch(() => {});
+            broadcast(buildSnapshot({ type: 'snapshot' }));
+            return sendJson(res, 200, { ok: true, ...(r || {}) });
+          } catch (err) {
+            return sendJson(res, 409, { error: err.code || 'push_failed', message: err.message, ...(err.data || {}) });
+          }
+        }
+
+        if (action === 'undo_merge') {
+          try {
+            const r = await runWt(['undo-merge', key]);
+            const curJob = verifyJobs.get(key);
+            if (curJob && curJob.state === 'failed') verifyJobs.delete(key);
+            const rKey = (r && r.repo_root && String(r.repo_root).replace(/\/+$/, '')) || '';
+            if (rKey && verifyJobs.get(rKey) && verifyJobs.get(rKey).state === 'failed') verifyJobs.delete(rKey);
+            await refreshRepoStatus(key).catch(() => {});
+            broadcast(buildSnapshot({ type: 'snapshot' }));
+            return sendJson(res, 200, { ok: true, ...(r || {}) });
+          } catch (err) {
+            return sendJson(res, 409, { error: err.code || 'undo_merge_failed', message: err.message, ...(err.data || {}) });
+          }
+        }
+
+        return sendJson(res, 400, { error: 'unknown_action', message: `unsupported action: ${action}` });
       }
 
       if (pathname === '/api/worktrees/remove' && req.method === 'POST') {
@@ -1563,12 +2083,14 @@ export function createGateway(options = {}) {
         const args = ['remove', wtPath];
         if (body.force) args.push('--force');
         try {
-          const r = await runWorktreeCmd(args);
+          const r = await runWt(args);
           const tid = body.terminal ? String(body.terminal) : '';
           const t = tid ? hc.terminals.get(tid) : null;
           const pinId = (t && t.labels && t.labels['swarmbox.pin_id']) || '';
           purgePinsForWorktree(wtPath, pinId);
           if (tid) await closeTerminalCleanly(tid);
+          const repoRoot = (r && r.repo_root) || (t && t.labels && t.labels['swarmbox.repo']) || '';
+          if (repoRoot) await refreshRepoStatus(repoRoot).catch(() => {});
           refreshPendingWorktrees();
           broadcast(buildSnapshot({ type: 'snapshot' }));
           return sendJson(res, 200, r);
@@ -1583,7 +2105,7 @@ export function createGateway(options = {}) {
         if (!wtPath || !fs.existsSync(wtPath)) {
           return sendJson(res, 404, { error: 'missing_path', message: 'worktree folder does not exist' });
         }
-        const st = await runWorktreeCmd(['status', wtPath]).catch(() => null);
+        const st = await runWt(['status', wtPath]).catch(() => null);
         const reqAgent = String(body.agent || process.env.SWARMBOX_AGENT || 'claude').trim();
         const cmd = ALLOWED_AGENT_CMDS.has(reqAgent) ? reqAgent : 'shell';
         const argv = buildAgentArgv(cmd, 'continue');

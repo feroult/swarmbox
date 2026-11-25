@@ -532,6 +532,68 @@
   font-weight: 600;
 }
 
+/* Inline Diff & Log views */
+.sbv-diff-view {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 8px 0 28px;
+}
+.sbv-diff-line {
+  padding: 0 16px;
+  white-space: pre;
+  color: var(--text);
+  min-height: 1.55em;
+}
+.sbv-diff-view.wrap .sbv-diff-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sbv-diff-file {
+  font-weight: 700;
+  color: var(--text);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 16px;
+  margin-top: 10px;
+}
+.sbv-diff-file:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+.sbv-diff-meta {
+  color: var(--text-dim);
+}
+.sbv-diff-hunk {
+  color: #8ad7e6;
+  background: rgba(138, 215, 230, 0.08);
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.sbv-diff-add {
+  background: rgba(74, 222, 128, 0.12);
+  color: #bbf7d0;
+}
+.sbv-diff-del {
+  background: rgba(255, 107, 120, 0.13);
+  color: #fecdd3;
+}
+
+.sbv-log-view {
+  margin: 0;
+  padding: 14px 16px 28px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre;
+}
+.sbv-log-view.wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Media & Binary */
 .sbv-media-stage {
   display: flex;

@@ -303,6 +303,7 @@
   let terminals = [];
   let pins = [];
   let pendingWorktrees = [];
+  let repoStatuses = {};
   let worktreePrefs = { mode: 'ask', copy_env: true };
   let sessionPrefs = { boot_mode: 'autostart' };
   let installedAgents = [];
@@ -1717,6 +1718,7 @@
         container: fileDrawerEl,
         mode: 'drawer',
         onClose: closeFileDrawer,
+        onToast: (msg) => showTermToast(msg),
       })
     : null;
 
@@ -1776,6 +1778,66 @@
     fileDrawerOpen = true;
     fileDrawerBackdropEl.classList.remove('hidden');
     fileViewer.open(targetPath, opts);
+  }
+
+  function openFileDrawerInline(opts) {
+    if (!fileViewer || !fileDrawerBackdropEl || typeof fileViewer.openInline !== 'function') return;
+    fileDrawerOpen = true;
+    fileDrawerBackdropEl.classList.remove('hidden');
+    fileViewer.openInline(opts);
+  }
+
+  function openLogInDrawer(title, subtitle, text) {
+    openFileDrawerInline({
+      title: title || 'Check output',
+      subtitle: subtitle || '',
+      content: text || '',
+      kind: 'log',
+    });
+  }
+
+  async function openDiffInDrawer(wtPath, title, file) {
+    if (!wtPath) return;
+    const baseTitle = title || file || 'Diff';
+    openFileDrawerInline({
+      title: baseTitle,
+      subtitle: 'Loading…',
+      content: 'Loading diff…',
+      kind: 'log',
+    });
+    try {
+      const qs = new URLSearchParams();
+      qs.set('path', wtPath);
+      if (file) qs.set('file', file);
+      const r = await fetch(`/api/worktrees/diff?${qs.toString()}`, { cache: 'no-store' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) {
+        openFileDrawerInline({
+          title: baseTitle,
+          subtitle: 'Error',
+          content: d.message || d.error || 'Unable to load diff.',
+          kind: 'log',
+        });
+        return;
+      }
+      const subParts = [];
+      if (d.branch && d.base) subParts.push(`${d.branch} vs ${d.base}`);
+      if (d.file) subParts.push(d.file);
+      if (d.truncated) subParts.push('truncated');
+      openFileDrawerInline({
+        title: title || d.file || d.branch || 'Diff',
+        subtitle: subParts.join(' · '),
+        content: d.diff || '',
+        kind: 'diff',
+      });
+    } catch (_) {
+      openFileDrawerInline({
+        title: baseTitle,
+        subtitle: 'Error',
+        content: 'Failed to fetch diff from server.',
+        kind: 'log',
+      });
+    }
   }
 
   function createTerminalPathLinkProvider(term, address) {
@@ -3868,6 +3930,42 @@
     openPopover(frag);
   }
 
+  function formatHandoffToast(data, fallback) {
+    const h = data && data.handoff;
+    if (!h) return fallback;
+    const willPush = h.push !== false;
+    if (h.mode === 'agent') {
+      return willPush
+        ? `Sent test & push to ${h.title || 'main agent'}`
+        : `Sent verification to ${h.title || 'main agent'}`;
+    }
+    if (h.mode === 'backend_verify') {
+      return willPush
+        ? `Running ${h.cmd || 'checks'} before push…`
+        : `Running ${h.cmd || 'checks'} on main…`;
+    }
+    if (h.mode === 'manual_push') {
+      return h.message || fallback;
+    }
+    return fallback;
+  }
+
+  async function runMainRepoAction(repoRoot, action, okMsg) {
+    const r = await fetch('/api/worktrees/main/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo: repoRoot, action }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      showTermToast(d.message || d.error || `Action ${action} failed`, 'error');
+      return null;
+    }
+    const msg = typeof okMsg === 'function' ? okMsg(d) : okMsg;
+    if (msg) showTermToast(msg, 'ok');
+    return d;
+  }
+
   async function openWorktreePopover(termId) {
     const t = terminals.find((x) => x.address === termId);
     if (!t) return;
@@ -3899,28 +3997,108 @@
       return;
     }
 
+    let repoSt = (st.repo_root && repoStatuses[st.repo_root]) || null;
+    if (st.repo_root) {
+      try {
+        const rr = await fetch(`/api/worktrees/repo-status?repo=${encodeURIComponent(st.repo_root)}`, { cache: 'no-store' });
+        if (rr.ok) repoSt = await rr.json();
+      } catch (_) {}
+    }
+    const mainAgent = (repoSt && repoSt.main_agent) || null;
+    const verifyCmd = st.verify_cmd || (repoSt && repoSt.verify_cmd) || '';
+    const behindSuffix = (!st.dirty && st.behind > 0) ? ` · ${st.behind} behind ${st.base}` : '';
+
     const frag = document.createDocumentFragment();
     const head = document.createElement('div');
     head.className = 'spop-head';
     const badgeCls = st.dirty || !st.can_merge || st.main_dirty ? 'warn' : 'ok';
     const badgeTxt = st.dirty ? 'DIRTY' : !st.can_merge ? 'CONFLICT' : st.ahead > 0 ? 'CLEAN' : 'EMPTY';
-    head.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px">${ICO_BRANCH_SVG}<span>${st.branch} → ${st.base}</span></span><span class="spop-badge ${badgeCls}">${badgeTxt}</span>`;
+    const headLeft = document.createElement('span');
+    headLeft.style.cssText = 'display:inline-flex;align-items:center;gap:6px;min-width:0';
+    headLeft.innerHTML = `${ICO_BRANCH_SVG}<span></span>`;
+    headLeft.querySelector('span').textContent = `${st.branch} → ${st.base}`;
+    const headBadge = document.createElement('span');
+    headBadge.className = `spop-badge ${badgeCls}`;
+    headBadge.textContent = badgeTxt;
+    head.append(headLeft, headBadge);
 
     const sub = document.createElement('div');
     sub.className = 'spop-sub';
     if (st.dirty) {
       sub.textContent = `${st.uncommitted_count} uncommitted change${st.uncommitted_count === 1 ? '' : 's'} in this worktree.`;
     } else if (st.ahead === 0) {
-      sub.textContent = `No commits ahead of ${st.base}. Safe to close and remove.`;
+      sub.textContent = `No commits ahead of ${st.base}${behindSuffix}. Safe to close and remove.`;
     } else if (!st.can_merge) {
-      sub.textContent = `${st.ahead} commit${st.ahead === 1 ? '' : 's'} ahead · conflict with ${st.base} in ${(st.conflict_files || []).join(', ') || 'files'}.`;
+      sub.textContent = `${st.ahead} commit${st.ahead === 1 ? '' : 's'} ahead${behindSuffix} · conflict with ${st.base} in ${(st.conflict_files || []).join(', ') || 'files'}.`;
     } else if (st.main_dirty) {
-      sub.textContent = `${st.ahead} commit${st.ahead === 1 ? '' : 's'} ahead · main repo has uncommitted changes (commit there first or open a PR).`;
+      sub.textContent = `${st.ahead} commit${st.ahead === 1 ? '' : 's'} ahead${behindSuffix} · ${st.base} has uncommitted changes.`;
     } else {
-      sub.textContent = `${st.ahead} commit${st.ahead === 1 ? '' : 's'} ahead · 0 conflicts (checked via git merge-tree).`;
+      sub.textContent = `${st.ahead} commit${st.ahead === 1 ? '' : 's'} ahead${behindSuffix} · 0 conflicts.`;
     }
 
     frag.append(head, sub);
+
+    // Rich preview block (commits + diff stat + View diff) when ahead > 0
+    if (st.ahead > 0 && ((Array.isArray(st.commits) && st.commits.length > 0) || st.diff_stat)) {
+      const preview = document.createElement('div');
+      preview.className = 'spop-wt-preview';
+
+      if (Array.isArray(st.commits) && st.commits.length > 0) {
+        const cList = document.createElement('div');
+        cList.className = 'spop-commit-list';
+        const shown = st.commits.slice(0, 4);
+        for (const c of shown) {
+          const row = document.createElement('div');
+          row.className = 'spop-commit-row';
+          const sha = document.createElement('span');
+          sha.className = 'spop-commit-sha';
+          sha.textContent = String(c.sha || '').slice(0, 7);
+          const subj = document.createElement('span');
+          subj.className = 'spop-commit-subj';
+          subj.textContent = c.subject || '';
+          subj.title = c.subject || '';
+          row.append(sha, subj);
+          if (c.rel_time) {
+            const tm = document.createElement('span');
+            tm.className = 'spop-commit-time';
+            tm.textContent = c.rel_time;
+            row.appendChild(tm);
+          }
+          cList.appendChild(row);
+        }
+        if (st.commits.length > 4) {
+          const more = document.createElement('div');
+          more.className = 'spop-commit-more';
+          more.textContent = `+${st.commits.length - 4} more commit${st.commits.length - 4 === 1 ? '' : 's'}`;
+          cList.appendChild(more);
+        }
+        preview.appendChild(cList);
+      }
+
+      const statRow = document.createElement('div');
+      statRow.className = 'spop-diff-stat';
+      const statTxt = document.createElement('span');
+      const ds = st.diff_stat;
+      if (ds && typeof ds.files === 'number') {
+        const filesLabel = `${ds.files} file${ds.files === 1 ? '' : 's'}`;
+        statTxt.innerHTML = `${filesLabel} · <span class="spop-stat-add">+${ds.insertions || 0}</span> <span class="spop-stat-del">-${ds.deletions || 0}</span>`;
+      } else {
+        statTxt.textContent = `${st.ahead} commit${st.ahead === 1 ? '' : 's'} ahead`;
+      }
+      const diffBtn = document.createElement('button');
+      diffBtn.type = 'button';
+      diffBtn.className = 'spop-link-btn';
+      diffBtn.textContent = 'View diff';
+      diffBtn.addEventListener('click', () => {
+        closePopover();
+        openDiffInDrawer(st.path, `${st.branch} vs ${st.base}`);
+      });
+      statRow.append(statTxt, diffBtn);
+      preview.appendChild(statRow);
+      frag.appendChild(preview);
+    }
+
+    let squashChk = null;
 
     if (st.dirty) {
       const btn = document.createElement('button');
@@ -3952,36 +4130,102 @@
         showTermToast(`Asked agent to merge ${st.base} & resolve conflict inside worktree`);
       });
       frag.appendChild(btn);
+    } else if (st.ahead > 0 && st.main_dirty) {
+      if (mainAgent && st.repo_root) {
+        const btnCommitMain = document.createElement('button');
+        btnCommitMain.type = 'button';
+        btnCommitMain.className = 'spop-btn primary';
+        btnCommitMain.innerHTML = '<span>Ask main agent to commit</span><span class="spop-hint"></span>';
+        btnCommitMain.querySelector('.spop-hint').textContent = mainAgent.title || st.base;
+        btnCommitMain.addEventListener('click', async () => {
+          closePopover();
+          await runMainRepoAction(st.repo_root, 'commit', `Asked ${mainAgent.title || 'main agent'} to commit`);
+        });
+        const btnFocusMain = document.createElement('button');
+        btnFocusMain.type = 'button';
+        btnFocusMain.className = 'spop-btn secondary';
+        btnFocusMain.innerHTML = `<span>Focus ${st.base}</span><span class="spop-hint">switch tab</span>`;
+        btnFocusMain.addEventListener('click', () => {
+          closePopover();
+          if (activeId !== mainAgent.address) connectPty(mainAgent.address);
+          else focusTerminalIfDesktop();
+        });
+        frag.append(btnCommitMain, btnFocusMain);
+      } else {
+        const mainTerm = terminals.find((x) =>
+          x.repo && x.repo.root === st.repo_root && !(x.labels && x.labels['swarmbox.worktree']),
+        );
+        if (mainTerm) {
+          const btnFocusMain = document.createElement('button');
+          btnFocusMain.type = 'button';
+          btnFocusMain.className = 'spop-btn primary';
+          btnFocusMain.innerHTML = `<span>Focus ${st.base}</span><span class="spop-hint">commit there first</span>`;
+          btnFocusMain.addEventListener('click', () => {
+            closePopover();
+            if (activeId !== mainTerm.address) connectPty(mainTerm.address);
+            else focusTerminalIfDesktop();
+          });
+          frag.appendChild(btnFocusMain);
+        }
+      }
     } else if (st.ahead > 0 && st.can_merge && !st.main_dirty) {
-      const btnMerge = document.createElement('button');
-      btnMerge.type = 'button';
-      btnMerge.className = 'spop-btn green';
-      btnMerge.innerHTML = `<span>Merge into ${st.base} &amp; clean</span><span class="spop-hint">1 click</span>`;
-      btnMerge.addEventListener('click', async () => {
+      const checkLabel = document.createElement('label');
+      checkLabel.className = 'spop-check';
+      squashChk = document.createElement('input');
+      squashChk.type = 'checkbox';
+      const checkSpan = document.createElement('span');
+      checkSpan.textContent = 'Squash commits';
+      checkLabel.append(squashChk, checkSpan);
+      frag.appendChild(checkLabel);
+
+      const verifyOnlyHint = mainAgent ? 'via main agent' : (verifyCmd ? 'run check' : st.base);
+      const verifyPushHint = mainAgent ? 'via main agent' : (verifyCmd ? 'check + push' : 'merge + push');
+
+      const btnVerify = document.createElement('button');
+      btnVerify.type = 'button';
+      btnVerify.className = 'spop-btn green';
+      btnVerify.innerHTML = '<span>Merge → Verify</span><span class="spop-hint"></span>';
+      btnVerify.querySelector('.spop-hint').textContent = verifyOnlyHint;
+      btnVerify.addEventListener('click', async () => {
+        const squash = !!(squashChk && squashChk.checked);
         closePopover();
         const r = await fetch('/api/worktrees/merge', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ terminal: termId, path: st.path, clean: true }),
+          body: JSON.stringify({ terminal: termId, path: st.path, clean: true, squash, verify: true, push: false }),
         });
         const d = await r.json().catch(() => ({}));
-        showTermToast(r.ok ? `Merged ${st.branch} into ${st.base} & cleaned worktree` : (d.message || 'Merge failed'));
+        if (!r.ok) {
+          showTermToast(d.message || d.error || 'Merge failed', 'error');
+          return;
+        }
+        const fallback = `Merged ${st.branch} into ${st.base} & cleaned worktree`;
+        showTermToast(formatHandoffToast(d, fallback), 'ok', 3600);
       });
-      const btnKeep = document.createElement('button');
-      btnKeep.type = 'button';
-      btnKeep.className = 'spop-btn secondary';
-      btnKeep.innerHTML = `<span>Merge &amp; keep tab</span><span class="spop-hint">${st.base}</span>`;
-      btnKeep.addEventListener('click', async () => {
+
+      const btnVerifyPush = document.createElement('button');
+      btnVerifyPush.type = 'button';
+      btnVerifyPush.className = 'spop-btn secondary';
+      btnVerifyPush.innerHTML = '<span>Merge → Verify &amp; Push</span><span class="spop-hint"></span>';
+      btnVerifyPush.querySelector('.spop-hint').textContent = verifyPushHint;
+      btnVerifyPush.addEventListener('click', async () => {
+        const squash = !!(squashChk && squashChk.checked);
         closePopover();
         const r = await fetch('/api/worktrees/merge', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ terminal: termId, path: st.path, clean: false }),
+          body: JSON.stringify({ terminal: termId, path: st.path, clean: true, squash, verify: true, push: true }),
         });
         const d = await r.json().catch(() => ({}));
-        showTermToast(r.ok ? `Merged ${st.branch} into ${st.base}` : (d.message || 'Merge failed'));
+        if (!r.ok) {
+          showTermToast(d.message || d.error || 'Merge failed', 'error');
+          return;
+        }
+        const fallback = `Merged ${st.branch} into ${st.base} & cleaned worktree`;
+        showTermToast(formatHandoffToast(d, fallback), 'ok', 3600);
       });
-      frag.append(btnMerge, btnKeep);
+
+      frag.append(btnVerify, btnVerifyPush);
     } else if (st.ahead === 0 && !st.dirty) {
       const btnClean = document.createElement('button');
       btnClean.type = 'button';
@@ -3999,8 +4243,104 @@
       frag.appendChild(btnClean);
     }
 
+    // Sync with base button when clean and behind
+    if (!st.dirty && st.behind > 0) {
+      const syncSlot = document.createElement('div');
+      syncSlot.className = 'spop-sync-slot';
+      const btnSync = document.createElement('button');
+      btnSync.type = 'button';
+      btnSync.className = 'spop-btn secondary';
+      btnSync.innerHTML = `<span>Sync with ${st.base}</span><span class="spop-hint">${st.behind} behind</span>`;
+      btnSync.addEventListener('click', async () => {
+        btnSync.disabled = true;
+        btnSync.querySelector('.spop-hint').textContent = 'syncing…';
+        try {
+          const r = await fetch('/api/worktrees/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: st.path, terminal: termId }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (r.status === 409 && d.error === 'sync_conflict') {
+            const cFiles = (d.conflict_files || []).join(', ');
+            showTermToast(`Sync conflict${cFiles ? ` in ${cFiles}` : ''}`, 'error', 3600);
+            syncSlot.innerHTML = '';
+            const btnRes = document.createElement('button');
+            btnRes.type = 'button';
+            btnRes.className = 'spop-btn amber';
+            btnRes.innerHTML = '<span>Resolve conflict with agent</span><span class="spop-hint">in worktree</span>';
+            btnRes.addEventListener('click', async () => {
+              closePopover();
+              await fetch('/api/worktrees/resolve-conflict', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ terminal: termId, base: st.base }),
+              });
+              showTermToast(`Asked agent to merge ${st.base} & resolve conflict inside worktree`);
+            });
+            syncSlot.appendChild(btnRes);
+            return;
+          }
+          if (!r.ok) {
+            btnSync.disabled = false;
+            btnSync.querySelector('.spop-hint').textContent = `${st.behind} behind`;
+            showTermToast(d.message || d.error || 'Sync failed', 'error');
+            return;
+          }
+          showTermToast(`Synced ${st.branch} with ${st.base}`, 'ok');
+          openWorktreePopover(termId);
+        } catch (_) {
+          btnSync.disabled = false;
+          btnSync.querySelector('.spop-hint').textContent = `${st.behind} behind`;
+          showTermToast('Sync failed', 'error');
+        }
+      });
+      syncSlot.appendChild(btnSync);
+      frag.appendChild(syncSlot);
+    }
+
     const links = document.createElement('div');
     links.className = 'spop-links';
+    const leftLinks = document.createElement('div');
+    leftLinks.className = 'spop-links-group';
+
+    if (st.ahead > 0 && st.can_merge && !st.main_dirty && !st.dirty) {
+      const mergeOnlyBtn = document.createElement('button');
+      mergeOnlyBtn.type = 'button';
+      mergeOnlyBtn.className = 'spop-link-btn';
+      mergeOnlyBtn.textContent = 'Merge only';
+      mergeOnlyBtn.title = `Merge ${st.branch} into ${st.base} & clean without running checks or pushing`;
+      mergeOnlyBtn.addEventListener('click', async () => {
+        const squash = !!(squashChk && squashChk.checked);
+        closePopover();
+        const r = await fetch('/api/worktrees/merge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ terminal: termId, path: st.path, clean: true, squash, verify: false, push: false }),
+        });
+        const d = await r.json().catch(() => ({}));
+        showTermToast(r.ok ? `Merged ${st.branch} into ${st.base} & cleaned worktree` : (d.message || 'Merge failed'), r.ok ? 'ok' : 'error');
+      });
+      leftLinks.appendChild(mergeOnlyBtn);
+
+      const keepMergeBtn = document.createElement('button');
+      keepMergeBtn.type = 'button';
+      keepMergeBtn.className = 'spop-link-btn';
+      keepMergeBtn.textContent = 'Merge & keep tab';
+      keepMergeBtn.addEventListener('click', async () => {
+        const squash = !!(squashChk && squashChk.checked);
+        closePopover();
+        const r = await fetch('/api/worktrees/merge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ terminal: termId, path: st.path, clean: false, squash, verify: false, push: false }),
+        });
+        const d = await r.json().catch(() => ({}));
+        showTermToast(r.ok ? `Merged ${st.branch} into ${st.base}` : (d.message || 'Merge failed'), r.ok ? 'ok' : 'error');
+      });
+      leftLinks.appendChild(keepMergeBtn);
+    }
+
     const prBtn = document.createElement('button');
     prBtn.type = 'button';
     prBtn.className = 'spop-link-btn';
@@ -4014,12 +4354,14 @@
       });
       showTermToast('Asked agent to push & open PR');
     });
+    leftLinks.appendChild(prBtn);
+
     const closeLink = document.createElement('button');
     closeLink.type = 'button';
     closeLink.className = 'spop-link-btn';
     closeLink.textContent = 'Keep worktree';
     closeLink.addEventListener('click', closePopover);
-    links.append(prBtn, closeLink);
+    links.append(leftLinks, closeLink);
     frag.appendChild(links);
     openPopover(frag);
   }
@@ -4091,17 +4433,31 @@
     const activeWts = (group.activeWorktrees || []);
     const pendingWts = (group.pendingWorktrees || []);
     const total = activeWts.length + pendingWts.length;
-    if (total === 0) return;
+    const cachedRs = (group.root && repoStatuses[group.root]) || null;
+    if (total === 0 && !cachedRs && !group.root) return;
 
-    const statuses = await Promise.all(activeWts.map(async (t) => {
-      try {
-        const r = await fetch(`/api/worktrees/status?terminal=${encodeURIComponent(t.address)}`, { cache: 'no-store' });
-        if (!r.ok) return { t, st: null };
-        return { t, st: await r.json() };
-      } catch (_) {
-        return { t, st: null };
-      }
-    }));
+    const loading = document.createElement('div');
+    loading.className = 'spop-sub';
+    loading.textContent = `Loading ${group.name} status…`;
+    openPopover(loading);
+
+    const [fetchedRs, statuses] = await Promise.all([
+      group.root
+        ? fetch(`/api/worktrees/repo-status?repo=${encodeURIComponent(group.root)}`, { cache: 'no-store' })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)
+        : Promise.resolve(null),
+      Promise.all(activeWts.map(async (t) => {
+        try {
+          const r = await fetch(`/api/worktrees/status?terminal=${encodeURIComponent(t.address)}`, { cache: 'no-store' });
+          if (!r.ok) return { t, st: null };
+          return { t, st: await r.json() };
+        } catch (_) {
+          return { t, st: null };
+        }
+      })),
+    ]);
+    const rs = fetchedRs || cachedRs;
 
     const frag = document.createDocumentFragment();
     const head = document.createElement('div');
@@ -4109,154 +4465,360 @@
     const titleEl = document.createElement('span');
     titleEl.style.cssText = 'display:inline-flex;align-items:center;gap:6px';
     titleEl.innerHTML = `${ICO_BRANCH_SVG}<span></span>`;
-    titleEl.querySelector('span').textContent = `${group.name} · ${total} worktree${total === 1 ? '' : 's'}`;
+    titleEl.querySelector('span').textContent = total > 0
+      ? `${group.name} · ${total} worktree${total === 1 ? '' : 's'}`
+      : `${group.name} · ${(rs && rs.branch) || 'main'}`;
     const escBadge = document.createElement('span');
     escBadge.className = 'wt-kbd desktop-only';
     escBadge.textContent = 'Esc';
     head.append(titleEl, escBadge);
     frag.appendChild(head);
 
-    const list = document.createElement('div');
-    list.className = 'spop-rec-list';
+    // Top Card: main branch control
+    if (rs) {
+      const mainCard = document.createElement('div');
+      mainCard.className = 'spop-main-card';
 
-    for (const { t, st } of statuses) {
-      const row = document.createElement('div');
-      row.className = 'spop-rec-row';
-      const info = document.createElement('div');
-      info.className = 'spop-rec-info';
+      const mTop = document.createElement('div');
+      mTop.className = 'spop-main-top';
+      const mLeft = document.createElement('div');
+      mLeft.className = 'spop-main-branch';
+      mLeft.textContent = rs.branch || 'main';
 
-      const rawBr = (st && st.branch) || (t.labels && t.labels['swarmbox.branch']) || 'worktree';
-      const base = (st && st.base) || (t.labels && t.labels['swarmbox.base']) || 'main';
-      const shortBr = rawBr.replace(/^sb\//, '');
-
-      const brBtn = document.createElement('button');
-      brBtn.type = 'button';
-      brBtn.className = 'spop-rec-branch';
-      brBtn.textContent = `${shortBr} → ${base}`;
-      brBtn.title = `Focus ${tabDisplayName(t)} (${rawBr})`;
-      brBtn.addEventListener('click', () => {
-        closePopover();
-        if (activeId !== t.address) connectPty(t.address);
-        else focusTerminalIfDesktop();
-      });
-
-      const meta = document.createElement('div');
-      meta.className = 'spop-rec-meta';
-      const actBtn = document.createElement('button');
-      actBtn.type = 'button';
-      actBtn.className = 'spop-rec-act';
-
-      if (!st) {
-        meta.textContent = 'status unavailable';
-        actBtn.textContent = 'Inspect';
-        actBtn.addEventListener('click', () => {
-          closePopover();
-          openWorktreePopover(t.address);
-        });
-      } else if (st.dirty) {
-        const n = st.uncommitted_count || 0;
-        meta.textContent = `${st.ahead > 0 ? `${st.ahead} ahead · ` : ''}${n ? `${n} dirty` : 'dirty'}`;
-        meta.classList.add('is-warn');
-        actBtn.textContent = 'Ask to commit';
-        actBtn.addEventListener('click', async () => {
-          closePopover();
-          await fetch('/api/worktrees/commit', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ terminal: t.address }),
-          });
-          showTermToast(`Asked agent on ${shortBr} to commit`);
-        });
-      } else if (st.ahead > 0 && !st.can_merge) {
-        meta.textContent = `${st.ahead} ahead · conflict`;
-        meta.classList.add('is-warn');
-        actBtn.classList.add('amber');
-        actBtn.textContent = 'Resolve';
-        actBtn.addEventListener('click', async () => {
-          closePopover();
-          await fetch('/api/worktrees/resolve-conflict', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ terminal: t.address, base }),
-          });
-          showTermToast(`Asked agent on ${shortBr} to resolve conflict`);
-        });
-      } else if (st.ahead > 0 && st.can_merge && !st.main_dirty) {
-        meta.textContent = `${st.ahead} ahead · clean`;
-        meta.classList.add('is-ok');
-        actBtn.classList.add('green');
-        actBtn.textContent = 'Merge & close';
-        actBtn.title = `Merge ${shortBr} into ${base}, remove worktree and close tab`;
-        actBtn.addEventListener('click', async () => {
-          closePopover();
-          const r = await fetch('/api/worktrees/merge', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ terminal: t.address, path: st.path, clean: true }),
-          });
-          const d = await r.json().catch(() => ({}));
-          showTermToast(r.ok ? `Merged ${shortBr} into ${base} & closed tab` : (d.message || 'Merge failed'));
-        });
-      } else if (st.ahead > 0 && st.main_dirty) {
-        meta.textContent = `${st.ahead} ahead · ${base} dirty`;
-        meta.classList.add('is-warn');
-        actBtn.textContent = 'Inspect';
-        actBtn.addEventListener('click', () => {
-          closePopover();
-          openWorktreePopover(t.address);
-        });
+      const vj = rs.verify_job || null;
+      const mBadge = document.createElement('span');
+      if (vj && vj.state === 'running') {
+        mBadge.className = 'spop-badge checking';
+        mBadge.textContent = 'CHECKING';
+      } else if (vj && vj.state === 'failed') {
+        mBadge.className = 'spop-badge err';
+        mBadge.textContent = 'CHECK FAILED';
+      } else if (rs.dirty) {
+        mBadge.className = 'spop-badge warn';
+        mBadge.textContent = 'DIRTY';
       } else {
-        meta.textContent = `0 ahead · empty`;
-        actBtn.textContent = 'Close & clean';
-        actBtn.title = `Close agent tab and remove empty worktree ${shortBr}`;
-        actBtn.addEventListener('click', async () => {
-          closePopover();
-          const r = await fetch('/api/worktrees/remove', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: st.path, terminal: t.address }),
+        mBadge.className = 'spop-badge ok';
+        mBadge.textContent = 'CLEAN';
+      }
+      mTop.append(mLeft, mBadge);
+
+      const mSync = document.createElement('div');
+      mSync.className = 'spop-main-sync';
+      const syncParts = [];
+      if (rs.dirty) {
+        syncParts.push(`${rs.uncommitted_count || 1} uncommitted change${(rs.uncommitted_count || 1) === 1 ? '' : 's'}`);
+      }
+      if (rs.ahead_origin > 0) {
+        syncParts.push(`↑${rs.ahead_origin} ahead of ${rs.upstream || 'origin'}`);
+      }
+      if (rs.behind_origin > 0) {
+        syncParts.push(`↓${rs.behind_origin} behind`);
+      }
+      if (!syncParts.length) {
+        syncParts.push(rs.upstream ? `synced with ${rs.upstream}` : 'working tree clean');
+      }
+      mSync.textContent = syncParts.join(' · ');
+      mainCard.append(mTop, mSync);
+
+      if (vj && (vj.state === 'running' || vj.state === 'failed' || vj.state === 'pushed' || vj.state === 'passed')) {
+        const strip = document.createElement('div');
+        strip.className = `spop-verify-strip is-${vj.state}`;
+        const stripTxt = document.createElement('span');
+        if (vj.state === 'running') {
+          stripTxt.textContent = `Running ${vj.cmd || 'verification'}…`;
+        } else if (vj.state === 'failed') {
+          stripTxt.textContent = `Check failed${vj.exit_code != null ? ` (exit ${vj.exit_code})` : ''}`;
+        } else if (vj.state === 'pushed') {
+          stripTxt.textContent = 'Verified & pushed';
+        } else {
+          stripTxt.textContent = 'Checks passed';
+        }
+        strip.appendChild(stripTxt);
+        if (vj.state === 'failed' || vj.output || vj.error) {
+          const logBtn = document.createElement('button');
+          logBtn.type = 'button';
+          logBtn.className = 'spop-link-btn';
+          logBtn.textContent = 'View log';
+          logBtn.addEventListener('click', () => {
+            closePopover();
+            openLogInDrawer(
+              `${group.name} · ${vj.state === 'failed' ? 'check failed' : 'check output'}`,
+              vj.cmd || '',
+              vj.output || vj.error || 'No output recorded.',
+            );
           });
-          const d = await r.json().catch(() => ({}));
-          showTermToast(r.ok ? `Closed tab & removed empty worktree ${shortBr}` : (d.message || 'Remove failed'));
-        });
+          strip.appendChild(logBtn);
+        }
+        mainCard.appendChild(strip);
       }
 
-      info.append(brBtn, meta);
-      row.append(info, actBtn);
-      list.appendChild(row);
+      const mActs = document.createElement('div');
+      mActs.className = 'spop-main-acts';
+      if (rs.dirty && rs.main_agent) {
+        const bCommit = document.createElement('button');
+        bCommit.type = 'button';
+        bCommit.className = 'spop-btn primary spop-btn-sm';
+        bCommit.innerHTML = '<span>Commit main</span><span class="spop-hint">via agent</span>';
+        bCommit.addEventListener('click', async () => {
+          closePopover();
+          await runMainRepoAction(group.root, 'commit', 'Asked main agent to commit');
+        });
+        const bFocus = document.createElement('button');
+        bFocus.type = 'button';
+        bFocus.className = 'spop-btn secondary spop-btn-sm spop-btn-fit';
+        bFocus.textContent = 'Focus';
+        bFocus.addEventListener('click', () => {
+          closePopover();
+          if (activeId !== rs.main_agent.address) connectPty(rs.main_agent.address);
+          else focusTerminalIfDesktop();
+        });
+        mActs.append(bCommit, bFocus);
+      } else if (!rs.dirty && rs.ahead_origin > 0) {
+        const bTestPush = document.createElement('button');
+        bTestPush.type = 'button';
+        bTestPush.className = 'spop-btn green spop-btn-sm';
+        const hint = rs.main_agent ? 'via main agent' : (rs.verify_cmd ? 'check + push' : 'push');
+        bTestPush.innerHTML = `<span>Test &amp; Push</span><span class="spop-hint">${hint}</span>`;
+        bTestPush.addEventListener('click', async () => {
+          closePopover();
+          await runMainRepoAction(group.root, 'verify_and_push', (d) => formatHandoffToast(d, 'Started verify & push on main'));
+        });
+        const bPush = document.createElement('button');
+        bPush.type = 'button';
+        bPush.className = 'spop-btn secondary spop-btn-sm spop-btn-fit';
+        bPush.textContent = 'Push now';
+        bPush.addEventListener('click', async () => {
+          closePopover();
+          await runMainRepoAction(group.root, 'push', `Pushed ${rs.branch || 'main'} to origin`);
+        });
+        mActs.append(bTestPush, bPush);
+      }
+      if (mActs.childNodes.length > 0) mainCard.appendChild(mActs);
+
+      if (rs.can_undo_merge) {
+        const undoRow = document.createElement('div');
+        undoRow.className = 'spop-main-undo';
+        const undoBtn = document.createElement('button');
+        undoBtn.type = 'button';
+        undoBtn.className = 'spop-link-btn';
+        undoBtn.textContent = 'Undo last merge';
+        undoBtn.title = 'Reset main back to the commit before the last worktree merge';
+        undoBtn.addEventListener('click', async () => {
+          closePopover();
+          await runMainRepoAction(group.root, 'undo_merge', `Undid last merge on ${rs.branch || 'main'}`);
+        });
+        undoRow.appendChild(undoBtn);
+        mainCard.appendChild(undoRow);
+      }
+
+      frag.appendChild(mainCard);
     }
 
-    for (const w of pendingWts) {
-      const row = document.createElement('div');
-      row.className = 'spop-rec-row';
-      const info = document.createElement('div');
-      info.className = 'spop-rec-info';
-      const shortBr = String(w.branch || 'worktree').replace(/^sb\//, '');
-      const brEl = document.createElement('div');
-      brEl.className = 'spop-rec-branch';
-      brEl.style.cursor = 'default';
-      brEl.textContent = `${shortBr} · parked`;
-      const meta = document.createElement('div');
-      meta.className = `spop-rec-meta${w.dirty || !w.can_merge ? ' is-warn' : ' is-ok'}`;
-      meta.textContent = w.dirty ? `${w.uncommitted_count || 1} dirty` : `${w.ahead || 0} ahead`;
-      const reopenBtn = document.createElement('button');
-      reopenBtn.type = 'button';
-      reopenBtn.className = 'spop-rec-act';
-      reopenBtn.textContent = 'Reopen';
-      reopenBtn.addEventListener('click', async () => {
+    // Batch merge bar when >= 2 active worktrees are ready
+    const readyCount = statuses.filter(({ st }) => st && !st.dirty && st.ahead > 0 && st.can_merge && !st.main_dirty).length;
+    if (readyCount >= 2 && group.root) {
+      const runBatchMerge = async (pushAfter) => {
         closePopover();
-        const r = await fetch('/api/worktrees/open', {
+        const r = await fetch('/api/worktrees/merge-all', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: w.path }),
+          body: JSON.stringify({ repo: group.root, clean: true, verify: true, push: pushAfter }),
         });
         const d = await r.json().catch(() => ({}));
-        const addr = (d && d.terminal && d.terminal.address) || (d && d.address);
-        if (addr) setTimeout(() => connectPty(addr), 100);
-      });
-      info.append(brEl, meta);
-      row.append(info, reopenBtn);
-      list.appendChild(row);
+        if (!r.ok) {
+          showTermToast(d.message || d.error || 'Batch merge failed', 'error');
+          return;
+        }
+        const mLen = Array.isArray(d.merged) ? d.merged.length : readyCount;
+        const fLen = Array.isArray(d.failed) ? d.failed.length : 0;
+        const baseMsg = `Merged ${mLen} worktree${mLen === 1 ? '' : 's'}${fLen ? ` (${fLen} failed)` : ''}`;
+        showTermToast(formatHandoffToast(d, baseMsg), fLen ? '' : 'ok', 3800);
+      };
+      const batchRow = document.createElement('div');
+      batchRow.className = 'spop-main-acts';
+      const mergeAllBtn = document.createElement('button');
+      mergeAllBtn.type = 'button';
+      mergeAllBtn.className = 'spop-btn green spop-btn-sm';
+      mergeAllBtn.innerHTML = `<span>Merge all (${readyCount}) → Verify</span><span class="spop-hint">batch</span>`;
+      mergeAllBtn.addEventListener('click', () => runBatchMerge(false));
+      const mergeAllPushBtn = document.createElement('button');
+      mergeAllPushBtn.type = 'button';
+      mergeAllPushBtn.className = 'spop-btn secondary spop-btn-sm spop-btn-fit';
+      mergeAllPushBtn.textContent = '& Push';
+      mergeAllPushBtn.title = `Merge all ${readyCount} ready worktrees, verify & push`;
+      mergeAllPushBtn.addEventListener('click', () => runBatchMerge(true));
+      batchRow.append(mergeAllBtn, mergeAllPushBtn);
+      frag.appendChild(batchRow);
+    }
+
+    if (total > 0) {
+      const list = document.createElement('div');
+      list.className = 'spop-rec-list';
+
+      for (const { t, st } of statuses) {
+        const row = document.createElement('div');
+        row.className = 'spop-rec-row';
+        const info = document.createElement('div');
+        info.className = 'spop-rec-info';
+
+        const rawBr = (st && st.branch) || (t.labels && t.labels['swarmbox.branch']) || 'worktree';
+        const base = (st && st.base) || (t.labels && t.labels['swarmbox.base']) || 'main';
+        const shortBr = rawBr.replace(/^sb\//, '');
+        const behindTxt = (st && st.behind > 0) ? ` · ${st.behind} behind` : '';
+
+        const brBtn = document.createElement('button');
+        brBtn.type = 'button';
+        brBtn.className = 'spop-rec-branch';
+        brBtn.textContent = `${shortBr} → ${base}`;
+        brBtn.title = `Focus ${tabDisplayName(t)} (${rawBr})`;
+        brBtn.addEventListener('click', () => {
+          closePopover();
+          if (activeId !== t.address) connectPty(t.address);
+          else focusTerminalIfDesktop();
+        });
+
+        const meta = document.createElement('div');
+        meta.className = 'spop-rec-meta';
+        const rowActs = document.createElement('div');
+        rowActs.className = 'spop-rec-acts';
+        const actBtn = document.createElement('button');
+        actBtn.type = 'button';
+        actBtn.className = 'spop-rec-act';
+        let needsInspectBtn = true;
+
+        if (!st) {
+          meta.textContent = 'status unavailable';
+          actBtn.textContent = 'Inspect';
+          needsInspectBtn = false;
+          actBtn.addEventListener('click', () => {
+            closePopover();
+            openWorktreePopover(t.address);
+          });
+        } else if (st.dirty) {
+          const n = st.uncommitted_count || 0;
+          meta.textContent = `${st.ahead > 0 ? `${st.ahead} ahead · ` : ''}${n ? `${n} dirty` : 'dirty'}${behindTxt}`;
+          meta.classList.add('is-warn');
+          actBtn.textContent = 'Ask to commit';
+          actBtn.addEventListener('click', async () => {
+            closePopover();
+            await fetch('/api/worktrees/commit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ terminal: t.address }),
+            });
+            showTermToast(`Asked agent on ${shortBr} to commit`);
+          });
+        } else if (st.ahead > 0 && !st.can_merge) {
+          meta.textContent = `${st.ahead} ahead${behindTxt} · conflict`;
+          meta.classList.add('is-warn');
+          actBtn.classList.add('amber');
+          actBtn.textContent = 'Resolve';
+          actBtn.addEventListener('click', async () => {
+            closePopover();
+            await fetch('/api/worktrees/resolve-conflict', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ terminal: t.address, base }),
+            });
+            showTermToast(`Asked agent on ${shortBr} to resolve conflict`);
+          });
+        } else if (st.ahead > 0 && st.can_merge && !st.main_dirty) {
+          meta.textContent = `${st.ahead} ahead${behindTxt} · clean`;
+          meta.classList.add('is-ok');
+          actBtn.classList.add('green');
+          actBtn.textContent = 'Merge & verify';
+          actBtn.title = `Merge ${shortBr} into ${base}, clean worktree & verify on ${base}`;
+          actBtn.addEventListener('click', async () => {
+            closePopover();
+            const r = await fetch('/api/worktrees/merge', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ terminal: t.address, path: st.path, clean: true, verify: true, push: false }),
+            });
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) {
+              showTermToast(d.message || d.error || 'Merge failed', 'error');
+              return;
+            }
+            showTermToast(formatHandoffToast(d, `Merged ${shortBr} into ${base} & closed tab`), 'ok', 3600);
+          });
+        } else if (st.ahead > 0 && st.main_dirty) {
+          meta.textContent = `${st.ahead} ahead${behindTxt} · ${base} dirty`;
+          meta.classList.add('is-warn');
+          actBtn.textContent = 'Inspect';
+          needsInspectBtn = false;
+          actBtn.addEventListener('click', () => {
+            closePopover();
+            openWorktreePopover(t.address);
+          });
+        } else {
+          meta.textContent = `0 ahead${behindTxt} · empty`;
+          actBtn.textContent = 'Close & clean';
+          actBtn.title = `Close agent tab and remove empty worktree ${shortBr}`;
+          actBtn.addEventListener('click', async () => {
+            closePopover();
+            const r = await fetch('/api/worktrees/remove', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ path: st.path, terminal: t.address }),
+            });
+            const d = await r.json().catch(() => ({}));
+            showTermToast(r.ok ? `Closed tab & removed empty worktree ${shortBr}` : (d.message || 'Remove failed'));
+          });
+        }
+
+        if (needsInspectBtn) {
+          const inspBtn = document.createElement('button');
+          inspBtn.type = 'button';
+          inspBtn.className = 'spop-rec-insp';
+          inspBtn.textContent = 'Inspect';
+          inspBtn.title = `Inspect commits & diff for ${shortBr}`;
+          inspBtn.addEventListener('click', () => {
+            closePopover();
+            openWorktreePopover(t.address);
+          });
+          rowActs.appendChild(inspBtn);
+        }
+        rowActs.appendChild(actBtn);
+        info.append(brBtn, meta);
+        row.append(info, rowActs);
+        list.appendChild(row);
+      }
+
+      for (const w of pendingWts) {
+        const row = document.createElement('div');
+        row.className = 'spop-rec-row';
+        const info = document.createElement('div');
+        info.className = 'spop-rec-info';
+        const shortBr = String(w.branch || 'worktree').replace(/^sb\//, '');
+        const brEl = document.createElement('div');
+        brEl.className = 'spop-rec-branch';
+        brEl.style.cursor = 'default';
+        brEl.textContent = `${shortBr} · parked`;
+        const meta = document.createElement('div');
+        meta.className = `spop-rec-meta${w.dirty || !w.can_merge ? ' is-warn' : ' is-ok'}`;
+        meta.textContent = w.dirty ? `${w.uncommitted_count || 1} dirty` : `${w.ahead || 0} ahead`;
+        const reopenBtn = document.createElement('button');
+        reopenBtn.type = 'button';
+        reopenBtn.className = 'spop-rec-act';
+        reopenBtn.textContent = 'Reopen';
+        reopenBtn.addEventListener('click', async () => {
+          closePopover();
+          const r = await fetch('/api/worktrees/open', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: w.path }),
+          });
+          const d = await r.json().catch(() => ({}));
+          const addr = (d && d.terminal && d.terminal.address) || (d && d.address);
+          if (addr) setTimeout(() => connectPty(addr), 100);
+        });
+        info.append(brEl, meta);
+        row.append(info, reopenBtn);
+        list.appendChild(row);
+      }
+
+      frag.appendChild(list);
     }
 
     const foot = document.createElement('div');
@@ -4267,7 +4829,7 @@
     doneBtn.textContent = 'Close';
     doneBtn.addEventListener('click', closePopover);
     foot.appendChild(doneBtn);
-    frag.append(list, foot);
+    frag.appendChild(foot);
     openPopover(frag);
   }
 
@@ -4783,6 +5345,44 @@
 
         const actsEl = document.createElement('div');
         actsEl.className = 'repo-group-acts';
+
+        const rs = (grp.isGit && grp.root && repoStatuses[grp.root]) ? repoStatuses[grp.root] : null;
+        if (rs) {
+          let mainPillText = '';
+          let mainPillCls = '';
+          let mainPillTitle = '';
+          const brName = rs.branch || 'main';
+          if (rs.verify_job && rs.verify_job.state === 'running') {
+            mainPillText = 'checking…';
+            mainPillCls = 'is-running';
+            mainPillTitle = `Running ${rs.verify_job.cmd || 'checks'} on ${brName} — click to manage`;
+          } else if (rs.verify_job && rs.verify_job.state === 'failed') {
+            mainPillText = 'check failed';
+            mainPillCls = 'is-failed';
+            mainPillTitle = `Check failed on ${brName} — click to inspect`;
+          } else if (rs.ahead_origin > 0) {
+            mainPillText = `↑${rs.ahead_origin}`;
+            mainPillCls = 'is-ahead';
+            mainPillTitle = `${brName} is ${rs.ahead_origin} commit(s) ahead of ${rs.upstream || 'origin'} — click to manage`;
+          } else if (rs.dirty) {
+            mainPillText = `● ${rs.uncommitted_count || 1}`;
+            mainPillCls = 'is-dirty';
+            mainPillTitle = `${brName} has uncommitted changes — click to manage`;
+          }
+          if (mainPillText) {
+            const mainPill = document.createElement('button');
+            mainPill.type = 'button';
+            mainPill.className = `repo-main-pill ${mainPillCls}`;
+            mainPill.textContent = mainPillText;
+            mainPill.title = mainPillTitle;
+            mainPill.addEventListener('click', (e) => {
+              e.stopPropagation();
+              closeCardMenu();
+              openRepoWorktreesPopover(grp);
+            });
+            actsEl.appendChild(mainPill);
+          }
+        }
 
         const wtTotal = grp.activeWorktrees.length + grp.pendingWorktrees.length;
         if (grp.isGit && wtTotal > 0) {
@@ -5601,6 +6201,7 @@
       }
       if (Array.isArray(msg.pins)) pins = msg.pins;
       if (Array.isArray(msg.worktrees)) pendingWorktrees = msg.worktrees;
+      if (msg.repo_statuses && typeof msg.repo_statuses === 'object') repoStatuses = msg.repo_statuses;
       if (msg.worktree_prefs && typeof msg.worktree_prefs === 'object') worktreePrefs = msg.worktree_prefs;
       if (msg.session_prefs && typeof msg.session_prefs === 'object') sessionPrefs = msg.session_prefs;
       if (Array.isArray(msg.installed_agents)) installedAgents = msg.installed_agents;

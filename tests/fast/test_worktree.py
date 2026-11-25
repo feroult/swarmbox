@@ -374,6 +374,338 @@ class WorktreeTest(unittest.TestCase):
         self.assertTrue(lines[1].startswith(f"cwd={os.path.realpath(self.repo)} "), lines)
         self.assertIn("/worktrees/shop-api/sb-wt-", lines[2], lines)
 
+    def test_detect_verify_cmd_precedence_and_override(self):
+        d = os.path.join(self.tmp, "detect-repo")
+        os.makedirs(d)
+        self.assertEqual(wt.detect_verify_cmd(d), "")
+
+        # f) go.mod
+        with open(os.path.join(d, "go.mod"), "w", encoding="utf-8") as f:
+            f.write("module example.com/app\n")
+        self.assertEqual(wt.detect_verify_cmd(d), "go test ./...")
+
+        # e) Cargo.toml takes precedence over go.mod
+        with open(os.path.join(d, "Cargo.toml"), "w", encoding="utf-8") as f:
+            f.write("[package]\nname = 'app'\n")
+        self.assertEqual(wt.detect_verify_cmd(d), "cargo test")
+
+        # d) Python tests (pytest on PATH vs missing)
+        os.makedirs(os.path.join(d, "tests", "unit"), exist_ok=True)
+        with open(os.path.join(d, "tests", "unit", "test_x.py"), "w", encoding="utf-8") as f:
+            f.write("def test_ok(): pass\n")
+        fake_bin = os.path.join(self.tmp, "pytest-bin")
+        os.makedirs(fake_bin, exist_ok=True)
+        with open(os.path.join(fake_bin, "pytest"), "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        os.chmod(os.path.join(fake_bin, "pytest"), 0o755)
+        self.assertEqual(wt.detect_verify_cmd(d, env={"PATH": fake_bin}), "pytest")
+        self.assertEqual(wt.detect_verify_cmd(d, env={"PATH": "/nonexistent-dir"}), "python3 -m unittest")
+
+        # c) package.json default placeholder is ignored; real script wins
+        with open(os.path.join(d, "package.json"), "w", encoding="utf-8") as f:
+            json.dump({"scripts": {"test": 'echo "Error: no test specified" && exit 1'}}, f)
+        self.assertEqual(wt.detect_verify_cmd(d, env={"PATH": "/nonexistent-dir"}), "python3 -m unittest")
+        with open(os.path.join(d, "package.json"), "w", encoding="utf-8") as f:
+            json.dump({"scripts": {"test": "vitest run"}}, f)
+        self.assertEqual(wt.detect_verify_cmd(d), "npm test")
+
+        # b) Makefile check: and test:
+        with open(os.path.join(d, "Makefile"), "w", encoding="utf-8") as f:
+            f.write("test := ignored\ncheck:\n\techo ok\n")
+        self.assertEqual(wt.detect_verify_cmd(d), "make check")
+        with open(os.path.join(d, "Makefile"), "w", encoding="utf-8") as f:
+            f.write("test:\n\techo ok\ncheck:\n\techo ok\n")
+        self.assertEqual(wt.detect_verify_cmd(d), "make test")
+
+        # a) dev/check.sh
+        os.makedirs(os.path.join(d, "dev"), exist_ok=True)
+        with open(os.path.join(d, "dev", "check.sh"), "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        self.assertEqual(wt.detect_verify_cmd(d), "sh dev/check.sh")
+
+        # .swarmbox-check overrides everything
+        with open(os.path.join(d, ".swarmbox-check"), "w", encoding="utf-8") as f:
+            f.write("\n# custom verification\n  ./scripts/run-ci.sh --fast  \nsecond-line\n")
+        self.assertEqual(wt.detect_verify_cmd(d), "./scripts/run-ci.sh --fast")
+
+    def test_status_commits_files_diff_and_upstream(self):
+        # Set up bare origin remote and push main
+        bare = os.path.join(self.tmp, "origin.git")
+        git(self.tmp, "init", "--bare", bare)
+        git(self.repo, "remote", "add", "origin", bare)
+        git(self.repo, "push", "-u", "origin", "main")
+
+        # Add a verify script in repo
+        with open(os.path.join(self.repo, ".swarmbox-check"), "w", encoding="utf-8") as f:
+            f.write("echo verified\n")
+        git(self.repo, "add", ".swarmbox-check")
+        git(self.repo, "commit", "-m", "add check")
+
+        # Main is now 1 commit ahead of origin/main
+        created = wt.create_worktree(self.repo, env=self.env)
+        wt_path = created["path"]
+
+        # Make two commits in worktree: add new file, modify app.py
+        with open(os.path.join(wt_path, "new_mod.py"), "w", encoding="utf-8") as f:
+            f.write("a = 1\nb = 2\n")
+        git(wt_path, "add", "new_mod.py")
+        git(wt_path, "commit", "-m", "add new_mod")
+
+        with open(os.path.join(wt_path, "app.py"), "w", encoding="utf-8") as f:
+            f.write("def greet():\n    return 'hi'\n    # extra\n")
+        git(wt_path, "add", "app.py")
+        git(wt_path, "commit", "-m", "update greet")
+
+        st = wt.status_worktree(wt_path, env=self.env)
+        self.assertEqual(st["ahead"], 2)
+        self.assertEqual(len(st["commits"]), 2)
+        self.assertEqual([c["subject"] for c in st["commits"]], ["update greet", "add new_mod"])
+        self.assertTrue(all(c["sha"] and c["rel_time"] for c in st["commits"]))
+
+        files_by_path = {f["path"]: f for f in st["files"]}
+        self.assertIn("new_mod.py", files_by_path)
+        self.assertEqual(files_by_path["new_mod.py"]["status"], "A")
+        self.assertEqual(files_by_path["new_mod.py"]["added"], 2)
+        self.assertEqual(files_by_path["new_mod.py"]["deleted"], 0)
+        self.assertIn("app.py", files_by_path)
+        self.assertEqual(files_by_path["app.py"]["status"], "M")
+        self.assertEqual(st["diff_stat"]["files"], 2)
+        self.assertGreaterEqual(st["diff_stat"]["insertions"], 4)
+        self.assertEqual(st["main_upstream"], "origin/main")
+        self.assertEqual(st["main_ahead_origin"], 1)
+        self.assertEqual(st["main_behind_origin"], 0)
+        self.assertEqual(st["verify_cmd"], "echo verified")
+
+        # diff_worktree full, single file, and truncated
+        df_all = wt.diff_worktree(wt_path, env=self.env)
+        self.assertTrue(df_all["ok"])
+        self.assertFalse(df_all["truncated"])
+        self.assertIn("new_mod.py", df_all["diff"])
+        self.assertIn("app.py", df_all["diff"])
+
+        df_one = wt.diff_worktree(wt_path, file_path="app.py", env=self.env)
+        self.assertEqual(df_one["file"], "app.py")
+        self.assertIn("app.py", df_one["diff"])
+        self.assertNotIn("new_mod.py", df_one["diff"])
+
+        df_trunc = wt.diff_worktree(wt_path, max_bytes=32, env=self.env)
+        self.assertTrue(df_trunc["truncated"])
+        self.assertLessEqual(len(df_trunc["diff"].encode("utf-8")), 32)
+
+        # CLI diff check
+        p = subprocess.run(
+            [sys.executable, WT_SCRIPT, "diff", wt_path, "--file", "new_mod.py"],
+            env=self.env, capture_output=True, text=True, check=True,
+        )
+        cli_df = json.loads(p.stdout)
+        self.assertTrue(cli_df["ok"])
+        self.assertIn("new_mod.py", cli_df["diff"])
+
+    def test_sync_worktree_merge_rebase_and_conflict_abort(self):
+        created = wt.create_worktree(self.repo, env=self.env)
+        wt_path = created["path"]
+
+        # Advance main with non-conflicting file
+        with open(os.path.join(self.repo, "main_only.txt"), "w", encoding="utf-8") as f:
+            f.write("from main\n")
+        git(self.repo, "add", "main_only.txt")
+        git(self.repo, "commit", "-m", "main_only")
+
+        # Worktree makes a dirty change -> sync refuses
+        with open(os.path.join(wt_path, "wt_only.txt"), "w", encoding="utf-8") as f:
+            f.write("from wt\n")
+        with self.assertRaises(wt.WorktreeError) as ctx:
+            wt.sync_worktree(wt_path, env=self.env)
+        self.assertEqual(ctx.exception.code, "dirty_worktree")
+
+        git(wt_path, "add", "wt_only.txt")
+        git(wt_path, "commit", "-m", "wt_only")
+
+        # Clean merge sync
+        s1 = wt.sync_worktree(wt_path, rebase=False, env=self.env)
+        self.assertTrue(s1["ok"])
+        self.assertEqual(s1["mode"], "merge")
+        self.assertEqual(s1["behind"], 0)
+        self.assertTrue(os.path.isfile(os.path.join(wt_path, "main_only.txt")))
+
+        # Advance main again and test rebase sync via CLI
+        with open(os.path.join(self.repo, "main_two.txt"), "w", encoding="utf-8") as f:
+            f.write("two\n")
+        git(self.repo, "add", "main_two.txt")
+        git(self.repo, "commit", "-m", "main_two")
+
+        p = subprocess.run(
+            [sys.executable, WT_SCRIPT, "sync", wt_path, "--rebase"],
+            env=self.env, capture_output=True, text=True, check=True,
+        )
+        s2 = json.loads(p.stdout)
+        self.assertTrue(s2["ok"])
+        self.assertEqual(s2["mode"], "rebase")
+        self.assertEqual(s2["behind"], 0)
+
+        # Now create a conflict on app.py and test both merge and rebase abort cleanly
+        with open(os.path.join(self.repo, "app.py"), "w", encoding="utf-8") as f:
+            f.write("def greet():\n    return 'main-conflict'\n")
+        git(self.repo, "add", "app.py")
+        git(self.repo, "commit", "-m", "main conflict")
+
+        with open(os.path.join(wt_path, "app.py"), "w", encoding="utf-8") as f:
+            f.write("def greet():\n    return 'wt-conflict'\n")
+        git(wt_path, "add", "app.py")
+        git(wt_path, "commit", "-m", "wt conflict")
+
+        for use_rebase in (False, True):
+            with self.assertRaises(wt.WorktreeError) as ctx:
+                wt.sync_worktree(wt_path, rebase=use_rebase, env=self.env)
+            self.assertEqual(ctx.exception.code, "sync_conflict")
+            self.assertIn("app.py", ctx.exception.extra.get("conflict_files", []))
+            # Worktree MUST be left completely clean (no leftover merge/rebase state)
+            self.assertEqual(git(wt_path, "status", "--porcelain"), "")
+
+    def test_merge_undo_repo_status_and_push_to_bare_origin(self):
+        bare = os.path.join(self.tmp, "remote.git")
+        git(self.tmp, "init", "--bare", "-b", "main", bare)
+        git(self.repo, "remote", "add", "origin", bare)
+
+        # Push initial main without upstream yet (uses origin)
+        p_init = wt.push_repo(self.repo, env=self.env)
+        self.assertTrue(p_init["ok"])
+        self.assertEqual(p_init["upstream"], "origin/main")
+
+        rs0 = wt.repo_status(self.repo, env=self.env)
+        self.assertTrue(rs0["ok"])
+        self.assertEqual(rs0["upstream"], "origin/main")
+        self.assertEqual(rs0["ahead_origin"], 0)
+        self.assertEqual(rs0["behind_origin"], 0)
+        self.assertFalse(rs0["can_undo_merge"])
+        self.assertIsNone(rs0["last_merge"])
+
+        # Create worktree, commit, and merge
+        created = wt.create_worktree(self.repo, env=self.env)
+        wt_path = created["path"]
+        with open(os.path.join(wt_path, "feat.py"), "w", encoding="utf-8") as f:
+            f.write("X = 1\n")
+        git(wt_path, "add", "feat.py")
+        git(wt_path, "commit", "-m", "add feat")
+
+        pre_head = git(self.repo, "rev-parse", "HEAD")
+        m = wt.merge_worktree(wt_path, clean=True, env=self.env)
+        post_head = git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual(m["pre_sha"], pre_head)
+        self.assertEqual(m["post_sha"], post_head)
+        self.assertEqual(m["commits_list"], ["add feat"])
+        self.assertEqual(m["files"], ["feat.py"])
+
+        # Persistent last_merge metadata file has mode 0600 and does not pollute list_worktrees
+        meta_fp = wt._repo_meta_path(wt.worktree_root(self.env), self.repo)
+        self.assertTrue(os.path.isfile(meta_fp))
+        self.assertEqual(stat.S_IMODE(os.stat(meta_fp).st_mode), 0o600)
+        self.assertEqual(wt.list_worktrees(env=self.env), [])
+
+        # repo-status CLI shows ahead_origin=1 and can_undo_merge=True
+        p_rs = subprocess.run(
+            [sys.executable, WT_SCRIPT, "repo-status", self.repo],
+            env=self.env, capture_output=True, text=True, check=True,
+        )
+        rs1 = json.loads(p_rs.stdout)
+        self.assertEqual(rs1["ahead_origin"], 1)
+        self.assertTrue(rs1["can_undo_merge"])
+        self.assertEqual(rs1["last_merge"]["post_sha"], post_head)
+
+        # Undo refused when repo is dirty
+        with open(os.path.join(self.repo, "dirty.txt"), "w", encoding="utf-8") as f:
+            f.write("dirty\n")
+        self.assertFalse(wt.repo_status(self.repo, env=self.env)["can_undo_merge"])
+        with self.assertRaises(wt.WorktreeError) as ctx:
+            wt.undo_merge(self.repo, env=self.env)
+        self.assertEqual(ctx.exception.code, "dirty_base")
+        os.unlink(os.path.join(self.repo, "dirty.txt"))
+
+        # Undo succeeds via CLI and restores pre_sha
+        p_undo = subprocess.run(
+            [sys.executable, WT_SCRIPT, "undo-merge", self.repo],
+            env=self.env, capture_output=True, text=True, check=True,
+        )
+        undone = json.loads(p_undo.stdout)
+        self.assertTrue(undone["ok"])
+        self.assertEqual(undone["restored_sha"], pre_head)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD"), pre_head)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "feat.py")))
+        self.assertFalse(wt.repo_status(self.repo, env=self.env)["can_undo_merge"])
+
+        # Second merge followed by a new manual commit -> undo must be refused
+        c2 = wt.create_worktree(self.repo, env=self.env)
+        with open(os.path.join(c2["path"], "f2.py"), "w", encoding="utf-8") as f:
+            f.write("Y = 2\n")
+        git(c2["path"], "add", "f2.py")
+        git(c2["path"], "commit", "-m", "add f2")
+        wt.merge_worktree(c2["path"], clean=True, env=self.env)
+
+        with open(os.path.join(self.repo, "manual.txt"), "w", encoding="utf-8") as f:
+            f.write("manual\n")
+        git(self.repo, "add", "manual.txt")
+        git(self.repo, "commit", "-m", "manual commit")
+
+        self.assertFalse(wt.repo_status(self.repo, env=self.env)["can_undo_merge"])
+        with self.assertRaises(wt.WorktreeError) as ctx:
+            wt.undo_merge(self.repo, env=self.env)
+        self.assertEqual(ctx.exception.code, "undo_unavailable")
+
+        # Push succeeds via CLI and brings ahead_origin back to 0
+        p_push = subprocess.run(
+            [sys.executable, WT_SCRIPT, "push", self.repo],
+            env=self.env, capture_output=True, text=True, check=True,
+        )
+        pushed = json.loads(p_push.stdout)
+        self.assertTrue(pushed["ok"])
+        self.assertEqual(wt.repo_status(self.repo, env=self.env)["ahead_origin"], 0)
+
+        # Simulate another clone pushing to bare origin so repo is behind_origin=1
+        other = os.path.join(self.tmp, "other-clone")
+        git(self.tmp, "clone", "-b", "main", bare, other)
+        git(other, "config", "user.name", "Other")
+        git(other, "config", "user.email", "other@example.com")
+        with open(os.path.join(other, "remote_only.txt"), "w", encoding="utf-8") as f:
+            f.write("remote\n")
+        git(other, "add", "remote_only.txt")
+        git(other, "commit", "-m", "remote commit")
+        git(other, "push", "origin", "main")
+        git(self.repo, "fetch", "origin")
+        self.assertEqual(wt.repo_status(self.repo, env=self.env)["behind_origin"], 1)
+
+    def test_verify_repo_pass_fail_tail_and_missing_cmd(self):
+        # No verify command detected -> WorktreeError("no_verify_cmd")
+        with self.assertRaises(wt.WorktreeError) as ctx:
+            wt.verify_repo(self.repo, env=self.env)
+        self.assertEqual(ctx.exception.code, "no_verify_cmd")
+
+        # Explicit passing command via CLI
+        p_ok = subprocess.run(
+            [sys.executable, WT_SCRIPT, "verify", self.repo, "--cmd", "echo ALL_GOOD"],
+            env=self.env, capture_output=True, text=True, check=True,
+        )
+        r_ok = json.loads(p_ok.stdout)
+        self.assertTrue(r_ok["ok"])
+        self.assertEqual(r_ok["exit_code"], 0)
+        self.assertIn("ALL_GOOD", r_ok["output"])
+        self.assertIsInstance(r_ok["duration_ms"], int)
+
+        # Failing command via CLI still exits 0 with ok=False so callers can read structured JSON
+        p_fail = subprocess.run(
+            [sys.executable, WT_SCRIPT, "verify", self.repo, "--cmd", "echo BOOM >&2; exit 3"],
+            env=self.env, capture_output=True, text=True, check=True,
+        )
+        r_fail = json.loads(p_fail.stdout)
+        self.assertFalse(r_fail["ok"])
+        self.assertEqual(r_fail["exit_code"], 3)
+        self.assertIn("BOOM", r_fail["output"])
+
+        # Output tail is capped at 16 KiB
+        r_big = wt.verify_repo(self.repo, cmd="python3 -c \"print('A' * 30000 + 'TAIL_END')\"", env=self.env)
+        self.assertTrue(r_big["ok"])
+        self.assertLessEqual(len(r_big["output"].encode("utf-8")), 16 * 1024)
+        self.assertIn("TAIL_END", r_big["output"])
+
 
 if __name__ == "__main__":
     unittest.main()

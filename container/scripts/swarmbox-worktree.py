@@ -8,13 +8,20 @@ so multiple coding agents can work concurrently on the same repository without c
   swarmbox-worktree list [REPO_DIR]
   swarmbox-worktree create DIR [--base REF] [--branch NAME] [--no-copy-env]
   swarmbox-worktree status PATH [--base REF]
+  swarmbox-worktree diff PATH [--base REF] [--file FILE]
+  swarmbox-worktree sync PATH [--base REF] [--rebase]
   swarmbox-worktree merge PATH [--base REF] [--squash] [--clean]
   swarmbox-worktree remove PATH [--force] [--keep-branch]
+  swarmbox-worktree repo-status DIR
+  swarmbox-worktree undo-merge DIR
+  swarmbox-worktree push DIR
+  swarmbox-worktree verify DIR [--cmd CMD]
   swarmbox-worktree prefs [get | set [--mode ask|auto|off] [--copy-env 0|1]]
   swarmbox-worktree guard [DIR] [--agent NAME] [--exclude TAB] [--shell]
 
 Output: JSON on stdout. Failures print {"err": CODE, "msg": TEXT} and exit non-zero (1 failure, 2 usage).
 """
+import hashlib
 import json
 import os
 import re
@@ -152,7 +159,7 @@ def _load_all_meta(root):
     except OSError:
         return out
     for name in names:
-        if not name.endswith(".json"):
+        if not name.endswith(".json") or name.startswith("repo-"):
             continue
         fp = os.path.join(mdir, name)
         try:
@@ -187,6 +194,142 @@ def _delete_meta(root, wt_path):
             os.unlink(meta["_meta_file"])
         except OSError:
             pass
+
+
+def _repo_meta_path(root, repo_root):
+    h = hashlib.sha1(_real(repo_root).encode("utf-8")).hexdigest()[:12]
+    return os.path.join(_meta_dir(root), "repo-%s.json" % h)
+
+
+def _load_last_merge(root, repo_root):
+    fp = _repo_meta_path(root, repo_root)
+    try:
+        with open(fp, encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d, dict) and d.get("pre_sha") and d.get("post_sha"):
+            return d
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _save_last_merge(root, repo_root, data):
+    mdir = _meta_dir(root)
+    os.makedirs(mdir, mode=0o700, exist_ok=True)
+    fp = _repo_meta_path(root, repo_root)
+    tmp = "%s.tmp.%d" % (fp, os.getpid())
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, fp)
+    return fp
+
+
+def _clear_last_merge(root, repo_root):
+    fp = _repo_meta_path(root, repo_root)
+    try:
+        os.unlink(fp)
+    except OSError:
+        pass
+
+
+def _full_head_sha(cwd):
+    r = _git(cwd, "rev-parse", "HEAD", check=False)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def _upstream_status(cwd):
+    r = _git(cwd, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}", check=False)
+    if r.returncode != 0 or not r.stdout.strip():
+        return "", 0, 0
+    upstream = r.stdout.strip()
+    ahead, behind = _ahead_behind(cwd, upstream, "HEAD")
+    return upstream, ahead, behind
+
+
+def _tail_bytes(text, max_bytes):
+    raw = text.encode("utf-8", errors="replace")
+    if len(raw) <= max_bytes:
+        return text
+    return raw[-max_bytes:].decode("utf-8", errors="ignore")
+
+
+def detect_verify_cmd(repo_root, env=None):
+    """Auto-detect a project verification/test command for repo_root."""
+    if not repo_root or not os.path.isdir(repo_root):
+        return ""
+    rr = _real(repo_root)
+
+    # Override file: .swarmbox-check (first non-comment non-empty line)
+    override_file = os.path.join(rr, ".swarmbox-check")
+    if os.path.isfile(override_file):
+        try:
+            with open(override_file, encoding="utf-8", errors="replace") as f:
+                for raw in f:
+                    ln = raw.strip()
+                    if ln and not ln.startswith("#"):
+                        return ln
+        except OSError:
+            pass
+
+    # a) dev/check.sh
+    if os.path.isfile(os.path.join(rr, "dev", "check.sh")):
+        return "sh dev/check.sh"
+
+    # b) Makefile with test: or check: target
+    makefile = os.path.join(rr, "Makefile")
+    if os.path.isfile(makefile):
+        try:
+            with open(makefile, encoding="utf-8", errors="replace") as f:
+                mk = f.read(65536)
+            if re.search(r"^test\s*:(?!=)", mk, re.M):
+                return "make test"
+            if re.search(r"^check\s*:(?!=)", mk, re.M):
+                return "make check"
+        except OSError:
+            pass
+
+    # c) package.json with scripts.test (ignoring npm init default placeholder)
+    pkg_json = os.path.join(rr, "package.json")
+    if os.path.isfile(pkg_json):
+        try:
+            with open(pkg_json, encoding="utf-8", errors="replace") as f:
+                pkg = json.load(f)
+            if isinstance(pkg, dict):
+                scripts = pkg.get("scripts")
+                if isinstance(scripts, dict):
+                    t = str(scripts.get("test") or "").strip()
+                    if t and "no test specified" not in t:
+                        return "npm test"
+        except (OSError, ValueError):
+            pass
+
+    # d) pyproject.toml, pytest.ini, or tests/ dir with .py files
+    has_py_tests = (
+        os.path.isfile(os.path.join(rr, "pyproject.toml"))
+        or os.path.isfile(os.path.join(rr, "pytest.ini"))
+    )
+    if not has_py_tests:
+        tests_dir = os.path.join(rr, "tests")
+        if os.path.isdir(tests_dir):
+            for _, _, filenames in os.walk(tests_dir):
+                if any(fn.endswith(".py") for fn in filenames):
+                    has_py_tests = True
+                    break
+    if has_py_tests:
+        path_env = (env.get("PATH") if isinstance(env, dict) else None)
+        return "pytest" if shutil.which("pytest", path=path_env) else "python3 -m unittest"
+
+    # e) Cargo.toml
+    if os.path.isfile(os.path.join(rr, "Cargo.toml")):
+        return "cargo test"
+
+    # f) go.mod
+    if os.path.isfile(os.path.join(rr, "go.mod")):
+        return "go test ./..."
+
+    return ""
 
 
 def _is_under(path, root):
@@ -425,6 +568,106 @@ def _ahead_behind(repo_root, base_ref, branch):
         return 0, 0
 
 
+def _collect_commits(cwd, base_ref, target_ref, limit=12):
+    r = _git(
+        cwd,
+        "log",
+        "--format=%h%x1f%s%x1f%cr",
+        "-n",
+        str(limit),
+        "%s..%s" % (base_ref, target_ref),
+        check=False,
+    )
+    if r.returncode != 0 or not r.stdout:
+        return []
+    out = []
+    for ln in r.stdout.splitlines():
+        if not ln:
+            continue
+        parts = ln.split("\x1f", 2)
+        if len(parts) == 3:
+            out.append({"sha": parts[0], "subject": parts[1], "rel_time": parts[2]})
+    return out
+
+
+def _collect_diff_files(cwd, base_ref, target_ref, limit=30):
+    rng = "%s...%s" % (base_ref, target_ref)
+    ns = _git(cwd, "diff", "--name-status", "-z", rng, check=False)
+    st_map = {}
+    order = []
+    if ns.returncode == 0 and ns.stdout:
+        toks = ns.stdout.split("\0")
+        i = 0
+        n = len(toks)
+        while i < n:
+            code = toks[i]
+            if not code:
+                i += 1
+                continue
+            ch = code[0]
+            if ch in ("R", "C"):
+                if i + 2 < n:
+                    path = toks[i + 2]
+                    st_map[path] = ch
+                    order.append(path)
+                i += 3
+            else:
+                if i + 1 < n:
+                    path = toks[i + 1]
+                    st_map[path] = ch
+                    order.append(path)
+                i += 2
+
+    nm = _git(cwd, "diff", "--numstat", "-z", rng, check=False)
+    num_map = {}
+    if nm.returncode == 0 and nm.stdout:
+        toks = nm.stdout.split("\0")
+        i = 0
+        n = len(toks)
+        while i < n:
+            tok = toks[i]
+            if not tok:
+                i += 1
+                continue
+            parts = tok.split("\t", 2)
+            if len(parts) != 3:
+                i += 1
+                continue
+            added = int(parts[0]) if parts[0].isdigit() else 0
+            deleted = int(parts[1]) if parts[1].isdigit() else 0
+            if parts[2] == "":
+                path = toks[i + 2] if i + 2 < n else (toks[i + 1] if i + 1 < n else "")
+                i += 3
+            else:
+                path = parts[2]
+                i += 1
+            if path:
+                num_map[path] = (added, deleted)
+                if path not in st_map:
+                    st_map[path] = "M"
+                    order.append(path)
+
+    entries = []
+    total_added = 0
+    total_deleted = 0
+    for path in order:
+        added, deleted = num_map.get(path, (0, 0))
+        total_added += added
+        total_deleted += deleted
+        entries.append({
+            "path": path,
+            "status": st_map.get(path, "M"),
+            "added": added,
+            "deleted": deleted,
+        })
+    diff_stat = {
+        "files": len(entries),
+        "insertions": total_added,
+        "deletions": total_deleted,
+    }
+    return entries[:limit], diff_stat
+
+
 def status_worktree(target_path, base=None, env=None):
     """Return full status of a worktree, including in-memory mergeability check."""
     info = inspect_dir(target_path, env=env)
@@ -434,13 +677,18 @@ def status_worktree(target_path, base=None, env=None):
     repo_root = info["repo_root"]
     branch = info["branch"]
     base_ref = (base or "").strip() or info["base"] or _default_base(repo_root)
-    ahead, behind = _ahead_behind(repo_root, base_ref, branch or "HEAD")
+    target_ref = branch or "HEAD"
+    ahead, behind = _ahead_behind(wt_path, base_ref, target_ref)
     main_dirty = _porcelain_count(repo_root)
     main_branch = _current_branch(repo_root)
+    main_upstream, main_ahead_origin, main_behind_origin = _upstream_status(repo_root)
     can_merge = True
     conflict_files = []
     if ahead > 0 and branch:
         can_merge, conflict_files = _merge_dry_run(repo_root, base_ref, branch)
+    commits = _collect_commits(wt_path, base_ref, target_ref, limit=12) if ahead > 0 else []
+    files, diff_stat = _collect_diff_files(wt_path, base_ref, target_ref, limit=30) if ahead > 0 else ([], {"files": 0, "insertions": 0, "deletions": 0})
+    verify_cmd = detect_verify_cmd(repo_root, env=env)
     empty = (not info["dirty"]) and ahead == 0
     return {
         "ok": True,
@@ -459,8 +707,15 @@ def status_worktree(target_path, base=None, env=None):
         "main_dirty": main_dirty > 0,
         "main_uncommitted_count": main_dirty,
         "main_branch": main_branch,
+        "main_upstream": main_upstream,
+        "main_ahead_origin": main_ahead_origin,
+        "main_behind_origin": main_behind_origin,
         "can_merge": can_merge,
         "conflict_files": conflict_files,
+        "commits": commits,
+        "files": files,
+        "diff_stat": diff_stat,
+        "verify_cmd": verify_cmd,
         "empty": empty,
     }
 
@@ -526,6 +781,9 @@ def merge_worktree(target_path, base=None, squash=False, clean=False, env=None):
     repo_root = st["repo_root"]
     branch = st["branch"]
     base_ref = st["base"]
+    pre_sha = _full_head_sha(repo_root)
+    commits_list = [c["subject"] for c in st["commits"]]
+    changed_files = [f["path"] for f in st["files"]]
     if squash:
         _git(repo_root, "merge", "--squash", branch)
         _git(repo_root, "commit", "-m", "Merge worktree %s into %s" % (branch, base_ref))
@@ -537,6 +795,21 @@ def merge_worktree(target_path, base=None, squash=False, clean=False, env=None):
         else:
             _git(repo_root, "merge", "--no-edit", branch)
             strategy = "merge"
+
+    post_sha = _full_head_sha(repo_root)
+    _save_last_merge(
+        worktree_root(env),
+        repo_root,
+        {
+            "pre_sha": pre_sha,
+            "post_sha": post_sha,
+            "branch": branch,
+            "base": base_ref,
+            "strategy": strategy,
+            "commits": st["ahead"],
+            "merged_at": int(time.time()),
+        },
+    )
 
     cleaned = False
     if clean:
@@ -550,8 +823,226 @@ def merge_worktree(target_path, base=None, squash=False, clean=False, env=None):
         "repo_root": repo_root,
         "strategy": strategy,
         "commits": st["ahead"],
+        "pre_sha": pre_sha,
+        "post_sha": post_sha,
+        "commits_list": commits_list,
+        "files": changed_files,
         "cleaned": cleaned,
     }
+
+
+def repo_status(repo_dir, env=None):
+    """Inspect a repository's main working tree, upstream status, verify cmd, and undo-merge state."""
+    info = inspect_dir(repo_dir, env=env)
+    if not info.get("is_git"):
+        raise WorktreeError("not_a_git_repo", "directory is not inside a git repository: %s" % repo_dir)
+    repo_root = info["repo_root"]
+    branch = _current_branch(repo_root)
+    head = _head_sha(repo_root)
+    full_head = _full_head_sha(repo_root)
+    dirty_n = _porcelain_count(repo_root)
+    dirty = dirty_n > 0
+    upstream, ahead_origin, behind_origin = _upstream_status(repo_root)
+    verify_cmd = detect_verify_cmd(repo_root, env=env)
+    last_merge = _load_last_merge(worktree_root(env), repo_root)
+    can_undo = bool(last_merge and not dirty and full_head and full_head == last_merge.get("post_sha"))
+    return {
+        "ok": True,
+        "repo_root": repo_root,
+        "repo_name": info["repo_name"],
+        "branch": branch,
+        "head": head,
+        "dirty": dirty,
+        "uncommitted_count": dirty_n,
+        "upstream": upstream,
+        "ahead_origin": ahead_origin,
+        "behind_origin": behind_origin,
+        "verify_cmd": verify_cmd,
+        "can_undo_merge": can_undo,
+        "last_merge": last_merge,
+    }
+
+
+def diff_worktree(target_path, base=None, file_path=None, max_bytes=262144, env=None):
+    """Return unified diff between base and worktree branch (optionally for a single file)."""
+    info = inspect_dir(target_path, env=env)
+    if not info.get("is_git") or not info.get("is_worktree"):
+        raise WorktreeError("not_a_worktree", "path is not a linked git worktree: %s" % target_path)
+    wt_path = info["worktree_path"]
+    repo_root = info["repo_root"]
+    branch = info["branch"]
+    base_ref = (base or "").strip() or info["base"] or _default_base(repo_root)
+    target_ref = branch or "HEAD"
+    args = ["diff", "%s...%s" % (base_ref, target_ref)]
+    if file_path:
+        args.extend(["--", file_path])
+    r = _git(wt_path, *args)
+    raw = r.stdout or ""
+    raw_bytes = raw.encode("utf-8", errors="replace")
+    truncated = False
+    if max_bytes and len(raw_bytes) > max_bytes:
+        raw = raw_bytes[:max_bytes].decode("utf-8", errors="ignore")
+        truncated = True
+    return {
+        "ok": True,
+        "branch": branch,
+        "base": base_ref,
+        "file": file_path or "",
+        "diff": raw,
+        "truncated": truncated,
+    }
+
+
+def sync_worktree(target_path, base=None, rebase=False, env=None):
+    """Update a clean worktree from its base branch via merge or rebase; aborts cleanly on conflict."""
+    st = status_worktree(target_path, base=base, env=env)
+    if st["dirty"]:
+        raise WorktreeError(
+            "dirty_worktree",
+            "worktree has %d uncommitted change(s); commit or stash them first" % st["uncommitted_count"],
+            {"uncommitted_count": st["uncommitted_count"]},
+        )
+    wt_path = st["path"]
+    base_ref = st["base"]
+    branch = st["branch"]
+    mode = "rebase" if rebase else "merge"
+    if rebase:
+        r = _git(wt_path, "rebase", base_ref, check=False)
+    else:
+        r = _git(wt_path, "merge", "--no-edit", base_ref, check=False)
+    if r.returncode != 0:
+        cf = _git(wt_path, "diff", "--name-only", "--diff-filter=U", check=False)
+        conflict_files = [ln.strip() for ln in cf.stdout.splitlines() if ln.strip()]
+        if not conflict_files:
+            for ln in (r.stdout + "\n" + r.stderr).splitlines():
+                m = re.search(r"CONFLICT \([^)]+\):.*\bin\s+(.+)$", ln)
+                if m:
+                    fn = m.group(1).strip()
+                    if fn not in conflict_files:
+                        conflict_files.append(fn)
+        if rebase:
+            _git(wt_path, "rebase", "--abort", check=False)
+        else:
+            _git(wt_path, "merge", "--abort", check=False)
+        raise WorktreeError(
+            "sync_conflict",
+            "sync (%s) conflict with %s in: %s" % (mode, base_ref, ", ".join(conflict_files) or "unknown files"),
+            {"conflict_files": conflict_files},
+        )
+    ahead, behind = _ahead_behind(wt_path, base_ref, branch or "HEAD")
+    return {
+        "ok": True,
+        "branch": branch,
+        "base": base_ref,
+        "mode": mode,
+        "ahead": ahead,
+        "behind": behind,
+    }
+
+
+def undo_merge(repo_dir, env=None):
+    """Safely undo the last recorded SwarmBox merge on repo_root if HEAD hasn't moved and tree is clean."""
+    info = inspect_dir(repo_dir, env=env)
+    if not info.get("is_git"):
+        raise WorktreeError("not_a_git_repo", "directory is not inside a git repository: %s" % repo_dir)
+    repo_root = info["repo_root"]
+    root = worktree_root(env)
+    last_merge = _load_last_merge(root, repo_root)
+    if not last_merge:
+        raise WorktreeError("undo_unavailable", "no recent merge recorded for %s" % info["repo_name"])
+    dirty_n = _porcelain_count(repo_root)
+    if dirty_n > 0:
+        raise WorktreeError(
+            "dirty_base",
+            "main repository (%s) has %d uncommitted change(s); commit or stash first" % (info["repo_name"], dirty_n),
+        )
+    full_head = _full_head_sha(repo_root)
+    if full_head != last_merge.get("post_sha"):
+        raise WorktreeError("undo_unavailable", "HEAD has changed since the last merge; cannot safely undo")
+    pre_sha = last_merge["pre_sha"]
+    _git(repo_root, "reset", "--hard", pre_sha)
+    _clear_last_merge(root, repo_root)
+    return {
+        "ok": True,
+        "repo_root": repo_root,
+        "restored_sha": pre_sha,
+        "undone_branch": last_merge.get("branch", ""),
+    }
+
+
+def push_repo(repo_dir, env=None):
+    """Push repo_root's current branch to its upstream (or origin if no upstream yet)."""
+    info = inspect_dir(repo_dir, env=env)
+    if not info.get("is_git"):
+        raise WorktreeError("not_a_git_repo", "directory is not inside a git repository: %s" % repo_dir)
+    repo_root = info["repo_root"]
+    dirty_n = _porcelain_count(repo_root)
+    if dirty_n > 0:
+        raise WorktreeError(
+            "dirty_base",
+            "main repository (%s) has %d uncommitted change(s); commit or stash first" % (info["repo_name"], dirty_n),
+        )
+    branch = _current_branch(repo_root)
+    if not branch:
+        raise WorktreeError("detached_head", "repository is on a detached HEAD; checkout a branch before pushing")
+    upstream, _, _ = _upstream_status(repo_root)
+    if upstream:
+        _git(repo_root, "push", timeout=60.0)
+    else:
+        rem = _git(repo_root, "remote", "get-url", "origin", check=False)
+        if rem.returncode != 0:
+            raise WorktreeError("no_remote", "no upstream branch or origin remote configured")
+        _git(repo_root, "push", "-u", "origin", branch, timeout=60.0)
+        upstream = "origin/" + branch
+    return {
+        "ok": True,
+        "repo_root": repo_root,
+        "branch": branch,
+        "upstream": upstream,
+        "head": _head_sha(repo_root),
+    }
+
+
+def verify_repo(repo_dir, cmd=None, timeout=180, env=None):
+    """Run verification command in repo_root and return structured result with tail output."""
+    info = inspect_dir(repo_dir, env=env)
+    if not info.get("is_git"):
+        raise WorktreeError("not_a_git_repo", "directory is not inside a git repository: %s" % repo_dir)
+    repo_root = info["repo_root"]
+    resolved = (cmd or "").strip() or detect_verify_cmd(repo_root, env=env)
+    if not resolved:
+        raise WorktreeError("no_verify_cmd", "no verification command detected")
+    t0 = time.monotonic()
+    try:
+        p = subprocess.run(
+            ["sh", "-lc", resolved],
+            cwd=repo_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+        dur_ms = int((time.monotonic() - t0) * 1000)
+        return {
+            "ok": p.returncode == 0,
+            "exit_code": p.returncode,
+            "cmd": resolved,
+            "duration_ms": dur_ms,
+            "output": _tail_bytes(p.stdout or "", 16 * 1024),
+        }
+    except subprocess.TimeoutExpired as e:
+        dur_ms = int((time.monotonic() - t0) * 1000)
+        out = e.stdout or ""
+        if isinstance(out, bytes):
+            out = out.decode("utf-8", errors="replace")
+        return {
+            "ok": False,
+            "exit_code": 124,
+            "cmd": resolved,
+            "duration_ms": dur_ms,
+            "output": _tail_bytes(out, 16 * 1024),
+        }
 
 
 def remove_worktree(target_path, force=False, keep_branch=False, env=None):
@@ -845,7 +1336,10 @@ def _parse_args(argv, takes=(), flags=()):
 
 def run_cli(argv, env=None):
     if not argv:
-        raise WorktreeError("usage", "command required: inspect, list, create, status, merge, remove, prefs")
+        raise WorktreeError(
+            "usage",
+            "command required: inspect, list, create, status, diff, sync, merge, remove, repo-status, undo-merge, push, verify, prefs, guard",
+        )
     cmd, a = argv[0], argv[1:]
     if cmd == "inspect":
         _, rest = _parse_args(a)
@@ -873,6 +1367,16 @@ def run_cli(argv, env=None):
         if len(rest) != 1:
             raise WorktreeError("usage", "usage: status PATH [--base REF]")
         return status_worktree(rest[0], base=opts.get("--base"), env=env)
+    if cmd == "diff":
+        opts, rest = _parse_args(a, ("--base", "--file"), ())
+        if len(rest) != 1:
+            raise WorktreeError("usage", "usage: diff PATH [--base REF] [--file FILE]")
+        return diff_worktree(rest[0], base=opts.get("--base"), file_path=opts.get("--file"), env=env)
+    if cmd == "sync":
+        opts, rest = _parse_args(a, ("--base",), ("--rebase",))
+        if len(rest) != 1:
+            raise WorktreeError("usage", "usage: sync PATH [--base REF] [--rebase]")
+        return sync_worktree(rest[0], base=opts.get("--base"), rebase="--rebase" in opts, env=env)
     if cmd == "merge":
         opts, rest = _parse_args(a, ("--base",), ("--squash", "--clean"))
         if len(rest) != 1:
@@ -883,6 +1387,26 @@ def run_cli(argv, env=None):
         if len(rest) != 1:
             raise WorktreeError("usage", "usage: remove PATH [--force] [--keep-branch]")
         return remove_worktree(rest[0], force="--force" in opts, keep_branch="--keep-branch" in opts, env=env)
+    if cmd == "repo-status":
+        _, rest = _parse_args(a)
+        if len(rest) != 1:
+            raise WorktreeError("usage", "usage: repo-status DIR")
+        return repo_status(rest[0], env=env)
+    if cmd == "undo-merge":
+        _, rest = _parse_args(a)
+        if len(rest) != 1:
+            raise WorktreeError("usage", "usage: undo-merge DIR")
+        return undo_merge(rest[0], env=env)
+    if cmd == "push":
+        _, rest = _parse_args(a)
+        if len(rest) != 1:
+            raise WorktreeError("usage", "usage: push DIR")
+        return push_repo(rest[0], env=env)
+    if cmd == "verify":
+        opts, rest = _parse_args(a, ("--cmd",), ())
+        if len(rest) != 1:
+            raise WorktreeError("usage", "usage: verify DIR [--cmd CMD]")
+        return verify_repo(rest[0], cmd=opts.get("--cmd"), env=env)
     if cmd == "prefs":
         if not a or a[0] == "get":
             return read_prefs(env=env)
