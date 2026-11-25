@@ -47,7 +47,7 @@ When `WEB=1`, `swarmbox-web run` starts `/usr/local/share/swarmbox/herdr-web/ser
 - **Framed OpenRPC multiplexing:** connects once to `hc connect` (framed binary JSON-RPC 2.0), streaming live PTY bytes over `/ws/pty/:address` with automatic `CREDIT` flow control (no `node-pty` required) and broadcasting live OSC 7501 terminal events over `/ws/events`.
 - **Real Sysop integration:** reads real `swarmbox-sysop` state (`status.json`, `state.json`, `calls.jsonl`, `say.jsonl`, `pending_action.json`) and invokes `swarmbox-sysop goal|approve|veto|stop`, plus surfaces OSC 7501 `blocked` dialogs with 1-tap approval.
 - **Voice addon:** accepts `-p PORT -i IFACE`, so `swarmbox-voice front` sits in front of it when installed, serving `/voice/health` and `/voice/audio` (local Whisper STT) and piping everything else to the server.
-- **Synchronized themes:** defaults to SwarmBox Purple Glow ([theme.md](theme.md)) and offers Catppuccin Mocha, Tokyo Night, Nord, and Rosé Pine, synced with `~/.config/herdr/config.toml` via `/api/theme`.
+- **Synchronized themes:** defaults to Catppuccin Mocha and offers SwarmBox Purple Glow ([theme.md](theme.md)), Tokyo Night, Nord, and Rosé Pine, synced with `~/.config/herdr/config.toml` via `/api/theme`.
 - **Security:** enforces same-origin on WebSockets and mutating API routes and sets `Content-Security-Policy: frame-ancestors 'self'` and `X-Frame-Options: SAMEORIGIN`.
 
 ## 4. Sysop (`container/addons/sysop/lib/swarmbox_sysop/`)

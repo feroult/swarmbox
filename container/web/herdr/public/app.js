@@ -1,7 +1,48 @@
 (() => {
   // Five curated themes synchronized with ~/.config/herdr/config.toml via /api/theme.
-  // Default: SwarmBox Purple Glow (exact palette from docs/theme.md).
+  // Default: Catppuccin Mocha.
+  const DEFAULT_THEME = 'catppuccin';
   const THEMES = {
+    catppuccin: {
+      label: 'Catppuccin',
+      css: {
+        '--bg': '#11111b',
+        '--surface': '#181825',
+        '--sheet': '#1a1a28',
+        '--band': '#29293e',
+        '--surface-2': '#1e1e2e',
+        '--surface-hover': '#2a2b3d',
+        '--border': 'rgba(203, 166, 247, 0.14)',
+        '--border-strong': 'rgba(203, 166, 247, 0.34)',
+        '--hair-1': '#8839ef',
+        '--hair-2': '#cba6f7',
+        '--text': '#cdd6f4',
+        '--text-muted': '#a6adc8',
+        '--text-dim': '#6c7086',
+        '--accent': '#cba6f7',
+        '--accent-bright': '#f5c2e7',
+        '--accent-deep': '#8839ef',
+        '--accent-bg': 'rgba(203, 166, 247, 0.14)',
+        '--accent-glow': 'rgba(203, 166, 247, 0.38)',
+        '--btn-grad-1': '#9c6ade',
+        '--btn-grad-2': '#7448b5',
+        '--btn-text': '#ffffff',
+      },
+      xterm: {
+        background: '#11111b',
+        foreground: '#cdd6f4',
+        cursor: '#f5e0dc',
+        selectionBackground: 'rgba(203, 166, 247, 0.28)',
+        black: '#45475a',
+        red: '#f38ba8',
+        green: '#a6e3a1',
+        yellow: '#f9e2af',
+        blue: '#89b4fa',
+        magenta: '#f5c2e7',
+        cyan: '#94e2d5',
+        white: '#bac2de',
+      },
+    },
     'purple-glow': {
       label: 'Purple Glow',
       css: {
@@ -50,46 +91,6 @@
         brightMagenta: '#e879f9',
         brightCyan: '#8ad7e6',
         brightWhite: '#fafafa',
-      },
-    },
-    catppuccin: {
-      label: 'Catppuccin',
-      css: {
-        '--bg': '#11111b',
-        '--surface': '#181825',
-        '--sheet': '#1a1a28',
-        '--band': '#29293e',
-        '--surface-2': '#1e1e2e',
-        '--surface-hover': '#2a2b3d',
-        '--border': 'rgba(203, 166, 247, 0.14)',
-        '--border-strong': 'rgba(203, 166, 247, 0.34)',
-        '--hair-1': '#8839ef',
-        '--hair-2': '#cba6f7',
-        '--text': '#cdd6f4',
-        '--text-muted': '#a6adc8',
-        '--text-dim': '#6c7086',
-        '--accent': '#cba6f7',
-        '--accent-bright': '#f5c2e7',
-        '--accent-deep': '#8839ef',
-        '--accent-bg': 'rgba(203, 166, 247, 0.14)',
-        '--accent-glow': 'rgba(203, 166, 247, 0.38)',
-        '--btn-grad-1': '#9c6ade',
-        '--btn-grad-2': '#7448b5',
-        '--btn-text': '#ffffff',
-      },
-      xterm: {
-        background: '#11111b',
-        foreground: '#cdd6f4',
-        cursor: '#f5e0dc',
-        selectionBackground: 'rgba(203, 166, 247, 0.28)',
-        black: '#45475a',
-        red: '#f38ba8',
-        green: '#a6e3a1',
-        yellow: '#f9e2af',
-        blue: '#89b4fa',
-        magenta: '#f5c2e7',
-        cyan: '#94e2d5',
-        white: '#bac2de',
       },
     },
     'tokyo-night': {
@@ -310,7 +311,7 @@
   let popoverKeyHandler = null;
   let activeId = null;
   let lastServerActive = null;   // the active tab the gateway reported last (the herdr-active-tab marker)
-  let currentThemeKey = 'purple-glow';
+  let currentThemeKey = DEFAULT_THEME;
   const tabSessions = new Map();
   let eventsWs = null;
   let eventsConnected = false;
@@ -1052,7 +1053,7 @@
   }, { capture: true, passive: false });
 
   function applyTheme(name, persist = false) {
-    const key = THEMES[name] ? name : 'purple-glow';
+    const key = THEMES[name] ? name : DEFAULT_THEME;
     currentThemeKey = key;
     const t = THEMES[key];
     for (const [k, v] of Object.entries(t.css)) {
@@ -1079,7 +1080,7 @@
   }
 
   const savedTheme = (() => {
-    try { return localStorage.getItem('swarmbox-herdr-theme') || 'purple-glow'; } catch (_) { return 'purple-glow'; }
+    try { return localStorage.getItem('swarmbox-herdr-theme') || DEFAULT_THEME; } catch (_) { return DEFAULT_THEME; }
   })();
   applyTheme(savedTheme, false);
 
@@ -2082,7 +2083,7 @@
       scrollback: scrollbackLines,
       macOptionIsMeta: true,
       allowProposedApi: true,
-      theme: (THEMES[currentThemeKey] || THEMES['purple-glow']).xterm,
+      theme: (THEMES[currentThemeKey] || THEMES[DEFAULT_THEME]).xterm,
       linkHandler: {
         allowNonHttpProtocols: true,
         activate: (event, uri) => {
@@ -6649,7 +6650,7 @@
           localStorage.removeItem('swarmbox-herdr-cursor-blink');
           localStorage.removeItem('swarmbox-herdr-scrollback');
         } catch (_) {}
-        applyTheme('purple-glow', true);
+        applyTheme(DEFAULT_THEME, true);
         applyTerminalPrefs();
         renderSettingsBody();
       },

@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import xtermHeadless from '@xterm/headless';
 import {
   ALLOWED_AGENT_CMDS,
+  DEFAULT_THEME,
   HC_BIN,
   HERDR_THEMES,
   HOME,
@@ -361,7 +362,7 @@ export class Cockpit {
   }
 
   palette() {
-    return (HERDR_THEMES[this.themeName] || HERDR_THEMES['purple-glow']).cockpit;
+    return (HERDR_THEMES[this.themeName] || HERDR_THEMES[DEFAULT_THEME]).cockpit;
   }
 
   cols() {
@@ -1107,7 +1108,7 @@ export class Cockpit {
     const activeName = smartTabName(active);
     const sm = statusMeta(active, pal);
     const ss = sysopStyle(this.sysop.state, pal);
-    const themeLabel = (HERDR_THEMES[this.themeName] || HERDR_THEMES['purple-glow']).label;
+    const themeLabel = (HERDR_THEMES[this.themeName] || HERDR_THEMES[DEFAULT_THEME]).label;
     const now = new Date();
     const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
@@ -1327,7 +1328,7 @@ export class Cockpit {
     out.push(actionRow(bgBtn, `${fgHex(pal.accentBright)}\x1b[1m`, '+ New tab', '^Ac'));
     this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: actY + 1, y2: actY + 1, onClick: () => this._createTab('shell') });
 
-    const tLabel = (HERDR_THEMES[this.themeName] || HERDR_THEMES['purple-glow']).label;
+    const tLabel = (HERDR_THEMES[this.themeName] || HERDR_THEMES[DEFAULT_THEME]).label;
     out.push(actionRow(bgS, fgHex(pal.muted), `◐ ${tLabel}`, '^At'));
     this.hitboxes.push({ x1: box.x, x2: box.x + box.w - 1, y1: actY + 2, y2: actY + 2, onClick: () => this._cycleTheme() });
 

@@ -61,27 +61,27 @@
 }
 
 :root {
-  /* Default: SwarmBox Purple Glow (docs/theme.md) */
-  --bg: #0c0b10;
-  --surface: #12101a;
-  --sheet: #15121d;
-  --band: #27222f;
-  --surface-2: #1b1726;
-  --surface-hover: #241e33;
-  --border: rgba(167, 139, 250, 0.13);
-  --border-strong: rgba(167, 139, 250, 0.34);
-  --hair-1: #6d28d9;
-  --hair-2: #a78bfa;
-  --text: #f4f4f5;
-  --text-muted: #a1a1aa;
-  --text-dim: #71717a;
-  --accent: #a78bfa;
-  --accent-bright: #c4b5fd;
-  --accent-deep: #6d28d9;
-  --accent-bg: rgba(167, 139, 250, 0.14);
-  --accent-glow: rgba(167, 139, 250, 0.42);
-  --btn-grad-1: #7c3aed;
-  --btn-grad-2: #5b21b6;
+  /* Default: Catppuccin Mocha */
+  --bg: #11111b;
+  --surface: #181825;
+  --sheet: #1a1a28;
+  --band: #29293e;
+  --surface-2: #1e1e2e;
+  --surface-hover: #2a2b3d;
+  --border: rgba(203, 166, 247, 0.14);
+  --border-strong: rgba(203, 166, 247, 0.34);
+  --hair-1: #8839ef;
+  --hair-2: #cba6f7;
+  --text: #cdd6f4;
+  --text-muted: #a6adc8;
+  --text-dim: #6c7086;
+  --accent: #cba6f7;
+  --accent-bright: #f5c2e7;
+  --accent-deep: #8839ef;
+  --accent-bg: rgba(203, 166, 247, 0.14);
+  --accent-glow: rgba(203, 166, 247, 0.38);
+  --btn-grad-1: #9c6ade;
+  --btn-grad-2: #7448b5;
   --btn-text: #ffffff;
   --green: #4ade80;
   --amber: #fbbf24;
