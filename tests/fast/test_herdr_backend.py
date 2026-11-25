@@ -6,7 +6,7 @@
   - container/scripts/mux/herdr.sh (serve init + config seeding, attach interactive,
     attach command + exit code + detach, `swarmbox-web` dispatch with and without voice front)
   - Sysop integration (brain.write_mcp_config forwarding mux env, risk.py guarding hc/herdr)
-  - container/config/herdr.toml (valid TOML using SwarmBox Purple Glow palette)
+  - container/config/herdr.toml (valid TOML using Catppuccin Mocha palette)
   - container/web/herdr/server.mjs (CLI arg parsing and Origin security check via Node)
 
 Zero real `hc` daemon, zero network.
@@ -537,7 +537,7 @@ class HerdrShellBackendTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(herdr_cfg))
         self.assertTrue(os.path.isfile(core_cfg))
         with open(herdr_cfg, encoding="utf-8") as f:
-            self.assertIn("#a78bfa", f.read())
+            self.assertIn("#cba6f7", f.read())
         with open(core_cfg, encoding="utf-8") as f:
             self.assertIn("notes = false", f.read())
         with open(self.state_file, encoding="utf-8") as f:
@@ -618,25 +618,17 @@ class HerdrShellBackendTest(unittest.TestCase):
 
 
 class HerdrSysopAndAssetsTest(unittest.TestCase):
-    def test_herdr_toml_is_valid_and_uses_purple_glow_palette(self):
+    def test_herdr_toml_is_valid_and_uses_catppuccin_palette(self):
         with open(HERDR_TOML, encoding="utf-8") as f:
             cfg = tomllib.loads(f.read())
         self.assertFalse(cfg.get("onboarding", True))
-        custom = cfg["theme"]["custom"]
-        self.assertEqual(custom["panel_bg"], "#0c0b10")
-        self.assertEqual(custom["active_row_bg"], "#27222f")
-        self.assertEqual(custom["selection_bg"], "#6d28d9")
-        self.assertEqual(custom["accent"], "#a78bfa")
-        self.assertEqual(custom["text"], "#d4d4d8")
-        self.assertEqual(custom["red"], "#ff6b78")
-        self.assertEqual(custom["green"], "#4ade80")
-        self.assertEqual(custom["yellow"], "#fbbf24")
-        self.assertEqual(custom["blue"], "#8b5cf6")
+        self.assertEqual(cfg["theme"]["name"], "catppuccin")
+        self.assertNotIn("custom", cfg["theme"])
         self.assertEqual(cfg["keys"]["prefix"], "ctrl+a")
         self.assertEqual(cfg["ui"]["status_indicators"], "dots")
         self.assertFalse(cfg["ui"]["pane_outer_borders"])
         self.assertFalse(cfg["ui"]["pane_scrollbars"])
-        self.assertEqual(cfg["ui"]["accent"], "#a78bfa")
+        self.assertEqual(cfg["ui"]["accent"], "#cba6f7")
 
     def test_sysop_brain_forwards_tabs_env_and_web_source_note(self):
         tmp = tempfile.mkdtemp(prefix="swarmbox-test-herdr-sysop.")
@@ -787,13 +779,15 @@ assert.equal(show('**Resumo:** **swarmbox** e **`sabrina`** ok'), '<bold:Resumo:
         # Exercise hc-client.mjs pure helpers directly in Node (no external npm deps needed)
         check_js = """
 import assert from 'node:assert/strict';
-import { isHiddenTerminal, sanitizeTabName, uniqueTabName, THEME_ORDER, readBoxConfigSnapshot } from %r;
+import { isHiddenTerminal, sanitizeTabName, uniqueTabName, DEFAULT_THEME, THEME_ORDER, readBoxConfigSnapshot } from %r;
 assert.equal(isHiddenTerminal({ labels: { 'swarmbox.role': 'sysop' } }), true);
 assert.equal(isHiddenTerminal({ labels: {} }), false);
 assert.equal(isHiddenTerminal({}), false);
 assert.ok(!/^t\\d+$/.test(sanitizeTabName('t1', 'shell')));
 assert.equal(uniqueTabName('shell', 'shell', [{ name: 'shell' }, { name: 'shell-2' }]), 'shell-3');
+assert.equal(DEFAULT_THEME, 'catppuccin');
 assert.equal(THEME_ORDER.length, 5);
+assert.equal(THEME_ORDER[0], 'catppuccin');
 const cfg = readBoxConfigSnapshot([], { SWARMBOX_MUX: 'tmux', SWARMBOX_WEB_PORT: '7699', SWARMBOX_SYSOP_AUTONOMY: 'confirm-all', SWARMBOX_VOICE_LANGUAGE: 'pt' });
 assert.equal(cfg.box.MUX, undefined);
 assert.equal(cfg.sysop.settings['sysop.panel'], undefined);

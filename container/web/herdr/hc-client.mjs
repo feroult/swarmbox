@@ -87,7 +87,8 @@ export function uniqueTabName(raw, prefix = 'tab', existing = []) {
 // ---------------------------------------------------------------------------
 // Theme registry (synchronized between Web UI, Terminal Cockpit, and herdr.toml)
 // ---------------------------------------------------------------------------
-export const THEME_ORDER = ['purple-glow', 'catppuccin', 'tokyo-night', 'nord', 'rose-pine'];
+export const DEFAULT_THEME = 'catppuccin';
+export const THEME_ORDER = ['catppuccin', 'purple-glow', 'tokyo-night', 'nord', 'rose-pine'];
 
 export const HERDR_THEMES = {
   'purple-glow': {
@@ -250,7 +251,7 @@ export function readSavedTheme() {
     const t = fs.readFileSync(THEME_FILE, 'utf8').trim();
     if (HERDR_THEMES[t]) return t;
   } catch (_) {}
-  return 'purple-glow';
+  return DEFAULT_THEME;
 }
 
 export function saveTheme(themeName) {

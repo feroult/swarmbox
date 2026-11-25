@@ -25,7 +25,7 @@ configuration of the box. On a phone the sidebar and the sysop panel become draw
 goal, `Alt+T` the next theme, `Alt+,` the settings, `Alt+=` / `Alt+-` / `Alt+0` the font size. The same keys work with any keyboard layout
 (the page matches the physical key).
 
-**Themes.** Five palettes: SwarmBox Purple Glow (the default, [theme.md](theme.md)), Catppuccin Mocha, Tokyo Night, Nord and Rosé Pine.
+**Themes.** Five palettes: Catppuccin Mocha (the default), SwarmBox Purple Glow ([theme.md](theme.md)), Tokyo Night, Nord and Rosé Pine.
 The choice is kept in `~/.config/swarmbox/herdr-web-theme` and shared with the cockpit.
 
 **Copy and paste.** `Ctrl+C` copies while text is selected (and is `^C` otherwise), `Ctrl+V` pastes, and a program in a terminal can write

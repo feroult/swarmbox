@@ -1,21 +1,9 @@
-# SwarmBox default configuration for herdr TUI (Purple Glow palette, see docs/theme.md).
+# SwarmBox default configuration for herdr TUI (Catppuccin Mocha palette).
 # Copied to ~/.config/herdr/config.toml on first start; user edits there are preserved.
 onboarding = false
 
 [theme]
 name = "catppuccin"
-
-[theme.custom]
-panel_bg = "#0c0b10"
-sidebar_bg = "#12101a"
-active_row_bg = "#27222f"
-selection_bg = "#6d28d9"
-accent = "#a78bfa"
-text = "#d4d4d8"
-red = "#ff6b78"
-green = "#4ade80"
-yellow = "#fbbf24"
-blue = "#8b5cf6"
 
 [terminal]
 default_shell = "/bin/bash"
@@ -60,7 +48,7 @@ show_agent_labels_on_pane_borders = true
 tab_bar_position = "top"
 tab_bar_right_separator = " ─ "
 status_indicators = "dots"
-accent = "#a78bfa"
+accent = "#cba6f7"
 mouse_scroll_lines = 5
 window_title = "SwarmBox · {workspace}"
 
