@@ -855,6 +855,16 @@ assert.ok(Array.isArray(cfg.mcp));
         self.assertIn("setDesktopSysop", app_src)
         self.assertIn("isInteractiveTuiTerminal", server_src)
         self.assertIn("type: 'resized', seq: doneSeq", server_src)
+        self.assertIn("resolveGitRepoInfo", server_src)
+        self.assertIn("discoverProjects", server_src)
+        self.assertIn("/api/projects", server_src)
+        self.assertIn("purgePinsForWorktree", server_src)
+        self.assertIn("closeTerminalCleanly", server_src)
+        self.assertIn("terminalRepoGroupInfo", app_src)
+        self.assertIn("openRepoWorktreesPopover", app_src)
+        self.assertIn("repo-group-head", app_src)
+        self.assertIn("showProjectPicker", app_src)
+        self.assertIn("proj-list", app_src)
 
     def test_attach_interactive_launches_cockpit_and_respects_raw_override(self):
         tmp = tempfile.mkdtemp(prefix="swarmbox-test-cockpit-sh.")

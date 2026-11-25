@@ -254,6 +254,164 @@ function serveFile(res, filePath, cacheable = false) {
 
 const PLAIN_SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
 
+// Fast, zero-subprocess Git repository resolver (cached 2s per cwd) so Web UI can group
+// main-checkout and worktree agent tabs under their parent repository cleanly.
+const repoInfoCache = new Map();
+const REPO_CACHE_TTL_MS = 2000;
+
+export function resolveGitRepoInfo(cwd) {
+  if (!cwd || typeof cwd !== 'string' || !cwd.startsWith('/')) return null;
+  const now = Date.now();
+  const cached = repoInfoCache.get(cwd);
+  if (cached && (now - cached.ts) < REPO_CACHE_TTL_MS) return cached.val;
+
+  let result = null;
+  try {
+    let dir = cwd.replace(/\/+$/, '') || '/';
+    for (let depth = 0; depth < 24; depth++) {
+      const gitPath = path.join(dir, '.git');
+      let st = null;
+      try { st = fs.statSync(gitPath); } catch (_) {}
+      if (st) {
+        if (st.isDirectory()) {
+          let branch = '';
+          try {
+            const head = fs.readFileSync(path.join(gitPath, 'HEAD'), 'utf8').trim();
+            if (head.startsWith('ref: refs/heads/')) branch = head.slice('ref: refs/heads/'.length);
+          } catch (_) {}
+          result = { root: dir, name: path.basename(dir) || dir, branch, is_worktree: false };
+        } else if (st.isFile()) {
+          const raw = fs.readFileSync(gitPath, 'utf8').trim();
+          const m = raw.match(/^gitdir:\s*(.+)$/i);
+          if (m) {
+            const gitDir = path.resolve(dir, m[1].trim());
+            let branch = '';
+            try {
+              const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim();
+              if (head.startsWith('ref: refs/heads/')) branch = head.slice('ref: refs/heads/'.length);
+            } catch (_) {}
+            let root = dir;
+            try {
+              const commonRaw = fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim();
+              if (commonRaw) {
+                const commonDir = path.resolve(gitDir, commonRaw);
+                root = path.basename(commonDir) === '.git' ? path.dirname(commonDir) : commonDir;
+              }
+            } catch (_) {
+              const idx = gitDir.indexOf(`${path.sep}.git${path.sep}worktrees${path.sep}`);
+              if (idx > 0) root = gitDir.slice(0, idx);
+            }
+            result = { root, name: path.basename(root) || root, branch, is_worktree: true };
+          }
+        }
+        break;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch (_) {}
+
+  if (repoInfoCache.size > 128) repoInfoCache.clear();
+  repoInfoCache.set(cwd, { ts: now, val: result });
+  return result;
+}
+
+function enrichTerminalsWithRepo(terminals) {
+  return (terminals || []).map((t) => {
+    const lbls = (t && t.labels) || {};
+    if (lbls['swarmbox.repo']) {
+      const root = String(lbls['swarmbox.repo']);
+      return {
+        ...t,
+        repo: {
+          root,
+          name: path.basename(root) || root,
+          branch: String(lbls['swarmbox.branch'] || ''),
+          is_worktree: Boolean(lbls['swarmbox.worktree']),
+        },
+      };
+    }
+    const repo = resolveGitRepoInfo(terminalCwd(t));
+    return repo ? { ...t, repo } : t;
+  });
+}
+
+const SKIP_SCAN_DIRS = new Set(['node_modules', '.git', 'venv', '.venv', 'dist', 'build', 'target', '__pycache__']);
+
+export function discoverProjects(terminals = [], pins = [], homeDir = HOME) {
+  const byReal = new Map();
+  const activeCounts = new Map();
+
+  const normReal = (p) => {
+    if (!p || typeof p !== 'string' || !p.startsWith('/')) return '';
+    try { return fs.realpathSync(p); } catch (_) { return p.replace(/\/+$/, '') || '/'; }
+  };
+
+  const enriched = enrichTerminalsWithRepo(terminals);
+  for (const t of enriched) {
+    if (!detectTerminalAgent(t)) continue;
+    const root = (t.repo && t.repo.root) || (t.labels && t.labels['swarmbox.repo']) || '';
+    const rp = normReal(root);
+    if (rp) activeCounts.set(rp, (activeCounts.get(rp) || 0) + 1);
+  }
+
+  const addRepoDir = (dirPath) => {
+    const rp = normReal(dirPath);
+    if (!rp || byReal.has(rp)) return;
+    const info = resolveGitRepoInfo(dirPath);
+    if (!info || info.is_worktree) return;
+    const rootReal = normReal(info.root);
+    if (!rootReal || byReal.has(rootReal)) return;
+    byReal.set(rootReal, {
+      path: info.root,
+      name: info.name,
+      branch: info.branch || 'main',
+      is_git: true,
+      active_count: activeCounts.get(rootReal) || 0,
+    });
+  };
+
+  // 1. Scan HOME (depth 1..2) for Git repositories (skipping hidden dot-directories)
+  if (homeDir && fs.existsSync(homeDir)) {
+    const scanLevel = (base, depth) => {
+      let entries;
+      try { entries = fs.readdirSync(base, { withFileTypes: true }); } catch (_) { return; }
+      for (const ent of entries) {
+        if (!ent.isDirectory() && !ent.isSymbolicLink()) continue;
+        const name = ent.name;
+        if (!name || name.startsWith('.') || SKIP_SCAN_DIRS.has(name)) continue;
+        const full = path.join(base, name);
+        let isDir = ent.isDirectory();
+        if (!isDir) {
+          try { isDir = fs.statSync(full).isDirectory(); } catch (_) { continue; }
+        }
+        if (!isDir) continue;
+        let hasGitDir = false;
+        try { hasGitDir = fs.statSync(path.join(full, '.git')).isDirectory(); } catch (_) {}
+        if (hasGitDir) {
+          addRepoDir(full);
+        } else if (depth < 2) {
+          scanLevel(full, depth + 1);
+        }
+      }
+    };
+    scanLevel(homeDir, 1);
+  }
+
+  // 2. Include any active terminal repos and pinned repos even if outside HOME depth 2
+  for (const t of enriched) {
+    const root = (t.repo && t.repo.root) || (t.labels && t.labels['swarmbox.repo']) || '';
+    if (root) addRepoDir(root);
+  }
+  for (const pin of pins || []) {
+    const root = (pin && pin.worktree && pin.worktree.repo) || (pin && pin.cwd) || '';
+    if (root) addRepoDir(root);
+  }
+
+  return Array.from(byReal.values()).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+}
+
 // Terminal protocol replies & mouse-tracking motion/hover reports that xterm.js emits
 // automatically (not user keystrokes) — these must never abort an active resize mask.
 const NON_TYPING_INPUT_RE = /^(?:\x1b\[<[0-9;]+[Mm]|\x1b\[M[\s\S]{3}|\x1b\[[IO]|\x1b\[[0-9;]*R|\x1b\[\?[0-9;]*c|\x1b\](?:10|11);[^\x07\x1b]*(?:\x07|\x1b\\))+$/;
@@ -300,6 +458,36 @@ export function createGateway(options = {}) {
       });
   }
 
+  function purgePinsForWorktree(wtPath, pinId = '') {
+    let wtReal = wtPath || '';
+    if (wtReal) {
+      try { wtReal = fs.realpathSync(wtReal); } catch (_) {}
+    }
+    const curPins = readPins();
+    const kept = curPins.filter((p) => {
+      if (!p) return false;
+      if (pinId && p.id === pinId) return false;
+      if (wtReal) {
+        const pPaths = [p.cwd, p.worktree && p.worktree.path].filter(Boolean);
+        for (const pp of pPaths) {
+          let rp = pp;
+          try { rp = fs.realpathSync(pp); } catch (_) {}
+          if (rp === wtReal || pp === wtPath) return false;
+        }
+      }
+      return true;
+    });
+    if (kept.length !== curPins.length) writePins(kept);
+  }
+
+  async function closeTerminalCleanly(tid) {
+    if (!tid) return;
+    await hc.call('terminal.keep', { terminal: tid, keep: false }).catch(() => {});
+    await hc.call('terminal.kill', { terminal: tid }).catch(() => {});
+    hc.call('terminal.rm', { terminal: tid }).catch(() => {});
+    hc.terminals.delete(tid);
+  }
+
   function pendingWorktreesFor(terminals, pins) {
     const livePaths = new Set();
     for (const t of terminals || []) {
@@ -323,10 +511,11 @@ export function createGateway(options = {}) {
   }
 
   function buildSnapshot(extra = {}) {
-    const terminals = hc.listSnapshot();
-    const sysop = readSysopSnapshot(terminals);
-    const pins = buildPinsSnapshot(terminals);
-    const worktrees = pendingWorktreesFor(terminals, pins);
+    const rawTerminals = hc.listSnapshot();
+    const terminals = enrichTerminalsWithRepo(rawTerminals);
+    const sysop = readSysopSnapshot(rawTerminals);
+    const pins = buildPinsSnapshot(rawTerminals);
+    const worktrees = pendingWorktreesFor(rawTerminals, pins);
     const worktree_prefs = readWorktreePrefs();
     const session_prefs = readSessionPrefs();
     const installed_agents = listInstalledAgents();
@@ -627,15 +816,16 @@ export function createGateway(options = {}) {
 
       if (pathname === '/api/tabs' && req.method === 'GET') {
         const resList = await hc.call('terminal.list', { all: false });
-        const terminals = (resList.terminals || []).filter((t) => t.state === 'live' && !isHiddenTerminal(t));
-        const pins = buildPinsSnapshot(terminals);
+        const rawTerminals = (resList.terminals || []).filter((t) => t.state === 'live' && !isHiddenTerminal(t));
+        const terminals = enrichTerminalsWithRepo(rawTerminals);
+        const pins = buildPinsSnapshot(rawTerminals);
         return sendJson(res, 200, {
           terminals,
           active: readActiveTab(),
-          sysop: readSysopSnapshot(terminals),
+          sysop: readSysopSnapshot(rawTerminals),
           theme: currentTheme,
           pins,
-          worktrees: pendingWorktreesFor(terminals, pins),
+          worktrees: pendingWorktreesFor(rawTerminals, pins),
           worktree_prefs: readWorktreePrefs(),
           session_prefs: readSessionPrefs(),
           installed_agents: listInstalledAgents(),
@@ -1160,6 +1350,11 @@ export function createGateway(options = {}) {
         }
       }
 
+      if (pathname === '/api/projects' && req.method === 'GET') {
+        const projects = discoverProjects(hc.listSnapshot(), readPins());
+        return sendJson(res, 200, { projects, home: HOME });
+      }
+
       if (pathname === '/api/worktrees/check' && req.method === 'GET') {
         const rawCwd = url.searchParams.get('cwd') || '';
         const cwd = rawCwd && rawCwd.startsWith('/') ? rawCwd : HOME;
@@ -1208,17 +1403,11 @@ export function createGateway(options = {}) {
         if (body.clean) args.push('--clean');
         try {
           const resMerge = await runWorktreeCmd(args);
-          if (body.clean && tid) {
-            // If pinned, unpin when explicitly merged & cleaned
-            const t = hc.terminals.get(tid);
-            const pinId = t && t.labels && t.labels['swarmbox.pin_id'];
-            if (pinId) {
-              const kept = readPins().filter((p) => p.id !== pinId);
-              writePins(kept);
-            }
-            hc.call('terminal.kill', { terminal: tid }).catch(() => {});
-            hc.call('terminal.rm', { terminal: tid }).catch(() => {});
-            hc.terminals.delete(tid);
+          if (body.clean) {
+            const t = tid ? hc.terminals.get(tid) : null;
+            const pinId = (t && t.labels && t.labels['swarmbox.pin_id']) || '';
+            purgePinsForWorktree(wtPath, pinId);
+            if (tid) await closeTerminalCleanly(tid);
           }
           refreshPendingWorktrees();
           broadcast(buildSnapshot({ type: 'snapshot' }));
@@ -1236,12 +1425,11 @@ export function createGateway(options = {}) {
         if (body.force) args.push('--force');
         try {
           const r = await runWorktreeCmd(args);
-          if (body.terminal) {
-            const tid = String(body.terminal);
-            hc.call('terminal.kill', { terminal: tid }).catch(() => {});
-            hc.call('terminal.rm', { terminal: tid }).catch(() => {});
-            hc.terminals.delete(tid);
-          }
+          const tid = body.terminal ? String(body.terminal) : '';
+          const t = tid ? hc.terminals.get(tid) : null;
+          const pinId = (t && t.labels && t.labels['swarmbox.pin_id']) || '';
+          purgePinsForWorktree(wtPath, pinId);
+          if (tid) await closeTerminalCleanly(tid);
           refreshPendingWorktrees();
           broadcast(buildSnapshot({ type: 'snapshot' }));
           return sendJson(res, 200, r);
