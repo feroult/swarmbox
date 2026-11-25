@@ -125,6 +125,7 @@ terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a r
 | `addon list\|install\|update\|use\|remove\|doctor\|new\|validate` | addons inside the box (section 8) |
 | `bus pub\|sub\|topics\|watch\|ping\|restart` | the message bus of the box (section 6); `swarmbox-bus --help` in the box |
 | `tabs list\|active\|screen\|send\|open\|rename\|focus\|close` | the tabs (herdr-core terminals) of the box, a capability of the host (section 6); `swarmbox-tabs --help` in the box |
+| `state [--section workspace\|system\|all]` | canonical read-only JSON world model of the box: repo-grouped agents & live states, pending worktrees, shells, parked sessions, and system health/resources (`swarmbox-state`) |
 | `pins list\|add\|update\|rm\|restore` | persistent pinned sessions in `<workspace>/.config/swarmbox/pins.json` ([pins-design.md](pins-design.md)) |
 | `worktree inspect\|list\|create\|status\|merge\|remove\|prefs` | isolated Git worktrees under `<workspace>/.local/share/swarmbox/worktrees/` ([worktrees-design.md](worktrees-design.md)) |
 | `remote setup\|status\|off\|token` | remote access through Cloudflare (`--dry-run` shows changes) |

@@ -85,7 +85,7 @@ class TestTabs(Base):
         res = d.open_tab(name="My API!", cwd=ft.dir, agent="claude")
         self.assertEqual(res, {"ok": True, "tab": "t4", "name": "my-api", "agent": "claude"})
         _, a = ft.calls("run")[-1]
-        self.assertEqual(a, ["run", "--bg", "--keep", "--no-parent", "--json", "--name", "my-api", "--cwd", ft.dir, "--", "bash", "-lc", "exec claude"])
+        self.assertEqual(a, ["run", "--bg", "--keep", "--no-parent", "--json", "--name", "my-api", "--cwd", ft.dir, "--label", "swarmbox.agent=claude", "--", "bash", "-lc", "exec claude"])
         self.assertEqual(d.active()["tab"], "t4")
         self.assertEqual(d.open_tab()["tab"], "t5")
         self.assertEqual(ft.calls("run")[-1][1][-3:], ["--", "bash", "-l"], "a shell: a login bash")

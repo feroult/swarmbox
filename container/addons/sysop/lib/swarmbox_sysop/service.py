@@ -26,7 +26,7 @@ import sys
 import threading
 import time
 
-from . import __version__, brain, busclient, history, ipc
+from . import __version__, brain, busclient, history, ipc, mcpserver, tabsclient
 from . import paths as pathsmod
 from . import audit as auditmod
 
@@ -489,15 +489,27 @@ class Service:
             def on_start(pid):
                 goal.brain["pid"] = pid
                 self.refresh(goal)
-            # the brain starts with no memory: the goals before this one go in front of it (history.py), so a follow-up is understood
-            heard = goal.text
+            # Pre-seed a fresh, nonce-framed workspace snapshot + conversation history so the brain has immediate awareness
+            # without spending Turn 1 calling box_state.
+            parts = []
+            if os.environ.get("SWARMBOX_SYSOP_PRESEED", "1") != "0":
+                try:
+                    ws = tabsclient.Tabs(read_timeout=5.0).box_state("workspace")
+                    if isinstance(ws, dict) and ("repos" in ws or "shells" in ws):
+                        parts.append(mcpserver.format_box_state(ws, "workspace"))
+                except Exception:
+                    pass
             try:
                 before = history.conversation(history.load(self.paths), goal.id, self.clock(), since=history.since(self.paths))
             except Exception as e:      # a damaged folder of an old goal must not stop this one
                 self.log("goal %s: no conversation so far (%r)" % (goal.id, e))
                 before = ""
             if before:
-                heard = before + "\n\nThe goal now (" + goal.source + "):\n" + goal.text
+                parts.append(before)
+            if parts:
+                heard = "\n\n".join(parts) + "\n\nThe goal now (" + goal.source + "):\n" + goal.text
+            else:
+                heard = goal.text
             res = brain.run(self.cfg, heard, goal.source, gdir, argv, env, stop_check, lambda: self.refresh(goal), deadline,
                             clock=self.clock, on_start=on_start, **kw)
         except Exception as e:             # a bug here must not kill the service: this goal fails, the next one runs

@@ -1025,6 +1025,8 @@ class Tabs:
                 row["title"] = str(lbls["swarmbox.title"])[:60]
             if lbls.get("swarmbox.title_source") in ("user", "auto"):
                 row["title_source"] = lbls["swarmbox.title_source"]
+            if lbls.get("swarmbox.agent") and str(lbls["swarmbox.agent"]).lower() != "shell":
+                row["agent"] = str(lbls["swarmbox.agent"]).lower()[:24]
             if lbls.get("swarmbox.pin_id"):
                 row["pin_id"] = str(lbls["swarmbox.pin_id"])
                 row["pinned"] = True
@@ -1081,7 +1083,7 @@ class Tabs:
         self.backend.set_labels(t, clean)
         return {"ok": True, "tab": t.id, "labels": clean}
 
-    def open_tab(self, name=None, cwd=None, agent=None, worktree=False, title=None):
+    def open_tab(self, name=None, cwd=None, agent=None, worktree=False, title=None, pin_id=None):
         ag = (agent or "shell").strip().lower()
         if ag not in ALLOWED_OPEN_AGENTS:
             raise usage_error("unknown agent %r (known: %s)" % (ag, ", ".join(sorted(ALLOWED_OPEN_AGENTS))))
@@ -1125,7 +1127,11 @@ class Tabs:
             if clean_t:
                 labels["swarmbox.title"] = clean_t
                 labels["swarmbox.title_source"] = "user"
-        if labels:
+        if pin_id:
+            clean_pid = str(pin_id).strip()[:64]
+            if clean_pid:
+                labels["swarmbox.pin_id"] = clean_pid
+        if ag != "shell" or labels:
             labels["swarmbox.agent"] = ag
             tid = self.backend.open_tab(name=clean_name, cwd=clean_cwd, agent=ag, labels=labels)
         else:
@@ -1288,7 +1294,10 @@ class Tabs:
         native = self.backend.tab_state(tab)
         if native is not None:
             return native
-        return agent_state(self._plain_rows(tab), tab.command)
+        lbls = self.backend.tab_labels(tab) or {}
+        lbl_ag = str(lbls.get("swarmbox.agent") or "").strip().lower()
+        cmd = lbl_ag if (lbl_ag and lbl_ag != "shell") else tab.command
+        return agent_state(self._plain_rows(tab), cmd)
 
     def send_body(self, tab, body):
         """send() with its arguments as a dict: {"run": text} or {"input": text}, with the optional booleans "queue" and "slash"; bad_body
@@ -1447,11 +1456,11 @@ def run(argv, tabs=None):
         return tabs.send(rest[0], run=text if key == "--run" else None, input=text if key == "--input" else None,
                          queue="--queue" in opts, slash="--slash" in opts)
     if cmd == "open":
-        opts, rest = parse_args(a, ("--name", "--cwd", "--agent", "--title"), ("--worktree",))
+        opts, rest = parse_args(a, ("--name", "--cwd", "--agent", "--title", "--pin-id"), ("--worktree",))
         if rest:
-            raise usage_error("usage: open [--name NAME] [--cwd DIR] [--agent AGENT] [--title TITLE] [--worktree]")
+            raise usage_error("usage: open [--name NAME] [--cwd DIR] [--agent AGENT] [--title TITLE] [--pin-id ID] [--worktree]")
         return tabs.open_tab(name=opts.get("--name"), cwd=opts.get("--cwd"), agent=opts.get("--agent"),
-                             worktree="--worktree" in opts, title=opts.get("--title"))
+                             worktree="--worktree" in opts, title=opts.get("--title"), pin_id=opts.get("--pin-id"))
     if cmd == "rename":
         opts, rest = parse_args(a, ("--source",), ())
         if len(rest) != 2:

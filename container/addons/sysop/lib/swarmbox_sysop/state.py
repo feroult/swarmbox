@@ -41,10 +41,19 @@ def step_text(call):
     a = call.get("args") if isinstance(call.get("args"), dict) else {}
     tool = one_line(call.get("tool"), 30)
     tab = one_line(a.get("tab"), 12)
-    if tool == "list_tabs":
-        return "look at the tabs"
+    if tool in ("box_state", "list_tabs"):
+        sec = one_line(a.get("section"), 16)
+        return "inspect %s state" % sec if sec and sec != "workspace" else "inspect box state"
     if tool == "read_tab":
         return "read tab %s" % tab if tab else "read a tab"
+    if tool == "tab":
+        act = one_line(a.get("action"), 16)
+        what = one_line(a.get("name") or a.get("title") or a.get("repo") or a.get("agent") or a.get("pin_id") or tab, 40)
+        return "%s tab %s" % (act, what) if what else ("%s tab" % act if act else "tab")
+    if tool == "worktree":
+        act = one_line(a.get("action"), 16)
+        tgt = one_line(a.get("target") or tab, 24)
+        return "worktree %s %s" % (act, tgt) if tgt else ("worktree %s" % act if act else "worktree")
     if tool in ("run", "input"):
         what = one_line(a.get("command") if tool == "run" else a.get("text"), 200)
         return "%s: %s" % ("run" if tool == "run" else "type", what)

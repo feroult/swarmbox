@@ -148,7 +148,7 @@ class AutoNamerTest(unittest.TestCase):
         self.assertEqual(autoname.clean_suggested_title("shell"), "")
         self.assertEqual(autoname.clean_suggested_title('"Fix Cache TTL."'), "Fix Cache TTL")
 
-    def test_mcp_list_tabs_open_worktree_rename_and_worktree_action(self):
+    def test_mcp_box_state_open_worktree_rename_and_worktree_action(self):
         cfg = sysop_config.load({"SWARMBOX_SYSOP_AUTONAME": "0"})
         self.assertFalse(cfg.autoname)
         self.assertTrue(sysop_config.load({}).autoname)
@@ -166,29 +166,35 @@ class AutoNamerTest(unittest.TestCase):
             ],
             {"t1": "done"},
         )
+        tabs.box_state = lambda section="workspace": {
+            "schema": 1, "active": "t1",
+            "repos": [{"name": "shop", "path": "/home/a/shop", "branch": "main", "agents": [
+                {"tab": "t1", "name": "Fix Cache Bug", "agent": "claude", "state": "idle", "branch": "sb/wt-1", "worktree": "wt-1"},
+            ]}],
+        }
         srv = mcpserver.Server(ctx, tabs=tabs, clock=lambda: self.now)
 
-        # list_tabs exposes title, pinned, and compact worktree
-        listed = srv.t_list_tabs({})
-        rows = json.loads(listed.splitlines()[1])
-        self.assertEqual(rows[0]["name"], "Fix Cache Bug")
-        self.assertTrue(rows[0]["pinned"])
-        self.assertEqual(rows[0]["worktree"]["branch"], "sb/wt-1")
+        # box_state exposes repo-grouped agent with display title and worktree branch
+        listed = srv.t_box_state({})
+        ws = json.loads(listed.splitlines()[1])
+        self.assertEqual(ws["repos"][0]["agents"][0]["name"], "Fix Cache Bug")
+        self.assertEqual(ws["repos"][0]["agents"][0]["branch"], "sb/wt-1")
 
-        # open_tab forwards worktree=True
-        opened = srv.t_open_tab({"agent": "claude", "cwd": "/home/a/shop", "worktree": True})
+        # tab(action="open") resolves repo name and forwards worktree=True
+        opened = srv.t_tab({"action": "open", "agent": "claude", "repo": "shop", "worktree": True})
         self.assertIn("sb/wt-9", opened)
+        self.assertEqual(tabs.opened[-1]["cwd"], "/home/a/shop")
         self.assertTrue(tabs.opened[-1]["worktree"])
 
-        # rename_tab locks title as user-owned without duplicating background system_events or polluting history
-        srv.t_rename_tab({"tab": "t1", "title": "Cache TTL Fix"})
+        # tab(action="rename") locks title as user-owned without duplicating background system_events or polluting history
+        srv.t_tab({"action": "rename", "tab": "t1", "title": "Cache TTL Fix"})
         self.assertEqual(tabs.renames[-1], ("t1", "Cache TTL Fix", "user"))
         self.assertEqual(sysop_history.conversation(sysop_history.load(self.paths), "g2", self.now), "")
 
         # worktree status (read-only) & merge with clean=True closes tab
-        st_out = json.loads(srv.t_worktree({"tab": "t1", "action": "status"}))
+        st_out = json.loads(srv.t_worktree({"target": "t1", "action": "status"}))
         self.assertTrue(st_out["can_merge"])
-        m_out = json.loads(srv.t_worktree({"tab": "t1", "action": "merge", "clean": True}))
+        m_out = json.loads(srv.t_worktree({"target": "t1", "action": "merge", "clean": True}))
         self.assertTrue(m_out["cleaned"])
         self.assertEqual(tabs.closed, ["t1"])
 

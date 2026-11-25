@@ -2872,7 +2872,7 @@ attach_main() {
     a_t=-i
     if [ -t 0 ] && [ -t 1 ]; then a_t=-it; fi
     case ${1-} in
-        pubkey|addon|bus|tabs|pins|worktree) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
+        pubkey|addon|bus|tabs|pins|worktree|state) exec podman exec "$a_t" -e TERM -e COLORTERM "$a_name" swarmbox-entrypoint "$@" ;;
         attach) shift ;;
     esac
     # The pty of this terminal tab names the tab: it is the same for as long as the tab lives, in any terminal or over ssh, so after `exit`
