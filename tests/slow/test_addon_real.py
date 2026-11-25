@@ -37,7 +37,6 @@ VERSION_RE = r"\d+\.\d+\.\d+"
 # The exact pinned version, when the manifest has one, is added to the check from addon.conf at run time.
 TABLE = {
     "opencode": (["opencode", "--version"], VERSION_RE, True),
-    "gemini": (["gemini", "--version"], VERSION_RE, True),
     "clasp": (["clasp", "--version"], VERSION_RE, True),
     "poetry": (["poetry", "--version"], r"(?i)poetry.*" + VERSION_RE, False),
     "go": (["go", "version"], r"go version go" + VERSION_RE + r" linux/(amd64|arm64)", False),

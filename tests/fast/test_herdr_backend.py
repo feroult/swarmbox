@@ -788,9 +788,7 @@ assert.equal(uniqueTabName('shell', 'shell', [{ name: 'shell' }, { name: 'shell-
 assert.equal(DEFAULT_THEME, 'catppuccin');
 assert.equal(THEME_ORDER.length, 5);
 assert.equal(THEME_ORDER[0], 'catppuccin');
-const cfg = readBoxConfigSnapshot([], { SWARMBOX_MUX: 'tmux', SWARMBOX_WEB_PORT: '7699', SWARMBOX_SYSOP_AUTONOMY: 'confirm-all', SWARMBOX_VOICE_LANGUAGE: 'pt' });
-assert.equal(cfg.box.MUX, undefined);
-assert.equal(cfg.sysop.settings['sysop.panel'], undefined);
+const cfg = readBoxConfigSnapshot([], { SWARMBOX_WEB_PORT: '7699', SWARMBOX_SYSOP_AUTONOMY: 'confirm-all', SWARMBOX_VOICE_LANGUAGE: 'pt' });
 assert.equal(cfg.box.WEB_PORT.value, '7699');
 assert.equal(cfg.box.WEB_PORT.custom, true);
 assert.equal(cfg.sysop.settings['sysop.autonomy'].value, 'confirm-all');
@@ -1179,6 +1177,350 @@ class PtyViewportOwnershipTest(unittest.TestCase):
         p = subprocess.run(["node", harness], env=env, capture_output=True, text=True, timeout=20)
         self.assertEqual(p.returncode, 0, "stdout:\n%s\nstderr:\n%s" % (p.stdout, p.stderr))
         self.assertIn("PTY_VIEWPORT_OWNERSHIP_OK", p.stdout)
+
+
+class WorktreeOrchestratorApiTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-wt-api.")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_worktree_orchestrator_endpoints_and_hybrid_verify_push(self):
+        if not shutil.which("node"):
+            self.skipTest("node is not installed")
+        web_dir = os.path.join(self.tmp, "web")
+        ws_dir = os.path.join(web_dir, "node_modules", "ws")
+        os.makedirs(ws_dir, exist_ok=True)
+        shutil.copyfile(HERDR_SERVER, os.path.join(web_dir, "server.mjs"))
+        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "hc-client.mjs"), os.path.join(web_dir, "hc-client.mjs"))
+        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "file-preview.mjs"), os.path.join(web_dir, "file-preview.mjs"))
+        with open(os.path.join(ws_dir, "package.json"), "w", encoding="utf-8") as f:
+            json.dump({"name": "ws", "type": "module", "main": "index.js"}, f)
+        with open(os.path.join(ws_dir, "index.js"), "w", encoding="utf-8") as f:
+            f.write(
+                "import { EventEmitter } from 'node:events';\n"
+                "export class WebSocketServer extends EventEmitter {\n"
+                "  constructor() { super(); this.clients = new Set(); }\n"
+                "  handleUpgrade(_req, _sock, _head, cb) { cb(new FakeWs()); }\n"
+                "  close() {}\n"
+                "}\n"
+                "export class FakeWs extends EventEmitter {\n"
+                "  constructor() { super(); this.readyState = 1; this.sent = []; }\n"
+                "  send(d) { this.sent.push(d); }\n"
+                "  ping() {}\n"
+                "  close() { this.readyState = 3; this.emit('close'); }\n"
+                "}\n"
+            )
+        harness = os.path.join(web_dir, "run_wt_api.mjs")
+        with open(harness, "w", encoding="utf-8") as f:
+            f.write(r"""
+import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import { createGateway } from './server.mjs';
+import { FakeWs } from './node_modules/ws/index.js';
+
+class FakeHc extends EventEmitter {
+  constructor() {
+    super();
+    this.terminals = new Map();
+    this.calls = [];
+  }
+  async start() {}
+  close() {}
+  listSnapshot() { return Array.from(this.terminals.values()); }
+  async call(method, params) {
+    this.calls.push({ method, params });
+    if (method === 'terminal.kill') this.terminals.delete(params.terminal);
+    return { ok: true };
+  }
+}
+
+const wtCalls = [];
+let mockRepoStatus = {
+  ok: true,
+  repo_root: '/fake/repo',
+  repo_name: 'repo',
+  branch: 'main',
+  head: 'abc1234',
+  dirty: false,
+  uncommitted_count: 0,
+  upstream: 'origin/main',
+  ahead_origin: 1,
+  behind_origin: 0,
+  verify_cmd: 'npm test',
+  can_undo_merge: true,
+  last_merge: { branch: 'sb/feat-a', pre_sha: '111', post_sha: '222' },
+};
+let mockSyncConflict = false;
+let mockVerifyOk = true;
+let mockMergeFailPath = null;
+let mockList = [
+  { path: '/fake/wt-1', repo_root: '/fake/repo', branch: 'sb/feat-1', dirty: false, ahead: 2, can_merge: true },
+  { path: '/fake/wt-dirty', repo_root: '/fake/repo', branch: 'sb/dirty', dirty: true, ahead: 1, can_merge: true },
+  { path: '/fake/wt-zero', repo_root: '/fake/repo', branch: 'sb/zero', dirty: false, ahead: 0, can_merge: true },
+  { path: '/fake/wt-2', repo_root: '/fake/repo', branch: 'sb/feat-2', dirty: false, ahead: 1, can_merge: true },
+];
+
+async function fakeRunWorktreeCmd(args, timeoutMs) {
+  wtCalls.push({ args, timeoutMs });
+  const sub = args[0];
+  if (sub === 'repo-status') {
+    return { ...mockRepoStatus, repo_root: args[1] };
+  }
+  if (sub === 'diff') {
+    const fIdx = args.indexOf('--file');
+    const file = fIdx >= 0 ? args[fIdx + 1] : null;
+    return { ok: true, branch: 'sb/feat-1', base: 'main', file, diff: '+hello\n', truncated: false };
+  }
+  if (sub === 'sync') {
+    if (mockSyncConflict) {
+      const err = new Error('merge conflict during sync');
+      err.code = 'sync_conflict';
+      err.data = { conflict_files: ['src/app.js'] };
+      throw err;
+    }
+    return { ok: true, branch: 'sb/feat-1', base: 'main', mode: args.includes('--rebase') ? 'rebase' : 'merge', ahead: 1, behind: 0, repo_root: '/fake/repo' };
+  }
+  if (sub === 'merge') {
+    const wtPath = args[1];
+    if (mockMergeFailPath && wtPath === mockMergeFailPath) {
+      const err = new Error('conflict on merge');
+      err.code = 'merge_conflict';
+      err.data = { conflict_files: ['README.md'] };
+      throw err;
+    }
+    return {
+      ok: true,
+      repo_root: '/fake/repo',
+      branch: wtPath === '/fake/wt-2' ? 'sb/feat-2' : 'sb/feat-1',
+      pre_sha: '111',
+      post_sha: '222',
+      commits_list: ['feat: add widget'],
+      files: ['src/widget.js'],
+    };
+  }
+  if (sub === 'list') {
+    return mockList;
+  }
+  if (sub === 'verify') {
+    if (!mockVerifyOk) {
+      return { ok: false, exit_code: 2, cmd: 'npm test', duration_ms: 12, output: 'FAIL test_a' };
+    }
+    return { ok: true, exit_code: 0, cmd: 'npm test', duration_ms: 10, output: 'PASS all' };
+  }
+  if (sub === 'push') {
+    return { ok: true, repo_root: args[1], branch: 'main', upstream: 'origin/main', head: '222' };
+  }
+  if (sub === 'undo-merge') {
+    return { ok: true, repo_root: args[1], restored_sha: '111', undone_branch: 'sb/feat-1' };
+  }
+  return { ok: true };
+}
+
+const hc = new FakeHc();
+hc.terminals.set('t-shell', {
+  address: 't-shell', name: 'shell', agent: 'bash', cwd: '/fake/repo', state: 'live',
+  labels: { 'swarmbox.agent': 'shell' },
+});
+hc.terminals.set('t-wt', {
+  address: 't-wt', name: 'claude-wt', agent: 'claude', cwd: '/fake/wt-1', state: 'live',
+  labels: { 'swarmbox.agent': 'claude', 'swarmbox.worktree': '/fake/wt-1', 'swarmbox.repo': '/fake/repo' },
+});
+hc.terminals.set('t-main', {
+  address: 't-main', name: 'main-claude', agent: 'claude', cwd: '/fake/repo/sub', state: 'live',
+  labels: { 'swarmbox.agent': 'claude', 'swarmbox.title': 'Main Agent' },
+});
+
+const { server, wss, shutdown } = createGateway({ hc, runWorktreeCmd: fakeRunWorktreeCmd });
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+const { port } = server.address();
+const base = `http://127.0.0.1:${port}`;
+
+// Connect a fake /ws/events client to verify reactive snapshot broadcasts
+const evWs = new FakeWs();
+wss.emit('connection', evWs, {}, new URL(`${base}/ws/events`));
+
+async function reqJson(method, p, body) {
+  const res = await fetch(`${base}${p}`, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  return { status: res.status, data: await res.json() };
+}
+
+// 1. GET /api/worktrees/repo-status
+{
+  const r = await reqJson('GET', '/api/worktrees/repo-status?repo=/fake/repo');
+  assert.equal(r.status, 200);
+  assert.equal(r.data.branch, 'main');
+  assert.deepEqual(r.data.main_agent, { address: 't-main', title: 'Main Agent' });
+  const lastSnap = JSON.parse(evWs.sent.at(-1));
+  assert.ok(lastSnap.repo_statuses['/fake/repo']);
+  assert.equal(lastSnap.repo_statuses['/fake/repo'].main_agent.address, 't-main');
+}
+
+// 2. GET /api/worktrees/diff
+{
+  const r1 = await reqJson('GET', '/api/worktrees/diff?path=/fake/wt-1');
+  assert.equal(r1.status, 200);
+  assert.equal(r1.data.diff, '+hello\n');
+  assert.deepEqual(wtCalls.at(-1).args, ['diff', '/fake/wt-1']);
+
+  const r2 = await reqJson('GET', '/api/worktrees/diff?path=/fake/wt-1&file=src/a.js');
+  assert.equal(r2.status, 200);
+  assert.equal(r2.data.file, 'src/a.js');
+  assert.deepEqual(wtCalls.at(-1).args, ['diff', '/fake/wt-1', '--file', 'src/a.js']);
+}
+
+// 3. POST /api/worktrees/sync (success + rebase + 409 conflict)
+{
+  const r1 = await reqJson('POST', '/api/worktrees/sync', { terminal: 't-wt', rebase: true });
+  assert.equal(r1.status, 200);
+  assert.equal(r1.data.mode, 'rebase');
+
+  mockSyncConflict = true;
+  const r2 = await reqJson('POST', '/api/worktrees/sync', { path: '/fake/wt-1' });
+  assert.equal(r2.status, 409);
+  assert.equal(r2.data.error, 'sync_conflict');
+  assert.deepEqual(r2.data.conflict_files, ['src/app.js']);
+  mockSyncConflict = false;
+}
+
+// 4. POST /api/worktrees/merge with verify_and_push -> hands off to live main agent
+{
+  hc.calls.length = 0;
+  const r = await reqJson('POST', '/api/worktrees/merge', {
+    path: '/fake/wt-1', terminal: 't-wt', verify_and_push: true,
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.handoff.mode, 'agent');
+  assert.equal(r.data.handoff.terminal, 't-main');
+  const sendCall = hc.calls.find((c) => c.method === 'terminal.send');
+  assert.ok(sendCall, 'expected terminal.send to main agent');
+  assert.equal(sendCall.params.terminal, 't-main');
+  assert.equal(sendCall.params.force, true);
+  assert.match(sendCall.params.text, /sb\/feat-1/);
+  assert.match(sendCall.params.text, /npm test/);
+  assert.match(sendCall.params.text, /push main/i);
+}
+
+// 5. POST /api/worktrees/merge with verify_and_push & NO main agent -> backend_verify -> pushed
+{
+  hc.terminals.delete('t-main');
+  wtCalls.length = 0;
+  const r = await reqJson('POST', '/api/worktrees/merge', {
+    path: '/fake/wt-1', verify_and_push: true,
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.handoff.mode, 'backend_verify');
+  assert.equal(r.data.handoff.state, 'running');
+  // Wait for async verify+push job to settle
+  await new Promise((res) => setTimeout(res, 40));
+  const verifyCall = wtCalls.find((c) => c.args[0] === 'verify');
+  assert.ok(verifyCall);
+  assert.equal(verifyCall.timeoutMs, 190000);
+  assert.ok(wtCalls.some((c) => c.args[0] === 'push'));
+  const st = await reqJson('GET', '/api/worktrees/repo-status?repo=/fake/repo');
+  assert.equal(st.data.verify_job.state, 'pushed');
+}
+
+// 6. Backend verify failure -> state='failed', no push, then undo_merge clears failed job
+{
+  mockVerifyOk = false;
+  wtCalls.length = 0;
+  const r = await reqJson('POST', '/api/worktrees/main/action', {
+    repo: '/fake/repo', action: 'verify_and_push',
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.handoff.mode, 'backend_verify');
+  await new Promise((res) => setTimeout(res, 40));
+  assert.equal(wtCalls.some((c) => c.args[0] === 'push'), false);
+  const st1 = await reqJson('GET', '/api/worktrees/repo-status?repo=/fake/repo');
+  assert.equal(st1.data.verify_job.state, 'failed');
+  assert.equal(st1.data.verify_job.exit_code, 2);
+
+  const undo = await reqJson('POST', '/api/worktrees/main/action', {
+    repo: '/fake/repo', action: 'undo_merge',
+  });
+  assert.equal(undo.status, 200);
+  assert.equal(undo.data.restored_sha, '111');
+  const st2 = await reqJson('GET', '/api/worktrees/repo-status?repo=/fake/repo');
+  assert.equal(st2.data.verify_job, null);
+  mockVerifyOk = true;
+}
+
+// 7. Manual push fallback when no main agent and no verify_cmd
+{
+  mockRepoStatus.verify_cmd = '';
+  await reqJson('GET', '/api/worktrees/repo-status?repo=/fake/repo');
+  const r = await reqJson('POST', '/api/worktrees/main/action', {
+    repo: '/fake/repo', action: 'verify_and_push',
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.handoff.mode, 'manual_push');
+  mockRepoStatus.verify_cmd = 'npm test';
+}
+
+// 8. POST /api/worktrees/main/action: commit (409 without main agent, 200 with main agent) & push
+{
+  const r409 = await reqJson('POST', '/api/worktrees/main/action', {
+    repo: '/fake/repo', action: 'commit',
+  });
+  assert.equal(r409.status, 409);
+  assert.equal(r409.data.error, 'no_main_agent');
+
+  hc.terminals.set('t-main', {
+    address: 't-main', name: 'main-claude', agent: 'claude', cwd: '/fake/repo', state: 'live',
+    labels: { 'swarmbox.agent': 'claude', 'swarmbox.title': 'Main Agent' },
+  });
+  hc.calls.length = 0;
+  const r200 = await reqJson('POST', '/api/worktrees/main/action', {
+    repo: '/fake/repo', action: 'commit',
+  });
+  assert.equal(r200.status, 200);
+  assert.equal(r200.data.terminal, 't-main');
+  assert.ok(hc.calls.some((c) => c.method === 'terminal.send' && c.params.terminal === 't-main'));
+
+  const rPush = await reqJson('POST', '/api/worktrees/main/action', {
+    repo: '/fake/repo', action: 'push',
+  });
+  assert.equal(rPush.status, 200);
+  assert.equal(rPush.data.head, '222');
+}
+
+// 9. POST /api/worktrees/merge-all: filters, stops on conflict, sends ONE handoff for merged branches
+{
+  hc.calls.length = 0;
+  mockMergeFailPath = '/fake/wt-2';
+  const r = await reqJson('POST', '/api/worktrees/merge-all', {
+    repo: '/fake/repo', clean: true, verify_and_push: true,
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.ok, true);
+  assert.equal(r.data.merged.length, 1);
+  assert.equal(r.data.merged[0].branch, 'sb/feat-1');
+  assert.equal(r.data.failed.length, 1);
+  assert.equal(r.data.failed[0].branch, 'sb/feat-2');
+  assert.equal(r.data.failed[0].error, 'merge_conflict');
+  assert.equal(r.data.handoff.mode, 'agent');
+  // t-wt should have been closed because clean: true
+  assert.equal(hc.terminals.has('t-wt'), false);
+  const sends = hc.calls.filter((c) => c.method === 'terminal.send');
+  assert.equal(sends.length, 1);
+  mockMergeFailPath = null;
+}
+
+shutdown();
+console.log('WORKTREE_ORCHESTRATOR_API_OK');
+""")
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "HOME": self.tmp,
+            "SB_RUN_DIR": os.path.join(self.tmp, "run"),
+        }
+        p = subprocess.run(["node", harness], env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 0, "stdout:\n%s\nstderr:\n%s" % (p.stdout, p.stderr))
+        self.assertIn("WORKTREE_ORCHESTRATOR_API_OK", p.stdout)
 
 
 if __name__ == "__main__":

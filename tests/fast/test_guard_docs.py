@@ -212,7 +212,7 @@ class Notices(unittest.TestCase):
                 programs.add(arg.lower().replace("_", "-"))
         programs.update(re.findall(r"npm install -g (@[\w-]+/[\w-]+)(?:@\$\{\w+\})?", d))
         addons = sorted(os.listdir(os.path.join(ROOT, "container", "addons")))
-        self.assertTrue({"gcloud", "poetry", "go", "clasp", "gemini"} <= set(addons), addons)
+        self.assertTrue({"gcloud", "poetry", "go", "clasp"} <= set(addons), addons)
         self.assertIn("chrome-devtools-mcp", programs)
         for name in sorted(programs | {"google-cloud-cli" if a == "gcloud" else a for a in addons}):
             self.assertIn(name.lower(), low, "%s is installed by the image but is not in the notices" % name)

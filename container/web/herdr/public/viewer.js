@@ -284,6 +284,7 @@
       path: '',
       displayPath: '',
       info: null,
+      inline: null, // { title, subtitle, content, kind }
       siblingImages: [],
       siblingIdx: -1,
       zoom: 'fit', // 'fit' | number
@@ -334,6 +335,7 @@
     const metaEl = container.querySelector('[data-role="meta"]');
     const subbarEl = container.querySelector('[data-role="subbar"]');
     const bodyEl = container.querySelector('[data-role="body"]');
+    const refreshBtn = container.querySelector('[data-act="refresh"]');
     const dlLink = container.querySelector('[data-act="download"]');
     const newTabLink = container.querySelector('[data-act="new-tab"]');
 
@@ -664,12 +666,111 @@
       bodyEl.appendChild(frame);
     }
 
+    function renderDiffContent(text) {
+      bodyEl.innerHTML = '';
+      if (!text || !text.trim()) {
+        bodyEl.innerHTML = '<div class="sbv-empty">No diff changes to display.</div>';
+        return;
+      }
+      const lines = String(text).replace(/\r\n/g, '\n').split('\n');
+      const wrap = document.createElement('div');
+      wrap.className = 'sbv-diff-view' + (state.codeWrap ? ' wrap' : '');
+      const parts = [];
+      for (const ln of lines) {
+        let cls = 'sbv-diff-line';
+        if (ln.startsWith('diff --git ')) {
+          cls += ' sbv-diff-file';
+        } else if (ln.startsWith('@@')) {
+          cls += ' sbv-diff-hunk';
+        } else if (
+          ln.startsWith('+++ ') ||
+          ln.startsWith('--- ') ||
+          ln.startsWith('index ') ||
+          ln.startsWith('new file mode') ||
+          ln.startsWith('deleted file mode') ||
+          ln.startsWith('rename ')
+        ) {
+          cls += ' sbv-diff-meta';
+        } else if (ln.startsWith('+')) {
+          cls += ' sbv-diff-add';
+        } else if (ln.startsWith('-')) {
+          cls += ' sbv-diff-del';
+        }
+        parts.push('<div class="' + cls + '">' + escHtml(ln || ' ') + '</div>');
+      }
+      wrap.innerHTML = parts.join('');
+      bodyEl.appendChild(wrap);
+    }
+
+    function renderLogContent(text) {
+      bodyEl.innerHTML = '';
+      if (!text) {
+        bodyEl.innerHTML = '<div class="sbv-empty">No output recorded.</div>';
+        return;
+      }
+      const pre = document.createElement('pre');
+      pre.className = 'sbv-log-view' + (state.codeWrap ? ' wrap' : '');
+      pre.textContent = String(text);
+      bodyEl.appendChild(pre);
+    }
+
+    function renderInlineView() {
+      const inl = state.inline;
+      if (!inl) return;
+      setSubbar([
+        { label: 'Wrap', active: state.codeWrap, onClick: () => { state.codeWrap = !state.codeWrap; renderInlineView(); } },
+        { spacer: true },
+        {
+          label: 'Copy',
+          onClick: () => {
+            navigator.clipboard?.writeText(inl.content || '').then(() => onToast('Copied to clipboard')).catch(() => {});
+          },
+        },
+      ]);
+      if (inl.kind === 'diff') {
+        renderDiffContent(inl.content);
+      } else {
+        renderLogContent(inl.content);
+      }
+    }
+
+    function openInline(inlineOpts = {}) {
+      const title = String(inlineOpts.title || '');
+      const subtitle = String(inlineOpts.subtitle || '');
+      const content = String(inlineOpts.content == null ? '' : inlineOpts.content);
+      const kind = inlineOpts.kind === 'diff' ? 'diff' : 'log';
+
+      state.path = '';
+      state.displayPath = title;
+      state.info = null;
+      state.inline = { title, subtitle, content, kind };
+
+      badgeEl.textContent = kind === 'diff' ? 'DIFF' : 'LOG';
+      crumbsEl.innerHTML = '';
+      const sp = document.createElement('span');
+      sp.className = 'sbv-crumb-cur';
+      sp.textContent = title || (kind === 'diff' ? 'Diff' : 'Output');
+      if (subtitle) sp.title = subtitle;
+      crumbsEl.appendChild(sp);
+      metaEl.textContent = subtitle;
+
+      dlLink.classList.add('hidden');
+      if (newTabLink) newTabLink.classList.add('hidden');
+      if (refreshBtn) refreshBtn.classList.add('hidden');
+
+      renderInlineView();
+      return true;
+    }
+
     async function open(targetPath, openOpts = {}) {
       const qs = new URLSearchParams();
       qs.set('path', targetPath);
       if (openOpts.cwd) qs.set('cwd', openOpts.cwd);
       if (openOpts.fallbackDir) qs.set('fallbackDir', openOpts.fallbackDir);
 
+      state.inline = null;
+      if (newTabLink) newTabLink.classList.remove('hidden');
+      if (refreshBtn) refreshBtn.classList.remove('hidden');
       state.zoom = 'fit';
       state.mdRaw = false;
       state.htmlSource = false;
@@ -803,6 +904,10 @@
       if (state.path) open(state.path, { line: state.info?.line });
     });
     container.querySelector('[data-act="copy-path"]')?.addEventListener('click', () => {
+      if (state.inline) {
+        navigator.clipboard?.writeText(state.inline.content || '').then(() => onToast('Copied to clipboard')).catch(() => {});
+        return;
+      }
       if (!state.displayPath) return;
       navigator.clipboard?.writeText(state.displayPath).then(() => onToast('Path copied')).catch(() => {});
     });
@@ -827,6 +932,7 @@
 
     return {
       open,
+      openInline,
       handleKey,
       getPath: () => state.path,
       viewUrlFor,

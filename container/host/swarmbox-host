@@ -374,15 +374,9 @@ cfg_prepare() {
     [ -r "$CFG_FILE" ] || die 1 "cannot read the config file $CFG_FILE."
     _unk=
     _hastoken=0
-    _mux=0
-    _panel=0
     while IFS= read -r _line || [ -n "$_line" ]; do
         parse_line "$_line" || continue
-        if [ "$P_KEY" = MUX ]; then
-            _mux=1
-        elif [ "$P_KEY" = sysop.panel ]; then
-            _panel=1
-        elif is_file_key "$P_KEY"; then
+        if is_file_key "$P_KEY"; then
             if [ "$P_KEY" = CLOUDFLARE_TUNNEL_TOKEN ] && [ -n "$P_VAL" ]; then
                 _hastoken=1
             fi
@@ -394,8 +388,6 @@ cfg_prepare() {
         fi
     done < "$CFG_FILE"
     [ -z "$_unk" ] || warn "ignoring unknown key(s) in $CFG_FILE:$_unk"
-    [ "$_mux" = 0 ] || warn "ignoring MUX in $CFG_FILE: MUX was removed, herdr is the only multiplexer (\`swarmbox config unset MUX\` removes it)"
-    [ "$_panel" = 0 ] || warn "ignoring sysop.panel in $CFG_FILE: it set the tmux panel of the sysop, which was removed (\`swarmbox config unset sysop.panel\` removes it)"
     if [ "$_hastoken" = 1 ]; then
         _mode=$(file_mode "$CFG_FILE") || _mode=
         if [ "$_mode" != 600 ]; then
@@ -856,7 +848,7 @@ cmd_config_set() {
 }
 
 # config unset KEY: removes the line of KEY from the config file, so the environment or the default applies again. It also takes a
-# key the file holds but the script does not know (a typo, MUX, sysop.panel), which is how a stale key is cleaned up. Exit 0
+# key the file holds but the script does not know (a typo, a removed key), which is how a stale key is cleaned up. Exit 0
 # when the key was not in the file (nothing to do), 2 for NAME or a key that is neither known nor in the file.
 cmd_config_unset() {
     [ $# -eq 1 ] || usage
@@ -874,10 +866,7 @@ cmd_config_unset() {
         done < "$CFG_FILE"
     fi
     if [ "$_infile" = 0 ]; then
-        case $_key in
-            MUX|sysop.panel) ;;
-            *) is_file_key "$_key" || die 2 "unknown key '$_key'." ;;
-        esac
+        is_file_key "$_key" || die 2 "unknown key '$_key'."
         warn "$_key is not in $CFG_FILE; nothing to remove."
         return 0
     fi

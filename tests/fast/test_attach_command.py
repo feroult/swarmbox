@@ -1,5 +1,5 @@
 """`swarmbox-attach` over a FAKE multiplexer backend (tests/support/attach_support.py: the real mux.sh loads a recording fake.sh): the
-readiness wait (exit 6), which backend function each entry calls (--web, an interactive terminal, a command), the quoted command string,
+readiness wait (exit 6), which backend function each entry calls (an interactive terminal, a command), the quoted command string,
 and the paths that bypass the multiplexer (no terminal, --plain, a backend that is not installed). The herdr functions themselves are
 tests/fast/test_herdr_backend.py; the entrypoint's `attach` forwarding is in test_entrypoint.py.
 
@@ -40,10 +40,6 @@ class DispatchTests(FakeMuxCase):
     def test_a_terminal_without_a_command_is_an_interactive_tab(self):
         self.assertEqual(self.run_term(self.fake, []).wait(), 0)
         self.assertEqual(self.calls(), ["attach_interactive"])
-
-    def test_web_is_the_browser_client(self):
-        self.assertEqual(self.run_term(self.fake, ["--web"]).wait(), 0)
-        self.assertEqual(self.calls(), ["attach_web web="])
 
     def test_a_command_reaches_the_backend_as_one_quoted_string_and_its_status_comes_back(self):
         args = ["printf", "%s\n"] + AWKWARD

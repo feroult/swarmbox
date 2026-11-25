@@ -493,6 +493,50 @@ html.swarmbox-ready #sb-boot {
 .repo-wt-dot[data-tone="ok"] {
   background: var(--green);
 }
+.repo-main-pill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .14s ease, color .14s ease, background .14s ease;
+}
+.repo-main-pill.is-running {
+  border-color: rgba(167, 139, 250, 0.42);
+  background: rgba(167, 139, 250, 0.14);
+  color: var(--accent-bright);
+  animation: sb-pulse 1.3s ease-in-out infinite;
+}
+.repo-main-pill.is-failed {
+  border-color: rgba(255, 107, 120, 0.48);
+  background: rgba(255, 107, 120, 0.15);
+  color: var(--red);
+}
+.repo-main-pill.is-ahead {
+  border-color: rgba(74, 222, 128, 0.42);
+  background: rgba(74, 222, 128, 0.13);
+  color: var(--green);
+}
+.repo-main-pill.is-dirty {
+  border-color: rgba(251, 191, 36, 0.42);
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--amber);
+}
+@media (hover: hover) {
+  .repo-main-pill:hover {
+    filter: brightness(1.12);
+  }
+}
 .repo-add-btn {
   color: var(--text-dim);
 }
@@ -584,6 +628,261 @@ html.swarmbox-ready #sb-boot {
   color: var(--amber);
 }
 .spop-rec-act.amber:hover { background: rgba(251, 191, 36, 0.22); }
+.spop-rec-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.spop-rec-insp {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.spop-rec-insp:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Repo Control Center main branch card & Worktree preview */
+.spop-main-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.025);
+}
+.spop-main-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.spop-main-branch {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+.spop-main-sync {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.spop-verify-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.spop-verify-strip.is-running {
+  border-color: rgba(167, 139, 250, 0.36);
+  background: rgba(167, 139, 250, 0.1);
+  color: var(--accent-bright);
+}
+.spop-verify-strip.is-failed {
+  border-color: rgba(255, 107, 120, 0.42);
+  background: rgba(255, 107, 120, 0.12);
+  color: var(--red);
+}
+.spop-verify-strip.is-pushed,
+.spop-verify-strip.is-passed {
+  border-color: rgba(74, 222, 128, 0.36);
+  background: rgba(74, 222, 128, 0.1);
+  color: var(--green);
+}
+.spop-main-acts {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.spop-main-acts > .spop-btn {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+.spop-main-acts > .spop-btn.spop-btn-fit {
+  flex: 0 0 auto;
+  justify-content: center;
+}
+.spop-btn-sm {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.spop-btn-fit {
+  width: auto;
+  flex-shrink: 0;
+  justify-content: center;
+}
+.spop-main-undo {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -2px;
+}
+.spop-badge.err {
+  background: rgba(255, 107, 120, 0.16);
+  color: var(--red);
+}
+.spop-badge.checking {
+  background: rgba(167, 139, 250, 0.18);
+  color: var(--accent-bright);
+  animation: sb-pulse 1.3s ease-in-out infinite;
+}
+
+.spop-wt-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: rgba(12, 11, 16, 0.45);
+}
+.spop-commit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.spop-commit-row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  min-width: 0;
+}
+.spop-commit-sha {
+  color: var(--accent-bright);
+  flex-shrink: 0;
+}
+.spop-commit-subj {
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spop-commit-time {
+  color: var(--text-dim);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.spop-commit-more {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  padding-left: 2px;
+}
+.spop-diff-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.spop-stat-add { color: var(--green); font-weight: 600; }
+.spop-stat-del { color: var(--red); font-weight: 600; }
+
+.spop-merge-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.spop-seg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.spop-seg-label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.spop-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.spop-seg-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.spop-seg-btn:hover {
+  color: var(--text);
+}
+.spop-seg-btn.is-active {
+  background: rgba(167, 139, 250, 0.2);
+  color: var(--accent-bright);
+  font-weight: 600;
+}
+.spop-opts-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.spop-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 2px;
+}
+.spop-check input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+}
+.spop-sync-slot {
+  display: flex;
+  flex-direction: column;
+}
+.spop-links-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 
 /* Global New Agent Project / Repository Picker */
 .proj-section {

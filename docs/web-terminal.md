@@ -9,7 +9,7 @@ the address (and the public one, when `swarmbox remote setup` has been run). A s
 host side of the mapping. There is no host-network mode.
 
 Since version 2.3 herdr-core is the only multiplexer of the box: the tmux and ttyd page of earlier versions, its `web-terminal.conf`, the
-controls strip and `swarmbox-web render` are gone. A `MUX` key left in the host config is ignored with a warning.
+controls strip and `swarmbox-web render` are gone.
 
 **Same tabs in the browser and in your terminal.** The Studio, the terminal cockpit that `swarmbox` opens in your host terminal
 (`container/web/herdr/cockpit.mjs`, [herdr-cockpit-design.md](herdr-cockpit-design.md)), `swarmbox-tabs` and the sysop all see the same
@@ -28,7 +28,7 @@ goal, `Alt+T` the next theme, `Alt+,` the settings, `Alt+=` / `Alt+-` / `Alt+0` 
 **Themes.** Five palettes: Catppuccin Mocha (the default), SwarmBox Purple Glow ([theme.md](theme.md)), Tokyo Night, Nord and Rosé Pine.
 The choice is kept in `~/.config/swarmbox/herdr-web-theme` and shared with the cockpit.
 
-**Copy and paste.** `Ctrl+C` copies while text is selected (and is `^C` otherwise), `Ctrl+V` pastes, and a program in a terminal can write
+**Copy and paste.** `Ctrl+C` copies while text is selected (and is `^C` otherwise), `Ctrl+V` pastes; on macOS `Cmd+C` and `Cmd+V` do the same (`Cmd+C` with nothing selected does nothing), and a program in a terminal can write
 the browser clipboard with OSC 52; a clipboard *read* request (`OSC 52 ; ... ; ?`) is never answered, so nothing in the terminal can read
 what you copied elsewhere. An image pasted into the page is saved in the box and its path typed into the terminal.
 

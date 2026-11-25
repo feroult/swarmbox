@@ -152,7 +152,6 @@ managers can read: the `uses:` lines of the workflows and a literal `FROM` line.
 | `container/addons/poetry/addon.conf` | by hand | change `VERSION` |
 | `container/addons/claude/addon.conf` | floating (nothing to bump) | `VERSION=latest`; the addon updates itself |
 | `container/addons/antigravity/addon.conf` | floating (nothing to bump) | `VERSION=latest`; the program updates itself (the installer reads the vendor's manifest, which is always the newest release) |
-| `container/addons/gemini/addon.conf` | floating (nothing to bump) | `VERSION=latest` |
 | `container/addons/opencode/addon.conf` | floating (nothing to bump) | `VERSION=latest` |
 
 A go or gcloud bump without the checksum step leaves the old checksums in the file and the installer refuses the new

@@ -1,8 +1,7 @@
 # Multiplexer Architecture
 
 The box has one terminal multiplexer: **herdr-core** (`hc`). The Web Studio, the Terminal Cockpit, `swarmbox-tabs` and the sysop all attach
-to the same `herdr-core` daemon and see the same live terminals. tmux and ttyd were removed. A `MUX` key in the config, and the
-`sysop.panel` key that set the old tmux panel, are ignored with a warning and never reach the box.
+to the same `herdr-core` daemon and see the same live terminals. tmux and ttyd were removed.
 
 The multiplexer is still kept behind three narrow contracts, so that the core of the box (`entrypoint.sh`, `swarmbox-attach`, `swarmbox-web`,
 `swarmbox-bus`, the addons, the sysop) calls `hc` in one place only and the tests can load synthetic backends.
@@ -10,14 +9,13 @@ The multiplexer is still kept behind three narrow contracts, so that the core of
 ## 1. Shell backend (`container/scripts/mux/`)
 
 `container/scripts/mux/mux.sh` loads `/usr/local/lib/swarmbox/mux/herdr.sh`. `SWARMBOX_MUX` is a test seam, not a setting: with
-`SWARMBOX_TEST_MUX_DIR` it names a synthetic backend file in that folder, and a stale `SWARMBOX_MUX=tmux` loads herdr. The backend implements:
+`SWARMBOX_TEST_MUX_DIR` it names a synthetic backend file in that folder. The backend implements:
 
 | Function | Caller | Responsibility |
 |---|---|---|
 | `mux_available` | `swarmbox-attach` | Return 0 when `hc` is installed on `PATH` |
 | `mux_serve_init` | `entrypoint.sh` (step 9) | Seed the herdr configs, start the `herdr-core` daemon and its first `shell` tab |
 | `mux_serve_shutdown_note` | `entrypoint.sh` (`on_signal`) | Log the shutdown message on `SIGTERM` / `SIGINT` |
-| `mux_attach_web` | `swarmbox-attach --web` | Attach a browser client (`hc attach`) |
 | `mux_attach_interactive` | `swarmbox-attach` | Open the Terminal Cockpit (`container/web/herdr/cockpit.mjs`; `SWARMBOX_HERDR_RAW=1` falls back to `hc attach` of a new tab) |
 | `mux_attach_command CMD` | `swarmbox-attach CMD...` | Run a quoted shell command in an attached tab and exit with its status |
 | `mux_web_run PORT IFACE VOICE_BIN` | `swarmbox-web run` | Exec the Herdr Web Gateway (`container/web/herdr/server.mjs`), behind `swarmbox-voice front` when the `voice` addon is installed |
