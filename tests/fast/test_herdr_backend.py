@@ -1027,6 +1027,7 @@ class PtyViewportOwnershipTest(unittest.TestCase):
         os.makedirs(ws_dir, exist_ok=True)
         shutil.copyfile(HERDR_SERVER, os.path.join(web_dir, "server.mjs"))
         shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "hc-client.mjs"), os.path.join(web_dir, "hc-client.mjs"))
+        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "file-preview.mjs"), os.path.join(web_dir, "file-preview.mjs"))
         with open(os.path.join(ws_dir, "package.json"), "w", encoding="utf-8") as f:
             json.dump({"name": "ws", "type": "module", "main": "index.js"}, f)
         with open(os.path.join(ws_dir, "index.js"), "w", encoding="utf-8") as f:
