@@ -28,7 +28,7 @@ goal, `Alt+T` the next theme, `Alt+,` the settings, `Alt+=` / `Alt+-` / `Alt+0` 
 **Themes.** Five palettes: Catppuccin Mocha (the default), SwarmBox Purple Glow ([theme.md](theme.md)), Tokyo Night, Nord and Rosé Pine.
 The choice is kept in `~/.config/swarmbox/herdr-web-theme` and shared with the cockpit.
 
-**Copy and paste.** `Ctrl+C` copies while text is selected (and is `^C` otherwise), `Ctrl+V` pastes, and a program in a terminal can write
+**Copy and paste.** `Ctrl+C` copies while text is selected (and is `^C` otherwise), `Ctrl+V` pastes; on macOS `Cmd+C` and `Cmd+V` do the same (`Cmd+C` with nothing selected does nothing), and a program in a terminal can write
 the browser clipboard with OSC 52; a clipboard *read* request (`OSC 52 ; ... ; ?`) is never answered, so nothing in the terminal can read
 what you copied elsewhere. An image pasted into the page is saved in the box and its path typed into the terminal.
 
