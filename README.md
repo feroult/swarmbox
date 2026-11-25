@@ -13,26 +13,26 @@
 
 <p>
   <a href="#quick-start">Quick start</a> ·
-  <a href="#web-studio--settings">Web Studio &amp; Settings</a> ·
-  <a href="#mobile-sysop--voice">Mobile, Sysop &amp; Voice</a> ·
-  <a href="#agents-addons--base-image">Addons</a> ·
-  <a href="#remote-access">Remote access</a> ·
+  <a href="#multi-repo--git-worktrees">Worktrees</a> ·
+  <a href="#web-studio--settings">Web Studio</a> ·
+  <a href="#mobile-sysop--voice">Mobile &amp; Sysop</a> ·
+  <a href="#agents--addons">Addons</a> ·
+  <a href="#remote-access">Remote</a> ·
   <a href="#everyday-commands">Commands</a> ·
-  <a href="#security">Security</a> ·
-  <a href="#documentation">Docs</a>
+  <a href="#security">Security</a>
 </p>
 
 <br>
 
-<img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Herdr Web Studio v2.2 — 3-pane browser workspace with pixel-art Agent Mascot Cards, symmetric panel chevrons, zero-redundancy adaptive topbar, JetBrains Mono + Nerd Font, Purple Glow Starship prompt, and docked Sysop drawer with its reactive pixel-art operator mascot" width="880">
+<img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Web Studio — multi-repo agent grouping, live OSC 7501 status cards, Git worktree badges, Purple Glow Starship prompt, and docked Sysop operator" width="900">
 
 </div>
 
 <br>
 
-| Persistent Sandbox | Native Web Studio &amp; Mobile | Sysop Operator &amp; Local Voice |
+| Persistent Sandbox | Multi-Repo Studio &amp; Worktrees | Autonomous Sysop &amp; Local Voice |
 | :--- | :--- | :--- |
-| Run **Claude Code**, **Antigravity (`agy`)**, **OpenCode**, or **Gemini CLI** in auto-approve mode with `sudo`, nested rootless Podman, and headless Chromium — with projects, logins, SSH keys, and addons persisted in one host folder (`~/swarmbox`). | Pixel-art **Agent Mascot Cards** with live OSC 7501 status, adaptive Focus Mode (`Alt+B`), 5 synced themes, bundled **JetBrains Mono + Nerd Font**, studio **Settings** (`Alt+,`), smart wrapped-line copy, instant bracketed &amp; **clipboard image paste (`Ctrl+V` / drag-and-drop)**, and a 3-pane 24-bit **Terminal Cockpit** over SSH. | Type or speak a goal from desktop or phone. **Sysop** reads your tabs, routes to the active agent, and pauses risky actions behind one-tap **Allow / Cancel** cards — backed by local `whisper.cpp` speech-to-text. |
+| Run **Claude Code**, **Antigravity (`agy`)**, or **OpenCode** in auto-approve mode with `sudo`, nested Podman, and headless Chromium — with projects, logins, and SSH keys persisted in `~/swarmbox`. | Agents group automatically by Git repository, isolate into clean **Git worktrees** on collision, survive restarts as zero-RAM **parked cards**, and switch in `0 ms` with zero reflow. | Direct agents by text or voice from desktop or phone. **Sysop** inspects your box state, routes goals across tabs, and gates risky actions behind one-tap **Allow / Cancel** cards — backed by local `whisper.cpp`. |
 
 ---
 
@@ -42,129 +42,132 @@ Requires **Podman 4.3+** (Linux, WSL2 on the Linux filesystem, or macOS via a Po
 
 ```bash
 curl -fsSL https://github.com/feroult/swarmbox/releases/latest/download/install.sh | sh -s -- --with claude
-swarmbox          # pulls the image, creates the box, and opens a shell (shortcut: sx)
-claude            # inside the box: installs Claude Code on first use and runs in auto-approve mode
+swarmbox          # pulls the image, creates the box, and opens the Terminal Cockpit (shortcut: sx)
+claude            # inside the box: installs Claude Code on first use in auto-approve mode
 ```
 
-- **Herdr Web Studio &amp; Terminal Cockpit:** every box runs on `herdr-core`; `swarmbox` opens the Terminal Cockpit and the web port serves the Web Studio, both on the same live terminals.
-- **Open the Web Studio:** run `swarmbox url` and visit `http://127.0.0.1:7681`, or run `swarmbox` again in another terminal to share the live session.
+- **Open the Web Studio:** run `swarmbox url` and visit `http://127.0.0.1:7681` — both the browser studio and SSH cockpit attach to the same live `herdr-core` terminals.
 - **Other agents &amp; API keys:** pass `--with antigravity` (`agy`) or `--with opencode`, install later with `swarmbox addon install <name>`, or forward a host key via `export ANTHROPIC_API_KEY=...` and `swarmbox env add ANTHROPIC_API_KEY && swarmbox reset`.
+
+---
+
+## Multi-Repo & Git Worktrees
+
+Run multiple agents on the same codebase in parallel without stepping on each other's files.
+
+<p align="center">
+  <img src="docs/img/swarmbox-worktrees.png" alt="SwarmBox global project picker with automatic Git worktree collision detection on the left, and one-click worktree reconciliation popover on the right" width="900">
+</p>
+
+- **Zero-friction launching (`Alt+A`):** Press `Alt+A` (or click **+ New agent**) to pick any auto-discovered Git repository in `~`, or click `+` on a repo header to spawn right beside your active agents.
+- **Automatic worktree isolation:** Launching a second agent on an active branch detects the collision and isolates it into a fresh `sb/wt-*` worktree (copying `.env*` files automatically, configurable as `ask` / `auto` / `off`).
+- **One-click reconcile &amp; pinned sessions:** Click a repo's `⑂ N` badge to dry-run merge checks and run **Merge &amp; close**, **Ask to commit**, or **Close &amp; clean**. Pin any tab so it survives `swarmbox stop` or `reset` as a zero-RAM `PARKED` card with 1-click **Wake** ([docs/worktrees-design.md](docs/worktrees-design.md), [docs/pins-design.md](docs/pins-design.md)).
 
 ---
 
 ## Web Studio & Settings
 
-A cohesive browser studio, responsive phone UI, and matching 24-bit Terminal Cockpit — all attached to the same live `herdr-core` daemon with zero extra host installs.
+One cohesive dark studio across desktop browser, phone, and 24-bit SSH Terminal Cockpit — bundled with zero external CDN dependencies.
 
 <p align="center">
-  <img src="docs/img/swarmbox-web-settings.png" alt="SwarmBox Studio Settings on desktop and mobile — 5 visual theme cards synced with Terminal Cockpit, JetBrains Mono font slider with live preview, line-height density, cursor, scrollback, and 5-section navigation" width="880">
+  <img src="docs/img/swarmbox-web-settings.png" alt="SwarmBox Studio Settings on desktop and mobile — 5 synced themes, JetBrains Mono font slider with live preview, cursor and scrollback controls" width="900">
 </p>
 
-| Capability | What you get out of the box |
+| Feature | Highlights |
 | :--- | :--- |
-| **Pixel-Art Agent Cards &amp; Focus Mode** | Active coding agents (`agy`, `claude`, `codex`, `opencode`, `gemini`) get color-coded **Pixel-Art Mascot Cards** in the sidebar with live OSC 7501 badges (`IDLE`, `WORKING 74%`, `BLOCKED`, `DONE`), inline progress bars, and `Alt+1..9` switching — while plain shells stay cleanly grouped under `SHELLS`. Collapse the sidebar (`Alt+B`) and informative horizontal pixel-icon tabs automatically take over the topbar for distraction-free full-width focus; Sysop also opens responsively by viewport width (`>= 1360px`). |
-| **Studio Settings (`Alt+,`)** | Desktop dialog + mobile bottom sheet across 5 live sections — **Appearance**, **SwarmBox**, **Sysop** (3-card autonomy policy), **Voice**, and **Addons &amp; System** (one-click live addon install, MCP servers, Git SSH public key copy, shortcuts). Editing host-managed keys stages a sticky **Apply on host** bar (`swarmbox config set ... && swarmbox reset`) with one-click copy. |
-| **5 Synced Themes &amp; Offline Fonts** | **Purple Glow** (default), **Catppuccin Mocha**, **Tokyo Night**, **Nord**, and **Rosé Pine** — synchronized across Web UI, Terminal Cockpit, and `herdr.toml` — paired with self-hosted **JetBrains Mono + Nerd Font** (zero CDN) and a Purple Glow Starship prompt. |
-| **Smart Copy, Bracketed &amp; Image Paste** | **Copy** (`Ctrl+C` / `Cmd+C` / context menu) inspects the terminal buffer to rejoin soft-wrapped, shaded, or bordered AI commands into one clean line while preserving real multi-line scripts. **Text paste** (`Ctrl+V` / `Ctrl+Shift+V`) uses native Bracketed Paste (`\x1b[200~...\x1b[201~`) with zero double-paste. **Image paste** (`Ctrl+V` / `Cmd+V` or drag-and-drop PNG/JPEG/WebP/GIF/BMP) uploads directly to `/tmp/swarmbox/paste/` (`0600`, rolling prune) and injects the local file path straight into the active agent (`claude`, `agy`, `codex`, `opencode`). |
-| **Zero-Scroll Hydration &amp; Cockpit** | Per-tab live `xterm.js` sessions open already anchored at the bottom, switch in 0 ms preserving scrollback (with a floating **Jump to live** pill), auto-heal WebSockets on wake, and match the 3-pane SSH **Terminal Cockpit** (`Alt+1..9`, `Alt+N`, `Alt+B`, `Alt+S`, `Alt+G`, `Alt+T`, `Alt+,`, `Alt+-/=/0`). |
+| **Pixel-Art Agent Cards &amp; Focus Mode** | Live OSC 7501 badges (`IDLE`, `WORKING 74%`, `BLOCKED`, `DONE`), inline progress bars, `Alt+1..9` switching, inline rename (`Alt+R`), and distraction-free Focus Mode (`Alt+B`). |
+| **Studio Settings (`Alt+,`)** | 5 live sections (**Appearance**, **SwarmBox**, **Sysop**, **Voice**, **Addons &amp; System**) with one-click addon installs, SSH public key copy, and a sticky host apply command bar. |
+| **5 Synced Themes &amp; Offline Fonts** | **Purple Glow**, **Catppuccin**, **Tokyo Night**, **Nord**, and **Rosé Pine** synced across Web Studio and Cockpit, paired with self-hosted **JetBrains Mono + Nerd Font**. |
+| **Smart Copy &amp; Clipboard Image Paste** | Rejoins soft-wrapped AI commands on copy, uses native Bracketed Paste for text, and uploads pasted or dropped screenshots (`Ctrl+V` / drag-and-drop) straight into the active agent. |
 
 ---
 
 ## Mobile, Sysop & Voice
 
-Operate long-running agents comfortably from your phone with iOS-calibrated momentum touch scrolling, a floating glass dock, one-tap approvals, and local offline Whisper dictation.
+Operate long-running agents from your phone with calibrated iOS touch scrolling, sticky tab controls, one-tap approvals, and offline Whisper dictation.
 
 <p align="center">
-  <img src="docs/img/swarmbox-mobile.png" alt="SwarmBox Herdr Web Studio on mobile — left phone shows live agent tabs with pixel-art mascot icons, 1-line Starship prompt, floating ALLOW? approval card, and glass dock; right phone shows the Sysop bottom sheet with countdown bar, live steps, and voice composer" width="740">
+  <img src="docs/img/swarmbox-mobile.png" alt="SwarmBox on mobile — left phone shows live agent tabs, Starship prompt, floating Confirm action card, and glass dock; right phone shows the Sysop bottom sheet with inline agent links and voice composer" width="700">
 </p>
 
 ```bash
-swarmbox addon install sysop      # autonomous operator + approval cards
+swarmbox addon install sysop      # autonomous operator + approval cards + auto tab naming
 swarmbox addon install voice      # local whisper.cpp speech-to-text microphone
 ```
 
-- **Context-aware operator:** Sysop remembers recent goals, infers the active agent tab, queues messages when an agent is working, and keeps a full audit log.
-- **Host-rated actions, your choice of autonomy:** by default (`full-auto`) the Sysop does what you ask with no approval prompts; under `auto` low-risk actions run directly, medium-risk ones pause on a veto countdown and high-risk commands and open agent dialogs wait for **Allow** (`confirm-risky` and `confirm-all` tighten further via **Settings → Sysop**).
-- **Private local voice:** Tap **Speak** on desktop or phone to capture audio with a live waveform and timer, then tap **Send** (or **×** to discard) — transcribed locally through `whisper.cpp` straight to Sysop without audio ever leaving your machine, and `swarmbox-voice say "..."` works from any shell ([docs/sysop.md](docs/sysop.md), [docs/voice.md](docs/voice.md)).
+- **Context-aware operator:** Sysop reads the unified box world model (`swarmbox state`), routes goals across tabs, auto-names unnamed sessions, and links agent tabs inline in its replies.
+- **Configurable autonomy:** Runs immediately in `full-auto` (default), or switches to `auto`, `confirm-risky`, or `confirm-all` in **Settings → Sysop** to gate risky commands behind **Allow / Cancel**.
+- **Private local voice:** Tap **Speak** on desktop or phone to record with a live waveform — transcribed locally via `whisper.cpp` without audio ever leaving your machine ([docs/sysop.md](docs/sysop.md), [docs/voice.md](docs/voice.md)).
 
 ---
 
-## Agents, Addons & Base Image
+## Agents & Addons
 
-Addons install on demand inside your persistent workspace — keeping the base image lean while preserving versions across resets and upgrades.
+Addons install on demand inside your persistent workspace, keeping the base image lean while preserving versions across resets.
 
-| Addon | Commands | Notes |
+| Addon | Command | What it adds |
 | :--- | :--- | :--- |
-| **`claude`** | `claude` | Claude Code (`--dangerously-skip-permissions` interactive default) + Purple Glow statusline |
-| **`antigravity`** | `agy` | Google Antigravity CLI (`--dangerously-skip-permissions` interactive default) + isolated statusline |
+| **`claude`** | `claude` | Claude Code (auto-approve default) + Purple Glow statusline |
+| **`antigravity`** | `agy` | Google Antigravity CLI (auto-approve default) + isolated statusline |
 | **`opencode`** | `opencode` | Open-source terminal coding agent |
-| **`gemini`** | `gemini` | Gemini CLI *(deprecated; paid API key only — use `antigravity`)* |
-| **`sysop`** | `swarmbox-sysop` | Autonomous goal operator, live activity panel, and risk-gated approval host |
-| **`voice`** | `swarmbox-voice` | Local `whisper.cpp` speech-to-text web front and goal publisher |
-| **`go`** | `go`, `gofmt` | Pinned Go toolchain (SHA-256 verified) with workspace `GOPATH` |
-| **`gcloud`** | `gcloud`, `gsutil`, `bq` | Pinned Google Cloud CLI (SHA-256 verified) |
-| **`clasp`** | `clasp` | Pinned Google Apps Script CLI with OAuth callback port (`43323`) published |
-| **`poetry`** | `poetry` | Pinned Python dependency manager installed isolated in the workspace |
+| **`sysop`** | `swarmbox-sysop` | Autonomous operator, auto tab naming, and approval cards |
+| **`voice`** | `swarmbox-voice` | Local `whisper.cpp` speech-to-text web front |
+| **`go`** · **`gcloud`** · **`clasp`** · **`poetry`** | `go`, `gcloud`, `clasp`, `poetry` | Pinned, SHA-256 verified developer runtimes &amp; CLIs |
 
-- **Agent shortcut &amp; custom addons:** Run `yolo` inside the box to launch your default agent (`YOLO=0` disables auto-approve); scaffold custom workspace addons with `swarmbox addon new NAME`, inspect with `swarmbox addon doctor`, and roll back with `swarmbox addon use NAME VERSION`.
-- **Included in the base image:** Node 24, Python 3 + `uv`, nested rootless Podman (`netavark` + `aardvark-dns`, [docs/nested-podman.md](docs/nested-podman.md)), pinned headless Chromium + `chrome-devtools-mcp`, `herdr-core` with the Herdr Web Studio &amp; Terminal Cockpit, Starship prompt, `swarmbox-bus`, `swarmbox-tabs`, `git`, `jq`, `sqlite3`, and `build-essential`.
+> **Base image includes:** Node 24, Python 3 + `uv`, nested rootless Podman ([docs/nested-podman.md](docs/nested-podman.md)), headless Chromium + `chrome-devtools-mcp`, `herdr-core`, Starship prompt, `git`, `jq`, `sqlite3`, and `build-essential`. Run `yolo` inside the box to launch your default agent (`YOLO=0` disables auto-approve).
 
 ---
 
 ## Remote access
 
-Reach the Web Studio, Sysop approvals, and Whisper microphone from anywhere over HTTPS with **Cloudflare Tunnel + Access** (email one-time code, free Zero Trust tier):
+Reach your Web Studio, Sysop approvals, and Whisper mic from anywhere over HTTPS with **Cloudflare Tunnel + Access** (free Zero Trust email code):
 
 ```bash
 swarmbox remote setup --domain example.com --email you@example.com
 swarmbox url
 ```
 
-`cloudflared` runs in a separate container **on your host**, never inside the box — no open router ports, no public IP, and no tunnel secrets inside the agent's environment ([docs/cloudflare.md](docs/cloudflare.md), [docs/web-terminal.md](docs/web-terminal.md)).
+`cloudflared` runs in a separate container **on your host**, never inside the box — zero open ports and no tunnel secrets inside the agent's environment ([docs/cloudflare.md](docs/cloudflare.md), [docs/web-terminal.md](docs/web-terminal.md)).
 
 ---
 
 ## Everyday commands
 
 ```bash
-swarmbox                        # attach to the shared session (starts the box if needed)
-swarmbox --plain                # open a plain bash shell without a multiplexer
-swarmbox url                    # print local and remote web terminal addresses
-swarmbox config list            # show all settings and where each comes from
-swarmbox config set WEB_PORT 7682  # change a setting (then swarmbox reset)
-swarmbox config unset WEB_PORT  # remove a setting from the file: its default applies again
-swarmbox config path            # print where the config file is
-swarmbox env add NAME           # pass a host environment variable into the box
-swarmbox addon list             # show available and installed addons
-swarmbox addon install NAME     # install an addon (e.g. sysop, voice, antigravity, go)
-swarmbox update                 # pull a newer image and refresh the host script from it
-swarmbox reset                  # recreate the box so changed settings apply (workspace kept)
-swarmbox stop                   # stop the box without deleting anything
-swarmbox pubkey                 # print the box's Git SSH public key
-swarmbox remote setup           # set up Cloudflare Tunnel + email-code Access
+swarmbox                              # attach to the shared session (starts the box if needed)
+swarmbox --plain                      # open a plain bash shell without a multiplexer
+swarmbox url                          # print local and remote Web Studio addresses
+swarmbox config list                  # show all settings and their sources
+swarmbox config set WEB_PORT 7682     # change a setting (then swarmbox reset)
+swarmbox config unset WEB_PORT        # revert a setting to its default
+swarmbox config path                  # print the config file path
+swarmbox env add NAME                 # forward a host environment variable into the box
+swarmbox addon list                   # list available and installed addons
+swarmbox addon install NAME           # install an addon (sysop, voice, antigravity, go, ...)
+swarmbox update                       # pull the latest image and refresh the host script
+swarmbox reset                        # recreate the box to apply settings (workspace kept)
+swarmbox stop                         # stop the box without deleting anything
+swarmbox pubkey                       # print the box's Git SSH public key
+swarmbox remote setup                 # configure Cloudflare Tunnel + email-code Access
 ```
 
 ---
 
 ## Security
 
-SwarmBox runs in a rootless Podman container, which is **not complete isolation**: it shares the kernel with your host and carries the known limits of containers (and nested Podman requires `/dev/net/tun` and an unmasked `/proc`). It confines agent mistakes to one workspace folder (`~/swarmbox`), keeps your host Podman socket and Cloudflare credentials outside the box, binds the web gateway to `127.0.0.1`, and makes no telemetry calls. For untrusted code or a stronger boundary, run SwarmBox inside a virtual machine ([docs/microvm.md](docs/microvm.md)). More in [SECURITY.md](SECURITY.md) and [docs/security-review.md](docs/security-review.md).
+SwarmBox runs in a rootless Podman container, which is **not complete isolation**: it shares the kernel with your host and carries the known limits of containers (nested Podman requires `/dev/net/tun` and an unmasked `/proc`). It confines agent mistakes to one workspace folder (`~/swarmbox`), keeps your host Podman socket and Cloudflare credentials outside the box, binds the web gateway to `127.0.0.1`, and sends zero telemetry. For untrusted code or a stronger boundary, run SwarmBox inside a virtual machine ([docs/microvm.md](docs/microvm.md)). See [SECURITY.md](SECURITY.md) and [docs/security-review.md](docs/security-review.md).
 
 ---
 
 ## Documentation
 
-| Guide | What it covers |
+| Guide | Covers |
 | :--- | :--- |
-| [Web terminal](docs/web-terminal.md) | Browser shortcuts, clipboard sync, mobile controls strip, font sizing, and customization |
-| [Herdr &amp; Cockpit](docs/herdr-cockpit-design.md) · [Mux architecture](docs/mux-architecture.md) | Opt-in `herdr` backend, Terminal Cockpit, Herdr Web Studio, and native OSC 7501 Sysop bridge |
-| [Sysop](docs/sysop.md) | Autonomous tab operator, MCP brain presets/templates, risk policy, panel modes, and audit log |
-| [Voice control](docs/voice.md) | Local Whisper setup, language/model settings, `/voice/` proxy, and troubleshooting |
-| [Remote access](docs/cloudflare.md) | Cloudflare Tunnel + Access setup, token handling, and multi-box hostnames |
-| [Nested Podman](docs/nested-podman.md) | Running containers inside the box, host `podman -c` connection, and port forwarding |
-| [Theme](docs/theme.md) | The Purple Glow palette for Windows Terminal, Ghostty, and Claude Code + statusline |
-| [Addons &amp; Bus](docs/addons-design.md) | Addon manifest model, `swarmbox-bus` pub/sub, and `swarmbox-tabs` capability |
-| [Architecture](docs/design.md) | Complete system design, configuration reference, and design decisions |
-| [MicroVM](docs/microvm.md) · [Uninstall](docs/uninstall.md) | Running inside a VM boundary; clean removal steps |
+| [Web terminal](docs/web-terminal.md) · [Herdr &amp; Cockpit](docs/herdr-cockpit-design.md) | Browser shortcuts, clipboard &amp; image paste, mobile dock, and Terminal Cockpit |
+| [Worktrees](docs/worktrees-design.md) · [Pinned sessions](docs/pins-design.md) | Multi-agent Git worktree isolation, reconciliation, and persistent parked sessions |
+| [Sysop](docs/sysop.md) · [Voice](docs/voice.md) | Autonomous operator, world model, autonomy policies, and local Whisper setup |
+| [Remote access](docs/cloudflare.md) · [Nested Podman](docs/nested-podman.md) | Cloudflare Tunnel + Access, containers inside the box, and port forwarding |
+| [Theme](docs/theme.md) · [Addons &amp; Bus](docs/addons-design.md) | Purple Glow palette, custom addons, `swarmbox-bus`, and `swarmbox-tabs` |
+| [Architecture](docs/design.md) · [MicroVM](docs/microvm.md) · [Uninstall](docs/uninstall.md) | Full system design, VM boundary guide, and clean removal steps |
 
 [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Third-party notices](THIRD_PARTY_NOTICES.md) · [Apache-2.0](LICENSE)
