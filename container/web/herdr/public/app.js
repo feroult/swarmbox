@@ -2543,17 +2543,20 @@
     //   suppresses native `paste` on <textarea> for image-only clipboards, a 70ms fallback checks
     //   navigator.clipboard.read() for images.
     // - Ctrl+Shift+V checks Clipboard API for images first, otherwise pastes text via term.paste().
+    // - Cmd (macOS) works exactly like Ctrl for all of the above; Cmd+C without a selection does nothing
+    //   (it never sends ^C), and Ctrl+C without a selection stays ^C.
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true;
       if (matchAltShortcut(ev)) return false;
       const key = ev.key.toLowerCase();
-      if (ev.ctrlKey && !ev.altKey && !ev.metaKey && key === 'c' && term.hasSelection()) {
+      const clipMod = !ev.altKey && (ev.ctrlKey !== ev.metaKey);
+      if (clipMod && key === 'c' && term.hasSelection()) {
         ev.preventDefault();
         copyTextSilently(getSmartSelection(term));
         term.clearSelection();
         return false;
       }
-      if (ev.ctrlKey && !ev.altKey && !ev.metaKey && key === 'v') {
+      if (clipMod && key === 'v') {
         if (ev.shiftKey && (navigator.clipboard?.read || navigator.clipboard?.readText)) {
           ev.preventDefault();
           (async () => {
