@@ -3930,6 +3930,78 @@
     openPopover(frag);
   }
 
+  const MERGE_PREFS_KEY = 'swarmbox.mergePrefs.v1';
+  function loadMergePrefs() {
+    const def = { afterMerge: 'verify', squash: false, clean: true };
+    try {
+      const raw = localStorage.getItem(MERGE_PREFS_KEY);
+      if (!raw) return def;
+      const d = JSON.parse(raw);
+      if (d && typeof d === 'object') {
+        if (d.afterMerge === 'verify' || d.afterMerge === 'verify_push' || d.afterMerge === 'none') {
+          def.afterMerge = d.afterMerge;
+        }
+        if (typeof d.squash === 'boolean') def.squash = d.squash;
+        if (typeof d.clean === 'boolean') def.clean = d.clean;
+      }
+    } catch (_) {}
+    return def;
+  }
+  function saveMergePrefs(next) {
+    try {
+      localStorage.setItem(MERGE_PREFS_KEY, JSON.stringify({
+        afterMerge: next.afterMerge,
+        squash: Boolean(next.squash),
+        clean: Boolean(next.clean),
+      }));
+    } catch (_) {}
+  }
+
+  function buildAfterMergeSeg(initialVal, onChange) {
+    const row = document.createElement('div');
+    row.className = 'spop-seg-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'spop-seg-label';
+    lbl.textContent = 'After merge';
+    const seg = document.createElement('div');
+    seg.className = 'spop-seg';
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-label', 'After merge action');
+    const items = [
+      { val: 'verify', label: 'Verify' },
+      { val: 'verify_push', label: 'Verify & Push' },
+      { val: 'none', label: 'None' },
+    ];
+    let cur = initialVal;
+    const btns = [];
+    const syncUi = () => {
+      for (const b of btns) {
+        const active = b.dataset.val === cur;
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-checked', active ? 'true' : 'false');
+      }
+    };
+    for (const it of items) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'spop-seg-btn';
+      b.dataset.val = it.val;
+      b.setAttribute('role', 'radio');
+      b.textContent = it.label;
+      b.addEventListener('click', () => {
+        if (cur === it.val) return;
+        cur = it.val;
+        syncUi();
+        if (onChange) onChange(cur);
+      });
+      btns.push(b);
+      seg.appendChild(b);
+    }
+    syncUi();
+    row.append(lbl, seg);
+    return { row, getVal: () => cur };
+  }
+
   function formatHandoffToast(data, fallback) {
     const h = data && data.handoff;
     if (!h) return fallback;
@@ -4169,63 +4241,100 @@
         }
       }
     } else if (st.ahead > 0 && st.can_merge && !st.main_dirty) {
-      const checkLabel = document.createElement('label');
-      checkLabel.className = 'spop-check';
+      const mPrefs = loadMergePrefs();
+      const optsBox = document.createElement('div');
+      optsBox.className = 'spop-merge-opts';
+
+      const btnExec = document.createElement('button');
+      btnExec.type = 'button';
+      btnExec.className = 'spop-btn green';
+      btnExec.innerHTML = '<span class="spop-btn-lbl"></span><span class="spop-hint"></span>';
+      const lblEl = btnExec.querySelector('.spop-btn-lbl');
+      const hintEl = btnExec.querySelector('.spop-hint');
+
+      const updatePrimaryBtn = () => {
+        const verb = mPrefs.squash ? 'Squash' : 'Merge';
+        if (mPrefs.afterMerge === 'verify') {
+          lblEl.textContent = `${verb} → Verify`;
+          hintEl.textContent = mainAgent ? 'via main agent' : (verifyCmd ? 'run check' : st.base);
+        } else if (mPrefs.afterMerge === 'verify_push') {
+          lblEl.textContent = `${verb} → Verify & Push`;
+          hintEl.textContent = mainAgent ? 'via main agent' : (verifyCmd ? 'check + push' : 'merge + push');
+        } else {
+          lblEl.textContent = `${verb} into ${st.base}`;
+          hintEl.textContent = mPrefs.clean ? 'local only' : 'keep tab';
+        }
+      };
+
+      const segCtrl = buildAfterMergeSeg(mPrefs.afterMerge, (val) => {
+        mPrefs.afterMerge = val;
+        saveMergePrefs(mPrefs);
+        updatePrimaryBtn();
+      });
+
+      const checksRow = document.createElement('div');
+      checksRow.className = 'spop-opts-row';
+
+      const squashLabel = document.createElement('label');
+      squashLabel.className = 'spop-check';
       squashChk = document.createElement('input');
       squashChk.type = 'checkbox';
-      const checkSpan = document.createElement('span');
-      checkSpan.textContent = 'Squash commits';
-      checkLabel.append(squashChk, checkSpan);
-      frag.appendChild(checkLabel);
+      squashChk.checked = mPrefs.squash;
+      squashChk.addEventListener('change', () => {
+        mPrefs.squash = squashChk.checked;
+        saveMergePrefs(mPrefs);
+        updatePrimaryBtn();
+      });
+      const squashSpan = document.createElement('span');
+      squashSpan.textContent = 'Squash';
+      squashLabel.append(squashChk, squashSpan);
 
-      const verifyOnlyHint = mainAgent ? 'via main agent' : (verifyCmd ? 'run check' : st.base);
-      const verifyPushHint = mainAgent ? 'via main agent' : (verifyCmd ? 'check + push' : 'merge + push');
+      const cleanLabel = document.createElement('label');
+      cleanLabel.className = 'spop-check';
+      const cleanChk = document.createElement('input');
+      cleanChk.type = 'checkbox';
+      cleanChk.checked = mPrefs.clean;
+      cleanChk.addEventListener('change', () => {
+        mPrefs.clean = cleanChk.checked;
+        saveMergePrefs(mPrefs);
+        updatePrimaryBtn();
+      });
+      const cleanSpan = document.createElement('span');
+      cleanSpan.textContent = 'Close & remove';
+      cleanLabel.append(cleanChk, cleanSpan);
 
-      const btnVerify = document.createElement('button');
-      btnVerify.type = 'button';
-      btnVerify.className = 'spop-btn green';
-      btnVerify.innerHTML = '<span>Merge → Verify</span><span class="spop-hint"></span>';
-      btnVerify.querySelector('.spop-hint').textContent = verifyOnlyHint;
-      btnVerify.addEventListener('click', async () => {
-        const squash = !!(squashChk && squashChk.checked);
+      checksRow.append(squashLabel, cleanLabel);
+      optsBox.append(segCtrl.row, checksRow);
+      updatePrimaryBtn();
+
+      btnExec.addEventListener('click', async () => {
+        const doVerify = mPrefs.afterMerge === 'verify' || mPrefs.afterMerge === 'verify_push';
+        const doPush = mPrefs.afterMerge === 'verify_push';
         closePopover();
         const r = await fetch('/api/worktrees/merge', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ terminal: termId, path: st.path, clean: true, squash, verify: true, push: false }),
+          body: JSON.stringify({
+            terminal: termId,
+            path: st.path,
+            clean: mPrefs.clean,
+            squash: mPrefs.squash,
+            verify: doVerify,
+            push: doPush,
+          }),
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) {
           showTermToast(d.message || d.error || 'Merge failed', 'error');
           return;
         }
-        const fallback = `Merged ${st.branch} into ${st.base} & cleaned worktree`;
+        const fallback = mPrefs.clean
+          ? `Merged ${st.branch} into ${st.base} & cleaned worktree`
+          : `Merged ${st.branch} into ${st.base}`;
         showTermToast(formatHandoffToast(d, fallback), 'ok', 3600);
       });
 
-      const btnVerifyPush = document.createElement('button');
-      btnVerifyPush.type = 'button';
-      btnVerifyPush.className = 'spop-btn secondary';
-      btnVerifyPush.innerHTML = '<span>Merge → Verify &amp; Push</span><span class="spop-hint"></span>';
-      btnVerifyPush.querySelector('.spop-hint').textContent = verifyPushHint;
-      btnVerifyPush.addEventListener('click', async () => {
-        const squash = !!(squashChk && squashChk.checked);
-        closePopover();
-        const r = await fetch('/api/worktrees/merge', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ terminal: termId, path: st.path, clean: true, squash, verify: true, push: true }),
-        });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          showTermToast(d.message || d.error || 'Merge failed', 'error');
-          return;
-        }
-        const fallback = `Merged ${st.branch} into ${st.base} & cleaned worktree`;
-        showTermToast(formatHandoffToast(d, fallback), 'ok', 3600);
-      });
-
-      frag.append(btnVerify, btnVerifyPush);
+      frag.append(optsBox, btnExec);
     } else if (st.ahead === 0 && !st.dirty) {
       const btnClean = document.createElement('button');
       btnClean.type = 'button';
@@ -4303,43 +4412,6 @@
     links.className = 'spop-links';
     const leftLinks = document.createElement('div');
     leftLinks.className = 'spop-links-group';
-
-    if (st.ahead > 0 && st.can_merge && !st.main_dirty && !st.dirty) {
-      const mergeOnlyBtn = document.createElement('button');
-      mergeOnlyBtn.type = 'button';
-      mergeOnlyBtn.className = 'spop-link-btn';
-      mergeOnlyBtn.textContent = 'Merge only';
-      mergeOnlyBtn.title = `Merge ${st.branch} into ${st.base} & clean without running checks or pushing`;
-      mergeOnlyBtn.addEventListener('click', async () => {
-        const squash = !!(squashChk && squashChk.checked);
-        closePopover();
-        const r = await fetch('/api/worktrees/merge', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ terminal: termId, path: st.path, clean: true, squash, verify: false, push: false }),
-        });
-        const d = await r.json().catch(() => ({}));
-        showTermToast(r.ok ? `Merged ${st.branch} into ${st.base} & cleaned worktree` : (d.message || 'Merge failed'), r.ok ? 'ok' : 'error');
-      });
-      leftLinks.appendChild(mergeOnlyBtn);
-
-      const keepMergeBtn = document.createElement('button');
-      keepMergeBtn.type = 'button';
-      keepMergeBtn.className = 'spop-link-btn';
-      keepMergeBtn.textContent = 'Merge & keep tab';
-      keepMergeBtn.addEventListener('click', async () => {
-        const squash = !!(squashChk && squashChk.checked);
-        closePopover();
-        const r = await fetch('/api/worktrees/merge', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ terminal: termId, path: st.path, clean: false, squash, verify: false, push: false }),
-        });
-        const d = await r.json().catch(() => ({}));
-        showTermToast(r.ok ? `Merged ${st.branch} into ${st.base}` : (d.message || 'Merge failed'), r.ok ? 'ok' : 'error');
-      });
-      leftLinks.appendChild(keepMergeBtn);
-    }
 
     const prBtn = document.createElement('button');
     prBtn.type = 'button';
@@ -4614,15 +4686,47 @@
       frag.appendChild(mainCard);
     }
 
-    // Batch merge bar when >= 2 active worktrees are ready
+    // Batch merge bar when >= 2 active worktrees are ready (shares saved After merge preference)
+    const repoMergePrefs = loadMergePrefs();
     const readyCount = statuses.filter(({ st }) => st && !st.dirty && st.ahead > 0 && st.can_merge && !st.main_dirty).length;
+    const rowMergeBtns = [];
+    const syncBatchLabels = () => {
+      const m = repoMergePrefs.afterMerge;
+      for (const b of rowMergeBtns) {
+        b.textContent = m === 'verify' ? 'Merge & verify' : m === 'verify_push' ? 'Merge & push' : 'Merge';
+      }
+    };
     if (readyCount >= 2 && group.root) {
-      const runBatchMerge = async (pushAfter) => {
+      const batchBox = document.createElement('div');
+      batchBox.className = 'spop-merge-opts';
+      const mergeAllBtn = document.createElement('button');
+      mergeAllBtn.type = 'button';
+      mergeAllBtn.className = 'spop-btn green spop-btn-sm';
+      mergeAllBtn.innerHTML = '<span class="spop-btn-lbl"></span><span class="spop-hint">batch</span>';
+      const mAllLbl = mergeAllBtn.querySelector('.spop-btn-lbl');
+      const updateBatchBtn = () => {
+        const m = repoMergePrefs.afterMerge;
+        mAllLbl.textContent = m === 'verify'
+          ? `Merge all (${readyCount}) → Verify`
+          : m === 'verify_push'
+            ? `Merge all (${readyCount}) → Verify & Push`
+            : `Merge all (${readyCount})`;
+        syncBatchLabels();
+      };
+      const segCtrl = buildAfterMergeSeg(repoMergePrefs.afterMerge, (val) => {
+        repoMergePrefs.afterMerge = val;
+        saveMergePrefs(repoMergePrefs);
+        updateBatchBtn();
+      });
+      updateBatchBtn();
+      mergeAllBtn.addEventListener('click', async () => {
+        const doVerify = repoMergePrefs.afterMerge === 'verify' || repoMergePrefs.afterMerge === 'verify_push';
+        const doPush = repoMergePrefs.afterMerge === 'verify_push';
         closePopover();
         const r = await fetch('/api/worktrees/merge-all', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repo: group.root, clean: true, verify: true, push: pushAfter }),
+          body: JSON.stringify({ repo: group.root, clean: true, verify: doVerify, push: doPush }),
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) {
@@ -4633,22 +4737,9 @@
         const fLen = Array.isArray(d.failed) ? d.failed.length : 0;
         const baseMsg = `Merged ${mLen} worktree${mLen === 1 ? '' : 's'}${fLen ? ` (${fLen} failed)` : ''}`;
         showTermToast(formatHandoffToast(d, baseMsg), fLen ? '' : 'ok', 3800);
-      };
-      const batchRow = document.createElement('div');
-      batchRow.className = 'spop-main-acts';
-      const mergeAllBtn = document.createElement('button');
-      mergeAllBtn.type = 'button';
-      mergeAllBtn.className = 'spop-btn green spop-btn-sm';
-      mergeAllBtn.innerHTML = `<span>Merge all (${readyCount}) → Verify</span><span class="spop-hint">batch</span>`;
-      mergeAllBtn.addEventListener('click', () => runBatchMerge(false));
-      const mergeAllPushBtn = document.createElement('button');
-      mergeAllPushBtn.type = 'button';
-      mergeAllPushBtn.className = 'spop-btn secondary spop-btn-sm spop-btn-fit';
-      mergeAllPushBtn.textContent = '& Push';
-      mergeAllPushBtn.title = `Merge all ${readyCount} ready worktrees, verify & push`;
-      mergeAllPushBtn.addEventListener('click', () => runBatchMerge(true));
-      batchRow.append(mergeAllBtn, mergeAllPushBtn);
-      frag.appendChild(batchRow);
+      });
+      batchBox.append(segCtrl.row, mergeAllBtn);
+      frag.appendChild(batchBox);
     }
 
     if (total > 0) {
@@ -4726,14 +4817,21 @@
           meta.textContent = `${st.ahead} ahead${behindTxt} · clean`;
           meta.classList.add('is-ok');
           actBtn.classList.add('green');
-          actBtn.textContent = 'Merge & verify';
-          actBtn.title = `Merge ${shortBr} into ${base}, clean worktree & verify on ${base}`;
+          actBtn.textContent = repoMergePrefs.afterMerge === 'verify'
+            ? 'Merge & verify'
+            : repoMergePrefs.afterMerge === 'verify_push'
+              ? 'Merge & push'
+              : 'Merge';
+          rowMergeBtns.push(actBtn);
+          actBtn.title = `Merge ${shortBr} into ${base} using your selected After merge mode`;
           actBtn.addEventListener('click', async () => {
+            const doVerify = repoMergePrefs.afterMerge === 'verify' || repoMergePrefs.afterMerge === 'verify_push';
+            const doPush = repoMergePrefs.afterMerge === 'verify_push';
             closePopover();
             const r = await fetch('/api/worktrees/merge', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ terminal: t.address, path: st.path, clean: true, verify: true, push: false }),
+              body: JSON.stringify({ terminal: t.address, path: st.path, clean: true, verify: doVerify, push: doPush }),
             });
             const d = await r.json().catch(() => ({}));
             if (!r.ok) {

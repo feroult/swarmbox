@@ -805,6 +805,57 @@ html.swarmbox-ready #sb-boot {
 .spop-stat-add { color: var(--green); font-weight: 600; }
 .spop-stat-del { color: var(--red); font-weight: 600; }
 
+.spop-merge-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.spop-seg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.spop-seg-label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.spop-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.spop-seg-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.spop-seg-btn:hover {
+  color: var(--text);
+}
+.spop-seg-btn.is-active {
+  background: rgba(167, 139, 250, 0.2);
+  color: var(--accent-bright);
+  font-weight: 600;
+}
+.spop-opts-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
 .spop-check {
   display: inline-flex;
   align-items: center;
