@@ -1644,7 +1644,209 @@
     return el.tagName === 'INPUT' || el.tagName === 'SELECT';
   }
 
+  // -------------------------------------------------------------------------
+  // Local File Preview Drawer & Terminal Path Links (OSC 8 + LinkProvider)
+  // -------------------------------------------------------------------------
+  const fileDrawerBackdropEl = document.getElementById('file-drawer-backdrop');
+  const fileDrawerEl = document.getElementById('file-drawer');
+  let fileDrawerOpen = false;
+  const fileStatCache = new Map(); // key -> { ts, stat }
+  const FILE_STAT_TTL_MS = 10000;
+
+  const fileViewer = (window.SwarmBoxViewer && fileDrawerEl)
+    ? window.SwarmBoxViewer.createViewer({
+        container: fileDrawerEl,
+        mode: 'drawer',
+        onClose: closeFileDrawer,
+      })
+    : null;
+
+  function closeFileDrawer() {
+    if (!fileDrawerOpen) return;
+    fileDrawerOpen = false;
+    fileDrawerBackdropEl?.classList.add('hidden');
+    focusTerminalIfDesktop();
+  }
+
+  if (fileDrawerBackdropEl) {
+    fileDrawerBackdropEl.addEventListener('click', (ev) => {
+      if (ev.target === fileDrawerBackdropEl) closeFileDrawer();
+    });
+  }
+
+  function terminalCwdFor(address) {
+    const t = terminals.find((x) => x.address === address);
+    return (t && t.cwd) ? t.cwd : '';
+  }
+
+  async function statBoxPathCached(rawPath, cwd, fallbackDir) {
+    const key = `${rawPath}\0${cwd || ''}\0${fallbackDir || ''}`;
+    const cached = fileStatCache.get(key);
+    const now = Date.now();
+    if (cached && (now - cached.ts) < FILE_STAT_TTL_MS) return cached.stat;
+    try {
+      const qs = new URLSearchParams();
+      qs.set('path', rawPath);
+      if (cwd) qs.set('cwd', cwd);
+      if (fallbackDir) qs.set('fallbackDir', fallbackDir);
+      const res = await fetch('/api/files/stat?' + qs.toString());
+      const data = await res.json();
+      const stat = (res.ok && data && data.ok) ? data : null;
+      fileStatCache.set(key, { ts: now, stat });
+      if (fileStatCache.size > 400) {
+        const firstKey = fileStatCache.keys().next().value;
+        if (firstKey) fileStatCache.delete(firstKey);
+      }
+      return stat;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function openFilePreview(targetPath, opts = {}) {
+    if (!targetPath) return;
+    if (opts.newTab) {
+      const stat = await statBoxPathCached(targetPath, opts.cwd || '', opts.fallbackDir || '');
+      const resolved = stat ? stat.path : targetPath;
+      const line = stat && stat.line ? stat.line : opts.line;
+      const url = fileViewer ? fileViewer.viewUrlFor(resolved, line) : ('/view?path=' + encodeURIComponent(resolved));
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (!fileViewer || !fileDrawerBackdropEl) return;
+    fileDrawerOpen = true;
+    fileDrawerBackdropEl.classList.remove('hidden');
+    fileViewer.open(targetPath, opts);
+  }
+
+  function createTerminalPathLinkProvider(term, address) {
+    return {
+      provideLinks(bufferLineNumber, callback) {
+        if (!window.PathLinks) return callback(undefined);
+        const buf = term.buffer && term.buffer.active;
+        if (!buf) return callback(undefined);
+
+        // 0-based index of the hovered row in xterm's buffer
+        const row0 = bufferLineNumber - 1;
+        const hoveredLine = buf.getLine(row0);
+        if (!hoveredLine) return callback(undefined);
+
+        // Expand upward/downward across soft-wrapped rows AND hard-wrapped rows from
+        // herdr-core attach hydration (where a long path hits col N and continues at col 0).
+        const cols = term.cols || 80;
+        const isHardPathContinuation = (upperIdx, lowerIdx) => {
+          const upper = buf.getLine(upperIdx);
+          const lower = buf.getLine(lowerIdx);
+          if (!upper || !lower) return false;
+          if (lower.isWrapped) return true;
+          const uText = upper.translateToString(true);
+          const lText = lower.translateToString(true);
+          if (!uText || !lText) return false;
+          // Upper row reaches the right edge (within 2 cols) with no trailing space,
+          // and lower row starts immediately with non-whitespace path characters.
+          if (uText.length >= cols - 2 && !/\s$/.test(uText) && /^\S/.test(lText)) {
+            const tailTok = uText.split(/\s+/).pop() || '';
+            if (tailTok.includes('/') || tailTok.startsWith('~') || tailTok.startsWith('file:')) {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        let startRow = row0;
+        while (startRow > 0 && isHardPathContinuation(startRow - 1, startRow)) {
+          startRow--;
+        }
+        let endRow = row0;
+        while (endRow + 1 < buf.length && isHardPathContinuation(endRow, endRow + 1)) {
+          endRow++;
+        }
+
+        // Build logical string and map each character offset to (row, col)
+        const rows = [];
+        let logical = '';
+        for (let r = startRow; r <= endRow; r++) {
+          const ln = buf.getLine(r);
+          if (!ln) continue;
+          const trimRight = (r === endRow) || !buf.getLine(r + 1)?.isWrapped;
+          const text = ln.translateToString(trimRight);
+          rows.push({ row1: r + 1, start: logical.length, end: logical.length + text.length });
+          logical += text;
+        }
+
+        const matches = window.PathLinks.extractPathMatches(logical);
+        if (!matches.length) return callback(undefined);
+
+        // Look back up to 25 lines for the most recent absolute path dir (resolves e.g. `shots/`)
+        let fallbackDir = '';
+        const lookbackStart = Math.max(0, startRow - 25);
+        for (let r = startRow; r >= lookbackStart && !fallbackDir; r--) {
+          let sr = r;
+          while (sr > lookbackStart && isHardPathContinuation(sr - 1, sr)) sr--;
+          let er = r;
+          while (er + 1 < buf.length && isHardPathContinuation(er, er + 1)) er++;
+          let prevLogical = '';
+          for (let k = sr; k <= er; k++) {
+            const ln = buf.getLine(k);
+            if (!ln) continue;
+            const tr = (k === er) || !buf.getLine(k + 1)?.isWrapped;
+            prevLogical += ln.translateToString(tr);
+          }
+          const prevMatches = window.PathLinks.extractPathMatches(prevLogical);
+          for (let mi = prevMatches.length - 1; mi >= 0; mi--) {
+            const d = window.PathLinks.dirnameOfAbsolute(prevMatches[mi].text);
+            if (d) { fallbackDir = d; break; }
+          }
+          r = sr;
+        }
+
+        const cwd = terminalCwdFor(address);
+        const posForOffset = (offset, isEnd) => {
+          const idx = isEnd ? Math.max(0, offset - 1) : offset;
+          for (const seg of rows) {
+            if (idx >= seg.start && idx < seg.end) {
+              return { x: (idx - seg.start) + 1, y: seg.row1 };
+            }
+          }
+          const last = rows[rows.length - 1];
+          return { x: Math.max(1, (last ? (last.end - last.start) : 1)), y: last ? last.row1 : bufferLineNumber };
+        };
+
+        Promise.all(matches.map(async (m) => {
+          const stat = await statBoxPathCached(m.text, cwd, fallbackDir);
+          if (!stat) return null;
+          const startPos = posForOffset(m.start, false);
+          const endPos = posForOffset(m.end, true);
+          return {
+            text: m.text,
+            range: { start: startPos, end: endPos },
+            decorations: { pointerCursor: true, underline: true },
+            activate(event) {
+              if (term.hasSelection && term.hasSelection()) return;
+              if (event) event.preventDefault();
+              const newTab = Boolean(event && (event.button === 1 || event.ctrlKey || event.metaKey));
+              openFilePreview(stat.path, { line: stat.line, cwd, fallbackDir, newTab });
+            },
+          };
+        })).then((resolved) => {
+          const links = resolved.filter(Boolean);
+          callback(links.length ? links : undefined);
+        }).catch(() => callback(undefined));
+      },
+    };
+  }
+
   window.addEventListener('keydown', (e) => {
+    if (fileDrawerOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeFileDrawer();
+        return;
+      }
+      if (fileViewer) fileViewer.handleKey(e);
+      return;
+    }
     if (popoverOpen) {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -1848,11 +2050,28 @@
       macOptionIsMeta: true,
       allowProposedApi: true,
       theme: (THEMES[currentThemeKey] || THEMES['purple-glow']).xterm,
+      linkHandler: {
+        allowNonHttpProtocols: true,
+        activate: (event, uri) => {
+          if (/^file:\/\//i.test(uri)) {
+            if (event) event.preventDefault();
+            const newTab = Boolean(event && (event.button === 1 || event.ctrlKey || event.metaKey));
+            openFilePreview(uri, { cwd: terminalCwdFor(address), newTab });
+            return;
+          }
+          if (/^https?:\/\//i.test(uri)) {
+            window.open(uri, '_blank', 'noopener,noreferrer');
+          }
+        },
+      },
     });
     const fitAddon = new window.FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     if (window.WebLinksAddon) {
       term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
+    }
+    if (typeof term.registerLinkProvider === 'function' && window.PathLinks) {
+      term.registerLinkProvider(createTerminalPathLinkProvider(term, address));
     }
     if (window.Unicode11Addon) {
       try {
@@ -4851,8 +5070,42 @@
           next.v = next.v.slice(1);
         }
         frag.appendChild(glue.childNodes.length > 1 ? glue : glue.firstChild);
-      } else if (seg.t === 'text') frag.append(seg.v);
-      else {
+      } else if (seg.t === 'text') {
+        if (window.PathLinks) {
+          const pMatches = window.PathLinks.extractPathMatches(seg.v);
+          if (pMatches.length) {
+            let pos = 0;
+            for (const pm of pMatches) {
+              if (pm.start > pos) frag.append(seg.v.slice(pos, pm.start));
+              const chip = document.createElement('button');
+              chip.type = 'button';
+              chip.className = 'sysop-file-chip';
+              chip.textContent = pm.text;
+              chip.title = 'Preview ' + pm.text + ' (Ctrl/Cmd+Click for new tab)';
+              chip.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                openFilePreview(pm.text, { cwd: terminalCwdFor(activeId), newTab: Boolean(ev.ctrlKey || ev.metaKey || ev.button === 1) });
+              });
+              frag.appendChild(chip);
+              pos = pm.end;
+            }
+            if (pos < seg.v.length) frag.append(seg.v.slice(pos));
+            continue;
+          }
+        }
+        frag.append(seg.v);
+      } else if (seg.t === 'code' && window.PathLinks && window.PathLinks.extractPathMatches(seg.v).length === 1 && window.PathLinks.extractPathMatches(seg.v)[0].text === seg.v.trim()) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'sysop-file-chip';
+        chip.textContent = seg.v;
+        chip.title = 'Preview ' + seg.v + ' (Ctrl/Cmd+Click for new tab)';
+        chip.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          openFilePreview(seg.v.trim(), { cwd: terminalCwdFor(activeId), newTab: Boolean(ev.ctrlKey || ev.metaKey || ev.button === 1) });
+        });
+        frag.appendChild(chip);
+      } else {
         const tag = seg.t === 'code' ? 'code' : seg.t === 'bold' ? 'strong' : 'span';
         const el = document.createElement(tag);
         if (tag === 'span') el.className = `tr-${seg.t}`;

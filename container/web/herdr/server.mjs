@@ -52,6 +52,13 @@ import {
   writeSessionPrefs,
   writeWorktreePrefs,
 } from './hc-client.mjs';
+import {
+  decodeRawPath,
+  listDirectory,
+  readTextFile,
+  resolveAndStat,
+  sandboxHeadersForRaw,
+} from './file-preview.mjs';
 
 export { HerdrClient };
 
@@ -1527,6 +1534,89 @@ export function createGateway(options = {}) {
         broadcast(buildSnapshot({ type: 'sysop' }));
         if (!r.ok) return sendJson(res, 409, { error: 'stop_failed', message: r.stderr || r.stdout || 'nothing to stop' });
         return sendJson(res, 200, { ok: true, message: r.stdout || 'stopped' });
+      }
+
+      // ---------------------------------------------------------------------
+      // Local File Preview API (read-only, rooted at HOME and /tmp)
+      // ---------------------------------------------------------------------
+      if (pathname === '/api/files/stat' && req.method === 'GET') {
+        const p = url.searchParams.get('path') || '';
+        const cwd = url.searchParams.get('cwd') || '';
+        const fallbackDir = url.searchParams.get('fallbackDir') || '';
+        const info = resolveAndStat(p, { cwd, fallbackDir, homeDir: HOME });
+        if (!info.ok) return sendJson(res, info.status || 404, { ok: false, error: info.error, message: info.message });
+        return sendJson(res, 200, info);
+      }
+
+      if (pathname === '/api/files/list' && req.method === 'GET') {
+        const p = url.searchParams.get('path') || '';
+        const cwd = url.searchParams.get('cwd') || '';
+        const fallbackDir = url.searchParams.get('fallbackDir') || '';
+        const info = resolveAndStat(p, { cwd, fallbackDir, homeDir: HOME });
+        if (!info.ok) return sendJson(res, info.status || 404, { ok: false, error: info.error, message: info.message });
+        if (info.kind !== 'dir') {
+          return sendJson(res, 400, { ok: false, error: 'not_a_directory', message: 'target is not a directory' });
+        }
+        const listing = listDirectory(info.path, HOME);
+        return sendJson(res, 200, { ...info, ...listing });
+      }
+
+      if (pathname === '/api/files/read' && req.method === 'GET') {
+        const p = url.searchParams.get('path') || '';
+        const cwd = url.searchParams.get('cwd') || '';
+        const fallbackDir = url.searchParams.get('fallbackDir') || '';
+        const info = resolveAndStat(p, { cwd, fallbackDir, homeDir: HOME });
+        if (!info.ok) return sendJson(res, info.status || 404, { ok: false, error: info.error, message: info.message });
+        if (info.kind !== 'file') {
+          return sendJson(res, 400, { ok: false, error: 'not_a_file', message: 'target is a directory' });
+        }
+        const read = readTextFile(info.path);
+        return sendJson(res, 200, { ...info, content: read.content, truncated: read.truncated, binary: read.binary });
+      }
+
+      if (pathname.startsWith('/api/files/raw/') && (req.method === 'GET' || req.method === 'HEAD')) {
+        const decoded = decodeRawPath(pathname.slice('/api/files/raw/'.length));
+        const info = resolveAndStat(decoded, { homeDir: HOME });
+        if (!info.ok) {
+          res.writeHead(info.status || 404, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' });
+          return res.end(info.message || 'Not found');
+        }
+        if (info.kind !== 'file') {
+          res.writeHead(400, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' });
+          return res.end('Target is a directory');
+        }
+        const forceDownload = url.searchParams.get('download') === '1';
+        const headers = {
+          ...sandboxHeadersForRaw(info.category, info.name, forceDownload),
+          'Content-Type': info.mime || 'application/octet-stream',
+          'Accept-Ranges': 'bytes',
+        };
+        const total = info.size;
+        const range = req.headers.range;
+        if (range && /^bytes=\d*-\d*$/.test(range) && total > 0) {
+          const [startStr, endStr] = range.slice(6).split('-');
+          const start = startStr ? parseInt(startStr, 10) : Math.max(0, total - parseInt(endStr, 10));
+          const end = endStr ? Math.min(total - 1, parseInt(endStr, 10)) : total - 1;
+          if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= total) {
+            res.writeHead(416, { ...headers, 'Content-Range': `bytes */${total}` });
+            return res.end();
+          }
+          res.writeHead(206, {
+            ...headers,
+            'Content-Range': `bytes ${start}-${end}/${total}`,
+            'Content-Length': String(end - start + 1),
+          });
+          if (req.method === 'HEAD') return res.end();
+          return fs.createReadStream(info.path, { start, end }).pipe(res);
+        }
+        res.writeHead(200, { ...headers, 'Content-Length': String(total) });
+        if (req.method === 'HEAD') return res.end();
+        return fs.createReadStream(info.path).pipe(res);
+      }
+
+      // Standalone fullscreen viewer route (/view?path=...)
+      if (pathname === '/view' && (req.method === 'GET' || req.method === 'HEAD')) {
+        return serveFile(res, path.join(PUBLIC_DIR, 'view.html'), false);
       }
 
       // Static frontend assets

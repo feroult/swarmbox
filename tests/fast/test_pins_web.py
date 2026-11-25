@@ -19,6 +19,7 @@ from helpers import ROOT  # noqa: E402
 
 SERVER_MJS = os.path.join(ROOT, "container", "web", "herdr", "server.mjs")
 CLIENT_MJS = os.path.join(ROOT, "container", "web", "herdr", "hc-client.mjs")
+PREVIEW_MJS = os.path.join(ROOT, "container", "web", "herdr", "file-preview.mjs")
 
 
 def git(cwd, *args):
@@ -335,6 +336,7 @@ class PinsWebGatewayTest(unittest.TestCase):
         os.makedirs(ws_dir, exist_ok=True)
         shutil.copyfile(SERVER_MJS, os.path.join(web_dir, "server.mjs"))
         shutil.copyfile(CLIENT_MJS, os.path.join(web_dir, "hc-client.mjs"))
+        shutil.copyfile(PREVIEW_MJS, os.path.join(web_dir, "file-preview.mjs"))
         with open(os.path.join(ws_dir, "package.json"), "w", encoding="utf-8") as f:
             json.dump({"name": "ws", "type": "module", "main": "index.js"}, f)
         with open(os.path.join(ws_dir, "index.js"), "w", encoding="utf-8") as f:
