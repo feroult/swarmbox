@@ -1419,6 +1419,26 @@
     }
   }
 
+  // Real user click/tap on the terminal canvas claims viewport ownership on the server
+  // so this device's cols×rows take effect immediately without needing a page refresh.
+  function claimSessionViewport(sess) {
+    if (!sess || !sess.ws || sess.ws.readyState !== 1) return;
+    sess.ws.send(JSON.stringify({
+      type: 'focus',
+      focused: true,
+      claim: true,
+      cols: sess.term.cols || 100,
+      rows: sess.term.rows || 30,
+    }));
+  }
+
+  termWrapEl.addEventListener('pointerdown', () => {
+    if (settingsOpen) return;
+    const sess = activeSession();
+    if (!sess) return;
+    claimSessionViewport(sess);
+  }, { passive: true });
+
   // Clicking anywhere on the terminal canvas (without a drag selection) restores keyboard focus
   // and recovers a dropped PTY socket immediately.
   termWrapEl.addEventListener('mouseup', () => {
@@ -1563,17 +1583,30 @@
     }
     const sess = activeSession();
     if (sess && (!sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3)) {
-      openSessionSocket(sess, { silent: true, reset: true });
+      openSessionSocket(sess, { silent: true, reset: true, reconnect: true });
     }
   }
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') ensureConnectionsAlive();
+    if (document.visibilityState === 'visible') {
+      ensureConnectionsAlive();
+    } else {
+      const sess = activeSession();
+      if (sess && sess.ws && sess.ws.readyState === 1) {
+        sess.ws.send(JSON.stringify({ type: 'focus', focused: false }));
+      }
+    }
   });
   window.addEventListener('focus', () => {
     ensureConnectionsAlive();
   });
+  window.addEventListener('blur', () => {
+    const sess = activeSession();
+    if (sess && sess.ws && sess.ws.readyState === 1) {
+      sess.ws.send(JSON.stringify({ type: 'focus', focused: false }));
+    }
+  });
   window.addEventListener('online', () => {
-    ensureConnectionsAlive();
+    if (document.visibilityState === 'visible') ensureConnectionsAlive();
   });
 
   // Desktop keyboard shortcuts (100% aligned with Terminal Cockpit:
@@ -2560,7 +2593,11 @@
 
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const tuiFlag = isSessionTui(sess) ? '&tui=1' : '';
-      const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(sess.address)}?cols=${initCols}&rows=${initRows}${tuiFlag}`;
+      const isReconnect = Boolean(opts.reconnect);
+      const isActiveFocused = activeId === sess.address && document.visibilityState === 'visible' && document.hasFocus();
+      const reconnectFlag = isReconnect ? '&reconnect=1' : '';
+      const focusedFlag = isActiveFocused ? '' : '&focused=0';
+      const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(sess.address)}?cols=${initCols}&rows=${initRows}${tuiFlag}${reconnectFlag}${focusedFlag}`;
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       sess.ws = ws;
@@ -2616,7 +2653,15 @@
         if (activeId === sess.address) {
           ptyConnected = true;
           syncConnPill();
-          ws.send(JSON.stringify({ type: 'focus', focused: true }));
+          if (isActiveFocused && !isReconnect) {
+            ws.send(JSON.stringify({
+              type: 'focus',
+              focused: true,
+              claim: true,
+              cols: sess.term.cols || initCols,
+              rows: sess.term.rows || initRows,
+            }));
+          }
         }
         // Only resize if viewport dimensions changed while the WebSocket was opening
         fitSession(sess, true);
@@ -2687,14 +2732,17 @@
           syncConnPill();
         }
         if (ws._terminalClosed) return;
-        // Auto-reconnect silently if this tab is still live so keyboard input never freezes
+        // Skip background reconnects while the browser tab is hidden; visibilitychange will heal on return.
+        if (document.visibilityState === 'hidden') return;
+        // Auto-reconnect silently as passive (reconnect=1) so an idle window never hijacks another active client's PTY size.
         if (tabSessions.get(sess.address) === sess && terminals.some((t) => t.address === sess.address)) {
           const delay = sess.reconnectDelay;
           sess.reconnectDelay = Math.min(Math.round(sess.reconnectDelay * 1.6), 3000);
           sess.reconnectTimer = setTimeout(() => {
             sess.reconnectTimer = null;
+            if (document.visibilityState === 'hidden') return;
             if (tabSessions.get(sess.address) === sess && !sess.ws) {
-              openSessionSocket(sess, { silent: true, reset: true });
+              openSessionSocket(sess, { silent: true, reset: true, reconnect: true });
             }
           }, delay);
         }
@@ -2744,9 +2792,7 @@
       }
       if (sess.needsFit) fitSession(sess, true);
       syncStageLoader();
-      if (sess.ws && sess.ws.readyState === 1) {
-        sess.ws.send(JSON.stringify({ type: 'focus', focused: true }));
-      }
+      claimSessionViewport(sess);
       syncJumpLive();
       focusTerminalIfDesktop();
     }

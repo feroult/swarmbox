@@ -439,6 +439,54 @@ function isInteractiveTuiTerminal(term) {
 export function createGateway(options = {}) {
   const hc = options.hc || new HerdrClient(options.hcBin || HC_BIN);
   const eventClients = new Set();
+  // Per-terminal viewport ownership so an idle/reconnecting browser on another screen
+  // (e.g. an ultrawide left open at home) cannot hijack the active client's PTY resolution.
+  const ptyRooms = new Map();
+
+  function clampCols(c) {
+    return Math.max(20, Math.min(400, Number(c) || 100));
+  }
+  function clampRows(r) {
+    return Math.max(6, Math.min(200, Number(r) || 30));
+  }
+  function getPtyRoom(termId) {
+    let room = ptyRooms.get(termId);
+    if (!room) {
+      room = { clients: new Set(), owner: null, ptyCols: 0, ptyRows: 0 };
+      ptyRooms.set(termId, room);
+    }
+    return room;
+  }
+  function getCurrentPtySize(termId, fallbackCols, fallbackRows) {
+    const t = hc.terminals.get(termId);
+    if (t && Number(t.cols) > 0 && Number(t.rows) > 0) {
+      return { cols: clampCols(t.cols), rows: clampRows(t.rows) };
+    }
+    const room = ptyRooms.get(termId);
+    if (room && room.ptyCols > 0 && room.ptyRows > 0) {
+      return { cols: room.ptyCols, rows: room.ptyRows };
+    }
+    return { cols: clampCols(fallbackCols), rows: clampRows(fallbackRows) };
+  }
+  function claimPtyOwnership(room, rec, opts = {}) {
+    if (opts.cols && opts.rows) {
+      rec.wantCols = clampCols(opts.cols);
+      rec.wantRows = clampRows(opts.rows);
+    }
+    room.owner = rec;
+    rec.lastActiveMs = Date.now();
+    if (opts.syncSize === false || !rec.stream) return false;
+    const cur = getCurrentPtySize(rec.termId, room.ptyCols || rec.wantCols, room.ptyRows || rec.wantRows);
+    if (cur.cols !== rec.wantCols || cur.rows !== rec.wantRows) {
+      room.ptyCols = rec.wantCols;
+      room.ptyRows = rec.wantRows;
+      rec.stream.resize(rec.wantCols, rec.wantRows);
+      return true;
+    }
+    room.ptyCols = cur.cols;
+    room.ptyRows = cur.rows;
+    return false;
+  }
   let currentTheme = readSavedTheme();
   let lastBroadcastHash = '';
   let cachedWorktrees = [];
@@ -671,6 +719,13 @@ export function createGateway(options = {}) {
   });
 
   hc.on('hc-event', ({ event }) => {
+    if (event && event.type === 'size' && event.terminal && event.data) {
+      const room = ptyRooms.get(event.terminal);
+      if (room) {
+        if (Number(event.data.cols) > 0) room.ptyCols = clampCols(event.data.cols);
+        if (Number(event.data.rows) > 0) room.ptyRows = clampRows(event.data.rows);
+      }
+    }
     const terms = hc.listSnapshot();
     syncPinsFromTerminals(terms);
     emitBusTabEvents(event, terms);
@@ -1677,10 +1732,36 @@ export function createGateway(options = {}) {
     }
 
     const termId = decodeURIComponent(url.pathname.slice('/ws/pty/'.length));
-    const cols = Number(url.searchParams.get('cols') || 100);
-    const rows = Number(url.searchParams.get('rows') || 30);
+    const cols = clampCols(url.searchParams.get('cols') || 100);
+    const rows = clampRows(url.searchParams.get('rows') || 30);
+    const isReconnect = url.searchParams.get('reconnect') === '1';
+    const isPassiveAttach = isReconnect || url.searchParams.get('focused') === '0';
     const attachIsTui = url.searchParams.get('tui') === '1' || isInteractiveTuiTerminal(hc.terminals.get(termId));
-    writeActiveTab(termId);
+
+    const room = getPtyRoom(termId);
+    const clientRec = {
+      ws,
+      termId,
+      wantCols: cols,
+      wantRows: rows,
+      stream: null,
+      lastActiveMs: isPassiveAttach ? 0 : Date.now(),
+    };
+    room.clients.add(clientRec);
+    const hasOtherOwner = Boolean(room.owner && room.owner !== clientRec && room.clients.has(room.owner));
+    const claimOnAttach = !hasOtherOwner || !isPassiveAttach;
+    let attachCols = cols;
+    let attachRows = rows;
+    if (claimOnAttach) {
+      room.owner = clientRec;
+      room.ptyCols = cols;
+      room.ptyRows = rows;
+      writeActiveTab(termId);
+    } else {
+      const cur = getCurrentPtySize(termId, cols, rows);
+      attachCols = cur.cols;
+      attachRows = cur.rows;
+    }
     if (typeof hc.refreshTerminals === 'function') hc.refreshTerminals();
 
     let stream = null;
@@ -1744,7 +1825,7 @@ export function createGateway(options = {}) {
     };
 
     try {
-      stream = await hc.attach(termId, cols, rows, {
+      stream = await hc.attach(termId, attachCols, attachRows, {
         onData: (buf) => {
           if (hydrating) {
             const now = Date.now();
@@ -1788,9 +1869,13 @@ export function createGateway(options = {}) {
           }
         },
       });
+      clientRec.stream = stream;
     } catch (err) {
       clearHydrationTimers();
       clearResizeTimers();
+      room.clients.delete(clientRec);
+      if (room.owner === clientRec) room.owner = null;
+      if (room.clients.size === 0) ptyRooms.delete(termId);
       if (ws.readyState === 1) {
         ws.send(JSON.stringify({ type: 'error', message: err.message }));
         ws.close();
@@ -1807,7 +1892,17 @@ export function createGateway(options = {}) {
     ws.on('message', (data, isBinary) => {
       if (!stream) return;
       if (isBinary) {
-        stream.write(Buffer.from(data));
+        const buf = Buffer.from(data);
+        if (!NON_TYPING_INPUT_RE.test(buf.toString('utf8'))) {
+          if (room.owner !== clientRec) {
+            claimPtyOwnership(room, clientRec);
+            writeActiveTab(termId);
+            stream.focus(true);
+          } else {
+            claimPtyOwnership(room, clientRec);
+          }
+        }
+        stream.write(buf);
         return;
       }
       const text = data.toString('utf8');
@@ -1815,6 +1910,19 @@ export function createGateway(options = {}) {
         try {
           const msg = JSON.parse(text);
           if (msg.type === 'resize') {
+            clientRec.wantCols = clampCols(msg.cols);
+            clientRec.wantRows = clampRows(msg.rows);
+            const canResize = !room.owner || room.owner === clientRec || Boolean(msg.claim);
+            if (!canResize) {
+              if (ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: 'resized', seq: Number(msg.seq) || 0 }));
+              }
+              return;
+            }
+            room.owner = clientRec;
+            room.ptyCols = clientRec.wantCols;
+            room.ptyRows = clientRec.wantRows;
+            clientRec.lastActiveMs = Date.now();
             // Coalesce SIGWINCH full-screen TUI repaint bursts into one atomic frame
             // (covering debounced & multi-pass TUIs such as OpenCode, Claude, AGY, and Gemini).
             if (!hydrating) {
@@ -1826,22 +1934,51 @@ export function createGateway(options = {}) {
               resizeQuietTimer = setTimeout(flushResize, resizeIsTui ? 580 : 110);
               resizeCapTimer = setTimeout(flushResize, resizeIsTui ? 1400 : 350);
             }
-            stream.resize(msg.cols, msg.rows);
+            stream.resize(clientRec.wantCols, clientRec.wantRows);
             return;
           }
           if (msg.type === 'focus') {
-            if (msg.focused) writeActiveTab(termId);
-            stream.focus(Boolean(msg.focused));
+            if (msg.cols && msg.rows) {
+              clientRec.wantCols = clampCols(msg.cols);
+              clientRec.wantRows = clampRows(msg.rows);
+            }
+            if (msg.focused) {
+              const shouldClaim = Boolean(msg.claim) || !room.owner || room.owner === clientRec;
+              if (shouldClaim) {
+                claimPtyOwnership(room, clientRec, { cols: msg.cols, rows: msg.rows });
+                writeActiveTab(termId);
+                stream.focus(true);
+              }
+            } else {
+              stream.focus(false);
+            }
             return;
           }
           if (msg.type === 'input' && typeof msg.data === 'string') {
-            if (resizing && !NON_TYPING_INPUT_RE.test(msg.data)) flushResize();
+            const isRealInput = !NON_TYPING_INPUT_RE.test(msg.data);
+            if (isRealInput) {
+              if (resizing) flushResize();
+              const wasOwner = room.owner === clientRec;
+              claimPtyOwnership(room, clientRec);
+              if (!wasOwner) {
+                writeActiveTab(termId);
+                stream.focus(true);
+              }
+            }
             stream.write(Buffer.from(msg.data, 'utf8'));
             return;
           }
         } catch (_) {}
       }
       if (resizing) flushResize();
+      if (!NON_TYPING_INPUT_RE.test(text)) {
+        const wasOwner = room.owner === clientRec;
+        claimPtyOwnership(room, clientRec);
+        if (!wasOwner) {
+          writeActiveTab(termId);
+          stream.focus(true);
+        }
+      }
       stream.write(Buffer.from(text, 'utf8'));
     });
 
@@ -1852,6 +1989,10 @@ export function createGateway(options = {}) {
       resizeChunks = [];
       hydrating = false;
       resizing = false;
+      room.clients.delete(clientRec);
+      if (room.owner === clientRec) room.owner = null;
+      if (room.clients.size === 0) ptyRooms.delete(termId);
+      clientRec.stream = null;
       if (stream) {
         stream.close();
         stream = null;
