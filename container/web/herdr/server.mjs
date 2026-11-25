@@ -530,6 +530,7 @@ export function createGateway(options = {}) {
       worktree_prefs,
       session_prefs,
       installed_agents,
+      home: HOME,
     };
   }
 
@@ -749,6 +750,7 @@ export function createGateway(options = {}) {
           tabs: snap.terminals.length,
           sysop_up: snap.sysop.up,
           theme: currentTheme,
+          home: HOME,
         });
       }
 
@@ -829,6 +831,7 @@ export function createGateway(options = {}) {
           worktree_prefs: readWorktreePrefs(),
           session_prefs: readSessionPrefs(),
           installed_agents: listInstalledAgents(),
+          home: HOME,
         });
       }
 

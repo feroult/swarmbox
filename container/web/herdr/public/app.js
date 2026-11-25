@@ -2734,10 +2734,15 @@
   const ICO_BRANCH_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.5-7 1.8-7 3.4"/></svg>';
   const ICO_PENCIL_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.4a1.6 1.6 0 0 1 2.3 2.3L5.6 12.6 2.5 13.5l.9-3.1 7.8-8Z"/></svg>';
 
+  let serverHomeDir = '';
+
   function shortDisplayPath(p) {
     const s = String(p || '');
     const wtMatch = s.match(/\/\.local\/share\/swarmbox\/worktrees\/([^/]+)\/[^/]+(\/.*)?$/);
     if (wtMatch) return `~/${wtMatch[1]}${wtMatch[2] || ''}`;
+    if (serverHomeDir && (s === serverHomeDir || s.startsWith(serverHomeDir + '/'))) {
+      return '~' + s.slice(serverHomeDir.length);
+    }
     return s.startsWith('/home/agent') ? '~' + s.slice('/home/agent'.length) : s;
   }
 
@@ -2929,6 +2934,21 @@
     });
     menu.appendChild(rItem);
 
+    if (term.cwd) {
+      const pItem = document.createElement('button');
+      pItem.type = 'button';
+      pItem.className = 'card-ctx-item';
+      pItem.setAttribute('role', 'menuitem');
+      pItem.innerHTML = `<span class="card-ctx-item-l"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="8.5" height="8.5" rx="1.6"/><path d="M11 5V3.6A1.6 1.6 0 0 0 9.4 2H3.6A1.6 1.6 0 0 0 2 3.6v5.8A1.6 1.6 0 0 0 3.6 11H5"/></svg><span>Copy path</span></span>`;
+      pItem.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        closeCardMenu();
+        try { await navigator.clipboard.writeText(term.cwd); } catch (_) {}
+        showTermToast(`Copied ${shortDisplayPath(term.cwd)}`);
+      });
+      menu.appendChild(pItem);
+    }
+
     const sep = document.createElement('div');
     sep.className = 'card-ctx-sep';
     menu.appendChild(sep);
@@ -2954,7 +2974,13 @@
     const mh = menu.offsetHeight || 140;
     let x = 12;
     let y = 12;
-    if (anchor && typeof anchor.getBoundingClientRect === 'function') {
+    if (cardEl && window.innerWidth > 860 && anchor && typeof anchor.getBoundingClientRect === 'function') {
+      const sbEl = document.getElementById('sidebar');
+      const cardRect = cardEl.getBoundingClientRect();
+      const sbRect = sbEl ? sbEl.getBoundingClientRect() : cardRect;
+      x = sbRect.right + 6;
+      y = cardRect.top;
+    } else if (anchor && typeof anchor.getBoundingClientRect === 'function') {
       const rect = anchor.getBoundingClientRect();
       x = rect.right - mw + 6;
       y = rect.bottom + 6;
@@ -2982,6 +3008,11 @@
   function openPopover(node, onKeyDown = null) {
     if (!popoverBackdropEl || !popoverEl) return;
     popoverEl.innerHTML = '';
+    const handle = document.createElement('div');
+    handle.className = 'sheet-handle mobile-only spop-handle';
+    handle.setAttribute('aria-hidden', 'true');
+    handle.innerHTML = '<span></span>';
+    popoverEl.appendChild(handle);
     popoverEl.appendChild(node);
     popoverOpen = true;
     popoverKeyHandler = typeof onKeyDown === 'function' ? onKeyDown : null;
@@ -3061,16 +3092,19 @@
     const head = document.createElement('div');
     head.className = 'spop-head';
     const titleSpan = document.createElement('span');
-    titleSpan.textContent = includeShell ? 'New tab' : 'New agent';
+    titleSpan.textContent = 'New agent';
     const headRight = document.createElement('span');
     headRight.className = 'spop-head-right';
+    const escBadge = document.createElement('span');
+    escBadge.className = 'wt-kbd desktop-only';
+    escBadge.textContent = 'Esc';
+    headRight.appendChild(escBadge);
+    head.append(titleSpan, headRight);
+    frag.appendChild(head);
 
-    if (showProjectPicker) {
-      const escBadge = document.createElement('span');
-      escBadge.className = 'wt-kbd desktop-only';
-      escBadge.textContent = 'Esc';
-      headRight.appendChild(escBadge);
-    } else {
+    if (!showProjectPicker) {
+      const targetBar = document.createElement('div');
+      targetBar.className = 'spop-target-bar';
       const cwdBtn = document.createElement('button');
       cwdBtn.type = 'button';
       cwdBtn.className = 'spop-badge spop-badge-btn';
@@ -3079,17 +3113,16 @@
       cwdBtn.addEventListener('click', () => {
         openNewAgentPopover(includeShell, selectedCwd, { showProjectPicker: true });
       });
-      headRight.appendChild(cwdBtn);
+      targetBar.appendChild(cwdBtn);
       if (isGit && branch) {
         const brBadge = document.createElement('span');
         brBadge.className = 'spop-badge branch';
         brBadge.innerHTML = `${ICO_BRANCH_SVG}<span></span>`;
         brBadge.querySelector('span').textContent = branch;
-        headRight.appendChild(brBadge);
+        targetBar.appendChild(brBadge);
       }
+      frag.appendChild(targetBar);
     }
-    head.append(titleSpan, headRight);
-    frag.appendChild(head);
 
     // Dynamic Workspace container (re-rendered whenever the selected project changes)
     const wtContainer = document.createElement('div');
@@ -3552,15 +3585,18 @@
       if (!r.ok) throw new Error(st.message || 'Not a Git worktree');
     } catch (err) {
       const box = document.createDocumentFragment();
+      const errHead = document.createElement('div');
+      errHead.className = 'spop-head';
+      errHead.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px">${ICO_BRANCH_SVG}<span>Worktree unavailable</span></span><span class="wt-kbd desktop-only">Esc</span>`;
       const m = document.createElement('div');
       m.className = 'spop-sub';
-      m.textContent = err.message || 'Unable to inspect worktree.';
+      m.textContent = err.message || 'This session is not running inside a linked Git worktree.';
       const c = document.createElement('button');
       c.type = 'button';
       c.className = 'spop-btn secondary';
       c.textContent = 'Close';
       c.addEventListener('click', closePopover);
-      box.append(m, c);
+      box.append(errHead, m, c);
       openPopover(box);
       return;
     }
@@ -3776,7 +3812,10 @@
     titleEl.style.cssText = 'display:inline-flex;align-items:center;gap:6px';
     titleEl.innerHTML = `${ICO_BRANCH_SVG}<span></span>`;
     titleEl.querySelector('span').textContent = `${group.name} · ${total} worktree${total === 1 ? '' : 's'}`;
-    head.appendChild(titleEl);
+    const escBadge = document.createElement('span');
+    escBadge.className = 'wt-kbd desktop-only';
+    escBadge.textContent = 'Esc';
+    head.append(titleEl, escBadge);
     frag.appendChild(head);
 
     const list = document.createElement('div');
@@ -3923,10 +3962,10 @@
     }
 
     const foot = document.createElement('div');
-    foot.className = 'spop-links';
+    foot.className = 'spop-links spop-links-end';
     const doneBtn = document.createElement('button');
     doneBtn.type = 'button';
-    doneBtn.className = 'spop-link-btn';
+    doneBtn.className = 'spop-ghost-btn';
     doneBtn.textContent = 'Close';
     doneBtn.addEventListener('click', closePopover);
     foot.appendChild(doneBtn);
@@ -4243,7 +4282,7 @@
         right.className = 'tab-right';
         const idxEl = document.createElement('span');
         idxEl.className = 'tab-idx';
-        idxEl.textContent = idx < 9 ? String(idx + 1) : '';
+        idxEl.textContent = idx < 9 ? `Alt+${idx + 1}` : '';
         const closeBtn = document.createElement('button');
         closeBtn.className = 'tab-close';
         closeBtn.title = 'Close tab';
@@ -4498,12 +4537,11 @@
     }
     if (sidebarAgentsSectionEl) {
       sidebarAgentsSectionEl.classList.toggle('is-empty', agentCount === 0);
+      sidebarAgentsSectionEl.classList.toggle('hidden', agentCount === 0);
     }
-    if (sidebarAgentsEl && agentCount === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'agents-empty';
-      empty.textContent = 'Run claude, agy, codex, or opencode in a shell to spawn an agent card.';
-      sidebarAgentsEl.appendChild(empty);
+    const sidebarShellsSectionEl = document.getElementById('sidebar-shells-section');
+    if (sidebarShellsSectionEl) {
+      sidebarShellsSectionEl.classList.toggle('hidden', shellCount === 0 && agentCount === 0);
     }
 
     const mPlus = document.createElement('button');
@@ -4515,6 +4553,12 @@
     mobileTabsEl.appendChild(mPlus);
 
     const active = terminals.find((t) => t.address === activeId);
+    const termCtxSepEl = document.querySelector('.term-ctx-sep');
+    const btnInterruptEl = document.getElementById('btn-interrupt');
+    if (btnInterruptEl) {
+      btnInterruptEl.disabled = !active;
+      btnInterruptEl.classList.toggle('is-disabled', !active);
+    }
     if (active) {
       const aParts = tabTitleParts(active);
       const aState = tabState(active);
@@ -4526,10 +4570,15 @@
         activeAgentEl.textContent = aParts.pill;
         activeAgentEl.classList.toggle('hidden', !aParts.pill);
       }
-      if (activeStatusEl) activeStatusEl.textContent = aSub;
+      if (termCtxSepEl) termCtxSepEl.classList.toggle('hidden', !aSub);
+      if (activeStatusEl) {
+        activeStatusEl.textContent = aSub;
+        activeStatusEl.classList.toggle('hidden', !aSub);
+      }
       if (termCtxIconEl) termCtxIconEl.innerHTML = pixelIconHtml(aKind);
       if (termCtxTitleEl) termCtxTitleEl.textContent = aParts.pill ? `${aParts.title} (${AGENT_FULL_NAMES[aParts.pill] || aParts.pill})` : aParts.title;
-      const aWtBranch = active.labels && active.labels['swarmbox.worktree'] ? (active.labels['swarmbox.branch'] || 'worktree') : '';
+      const isLiveWt = Boolean(active.labels && active.labels['swarmbox.worktree'] && (!active.repo || active.repo.is_worktree));
+      const aWtBranch = isLiveWt ? (active.labels['swarmbox.branch'] || 'worktree') : '';
       const aWtBase = (active.labels && active.labels['swarmbox.base']) || 'main';
       if (topbarWtBtnEl) {
         topbarWtBtnEl.classList.toggle('hidden', !aWtBranch);
@@ -4540,6 +4589,7 @@
         if (aWtBranch) mobileWtBtnEl.innerHTML = `${ICO_BRANCH_SVG}<span>${aWtBranch.replace(/^sb\//, '')}</span>`;
       }
       if (termCtxStateEl) {
+        termCtxStateEl.classList.remove('hidden');
         termCtxStateEl.dataset.state = aState;
         termCtxStateEl.textContent = stateBadgeText(aState, active.status);
       }
@@ -4550,12 +4600,17 @@
       if (activeAgentEl) activeAgentEl.classList.add('hidden');
       if (topbarWtBtnEl) topbarWtBtnEl.classList.add('hidden');
       if (mobileWtBtnEl) mobileWtBtnEl.classList.add('hidden');
-      if (activeStatusEl) activeStatusEl.textContent = hasParked ? `${parkedPins.length} parked` : 'idle';
+      if (termCtxSepEl) termCtxSepEl.classList.toggle('hidden', !hasParked);
+      if (activeStatusEl) {
+        activeStatusEl.textContent = hasParked ? `${parkedPins.length} parked` : '';
+        activeStatusEl.classList.toggle('hidden', !hasParked);
+      }
       if (termCtxIconEl) termCtxIconEl.innerHTML = pixelIconHtml('shell');
       if (termCtxTitleEl) termCtxTitleEl.textContent = hasParked ? 'Sessions parked' : 'No active tab';
       if (termCtxStateEl) {
         termCtxStateEl.dataset.state = 'idle';
-        termCtxStateEl.textContent = hasParked ? 'PARKED' : 'IDLE';
+        termCtxStateEl.textContent = hasParked ? 'PARKED' : '';
+        termCtxStateEl.classList.toggle('hidden', !hasParked);
       }
     }
 
@@ -4968,6 +5023,12 @@
     box.append(icon, title, desc);
     if (!sysop.up) {
       desc.innerHTML = 'Install it from Settings › Addons, or run <code>swarmbox addon install sysop</code>.';
+      const cta = document.createElement('button');
+      cta.type = 'button';
+      cta.className = 'sysop-offline-cta';
+      cta.textContent = 'Open Addons Settings →';
+      cta.addEventListener('click', () => openSettings('system'));
+      box.appendChild(cta);
       return box;
     }
     const policy = (sysop.settings && sysop.settings.autonomy) || '';
@@ -5152,6 +5213,7 @@
 
   function renderSysop(sysop) {
     if (!sysop) return;
+    if (appEl) appEl.dataset.sysopUp = sysop.up ? '1' : '0';
     const st = sysop.state || 'off';
     if (sysopDotEl) sysopDotEl.dataset.state = st;
     sysopStateEl.dataset.state = st;
@@ -5210,6 +5272,7 @@
       if (msg.worktree_prefs && typeof msg.worktree_prefs === 'object') worktreePrefs = msg.worktree_prefs;
       if (msg.session_prefs && typeof msg.session_prefs === 'object') sessionPrefs = msg.session_prefs;
       if (Array.isArray(msg.installed_agents)) installedAgents = msg.installed_agents;
+      if (typeof msg.home === 'string' && msg.home) serverHomeDir = msg.home;
       if (Array.isArray(msg.terminals)) {
         terminals = msg.terminals;
         rememberTabs();
@@ -6199,7 +6262,10 @@
     }
     frag.appendChild(makeGroup(
       'Theme Palette',
-      el('span', { class: 's-badge', text: 'Synced with Cockpit' }),
+      el('span', { class: 's-sync-note' }, [
+        el('i', { class: 's-sync-dot', 'aria-hidden': 'true' }),
+        el('span', { text: 'Synced with Cockpit' }),
+      ]),
       themeGrid,
     ));
 
@@ -6230,7 +6296,7 @@
       el('span', { class: 'fp-branch', text: 'main ' }),
       el('span', { class: 'fp-dirty', text: '● ' }),
       el('span', { text: '❯ ' }),
-      el('span', { class: 'fp-dim', text: 'JetBrains Mono + Nerd Font glyphs' }),
+      el('span', { class: 'fp-dim', text: window.innerWidth <= 860 ? 'JetBrains Mono' : 'JetBrains Mono + Nerd Font glyphs' }),
     ]);
 
     const fontRow = el('div', { class: 's-row s-row-col' }, [
@@ -6298,7 +6364,7 @@
           [
             { value: 'block', label: 'Block' },
             { value: 'bar', label: 'Bar' },
-            { value: 'underline', label: 'Line' },
+            { value: 'underline', label: 'Underline' },
           ],
           cursorStyle,
           (val) => {
@@ -6366,7 +6432,9 @@
       ]),
       el('div', { class: 's-stat' }, [
         el('span', { class: 's-stat-k', text: 'Health' }),
-        el('span', { class: 's-stat-v', text: healthCount === 0 ? '✓ All green' : `${healthCount} notice${healthCount > 1 ? 's' : ''}` }),
+        healthCount === 0
+          ? el('span', { class: 's-stat-v' }, [el('span', { class: 's-health-ok', text: '✓' }), el('span', { text: ' All green' })])
+          : el('span', { class: 's-stat-v', text: `${healthCount} notice${healthCount > 1 ? 's' : ''}` }),
       ]),
     ]);
     frag.appendChild(makeGroup('Environment Summary', el('span', { class: 's-badge muted', text: `box: ${currentHostField('box', 'NAME').value}` }), stats));
@@ -6536,7 +6604,7 @@
     // Visual 4-card Autonomy selector (full-auto is the default)
     const curAuto = effectiveHostValue('sysop', 'sysop.autonomy') || 'full-auto';
     const policies = [
-      { value: 'full-auto', title: 'full-auto', desc: 'Everything you ask runs right away, nothing waits for Allow (default).' },
+      { value: 'full-auto', title: 'full-auto', desc: 'Runs immediately without waiting for Allow (default).' },
       { value: 'auto', title: 'auto', desc: 'Safe commands run right away; risky ones wait for Allow.' },
       { value: 'confirm-risky', title: 'confirm-risky', desc: 'Medium & high risk actions pause with countdown or Allow.' },
       { value: 'confirm-all', title: 'confirm-all', desc: 'Every shell command waits for your explicit Allow click.' },
