@@ -28,14 +28,17 @@ import {
   buildPinsSnapshot,
   cleanSessionTitle,
   defaultTitleForPath,
+  detectLiveAgent,
   detectTerminalAgent,
   isHiddenTerminal,
   listInstalledAgents,
   makePinId,
+  noteRecentDir,
   publishTabEvent,
   readActiveTab,
   readBoxConfigSnapshot,
   readPins,
+  readRecentDirs,
   readSavedTheme,
   readSessionPrefs,
   readSysopSnapshot,
@@ -419,6 +422,67 @@ export function discoverProjects(terminals = [], pins = [], homeDir = HOME) {
   return Array.from(byReal.values()).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }
 
+// Describe one folder for the New agent picker: a Git checkout (repo name and branch) or a plain folder.
+// Only a `.git` directly in `dir` makes it a repo row, so a plain subfolder of a repo stays a folder.
+function describeDir(dir) {
+  const name = path.basename(dir) || dir;
+  let hasGit = false;
+  try { fs.statSync(path.join(dir, '.git')); hasGit = true; } catch (_) {}
+  const info = hasGit ? resolveGitRepoInfo(dir) : null;
+  if (info) return { path: dir, name, is_git: true, is_worktree: Boolean(info.is_worktree), branch: info.branch || '' };
+  return { path: dir, name, is_git: false, is_worktree: false, branch: '' };
+}
+
+// Recently used folders, newest first: launches from the Web Studio, then the folders of live tabs (shells
+// included, so a folder you cd'd into shows up), then pinned sessions. Missing folders and managed
+// worktrees (reached through their repo) are left out.
+export function listRecentDirs(terminals = [], pins = [], recent = [], limit = 6) {
+  const out = [];
+  const seen = new Set();
+  const add = (p) => {
+    if (out.length >= limit || typeof p !== 'string' || !p.startsWith('/')) return;
+    let real = p;
+    try { real = fs.realpathSync(p); } catch (_) { return; }
+    if (seen.has(real)) return;
+    try { if (!fs.statSync(real).isDirectory()) return; } catch (_) { return; }
+    seen.add(real);
+    const d = describeDir(p.replace(/\/+$/, '') || '/');
+    if (d.is_worktree) return;
+    out.push(d);
+  };
+  for (const r of recent || []) add(r && r.path);
+  const live = (terminals || []).slice().sort((a, b) => (b.created_ms || 0) - (a.created_ms || 0));
+  for (const t of live) if (!(t.labels && t.labels['swarmbox.worktree'])) add(terminalCwd(t));
+  for (const pin of pins || []) if (!pin.worktree) add(pin.cwd);
+  return out;
+}
+
+const LIST_DIRS_MAX = 400;
+
+// The subfolders of `dir` for the picker's folder browser: hidden folders and build/dependency folders skipped,
+// symlinks to folders followed, repos flagged. Returns null when `dir` is not a readable folder.
+export function listChildDirs(dir) {
+  if (typeof dir !== 'string' || !dir.startsWith('/')) return null;
+  const clean = path.resolve(dir);
+  let entries;
+  try { entries = fs.readdirSync(clean, { withFileTypes: true }); } catch (_) { return null; }
+  const out = [];
+  for (const ent of entries) {
+    const name = ent.name;
+    if (!name || name.startsWith('.') || SKIP_SCAN_DIRS.has(name)) continue;
+    const full = path.join(clean, name);
+    let isDir = ent.isDirectory();
+    if (!isDir && ent.isSymbolicLink()) {
+      try { isDir = fs.statSync(full).isDirectory(); } catch (_) { isDir = false; }
+    }
+    if (!isDir) continue;
+    out.push(describeDir(full));
+    if (out.length >= LIST_DIRS_MAX) break;
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return { path: clean, parent: clean === '/' ? null : path.dirname(clean), entries: out, truncated: out.length >= LIST_DIRS_MAX };
+}
+
 // Terminal protocol replies & mouse-tracking motion/hover reports that xterm.js emits
 // automatically (not user keystrokes) — these must never abort an active resize mask.
 const NON_TYPING_INPUT_RE = /^(?:\x1b\[<[0-9;]+[Mm]|\x1b\[M[\s\S]{3}|\x1b\[[IO]|\x1b\[[0-9;]*R|\x1b\[\?[0-9;]*c|\x1b\](?:10|11);[^\x07\x1b]*(?:\x07|\x1b\\))+$/;
@@ -542,6 +606,23 @@ export function createGateway(options = {}) {
     }
     return { cols: clampCols(fallbackCols), rows: clampRows(fallbackRows) };
   }
+  // herdr-core sizes a PTY from its attached streams: an attach or a resize frame applies that stream's size,
+  // and so does focus(true) (it re-applies the size that stream last sent), and closing a stream applies a
+  // remaining one's. So every stream must always have told hc its client's current size, or a later focus(true)
+  // re-applies a stale size (a SIGWINCH and a full redraw nobody masked).
+  function sendStreamSize(rec) {
+    if (!rec.stream) return;
+    rec.stream.resize(rec.wantCols, rec.wantRows);
+    rec.streamCols = rec.wantCols;
+    rec.streamRows = rec.wantRows;
+  }
+  // A PTY resize redraws the program for EVERY client attached to it, not only the one that asked: mask the
+  // redraw on the others too, so a second window or device never paints the reflow without the loader.
+  function maskRoomPeers(room, rec, isTui = true) {
+    for (const peer of room.clients) {
+      if (peer !== rec && typeof peer.onPeerResize === 'function') peer.onPeerResize(isTui);
+    }
+  }
   function claimPtyOwnership(room, rec, opts = {}) {
     if (opts.cols && opts.rows) {
       rec.wantCols = clampCols(opts.cols);
@@ -554,9 +635,13 @@ export function createGateway(options = {}) {
     if (cur.cols !== rec.wantCols || cur.rows !== rec.wantRows) {
       room.ptyCols = rec.wantCols;
       room.ptyRows = rec.wantRows;
-      rec.stream.resize(rec.wantCols, rec.wantRows);
+      maskRoomPeers(room, rec);
+      sendStreamSize(rec);
       return true;
     }
+    // The PTY already has this size (another stream set it): still refresh this stream's size in hc,
+    // which changes nothing now (same size, no SIGWINCH) but keeps a later focus(true) from going stale.
+    if (rec.streamCols !== rec.wantCols || rec.streamRows !== rec.wantRows) sendStreamSize(rec);
     room.ptyCols = cur.cols;
     room.ptyRows = cur.rows;
     return false;
@@ -783,8 +868,69 @@ export function createGateway(options = {}) {
     return info.collision;
   }
 
+  // Every agent session persists until its tab is closed, however it was started: an agent typed into a
+  // shell tab (the usual way into a folder without a repo), a cockpit or Sysop tab, a worktree opened from
+  // its badge. The first time a terminal without a pin is seen running a known agent it gets an `auto` pin,
+  // exactly like an agent tab opened with POST /api/tabs. `swarmbox.persist=off` (persist: false) opts out.
+  const autoPinPending = new Set();
+  function autoPinAgentTerminals(terms) {
+    let pins = null;
+    const added = [];
+    for (const t of terms || []) {
+      if (!t || !t.address || (t.state && t.state !== 'live') || isHiddenTerminal(t)) continue;
+      const lbls = t.labels || {};
+      if (lbls['swarmbox.pin_id'] || lbls['swarmbox.persist'] === 'off' || autoPinPending.has(t.address)) continue;
+      const agent = detectLiveAgent(t);
+      if (!agent) continue;
+      if (!pins) pins = readPins();
+      const cwd = terminalCwd(t);
+      const nowSec = Math.floor(Date.now() / 1000);
+      const labelTitle = cleanSessionTitle(lbls['swarmbox.title']);
+      const labelSource = lbls['swarmbox.title_source'] === 'user' || lbls['swarmbox.title_source'] === 'auto' ? lbls['swarmbox.title_source'] : '';
+      const rec = {
+        id: makePinId(pins),
+        title: labelTitle || defaultTitleForPath(cwd, agent),
+        title_source: labelTitle ? labelSource : '',
+        agent,
+        cwd,
+        resume: 'continue',
+        autostart: readSessionPrefs().boot_mode === 'autostart',
+        auto: true,
+        created_at: nowSec,
+        updated_at: nowSec,
+      };
+      if (lbls['swarmbox.worktree']) {
+        rec.worktree = {
+          path: String(lbls['swarmbox.worktree']),
+          branch: String(lbls['swarmbox.branch'] || ''),
+          base: String(lbls['swarmbox.base'] || ''),
+          repo: String(lbls['swarmbox.repo'] || ''),
+        };
+      }
+      pins.push(rec);
+      added.push({ term: t, rec });
+    }
+    if (added.length === 0) return false;
+    try { writePins(pins); } catch (_) { return false; }
+    for (const { term, rec } of added) {
+      const newLabels = { 'swarmbox.pin_id': rec.id, 'swarmbox.agent': rec.agent };
+      if (!(term.labels && term.labels['swarmbox.title'])) newLabels['swarmbox.title'] = rec.title;
+      term.labels = { ...(term.labels || {}), ...newLabels };
+      autoPinPending.add(term.address);
+      hc.call('terminal.label', { terminal: term.address, labels: newLabels })
+        .catch(() => {
+          // The label did not stick: drop the pin so the next snapshot can try again instead of leaving an orphan.
+          try { writePins(readPins().filter((p) => p.id !== rec.id)); } catch (_) {}
+          if (term.labels) delete term.labels['swarmbox.pin_id'];
+        })
+        .finally(() => autoPinPending.delete(term.address));
+    }
+    return true;
+  }
+
   hc.on('snapshot', () => {
     const terms = hc.listSnapshot();
+    autoPinAgentTerminals(terms);
     syncPinsFromTerminals(terms);
     emitBusTabEvents(null, terms);
     const snap = buildSnapshot({ type: 'snapshot' });
@@ -801,6 +947,7 @@ export function createGateway(options = {}) {
       }
     }
     const terms = hc.listSnapshot();
+    autoPinAgentTerminals(terms);
     syncPinsFromTerminals(terms);
     emitBusTabEvents(event, terms);
     const snap = buildSnapshot({ type: 'event', event });
@@ -992,7 +1139,9 @@ export function createGateway(options = {}) {
 
         const labels = {};
         if (agentKind && agentKind !== 'shell') labels['swarmbox.agent'] = agentKind;
+        if (preset === 'agent' && body.persist === false) labels['swarmbox.persist'] = 'off';
         let createdWorktree = null;
+        const requestedCwd = cwd;
 
         if (preset === 'agent' && worktreeChoice !== 'same') {
           const collision = await detectWorkingTreeCollision(cwd, liveTerms);
@@ -1078,6 +1227,7 @@ export function createGateway(options = {}) {
           writeActiveTab(addr);
           hc.terminals.set(addr, createdTerm);
         }
+        if (body.cwd) noteRecentDir(requestedCwd);
         if (createdWorktree) refreshPendingWorktrees();
         broadcast(buildSnapshot({ type: 'snapshot' }));
         const resp = { ...(createdTerm || {}), terminal: createdTerm };
@@ -1490,8 +1640,18 @@ export function createGateway(options = {}) {
       }
 
       if (pathname === '/api/projects' && req.method === 'GET') {
-        const projects = discoverProjects(hc.listSnapshot(), readPins());
-        return sendJson(res, 200, { projects, home: HOME });
+        const live = hc.listSnapshot();
+        const pinsNow = readPins();
+        const projects = discoverProjects(live, pinsNow);
+        const recent = listRecentDirs(live, pinsNow, readRecentDirs());
+        return sendJson(res, 200, { projects, recent, home: HOME });
+      }
+
+      if (pathname === '/api/dirs' && req.method === 'GET') {
+        const raw = url.searchParams.get('path') || HOME;
+        const listing = listChildDirs(raw.startsWith('/') ? raw : HOME);
+        if (!listing) return sendJson(res, 404, { error: 'not_a_dir', message: `Not a readable folder: ${raw}` });
+        return sendJson(res, 200, { ...listing, home: HOME, self: describeDir(listing.path) });
       }
 
       if (pathname === '/api/worktrees/check' && req.method === 'GET') {
@@ -1825,6 +1985,12 @@ export function createGateway(options = {}) {
     room.clients.add(clientRec);
     const hasOtherOwner = Boolean(room.owner && room.owner !== clientRec && room.clients.has(room.owner));
     const claimOnAttach = !hasOtherOwner || !isPassiveAttach;
+    // The size the PTY has right now. The owner's stream is exact (this gateway set it); hc's cached
+    // size can lag a resize by a refresh, and attaching at a stale size would resize the PTY itself.
+    const ownerRec = hasOtherOwner ? room.owner : null;
+    const ptyNow = ownerRec && ownerRec.streamCols
+      ? { cols: ownerRec.streamCols, rows: ownerRec.streamRows }
+      : getCurrentPtySize(termId, cols, rows);
     let attachCols = cols;
     let attachRows = rows;
     if (claimOnAttach) {
@@ -1833,10 +1999,15 @@ export function createGateway(options = {}) {
       room.ptyRows = rows;
       writeActiveTab(termId);
     } else {
-      const cur = getCurrentPtySize(termId, cols, rows);
-      attachCols = cur.cols;
-      attachRows = cur.rows;
+      // A passive attach (a background window, a reconnect) must never change the PTY: join at its current size.
+      attachCols = ptyNow.cols;
+      attachRows = ptyNow.rows;
     }
+    // In herdr-core an attach applies its size: when that changes the PTY, the program redraws for every
+    // client. Mask it for the others now, and for this one right after its hydration (the SIGWINCH redraw
+    // of a TUI tends to land after the replay that hydration releases).
+    const attachResizesPty = clampCols(attachCols) !== ptyNow.cols || clampRows(attachRows) !== ptyNow.rows;
+    if (attachResizesPty) maskRoomPeers(room, clientRec);
     if (typeof hc.refreshTerminals === 'function') hc.refreshTerminals();
 
     let stream = null;
@@ -1900,6 +2071,10 @@ export function createGateway(options = {}) {
         ws.send(merged);
       }
       ws.send(JSON.stringify({ type: 'hydrated' }));
+      if (attachResizesPty && attachIsTui) {
+        startResizeMask(0, true);
+        ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq }));
+      }
     };
 
     const flushResize = () => {
@@ -1982,6 +2157,13 @@ export function createGateway(options = {}) {
         },
       });
       clientRec.stream = stream;
+      clientRec.streamCols = clampCols(attachCols);
+      clientRec.streamRows = clampRows(attachRows);
+      clientRec.onPeerResize = (isTui) => {
+        if (hydrating || ws.readyState !== 1) return;
+        startResizeMask(0, isTui);
+        ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq }));
+      };
     } catch (err) {
       clearHydrationTimers();
       clearResizeTimers();
@@ -2031,6 +2213,7 @@ export function createGateway(options = {}) {
               }
               return;
             }
+            const before = getCurrentPtySize(termId, room.ptyCols || clientRec.wantCols, room.ptyRows || clientRec.wantRows);
             room.owner = clientRec;
             room.ptyCols = clientRec.wantCols;
             room.ptyRows = clientRec.wantRows;
@@ -2038,7 +2221,8 @@ export function createGateway(options = {}) {
             // Coalesce SIGWINCH full-screen TUI repaint bursts into one atomic frame
             // (covering debounced & multi-pass TUIs such as OpenCode, Claude, AGY, and Gemini).
             startResizeMask(msg.seq, Boolean(msg.tui));
-            stream.resize(clientRec.wantCols, clientRec.wantRows);
+            if (before.cols !== clientRec.wantCols || before.rows !== clientRec.wantRows) maskRoomPeers(room, clientRec);
+            sendStreamSize(clientRec);
             return;
           }
           if (msg.type === 'focus') {
@@ -2109,6 +2293,12 @@ export function createGateway(options = {}) {
       room.clients.delete(clientRec);
       if (room.owner === clientRec) room.owner = null;
       if (room.clients.size === 0) ptyRooms.delete(termId);
+      // Closing this stream makes herdr-core apply a remaining stream's size: when that differs, the
+      // program redraws for the clients still attached, so mask it for them.
+      else if ([...room.clients].some((c) => c.streamCols && (c.streamCols !== clientRec.streamCols || c.streamRows !== clientRec.streamRows))) {
+        maskRoomPeers(room, clientRec);
+      }
+      clientRec.onPeerResize = null;
       clientRec.stream = null;
       if (stream) {
         stream.close();

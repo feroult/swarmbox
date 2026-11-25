@@ -1359,6 +1359,42 @@ export function detectTerminalAgent(term) {
   return '';
 }
 
+// The agent a terminal is running right now, from live signals only (OSC 7501 status or the foreground
+// process). Unlike detectTerminalAgent it ignores labels and the tab name, so a plain shell tab named
+// `claude-2` or still carrying an old `swarmbox.agent` label is not mistaken for a running agent.
+export function detectLiveAgent(term) {
+  if (!term || typeof term !== 'object') return '';
+  const app = String((term.status && term.status.app) || '').toLowerCase().trim();
+  if (AGENT_NAME_MAP[app]) return AGENT_NAME_MAP[app];
+  const fg = path.basename(String((term.foreground && term.foreground.name) || '')).toLowerCase();
+  if (AGENT_NAME_MAP[fg]) return AGENT_NAME_MAP[fg];
+  return '';
+}
+
+// Folders recently used to launch a tab from the Web Studio, newest first (state, not config).
+export const RECENT_DIRS_FILE = path.join(SB_STATE_DIR, 'recent-dirs.json');
+const RECENT_DIRS_MAX = 12;
+
+export function readRecentDirs() {
+  const d = readJsonSafe(RECENT_DIRS_FILE);
+  if (!d || !Array.isArray(d.dirs)) return [];
+  return d.dirs.filter((x) => x && typeof x.path === 'string' && x.path.startsWith('/'));
+}
+
+export function noteRecentDir(dir) {
+  if (typeof dir !== 'string' || !dir.startsWith('/')) return;
+  const clean = dir.replace(/\/+$/, '') || '/';
+  try {
+    const dirs = [{ path: clean, ts: Math.floor(Date.now() / 1000) }]
+      .concat(readRecentDirs().filter((x) => x.path !== clean))
+      .slice(0, RECENT_DIRS_MAX);
+    fs.mkdirSync(SB_STATE_DIR, { recursive: true, mode: 0o700 });
+    const tmp = `${RECENT_DIRS_FILE}.tmp.${process.pid}.${crypto.randomBytes(2).toString('hex')}`;
+    fs.writeFileSync(tmp, JSON.stringify({ dirs }, null, 2) + '\n', { mode: 0o600 });
+    fs.renameSync(tmp, RECENT_DIRS_FILE);
+  } catch (_) {}
+}
+
 export function buildAgentArgv(agent, resume = 'continue') {
   const ag = String(agent || 'shell').trim().toLowerCase();
   if (ag === 'shell' || !ALLOWED_AGENT_CMDS.has(ag)) {

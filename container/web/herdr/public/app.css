@@ -717,6 +717,57 @@ html.swarmbox-ready #sb-boot {
   border-color: var(--border-strong);
   color: var(--accent-bright);
 }
+/* Folder browser inside the New agent picker: Recent group, breadcrumb, folders you can enter */
+.proj-list-browse { max-height: 248px; }
+.proj-group-label {
+  padding: 4px 2px 0;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.proj-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 4px;
+  padding: 6px 2px 2px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.proj-crumb {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px 5px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.proj-crumb.current { color: var(--text); font-weight: 600; }
+@media (hover: hover) {
+  .proj-crumb:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+}
+.proj-crumb-sep { color: var(--text-dim); }
+.proj-row-go {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-dim);
+  padding-left: 2px;
+}
+.proj-row.is-use .proj-row-name { font-weight: 500; color: var(--text-muted); }
+.proj-row.is-use.active .proj-row-name { color: var(--text); }
+.proj-empty {
+  padding: 6px 9px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
 .spop-badge-btn {
   appearance: none;
   cursor: pointer;

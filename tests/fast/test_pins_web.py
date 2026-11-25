@@ -304,6 +304,51 @@ try {
   assert.equal(unpin.status, 200);
   assert.equal(readPins().length, 0);
 
+  // 9. An agent typed into a plain shell tab in a folder without a repo is auto-pinned on the next snapshot,
+  //    once, with the live agent and folder, so a restart brings the agent back instead of a bare shell.
+  const sh = await api('POST', '/api/tabs', { preset: 'shell', cwd: proj2 });
+  assert.equal(sh.status, 201);
+  const tSh = sh.data.terminal.address;
+  hc.emit('snapshot');
+  assert.equal(readPins().filter((p) => p.cwd === proj2).length, 0, 'a plain shell is not pinned');
+  hc.terminals.get(tSh).foreground = { name: 'agy', cwd: proj2 };
+  hc.emit('snapshot');
+  hc.emit('snapshot');
+  await new Promise((r) => setTimeout(r, 20));
+  const shPins = readPins().filter((p) => p.cwd === proj2);
+  assert.equal(shPins.length, 1, 'exactly one auto pin for the shell that started an agent');
+  assert.equal(shPins[0].agent, 'agy');
+  assert.equal(shPins[0].auto, true);
+  assert.equal(shPins[0].autostart, true);
+  assert.equal(shPins[0].title, 'other-proj');
+  assert.equal(hc.terminals.get(tSh).labels['swarmbox.pin_id'], shPins[0].id);
+  // Closing the tab drops the auto pin like any other agent tab
+  const delSh = await api('DELETE', `/api/tabs/${tSh}`);
+  assert.equal(delSh.status, 200);
+  assert.equal(readPins().filter((p) => p.cwd === proj2).length, 0);
+
+  // 9b. persist: false opts an agent tab out of auto-pinning
+  const np = await api('POST', '/api/tabs', { preset: 'agent', agent: 'claude', cwd: proj2, persist: false });
+  assert.equal(np.status, 201);
+  hc.emit('snapshot');
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(readPins().filter((p) => p.cwd === proj2).length, 0, 'persist:false must not be auto-pinned');
+
+  // 10. The New agent picker: recent folders (launches first) and a folder browser that flags repos
+  const projs = await api('GET', '/api/projects');
+  assert.equal(projs.status, 200);
+  assert.equal(projs.data.recent[0].path, proj2);
+  assert.equal(projs.data.recent[0].is_git, false);
+  const dirs = await api('GET', `/api/dirs?path=${encodeURIComponent(process.env.HOME)}`);
+  assert.equal(dirs.status, 200);
+  const byName = Object.fromEntries(dirs.data.entries.map((d) => [d.name, d]));
+  assert.equal(byName['shop-api'].is_git, true);
+  assert.equal(byName['shop-api'].branch, 'main');
+  assert.equal(byName['other-proj'].is_git, false);
+  assert.ok(!dirs.data.entries.some((d) => d.name.startsWith('.')), 'hidden folders are skipped');
+  const noDir = await api('GET', `/api/dirs?path=${encodeURIComponent(path.join(proj2, 'missing'))}`);
+  assert.equal(noDir.status, 404);
+
   console.log('ALL_PINS_WEB_OK');
 } finally {
   gw.shutdown();

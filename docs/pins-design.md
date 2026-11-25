@@ -67,6 +67,7 @@ Rules:
   - `title_source`: current `swarmbox.title_source` (if set), else `""`
   - `resume`: `"continue"` (default)
   - `autostart`: `false` (default)
+- **Auto-pin of any agent session:** an agent tab from **New agent** is pinned when it opens (`auto: true`). Any other live terminal without a pin (a shell where an agent was typed, a cockpit or Sysop tab, a worktree opened from its badge) is pinned the first time the gateway sees it running a known agent, from live signals only (`status.app` or the foreground process, never the tab name or labels). The pin is `auto`, so closing the tab removes it; `swarmbox.persist=off` (`persist: false`) opts a terminal out.
 - **Live auto-follow:** while a pinned tab is alive, the gateway observes `foreground.cwd` and active agent during terminal refreshes:
   - When `cwd` changes to an existing directory different from `pin.cwd`, `pins.json` is updated (debounced / write-on-change only).
   - When a known agent starts inside a pinned tab (e.g. starting `agy` in a pinned shell, or switching agents), `pin.agent` updates to that agent.

@@ -1445,6 +1445,13 @@
     }
   }
 
+  // Only the window the user is actually using may size a PTY. Another Studio window (a second monitor, a phone,
+  // a background tab) still follows the active tab, but passively: if it claimed too, the two would resize the
+  // PTY back and forth on every tab switch, and each resize redraws the agent for both.
+  function windowHasUserFocus() {
+    return document.visibilityState === 'visible' && document.hasFocus();
+  }
+
   // Real user click/tap on the terminal canvas claims viewport ownership on the server
   // so this device's cols×rows take effect immediately without needing a page refresh.
   function claimSessionViewport(sess) {
@@ -1624,6 +1631,8 @@
   });
   window.addEventListener('focus', () => {
     ensureConnectionsAlive();
+    const sess = activeSession();
+    if (sess && !sess.hydrating) claimSessionViewport(sess);
   });
   window.addEventListener('blur', () => {
     const sess = activeSession();
@@ -2825,7 +2834,7 @@
       }
       if (sess.needsFit) fitSession(sess, true);
       syncStageLoader();
-      claimSessionViewport(sess);
+      if (windowHasUserFocus()) claimSessionViewport(sess);
       syncJumpLive();
       focusTerminalIfDesktop();
     }
@@ -3322,6 +3331,8 @@
     });
   }
 
+  const ICO_FOLDER_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.8 4.2c0-.8.6-1.4 1.4-1.4h3l1.5 1.7h5.1c.8 0 1.4.6 1.4 1.4v6.1c0 .8-.6 1.4-1.4 1.4H3.2c-.8 0-1.4-.6-1.4-1.4Z"/></svg>';
+  const ICO_CHECK_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg>';
   const ICO_SEARCH_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>';
 
   async function openNewAgentPopover(includeShell = false, targetCwd = '', opts = {}) {
@@ -3355,10 +3366,12 @@
     }
 
     const projects = (projData && Array.isArray(projData.projects)) ? projData.projects : [];
-    const homeDir = (projData && projData.home) || '/home/agent';
+    const recent = (projData && Array.isArray(projData.recent)) ? projData.recent : [];
+    const homeDir = ((projData && projData.home) || '/home/agent').replace(/\/+$/, '') || '/';
 
-    if (showProjectPicker && !selectedCwd && projects.length > 0) {
-      selectedCwd = projects[0].path;
+    if (showProjectPicker && !selectedCwd) {
+      if (recent.length > 0) selectedCwd = recent[0].path;
+      else if (projects.length > 0) selectedCwd = projects[0].path;
     }
 
     let wtInfo = initialWtInfo;
@@ -3554,7 +3567,7 @@
       const pHead = document.createElement('div');
       pHead.className = 'proj-head';
       const pLbl = document.createElement('span');
-      pLbl.textContent = 'Project';
+      pLbl.textContent = 'Folder';
       const pCnt = document.createElement('span');
       pCnt.textContent = `${projects.length} repo${projects.length === 1 ? '' : 's'}`;
       pHead.append(pLbl, pCnt);
@@ -3567,108 +3580,195 @@
       projInputEl = document.createElement('input');
       projInputEl.type = 'text';
       projInputEl.className = 'proj-input';
-      projInputEl.placeholder = 'Filter projects or enter ~/path…';
-      projInputEl.setAttribute('aria-label', 'Filter projects or enter folder path');
+      projInputEl.placeholder = 'Filter repos and folders…';
+      projInputEl.setAttribute('aria-label', 'Filter repos and folders, or enter a folder path');
       pWrap.append(pIco, projInputEl);
 
       const pList = document.createElement('div');
-      pList.className = 'proj-list';
+      pList.className = 'proj-list proj-list-browse';
 
       const expandUserPath = (raw) => {
         const s = String(raw || '').trim();
         if (!s) return '';
         if (s === '~') return homeDir;
-        if (s.startsWith('~/')) return `${homeDir}/${s.slice(2)}`.replace(/\/+/g, '/');
+        if (s.startsWith('~/')) return `${homeDir}/${s.slice(2)}`.replace(/\/+/g, '/').replace(/\/+$/, '');
         if (s.startsWith('/')) return s.replace(/\/+$/, '') || '/';
         return '';
       };
+      const underHome = (p) => p === homeDir || String(p || '').startsWith(homeDir + '/');
+      const parentOf = (p) => {
+        const s = String(p || '').replace(/\/+$/, '');
+        const i = s.lastIndexOf('/');
+        return i <= 0 ? '/' : s.slice(0, i);
+      };
+
+      // Folder browser state: start beside the selected folder so its siblings are one click away.
+      let browseDir = (selectedCwd && underHome(selectedCwd) && selectedCwd !== homeDir) ? parentOf(selectedCwd) : homeDir;
+      let browseEntries = [];
+      let browseGen = 0;
+
+      const makeRow = ({ kind, name, sub, branch, active, enter, onClick }) => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = `proj-row${active ? ' active' : ''}${kind === 'use' ? ' is-use' : ''}`;
+        const left = document.createElement('span');
+        left.className = 'proj-row-left';
+        const icon = kind === 'repo' ? ICO_BRANCH_SVG : (kind === 'use' ? ICO_CHECK_SVG : ICO_FOLDER_SVG);
+        left.innerHTML = `${icon}<span class="proj-row-name"></span><span class="proj-row-path"></span>`;
+        left.querySelector('.proj-row-name').textContent = name;
+        left.querySelector('.proj-row-path').textContent = sub || '';
+        const right = document.createElement('span');
+        right.className = 'proj-row-right';
+        if (branch) {
+          const br = document.createElement('span');
+          br.className = 'proj-branch-pill';
+          br.textContent = branch;
+          right.appendChild(br);
+        }
+        if (enter) {
+          const go = document.createElement('span');
+          go.className = 'proj-row-go';
+          go.setAttribute('aria-hidden', 'true');
+          go.textContent = '›';
+          right.appendChild(go);
+        }
+        row.append(left, right);
+        row.addEventListener('click', onClick);
+        return row;
+      };
+
+      const groupLabel = (text) => {
+        const el = document.createElement('div');
+        el.className = 'proj-group-label';
+        el.textContent = text;
+        return el;
+      };
+
+      const pick = (p) => {
+        selectProjectPath(p);
+        renderProjectRows();
+      };
+      // Entering a folder also selects it: the agent opens where you are browsing.
+      const enterDir = (p) => {
+        selectProjectPath(p);
+        loadBrowse(p);
+      };
+
+      const renderCrumbs = () => {
+        const bar = document.createElement('div');
+        bar.className = 'proj-crumbs';
+        const parts = [];
+        if (underHome(browseDir)) {
+          parts.push({ label: '~', path: homeDir });
+          const rest = browseDir.slice(homeDir.length).split('/').filter(Boolean);
+          let acc = homeDir;
+          for (const seg of rest) { acc = `${acc}/${seg}`; parts.push({ label: seg, path: acc }); }
+        } else {
+          parts.push({ label: '/', path: '/' });
+          let acc = '';
+          for (const seg of browseDir.split('/').filter(Boolean)) { acc = `${acc}/${seg}`; parts.push({ label: seg, path: acc }); }
+        }
+        parts.forEach((pt, i) => {
+          if (i > 0) {
+            const sep = document.createElement('span');
+            sep.className = 'proj-crumb-sep';
+            sep.textContent = '/';
+            bar.appendChild(sep);
+          }
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = `proj-crumb${i === parts.length - 1 ? ' current' : ''}`;
+          b.textContent = pt.label;
+          b.addEventListener('click', () => enterDir(pt.path));
+          bar.appendChild(b);
+        });
+        return bar;
+      };
+
+      const rowFor = (d, sub) => (d.is_git
+        ? makeRow({ kind: 'repo', name: d.name, sub, branch: d.branch, active: selectedCwd === d.path, onClick: () => pick(d.path) })
+        : makeRow({ kind: 'folder', name: d.name, sub, active: selectedCwd === d.path, enter: true, onClick: () => enterDir(d.path) }));
 
       const renderProjectRows = () => {
         pList.innerHTML = '';
         const q = projInputEl.value.trim();
-        const qLow = q.toLowerCase();
-        const filtered = projects.filter((p) => {
-          if (!qLow) return true;
-          return p.name.toLowerCase().includes(qLow)
-            || shortDisplayPath(p.path).toLowerCase().includes(qLow)
-            || p.path.toLowerCase().includes(qLow);
-        });
-        const customPath = expandUserPath(q);
-        const matchesCustom = customPath && filtered.some((p) => p.path === customPath);
-
-        for (const p of filtered) {
-          const row = document.createElement('button');
-          row.type = 'button';
-          row.className = `proj-row${selectedCwd === p.path ? ' active' : ''}`;
-          const left = document.createElement('span');
-          left.className = 'proj-row-left';
-          left.innerHTML = `${ICO_BRANCH_SVG}<span class="proj-row-name"></span><span class="proj-row-path"></span>`;
-          left.querySelector('.proj-row-name').textContent = p.name;
-          left.querySelector('.proj-row-path').textContent = shortDisplayPath(p.path);
-
-          const right = document.createElement('span');
-          right.className = 'proj-row-right';
-          if (p.active_count > 0) {
-            const act = document.createElement('span');
-            act.className = 'proj-active-pill';
-            act.textContent = `${p.active_count} active`;
-            right.appendChild(act);
+        if (q) {
+          // Filtering searches everything the picker knows: recent folders, every discovered repo, this folder.
+          const qLow = q.toLowerCase();
+          const pool = new Map();
+          for (const d of recent) pool.set(d.path, d);
+          for (const p of projects) if (!pool.has(p.path)) pool.set(p.path, { path: p.path, name: p.name, is_git: true, branch: p.branch });
+          for (const d of browseEntries) if (!pool.has(d.path)) pool.set(d.path, d);
+          const customPath = expandUserPath(q);
+          for (const d of pool.values()) {
+            if (!d.name.toLowerCase().includes(qLow) && !shortDisplayPath(d.path).toLowerCase().includes(qLow)) continue;
+            pList.appendChild(rowFor(d, shortDisplayPath(d.path)));
           }
-          if (p.branch) {
-            const br = document.createElement('span');
-            br.className = 'proj-branch-pill';
-            br.textContent = p.branch;
-            right.appendChild(br);
+          if (customPath && !pool.has(customPath)) {
+            pList.appendChild(makeRow({
+              kind: 'folder', name: 'Open folder', sub: shortDisplayPath(customPath), enter: true,
+              active: selectedCwd === customPath, onClick: () => { projInputEl.value = ''; enterDir(customPath); },
+            }));
           }
-          row.append(left, right);
-          row.addEventListener('click', () => {
-            selectProjectPath(p.path);
-            renderProjectRows();
-          });
-          pList.appendChild(row);
+          if (pList.children.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'spop-sub';
+            empty.textContent = 'No match — type a path like ~/my-folder';
+            pList.appendChild(empty);
+          }
+          return;
         }
 
-        if (customPath && !matchesCustom) {
-          const row = document.createElement('button');
-          row.type = 'button';
-          row.className = `proj-row${selectedCwd === customPath ? ' active' : ''}`;
-          const left = document.createElement('span');
-          left.className = 'proj-row-left';
-          left.innerHTML = `<span class="proj-row-name"></span><span class="proj-row-path"></span>`;
-          left.querySelector('.proj-row-name').textContent = 'Use folder';
-          left.querySelector('.proj-row-path').textContent = shortDisplayPath(customPath);
-          row.appendChild(left);
-          row.addEventListener('click', () => {
-            selectProjectPath(customPath);
-            renderProjectRows();
-          });
-          pList.appendChild(row);
+        if (recent.length > 0) {
+          pList.appendChild(groupLabel('Recent'));
+          for (const d of recent) pList.appendChild(rowFor(d, shortDisplayPath(parentOf(d.path))));
         }
-
-        if (pList.children.length === 0) {
+        pList.appendChild(renderCrumbs());
+        pList.appendChild(makeRow({
+          kind: 'use', name: 'Use this folder', sub: shortDisplayPath(browseDir) || '/',
+          active: selectedCwd === browseDir, onClick: () => pick(browseDir),
+        }));
+        for (const d of browseEntries) pList.appendChild(rowFor(d, ''));
+        if (browseEntries.length === 0) {
           const empty = document.createElement('div');
-          empty.className = 'spop-sub';
-          empty.textContent = 'No matching repos — enter a full path like ~/my-project';
+          empty.className = 'proj-empty';
+          empty.textContent = 'No subfolders';
           pList.appendChild(empty);
         }
       };
 
-      projInputEl.addEventListener('input', () => {
+      async function loadBrowse(dir) {
+        const myGen = ++browseGen;
+        const data = await fetch(`/api/dirs?path=${encodeURIComponent(dir)}`, { cache: 'no-store' })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        if (myGen !== browseGen || !popoverOpen) return;
+        if (data && Array.isArray(data.entries)) {
+          browseDir = data.path;
+          browseEntries = data.entries;
+        }
         renderProjectRows();
-        const customPath = expandUserPath(projInputEl.value);
-        if (customPath) selectProjectPath(customPath);
-      });
+        const crumbs = pList.querySelector('.proj-crumbs');
+        if (crumbs && dir !== homeDir) crumbs.scrollIntoView({ block: 'nearest' });
+      }
+
+      projInputEl.addEventListener('input', () => renderProjectRows());
       projInputEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          const firstRow = pList.querySelector('.proj-row');
+          const firstRow = pList.querySelector('.proj-row:not(.is-use)') || pList.querySelector('.proj-row');
           if (firstRow) firstRow.click();
           const primary = popoverEl.querySelector('.agent-pick-btn.is-default, .agent-pick-btn');
           if (primary) primary.focus();
+        } else if (e.key === 'Backspace' && projInputEl.value === '' && browseDir !== '/') {
+          // Backspace on an empty filter walks up one folder, like a path bar.
+          e.preventDefault();
+          enterDir(parentOf(browseDir));
         }
       });
 
       renderProjectRows();
+      loadBrowse(browseDir);
       projSec.append(pHead, pWrap, pList);
       frag.appendChild(projSec);
     }
