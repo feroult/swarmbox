@@ -429,8 +429,11 @@ const NON_TYPING_INPUT_RE = /^(?:\x1b\[<[0-9;]+[Mm]|\x1b\[M[\s\S]{3}|\x1b\[[IO]|
 // intermediate partial frames. Coalescing at the gateway makes every DEC 2026 frame atomic.
 const SYNC_BEGIN_BUF = Buffer.from('\x1b[?2026h');
 const SYNC_END_BUF = Buffer.from('\x1b[?2026l');
+const CLEAR_SCREEN_BUF = Buffer.from('\x1b[2J');
+const CLEAR_SCROLLBACK_BUF = Buffer.from('\x1b[3J');
 const MAX_SYNC_FRAME_BYTES = 512 * 1024;
 const MAX_SYNC_FRAME_MS = 120;
+const LATE_REDRAW_WINDOW_MS = 2500;
 
 export function createSyncOutputCoalescer(onEmit, opts = {}) {
   const maxMs = Number(opts.maxMs) || MAX_SYNC_FRAME_MS;
@@ -1849,6 +1852,7 @@ export function createGateway(options = {}) {
     let resizeSeq = 0;
     let resizeBytes = 0;
     let resizeIsTui = false;
+    let lastResizeAtMs = 0;
     let resizeChunks = [];
     let resizeQuietTimer = null;
     let resizeCapTimer = null;
@@ -1871,11 +1875,15 @@ export function createGateway(options = {}) {
       syncCoalescer.flush();
       clearResizeTimers();
       resizing = true;
+      lastResizeAtMs = Date.now();
       resizeSeq = Number(seqVal) || (resizeSeq + 1);
       resizeBytes = 0;
       resizeIsTui = Boolean(isTuiHint) || isInteractiveTuiTerminal(hc.terminals.get(termId));
-      resizeQuietTimer = setTimeout(flushResize, resizeIsTui ? 620 : 110);
-      resizeCapTimer = setTimeout(flushResize, resizeIsTui ? 1600 : 350);
+      // Long-conversation TUIs like agy may take ~600-850ms to re-layout markdown before emitting
+      // their clear+redraw burst, and up to ~2-3s to stream the full history. Give them room while
+      // still releasing fast TUIs (Claude/empty agy) shortly after their burst settles.
+      resizeQuietTimer = setTimeout(flushResize, resizeIsTui ? 900 : 110);
+      resizeCapTimer = setTimeout(flushResize, resizeIsTui ? 3500 : 350);
     };
 
     const flushInitial = () => {
@@ -1937,18 +1945,27 @@ export function createGateway(options = {}) {
             }
             return;
           }
+          if (!resizing && lastResizeAtMs > 0 && (Date.now() - lastResizeAtMs) <= LATE_REDRAW_WINDOW_MS) {
+            // Catch late full-screen/scrollback clear+redraw passes from heavy TUIs (e.g. agy
+            // re-rendering a long conversation >900ms after SIGWINCH) BEFORE the clear hits xterm.
+            const hasFullClear = buf.includes(CLEAR_SCROLLBACK_BUF) || buf.includes(CLEAR_SCREEN_BUF);
+            if (hasFullClear && (resizeIsTui || isInteractiveTuiTerminal(hc.terminals.get(termId)))) {
+              startResizeMask(0, true);
+              if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq }));
+            }
+          }
           if (resizing) {
             resizeChunks.push(Buffer.from(buf));
             resizeBytes += buf.length;
             if (resizeQuietTimer) clearTimeout(resizeQuietTimer);
             // If the TUI opened a DEC 2026 synchronized frame that has not closed yet,
-            // give it slightly more breathing room before declaring the redraw settled.
+            // give it extra breathing room before declaring the redraw settled.
             const lb = buf.lastIndexOf(SYNC_BEGIN_BUF);
             const le = buf.lastIndexOf(SYNC_END_BUF);
             const openSync = lb !== -1 && lb > le;
             const quietMs = openSync
-              ? 320
-              : ((resizeIsTui && resizeBytes < 256) ? 450 : (resizeIsTui ? 240 : 85));
+              ? 420
+              : ((resizeIsTui && resizeBytes < 512) ? 650 : (resizeIsTui ? 320 : 85));
             resizeQuietTimer = setTimeout(flushResize, quietMs);
             return;
           }

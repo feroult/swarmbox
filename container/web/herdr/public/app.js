@@ -1184,7 +1184,7 @@
     }
     if (activeId === sess.address) syncStageLoader();
     if (sess.resizeFallbackTimer) clearTimeout(sess.resizeFallbackTimer);
-    const fallbackMs = isSessionTui(sess) ? 1800 : 600;
+    const fallbackMs = isSessionTui(sess) ? 4200 : 600;
     sess.resizeFallbackTimer = setTimeout(() => finishResizeCycle(sess), fallbackMs);
   }
 
