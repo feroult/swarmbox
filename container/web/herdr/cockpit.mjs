@@ -746,6 +746,41 @@ export class Cockpit {
     this.scheduleRender();
   }
 
+  // The wheel (two fingers on a trackpad). A program that asked for the mouse, or that runs on the alternate screen (Claude Code in
+  // fullscreen, vim, less), has no history in this buffer and handles scrolling itself: give it the wheel, as a mouse event when it
+  // asked for the mouse, as arrow keys otherwise (what a terminal does). Anything else scrolls the history kept here.
+  // dir: 1 = up, -1 = down.
+  _wheel(dir, btn, x, y) {
+    const term = this.xterm;
+    if (term && this.stream && this.focus === 'terminal') {
+      const mouse = term.modes && term.modes.mouseTrackingMode && term.modes.mouseTrackingMode !== 'none';
+      const alt = term.buffer.active.type === 'alternate';
+      if (mouse || alt) {
+        const P = this.layout().pane;
+        const px = x - (P.x + P.pad);
+        const py = y - P.y;
+        if (px < 0 || py < 0 || px >= P.innerW || py >= P.h) return; // over the sidebar or the Sysop panel: not for the program
+        if (mouse) {
+          const core = term._core && term._core.coreMouseService;
+          const enc = core && core.activeEncoding;
+          if (enc && enc !== 'SGR') {
+            // an old program without SGR (1006): the classic X10 encoding, one byte per value, offset 32
+            if (px + 33 > 255 || py + 33 > 255) return;
+            this.stream.write(Buffer.from([0x1b, 0x5b, 0x4d, 32 + btn, 33 + px, 33 + py]));
+          } else {
+            this.stream.write(`\x1b[<${btn};${px + 1};${py + 1}M`);
+          }
+        } else {
+          const app = term.modes && term.modes.applicationCursorKeysMode;
+          const key = `\x1b${app ? 'O' : '['}${dir > 0 ? 'A' : 'B'}`;
+          this.stream.write(key.repeat(3));
+        }
+        return;
+      }
+    }
+    this._scroll(dir * 3);
+  }
+
   _scroll(delta) {
     if (!this.xterm) return;
     const maxScroll = this.xterm.buffer.active.baseY;
@@ -975,8 +1010,7 @@ export class Cockpit {
 
   _handleMouse(btn, x, y, press) {
     if (!press) return;
-    if (btn === 64) { this._scroll(3); return; }
-    if (btn === 65) { this._scroll(-3); return; }
+    if ((btn & 64) && !(btn & 32) && (btn & 3) < 2) { this._wheel((btn & 3) === 0 ? 1 : -1, btn, x, y); return; }
     if (btn !== 0) return;
 
     for (const hb of this.hitboxes) {
