@@ -134,7 +134,7 @@ class McpWithoutAudit(tm.Rig):
 
     def test_reading_and_saying_go_on_without_the_audit(self):
         with self.failing(), mock.patch.object(sys, "stderr", io.StringIO()):
-            self.assertIn("tab", self.ok("list_tabs"))
+            self.assertIn("repos", self.ok("box_state"))
             self.ok("read_tab", tab="@1")
             self.ok("say", text="the disk is full")
             self.ok("done", summary="stopped")
@@ -400,7 +400,7 @@ class FullDiskEnds(tss.Base):
         service.RETRY_WRITES = 0.05
         self.addCleanup(setattr, service, "RETRY_WRITES", old)
         hold, release = self.gate()
-        self.script([{"tool": "list_tabs"}, hold, {"tool": "done", "args": {"summary": "finished"}}])
+        self.script([{"tool": "box_state"}, hold, {"tool": "done", "args": {"summary": "finished"}}])
         svc = self.start()
         real = svc.write_goal
         full = threading.Event()
@@ -500,7 +500,7 @@ class BrainWords(unittest.TestCase):
 
 class KilledBrainGoal(tss.Base):
     def test_the_goal_of_a_killed_brain_fails_with_a_message_a_person_can_read(self):
-        self.script([{"tool": "list_tabs"}, {"sleep": 30}, {"tool": "done", "args": {"summary": "x"}}])
+        self.script([{"tool": "box_state"}, {"sleep": 30}, {"tool": "done", "args": {"summary": "x"}}])
         self.start()
         gid = self.goal("long")
         pid = ss.wait_for(lambda: (self.state(gid) or {}).get("brain", {}).get("pid"), 15)

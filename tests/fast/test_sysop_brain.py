@@ -132,30 +132,19 @@ class Template(unittest.TestCase):
         """every phrase is a behaviour that a real model got wrong without it (tests/e2e/e2e_voice.py, e2e_sysop.py)"""
         p = " ".join(brain.system_prompt("voice", 20, 300).split())
         needs = {
-            "the tools": ("list_tabs", "read_tab", "box_info", "focus_tab", "open_tab", "close_tab", "run", "input", "wait", "say", "done"),
-            "tabs, never the bus": ("TABS", "herdr terminals"),
-            # 'reply with exactly banana nine' with Claude Code in the active tab was answered by the brain itself and nothing was typed
-            # the user talks to the sysop to reach the agents: they never say "send it to Claude", and the target is inferred
-            "a goal is a message for an agent by default": ("THE USER IS TALKING TO YOU TO REACH THEIR AGENTS", "never has to say", "clearly an operation on the box",
-                                                            "never answer it yourself", "do not type it into the shell"),
-            "the most likely agent is inferred": ("WHICH AGENT", "never ask which unless you truly cannot", "the agent in the ACTIVE tab",
-                                                  "the tab the conversation so far was with", "the only agent that exists"),
-            # each goal is a brain with no memory: the host puts the goals before it in front of the goal
-            "the conversation so far is the memory": ("THE CONVERSATION SO FAR", "[conversation so far", "It is your memory", "trust the screens over it"),
-            "the message goes in the user's words": ("in the user's words", "typed with run exactly as said"),
-            # an agent that works queues what is typed: refusing because it works was the failure
-            "a working agent takes the message": ("AN AGENT THAT IS WORKING IS NOT A REASON TO WAIT OR REFUSE", "queue what is typed while they work",
-                                                  "never press Esc or interrupt it", "type the message with run anyway", "The only exception is a dialog"),
-            # 'delete the build folder' made it type `pwd; ls -la; ls -la build | head`: the user was asked to approve a look before the command that mattered
-            "one simple command per run": ("ONE simple command per run", "no `;`, `&&`, `||` or pipes", "the host holds a chained line for the user's approval"),
-            # the operator answers what the screens show, and only that: a question for an agent's thinking still goes to the agent
-            "a question about the box is answered, not forwarded": ("A question about the STATE of the box, answered from what is on the screens", "never type such a question into an agent",
-                                                                     "When a question asks an agent to think or to do something", "reply with exactly ok"),
-            # the panel draws every tab as a chip with its icon: an id (t3) or a numbered label (1:shell) said to the user read as noise
-            "a tab is named by its name": ("ONLY by its name from list_tabs, in backticks", "never by its id (t3, @3) or its numbered label"),
-            "the reply is short and in the user's language": ("in the language the user spoke", "never repeat in done what you said with say", "At most 1000 characters"),
-            "a dialog is the user's decision": ("is the USER's decision", "do not answer it", "do not press Esc", "do not type a prompt over it", "Report it in your reply",
-                                                "unless the goal itself asks you to answer that dialog"),
+            "the tools": ("box_state", "read_tab", "tab", "worktree", "run", "input", "wait", "say", "done"),
+            "world model": ("REPOS", "SHELLS", "PARKED", "[box state (workspace)"),
+            "a goal is a message for an agent by default": ("BY DEFAULT a message for an agent", "never do an agent's coding",
+                                                            "do not type prose into the shell"),
+            "the most likely agent is inferred": ("Pick the agent in order", "active", "last conversation turn", "sole running agent"),
+            "the conversation so far is the memory": ("[conversation so far", "Trust fresh screens and state over conversation history"),
+            "the message goes in the user's words": ("passed verbatim with `run` in the user's words",),
+            "a working agent takes the message": ('state="working"', "queues messages automatically", "ALWAYS type the message with `run` anyway"),
+            "one simple command per run": ("ONE simple command per `run`",),
+            "a question about the box is answered, not forwarded": ("Question about box state", "never type it into an agent"),
+            "a tab is named by its name": ("Name tabs ONLY by their canonical `name` in backticks", "never by id (`t3`, `@3`) or numbered label"),
+            "the reply is short and in the user's language": ("in the user's language", "Do not repeat in `done` what you already said with `say`", "At most 1000 characters"),
+            "a dialog is the user's decision": ("USER's decision", "never answer, press Esc/Enter, or type over them", "unless the goal explicitly asks to answer that dialog"),
         }
         for why, phrases in needs.items():
             for phrase in phrases:
@@ -231,7 +220,7 @@ class RunBrain(unittest.TestCase):
             return json.load(f)
 
     def test_a_scripted_goal_runs_through_the_real_mcp_server(self):
-        self.script([{"tool": "list_tabs"}, {"tool": "run", "args": {"tab": "@1", "command": "ls"}}, {"tool": "say", "args": {"text": "listing"}},
+        self.script([{"tool": "box_state"}, {"tool": "run", "args": {"tab": "@1", "command": "ls"}}, {"tool": "say", "args": {"text": "listing"}},
                      {"tool": "done", "args": {"summary": "listed"}}])
         r = self.go()
         self.assertEqual((r.outcome, r.summary, r.error), ("done", "listed", ""))
@@ -259,12 +248,12 @@ class RunBrain(unittest.TestCase):
         self.assertIn("SPOKEN", argv[argv.index("--system-prompt") + 1])
 
     def test_stream_json_is_kept_as_the_audit_stream(self):
-        self.script([{"tool": "list_tabs"}, {"tool": "done", "args": {"summary": "x"}}])
+        self.script([{"tool": "box_state"}, {"tool": "done", "args": {"summary": "x"}}])
         self.go()
         with open(os.path.join(self.gdir, "stream.jsonl")) as f:
             ev = [json.loads(x) for x in f]
         self.assertEqual([e["type"] for e in ev], ["system", "assistant", "user", "assistant", "user", "result"])
-        self.assertEqual(ev[1]["message"]["content"][0]["name"], "mcp__sysop__list_tabs")
+        self.assertEqual(ev[1]["message"]["content"][0]["name"], "mcp__sysop__box_state")
         self.assertEqual(oct(os.stat(os.path.join(self.gdir, "stream.jsonl")).st_mode & 0o777), "0o600")
 
     def test_the_brain_runs_in_its_own_process_group_and_none_is_left(self):
@@ -293,7 +282,7 @@ class RunBrain(unittest.TestCase):
         return out
 
     def test_stop_kills_the_whole_group_and_ends_the_goal_stopped(self):
-        self.script([{"tool": "list_tabs"}, {"sleep": 60}])
+        self.script([{"tool": "box_state"}, {"sleep": 60}])
         threading_stop = __import__("threading").Timer(0.5, lambda: setattr(self, "stop", True))
         threading_stop.start()
         self.addCleanup(threading_stop.cancel)

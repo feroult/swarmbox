@@ -120,7 +120,7 @@ class WholePath(unittest.TestCase):
         os.environ.update(self.tabs.cmd_env)
         script = os.path.join(self.e.dir, "script.json")
         with open(script, "w") as f:
-            json.dump([{"tool": "list_tabs"}, {"tool": "read_tab", "args": {}}, {"tool": "run", "args": {"command": "make test"}},
+            json.dump([{"tool": "box_state"}, {"tool": "read_tab", "args": {}}, {"tool": "run", "args": {"command": "make test"}},
                        {"tool": "done", "args": {"summary": "ran make test"}}], f)
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"] = script
         self.svc = service.Service(self.e.cfg(countdown=0), self.e.paths, backoff=(0.05, 0.3), log=lambda m: None)

@@ -189,12 +189,16 @@ class Flow(Base):
         first = self.goal("list the tabs", "voice")
         self.assertEqual(self.wait_state(first)["state"], "done")
         with open(self.logf) as f:
-            self.assertEqual(json.load(f)["stdin"], "list the tabs\n", "nothing before the first goal")
+            first_in = json.load(f)["stdin"]
+        self.assertIn("[box state (workspace)", first_in)
+        self.assertNotIn("[conversation so far", first_in, "no conversation before the first goal")
+        self.assertTrue(first_in.endswith("The goal now (voice):\nlist the tabs\n"), first_in)
         second = self.goal("and the other one?", "panel")
         self.assertEqual(self.wait_state(second)["state"], "done")
         with open(self.logf) as f:
             got = json.load(f)["stdin"]
-        self.assertTrue(got.startswith("[conversation so far"), got)
+        self.assertIn("[box state (workspace)", got)
+        self.assertIn("[conversation so far", got)
         for must in ('The user said: "list the tabs"', "you said: finished it", "[end of the conversation so far]", "The goal now (panel):\nand the other one?"):
             self.assertIn(must, got)
         self.assertEqual(self.wait_state(second)["text"], "and the other one?", "the goal itself is kept as the user said it")
@@ -211,7 +215,9 @@ class Flow(Base):
         self.assertEqual((st["brain"]["exit"], st["brain"]["turns"]), (0, 3))
         self.assertTrue(st["created"] <= st["started"] <= st["ended"])
         with open(self.logf) as f:
-            self.assertEqual(json.load(f)["stdin"], "list the tabs\n")
+            got_in = json.load(f)["stdin"]
+        self.assertIn("[box state (workspace)", got_in)
+        self.assertTrue(got_in.endswith("The goal now (voice):\nlist the tabs\n"), got_in)
         # the state file and the audit file are written one after the other: wait for the last line of the audit
         self.assertTrue(ss.wait_for(lambda: any(e.get("state") == "done" for e in self.events("state", gid)), 10))
         ev = self.events(goal=gid)             # the audit file has the goal, its states and the end
@@ -441,7 +447,7 @@ class Survival(Base):
 
     def test_the_bus_dies_in_the_middle_of_a_goal(self):
         hold, release = self.gate()
-        self.script([hold, {"tool": "list_tabs"}, {"tool": "say", "args": {"text": "x"}}] + DONE)
+        self.script([hold, {"tool": "box_state"}, {"tool": "say", "args": {"text": "x"}}] + DONE)
         self.start()
         gid = self.goal("long")
         self.wait_state(gid, ("running",))
@@ -478,7 +484,7 @@ class Survival(Base):
 
 class Stopping(Base):
     def test_stop_ends_the_running_goal_kills_the_brain_and_drops_the_queue(self):
-        self.script([{"tool": "list_tabs"}, {"sleep": 60}])
+        self.script([{"tool": "box_state"}, {"sleep": 60}])
         self.start()
         a, b, c = self.goal("a"), self.goal("b"), self.goal("c")
         self.wait_state(a, ("running",))
