@@ -15,7 +15,7 @@ podman run -d --name mongo --network dev -p 27017:27017 mongo:7   # inside Swarm
   podman -c swarmbox logs mongo
   ```
   Linux and WSL2 only: unix sockets do not cross the macOS VM, so no connection is registered on a Mac [unverified: not run on macOS].
-  The socket is `<workspace>/.local/state/swarmbox/podman.sock`. A unix socket path holds at most 107 characters; when the workspace
+  The socket is `<workspace>/.local/state/swarmbox/podman.sock`. When the workspace is on a shared file system (virtiofs, 9p, nfs, smb), serve puts the socket on the box's own disk (`/tmp/swarmbox-podman-<uid>.sock`) instead: a socket left behind on such a share cannot be removed or re-bound, and no host can use it through the share. A unix socket path holds at most 107 characters; when the workspace
   path makes it longer than 100, the helper connects through a short symlink in `~/.local/state/swarmbox/` instead, and a path that is
   still too long makes `swarmbox up` stop with exit 4.
 - **Publish ports to the host in two hops**: declare the port on the host and publish it inside. On the host,

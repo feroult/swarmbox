@@ -243,9 +243,21 @@ wait_for_bus() {
     SB_BUS_SOCKET=$SB_BUS_SOCK swarmbox-bus ping > /dev/null 2>&1
 }
 
-# socket_works_in DIR: 0 when a unix socket can be bound (and removed) in DIR. SWARMBOX_TEST_NO_STATE_SOCKET=1 says no (tests).
+# socket_works_in DIR: 0 when DIR is a place where the nested Podman socket can live. SWARMBOX_TEST_NO_STATE_SOCKET=1 says no (tests).
+# A socket is only kept in the workspace so that a Linux/WSL2 host can reach it (`podman -c <box>`). Two things make that wrong:
+#  - the folder is on a file system shared from another machine (the macOS workspace is a virtiofs share, shown as "fuse"; also 9p, nfs,
+#    smb): binding a fresh name there may work, which is why a bind probe alone is not enough, but a socket left by an earlier run becomes a
+#    node that cannot be stat'ed or removed ("Operation not supported"), and the next bind of the same name fails. Nothing on the host
+#    can use a socket through that share anyway.
+#  - the real socket name is already a node that cannot be stat'ed or removed.
+# So the file system is the test, with a bind probe for any other case.
 socket_works_in() {
     [ "${SWARMBOX_TEST_NO_STATE_SOCKET:-0}" = 1 ] && return 1
+    case $(stat -f -c %T "$1" 2>/dev/null) in
+        fuse|fuseblk|virtiofs|9p|v9fs|nfs|nfs4|cifs|smb|smb2|smbfs) return 1 ;;
+    esac
+    # whatever sits at the real socket name must be removable (rm -f of a missing name succeeds)
+    rm -f "$SB_PODMAN_SOCK" 2>/dev/null || return 1
     local probe="$1/.socket-probe.$$"
     python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$probe" 2>/dev/null
     local rc=$?
@@ -422,6 +434,7 @@ serve() {
         if ! socket_works_in "$SB_STATE_DIR"; then
             SB_PODMAN_SOCK=${SWARMBOX_TEST_FALLBACK_SOCK:-/tmp/swarmbox-podman-$(id -u).sock}
             log "step 8: the state folder cannot hold a unix socket (a shared drive of the host): the nested Podman service uses $SB_PODMAN_SOCK"
+            rm -f "$SB_STATE_DIR/podman.sock" 2>/dev/null || true   # a socket left there by an older run; best effort, nothing uses it
         fi
         log "step 8: starting the nested Podman service on $SB_PODMAN_SOCK"
         rm -f "$SB_PODMAN_SOCK"
