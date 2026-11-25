@@ -43,6 +43,7 @@
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-name">SWARMBOX</span>
+        <span class="busy-pill brand-busy hidden" id="agents-busy-count">0 busy</span>
       </div>
       <button class="icon-btn" id="btn-sidebar-close" title="Collapse sidebar (Alt+B)" aria-label="Collapse sidebar">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -50,18 +51,15 @@
     </div>
 
     <div class="sidebar-body">
+      <button type="button" class="new-agent-cta" id="btn-new-agent" title="New agent in any project (Alt+A)" aria-label="New agent">
+        <span class="new-agent-cta-left">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+          <span>New agent</span>
+        </span>
+        <kbd class="new-agent-cta-kbd">Alt+A</kbd>
+      </button>
+
       <div class="sidebar-section sidebar-agents" id="sidebar-agents-section">
-        <div class="section-label">
-          <div class="section-label-left">
-            <span>Agents</span>
-          </div>
-          <div class="section-label-right">
-            <span class="busy-pill" id="agents-busy-count">0 busy</span>
-            <button type="button" class="icon-btn icon-btn-sm" id="btn-new-agent" title="New agent tab in current folder" aria-label="New agent tab">
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
-            </button>
-          </div>
-        </div>
         <div class="agent-cards" id="sidebar-agents"></div>
       </div>
 

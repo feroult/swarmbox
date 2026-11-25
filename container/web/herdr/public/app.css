@@ -337,11 +337,73 @@ html.swarmbox-ready #sb-boot {
   font-family: var(--mono);
   font-size: 9.5px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-dim);
 }
 .busy-pill.has-busy { color: var(--accent-bright); }
+.brand-busy {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  border: 1px solid var(--border-strong);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+}
+
+/* Quiet minimalist New Agent row at top of sidebar */
+.new-agent-cta {
+  appearance: none;
+  flex-shrink: 0;
+  width: 100%;
+  height: 29px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text-muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  transition: background .14s ease, border-color .14s ease, color .14s ease;
+}
+.new-agent-cta:active { transform: scale(0.985); }
+@media (hover: hover) {
+  .new-agent-cta:hover {
+    background: rgba(255, 255, 255, 0.055);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .new-agent-cta:hover .new-agent-cta-left svg {
+    color: var(--accent-bright);
+  }
+}
+.new-agent-cta-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.new-agent-cta-left svg {
+  color: var(--text-dim);
+  flex-shrink: 0;
+  transition: color .14s ease;
+}
+.new-agent-cta-kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-dim);
+  opacity: 0.7;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
 
 .agent-cards {
   display: flex;

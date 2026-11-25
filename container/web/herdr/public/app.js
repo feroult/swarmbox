@@ -1592,6 +1592,7 @@
     if (key >= '1' && key <= '9') return { action: 'tab', idx: Number(key) - 1 };
 
     if (code === 'KeyN' || low === 'n') return { action: 'new-shell' };
+    if (code === 'KeyA' || low === 'a') return { action: 'new-agent' };
     if (code === 'KeyR' || low === 'r') return { action: 'rename' };
     if (code === 'KeyS' || low === 's') return { action: 'sysop' };
     if (code === 'KeyB' || low === 'b') return { action: 'sidebar' };
@@ -1616,6 +1617,7 @@
       return;
     }
     if (sc.action === 'new-shell') { spawnTab('shell'); return; }
+    if (sc.action === 'new-agent') { openNewAgentPopover(false, '', { showProjectPicker: true }); return; }
     if (sc.action === 'rename') { if (activeId) startInlineRename(activeId); return; }
     if (sc.action === 'sysop') { toggleDesktopSysop(); return; }
     if (sc.action === 'sidebar') { toggleSidebar(); return; }
@@ -4488,10 +4490,11 @@
     if (agentsBusyCountEl) {
       agentsBusyCountEl.textContent = `${busyCount} busy`;
       agentsBusyCountEl.classList.toggle('has-busy', busyCount > 0);
+      agentsBusyCountEl.classList.toggle('hidden', busyCount === 0);
     }
     if (btnNewAgent) {
       btnNewAgent.classList.remove('hidden');
-      btnNewAgent.title = 'New agent in any project';
+      btnNewAgent.title = 'New agent in any project (Alt+A)';
     }
     if (sidebarAgentsSectionEl) {
       sidebarAgentsSectionEl.classList.toggle('is-empty', agentCount === 0);
@@ -6762,6 +6765,7 @@
     // 4. Keyboard shortcuts cheat sheet
     const shortcuts = [
       ['Switch terminal tab', 'Alt+1..9'],
+      ['New agent (project picker)', 'Alt+A'],
       ['Rename active tab', 'Alt+R'],
       ['Open new terminal tab', 'Alt+N'],
       ['Open / close Settings', 'Alt+,'],
