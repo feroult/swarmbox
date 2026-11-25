@@ -173,7 +173,7 @@ COPY container/config/herdr.toml /etc/swarmbox/herdr.toml
 COPY container/config/starship.toml /etc/swarmbox/starship.toml
 COPY container/config/bashrc.sh /etc/swarmbox/bashrc.sh
 COPY container/config/ssh-swarmbox.conf /etc/ssh/ssh_config.d/swarmbox.conf
-COPY container/web/herdr/hc-client.mjs container/web/herdr/server.mjs container/web/herdr/cockpit.mjs /usr/local/share/swarmbox/herdr-web/
+COPY container/web/herdr/hc-client.mjs container/web/herdr/server.mjs container/web/herdr/cockpit.mjs container/web/herdr/file-preview.mjs /usr/local/share/swarmbox/herdr-web/
 COPY container/web/herdr/public/ /usr/local/share/swarmbox/herdr-web/public/
 COPY container/scripts/dirs.sh /usr/local/lib/swarmbox/dirs.sh
 COPY container/scripts/mux/ /usr/local/lib/swarmbox/mux/

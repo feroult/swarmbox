@@ -56,6 +56,15 @@ class Image(unittest.TestCase):
         self.assertEqual([i for i in INS if i.startswith("USER ")][-1], "USER agent")
         self.assertIn("WORKDIR /home/agent", INS)
 
+    def test_every_module_the_web_studio_imports_is_copied_into_the_image(self):
+        # file-preview.mjs was imported by server.mjs but missing from the COPY: the image built, and the web studio crashed on start (ERR_MODULE_NOT_FOUND)
+        web = os.path.join(ROOT, "container", "web", "herdr")
+        copied = " ".join(i for i in instructions(read("Dockerfile")) if i.startswith("COPY"))
+        for name in ("server.mjs", "cockpit.mjs", "hc-client.mjs", "file-preview.mjs"):
+            with open(os.path.join(web, name), encoding="utf-8") as f:
+                for dep in re.findall(r"from\s+['\"]\./([\w.-]+\.mjs)['\"]", f.read()):
+                    self.assertIn("container/web/herdr/" + dep, copied, name + " imports " + dep + ", which the Dockerfile does not COPY")
+
     def test_entrypoint_cmd_and_every_copy_source(self):
         self.assertIn('ENTRYPOINT ["/usr/local/bin/swarmbox-entrypoint"]', INS)
         self.assertIn('CMD ["serve"]', INS)
