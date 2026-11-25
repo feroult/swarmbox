@@ -1016,5 +1016,119 @@ class HerdrSysopAgentTest(unittest.TestCase):
         self.assertIn("agent", sysop_brain.SOURCE_NOTES)
 
 
+class PtyViewportOwnershipTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-pty-owner.")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_idle_reconnecting_client_cannot_hijack_active_viewport_resolution(self):
+        web_dir = os.path.join(self.tmp, "web")
+        ws_dir = os.path.join(web_dir, "node_modules", "ws")
+        os.makedirs(ws_dir, exist_ok=True)
+        shutil.copyfile(HERDR_SERVER, os.path.join(web_dir, "server.mjs"))
+        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "hc-client.mjs"), os.path.join(web_dir, "hc-client.mjs"))
+        with open(os.path.join(ws_dir, "package.json"), "w", encoding="utf-8") as f:
+            json.dump({"name": "ws", "type": "module", "main": "index.js"}, f)
+        with open(os.path.join(ws_dir, "index.js"), "w", encoding="utf-8") as f:
+            f.write(
+                "import { EventEmitter } from 'node:events';\n"
+                "export class WebSocketServer extends EventEmitter {\n"
+                "  constructor() { super(); this.clients = new Set(); }\n"
+                "  handleUpgrade(_req, _sock, _head, cb) { cb(new FakeWs()); }\n"
+                "  close() {}\n"
+                "}\n"
+                "export class FakeWs extends EventEmitter {\n"
+                "  constructor() { super(); this.readyState = 1; this.sent = []; }\n"
+                "  send(d) { this.sent.push(d); }\n"
+                "  ping() {}\n"
+                "  close() { this.readyState = 3; this.emit('close'); }\n"
+                "}\n"
+            )
+        harness = os.path.join(web_dir, "run.mjs")
+        with open(harness, "w", encoding="utf-8") as f:
+            f.write(
+                "import assert from 'node:assert/strict';\n"
+                "import { EventEmitter } from 'node:events';\n"
+                "import { createGateway } from './server.mjs';\n"
+                "import { FakeWs } from './node_modules/ws/index.js';\n"
+                "\n"
+                "class FakeHc extends EventEmitter {\n"
+                "  constructor() {\n"
+                "    super();\n"
+                "    this.terminals = new Map([['t1', { address: 't1', name: 'claude', state: 'live', cols: 100, rows: 30, created_ms: 1 }]]);\n"
+                "    this.attaches = [];\n"
+                "    this.resizes = [];\n"
+                "  }\n"
+                "  async start() {}\n"
+                "  close() {}\n"
+                "  listSnapshot() { return Array.from(this.terminals.values()); }\n"
+                "  async attach(termId, cols, rows, handlers) {\n"
+                "    this.attaches.push({ termId, cols, rows });\n"
+                "    const t = this.terminals.get(termId);\n"
+                "    if (t) { t.cols = cols; t.rows = rows; }\n"
+                "    return {\n"
+                "      write() {},\n"
+                "      resize: (c, r) => {\n"
+                "        this.resizes.push({ termId, cols: c, rows: r });\n"
+                "        if (t) { t.cols = c; t.rows = r; }\n"
+                "      },\n"
+                "      focus() {},\n"
+                "      close() {},\n"
+                "    };\n"
+                "  }\n"
+                "}\n"
+                "\n"
+                "const hc = new FakeHc();\n"
+                "const { wss, shutdown } = createGateway({ hc });\n"
+                "async function openClient(query) {\n"
+                "  const ws = new FakeWs();\n"
+                "  const url = new URL(`http://127.0.0.1:7681/ws/pty/t1?${query}`);\n"
+                "  wss.emit('connection', ws, {}, url);\n"
+                "  await new Promise((r) => setTimeout(r, 20));\n"
+                "  return ws;\n"
+                "}\n"
+                "\n"
+                "// 1. Home ultrawide opens t1 at 220x60\n"
+                "const home1 = await openClient('cols=220&rows=60');\n"
+                "assert.deepEqual(hc.attaches.at(-1), { termId: 't1', cols: 220, rows: 60 });\n"
+                "\n"
+                "// 2. Work Mac opens t1 at 120x35 -> becomes owner\n"
+                "const mac = await openClient('cols=120&rows=35');\n"
+                "assert.deepEqual(hc.attaches.at(-1), { termId: 't1', cols: 120, rows: 35 });\n"
+                "\n"
+                "// 3. Home ultrawide drops & auto-reconnects (reconnect=1) -> attaches at Mac's 120x35, no hijack\n"
+                "home1.close();\n"
+                "const home2 = await openClient('cols=220&rows=60&reconnect=1');\n"
+                "assert.deepEqual(hc.attaches.at(-1), { termId: 't1', cols: 120, rows: 35 });\n"
+                "\n"
+                "// 4. Spurious resize, passive focus, and automated DA1 reply from Home do NOT resize PTY\n"
+                "home2.emit('message', Buffer.from(JSON.stringify({ type: 'resize', cols: 220, rows: 60, seq: 7 })), false);\n"
+                "assert.equal(hc.resizes.length, 0);\n"
+                "assert.ok(home2.sent.some((m) => typeof m === 'string' && JSON.parse(m).type === 'resized' && JSON.parse(m).seq === 7));\n"
+                "home2.emit('message', Buffer.from(JSON.stringify({ type: 'focus', focused: true })), false);\n"
+                "home2.emit('message', Buffer.from(JSON.stringify({ type: 'input', data: '\\x1b[?1;2c' })), false);\n"
+                "assert.equal(hc.resizes.length, 0);\n"
+                "\n"
+                "// 5. Explicit user claim on Home reclaims 220x60\n"
+                "home2.emit('message', Buffer.from(JSON.stringify({ type: 'focus', focused: true, claim: true, cols: 220, rows: 60 })), false);\n"
+                "assert.deepEqual(hc.resizes.at(-1), { termId: 't1', cols: 220, rows: 60 });\n"
+                "\n"
+                "// 6. Real keystroke on Mac reclaims 120x35\n"
+                "mac.emit('message', Buffer.from(JSON.stringify({ type: 'input', data: 'a' })), false);\n"
+                "assert.deepEqual(hc.resizes.at(-1), { termId: 't1', cols: 120, rows: 35 });\n"
+                "\n"
+                "shutdown();\n"
+                "console.log('PTY_VIEWPORT_OWNERSHIP_OK');\n"
+            )
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "HOME": self.tmp,
+            "SB_RUN_DIR": os.path.join(self.tmp, "run"),
+        }
+        p = subprocess.run(["node", harness], env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 0, "stdout:\n%s\nstderr:\n%s" % (p.stdout, p.stderr))
+        self.assertIn("PTY_VIEWPORT_OWNERSHIP_OK", p.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
