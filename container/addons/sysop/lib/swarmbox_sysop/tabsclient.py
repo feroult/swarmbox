@@ -168,6 +168,7 @@ def _fallback_system(env):
 class Tabs:
     def __init__(self, cmd=None, env=None, read_timeout=READ_TIMEOUT, send_timeout=SEND_TIMEOUT):
         e = os.environ if env is None else env
+        self._custom_cmd = bool(cmd)
         self.cmd = list(cmd) if cmd else shlex.split(e.get(ENV_CMD) or "swarmbox-tabs")
         self.env = dict(e)
         self.read_timeout, self.send_timeout = read_timeout, send_timeout
@@ -200,7 +201,9 @@ class Tabs:
         """Canonical box state via swarmbox-state (falls back to list_tabs/local stats when swarmbox-state is absent)."""
         sec = str(section or "workspace").strip().lower()
         explicit = self.env.get(ENV_STATE_CMD)
-        state_bin = shlex.split(explicit) if explicit else (["swarmbox-state"] if shutil.which("swarmbox-state", path=self.env.get("PATH")) else None)
+        state_bin = shlex.split(explicit) if explicit else (
+            None if self._custom_cmd else (["swarmbox-state"] if shutil.which("swarmbox-state", path=self.env.get("PATH")) else None)
+        )
         if state_bin:
             return self._run_json(state_bin + ["--section", sec], timeout=self.read_timeout, label="swarmbox-state")
         if sec == "system":
