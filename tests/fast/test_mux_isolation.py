@@ -40,10 +40,6 @@ mux_serve_shutdown_note() {
     log "leaving the fake mux backend to end with the container"
     echo "serve_shutdown" >> "$FAKE_MUX_LOG"
 }
-mux_attach_web() {
-    echo "attach_web" >> "$FAKE_MUX_LOG"
-    exit 0
-}
 mux_attach_interactive() {
     echo "attach_interactive" >> "$FAKE_MUX_LOG"
     exit 0
@@ -157,7 +153,6 @@ class ShellMuxLoader(unittest.TestCase):
             "LANG": "C.UTF-8",
         }
         for args, extra, want_rc, want_entry in (
-            (["--web"], {}, 0, "attach_web"),
             ([], {}, 0, "attach_interactive"),
             (["echo", "hello"], {"FAKE_MUX_CMD_RC": "7"}, 7, "attach_command:echo hello "),
         ):

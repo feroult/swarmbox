@@ -76,7 +76,7 @@ The three area ledgers in this folder say where each old test went; this file sa
 | macOS: BSD `stat`, extended attributes, a long temporary folder; the 100-character socket path | `fast/test_host_config.py::ModeCheckTest`, `fast/test_host_socket.py::BoundaryTest` | fast |
 | with `BROWSER_URL` set the Chrome DevTools MCP attaches to that browser (the unprefixed variable is not read) | `fast/test_mcp_registry.py::McpCase` | fast |
 | the colours of the Claude Code theme in tmux: `CLAUDE_CODE_TMUX_TRUECOLOR` is set in the shell of the box | `fast/test_theme.py` | fast |
-| the npm installers of the addons wrote into the home (node-gyp headers, logs) | `fast/test_addon_gemini_clasp_poetry.py::NpmAddonInstallTest::test_writes_nothing_outside_the_prefix` | fast |
+| the npm installers of the addons wrote into the home (node-gyp headers, logs) | `fast/test_addon_clasp_poetry.py::NpmAddonInstallTest::test_writes_nothing_outside_the_prefix` | fast |
 | an addon whose program is the shim looped, a manifest with a path or a glob as VERSION or COMMANDS, a self-updating addon pinned | `fast/test_addon_shim.py::LoopGuard`, `fast/test_addon_use_remove.py::HostileManifests`, `fast/test_addon_use_remove.py::Use::test_self_updating_addon_is_refused`, `fast/test_addon_install.py::InstallSelf` | fast |
 | the wizard for the voice installer: unknown models and versions are refused before any download, a checksum is checked before the download | `fast/test_addon_voice.py::InstallTests`, `fast/test_addon_go_gcloud.py::InstallTest` | fast |
 | the nested Podman run without `/dev/fuse` | `fast/test_serve_steps.py::NestedPodmanState`, `slow/test_nested_fuse_real.py::NestedWithoutFuse` | fast + slow |

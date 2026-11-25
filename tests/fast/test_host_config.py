@@ -313,8 +313,8 @@ class UnsetAndPathTest(Base):
         self.assertEqual(slurp(self.cfg_file), before)
 
     def test_unset_cleans_stale_and_unknown_keys_of_the_file(self):
-        self.write_cfg("MUX=tmux\nsysop.panel=off\nTYPO_KEY=1\nWEB=0\n")
-        for key in ("MUX", "sysop.panel", "TYPO_KEY"):
+        self.write_cfg("OLD_KEY=tmux\nsysop.gone=off\nTYPO_KEY=1\nWEB=0\n")
+        for key in ("OLD_KEY", "sysop.gone", "TYPO_KEY"):
             p = self.run_h("config", "unset", key)
             self.assertEqual(p.returncode, 0, (key, p.stderr))
         self.assertEqual(slurp(self.cfg_file), "WEB=0\n")
@@ -506,41 +506,6 @@ class SysopFlagsTest(CreateFlagsBase):
 
     def test_an_invalid_value_in_the_file_stops_create_flags(self):
         self.assertEqual(self.cf(cfg="sysop.autonomy=yolo\n").returncode, 2)
-
-
-class RemovedKeysTest(CreateFlagsBase):
-    """MUX (herdr is the only multiplexer) and sysop.panel (it set the tmux panel) were removed: a config that still has them keeps working,
-    with one warning each, and nothing of them reaches the box or its fingerprint."""
-
-    def passed(self, flags, prefix):
-        return [flags[i + 1] for i, f in enumerate(flags) if f == "-e" and flags[i + 1].startswith(prefix)]
-
-    def test_mux_in_the_file_is_ignored_with_a_warning(self):
-        base = self.fp()
-        for value in ("tmux", "herdr", "screen"):
-            p = self.cf(cfg="MUX=%s\n" % value)
-            self.assertEqual(p.returncode, 0, p.stderr)
-            self.assertEqual(p.stderr.count("MUX was removed, herdr is the only multiplexer"), 1, p.stderr)
-            self.assertNotIn("unknown key", p.stderr)
-            self.assertEqual(self.passed(p.stdout.split("\n"), "SWARMBOX_MUX="), [])
-            self.assertEqual(self.fp(cfg="MUX=%s\n" % value), base)
-
-    def test_mux_in_the_environment_is_not_passed(self):
-        self.assertEqual(self.passed(self.flags(env={"SWARMBOX_MUX": "herdr"}), "SWARMBOX_MUX="), [])
-        self.assertEqual(self.fp(env={"SWARMBOX_MUX": "herdr"}), self.fp())
-
-    def test_sysop_panel_in_the_file_is_ignored_with_a_warning(self):
-        base = self.fp()
-        p = self.cf(cfg="sysop.panel=off\n")
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(p.stderr.count("ignoring sysop.panel"), 1, p.stderr)
-        self.assertEqual(self.passed(p.stdout.split("\n"), "SWARMBOX_SYSOP_PANEL"), [])
-        self.assertEqual(self.fp(cfg="sysop.panel=off\n"), base)
-
-    def test_they_are_not_keys_of_config_get_or_set(self):
-        for key in ("MUX", "sysop.panel"):
-            self.assertEqual(self.run_h("config", "get", key).returncode, 2, key)
-            self.assertEqual(self.run_h("config", "set", key, "x").returncode, 2, key)
 
 
 if __name__ == "__main__":

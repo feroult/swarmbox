@@ -22,10 +22,10 @@ Two addons connect by one thing only: the same topic name in their settings. `vo
 
 ## Vocabulary
 
-- **Addon:** anything installable on demand in the box: `claude`, `antigravity`, `gemini`, `opencode`, `gcloud`, `clasp`, `poetry`, `go`, `voice`, `sysop`.
+- **Addon:** anything installable on demand in the box: `claude`, `antigravity`, `opencode`, `gcloud`, `clasp`, `poetry`, `go`, `voice`, `sysop`.
   The command is `swarmbox-addon list | install | remove | update` in the box, and `swarmbox addon ...` on the host, which forwards it into the box
   as it does `swarmbox bus` and `swarmbox tabs`.
-- **Agent:** an AI CLI you work with (`claude`, `antigravity` with the command `agy`, `opencode`, and `gemini`, deprecated). It is an addon like any other; the word only names what it does.
+- **Agent:** an AI CLI you work with (`claude`, `antigravity` with the command `agy`, and `opencode`). It is an addon like any other; the word only names what it does.
 - **Roles** are words for the documentation and no code reads them: an *input* publishes goals (`voice`), an *operator* handles them (`sysop`). A role is a consequence of the topics an addon uses, not a field.
 
 **Names of the commands.** Every SwarmBox command keeps the prefix: `swarmbox-bus`, `swarmbox-addon`, `swarmbox-sysop`, `swarmbox-voice`, `swarmbox-web` and `swarmbox-mcp`. The prefix keeps them from colliding with anything on `PATH` and lets `swarmbox-<TAB>` list them. Inside
@@ -64,7 +64,7 @@ Rules: `VERSION` is `latest` (the newest release when the addon is installed) or
 **Not in the manifest, on purpose:**
 
 - **How a command starts.** There is no key for it: each addon does it in its own `shell.sh`, which the box loads for every installed addon
-  (Claude defines a function that adds the auto-approve flag and `--mcp-config` only to the interactive prompt, so `claude update` and `claude mcp ...` do not receive them; Gemini defines a function that adds `--yolo`; opencode defines a
+  (Claude defines a function that adds the auto-approve flag and `--mcp-config` only to the interactive prompt, so `claude update` and `claude mcp ...` do not receive them; opencode defines a
   function that adds `--auto` only for `opencode` and `opencode run`, as the `clasp` function adds a port only to `login`). The host already sets
   `SWARMBOX_YOLO` (`0` turns auto-approve off) and a `shell.sh` reads it. `yolo` runs the default agent (`$SWARMBOX_AGENT`, whose alias or function already starts it in auto-approve mode; the host records it when the
   box is created: the setting `AGENT`, else the first item of `WITH`; with neither, `yolo` says there is no default agent; when the default is not a command, because the first item of `WITH` is an addon that is not an agent, it says that too).
@@ -153,7 +153,7 @@ anything else that can write a line of text (the panel of the sysop, `swarmbox-s
 |---|---|---|---|
 | `claude` | `latest`, `UPDATE=self` | `install.sh`, `shell.sh`, `prepare.sh` | nothing |
 | `antigravity` | `latest`, `UPDATE=self` | `install.sh`, `shell.sh`, `prepare.sh`, `statusline.sh` | nothing |
-| `gemini`, `opencode` | `latest`, managed | `install.sh`, `shell.sh` (opencode also `prepare.sh`) | nothing |
+| `opencode` | `latest`, managed | `install.sh`, `shell.sh`, `prepare.sh` | nothing |
 | `gcloud`, `poetry`, `go`, `clasp` | pinned (`clasp` has `PORTS`) | `install.sh` (`go`, `clasp` also `shell.sh`) | nothing |
 | `voice` | pinned (whisper.cpp release) | `install.sh`, `prepare.sh`, the library | publishes on `voice.topic` |
 | `sysop` | pinned | `install.sh`, `prepare.sh`, the library, the panel | subscribes on `sysop.topic`; uses the `tabs` capability |

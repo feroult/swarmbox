@@ -81,13 +81,12 @@ class FragmentInContainer(unittest.TestCase):
     def test_the_shipped_agent_addons_give_functions_and_an_unknown_default_agent_is_reported(self):
         # the image ships the agent addons (and no program). The agents are never run here: that would trigger the first-use
         # install, a real download.
-        out = self.interactive("type claude gemini opencode agy; alias claude 2>&1; yolo 2>&1; echo status=$?; "
+        out = self.interactive("type claude opencode agy; alias claude 2>&1; yolo 2>&1; echo status=$?; "
                                "SWARMBOX_AGENT=nonesuch yolo 2>&1; echo status=$?")
-        for name in ("claude", "gemini", "opencode", "agy"):
+        for name in ("claude", "opencode", "agy"):
             self.assertIn("%s is a function" % name, out)
         self.assertIn("--dangerously-skip-permissions", out)
         self.assertIn("--mcp-config \"$HOME/.claude/mcp-servers.json\"", out)
-        self.assertIn("--yolo", out)
         self.assertIn("--auto", out)
         self.assertNotIn("claude is aliased", out)
         self.assertIn("no default agent", out)

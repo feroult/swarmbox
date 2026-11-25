@@ -10,7 +10,7 @@ Contents: 1 Purpose, 2 The box model, 3 Directories and paths, 4 Commands, 5 The
 
 ## 1. Purpose
 
-SwarmBox is a persistent sandbox for running AI coding agents (Claude Code, Gemini CLI, OpenCode) in auto-approve mode
+SwarmBox is a persistent sandbox for running AI coding agents (Claude Code, Antigravity, OpenCode) in auto-approve mode
 on your own machine. It is one long-lived, rootless Podman container, the **box**, with one folder of your machine, the
 **workspace**, mounted as its home. You enter it from any terminal tab or from a browser, and every entry sees the same
 terminals, those of one herdr-core daemon. The aim is that a mistake of the agent is limited to one folder, not that untrusted code becomes safe (section 12).
@@ -131,7 +131,7 @@ terminals; `TERM` and `COLORTERM` are passed). A command of the box that has a r
 | `remote setup\|status\|off\|token` | remote access through Cloudflare (`--dry-run` shows changes) |
 | `version`, `fingerprint`, `help` | script version; creation fingerprint (`--explain` lists differences); the command list |
 
-Inside the box: `claude`, `gemini`, ... (shims, auto-approve by default for agents), `yolo` (the default agent in auto-approve mode),
+Inside the box: `claude`, `agy`, ... (shims, auto-approve by default for agents), `yolo` (the default agent in auto-approve mode),
 `swarmbox-web restart`, `swarmbox-addon`, `swarmbox-pubkey`, `swarmbox-bus`, `swarmbox-tabs` (and `swarmbox-sysop` and `swarmbox-voice` once those addons are installed). There is no `swarmbox uninstall`; the manual steps are in [uninstall.md](uninstall.md).
 
 **Exit codes of the script.** 0 ok; 1 failure of Podman or of a file operation; 2 usage or an invalid value; 3 a prerequisite
@@ -325,7 +325,7 @@ Details and the end-to-end check list: [cloudflare.md](cloudflare.md).
 ## 8. Addons and shims
 
 An addon is a directory `container/addons/<name>/` with `addon.conf` (manifest), `install.sh`, and optionally `shell.sh` (sourced by every interactive shell: aliases and functions),
-`prepare.sh` (run by `serve` at every start to render files into `box:/tmp/swarmbox`) and data files. Shipped: agents `claude`, `gemini`, `opencode`; addons `gcloud`
+`prepare.sh` (run by `serve` at every start to render files into `box:/tmp/swarmbox`) and data files. Shipped: agents `claude`, `antigravity`, `opencode`; addons `gcloud`
 (with `gsutil`, `bq`), `clasp`, `go`, `poetry`, `voice` (an input: whisper.cpp, a multilingual Whisper model and a service that publishes what you say as a goal on the bus; `docs/voice.md`), `sysop` (the agent that operates the tabs from a goal; `docs/sysop.md`).
 
 Manifest keys: `SCHEMA`, `NAME`, `DESCRIPTION`, `VERSION` and `COMMANDS` (mandatory), and `UPDATE` (`managed` or `self`) with `UPDATE_CMD`, `PORTS` and `SHA256_<arch>` where the vendor's checksum is recorded (optional).
@@ -348,7 +348,7 @@ installer (npm under a prefix cannot update itself, measured), then it updates i
 gcloud's checksum is recorded by `dev/record-checksums.sh`. `WITH_ADDONS` is a build argument of the Dockerfile that bakes addons into the image with the same installer.
 
 **Agents.** `bashrc.sh` reads no manifest and builds no alias: it sources the `shell.sh` of every installed addon. Each agent addon ships one that starts the agent in auto-approve mode. `claude` defines a function that adds
-`--dangerously-skip-permissions` and `--mcp-config $HOME/.claude/mcp-servers.json` only for the interactive prompt form, so `claude update` and `claude mcp ...` do not receive them; `gemini` defines a function with `--yolo`;
+`--dangerously-skip-permissions` and `--mcp-config $HOME/.claude/mcp-servers.json` only for the interactive prompt form, so `claude update` and `claude mcp ...` do not receive them;
 `opencode` defines a function that adds `--auto` only for `opencode` and `opencode run` (its flag is refused before other subcommands). `command claude` bypasses them and `SWARMBOX_YOLO=0` turns auto-approve off.
 `yolo` runs the default agent, `$SWARMBOX_AGENT`, whose alias or function already starts it in auto-approve mode. The host records it when the box is created: the setting `AGENT`, else the first item of `WITH`;
 with neither, `yolo` says that there is no default agent, and when the default is not a command (the first item of `WITH` may be an addon that is not an agent) it says that too. OpenCode's local-LLM setup is `prepare.sh` rendering `box:/tmp/swarmbox/opencode.json` from `LOCAL_LLM_*` variables.
@@ -398,10 +398,6 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 
 The `voice.*` and `sysop.*` keys are lower case with dots (`sysop.max_steps` keeps its underscore); the environment variable of a key is `SWARMBOX_` plus the key in upper case with `.` turned into `_`. They are creation settings like the others (applied by `swarmbox reset`), but
 they are passed to the box, and enter the fingerprint, only when they differ from the default.
-
-`MUX` and `sysop.panel` were removed in version 2.3 (herdr-core is the only multiplexer, and the tmux panel of the sysop is gone): a config
-file that still has them is accepted, each is ignored with one warning, and `config get` or `config set` of them exits 2; `config unset MUX` (or
-`sysop.panel`) removes the line.
 
 Also environment only: `SWARMBOX_WEB_DOMAIN`, `SWARMBOX_WEB_HOSTNAME` (public address printed by `url`), `SWARMBOX_CLOUDFLARED_IMAGE`; in the box `SWARMBOX_STARSHIP=0` (plain prompt),
 `SWARMBOX_UPDATE_CHECK=0`. `config set` writes under `umask 077`, replaces the file by `mv`, and refuses to write if `chmod 600` fails. `config list` shows each key with its source

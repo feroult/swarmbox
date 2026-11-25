@@ -32,7 +32,6 @@ FAKE_BACKEND = r'''mux_available() { [ "${FAKE_UNAVAILABLE:-0}" != 1 ]; }
 _fake_rec() { printf '%s\n' "$*" >> "$FAKE_DIR/calls.txt"; }
 mux_serve_init() { _fake_rec serve_init; }
 mux_serve_shutdown_note() { _fake_rec shutdown_note; }
-mux_attach_web() { _fake_rec attach_web "web=${SWARMBOX_WEB_CLIENT:-}"; exit "${FAKE_RC:-0}"; }
 mux_attach_interactive() { _fake_rec attach_interactive; exit "${FAKE_RC:-0}"; }
 mux_attach_command() { _fake_rec attach_command; printf '%s' "$1" > "$FAKE_DIR/command.q"; exit "${FAKE_RC:-0}"; }
 mux_web_run() { _fake_rec web_run "$@"; exit "${FAKE_RC:-0}"; }

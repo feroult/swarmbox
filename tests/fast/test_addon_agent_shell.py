@@ -1,4 +1,4 @@
-"""The shell.sh of the agent addons (claude, gemini, opencode): how each starts in auto-approve mode.
+"""The shell.sh of the agent addons (claude, antigravity, opencode): how each starts in auto-approve mode.
 
 The auto-approve flags are not in a manifest and not in bashrc.sh: each agent addon defines them in its own shell.sh, which the
 box sources in every interactive shell (bash and zsh). These tests source the REAL shell.sh files in a mktemp tree with a fake agent
@@ -21,7 +21,7 @@ REAL_ADDONS = os.path.join(ROOT, "container", "addons")
 FRAGMENT = os.path.join(ROOT, "container", "config", "bashrc.sh")
 LIB = os.path.join(ROOT, "container", "scripts")
 SHELLS = [s for s in ("bash", "zsh") if shutil.which(s)]
-AGENTS = ("claude", "gemini", "opencode", "agy")
+AGENTS = ("claude", "opencode", "agy")
 ADDON_OF = {"agy": "antigravity"}  # the command agy comes from the addon antigravity
 
 
@@ -81,19 +81,6 @@ class ClaudeShell(Base):
                 for args in ("", "-p hello"):
                     self.assertNotIn("--dangerously-skip-permissions", self.run_in(sh, "claude", args, yolo="0"))
                 self.assertIn("--dangerously-skip-permissions", self.run_in(sh, "claude", "", yolo="1"))
-
-class GeminiShell(Base):
-    def test_gemini_starts_with_yolo(self):
-        for sh in SHELLS:
-            with self.subTest(shell=sh):
-                self.assertEqual(self.run_in(sh, "gemini", ""), "gemini:[--yolo]")
-                self.assertEqual(self.run_in(sh, "gemini", "-p 'say hi'"), "gemini:[--yolo][-p][say hi]")
-
-    def test_swarmbox_yolo_zero_turns_it_off(self):
-        for sh in SHELLS:
-            with self.subTest(shell=sh):
-                self.assertEqual(self.run_in(sh, "gemini", "-p x", yolo="0"), "gemini:[-p][x]")
-
 
 class AntigravityShell(Base):
     def test_agy_starts_with_dangerously_skip_permissions(self):
@@ -173,17 +160,17 @@ class ThroughTheFragment(Base):
                               capture_output=True, text=True, timeout=30, cwd=d)
 
     def test_every_agent_is_a_function_and_none_is_an_alias(self):
-        r = self.frag("type claude gemini opencode agy")
+        r = self.frag("type claude opencode agy")
         for name in AGENTS:
             self.assertIn("%s is a function" % name, r.stdout, r.stdout + r.stderr)
         self.assertNotIn("aliased", r.stdout)
-        self.assertEqual(self.frag("alias claude gemini opencode agy 2>&1").stdout.count("alias "), 0)
+        self.assertEqual(self.frag("alias claude opencode agy 2>&1").stdout.count("alias "), 0)
 
     def test_yolo_runs_the_default_agent_in_auto_approve_mode(self):
-        for agent, want in (("claude", "claude:[--dangerously-skip-permissions]"), ("gemini", "gemini:[--yolo][-p][go]"),
+        for agent, want in (("claude", "claude:[--dangerously-skip-permissions]"),
                             ("opencode", "opencode:[run][--auto][go]")):
             with self.subTest(agent=agent):
-                args = {"claude": "-p go", "gemini": "-p go", "opencode": "run go"}[agent]
+                args = {"claude": "-p go", "opencode": "run go"}[agent]
                 r = self.frag("yolo %s" % args, SWARMBOX_AGENT=agent)
                 self.assertIn(want, r.stdout, r.stdout + r.stderr)
                 self.assertEqual(r.stdout.count("%s:" % agent), 1)

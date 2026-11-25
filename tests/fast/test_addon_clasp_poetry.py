@@ -1,7 +1,7 @@
-"""The gemini, clasp and poetry addons.
+"""The clasp and poetry addons.
 
 install.sh runs against a FAKE npm and a FAKE curl serving a fake Poetry installer; the real npm, PyPI and network are NOT used here
-(real installs are in tests/slow/test_addon_real.py). Run with: python3 -W error tests/fast/test_addon_gemini_clasp_poetry.py   (needs bash, jq; zsh is optional)
+(real installs are in tests/slow/test_addon_real.py). Run with: python3 -W error tests/fast/test_addon_clasp_poetry.py   (needs bash, jq; zsh is optional)
 """
 import os
 import shutil
@@ -17,7 +17,7 @@ from helpers import ROOT  # noqa: E402
 REAL_ADDONS = os.path.join(ROOT, "container", "addons")
 ADDON = os.path.join(ROOT, "container", "scripts", "swarmbox-addon.sh")
 LIB = os.path.join(ROOT, "container", "scripts")
-NPM_ADDONS = {"gemini": ("@google/gemini-cli", "gemini"), "clasp": ("@google/clasp", "clasp")}
+NPM_ADDONS = {"clasp": ("@google/clasp", "clasp")}
 
 # fake npm: `npm install -g --prefix P PKG@V` makes P/bin/<name>; `npm cache clean --force` is recorded
 FAKE_NPM = r"""#!/bin/bash
@@ -25,7 +25,7 @@ echo "npm $*" >> "$FAKE_CALLS"
 [ "$1" = cache ] && exit "${FAKE_CACHE_EXIT:-0}"
 [ "$1" = install ] || exit 2
 [ -z "${FAKE_NPM_FAIL:-}" ] || { echo "npm ERR! network" >&2; exit 1; }
-# like node-gyp compiling a native dependency (measured on gemini in 4b.7): it unpacks Node headers into its devdir
+# like node-gyp compiling a native dependency (measured in 4b.7): it unpacks Node headers into its devdir
 echo "devdir=${npm_config_devdir:-unset}" >> "$FAKE_CALLS"
 echo "xdg=${XDG_DATA_HOME:-unset}|${XDG_STATE_HOME:-unset}|${XDG_CONFIG_HOME:-unset}|${XDG_CACHE_HOME:-unset}" >> "$FAKE_CALLS"
 [ -z "${npm_config_devdir:-}" ] || { mkdir -p "$npm_config_devdir/24.0.0"; echo hdr > "$npm_config_devdir/24.0.0/node.h"; }
@@ -126,12 +126,12 @@ class NpmAddonInstallTest(InstallBase):
                 self.assertEqual(r.stdout, "")  # stdout belongs to the addon
                 os.remove(self.calls)
 
-    def test_the_version_comes_from_the_caller_and_latest_is_passed_through(self):
-        r = self.install("gemini", "latest")
+    def test_the_version_comes_from_the_caller_and_a_pinned_addon_needs_one(self):
+        r = self.install("clasp", "latest")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("@google/gemini-cli@latest", read(self.calls))
-        r = self.install("gemini", None)  # no ADDON_VERSION at all: the installer falls back to latest
-        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("@google/clasp@latest", read(self.calls))
+        r = self.install("clasp", None)  # no ADDON_VERSION at all: clasp is pinned, the installer refuses
+        self.assertNotEqual(r.returncode, 0)
 
     def test_writes_nothing_outside_the_prefix(self):
         for addon in NPM_ADDONS:
@@ -164,7 +164,7 @@ class PoetryInstallTest(InstallBase):
 class ThroughSwarmboxAddonTest(InstallBase):
     def run_addon(self, *args):
         image = os.path.join(self.base, "image")
-        for t in ("gemini", "clasp", "poetry"):
+        for t in ("clasp", "poetry"):
             if not os.path.isdir(os.path.join(image, t)):
                 shutil.copytree(os.path.join(REAL_ADDONS, t), os.path.join(image, t))
         env = {"PATH": self.fakebin + ":/usr/bin:/bin", "HOME": self.home, "SWARMBOX_TEST_LIB": LIB,
@@ -178,7 +178,7 @@ class ThroughSwarmboxAddonTest(InstallBase):
         return os.path.join(self.home, ".local", "share", "swarmbox", "addons", name)
 
     def test_versions_come_from_the_manifest(self):
-        expect = {a: manifest(a)[0] for a in ("gemini", "clasp", "poetry")}
+        expect = {a: manifest(a)[0] for a in ("clasp", "poetry")}
         for addon, version in expect.items():
             with self.subTest(addon=addon):
                 r = self.run_addon("install", addon)
@@ -199,9 +199,7 @@ class ManifestTest(unittest.TestCase):
                 elif version != "latest":
                     self.assertRegex(version, r"^\d+\.\d+(\.\d+)?$")
         # the npm agents follow the newest release and SwarmBox installs them (they have no update command of their own, or a different one)
-        for t in ("gemini", "opencode"):
-            with self.subTest(addon=t):
-                self.assertEqual(tuple(manifest(t)[:2]), ("latest", "managed"))
+        self.assertEqual(tuple(manifest("opencode")[:2]), ("latest", "managed"))
 
 from host_support import CreateFlagsBase, values  # noqa: E402
 
@@ -222,7 +220,7 @@ class ClaspPortPublishedTest(CreateFlagsBase):
         self.make_helper(self.real_addon_ports())
         ps = values(self.flags(env={"SWARMBOX_WITH": "clasp"}), "-p")
         self.assertEqual(sorted(p for p in ps if not p.endswith(":7681")), ["127.0.0.1:43323:43323"])
-        ps = values(self.flags(env={"SWARMBOX_WITH": "gemini,poetry"}), "-p")
+        ps = values(self.flags(env={"SWARMBOX_WITH": "opencode,poetry"}), "-p")
         self.assertEqual(ps, ["127.0.0.1:7681:7681"])
 
 

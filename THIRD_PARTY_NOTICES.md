@@ -259,13 +259,6 @@ statements below are for people who bake them in or want to know the terms.
 - [verified: the contents of the repository's root and its `license` field through the GitHub API (no license; five entries: `.github`, `CHANGELOG.md`, `README.md`, a demo GIF and `examples`); the vendor's install script and release manifest of version 1.5.13; 2026-11-20]
 - [owner-check: the terms of service page was not read here (legal sufficiency is for the owner or a lawyer to confirm), nor whether the vendor allows redistribution inside an image]
 
-### Gemini CLI (`@google/gemini-cli`, addon `gemini`)
-
-- License: Apache-2.0
-- Source: https://github.com/google-gemini/gemini-cli
-- Deprecated by the vendor: Google stopped serving it for most accounts on 2026-06-18 and points to the Antigravity CLI above (it still works with a paid Gemini API key).
-- [verified: "license" field of the installed package.json and LICENSE on the main branch; `npm view` shows Apache-2.0 and the repository URL (version 0.67.0); 2026-11-08]
-
 ### clasp (`@google/clasp`, addon `clasp`)
 
 - License: Apache-2.0

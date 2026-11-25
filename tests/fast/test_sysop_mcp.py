@@ -752,7 +752,7 @@ class TabTools(Rig):
     def test_box_state_system_reads_the_box_and_types_nothing(self):
         out = self.ok("box_state", section="system")
         info = json.loads(out.splitlines()[1])
-        self.assertIn("mux", info)
+        self.assertIn("health", info)
         self.assertIsInstance(info["addons"], list)
         self.assertIsInstance(info["containers"], list)
         self.assertEqual(self.tabs.sent, [])
