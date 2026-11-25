@@ -423,6 +423,77 @@ export function discoverProjects(terminals = [], pins = [], homeDir = HOME) {
 // automatically (not user keystrokes) — these must never abort an active resize mask.
 const NON_TYPING_INPUT_RE = /^(?:\x1b\[<[0-9;]+[Mm]|\x1b\[M[\s\S]{3}|\x1b\[[IO]|\x1b\[[0-9;]*R|\x1b\[\?[0-9;]*c|\x1b\](?:10|11);[^\x07\x1b]*(?:\x07|\x1b\\))+$/;
 
+// DEC Mode 2026 Synchronized Output markers (\x1b[?2026h begin, \x1b[?2026l end).
+// xterm.js 5.5.0 ignores DEC 2026, so TUIs like agy that clear and redraw inside
+// synchronized frames split across multiple PTY chunks would otherwise flash/reflow
+// intermediate partial frames. Coalescing at the gateway makes every DEC 2026 frame atomic.
+const SYNC_BEGIN_BUF = Buffer.from('\x1b[?2026h');
+const SYNC_END_BUF = Buffer.from('\x1b[?2026l');
+const MAX_SYNC_FRAME_BYTES = 512 * 1024;
+const MAX_SYNC_FRAME_MS = 120;
+
+export function createSyncOutputCoalescer(onEmit, opts = {}) {
+  const maxMs = Number(opts.maxMs) || MAX_SYNC_FRAME_MS;
+  const maxBytes = Number(opts.maxBytes) || MAX_SYNC_FRAME_BYTES;
+  let inSync = false;
+  let chunks = [];
+  let totalBytes = 0;
+  let timer = null;
+
+  const flush = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    inSync = false;
+    if (!chunks.length) return;
+    const merged = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, totalBytes);
+    chunks = [];
+    totalBytes = 0;
+    onEmit(merged);
+  };
+
+  const push = (rawBuf) => {
+    const buf = Buffer.isBuffer(rawBuf) ? rawBuf : Buffer.from(rawBuf);
+    if (!buf.length) return;
+    const lastBegin = buf.lastIndexOf(SYNC_BEGIN_BUF);
+    const lastEnd = buf.lastIndexOf(SYNC_END_BUF);
+
+    if (!inSync) {
+      if (lastBegin === -1 || lastEnd > lastBegin) {
+        // Complete or non-synchronized chunk: pass straight through with 0ms latency
+        onEmit(buf);
+        return;
+      }
+      // Opened a synchronized frame that does not close in this chunk: buffer until \x1b[?2026l
+      inSync = true;
+      chunks = [buf];
+      totalBytes = buf.length;
+      timer = setTimeout(flush, maxMs);
+      if (timer.unref) timer.unref();
+      return;
+    }
+
+    chunks.push(buf);
+    totalBytes += buf.length;
+    const closed = lastEnd !== -1 && lastEnd > lastBegin;
+    if (closed || totalBytes >= maxBytes) {
+      flush();
+    }
+  };
+
+  const reset = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    inSync = false;
+    chunks = [];
+    totalBytes = 0;
+  };
+
+  return {
+    push,
+    flush,
+    reset,
+    isBuffering: () => inSync,
+  };
+}
+
 function isInteractiveTuiTerminal(term) {
   if (!term) return false;
   if (detectTerminalAgent(term)) return true;
@@ -1745,6 +1816,7 @@ export function createGateway(options = {}) {
       wantCols: cols,
       wantRows: rows,
       stream: null,
+      focused: !isPassiveAttach,
       lastActiveMs: isPassiveAttach ? 0 : Date.now(),
     };
     room.clients.add(clientRec);
@@ -1780,6 +1852,9 @@ export function createGateway(options = {}) {
     let resizeChunks = [];
     let resizeQuietTimer = null;
     let resizeCapTimer = null;
+    const syncCoalescer = createSyncOutputCoalescer((frame) => {
+      if (ws.readyState === 1) ws.send(frame);
+    });
 
     const clearHydrationTimers = () => {
       if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
@@ -1789,6 +1864,18 @@ export function createGateway(options = {}) {
     const clearResizeTimers = () => {
       if (resizeQuietTimer) { clearTimeout(resizeQuietTimer); resizeQuietTimer = null; }
       if (resizeCapTimer) { clearTimeout(resizeCapTimer); resizeCapTimer = null; }
+    };
+
+    const startResizeMask = (seqVal, isTuiHint = false) => {
+      if (hydrating) return;
+      syncCoalescer.flush();
+      clearResizeTimers();
+      resizing = true;
+      resizeSeq = Number(seqVal) || (resizeSeq + 1);
+      resizeBytes = 0;
+      resizeIsTui = Boolean(isTuiHint) || isInteractiveTuiTerminal(hc.terminals.get(termId));
+      resizeQuietTimer = setTimeout(flushResize, resizeIsTui ? 620 : 110);
+      resizeCapTimer = setTimeout(flushResize, resizeIsTui ? 1600 : 350);
     };
 
     const flushInitial = () => {
@@ -1854,15 +1941,23 @@ export function createGateway(options = {}) {
             resizeChunks.push(Buffer.from(buf));
             resizeBytes += buf.length;
             if (resizeQuietTimer) clearTimeout(resizeQuietTimer);
-            const quietMs = (resizeIsTui && resizeBytes < 256) ? 420 : (resizeIsTui ? 160 : 85);
+            // If the TUI opened a DEC 2026 synchronized frame that has not closed yet,
+            // give it slightly more breathing room before declaring the redraw settled.
+            const lb = buf.lastIndexOf(SYNC_BEGIN_BUF);
+            const le = buf.lastIndexOf(SYNC_END_BUF);
+            const openSync = lb !== -1 && lb > le;
+            const quietMs = openSync
+              ? 320
+              : ((resizeIsTui && resizeBytes < 256) ? 450 : (resizeIsTui ? 240 : 85));
             resizeQuietTimer = setTimeout(flushResize, quietMs);
             return;
           }
-          if (ws.readyState === 1) ws.send(buf);
+          syncCoalescer.push(Buffer.from(buf));
         },
         onClose: (info) => {
           flushInitial();
           flushResize();
+          syncCoalescer.flush();
           if (ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'closed', info }));
             ws.close();
@@ -1925,15 +2020,7 @@ export function createGateway(options = {}) {
             clientRec.lastActiveMs = Date.now();
             // Coalesce SIGWINCH full-screen TUI repaint bursts into one atomic frame
             // (covering debounced & multi-pass TUIs such as OpenCode, Claude, AGY, and Gemini).
-            if (!hydrating) {
-              clearResizeTimers();
-              resizing = true;
-              resizeSeq = Number(msg.seq) || (resizeSeq + 1);
-              resizeBytes = 0;
-              resizeIsTui = Boolean(msg.tui) || isInteractiveTuiTerminal(hc.terminals.get(termId));
-              resizeQuietTimer = setTimeout(flushResize, resizeIsTui ? 580 : 110);
-              resizeCapTimer = setTimeout(flushResize, resizeIsTui ? 1400 : 350);
-            }
+            startResizeMask(msg.seq, Boolean(msg.tui));
             stream.resize(clientRec.wantCols, clientRec.wantRows);
             return;
           }
@@ -1943,13 +2030,25 @@ export function createGateway(options = {}) {
               clientRec.wantRows = clampRows(msg.rows);
             }
             if (msg.focused) {
-              const shouldClaim = Boolean(msg.claim) || !room.owner || room.owner === clientRec;
+              const wasOwner = room.owner === clientRec;
+              const wasFocused = Boolean(clientRec.focused);
+              const shouldClaim = Boolean(msg.claim) || !room.owner || wasOwner;
               if (shouldClaim) {
+                const cur = getCurrentPtySize(termId, room.ptyCols || clientRec.wantCols, room.ptyRows || clientRec.wantRows);
+                const willResize = cur.cols !== clientRec.wantCols || cur.rows !== clientRec.wantRows;
+                if (willResize && !hydrating) {
+                  startResizeMask(0, true);
+                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq }));
+                }
                 claimPtyOwnership(room, clientRec, { cols: msg.cols, rows: msg.rows });
-                writeActiveTab(termId);
-                stream.focus(true);
+                clientRec.focused = true;
+                if (!wasOwner || !wasFocused) {
+                  writeActiveTab(termId);
+                  stream.focus(true);
+                }
               }
             } else {
+              clientRec.focused = false;
               stream.focus(false);
             }
             return;
@@ -1985,6 +2084,7 @@ export function createGateway(options = {}) {
     ws.on('close', () => {
       clearHydrationTimers();
       clearResizeTimers();
+      syncCoalescer.reset();
       initChunks = [];
       resizeChunks = [];
       hydrating = false;

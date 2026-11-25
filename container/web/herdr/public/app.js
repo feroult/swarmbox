@@ -1202,6 +1202,19 @@
       const linesFromBottom = (bufBefore && bufBefore.type === 'normal')
         ? Math.max(0, bufBefore.baseY - bufBefore.viewportY)
         : 0;
+      // Pre-mask BEFORE fitAddon.fit() reflows xterm's normal buffer so no half-wrapped frame paints.
+      let willChange = false;
+      if (sendResize && !sess.hydrating && sess.ws && sess.ws.readyState === 1 && typeof sess.fitAddon.proposeDimensions === 'function') {
+        try {
+          const prop = sess.fitAddon.proposeDimensions();
+          if (prop && prop.cols && prop.rows && (prop.cols !== sess.lastCols || prop.rows !== sess.lastRows)) {
+            willChange = true;
+            sess.resizeWasAtBottom = wasAtBottom;
+            sess.resizeLinesFromBottom = linesFromBottom;
+            beginResizeCycle(sess);
+          }
+        } catch (_) {}
+      }
       sess.fitAddon.fit();
       sess.needsFit = false;
       const changed = sess.term.cols !== sess.lastCols || sess.term.rows !== sess.lastRows;
@@ -1216,7 +1229,7 @@
           sess.resizeWasAtBottom = wasAtBottom;
           sess.resizeLinesFromBottom = linesFromBottom;
           sess.resizeAwaitingServer = true;
-          beginResizeCycle(sess);
+          if (!willChange) beginResizeCycle(sess);
           logTouchDebug('resize_sent', {
             prevCols,
             prevRows,
@@ -1240,7 +1253,7 @@
     } catch (_) {}
   }
 
-  let fitRaf = 0;
+  let desktopFitDebounce = 0;
   let mobileFitDebounce = 0;
   function fitAndResize() {
     if (isViewportPinchingOrBouncing() || multiTouchActive || Date.now() < zoomCooldownUntil) return;
@@ -1265,11 +1278,23 @@
       }, 160);
       return;
     }
-    if (fitRaf) return;
-    fitRaf = requestAnimationFrame(() => {
-      fitRaf = 0;
+    // Debounce continuous desktop window-drag resizes (90ms) so dragging a window edge sends
+    // one clean final SIGWINCH to TUIs like agy/claude instead of 30+ intermediate reflows.
+    // Instant panel toggles bypass scheduleFit() and call fitAndResize() synchronously.
+    const active = activeSession();
+    if (active && !active.hydrating && active.ws && active.ws.readyState === 1 && typeof active.fitAddon.proposeDimensions === 'function') {
+      try {
+        const prop = active.fitAddon.proposeDimensions();
+        if (prop && prop.cols && prop.rows && (prop.cols !== active.lastCols || prop.rows !== active.lastRows)) {
+          beginResizeCycle(active);
+        }
+      } catch (_) {}
+    }
+    clearTimeout(desktopFitDebounce);
+    desktopFitDebounce = setTimeout(() => {
+      desktopFitDebounce = 0;
       fitAndResize();
-    });
+    }, 150);
   }
 
   // Wait for self-hosted JetBrains Mono before the first PTY attach so initial cols/rows
@@ -2693,6 +2718,13 @@
             const msg = JSON.parse(ev.data);
             if (msg.type === 'hydrated') {
               finishHydration();
+              return;
+            }
+            if (msg.type === 'resizing') {
+              if (!sess.hydrating) {
+                sess.resizeAwaitingServer = true;
+                beginResizeCycle(sess);
+              }
               return;
             }
             if (msg.type === 'resized') {
@@ -5992,7 +6024,7 @@
   window.addEventListener('resize', () => {
     const before = appEl.dataset.sysopOpen;
     applyResponsiveSysopDefault();
-    if (appEl.dataset.sysopOpen !== before) requestAnimationFrame(fitAndResize);
+    if (appEl.dataset.sysopOpen !== before) scheduleFit();
   });
 
   function applyDesktopPanelToggle(applyDomChange) {
