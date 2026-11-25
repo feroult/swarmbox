@@ -151,7 +151,7 @@ anything else that can write a line of text (the panel of the sysop, `swarmbox-s
 
 | Addon | Version | Ships | Bus and capabilities |
 |---|---|---|---|
-| `claude` | `latest`, `UPDATE=self` | `install.sh`, `shell.sh` | nothing |
+| `claude` | `latest`, `UPDATE=self` | `install.sh`, `shell.sh`, `prepare.sh` | nothing |
 | `antigravity` | `latest`, `UPDATE=self` | `install.sh`, `shell.sh`, `prepare.sh`, `statusline.sh` | nothing |
 | `gemini`, `opencode` | `latest`, managed | `install.sh`, `shell.sh` (opencode also `prepare.sh`) | nothing |
 | `gcloud`, `poetry`, `go`, `clasp` | pinned (`clasp` has `PORTS`) | `install.sh` (`go`, `clasp` also `shell.sh`) | nothing |

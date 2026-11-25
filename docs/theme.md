@@ -46,7 +46,7 @@ palette as the browser terminal (`tests/fast/test_theme.py` checks that they agr
 - **The bars above and below the input box** are `promptBorder` (and `promptBorderShimmer` when it moves); in the bash mode the box takes `bashBorder`.
 - **The status line** is a line you configure: Claude Code runs a command and prints what it prints. `container/scripts/swarmbox-statusline.sh` (installed as `swarmbox-statusline`) is one in the style of the box,
   `╶─ …/swarmbox ─ main ! ─ Sonnet 5.5 ─ ▰▰▰▱▱▱▱▱▱▱ 34% ─ 5h 71%`: the directory in violet, the branch, the model, and the context as a bar that is violet, fuchsia from 70% and rose from 90% (no orange), with the usage
-  limits when Claude Code reports them. Turn it on with `"statusLine": {"type": "command", "command": "swarmbox-statusline"}` in `~/.claude/settings.json`.
+  limits when Claude Code reports them. It is on by default: the `claude` addon (`prepare.sh`) seeds `"statusLine": {"type": "command", "command": "swarmbox-statusline"}` in `~/.claude/settings.json` once, keeping every key you already have; remove the key and it stays removed.
 
 ## Antigravity CLI (`agy`)
 
