@@ -5,7 +5,6 @@
 #   mux_available             0 when the backend's binary is installed on PATH
 #   mux_serve_init            step 9 of `serve`: start the backend's background session/daemon
 #   mux_serve_shutdown_note   log line written when `serve` stops on SIGTERM/SIGINT
-#   mux_attach_web            attach a browser client (`swarmbox-attach --web`)
 #   mux_attach_interactive    open and attach an interactive host terminal tab
 #   mux_attach_command CMD    run quoted shell command CMD in an attached tab and exit with its status
 #   mux_web_run PORT IFACE VOICE_BIN   `swarmbox-web run`: exec the web server on PORT/IFACE (behind the voice front VOICE_BIN when set)
@@ -15,8 +14,6 @@
 
 # shellcheck disable=SC2034  # read by callers and tests
 SB_MUX_NAME=${SWARMBOX_MUX:-herdr}
-# tmux was removed (herdr is the only multiplexer): a box that still carries SWARMBOX_MUX=tmux gets herdr.
-[ "$SB_MUX_NAME" != tmux ] || SB_MUX_NAME=herdr
 
 _sb_mux_load() {
     local name=$SB_MUX_NAME dir='' cand

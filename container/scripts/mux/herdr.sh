@@ -138,14 +138,6 @@ mux_web_run() {
     exec "$_SB_HERDR_WEB" -p "$port" -i "$iface"
 }
 
-mux_attach_web() {
-    _herdr_seed_config
-    _herdr_ensure_server || die "herdr-core could not start"
-    _herdr_ensure_initial_tab
-    export SWARMBOX_WEB_CLIENT=1
-    exec "$_SB_HERDR_HC" attach
-}
-
 mux_attach_interactive() {
     _herdr_seed_config
     _herdr_ensure_server || die "herdr-core could not start"

@@ -555,7 +555,7 @@ def build_system(env=None):
         except Exception:
             pass
 
-    out = {"schema": SCHEMA, "mux": e.get("SWARMBOX_MUX") or "herdr", "health": health}
+    out = {"schema": SCHEMA, "health": health}
     if resources:
         out["resources"] = resources
     out["addons"] = sorted(addons)

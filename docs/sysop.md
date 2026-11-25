@@ -151,7 +151,7 @@ The brain needs a login: the `claude` preset uses the one already in the box.
 | `sysop.topic` | `goal` | the bus topic the sysop listens on (`[a-z0-9][a-z0-9._-]{0,62}`); it hears voice when `voice.topic` is the same name |
 | `sysop.group` | `sysop` | the group the sysop subscribes with (same charset); members of a group share the goals, one each |
 
-A setting that equals its default is not passed to the box. Inside the box the sysop reads `SWARMBOX_SYSOP_BRAIN`, `_MODEL`, `_AUTONOMY`, `_COUNTDOWN`, `_MAX_STEPS`, `_MAX_SECONDS`, `_TOPIC` and `_GROUP`. The old `sysop.panel` (when the tmux panel opened) went with tmux: it is ignored with a warning. Changing a setting needs `swarmbox reset`; after `swarmbox update` the addon refreshes its code at the next start.
+A setting that equals its default is not passed to the box. Inside the box the sysop reads `SWARMBOX_SYSOP_BRAIN`, `_MODEL`, `_AUTONOMY`, `_COUNTDOWN`, `_MAX_STEPS`, `_MAX_SECONDS`, `_TOPIC` and `_GROUP`. Changing a setting needs `swarmbox reset`; after `swarmbox update` the addon refreshes its code at the next start.
 
 ## The panel
 

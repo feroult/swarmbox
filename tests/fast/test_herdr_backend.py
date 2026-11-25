@@ -788,9 +788,7 @@ assert.equal(uniqueTabName('shell', 'shell', [{ name: 'shell' }, { name: 'shell-
 assert.equal(DEFAULT_THEME, 'catppuccin');
 assert.equal(THEME_ORDER.length, 5);
 assert.equal(THEME_ORDER[0], 'catppuccin');
-const cfg = readBoxConfigSnapshot([], { SWARMBOX_MUX: 'tmux', SWARMBOX_WEB_PORT: '7699', SWARMBOX_SYSOP_AUTONOMY: 'confirm-all', SWARMBOX_VOICE_LANGUAGE: 'pt' });
-assert.equal(cfg.box.MUX, undefined);
-assert.equal(cfg.sysop.settings['sysop.panel'], undefined);
+const cfg = readBoxConfigSnapshot([], { SWARMBOX_WEB_PORT: '7699', SWARMBOX_SYSOP_AUTONOMY: 'confirm-all', SWARMBOX_VOICE_LANGUAGE: 'pt' });
 assert.equal(cfg.box.WEB_PORT.value, '7699');
 assert.equal(cfg.box.WEB_PORT.custom, true);
 assert.equal(cfg.sysop.settings['sysop.autonomy'].value, 'confirm-all');

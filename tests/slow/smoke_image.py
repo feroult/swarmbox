@@ -193,7 +193,7 @@ def step_page_built(ctx):
 
 
 # The ten addons of the repository and the commands they provide (the order of the index is the sort of `link`).
-ADDON_COMMANDS = {"claude": ["claude"], "gemini": ["gemini"], "antigravity": ["agy"], "opencode": ["opencode"], "gcloud": ["gcloud", "gsutil", "bq"],
+ADDON_COMMANDS = {"claude": ["claude"], "antigravity": ["agy"], "opencode": ["opencode"], "gcloud": ["gcloud", "gsutil", "bq"],
                  "clasp": ["clasp"], "go": ["go", "gofmt"], "poetry": ["poetry"], "voice": ["swarmbox-voice"], "sysop": ["swarmbox-sysop"]}
 ALL_COMMANDS = [c for cmds in ADDON_COMMANDS.values() for c in cmds]
 
@@ -271,7 +271,7 @@ def step_attach_session(ctx):
 def step_no_agent(ctx):
     """A default build holds no addon (bash, because dash has no `type -P`; the step used sh and found nothing at first): every command resolves to its shim and /opt/swarmbox/addons is empty."""
     r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
-               "for c in claude opencode gemini agy codex clasp gcloud gsutil bq go gofmt poetry swarmbox-voice swarmbox-sysop; do p=$(type -P $c) && echo \"FOUND:$c:$p\"; done; "
+               "for c in claude opencode agy codex clasp gcloud gsutil bq go gofmt poetry swarmbox-voice swarmbox-sysop; do p=$(type -P $c) && echo \"FOUND:$c:$p\"; done; "
                "ls -A /opt/swarmbox/addons | wc -l; true")
     found = [l for l in r.stdout.splitlines() if l.startswith("FOUND:")]
     # the shims are on PATH (a link to swarmbox-shim each); codex has no addon; none is a program

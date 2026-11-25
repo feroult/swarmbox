@@ -1,9 +1,8 @@
 #!/bin/bash
 # swarmbox-attach (installed as /usr/local/bin/swarmbox-attach, called by `swarmbox-entrypoint attach`).
 #
-#   swarmbox-attach [--plain | --web] [--] [command [args...]]
+#   swarmbox-attach [--plain] [--] [command [args...]]
 #
-#   --web                   what the web terminal runs: delegates to mux_attach_web so the browser sees every tab
 #   no command, terminal    delegates to mux_attach_interactive for an interactive host terminal tab
 #   command, terminal       delegates to mux_attach_command so the command runs in a shared tab and exits with its status
 #   no terminal, or --plain bypasses the multiplexer completely: the command (or a shell) runs directly; without a terminal
@@ -38,8 +37,7 @@ fi
 : "${BOX_NAME:=<box>}"
 
 PLAIN=0
-WEB=0
-if [ "${1:-}" = "--plain" ]; then PLAIN=1; shift; elif [ "${1:-}" = "--web" ]; then WEB=1; shift; fi
+if [ "${1:-}" = "--plain" ]; then PLAIN=1; shift; fi
 if [ "${1:-}" = "--" ]; then shift; fi
 
 die() { echo "swarmbox: $*" >&2; exit "${2:-1}"; }
@@ -93,9 +91,7 @@ fi
 if ! load_mux || ! mux_available; then
     direct
 fi
-if [ "$WEB" = 1 ]; then
-    mux_attach_web
-elif [ -z "$q" ]; then
+if [ -z "$q" ]; then
     mux_attach_interactive
 else
     mux_attach_command "$q"

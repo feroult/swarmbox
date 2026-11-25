@@ -377,10 +377,6 @@ class StaticTest(unittest.TestCase):
         for line in ("NAME=antigravity", 'COMMANDS="agy"', "VERSION=latest", "UPDATE=self", 'UPDATE_CMD="agy update"'):
             self.assertIn(line + "\n", text)
 
-    def test_the_gemini_addon_says_it_is_deprecated(self):
-        with open(os.path.join(ROOT, "container", "addons", "gemini", "addon.conf")) as f:
-            self.assertRegex(f.read(), r'DESCRIPTION=".*(?i:deprecated).*antigravity')
-
 
 if __name__ == "__main__":
     unittest.main()

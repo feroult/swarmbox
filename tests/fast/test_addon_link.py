@@ -169,7 +169,7 @@ class RealImageTree(Base):
         shutil.copytree(REAL_ADDONS, self.image)
         r = self.link("--system")
         self.assertEqual(r.returncode, 0, r.stderr)
-        for command in ("claude", "gemini", "clasp", "poetry"):
+        for command in ("claude", "agy", "clasp", "poetry"):
             self.assertIn(command, os.listdir(self.ishims))
         self.assertIn("claude claude\n", self.read(self.base, "lib", "index"))
         p = os.path.join(self.host, "addon-ports")

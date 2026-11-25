@@ -523,12 +523,10 @@ class TestErrors(Base):
         d.backend.binary = "/nonexistent/hc"
         self.assertEqual(self.code(d.list_tabs)[0], "no_backend")
 
-    def test_an_unknown_backend_is_no_backend_and_swarmbox_mux_is_not_read(self):
+    def test_an_unknown_backend_is_no_backend(self):
         self.assertEqual(self.code(lambda: mod.Tabs(backend="tmux"))[0], "no_backend")
         with mock.patch.dict(os.environ, {"SB_TABS_BACKEND": "screen"}):
             self.assertEqual(self.code(mod.Tabs)[0], "no_backend")
-        with mock.patch.dict(os.environ, {"SWARMBOX_MUX": "tmux"}):          # the env of a box made before tmux was removed
-            self.assertEqual(mod.Tabs().backend.name, "herdr")
 
     def test_other_failures_are_backend_error_with_the_message(self):
         self.ft.term("t1", "x")
@@ -844,10 +842,6 @@ class TestCommand(Base):
         self.ft.save()
         rc, out, _ = self.ft.cli("list")
         self.assertEqual((rc, out["err"]), (4, "no_session"))
-
-    def test_an_old_swarmbox_mux_in_the_environment_changes_nothing(self):
-        rc, out, _ = self.ft.cli("list", SWARMBOX_MUX="tmux")
-        self.assertEqual((rc, [t["tab"] for t in out]), (0, ["t1", "t2"]))
 
     def test_every_error_code_has_its_exit_code(self):
         """the exit codes of the documented contract (usage, bad_body 2; no_backend, no_session 4; timeout 5; the others 1), in process: the real
