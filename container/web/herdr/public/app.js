@@ -275,7 +275,6 @@
   const connPillEl = document.getElementById('conn-pill');
   const connTextEl = document.getElementById('conn-text');
   const sysopDotEl = document.getElementById('sysop-dot');
-  const sysopStateEl = document.getElementById('sysop-state');
   const mobileSysopBtn = document.getElementById('btn-mobile-sysop');
   const mobileSysopTextEl = document.getElementById('mobile-sysop-text');
   const btnMobileKeys = document.getElementById('btn-mobile-keys');
@@ -1184,8 +1183,14 @@
       stageLoaderCtxEl.hidden = !waiting;
       if (waiting) {
         const secs = Math.max(0, Math.round((Date.now() - (ctx.at || Date.now())) / 1000));
-        stageLoaderCtxTitleEl.textContent = `Preparing the context of ${ctx.repo || 'this repository'}`;
-        stageLoaderCtxSubEl.textContent = `The sysop is writing it · ${secs}s · the agent starts with it`;
+        const behind = ctx.reason === 'behind';
+        stageLoaderCtxTitleEl.textContent = `${behind ? 'Rewriting' : 'Preparing'} the context of ${ctx.repo || 'this repository'}`;
+        stageLoaderCtxSubEl.textContent = behind
+          ? `${ctx.changes ? `${plural(ctx.changes, 'file')} changed` : 'Its docs changed'} since the last one · ${secs}s · the agent starts with the new one`
+          : `The sysop is writing it · ${secs}s · the agent starts with it`;
+        if (stageLoaderCtxSkipEl && stageLoaderCtxSkipEl.firstChild) {
+          stageLoaderCtxSkipEl.firstChild.textContent = behind ? 'Start with the last one ' : 'Start without it ';
+        }
       }
     }
     termStageLoaderEl.classList.toggle('is-ctx', waiting);
@@ -3157,9 +3162,6 @@
       '<rect x="10" y="15" width="2" height="1" fill="#27272a"/>' +
       '</svg>',
   };
-
-  // Mount crisp pixel-art Sysop mascot in header, mobile capsule & operator hero card
-  if (sysopDotEl) sysopDotEl.innerHTML = PIXEL_SVG.sysop;
 
   // the agent a tab runs: the live signals, then the swarmbox.agent label while the tab is not a bare login shell (its argv is longer
   // than `bash -l`, or its foreground is a program that is no shell: an agent under `node`). Never the tab name.
@@ -6643,8 +6645,9 @@
   const CTX_REASONS = {
     new: 'first time in this repository',
     prefetch: 'a repository you use, when the box started',
+    behind: 'its docs or many files changed since the last one',
     stale: 'the last one was over 6 hours old',
-    changed: 'its docs or many files changed',
+    changed: 'many files changed',
     manual: 'you asked',
   };
   let sysopContext = null;
@@ -6729,10 +6732,12 @@
   }
 
   // The "Repository context" row of the New agent box (a Git folder, autocontext on): ticked, the session starts with the sysop's
-  // context of the repository (and waits for the first one); unticked, without it. null when autocontext is off.
+  // context of the repository (and waits for the first one, or for a new one when the last is far behind the folder's commit: the
+  // sysop's check says so); unticked, without it. null when autocontext is off.
   function makeNewAgentCtxRow(cwd, get, set) {
     if (!sysopContext || !sysopContext.on) return null;
     const repo = ctxRepoForCwd(cwd);
+    let check = null;
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'newag-ctx';
@@ -6748,26 +6753,46 @@
     kbd.className = 'wt-kbd desktop-only';
     kbd.title = 'Press C to toggle the repository context';
     kbd.textContent = 'C';
-    row.append(box, label, meta, kbd);
+    // far behind the folder's commit: a second line says that the session waits for a new context (the meta keeps its age)
+    const note = document.createElement('span');
+    note.className = 'newag-ctx-note';
+    note.hidden = true;
+    row.append(box, label, meta, kbd, note);
     const update = () => {
       const on = get();
       row.classList.toggle('is-on', on);
       row.setAttribute('aria-checked', on ? 'true' : 'false');
+      const behind = Boolean(on && check && check.need === 'behind' && !(repo && repo.state === 'writing'));
       meta.textContent = !on ? 'starts without it'
         : repo && repo.state === 'writing' ? 'being written now'
-          : repo && repo.at ? `written ${fmtAge(repo.at)}`
-            : 'written now, ~10 s';
+          : behind ? `written ${fmtAge(check.at)}`
+            : repo && repo.at ? `written ${fmtAge(repo.at)}`
+              : 'written now, ~10 s';
+      note.hidden = !behind;
+      note.textContent = behind
+        ? `${check.changes ? plural(check.changes, 'file') : 'Its docs'} changed since: rewritten before the agent starts, ~10 s`
+        : '';
+      row.classList.toggle('is-behind', behind);
       row.title = on
         ? 'The session starts with the sysop\'s orientation to this repository in its system prompt. Click (or C) to start without it.'
         : 'The session starts without the sysop\'s repository context. Click (or C) to start with it.';
     };
     row.addEventListener('click', () => { set(!get()); update(); });
     update();
+    if (cwd) {
+      fetch(`/api/sysop/context/check?cwd=${encodeURIComponent(cwd)}`, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d && d.ok) { check = d; update(); } })
+        .catch(() => {});
+    }
     return { el: row, update };
   }
 
   function ctxSessionWhy(s) {
     const repo = ctxRepoByKey(s.key);
+    if (s.waiting && s.reason === 'behind') {
+      return `Its launcher waits for a new context of ${s.repo} (about 10 s): ${s.changes ? `${plural(s.changes, 'file')} changed` : 'its docs changed'} since the last one; Enter in the terminal starts it with the last one.`;
+    }
     if (s.waiting) return `Its launcher waits for the first context of ${s.repo} (about 10 s); Enter in the terminal starts it without.`;
     if (s.context) return `Started with the context of ${s.repo}: ${ctxProvenance(s)}.`;
     if (s.off) return `Started without context: you unticked "Repository context" when you created it.`;
@@ -6880,8 +6905,13 @@
     if (!t || !s) return;
     const repo = ctxRepoByKey(s.key);
     const frag = document.createDocumentFragment();
-    const title = s.waiting ? `Preparing the context of ${s.repo}` : s.context ? `Started with the context of ${s.repo}` : `Started without context`;
-    frag.appendChild(ctxPopHead(title, s.waiting ? 'wait' : s.context ? 'ok' : s.off ? '' : 'warn'));
+    const title = s.waiting ? `${s.reason === 'behind' ? 'Rewriting' : 'Preparing'} the context of ${s.repo}` : s.context ? `Started with the context of ${s.repo}` : `Started without context`;
+    const head = ctxPopHead(title, s.waiting ? 'wait' : s.context ? 'ok' : s.off ? '' : 'warn');
+    // The same ↻ as the repository's card; the repository's card then opens to show the sysop writing
+    if (repo && repo.top) {
+      head.appendChild(ctxRefreshButton(repo, { busy: ctxBusy(repo), onClick: () => { rewriteContext(repo.key, address); openRepoContextPopover(repo.key); } }));
+    }
+    frag.appendChild(head);
     const sub = document.createElement('div');
     sub.className = 'spop-sub';
     sub.textContent = s.context
@@ -6897,9 +6927,6 @@
     const acts = document.createElement('div');
     acts.className = 'ctx-pop-acts';
     if (s.context) acts.appendChild(ctxPopButton('See what it got', 'primary', () => { closePopover(); openContextViewer({ tab: address }); }));
-    if (repo && repo.state !== 'writing' && repo.top) {
-      acts.appendChild(ctxPopButton(repo.at ? 'Rewrite the context' : 'Write it now', 'secondary', () => { rewriteContext(repo.key, address); openRepoContextPopover(repo.key); }));
-    }
     acts.appendChild(ctxPopButton('Events', 'secondary', () => { closePopover(); showSysopEvents(s.key); }));
     frag.appendChild(acts);
     openPopover(frag);
@@ -6929,6 +6956,19 @@
     return [repo.state, repo.at, repo.call && repo.call.phase, repo.call && repo.call.ts, ctxBusy(repo), ctxJustDone.has(repo.key)].join('|');
   }
 
+  // The ↻ in a context card's head: the same button on the repository's card and on an agent's
+  function ctxRefreshButton(repo, { busy, done = false, onClick }) {
+    const rb = document.createElement('button');
+    rb.type = 'button';
+    rb.className = `ctx-refresh${busy ? ' is-spinning' : ''}${done ? ' is-done' : ''}`;
+    rb.innerHTML = done ? ICO_CHECK_SVG : ICO_REFRESH_SVG;
+    rb.disabled = busy;
+    rb.title = busy ? 'The sysop is writing it' : done ? 'Rewritten just now' : repo.at ? 'Rewrite the context now' : 'Write the context now';
+    rb.setAttribute('aria-label', rb.title);
+    rb.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    return rb;
+  }
+
   function openRepoContextPopover(key) {
     const repo = ctxRepoByKey(key);
     if (!repo) return;
@@ -6941,18 +6981,8 @@
     const tone = busy ? 'wait' : repo.state === 'ready' ? 'ok' : 'warn';
     const head = ctxPopHead(busy ? `Writing the context of ${repo.repo}…` : `Context of ${repo.repo}`, tone);
     head.dataset.ctxKey = key;
-    if (repo.top) {
-      // ↻ rewrites it here: the card stays open, the arrow turns while the sysop writes, a check when the new one is in
-      const rb = document.createElement('button');
-      rb.type = 'button';
-      rb.className = `ctx-refresh${busy ? ' is-spinning' : ''}${done ? ' is-done' : ''}`;
-      rb.innerHTML = done ? ICO_CHECK_SVG : ICO_REFRESH_SVG;
-      rb.disabled = busy;
-      rb.title = busy ? 'The sysop is writing it' : done ? 'Rewritten just now' : repo.at ? 'Rewrite the context now' : 'Write the context now';
-      rb.setAttribute('aria-label', rb.title);
-      rb.addEventListener('click', (e) => { e.stopPropagation(); rewriteContext(key); });
-      head.appendChild(rb);
-    }
+    // ↻ rewrites it here: the card stays open, the arrow turns while the sysop writes, a check when the new one is in
+    if (repo.top) head.appendChild(ctxRefreshButton(repo, { busy, done, onClick: () => rewriteContext(key) }));
     frag.appendChild(head);
     const sub = document.createElement('div');
     sub.className = 'spop-sub';
@@ -7546,9 +7576,12 @@
     if (!sysop) return;
     if (appEl) appEl.dataset.sysopUp = sysop.up ? '1' : '0';
     const st = sysop.state || 'off';
-    if (sysopDotEl) sysopDotEl.dataset.state = st;
-    sysopStateEl.dataset.state = st;
-    sysopStateEl.textContent = STATE_WORDS[st] || st;
+    const stWord = STATE_WORDS[st] || st;
+    if (sysopDotEl) {
+      sysopDotEl.dataset.state = st;
+      sysopDotEl.title = `Sysop: ${stWord}`;
+      sysopDotEl.setAttribute('aria-label', `Sysop: ${stWord}`);
+    }
     if (mobileSysopBtn) mobileSysopBtn.dataset.state = st;
     if (mobileSysopTextEl) mobileSysopTextEl.textContent = st === 'idle' || st === 'off' ? 'Sysop' : (sysop.sentence || `Sysop · ${st}`);
     if (btnToggleSysop) btnToggleSysop.dataset.state = st;

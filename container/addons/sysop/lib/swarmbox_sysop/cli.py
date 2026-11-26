@@ -274,7 +274,8 @@ def cmd_approve(_args):
 
 def cmd_context(args):
     """`context [DIR]`: the digest of the commit of DIR, made now (it waits for the model); prints the file. 0 written or already there,
-    1 not a repository or the call failed, 2 sysop.autocontext is off (a digest would be used although it is off)."""
+    1 not a repository or the call failed, 2 sysop.autocontext is off (a digest would be used although it is off). `--check` writes
+    nothing and prints how far the digest is from the commit of DIR (digest.assess) and whether a session started there waits."""
     if not _cfg().autocontext:
         print("swarmbox-sysop: sysop.autocontext is off (swarmbox config set sysop.autocontext 1, then swarmbox reset)", file=sys.stderr)
         return 2
@@ -283,6 +284,13 @@ def cmd_context(args):
     if repo is None:
         print("swarmbox-sysop: %s is not in a Git repository with a commit" % args.dir, file=sys.stderr)
         return 1
+    if args.check:
+        # what a session started in DIR now would get, without writing anything (the Web Studio's New agent box)
+        a = digest.assess(repo, digest.Store(digest.digests_dir(pth)))
+        print(json.dumps({"repo": repo["name"], "key": repo["key"], "commit": repo["head"], "base": a["base"], "at": a["at"],
+                          "changes": len(a["changes"]) if a["changes"] is not None else None, "need": a["need"],
+                          "wait": a["need"] in ("new", "behind")}))
+        return 0
     ac = digest.AutoContext(None, pth.make())
     tab = args.tab or os.environ.get("SWARMBOX_SYSOP_CONTEXT_TAB", "")     # the Web Studio's Rewrite names the tab that asked
     what = ac.run_one(repo["top"], tab=tab if digest.TAB_RE.match(tab or "") else "", reason="manual" if args.force else None)
@@ -352,6 +360,7 @@ def main(argv=None):
     c = sub.add_parser("context")
     c.add_argument("dir", nargs="?", default=".")
     c.add_argument("--force", action="store_true")
+    c.add_argument("--check", action="store_true", help="print, as JSON, how far the digest is from DIR's commit; write nothing")
     c.add_argument("--tab", default="", help=argparse.SUPPRESS)
     c.set_defaults(fn=cmd_context)
     sub.add_parser("agent").set_defaults(fn=_cmd_agent)

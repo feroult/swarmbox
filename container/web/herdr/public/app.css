@@ -1925,7 +1925,7 @@ html.swarmbox-ready #sb-boot {
   50% { transform: scale(1.28); opacity: 0.48; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .status-dot, .btn-allow { animation: none !important; }
+  .status-dot, .sysop-mark, .btn-allow { animation: none !important; }
 }
 
 /* ---- Center Terminal Stage ---------------------------------------------------------------- */
@@ -2315,14 +2315,16 @@ html.swarmbox-ready #sb-boot {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 10px 0 14px;
+  gap: 6px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--border);
 }
+.sysop-close-btn { flex-shrink: 0; }
 .sysop-title {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 .sysop-word {
   font-family: var(--mono);
@@ -2331,24 +2333,9 @@ html.swarmbox-ready #sb-boot {
   letter-spacing: 0.1em;
   color: var(--text);
 }
-.sysop-state-pill {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  padding: 1px 2px;
-  transition: color .15s;
-}
-.sysop-state-pill[data-state="working"],
-.sysop-state-pill[data-state="queued"] { color: var(--accent-bright); }
-.sysop-state-pill[data-state="allow?"],
-.sysop-state-pill[data-state="sending"] { color: var(--peach); }
-.sysop-state-pill[data-state="failed"] { color: var(--red); }
-.sysop-head-actions { display: flex; gap: 4px; align-items: center; }
-/* The close button sits apart from New and Stop, behind a thin divider, so a tap on one never lands on the other. */
-.sysop-head-sep { width: 1px; height: 16px; background: var(--border); margin: 0 6px 0 8px; flex-shrink: 0; }
-.sysop-head-actions:not(:has(.sysop-new-btn:not(.hidden), #btn-sysop-stop:not(.hidden))) .sysop-head-sep { display: none; }
+.sysop-head-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+.sysop-head-actions:not(:has(> :not(.hidden))) { display: none; }
 @media (max-width: 860px) {
-  .sysop-head-sep { margin: 0 8px 0 10px; }
   .sysop-close-btn { width: 34px; height: 34px; }
 }
 .sysop-new-btn {
@@ -2367,51 +2354,37 @@ html.swarmbox-ready #sb-boot {
 }
 .sysop-new-btn:hover { color: var(--text); background: var(--accent-bg); }
 
-/* Pixel-Art Sysop Operator Mini Mascot & Reactive Pixel Expressions */
-.sysop-mini {
-  width: 17px;
-  height: 17px;
+/* Sysop header status circle (matches .brand-mark beside SWARMBOX) */
+.sysop-mark {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
   flex-shrink: 0;
-  display: inline-grid;
-  place-items: center;
-  image-rendering: pixelated;
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.45);
+  transition: background .18s ease, box-shadow .18s ease, opacity .18s ease;
 }
-.sysop-mini svg { width: 17px; height: 17px; display: block; image-rendering: pixelated; }
-.sysop-mini .sys-eye { fill: #a78bfa; transition: fill .18s ease; }
-.sysop-mini .sys-ant { fill: #8b5cf6; transition: fill .18s ease; }
-.sysop-mini .sys-wave { fill: #3b2763; transition: fill .18s ease; }
-.sysop-mini .sys-led { fill: #4ade80; transition: fill .18s ease; }
-
-.sysop-mini[data-state="off"] svg { opacity: 0.65; }
-.sysop-mini[data-state="off"] .sys-eye { fill: #52525b; }
-.sysop-mini[data-state="off"] .sys-ant { fill: #3f3f46; }
-.sysop-mini[data-state="off"] .sys-led { fill: #3f3f46; }
-
-.sysop-mini[data-state="working"] .sys-eye,
-.sysop-mini[data-state="queued"] .sys-eye { fill: #67e8f9; }
-.sysop-mini[data-state="working"] .sys-ant,
-.sysop-mini[data-state="queued"] .sys-ant {
-  fill: #67e8f9;
-  animation: sb-boot-pulse 0.8s steps(2, end) infinite;
+.sysop-mark[data-state="off"] {
+  background: var(--text-dim);
+  box-shadow: none;
+  opacity: 0.5;
 }
-.sysop-mini[data-state="working"] .sys-wave { fill: #c4b5fd; }
-.sysop-mini[data-state="working"] .sys-led { fill: #67e8f9; }
-
-.sysop-mini[data-state="allow?"] .sys-eye,
-.sysop-mini[data-state="sending"] .sys-eye { fill: var(--peach); }
-.sysop-mini[data-state="allow?"] .sys-ant,
-.sysop-mini[data-state="sending"] .sys-ant { fill: var(--peach); }
-.sysop-mini[data-state="allow?"] .sys-wave { fill: #fbd3ba; }
-.sysop-mini[data-state="allow?"] .sys-led { fill: var(--peach); }
-
-.sysop-mini[data-state="done"] .sys-eye { fill: #4ade80; }
-.sysop-mini[data-state="done"] .sys-ant { fill: #4ade80; }
-.sysop-mini[data-state="done"] .sys-wave { fill: #6ee7b7; }
-
-.sysop-mini[data-state="failed"] .sys-eye,
-.sysop-mini[data-state="stopped"] .sys-eye { fill: #ff6b78; }
-.sysop-mini[data-state="failed"] .sys-ant,
-.sysop-mini[data-state="stopped"] .sys-ant { fill: #ff6b78; }
+.sysop-mark[data-state="working"],
+.sysop-mark[data-state="queued"] {
+  background: var(--accent-bright);
+  box-shadow: 0 0 8px var(--accent-glow);
+  animation: sb-pulse 1.4s ease-in-out infinite;
+}
+.sysop-mark[data-state="allow?"],
+.sysop-mark[data-state="sending"] {
+  background: var(--peach);
+  box-shadow: 0 0 8px rgba(246, 167, 122, 0.55);
+  animation: sb-pulse 0.95s ease-in-out infinite;
+}
+.sysop-mark[data-state="failed"] {
+  background: var(--red);
+  box-shadow: 0 0 8px rgba(255, 107, 120, 0.5);
+}
 
 /* Calm confirmation card (lives inside the conversation) */
 .approval-card {
@@ -5424,7 +5397,6 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
   gap: 2px;
   padding: 2px;
   margin-left: auto;
-  margin-right: 8px;
   border-radius: 8px;
   background: var(--bg);
   flex-shrink: 0;
@@ -5642,3 +5614,6 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
 .newag-ctx-label svg { width: 11px; height: 11px; color: var(--text-dim); flex-shrink: 0; }
 .newag-ctx.is-on .newag-ctx-label svg { color: var(--green); }
 .newag-ctx-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 10.5px; }
+.newag-ctx.is-behind { flex-wrap: wrap; row-gap: 4px; }
+.newag-ctx-note { flex-basis: 100%; padding-left: 22px; color: var(--amber); font-size: 10.5px; line-height: 1.35; }
+.newag-ctx-note[hidden] { display: none; }

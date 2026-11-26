@@ -668,32 +668,47 @@ FUNC_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 # no words: the agent starts as it would without the sysop. The commit is read after the guard, which may have moved the shell into a
 # new worktree. An addon with a shell.sh of its own calls _sb_context itself (OpenCode).
 # _sb_context ID: when the digests folder exists (autocontext is on) the session is told to the box on tab.events (swarmbox-bus, source
-# launcher): a commit without a file first publishes `prepare` and, when somebody received it, waits for the file (_sb_wait: the sysop
-# carries the repository's digest forward at once; the first time in a repository the model writes it, about 10 s, shown on the
-# terminal, and Enter skips); then `session` says which file the agent got (or none, and whether the user skipped), in the background,
+# launcher): a commit without a file, or whose file is marked <commit>.wait, first publishes `prepare` and, when somebody received it,
+# waits for the file (_sb_wait: the sysop carries the repository's digest forward at once; the first time in a repository, or when the
+# digest is far behind the commit, the model writes it, about 10 s, shown on the terminal, and Enter skips: without context the first
+# time, with the carried file when it is behind); then `session` says which file the agent got (or none, and whether the user skipped), in the background,
 # for the panel and the mark on the tab. SWARMBOX_CONTEXT=0 (the Web Studio's New agent box, unticked) starts without the context and
 # says so (`off`). No folder, no bus: nothing is published and nothing waits. It sets _sb_context_file (empty: no context).
 # `command CMD` reaches the program (or its shim), not the function. Written for bash and zsh.
 SHELL_HELPER = r"""_sb_wait() {
     # _sb_wait DIR COMMIT: after a `prepare`, wait for DIR/COMMIT.md. Up to 2 s for a carry-forward or a mark of the sysop; while the mark
-    # is COMMIT.wait (the model is writing the first digest of the repository) it says so in one still line on the terminal (cut to the
-    # terminal's real width, so it never wraps: a redrawn line that wraps floods the screen), up to 30 s, and Enter starts the agent at
-    # once without it. The Web Studio shows its own loader over the terminal. COMMIT.none, or no mark after 2 s (an older sysop), starts
-    # at once. 1 when the user skipped.
-    local _w_i=0 _w_shown= _w_repo= _w_why= _w_line _w_k _w_cols
+    # is COMMIT.wait (the model is writing the first digest of the repository, or a new one: the carried COMMIT.md beside it is far behind)
+    # it says so in one still line on the terminal (cut to the terminal's real width, so it never wraps: a redrawn line that wraps floods
+    # the screen), up to 30 s, and Enter starts the agent at once (without context, or with the carried file). The Web Studio shows its
+    # own loader over the terminal. COMMIT.none, or no mark after 2 s (an older sysop), starts at once. 1 when the user skipped.
+    local _w_i=0 _w_shown= _w_repo= _w_why= _w_raw= _w_line _w_k _w_cols
     while [ "$_w_i" -lt 300 ]; do
-        [ -s "$1/$2.md" ] && break
-        [ -e "$1/$2.none" ] && break
+        if [ ! -e "$1/$2.wait" ]; then
+            [ -s "$1/$2.md" ] && break
+            [ -e "$1/$2.none" ] && break
+        fi
         if [ -e "$1/$2.wait" ]; then
-            [ -t 0 ] && [ -t 2 ] || break
+            # behind: the sysop writes the mark, then the carried file; without a terminal the launcher starts with that file at once
+            if ! { [ -t 0 ] && [ -t 2 ]; }; then
+                [ -s "$1/$2.md" ] && break
+                IFS="$(printf '\t')" read -r _w_repo _w_raw < "$1/$2.wait" || :
+                [ "$_w_raw" = behind ] && [ "$_w_i" -lt 20 ] || break
+                command sleep 0.1
+                _w_i=$((_w_i + 1))
+                continue
+            fi
             if [ -z "$_w_shown" ]; then
-                IFS="$(printf '\t')" read -r _w_repo _w_why < "$1/$2.wait" || :
+                IFS="$(printf '\t')" read -r _w_repo _w_raw < "$1/$2.wait" || :
                 _w_repo=${_w_repo//[[:cntrl:]]/}
-                case "$_w_why" in prefetch|new) _w_why='first time' ;; stale) _w_why='the last one is old' ;; changed) _w_why='its docs changed' ;; *) _w_why='' ;; esac
+                case "$_w_raw" in prefetch|new) _w_why='first time' ;; behind) _w_why='many files or its docs changed since the last one' ;; stale) _w_why='the last one is old' ;; changed) _w_why='many files changed' ;; *) _w_why='' ;; esac
                 _w_cols=$(command stty size 2>/dev/null <&2) || _w_cols=
                 _w_cols=${_w_cols##* }
                 case "$_w_cols" in ""|*[!0-9]*) _w_cols=${COLUMNS:-80} ;; esac
-                _w_line="sysop: preparing the context of ${_w_repo:-this repository}${_w_why:+ ($_w_why)} - Enter starts without it"
+                if [ "$_w_raw" = behind ]; then
+                    _w_line="sysop: rewriting the context of ${_w_repo:-this repository} ($_w_why) - Enter starts with the last one"
+                else
+                    _w_line="sysop: preparing the context of ${_w_repo:-this repository}${_w_why:+ ($_w_why)} - Enter starts without it"
+                fi
                 [ "$_w_cols" -gt 1 ] && _w_line=${_w_line:0:$((_w_cols - 1))}
                 printf '\r\033[2K\033[2m%s\033[0m' "$_w_line" >&2
                 _w_shown=1
@@ -729,7 +744,7 @@ _sb_context() {
     if [ "${SWARMBOX_CONTEXT:-1}" = 0 ]; then
         _c_file=
         _c_msg="$_c_msg,\"off\":true"
-    elif [ ! -s "$_c_file" ] && command swarmbox-bus pub --source launcher tab.events "{\"event\":\"prepare\",$_c_msg}" >/dev/null 2>&1; then
+    elif { [ ! -s "$_c_file" ] || [ -e "$_c_dir/$_c_head.wait" ]; } && command swarmbox-bus pub --source launcher tab.events "{\"event\":\"prepare\",$_c_msg}" >/dev/null 2>&1; then
         _sb_wait "$_c_dir" "$_c_head" || _c_skip=1
     fi
     [ -n "$_c_file" ] && [ -f "$_c_file" ] && [ -s "$_c_file" ] || _c_file=

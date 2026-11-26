@@ -16,8 +16,9 @@ that another session of the box already read.
 THE FILES, in <SB_STATE_DIR>/sysop/digests (0700; files 0600):
   <commit>.md          what an agent reads: a short header, the digest, and the files changed since the digest was written, if any
   <commit>.json        what the panel shows of it: the repository, the commit the digest was written at and when, the files changed since
-  <commit>.wait        a launcher asked for that commit, none could be carried and the model is writing the digest: the launcher shows
-                       that it waits (first line: the repository and why), up to 30 s, and the worker gives the commit its file at the end
+  <commit>.wait        the model is writing the digest a launcher of that commit waits for: none could be carried (the first time), or
+                       the carried <commit>.md is far behind (`behind`: the launcher can start with it at once); the launcher shows that
+                       it waits (first line: the repository and why), up to 30 s, and the worker gives the commit its new file at the end
   <commit>.none        no file comes for that commit now (the call failed, or waits for its retry): a waiting launcher starts at once
   repos/<key>.json     per repository (key: a hash of its common Git folder, shared by its worktrees): the commit the digest was made at
   repos/<key>.md       the digest itself, as the model wrote it
@@ -30,9 +31,11 @@ THE FILES, in <SB_STATE_DIR>/sysop/digests (0700; files 0600):
 HOW A COMMIT GETS ITS FILE. When the repository has a digest whose commit is still there, it is carried forward to the new commit at once
 with the list of files changed since it (`git diff --name-status`). The digest is written again by a one-shot call of the DIGEST an agent
 declares (Claude Code's: haiku, no tools, no MCP, no settings) over the file list, the top-level docs and manifests and the recent commits
-(build_input) when the repository has none (`new`), when it is older than REFRESH_S (`stale`), or when more than MAX_CARRY files or a
-top-level doc or manifest changed since it and it is older than MIN_REWRITE_S (`changed`). A carried file is used meanwhile, so a session
-never waits for the model. A failed call is logged and tried again after RETRY_S. `swarmbox-sysop context --force` writes it now (`manual`).
+(build_input) when the repository has none (`new`), when it is older than MIN_REWRITE_S and more than WAIT_CHANGES files or a top-level
+doc or manifest changed since it (`behind`), when it is older than REFRESH_S (`stale`), or when more than MAX_CARRY files changed since
+it and it is older than MIN_REWRITE_S (`changed`). A carried file is used meanwhile, so a running session never waits for the model; a
+session that starts on a commit `behind` waits for the new one like the first time in a repository, and Enter starts it at once with
+the carried file. A failed call is logged and tried again after RETRY_S. `swarmbox-sysop context --force` writes it now (`manual`).
 
 WHAT YOU SEE. What the sysop does by itself is in the Events tab of its panel (`autocontext` events in system_events.jsonl): `started`
 when a model call begins (and why), then `made` or `failed`; `session` records are for the cards, not shown as rows. The Web Studio marks
@@ -58,7 +61,8 @@ from .autoname import append_system_event
 TOPIC = "tab.events"
 GROUP = "sysop-digest"
 REFRESH_S = 6 * 3600.0       # a digest older than this is made again (not carried) at the next commit
-MAX_CARRY = 40               # more files changed than this since the digest: made again
+MAX_CARRY = 40               # more files changed than this since the digest: made again, in the background
+WAIT_CHANGES = 100           # more files changed than this (or a top-level doc or manifest): a starting session waits for the new one
 MIN_REWRITE_S = 1800.0       # a digest younger than this is not written again for a changed doc or manifest
 RETRY_S = 600.0              # after a failed call for a repository, before the next try
 MAX_FILES = 300              # <commit>.md files kept (the oldest go first)
@@ -304,12 +308,17 @@ class Store:
         _write(os.path.join(repos, key + ".md"), body)
         _write(os.path.join(repos, key + ".json"), json.dumps(idx))
 
-    def save(self, commit, text, meta=None):
+    def save(self, commit, text, meta=None, keep_wait=False):
+        """Write <commit>.md (and its .json). It ends a wait for that commit, unless `keep_wait`: a carried file that a launcher may start
+        with while the model writes the new one (`behind`)."""
         root = _private(self.root)
         if meta is not None:
             _write(os.path.join(root, "%s.json" % commit), json.dumps(meta))
         _write(os.path.join(root, "%s.md" % commit), text)
-        self.forget_none(commit)
+        if keep_wait:
+            self._unlink(commit, ".none")
+        else:
+            self.forget_none(commit)
         self.prune()
 
     def mark_wait(self, commit, repo_name, reason):
@@ -411,10 +420,10 @@ def _touches_docs(changes):
     return False
 
 
-def carry(repo, store, clock=time.time):
-    """Give the HEAD of `repo` its <commit>.md at once when it can be done without the model. Returns (what, need): what is 'have' (it
-    was there), 'carried' (written now from the repository's digest) or None (no file: there is no digest, or its commit is gone); need is
-    why the digest should be written again by the model ('new', 'stale', 'changed') or None."""
+def assess(repo, store, clock=time.time):
+    """How far the digest of `repo` is from its HEAD, without writing: a dict with base and at (the commit and time it was written, ''
+    and 0 when there is none), changes (the files changed since, None when they cannot be listed) and need: why the model should write
+    it again ('new', 'behind', 'stale', 'changed') or None. 'behind' is the only one a starting session waits for."""
     head, key = repo["head"], repo["key"]
     now = float(clock())
     idx, body = store.base(key)
@@ -425,17 +434,31 @@ def carry(repo, store, clock=time.time):
         changes = [] if base == head else changed_since(repo, base)
     if not usable or changes is None:
         need = "new"
+    elif now - made_at >= MIN_REWRITE_S and (len(changes) > WAIT_CHANGES or _touches_docs(changes)):
+        need = "behind"
     elif now - made_at >= REFRESH_S:
         need = "stale"
-    elif now - made_at >= MIN_REWRITE_S and (len(changes) > MAX_CARRY or _touches_docs(changes)):
+    elif now - made_at >= MIN_REWRITE_S and len(changes) > MAX_CARRY:
         need = "changed"
     else:
         need = None
-    if store.has(head):
+    return {"base": base if usable else "", "at": made_at if usable else 0.0, "changes": changes, "need": need, "body": body,
+            "now": now}
+
+
+def carry(repo, store, clock=time.time, again=False, assessed=None):
+    """Give the HEAD of `repo` its <commit>.md at once when it can be done without the model (`again`: write it again from the
+    repository's digest even when it is there: a newer digest was just written). Returns (what, need): what is 'have' (it was there),
+    'carried' (written now from the repository's digest) or None (no file: there is no digest, or its commit is gone); need is why the
+    digest should be written again by the model (assess; `assessed`: its answer, already asked) or None."""
+    a = assessed or assess(repo, store, clock)
+    need, changes = a["need"], a["changes"]
+    if store.has(repo["head"]) and not again:
         return "have", need
     if changes is None:
         return None, need
-    store.save(head, compose(repo, body, base, made_at, changes), _meta(repo, base, made_at, len(changes), now))
+    store.save(repo["head"], compose(repo, a["body"], a["base"], a["at"], changes), _meta(repo, a["base"], a["at"], len(changes), a["now"]),
+               keep_wait=not again)
     return "carried", need
 
 
@@ -564,7 +587,7 @@ class AutoContext:
         self._queue = {}        # repository key -> (repo, reason, tab, agent): the model calls to make, one per repository, in order
         self._busy = None       # the key of the call running now
         self._busy_reason = ""
-        self._waiting = {}      # repository key -> {commit: repo}: the commits launchers wait for while its call runs
+        self._waiting = {}      # repository key -> {commit: (repo, reason, changes)}: the commits launchers wait for while its call runs
 
     def start(self):
         if self.thread is not None:
@@ -643,22 +666,33 @@ class AutoContext:
             return False
         off = body.get("off") is True
         what = None if off else self.ensure(repo, tab, agent)
-        if what is None and not off and str(body.get("event") or "") == "prepare" and self.hold(repo) and tab:
-            self.record_waiting(repo, tab, agent, cwd)
+        if not off and str(body.get("event") or "") == "prepare" and tab:
+            held = self.held(repo) if what is not None else (self.hold(repo) and self.held(repo))
+            if held:
+                self.record_waiting(repo, tab, agent, cwd, *held)
         if str(body.get("event") or "") == "session":
             self.record_session(repo, tab, agent, cwd, str(body.get("context") or ""), skipped=body.get("skipped") is True, off=off)
         return what
 
     def ensure(self, repo, tab="", agent=""):
-        """Carry the digest forward to HEAD now when it can be; queue a model call when one is needed. Returns 'have', 'carried' or None."""
+        """Carry the digest forward to HEAD now when it can be; queue a model call when one is needed. A digest far `behind` HEAD also
+        gets <commit>.wait (before the carried file, so a launcher never sees the file without it) while its call is queued or running.
+        Returns 'have', 'carried' or None."""
         try:
-            what, need = carry(repo, self.store, self.clock)
+            a = assess(repo, self.store, self.clock)
+            if a["need"] == "behind" and a["changes"] is not None:
+                self.queue(repo, "behind", tab, agent)
+                with self._cond:     # the mark under the lock: the worker's release (which removes it) cannot come in between
+                    if self._busy == repo["key"] or repo["key"] in self._queue:
+                        self._waiting.setdefault(repo["key"], {})[repo["head"]] = (repo, "behind", len(a["changes"]))
+                        self.store.mark_wait(repo["head"], repo["name"], "behind")
+            what, need = carry(repo, self.store, self.clock, assessed=a)
         except OSError as e:
             self.log("autocontext %s@%s: cannot write: %s" % (repo["name"], repo["head"][:7], e))
             return None
         if what == "carried":
             self.log("autocontext %s@%s: carried the digest forward" % (repo["name"], repo["head"][:7]))
-        if need is not None:
+        if need is not None and need != "behind":
             self.queue(repo, need, tab, agent)
         return what
 
@@ -701,13 +735,13 @@ class AutoContext:
         """A launcher waits for the file of HEAD and none could be carried: <commit>.wait while a model call for the repository is queued
         or running (the worker gives this commit its file when the call ends), else <commit>.none with why."""
         try:
-            with self._cond:
+            with self._cond:     # the mark under the lock: the worker's release (which removes it) cannot come in between
                 busy = self._busy == repo["key"] or repo["key"] in self._queue
                 if busy:
-                    self._waiting.setdefault(repo["key"], {})[repo["head"]] = repo
                     reason = self._queue[repo["key"]][1] if repo["key"] in self._queue else self._busy_reason
+                    self._waiting.setdefault(repo["key"], {})[repo["head"]] = (repo, reason, 0)
+                    self.store.mark_wait(repo["head"], repo["name"], reason)
             if busy:
-                self.store.mark_wait(repo["head"], repo["name"], reason)
                 return True
             f = self.failures.get(repo["key"])
             why = ("the last call failed less than %d min ago" % (RETRY_S // 60)) if f else "no digest yet"
@@ -720,24 +754,33 @@ class AutoContext:
         """The model call of a repository ended: each commit a launcher waits for gets its file (carried from the new digest) or a .none."""
         with self._cond:
             waiting = self._waiting.pop(key, {})
-        for head, repo in waiting.items():
+        for head, (repo, _reason, _changes) in waiting.items():
             try:
-                if made and carry(repo, self.store, self.clock)[0] is not None:
+                if made and carry(repo, self.store, self.clock, again=True)[0] is not None:
                     continue
-                self.store.mark_none(head, why or "the digest could not be written")
+                if self.store.has(head):
+                    self.store.forget_none(head)    # behind: the launcher starts with the carried file
+                else:
+                    self.store.mark_none(head, why or "the digest could not be written")
             except OSError:
                 pass
+
+    def held(self, repo):
+        """(reason, changes) when a launcher of HEAD waits for a model call of the repository (hold, or a digest `behind`), else None."""
+        with self._cond:
+            w = self._waiting.get(repo["key"], {}).get(repo["head"])
+        return (w[1], w[2]) if w else None
 
     def writing(self, key):
         """True while a model call for the repository is queued or running."""
         with self._cond:
             return self._busy == key or key in self._queue
 
-    def record_waiting(self, repo, tab, agent, cwd):
-        """The launcher of `tab` waits for the first digest of the repository: sessions/<tab>.json says so (its card shows "preparing
-        context"), until its `session` replaces it."""
+    def record_waiting(self, repo, tab, agent, cwd, reason="new", changes=0):
+        """The launcher of `tab` waits for a digest of the repository (the first one, or a new one when the last is `behind`, with how many
+        files changed since): sessions/<tab>.json says so (its card shows "preparing context"), until its `session` replaces it."""
         rec = {"tab": tab, "agent": agent, "cwd": cwd, "repo": repo["name"], "key": repo["key"], "commit": repo["head"][:12],
-               "context": False, "waiting": True, "at": float(self.clock())}
+               "context": False, "waiting": True, "reason": reason, "changes": int(changes or 0), "at": float(self.clock())}
         try:
             self.store.save_session(tab, rec, None)
         except OSError as e:

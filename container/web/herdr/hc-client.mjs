@@ -907,6 +907,7 @@ export function readContextState(stateSysop, terminals, status = null) {
       off: Boolean(m.off),
       failed: Boolean(m.failed),
       waiting: Boolean(m.waiting),
+      reason: m.waiting ? String(m.reason || '') : '',   // what a waiting launcher waits for: 'behind' (a new context; the last one is there)
       at: num(m.at) * 1000,
     };
   }
