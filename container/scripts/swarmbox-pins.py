@@ -21,9 +21,13 @@ import subprocess
 import sys
 import time
 
+for _d in (os.path.dirname(os.path.realpath(__file__)), "/usr/local/lib/swarmbox"):
+    if os.path.isfile(os.path.join(_d, "swarmbox_agents.py")):
+        sys.path.insert(0, _d)
+        break
+import swarmbox_agents  # noqa: E402  - the agent registry: which programs are agents (docs/agents-design.md)
+
 SCHEMA = 1
-ALLOWED_AGENTS = frozenset({"shell", "claude", "agy", "opencode", "gemini", "codex", "yolo"})
-CONTINUE_AGENTS = frozenset({"claude", "agy", "opencode"})
 VALID_RESUME = frozenset({"continue", "fresh"})
 EXIT = {"usage": 2, "bad_arg": 2}
 
@@ -102,11 +106,23 @@ def default_title_for(cwd, agent="shell", env=None):
     return agent if agent and agent != "shell" else "shell"
 
 
+def _norm_agent(agent, env=None):
+    """The agent of a pin: `shell`, an agent id (an alias is stored as its id) or `yolo`, stored as the default agent when the box has
+    one (a pin keeps running the agent it was made with); a name that is no agent is refused."""
+    ag = (agent or "shell").strip().lower()
+    if ag == "shell":
+        return ag
+    if ag == "yolo":
+        return swarmbox_agents.default_agent(env) or ag
+    aid = swarmbox_agents.resolve(ag, env)
+    if not aid:
+        raise PinsError("bad_arg", "unknown agent %r" % ag)
+    return aid
+
+
 def add_pin(cwd, agent="shell", title="", title_source="", resume="continue", autostart=False,
             worktree=None, pin_id=None, env=None):
-    ag = (agent or "shell").strip().lower()
-    if ag not in ALLOWED_AGENTS:
-        raise PinsError("bad_arg", "unknown agent %r" % ag)
+    ag = _norm_agent(agent, env)
     res = (resume or "continue").strip().lower()
     if res not in VALID_RESUME:
         raise PinsError("bad_arg", "resume must be continue or fresh")
@@ -163,10 +179,7 @@ def update_pin(pin_id, title=None, title_source=None, cwd=None, agent=None, resu
             raise PinsError("bad_arg", "cwd must be an absolute path")
         hit["cwd"] = cc
     if agent is not None:
-        ag = str(agent).strip().lower()
-        if ag not in ALLOWED_AGENTS:
-            raise PinsError("bad_arg", "unknown agent %r" % ag)
-        hit["agent"] = ag
+        hit["agent"] = _norm_agent(str(agent), env)
     if resume is not None:
         res = str(resume).strip().lower()
         if res not in VALID_RESUME:
@@ -193,25 +206,13 @@ def remove_pin(pin_id, env=None):
     return {"ok": True, "id": pin_id}
 
 
-def build_agent_argv(agent, resume="continue"):
-    """Build herdr-core argv for launching an agent with safe --continue fallback."""
-    ag = (agent or "shell").strip().lower()
-    if ag == "shell" or ag not in ALLOWED_AGENTS:
-        return ["/bin/bash", "-l"]
-    if resume == "continue" and ag in CONTINUE_AGENTS:
-        # Only fall back to a fresh session if --continue exits non-zero almost immediately (< 4s),
-        # which indicates no prior conversation exists in this directory.
-        script = (
-            "_sb_t0=$(date +%s); "
-            f"SWARMBOX_WORKTREE_GUARD=0 {ag} --continue; _sb_rc=$?; "
-            "if [ \"$_sb_rc\" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt 4 ]; then "
-            f"SWARMBOX_WORKTREE_GUARD=0 {ag}; fi; exec /bin/bash -l"
-        )
-        return ["/bin/bash", "-lic", script]
-    return ["/bin/bash", "-lic", f"SWARMBOX_WORKTREE_GUARD=0 {ag}; exec /bin/bash -l"]
+def build_agent_argv(agent, resume="continue", env=None):
+    """The herdr-core argv of a pin's terminal (the registry's build_argv): with resume=continue an agent that can resume tries to,
+    and starts fresh when that fails at once (no conversation in this folder)."""
+    return swarmbox_agents.build_argv(agent, resume, env)
 
 
-SHELL_NAMES = frozenset({"bash", "sh", "zsh", "dash", "fish", "ash", "ksh", "nu", "nushell", ""})
+SHELL_NAMES = swarmbox_agents.SHELL_NAMES | {""}
 
 
 def _is_shell_only(term):
@@ -340,7 +341,7 @@ def restore_autostart_pins(hc_bin=None, run_dir=None, env=None, on_boot=False):
             n += 1
         used_names.add(name)
 
-        argv = build_agent_argv(ag, pin.get("resume") or "continue")
+        argv = build_agent_argv(ag, pin.get("resume") or "continue", e)
         cmd = [
             hc, "run", "--bg", "--keep", "--no-parent", "--json",
             "--name", name,

@@ -93,11 +93,13 @@ class KeyTest(Base):
         out = self.flags(env={"SWARMBOX_AGENT": "gemini", "SWARMBOX_WITH": "claude,gemini"})
         self.assertEqual(self.agent_of(out), ["SWARMBOX_AGENT=gemini"])
 
-    def test_without_an_agent_setting_the_first_addon_of_with_is_recorded(self):
-        for with_, want in (("claude", "claude"), ("claude,go", "claude"), ("opencode,gemini,claude", "opencode"), ("go,claude", "go")):
+    def test_without_an_agent_setting_no_agent_is_recorded_and_with_goes_as_it_is(self):
+        # the host cannot tell an agent from another addon (WITH=go,claude): the box picks the first agent of WITH from its registry
+        for with_ in ("claude", "go,claude"):
             with self.subTest(with_=with_):
                 out = self.flags(env={"SWARMBOX_WITH": with_})
-                self.assertEqual(self.agent_of(out), ["SWARMBOX_AGENT=" + want])
+                self.assertEqual(self.agent_of(out), [])
+                self.assertIn("SWARMBOX_WITH=" + with_, values(out, "-e"))
 
     def test_the_agent_setting_wins_even_when_it_is_not_in_with(self):
         out = self.flags(env={"SWARMBOX_AGENT": "opencode", "SWARMBOX_WITH": "claude"})

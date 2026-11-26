@@ -53,7 +53,8 @@ class Base(unittest.TestCase):
              "PATH": self.bin + ":/usr/bin:/bin", "SWARMBOX_IMAGE_ADDONS_DIR": self.imgaddons,
              "SWARMBOX_IMAGE_SHIMS_DIR": self.imgshims, "SWARMBOX_VENV": os.path.join(self.tmp, "no-venv"),
              "SWARMBOX_DIRS_SH": os.path.join(ROOT, "container", "scripts", "dirs.sh"),
-             "SWARMBOX_STARSHIP_INIT": os.path.join(self.tmp, "none-starship-init.sh"), "TERM": "dumb"}
+             "SWARMBOX_STARSHIP_INIT": os.path.join(self.tmp, "none-starship-init.sh"), "TERM": "dumb",
+             "SWARMBOX_AGENTS_BIN": os.path.join(ROOT, "container", "scripts", "swarmbox-agents.py")}
         e.update(extra)
         return {k: v for k, v in e.items() if v is not None}
 
@@ -87,6 +88,8 @@ class Base(unittest.TestCase):
         """Two agent addons the way the real ones are: a shell.sh with a function that adds the flags of the agent."""
         self.addon("alpha", shell_sh='alpha() { command alpha --auto-approve-a --mcp-config "$HOME/m.json" "$@"; }\n')
         self.addon("beta", shell_sh='beta() {\n    if [ "${SWARMBOX_YOLO:-1}" = 0 ]; then command beta "$@"; else command beta --yes "$@"; fi\n}\n')
+        for name in ("alpha", "beta"):    # an addon is an agent when it has agent/agent.conf (the registry)
+            write(os.path.join(self.imgaddons, name, "agent", "agent.conf"), "ID=%s\n" % name)
         self.addon("plain")   # an addon without a shell.sh gives the shell nothing
         self.fake_agent("alpha")
         self.fake_agent("beta")
@@ -166,11 +169,11 @@ class Yolo(Base):
         self.assertIn("status=1", r.stdout)
         self.assertNotIn("RAN", r.stdout)
 
-    def test_yolo_with_a_default_agent_that_is_not_a_command_says_so_and_fails(self):
-        # WITH=sysop,voice records SWARMBOX_AGENT=sysop, which is no command: not the bare "command not found" of the shell
+    def test_yolo_with_a_default_agent_that_is_not_an_agent_says_so_and_fails(self):
+        # AGENT=sysop names an addon that is no agent, and no agent is installed: not the bare "command not found" of the shell
         self.two_agents()
         r = self.interactive("yolo; echo status=$?", SWARMBOX_AGENT="sysop")
-        self.assertIn("the default agent 'sysop' is not a command", r.stdout + r.stderr)
+        self.assertIn("the default agent 'sysop' is not an agent of this box", r.stdout + r.stderr)
         self.assertNotIn("command not found", r.stdout + r.stderr)
         self.assertIn("status=127", r.stdout)
 
@@ -179,6 +182,12 @@ class Yolo(Base):
         r = self.interactive("yolo; echo status=$?", SWARMBOX_AGENT="yolo")
         self.assertIn("cannot be 'yolo'", r.stdout + r.stderr)
         self.assertIn("status=1", r.stdout)
+
+    def test_yolo_skips_an_addon_of_with_that_is_not_an_agent(self):
+        # WITH=plain,beta: the first agent of WITH is the default, not its first addon
+        self.two_agents()
+        r = self.interactive("yolo go", SWARMBOX_WITH="plain,beta")
+        self.assertIn("RAN beta --yes go", r.stdout, r.stdout + r.stderr)
 
     def test_yolo_is_a_function(self):
         self.assertIn("yolo is a function", self.interactive("type yolo | head -1").stdout)

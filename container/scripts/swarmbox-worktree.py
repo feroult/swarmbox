@@ -31,6 +31,12 @@ import subprocess
 import sys
 import time
 
+for _d in (os.path.dirname(os.path.realpath(__file__)), "/usr/local/lib/swarmbox"):
+    if os.path.isfile(os.path.join(_d, "swarmbox_agents.py")):
+        sys.path.insert(0, _d)
+        break
+import swarmbox_agents  # noqa: E402  - the agent registry: which programs are agents (docs/agents-design.md)
+
 GIT_TIMEOUT = 20.0
 MAX_ENV_BYTES = 64 * 1024
 SKIP_ENV_NAMES = frozenset({".env.example", ".env.sample", ".env.template", ".env.dist"})
@@ -1081,10 +1087,6 @@ def remove_worktree(target_path, force=False, keep_branch=False, env=None):
     }
 
 
-AGENT_CMDS = frozenset({"claude", "claude-code", "agy", "antigravity", "opencode", "gemini", "codex"})
-SHELL_CMDS = frozenset({"bash", "sh", "zsh", "dash", "fish", "ash", "ksh", "nu", "nushell"})
-
-
 def _tabs_cmd(env=None):
     e = os.environ if env is None else env
     override = (e.get("SWARMBOX_TEST_TABS_BIN") or "").strip()
@@ -1097,26 +1099,10 @@ def _tabs_cmd(env=None):
     return ["swarmbox-tabs"]
 
 
-def _tab_agent_kind(row):
-    """Identify if a swarmbox-tabs list row is running a coding agent."""
-    if not isinstance(row, dict):
-        return ""
-    st = row.get("status")
-    if isinstance(st, dict):
-        app = str(st.get("app") or "").strip().lower()
-        if app in AGENT_CMDS:
-            return "agy" if app == "antigravity" else ("claude" if app == "claude-code" else app)
-    cmd = os.path.basename(str(row.get("cmd") or row.get("command") or "")).lower().lstrip("-")
-    if cmd in AGENT_CMDS:
-        return "agy" if cmd == "antigravity" else ("claude" if cmd == "claude-code" else cmd)
-    # The swarmbox.agent label (a string in `swarmbox-tabs list`) names the agent a tab was launched with. It is sticky, so it
-    # counts only while the foreground is not a plain shell: an agent that runs as `node` or under a version-named binary is
-    # still seen, a tab whose agent has exited is not.
-    lbl = row.get("agent")
-    lbl = lbl.strip().lower() if isinstance(lbl, str) else ""
-    if lbl in AGENT_CMDS and cmd not in SHELL_CMDS:
-        return "agy" if lbl == "antigravity" else ("claude" if lbl == "claude-code" else lbl)
-    return ""
+def _tab_agent_kind(row, env=None):
+    """The agent a swarmbox-tabs list row runs, by the registry's detection order. The swarmbox.agent label (sticky) counts only while
+    the foreground is not a plain shell: an agent that runs as `node` is still seen, a tab whose agent has exited is not."""
+    return swarmbox_agents.detect(row, env)
 
 
 def _expand_tab_dir(raw_dir, env=None):
@@ -1163,7 +1149,7 @@ def find_working_tree_collisions(target_dir, exclude_tab=None, env=None):
         tid = str(row.get("tab") or row.get("id") or "")
         if excl and tid == excl:
             continue
-        ag = _tab_agent_kind(row)
+        ag = _tab_agent_kind(row, e)
         if not ag:
             continue
         tcwd = _expand_tab_dir(row.get("dir") or row.get("cwd") or "", env=e)

@@ -34,6 +34,7 @@ import sys
 import time
 
 from . import ipc
+from .agents import registry
 
 PRESETS = {
     "claude": "claude -p --model {model} --mcp-config {mcp_config} --strict-mcp-config --tools '' --allowedTools 'mcp__sysop__*' "
@@ -51,7 +52,7 @@ KILL_GRACE = 2.0
 LOGIN_FAILURE = re.compile(r"Not logged in|Please run /login|Invalid API key|OAuth token has expired|authentication_error|Credit balance is too low")
 
 SYSTEM_PROMPT = """<role>
-You are Sysop, the operator of a SwarmBox: a persistent sandbox whose workspace is organized into REPOS (each with running coding agents like claude, agy, opencode, codex, gemini, plus any pending git worktrees), SHELLS (plain terminals), and PARKED sessions.
+You are Sysop, the operator of a SwarmBox: a persistent sandbox whose workspace is organized into REPOS (each with running coding agents, the agents of this box: {agents}; plus any pending git worktrees), SHELLS (plain terminals), and PARKED sessions.
 You manage the workspace and route the user's requests to their agents. You are the operator, never the coding assistant: never do an agent's coding or analysis work yourself.
 </role>
 
@@ -128,8 +129,9 @@ def system_prompt(source, max_steps, max_seconds, autonomy="full-auto"):
     # an unknown level gets the most careful words (config.load refuses one anyway)
     anote = AUTONOMY_NOTES.get(autonomy, AUTONOMY_NOTES["confirm-all"])
     # not str.format: the prompt holds literal braces ({Esc}) and the source is data
+    names = ", ".join(registry.ids()) or "none installed"
     return (SYSTEM_PROMPT.replace("{max_steps}", str(max_steps)).replace("{max_seconds}", str(max_seconds))
-            .replace("{autonomy_note}", anote).replace("{source_note}", note))
+            .replace("{autonomy_note}", anote).replace("{source_note}", note).replace("{agents}", names))
 
 
 def parse_template(text):

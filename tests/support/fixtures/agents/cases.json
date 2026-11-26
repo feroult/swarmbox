@@ -23,7 +23,10 @@
     {"term": {"foreground": {"name": "opencode"}}, "want": "opencode", "live": "opencode"},
     {"term": {"foreground": {"name": "node"}, "labels": {"swarmbox.agent": "opencode"}, "argv": ["/bin/bash", "-lic", "opencode"]}, "want": "opencode", "live": ""},
     {"term": {"foreground": {"name": "bash"}, "labels": {"swarmbox.agent": "claude"}, "argv": ["/bin/bash", "-l"]}, "want": "", "live": ""},
-    {"term": {"foreground": {"name": "bash"}, "labels": {"swarmbox.agent": "claude"}}, "want": "claude", "live": ""},
+    {"term": {"foreground": {"name": "bash"}, "labels": {"swarmbox.agent": "claude"}}, "want": "", "live": ""},
+    {"term": {"labels": {"swarmbox.agent": "claude"}}, "want": "", "live": ""},
+    {"term": {"cmd": "bash", "agent": "claude"}, "want": "", "live": ""},
+    {"term": {"foreground": {"name": "bash"}, "labels": {"swarmbox.agent": "antigravity"}, "argv": ["/bin/bash", "-lic", "agy; exec /bin/bash -l"]}, "want": "agy", "live": ""},
     {"term": {"name": "claude-2", "foreground": {"name": "bash"}}, "want": "", "live": ""},
     {"term": {"status": {"app": "vim"}, "foreground": {"name": "vim"}}, "want": "", "live": ""},
     {"term": {"cmd": "agy", "agent": ""}, "want": "agy", "live": "agy"},
@@ -33,8 +36,16 @@
   ],
   "launch": [
     {"id": "claude", "resume": true, "want": "_sb_t0=$(date +%s); SWARMBOX_WORKTREE_GUARD=0 claude --continue; _sb_rc=$?; if [ \"$_sb_rc\" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt 4 ]; then SWARMBOX_WORKTREE_GUARD=0 claude; fi; exec /bin/bash -l"},
-    {"id": "claude", "resume": false, "want": "claude; exec /bin/bash -l"},
-    {"id": "fakebot", "resume": true, "want": "fbot; exec /bin/bash -l"},
+    {"id": "claude", "resume": false, "want": "SWARMBOX_WORKTREE_GUARD=0 claude; exec /bin/bash -l"},
+    {"id": "fakebot", "resume": true, "want": "SWARMBOX_WORKTREE_GUARD=0 fbot; exec /bin/bash -l"},
     {"id": "nope", "resume": true, "want": "exec /bin/bash -l"}
+  ],
+  "argv": [
+    {"agent": "shell", "resume": "continue", "env": {}, "want": ["/bin/bash", "-l"]},
+    {"agent": "gcloud", "resume": "continue", "env": {}, "want": ["/bin/bash", "-l"]},
+    {"agent": "antigravity", "resume": "fresh", "env": {}, "want": ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 agy; exec /bin/bash -l"]},
+    {"agent": "yolo", "resume": "fresh", "env": {"SWARMBOX_AGENT": "claude-code"}, "want": ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 claude; exec /bin/bash -l"]},
+    {"agent": "yolo", "resume": "fresh", "env": {}, "want": ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 yolo; exec /bin/bash -l"]},
+    {"agent": "fakebot", "resume": "continue", "env": {}, "want": ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 fbot; exec /bin/bash -l"]}
   ]
 }

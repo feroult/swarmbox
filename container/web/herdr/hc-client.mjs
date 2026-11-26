@@ -9,6 +9,13 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import {
+  buildAgentArgv as registryBuildAgentArgv,
+  defaultAgent,
+  detectAgent,
+  listAgents,
+  resolveAgent,
+} from './agents.mjs';
 
 const __clientDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,10 +39,8 @@ export const WORKTREE_BIN = process.env.SWARMBOX_TEST_WORKTREE_BIN || '';
 export const PINS_FILE = path.join(SB_CONFIG_DIR, 'pins.json');
 export const SESSION_PREFS_FILE = path.join(SB_CONFIG_DIR, 'session-prefs.json');
 export const WORKTREE_PREFS_FILE = path.join(SB_CONFIG_DIR, 'worktree-prefs.json');
-export const CONTINUE_AGENTS = new Set(['claude', 'agy', 'opencode']);
 
 export const HIDDEN_ROLES = new Set(['sysop']);
-export const ALLOWED_AGENT_CMDS = new Set(['yolo', 'claude', 'agy', 'gemini', 'opencode', 'codex']);
 
 export function isAbs(p) {
   return typeof p === 'string' && p.startsWith('/');
@@ -1129,7 +1134,7 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
   const healthRaw = readTextSafe(path.join(SB_STATE_DIR, 'health'));
   const health = healthRaw ? healthRaw.split('\n').map((s) => s.trim()).filter(Boolean) : [];
   const addons = listAddonsSnapshot();
-  const installedAgents = listInstalledAgents(env, addons);
+  const installedAgents = listInstalledAgents(env);
 
   const box = {
     NAME: envField('SWARMBOX_NAME', 'swarmbox', env),
@@ -1189,27 +1194,16 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
 // ---------------------------------------------------------------------------
 // Persistent Pinned Sessions (pins.json), Worktree Prefs & tab.events Bus
 // ---------------------------------------------------------------------------
-const AGENT_NAME_MAP = {
-  claude: 'claude',
-  'claude-code': 'claude',
-  agy: 'agy',
-  antigravity: 'agy',
-  opencode: 'opencode',
-  gemini: 'gemini',
-  codex: 'codex',
-};
-
 // The agent id of a name: an agent command, or another name of it (the OSC 7501 app it reports, its addon name). '' for anything
-// else, `yolo` included: yolo is the shell function that runs the default agent, not an agent.
+// else, `yolo` included: yolo is the shell function that runs the default agent, not an agent. The registry (agents.mjs) answers.
 export function normalizeAgentName(raw) {
-  const id = AGENT_NAME_MAP[String(raw || '').trim().toLowerCase()] || '';
-  return id && ALLOWED_AGENT_CMDS.has(id) ? id : '';
+  return resolveAgent(raw);
 }
 
-// The default agent of the box: SWARMBOX_AGENT (the host's AGENT, else the first addon of WITH) when it names an agent, else ''.
+// The default agent of the box: AGENT if it names an agent, else the first agent of WITH, else the first installed agent, else ''.
 // The same answer for every place that starts or offers the default agent: New agent, worktree open, the cockpit, the launcher.
 export function resolveDefaultAgent(env = process.env) {
-  return normalizeAgentName(env && env.SWARMBOX_AGENT);
+  return defaultAgent(env);
 }
 
 export function cleanSessionTitle(raw) {
@@ -1235,33 +1229,17 @@ export function terminalCwd(term) {
   return typeof c === 'string' && c.startsWith('/') ? c : HOME;
 }
 
+// The agent a terminal runs, by the registry's one detection order: OSC 7501 app, foreground process, then the swarmbox.agent label
+// while the terminal is not a bare login shell. Never the tab name.
 export function detectTerminalAgent(term) {
-  if (!term || typeof term !== 'object') return '';
-  const app = String((term.status && term.status.app) || '').toLowerCase().trim();
-  if (AGENT_NAME_MAP[app]) return AGENT_NAME_MAP[app];
-  const fg = path.basename(String((term.foreground && term.foreground.name) || '')).toLowerCase();
-  if (AGENT_NAME_MAP[fg]) return AGENT_NAME_MAP[fg];
-  const ag = path.basename(String(term.agent || '')).toLowerCase();
-  if (AGENT_NAME_MAP[ag]) return AGENT_NAME_MAP[ag];
-  const lbl = String((term.labels && term.labels['swarmbox.agent']) || '').toLowerCase().trim();
-  if (AGENT_NAME_MAP[lbl]) return AGENT_NAME_MAP[lbl];
-  const nm = String(term.name || '').toLowerCase();
-  for (const [k, v] of Object.entries(AGENT_NAME_MAP)) {
-    if (nm === k || nm.startsWith(k + '-')) return v;
-  }
-  return '';
+  return detectAgent(term);
 }
 
 // The agent a terminal is running right now, from live signals only (OSC 7501 status or the foreground
-// process). Unlike detectTerminalAgent it ignores labels and the tab name, so a plain shell tab named
-// `claude-2` or still carrying an old `swarmbox.agent` label is not mistaken for a running agent.
+// process). Unlike detectTerminalAgent it ignores labels, so a plain shell tab still carrying an old
+// `swarmbox.agent` label is not mistaken for a running agent.
 export function detectLiveAgent(term) {
-  if (!term || typeof term !== 'object') return '';
-  const app = String((term.status && term.status.app) || '').toLowerCase().trim();
-  if (AGENT_NAME_MAP[app]) return AGENT_NAME_MAP[app];
-  const fg = path.basename(String((term.foreground && term.foreground.name) || '')).toLowerCase();
-  if (AGENT_NAME_MAP[fg]) return AGENT_NAME_MAP[fg];
-  return '';
+  return detectAgent(term, { live: true });
 }
 
 // Folders recently used to launch a tab from the Web Studio, newest first (state, not config).
@@ -1288,18 +1266,9 @@ export function noteRecentDir(dir) {
   } catch (_) {}
 }
 
-export function buildAgentArgv(agent, resume = 'continue') {
-  const ag = String(agent || 'shell').trim().toLowerCase();
-  if (ag === 'shell' || !ALLOWED_AGENT_CMDS.has(ag)) {
-    return ['/bin/bash', '-l'];
-  }
-  if (resume === 'continue' && CONTINUE_AGENTS.has(ag)) {
-    const script =
-      `_sb_t0=$(date +%s); SWARMBOX_WORKTREE_GUARD=0 ${ag} --continue; _sb_rc=$?; ` +
-      `if [ "$_sb_rc" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt 4 ]; then SWARMBOX_WORKTREE_GUARD=0 ${ag}; fi; exec /bin/bash -l`;
-    return ['/bin/bash', '-lic', script];
-  }
-  return ['/bin/bash', '-lic', `SWARMBOX_WORKTREE_GUARD=0 ${ag}; exec /bin/bash -l`];
+// The argv of a terminal that runs `agent` (shell, yolo or an agent): the registry's, the twin of build_argv in swarmbox_agents.py.
+export function buildAgentArgv(agent, resume = 'continue', env = process.env) {
+  return registryBuildAgentArgv(agent, resume, env);
 }
 
 export function readPins() {
@@ -1406,41 +1375,14 @@ export function buildPinsSnapshot(terminals) {
   });
 }
 
-const KNOWN_CODING_AGENTS = [
-  { id: 'claude', name: 'Claude Code' },
-  { id: 'agy', name: 'Antigravity' },
-  { id: 'codex', name: 'OpenAI Codex' },
-  { id: 'opencode', name: 'OpenCode' },
-  { id: 'gemini', name: 'Gemini CLI' },
-];
-
-function isCmdOnPath(cmd, env = process.env) {
-  const dirs = String((env && env.PATH) || '/usr/local/bin:/usr/bin:/bin').split(path.delimiter).filter(Boolean);
-  for (const dir of dirs) {
-    try {
-      fs.accessSync(path.join(dir, cmd), fs.constants.X_OK);
-      return true;
-    } catch (_) {}
-  }
-  return false;
-}
-
-export function listInstalledAgents(env = process.env, addons = null) {
-  const addonList = Array.isArray(addons) ? addons : listAddonsSnapshot();
-  const addonCmds = new Set();
-  for (const a of addonList) {
-    if (!a || !a.installed) continue;
-    addonCmds.add(String(a.name || '').toLowerCase());
-    for (const c of a.commands || []) addonCmds.add(String(c || '').toLowerCase());
-  }
-  const defaultAgent = resolveDefaultAgent(env);
-  const found = [];
-  for (const spec of KNOWN_CODING_AGENTS) {
-    if (isCmdOnPath(spec.id, env) || addonCmds.has(spec.id)) {
-      found.push({ id: spec.id, name: spec.name, default: spec.id === defaultAgent });
-    }
-  }
-  // Put default agent first; if SWARMBOX_AGENT wasn't set, mark the first installed agent as default
+// The agents offered by the Web Studio (launcher, settings): the installed agents and those of WITH (installed at startup), the default
+// agent first and marked; with no default agent, the first one is marked.
+export function listInstalledAgents(env = process.env) {
+  const withIds = new Set(String(env.SWARMBOX_WITH || '').replace(/,/g, ' ').split(/\s+/).filter(Boolean).map((t) => resolveAgent(t, env)));
+  const def = defaultAgent(env);
+  const found = listAgents(env)
+    .filter((a) => a.installed || withIds.has(a.id))
+    .map((a) => ({ id: a.id, name: a.label, default: a.id === def }));
   found.sort((a, b) => (a.default === b.default ? 0 : a.default ? -1 : 1));
   if (found.length > 0 && !found.some((x) => x.default)) found[0].default = true;
   return found;

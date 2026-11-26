@@ -39,7 +39,7 @@ class CockpitTabBadge(unittest.TestCase):
         os.symlink(MODULES[0], os.path.join(tmp, "node_modules"))
         with open(os.path.join(tmp, "harness.mjs"), "w", encoding="utf-8") as f:
             f.write(HARNESS)
-        p = subprocess.run(["node", "harness.mjs"], cwd=tmp, env=dict(os.environ, HOME=tmp), capture_output=True, text=True, timeout=60)
+        p = subprocess.run(["node", "harness.mjs"], cwd=tmp, env=dict(os.environ, HOME=tmp, SWARMBOX_IMAGE_ADDONS_DIR=os.path.join(ROOT, "container", "addons")), capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         got = json.loads(p.stdout.strip().splitlines()[-1])
         self.assertEqual(got, {"claudeCode": "claude", "antigravity": "agy", "byProcess": "opencode", "shell": ""})

@@ -123,24 +123,30 @@ if ! declare -f codex > /dev/null 2>&1 && command -v codex > /dev/null 2>&1; the
     }
 fi
 
-# yolo: run the default agent, $SWARMBOX_AGENT (the host records it when the box is created: the AGENT setting, else the first addon
-# of WITH). The agent's own function (its shell.sh) starts it in auto-approve mode; yolo asks for that mode even when SWARMBOX_YOLO=0.
+# yolo: run the default agent of the box, the one the agent registry names (swarmbox-agents default: AGENT if it names an agent, else
+# the first agent of WITH, else the first installed agent). The agent's own function starts it in auto-approve mode; yolo asks for that
+# mode even when SWARMBOX_YOLO=0. SWARMBOX_AGENTS_BIN (tests) replaces the registry command.
 yolo() {
-    if [ -z "${SWARMBOX_AGENT:-}" ]; then
-        echo "yolo: this box has no default agent. Set one on the host (swarmbox config set AGENT claude, then swarmbox reset) or create the box with --with claude." >&2
-        return 1
-    fi
-    # yolo is not an agent: it would call itself until the shell dies.
-    if [ "$SWARMBOX_AGENT" = yolo ]; then
+    local _sb_agent="" _sb_reg=${SWARMBOX_AGENTS_BIN:-swarmbox-agents}
+    if [ "${SWARMBOX_AGENT:-}" = yolo ]; then
         echo "yolo: the default agent cannot be 'yolo'. Set an agent on the host (swarmbox config set AGENT claude, then swarmbox reset)." >&2
         return 1
     fi
-    # The addon antigravity provides the command agy: the default agent may be named by either.
-    local _sb_agent=$SWARMBOX_AGENT
-    [ "$_sb_agent" != antigravity ] || _sb_agent=agy
-    # The first item of WITH is the default when AGENT is not set, and it may be an addon that is not an agent (sysop, voice): say so.
+    if command -v "$_sb_reg" > /dev/null 2>&1; then
+        _sb_agent=$("$_sb_reg" default --cmd 2>/dev/null)
+    else
+        _sb_agent=${SWARMBOX_AGENT:-}    # no registry (an old image): the setting as it is
+    fi
+    if [ -z "$_sb_agent" ]; then
+        if [ -n "${SWARMBOX_AGENT:-}" ]; then
+            echo "yolo: the default agent '$SWARMBOX_AGENT' is not an agent of this box, and no other agent is installed. Set the agent on the host (swarmbox config set AGENT claude, then swarmbox reset)." >&2
+            return 127
+        fi
+        echo "yolo: this box has no default agent. Set one on the host (swarmbox config set AGENT claude, then swarmbox reset) or create the box with --with claude." >&2
+        return 1
+    fi
     if ! command -v "$_sb_agent" > /dev/null 2>&1; then
-        echo "yolo: the default agent '$SWARMBOX_AGENT' is not a command in this box. Set the agent on the host (swarmbox config set AGENT claude, then swarmbox reset)." >&2
+        echo "yolo: the default agent '$_sb_agent' is not a command in this box. Set the agent on the host (swarmbox config set AGENT claude, then swarmbox reset)." >&2
         return 127
     fi
     SWARMBOX_YOLO=1 "$_sb_agent" "$@"

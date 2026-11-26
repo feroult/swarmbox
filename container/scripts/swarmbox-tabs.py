@@ -11,7 +11,7 @@ a command line and, at the same time, the library the addons can import by path.
                                                          multi-line text: one trailing newline is dropped). --queue types although the agent in
                                                          the tab is busy; --slash allows a first character "/" or "!" for an agent.
   swarmbox-tabs open [--name NAME] [--cwd DIR] [--agent AGENT]
-                                                         open a tab: a login shell, or an agent of ALLOWED_OPEN_AGENTS; it becomes the active tab
+                                                         open a tab: a login shell, or an agent (or yolo: the default one); it becomes the active tab
   swarmbox-tabs focus TAB                                make TAB the active tab
   swarmbox-tabs close TAB                                end the program of TAB and remove the tab
 
@@ -73,6 +73,12 @@ import sys
 import time
 from collections import namedtuple
 
+for _d in (os.path.dirname(os.path.realpath(__file__)), "/usr/local/lib/swarmbox"):
+    if os.path.isfile(os.path.join(_d, "swarmbox_agents.py")):
+        sys.path.insert(0, _d)
+        break
+import swarmbox_agents  # noqa: E402  - the agent registry: which programs are agents (docs/agents-design.md)
+
 HIDDEN_HERDR_ROLES = ("sysop",)                   # herdr-core labels["swarmbox.role"] values hidden from normal tab lists
 PAUSE = 0.15
 MAX_STEPS = 100          # steps (texts and keys) of one send: each key costs PAUSE plus an hc process (about 0.15 s)
@@ -83,7 +89,6 @@ CHUNK = 1024             # bytes of one DATA frame of `hc connect` when text is 
 TIMEOUT = 5.0            # seconds of one hc call
 MAX_LINE = 1000          # characters of one line of a screen, cut after the secrets filter (see _render)
 VERIFY_TIMEOUT = 5.0     # seconds to see the text leave the input box after an Enter
-AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex", "agy")
 REDACTED = "[REDACTED]"
 
 Tab = namedtuple("Tab", "id index name cwd command pane panes active label")
@@ -502,7 +507,7 @@ def agent_state(rows, command=""):
     box = input_box(rows) is not None
     footer = used[-4:]
     dialog = _has_rule(rows) and (any(_DIALOG_FOOTER.search(x) for x in footer) or (not box and any(_DIALOG_BODY.search(x) for x in used[-12:])))
-    agent = box or dialog or os.path.basename(command) in AGENT_COMMANDS
+    agent = box or dialog or swarmbox_agents.is_agent(command)
     if not agent:
         return False, "unknown"
     if dialog:
@@ -583,16 +588,6 @@ class TabsBackend:
     def close_tab(self, tab):
         """Close `tab` and end its program."""
         raise TabsError("unsupported", "backend %s cannot close tabs" % self.name)
-
-
-ALLOWED_OPEN_AGENTS = {
-    "shell": None,
-    "claude": ["claude"],
-    "agy": ["agy"],
-    "opencode": ["opencode"],
-    "codex": ["codex"],
-    "gemini": ["gemini"],
-}
 
 
 _HC_KEYS = {
@@ -938,12 +933,11 @@ class HerdrBackend(TabsBackend):
             for k, v in sorted(labels.items()):
                 if k and v is not None and str(v) != "":
                     args += ["--label", "%s=%s" % (k, v)]
-        cmd = ALLOWED_OPEN_AGENTS.get(agent or "shell")
-        if cmd:
+        if agent and agent != "shell":
             # An interactive shell (-i), as the Web Studio and the pins start an agent: `exec` and a non-interactive shell would run the
             # program itself and skip the agent's shell function (auto-approve, the box MCP servers). The worktree guard is off, as there:
             # the caller chose the folder. When the agent exits, a login shell takes its place.
-            args += ["--", "/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 %s; exec /bin/bash -l" % " ".join(cmd)]
+            args += ["--"] + swarmbox_agents.build_argv(agent, "fresh")
         else:
             args += ["--", "bash", "-l"]
         res = self.hc(*args)
@@ -1089,8 +1083,14 @@ class Tabs:
 
     def open_tab(self, name=None, cwd=None, agent=None, worktree=False, title=None, pin_id=None):
         ag = (agent or "shell").strip().lower()
-        if ag not in ALLOWED_OPEN_AGENTS:
-            raise usage_error("unknown agent %r (known: %s)" % (ag, ", ".join(sorted(ALLOWED_OPEN_AGENTS))))
+        if ag == "yolo":
+            ag = swarmbox_agents.default_agent() or ag
+        if ag != "shell":
+            known = ["shell"] + swarmbox_agents.ids()   # a declared agent that is not installed yet installs on first use (its shim)
+            aid = swarmbox_agents.resolve(ag)
+            if not aid or aid not in known:
+                raise usage_error("unknown agent %r (known: %s)" % (ag, ", ".join(known)))
+            ag = aid
         clean_name = None
         if name:
             # the rule of `hc run --name` (1-32 of a-z 0-9 - _)

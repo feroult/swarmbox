@@ -34,6 +34,7 @@ import time
 
 from . import audit as auditmod
 from . import autoname, ipc, paths, policy, tabsclient
+from .agents import registry
 
 SUPPORTED = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
 SERVER_NAME = "sysop"
@@ -225,7 +226,7 @@ class Server:
             "tab": (self.t_tab, "Manage terminal tabs and parked sessions: action is open, focus, rename, close, or wake.",
                     {"action": ("string!", "open | focus | rename | close | wake"),
                      "tab": ("string", "for focus/rename/close: tab id, label, index, or unique name"),
-                     "agent": ("string", "for open: shell (default), claude, agy, opencode, codex, or gemini"),
+                     "agent": ("string", "for open: shell (default), yolo (the default agent) or an agent of the box: %s" % (", ".join(registry.ids()) or "none")),
                      "repo": ("string", "for open: repo name from box_state (resolved to its path)"),
                      "cwd": ("string", "for open: working directory path"),
                      "name": ("string", "for open: optional short tab name"),

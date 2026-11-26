@@ -14,7 +14,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 export const SCHEMA = 1;
 export const PSEUDO_AGENTS = new Set(['shell', 'yolo']);
-export const SHELL_NAMES = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', 'ash', 'busybox', '-bash', '-sh', '-zsh', '-dash', 'login']);
+// The names of a plain shell process (the foreground of a tab that runs no program): one list for every reader.
+export const SHELL_NAMES = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', 'ash', 'ksh', 'nu', 'nushell', 'busybox', 'login',
+  '-bash', '-sh', '-zsh', '-dash', '-fish', '-ksh']);
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
 const KEY_RE = /^[A-Z][A-Z0-9_]*$/;
@@ -265,7 +267,7 @@ export function detectAgent(term, { live = false } = {}, env = process.env) {
   if (b || live) return b;
   const lbl = term.labels && typeof term.labels === 'object' ? term.labels['swarmbox.agent'] : term.agent;
   if (typeof lbl === 'string' && resolveAgent(lbl, env)) {
-    if (!('argv' in term) || !bareShell(term.argv, fg)) return resolveAgent(lbl, env);
+    if (!bareShell(term.argv, fg)) return resolveAgent(lbl, env);
   }
   return '';
 }
@@ -289,7 +291,21 @@ export function launchScript(id, { resume = true } = {}, env = process.env) {
     return `_sb_t0=$(date +%s); SWARMBOX_WORKTREE_GUARD=0 ${cmd} ${rargs}; _sb_rc=$?; ` +
       `if [ "$_sb_rc" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt ${a.resume.fast_fail_s} ]; then SWARMBOX_WORKTREE_GUARD=0 ${cmd}; fi; exec /bin/bash -l`;
   }
-  return `${cmd}; exec /bin/bash -l`;
+  return `SWARMBOX_WORKTREE_GUARD=0 ${cmd}; exec /bin/bash -l`;
+}
+
+// buildAgentArgv(agent, resume) -> the argv of a terminal that runs `agent` (same rules as build_argv in Python).
+export function buildAgentArgv(agent, resume = 'continue', env = process.env) {
+  const name = String(agent || 'shell').trim().toLowerCase();
+  let id;
+  if (name === 'yolo') {
+    id = defaultAgent(env);
+    if (!id) return ['/bin/bash', '-lic', 'SWARMBOX_WORKTREE_GUARD=0 yolo; exec /bin/bash -l'];
+  } else {
+    id = resolveAgent(name, env);
+  }
+  if (!id) return ['/bin/bash', '-l'];
+  return ['/bin/bash', '-lic', launchScript(id, { resume: resume === 'continue' }, env)];
 }
 
 // publicAgent(a): an agent as the browser sees it (no file system paths).

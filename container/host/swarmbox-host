@@ -1408,10 +1408,9 @@ PEOF
     emit "SWARMBOX_YOLO=$C_YOLO"
     if [ "${SWARMBOX_TEST_NO_NESTED:-}" = 1 ]; then emit -e; emit SWARMBOX_TEST_NO_NESTED=1; fi
     if [ -n "$C_WITH" ]; then emit -e; emit "SWARMBOX_WITH=$C_WITH"; fi
-    # the default agent that `yolo` runs: AGENT, else the first addon of WITH (recorded here, when the box is created)
-    _agent=$C_AGENT
-    [ -n "$_agent" ] || _agent=${C_WITH%%,*}
-    if [ -n "$_agent" ]; then emit -e; emit "SWARMBOX_AGENT=$_agent"; fi
+    # the default agent: AGENT as it is. The box resolves it against its agent registry (AGENT if it names an agent, else the first
+    # agent of WITH, else the first installed agent): the host cannot tell which addons are agents.
+    if [ -n "$C_AGENT" ]; then emit -e; emit "SWARMBOX_AGENT=$C_AGENT"; fi
     if [ -n "$C_BROWSER_URL" ]; then emit -e; emit "SWARMBOX_BROWSER_URL=$C_BROWSER_URL"; fi
     for _key in $ADDON_KEYS; do
         env_of "$_key"

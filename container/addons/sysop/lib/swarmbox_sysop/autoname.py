@@ -24,6 +24,7 @@ import threading
 import time
 
 from . import busclient, tabsclient, usermsgs
+from .agents import registry
 
 TOPIC = "tab.events"
 MAX_TITLE_CHARS = 18                       # what the sidebar shows without cutting
@@ -33,8 +34,16 @@ SUBMIT_GRACE = 3.0                         # after the user sends a request: sti
 MIN_SCREEN_CHARS = 40
 SCREEN_CHARS = 1500
 MAX_SYSTEM_EVENTS = 200
-GENERIC_TITLES = frozenset({"shell", "bash", "zsh", "terminal", "tab", "claude", "agy", "opencode", "gemini", "codex", "keep", "none", "untitled"})
-AGENT_ALIASES = {"claude-code": "claude", "antigravity": "agy"}
+_GENERIC_WORDS = frozenset({"shell", "bash", "zsh", "terminal", "tab", "keep", "none", "untitled"})
+
+
+def generic_titles():
+    """Titles that name no goal: the generic words and every name of an agent of the registry (`claude`, `antigravity`...)."""
+    names = set(_GENERIC_WORDS)
+    for a in registry.agents():
+        names.add(a["id"])
+        names.update(a["aliases"])
+    return names
 _WT_SLUG_RE = re.compile(r"^sb-wt-[a-z0-9]{3,12}$", re.I)
 
 
@@ -43,7 +52,7 @@ def _is_placeholder_title(title, cwd=""):
     if not s:
         return True
     low = s.lower()
-    if low in GENERIC_TITLES or _WT_SLUG_RE.match(s):
+    if low in generic_titles() or _WT_SLUG_RE.match(s):
         return True
     base = os.path.basename(str(cwd or "").rstrip("/"))
     if base and low == base.lower():
@@ -159,7 +168,7 @@ def clean_suggested_title(raw, limit=MAX_TITLE_CHARS):
             words.pop(0)
         first = " ".join(words)
     first = fit_title(first, limit).strip(" .,:;!?-")
-    if len(first) < 2 or first.lower() in GENERIC_TITLES:
+    if len(first) < 2 or first.lower() in generic_titles():
         return ""
     return first
 
@@ -205,7 +214,7 @@ def default_namer(cwd, agent, title, screen_text, requests=None, model="haiku", 
 
 def _agent_kind(name):
     base = os.path.basename(str(name or "").strip().split(" ")[0]).lower()
-    return AGENT_ALIASES.get(base, base)
+    return registry.resolve(base) or base
 
 
 class AutoNamer:

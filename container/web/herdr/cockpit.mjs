@@ -10,6 +10,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SHELL_NAMES } from './agents.mjs';
 import xtermHeadless from '@xterm/headless';
 import {
   DEFAULT_THEME,
@@ -22,6 +23,8 @@ import {
   readActiveTab,
   readSavedTheme,
   readSysopSnapshot,
+  buildAgentArgv,
+  detectLiveAgent,
   resolveDefaultAgent,
   runCommand,
   saveTheme,
@@ -244,17 +247,6 @@ function wrapText(text, width, maxLines = 4) {
   return lines.slice(0, maxLines);
 }
 
-const AGENT_APP_LABELS = {
-  antigravity: 'agy',
-  agy: 'agy',
-  claude: 'claude',
-  'claude-code': 'claude', // the OSC 7501 app that Claude Code reports
-  codex: 'codex',
-  opencode: 'opencode',
-  gemini: 'gemini',
-};
-const SHELL_NAMES = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
-
 function cleanStatusText(raw) {
   return String(raw || '')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
@@ -267,10 +259,9 @@ export function smartTabParts(t) {
   if (!t) return { title: 'no tab', pill: '' };
   const rawName = String(t.name || '').trim();
   const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);
-  const app = String((t.status && t.status.app) || '').toLowerCase();
   const fg = String((t.foreground && t.foreground.name) || '').trim();
   const fgLow = fg.toLowerCase();
-  const badge = AGENT_APP_LABELS[app] || AGENT_APP_LABELS[fgLow] || '';
+  const badge = detectLiveAgent(t);
   const pill = badge && (isGenericShell || !rawName.toLowerCase().includes(badge)) ? badge : '';
 
   if (!isGenericShell) return { title: rawName, pill };
@@ -619,7 +610,7 @@ export class Cockpit {
     let prefix = 'shell';
     if (preset === 'agent') {
       const cmd = resolveDefaultAgent() || 'yolo';
-      argv = ['/bin/bash', '-lic', `${cmd}; exec /bin/bash -l`];
+      argv = buildAgentArgv(cmd, 'fresh');
       prefix = cmd === 'yolo' ? 'agent' : cmd;
     }
     try {

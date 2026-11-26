@@ -155,6 +155,7 @@ class ThroughTheFragment(Base):
                "SWARMBOX_IMAGE_ADDONS_DIR": REAL_ADDONS, "SWARMBOX_IMAGE_SHIMS_DIR": os.path.join(d, "shims"),
                "SWARMBOX_VENV": os.path.join(d, "no-venv"), "SWARMBOX_DIRS_SH": os.path.join(LIB, "dirs.sh"),
                "SWARMBOX_STARSHIP_INIT": os.path.join(d, "none"),
+               "SWARMBOX_AGENTS_BIN": os.path.join(LIB, "swarmbox-agents.py"),
                "TERM": "dumb"}
         env.update(extra)
         os.makedirs(os.path.join(d, "s", "swarmbox"), exist_ok=True)

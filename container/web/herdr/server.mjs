@@ -17,7 +17,6 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import {
   ADDON_BIN,
-  ALLOWED_AGENT_CMDS,
   HC_BIN,
   HERDR_THEMES,
   HOME,
@@ -568,8 +567,8 @@ function isInteractiveTuiTerminal(term) {
   if (detectTerminalAgent(term)) return true;
   const fg = String((term.foreground && term.foreground.name) || '').toLowerCase().trim();
   if (fg && !PLAIN_SHELLS.has(fg)) return true;
-  const name = String(term.name || '').toLowerCase();
-  if (/^(?:claude|agy|antigravity|opencode|gemini|codex)\b/.test(name)) return true;
+  const word = /^[a-z0-9_]+/.exec(String(term.name || '').toLowerCase());
+  if (word && normalizeAgentName(word[0])) return true;
   return false;
 }
 
@@ -749,7 +748,7 @@ export function createGateway(options = {}) {
       if (lbls['swarmbox.worktree']) continue;
       const lblAgent = String(lbls['swarmbox.agent'] || '').toLowerCase().trim();
       const detected = detectTerminalAgent(t);
-      const hasAgent = Boolean(detected) || (lblAgent && lblAgent !== 'shell' && ALLOWED_AGENT_CMDS.has(lblAgent));
+      const hasAgent = Boolean(detected) || Boolean(normalizeAgentName(lblAgent));
       if (!hasAgent) continue;
 
       const cwd = terminalCwd(t);
@@ -1812,7 +1811,8 @@ export function createGateway(options = {}) {
           return sendJson(res, 201, { ok: true, pin: rec, pins: buildPinsSnapshot(hc.listSnapshot()) });
         }
         const cwd = typeof body.cwd === 'string' && body.cwd.startsWith('/') ? body.cwd : HOME;
-        const agent = normalizeAgentName(body.agent) || (ALLOWED_AGENT_CMDS.has(body.agent) ? body.agent : 'shell');
+        // an agent is stored by its id; yolo as the default agent it runs (a pin keeps its agent), or as yolo when the box has none
+        const agent = normalizeAgentName(body.agent) || (body.agent === 'yolo' ? resolveDefaultAgent() || 'yolo' : 'shell');
         const title = cleanSessionTitle(body.title) || defaultTitleForPath(cwd, agent);
         const rec = {
           id: makePinId(pins),
@@ -2353,7 +2353,7 @@ export function createGateway(options = {}) {
         const st = await runWt(['status', wtPath]).catch(() => null);
         // The agent asked for, else the default agent of the box, else a shell: never an agent the box may not have.
         const reqAgent = String(body.agent || '').trim().toLowerCase();
-        const cmd = normalizeAgentName(reqAgent) || (reqAgent === 'yolo' ? 'yolo' : '') || resolveDefaultAgent() || 'shell';
+        const cmd = normalizeAgentName(reqAgent) || resolveDefaultAgent() || (reqAgent === 'yolo' ? 'yolo' : '') || 'shell';
         const argv = buildAgentArgv(cmd, 'continue');
         const labels = {
           'swarmbox.agent': cmd,

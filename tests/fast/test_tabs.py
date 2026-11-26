@@ -838,8 +838,10 @@ class TestCommand(Base):
             self.assertEqual((rc, out["err"]), (2, "bad_body"), data)
 
     def test_open_focus_close(self):
-        rc, out, _ = self.ft.cli("open", "--name", "api", "--agent", "codex", "--cwd", self.ft.dir)
-        self.assertEqual((rc, out), (0, {"ok": True, "tab": "t3", "name": "api", "agent": "codex"}))
+        rc, out, _ = self.ft.cli("open", "--name", "api", "--agent", "antigravity", "--cwd", self.ft.dir)
+        self.assertEqual((rc, out), (0, {"ok": True, "tab": "t3", "name": "api", "agent": "agy"}))
+        rc, out, _ = self.ft.cli("open", "--agent", "codex")      # no addon declares it: a program, not an agent
+        self.assertEqual((rc, out["err"]), (2, "usage"))
         self.assertEqual(self.ft.cli("active")[1]["tab"], "t3")
         rc, out, _ = self.ft.cli("focus", "sh")
         self.assertEqual((rc, out["tab"]), (0, "t1"))

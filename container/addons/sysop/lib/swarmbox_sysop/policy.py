@@ -5,7 +5,7 @@ risk, pick the autonomy or skip the countdown. (Under `full-auto`, the default, 
 but nothing waits for the user.)
 
 THE RISK of an action (assess_run / assess_input), low, medium or high, plus `block`:
-  * the target tab runs an AGENT (claude, gemini, opencode, codex, agy, aider), a SHELL (bash, zsh, ...) or something ELSE (python, vim, ssh,
+  * the target tab runs an AGENT (an addon with agent/, see agents.py), a SHELL (bash, zsh, ...) or something ELSE (python, vim, ssh,
     a program that is running a command, node...). A tab that is not a shell or an agent is rated at least medium: what is typed there is
     code of a program the policy cannot read.
   * agent: the text is a prompt, low. A text whose first character is `/` or `!` (a slash command, a shell escape) is BLOCKED (no approval path:
@@ -43,8 +43,7 @@ import time
 import unicodedata
 
 from . import risk
-
-AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex", "agy", "aider")
+from .agents import registry
 SHELLS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "ash")
 MAX_TEXT = 4000
 LEVELS = risk.LEVELS
@@ -125,7 +124,7 @@ def parse_input(text):
 
 def tab_kind(cmd):
     base = os.path.basename(str(cmd or "").strip()).lstrip("-").lower()
-    if base in AGENT_COMMANDS:
+    if registry.is_agent(base):
         return "agent"
     if base in SHELLS:
         return "shell"

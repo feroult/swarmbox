@@ -35,6 +35,7 @@ for (const [name] of job.vec.resolve) out.resolve.push(A.resolveAgent(name, base
 for (const c of job.vec.default) out.default.push(A.defaultAgent({ ...job.homes[out.default.length], ...c.env }));
 for (const c of job.vec.detect) out.detect.push([A.detectAgent(c.term, {}, base), A.detectAgent(c.term, { live: true }, base)]);
 for (const c of job.vec.launch) out.launch.push(A.launchScript(c.id, { resume: c.resume }, base));
+out.argv = job.vec.argv.map((c) => A.buildAgentArgv(c.agent, c.resume, { ...base, ...c.env }));
 out.ids = A.listAgents(base).map((a) => a.id);
 out.parse = A.parseConf(job.conf_text);
 process.stdout.write(JSON.stringify(out));
@@ -82,6 +83,7 @@ class RegistryVectors(unittest.TestCase):
                "default": [A.default_agent(dict(self.homes[i], **c["env"])) for i, c in enumerate(VEC["default"])],
                "detect": [[A.detect(c["term"], self.env), A.detect(c["term"], self.env, live=True)] for c in VEC["detect"]],
                "launch": [A.launch_script(c["id"], c["resume"], self.env) for c in VEC["launch"]],
+               "argv": [A.build_argv(c["agent"], c["resume"], dict(self.env, **c["env"])) for c in VEC["argv"]],
                "ids": A.ids(self.env)}
         vals, probs = A.parse_conf(TRICKY_CONF)
         out["parse"] = {"values": vals, "problems": probs}
@@ -97,6 +99,8 @@ class RegistryVectors(unittest.TestCase):
             self.assertEqual(gl, c["live"], "%s live detect %r" % (who, c["term"]))
         for c, g in zip(VEC["launch"], got["launch"]):
             self.assertEqual(g, c["want"], "%s launch %r" % (who, c))
+        for c, g in zip(VEC["argv"], got["argv"]):
+            self.assertEqual(g, c["want"], "%s argv %r" % (who, c))
         self.assertEqual(got["ids"], ["agy", "claude", "fakebot", "opencode"], who)
 
     def test_python_library_meets_the_vectors(self):

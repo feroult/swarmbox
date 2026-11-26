@@ -2,6 +2,7 @@
 image addons, lock): install, where, prepare, the detached service, idempotence, the refresh of the library. No network, no model, no herdr-core.
 Run with: python3 -W error tests/fast/test_sysop_addon.py
 """
+import ast
 import os
 import re
 import shutil
@@ -62,8 +63,13 @@ class Manifest(unittest.TestCase):
         for name in os.listdir(os.path.join(ss.LIB, "swarmbox_sysop")):
             if name.endswith(".py"):
                 for m in re.finditer(r"(?m)^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_]*)", rd(os.path.join(ss.LIB, "swarmbox_sysop", name))):
-                    if m.group(1) not in std and m.group(1) != "swarmbox_sysop":
+                    # swarmbox_agents: the box's own agent registry (container/scripts), itself stdlib only (checked below)
+                    if m.group(1) not in std and m.group(1) not in ("swarmbox_sysop", "swarmbox_agents"):
                         bad.append((name, m.group(1)))
+        reg = ast.parse(rd(os.path.join(ROOT, "container", "scripts", "swarmbox_agents.py")))
+        for node in ast.walk(reg):
+            names = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module or ""] if isinstance(node, ast.ImportFrom) else []
+            bad += [("swarmbox_agents.py", n) for n in names if n.split(".")[0] not in std]
         self.assertEqual(bad, [])
 
 

@@ -17,10 +17,13 @@ import shutil
 import subprocess
 import sys
 
+for _d in (os.path.dirname(os.path.realpath(__file__)), "/usr/local/lib/swarmbox"):
+    if os.path.isfile(os.path.join(_d, "swarmbox_agents.py")):
+        sys.path.insert(0, _d)
+        break
+import swarmbox_agents  # noqa: E402  - the agent registry: which programs are agents (docs/agents-design.md)
+
 SCHEMA = 1
-AGENT_COMMANDS = ("claude", "agy", "opencode", "codex", "gemini", "aider")
-# Other names of an agent: what it reports as its OSC 7501 `app` (Claude Code says claude-code) and the addon name of agy.
-AGENT_ALIASES = {"claude-code": "claude", "antigravity": "agy"}
 SHELL_COMMANDS = ("bash", "sh", "zsh", "dash", "fish", "ksh", "ash", "-bash", "-sh", "-zsh")
 SKIP_SCAN_DIRS = frozenset({"node_modules", ".git", "venv", ".venv", "dist", "build", "target", "__pycache__"})
 _GENERIC_SHELL = re.compile(r"shell(?:-\d+)?", re.I)
@@ -169,39 +172,18 @@ def display_name(t, home=""):
     return raw or "shell"
 
 
-def detect_agent(t):
-    """Return canonical agent name (claude, agy, opencode, codex, gemini, aider) or '' for a shell."""
-    st = t.get("status")
-    app = str(st.get("app") or "") if isinstance(st, dict) else ""
-    for raw in (t.get("agent"), os.path.basename(str(t.get("cmd") or "").strip()).lstrip("-"), app):
-        name = str(raw or "").strip().lower()
-        name = AGENT_ALIASES.get(name, name)
-        if name in AGENT_COMMANDS:
-            return name
-    return ""
+def detect_agent(t, env=None):
+    """The agent id a tab row runs (the registry's detection order: OSC 7501 app, command, `swarmbox.agent` label), or '' for a shell."""
+    return swarmbox_agents.detect(t, env)
 
 
-def _installed_agents(env, data_dir):
-    found = set()
+def _installed_agents(env, data_dir=None):
+    """The agents of the box: the installed ones and those of WITH (installed in the background at startup)."""
+    found = set(swarmbox_agents.ids(env, installed_only=True))
     for tok in (env.get("SWARMBOX_WITH") or "").replace(",", " ").split():
-        if tok == "antigravity":
-            found.add("agy")
-        elif tok in AGENT_COMMANDS:
-            found.add(tok)
-    adir = os.path.join(data_dir, "addons")
-    try:
-        for entry in os.listdir(adir):
-            if os.path.isdir(os.path.join(adir, entry)):
-                if entry == "antigravity":
-                    found.add("agy")
-                elif entry in AGENT_COMMANDS:
-                    found.add(entry)
-    except OSError:
-        pass
-    path_env = env.get("PATH") or ""
-    for ag in ("claude", "agy", "opencode", "codex", "gemini"):
-        if shutil.which(ag, path=path_env):
-            found.add(ag)
+        a = swarmbox_agents.resolve(tok, env)
+        if a:
+            found.add(a)
     return sorted(found)
 
 
@@ -304,7 +286,7 @@ def build_workspace(env=None, tabs_list=None, pins_list=None, worktrees_list=Non
         if tab_dir_real:
             live_wt_paths.add(tab_dir_real)
 
-        ag = detect_agent(t)
+        ag = detect_agent(t, e)
         name = display_name(t, home)
         if not ag:
             shells.append({

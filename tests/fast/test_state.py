@@ -141,7 +141,9 @@ class DetectAgent(unittest.TestCase):
         # Claude Code reports `claude-code` as its OSC 7501 app; the addon of agy is named antigravity.
         self.assertEqual(sb_state.detect_agent({"cmd": "2.1.332", "status": {"app": "claude-code"}}), "claude")
         self.assertEqual(sb_state.detect_agent({"cmd": "node", "status": {"app": "antigravity"}}), "agy")
-        self.assertEqual(sb_state.detect_agent({"cmd": "bash", "agent": "antigravity"}), "agy")
+        self.assertEqual(sb_state.detect_agent({"cmd": "node", "agent": "antigravity"}), "agy")
+        # the sticky label of a tab whose agent exited (back at its shell) names no running agent: one rule with the worktree check
+        self.assertEqual(sb_state.detect_agent({"cmd": "bash", "agent": "antigravity"}), "")
         self.assertEqual(sb_state.detect_agent({"cmd": "opencode"}), "opencode")
         self.assertEqual(sb_state.detect_agent({"cmd": "bash"}), "")
 

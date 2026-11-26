@@ -1003,6 +1003,7 @@ class PtyViewportOwnershipTest(unittest.TestCase):
         shutil.copyfile(HERDR_SERVER, os.path.join(web_dir, "server.mjs"))
         shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "hc-client.mjs"), os.path.join(web_dir, "hc-client.mjs"))
         shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "file-preview.mjs"), os.path.join(web_dir, "file-preview.mjs"))
+        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "agents.mjs"), os.path.join(web_dir, "agents.mjs"))
         with open(os.path.join(ws_dir, "package.json"), "w", encoding="utf-8") as f:
             json.dump({"name": "ws", "type": "module", "main": "index.js"}, f)
         with open(os.path.join(ws_dir, "index.js"), "w", encoding="utf-8") as f:
@@ -1154,6 +1155,7 @@ class PtyViewportOwnershipTest(unittest.TestCase):
             )
         env = {
             "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "SWARMBOX_IMAGE_ADDONS_DIR": os.path.join(ROOT, "container", "addons"),   # the staged agents.mjs is not next to them
             "HOME": self.tmp,
             "SB_RUN_DIR": os.path.join(self.tmp, "run"),
         }
@@ -1176,6 +1178,7 @@ class WorktreeOrchestratorApiTest(unittest.TestCase):
         shutil.copyfile(HERDR_SERVER, os.path.join(web_dir, "server.mjs"))
         shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "hc-client.mjs"), os.path.join(web_dir, "hc-client.mjs"))
         shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "file-preview.mjs"), os.path.join(web_dir, "file-preview.mjs"))
+        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "agents.mjs"), os.path.join(web_dir, "agents.mjs"))
         with open(os.path.join(ws_dir, "package.json"), "w", encoding="utf-8") as f:
             json.dump({"name": "ws", "type": "module", "main": "index.js"}, f)
         with open(os.path.join(ws_dir, "index.js"), "w", encoding="utf-8") as f:
@@ -1508,6 +1511,7 @@ console.log('WORKTREE_ORCHESTRATOR_API_OK');
 """)
         env = {
             "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "SWARMBOX_IMAGE_ADDONS_DIR": os.path.join(ROOT, "container", "addons"),   # the staged agents.mjs is not next to them
             "HOME": self.tmp,
             "SB_RUN_DIR": os.path.join(self.tmp, "run"),
         }

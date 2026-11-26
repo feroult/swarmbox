@@ -13,6 +13,8 @@ import re
 import shlex
 import unicodedata
 
+from .agents import registry
+
 LEVELS = ("low", "medium", "high")
 SHELLS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "ash", "busybox")
 _MAX_DEPTH = 4
@@ -48,18 +50,44 @@ _SELF = re.compile(r"(?i)decision\.json|pending_action|events\.jsonl|stop\.reque
                    r"(?<![\w-])herdr(?:-core)?(?![\w-])|(?<![\w-])hc\s+(?:send|keys|kill|run|interrupt|connect|server|rm|attach|read|exec|file)\b|"
                    r"swarmbox[-_ ]?tabs|SB_TABS_|swarmbox[-_]bus|swarmbox\s+bus\b|\bbus\s+(pub|sub|serve|stop|tabs|screen)\b|bus\.sock")
 # files that hold secrets: reading them is at least medium (a screen is redacted by patterns only)
-_SECRET = re.compile(r"(?i)(^|[/=~])\.(ssh|gnupg|aws|docker|kube)(/|$)|(^|/)id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx)$|(^|/)\.(env|netrc|pgpass|npmrc|git-credentials)\b|"
-                     r"(^|/)(credentials|secrets?)(\.[a-z]+)?$|(^|/)\.config/(gh|gcloud)(/|$)|^/proc/(\d+|self|thread-self|\*)/(environ|cmdline|mem|fd(/|$))|^/proc/self/|"
-                     # the logins of the agents: Claude Code, agy (Antigravity), OpenCode
-                     r"(^|/)\.credentials\.json$|(^|/)\.claude\.json$|(^|/)\.gemini/(oauth_creds\.json|google_accounts\.json|antigravity-cli/antigravity-oauth-token)$|"
-                     r"(^|/)opencode/auth\.json$")
+_SECRET_BASE = (r"(?i)(^|[/=~])\.(ssh|gnupg|aws|docker|kube)(/|$)|(^|/)id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx)$|(^|/)\.(env|netrc|pgpass|npmrc|git-credentials)\b|"
+                r"(^|/)(credentials|secrets?)(\.[a-z]+)?$|(^|/)\.credentials\.json$|(^|/)\.config/(gh|gcloud)(/|$)|^/proc/(\d+|self|thread-self|\*)/(environ|cmdline|mem|fd(/|$))|^/proc/self/")
+
+
+class _Lazy:
+    """A pattern built from the agent registry when first used, and again when the registry changes (an agent's addon was added)."""
+
+    def __init__(self, build):
+        self.build, self.key, self.rx = build, None, None
+
+    def search(self, text):
+        names = tuple((a["id"], tuple(a["secrets"]["files"]), tuple(a["secrets"]["env"])) for a in registry.agents())
+        if names != self.key:
+            self.key, self.rx = names, re.compile(self.build())
+        return self.rx.search(text)
+
+
+def _secret_files():
+    # the logins of the agents: the SECRET_FILES of every agent.conf (paths under the home)
+    files = [f for a in registry.agents() for f in a["secrets"]["files"]]
+    return _SECRET_BASE + "".join("|(^|/)%s$" % re.escape(f.lstrip("/")) for f in files)
+
+
+def _secret_env():
+    # the login of an agent lives in the environment of process 1 when it is forwarded (swarmbox env add), readable by every process of
+    # the user: the SECRET_ENV of every agent.conf
+    names = sorted({v for a in registry.agents() for v in a["secrets"]["env"]})
+    return r"(?i)" + ("|".join(re.escape(n) for n in names) if names else r"(?!x)x")
+
+
+# files that hold secrets: reading them is at least medium (a screen is redacted by patterns only)
+_SECRET = _Lazy(_secret_files)
 _ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
 # variables whose value is run as code or changes what runs (the shell runs PROMPT_COMMAND before every prompt, BASH_ENV in every script...)
 _HOOK_VARS = ("PROMPT_COMMAND", "PS0", "PS1", "PS2", "PS4", "BASH_ENV", "ENV", "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "SHELLOPTS", "BASHOPTS",
               "PYTHONSTARTUP", "PYTHONPATH", "NODE_OPTIONS", "GIT_SSH_COMMAND", "GIT_ASKPASS", "SSH_ASKPASS", "EDITOR", "VISUAL", "PAGER")
 _VAR_SETTERS = ("export", "declare", "typeset", "readonly", "local")
-# the login of an agent lives in the environment of process 1 when it is forwarded (swarmbox env add), readable by every process of the user
-_SECRET_ENV = re.compile(r"(?i)CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|OPENAI_API_KEY")
+_SECRET_ENV = _Lazy(_secret_env)
 _REDIRECT = re.compile(r"^(\d*)(>>|>\||>|&>>|&>)$")
 
 

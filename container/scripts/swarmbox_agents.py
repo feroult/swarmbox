@@ -33,7 +33,9 @@ import time
 
 SCHEMA = 1
 PSEUDO = ("shell", "yolo")
-SHELL_NAMES = frozenset({"bash", "sh", "zsh", "dash", "fish", "ash", "busybox", "-bash", "-sh", "-zsh", "-dash", "login"})
+# The names of a plain shell process (the foreground of a tab that runs no program): one list for every reader.
+SHELL_NAMES = frozenset({"bash", "sh", "zsh", "dash", "fish", "ash", "ksh", "nu", "nushell", "busybox", "login",
+                         "-bash", "-sh", "-zsh", "-dash", "-fish", "-ksh"})
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 WORD_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
@@ -357,7 +359,8 @@ def _bare_shell(argv, fg):
 
 def detect(term, env=None, live=False):
     """The agent a terminal runs, by the one detection order of docs/agents-design.md 3.3: the OSC 7501 `app` it reports, then its
-    foreground process, then (not for `live`) the `swarmbox.agent` label, trusted only when the terminal was not a bare login shell.
+    foreground process, then (not for `live`) the `swarmbox.agent` label, trusted only when the terminal is not a bare login shell (its
+    argv is longer than `bash -l`, or its foreground is a program that is not a shell: an agent that runs as `node`).
     Never the tab name. `term` is a herdr-core terminal object or a row of `swarmbox-tabs list` (keys status, foreground/cmd, labels/agent)."""
     if not isinstance(term, dict):
         return ""
@@ -374,7 +377,7 @@ def detect(term, env=None, live=False):
     labels = term.get("labels")
     lbl = labels.get("swarmbox.agent") if isinstance(labels, dict) else term.get("agent")
     if isinstance(lbl, str) and resolve(lbl, env):
-        if "argv" not in term or not _bare_shell(term.get("argv"), fgname):
+        if not _bare_shell(term.get("argv"), fgname):
             return resolve(lbl, env)
     return ""
 
@@ -398,7 +401,24 @@ def launch_script(aid, resume=True, env=None):
         return ("_sb_t0=$(date +%%s); SWARMBOX_WORKTREE_GUARD=0 %s %s; _sb_rc=$?; "
                 "if [ \"$_sb_rc\" -ne 0 ] && [ $(( $(date +%%s) - _sb_t0 )) -lt %d ]; then SWARMBOX_WORKTREE_GUARD=0 %s; fi; exec /bin/bash -l"
                 % (cmd, rargs, a["resume"]["fast_fail_s"], cmd))
-    return "%s; exec /bin/bash -l" % cmd
+    return "SWARMBOX_WORKTREE_GUARD=0 %s; exec /bin/bash -l" % cmd
+
+
+def build_argv(agent, resume="continue", env=None):
+    """The argv of a terminal that runs `agent` (an id, an alias, `shell` or `yolo`): a login shell for `shell` and for a name that is no
+    agent; `yolo` is the default agent of the box (when there is none, the `yolo` function runs and says so in the tab). An agent starts
+    through an interactive shell (-i), so that its shell function applies (auto-approve, the box MCP servers); the worktree guard is off,
+    the caller chose the folder. `resume` is "continue" (resume the last conversation when the agent can) or "fresh"."""
+    name = str(agent or "shell").strip().lower()
+    if name == "yolo":
+        aid = default_agent(env)
+        if not aid:
+            return ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 yolo; exec /bin/bash -l"]
+    else:
+        aid = resolve(name, env)
+    if not aid:
+        return ["/bin/bash", "-l"]
+    return ["/bin/bash", "-lic", launch_script(aid, resume == "continue", env)]
 
 
 def hook(aid, name, env=None):
@@ -538,7 +558,7 @@ USAGE = """usage: swarmbox-agents COMMAND
   list [--installed] [--json]   the declared agents (id, command, installed)
   get ID                        one agent as JSON
   resolve NAME                  the agent id of a name (exit 1 when it is not an agent)
-  default                       the default agent of the box (exit 1 when there is none)
+  default [--cmd]               the default agent of the box, or its command (exit 1 when there is none)
   generate [--output FILE]      write the registry as JSON (default: $SB_RUN_DIR/agents.json, /tmp/swarmbox/agents.json)
   sh                            the shell functions of the agents (sourced by the shell)
   check DIR                     check the agent/ folder of the addon in DIR (exit 1 with the problems)
@@ -572,10 +592,10 @@ def main(argv=None):
         if a:
             print(a)
         return 0 if a else 1
-    if cmd == "default" and not rest:
+    if cmd == "default" and rest in ([], ["--cmd"]):
         a = default_agent()
         if a:
-            print(a)
+            print(get(a)["cmd"] if rest else a)
         return 0 if a else 1
     if cmd == "generate":
         out = os.path.join(os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox", "agents.json")
