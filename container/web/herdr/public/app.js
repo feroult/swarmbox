@@ -7990,7 +7990,15 @@
           actions.push(el('span', { class: `s-badge ${msg.tone || 'muted'}`.trim(), text: msg.text.slice(0, 32) }));
         }
         if (a.installed) {
-          actions.push(el('span', { class: 's-badge ok', text: a.installedVersion ? `installed · ${a.installedVersion}` : 'installed' }));
+          // the version its program reports for a floating install (`latest`); an addon that updates itself says so
+          if (a.selfUpdate) {
+            actions.push(el('span', { class: 's-badge muted', text: 'auto-update', title: 'Updates itself; the version is read from the program' }));
+          }
+          actions.push(el('span', {
+            class: 's-badge ok',
+            text: a.installedVersion ? `installed · ${a.installedVersion}` : 'installed',
+            title: a.channel === 'latest' ? 'Installed from the latest release' : null,
+          }));
         } else {
           actions.push(el('button', {
             type: 'button',

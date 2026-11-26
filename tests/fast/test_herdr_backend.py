@@ -743,39 +743,63 @@ assert.equal(show('**Resumo:** **swarmbox** e **`sabrina`** ok'), '<bold:Resumo:
     def test_settings_addon_state_follows_the_install_record(self):
         # Settings > Addons shows Install for an addon that is not installed. An addon that updates itself has no `current` link
         # (its record is self/.swarmbox-env), so it must read as installed by that record, like `swarmbox-addon list` does; a
-        # managed addon whose link exists without the record is an install that did not finish. A self-updating addon shows its channel
-        # (VERSION, `latest`), not the version reported at install, which its first update of itself makes stale.
+        # managed addon whose link exists without the record is an install that did not finish. A floating install (`latest`) shows
+        # the version its program reports (`--version`, standard output only), read again when an update replaces the program; a
+        # pinned one shows its version; a program that cannot say leaves the channel.
         if not shutil.which("node"):
             self.skipTest("node not on PATH")
         tmp = tempfile.mkdtemp(prefix="addon-state-")
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         image, data = os.path.join(tmp, "image"), os.path.join(tmp, "data", "swarmbox", "addons")
-        for name, update in (("selfup", "self"), ("selfnone", "self"), ("managed", "managed"), ("halfdone", "managed")):
+        home_bin = os.path.join(tmp, "home", ".local", "bin")
+        os.makedirs(home_bin)
+
+        def prog(path, out):
+            with open(path, "w") as f:
+                f.write("#!/bin/sh\n[ \"$1\" = --version ] || exit 9\necho 'warning: noise' >&2\n%s\n" % out)
+            os.chmod(path, 0o755)
+
+        addons = (("selfup", "self", "latest"), ("selfmute", "self", "latest"), ("selfnone", "self", "latest"),
+                  ("floating", "managed", "latest"), ("managed", "managed", "1.2.3"), ("halfdone", "managed", "1.2.3"))
+        for name, update, version in addons:
             os.makedirs(os.path.join(image, name))
             with open(os.path.join(image, name, "addon.conf"), "w") as f:
-                f.write('SCHEMA=1\nNAME=%s\nDESCRIPTION="x"\nVERSION=latest\nUPDATE=%s\nCOMMANDS="%s"\n' % (name, update, name))
-        os.makedirs(os.path.join(data, "selfup", "self"))
-        for rel, text in (("selfup/self/.swarmbox-env", "VERSION=latest\n"),
-                          ("selfup/self/installed", "requested=latest\nreported=2.1.332 (Claude Code)\narch=amd64\n")):
-            with open(os.path.join(data, rel), "w") as f:
-                f.write(text)
+                f.write('SCHEMA=1\nNAME=%s\nDESCRIPTION="x"\nVERSION=%s\nUPDATE=%s\nCOMMANDS="%s"\n' % (name, version, update, name))
+        for name in ("selfup", "selfmute"):
+            os.makedirs(os.path.join(data, name, "self"))
+            open(os.path.join(data, name, "self", ".swarmbox-env"), "w").close()
+        prog(os.path.join(home_bin, "selfup"), "echo '2.1.332 (Claude Code)'")
+        prog(os.path.join(home_bin, "selfmute"), "exit 1")
         os.makedirs(os.path.join(data, "selfnone", "self"))   # a folder without the record: not installed
-        for name, record in (("managed", True), ("halfdone", False)):
-            os.makedirs(os.path.join(data, name, "1.2.3"))
-            os.symlink("1.2.3", os.path.join(data, name, "current"))
+        for name, ver, record in (("floating", "latest", True), ("managed", "1.2.3", True), ("halfdone", "1.2.3", False)):
+            os.makedirs(os.path.join(data, name, ver, "bin"))
+            os.symlink(ver, os.path.join(data, name, "current"))
+            prog(os.path.join(data, name, ver, "bin", name), "echo 'opencode v2.4.2'")
             if record:
-                open(os.path.join(data, name, "1.2.3", ".swarmbox-env"), "w").close()
+                open(os.path.join(data, name, ver, ".swarmbox-env"), "w").close()
         js = """
+import fs from 'node:fs';
 import { readBoxConfigSnapshot } from %r;
-const cfg = readBoxConfigSnapshot([], process.env);
-console.log(JSON.stringify(Object.fromEntries(cfg.addons.map((a) => [a.name, [a.installed, a.installedVersion]]))));
+const show = () => Object.fromEntries(readBoxConfigSnapshot([], process.env).addons
+  .map((a) => [a.name, [a.installed, a.installedVersion, a.selfUpdate]]));
+console.log(JSON.stringify(show()));
+// an update of itself replaces the program: the version shown follows
+const p = process.env.HOME + '/.local/bin/selfup';
+fs.writeFileSync(p + '.new', "#!/bin/sh\\necho 2.1.400\\n", { mode: 0o755 });
+fs.renameSync(p + '.new', p);
+console.log(JSON.stringify(show()));
 """ % (HERDR_CLIENT,)
-        env = dict(os.environ, XDG_DATA_HOME=os.path.join(tmp, "data"), XDG_CONFIG_HOME=os.path.join(tmp, "config"),
-                   SWARMBOX_IMAGE_ADDONS_DIR=image, SWARMBOX_TEST_IMAGE_STATE=os.path.join(tmp, "baked"))
+        env = dict(os.environ, HOME=os.path.join(tmp, "home"), XDG_DATA_HOME=os.path.join(tmp, "data"),
+                   XDG_CONFIG_HOME=os.path.join(tmp, "config"), SWARMBOX_IMAGE_ADDONS_DIR=image,
+                   SWARMBOX_TEST_IMAGE_STATE=os.path.join(tmp, "baked"))
         p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(json.loads(p.stdout.strip().splitlines()[-1]), {
-            "selfup": [True, "latest"], "selfnone": [False, ""], "managed": [True, "1.2.3"], "halfdone": [False, ""]})
+        first, second = [json.loads(l) for l in p.stdout.strip().splitlines()[-2:]]
+        self.assertEqual(first, {
+            "selfup": [True, "2.1.332", True], "selfmute": [True, "latest", True], "selfnone": [False, "", True],
+            "floating": [True, "2.4.2", False], "managed": [True, "1.2.3", False], "halfdone": [False, "", False]})
+        self.assertEqual(second["selfup"], [True, "2.1.400", True])
+        self.assertEqual(os.listdir(os.path.join(tmp, "home")), [".local"], "the version check made nothing in HOME")
 
     def test_herdr_web_cli_args_and_origin_guard(self):
         if not shutil.which("node"):

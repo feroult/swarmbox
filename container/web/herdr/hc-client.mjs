@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import {
   buildAgentArgv as registryBuildAgentArgv,
@@ -1047,17 +1047,52 @@ function parseAddonConf(filePath) {
   return out.NAME ? out : null;
 }
 
-// installedOf(dir, item): whether an install of the addon in the state folder `dir` is complete, by the record swarmbox-addon writes
+// installedOf(dir, item): where the complete install of the addon in the state folder `dir` is, by the record swarmbox-addon writes
 // last (its is_installed): `current/.swarmbox-env` for a managed addon, `self/.swarmbox-env` for one that updates itself (UPDATE=self,
-// no `current` link). The version is the link's target (a pinned version, or `latest`); for a self-updating addon it is its VERSION
-// (`latest`): the version its program reported at install goes stale at its first update of itself.
-function installedOf(dir, item) {
+// no `current` link). Answers { version: the link's target (a pinned version, or `latest`) or VERSION, cmd: the path of its first
+// command (real_command_at) }, or null.
+function installedOf(dir, item, home) {
   const base = path.join(dir, item.name);
+  const first = item.commands[0];
   if (item.update === 'self') {
-    return fs.existsSync(path.join(base, 'self', '.swarmbox-env')) ? item.manifestVersion || 'latest' : null;
+    if (!fs.existsSync(path.join(base, 'self', '.swarmbox-env'))) return null;
+    const h = dir === home.baked ? path.join(base, 'home') : home.user;
+    return { version: item.manifestVersion || 'latest', cmd: first ? path.join(h, '.local', 'bin', first) : '' };
   }
   if (!fs.existsSync(path.join(base, 'current', '.swarmbox-env'))) return null;
-  try { return path.basename(fs.readlinkSync(path.join(base, 'current'))); } catch (_) { return ''; }
+  let version = '';
+  try { version = path.basename(fs.readlinkSync(path.join(base, 'current'))); } catch (_) {}
+  return { version, cmd: first ? path.join(base, 'current', 'bin', first) : '' };
+}
+
+// reportedVersion(cmd): the version a floating install's program reports (`CMD --version`: the first thing on its standard output
+// that looks like a version, `2.1.332 (Claude Code)` -> 2.1.332), or ''. It runs with a scratch HOME (a program may create its folders
+// on a first run) and a timeout, and is kept until the program's file changes: an update of itself replaces it (a new link target, a
+// new file), so the version shown follows it without asking again on every read.
+const reportedCache = new Map();
+function reportedVersion(cmd) {
+  let st;
+  let real;
+  try { real = fs.realpathSync(cmd); st = fs.statSync(real); } catch (_) { return ''; }
+  if (!st.isFile()) return '';
+  const key = `${real}:${st.mtimeMs}:${st.size}`;
+  if (reportedCache.get(cmd)?.key === key) return reportedCache.get(cmd).version;
+  let version = '';
+  let scratch = '';
+  try {
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'swarmbox-version-'));
+    const out = execFileSync(cmd, ['--version'], {
+      env: { ...process.env, HOME: scratch }, cwd: scratch, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8',
+    });
+    const m = String(out).match(/\d+\.\d+(?:\.\d+)*(?:[-+][0-9A-Za-z.]+)?/);
+    version = m ? m[0] : '';
+  } catch (_) {
+    version = '';
+  } finally {
+    if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
+  }
+  reportedCache.set(cmd, { key, version });
+  return version;
 }
 
 function listAddonsSnapshot(env = process.env) {
@@ -1086,22 +1121,29 @@ function listAddonsSnapshot(env = process.env) {
   }
 
   const out = [];
+  const home = { user: HOME, baked: bakedDir };
   for (const item of Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name))) {
     let installed = false;
     let installedVersion = '';
     let location = '';
+    let cmd = '';
     for (const [loc, dir] of [['workspace', dataDir], ['image', bakedDir]]) {
-      const v = installedOf(dir, item);
-      if (v === null) continue;
+      const got = installedOf(dir, item, home);
+      if (got === null) continue;
       installed = true;
-      installedVersion = v;
+      installedVersion = got.version;
+      cmd = got.cmd;
       location = loc;
       break;
     }
+    // a floating install (`latest`) shows the version its program reports; a pinned one is the version it names
+    const reported = installed && cmd && installedVersion === 'latest' ? reportedVersion(cmd) : '';
     out.push({
       ...item,
       installed,
-      installedVersion,
+      installedVersion: reported || installedVersion,
+      channel: installedVersion,
+      selfUpdate: item.update === 'self',
       location,
     });
   }
