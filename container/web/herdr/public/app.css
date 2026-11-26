@@ -2832,6 +2832,156 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
   .send-btn:hover { filter: brightness(1.1); border-color: var(--accent-bright); }
 }
 
+/* Sysop v2: Model pill, Desktop Stop/Queue buttons, Queue Strip, Streaming Markdown & Clean Interrupted State */
+.sysop-model-pill {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  letter-spacing: 0.01em;
+}
+.stop-btn {
+  appearance: none;
+  height: 30px;
+  padding: 0 11px;
+  gap: 6px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 107, 120, 0.72);
+  background: linear-gradient(180deg, #ff6b78, #e64c5c);
+  box-shadow: 0 2px 12px rgba(255, 107, 120, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform .08s, filter .14s, width .12s, padding .12s;
+}
+.stop-btn:active { transform: scale(0.96); }
+@media (hover: hover) {
+  .stop-btn:hover { filter: brightness(1.08); }
+}
+.stop-kbd {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.24);
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.2;
+}
+/* Desktop running state matrix: empty -> full Stop (hide Send); typing -> compact 30x30 Stop + Queue button */
+.sysop-composer[data-running="1"][data-ready="0"] .send-btn { display: none; }
+.sysop-composer[data-running="1"][data-ready="1"] .stop-btn {
+  width: 30px;
+  padding: 0;
+  gap: 0;
+}
+.sysop-composer[data-running="1"][data-ready="1"] .stop-label,
+.sysop-composer[data-running="1"][data-ready="1"] .stop-kbd { display: none; }
+
+.sysop-queue-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  background: rgba(203, 166, 247, 0.05);
+}
+.sysop-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.sysop-queue-tag {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent);
+}
+.sysop-queue-text {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.sysop-queue-cancel {
+  appearance: none;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+.sysop-queue-cancel:hover { background: rgba(255, 107, 120, 0.16); color: var(--red); }
+
+.turn-stream-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: sb-pulse 0.9s ease-in-out infinite;
+}
+.turn-stopped-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 2px 0;
+}
+.turn-stopped-note::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--text-dim);
+  opacity: 0.75;
+}
+.turn-reply pre {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.turn-reply h4 {
+  margin: 8px 0 3px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.tab-card[data-sysop-target="1"] {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 1px var(--accent-bg), 0 0 16px rgba(203, 166, 247, 0.22) !important;
+}
+
 /* ---- Mobile Responsive (<= 860px) — SwarmBox v2.0.24 Compact Glass Craft ----------------- */
 @media (max-width: 860px) {
   .desktop-only { display: none !important; }
@@ -3463,6 +3613,24 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
     opacity: 0.72;
   }
 
+  .capsule-stop {
+    appearance: none;
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 107, 120, 0.75);
+    background: linear-gradient(180deg, #ff6b78, #e64c5c);
+    box-shadow: 0 4px 14px rgba(255, 107, 120, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    color: #ffffff;
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform .08s ease, filter .14s ease;
+  }
+  .capsule-stop:active { transform: scale(0.93); }
+
   .capsule-mic {
     flex: 0 0 auto;
     min-width: 114px;
@@ -3569,6 +3737,59 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
   .app[data-mobile-sysop="1"] .mobile-approval,
   .app[data-mobile-sessions="1"] .touch-keys,
   .app[data-mobile-sessions="1"] .mobile-approval { display: none !important; }
+
+  /* Open Sysop sheet Live Strip: docks directly above WhatsApp pill while running, preserving 48x48 Mic/Send FAB */
+  .sysop-live-strip {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 40px;
+    padding: 0 12px 0 14px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .live-strip-spin {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--accent);
+    flex-shrink: 0;
+    animation: sb-spin 0.85s linear infinite;
+  }
+  @keyframes sb-spin { to { transform: rotate(360deg); } }
+  .live-strip-text {
+    flex: 1 1 0;
+    min-width: 0;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .live-strip-stop {
+    appearance: none;
+    flex-shrink: 0;
+    height: 28px;
+    padding: 0 12px;
+    gap: 5px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 107, 120, 0.72);
+    background: linear-gradient(180deg, #ff6b78, #e64c5c);
+    box-shadow: 0 2px 10px rgba(255, 107, 120, 0.34);
+    color: #ffffff;
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .live-strip-stop:active { transform: scale(0.95); }
 
   /* Open Sysop sheet composer: WhatsApp-style input pill + 48x48 mic/send circle + sinusoidal voice bar */
   .sysop-composer {

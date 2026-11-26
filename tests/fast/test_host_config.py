@@ -51,8 +51,8 @@ KEYS = {
     "sysop.autoname": ("1", "0", "1", ["yes", "2", "true"]),
     "sysop.autocontext": ("1", "0", "1", ["yes", "2", "true"]),
     "sysop.countdown": ("4", "0", "30", ["31", "-1", "1.5", "abc", "04", "+3"]),
-    "sysop.max_steps": ("20", "1", "100", ["0", "101", "x", "010"]),
-    "sysop.max_seconds": ("300", "10", "3600", ["9", "3601", "1e3", "0"]),
+    "sysop.max_steps": ("0", "0", "500", ["-1", "501", "x", "010"]),
+    "sysop.max_seconds": ("0", "0", "3600", ["9", "3601", "1e3", "-1"]),
     "IMAGE": (None, "localhost:5000/sb:2.0.1", "swarmbox:dev", ["a b", "x\ty"]),
 }
 
@@ -489,7 +489,7 @@ class SysopFlagsTest(CreateFlagsBase):
     def test_defaults_and_explicit_defaults_pass_nothing(self):
         base = self.fp()
         self.assertEqual(self.sysop(self.flags()), [])
-        cfg = "sysop.brain=auto\nsysop.model=auto\nsysop.autonomy=full-auto\nsysop.countdown=4\nsysop.max_steps=20\nsysop.max_seconds=300\n"
+        cfg = "sysop.brain=auto\nsysop.model=auto\nsysop.autonomy=full-auto\nsysop.countdown=4\nsysop.max_steps=0\nsysop.max_seconds=0\n"
         self.assertEqual(self.sysop(self.flags(cfg=cfg)), [])
         self.assertEqual(self.fp(cfg=cfg), base)
 

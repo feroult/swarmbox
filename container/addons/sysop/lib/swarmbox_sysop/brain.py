@@ -96,13 +96,13 @@ Call ONE tool at a time and wait for its result before the next call.
 - Never start text for an agent with `/` or `!` (never start the text with / or !). In a shell tab, give ONE simple command per `run` (avoid chaining `;`, `&&`, `||`, pipes when one command suffices).
 - {autonomy_note}
 - If a tool returns blocked, vetoed, refused, or not approved, nothing was done: do NOT retry or work around it. Report it and call `done`.
-- Never type secrets or passwords. Budget: at most {max_steps} tool calls (say and done are free) and {max_seconds} seconds.
+- Never type secrets or passwords. {budget_note}
 </safety>
 
 <reply>
-- Reply in the user's language via `done`. For actions: 1-2 short sentences. For box status: concise `- ` bullets.
+- Reply in the user's language, either directly as your final Markdown message or via `done`. Keep action confirmations concise and use structured Markdown (bullets, code blocks) when reporting box status or diagnostics.
 - Name tabs ONLY by their canonical `name` in backticks (e.g. `shop-api`), never by id (`t3`, `@3`) or numbered label (`1:shop-api`), and never paste raw command output.
-- At most 1000 characters. Do not repeat in `done` what you already said with `say`.
+- Do not repeat in your final reply what you already said with `say`.
 </reply>
 {source_note}"""
 
@@ -141,7 +141,15 @@ def system_prompt(source, max_steps, max_seconds, autonomy="full-auto"):
     anote = AUTONOMY_NOTES.get(autonomy, AUTONOMY_NOTES["confirm-all"])
     # not str.format: the prompt holds literal braces ({Esc}) and the source is data
     names = ", ".join(registry.ids()) or "none installed"
-    return (SYSTEM_PROMPT.replace("{max_steps}", str(max_steps)).replace("{max_seconds}", str(max_seconds))
+    if max_steps and max_steps > 0 and max_seconds and max_seconds > 0:
+        bnote = "Budget: at most %d tool calls (say and done are free) and %d seconds." % (max_steps, max_seconds)
+    elif max_steps and max_steps > 0:
+        bnote = "Budget: at most %d tool calls (say and done are free)." % max_steps
+    elif max_seconds and max_seconds > 0:
+        bnote = "Budget: at most %d seconds." % max_seconds
+    else:
+        bnote = "No artificial step or time limit: work until the goal is complete; the user can stop you at any time."
+    return (SYSTEM_PROMPT.replace("{budget_note}", bnote).replace("{max_steps}", str(max_steps)).replace("{max_seconds}", str(max_seconds))
             .replace("{autonomy_note}", anote).replace("{source_note}", note).replace("{agents}", names))
 
 
@@ -205,16 +213,33 @@ def fill(word, values):
     return _TOKEN.sub(sub, word)
 
 
-def build(cfg, goal_dir, mcp_config, source, prompt_file=None):
+def build(cfg, goal_dir, mcp_config, source, prompt_file=None, session_id=None):
     """(argv, env_extra) for the brain of one goal."""
     env_t, argv_t = parse_template(cfg.brain)
     prompt = system_prompt(source, cfg.max_steps, cfg.max_seconds, cfg.autonomy)
     model = cfg.model if cfg.model != AUTO else default_model(cfg.brain)
     if not model and any("{model}" in w for w in [x for _, x in env_t] + argv_t):
         raise TemplateError("the brain uses {model} and its agent declares no MODEL: set sysop.model")
+    unlimited_steps = not (cfg.max_steps and cfg.max_steps > 0)
+    max_turns = str(cfg.max_steps + 3) if not unlimited_steps else ""
     values = {"mcp_config": mcp_config, "model": model, "system_prompt": prompt, "system_prompt_file": prompt_file or "",
-              "max_turns": str(cfg.max_steps + 3), "goal_dir": goal_dir}
-    return [fill(w, values) for w in argv_t], {k: fill(v, values) for k, v in env_t}
+              "max_turns": max_turns, "goal_dir": goal_dir}
+    argv = []
+    i = 0
+    while i < len(argv_t):
+        w = argv_t[i]
+        # When max_steps is 0 (unlimited), omit `--max-turns {max_turns}` so Claude Code runs without a turn cap.
+        if unlimited_steps and w in ("--max-turns", "-max-turns") and i + 1 < len(argv_t) and argv_t[i + 1] == "{max_turns}":
+            i += 2
+            continue
+        if unlimited_steps and w.startswith("--max-turns=") and "{max_turns}" in w:
+            i += 1
+            continue
+        argv.append(fill(w, values))
+        i += 1
+    if session_id and argv and "stream-json" in argv and "--resume" not in argv and "--no-session-persistence" not in argv:
+        argv.extend(["--resume", str(session_id)])
+    return argv, {k: fill(v, values) for k, v in env_t}
 
 
 def write_mcp_config(path, ctx_path, paths, libdir):
@@ -246,9 +271,13 @@ def pdeathsig():
         pass
 
 
-def kill_group(pgid, grace=KILL_GRACE, proc=None):
-    """TERM, wait up to `grace` seconds for the leader, then KILL the whole group."""
-    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 0)):
+def kill_group(pgid, grace=KILL_GRACE, proc=None, first_sig=signal.SIGTERM):
+    """Signal the process group (`first_sig`, then TERM if needed, then KILL)."""
+    sigs = [(first_sig, grace)]
+    if first_sig != signal.SIGTERM:
+        sigs.append((signal.SIGTERM, min(1.0, grace)))
+    sigs.append((signal.SIGKILL, 0))
+    for sig, wait in sigs:
         try:
             os.killpg(pgid, sig)
         except (ProcessLookupError, PermissionError):
@@ -265,15 +294,20 @@ def kill_group(pgid, grace=KILL_GRACE, proc=None):
 
 
 class Result:
-    def __init__(self, outcome, error="", summary="", exit_code=None, turns=None, cost=None, note=""):
-        self.outcome, self.error, self.summary, self.exit_code, self.turns, self.cost, self.note = outcome, error, summary, exit_code, turns, cost, note
+    def __init__(self, outcome, error="", summary="", exit_code=None, turns=None, cost=None, note="", session_id=""):
+        self.outcome, self.error, self.summary, self.exit_code, self.turns, self.cost, self.note, self.session_id = (
+            outcome, error, summary, exit_code, turns, cost, note, session_id or ""
+        )
 
     def as_dict(self):
-        return {"outcome": self.outcome, "error": self.error, "exit": self.exit_code, "turns": self.turns, "cost": self.cost}
+        d = {"outcome": self.outcome, "error": self.error, "exit": self.exit_code, "turns": self.turns, "cost": self.cost}
+        if self.session_id:
+            d["session_id"] = self.session_id
+        return d
 
 
-def read_stream(path, limit=8 << 20):
-    """(result event or {}, text to scan for a login failure) of a stream-json file."""
+def extract_stream_info(path, limit=8 << 20):
+    """Parse stream-json output into {result, text, assistant_text, session_id}."""
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as f:
@@ -284,18 +318,51 @@ def read_stream(path, limit=8 << 20):
             else:
                 data = f.read()
     except OSError:
-        return {}, ""
+        return {"result": {}, "text": "", "assistant_text": "", "session_id": ""}
     text = data.decode("utf-8", "replace")
     res = {}
+    sid = ""
+    delta_chunks = []
+    last_assistant = ""
     for line in text.splitlines():
-        if line.startswith("{") and '"result"' in line:
-            try:
-                ev = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(ev, dict) and ev.get("type") == "result":
-                res = ev
-    return res, text
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        if isinstance(ev.get("session_id"), str) and ev["session_id"].strip():
+            sid = ev["session_id"].strip()
+        et = ev.get("type")
+        if et == "result":
+            res = ev
+        elif et == "assistant":
+            msg = ev.get("message")
+            content = msg.get("content") if isinstance(msg, dict) else None
+            if isinstance(content, list):
+                parts = [str(b.get("text") or "") for b in content if isinstance(b, dict) and b.get("type") == "text" and b.get("text")]
+                if parts:
+                    last_assistant = "\n".join(parts).strip()
+                    delta_chunks = []
+        elif et == "stream_event":
+            inner = ev.get("event")
+            if isinstance(inner, dict) and inner.get("type") == "content_block_delta":
+                delta = inner.get("delta")
+                if isinstance(delta, dict) and delta.get("type") == "text_delta" and isinstance(delta.get("text"), str):
+                    delta_chunks.append(delta["text"])
+            elif isinstance(inner, dict) and inner.get("type") == "message_start":
+                delta_chunks = []
+    streamed = "".join(delta_chunks).strip()
+    assistant_text = streamed or last_assistant or (str(res.get("result") or "").strip() if isinstance(res, dict) else "")
+    return {"result": res, "text": text, "assistant_text": assistant_text, "session_id": sid}
+
+
+def read_stream(path, limit=8 << 20):
+    """(result event or {}, text to scan for a login failure) of a stream-json file."""
+    info = extract_stream_info(path, limit=limit)
+    return info["result"], info["text"]
 
 
 def exit_words(code):
@@ -324,14 +391,14 @@ def _tail(path, n=300):
 
 def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline, clock=time.time, sleep=time.sleep, popen=subprocess.Popen, on_start=None):
     """Run the brain for one goal and return a Result. stop_check() is true when the stop key was pressed; tick() is called about every 0.1 s;
-    deadline is the epoch at which the brain is killed."""
+    deadline is the epoch at which the brain is killed, or None when unlimited."""
     prog = shutil.which(argv[0], path=env_extra.get("PATH") or os.environ.get("PATH"))
     if prog is None:
         return Result("failed", "the brain program %r was not found: install it (swarmbox addon install %s) or set SWARMBOX_SYSOP_BRAIN" % (argv[0], os.path.basename(argv[0])))
     env = dict(os.environ)
     env.update(env_extra)
     wrap = []
-    if shutil.which("timeout"):
+    if deadline is not None and shutil.which("timeout"):
         wrap = ["timeout", "-k", "5", str(max(1, int(deadline - clock())))]
     stream, errf = os.path.join(goal_dir, "stream.jsonl"), os.path.join(goal_dir, "brain.err")
     done_path = os.path.join(goal_dir, "done.json")
@@ -358,13 +425,13 @@ def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline
             pass
         outcome = None
         done_seen = None
-        mono_end = time.monotonic() + (deadline - clock())       # a wall clock that jumps back (NTP, a resumed laptop) must not stretch the budget
+        mono_end = (time.monotonic() + (deadline - clock())) if deadline is not None else None       # a wall clock that jumps back (NTP, a resumed laptop) must not stretch the budget
         while proc.poll() is None:
             if stop_check():
                 outcome = "stopped"
                 break
             now = clock()
-            if now >= deadline + 1 or time.monotonic() >= mono_end + 1:
+            if deadline is not None and (now >= deadline + 1 or time.monotonic() >= mono_end + 1):
                 outcome = "timeout"
                 break
             if done_seen is None and os.path.exists(done_path):
@@ -385,29 +452,38 @@ def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline
                 pass
         raise
     code = proc.poll()
+    # On user Stop, send SIGINT first so Claude Code can flush its session_id cleanly before terminating.
+    if outcome == "stopped" and code is None:
+        try:
+            os.killpg(proc.pid, signal.SIGINT)
+            proc.wait(timeout=1.0)
+        except (ProcessLookupError, PermissionError, subprocess.TimeoutExpired):
+            pass
+        code = proc.poll()
     kill_group(proc.pid, proc=proc if code is None else None)
     try:
         code = proc.wait(5)
     except subprocess.TimeoutExpired:
         code = None
     tick()
-    ev, text = read_stream(stream)
+    info = extract_stream_info(stream)
+    ev, text, assistant_text, sid = info["result"], info["text"], info["assistant_text"], info["session_id"]
     turns, cost = ev.get("num_turns"), ev.get("total_cost_usd")
     done = ipc.read_json(done_path)
     summary = done.get("summary", "") if isinstance(done, dict) else ""
     if outcome == "stopped":
-        return Result("stopped", "stopped by the user", summary, code, turns, cost)
+        return Result("stopped", "stopped by the user", summary or assistant_text, code, turns, cost, session_id=sid)
     if isinstance(done, dict):
-        return Result("done", "", summary, code, turns, cost)
+        return Result("done", "", summary, code, turns, cost, session_id=sid)
     if outcome == "timeout" or code == 124:             # 124: `timeout` ended it at the deadline before this loop did
-        return Result("failed", "the time budget of %d s is spent: the brain was killed" % cfg.max_seconds, summary, code, turns, cost)
+        return Result("failed", "the time budget of %d s is spent: the brain was killed" % cfg.max_seconds, summary or assistant_text, code, turns, cost, session_id=sid)
     if LOGIN_FAILURE.search(text) or LOGIN_FAILURE.search(_tail(errf, 4000)):
-        return Result("failed", "the brain is not logged in (%s). %s" % (argv[0], login_hint(argv[0])), "", code, turns, cost)
+        return Result("failed", "the brain is not logged in (%s). %s" % (argv[0], login_hint(argv[0])), "", code, turns, cost, session_id=sid)
     if ev.get("subtype") == "error_max_turns":
-        return Result("failed", "the brain used all its %d turns without calling done" % (cfg.max_steps + 3), "", code, turns, cost)
+        return Result("failed", "the brain used all its %d turns without calling done" % (cfg.max_steps + 3), "", code, turns, cost, session_id=sid)
     if code not in (0, None):
         why = _tail(errf) or str(ev.get("result") or "")[:300]
-        return Result("failed", "the brain %s%s" % (exit_words(code), (": " + why) if why else "; it left no message (brain.err in the folder of the goal may say more)"), "", code, turns, cost)
+        return Result("failed", "the brain %s%s" % (exit_words(code), (": " + why) if why else "; it left no message (brain.err in the folder of the goal may say more)"), "", code, turns, cost, session_id=sid)
     if ev.get("is_error"):
-        return Result("failed", "the brain reported an error: %s" % str(ev.get("result") or "")[:300], "", code, turns, cost)
-    return Result("done", "", str(ev.get("result") or "")[:500], code, turns, cost, note="the brain ended without calling done")
+        return Result("failed", "the brain reported an error: %s" % str(ev.get("result") or "")[:300], "", code, turns, cost, session_id=sid)
+    return Result("done", "", assistant_text or str(ev.get("result") or ""), code, turns, cost, note="the brain ended without calling done", session_id=sid)

@@ -83,6 +83,36 @@ def since(paths):
         return 0.0
 
 
+_SESSION_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+def session_id(paths):
+    """Active persistent brain session_id for the current conversation (conversation.json), or ''."""
+    import os
+    d = ipc.read_json(os.path.join(paths.state, "conversation.json"))
+    if not isinstance(d, dict):
+        return ""
+    sid = str(d.get("session_id") or "").strip()
+    return sid if _SESSION_RE.match(sid) else ""
+
+
+def save_session_id(paths, sid):
+    """Persist (or clear) the active conversation's brain session_id while preserving `since`."""
+    import os
+    p = os.path.join(paths.state, "conversation.json")
+    d = ipc.read_json(p)
+    data = dict(d) if isinstance(d, dict) else {}
+    sid = str(sid or "").strip()
+    if sid and _SESSION_RE.match(sid):
+        data["session_id"] = sid
+    else:
+        data.pop("session_id", None)
+    try:
+        ipc.write_json(p, data)
+    except OSError:
+        pass
+
+
 def load(paths):
     """The state.json of every folder of goals (the service keeps the last KEEP_GOALS)."""
     import os

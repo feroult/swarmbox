@@ -44,7 +44,7 @@ POLL = 0.1
 WAIT_MAX = 30.0
 MAX_RESULT = 20000
 MAX_SAY = 800
-DONE_MAX = 1200        # concise action reply or structured multi-tab summary; longer is refused once to summarize cleanly
+DONE_MAX = 8000        # rich Markdown reply or structured multi-tab summary; longer is refused once to summarize cleanly
 MAX_LINES = 500
 HINTS = {
     "dialog_open": "a dialog is open in the tab: it is the user's decision, nothing was typed; report it with say and call done unless the goal asks you to answer it",
@@ -97,7 +97,7 @@ class Context:
         self.autonomy = d.get("autonomy", "full-auto")
         self.countdown = float(d.get("countdown", 4))
         self.approval_timeout = float(d.get("approval_timeout", 60))
-        self.max_steps = int(d.get("max_steps", 20))
+        self.max_steps = int(d.get("max_steps", 0))
         self.deadline = d.get("deadline")
 
     @staticmethod

@@ -284,6 +284,14 @@
   const sysopFeedEl = document.getElementById('sysop-feed');
   const btnSysopStop = document.getElementById('btn-sysop-stop');
   const btnSysopNew = document.getElementById('btn-sysop-new');
+  const sysopModelPillEl = document.getElementById('sysop-model-pill');
+  const sysopQueueBarEl = document.getElementById('sysop-queue-bar');
+  const sysopLiveStripEl = document.getElementById('sysop-live-strip');
+  const sysopLiveStripTextEl = document.getElementById('sysop-live-strip-text');
+  const btnMobileLiveStop = document.getElementById('btn-mobile-live-stop');
+  const btnMobileDockStop = document.getElementById('btn-mobile-dock-stop');
+  const sendLabelEl = document.getElementById('send-label');
+  let sysopRunning = false;
   const approvalCardEl = document.getElementById('approval-card');
   const approvalBadgeEl = document.getElementById('approval-badge');
   const approvalTabEl = document.getElementById('approval-tab');
@@ -6437,15 +6445,50 @@
     return frag;
   }
 
-  // "- item" lines become rows (a tab named first gets its agent's pixel icon); any other line is a paragraph
-  function renderReplyText(text) {
+  // Rich Markdown rendering: fenced code blocks, headings, "- item" lists (with agent pixel icons), inline bold/code & clickable tab chips
+  function renderReplyText(text, streaming = false) {
     const wrap = document.createElement('div');
     wrap.className = 'turn-reply';
     let list = null;
+    let inFence = false;
+    let fenceLines = [];
+    const flushFence = () => {
+      if (!fenceLines.length) return;
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      code.textContent = fenceLines.join('\n');
+      pre.appendChild(code);
+      wrap.appendChild(pre);
+      fenceLines = [];
+    };
     for (const raw of String(text || '').split('\n')) {
-      const line = raw.trim();
+      const trimmed = raw.trim();
+      if (trimmed.startsWith('```')) {
+        list = null;
+        if (inFence) {
+          flushFence();
+          inFence = false;
+        } else {
+          inFence = true;
+          fenceLines = [];
+        }
+        continue;
+      }
+      if (inFence) {
+        fenceLines.push(raw);
+        continue;
+      }
+      const line = trimmed;
       if (!line) {
         list = null;
+        continue;
+      }
+      const heading = /^#{1,4}\s+(.*)$/.exec(line);
+      if (heading) {
+        list = null;
+        const h = document.createElement('h4');
+        h.appendChild(linkTabs(heading[1]));
+        wrap.appendChild(h);
         continue;
       }
       const bullet = /^[-•*]\s+(.*)$/.exec(line);
@@ -6480,6 +6523,16 @@
         pEl.appendChild(linkTabs(line));
         wrap.appendChild(pEl);
       }
+    }
+    if (inFence) flushFence();
+    if (streaming) {
+      const cur = document.createElement('span');
+      cur.className = 'turn-stream-cursor';
+      cur.setAttribute('aria-hidden', 'true');
+      const last = wrap.lastElementChild;
+      if (last && (last.tagName === 'P' || last.tagName === 'H4')) last.appendChild(cur);
+      else if (last && last.tagName === 'UL' && last.lastElementChild) last.lastElementChild.appendChild(cur);
+      else wrap.appendChild(cur);
     }
     return wrap;
   }
@@ -6571,9 +6624,26 @@
       const dot = document.createElement('span');
       dot.className = 'turn-live-dot';
       const txt = document.createElement('span');
-      txt.textContent = turn.live_action || 'Thinking…';
+      const elapsed = turn.started ? Math.max(0, Math.floor((Date.now() - turn.started) / 1000)) : 0;
+      const base = turn.live_action || 'Thinking…';
+      txt.textContent = elapsed >= 1 ? `${base} · ${elapsed}s` : base;
       live.append(dot, txt);
       said.appendChild(live);
+      if (turn.stream_text) {
+        const rep = renderReplyText(turn.stream_text, true);
+        rep.dataset.state = 'streaming';
+        said.appendChild(rep);
+      }
+    } else if (turn.state === 'stopped') {
+      if (turn.reply) {
+        const rep = renderReplyText(turn.reply);
+        rep.dataset.state = 'done';
+        said.appendChild(rep);
+      }
+      const stopNote = document.createElement('div');
+      stopNote.className = 'turn-stopped-note';
+      stopNote.textContent = 'Stopped — session context preserved';
+      said.appendChild(stopNote);
     } else if (turn.reply) {
       const rep = renderReplyText(turn.reply);
       rep.dataset.state = turn.state || 'done';
@@ -7541,11 +7611,16 @@
     const hasTurns = turns ? turns.length > 0 : steps.length > 0;
     sysopFeedEl.classList.toggle('is-empty', !hasTurns || !sysop.up);
     const keyHint = window.innerWidth <= 860 ? '' : ' (Alt+G)';
-    goalInputEl.placeholder = (!hasTurns ? (window.innerWidth <= 860 ? 'Ask Sysop…' : 'Ask Sysop or direct an agent…') : 'Ask a follow-up…') + keyHint;
+    if (sysopRunning) {
+      goalInputEl.placeholder = (window.innerWidth <= 860 ? 'Redirect or queue…' : 'Redirect or queue instruction…') + keyHint;
+    } else {
+      goalInputEl.placeholder = (!hasTurns ? (window.innerWidth <= 860 ? 'Ask Sysop…' : 'Ask Sysop or direct an agent…') : 'Ask a follow-up…') + keyHint;
+    }
     btnSysopNew.classList.toggle('hidden', !hasTurns || !sysop.up);
-    // the snapshot comes every 600 ms: rebuild only when something shown changed (the minute keeps "3m ago" true)
+    // the snapshot comes every 600 ms: rebuild only when something shown changed (per-second tick while running keeps elapsed live)
+    const tickBucket = sysopRunning ? Math.floor(Date.now() / 1000) : Math.floor(Date.now() / 60000);
     const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns, turns ? null : steps,
-      terminals.map((t) => [t.address, tabDisplayName(t), tabAgentKind(t)]), Math.floor(Date.now() / 60000)]);
+      terminals.map((t) => [t.address, tabDisplayName(t), tabAgentKind(t)]), tickBucket]);
     if (key !== lastFeedKey) {
       lastFeedKey = key;
       const nearBottom = sysopFeedEl.scrollHeight - sysopFeedEl.scrollTop - sysopFeedEl.clientHeight < 48;
@@ -7572,23 +7647,107 @@
     if (!approvalCardEl.classList.contains('hidden')) sysopFeedEl.scrollTop = sysopFeedEl.scrollHeight;
   }
 
+  function stopSysop(goalId = null) {
+    const payload = goalId ? { goal_id: String(goalId) } : {};
+    return fetch('/api/sysop/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  }
+
+  function renderSysopQueue(queue) {
+    if (!sysopQueueBarEl) return;
+    const list = Array.isArray(queue) ? queue : [];
+    sysopQueueBarEl.classList.toggle('hidden', !list.length);
+    if (!list.length) {
+      sysopQueueBarEl.innerHTML = '';
+      return;
+    }
+    sysopQueueBarEl.innerHTML = '';
+    for (const q of list.slice(0, 3)) {
+      const row = document.createElement('div');
+      row.className = 'sysop-queue-item';
+      const tag = document.createElement('span');
+      tag.className = 'sysop-queue-tag';
+      tag.textContent = 'Queued:';
+      const txt = document.createElement('span');
+      txt.className = 'sysop-queue-text';
+      txt.textContent = String(q.text || '').trim();
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'sysop-queue-cancel';
+      cancel.title = 'Remove from queue';
+      cancel.setAttribute('aria-label', 'Remove from queue');
+      cancel.textContent = '×';
+      cancel.addEventListener('click', () => stopSysop(q.id));
+      row.append(tag, txt, cancel);
+      sysopQueueBarEl.appendChild(row);
+    }
+  }
+
   function renderSysop(sysop) {
     if (!sysop) return;
     if (appEl) appEl.dataset.sysopUp = sysop.up ? '1' : '0';
     const st = sysop.state || 'off';
     const stWord = STATE_WORDS[st] || st;
+    const running = st === 'working' || st === 'allow?' || st === 'sending' || st === 'queued';
+    sysopRunning = running;
+
     if (sysopDotEl) {
       sysopDotEl.dataset.state = st;
       sysopDotEl.title = `Sysop: ${stWord}`;
       sysopDotEl.setAttribute('aria-label', `Sysop: ${stWord}`);
     }
+    const turns = Array.isArray(sysop.turns) ? sysop.turns : [];
+    const activeTurn = turns.find((t) => t && t.running) || null;
+    const liveAction = (activeTurn && activeTurn.live_action) || sysop.sentence || 'Working…';
+    const elapsed = activeTurn && activeTurn.started ? Math.max(0, Math.floor((Date.now() - activeTurn.started) / 1000)) : 0;
+
     if (mobileSysopBtn) mobileSysopBtn.dataset.state = st;
-    if (mobileSysopTextEl) mobileSysopTextEl.textContent = st === 'idle' || st === 'off' ? 'Sysop' : (sysop.sentence || `Sysop · ${st}`);
+    if (mobileSysopTextEl) {
+      if (st === 'idle' || st === 'off') {
+        mobileSysopTextEl.textContent = 'Sysop';
+      } else if (running) {
+        const shortAct = liveAction.replace(/^run → /, '').replace(/…$/, '');
+        mobileSysopTextEl.textContent = elapsed >= 1 ? `Sysop · ${shortAct} · ${elapsed}s` : `Sysop · ${shortAct}`;
+      } else {
+        mobileSysopTextEl.textContent = `Sysop · ${sysop.sentence || st}`;
+      }
+    }
     if (btnToggleSysop) btnToggleSysop.dataset.state = st;
+    if (composerEl) composerEl.dataset.running = running ? '1' : '0';
+    if (sendLabelEl) sendLabelEl.textContent = running ? 'Queue' : 'Send';
 
-    const running = st === 'working' || st === 'allow?' || st === 'sending' || st === 'queued';
-    btnSysopStop.classList.toggle('hidden', !running);
+    if (btnSysopStop) btnSysopStop.classList.toggle('hidden', !running);
+    if (btnMobileDockStop) btnMobileDockStop.classList.toggle('hidden', !running);
+    if (sysopLiveStripEl) {
+      sysopLiveStripEl.classList.toggle('hidden', !running);
+      if (running && sysopLiveStripTextEl) {
+        sysopLiveStripTextEl.textContent = elapsed >= 1 ? `${liveAction} · ${elapsed}s` : liveAction;
+      }
+    }
+    if (sysopModelPillEl) {
+      const m = sysop.settings && sysop.settings.model && sysop.settings.model !== 'auto' ? String(sysop.settings.model) : '';
+      sysopModelPillEl.textContent = m;
+      sysopModelPillEl.classList.toggle('hidden', !sysop.up || !m);
+    }
 
+    // Highlight sidebar card if Sysop is actively targeting a tab
+    const liveTarget = (activeTurn && activeTurn.live_target) ? String(activeTurn.live_target).toLowerCase() : '';
+    document.querySelectorAll('.tab-card[data-sysop-target="1"]').forEach((el) => { el.dataset.sysopTarget = '0'; });
+    if (running && liveTarget) {
+      for (const t of terminals) {
+        const name = tabDisplayName(t).toLowerCase();
+        if (t.address.toLowerCase() === liveTarget || name === liveTarget) {
+          const card = document.querySelector(`.tab-card[data-addr="${CSS.escape(t.address)}"]`);
+          if (card) card.dataset.sysopTarget = '1';
+          break;
+        }
+      }
+    }
+
+    renderSysopQueue(sysop.queue);
     renderApprovalCard(sysop);
     renderSysopFeed(sysop);
     syncContext(sysop);   // sets sysopContext (it compares with the last one: a rewrite seen to end)
@@ -8478,9 +8637,9 @@
     await fetch('/api/sysop/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
   });
 
-  btnSysopStop.addEventListener('click', () => {
-    fetch('/api/sysop/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-  });
+  if (btnSysopStop) btnSysopStop.addEventListener('click', () => stopSysop());
+  if (btnMobileLiveStop) btnMobileLiveStop.addEventListener('click', () => stopSysop());
+  if (btnMobileDockStop) btnMobileDockStop.addEventListener('click', () => stopSysop());
 
   document.getElementById('btn-interrupt').addEventListener('click', async () => {
     if (!activeId) return;
@@ -8504,6 +8663,10 @@
   goalInputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
+      if (sysopRunning && !goalInputEl.value.trim()) {
+        stopSysop();
+        return;
+      }
       if (isMobileLayout()) { goalInputEl.value = ''; syncSendReady(); autosizeGoalInput(); }
       goalInputEl.blur();
       focusTerminalIfDesktop();
@@ -9210,15 +9373,15 @@
       }),
       makeHostInputRow('sysop', 'sysop.max_steps', {
         title: 'Max Steps per Goal',
-        desc: 'Upper bound on operator turns for a single goal.',
+        desc: '0 = unlimited (use Stop). Set 1–500 to cap tool calls per goal.',
         type: 'number',
-        placeholder: '20',
+        placeholder: '0',
       }),
       makeHostInputRow('sysop', 'sysop.max_seconds', {
         title: 'Goal Time Budget (sec)',
-        desc: 'Maximum runtime per goal before automatic stop.',
+        desc: '0 = unlimited (use Stop). Set 10–3600 to cap runtime per goal.',
         type: 'number',
-        placeholder: '300',
+        placeholder: '0',
       }),
       makeHostInputRow('sysop', 'sysop.topic', {
         title: 'Bus Topic',

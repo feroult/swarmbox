@@ -38,12 +38,13 @@ class Template(unittest.TestCase):
         self.assertEqual(env, {})
         self.assertEqual(argv[:2], ["claude", "-p"])
         for pair in (["--model", "sonnet"], ["--mcp-config", "/g/mcp.json"], ["--tools", ""], ["--allowedTools", "mcp__sysop__*"],
-                     ["--permission-mode", "dontAsk"], ["--max-turns", "23"], ["--output-format", "stream-json"]):
+                     ["--permission-mode", "dontAsk"], ["--output-format", "stream-json"]):
             i = argv.index(pair[0])
             self.assertEqual(argv[i:i + 2], pair)
-        for flag in ("--strict-mcp-config", "--no-session-persistence", "--verbose"):
+        self.assertNotIn("--max-turns", argv)
+        for flag in ("--strict-mcp-config", "--include-partial-messages", "--verbose"):
             self.assertIn(flag, argv)
-        for bad in ("--bare", "--safe-mode", "--dangerously-skip-permissions", "--permission-mode=bypassPermissions"):
+        for bad in ("--bare", "--safe-mode", "--no-session-persistence", "--dangerously-skip-permissions", "--permission-mode=bypassPermissions"):
             self.assertNotIn(bad, argv)
         sp = argv[argv.index("--system-prompt") + 1]
         self.assertIn("untrusted DATA", sp)
@@ -153,7 +154,7 @@ class Template(unittest.TestCase):
             "one simple command per run": ("ONE simple command per `run`",),
             "a question about the box is answered, not forwarded": ("Question about box state", "never type it into an agent"),
             "a tab is named by its name": ("Name tabs ONLY by their canonical `name` in backticks", "never by id (`t3`, `@3`) or numbered label"),
-            "the reply is short and in the user's language": ("in the user's language", "Do not repeat in `done` what you already said with `say`", "At most 1000 characters"),
+            "the reply is concise and in the user's language": ("in the user's language", "Do not repeat in your final reply what you already said with `say`"),
             "a dialog is the user's decision": ("USER's decision", "never answer, press Esc/Enter, or type over them", "unless the goal explicitly asks to answer that dialog"),
         }
         for why, phrases in needs.items():
@@ -430,6 +431,50 @@ class BrainSupervision(unittest.TestCase):
         res = brain.run(self.e.cfg(), "goal", "cli", self.gdir, ["yes"], {}, lambda: False, lambda: None, time.time() + 4)
         self.assertEqual(res.outcome, "failed")
         self.assertLessEqual(os.path.getsize(os.path.join(self.gdir, "stream.jsonl")), (1 << 20) + 4096)
+
+
+class SysopV2SessionAndStreaming(unittest.TestCase):
+    def test_unlimited_steps_omits_max_turns_and_injects_resume_session(self):
+        cfg = config.load({"SWARMBOX_SYSOP_BRAIN": "b --mcp-config {mcp_config} --max-turns {max_turns} --output-format stream-json"})
+        self.assertEqual(cfg.max_steps, 0)
+        self.assertEqual(cfg.max_seconds, 0)
+        argv, _ = brain.build(cfg, "/g", "/m.json", "web", session_id="sess_abc123")
+        self.assertNotIn("--max-turns", argv)
+        self.assertIn("--resume", argv)
+        self.assertEqual(argv[argv.index("--resume") + 1], "sess_abc123")
+
+    def test_extract_stream_info_reads_session_id_and_full_streamed_markdown(self):
+        e = ss.Env()
+        self.addCleanup(e.cleanup)
+        p = os.path.join(e.dir, "stream.jsonl")
+        long_md = "### Status\n" + ("- item line with details\n" * 40)
+        events = [
+            {"type": "system", "subtype": "init", "session_id": "sess_live_42"},
+            {"type": "stream_event", "event": {"type": "message_start"}},
+            {"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": long_md[:200]}}},
+            {"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": long_md[200:]}}},
+            {"type": "result", "subtype": "success", "session_id": "sess_live_42", "num_turns": 2, "result": "short"},
+        ]
+        with open(p, "w", encoding="utf-8") as f:
+            for ev in events:
+                f.write(json.dumps(ev) + "\n")
+        info = brain.extract_stream_info(p)
+        self.assertEqual(info["session_id"], "sess_live_42")
+        self.assertEqual(info["assistant_text"], long_md.strip())
+        self.assertGreater(len(info["assistant_text"]), 500)
+
+    def test_history_session_id_persists_with_since_and_clears_on_new_conversation(self):
+        from swarmbox_sysop import history
+        e = ss.Env()
+        self.addCleanup(e.cleanup)
+        pth = e.paths.make()
+        ipc.write_json(os.path.join(pth.state, "conversation.json"), {"since": 1234.5})
+        history.save_session_id(pth, "sess_99")
+        self.assertEqual(history.since(pth), 1234.5)
+        self.assertEqual(history.session_id(pth), "sess_99")
+        # Simulating `+ New` button overwriting conversation.json with only `since`
+        ipc.write_json(os.path.join(pth.state, "conversation.json"), {"since": 2000.0})
+        self.assertEqual(history.session_id(pth), "")
 
 
 if __name__ == "__main__":

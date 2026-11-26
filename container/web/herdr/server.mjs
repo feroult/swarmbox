@@ -2575,7 +2575,10 @@ export function createGateway(options = {}) {
       }
 
       if (pathname === '/api/sysop/stop' && req.method === 'POST') {
-        const r = await runCommand(SYSOP_BIN, ['stop']);
+        const body = await readBody(req).catch(() => ({}));
+        const rawId = body && body.goal_id ? String(body.goal_id).trim() : '';
+        const goalId = /^[A-Za-z0-9._-]{1,64}$/.test(rawId) ? rawId : '';
+        const r = await runCommand(SYSOP_BIN, goalId ? ['stop', goalId] : ['stop']);
         broadcast(buildSnapshot({ type: 'sysop' }));
         if (!r.ok) return sendJson(res, 409, { error: 'stop_failed', message: r.stderr || r.stdout || 'nothing to stop' });
         return sendJson(res, 200, { ok: true, message: r.stdout || 'stopped' });

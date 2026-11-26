@@ -728,7 +728,7 @@ class OwnProcess(Base):
         os.close(r)
 
     def test_bad_settings_stop_it_with_a_clear_line(self):
-        for var, val in (("SWARMBOX_SYSOP_AUTONOMY", "yolo"), ("SWARMBOX_SYSOP_COUNTDOWN", "x"), ("SWARMBOX_SYSOP_MAX_STEPS", "0"),
+        for var, val in (("SWARMBOX_SYSOP_AUTONOMY", "yolo"), ("SWARMBOX_SYSOP_COUNTDOWN", "x"), ("SWARMBOX_SYSOP_MAX_STEPS", "-1"),
                          ("SWARMBOX_SYSOP_BRAIN", "b {nope}"), ("SWARMBOX_SYSOP_MODEL", "a b"),
                          ("SWARMBOX_SYSOP_TOPIC", "Goal"), ("SWARMBOX_SYSOP_TOPIC", "a/b"), ("SWARMBOX_SYSOP_GROUP", "x" * 64), ("SWARMBOX_SYSOP_GROUP", "-g")):
             with self.subTest(var=var):

@@ -60,9 +60,9 @@ and the error tells the brain how to write it. Below `full-auto`, no level lets 
 
 ## Stop and budgets
 
-- **Stop.** `swarmbox-sysop stop` (`Ctrl+A X`, and the stop key of the panel) kills the brain's process group, ends the goal as `stopped` and drops the queue. It always works, also while an approval waits.
-- **Steps.** At most `sysop.max_steps` tool calls per goal (default 20; `say` and `done` do not count). After that every tool but `say` and `done` answers with an error.
-- **Time.** At most `sysop.max_seconds` per goal (default 300). The brain is killed at the deadline.
+- **Stop.** Press **Stop** in the Sysop composer (`Esc` when focused), the **Live Strip** above the mobile composer, the mobile terminal dock stop button, or run `swarmbox-sysop stop` (`Ctrl+A X`). Stop sends a graceful interrupt (`SIGINT`) first so Claude Code preserves its persistent session context, then terminates the process group. Clicking `×` on a queued item cancels just that queued goal (`POST /api/sysop/stop` with `{ "goal_id": "..." }`).
+- **Steps.** Unlimited by default (`sysop.max_steps` = `0`); set `1` to `500` if you want a per-goal tool call cap (`say` and `done` do not count).
+- **Time.** Unlimited by default (`sysop.max_seconds` = `0`); set `10` to `3600` if you want an automatic per-goal timeout.
 
 ## How the tools reach the tabs
 
@@ -153,8 +153,8 @@ The brain needs a login: Claude Code's preset uses the one already in the box.
 | `sysop.autonomy` | `full-auto` | `full-auto`, `auto`, `confirm-risky` or `confirm-all` |
 | `sysop.autocontext` | `1` | `1` writes a digest of each repository an agent works in and starts new sessions with it (below); `0` writes none and removes them |
 | `sysop.countdown` | `4` | seconds an action waits for your veto, 0 to 30 (`0` sends at once) |
-| `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100 |
-| `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600 |
+| `sysop.max_steps` | `0` | tool calls of one goal, `0` (unlimited) or `1` to `500` |
+| `sysop.max_seconds` | `0` | seconds of one goal, `0` (unlimited) or `10` to `3600` |
 | `sysop.topic` | `goal` | the bus topic the sysop listens on (`[a-z0-9][a-z0-9._-]{0,62}`); it hears voice when `voice.topic` is the same name |
 | `sysop.group` | `sysop` | the group the sysop subscribes with (same charset); members of a group share the goals, one each |
 

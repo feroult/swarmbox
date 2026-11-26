@@ -506,7 +506,7 @@ class KilledBrainGoal(tss.Base):
         pid = ss.wait_for(lambda: (self.state(gid) or {}).get("brain", {}).get("pid"), 15)
         self.assertTrue(pid)
         ss.wait_for(lambda: os.path.exists(os.path.join(self.e.paths.goals, gid, "calls.jsonl")), 15)
-        subprocess.run(["pkill", "-9", "-P", str(pid)], check=False)       # the fake claude is the child of the `timeout` wrapper
+        os.kill(pid, 9)
         st = self.wait_state(gid, seconds=30)
         self.assertEqual(st["state"], "failed")
         self.assertIn("killed (signal 9, KILL", st["error"], st["error"])

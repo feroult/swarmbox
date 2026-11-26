@@ -464,7 +464,7 @@ class Service:
             self.write_goal(goal)
             aud.append("state", state="running")
             self.status()
-            deadline = goal.started + self.cfg.max_seconds
+            deadline = (goal.started + self.cfg.max_seconds) if (self.cfg.max_seconds and self.cfg.max_seconds > 0) else None
             ctx = os.path.join(gdir, "context.json")
             ipc.write_json(ctx, {"goal": goal.id, "source": goal.source, "goal_dir": gdir, "audit": self.paths.audit,
                                  "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "approval_timeout": self.cfg.approval_timeout,
@@ -475,7 +475,9 @@ class Service:
             with open(pfile, "w", encoding="utf-8") as f:
                 f.write(brain.system_prompt(goal.source, self.cfg.max_steps, self.cfg.max_seconds, self.cfg.autonomy))
             os.chmod(pfile, 0o600)
-            argv, env = brain.build(self.cfg, gdir, mcp, goal.source, pfile)
+            prev_sid = history.session_id(self.paths)
+            argv, env = brain.build(self.cfg, gdir, mcp, goal.source, pfile, session_id=prev_sid)
+            resuming = bool(prev_sid and "--resume" in argv)
             kw = {"popen": self.popen} if self.popen else {}
 
             def stop_check():
@@ -491,7 +493,8 @@ class Service:
                 goal.brain["pid"] = pid
                 self.refresh(goal)
             # Pre-seed a fresh, nonce-framed workspace snapshot + conversation history so the brain has immediate awareness
-            # without spending Turn 1 calling box_state.
+            # without spending Turn 1 calling box_state. When resuming a persistent Claude Code session, skip the lossy
+            # text history block since the session already holds the full conversation and prompt cache.
             parts = []
             if os.environ.get("SWARMBOX_SYSOP_PRESEED", "1") != "0":
                 try:
@@ -500,19 +503,25 @@ class Service:
                         parts.append(mcpserver.format_box_state(ws, "workspace"))
                 except Exception:
                     pass
-            try:
-                before = history.conversation(history.load(self.paths), goal.id, self.clock(), since=history.since(self.paths))
-            except Exception as e:      # a damaged folder of an old goal must not stop this one
-                self.log("goal %s: no conversation so far (%r)" % (goal.id, e))
-                before = ""
-            if before:
-                parts.append(before)
+            if not resuming:
+                try:
+                    before = history.conversation(history.load(self.paths), goal.id, self.clock(), since=history.since(self.paths))
+                except Exception as e:      # a damaged folder of an old goal must not stop this one
+                    self.log("goal %s: no conversation so far (%r)" % (goal.id, e))
+                    before = ""
+                if before:
+                    parts.append(before)
             if parts:
                 heard = "\n\n".join(parts) + "\n\nThe goal now (" + goal.source + "):\n" + goal.text
             else:
                 heard = goal.text
             res = brain.run(self.cfg, heard, goal.source, gdir, argv, env, stop_check, lambda: self.refresh(goal), deadline,
                             clock=self.clock, on_start=on_start, **kw)
+            if res.session_id:
+                history.save_session_id(self.paths, res.session_id)
+            elif resuming and res.outcome == "failed" and re.search(r"session|resume|conversation", res.error or "", re.I):
+                # Stale/missing persistent session: clear it so the next turn starts cleanly.
+                history.save_session_id(self.paths, "")
         except Exception as e:             # a bug here must not kill the service: this goal fails, the next one runs
             self.log("goal %s: internal error: %r" % (goal.id, e))
             res = brain.Result("failed", explain(e))
@@ -522,6 +531,8 @@ class Service:
         if res.summary:
             goal.summary = res.summary
         goal.brain.update({"exit": res.exit_code, "turns": res.turns, "cost": res.cost})
+        if res.session_id:
+            goal.brain["session_id"] = res.session_id
         goal.pending = None
         for name in ("pending_action.json", "decision.json"):
             ipc.remove(os.path.join(gdir, name))

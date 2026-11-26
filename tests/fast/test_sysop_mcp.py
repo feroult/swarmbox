@@ -817,7 +817,7 @@ class Finishing(Rig):
         self.ok("say", text="a stray say is harmless")
 
     def test_a_long_summary_is_sent_back_once_to_be_written_again_and_then_taken(self):
-        long_text = "the command printed this and that " * 40
+        long_text = "the command printed this and that " * (mcpserver.DONE_MAX // 30 + 2)
         t = self.fail("done", summary=long_text)
         self.assertIn("at most %d" % mcpserver.DONE_MAX, t)
         self.assertIsNone(ipc.read_json(os.path.join(self.gdir, "done.json")), "the goal is not finished by the refused call")
@@ -825,8 +825,9 @@ class Finishing(Rig):
         self.assertEqual(ipc.read_json(os.path.join(self.gdir, "done.json"))["summary"], "Tests pass: 41 of 41.")
 
     def test_a_brain_that_keeps_a_long_summary_is_not_asked_twice(self):
-        self.fail("done", summary="x " * 700)
-        self.ok("done", summary="y " * 700)         # a second long one is taken, cut to what the panel shows
+        n = mcpserver.DONE_MAX // 2 + 100
+        self.fail("done", summary="x " * n)
+        self.ok("done", summary="y " * n)         # a second long one is taken, cut to what the panel shows
         self.assertEqual(len(ipc.read_json(os.path.join(self.gdir, "done.json"))["summary"]), mcpserver.DONE_MAX)
 
     def test_a_reply_of_a_few_lines_is_taken_at_once(self):

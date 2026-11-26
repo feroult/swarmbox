@@ -31,8 +31,8 @@ DEFAULTS = {
     "autocontext": "1",
     "countdown": "4",
     "approval_timeout": "60",
-    "max_steps": "20",
-    "max_seconds": "300",
+    "max_steps": "0",
+    "max_seconds": "0",
     "max_goals": "5",
 }
 ENV = {k: "SWARMBOX_SYSOP_" + k.upper() for k in DEFAULTS}
@@ -107,7 +107,7 @@ def load(env):
     v["autocontext"] = ac in ("1", "true")
     v["countdown"] = _number(ENV["countdown"], raw["countdown"], 0, 60, False)
     v["approval_timeout"] = _number(ENV["approval_timeout"], raw["approval_timeout"], 1, 3600, False)
-    v["max_steps"] = _number(ENV["max_steps"], raw["max_steps"], 1, 500, True)
-    v["max_seconds"] = _number(ENV["max_seconds"], raw["max_seconds"], 5, 86400, True)
+    v["max_steps"] = _number(ENV["max_steps"], raw["max_steps"], 0, 500, True)
+    v["max_seconds"] = 0 if raw["max_seconds"].strip() == "0" else _number(ENV["max_seconds"], raw["max_seconds"], 5, 86400, True)
     v["max_goals"] = _number(ENV["max_goals"], raw["max_goals"], 1, 100, True)
     return Config(**v)

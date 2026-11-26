@@ -183,14 +183,14 @@ class Route:
 
 
 class Budget:
-    def __init__(self, max_steps, deadline, clock=time.time):
+    def __init__(self, max_steps=0, deadline=None, clock=time.time):
         self.max_steps, self.deadline, self.clock, self.steps = max_steps, deadline, clock, 0
 
     def charge(self):
-        """Count one tool call; PolicyError when the budget is spent."""
+        """Count one tool call; PolicyError when the budget is spent (0 / None means unlimited)."""
         if self.deadline is not None and self.clock() >= self.deadline:
             raise PolicyError("the time budget of this goal is spent: do not call more tools, say what is done and call done")
-        if self.steps >= self.max_steps:
+        if self.max_steps and self.max_steps > 0 and self.steps >= self.max_steps:
             raise PolicyError("the budget of %d tool calls is spent: do not call more tools, say what is done and call done" % self.max_steps)
         self.steps += 1
 

@@ -728,24 +728,84 @@ function formatCallStep(call) {
 function liveActionLabel(call) {
   const a = call && typeof call.args === 'object' && call.args ? call.args : {};
   const fn = String((call && call[FN_KEY]) || '').slice(0, 30);
-  const tab = String(a.tab || '').slice(0, 20);
-  if (fn === 'list_tabs') return 'Checking open tabs…';
-  if (fn === 'read_tab') return tab ? `Reading ${tab}…` : 'Reading active tab…';
+  const tab = String(a.tab || '').slice(0, 24);
+  if (fn === 'box_state' || fn === 'list_tabs') {
+    const sec = String(a.section || '').slice(0, 16);
+    return sec && sec !== 'workspace' ? `box_state · ${sec}` : 'Inspecting box state…';
+  }
+  if (fn === 'read_tab') return tab ? `read → ${tab}` : 'Reading active tab…';
   if (fn === 'box_info') return 'Inspecting box health…';
-  if (fn === 'focus_tab') return tab ? `Switching to ${tab}…` : 'Switching tab…';
-  if (fn === 'open_tab') return `Opening ${String(a.name || a.agent || 'tab').slice(0, 20)}…`;
-  if (fn === 'rename_tab') return tab ? `Renaming ${tab}…` : 'Renaming tab…';
+  if (fn === 'tab') {
+    const act = String(a.action || 'tab').slice(0, 16);
+    const what = String(a.name || a.title || a.repo || a.agent || a.pin_id || tab || '').slice(0, 24);
+    return what ? `tab ${act} → ${what}` : `tab ${act}…`;
+  }
+  if (fn === 'focus_tab') return tab ? `focus → ${tab}` : 'Switching tab…';
+  if (fn === 'open_tab') return `tab open → ${String(a.name || a.agent || 'tab').slice(0, 24)}`;
+  if (fn === 'rename_tab') return tab ? `rename → ${tab}` : 'Renaming tab…';
   if (fn === 'worktree') {
     const act = String(a.action || 'status');
-    return act === 'merge' ? 'Merging worktree…' : act === 'remove' ? 'Removing worktree…' : 'Checking worktree…';
+    const tgt = String(a.target || tab || '').slice(0, 24);
+    return tgt ? `worktree ${act} → ${tgt}` : `worktree ${act}…`;
   }
-  if (fn === 'close_tab') return tab ? `Closing ${tab}…` : 'Closing tab…';
+  if (fn === 'close_tab') return tab ? `close → ${tab}` : 'Closing tab…';
   if (fn === 'run') {
-    const cmd = String(a.command || '').replace(/\s+/g, ' ').trim().slice(0, 56);
-    return tab ? `Running in ${tab}: ${cmd}` : `Running: ${cmd}`;
+    const cmd = String(a.command || '').replace(/\s+/g, ' ').trim().slice(0, 48);
+    return tab ? `run → ${tab}` : `run · ${cmd}`;
   }
-  if (fn === 'wait') return 'Waiting for output…';
+  if (fn === 'input') return tab ? `input → ${tab}` : 'Sending keys…';
+  if (fn === 'wait') return tab ? `wait → ${tab}` : 'Waiting for output…';
   return 'Working…';
+}
+
+function readLiveStreamText(gdir) {
+  const p = path.join(gdir, 'stream.jsonl');
+  let raw = '';
+  try {
+    const st = fs.statSync(p);
+    const maxBytes = 256 * 1024;
+    if (st.size <= maxBytes) {
+      raw = fs.readFileSync(p, 'utf8');
+    } else {
+      const fd = fs.openSync(p, 'r');
+      try {
+        const buf = Buffer.alloc(maxBytes);
+        fs.readSync(fd, buf, 0, maxBytes, st.size - maxBytes);
+        raw = buf.toString('utf8');
+      } finally {
+        fs.closeSync(fd);
+      }
+    }
+  } catch (_) {
+    return '';
+  }
+  let lastAssistant = '';
+  let deltaChunks = [];
+  for (const line of raw.split('\n')) {
+    if (!line.startsWith('{')) continue;
+    let ev;
+    try { ev = JSON.parse(line); } catch (_) { continue; }
+    if (!ev || typeof ev !== 'object') continue;
+    if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {
+      const parts = [];
+      for (const b of ev.message.content) {
+        if (b && b.type === 'text' && typeof b.text === 'string' && b.text) parts.push(b.text);
+      }
+      if (parts.length) {
+        lastAssistant = parts.join('\n').trim();
+        deltaChunks = [];
+      }
+    } else if (ev.type === 'stream_event' && ev.event && typeof ev.event === 'object') {
+      const inner = ev.event;
+      if (inner.type === 'message_start') {
+        deltaChunks = [];
+      } else if (inner.type === 'content_block_delta' && inner.delta && inner.delta.type === 'text_delta' && typeof inner.delta.text === 'string') {
+        deltaChunks.push(inner.delta.text);
+      }
+    }
+  }
+  const streamed = deltaChunks.join('').trim();
+  return streamed || lastAssistant;
 }
 
 function buildGoalTurn(gdir, gid, goal, isCurrent) {
@@ -774,13 +834,21 @@ function buildGoalTurn(gdir, gid, goal, isCurrent) {
   }
   let reply = '';
   if (TERMINAL_STATES.has(goal.state)) {
-    reply = String(goal.summary || goal.error || (sayTexts.length ? sayTexts[sayTexts.length - 1] : goal.state)).trim();
+    if (goal.state === 'stopped') {
+      reply = String(goal.summary || (sayTexts.length ? sayTexts[sayTexts.length - 1] : '')).trim();
+    } else {
+      reply = String(goal.summary || goal.error || (sayTexts.length ? sayTexts[sayTexts.length - 1] : goal.state)).trim();
+    }
   }
   // Drop trailing say if it duplicates the final reply
   const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const notes = reply
     ? sayTexts.filter((s) => norm(s) !== norm(reply))
     : sayTexts;
+  const streamText = running ? readLiveStreamText(gdir) : '';
+  const liveTarget = running && lastCall && lastCall.args && typeof lastCall.args === 'object'
+    ? String(lastCall.args.tab || lastCall.args.name || '').slice(0, 40)
+    : '';
 
   return {
     id: gid,
@@ -792,6 +860,8 @@ function buildGoalTurn(gdir, gid, goal, isCurrent) {
     running,
     actions,
     live_action: running ? (lastCall ? liveActionLabel(lastCall) : 'Thinking…') : '',
+    live_target: liveTarget,
+    stream_text: streamText,
     notes,
     reply,
   };

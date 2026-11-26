@@ -683,9 +683,9 @@ assert.equal(a.actions[1].ok, false);
 assert.equal(a.running, false);
 assert.equal(b.running, true);
 assert.equal(b.reply, '');
-assert.equal(b.live_action, 'Running in t1: pytest -q');
+assert.equal(b.live_action, 'run → t1');
 assert.equal(s.state, 'working');
-assert.equal(s.sentence, 'Running in t1: pytest -q');
+assert.equal(s.sentence, 'run → t1');
 assert.ok(s.steps.some((x) => x.kind === 'goal' && x.text === 'roda os testes'), 'the flat steps of the current goal stay for the cockpit');
 // New: the goals before it leave the panel (the running one stays), and history.py reads the same file
 startNewConversation(Date.now() / 1000 - 30);

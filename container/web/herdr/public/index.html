@@ -230,13 +230,16 @@
         <button data-key="enter" aria-label="Enter">↵</button>
       </div>
 
-      <!-- Terminal-mode bottom dock: clean [Sysop ⌃] capsule + primary [Speak] pill -->
+      <!-- Terminal-mode bottom dock: clean [Sysop ⌃] capsule + optional [■] stop while running + primary [Speak] pill -->
       <div class="mobile-capsule" id="mobile-capsule">
         <button type="button" class="capsule-main" id="btn-mobile-sysop" data-state="idle" data-on="0">
           <span class="capsule-text" id="mobile-sysop-text">Sysop</span>
           <span class="capsule-chevron" aria-hidden="true">
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4-4 4 4"/></svg>
           </span>
+        </button>
+        <button type="button" class="capsule-stop hidden" id="btn-mobile-dock-stop" title="Stop Sysop" aria-label="Stop Sysop">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>
         </button>
         <button type="button" class="capsule-mic" id="btn-mobile-mic" title="Tap to record a voice goal" aria-label="Record voice goal">
           <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
@@ -315,10 +318,8 @@
         <button type="button" class="sysop-tab" id="sysop-tab-events" role="tab" aria-selected="false" aria-controls="sysop-events" title="What the Sysop did by itself: repository context, tab names">Events<span class="sysop-tab-badge hidden" id="sysop-events-badge"></span></button>
       </div>
       <div class="sysop-head-actions">
-        <button type="button" class="sysop-new-btn hidden" id="btn-sysop-new" title="Start a new conversation: Sysop forgets the goals before it" aria-label="New conversation"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New</button>
-        <button class="icon-btn hidden" id="btn-sysop-stop" title="Stop running goal" aria-label="Stop running goal">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-        </button>
+        <span class="sysop-model-pill hidden" id="sysop-model-pill" title="Active Sysop model"></span>
+        <button type="button" class="sysop-new-btn hidden" id="btn-sysop-new" title="Start a new conversation: Sysop starts a fresh Claude Code session" aria-label="New conversation"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New</button>
       </div>
     </div>
 
@@ -343,8 +344,21 @@
     <div class="sysop-feed" id="sysop-feed" role="tabpanel" aria-labelledby="sysop-tab-chat"></div>
     <div class="sysop-events hidden" id="sysop-events" role="tabpanel" aria-labelledby="sysop-tab-events"></div>
 
+    <!-- Queued Goals Strip (Desktop & Mobile) -->
+    <div class="sysop-queue-bar hidden" id="sysop-queue-bar" role="status" aria-live="polite"></div>
+
+    <!-- Mobile Live Execution Strip (docks above WhatsApp pill while Sysop runs, preserving 48x48 Mic/Send FAB) -->
+    <div class="sysop-live-strip mobile-only hidden" id="sysop-live-strip" role="status" aria-live="polite">
+      <span class="live-strip-spin" aria-hidden="true"></span>
+      <span class="live-strip-text" id="sysop-live-strip-text">Working…</span>
+      <button type="button" class="live-strip-stop" id="btn-mobile-live-stop" title="Stop Sysop" aria-label="Stop Sysop">
+        <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
+        <span>Stop</span>
+      </button>
+    </div>
+
     <!-- Goal Composer (Desktop: classic box; Mobile: full-bottom WhatsApp pill + 48x48 mic/send + sinusoidal voice bar) -->
-    <div class="sysop-composer" id="sysop-composer" data-ready="0">
+    <div class="sysop-composer" id="sysop-composer" data-ready="0" data-running="0">
       <div class="goal-box" id="goal-box">
         <textarea id="goal-input" rows="2" placeholder="Ask Sysop or direct an agent… (Alt+G)"></textarea>
         <div class="goal-actions" id="goal-actions">
@@ -353,7 +367,12 @@
             <span class="mic-label" id="mic-label">Speak</span>
           </button>
           <span class="voice-hint" id="voice-hint"></span>
-          <button type="button" class="send-btn" id="btn-send-goal" aria-label="Send"><svg class="send-ico" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m0 0l-6 6m6-6l6 6"/></svg><span class="send-label">Send</span></button>
+          <button type="button" class="stop-btn hidden" id="btn-sysop-stop" title="Stop Sysop (Esc)" aria-label="Stop Sysop">
+            <svg class="stop-ico" viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
+            <span class="stop-label">Stop</span>
+            <kbd class="stop-kbd">Esc</kbd>
+          </button>
+          <button type="button" class="send-btn" id="btn-send-goal" aria-label="Send"><svg class="send-ico" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m0 0l-6 6m6-6l6 6"/></svg><span class="send-label" id="send-label">Send</span></button>
         </div>
         <div class="voice-bar desktop-voice-bar" id="desktop-voice-bar" role="region" aria-label="Voice recording">
           <button type="button" class="voice-cancel-btn voice-cancel-sm" id="btn-desktop-rec-cancel" title="Discard recording" aria-label="Discard recording">
