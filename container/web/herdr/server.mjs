@@ -1069,9 +1069,12 @@ export function createGateway(options = {}) {
       lastTabCwd.set(addr, cwd);
       const isTurn = type === 'turn';
       const isFinishedWork = type === 'status' && prevSt === 'working' && (st === 'done' || st === 'idle');
-      if (isTurn || isFinishedWork) {
+      // A tab that starts working is the user who just sent a request: the auto-namer names it a few seconds later
+      // (when the request was not cancelled), instead of at the end of a turn that may take minutes.
+      const isStart = type === 'status' && st === 'working' && prevSt !== 'working';
+      if (isTurn || isFinishedWork || isStart) {
         publishTabEvent({
-          event: isTurn ? 'turn' : 'status',
+          event: isTurn ? 'turn' : isStart ? 'start' : 'status',
           tab: addr,
           cwd,
           agent: detectTerminalAgent(t) || 'shell',

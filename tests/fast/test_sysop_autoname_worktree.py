@@ -163,24 +163,30 @@ class AutoNamerTest(unittest.TestCase):
         namer = autoname.AutoNamer(bus=None, paths=self.paths, tabs=FakeTabs([], {}))
         self.assertEqual([namer.cooldown_for(n) for n in range(6)], [0.0, 180.0, 600.0, 1800.0, 3600.0, 3600.0])
 
-    def test_keep_answer_waits_recheck_and_unchanged_input_never_calls(self):
+    def test_keep_answer_waits_recheck_only_on_a_named_tab_and_unchanged_input_never_calls(self):
         tabs = FakeTabs([{"tab": "t1", "name": "api", "cmd": "claude"}], {"t1": "x" * 80})
         calls = []
         suggested = ["KEEP"]
         namer = self._namer(tabs, suggested, calls=calls, recheck=120.0)
         self.assertIsNone(namer.handle_event(self._turn()))
         self.assertEqual(len(calls), 1)
-        # New screen, but inside the recheck interval: no call
+        # Still unnamed ('api' is the folder): new input is tried at once, a KEEP costs no wait
         tabs.screens["t1"] = "y" * 80
+        self.now += 5.0
+        self.assertIsNone(namer.handle_event(self._turn()))
+        self.assertEqual(len(calls), 2)
+        # A named tab (auto) waits the recheck interval after a KEEP
+        tabs.tabs[0].update(title="Fix Login", title_source="auto")
+        tabs.screens["t1"] = "z" * 80
         self.now += 60.0
         self.assertIsNone(namer.handle_event(self._turn()))
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
         # Past it, with the same screen as the last call: no call either
         tabs.screens["t1"] = "x" * 80
         namer._tab_state["t1"]["last_sig"] = "s|/home/a/api|80|" + "x" * 80
         self.now += 500.0
         self.assertIsNone(namer.handle_event(self._turn()))
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
 
     def test_user_requests_replace_the_screen_and_gate_on_new_requests(self):
         tabs = FakeTabs([{"tab": "t1", "name": "api", "cmd": "claude"}], {})  # no screen at all: it must not be needed
@@ -217,6 +223,54 @@ class AutoNamerTest(unittest.TestCase):
         self.now += 1000.0
         self.assertIsNone(namer.handle_event(self._turn()))
         self.assertEqual(calls[-1]["title"], "Renomear Tabs")
+
+    def test_a_sent_request_names_the_tab_after_the_grace_unless_cancelled(self):
+        tabs = FakeTabs([{"tab": "t1", "name": "api", "cmd": "claude"}], {})
+        reqs = [["corrija o redirect do login oauth"]]
+        calls = []
+        suggested = ["Login OAuth"]
+        logs = []
+        namer = self._namer(tabs, suggested, requests=lambda a, c: list(reqs[0]), calls=calls, grace=3.0, log=logs.append)
+        # Sent: nothing happens before the grace
+        self.assertIsNone(namer.handle_event(self._turn(event="start")))
+        self.now += 2.0
+        self.assertEqual(namer.run_due(), [])
+        self.assertEqual(calls, [])
+        # Cancelled inside the grace (the tab stopped working): not named, and that end of work is not evaluated either
+        self.assertIsNone(namer.handle_event(self._turn(event="status")))
+        self.now += 10.0
+        self.assertEqual(namer.run_due(), [])
+        self.assertEqual(calls, [])
+        self.assertIn("cancelled", logs[-1])
+        # Sent again and still working after the grace: named, long before the turn ends
+        reqs[0].append("e adicione um teste para o callback")
+        namer.handle_event(self._turn(event="start"))
+        self.now += 3.0
+        self.assertEqual(namer.run_due(), ["Login OAuth"])
+        self.assertEqual(tabs.renames, [("t1", "Login OAuth", "auto")])
+        self.assertIn("-> 'Login OAuth' on start", logs[-1])
+        # The end of that turn, with the same requests, makes no second call
+        self.now += 60.0
+        self.assertIsNone(namer.handle_event(self._turn(event="status")))
+        self.assertEqual(len(calls), 1)
+
+    def test_a_failed_naming_call_is_logged_and_retried(self):
+        tabs = FakeTabs([{"tab": "t1", "name": "api", "cmd": "claude"}], {})
+        logs = []
+        fail = [True]
+
+        def namer_fn(cwd, ag, title, scr, requests=None):
+            if fail[0]:
+                raise autoname.NamerError("claude -p exit 1: Not logged in")
+            return "Login OAuth"
+
+        namer = autoname.AutoNamer(bus=None, paths=self.paths, tabs=tabs, namer=namer_fn, clock=lambda: self.now,
+                                   log=logs.append, requests=lambda a, c: ["corrija o login oauth agora"])
+        self.assertIsNone(namer.handle_event(self._turn()))
+        self.assertIn("Not logged in", logs[-1])
+        fail[0] = False
+        self.now += 1.0
+        self.assertEqual(namer.handle_event(self._turn()), "Login OAuth")   # same input, but the failure was no answer
 
     def test_titles_fit_the_sidebar(self):
         self.assertEqual(autoname.clean_suggested_title("KEEP"), "")

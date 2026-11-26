@@ -117,7 +117,7 @@ Aligned with [addons-design.md](addons-design.md):
     "title_source": ""
   }
   ```
-- Triggered by real `herdr-core` events (`turn`, `status` transitions such as `working -> done|idle`, and `cwd` change) — zero blind polling.
+- Triggered by real `herdr-core` events (`start` when a tab begins working, i.e. the user just sent a request; `turn`; `status` transitions such as `working -> done|idle`; and `cwd` change) — zero blind polling.
 - Published from a thin `hc events` bridge (or the gateway with a `WEB=0` fallback) so both Web Studio and SSH Cockpit sessions emit events.
 
 ### 4.3 Sysop Auto-Namer Behavior
@@ -125,8 +125,10 @@ Aligned with [addons-design.md](addons-design.md):
 - **Cheap local gates (before any LLM call), in order:**
   - Skip if `title_source == "user"` (checked on the event and again on `swarmbox-tabs list` just before the call).
   - Skip while an interactive user goal is active in the Sysop queue.
-  - **Per-tab backoff:** after its 1st, 2nd, 3rd and every later automatic rename a tab keeps its title for 3, 10, 30 and then 60 minutes (`COOLDOWNS`), so a name can follow the goal but settles. A `cwd` change to another folder resets the backoff and names the tab at once.
-  - After a call that answered `KEEP`, no new call for that tab for 2 minutes (`RECHECK`).
+  - **When:** about 3 seconds after the user sends a request (`start`, `SUBMIT_GRACE`), if the tab is still working then; when it stops working inside that window (an Esc) the request is not used. `start` comes from the OSC 7501 status that herdr-core reads from every agent (claude as `claude-code`, agy and opencode report it natively); the requests are read from that agent's own store, so the timing is the same for all three. The end of a turn and a `cwd` change are evaluated too, for a missed `start` or a tab that only has a screen to read.
+  - **A tab without a name** (its folder or worktree slug, a generic title) has no backoff: every new request is tried, and a `KEEP` ("understand the repo") costs no wait.
+  - **Per-tab backoff of a named tab:** after its 1st, 2nd, 3rd and every later automatic rename a tab keeps its title for 3, 10, 30 and then 60 minutes (`COOLDOWNS`), so a name can follow the goal but settles. A `cwd` change to another folder resets the backoff and names the tab at once.
+  - After a call on a named tab that answered `KEEP`, no new call for that tab for 2 minutes (`RECHECK`).
   - No call when the input is the same as on the last call (the same requests, or the same screen tail).
 - **Input: the user's requests first, the screen as the fallback.** `usermsgs.recent(agent, cwd)` reads the last 4 requests the user typed in that folder from the agent's own store, each clipped to 280 characters; slash commands, `!` shell lines and short replies ("ok", "pode sim": fewer than 3 words, while longer ones exist) are left out:
   - `claude`: `~/.claude/history.jsonl` (`project` = cwd, `sessionId`), the prompt history, not the session transcript (which the output of the agent's commands grows to megabytes).
@@ -136,6 +138,7 @@ Aligned with [addons-design.md](addons-design.md):
 - **1-shot naming call:** `claude -p --model haiku` with its own short `--system-prompt` (not Claude Code's default one), `--tools ""`, `--strict-mcp-config`, `--setting-sources ""` and `--no-session-persistence` (not `--bare`, which reads no OAuth login). The rules ask for 1 to 3 short words in the language of the requests, the concrete subject rather than the activity, and `KEEP` when there is no clear goal yet (exploring, "understand the repo") or when the current title still fits; the current auto title is sent so the model can keep it. A typical input is about 1500 characters.
   - The answer is cut to 18 characters on a word boundary (a dangling "of", "de" is dropped); `KEEP`, empty and generic answers change nothing.
   - Applies via `swarmbox-tabs rename <tab> "<Title>" --source auto`; the audit record says whether the title came from the `requests` or the `screen`.
+  - Every decision is one `autoname <tab>: ...` line in the sysop `serve.log`: the gate that skipped, a `KEEP` with the answer and the time it took, the rename, or why the naming call failed (a failed call is not an answer: the same input is tried again).
   - Additionally, the Sysop MCP server exposes `rename_tab(tab, title)` so interactive goals can name tabs opportunistically with zero extra calls.
 - Not measured: the tokens of one real call (the development box had no Claude login for `claude -p`), and the store formats of agent versions other than the ones above (a changed format gives no requests, so the screen is used).
 
