@@ -839,8 +839,10 @@ export function readContextState(stateSysop, terminals, status = null) {
   const settings = status && status.settings && typeof status.settings === 'object' ? status.settings : {};
   const on = settings.autocontext === undefined ? fs.existsSync(dir) : Boolean(settings.autocontext);
   const calls = new Map();
+  const tops = new Map();   // key -> the folder its last event names (an index written before it kept `top` has none)
   for (const ev of readJsonlSafe(path.join(stateSysop, 'system_events.jsonl'), 200)) {
     if (!ev || ev.kind !== 'autocontext' || !CTX_KEY_RE.test(String(ev.key || ''))) continue;
+    if (typeof ev.top === 'string' && ev.top) tops.set(String(ev.key), ev.top);
     if (ev.phase === 'started' || ev.phase === 'made' || ev.phase === 'failed') {
       calls.set(String(ev.key), {
         phase: String(ev.phase), ts: num(ev.ts) * 1000, reason: String(ev.reason || ''), error: String(ev.error || ''),
@@ -863,7 +865,7 @@ export function readContextState(stateSysop, terminals, status = null) {
     repos.push({
       key,
       repo: String(idx.repo || 'repo'),
-      top: String(idx.top || ''),
+      top: String(idx.top || tops.get(key) || ''),
       base: String(idx.base || '').slice(0, 12),
       at: num(idx.at) * 1000,
       call: calls.get(key) || null,

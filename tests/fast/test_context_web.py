@@ -76,6 +76,13 @@ const ctx2 = readContextState(state, live, { settings: { autocontext: true } });
 assert.equal(ctx2.repos.find((r) => r.key === KEY).state, 'ready');
 assert.equal(ctx2.repos.find((r) => r.key === KEY2).state, 'stuck');
 
+// an index written before it kept `top` still has the folder its events name (the card's rewrite button needs it)
+const KEY3 = '00112233aabbccdd';
+fs.writeFileSync(path.join(dir, 'repos', `${KEY3}.json`), JSON.stringify({ base: 'd'.repeat(40), at: nowSec - 9000, repo: 'old' }));
+fs.appendFileSync(path.join(state, 'system_events.jsonl'), JSON.stringify(
+  { kind: 'autocontext', phase: 'session', key: KEY3, repo: 'old', commit: 'e'.repeat(12), ts: nowSec - 30, tab: 't1', top }) + '\n');
+assert.equal(readContextState(state, live, { settings: { autocontext: true } }).repos.find((r) => r.key === KEY3).top, top);
+
 // the session event reaches the feed with what it started with
 fs.mkdirSync(path.join(process.env.SB_RUN_DIR, 'sysop'), { recursive: true });
 fs.writeFileSync(path.join(process.env.SB_RUN_DIR, 'sysop', 'status.json'), JSON.stringify({ pid: process.pid, settings: { autocontext: true } }));
