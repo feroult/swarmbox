@@ -206,10 +206,11 @@ def remove_pin(pin_id, env=None):
     return {"ok": True, "id": pin_id}
 
 
-def build_agent_argv(agent, resume="continue", env=None):
+def build_agent_argv(agent, resume="continue", env=None, context=True):
     """The herdr-core argv of a pin's terminal (the registry's build_argv): with resume=continue an agent that can resume tries to,
-    and starts fresh when that fails at once (no conversation in this folder)."""
-    return swarmbox_agents.build_argv(agent, resume, env)
+    and starts fresh when that fails at once (no conversation in this folder). A pin with "context": false starts without the
+    repository context."""
+    return swarmbox_agents.build_argv(agent, resume, env, context)
 
 
 SHELL_NAMES = swarmbox_agents.SHELL_NAMES | {""}
@@ -341,7 +342,7 @@ def restore_autostart_pins(hc_bin=None, run_dir=None, env=None, on_boot=False):
             n += 1
         used_names.add(name)
 
-        argv = build_agent_argv(ag, pin.get("resume") or "continue", e)
+        argv = build_agent_argv(ag, pin.get("resume") or "continue", e, pin.get("context") is not False)
         cmd = [
             hc, "run", "--bg", "--keep", "--no-parent", "--json",
             "--name", name,

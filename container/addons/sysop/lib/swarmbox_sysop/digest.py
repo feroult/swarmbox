@@ -629,11 +629,12 @@ class AutoContext:
         repo = repo_of(cwd)
         if repo is None:
             return False
-        what = self.ensure(repo, tab, agent)
-        if what is None and str(body.get("event") or "") == "prepare" and self.hold(repo) and tab:
+        off = body.get("off") is True
+        what = None if off else self.ensure(repo, tab, agent)
+        if what is None and not off and str(body.get("event") or "") == "prepare" and self.hold(repo) and tab:
             self.record_waiting(repo, tab, agent, cwd)
         if str(body.get("event") or "") == "session":
-            self.record_session(repo, tab, agent, cwd, str(body.get("context") or ""), skipped=body.get("skipped") is True)
+            self.record_session(repo, tab, agent, cwd, str(body.get("context") or ""), skipped=body.get("skipped") is True, off=off)
         return what
 
     def ensure(self, repo, tab="", agent=""):
@@ -730,13 +731,13 @@ class AutoContext:
         except OSError as e:
             self.log("autocontext session %s: cannot write: %s" % (tab, e))
 
-    def record_session(self, repo, tab, agent, cwd, context, skipped=False):
-        """An agent session started in `repo`, with the file `context` (its launcher says which) or without one: sessions/<tab> and a
-        `session` line in the panel's feed."""
+    def record_session(self, repo, tab, agent, cwd, context, skipped=False, off=False):
+        """An agent session started in `repo`, with the file `context` (its launcher says which) or without one (`skipped`: the user
+        pressed Enter while it was written; `off`: the user started it without context): sessions/<tab> and a `session` event."""
         commit = repo["head"]
         root = os.path.realpath(self.store.root)
         text, meta = None, {}
-        if context:
+        if context and not off:
             real = os.path.realpath(context)
             name = os.path.basename(real)
             if os.path.dirname(real) == root and name.endswith(".md") and COMMIT_RE.match(name[:-3]):
@@ -752,13 +753,13 @@ class AutoContext:
         rec = {"tab": tab, "agent": agent, "cwd": cwd, "repo": repo["name"], "key": repo["key"], "commit": commit[:12],
                "context": text is not None, "base": str(meta.get("base") or "")[:12], "base_at": float(meta.get("base_at") or 0),
                "changes": int(meta.get("changes") or 0), "writing": writing, "skipped": bool(skipped and text is None),
-               "failed": text is None and not writing and repo["key"] in self.failures, "at": now}
+               "off": bool(off), "failed": text is None and not off and not writing and repo["key"] in self.failures, "at": now}
         if tab:
             try:
                 self.store.save_session(tab, rec, text)
             except OSError as e:
                 self.log("autocontext session %s: cannot write: %s" % (tab, e))
-        fields = {k: rec[k] for k in ("context", "base", "base_at", "changes", "writing", "skipped", "failed")}
+        fields = {k: rec[k] for k in ("context", "base", "base_at", "changes", "writing", "skipped", "off", "failed")}
         emit(self.events_file, "session", dict(repo, head=commit), self.clock, tab, agent, **fields)
         self.log("autocontext %s@%s: a %s session in %s started %s" % (repo["name"], commit[:7], agent, tab or "a shell",
                                                                      "with the orientation" if text is not None else "without it"))

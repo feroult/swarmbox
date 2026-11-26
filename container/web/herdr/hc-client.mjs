@@ -902,6 +902,7 @@ export function readContextState(stateSysop, terminals, status = null) {
       base_at: num(m.base_at) * 1000,
       changes: num(m.changes),
       skipped: Boolean(m.skipped),
+      off: Boolean(m.off),
       failed: Boolean(m.failed),
       waiting: Boolean(m.waiting),
       at: num(m.at) * 1000,
@@ -1094,6 +1095,7 @@ export function readSysopSnapshot(terminals) {
           changes: Number.isFinite(Number(ev.changes)) ? Number(ev.changes) : 0,
           writing: Boolean(ev.writing),
           skipped: Boolean(ev.skipped),
+          off: Boolean(ev.off),
           failed: Boolean(ev.failed),
         };
         allEvents.push(row);
@@ -1477,8 +1479,8 @@ export function noteRecentDir(dir) {
 }
 
 // The argv of a terminal that runs `agent` (shell, yolo or an agent): the registry's, the twin of build_argv in swarmbox_agents.py.
-export function buildAgentArgv(agent, resume = 'continue', env = process.env) {
-  return registryBuildAgentArgv(agent, resume, env);
+export function buildAgentArgv(agent, resume = 'continue', env = process.env, opts = {}) {
+  return registryBuildAgentArgv(agent, resume, env, opts);
 }
 
 export function readPins() {

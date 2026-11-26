@@ -425,15 +425,16 @@ def resume_argv(aid, env=None):
     return list(a["resume"]["args"]) if a else []
 
 
-def launch_script(aid, resume=True, env=None):
+def launch_script(aid, resume=True, env=None, context=True):
     """The bash -lic script that starts agent `aid` in a tab (through its shell function, so auto-approve and MCP apply): with `resume`
     and RESUME_ARGS, it first tries to continue; when that fails within RESUME_FAST_FAIL_S seconds (no conversation here, or a failure
-    such as a login that expired), it says so in the tab and starts fresh. A login shell takes the agent's place when it exits. The JS
-    twin is launchScript in agents.mjs."""
+    such as a login that expired), it says so in the tab and starts fresh. A login shell takes the agent's place when it exits. Without
+    `context` the session starts without the sysop's repository context (SWARMBOX_CONTEXT=0, read by _sb_agent_run). The JS twin is
+    launchScript in agents.mjs."""
     a = get(aid, env)
     if not a:
         return "exec /bin/bash -l"
-    cmd = shlex.quote(a["cmd"])
+    cmd = shlex.quote(a["cmd"]) if context else "SWARMBOX_CONTEXT=0 " + shlex.quote(a["cmd"])
     rargs = " ".join(shlex.quote(w) for w in a["resume"]["args"])
     if resume and rargs:
         return ("_sb_t0=$(date +%%s); SWARMBOX_WORKTREE_GUARD=0 %s %s; _sb_rc=$?; "
@@ -444,7 +445,7 @@ def launch_script(aid, resume=True, env=None):
     return "SWARMBOX_WORKTREE_GUARD=0 %s; exec /bin/bash -l" % cmd
 
 
-def build_argv(agent, resume="continue", env=None):
+def build_argv(agent, resume="continue", env=None, context=True):
     """The argv of a terminal that runs `agent` (an id, an alias, `shell` or `yolo`): a login shell for `shell` and for a name that is no
     agent; `yolo` is the default agent of the box (when there is none, the `yolo` function runs and says so in the tab). An agent starts
     through an interactive shell (-i), so that its shell function applies (auto-approve, the box MCP servers); the worktree guard is off,
@@ -458,7 +459,7 @@ def build_argv(agent, resume="continue", env=None):
         aid = resolve(name, env)
     if not aid:
         return ["/bin/bash", "-l"]
-    return ["/bin/bash", "-lic", launch_script(aid, resume == "continue", env)]
+    return ["/bin/bash", "-lic", launch_script(aid, resume == "continue", env, context)]
 
 
 def hook(aid, name, env=None):
@@ -666,13 +667,16 @@ FUNC_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 # commit without a file first publishes `prepare` and, when somebody received it, waits for the file (_sb_wait: the sysop carries the
 # repository's digest forward at once; the first time in a repository the model writes it, about 10 s, shown on the terminal, and Enter
 # skips); then `session` says which file the agent got (or none, and whether the user skipped), in the background, for the panel and the
-# mark on the tab. No folder, no bus: nothing is published and nothing waits. `command CMD` reaches the program (or its shim), not the
+# mark on the tab. SWARMBOX_CONTEXT=0 (the Web Studio's New agent box, unticked) starts without the context and says so (`off`).
+# No folder, no bus: nothing is published and nothing waits. `command CMD` reaches the program (or its shim), not the
 # function. Written for bash and zsh.
 SHELL_HELPER = r"""_sb_wait() {
     # _sb_wait DIR COMMIT: after a `prepare`, wait for DIR/COMMIT.md. Up to 2 s for a carry-forward or a mark of the sysop; while the mark
-    # is COMMIT.wait (the model is writing the first digest of the repository) it says so on the terminal, up to 30 s, and Enter starts
-    # the agent at once without it. COMMIT.none, or no mark after 2 s (an older sysop), starts at once. 1 when the user skipped.
-    local _w_i=0 _w_shown= _w_repo= _w_why= _w_line _w_k _w_spin='|/-\'
+    # is COMMIT.wait (the model is writing the first digest of the repository) it says so in one still line on the terminal (cut to the
+    # terminal's real width, so it never wraps: a redrawn line that wraps floods the screen), up to 30 s, and Enter starts the agent at
+    # once without it. The Web Studio shows its own loader over the terminal. COMMIT.none, or no mark after 2 s (an older sysop), starts
+    # at once. 1 when the user skipped.
+    local _w_i=0 _w_shown= _w_repo= _w_why= _w_line _w_k _w_cols
     while [ "$_w_i" -lt 300 ]; do
         [ -s "$1/$2.md" ] && break
         [ -e "$1/$2.none" ] && break
@@ -682,11 +686,15 @@ SHELL_HELPER = r"""_sb_wait() {
                 IFS="$(printf '\t')" read -r _w_repo _w_why < "$1/$2.wait" || :
                 _w_repo=${_w_repo//[[:cntrl:]]/}
                 case "$_w_why" in prefetch|new) _w_why='first time' ;; stale) _w_why='the last one is old' ;; changed) _w_why='its docs changed' ;; *) _w_why='' ;; esac
+                _w_cols=$(command stty size 2>/dev/null <&2) || _w_cols=
+                _w_cols=${_w_cols##* }
+                case "$_w_cols" in ""|*[!0-9]*) _w_cols=${COLUMNS:-80} ;; esac
+                _w_line="sysop: preparing the context of ${_w_repo:-this repository}${_w_why:+ ($_w_why)} - Enter starts without it"
+                [ "$_w_cols" -gt 1 ] && _w_line=${_w_line:0:$((_w_cols - 1))}
+                printf '\r\033[2K\033[2m%s\033[0m' "$_w_line" >&2
                 _w_shown=1
             fi
-            _w_line=" ${_w_spin:$((_w_i / 2 % 4)):1} sysop: writing the context of ${_w_repo:-this repository}${_w_why:+ ($_w_why)} for this session, $((_w_i / 10))s - Enter starts without it"
-            printf '\r\033[2K\033[2m%s\033[0m' "${_w_line:0:$(( ${COLUMNS:-80} - 1 ))}" >&2
-            if read -r -t 0.1 _w_k 2>/dev/null; then
+            if read -rs -t 0.1 _w_k 2>/dev/null; then
                 printf '\r\033[2K' >&2
                 return 1
             fi
@@ -739,7 +747,10 @@ _sb_agent_run() {
                     case "$_sb_tab" in *[!A-Za-z0-9_.:@-]*) _sb_tab= ;; esac
                     _sb_msg="\"tab\":\"$_sb_tab\",\"cwd\":\"$_sb_cwd\",\"agent\":\"$_sb_id\",\"commit\":\"$_sb_head\""
                     _sb_skip=
-                    if [ ! -s "$_sb_file" ] && command swarmbox-bus pub --source launcher tab.events "{\"event\":\"prepare\",$_sb_msg}" >/dev/null 2>&1; then
+                    if [ "${SWARMBOX_CONTEXT:-1}" = 0 ]; then
+                        _sb_file=
+                        _sb_msg="$_sb_msg,\"off\":true"
+                    elif [ ! -s "$_sb_file" ] && command swarmbox-bus pub --source launcher tab.events "{\"event\":\"prepare\",$_sb_msg}" >/dev/null 2>&1; then
                         _sb_wait "$_sb_dir" "$_sb_head" || _sb_skip=1
                     fi
                     [ -s "$_sb_file" ] || _sb_file=

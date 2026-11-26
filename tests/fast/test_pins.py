@@ -212,6 +212,35 @@ class PinsTest(unittest.TestCase):
         r2 = pins_mod.restore_autostart_pins(env=env)
         self.assertEqual(len(r2["spawned"]), 0)
 
+    def test_a_pin_started_without_the_repository_context_restarts_without_it(self):
+        hc_state = os.path.join(self.tmp, "hc-ctx.json")
+        with open(hc_state, "w", encoding="utf-8") as f:
+            json.dump({"terminals": []}, f)
+        hc_bin = os.path.join(self.tmp, "hc-ctx")
+        with open(hc_bin, "w", encoding="utf-8") as f:
+            f.write(FAKE_HC)
+        os.chmod(hc_bin, 0o755)
+        env = {**self.env, "FAKE_HC_STATE": hc_state, "SWARMBOX_TEST_HC_BIN": hc_bin}
+        off = pins_mod.add_pin(self.proj1, agent="claude", title="No ctx", autostart=True, env=env)
+        pins_mod.add_pin(self.proj2, agent="claude", title="With ctx", autostart=True, env=env)
+        pins = pins_mod.load_pins(env=env)
+        for p in pins:
+            if p["id"] == off["id"]:
+                p["context"] = False     # what the Web Studio writes when "Repository context" was unticked
+        pins_mod.save_pins(pins, env=env)
+        seen = {}
+        real = pins_mod.build_agent_argv
+        def spy(agent, resume="continue", env=None, context=True):
+            argv = real(agent, resume, env, context)
+            seen[len(seen)] = argv
+            return argv
+        pins_mod.build_agent_argv = spy
+        self.addCleanup(setattr, pins_mod, "build_agent_argv", real)
+        pins_mod.restore_autostart_pins(env=env)
+        scripts = sorted(a[-1] for a in seen.values())
+        self.assertEqual(len(scripts), 2)
+        self.assertEqual(sum("SWARMBOX_CONTEXT=0 claude" in x for x in scripts), 1, scripts)
+
     def test_tabs_rename_syncs_pin_and_resolves_by_title_and_open_worktree(self):
         hc_state = os.path.join(self.tmp, "hc-tabs.json")
         hc_bin = os.path.join(self.tmp, "hc-tabs")

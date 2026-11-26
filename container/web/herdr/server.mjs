@@ -1608,7 +1608,7 @@ export function createGateway(options = {}) {
           const named = requested !== 'yolo' ? normalizeAgentName(requested) : '';
           const cmd = named || (!requested && defaultAgent) || 'yolo';
           agentKind = cmd === 'yolo' ? (defaultAgent || 'yolo') : cmd;
-          argv = buildAgentArgv(cmd, body.resume === 'continue' ? 'continue' : 'fresh');
+          argv = buildAgentArgv(cmd, body.resume === 'continue' ? 'continue' : 'fresh', process.env, { context: body.context !== false });
           prefix = cmd === 'yolo' ? 'agent' : cmd;
         }
 
@@ -1672,6 +1672,8 @@ export function createGateway(options = {}) {
             created_at: nowSec,
             updated_at: nowSec,
           };
+          // Unticked "Repository context" in the New agent box: a restart of this pin starts without it too
+          if (body.context === false) autoPin.context = false;
           if (createdWorktree) {
             autoPin.worktree = {
               path: createdWorktree.path,
@@ -2089,7 +2091,7 @@ export function createGateway(options = {}) {
             }
           }
 
-          const argv = buildAgentArgv(pin.agent || 'shell', resumeMode);
+          const argv = buildAgentArgv(pin.agent || 'shell', resumeMode, process.env, { context: pin.context !== false });
           const name = uniqueTabName(pin.title, pin.agent || 'pin', Array.from(hc.terminals.values()));
           const created = await hc.call('terminal.run', {
             argv,

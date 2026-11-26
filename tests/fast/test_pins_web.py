@@ -357,6 +357,22 @@ try {
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(readPins().filter((p) => p.cwd === proj2).length, 0, 'persist:false must not be auto-pinned');
 
+  // 9c. "Repository context" unticked in the New agent box: the agent starts without it, and so does a restart of its pin
+  const noCtx = await api('POST', '/api/tabs', { preset: 'agent', agent: 'claude', cwd: proj2, context: false });
+  assert.equal(noCtx.status, 201);
+  const noCtxTerm = hc.terminals.get(noCtx.data.address);
+  assert.ok(noCtxTerm.argv.join(' ').includes('SWARMBOX_CONTEXT=0 claude'), noCtxTerm.argv.join(' '));
+  const noCtxPin = readPins().find((p) => p.id === noCtxTerm.labels['swarmbox.pin_id']);
+  assert.equal(noCtxPin.context, false);
+  hc.terminals.delete(noCtx.data.address);       // the box restarted
+  const reWoken = await api('POST', `/api/pins/${noCtxPin.id}/wake`, {});
+  assert.equal(reWoken.status, 201, JSON.stringify(reWoken.data));
+  assert.ok(reWoken.data.terminal.argv.join(' ').includes('SWARMBOX_CONTEXT=0 claude'));
+  const withCtx = await api('POST', '/api/tabs', { preset: 'agent', agent: 'claude', cwd: proj2, persist: false });
+  assert.ok(!hc.terminals.get(withCtx.data.address).argv.join(' ').includes('SWARMBOX_CONTEXT'), 'ticked (the default): with it');
+  for (const t of hc.listSnapshot().filter((x) => x.cwd === proj2)) await api('DELETE', `/api/tabs/${t.address}`);
+  for (const p of readPins().filter((x) => x.cwd === proj2)) await api('DELETE', `/api/pins/${p.id}`);
+
   // 10. The New agent picker: recent folders (launches first) and a folder browser that flags repos
   const projs = await api('GET', '/api/projects');
   assert.equal(projs.status, 200);

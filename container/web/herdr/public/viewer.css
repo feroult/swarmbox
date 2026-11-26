@@ -704,3 +704,8 @@
   background: rgba(127, 127, 127, 0.06);
 }
 .sbv-inline-note[data-tone="warn"] { border-left-color: var(--amber, #e0af68); }
+
+.sbv-icon-btn.is-spinning { color: var(--accent, #cba6f7); cursor: default; }
+.sbv-icon-btn.is-spinning svg { animation: sbv-spin 0.9s linear infinite; }
+@keyframes sbv-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sbv-icon-btn.is-spinning svg { animation-duration: 2.4s; } }

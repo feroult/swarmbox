@@ -172,7 +172,8 @@ agent launcher  -> the file of HEAD exists? no: publish `prepare` on tab.events
 sysop           -> carries the repository's digest to HEAD at once (no model call); the first time in a repository: <commit>.wait and a
                    model call, then the file (or <commit>.none with why)
 agent launcher  -> waits for the file: instant for a carry; the first time it says so on the terminal (about 10 s, Enter skips, 30 s
-                   at most); the agent starts with CONTEXT_ARGS (file) or without; publish `session` (which file, or none, skipped)
+                   at most); the agent starts with CONTEXT_ARGS (file) or without; publish `session` (which file, or none, skipped,
+                   off: started with SWARMBOX_CONTEXT=0, which publishes no `prepare`)
 sysop           -> records the session (sessions/<tab>: the exact text) and a `session` line in the panel
 ```
 
@@ -183,21 +184,28 @@ sysop           -> records the session (sessions/<tab>: the exact text) and a `s
   since (listed at the end, at most 60). Nothing of the working tree that is not committed or listed is read.
 - **When it is written.** When the service starts (a box start or reset), for the repositories you use: your agent pins, then the folders
   of the last 14 days (`recent-dirs.json`), 5 at most, the ones that need one (a few haiku calls). Else the first time a session starts in
-  a repository: its launcher waits for the model, about 10 s, with a line on the terminal (*sysop: writing the context of REPO (first
-  time) for this session, 4s - Enter starts without it*); Enter starts the agent at once without it, a failed call starts it at once, and
-  it never waits more than 30 s. Without a terminal (a script) it does not wait. The worktrees of a repository share it. A new
+  a repository: its launcher waits for the model, about 10 s, with one still line on the terminal (*sysop: preparing the context of REPO
+  (first time) - Enter starts without it*, cut to the terminal's width) and, in the Web Studio, the SwarmBox loader over the terminal
+  with the same words, a counter and **Start without it**; Enter starts the agent at once without it, a failed call starts it at once,
+  and it never waits more than 30 s. Without a terminal (a script) it does not wait. **New agent** has a **Repository context** box
+  (ticked for every new agent, `C` toggles it): unticked, the session starts without it (`SWARMBOX_CONTEXT=0`), its card shows a grey
+  book (*context off*), and a restart of its pin starts without it too. The worktrees of a repository share it. A new
   commit gets the digest carried forward at once, with the list of files changed since, so a session never waits for the model; it is
   written again in the background when it is older than 6 hours, or when more than 40 files or a top-level doc or manifest changed and it is
   older than 30 minutes. A failed call (no login) is tried again after 10 minutes. `swarmbox-sysop context [DIR] [--force]` writes it now.
 - **What you see.** In the Web Studio, the state is where the thing is, and the Sysop panel keeps what the sysop did by itself apart
   from your conversation:
   - **the repository header** in the sidebar has a pill: its age (`5m`, green) when the context is ready, *writing* (pulsing) while the
-    model writes it, *failed* or *no answer* (amber). A click opens its card: when and at which commit it was written, why, how many open
-    sessions have it, **View**, **Rewrite** (or **Retry now**), **Events**;
+    model writes it, *failed* or *no answer* (amber). When the repository's name does not fit beside it, the pill keeps only its book
+    (same colors) and the name keeps the room. A click opens its card: when and at which commit it was written, why, how many open
+    sessions have it, **View**, **Retry now** after a failure, **Events**, and ↻ in its corner: it rewrites the context there, the card
+    stays open, the arrow turns while the model writes, then a check. The viewer of a repository's context has the same ↻ (it reloads
+    with the new text); the viewer of what a session got has none (that text does not change), but **See current context**;
   - **the agent card** says what its session started with: *STARTING · preparing context · 6s* while its launcher waits for the first
     context of the repository, then a small book beside Alt+N (green: with it; amber: without). The active tab's title bar has the
     same mark with words (**context** / **no context** / *preparing context…*). A click opens the session's card: why, at which commit,
-    when the context was written and the files changed since, **See what it got** (the exact text, Rendered / Raw), **Rewrite**;
+    when the context was written and the files changed since, **See what it got** (the exact text, Rendered / Raw), **Rewrite the context**
+    (it opens the repository's card, where the rewrite shows);
   - **the Sysop panel** has two tabs: **Chat** (you and the sysop) and **Events** (what it did by itself: the context it writes, with
     why, how long it took, or why it failed and **Retry now**; the repositories it prepared when the box started, in one row; the tab
     names it gave). *Now* holds a call that runs and a failure the repository still has; the Events tab counts those failures. Filters:

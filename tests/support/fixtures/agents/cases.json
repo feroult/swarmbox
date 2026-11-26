@@ -46,6 +46,7 @@
     {"agent": "antigravity", "resume": "fresh", "env": {}, "want": ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 agy; exec /bin/bash -l"]},
     {"agent": "yolo", "resume": "fresh", "env": {"SWARMBOX_AGENT": "claude-code"}, "want": ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 claude; exec /bin/bash -l"]},
     {"agent": "yolo", "resume": "fresh", "env": {}, "want": ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 yolo; exec /bin/bash -l"]},
-    {"agent": "fakebot", "resume": "continue", "env": {}, "want": ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 fbot; exec /bin/bash -l"]}
+    {"agent": "fakebot", "resume": "continue", "env": {}, "want": ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 fbot; exec /bin/bash -l"]},
+    {"agent": "antigravity", "resume": "fresh", "env": {}, "context": false, "want": ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 SWARMBOX_CONTEXT=0 agy; exec /bin/bash -l"]}
   ]
 }

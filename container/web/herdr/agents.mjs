@@ -303,10 +303,11 @@ function shq(w) {
 }
 
 // launchScript(id, { resume }) -> the bash -lic script that starts agent `id` in a tab (same text as launch_script in Python).
-export function launchScript(id, { resume = true } = {}, env = process.env) {
+export function launchScript(id, { resume = true, context = true } = {}, env = process.env) {
   const a = getAgent(id, env);
   if (!a) return 'exec /bin/bash -l';
-  const cmd = shq(a.cmd);
+  // SWARMBOX_CONTEXT=0: this session starts without the sysop's repository context (the launcher's _sb_agent_run reads it)
+  const cmd = context ? shq(a.cmd) : `SWARMBOX_CONTEXT=0 ${shq(a.cmd)}`;
   const rargs = a.resume.args.map(shq).join(' ');
   if (resume && rargs) {
     return `_sb_t0=$(date +%s); SWARMBOX_WORKTREE_GUARD=0 ${cmd} ${rargs}; _sb_rc=$?; ` +
@@ -317,8 +318,9 @@ export function launchScript(id, { resume = true } = {}, env = process.env) {
   return `SWARMBOX_WORKTREE_GUARD=0 ${cmd}; exec /bin/bash -l`;
 }
 
-// buildAgentArgv(agent, resume) -> the argv of a terminal that runs `agent` (same rules as build_argv in Python).
-export function buildAgentArgv(agent, resume = 'continue', env = process.env) {
+// buildAgentArgv(agent, resume) -> the argv of a terminal that runs `agent` (same rules as build_argv in Python). `context: false`
+// starts the session without the repository context (the Web Studio's New agent box; Python has no such option).
+export function buildAgentArgv(agent, resume = 'continue', env = process.env, { context = true } = {}) {
   const name = String(agent || 'shell').trim().toLowerCase();
   let id;
   if (name === 'yolo') {
@@ -328,7 +330,7 @@ export function buildAgentArgv(agent, resume = 'continue', env = process.env) {
     id = resolveAgent(name, env);
   }
   if (!id) return ['/bin/bash', '-l'];
-  return ['/bin/bash', '-lic', launchScript(id, { resume: resume === 'continue' }, env)];
+  return ['/bin/bash', '-lic', launchScript(id, { resume: resume === 'continue', context }, env)];
 }
 
 // publicAgent(a): an agent as the browser sees it (no file system paths).

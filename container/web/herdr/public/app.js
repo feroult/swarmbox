@@ -288,6 +288,10 @@
   const btnMobileMic = document.getElementById('btn-mobile-mic');
   const termWrapEl = document.getElementById('term-wrap');
   const termStageLoaderEl = document.getElementById('term-stage-loader');
+  const stageLoaderCtxEl = document.getElementById('stage-loader-ctx');
+  const stageLoaderCtxTitleEl = document.getElementById('stage-loader-ctx-title');
+  const stageLoaderCtxSubEl = document.getElementById('stage-loader-ctx-sub');
+  const stageLoaderCtxSkipEl = document.getElementById('stage-loader-ctx-skip');
   const termDropOverlayEl = document.getElementById('term-drop-overlay');
   const termToastEl = document.getElementById('term-toast');
   const btnJumpLive = document.getElementById('btn-jump-live');
@@ -1155,9 +1159,24 @@
     if (!termStageLoaderEl) return;
     const sess = activeSession();
     const busy = Boolean(sess && (sess.resizing || sess.hydrating || sess.revealPending));
+    // While the active agent's launcher waits for the first context of its repository, the same loader covers the terminal with
+    // what it waits for and a way out (Enter in the terminal does the same: the launcher reads it).
+    const t = activeId ? terminals.find((x) => x.address === activeId) : null;
+    let ctx = null;
+    try { ctx = t ? ctxSessionFor(t) : null; } catch (_) { ctx = null; } // called once before the context state exists
+    const waiting = Boolean(ctx && ctx.waiting);
+    if (stageLoaderCtxEl) {
+      stageLoaderCtxEl.hidden = !waiting;
+      if (waiting) {
+        const secs = Math.max(0, Math.round((Date.now() - (ctx.at || Date.now())) / 1000));
+        stageLoaderCtxTitleEl.textContent = `Preparing the context of ${ctx.repo || 'this repository'}`;
+        stageLoaderCtxSubEl.textContent = `The sysop is writing it · ${secs}s · the agent starts with it`;
+      }
+    }
+    termStageLoaderEl.classList.toggle('is-ctx', waiting);
     // During initial page load, #sb-boot already covers the viewport; once dismissed,
     // use the stage-scoped SwarmBox loader whenever a resize or cold tab hydration runs.
-    const show = bootDismissed && (busy || termWrapEl.classList.contains('term-loading'));
+    const show = bootDismissed && (busy || waiting || termWrapEl.classList.contains('term-loading'));
     termStageLoaderEl.classList.toggle('visible', show);
   }
 
@@ -3510,6 +3529,9 @@
 
     let wtChoice = hasCollision ? (prefs.mode === 'off' ? 'same' : 'new') : 'same';
     let wtCheckGen = 0;
+    // "Repository context": ticked for every new agent (the choice is not remembered); unticked, the session starts without it
+    let ctxChoice = true;
+    let updateCtxUi = null;
 
     const frag = document.createDocumentFragment();
     const head = document.createElement('div');
@@ -3650,6 +3672,13 @@
 
       updateWtUi();
       wtBox.append(wtHead, seg, meta);
+      const ctxRow = makeNewAgentCtxRow(selectedCwd, () => ctxChoice, (v) => { ctxChoice = v; });
+      if (ctxRow) {
+        updateCtxUi = ctxRow.update;
+        wtBox.appendChild(ctxRow.el);
+      } else {
+        updateCtxUi = null;
+      }
       wtContainer.appendChild(wtBox);
     }
 
@@ -3940,11 +3969,13 @@
       }
       btn.addEventListener('click', () => {
         const chosenWt = isGit ? wtChoice : '';
+        const noCtx = Boolean(updateCtxUi) && !ctxChoice;
         closePopover();
         spawnTab('agent', {
           agent: ag.id,
           cwd: selectedCwd || undefined,
           worktree_choice: chosenWt || undefined,
+          context: noCtx ? false : undefined,
         });
       });
       pickList.appendChild(btn);
@@ -4010,6 +4041,13 @@
         updateWtUi();
         return true;
       }
+      if (!inInput && updateCtxUi && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        e.stopPropagation();
+        ctxChoice = !ctxChoice;
+        updateCtxUi();
+        return true;
+      }
       if (!inInput && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
         const btns = Array.from(popoverEl.querySelectorAll('.agent-pick-btn'));
         if (btns.length === 0) return false;
@@ -4047,7 +4085,7 @@
     btnWt.addEventListener('click', () => {
       closePopover();
       if (ctx.kind === 'pin') wakePin(ctx.pinId, 'new');
-      else spawnTab(ctx.preset || 'agent', { cwd: ctx.cwd, agent: ctx.agent, worktree_choice: 'new' });
+      else spawnTab(ctx.preset || 'agent', { cwd: ctx.cwd, agent: ctx.agent, worktree_choice: 'new', context: ctx.context });
     });
 
     const meta = document.createElement('div');
@@ -4063,7 +4101,7 @@
     btnSame.addEventListener('click', () => {
       closePopover();
       if (ctx.kind === 'pin') wakePin(ctx.pinId, 'same');
-      else spawnTab(ctx.preset || 'agent', { cwd: ctx.cwd, agent: ctx.agent, worktree_choice: 'same' });
+      else spawnTab(ctx.preset || 'agent', { cwd: ctx.cwd, agent: ctx.agent, worktree_choice: 'same', context: ctx.context });
     });
 
     const links = document.createElement('div');
@@ -5911,7 +5949,20 @@
       if (busyCount > 0) parts.push(`${busyCount} busy`);
       statusbarSummaryEl.textContent = parts.join(' · ');
     }
+    fitRepoCtxPills();
   }
+
+  // A repository group's name keeps the room: when it does not fit beside the context mark, the mark drops its age and keeps the
+  // book (its color still tells ready, writing or failed; the age is in its tooltip and card). Measured, so any name length works.
+  function fitRepoCtxPills() {
+    if (!sidebarAgentsEl) return;
+    for (const pill of sidebarAgentsEl.querySelectorAll('.repo-ctx-pill')) {
+      pill.classList.remove('is-tight');
+      const name = pill.parentElement && pill.parentElement.querySelector(':scope > span');
+      if (name && name.scrollWidth > name.clientWidth + 1) pill.classList.add('is-tight');
+    }
+  }
+  if (sidebarAgentsEl && typeof ResizeObserver === 'function') new ResizeObserver(() => fitRepoCtxPills()).observe(sidebarAgentsEl);
 
   function stopCountdownTimer() {
     if (countdownTimer) {
@@ -6402,10 +6453,60 @@
     return ((sysopContext.repos || []).find((r) => r.repo === grp.name)) || null;
   }
 
+  // The context the sysop has for a folder: the repository whose top holds it, else the one of its name
+  function ctxRepoForCwd(cwd) {
+    if (!cwd || !sysopContext || !sysopContext.on) return null;
+    const repos = sysopContext.repos || [];
+    const byTop = repos.filter((r) => r.top && (cwd === r.top || cwd.startsWith(`${r.top}/`)))
+      .sort((a, b) => b.top.length - a.top.length)[0];
+    if (byTop) return byTop;
+    const base = cwd.replace(/\/+$/, '').split('/').pop();
+    return repos.find((r) => r.repo === base) || null;
+  }
+
+  // The "Repository context" row of the New agent box (a Git folder, autocontext on): ticked, the session starts with the sysop's
+  // context of the repository (and waits for the first one); unticked, without it. null when autocontext is off.
+  function makeNewAgentCtxRow(cwd, get, set) {
+    if (!sysopContext || !sysopContext.on) return null;
+    const repo = ctxRepoForCwd(cwd);
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'newag-ctx';
+    row.setAttribute('role', 'switch');
+    const box = document.createElement('span');
+    box.className = 'newag-ctx-box';
+    const label = document.createElement('span');
+    label.className = 'newag-ctx-label';
+    label.innerHTML = `${ICO_BOOK_SVG}<span>Repository context</span>`;
+    const meta = document.createElement('span');
+    meta.className = 'newag-ctx-meta';
+    const kbd = document.createElement('span');
+    kbd.className = 'wt-kbd desktop-only';
+    kbd.title = 'Press C to toggle the repository context';
+    kbd.textContent = 'C';
+    row.append(box, label, meta, kbd);
+    const update = () => {
+      const on = get();
+      row.classList.toggle('is-on', on);
+      row.setAttribute('aria-checked', on ? 'true' : 'false');
+      meta.textContent = !on ? 'starts without it'
+        : repo && repo.state === 'writing' ? 'being written now'
+          : repo && repo.at ? `written ${fmtAge(repo.at)}`
+            : 'written now, ~10 s';
+      row.title = on
+        ? 'The session starts with the sysop\'s orientation to this repository in its system prompt. Click (or C) to start without it.'
+        : 'The session starts without the sysop\'s repository context. Click (or C) to start with it.';
+    };
+    row.addEventListener('click', () => { set(!get()); update(); });
+    update();
+    return { el: row, update };
+  }
+
   function ctxSessionWhy(s) {
     const repo = ctxRepoByKey(s.key);
     if (s.waiting) return `Its launcher waits for the first context of ${s.repo} (about 10 s); Enter in the terminal starts it without.`;
     if (s.context) return `Started with the context of ${s.repo}: ${ctxProvenance(s)}.`;
+    if (s.off) return `Started without context: you unticked "Repository context" when you created it.`;
     if (s.skipped) return `Started without context: you started it without waiting. The next session in ${s.repo} gets it.`;
     if (s.failed || (repo && repo.state === 'failed')) {
       return `Started without context: the sysop could not write it${repo && repo.call && repo.call.error ? ` (${repo.call.error})` : ''}.`;
@@ -6418,10 +6519,10 @@
   // `compact`. A click opens the session's context card.
   function makeCtxChip(t, s, compact = false, el = null) {
     const b = el || document.createElement('button');
-    const state = s.waiting ? 'is-wait' : s.context ? '' : 'is-none';
+    const state = s.waiting ? 'is-wait' : s.context ? '' : s.off ? 'is-off' : 'is-none';
     b.type = 'button';
-    b.className = `${el ? el.className.replace(/\s*(is-none|is-wait|hidden)\b/g, '') : `agent-ctx-chip${compact ? ' is-compact' : ''}`}${state ? ` ${state}` : ''}`;
-    const label = s.waiting ? 'preparing context…' : s.context ? 'context' : 'no context';
+    b.className = `${el ? el.className.replace(/\s*(is-none|is-wait|is-off|hidden)\b/g, '') : `agent-ctx-chip${compact ? ' is-compact' : ''}`}${state ? ` ${state}` : ''}`;
+    const label = s.waiting ? 'preparing context…' : s.context ? 'context' : s.off ? 'context off' : 'no context';
     b.innerHTML = compact ? ICO_BOOK_SVG : `${ICO_BOOK_SVG}<span>${label}</span>`;
     b.title = `${ctxSessionWhy(s)} Click for details.`;
     b.setAttribute('aria-label', b.title);
@@ -6516,7 +6617,7 @@
     const repo = ctxRepoByKey(s.key);
     const frag = document.createDocumentFragment();
     const title = s.waiting ? `Preparing the context of ${s.repo}` : s.context ? `Started with the context of ${s.repo}` : `Started without context`;
-    frag.appendChild(ctxPopHead(title, s.waiting ? 'wait' : s.context ? 'ok' : 'warn'));
+    frag.appendChild(ctxPopHead(title, s.waiting ? 'wait' : s.context ? 'ok' : s.off ? '' : 'warn'));
     const sub = document.createElement('div');
     sub.className = 'spop-sub';
     sub.textContent = s.context
@@ -6533,30 +6634,79 @@
     acts.className = 'ctx-pop-acts';
     if (s.context) acts.appendChild(ctxPopButton('See what it got', 'primary', () => { closePopover(); openContextViewer({ tab: address }); }));
     if (repo && repo.state !== 'writing' && repo.top) {
-      acts.appendChild(ctxPopButton(repo.at ? 'Rewrite the context' : 'Write it now', 'secondary', () => { closePopover(); rewriteContext(repo.key, address); }));
+      acts.appendChild(ctxPopButton(repo.at ? 'Rewrite the context' : 'Write it now', 'secondary', () => { rewriteContext(repo.key, address); openRepoContextPopover(repo.key); }));
     }
     acts.appendChild(ctxPopButton('Events', 'secondary', () => { closePopover(); showSysopEvents(s.key); }));
     frag.appendChild(acts);
     openPopover(frag);
   }
 
+  // A rewrite asked from a context card or the viewer: until the snapshot says the repository is writing, it counts as busy here
+  const ctxPending = new Map();   // key -> when the rewrite was asked
+  const ctxJustDone = new Map();  // key -> when a rewrite seen here ended with a new context (a check for a few seconds)
+  let ctxPopKey = '';             // the repository whose context card is open
+  let ctxPopSig = '';
+  let ctxViewer = null;           // { kind: 'repo'|'session', key, tab, sig } of the context in the file drawer
+  const ICO_REFRESH_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9L13.5 5.7"/><path d="M13.5 2.5v3.2h-3.2"/></svg>';
+
+  function ctxBusy(repo) {
+    if (!repo) return false;
+    if (repo.state === 'writing') return true;
+    const t = ctxPending.get(repo.key);
+    return Boolean(t && Date.now() - t < 30000);
+  }
+
+  function capFirst(t) {
+    return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+  }
+
+  function ctxRepoSig(repo) {
+    if (!repo) return '';
+    return [repo.state, repo.at, repo.call && repo.call.phase, repo.call && repo.call.ts, ctxBusy(repo), ctxJustDone.has(repo.key)].join('|');
+  }
+
   function openRepoContextPopover(key) {
     const repo = ctxRepoByKey(key);
     if (!repo) return;
+    const busy = ctxBusy(repo);
+    const done = !busy && ctxJustDone.has(key) && Date.now() - ctxJustDone.get(key) < 4000;
     const sessions = Object.values((sysopContext && sysopContext.sessions) || {})
       .filter((s) => s.key === key && !s.waiting && terminals.some((x) => x.address === s.tab));
     const withIt = sessions.filter((s) => s.context).length;
     const frag = document.createDocumentFragment();
-    const tone = repo.state === 'writing' ? 'wait' : repo.state === 'ready' ? 'ok' : 'warn';
-    frag.appendChild(ctxPopHead(repo.state === 'writing' ? `Writing the context of ${repo.repo}…` : `Context of ${repo.repo}`, tone));
+    const tone = busy ? 'wait' : repo.state === 'ready' ? 'ok' : 'warn';
+    const head = ctxPopHead(busy ? `Writing the context of ${repo.repo}…` : `Context of ${repo.repo}`, tone);
+    head.dataset.ctxKey = key;
+    if (repo.top) {
+      // ↻ rewrites it here: the card stays open, the arrow turns while the sysop writes, a check when the new one is in
+      const rb = document.createElement('button');
+      rb.type = 'button';
+      rb.className = `ctx-refresh${busy ? ' is-spinning' : ''}${done ? ' is-done' : ''}`;
+      rb.innerHTML = done ? ICO_CHECK_SVG : ICO_REFRESH_SVG;
+      rb.disabled = busy;
+      rb.title = busy ? 'The sysop is writing it' : done ? 'Rewritten just now' : repo.at ? 'Rewrite the context now' : 'Write the context now';
+      rb.setAttribute('aria-label', rb.title);
+      rb.addEventListener('click', (e) => { e.stopPropagation(); rewriteContext(key); });
+      head.appendChild(rb);
+    }
+    frag.appendChild(head);
     const sub = document.createElement('div');
     sub.className = 'spop-sub';
-    sub.textContent = repo.state === 'writing'
-      ? `${CTX_REASONS[repo.call && repo.call.reason] || 'In the background'}; started ${fmtAge(repo.call && repo.call.ts)}. New agent sessions get it as soon as it is written.`
-      : repo.state === 'failed' ? `The last call failed: ${(repo.call && repo.call.error) || 'no reason given'}.${repo.call && repo.call.retry_min ? ` It tries again by itself in ${repo.call.retry_min} min.` : ''}${repo.at ? ` New sessions still get the context written ${fmtAge(repo.at)}.` : ''}`
-        : repo.state === 'stuck' ? 'The last call never ended (the sysop was stopped?).'
-          : 'The sysop\'s orientation to this repository: new agent sessions in it start with it in their system prompt.';
+    sub.textContent = busy
+      ? (repo.state === 'writing'
+        ? `${capFirst(CTX_REASONS[repo.call && repo.call.reason] || 'in the background')}; started ${fmtAge(repo.call && repo.call.ts)}. New agent sessions get it as soon as it is written.`
+        : 'Asking the sysop to write it…')
+      : done ? 'Rewritten just now: new agent sessions in it start with this one.'
+        : repo.state === 'failed' ? `The last call failed: ${(repo.call && repo.call.error) || 'no reason given'}.${repo.call && repo.call.retry_min ? ` It tries again by itself in ${repo.call.retry_min} min.` : ''}${repo.at ? ` New sessions still get the context written ${fmtAge(repo.at)}.` : ''}`
+          : repo.state === 'stuck' ? 'The last call never ended (the sysop was stopped?).'
+            : 'The sysop\'s orientation to this repository: new agent sessions in it start with it in their system prompt.';
     frag.appendChild(sub);
+    if (busy) {
+      const bar = document.createElement('div');
+      bar.className = 'ctx-progress';
+      bar.innerHTML = '<i></i>';
+      frag.appendChild(bar);
+    }
     frag.appendChild(ctxKv([
       ['written', repo.at ? `${fmtAge(repo.at)}${repo.base ? ` at ${repo.base.slice(0, 7)}` : ''}` : ''],
       ['why', repo.call && repo.call.phase === 'made' ? CTX_REASONS[repo.call.reason] || '' : ''],
@@ -6564,18 +6714,28 @@
     ]));
     const acts = document.createElement('div');
     acts.className = 'ctx-pop-acts';
-    if (repo.at) acts.appendChild(ctxPopButton('View', 'primary', () => { closePopover(); openContextViewer({ key }); }));
-    if (repo.state !== 'writing' && repo.top) {
-      acts.appendChild(ctxPopButton(repo.state === 'failed' || repo.state === 'stuck' ? 'Retry now' : 'Rewrite', repo.at ? 'secondary' : 'primary',
-        () => { closePopover(); rewriteContext(key); }));
+    if (!busy && (repo.state === 'failed' || repo.state === 'stuck') && repo.top) {
+      acts.appendChild(ctxPopButton('Retry now', 'primary', () => rewriteContext(key)));
     }
+    if (repo.at) acts.appendChild(ctxPopButton('View', repo.state === 'failed' || repo.state === 'stuck' ? 'secondary' : 'primary', () => { closePopover(); openContextViewer({ key }); }));
     acts.appendChild(ctxPopButton('Events', 'secondary', () => { closePopover(); showSysopEvents(key); }));
     frag.appendChild(acts);
+    ctxPopKey = key;
+    ctxPopSig = ctxRepoSig(repo);
     openPopover(frag);
   }
 
-  async function rewriteContext(key, tab = '') {
+  // The context card of this repository is still the open popover
+  function ctxPopIsOpen(key) {
+    return Boolean(popoverOpen && popoverEl && key && popoverEl.querySelector(`.ctx-pop-head[data-ctx-key="${CSS.escape(key)}"]`));
+  }
+
+  // Rewrite a repository's context. `stay` (the card, the viewer): the place it was asked from shows the work; otherwise a toast.
+  async function rewriteContext(key, tab = '', { stay = true } = {}) {
     const repo = ctxRepoByKey(key);
+    ctxPending.set(key, Date.now());
+    ctxJustDone.delete(key);
+    syncCtxSurfaces();
     try {
       const r = await fetch('/api/sysop/context/rewrite', {
         method: 'POST',
@@ -6584,10 +6744,49 @@
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.message || `HTTP ${r.status}`);
-      showTermToast(`Sysop is writing the context of ${(repo && repo.repo) || 'the repository'}: see its Events`, 'ok');
-      showSysopEvents(key);
+      if (!stay) showTermToast(`Sysop is writing the context of ${(repo && repo.repo) || 'the repository'}`, 'ok');
     } catch (e) {
+      ctxPending.delete(key);
+      syncCtxSurfaces();
       showTermToast(`Cannot write the context: ${e.message || e}`, 'error', 4000);
+    }
+  }
+
+  // The context card and the viewer follow the repository's state while open (writing, then the new context or the failure)
+  function syncCtxSurfaces() {
+    syncStageLoader();
+    for (const [key, t] of ctxPending) {
+      const repo = ctxRepoByKey(key);
+      const seen = repo && (repo.state === 'writing' || (repo.call && repo.call.ts >= t - 2000 && repo.call.phase !== 'started'));
+      if (seen || Date.now() - t > 30000) ctxPending.delete(key);
+    }
+    if (ctxPopKey && ctxPopIsOpen(ctxPopKey)) {
+      const repo = ctxRepoByKey(ctxPopKey);
+      if (repo && ctxRepoSig(repo) !== ctxPopSig) openRepoContextPopover(ctxPopKey);
+    } else {
+      ctxPopKey = '';
+    }
+    if (ctxViewer && ctxViewer.kind === 'repo') {
+      const open = fileDrawerOpen && fileViewer && typeof fileViewer.getInlineTag === 'function' && fileViewer.getInlineTag() === `ctx:${ctxViewer.key}`;
+      if (!open) {
+        ctxViewer = null;
+      } else {
+        const repo = ctxRepoByKey(ctxViewer.key);
+        if (typeof fileViewer.setInlineBusy === 'function') fileViewer.setInlineBusy(ctxBusy(repo));
+        if (repo && !ctxBusy(repo) && repo.at && repo.at !== ctxViewer.at) openContextViewer({ key: ctxViewer.key });
+      }
+    }
+  }
+
+  // A rewrite seen to end with a new context: the check on the card for a few seconds
+  function noteCtxDone(prev, next) {
+    const before = new Map((prev || []).map((r) => [r.key, r]));
+    for (const r of next || []) {
+      const p = before.get(r.key);
+      if (p && p.state === 'writing' && r.state === 'ready' && r.at && r.at !== p.at) {
+        ctxJustDone.set(r.key, Date.now());
+        setTimeout(() => { ctxJustDone.delete(r.key); syncCtxSurfaces(); }, 4000);
+      }
     }
   }
 
@@ -6602,17 +6801,20 @@
       if (!r.ok) d = null;
     } catch (_) { d = null; }
     if (!d || d.text == null) {
+      ctxViewer = null;
       openFileDrawerInline({ title: 'Repository context', subtitle: '', content: '', note: 'There is no repository context for this.', noteTone: 'warn', kind: 'md', badge: 'CTX' });
       return;
     }
     const m = d.meta || {};
     const repoKey = String(m.key || key || '');
-    const actions = [];
-    if (repoKey) actions.push({ label: 'Rewrite', onClick: () => rewriteContext(repoKey, tab) });
-    actions.push({ label: 'Settings', onClick: () => { closeFileDrawer(); openSettings('sysop'); } });
+    const settings = { label: 'Settings', onClick: () => { closeFileDrawer(); openSettings('sysop'); } };
     if (d.kind === 'session') {
       const s = { ...m, base_at: Number(m.base_at || 0) * 1000, at: Number(m.at || 0) * 1000 };
       const live = terminals.find((x) => x.address === tab);
+      ctxViewer = { kind: 'session', key: repoKey, tab };
+      // What a session got does not change: no refresh here; the repository's current context is one click away
+      const actions = repoKey && ctxRepoByKey(repoKey) && ctxRepoByKey(repoKey).at
+        ? [{ label: 'See current context', onClick: () => openContextViewer({ key: repoKey }) }, settings] : [settings];
       openFileDrawerInline({
         title: `${live ? tabDisplayName(live) : tab} · context of ${s.repo}`,
         subtitle: `${agentLabel(s.agent)} session started ${fmtClock(s.at)} at ${String(s.commit || '').slice(0, 7)}`,
@@ -6620,11 +6822,14 @@
         content: d.text,
         kind: 'md',
         badge: 'CTX',
+        tag: `ctx-session:${tab}`,
         actions,
       });
       return;
     }
     const at = Number(m.at || 0) * 1000;
+    const repo = ctxRepoByKey(repoKey);
+    ctxViewer = { kind: 'repo', key: repoKey, at: repo ? repo.at : at };
     openFileDrawerInline({
       title: `Context of ${m.repo || 'the repository'}`,
       subtitle: `written ${fmtClock(at)} at ${String(m.base || '').slice(0, 7)}`,
@@ -6632,12 +6837,27 @@
       content: d.text || '',
       kind: 'md',
       badge: 'CTX',
-      actions,
+      tag: `ctx:${repoKey}`,
+      refresh: repoKey && repo && repo.top
+        ? { title: 'Rewrite the context now (the view reloads when the new one is in)', busy: ctxBusy(repo), onClick: () => rewriteContext(repoKey) }
+        : null,
+      actions: [settings],
     });
   }
 
   // "preparing context · 6s" counts while a launcher waits (the snapshot only comes when something changes)
+  if (stageLoaderCtxSkipEl) {
+    stageLoaderCtxSkipEl.addEventListener('click', () => {
+      const sess = activeSession();
+      if (sess) {
+        sendPtyInput('\r', sess);
+        try { sess.term.focus(); } catch (_) {}
+      }
+    });
+  }
+
   function tickCtxSince() {
+    if (termStageLoaderEl && termStageLoaderEl.classList.contains('is-ctx')) syncStageLoader();
     for (const el of document.querySelectorAll('[data-ctx-since]')) {
       const secs = Math.max(0, Math.round((Date.now() - Number(el.dataset.ctxSince || 0)) / 1000));
       el.textContent = `preparing context · ${secs}s`;
@@ -6646,13 +6866,16 @@
   setInterval(tickCtxSince, 1000);
 
   function syncContext(sysop) {
+    const prevRepos = sysopContext && sysopContext.repos;
     sysopContext = (sysop && sysop.context) || null;
+    noteCtxDone(prevRepos, sysopContext && sysopContext.repos);
     const k = JSON.stringify([sysopContext && sysopContext.on, sysopContext && sysopContext.sessions,
       sysopContext && (sysopContext.repos || []).map((r) => [r.key, r.state, Math.floor((r.at || 0) / 60000), Math.floor(Date.now() / 60000)])]);
     if (k !== lastCtxTabsKey) {
       lastCtxTabsKey = k;
       renderTabs();
     }
+    syncCtxSurfaces();
   }
 
   // ---------------------------------------------------------------------------
@@ -7069,10 +7292,9 @@
     const running = st === 'working' || st === 'allow?' || st === 'sending' || st === 'queued';
     btnSysopStop.classList.toggle('hidden', !running);
 
-    sysopContext = sysop.context || null;
     renderApprovalCard(sysop);
     renderSysopFeed(sysop);
-    syncContext(sysop);
+    syncContext(sysop);   // sets sysopContext (it compares with the last one: a rewrite seen to end)
     renderEvents(sysop);
   }
 
@@ -7173,6 +7395,7 @@
     }
     if (opts.agent) payload.agent = opts.agent;
     if (opts.worktree_choice) payload.worktree_choice = opts.worktree_choice;
+    if (opts.context === false) payload.context = false;
 
     const r = await fetch('/api/tabs', {
       method: 'POST',
@@ -7187,6 +7410,7 @@
         agent: data.agent || opts.agent,
         cwd: data.cwd || payload.cwd,
         collision: data.collision,
+        context: payload.context,
       });
       return;
     }

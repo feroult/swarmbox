@@ -3,14 +3,17 @@ agent that declares CONTEXT_ARGS passes that file when a session starts on that 
 
 Run: python3 tests/fast/test_sysop_digest.py
 """
+import fcntl
 import json
 import os
 import pty
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
+import termios
 import threading
 import time
 import unittest
@@ -383,6 +386,13 @@ class EventsTest(Base):
         self.assertFalse(os.path.exists(os.path.join(self.store.root, "sessions", "w1.md")))
         self.assertEqual([(e["phase"], e["context"], e["writing"], e["skipped"]) for e in self.events()], [("session", False, True, True)])
 
+    def test_a_session_started_with_the_context_off_is_recorded_so_and_asks_for_no_writing(self):
+        ac = self.ac()
+        ac.handle_event({"body": {"event": "session", "tab": "w1", "cwd": self.repo, "agent": "claude", "context": "", "off": True}})
+        meta = json.loads(slurp(os.path.join(self.store.root, "sessions", "w1.json")))
+        self.assertEqual((meta["context"], meta["off"], meta["writing"], meta["failed"]), (False, True, False, False))
+        self.assertEqual([(e["phase"], e["off"]) for e in self.events()], [("session", True)])
+
     def test_a_context_file_outside_the_digests_or_a_bad_tab_name_is_not_trusted(self):
         ac = self.ac()
         ac.run_one(self.repo)
@@ -554,14 +564,16 @@ exit "${FAKE_BUS_RC:-0}"
             time.sleep(0.02)
         return r.stdout.strip(), [(p[:-1], json.loads(p[-1])) for p in pubs], took
 
-    def run_launcher_on_a_terminal(self, cwd, bus_do, keys_after=None):
+    def run_launcher_on_a_terminal(self, cwd, bus_do, keys_after=None, cols=0):
         """claude through the generated function on a pty (stdin and stderr), with a fake bus: (what the agent got, the screen, the
-        publishes). `keys_after` = (seconds, bytes) typed on the terminal."""
+        publishes). `keys_after` = (seconds, bytes) typed on the terminal; `cols`: the terminal's real width (COLUMNS says 200)."""
         self.run_launcher(cwd)      # writes agents.sh, the fake claude and the fake bus
         log = os.path.join(self.tmp, "bus.log")
         os.unlink(log)
         master, slave = pty.openpty()
         self.addCleanup(os.close, master)
+        if cols:
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, cols, 0, 0))
         env = {"PATH": os.path.join(self.tmp, "bin") + ":/usr/bin:/bin", "HOME": self.tmp, "TERM": "dumb", "COLUMNS": "200",
                "SB_STATE_DIR": os.path.join(self.tmp, "state"), "FAKE_BUS_LOG": log, "FAKE_BUS_DO": bus_do}
         p = subprocess.Popen(["bash", "-c", ". %s; claude" % os.path.join(self.tmp, "agents.sh")], cwd=cwd, env=env, stdin=slave,
@@ -593,17 +605,31 @@ exit "${FAKE_BUS_RC:-0}"
         os.makedirs(self.store.root)
         head = self.git("rev-parse", "HEAD")
         got, screen, pubs = self.run_launcher_on_a_terminal(self.repo, "wait")
-        self.assertIn("sysop: writing the context of calc (first time) for this session", screen)
-        self.assertIn("Enter starts without it", screen)
+        self.assertIn("sysop: preparing the context of calc (first time) - Enter starts without it", screen)
+        self.assertEqual(screen.count("sysop:"), 1, "one still line: a line redrawn every tick floods a terminal where it wraps")
         self.assertTrue(got.endswith("[%s]" % self.store.file(head)), got)
         self.assertEqual(pubs[-1]["context"], self.store.file(head))
         self.assertNotIn("skipped", pubs[-1])
 
+    def test_the_waiting_line_is_cut_to_the_real_width_of_the_terminal(self):
+        os.makedirs(self.store.root)
+        _, screen, _ = self.run_launcher_on_a_terminal(self.repo, "wait", cols=30)
+        line = screen.split("\x1b[2m", 1)[1].split("\x1b[0m", 1)[0]
+        self.assertEqual(line, "sysop: preparing the context ", "a line as wide as the terminal would wrap and stay behind")
+
+    def test_a_session_started_with_the_context_off_waits_for_nothing_and_says_so(self):
+        self.refresh()
+        got, pubs, took = self.run_launcher(self.repo, {"SWARMBOX_CONTEXT": "0", "FAKE_BUS_DO": "waitforever"})
+        self.assertNotIn("--append-system-prompt-file", got, "there is a digest, but the user started without it")
+        self.assertLess(took, 1.5)
+        self.assertEqual([(b["event"], b["context"], b["off"]) for _, b in pubs], [("session", "", True)])
+
     def test_enter_starts_the_agent_at_once_without_the_context(self):
         os.makedirs(self.store.root)
         t0 = time.monotonic()
-        got, _, pubs = self.run_launcher_on_a_terminal(self.repo, "waitforever", keys_after=(0.6, b"\r"))
+        got, screen, pubs = self.run_launcher_on_a_terminal(self.repo, "waitforever", keys_after=(0.6, b"\r"))
         self.assertLess(time.monotonic() - t0, 5)
+        self.assertTrue(screen.endswith("\x1b[0m\r\x1b[2K"), "the Enter is not echoed, so the line it clears is the waiting line: %r" % screen)
         self.assertNotIn("--append-system-prompt-file", got)
         self.assertEqual((pubs[-1]["context"], pubs[-1]["skipped"]), ("", True))
 

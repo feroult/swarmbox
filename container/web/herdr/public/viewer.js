@@ -1445,6 +1445,8 @@
         actions: Array.isArray(inlineOpts.actions) ? inlineOpts.actions : [],
         note: String(inlineOpts.note || ''),
         noteTone: String(inlineOpts.noteTone || ''),
+        tag: String(inlineOpts.tag || ''),
+        refresh: inlineOpts.refresh && typeof inlineOpts.refresh.onClick === 'function' ? inlineOpts.refresh : null,
       };
 
       badgeEl.textContent = inlineOpts.badge ? String(inlineOpts.badge) : kind === 'diff' ? 'DIFF' : kind === 'md' ? 'MD' : 'LOG';
@@ -1458,10 +1460,24 @@
 
       dlLink.classList.add('hidden');
       if (newTabLink) newTabLink.classList.add('hidden');
-      if (refreshBtn) refreshBtn.classList.add('hidden');
+      if (refreshBtn) {
+        // An inline view with `refresh` ({ title, onClick, busy }) shows the header's refresh button for it (spinning while busy)
+        const r = state.inline.refresh;
+        refreshBtn.classList.toggle('hidden', !r);
+        refreshBtn.title = r ? String(r.title || 'Refresh') : 'Refresh (R)';
+        refreshBtn.setAttribute('aria-label', refreshBtn.title);
+        setInlineBusy(Boolean(r && r.busy));
+      }
 
       renderInlineView();
       return true;
+    }
+
+    // setInlineBusy(on): the refresh button of an inline view spins (and does not take a second click) while its work runs
+    function setInlineBusy(on) {
+      if (!refreshBtn) return;
+      refreshBtn.classList.toggle('is-spinning', Boolean(on));
+      refreshBtn.disabled = Boolean(on);
     }
 
     async function open(targetPath, openOpts = {}) {
@@ -1472,7 +1488,12 @@
 
       state.inline = null;
       if (newTabLink) newTabLink.classList.remove('hidden');
-      if (refreshBtn) refreshBtn.classList.remove('hidden');
+      if (refreshBtn) {
+        refreshBtn.classList.remove('hidden');
+        refreshBtn.title = 'Refresh (R)';
+        refreshBtn.setAttribute('aria-label', 'Refresh');
+        setInlineBusy(false);
+      }
       state.zoom = 'fit';
       state.mdRaw = false;
       state.htmlSource = false;
@@ -1603,6 +1624,10 @@
 
     // Header actions
     container.querySelector('[data-act="refresh"]')?.addEventListener('click', () => {
+      if (state.inline) {
+        if (state.inline.refresh) state.inline.refresh.onClick();
+        return;
+      }
       if (state.path) open(state.path, { line: state.info?.line });
     });
     container.querySelector('[data-act="copy-path"]')?.addEventListener('click', () => {
@@ -1635,6 +1660,8 @@
     return {
       open,
       openInline,
+      setInlineBusy,
+      getInlineTag: () => (state.inline ? state.inline.tag : ''),
       handleKey,
       getPath: () => state.path,
       viewUrlFor,
