@@ -6,7 +6,6 @@
   - container/scripts/mux/herdr.sh (serve init + config seeding, attach interactive,
     attach command + exit code + detach, `swarmbox-web` dispatch with and without voice front)
   - Sysop integration (brain.write_mcp_config forwarding mux env, risk.py guarding hc/herdr)
-  - container/config/herdr.toml (valid TOML using Catppuccin Mocha palette)
   - container/web/herdr/server.mjs (CLI arg parsing and Origin security check via Node)
 
 Zero real `hc` daemon, zero network.
@@ -21,7 +20,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import tomllib
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -31,7 +29,6 @@ from helpers import ROOT  # noqa: E402
 TABS_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py")
 ATTACH_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-attach.sh")
 WEB_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-web.sh")
-HERDR_TOML = os.path.join(ROOT, "container", "config", "herdr.toml")
 HERDR_CLIENT = os.path.join(ROOT, "container", "web", "herdr", "hc-client.mjs")
 HERDR_SERVER = os.path.join(ROOT, "container", "web", "herdr", "server.mjs")
 HERDR_COCKPIT = os.path.join(ROOT, "container", "web", "herdr", "cockpit.mjs")
@@ -511,9 +508,10 @@ class HerdrShellBackendTest(unittest.TestCase):
             "PATH": self.bin_dir + os.pathsep + os.environ["PATH"],
             "HOME": self.home,
             "SWARMBOX_MUX": "herdr",
+            # the checkout's backend, not the one installed in a box (/usr/local/lib/swarmbox/mux comes first otherwise)
+            "SWARMBOX_TEST_MUX_DIR": os.path.join(ROOT, "container", "scripts", "mux"),
             "SWARMBOX_TEST_HC_BIN": self.hc_bin,
             "SWARMBOX_TEST_HERDR_WEB": self.fake_web,
-            "SWARMBOX_TEST_HERDR_CONFIG": HERDR_TOML,
             "SWARMBOX_TEST_LIB": os.path.join(ROOT, "container", "scripts"),
             "SWARMBOX_TEST_RUN_DIR": self.run_dir,
             "FAKE_HC_STATE": self.state_file,
@@ -532,12 +530,10 @@ class HerdrShellBackendTest(unittest.TestCase):
         )
         p = subprocess.run(["bash", "-c", script], env=self.env(), capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stderr)
-        herdr_cfg = os.path.join(self.home, ".config", "herdr", "config.toml")
         core_cfg = os.path.join(self.home, ".config", "herdr-core", "config.toml")
-        self.assertTrue(os.path.isfile(herdr_cfg))
         self.assertTrue(os.path.isfile(core_cfg))
-        with open(herdr_cfg, encoding="utf-8") as f:
-            self.assertIn("#cba6f7", f.read())
+        # the old herdr TUI is gone, so its config is no longer seeded
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".config", "herdr")))
         with open(core_cfg, encoding="utf-8") as f:
             self.assertIn("notes = false", f.read())
         with open(self.state_file, encoding="utf-8") as f:
@@ -547,12 +543,12 @@ class HerdrShellBackendTest(unittest.TestCase):
         self.assertEqual(st["terminals"][0]["name"], "shell")
 
         # User edits are preserved on subsequent runs
-        with open(herdr_cfg, "w", encoding="utf-8") as f:
-            f.write("# custom user theme\n")
+        with open(core_cfg, "w", encoding="utf-8") as f:
+            f.write("# custom user config\n")
         p2 = subprocess.run(["bash", "-c", script], env=self.env(), capture_output=True, text=True)
         self.assertEqual(p2.returncode, 0, p2.stderr)
-        with open(herdr_cfg, encoding="utf-8") as f:
-            self.assertEqual(f.read(), "# custom user theme\n")
+        with open(core_cfg, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "# custom user config\n")
 
     def _run_on_pty(self, argv, env):
         master, slave = pty.openpty()
@@ -618,18 +614,6 @@ class HerdrShellBackendTest(unittest.TestCase):
 
 
 class HerdrSysopAndAssetsTest(unittest.TestCase):
-    def test_herdr_toml_is_valid_and_uses_catppuccin_palette(self):
-        with open(HERDR_TOML, encoding="utf-8") as f:
-            cfg = tomllib.loads(f.read())
-        self.assertFalse(cfg.get("onboarding", True))
-        self.assertEqual(cfg["theme"]["name"], "catppuccin")
-        self.assertNotIn("custom", cfg["theme"])
-        self.assertEqual(cfg["keys"]["prefix"], "ctrl+a")
-        self.assertEqual(cfg["ui"]["status_indicators"], "dots")
-        self.assertFalse(cfg["ui"]["pane_outer_borders"])
-        self.assertFalse(cfg["ui"]["pane_scrollbars"])
-        self.assertEqual(cfg["ui"]["accent"], "#cba6f7")
-
     def test_sysop_brain_forwards_tabs_env_and_web_source_note(self):
         tmp = tempfile.mkdtemp(prefix="swarmbox-test-herdr-sysop.")
         self.addCleanup(shutil.rmtree, tmp, True)
@@ -882,7 +866,6 @@ assert.ok(Array.isArray(cfg.mcp));
             "SWARMBOX_MUX": "herdr",
             "SWARMBOX_TEST_HC_BIN": hc_bin,
             "SWARMBOX_TEST_HERDR_COCKPIT": fake_cockpit,
-            "SWARMBOX_TEST_HERDR_CONFIG": HERDR_TOML,
             "SWARMBOX_TEST_LIB": os.path.join(ROOT, "container", "scripts"),
             "SWARMBOX_TEST_RUN_DIR": run_dir,
             "SWARMBOX_TEST_READY_TIMEOUT": "2",

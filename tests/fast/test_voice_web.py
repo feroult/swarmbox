@@ -65,7 +65,6 @@ class Base(unittest.TestCase):
              "SWARMBOX_TEST_RUN_DIR": self.run_dir, "SWARMBOX_TEST_WEB_PORT": "29541",
              "SWARMBOX_TEST_WEB_IFACE": "lo", "LANG": "C.UTF-8", "SWARMBOX_TEST_IMAGE_ADDONS": ADDONS,
              "SWARMBOX_TEST_HC_BIN": os.path.join(self.fake, "hc"), "SWARMBOX_TEST_HERDR_WEB": self.server,
-             "SWARMBOX_TEST_HERDR_CONFIG": os.path.join(self.tmp, "no-herdr.toml"),
              "SWARMBOX_TEST_IMAGE_STATE": os.path.join(self.tmp, "image-state"), "SWARMBOX_TEST_HOST_DIR": os.path.join(self.tmp, "host"),
              "SWARMBOX_TEST_USER_ADDONS": os.path.join(self.tmp, "user-addons"), "SWARMBOX_TEST_LOCK": os.path.join(self.tmp, "addons.lock"),
              "SWARMBOX_TEST_ARCH": "amd64", "TMPDIR": self.tmp}

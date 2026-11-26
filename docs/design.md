@@ -210,8 +210,8 @@ The multiplexer of the box is herdr-core (`hc`, pinned in the `Dockerfile`), the
   quoted with `printf %q`, so spaces, quotes and `$` arrive unchanged. Without a terminal on stdin and stdout (`swarmbox pubkey > file`), or with
   `--plain`, the command runs directly, through `bash -c` with the shell fragment sourced, not an interactive shell, so standard error stays clean.
 - A command named like a host word cannot be run this way: use `swarmbox bash -c '<command>'`.
-- herdr config: `container/config/herdr.toml` (the Purple Glow theme) is copied to `~/.config/herdr/config.toml` once, and
-  `~/.config/herdr-core/config.toml` is written once with the defaults of the box; neither is ever overwritten, so edit them freely.
+- herdr-core config: `~/.config/herdr-core/config.toml` is written once with the defaults of the box and never overwritten, so edit it
+  freely. The theme of the Web Studio and the cockpit is kept in `~/.config/swarmbox/herdr-web-theme`.
 
 ## 6. Startup of the box
 
@@ -486,7 +486,7 @@ container/entrypoint.sh     serve, attach, install, pubkey, addon, bus, tabs, ho
 container/scripts/          dirs, banner, messages, ssh-key, starship-init, swarmbox-{attach,bus,tabs,install,mcp,shim,addon,web}, mux/ (mux.sh, herdr.sh)
 container/host/             swarmbox-host (the `swarmbox` script), VERSION, DEFAULTS   (the archive of `host-helper`)
 install.sh                  the release installer (downloads swarmbox, checks its sha256)
-container/config/           herdr.toml, starship.toml, bashrc.sh (the shell fragment), ssh-swarmbox.conf
+container/config/           starship.toml, bashrc.sh (the shell fragment), ssh-swarmbox.conf
 container/addons/<name>/     addon manifests and installers;  container/mcp/<name>/  MCP server descriptions
 container/web/herdr/        the Web Studio (server.mjs, public/), the cockpit (cockpit.mjs), hc-client.mjs
 cloudflare-setup.py         the back end of `swarmbox remote`

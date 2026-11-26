@@ -159,7 +159,6 @@ class ServeCase(unittest.TestCase):
                "SWARMBOX_TEST_PODMAN_RUNROOT": os.path.join(self.base, "storage-run"),
                "SWARMBOX_TEST_PODMAN_LIBPOD_RUN": os.path.join(self.base, "podman-run"),
                "SWARMBOX_TEST_FALLBACK_SOCK": os.path.join(self.base, "fallback.sock"),
-               "SWARMBOX_TEST_HERDR_CONFIG": os.path.join(self.base, "no-herdr.toml"),
                "SWARMBOX_TEST_BACKOFF_SCALE": "0", "SWARMBOX_TEST_SERVICE_WAIT": "2", "SWARMBOX_TEST_BUS_WAIT": "1", "LANG": "C.UTF-8"}
         env.update({k: v for k, v in extra.items() if v is not None})
         for k, v in extra.items():

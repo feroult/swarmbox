@@ -109,7 +109,3 @@ hc machine add swarmbox-vps --via 'ssh my-vps podman exec -i swarmbox hc connect
 ```
 
 Once added, `herdr-app` discovers all live terminals plus the `sysop` agent (with live OSC 7501 status badges and permission prompts) natively inside the user's own `herdr-app` workspace.
-
-## Follow-up Cleanup (Future)
-
-Once the Terminal Cockpit (`cockpit.mjs`) is validated in daily use, the older standalone `herdr 0.9.5` binary and `container/config/herdr.toml` (which run a separate daemon unrelated to `herdr-core`) can be removed from `Dockerfile` to slim the image further.

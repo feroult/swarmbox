@@ -1,5 +1,5 @@
 (() => {
-  // Five curated themes synchronized with ~/.config/herdr/config.toml via /api/theme.
+  // Five curated themes synchronized with the cockpit via /api/theme (~/.config/swarmbox/herdr-web-theme).
   // Default: Catppuccin Mocha.
   const DEFAULT_THEME = 'catppuccin';
   const THEMES = {

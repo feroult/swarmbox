@@ -194,13 +194,6 @@ in the image, where they were installed.
 - Source: https://github.com/herdrdev/herdr-core
 - [verified: `hc --licenses` and release metadata for 0.1.21; 2026-11-21]
 
-### herdr
-
-- Version: 0.9.5 (`ARG HERDR_VERSION`, release binary with SHA-256 verified per architecture)
-- License: Apache-2.0
-- Source: https://github.com/herdrdev/herdr
-- [verified: GitHub release v0.9.5 and repository license; 2026-11-21]
-
 ### jetbrains-mono
 
 - Version: 2.304 (`ARG JETBRAINS_MONO_VERSION`, official WOFF2 webfonts with SHA-256 verified)

@@ -99,7 +99,7 @@ class Image(unittest.TestCase):
 
 
 class Pins(unittest.TestCase):
-    """starship and herdr are fetched by checksum; herdr (herdr-core) is the only multiplexer, so neither tmux nor ttyd is in the image."""
+    """starship and herdr-core are fetched by checksum; herdr-core is the only multiplexer, so neither tmux, ttyd nor the old herdr TUI is in the image."""
 
     def arg(self, name):
         m = re.search(r"^ARG %s=(\S+)" % name, D, re.M)
@@ -107,16 +107,19 @@ class Pins(unittest.TestCase):
         return m.group(1)
 
     def test_downloads_are_pinned_and_checksummed(self):
-        for prog in ("STARSHIP", "HERDR_CORE", "HERDR"):
+        for prog in ("STARSHIP", "HERDR_CORE"):
             self.assertRegex(self.arg(prog + "_VERSION"), r"^\d")
         for a in ("AMD64", "ARM64"):
             self.assertRegex(self.arg("HERDR_CORE_SHA256_" + a), r"^[0-9a-f]{64}$")
-            self.assertRegex(self.arg("HERDR_SHA256_" + a), r"^[0-9a-f]{64}$")
-        self.assertGreaterEqual(CODE.count("sha256sum -c"), 3)
+        self.assertGreaterEqual(CODE.count("sha256sum -c"), 2)
 
     def test_neither_tmux_nor_ttyd_is_installed(self):
         self.assertNotRegex(D, r"(?i)\btmux\b")
         self.assertNotRegex(D, r"(?i)\bttyd\b")
+        # the old herdr TUI (a separate daemon unrelated to herdr-core) and its herdr.toml are gone
+        self.assertNotIn("HERDR_VERSION", D)
+        self.assertNotIn("/usr/local/bin/herdr ", CODE)
+        self.assertNotIn("herdr.toml", D)
         self.assertIn("ln -sf /usr/local/bin/herdr-core /usr/local/bin/hc", CODE)
 
 

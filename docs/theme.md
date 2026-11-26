@@ -22,7 +22,7 @@ through violet to white and back; the prompt, the tab bar of the Web Studio and 
 |---|---|
 | The banner and its glint | `container/scripts/banner.sh` |
 | The prompt | `container/config/starship.toml` |
-| The Web Studio and the cockpit (Purple Glow and the four other themes) | `container/web/herdr/public/app.js`, `container/web/herdr/hc-client.mjs`, `container/config/herdr.toml` |
+| The Web Studio and the cockpit (Purple Glow and the four other themes) | `container/web/herdr/public/app.js`, `container/web/herdr/hc-client.mjs` |
 | The line of a pull (`swarmbox update`) | `ui_c` in `container/host/swarmbox-host` |
 | The 16 colors, the cursor and the selection of the browser terminal | the Purple Glow theme in `container/web/herdr/public/app.js` (Settings of the Web Studio picks another) |
 | `ls` and `grep` | `LS_COLORS` and `GREP_COLORS` in `container/config/bashrc.sh`, in 256-colour numbers so they look the same in any terminal scheme |

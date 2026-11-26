@@ -13,7 +13,7 @@ swarmbox-sysop status [--json]   the service and its goals (exit 1 when it is no
 swarmbox-sysop stop [GOAL_ID]    the stop key: kills the brain's process group, ends the goal, drops the queue
 swarmbox-sysop mcp               the MCP server of a goal (the brain's MCP config runs it)
 swarmbox-sysop agent             the OSC 7501 agent bridge in a hidden herdr terminal (`serve --dock` starts it)
-swarmbox-sysop veto | approve    the keys of herdr (container/config/herdr.toml): Ctrl+A then a approve, Shift+V veto; Ctrl+A then g asks for a goal (`goal` with no text)
+swarmbox-sysop veto | approve    refuse or allow the pending action (the cockpit keys: Ctrl+A then a approve, Ctrl+A then v veto; Ctrl+A then g focuses the goal box)
 ```
 
 Settings (environment, `SWARMBOX_SYSOP_*`, see `lib/swarmbox_sysop/config.py`): `TOPIC` (goal), `GROUP` (sysop), `BRAIN` (preset `claude` or a command template, never run by a shell),

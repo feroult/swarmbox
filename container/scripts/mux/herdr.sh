@@ -7,7 +7,6 @@
 _SB_HERDR_HC=${SWARMBOX_TEST_HC_BIN:-hc}
 _SB_HERDR_WEB=${SWARMBOX_TEST_HERDR_WEB:-/usr/local/share/swarmbox/herdr-web/server.mjs}
 _SB_HERDR_COCKPIT=${SWARMBOX_TEST_HERDR_COCKPIT:-/usr/local/share/swarmbox/herdr-web/cockpit.mjs}
-_SB_HERDR_THEME_SRC=${SWARMBOX_TEST_HERDR_CONFIG:-/etc/swarmbox/herdr.toml}
 
 mux_available() {
     command -v "$_SB_HERDR_HC" > /dev/null 2>&1
@@ -21,17 +20,10 @@ _herdr_config_root() {
     esac
 }
 
-# Seed default Purple Glow config for herdr TUI and clean defaults for herdr-core once,
-# never overwriting existing user files.
+# Seed clean defaults for herdr-core once, never overwriting an existing user file.
 _herdr_seed_config() {
-    local cfg_root herdr_dir core_dir
-    cfg_root=$(_herdr_config_root)
-    herdr_dir="$cfg_root/herdr"
-    core_dir="$cfg_root/herdr-core"
-    if [ -r "$_SB_HERDR_THEME_SRC" ] && [ ! -e "$herdr_dir/config.toml" ]; then
-        mkdir -p "$herdr_dir" 2>/dev/null || true
-        cp "$_SB_HERDR_THEME_SRC" "$herdr_dir/config.toml" 2>/dev/null || true
-    fi
+    local core_dir
+    core_dir="$(_herdr_config_root)/herdr-core"
     if [ ! -e "$core_dir/config.toml" ]; then
         mkdir -p "$core_dir" 2>/dev/null || true
         cat > "$core_dir/config.toml" 2>/dev/null <<'EOF' || true
