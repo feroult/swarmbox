@@ -43,6 +43,7 @@ def git(cwd, *args):
 NODE_HARNESS = r"""
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
@@ -89,7 +90,9 @@ class FakeHc extends EventEmitter {
       return t;
     }
     if (method === 'terminal.kill' || method === 'terminal.rm') {
-      this.terminals.delete(params.terminal);
+      const had = this.terminals.delete(params.terminal);
+      // Like the real daemon, a kill is followed by events that the gateway broadcasts while the close is still running.
+      if (had && method === 'terminal.kill') this.emit('hc-event', { event: { type: 'removed', terminal: params.terminal } });
       return { ok: true };
     }
     if (method === 'terminal.send') {
@@ -222,11 +225,27 @@ try {
   const wtPath = wtTab.data.worktree.path;
   assert.ok(fs.existsSync(wtPath));
 
-  // Closing an empty unpinned worktree auto-removes the worktree!
+  // Closing an empty unpinned worktree auto-removes the worktree, and no snapshot broadcast during the close reports it as
+  // pending: that showed the Pending worktrees pill for a moment and made the sidebar jump.
+  const listed = await api('GET', '/api/worktrees');
+  assert.ok(listed.data.worktrees.some((w) => w.path === wtPath), 'the worktree is in the cached list before the close');
+  // An events client (the fake ws module records what it is sent in globalThis.__wsSent).
+  const upReq = http.request({ host: '127.0.0.1', port, path: '/ws/events', headers: { Connection: 'Upgrade', Upgrade: 'websocket' } });
+  upReq.on('error', () => {});
+  upReq.end();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  globalThis.__wsSent = [];
   const delEmpty = await api('DELETE', `/api/tabs/${t2}`);
+  const evMsgs = globalThis.__wsSent.map((d) => { try { return JSON.parse(d); } catch (_) { return {}; } });
+  upReq.destroy();
   assert.equal(delEmpty.status, 200);
   assert.equal(delEmpty.data.auto_cleaned_worktree, true);
   assert.equal(fs.existsSync(wtPath), false);
+  const duringClose = evMsgs.filter((m) => Array.isArray(m.worktrees));
+  assert.ok(duringClose.length >= 2, 'the kill event and the close both broadcast');
+  for (const m of duringClose) {
+    assert.ok(!m.worktrees.some((w) => w.path === wtPath), `a ${m.type} broadcast listed the closing worktree as pending`);
+  }
 
   // 4. Create another worktree, commit inside it, merge cleanly with clean=true
   const wtTab2 = await api('POST', '/api/tabs', { preset: 'agent', agent: 'claude', cwd: repo, worktree_choice: 'new' });
@@ -388,7 +407,9 @@ class PinsWebGatewayTest(unittest.TestCase):
             f.write("import { EventEmitter } from 'node:events';\n"
                     "export class WebSocketServer extends EventEmitter {\n"
                     "  constructor() { super(); this.clients = new Set(); }\n"
-                    "  handleUpgrade(_req, _sock, _head, cb) { cb({ readyState: 1, send() {}, close() {}, on() {}, ping() {} }); }\n"
+                    "  handleUpgrade(_req, _sock, _head, cb) {\n"
+                    "    cb({ readyState: 1, send(d) { (globalThis.__wsSent ||= []).push(d); }, close() {}, on() {}, ping() {} });\n"
+                    "  }\n"
                     "  close() {}\n"
                     "}\n")
         staged_server = os.path.join(web_dir, "server.mjs")
