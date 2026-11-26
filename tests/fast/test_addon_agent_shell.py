@@ -75,11 +75,13 @@ class ClaudeShell(Base):
                 with self.subTest(shell=sh, args=args):
                     self.assertEqual(self.run_in(sh, "claude", args), "claude:" + "".join("[%s]" % a for a in args.split()))
 
-    def test_swarmbox_yolo_zero_turns_auto_approve_off(self):
+    def test_swarmbox_yolo_zero_turns_auto_approve_off_and_keeps_the_mcp_config(self):
         for sh in SHELLS:
             with self.subTest(shell=sh):
                 for args in ("", "-p hello"):
-                    self.assertNotIn("--dangerously-skip-permissions", self.run_in(sh, "claude", args, yolo="0"))
+                    got = self.run_in(sh, "claude", args, yolo="0")
+                    self.assertNotIn("--dangerously-skip-permissions", got)
+                    self.assertIn(self.MCP % self.d, got, "the MCP servers of the box are not a permission")
                 self.assertIn("--dangerously-skip-permissions", self.run_in(sh, "claude", "", yolo="1"))
 
 class AntigravityShell(Base):
