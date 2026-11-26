@@ -11,7 +11,7 @@ THE RISK of an action (assess_run / assess_input), low, medium or high, plus `bl
   * agent: the text is a prompt, low. A text that starts with one of the agent's reserved prefixes (its RESERVED_PREFIXES; `/` and `!`, a slash
     command and a shell escape, by default) is BLOCKED (no approval path:
     the sysop never passes --slash to swarmbox-tabs, which refuses it anyway). A later line that starts so is medium. Any key
-    while a dialog of the agent is on the screen (Esc included: it rejects the request) is high, so it always needs the user's approval, never a
+    while a dialog of the agent is open (its screen shows one, or it reports `blocked` with OSC 7501; Esc included: it rejects the request) is high, so it always needs the user's approval, never a
     countdown: a dialog is the USER's decision.
   * shell: classify_command(the whole line; for `run` the text already on the command line of the screen is part of it) from risk.py. The line is what is already typed plus the new text, because a command can be typed in
     several parts (input "r", input "m -rf ~", input "{Enter}"): the policy keeps what it typed in each tab since the last Enter or {C-c}. Keys
@@ -147,6 +147,12 @@ def reserved_of(tab):
     """the reserved prefixes of the agent of a tab (its RESERVED_PREFIXES: a slash command, a shell escape); "/" and "!" when unknown"""
     a = registry.get(agent_of(tab))
     return tuple(p for p in (a["reserved_prefixes"] if a else ("/", "!")) if p)
+
+
+def reports_blocked(tab):
+    """the tab's program reports a dialog with OSC 7501 (state `blocked`, `blocked:<reason>`): known without reading its screen"""
+    st = tab.get("status") if isinstance(tab, dict) else None
+    return isinstance(st, dict) and str(st.get("state") or "").split(":", 1)[0] == "blocked"
 
 
 def state_unknown(tab):
@@ -288,7 +294,8 @@ class Policy:
         buf, dirty = self.buf(tab["tab"]).text, self.buf(tab["tab"]).dirty
         # the screen decides, not the name of the process: Claude Code started through `hc run -- CMD`, `env`, `ssh` or `bash -c` shows as sh,
         # ssh or node. A screen with a dialog is a dialog whatever runs: it is rated as an agent's (the safe side)
-        dialog = bool(_DIALOG.search("\n".join([x for x in screen.split("\n") if x.strip()][-14:])))
+        # A dialog the program reports (OSC 7501 `blocked`) counts too: the screen's words are the vendor's and can change in an update.
+        dialog = reports_blocked(tab) or bool(_DIALOG.search("\n".join([x for x in screen.split("\n") if x.strip()][-14:])))
         if dialog:
             kind = "agent"
         self._control(text, v, kind, buf)

@@ -384,7 +384,8 @@ class Server:
         self.gate(kind, tab, text, verdict, route)
         if kind == "input" and route.action != "allow":
             # the screen was read before the countdown or the approval: a dialog that opened while it waited changes what these keys do
-            now = self.policy.assess_input(tab, text, self.tabs_call(self.tabs.screen, tab["tab"])["text"])
+            # the row is read again too: the state the tab reports (OSC 7501) may have changed with the screen
+            now = self.policy.assess_input(self.resolve(tab["tab"]), text, self.tabs_call(self.tabs.screen, tab["tab"])["text"])
             if now.block or policy.LEVELS.index(now.level) > policy.LEVELS.index(verdict.level):
                 self.audit.append("decision", decision="refused_after_wait", why="the screen changed while the action waited", kind=kind, tab=tab["tab"],
                                   text=text, verdict=now.as_dict())

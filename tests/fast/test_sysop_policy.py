@@ -207,6 +207,19 @@ class HooksReadlineAndDialogs(unittest.TestCase):
                     self.assertEqual(v.level, "high", v.reasons)
                     self.assertEqual(policy.Policy(autonomy="auto").route(v).action, "approve")
 
+    def test_a_dialog_the_agent_reports_is_a_dialog_whatever_its_screen_says(self):
+        # OSC 7501 `blocked`: known even when the vendor's words on the screen changed in an update
+        p = policy.Policy(autonomy="confirm-risky")
+        for state in ("blocked", "blocked:permission"):
+            for text in ("{Enter}", "{Esc}", "1"):
+                with self.subTest(state=state, text=text):
+                    v = p.assess_input(dict(AG, status={"state": state}), text, "> ")
+                    self.assertEqual(v.level, "high", v.reasons)
+        for state in ("working", "idle"):
+            with self.subTest(state=state):
+                v = p.assess_input(dict(AG, status={"state": state}), "{Esc}", "> ")
+                self.assertNotIn("user's decision", " ".join(v.reasons))
+
     def test_a_shell_without_a_dialog_is_unchanged(self):
         self.assertEqual(policy.Policy(autonomy="confirm-risky").assess_input(SH, "{Esc}", "$ ").level, "low")
 

@@ -946,6 +946,15 @@ class ServerWait(Rig):
         self.assertEqual(self.tabs.sent, [])
         self.assertTrue([e for e in self.events("decision") if e.get("decision") == "refused_after_wait"])
 
+    def test_a_dialog_the_agent_reports_while_an_action_waits_stops_it(self):
+        # the screen never changes; the state the tab reports (OSC 7501) turns blocked during the countdown
+        self.tabs.tabs["@2"]["cmd"] = "claude"
+        self.clock.at(0.3, lambda: self.tabs.tabs["@2"].__setitem__("status", {"state": "blocked"}))
+        text, err = self.call("input", tab="@2", text="{Enter}")
+        self.assertTrue(err, text)
+        self.assertIn("changed while the action waited", text)
+        self.assertEqual(self.tabs.sent, [])
+
 
 if __name__ == "__main__":
     unittest.main()
