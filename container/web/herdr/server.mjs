@@ -2540,6 +2540,23 @@ export function createGateway(options = {}) {
       }
 
       // Rewrite: the sysop writes the digest of the repository again now (the panel shows the call)
+      // How far the digest is from a folder's commit (the New agent box says whether the session waits for a new one); writes nothing
+      if (pathname === '/api/sysop/context/check' && req.method === 'GET') {
+        const cwd = url.searchParams.get('cwd') || '';
+        if (!cwd.startsWith('/') || !fs.existsSync(cwd)) return sendJson(res, 400, { error: 'bad_arg', message: 'an absolute folder is required' });
+        const r = await runCommand(SYSOP_BIN, ['context', '--check', cwd], null, 8000);
+        let info = null;
+        try { info = r.ok ? JSON.parse(r.stdout) : null; } catch (_) { info = null; }
+        if (!info || typeof info !== 'object') return sendJson(res, 200, { ok: false });
+        return sendJson(res, 200, {
+          ok: true,
+          need: typeof info.need === 'string' ? info.need : null,
+          wait: info.wait === true,
+          changes: Number.isFinite(info.changes) ? info.changes : null,
+          at: Number.isFinite(info.at) ? info.at * 1000 : 0,
+        });
+      }
+
       if (pathname === '/api/sysop/context/rewrite' && req.method === 'POST') {
         const body = await readBody(req);
         const top = contextRepoTop(String(body.key || ''));

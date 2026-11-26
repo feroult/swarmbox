@@ -168,11 +168,29 @@ class RefreshTest(Base):
         self.clock.t += digest.MIN_REWRITE_S + 1
         write(os.path.join(self.repo, "README.md"), "# calc\nNow with `make all`.\n")
         self.commit("readme again")
-        self.assertEqual(digest.carry(digest.repo_of(self.repo), self.store, self.clock), ("carried", "changed"),
-                         "a changed doc of an older digest asks for a rewrite, and the session still gets the carried file now")
+        self.assertEqual(digest.carry(digest.repo_of(self.repo), self.store, self.clock), ("carried", "behind"),
+                         "a changed doc of an older digest asks for a rewrite a session waits for, and the carried file is there now")
         self.clock.t += digest.REFRESH_S
-        self.assertEqual(digest.carry(digest.repo_of(self.repo), self.store, self.clock), ("have", "stale"))
+        self.assertEqual(digest.carry(digest.repo_of(self.repo), self.store, self.clock), ("have", "behind"),
+                         "far behind counts before old")
         self.assertEqual(len(self.calls), 1, "carry never calls the model")
+
+    def test_how_many_files_changed_decides_between_writing_in_the_background_and_waiting(self):
+        self.refresh()
+        self.clock.t += digest.MIN_REWRITE_S + 1
+        for i in range(digest.MAX_CARRY + 1):
+            write(os.path.join(self.repo, "gen", "f%d.py" % i), "x = %d\n" % i)
+        self.commit("some")
+        a = digest.assess(digest.repo_of(self.repo), self.store, self.clock)
+        self.assertEqual((a["need"], len(a["changes"])), ("changed", digest.MAX_CARRY + 1), "written again in the background")
+        for i in range(digest.WAIT_CHANGES):
+            write(os.path.join(self.repo, "gen", "g%d.py" % i), "x = %d\n" % i)
+        self.commit("many")
+        self.assertEqual(digest.assess(digest.repo_of(self.repo), self.store, self.clock)["need"], "behind")
+        self.clock.t += digest.REFRESH_S
+        self.git("reset", "-q", "--hard", "HEAD~2")
+        self.assertEqual(digest.assess(digest.repo_of(self.repo), self.store, self.clock)["need"], "stale",
+                         "old, with nothing changed: written again in the background")
 
     def test_a_long_list_of_changed_files_is_cut(self):
         self.refresh()
@@ -325,6 +343,58 @@ class EventsTest(Base):
         self.assertIn("failed", self.mark(head, ".none") or "")
         self.assertIsNone(self.mark(head, ".wait"))
 
+    def far_behind(self):
+        """A digest written long ago, then a commit with a changed README: HEAD is `behind` it."""
+        self.refresh()
+        self.clock.t += digest.MIN_REWRITE_S + 1
+        write(os.path.join(self.repo, "README.md"), "# calc\nNow with `make check`.\n")
+        return self.commit("readme")
+
+    def test_a_launcher_on_a_commit_far_behind_the_digest_waits_for_the_new_one_with_the_carried_file_ready(self):
+        head = self.far_behind()
+        ac = self.ac()
+        prepare = {"body": {"event": "prepare", "tab": "w1", "cwd": self.repo, "agent": "claude", "commit": head}}
+        self.assertEqual(ac.handle_event(prepare), "carried")
+        self.assertEqual(self.mark(head, ".wait"), "calc\tbehind\n", "the launcher waits for the model")
+        self.assertIn("Changed since the orientation was written", slurp(self.store.file(head)), "Enter starts with the carried file")
+        waiting = json.loads(slurp(os.path.join(self.store.root, "sessions", "w1.json")))
+        self.assertEqual((waiting["waiting"], waiting["reason"], waiting["changes"]), (True, "behind", 1))
+        ac.worker = threading.Thread(target=ac._work, daemon=True)     # the worker alone: a service that starts drops every mark
+        ac.worker.start()
+        self.addCleanup(ac.stop)
+        for _ in range(200):
+            if self.mark(head, ".wait") is None:
+                break
+            time.sleep(0.02)
+        self.assertIsNone(self.mark(head, ".wait"))
+        self.assertNotIn("Changed since the orientation was written", slurp(self.store.file(head)), "the new digest, for this commit")
+        self.assertEqual(len(self.calls), 2)
+
+    def test_a_commit_far_behind_with_its_file_already_there_is_marked_for_the_next_launcher(self):
+        head = self.far_behind()
+        ac = self.ac()
+        ac.handle_event({"body": {"event": "turn", "tab": "w1", "cwd": self.repo, "agent": "claude"}})
+        self.assertEqual(self.mark(head, ".wait"), "calc\tbehind\n", "the file is there, but a launcher sees the mark and waits")
+        self.assertFalse(os.path.exists(os.path.join(self.store.root, "sessions", "w1.json")), "only a launcher's prepare is waiting")
+
+    def test_a_failed_rewrite_of_a_commit_far_behind_lets_the_launcher_start_with_the_carried_file(self):
+        head = self.far_behind()
+
+        def bad(prompt):
+            raise digest.DigestError("not logged in")
+        ac = self.ac(bad)
+        ac.handle_event({"body": {"event": "prepare", "tab": "w1", "cwd": self.repo, "agent": "claude", "commit": head}})
+        self.assertIsNotNone(self.mark(head, ".wait"))
+        ac.worker = threading.Thread(target=ac._work, daemon=True)
+        ac.worker.start()
+        self.addCleanup(ac.stop)
+        for _ in range(200):
+            if self.mark(head, ".wait") is None:
+                break
+            time.sleep(0.02)
+        self.assertEqual((self.mark(head, ".wait"), self.mark(head, ".none")), (None, None))
+        self.assertTrue(self.store.has(head))
+
     def test_a_service_that_starts_drops_the_waits_of_a_call_that_died(self):
         os.makedirs(self.store.root)
         write(os.path.join(self.store.root, "a" * 40 + ".wait"), "calc\tnew\n")
@@ -467,6 +537,27 @@ class EventsTest(Base):
         self.assertEqual(len(self.events()), 2)
 
 
+class CheckCommandTest(Base):
+    def check(self):
+        env = dict(GIT_ENV, PATH="/usr/bin:/bin", HOME=self.tmp, SB_STATE_DIR=os.path.join(self.tmp, "state"),
+                   SB_RUN_DIR=os.path.join(self.tmp, "run"), PYTHONPATH=SYSOP_LIB)
+        p = subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop", "context", "--check", self.repo], env=env, capture_output=True,
+                           text=True, timeout=30)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads(p.stdout)
+
+    def test_check_says_how_far_the_digest_is_and_whether_a_session_would_wait_without_writing(self):
+        got = self.check()
+        self.assertEqual((got["need"], got["wait"], got["changes"]), ("new", True, None))
+        self.refresh()
+        write(os.path.join(self.repo, "src", "b.py"), "b = 1\n")
+        write(os.path.join(self.repo, "README.md"), "# calc\nNow with `make check`.\n")
+        head = self.commit("readme")
+        got = self.check()
+        self.assertEqual((got["need"], got["wait"], got["changes"], got["at"]), ("behind", True, 2, self.clock()))
+        self.assertFalse(self.store.has(head), "a check writes nothing")
+
+
 class ArgvTest(unittest.TestCase):
     def test_claude_code_declares_a_one_shot_digest_on_haiku_with_the_input_on_stdin(self):
         env = {"PATH": "/usr/bin:/bin", "HOME": tempfile.gettempdir(), "SWARMBOX_TEST_IMAGE_ADDONS": REAL_ADDONS,
@@ -521,7 +612,8 @@ class LauncherContractTest(Base):
         return r.stdout.strip()
 
     # the fake swarmbox-bus: logs each publish (its words, one per line, then a blank line); FAKE_BUS_RC is its exit code; on a `prepare`,
-    # FAKE_BUS_DO=carry writes the file of the commit (what the sysop does), FAKE_BUS_DO=none writes <commit>.none
+    # FAKE_BUS_DO=carry writes the file of the commit (what the sysop does), FAKE_BUS_DO=none writes <commit>.none, FAKE_BUS_DO=behind
+    # writes the mark and the carried file, then the new file 2.5 s later
     FAKE_BUS = r"""#!/bin/sh
 { for a in "$@"; do printf '%s\n' "$a"; done; echo; } > "$FAKE_BUS_LOG.$$"
 cat "$FAKE_BUS_LOG.$$" >> "$FAKE_BUS_LOG"; rm -f "$FAKE_BUS_LOG.$$"
@@ -534,6 +626,9 @@ case "$*" in
             none) echo > "$d/$c.none" ;;
             wait) printf 'calc\tnew\n' > "$d/$c.wait"; ( sleep 2.5; echo "written for $c" > "$d/$c.md"; rm -f "$d/$c.wait" ) > /dev/null 2>&1 & ;;
             waitforever) printf 'calc\tnew\n' > "$d/$c.wait" ;;
+            behind) printf 'calc\tbehind\n' > "$d/$c.wait"; echo "carried for $c" > "$d/$c.md"
+                    ( sleep 2.5; echo "written for $c" > "$d/$c.md"; rm -f "$d/$c.wait" ) > /dev/null 2>&1 & ;;
+            behindforever) printf 'calc\tbehind\n' > "$d/$c.wait"; echo "carried for $c" > "$d/$c.md" ;;
         esac ;;
 esac
 exit "${FAKE_BUS_RC:-0}"
@@ -610,6 +705,33 @@ exit "${FAKE_BUS_RC:-0}"
         self.assertTrue(got.endswith("[%s]" % self.store.file(head)), got)
         self.assertEqual(pubs[-1]["context"], self.store.file(head))
         self.assertNotIn("skipped", pubs[-1])
+
+    def test_a_session_on_a_commit_far_behind_the_digest_waits_on_screen_for_the_new_one(self):
+        os.makedirs(self.store.root)
+        head = self.git("rev-parse", "HEAD")
+        got, screen, pubs = self.run_launcher_on_a_terminal(self.repo, "behind")
+        self.assertIn("sysop: rewriting the context of calc (many files or its docs changed since the last one) - Enter starts with "
+                      "the last one", screen)
+        self.assertEqual(slurp(self.store.file(head)), "written for %s\n" % head, "it waited for the new file")
+        self.assertTrue(got.endswith("[%s]" % self.store.file(head)), got)
+        self.assertNotIn("skipped", pubs[-1])
+
+    def test_enter_starts_a_session_far_behind_at_once_with_the_last_context(self):
+        os.makedirs(self.store.root)
+        head = self.git("rev-parse", "HEAD")
+        got, _, pubs = self.run_launcher_on_a_terminal(self.repo, "behindforever", keys_after=(0.6, b"\r"))
+        self.assertTrue(got.endswith("[%s]" % self.store.file(head)), got)
+        self.assertEqual((pubs[-1]["context"], pubs[-1]["skipped"]), (self.store.file(head), True))
+
+    def test_a_file_marked_to_wait_asks_the_sysop_and_without_a_terminal_starts_with_it_at_once(self):
+        os.makedirs(self.store.root)
+        head = self.git("rev-parse", "HEAD")
+        write(self.store.file(head), "carried for %s\n" % head)
+        write(os.path.join(self.store.root, head + ".wait"), "calc\tbehind\n")
+        got, pubs, took = self.run_launcher(self.repo, {"FAKE_BUS_DO": "behindforever"})
+        self.assertEqual([b["event"] for _, b in pubs], ["prepare", "session"], "the file is there, but the mark says a new one comes")
+        self.assertLess(took, 1.5)
+        self.assertTrue(got.endswith("[%s]" % self.store.file(head)), got)
 
     def test_the_waiting_line_is_cut_to_the_real_width_of_the_terminal(self):
         os.makedirs(self.store.root)

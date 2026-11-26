@@ -5237,3 +5237,6 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
 .newag-ctx-label svg { width: 11px; height: 11px; color: var(--text-dim); flex-shrink: 0; }
 .newag-ctx.is-on .newag-ctx-label svg { color: var(--green); }
 .newag-ctx-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 10.5px; }
+.newag-ctx.is-behind { flex-wrap: wrap; row-gap: 4px; }
+.newag-ctx-note { flex-basis: 100%; padding-left: 22px; color: var(--amber); font-size: 10.5px; line-height: 1.35; }
+.newag-ctx-note[hidden] { display: none; }

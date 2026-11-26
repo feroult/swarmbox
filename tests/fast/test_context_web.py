@@ -1,5 +1,6 @@
 """Fast tests of the repository context in the Web Studio gateway (sysop.autocontext): what the snapshot says of each repository and each
-session, the text a session started with (/api/sysop/context), and Rewrite (/api/sysop/context/rewrite).
+session, the text a session started with (/api/sysop/context), how far a folder is from its digest (/api/sysop/context/check), and
+Rewrite (/api/sysop/context/rewrite).
 
 The real Node `createGateway()` on 127.0.0.1:0 with an in-memory fake HerdrClient, a fake swarmbox-sysop, and the digests folder in a mktemp
 HOME (no hc daemon, no sysop, nothing of the live box).
@@ -51,7 +52,8 @@ fs.writeFileSync(path.join(dir, 'sessions', 't1.json'), JSON.stringify({ tab: 't
   commit: 'b'.repeat(12), context: true, base: 'a'.repeat(12), base_at: nowSec - 60, changes: 3, at: nowSec - 5 }));
 fs.writeFileSync(path.join(dir, 'sessions', 't1.md'), '# Repository orientation: calc\nexactly this\n');
 fs.writeFileSync(path.join(dir, 'sessions', 't9.json'), JSON.stringify({ tab: 't9', context: true }));   // a closed tab
-fs.writeFileSync(path.join(dir, 'sessions', 't2.json'), JSON.stringify({ tab: 't2', repo: 'shop', key: KEY2, waiting: true, at: nowSec - 2 }));
+fs.writeFileSync(path.join(dir, 'sessions', 't2.json'), JSON.stringify({ tab: 't2', repo: 'shop', key: KEY2, waiting: true, reason: 'behind',
+  changes: 120, at: nowSec - 2 }));
 fs.writeFileSync(path.join(state, 'system_events.jsonl'), [
   { kind: 'autocontext', phase: 'started', key: KEY2, repo: 'shop', commit: 'c'.repeat(12), ts: nowSec - 3, reason: 'new', tab: 't2' },
   { kind: 'autocontext', phase: 'session', key: KEY, repo: 'calc', commit: 'b'.repeat(12), ts: nowSec - 5, tab: 't1', context: true },
@@ -64,7 +66,8 @@ const byKey = Object.fromEntries(ctx.repos.map((r) => [r.key, r]));
 assert.deepEqual([byKey[KEY].repo, byKey[KEY].state, byKey[KEY].base, byKey[KEY].top], ['calc', 'ready', 'a'.repeat(12), top]);
 assert.deepEqual([byKey[KEY2].repo, byKey[KEY2].state, byKey[KEY2].call.reason], ['shop', 'writing', 'new']);
 assert.deepEqual(Object.keys(ctx.sessions).sort(), ['t1', 't2'], 'a closed tab has no session in the snapshot');
-assert.deepEqual([ctx.sessions.t2.waiting, ctx.sessions.t2.context], [true, false], 'a launcher that waits for the first context');
+assert.deepEqual([ctx.sessions.t2.waiting, ctx.sessions.t2.context, ctx.sessions.t2.reason, ctx.sessions.t2.changes], [true, false, 'behind', 120],
+  'a launcher that waits for a new context, the last one far behind');
 assert.deepEqual([ctx.sessions.t1.context, ctx.sessions.t1.changes, ctx.sessions.t1.base], [true, 3, 'a'.repeat(12)]);
 assert.equal(readContextState(state, live, { settings: { autocontext: false } }).on, false);
 
@@ -115,6 +118,12 @@ try {
     assert.equal((await api('GET', `/api/sysop/context?${q}`)).status, 404, q);
   }
 
+  // the New agent box: how far the digest is from a folder's commit, from the sysop's check; nothing for a folder that is not absolute
+  const ck = await api('GET', `/api/sysop/context/check?cwd=${encodeURIComponent(top)}`);
+  assert.deepEqual(ck.data, { ok: true, need: 'behind', wait: true, changes: 120, at: 100000 });
+  assert.equal((await api('GET', '/api/sysop/context/check?cwd=calc')).status, 400);
+  fs.rmSync(process.env.FAKE_SYSOP_LOG, { force: true });
+
   // Rewrite: the sysop's context --force on the folder the sysop recorded, with the tab that asked in the environment
   const rw = await api('POST', '/api/sysop/context/rewrite', { key: KEY, tab: 't1' });
   assert.equal(rw.status, 202);
@@ -144,6 +153,7 @@ try {
 """
 
 FAKE_SYSOP = """#!/bin/sh
+[ "$2" = --check ] && { echo '{"repo": "calc", "need": "behind", "wait": true, "changes": 120, "at": 100.0}'; exit 0; }
 { for a in "$@"; do printf '%s\\n' "$a"; done; printf 'tab=%s\\n' "${SWARMBOX_SYSOP_CONTEXT_TAB:-}"; } > "$FAKE_SYSOP_LOG.tmp"
 mv "$FAKE_SYSOP_LOG.tmp" "$FAKE_SYSOP_LOG"
 """
