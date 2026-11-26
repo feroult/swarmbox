@@ -1521,26 +1521,34 @@ export function createGateway(options = {}) {
         return sendJson(res, 200, cfg);
       }
 
-      const addonMatch = pathname.match(/^\/api\/addons\/([a-z0-9][a-z0-9_-]{0,40})\/install$/);
+      // Settings > Addons: install, update (a managed addon installed again: the newest release of a floating one, the version the
+      // image names for a pinned one; an addon that updates itself is not offered) and remove (the install only, never its settings).
+      const addonMatch = pathname.match(/^\/api\/addons\/([a-z0-9][a-z0-9_-]{0,40})\/(install|update|remove)$/);
       if (addonMatch && req.method === 'POST') {
-        const addonName = addonMatch[1];
+        const [, addonName, action] = addonMatch;
         const curCfg = readBoxConfigSnapshot(hc.listSnapshot());
-        if (!curCfg.addons.some((a) => a.name === addonName)) {
+        const addon = curCfg.addons.find((a) => a.name === addonName);
+        if (!addon) {
           return sendJson(res, 404, { error: 'unknown_addon', message: `Addon "${addonName}" not found` });
         }
-        const r = await runCommand(ADDON_BIN, ['install', addonName], null, 180000);
+        if ((action === 'update' && !addon.canUpdate) || (action === 'remove' && !addon.canRemove)) {
+          return sendJson(res, 409, { error: `addon_${action}_refused`, message: `${addonName} cannot be ${action === 'update' ? 'updated' : 'removed'} here` });
+        }
+        const args = { install: ['install', addonName], update: ['install', addonName, '--force'], remove: ['remove', addonName] }[action];
+        const r = await runCommand(ADDON_BIN, args, null, 180000);
         if (!r.ok) {
           return sendJson(res, 502, {
-            error: 'addon_install_failed',
-            message: r.stderr || r.stdout || `swarmbox-addon install ${addonName} failed`,
+            error: `addon_${action}_failed`,
+            message: r.stderr || r.stdout || `swarmbox-addon ${args.join(' ')} failed`,
           });
         }
-        await runCommand(ADDON_BIN, ['prepare'], null, 60000);
+        if (action !== 'remove') await runCommand(ADDON_BIN, ['prepare'], null, 60000);
         broadcast(buildSnapshot({ type: 'sysop' }));
         return sendJson(res, 200, {
           ok: true,
           addon: addonName,
-          message: r.stdout || `${addonName} installed`,
+          action,
+          message: r.stdout || `${addonName}: ${action} done`,
           config: readBoxConfigSnapshot(hc.listSnapshot()),
         });
       }

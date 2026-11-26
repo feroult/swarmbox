@@ -3755,14 +3755,17 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 11px 14px;
   border-bottom: 1px solid var(--border);
 }
+/* the description keeps a readable width: on a narrow screen the badges and buttons go to their own line */
+.addon-row > .s-row-info { flex: 1 1 220px; min-width: 0; }
 .addon-row:last-child { border-bottom: none; }
 .addon-name { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--text); }
 .addon-desc { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
-.addon-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.addon-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; margin-left: auto; }
 
 .sbtn-primary, .sbtn-ghost {
   appearance: none;
@@ -3786,6 +3789,7 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   color: var(--text-muted);
 }
 .sbtn-primary:disabled, .sbtn-ghost:disabled { opacity: 0.55; cursor: wait; }
+.sbtn-ghost.sbtn-danger { color: var(--red); border-color: var(--red); }
 .sbtn-primary:active, .sbtn-ghost:active { transform: scale(0.97); }
 @media (hover: hover) {
   .sbtn-ghost:hover { border-color: var(--border-strong); color: var(--text); background: var(--surface-hover); }

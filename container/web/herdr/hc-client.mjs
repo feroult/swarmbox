@@ -1137,6 +1137,8 @@ function listAddonsSnapshot(env = process.env) {
       break;
     }
     // a floating install (`latest`) shows the version its program reports; a pinned one is the version it names
+    const pinnedBehind = installed && item.update !== 'self' && installedVersion !== 'latest' && !!item.manifestVersion
+      && installedVersion !== item.manifestVersion;
     const reported = installed && cmd && installedVersion === 'latest' ? reportedVersion(cmd) : '';
     out.push({
       ...item,
@@ -1145,6 +1147,12 @@ function listAddonsSnapshot(env = process.env) {
       channel: installedVersion,
       selfUpdate: item.update === 'self',
       location,
+      // Update installs a managed addon again: a floating one (`latest`) gets the newest release, a pinned one the version the image
+      // names, offered only when that differs from the installed one (a newer image). One that updates itself is never offered.
+      updateAvailable: pinnedBehind,
+      canUpdate: installed && item.update !== 'self' && (installedVersion === 'latest' || pinnedBehind),
+      // `swarmbox-addon remove` deletes the workspace's install; one baked into the image stays
+      canRemove: installed && location === 'workspace',
     });
   }
   return out;

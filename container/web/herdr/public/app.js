@@ -7944,13 +7944,22 @@
     return frag;
   }
 
-  async function installAddonLive(name) {
+  // Settings > Addons: install, update (a managed addon installed again) and remove (the install only: logins and settings stay).
+  const ADDON_ACTION_TEXT = {
+    install: { busy: 'Installing…', done: 'Installed!', failed: 'Install failed' },
+    update: { busy: 'Updating…', done: 'Updated!', failed: 'Update failed' },
+    remove: { busy: 'Removing…', done: 'Removed', failed: 'Remove failed' },
+  };
+  const addonRemoveArmed = new Map();   // name -> timer: Remove asks for a second click before it runs
+
+  async function addonActionLive(name, action) {
     if (installingAddons.has(name)) return;
+    const text = ADDON_ACTION_TEXT[action];
     installingAddons.add(name);
-    addonMessages.set(name, { tone: '', text: 'Installing…' });
+    addonMessages.set(name, { tone: '', text: text.busy, action });
     renderSettingsBody();
     try {
-      const r = await fetch(`/api/addons/${encodeURIComponent(name)}/install`, {
+      const r = await fetch(`/api/addons/${encodeURIComponent(name)}/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
@@ -7958,9 +7967,9 @@
       const d = await r.json().catch(() => ({}));
       if (r.ok && d.ok) {
         if (d.config) boxConfig = d.config;
-        addonMessages.set(name, { tone: 'ok', text: 'Installed!' });
+        addonMessages.set(name, { tone: 'ok', text: text.done });
       } else {
-        addonMessages.set(name, { tone: 'warn', text: d.stderr || d.error || 'Install failed' });
+        addonMessages.set(name, { tone: 'warn', text: d.message || d.error || text.failed, title: d.message || '' });
       }
     } catch (err) {
       addonMessages.set(name, { tone: 'warn', text: err.message || 'Network error' });
@@ -7968,6 +7977,17 @@
       installingAddons.delete(name);
       renderSettingsBody();
     }
+  }
+
+  function armAddonRemove(name) {
+    if (addonRemoveArmed.has(name)) {
+      clearTimeout(addonRemoveArmed.get(name));
+      addonRemoveArmed.delete(name);
+      addonActionLive(name, 'remove');
+      return;
+    }
+    addonRemoveArmed.set(name, setTimeout(() => { addonRemoveArmed.delete(name); renderSettingsBody(); }, 4000));
+    renderSettingsBody();
   }
 
   function renderSystemSection() {
@@ -7987,9 +8007,11 @@
         const msg = addonMessages.get(a.name);
         const actions = [];
         if (msg && msg.text && !busy) {
-          actions.push(el('span', { class: `s-badge ${msg.tone || 'muted'}`.trim(), text: msg.text.slice(0, 32) }));
+          actions.push(el('span', { class: `s-badge ${msg.tone || 'muted'}`.trim(), text: msg.text.slice(0, 32), title: msg.title || null }));
         }
-        if (a.installed) {
+        if (busy) {
+          actions.push(el('button', { type: 'button', class: 'sbtn-ghost', text: (msg && msg.text) || 'Working…', disabled: 'disabled' }));
+        } else if (a.installed) {
           // the version its program reports for a floating install (`latest`); an addon that updates itself says so
           if (a.selfUpdate) {
             actions.push(el('span', { class: 's-badge muted', text: 'auto-update', title: 'Updates itself; the version is read from the program' }));
@@ -7999,13 +8021,31 @@
             text: a.installedVersion ? `installed · ${a.installedVersion}` : 'installed',
             title: a.channel === 'latest' ? 'Installed from the latest release' : null,
           }));
+          if (a.canUpdate) {
+            actions.push(el('button', {
+              type: 'button',
+              class: 'sbtn-primary',
+              text: 'Update',
+              title: a.updateAvailable ? `Install ${a.manifestVersion}, the version this image names` : 'Install the newest release again',
+              onClick: () => addonActionLive(a.name, 'update'),
+            }));
+          }
+          if (a.canRemove) {
+            const armed = addonRemoveArmed.has(a.name);
+            actions.push(el('button', {
+              type: 'button',
+              class: armed ? 'sbtn-ghost sbtn-danger' : 'sbtn-ghost',
+              text: armed ? 'Confirm' : 'Remove',
+              title: 'Remove the install; logins and settings stay. Running sessions keep running.',
+              onClick: () => armAddonRemove(a.name),
+            }));
+          }
         } else {
           actions.push(el('button', {
             type: 'button',
             class: 'sbtn-primary',
-            text: busy ? 'Installing…' : 'Install',
-            disabled: busy ? 'disabled' : null,
-            onClick: () => installAddonLive(a.name),
+            text: 'Install',
+            onClick: () => addonActionLive(a.name, 'install'),
           }));
         }
         addonList.appendChild(el('div', { class: 'addon-row' }, [

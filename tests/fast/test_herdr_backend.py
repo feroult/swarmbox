@@ -862,7 +862,7 @@ assert.ok(Array.isArray(cfg.mcp));
             "openSettings",
             "stagedHostConfig",
             "buildHostApplyCommand",
-            "installAddonLive",
+            "addonActionLive",
             "term.paste(",
             "getSmartSelection",
             "looksLikeMidTokenWrap",
