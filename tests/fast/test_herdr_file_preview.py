@@ -157,6 +157,67 @@ class FilePreviewTests(unittest.TestCase):
         self.assertNotIn("<script>", html)
         self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
 
+    def test_syntax_highlighting_code_and_markdown(self):
+        md = (
+            "# Code\n\n"
+            "```python\n"
+            "# greet\n"
+            "def hello(name: str) -> bool:\n"
+            "    return '<script>' in name\n"
+            "```\n\n"
+            "```json\n"
+            '{"ok": true, "count": 42}\n'
+            "```\n"
+        )
+        multiline_js = "/* line 1\n   line 2 */\nconst x = greet('hi', 123);\n"
+        res = run_node_json(f"""
+            import './public/viewer.js';
+            const v = globalThis.SwarmBoxViewer;
+            const mdHtml = v.renderMarkdown({json.dumps(md)}, '/home/agent/report');
+            const jsLines = v.highlightLines({json.dumps(multiline_js)}, 'server.mjs');
+            const pyLang = v.detectLanguage('/tmp/app.py');
+            const dockerLang = v.detectLanguage('Dockerfile');
+            const shHtml = v.highlightCode('export FOO=$BAR; echo "hi" # note', 'bash');
+            const htmlCode = v.highlightCode('<div class="a">hi</div>', 'html');
+            const diffHtml = v.highlightCode('@@ -1,2 +1,2 @@\\n-old\\n+new', 'diff');
+            const bigText = 'const a = 1;\\n'.repeat(30000);
+            const bigHtml = v.highlightCode(bigText, 'js');
+            console.log(JSON.stringify({{
+              mdHtml, jsLines, pyLang, dockerLang, shHtml, htmlCode, diffHtml,
+              bigFallbackPlain: !bigHtml.includes('sbv-tok-'),
+            }}));
+        """)
+        # Markdown fenced code blocks highlighted & XSS-escaped
+        self.assertIn('data-lang="python"', res["mdHtml"])
+        self.assertIn('<span class="sbv-tok-cmt"># greet</span>', res["mdHtml"])
+        self.assertIn('<span class="sbv-tok-kw">def</span>', res["mdHtml"])
+        self.assertIn('<span class="sbv-tok-fn">hello</span>', res["mdHtml"])
+        self.assertIn("&lt;script&gt;", res["mdHtml"])
+        self.assertNotIn("<script>", res["mdHtml"])
+        self.assertIn('<span class="sbv-tok-key">&quot;ok&quot;</span>', res["mdHtml"])
+        self.assertIn('<span class="sbv-tok-bool">true</span>', res["mdHtml"])
+        self.assertIn('<span class="sbv-tok-num">42</span>', res["mdHtml"])
+
+        # Multiline block comment split cleanly across table rows
+        self.assertEqual(len(res["jsLines"]), 4)
+        self.assertIn('<span class="sbv-tok-cmt">/* line 1</span>', res["jsLines"][0])
+        self.assertIn('<span class="sbv-tok-cmt">   line 2 */</span>', res["jsLines"][1])
+        self.assertIn('<span class="sbv-tok-kw">const</span>', res["jsLines"][2])
+        self.assertIn('<span class="sbv-tok-fn">greet</span>', res["jsLines"][2])
+        self.assertIn('<span class="sbv-tok-num">123</span>', res["jsLines"][2])
+
+        # Language detection, bash, html, diff, and large-file fallback
+        self.assertEqual(res["pyLang"], "py")
+        self.assertEqual(res["dockerLang"], "dockerfile")
+        self.assertIn('<span class="sbv-tok-kw">export</span>', res["shHtml"])
+        self.assertIn('<span class="sbv-tok-var">$BAR</span>', res["shHtml"])
+        self.assertIn('<span class="sbv-tok-tag">div</span>', res["htmlCode"])
+        self.assertIn('<span class="sbv-tok-attr">class</span>', res["htmlCode"])
+        self.assertIn('<span class="sbv-tok-hunk">@@ -1,2 +1,2 @@</span>', res["diffHtml"])
+        self.assertIn('<span class="sbv-tok-del">-old</span>', res["diffHtml"])
+        self.assertIn('<span class="sbv-tok-add">+new</span>', res["diffHtml"])
+        self.assertTrue(res["bigFallbackPlain"])
+
     def test_http_endpoints(self):
         res = run_node_json(
             f"""

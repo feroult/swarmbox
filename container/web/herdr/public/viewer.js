@@ -51,6 +51,664 @@
   }
 
   // -------------------------------------------------------------------------
+  // Zero-dependency, XSS-safe Syntax Highlighter (for Code Viewer & Markdown)
+  // -------------------------------------------------------------------------
+  const MAX_HIGHLIGHT_CHARS = 250000;
+
+  const LANG_ALIASES = {
+    js: 'js', javascript: 'js', mjs: 'js', cjs: 'js', jsx: 'js',
+    ts: 'ts', typescript: 'ts', tsx: 'ts',
+    py: 'py', python: 'py',
+    sh: 'sh', bash: 'sh', zsh: 'sh', shell: 'sh', console: 'sh',
+    json: 'json', jsonl: 'json', jsonc: 'json',
+    html: 'html', htm: 'html', xml: 'html', svg: 'html',
+    css: 'css', scss: 'css', less: 'css',
+    yaml: 'yaml', yml: 'yaml',
+    toml: 'toml', ini: 'toml', conf: 'toml', cfg: 'toml', env: 'toml',
+    go: 'go', golang: 'go',
+    rs: 'rust', rust: 'rust',
+    c: 'c', h: 'c', cpp: 'c', cc: 'c', cxx: 'c', hpp: 'c',
+    java: 'java', kt: 'java', kotlin: 'java', cs: 'java', csharp: 'java',
+    rb: 'rb', ruby: 'rb',
+    php: 'php',
+    sql: 'sql',
+    dockerfile: 'dockerfile',
+    makefile: 'makefile', mk: 'makefile',
+    diff: 'diff', patch: 'diff',
+    md: 'md', markdown: 'md', mdx: 'md',
+  };
+
+  function normalizeLang(hint) {
+    const raw = String(hint || '').trim().toLowerCase().replace(/^\./, '');
+    if (!raw) return '';
+    return LANG_ALIASES[raw] || '';
+  }
+
+  function detectLanguage(fileNameOrLang) {
+    const raw = String(fileNameOrLang || '').trim();
+    if (!raw) return '';
+    const direct = normalizeLang(raw);
+    if (direct) return direct;
+    const base = raw.split('/').pop().toLowerCase();
+    if (base === 'dockerfile' || base.startsWith('dockerfile.')) return 'dockerfile';
+    if (base === 'makefile' || base === 'gnumakefile') return 'makefile';
+    const dot = base.lastIndexOf('.');
+    if (dot > 0) {
+      return normalizeLang(base.slice(dot + 1));
+    }
+    return '';
+  }
+
+  const KW_SETS = {
+    js: new Set([
+      'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue',
+      'debugger', 'default', 'delete', 'do', 'else', 'export', 'extends', 'finally',
+      'for', 'from', 'function', 'if', 'import', 'in', 'instanceof', 'let', 'new',
+      'of', 'return', 'static', 'super', 'switch', 'this', 'throw', 'try', 'typeof',
+      'var', 'void', 'while', 'with', 'yield',
+    ]),
+    ts: new Set([
+      'abstract', 'as', 'async', 'await', 'break', 'case', 'catch', 'class', 'const',
+      'continue', 'debugger', 'declare', 'default', 'delete', 'do', 'else', 'enum',
+      'export', 'extends', 'finally', 'for', 'from', 'function', 'if', 'implements',
+      'import', 'in', 'infer', 'instanceof', 'interface', 'is', 'keyof', 'let',
+      'namespace', 'new', 'of', 'override', 'private', 'protected', 'public',
+      'readonly', 'return', 'satisfies', 'static', 'super', 'switch', 'this', 'throw',
+      'try', 'type', 'typeof', 'var', 'void', 'while', 'with', 'yield',
+    ]),
+    py: new Set([
+      'and', 'as', 'assert', 'async', 'await', 'break', 'case', 'class', 'continue',
+      'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global',
+      'if', 'import', 'in', 'is', 'lambda', 'match', 'nonlocal', 'not', 'or', 'pass',
+      'raise', 'return', 'try', 'while', 'with', 'yield',
+    ]),
+    sh: new Set([
+      'case', 'do', 'done', 'elif', 'else', 'esac', 'export', 'fi', 'for', 'function',
+      'if', 'in', 'local', 'readonly', 'return', 'select', 'set', 'shift', 'source',
+      'then', 'trap', 'unset', 'until', 'while',
+    ]),
+    go: new Set([
+      'break', 'case', 'chan', 'const', 'continue', 'default', 'defer', 'else',
+      'fallthrough', 'for', 'func', 'go', 'goto', 'if', 'import', 'interface', 'map',
+      'package', 'range', 'return', 'select', 'struct', 'switch', 'type', 'var',
+    ]),
+    rust: new Set([
+      'as', 'async', 'await', 'break', 'const', 'continue', 'crate', 'dyn', 'else',
+      'enum', 'extern', 'fn', 'for', 'if', 'impl', 'in', 'let', 'loop', 'match',
+      'mod', 'move', 'mut', 'pub', 'ref', 'return', 'self', 'Self', 'static',
+      'struct', 'super', 'trait', 'type', 'unsafe', 'use', 'where', 'while',
+    ]),
+    c: new Set([
+      'auto', 'break', 'case', 'catch', 'class', 'const', 'constexpr', 'continue',
+      'default', 'delete', 'do', 'else', 'enum', 'explicit', 'extern', 'for', 'friend',
+      'goto', 'if', 'inline', 'namespace', 'new', 'noexcept', 'operator', 'override',
+      'private', 'protected', 'public', 'register', 'return', 'sizeof', 'static',
+      'struct', 'switch', 'template', 'this', 'throw', 'try', 'typedef', 'typename',
+      'union', 'unsigned', 'using', 'virtual', 'void', 'volatile', 'while',
+    ]),
+    java: new Set([
+      'abstract', 'as', 'async', 'await', 'break', 'case', 'catch', 'class', 'const',
+      'continue', 'data', 'default', 'do', 'else', 'enum', 'extends', 'final',
+      'finally', 'for', 'fun', 'if', 'implements', 'import', 'in', 'interface',
+      'internal', 'is', 'namespace', 'new', 'object', 'open', 'override', 'package',
+      'private', 'protected', 'public', 'readonly', 'record', 'return', 'sealed',
+      'static', 'super', 'switch', 'this', 'throw', 'throws', 'try', 'using', 'val',
+      'var', 'virtual', 'void', 'when', 'while',
+    ]),
+    rb: new Set([
+      'alias', 'and', 'begin', 'break', 'case', 'class', 'def', 'defined?', 'do',
+      'else', 'elsif', 'end', 'ensure', 'for', 'if', 'in', 'module', 'next', 'not',
+      'or', 'redo', 'rescue', 'retry', 'return', 'self', 'super', 'then', 'undef',
+      'unless', 'until', 'when', 'while', 'yield', 'require', 'require_relative',
+    ]),
+    php: new Set([
+      'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch', 'class',
+      'clone', 'const', 'continue', 'declare', 'default', 'do', 'echo', 'else',
+      'elseif', 'empty', 'extends', 'final', 'finally', 'fn', 'for', 'foreach',
+      'function', 'global', 'if', 'implements', 'include', 'include_once', 'instanceof',
+      'interface', 'isset', 'match', 'namespace', 'new', 'or', 'private', 'protected',
+      'public', 'readonly', 'require', 'require_once', 'return', 'static', 'switch',
+      'throw', 'trait', 'try', 'unset', 'use', 'var', 'while', 'yield',
+    ]),
+    sql: new Set([
+      'select', 'from', 'where', 'join', 'left', 'right', 'inner', 'outer', 'full',
+      'cross', 'on', 'as', 'and', 'or', 'not', 'in', 'is', 'null', 'like', 'ilike',
+      'between', 'exists', 'case', 'when', 'then', 'else', 'end', 'group', 'by',
+      'having', 'order', 'asc', 'desc', 'limit', 'offset', 'union', 'all', 'distinct',
+      'insert', 'into', 'values', 'update', 'set', 'delete', 'create', 'alter', 'drop',
+      'table', 'index', 'view', 'primary', 'key', 'foreign', 'references', 'constraint',
+      'default', 'unique', 'check', 'with', 'recursive', 'returning', 'begin', 'commit',
+      'rollback', 'transaction', 'explain', 'analyze',
+    ]),
+    dockerfile: new Set([
+      'from', 'run', 'cmd', 'label', 'maintainer', 'expose', 'env', 'add', 'copy',
+      'entrypoint', 'volume', 'user', 'workdir', 'arg', 'onbuild', 'stopsignal',
+      'healthcheck', 'shell', 'as',
+    ]),
+  };
+
+  const BOOL_WORDS = new Set([
+    'true', 'false', 'null', 'undefined', 'nil', 'none', 'True', 'False', 'None',
+    'NaN', 'Infinity', 'Some', 'Ok', 'Err',
+  ]);
+
+  const BUILTIN_TYPES = new Set([
+    'string', 'number', 'boolean', 'any', 'unknown', 'never', 'object', 'symbol', 'bigint',
+    'int', 'int8', 'int16', 'int32', 'int64', 'uint', 'uint8', 'uint16', 'uint32', 'uint64',
+    'float', 'float32', 'float64', 'double', 'char', 'byte', 'rune', 'bool', 'str', 'bytes',
+    'usize', 'isize', 'i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'f32', 'f64',
+    'size_t', 'error', 'void',
+  ]);
+
+  function tokenizeDiff(text) {
+    const tokens = [];
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const ln = lines[i];
+      let type = 'plain';
+      if (ln.startsWith('diff --git ') || ln.startsWith('+++ ') || ln.startsWith('--- ') || ln.startsWith('index ')) {
+        type = 'cmt';
+      } else if (ln.startsWith('@@')) {
+        type = 'hunk';
+      } else if (ln.startsWith('+')) {
+        type = 'add';
+      } else if (ln.startsWith('-')) {
+        type = 'del';
+      }
+      if (ln) tokens.push({ type, value: ln });
+      if (i < lines.length - 1) tokens.push({ type: 'plain', value: '\n' });
+    }
+    return tokens;
+  }
+
+  function tokenizeHtml(text) {
+    const tokens = [];
+    let i = 0;
+    const n = text.length;
+    while (i < n) {
+      if (text.startsWith('<!--', i)) {
+        const end = text.indexOf('-->', i + 4);
+        const stop = end === -1 ? n : end + 3;
+        tokens.push({ type: 'cmt', value: text.slice(i, stop) });
+        i = stop;
+        continue;
+      }
+      if (text.startsWith('<!', i)) {
+        const end = text.indexOf('>', i + 2);
+        const stop = end === -1 ? n : end + 1;
+        tokens.push({ type: 'cmt', value: text.slice(i, stop) });
+        i = stop;
+        continue;
+      }
+      if (text[i] === '<') {
+        const tagMatch = text.slice(i).match(/^<\/?([A-Za-z][A-Za-z0-9:._-]*)/);
+        if (tagMatch) {
+          const prefix = text[i + 1] === '/' ? '</' : '<';
+          tokens.push({ type: 'op', value: prefix });
+          tokens.push({ type: 'tag', value: tagMatch[1] });
+          i += tagMatch[0].length;
+          while (i < n && text[i] !== '>') {
+            if (text.startsWith('/>', i)) {
+              tokens.push({ type: 'op', value: '/>' });
+              i += 2;
+              break;
+            }
+            const ws = text.slice(i).match(/^\s+/);
+            if (ws) {
+              tokens.push({ type: 'plain', value: ws[0] });
+              i += ws[0].length;
+              continue;
+            }
+            const attr = text.slice(i).match(/^[A-Za-z_:][A-Za-z0-9_.:-]*/);
+            if (attr) {
+              tokens.push({ type: 'attr', value: attr[0] });
+              i += attr[0].length;
+              continue;
+            }
+            if (text[i] === '=') {
+              tokens.push({ type: 'op', value: '=' });
+              i++;
+              continue;
+            }
+            if (text[i] === '"' || text[i] === "'") {
+              const q = text[i];
+              let j = i + 1;
+              while (j < n && text[j] !== q) j++;
+              if (j < n) j++;
+              tokens.push({ type: 'str', value: text.slice(i, j) });
+              i = j;
+              continue;
+            }
+            tokens.push({ type: 'plain', value: text[i] });
+            i++;
+          }
+          if (i < n && text[i] === '>') {
+            tokens.push({ type: 'op', value: '>' });
+            i++;
+          }
+          continue;
+        }
+      }
+      const nextTag = text.indexOf('<', i + 1);
+      const stop = nextTag === -1 ? n : nextTag;
+      tokens.push({ type: 'plain', value: text.slice(i, stop) });
+      i = stop;
+    }
+    return tokens;
+  }
+
+  function tokenizeCss(text) {
+    const tokens = [];
+    let i = 0;
+    const n = text.length;
+    while (i < n) {
+      if (text.startsWith('/*', i)) {
+        const end = text.indexOf('*/', i + 2);
+        const stop = end === -1 ? n : end + 2;
+        tokens.push({ type: 'cmt', value: text.slice(i, stop) });
+        i = stop;
+        continue;
+      }
+      if (text[i] === '"' || text[i] === "'") {
+        const q = text[i];
+        let j = i + 1;
+        while (j < n && text[j] !== q) {
+          if (text[j] === '\\' && j + 1 < n) j += 2;
+          else j++;
+        }
+        if (j < n) j++;
+        tokens.push({ type: 'str', value: text.slice(i, j) });
+        i = j;
+        continue;
+      }
+      const rest = text.slice(i);
+      let m;
+      if ((m = rest.match(/^@[A-Za-z-]+/))) {
+        tokens.push({ type: 'kw', value: m[0] });
+        i += m[0].length;
+        continue;
+      }
+      if ((m = rest.match(/^--[A-Za-z0-9_-]+/))) {
+        tokens.push({ type: 'var', value: m[0] });
+        i += m[0].length;
+        continue;
+      }
+      if ((m = rest.match(/^#[0-9a-fA-F]{3,8}\b/))) {
+        tokens.push({ type: 'num', value: m[0] });
+        i += m[0].length;
+        continue;
+      }
+      if ((m = rest.match(/^[+-]?(?:\d+\.?\d*|\.\d+)(?:%|px|em|rem|vh|vw|vmin|vmax|ch|ex|fr|deg|rad|ms|s)?\b/))) {
+        tokens.push({ type: 'num', value: m[0] });
+        i += m[0].length;
+        continue;
+      }
+      if ((m = rest.match(/^([A-Za-z-]+)(?=\s*:)/))) {
+        tokens.push({ type: 'key', value: m[1] });
+        i += m[1].length;
+        continue;
+      }
+      if ((m = rest.match(/^([A-Za-z_-][A-Za-z0-9_-]*)(?=\s*\()/))) {
+        tokens.push({ type: 'fn', value: m[1] });
+        i += m[1].length;
+        continue;
+      }
+      if ((m = rest.match(/^[.#][A-Za-z_-][A-Za-z0-9_-]*/))) {
+        tokens.push({ type: 'tag', value: m[0] });
+        i += m[0].length;
+        continue;
+      }
+      if ((m = rest.match(/^!important\b/))) {
+        tokens.push({ type: 'kw', value: m[0] });
+        i += m[0].length;
+        continue;
+      }
+      tokens.push({ type: 'plain', value: text[i] });
+      i++;
+    }
+    return tokens;
+  }
+
+  function tokenizeYamlOrToml(text, lang) {
+    const tokens = [];
+    const lines = text.split('\n');
+    for (let li = 0; li < lines.length; li++) {
+      const ln = lines[li];
+      if (lang === 'toml' && /^\s*\[+[^\]]+\]+\s*$/.test(ln)) {
+        tokens.push({ type: 'tag', value: ln });
+      } else if (/^\s*#/.test(ln)) {
+        tokens.push({ type: 'cmt', value: ln });
+      } else {
+        const keyRe = lang === 'yaml'
+          ? /^(\s*(?:-\s+)?)([A-Za-z0-9_.-]+|"[^"]+"|'[^']+')(\s*:)(.*)$/
+          : /^(\s*)([A-Za-z0-9_.-]+|"[^"]+")(\s*=)(.*)$/;
+        const km = ln.match(keyRe);
+        if (km) {
+          if (km[1]) tokens.push({ type: 'plain', value: km[1] });
+          tokens.push({ type: 'key', value: km[2] });
+          tokens.push({ type: 'op', value: km[3] });
+          if (km[4]) tokens.push(...tokenizeGenericValue(km[4]));
+        } else {
+          tokens.push(...tokenizeGenericValue(ln));
+        }
+      }
+      if (li < lines.length - 1) tokens.push({ type: 'plain', value: '\n' });
+    }
+    return tokens;
+  }
+
+  function tokenizeGenericValue(seg) {
+    const out = [];
+    let i = 0;
+    const n = seg.length;
+    while (i < n) {
+      if (seg[i] === '#' && (i === 0 || /\s/.test(seg[i - 1]))) {
+        out.push({ type: 'cmt', value: seg.slice(i) });
+        break;
+      }
+      if (seg[i] === '"' || seg[i] === "'") {
+        const q = seg[i];
+        let j = i + 1;
+        while (j < n && seg[j] !== q) {
+          if (q === '"' && seg[j] === '\\' && j + 1 < n) j += 2;
+          else j++;
+        }
+        if (j < n) j++;
+        out.push({ type: 'str', value: seg.slice(i, j) });
+        i = j;
+        continue;
+      }
+      const rest = seg.slice(i);
+      let m;
+      if ((m = rest.match(/^(?:true|false|null|yes|no|on|off)\b/i))) {
+        out.push({ type: 'bool', value: m[0] });
+        i += m[0].length;
+        continue;
+      }
+      if ((m = rest.match(/^-?(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/))) {
+        out.push({ type: 'num', value: m[0] });
+        i += m[0].length;
+        continue;
+      }
+      out.push({ type: 'plain', value: seg[i] });
+      i++;
+    }
+    return out;
+  }
+
+  function tokenizeMarkdownRaw(text) {
+    const tokens = [];
+    const lines = text.split('\n');
+    let inFence = false;
+    for (let li = 0; li < lines.length; li++) {
+      const ln = lines[li];
+      if (/^\s*(?:```|~~~)/.test(ln)) {
+        inFence = !inFence;
+        tokens.push({ type: 'kw', value: ln });
+      } else if (inFence) {
+        tokens.push({ type: 'str', value: ln });
+      } else if (/^#{1,6}\s/.test(ln)) {
+        tokens.push({ type: 'tag', value: ln });
+      } else if (/^\s*>\s?/.test(ln)) {
+        tokens.push({ type: 'cmt', value: ln });
+      } else {
+        let i = 0;
+        const n = ln.length;
+        while (i < n) {
+          const rest = ln.slice(i);
+          let m;
+          if ((m = rest.match(/^`[^`]+`/))) {
+            tokens.push({ type: 'str', value: m[0] });
+            i += m[0].length;
+            continue;
+          }
+          if ((m = rest.match(/^!\[[^\]]*\]\([^)]+\)|^\[[^\]]+\]\([^)]+\)/))) {
+            tokens.push({ type: 'fn', value: m[0] });
+            i += m[0].length;
+            continue;
+          }
+          if ((m = rest.match(/^\*\*[^*]+\*\*|^__[^_]+__/))) {
+            tokens.push({ type: 'kw', value: m[0] });
+            i += m[0].length;
+            continue;
+          }
+          tokens.push({ type: 'plain', value: ln[i] });
+          i++;
+        }
+      }
+      if (li < lines.length - 1) tokens.push({ type: 'plain', value: '\n' });
+    }
+    return tokens;
+  }
+
+  function tokenizeCode(text, lang) {
+    if (lang === 'diff') return tokenizeDiff(text);
+    if (lang === 'html') return tokenizeHtml(text);
+    if (lang === 'css') return tokenizeCss(text);
+    if (lang === 'yaml' || lang === 'toml') return tokenizeYamlOrToml(text, lang);
+    if (lang === 'md') return tokenizeMarkdownRaw(text);
+
+    const kws = KW_SETS[lang] || null;
+    const isSql = lang === 'sql';
+    const isDocker = lang === 'dockerfile';
+    const isHashComment = lang === 'py' || lang === 'sh' || lang === 'rb' || lang === 'dockerfile' || lang === 'makefile' || lang === 'php';
+    const isSlashComment = lang === 'js' || lang === 'ts' || lang === 'go' || lang === 'rust' || lang === 'c' || lang === 'java' || lang === 'php' || lang === 'json';
+    const isDashComment = lang === 'sql';
+    const isBacktickStr = lang === 'js' || lang === 'ts' || lang === 'go' || lang === 'sh' || lang === 'sql';
+    const isTripleStr = lang === 'py';
+    const isShellVar = lang === 'sh' || lang === 'php' || lang === 'makefile';
+    const isJson = lang === 'json';
+
+    const tokens = [];
+    let i = 0;
+    const n = text.length;
+
+    while (i < n) {
+      const ch = text[i];
+
+      // Block comment /* ... */
+      if (isSlashComment && ch === '/' && text[i + 1] === '*') {
+        const end = text.indexOf('*/', i + 2);
+        const stop = end === -1 ? n : end + 2;
+        tokens.push({ type: 'cmt', value: text.slice(i, stop) });
+        i = stop;
+        continue;
+      }
+
+      // Line comment // ...
+      if (isSlashComment && ch === '/' && text[i + 1] === '/') {
+        const nl = text.indexOf('\n', i + 2);
+        const stop = nl === -1 ? n : nl;
+        tokens.push({ type: 'cmt', value: text.slice(i, stop) });
+        i = stop;
+        continue;
+      }
+
+      // Line comment -- ... (SQL)
+      if (isDashComment && ch === '-' && text[i + 1] === '-') {
+        const nl = text.indexOf('\n', i + 2);
+        const stop = nl === -1 ? n : nl;
+        tokens.push({ type: 'cmt', value: text.slice(i, stop) });
+        i = stop;
+        continue;
+      }
+
+      // Line comment # ...
+      if (isHashComment && ch === '#') {
+        const nl = text.indexOf('\n', i + 1);
+        const stop = nl === -1 ? n : nl;
+        tokens.push({ type: 'cmt', value: text.slice(i, stop) });
+        i = stop;
+        continue;
+      }
+
+      // C preprocessor directives (#include, #define, ...)
+      if (lang === 'c' && ch === '#' && (i === 0 || text[i - 1] === '\n')) {
+        const m = text.slice(i).match(/^#\s*[A-Za-z_]\w*/);
+        if (m) {
+          tokens.push({ type: 'kw', value: m[0] });
+          i += m[0].length;
+          continue;
+        }
+      }
+
+      // Python triple-quoted strings
+      if (isTripleStr && (text.startsWith('"""', i) || text.startsWith("'''", i))) {
+        const q3 = text.slice(i, i + 3);
+        let j = i + 3;
+        while (j < n && !text.startsWith(q3, j)) {
+          if (text[j] === '\\' && j + 1 < n) j += 2;
+          else j++;
+        }
+        if (j < n) j += 3;
+        tokens.push({ type: 'str', value: text.slice(i, j) });
+        i = j;
+        continue;
+      }
+
+      // Strings ("...", '...', `...`)
+      if (ch === '"' || ch === "'" || (isBacktickStr && ch === '`')) {
+        // Rust lifetimes like 'a should not eat until the next apostrophe
+        if (lang === 'rust' && ch === "'" && /^'[A-Za-z_]\w*(?!')/.test(text.slice(i))) {
+          const lm = text.slice(i).match(/^'[A-Za-z_]\w*/);
+          tokens.push({ type: 'attr', value: lm[0] });
+          i += lm[0].length;
+          continue;
+        }
+        let j = i + 1;
+        while (j < n && text[j] !== ch) {
+          if (text[j] === '\\' && j + 1 < n) {
+            j += 2;
+            continue;
+          }
+          if (ch !== '`' && text[j] === '\n') break;
+          j++;
+        }
+        if (j < n && text[j] === ch) j++;
+        const rawStr = text.slice(i, j);
+        if (isJson && ch === '"' && /^\s*:/.test(text.slice(j))) {
+          tokens.push({ type: 'key', value: rawStr });
+        } else {
+          tokens.push({ type: 'str', value: rawStr });
+        }
+        i = j;
+        continue;
+      }
+
+      // Shell / PHP / Makefile variables ($VAR, ${VAR}, $(VAR))
+      if (isShellVar && ch === '$') {
+        const vm = text.slice(i).match(/^\$(?:\{[^}\n]+\}|\([^)\n]+\)|[A-Za-z_][A-Za-z0-9_]*|[0-9@#?$!*-])/);
+        if (vm) {
+          tokens.push({ type: 'var', value: vm[0] });
+          i += vm[0].length;
+          continue;
+        }
+      }
+
+      // Decorators / attributes (@decorator, #[attr])
+      if ((lang === 'py' || lang === 'ts' || lang === 'js' || lang === 'java') && ch === '@') {
+        const dm = text.slice(i).match(/^@[A-Za-z_][A-Za-z0-9_.]*/);
+        if (dm) {
+          tokens.push({ type: 'attr', value: dm[0] });
+          i += dm[0].length;
+          continue;
+        }
+      }
+
+      // Numbers
+      if (/[0-9]/.test(ch) && (i === 0 || !/[A-Za-z0-9_$]/.test(text[i - 1]))) {
+        const nm = text.slice(i).match(/^(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?)[uUlLfFnN]?/);
+        if (nm) {
+          tokens.push({ type: 'num', value: nm[0] });
+          i += nm[0].length;
+          continue;
+        }
+      }
+
+      // Identifiers / Keywords / Types / Function calls
+      if (/[A-Za-z_]/.test(ch)) {
+        const im = text.slice(i).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+        const word = im[0];
+        const nextIdx = i + word.length;
+        const lower = word.toLowerCase();
+
+        if (isJson) {
+          if (word === 'true' || word === 'false' || word === 'null') {
+            tokens.push({ type: 'bool', value: word });
+          } else {
+            tokens.push({ type: 'plain', value: word });
+          }
+        } else if (kws && (kws.has(word) || ((isSql || isDocker) && kws.has(lower)))) {
+          tokens.push({ type: 'kw', value: word });
+        } else if (BOOL_WORDS.has(word)) {
+          tokens.push({ type: 'bool', value: word });
+        } else if (BUILTIN_TYPES.has(word)) {
+          tokens.push({ type: 'type', value: word });
+        } else if (text[nextIdx] === '(') {
+          tokens.push({ type: 'fn', value: word });
+        } else if (/^[A-Z][A-Za-z0-9_]*$/.test(word) && /[a-z]/.test(word)) {
+          tokens.push({ type: 'type', value: word });
+        } else {
+          tokens.push({ type: 'plain', value: word });
+        }
+        i = nextIdx;
+        continue;
+      }
+
+      // Plain character run (batch whitespace/punctuation for speed)
+      let j = i + 1;
+      while (j < n && !/[A-Za-z0-9_"'`/#@$<>-]/.test(text[j])) j++;
+      tokens.push({ type: 'plain', value: text.slice(i, j) });
+      i = j;
+    }
+
+    return tokens;
+  }
+
+  function renderTokenHtml(type, value) {
+    const safe = escHtml(value);
+    if (!type || type === 'plain') return safe;
+    return '<span class="sbv-tok-' + type + '">' + safe + '</span>';
+  }
+
+  function highlightCode(text, langHint) {
+    const src = String(text == null ? '' : text);
+    const lang = detectLanguage(langHint);
+    if (!lang || !src || src.length > MAX_HIGHLIGHT_CHARS) {
+      return escHtml(src);
+    }
+    const tokens = tokenizeCode(src, lang);
+    let out = '';
+    for (let i = 0; i < tokens.length; i++) {
+      out += renderTokenHtml(tokens[i].type, tokens[i].value);
+    }
+    return out;
+  }
+
+  function highlightLines(text, langHint) {
+    const src = String(text == null ? '' : text).replace(/\r\n/g, '\n');
+    const lang = detectLanguage(langHint);
+    if (!lang || src.length > MAX_HIGHLIGHT_CHARS) {
+      return src.split('\n').map((ln) => escHtml(ln));
+    }
+    const tokens = tokenizeCode(src, lang);
+    const lines = [''];
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      if (!tok.value.includes('\n')) {
+        lines[lines.length - 1] += renderTokenHtml(tok.type, tok.value);
+      } else {
+        const parts = tok.value.split('\n');
+        for (let p = 0; p < parts.length; p++) {
+          if (p > 0) lines.push('');
+          if (parts[p]) lines[lines.length - 1] += renderTokenHtml(tok.type, parts[p]);
+        }
+      }
+    }
+    return lines;
+  }
+
+  // -------------------------------------------------------------------------
   // Lightweight, XSS-safe GitHub Flavored Markdown renderer
   // -------------------------------------------------------------------------
   function renderInlineMd(text, baseDir) {
@@ -151,13 +809,15 @@
         }
         if (i < lines.length) i++;
         const codeStr = buf.join('\n');
+        const highlighted = highlightCode(codeStr, lang);
+        const langAttr = lang ? ' data-lang="' + escHtml(lang) + '"' : '';
         out.push(
           '<div class="sbv-md-codeblock">' +
           '<div class="sbv-md-codehead">' +
           '<span>' + escHtml(lang || 'code') + '</span>' +
           '<button type="button" class="sbv-mini-btn sbv-copy-code">Copy</button>' +
           '</div>' +
-          '<pre><code>' + escHtml(codeStr) + '</code></pre>' +
+          '<pre><code' + langAttr + '>' + highlighted + '</code></pre>' +
           '</div>'
         );
         continue;
@@ -429,14 +1089,15 @@
       } catch (_) {}
     }
 
-    function renderCodeBlock(content, info, isJson) {
+    function renderCodeBlock(content, info, isJson, langOverride) {
       let text = content;
       if (isJson && state.jsonPretty) {
         try {
           text = JSON.stringify(JSON.parse(content), null, 2);
         } catch (_) {}
       }
-      const lines = text.replace(/\r\n/g, '\n').split('\n');
+      const langHint = langOverride || (isJson ? 'json' : (info && (info.name || info.path)) || '');
+      const highlightedLines = highlightLines(text, langHint);
       const targetStart = info.line ? Number(info.line) : null;
       const targetEnd = info.endLine ? Number(info.endLine) : targetStart;
 
@@ -447,7 +1108,7 @@
       const tbody = document.createElement('tbody');
       let targetRow = null;
 
-      lines.forEach((ln, idx) => {
+      highlightedLines.forEach((lnHtml, idx) => {
         const num = idx + 1;
         const tr = document.createElement('tr');
         if (targetStart && num >= targetStart && num <= (targetEnd || targetStart)) {
@@ -459,7 +1120,7 @@
         tdNum.textContent = String(num);
         const tdCode = document.createElement('td');
         tdCode.className = 'sbv-lc';
-        tdCode.textContent = ln || ' ';
+        tdCode.innerHTML = lnHtml || ' ';
         tr.appendChild(tdNum);
         tr.appendChild(tdCode);
         tbody.appendChild(tr);
@@ -610,7 +1271,7 @@
       ]);
 
       if (state.mdRaw) {
-        renderCodeBlock(data.content || '', data, false);
+        renderCodeBlock(data.content || '', data, false, 'md');
         return;
       }
       bodyEl.innerHTML = '';
@@ -655,7 +1316,7 @@
       if (state.htmlSource) {
         const res = await fetch('/api/files/read?path=' + encodeURIComponent(info.path));
         const data = await res.json();
-        renderCodeBlock(data.content || '', data, false);
+        renderCodeBlock(data.content || '', data, false, 'html');
         return;
       }
       bodyEl.innerHTML = '';
@@ -939,7 +1600,7 @@
     };
   }
 
-  const api = { createViewer, renderMarkdown, resolveRelativePath, encodeRawUrl };
+  const api = { createViewer, renderMarkdown, resolveRelativePath, encodeRawUrl, detectLanguage, highlightCode, highlightLines };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SwarmBoxViewer = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

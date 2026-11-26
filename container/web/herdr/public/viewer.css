@@ -532,6 +532,23 @@
   font-weight: 600;
 }
 
+/* Syntax highlighting tokens (theme-aware via CSS variables) */
+.sbv-tok-cmt { color: var(--text-dim); font-style: italic; }
+.sbv-tok-str { color: var(--green); }
+.sbv-tok-num { color: var(--peach); }
+.sbv-tok-kw { color: var(--accent); font-weight: 500; }
+.sbv-tok-bool { color: var(--peach); font-weight: 500; }
+.sbv-tok-type { color: var(--amber); }
+.sbv-tok-fn { color: #89b4fa; }
+.sbv-tok-key { color: var(--accent-bright); }
+.sbv-tok-tag { color: var(--red); }
+.sbv-tok-attr { color: var(--amber); }
+.sbv-tok-var { color: #94e2d5; }
+.sbv-tok-op { color: var(--text-muted); }
+.sbv-tok-add { color: #bbf7d0; background: rgba(74, 222, 128, 0.12); display: inline-block; width: 100%; }
+.sbv-tok-del { color: #fecdd3; background: rgba(255, 107, 120, 0.13); display: inline-block; width: 100%; }
+.sbv-tok-hunk { color: #8ad7e6; background: rgba(138, 215, 230, 0.08); display: inline-block; width: 100%; }
+
 /* Inline Diff & Log views */
 .sbv-diff-view {
   font-family: var(--mono);
