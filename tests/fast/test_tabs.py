@@ -824,6 +824,14 @@ class TestCommand(Base):
         self.assertEqual((rows["t4"]["cmd"], rows["t4"]["agent"]), ("bash", "agy"))
         self.assertEqual(mod.swarmbox_agents.detect(rows["t3"]), "claude")
         self.assertEqual(mod.swarmbox_agents.detect(rows["t4"]), "", "the label of an agent that exited names no running agent")
+        # the status an agent reports comes whole (its app too) although `hc ls` gives only its state as a word
+        self.ft.load()
+        self.ft.term("t5", "robo", argv=["/bin/bash", "-lic", "agy"], foreground={"name": "node"}, status={"state": "idle", "app": "antigravity"},
+                     reported=True)
+        self.ft.save()
+        row = {r["tab"]: r for r in self.ft.cli("list")[1]}["t5"]
+        self.assertEqual(row["status"], {"state": "idle", "app": "antigravity"})
+        self.assertEqual(mod.swarmbox_agents.detect(row), "agy")
 
     def test_send_run_and_input_and_queue_and_slash(self):
         rc, out, _ = self.ft.cli("send", "t1", "--run", "echo hi")

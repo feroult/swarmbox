@@ -69,8 +69,15 @@ def find(addr):
 
 def public(t, full):
     """a terminal as hc shows it: `hc get` (full) has the labels and the foreground program; `hc ls` has neither (measured with herdr-core
-    0.1.21: its summaries carry no `foreground`)"""
-    return {k: v for k, v in t.items() if k not in INTERNAL and (full or k not in ("labels", "foreground"))}
+    0.1.21: its summaries carry no `foreground` and the status only as a word)"""
+    out = {k: v for k, v in t.items() if k not in INTERNAL and (full or k not in ("labels", "foreground"))}
+    if not full and isinstance(out.get("status"), dict):
+        # `hc ls` gives the state as a word and the app it reported as `agent` (herdr-core 0.1.21)
+        st = out["status"]
+        out["status"] = st.get("state")
+        if st.get("app") and not out.get("agent"):
+            out["agent"] = st["app"]
+    return out
 
 
 def render(t):

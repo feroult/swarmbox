@@ -1025,10 +1025,11 @@ class Tabs:
         for t in self.tabs():
             row = {"tab": t.id, "label": t.label, "index": t.index, "name": t.name, "dir": t.cwd, "cmd": t.command, "pane": t.pane,
                    "panes": t.panes, "active": t.active}
+            # the labels first: they come from `hc get`, which also has the status and the foreground that `hc ls` leaves out
+            lbls = self.backend.tab_labels(t) or {}
             st = self.backend.tab_status(t)
             if st:
                 row["status"] = st
-            lbls = self.backend.tab_labels(t) or {}
             fg = self.backend.tab_foreground(t)
             if fg:
                 row["cmd"] = fg      # the program running now, not the one the terminal started with
