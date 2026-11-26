@@ -707,5 +707,23 @@ class WorktreeTest(unittest.TestCase):
         self.assertIn("TAIL_END", r_big["output"])
 
 
+class TabAgentKind(unittest.TestCase):
+    """Which agent a `swarmbox-tabs list` row runs, for the collision check."""
+
+    def test_the_agent_label_counts_while_the_foreground_is_not_a_shell(self):
+        # An agent the process name does not tell (OpenCode through node) is still found by its label.
+        self.assertEqual(wt._tab_agent_kind({"tab": "t1", "cmd": "node", "agent": "opencode"}), "opencode")
+        self.assertEqual(wt._tab_agent_kind({"tab": "t1", "cmd": "2.1.332", "agent": "antigravity"}), "agy")
+
+    def test_a_label_on_a_plain_shell_is_not_an_agent(self):
+        self.assertEqual(wt._tab_agent_kind({"tab": "t1", "cmd": "bash", "agent": "claude"}), "")
+        self.assertEqual(wt._tab_agent_kind({"tab": "t1", "cmd": "-bash", "agent": "claude"}), "")
+
+    def test_status_and_command_still_win(self):
+        self.assertEqual(wt._tab_agent_kind({"tab": "t1", "cmd": "node", "status": {"app": "claude-code"}}), "claude")
+        self.assertEqual(wt._tab_agent_kind({"tab": "t1", "cmd": "agy"}), "agy")
+        self.assertEqual(wt._tab_agent_kind({"tab": "t1", "cmd": "node", "name": "claude-2"}), "")
+
+
 if __name__ == "__main__":
     unittest.main()

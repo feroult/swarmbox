@@ -1082,6 +1082,7 @@ def remove_worktree(target_path, force=False, keep_branch=False, env=None):
 
 
 AGENT_CMDS = frozenset({"claude", "claude-code", "agy", "antigravity", "opencode", "gemini", "codex"})
+SHELL_CMDS = frozenset({"bash", "sh", "zsh", "dash", "fish", "ash", "ksh", "nu", "nushell"})
 
 
 def _tabs_cmd(env=None):
@@ -1108,12 +1109,13 @@ def _tab_agent_kind(row):
     cmd = os.path.basename(str(row.get("cmd") or row.get("command") or "")).lower().lstrip("-")
     if cmd in AGENT_CMDS:
         return "agy" if cmd == "antigravity" else ("claude" if cmd == "claude-code" else cmd)
-    if row.get("agent") is True:
-        nm = str(row.get("name") or "").lower()
-        for k in ("agy", "claude", "opencode", "gemini", "codex"):
-            if nm == k or nm.startswith(k + "-"):
-                return k
-        return "agent"
+    # The swarmbox.agent label (a string in `swarmbox-tabs list`) names the agent a tab was launched with. It is sticky, so it
+    # counts only while the foreground is not a plain shell: an agent that runs as `node` or under a version-named binary is
+    # still seen, a tab whose agent has exited is not.
+    lbl = row.get("agent")
+    lbl = lbl.strip().lower() if isinstance(lbl, str) else ""
+    if lbl in AGENT_CMDS and cmd not in SHELL_CMDS:
+        return "agy" if lbl == "antigravity" else ("claude" if lbl == "claude-code" else lbl)
     return ""
 
 
