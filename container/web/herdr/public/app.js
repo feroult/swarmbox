@@ -1,4 +1,9 @@
 (() => {
+  // Stable per-window identity so the gateway knows which channel (desktop vs phone) last had real user input.
+  const STUDIO_CLIENT_ID = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : `sb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
   // Five curated themes synchronized with the cockpit via /api/theme (~/.config/swarmbox/herdr-web-theme).
   // Default: Catppuccin Mocha.
   const DEFAULT_THEME = 'catppuccin';
@@ -1250,9 +1255,10 @@
       const linesFromBottom = (bufBefore && bufBefore.type === 'normal')
         ? Math.max(0, bufBefore.baseY - bufBefore.viewportY)
         : 0;
+      const canSendResize = sendResize && sess.isOwner !== false;
       // Pre-mask BEFORE fitAddon.fit() reflows xterm's normal buffer so no half-wrapped frame paints.
       let willChange = false;
-      if (sendResize && !sess.hydrating && sess.ws && sess.ws.readyState === 1 && typeof sess.fitAddon.proposeDimensions === 'function') {
+      if (canSendResize && !sess.hydrating && sess.ws && sess.ws.readyState === 1 && typeof sess.fitAddon.proposeDimensions === 'function') {
         try {
           const prop = sess.fitAddon.proposeDimensions();
           if (prop && prop.cols && prop.rows && (prop.cols !== sess.lastCols || prop.rows !== sess.lastRows)) {
@@ -1266,7 +1272,7 @@
       sess.fitAddon.fit();
       sess.needsFit = false;
       const changed = sess.term.cols !== sess.lastCols || sess.term.rows !== sess.lastRows;
-      if (sendResize && changed && sess.ws && sess.ws.readyState === 1) {
+      if (canSendResize && changed && sess.ws && sess.ws.readyState === 1) {
         const prevCols = sess.lastCols;
         const prevRows = sess.lastRows;
         sess.lastCols = sess.term.cols;
@@ -1292,7 +1298,7 @@
           rows: sess.term.rows,
           seq: sess.resizeSeq,
         }));
-      } else if (sendResize && !changed && sess.resizing && !sess.resizeAwaitingServer) {
+      } else if (canSendResize && !changed && sess.resizing && !sess.resizeAwaitingServer) {
         // Pre-armed resize cycle (e.g. panel toggle) produced identical cols/rows: reveal cleanly.
         finishResizeCycle(sess);
       }
@@ -1328,7 +1334,7 @@
     // one clean final SIGWINCH to the agents' TUIs instead of 30+ intermediate reflows.
     // Instant panel toggles bypass scheduleFit() and call fitAndResize() synchronously.
     const active = activeSession();
-    if (active && !active.hydrating && active.ws && active.ws.readyState === 1 && typeof active.fitAddon.proposeDimensions === 'function') {
+    if (active && active.isOwner !== false && !active.hydrating && active.ws && active.ws.readyState === 1 && typeof active.fitAddon.proposeDimensions === 'function') {
       try {
         const prop = active.fitAddon.proposeDimensions();
         if (prop && prop.cols && prop.rows && (prop.cols !== active.lastCols || prop.rows !== active.lastRows)) {
@@ -1497,26 +1503,36 @@
     return document.visibilityState === 'visible' && document.hasFocus();
   }
 
-  // Real user click/tap on the terminal canvas claims viewport ownership on the server
-  // so this device's cols×rows take effect immediately without needing a page refresh.
+  // Real user interaction (pointerdown/keydown/wheel/tab click) claims viewport ownership on the server
+  // so only the last active channel sizes the PTY, with zero ping-pong against idle devices.
   function claimSessionViewport(sess) {
     if (!sess || !sess.ws || sess.ws.readyState !== 1) return;
+    fitSession(sess, false);
+    const cols = sess.term.cols || 100;
+    const rows = sess.term.rows || 30;
+    sess.lastCols = cols;
+    sess.lastRows = rows;
     sess.passiveAttach = false;
+    sess.isOwner = true;
+    if (!sess.hydrating && sess.serverPtyCols && (sess.serverPtyCols !== cols || sess.serverPtyRows !== rows)) {
+      sess.resizeAwaitingServer = true;
+      beginResizeCycle(sess);
+    }
     sess.ws.send(JSON.stringify({
       type: 'focus',
       focused: true,
       claim: true,
-      cols: sess.term.cols || 100,
-      rows: sess.term.rows || 30,
+      cols,
+      rows,
     }));
   }
 
   // Self-heal if the server reports a PTY size that disagrees with our fitted xterm viewport
-  // (e.g. a concurrent device resized the PTY or a panel transition finished right after attach).
+  // ONLY when this client is the active PTY owner. Never fight another device's ownership.
   function verifyServerPtySize(sess, serverCols, serverRows) {
     if (!sess || !serverCols || !serverRows) return;
     if (activeId !== sess.address || sess.hydrating || sess.resizing) return;
-    if (sess.passiveAttach && !windowHasUserFocus()) return;
+    if (!sess.isOwner || sess.passiveAttach) return;
     fitSession(sess, false);
     const wantCols = sess.term.cols || 0;
     const wantRows = sess.term.rows || 0;
@@ -1536,17 +1552,20 @@
         cols: wantCols,
         rows: wantRows,
         seq: sess.resizeSeq,
-        claim: true,
       }));
     }
   }
 
-  termWrapEl.addEventListener('pointerdown', () => {
-    if (settingsOpen) return;
+  function onUserChannelActivity() {
     const sess = activeSession();
-    if (!sess) return;
-    claimSessionViewport(sess);
-  }, { passive: true });
+    if (!sess || sess.hydrating || !sess.ws || sess.ws.readyState !== 1) return;
+    if (sess.isOwner !== true || sess.passiveAttach) {
+      claimSessionViewport(sess);
+    }
+  }
+  document.addEventListener('pointerdown', onUserChannelActivity, { capture: true, passive: true });
+  document.addEventListener('keydown', onUserChannelActivity, { capture: true, passive: true });
+  document.addEventListener('wheel', onUserChannelActivity, { capture: true, passive: true });
 
   // Clicking anywhere on the terminal canvas (without a drag selection) restores keyboard focus
   // and recovers a dropped PTY socket immediately.
@@ -1714,8 +1733,6 @@
   });
   window.addEventListener('focus', () => {
     ensureConnectionsAlive();
-    const sess = activeSession();
-    if (sess && !sess.hydrating) claimSessionViewport(sess);
   });
   window.addEventListener('blur', () => {
     const sess = activeSession();
@@ -2781,12 +2798,14 @@
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const isReconnect = Boolean(opts.reconnect);
       const isPassive = Boolean(opts.passive);
-      const isActiveFocused = activeId === sess.address && (!isPassive || windowHasUserFocus());
+      const isActiveFocused = activeId === sess.address && !isPassive;
       sess.passiveAttach = isReconnect || !isActiveFocused;
+      sess.isOwner = isActiveFocused && !isReconnect;
       sess.resyncCount = 0;
       const reconnectFlag = isReconnect ? '&reconnect=1' : '';
       const focusedFlag = isActiveFocused ? '' : '&focused=0';
-      const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(sess.address)}?cols=${initCols}&rows=${initRows}${reconnectFlag}${focusedFlag}`;
+      const clientFlag = `&clientId=${encodeURIComponent(STUDIO_CLIENT_ID)}`;
+      const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(sess.address)}?cols=${initCols}&rows=${initRows}${reconnectFlag}${focusedFlag}${clientFlag}`;
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       sess.ws = ws;
@@ -2883,6 +2902,10 @@
             if (typeof msg.tui === 'boolean') {
               sess.serverTui = msg.tui;
               sess.serverFallbackMs = Number(msg.fallback_ms) || 0;
+            }
+            if (typeof msg.owner === 'boolean') {
+              sess.isOwner = msg.owner;
+              sess.passiveAttach = !msg.owner;
             }
             if (msg.type === 'hydrated') {
               if (msg.cols && msg.rows) {
@@ -3009,7 +3032,7 @@
       } else {
         termWrapEl.classList.add('term-loading');
       }
-      const shouldClaim = !opts.passive || windowHasUserFocus();
+      const shouldClaim = !opts.passive;
       if (sess.needsFit) {
         // Pre-mask before fitAddon.fit() when we are about to resize/claim, then send ONE atomic
         // claim+size message instead of racing a resize packet against a focus(claim) packet.
@@ -6448,7 +6471,7 @@
   function connectEvents() {
     if (eventsWs && (eventsWs.readyState === 0 || eventsWs.readyState === 1)) return;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${location.host}/ws/events`);
+    const ws = new WebSocket(`${proto}//${location.host}/ws/events?clientId=${encodeURIComponent(STUDIO_CLIENT_ID)}`);
     eventsWs = ws;
 
     ws.onopen = () => {
@@ -6492,7 +6515,7 @@
           const preferred = msg.active && liveAddrs.has(msg.active)
             ? msg.active
             : (terminals[0] && terminals[0].address);
-          if (preferred) connectPty(preferred, { passive: !windowHasUserFocus() });
+          if (preferred) connectPty(preferred, { passive: document.visibilityState === 'hidden' });
           else { activeId = null; ptyConnected = false; syncConnPill(); renderTabs(); dismissBoot(); }
         } else {
           // If events reconnected after a brief blip and the active PTY socket died, heal it automatically

@@ -625,9 +625,23 @@ export function createGateway(options = {}) {
   const hc = options.hc || new HerdrClient(options.hcBin || HC_BIN);
   const runWt = options.runWorktreeCmd || runWorktreeCmd;
   const eventClients = new Set();
-  // Per-terminal viewport ownership so an idle/reconnecting browser on another screen
-  // (e.g. an ultrawide left open at home) cannot hijack the active client's PTY resolution.
+  // Per-terminal viewport ownership + global last-active client tracking so only the last
+  // channel with real user activity (keyboard/pointer/wheel/explicit tab action) sizes the PTY.
   const ptyRooms = new Map();
+  let lastActiveClientId = null;
+
+  function hasLiveClientWithId(cid) {
+    if (!cid) return false;
+    for (const ws of eventClients) {
+      if (ws && ws._clientId === cid && ws.readyState === 1) return true;
+    }
+    for (const room of ptyRooms.values()) {
+      for (const c of room.clients) {
+        if (c && c.clientId === cid && c.ws && c.ws.readyState === 1) return true;
+      }
+    }
+    return false;
+  }
 
   function clampCols(c) {
     return Math.max(20, Math.min(400, Number(c) || 100));
@@ -702,6 +716,7 @@ export function createGateway(options = {}) {
     }
     const cur = getCurrentPtySize(rec.termId, room.ptyCols || rec.wantCols, room.ptyRows || rec.wantRows);
     room.owner = rec;
+    if (rec.clientId) lastActiveClientId = rec.clientId;
     rec.lastActiveMs = Date.now();
     if (opts.syncSize === false || !rec.stream) return false;
     if (cur.cols !== rec.wantCols || cur.rows !== rec.wantRows) {
@@ -2658,6 +2673,7 @@ export function createGateway(options = {}) {
     ws.on('pong', () => { ws.isAlive = true; });
 
     if (url.pathname === '/ws/events') {
+      ws._clientId = (url.searchParams.get('clientId') || '').slice(0, 64) || null;
       eventClients.add(ws);
       ws.send(JSON.stringify(buildSnapshot({ type: 'snapshot' })));
       if (typeof hc.refreshTerminals === 'function') hc.refreshTerminals();
@@ -2668,6 +2684,7 @@ export function createGateway(options = {}) {
     const termId = decodeURIComponent(url.pathname.slice('/ws/pty/'.length));
     const cols = clampCols(url.searchParams.get('cols') || 100);
     const rows = clampRows(url.searchParams.get('rows') || 30);
+    const clientId = (url.searchParams.get('clientId') || '').slice(0, 64) || null;
     const isReconnect = url.searchParams.get('reconnect') === '1';
     const isPassiveAttach = isReconnect || url.searchParams.get('focused') === '0';
     const modes = modesOf(termId);
@@ -2678,6 +2695,7 @@ export function createGateway(options = {}) {
     const room = getPtyRoom(termId);
     const clientRec = {
       ws,
+      clientId,
       termId,
       wantCols: cols,
       wantRows: rows,
@@ -2687,7 +2705,11 @@ export function createGateway(options = {}) {
     };
     room.clients.add(clientRec);
     const hasOtherOwner = Boolean(room.owner && room.owner !== clientRec && room.clients.has(room.owner));
-    const claimOnAttach = !hasOtherOwner || !isPassiveAttach;
+    const sameActiveChannel = Boolean(clientId && lastActiveClientId && clientId === lastActiveClientId);
+    const otherActiveChannel = Boolean(lastActiveClientId && clientId !== lastActiveClientId && hasLiveClientWithId(lastActiveClientId));
+    const claimOnAttach = !isPassiveAttach
+      || (isReconnect && sameActiveChannel)
+      || (!hasOtherOwner && !otherActiveChannel);
     // The size the PTY has right now. The owner's stream is exact (this gateway set it); hc's cached
     // size can lag a resize by a refresh, and attaching at a stale size would resize the PTY itself.
     const ownerRec = hasOtherOwner ? room.owner : null;
@@ -2698,6 +2720,7 @@ export function createGateway(options = {}) {
     let attachRows = rows;
     if (claimOnAttach) {
       room.owner = clientRec;
+      if (clientId) lastActiveClientId = clientId;
       room.ptyCols = cols;
       room.ptyRows = rows;
       writeActiveTab(termId);
@@ -2729,6 +2752,7 @@ export function createGateway(options = {}) {
     let resizeIsTui = false;
     let resizeTimings = PLAIN_TIMINGS;
     let lastResizeAtMs = 0;
+    let lateRedrawCaught = false;
     let resizeChunks = [];
     let resizeQuietTimer = null;
     let resizeCapTimer = null;
@@ -2746,12 +2770,17 @@ export function createGateway(options = {}) {
       if (resizeCapTimer) { clearTimeout(resizeCapTimer); resizeCapTimer = null; }
     };
 
-    const startResizeMask = (seqVal) => {
+    const startResizeMask = (seqVal, opts = {}) => {
       if (hydrating) return;
       syncCoalescer.flush();
       clearResizeTimers();
       resizing = true;
-      lastResizeAtMs = Date.now();
+      if (opts.isLateRedraw) {
+        lateRedrawCaught = true;
+      } else {
+        lastResizeAtMs = Date.now();
+        lateRedrawCaught = false;
+      }
       resizeSeq = Number(seqVal) || (resizeSeq + 1);
       resizeBytes = 0;
       resizeIsTui = tuiNow();
@@ -2778,15 +2807,17 @@ export function createGateway(options = {}) {
         initChunks = [];
         ws.send(merged);
       }
+      const isOwner = room.owner === clientRec;
       ws.send(JSON.stringify({
         type: 'hydrated',
         cols: room.ptyCols || clampCols(attachCols),
         rows: room.ptyRows || clampRows(attachRows),
+        owner: isOwner,
         ...tuiInfo(),
       }));
       if (attachResizesPty && tuiNow()) {
         startResizeMask(0);
-        ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, ...tuiInfo() }));
+        ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, owner: isOwner, ...tuiInfo() }));
       }
     };
 
@@ -2804,7 +2835,7 @@ export function createGateway(options = {}) {
         resizeChunks = [];
         ws.send(merged);
       }
-      ws.send(JSON.stringify({ type: 'resized', seq: doneSeq, cols: room.ptyCols || clientRec.streamCols || clientRec.wantCols, rows: room.ptyRows || clientRec.streamRows || clientRec.wantRows }));
+      ws.send(JSON.stringify({ type: 'resized', seq: doneSeq, cols: room.ptyCols || clientRec.streamCols || clientRec.wantCols, rows: room.ptyRows || clientRec.streamRows || clientRec.wantRows, owner: room.owner === clientRec }));
     };
 
     try {
@@ -2841,13 +2872,14 @@ export function createGateway(options = {}) {
             }
             return;
           }
-          if (!resizing && lastResizeAtMs > 0 && (Date.now() - lastResizeAtMs) <= resizeTimings.late_redraw_ms) {
-            // Catch late full-screen/scrollback clear+redraw passes from heavy TUIs (e.g. Antigravity
+          if (!resizing && !lateRedrawCaught && lastResizeAtMs > 0 && (Date.now() - lastResizeAtMs) <= resizeTimings.late_redraw_ms) {
+            // Catch at most ONE late full-screen/scrollback clear+redraw pass from heavy TUIs (e.g. Antigravity
             // re-rendering a long conversation >900ms after SIGWINCH) BEFORE the clear hits xterm.
+            // Never reset lastResizeAtMs here so periodic TUI redraws cannot loop the loading mask.
             const hasFullClear = buf.includes(CLEAR_SCROLLBACK_BUF) || buf.includes(CLEAR_SCREEN_BUF);
             if (hasFullClear && (resizeIsTui || tuiNow())) {
-              startResizeMask(0);
-              if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, ...tuiInfo() }));
+              startResizeMask(0, { isLateRedraw: true });
+              if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, owner: room.owner === clientRec, ...tuiInfo() }));
             }
           }
           if (resizing) {
@@ -2883,7 +2915,7 @@ export function createGateway(options = {}) {
       clientRec.onPeerResize = () => {
         if (hydrating || ws.readyState !== 1) return;
         startResizeMask(0);
-        ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, ...tuiInfo() }));
+        ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, owner: false, ...tuiInfo() }));
       };
     } catch (err) {
       clearHydrationTimers();
@@ -2933,19 +2965,42 @@ export function createGateway(options = {}) {
             const canResize = !room.owner || room.owner === clientRec || Boolean(msg.claim);
             if (!canResize) {
               if (ws.readyState === 1) {
-                ws.send(JSON.stringify({ type: 'resized', seq: Number(msg.seq) || 0 }));
+                ws.send(JSON.stringify({
+                  type: 'resized',
+                  seq: Number(msg.seq) || 0,
+                  cols: room.ptyCols || clientRec.streamCols || clientRec.wantCols,
+                  rows: room.ptyRows || clientRec.streamRows || clientRec.wantRows,
+                  owner: false,
+                }));
               }
               return;
             }
             const before = getCurrentPtySize(termId, room.ptyCols || clientRec.wantCols, room.ptyRows || clientRec.wantRows);
             room.owner = clientRec;
+            if (clientId) lastActiveClientId = clientId;
             room.ptyCols = clientRec.wantCols;
             room.ptyRows = clientRec.wantRows;
             clientRec.lastActiveMs = Date.now();
+            const sizeChanged = before.cols !== clientRec.wantCols || before.rows !== clientRec.wantRows;
+            if (!sizeChanged) {
+              if (clientRec.streamCols !== clientRec.wantCols || clientRec.streamRows !== clientRec.wantRows) {
+                sendStreamSize(clientRec);
+              }
+              if (!hydrating && !resizing && ws.readyState === 1) {
+                ws.send(JSON.stringify({
+                  type: 'resized',
+                  seq: Number(msg.seq) || 0,
+                  cols: room.ptyCols,
+                  rows: room.ptyRows,
+                  owner: true,
+                }));
+              }
+              return;
+            }
             // Coalesce SIGWINCH full-screen TUI repaint bursts into one atomic frame
             // (covering debounced & multi-pass TUIs such as OpenCode, Claude, AGY, and Gemini).
             startResizeMask(msg.seq);
-            if (before.cols !== clientRec.wantCols || before.rows !== clientRec.wantRows) maskRoomPeers(room, clientRec);
+            maskRoomPeers(room, clientRec);
             sendStreamSize(clientRec);
             return;
           }
@@ -2963,7 +3018,7 @@ export function createGateway(options = {}) {
                 const willResize = cur.cols !== clientRec.wantCols || cur.rows !== clientRec.wantRows;
                 if (willResize && !hydrating) {
                   startResizeMask(0);
-                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, ...tuiInfo() }));
+                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, owner: true, ...tuiInfo() }));
                 }
                 claimPtyOwnership(room, clientRec, { cols: msg.cols, rows: msg.rows });
                 clientRec.focused = true;
@@ -2977,6 +3032,7 @@ export function createGateway(options = {}) {
                     seq: 0,
                     cols: room.ptyCols || clientRec.wantCols,
                     rows: room.ptyRows || clientRec.wantRows,
+                    owner: true,
                   }));
                 }
               }
