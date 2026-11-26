@@ -30,9 +30,9 @@ ROBO = r'''#!/bin/bash
 echo "$(date +%s) cwd=$PWD args=$*" >> "$HOME/robo-argv.log"
 [ "${1:-}" = "--yes" ] && shift
 if [ "${1:-}" = "--continue" ]; then
-    if [ -f "$PWD/.robo-session" ]; then echo "resuming"; else echo "no session here" >&2; exit 3; fi
+    if [ -f "$HOME/.robo-sessions/${PWD//\//_}" ]; then echo "resuming"; else echo "no session here" >&2; exit 3; fi
 fi
-touch "$PWD/.robo-session"
+mkdir -p "$HOME/.robo-sessions" && touch "$HOME/.robo-sessions/${PWD//\//_}"   # outside the folder: a worktree stays clean
 st() { printf '\033]7501;state=%s:app=robo-cli\007' "$1"; }
 printf '\033[?1049h\033[H\033[2J'
 st idle
