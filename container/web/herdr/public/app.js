@@ -247,7 +247,22 @@
   const popoverEl = document.getElementById('studio-popover');
   const agentsBusyCountEl = document.getElementById('agents-busy-count');
   const topbarTabsEl = document.getElementById('topbar-tabs');
-  const mobileTabsEl = document.getElementById('mobile-tabs');
+  const mobileSwitcherBtn = document.getElementById('btn-mobile-switcher');
+  const mobileSwitcherIcoEl = document.getElementById('mobile-switcher-ico');
+  const mobileSwitcherCountEl = document.getElementById('mobile-switcher-count');
+  const sessionsSheetEl = document.getElementById('sessions-sheet');
+  const sessionsSheetHandleEl = document.getElementById('sessions-sheet-handle');
+  const sessionsSheetHeadEl = document.getElementById('sessions-sheet-head');
+  const sessionsSheetBodyEl = document.getElementById('sessions-sheet-body');
+  const sessionsFilterBarEl = document.getElementById('sessions-filter-bar');
+  const mobileSessionsBusyEl = document.getElementById('mobile-sessions-busy');
+  const sfilterCountAllEl = document.getElementById('sfilter-count-all');
+  const sfilterCountAgentsEl = document.getElementById('sfilter-count-agents');
+  const sfilterCountShellsEl = document.getElementById('sfilter-count-shells');
+  const btnSessionsClose = document.getElementById('btn-sessions-close');
+  const btnMobileNewAgent = document.getElementById('btn-mobile-new-agent');
+  const btnMobileNewShell = document.getElementById('btn-mobile-new-shell');
+  let mobileSessionsFilter = 'all';
   const tabCountEl = document.getElementById('tab-count');
   const activeDotEl = document.getElementById('active-dot');
   const activeNameEl = document.getElementById('active-name');
@@ -5187,7 +5202,7 @@
       setTimeout(() => { if (!tabBarPointerHeld) renderTabs(true); }, 0);
     }
   }
-  for (const el of [sidebarAgentsEl, sidebarTabsEl, topbarTabsEl, mobileTabsEl]) {
+  for (const el of [sidebarAgentsEl, sidebarTabsEl, topbarTabsEl, sessionsSheetBodyEl]) {
     if (!el) continue;
     el.addEventListener('pointerdown', () => {
       tabBarPointerHeld = true;
@@ -5198,6 +5213,273 @@
   window.addEventListener('pointerup', releaseTabBarPointer, { passive: true, capture: true });
   window.addEventListener('pointercancel', releaseTabBarPointer, { passive: true, capture: true });
 
+  function buildMobileSessionRow(t, isAgent) {
+    const state = tabState(t);
+    const { title: label } = tabTitleParts(t);
+    const agentKind = isAgent ? (tabAgentKind(t) || 'shell') : 'shell';
+    const isActive = t.address === activeId;
+    const subText = tabSubtitle(t);
+    const wtBranch = t.labels && t.labels['swarmbox.worktree'] ? (t.labels['swarmbox.branch'] || 'worktree') : '';
+    const shortBranch = wtBranch ? wtBranch.replace(/^sb\//, '') : '';
+    const repoBranch = (!wtBranch && t.repo && t.repo.branch) ? t.repo.branch : '';
+
+    const row = document.createElement('div');
+    row.className = `ms-row${isActive ? ' active' : ''}${state === 'blocked' ? ' is-blocked' : ''}`;
+    row.setAttribute('role', 'option');
+    row.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    if (isAgent) applyAgentColor(row, agentKind);
+
+    const ico = document.createElement('div');
+    ico.className = 'ms-ico';
+    if (isAgent) {
+      ico.innerHTML = pixelIconHtml(agentKind);
+    } else {
+      ico.innerHTML = '<span class="ms-ico-shell">&gt;_</span>';
+    }
+
+    const info = document.createElement('div');
+    info.className = 'ms-info';
+
+    const top = document.createElement('div');
+    top.className = 'ms-top';
+    const titleEl = document.createElement('span');
+    titleEl.className = 'ms-title';
+    titleEl.textContent = label;
+    top.appendChild(titleEl);
+    if (isAgent) {
+      const tag = document.createElement('span');
+      tag.className = 'ms-tag';
+      tag.textContent = agentLabel(agentKind);
+      top.appendChild(tag);
+    }
+
+    const sub = document.createElement('div');
+    sub.className = 'ms-sub';
+    if (isAgent) {
+      const dot = document.createElement('span');
+      dot.className = 'status-dot';
+      dot.dataset.state = state;
+      const st = document.createElement('span');
+      st.className = 'ms-state';
+      st.dataset.state = state;
+      st.textContent = stateBadgeText(state, t.status);
+      const meta = document.createElement('span');
+      meta.className = 'ms-meta-text';
+      const detail = shortBranch || repoBranch || subText || '';
+      meta.textContent = detail ? `· ${detail}` : '';
+      sub.append(dot, st, meta);
+    } else {
+      const meta = document.createElement('span');
+      meta.className = 'ms-meta-text';
+      meta.textContent = subText ? `Shell · ${subText}` : 'Shell';
+      sub.appendChild(meta);
+    }
+
+    info.append(top, sub);
+
+    const acts = document.createElement('div');
+    acts.className = 'ms-acts';
+
+    const moreBtn = document.createElement('button');
+    moreBtn.type = 'button';
+    moreBtn.className = 'ms-act-btn';
+    moreBtn.title = 'Session actions (Rename, Worktree, Copy path, Close)';
+    moreBtn.setAttribute('aria-label', `Actions for ${label}`);
+    moreBtn.textContent = '⋯';
+    moreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (openCardMenuCard === row) closeCardMenu();
+      else openCardMenu(t, moreBtn, row);
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'ms-act-btn ms-close-btn';
+    closeBtn.title = 'Close tab';
+    closeBtn.setAttribute('aria-label', `Close ${label}`);
+    closeBtn.textContent = '✕';
+    closeBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      closeCardMenu();
+      await fetch(`/api/tabs/${encodeURIComponent(t.address)}`, { method: 'DELETE' });
+    });
+
+    acts.append(moreBtn, closeBtn);
+    row.append(ico, info, acts);
+
+    row.addEventListener('click', (e) => {
+      if (e.target && e.target.closest('button')) return;
+      closeCardMenu();
+      if (activeId !== t.address) connectPty(t.address);
+      setMobileSessions(false);
+    });
+    return row;
+  }
+
+  function renderMobileSessions(repoGroups, shellTerms, parkedPins) {
+    if (!sessionsSheetBodyEl) return;
+    sessionsSheetBodyEl.innerHTML = '';
+
+    const showAgents = mobileSessionsFilter === 'all' || mobileSessionsFilter === 'agents';
+    const showShells = mobileSessionsFilter === 'all' || mobileSessionsFilter === 'shells';
+    let renderedCount = 0;
+
+    if (showAgents && repoGroups.length > 0) {
+      for (const grp of repoGroups) {
+        const groupEl = document.createElement('div');
+        groupEl.className = 'ms-group';
+
+        const headEl = document.createElement('div');
+        headEl.className = 'ms-group-head';
+        headEl.style.setProperty('--rg-accent', grp.accent);
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'ms-group-title';
+        titleEl.innerHTML = `${grp.isGit ? ICO_BRANCH_SVG : ''}<span></span>`;
+        titleEl.querySelector('span').textContent = grp.name;
+
+        const actsEl = document.createElement('div');
+        actsEl.className = 'ms-group-acts';
+
+        const wtTotal = grp.activeWorktrees.length + grp.pendingWorktrees.length;
+        if (grp.isGit && wtTotal > 0) {
+          const hasWarn = grp.pendingWorktrees.some((w) => w.dirty || !w.can_merge)
+            || grp.activeWorktrees.some((t) => tabState(t) === 'blocked');
+          const wtPill = document.createElement('button');
+          wtPill.type = 'button';
+          wtPill.className = 'repo-wt-pill';
+          wtPill.title = `${wtTotal} worktree${wtTotal === 1 ? '' : 's'} in ${grp.name}`;
+          wtPill.innerHTML = `<span class="repo-wt-dot" data-tone="${hasWarn ? 'warn' : 'ok'}"></span>${ICO_BRANCH_SVG}<span>${wtTotal}</span>`;
+          wtPill.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeCardMenu();
+            openRepoWorktreesPopover(grp);
+          });
+          actsEl.appendChild(wtPill);
+        }
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'ms-group-add';
+        addBtn.title = `New agent in ${grp.name}`;
+        addBtn.setAttribute('aria-label', `New agent in ${grp.name}`);
+        addBtn.innerHTML = ICO_PLUS_SM_SVG;
+        addBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeCardMenu();
+          setMobileSessions(false);
+          openNewAgentPopover(false, grp.cwd);
+        });
+        actsEl.appendChild(addBtn);
+
+        headEl.append(titleEl, actsEl);
+        groupEl.appendChild(headEl);
+
+        for (const t of grp.terms) {
+          groupEl.appendChild(buildMobileSessionRow(t, true));
+          renderedCount += 1;
+        }
+        sessionsSheetBodyEl.appendChild(groupEl);
+      }
+    }
+
+    if (showShells && shellTerms.length > 0) {
+      const groupEl = document.createElement('div');
+      groupEl.className = 'ms-group';
+      if (mobileSessionsFilter === 'all' && repoGroups.length > 0) {
+        const headEl = document.createElement('div');
+        headEl.className = 'ms-group-head';
+        const titleEl = document.createElement('div');
+        titleEl.className = 'ms-group-title';
+        titleEl.textContent = 'Shells';
+        headEl.appendChild(titleEl);
+        groupEl.appendChild(headEl);
+      }
+      for (const t of shellTerms) {
+        groupEl.appendChild(buildMobileSessionRow(t, false));
+        renderedCount += 1;
+      }
+      sessionsSheetBodyEl.appendChild(groupEl);
+    }
+
+    if (showAgents && parkedPins.length > 0) {
+      const groupEl = document.createElement('div');
+      groupEl.className = 'ms-group';
+      const headEl = document.createElement('div');
+      headEl.className = 'ms-group-head';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'ms-group-title';
+      titleEl.textContent = 'Pinned · Parked';
+      headEl.appendChild(titleEl);
+      groupEl.appendChild(headEl);
+
+      for (const pin of parkedPins) {
+        const pKind = isAgentId(pin.agent) ? pin.agent : 'shell';
+        const row = document.createElement('div');
+        row.className = 'ms-row is-parked';
+        applyAgentColor(row, pKind);
+
+        const ico = document.createElement('div');
+        ico.className = 'ms-ico';
+        ico.innerHTML = pixelIconHtml(pKind);
+
+        const info = document.createElement('div');
+        info.className = 'ms-info';
+        const top = document.createElement('div');
+        top.className = 'ms-top';
+        const titleTxt = document.createElement('span');
+        titleTxt.className = 'ms-title';
+        titleTxt.textContent = pin.title || shortDisplayPath(pin.cwd) || 'pinned';
+        top.appendChild(titleTxt);
+
+        const sub = document.createElement('div');
+        sub.className = 'ms-sub';
+        const wakePill = document.createElement('span');
+        wakePill.className = 'ms-wake-pill';
+        wakePill.textContent = pin.missing_cwd ? 'Missing dir' : 'PARKED · ▶ Wake';
+        sub.appendChild(wakePill);
+        info.append(top, sub);
+
+        const acts = document.createElement('div');
+        acts.className = 'ms-acts';
+        const dismissBtn = document.createElement('button');
+        dismissBtn.type = 'button';
+        dismissBtn.className = 'ms-act-btn ms-close-btn';
+        dismissBtn.title = 'Dismiss saved session';
+        dismissBtn.setAttribute('aria-label', `Dismiss ${pin.title || 'session'}`);
+        dismissBtn.textContent = '✕';
+        dismissBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          unpinById(pin.id);
+        });
+        acts.appendChild(dismissBtn);
+
+        row.append(ico, info, acts);
+        row.addEventListener('click', (e) => {
+          if (e.target && e.target.closest('button')) return;
+          if (!pin.missing_cwd) {
+            wakePin(pin.id);
+            setMobileSessions(false);
+          }
+        });
+        groupEl.appendChild(row);
+        renderedCount += 1;
+      }
+      sessionsSheetBodyEl.appendChild(groupEl);
+    }
+
+    if (renderedCount === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'ms-empty';
+      empty.textContent = mobileSessionsFilter === 'agents'
+        ? 'No agents running yet'
+        : mobileSessionsFilter === 'shells'
+          ? 'No shells open yet'
+          : 'No active sessions';
+      sessionsSheetBodyEl.appendChild(empty);
+    }
+  }
+
   function renderTabs(force = false) {
     if (tabBarPointerHeld && !force) {
       tabBarRenderDeferred = true;
@@ -5207,13 +5489,13 @@
     sidebarTabsEl.innerHTML = '';
     if (topbarTabsEl) topbarTabsEl.innerHTML = '';
     if (sidebarAgentsEl) sidebarAgentsEl.innerHTML = '';
-    mobileTabsEl.innerHTML = '';
 
     let agentCount = 0;
     let shellCount = 0;
     let busyCount = 0;
     const repoGroups = [];
     const repoGroupMap = new Map();
+    const shellTerms = [];
 
     terminals.forEach((t, idx) => {
       const state = tabState(t);
@@ -5448,6 +5730,7 @@
         grp.cards.push(card);
       } else {
         shellCount += 1;
+        shellTerms.push(t);
         const btn = document.createElement('div');
         btn.className = `tab-item${isActive ? ' active' : ''}${state === 'blocked' ? ' is-blocked' : ''}${state === 'working' ? ' is-working' : ''}`;
         btn.setAttribute('role', 'tab');
@@ -5559,24 +5842,6 @@
         });
         topbarTabsEl.appendChild(tt);
       }
-
-      // 3. Mobile tab chip (with mini pixel icon!)
-      const m = document.createElement('button');
-      m.className = `m-tab${isActive ? ' active' : ''}`;
-      const mName = document.createElement('span');
-      mName.className = 'm-tab-name';
-      mName.textContent = label.length > 14 ? label.slice(0, 13) + '…' : label;
-      m.append(makeMiniPixelIcon(iconKind), mName);
-      if (state === 'working' || state === 'blocked' || state === 'done') {
-        const mDot = document.createElement('span');
-        mDot.className = 'status-dot';
-        mDot.dataset.state = state;
-        m.appendChild(mDot);
-      }
-      m.addEventListener('click', () => {
-        if (activeId !== t.address) connectPty(t.address);
-      });
-      mobileTabsEl.appendChild(m);
     });
 
     tabCountEl.textContent = String(shellCount);
@@ -5645,21 +5910,6 @@
         card.addEventListener('click', () => { if (!pin.missing_cwd) wakePin(pin.id); });
         sidebarParkedEl.appendChild(card);
       }
-    }
-
-    // Parked chips on mobile tab strip (1 tap wakes!)
-    for (const pin of parkedPins) {
-      const pKind = isAgentId(pin.agent) ? pin.agent : 'shell';
-      const mp = document.createElement('button');
-      mp.className = 'm-tab is-parked';
-      const mpName = document.createElement('span');
-      mpName.className = 'm-tab-name';
-      const lbl = pin.title || 'pin';
-      mpName.textContent = (lbl.length > 11 ? lbl.slice(0, 10) + '…' : lbl) + ' ▶';
-      mp.append(makeMiniPixelIcon(pKind), mpName);
-      mp.title = `Wake pinned session ${lbl}`;
-      mp.addEventListener('click', () => wakePin(pin.id));
-      mobileTabsEl.appendChild(mp);
     }
 
     // Pending worktrees pill in sidebar
@@ -5803,13 +6053,22 @@
       sidebarShellsSectionEl.classList.toggle('hidden', shellCount === 0 && agentCount === 0);
     }
 
-    const mPlus = document.createElement('button');
-    mPlus.className = 'm-tab m-tab-add';
-    mPlus.textContent = '+';
-    mPlus.title = 'New agent or shell tab';
-    mPlus.setAttribute('aria-label', 'New agent or shell tab');
-    mPlus.addEventListener('click', () => openNewAgentPopover(true));
-    mobileTabsEl.appendChild(mPlus);
+    // Mobile Switcher Pill counter + Thumb-Zone Sessions Bottom Sheet
+    const totalMobileCount = terminals.length;
+    const hasBgAttention = terminals.some((t) => t.address !== activeId && tabState(t) === 'blocked');
+    if (mobileSwitcherCountEl) {
+      mobileSwitcherCountEl.textContent = String(totalMobileCount);
+      mobileSwitcherCountEl.classList.toggle('has-attention', hasBgAttention);
+    }
+    if (mobileSessionsBusyEl) {
+      mobileSessionsBusyEl.textContent = `${busyCount} busy`;
+      mobileSessionsBusyEl.classList.toggle('has-busy', busyCount > 0);
+      mobileSessionsBusyEl.classList.toggle('hidden', busyCount === 0);
+    }
+    if (sfilterCountAllEl) sfilterCountAllEl.textContent = String(terminals.length + parkedPins.length);
+    if (sfilterCountAgentsEl) sfilterCountAgentsEl.textContent = String(agentCount);
+    if (sfilterCountShellsEl) sfilterCountShellsEl.textContent = String(shellCount);
+    renderMobileSessions(repoGroups, shellTerms, parkedPins);
 
     const active = terminals.find((t) => t.address === activeId);
     const termCtxSepEl = document.querySelector('.term-ctx-sep');
@@ -5825,6 +6084,10 @@
       const aSub = tabSubtitle(active);
       activeDotEl.dataset.state = aState;
       activeNameEl.textContent = aParts.title;
+      if (mobileSwitcherIcoEl) {
+        mobileSwitcherIcoEl.innerHTML = '';
+        mobileSwitcherIcoEl.appendChild(makeMiniPixelIcon(aKind));
+      }
       if (activeAgentEl) {
         activeAgentEl.textContent = aParts.pill;
         activeAgentEl.classList.toggle('hidden', !aParts.pill);
@@ -5857,6 +6120,7 @@
       const hasParked = parkedPins.length > 0;
       activeDotEl.dataset.state = 'idle';
       activeNameEl.textContent = hasParked ? 'Sessions parked' : 'No active tab';
+      if (mobileSwitcherIcoEl) mobileSwitcherIcoEl.innerHTML = '';
       if (activeAgentEl) activeAgentEl.classList.add('hidden');
       if (topbarWtBtnEl) topbarWtBtnEl.classList.add('hidden');
       if (mobileWtBtnEl) mobileWtBtnEl.classList.add('hidden');
@@ -7837,8 +8101,18 @@
   function toggleDesktopSysop() {
     setDesktopSysop(appEl.dataset.sysopOpen !== '1');
   }
+  function setMobileSessions(open) {
+    const val = open ? '1' : '0';
+    if (open && appEl.dataset.mobileSysop === '1') setMobileSysop(false);
+    if (!open) closeCardMenu();
+    appEl.dataset.mobileSessions = val;
+    if (mobileSwitcherBtn) mobileSwitcherBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (sessionsSheetEl) sessionsSheetEl.setAttribute('aria-hidden', open ? 'false' : 'true');
+  }
+
   function setMobileSysop(open) {
     const val = open ? '1' : '0';
+    if (open && appEl.dataset.mobileSessions === '1') setMobileSessions(false);
     appEl.dataset.mobileSysop = val;
     if (mobileSysopBtn) mobileSysopBtn.dataset.on = val;
     if (!open && document.activeElement === goalInputEl) goalInputEl.blur();
@@ -7919,7 +8193,168 @@
   const sheetHandleEl = document.getElementById('sheet-handle');
   const sysopPanelEl = document.getElementById('sysop-panel');
   const sysopHeadEl = sysopPanelEl ? sysopPanelEl.querySelector('.sysop-head') : null;
-  if (sheetBackdropEl) sheetBackdropEl.addEventListener('click', () => setMobileSysop(false));
+  if (sheetBackdropEl) {
+    sheetBackdropEl.addEventListener('click', () => {
+      setMobileSysop(false);
+      setMobileSessions(false);
+    });
+  }
+
+  // Mobile Switcher Pill: tap opens thumb-zone Sessions sheet; horizontal swipe switches adjacent tabs!
+  if (mobileSwitcherBtn) {
+    let pillSwipe = null;
+    let suppressPillClick = false;
+    mobileSwitcherBtn.addEventListener('pointerdown', (e) => {
+      if (!isMobileLayout() || (e.button !== undefined && e.button !== 0)) return;
+      pillSwipe = { id: e.pointerId, startX: e.clientX, startY: e.clientY, handled: false };
+    });
+    mobileSwitcherBtn.addEventListener('pointermove', (e) => {
+      if (!pillSwipe || e.pointerId !== pillSwipe.id || pillSwipe.handled) return;
+      const dx = e.clientX - pillSwipe.startX;
+      const dy = e.clientY - pillSwipe.startY;
+      if (Math.abs(dx) >= 36 && Math.abs(dx) > Math.abs(dy) * 1.4 && terminals.length > 1) {
+        pillSwipe.handled = true;
+        suppressPillClick = true;
+        setTimeout(() => { suppressPillClick = false; }, 260);
+        const curIdx = terminals.findIndex((t) => t.address === activeId);
+        const base = curIdx >= 0 ? curIdx : 0;
+        const nextIdx = dx < 0
+          ? (base + 1) % terminals.length
+          : (base - 1 + terminals.length) % terminals.length;
+        const target = terminals[nextIdx];
+        if (target && target.address !== activeId) {
+          connectPty(target.address);
+        }
+      }
+    });
+    const clearPillSwipe = () => { pillSwipe = null; };
+    mobileSwitcherBtn.addEventListener('pointerup', clearPillSwipe);
+    mobileSwitcherBtn.addEventListener('pointercancel', clearPillSwipe);
+    mobileSwitcherBtn.addEventListener('click', () => {
+      if (suppressPillClick) return;
+      setMobileSessions(appEl.dataset.mobileSessions !== '1');
+    });
+  }
+  if (btnSessionsClose) {
+    btnSessionsClose.addEventListener('click', () => setMobileSessions(false));
+  }
+  if (sessionsFilterBarEl) {
+    sessionsFilterBarEl.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest('.sfilter-pill[data-filter]');
+      if (!btn) return;
+      const next = btn.dataset.filter;
+      if (!next || next === mobileSessionsFilter) return;
+      mobileSessionsFilter = next;
+      for (const p of sessionsFilterBarEl.querySelectorAll('.sfilter-pill')) {
+        const on = p.dataset.filter === next;
+        p.classList.toggle('is-on', on);
+        p.setAttribute('aria-selected', on ? 'true' : 'false');
+      }
+      renderTabs(true);
+    });
+  }
+  if (btnMobileNewAgent) {
+    btnMobileNewAgent.addEventListener('click', () => {
+      setMobileSessions(false);
+      openNewAgentPopover(false);
+    });
+  }
+  if (btnMobileNewShell) {
+    btnMobileNewShell.addEventListener('click', () => {
+      setMobileSessions(false);
+      spawnTab('shell');
+    });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && appEl.dataset.mobileSessions === '1') {
+      e.preventDefault();
+      setMobileSessions(false);
+    }
+  });
+
+  // Native-feeling swipe-to-dismiss on mobile Sessions sheet (from top drag handle or header bar).
+  if (sessionsSheetEl && sessionsSheetHandleEl) {
+    let sDrag = null;
+    let suppressSHandleClick = false;
+    const sGrabZones = [sessionsSheetHandleEl, sessionsSheetHeadEl].filter(Boolean);
+
+    const endSDrag = (cancel) => {
+      if (!sDrag) return;
+      const d = sDrag;
+      sDrag = null;
+      sessionsSheetEl.classList.remove('is-dragging');
+      if (sheetBackdropEl) {
+        sheetBackdropEl.classList.remove('is-dragging');
+        sheetBackdropEl.style.opacity = '';
+      }
+      sessionsSheetEl.style.transform = '';
+      if (!d.moved) return;
+      suppressSHandleClick = true;
+      setTimeout(() => { suppressSHandleClick = false; }, 220);
+      const dismissDist = Math.min(120, d.sheetH * 0.26);
+      const freshVy = (performance.now() - d.lastT) < 90 ? d.vy : 0;
+      const shouldClose = !cancel && (d.offset > dismissDist || (freshVy > 0.45 && d.offset > 30));
+      if (shouldClose) setMobileSessions(false);
+    };
+
+    const onSDown = (e) => {
+      if (!isMobileLayout() || appEl.dataset.mobileSessions !== '1') return;
+      if (e.button !== undefined && e.button !== 0) return;
+      if (e.target && e.target.closest('button')) return;
+      const now = performance.now();
+      sDrag = {
+        id: e.pointerId,
+        target: e.currentTarget,
+        startY: e.clientY,
+        lastY: e.clientY,
+        lastT: now,
+        offset: 0,
+        vy: 0,
+        moved: false,
+        sheetH: sessionsSheetEl.getBoundingClientRect().height || 460,
+      };
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    };
+
+    const onSMove = (e) => {
+      if (!sDrag || e.pointerId !== sDrag.id) return;
+      const dy = e.clientY - sDrag.startY;
+      if (!sDrag.moved) {
+        if (Math.abs(dy) < 6) return;
+        sDrag.moved = true;
+        sessionsSheetEl.classList.add('is-dragging');
+        if (sheetBackdropEl) sheetBackdropEl.classList.add('is-dragging');
+      }
+      const now = performance.now();
+      const dt = Math.max(1, now - sDrag.lastT);
+      sDrag.vy = (e.clientY - sDrag.lastY) / dt;
+      sDrag.lastY = e.clientY;
+      sDrag.lastT = now;
+      sDrag.offset = dy >= 0 ? dy : dy * 0.18;
+      sessionsSheetEl.style.transform = `translateY(${Math.round(sDrag.offset)}px)`;
+      if (sheetBackdropEl) {
+        const p = Math.max(0, Math.min(1, sDrag.offset / Math.max(160, sDrag.sheetH)));
+        sheetBackdropEl.style.opacity = String(1 - p * 0.85);
+      }
+    };
+
+    const onSUp = (e) => {
+      if (!sDrag || e.pointerId !== sDrag.id) return;
+      try { sDrag.target.releasePointerCapture(e.pointerId); } catch (_) {}
+      endSDrag(e.type === 'pointercancel');
+    };
+
+    for (const zone of sGrabZones) {
+      zone.addEventListener('pointerdown', onSDown);
+      zone.addEventListener('pointermove', onSMove);
+      zone.addEventListener('pointerup', onSUp);
+      zone.addEventListener('pointercancel', onSUp);
+    }
+    sessionsSheetHandleEl.addEventListener('click', () => {
+      if (suppressSHandleClick) return;
+      setMobileSessions(false);
+    });
+  }
 
   // Native-feeling swipe-to-dismiss on mobile Sysop sheet (from top drag handle or header bar).
   if (sysopPanelEl && sheetHandleEl) {

@@ -37,7 +37,7 @@
   </div>
 </div>
 
-<div id="app" class="app" data-sysop-open="0" data-sidebar-open="1" data-mobile-keys="0" data-mobile-sysop="0" data-voice-state="idle">
+<div id="app" class="app" data-sysop-open="0" data-sidebar-open="1" data-mobile-keys="0" data-mobile-sysop="0" data-mobile-sessions="0" data-voice-state="idle">
   <!-- Left Sidebar (Desktop) -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
@@ -129,9 +129,14 @@
           <span class="term-ctx-state" id="term-ctx-state" data-state="idle">IDLE</span>
         </div>
         <div class="topbar-tabs desktop-only" id="topbar-tabs" role="tablist" aria-label="Open tabs"></div>
-        <div class="active-meta mobile-only">
-          <span class="status-dot" id="active-dot" data-state="idle"></span>
-          <span class="active-name" id="active-name">—</span>
+        <div class="active-meta mobile-only" id="mobile-active-meta">
+          <button type="button" class="mobile-switcher-pill" id="btn-mobile-switcher" aria-haspopup="dialog" aria-expanded="false" aria-controls="sessions-sheet" title="Switch or manage sessions (swipe to switch tabs)">
+            <span class="status-dot" id="active-dot" data-state="idle"></span>
+            <span class="switcher-ico" id="mobile-switcher-ico" aria-hidden="true"></span>
+            <span class="active-name" id="active-name">—</span>
+            <svg class="switcher-chevron" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+            <span class="switcher-count" id="mobile-switcher-count">0</span>
+          </button>
           <span class="tab-agent-tag hidden" id="active-agent"></span>
           <button type="button" class="topbar-wt-btn topbar-wt-btn-sm hidden" id="mobile-wt-btn" title="Worktree status &amp; merge"></button>
           <button type="button" class="topbar-ctx-btn topbar-ctx-btn-sm hidden" id="mobile-ctx-btn"></button>
@@ -154,9 +159,6 @@
         </button>
       </div>
     </header>
-
-    <!-- Mobile Tab Strip -->
-    <div class="mobile-tabs mobile-only" id="mobile-tabs"></div>
 
     <!-- Terminal Canvas -->
     <div class="term-wrap" id="term-wrap">
@@ -263,8 +265,38 @@
     </div>
   </main>
 
-  <!-- Mobile backdrop when Sysop sheet is open -->
+  <!-- Mobile backdrop when Sysop or Sessions sheet is open -->
   <div class="sheet-backdrop mobile-only" id="sheet-backdrop"></div>
+
+  <!-- Mobile Sessions Bottom Sheet (Thumb-zone tab switcher & manager) -->
+  <aside class="sessions-sheet mobile-only" id="sessions-sheet" role="dialog" aria-modal="true" aria-labelledby="sessions-sheet-title" aria-hidden="true">
+    <div class="sheet-handle" id="sessions-sheet-handle" aria-hidden="true"><span></span></div>
+    <div class="sessions-sheet-head" id="sessions-sheet-head">
+      <div class="sessions-sheet-title-wrap">
+        <h2 class="sessions-sheet-title" id="sessions-sheet-title">Sessions</h2>
+        <span class="busy-pill brand-busy hidden" id="mobile-sessions-busy">0 busy</span>
+      </div>
+      <button type="button" class="icon-btn sessions-sheet-close" id="btn-sessions-close" title="Close sessions" aria-label="Close sessions">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="sessions-filter-bar" id="sessions-filter-bar" role="tablist" aria-label="Filter sessions">
+      <button type="button" class="sfilter-pill is-on" data-filter="all" role="tab" aria-selected="true">All <span class="sfilter-count" id="sfilter-count-all">0</span></button>
+      <button type="button" class="sfilter-pill" data-filter="agents" role="tab" aria-selected="false">Agents <span class="sfilter-count" id="sfilter-count-agents">0</span></button>
+      <button type="button" class="sfilter-pill" data-filter="shells" role="tab" aria-selected="false">Shells <span class="sfilter-count" id="sfilter-count-shells">0</span></button>
+    </div>
+    <div class="sessions-sheet-body" id="sessions-sheet-body"></div>
+    <div class="sessions-sheet-foot">
+      <button type="button" class="sessions-cta-primary" id="btn-mobile-new-agent">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+        <span>New Agent</span>
+      </button>
+      <button type="button" class="sessions-cta-secondary" id="btn-mobile-new-shell">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+        <span>Shell</span>
+      </button>
+    </div>
+  </aside>
 
   <!-- Right Sysop Panel (Desktop docked drawer / Mobile bottom sheet) -->
   <aside class="sysop-panel" id="sysop-panel">
