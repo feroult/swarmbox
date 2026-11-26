@@ -247,5 +247,58 @@ class CheckAndCommand(unittest.TestCase):
         self.assertEqual(run("bogus").returncode, 64)
 
 
+class GatewayRoutes(unittest.TestCase):
+    """The page's view of the registry: /agents.js (loaded before app.js), /api/agents and /agents/<id>/icon.svg of the real gateway."""
+
+    def test_the_gateway_serves_the_registry_and_the_icons(self):
+        if not shutil.which("node"):
+            self.skipTest("node is not installed")
+        tmp = os.path.realpath(tempfile.mkdtemp(prefix="sbagents-gw-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        js = r"""
+import { registerHooks } from 'node:module';
+if (typeof registerHooks === 'function') {
+  registerHooks({ resolve(specifier, context, next) {
+    if (specifier === 'ws') return { shortCircuit: true, url: 'data:text/javascript,export class WebSocketServer { constructor(){ this.clients = new Set(); } on(){} handleUpgrade(){} }' };
+    return next(specifier, context);
+  } });
+}
+const { createGateway } = await import('./server.mjs');
+const { server } = createGateway({ hc: { terminals: new Map(), on() {}, proc: null, close() {} } });
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const base = `http://127.0.0.1:${server.address().port}`;
+const out = {};
+let r = await fetch(base + '/agents.js'); out.js = { status: r.status, type: r.headers.get('content-type'), text: await r.text() };
+r = await fetch(base + '/api/agents'); out.api = await r.json();
+r = await fetch(base + '/agents/claude/icon.svg'); out.icon = { status: r.status, type: r.headers.get('content-type'), text: await r.text() };
+r = await fetch(base + '/agents/claude-code/icon.svg'); out.alias = r.status;
+r = await fetch(base + '/agents/nope/icon.svg'); out.nope = r.status;
+r = await fetch(base + '/agents/..%2F..%2Fetc/icon.svg'); out.trav = r.status;
+server.close();
+console.log(JSON.stringify(out));
+"""
+        env = dict(os.environ, HOME=tmp, SWARMBOX_HC_AUTOSTART="0", SWARMBOX_TEST_USER_ADDONS=os.path.join(tmp, "none"))
+        env.pop("SWARMBOX_IMAGE_ADDONS_DIR", None)
+        env.pop("SWARMBOX_TEST_IMAGE_ADDONS", None)
+        p = subprocess.run(["node", "--input-type=module", "-e", js], cwd=os.path.dirname(AGENTS_MJS), env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        out = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertEqual(out["js"]["status"], 200)
+        self.assertIn("javascript", out["js"]["type"])
+        self.assertTrue(out["js"]["text"].startswith("window.SWARMBOX_AGENTS = {"))
+        self.assertNotIn("<svg", out["js"]["text"], "a < in the inlined data is escaped, so it cannot close a script element")
+        ids = [a["id"] for a in out["api"]["agents"]]
+        self.assertEqual(ids, ["agy", "claude", "opencode"])
+        claude = out["api"]["agents"][ids.index("claude")]
+        self.assertEqual(claude["label"], "Claude Code")
+        self.assertIn("claude-code", claude["aliases"])
+        self.assertTrue(claude["icon_svg"].startswith("<svg"))
+        self.assertNotIn("dir", claude)
+        self.assertIn("bash", out["api"]["shell_names"])
+        self.assertEqual((out["icon"]["status"], out["icon"]["type"]), (200, "image/svg+xml"))
+        self.assertEqual(out["icon"]["text"].strip(), claude["icon_svg"])
+        self.assertEqual((out["alias"], out["nope"], out["trav"]), (404, 404, 404))
+
+
 if __name__ == "__main__":
     unittest.main()

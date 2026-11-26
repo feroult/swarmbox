@@ -454,7 +454,7 @@ def public(a):
 
 
 def registry_json(env=None):
-    return {"schema": SCHEMA, "default": default_agent(env), "agents": [public(a) for a in agents(env)]}
+    return {"schema": SCHEMA, "default": default_agent(env), "shell_names": sorted(SHELL_NAMES), "agents": [public(a) for a in agents(env)]}
 
 
 # ---- check ------------------------------------------------------------------------------------------------------------------------

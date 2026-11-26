@@ -307,6 +307,54 @@
   let worktreePrefs = { mode: 'ask', copy_env: true };
   let sessionPrefs = { boot_mode: 'autostart' };
   let installedAgents = [];
+
+  // The agents of the box (the registry, docs/agents-design.md): window.SWARMBOX_AGENTS, set by /agents.js before this script, and
+  // refreshed from /api/agents. Ids, names, labels, colours and icons come from each agent's addon: nothing in this page names an agent.
+  let agentReg = { list: [], byId: new Map(), byName: new Map(), shellNames: new Set() };
+  function setAgentRegistry(data) {
+    const list = data && Array.isArray(data.agents) ? data.agents.filter((a) => a && typeof a.id === 'string' && a.id) : [];
+    const byId = new Map();
+    const byName = new Map();
+    for (const a of list) { byId.set(a.id, a); byName.set(a.id, a.id); }
+    for (const a of list) for (const al of a.aliases || []) if (!byName.has(al)) byName.set(al, a.id);
+    const shellNames = new Set(data && Array.isArray(data.shell_names) ? data.shell_names : ['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
+    agentReg = { list, byId, byName, shellNames };
+  }
+  setAgentRegistry(window.SWARMBOX_AGENTS);
+  function refreshAgentRegistry() {
+    return fetch('/api/agents', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { window.SWARMBOX_AGENTS = d; setAgentRegistry(d); } })
+      .catch(() => {});
+  }
+  // the agent id of a name (an id, a command, an alias such as the OSC 7501 app it reports), or ''
+  function resolveAgentName(raw) {
+    let n = String(raw || '').trim().toLowerCase();
+    n = n.slice(n.lastIndexOf('/') + 1).replace(/^-+/, '');
+    return (n && agentReg.byName.get(n)) || '';
+  }
+  function isAgentId(id) {
+    return Boolean(id) && agentReg.byId.has(id);
+  }
+  function agentLabel(id) {
+    if (!id || id === 'shell') return 'Shell';
+    const a = agentReg.byId.get(id);
+    return a ? a.label || a.id : id;
+  }
+  // the card colours of an agent, from its COLOR: the border, its strong form, the background tint, the scene and the accent
+  function applyAgentColor(el, id) {
+    const a = agentReg.byId.get(id);
+    const m = a && /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(a.color || '');
+    for (const v of ['--ac-border', '--ac-strong', '--ac-bg', '--ac-scene', '--ac-accent']) el.style.removeProperty(v);
+    if (!m) return;
+    const [r, g, b] = [m[1], m[2], m[3]].map((x) => parseInt(x, 16));
+    const mix = (c, base, k) => Math.round(base + (c - base) * k);
+    el.style.setProperty('--ac-border', `rgba(${r}, ${g}, ${b}, 0.36)`);
+    el.style.setProperty('--ac-strong', `rgba(${r}, ${g}, ${b}, 0.74)`);
+    el.style.setProperty('--ac-bg', `rgba(${r}, ${g}, ${b}, 0.09)`);
+    el.style.setProperty('--ac-scene', `rgb(${mix(r, 12, 0.08)}, ${mix(g, 11, 0.08)}, ${mix(b, 16, 0.08)})`);
+    el.style.setProperty('--ac-accent', a.color);
+  }
   let editingTabId = null;
   let popoverOpen = false;
   let popoverKeyHandler = null;
@@ -1116,9 +1164,9 @@
     if (!t) return false;
     if (tabAgentBadge(t)) return true;
     const fg = String((t.foreground && t.foreground.name) || '').toLowerCase().trim();
-    if (fg && !SHELL_NAMES.has(fg)) return true;
+    if (fg && !agentReg.shellNames.has(fg)) return true;
     const nm = String(t.name || '').toLowerCase();
-    if (/^(?:claude|agy|antigravity|opencode|gemini|codex)\b/.test(nm)) return true;
+    if (resolveAgentName((/^[a-z0-9_]+/.exec(nm) || [''])[0])) return true;
     return false;
   }
 
@@ -2063,24 +2111,10 @@
     }
   }, true);
 
-  const AGENT_APP_LABELS = {
-    antigravity: 'agy',
-    agy: 'agy',
-    claude: 'claude',
-    'claude-code': 'claude',
-    codex: 'codex',
-    opencode: 'opencode',
-    gemini: 'gemini',
-  };
-  const SHELL_NAMES = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
-
+  // the agent a tab runs from live signals: the app it reports (OSC 7501), then its foreground program
   function tabAgentBadge(t) {
     if (!t) return '';
-    const app = String((t.status && t.status.app) || '').toLowerCase();
-    if (AGENT_APP_LABELS[app]) return AGENT_APP_LABELS[app];
-    const fg = String((t.foreground && t.foreground.name) || '').toLowerCase();
-    if (AGENT_APP_LABELS[fg]) return AGENT_APP_LABELS[fg];
-    return '';
+    return resolveAgentName(t.status && t.status.app) || resolveAgentName(t.foreground && t.foreground.name);
   }
 
   function cleanStatusText(raw) {
@@ -2115,7 +2149,7 @@
 
     const fg = String((t.foreground && t.foreground.name) || '').trim();
     const fgLow = fg.toLowerCase();
-    if (fg && !SHELL_NAMES.has(fgLow) && fgLow !== pill) {
+    if (fg && !agentReg.shellNames.has(fgLow) && fgLow !== pill) {
       return { title: fg, pill };
     }
 
@@ -2985,110 +3019,9 @@
     renderTabs(true);
   }
 
-  // Hand-crafted 16x16 crisp pixel-art mascots for agents & shells (inline SVG, zero external assets)
-  const AGENT_FULL_NAMES = {
-    agy: 'Antigravity',
-    claude: 'Claude Code',
-    codex: 'OpenAI Codex',
-    opencode: 'OpenCode',
-    gemini: 'Gemini CLI',
-    shell: 'Shell',
-  };
-
+  // Hand-crafted 16x16 crisp pixel-art icons of the shell, the sysop and a generic agent (inline SVG); an agent's own icon is its
+  // addon's agent/icon.svg, from the registry
   const PIXEL_SVG = {
-    // Antigravity (agy): Cosmic violet space-owl / visor bot floating over a dark desk
-    agy: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
-      '<rect x="2" y="2" width="1" height="1" fill="#c4b5fd" opacity=".55"/>' +
-      '<rect x="13" y="3" width="1" height="1" fill="#8ad7e6" opacity=".65"/>' +
-      '<rect x="7" y="1" width="2" height="1" fill="#c4b5fd"/>' +
-      '<rect x="5" y="2" width="6" height="1" fill="#a78bfa"/>' +
-      '<rect x="4" y="3" width="8" height="2" fill="#8b5cf6"/>' +
-      '<rect x="3" y="5" width="10" height="4" fill="#7c3aed"/>' +
-      '<rect x="5" y="5" width="6" height="3" fill="#18122b"/>' +
-      '<rect x="6" y="6" width="1" height="1" fill="#67e8f9"/>' +
-      '<rect x="9" y="6" width="1" height="1" fill="#67e8f9"/>' +
-      '<rect x="4" y="9" width="8" height="2" fill="#a78bfa"/>' +
-      '<rect x="2" y="7" width="1" height="3" fill="#c4b5fd"/>' +
-      '<rect x="13" y="7" width="1" height="3" fill="#c4b5fd"/>' +
-      '<rect x="5" y="11" width="2" height="1" fill="#6d28d9"/>' +
-      '<rect x="9" y="11" width="2" height="1" fill="#6d28d9"/>' +
-      '<rect x="1" y="12" width="14" height="2" fill="#3b2763"/>' +
-      '<rect x="2" y="14" width="2" height="2" fill="#261842"/>' +
-      '<rect x="12" y="14" width="2" height="2" fill="#261842"/>' +
-      '</svg>',
-
-    // Claude Code: Iconic warm terracotta blocky pixel critter at a cozy desk
-    claude: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
-      '<rect x="2" y="2" width="1" height="1" fill="#fbbf24" opacity=".5"/>' +
-      '<rect x="4" y="3" width="8" height="1" fill="#e89274"/>' +
-      '<rect x="3" y="4" width="10" height="5" fill="#d97757"/>' +
-      '<rect x="2" y="6" width="1" height="2" fill="#d97757"/>' +
-      '<rect x="13" y="6" width="1" height="2" fill="#d97757"/>' +
-      '<rect x="5" y="5" width="1" height="2" fill="#1a1110"/>' +
-      '<rect x="10" y="5" width="1" height="2" fill="#1a1110"/>' +
-      '<rect x="4" y="9" width="8" height="1" fill="#b85c3e"/>' +
-      '<rect x="4" y="10" width="1" height="2" fill="#d97757"/>' +
-      '<rect x="6" y="10" width="1" height="2" fill="#d97757"/>' +
-      '<rect x="9" y="10" width="1" height="2" fill="#d97757"/>' +
-      '<rect x="11" y="10" width="1" height="2" fill="#d97757"/>' +
-      '<rect x="1" y="12" width="14" height="2" fill="#5c3626"/>' +
-      '<rect x="2" y="14" width="2" height="2" fill="#3d2217"/>' +
-      '<rect x="12" y="14" width="2" height="2" fill="#3d2217"/>' +
-      '</svg>',
-
-    // OpenAI Codex: Charming mint pixel frog at a dark desk
-    codex: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
-      '<rect x="3" y="2" width="3" height="2" fill="#4ade80"/>' +
-      '<rect x="10" y="2" width="3" height="2" fill="#4ade80"/>' +
-      '<rect x="4" y="3" width="1" height="1" fill="#ffffff"/>' +
-      '<rect x="5" y="3" width="1" height="1" fill="#0c1a12"/>' +
-      '<rect x="10" y="3" width="1" height="1" fill="#ffffff"/>' +
-      '<rect x="11" y="3" width="1" height="1" fill="#0c1a12"/>' +
-      '<rect x="3" y="4" width="10" height="4" fill="#4ade80"/>' +
-      '<rect x="4" y="6" width="1" height="1" fill="#166534"/>' +
-      '<rect x="11" y="6" width="1" height="1" fill="#166534"/>' +
-      '<rect x="5" y="7" width="6" height="1" fill="#14532d"/>' +
-      '<rect x="4" y="8" width="8" height="3" fill="#22c55e"/>' +
-      '<rect x="6" y="8" width="4" height="3" fill="#bbf7d0"/>' +
-      '<rect x="3" y="10" width="2" height="2" fill="#4ade80"/>' +
-      '<rect x="11" y="10" width="2" height="2" fill="#4ade80"/>' +
-      '<rect x="1" y="12" width="14" height="2" fill="#1f4d3a"/>' +
-      '<rect x="2" y="14" width="2" height="2" fill="#133326"/>' +
-      '<rect x="12" y="14" width="2" height="2" fill="#133326"/>' +
-      '</svg>',
-
-    // OpenCode: Cozy golden pixel duck at a warm desk
-    opencode: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
-      '<rect x="6" y="2" width="4" height="1" fill="#fde047"/>' +
-      '<rect x="5" y="3" width="6" height="4" fill="#facc15"/>' +
-      '<rect x="6" y="4" width="1" height="1" fill="#18181b"/>' +
-      '<rect x="3" y="5" width="2" height="1" fill="#fb923c"/>' +
-      '<rect x="4" y="6" width="1" height="1" fill="#f97316"/>' +
-      '<rect x="4" y="7" width="8" height="4" fill="#eab308"/>' +
-      '<rect x="6" y="8" width="4" height="2" fill="#fde047"/>' +
-      '<rect x="12" y="8" width="1" height="2" fill="#facc15"/>' +
-      '<rect x="6" y="11" width="2" height="1" fill="#f97316"/>' +
-      '<rect x="9" y="11" width="2" height="1" fill="#f97316"/>' +
-      '<rect x="1" y="12" width="14" height="2" fill="#6b4423"/>' +
-      '<rect x="2" y="14" width="2" height="2" fill="#422915"/>' +
-      '<rect x="12" y="14" width="2" height="2" fill="#422915"/>' +
-      '</svg>',
-
-    // Gemini CLI: Sky-blue twin-star pixel fox
-    gemini: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
-      '<rect x="3" y="2" width="2" height="2" fill="#7aa2f7"/>' +
-      '<rect x="11" y="2" width="2" height="2" fill="#7aa2f7"/>' +
-      '<rect x="4" y="4" width="8" height="4" fill="#60a5fa"/>' +
-      '<rect x="5" y="5" width="1" height="1" fill="#ffffff"/>' +
-      '<rect x="10" y="5" width="1" height="1" fill="#ffffff"/>' +
-      '<rect x="6" y="7" width="4" height="1" fill="#dbeafe"/>' +
-      '<rect x="5" y="8" width="6" height="3" fill="#818cf8"/>' +
-      '<rect x="7" y="9" width="2" height="1" fill="#e0f2fe"/>' +
-      '<rect x="1" y="12" width="14" height="2" fill="#273966"/>' +
-      '<rect x="2" y="14" width="2" height="2" fill="#182442"/>' +
-      '<rect x="12" y="14" width="2" height="2" fill="#182442"/>' +
-      '</svg>',
-
     // Plain shell: Crisp retro pixel >_ CRT icon
     shell: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
       '<rect x="1" y="2" width="14" height="11" fill="#27222f"/>' +
@@ -3126,32 +3059,47 @@
       '<rect x="2" y="14" width="2" height="2" fill="#1a132c"/>' +
       '<rect x="12" y="14" width="2" height="2" fill="#1a132c"/>' +
       '</svg>',
+    // A generic agent (an agent whose addon has no icon.svg): a neutral pixel robot
+    agent: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
+      '<rect x="7" y="0" width="2" height="1" fill="#a1a1aa"/>' +
+      '<rect x="7" y="1" width="2" height="1" fill="#71717a"/>' +
+      '<rect x="3" y="2" width="10" height="8" fill="#3f3f46"/>' +
+      '<rect x="4" y="3" width="8" height="6" fill="#18181b"/>' +
+      '<rect x="5" y="5" width="2" height="2" fill="#e4e4e7"/>' +
+      '<rect x="9" y="5" width="2" height="2" fill="#e4e4e7"/>' +
+      '<rect x="6" y="8" width="4" height="1" fill="#71717a"/>' +
+      '<rect x="7" y="10" width="2" height="1" fill="#52525b"/>' +
+      '<rect x="4" y="11" width="8" height="4" fill="#3f3f46"/>' +
+      '<rect x="7" y="12" width="2" height="1" fill="#a1a1aa"/>' +
+      '<rect x="4" y="15" width="2" height="1" fill="#27272a"/>' +
+      '<rect x="10" y="15" width="2" height="1" fill="#27272a"/>' +
+      '</svg>',
   };
 
   // Mount crisp pixel-art Sysop mascot in header, mobile capsule & operator hero card
   if (sysopDotEl) sysopDotEl.innerHTML = PIXEL_SVG.sysop;
 
+  // the agent a tab runs: the live signals, then the swarmbox.agent label while the tab is not a bare login shell (its argv is longer
+  // than `bash -l`, or its foreground is a program that is no shell: an agent under `node`). Never the tab name.
   function tabAgentKind(t) {
     const b = tabAgentBadge(t);
     if (b) return b;
-    const lblAg = String((t && t.labels && t.labels['swarmbox.agent']) || '').toLowerCase();
-    if (AGENT_APP_LABELS[lblAg]) {
-      // Only trust the sticky swarmbox.agent label if the terminal was launched with an agent argv
-      // (not an unpinned tab replaced with a bare login shell by herdr-core --keep recovery).
+    const lblAg = resolveAgentName(t && t.labels && t.labels['swarmbox.agent']);
+    if (lblAg) {
       const argv = Array.isArray(t && t.argv) ? t.argv : [];
       const fg = String((t && t.foreground && t.foreground.name) || '').toLowerCase();
-      const bareShell = argv.length <= 2 && (!fg || SHELL_NAMES.has(fg));
-      if (!bareShell) return AGENT_APP_LABELS[lblAg];
-    }
-    const raw = String((t && t.name) || '').toLowerCase();
-    for (const key of Object.keys(AGENT_APP_LABELS)) {
-      if (raw === key || raw.startsWith(key + '-')) return AGENT_APP_LABELS[key];
+      const bareShell = argv.length <= 2 && (!fg || agentReg.shellNames.has(fg));
+      if (!bareShell) return lblAg;
     }
     return '';
   }
 
+  // the icon of a kind: shell, sysop, an agent (its own icon, else the generic one) or `agent` (the generic one)
   function pixelIconHtml(kind) {
-    return PIXEL_SVG[kind] || PIXEL_SVG.shell;
+    if (PIXEL_SVG[kind]) return PIXEL_SVG[kind];
+    const a = agentReg.byId.get(kind);
+    if (a) return a.icon_svg || PIXEL_SVG.agent;
+    return PIXEL_SVG.shell;
   }
 
   function makeMiniPixelIcon(kind) {
@@ -3913,12 +3861,12 @@
       btn.dataset.agent = ag.id;
       const ico = document.createElement('span');
       ico.className = 'agent-pick-ico';
-      ico.innerHTML = pixelIconHtml(PIXEL_SVG[ag.id] ? ag.id : 'agent');
+      ico.innerHTML = pixelIconHtml(isAgentId(ag.id) ? ag.id : 'agent');
       const info = document.createElement('span');
       info.className = 'agent-pick-info';
       const nm = document.createElement('span');
       nm.className = 'agent-pick-name';
-      nm.textContent = ag.name || AGENT_FULL_NAMES[ag.id] || ag.id;
+      nm.textContent = ag.name || agentLabel(ag.id);
       const cmd = document.createElement('span');
       cmd.className = 'agent-pick-cmd';
       cmd.textContent = ag.id;
@@ -5208,8 +5156,9 @@
         card.setAttribute('tabindex', '0');
         card.setAttribute('aria-selected', isActive ? 'true' : 'false');
         card.dataset.agent = agentKind;
+        applyAgentColor(card, agentKind);
         card.dataset.state = state;
-        card.title = `${label} — ${AGENT_FULL_NAMES[agentKind] || agentKind} (${state})`;
+        card.title = `${label} — ${agentLabel(agentKind)} (${state})`;
 
         const main = document.createElement('div');
         main.className = 'agent-card-main';
@@ -5319,7 +5268,7 @@
         footL.className = 'agent-card-foot-l';
         const footAg = document.createElement('span');
         footAg.className = 'agent-card-foot-ag';
-        footAg.textContent = `└ ${AGENT_FULL_NAMES[agentKind] || agentKind}`;
+        footAg.textContent = `└ ${agentLabel(agentKind)}`;
         footL.appendChild(footAg);
         if (wtBranch) {
           const wtSep = document.createElement('span');
@@ -5528,10 +5477,11 @@
       if (parkedCountEl) parkedCountEl.textContent = String(parkedPins.length);
       sidebarParkedEl.innerHTML = '';
       for (const pin of parkedPins) {
-        const pKind = pin.agent && PIXEL_SVG[pin.agent] ? pin.agent : 'shell';
+        const pKind = isAgentId(pin.agent) ? pin.agent : 'shell';
         const card = document.createElement('div');
         card.className = 'agent-card is-parked';
         card.dataset.agent = pKind;
+        applyAgentColor(card, pKind);
         card.title = pin.missing_cwd
           ? `Directory missing: ${pin.cwd}`
           : `Click to wake ${pin.title} (${pin.agent || 'shell'} · ${pin.resume || 'continue'})`;
@@ -5574,7 +5524,7 @@
         const foot = document.createElement('div');
         foot.className = 'agent-card-foot';
         const fl = document.createElement('span');
-        fl.textContent = `${AGENT_FULL_NAMES[pKind] || pKind} · ${pin.resume === 'fresh' ? 'fresh' : '--continue'}`;
+        fl.textContent = `${agentLabel(pKind)} · ${pin.resume === 'fresh' ? 'fresh' : '--continue'}`;
         const wake = document.createElement('span');
         wake.className = `wake-pill${pin.missing_cwd ? ' is-missing' : ''}`;
         wake.textContent = pin.missing_cwd ? 'Missing dir' : '▶ Wake';
@@ -5588,7 +5538,7 @@
 
     // Parked chips on mobile tab strip (1 tap wakes!)
     for (const pin of parkedPins) {
-      const pKind = pin.agent && PIXEL_SVG[pin.agent] ? pin.agent : 'shell';
+      const pKind = isAgentId(pin.agent) ? pin.agent : 'shell';
       const mp = document.createElement('button');
       mp.className = 'm-tab is-parked';
       const mpName = document.createElement('span');
@@ -5772,7 +5722,7 @@
         activeStatusEl.classList.toggle('hidden', !aSub);
       }
       if (termCtxIconEl) termCtxIconEl.innerHTML = pixelIconHtml(aKind);
-      if (termCtxTitleEl) termCtxTitleEl.textContent = aParts.pill ? `${aParts.title} (${AGENT_FULL_NAMES[aParts.pill] || aParts.pill})` : aParts.title;
+      if (termCtxTitleEl) termCtxTitleEl.textContent = aParts.pill ? `${aParts.title} (${agentLabel(aParts.pill)})` : aParts.title;
       const isLiveWt = Boolean(active.labels && active.labels['swarmbox.worktree'] && (!active.repo || active.repo.is_worktree));
       const aWtBranch = isLiveWt ? (active.labels['swarmbox.branch'] || 'worktree') : '';
       const aWtBase = (active.labels && active.labels['swarmbox.base']) || 'main';
@@ -5832,7 +5782,7 @@
           const list = document.createElement('div');
           list.className = 'stage-empty-list';
           for (const pin of parkedPins) {
-            const pKind = pin.agent && PIXEL_SVG[pin.agent] ? pin.agent : 'shell';
+            const pKind = isAgentId(pin.agent) ? pin.agent : 'shell';
             const row = document.createElement('button');
             row.type = 'button';
             row.className = 'stage-empty-pin';
@@ -5846,7 +5796,7 @@
             nm.textContent = pin.title || shortDisplayPath(pin.cwd) || 'pinned';
             const pt = document.createElement('span');
             pt.className = 'stage-empty-pin-path';
-            pt.textContent = `${AGENT_FULL_NAMES[pKind] || pKind} · ${shortDisplayPath(pin.cwd)}`;
+            pt.textContent = `${agentLabel(pKind)} · ${shortDisplayPath(pin.cwd)}`;
             meta.append(nm, pt);
             left.append(makeMiniPixelIcon(pKind), meta);
             const pill = document.createElement('span');
@@ -6311,7 +6261,7 @@
       const newS = String(ev.new_title || '');
       const known = ev.tab ? knownTabs[ev.tab] : null;
       const chipKind = (liveTab && (tabAgentKind(liveTab) || 'shell'))
-        || (ev.agent && PIXEL_SVG[ev.agent] ? ev.agent : '')
+        || (isAgentId(ev.agent) ? ev.agent : '')
         || (known && known.kind)
         || 'shell';
       const chipObj = {
@@ -6502,7 +6452,11 @@
       if (msg.repo_statuses && typeof msg.repo_statuses === 'object') repoStatuses = msg.repo_statuses;
       if (msg.worktree_prefs && typeof msg.worktree_prefs === 'object') worktreePrefs = msg.worktree_prefs;
       if (msg.session_prefs && typeof msg.session_prefs === 'object') sessionPrefs = msg.session_prefs;
-      if (Array.isArray(msg.installed_agents)) installedAgents = msg.installed_agents;
+      if (Array.isArray(msg.installed_agents)) {
+        installedAgents = msg.installed_agents;
+        // an agent addon installed since the page loaded: fetch the registry again (its name, colour, icon)
+        if (installedAgents.some((a) => a && a.id && !agentReg.byId.has(a.id))) refreshAgentRegistry().then(() => renderTabs(true));
+      }
       if (typeof msg.home === 'string' && msg.home) serverHomeDir = msg.home;
       if (Array.isArray(msg.terminals)) {
         terminals = msg.terminals;
@@ -7323,6 +7277,7 @@
       const r = await fetch('/api/config', { cache: 'no-store' });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       boxConfig = await r.json();
+      await refreshAgentRegistry();   // the Default Agent choices and the placeholders come from it
       if (boxConfig && boxConfig.session_prefs) sessionPrefs = boxConfig.session_prefs;
       if (boxConfig && Array.isArray(boxConfig.installed_agents)) installedAgents = boxConfig.installed_agents;
       if (settingsVersionEl && boxConfig.version) {
@@ -7684,13 +7639,8 @@
       makeHostSelectRow('box', 'AGENT', {
         title: 'Default Agent',
         desc: 'Agent launched automatically when running swarmbox.',
-        options: [
-          { value: '', label: 'None (interactive shell)' },
-          { value: 'claude', label: 'Claude Code (claude)' },
-          { value: 'codex', label: 'OpenAI Codex (codex)' },
-          { value: 'opencode', label: 'OpenCode (opencode)' },
-          { value: 'agy', label: 'Antigravity (agy)' },
-        ],
+        options: [{ value: '', label: 'None (interactive shell)' }]
+          .concat(agentReg.list.map((a) => ({ value: a.id, label: `${a.label || a.id} (${a.cmd || a.id})` }))),
       }),
       makeHostToggleRow('box', 'YOLO', {
         title: 'YOLO Mode',
@@ -7805,7 +7755,7 @@
       makeHostInputRow('box', 'WITH', {
         title: 'Provisioned Addons',
         desc: 'Comma-separated addon list installed automatically on startup.',
-        placeholder: 'sysop,voice,agy',
+        placeholder: ['sysop', 'voice'].concat(agentReg.list.slice(0, 1).map((a) => a.addon || a.id)).join(','),
       }),
       makeHostInputRow('box', 'BROWSER_URL', {
         title: 'Host Browser CDP URL',

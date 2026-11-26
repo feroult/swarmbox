@@ -1118,42 +1118,8 @@ html.swarmbox-ready #sb-boot {
   box-shadow: 0 0 0 1px var(--ac-border, var(--border-strong)), 0 8px 22px rgba(0, 0, 0, 0.32);
 }
 
-/* Per-agent color identity (harmonized across all 5 themes) */
-.agent-card[data-agent="agy"] {
-  --ac-border: rgba(167, 139, 250, 0.34);
-  --ac-strong: rgba(196, 181, 253, 0.72);
-  --ac-bg: rgba(109, 40, 217, 0.11);
-  --ac-scene: #151029;
-  --ac-accent: #c4b5fd;
-}
-.agent-card[data-agent="claude"] {
-  --ac-border: rgba(217, 119, 87, 0.38);
-  --ac-strong: rgba(244, 162, 127, 0.75);
-  --ac-bg: rgba(217, 119, 87, 0.1);
-  --ac-scene: #211412;
-  --ac-accent: #f4a27f;
-}
-.agent-card[data-agent="codex"] {
-  --ac-border: rgba(74, 222, 128, 0.34);
-  --ac-strong: rgba(110, 231, 183, 0.72);
-  --ac-bg: rgba(34, 197, 94, 0.08);
-  --ac-scene: #0f201a;
-  --ac-accent: #6ee7b7;
-}
-.agent-card[data-agent="opencode"] {
-  --ac-border: rgba(94, 181, 201, 0.36);
-  --ac-strong: rgba(138, 215, 230, 0.75);
-  --ac-bg: rgba(94, 181, 201, 0.09);
-  --ac-scene: #0e1c22;
-  --ac-accent: #8ad7e6;
-}
-.agent-card[data-agent="gemini"] {
-  --ac-border: rgba(122, 162, 247, 0.36);
-  --ac-strong: rgba(165, 196, 255, 0.75);
-  --ac-bg: rgba(122, 162, 247, 0.09);
-  --ac-scene: #111829;
-  --ac-accent: #93c5fd;
-}
+/* Per-agent color identity: set inline from each agent's COLOR (applyAgentColor in app.js, the registry); an agent without one keeps
+   the theme's colours through the var() fallbacks above */
 .agent-card[data-state="blocked"] {
   --ac-border: rgba(251, 191, 36, 0.55);
   --ac-strong: rgba(251, 191, 36, 0.9);

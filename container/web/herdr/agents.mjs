@@ -315,7 +315,25 @@ export function publicAgent(a) {
 }
 
 export function registryJson(env = process.env) {
-  return { schema: SCHEMA, default: defaultAgent(env), agents: listAgents(env).map(publicAgent) };
+  return { schema: SCHEMA, default: defaultAgent(env), shell_names: [...SHELL_NAMES].sort(), agents: listAgents(env).map(publicAgent) };
+}
+
+// browserRegistry(env): what the page receives (window.SWARMBOX_AGENTS, /api/agents): the registry with each agent's icon inlined as
+// icon_svg (its icon.svg, checked by swarmbox-addon validate: small, one <svg>, no script). An agent without one gets ''.
+export function browserRegistry(env = process.env) {
+  const reg = registryJson(env);
+  for (const a of reg.agents) {
+    const p = agentIconPath(a.id, env);
+    let svg = '';
+    if (p) {
+      try {
+        const txt = fs.readFileSync(p, 'utf8');
+        if (txt.length <= 16384 && /^\s*<svg[\s>]/.test(txt) && !/<script|\son[a-z]+\s*=|javascript:/i.test(txt)) svg = txt.trim();
+      } catch (_) {}
+    }
+    a.icon_svg = svg;
+  }
+  return reg;
 }
 
 // agentIconPath(id) -> the icon.svg of agent `id`, or '' when it has none.

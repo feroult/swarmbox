@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import { agentIconPath, browserRegistry, resolveAgent } from './agents.mjs';
 import {
   ADDON_BIN,
   HC_BIN,
@@ -1436,6 +1437,25 @@ export function createGateway(options = {}) {
           return sendJson(res, 415, { error: 'unsupported_image', message: 'supported formats: PNG, JPEG, WebP, GIF, BMP' });
         }
         return sendJson(res, 200, { ok: true, ...saved });
+      }
+
+      // The agent registry for the page (docs/agents-design.md): /agents.js sets window.SWARMBOX_AGENTS before app.js runs, so the first
+      // render already knows which tabs are agents; /api/agents refreshes it; /agents/<id>/icon.svg is an agent's icon as a file.
+      if (pathname === '/agents.js' && req.method === 'GET') {
+        const body = `window.SWARMBOX_AGENTS = ${JSON.stringify(browserRegistry()).replace(/</g, '\\u003c')};\n`;
+        res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(body);
+      }
+      if (pathname === '/api/agents' && req.method === 'GET') {
+        return sendJson(res, 200, browserRegistry());
+      }
+      {
+        const m = /^\/agents\/([a-z0-9][a-z0-9_-]*)\/icon\.svg$/.exec(pathname);
+        if (m && req.method === 'GET') {
+          const icon = resolveAgent(m[1]) === m[1] ? agentIconPath(m[1]) : '';
+          if (!icon) return sendJson(res, 404, { error: 'no_icon', message: 'no such agent or it has no icon' });
+          return serveFile(res, icon, false);
+        }
       }
 
       if (pathname === '/api/config' && req.method === 'GET') {

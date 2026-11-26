@@ -11,9 +11,17 @@
 (function (root) {
   'use strict';
 
-  // names that are ordinary words of a reply: only a backticked, numbered (1:shell) or id reference turns them into a tab
-  const COMMON = new Set(['shell', 'bash', 'sh', 'zsh', 'fish', 'claude', 'agy', 'codex', 'gemini', 'opencode', 'sysop', 'main', 'tab', 'aba',
+  // names that are ordinary words of a reply: only a backticked, numbered (1:shell) or id reference turns them into a tab. The names of
+  // the agents of the box (window.SWARMBOX_AGENTS, the registry the page loads first) are such words too.
+  const COMMON = new Set(['shell', 'bash', 'sh', 'zsh', 'fish', 'sysop', 'main', 'tab', 'aba',
     'term', 'terminal', 'test', 'tests', 'home', 'work', 'app', 'api', 'web']);
+
+  function isCommon(word) {
+    if (COMMON.has(word)) return true;
+    const reg = root && root.SWARMBOX_AGENTS;
+    const list = reg && Array.isArray(reg.agents) ? reg.agents : [];
+    return list.some((a) => a && (a.id === word || (Array.isArray(a.aliases) && a.aliases.includes(word))));
+  }
   const OK_RE = String.raw`\b\d+\s+(?:(?:unit\s+)?tests?\s+|testes?\s+)?(?:passed|passing|pass|passaram|passou|ok)\b`;
   const BAD_RE = String.raw`\b\d+\s+(?:tests?\s+|testes?\s+)?(?:failed|failing|failures?|falharam|falhou|falhas?|errors?|erros?)\b`;
 
@@ -42,7 +50,7 @@
     for (const t of Array.isArray(tabs) ? tabs : []) {
       for (const raw of [t && t.name].concat((t && t.aliases) || [])) {
         const n = String(raw || '');
-        if (n.length >= 3 && !COMMON.has(n.toLowerCase()) && !/^[t@]\d[a-z0-9]{0,3}$/i.test(n) && !seen.has(n)) {
+        if (n.length >= 3 && !isCommon(n.toLowerCase()) && !/^[t@]\d[a-z0-9]{0,3}$/i.test(n) && !seen.has(n)) {
           seen.add(n);
           names.push(n);
         }
