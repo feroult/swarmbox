@@ -101,8 +101,13 @@ vendor-chosen, and without it SwarmBox falls back to the Claude-only screen heur
 | 13 | `--continue` fallback hides any fast failure (auth, crash) by starting fresh | `swarmbox-pins.py:202`, `hc-client.mjs:1278` |
 | 14 | Dead code: `risk.AGENT_COMMANDS`, orphan comment `usermsgs.py:30`, the name-prefix loop after bug 1 | |
 
-To verify at runtime before fixing: 2 (effect on a sysop-opened agent), 13 for agy (`agy --continue`), `server.mjs:1711` (y/n vs Claude's
-numbered permission menu).
+**Step 0 status** (branch `fix/agent-bugs`): fixed 1, 2, 3, 4+5, 7, 8, 11, 12 and the dead code of 14, each with a regression test.
+Left on purpose: 6 needs to know in bash which addons are agents (step 2, from the registry, not another list); 9 and 10 are steps 4
+and 3; 13 is step 5 (`resume_argv`). Checked at runtime: bug 2 (`bash -lc "exec claude"` runs the program without the function's
+flags); agy 1.5.17 and OpenCode accept `--continue` (not a bug), but agy's help says "the most recent conversation" without "in this
+directory": whether a pin resumes the conversation of its own folder is open for step 5 (`RESUME_SCOPE`). Still to check by hand, with
+a real permission dialog: what the Web Studio's Allow/Cancel card types (`server.mjs` `answer`: `y`/`n`) does in Claude Code, agy
+and OpenCode.
 
 ## 3. Target design
 
