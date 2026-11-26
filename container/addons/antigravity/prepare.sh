@@ -39,12 +39,15 @@ sync_agy_mcp() {
     fi
     mkdir -p "$dir" || { echo "antigravity prepare: cannot create $dir" >&2; return 1; }
     t=$(mktemp "$dir/.plugin.json.XXXXXX") || return 1
-    jq -n '{name: "swarmbox", version: "1.0.0", description: "The MCP servers of the SwarmBox (written by SwarmBox at every start)"}' > "$t" \
-        && mv -f "$t" "$dir/plugin.json" || { rm -f "$t"; echo "antigravity prepare: cannot write $dir/plugin.json" >&2; return 1; }
+    if ! { jq -n '{name: "swarmbox", version: "1.0.0", description: "The MCP servers of the SwarmBox (written by SwarmBox at every start)"}' > "$t" \
+        && mv -f "$t" "$dir/plugin.json"; }; then
+        rm -f "$t"; echo "antigravity prepare: cannot write $dir/plugin.json" >&2; return 1
+    fi
     t=$(mktemp "$dir/.mcp_config.json.XXXXXX") || return 1
     chmod 600 "$t"
-    jq '{mcpServers: (.mcpServers // {})}' "$src" > "$t" \
-        && mv -f "$t" "$dir/mcp_config.json" || { rm -f "$t"; echo "antigravity prepare: cannot write $dir/mcp_config.json" >&2; return 1; }
+    if ! { jq '{mcpServers: (.mcpServers // {})}' "$src" > "$t" && mv -f "$t" "$dir/mcp_config.json"; }; then
+        rm -f "$t"; echo "antigravity prepare: cannot write $dir/mcp_config.json" >&2; return 1
+    fi
     return 0
 }
 mcp_rc=0

@@ -22,7 +22,7 @@ agent": `addon.conf` cannot say it, so everything that treats an agent different
 | `swarmbox-worktree.py:1084` `AGENT_CMDS`, `:1099-1116` | + claude-code, antigravity; aliases inline |
 | `sysop/policy.py:47`, `sysop/risk.py:17` (unused) | + aider |
 | `sysop/autoname.py:36-37` | generic titles, aliases |
-| `sysop/mcpserver.py:225`, `sysop/brain.py:54` | names in tool description and system prompt |
+| `sysop/mcpserver.py:225`, `sysop/brain.py:54` | names in the description of the `tab` action and in the system prompt |
 | `hc-client.mjs:35,38` `CONTINUE_AGENTS`, `ALLOWED_AGENT_CMDS` | + yolo |
 | `hc-client.mjs:1192` `AGENT_NAME_MAP`, `:1396` `KNOWN_CODING_AGENTS` | aliases; display names |
 | `server.mjs:570`, `app.js:1121` | name regex `^(claude\|agy\|antigravity\|opencode\|gemini\|codex)\b` |
@@ -240,7 +240,7 @@ data), the statusline renderer, the seeding helper, `swarmbox-mcp` (the box's MC
 | TUI detection (`server.mjs`) | the gateway tracks the alternate screen (`\e[?1049h/l`, `\e[?47h`) and mouse mode in the PTY stream it already scans for DEC 2026; `isTui` = alt screen or mouse mode or 7501 reported; registry timings override the defaults. The name regex and the client's `?tui=1` hint go (the server is the one source). |
 | Client (`app.js`, `app.css`, `tabrefs.js`) | names, icons, colours (CSS variables set inline, one generic `.agent-card` rule), settings dropdown, `COMMON` words, from `/api/agents`; membership from the registry, never from the icon; generic agent icon. `PIXEL_SVG` keeps only shell and sysop. |
 | State and screen (`swarmbox-tabs.py`) | `agent_state` = 7501 → `screen_adapter(agent)` → `unknown`. The Claude heuristics move to `addons/claude/agent/screen.py` (interface in 3.2); an agent without `screen.py` gets `unknown`. `_verify` uses the 7501 transition to `working` when reported, else the adapter, else reports `unverified` instead of success. Reserved prefixes from the registry. |
-| Sysop | `policy.tab_kind`, risk, autoname generic titles, tool description and system prompt from the registry; namer and brain from the drivers' templates (first installed agent that has one, or the configured one); history via the driver's `history.py` or `HISTORY=jsonl:`; secrets from the drivers' `agent.conf`. Policy for an agent in state `unknown`: treat a submit as possibly answering a dialog (needs `--queue`/approval), the safe side. |
+| Sysop | `policy.tab_kind`, risk, autoname generic titles, the action descriptions and the system prompt from the registry; namer and brain from the drivers' templates (first installed agent that has one, or the configured one); history via the driver's `history.py` or `HISTORY=jsonl:`; secrets from the drivers' `agent.conf`. Policy for an agent in state `unknown`: treat a submit as possibly answering a dialog (needs `--queue`/approval), the safe side. |
 | MCP | canonical list moves to `<workspace>/.local/share/swarmbox/mcp-servers.json` (written by `swarmbox-mcp`); `~/.claude/mcp-servers.json` becomes what the claude addon's `mcp.sh` writes (kept as the same content for compatibility). Each agent's `mcp.sh` writes its format: Claude (file), OpenCode (`.mcp` in its config), agy (`mcpServers` in its settings). |
 | Settings seeding, statusline | shared `seed_json_defaults FILE DEFAULTS STAMP` in the lib; one statusline renderer, per-agent field extractors. |
 | Host | `sysop.brain` validated against the presets the registry can provide (`claude` stays a valid name). |

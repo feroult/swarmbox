@@ -67,6 +67,14 @@ OLD_NAME_ALLOW = [
      "the subcommands of the Antigravity CLI program (`agy plugin`, `agy plugins`), which the agy function never gives the flag"),
     ("container/addons/opencode/shell.sh", r"\| plugin \|",
      "a subcommand of the OpenCode program"),
+    ("container/addons/antigravity/prepare.sh", r"(?i)plugins?",
+     "the plugins of the Antigravity CLI: the addon gives agy the MCP servers of the box as a plugin of SwarmBox's own"),
+    ("tests/fast/test_addon_antigravity.py", r"(?i)plugins?",
+     "the test of that Antigravity plugin (its files plugin.json and mcp_config.json)"),
+    ("docs/design.md", r"Antigravity plugin|config/plugins/|agy plugin disable",
+     "the Antigravity plugin that carries the MCP servers of the box to agy"),
+    ("CHANGELOG.md", r"Antigravity plugin|config/plugins/|agy plugin (list|disable)",
+     "the Antigravity plugin that carries the MCP servers of the box to agy"),
 ]
 
 # ---- 2. the word "tool" / "tools" ------------------------------------------------------------------------------------------------------
