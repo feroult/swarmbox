@@ -406,6 +406,7 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `sysop.model` | `auto` | the model of the brain (`auto`: the `MODEL` its agent declares, `sonnet` for Claude Code); `SWARMBOX_SYSOP_MODEL` |
 | `sysop.autonomy` | `full-auto` | `full-auto`, `auto`, `confirm-risky` or `confirm-all`; `SWARMBOX_SYSOP_AUTONOMY` |
 | `sysop.autoname` | `1` | `1` enables event-driven automatic tab naming via `tab.events`: titles of at most 18 characters from the user's requests, revised with a per-tab backoff, never over a manual rename ([pins-design.md](pins-design.md) 4.3); `SWARMBOX_SYSOP_AUTONAME` |
+| `sysop.autocontext` | `1` | `1` writes a short digest of each repository an agent works in, once per commit, and an agent that declares `CONTEXT_ARGS` starts its sessions on that commit with it ([sysop.md](sysop.md)); `0` writes none and removes them at the next start; `SWARMBOX_SYSOP_AUTOCONTEXT` |
 | `sysop.countdown` | `4` | seconds an action waits for a veto, 0 to 30; `SWARMBOX_SYSOP_COUNTDOWN` |
 | `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100; `SWARMBOX_SYSOP_MAX_STEPS` |
 | `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600; `SWARMBOX_SYSOP_MAX_SECONDS` |

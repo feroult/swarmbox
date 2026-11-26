@@ -7869,6 +7869,10 @@
         title: 'Automatic Tab Naming',
         desc: 'Name agent tabs after your requests in 1–3 short words, renaming as the goal gets clearer (never overwrites manual renames).',
       }),
+      makeHostToggleRow('sysop', 'sysop.autocontext', {
+        title: 'Repository Context',
+        desc: 'Write a short orientation of each repository an agent works in, and start new agent sessions with it, so a new worktree needs no "understand the repo" (off removes them).',
+      }),
       makeHostInputRow('sysop', 'sysop.brain', {
         title: 'Operator Brain',
         desc: 'CLI brain used to plan actions: auto (the brain an agent of the box declares), an agent name, or a command with {mcp_config}.',

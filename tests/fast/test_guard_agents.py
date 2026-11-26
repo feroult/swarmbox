@@ -43,6 +43,8 @@ ALLOW = [
     ("container/scripts/swarmbox-addon.sh", r"\(for example claude\)", "an example in the usage of swarmbox-addon"),
     ("container/scripts/swarmbox-install.sh", r"for example claude,gcloud", "an example in the usage of the installer"),
     ("container/addons/clasp/install.sh", r"measured in 4b\.7: opencode wrote", "a measurement of what an npm postinstall writes, not agent logic"),
+    ("container/addons/sysop/lib/swarmbox_sysop/digest.py", r'"claude\.md", "agents\.md"',
+     "the file names a repository uses for its own agent instructions (CLAUDE.md, AGENTS.md), read as docs of the repository, not agent logic"),
 ]
 
 

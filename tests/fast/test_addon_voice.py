@@ -87,7 +87,9 @@ def write(path, text, mode=0o755):
 class ManifestTests(unittest.TestCase):
     def test_manifest_passes_the_real_validator(self):
         p = subprocess.run(["bash", ADDON_SH, "validate", os.path.join(ROOT, "container", "addons")], capture_output=True, text=True,
-                           env={"PATH": os.environ["PATH"], "HOME": tempfile.gettempdir()}, timeout=60)
+                           env={"PATH": os.environ["PATH"], "HOME": tempfile.gettempdir(),
+                                "SWARMBOX_TEST_LIB": os.path.join(ROOT, "container", "scripts")},   # the repository's registry, not a box's
+                           timeout=60)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn("image/voice  (VERSION=", p.stdout)
 

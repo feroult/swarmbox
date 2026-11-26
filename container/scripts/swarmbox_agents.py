@@ -64,6 +64,7 @@ KEYS = {
     "COLOR": "color",
     "YOLO_ARGS": "words",
     "MCP_ARGS": "words",
+    "CONTEXT_ARGS": "words",
     "PASSTHROUGH": "words",
     "PRINT_FLAGS": "words",
     "RESUME_ARGS": "words",
@@ -79,9 +80,11 @@ KEYS = {
     "HISTORY_FIELDS": "words",
     "NAMER": "template",
     "BRAIN": "template",
+    "DIGEST": "template",
     "LOGIN_HINT": "str",
     "MODEL": "word",
     "NAMER_MODEL": "word",
+    "DIGEST_MODEL": "word",
     "SECRET_ENV": "words",
     "SECRET_FILES": "words",
     "SETTINGS_FILE": "path",
@@ -93,9 +96,14 @@ KEYS["TERM_COPY_GUTTER_GLYPHS"] = "str"
 KEYS["TERM_IMAGE_PASTE"] = "enum:path|none"
 
 PLACEHOLDERS = {"NAMER": ("prompt", "system_prompt", "model"),
+                "DIGEST": ("prompt", "system_prompt", "model"),
+                "CONTEXT_ARGS": ("context_file",),
                 "BRAIN": ("mcp_config", "model", "system_prompt", "system_prompt_file", "max_turns", "goal_dir"),
                 "MCP_ARGS": ("mcp_file", "home")}
 # {mcp_file} in MCP_ARGS: the box's list of MCP servers, $SB_DATA_DIR/mcp-servers.json (swarmbox-mcp)
+# {context_file} in CONTEXT_ARGS: the repository digest of the commit the agent starts on (CONTEXT_DIR/<commit>.md, written by the
+# sysop's autocontext); the words are passed only when that file exists
+CONTEXT_DIR_REL = os.path.join("sysop", "digests")     # under SB_STATE_DIR
 HOOKS = {"screen": "screen.py", "history": "history.py", "shell": "shell.sh", "mcp": "mcp.sh", "statusline": "statusline.sh",
          "terminal": "terminal.mjs", "icon": "icon.svg", "settings": "settings.json"}
 HOOK_FUNCS = {"screen.py": ("state",), "history.py": ("messages",)}
@@ -235,6 +243,7 @@ def _agent_from(dirpath, level, conf, values, env):
         "installed": _installed(conf["NAME"], conf, cmd, env),
         "yolo_args": _words(values.get("YOLO_ARGS")),
         "mcp_args": _words(values.get("MCP_ARGS")),
+        "context_args": _words(values.get("CONTEXT_ARGS")),
         "passthrough": _words(values.get("PASSTHROUGH")),
         "print_flags": _words(values.get("PRINT_FLAGS")),
         "resume": {"args": _words(values.get("RESUME_ARGS")), "fast_fail_s": _int(values.get("RESUME_FAST_FAIL_S"), 4),
@@ -246,9 +255,11 @@ def _agent_from(dirpath, level, conf, values, env):
                     "fields": _words(values.get("HISTORY_FIELDS"))},
         "namer": values.get("NAMER", ""),
         "brain": values.get("BRAIN", ""),
+        "digest": values.get("DIGEST", ""),
         "login_hint": values.get("LOGIN_HINT", ""),
         "model": values.get("MODEL", ""),
         "namer_model": values.get("NAMER_MODEL", ""),
+        "digest_model": values.get("DIGEST_MODEL", ""),
         "secrets": {"env": _words(values.get("SECRET_ENV")), "files": _words(values.get("SECRET_FILES"))},
         "settings_file": values.get("SETTINGS_FILE", ""),
         "term": term,
@@ -644,21 +655,29 @@ def seed_settings(addon_dir, env=None):
 
 FUNC_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 
-# _sb_agent_run ID CMD PASSTHROUGH PRINT_FLAGS NYOLO YOLO... NMCP MCP... ARGS...: how every generated agent function starts its agent.
-# A first word of PASSTHROUGH (a subcommand that refuses the flags) runs the program untouched; a word of PRINT_FLAGS (a one-shot call,
-# not a session) skips the worktree guard; then the program runs with its auto-approve words (unless SWARMBOX_YOLO=0) and the words that
-# give it the box's MCP servers (always: they are not a permission). `command CMD` reaches the program (or its shim), not the function.
+# _sb_agent_run ID CMD PASSTHROUGH PRINT_FLAGS NYOLO YOLO... NMCP MCP... NCTX CTX... ARGS...: how every generated agent function starts
+# its agent. A first word of PASSTHROUGH (a subcommand that refuses the flags) runs the program untouched; a word of PRINT_FLAGS (a
+# one-shot call, not a session) skips the worktree guard and the context; then the program runs with its auto-approve words (unless
+# SWARMBOX_YOLO=0), the words that give it the box's MCP servers (always: they are not a permission) and, for a session started in a Git
+# repository whose commit has a digest (the sysop's autocontext writes $SB_STATE_DIR/sysop/digests/<commit>.md), its CONTEXT_ARGS with
+# {context_file} replaced by that file. No file, no words: the agent starts as it would without the sysop. The commit is read after the
+# guard, which may have moved the shell into a new worktree. `command CMD` reaches the program (or its shim), not the function.
 # Written for bash and zsh.
 SHELL_HELPER = r"""_sb_agent_run() {
-    local _sb_id=$1 _sb_cmd=$2 _sb_pass=" $3 " _sb_print=" $4 " _sb_n=$5 _sb_a _sb_guard=1
+    local _sb_id=$1 _sb_cmd=$2 _sb_pass=" $3 " _sb_print=" $4 " _sb_n=$5 _sb_a _sb_guard=1 _sb_head _sb_file _sb_ph='{context_file}'
     shift 5
-    local -a _sb_yolo _sb_mcp
+    local -a _sb_yolo _sb_mcp _sb_ctx _sb_ctx_on
     _sb_yolo=()
     _sb_mcp=()
+    _sb_ctx=()
+    _sb_ctx_on=()
     while [ "$_sb_n" -gt 0 ]; do _sb_yolo+=("$1"); shift; _sb_n=$((_sb_n - 1)); done
     _sb_n=$1
     shift
     while [ "$_sb_n" -gt 0 ]; do _sb_mcp+=("$1"); shift; _sb_n=$((_sb_n - 1)); done
+    _sb_n=$1
+    shift
+    while [ "$_sb_n" -gt 0 ]; do _sb_ctx+=("$1"); shift; _sb_n=$((_sb_n - 1)); done
     if [ -n "${1:-}" ]; then
         case "$_sb_pass" in *" $1 "*) command "$_sb_cmd" "$@"; return ;; esac
     fi
@@ -669,10 +688,22 @@ SHELL_HELPER = r"""_sb_agent_run() {
     if [ "$_sb_guard" = 1 ] && type _sb_worktree_guard >/dev/null 2>&1; then
         _sb_worktree_guard "$_sb_id" "$@" || return $?
     fi
+    if [ "$_sb_guard" = 1 ] && [ "${#_sb_ctx[@]}" -gt 0 ]; then
+        _sb_head=$(command git rev-parse --verify -q HEAD 2>/dev/null) || _sb_head=
+        case "$_sb_head" in
+            ""|*[!0-9a-f]*) ;;
+            *)
+                _sb_file="${SB_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/swarmbox}/sysop/digests/$_sb_head.md"
+                if [ -f "$_sb_file" ] && [ -s "$_sb_file" ]; then
+                    for _sb_a in "${_sb_ctx[@]}"; do _sb_ctx_on+=("${_sb_a//"$_sb_ph"/$_sb_file}"); done
+                fi
+                ;;
+        esac
+    fi
     if [ "${SWARMBOX_YOLO:-1}" = 0 ]; then
-        command "$_sb_cmd" "${_sb_mcp[@]}" "$@"
+        command "$_sb_cmd" "${_sb_mcp[@]}" "${_sb_ctx_on[@]}" "$@"
     else
-        command "$_sb_cmd" "${_sb_yolo[@]}" "${_sb_mcp[@]}" "$@"
+        command "$_sb_cmd" "${_sb_yolo[@]}" "${_sb_mcp[@]}" "${_sb_ctx_on[@]}" "$@"
     fi
 }
 """
@@ -695,6 +726,7 @@ def shell_functions(env=None):
             continue
         words = [shlex.quote(a["id"]), shlex.quote(a["cmd"]), shlex.quote(" ".join(a["passthrough"])), shlex.quote(" ".join(a["print_flags"])),
                  str(len(a["yolo_args"]))] + [_sh_word(w) for w in a["yolo_args"]] + [str(len(a["mcp_args"]))] + [_sh_word(w) for w in a["mcp_args"]]
+        words += [str(len(a["context_args"]))] + [shlex.quote(w) for w in a["context_args"]]
         out.append("%s() {\n    _sb_agent_run %s \"$@\"\n}\n" % (a["cmd"], " ".join(words)))
     if not out:
         return ""

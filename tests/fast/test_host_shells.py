@@ -81,7 +81,7 @@ class ShellMatrix(unittest.TestCase):
         p = run("config", "list")
         ok(p)
         self.assertIn("WITH=claude,gcloud\tfile\n", p.stdout)
-        self.assertEqual(len(p.stdout.splitlines()), 30)
+        self.assertEqual(len(p.stdout.splitlines()), 31)
         ok(run("config", "set", "PORTS", "99999"), "", 2)
         ok(run("config", "set", "PORTS", "3000,127.0.0.1:8080:80"))
         ok(run("env", "add", "ANTHROPIC_API_KEY"))

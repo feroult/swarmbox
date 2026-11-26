@@ -49,6 +49,7 @@ KEYS = {
     "sysop.model": ("auto", "haiku", "claude-sonnet-4-5", ["a b", "-x", "a;b", "$(x)"]),
     "sysop.autonomy": ("full-auto", "auto", "confirm-all", ["yes", "Auto", "confirm", "full", "fullauto"]),
     "sysop.autoname": ("1", "0", "1", ["yes", "2", "true"]),
+    "sysop.autocontext": ("1", "0", "1", ["yes", "2", "true"]),
     "sysop.countdown": ("4", "0", "30", ["31", "-1", "1.5", "abc", "04", "+3"]),
     "sysop.max_steps": ("20", "1", "100", ["0", "101", "x", "010"]),
     "sysop.max_seconds": ("300", "10", "3600", ["9", "3601", "1e3", "0"]),

@@ -14,10 +14,10 @@ import swarmbox_agents as registry  # noqa: E402,F401
 
 
 def pick(role, env=None):
-    """The agent that serves the sysop as `role` ("brain": its BRAIN, "namer": its NAMER): the default agent of the box when it declares
+    """The agent that serves the sysop as `role` ("brain": its BRAIN, "namer": its NAMER, "digest": its DIGEST): the default agent of the box when it declares
     one, else the first installed agent that does, else the first whose command is on PATH; None when no agent declares one."""
     env = os.environ if env is None else env
-    field = {"brain": "brain", "namer": "namer"}[role]
+    field = {"brain": "brain", "namer": "namer", "digest": "digest"}[role]
     cands = [a for a in registry.agents(env) if a[field]]
     if not cands:
         return None
