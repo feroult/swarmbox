@@ -325,7 +325,7 @@ Details and the end-to-end check list: [cloudflare.md](cloudflare.md).
 ## 8. Addons and shims
 
 An addon is a directory `container/addons/<name>/` with `addon.conf` (manifest), `install.sh`, and optionally `shell.sh` (sourced by every interactive shell: aliases and functions),
-`prepare.sh` (run by `serve` at every start to render files into `box:/tmp/swarmbox`) and data files. Shipped: agents `claude`, `antigravity`, `opencode`; addons `gcloud`
+`prepare.sh` (run by `serve` at every start to render files into `box:/tmp/swarmbox`), `agent/` (an agent addon: below) and data files. Shipped: agents `claude`, `antigravity`, `opencode`; addons `gcloud`
 (with `gsutil`, `bq`), `clasp`, `go`, `poetry`, `voice` (an input: whisper.cpp, a multilingual Whisper model and a service that publishes what you say as a goal on the bus; `docs/voice.md`), `sysop` (the agent that operates the tabs from a goal; `docs/sysop.md`).
 
 Manifest keys: `SCHEMA`, `NAME`, `DESCRIPTION`, `VERSION` and `COMMANDS` (mandatory), and `UPDATE` (`managed` or `self`) with `UPDATE_CMD`, `PORTS` and `SHA256_<arch>` where the vendor's checksum is recorded (optional).
@@ -347,16 +347,31 @@ back. A once-a-day, online-only notice says when a newer version exists (`SWARMB
 installer (npm under a prefix cannot update itself, measured), then it updates itself; `update` runs `claude update`. This costs reproducibility and runs new vendor code in the box.
 gcloud's checksum is recorded by `dev/record-checksums.sh`. `WITH_ADDONS` is a build argument of the Dockerfile that bakes addons into the image with the same installer.
 
-**Agents.** `bashrc.sh` reads no manifest and builds no alias: it sources the `shell.sh` of every installed addon. Each agent addon ships one that starts the agent in auto-approve mode. `claude` defines a function that adds
-`--dangerously-skip-permissions` and `--mcp-config $HOME/.claude/mcp-servers.json` only for the interactive prompt form, so `claude update` and `claude mcp ...` do not receive them;
-`opencode` defines a function that adds `--auto` only for `opencode` and `opencode run` (its flag is refused before other subcommands). `command claude` bypasses them and `SWARMBOX_YOLO=0` turns auto-approve off.
-`yolo` runs the default agent, `$SWARMBOX_AGENT`, whose alias or function already starts it in auto-approve mode. The host records it when the box is created: the setting `AGENT`, else the first item of `WITH`;
-with neither, `yolo` says that there is no default agent, and when the default is not a command (the first item of `WITH` may be an addon that is not an agent) it says that too. OpenCode's local-LLM setup is `prepare.sh` rendering `box:/tmp/swarmbox/opencode.json` from `LOCAL_LLM_*` variables.
+**Agents.** An addon is a coding agent if and only if it has `agent/agent.conf` ([agents-design.md](agents-design.md)): its id, command and
+other names (the `app` it reports with OSC 7501, its addon name), label and colour, how it starts (`YOLO_ARGS`, `MCP_ARGS`, `PASSTHROUGH`
+subcommands, `PRINT_FLAGS`), how it resumes (`RESUME_ARGS`, `RESUME_FAST_FAIL_S`), its input rules (`RESERVED_PREFIXES`, the `ANSWER_*` keys of
+its dialogs), its terminal profile (`TERM_*`), its secrets, where its prompts are kept, and the sysop's `BRAIN` and `NAMER` templates. Next to
+it, optional files: `icon.svg`, `settings.json` (seeded once into its `SETTINGS_FILE`), `mcp.sh` (the box's MCP servers in its own format),
+`screen.py` (what its screen says when it reports no state), `history.py`. The registry reads these files without running them: one library per
+language, `swarmbox_agents.py` (`swarmbox-agents` on the command line; `serve` writes `/tmp/swarmbox/agents.json`) and
+`container/web/herdr/agents.mjs`, held to the same test vectors; `swarmbox-addon validate` checks the folder. Nothing else in the box names an
+agent (tests/fast/test_guard_agents.py). Shipped: `claude`, `antigravity` (command `agy`), `opencode`.
 
-**MCP.** `container/mcp/<name>/config.json` describes an MCP server (`command`, `args`, `env`, `browserUrlArgs`). `swarmbox-mcp generate` writes `<workspace>/.claude/mcp-servers.json`;
+`bashrc.sh` reads no manifest and builds no alias: it sources the `shell.sh` of every installed addon, then evaluates `swarmbox-agents sh`, one
+function per agent whose addon has no `shell.sh` of its own: the declared words go only to the interactive and print forms (a `PASSTHROUGH`
+subcommand such as `claude update` receives none), the auto-approve words unless `SWARMBOX_YOLO=0`, the MCP words always, and the worktree guard
+except for a `PRINT_FLAGS` call. OpenCode keeps its own `shell.sh` (`--auto` only for `opencode` and `opencode run`). `command claude` bypasses
+the function. `yolo` runs the default agent of the box: `AGENT` when it names an agent, else the first agent of `WITH`, else the first installed
+agent (the host passes `AGENT` and `WITH` as they are; the box resolves them). With none, `yolo` says that there is no default agent.
+OpenCode's local-LLM setup is `prepare.sh` rendering `box:/tmp/swarmbox/opencode.json` from `LOCAL_LLM_*` variables.
+
+**MCP.** `container/mcp/<name>/config.json` describes an MCP server (`command`, `args`, `env`, `browserUrlArgs`). `swarmbox-mcp generate` writes the box's list,
+`<workspace>/.local/share/swarmbox/mcp-servers.json`, which belongs to no agent;
 a user file `<workspace>/.config/swarmbox/mcp/<name>/config.json` can override or set `{"enabled": false}`. The only shipped server is `chrome-devtools-mcp`, pinned and installed in the
-image (never `npx`), with Chromium. When `BROWSER_URL` is set it attaches to a remote Chrome instead. OpenCode gets a mirrored copy; agy gets them as an
-Antigravity plugin of SwarmBox's own, `~/.gemini/config/plugins/swarmbox/` (rewritten by its `prepare.sh` at every start; `agy plugin disable swarmbox` turns it off).
+image (never `npx`), with Chromium. When `BROWSER_URL` is set it attaches to a remote Chrome instead. Each agent addon gives the list to its
+agent with its `agent/mcp.sh`, which `swarmbox-addon prepare` runs at every start: Claude Code gets a copy in `<workspace>/.claude/mcp-servers.json`
+(the file its function passes with `--mcp-config`), agy gets them as an Antigravity plugin of SwarmBox's own, `~/.gemini/config/plugins/swarmbox/`
+(`agy plugin disable swarmbox` turns it off), and OpenCode's `prepare.sh` mirrors them into its configuration.
 
 Adding an addon: `swarmbox addon new NAME` (an `addon.conf` and `install.sh` skeleton; `--repo` or `--dir`), then `swarmbox addon validate`. [../CONTRIBUTING.md](../CONTRIBUTING.md) lists how pins are bumped.
 
@@ -387,8 +402,8 @@ Precedence: environment `SWARMBOX_<KEY>`, then the file, then the default. The f
 | `voice.stt.vocabulary` | empty | words given to Whisper as its initial prompt (at most 500 characters); `SWARMBOX_VOICE_STT_VOCABULARY` |
 | `voice.web` | `1` | `0` keeps the voice front off: the web terminal port then goes straight to the Web Studio, with no microphone; `SWARMBOX_VOICE_WEB` |
 | `voice.topic` | `goal` | the bus topic the voice addon publishes its goals to (a topic name: `[a-z0-9][a-z0-9._-]{0,62}`); passed as `SWARMBOX_VOICE_TOPIC` |
-| `sysop.brain` | `claude` | the brain of the `sysop` addon: a preset name or a command template (no line break; [sysop.md](sysop.md)); `SWARMBOX_SYSOP_BRAIN` |
-| `sysop.model` | `sonnet` | the model the `claude` preset asks for; `SWARMBOX_SYSOP_MODEL` |
+| `sysop.brain` | `auto` | the brain of the `sysop` addon: `auto` (the one an agent of the box declares), an agent's name (its preset) or a command template (no line break; [sysop.md](sysop.md)); `SWARMBOX_SYSOP_BRAIN` |
+| `sysop.model` | `auto` | the model of the brain (`auto`: the `MODEL` its agent declares, `sonnet` for Claude Code); `SWARMBOX_SYSOP_MODEL` |
 | `sysop.autonomy` | `full-auto` | `full-auto`, `auto`, `confirm-risky` or `confirm-all`; `SWARMBOX_SYSOP_AUTONOMY` |
 | `sysop.autoname` | `1` | `1` enables event-driven automatic tab naming via `tab.events`: titles of at most 18 characters from the user's requests, revised with a per-tab backoff, never over a manual rename ([pins-design.md](pins-design.md) 4.3); `SWARMBOX_SYSOP_AUTONAME` |
 | `sysop.countdown` | `4` | seconds an action waits for a veto, 0 to 30; `SWARMBOX_SYSOP_COUNTDOWN` |

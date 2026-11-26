@@ -260,7 +260,7 @@ def restore_autostart_pins(hc_bin=None, run_dir=None, env=None, on_boot=False):
     - Spawns pins with autostart=true that have no live terminal.
     - For autostart=true agent pins whose terminal was resurrected by `herdr-core --keep` as a
       bare recovery shell after `swarmbox reset` / restart, replaces the empty shell with the
-      configured agent command (e.g. `agy --continue`).
+      configured agent command (its resume form, e.g. `--continue`).
     - When on_boot=True, parks (closes) bare `--keep` recovery shells belonging to autostart=false
       pins so they appear cleanly under PINNED · PARKED instead of as empty shells.
     - Never fails boot on missing cwd and never touches unpinned terminals.

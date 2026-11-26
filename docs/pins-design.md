@@ -7,7 +7,7 @@ Status: **implemented**. Pins are automatic: every agent session is pinned while
 1. **Agent sessions survive restarts and resets:** every open agent tab is pinned automatically in the workspace (`~/.config/swarmbox/pins.json`), surviving `swarmbox stop`, host reboots, `swarmbox reset`, and image updates.
 2. **Live auto-follow:** a pinned tab tracks the user's current working directory (`cwd`) and active agent as they work, without requiring manual bookmark updates.
 3. **Boot mode:** one global setting (**Settings → SwarmBox**, `boot_mode` in `~/.config/swarmbox/session-prefs.json`) decides whether pinned sessions start on boot (`autostart`, the default) or wait as `PARKED` cards to wake in one click (`parked`). Changing it rewrites `autostart` on every pin.
-4. **Resume where you left off (`continue` by default):** waking a pinned agent tries `--continue` (`claude`, `agy`, `opencode`) in its saved `cwd`, falling back cleanly to a fresh session when no prior conversation exists in that folder.
+4. **Resume where you left off (`continue` by default):** waking a pinned agent tries its resume form (`RESUME_ARGS` of its `agent.conf`: `--continue` for `claude`, `agy`, `opencode`) in its saved `cwd`, falling back cleanly to a fresh session when no prior conversation exists in that folder.
 5. **Zero-friction session naming:** no mandatory modal when creating a tab. Tabs default to the folder name, can be renamed inline at any time (`title_source=user`), and when the `sysop` addon is installed, an event-driven Sysop auto-namer gives unnamed tabs concise semantic titles (`title_source=auto`) and logs the rename in the Sysop visual feed without consuming conversation-memory slots.
 
 ---
@@ -23,7 +23,7 @@ Status: **implemented**. Pins are automatic: every agent session is pinned while
 | `swarmbox.title` | `Fix OAuth Login` | Human-readable display title shown in Web Studio, Cockpit, and `swarmbox-tabs list` |
 | `swarmbox.title_source` | `auto` \| `user` | `user` locks the title against automatic renames |
 | `swarmbox.pin_id` | `p_8f3a1c` | Links the live terminal to a record in `pins.json` |
-| `swarmbox.agent` | `claude` \| `agy` \| `opencode` \| `gemini` \| `shell` | Agent kind associated with the session |
+| `swarmbox.agent` | an agent id of the registry (`claude` \| `agy` \| `opencode` ...) \| `shell` | Agent kind associated with the session |
 
 *(Reserved for future Git worktree support: `swarmbox.repo`, `swarmbox.worktree`, `swarmbox.branch`.)*
 
@@ -73,7 +73,7 @@ Rules:
 - **Live auto-follow:** while a pinned tab is alive, the gateway observes `foreground.cwd` and active agent during terminal refreshes:
   - When `cwd` changes to an existing directory different from `pin.cwd`, `pins.json` is updated (debounced / write-on-change only).
   - When a known agent starts inside a pinned tab (e.g. starting `agy` in a pinned shell, or switching agents), `pin.agent` updates to that agent.
-  - **Downgrade guard:** exiting an agent back to `bash` does **not** overwrite an agent pin (`claude`, `agy`, `opencode`, `gemini`) with `shell`, so closing an agent before stopping the box never demotes the pin.
+  - **Downgrade guard:** exiting an agent back to `bash` does **not** overwrite an agent pin with `shell`, so closing an agent before stopping the box never demotes the pin.
   - Renaming a pinned tab immediately updates both `swarmbox.title` / `swarmbox.title_source` and `pins.json`.
 
 ### 3.2 Closing, Parking and Removing
@@ -90,7 +90,7 @@ Rules:
   - If a live terminal with `swarmbox.pin_id == id` already exists, focuses it instead of duplicating.
   - Spawns a `herdr-core` terminal (`keep: true`, `no_parent: true`) in `pin.cwd` with the pin's labels (`swarmbox.pin_id`, `swarmbox.title`, `swarmbox.title_source`, `swarmbox.agent`).
 - **Safe `--continue` wrapper (`resume: "continue"`):**
-  - Agents with native continue support (`claude`, `agy`, `opencode`) launch via a small shell wrapper that records start time, runs `<agent> --continue`, and **only** falls back to fresh `<agent>` if `--continue` exits non-zero almost immediately (e.g. `< 3s`, meaning no prior conversation exists in that directory).
+  - Agents that declare `RESUME_ARGS` (`claude`, `agy`, `opencode`) launch via a small shell wrapper that records start time, runs `<agent> --continue`, and **only** falls back to fresh `<agent>` if `--continue` exits non-zero almost immediately (e.g. `< 3s`, meaning no prior conversation exists in that directory).
   - A normal session that exits later falls through to `exec /bin/bash -l` as usual, never unexpectedly relaunching the agent.
   - Pins with `resume: "fresh"` skip `--continue`; `agent: "shell"` launches `/bin/bash -l`.
 
@@ -131,11 +131,12 @@ Aligned with [addons-design.md](addons-design.md):
   - After a call on a named tab that answered `KEEP`, no new call for that tab for 2 minutes (`RECHECK`).
   - No call when the input is the same as on the last call (the same requests, or the same screen tail).
 - **Input: the user's requests first, the screen as the fallback.** `usermsgs.recent(agent, cwd)` reads the last 4 requests the user typed in that folder from the agent's own store, each clipped to 280 characters; slash commands, `!` shell lines and short replies ("ok", "pode sim": fewer than 3 words, while longer ones exist) are left out:
+  - Where an agent keeps its prompts is declared by its addon (`HISTORY*` in `agent.conf`, or its `agent/history.py`):
   - `claude`: `~/.claude/history.jsonl` (`project` = cwd, `sessionId`), the prompt history, not the session transcript (which the output of the agent's commands grows to megabytes).
   - `agy`: `~/.gemini/antigravity-cli/history.jsonl` (`workspace` = cwd, `conversationId`).
   - `opencode`: `~/.local/share/opencode/opencode.db`, read-only: the latest top-level `session_v2` of the folder, its `session_message` rows of `type = 'user'`.
   - An event names the cwd, not the agent session: when two sessions of the same agent were active in the same folder in the last 10 minutes, the reader returns nothing and the redacted screen is used (`swarmbox-tabs screen <tab> --lines 40`, last 1500 characters).
-- **1-shot naming call:** `claude -p --model haiku` with its own short `--system-prompt` (not Claude Code's default one), `--tools ""`, `--strict-mcp-config`, `--setting-sources ""` and `--no-session-persistence` (not `--bare`, which reads no OAuth login). The rules ask for 1 to 3 short words in the language of the requests, the concrete subject rather than the activity, and `KEEP` when there is no clear goal yet (exploring, "understand the repo") or when the current title still fits; the current auto title is sent so the model can keep it. A typical input is about 1500 characters.
+- **1-shot naming call:** the `NAMER` template an agent declares (Claude Code's: `claude -p --model haiku` with its own short `--system-prompt` (not Claude Code's default one), `--tools ""`, `--strict-mcp-config`, `--setting-sources ""` and `--no-session-persistence` (not `--bare`, which reads no OAuth login)). The rules ask for 1 to 3 short words in the language of the requests, the concrete subject rather than the activity, and `KEEP` when there is no clear goal yet (exploring, "understand the repo") or when the current title still fits; the current auto title is sent so the model can keep it. A typical input is about 1500 characters.
   - The answer is cut to 18 characters on a word boundary (a dangling "of", "de" is dropped); `KEEP`, empty and generic answers change nothing.
   - Applies via `swarmbox-tabs rename <tab> "<Title>" --source auto`; the audit record says whether the title came from the `requests` or the `screen`.
   - Every decision is one `autoname <tab>: ...` line in the sysop `serve.log`: the gate that skipped, a `KEEP` with the answer and the time it took, the rename, or why the naming call failed (a failed call is not an answer: the same input is tried again).

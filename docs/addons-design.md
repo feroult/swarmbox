@@ -40,6 +40,7 @@ addons/<name>/
   install.sh     how to put it in the workspace
   prepare.sh     optional: runs at every start of the box
   shell.sh       optional: sourced by every interactive shell (bash and zsh)
+  agent/         optional: the addon is a coding agent (agent.conf, and its driver files: below)
   ...            whatever else the addon ships
 ```
 
@@ -63,12 +64,47 @@ Rules: `VERSION` is `latest` (the newest release when the addon is installed) or
 
 **Not in the manifest, on purpose:**
 
-- **How a command starts.** There is no key for it: each addon does it in its own `shell.sh`, which the box loads for every installed addon
-  (Claude defines a function that adds the auto-approve flag and `--mcp-config` only to the interactive prompt, so `claude update` and `claude mcp ...` do not receive them; opencode defines a
-  function that adds `--auto` only for `opencode` and `opencode run`, as the `clasp` function adds a port only to `login`). The host already sets
-  `SWARMBOX_YOLO` (`0` turns auto-approve off) and a `shell.sh` reads it. `yolo` runs the default agent (`$SWARMBOX_AGENT`, whose alias or function already starts it in auto-approve mode; the host records it when the
-  box is created: the setting `AGENT`, else the first item of `WITH`; with neither, `yolo` says there is no default agent; when the default is not a command, because the first item of `WITH` is an addon that is not an agent, it says that too).
+- **How a command starts.** There is no key for it in the manifest. An addon that needs a shell function ships a `shell.sh`, which the box loads for
+  every installed addon (the `clasp` function adds a port only to `login`; OpenCode's adds `--auto` only for `opencode` and `opencode run`). An agent
+  declares how it starts in its `agent/agent.conf` instead, and the box generates its function (below). The host sets `SWARMBOX_YOLO` (`0` turns
+  auto-approve off). `yolo` runs the default agent: `AGENT` when it names an agent, else the first agent of `WITH`, else the first installed agent
+  (the box resolves it; with none, `yolo` says there is no default agent).
 - Services, MCP servers an addon offers: the addon starts or installs them in `prepare.sh`.
+
+### Agent addons: `agent/`
+
+An addon is a coding agent if and only if it has `agent/agent.conf` (the design and its reasons: [agents-design.md](agents-design.md)). The file
+is read, never run, by the agent registry (`swarmbox_agents.py`, `agents.mjs`): `KEY=value` lines, the value optionally in double quotes, no
+`"`, `$`, backslash or backtick inside; lists are words separated by spaces. `swarmbox addon validate` checks it. Every key but `ID` is optional.
+
+| Key | What it is | Default |
+|---|---|---|
+| `ID` | the agent's id: what pins, labels and the UI store (`agy` for the addon `antigravity`) | required |
+| `CMD` | its command, one of the addon's `COMMANDS` | the id |
+| `LABEL`, `COLOR` | its name in the UI, its card colour (`#rrggbb`) | the id, the theme's |
+| `ALIASES` | other names: the `app` it reports with OSC 7501 (`claude-code`), process names (the addon name is one already) | none |
+| `YOLO_ARGS`, `MCP_ARGS` | the auto-approve words, and the words that give it the box's MCP servers (`{home}`, `{mcp_file}`) | none |
+| `PASSTHROUGH`, `PRINT_FLAGS` | subcommands that get no words; flags of a one-shot call (no worktree guard) | none |
+| `RESUME_ARGS`, `RESUME_FAST_FAIL_S`, `RESUME_SCOPE` | how a pin resumes the last conversation, and how fast a failure means "start fresh" | no resume, 4, `cwd` |
+| `STATUS` | `osc7501` or `none`: whether it reports its state | `osc7501` |
+| `RESERVED_PREFIXES` | first characters of a text that are commands for it, never a prompt | `/ !` |
+| `ANSWER_ALLOW`, `ANSWER_DENY` | the keys (hc key names) that answer its permission dialog from the Allow / Cancel card | none: answer in its terminal |
+| `TERM_*` | its terminal profile: resize and hydration timings, smart-copy glyphs, `TERM_IMAGE_PASTE` (`path` or `none`) | the core's TUI profile |
+| `HISTORY`, `HISTORY_FILE`, `HISTORY_FILE_ENV`, `HISTORY_FIELDS` | where its prompts are kept (a JSONL prompt history), for the sysop's tab naming | none |
+| `BRAIN`, `MODEL`, `NAMER`, `NAMER_MODEL`, `LOGIN_HINT` | the sysop's brain and tab namer templates, their models, what to do when it is not logged in | not usable by the sysop |
+| `SECRET_ENV`, `SECRET_FILES` | its login: variables and files (under the home) the sysop rates as secrets | none |
+| `SETTINGS_FILE` | its settings file (under the home), where `agent/settings.json` is seeded | none |
+
+| File in `agent/` | What it is |
+|---|---|
+| `icon.svg` | its 16x16 icon in the Web Studio (small, one `<svg>`, no script); without it a generic one |
+| `settings.json` | default settings, seeded once into `SETTINGS_FILE` (`{home}`, `{addon_dir}`); a key the user has wins, a default the user removed stays removed |
+| `mcp.sh` | writes the box's MCP servers (`$SWARMBOX_MCP_FILE`) in the agent's format, at every start |
+| `screen.py` | `state(rows)`, and optionally `detect`, `input_box`, `submitted`: what its screen says when it reports no state |
+| `history.py` | `messages(cwd, home, now)`: its prompts, when they are not in a JSONL history |
+
+`swarmbox-addon prepare` runs, for each installed agent, `agent/mcp.sh`, then the seeding of `agent/settings.json`, then the addon's `prepare.sh`.
+Adding an agent is one folder: see "Adding an agent" in CONTRIBUTING.md.
 - Which topics an addon uses: it just uses them (below).
 - A `REQUIRES` key and any handler declaration: with the bus no addon needs to name another.
 
@@ -151,9 +187,9 @@ anything else that can write a line of text (the panel of the sysop, `swarmbox-s
 
 | Addon | Version | Ships | Bus and capabilities |
 |---|---|---|---|
-| `claude` | `latest`, `UPDATE=self` | `install.sh`, `shell.sh`, `prepare.sh` | nothing |
-| `antigravity` | `latest`, `UPDATE=self` | `install.sh`, `shell.sh`, `prepare.sh`, `statusline.sh` | nothing |
-| `opencode` | `latest`, managed | `install.sh`, `shell.sh`, `prepare.sh` | nothing |
+| `claude` | `latest`, `UPDATE=self` | `install.sh`, `agent/` (`agent.conf`, `icon.svg`, `settings.json`, `mcp.sh`, `screen.py`) | nothing |
+| `antigravity` | `latest`, `UPDATE=self` | `install.sh`, `statusline.sh`, `agent/` (`agent.conf`, `icon.svg`, `settings.json`, `mcp.sh`) | nothing |
+| `opencode` | `latest`, managed | `install.sh`, `shell.sh`, `prepare.sh`, `agent/` (`agent.conf`, `icon.svg`, `history.py`) | nothing |
 | `gcloud`, `poetry`, `go`, `clasp` | pinned (`clasp` has `PORTS`) | `install.sh` (`go`, `clasp` also `shell.sh`) | nothing |
 | `voice` | pinned (whisper.cpp release) | `install.sh`, `prepare.sh`, the library | publishes on `voice.topic` |
 | `sysop` | pinned | `install.sh`, `prepare.sh`, the library, the panel | subscribes on `sysop.topic`; uses the `tabs` capability |
@@ -179,7 +215,7 @@ The path that version 1 had to do: you send audio from the browser; the sysop un
 
 **Implemented** (in version 1, on tmux; the panel, its keys and the strip were removed in version 2.3, when the panel moved to the Web Studio and the cockpit)
 
-- the addon model: the folder and manifest above, `swarmbox-addon`, and the `shell.sh` of every agent addon (auto-approve and the MCP file), so the host builds no alias;
+- the addon model: the folder and manifest above, `swarmbox-addon`, and the `agent/` folder of every agent addon (auto-approve and the MCP servers), so the host builds no alias;
 - the bus (publish, subscribe with groups, `topics`, `watch`, `ping`, `restart`; `pub` counts receivers and exits 3 for none) and the `tabs` capability (`list`, `active`, `screen`, `send`, with the lock per tab);
 - `voice` publishing on `voice.topic` and the sysop listening on `sysop.topic` in the group `sysop.group`; both are settings, validated by the host (`config set`) and by the addons;
 - the `sysop` with the tools `list_tabs`, `read_tab`, `run`, `input`, `wait`, `say` and `done`, a panel that is beside the tab and never takes the focus on its own (`sysop.panel`: `always` in every window, `auto` while a goal runs, `off`; at the right in a wide window, at the bottom in a narrow or portrait one; a window of 80 columns or fewer, a phone, has none until it is opened and the web page shows one line of what the sysop does instead; an approval there makes a small separate pane with the action and two big buttons, Allow and Cancel, that goes after the answer), the countdown to veto, the approval, the stop and the audit file; the keys `Ctrl+A` then `S`, `V`, `X`, `a`, `g`; a watcher that starts the service again when it dies;

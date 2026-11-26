@@ -1,7 +1,7 @@
 """The brain: a command that speaks MCP and runs without interaction, started once per goal.
 
 THE TEMPLATE (SWARMBOX_SYSOP_BRAIN). `auto` (the default: the BRAIN of the box's default agent, or of the first agent that declares one,
-agents.pick), the name of a preset (an agent: its agent/agent.conf BRAIN, `claude` for Claude Code; a piece of text, not a dependency on
+agents.pick), the name of a preset (an agent: its agent/agent.conf BRAIN, Claude Code's by its id; a piece of text, not a dependency on
 the addon) or a full command. The text is split into words like a shell does (quotes, backslashes), and the words are the argument vector of the program:
 NO SHELL RUNS IT, so a quote, a `$(...)` or a `;` in the template or in a setting is a character of an argument, never a command. Then the
 placeholders are replaced INSIDE each word, so a value can never become more than that one word:
@@ -10,7 +10,7 @@ placeholders are replaced INSIDE each word, so a value can never become more tha
     {system_prompt}      the system prompt as one word;  {system_prompt_file}  the same in a file
     {max_turns}          steps + 3;   {goal_dir}  the folder of the goal (also the working directory)
     {{ and }}            literal braces. A {name} that is not in the list is an error, so is a missing {mcp_config}.
-Words at the front that look like NAME=value are environment variables of the brain, as with env(1): `OPENCODE_CONFIG={mcp_config} opencode run`.
+Words at the front that look like NAME=value are environment variables of the brain, as with env(1): `CONFIG={mcp_config} some-agent run`.
 The goal goes to the brain on STANDARD INPUT (never on the command line: no length limit, not visible in ps). The brain's standard output is
 kept as stream.jsonl in the goal folder (the audit stream); its error output as brain.err.
 
@@ -40,7 +40,7 @@ from .agents import pick, registry
 
 
 def presets():
-    """the brain presets: the BRAIN template of every agent of the registry, by its id and its other names (`sysop.brain claude`)"""
+    """the brain presets: the BRAIN template of every agent of the registry, by its id and its other names (`sysop.brain` set to an agent's name)"""
     out = {}
     for a in registry.agents():
         if a["brain"]:
@@ -83,8 +83,8 @@ Call ONE tool at a time and wait for its result before the next call.
 </tools>
 
 <routing>
-1. Workspace or shell operation ("open claude in swarmbox in a new worktree", "merge wt-5f3e", "wake Billing fix", "focus shop-api", "run pytest in the shell") -> execute directly with `tab`, `worktree`, or `run`.
-2. Question about box state ("what's running?", "any blocked agents?", "what did claude answer?", "how much disk is left?") -> answer from `[box state]`, `box_state`, or `read_tab` in `done`; never type it into an agent.
+1. Workspace or shell operation ("open an agent in swarmbox in a new worktree", "merge wt-5f3e", "wake Billing fix", "focus shop-api", "run pytest in the shell") -> execute directly with `tab`, `worktree`, or `run`.
+2. Question about box state ("what's running?", "any blocked agents?", "what did the agent answer?", "how much disk is left?") -> answer from `[box state]`, `box_state`, or `read_tab` in `done`; never type it into an agent.
 3. Everything else (any coding request, bug fix, explanation, or follow-up) -> BY DEFAULT a message for an agent, passed verbatim with `run` in the user's words (fix only obvious voice mishearings; add minimal context only if a follow-up needs it).
    Pick the agent in order: (1) agent in the `active` tab; (2) agent from the last conversation turn; (3) agent matching the repo/subject; (4) the sole running agent. If no agent fits and active is a shell, do not type prose into the shell: explain in `done`.
    An agent with `state="working"` queues messages automatically: ALWAYS type the message with `run` anyway; never wait, interrupt, or refuse because it is working, and mention in `done` that it was queued.
@@ -151,8 +151,8 @@ def resolve_template(text):
     if t == AUTO:
         a = pick("brain")
         if a is None:
-            raise TemplateError("no agent of this box declares a brain (BRAIN in its agent/agent.conf): install one (swarmbox addon install claude) "
-                                "or set sysop.brain to a command")
+            raise TemplateError("no agent of this box declares a brain (BRAIN in its agent/agent.conf): install an agent addon "
+                                "that declares one (swarmbox addon list) or set sysop.brain to a command")
         return a["brain"]
     return presets().get(t, text)
 

@@ -488,7 +488,7 @@ export function listChildDirs(dir) {
 const NON_TYPING_INPUT_RE = /^(?:\x1b\[<[0-9;]+[Mm]|\x1b\[M[\s\S]{3}|\x1b\[[IO]|\x1b\[[0-9;]*R|\x1b\[\?[0-9;]*c|\x1b\](?:10|11);[^\x07\x1b]*(?:\x07|\x1b\\))+$/;
 
 // DEC Mode 2026 Synchronized Output markers (\x1b[?2026h begin, \x1b[?2026l end).
-// xterm.js 5.5.0 ignores DEC 2026, so TUIs like agy that clear and redraw inside
+// xterm.js 5.5.0 ignores DEC 2026, so TUIs (Antigravity was measured) that clear and redraw inside
 // synchronized frames split across multiple PTY chunks would otherwise flash/reflow
 // intermediate partial frames. Coalescing at the gateway makes every DEC 2026 frame atomic.
 const SYNC_BEGIN_BUF = Buffer.from('\x1b[?2026h');
@@ -2748,7 +2748,7 @@ export function createGateway(options = {}) {
       resizeBytes = 0;
       resizeIsTui = tuiNow();
       resizeTimings = timingsNow();
-      // A TUI re-lays out after SIGWINCH and may stream a long history (agy: ~600-850 ms before its clear+redraw burst, up to
+      // A TUI re-lays out after SIGWINCH and may stream a long history (Antigravity: ~600-850 ms before its clear+redraw burst, up to
       // 2-3 s for the history): the profile's quiet window and cap (an agent may tune them in its agent.conf). A plain terminal
       // is released shortly after its burst.
       resizeQuietTimer = setTimeout(flushResize, resizeTimings.resize_quiet_ms);
@@ -2834,7 +2834,7 @@ export function createGateway(options = {}) {
             return;
           }
           if (!resizing && lastResizeAtMs > 0 && (Date.now() - lastResizeAtMs) <= resizeTimings.late_redraw_ms) {
-            // Catch late full-screen/scrollback clear+redraw passes from heavy TUIs (e.g. agy
+            // Catch late full-screen/scrollback clear+redraw passes from heavy TUIs (e.g. Antigravity
             // re-rendering a long conversation >900ms after SIGWINCH) BEFORE the clear hits xterm.
             const hasFullClear = buf.includes(CLEAR_SCROLLBACK_BUF) || buf.includes(CLEAR_SCREEN_BUF);
             if (hasFullClear && (resizeIsTui || tuiNow())) {

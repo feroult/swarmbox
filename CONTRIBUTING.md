@@ -83,6 +83,26 @@ A push of another branch is not checked. Skip it once with `git push --no-verify
 It cannot cover what only CI has: the macOS job (bash 3.2), the arm64 job and the image smoke test. It also prints how many tests were skipped
 here (no dash or busybox, for example): CI installs them and runs those tests.
 
+## Adding an agent
+
+A coding agent is one folder, `container/addons/<addon>/`, and nothing else changes: the shell, the Web Studio, the cockpit, `swarmbox-tabs`,
+the pins, the worktrees, `swarmbox state` and the sysop read it through the agent registry. `tests/fast/test_guard_agents.py` fails when an
+agent's name appears anywhere else in the product.
+
+1. The addon itself: `addon.conf` and `install.sh` like any addon (`docs/addons-design.md`).
+2. `agent/agent.conf`: at least `ID` (and `CMD` when the command is another word). Then what the agent needs, all optional: `LABEL` and
+   `COLOR`; `ALIASES` (the `app` it reports with OSC 7501: run it in a tab and read `hc ls --json`); `YOLO_ARGS`, `MCP_ARGS`, `PASSTHROUGH`
+   and `PRINT_FLAGS` from its `--help`; `RESUME_ARGS`; `RESERVED_PREFIXES`; `ANSWER_ALLOW` and `ANSWER_DENY` only after you saw what the
+   keys do in its real permission dialog; `SECRET_ENV` and `SECRET_FILES`; `HISTORY*`, `BRAIN`, `NAMER` for the sysop. The keys and what they
+   do: the table in `docs/addons-design.md`.
+3. Files next to it when needed: `agent/icon.svg` (16x16), `agent/settings.json` with `SETTINGS_FILE`, `agent/mcp.sh` (the box's MCP servers
+   in its format: `container/addons/claude/agent/mcp.sh`), `agent/screen.py` (when it reports no state:
+   `container/addons/claude/agent/screen.py`), `agent/history.py` (`container/addons/opencode/agent/history.py`). A shell function of its own
+   in the addon (`container/addons/opencode/shell.sh`) only when a declaration cannot say how it starts.
+4. Check: `container/scripts/swarmbox-addon.sh validate container/addons`, `python3 container/scripts/swarmbox-agents.py list`, then
+   `sh tests/run.sh` (the registry tests read every agent folder) and a real run in the box: open it from **New agent**, close and wake its
+   pin, open a second one in the same repository (the worktree check), and let the sysop name its tab.
+
 ## Releasing
 
 A release is one command, and the part that needs a writer is the CHANGELOG, which is written **before** it runs, by whoever made the changes (a person or

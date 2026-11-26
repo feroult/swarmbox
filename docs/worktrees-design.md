@@ -7,7 +7,7 @@ Status: **design agreed, implemented alongside [pins-design.md](pins-design.md)*
 When two coding agents work concurrently on the same Git repository, sharing one working tree leads to overwritten edits, `index.lock` races, and mixed commits. SwarmBox solves this with standard Git worktrees managed by the box — **non-intrusive when there is no collision, 1-click intuitive when there is**.
 
 Key principles:
-- **Agent-agnostic:** uses pure `git worktree`, so it works identically for `claude`, `agy`, `opencode`, `gemini`, `codex`, and plain shells — while passively recognizing worktrees created manually (including `claude --worktree`).
+- **Agent-agnostic:** uses pure `git worktree`, so it works identically for every agent of the registry (`claude`, `agy`, `opencode`, and any addon with an `agent/` folder) and plain shells — while passively recognizing worktrees created manually (including `claude --worktree`).
 - **Zero forms on creation:** never blocks with branch-naming modals.
 - **Zero data loss:** never deletes a worktree with uncommitted changes or unmerged commits without explicit user action, and never leaves the main repository stuck in a conflicted `MERGING` state.
 
@@ -28,7 +28,7 @@ Settings persisted in `$SB_CONFIG_DIR/worktree-prefs.json` (live-editable in Web
 - `mode`: `"ask"` (default) | `"auto"` | `"off"`
 - `copy_env`: `true` (default) | `false`
 
-When opening a new agent tab in a Git repo, waking a `PARKED` pin whose saved `cwd` points to a Git repo, or launching an agent (`agy`, `claude`, `opencode`, `gemini`, `codex`) manually inside an interactive shell:
+When opening a new agent tab in a Git repo, waking a `PARKED` pin whose saved `cwd` points to a Git repo, or launching an agent (any agent of the registry: `agy`, `claude`, `opencode`, ...) manually inside an interactive shell:
 1. Check whether **another live terminal** is already running on the same Git working tree. (`PARKED` pins do **not** count as collisions.)
 2. **No collision:** opens directly in that directory with zero prompts.
 3. **Collision detected:**

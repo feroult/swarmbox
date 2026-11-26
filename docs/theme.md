@@ -53,7 +53,7 @@ palette as the browser terminal (`tests/fast/test_theme.py` checks that they agr
 The `antigravity` addon keeps its own isolated configuration and status line inside `container/addons/antigravity/` (never touching Claude Code's `swarmbox-statusline` or `~/.claude/settings.json`):
 
 - **Dedicated status line (`container/addons/antigravity/statusline.sh`):** uses the same Purple Glow palette (`╶─ …/swarmbox ─ main ! ─ Gemini 4 Neon (High) ─ ▰▰▰▱▱▱▱▱▱▱ 34% 149k ─ $0.42 ─ 7d 6%`) to show the current directory, git branch, active model, context window bar with token count, estimated USD cost, quota usage, and running subagents/tasks, adapting automatically to `terminal_width`.
-- **Automatic defaults (`container/addons/antigravity/prepare.sh`):** on install or first box start, seeds `~/.gemini/antigravity-cli/settings.json` (mode `600`, once, never overwriting existing keys) with `statusLine` wired to `statusline.sh`, `colorScheme: "tokyo night"`, `showFeedbackSurvey: false`, and `allowNonWorkspaceAccess: true`. Turn off or change it any time inside `agy` with `/statusline` or `/config`.
+- **Automatic defaults (`container/addons/antigravity/agent/settings.json`, seeded by `swarmbox-addon prepare`):** on install or first box start, seeds `~/.gemini/antigravity-cli/settings.json` (mode `600`, once, never overwriting existing keys) with `statusLine` wired to `statusline.sh`, `colorScheme: "tokyo night"`, `showFeedbackSurvey: false`, and `allowNonWorkspaceAccess: true`. Turn off or change it any time inside `agy` with `/statusline` or `/config`.
 
 ## Fonts
 

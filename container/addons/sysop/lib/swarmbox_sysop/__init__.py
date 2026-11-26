@@ -1,7 +1,7 @@
 """swarmbox_sysop: the library of the `sysop` addon (stdlib only, Python 3.9+).
 
 The sysop takes goals from the bus (the topic of `sysop.topic`, default `goal`, as a member of the group `sysop.group`), runs a brain (a command that
-speaks MCP, by default `claude -p`) with ONE set of tools, and the tools act on the tabs of the box through the command `swarmbox-tabs`, never
+speaks MCP, by default the one an agent of the box declares) with ONE set of tools, and the tools act on the tabs of the box through the command `swarmbox-tabs`, never
 through the bus. Everything the brain does is rated by the host (policy.py) before it is typed, and everything is written to the audit file (audit.py). Modules:
 
     config       the settings (SWARMBOX_SYSOP_*), validated in one place

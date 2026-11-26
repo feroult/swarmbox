@@ -3,7 +3,7 @@
 The auto-namer names a tab after what the user asked, which is shorter and more specific than the screen. Where an agent keeps its
 prompts is its addon's knowledge (docs/agents-design.md 3.2), declared in its agent/agent.conf:
 
-- HISTORY=jsonl: a prompt history with one JSON line per typed prompt (Claude Code's `~/.claude/history.jsonl`, agy's): HISTORY_FILE
+- HISTORY=jsonl: a prompt history with one JSON line per typed prompt (Claude Code's and Antigravity's): HISTORY_FILE
   (under the home; HISTORY_FILE_ENV names a variable that, when set, is the folder of the file instead), HISTORY_FIELDS (the keys of the
   folder, the session, the text and the time in ms). Read here.
 - else its agent/history.py, `messages(cwd, home, now)`, for any other store (OpenCode's SQLite database).

@@ -2,7 +2,7 @@
 
 An agent loop that operates the box from a goal ([docs/addons-design.md](../../../docs/addons-design.md)). It subscribes to the topic of
 `sysop.topic` (default `goal`) of `swarmbox-bus`, in the group `sysop.group` (default `sysop`: two sysops of a group handle a goal once between them),
-runs a brain (a command that speaks MCP, `claude -p` by default) with eleven tools, and the tools read and type into the tabs through the command
+runs a brain (a command that speaks MCP, by default the one an agent of the box declares, Claude Code's one-shot mode) with eleven tools, and the tools read and type into the tabs through the command
 `swarmbox-tabs` (the bus is for goals only). The host rates every action first (countdown, approval, block), keeps budgets, and writes an audit file.
 
 ```
@@ -16,7 +16,7 @@ swarmbox-sysop agent             the OSC 7501 agent bridge in a hidden herdr ter
 swarmbox-sysop veto | approve    refuse or allow the pending action (the cockpit keys: Ctrl+A then a approve, Ctrl+A then v veto; Ctrl+A then g focuses the goal box)
 ```
 
-Settings (environment, `SWARMBOX_SYSOP_*`, see `lib/swarmbox_sysop/config.py`): `TOPIC` (goal), `GROUP` (sysop), `BRAIN` (preset `claude` or a command template, never run by a shell),
+Settings (environment, `SWARMBOX_SYSOP_*`, see `lib/swarmbox_sysop/config.py`): `TOPIC` (goal), `GROUP` (sysop), `BRAIN` (`auto`, an agent's preset or a command template, never run by a shell),
 `MODEL` (sonnet), `AUTONOMY` (`full-auto` | `auto` | `confirm-risky` | `confirm-all`, default `full-auto`), `COUNTDOWN` (4 s, 0 = none), `APPROVAL_TIMEOUT` (60 s), `MAX_STEPS` (20),
 `MAX_SECONDS` (300), `MAX_GOALS` (5).
 The panel of the sysop is the one of the Herdr Web Studio and of the terminal cockpit (`container/web/herdr/`): they read the files below.

@@ -3,7 +3,7 @@
 Subscribes to `tab.events` on `swarmbox-bus` in a daemon thread (zero polling). A few seconds after the user sends a request
 (the tab starts working and is not cancelled), when a tab completes a turn, or when it changes project folder, local cheap
 gates decide whether to invoke a lightweight 1-shot naming call. Its input is the user's last requests in that tab, as the
-agent's own session store keeps them (`usermsgs`: claude, agy, opencode), or the redacted screen when they cannot be read.
+agent's own session store keeps them (`usermsgs`, by what the agent's addon declares), or the redacted screen when they cannot be read.
 
 A tab is not named once and frozen: it may be renamed when the goal becomes clearer or changes (the model answers KEEP
 otherwise), with a backoff per tab (COOLDOWNS: 3, 10, 30, then 60 minutes between automatic renames), so names settle.
@@ -38,7 +38,7 @@ _GENERIC_WORDS = frozenset({"shell", "bash", "zsh", "terminal", "tab", "keep", "
 
 
 def generic_titles():
-    """Titles that name no goal: the generic words and every name of an agent of the registry (`claude`, `antigravity`...)."""
+    """Titles that name no goal: the generic words and every name of an agent of the registry (its id, its command, its aliases)."""
     names = set(_GENERIC_WORDS)
     for a in registry.agents():
         names.add(a["id"])
@@ -198,7 +198,7 @@ def namer_argv(prompt, model=None, env=None):
 
 
 def default_namer(cwd, agent, title, screen_text, requests=None, model=None, env=None, timeout=20.0):
-    """A 1-shot call of the namer an agent declares (Claude Code's: `claude -p` with its own small system prompt, no tools, no MCP, no
+    """A 1-shot call of the namer an agent declares (Claude Code's: its print mode with its own small system prompt, no tools, no MCP, no
     settings or hooks). Returns the raw answer (a title or KEEP); raises NamerError when the call fails, so the caller can say why."""
     prompt = build_prompt(cwd, agent, title, screen_text, requests)
     cmd, stdin = namer_argv(prompt, model, env)

@@ -90,15 +90,21 @@ While the bus is away (it is restarted within seconds; after five crashes in a m
 
 ## The brain
 
-`sysop.brain` is either a preset name or a **command template**. The only preset today is `claude`: the headless Claude Code CLI (`claude -p`, using the login that is already in the box) with every built-in tool turned off (`--tools ""`; without it Bash stays on),
-only the tools of the sysop allowed, a system prompt of its own, no session file and a turn limit. The model is `sysop.model` (default `sonnet`: about 11 to 15 seconds and a cent a goal in the tests; `haiku` is quicker, about 7 seconds, and costs about a tenth as much, at the price of more mistakes on a spoken goal that is not clear).
+`sysop.brain` is `auto` (the default), the name of an agent, or a **command template**. A brain is declared by an agent's addon (`BRAIN` in its
+`agent/agent.conf`, with its default `MODEL`); `auto` takes the one of the box's default agent, else of the first agent that declares one. Only
+Claude Code declares one today, `claude`: the headless Claude Code CLI (`claude -p`, using the login that is already in the box) with every
+built-in tool turned off (`--tools ""`; without it Bash stays on), only the tools of the sysop allowed, a system prompt of its own, no session file
+and a turn limit. A box with no agent that declares a brain still runs the service, and a goal fails with that reason. The model is `sysop.model`
+(default `auto`: the agent's `MODEL`, `sonnet` for Claude Code: about 11 to 15 seconds and a cent a goal in the tests; `haiku` is quicker,
+about 7 seconds, and costs about a tenth as much, at the price of more mistakes on a spoken goal that is not clear). The tab namer is declared the
+same way (`NAMER`, `NAMER_MODEL`: Claude Code's runs `haiku`); without an agent that declares one, tabs keep their names.
 
 To use another brain, write a template. It is split into words like a shell would, but **no shell runs it**: a quote, `$(...)` or `;` in it is a character of an argument, never a command. Placeholders are replaced inside each word:
 
 | Placeholder | Value |
 |---|---|
 | `{mcp_config}` | path of the MCP config file of the goal (required: the brain must reach the tools) |
-| `{model}` | `sysop.model` |
+| `{model}` | `sysop.model` (`auto`: the `MODEL` of the brain's agent; a template of no agent then needs `sysop.model` set) |
 | `{system_prompt}`, `{system_prompt_file}` | the system prompt as a word, or in a file |
 | `{max_turns}` | steps + 3 |
 | `{goal_dir}` | the folder of the goal (also the working directory) |
@@ -138,12 +144,12 @@ With the default autonomy the goal runs by itself: `echo hello` is typed at once
 A setting is learned by the box when it is created, so to be asked about every action: `swarmbox config set sysop.autonomy confirm-all` and `swarmbox reset`: the goal then waits for you, so press Allow (the strip button, a click on the panel, or `Ctrl+A a`). You can also type the goal with `Ctrl+A g`, or speak it ([voice.md](voice.md)).
 
 Check the service with `swarmbox-sysop status` (it runs from `prepare.sh` at every start of the box); `swarmbox-sysop --self-test` checks the install without a model, and `swarmbox tabs list` shows the tabs the sysop sees (`swarmbox bus topics` shows who listens on which topic). `swarmbox-sysop goal` exits with 3 when nobody listens (the service is not running) and 4 when the bus is not.
-The brain needs a login: the `claude` preset uses the one already in the box.
+The brain needs a login: Claude Code's preset uses the one already in the box.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `sysop.brain` | `claude` | a preset name or a command template (no line break) |
-| `sysop.model` | `sonnet` | the model the `claude` preset asks for, and `{model}` |
+| `sysop.brain` | `auto` | `auto`, an agent's name (its preset) or a command template (no line break) |
+| `sysop.model` | `auto` | the model of the brain, `{model}` (`auto`: the `MODEL` its agent declares) |
 | `sysop.autonomy` | `full-auto` | `full-auto`, `auto`, `confirm-risky` or `confirm-all` |
 | `sysop.countdown` | `4` | seconds an action waits for your veto, 0 to 30 (`0` sends at once) |
 | `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100 |
@@ -177,8 +183,9 @@ What you see, why, and what to do. Everything here was met in the soak and end-t
 | `swarmbox-sysop: no_subscriber (is the sysop service running? swarmbox-sysop status)` (exit 3), or "Nobody is listening." on the microphone | nobody listens on the goal topic: the addon is not installed, the service is down (for a second or two after a crash), or the topics differ (`voice.topic` is not `sysop.topic`) | `swarmbox-sysop status`; `swarmbox bus topics` shows who listens on which topic; if it is not running, `swarmbox-addon prepare` starts it; if the command is missing, `swarmbox addon install sysop` |
 | `sysop: not running (the box starts it at boot and again after a crash; by hand: swarmbox-addon prepare)` | the service is down | `swarmbox-addon prepare`. When the line says it keeps crashing (five abnormal exits in a minute), the cause is in `serve.log` of the sysop in the state folder; `swarmbox-sysop --self-test` checks the install |
 | `swarmbox-sysop: ...` with exit 4, or "The bus of the box is not answering" on the microphone | the bus is away (it is restarted within seconds; after five crashes in a minute it waits) | `swarmbox-bus ping`; `swarmbox-bus restart` |
+| `failed: no agent of this box declares a brain` | `sysop.brain` is `auto` and no agent addon of the box has a `BRAIN` | install an agent addon that declares one (`swarmbox addon install claude`), or set `sysop.brain` to a command |
 | `failed: the brain program 'claude' was not found: install it (swarmbox addon install claude) or set SWARMBOX_SYSOP_BRAIN` | the brain command is not in the box | `swarmbox addon install claude`, or point `sysop.brain` to a command that exists |
-| `failed: the brain is not logged in (claude). Log in once in a tab (`claude`, then /login) or add CLAUDE_CODE_OAUTH_TOKEN with `swarmbox env add`` | the brain has no login (a login in `~/.claude` is enough and survives a reset) | run `claude` in a tab and log in, or `swarmbox env add CLAUDE_CODE_OAUTH_TOKEN` and `swarmbox reset`; then send the goal again |
+| `failed: the brain is not logged in (claude). Log in once in a tab (claude, then /login) or add CLAUDE_CODE_OAUTH_TOKEN with swarmbox env add` (the agent's `LOGIN_HINT`) | the brain has no login (a login in `~/.claude` is enough and survives a reset) | run `claude` in a tab and log in, or `swarmbox env add CLAUDE_CODE_OAUTH_TOKEN` and `swarmbox reset`; then send the goal again |
 | a tool answers that herdr-core is not available (`no_backend`) | no `hc` on the PATH of the service | the image has it, so check what changed the PATH (`swarmbox-tabs list` in a tab shows the error) |
 | a tool answers that there is no herdr-core session (`no_session`) | the herdr-core daemon is not answering | open a tab (`swarmbox attach`, or the web terminal): it starts the daemon again, and the sysop goes on with the next goal |
 | the panel is not there | you hid it (`Ctrl+A s` in the cockpit, the Sysop button of the Web Studio), or the service is down | show it again; `swarmbox-sysop status` |

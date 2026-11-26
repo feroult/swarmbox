@@ -717,7 +717,7 @@
       return true;
     }
 
-    // Alternate screen or mouse-tracked TUI (agy, Claude Code fullscreen, vim, less, htop):
+    // Alternate screen or mouse-tracked TUI (an agent in fullscreen, vim, less, htop):
     // dispatch line-mode WheelEvents with coords clamped inside .xterm-screen so xterm's
     // CoreMouseService always resolves valid (col, row) coordinates and delivers every tick.
     const rh = sessionRowHeight(sess);
@@ -1325,7 +1325,7 @@
       return;
     }
     // Debounce continuous desktop window-drag resizes (90ms) so dragging a window edge sends
-    // one clean final SIGWINCH to TUIs like agy/claude instead of 30+ intermediate reflows.
+    // one clean final SIGWINCH to the agents' TUIs instead of 30+ intermediate reflows.
     // Instant panel toggles bypass scheduleFit() and call fitAndResize() synchronously.
     const active = activeSession();
     if (active && !active.hydrating && active.ws && active.ws.readyState === 1 && typeof active.fitAddon.proposeDimensions === 'function') {
@@ -2539,7 +2539,7 @@
           continue;
         }
 
-        // 3. AI TUI padded / bordered / shaded soft-wrap (agy, claude, codex, opencode)
+        // 3. AI TUI padded / bordered / shaded soft-wrap (the coding agents)
         const boxRight = Math.min(curRow.visualRightCol, nearbyWrapCol);
         const effectiveWrap =
           blockMaxEnd >= boxRight - 8 && blockMaxEnd < boxRight
