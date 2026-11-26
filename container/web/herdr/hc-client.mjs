@@ -702,9 +702,25 @@ function formatCallStep(call) {
   const a = call && typeof call.args === 'object' && call.args ? call.args : {};
   const fn = String((call && call[FN_KEY]) || '').slice(0, 30);
   const tab = String(a.tab || '').slice(0, 20);
+  if (fn === 'box_state') return a.section === 'system' ? 'checked system state' : 'checked workspace state';
   if (fn === 'list_tabs') return 'checked tabs';
   if (fn === 'read_tab') return tab ? `read tab ${tab}` : 'read active tab';
   if (fn === 'box_info') return 'checked box health';
+  if (fn === 'tab') {
+    const act = String(a.action || '').slice(0, 16);
+    if (act === 'open') {
+      const label = a.name || a.agent || 'shell';
+      return `opened tab ${String(label).slice(0, 24)}${a.worktree ? ' (worktree)' : ''}`;
+    }
+    if (act === 'focus') return tab ? `switched to ${tab}` : 'switched tab';
+    if (act === 'rename') {
+      const to = String(a.title || '').replace(/\s+/g, ' ').trim().slice(0, 48);
+      return tab ? `renamed ${tab} → ${to}` : `renamed tab → ${to}`;
+    }
+    if (act === 'close') return tab ? `closed tab ${tab}` : 'closed tab';
+    if (act === 'wake') return `woke ${String(a.pin_id || 'session').slice(0, 24)}`;
+    return act ? `tab ${act}` : 'tab';
+  }
   if (fn === 'focus_tab') return tab ? `switched to ${tab}` : 'switched tab';
   if (fn === 'open_tab') {
     const label = a.name || a.agent || 'shell';
@@ -716,12 +732,17 @@ function formatCallStep(call) {
   }
   if (fn === 'worktree') {
     const act = String(a.action || 'status').slice(0, 16);
-    return tab ? `worktree ${act} on ${tab}` : `worktree ${act}`;
+    const target = String(a.target || a.tab || '').slice(0, 24);
+    return target ? `worktree ${act} on ${target}` : `worktree ${act}`;
   }
   if (fn === 'close_tab') return tab ? `closed tab ${tab}` : 'closed tab';
   if (fn === 'run') return `run: ${String(a.command || '').replace(/\s+/g, ' ').trim().slice(0, 180)}`;
   if (fn === 'input') return `keys: ${String(a.text || '').replace(/\s+/g, ' ').trim().slice(0, 120)}`;
-  if (fn === 'wait') return 'waited for output';
+  if (fn === 'wait') {
+    const until = String(a.until || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (until) return tab ? `waited for "${until}" in ${tab}` : `waited for "${until}"`;
+    return tab ? `waited on ${tab}` : 'waited for output';
+  }
   return fn || 'step';
 }
 
@@ -729,22 +750,39 @@ function liveActionLabel(call) {
   const a = call && typeof call.args === 'object' && call.args ? call.args : {};
   const fn = String((call && call[FN_KEY]) || '').slice(0, 30);
   const tab = String(a.tab || '').slice(0, 20);
+  if (fn === 'box_state') return a.section === 'system' ? 'Inspecting system state…' : 'Checking workspace state…';
   if (fn === 'list_tabs') return 'Checking open tabs…';
   if (fn === 'read_tab') return tab ? `Reading ${tab}…` : 'Reading active tab…';
   if (fn === 'box_info') return 'Inspecting box health…';
+  if (fn === 'tab') {
+    const act = String(a.action || '');
+    if (act === 'open') return `Opening ${String(a.name || a.agent || 'tab').slice(0, 20)}…`;
+    if (act === 'focus') return tab ? `Switching to ${tab}…` : 'Switching tab…';
+    if (act === 'rename') return tab ? `Renaming ${tab}…` : 'Renaming tab…';
+    if (act === 'close') return tab ? `Closing ${tab}…` : 'Closing tab…';
+    if (act === 'wake') return `Waking ${String(a.pin_id || 'session').slice(0, 20)}…`;
+    return 'Updating tab…';
+  }
   if (fn === 'focus_tab') return tab ? `Switching to ${tab}…` : 'Switching tab…';
   if (fn === 'open_tab') return `Opening ${String(a.name || a.agent || 'tab').slice(0, 20)}…`;
   if (fn === 'rename_tab') return tab ? `Renaming ${tab}…` : 'Renaming tab…';
   if (fn === 'worktree') {
     const act = String(a.action || 'status');
-    return act === 'merge' ? 'Merging worktree…' : act === 'remove' ? 'Removing worktree…' : 'Checking worktree…';
+    const target = String(a.target || a.tab || '').slice(0, 24);
+    if (act === 'merge') return target ? `Merging ${target}…` : 'Merging worktree…';
+    if (act === 'remove') return target ? `Removing ${target}…` : 'Removing worktree…';
+    return target ? `Checking ${target}…` : 'Checking worktree…';
   }
   if (fn === 'close_tab') return tab ? `Closing ${tab}…` : 'Closing tab…';
   if (fn === 'run') {
     const cmd = String(a.command || '').replace(/\s+/g, ' ').trim().slice(0, 56);
     return tab ? `Running in ${tab}: ${cmd}` : `Running: ${cmd}`;
   }
-  if (fn === 'wait') return 'Waiting for output…';
+  if (fn === 'wait') {
+    const until = String(a.until || '').replace(/\s+/g, ' ').trim().slice(0, 36);
+    if (until) return tab ? `Waiting for "${until}" in ${tab}…` : `Waiting for "${until}"…`;
+    return tab ? `Waiting on ${tab}…` : 'Waiting for output…';
+  }
   return 'Working…';
 }
 
@@ -1575,19 +1613,32 @@ export function buildPinsSnapshot(terminals) {
     const pid = t && t.labels && t.labels['swarmbox.pin_id'];
     if (pid) liveByPin.set(String(pid), t);
   }
-  return pins.map((p) => {
+  const kept = [];
+  const snap = [];
+  let pruned = false;
+  for (const p of pins) {
     const liveTerm = liveByPin.get(p.id) || null;
     const cwd = String(p.cwd || '');
     let missingCwd = false;
     try { missingCwd = !cwd || !fs.existsSync(cwd); } catch (_) { missingCwd = true; }
-    return {
+    // Drop orphaned automatic worktree pins once the worktree directory is gone and no live tab uses it.
+    if (!liveTerm && missingCwd && p.auto && p.worktree && p.worktree.path) {
+      pruned = true;
+      continue;
+    }
+    kept.push(p);
+    snap.push({
       ...p,
       live: Boolean(liveTerm),
       parked: !liveTerm,
       live_address: liveTerm ? liveTerm.address : null,
       missing_cwd: missingCwd,
-    };
-  });
+    });
+  }
+  if (pruned) {
+    try { writePins(kept); } catch (_) {}
+  }
+  return snap;
 }
 
 // The agents offered by the Web Studio (launcher, settings): the installed agents and those of WITH (installed at startup), the default

@@ -294,6 +294,25 @@ class PinsTest(unittest.TestCase):
         self.assertTrue(os.path.isdir(wt_out["worktree"]["path"]))
         self.assertTrue(wt_out["worktree"]["branch"].startswith("sb/wt-"))
 
+        # Closing a tab removes its auto pin, while a manual pin stays parked
+        auto_pin = pins_mod.add_pin(self.proj2, agent="claude", title="Auto Tab", env=env)
+        pins_all = pins_mod.load_pins(env=env)
+        for p in pins_all:
+            if p["id"] == auto_pin["id"]:
+                p["auto"] = True
+        pins_mod.save_pins(pins_all, env=env)
+        with open(hc_state, encoding="utf-8") as f:
+            st_hc = json.load(f)
+        st_hc["terminals"].append({
+            "address": "t2", "name": "claude-2", "cwd": self.proj2, "state": "live",
+            "labels": {"swarmbox.pin_id": auto_pin["id"], "swarmbox.title": "Auto Tab"},
+        })
+        with open(hc_state, "w", encoding="utf-8") as f:
+            json.dump(st_hc, f)
+        subprocess.run([sys.executable, tabs_script, "close", "t2"], env=env, capture_output=True, text=True, check=True)
+        subprocess.run([sys.executable, tabs_script, "close", "t1"], env=env, capture_output=True, text=True, check=True)
+        self.assertEqual([p["id"] for p in pins_mod.load_pins(env=env)], [pin["id"]])
+
     def test_herdr_ensure_initial_tab_uses_autostart_pins_or_falls_back_to_shell(self):
         hc_state = os.path.join(self.tmp, "hc-boot.json")
         hc_bin = os.path.join(self.tmp, "hc-boot")

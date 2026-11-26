@@ -236,8 +236,8 @@ class Server:
             "worktree": (self.t_worktree, "Inspect, cleanly merge, or remove a git worktree (action: status | merge | remove). Target can be a live tab or a pending worktree id/branch/path.",
                          {"action": ("string!", "status (read-only), merge (clean merge into base), or remove"),
                           "target": ("string", "live tab id/name OR pending worktree id/branch/path; default: active tab"),
-                          "clean": ("boolean", "for merge: also close the tab and remove the worktree after merging")}),
-            "say": (self.t_say, "Send a brief mid-flight progress note to the user during longer tasks. Do not duplicate the final done() reply.", {"text": ("string!", "the progress note")}),
+                          "clean": ("boolean", "for merge: true to also close the tab and remove the worktree and branch after merging")}),
+            "say": (self.t_say, "Send a brief progress update to the user in their language during multi-step tasks (free, does not count as a step). Call before waiting or after key milestones (e.g. checking agents, merging a worktree, running tests, or hitting an error) so the user can follow along.", {"text": ("string!", "the progress note")}),
             "done": (self.t_done, "Finish the goal and send the final reply to the user (under 1200 characters, in the user's language; concise bullets allowed for multi-tab status).", {"summary": ("string!", "final reply to the user")}),
         }
 
@@ -547,7 +547,7 @@ class Server:
         gate_tab = tab if tab is not None else {"tab": "worktree", "label": label}
         self.gate("worktree_" + action, gate_tab, desc, verdict, route)
         res = self.tabs_call(self.tabs.worktree, action, target_path, clean=clean)
-        if action == "merge" and clean and res.get("ok") and tab is not None:
+        if ((action == "merge" and clean) or action == "remove") and res.get("ok") and tab is not None:
             try:
                 self.tabs.close_tab(tab["tab"])
             except tabsclient.TabsError:

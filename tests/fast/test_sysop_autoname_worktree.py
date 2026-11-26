@@ -399,12 +399,15 @@ class AutoNamerTest(unittest.TestCase):
         self.assertEqual(tabs.renames[-1], ("t1", "Cache TTL Fix", "user"))
         self.assertEqual(sysop_history.conversation(sysop_history.load(self.paths), "g2", self.now), "")
 
-        # worktree status (read-only) & merge with clean=True closes tab
+        # worktree status (read-only), merge with clean=True, and remove all close the live tab
         st_out = json.loads(srv.t_worktree({"target": "t1", "action": "status"}))
         self.assertTrue(st_out["can_merge"])
         m_out = json.loads(srv.t_worktree({"target": "t1", "action": "merge", "clean": True}))
         self.assertTrue(m_out["cleaned"])
         self.assertEqual(tabs.closed, ["t1"])
+        r_out = json.loads(srv.t_worktree({"target": "t1", "action": "remove"}))
+        self.assertTrue(r_out["ok"])
+        self.assertEqual(tabs.closed, ["t1", "t1"])
 
 
 if __name__ == "__main__":

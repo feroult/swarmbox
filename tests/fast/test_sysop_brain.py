@@ -154,6 +154,7 @@ class Template(unittest.TestCase):
             "a question about the box is answered, not forwarded": ("Question about box state", "never type it into an agent"),
             "a tab is named by its name": ("Name tabs ONLY by their canonical `name` in backticks", "never by id (`t3`, `@3`) or numbered label"),
             "the reply is short and in the user's language": ("in the user's language", "Do not repeat in `done` what you already said with `say`", "At most 1000 characters"),
+            "multi-step tasks narrate progress with say": ("On multi-step tasks", "narrate progress with `say`"),
             "a dialog is the user's decision": ("USER's decision", "never answer, press Esc/Enter, or type over them", "unless the goal explicitly asks to answer that dialog"),
         }
         for why, phrases in needs.items():

@@ -1168,6 +1168,21 @@ class Tabs:
 
     def close_tab(self, tab):
         t = self.resolve(tab)
+        lbls = self.backend.tab_labels(t) or {}
+        pin_id = str(lbls.get("swarmbox.pin_id") or "").strip()
+        if pin_id:
+            try:
+                pcmd = self._sibling_bin("swarmbox-pins", "swarmbox-pins.py")
+                r = subprocess.run(pcmd + ["list"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=5.0)
+                if r.returncode == 0 and r.stdout.strip():
+                    pins = json.loads(r.stdout)
+                    if isinstance(pins, list):
+                        for p in pins:
+                            if isinstance(p, dict) and p.get("id") == pin_id and p.get("auto"):
+                                subprocess.run(pcmd + ["rm", pin_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5.0)
+                                break
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                pass
         self.backend.close_tab(t)
         return {"ok": True, "tab": t.id, "label": t.label}
 
