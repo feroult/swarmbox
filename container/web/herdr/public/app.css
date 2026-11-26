@@ -4018,40 +4018,6 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   border-color: var(--border-strong);
   background: rgba(36, 30, 51, 0.72);
 }
-.agent-card-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.card-act-btn {
-  appearance: none;
-  border: none;
-  background: transparent;
-  color: var(--text-dim);
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  opacity: 0.72;
-  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
-}
-.card-act-btn:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-}
-.card-act-btn.is-pinned {
-  color: var(--accent-bright);
-  opacity: 1;
-}
-.card-act-btn.is-autostart {
-  color: var(--amber);
-  opacity: 1;
-}
 .inline-rename-input {
   width: 100%;
   min-width: 0;

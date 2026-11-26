@@ -61,7 +61,7 @@ Run multiple agents on the same codebase in parallel without stepping on each ot
 
 - **Zero-friction launching (`Alt+A`):** Press `Alt+A` (or click **+ New agent**) to pick any auto-discovered Git repository in `~`, or click `+` on a repo header to spawn right beside your active agents.
 - **Automatic worktree isolation:** Launching a second agent on an active branch detects the collision and isolates it into a fresh `sb/wt-*` worktree (copying `.env*` files automatically, configurable as `ask` / `auto` / `off`).
-- **One-click reconcile &amp; pinned sessions:** Click a repo's `⑂ N` badge to dry-run merge checks and run **Merge &amp; close**, **Ask to commit**, or **Close &amp; clean**. Pin any tab so it survives `swarmbox stop` or `reset` as a zero-RAM `PARKED` card with 1-click **Wake** ([docs/worktrees-design.md](docs/worktrees-design.md), [docs/pins-design.md](docs/pins-design.md)).
+- **One-click reconcile &amp; persistent sessions:** Click a repo's `⑂ N` badge to dry-run merge checks and run **Merge &amp; close**, **Ask to commit**, or **Close &amp; clean**. Open agent sessions persist on their own: they survive `swarmbox stop` or `reset`, restarting on boot or waiting as zero-RAM `PARKED` cards with 1-click **Wake** ([docs/worktrees-design.md](docs/worktrees-design.md), [docs/pins-design.md](docs/pins-design.md)).
 
 ---
 

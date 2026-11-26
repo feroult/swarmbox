@@ -57,9 +57,11 @@ Tabs running inside a worktree show a branch badge (`⎇ <branch> → <base>`) i
 
 | Tab state on close (`✕`) | Behavior |
 | :--- | :--- |
-| **Pinned (`📌`)** | Becomes **`PARKED`** in the sidebar; worktree and branch stay intact until unpinned. |
-| **Unpinned, clean & 0 commits ahead** | Automatically removes the worktree and empty `sb/wt-*` branch (zero clutter, zero popup). |
-| **Unpinned, dirty or commits ahead** | Closes the tab without deleting anything; surfaces under **`Pending worktrees (N)`** in the sidebar with 1-click **Reopen** or **Remove**. |
+| **Manual pin** (`swarmbox pins add`, no `auto`) | Becomes **`PARKED`** in the sidebar; worktree and branch stay intact until the pin is removed. |
+| **Automatic pin or none, clean & 0 commits ahead** | The `auto` pin is removed with the tab, then the worktree and its empty `sb/wt-*` branch are removed (zero clutter, zero popup). |
+| **Automatic pin or none, dirty or commits ahead** | Closes the tab without deleting anything; surfaces under **`Pending worktrees (N)`** in the sidebar with 1-click **Reopen** or **Remove**. |
+
+Every agent tab has an automatic pin while it is open (see [pins-design.md](pins-design.md)), so the last two rows are the usual case; a worktree tab open when the box stops comes back on boot or as `PARKED`.
 
 ---
 

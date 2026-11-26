@@ -3179,8 +3179,6 @@
     return 'Z';
   }
 
-  const ICO_PIN_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M9.8 1.5l4.7 4.7-1.1 1.1-1.3-.3-2.5 2.5.4 2.1-1.1 1.1-2.5-2.5L3 13.6l-.6-.6 3.4-3.4-2.5-2.5 1.1-1.1 2.1.4L9 3.9l-.3-1.3 1.1-1.1z"/></svg>';
-  const ICO_BOLT_SVG = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M9.2 1L3 9h4.4l-.8 6L13 7H8.6l.6-6z"/></svg>';
   const ICO_BRANCH_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.5-7 1.8-7 3.4"/></svg>';
   const ICO_PENCIL_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.4a1.6 1.6 0 0 1 2.3 2.3L5.6 12.6 2.5 13.5l.9-3.1 7.8-8Z"/></svg>';
 
@@ -3282,32 +3280,6 @@
       body: JSON.stringify({ title: clean, title_source: 'user' }),
     }).catch(() => {});
     focusTerminalIfDesktop();
-  }
-
-  async function togglePinForTab(t) {
-    const pinId = t && t.labels && t.labels['swarmbox.pin_id'];
-    if (pinId) {
-      await fetch(`/api/pins/${encodeURIComponent(pinId)}`, { method: 'DELETE' }).catch(() => {});
-      showTermToast('Unpinned session');
-      return;
-    }
-    const r = await fetch('/api/pins', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ terminal: t.address }),
-    }).catch(() => null);
-    if (r && r.ok) showTermToast('Pinned session (auto-follows folder & agent)');
-  }
-
-  async function togglePinAutostart(pin) {
-    if (!pin || !pin.id) return;
-    const next = !pin.autostart;
-    const r = await fetch(`/api/pins/${encodeURIComponent(pin.id)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ autostart: next }),
-    }).catch(() => null);
-    if (r && r.ok) showTermToast(next ? 'Autostart on boot enabled' : 'Autostart disabled (parked on boot)');
   }
 
   async function unpinById(pinId) {

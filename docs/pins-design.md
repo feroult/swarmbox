@@ -1,12 +1,12 @@
 # Pinned Sessions & Auto-Naming (Design)
 
-Status: **design agreed, ready for implementation** (Phase 1: Pins & Rename; Phase 2: `tab.events` & Sysop Auto-Namer). Git worktree isolation for multi-agent work on the same repository is designed separately and intentionally parked so this ships cleanly first; the schema below is extensible for it.
+Status: **implemented**. Pins are automatic: every agent session is pinned while its tab is open, so it survives a restart; closing the tab discards it. The Web Studio has no manual pin control; a manual pin (`auto` absent) is made only with `swarmbox pins add` or `POST /api/pins`. Git worktree isolation is in [worktrees-design.md](worktrees-design.md) and uses the same labels and `pins.json`.
 
 ## 1. Goals
 
-1. **Pinned sessions survive restarts and resets:** pinning a live tab persists its session identity in the workspace (`~/.config/swarmbox/pins.json`), surviving `swarmbox stop`, host reboots, `swarmbox reset`, and image updates.
+1. **Agent sessions survive restarts and resets:** every open agent tab is pinned automatically in the workspace (`~/.config/swarmbox/pins.json`), surviving `swarmbox stop`, host reboots, `swarmbox reset`, and image updates.
 2. **Live auto-follow:** a pinned tab tracks the user's current working directory (`cwd`) and active agent as they work, without requiring manual bookmark updates.
-3. **Zero-weight restart (`parked` by default):** on container start, pinned sessions appear in the sidebar ready to wake in one click instead of launching every agent at boot. Only pins explicitly marked `autostart: true` spawn automatically during `serve` startup.
+3. **Boot mode:** one global setting (**Settings → SwarmBox**, `boot_mode` in `~/.config/swarmbox/session-prefs.json`) decides whether pinned sessions start on boot (`autostart`, the default) or wait as `PARKED` cards to wake in one click (`parked`). Changing it rewrites `autostart` on every pin.
 4. **Resume where you left off (`continue` by default):** waking a pinned agent tries `--continue` (`claude`, `agy`, `opencode`) in its saved `cwd`, falling back cleanly to a fresh session when no prior conversation exists in that folder.
 5. **Zero-friction session naming:** no mandatory modal when creating a tab. Tabs default to the folder name, can be renamed inline at any time (`title_source=user`), and when the `sysop` addon is installed, an event-driven Sysop auto-namer gives unnamed tabs concise semantic titles (`title_source=auto`) and logs the rename in the Sysop visual feed without consuming conversation-memory slots.
 
@@ -42,7 +42,8 @@ Stored under XDG config inside the workspace (`$SB_CONFIG_DIR/pins.json`), writt
       "agent": "claude",
       "cwd": "/home/agent/my-app",
       "resume": "continue",
-      "autostart": false,
+      "autostart": true,
+      "auto": true,
       "created_at": 1795400000,
       "updated_at": 1795401200
     }
@@ -53,20 +54,21 @@ Stored under XDG config inside the workspace (`$SB_CONFIG_DIR/pins.json`), writt
 Rules:
 - Array order in `pins` is the display order in the sidebar.
 - Unknown fields on a pin record are preserved on read-modify-write so future fields (such as worktree metadata) stay backward-compatible.
-- If `pins.json` is absent or empty, the box behaves identically to today.
+- `auto: true` marks a pin the gateway made for an open agent tab; closing that tab removes it. A pin without `auto` (from the CLI or the API) survives closing its tab as `PARKED`.
+- If `pins.json` is absent or empty, the box starts with one `shell` tab and nothing is restored.
 
 ---
 
 ## 3. Lifecycle & Invariants
 
 ### 3.1 Pinning & Auto-Follow
-- **Pinning a live tab** captures:
+- **A pin** captures:
   - `cwd`: `foreground.cwd || terminal.cwd || HOME`
   - `agent`: detected agent (`status.app`, `foreground.name`, or `swarmbox.agent`), else `shell`
   - `title`: current `swarmbox.title`, else basename of `cwd` (or `shell` for `$HOME`)
   - `title_source`: current `swarmbox.title_source` (if set), else `""`
   - `resume`: `"continue"` (default)
-  - `autostart`: `false` (default)
+  - `autostart`: from `boot_mode` for an automatic pin; `false` unless asked for a manual one
 - **Auto-pin of any agent session:** an agent tab from **New agent** is pinned when it opens (`auto: true`). Any other live terminal without a pin (a shell where an agent was typed, a cockpit or Sysop tab, a worktree opened from its badge) is pinned the first time the gateway sees it running a known agent, from live signals only (`status.app` or the foreground process, never the tab name or labels). The pin is `auto`, so closing the tab removes it; `swarmbox.persist=off` (`persist: false`) opts a terminal out.
 - **Live auto-follow:** while a pinned tab is alive, the gateway observes `foreground.cwd` and active agent during terminal refreshes:
   - When `cwd` changes to an existing directory different from `pin.cwd`, `pins.json` is updated (debounced / write-on-change only).
@@ -74,15 +76,16 @@ Rules:
   - **Downgrade guard:** exiting an agent back to `bash` does **not** overwrite an agent pin (`claude`, `agy`, `opencode`, `gemini`) with `shell`, so closing an agent before stopping the box never demotes the pin.
   - Renaming a pinned tab immediately updates both `swarmbox.title` / `swarmbox.title_source` and `pins.json`.
 
-### 3.2 Closing vs. Unpinning
-- **Closing a live pinned tab** (`DELETE /api/tabs/:id` or process exit) ends the `herdr-core` terminal, **leaving the pin intact**. The pin immediately renders as **`PARKED`** in the sidebar.
-- **Unpinning** removes the record from `pins.json` and clears `swarmbox.pin_id` on any linked live terminal (leaving a live terminal open).
+### 3.2 Closing, Parking and Removing
+- **Closing an agent tab** (`DELETE /api/tabs/:id`) removes its `auto` pin: the session is discarded, and the agent's own `--continue` / `--resume` in that folder still reaches the conversation. A manual pin (no `auto`) is kept and renders as **`PARKED`**; `?drop_pin=1` removes it too.
+- **Stopping the box** (`swarmbox stop`, `reset`, a reboot) with agent tabs open keeps their pins: they start again on boot or wait as `PARKED`, by `boot_mode`.
+- **Dismissing a `PARKED` card** (its `×`) or `DELETE /api/pins/:id` removes the record and clears `swarmbox.pin_id` on any linked live terminal. A live terminal still running an agent is pinned again (`auto`) on the next snapshot, so the only way to keep an open agent tab out of `pins.json` is `persist: false` when it opens (`swarmbox.persist=off`).
 
 ### 3.3 Boot Restoration & Waking a Parked Pin
 - **On container start** (`mux_serve_init` in [herdr.sh](../container/scripts/mux/herdr.sh)):
-  - Only pins with `autostart: true` are spawned automatically.
+  - `swarmbox-pins restore --boot` spawns the pins with `autostart: true` and closes the bare `--keep` recovery shells of the others, so they show as `PARKED`.
   - If a pin's `cwd` no longer exists on disk, boot does not fail: the pin stays `PARKED` with a `missing_cwd` flag surfaced in the UI.
-  - If no pin is spawned at boot, `herdr.sh` creates the default `shell` tab in `$HOME` as before.
+  - When no terminal is live and `pins.json` has no pins, `herdr.sh` creates the default `shell` tab in `$HOME`; with only parked pins it opens none, so waking one leaves no stray shell.
 - **Waking a `PARKED` pin** (`POST /api/pins/:id/wake` or CLI):
   - If a live terminal with `swarmbox.pin_id == id` already exists, focuses it instead of duplicating.
   - Spawns a `herdr-core` terminal (`keep: true`, `no_parent: true`) in `pin.cwd` with the pin's labels (`swarmbox.pin_id`, `swarmbox.title`, `swarmbox.title_source`, `swarmbox.agent`).
@@ -149,7 +152,7 @@ Aligned with [addons-design.md](addons-design.md):
    - `swarmbox-tabs rename` (`--source user|auto`) and enriched `swarmbox-tabs list` (`title`, `title_source`, `pin_id`, `pinned`).
    - Atomic `pins.json` store, `/api/pins` + `/api/pins/:id/wake` + `PATCH /api/tabs/:id` in [server.mjs](../container/web/herdr/server.mjs), and live `cwd`/agent auto-follow.
    - `autostart` boot restoration in [herdr.sh](../container/scripts/mux/herdr.sh) with the safe `--continue` wrapper.
-   - Web Studio UI (desktop & mobile): `📌` pin/unpin, `PARKED` cards with 1-click wake, per-pin `⚡ Autostart` and `continue/fresh` controls, inline rename (`✎` / double-click / `Alt+R`), and `missing_cwd` indicator.
+   - Web Studio UI (desktop & mobile): automatic pins for agent tabs, the global boot mode (**Auto-start** / **Parked**) in Settings, `PARKED` cards with 1-click wake and dismiss, inline rename (`✎` / double-click / `Alt+R`), and `missing_cwd` indicator. (The first version had a per-tab `📌` pin button and a per-pin `⚡ Autostart`; both were replaced by the automatic model.)
 2. **Phase 2 — `tab.events` & Sysop Auto-Namer**
    - `tab.events` publisher on `swarmbox-bus`.
    - Event-driven auto-namer + `rename_tab` MCP action in `sysop`, `sysop.autoname` config key, and compact rename rows in the Sysop visual feed.
