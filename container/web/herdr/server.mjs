@@ -660,6 +660,40 @@ export function createGateway(options = {}) {
     room.ptyRows = cur.rows;
     return false;
   }
+  // A button of the Studio (Ask to commit, Resolve, Commit main, a verify hand-off) types its prompt straight into the
+  // agent's PTY through an attach stream, not with hc's terminal.send: that one holds a delivery while a person was
+  // active in the terminal (about 3 s after a mouse report, which xterm emits as the pointer crosses the terminal on its
+  // way to the button, and up to `draft_wait`, 60 s, with text in the input box). The click is the person, so it must
+  // not wait. The text goes first and the Enter as its own write after a pause: text and Enter in one burst reach a TUI
+  // as a paste and the Enter becomes a line break (docs/spikes/enter.md: 50 ms was the smallest passing pause, 150 ms chosen).
+  const PROMPT_ENTER_GAP_MS = 150;
+  async function typePrompt(termId, text) {
+    const room = ptyRooms.get(termId);
+    const live = room ? [room.owner, ...room.clients].find((c) => c && c.stream) : null;
+    let own = null;
+    try {
+      if (!live) {
+        // No browser is on this terminal: attach at its current size (an attach applies its size in herdr-core).
+        const size = getCurrentPtySize(termId, 100, 30);
+        own = await hc.attach(termId, size.cols, size.rows, {}, 0);
+      }
+    } catch (_) {
+      own = null;
+    }
+    const stream = live ? live.stream : own;
+    if (!stream) {
+      // Attach failed: the queued delivery of hc is still better than nothing.
+      return hc.call('terminal.send', { terminal: termId, text, force: true });
+    }
+    try {
+      stream.write(Buffer.from(text, 'utf8'));
+      await new Promise((r) => setTimeout(r, PROMPT_ENTER_GAP_MS));
+      stream.write(Buffer.from('\r'));
+    } finally {
+      if (own) setTimeout(() => own.close(), 300);
+    }
+    return { ok: true, typed: true };
+  }
   let currentTheme = readSavedTheme();
   let lastBroadcastHash = '';
   let cachedWorktrees = [];
@@ -859,7 +893,7 @@ export function createGateway(options = {}) {
 
     if (mainTerm) {
       const prompt = buildVerifyHandoffPrompt({ ...context, push: shouldPush }, verifyCmd);
-      await hc.call('terminal.send', { terminal: mainTerm.address, text: prompt, force: true });
+      await typePrompt(mainTerm.address, prompt);
       return {
         mode: 'agent',
         push: shouldPush,
@@ -2235,7 +2269,7 @@ export function createGateway(options = {}) {
             return sendJson(res, 409, { error: 'no_main_agent', message: 'No active agent terminal on main for this repository' });
           }
           const prompt = 'Review the uncommitted changes on main, run relevant tests if needed, and create a clean git commit.';
-          const r = await hc.call('terminal.send', { terminal: mainTerm.address, text: prompt, force: true });
+          const r = await typePrompt(mainTerm.address, prompt);
           return sendJson(res, 200, { ok: true, action: 'commit', terminal: mainTerm.address, result: r });
         }
 
@@ -2345,7 +2379,7 @@ export function createGateway(options = {}) {
         const prompt = pathname.endsWith('/commit')
           ? 'Review our uncommitted changes in this worktree, run tests if relevant, and create a clean git commit.'
           : `Pull ${base} into this worktree branch (git merge ${base}), resolve any merge conflicts preserving both intents, run tests, and commit the resolution.`;
-        const r = await hc.call('terminal.send', { terminal: tid, text: prompt, force: true });
+        const r = await typePrompt(tid, prompt);
         return sendJson(res, 200, { ok: true, result: r });
       }
 
