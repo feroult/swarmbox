@@ -158,6 +158,8 @@ function agentFrom(dir, level, conf, values, env) {
     history: { kind: values.HISTORY || '', file: values.HISTORY_FILE || '', file_env: values.HISTORY_FILE_ENV || '', fields: words(values.HISTORY_FIELDS) },
     namer: values.NAMER || '',
     brain: values.BRAIN || '',
+    brain_opts: { format: values.BRAIN_FORMAT || 'text', resume: values.BRAIN_RESUME || '', stop: values.BRAIN_STOP || 'TERM',
+      home_env: values.BRAIN_HOME_ENV || '', login_failure: values.BRAIN_LOGIN_FAILURE || '' },
     digest: values.DIGEST || '',
     login_hint: values.LOGIN_HINT || '',
     model: values.MODEL || '',

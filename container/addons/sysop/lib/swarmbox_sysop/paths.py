@@ -83,5 +83,13 @@ class Paths:
     system_events = property(lambda self: os.path.join(self.state, "system_events.jsonl"))
     log = property(lambda self: os.path.join(self.state, "serve.log"))
 
+    # the brain's own home (docs/sysop-brain-design.md 3.1): its HOME, configuration folder, TMPDIR and working directory; kept across goals
+    brain_home = property(lambda self: os.path.join(self.state, "brain"))
+
     def goal_dir(self, goal_id):
         return os.path.join(self.goals, goal_id)
+
+    def mcp_socket(self, goal_id):
+        """the socket of a goal's MCP server, in the private run folder (short: a unix socket path is at most 107 bytes)"""
+        import hashlib
+        return os.path.join(self.run, "mcp-%s.sock" % hashlib.sha1(goal_id.encode("utf-8", "replace")).hexdigest()[:12])

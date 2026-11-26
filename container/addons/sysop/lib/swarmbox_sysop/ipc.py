@@ -24,6 +24,12 @@ In the goal folder (state/goals/<id>/):
                      refuses an approval. A decision with another id, or another word in "decision", is ignored. The MCP server deletes both
                      files when it is done.
   stopped            created by the service when the goal is stopped; the MCP server refuses every call once it exists
+  events.jsonl       the live log of the goal (events.py): one event per line with a growing `seq`, written by the service only (the brain's
+                     output through its adapter, the MCP server's events, the states). The Web Studio tails it.
+  stream.jsonl, brain.err   the brain's raw standard output (the audit stream, read by the service through a pipe) and its error output
+In the run folder, per goal: mcp-<hash>.sock, the socket of the goal's MCP server (run by the service, outside the brain's sandbox), for the
+one connection of the brain's proxy; removed once it connected.
+In the state folder: brain/, the brain's own home (HOME, its configuration folder, TMPDIR, its working directory), kept across goals.
 """
 import json
 import os

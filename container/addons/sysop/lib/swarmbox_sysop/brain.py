@@ -32,9 +32,11 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 
-from . import ipc
+from . import events as eventsmod
+from . import ipc, landlock
 from .agents import pick, registry
 
 
@@ -55,7 +57,7 @@ AUTO = "auto"   # the default: the brain of the agent that agents.pick chooses
 TABS_ENV = ("HOME", "PATH", "SB_TABS_BIN", "SB_TABS_BACKEND", "SB_TABS_HC_BIN", "HC_SESSION",
             "SWARMBOX_SYSOP_TABS_CMD", "SWARMBOX_SYSOP_STATE_CMD", "SWARMBOX_SYSOP_WORKTREE_CMD", "SWARMBOX_SYSOP_PINS_CMD",
             "SWARMBOX_STATE_TABS_CMD", "SWARMBOX_STATE_PINS_CMD", "SWARMBOX_STATE_WORKTREE_CMD")
-PLACEHOLDERS = ("mcp_config", "model", "system_prompt", "system_prompt_file", "max_turns", "goal_dir")
+PLACEHOLDERS = ("mcp_config", "model", "system_prompt", "system_prompt_file", "max_turns", "goal_dir", "agent_dir")
 _TOKEN = re.compile(r"\{\{|\}\}|\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
 GRACE_AFTER_DONE = 2.0
@@ -173,8 +175,15 @@ def default_model(text):
     return a["model"] if a else ""
 
 
-def login_hint(program):
-    """what to do when the brain is not logged in: the LOGIN_HINT of the agent whose command it runs"""
+def login_hint(program, opts=None, home=None, env=None):
+    """what to do when the brain is not logged in: the LOGIN_HINT of the agent whose command it runs. A hermetic brain (its own configuration
+    folder) does not see a login kept in the user's folder: it logs in only through the agent's SECRET_ENV, so the hint says that when none
+    of those variables is set. (A login kept only in the user's folder, shared with the brain: docs/sysop-brain-design.md, open.)"""
+    env = os.environ if env is None else env
+    if home and opts and opts.get("home_env") and opts.get("secrets") and not any(env.get(k) for k in opts["secrets"]):
+        a = registry.get(registry.resolve(os.path.basename(program or "")))
+        return ("The sysop's brain runs with a configuration folder of its own and logs in only with %s, not with a login made in a "
+                "tab. %s" % (" or ".join(opts["secrets"]), (a or {}).get("login_hint") or "")).strip()
     a = registry.get(registry.resolve(os.path.basename(program or "")))
     return (a or {}).get("login_hint") or "log in to the agent the brain runs, in a tab"
 
@@ -214,37 +223,158 @@ def fill(word, values):
     return _TOKEN.sub(sub, word)
 
 
+def brain_agent(text):
+    """The agent whose brain a setting runs: the agent `auto` picks, the agent a preset names, or the agent whose command a full command
+    starts with (`<its command> -p ...`); None for a program that is no agent of the box."""
+    t = text.strip()
+    if t == AUTO:
+        return pick("brain")
+    a = registry.get(registry.resolve(t))
+    if a and a["brain"]:
+        return a
+    try:
+        words = [w for w in shlex.split(t) if not _ASSIGN.match(w)]
+    except ValueError:
+        return None
+    return registry.get(registry.resolve(os.path.basename(words[0]))) if words else None
+
+
+def options(text):
+    """How the sysop runs the brain of a setting (docs/sysop-brain-design.md 5), from the agent's agent.conf: format (the adapter of its
+    output), resume (the template that resumes a session, or ""), stop (the polite signal), home_env (the variable that points it at the
+    brain home, or ""), login (the regex of its "not logged in" words), secrets (the variables of its login), agent_dir (its folder)."""
+    a = brain_agent(text)
+    o = dict((a or {}).get("brain_opts") or {})
+    try:
+        words = shlex.split(resolve_template(text))
+    except (ValueError, TemplateError):
+        words = []
+    fmt = o.get("format") or ""
+    if fmt not in eventsmod.ADAPTERS:
+        fmt = "claude-stream-json" if "stream-json" in words else "text"
+    login = o.get("login_failure") or ""
+    try:
+        login_re = re.compile(login) if login else LOGIN_FAILURE
+    except re.error:
+        login_re = LOGIN_FAILURE
+    return {"format": fmt, "resume": o.get("resume") or "", "stop": "INT" if o.get("stop") == "INT" else "TERM",
+            "home_env": o.get("home_env") or "", "login": login_re, "secrets": list(((a or {}).get("secrets") or {}).get("env") or []),
+            "agent_dir": (a or {}).get("dir") or "", "agent": (a or {}).get("id") or "", "addon": (a or {}).get("addon") or ""}
+
+
+def real_program(prog, opts, run=subprocess.run, log=None):
+    """The program the brain really is. An addon's command is a SwarmBox shim that installs on first use and then execs the real program
+    (`swarmbox-addon run`); inside the brain's sandbox and environment the shim can neither take the addon lock (/tmp/swarmbox) nor find
+    the user's install (HOME is the brain home). So the service resolves it here, outside both: `swarmbox-addon where`, after an install
+    when the addon has none yet. A program that is not a shim, or a shim of no agent's addon, is run as it is."""
+    log = log or (lambda m: None)
+    if os.path.basename(os.path.realpath(prog)) not in ("swarmbox-shim", "swarmbox-shim.sh"):
+        return prog
+    tool = shutil.which("swarmbox-addon")
+    if not opts.get("addon") or not tool:
+        return prog
+    cmd = os.path.basename(prog)
+    for attempt in (1, 2):
+        try:
+            r = run([tool, "where", opts["addon"], cmd], capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            log("swarmbox-addon where %s %s: %s" % (opts["addon"], cmd, e))
+            return prog
+        real = (r.stdout or "").strip().splitlines()[-1:] if r.returncode == 0 else []
+        if real and os.path.isabs(real[0]) and os.access(real[0], os.X_OK):
+            return real[0]
+        if attempt == 1:
+            log("the brain's program %s is not installed yet: installing the addon %s" % (cmd, opts["addon"]))
+            try:
+                run([tool, "install", opts["addon"]], capture_output=True, text=True, timeout=900)
+            except (OSError, subprocess.SubprocessError) as e:
+                log("swarmbox-addon install %s: %s" % (opts["addon"], e))
+                return prog
+    return prog
+
+
 def build(cfg, goal_dir, mcp_config, source, prompt_file=None, session_id=None):
     """(argv, env_extra) for the brain of one goal."""
     env_t, argv_t = parse_template(cfg.brain)
+    opts = options(cfg.brain)
     prompt = system_prompt(source, cfg.max_steps, cfg.max_seconds, cfg.autonomy)
     model = cfg.model if cfg.model != AUTO else default_model(cfg.brain)
     if not model and any("{model}" in w for w in [x for _, x in env_t] + argv_t):
         raise TemplateError("the brain uses {model} and its agent declares no MODEL: set sysop.model")
+    if not opts["agent_dir"] and any("{agent_dir}" in w for w in [x for _, x in env_t] + argv_t):
+        raise TemplateError("the brain uses {agent_dir} but it is not the brain of an agent of the box")
     unlimited_steps = not (cfg.max_steps and cfg.max_steps > 0)
     max_turns = str(cfg.max_steps + 3) if not unlimited_steps else ""
     values = {"mcp_config": mcp_config, "model": model, "system_prompt": prompt, "system_prompt_file": prompt_file or "",
-              "max_turns": max_turns, "goal_dir": goal_dir}
+              "max_turns": max_turns, "goal_dir": goal_dir, "agent_dir": opts["agent_dir"]}
     argv = []
-    i = 0
-    while i < len(argv_t):
-        w = argv_t[i]
-        # When max_steps is 0 (unlimited), omit `--max-turns {max_turns}` so Claude Code runs without a turn cap.
-        if unlimited_steps and w in ("--max-turns", "-max-turns") and i + 1 < len(argv_t) and argv_t[i + 1] == "{max_turns}":
-            i += 2
+    for w in argv_t:
+        # an option whose value is a placeholder that is empty (max_steps 0: no turn cap) is left out whole: `--max-turns {max_turns}`
+        # loses both words, `--max-turns={max_turns}` its one word (a rule of templates, not the name of one program's flag)
+        if w == "{max_turns}" and not max_turns:
+            if argv and argv[-1].startswith("-"):
+                argv.pop()
             continue
-        if unlimited_steps and w.startswith("--max-turns=") and "{max_turns}" in w:
-            i += 1
+        if "{max_turns}" in w and not max_turns and w.startswith("-") and "=" in w:
             continue
         argv.append(fill(w, values))
-        i += 1
-    if session_id and argv and "stream-json" in argv and "--resume" not in argv and "--no-session-persistence" not in argv:
-        argv.extend(["--resume", str(session_id)])
+    if session_id and opts["resume"] and argv:
+        try:
+            rwords = shlex.split(opts["resume"])
+        except ValueError:
+            rwords = []
+        argv.extend(fill(w, {"session_id": str(session_id)}) for w in rwords)
     return argv, {k: fill(v, values) for k, v in env_t}
 
 
-def write_mcp_config(path, ctx_path, paths, libdir):
-    """The MCP config file: the server is this library, run by the python that runs the service (no PATH, no launcher)."""
+# What the brain's environment is made of (docs/sysop-brain-design.md 3.3): built, not inherited. Its own login (the agent's SECRET_ENV),
+# what a program needs to run (PATH, the locale, the time zone, proxies and certificates), the variables of its template, its home, and the
+# test hooks of the suite (SWARMBOX_TEST_*). Nothing else of the service: the box's other secrets never reach the brain.
+BASE_ENV = ("PATH", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "TZ", "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+            "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE")
+
+
+def prepare_home(path):
+    """The brain home (docs/sysop-brain-design.md 3.1): HOME of the brain, its configuration folder, its TMPDIR and its working directory,
+    all private. Kept across goals: it holds the persistent session."""
+    from .paths import private_dir
+    home = {"root": private_dir(path)}
+    for k in ("config", "tmp", "work"):
+        home[k] = private_dir(os.path.join(path, k))
+    return home
+
+
+def environment(env_extra, opts, home, base=None):
+    """The whole environment of the brain."""
+    base = os.environ if base is None else base
+    env = {k: base[k] for k in BASE_ENV if base.get(k)}
+    for k in opts.get("secrets") or ():
+        if base.get(k):
+            env[k] = base[k]
+    for k, v in base.items():
+        if k.startswith("SWARMBOX_TEST_"):
+            env[k] = v
+    env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+    env.setdefault("LANG", "C.UTF-8")
+    if home:
+        env["HOME"] = home["root"]
+        env["TMPDIR"] = home["tmp"]
+        if opts.get("home_env"):
+            env[opts["home_env"]] = home["config"]
+    else:
+        env["HOME"] = base.get("HOME", "/")
+    env.update(env_extra)
+    return env
+
+
+def write_mcp_config(path, ctx_path, paths, libdir, socket_path=None):
+    """The MCP config file the brain reads. With socket_path (the service hosts the server, McpHost): the brain starts only the proxy, which
+    carries the protocol to that socket; the proxy gets nothing but the library path. Without it (by hand, older callers): the brain starts
+    the server itself, as this library run by the python that runs the service (no PATH, no launcher)."""
+    if socket_path:
+        ipc.write_json(path, {"mcpServers": {"sysop": {"command": sys.executable, "args": ["-B", "-m", "swarmbox_sysop", "mcp-proxy", socket_path],
+                                                       "env": {"PYTHONPATH": libdir, "PYTHONDONTWRITEBYTECODE": "1"}}}})
+        return
     env = {"PYTHONPATH": libdir, "PYTHONDONTWRITEBYTECODE": "1", "SWARMBOX_SYSOP_CONTEXT": ctx_path,
            "SB_RUN_DIR": os.path.dirname(paths.run), "SB_STATE_DIR": os.path.dirname(paths.state)}
     # what the server needs to run `swarmbox-tabs` as the service would (the command finds herdr-core and its locks by these): only what is set
@@ -254,12 +384,110 @@ def write_mcp_config(path, ctx_path, paths, libdir):
     ipc.write_json(path, {"mcpServers": {"sysop": {"command": sys.executable, "args": ["-B", "-m", "swarmbox_sysop", "mcp"], "env": env}}})
 
 
+def server_env(ctx_path, paths, libdir, base=None):
+    """The environment of the MCP server the service hosts: what it needs to run `swarmbox-tabs` as the service would, its context, the
+    library. Not the brain's secrets: it never runs the brain's program."""
+    base = os.environ if base is None else base
+    env = {k: base[k] for k in BASE_ENV if base.get(k)}
+    for k in TABS_ENV + ("SB_BUS_SOCKET", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "HC_SOCKET"):
+        if base.get(k):
+            env[k] = base[k]
+    for k, v in base.items():
+        if k.startswith(("SWARMBOX_", "SB_")):
+            env[k] = v
+    env.update({"PYTHONPATH": libdir, "PYTHONDONTWRITEBYTECODE": "1", "SWARMBOX_SYSOP_CONTEXT": ctx_path,
+                "SB_RUN_DIR": os.path.dirname(paths.run), "SB_STATE_DIR": os.path.dirname(paths.state)})
+    return env
+
+
+class McpHost:
+    """The goal's MCP server, run by the service OUTSIDE the brain's sandbox (docs/sysop-brain-design.md 3): it listens on a private socket
+    for the brain's proxy, and writes its events (events.py) on its standard output, which a thread here passes to the goal's EventLog.
+
+    start() returns when the server listens (or raises McpHostError); stop() ends it (TERM, then KILL)."""
+
+    def __init__(self, socket_path, env, events=None, log=None, popen=subprocess.Popen):
+        self.socket_path, self.env, self.events = socket_path, env, events
+        self.log = log or (lambda m: None)
+        self.popen = popen
+        self.proc = None
+        self.thread = None
+        self.ready = threading.Event()
+
+    def start(self, timeout=10.0):
+        if len(self.socket_path.encode()) > 100:
+            raise McpHostError("the socket path is too long for a unix socket (%d bytes): %s" % (len(self.socket_path.encode()), self.socket_path))
+        self.proc = self.popen([sys.executable, "-B", "-m", "swarmbox_sysop", "mcp", "--socket", self.socket_path], stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=self.env, close_fds=True, start_new_session=True,
+                               preexec_fn=_deathsig_only)
+        self.thread = threading.Thread(target=self._read, name="mcp-events", daemon=True)
+        self.thread.start()
+        if not self.ready.wait(timeout):
+            self.stop()
+            raise McpHostError("the MCP server did not start in %d s" % timeout)
+
+    def _read(self):
+        try:
+            for raw in self.proc.stdout:
+                line = raw.decode("utf-8", "replace").strip()
+                if line == '{"type": "ready"}':
+                    self.ready.set()
+                    continue
+                ev = eventsmod.mcp_event(line)
+                if ev is not None and self.events is not None:
+                    self.events.emit(ev[0], **ev[1])
+        except (OSError, ValueError):
+            pass
+        self.ready.set()
+
+    def stop(self):
+        p = self.proc
+        if p is None:
+            return
+        if p.poll() is None:
+            try:
+                os.killpg(p.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                p.wait(2)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+                p.wait(2)
+        if self.thread is not None:
+            self.thread.join(2)
+        try:
+            p.stdout.close()
+        except (OSError, AttributeError):
+            pass
+        try:
+            os.unlink(self.socket_path)
+        except OSError:
+            pass
+
+
+class McpHostError(RuntimeError):
+    pass
+
+
+def _deathsig_only():
+    try:
+        import ctypes
+        ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGTERM)
+    except Exception:
+        pass
+
+
 MAX_OUTPUT = 32 << 20        # bytes one file written by the brain (its stream and error output) may reach: with 50 folders of goals kept, at most 3.2 GB in the worst case (a real goal writes some 100 KB)
 
 
-def pdeathsig():
-    """Child setup: SIGTERM to the brain when the service dies (Linux; best effort); and a cap on the size of any file it writes
-    (RLIMIT_FSIZE), so a brain that prints in a loop cannot fill the disk before its time budget ends."""
+def pdeathsig(write_dirs=None):
+    """Child setup: SIGTERM to the brain when the service dies (Linux; best effort); a cap on the size of any file it writes (RLIMIT_FSIZE),
+    so a brain that writes in a loop cannot fill the disk before its time budget ends; and, with write_dirs, the Landlock domain that allows
+    writes only under those folders (landlock.py). A sandbox that was found available but cannot be applied fails the start (fail closed)."""
     try:
         import resource
         resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_OUTPUT, MAX_OUTPUT))
@@ -270,6 +498,15 @@ def pdeathsig():
         ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGTERM)
     except Exception:
         pass
+    if write_dirs:
+        landlock.restrict_writes(write_dirs)
+
+
+def sandbox_dirs(home, goal_dir):
+    """The folders the brain may write under: its home, the goal's folder (the CLI writes nothing there today; the service's files are
+    written by the service), and /dev (/dev/null, /dev/tty)."""
+    extra = [d for d in os.environ.get("SWARMBOX_TEST_SANDBOX_DIRS", "").split(":") if d and os.path.isdir(d)]     # the suite's scratch folder
+    return [home["root"], goal_dir, "/dev"] + extra
 
 
 def kill_group(pgid, grace=KILL_GRACE, proc=None, first_sig=signal.SIGTERM):
@@ -390,32 +627,105 @@ def _tail(path, n=300):
         return ""
 
 
-def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline, clock=time.time, sleep=time.sleep, popen=subprocess.Popen, on_start=None):
+class _Pump(threading.Thread):
+    """Reads the brain's standard output: the raw bytes go to stream.jsonl (the audit stream, at most MAX_OUTPUT bytes), each line to the
+    adapter, the adapter's events to the log. It never waits on anyone but the pipe, so the brain never blocks on its output."""
+
+    def __init__(self, pipe, raw_path, adapter, events):
+        threading.Thread.__init__(self, name="brain-output", daemon=True)
+        self.pipe, self.raw_path, self.adapter, self.events = pipe, raw_path, adapter, events
+
+    def run(self):
+        written = 0
+        try:
+            raw = open(self.raw_path, "ab")
+        except OSError:
+            raw = None
+        try:
+            while True:
+                line = self.pipe.readline(1 << 22)
+                if not line:
+                    break
+                if raw is not None and written < MAX_OUTPUT:
+                    chunk = line[:MAX_OUTPUT - written]
+                    try:
+                        raw.write(chunk)
+                        raw.flush()
+                        written += len(chunk)
+                    except OSError:
+                        pass
+                try:
+                    for typ, fields in self.adapter.feed(line.decode("utf-8", "replace").rstrip("\r\n")):
+                        self.events.emit(typ, **fields)
+                except Exception:       # a line the adapter cannot take is kept raw, never a dead reader
+                    pass
+        except (OSError, ValueError):
+            pass
+        finally:
+            if raw is not None:
+                raw.close()
+
+
+def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline, clock=time.time, sleep=time.sleep, popen=subprocess.Popen,
+        on_start=None, opts=None, home=None, events=None, sandbox=True, log=None):
     """Run the brain for one goal and return a Result. stop_check() is true when the stop key was pressed; tick() is called about every 0.1 s;
-    deadline is the epoch at which the brain is killed, or None when unlimited."""
-    prog = shutil.which(argv[0], path=env_extra.get("PATH") or os.environ.get("PATH"))
+    deadline is the epoch at which the brain is killed, or None when unlimited.
+    home (prepare_home): the hermetic run of docs/sysop-brain-design.md 3: the environment by allowlist, the brain home, its working
+    directory, and with `sandbox` the Landlock domain. Without it the brain inherits the service's environment and runs in the goal folder.
+    events: the goal's EventLog (one is opened on goal_dir/events.jsonl when None)."""
+    opts = opts or options(cfg.brain)
+    log = log or (lambda m: None)
+    if home:
+        env = environment(env_extra, opts, home)
+    else:
+        env = dict(os.environ)
+        env.update(env_extra)
+    prog = shutil.which(argv[0], path=env.get("PATH"))
     if prog is None:
         return Result("failed", "the brain program %r was not found: install it (swarmbox addon install %s) or set SWARMBOX_SYSOP_BRAIN" % (argv[0], os.path.basename(argv[0])))
-    env = dict(os.environ)
-    env.update(env_extra)
+    if home:
+        prog = real_program(prog, opts, log=log)
+        env["PATH"] = os.path.dirname(prog) + os.pathsep + env.get("PATH", "")      # what the shim would add: the program's own folder first
     wrap = []
     if deadline is not None and shutil.which("timeout"):
         wrap = ["timeout", "-k", "5", str(max(1, int(deadline - clock())))]
     stream, errf = os.path.join(goal_dir, "stream.jsonl"), os.path.join(goal_dir, "brain.err")
     done_path = os.path.join(goal_dir, "done.json")
-    out = open(stream, "wb")
+    own_events = events is None
+    if own_events:
+        events = eventsmod.EventLog(os.path.join(goal_dir, "events.jsonl"), clock, log)
+    done_flag = threading.Event()
+
+    def on_event(ev):
+        if ev.get("type") == "done":
+            done_flag.set()
+    events.listeners.append(on_event)
+    write_dirs = None
+    if home and sandbox:
+        write_dirs = sandbox_dirs(home, goal_dir) if landlock.abi() else None
+        if write_dirs is None:
+            log("the brain runs without a filesystem sandbox: Landlock is not available in this kernel or container")
+    adapter = eventsmod.adapter(opts["format"])
+    for path in (stream, errf):
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            os.close(fd)
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
     err = open(errf, "wb")
-    os.chmod(stream, 0o600)
-    os.chmod(errf, 0o600)
     try:
-        proc = popen(wrap + [prog] + argv[1:], stdin=subprocess.PIPE, stdout=out, stderr=err, cwd=goal_dir, env=env, start_new_session=True,
-                     close_fds=True, preexec_fn=pdeathsig)
-    except OSError as e:
-        out.close()
+        proc = popen(wrap + [prog] + argv[1:], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, cwd=home["work"] if home else goal_dir,
+                     env=env, start_new_session=True, close_fds=True, preexec_fn=lambda: pdeathsig(write_dirs))
+    except (OSError, subprocess.SubprocessError) as e:
         err.close()
-        return Result("failed", "cannot start the brain %s: %s" % (argv[0], e.strerror or e))
-    out.close()
+        events.listeners.remove(on_event)
+        if own_events:
+            events.close()
+        return Result("failed", "cannot start the brain %s: %s" % (argv[0], getattr(e, "strerror", None) or e))
     err.close()
+    pump = _Pump(proc.stdout, stream, adapter, events)
+    pump.start()
     try:        # whatever goes wrong while supervising (a tick, the stop check, on_start), the brain must not be left running
         if on_start:
             on_start(proc.pid)
@@ -435,7 +745,7 @@ def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline
             if deadline is not None and (now >= deadline + 1 or time.monotonic() >= mono_end + 1):
                 outcome = "timeout"
                 break
-            if done_seen is None and os.path.exists(done_path):
+            if done_seen is None and (done_flag.is_set() or os.path.exists(done_path)):
                 done_seen = now
             if done_seen is not None and now - done_seen >= GRACE_AFTER_DONE:
                 break
@@ -451,13 +761,18 @@ def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline
                 closer()
             except (OSError, subprocess.TimeoutExpired):
                 pass
+        pump.join(2)
+        events.listeners.remove(on_event)
+        if own_events:
+            events.close()
         raise
     code = proc.poll()
-    # On user Stop, send SIGINT first so Claude Code can flush its session_id cleanly before terminating.
-    if outcome == "stopped" and code is None:
+    # the polite stop the agent declares first (Claude Code: SIGINT, so it writes its result and its session), then TERM and KILL
+    first = signal.SIGINT if opts["stop"] == "INT" else signal.SIGTERM
+    if outcome == "stopped" and code is None and first == signal.SIGINT:
         try:
             os.killpg(proc.pid, signal.SIGINT)
-            proc.wait(timeout=1.0)
+            proc.wait(timeout=2.0)
         except (ProcessLookupError, PermissionError, subprocess.TimeoutExpired):
             pass
         code = proc.poll()
@@ -466,20 +781,32 @@ def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline
         code = proc.wait(5)
     except subprocess.TimeoutExpired:
         code = None
+    pump.join(5)
+    try:
+        proc.stdout.close()
+    except OSError:
+        pass
+    if outcome is None and wrap and code == 124:     # `timeout` ended it: the time budget, even when it acted before the loop saw the deadline
+        outcome = "timeout"
     tick()
-    info = extract_stream_info(stream)
-    ev, text, assistant_text, sid = info["result"], info["text"], info["assistant_text"], info["session_id"]
+    events.listeners.remove(on_event)
+    if own_events:
+        events.close()
+    ev, assistant_text, sid = adapter.result, adapter.assistant_text, adapter.session_id
+    text = "\n".join(adapter.tail) + "\n" + str(ev.get("result") or "")
     turns, cost = ev.get("num_turns"), ev.get("total_cost_usd")
-    done = ipc.read_json(done_path)
-    summary = done.get("summary", "") if isinstance(done, dict) else ""
+    summary = ""
+    d = ipc.read_json(done_path)
+    if isinstance(d, dict):
+        summary = str(d.get("summary", ""))
     if outcome == "stopped":
         return Result("stopped", "stopped by the user", summary or assistant_text, code, turns, cost, session_id=sid)
-    if isinstance(done, dict):
+    if summary:
         return Result("done", "", summary, code, turns, cost, session_id=sid)
-    if outcome == "timeout" or code == 124:             # 124: `timeout` ended it at the deadline before this loop did
+    if outcome == "timeout":
         return Result("failed", "the time budget of %d s is spent: the brain was killed" % cfg.max_seconds, summary or assistant_text, code, turns, cost, session_id=sid)
-    if LOGIN_FAILURE.search(text) or LOGIN_FAILURE.search(_tail(errf, 4000)):
-        return Result("failed", "the brain is not logged in (%s). %s" % (argv[0], login_hint(argv[0])), "", code, turns, cost, session_id=sid)
+    if opts["login"].search(text) or opts["login"].search(_tail(errf, 2000)):
+        return Result("failed", "the brain is not logged in (%s). %s" % (argv[0], login_hint(argv[0], opts, home)), "", code, turns, cost, session_id=sid)
     if ev.get("subtype") == "error_max_turns":
         return Result("failed", "the brain used all its %d turns without calling done" % (cfg.max_steps + 3), "", code, turns, cost, session_id=sid)
     if code not in (0, None):

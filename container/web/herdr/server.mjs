@@ -45,6 +45,8 @@ import {
   readRecentDirs,
   readSavedTheme,
   readSessionPrefs,
+  compactEvents,
+  sysopLiveTail,
   readSysopSnapshot,
   readWorktreePrefs,
   runCommand,
@@ -1421,8 +1423,82 @@ export function createGateway(options = {}) {
       lastBroadcastHash = h;
       broadcast(snap);
     }
-  }, 600);
+  }, options.sysopPollMs || 600);
   if (sysopTimer.unref) sysopTimer.unref();
+
+  // The sysop's live events (docs/sysop-brain-design.md 4.4): the goal's events.jsonl is the broker. inotify (fs.watch) wakes the pump the
+  // moment the service appends a line; a slow timer is the fallback where inotify does not fire, and notices a new goal. Each new batch
+  // goes to every page as one `sysop_events` message; a page that connects gets the goal's events so far (compacted) after its snapshot.
+  // An event that changes what the snapshot shows (a state, an approval, the end of a call, a say, done) brings the snapshot at once.
+  const LIVE_BACKLOG = 1 << 20;          // bytes a page may have queued before its events are held and coalesced
+  let liveWatcher = null;
+  let liveWatchGid = '';
+  let liveSnapTimer = null;
+  const SNAP_TYPES = new Set(['state', 'approval', 'call.end', 'say', 'done', 'call']);
+
+  function sendLive(ws, msg) {
+    if (ws.readyState !== 1) return;
+    if (ws.bufferedAmount > LIVE_BACKLOG || (ws._livePending && ws._livePending.length)) {
+      // a slow page: hold its events and send them coalesced when its buffer drains (never block, never grow without bound)
+      ws._livePending = compactEvents([...(ws._livePending || []), ...msg.events]).slice(-5000);
+      ws._liveGid = msg.gid;
+      if (!ws._liveRetry) {
+        ws._liveRetry = setInterval(() => {
+          if (ws.readyState !== 1) { clearInterval(ws._liveRetry); ws._liveRetry = null; return; }
+          if (ws.bufferedAmount > LIVE_BACKLOG) return;
+          const events = ws._livePending;
+          ws._livePending = null;
+          clearInterval(ws._liveRetry);
+          ws._liveRetry = null;
+          if (events && events.length) ws.send(JSON.stringify({ type: 'sysop_events', gid: ws._liveGid, events }));
+        }, 100);
+        if (ws._liveRetry.unref) ws._liveRetry.unref();
+      }
+      return;
+    }
+    ws.send(JSON.stringify(msg));
+  }
+
+  function pumpLive(force = false) {
+    if (eventClients.size === 0 && !force) return;
+    let tail = null;
+    try { tail = sysopLiveTail(); } catch (_) { tail = null; }
+    if (!tail) return;
+    if (tail.gid !== liveWatchGid) watchLive(tail);
+    const fresh = tail.poll();
+    if (!fresh.length) return;
+    const msg = { type: 'sysop_events', gid: tail.gid, events: fresh };
+    for (const ws of eventClients) sendLive(ws, msg);
+    if (fresh.some((e) => SNAP_TYPES.has(e.type)) && !liveSnapTimer) {
+      liveSnapTimer = setTimeout(() => {
+        liveSnapTimer = null;
+        const snap = buildSnapshot({ type: 'sysop' });
+        const h = snapshotHash(snap);
+        if (h !== lastBroadcastHash) {
+          lastBroadcastHash = h;
+          broadcast(snap);
+        }
+      }, 25);
+    }
+  }
+
+  function watchLive(tail) {
+    if (liveWatcher) { try { liveWatcher.close(); } catch (_) {} liveWatcher = null; }
+    liveWatchGid = tail.gid;
+    const dir = path.dirname(tail.file);
+    try {
+      // the folder, not the file: the file may not exist yet when the goal starts
+      liveWatcher = fs.watch(dir, { persistent: false }, (_ev, name) => {
+        if (!name || name === 'events.jsonl') setImmediate(pumpLive);
+      });
+      liveWatcher.on('error', () => { try { liveWatcher.close(); } catch (_) {} liveWatcher = null; });
+    } catch (_) {
+      liveWatcher = null;
+    }
+  }
+
+  const liveTimer = setInterval(pumpLive, options.liveFallbackMs || 1000);
+  if (liveTimer.unref) liveTimer.unref();
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -2718,8 +2794,16 @@ export function createGateway(options = {}) {
 
     if (url.pathname === '/ws/events') {
       ws._clientId = (url.searchParams.get('clientId') || '').slice(0, 64) || null;
+      try { pumpLive(true); } catch (_) {}     // what arrived since the last pump goes to the other pages; this one gets it in its replay
       eventClients.add(ws);
       ws.send(JSON.stringify(buildSnapshot({ type: 'snapshot' })));
+      try {
+        const tail = sysopLiveTail();
+        if (tail) {
+          const events = tail.replay(0);
+          if (events.length) ws.send(JSON.stringify({ type: 'sysop_events', gid: tail.gid, events, replay: true }));
+        }
+      } catch (_) {}
       if (typeof hc.refreshTerminals === 'function') hc.refreshTerminals();
       ws.on('close', () => eventClients.delete(ws));
       return;
@@ -3141,6 +3225,8 @@ export function createGateway(options = {}) {
 
   function shutdown() {
     clearInterval(sysopTimer);
+    clearInterval(liveTimer);
+    if (liveWatcher) { try { liveWatcher.close(); } catch (_) {} }
     clearInterval(wsPingTimer);
     for (const ws of eventClients) {
       try { ws.close(); } catch (_) {}

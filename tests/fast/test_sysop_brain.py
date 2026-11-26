@@ -263,7 +263,7 @@ class RunBrain(unittest.TestCase):
         self.script([{"tool": "box_state"}, {"tool": "done", "args": {"summary": "x"}}])
         self.go()
         with open(os.path.join(self.gdir, "stream.jsonl")) as f:
-            ev = [json.loads(x) for x in f]
+            ev = [e for e in (json.loads(x) for x in f) if e["type"] != "stream_event"]      # the raw stream, partial messages and all
         self.assertEqual([e["type"] for e in ev], ["system", "assistant", "user", "assistant", "user", "result"])
         self.assertEqual(ev[1]["message"]["content"][0]["name"], "mcp__sysop__box_state")
         self.assertEqual(oct(os.stat(os.path.join(self.gdir, "stream.jsonl")).st_mode & 0o777), "0o600")
@@ -436,13 +436,16 @@ class BrainSupervision(unittest.TestCase):
 
 class SysopV2SessionAndStreaming(unittest.TestCase):
     def test_unlimited_steps_omits_max_turns_and_injects_resume_session(self):
-        cfg = config.load({"SWARMBOX_SYSOP_BRAIN": "b --mcp-config {mcp_config} --max-turns {max_turns} --output-format stream-json"})
+        cfg = config.load({"SWARMBOX_SYSOP_BRAIN": "claude"})
         self.assertEqual(cfg.max_steps, 0)
         self.assertEqual(cfg.max_seconds, 0)
         argv, _ = brain.build(cfg, "/g", "/m.json", "web", session_id="sess_abc123")
         self.assertNotIn("--max-turns", argv)
-        self.assertIn("--resume", argv)
-        self.assertEqual(argv[argv.index("--resume") + 1], "sess_abc123")
+        self.assertEqual(argv[argv.index("--resume") + 1], "sess_abc123", "the agent's BRAIN_RESUME, filled with the session")
+        argv, _ = brain.build(config.load({"SWARMBOX_SYSOP_BRAIN": "b --mcp-config {mcp_config} --max-turns={max_turns} --output-format stream-json"}),
+                              "/g", "/m.json", "web", session_id="sess_abc123")
+        self.assertEqual(argv, ["b", "--mcp-config", "/m.json", "--output-format", "stream-json"],
+                         "a program that is no agent has no way to resume; an empty --opt={max_turns} goes too")
 
     def test_extract_stream_info_reads_session_id_and_full_streamed_markdown(self):
         e = ss.Env()

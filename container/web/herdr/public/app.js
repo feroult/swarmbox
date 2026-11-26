@@ -6546,10 +6546,78 @@
     return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
   }
 
+  // ---- The running goal, live (docs/sysop-brain-design.md 4.5): a reducer over the goal's events (sysop_events from the gateway, in seq
+  // order), drawn into the running turn only. What the model chose, typed, waits for and wrote shows as it happens; a burst of text is
+  // revealed at a steady pace that catches up within a few hundred milliseconds. The snapshot keeps the finished turns.
+  const Live = window.SbSysopLive;          // public/sysoplive.js: the reducer (pure, tested in Node)
+  const liveGoals = new Map();     // gid -> the reducer's state of that goal
+  const lastTurns = new Map();     // gid -> the snapshot's turn (prompt, started) for a redraw between snapshots
+  const liveTurnParts = (g, turn) => Live.parts(g, turn && turn.live_action);
+  const liveLine = (g, turn) => Live.line(g, turn && turn.live_action);
+
+  let livePaceRaf = 0;
+  function paceLive() {
+    livePaceRaf = 0;
+    let more = false;
+    const hidden = document.visibilityState === 'hidden';
+    for (const [gid, g] of liveGoals) {
+      const r = Live.pace(g, hidden);
+      if (r.more) more = true;
+      if (r.changed) redrawLiveTurn(gid);
+    }
+    if (more) livePaceRaf = requestAnimationFrame(paceLive);
+  }
+  function scheduleLive(gid) {
+    redrawLiveTurn(gid);
+    if (!livePaceRaf) livePaceRaf = requestAnimationFrame(paceLive);
+  }
+
+  function onSysopEvents(msg) {
+    const gid = String(msg.gid || '');
+    if (!gid || !Array.isArray(msg.events)) return;
+    if (msg.replay || !liveGoals.has(gid)) liveGoals.set(gid, Live.goal());
+    const g = liveGoals.get(gid);
+    const before = g.seq;
+    for (const ev of msg.events) Live.apply(g, ev);
+    if (msg.replay) Live.showAll(g);     // what already happened is shown at once
+    if (g.seq !== before || msg.replay) scheduleLive(gid);
+  }
+
+  // draw the running turn of `gid` again, in place (the approval card, which lives inside it, is moved into the new one)
+  function redrawLiveTurn(gid) {
+    if (!sysopFeedEl) return;
+    const old = Array.from(sysopFeedEl.querySelectorAll('.turn.running')).find((el) => el.dataset.gid === gid);
+    const turn = lastTurns.get(gid);
+    if (!old || !turn) return;
+    const nearBottom = sysopFeedEl.scrollHeight - sysopFeedEl.scrollTop - sysopFeedEl.clientHeight < 48;
+    const fresh = renderTurn(turn);
+    const hadCard = approvalCardEl && old.contains(approvalCardEl);
+    old.replaceWith(fresh);
+    if (hadCard) {
+      const host = fresh.querySelector('.turn-sysop');
+      if (host) host.appendChild(approvalCardEl);
+    }
+    if (nearBottom) sysopFeedEl.scrollTop = sysopFeedEl.scrollHeight;
+    const g = liveGoals.get(gid);
+    if (g && sysopLiveStripTextEl && sysopRunning) {
+      const elapsed = turn.started ? Math.max(0, Math.floor((Date.now() - turn.started) / 1000)) : 0;
+      const line = liveLine(g, turn);
+      sysopLiveStripTextEl.textContent = elapsed >= 1 ? `${line} · ${elapsed}s` : line;
+    }
+  }
+
+  function streamCursor() {
+    const cur = document.createElement('span');
+    cur.className = 'turn-stream-cursor';
+    cur.setAttribute('aria-hidden', 'true');
+    return cur;
+  }
+
   function renderTurn(turn) {
     const el = document.createElement('div');
     el.className = `turn${turn.running ? ' running' : ''}`;
     el.dataset.state = turn.state || '';
+    el.dataset.gid = turn.id || '';
 
     if (turn.prompt) {
       const ask = document.createElement('div');
@@ -6574,7 +6642,9 @@
     who.className = 'turn-who';
     who.textContent = 'Sysop';
     head.appendChild(who);
-    const acts = Array.isArray(turn.actions) ? turn.actions : [];
+    const lg = turn.running ? liveGoals.get(turn.id) : null;
+    const live = lg ? liveTurnParts(lg, turn) : null;
+    const acts = live ? live.acts : (Array.isArray(turn.actions) ? turn.actions : []);
     let list = null;
     if (acts.length) {
       const failed = acts.filter((a) => !a.ok).length;
@@ -6589,10 +6659,12 @@
       list.hidden = !open;
       for (const a of acts) {
         const li = document.createElement('li');
-        li.className = a.ok ? 'ok' : 'err';
+        const pending = a.state === 'chosen' || a.state === 'running' || a.state === 'waiting';
+        li.className = pending ? 'live' : (a.ok ? 'ok' : 'err');
+        if (a.state) li.dataset.state = a.state;
         const mark = document.createElement('span');
         mark.className = 'turn-act-mark';
-        mark.textContent = a.ok ? '✓' : '✕';
+        mark.textContent = pending ? (a.state === 'waiting' ? '⏸' : '…') : (a.ok ? '✓' : '✕');
         li.append(mark, linkTabs(a.label || a.fn || 'step'));
         list.appendChild(li);
       }
@@ -6612,26 +6684,31 @@
     said.appendChild(head);
     if (list) said.appendChild(list);
 
-    for (const n of Array.isArray(turn.notes) ? turn.notes : []) {
+    const noteList = live ? live.notes : (Array.isArray(turn.notes) ? turn.notes : []).map((n) => ({ text: String(n), streaming: false }));
+    for (const n of noteList) {
       const note = document.createElement('div');
       note.className = 'turn-note';
-      note.appendChild(linkTabs(String(n)));
+      note.appendChild(linkTabs(n.text));
+      if (n.streaming) {
+        note.dataset.state = 'streaming';
+        note.appendChild(streamCursor());
+      }
       said.appendChild(note);
     }
     if (turn.running) {
-      const live = document.createElement('div');
-      live.className = 'turn-live';
+      const liveEl = document.createElement('div');
+      liveEl.className = 'turn-live';
       const dot = document.createElement('span');
       dot.className = 'turn-live-dot';
       const txt = document.createElement('span');
       const elapsed = turn.started ? Math.max(0, Math.floor((Date.now() - turn.started) / 1000)) : 0;
-      const base = turn.live_action || 'Thinking…';
+      const base = live ? live.line : (turn.live_action || 'Thinking…');
       txt.textContent = elapsed >= 1 ? `${base} · ${elapsed}s` : base;
-      live.append(dot, txt);
-      said.appendChild(live);
-      if (turn.stream_text) {
-        const rep = renderReplyText(turn.stream_text, true);
-        rep.dataset.state = 'streaming';
+      liveEl.append(dot, txt);
+      said.appendChild(liveEl);
+      if (live && live.reply && live.reply.text) {
+        const rep = renderReplyText(live.reply.text, live.reply.streaming);
+        rep.dataset.state = live.reply.streaming ? 'streaming' : 'running';
         said.appendChild(rep);
       }
     } else if (turn.state === 'stopped') {
@@ -7617,9 +7694,22 @@
       goalInputEl.placeholder = (!hasTurns ? (window.innerWidth <= 860 ? 'Ask Sysop…' : 'Ask Sysop or direct an agent…') : 'Ask a follow-up…') + keyHint;
     }
     btnSysopNew.classList.toggle('hidden', !hasTurns || !sysop.up);
+    // the running turn drawn from its live events: the snapshot gives its prompt and start; a goal that ended leaves the live state
+    const runningIds = new Set();
+    for (const t of turns || []) {
+      lastTurns.set(t.id, t);
+      if (t.running) runningIds.add(t.id);
+    }
+    for (const gid of Array.from(liveGoals.keys())) {
+      if (!runningIds.has(gid) && (turns || []).some((t) => t.id === gid)) liveGoals.delete(gid);
+    }
+    for (const gid of Array.from(lastTurns.keys())) {
+      if (!(turns || []).some((t) => t.id === gid)) lastTurns.delete(gid);
+    }
+    const keyTurns = (turns || []).map((t) => (t.running && liveGoals.has(t.id) ? { id: t.id, prompt: t.prompt, running: true, started: t.started, source: t.source } : t));
     // the snapshot comes every 600 ms: rebuild only when something shown changed (per-second tick while running keeps elapsed live)
     const tickBucket = sysopRunning ? Math.floor(Date.now() / 1000) : Math.floor(Date.now() / 60000);
-    const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns, turns ? null : steps,
+    const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns ? keyTurns : null, turns ? null : steps,
       terminals.map((t) => [t.address, tabDisplayName(t), tabAgentKind(t)]), tickBucket]);
     if (key !== lastFeedKey) {
       lastFeedKey = key;
@@ -7789,6 +7879,7 @@
       if (eventsWs !== ws) return;
       let msg;
       try { msg = JSON.parse(ev.data); } catch (_) { return; }
+      if (msg && msg.type === 'sysop_events') { onSysopEvents(msg); return; }
       if (msg.theme && THEMES[msg.theme] && msg.theme !== currentThemeKey) {
         applyTheme(msg.theme, false);
       }

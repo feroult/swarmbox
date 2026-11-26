@@ -237,6 +237,8 @@ def cmd_status(args):
             print("sysop: running (pid %s), bus %s, autonomy %s, countdown %gs, brain %s %s" % (
                 st.get("pid", "?"), state.clean(st.get("bus", "?")), state.clean(s.get("autonomy")), s.get("countdown", 0), state.clean(s.get("brain")),
                 state.clean(s.get("model"))))
+            if s.get("sandbox"):
+                print("sandbox: %s" % state.clean(s.get("sandbox")))
             print("current: %s" % (st.get("current") or "none"))
             print("queued: %d" % len(st.get("queue", [])))
         for g in service.recent_goals(pth, 3):
@@ -356,7 +358,12 @@ def main(argv=None):
     for name, fn in (("veto", cmd_veto), ("approve", cmd_approve)):
         k = sub.add_parser(name)
         k.set_defaults(fn=fn)
-    sub.add_parser("mcp").set_defaults(fn=lambda a: mcpserver.main())
+    m = sub.add_parser("mcp")
+    m.add_argument("--socket", default=None, help=argparse.SUPPRESS)
+    m.set_defaults(fn=lambda a: mcpserver.main(socket_path=a.socket))
+    mp = sub.add_parser("mcp-proxy", help=argparse.SUPPRESS)
+    mp.add_argument("socket")
+    mp.set_defaults(fn=lambda a: mcpserver.proxy(a.socket))
     c = sub.add_parser("context")
     c.add_argument("dir", nargs="?", default=".")
     c.add_argument("--force", action="store_true")

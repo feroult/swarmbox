@@ -80,6 +80,11 @@ KEYS = {
     "HISTORY_FIELDS": "words",
     "NAMER": "template",
     "BRAIN": "template",
+    "BRAIN_FORMAT": "enum:claude-stream-json|text",
+    "BRAIN_RESUME": "template",
+    "BRAIN_STOP": "enum:INT|TERM",
+    "BRAIN_HOME_ENV": "word",
+    "BRAIN_LOGIN_FAILURE": "str",
     "DIGEST": "template",
     "LOGIN_HINT": "str",
     "MODEL": "word",
@@ -98,7 +103,8 @@ KEYS["TERM_IMAGE_PASTE"] = "enum:path|none"
 PLACEHOLDERS = {"NAMER": ("prompt", "system_prompt", "model"),
                 "DIGEST": ("prompt", "system_prompt", "model"),
                 "CONTEXT_ARGS": ("context_file", "context_dir", "context_toml"),
-                "BRAIN": ("mcp_config", "model", "system_prompt", "system_prompt_file", "max_turns", "goal_dir"),
+                "BRAIN": ("mcp_config", "model", "system_prompt", "system_prompt_file", "max_turns", "goal_dir", "agent_dir"),
+                "BRAIN_RESUME": ("session_id",),
                 "MCP_ARGS": ("mcp_file", "home")}
 # {mcp_file} in MCP_ARGS: the box's list of MCP servers, $SB_DATA_DIR/mcp-servers.json (swarmbox-mcp)
 # {context_file} in CONTEXT_ARGS: the repository digest of the commit the agent starts on (CONTEXT_DIR/<commit>.md, written by the
@@ -256,6 +262,11 @@ def _agent_from(dirpath, level, conf, values, env):
                     "fields": _words(values.get("HISTORY_FIELDS"))},
         "namer": values.get("NAMER", ""),
         "brain": values.get("BRAIN", ""),
+        # how the sysop runs that brain (docs/sysop-brain-design.md 5): the adapter of its output, how it resumes, how it is stopped
+        # politely, the variable that points it at a home of its own, the words of its output that mean "not logged in"
+        "brain_opts": {"format": values.get("BRAIN_FORMAT") or "text", "resume": values.get("BRAIN_RESUME", ""),
+                       "stop": values.get("BRAIN_STOP") or "TERM", "home_env": values.get("BRAIN_HOME_ENV", ""),
+                       "login_failure": values.get("BRAIN_LOGIN_FAILURE", "")},
         "digest": values.get("DIGEST", ""),
         "login_hint": values.get("LOGIN_HINT", ""),
         "model": values.get("MODEL", ""),

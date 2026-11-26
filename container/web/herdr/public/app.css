@@ -2519,6 +2519,8 @@ html.swarmbox-ready #sb-boot {
 .turn-acts li { word-break: break-word; }
 .turn-act-mark { color: var(--green); margin-right: 8px; }
 .turn-acts li.err, .turn-acts li.err .turn-act-mark { color: var(--red); }
+.turn-acts li.live .turn-act-mark { color: var(--accent-bright); }
+.turn-acts li[data-state="waiting"] .turn-act-mark { color: var(--amber, #f5b84a); }
 .turn-note { font-size: 12px; line-height: 1.55; color: var(--text-dim); word-break: break-word; }
 .turn-live { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; color: var(--accent-bright); }
 .turn-sysop:has(.approval-card:not(.hidden)) .turn-live { display: none; }

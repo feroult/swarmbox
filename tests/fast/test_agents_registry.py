@@ -206,12 +206,26 @@ class CheckAndCommand(unittest.TestCase):
         return d
 
     def test_check_reports_every_kind_of_problem(self):
-        d = self.addon('ID=bot\nCMD=other\nCOLOR=red\nFOO=1\nANSWER_ALLOW="Enter!"\nNAMER="x {nope}"\nRESUME_FAST_FAIL_S=soon\nSTATUS=maybe\nALIASES="Bad"\n',
+        d = self.addon('ID=bot\nCMD=other\nCOLOR=red\nFOO=1\nANSWER_ALLOW="Enter!"\nNAMER="x {nope}"\nRESUME_FAST_FAIL_S=soon\nSTATUS=maybe\nALIASES="Bad"\n'
+                       'BRAIN_FORMAT=json\nBRAIN_RESUME="--resume {sid}"\nBRAIN_STOP=KILL\nBRAIN_HOME_ENV="two words"\n',
                        icon='<svg onload="alert(1)"></svg>', files={"screen.py": "def other():\n    pass\n", "settings.json": "[1]"})
         errs = "\n".join(A.check_dir(d))
         for frag in ("CMD 'other'", "COLOR", "unknown key FOO", "'Enter!' is not a key name", "{nope}", "RESUME_FAST_FAIL_S", "STATUS", "ALIASES entry 'Bad'",
-                     "event handler", "does not define state()", "settings.json is not a JSON object", "needs SETTINGS_FILE"):
+                     "event handler", "does not define state()", "settings.json is not a JSON object", "needs SETTINGS_FILE",
+                     "BRAIN_FORMAT must be one of", "BRAIN_RESUME uses the unknown placeholder {sid}", "BRAIN_STOP must be one of", "BRAIN_HOME_ENV"):
             self.assertIn(frag, errs)
+
+    def test_how_the_sysop_runs_an_agents_brain_is_read_from_its_conf(self):
+        d = self.addon('ID=bot\nBRAIN="bot -p {mcp_config} --cfg {agent_dir}/x.json"\nBRAIN_FORMAT=claude-stream-json\nBRAIN_RESUME="--resume {session_id}"\n'
+                       'BRAIN_STOP=INT\nBRAIN_HOME_ENV=BOT_HOME\nBRAIN_LOGIN_FAILURE="Not logged in|expired"\n')
+        self.assertEqual(A.check_dir(d), [])
+        env = {"HOME": self.tmp, "PATH": "/usr/bin:/bin", "SWARMBOX_TEST_IMAGE_ADDONS": ADDONS}
+        claude = A.get("claude", env)
+        self.assertEqual({k: v for k, v in claude["brain_opts"].items() if k != "login_failure"},
+                         {"format": "claude-stream-json", "resume": "--resume {session_id}", "stop": "INT", "home_env": "CLAUDE_CONFIG_DIR"})
+        self.assertIn("Not logged in", claude["brain_opts"]["login_failure"])
+        self.assertEqual(A.get("agy", env)["brain_opts"], {"format": "text", "resume": "", "stop": "TERM", "home_env": "", "login_failure": ""},
+                         "an agent that declares nothing: its output is text, no resume, TERM, no home of its own")
 
     def test_a_good_agent_folder_has_no_problem_and_no_folder_is_not_an_agent(self):
         d = self.addon('ID=bot\nLABEL="Bot"\nCOLOR="#112233"\nRESUME_ARGS="--continue"\n', icon='<svg viewBox="0 0 16 16"></svg>',

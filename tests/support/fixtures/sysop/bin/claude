@@ -8,7 +8,12 @@ user tool_result, result).
 SWARMBOX_TEST_FAKE_CLAUDE_LOG     file that receives {"argv", "stdin", "cwd", "pid", "pgid", "env"} as JSON
 SWARMBOX_TEST_FAKE_CLAUDE_OUT     file that receives one JSON line per tool result {"tool", "args", "is_error", "text"}
 SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT  JSON file: a list of steps {"tool": name, "args": {...}} | {"sleep": seconds} | {"touch": path} |
-                                  {"waitfile": path} (wait until the file exists, up to 60 s: a goal held running until the test lets it go)
+                                  {"waitfile": path} (wait until the file exists, up to 60 s: a goal held running until the test lets it go) |
+                                  {"write": path} (try to create the file; the outcome goes to the OUT file as {"write", "ok", "error"}: the sandbox) |
+                                  {"text": words} (free text, as partial messages)
+Like the real CLI with --include-partial-messages, every tool call is also streamed as partial messages (content_block_start, input_json_delta
+in two chunks, content_block_stop) before the complete assistant message, and the call carries `_meta.claudecode/toolUseId` = the block id.
+SWARMBOX_TEST_FAKE_CLAUDE_SESSION the session id to report (init and result events); none when unset
 SWARMBOX_TEST_FAKE_CLAUDE_MODE    script (default) | notloggedin (what the real CLI does: the line on stdout, exit 1) | notloggedin-json |
                                   crash (exit 3, a line on stderr) | hang (sleeps) | hang-ignore-term (sleeps, ignores SIGTERM) |
                                   quiet (a result event, exit 0, no done) | maxturns | badjson
@@ -26,9 +31,13 @@ log = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_LOG")
 if log:
     with open(log + ".tmp", "w") as f:            # written whole and renamed: a test that waits for the file never reads half of it
         json.dump({"argv": argv, "stdin": stdin, "cwd": os.getcwd(), "pid": os.getpid(), "pgid": os.getpgid(0),
-                   "env": {k: v for k, v in os.environ.items() if k.startswith(("SWARMBOX_", "FOO", "SB_", "PATH"))}}, f)
+                   "env": {k: v for k, v in os.environ.items() if k.startswith(("SWARMBOX_", "FOO", "SB_", "PATH"))},
+                   "env_names": sorted(os.environ), "home": os.environ.get("HOME", ""), "tmpdir": os.environ.get("TMPDIR", ""),
+                   "claude_config_dir": os.environ.get("CLAUDE_CONFIG_DIR", "")}, f)
     os.replace(log + ".tmp", log)
 mode = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_MODE") or "script"
+# SWARMBOX_TEST_FAKE_CLAUDE_SESSION: the session id the fake reports (as the real CLI does in its init and result events); none when unset
+SESSION = {"session_id": os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SESSION"]} if os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_SESSION") else {}
 
 
 def emit(obj):
@@ -37,7 +46,7 @@ def emit(obj):
 
 
 def result(sub="success", err=False, text="", turns=1):
-    emit({"type": "result", "subtype": sub, "is_error": err, "num_turns": turns, "total_cost_usd": 0.0012, "result": text})
+    emit({"type": "result", "subtype": sub, "is_error": err, "num_turns": turns, "total_cost_usd": 0.0012, "result": text, **SESSION})
 
 
 if mode == "notloggedin":
@@ -94,7 +103,7 @@ def rpc(method, params=None, notify=False):
 init = rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "claude-code", "version": "0"}})
 rpc("notifications/initialized", notify=True)
 tools = rpc("tools/list")["result"]["tools"]
-emit({"type": "system", "subtype": "init", "tools": ["mcp__sysop__" + t["name"] for t in tools], "mcp_servers": [{"name": "sysop", "status": "connected"}]})
+emit({"type": "system", "subtype": "init", **SESSION, "tools": ["mcp__sysop__" + t["name"] for t in tools], "mcp_servers": [{"name": "sysop", "status": "connected"}]})
 steps = json.load(open(os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"])) if os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT") else []
 out = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_OUT")
 n = 0
@@ -110,12 +119,38 @@ for st in steps:
         while not os.path.exists(st["waitfile"]) and time.time() < end:
             time.sleep(0.02)
         continue
+    if "write" in st:
+        try:
+            with open(st["write"], "w") as f:
+                f.write("x")
+            rec = {"write": st["write"], "ok": True, "error": ""}
+        except OSError as e:
+            rec = {"write": st["write"], "ok": False, "error": e.strerror or str(e)}
+        if out:
+            with open(out, "a") as f:
+                f.write(json.dumps(rec) + "\n")
+        continue
+    if "text" in st:
+        emit({"type": "stream_event", "event": {"type": "message_start", "message": {}}})
+        emit({"type": "stream_event", "event": {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}})
+        for w in st["text"].split(" "):
+            emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": w + " "}}})
+        emit({"type": "stream_event", "event": {"type": "content_block_stop", "index": 0}})
+        emit({"type": "assistant", "message": {"content": [{"type": "text", "text": st["text"]}]}})
+        continue
     n += 1
-    emit({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t%d" % n, "name": "mcp__sysop__" + st["tool"], "input": st.get("args", {})}]}})
-    rep = rpc("tools/call", {"name": st["tool"], "arguments": st.get("args", {})})
+    tid = "toolu_fake%d" % n
+    body = json.dumps(st.get("args", {}))
+    emit({"type": "stream_event", "event": {"type": "message_start", "message": {}}})
+    emit({"type": "stream_event", "event": {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": tid, "name": "mcp__sysop__" + st["tool"], "input": {}}}})
+    for part in (body[:len(body) // 2], body[len(body) // 2:]):
+        emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": part}}})
+    emit({"type": "stream_event", "event": {"type": "content_block_stop", "index": 0}})
+    emit({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": tid, "name": "mcp__sysop__" + st["tool"], "input": st.get("args", {})}]}})
+    rep = rpc("tools/call", {"name": st["tool"], "arguments": st.get("args", {}), "_meta": {"claudecode/toolUseId": tid, "progressToken": n}})
     r = rep.get("result") or {}
     text = "".join(c.get("text", "") for c in r.get("content", [])) if r else json.dumps(rep.get("error"))
-    emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t%d" % n, "is_error": bool(r.get("isError")), "content": [{"type": "text", "text": text}]}]}})
+    emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "is_error": bool(r.get("isError")), "content": [{"type": "text", "text": text}]}]}})
     if out:
         with open(out, "a") as f:
             f.write(json.dumps({"tool": st["tool"], "args": st.get("args", {}), "is_error": bool(r.get("isError")), "text": text}) + "\n")

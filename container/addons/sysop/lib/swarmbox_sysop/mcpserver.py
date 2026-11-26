@@ -198,8 +198,12 @@ def format_box_state(data, section="workspace"):
 
 
 class Server:
-    def __init__(self, ctx, tabs=None, clock=time.time, sleep=time.sleep, log=None):
+    def __init__(self, ctx, tabs=None, clock=time.time, sleep=time.sleep, log=None, emit=None):
         self.ctx = ctx
+        # the live events of the goal (events.py): the service reads them from this server's standard output when it hosts it
+        self.emit = emit or (lambda type_, **fields: None)
+        self.call_id = None
+        self.ncalls = 0
         self.tabs = tabs or tabsclient.Tabs()
         self.clock, self.sleep = clock, sleep
         self.settle_args = {"quiet": QUIET, "cap": SETTLE_CAP, "step": POLL}      # tests shorten them
@@ -325,6 +329,8 @@ class Server:
         ipc.write_json(pend, {"id": pid, "goal": self.ctx.goal, "tab": tab["tab"], "label": tab.get("label", tab["tab"]), "kind": kind, "text": text,
                               "risk": verdict.level, "reasons": verdict.reasons[:8], "mode": mode, "created": now, "deadline": deadline})
         a.append("decision", decision="waiting", mode=mode, id=pid, kind=kind, tab=tab["tab"], text=text, verdict=verdict.as_dict(), seconds=route.seconds)
+        self.emit("approval", id=self.call_id, state="waiting", mode=mode, risk=verdict.level, reasons=verdict.reasons[:8], text=text[:2000],
+                  tab=tab["tab"], label=tab.get("label", tab["tab"]), kind=kind, deadline=deadline)
         outcome, ignored = None, False
         try:
             while outcome is None:
@@ -352,6 +358,8 @@ class Server:
         finally:
             ipc.remove(pend)
             ipc.remove(dec)
+        self.emit("approval", id=self.call_id, state={"approve": "approved", "veto": "vetoed", "deny": "denied", "goal_deadline": "timed_out"}.get(
+            outcome, "allowed" if (outcome == "timeout" and mode == "veto") else ("timed_out" if outcome == "timeout" else outcome)))
         if outcome == "approve" or (outcome == "timeout" and mode == "veto"):
             a.require("decision", decision="approved" if outcome == "approve" else "allowed", why="user approved" if outcome == "approve" else "countdown ended",
                       id=pid, kind=kind, tab=tab["tab"])
@@ -588,6 +596,7 @@ class Server:
         text = self.arg(args, "text", "string", True)[:MAX_SAY]
         ipc.append_jsonl(os.path.join(self.ctx.goal_dir, "say.jsonl"), {"t": self.clock(), "text": text})
         self.audit.append("say", text=text)
+        self.emit("say", text=text)
         return "shown"
 
     def t_done(self, args):
@@ -599,12 +608,17 @@ class Server:
         if not self.finished:
             self.finished = True
             ipc.write_json(os.path.join(self.ctx.goal_dir, "done.json"), {"t": self.clock(), "summary": summary})
+            self.emit("done", summary=summary)
         return "ok, the goal is finished: stop now, call no more tools"
 
     # ---- one call
-    def call(self, name, args):
-        """(text, is_error)"""
+    def call(self, name, args, call_id=None):
+        """(text, is_error). call_id: the CLI's id of the call (its tool-use id, `_meta.claudecode/toolUseId`), which joins this call to the
+        block of the brain's stream that asked for it; a counter when the CLI gives none."""
         fn = self.tools[name][0]
+        self.ncalls += 1
+        self.call_id = call_id if isinstance(call_id, str) and re.match(r"^[A-Za-z0-9_.:-]{1,100}$", call_id) else "c%d" % self.ncalls
+        self.emit("call", id=self.call_id, fn=name, args=self._small(args))
         verdict = None
         self.last_verdict = None
         free = name in ("say", "done")
@@ -640,6 +654,7 @@ class Server:
             keep = MAX_RESULT - len(note)
             text = text[:keep // 4] + note + text[len(text) - (keep - keep // 4):]
         self.audit.append("result", tool=name, is_error=err, text=text)
+        self.emit("call.end", id=self.call_id, fn=name, ok=not err, summary=text[:300])
         try:
             ipc.append_jsonl(os.path.join(self.ctx.goal_dir, "calls.jsonl"),
                              {"t": self.clock(), "tool": name, "args": self._small(args), "verdict": verdict, "is_error": err, "summary": text[:200]})
@@ -684,7 +699,8 @@ class Server:
             name = params.get("name")
             if not isinstance(name, str) or name not in self.tools:
                 return bad(-32602, "unknown tool")
-            text, err = self.call(name, params.get("arguments") or {})
+            meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
+            text, err = self.call(name, params.get("arguments") or {}, meta.get("claudecode/toolUseId"))
             return ok({"content": [{"type": "text", "text": text}], "isError": err})
         return bad(-32601, "method not found")
 
@@ -716,7 +732,82 @@ def steady_clock():
     return lambda: w0 + (time.monotonic() - m0)
 
 
-def main(env=None):
+def emitter(stream):
+    """An emit function that writes one JSON line per event to `stream` (the server's standard output when the service hosts it). A
+    closed stream (the service went away) loses the event, never the call."""
+    lock = __import__("threading").Lock()
+
+    def emit(type_, **fields):
+        d = {"type": type_}
+        d.update(fields)
+        with lock:
+            try:
+                stream.write(json.dumps(d, ensure_ascii=True) + "\n")
+                stream.flush()
+            except (OSError, ValueError):
+                pass
+    return emit
+
+
+def listen(path):
+    """The socket the brain's proxy connects to (docs/sysop-brain-design.md 3): private (0600 in a private folder), for ONE connection."""
+    import socket
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    old = os.umask(0o177)
+    try:
+        srv.bind(path)
+    finally:
+        os.umask(old)
+    srv.listen(1)
+    return srv
+
+
+def proxy(path, fin=None, fout=None):
+    """`swarmbox-sysop mcp-proxy SOCKET`: what the brain starts as its MCP server. It only carries bytes between its standard streams and
+    the socket of the real server, which the service runs outside the brain's sandbox: the server's writes (its files, swarmbox-tabs,
+    git) are not limited by the brain's Landlock domain, and the server's environment is not the brain's."""
+    import socket
+    import threading
+    fin = fin if fin is not None else open(sys.stdin.fileno(), "rb", buffering=0, closefd=False)
+    fout = fout if fout is not None else open(sys.stdout.fileno(), "wb", buffering=0, closefd=False)
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.connect(path)
+    except OSError as e:
+        sys.stderr.write("swarmbox-sysop mcp-proxy: cannot reach the MCP server at %s: %s\n" % (path, e.strerror or e))
+        return 1
+
+    def up():
+        try:
+            while True:
+                b = fin.read(65536)
+                if not b:
+                    break
+                s.sendall(b)
+        except OSError:
+            pass
+        try:
+            s.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+    t = threading.Thread(target=up, daemon=True)
+    t.start()
+    try:
+        while True:
+            b = s.recv(65536)
+            if not b:
+                break
+            fout.write(b)
+    except OSError:
+        pass
+    return 0
+
+
+def main(env=None, socket_path=None):
     env = os.environ if env is None else env
     cpath = env.get("SWARMBOX_SYSOP_CONTEXT")
     pth = paths.Paths(env).make()
@@ -738,6 +829,27 @@ def main(env=None):
             logf.flush()
         except (OSError, ValueError):
             pass                      # a full disk: the line is lost, the tool call goes on
+    if socket_path:
+        # hosted by the service: the protocol on the socket, the events on standard output
+        srv = listen(socket_path)
+        out = open(sys.stdout.fileno(), "w", encoding="utf-8", closefd=False)
+        emit = emitter(out)
+        emit("ready")
+        try:
+            conn, _ = srv.accept()
+        finally:
+            srv.close()
+            try:
+                os.unlink(socket_path)        # one brain, one connection: nobody else may connect after it
+            except OSError:
+                pass
+        rf = conn.makefile("r", encoding="utf-8", errors="replace")
+        wf = conn.makefile("w", encoding="utf-8")
+        try:
+            Server(ctx, log=log, clock=steady_clock(), emit=emit).serve(rf, wf)
+        except (OSError, ValueError):
+            pass
+        return 0
     stdin = open(sys.stdin.fileno(), encoding="utf-8", errors="replace", closefd=False)
     stdout = open(sys.stdout.fileno(), "w", encoding="utf-8", closefd=False)
     Server(ctx, log=log, clock=steady_clock()).serve(stdin, stdout)

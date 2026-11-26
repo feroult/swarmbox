@@ -54,7 +54,9 @@ class Env:
                     "PATH": FAKE_BIN + ":" + os.environ.get("PATH", "/usr/bin:/bin"),
                     # never the herdr-core of whoever runs the suite: a service started here with --dock runs headless, and an hc it might
                     # still call does not exist
-                    "SWARMBOX_MUX": "none", "SWARMBOX_TEST_HC_BIN": os.path.join(self.dir, "no-hc"), "TMPDIR": os.path.join(self.dir, "sb-tmp")}
+                    "SWARMBOX_MUX": "none", "SWARMBOX_TEST_HC_BIN": os.path.join(self.dir, "no-hc"), "TMPDIR": os.path.join(self.dir, "sb-tmp"),
+                    # the brain runs in its Landlock domain in the tests too; the fake claude writes its records in this scratch folder
+                    "SWARMBOX_TEST_SANDBOX_DIRS": self.dir}
         os.makedirs(self.env["HOME"])
         os.makedirs(self.env["TMPDIR"])
         self.env.update(extra)

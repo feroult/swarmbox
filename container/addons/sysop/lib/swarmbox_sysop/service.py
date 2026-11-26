@@ -26,7 +26,8 @@ import sys
 import threading
 import time
 
-from . import __version__, brain, busclient, history, ipc, mcpserver, tabsclient
+from . import __version__, brain, busclient, history, ipc, landlock, mcpserver, tabsclient
+from . import events as eventsmod
 from . import paths as pathsmod
 from . import audit as auditmod
 
@@ -127,6 +128,7 @@ class Service:
         self.lock_fd = None
         self.reader = None
         self.popen = popen
+        self.sandbox_state = self.sandbox()
         self.housekeeping = None       # a callable the main loop runs every HOUSEKEEPING seconds (the daemon's log rotation: cli.py)
         self._retried = 0.0
         self.unwritten = {}            # goals whose end could not be written to their state.json (a full disk): tried again by retry_writes
@@ -395,7 +397,7 @@ class Service:
                   "rejected": self.rejected,
                   "settings": {"topic": self.cfg.topic, "group": self.cfg.group, "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "brain": self.cfg.brain.split()[0], "model": self.cfg.model,
                                "max_steps": self.cfg.max_steps, "max_seconds": self.cfg.max_seconds, "max_goals": self.cfg.max_goals,
-                               "autocontext": bool(getattr(self.cfg, "autocontext", True))}}
+                               "autocontext": bool(getattr(self.cfg, "autocontext", True)), "sandbox": self.sandbox_state}}
             key = json.dumps({k: v for k, v in st.items() if k != "updated"}, sort_keys=True)
             if key == self._last_status and not final:
                 return
@@ -455,11 +457,20 @@ class Service:
             if before is not None and json.loads(before)["state"] != goal.state:
                 self.audit.bind(goal.id, goal.source).append("state", state=goal.state)
 
+    def sandbox(self):
+        """landlock | off (SWARMBOX_SYSOP_SANDBOX=0) | unavailable (no Landlock in this kernel or container)"""
+        if os.environ.get("SWARMBOX_SYSOP_SANDBOX", "1") == "0":
+            return "off"
+        return "landlock" if landlock.abi() else "unavailable"
+
     def execute(self, goal):
         aud = self.audit.bind(goal.id, goal.source)
         self.current, self.stop_current = goal, False
         goal.state, goal.started = "running", self.clock()
         gdir = self.paths.goal_dir(goal.id)
+        events = eventsmod.EventLog(os.path.join(gdir, "events.jsonl"), self.clock, self.log)
+        events.emit("state", state="running", source=goal.source, text=goal.text[:4000])
+        host = None
         try:
             self.write_goal(goal)
             aud.append("state", state="running")
@@ -470,14 +481,20 @@ class Service:
                                  "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "approval_timeout": self.cfg.approval_timeout,
                                  "max_steps": self.cfg.max_steps, "deadline": deadline})
             mcp = os.path.join(gdir, "mcp.json")
-            brain.write_mcp_config(mcp, ctx, self.paths, self.libdir)
+            # the MCP server runs here, outside the brain's sandbox; the brain starts only the proxy that reaches its socket
+            sock = self.paths.mcp_socket(goal.id)
+            host = brain.McpHost(sock, brain.server_env(ctx, self.paths, self.libdir), events, self.log)
+            host.start()
+            brain.write_mcp_config(mcp, ctx, self.paths, self.libdir, socket_path=sock)
             pfile = os.path.join(gdir, "system-prompt.txt")
             with open(pfile, "w", encoding="utf-8") as f:
                 f.write(brain.system_prompt(goal.source, self.cfg.max_steps, self.cfg.max_seconds, self.cfg.autonomy))
             os.chmod(pfile, 0o600)
             prev_sid = history.session_id(self.paths)
             argv, env = brain.build(self.cfg, gdir, mcp, goal.source, pfile, session_id=prev_sid)
-            resuming = bool(prev_sid and "--resume" in argv)
+            opts = brain.options(self.cfg.brain)
+            resuming = bool(prev_sid and opts["resume"])
+            home = brain.prepare_home(self.paths.brain_home)
             kw = {"popen": self.popen} if self.popen else {}
 
             def stop_check():
@@ -511,20 +528,33 @@ class Service:
                     before = ""
                 if before:
                     parts.append(before)
+            note = history.stop_note(self.paths) if resuming else ""
+            if note:
+                # the session of a stopped goal may hold a call that ran as refused (docs/sysop-brain-design.md 7): the host's record wins
+                parts.append("[note from the host: the previous goal was stopped by the user. These actions DID run (or failed) whatever your "
+                             "own record of that goal says; do not run them again unless the user asks:\n" + note + "\n]")
+            history.save_stop_note(self.paths, "")
             if parts:
                 heard = "\n\n".join(parts) + "\n\nThe goal now (" + goal.source + "):\n" + goal.text
             else:
                 heard = goal.text
             res = brain.run(self.cfg, heard, goal.source, gdir, argv, env, stop_check, lambda: self.refresh(goal), deadline,
-                            clock=self.clock, on_start=on_start, **kw)
+                            clock=self.clock, on_start=on_start, opts=opts, home=home, events=events, sandbox=self.sandbox() != "off",
+                            log=self.log, **kw)
             if res.session_id:
                 history.save_session_id(self.paths, res.session_id)
             elif resuming and res.outcome == "failed" and re.search(r"session|resume|conversation", res.error or "", re.I):
                 # Stale/missing persistent session: clear it so the next turn starts cleanly.
                 history.save_session_id(self.paths, "")
+        except brain.McpHostError as e:
+            self.log("goal %s: %s" % (goal.id, e))
+            res = brain.Result("failed", "the MCP server of the goal could not start: %s" % e)
         except Exception as e:             # a bug here must not kill the service: this goal fails, the next one runs
             self.log("goal %s: internal error: %r" % (goal.id, e))
             res = brain.Result("failed", explain(e))
+        finally:
+            if host is not None:
+                host.stop()
         goal.state, goal.ended, goal.error, goal.note = res.outcome, self.clock(), res.error, res.note
         if self.stopping and res.outcome == "stopped":
             goal.error = "the sysop service was stopped"
@@ -543,6 +573,13 @@ class Service:
         except Exception as e:       # not only OSError: the end of one goal must never end the service
             self.log("cannot write the end of goal %s: %r" % (goal.id, e))
             self.unwritten[goal.id] = goal
+        if goal.state == "stopped":
+            try:
+                history.save_stop_note(self.paths, history.describe_calls(ipc.read_jsonl(os.path.join(gdir, "calls.jsonl"))))
+            except Exception as e:
+                self.log("goal %s: cannot keep the stop note: %r" % (goal.id, e))
+        events.emit("state", state=goal.state, error=goal.error or "", summary=(goal.summary or "")[:8000])
+        events.close()
         aud.append("brain", **res.as_dict(), note=res.note)
         aud.append("state", state=goal.state, summary=goal.summary, error=goal.error)
         self.log("goal %s: %s%s" % (goal.id, goal.state, (" (%s)" % goal.error) if goal.error else ""))

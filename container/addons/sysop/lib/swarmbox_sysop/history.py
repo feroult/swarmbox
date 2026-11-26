@@ -86,31 +86,74 @@ def since(paths):
 _SESSION_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 
+# Where the brain keeps its sessions: a session id is only good in the home that wrote it. "hermetic-1" is the brain home of
+# docs/sysop-brain-design.md; an id saved before it (in the user's own configuration folder) is not resumed, the next goal starts a session.
+SESSION_HOME = "hermetic-1"
+
+
 def session_id(paths):
     """Active persistent brain session_id for the current conversation (conversation.json), or ''."""
     import os
     d = ipc.read_json(os.path.join(paths.state, "conversation.json"))
-    if not isinstance(d, dict):
+    if not isinstance(d, dict) or d.get("session_home") != SESSION_HOME:
         return ""
     sid = str(d.get("session_id") or "").strip()
     return sid if _SESSION_RE.match(sid) else ""
 
 
-def save_session_id(paths, sid):
-    """Persist (or clear) the active conversation's brain session_id while preserving `since`."""
+def _update(paths, fn):
     import os
     p = os.path.join(paths.state, "conversation.json")
     d = ipc.read_json(p)
     data = dict(d) if isinstance(d, dict) else {}
-    sid = str(sid or "").strip()
-    if sid and _SESSION_RE.match(sid):
-        data["session_id"] = sid
-    else:
-        data.pop("session_id", None)
+    fn(data)
     try:
         ipc.write_json(p, data)
     except OSError:
         pass
+
+
+def save_session_id(paths, sid):
+    """Persist (or clear) the active conversation's brain session_id while preserving `since`."""
+    sid = str(sid or "").strip()
+
+    def f(data):
+        if sid and _SESSION_RE.match(sid):
+            data["session_id"], data["session_home"] = sid, SESSION_HOME
+        else:
+            data.pop("session_id", None)
+            data.pop("session_home", None)
+    _update(paths, f)
+
+
+def save_stop_note(paths, note):
+    """After a Stop (docs/sysop-brain-design.md 7): the calls that DID run, for the next goal of the session to start with. A stopped CLI can
+    record a call that ran as refused; the note is the host's word against it. "" clears it."""
+    def f(data):
+        if note:
+            data["stop_note"] = str(note)[:4000]
+        else:
+            data.pop("stop_note", None)
+    _update(paths, f)
+
+
+def stop_note(paths):
+    import os
+    d = ipc.read_json(os.path.join(paths.state, "conversation.json"))
+    return str(d.get("stop_note") or "") if isinstance(d, dict) else ""
+
+
+def describe_calls(calls):
+    """The calls of a stopped goal as the note says them: `run` in t1: pytest -q (ok)."""
+    out = []
+    for c in calls:
+        if not isinstance(c, dict) or c.get("tool") in ("say", "done"):
+            continue
+        args = c.get("args") if isinstance(c.get("args"), dict) else {}
+        where = (" in %s" % args["tab"]) if isinstance(args.get("tab"), str) and args["tab"] else ""
+        what = next((str(args[k]) for k in ("command", "text", "action", "section", "until") if isinstance(args.get(k), str) and args[k]), "")
+        out.append("- `%s`%s%s (%s)" % (c.get("tool"), where, (": " + what[:200]) if what else "", "error" if c.get("is_error") else "ran"))
+    return "\n".join(out[-20:])
 
 
 def load(paths):

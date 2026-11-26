@@ -783,54 +783,129 @@ function liveActionLabel(call) {
   return 'Working…';
 }
 
-function readLiveStreamText(gdir) {
-  const p = path.join(gdir, 'stream.jsonl');
-  let raw = '';
-  try {
-    const st = fs.statSync(p);
-    const maxBytes = 256 * 1024;
-    if (st.size <= maxBytes) {
-      raw = fs.readFileSync(p, 'utf8');
+// ---------------------------------------------------------------------------
+// The live log of the goal the sysop works on (docs/sysop-brain-design.md 4): goals/<id>/events.jsonl, written by the sysop service only,
+// one neutral event per line with a seq that only grows (events.py says what each one is). The gateway reads only the bytes added since its
+// last read, keeps the goal's events (compacted for a page that connects in the middle), and relays the new ones as they come. Nothing here
+// knows the output format of any brain.
+// ---------------------------------------------------------------------------
+const LIVE_FIRST_READ = 4 << 20;       // a gateway started in the middle of a huge goal reads its last 4 MB
+const LIVE_CHUNK = 256 * 1024;
+const LIVE_KEEP = 20000;               // events kept per goal for a replay (deltas are compacted first)
+
+// one event made ready for a page: an action gets the same labels the snapshot's turns use
+function enrichEvent(ev) {
+  if (ev && (ev.type === 'action.args' || ev.type === 'call') && ev.fn) {
+    const call = { [FN_KEY]: ev.fn, args: ev.args && typeof ev.args === 'object' ? ev.args : {} };
+    ev.label = formatCallStep(call);
+    ev.live = liveActionLabel(call);
+  } else if (ev && ev.type === 'action.start' && ev.fn) {
+    ev.live = liveActionLabel({ [FN_KEY]: ev.fn, args: {} });
+  }
+  return ev;
+}
+
+// consecutive deltas of one block become one (lossless: a delta is the new part of the text)
+export function compactEvents(list) {
+  const out = [];
+  for (const ev of list) {
+    const last = out[out.length - 1];
+    if (last && ev.type.endsWith('.delta') && last.type === ev.type && last.block === ev.block) {
+      out[out.length - 1] = { ...last, text: String(last.text || '') + String(ev.text || ''), seq: ev.seq, t: ev.t };
     } else {
-      const fd = fs.openSync(p, 'r');
-      try {
-        const buf = Buffer.alloc(maxBytes);
-        fs.readSync(fd, buf, 0, maxBytes, st.size - maxBytes);
-        raw = buf.toString('utf8');
-      } finally {
-        fs.closeSync(fd);
-      }
-    }
-  } catch (_) {
-    return '';
-  }
-  let lastAssistant = '';
-  let deltaChunks = [];
-  for (const line of raw.split('\n')) {
-    if (!line.startsWith('{')) continue;
-    let ev;
-    try { ev = JSON.parse(line); } catch (_) { continue; }
-    if (!ev || typeof ev !== 'object') continue;
-    if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {
-      const parts = [];
-      for (const b of ev.message.content) {
-        if (b && b.type === 'text' && typeof b.text === 'string' && b.text) parts.push(b.text);
-      }
-      if (parts.length) {
-        lastAssistant = parts.join('\n').trim();
-        deltaChunks = [];
-      }
-    } else if (ev.type === 'stream_event' && ev.event && typeof ev.event === 'object') {
-      const inner = ev.event;
-      if (inner.type === 'message_start') {
-        deltaChunks = [];
-      } else if (inner.type === 'content_block_delta' && inner.delta && inner.delta.type === 'text_delta' && typeof inner.delta.text === 'string') {
-        deltaChunks.push(inner.delta.text);
-      }
+      out.push(ev);
     }
   }
-  const streamed = deltaChunks.join('').trim();
-  return streamed || lastAssistant;
+  return out;
+}
+
+export class GoalEventsTail {
+  constructor(file, gid) {
+    this.file = file;
+    this.gid = gid;
+    this.offset = -1;
+    this.carry = Buffer.alloc(0);
+    this.events = [];
+    this.seq = 0;
+  }
+
+  // the events added to the file since the last call
+  poll() {
+    const fresh = [];
+    let fd;
+    try {
+      fd = fs.openSync(this.file, 'r');
+    } catch (_) {
+      return fresh;
+    }
+    try {
+      const size = fs.fstatSync(fd).size;
+      let skipFirst = false;
+      if (this.offset < 0 || size < this.offset) {
+        this.carry = Buffer.alloc(0);
+        this.events = [];
+        this.offset = Math.max(0, size - LIVE_FIRST_READ);
+        skipFirst = this.offset > 0;
+      }
+      while (this.offset < size) {
+        const n = Math.min(LIVE_CHUNK, size - this.offset);
+        const buf = Buffer.alloc(n);
+        const got = fs.readSync(fd, buf, 0, n, this.offset);
+        if (got <= 0) break;
+        this.offset += got;
+        let data = this.carry.length ? Buffer.concat([this.carry, buf.subarray(0, got)]) : buf.subarray(0, got);
+        let start = 0;
+        if (skipFirst) {
+          const nl0 = data.indexOf(10);
+          if (nl0 < 0) { this.carry = Buffer.from(data); continue; }
+          start = nl0 + 1;
+          skipFirst = false;
+        }
+        let nl = data.indexOf(10, start);
+        while (nl >= 0) {
+          const line = data.subarray(start, nl).toString('utf8');
+          start = nl + 1;
+          nl = data.indexOf(10, start);
+          if (!line.startsWith('{')) continue;
+          let ev;
+          try { ev = JSON.parse(line); } catch (_) { continue; }
+          if (!ev || typeof ev !== 'object' || !Number.isInteger(ev.seq) || ev.seq <= this.seq || typeof ev.type !== 'string') continue;
+          this.seq = ev.seq;
+          fresh.push(enrichEvent(ev));
+        }
+        this.carry = Buffer.from(data.subarray(start));
+      }
+    } catch (_) {
+      // a read error leaves the state as it is: the next poll tries again
+    } finally {
+      fs.closeSync(fd);
+    }
+    if (fresh.length) {
+      this.events.push(...fresh);
+      if (this.events.length > LIVE_KEEP) this.events = compactEvents(this.events).slice(-LIVE_KEEP);
+    }
+    return fresh;
+  }
+
+  // what a page that connects now needs: the goal's events after `since`, compacted
+  replay(since = 0) {
+    return compactEvents(this.events.filter((e) => e.seq > since));
+  }
+}
+
+let liveTail = null;
+
+// the tail of the goal the sysop works on now, made again when that goal changes; null when the sysop is down or idle
+export function sysopLiveTail() {
+  const status = readJsonSafe(path.join(SB_RUN_DIR, 'sysop', 'status.json'));
+  const gid = status && isPidAlive(status.pid) ? sanitizeGoalId(status.current) : '';
+  if (!gid) {
+    return liveTail && liveTail.gid ? liveTail : null;    // the goal just ended: its last events (its `state`) are still read once
+  }
+  if (!liveTail || liveTail.gid !== gid) {
+    liveTail = new GoalEventsTail(path.join(SB_STATE_DIR, 'sysop', 'goals', gid, 'events.jsonl'), gid);
+  }
+  return liveTail;
 }
 
 function buildGoalTurn(gdir, gid, goal, isCurrent) {
@@ -870,7 +945,7 @@ function buildGoalTurn(gdir, gid, goal, isCurrent) {
   const notes = reply
     ? sayTexts.filter((s) => norm(s) !== norm(reply))
     : sayTexts;
-  const streamText = running ? readLiveStreamText(gdir) : '';
+
   const liveTarget = running && lastCall && lastCall.args && typeof lastCall.args === 'object'
     ? String(lastCall.args.tab || lastCall.args.name || '').slice(0, 40)
     : '';
@@ -886,7 +961,6 @@ function buildGoalTurn(gdir, gid, goal, isCurrent) {
     actions,
     live_action: running ? (lastCall ? liveActionLabel(lastCall) : 'Thinking…') : '',
     live_target: liveTarget,
-    stream_text: streamText,
     notes,
     reply,
   };

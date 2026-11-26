@@ -75,6 +75,10 @@ OLD_NAME_ALLOW = [
      "the Antigravity plugin that carries the MCP servers of the box to agy"),
     ("CHANGELOG.md", r"Antigravity plugin|config/plugins/|agy plugin (list|disable)",
      "the Antigravity plugin that carries the MCP servers of the box to agy"),
+    ("docs/sysop-brain-design.md", r"(?i)plugins?",
+     "the plugins of the Claude Code program (its built-ins and the user's), which the sysop's brain runs without"),
+    ("dev/spikes/sysop-brain/init.py", r"\"plugins\"",
+     "the `plugins` field of Claude Code's init event, which the spike prints"),
 ]
 
 # ---- 2. the word "tool" / "tools" ------------------------------------------------------------------------------------------------------
@@ -112,6 +116,7 @@ LEGIT_FILES = [
     ("container/addons/sysop/lib/**", "the sysop serves tools to an LLM over MCP: mcpserver.py, brain.py, policy.py, audit.py, service.py, ipc.py"),
     ("container/addons/sysop/README.md", "the tools of the sysop's brain"),
     ("docs/sysop.md", "the tools of the sysop's brain, their table, budget and errors"),
+    ("docs/sysop-brain-design.md", "the isolation and the stream of the sysop's brain: the tools it may call and how their calls are seen"),
     ("tests/support/sysop_support.py", "support of the sysop tests"),
     ("tests/*/test_sysop_*.py", "tests of the sysop: the tools of its brain, the records of their calls ({\"tool\": ...})"),
     ("tests/support/fixtures/sysop/**", "the fake `claude` that calls the sysop's MCP tools from a script"),

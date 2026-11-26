@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 import sysop_support as ss  # noqa: E402
 
-from swarmbox_sysop import audit, cli, ipc, paths, service  # noqa: E402
+from swarmbox_sysop import audit, cli, events, ipc, paths, service  # noqa: E402
 
 DONE = [{"tool": "say", "args": {"text": "working"}}, {"tool": "done", "args": {"summary": "finished it"}}]
 TERMINAL = ("done", "stopped", "failed")
@@ -508,6 +508,38 @@ class Stopping(Base):
         self.assertEqual(self.wait_state(self.goal("after"))["state"], "done", "the service goes on")
         self.assertIn("stop", [e.get("decision") for e in self.events("decision", a)])
 
+    def test_after_a_stop_the_resumed_session_hears_from_the_host_what_ran(self):
+        """docs/sysop-brain-design.md 7: a stopped CLI can record a call that ran as refused; the next goal of the session starts with the
+        host's list of the calls that did run, once"""
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SESSION"] = "sess-1"
+        step, _release = self.gate()
+        self.script([{"tool": "box_state", "args": {"section": "workspace"}}, step])
+        self.start()
+        a = self.goal("look around")
+        calls = os.path.join(self.e.paths.goals, a, "calls.jsonl")
+        self.assertTrue(ss.wait_for(lambda: os.path.exists(calls) and "box_state" in self.read(calls), 10))
+        ss.wait_for(lambda: os.path.exists(self.logf), 10)
+        ipc.request_stop(self.e.paths)
+        self.assertEqual(self.wait_state(a)["state"], "stopped")
+        live = events.read(os.path.join(self.e.paths.goals, a, "events.jsonl"))
+        self.assertEqual((live[0]["type"], live[0]["state"]), ("state", "running"))
+        self.assertEqual((live[-1]["type"], live[-1]["state"]), ("state", "stopped"))
+        self.assertIn(("call", "box_state"), [(e["type"], e.get("fn")) for e in live])
+        os.unlink(self.logf)
+        self.script(DONE)
+        b = self.goal("and now?")
+        self.assertEqual(self.wait_state(b)["state"], "done")
+        with open(self.logf) as f:
+            got = json.load(f)
+        self.assertEqual(got["argv"][got["argv"].index("--resume") + 1], "sess-1")
+        self.assertIn("[note from the host: the previous goal was stopped", got["stdin"])
+        self.assertIn("`box_state`: workspace (ran)", got["stdin"])
+        os.unlink(self.logf)
+        c = self.goal("again")
+        self.assertEqual(self.wait_state(c)["state"], "done")
+        with open(self.logf) as f:
+            self.assertNotIn("note from the host", json.load(f)["stdin"], "the note is said once")
+
     def test_stop_of_one_queued_goal_leaves_the_rest(self):
         hold, release = self.gate()
         self.script([hold] + DONE)
@@ -800,6 +832,7 @@ class Cli(Base):
         self.assertIn("running (pid %d)" % os.getpid(), s.stdout)
         self.assertIn("current: %s" % gid, s.stdout)
         self.assertIn("autonomy full-auto", s.stdout)
+        self.assertRegex(s.stdout, r"sandbox: (landlock|unavailable)\n", "whether the brain runs in its Landlock domain")
         j = json.loads(self.run_cli("status", "--json").stdout)
         self.assertTrue(j["running"])
         self.assertEqual(j["recent"][0]["id"], gid)
@@ -848,7 +881,7 @@ class Cli(Base):
         h = self.run_cli("--help")
         for word in ("serve", "goal", "status", "stop", "mcp", "agent", "veto", "approve"):
             self.assertIn(word, h.stdout)
-        commands = re.search(r"\{([a-z,]+)\}", h.stdout).group(1).split(",")
+        commands = re.search(r"\{([a-z,-]+)\}", h.stdout).group(1).split(",")
         self.assertNotIn("panel", commands)
         self.assertNotIn("dock", commands)
         p = self.run_cli("--self-test")
