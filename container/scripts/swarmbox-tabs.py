@@ -939,7 +939,10 @@ class HerdrBackend(TabsBackend):
                     args += ["--label", "%s=%s" % (k, v)]
         cmd = ALLOWED_OPEN_AGENTS.get(agent or "shell")
         if cmd:
-            args += ["--", "bash", "-lc", "exec " + " ".join(cmd)]
+            # An interactive shell (-i), as the Web Studio and the pins start an agent: `exec` and a non-interactive shell would run the
+            # program itself and skip the agent's shell function (auto-approve, the box MCP servers). The worktree guard is off, as there:
+            # the caller chose the folder. When the agent exits, a login shell takes its place.
+            args += ["--", "/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 %s; exec /bin/bash -l" % " ".join(cmd)]
         else:
             args += ["--", "bash", "-l"]
         res = self.hc(*args)

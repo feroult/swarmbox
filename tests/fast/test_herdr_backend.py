@@ -320,7 +320,7 @@ class HerdrTabsTest(unittest.TestCase):
             self.assertIn(flag, run)
         self.assertEqual(run[run.index("--name") + 1], "shop-api-v2", "the name follows the rule of hc run --name")
         self.assertEqual(run[run.index("--cwd") + 1], self.tmp)
-        self.assertEqual(run[run.index("--") + 1:], ["bash", "-lc", "exec claude"])
+        self.assertEqual(run[run.index("--") + 1:], ["/bin/bash", "-lic", "SWARMBOX_WORKTREE_GUARD=0 claude; exec /bin/bash -l"])
         with open(os.path.join(self.run_dir, "herdr-active-tab"), encoding="utf-8") as f:
             self.assertEqual(f.read().strip(), "t3")
 
