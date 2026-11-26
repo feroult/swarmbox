@@ -685,6 +685,56 @@ exit "${FAKE_BUS_RC:-0}"
                 _, pubs, _ = self.run_launcher(odd, {"FAKE_BUS_DO": "none"}, shell=sh)
                 self.assertEqual(pubs[-1][1]["cwd"], odd)
 
+    TRICKY = '# Repository orientation: calc\n\nSays "hi" with a backslash \\ and a\ttab; and & too.\n'
+
+    def run_agent_with_digest(self, cmd, args="", env_extra=None, opencode=False):
+        """`cmd` (an agent of the real addons) through its shell function on a commit whose digest is TRICKY, with a fake program that
+        prints its words, one per line, then the OPENCODE_CONFIG_CONTENT it got: (words, the digest file)."""
+        self.run_claude(self.repo)          # writes agents.sh
+        self.refresh()
+        path = self.store.file(self.git("rev-parse", "HEAD"))
+        write(path, self.TRICKY)
+        prog = os.path.join(self.tmp, "bin", cmd)
+        write(prog, '#!/bin/sh\nfor a in "$@"; do printf "%s\\n" "$a"; done; printf "ENV=%s\\n" "${OPENCODE_CONFIG_CONTENT:-}"\n')
+        os.chmod(prog, 0o755)
+        src = ". %s; " % os.path.join(self.tmp, "agents.sh")
+        if opencode:
+            src += ". %s; " % os.path.join(REAL_ADDONS, "opencode", "shell.sh")
+        env = {"PATH": os.path.join(self.tmp, "bin") + ":/usr/bin:/bin", "HOME": self.tmp, "TERM": "dumb",
+               "SB_STATE_DIR": os.path.join(self.tmp, "state")}
+        env.update(env_extra or {})
+        r = subprocess.run(["bash", "-c", src + "%s %s" % (cmd, args)], cwd=self.repo, env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout.split("\n"), path
+
+    def test_antigravity_gets_the_digest_as_the_rules_of_an_added_folder(self):
+        words, path = self.run_agent_with_digest("agy")
+        i = words.index("--add-dir")
+        folder = words[i + 1]
+        self.assertEqual(slurp(os.path.join(folder, "AGENTS.md")), self.TRICKY, "agy reads AGENTS.md of a folder added to its workspace")
+        self.assertEqual(os.path.dirname(folder), os.path.join(self.store.root, "dirs"))
+        self.store.prune(keep=0)
+        self.assertFalse(os.path.exists(folder), "the folder goes with the digest it copies")
+
+    def test_codex_gets_the_digest_as_developer_instructions_in_valid_toml(self):
+        import tomllib
+        words, _ = self.run_agent_with_digest("codex")
+        i = words.index("-c")
+        key, _, value = words[i + 1].partition("=")
+        self.assertEqual(key, "developer_instructions")
+        self.assertEqual(tomllib.loads("v = " + value)["v"], self.TRICKY.rstrip("\n"), "codex parses the value as TOML")
+
+    def test_opencode_gets_the_digest_as_an_instruction_file_of_its_own_server(self):
+        words, path = self.run_agent_with_digest("opencode", opencode=True)
+        self.assertEqual(words[:2], ["--standalone", "--auto"], "the shared service would keep the config of the session that started it")
+        env = [w for w in words if w.startswith("ENV=")][0][4:]
+        self.assertEqual(json.loads(env), {"instructions": [path]})
+        words, _ = self.run_agent_with_digest("opencode", "run hello", opencode=True)
+        self.assertEqual(words[:3], ["run", "--auto", "hello"], "a one-shot call: no context")
+        self.assertIn("ENV=", words)
+        words, _ = self.run_agent_with_digest("opencode", env_extra={"OPENCODE_CONFIG_CONTENT": "{}"}, opencode=True)
+        self.assertNotIn("--standalone", words, "the user's own OPENCODE_CONFIG_CONTENT wins")
+
     def test_a_session_on_a_commit_with_a_digest_gets_the_file_the_sysop_wrote(self):
         flag = "[--append-system-prompt-file]"
         self.assertNotIn(flag, self.run_claude(self.repo), "no digest yet: the agent starts as without the sysop")

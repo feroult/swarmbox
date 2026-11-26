@@ -164,7 +164,7 @@ Every capability has a **default in the core**, so an agent declares only what d
 | Input semantics: reserved prefixes, permission answer keys | `agent.conf` | data | tabs, sysop policy, gateway `answer` | `/ !`; answering disabled |
 | Prompt history | `history.py`, or `HISTORY=jsonl:...` | Python / data | sysop autoname | redacted screen text |
 | Namer and brain command templates, login hint, default model | `agent.conf` | data | sysop | agent not usable as namer/brain |
-| Repository context: the words that hand a file to the agent's system prompt (`CONTEXT_ARGS`, `{context_file}`), and the one-shot call that writes the digest (`DIGEST`, `DIGEST_MODEL`) | `agent.conf` | data | generated shell wrapper, sysop autocontext | the agent starts without context; agent not usable to write digests |
+| Repository context: the words that hand the digest to the agent in the form it takes best (`CONTEXT_ARGS`: `{context_file}` the file, `{context_dir}` a folder holding it as `AGENTS.md`, `{context_toml}` its text as a TOML string; an addon with its own `shell.sh` calls `_sb_context`), and the one-shot call that writes the digest (`DIGEST`, `DIGEST_MODEL`) | `agent.conf` | data | generated shell wrapper, sysop autocontext | the agent starts without context; agent not usable to write digests |
 | Secrets: env vars, credential files | `agent.conf` | data | sysop risk | none |
 
 **The hydration and reflow code you saw in the gateway is mechanism, not agent code.** The masking holds the PTY output after a resize

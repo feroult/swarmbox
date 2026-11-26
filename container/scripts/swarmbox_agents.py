@@ -97,12 +97,13 @@ KEYS["TERM_IMAGE_PASTE"] = "enum:path|none"
 
 PLACEHOLDERS = {"NAMER": ("prompt", "system_prompt", "model"),
                 "DIGEST": ("prompt", "system_prompt", "model"),
-                "CONTEXT_ARGS": ("context_file",),
+                "CONTEXT_ARGS": ("context_file", "context_dir", "context_toml"),
                 "BRAIN": ("mcp_config", "model", "system_prompt", "system_prompt_file", "max_turns", "goal_dir"),
                 "MCP_ARGS": ("mcp_file", "home")}
 # {mcp_file} in MCP_ARGS: the box's list of MCP servers, $SB_DATA_DIR/mcp-servers.json (swarmbox-mcp)
 # {context_file} in CONTEXT_ARGS: the repository digest of the commit the agent starts on (CONTEXT_DIR/<commit>.md, written by the
-# sysop's autocontext); the words are passed only when that file exists
+# sysop's autocontext); {context_dir}: a folder holding it as AGENTS.md (CONTEXT_DIR/dirs/<commit>); {context_toml}: its text as a TOML
+# basic string. The words are passed only when that file exists
 CONTEXT_DIR_REL = os.path.join("sysop", "digests")     # under SB_STATE_DIR
 HOOKS = {"screen": "screen.py", "history": "history.py", "shell": "shell.sh", "mcp": "mcp.sh", "statusline": "statusline.sh",
          "terminal": "terminal.mjs", "icon": "icon.svg", "settings": "settings.json"}
@@ -661,15 +662,18 @@ FUNC_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 # one-shot call, not a session) skips the worktree guard and the context; then the program runs with its auto-approve words (unless
 # SWARMBOX_YOLO=0), the words that give it the box's MCP servers (always: they are not a permission) and, for a session started in a Git
 # repository whose commit has a digest (the sysop's autocontext writes $SB_STATE_DIR/sysop/digests/<commit>.md), its CONTEXT_ARGS with
-# {context_file} replaced by that file. No file, no words: the agent starts as it would without the sysop. The commit is read after the
-# guard, which may have moved the shell into a new worktree.
-# When the digests folder exists (autocontext is on) the session is told to the box on tab.events (swarmbox-bus, source launcher): a
-# commit without a file first publishes `prepare` and, when somebody received it, waits for the file (_sb_wait: the sysop carries the
-# repository's digest forward at once; the first time in a repository the model writes it, about 10 s, shown on the terminal, and Enter
-# skips); then `session` says which file the agent got (or none, and whether the user skipped), in the background, for the panel and the
-# mark on the tab. SWARMBOX_CONTEXT=0 (the Web Studio's New agent box, unticked) starts without the context and says so (`off`).
-# No folder, no bus: nothing is published and nothing waits. `command CMD` reaches the program (or its shim), not the
-# function. Written for bash and zsh.
+# the digest in the form the agent takes best (docs/agents-design.md): {context_file} the file (Claude Code:
+# --append-system-prompt-file, its system prompt), {context_dir} a folder holding it as AGENTS.md (Antigravity: --add-dir, its rules;
+# digests/dirs/<commit>/), {context_toml} its text as a TOML string (Codex: -c developer_instructions=, a developer message). No file,
+# no words: the agent starts as it would without the sysop. The commit is read after the guard, which may have moved the shell into a
+# new worktree. An addon with a shell.sh of its own calls _sb_context itself (OpenCode).
+# _sb_context ID: when the digests folder exists (autocontext is on) the session is told to the box on tab.events (swarmbox-bus, source
+# launcher): a commit without a file first publishes `prepare` and, when somebody received it, waits for the file (_sb_wait: the sysop
+# carries the repository's digest forward at once; the first time in a repository the model writes it, about 10 s, shown on the
+# terminal, and Enter skips); then `session` says which file the agent got (or none, and whether the user skipped), in the background,
+# for the panel and the mark on the tab. SWARMBOX_CONTEXT=0 (the Web Studio's New agent box, unticked) starts without the context and
+# says so (`off`). No folder, no bus: nothing is published and nothing waits. It sets _sb_context_file (empty: no context).
+# `command CMD` reaches the program (or its shim), not the function. Written for bash and zsh.
 SHELL_HELPER = r"""_sb_wait() {
     # _sb_wait DIR COMMIT: after a `prepare`, wait for DIR/COMMIT.md. Up to 2 s for a carry-forward or a mark of the sysop; while the mark
     # is COMMIT.wait (the model is writing the first digest of the repository) it says so in one still line on the terminal (cut to the
@@ -707,8 +711,53 @@ SHELL_HELPER = r"""_sb_wait() {
     [ -z "$_w_shown" ] || printf '\r\033[2K' >&2
     return 0
 }
+_sb_context() {
+    # _sb_context ID: the digest of the commit a session of agent ID starts on, in _sb_context_file (empty: none), told to the box
+    local _c_head _c_dir _c_file _c_cwd _c_tab _c_msg _c_skip=
+    _sb_context_file=
+    _c_head=$(command git rev-parse --verify -q HEAD 2>/dev/null) || return 0
+    case "$_c_head" in ""|*[!0-9a-f]*) return 0 ;; esac
+    _c_dir="${SB_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/swarmbox}/sysop/digests"
+    [ -d "$_c_dir" ] || return 0
+    _c_file="$_c_dir/$_c_head.md"
+    _c_cwd=${PWD//[[:cntrl:]]/}
+    _c_cwd=${_c_cwd//\\/\\\\}
+    _c_cwd=${_c_cwd//\"/\\\"}
+    _c_tab=${HC_TERMINAL_ID:-}
+    case "$_c_tab" in *[!A-Za-z0-9_.:@-]*) _c_tab= ;; esac
+    _c_msg="\"tab\":\"$_c_tab\",\"cwd\":\"$_c_cwd\",\"agent\":\"$1\",\"commit\":\"$_c_head\""
+    if [ "${SWARMBOX_CONTEXT:-1}" = 0 ]; then
+        _c_file=
+        _c_msg="$_c_msg,\"off\":true"
+    elif [ ! -s "$_c_file" ] && command swarmbox-bus pub --source launcher tab.events "{\"event\":\"prepare\",$_c_msg}" >/dev/null 2>&1; then
+        _sb_wait "$_c_dir" "$_c_head" || _c_skip=1
+    fi
+    [ -n "$_c_file" ] && [ -f "$_c_file" ] && [ -s "$_c_file" ] || _c_file=
+    _c_msg="$_c_msg,\"context\":\"$_c_file\""
+    [ -z "$_c_skip" ] || _c_msg="$_c_msg,\"skipped\":true"
+    ( command swarmbox-bus pub --allow-none --source launcher tab.events "{\"event\":\"session\",$_c_msg}" >/dev/null 2>&1 & ) 2>/dev/null
+    _sb_context_file=$_c_file
+}
+_sb_context_dir() {
+    # _sb_context_dir FILE: a folder that holds FILE (DIR/<commit>.md) as AGENTS.md, DIR/dirs/<commit> (the sysop prunes it with FILE)
+    local _d="${1%/*}/dirs/${1##*/}"
+    _d=${_d%.md}
+    command mkdir -p "$_d" 2>/dev/null && command cp -f "$1" "$_d/AGENTS.md.$$" 2>/dev/null && command mv -f "$_d/AGENTS.md.$$" "$_d/AGENTS.md" 2>/dev/null || return 1
+    printf '%s' "$_d"
+}
+_sb_context_toml() {
+    # _sb_context_toml FILE: the text of FILE as one TOML basic string ("...": backslash, quote, newline and tab escaped, other
+    # control characters dropped)
+    local _t
+    _t=$(command tr -d '\000-\010\013-\037\177' < "$1" 2>/dev/null) || return 1
+    _t=${_t//\\/\\\\}
+    _t=${_t//\"/\\\"}
+    _t=${_t//$'\n'/\\n}
+    _t=${_t//$'\t'/\\t}
+    printf '"%s"' "$_t"
+}
 _sb_agent_run() {
-    local _sb_id=$1 _sb_cmd=$2 _sb_pass=" $3 " _sb_print=" $4 " _sb_n=$5 _sb_a _sb_guard=1 _sb_head _sb_file _sb_ph='{context_file}' _sb_dir _sb_cwd _sb_tab _sb_msg _sb_skip
+    local _sb_id=$1 _sb_cmd=$2 _sb_pass=" $3 " _sb_print=" $4 " _sb_n=$5 _sb_a _sb_guard=1 _sb_v _sb_ok=1 _sb_cdir= _sb_ctoml=
     shift 5
     local -a _sb_yolo _sb_mcp _sb_ctx _sb_ctx_on
     _sb_yolo=()
@@ -733,36 +782,23 @@ _sb_agent_run() {
         _sb_worktree_guard "$_sb_id" "$@" || return $?
     fi
     if [ "$_sb_guard" = 1 ] && [ "${#_sb_ctx[@]}" -gt 0 ]; then
-        _sb_head=$(command git rev-parse --verify -q HEAD 2>/dev/null) || _sb_head=
-        _sb_dir="${SB_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/swarmbox}/sysop/digests"
-        case "$_sb_head" in
-            ""|*[!0-9a-f]*) ;;
-            *)
-                _sb_file="$_sb_dir/$_sb_head.md"
-                if [ -d "$_sb_dir" ]; then
-                    _sb_cwd=${PWD//[[:cntrl:]]/}
-                    _sb_cwd=${_sb_cwd//\\/\\\\}
-                    _sb_cwd=${_sb_cwd//\"/\\\"}
-                    _sb_tab=${HC_TERMINAL_ID:-}
-                    case "$_sb_tab" in *[!A-Za-z0-9_.:@-]*) _sb_tab= ;; esac
-                    _sb_msg="\"tab\":\"$_sb_tab\",\"cwd\":\"$_sb_cwd\",\"agent\":\"$_sb_id\",\"commit\":\"$_sb_head\""
-                    _sb_skip=
-                    if [ "${SWARMBOX_CONTEXT:-1}" = 0 ]; then
-                        _sb_file=
-                        _sb_msg="$_sb_msg,\"off\":true"
-                    elif [ ! -s "$_sb_file" ] && command swarmbox-bus pub --source launcher tab.events "{\"event\":\"prepare\",$_sb_msg}" >/dev/null 2>&1; then
-                        _sb_wait "$_sb_dir" "$_sb_head" || _sb_skip=1
-                    fi
-                    [ -s "$_sb_file" ] || _sb_file=
-                    _sb_msg="$_sb_msg,\"context\":\"$_sb_file\""
-                    [ -z "$_sb_skip" ] || _sb_msg="$_sb_msg,\"skipped\":true"
-                    ( command swarmbox-bus pub --allow-none --source launcher tab.events "{\"event\":\"session\",$_sb_msg}" >/dev/null 2>&1 & ) 2>/dev/null
-                fi
-                if [ -n "$_sb_file" ] && [ -f "$_sb_file" ] && [ -s "$_sb_file" ]; then
-                    for _sb_a in "${_sb_ctx[@]}"; do _sb_ctx_on+=("${_sb_a//"$_sb_ph"/$_sb_file}"); done
-                fi
-                ;;
-        esac
+        _sb_context "$_sb_id"
+        if [ -n "$_sb_context_file" ]; then
+            for _sb_a in "${_sb_ctx[@]}"; do
+                _sb_v=$_sb_a
+                case "$_sb_v" in *'{context_file}'*) _sb_v=${_sb_v//'{context_file}'/"$_sb_context_file"} ;; esac
+                case "$_sb_v" in *'{context_dir}'*)
+                    [ -n "$_sb_cdir" ] || _sb_cdir=$(_sb_context_dir "$_sb_context_file") || { _sb_ok=0; break; }
+                    _sb_v=${_sb_v//'{context_dir}'/"$_sb_cdir"} ;;
+                esac
+                case "$_sb_v" in *'{context_toml}'*)
+                    [ -n "$_sb_ctoml" ] || _sb_ctoml=$(_sb_context_toml "$_sb_context_file") || { _sb_ok=0; break; }
+                    _sb_v=${_sb_v//'{context_toml}'/"$_sb_ctoml"} ;;
+                esac
+                _sb_ctx_on+=("$_sb_v")
+            done
+            [ "$_sb_ok" = 1 ] || _sb_ctx_on=()
+        fi
     fi
     if [ "${SWARMBOX_YOLO:-1}" = 0 ]; then
         command "$_sb_cmd" "${_sb_mcp[@]}" "${_sb_ctx_on[@]}" "$@"
@@ -783,16 +819,18 @@ def _sh_word(w):
 
 def shell_functions(env=None):
     """The shell text that defines one function per agent of the registry whose addon has no shell.sh of its own (an addon's shell.sh
-    wins: OpenCode's), each calling _sb_agent_run with the agent's data inlined, plus _sb_agent_run itself."""
+    wins: OpenCode's), each calling _sb_agent_run with the agent's data inlined, plus the helpers (_sb_agent_run, and _sb_context that
+    an addon's shell.sh calls), written whenever the registry has an agent."""
     out = []
-    for a in agents(env):
+    every = agents(env)
+    for a in every:
         if a["hooks"]["shell"] or not FUNC_NAME_RE.match(a["cmd"]):
             continue
         words = [shlex.quote(a["id"]), shlex.quote(a["cmd"]), shlex.quote(" ".join(a["passthrough"])), shlex.quote(" ".join(a["print_flags"])),
                  str(len(a["yolo_args"]))] + [_sh_word(w) for w in a["yolo_args"]] + [str(len(a["mcp_args"]))] + [_sh_word(w) for w in a["mcp_args"]]
         words += [str(len(a["context_args"]))] + [shlex.quote(w) for w in a["context_args"]]
         out.append("%s() {\n    _sb_agent_run %s \"$@\"\n}\n" % (a["cmd"], " ".join(words)))
-    if not out:
+    if not every:
         return ""
     return "# generated by swarmbox-agents sh: the shell functions of the agents of the box (docs/agents-design.md)\n" + SHELL_HELPER + "".join(out)
 

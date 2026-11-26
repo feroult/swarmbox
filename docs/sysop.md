@@ -211,13 +211,25 @@ sysop           -> records the session (sessions/<tab>: the exact text) and a `s
     names it gave). *Now* holds a call that runs and a failure the repository still has; the Events tab counts those failures. Filters:
     All, Context, Tab names, and one repository (from a card's **Events**). No row per session: the card shows it. New conversation
     clears the chat, not the events. Every outcome is also a line `autocontext ...` in `serve.log`.
-- **How the agent gets it.** The shell function of the agent passes `CONTEXT_ARGS` (Claude Code: `--append-system-prompt-file FILE`) when a
-  session (not a one-shot `-p`) starts on a commit that has a digest. The agent's system prompt is fixed when it starts: a digest written
-  later reaches the next session, not this one. It writes nothing on the terminal (an agent's screen would cover it at once).
+- **How the agent gets it.** Each agent in the form it takes best, measured on the request each one sends to its model (a local server
+  that recorded it) or, for Antigravity, on its answer:
+
+  | Agent | How | Where it lands |
+  |---|---|---|
+  | Claude Code | `--append-system-prompt-file FILE` | the end of its system prompt |
+  | Antigravity | `--add-dir DIR`, `DIR/AGENTS.md` a copy of the digest (`digests/dirs/<commit>/`, pruned with it): agy has no system prompt flag | its rules (directory rules of its workspace) |
+  | Codex | `-c developer_instructions="TEXT"` (`model_instructions_file` would replace its own instructions) | a developer message, beside its instructions |
+  | OpenCode | `OPENCODE_CONFIG_CONTENT={"instructions":[FILE]}` with `--standalone` (its shared background service reads its config once, from the session that started it, so another session would get that one's context); a user's own `OPENCODE_CONFIG_CONTENT` wins | its system prompt |
+
+  The words are passed when a session (not a one-shot call: `-p`, `codex exec`, `opencode run`) starts on a commit that has a digest:
+  `CONTEXT_ARGS` with `{context_file}`, `{context_dir}` or `{context_toml}` in the agent's `agent.conf`; OpenCode's own `shell.sh` calls
+  `_sb_context`. What an agent got is fixed when it starts: a digest written later reaches the next session, not this one. It writes
+  nothing on the terminal but the one waiting line (an agent's screen would cover it at once).
 - **Off.** `swarmbox config set sysop.autocontext 0` and `swarmbox reset` (or the toggle in **Settings → Sysop**): the sysop writes none and
   removes the folder when it starts, so no agent gets an old one and the marks are gone. A digest is only used for its own commit, so after `swarmbox addon remove
   sysop` the next commit has none.
-- **Agents.** Only Claude Code declares `CONTEXT_ARGS` and `DIGEST` today; another agent starts as before.
+- **Agents.** Claude Code, Antigravity, Codex and OpenCode get the digest (above); only Claude Code declares `DIGEST`, the call that writes
+  it. An agent that declares neither starts as before.
 
 ## The panel
 

@@ -1,12 +1,13 @@
 """Repository digests for new agent sessions (`sysop.autocontext`): an orientation to a repository, written once per commit, that an
-agent's launcher adds to the agent's system prompt, so a session in a new worktree does not spend its first minute exploring a repository
+agent's launcher hands to the agent (its system prompt, rules or developer instructions: the form each agent takes best), so a session in a new worktree does not spend its first minute exploring a repository
 that another session of the box already read.
 
   writer  the resident service subscribes to `tab.events` on swarmbox-bus (its own group) in a daemon thread. A commit that has no file
           gets one at once when the repository has a digest (a carry-forward: no model call); a model call (a new repository, an old
           digest, a large change) runs in one worker thread, in the background.
-  reader  the shell function of an agent (`_sb_agent_run`, swarmbox_agents.py) that declares CONTEXT_ARGS: when <dir>/<HEAD>.md exists in the
-          folder a session starts in, the agent gets CONTEXT_ARGS with {context_file} = that file; no file, no words. The reader knows the
+  reader  the shell function of an agent (`_sb_context` and `_sb_agent_run`, swarmbox_agents.py) that declares CONTEXT_ARGS (or calls
+          _sb_context from its own shell.sh: OpenCode): when <dir>/<HEAD>.md exists in the folder a session starts in, the agent gets
+          CONTEXT_ARGS with {context_file} = that file ({context_dir}, {context_toml}: other forms of it); no file, no words. The reader knows the
           folder, the file name and the bus, nothing of the sysop. When the folder exists (autocontext is on) and the file does not, it
           publishes `prepare` on tab.events and waits for the carry-forward (instant) or, the first time in a repository, for the
           model (it says so on the terminal, Enter skips); then it publishes `session` (the file it passed, or none), which the sysop
@@ -20,6 +21,8 @@ THE FILES, in <SB_STATE_DIR>/sysop/digests (0700; files 0600):
   <commit>.none        no file comes for that commit now (the call failed, or waits for its retry): a waiting launcher starts at once
   repos/<key>.json     per repository (key: a hash of its common Git folder, shared by its worktrees): the commit the digest was made at
   repos/<key>.md       the digest itself, as the model wrote it
+  dirs/<commit>/       AGENTS.md, a copy of <commit>.md for an agent that reads a folder's rules (Antigravity: --add-dir), made by the
+                       launcher, pruned with <commit>.md
   sessions/<tab>.md    the exact text the last agent session of tab <tab> started with (a later rewrite of <commit>.md does not change it)
   sessions/<tab>.json  that session: tab, agent, folder, repository, commit, with or without context, the digest's commit, age and changes;
                        `waiting` while its launcher waits for the first digest of the repository
@@ -357,6 +360,15 @@ class Store:
 
     def prune(self, keep=MAX_FILES):
         self._prune_dir(self.root, keep, pair=True)
+        # dirs/<commit>/AGENTS.md: the copy a launcher made for an agent that takes a folder (Antigravity); it goes with <commit>.md
+        d = os.path.join(self.root, "dirs")
+        try:
+            names = os.listdir(d)
+        except OSError:
+            return
+        for n in names:
+            if COMMIT_RE.match(n) and not os.path.exists(os.path.join(self.root, n + ".md")):
+                shutil.rmtree(os.path.join(d, n), ignore_errors=True)
 
     @staticmethod
     def _prune_dir(root, keep, pair=False):
