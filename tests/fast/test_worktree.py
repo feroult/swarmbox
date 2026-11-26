@@ -161,7 +161,16 @@ class WorktreeTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "dirty_base")
         os.unlink(os.path.join(self.repo, "scratch.txt"))
 
-        # Clean merge with --clean removes worktree and branch
+        # Seed a pin for this worktree and an unrelated pin to verify merge --clean purges only the removed worktree's pin
+        pins_file = os.path.join(wt.config_dir(self.env), "pins.json")
+        os.makedirs(os.path.dirname(pins_file), exist_ok=True)
+        with open(pins_file, "w", encoding="utf-8") as f:
+            json.dump({"schema": 1, "pins": [
+                {"id": "p-wt", "cwd": wt_path, "auto": True, "worktree": {"path": wt_path, "branch": created["branch"]}},
+                {"id": "p-main", "cwd": self.repo, "auto": False},
+            ]}, f)
+
+        # Clean merge with --clean removes worktree, branch, and its pin
         m = wt.merge_worktree(wt_path, clean=True, env=self.env)
         self.assertTrue(m["ok"])
         self.assertEqual(m["strategy"], "fast-forward")
@@ -169,6 +178,9 @@ class WorktreeTest(unittest.TestCase):
         self.assertFalse(os.path.exists(wt_path))
         self.assertTrue(os.path.isfile(os.path.join(self.repo, "feature.py")))
         self.assertEqual(wt.list_worktrees(env=self.env), [])
+        with open(pins_file, encoding="utf-8") as f:
+            remaining_pins = json.load(f)["pins"]
+        self.assertEqual([p["id"] for p in remaining_pins], ["p-main"])
 
     def test_in_memory_conflict_detection_leaves_main_repo_clean(self):
         created = wt.create_worktree(self.repo, env=self.env)

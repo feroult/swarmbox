@@ -202,6 +202,56 @@ def _delete_meta(root, wt_path):
             pass
 
 
+def _purge_pins_for_worktree(wt_path, env=None):
+    """Remove any pins in pins.json whose cwd or worktree.path points to wt_path."""
+    if not wt_path:
+        return
+    pfile = os.path.join(config_dir(env), "pins.json")
+    try:
+        with open(pfile, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict) or not isinstance(data.get("pins"), list):
+        return
+    raw_target = str(wt_path).rstrip("/")
+    real_target = _real(wt_path).rstrip("/")
+    kept = []
+    changed = False
+    for pin in data["pins"]:
+        if not isinstance(pin, dict):
+            kept.append(pin)
+            continue
+        wt = pin.get("worktree") if isinstance(pin.get("worktree"), dict) else {}
+        candidates = [pin.get("cwd"), wt.get("path")]
+        matched = False
+        for c in candidates:
+            if not c or not isinstance(c, str):
+                continue
+            cr = c.rstrip("/")
+            if cr == raw_target or cr == real_target or _real(c).rstrip("/") == real_target:
+                matched = True
+                break
+        if matched:
+            changed = True
+        else:
+            kept.append(pin)
+    if not changed:
+        return
+    tmp = "%s.tmp.%d.%s" % (pfile, os.getpid(), secrets.token_hex(2))
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({**data, "pins": kept}, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, pfile)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
 def _repo_meta_path(root, repo_root):
     h = hashlib.sha1(_real(repo_root).encode("utf-8")).hexdigest()[:12]
     return os.path.join(_meta_dir(root), "repo-%s.json" % h)
@@ -1072,6 +1122,7 @@ def remove_worktree(target_path, force=False, keep_branch=False, env=None):
     _git(repo_root, *args)
     _git(repo_root, "worktree", "prune", check=False)
     _delete_meta(root, wt_path)
+    _purge_pins_for_worktree(wt_path, env=env)
 
     branch_deleted = False
     if branch and not keep_branch and (branch.startswith("sb/") or force):
