@@ -53,10 +53,12 @@ def _is_placeholder_title(title, cwd=""):
 
 SYSTEM_PROMPT = (
     "You name a terminal tab after the goal the user is working on with a coding agent.\n"
-    "Reply with ONLY the title, or exactly KEEP.\n"
+    "Reply with ONLY the title, or exactly KEEP. No label or prefix (never 'Goal:', 'Title:'), no explanation.\n"
     "Title: 1 to 3 short words, at most %d characters including spaces, no quotes, no final punctuation. Name the concrete "
-    "subject (feature, bug, component, file), not the activity (understand, explore, review). Use the language of the "
-    "user's requests. Examples: Fix OAuth Login, Tab Autonamer, Cmd+C macOS, Checkout Cache.\n"
+    "subject (feature, bug, component, file, the things compared), never the activity: drop verbs such as understand, "
+    "explore, review, evaluate, compare (entender, avaliar, comparar, verificar).\n"
+    "Write the title in the language the user's requests are written in: Portuguese requests get a Portuguese title. "
+    "Examples: Fix OAuth Login, Tab Autonamer, Cmd+C macOS, Cache do Checkout, Rex vs Herdr, Login com Google.\n"
     "Reply KEEP when there is no clear goal yet (a greeting, 'understand the repo', explain, list files, git status), or "
     "when the current title still fits the latest goal. Change the title only when the latest requests show a goal that "
     "is clearly different from, or more specific than, the current title.\n"
@@ -103,8 +105,19 @@ def append_system_event(path, kind, clock=time.time, **fields):
         pass
 
 
-_TRAILING_FILLERS = frozenset({"a", "an", "and", "the", "of", "for", "to", "in", "on", "with", "de", "da", "do", "das", "dos",
-                               "e", "o", "os", "as", "para", "com", "em", "no", "na", "por"})
+_TRAILING_FILLERS = frozenset({"a", "an", "and", "or", "the", "of", "for", "to", "in", "on", "with", "as", "vs", "vs.", "versus",
+                               "x", "de", "da", "do", "das", "dos", "e", "ou", "o", "os", "para", "com", "em", "no", "na",
+                               "por", "como", "sobre"})
+# A label the model sometimes puts before the title ("Goal: evaluate ...").
+_LABEL_RE = re.compile(r"^(?:goal|title|tab|tab title|name|task|topic|subject|objetivo|título|titulo|nome|tarefa|assunto)\s*:\s*",
+                       re.I)
+# The activity, not the subject: dropped from the front of an answer too long for the sidebar, so the cut keeps the subject
+# ("Comparar Rex e Herdr como engine" -> "Rex e Herdr", not "Comparar Rex").
+_ACTIVITY_VERBS = frozenset({
+    "understand", "explore", "review", "evaluate", "assess", "compare", "analyze", "analyse", "check", "verify", "investigate",
+    "inspect", "examine", "study", "consider",
+    "entender", "entenda", "explorar", "revisar", "revise", "avaliar", "avalie", "comparar", "analisar", "analise",
+    "verificar", "verifique", "checar", "investigar", "investigue", "examinar", "estudar", "considerar"})
 
 
 def fit_title(title, limit=MAX_TITLE_CHARS):
@@ -122,14 +135,14 @@ def fit_title(title, limit=MAX_TITLE_CHARS):
     return " ".join(out)
 
 
-def clean_suggested_title(raw):
-    """Normalize a 1-shot LLM answer to at most MAX_TITLE_CHARS; return '' if KEEP, empty, or generic."""
+def clean_suggested_title(raw, limit=MAX_TITLE_CHARS):
+    """Normalize a 1-shot LLM answer to at most `limit` characters; return '' if KEEP, empty, generic or only an activity."""
     if not isinstance(raw, str):
         return ""
     first = ""
     for ln in raw.splitlines():
-        s = ln.strip().strip('"\'`*#-_ ')
-        if s:
+        s = _LABEL_RE.sub("", ln.strip().strip('"\'`*#-_ ')).strip('"\'`*#-_ ')
+        if s:                             # a line that is only a label ("Title:") is skipped
             first = s
             break
     if not first:
@@ -138,7 +151,14 @@ def clean_suggested_title(raw):
     first = re.sub(r"\s+", " ", first).strip(" .,:;!?")
     if not first or first.upper() == "KEEP":
         return ""
-    first = fit_title(first).strip(" .,:;!?-")
+    if all(w.lower() in _ACTIVITY_VERBS or w.lower() in _TRAILING_FILLERS for w in first.split()):
+        return ""                         # only an activity ("evaluate"): no subject to name the tab after
+    if len(first) > limit:
+        words = first.split()
+        while len(words) > 1 and words[0].lower() in _ACTIVITY_VERBS:
+            words.pop(0)
+        first = " ".join(words)
+    first = fit_title(first, limit).strip(" .,:;!?-")
     if len(first) < 2 or first.lower() in GENERIC_TITLES:
         return ""
     return first
@@ -441,8 +461,8 @@ class AutoNamer:
         old_title = str(res.get("old_title") or cur_title or tab)
         st["renames"] += 1
         st["last_named_at"] = now
-        self.log("autoname %s: %r -> %r on %s (%s, %d request(s), %.1fs)" % (
-            tab, old_title, new_title, event, source, len(requests), took))
+        self.log("autoname %s: %r -> %r on %s (%s, %d request(s), %.1fs, answer %r)" % (
+            tab, old_title, new_title, event, source, len(requests), took, str(raw_suggestion or "")[:60]))
         if self.audit is not None:
             self.audit.append("autoname", tab=tab, old_title=old_title, new_title=new_title, trigger=event, source=source)
         append_system_event(

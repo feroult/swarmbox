@@ -279,6 +279,13 @@ class AutoNamerTest(unittest.TestCase):
         self.assertEqual(autoname.clean_suggested_title("Checkout Cache Tests Suite"), "Checkout Cache")
         self.assertEqual(autoname.clean_suggested_title("Renomear Tabs de Agentes"), "Renomear Tabs")
         self.assertEqual(autoname.clean_suggested_title("Supercalifragilisticexpialidocious"), "Supercalifragilist")
+        # Real answers of the naming model (November 2026) that ignored the limit: a label and the activity verb are
+        # dropped so the cut keeps the subject, and an answer that is only an activity names nothing.
+        self.assertEqual(autoname.clean_suggested_title("Goal: evaluate Rex vs Herdr as terminal engine"), "Rex vs Herdr")
+        self.assertEqual(autoname.clean_suggested_title("Comparar Rex e Herdr como engine de terminal"), "Rex e Herdr")
+        self.assertEqual(autoname.clean_suggested_title("Goal: evaluate"), "")
+        self.assertEqual(autoname.clean_suggested_title("Avaliar"), "")
+        self.assertEqual(autoname.clean_suggested_title("Title:\nTab Autonamer"), "Tab Autonamer")
         for raw in ("Mobile Sysop Sheet Redesign", "Fix the OAuth login flow", "Cmd+C macOS"):
             self.assertLessEqual(len(autoname.clean_suggested_title(raw)), autoname.MAX_TITLE_CHARS)
 
