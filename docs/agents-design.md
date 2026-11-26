@@ -1,6 +1,7 @@
 # Agent registry: refactor plan
 
-Status: **plan, not implemented**. Written from a line-by-line audit of the code at `2e06be8` (2026-11-26). Line numbers are of that commit.
+Status: **implemented** (steps 0 to 10, 2026-11-26; what was built and where it differs from this plan: section 7). Sections 1 to 6 are the
+plan as it was written, from a line-by-line audit of the code at `2e06be8`; their line numbers are of that commit.
 
 Goal: a coding agent (Claude Code, Antigravity `agy`, OpenCode, and any future one) is **declared once**, in its addon folder, and every part
 of SwarmBox (shell, gateway, Web Studio, cockpit, `swarmbox-tabs`, pins, worktrees, state, sysop) reads that declaration. Adding an agent
@@ -310,3 +311,41 @@ folder is empty, the guard passes, and the agent is detected, persisted, guarded
 3. Decided: an agent in state `unknown` is treated by the sysop policy as possibly showing a dialog (conservative).
 4. Decided: the canonical MCP file moves out of `~/.claude`; the old path stays as Claude's own copy.
 5. Decided: the bugs of section 2 are fixed first (step 0), before the refactor.
+
+## 7. What was built
+
+Each step is one commit on the branch `feat/agent-registry`, with its CHANGELOG entry; the fast suite is green after each.
+
+| Step | Where it lives now |
+|---|---|
+| 1 | `container/scripts/swarmbox_agents.py` (`swarmbox-agents`: `list`, `get`, `resolve`, `default`, `generate`, `sh`, `check`, `seed`), `container/web/herdr/agents.mjs`, the `agent/` folders of `claude`, `antigravity`, `opencode`; `swarmbox-addon validate` runs `check`; `serve` step 6c writes `/tmp/swarmbox/agents.json`. Vectors: `tests/support/fixtures/agents/cases.json`, run by both libraries (`tests/fast/test_agents_registry.py`). |
+| 2 | Every list of section 1.A is gone; `detect` is the one detection order (OSC 7501 `app`, foreground, `swarmbox.agent` label while the terminal is not a bare login shell, never the name) in both languages. Bug 6: the host passes `AGENT` raw, `default_agent()` resolves it. |
+| 3 | `/agents.js` (loaded before `app.js`), `/api/agents`, `/agents/<id>/icon.svg`; icons in `agent/icon.svg`, a generic one in the page; colours inline from `COLOR`. |
+| 4 | `createTermModeTracker`, `isTuiTerminal`, `tuiTimings` in `server.mjs`; the page reports no hint and gets `tui` and `fallback_ms` from the gateway (`tests/fast/test_tui_signals.py`). |
+| 5 | `swarmbox-agents sh` and `_sb_agent_run`; `claude/shell.sh` and `antigravity/shell.sh` removed; `build_argv`/`buildAgentArgv`; a resume that fails at once says so (bug 13). |
+| 6 | `claude/agent/screen.py`; `agent_state`, `input_box` and `_verify` delegate to the adapter; `RESERVED_PREFIXES` in `swarmbox-tabs` and the sysop policy; the `unknown`-state rule (medium); `ANSWER_*` keys pressed with `hc keys`. |
+| 7 | `$SB_DATA_DIR/mcp-servers.json`; `claude/agent/mcp.sh`, `antigravity/agent/mcp.sh`; `swarmbox-agents seed` and `SETTINGS_FILE`; `prepare_addon` runs `mcp.sh`, the seeding, then `prepare.sh`. |
+| 8 | `HISTORY*` and `opencode/agent/history.py`; `BRAIN`, `MODEL`, `NAMER`, `NAMER_MODEL`, `LOGIN_HINT`; `sysop.brain` and `sysop.model` default to `auto`. |
+| 9 | `tests/fast/test_guard_agents.py`; `design.md` §8, `addons-design.md` (the keys), `sysop.md`, `pins-design.md`, `worktrees-design.md`, "Adding an agent" in CONTRIBUTING.md. |
+| 10 | `container/addons/codex/`. Its commit changes no other code; it adds what every addon has (its THIRD_PARTY_NOTICES section, its line in the smoke test's list, the CHANGELOG). |
+
+Measured while building it: Claude Code 2.1's dialogs are menus where a typed letter does nothing, Enter confirms the highlighted option, a
+number key picks its option and Esc cancels (its folder-trust dialog, in a pty): the old Allow / Cancel card typed `y`/`n` and Enter, so
+Cancel allowed a permission request. Codex 0.172.0 accepts its top-level flags before any subcommand and filters `resume --last` by folder
+(its `--help`).
+
+Where it differs from the plan, and why:
+
+- **One statusline renderer** (section 3.4) was not done: Claude Code keeps `swarmbox-statusline` and agy its own `statusline.sh`. They draw
+  different data (agy adds tokens, cost, quotas and a two-line layout) under exact tests; merging them is a visual change of its own.
+- **agy and OpenCode declare no `ANSWER_*` keys, no `NAMER` and no `BRAIN`**: their dialogs and one-shot modes could not be run here (no login
+  in the development box). Their Allow / Cancel card asks to answer in the terminal (it typed `y`/`n` before, unverified); the sysop's
+  brain and namer use Claude Code's when it is in the box.
+- **`STATUS` and `RESUME_SCOPE`** are read and shown but change no behaviour: the live state comes from what the terminal reports, and the
+  resume form of each agent already scopes itself (or not).
+- **`terminal.mjs`** was not needed: the `TERM_*` numbers cover the profile.
+- **The readers compute the registry from the manifests** on every read (cached while no manifest changes, at most 5 s for `installed`),
+  so `agents.json` is a convenience for people and shells, never a cache that can be stale.
+- **Codex's** OSC 7501 status, dialog keys and MCP servers are not measured; it runs with the safe defaults (state `unknown`, no answer keys,
+  no box MCP servers).
+
