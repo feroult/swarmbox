@@ -12,6 +12,8 @@
   swarmbox-sysop status [--json] [-q]          the service and its goals; exit 0 when it runs, 1 when it does not
   swarmbox-sysop stop [GOAL_ID]                the stop key: ends the running goal (and drops the queue), or just GOAL_ID
   swarmbox-sysop mcp                           the MCP server of a goal (the brain's MCP config runs this; SWARMBOX_SYSOP_CONTEXT names the goal)
+  swarmbox-sysop context [DIR] [--force]       write the repository digest of the commit of DIR (default: here) now, and print its file
+                                               (what the service does by itself with sysop.autocontext 1; --force makes it again)
   swarmbox-sysop agent                         interactive OSC 7501 agent bridge for herdr-core / herdr-app (hidden from normal tabs)
   swarmbox-sysop --self-test                   checks the install without a model
 
@@ -26,7 +28,7 @@ import signal
 import sys
 import time
 
-from . import actions, autoname, brain, busclient, config, ipc, mcpserver, paths, policy, service, state, ui_host, watch
+from . import actions, autoname, brain, busclient, config, digest, ipc, mcpserver, paths, policy, service, state, ui_host, watch
 
 EXIT = {"no_subscriber": 3, "bus_down": 4, "bus_closed": 4, "too_large": 5, "bad_topic": 6, "bad_request": 6, "bad_body": 6, "busy": 7}
 
@@ -117,6 +119,13 @@ def cmd_serve(args):
             log=svc.log,
         )
         namer.start()
+    context = None
+    if not getattr(cfg, "autocontext", True):
+        if digest.purge(pth):
+            svc.log("autocontext is off: removed the repository digests")
+    elif args.dock:
+        context = digest.AutoContext(svc.bus, pth, log=svc.log)
+        context.start()
     for sg in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sg, lambda *_: svc.shutdown())
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
@@ -126,6 +135,8 @@ def cmd_serve(args):
     finally:
         if namer is not None:
             namer.stop()
+        if context is not None:
+            context.stop()
         ui.shutdown(unset=rc != 9)      # 9: another service is running and keeps the UI state
     if rc == 9:
         print("swarmbox-sysop: already running", file=sys.stderr)
@@ -260,6 +271,30 @@ def cmd_approve(_args):
     return res.rc
 
 
+def cmd_context(args):
+    """`context [DIR]`: the digest of the commit of DIR, made now (it waits for the model); prints the file. 0 written or already there,
+    1 not a repository or the call failed, 2 sysop.autocontext is off (a digest would be used although it is off)."""
+    if not _cfg().autocontext:
+        print("swarmbox-sysop: sysop.autocontext is off (swarmbox config set sysop.autocontext 1, then swarmbox reset)", file=sys.stderr)
+        return 2
+    pth = paths.Paths()
+    repo = digest.repo_of(os.path.abspath(args.dir))
+    if repo is None:
+        print("swarmbox-sysop: %s is not in a Git repository with a commit" % args.dir, file=sys.stderr)
+        return 1
+    store = digest.Store(digest.digests_dir(pth.make()))
+    try:
+        what = digest.refresh(repo, store, force=args.force)
+    except (digest.DigestError, OSError) as e:
+        print("swarmbox-sysop: the digest of %s failed: %s" % (repo["name"], e), file=sys.stderr)
+        return 1
+    print(store.file(repo["head"]))
+    if what != "have":
+        print("swarmbox-sysop: %s the digest of %s at %s" % ({"made": "wrote", "carried": "carried forward"}.get(what, what), repo["name"],
+                                                             repo["head"][:12]), file=sys.stderr)
+    return 0
+
+
 def _cmd_agent(_args):
     from . import agent
     return agent.run_agent()
@@ -309,6 +344,10 @@ def main(argv=None):
         k = sub.add_parser(name)
         k.set_defaults(fn=fn)
     sub.add_parser("mcp").set_defaults(fn=lambda a: mcpserver.main())
+    c = sub.add_parser("context")
+    c.add_argument("dir", nargs="?", default=".")
+    c.add_argument("--force", action="store_true")
+    c.set_defaults(fn=cmd_context)
     sub.add_parser("agent").set_defaults(fn=_cmd_agent)
     args = ap.parse_args(sys.argv[1:] if argv is None else list(argv))
     if args.self_test:

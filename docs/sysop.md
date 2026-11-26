@@ -151,13 +151,40 @@ The brain needs a login: Claude Code's preset uses the one already in the box.
 | `sysop.brain` | `auto` | `auto`, an agent's name (its preset) or a command template (no line break) |
 | `sysop.model` | `auto` | the model of the brain, `{model}` (`auto`: the `MODEL` its agent declares) |
 | `sysop.autonomy` | `full-auto` | `full-auto`, `auto`, `confirm-risky` or `confirm-all` |
+| `sysop.autocontext` | `1` | `1` writes a digest of each repository an agent works in and starts new sessions with it (below); `0` writes none and removes them |
 | `sysop.countdown` | `4` | seconds an action waits for your veto, 0 to 30 (`0` sends at once) |
 | `sysop.max_steps` | `20` | tool calls of one goal, 1 to 100 |
 | `sysop.max_seconds` | `300` | seconds of one goal, 10 to 3600 |
 | `sysop.topic` | `goal` | the bus topic the sysop listens on (`[a-z0-9][a-z0-9._-]{0,62}`); it hears voice when `voice.topic` is the same name |
 | `sysop.group` | `sysop` | the group the sysop subscribes with (same charset); members of a group share the goals, one each |
 
-A setting that equals its default is not passed to the box. Inside the box the sysop reads `SWARMBOX_SYSOP_BRAIN`, `_MODEL`, `_AUTONOMY`, `_COUNTDOWN`, `_MAX_STEPS`, `_MAX_SECONDS`, `_TOPIC` and `_GROUP`. Changing a setting needs `swarmbox reset`; after `swarmbox update` the addon refreshes its code at the next start.
+A setting that equals its default is not passed to the box. Inside the box the sysop reads `SWARMBOX_SYSOP_BRAIN`, `_MODEL`, `_AUTONOMY`, `_AUTOCONTEXT`, `_COUNTDOWN`, `_MAX_STEPS`, `_MAX_SECONDS`, `_TOPIC` and `_GROUP`. Changing a setting needs `swarmbox reset`; after `swarmbox update` the addon refreshes its code at the next start.
+
+## Repository context
+
+A new session in a repository, such as an agent in a fresh worktree beside one that works on `main`, starts knowing nothing of it and
+spends its first minute reading files that another session of the box already read. With `sysop.autocontext 1` (the default) the sysop
+writes a short orientation of the repository, a **digest**, and the agent starts with it in its system prompt:
+
+```
+tab.events (an agent works in a repository) -> sysop: <state>/sysop/digests/<commit>.md, in the background
+the agent's launcher (every start: New agent, a pin, a worktree, typing claude) -> the file of the current commit exists? its CONTEXT_ARGS : nothing
+```
+
+- **What it is.** One call of the `DIGEST` an agent declares (Claude Code's: `claude -p` on haiku, no tools, no MCP, no settings) over the
+  repository's file list, its top-level docs (README, CLAUDE.md, AGENTS.md, CONTRIBUTING), its manifests (`package.json`, `pyproject.toml`,
+  `Makefile`, ...) and its last 15 commits: purpose, stack, layout, commands and conventions in at most 60 lines, under a header that says
+  when it was written and that it can be out of date. Nothing of the working tree that is not committed or listed is read.
+- **When it is written.** The first time an agent tab works in a repository whose commit has no digest. The worktrees of a repository
+  share it. A new commit carries the digest forward with the list of files changed since it (no model call); it is written again when it is
+  older than 6 hours or more than 40 files changed. A failed call (no login) is in `serve.log` as `autocontext ...` and tried again after
+  10 minutes. `swarmbox-sysop context [DIR]` writes it now and prints the file.
+- **How the agent gets it.** The shell function of the agent passes `CONTEXT_ARGS` (Claude Code: `--append-system-prompt-file FILE`) when a
+  session (not a one-shot `-p`) starts on a commit that has a digest. A resumed conversation keeps the system prompt it started with.
+- **Off.** `swarmbox config set sysop.autocontext 0` and `swarmbox reset` (or the toggle in **Settings → Sysop**): the sysop writes none and
+  removes the folder when it starts, so no agent gets an old one. A digest is only used for its own commit, so after `swarmbox addon remove
+  sysop` the next commit has none.
+- **Agents.** Only Claude Code declares `CONTEXT_ARGS` and `DIGEST` today; another agent starts as before.
 
 ## The panel
 
