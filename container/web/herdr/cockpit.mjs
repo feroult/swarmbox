@@ -12,7 +12,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import xtermHeadless from '@xterm/headless';
 import {
-  ALLOWED_AGENT_CMDS,
   DEFAULT_THEME,
   HC_BIN,
   HERDR_THEMES,
@@ -23,6 +22,7 @@ import {
   readActiveTab,
   readSavedTheme,
   readSysopSnapshot,
+  resolveDefaultAgent,
   runCommand,
   saveTheme,
   uniqueTabName,
@@ -618,8 +618,7 @@ export class Cockpit {
     let argv = ['/bin/bash', '-l'];
     let prefix = 'shell';
     if (preset === 'agent') {
-      const requested = String(process.env.SWARMBOX_AGENT || 'yolo').trim();
-      const cmd = ALLOWED_AGENT_CMDS.has(requested) ? requested : 'yolo';
+      const cmd = resolveDefaultAgent() || 'yolo';
       argv = ['/bin/bash', '-lic', `${cmd}; exec /bin/bash -l`];
       prefix = cmd === 'yolo' ? 'agent' : cmd;
     }

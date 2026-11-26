@@ -30,6 +30,8 @@ import {
   defaultTitleForPath,
   detectLiveAgent,
   detectTerminalAgent,
+  normalizeAgentName,
+  resolveDefaultAgent,
   isHiddenTerminal,
   listInstalledAgents,
   makePinId,
@@ -1499,9 +1501,12 @@ export function createGateway(options = {}) {
         let prefix = 'shell';
         let agentKind = 'shell';
         if (preset === 'agent') {
-          const requested = String(body.agent || process.env.SWARMBOX_AGENT || 'yolo').trim();
-          const cmd = ALLOWED_AGENT_CMDS.has(requested) ? requested : 'yolo';
-          agentKind = cmd === 'yolo' ? (ALLOWED_AGENT_CMDS.has(process.env.SWARMBOX_AGENT) ? process.env.SWARMBOX_AGENT : 'yolo') : cmd;
+          // A named agent, else the default agent of the box, else `yolo` (which explains in the tab that there is none).
+          const defaultAgent = resolveDefaultAgent();
+          const requested = String(body.agent || '').trim().toLowerCase();
+          const named = requested !== 'yolo' ? normalizeAgentName(requested) : '';
+          const cmd = named || (!requested && defaultAgent) || 'yolo';
+          agentKind = cmd === 'yolo' ? (defaultAgent || 'yolo') : cmd;
           argv = buildAgentArgv(cmd, body.resume === 'continue' ? 'continue' : 'fresh');
           prefix = cmd === 'yolo' ? 'agent' : cmd;
         }
@@ -1807,7 +1812,7 @@ export function createGateway(options = {}) {
           return sendJson(res, 201, { ok: true, pin: rec, pins: buildPinsSnapshot(hc.listSnapshot()) });
         }
         const cwd = typeof body.cwd === 'string' && body.cwd.startsWith('/') ? body.cwd : HOME;
-        const agent = ALLOWED_AGENT_CMDS.has(body.agent) ? body.agent : 'shell';
+        const agent = normalizeAgentName(body.agent) || (ALLOWED_AGENT_CMDS.has(body.agent) ? body.agent : 'shell');
         const title = cleanSessionTitle(body.title) || defaultTitleForPath(cwd, agent);
         const rec = {
           id: makePinId(pins),
@@ -2346,8 +2351,9 @@ export function createGateway(options = {}) {
           return sendJson(res, 404, { error: 'missing_path', message: 'worktree folder does not exist' });
         }
         const st = await runWt(['status', wtPath]).catch(() => null);
-        const reqAgent = String(body.agent || process.env.SWARMBOX_AGENT || 'claude').trim();
-        const cmd = ALLOWED_AGENT_CMDS.has(reqAgent) ? reqAgent : 'shell';
+        // The agent asked for, else the default agent of the box, else a shell: never an agent the box may not have.
+        const reqAgent = String(body.agent || '').trim().toLowerCase();
+        const cmd = normalizeAgentName(reqAgent) || (reqAgent === 'yolo' ? 'yolo' : '') || resolveDefaultAgent() || 'shell';
         const argv = buildAgentArgv(cmd, 'continue');
         const labels = {
           'swarmbox.agent': cmd,

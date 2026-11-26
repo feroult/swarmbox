@@ -1199,6 +1199,19 @@ const AGENT_NAME_MAP = {
   codex: 'codex',
 };
 
+// The agent id of a name: an agent command, or another name of it (the OSC 7501 app it reports, its addon name). '' for anything
+// else, `yolo` included: yolo is the shell function that runs the default agent, not an agent.
+export function normalizeAgentName(raw) {
+  const id = AGENT_NAME_MAP[String(raw || '').trim().toLowerCase()] || '';
+  return id && ALLOWED_AGENT_CMDS.has(id) ? id : '';
+}
+
+// The default agent of the box: SWARMBOX_AGENT (the host's AGENT, else the first addon of WITH) when it names an agent, else ''.
+// The same answer for every place that starts or offers the default agent: New agent, worktree open, the cockpit, the launcher.
+export function resolveDefaultAgent(env = process.env) {
+  return normalizeAgentName(env && env.SWARMBOX_AGENT);
+}
+
 export function cleanSessionTitle(raw) {
   return String(raw || '')
     .replace(/[\x00-\x1f\x7f]+/g, ' ')
@@ -1420,7 +1433,7 @@ export function listInstalledAgents(env = process.env, addons = null) {
     addonCmds.add(String(a.name || '').toLowerCase());
     for (const c of a.commands || []) addonCmds.add(String(c || '').toLowerCase());
   }
-  const defaultAgent = String((env && env.SWARMBOX_AGENT) || '').trim().toLowerCase();
+  const defaultAgent = resolveDefaultAgent(env);
   const found = [];
   for (const spec of KNOWN_CODING_AGENTS) {
     if (isCmdOnPath(spec.id, env) || addonCmds.has(spec.id)) {

@@ -368,6 +368,22 @@ try {
   const noDir = await api('GET', `/api/dirs?path=${encodeURIComponent(path.join(proj2, 'missing'))}`);
   assert.equal(noDir.status, 404);
 
+  // 11. The default agent: one answer for New agent and worktree open, whatever name the box's AGENT setting uses
+  const killAll = async () => { for (const t of hc.listSnapshot()) await api('DELETE', `/api/tabs/${t.address}`); };
+  process.env.SWARMBOX_AGENT = 'antigravity';   // the addon name of agy
+  const defTab = await api('POST', '/api/tabs', { preset: 'agent', cwd: proj2, persist: false });
+  assert.equal(defTab.status, 201);
+  const defTerm = hc.terminals.get(defTab.data.address);
+  assert.equal(defTerm.labels['swarmbox.agent'], 'agy');
+  assert.ok(defTerm.argv.join(' ').includes('agy'), defTerm.argv.join(' '));
+  await killAll();
+  delete process.env.SWARMBOX_AGENT;             // a box without a default agent
+  const wtOpen = await api('POST', '/api/worktrees/open', { path: proj2 });
+  const wtTerm = hc.listSnapshot().find((t) => t.cwd === proj2);
+  assert.ok(wtTerm, JSON.stringify(wtOpen));
+  assert.equal(wtTerm.labels['swarmbox.agent'], 'shell', 'worktree open must not start an agent the box may not have');
+  assert.deepEqual(wtTerm.argv, ['/bin/bash', '-l']);
+
   console.log('ALL_PINS_WEB_OK');
 } finally {
   gw.shutdown();
