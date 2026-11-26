@@ -4114,6 +4114,9 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
 .pending-wt-pill {
   appearance: none;
   width: 100%;
+  /* Last in the sidebar body (after the shells, like the markup): without an order it sorted first and, when it
+     appeared, pushed every agent card down. */
+  order: 5;
   margin-top: auto;
   display: flex;
   align-items: center;
