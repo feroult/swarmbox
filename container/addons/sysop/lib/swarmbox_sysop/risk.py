@@ -14,7 +14,6 @@ import shlex
 import unicodedata
 
 LEVELS = ("low", "medium", "high")
-AGENT_COMMANDS = ("claude", "gemini", "opencode", "codex", "agy", "aider")
 SHELLS = ("sh", "bash", "zsh", "dash", "ksh", "fish", "ash", "busybox")
 _MAX_DEPTH = 4
 
@@ -50,14 +49,17 @@ _SELF = re.compile(r"(?i)decision\.json|pending_action|events\.jsonl|stop\.reque
                    r"swarmbox[-_ ]?tabs|SB_TABS_|swarmbox[-_]bus|swarmbox\s+bus\b|\bbus\s+(pub|sub|serve|stop|tabs|screen)\b|bus\.sock")
 # files that hold secrets: reading them is at least medium (a screen is redacted by patterns only)
 _SECRET = re.compile(r"(?i)(^|[/=~])\.(ssh|gnupg|aws|docker|kube)(/|$)|(^|/)id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx)$|(^|/)\.(env|netrc|pgpass|npmrc|git-credentials)\b|"
-                     r"(^|/)(credentials|secrets?)(\.[a-z]+)?$|(^|/)\.config/(gh|gcloud)(/|$)|^/proc/(\d+|self|thread-self|\*)/(environ|cmdline|mem|fd(/|$))|^/proc/self/")
+                     r"(^|/)(credentials|secrets?)(\.[a-z]+)?$|(^|/)\.config/(gh|gcloud)(/|$)|^/proc/(\d+|self|thread-self|\*)/(environ|cmdline|mem|fd(/|$))|^/proc/self/|"
+                     # the logins of the agents: Claude Code, agy (Antigravity), OpenCode
+                     r"(^|/)\.credentials\.json$|(^|/)\.claude\.json$|(^|/)\.gemini/(oauth_creds\.json|google_accounts\.json|antigravity-cli/antigravity-oauth-token)$|"
+                     r"(^|/)opencode/auth\.json$")
 _ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
 # variables whose value is run as code or changes what runs (the shell runs PROMPT_COMMAND before every prompt, BASH_ENV in every script...)
 _HOOK_VARS = ("PROMPT_COMMAND", "PS0", "PS1", "PS2", "PS4", "BASH_ENV", "ENV", "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "SHELLOPTS", "BASHOPTS",
               "PYTHONSTARTUP", "PYTHONPATH", "NODE_OPTIONS", "GIT_SSH_COMMAND", "GIT_ASKPASS", "SSH_ASKPASS", "EDITOR", "VISUAL", "PAGER")
 _VAR_SETTERS = ("export", "declare", "typeset", "readonly", "local")
-# the login of Claude Code lives in the environment of process 1, readable by every process of the user
-_SECRET_ENV = re.compile(r"(?i)CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY")
+# the login of an agent lives in the environment of process 1 when it is forwarded (swarmbox env add), readable by every process of the user
+_SECRET_ENV = re.compile(r"(?i)CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|OPENAI_API_KEY")
 _REDIRECT = re.compile(r"^(\d*)(>>|>\||>|&>>|&>)$")
 
 
