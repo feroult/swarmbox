@@ -367,19 +367,19 @@ serve() {
         wait_for_bus "${SWARMBOX_TEST_BUS_WAIT:-2}" || warn "the bus did not answer on $SB_BUS_SOCK; see bus.log"
     fi
 
-    # step 7 [W]: the MCP configuration (swarmbox-mcp), then prepare.sh of every addon
-    # The claude alias passes --mcp-config <workspace>/.claude/mcp-servers.json and claude refuses a missing file, so when the
-    # generator is missing or fails before it wrote anything, an empty valid list is left where there is none.
+    # step 7 [W]: the MCP configuration (swarmbox-mcp: the box's list, $SB_DATA_DIR/mcp-servers.json), then what every addon prepares
+    # (an agent's agent/mcp.sh gives that list to its agent in its own format, its agent/settings.json is seeded, then prepare.sh).
+    # When the generator is missing or fails before it wrote anything, an empty valid list is left where there is none.
     log "step 7: swarmbox-mcp generate"
     run_logged swarmbox-mcp generate; rc=$?
     [ "$rc" = 0 ] || warn "generating the MCP configuration failed or was incomplete (swarmbox-mcp exit $rc); see serve.log"
-    if [ ! -e "$HOME/.claude/mcp-servers.json" ]; then
-        if mkdir -p "$HOME/.claude" 2>/dev/null && printf '{"mcpServers": {}}\n' > "$HOME/.claude/mcp-servers.json.tmp" \
-            && mv -f "$HOME/.claude/mcp-servers.json.tmp" "$HOME/.claude/mcp-servers.json"; then
+    mcp_file="$SB_DATA_DIR/mcp-servers.json"
+    if [ ! -e "$mcp_file" ]; then
+        if mkdir -p "$SB_DATA_DIR" 2>/dev/null && printf '{"mcpServers": {}}\n' > "$mcp_file.tmp" && mv -f "$mcp_file.tmp" "$mcp_file"; then
             log "step 7: left an empty mcp-servers.json"
         else
-            rm -f "$HOME/.claude/mcp-servers.json.tmp"
-            warn "could not write $HOME/.claude/mcp-servers.json; the claude alias may refuse to start"
+            rm -f "$mcp_file.tmp"
+            warn "could not write $mcp_file; the agents get no MCP servers of the box"
         fi
     fi
     log "step 7: swarmbox-addon prepare"

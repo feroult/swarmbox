@@ -1,4 +1,6 @@
-"""The prepare.sh of the claude addon: it seeds the status line of the box in ~/.claude/settings.json, once, without overwriting the user.
+"""What `swarmbox-addon prepare` does for the claude addon (serve's step 7): its agent/settings.json seeds the status line of the box in
+~/.claude/settings.json, once, without overwriting the user; its agent/mcp.sh copies the box's MCP servers to ~/.claude/mcp-servers.json,
+the file the claude function passes with --mcp-config.
 
 A fake HOME in a temporary folder. Run: python3 tests/fast/test_addon_claude.py
 """
@@ -16,7 +18,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from helpers import ROOT  # noqa: E402
 
 ADDON = os.path.join(ROOT, "container", "addons", "claude")
-PREPARE = os.path.join(ADDON, "prepare.sh")
+MCP_SH = os.path.join(ADDON, "agent", "mcp.sh")
+ADDON_SH = os.path.join(ROOT, "container", "scripts", "swarmbox-addon.sh")
 LIB = os.path.join(ROOT, "container", "scripts")
 STATUSLINE = {"type": "command", "command": "swarmbox-statusline"}
 
@@ -30,8 +33,12 @@ class PrepareTest(unittest.TestCase):
         self.settings = os.path.join(self.home, ".claude", "settings.json")
 
     def run_prepare(self):
-        e = {"PATH": os.environ["PATH"], "HOME": self.home, "SWARMBOX_TEST_LIB": LIB, "TMPDIR": self.base}
-        return subprocess.run(["bash", PREPARE], env=e, capture_output=True, text=True, timeout=30, cwd=self.home)
+        state = os.path.join(self.base, "image-state")
+        os.makedirs(state, exist_ok=True)
+        e = {"PATH": os.environ["PATH"], "HOME": self.home, "SWARMBOX_TEST_LIB": LIB, "TMPDIR": self.base, "SWARMBOX_WITH": "claude",
+             "SWARMBOX_TEST_IMAGE_ADDONS": os.path.dirname(ADDON), "SWARMBOX_TEST_USER_ADDONS": os.path.join(self.base, "no-user-addons"),
+             "SWARMBOX_TEST_IMAGE_STATE": state, "SWARMBOX_TEST_LOCK": os.path.join(self.base, "lock")}
+        return subprocess.run(["bash", ADDON_SH, "prepare"], env=e, capture_output=True, text=True, timeout=60, cwd=self.home)
 
     def read(self):
         with open(self.settings, encoding="utf-8") as f:
@@ -80,12 +87,51 @@ class PrepareTest(unittest.TestCase):
             self.assertEqual(f.read(), "{not json")
 
 
+class McpCopyTest(unittest.TestCase):
+    """Claude Code refuses a --mcp-config file that is missing: the copy always exists after a prepare, empty when the box has no list."""
+
+    run_prepare = PrepareTest.run_prepare
+
+    def setUp(self):
+        PrepareTest.setUp(self)
+        self.src = os.path.join(self.home, ".local", "share", "swarmbox", "mcp-servers.json")
+        self.copy = os.path.join(self.home, ".claude", "mcp-servers.json")
+
+    def put_src(self, text):
+        os.makedirs(os.path.dirname(self.src), exist_ok=True)
+        with open(self.src, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def copied(self):
+        with open(self.copy, encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_the_box_list_is_copied_and_follows_every_start(self):
+        cdp = {"command": "chrome-devtools-mcp", "args": ["--headless"]}
+        self.put_src(json.dumps({"mcpServers": {"chrome-devtools": cdp}}))
+        self.assertEqual(self.run_prepare().returncode, 0)
+        self.assertEqual(self.copied(), {"mcpServers": {"chrome-devtools": cdp}})
+        self.assertEqual(stat.S_IMODE(os.stat(self.copy).st_mode), 0o600)
+        self.put_src(json.dumps({"mcpServers": {}}))
+        self.assertEqual(self.run_prepare().returncode, 0)
+        self.assertEqual(self.copied(), {"mcpServers": {}})
+
+    def test_no_list_gives_an_empty_one_and_a_broken_list_is_reported(self):
+        self.assertEqual(self.run_prepare().returncode, 0)
+        self.assertEqual(self.copied(), {"mcpServers": {}})
+        self.put_src("{broken")
+        r = self.run_prepare()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("prepare-failed: claude: agent/mcp.sh failed", r.stderr)
+        self.assertEqual(self.copied(), {"mcpServers": {}})
+
+
 class StaticTest(unittest.TestCase):
     def test_the_script_is_executable_and_passes_bash_n_and_shellcheck(self):
-        self.assertTrue(os.access(PREPARE, os.X_OK))
-        self.assertEqual(subprocess.run(["bash", "-n", PREPARE]).returncode, 0)
+        self.assertTrue(os.access(MCP_SH, os.X_OK))
+        self.assertEqual(subprocess.run(["bash", "-n", MCP_SH]).returncode, 0)
         if shutil.which("shellcheck"):
-            r = subprocess.run(["shellcheck", "-s", "bash", PREPARE], capture_output=True, text=True)
+            r = subprocess.run(["shellcheck", "-s", "bash", MCP_SH], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout)
 
 

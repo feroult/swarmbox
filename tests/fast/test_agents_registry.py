@@ -209,7 +209,7 @@ class CheckAndCommand(unittest.TestCase):
                        icon='<svg onload="alert(1)"></svg>', files={"screen.py": "def other():\n    pass\n", "settings.json": "[1]"})
         errs = "\n".join(A.check_dir(d))
         for frag in ("CMD 'other'", "COLOR", "unknown key FOO", "'Enter!' is not a key name", "{nope}", "RESUME_FAST_FAIL_S", "STATUS", "ALIASES entry 'Bad'",
-                     "event handler", "does not define state()", "settings.json is not a JSON object"):
+                     "event handler", "does not define state()", "settings.json is not a JSON object", "needs SETTINGS_FILE"):
             self.assertIn(frag, errs)
 
     def test_a_good_agent_folder_has_no_problem_and_no_folder_is_not_an_agent(self):

@@ -67,7 +67,7 @@ OLD_NAME_ALLOW = [
      "the subcommands of the Claude Code program (`claude plugin`, `claude plugins`), passed through without the flags"),
     ("container/addons/antigravity/agent/agent.conf", r"^PASSTHROUGH=.* plugin plugins ",
      "the subcommands of the Antigravity CLI program (`agy plugin`, `agy plugins`), passed through without the flag"),
-    ("container/addons/antigravity/prepare.sh", r"(?i)plugins?",
+    ("container/addons/antigravity/agent/mcp.sh", r"(?i)plugins?",
      "the plugins of the Antigravity CLI: the addon gives agy the MCP servers of the box as a plugin of SwarmBox's own"),
     ("tests/fast/test_addon_antigravity.py", r"(?i)plugins?",
      "the test of that Antigravity plugin (its files plugin.json and mcp_config.json)"),

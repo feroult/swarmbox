@@ -1,7 +1,9 @@
 #!/bin/bash
-# swarmbox-mcp: generate <workspace>/.claude/mcp-servers.json from the MCP registry, run by `serve` at step 7.
+# swarmbox-mcp: generate the box's list of MCP servers, <workspace>/.local/share/swarmbox/mcp-servers.json ($SB_DATA_DIR), from the
+# MCP registry, run by `serve` at step 7. It belongs to no agent: each agent addon gives it to its agent in the agent's own format
+# (its agent/mcp.sh, run by `swarmbox-addon prepare` right after this; Claude Code's is a copy in ~/.claude/mcp-servers.json).
 #
-#   swarmbox-mcp [generate] [--output FILE]     default FILE: $HOME/.claude/mcp-servers.json (the workspace is $HOME in the box)
+#   swarmbox-mcp [generate] [--output FILE]     default FILE: $SB_DATA_DIR/mcp-servers.json
 #
 # Inputs: the image registry /etc/swarmbox/mcp/<name>/config.json and the user level $SB_CONFIG_DIR/mcp/<name>/config.json
 # (<workspace>/.config/swarmbox/mcp/<name>/config.json). A server found in either is merged field by field (shallow: a user
@@ -20,7 +22,7 @@ SB_LIB=${SWARMBOX_TEST_LIB:-/usr/local/lib/swarmbox}
 
 IMAGE_DIR=${SWARMBOX_TEST_MCP_DIR:-/etc/swarmbox/mcp}
 USER_DIR=$SB_CONFIG_DIR/mcp
-OUT="$HOME/.claude/mcp-servers.json"
+OUT="$SB_DATA_DIR/mcp-servers.json"
 
 [ "${1:-}" = generate ] && shift
 while [ $# -gt 0 ]; do

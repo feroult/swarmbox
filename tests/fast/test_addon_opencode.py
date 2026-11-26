@@ -147,9 +147,11 @@ class PrepareRenderTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
         self.home = os.path.join(self.base, "home")
         self.run_dir = os.path.join(self.base, "run", "swarmbox")
-        os.makedirs(os.path.join(self.home, ".claude"))
+        # the box's list of MCP servers (swarmbox-mcp), which `swarmbox-addon prepare` names in SWARMBOX_MCP_FILE; read from its default
+        # place, <data>/swarmbox/mcp-servers.json, when the variable is not set
+        os.makedirs(os.path.join(self.home, ".local", "share", "swarmbox"))
         self.out = os.path.join(self.run_dir, "opencode.json")
-        self.src = os.path.join(self.home, ".claude", "mcp-servers.json")
+        self.src = os.path.join(self.home, ".local", "share", "swarmbox", "mcp-servers.json")
 
     def prepare(self, **env):
         e = {"PATH": os.environ["PATH"], "HOME": self.home, "SWARMBOX_TEST_LIB": LIB, "SWARMBOX_TEST_RUN_DIR": self.run_dir,

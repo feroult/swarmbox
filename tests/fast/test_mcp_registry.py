@@ -1,4 +1,5 @@
-"""Container/scripts/swarmbox-mcp.sh, the generator of <workspace>/.claude/mcp-servers.json.
+"""Container/scripts/swarmbox-mcp.sh, the generator of the box's list of MCP servers, <workspace>/.local/share/swarmbox/mcp-servers.json
+(each agent addon gives it to its agent: Claude Code's copy is <workspace>/.claude/mcp-servers.json, see tests/fast/test_addon_claude.py).
 
 Everything runs in mktemp directories: HOME (the workspace), the XDG folders and a copy of the registry. Nothing touches the
 real configuration. Run with: python3 -W error tests/fast/test_mcp_registry.py   (needs bash and jq)
@@ -42,7 +43,7 @@ class McpCase(unittest.TestCase):
         os.makedirs(self.lib)
         os.symlink(DIRS_SH, os.path.join(self.lib, "dirs.sh"))
         shutil.copytree(IMAGE_REG, self.reg)
-        self.out = os.path.join(self.home, ".claude", "mcp-servers.json")
+        self.out = os.path.join(self.home, ".local", "share", "swarmbox", "mcp-servers.json")
         self.user = os.path.join(self.home, ".config", "swarmbox", "mcp")
 
     def run_gen(self, args=(), **extra):

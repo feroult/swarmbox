@@ -12,7 +12,7 @@
 #   remove NAME [--purge]                  delete the install of NAME (--purge also its user-level manifest)
 #   new NAME [--repo | --dir DIR]          write a skeleton that passes validate (user level by default)
 #   doctor [--fix]                         ok / needs reinstall / missing for every addon; --fix reinstalls the ones that need it
-#   prepare                                run the prepare.sh of every installed or WITH-declared addon
+#   prepare                                prepare every installed or WITH-declared addon: an agent's agent/mcp.sh and agent/settings.json, then prepare.sh
 #   anything else                          usage, exit 64
 #
 # Manifests are shell-sourceable KEY=VALUE files. Loading one SOURCES it in a subshell, so it executes arbitrary shell:
@@ -1008,27 +1008,53 @@ cmd_list() {
 }
 
 # ---- prepare ----------------------------------------------------------------------------------------
-# prepare_addon NAME: runs <manifest dir>/prepare.sh of NAME when it has one (find_manifest has set MDIR). Run with bash (no
-# executable bit needed), in $HOME, stdin closed, stdout sent to stderr (stdout belongs to the caller), under `timeout`
-# (SWARMBOX_PREPARE_TIMEOUT seconds, default 60; a hang is a failure, never a stop). Exports SWARMBOX_ADDON_NAME and
-# SWARMBOX_ADDON_DIR. A failure prints ONE line on stderr, "prepare-failed: <name>: <reason>", which `serve` turns into one health
-# line, and returns 1. No prepare.sh: returns 0 and prints nothing.
+# prepare_addon NAME: prepares NAME (find_manifest has set MDIR), in order: an agent's agent/mcp.sh (the box's MCP servers in the
+# agent's own format), its agent/settings.json (its default settings, seeded once by the registry: `swarmbox_agents.py seed`), then
+# <manifest dir>/prepare.sh. Each runs with bash (no executable bit needed), in $HOME, stdin closed, stdout sent to stderr (stdout
+# belongs to the caller), under `timeout` (SWARMBOX_PREPARE_TIMEOUT seconds, default 60; a hang is a failure, never a stop). Exports
+# SWARMBOX_ADDON_NAME, SWARMBOX_ADDON_DIR and SWARMBOX_MCP_FILE (the box's list). Each failure prints ONE line on stderr,
+# "prepare-failed: <name>: <reason>", which `serve` turns into one health line, and the call returns 1. Nothing to prepare: returns 0
+# and prints nothing.
 PREPARE_TIMEOUT=${SWARMBOX_PREPARE_TIMEOUT:-60}
 prepare_addon() {
-    local name=$1 dir=$MDIR status=0
-    [ -f "$dir/prepare.sh" ] || return 0
-    (
-        cd "$HOME" || exit 1
-        export SWARMBOX_ADDON_NAME=$name SWARMBOX_ADDON_DIR=$dir
-        exec timeout -k 2 "$PREPARE_TIMEOUT" bash "$dir/prepare.sh"
-    ) </dev/null >&2 9>&- || status=$?
-    [ "$status" -eq 0 ] && return 0
-    if [ "$status" -eq 124 ]; then
-        echo "prepare-failed: $name: prepare.sh timed out after ${PREPARE_TIMEOUT}s" >&2
-    else
-        echo "prepare-failed: $name: prepare.sh failed (exit $status)" >&2
-    fi
-    return 1
+    local name=$1 dir=$MDIR status step lib failed=0 what mcp_file
+    # the box's list of MCP servers (swarmbox-mcp): read from dirs.sh in a subshell of its own, so that the folders the caller set stay
+    mcp_file=$(load_dirs && printf '%s' "$SB_DATA_DIR/mcp-servers.json") || mcp_file=
+    for step in mcp seed prepare; do
+        case $step in
+            mcp) [ -f "$dir/agent/mcp.sh" ] || continue; what="agent/mcp.sh" ;;
+            seed) [ -f "$dir/agent/settings.json" ] || continue; what="agent/settings.json"
+                if ! lib=$(agents_lib) || ! command -v python3 >/dev/null 2>&1; then
+                    echo "prepare-failed: $name: its default settings cannot be seeded (python3 or swarmbox_agents.py is missing)" >&2
+                    failed=1
+                    continue
+                fi ;;
+            prepare) [ -f "$dir/prepare.sh" ] || continue; what="prepare.sh" ;;
+        esac
+        status=0
+        (
+            cd "$HOME" || exit 1
+            export SWARMBOX_ADDON_NAME=$name SWARMBOX_ADDON_DIR=$dir SWARMBOX_MCP_FILE=$mcp_file
+            case $step in
+                mcp) exec timeout -k 2 "$PREPARE_TIMEOUT" bash "$dir/agent/mcp.sh" ;;
+                seed) exec timeout -k 2 "$PREPARE_TIMEOUT" python3 -I "$lib" seed "$dir" ;;
+                *) exec timeout -k 2 "$PREPARE_TIMEOUT" bash "$dir/prepare.sh" ;;
+            esac
+        ) </dev/null >&2 9>&- || status=$?
+        [ "$status" -eq 0 ] && continue
+        failed=1
+        if [ "$status" -eq 124 ]; then
+            echo "prepare-failed: $name: $what timed out after ${PREPARE_TIMEOUT}s" >&2
+        else
+            echo "prepare-failed: $name: $what failed (exit $status)" >&2
+        fi
+    done
+    return "$failed"
+}
+
+# has_prepare DIR: the addon in DIR has something to prepare (prepare.sh, or an agent's mcp.sh or settings.json)
+has_prepare() {
+    [ -f "$1/prepare.sh" ] || [ -f "$1/agent/mcp.sh" ] || [ -f "$1/agent/settings.json" ]
 }
 
 # declared_with NAME: true when NAME is in SWARMBOX_WITH (separated by commas or blanks).
@@ -1081,7 +1107,7 @@ cmd_prepare() {
             fi
             continue
         fi
-        [ -f "$MDIR/prepare.sh" ] || continue
+        has_prepare "$MDIR" || continue
         if declared_with "$name" || is_installed "$name"; then
             prepare_addon "$name" || failed=1
         fi

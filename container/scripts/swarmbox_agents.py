@@ -80,6 +80,7 @@ KEYS = {
     "MODEL": "word",
     "SECRET_ENV": "words",
     "SECRET_FILES": "words",
+    "SETTINGS_FILE": "path",
 }
 for _k in TERM_INT_KEYS:
     KEYS["TERM_" + _k.upper()] = "int"
@@ -88,6 +89,7 @@ KEYS["TERM_COPY_GUTTER_GLYPHS"] = "str"
 KEYS["TERM_IMAGE_PASTE"] = "enum:path|none"
 
 PLACEHOLDERS = {"NAMER": ("prompt", "system", "model"), "BRAIN": ("mcp_config", "model", "system"), "MCP_ARGS": ("mcp_file", "home")}
+# {mcp_file} in MCP_ARGS: the box's list of MCP servers, $SB_DATA_DIR/mcp-servers.json (swarmbox-mcp)
 HOOKS = {"screen": "screen.py", "history": "history.py", "shell": "shell.sh", "mcp": "mcp.sh", "statusline": "statusline.sh",
          "terminal": "terminal.mjs", "icon": "icon.svg", "settings": "settings.json"}
 HOOK_FUNCS = {"screen.py": ("state",), "history.py": ("messages",)}
@@ -240,6 +242,7 @@ def _agent_from(dirpath, level, conf, values, env):
         "login_hint": values.get("LOGIN_HINT", ""),
         "model": values.get("MODEL", ""),
         "secrets": {"env": _words(values.get("SECRET_ENV")), "files": _words(values.get("SECRET_FILES"))},
+        "settings_file": values.get("SETTINGS_FILE", ""),
         "term": term,
         "hooks": hooks,
     }
@@ -491,6 +494,8 @@ def check_dir(addon_dir, commands=None):
             errs.append("agent.conf: COLOR must be #rrggbb, found '%s'" % v)
         elif kind.startswith("enum:") and v and v not in kind[5:].split("|"):
             errs.append("agent.conf: %s must be one of %s, found '%s'" % (k, kind[5:].replace("|", ", "), v))
+        elif kind == "path" and v and (v.startswith("/") or ".." in v.split("/") or not re.match(r"^[A-Za-z0-9._/-]+$", v)):
+            errs.append("agent.conf: %s must be a plain path under the home, found '%s'" % (k, v))
         elif kind == "keys":
             for w in v.split():
                 if not re.match(r"^[a-z0-9]+(?:\+[a-z0-9]+)*$", w):
@@ -535,7 +540,79 @@ def check_dir(addon_dir, commands=None):
                 errs.append("agent/settings.json is not a JSON object")
         except ValueError:
             errs.append("agent/settings.json is not valid JSON")
+        if not values.get("SETTINGS_FILE"):
+            errs.append("agent/settings.json needs SETTINGS_FILE in agent.conf (the agent's settings file, under the home)")
     return errs
+
+
+# ---- the default settings of an agent (swarmbox-addon prepare runs `seed`) -------------------------------------------------------------
+
+def _fill(value, subst):
+    """the placeholders {home} and {addon_dir} in every string of a JSON value"""
+    if isinstance(value, str):
+        for k, v in subst.items():
+            value = value.replace("{%s}" % k, v)
+        return value
+    if isinstance(value, list):
+        return [_fill(x, subst) for x in value]
+    if isinstance(value, dict):
+        return {k: _fill(v, subst) for k, v in value.items()}
+    return value
+
+
+def seed_settings(addon_dir, env=None):
+    """Seed the defaults of agent/settings.json into the agent's own settings file (SETTINGS_FILE, under the home): once, tracked by
+    <data>/addons/<addon>/.defaults-applied, so a default the user removed stays removed (deleting the settings file seeds again);
+    never over a key the user has; atomic, mode 0600. A settings file that is not a JSON object is left untouched (an error).
+    Returns (exit code, message)."""
+    env = os.environ if env is None else env
+    conf = _addon_conf(addon_dir) or {}
+    name = conf.get("NAME") or os.path.basename(addon_dir.rstrip("/"))
+    values, _ = parse_conf(_read(os.path.join(addon_dir, "agent", "agent.conf")) or "")
+    rel = values.get("SETTINGS_FILE", "")
+    src = os.path.join(addon_dir, "agent", "settings.json")
+    if not rel or not os.path.isfile(src):
+        return 0, ""
+    home = env.get("HOME") or os.path.expanduser("~")
+    target = os.path.join(home, rel)
+    stamp_dir = os.path.join(_xdg("XDG_DATA_HOME", os.path.join(home, ".local", "share"), env), "addons", name)
+    stamp = os.path.join(stamp_dir, ".defaults-applied")
+    if os.path.isfile(stamp) and os.path.isfile(target):
+        return 0, ""
+    try:
+        defaults = json.loads(_read(src) or "")
+    except ValueError:
+        return 2, "%s: agent/settings.json is not valid JSON" % name
+    defaults = _fill(defaults, {"home": home, "addon_dir": os.path.abspath(addon_dir)})
+    old_umask = os.umask(0o077)
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        os.makedirs(stamp_dir, exist_ok=True)
+        if os.path.exists(target):
+            try:
+                with open(target, encoding="utf-8") as f:
+                    user = json.load(f)
+            except (OSError, ValueError):
+                user = None
+            if not isinstance(user, dict):
+                return 1, "%s: %s is not a JSON object; leaving it untouched" % (name, target)
+            merged = dict(defaults)
+            merged.update(user)      # the user's keys always win
+        else:
+            merged = defaults
+        tmp = "%s.tmp.%d" % (target, os.getpid())
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(merged, indent=2, ensure_ascii=False) + "\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, target)
+        with open(stamp, "w"):
+            pass
+    except OSError as e:
+        return 1, "%s: cannot write %s: %s" % (name, target, e)
+    finally:
+        os.umask(old_umask)
+    return 0, "%s: seeded its default settings in %s" % (name, target)
 
 
 # ---- the generated shell wrappers (bashrc.sh evaluates `swarmbox-agents sh`) ------------------------------------------------------
@@ -580,7 +657,7 @@ def _sh_word(w):
     """A word of agent.conf as shell text: {home} and {mcp_file} become paths under $HOME, expanded when the function runs. A value
     has no quote, $, backslash or backtick (parse_conf), so double quotes are safe."""
     if "{home}" in w or "{mcp_file}" in w:
-        return '"%s"' % w.replace("{mcp_file}", "{home}/.claude/mcp-servers.json").replace("{home}", "$HOME")
+        return '"%s"' % w.replace("{mcp_file}", "${SB_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/swarmbox}/mcp-servers.json").replace("{home}", "$HOME")
     return shlex.quote(w)
 
 
@@ -609,6 +686,7 @@ USAGE = """usage: swarmbox-agents COMMAND
   generate [--output FILE]      write the registry as JSON (default: $SB_RUN_DIR/agents.json, /tmp/swarmbox/agents.json)
   sh                            the shell functions of the agents (bashrc.sh evaluates it in every shell)
   check DIR                     check the agent/ folder of the addon in DIR (exit 1 with the problems)
+  seed DIR                      seed the agent/settings.json of the addon in DIR into the agent's settings file, once
 """
 
 
@@ -665,6 +743,11 @@ def main(argv=None):
     if cmd == "sh" and not rest:
         sys.stdout.write(shell_functions())
         return 0
+    if cmd == "seed" and len(rest) == 1:
+        rc, msg = seed_settings(rest[0])
+        if msg:
+            sys.stderr.write("swarmbox-agents seed: %s\n" % msg)
+        return rc
     if cmd == "check" and len(rest) == 1:
         errs = check_dir(rest[0])
         for e in errs:

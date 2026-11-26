@@ -21,7 +21,8 @@ from helpers import ROOT  # noqa: E402
 
 ADDON = os.path.join(ROOT, "container", "addons", "antigravity")
 INSTALL = os.path.join(ADDON, "install.sh")
-PREPARE = os.path.join(ADDON, "prepare.sh")
+MCP_SH = os.path.join(ADDON, "agent", "mcp.sh")
+ADDON_SH = os.path.join(ROOT, "container", "scripts", "swarmbox-addon.sh")
 STATUSLINE = os.path.join(ADDON, "statusline.sh")
 LIB = os.path.join(ROOT, "container", "scripts")
 SGR = re.compile(r"\x1b\[[0-9;]*m")
@@ -297,8 +298,13 @@ class PrepareTest(unittest.TestCase):
         self.settings = os.path.join(self.home, ".gemini", "antigravity-cli", "settings.json")
 
     def run_prepare(self):
-        e = {"PATH": os.environ["PATH"], "HOME": self.home, "SWARMBOX_TEST_LIB": LIB, "TMPDIR": self.base}
-        return subprocess.run(["bash", PREPARE], env=e, capture_output=True, text=True, timeout=30, cwd=self.home)
+        """what serve's step 7 runs for the addon: `swarmbox-addon prepare` (its agent/mcp.sh, then its agent/settings.json seeded)"""
+        state = os.path.join(self.base, "image-state")
+        os.makedirs(state, exist_ok=True)
+        e = {"PATH": os.environ["PATH"], "HOME": self.home, "SWARMBOX_TEST_LIB": LIB, "TMPDIR": self.base, "SWARMBOX_WITH": "antigravity",
+             "SWARMBOX_TEST_IMAGE_ADDONS": os.path.dirname(ADDON), "SWARMBOX_TEST_USER_ADDONS": os.path.join(self.base, "no-user-addons"),
+             "SWARMBOX_TEST_IMAGE_STATE": state, "SWARMBOX_TEST_LOCK": os.path.join(self.base, "lock")}
+        return subprocess.run(["bash", ADDON_SH, "prepare"], env=e, capture_output=True, text=True, timeout=60, cwd=self.home)
 
     def read_settings(self):
         with open(self.settings, encoding="utf-8") as f:
@@ -369,7 +375,7 @@ class PrepareMcpTest(unittest.TestCase):
     def setUp(self):
         PrepareTest.setUp(self)
         self.plugin = os.path.join(self.home, ".gemini", "config", "plugins", "swarmbox")
-        self.src = os.path.join(self.home, ".claude", "mcp-servers.json")
+        self.src = os.path.join(self.home, ".local", "share", "swarmbox", "mcp-servers.json")   # the box's list (swarmbox-mcp)
         os.makedirs(os.path.dirname(self.src))
 
     def write_src(self, text):
@@ -408,10 +414,10 @@ class PrepareMcpTest(unittest.TestCase):
 
 class StaticTest(unittest.TestCase):
     def test_the_scripts_pass_bash_n_and_shellcheck(self):
-        for f in (INSTALL, PREPARE, STATUSLINE):
+        for f in (INSTALL, MCP_SH, STATUSLINE):
             self.assertTrue(os.access(f, os.X_OK), f)
             self.assertEqual(subprocess.run(["bash", "-n", f]).returncode, 0, f)
-        for f in (INSTALL, PREPARE, STATUSLINE, os.path.join(ADDON, "shell.sh")):
+        for f in (INSTALL, MCP_SH, STATUSLINE):
             if shutil.which("shellcheck"):
                 r = subprocess.run(["shellcheck", "-s", "bash", f], capture_output=True, text=True)
                 self.assertEqual(r.returncode, 0, r.stdout)

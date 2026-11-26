@@ -160,6 +160,7 @@ function agentFrom(dir, level, conf, values, env) {
     login_hint: values.LOGIN_HINT || '',
     model: values.MODEL || '',
     secrets: { env: words(values.SECRET_ENV), files: words(values.SECRET_FILES) },
+    settings_file: values.SETTINGS_FILE || '',
     term,
     hooks,
   };
