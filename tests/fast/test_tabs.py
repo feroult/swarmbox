@@ -594,7 +594,7 @@ class TestAgentState(unittest.TestCase):
         self.assertEqual(mod.agent_state(busy, "agy"), (True, "unknown"))
         self.assertEqual(mod.agent_state(busy, "opencode"), (True, "unknown"))
         self.assertEqual(mod.agent_state(busy, "node"), (True, "busy"))
-        self.assertEqual(mod.agent_state(busy, "codex"), (True, "busy"), "codex is no agent of the registry: the screen is Claude Code's")
+        self.assertEqual(mod.agent_state(busy, "no-such-cli"), (True, "busy"), "a program that is no agent of the registry: the screen is Claude Code's")
 
     def test_busy_in_a_narrow_pane_where_the_footer_is_cut(self):
         """Real footers of Claude Code 2.1 in panes of 37, 45 and 52 columns while it worked, and the same panes idle (captured in Podman). The words
@@ -852,7 +852,7 @@ class TestCommand(Base):
     def test_open_focus_close(self):
         rc, out, _ = self.ft.cli("open", "--name", "api", "--agent", "antigravity", "--cwd", self.ft.dir)
         self.assertEqual((rc, out), (0, {"ok": True, "tab": "t3", "name": "api", "agent": "agy"}))
-        rc, out, _ = self.ft.cli("open", "--agent", "codex")      # no addon declares it: a program, not an agent
+        rc, out, _ = self.ft.cli("open", "--agent", "no-such-cli")      # no addon declares it: a program, not an agent
         self.assertEqual((rc, out["err"]), (2, "usage"))
         self.assertEqual(self.ft.cli("active")[1]["tab"], "t3")
         rc, out, _ = self.ft.cli("focus", "sh")

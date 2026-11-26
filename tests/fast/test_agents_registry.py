@@ -101,7 +101,9 @@ class RegistryVectors(unittest.TestCase):
             self.assertEqual(g, c["want"], "%s launch %r" % (who, c))
         for c, g in zip(VEC["argv"], got["argv"]):
             self.assertEqual(g, c["want"], "%s argv %r" % (who, c))
-        self.assertEqual(got["ids"], ["agy", "claude", "fakebot", "opencode"], who)
+        # the repository's agents (a new agent addon adds to them: nothing here names it) and the user-level one of the world
+        self.assertTrue({"agy", "claude", "opencode", "fakebot"} <= set(got["ids"]), (who, got["ids"]))
+        self.assertEqual(got["ids"], sorted(got["ids"]), who)
 
     def test_python_library_meets_the_vectors(self):
         self.check(self.python_results(), "python")
@@ -170,7 +172,7 @@ class RepositoryAgents(unittest.TestCase):
             if os.path.isdir(os.path.join(d, "agent")):
                 self.assertEqual(A.check_dir(d), [], name)
                 found.append(name)
-        self.assertEqual(found, ["antigravity", "claude", "opencode"])
+        self.assertTrue({"antigravity", "claude", "opencode"} <= set(found), found)
 
     def test_no_two_agents_share_a_name(self):
         env = {"HOME": tempfile.gettempdir(), "SWARMBOX_TEST_IMAGE_ADDONS": ADDONS, "SWARMBOX_TEST_USER_ADDONS": "/nonexistent"}
@@ -242,7 +244,7 @@ class CheckAndCommand(unittest.TestCase):
         with open(out) as f:
             data = json.load(f)
         self.assertEqual(data["default"], "agy")
-        self.assertEqual([a["id"] for a in data["agents"]], ["agy", "claude", "opencode"])
+        self.assertTrue({"agy", "claude", "opencode"} <= {a["id"] for a in data["agents"]})
         self.assertNotIn("dir", data["agents"][0])
         self.assertEqual(run("bogus").returncode, 64)
 
@@ -288,7 +290,7 @@ console.log(JSON.stringify(out));
         self.assertTrue(out["js"]["text"].startswith("window.SWARMBOX_AGENTS = {"))
         self.assertNotIn("<svg", out["js"]["text"], "a < in the inlined data is escaped, so it cannot close a script element")
         ids = [a["id"] for a in out["api"]["agents"]]
-        self.assertEqual(ids, ["agy", "claude", "opencode"])
+        self.assertTrue({"agy", "claude", "opencode"} <= set(ids), ids)
         claude = out["api"]["agents"][ids.index("claude")]
         self.assertEqual(claude["label"], "Claude Code")
         self.assertIn("claude-code", claude["aliases"])

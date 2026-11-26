@@ -4,7 +4,7 @@
     ["claude", "claude"], ["claude-code", "claude"], ["Claude-Code", "claude"], ["agy", "agy"], ["antigravity", "agy"],
     ["ANTIGRAVITY", "agy"], ["/home/agent/.local/bin/agy", "agy"], ["-claude", "claude"], ["opencode", "opencode"],
     ["fbot", "fakebot"], ["fake-bot", "fakebot"], ["fakebot", "fakebot"],
-    ["yolo", ""], ["shell", ""], ["sysop", ""], ["bash", ""], ["gcloud", ""], ["codex", ""], ["gemini", ""], ["aider", ""],
+    ["yolo", ""], ["shell", ""], ["sysop", ""], ["bash", ""], ["gcloud", ""], ["no-such-cli", ""], ["vim", ""],
     ["", ""], ["claude-2", ""], [" claude ", "claude"]
   ],
   "default": [

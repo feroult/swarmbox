@@ -304,9 +304,9 @@ class AgentDeclarations(unittest.TestCase):
 
 class TabKinds(unittest.TestCase):
     def test_kind_of_the_running_command(self):
-        # an agent is an addon with agent/ (the registry); a CLI without one (gemini, codex, aider) is a program like any other
+        # an agent is an addon with agent/ (the registry); a CLI without one is a program like any other
         for cmd, kind in (("claude", "agent"), ("opencode", "agent"), ("agy", "agent"), ("antigravity", "agent"), ("/usr/bin/claude", "agent"),
-                          ("gemini", "other"), ("codex", "other"), ("aider", "other"),
+                          ("no-such-cli", "other"),
                           ("bash", "shell"), ("zsh", "shell"), ("-bash", "shell"), ("fish", "shell"), ("sh", "shell"), ("dash", "shell"),
                           ("python3", "other"), ("node", "other"), ("vim", "other"), ("ssh", "other"), ("sleep", "other"), ("", "other"), (None, "other")):
             with self.subTest(cmd=cmd):
