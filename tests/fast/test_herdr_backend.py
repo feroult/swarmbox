@@ -1215,6 +1215,14 @@ class FakeHc extends EventEmitter {
     if (method === 'terminal.kill') this.terminals.delete(params.terminal);
     return { ok: true };
   }
+  // A button's prompt is typed through an attach stream: record each write as a 'typed' call.
+  async attach(terminal, cols, rows) {
+    this.calls.push({ method: 'attach', params: { terminal, cols, rows } });
+    return {
+      write: (buf) => this.calls.push({ method: 'typed', params: { terminal, text: Buffer.from(buf).toString('utf8') } }),
+      close: () => this.calls.push({ method: 'attach.close', params: { terminal } }),
+    };
+  }
 }
 
 const wtCalls = [];
@@ -1378,10 +1386,12 @@ async function reqJson(method, p, body) {
   assert.equal(r.status, 200);
   assert.equal(r.data.handoff.mode, 'agent');
   assert.equal(r.data.handoff.terminal, 't-main');
-  const sendCall = hc.calls.find((c) => c.method === 'terminal.send');
-  assert.ok(sendCall, 'expected terminal.send to main agent');
+  assert.equal(hc.calls.some((c) => c.method === 'terminal.send'), false, 'a button must not wait in terminal.send');
+  const typed = hc.calls.filter((c) => c.method === 'typed');
+  assert.equal(typed.length, 2, 'the text, then the Enter as its own write');
+  const sendCall = typed[0];
   assert.equal(sendCall.params.terminal, 't-main');
-  assert.equal(sendCall.params.force, true);
+  assert.equal(typed[1].params.text, '\r');
   assert.match(sendCall.params.text, /sb\/feat-1/);
   assert.match(sendCall.params.text, /npm test/);
   assert.match(sendCall.params.text, /push main/i);
@@ -1462,7 +1472,7 @@ async function reqJson(method, p, body) {
   });
   assert.equal(r200.status, 200);
   assert.equal(r200.data.terminal, 't-main');
-  assert.ok(hc.calls.some((c) => c.method === 'terminal.send' && c.params.terminal === 't-main'));
+  assert.ok(hc.calls.some((c) => c.method === 'typed' && c.params.terminal === 't-main' && /clean git commit/.test(c.params.text)));
 
   const rPush = await reqJson('POST', '/api/worktrees/main/action', {
     repo: '/fake/repo', action: 'push',
@@ -1488,7 +1498,7 @@ async function reqJson(method, p, body) {
   assert.equal(r.data.handoff.mode, 'agent');
   // t-wt should have been closed because clean: true
   assert.equal(hc.terminals.has('t-wt'), false);
-  const sends = hc.calls.filter((c) => c.method === 'terminal.send');
+  const sends = hc.calls.filter((c) => c.method === 'typed' && c.params.text !== '\r');
   assert.equal(sends.length, 1);
   mockMergeFailPath = null;
 }
