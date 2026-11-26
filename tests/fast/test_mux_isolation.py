@@ -271,7 +271,8 @@ class TabsCustomBackend(unittest.TestCase):
         self.assertIn("[sel]ready[/sel]", scr["text"])
 
         res = tabs.send("t1", run="fix tests")
-        self.assertEqual(res, {"ok": True, "tab": "t1", "pane": "t1", "submitted": True})
+        # no input box to read and the agent stays idle: typed, but nothing showed it was taken
+        self.assertEqual(res, {"ok": True, "tab": "t1", "pane": "t1", "submitted": True, "verified": False})
         self.assertEqual(backend.prepared, ["t1"])
         self.assertEqual(backend.typed, [("t1", "text", "fix tests"), ("t1", "key", "Enter")])
 
