@@ -743,7 +743,8 @@ assert.equal(show('**Resumo:** **swarmbox** e **`sabrina`** ok'), '<bold:Resumo:
     def test_settings_addon_state_follows_the_install_record(self):
         # Settings > Addons shows Install for an addon that is not installed. An addon that updates itself has no `current` link
         # (its record is self/.swarmbox-env), so it must read as installed by that record, like `swarmbox-addon list` does; a
-        # managed addon whose link exists without the record is an install that did not finish.
+        # managed addon whose link exists without the record is an install that did not finish. A self-updating addon shows its channel
+        # (VERSION, `latest`), not the version reported at install, which its first update of itself makes stale.
         if not shutil.which("node"):
             self.skipTest("node not on PATH")
         tmp = tempfile.mkdtemp(prefix="addon-state-")
@@ -774,7 +775,7 @@ console.log(JSON.stringify(Object.fromEntries(cfg.addons.map((a) => [a.name, [a.
         p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(json.loads(p.stdout.strip().splitlines()[-1]), {
-            "selfup": [True, "2.1.332"], "selfnone": [False, ""], "managed": [True, "1.2.3"], "halfdone": [False, ""]})
+            "selfup": [True, "latest"], "selfnone": [False, ""], "managed": [True, "1.2.3"], "halfdone": [False, ""]})
 
     def test_herdr_web_cli_args_and_origin_guard(self):
         if not shutil.which("node"):

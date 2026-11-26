@@ -1049,14 +1049,12 @@ function parseAddonConf(filePath) {
 
 // installedOf(dir, item): whether an install of the addon in the state folder `dir` is complete, by the record swarmbox-addon writes
 // last (its is_installed): `current/.swarmbox-env` for a managed addon, `self/.swarmbox-env` for one that updates itself (UPDATE=self,
-// no `current` link). The version is the link's target, or what a self-updating program reported at install.
+// no `current` link). The version is the link's target (a pinned version, or `latest`); for a self-updating addon it is its VERSION
+// (`latest`): the version its program reported at install goes stale at its first update of itself.
 function installedOf(dir, item) {
   const base = path.join(dir, item.name);
   if (item.update === 'self') {
-    if (!fs.existsSync(path.join(base, 'self', '.swarmbox-env'))) return null;
-    const rec = readTextSafe(path.join(base, 'self', 'installed')) || '';
-    const m = rec.match(/^reported=(\S+)/m);
-    return m ? m[1] : 'self';
+    return fs.existsSync(path.join(base, 'self', '.swarmbox-env')) ? item.manifestVersion || 'latest' : null;
   }
   if (!fs.existsSync(path.join(base, 'current', '.swarmbox-env'))) return null;
   try { return path.basename(fs.readlinkSync(path.join(base, 'current'))); } catch (_) { return ''; }
