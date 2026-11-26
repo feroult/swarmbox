@@ -3,7 +3,9 @@ agent that declares CONTEXT_ARGS passes that file when a session starts on that 
 
 Run: python3 tests/fast/test_sysop_digest.py
 """
+import json
 import os
+import pty
 import shutil
 import stat
 import subprocess
@@ -184,8 +186,47 @@ class EventsTest(Base):
         self.assertTrue(ac.handle_event({"body": {"event": "start", "tab": "w1", "cwd": self.repo, "agent": "claude"}}))
         self.assertTrue(ac.handle_event({"body": {"event": "turn", "tab": "w1", "cwd": self.repo, "agent": "claude-code"}}))
         self.assertEqual(list(ac._queue), [self.repo], "a folder queued twice is done once")
+        self.assertEqual(list(ac._queue.values()), [("w1", "claude")], "the tab of the latest event is kept, for the panel")
         self.assertEqual(ac.run_one(self.repo), "made")
         self.assertIsNone(ac.run_one(self.tmp))
+
+    def events(self):
+        try:
+            with open(self.paths.system_events, encoding="utf-8") as f:
+                return [json.loads(ln) for ln in f if ln.strip()]
+        except FileNotFoundError:
+            return []
+
+    def test_the_panel_sees_a_digest_being_written_then_written_with_its_repository_commit_and_tab(self):
+        ac = digest.AutoContext(None, self.paths, generator=self.gen, clock=self.clock)
+        head = self.git("rev-parse", "HEAD")
+        self.assertEqual(ac.run_one(self.repo, "w1", "claude"), "made")
+        evs = self.events()
+        self.assertEqual([(e["kind"], e["phase"]) for e in evs], [("autocontext", "started"), ("autocontext", "made")])
+        for e in evs:
+            self.assertEqual((e["repo"], e["commit"], e["tab"], e["agent"]), ("calc", head[:12], "w1", "claude"))
+        self.assertNotEqual(evs[0]["id"], evs[1]["id"])
+        self.assertIn("took", evs[1])
+
+    def test_the_panel_sees_a_failed_digest_with_why_and_nothing_while_it_waits_to_try_again(self):
+        def bad(prompt):
+            raise digest.DigestError("claude exit 1: not logged in")
+        ac = digest.AutoContext(None, self.paths, generator=bad, clock=self.clock)
+        self.assertEqual(ac.run_one(self.repo, "w1", "claude"), "failed")
+        self.assertEqual(ac.run_one(self.repo, "w1", "claude"), "backoff")
+        evs = self.events()
+        self.assertEqual([e["phase"] for e in evs], ["started", "failed"])
+        self.assertIn("not logged in", evs[1]["error"])
+        self.assertEqual(evs[1]["retry_min"], digest.RETRY_S // 60)
+
+    def test_a_carried_or_present_digest_adds_nothing_to_the_panel(self):
+        ac = digest.AutoContext(None, self.paths, generator=self.gen, clock=self.clock)
+        ac.run_one(self.repo, "w1", "claude")
+        write(os.path.join(self.repo, "y.py"), "y = 1\n")
+        self.commit("y")
+        self.assertEqual(ac.run_one(self.repo, "w1", "claude"), "carried")
+        self.assertEqual(ac.run_one(self.repo, "w1", "claude"), "have")
+        self.assertEqual(len(self.events()), 2)
 
 
 class ArgvTest(unittest.TestCase):
@@ -240,6 +281,39 @@ class LauncherContractTest(Base):
         r = subprocess.run([shell, "-c", ". %s; claude %s" % (fns, args)], cwd=cwd, env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout.strip()
+
+    def run_claude_on_a_terminal(self, cwd, shell="bash"):
+        """What the launcher writes on its standard error when that is a terminal (a pty), before the agent starts."""
+        self.run_claude(cwd)        # writes agents.sh and the fake claude
+        master, slave = pty.openpty()
+        self.addCleanup(os.close, master)
+        env = {"PATH": os.path.join(self.tmp, "bin") + ":/usr/bin:/bin", "HOME": self.tmp, "TERM": "dumb",
+               "SB_STATE_DIR": os.path.join(self.tmp, "state")}
+        try:
+            r = subprocess.run([shell, "-c", ". %s; claude" % os.path.join(self.tmp, "agents.sh")], cwd=cwd, env=env, stdout=subprocess.PIPE,
+                               stderr=slave, stdin=subprocess.DEVNULL, timeout=30)
+        finally:
+            os.close(slave)
+        self.assertEqual(r.returncode, 0)
+        out = b""
+        while True:
+            try:
+                chunk = os.read(master, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            out += chunk
+        return out.decode("utf-8", "replace")
+
+    def test_a_session_that_gets_the_digest_says_so_on_the_terminal(self):
+        self.assertNotIn("orientation", self.run_claude_on_a_terminal(self.repo), "no digest: no line")
+        self.refresh()
+        head = self.git("rev-parse", "HEAD")
+        for sh in SHELLS:
+            with self.subTest(shell=sh):
+                said = self.run_claude_on_a_terminal(self.repo, shell=sh)
+                self.assertIn("orientation to calc (commit %s)" % head[:7], said)
 
     def test_a_session_on_a_commit_with_a_digest_gets_the_file_the_sysop_wrote(self):
         flag = "[--append-system-prompt-file]"

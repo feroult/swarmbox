@@ -177,8 +177,14 @@ the agent's launcher (every start: New agent, a pin, a worktree, typing claude) 
   when it was written and that it can be out of date. Nothing of the working tree that is not committed or listed is read.
 - **When it is written.** The first time an agent tab works in a repository whose commit has no digest. The worktrees of a repository
   share it. A new commit carries the digest forward with the list of files changed since it (no model call); it is written again when it is
-  older than 6 hours or more than 40 files changed. A failed call (no login) is in `serve.log` as `autocontext ...` and tried again after
-  10 minutes. `swarmbox-sysop context [DIR]` writes it now and prints the file.
+  older than 6 hours or more than 40 files changed. A failed call (no login) is tried again after 10 minutes. `swarmbox-sysop context [DIR]`
+  writes it now and prints the file.
+- **What you see.** What the sysop does by itself is in its panel, beside the renames of the tab naming: a row *Writing an orientation of
+  REPO…* with the tab whose agent caused it while the model call runs, then *Wrote an orientation of REPO* (and how long it took) or
+  *Could not write the orientation of REPO* with the reason and when it tries again (`autocontext` events in `system_events.jsonl`). A
+  carry-forward to a new commit makes no call and shows nothing; every outcome is also a line `autocontext ...` in `serve.log`. A session
+  that starts with the digest says so in one dim line above the agent's screen (`swarmbox: this session starts with the sysop's
+  orientation to REPO (commit abc1234)`).
 - **How the agent gets it.** The shell function of the agent passes `CONTEXT_ARGS` (Claude Code: `--append-system-prompt-file FILE`) when a
   session (not a one-shot `-p`) starts on a commit that has a digest. A resumed conversation keeps the system prompt it started with.
 - **Off.** `swarmbox config set sysop.autocontext 0` and `swarmbox reset` (or the toggle in **Settings → Sysop**): the sysop writes none and

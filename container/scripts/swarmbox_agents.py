@@ -661,10 +661,11 @@ FUNC_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 # SWARMBOX_YOLO=0), the words that give it the box's MCP servers (always: they are not a permission) and, for a session started in a Git
 # repository whose commit has a digest (the sysop's autocontext writes $SB_STATE_DIR/sysop/digests/<commit>.md), its CONTEXT_ARGS with
 # {context_file} replaced by that file. No file, no words: the agent starts as it would without the sysop. The commit is read after the
-# guard, which may have moved the shell into a new worktree. `command CMD` reaches the program (or its shim), not the function.
+# guard, which may have moved the shell into a new worktree. A session that gets the digest says so in one line on the terminal (standard
+# error, when it is a terminal), above the agent's screen. `command CMD` reaches the program (or its shim), not the function.
 # Written for bash and zsh.
 SHELL_HELPER = r"""_sb_agent_run() {
-    local _sb_id=$1 _sb_cmd=$2 _sb_pass=" $3 " _sb_print=" $4 " _sb_n=$5 _sb_a _sb_guard=1 _sb_head _sb_file _sb_ph='{context_file}'
+    local _sb_id=$1 _sb_cmd=$2 _sb_pass=" $3 " _sb_print=" $4 " _sb_n=$5 _sb_a _sb_guard=1 _sb_head _sb_file _sb_ph='{context_file}' _sb_repo
     shift 5
     local -a _sb_yolo _sb_mcp _sb_ctx _sb_ctx_on
     _sb_yolo=()
@@ -696,6 +697,13 @@ SHELL_HELPER = r"""_sb_agent_run() {
                 _sb_file="${SB_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/swarmbox}/sysop/digests/$_sb_head.md"
                 if [ -f "$_sb_file" ] && [ -s "$_sb_file" ]; then
                     for _sb_a in "${_sb_ctx[@]}"; do _sb_ctx_on+=("${_sb_a//"$_sb_ph"/$_sb_file}"); done
+                    if [ -t 2 ]; then
+                        IFS= read -r _sb_repo < "$_sb_file" || :
+                        _sb_repo=${_sb_repo#"# Repository orientation: "}
+                        _sb_repo=${_sb_repo//[[:cntrl:]]/}
+                        printf '\033[2mswarmbox: this session starts with the sysop'"'"'s orientation to %s (commit %.7s)\033[0m\n' \
+                            "${_sb_repo:-the repository}" "$_sb_head" >&2
+                    fi
                 fi
                 ;;
         esac

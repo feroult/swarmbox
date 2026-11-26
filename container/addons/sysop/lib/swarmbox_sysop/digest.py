@@ -20,6 +20,11 @@ the top-level docs and manifests and the recent commits (build_input). Otherwise
 list of files changed since it (`git diff --name-status`): no model call for the commits an agent makes while it works. A failed call is
 logged and tried again after RETRY_S.
 
+WHAT YOU SEE. The sysop is the assistant of the box, and what it does by itself is shown in its panel: a model call appends `autocontext`
+events to system_events.jsonl (the feed of the Web Studio, like the renames of autoname): `started` when the call begins, then `made` or
+`failed`, each with the repository, the commit and the tab whose agent caused it. A carry-forward makes no model call and shows nothing
+(it happens at every commit an agent makes); it is one line in the service log.
+
 Turned off (`sysop.autocontext 0`), the service writes nothing and removes the folder when it starts (purge), so no launcher finds an old
 digest. Removing the sysop leaves the folder, but a digest is only used for its own commit: the next commit has none.
 """
@@ -34,6 +39,7 @@ import time
 
 from . import busclient
 from .agents import pick, registry
+from .autoname import append_system_event
 
 TOPIC = "tab.events"
 GROUP = "sysop-digest"
@@ -284,9 +290,10 @@ def changed_since(repo, base):
     return [ln for ln in out.split("\n") if ln.strip()]
 
 
-def refresh(repo, store, generator=default_generator, clock=time.time, failures=None, force=False):
+def refresh(repo, store, generator=default_generator, clock=time.time, failures=None, force=False, on_call=None):
     """Make sure the HEAD of `repo` has its <commit>.md. Returns what happened: 'have', 'carried', 'made' or 'backoff'; raises DigestError
-    when the call fails (and records it in `failures`, a dict key -> (head, time), for the back-off)."""
+    when the call fails (and records it in `failures`, a dict key -> (head, time), for the back-off). `on_call()` runs just before the model
+    call, the only slow step (the panel says that the sysop is writing one)."""
     head, key = repo["head"], repo["key"]
     if store.has(head) and not force:
         return "have"
@@ -302,6 +309,8 @@ def refresh(repo, store, generator=default_generator, clock=time.time, failures=
         f = failures.get(key)
         if f and now - f[1] < RETRY_S:
             return "backoff"
+    if on_call is not None:
+        on_call()
     try:
         text = clean_digest(generator(build_input(repo)))
         if not text:
@@ -319,11 +328,13 @@ def refresh(repo, store, generator=default_generator, clock=time.time, failures=
 
 class AutoContext:
     """Background subscriber on `tab.events` that keeps a digest for the commit each agent works on. Every outcome other than 'have' is
-    one `autocontext <repo>@<commit>: ...` line in the service log."""
+    one `autocontext <repo>@<commit>: ...` line in the service log; a model call is also shown in the panel (`autocontext` system
+    events: started, then made or failed)."""
 
     def __init__(self, bus, paths, generator=None, clock=time.time, log=None, backoff=(1.0, 5.0), env=None):
         self.bus = bus
         self.store = Store(digests_dir(paths))
+        self.events_file = paths.system_events
         self.generator = generator or (lambda prompt: default_generator(prompt, env=env))
         self.clock = clock
         self.log = log or (lambda m: None)
@@ -334,7 +345,7 @@ class AutoContext:
         self.worker = None
         self.failures = {}
         self._cond = threading.Condition()
-        self._queue = {}        # folder -> folder, in arrival order (a folder queued twice is done once)
+        self._queue = {}        # folder -> (tab, agent) of its latest event, in arrival order (a folder queued twice is done once)
 
     def start(self):
         if self.thread is not None:
@@ -394,10 +405,11 @@ class AutoContext:
             return False
         cwd = str(body.get("cwd") or "")
         name = os.path.basename(str(body.get("agent") or "").strip().split(" ")[0]).lower()
-        if not cwd.startswith("/") or not registry.resolve(name):
+        agent = registry.resolve(name)
+        if not cwd.startswith("/") or not agent:
             return False
         with self._cond:
-            self._queue[cwd] = cwd
+            self._queue[cwd] = (str(body.get("tab") or ""), agent)
             self._cond.notify_all()
         return True
 
@@ -409,23 +421,40 @@ class AutoContext:
                 if self.stopping:
                     return
                 cwd = next(iter(self._queue))
-                del self._queue[cwd]
-            self.run_one(cwd)
+                tab, agent = self._queue.pop(cwd)
+            self.run_one(cwd, tab, agent)
 
-    def run_one(self, cwd):
-        """Refresh the digest of the repository of `cwd`; returns the outcome (None when `cwd` is not in a repository)."""
+    def event(self, phase, repo, tab="", agent="", **fields):
+        """One `autocontext` line of the panel's feed."""
+        now = float(self.clock())
+        append_system_event(self.events_file, "autocontext", clock=self.clock,
+                            id="ev_ctx_%s_%s_%s_%d" % (repo["key"], repo["head"][:12], phase, int(now * 1000)),
+                            phase=phase, repo=repo["name"], key=repo["key"], commit=repo["head"][:12], tab=tab, agent=agent, **fields)
+
+    def run_one(self, cwd, tab="", agent=""):
+        """Refresh the digest of the repository of `cwd` (for the agent of `tab`); returns the outcome (None when `cwd` is not in a
+        repository)."""
         repo = repo_of(cwd)
         if repo is None:
             return None
         where = "%s@%s" % (repo["name"], repo["head"][:7])
         t0 = time.monotonic()
+        called = []
+
+        def on_call():
+            called.append(True)
+            self.event("started", repo, tab, agent)
         try:
-            what = refresh(repo, self.store, self.generator, self.clock, self.failures)
+            what = refresh(repo, self.store, self.generator, self.clock, self.failures, on_call=on_call)
         except (DigestError, OSError) as e:
             self.log("autocontext %s: failed, tried again in %d min: %s" % (where, RETRY_S // 60, e))
+            if called:
+                self.event("failed", repo, tab, agent, error=str(e)[:200], retry_min=int(RETRY_S // 60))
             return "failed"
         if what == "made":
-            self.log("autocontext %s: wrote the digest in %.1fs" % (where, time.monotonic() - t0))
+            took = time.monotonic() - t0
+            self.log("autocontext %s: wrote the digest in %.1fs" % (where, took))
+            self.event("made", repo, tab, agent, took=round(took, 1))
         elif what == "carried":
             self.log("autocontext %s: carried the digest forward" % where)
         return what

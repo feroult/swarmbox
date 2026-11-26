@@ -309,11 +309,15 @@ try {
   const nowSec = Date.now() / 1000;
   fs.writeFileSync(
     path.join(stateSysop, 'system_events.jsonl'),
-    JSON.stringify({ id: 'ev1', kind: 'autoname', ts: nowSec - 5, tab: 't1', old_title: 'shop-api', new_title: 'Fix Cache' }) + '\n',
+    JSON.stringify({ id: 'ev1', kind: 'autoname', ts: nowSec - 5, tab: 't1', old_title: 'shop-api', new_title: 'Fix Cache' }) + '\n'
+      + JSON.stringify({ id: 'ev2', kind: 'autocontext', ts: nowSec - 4, phase: 'failed', repo: 'shop', key: 'k1', commit: 'abc123',
+        tab: 't1', agent: 'claude', error: 'not logged in', retry_min: 10 }) + '\n',
   );
   const snap1 = readSysopSnapshot([]);
-  assert.equal(snap1.system_events.length, 1);
+  assert.equal(snap1.system_events.length, 2);
   assert.equal(snap1.system_events[0].new_title, 'Fix Cache');
+  const ctx = snap1.system_events[1];
+  assert.deepEqual([ctx.phase, ctx.repo, ctx.commit, ctx.error, ctx.retry_min], ['failed', 'shop', 'abc123', 'not logged in', 10]);
   startNewConversation(nowSec);
   const snap2 = readSysopSnapshot([]);
   assert.equal(snap2.system_events.length, 0);

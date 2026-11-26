@@ -4632,6 +4632,31 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
   }
 }
 
+/* Repository context (autocontext): writing, written, failed */
+.sysop-sysev-repo {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.sysop-sysev-err {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+.sysop-sysev-ctx.is-started { border-left-color: var(--accent); }
+.sysop-sysev-ctx.is-started .sysop-sysev-ico { color: var(--accent); opacity: 1; animation: sb-pulse 1.6s ease-in-out infinite; }
+.sysop-sysev-ctx.is-made .sysop-sysev-ico { color: var(--green); }
+.sysop-sysev-ctx.is-failed { border-left-color: var(--amber); }
+.sysop-sysev-ctx.is-failed .sysop-sysev-ico,
+.sysop-sysev-ctx.is-failed .sysop-sysev-state { color: var(--amber); }
+.sysop-sysev-ctx.is-stale { color: var(--text-dim); }
+@media (prefers-reduced-motion: reduce) {
+  .sysop-sysev-ctx.is-started .sysop-sysev-ico { animation: none; }
+}
+
 /* Stage empty state when all sessions are parked or closed */
 .stage-empty {
   position: absolute;

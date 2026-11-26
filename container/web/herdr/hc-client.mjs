@@ -929,7 +929,7 @@ export function readSysopSnapshot(terminals) {
       kind: t.status.kind || 'permission',
     }));
 
-  // System events (e.g. automatic tab renames by Sysop) shown inline in the visual feed
+  // System events (automatic tab renames, repository digests by Sysop) shown inline in the visual feed
   // without consuming the 8-goal user conversation memory window in history.py.
   const systemEvents = [];
   if (up) {
@@ -948,6 +948,14 @@ export function readSysopSnapshot(terminals) {
           old_title: String(ev.old_title || ''),
           new_title: String(ev.new_title || ''),
           text: String(ev.text || ''),
+          // autocontext (the repository digest): started, then made or failed
+          phase: String(ev.phase || ''),
+          repo: String(ev.repo || ''),
+          key: String(ev.key || ''),
+          commit: String(ev.commit || ''),
+          took: Number.isFinite(Number(ev.took)) ? Number(ev.took) : null,
+          error: String(ev.error || ''),
+          retry_min: Number.isFinite(Number(ev.retry_min)) ? Number(ev.retry_min) : null,
         });
       }
     }

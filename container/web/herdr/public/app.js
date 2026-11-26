@@ -3174,6 +3174,7 @@
   }
 
   const ICO_BRANCH_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.5-7 1.8-7 3.4"/></svg>';
+  const ICO_BOOK_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.2c1.9-.6 3.9-.4 5.5.8 1.6-1.2 3.6-1.4 5.5-.8v9.3c-1.9-.6-3.9-.4-5.5.8-1.6-1.2-3.6-1.4-5.5-.8Z"/><path d="M8 4v9.3"/></svg>';
   const ICO_PENCIL_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.4a1.6 1.6 0 0 1 2.3 2.3L5.6 12.6 2.5 13.5l.9-3.1 7.8-8Z"/></svg>';
 
   let serverHomeDir = '';
@@ -6286,7 +6287,89 @@
     return box;
   }
 
+  // A sysop digest call that started more than this long ago and never ended (the service was killed) is shown as without answer
+  const AUTOCONTEXT_STALE_MS = 5 * 60 * 1000;
+
+  // The system events the feed shows: an autocontext `started` is folded into the `made`/`failed` of the same repository and commit
+  function visibleSystemEvents(evs) {
+    const ended = new Set();
+    for (const ev of evs) {
+      if (ev && ev.kind === 'autocontext' && (ev.phase === 'made' || ev.phase === 'failed')) ended.add(`${ev.key}|${ev.commit}`);
+    }
+    return evs.filter((ev) => !(ev && ev.kind === 'autocontext' && ev.phase === 'started' && ended.has(`${ev.key}|${ev.commit}`)));
+  }
+
+  function sysevTabChip(ev, liveTab, name) {
+    const known = ev.tab ? knownTabs[ev.tab] : null;
+    const kind = (liveTab && (tabAgentKind(liveTab) || 'shell'))
+      || (isAgentId(ev.agent) ? ev.agent : '')
+      || (known && known.kind)
+      || 'shell';
+    return tabChip({
+      address: ev.tab || '',
+      name: name || (liveTab ? tabDisplayName(liveTab) : (known && known.name) || ev.tab || 'tab'),
+      kind,
+      live: Boolean(liveTab),
+      unknown: !liveTab && !known,
+    });
+  }
+
+  function renderAutocontextRow(ev) {
+    const liveTab = ev.tab ? terminals.find((t) => t.address === ev.tab) : null;
+    const stale = ev.phase === 'started' && Date.now() - (ev.ts || 0) > AUTOCONTEXT_STALE_MS;
+    const row = document.createElement('div');
+    row.className = `sysop-sysev sysop-sysev-ctx is-${stale ? 'stale' : ev.phase || 'made'}`;
+
+    const body = document.createElement('div');
+    body.className = 'sysop-sysev-body';
+    const ico = document.createElement('span');
+    ico.className = 'sysop-sysev-ico';
+    ico.innerHTML = ICO_BOOK_SVG;
+    const textWrap = document.createElement('span');
+    textWrap.className = 'sysop-sysev-text';
+    const repo = document.createElement('span');
+    repo.className = 'sysop-sysev-repo';
+    repo.textContent = ev.repo || 'the repository';
+    repo.title = ev.commit ? `${ev.repo} at commit ${ev.commit}` : '';
+    const forTab = ev.tab ? [' · for ', sysevTabChip(ev, liveTab)] : [];
+    if (ev.phase === 'started' && !stale) {
+      textWrap.append('Writing an orientation of ', repo, ' for new agent sessions…', ...forTab);
+    } else if (ev.phase === 'started') {
+      textWrap.append('The orientation of ', repo, ' got no answer', ...forTab);
+    } else if (ev.phase === 'failed') {
+      textWrap.append('Could not write the orientation of ', repo, ...forTab);
+      if (ev.error) {
+        const err = document.createElement('span');
+        err.className = 'sysop-sysev-err';
+        err.textContent = ev.error;
+        textWrap.append(err);
+      }
+    } else {
+      textWrap.append('Wrote an orientation of ', repo, ': new agent sessions in it start with it', ...forTab);
+    }
+    body.append(ico, textWrap);
+
+    const meta = document.createElement('div');
+    meta.className = 'sysop-sysev-meta';
+    const tag = document.createElement('span');
+    tag.className = 'sysop-sysev-state';
+    tag.textContent = ev.phase === 'started' && !stale ? 'writing'
+      : ev.phase === 'failed' ? (ev.retry_min ? `retry in ${ev.retry_min}m` : 'failed')
+      : ev.phase === 'made' && ev.took != null ? `context · ${ev.took}s` : 'context';
+    meta.appendChild(tag);
+    const ago = fmtAgo(ev.ts);
+    if (ago) {
+      const tm = document.createElement('span');
+      tm.className = 'sysop-sysev-time';
+      tm.textContent = ago;
+      meta.appendChild(tm);
+    }
+    row.append(body, meta);
+    return row;
+  }
+
   function renderSystemEventRow(ev, opts = {}) {
+    if (ev.kind === 'autocontext') return renderAutocontextRow(ev);
     const row = document.createElement('div');
     const liveTab = ev.tab ? terminals.find((t) => t.address === ev.tab) : null;
     const isLive = Boolean(liveTab);
@@ -6366,7 +6449,7 @@
 
   function renderSysopFeed(sysop) {
     const turns = Array.isArray(sysop.turns) ? sysop.turns : null;
-    const sysEvents = Array.isArray(sysop.system_events) ? sysop.system_events : [];
+    const sysEvents = visibleSystemEvents(Array.isArray(sysop.system_events) ? sysop.system_events : []);
     const steps = Array.isArray(sysop.steps) ? sysop.steps : [];
     const hasTurns = turns ? turns.length > 0 : steps.length > 0;
     const empty = !hasTurns && sysEvents.length === 0;
