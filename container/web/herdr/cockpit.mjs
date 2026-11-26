@@ -248,6 +248,7 @@ const AGENT_APP_LABELS = {
   antigravity: 'agy',
   agy: 'agy',
   claude: 'claude',
+  'claude-code': 'claude', // the OSC 7501 app that Claude Code reports
   codex: 'codex',
   opencode: 'opencode',
   gemini: 'gemini',
@@ -262,7 +263,7 @@ function cleanStatusText(raw) {
     .trim();
 }
 
-function smartTabParts(t) {
+export function smartTabParts(t) {
   if (!t) return { title: 'no tab', pill: '' };
   const rawName = String(t.name || '').trim();
   const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);

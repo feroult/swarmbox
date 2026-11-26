@@ -19,6 +19,8 @@ import sys
 
 SCHEMA = 1
 AGENT_COMMANDS = ("claude", "agy", "opencode", "codex", "gemini", "aider")
+# Other names of an agent: what it reports as its OSC 7501 `app` (Claude Code says claude-code) and the addon name of agy.
+AGENT_ALIASES = {"claude-code": "claude", "antigravity": "agy"}
 SHELL_COMMANDS = ("bash", "sh", "zsh", "dash", "fish", "ksh", "ash", "-bash", "-sh", "-zsh")
 SKIP_SCAN_DIRS = frozenset({"node_modules", ".git", "venv", ".venv", "dist", "build", "target", "__pycache__"})
 _GENERIC_SHELL = re.compile(r"shell(?:-\d+)?", re.I)
@@ -169,21 +171,13 @@ def display_name(t, home=""):
 
 def detect_agent(t):
     """Return canonical agent name (claude, agy, opencode, codex, gemini, aider) or '' for a shell."""
-    lbl_ag = str(t.get("agent") or "").strip().lower()
-    if lbl_ag in AGENT_COMMANDS:
-        return lbl_ag
-    if lbl_ag == "antigravity":
-        return "agy"
-    cmd = os.path.basename(str(t.get("cmd") or "").strip()).lstrip("-").lower()
-    if cmd in AGENT_COMMANDS:
-        return cmd
     st = t.get("status")
-    if isinstance(st, dict):
-        app = str(st.get("app") or "").strip().lower()
-        if app in AGENT_COMMANDS:
-            return app
-        if app == "antigravity":
-            return "agy"
+    app = str(st.get("app") or "") if isinstance(st, dict) else ""
+    for raw in (t.get("agent"), os.path.basename(str(t.get("cmd") or "").strip()).lstrip("-"), app):
+        name = str(raw or "").strip().lower()
+        name = AGENT_ALIASES.get(name, name)
+        if name in AGENT_COMMANDS:
+            return name
     return ""
 
 

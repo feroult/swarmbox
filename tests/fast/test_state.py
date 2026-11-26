@@ -136,5 +136,15 @@ class StateTests(unittest.TestCase):
         self.assertEqual(json.loads(bad.stdout)["err"], "usage")
 
 
+class DetectAgent(unittest.TestCase):
+    def test_the_names_an_agent_reports_map_to_its_command(self):
+        # Claude Code reports `claude-code` as its OSC 7501 app; the addon of agy is named antigravity.
+        self.assertEqual(sb_state.detect_agent({"cmd": "2.1.332", "status": {"app": "claude-code"}}), "claude")
+        self.assertEqual(sb_state.detect_agent({"cmd": "node", "status": {"app": "antigravity"}}), "agy")
+        self.assertEqual(sb_state.detect_agent({"cmd": "bash", "agent": "antigravity"}), "agy")
+        self.assertEqual(sb_state.detect_agent({"cmd": "opencode"}), "opencode")
+        self.assertEqual(sb_state.detect_agent({"cmd": "bash"}), "")
+
+
 if __name__ == "__main__":
     unittest.main()
