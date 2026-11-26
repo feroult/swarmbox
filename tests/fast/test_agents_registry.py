@@ -205,10 +205,10 @@ class CheckAndCommand(unittest.TestCase):
         return d
 
     def test_check_reports_every_kind_of_problem(self):
-        d = self.addon('ID=bot\nCMD=other\nCOLOR=red\nFOO=1\nNAMER="x {nope}"\nRESUME_FAST_FAIL_S=soon\nSTATUS=maybe\nALIASES="Bad"\n',
+        d = self.addon('ID=bot\nCMD=other\nCOLOR=red\nFOO=1\nANSWER_ALLOW="Enter!"\nNAMER="x {nope}"\nRESUME_FAST_FAIL_S=soon\nSTATUS=maybe\nALIASES="Bad"\n',
                        icon='<svg onload="alert(1)"></svg>', files={"screen.py": "def other():\n    pass\n", "settings.json": "[1]"})
         errs = "\n".join(A.check_dir(d))
-        for frag in ("CMD 'other'", "COLOR", "unknown key FOO", "{nope}", "RESUME_FAST_FAIL_S", "STATUS", "ALIASES entry 'Bad'",
+        for frag in ("CMD 'other'", "COLOR", "unknown key FOO", "'Enter!' is not a key name", "{nope}", "RESUME_FAST_FAIL_S", "STATUS", "ALIASES entry 'Bad'",
                      "event handler", "does not define state()", "settings.json is not a JSON object"):
             self.assertIn(frag, errs)
 
@@ -325,6 +325,50 @@ class LaunchScriptRuns(unittest.TestCase):
         r = self.run_script("exit 0")
         self.assertEqual(r.stdout.splitlines(), ["RAN --continue", "SHELL"])
         self.assertEqual(r.stderr, "")
+
+
+class AnswerCard(unittest.TestCase):
+    """POST /api/tabs/<id>/answer (the Allow / Cancel card of a blocked agent) presses the keys the agent declares, as keys."""
+
+    def test_the_keys_are_the_agents_and_an_agent_without_them_is_answered_in_its_terminal(self):
+        if not shutil.which("node"):
+            self.skipTest("node is not installed")
+        tmp = os.path.realpath(tempfile.mkdtemp(prefix="sbagents-ans-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        js = r"""
+import { registerHooks } from 'node:module';
+if (typeof registerHooks === 'function') {
+  registerHooks({ resolve(specifier, context, next) {
+    if (specifier === 'ws') return { shortCircuit: true, url: 'data:text/javascript,export class WebSocketServer { constructor(){ this.clients = new Set(); } on(){} handleUpgrade(){} }' };
+    return next(specifier, context);
+  } });
+}
+const { createGateway } = await import('./server.mjs');
+const calls = [];
+const terminals = new Map([
+  ['t1', { address: 't1', status: { app: 'claude-code', state: 'blocked' }, foreground: { name: '2.1.332' } }],
+  ['t2', { address: 't2', status: { app: 'antigravity', state: 'blocked' }, foreground: { name: 'agy' } }],
+]);
+const hc = { terminals, on() {}, proc: null, close() {}, listSnapshot: () => [...terminals.values()],
+  call: async (m, p) => { calls.push([m, p]); return { ok: true }; } };
+const { server } = createGateway({ hc });
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const base = `http://127.0.0.1:${server.address().port}`;
+const post = async (u, b) => { const r = await fetch(base + u, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base }, body: JSON.stringify(b) }); return r.status; };
+const out = { allow: await post('/api/tabs/t1/answer', { decision: 'allow' }), deny: await post('/api/tabs/t1/answer', { decision: 'deny' }),
+  agy: await post('/api/tabs/t2/answer', { decision: 'deny' }) };
+out.calls = calls.filter((c) => c[0] === 'terminal.keys' || c[0] === 'terminal.send');
+server.close();
+console.log(JSON.stringify(out));
+"""
+        env = dict(os.environ, HOME=tmp, SWARMBOX_HC_AUTOSTART="0", SWARMBOX_TEST_USER_ADDONS=os.path.join(tmp, "none"))
+        env.pop("SWARMBOX_IMAGE_ADDONS_DIR", None)
+        p = subprocess.run(["node", "--input-type=module", "-e", js], cwd=os.path.dirname(AGENTS_MJS), env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        out = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertEqual((out["allow"], out["deny"], out["agy"]), (200, 200, 409))
+        self.assertEqual(out["calls"], [["terminal.keys", {"terminal": "t1", "keys": ["1"]}], ["terminal.keys", {"terminal": "t1", "keys": ["esc"]}]],
+                         "Claude's dialog gets its keys, never a typed letter and Enter; agy, which declares none, gets nothing")
 
 
 if __name__ == "__main__":

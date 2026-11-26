@@ -40,10 +40,10 @@ timeout.
 Typing.  The text goes as literal UTF-8 over `hc connect` (a framed terminal.attach, in pieces of CHUNK bytes, no Enter), then, after
 PAUSE seconds, each key (the Enter of --run too) as its own `hc keys` call: never one burst, because a terminal program that sees text and
 Enter in one burst treats it as a paste and the Enter becomes a line break (docs/spikes/enter.md: 0 of 4 at 600 characters).
-When the tab runs an agent (the state it reports with OSC 7501; else Claude Code's screen: the input box between two rules, a dialog, "esc
-to interrupt"; or the command is a known agent) and the message submits text (text followed by Enter): a dialog is refused (dialog_open), a
-busy agent is refused unless --queue, a text that starts with "/" or "!" is refused unless --slash (it would open a menu or run a shell
-command; every text that is submitted is checked, not only the first, and a body that submits more than one text to an agent needs
+When the tab runs an agent (the state it reports with OSC 7501; else what its addon's screen adapter reads on the screen; or the command is
+an agent of the registry) and the message submits text (text followed by Enter): a dialog is refused (dialog_open), a
+busy agent is refused unless --queue, a text that starts with one of the agent's reserved prefixes (its RESERVED_PREFIXES: "/" and "!" by
+default) is refused unless --slash (it would open a menu or run a shell command; every text that is submitted is checked, not only the first, and a body that submits more than one text to an agent needs
 --queue, because the agent is busy after the first), and after the Enter the call checks that the end of the text left the input box,
 pressing Enter once more only when it did not (not_submitted when it still did not). An agent whose input box cannot be read is checked by
 the state it reports turning busy or to a dialog; "verified": false when nothing showed the submission (no second Enter then).
@@ -450,71 +450,59 @@ def parse_keys(text):
 
 
 # ---------------------------------------------------------------------------------------------------------------- the state of an agent
-_RULE = "─" * 6          # a line that starts so is a rule of the input box of Claude Code
-_DASHED = "\u254c" * 6
-_DIALOG_FOOTER = re.compile(r"Enter to confirm|Esc to cancel|Esc to exit")
-_DIALOG_BODY = re.compile(r"Do you want to")
+# What an agent's screen says is its driver's knowledge, not this file's: the screen adapter of its addon (agent/screen.py, loaded by the
+# registry: state, detect, input_box, submitted). An agent without one has the state it reports (OSC 7501) or none: "unknown".
 
 
-def _rule_rows(rows):
-    return [i for i, r in enumerate(rows) if r.startswith(_RULE)]
+def screen_adapter(agent):
+    """the screen adapter (a module) of the agent named `agent` (an id, a command, an alias), or None"""
+    aid = swarmbox_agents.resolve(agent) if agent else ""
+    return swarmbox_agents.hook(aid, "screen") if aid else None
 
 
-def _has_rule(rows):
-    """a rule of any kind: the solid one of the input box, the dashed ones that frame the command of a permission dialog"""
-    return any(r.startswith(_RULE) or r.startswith(_DASHED) for r in rows)
+def _adapter_of_screen(rows):
+    """(agent id, adapter) of the agent whose adapter recognises these rows as its screen (detect), or ("", None): an agent started under
+    another process name (`hc run -- node ...`) is still seen by what it shows"""
+    for a in swarmbox_agents.agents():
+        if a["hooks"].get("screen"):
+            ad = swarmbox_agents.hook(a["id"], "screen")
+            fn = getattr(ad, "detect", None)
+            try:
+                if fn is not None and fn(rows):
+                    return a["id"], ad
+            except Exception:  # noqa: BLE001  - a broken adapter recognises nothing
+                continue
+    return "", None
 
 
-def input_box(rows, lenient=False):
-    """The text of the input box of Claude Code: what is between the last two rules, without the pointer (a pointer is followed by a no-break
-    space). None when there is no box. lenient: a box whose top scrolled off the screen (a long text in it) has only its bottom rule; its
-    text is then what is above that rule, from the last pointer line."""
-    r = _rule_rows(rows)
-    if len(r) >= 2:
-        body = rows[r[-2] + 1:r[-1]]
-    elif lenient and len(r) == 1 and len([x for x in rows[r[0] + 1:] if x.strip()]) <= 3:
-        top = max([i for i, x in enumerate(rows[:r[0]]) if x.startswith("\u276f")] or [0])
-        body = rows[top:r[0]]
-    else:
-        return None
-    box = []
-    for x in body:
-        if x.startswith("\u276f"):
-            x = x[1:]
-        box.append(x[1:] if x[:1] in (" ", "\xa0") else x)
-    return "\n".join(box).strip("\n")
-
-
-_INTERRUPT = "esc to interrupt"
-
-
-def _footer_busy(row):
-    """The footer of Claude Code while it works ends with `· esc to interrupt`. In a narrow pane the end is cut (`· esc to in…`, `· esc …`, a lone `·`) and
-    the words are not whole on the screen, which a phone held sideways (about 60 columns) does. So: after the last `·` of the row, nothing, or a start of
-    those words (with an ellipsis or not). A pane of about 30 columns shows no `·` at all: nothing on that screen tells busy from idle."""
-    if "\u00b7" not in row:
-        return False
-    tail = row.rsplit("\u00b7", 1)[1].strip().rstrip("\u2026").strip().lower()
-    return _INTERRUPT.startswith(tail)
+def _adapter_state(ad, rows):
+    try:
+        st = ad.state(rows)
+    except Exception:  # noqa: BLE001
+        return "unknown"
+    return st if st in ("dialog", "busy", "idle", "unknown") else "unknown"
 
 
 def agent_state(rows, command=""):
-    """(is_agent, state) for the rows of a plain screen: state is dialog, busy, idle or unknown. A screen is an agent's when it has the
-    input box, or a dialog footer next to a rule, or the command is a known agent. Only the bottom of the screen is read: an old answer
-    that says "Do you want to" is no dialog."""
-    used = [r for r in rows if r.strip()]
-    bottom = used[-14:]
-    box = input_box(rows) is not None
-    footer = used[-4:]
-    dialog = _has_rule(rows) and (any(_DIALOG_FOOTER.search(x) for x in footer) or (not box and any(_DIALOG_BODY.search(x) for x in used[-12:])))
-    agent = box or dialog or swarmbox_agents.is_agent(command)
-    if not agent:
-        return False, "unknown"
-    if dialog:
-        return True, "dialog"
-    if any("esc to interrupt" in x for x in bottom[-3:]) or (box and _footer_busy(used[-1])):
-        return True, "busy"
-    return True, "idle" if box else "unknown"
+    """(is_agent, state) for the rows of a plain screen: state is dialog, busy, idle or unknown. The tab runs an agent when `command`
+    names one (the registry) or an agent's screen adapter recognises the rows; the state is that adapter's reading, else unknown."""
+    if command and swarmbox_agents.is_agent(command):
+        ad = screen_adapter(command)
+        return True, (_adapter_state(ad, rows) if ad is not None else "unknown")
+    aid, ad = _adapter_of_screen(rows)
+    if ad is not None:
+        return True, _adapter_state(ad, rows)
+    return False, "unknown"
+
+
+def input_box(rows, lenient=False, command=""):
+    """The text of the input box of the agent of `command` (or of the agent that recognises the rows), by its screen adapter; None when
+    there is no box, or no adapter that reads one."""
+    ad = screen_adapter(command) if command else None
+    if ad is None:
+        _, ad = _adapter_of_screen(rows)
+    fn = getattr(ad, "input_box", None) if ad is not None else None
+    return fn(rows, lenient) if fn is not None else None
 
 
 # ---------------------------------------------------------------------------------------------------------------- multiplexer backends
@@ -555,6 +543,10 @@ class TabsBackend:
     def live_tab_ids(self):
         """Return a set of live tab ids (used by lock sweeping)."""
         return {t.id for t in self.list_tabs_raw()}
+
+    def tab_app(self, tab):
+        """Optional: the `app` the program of `tab` reports with OSC 7501 (an agent says its name), or None."""
+        return None
 
     def tab_state(self, tab):
         """Optional native agent state `(is_agent, state)` where state is dialog|busy|idle|unknown.
@@ -956,6 +948,12 @@ class HerdrBackend(TabsBackend):
         self.hc("kill", tab.id)
         self.hc("rm", tab.id, check=False)
 
+    def tab_app(self, tab):
+        meta = self._get_meta(tab.id)
+        st = meta.get("status") if meta else None
+        app = st.get("app") if isinstance(st, dict) else None
+        return app if isinstance(app, str) and app else None
+
     def tab_state(self, tab):
         """Return native OSC 7501 `(True, dialog|busy|idle)` when the program reported status, else None for heuristic fallback."""
         meta = self._get_meta(tab.id, fresh=True)
@@ -1295,14 +1293,26 @@ class Tabs:
             body["slash"] = True
         return self.send_body(tab, body)
 
-    def _agent_state_for(self, tab):
-        native = self.backend.tab_state(tab)
-        if native is not None:
-            return native
+    def _agent_of(self, tab, rows=None):
+        """(agent id, screen adapter) of the agent a tab runs: the swarmbox.agent label, the program, the app it reports (OSC 7501), else
+        the agent whose screen adapter recognises its screen. ("", None) for no agent."""
         lbls = self.backend.tab_labels(tab) or {}
-        lbl_ag = str(lbls.get("swarmbox.agent") or "").strip().lower()
-        cmd = lbl_ag if (lbl_ag and lbl_ag != "shell") else tab.command
-        return agent_state(self._plain_rows(tab), cmd)
+        for name in (lbls.get("swarmbox.agent"), tab.command, self.backend.tab_app(tab)):
+            aid = swarmbox_agents.resolve(name) if name else ""
+            if aid:
+                return aid, screen_adapter(aid)
+        return _adapter_of_screen(self._plain_rows(tab) if rows is None else rows)
+
+    def _agent_state_for(self, tab):
+        """(is_agent, state, agent id, adapter): the state the program reports (OSC 7501) first, else its adapter's reading of the screen"""
+        native = self.backend.tab_state(tab)
+        rows = None if native is not None else self._plain_rows(tab)
+        aid, ad = self._agent_of(tab, rows)
+        if native is not None:
+            return native[0], native[1], aid, ad
+        if aid:
+            return True, (_adapter_state(ad, rows) if ad is not None else "unknown"), aid, ad
+        return False, "unknown", "", None
 
     def send_body(self, tab, body):
         """send() with its arguments as a dict: {"run": text} or {"input": text}, with the optional booleans "queue" and "slash"; bad_body
@@ -1314,8 +1324,11 @@ class Tabs:
             self.backend.prepare_send(t)
             agent = False
             submitted = self._submitted(steps)
+            adapter = None
             if submit:
-                agent, state = self._agent_state_for(t)
+                agent, state, aid, adapter = self._agent_state_for(t)
+                a = swarmbox_agents.get(aid) if aid else None
+                reserved = tuple(p for p in (a["reserved_prefixes"] if a else ["/", "!"]) if p)
                 if agent:
                     if state == "dialog":
                         raise TabsError("dialog_open", "a dialog is open in the tab; answer it with input (a key), nothing was typed")
@@ -1324,8 +1337,9 @@ class Tabs:
                     if len(submitted) > 1 and not queue:
                         # the state above is read once: after the first Enter the agent works, so the later texts would be typed into a busy agent
                         raise TabsError("busy_tab", 'the message submits %d texts to an agent, and the agent is busy after the first; nothing was typed (use --queue, or send one message per text)' % len(submitted))
-                    if not slash and any(steps[i][1][:1] in ("/", "!") for i in submitted):
-                        raise TabsError("slash_refused", 'text that starts with "/" or "!" is a command for the agent, not a prompt; nothing was typed (--slash allows it)')
+                    if not slash and reserved and any(steps[i][1].startswith(reserved) for i in submitted):
+                        raise TabsError("slash_refused", 'text that starts with %s is a command for the agent, not a prompt; nothing was typed (--slash allows it)'
+                                        % " or ".join('"%s"' % p for p in reserved))
             last_enter = max(i for i, (k, v) in enumerate(steps) if k == "key" and v == "Enter") if submit else -1
             verified = None
             for i, (kind, val) in enumerate(steps):
@@ -1336,7 +1350,7 @@ class Tabs:
                 else:
                     self.backend.send_key(t, val)
                 if agent and i == last_enter:
-                    verified = self._verify(t, steps, i)
+                    verified = self._verify(t, steps, i, adapter)
         out = {"ok": True, "tab": t.id, "pane": t.pane, "submitted": submit}
         if verified is not None:
             out["verified"] = verified
@@ -1365,16 +1379,23 @@ class Tabs:
                 return ""
         return ""
 
-    def _verify(self, t, steps, enter_index):
+    def _verify(self, t, steps, enter_index, adapter=None):
         """After the Enter: wait until the text left the input box (or the agent is busy or showing a dialog). If it did not within
         VERIFY_TIMEOUT, press Enter once more, only when the text is still in the box (an Enter on an empty box could accept a suggestion).
-        True when the submission was seen. An agent whose input box cannot be read (only Claude Code's is known) is seen by the state it
-        reports (OSC 7501) turning busy or to a dialog; when it does not within VERIFY_TIMEOUT, False: unverified, never a second Enter,
-        because nothing says the text is still there."""
+        True when the submission was seen. The box is read by the agent's screen adapter (its `submitted`); an agent whose box cannot be
+        read is seen by the state it reports (OSC 7501) turning busy or to a dialog; when it does not within VERIFY_TIMEOUT, False:
+        unverified, never a second Enter, because nothing says the text is still there."""
         tail = self._tail(steps, enter_index)
         if not tail:
             return True
-        if input_box(self._plain_rows(t), lenient=True) is None:
+        reader = getattr(adapter, "submitted", None) if adapter is not None else None
+
+        def read_box(rows):
+            try:
+                return reader(rows, tail) if reader is not None else None
+            except Exception:  # noqa: BLE001  - a broken adapter reads nothing
+                return None
+        if read_box(self._plain_rows(t)) is None:
             end = time.monotonic() + self.verify_timeout
             while True:
                 native = self.backend.tab_state(t)
@@ -1389,9 +1410,8 @@ class Tabs:
             if native is not None and native[1] not in ("idle", "unknown"):
                 return False
             rows = self._plain_rows(t)
-            _, state = native if native is not None else agent_state(rows, t.command)
-            box = input_box(rows, lenient=True)
-            return state in ("idle", "unknown") and box is not None and (tail in box or "[Pasted text" in box)
+            state = native[1] if native is not None else _adapter_state(adapter, rows)
+            return state in ("idle", "unknown") and read_box(rows) is False
         for attempt in (1, 2):
             end = time.monotonic() + self.verify_timeout
             while True:

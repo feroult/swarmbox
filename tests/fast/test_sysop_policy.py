@@ -275,6 +275,33 @@ class RiskTable(unittest.TestCase):
             self.assertFalse(p.assess_run(AG, ok).block, ok)
 
 
+class AgentDeclarations(unittest.TestCase):
+    """What the policy takes from the agent registry: which tab is an agent, its reserved prefixes, and whether its state can be read."""
+
+    def test_an_agent_whose_state_nothing_reads_is_at_least_medium(self):
+        p = policy.Policy(autonomy="confirm-risky")
+        agy_silent = {"tab": "@5", "cmd": "agy"}                                       # agy has no screen adapter
+        agy_reporting = {"tab": "@6", "cmd": "agy", "status": {"app": "antigravity", "state": "idle"}}
+        claude_silent = {"tab": "@7", "cmd": "claude"}                                 # its screen adapter reads the screen
+        self.assertEqual(p.assess_run(agy_silent, "fix the build").level, "medium")
+        self.assertIn("cannot be read", " ".join(p.assess_run(agy_silent, "fix the build").reasons))
+        self.assertEqual(p.assess_run(agy_reporting, "fix the build").level, "low")
+        self.assertEqual(p.assess_run(claude_silent, "fix the build").level, "low")
+
+    def test_an_agent_under_node_with_its_label_is_an_agent_and_a_stale_label_on_a_shell_is_not(self):
+        self.assertEqual(policy.kind_of({"tab": "@8", "cmd": "node", "agent": "opencode", "status": {"app": "opencode"}}), "agent")
+        self.assertEqual(policy.kind_of({"tab": "@8", "cmd": "node", "agent": "opencode"}), "agent")
+        self.assertEqual(policy.kind_of({"tab": "@9", "cmd": "bash", "agent": "claude"}), "shell")
+
+    def test_the_reserved_prefixes_are_the_agents(self):
+        p = policy.Policy(autonomy="confirm-risky")
+        v = p.assess_run({"tab": "@4", "cmd": "claude"}, "/clear")
+        self.assertTrue(v.block)
+        self.assertIn('"/"', " ".join(v.reasons))
+        self.assertEqual(policy.reserved_of({"tab": "@4", "cmd": "claude"}), ("/", "!"))
+        self.assertEqual(policy.reserved_of({"tab": "@4", "cmd": "vim"}), ("/", "!"), "an unknown program gets the default, the safe side")
+
+
 class TabKinds(unittest.TestCase):
     def test_kind_of_the_running_command(self):
         # an agent is an addon with agent/ (the registry); a CLI without one (gemini, codex, aider) is a program like any other

@@ -8,7 +8,8 @@ THE RISK of an action (assess_run / assess_input), low, medium or high, plus `bl
   * the target tab runs an AGENT (an addon with agent/, see agents.py), a SHELL (bash, zsh, ...) or something ELSE (python, vim, ssh,
     a program that is running a command, node...). A tab that is not a shell or an agent is rated at least medium: what is typed there is
     code of a program the policy cannot read.
-  * agent: the text is a prompt, low. A text whose first character is `/` or `!` (a slash command, a shell escape) is BLOCKED (no approval path:
+  * agent: the text is a prompt, low. A text that starts with one of the agent's reserved prefixes (its RESERVED_PREFIXES; `/` and `!`, a slash
+    command and a shell escape, by default) is BLOCKED (no approval path:
     the sysop never passes --slash to swarmbox-tabs, which refuses it anyway). A later line that starts so is medium. Any key
     while a dialog of the agent is on the screen (Esc included: it rejects the request) is high, so it always needs the user's approval, never a
     countdown: a dialog is the USER's decision.
@@ -131,6 +132,29 @@ def tab_kind(cmd):
     return "other"
 
 
+def agent_of(tab):
+    """the agent id a tab row runs (the registry's detection: the app it reports, its program, its label while it runs no shell), or ''"""
+    return registry.detect(tab) if isinstance(tab, dict) else ""
+
+
+def kind_of(tab):
+    """agent, shell or other for a tab row: an agent by the registry's detection (an agent under `node` with its label is one), else by
+    its program"""
+    return "agent" if agent_of(tab) else tab_kind(tab.get("cmd"))
+
+
+def reserved_of(tab):
+    """the reserved prefixes of the agent of a tab (its RESERVED_PREFIXES: a slash command, a shell escape); "/" and "!" when unknown"""
+    a = registry.get(agent_of(tab))
+    return tuple(p for p in (a["reserved_prefixes"] if a else ("/", "!")) if p)
+
+
+def state_unknown(tab):
+    """an agent tab whose state nothing reads: it reports no status (OSC 7501) and its addon has no screen adapter"""
+    a = registry.get(agent_of(tab))
+    return bool(a) and not tab.get("status") and not a["hooks"].get("screen")
+
+
 class Verdict:
     def __init__(self, level="low", reasons=None, block=False):
         self.level, self.reasons, self.block = level, list(reasons or []), block
@@ -220,30 +244,36 @@ class Policy:
             v.add("medium", "keys edited the line, so what runs is not exactly the text typed")
 
     @staticmethod
-    def _agent_start(text, v):
+    def _agent_start(text, v, reserved=("/", "!")):
         body = risk._normalize(text).lstrip()
-        if body[:1] in ("/", "!"):
+        hit = next((p for p in reserved if body.startswith(p)), None)
+        if hit:
             v.block = True
-            v.add("high", 'text that starts with "%s" is a command for the agent (a menu or a shell escape), not a prompt' % body[:1])
+            v.add("high", 'text that starts with "%s" is a command for the agent (a menu or a shell escape), not a prompt' % hit)
         for ln in body.split("\n")[1:]:
-            if ln.lstrip()[:1] in ("/", "!"):
-                v.add("medium", 'a later line starts with "/" or "!"')
+            if reserved and ln.lstrip().startswith(reserved):
+                v.add("medium", "a later line starts with %s" % " or ".join('"%s"' % p for p in reserved))
 
     def assess_run(self, tab, text, prefill=""):
         """Verdict for `run`: text typed and Enter. tab is a dict with at least "tab" and "cmd". prefill is what the screen shows on the command line
         of a shell tab before the text goes in (typed by the user or left by something else, not by this goal); it is part of the line that runs."""
         self._check_text(text)
-        kind = tab_kind(tab.get("cmd"))
+        kind = kind_of(tab)
         v = Verdict()
         b = self.buf(tab["tab"])
         self._control(text, v, kind, b.text)
         if kind == "agent":
+            reserved = reserved_of(tab)
             if not b.text or b.dirty:
-                self._agent_start(text, v)
+                self._agent_start(text, v, reserved)
             elif "\n" in text:
-                self._agent_start("x\n" + text, v)
+                self._agent_start("x\n" + text, v, reserved)
+            if state_unknown(tab):
+                # nothing tells whether a dialog is open: the text and its Enter may answer one (docs/agents-design.md, decision 3)
+                v.add("medium", "the state of %s cannot be read (it reports none and no screen adapter reads it): the text may answer a dialog"
+                      % (agent_of(tab) or "the agent"))
             if not v.reasons:
-                v.reasons.append("a prompt for %s" % os.path.basename(str(tab.get("cmd"))))
+                v.reasons.append("a prompt for %s" % (agent_of(tab) or os.path.basename(str(tab.get("cmd")))))
         else:
             self._line_risk(kind, (b.text or prefill) + text, v, b.dirty)
         return v
@@ -252,7 +282,8 @@ class Policy:
         """Verdict for `input`: the text and keys in order. screen is the plain screen of the tab (used for dialogs of an agent)."""
         self._check_text(text)
         steps = parse_input(text)
-        kind = tab_kind(tab.get("cmd"))
+        kind = kind_of(tab)
+        reserved = reserved_of(tab)
         v = Verdict()
         buf, dirty = self.buf(tab["tab"]).text, self.buf(tab["tab"]).dirty
         # the screen decides, not the name of the process: Claude Code started through `hc run -- CMD`, `env`, `ssh` or `bash -c` shows as sh,
@@ -265,7 +296,7 @@ class Policy:
             if what == "text":
                 if kind == "agent" and (not buf or dirty):
                     # after {Home}, {Left}... the text may land at the start of what is in the box: look at its first character anyway
-                    self._agent_start(val, v)
+                    self._agent_start(val, v, reserved)
                 buf += val
                 if kind != "agent":
                     self._line_risk(kind, buf, v, dirty)

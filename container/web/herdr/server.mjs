@@ -1788,14 +1788,22 @@ export function createGateway(options = {}) {
           return sendJson(res, 200, r);
         }
         if (action === 'answer' && req.method === 'POST') {
+          // The Allow / Cancel card of a blocked agent: the keys its agent.conf declares (ANSWER_ALLOW, ANSWER_DENY: hc key names), pressed
+          // as keys. An agent that declares none is answered in its own terminal, never with a guess: a typed `n` and Enter confirm the
+          // highlighted option of a menu, which in a permission dialog is the one that allows (measured with Claude Code 2.1).
           const body = await readBody(req);
-          const decision = body.decision === 'allow' ? 'y' : 'n';
-          const r = await hc.call('terminal.send', {
-            terminal: termId,
-            text: typeof body.text === 'string' ? body.text : decision,
-            force: true,
-          });
-          return sendJson(res, 200, { ok: true, result: r });
+          if (typeof body.text === 'string') {
+            const r = await hc.call('terminal.send', { terminal: termId, text: body.text, force: true });
+            return sendJson(res, 200, { ok: true, result: r });
+          }
+          const aid = detectTerminalAgent(hc.terminals.get(termId));
+          const a = aid ? getAgent(aid) : null;
+          const keys = a ? (body.decision === 'allow' ? a.answer.allow : a.answer.deny) : [];
+          if (!keys.length) {
+            return sendJson(res, 409, { error: 'no_answer_keys', message: 'this agent does not say how its dialog is answered: answer it in its terminal' });
+          }
+          const r = await hc.call('terminal.keys', { terminal: termId, keys });
+          return sendJson(res, 200, { ok: true, result: r, keys });
         }
         if (action === 'keys' && req.method === 'POST') {
           const body = await readBody(req);

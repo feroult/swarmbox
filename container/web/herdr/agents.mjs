@@ -153,7 +153,7 @@ function agentFrom(dir, level, conf, values, env) {
     resume: { args: words(values.RESUME_ARGS), fast_fail_s: int(values.RESUME_FAST_FAIL_S, 4), scope: values.RESUME_SCOPE || 'cwd' },
     status: values.STATUS || 'osc7501',
     reserved_prefixes: 'RESERVED_PREFIXES' in values ? words(values.RESERVED_PREFIXES) : ['/', '!'],
-    answer: { allow: values.ANSWER_ALLOW || '', deny: values.ANSWER_DENY || '' },
+    answer: { allow: words(values.ANSWER_ALLOW), deny: words(values.ANSWER_DENY) },
     history: values.HISTORY || '',
     namer: values.NAMER || '',
     brain: values.BRAIN || '',

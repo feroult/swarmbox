@@ -367,7 +367,7 @@ class Server:
         try:
             if kind == "run":
                 prefill = ""
-                if policy.tab_kind(tab.get("cmd")) == "shell" and not self.policy.buf(tab["tab"]).text:
+                if policy.kind_of(tab) == "shell" and not self.policy.buf(tab["tab"]).text:
                     try:
                         prefill = typed_on_prompt(self.tabs.screen(tab["tab"]))
                     except tabsclient.TabsError:

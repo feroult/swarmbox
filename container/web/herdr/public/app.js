@@ -1609,6 +1609,13 @@
   async function uploadAndPasteImages(blobs, targetSession = null) {
     const sess = targetSession || activeSession();
     if (!sess || !blobs || blobs.length === 0) return;
+    // an agent that takes no pasted image path (TERM_IMAGE_PASTE=none in its agent.conf) gets nothing typed into it
+    const pasteTab = terminals.find((x) => x.address === sess.address);
+    const pasteAgent = agentReg.byId.get(pasteTab ? tabAgentKind(pasteTab) : '');
+    if (pasteAgent && pasteAgent.term && pasteAgent.term.image_paste === 'none') {
+      showTermToast(`${pasteAgent.label || pasteAgent.id} does not take pasted images`, 'error', 3200);
+      return;
+    }
     showTermToast(blobs.length === 1 ? 'Attaching image…' : `Attaching ${blobs.length} images…`, '', 0);
     const paths = [];
     const names = [];
@@ -2599,7 +2606,7 @@
     }, true);
 
     // Intercept image paste (Ctrl+V / Cmd+V / right-click Paste): upload binary image to container
-    // and paste its path via Bracketed Paste so Claude Code, agy, OpenCode, Codex, and bash attach it.
+    // and paste its path via Bracketed Paste so the agent (or the shell) attaches it.
     paneEl.addEventListener('paste', (ev) => {
       lastNativePasteTs = Date.now();
       const imgs = extractClipboardImages(ev.clipboardData);
@@ -6566,11 +6573,18 @@
   async function handleApproval(decision) {
     if (!currentApproval) return;
     if (currentApproval.kind === 'osc' && currentApproval.terminal) {
-      await fetch(`/api/tabs/${encodeURIComponent(currentApproval.terminal)}/answer`, {
+      const answerTerm = currentApproval.terminal;
+      const r = await fetch(`/api/tabs/${encodeURIComponent(answerTerm)}/answer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision }),
-      });
+      }).catch(() => null);
+      if (r && r.status === 409) {
+        // the agent declares no answer keys: its dialog is answered in its own terminal
+        const data = await r.json().catch(() => ({}));
+        showTermToast(data.message || 'Answer this dialog in the agent\'s terminal.', 'error', 4200);
+        if (answerTerm !== activeId) connectPty(answerTerm);
+      }
       return;
     }
     const route = decision === 'allow' ? '/api/sysop/approve' : '/api/sysop/veto';

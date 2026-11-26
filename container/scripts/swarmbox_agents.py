@@ -71,8 +71,8 @@ KEYS = {
     "RESUME_SCOPE": "enum:cwd|global",
     "STATUS": "enum:osc7501|none",
     "RESERVED_PREFIXES": "words",
-    "ANSWER_ALLOW": "str",
-    "ANSWER_DENY": "str",
+    "ANSWER_ALLOW": "keys",
+    "ANSWER_DENY": "keys",
     "HISTORY": "str",
     "NAMER": "template",
     "BRAIN": "template",
@@ -233,7 +233,7 @@ def _agent_from(dirpath, level, conf, values, env):
                    "scope": values.get("RESUME_SCOPE") or "cwd"},
         "status": values.get("STATUS") or "osc7501",
         "reserved_prefixes": _words(values["RESERVED_PREFIXES"]) if "RESERVED_PREFIXES" in values else ["/", "!"],
-        "answer": {"allow": values.get("ANSWER_ALLOW", ""), "deny": values.get("ANSWER_DENY", "")},
+        "answer": {"allow": _words(values.get("ANSWER_ALLOW")), "deny": _words(values.get("ANSWER_DENY"))},
         "history": values.get("HISTORY", ""),
         "namer": values.get("NAMER", ""),
         "brain": values.get("BRAIN", ""),
@@ -491,6 +491,10 @@ def check_dir(addon_dir, commands=None):
             errs.append("agent.conf: COLOR must be #rrggbb, found '%s'" % v)
         elif kind.startswith("enum:") and v and v not in kind[5:].split("|"):
             errs.append("agent.conf: %s must be one of %s, found '%s'" % (k, kind[5:].replace("|", ", "), v))
+        elif kind == "keys":
+            for w in v.split():
+                if not re.match(r"^[a-z0-9]+(?:\+[a-z0-9]+)*$", w):
+                    errs.append("agent.conf: %s entry '%s' is not a key name (enter, esc, up, ctrl+c, 1, y...)" % (k, w))
         elif kind == "words" and k == "ALIASES":
             for w in v.split():
                 if not ID_RE.match(w):

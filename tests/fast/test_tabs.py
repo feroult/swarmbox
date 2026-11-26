@@ -577,12 +577,24 @@ class TestAgentState(unittest.TestCase):
         self.assertIn("multi", box)
         self.assertEqual(mod.input_box(self.rows("idle-bypass.txt")), 'Try "create a util logging.py that..."')   # a ghost suggestion: text alone cannot tell
         self.assertIsNone(mod.input_box(self.rows("dialog-permission.txt")))
-        self.assertIn("PONG-burst-1", mod.input_box(self.rows("failed-burst-long-newline-in-box.txt"), lenient=True))   # the top rule scrolled off
+        # the top rule scrolled off: a screen no adapter recognises alone (one rule), read as the agent the tab is known to run
+        self.assertIn("PONG-burst-1", mod.input_box(self.rows("failed-burst-long-newline-in-box.txt"), lenient=True, command="claude"))
+        self.assertIsNone(mod.input_box(self.rows("failed-burst-long-newline-in-box.txt"), lenient=True, command="agy"), "agy has no screen adapter")
 
     def test_a_plain_shell_is_no_agent(self):
         self.assertEqual(mod.agent_state(["user@box:~$ ls", "a b c", "user@box:~$ "], "bash"), (False, "unknown"))
         self.assertEqual(mod.agent_state(["Do you want to continue? [Y/n]"], "apt"), (False, "unknown"))
         self.assertEqual(mod.agent_state(["booting"], "claude"), (True, "unknown"))
+
+    def test_the_state_is_the_agents_adapter_reading_or_unknown(self):
+        """the screen rules are the claude addon's (agent/screen.py); an agent without an adapter is an agent in state unknown, never
+        read with another agent's rules; an agent under another process name is recognised by its adapter"""
+        busy = self.rows("busy-streaming.txt")
+        self.assertEqual(mod.agent_state(busy, "claude-code"), (True, "busy"))
+        self.assertEqual(mod.agent_state(busy, "agy"), (True, "unknown"))
+        self.assertEqual(mod.agent_state(busy, "opencode"), (True, "unknown"))
+        self.assertEqual(mod.agent_state(busy, "node"), (True, "busy"))
+        self.assertEqual(mod.agent_state(busy, "codex"), (True, "busy"), "codex is no agent of the registry: the screen is Claude Code's")
 
     def test_busy_in_a_narrow_pane_where_the_footer_is_cut(self):
         """Real footers of Claude Code 2.1 in panes of 37, 45 and 52 columns while it worked, and the same panes idle (captured in Podman). The words
