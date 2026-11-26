@@ -1378,6 +1378,41 @@
     function renderInlineView() {
       const inl = state.inline;
       if (!inl) return;
+      if (inl.kind === 'md') {
+        const acts = (inl.actions || []).map((a) => ({ label: a.label, onClick: a.onClick }));
+        setSubbar([
+          { label: 'Rendered', active: !state.mdRaw, onClick: () => { state.mdRaw = false; renderInlineView(); } },
+          { label: 'Raw', active: state.mdRaw, onClick: () => { state.mdRaw = true; renderInlineView(); } },
+          { spacer: true },
+          ...acts,
+          {
+            label: 'Copy',
+            onClick: () => {
+              navigator.clipboard?.writeText(inl.content || '').then(() => onToast('Copied to clipboard')).catch(() => {});
+            },
+          },
+        ]);
+        bodyEl.innerHTML = '';
+        if (inl.note) {
+          const note = document.createElement('div');
+          note.className = 'sbv-inline-note';
+          if (inl.noteTone) note.dataset.tone = inl.noteTone;
+          note.textContent = inl.note;
+          bodyEl.appendChild(note);
+        }
+        if (state.mdRaw) {
+          const pre = document.createElement('pre');
+          pre.className = 'sbv-log-view wrap';
+          pre.textContent = inl.content || '';
+          bodyEl.appendChild(pre);
+          return;
+        }
+        const article = document.createElement('article');
+        article.className = 'sbv-md';
+        article.innerHTML = renderMarkdown(inl.content || '', '');
+        bodyEl.appendChild(article);
+        return;
+      }
       setSubbar([
         { label: 'Wrap', active: state.codeWrap, onClick: () => { state.codeWrap = !state.codeWrap; renderInlineView(); } },
         { spacer: true },
@@ -1399,14 +1434,20 @@
       const title = String(inlineOpts.title || '');
       const subtitle = String(inlineOpts.subtitle || '');
       const content = String(inlineOpts.content == null ? '' : inlineOpts.content);
-      const kind = inlineOpts.kind === 'diff' ? 'diff' : 'log';
+      const kind = inlineOpts.kind === 'diff' ? 'diff' : inlineOpts.kind === 'md' ? 'md' : 'log';
 
       state.path = '';
       state.displayPath = title;
       state.info = null;
-      state.inline = { title, subtitle, content, kind };
+      state.mdRaw = false;
+      state.inline = {
+        title, subtitle, content, kind,
+        actions: Array.isArray(inlineOpts.actions) ? inlineOpts.actions : [],
+        note: String(inlineOpts.note || ''),
+        noteTone: String(inlineOpts.noteTone || ''),
+      };
 
-      badgeEl.textContent = kind === 'diff' ? 'DIFF' : 'LOG';
+      badgeEl.textContent = inlineOpts.badge ? String(inlineOpts.badge) : kind === 'diff' ? 'DIFF' : kind === 'md' ? 'MD' : 'LOG';
       crumbsEl.innerHTML = '';
       const sp = document.createElement('span');
       sp.className = 'sbv-crumb-cur';

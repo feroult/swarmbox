@@ -394,7 +394,8 @@ class Service:
                   "bus": "stopped" if final else self.bus_state, "current": self.current.id if self.current else None, "queue": queue,
                   "rejected": self.rejected,
                   "settings": {"topic": self.cfg.topic, "group": self.cfg.group, "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "brain": self.cfg.brain.split()[0], "model": self.cfg.model,
-                               "max_steps": self.cfg.max_steps, "max_seconds": self.cfg.max_seconds, "max_goals": self.cfg.max_goals}}
+                               "max_steps": self.cfg.max_steps, "max_seconds": self.cfg.max_seconds, "max_goals": self.cfg.max_goals,
+                               "autocontext": bool(getattr(self.cfg, "autocontext", True))}}
             key = json.dumps({k: v for k, v in st.items() if k != "updated"}, sort_keys=True)
             if key == self._last_status and not final:
                 return

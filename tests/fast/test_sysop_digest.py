@@ -11,6 +11,8 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -21,6 +23,7 @@ SYSOP_LIB = os.path.join(ROOT, "container", "addons", "sysop", "lib")
 if SYSOP_LIB not in sys.path:
     sys.path.insert(0, SYSOP_LIB)
 
+from swarmbox_sysop import busclient  # noqa: E402
 from swarmbox_sysop import config as sysop_config  # noqa: E402
 from swarmbox_sysop import digest  # noqa: E402
 from swarmbox_sysop import paths as sysop_paths  # noqa: E402
@@ -42,6 +45,13 @@ def write(path, text):
 def slurp(path):
     with open(path) as f:
         return f.read()
+
+
+class NoBus:
+    """A bus that is not running: the subscriber thread waits and tries again until it is stopped."""
+
+    def subscribe(self, topic, group):
+        raise busclient.BusError("bus_down")
 
 
 class Clock:
@@ -115,8 +125,13 @@ class RefreshTest(Base):
         self.assertEqual(len(self.calls), 1, "no model call for a commit an agent made")
         text = slurp(self.store.file(head))
         self.assertIn(BODY.strip(), text)
-        self.assertIn("## Changed since then (now at commit %s)" % head[:12], text)
+        self.assertIn("This session starts at commit %s: 1 file changed since then" % head[:12], text,
+                      "the header says that the orientation is older than the session's commit")
+        self.assertIn("## Changed since the orientation was written", text)
         self.assertIn("A\tsrc/mul.py", text)
+        meta = self.store.meta(head)
+        self.assertEqual((meta["repo"], meta["commit"], meta["changes"]), ("calc", head, 1))
+        self.assertNotEqual(meta["base"], head)
 
     def test_an_old_digest_or_a_large_change_is_made_again(self):
         self.refresh()
@@ -128,8 +143,43 @@ class RefreshTest(Base):
             write(os.path.join(self.repo, "gen", "f%d.py" % i), "x = %d\n" % i)
         self.commit("many")
         self.clock.t += 60
+        self.assertEqual(self.refresh(), "carried", "a digest written a minute ago is not written again at once")
+        self.clock.t += digest.MIN_REWRITE_S
+        write(os.path.join(self.repo, "gen", "one-more.py"), "x = 0\n")
+        self.commit("one more")
         self.assertEqual(self.refresh(), "made")
         self.assertEqual(len(self.calls), 3)
+
+    def test_a_carry_is_given_at_once_and_says_when_the_model_should_write_again(self):
+        repo = digest.repo_of(self.repo)
+        self.assertEqual(digest.carry(repo, self.store, self.clock), (None, "new"), "no digest: nothing to carry, a call is needed")
+        self.refresh()
+        self.assertEqual(digest.carry(digest.repo_of(self.repo), self.store, self.clock), ("have", None))
+        write(os.path.join(self.repo, "src", "b.py"), "b = 1\n")
+        self.commit("b")
+        self.assertEqual(digest.carry(digest.repo_of(self.repo), self.store, self.clock), ("carried", None))
+        write(os.path.join(self.repo, "README.md"), "# calc\nNow with `make check`.\n")
+        self.commit("readme")
+        self.assertEqual(digest.carry(digest.repo_of(self.repo), self.store, self.clock), ("carried", None),
+                         "a young digest is carried over a changed doc")
+        self.clock.t += digest.MIN_REWRITE_S + 1
+        write(os.path.join(self.repo, "README.md"), "# calc\nNow with `make all`.\n")
+        self.commit("readme again")
+        self.assertEqual(digest.carry(digest.repo_of(self.repo), self.store, self.clock), ("carried", "changed"),
+                         "a changed doc of an older digest asks for a rewrite, and the session still gets the carried file now")
+        self.clock.t += digest.REFRESH_S
+        self.assertEqual(digest.carry(digest.repo_of(self.repo), self.store, self.clock), ("have", "stale"))
+        self.assertEqual(len(self.calls), 1, "carry never calls the model")
+
+    def test_a_long_list_of_changed_files_is_cut(self):
+        self.refresh()
+        for i in range(digest.MAX_LISTED + 5):
+            write(os.path.join(self.repo, "gen", "f%d.py" % i), "x = %d\n" % i)
+        head = self.commit("many")
+        self.assertEqual(digest.carry(digest.repo_of(self.repo), self.store, self.clock)[0], "carried")
+        text = slurp(self.store.file(head))
+        self.assertIn("... and 5 more", text)
+        self.assertEqual(self.store.meta(head)["changes"], digest.MAX_LISTED + 5)
 
     def test_a_worktree_of_the_repository_uses_the_same_digest(self):
         self.refresh()
@@ -178,17 +228,8 @@ class RefreshTest(Base):
 
 
 class EventsTest(Base):
-    def test_only_an_agent_tab_with_a_folder_is_queued_and_the_worker_writes_its_digest(self):
-        ac = digest.AutoContext(None, self.paths, generator=self.gen, clock=self.clock)
-        self.assertFalse(ac.handle_event({"body": {"event": "turn", "tab": "w1", "cwd": self.repo, "agent": "shell"}}))
-        self.assertFalse(ac.handle_event({"body": {"event": "turn", "tab": "w1", "cwd": "relative", "agent": "claude"}}))
-        self.assertFalse(ac.handle_event({"body": "x"}))
-        self.assertTrue(ac.handle_event({"body": {"event": "start", "tab": "w1", "cwd": self.repo, "agent": "claude"}}))
-        self.assertTrue(ac.handle_event({"body": {"event": "turn", "tab": "w1", "cwd": self.repo, "agent": "claude-code"}}))
-        self.assertEqual(list(ac._queue), [self.repo], "a folder queued twice is done once")
-        self.assertEqual(list(ac._queue.values()), [("w1", "claude")], "the tab of the latest event is kept, for the panel")
-        self.assertEqual(ac.run_one(self.repo), "made")
-        self.assertIsNone(ac.run_one(self.tmp))
+    def ac(self, generator=None):
+        return digest.AutoContext(NoBus(), self.paths, generator=generator or self.gen, clock=self.clock, backoff=(0.05, 0.1))
 
     def events(self):
         try:
@@ -197,30 +238,217 @@ class EventsTest(Base):
         except FileNotFoundError:
             return []
 
+    def test_only_an_agent_in_a_repository_counts_and_a_model_call_waits_in_the_queue(self):
+        ac = self.ac()
+        self.assertFalse(ac.handle_event({"body": {"event": "turn", "tab": "w1", "cwd": self.repo, "agent": "shell"}}))
+        self.assertFalse(ac.handle_event({"body": {"event": "turn", "tab": "w1", "cwd": "relative", "agent": "claude"}}))
+        self.assertFalse(ac.handle_event({"body": {"event": "turn", "tab": "w1", "cwd": self.tmp, "agent": "claude"}}))
+        self.assertFalse(ac.handle_event({"body": "x"}))
+        self.assertIsNone(ac.handle_event({"body": {"event": "start", "tab": "w1", "cwd": self.repo, "agent": "claude"}}))
+        self.assertIsNone(ac.handle_event({"body": {"event": "turn", "tab": "w2", "cwd": self.repo, "agent": "claude-code"}}))
+        key = digest.repo_of(self.repo)["key"]
+        self.assertEqual(list(ac._queue), [key], "a repository queued twice is called once")
+        self.assertEqual(ac._queue[key][1:], ("new", "w2", "claude"), "why, and the tab of the latest event, for the panel")
+        self.assertEqual(self.calls, [], "the subscriber thread never waits for the model")
+        self.assertTrue(ac.writing(key))
+
+    def mark(self, commit, ext):
+        p = os.path.join(self.store.root, commit + ext)
+        return slurp(p) if os.path.exists(p) else None
+
+    def test_a_launcher_that_asks_for_a_commit_gets_the_carried_file_at_once_or_a_mark_to_wait_for_the_model(self):
+        ac = self.ac()
+        head = self.git("rev-parse", "HEAD")
+        prepare = {"body": {"event": "prepare", "tab": "w1", "cwd": self.repo, "agent": "claude", "commit": head}}
+        self.assertIsNone(ac.handle_event(prepare))
+        self.assertEqual(self.mark(head, ".wait"), "calc\tnew\n", "the model writes the first digest: the launcher shows it waits")
+        waiting = json.loads(slurp(os.path.join(self.store.root, "sessions", "w1.json")))
+        self.assertEqual((waiting["waiting"], waiting["context"], waiting["repo"]), (True, False, "calc"), "its card says it prepares")
+        self.assertEqual(ac.run_one(self.repo), "made")
+        self.assertIsNone(self.mark(head, ".wait"), "the written file replaces the mark")
+        write(os.path.join(self.repo, "z.py"), "z = 1\n")
+        head2 = self.commit("z")
+        self.assertEqual(ac.handle_event(dict(prepare, body=dict(prepare["body"], commit=head2))), "carried")
+        self.assertTrue(self.store.has(head2))
+        self.assertEqual(len(self.calls), 1)
+
+    def test_a_launcher_waiting_during_a_failure_backoff_is_told_to_start_at_once(self):
+        def bad(prompt):
+            raise digest.DigestError("not logged in")
+        ac = self.ac(bad)
+        ac.run_one(self.repo)
+        head = self.git("rev-parse", "HEAD")
+        ac.handle_event({"body": {"event": "prepare", "tab": "w1", "cwd": self.repo, "agent": "claude", "commit": head}})
+        self.assertIsNone(self.mark(head, ".wait"))
+        self.assertIn("failed", self.mark(head, ".none"))
+        ac.handle_event({"body": {"event": "session", "tab": "w1", "cwd": self.repo, "agent": "claude", "context": ""}})
+        meta = json.loads(slurp(os.path.join(self.store.root, "sessions", "w1.json")))
+        self.assertEqual((meta["context"], meta["failed"], meta["writing"]), (False, True, False))
+
+    def test_the_worker_gives_every_waiting_commit_its_file_or_a_reason_when_the_call_ends(self):
+        ac = self.ac()
+        head = self.git("rev-parse", "HEAD")
+        ac.handle_event({"body": {"event": "prepare", "tab": "w1", "cwd": self.repo, "agent": "claude", "commit": head}})
+        wt = os.path.join(self.tmp, "wt")
+        self.git("worktree", "add", "-q", "-b", "sb/wt-1", wt)
+        write(os.path.join(wt, "n.py"), "n = 1\n")
+        self.git("add", "-A", cwd=wt)
+        self.git("commit", "-q", "-m", "in the worktree", cwd=wt)
+        head2 = self.git("rev-parse", "HEAD", cwd=wt)
+        ac.handle_event({"body": {"event": "prepare", "tab": "w2", "cwd": wt, "agent": "claude", "commit": head2}})
+        self.assertEqual(self.mark(head2, ".wait"), "calc\tnew\n", "a second commit of the same repository waits for the same call")
+        ac.start()
+        self.addCleanup(ac.stop)
+        for _ in range(200):
+            if self.store.has(head) and self.store.has(head2):
+                break
+            time.sleep(0.02)
+        self.assertTrue(self.store.has(head2), "carried from the new digest when the call ended")
+        self.assertEqual((self.mark(head, ".wait"), self.mark(head2, ".wait")), (None, None))
+        self.assertEqual(len(self.calls), 1)
+
+    def test_a_failed_call_tells_the_waiting_launchers_why(self):
+        def bad(prompt):
+            raise digest.DigestError("not logged in")
+        ac = self.ac(bad)
+        head = self.git("rev-parse", "HEAD")
+        ac.handle_event({"body": {"event": "prepare", "tab": "w1", "cwd": self.repo, "agent": "claude", "commit": head}})
+        ac.start()
+        self.addCleanup(ac.stop)
+        for _ in range(200):
+            if self.mark(head, ".none") is not None:
+                break
+            time.sleep(0.02)
+        self.assertIn("failed", self.mark(head, ".none") or "")
+        self.assertIsNone(self.mark(head, ".wait"))
+
+    def test_a_service_that_starts_drops_the_waits_of_a_call_that_died(self):
+        os.makedirs(self.store.root)
+        write(os.path.join(self.store.root, "a" * 40 + ".wait"), "calc\tnew\n")
+        ac = self.ac()
+        ac.start()
+        self.addCleanup(ac.stop)
+        self.assertFalse(os.path.exists(os.path.join(self.store.root, "a" * 40 + ".wait")))
+
+    def test_the_repositories_the_user_works_in_are_prepared_when_the_service_starts(self):
+        others = []
+        for n in ("b", "c"):
+            d = os.path.join(self.tmp, n)
+            self.git("init", "-q", "-b", "main", d, cwd=self.tmp)
+            write(os.path.join(d, "README.md"), "# %s\n" % n)
+            self.git("add", "-A", cwd=d)
+            self.git("commit", "-q", "-m", "first", cwd=d)
+            others.append(d)
+        home = os.path.join(self.tmp, "home")
+        now = self.clock()
+        write(os.path.join(home, ".config", "swarmbox", "pins.json"), json.dumps({"pins": [
+            {"agent": "claude", "cwd": others[0], "updated_at": now - 100},
+            {"agent": "claude", "cwd": self.repo, "updated_at": now - 10},
+            {"agent": "", "cwd": others[1], "updated_at": now}]}))
+        write(os.path.join(home, ".local", "state", "swarmbox", "recent-dirs.json"), json.dumps({"dirs": [
+            {"path": others[1], "ts": now - 5}, {"path": os.path.join(self.tmp, "gone"), "ts": now},
+            {"path": self.tmp, "ts": now - digest.PREFETCH_RECENT_S - 1}]}))
+        dirs = digest.known_dirs({"HOME": home}, clock=self.clock)
+        self.assertEqual(dirs, [self.repo, others[0], others[1]], "pins newest first (agents only), then recent folders that exist")
+        ac = self.ac()
+        self.assertEqual(ac.prefetch(dirs, limit=2), 2)
+        self.assertEqual([v[1] for v in ac._queue.values()], ["prefetch", "prefetch"])
+        self.assertEqual(ac.prefetch(dirs, limit=2), 0, "queued already")
+        ac.run_one(self.repo)
+        ac2 = self.ac()
+        self.assertEqual(ac2.prefetch([self.repo]), 0, "a repository whose digest is fresh costs nothing")
+
+    def test_a_session_is_recorded_with_the_exact_text_it_started_with(self):
+        ac = self.ac()
+        ac.run_one(self.repo)
+        head = self.git("rev-parse", "HEAD")
+        given = self.store.file(head)
+        self.assertEqual(ac.handle_event({"body": {"event": "session", "tab": "w1", "cwd": self.repo, "agent": "claude",
+                                                   "commit": head, "context": given}}), "have")
+        meta = json.loads(slurp(os.path.join(self.store.root, "sessions", "w1.json")))
+        self.assertEqual((meta["tab"], meta["agent"], meta["repo"], meta["commit"], meta["context"], meta["base"], meta["changes"]),
+                         ("w1", "claude", "calc", head[:12], True, head[:12], 0))
+        self.assertEqual(slurp(os.path.join(self.store.root, "sessions", "w1.md")), slurp(given))
+        ev = self.events()[-1]
+        self.assertEqual((ev["phase"], ev["tab"], ev["context"], ev["writing"]), ("session", "w1", True, False))
+        self.store.save(head, "rewritten later\n")
+        self.assertNotEqual(slurp(os.path.join(self.store.root, "sessions", "w1.md")), "rewritten later\n",
+                            "a later rewrite does not change what the session got")
+
+    def test_a_session_without_a_file_says_so_and_whether_one_is_being_written_or_the_user_skipped(self):
+        ac = self.ac()
+        ac.handle_event({"body": {"event": "session", "tab": "w1", "cwd": self.repo, "agent": "claude", "context": "", "skipped": True}})
+        meta = json.loads(slurp(os.path.join(self.store.root, "sessions", "w1.json")))
+        self.assertEqual((meta["context"], meta["writing"], meta["skipped"], meta["failed"]), (False, True, True, False))
+        self.assertFalse(os.path.exists(os.path.join(self.store.root, "sessions", "w1.md")))
+        self.assertEqual([(e["phase"], e["context"], e["writing"], e["skipped"]) for e in self.events()], [("session", False, True, True)])
+
+    def test_a_context_file_outside_the_digests_or_a_bad_tab_name_is_not_trusted(self):
+        ac = self.ac()
+        ac.run_one(self.repo)
+        secret = os.path.join(self.tmp, "secret.md")
+        write(secret, "do not copy me\n")
+        ac.handle_event({"body": {"event": "session", "tab": "../w1", "cwd": self.repo, "agent": "claude", "context": secret}})
+        self.assertFalse(os.path.exists(os.path.join(self.store.root, "sessions")), "no tab name: no session file")
+        ac.handle_event({"body": {"event": "session", "tab": "w2", "cwd": self.repo, "agent": "claude", "context": secret}})
+        self.assertFalse(json.loads(slurp(os.path.join(self.store.root, "sessions", "w2.json")))["context"])
+        self.assertFalse(os.path.exists(os.path.join(self.store.root, "sessions", "w2.md")))
+
+    def test_the_worker_writes_the_queued_digest_and_the_panel_sees_why(self):
+        ac = self.ac()
+        ac.handle_event({"body": {"event": "prepare", "tab": "w1", "cwd": self.repo, "agent": "claude"}})
+        ac.start()
+        self.addCleanup(ac.stop)
+        head = self.git("rev-parse", "HEAD")
+        for _ in range(200):
+            if self.store.has(head) and not ac.writing(digest.repo_of(self.repo)["key"]):
+                break
+            threading.Event().wait(0.02)
+        self.assertTrue(self.store.has(head))
+        phases = [(e["phase"], e.get("reason"), e["tab"]) for e in self.events()]
+        self.assertEqual(phases, [("started", "new", "w1"), ("made", "new", "w1")])
+
+    def test_the_service_makes_the_folder_when_it_starts_so_launchers_report_the_first_session(self):
+        self.assertFalse(os.path.isdir(self.store.root))
+        ac = self.ac()
+        ac.start()
+        self.addCleanup(ac.stop)
+        self.assertTrue(os.path.isdir(self.store.root))
+
     def test_the_panel_sees_a_digest_being_written_then_written_with_its_repository_commit_and_tab(self):
-        ac = digest.AutoContext(None, self.paths, generator=self.gen, clock=self.clock)
+        ac = self.ac()
         head = self.git("rev-parse", "HEAD")
         self.assertEqual(ac.run_one(self.repo, "w1", "claude"), "made")
         evs = self.events()
         self.assertEqual([(e["kind"], e["phase"]) for e in evs], [("autocontext", "started"), ("autocontext", "made")])
         for e in evs:
-            self.assertEqual((e["repo"], e["commit"], e["tab"], e["agent"]), ("calc", head[:12], "w1", "claude"))
+            self.assertEqual((e["repo"], e["commit"], e["tab"], e["agent"], e["reason"]), ("calc", head[:12], "w1", "claude", "new"))
+            self.assertEqual(e["top"], digest.repo_of(self.repo)["top"], "Retry now finds the folder of a repository without an index")
         self.assertNotEqual(evs[0]["id"], evs[1]["id"])
         self.assertIn("took", evs[1])
 
     def test_the_panel_sees_a_failed_digest_with_why_and_nothing_while_it_waits_to_try_again(self):
         def bad(prompt):
             raise digest.DigestError("claude exit 1: not logged in")
-        ac = digest.AutoContext(None, self.paths, generator=bad, clock=self.clock)
+        ac = self.ac(bad)
         self.assertEqual(ac.run_one(self.repo, "w1", "claude"), "failed")
         self.assertEqual(ac.run_one(self.repo, "w1", "claude"), "backoff")
+        self.assertFalse(ac.queue(digest.repo_of(self.repo), "new"), "a repository that failed is not queued before its retry")
         evs = self.events()
         self.assertEqual([e["phase"] for e in evs], ["started", "failed"])
         self.assertIn("not logged in", evs[1]["error"])
         self.assertEqual(evs[1]["retry_min"], digest.RETRY_S // 60)
 
-    def test_a_carried_or_present_digest_adds_nothing_to_the_panel(self):
-        ac = digest.AutoContext(None, self.paths, generator=self.gen, clock=self.clock)
+    def test_a_rewrite_asked_for_writes_again_and_the_panel_says_you_asked(self):
+        ac = self.ac()
+        ac.run_one(self.repo)
+        self.assertEqual(ac.run_one(self.repo, "w9", reason="manual"), "made", "a commit that has its file is written again")
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual([(e["phase"], e["reason"], e["tab"]) for e in self.events()][-2:], [("started", "manual", "w9"),
+                                                                                             ("made", "manual", "w9")])
+
+    def test_a_carried_or_present_digest_adds_no_model_call_to_the_panel(self):
+        ac = self.ac()
         ac.run_one(self.repo, "w1", "claude")
         write(os.path.join(self.repo, "y.py"), "y = 1\n")
         self.commit("y")
@@ -282,38 +510,154 @@ class LauncherContractTest(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout.strip()
 
-    def run_claude_on_a_terminal(self, cwd, shell="bash"):
-        """What the launcher writes on its standard error when that is a terminal (a pty), before the agent starts."""
+    # the fake swarmbox-bus: logs each publish (its words, one per line, then a blank line); FAKE_BUS_RC is its exit code; on a `prepare`,
+    # FAKE_BUS_DO=carry writes the file of the commit (what the sysop does), FAKE_BUS_DO=none writes <commit>.none
+    FAKE_BUS = r"""#!/bin/sh
+{ for a in "$@"; do printf '%s\n' "$a"; done; echo; } > "$FAKE_BUS_LOG.$$"
+cat "$FAKE_BUS_LOG.$$" >> "$FAKE_BUS_LOG"; rm -f "$FAKE_BUS_LOG.$$"
+case "$*" in
+    *'"event":"prepare"'*)
+        c=$(printf '%s' "$*" | sed -n 's/.*"commit":"\([0-9a-f]*\)".*/\1/p')
+        d="$SB_STATE_DIR/sysop/digests"
+        case "${FAKE_BUS_DO:-}" in
+            carry) sleep 0.3; echo "carried for $c" > "$d/$c.md" ;;
+            none) echo > "$d/$c.none" ;;
+            wait) printf 'calc\tnew\n' > "$d/$c.wait"; ( sleep 2.5; echo "written for $c" > "$d/$c.md"; rm -f "$d/$c.wait" ) > /dev/null 2>&1 & ;;
+            waitforever) printf 'calc\tnew\n' > "$d/$c.wait" ;;
+        esac ;;
+esac
+exit "${FAKE_BUS_RC:-0}"
+"""
+
+    def run_launcher(self, cwd, extra_env=None, shell="bash"):
+        """claude through the generated function with a fake bus: (what the agent got, the publishes, the seconds it took)."""
         self.run_claude(cwd)        # writes agents.sh and the fake claude
+        write(os.path.join(self.tmp, "bin", "swarmbox-bus"), self.FAKE_BUS)
+        os.chmod(os.path.join(self.tmp, "bin", "swarmbox-bus"), 0o755)
+        log = os.path.join(self.tmp, "bus.log")
+        if os.path.exists(log):
+            os.unlink(log)
+        env = {"PATH": os.path.join(self.tmp, "bin") + ":/usr/bin:/bin", "HOME": self.tmp, "TERM": "dumb",
+               "SB_STATE_DIR": os.path.join(self.tmp, "state"), "FAKE_BUS_LOG": log, "HC_TERMINAL_ID": "t7"}
+        env.update(extra_env or {})
+        t0 = time.monotonic()
+        r = subprocess.run([shell, "-c", ". %s; claude" % os.path.join(self.tmp, "agents.sh")], cwd=cwd, env=env, capture_output=True,
+                           text=True, timeout=30)
+        took = time.monotonic() - t0
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stderr, "", "the launcher writes nothing on the terminal (an agent's screen would hide it)")
+        pubs = []
+        for _ in range(150):        # the `session` publish runs in the background
+            pubs = [p.split("\n") for p in slurp(log).split("\n\n") if p.strip()] if os.path.exists(log) else []
+            if any('"event":"session"' in p[-1] for p in pubs):
+                break
+            time.sleep(0.02)
+        return r.stdout.strip(), [(p[:-1], json.loads(p[-1])) for p in pubs], took
+
+    def run_launcher_on_a_terminal(self, cwd, bus_do, keys_after=None):
+        """claude through the generated function on a pty (stdin and stderr), with a fake bus: (what the agent got, the screen, the
+        publishes). `keys_after` = (seconds, bytes) typed on the terminal."""
+        self.run_launcher(cwd)      # writes agents.sh, the fake claude and the fake bus
+        log = os.path.join(self.tmp, "bus.log")
+        os.unlink(log)
         master, slave = pty.openpty()
         self.addCleanup(os.close, master)
-        env = {"PATH": os.path.join(self.tmp, "bin") + ":/usr/bin:/bin", "HOME": self.tmp, "TERM": "dumb",
-               "SB_STATE_DIR": os.path.join(self.tmp, "state")}
-        try:
-            r = subprocess.run([shell, "-c", ". %s; claude" % os.path.join(self.tmp, "agents.sh")], cwd=cwd, env=env, stdout=subprocess.PIPE,
-                               stderr=slave, stdin=subprocess.DEVNULL, timeout=30)
-        finally:
-            os.close(slave)
-        self.assertEqual(r.returncode, 0)
-        out = b""
+        env = {"PATH": os.path.join(self.tmp, "bin") + ":/usr/bin:/bin", "HOME": self.tmp, "TERM": "dumb", "COLUMNS": "200",
+               "SB_STATE_DIR": os.path.join(self.tmp, "state"), "FAKE_BUS_LOG": log, "FAKE_BUS_DO": bus_do}
+        p = subprocess.Popen(["bash", "-c", ". %s; claude" % os.path.join(self.tmp, "agents.sh")], cwd=cwd, env=env, stdin=slave,
+                             stderr=slave, stdout=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: p.poll() is None and p.kill())
+        os.close(slave)
+        if keys_after:
+            time.sleep(keys_after[0])
+            os.write(master, keys_after[1])
+        out, _ = p.communicate(timeout=40)
+        screen = b""
         while True:
             try:
-                chunk = os.read(master, 4096)
+                chunk = os.read(master, 65536)
             except OSError:
                 break
             if not chunk:
                 break
-            out += chunk
-        return out.decode("utf-8", "replace")
+            screen += chunk
+        pubs = []
+        for _ in range(150):
+            pubs = [x.split("\n") for x in slurp(log).split("\n\n") if x.strip()] if os.path.exists(log) else []
+            if any('"event":"session"' in x[-1] for x in pubs):
+                break
+            time.sleep(0.02)
+        return out.strip(), screen.decode("utf-8", "replace"), [json.loads(x[-1]) for x in pubs]
 
-    def test_a_session_that_gets_the_digest_says_so_on_the_terminal(self):
-        self.assertNotIn("orientation", self.run_claude_on_a_terminal(self.repo), "no digest: no line")
+    def test_the_first_session_in_a_repository_waits_on_screen_for_the_model_and_starts_with_its_file(self):
+        os.makedirs(self.store.root)
+        head = self.git("rev-parse", "HEAD")
+        got, screen, pubs = self.run_launcher_on_a_terminal(self.repo, "wait")
+        self.assertIn("sysop: writing the context of calc (first time) for this session", screen)
+        self.assertIn("Enter starts without it", screen)
+        self.assertTrue(got.endswith("[%s]" % self.store.file(head)), got)
+        self.assertEqual(pubs[-1]["context"], self.store.file(head))
+        self.assertNotIn("skipped", pubs[-1])
+
+    def test_enter_starts_the_agent_at_once_without_the_context(self):
+        os.makedirs(self.store.root)
+        t0 = time.monotonic()
+        got, _, pubs = self.run_launcher_on_a_terminal(self.repo, "waitforever", keys_after=(0.6, b"\r"))
+        self.assertLess(time.monotonic() - t0, 5)
+        self.assertNotIn("--append-system-prompt-file", got)
+        self.assertEqual((pubs[-1]["context"], pubs[-1]["skipped"]), ("", True))
+
+    def test_without_a_terminal_the_launcher_does_not_wait_for_the_model(self):
+        os.makedirs(self.store.root)
+        got, pubs, took = self.run_launcher(self.repo, {"FAKE_BUS_DO": "waitforever"})
+        self.assertLess(took, 1.5)
+        self.assertNotIn("--append-system-prompt-file", got)
+
+    def test_without_the_digests_folder_the_launcher_tells_nobody_and_waits_for_nothing(self):
+        got, pubs, _ = self.run_launcher(self.repo)
+        self.assertEqual(pubs, [])
+        self.assertNotIn("--append-system-prompt-file", got)
+
+    def test_a_session_with_a_digest_is_told_to_the_box_with_its_file_and_tab(self):
         self.refresh()
         head = self.git("rev-parse", "HEAD")
         for sh in SHELLS:
             with self.subTest(shell=sh):
-                said = self.run_claude_on_a_terminal(self.repo, shell=sh)
-                self.assertIn("orientation to calc (commit %s)" % head[:7], said)
+                got, pubs, _ = self.run_launcher(self.repo, shell=sh)
+                self.assertTrue(got.endswith("[--append-system-prompt-file][%s]" % self.store.file(head)), got)
+                self.assertEqual(len(pubs), 1, "the file was there: no prepare")
+                words, body = pubs[0]
+                self.assertEqual(words, ["pub", "--allow-none", "--source", "launcher", "tab.events"])
+                self.assertEqual(body, {"event": "session", "tab": "t7", "cwd": self.repo, "agent": "claude", "commit": head,
+                                        "context": self.store.file(head)})
+
+    def test_a_commit_without_a_file_asks_the_sysop_and_starts_with_the_file_it_carries(self):
+        os.makedirs(self.store.root)
+        head = self.git("rev-parse", "HEAD")
+        got, pubs, _ = self.run_launcher(self.repo, {"FAKE_BUS_DO": "carry"})
+        self.assertEqual([b["event"] for _, b in pubs], ["prepare", "session"])
+        self.assertEqual(pubs[0][0], ["pub", "--source", "launcher", "tab.events"], "a prepare must reach somebody: no --allow-none")
+        self.assertTrue(got.endswith("[%s]" % self.store.file(head)), "it waited for the carried file: %s" % got)
+        self.assertEqual(pubs[1][1]["context"], self.store.file(head))
+
+    def test_the_launcher_stops_waiting_at_the_none_mark_or_when_nobody_listens(self):
+        os.makedirs(self.store.root)
+        for extra in ({"FAKE_BUS_DO": "none"}, {"FAKE_BUS_RC": "3"}):
+            with self.subTest(**extra):
+                got, pubs, took = self.run_launcher(self.repo, extra)
+                self.assertLess(took, 1.5, "no wait of 2 seconds for a file that will not come")
+                self.assertNotIn("--append-system-prompt-file", got)
+                self.assertEqual([b["event"] for _, b in pubs], ["prepare", "session"])
+                self.assertEqual(pubs[1][1]["context"], "", "the session says it started without a file")
+
+    def test_a_folder_name_with_quotes_and_backslashes_stays_valid_json(self):
+        odd = os.path.join(self.tmp, 'we"ird\\repo')
+        shutil.copytree(self.repo, odd, symlinks=True)
+        os.makedirs(self.store.root)
+        for sh in SHELLS:
+            with self.subTest(shell=sh):
+                _, pubs, _ = self.run_launcher(odd, {"FAKE_BUS_DO": "none"}, shell=sh)
+                self.assertEqual(pubs[-1][1]["cwd"], odd)
 
     def test_a_session_on_a_commit_with_a_digest_gets_the_file_the_sysop_wrote(self):
         flag = "[--append-system-prompt-file]"

@@ -1347,6 +1347,12 @@ html.swarmbox-ready #sb-boot {
   white-space: nowrap;
   flex-shrink: 0;
 }
+.agent-card-foot-br {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .agent-wt-sep {
   opacity: 0.45;
   flex-shrink: 0;
@@ -4656,6 +4662,67 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
 @media (prefers-reduced-motion: reduce) {
   .sysop-sysev-ctx.is-started .sysop-sysev-ico { animation: none; }
 }
+.sysop-sysev-sub {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+/* The context mark of an agent card: what its session started with */
+.agent-ctx-chip {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color .12s ease;
+}
+.agent-ctx-chip svg { flex-shrink: 0; width: 10px; height: 10px; color: var(--green); }
+.agent-ctx-chip.is-none { color: var(--text-dim); }
+.agent-ctx-chip.is-compact { margin-right: 6px; vertical-align: -1px; }
+.agent-ctx-chip.is-compact svg { width: 11px; height: 11px; }
+
+/* The context of the active session in the title bar */
+.topbar-ctx-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 7px;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  color: var(--green);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.topbar-ctx-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+.topbar-ctx-btn.is-none { background: rgba(251, 191, 36, 0.08); border-color: rgba(251, 191, 36, 0.32); color: var(--amber); }
+.topbar-ctx-btn:hover { filter: brightness(1.15); }
+.topbar-ctx-btn.hidden { display: none; }
+.topbar-ctx-btn-sm { padding: 3px 6px; }
+.agent-ctx-chip.is-none svg { color: var(--amber); opacity: 0.85; }
+@media (hover: hover) {
+  .agent-ctx-chip:hover { color: var(--accent-bright); }
+  .agent-ctx-chip:hover span { text-decoration: underline; text-underline-offset: 2px; }
+}
+
 
 /* Stage empty state when all sessions are parked or closed */
 .stage-empty {
@@ -4909,4 +4976,159 @@ button, .topbar, .sidebar, .mobile-tabs, .mobile-dock, .sysop-head, .goal-action
 .s-health-ok {
   color: var(--green);
   font-weight: 700;
+}
+
+/* ---- The Sysop panel: Chat | Events ---- */
+.sysop-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  margin-left: auto;
+  margin-right: 8px;
+  border-radius: 8px;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.sysop-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sysop-tab.is-on { background: var(--surface-hover); color: var(--text); font-weight: 600; }
+.sysop-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sysop-tab-badge {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.18);
+  color: var(--amber);
+  font-size: 10px;
+  text-align: center;
+  line-height: 15px;
+}
+.sysop-events {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sysop-ev-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sysop-ev-chip {
+  appearance: none;
+  padding: 3px 9px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.sysop-ev-chip.is-on { border-color: var(--border-strong); background: var(--accent-bg); color: var(--text); }
+.sysop-ev-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.sysop-ev-section {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 8px 2px 2px;
+}
+.sysop-ev-section:first-child { padding-top: 0; }
+.sysop-ev-empty, .sysop-ev-foot {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.5;
+  padding: 18px 8px 4px;
+}
+.sysop-ev-foot { margin-top: auto; padding-top: 14px; }
+.sysop-ev-repos { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-right: auto; }
+.sysop-events .sysop-sysev-meta { flex-wrap: wrap; }
+.sysop-events .sysop-sysev-time { margin-left: auto; }
+
+/* A progress line: the model is writing a context */
+.ctx-progress { height: 2px; background: rgba(203, 166, 247, 0.12); overflow: hidden; border-radius: 1px; }
+.ctx-progress i { display: block; width: 40%; height: 100%; background: var(--accent); animation: sb-ctx-slide 1.6s linear infinite; }
+@keyframes sb-ctx-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+/* The context of a repository, on its header in the sidebar */
+.repo-ctx-pill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  background: rgba(74, 222, 128, 0.08);
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.repo-ctx-pill svg { width: 10px; height: 10px; opacity: 1; }
+.repo-ctx-pill[data-state="writing"] { border-color: rgba(203, 166, 247, 0.45); background: var(--accent-bg); color: var(--accent); }
+.repo-ctx-pill[data-state="writing"] svg { animation: sb-pulse 1.4s ease-in-out infinite; }
+.repo-ctx-pill[data-state="failed"],
+.repo-ctx-pill[data-state="stuck"] { border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.08); color: var(--amber); }
+.repo-ctx-pill:hover { filter: brightness(1.15); }
+
+/* An agent card whose launcher waits for the first context */
+.agent-state-box.is-ctx-wait { border-color: var(--accent); color: var(--accent); }
+.agent-card-msg.is-ctx-wait { color: var(--accent); display: flex; align-items: center; gap: 5px; }
+.agent-card-msg.is-ctx-wait svg { flex-shrink: 0; width: 11px; height: 11px; animation: sb-pulse 1.4s ease-in-out infinite; }
+.agent-card > .ctx-progress { margin: 0 10px; }
+.agent-ctx-chip.is-wait, .topbar-ctx-btn.is-wait { color: var(--accent); }
+.agent-ctx-chip.is-wait svg, .topbar-ctx-btn.is-wait svg { animation: sb-pulse 1.4s ease-in-out infinite; }
+.topbar-ctx-btn.is-wait { background: var(--accent-bg); border-color: rgba(203, 166, 247, 0.4); }
+
+/* The context cards (popovers) of a session and of a repository */
+.ctx-pop-title { display: inline-flex; align-items: center; gap: 7px; }
+.ctx-pop-title svg { width: 13px; height: 13px; flex-shrink: 0; }
+.ctx-pop-head.is-ok .ctx-pop-title svg { color: var(--green); }
+.ctx-pop-head.is-warn .ctx-pop-title svg { color: var(--amber); }
+.ctx-pop-head.is-wait .ctx-pop-title svg { color: var(--accent); animation: sb-pulse 1.4s ease-in-out infinite; }
+.ctx-kv {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.ctx-kv-k { color: var(--text-dim); }
+.ctx-kv-v { color: var(--text); word-break: break-word; }
+.ctx-pop-acts { display: flex; flex-direction: column; gap: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  .ctx-progress i, .repo-ctx-pill svg, .agent-card-msg.is-ctx-wait svg, .agent-ctx-chip.is-wait svg, .topbar-ctx-btn.is-wait svg,
+  .ctx-pop-head.is-wait .ctx-pop-title svg { animation: none; }
 }

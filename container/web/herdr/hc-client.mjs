@@ -816,6 +816,136 @@ export function startNewConversation(now = Date.now() / 1000) {
   return now;
 }
 
+// ---------------------------------------------------------------------------
+// Repository context (sysop.autocontext): what each agent session started with
+// ---------------------------------------------------------------------------
+const CTX_TAB_RE = /^[A-Za-z0-9_.:@-]{1,64}$/;
+const CTX_KEY_RE = /^[0-9a-f]{16}$/;
+const CTX_STALE_START_MS = 5 * 60 * 1000;
+
+function contextDir(stateSysop = path.join(SB_STATE_DIR, 'sysop')) {
+  return path.join(stateSysop, 'digests');
+}
+
+function num(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// The repositories with a digest (repos/<key>.json) and, from the feed, whether a model call runs or failed for each;
+// the sessions of the live tabs (sessions/<tab>.json).
+export function readContextState(stateSysop, terminals, status = null) {
+  const dir = contextDir(stateSysop);
+  const settings = status && status.settings && typeof status.settings === 'object' ? status.settings : {};
+  const on = settings.autocontext === undefined ? fs.existsSync(dir) : Boolean(settings.autocontext);
+  const calls = new Map();
+  for (const ev of readJsonlSafe(path.join(stateSysop, 'system_events.jsonl'), 200)) {
+    if (!ev || ev.kind !== 'autocontext' || !CTX_KEY_RE.test(String(ev.key || ''))) continue;
+    if (ev.phase === 'started' || ev.phase === 'made' || ev.phase === 'failed') {
+      calls.set(String(ev.key), {
+        phase: String(ev.phase), ts: num(ev.ts) * 1000, reason: String(ev.reason || ''), error: String(ev.error || ''),
+        retry_min: num(ev.retry_min) || null, tab: String(ev.tab || ''), repo: String(ev.repo || ''), commit: String(ev.commit || ''),
+        top: String(ev.top || ''),
+      });
+    }
+  }
+  const repos = [];
+  const seen = new Set();
+  let names = [];
+  try { names = fs.readdirSync(path.join(dir, 'repos')); } catch (_) {}
+  for (const n of names) {
+    if (!n.endsWith('.json')) continue;
+    const key = n.slice(0, -5);
+    if (!CTX_KEY_RE.test(key)) continue;
+    const idx = readJsonSafe(path.join(dir, 'repos', n));
+    if (!idx || typeof idx !== 'object') continue;
+    seen.add(key);
+    repos.push({
+      key,
+      repo: String(idx.repo || 'repo'),
+      top: String(idx.top || ''),
+      base: String(idx.base || '').slice(0, 12),
+      at: num(idx.at) * 1000,
+      call: calls.get(key) || null,
+    });
+  }
+  // a repository whose first digest is being written (or failed) has no index yet
+  for (const [key, call] of calls) {
+    if (seen.has(key)) continue;
+    repos.push({ key, repo: call.repo || 'repo', top: call.top || '', base: '', at: 0, call });
+  }
+  const now = Date.now();
+  for (const r of repos) {
+    const c = r.call;
+    r.state = !c ? 'ready'
+      : c.phase === 'started' ? (now - c.ts > CTX_STALE_START_MS ? 'stuck' : 'writing')
+      : c.phase === 'failed' ? (r.at > c.ts ? 'ready' : 'failed')
+      : 'ready';
+  }
+  repos.sort((a, b) => Math.max(b.at, b.call ? b.call.ts : 0) - Math.max(a.at, a.call ? a.call.ts : 0));
+
+  const sessions = {};
+  const live = new Set((terminals || []).map((t) => t && t.address).filter(Boolean));
+  for (const tab of live) {
+    if (!CTX_TAB_RE.test(tab)) continue;
+    const m = readJsonSafe(path.join(dir, 'sessions', `${tab}.json`));
+    if (!m || typeof m !== 'object') continue;
+    sessions[tab] = {
+      tab,
+      agent: String(m.agent || ''),
+      cwd: String(m.cwd || ''),
+      repo: String(m.repo || ''),
+      key: String(m.key || ''),
+      commit: String(m.commit || ''),
+      context: Boolean(m.context),
+      base: String(m.base || ''),
+      base_at: num(m.base_at) * 1000,
+      changes: num(m.changes),
+      skipped: Boolean(m.skipped),
+      failed: Boolean(m.failed),
+      waiting: Boolean(m.waiting),
+      at: num(m.at) * 1000,
+    };
+  }
+  return { on, repos: repos.slice(0, 12), sessions };
+}
+
+// The text a session started with (sessions/<tab>.md) or the current digest of a repository (repos/<key>.md), with what the panel shows of it.
+export function readContextText({ tab = '', key = '' } = {}) {
+  const dir = contextDir();
+  if (tab) {
+    if (!CTX_TAB_RE.test(tab)) return null;
+    const meta = readJsonSafe(path.join(dir, 'sessions', `${tab}.json`));
+    if (!meta) return null;
+    let text = null;
+    try { text = fs.readFileSync(path.join(dir, 'sessions', `${tab}.md`), 'utf8'); } catch (_) {}
+    return { kind: 'session', meta, text };
+  }
+  if (key) {
+    if (!CTX_KEY_RE.test(key)) return null;
+    const meta = readJsonSafe(path.join(dir, 'repos', `${key}.json`));
+    if (!meta) return null;
+    let text = null;
+    try { text = fs.readFileSync(path.join(dir, 'repos', `${key}.md`), 'utf8'); } catch (_) {}
+    return { kind: 'repo', meta, text };
+  }
+  return null;
+}
+
+// The top folder of a repository with a digest (for Rewrite): only one the sysop itself recorded.
+export function contextRepoTop(key) {
+  if (!CTX_KEY_RE.test(String(key || ''))) return '';
+  const idx = readJsonSafe(path.join(contextDir(), 'repos', `${key}.json`));
+  let top = idx && typeof idx.top === 'string' ? idx.top : '';
+  if (!top) {
+    // a repository whose first digest failed has no index yet: the folder its last event names
+    for (const ev of readJsonlSafe(path.join(SB_STATE_DIR, 'sysop', 'system_events.jsonl'), 200).reverse()) {
+      if (ev && ev.kind === 'autocontext' && ev.key === key && typeof ev.top === 'string' && ev.top) { top = ev.top; break; }
+    }
+  }
+  return top && path.isAbsolute(top) && fs.existsSync(top) ? top : '';
+}
+
 export function readSysopSnapshot(terminals) {
   const runSysop = path.join(SB_RUN_DIR, 'sysop');
   const stateSysop = path.join(SB_STATE_DIR, 'sysop');
@@ -932,14 +1062,14 @@ export function readSysopSnapshot(terminals) {
   // System events (automatic tab renames, repository digests by Sysop) shown inline in the visual feed
   // without consuming the 8-goal user conversation memory window in history.py.
   const systemEvents = [];
+  const allEvents = [];
   if (up) {
-    const rawEv = readJsonlSafe(path.join(stateSysop, 'system_events.jsonl'), 60);
+    const rawEv = readJsonlSafe(path.join(stateSysop, 'system_events.jsonl'), 200);
     for (const ev of rawEv) {
       const ts = Number(ev && ev.ts ? ev.ts : 0);
       if (ts > 0 && (nowSec - ts) > maxAgeSec) continue;
-      if (sinceSec && ts > 0 && ts < sinceSec) continue;
       if (ev && ev.kind) {
-        systemEvents.push({
+        const row = {
           id: String(ev.id || `ev-${Math.round(ts * 1000)}`),
           kind: String(ev.kind),
           ts: ts * 1000,
@@ -956,7 +1086,18 @@ export function readSysopSnapshot(terminals) {
           took: Number.isFinite(Number(ev.took)) ? Number(ev.took) : null,
           error: String(ev.error || ''),
           retry_min: Number.isFinite(Number(ev.retry_min)) ? Number(ev.retry_min) : null,
-        });
+          reason: String(ev.reason || ''),
+          // session: an agent session started in a repository, with the orientation or without it
+          context: Boolean(ev.context),
+          base: String(ev.base || ''),
+          base_at: Number.isFinite(Number(ev.base_at)) ? Number(ev.base_at) * 1000 : 0,
+          changes: Number.isFinite(Number(ev.changes)) ? Number(ev.changes) : 0,
+          writing: Boolean(ev.writing),
+          skipped: Boolean(ev.skipped),
+          failed: Boolean(ev.failed),
+        };
+        allEvents.push(row);
+        if (!(sinceSec && ts > 0 && ts < sinceSec)) systemEvents.push(row);
       }
     }
   }
@@ -981,6 +1122,9 @@ export function readSysopSnapshot(terminals) {
     queue_len: queue.length,
     turns,
     system_events: systemEvents.slice(-30),
+    // the Events tab: what the sysop did by itself, not cut by New conversation (session records are for the cards)
+    events: allEvents.filter((e) => !(e.kind === 'autocontext' && e.phase === 'session')).slice(-40),
+    context: up ? readContextState(stateSysop, terminals, status) : null,
     steps: steps.slice(-40),
     blocked,
     settings: up && status.settings && typeof status.settings === 'object' ? status.settings : {},
@@ -988,10 +1132,14 @@ export function readSysopSnapshot(terminals) {
 }
 
 export function runCommand(bin, args, stdinText = null, timeoutMs = 15000) {
+  return runCommandEnv(bin, args, process.env, timeoutMs, stdinText);
+}
+
+export function runCommandEnv(bin, args, env, timeoutMs = 15000, stdinText = null) {
   return new Promise((resolve) => {
     const p = spawn(bin, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
+      env,
     });
     let out = '';
     let err = '';

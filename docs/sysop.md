@@ -167,28 +167,47 @@ spends its first minute reading files that another session of the box already re
 writes a short orientation of the repository, a **digest**, and the agent starts with it in its system prompt:
 
 ```
-tab.events (an agent works in a repository) -> sysop: <state>/sysop/digests/<commit>.md, in the background
-the agent's launcher (every start: New agent, a pin, a worktree, typing claude) -> the file of the current commit exists? its CONTEXT_ARGS : nothing
+sysop (starts)  -> makes <state>/sysop/digests/ (the launchers know that autocontext is on) and prepares the repositories you use
+agent launcher  -> the file of HEAD exists? no: publish `prepare` on tab.events
+sysop           -> carries the repository's digest to HEAD at once (no model call); the first time in a repository: <commit>.wait and a
+                   model call, then the file (or <commit>.none with why)
+agent launcher  -> waits for the file: instant for a carry; the first time it says so on the terminal (about 10 s, Enter skips, 30 s
+                   at most); the agent starts with CONTEXT_ARGS (file) or without; publish `session` (which file, or none, skipped)
+sysop           -> records the session (sessions/<tab>: the exact text) and a `session` line in the panel
 ```
 
 - **What it is.** One call of the `DIGEST` an agent declares (Claude Code's: `claude -p` on haiku, no tools, no MCP, no settings) over the
   repository's file list, its top-level docs (README, CLAUDE.md, AGENTS.md, CONTRIBUTING), its manifests (`package.json`, `pyproject.toml`,
   `Makefile`, ...) and its last 15 commits: purpose, stack, layout, commands and conventions in at most 60 lines, under a header that says
-  when it was written and that it can be out of date. Nothing of the working tree that is not committed or listed is read.
-- **When it is written.** The first time an agent tab works in a repository whose commit has no digest. The worktrees of a repository
-  share it. A new commit carries the digest forward with the list of files changed since it (no model call); it is written again when it is
-  older than 6 hours or more than 40 files changed. A failed call (no login) is tried again after 10 minutes. `swarmbox-sysop context [DIR]`
-  writes it now and prints the file.
-- **What you see.** What the sysop does by itself is in its panel, beside the renames of the tab naming: a row *Writing an orientation of
-  REPO…* with the tab whose agent caused it while the model call runs, then *Wrote an orientation of REPO* (and how long it took) or
-  *Could not write the orientation of REPO* with the reason and when it tries again (`autocontext` events in `system_events.jsonl`). A
-  carry-forward to a new commit makes no call and shows nothing; every outcome is also a line `autocontext ...` in `serve.log`. A session
-  that starts with the digest says so in one dim line above the agent's screen (`swarmbox: this session starts with the sysop's
-  orientation to REPO (commit abc1234)`).
+  when and at which commit it was written and, when it was carried forward, at which commit the session starts and how many files changed
+  since (listed at the end, at most 60). Nothing of the working tree that is not committed or listed is read.
+- **When it is written.** When the service starts (a box start or reset), for the repositories you use: your agent pins, then the folders
+  of the last 14 days (`recent-dirs.json`), 5 at most, the ones that need one (a few haiku calls). Else the first time a session starts in
+  a repository: its launcher waits for the model, about 10 s, with a line on the terminal (*sysop: writing the context of REPO (first
+  time) for this session, 4s - Enter starts without it*); Enter starts the agent at once without it, a failed call starts it at once, and
+  it never waits more than 30 s. Without a terminal (a script) it does not wait. The worktrees of a repository share it. A new
+  commit gets the digest carried forward at once, with the list of files changed since, so a session never waits for the model; it is
+  written again in the background when it is older than 6 hours, or when more than 40 files or a top-level doc or manifest changed and it is
+  older than 30 minutes. A failed call (no login) is tried again after 10 minutes. `swarmbox-sysop context [DIR] [--force]` writes it now.
+- **What you see.** In the Web Studio, the state is where the thing is, and the Sysop panel keeps what the sysop did by itself apart
+  from your conversation:
+  - **the repository header** in the sidebar has a pill: its age (`5m`, green) when the context is ready, *writing* (pulsing) while the
+    model writes it, *failed* or *no answer* (amber). A click opens its card: when and at which commit it was written, why, how many open
+    sessions have it, **View**, **Rewrite** (or **Retry now**), **Events**;
+  - **the agent card** says what its session started with: *STARTING · preparing context · 6s* while its launcher waits for the first
+    context of the repository, then a small book beside Alt+N (green: with it; amber: without). The active tab's title bar has the
+    same mark with words (**context** / **no context** / *preparing context…*). A click opens the session's card: why, at which commit,
+    when the context was written and the files changed since, **See what it got** (the exact text, Rendered / Raw), **Rewrite**;
+  - **the Sysop panel** has two tabs: **Chat** (you and the sysop) and **Events** (what it did by itself: the context it writes, with
+    why, how long it took, or why it failed and **Retry now**; the repositories it prepared when the box started, in one row; the tab
+    names it gave). *Now* holds a call that runs and a failure the repository still has; the Events tab counts those failures. Filters:
+    All, Context, Tab names, and one repository (from a card's **Events**). No row per session: the card shows it. New conversation
+    clears the chat, not the events. Every outcome is also a line `autocontext ...` in `serve.log`.
 - **How the agent gets it.** The shell function of the agent passes `CONTEXT_ARGS` (Claude Code: `--append-system-prompt-file FILE`) when a
-  session (not a one-shot `-p`) starts on a commit that has a digest. A resumed conversation keeps the system prompt it started with.
+  session (not a one-shot `-p`) starts on a commit that has a digest. The agent's system prompt is fixed when it starts: a digest written
+  later reaches the next session, not this one. It writes nothing on the terminal (an agent's screen would cover it at once).
 - **Off.** `swarmbox config set sysop.autocontext 0` and `swarmbox reset` (or the toggle in **Settings → Sysop**): the sysop writes none and
-  removes the folder when it starts, so no agent gets an old one. A digest is only used for its own commit, so after `swarmbox addon remove
+  removes the folder when it starts, so no agent gets an old one and the marks are gone. A digest is only used for its own commit, so after `swarmbox addon remove
   sysop` the next commit has none.
 - **Agents.** Only Claude Code declares `CONTEXT_ARGS` and `DIGEST` today; another agent starts as before.
 

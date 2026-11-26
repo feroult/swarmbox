@@ -13,7 +13,8 @@
   swarmbox-sysop stop [GOAL_ID]                the stop key: ends the running goal (and drops the queue), or just GOAL_ID
   swarmbox-sysop mcp                           the MCP server of a goal (the brain's MCP config runs this; SWARMBOX_SYSOP_CONTEXT names the goal)
   swarmbox-sysop context [DIR] [--force]       write the repository digest of the commit of DIR (default: here) now, and print its file
-                                               (what the service does by itself with sysop.autocontext 1; --force makes it again)
+                                               (what the service does by itself with sysop.autocontext 1; --force makes it again, as the
+                                               Rewrite button of the Web Studio does; the panel shows the call)
   swarmbox-sysop agent                         interactive OSC 7501 agent bridge for herdr-core / herdr-app (hidden from normal tabs)
   swarmbox-sysop --self-test                   checks the install without a model
 
@@ -124,7 +125,7 @@ def cmd_serve(args):
         if digest.purge(pth):
             svc.log("autocontext is off: removed the repository digests")
     elif args.dock:
-        context = digest.AutoContext(svc.bus, pth, log=svc.log)
+        context = digest.AutoContext(svc.bus, pth, log=svc.log, prefetch_dirs=digest.known_dirs)
         context.start()
     for sg in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sg, lambda *_: svc.shutdown())
@@ -282,13 +283,17 @@ def cmd_context(args):
     if repo is None:
         print("swarmbox-sysop: %s is not in a Git repository with a commit" % args.dir, file=sys.stderr)
         return 1
-    store = digest.Store(digest.digests_dir(pth.make()))
-    try:
-        what = digest.refresh(repo, store, force=args.force)
-    except (digest.DigestError, OSError) as e:
-        print("swarmbox-sysop: the digest of %s failed: %s" % (repo["name"], e), file=sys.stderr)
+    ac = digest.AutoContext(None, pth.make())
+    tab = args.tab or os.environ.get("SWARMBOX_SYSOP_CONTEXT_TAB", "")     # the Web Studio's Rewrite names the tab that asked
+    what = ac.run_one(repo["top"], tab=tab if digest.TAB_RE.match(tab or "") else "", reason="manual" if args.force else None)
+    if what in ("failed", "backoff"):
+        print("swarmbox-sysop: the digest of %s failed (%s)" % (repo["name"], "tried again later" if what == "backoff" else
+                                                               "see the sysop panel or serve.log"), file=sys.stderr)
         return 1
-    print(store.file(repo["head"]))
+    if not ac.store.has(repo["head"]):
+        print("swarmbox-sysop: no digest of %s" % repo["name"], file=sys.stderr)
+        return 1
+    print(ac.store.file(repo["head"]))
     if what != "have":
         print("swarmbox-sysop: %s the digest of %s at %s" % ({"made": "wrote", "carried": "carried forward"}.get(what, what), repo["name"],
                                                              repo["head"][:12]), file=sys.stderr)
@@ -347,6 +352,7 @@ def main(argv=None):
     c = sub.add_parser("context")
     c.add_argument("dir", nargs="?", default=".")
     c.add_argument("--force", action="store_true")
+    c.add_argument("--tab", default="", help=argparse.SUPPRESS)
     c.set_defaults(fn=cmd_context)
     sub.add_parser("agent").set_defaults(fn=_cmd_agent)
     args = ap.parse_args(sys.argv[1:] if argv is None else list(argv))

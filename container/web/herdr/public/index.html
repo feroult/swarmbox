@@ -123,6 +123,7 @@
           <span class="term-ctx-icon" id="term-ctx-icon" aria-hidden="true"></span>
           <span class="term-ctx-title" id="term-ctx-title">—</span>
           <button type="button" class="topbar-wt-btn hidden" id="topbar-wt-btn" title="Worktree status &amp; merge"></button>
+          <button type="button" class="topbar-ctx-btn hidden" id="topbar-ctx-btn"></button>
           <span class="term-ctx-sep" aria-hidden="true">·</span>
           <span class="term-ctx-sub" id="active-status">idle</span>
           <span class="term-ctx-state" id="term-ctx-state" data-state="idle">IDLE</span>
@@ -133,6 +134,7 @@
           <span class="active-name" id="active-name">—</span>
           <span class="tab-agent-tag hidden" id="active-agent"></span>
           <button type="button" class="topbar-wt-btn topbar-wt-btn-sm hidden" id="mobile-wt-btn" title="Worktree status &amp; merge"></button>
+          <button type="button" class="topbar-ctx-btn topbar-ctx-btn-sm hidden" id="mobile-ctx-btn"></button>
         </div>
       </div>
 
@@ -268,6 +270,10 @@
         <span class="sysop-word">SYSOP</span>
         <span class="sysop-state-pill" id="sysop-state">idle</span>
       </div>
+      <div class="sysop-tabs" role="tablist" aria-label="Sysop views">
+        <button type="button" class="sysop-tab is-on" id="sysop-tab-chat" role="tab" aria-selected="true" aria-controls="sysop-feed">Chat</button>
+        <button type="button" class="sysop-tab" id="sysop-tab-events" role="tab" aria-selected="false" aria-controls="sysop-events" title="What the Sysop did by itself: repository context, tab names">Events<span class="sysop-tab-badge hidden" id="sysop-events-badge"></span></button>
+      </div>
       <div class="sysop-head-actions">
         <button type="button" class="sysop-new-btn hidden" id="btn-sysop-new" title="Start a new conversation: Sysop forgets the goals before it" aria-label="New conversation"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New</button>
         <button class="icon-btn hidden" id="btn-sysop-stop" title="Stop running goal" aria-label="Stop running goal">
@@ -299,7 +305,8 @@
     <div class="voice-note hidden" id="voice-note" role="status"></div>
 
     <!-- Activity Feed -->
-    <div class="sysop-feed" id="sysop-feed"></div>
+    <div class="sysop-feed" id="sysop-feed" role="tabpanel" aria-labelledby="sysop-tab-chat"></div>
+    <div class="sysop-events hidden" id="sysop-events" role="tabpanel" aria-labelledby="sysop-tab-events"></div>
 
     <!-- Goal Composer (Desktop: classic box; Mobile: full-bottom WhatsApp pill + 48x48 mic/send + sinusoidal voice bar) -->
     <div class="sysop-composer" id="sysop-composer" data-ready="0">

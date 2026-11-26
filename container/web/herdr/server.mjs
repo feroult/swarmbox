@@ -27,6 +27,7 @@ import {
   buildAgentArgv,
   buildPinsSnapshot,
   cleanSessionTitle,
+  contextRepoTop,
   defaultTitleForPath,
   detectLiveAgent,
   detectTerminalAgent,
@@ -39,6 +40,7 @@ import {
   publishTabEvent,
   readActiveTab,
   readBoxConfigSnapshot,
+  readContextText,
   readPins,
   readRecentDirs,
   readSavedTheme,
@@ -46,6 +48,7 @@ import {
   readSysopSnapshot,
   readWorktreePrefs,
   runCommand,
+  runCommandEnv,
   runWorktreeCmd,
   saveTheme,
   startNewConversation,
@@ -2525,6 +2528,25 @@ export function createGateway(options = {}) {
         broadcast(buildSnapshot({ type: 'sysop' }));
         if (!r.ok) return sendJson(res, 409, { error: 'veto_failed', message: r.stderr || r.stdout || 'nothing waiting' });
         return sendJson(res, 200, { ok: true, message: r.stdout || 'cancelled' });
+      }
+
+      // Repository context (sysop.autocontext): the text a session started with, or the current digest of a repository
+      if (pathname === '/api/sysop/context' && req.method === 'GET') {
+        const got = readContextText({ tab: url.searchParams.get('tab') || '', key: url.searchParams.get('key') || '' });
+        if (!got) return sendJson(res, 404, { error: 'no_context', message: 'no repository context for that' });
+        return sendJson(res, 200, { ok: true, ...got });
+      }
+
+      // Rewrite: the sysop writes the digest of the repository again now (the panel shows the call)
+      if (pathname === '/api/sysop/context/rewrite' && req.method === 'POST') {
+        const body = await readBody(req);
+        const top = contextRepoTop(String(body.key || ''));
+        if (!top) return sendJson(res, 404, { error: 'no_repo', message: 'no repository with that digest' });
+        // the tab that asked rides in the environment: an older sysop ignores it instead of refusing an unknown option
+        const tab = String(body.tab || '');
+        const env = { ...process.env, SWARMBOX_SYSOP_CONTEXT_TAB: /^[A-Za-z0-9_.:@-]{1,64}$/.test(tab) ? tab : '' };
+        runCommandEnv(SYSOP_BIN, ['context', '--force', top], env, 180000).then(() => broadcast(buildSnapshot({ type: 'sysop' })));
+        return sendJson(res, 202, { ok: true });
       }
 
       if (pathname === '/api/sysop/new' && req.method === 'POST') {
