@@ -335,6 +335,14 @@ class Typing(Rig):
         self.assertTrue(t.startswith("sent. screen now:"))
         self.assertIn("$ make test\nok", t)
 
+    def test_a_send_the_agent_did_not_show_it_took_says_so_before_the_screen(self):
+        self.tabs.send_extra = {"verified": False}
+        t = self.ok("run", tab="@2", command="fix the build")
+        self.assertTrue(t.startswith("note: the agent did not show that it took the text"), t[:80])
+        self.assertIn("sent. screen now:", t)
+        self.tabs.send_extra = {"verified": True}
+        self.assertTrue(self.ok("run", tab="@2", command="again").startswith("sent. screen now:"))
+
     def test_the_default_tab_is_the_active_one_and_the_address_is_canonical(self):
         self.ok("run", command="ls")
         self.ok("run", tab="1:agent", command="hello")

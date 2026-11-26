@@ -15,7 +15,7 @@ a command line and, at the same time, the library the addons can import by path.
   swarmbox-tabs focus TAB                                make TAB the active tab
   swarmbox-tabs close TAB                                end the program of TAB and remove the tab
 
-Output: JSON on stdout, always. Success: the object or list above; send answers {"ok":true,"tab":"t3","pane":"t3","submitted":BOOL}. A
+Output: JSON on stdout, always. Success: the object or list above; send answers {"ok":true,"tab":"t3","pane":"t3","submitted":BOOL}, plus "verified":BOOL after a text submitted to an agent. A
 failure is {"err":CODE,"msg":TEXT} (also on stdout, so a program has one place to read) and a non-zero exit.
 Exit codes: 0 ok; 1 the call was understood and refused or failed: no_such_tab ambiguous_tab dialog_open busy_tab slash_refused
 not_submitted backend_error lock_error unsupported; 2 usage or a text that cannot be typed (usage, bad_body); 4 herdr-core is not there:
@@ -45,7 +45,8 @@ to interrupt"; or the command is a known agent) and the message submits text (te
 busy agent is refused unless --queue, a text that starts with "/" or "!" is refused unless --slash (it would open a menu or run a shell
 command; every text that is submitted is checked, not only the first, and a body that submits more than one text to an agent needs
 --queue, because the agent is busy after the first), and after the Enter the call checks that the end of the text left the input box,
-pressing Enter once more only when it did not (not_submitted when it still did not).
+pressing Enter once more only when it did not (not_submitted when it still did not). An agent whose input box cannot be read is checked by
+the state it reports turning busy or to a dialog; "verified": false when nothing showed the submission (no second Enter then).
 Plain --input (keys, or text without Enter) is not judged: it is how a dialog is answered and a busy agent interrupted.
 
 The lock.  A send holds an flock on <run folder>/tabs/tab-<address>.lock for as long as it types (the kernel drops it however the process
@@ -1285,7 +1286,8 @@ class Tabs:
         return steps, has_text and any(k == "key" and v == "Enter" for k, v in steps), bool(body.get("queue")), bool(body.get("slash"))
 
     def send(self, tab, run=None, input=None, queue=False, slash=False):
-        """type into a tab: run=TEXT (TEXT and Enter) or input=TEXT (braces keys); returns {"ok", "tab", "pane", "submitted"}"""
+        """type into a tab: run=TEXT (TEXT and Enter) or input=TEXT (braces keys); returns {"ok", "tab", "pane", "submitted"}, and "verified"
+        after a text submitted to an agent"""
         body = {k: v for k, v in (("run", run), ("input", input)) if v is not None}
         if queue:
             body["queue"] = True
@@ -1325,6 +1327,7 @@ class Tabs:
                     if not slash and any(steps[i][1][:1] in ("/", "!") for i in submitted):
                         raise TabsError("slash_refused", 'text that starts with "/" or "!" is a command for the agent, not a prompt; nothing was typed (--slash allows it)')
             last_enter = max(i for i, (k, v) in enumerate(steps) if k == "key" and v == "Enter") if submit else -1
+            verified = None
             for i, (kind, val) in enumerate(steps):
                 if i and self.pause:
                     time.sleep(self.pause)
@@ -1333,8 +1336,11 @@ class Tabs:
                 else:
                     self.backend.send_key(t, val)
                 if agent and i == last_enter:
-                    self._verify(t, steps, i)
-        return {"ok": True, "tab": t.id, "pane": t.pane, "submitted": submit}
+                    verified = self._verify(t, steps, i)
+        out = {"ok": True, "tab": t.id, "pane": t.pane, "submitted": submit}
+        if verified is not None:
+            out["verified"] = verified
+        return out
 
     @staticmethod
     def _submitted(steps):
@@ -1361,10 +1367,22 @@ class Tabs:
 
     def _verify(self, t, steps, enter_index):
         """After the Enter: wait until the text left the input box (or the agent is busy or showing a dialog). If it did not within
-        VERIFY_TIMEOUT, press Enter once more, only when the text is still in the box (an Enter on an empty box could accept a suggestion)."""
+        VERIFY_TIMEOUT, press Enter once more, only when the text is still in the box (an Enter on an empty box could accept a suggestion).
+        True when the submission was seen. An agent whose input box cannot be read (only Claude Code's is known) is seen by the state it
+        reports (OSC 7501) turning busy or to a dialog; when it does not within VERIFY_TIMEOUT, False: unverified, never a second Enter,
+        because nothing says the text is still there."""
         tail = self._tail(steps, enter_index)
         if not tail:
-            return
+            return True
+        if input_box(self._plain_rows(t), lenient=True) is None:
+            end = time.monotonic() + self.verify_timeout
+            while True:
+                native = self.backend.tab_state(t)
+                if native is not None and native[1] in ("busy", "dialog"):
+                    return True
+                if time.monotonic() >= end:
+                    return False
+                time.sleep(0.1)
 
         def left_in_box():
             native = self.backend.tab_state(t)
@@ -1378,7 +1396,7 @@ class Tabs:
             end = time.monotonic() + self.verify_timeout
             while True:
                 if not left_in_box():
-                    return
+                    return True
                 if time.monotonic() >= end:
                     break
                 time.sleep(0.1)

@@ -4,7 +4,7 @@
   box_state(section)           -> {"schema": 1, "active", "repos": [...], "shells": [...], "parked": [...], ...}
   list_tabs()                  -> [{"tab": "t3", "label": "1:api", "index", "name", "dir", "cmd", "pane", "panes", "active"}]
   screen(tab, lines=None)      -> {"tab", "pane", "text", "cursor", "alternate", "in_mode", "mode", "size", "lines"}
-  send(tab, run=T | input=T)   -> {"ok": true, "tab", "pane", "submitted"}
+  send(tab, run=T | input=T)   -> {"ok": true, "tab", "pane", "submitted"} (+ "verified" for a text submitted to an agent)
   open_tab(...) / focus_tab / rename_tab / close_tab / wake_pin / worktree
 
 A failure is TabsError(code, msg), with the command's {"err", "msg"} or tabs_unavailable / tabs_timeout / tabs_protocol.

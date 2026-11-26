@@ -58,6 +58,9 @@ HINTS = {
     "lock_error": "another action is typing in the tab: try again",
     "not_submitted": "the text may still be in the input box of the tab: read the tab before doing anything else",
 }
+# a send to an agent whose input box cannot be read and that did not report that it started working (swarmbox-tabs "verified": false)
+UNVERIFIED_NOTE = ("note: the agent did not show that it took the text (it may still be in its input box, or it answered at once): "
+                   "read the screen below before sending it again.\n")
 # errors of swarmbox-tabs after which nothing was typed (the buffer of the policy stays as it was); any other error may have typed part of the text
 NOT_TYPED = ("dialog_open", "busy_tab", "slash_refused", "no_such_tab", "ambiguous_tab", "bad_body", "usage", "tabs_unavailable",
              "no_session", "no_backend", "lock_error")
@@ -387,12 +390,14 @@ class Server:
                 raise ToolError("error: the screen of the tab changed while the action waited (%s), so it was not sent. Nothing was typed. "
                                 "Read the tab again and decide." % "; ".join(now.reasons[:2]))
         try:
-            self.tabs.send(tab["tab"], **{kind: text})
+            sent = self.tabs.send(tab["tab"], **{kind: text})
         except tabsclient.TabsError as e:
             if e.code not in NOT_TYPED:         # it may have typed part of the text: the memory of the line is unreliable (a refusal typed nothing: it stays as it was)
                 self.policy.commit(tab, kind, text, typed=False)
             raise ToolError(self.tabs_text(e))
         self.policy.commit(tab, kind, text)
+        if isinstance(sent, dict) and sent.get("verified") is False:
+            return UNVERIFIED_NOTE + self.settled(tab)
         return self.settled(tab)
 
     # ---- the tools

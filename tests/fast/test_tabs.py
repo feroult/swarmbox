@@ -315,7 +315,7 @@ class TestSend(Base):
 
     def test_agent_prompt_is_submitted_and_checked(self):
         d = self.ft.driver()
-        d.send_body("t2", {"run": "reply with exactly PONG"})
+        self.assertIs(d.send_body("t2", {"run": "reply with exactly PONG"})["verified"], True)
         self.assertEqual(self.typed("t2"), ["reply with exactly PONG", "<enter>"])
         c = self.ft.t("t2")["claude"]
         self.assertEqual(c["box"], "")
@@ -653,6 +653,39 @@ class TestApi(Base):
         self.ft.state["terminals"] = []
         self.ft.save()
         self.assertEqual(self.code(d.active)[0], "no_such_tab")
+
+    def test_an_agent_without_a_readable_input_box_is_verified_by_the_state_it_reports(self):
+        """agy and OpenCode draw no input box SwarmBox reads: the submission shows as the reported state turning busy, or not at all"""
+        class Agy(mod.TabsBackend):
+            name = "mem"
+
+            def __init__(self, starts_working):
+                self.typed, self.starts_working = [], starts_working
+
+            def list_tabs_raw(self):
+                return [mod.Tab("m1", 1, "agy", "/", "agy", "m1", ["m1"], False, "1:agy")]
+
+            def active_tab_id(self, ids):
+                return ids[0]
+
+            def capture_plain_rows(self, tab):
+                return ["╭──────╮", "│ > " + "".join(self.typed[-2:-1]) + " │", "╰──────╯"]
+
+            def tab_state(self, tab):
+                return True, ("busy" if self.starts_working and "Enter" in self.typed else "idle")
+
+            def send_text(self, tab, text):
+                self.typed.append(text)
+
+            def send_key(self, tab, key):
+                self.typed.append(key)
+        works = Agy(starts_working=True)
+        out = mod.Tabs(backend=works, pause=0, verify_timeout=0.3, run_dir=self.ft.dir).send_body("agy", {"run": "fix the build"})
+        self.assertIs(out["verified"], True)
+        stays = Agy(starts_working=False)
+        out = mod.Tabs(backend=stays, pause=0, verify_timeout=0.3, run_dir=self.ft.dir).send_body("agy", {"run": "fix the build"})
+        self.assertIs(out["verified"], False, "no box to read and no busy state: unverified, not a success")
+        self.assertEqual(stays.typed, ["fix the build", "Enter"], "never a second Enter when nothing says the text is still there")
 
     def test_any_tabs_backend_can_be_given(self):
         """Tabs(backend=...) is the contract between the facade and the multiplexer: a backend in memory gets the same rules"""

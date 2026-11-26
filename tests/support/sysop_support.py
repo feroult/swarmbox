@@ -237,6 +237,7 @@ class FakeTabs:
     errors      {tab: (code, msg)}: a send to that tab fails; `ls_error` and `get_error` do the same for list and screen
     on_send     callback(fake, tab, body) after an accepted send (change a screen, ...)
     send_delay  seconds a send takes (the pauses of the real command)
+    send_extra  fields added to the answer of an accepted send (e.g. {"verified": False})
     """
 
     def __init__(self, path, tabs=None):
@@ -246,7 +247,7 @@ class FakeTabs:
             "@2": dict(tab="@2", label="1:agent", index=1, name="agent", dir="/work", cmd="claude", active=False, pane="%2", panes=1)}
         self.screens = {"@1": "$ ", "@2": "> "}
         self.sent, self.calls, self.reads, self.errors, self.ls_error, self.get_error = [], [], [], {}, None, None
-        self.on_send, self.send_delay = None, 0.0
+        self.on_send, self.send_delay, self.send_extra = None, 0.0, {}
         self.ops = []           # [("open", {opt: value}) | ("focus", tab) | ("close", tab)] of every accepted tab operation
         self.up = False
         self.srv = None
@@ -335,7 +336,7 @@ class FakeTabs:
             self.sent.append((tab, body))
             if self.on_send:
                 self.on_send(self, tab, body)
-            return {"ok": True, "tab": tab, "pane": "%1", "submitted": key == "--run"}, 0
+            return dict({"ok": True, "tab": tab, "pane": "%1", "submitted": key == "--run"}, **self.send_extra), 0
         if cmd == "open":
             opts = dict(zip(argv[1::2], argv[2::2]))
             tid = "@%d" % (len(self.tabs) + 1)
