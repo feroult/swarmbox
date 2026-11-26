@@ -675,6 +675,26 @@ export function createGateway(options = {}) {
     try { return fs.realpathSync(p); } catch (_) { return p.replace(/\/+$/, '') || '/'; }
   }
 
+  // Worktrees whose tab is being closed. Between the kill and the auto-clean decision the hc events broadcast
+  // snapshots in which the worktree has no live terminal; without this hold it shows as pending for a moment and
+  // the sidebar flickers (the pending pill appears and goes). Keys are real paths taken while the folder exists.
+  const closingWorktrees = new Set();
+
+  // Drop a worktree that was just removed from the cached list, so no snapshot sent before the next `list` refresh
+  // reports it as pending. Pass the real path too when it was taken before the folder went away.
+  function forgetCachedWorktree(...paths) {
+    const gone = new Set();
+    for (const p of paths) {
+      const raw = String(p || '').replace(/\/+$/, '');
+      if (raw) { gone.add(raw); gone.add(normRealPath(raw)); }
+    }
+    if (gone.size === 0) return;
+    cachedWorktrees = cachedWorktrees.filter((w) => {
+      const wp = String((w && w.path) || '').replace(/\/+$/, '');
+      return !gone.has(wp) && !gone.has(normRealPath(wp));
+    });
+  }
+
   function formatMainAgent(term) {
     if (!term) return null;
     return {
@@ -1009,7 +1029,7 @@ export function createGateway(options = {}) {
     return cachedWorktrees.filter((w) => {
       let rp = w.path;
       try { rp = fs.realpathSync(w.path); } catch (_) {}
-      return !livePaths.has(rp) && !pinnedPaths.has(rp);
+      return !livePaths.has(rp) && !pinnedPaths.has(rp) && !closingWorktrees.has(rp) && !closingWorktrees.has(w.path);
     });
   }
 
@@ -1603,20 +1623,27 @@ export function createGateway(options = {}) {
               pinKept = true;
             }
           }
-          await hc.call('terminal.keep', { terminal: termId, keep: false }).catch(() => {});
-          await hc.call('terminal.kill', { terminal: termId }).catch(() => {});
-          hc.call('terminal.rm', { terminal: termId }).catch(() => {});
-          hc.terminals.delete(termId);
+          const wtHold = wtPath ? normRealPath(wtPath) : '';
+          if (wtHold) closingWorktrees.add(wtHold);
           let autoCleaned = false;
-          // Auto-clean empty managed worktrees on close when no parked pin holds them
-          if (!pinKept && wtPath) {
-            try {
-              const st = await runWorktreeCmd(['status', wtPath]);
-              if (st && st.managed && st.empty) {
-                await runWorktreeCmd(['remove', wtPath]);
-                autoCleaned = true;
-              }
-            } catch (_) {}
+          try {
+            await hc.call('terminal.keep', { terminal: termId, keep: false }).catch(() => {});
+            await hc.call('terminal.kill', { terminal: termId }).catch(() => {});
+            hc.call('terminal.rm', { terminal: termId }).catch(() => {});
+            hc.terminals.delete(termId);
+            // Auto-clean empty managed worktrees on close when no parked pin holds them
+            if (!pinKept && wtPath) {
+              try {
+                const st = await runWorktreeCmd(['status', wtPath]);
+                if (st && st.managed && st.empty) {
+                  await runWorktreeCmd(['remove', wtPath]);
+                  autoCleaned = true;
+                  forgetCachedWorktree(wtPath, wtHold);
+                }
+              } catch (_) {}
+            }
+          } finally {
+            if (wtHold) closingWorktrees.delete(wtHold);
           }
           refreshPendingWorktrees();
           broadcast(buildSnapshot({ type: 'snapshot' }));
@@ -2075,6 +2102,7 @@ export function createGateway(options = {}) {
           if (body.clean) {
             const pinId = (t && t.labels && t.labels['swarmbox.pin_id']) || '';
             purgePinsForWorktree(wtPath, pinId);
+            forgetCachedWorktree(wtPath);
             if (tid) await closeTerminalCleanly(tid);
           }
           const repoRoot = (resMerge && resMerge.repo_root) || (t && t.labels && t.labels['swarmbox.repo']) || '';
@@ -2151,6 +2179,7 @@ export function createGateway(options = {}) {
               for (const f of resMerge.files) filesSet.add(f);
             }
             if (body.clean) {
+              forgetCachedWorktree(w.path);
               const matchingTerms = termByWtPath.get(normRealPath(w.path)) || [];
               if (matchingTerms.length > 0) {
                 for (const mt of matchingTerms) {
@@ -2264,6 +2293,7 @@ export function createGateway(options = {}) {
           const t = tid ? hc.terminals.get(tid) : null;
           const pinId = (t && t.labels && t.labels['swarmbox.pin_id']) || '';
           purgePinsForWorktree(wtPath, pinId);
+          forgetCachedWorktree(wtPath);
           if (tid) await closeTerminalCleanly(tid);
           const repoRoot = (r && r.repo_root) || (t && t.labels && t.labels['swarmbox.repo']) || '';
           if (repoRoot) await refreshRepoStatus(repoRoot).catch(() => {});
