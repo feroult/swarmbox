@@ -27,7 +27,6 @@ MAX_MESSAGE_CHARS = 280
 TAIL_BYTES = 512 * 1024   # the newest prompts of every folder; a history line is a few hundred bytes
 AMBIGUOUS_WINDOW = 600.0
 
-# Claude Code writes these as user lines, but the user did not type them as a request.
 MIN_WORDS = 3   # "ok", "pode sim", "go on" carry no goal: they are dropped while longer requests exist
 
 
