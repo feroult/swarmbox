@@ -1457,13 +1457,46 @@
   // so this device's cols×rows take effect immediately without needing a page refresh.
   function claimSessionViewport(sess) {
     if (!sess || !sess.ws || sess.ws.readyState !== 1) return;
+    sess.passiveAttach = false;
     sess.ws.send(JSON.stringify({
       type: 'focus',
       focused: true,
       claim: true,
       cols: sess.term.cols || 100,
       rows: sess.term.rows || 30,
+      tui: isSessionTui(sess),
     }));
+  }
+
+  // Self-heal if the server reports a PTY size that disagrees with our fitted xterm viewport
+  // (e.g. a concurrent device resized the PTY or a panel transition finished right after attach).
+  function verifyServerPtySize(sess, serverCols, serverRows) {
+    if (!sess || !serverCols || !serverRows) return;
+    if (activeId !== sess.address || sess.hydrating || sess.resizing) return;
+    if (sess.passiveAttach && !windowHasUserFocus()) return;
+    fitSession(sess, false);
+    const wantCols = sess.term.cols || 0;
+    const wantRows = sess.term.rows || 0;
+    if (wantCols > 0 && wantRows > 0 && (wantCols === serverCols && wantRows === serverRows)) {
+      sess.resyncCount = 0;
+      return;
+    }
+    if (wantCols > 0 && wantRows > 0 && sess.ws && sess.ws.readyState === 1 && (sess.resyncCount || 0) < 2) {
+      sess.resyncCount = (sess.resyncCount || 0) + 1;
+      sess.lastCols = wantCols;
+      sess.lastRows = wantRows;
+      sess.resizeSeq = (sess.resizeSeq || 0) + 1;
+      sess.resizeAwaitingServer = true;
+      beginResizeCycle(sess);
+      sess.ws.send(JSON.stringify({
+        type: 'resize',
+        cols: wantCols,
+        rows: wantRows,
+        seq: sess.resizeSeq,
+        tui: isSessionTui(sess),
+        claim: true,
+      }));
+    }
   }
 
   termWrapEl.addEventListener('pointerdown', () => {
@@ -2694,7 +2727,10 @@
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const tuiFlag = isSessionTui(sess) ? '&tui=1' : '';
       const isReconnect = Boolean(opts.reconnect);
-      const isActiveFocused = activeId === sess.address && document.visibilityState === 'visible' && document.hasFocus();
+      const isPassive = Boolean(opts.passive);
+      const isActiveFocused = activeId === sess.address && (!isPassive || windowHasUserFocus());
+      sess.passiveAttach = isReconnect || !isActiveFocused;
+      sess.resyncCount = 0;
       const reconnectFlag = isReconnect ? '&reconnect=1' : '';
       const focusedFlag = isActiveFocused ? '' : '&focused=0';
       const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(sess.address)}?cols=${initCols}&rows=${initRows}${tuiFlag}${reconnectFlag}${focusedFlag}`;
@@ -2792,7 +2828,14 @@
           try {
             const msg = JSON.parse(ev.data);
             if (msg.type === 'hydrated') {
+              if (msg.cols && msg.rows) {
+                sess.serverPtyCols = Number(msg.cols);
+                sess.serverPtyRows = Number(msg.rows);
+              }
               finishHydration();
+              if (msg.cols && msg.rows) {
+                setTimeout(() => verifyServerPtySize(sess, Number(msg.cols), Number(msg.rows)), 30);
+              }
               return;
             }
             if (msg.type === 'resizing') {
@@ -2803,7 +2846,14 @@
               return;
             }
             if (msg.type === 'resized') {
+              if (msg.cols && msg.rows) {
+                sess.serverPtyCols = Number(msg.cols);
+                sess.serverPtyRows = Number(msg.rows);
+              }
               finishResizeCycle(sess, msg.seq || null);
+              if (msg.cols && msg.rows) {
+                setTimeout(() => verifyServerPtySize(sess, Number(msg.cols), Number(msg.rows)), 30);
+              }
               return;
             }
             finishHydration();
@@ -2863,9 +2913,12 @@
     }
   }
 
+  let lastLocalTabSwitchMs = 0;
+
   function connectPty(address, opts = {}) {
     if (!address) return;
     stopTouchCoast('connectPty');
+    if (!opts.passive) lastLocalTabSwitchMs = Date.now();
 
     const prevSess = activeSession();
     clearTouchOffset(prevSess);
@@ -2884,10 +2937,12 @@
     }
 
     sess.lastUsed = Date.now();
+    // Also allow explicit user-initiated tab clicks when the browser window is just gaining focus.
+    if (!opts.passive) sess.passiveAttach = false;
     sess.paneEl.classList.add('active');
 
     if (isNew || opts.forceReconnect || !sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3) {
-      openSessionSocket(sess, { silent: Boolean(opts.silent), reset: !isNew });
+      openSessionSocket(sess, { silent: Boolean(opts.silent), reset: !isNew, passive: Boolean(opts.passive) });
     } else {
       // Instant 0ms tab switch: live terminal & exact scroll position preserved!
       ptyConnected = sess.connected;
@@ -2897,14 +2952,37 @@
       } else {
         termWrapEl.classList.add('term-loading');
       }
-      if (sess.needsFit) fitSession(sess, true);
+      const shouldClaim = !opts.passive || windowHasUserFocus();
+      if (sess.needsFit) {
+        // Pre-mask before fitAddon.fit() when we are about to resize/claim, then send ONE atomic
+        // claim+size message instead of racing a resize packet against a focus(claim) packet.
+        if (shouldClaim && !sess.hydrating && typeof sess.fitAddon.proposeDimensions === 'function') {
+          try {
+            const prop = sess.fitAddon.proposeDimensions();
+            if (prop && prop.cols && prop.rows && (prop.cols !== sess.lastCols || prop.rows !== sess.lastRows)) {
+              sess.resizeAwaitingServer = true;
+              beginResizeCycle(sess);
+            }
+          } catch (_) {}
+        }
+        fitSession(sess, false);
+        sess.lastCols = sess.term.cols;
+        sess.lastRows = sess.term.rows;
+      } else if (shouldClaim && !sess.hydrating && sess.serverPtyCols && (sess.serverPtyCols !== sess.term.cols || sess.serverPtyRows !== sess.term.rows)) {
+        // Another device resized this PTY while the tab was cached: pre-mask at 0ms before claiming
+        // so the stale-column buffer never flashes before the server's resizing frame arrives.
+        sess.resizeAwaitingServer = true;
+        beginResizeCycle(sess);
+      }
       syncStageLoader();
-      if (windowHasUserFocus()) claimSessionViewport(sess);
+      if (shouldClaim) {
+        claimSessionViewport(sess);
+      }
       syncJumpLive();
       focusTerminalIfDesktop();
     }
 
-    renderTabs();
+    renderTabs(true);
   }
 
   // Hand-crafted 16x16 crisp pixel-art mascots for agents & shells (inline SVG, zero external assets)
@@ -5088,7 +5166,37 @@
     return { key: 'dir:~', isGit: false, root: '', name: '~', cwd: rawCwd || '/home/agent' };
   }
 
-  function renderTabs() {
+  // Never wipe sidebar/tab DOM mid-click: defer background snapshot re-renders while a pointer
+  // is pressed on any tab bar so a live status tick between mousedown and mouseup never swallows clicks.
+  let tabBarPointerHeld = false;
+  let tabBarRenderDeferred = false;
+  let tabBarPointerTimer = null;
+  function releaseTabBarPointer() {
+    if (tabBarPointerTimer) { clearTimeout(tabBarPointerTimer); tabBarPointerTimer = null; }
+    if (!tabBarPointerHeld) return;
+    tabBarPointerHeld = false;
+    if (tabBarRenderDeferred) {
+      tabBarRenderDeferred = false;
+      setTimeout(() => { if (!tabBarPointerHeld) renderTabs(true); }, 0);
+    }
+  }
+  for (const el of [sidebarAgentsEl, sidebarTabsEl, topbarTabsEl, mobileTabsEl]) {
+    if (!el) continue;
+    el.addEventListener('pointerdown', () => {
+      tabBarPointerHeld = true;
+      if (tabBarPointerTimer) clearTimeout(tabBarPointerTimer);
+      tabBarPointerTimer = setTimeout(releaseTabBarPointer, 600);
+    }, { passive: true, capture: true });
+  }
+  window.addEventListener('pointerup', releaseTabBarPointer, { passive: true, capture: true });
+  window.addEventListener('pointercancel', releaseTabBarPointer, { passive: true, capture: true });
+
+  function renderTabs(force = false) {
+    if (tabBarPointerHeld && !force) {
+      tabBarRenderDeferred = true;
+      return;
+    }
+    tabBarRenderDeferred = false;
     sidebarTabsEl.innerHTML = '';
     if (topbarTabsEl) topbarTabsEl.innerHTML = '';
     if (sidebarAgentsEl) sidebarAgentsEl.innerHTML = '';
@@ -5290,7 +5398,15 @@
           if (activeId !== t.address) connectPty(t.address);
           else focusTerminalIfDesktop();
         };
-        card.addEventListener('click', activateCard);
+        card.addEventListener('mousedown', (e) => {
+          if (e.button !== 0 || e.detail > 1) return;
+          if (e.target && e.target.closest('button, input')) return;
+          activateCard();
+        });
+        card.addEventListener('click', (e) => {
+          if (e.target && e.target.closest('button, input')) return;
+          activateCard();
+        });
         card.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -5356,9 +5472,18 @@
         right.append(idxEl, closeBtn);
 
         btn.append(makeMiniPixelIcon(iconKind), info, right);
-        btn.addEventListener('click', () => {
+        const activateShellTab = () => {
           if (activeId !== t.address) connectPty(t.address);
           else focusTerminalIfDesktop();
+        };
+        btn.addEventListener('mousedown', (e) => {
+          if (e.button !== 0 || e.detail > 1) return;
+          if (e.target && e.target.closest('button, input')) return;
+          activateShellTab();
+        });
+        btn.addEventListener('click', (e) => {
+          if (e.target && e.target.closest('button, input')) return;
+          activateShellTab();
         });
         sidebarTabsEl.appendChild(btn);
       }
@@ -6418,7 +6543,7 @@
           const preferred = msg.active && liveAddrs.has(msg.active)
             ? msg.active
             : (terminals[0] && terminals[0].address);
-          if (preferred) connectPty(preferred);
+          if (preferred) connectPty(preferred, { passive: !windowHasUserFocus() });
           else { activeId = null; ptyConnected = false; syncConnPill(); renderTabs(); dismissBoot(); }
         } else {
           // If events reconnected after a brief blip and the active PTY socket died, heal it automatically
@@ -6435,7 +6560,10 @@
       if (typeof msg.active === 'string' && msg.active) {
         const changed = lastServerActive !== null && msg.active !== lastServerActive;
         lastServerActive = msg.active;
-        if (changed && msg.active !== activeId && terminals.some((t) => t.address === msg.active)) connectPty(msg.active);
+        const recentlySwitchedLocally = (Date.now() - lastLocalTabSwitchMs) < 1200;
+        if (changed && !recentlySwitchedLocally && msg.active !== activeId && terminals.some((t) => t.address === msg.active)) {
+          connectPty(msg.active, { passive: true });
+        }
       }
       if (msg.sysop) renderSysop(msg.sysop);
     };

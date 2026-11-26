@@ -597,13 +597,16 @@ export function createGateway(options = {}) {
     return room;
   }
   function getCurrentPtySize(termId, fallbackCols, fallbackRows) {
+    const room = ptyRooms.get(termId);
+    if (room && room.owner && room.owner.streamCols > 0 && room.owner.streamRows > 0) {
+      return { cols: room.owner.streamCols, rows: room.owner.streamRows };
+    }
+    if (room && room.ptyCols > 0 && room.ptyRows > 0) {
+      return { cols: room.ptyCols, rows: room.ptyRows };
+    }
     const t = hc.terminals.get(termId);
     if (t && Number(t.cols) > 0 && Number(t.rows) > 0) {
       return { cols: clampCols(t.cols), rows: clampRows(t.rows) };
-    }
-    const room = ptyRooms.get(termId);
-    if (room && room.ptyCols > 0 && room.ptyRows > 0) {
-      return { cols: room.ptyCols, rows: room.ptyRows };
     }
     return { cols: clampCols(fallbackCols), rows: clampRows(fallbackRows) };
   }
@@ -616,6 +619,16 @@ export function createGateway(options = {}) {
     rec.stream.resize(rec.wantCols, rec.wantRows);
     rec.streamCols = rec.wantCols;
     rec.streamRows = rec.wantRows;
+    const room = ptyRooms.get(rec.termId);
+    if (room) {
+      room.ptyCols = rec.wantCols;
+      room.ptyRows = rec.wantRows;
+    }
+    const t = hc.terminals.get(rec.termId);
+    if (t) {
+      t.cols = rec.wantCols;
+      t.rows = rec.wantRows;
+    }
   }
   // A PTY resize redraws the program for EVERY client attached to it, not only the one that asked: mask the
   // redraw on the others too, so a second window or device never paints the reflow without the loader.
@@ -629,10 +642,10 @@ export function createGateway(options = {}) {
       rec.wantCols = clampCols(opts.cols);
       rec.wantRows = clampRows(opts.rows);
     }
+    const cur = getCurrentPtySize(rec.termId, room.ptyCols || rec.wantCols, room.ptyRows || rec.wantRows);
     room.owner = rec;
     rec.lastActiveMs = Date.now();
     if (opts.syncSize === false || !rec.stream) return false;
-    const cur = getCurrentPtySize(rec.termId, room.ptyCols || rec.wantCols, room.ptyRows || rec.wantRows);
     if (cur.cols !== rec.wantCols || cur.rows !== rec.wantRows) {
       room.ptyCols = rec.wantCols;
       room.ptyRows = rec.wantRows;
@@ -2592,7 +2605,11 @@ export function createGateway(options = {}) {
         initChunks = [];
         ws.send(merged);
       }
-      ws.send(JSON.stringify({ type: 'hydrated' }));
+      ws.send(JSON.stringify({
+        type: 'hydrated',
+        cols: room.ptyCols || clampCols(attachCols),
+        rows: room.ptyRows || clampRows(attachRows),
+      }));
       if (attachResizesPty && attachIsTui) {
         startResizeMask(0, true);
         ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq }));
@@ -2613,7 +2630,7 @@ export function createGateway(options = {}) {
         resizeChunks = [];
         ws.send(merged);
       }
-      ws.send(JSON.stringify({ type: 'resized', seq: doneSeq }));
+      ws.send(JSON.stringify({ type: 'resized', seq: doneSeq, cols: room.ptyCols || clientRec.streamCols || clientRec.wantCols, rows: room.ptyRows || clientRec.streamRows || clientRec.wantRows }));
     };
 
     try {
@@ -2760,7 +2777,7 @@ export function createGateway(options = {}) {
                 const cur = getCurrentPtySize(termId, room.ptyCols || clientRec.wantCols, room.ptyRows || clientRec.wantRows);
                 const willResize = cur.cols !== clientRec.wantCols || cur.rows !== clientRec.wantRows;
                 if (willResize && !hydrating) {
-                  startResizeMask(0, true);
+                  startResizeMask(0, Boolean(msg.tui) || isInteractiveTuiTerminal(hc.terminals.get(termId)));
                   if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq }));
                 }
                 claimPtyOwnership(room, clientRec, { cols: msg.cols, rows: msg.rows });
@@ -2768,6 +2785,14 @@ export function createGateway(options = {}) {
                 if (!wasOwner || !wasFocused) {
                   writeActiveTab(termId);
                   stream.focus(true);
+                }
+                if (!willResize && !hydrating && !resizing && ws.readyState === 1) {
+                  ws.send(JSON.stringify({
+                    type: 'resized',
+                    seq: 0,
+                    cols: room.ptyCols || clientRec.wantCols,
+                    rows: room.ptyRows || clientRec.wantRows,
+                  }));
                 }
               }
             } else {
