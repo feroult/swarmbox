@@ -390,8 +390,9 @@ def resume_argv(aid, env=None):
 
 def launch_script(aid, resume=True, env=None):
     """The bash -lic script that starts agent `aid` in a tab (through its shell function, so auto-approve and MCP apply): with `resume`
-    and RESUME_ARGS, it first tries to continue; when that fails within RESUME_FAST_FAIL_S seconds (no conversation here), it starts
-    fresh. A login shell takes the agent's place when it exits. The JS twin is buildAgentArgv in agents.mjs."""
+    and RESUME_ARGS, it first tries to continue; when that fails within RESUME_FAST_FAIL_S seconds (no conversation here, or a failure
+    such as a login that expired), it says so in the tab and starts fresh. A login shell takes the agent's place when it exits. The JS
+    twin is launchScript in agents.mjs."""
     a = get(aid, env)
     if not a:
         return "exec /bin/bash -l"
@@ -399,8 +400,10 @@ def launch_script(aid, resume=True, env=None):
     rargs = " ".join(shlex.quote(w) for w in a["resume"]["args"])
     if resume and rargs:
         return ("_sb_t0=$(date +%%s); SWARMBOX_WORKTREE_GUARD=0 %s %s; _sb_rc=$?; "
-                "if [ \"$_sb_rc\" -ne 0 ] && [ $(( $(date +%%s) - _sb_t0 )) -lt %d ]; then SWARMBOX_WORKTREE_GUARD=0 %s; fi; exec /bin/bash -l"
-                % (cmd, rargs, a["resume"]["fast_fail_s"], cmd))
+                "if [ \"$_sb_rc\" -ne 0 ] && [ $(( $(date +%%s) - _sb_t0 )) -lt %d ]; then "
+                "printf '\\n[swarmbox] %%s ended at once (exit %%s): starting a new conversation\\n' %s \"$_sb_rc\" >&2; "
+                "SWARMBOX_WORKTREE_GUARD=0 %s; fi; exec /bin/bash -l"
+                % (cmd, rargs, a["resume"]["fast_fail_s"], shlex.quote("%s %s" % (a["cmd"], " ".join(a["resume"]["args"]))), cmd))
     return "SWARMBOX_WORKTREE_GUARD=0 %s; exec /bin/bash -l" % cmd
 
 
@@ -531,25 +534,65 @@ def check_dir(addon_dir, commands=None):
     return errs
 
 
-# ---- the generated shell wrappers (bashrc.sh sources `swarmbox-agents sh`) ------------------------------------------------------------
+# ---- the generated shell wrappers (bashrc.sh evaluates `swarmbox-agents sh`) ------------------------------------------------------
 
-def _shq(words):
-    return " ".join(shlex.quote(w) for w in words)
+FUNC_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+
+# _sb_agent_run ID CMD PASSTHROUGH PRINT_FLAGS NYOLO YOLO... NMCP MCP... ARGS...: how every generated agent function starts its agent.
+# A first word of PASSTHROUGH (a subcommand that refuses the flags) runs the program untouched; a word of PRINT_FLAGS (a one-shot call,
+# not a session) skips the worktree guard; then the program runs with its auto-approve words (unless SWARMBOX_YOLO=0) and the words that
+# give it the box's MCP servers (always: they are not a permission). `command CMD` reaches the program (or its shim), not the function.
+# Written for bash and zsh.
+SHELL_HELPER = r"""_sb_agent_run() {
+    local _sb_id=$1 _sb_cmd=$2 _sb_pass=" $3 " _sb_print=" $4 " _sb_n=$5 _sb_a _sb_guard=1
+    shift 5
+    local -a _sb_yolo _sb_mcp
+    _sb_yolo=()
+    _sb_mcp=()
+    while [ "$_sb_n" -gt 0 ]; do _sb_yolo+=("$1"); shift; _sb_n=$((_sb_n - 1)); done
+    _sb_n=$1
+    shift
+    while [ "$_sb_n" -gt 0 ]; do _sb_mcp+=("$1"); shift; _sb_n=$((_sb_n - 1)); done
+    if [ -n "${1:-}" ]; then
+        case "$_sb_pass" in *" $1 "*) command "$_sb_cmd" "$@"; return ;; esac
+    fi
+    for _sb_a in "$@"; do
+        [ -n "$_sb_a" ] || continue
+        case "$_sb_print" in *" $_sb_a "*) _sb_guard=0 ;; esac
+    done
+    if [ "$_sb_guard" = 1 ] && type _sb_worktree_guard >/dev/null 2>&1; then
+        _sb_worktree_guard "$_sb_id" "$@" || return $?
+    fi
+    if [ "${SWARMBOX_YOLO:-1}" = 0 ]; then
+        command "$_sb_cmd" "${_sb_mcp[@]}" "$@"
+    else
+        command "$_sb_cmd" "${_sb_yolo[@]}" "${_sb_mcp[@]}" "$@"
+    fi
+}
+"""
+
+
+def _sh_word(w):
+    """A word of agent.conf as shell text: {home} and {mcp_file} become paths under $HOME, expanded when the function runs. A value
+    has no quote, $, backslash or backtick (parse_conf), so double quotes are safe."""
+    if "{home}" in w or "{mcp_file}" in w:
+        return '"%s"' % w.replace("{mcp_file}", "{home}/.claude/mcp-servers.json").replace("{home}", "$HOME")
+    return shlex.quote(w)
 
 
 def shell_functions(env=None):
-    """One shell function per declared agent whose addon has no shell.sh of its own: `<cmd>() { _sb_agent_run ID ... "$@"; }` with
-    the agent's data inlined, so a shell needs no Python at each call. _sb_agent_run is defined in bashrc.sh."""
+    """The shell text that defines one function per agent of the registry whose addon has no shell.sh of its own (an addon's shell.sh
+    wins: OpenCode's), each calling _sb_agent_run with the agent's data inlined, plus _sb_agent_run itself."""
     out = []
     for a in agents(env):
-        if a["hooks"]["shell"] or not WORD_RE.match(a["cmd"]) or "." in a["cmd"]:
+        if a["hooks"]["shell"] or not FUNC_NAME_RE.match(a["cmd"]):
             continue
-        mcp = [w.replace("{home}", "$HOME").replace("{mcp_file}", "$HOME/.claude/mcp-servers.json") for w in a["mcp_args"]]
-        mcp_q = " ".join('"%s"' % w if "$HOME" in w else shlex.quote(w) for w in mcp)
-        out.append("%s() {\n    _sb_agent_run %s %s '%s' '%s' '%s' '%s' \"$@\"\n}"
-                   % (a["cmd"], shlex.quote(a["id"]), shlex.quote(a["cmd"]), " ".join(a["passthrough"]), " ".join(a["print_flags"]),
-                      _shq(a["yolo_args"]).replace("'", ""), mcp_q.replace("'", "")))
-    return "\n".join(out) + ("\n" if out else "")
+        words = [shlex.quote(a["id"]), shlex.quote(a["cmd"]), shlex.quote(" ".join(a["passthrough"])), shlex.quote(" ".join(a["print_flags"])),
+                 str(len(a["yolo_args"]))] + [_sh_word(w) for w in a["yolo_args"]] + [str(len(a["mcp_args"]))] + [_sh_word(w) for w in a["mcp_args"]]
+        out.append("%s() {\n    _sb_agent_run %s \"$@\"\n}\n" % (a["cmd"], " ".join(words)))
+    if not out:
+        return ""
+    return "# generated by swarmbox-agents sh: the shell functions of the agents of the box (docs/agents-design.md)\n" + SHELL_HELPER + "".join(out)
 
 
 # ---- command line: swarmbox-agents ---------------------------------------------------------------------------------------------------
@@ -560,7 +603,7 @@ USAGE = """usage: swarmbox-agents COMMAND
   resolve NAME                  the agent id of a name (exit 1 when it is not an agent)
   default [--cmd]               the default agent of the box, or its command (exit 1 when there is none)
   generate [--output FILE]      write the registry as JSON (default: $SB_RUN_DIR/agents.json, /tmp/swarmbox/agents.json)
-  sh                            the shell functions of the agents (sourced by the shell)
+  sh                            the shell functions of the agents (bashrc.sh evaluates it in every shell)
   check DIR                     check the agent/ folder of the addon in DIR (exit 1 with the problems)
 """
 

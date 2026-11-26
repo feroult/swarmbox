@@ -2,7 +2,7 @@
 # image's /etc/bash.bashrc; `swarmbox-attach` also sources it directly for a command run without a terminal.
 #
 # It gives every shell: the Python venv, the PATH additions of the addons, the colored ls and grep aliases, the
-# `shell.sh` of every addon (the auto-approve function of an agent is there) and the `yolo` function, and, in an
+# `shell.sh` of every addon, a function per agent of the registry (auto-approve, the box's MCP servers) and the `yolo` function, and, in an
 # interactive shell only, the banner with the startup-health lines and the Starship prompt. Nothing here
 # regenerates a file: that is `serve`'s job.
 #
@@ -63,10 +63,11 @@ alias fgrep='fgrep --color=auto'
 alias egrep='egrep --color=auto'
 
 # --- Worktree collision guard for manual agent launches in interactive shells ---
-# Checks whether another live agent tab occupies the current Git working tree before starting
-# agy, claude, opencode, gemini, or codex interactively. Honors worktree-prefs.json (ask|auto|off)
-# and stays silent in non-TTY scripts, print mode (-p/--print), and when launched via Web Studio
-# (SWARMBOX_WORKTREE_GUARD=0, where the gateway popover already ran the guard).
+# Checks whether another live agent tab occupies the current Git working tree before an agent starts
+# interactively (the agent functions call it). Honors worktree-prefs.json (ask|auto|off) and stays
+# silent in non-TTY scripts, for --help and --version, and when launched via Web Studio
+# (SWARMBOX_WORKTREE_GUARD=0, where the gateway popover already ran the guard). An agent's one-shot
+# form (its PRINT_FLAGS, such as -p) never calls it.
 _sb_worktree_guard() {
     [ -t 0 ] && [ -t 1 ] || return 0
     [ "${SWARMBOX_WORKTREE_GUARD:-1}" != 0 ] || return 0
@@ -76,7 +77,7 @@ _sb_worktree_guard() {
     local _sb_a
     for _sb_a in "$@"; do
         case "$_sb_a" in
-            -h|--help|-v|--version|-p|--print|--output-format|--input-format) return 0 ;;
+            -h|--help|-v|--version) return 0 ;;
         esac
     done
     local _sb_wt_bin=${SWARMBOX_TEST_WORKTREE_BIN:-swarmbox-worktree}
@@ -94,8 +95,8 @@ _sb_worktree_guard() {
 }
 
 # --- The addons ---
-# The shell.sh of every addon is sourced: what an addon wants in the shell (the auto-approve function of an agent, a port for
-# `clasp login`, the path of Go) is in its own file; this fragment reads no manifest. The user level (<config>/addons) wins over the
+# The shell.sh of every addon is sourced: what an addon wants in the shell (a port for `clasp login`, the path of Go, an agent
+# function that the registry's cannot express) is in its own file; this fragment reads no manifest. The user level (<config>/addons) wins over the
 # image level for the same name. A failing file does not stop the shell.
 _sb_seen=" "
 for _sb_base in "$SB_CONFIG_DIR/addons" "$_sb_image_addons"; do
@@ -112,16 +113,15 @@ for _sb_base in "$SB_CONFIG_DIR/addons" "$_sb_image_addons"; do
 done
 unset _sb_seen _sb_base _sb_d _sb_name
 
-# Wrap codex with the worktree collision guard too when installed without its own shell.sh.
-if ! declare -f codex > /dev/null 2>&1 && command -v codex > /dev/null 2>&1; then
-    codex() {
-        case "${1:-}" in
-            -h|--help|-v|--version|exec|login|logout|mcp|completion|help) command codex "$@"; return ;;
-        esac
-        _sb_worktree_guard codex "$@" || return $?
-        command codex "$@"
-    }
+# --- The agents ---
+# One function per agent of the registry (swarmbox-agents sh: the agent/agent.conf of every agent addon), unless its addon has a
+# shell.sh of its own (sourced above). Each starts its agent in auto-approve mode with the box's MCP servers; SWARMBOX_YOLO=0 (the host's
+# YOLO setting) turns auto-approve off. SWARMBOX_AGENTS_BIN (tests) replaces the registry command.
+_sb_reg=${SWARMBOX_AGENTS_BIN:-swarmbox-agents}
+if command -v "$_sb_reg" > /dev/null 2>&1; then
+    eval "$("$_sb_reg" sh 2>/dev/null </dev/null)" || true
 fi
+unset _sb_reg
 
 # yolo: run the default agent of the box, the one the agent registry names (swarmbox-agents default: AGENT if it names an agent, else
 # the first agent of WITH, else the first installed agent). The agent's own function starts it in auto-approve mode; yolo asks for that

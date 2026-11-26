@@ -329,6 +329,7 @@ class WorktreeTest(unittest.TestCase):
             "SWARMBOX_VENV": "/nonexistent",
             "SWARMBOX_TEST_WORKTREE_BIN": WT_SCRIPT,
             "SWARMBOX_TEST_TABS_BIN": fake_tabs,
+            "SWARMBOX_AGENTS_BIN": os.path.join(ROOT, "container", "scripts", "swarmbox-agents.py"),   # the agent functions of the registry
             "HC_TERMINAL_ID": "t2",
         }
         bashrc = os.path.join(ROOT, "container", "config", "bashrc.sh")

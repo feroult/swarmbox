@@ -300,5 +300,32 @@ console.log(JSON.stringify(out));
         self.assertEqual((out["alias"], out["nope"], out["trav"]), (404, 404, 404))
 
 
+class LaunchScriptRuns(unittest.TestCase):
+    """The launch script of a pin or a tab, run for real in bash with a fake agent (the agent function is the program itself here)."""
+
+    def run_script(self, behaviour):
+        tmp = os.path.realpath(tempfile.mkdtemp(prefix="sbagents-run-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        b = os.path.join(tmp, "bin")
+        os.makedirs(b)
+        with open(os.path.join(b, "claude"), "w") as f:
+            f.write("#!/bin/sh\necho \"RAN $*\"\n%s\n" % behaviour)
+        os.chmod(os.path.join(b, "claude"), 0o755)
+        env = {"HOME": tmp, "SWARMBOX_TEST_IMAGE_ADDONS": ADDONS, "SWARMBOX_TEST_USER_ADDONS": "/nonexistent"}
+        script = A.launch_script("claude", True, env).replace("exec /bin/bash -l", "echo SHELL")
+        return subprocess.run(["bash", "--noprofile", "--norc", "-c", script], env={"PATH": b + ":/usr/bin:/bin", "HOME": tmp},
+                              capture_output=True, text=True, timeout=30)
+
+    def test_a_resume_that_fails_at_once_says_so_and_starts_fresh(self):
+        r = self.run_script('[ "$1" = --continue ] && exit 3; exit 0')
+        self.assertEqual(r.stdout.splitlines(), ["RAN --continue", "RAN ", "SHELL"])
+        self.assertIn("[swarmbox] claude --continue ended at once (exit 3): starting a new conversation", r.stderr)
+
+    def test_a_resume_that_works_runs_once_and_says_nothing(self):
+        r = self.run_script("exit 0")
+        self.assertEqual(r.stdout.splitlines(), ["RAN --continue", "SHELL"])
+        self.assertEqual(r.stderr, "")
+
+
 if __name__ == "__main__":
     unittest.main()

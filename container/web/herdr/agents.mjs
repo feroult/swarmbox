@@ -289,7 +289,9 @@ export function launchScript(id, { resume = true } = {}, env = process.env) {
   const rargs = a.resume.args.map(shq).join(' ');
   if (resume && rargs) {
     return `_sb_t0=$(date +%s); SWARMBOX_WORKTREE_GUARD=0 ${cmd} ${rargs}; _sb_rc=$?; ` +
-      `if [ "$_sb_rc" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt ${a.resume.fast_fail_s} ]; then SWARMBOX_WORKTREE_GUARD=0 ${cmd}; fi; exec /bin/bash -l`;
+      `if [ "$_sb_rc" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt ${a.resume.fast_fail_s} ]; then ` +
+      `printf '\\n[swarmbox] %s ended at once (exit %s): starting a new conversation\\n' ${shq(`${a.cmd} ${a.resume.args.join(' ')}`)} "$_sb_rc" >&2; ` +
+      `SWARMBOX_WORKTREE_GUARD=0 ${cmd}; fi; exec /bin/bash -l`;
   }
   return `SWARMBOX_WORKTREE_GUARD=0 ${cmd}; exec /bin/bash -l`;
 }

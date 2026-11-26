@@ -1,9 +1,10 @@
-"""The shell.sh of the agent addons (claude, antigravity, opencode): how each starts in auto-approve mode.
+"""The shell functions of the agent addons (claude, antigravity, opencode): how each starts in auto-approve mode.
 
-The auto-approve flags are not in a manifest and not in bashrc.sh: each agent addon defines them in its own shell.sh, which the
-box sources in every interactive shell (bash and zsh). These tests source the REAL shell.sh files in a mktemp tree with a fake agent
-program that prints every argument as [arg], in every shell that exists here (bash always, zsh when installed), and also through the
-real bashrc.sh fragment (what `yolo` runs). SWARMBOX_YOLO=0 turns auto-approve off everywhere.
+The auto-approve words are not in bashrc.sh: each agent addon declares them in its agent/agent.conf, and `swarmbox-agents sh` turns
+them into one function per agent, which the box evaluates in every interactive shell; an addon whose agent needs more than the
+declaration has its own shell.sh (OpenCode). These tests run the REAL generated functions and the REAL shell.sh in a mktemp tree with a
+fake agent program that prints every argument as [arg], in every shell that exists here (bash always, zsh when installed), and also
+through the real bashrc.sh fragment (what `yolo` runs). SWARMBOX_YOLO=0 turns auto-approve off everywhere.
 Run with: python3 -W error tests/fast/test_addon_agent_shell.py   (needs bash; zsh is optional)
 """
 import os
@@ -47,8 +48,19 @@ class Base(unittest.TestCase):
         return e
 
     def run_in(self, shell, agent, args, yolo=None):
-        """Source the shell.sh of `agent` in `shell` and run `agent args`; the fake program prints what it received."""
-        script = ". %s; %s %s" % (os.path.join(REAL_ADDONS, ADDON_OF.get(agent, agent), "shell.sh"), agent, args)
+        """Define the function of `agent` in `shell` (its addon's shell.sh, else the registry's generated one) and run `agent args`;
+        the fake program prints what it received."""
+        own = os.path.join(REAL_ADDONS, ADDON_OF.get(agent, agent), "shell.sh")
+        if os.path.exists(own):
+            script = ". %s; %s %s" % (own, agent, args)
+        else:
+            gen = subprocess.run([sys.executable, "-I", os.path.join(LIB, "swarmbox-agents.py"), "sh"], capture_output=True, text=True, timeout=30,
+                                 env={"PATH": "/usr/bin:/bin", "HOME": self.d, "SWARMBOX_TEST_IMAGE_ADDONS": REAL_ADDONS})
+            self.assertEqual(gen.returncode, 0, gen.stderr)
+            self.assertIn("%s() {" % agent, gen.stdout)
+            path = os.path.join(self.d, "agents.sh")
+            write(path, gen.stdout)
+            script = ". %s; %s %s" % (path, agent, args)
         r = subprocess.run([shell, "-c", script], env=self.env(yolo), capture_output=True, text=True, timeout=30, cwd=self.d)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stderr, "")
@@ -184,6 +196,40 @@ class ThroughTheFragment(Base):
             with self.subTest(agent=agent):
                 r = self.frag("yolo -p go", SWARMBOX_AGENT=agent)
                 self.assertIn("agy:[--dangerously-skip-permissions][-p][go]", r.stdout, r.stdout + r.stderr)
+
+
+class DeclaredOnly(Base):
+    """An agent addon with only agent/agent.conf: the registry gives it a function in every shell, through the real fragment."""
+
+    def test_a_declared_agent_gets_a_function_with_its_words(self):
+        addon = os.path.join(self.d, "c", "swarmbox", "addons", "robo")
+        write(os.path.join(addon, "addon.conf"), 'SCHEMA=1\nNAME=robo\nDESCRIPTION="x"\nVERSION=1\nCOMMANDS="robo"\n')
+        write(os.path.join(addon, "agent", "agent.conf"),
+              'ID=robo\nYOLO_ARGS="--yes --fast"\nMCP_ARGS="--mcp {home}/m.json"\nPRINT_FLAGS="-q"\nPASSTHROUGH="login logout"\n')
+        write(os.path.join(self.d, "bin", "robo"), '#!/bin/sh\nprintf "robo:"; for a in "$@"; do printf "[%s]" "$a"; done; echo\n', 0o755)
+        guard = '_sb_worktree_guard() { echo "GUARD $*"; }; '
+        env = {"PATH": os.path.join(self.d, "bin") + ":/usr/bin:/bin", "HOME": self.d, "XDG_CONFIG_HOME": os.path.join(self.d, "c"),
+               "XDG_DATA_HOME": os.path.join(self.d, "d"), "XDG_STATE_HOME": os.path.join(self.d, "s"),
+               "SWARMBOX_IMAGE_ADDONS_DIR": REAL_ADDONS, "SWARMBOX_IMAGE_SHIMS_DIR": os.path.join(self.d, "shims"),
+               "SWARMBOX_VENV": os.path.join(self.d, "no-venv"), "SWARMBOX_DIRS_SH": os.path.join(LIB, "dirs.sh"),
+               "SWARMBOX_STARSHIP_INIT": os.path.join(self.d, "none"), "SWARMBOX_AGENTS_BIN": os.path.join(LIB, "swarmbox-agents.py"),
+               "TERM": "dumb"}
+        os.makedirs(os.path.join(self.d, "s", "swarmbox"), exist_ok=True)
+
+        def run(cmds, **extra):
+            r = subprocess.run(["bash", "--noprofile", "--norc", "-i"], input=". %s\n%s%s\nexit\n" % (FRAGMENT, guard, cmds),
+                               env=dict(env, **extra), capture_output=True, text=True, timeout=30, cwd=self.d)
+            return r.stdout
+
+        m = "[--mcp][%s/m.json]" % self.d
+        self.assertIn("GUARD robo go\nrobo:[--yes][--fast]%s[go]" % m, run("robo go"))
+        self.assertIn("robo:[--yes][--fast]%s[-q][x]" % m, run("robo -q x"))
+        self.assertNotIn("GUARD", run("robo -q x"), "a one-shot call (PRINT_FLAGS) is not guarded")
+        self.assertIn("robo:[login][me]", run("robo login me"))
+        self.assertIn("robo:%s[go]" % m, run("robo go", SWARMBOX_YOLO="0"))
+        self.assertIn("robo:[--yes][--fast]%s[go]" % m, run("yolo go", SWARMBOX_YOLO="0", SWARMBOX_AGENT="robo"))
+        # an agent whose addon has a shell.sh keeps its own function (OpenCode: --auto only where it is accepted)
+        self.assertIn("opencode:[--auto]", run("opencode"))
 
 
 if __name__ == "__main__":

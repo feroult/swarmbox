@@ -35,7 +35,7 @@
     {"term": null, "want": "", "live": ""}
   ],
   "launch": [
-    {"id": "claude", "resume": true, "want": "_sb_t0=$(date +%s); SWARMBOX_WORKTREE_GUARD=0 claude --continue; _sb_rc=$?; if [ \"$_sb_rc\" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt 4 ]; then SWARMBOX_WORKTREE_GUARD=0 claude; fi; exec /bin/bash -l"},
+    {"id": "claude", "resume": true, "want": "_sb_t0=$(date +%s); SWARMBOX_WORKTREE_GUARD=0 claude --continue; _sb_rc=$?; if [ \"$_sb_rc\" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt 4 ]; then printf '\\n[swarmbox] %s ended at once (exit %s): starting a new conversation\\n' 'claude --continue' \"$_sb_rc\" >&2; SWARMBOX_WORKTREE_GUARD=0 claude; fi; exec /bin/bash -l"},
     {"id": "claude", "resume": false, "want": "SWARMBOX_WORKTREE_GUARD=0 claude; exec /bin/bash -l"},
     {"id": "fakebot", "resume": true, "want": "SWARMBOX_WORKTREE_GUARD=0 fbot; exec /bin/bash -l"},
     {"id": "nope", "resume": true, "want": "exec /bin/bash -l"}

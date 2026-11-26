@@ -61,10 +61,6 @@ OLD_NAMES = [
 
 # (path glob, regex, reason): the old names that a file may carry. The regex is removed from the line before the check.
 OLD_NAME_ALLOW = [
-    ("container/addons/claude/shell.sh", r"\| plugin \| plugins \|",
-     "the subcommands of the Claude Code program (`claude plugin`, `claude plugins`), which the claude function never gives the flags"),
-    ("container/addons/antigravity/shell.sh", r"\| plugin \| plugins \|",
-     "the subcommands of the Antigravity CLI program (`agy plugin`, `agy plugins`), which the agy function never gives the flag"),
     ("container/addons/opencode/shell.sh", r"\| plugin \|",
      "a subcommand of the OpenCode program"),
     ("container/addons/claude/agent/agent.conf", r"^PASSTHROUGH=.* plugin plugins ",
@@ -280,8 +276,8 @@ class TheOldNamesScanner(unittest.TestCase):
     def test_a_legit_file_keeps_the_word_but_not_the_old_names_and_an_allowed_old_name_is_allowed_in_its_file_only(self):
         self.assertEqual(self.one("the tools of the brain", "docs/sysop.md"), [])
         self.assertEqual(self.one("the tools of the brain, and swarmbox-tool", "docs/sysop.md"), ["old name: swarmbox-tool"])
-        line = "        agents | mcp | plugin | plugins | purge)"
-        self.assertEqual(self.one(line, "container/addons/claude/shell.sh"), [])
+        line = 'PASSTHROUGH="agents mcp plugin plugins purge"'
+        self.assertEqual(self.one(line, "container/addons/claude/agent/agent.conf"), [])
         self.assertEqual(self.one(line, "tests/test_other.py"), ["old name: the intermediate name of the design"])
 
     def test_file_and_folder_names_are_scanned_and_the_skipped_places_are_skipped(self):
