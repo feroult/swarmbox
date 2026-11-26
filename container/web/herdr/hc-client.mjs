@@ -1047,11 +1047,26 @@ function parseAddonConf(filePath) {
   return out.NAME ? out : null;
 }
 
-function listAddonsSnapshot() {
-  const imageDir = process.env.SWARMBOX_IMAGE_ADDONS_DIR || '/usr/local/lib/swarmbox/addons';
+// installedOf(dir, item): whether an install of the addon in the state folder `dir` is complete, by the record swarmbox-addon writes
+// last (its is_installed): `current/.swarmbox-env` for a managed addon, `self/.swarmbox-env` for one that updates itself (UPDATE=self,
+// no `current` link). The version is the link's target, or what a self-updating program reported at install.
+function installedOf(dir, item) {
+  const base = path.join(dir, item.name);
+  if (item.update === 'self') {
+    if (!fs.existsSync(path.join(base, 'self', '.swarmbox-env'))) return null;
+    const rec = readTextSafe(path.join(base, 'self', 'installed')) || '';
+    const m = rec.match(/^reported=(\S+)/m);
+    return m ? m[1] : 'self';
+  }
+  if (!fs.existsSync(path.join(base, 'current', '.swarmbox-env'))) return null;
+  try { return path.basename(fs.readlinkSync(path.join(base, 'current'))); } catch (_) { return ''; }
+}
+
+function listAddonsSnapshot(env = process.env) {
+  const imageDir = env.SWARMBOX_IMAGE_ADDONS_DIR || '/usr/local/lib/swarmbox/addons';
   const userDir = path.join(SB_CONFIG_DIR, 'addons');
   const dataDir = path.join(SB_DATA_DIR, 'addons');
-  const bakedDir = '/opt/swarmbox/addons';
+  const bakedDir = env.SWARMBOX_TEST_IMAGE_STATE || '/opt/swarmbox/addons';
   const byName = new Map();
 
   for (const [level, dir] of [['image', imageDir], ['user', userDir]]) {
@@ -1066,6 +1081,7 @@ function listAddonsSnapshot() {
         description: conf.DESCRIPTION || '',
         manifestVersion: conf.VERSION || '',
         commands: (conf.COMMANDS || '').split(/\s+/).filter(Boolean),
+        update: conf.UPDATE || 'managed',
         level,
       });
     }
@@ -1073,27 +1089,16 @@ function listAddonsSnapshot() {
 
   const out = [];
   for (const item of Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name))) {
-    const userCur = path.join(dataDir, item.name, 'current');
-    const bakedCur = path.join(bakedDir, item.name, 'current');
     let installed = false;
     let installedVersion = '';
     let location = '';
-    for (const [loc, cur] of [['workspace', userCur], ['image', bakedCur]]) {
-      try {
-        const target = fs.readlinkSync(cur);
-        installed = true;
-        installedVersion = path.basename(target);
-        location = loc;
-        break;
-      } catch (_) {
-        try {
-          if (fs.existsSync(cur)) {
-            installed = true;
-            location = loc;
-            break;
-          }
-        } catch (_) {}
-      }
+    for (const [loc, dir] of [['workspace', dataDir], ['image', bakedDir]]) {
+      const v = installedOf(dir, item);
+      if (v === null) continue;
+      installed = true;
+      installedVersion = v;
+      location = loc;
+      break;
     }
     out.push({
       ...item,
@@ -1133,7 +1138,7 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
     || '';
   const healthRaw = readTextSafe(path.join(SB_STATE_DIR, 'health'));
   const health = healthRaw ? healthRaw.split('\n').map((s) => s.trim()).filter(Boolean) : [];
-  const addons = listAddonsSnapshot();
+  const addons = listAddonsSnapshot(env);
   const installedAgents = listInstalledAgents(env);
 
   const box = {

@@ -740,6 +740,42 @@ assert.equal(show('**Resumo:** **swarmbox** e **`sabrina`** ok'), '<bold:Resumo:
             lvl, _ = sysop_risk.classify_command(safe)
             self.assertEqual(lvl, "low", safe)
 
+    def test_settings_addon_state_follows_the_install_record(self):
+        # Settings > Addons shows Install for an addon that is not installed. An addon that updates itself has no `current` link
+        # (its record is self/.swarmbox-env), so it must read as installed by that record, like `swarmbox-addon list` does; a
+        # managed addon whose link exists without the record is an install that did not finish.
+        if not shutil.which("node"):
+            self.skipTest("node not on PATH")
+        tmp = tempfile.mkdtemp(prefix="addon-state-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        image, data = os.path.join(tmp, "image"), os.path.join(tmp, "data", "swarmbox", "addons")
+        for name, update in (("selfup", "self"), ("selfnone", "self"), ("managed", "managed"), ("halfdone", "managed")):
+            os.makedirs(os.path.join(image, name))
+            with open(os.path.join(image, name, "addon.conf"), "w") as f:
+                f.write('SCHEMA=1\nNAME=%s\nDESCRIPTION="x"\nVERSION=latest\nUPDATE=%s\nCOMMANDS="%s"\n' % (name, update, name))
+        os.makedirs(os.path.join(data, "selfup", "self"))
+        for rel, text in (("selfup/self/.swarmbox-env", "VERSION=latest\n"),
+                          ("selfup/self/installed", "requested=latest\nreported=2.1.332 (Claude Code)\narch=amd64\n")):
+            with open(os.path.join(data, rel), "w") as f:
+                f.write(text)
+        os.makedirs(os.path.join(data, "selfnone", "self"))   # a folder without the record: not installed
+        for name, record in (("managed", True), ("halfdone", False)):
+            os.makedirs(os.path.join(data, name, "1.2.3"))
+            os.symlink("1.2.3", os.path.join(data, name, "current"))
+            if record:
+                open(os.path.join(data, name, "1.2.3", ".swarmbox-env"), "w").close()
+        js = """
+import { readBoxConfigSnapshot } from %r;
+const cfg = readBoxConfigSnapshot([], process.env);
+console.log(JSON.stringify(Object.fromEntries(cfg.addons.map((a) => [a.name, [a.installed, a.installedVersion]]))));
+""" % (HERDR_CLIENT,)
+        env = dict(os.environ, XDG_DATA_HOME=os.path.join(tmp, "data"), XDG_CONFIG_HOME=os.path.join(tmp, "config"),
+                   SWARMBOX_IMAGE_ADDONS_DIR=image, SWARMBOX_TEST_IMAGE_STATE=os.path.join(tmp, "baked"))
+        p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, env=env)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(p.stdout.strip().splitlines()[-1]), {
+            "selfup": [True, "2.1.332"], "selfnone": [False, ""], "managed": [True, "1.2.3"], "halfdone": [False, ""]})
+
     def test_herdr_web_cli_args_and_origin_guard(self):
         if not shutil.which("node"):
             self.skipTest("node not on PATH")
