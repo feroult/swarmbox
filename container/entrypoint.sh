@@ -344,6 +344,17 @@ serve() {
     run_logged swarmbox-addon link --user; rc=$?
     [ "$rc" = 0 ] || warn "linking the user addons failed (swarmbox-addon link exit $rc); see serve.log"
 
+    # step 6c [W]: the agent registry (docs/agents-design.md 3.3): <run>/agents.json from the agent/ folders of the addons. The readers
+    # compute it from the manifests themselves when it is missing or stale, so this is a convenience; an AGENT that names no agent is a W line.
+    if have swarmbox-agents; then
+        log "step 6c: swarmbox-agents generate"
+        run_logged swarmbox-agents generate; rc=$?
+        [ "$rc" = 0 ] || warn "writing the agent registry failed (swarmbox-agents exit $rc); see serve.log"
+        if [ -n "${SWARMBOX_AGENT:-}" ] && ! swarmbox-agents resolve "$SWARMBOX_AGENT" >/dev/null 2>&1; then
+            warn "AGENT=$SWARMBOX_AGENT is not an agent of this box (no agent/ in its addon); yolo runs $(swarmbox-agents default 2>/dev/null || echo nothing)"
+        fi
+    fi
+
     # step 6b [W]: the bus broker, supervised, before step 7 because the prepare.sh of an addon may start subscribers and publishers.
     # It needs only the run folder (step 3): the bus knows nothing about the multiplexer. Nothing of the box depends on it.
     if ! have swarmbox-bus; then

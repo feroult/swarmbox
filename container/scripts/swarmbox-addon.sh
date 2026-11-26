@@ -193,6 +193,29 @@ lint_install() {
     for ((n = 0; n < ${#bad[@]}; n++)); do err "${bad[$n]}"; done
 }
 
+# agents_lib: the agent registry library (swarmbox_agents.py) next to dirs.sh, or next to this script (the repository); 1 when absent.
+agents_lib() {
+    local f
+    for f in "$SB_LIB/swarmbox_agents.py" "$(dirname "$0")/swarmbox_agents.py"; do
+        [ -r "$f" ] && { printf '%s' "$f"; return 0; }
+    done
+    return 1
+}
+
+# check_agent_dir DIR: an addon with an agent/ folder is a coding agent (docs/agents-design.md 3.2); its agent.conf, icon and hooks are
+# checked by the registry library itself (one reader of the format), each problem appended to ERRS.
+check_agent_dir() {
+    local dir=$1 lib line
+    [ -d "$dir/agent" ] || return 0
+    if ! lib=$(agents_lib) || ! command -v python3 >/dev/null 2>&1; then
+        err "agent/ cannot be checked: python3 or swarmbox_agents.py is missing"
+        return 0
+    fi
+    while IFS= read -r line; do
+        [ -z "$line" ] || err "$line"
+    done < <(python3 -I "$lib" check "$dir" 2>&1)
+}
+
 # check_manifest DIR LEVEL: with M loaded, appends every problem to ERRS.
 check_manifest() {
     local dir=$1 base c update version h a
@@ -261,6 +284,7 @@ check_manifest() {
         && grep -v '^[[:space:]]*#' "$dir/install.sh" | grep -q 'ADDON_SHA256'; then
         err "install.sh verifies ADDON_SHA256 but the manifest declares no SHA256_amd64 and SHA256_arm64 (record them with dev/record-checksums.sh)"
     fi
+    check_agent_dir "$dir"
     if [ ! -f "$dir/install.sh" ]; then
         err "install.sh is missing"
     elif [ ! -x "$dir/install.sh" ]; then
@@ -1016,8 +1040,16 @@ declared_with() {
     return 1
 }
 
+# regen_agents: rewrite <run>/agents.json after an install or a remove (an addon may be an agent). Best effort and silent: the readers of
+# the registry compute it from the manifests when the file is stale.
+regen_agents() {
+    command -v swarmbox-agents >/dev/null 2>&1 || return 0
+    swarmbox-agents generate >/dev/null 2>&1 || true
+}
+
 # prepare_after_install NAME: after a successful install; a failure is reported, never fatal (the addon is installed).
 prepare_after_install() {
+    regen_agents
     find_manifest "$1" 2>/dev/null || return 0
     prepare_addon "$1" || true
 }
@@ -1263,6 +1295,7 @@ cmd_remove() {
         echo "swarmbox-addon: purged the user-level manifest of $name and relinked" >&2
     fi
     drop_lock
+    regen_agents
     exit 0
 }
 

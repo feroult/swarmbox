@@ -1,0 +1,611 @@
+"""swarmbox_agents: the agent registry of SwarmBox (installed as /usr/local/lib/swarmbox/swarmbox_agents.py).
+
+An addon is a coding AGENT if and only if it has `agent/agent.conf` (docs/agents-design.md 3.2). This module reads those declarations
+from the two addon levels (the image's manifests and the user's), and is the only place in Python that knows which programs are agents:
+swarmbox-tabs, swarmbox-state, swarmbox-pins, swarmbox-worktree and the sysop ask it, never a list of their own. Its twin in Node is
+container/web/herdr/agents.mjs; both are checked against the same vectors (tests/support/fixtures/agents/cases.json).
+
+THE FILE FORMAT of agent.conf is a small subset of shell assignments that a parser reads without running anything:
+  * one `KEY=value` per line; blank lines and lines starting with `#` are skipped;
+  * the value may be wrapped in double quotes; inside, no `"`, `$`, backslash or backtick (no expansion, no escapes);
+  * lists are words separated by spaces.
+An unknown key is ignored at run time and reported by `check` (swarmbox-addon validate runs it).
+
+THE LEVELS. The image level is SWARMBOX_TEST_IMAGE_ADDONS / SWARMBOX_IMAGE_ADDONS_DIR, else the `addons` folder next to this file (the
+image: /usr/local/lib/swarmbox/addons) or one level up (the repository: container/addons). The user level is SWARMBOX_TEST_USER_ADDONS,
+else $XDG_CONFIG_HOME/swarmbox/addons (~/.config/swarmbox/addons). A user addon of the same name replaces the image one.
+
+INSTALLED means the install record of swarmbox-addon exists (workspace or image install), or, for a self-updating addon, the program is in
+~/.local/bin. Only installed agents are offered (default agent, New agent, the sysop's tab open); every declared agent is RECOGNISED
+(detection of a running agent works for one installed by hand from its addon's command name).
+
+Pseudo-agents are built in, not declared: `shell` (a login shell), `yolo` (runs the default agent; resolved at launch, never persisted)
+and the role `sysop`.
+"""
+
+import importlib.util
+import json
+import os
+import re
+import shlex
+import sys
+import time
+
+SCHEMA = 1
+PSEUDO = ("shell", "yolo")
+SHELL_NAMES = frozenset({"bash", "sh", "zsh", "dash", "fish", "ash", "busybox", "-bash", "-sh", "-zsh", "-dash", "login"})
+
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+WORD_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
+COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+BAD_VALUE_RE = re.compile(r'["$\\`]')
+PLACEHOLDER_RE = re.compile(r"\{([a-z_]+)\}")
+
+# The built-in terminal profiles (docs/agents-design.md 3.2). `tui` holds today's agy-tuned numbers; an agent's TERM_* keys override it.
+TERM_DEFAULTS = {
+    "resize_quiet_ms": 900, "resize_cap_ms": 3500, "resize_client_fallback_ms": 4200,
+    "hydrate_gap_ms": 60, "hydrate_min_bytes": 256, "hydrate_flush_ms": 460, "hydrate_cap_ms": 1400,
+    "late_redraw_ms": 2500, "settle_ms": 650,
+    "copy_prompt_glyphs": "❯", "copy_gutter_glyphs": "│┃║▕▎▏", "image_paste": "path",
+}
+TERM_INT_KEYS = ("resize_quiet_ms", "resize_cap_ms", "resize_client_fallback_ms", "hydrate_gap_ms", "hydrate_min_bytes",
+                 "hydrate_flush_ms", "hydrate_cap_ms", "late_redraw_ms", "settle_ms")
+
+# key -> kind. str: one line; words: a list; int: a whole number; enum:a|b: one of; template: a command template with placeholders.
+KEYS = {
+    "SCHEMA": "int",
+    "ID": "id",
+    "CMD": "word",
+    "LABEL": "str",
+    "ALIASES": "words",
+    "COLOR": "color",
+    "YOLO_ARGS": "words",
+    "MCP_ARGS": "words",
+    "PASSTHROUGH": "words",
+    "PRINT_FLAGS": "words",
+    "RESUME_ARGS": "words",
+    "RESUME_FAST_FAIL_S": "int",
+    "RESUME_SCOPE": "enum:cwd|global",
+    "STATUS": "enum:osc7501|none",
+    "RESERVED_PREFIXES": "words",
+    "ANSWER_ALLOW": "str",
+    "ANSWER_DENY": "str",
+    "HISTORY": "str",
+    "NAMER": "template",
+    "BRAIN": "template",
+    "LOGIN_HINT": "str",
+    "MODEL": "word",
+    "SECRET_ENV": "words",
+    "SECRET_FILES": "words",
+}
+for _k in TERM_INT_KEYS:
+    KEYS["TERM_" + _k.upper()] = "int"
+KEYS["TERM_COPY_PROMPT_GLYPHS"] = "str"
+KEYS["TERM_COPY_GUTTER_GLYPHS"] = "str"
+KEYS["TERM_IMAGE_PASTE"] = "enum:path|none"
+
+PLACEHOLDERS = {"NAMER": ("prompt", "system", "model"), "BRAIN": ("mcp_config", "model", "system"), "MCP_ARGS": ("mcp_file", "home")}
+HOOKS = {"screen": "screen.py", "history": "history.py", "shell": "shell.sh", "mcp": "mcp.sh", "statusline": "statusline.sh",
+         "terminal": "terminal.mjs", "icon": "icon.svg", "settings": "settings.json"}
+HOOK_FUNCS = {"screen.py": ("state",), "history.py": ("messages",)}
+
+
+# ---- reading ----------------------------------------------------------------------------------------------------------------------
+
+def parse_conf(text):
+    """(values, problems): the KEY=value pairs of an agent.conf text, and every line that breaks the format."""
+    values, problems = {}, []
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        k, eq, v = line.partition("=")
+        if not eq or not KEY_RE.match(k):
+            problems.append("line %d is not KEY=value" % n)
+            continue
+        if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+            v = v[1:-1]
+        if BAD_VALUE_RE.search(v):
+            problems.append('line %d (%s): a value has no quotes inside, no $, no backslash and no backtick' % (n, k))
+            continue
+        values[k] = v.strip()
+    return values, problems
+
+
+def _here():
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _xdg(var, fallback, env):
+    base = env.get(var) or ""
+    if not base.startswith("/"):
+        base = fallback
+    return os.path.join(base.rstrip("/") or "/", "swarmbox")
+
+
+def image_addons_dir(env=None):
+    env = os.environ if env is None else env
+    for var in ("SWARMBOX_TEST_IMAGE_ADDONS", "SWARMBOX_IMAGE_ADDONS_DIR"):
+        if env.get(var):
+            return env[var]
+    for cand in (os.path.join(_here(), "addons"), os.path.join(os.path.dirname(_here()), "addons")):
+        if os.path.isdir(cand):
+            return cand
+    return "/usr/local/lib/swarmbox/addons"
+
+
+def user_addons_dir(env=None):
+    env = os.environ if env is None else env
+    if env.get("SWARMBOX_TEST_USER_ADDONS"):
+        return env["SWARMBOX_TEST_USER_ADDONS"]
+    home = env.get("HOME") or os.path.expanduser("~")
+    return os.path.join(_xdg("XDG_CONFIG_HOME", os.path.join(home, ".config"), env), "addons")
+
+
+def _read(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _addon_conf(dirpath):
+    """NAME, COMMANDS, UPDATE of an addon.conf, read without running it (the same reading as the Web Studio's)."""
+    txt = _read(os.path.join(dirpath, "addon.conf"))
+    if txt is None:
+        return None
+    out = {}
+    for raw in txt.splitlines():
+        ln = raw.strip()
+        if not ln or ln.startswith("#") or "=" not in ln:
+            continue
+        k, _, v = ln.partition("=")
+        v = v.strip()
+        if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+            v = v[1:-1]
+        out[k.strip()] = v
+    return out if out.get("NAME") else None
+
+
+def _installed(addon, conf, cmd, env):
+    home = env.get("HOME") or os.path.expanduser("~")
+    data = _xdg("XDG_DATA_HOME", os.path.join(home, ".local", "share"), env)
+    image_state = env.get("SWARMBOX_TEST_IMAGE_STATE") or "/opt/swarmbox/addons"
+    self_upd = conf.get("UPDATE") == "self"
+    sub = "self" if self_upd else "current"
+    for root in (os.path.join(data, "addons"), image_state):
+        if os.path.isfile(os.path.join(root, addon, sub, ".swarmbox-env")):
+            return True
+    if self_upd:
+        p = os.path.join(home, ".local", "bin", cmd)
+        return os.path.isfile(p) and os.access(p, os.X_OK)
+    return False
+
+
+def _words(v):
+    return v.split() if v else []
+
+
+def _int(v, default):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _agent_from(dirpath, level, conf, values, env):
+    adir = os.path.join(dirpath, "agent")
+    aid = values.get("ID", "")
+    cmd = values.get("CMD") or aid
+    aliases = []
+    for w in [conf["NAME"], cmd] + _words(values.get("ALIASES", "")):
+        w = w.lower()
+        if w != aid and w not in aliases:
+            aliases.append(w)
+    term = dict(TERM_DEFAULTS)
+    for k in TERM_INT_KEYS:
+        if values.get("TERM_" + k.upper()):
+            term[k] = _int(values["TERM_" + k.upper()], term[k])
+    for k in ("copy_prompt_glyphs", "copy_gutter_glyphs", "image_paste"):
+        if values.get("TERM_" + k.upper()):
+            term[k] = values["TERM_" + k.upper()]
+    hooks = {h: os.path.isfile(os.path.join(adir, f)) for h, f in HOOKS.items()}
+    hooks["shell"] = hooks["shell"] or os.path.isfile(os.path.join(dirpath, "shell.sh"))
+    return {
+        "id": aid,
+        "cmd": cmd,
+        "label": values.get("LABEL") or aid,
+        "aliases": aliases,
+        "color": values.get("COLOR", ""),
+        "addon": conf["NAME"],
+        "level": level,
+        "dir": adir,
+        "installed": _installed(conf["NAME"], conf, cmd, env),
+        "yolo_args": _words(values.get("YOLO_ARGS")),
+        "mcp_args": _words(values.get("MCP_ARGS")),
+        "passthrough": _words(values.get("PASSTHROUGH")),
+        "print_flags": _words(values.get("PRINT_FLAGS")),
+        "resume": {"args": _words(values.get("RESUME_ARGS")), "fast_fail_s": _int(values.get("RESUME_FAST_FAIL_S"), 4),
+                   "scope": values.get("RESUME_SCOPE") or "cwd"},
+        "status": values.get("STATUS") or "osc7501",
+        "reserved_prefixes": _words(values["RESERVED_PREFIXES"]) if "RESERVED_PREFIXES" in values else ["/", "!"],
+        "answer": {"allow": values.get("ANSWER_ALLOW", ""), "deny": values.get("ANSWER_DENY", "")},
+        "history": values.get("HISTORY", ""),
+        "namer": values.get("NAMER", ""),
+        "brain": values.get("BRAIN", ""),
+        "login_hint": values.get("LOGIN_HINT", ""),
+        "model": values.get("MODEL", ""),
+        "secrets": {"env": _words(values.get("SECRET_ENV")), "files": _words(values.get("SECRET_FILES"))},
+        "term": term,
+        "hooks": hooks,
+    }
+
+
+_CACHE = {}
+
+
+def _stamp(dirs):
+    """A cheap fingerprint of every file the registry reads: a changed, added or removed manifest gives a different stamp."""
+    parts = []
+    for d in dirs:
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            continue
+        for n in names:
+            for rel in ("addon.conf", "agent", os.path.join("agent", "agent.conf"), "shell.sh"):
+                try:
+                    st = os.stat(os.path.join(d, n, rel))
+                    parts.append((d, n, rel, st.st_mtime_ns, st.st_size))
+                except OSError:
+                    pass
+    return tuple(parts)
+
+
+def load(env=None):
+    """The registry: {"agents": [agent, ...] (sorted by id), "by_name": {name: id}}. Cached while no manifest changes."""
+    env = os.environ if env is None else env
+    levels = (("image", image_addons_dir(env)), ("user", user_addons_dir(env)))
+    key = tuple(d for _, d in levels) + (env.get("HOME", ""), env.get("XDG_DATA_HOME", ""), env.get("XDG_CONFIG_HOME", ""))
+    stamp = _stamp([d for _, d in levels])
+    hit = _CACHE.get(key)
+    if hit and hit[0] == stamp and time.monotonic() - hit[2] < 5.0:   # 5 s: an install changes `installed` without touching a manifest
+        return hit[1]
+    found = {}
+    for level, root in levels:
+        try:
+            names = sorted(os.listdir(root))
+        except OSError:
+            continue
+        for n in names:
+            d = os.path.join(root, n)
+            conf = _addon_conf(d)
+            if not conf:
+                continue
+            txt = _read(os.path.join(d, "agent", "agent.conf"))
+            if txt is None:
+                found.pop(conf["NAME"], None)      # a user addon without agent/ hides the image agent of the same name
+                continue
+            values, _ = parse_conf(txt)
+            if not ID_RE.match(values.get("ID", "")) or values["ID"] in PSEUDO or values["ID"] == "sysop":
+                continue
+            found[conf["NAME"]] = _agent_from(d, level, conf, values, env)
+    agents = sorted(found.values(), key=lambda a: a["id"])
+    by_name = {}
+    for a in agents:
+        by_name.setdefault(a["id"], a["id"])
+    for a in agents:
+        for al in a["aliases"]:
+            by_name.setdefault(al, a["id"])
+    reg = {"agents": agents, "by_name": by_name}
+    _CACHE[key] = (stamp, reg, time.monotonic())
+    return reg
+
+
+# ---- the resolver -----------------------------------------------------------------------------------------------------------------
+
+def agents(env=None, installed_only=False):
+    return [a for a in load(env)["agents"] if a["installed"] or not installed_only]
+
+
+def get(aid, env=None):
+    for a in load(env)["agents"]:
+        if a["id"] == aid:
+            return a
+    return None
+
+
+def resolve(name, env=None):
+    """The agent id of a name (an id, a command, an alias: the OSC 7501 app it reports, its addon name, a process name), or ''.
+    A path is reduced to its last part and a login shell's leading '-' is dropped. Pseudo-agents give ''."""
+    n = os.path.basename(str(name or "").strip()).lower().lstrip("-")
+    if not n:
+        return ""
+    return load(env)["by_name"].get(n, "")
+
+
+def is_agent(name, env=None):
+    return bool(resolve(name, env))
+
+
+def ids(env=None, installed_only=False):
+    return [a["id"] for a in agents(env, installed_only)]
+
+
+def default_agent(env=None):
+    """The default agent of the box: AGENT if it names an agent, else the first WITH entry that is an agent, else the first installed
+    agent, else ''. One answer for every place that starts or offers the default agent (yolo, New agent, worktree open, the sysop)."""
+    env = os.environ if env is None else env
+    a = resolve(env.get("SWARMBOX_AGENT", ""), env)
+    if a:
+        return a
+    for tok in (env.get("SWARMBOX_WITH") or "").replace(",", " ").split():
+        a = resolve(tok, env)
+        if a:
+            return a
+    inst = ids(env, installed_only=True)
+    return inst[0] if inst else ""
+
+
+def _bare_shell(argv, fg):
+    argv = argv if isinstance(argv, (list, tuple)) else []
+    fg = os.path.basename(str(fg or "")).lower()
+    return len(argv) <= 2 and (not fg or fg in SHELL_NAMES)
+
+
+def detect(term, env=None, live=False):
+    """The agent a terminal runs, by the one detection order of docs/agents-design.md 3.3: the OSC 7501 `app` it reports, then its
+    foreground process, then (not for `live`) the `swarmbox.agent` label, trusted only when the terminal was not a bare login shell.
+    Never the tab name. `term` is a herdr-core terminal object or a row of `swarmbox-tabs list` (keys status, foreground/cmd, labels/agent)."""
+    if not isinstance(term, dict):
+        return ""
+    st = term.get("status")
+    if isinstance(st, dict):
+        a = resolve(st.get("app"), env)
+        if a:
+            return a
+    fg = term.get("foreground")
+    fgname = fg.get("name") if isinstance(fg, dict) else term.get("cmd")
+    a = resolve(fgname, env)
+    if a or live:
+        return a
+    labels = term.get("labels")
+    lbl = labels.get("swarmbox.agent") if isinstance(labels, dict) else term.get("agent")
+    if isinstance(lbl, str) and resolve(lbl, env):
+        if "argv" not in term or not _bare_shell(term.get("argv"), fgname):
+            return resolve(lbl, env)
+    return ""
+
+
+def resume_argv(aid, env=None):
+    """The words that resume the last conversation of agent `aid` (its RESUME_ARGS), [] when it cannot resume."""
+    a = get(aid, env)
+    return list(a["resume"]["args"]) if a else []
+
+
+def launch_script(aid, resume=True, env=None):
+    """The bash -lic script that starts agent `aid` in a tab (through its shell function, so auto-approve and MCP apply): with `resume`
+    and RESUME_ARGS, it first tries to continue; when that fails within RESUME_FAST_FAIL_S seconds (no conversation here), it starts
+    fresh. A login shell takes the agent's place when it exits. The JS twin is buildAgentArgv in agents.mjs."""
+    a = get(aid, env)
+    if not a:
+        return "exec /bin/bash -l"
+    cmd = shlex.quote(a["cmd"])
+    rargs = " ".join(shlex.quote(w) for w in a["resume"]["args"])
+    if resume and rargs:
+        return ("_sb_t0=$(date +%%s); SWARMBOX_WORKTREE_GUARD=0 %s %s; _sb_rc=$?; "
+                "if [ \"$_sb_rc\" -ne 0 ] && [ $(( $(date +%%s) - _sb_t0 )) -lt %d ]; then SWARMBOX_WORKTREE_GUARD=0 %s; fi; exec /bin/bash -l"
+                % (cmd, rargs, a["resume"]["fast_fail_s"], cmd))
+    return "%s; exec /bin/bash -l" % cmd
+
+
+def hook(aid, name, env=None):
+    """The Python module of a hook of agent `aid` (`screen` or `history`), or None. Loaded from the agent's folder by path; a hook that
+    fails to import is treated as absent (logged to stderr)."""
+    a = get(aid, env)
+    if not a or not a["hooks"].get(name) or not HOOKS[name].endswith(".py"):
+        return None
+    path = os.path.join(a["dir"], HOOKS[name])
+    key = ("hook", path)
+    try:
+        mtime = os.stat(path).st_mtime_ns
+    except OSError:
+        return None
+    hit = _CACHE.get(key)
+    if hit and hit[0] == mtime:
+        return hit[1]
+    try:
+        spec = importlib.util.spec_from_file_location("swarmbox_agent_%s_%s" % (aid.replace("-", "_"), name), path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except Exception as e:  # noqa: BLE001  - a broken hook degrades to "absent"
+        sys.stderr.write("swarmbox_agents: the %s hook of %s does not load: %s\n" % (name, aid, e))
+        mod = None
+    _CACHE[key] = (mtime, mod)
+    return mod
+
+
+def public(a):
+    """An agent as the browser and agents.json see it (no file system paths)."""
+    out = {k: v for k, v in a.items() if k != "dir"}
+    return out
+
+
+def registry_json(env=None):
+    return {"schema": SCHEMA, "default": default_agent(env), "agents": [public(a) for a in agents(env)]}
+
+
+# ---- check ------------------------------------------------------------------------------------------------------------------------
+
+def check_dir(addon_dir, commands=None):
+    """The problems of the agent/ folder of an addon (empty when it is good, or when there is no agent/)."""
+    adir = os.path.join(addon_dir, "agent")
+    if not os.path.isdir(adir):
+        return []
+    errs = []
+    txt = _read(os.path.join(adir, "agent.conf"))
+    if txt is None:
+        return ["agent/ has no agent.conf (an addon is an agent when agent/agent.conf exists)"]
+    values, problems = parse_conf(txt)
+    errs += ["agent.conf: " + p for p in problems]
+    if commands is None:
+        conf = _addon_conf(addon_dir) or {}
+        commands = (conf.get("COMMANDS") or "").split()
+    for k, v in values.items():
+        kind = KEYS.get(k)
+        if kind is None:
+            errs.append("agent.conf: unknown key %s" % k)
+            continue
+        if kind == "int" and not re.match(r"^[0-9]+$", v):
+            errs.append("agent.conf: %s must be a whole number, found '%s'" % (k, v))
+        elif kind == "id" and not ID_RE.match(v):
+            errs.append("agent.conf: ID '%s' is not a plain lowercase word" % v)
+        elif kind == "word" and v and not WORD_RE.match(v):
+            errs.append("agent.conf: %s '%s' is not one plain word" % (k, v))
+        elif kind == "color" and v and not COLOR_RE.match(v):
+            errs.append("agent.conf: COLOR must be #rrggbb, found '%s'" % v)
+        elif kind.startswith("enum:") and v and v not in kind[5:].split("|"):
+            errs.append("agent.conf: %s must be one of %s, found '%s'" % (k, kind[5:].replace("|", ", "), v))
+        elif kind == "words" and k == "ALIASES":
+            for w in v.split():
+                if not ID_RE.match(w):
+                    errs.append("agent.conf: ALIASES entry '%s' is not a plain lowercase word" % w)
+        if k in PLACEHOLDERS:
+            for ph in PLACEHOLDER_RE.findall(v):
+                if ph not in PLACEHOLDERS[k]:
+                    errs.append("agent.conf: %s uses the unknown placeholder {%s} (known: %s)" % (k, ph, ", ".join(PLACEHOLDERS[k])))
+    if "ID" not in values:
+        errs.append("agent.conf: ID is missing")
+    elif values["ID"] in PSEUDO or values["ID"] == "sysop":
+        errs.append("agent.conf: ID '%s' is a built-in name (shell, yolo, sysop)" % values["ID"])
+    cmd = values.get("CMD") or values.get("ID", "")
+    if cmd and commands and cmd not in commands:
+        errs.append("agent.conf: CMD '%s' is not one of the addon's COMMANDS (%s)" % (cmd, " ".join(commands)))
+    if values.get("SCHEMA") and _int(values["SCHEMA"], 0) > SCHEMA:
+        errs.append("agent.conf: SCHEMA=%s is newer than this SwarmBox reads (%d)" % (values["SCHEMA"], SCHEMA))
+    icon = os.path.join(adir, "icon.svg")
+    if os.path.isfile(icon):
+        data = _read(icon) or ""
+        if len(data) > 16384:
+            errs.append("agent/icon.svg is larger than 16 KiB")
+        elif not re.match(r"^\s*<svg[\s>]", data) or "</svg>" not in data:
+            errs.append("agent/icon.svg is not one <svg> element")
+        elif re.search(r"<script|\son[a-z]+\s*=|javascript:", data, re.I):
+            errs.append("agent/icon.svg has a script or an event handler")
+    for f, funcs in HOOK_FUNCS.items():
+        p = os.path.join(adir, f)
+        if os.path.isfile(p):
+            src = _read(p) or ""
+            for fn in funcs:
+                if not re.search(r"^def %s\(" % fn, src, re.M):
+                    errs.append("agent/%s does not define %s()" % (f, fn))
+    sj = os.path.join(adir, "settings.json")
+    if os.path.isfile(sj):
+        try:
+            if not isinstance(json.loads(_read(sj) or ""), dict):
+                errs.append("agent/settings.json is not a JSON object")
+        except ValueError:
+            errs.append("agent/settings.json is not valid JSON")
+    return errs
+
+
+# ---- the generated shell wrappers (bashrc.sh sources `swarmbox-agents sh`) ------------------------------------------------------------
+
+def _shq(words):
+    return " ".join(shlex.quote(w) for w in words)
+
+
+def shell_functions(env=None):
+    """One shell function per declared agent whose addon has no shell.sh of its own: `<cmd>() { _sb_agent_run ID ... "$@"; }` with
+    the agent's data inlined, so a shell needs no Python at each call. _sb_agent_run is defined in bashrc.sh."""
+    out = []
+    for a in agents(env):
+        if a["hooks"]["shell"] or not WORD_RE.match(a["cmd"]) or "." in a["cmd"]:
+            continue
+        mcp = [w.replace("{home}", "$HOME").replace("{mcp_file}", "$HOME/.claude/mcp-servers.json") for w in a["mcp_args"]]
+        mcp_q = " ".join('"%s"' % w if "$HOME" in w else shlex.quote(w) for w in mcp)
+        out.append("%s() {\n    _sb_agent_run %s %s '%s' '%s' '%s' '%s' \"$@\"\n}"
+                   % (a["cmd"], shlex.quote(a["id"]), shlex.quote(a["cmd"]), " ".join(a["passthrough"]), " ".join(a["print_flags"]),
+                      _shq(a["yolo_args"]).replace("'", ""), mcp_q.replace("'", "")))
+    return "\n".join(out) + ("\n" if out else "")
+
+
+# ---- command line: swarmbox-agents ---------------------------------------------------------------------------------------------------
+
+USAGE = """usage: swarmbox-agents COMMAND
+  list [--installed] [--json]   the declared agents (id, command, installed)
+  get ID                        one agent as JSON
+  resolve NAME                  the agent id of a name (exit 1 when it is not an agent)
+  default                       the default agent of the box (exit 1 when there is none)
+  generate [--output FILE]      write the registry as JSON (default: $SB_RUN_DIR/agents.json, /tmp/swarmbox/agents.json)
+  sh                            the shell functions of the agents (sourced by the shell)
+  check DIR                     check the agent/ folder of the addon in DIR (exit 1 with the problems)
+"""
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv:
+        sys.stderr.write(USAGE)
+        return 64
+    cmd, rest = argv[0], argv[1:]
+    if cmd == "list":
+        inst = "--installed" in rest
+        lst = agents(installed_only=inst)
+        if "--json" in rest:
+            print(json.dumps([public(a) for a in lst], indent=2))
+        else:
+            for a in lst:
+                print("%-12s %-12s %s" % (a["id"], a["cmd"], "installed" if a["installed"] else "-"))
+        return 0
+    if cmd == "get" and len(rest) == 1:
+        a = get(resolve(rest[0]) or rest[0])
+        if not a:
+            sys.stderr.write("swarmbox-agents: no agent named %s\n" % rest[0])
+            return 1
+        print(json.dumps(public(a), indent=2))
+        return 0
+    if cmd == "resolve" and len(rest) == 1:
+        a = resolve(rest[0])
+        if a:
+            print(a)
+        return 0 if a else 1
+    if cmd == "default" and not rest:
+        a = default_agent()
+        if a:
+            print(a)
+        return 0 if a else 1
+    if cmd == "generate":
+        out = os.path.join(os.environ.get("SB_RUN_DIR") or "/tmp/swarmbox", "agents.json")
+        if rest[:1] == ["--output"] and len(rest) == 2:
+            out = rest[1]
+        elif rest:
+            sys.stderr.write(USAGE)
+            return 64
+        data = json.dumps(registry_json(), indent=2) + "\n"
+        try:
+            os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+            tmp = "%s.tmp.%d" % (out, os.getpid())
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(data)
+            os.replace(tmp, out)
+        except OSError as e:
+            sys.stderr.write("swarmbox-agents: cannot write %s: %s\n" % (out, e))
+            return 1
+        return 0
+    if cmd == "sh" and not rest:
+        sys.stdout.write(shell_functions())
+        return 0
+    if cmd == "check" and len(rest) == 1:
+        errs = check_dir(rest[0])
+        for e in errs:
+            print(e)
+        return 1 if errs else 0
+    sys.stderr.write(USAGE)
+    return 64
+
+
+if __name__ == "__main__":
+    sys.exit(main())

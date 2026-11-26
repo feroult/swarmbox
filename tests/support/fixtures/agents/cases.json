@@ -1,0 +1,40 @@
+{
+  "_comment": "Shared vectors of the agent registry: run by swarmbox_agents.py and by agents.mjs (tests/fast/test_agents_registry.py). The world: the repository's addons as the image level, plus the user-level addon `fakebot` (agent id fakebot, command fbot, alias fake-bot, no RESUME_ARGS), with `installed` the addons that have an install record.",
+  "resolve": [
+    ["claude", "claude"], ["claude-code", "claude"], ["Claude-Code", "claude"], ["agy", "agy"], ["antigravity", "agy"],
+    ["ANTIGRAVITY", "agy"], ["/home/agent/.local/bin/agy", "agy"], ["-claude", "claude"], ["opencode", "opencode"],
+    ["fbot", "fakebot"], ["fake-bot", "fakebot"], ["fakebot", "fakebot"],
+    ["yolo", ""], ["shell", ""], ["sysop", ""], ["bash", ""], ["gcloud", ""], ["codex", ""], ["gemini", ""], ["aider", ""],
+    ["", ""], ["claude-2", ""], [" claude ", "claude"]
+  ],
+  "default": [
+    {"env": {"SWARMBOX_AGENT": "claude"}, "installed": [], "want": "claude"},
+    {"env": {"SWARMBOX_AGENT": "antigravity"}, "installed": [], "want": "agy"},
+    {"env": {"SWARMBOX_AGENT": "gcloud", "SWARMBOX_WITH": "gcloud,opencode"}, "installed": [], "want": "opencode"},
+    {"env": {"SWARMBOX_WITH": "gcloud,claude"}, "installed": [], "want": "claude"},
+    {"env": {"SWARMBOX_WITH": "go"}, "installed": ["opencode"], "want": "opencode"},
+    {"env": {}, "installed": ["claude", "antigravity"], "want": "agy"},
+    {"env": {}, "installed": [], "want": ""},
+    {"env": {"SWARMBOX_AGENT": "yolo"}, "installed": [], "want": ""}
+  ],
+  "detect": [
+    {"term": {"status": {"app": "claude-code", "state": "idle"}}, "want": "claude", "live": "claude"},
+    {"term": {"status": {"app": "antigravity"}, "foreground": {"name": "bash"}}, "want": "agy", "live": "agy"},
+    {"term": {"foreground": {"name": "opencode"}}, "want": "opencode", "live": "opencode"},
+    {"term": {"foreground": {"name": "node"}, "labels": {"swarmbox.agent": "opencode"}, "argv": ["/bin/bash", "-lic", "opencode"]}, "want": "opencode", "live": ""},
+    {"term": {"foreground": {"name": "bash"}, "labels": {"swarmbox.agent": "claude"}, "argv": ["/bin/bash", "-l"]}, "want": "", "live": ""},
+    {"term": {"foreground": {"name": "bash"}, "labels": {"swarmbox.agent": "claude"}}, "want": "claude", "live": ""},
+    {"term": {"name": "claude-2", "foreground": {"name": "bash"}}, "want": "", "live": ""},
+    {"term": {"status": {"app": "vim"}, "foreground": {"name": "vim"}}, "want": "", "live": ""},
+    {"term": {"cmd": "agy", "agent": ""}, "want": "agy", "live": "agy"},
+    {"term": {"cmd": "node", "agent": "opencode"}, "want": "opencode", "live": ""},
+    {"term": {"foreground": {"name": "fbot"}}, "want": "fakebot", "live": "fakebot"},
+    {"term": null, "want": "", "live": ""}
+  ],
+  "launch": [
+    {"id": "claude", "resume": true, "want": "_sb_t0=$(date +%s); SWARMBOX_WORKTREE_GUARD=0 claude --continue; _sb_rc=$?; if [ \"$_sb_rc\" -ne 0 ] && [ $(( $(date +%s) - _sb_t0 )) -lt 4 ]; then SWARMBOX_WORKTREE_GUARD=0 claude; fi; exec /bin/bash -l"},
+    {"id": "claude", "resume": false, "want": "claude; exec /bin/bash -l"},
+    {"id": "fakebot", "resume": true, "want": "fbot; exec /bin/bash -l"},
+    {"id": "nope", "resume": true, "want": "exec /bin/bash -l"}
+  ]
+}
