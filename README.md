@@ -32,7 +32,7 @@
 
 | Persistent Sandbox | Multi-Repo Studio &amp; Worktrees | Autonomous Sysop &amp; Local Voice |
 | :--- | :--- | :--- |
-| Run **Claude Code**, **Antigravity (`agy`)**, or **OpenCode** in auto-approve mode with `sudo`, nested Podman, and headless Chromium — with projects, logins, and SSH keys persisted in `~/swarmbox`. | Agents group automatically by Git repository, isolate into clean **Git worktrees** on collision, survive restarts as zero-RAM **parked cards**, and switch in `0 ms` with zero reflow. | Direct agents by text or voice from desktop or phone. **Sysop** inspects your box state, routes goals across tabs, and gates risky actions behind one-tap **Allow / Cancel** cards — backed by local `whisper.cpp`. |
+| Run **Claude Code**, **Antigravity (`agy`)**, **OpenCode**, or **OpenAI Codex** in auto-approve mode with `sudo`, nested Podman, and headless Chromium — with projects, logins, and SSH keys persisted in `~/swarmbox`. | Agents group automatically by Git repository, isolate into clean **Git worktrees** on collision, survive restarts as zero-RAM **parked cards**, and switch in `0 ms` with zero reflow. | Direct agents by text or voice from desktop or phone. **Sysop** inspects your box state, routes goals across tabs, and gates risky actions behind one-tap **Allow / Cancel** cards — backed by local `whisper.cpp`. |
 
 ---
 
@@ -47,7 +47,7 @@ claude            # inside the box: installs Claude Code on first use in auto-ap
 ```
 
 - **Open the Web Studio:** run `swarmbox url` and visit `http://127.0.0.1:7681` — both the browser studio and SSH cockpit attach to the same live `herdr-core` terminals.
-- **Other agents &amp; API keys:** pass `--with antigravity` (`agy`) or `--with opencode`, install later with `swarmbox addon install <name>`, or forward a host key via `export ANTHROPIC_API_KEY=...` and `swarmbox env add ANTHROPIC_API_KEY && swarmbox reset`.
+- **Other agents &amp; API keys:** pass `--with antigravity` (`agy`), `--with opencode` or `--with codex`, install later with `swarmbox addon install <name>`, or forward a host key via `export ANTHROPIC_API_KEY=...` and `swarmbox env add ANTHROPIC_API_KEY && swarmbox reset`.
 
 ---
 
@@ -110,6 +110,7 @@ Addons install on demand inside your persistent workspace, keeping the base imag
 | **`claude`** | `claude` | Claude Code (auto-approve default) + Purple Glow statusline |
 | **`antigravity`** | `agy` | Google Antigravity CLI (auto-approve default) + isolated statusline |
 | **`opencode`** | `opencode` | Open-source terminal coding agent |
+| **`codex`** | `codex` | OpenAI Codex CLI (auto-approve default) |
 | **`sysop`** | `swarmbox-sysop` | Autonomous operator, auto tab naming, and approval cards |
 | **`voice`** | `swarmbox-voice` | Local `whisper.cpp` speech-to-text web front |
 | **`go`** · **`gcloud`** · **`clasp`** · **`poetry`** | `go`, `gcloud`, `clasp`, `poetry` | Pinned, SHA-256 verified developer runtimes &amp; CLIs |
