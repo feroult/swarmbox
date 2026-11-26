@@ -265,6 +265,13 @@ statements below are for people who bake them in or want to know the terms.
 - [verified: "license" and "repository" fields of the npm registry entry (`npm view @opencode/cli`, version 2.2.6) and LICENSE of the repository's dev branch, "MIT License, Copyright (c) 2025 opencode"; 2026-11-08]
 - The other package, `opencode-ai` 1.x, is also MIT by `npm view`; which of the two the addon installs is an open question (docs/release-checklist.md), not a license one.
 
+### OpenAI Codex CLI (`@openai/codex`, addon `codex`)
+
+- license: Apache-2.0
+- source: https://github.com/openai/codex
+- not redistributed by SwarmBox: npm installs it on first use, into the user's addons volume, with the native program of the platform (`@openai/codex-linux-x64` or `-arm64`, an optional dependency of the same release).
+- [verified: "license" and "repository" fields of the npm registry entry (`npm view @openai/codex`, version 0.172.0); 2026-11-26]
+
 ### Poetry (addon `poetry`)
 
 - Version: latest at install time (`install.python-poetry.org`)

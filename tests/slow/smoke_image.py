@@ -194,7 +194,8 @@ def step_page_built(ctx):
 
 # The ten addons of the repository and the commands they provide (the order of the index is the sort of `link`).
 ADDON_COMMANDS = {"claude": ["claude"], "antigravity": ["agy"], "opencode": ["opencode"], "gcloud": ["gcloud", "gsutil", "bq"],
-                 "clasp": ["clasp"], "go": ["go", "gofmt"], "poetry": ["poetry"], "voice": ["swarmbox-voice"], "sysop": ["swarmbox-sysop"]}
+                 "clasp": ["clasp"], "go": ["go", "gofmt"], "poetry": ["poetry"], "voice": ["swarmbox-voice"], "sysop": ["swarmbox-sysop"],
+                 "codex": ["codex"]}
 ALL_COMMANDS = [c for cmds in ADDON_COMMANDS.values() for c in cmds]
 
 
@@ -274,7 +275,7 @@ def step_no_agent(ctx):
                "for c in claude opencode agy codex clasp gcloud gsutil bq go gofmt poetry swarmbox-voice swarmbox-sysop; do p=$(type -P $c) && echo \"FOUND:$c:$p\"; done; "
                "ls -A /opt/swarmbox/addons | wc -l; true")
     found = [l for l in r.stdout.splitlines() if l.startswith("FOUND:")]
-    # the shims are on PATH (a link to swarmbox-shim each); codex has no addon; none is a program
+    # the shims are on PATH (a link to swarmbox-shim each); none is a program
     bad = [l for l in found if not l.split(":", 2)[2] == "/usr/local/lib/swarmbox/shims/" + l.split(":")[1]]
     assert not bad, "the neutral image holds a program it should not: " + r.stdout
     assert len(found) == len(ALL_COMMANDS), "a shim is missing: " + r.stdout
