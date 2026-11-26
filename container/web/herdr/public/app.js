@@ -260,7 +260,6 @@
   const connPillEl = document.getElementById('conn-pill');
   const connTextEl = document.getElementById('conn-text');
   const sysopDotEl = document.getElementById('sysop-dot');
-  const sysopStateEl = document.getElementById('sysop-state');
   const mobileSysopBtn = document.getElementById('btn-mobile-sysop');
   const mobileSysopTextEl = document.getElementById('mobile-sysop-text');
   const btnMobileKeys = document.getElementById('btn-mobile-keys');
@@ -3148,9 +3147,6 @@
       '<rect x="10" y="15" width="2" height="1" fill="#27272a"/>' +
       '</svg>',
   };
-
-  // Mount crisp pixel-art Sysop mascot in header, mobile capsule & operator hero card
-  if (sysopDotEl) sysopDotEl.innerHTML = PIXEL_SVG.sysop;
 
   // the agent a tab runs: the live signals, then the swarmbox.agent label while the tab is not a bare login shell (its argv is longer
   // than `bash -l`, or its foreground is a program that is no shell: an agent under `node`). Never the tab name.
@@ -7316,9 +7312,12 @@
     if (!sysop) return;
     if (appEl) appEl.dataset.sysopUp = sysop.up ? '1' : '0';
     const st = sysop.state || 'off';
-    if (sysopDotEl) sysopDotEl.dataset.state = st;
-    sysopStateEl.dataset.state = st;
-    sysopStateEl.textContent = STATE_WORDS[st] || st;
+    const stWord = STATE_WORDS[st] || st;
+    if (sysopDotEl) {
+      sysopDotEl.dataset.state = st;
+      sysopDotEl.title = `Sysop: ${stWord}`;
+      sysopDotEl.setAttribute('aria-label', `Sysop: ${stWord}`);
+    }
     if (mobileSysopBtn) mobileSysopBtn.dataset.state = st;
     if (mobileSysopTextEl) mobileSysopTextEl.textContent = st === 'idle' || st === 'off' ? 'Sysop' : (sysop.sentence || `Sysop · ${st}`);
     if (btnToggleSysop) btnToggleSysop.dataset.state = st;
