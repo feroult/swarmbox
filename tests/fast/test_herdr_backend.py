@@ -829,7 +829,7 @@ assert.ok(Array.isArray(cfg.mcp));
         self.assertIn("fontsReadyPromise", app_src)
         self.assertIn("setDesktopSidebar", app_src)
         self.assertIn("setDesktopSysop", app_src)
-        self.assertIn("isInteractiveTuiTerminal", server_src)
+        self.assertIn("isTuiTerminal", server_src)
         self.assertIn("type: 'resized', seq: doneSeq", server_src)
         self.assertIn("resolveGitRepoInfo", server_src)
         self.assertIn("discoverProjects", server_src)

@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { agentIconPath, browserRegistry, resolveAgent } from './agents.mjs';
+import { TERM_DEFAULTS, agentIconPath, browserRegistry, getAgent, resolveAgent } from './agents.mjs';
 import {
   ADDON_BIN,
   HC_BIN,
@@ -264,8 +264,6 @@ function serveFile(res, filePath, cacheable = false) {
   });
 }
 
-const PLAIN_SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
-
 // Fast, zero-subprocess Git repository resolver (cached 2s per cwd) so Web UI can group
 // main-checkout and worktree agent tabs under their parent repository cleanly.
 const repoInfoCache = new Map();
@@ -499,7 +497,6 @@ const CLEAR_SCREEN_BUF = Buffer.from('\x1b[2J');
 const CLEAR_SCROLLBACK_BUF = Buffer.from('\x1b[3J');
 const MAX_SYNC_FRAME_BYTES = 512 * 1024;
 const MAX_SYNC_FRAME_MS = 120;
-const LATE_REDRAW_WINDOW_MS = 2500;
 
 export function createSyncOutputCoalescer(onEmit, opts = {}) {
   const maxMs = Number(opts.maxMs) || MAX_SYNC_FRAME_MS;
@@ -563,14 +560,62 @@ export function createSyncOutputCoalescer(onEmit, opts = {}) {
   };
 }
 
-function isInteractiveTuiTerminal(term) {
-  if (!term) return false;
-  if (detectTerminalAgent(term)) return true;
-  const fg = String((term.foreground && term.foreground.name) || '').toLowerCase().trim();
-  if (fg && !PLAIN_SHELLS.has(fg)) return true;
-  const word = /^[a-z0-9_]+/.exec(String(term.name || '').toLowerCase());
-  if (word && normalizeAgentName(word[0])) return true;
-  return false;
+// The modes a program set in its PTY stream, which say it is a full-screen TUI (docs/agents-design.md 3.4): the alternate screen
+// (DECSET 47, 1047, 1049) and mouse reporting (9, 1000, 1001, 1002, 1003; 1005/1006/1015 only pick an encoding). A full reset (ESC c)
+// clears both. A sequence split across two chunks is completed with the next one. The gateway feeds every chunk of a terminal to
+// its tracker, the hydration replay included.
+const MODE_SEQ_RE = /\x1b\[\?([0-9;]*)([hl])|\x1bc/g;
+const ALT_MODES = new Set([47, 1047, 1049]);
+const MOUSE_MODES = new Set([9, 1000, 1001, 1002, 1003]);
+
+export function createTermModeTracker() {
+  let alt = false;
+  const mouse = new Set();
+  let tail = '';
+  return {
+    push(chunk) {
+      const s = tail + (Buffer.isBuffer(chunk) ? chunk.toString('latin1') : String(chunk || ''));
+      tail = '';
+      MODE_SEQ_RE.lastIndex = 0;
+      let m;
+      while ((m = MODE_SEQ_RE.exec(s))) {
+        if (m[0] === '\x1bc') { alt = false; mouse.clear(); continue; }
+        const on = m[2] === 'h';
+        for (const p of m[1].split(';')) {
+          const n = Number(p);
+          if (ALT_MODES.has(n)) alt = on;
+          else if (MOUSE_MODES.has(n)) { if (on) mouse.add(n); else mouse.delete(n); }
+        }
+      }
+      // an escape sequence cut at the end of the chunk: keep it for the next one
+      const esc = s.lastIndexOf('\x1b');
+      if (esc !== -1 && s.length - esc < 32 && /^\x1b(?:\[\??[0-9;]*)?$/.test(s.slice(esc))) tail = s.slice(esc);
+    },
+    state() {
+      return { alt, mouse: mouse.size > 0 };
+    },
+  };
+}
+
+// The timings of a plain terminal (a shell, a command printing lines): short masks, nothing to wait for.
+const PLAIN_TIMINGS = Object.freeze({
+  resize_quiet_ms: 110, resize_cap_ms: 350, resize_client_fallback_ms: 600, hydrate_flush_ms: 75, hydrate_initial_ms: 110,
+  hydrate_cap_ms: 350, settle_ms: 85,
+});
+
+// isTuiTerminal(term, modes): a full-screen program by the terminal's own signals: the alternate screen or mouse reporting in its
+// stream, or a status it reports with OSC 7501 (the coding agents). Never by its name or a label.
+export function isTuiTerminal(term, modes) {
+  if (modes && (modes.alt || modes.mouse)) return true;
+  const app = term && term.status && term.status.app;
+  return typeof app === 'string' && app.trim() !== '';
+}
+
+// tuiTimings(term): the core's TUI profile, with the TERM_* keys of the agent the terminal runs (its agent.conf) over it.
+export function tuiTimings(term) {
+  const id = detectTerminalAgent(term);
+  const a = id ? getAgent(id) : null;
+  return a ? a.term : TERM_DEFAULTS;
 }
 
 // ---------------------------------------------------------------------------
@@ -634,10 +679,21 @@ export function createGateway(options = {}) {
   }
   // A PTY resize redraws the program for EVERY client attached to it, not only the one that asked: mask the
   // redraw on the others too, so a second window or device never paints the reflow without the loader.
-  function maskRoomPeers(room, rec, isTui = true) {
+  function maskRoomPeers(room, rec) {
     for (const peer of room.clients) {
-      if (peer !== rec && typeof peer.onPeerResize === 'function') peer.onPeerResize(isTui);
+      if (peer !== rec && typeof peer.onPeerResize === 'function') peer.onPeerResize();
     }
+  }
+  // The modes each terminal's program set (createTermModeTracker), fed by the attach streams of this gateway.
+  const termModes = new Map();
+  function modesOf(termId) {
+    let tr = termModes.get(termId);
+    if (!tr) { tr = createTermModeTracker(); termModes.set(termId, tr); }
+    return tr;
+  }
+  function isTuiTerm(termId) {
+    const tr = termModes.get(termId);
+    return isTuiTerminal(hc.terminals.get(termId), tr ? tr.state() : null);
   }
   function claimPtyOwnership(room, rec, opts = {}) {
     if (opts.cols && opts.rows) {
@@ -2598,7 +2654,10 @@ export function createGateway(options = {}) {
     const rows = clampRows(url.searchParams.get('rows') || 30);
     const isReconnect = url.searchParams.get('reconnect') === '1';
     const isPassiveAttach = isReconnect || url.searchParams.get('focused') === '0';
-    const attachIsTui = url.searchParams.get('tui') === '1' || isInteractiveTuiTerminal(hc.terminals.get(termId));
+    const modes = modesOf(termId);
+    // TUI-ness is decided by the terminal's signals as they arrive (the replay of the attach carries the modes the program set)
+    const tuiNow = () => isTuiTerm(termId);
+    const timingsNow = () => (tuiNow() ? tuiTimings(hc.terminals.get(termId)) : PLAIN_TIMINGS);
 
     const room = getPtyRoom(termId);
     const clientRec = {
@@ -2645,12 +2704,14 @@ export function createGateway(options = {}) {
     let initPostReplayBytes = 0;
     let initSawPostReplay = false;
     let initChunks = [];
+    let hydrateCapIsTui = false;
     let flushTimer = null;
     let capTimer = null;
     let resizing = false;
     let resizeSeq = 0;
     let resizeBytes = 0;
     let resizeIsTui = false;
+    let resizeTimings = PLAIN_TIMINGS;
     let lastResizeAtMs = 0;
     let resizeChunks = [];
     let resizeQuietTimer = null;
@@ -2669,7 +2730,7 @@ export function createGateway(options = {}) {
       if (resizeCapTimer) { clearTimeout(resizeCapTimer); resizeCapTimer = null; }
     };
 
-    const startResizeMask = (seqVal, isTuiHint = false) => {
+    const startResizeMask = (seqVal) => {
       if (hydrating) return;
       syncCoalescer.flush();
       clearResizeTimers();
@@ -2677,13 +2738,16 @@ export function createGateway(options = {}) {
       lastResizeAtMs = Date.now();
       resizeSeq = Number(seqVal) || (resizeSeq + 1);
       resizeBytes = 0;
-      resizeIsTui = Boolean(isTuiHint) || isInteractiveTuiTerminal(hc.terminals.get(termId));
-      // Long-conversation TUIs like agy may take ~600-850ms to re-layout markdown before emitting
-      // their clear+redraw burst, and up to ~2-3s to stream the full history. Give them room while
-      // still releasing fast TUIs (Claude/empty agy) shortly after their burst settles.
-      resizeQuietTimer = setTimeout(flushResize, resizeIsTui ? 900 : 110);
-      resizeCapTimer = setTimeout(flushResize, resizeIsTui ? 3500 : 350);
+      resizeIsTui = tuiNow();
+      resizeTimings = timingsNow();
+      // A TUI re-lays out after SIGWINCH and may stream a long history (agy: ~600-850 ms before its clear+redraw burst, up to
+      // 2-3 s for the history): the profile's quiet window and cap (an agent may tune them in its agent.conf). A plain terminal
+      // is released shortly after its burst.
+      resizeQuietTimer = setTimeout(flushResize, resizeTimings.resize_quiet_ms);
+      resizeCapTimer = setTimeout(flushResize, resizeTimings.resize_cap_ms);
     };
+    // what the page needs to know of this terminal for its own resize fallback (it never guesses TUI-ness by a name)
+    const tuiInfo = () => ({ tui: resizeIsTui || tuiNow(), fallback_ms: (resizeIsTui || tuiNow() ? timingsNow() : PLAIN_TIMINGS).resize_client_fallback_ms });
 
     const flushInitial = () => {
       if (!hydrating) return;
@@ -2702,10 +2766,11 @@ export function createGateway(options = {}) {
         type: 'hydrated',
         cols: room.ptyCols || clampCols(attachCols),
         rows: room.ptyRows || clampRows(attachRows),
+        ...tuiInfo(),
       }));
-      if (attachResizesPty && attachIsTui) {
-        startResizeMask(0, true);
-        ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq }));
+      if (attachResizesPty && tuiNow()) {
+        startResizeMask(0);
+        ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, ...tuiInfo() }));
       }
     };
 
@@ -2729,36 +2794,44 @@ export function createGateway(options = {}) {
     try {
       stream = await hc.attach(termId, attachCols, attachRows, {
         onData: (buf) => {
+          modes.push(buf);
           if (hydrating) {
             const now = Date.now();
             initChunks.push(Buffer.from(buf));
-            if (attachIsTui) {
+            if (tuiNow()) {
+              const tm = timingsNow();
+              if (!hydrateCapIsTui) {
+                // the replay showed a TUI: give the hydration the TUI cap, counted from the attach
+                hydrateCapIsTui = true;
+                if (capTimer) clearTimeout(capTimer);
+                capTimer = setTimeout(flushInitial, Math.max(0, tm.hydrate_cap_ms - (now - attachStartMs)));
+              }
               const elapsed = now - attachStartMs;
               const gap = initLastChunkMs > 0 ? now - initLastChunkMs : 0;
               // Distinguish the initial history replay from the post-attach SIGWINCH TUI redraw:
               // require an actual inter-burst pause (not just a large replay taking >65ms) and
               // substantial redraw bytes so a tiny spinner/status tick never ends hydration early.
-              if (gap >= 60 || (elapsed >= 160 && gap >= 40)) {
+              if (gap >= tm.hydrate_gap_ms || (elapsed >= 160 && gap >= 40)) {
                 initPostReplayBytes += buf.length;
-                if (initPostReplayBytes >= 256) initSawPostReplay = true;
+                if (initPostReplayBytes >= tm.hydrate_min_bytes) initSawPostReplay = true;
               }
               initLastChunkMs = now;
               if (flushTimer) clearTimeout(flushTimer);
-              flushTimer = setTimeout(flushInitial, initSawPostReplay ? 160 : 460);
+              flushTimer = setTimeout(flushInitial, initSawPostReplay ? 160 : tm.hydrate_flush_ms);
             } else {
               initLastChunkMs = now;
               if (flushTimer) clearTimeout(flushTimer);
-              flushTimer = setTimeout(flushInitial, 75);
+              flushTimer = setTimeout(flushInitial, PLAIN_TIMINGS.hydrate_flush_ms);
             }
             return;
           }
-          if (!resizing && lastResizeAtMs > 0 && (Date.now() - lastResizeAtMs) <= LATE_REDRAW_WINDOW_MS) {
+          if (!resizing && lastResizeAtMs > 0 && (Date.now() - lastResizeAtMs) <= resizeTimings.late_redraw_ms) {
             // Catch late full-screen/scrollback clear+redraw passes from heavy TUIs (e.g. agy
             // re-rendering a long conversation >900ms after SIGWINCH) BEFORE the clear hits xterm.
             const hasFullClear = buf.includes(CLEAR_SCROLLBACK_BUF) || buf.includes(CLEAR_SCREEN_BUF);
-            if (hasFullClear && (resizeIsTui || isInteractiveTuiTerminal(hc.terminals.get(termId)))) {
-              startResizeMask(0, true);
-              if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq }));
+            if (hasFullClear && (resizeIsTui || tuiNow())) {
+              startResizeMask(0);
+              if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, ...tuiInfo() }));
             }
           }
           if (resizing) {
@@ -2772,7 +2845,7 @@ export function createGateway(options = {}) {
             const openSync = lb !== -1 && lb > le;
             const quietMs = openSync
               ? 420
-              : ((resizeIsTui && resizeBytes < 512) ? 650 : (resizeIsTui ? 320 : 85));
+              : ((resizeIsTui && resizeBytes < 512) ? resizeTimings.settle_ms : (resizeIsTui ? 320 : PLAIN_TIMINGS.settle_ms));
             resizeQuietTimer = setTimeout(flushResize, quietMs);
             return;
           }
@@ -2791,10 +2864,10 @@ export function createGateway(options = {}) {
       clientRec.stream = stream;
       clientRec.streamCols = clampCols(attachCols);
       clientRec.streamRows = clampRows(attachRows);
-      clientRec.onPeerResize = (isTui) => {
+      clientRec.onPeerResize = () => {
         if (hydrating || ws.readyState !== 1) return;
-        startResizeMask(0, isTui);
-        ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq }));
+        startResizeMask(0);
+        ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, ...tuiInfo() }));
       };
     } catch (err) {
       clearHydrationTimers();
@@ -2811,8 +2884,11 @@ export function createGateway(options = {}) {
 
     // Coalesce initial replay + post-attach TUI SIGWINCH redraw into one atomic hydrated frame.
     if (hydrating) {
-      if (!flushTimer) flushTimer = setTimeout(flushInitial, attachIsTui ? 460 : 110);
-      capTimer = setTimeout(flushInitial, attachIsTui ? 1400 : 350);
+      const tui0 = tuiNow();
+      hydrateCapIsTui = tui0;
+      const tm0 = tui0 ? timingsNow() : PLAIN_TIMINGS;
+      if (!flushTimer) flushTimer = setTimeout(flushInitial, tui0 ? tm0.hydrate_flush_ms : PLAIN_TIMINGS.hydrate_initial_ms);
+      if (!capTimer) capTimer = setTimeout(flushInitial, tm0.hydrate_cap_ms);
     }
 
     ws.on('message', (data, isBinary) => {
@@ -2852,7 +2928,7 @@ export function createGateway(options = {}) {
             clientRec.lastActiveMs = Date.now();
             // Coalesce SIGWINCH full-screen TUI repaint bursts into one atomic frame
             // (covering debounced & multi-pass TUIs such as OpenCode, Claude, AGY, and Gemini).
-            startResizeMask(msg.seq, Boolean(msg.tui));
+            startResizeMask(msg.seq);
             if (before.cols !== clientRec.wantCols || before.rows !== clientRec.wantRows) maskRoomPeers(room, clientRec);
             sendStreamSize(clientRec);
             return;
@@ -2870,8 +2946,8 @@ export function createGateway(options = {}) {
                 const cur = getCurrentPtySize(termId, room.ptyCols || clientRec.wantCols, room.ptyRows || clientRec.wantRows);
                 const willResize = cur.cols !== clientRec.wantCols || cur.rows !== clientRec.wantRows;
                 if (willResize && !hydrating) {
-                  startResizeMask(0, Boolean(msg.tui) || isInteractiveTuiTerminal(hc.terminals.get(termId)));
-                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq }));
+                  startResizeMask(0);
+                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'resizing', seq: resizeSeq, ...tuiInfo() }));
                 }
                 claimPtyOwnership(room, clientRec, { cols: msg.cols, rows: msg.rows });
                 clientRec.focused = true;

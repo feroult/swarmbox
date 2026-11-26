@@ -1154,20 +1154,17 @@
     termStageLoaderEl.classList.toggle('visible', show);
   }
 
+  // A full-screen program in this session, by the terminal's own signals: the alternate screen or mouse reporting in this page's
+  // xterm, or what the gateway last said (its view adds the OSC 7501 status the agents report). Never by a name.
   function isSessionTui(sess) {
     if (!sess) return false;
     try {
       const buf = sess.term && sess.term.buffer && sess.term.buffer.active;
       if (buf && buf.type === 'alternate') return true;
+      const mm = sess.term && sess.term.modes && sess.term.modes.mouseTrackingMode;
+      if (mm && mm !== 'none') return true;
     } catch (_) {}
-    const t = terminals.find((x) => x.address === sess.address);
-    if (!t) return false;
-    if (tabAgentBadge(t)) return true;
-    const fg = String((t.foreground && t.foreground.name) || '').toLowerCase().trim();
-    if (fg && !agentReg.shellNames.has(fg)) return true;
-    const nm = String(t.name || '').toLowerCase();
-    if (resolveAgentName((/^[a-z0-9_]+/.exec(nm) || [''])[0])) return true;
-    return false;
+    return Boolean(sess.serverTui);
   }
 
   function finishResizeCycle(sess, seq = null) {
@@ -1233,7 +1230,8 @@
     }
     if (activeId === sess.address) syncStageLoader();
     if (sess.resizeFallbackTimer) clearTimeout(sess.resizeFallbackTimer);
-    const fallbackMs = isSessionTui(sess) ? 4200 : 600;
+    // the gateway's number (the agent's profile) when it gave one, else the core's TUI or plain one
+    const fallbackMs = sess.serverFallbackMs || (isSessionTui(sess) ? 4200 : 600);
     sess.resizeFallbackTimer = setTimeout(() => finishResizeCycle(sess), fallbackMs);
   }
 
@@ -1273,7 +1271,6 @@
         const prevRows = sess.lastRows;
         sess.lastCols = sess.term.cols;
         sess.lastRows = sess.term.rows;
-        const isTui = isSessionTui(sess);
         sess.resizeSeq = (sess.resizeSeq || 0) + 1;
         if (!sess.hydrating) {
           sess.resizeWasAtBottom = wasAtBottom;
@@ -1294,7 +1291,6 @@
           cols: sess.term.cols,
           rows: sess.term.rows,
           seq: sess.resizeSeq,
-          tui: isTui,
         }));
       } else if (sendResize && !changed && sess.resizing && !sess.resizeAwaitingServer) {
         // Pre-armed resize cycle (e.g. panel toggle) produced identical cols/rows: reveal cleanly.
@@ -1512,7 +1508,6 @@
       claim: true,
       cols: sess.term.cols || 100,
       rows: sess.term.rows || 30,
-      tui: isSessionTui(sess),
     }));
   }
 
@@ -1541,7 +1536,6 @@
         cols: wantCols,
         rows: wantRows,
         seq: sess.resizeSeq,
-        tui: isSessionTui(sess),
         claim: true,
       }));
     }
@@ -2324,13 +2318,32 @@
 
     // Smart terminal selection copy:
     // Rejoins lines that were soft-wrapped by xterm, herdr-core attach hydration (\r\n at col N),
-    // or AI TUI padded/bordered/shaded code blocks (agy, claude, codex, opencode), while preserving
+    // or the padded/bordered/shaded code blocks of the coding agents' TUIs, while preserving
     // intentional multi-line scripts, blank lines, lists, prompts, and explicit `\` continuations.
+    // The prompt and gutter glyphs are the core's, plus any an agent declares (TERM_COPY_*_GLYPHS in its agent.conf).
     const RULE_LINE_RE = /^[\s─━═┄┅┈┉\-=_·•]+$/;
-    const LIST_OR_PROMPT_RE = /^(?:[-*+•]\s|\d+[.)]\s|#{1,6}\s|>\s|\$\s|❯\s|>>>\s)/;
-    const RIGHT_BORDER_RE = /[│┃║▕]/;
-    const UNIFORM_LEFT_GUTTER_RE = /^(\s*[│┃║▎▏]\s?)/;
-    const UNIFORM_RIGHT_GUTTER_RE = /(\s?[│┃║▕]\s*)$/;
+    let copyReKey = null;
+    let copyReCache = null;
+    function copyRe() {
+      if (copyReKey === agentReg) return copyReCache;
+      const esc = (c) => c.replace(/[\\\]^-]/g, '\\$&');
+      const extra = (field, base) => {
+        const out = new Set();
+        for (const a of agentReg.list) for (const c of String((a.term && a.term[field]) || '')) if (!base.includes(c) && !/\s/.test(c)) out.add(c);
+        return Array.from(out).map(esc).join('');
+      };
+      const xp = extra('copy_prompt_glyphs', '❯');
+      const xg = extra('copy_gutter_glyphs', '│┃║▕▎▏');
+      copyReCache = {
+        prompt: new RegExp(`^(?:[-*+•]\\s|\\d+[.)]\\s|#{1,6}\\s|>\\s|\\$\\s|[❯${xp}]\\s|>>>\\s)`),
+        promptStart: new RegExp(`^(?:\\$|[❯${xp}]|#)\\s`),
+        rightBorder: new RegExp(`[│┃║▕${xg}]`),
+        leftGutter: new RegExp(`^(\\s*[│┃║▎▏${xg}]\\s?)`),
+        rightGutter: new RegExp(`(\\s?[│┃║▕${xg}]\\s*)$`),
+      };
+      copyReKey = agentReg;
+      return copyReCache;
+    }
 
     function countLeadSpaces(s) {
       let n = 0;
@@ -2343,7 +2356,7 @@
       const full = line.translateToString(false);
       // 1. Right-side box border (│ ┃ ║ ▕) at or past content end
       for (let c = Math.max(20, contentEndCol - 1); c < full.length; c++) {
-        if (RIGHT_BORDER_RE.test(full[c])) {
+        if (copyRe().rightBorder.test(full[c])) {
           return Math.max(20, c - 1);
         }
       }
@@ -2453,16 +2466,16 @@
 
       // If every non-empty selected row starts with a uniform Unicode box border (│/┃/║/▎/▏), strip the box gutter
       const nonEmpty = rows.filter((r) => r.trimmedSlice.length > 0);
-      if (nonEmpty.length >= 2 && nonEmpty.every((r) => UNIFORM_LEFT_GUTTER_RE.test(r.trimmedSlice))) {
-        const allRightBar = nonEmpty.every((r) => UNIFORM_RIGHT_GUTTER_RE.test(r.trimmedSlice));
+      if (nonEmpty.length >= 2 && nonEmpty.every((r) => copyRe().leftGutter.test(r.trimmedSlice))) {
+        const allRightBar = nonEmpty.every((r) => copyRe().rightGutter.test(r.trimmedSlice));
         for (const r of rows) {
-          const m = r.rawSlice.match(UNIFORM_LEFT_GUTTER_RE);
+          const m = r.rawSlice.match(copyRe().leftGutter);
           if (m) {
             r.x0 += m[1].length;
             r.rawSlice = r.rawSlice.slice(m[1].length);
           }
           if (allRightBar) {
-            r.rawSlice = r.rawSlice.replace(UNIFORM_RIGHT_GUTTER_RE, '');
+            r.rawSlice = r.rawSlice.replace(copyRe().rightGutter, '');
             r.visualRightCol = Math.max(20, r.x0 + r.rawSlice.length);
           }
           r.trimmedSlice = r.rawSlice.replace(/\s+$/, '');
@@ -2526,7 +2539,7 @@
             ? Math.min(boxRight, Math.max(blockMaxEnd + 1, boxRight - 6))
             : Math.max(40, boxRight - 2);
 
-        const curStartsPrompt = /^(?:\$|❯|#)\s/.test(curText.trimStart());
+        const curStartsPrompt = copyRe().promptStart.test(curText.trimStart());
         const sameIndent = Math.abs(next.indent - curRow.indent) <= 2 || (curStartsPrompt && next.indent <= curRow.indent + 4);
         const nextFirstToken = (nextCore.match(/^\S+/) || [''])[0];
         const endsHardBreak = /(?:\\|;|{|})$/.test(curText) && curRow.contentEndCol < effectiveWrap - 1;
@@ -2537,7 +2550,7 @@
           !RULE_LINE_RE.test(curText) &&
           !RULE_LINE_RE.test(nextCore) &&
           sameIndent &&
-          !LIST_OR_PROMPT_RE.test(nextCore) &&
+          !copyRe().prompt.test(nextCore) &&
           !endsHardBreak &&
           curRow.contentEndCol >= 36 &&
           (curRow.contentEndCol + 1 + nextFirstToken.length) > effectiveWrap;
@@ -2759,7 +2772,6 @@
       sess.lastRows = initRows;
 
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const tuiFlag = isSessionTui(sess) ? '&tui=1' : '';
       const isReconnect = Boolean(opts.reconnect);
       const isPassive = Boolean(opts.passive);
       const isActiveFocused = activeId === sess.address && (!isPassive || windowHasUserFocus());
@@ -2767,7 +2779,7 @@
       sess.resyncCount = 0;
       const reconnectFlag = isReconnect ? '&reconnect=1' : '';
       const focusedFlag = isActiveFocused ? '' : '&focused=0';
-      const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(sess.address)}?cols=${initCols}&rows=${initRows}${tuiFlag}${reconnectFlag}${focusedFlag}`;
+      const wsUrl = `${proto}//${location.host}/ws/pty/${encodeURIComponent(sess.address)}?cols=${initCols}&rows=${initRows}${reconnectFlag}${focusedFlag}`;
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
       sess.ws = ws;
@@ -2861,6 +2873,10 @@
         } else if (typeof ev.data === 'string') {
           try {
             const msg = JSON.parse(ev.data);
+            if (typeof msg.tui === 'boolean') {
+              sess.serverTui = msg.tui;
+              sess.serverFallbackMs = Number(msg.fallback_ms) || 0;
+            }
             if (msg.type === 'hydrated') {
               if (msg.cols && msg.rows) {
                 sess.serverPtyCols = Number(msg.cols);
