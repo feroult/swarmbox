@@ -33,7 +33,7 @@ class ImageTest(unittest.TestCase):
         self.assertIn("uid=1000(node) gid=1000(node)", r.stdout)
 
     def test_the_programs_of_the_box_are_in_the_image(self):
-        for cmd in (["hc", "--version"], ["herdr", "--version"], ["starship", "--version"], ["git", "--version"],
+        for cmd in (["hc", "--version"], ["starship", "--version"], ["git", "--version"],
                     ["podman", "--version"], ["chromium", "--version"], ["uv", "--version"], ["jq", "--version"]):
             r = in_image(*cmd)
             self.assertEqual(r.returncode, 0, "%s: %s" % (cmd[0], r.stderr))

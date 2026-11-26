@@ -248,9 +248,9 @@ def step_addon_index_ports(ctx):
 
 
 def step_mcp_generated(ctx):
-    """serve step 7 writes mcp-servers.json from the registry: chrome-devtools runs the installed program, never npx."""
+    """serve step 7 writes the box's mcp-servers.json from the registry: chrome-devtools runs the installed program, never npx."""
     r = podman("run", "--rm", "--entrypoint", "bash", ctx.tag, "-c",
-               "export HOME=$(mktemp -d); swarmbox-mcp generate && cat \"$HOME/.claude/mcp-servers.json\"")
+               "export HOME=$(mktemp -d); swarmbox-mcp generate && cat \"$HOME/.local/share/swarmbox/mcp-servers.json\"")
     assert r.returncode == 0, "swarmbox-mcp exited %d: %s" % (r.returncode, r.stdout + r.stderr)
     import json
     doc = json.loads(r.stdout)

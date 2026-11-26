@@ -101,6 +101,10 @@ class FragmentInContainer(unittest.TestCase):
             f.write('SCHEMA=1\nNAME=fakeagent\nDESCRIPTION="a fake agent"\nVERSION=1.0.0\nCOMMANDS="fakeagent"\n')
         with open(os.path.join(d, "shell.sh"), "w") as f:
             f.write('fakeagent() { command fakeagent --auto-approve "$@"; }\n')
+        # an addon is an agent (yolo can run it) when it declares agent/agent.conf; its own shell.sh keeps its function
+        os.makedirs(os.path.join(d, "agent"))
+        with open(os.path.join(d, "agent", "agent.conf"), "w") as f:
+            f.write("ID=fakeagent\n")
         os.makedirs(os.path.join(self.ws, ".local", "bin"), exist_ok=True)
         prog = os.path.join(self.ws, ".local", "bin", "fakeagent")
         with open(prog, "w") as f:
