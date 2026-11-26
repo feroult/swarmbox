@@ -1,7 +1,8 @@
 """The brain: a command that speaks MCP and runs without interaction, started once per goal.
 
-THE TEMPLATE (SWARMBOX_SYSOP_BRAIN). Either the name of a preset (`claude`, below: a piece of text, not a dependency on the claude addon) or
-a full command. The text is split into words like a shell does (quotes, backslashes), and the words are the argument vector of the program:
+THE TEMPLATE (SWARMBOX_SYSOP_BRAIN). `auto` (the default: the BRAIN of the box's default agent, or of the first agent that declares one,
+agents.pick), the name of a preset (an agent: its agent/agent.conf BRAIN, `claude` for Claude Code; a piece of text, not a dependency on
+the addon) or a full command. The text is split into words like a shell does (quotes, backslashes), and the words are the argument vector of the program:
 NO SHELL RUNS IT, so a quote, a `$(...)` or a `;` in the template or in a setting is a character of an argument, never a command. Then the
 placeholders are replaced INSIDE each word, so a value can never become more than that one word:
     {mcp_config}         path of the MCP config file of the goal (required: the brain has to reach the tools)
@@ -18,7 +19,7 @@ watchdog here, and with a death signal tied to the service, so a dead service le
 whole group (TERM, then KILL). The first `done` of the goal ends the run (after a short grace, to let the final turn print its result).
 Credentials are not handled here: the brain inherits the environment of the service.
 
-THE `claude` PRESET is the invocation of docs/spikes/mcp-loop.md: --tools "" (without it 33 built-in tools, Bash among them, stay on), --strict-mcp-config,
+CLAUDE CODE'S PRESET (container/addons/claude/agent/agent.conf) is the invocation of docs/spikes/mcp-loop.md: --tools "" (without it 33 built-in tools, Bash among them, stay on), --strict-mcp-config,
 --allowedTools 'mcp__sysop__*' with --permission-mode dontAsk (exactly our tools, anything else denied at once), --no-session-persistence,
 --system-prompt (replaces the coding-agent prompt), --output-format stream-json --verbose. Not --bare (it loses the OAuth token login) and not --safe-mode
 (it turns MCP off).
@@ -34,13 +35,23 @@ import sys
 import time
 
 from . import ipc
-from .agents import registry
+from .agents import pick, registry
 
-PRESETS = {
-    "claude": "claude -p --model {model} --mcp-config {mcp_config} --strict-mcp-config --tools '' --allowedTools 'mcp__sysop__*' "
-              "--permission-mode dontAsk --no-session-persistence --max-turns {max_turns} --system-prompt {system_prompt} "
-              "--output-format stream-json --verbose",
-}
+
+
+def presets():
+    """the brain presets: the BRAIN template of every agent of the registry, by its id and its other names (`sysop.brain claude`)"""
+    out = {}
+    for a in registry.agents():
+        if a["brain"]:
+            for n in [a["id"]] + a["aliases"]:
+                out.setdefault(n, a["brain"])
+    return out
+
+
+AUTO = "auto"   # the default: the brain of the agent that agents.pick chooses
+
+
 TABS_ENV = ("HOME", "PATH", "SB_TABS_BIN", "SB_TABS_BACKEND", "SB_TABS_HC_BIN", "HC_SESSION",
             "SWARMBOX_SYSOP_TABS_CMD", "SWARMBOX_SYSOP_STATE_CMD", "SWARMBOX_SYSOP_WORKTREE_CMD", "SWARMBOX_SYSOP_PINS_CMD",
             "SWARMBOX_STATE_TABS_CMD", "SWARMBOX_STATE_PINS_CMD", "SWARMBOX_STATE_WORKTREE_CMD")
@@ -134,9 +145,34 @@ def system_prompt(source, max_steps, max_seconds, autonomy="full-auto"):
             .replace("{autonomy_note}", anote).replace("{source_note}", note).replace("{agents}", names))
 
 
+def resolve_template(text):
+    """the command template of a brain setting: `auto` and a preset name become the agent's BRAIN; anything else is a command"""
+    t = text.strip()
+    if t == AUTO:
+        a = pick("brain")
+        if a is None:
+            raise TemplateError("no agent of this box declares a brain (BRAIN in its agent/agent.conf): install one (swarmbox addon install claude) "
+                                "or set sysop.brain to a command")
+        return a["brain"]
+    return presets().get(t, text)
+
+
+def default_model(text):
+    """the model of the agent whose brain a setting names (its MODEL), or '' (a full command: the setting's model only)"""
+    t = text.strip()
+    a = pick("brain") if t == AUTO else registry.get(registry.resolve(t))
+    return a["model"] if a else ""
+
+
+def login_hint(program):
+    """what to do when the brain is not logged in: the LOGIN_HINT of the agent whose command it runs"""
+    a = registry.get(registry.resolve(os.path.basename(program or "")))
+    return (a or {}).get("login_hint") or "log in to the agent the brain runs, in a tab"
+
+
 def parse_template(text):
     """(env, argv): env is [(NAME, template)], argv is [template words]; TemplateError when it cannot be a command."""
-    text = PRESETS.get(text.strip(), text)
+    text = resolve_template(text)
     try:
         words = shlex.split(text, posix=True)
     except ValueError as e:
@@ -173,7 +209,10 @@ def build(cfg, goal_dir, mcp_config, source, prompt_file=None):
     """(argv, env_extra) for the brain of one goal."""
     env_t, argv_t = parse_template(cfg.brain)
     prompt = system_prompt(source, cfg.max_steps, cfg.max_seconds, cfg.autonomy)
-    values = {"mcp_config": mcp_config, "model": cfg.model, "system_prompt": prompt, "system_prompt_file": prompt_file or "",
+    model = cfg.model if cfg.model != AUTO else default_model(cfg.brain)
+    if not model and any("{model}" in w for w in [x for _, x in env_t] + argv_t):
+        raise TemplateError("the brain uses {model} and its agent declares no MODEL: set sysop.model")
+    values = {"mcp_config": mcp_config, "model": model, "system_prompt": prompt, "system_prompt_file": prompt_file or "",
               "max_turns": str(cfg.max_steps + 3), "goal_dir": goal_dir}
     return [fill(w, values) for w in argv_t], {k: fill(v, values) for k, v in env_t}
 
@@ -363,8 +402,7 @@ def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline
     if outcome == "timeout" or code == 124:             # 124: `timeout` ended it at the deadline before this loop did
         return Result("failed", "the time budget of %d s is spent: the brain was killed" % cfg.max_seconds, summary, code, turns, cost)
     if LOGIN_FAILURE.search(text) or LOGIN_FAILURE.search(_tail(errf, 4000)):
-        return Result("failed", "the brain is not logged in (%s). Log in once in a tab (`claude`, then /login) or add CLAUDE_CODE_OAUTH_TOKEN with `swarmbox env add`" % argv[0],
-                      "", code, turns, cost)
+        return Result("failed", "the brain is not logged in (%s). %s" % (argv[0], login_hint(argv[0])), "", code, turns, cost)
     if ev.get("subtype") == "error_max_turns":
         return Result("failed", "the brain used all its %d turns without calling done" % (cfg.max_steps + 3), "", code, turns, cost)
     if code not in (0, None):

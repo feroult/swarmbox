@@ -7848,13 +7848,14 @@
       }),
       makeHostInputRow('sysop', 'sysop.brain', {
         title: 'Operator Brain',
-        desc: 'CLI brain used to plan actions (e.g. claude or custom command).',
-        placeholder: 'claude',
+        desc: 'CLI brain used to plan actions: auto (the brain an agent of the box declares), an agent name, or a command with {mcp_config}.',
+        placeholder: 'auto',
       }),
       makeHostSelectRow('sysop', 'sysop.model', {
         title: 'Operator Model',
         desc: 'Model alias forwarded to the brain.',
         options: [
+          { value: 'auto', label: "auto (the brain agent's default)" },
           { value: 'haiku', label: 'haiku (fast)' },
           { value: 'sonnet', label: 'sonnet (balanced)' },
           { value: 'opus', label: 'opus (deep)' },

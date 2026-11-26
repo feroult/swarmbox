@@ -117,8 +117,8 @@ default_of() {
         voice.web) printf '1' ;;
         voice.topic|sysop.topic) printf 'goal' ;;
         sysop.group) printf 'sysop' ;;
-        sysop.brain) printf 'claude' ;;
-        sysop.model) printf 'sonnet' ;;
+        sysop.brain) printf 'auto' ;;
+        sysop.model) printf 'auto' ;;
         sysop.autonomy) printf 'full-auto' ;;
         sysop.autoname) printf '1' ;;
         sysop.countdown) printf '4' ;;
@@ -652,10 +652,11 @@ validate_value() {
             ;;
         sysop.brain)
             [ "${#V_OUT}" -le 2000 ] || { _bad "it must be at most 2000 characters."; return 1; }
-            # the service refuses a command without {mcp_config} and the box would start with no sysop and no word about it
+            # the service refuses a command without {mcp_config} and the box would start with no sysop and no word about it; a plain
+            # word is auto or the name of an agent whose addon declares a brain (the box checks which agents it has)
             case $V_OUT in
-                claude|*'{mcp_config}'*) ;;
-                *) _bad "it must be claude or a command that contains {mcp_config} (the file that tells the brain where the tools are)."; return 1 ;;
+                *'{mcp_config}'*) ;;
+                *[!a-z0-9_-]*|[!a-z0-9]*) _bad "it must be auto, the name of an agent (claude) or a command that contains {mcp_config} (the file that tells the brain where the tools are)."; return 1 ;;
             esac
             ;;
         sysop.model)

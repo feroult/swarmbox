@@ -24,7 +24,7 @@ import threading
 import time
 
 from . import busclient, tabsclient, usermsgs
-from .agents import registry
+from .agents import pick, registry
 
 TOPIC = "tab.events"
 MAX_TITLE_CHARS = 18                       # what the sidebar shows without cutting
@@ -174,41 +174,52 @@ def clean_suggested_title(raw, limit=MAX_TITLE_CHARS):
 
 
 class NamerError(Exception):
-    """The naming call failed (not logged in, a timeout, no `claude`): logged, and the same input is tried again later."""
+    """The naming call failed (not logged in, a timeout, no namer in the box): logged, and the same input is tried again later."""
 
 
-def default_namer(cwd, agent, title, screen_text, requests=None, model="haiku", env=None, timeout=20.0):
-    """A 1-shot `claude -p` call: own small system prompt (not Claude Code's), no tools, no MCP, no settings or hooks.
+def namer_argv(prompt, model=None, env=None):
+    """(argv, stdin) of the naming call: the NAMER template of the agent agents.pick chooses (the box's default agent when it declares
+    one), its words filled like a brain's ({system_prompt}, {model}: the agent's NAMER_MODEL unless `model` is given, {prompt}: the
+    system prompt and the request as one word, for a CLI that takes no system prompt). Without {prompt} the request goes on standard
+    input. NamerError when no agent of the box declares a namer."""
+    import shlex
+    a = pick("namer", env)
+    if a is None:
+        raise NamerError("no agent of this box can name tabs (none declares NAMER in its agent/agent.conf)")
+    try:
+        words = shlex.split(a["namer"], posix=True)
+    except ValueError as e:
+        raise NamerError("the NAMER of %s does not parse: %s" % (a["id"], e))
+    values = {"system_prompt": SYSTEM_PROMPT, "model": model or a["namer_model"] or a["model"] or "",
+              "prompt": SYSTEM_PROMPT + "\n\n" + prompt}
+    argv = [re.sub(r"\{(system_prompt|model|prompt)\}", lambda m: values[m.group(1)], w) for w in words]
+    stdin = None if "{prompt}" in a["namer"] else prompt
+    return argv, stdin
 
-    Returns the raw answer (a title or KEEP); raises NamerError when the call fails, so the caller can say why."""
-    cmd = [
-        "claude", "-p",
-        "--model", model,
-        "--system-prompt", SYSTEM_PROMPT,
-        "--tools", "",
-        "--strict-mcp-config",
-        "--setting-sources", "",
-        "--no-session-persistence",
-        "--output-format", "text",
-    ]
+
+def default_namer(cwd, agent, title, screen_text, requests=None, model=None, env=None, timeout=20.0):
+    """A 1-shot call of the namer an agent declares (Claude Code's: `claude -p` with its own small system prompt, no tools, no MCP, no
+    settings or hooks). Returns the raw answer (a title or KEEP); raises NamerError when the call fails, so the caller can say why."""
     prompt = build_prompt(cwd, agent, title, screen_text, requests)
+    cmd, stdin = namer_argv(prompt, model, env)
+    what = "%s %s" % (os.path.basename(cmd[0]), cmd[1] if len(cmd) > 1 and cmd[1].startswith("-") else "")
     try:
         p = subprocess.run(
             cmd,
-            input=prompt.encode("utf-8", "replace"),
+            input=(stdin or "").encode("utf-8", "replace"),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=os.environ if env is None else env,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        raise NamerError("claude -p timed out after %.0fs" % timeout)
+        raise NamerError("%s timed out after %.0fs" % (what.strip(), timeout))
     except OSError as e:
-        raise NamerError("cannot run claude: %s" % e)
+        raise NamerError("cannot run %s: %s" % (cmd[0], e))
     out = p.stdout.decode("utf-8", "replace").strip()
     if p.returncode != 0:
         why = (p.stderr.decode("utf-8", "replace").strip() or out).splitlines()
-        raise NamerError("claude -p exit %d: %s" % (p.returncode, why[-1][:200] if why else "no output"))
+        raise NamerError("%s exit %d: %s" % (what.strip(), p.returncode, why[-1][:200] if why else "no output"))
     return out
 
 

@@ -45,8 +45,8 @@ KEYS = {
     "voice.topic": ("goal", "speech", "voice.goals", ["Goal", "-x", "a b", "a/b", "x" * 64, "a\nb"]),
     "sysop.topic": ("goal", "ops", "a-b_c.d", ["Goal", "-x", "a b", "a/b", "x" * 64, ".x"]),
     "sysop.group": ("sysop", "ops2", "g-1", ["Sysop", "-x", "a b", "a/b", "x" * 64, "_x"]),
-    "sysop.brain": ("claude", "claude", "gemini -p {mcp_config}", ["a\nb", "foo bar", "gemini -p"]),
-    "sysop.model": ("sonnet", "haiku", "claude-sonnet-4-5", ["a b", "-x", "a;b", "$(x)"]),
+    "sysop.brain": ("auto", "claude", "gemini -p {mcp_config}", ["a\nb", "foo bar", "gemini -p", "-x", "Claude"]),
+    "sysop.model": ("auto", "haiku", "claude-sonnet-4-5", ["a b", "-x", "a;b", "$(x)"]),
     "sysop.autonomy": ("full-auto", "auto", "confirm-all", ["yes", "Auto", "confirm", "full", "fullauto"]),
     "sysop.autoname": ("1", "0", "1", ["yes", "2", "true"]),
     "sysop.countdown": ("4", "0", "30", ["31", "-1", "1.5", "abc", "04", "+3"]),
@@ -488,9 +488,14 @@ class SysopFlagsTest(CreateFlagsBase):
     def test_defaults_and_explicit_defaults_pass_nothing(self):
         base = self.fp()
         self.assertEqual(self.sysop(self.flags()), [])
-        cfg = "sysop.brain=claude\nsysop.model=sonnet\nsysop.autonomy=full-auto\nsysop.countdown=4\nsysop.max_steps=20\nsysop.max_seconds=300\n"
+        cfg = "sysop.brain=auto\nsysop.model=auto\nsysop.autonomy=full-auto\nsysop.countdown=4\nsysop.max_steps=20\nsysop.max_seconds=300\n"
         self.assertEqual(self.sysop(self.flags(cfg=cfg)), [])
         self.assertEqual(self.fp(cfg=cfg), base)
+
+    def test_the_old_defaults_claude_and_sonnet_are_now_choices_that_are_passed(self):
+        # auto is the brain and the model an agent of the box declares (Claude Code's: claude, sonnet); naming them chooses them
+        self.assertEqual(self.sysop(self.flags(cfg="sysop.brain=claude\nsysop.model=sonnet\n")),
+                         ["SWARMBOX_SYSOP_BRAIN=claude", "SWARMBOX_SYSOP_MODEL=sonnet"])
 
     def test_the_old_default_auto_is_now_a_choice_that_is_passed(self):
         self.assertEqual(self.sysop(self.flags(cfg="sysop.autonomy=auto\n")), ["SWARMBOX_SYSOP_AUTONOMY=auto"])

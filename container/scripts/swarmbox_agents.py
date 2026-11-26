@@ -73,11 +73,15 @@ KEYS = {
     "RESERVED_PREFIXES": "words",
     "ANSWER_ALLOW": "keys",
     "ANSWER_DENY": "keys",
-    "HISTORY": "str",
+    "HISTORY": "enum:jsonl",
+    "HISTORY_FILE": "path",
+    "HISTORY_FILE_ENV": "word",
+    "HISTORY_FIELDS": "words",
     "NAMER": "template",
     "BRAIN": "template",
     "LOGIN_HINT": "str",
     "MODEL": "word",
+    "NAMER_MODEL": "word",
     "SECRET_ENV": "words",
     "SECRET_FILES": "words",
     "SETTINGS_FILE": "path",
@@ -88,7 +92,9 @@ KEYS["TERM_COPY_PROMPT_GLYPHS"] = "str"
 KEYS["TERM_COPY_GUTTER_GLYPHS"] = "str"
 KEYS["TERM_IMAGE_PASTE"] = "enum:path|none"
 
-PLACEHOLDERS = {"NAMER": ("prompt", "system", "model"), "BRAIN": ("mcp_config", "model", "system"), "MCP_ARGS": ("mcp_file", "home")}
+PLACEHOLDERS = {"NAMER": ("prompt", "system_prompt", "model"),
+                "BRAIN": ("mcp_config", "model", "system_prompt", "system_prompt_file", "max_turns", "goal_dir"),
+                "MCP_ARGS": ("mcp_file", "home")}
 # {mcp_file} in MCP_ARGS: the box's list of MCP servers, $SB_DATA_DIR/mcp-servers.json (swarmbox-mcp)
 HOOKS = {"screen": "screen.py", "history": "history.py", "shell": "shell.sh", "mcp": "mcp.sh", "statusline": "statusline.sh",
          "terminal": "terminal.mjs", "icon": "icon.svg", "settings": "settings.json"}
@@ -236,11 +242,13 @@ def _agent_from(dirpath, level, conf, values, env):
         "status": values.get("STATUS") or "osc7501",
         "reserved_prefixes": _words(values["RESERVED_PREFIXES"]) if "RESERVED_PREFIXES" in values else ["/", "!"],
         "answer": {"allow": _words(values.get("ANSWER_ALLOW")), "deny": _words(values.get("ANSWER_DENY"))},
-        "history": values.get("HISTORY", ""),
+        "history": {"kind": values.get("HISTORY", ""), "file": values.get("HISTORY_FILE", ""), "file_env": values.get("HISTORY_FILE_ENV", ""),
+                    "fields": _words(values.get("HISTORY_FIELDS"))},
         "namer": values.get("NAMER", ""),
         "brain": values.get("BRAIN", ""),
         "login_hint": values.get("LOGIN_HINT", ""),
         "model": values.get("MODEL", ""),
+        "namer_model": values.get("NAMER_MODEL", ""),
         "secrets": {"env": _words(values.get("SECRET_ENV")), "files": _words(values.get("SECRET_FILES"))},
         "settings_file": values.get("SETTINGS_FILE", ""),
         "term": term,
@@ -508,6 +516,8 @@ def check_dir(addon_dir, commands=None):
             for ph in PLACEHOLDER_RE.findall(v):
                 if ph not in PLACEHOLDERS[k]:
                     errs.append("agent.conf: %s uses the unknown placeholder {%s} (known: %s)" % (k, ph, ", ".join(PLACEHOLDERS[k])))
+    if values.get("HISTORY") == "jsonl" and (not values.get("HISTORY_FILE") or len(values.get("HISTORY_FIELDS", "").split()) != 4):
+        errs.append("agent.conf: HISTORY=jsonl needs HISTORY_FILE and HISTORY_FIELDS (folder, session, text and time keys)")
     if "ID" not in values:
         errs.append("agent.conf: ID is missing")
     elif values["ID"] in PSEUDO or values["ID"] == "sysop":

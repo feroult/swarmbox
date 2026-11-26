@@ -56,10 +56,20 @@ class Template(unittest.TestCase):
         self.assertIn("at most 7 tool calls", argv[argv.index("--system-prompt") + 1])
 
     def test_a_custom_template_with_env_and_placeholders(self):
-        c = self.cfg(brain="OPENCODE_CONFIG={mcp_config} MODE=x opencode run --model {model} -- {goal_dir}")
+        c = self.cfg(brain="OPENCODE_CONFIG={mcp_config} MODE=x opencode run --model {model} -- {goal_dir}", model="sonnet")
         argv, env = brain.build(c, "/g d", "/g d/mcp.json", "cli")
         self.assertEqual(argv, ["opencode", "run", "--model", "sonnet", "--", "/g d"])
         self.assertEqual(env, {"OPENCODE_CONFIG": "/g d/mcp.json", "MODE": "x"})
+
+    def test_the_model_auto_is_the_brain_agents_and_a_custom_command_needs_one(self):
+        # auto: the MODEL the agent of the brain declares (Claude Code: sonnet); a command of no agent has none to give
+        argv, _ = brain.build(self.cfg(brain="claude"), "/g", "/g/m", "cli")
+        self.assertEqual(argv[argv.index("--model") + 1], "sonnet")
+        with self.assertRaises(brain.TemplateError) as cm:
+            brain.build(self.cfg(brain="prog --model {model} {mcp_config}"), "/g", "/g/m", "cli")
+        self.assertIn("sysop.model", str(cm.exception))
+        argv, _ = brain.build(self.cfg(brain="prog {mcp_config}"), "/g", "/g/m", "cli")
+        self.assertEqual(argv, ["prog", "/g/m"], "a command without {model} needs none")
 
     def test_literal_braces_and_the_prompt_in_a_file(self):
         c = self.cfg(brain="b --cfg {mcp_config} --json '{{\"a\": 1}}' --p {system_prompt_file}")
@@ -70,8 +80,8 @@ class Template(unittest.TestCase):
         for text, why in (("b --x", "mcp_config"), ("b {mcp_config} {nope}", "unknown placeholder"), ("b 'unclosed {mcp_config}", "unbalanced"),
                           ("A=1", "empty"), ("   ", None), ("b {mcp_config} {Model}", "unknown placeholder")):
             with self.subTest(text=text):
-                if why is None:       # blank is the default
-                    self.assertEqual(self.cfg(brain=text).brain, "claude")
+                if why is None:       # blank is the default: the brain an agent of the box declares
+                    self.assertEqual(self.cfg(brain=text).brain, "auto")
                     continue
                 with self.assertRaises(config.ConfigError) as cm:
                     self.cfg(brain=text)
@@ -94,7 +104,7 @@ class Template(unittest.TestCase):
         for bad in ('haiku"; touch x', "haiku $(id)", "a b", "`id`", "x;y", "", "-x y", "a'b", "a\nb", "a" * 101):
             with self.subTest(bad=bad):
                 if bad == "":
-                    self.assertEqual(self.cfg(model=bad).model, "sonnet")
+                    self.assertEqual(self.cfg(model=bad).model, "auto")
                     continue
                 with self.assertRaises(config.ConfigError):
                     self.cfg(model=bad)

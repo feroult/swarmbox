@@ -3,13 +3,14 @@
 The host passes the non-default values as SWARMBOX_SYSOP_* variables (the same way voice gets SWARMBOX_VOICE_*); missing or empty means the
 default. A wrong value raises ConfigError with a line that names the variable: the service does not start with a setting it cannot honour.
 
-  SWARMBOX_SYSOP_BRAIN             `claude` (a preset) or a command template, see brain.py: split into words like a shell would, but never run
+  SWARMBOX_SYSOP_BRAIN             `auto` (default: the brain an agent of the box declares), an agent's name (its preset) or a command
+                                   template, see brain.py: split into words like a shell would, but never run
                                    by a shell. {mcp_config} is required; {model}, {system_prompt_file}, {system_prompt}, {max_turns} and {goal_dir}
                                    are known; leading NAME=value words are environment; {{ and }} are literal braces
   SWARMBOX_SYSOP_TOPIC             the bus topic the sysop listens on for goals (default goal); voice publishes on its own voice.topic: they meet by
                                    the same name. 1 to 63 characters of a-z 0-9 . _ - (a digit or a letter first)
   SWARMBOX_SYSOP_GROUP             the group the sysop subscribes with (default sysop; same characters): sysops of one group share the goals, one gets each
-  SWARMBOX_SYSOP_MODEL             model name for the brain (default sonnet)
+  SWARMBOX_SYSOP_MODEL             model name for the brain (default auto: the MODEL of the brain's agent, sonnet for Claude Code)
   SWARMBOX_SYSOP_AUTONOMY          full-auto (default) | auto | confirm-risky | confirm-all, see policy.py
   SWARMBOX_SYSOP_COUNTDOWN         seconds a low-risk action waits for a veto (default 4; 0 = none)
   SWARMBOX_SYSOP_APPROVAL_TIMEOUT  seconds a high-risk action waits for the word `run` before it is refused (default 60)
@@ -23,8 +24,8 @@ from collections import namedtuple
 DEFAULTS = {
     "topic": "goal",
     "group": "sysop",
-    "brain": "claude",
-    "model": "sonnet",
+    "brain": "auto",
+    "model": "auto",
     "autonomy": "full-auto",
     "autoname": "1",
     "countdown": "4",
@@ -35,7 +36,6 @@ DEFAULTS = {
 }
 ENV = {k: "SWARMBOX_SYSOP_" + k.upper() for k in DEFAULTS}
 AUTONOMY = ("confirm-all", "confirm-risky", "auto", "full-auto")
-PRESETS = ("claude",)
 MAX_BRAIN = 2000
 
 Config = namedtuple("Config", sorted(DEFAULTS))
@@ -84,10 +84,11 @@ def load(env):
     if len(brain) > MAX_BRAIN:
         raise ConfigError("%s: at most %d characters" % (ENV["brain"], MAX_BRAIN))
     from . import brain as brainmod            # the template is checked where it is understood
-    try:
-        brainmod.parse_template(brain)
-    except brainmod.TemplateError as e:
-        raise ConfigError("%s: %s" % (ENV["brain"], e))
+    if brain != brainmod.AUTO:                 # auto is resolved for each goal: the agents of the box may change
+        try:
+            brainmod.parse_template(brain)
+        except brainmod.TemplateError as e:
+            raise ConfigError("%s: %s" % (ENV["brain"], e))
     v["brain"] = brain
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}", raw["model"]):
         raise ConfigError("%s: a model name (letters, digits and . _ : / -, no blanks or quotes)" % ENV["model"])

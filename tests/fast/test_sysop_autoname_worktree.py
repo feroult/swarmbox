@@ -322,6 +322,40 @@ class AutoNamerTest(unittest.TestCase):
         self.assertNotIn("--bare", argv)          # --bare reads no OAuth login: a logged-in box would fail
         self.assertIn("- rename tabs", rec["stdin"])
 
+    def test_the_namer_is_the_one_an_agent_declares(self):
+        """a box whose only agent is a declared one (no Claude Code) names its tabs with that agent's NAMER: {prompt} as one word"""
+        user = os.path.join(self.tmp, "user-addons")
+        d = os.path.join(user, "fbot")
+        os.makedirs(os.path.join(d, "agent"))
+        with open(os.path.join(d, "addon.conf"), "w") as f:
+            f.write('SCHEMA=1\nNAME=fbot\nDESCRIPTION="x"\nVERSION=1\nCOMMANDS="fbot"\n')
+        with open(os.path.join(d, "agent", "agent.conf"), "w") as f:
+            f.write('ID=fbot\nNAMER="fbot ask --model {model} {prompt}"\nNAMER_MODEL=tiny\n')
+        bindir = os.path.join(self.tmp, "fbin")
+        os.makedirs(bindir)
+        out = os.path.join(self.tmp, "fbot.json")
+        with open(os.path.join(bindir, "fbot"), "w") as f:
+            f.write("#!/usr/bin/env python3\nimport json,sys\n"
+                    "json.dump({'argv': sys.argv[1:], 'stdin': sys.stdin.read()}, open(%r, 'w'))\nprint('Fake Title')\n" % out)
+        os.chmod(os.path.join(bindir, "fbot"), 0o755)
+        empty = os.path.join(self.tmp, "no-image-addons")
+        os.makedirs(empty)
+        env = dict(os.environ, PATH=bindir + os.pathsep + os.environ.get("PATH", ""), SWARMBOX_TEST_IMAGE_ADDONS=empty,
+                   SWARMBOX_TEST_USER_ADDONS=user, HOME=self.tmp)
+        env.pop("SWARMBOX_AGENT", None)
+        self.assertEqual(autoname.default_namer("/home/a/api", "fbot", "", "", requests=["fix the login"], env=env), "Fake Title")
+        with open(out) as f:
+            rec = json.load(f)
+        self.assertEqual(rec["argv"][:3], ["ask", "--model", "tiny"])
+        self.assertEqual(len(rec["argv"]), 4, "the prompt is one word")
+        self.assertTrue(rec["argv"][3].startswith(autoname.SYSTEM_PROMPT))
+        self.assertIn("- fix the login", rec["argv"][3])
+        self.assertEqual(rec["stdin"], "", "with {prompt} nothing goes on standard input")
+        env["SWARMBOX_TEST_USER_ADDONS"] = empty
+        with self.assertRaises(autoname.NamerError) as cm:
+            autoname.default_namer("/home/a/api", "fbot", "", "", env=env)
+        self.assertIn("can name tabs", str(cm.exception))
+
     def test_mcp_box_state_open_worktree_rename_and_worktree_action(self):
         cfg = sysop_config.load({"SWARMBOX_SYSOP_AUTONAME": "0"})
         self.assertFalse(cfg.autoname)

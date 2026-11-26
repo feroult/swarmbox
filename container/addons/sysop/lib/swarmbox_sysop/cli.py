@@ -269,7 +269,8 @@ def self_test():
     problems = []
     try:
         cfg = config.load(os.environ)
-        brain.parse_template(cfg.brain)
+        if cfg.brain != brain.AUTO:       # auto is resolved for each goal: a box without an agent that declares a brain is no broken install
+            brain.parse_template(cfg.brain)
     except (config.ConfigError, brain.TemplateError) as e:
         problems.append(str(e))
     gated = policy.Policy(autonomy="auto")

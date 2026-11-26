@@ -1,26 +1,25 @@
 """The last requests the user typed into an agent tab, read from the agent's own session store.
 
-The auto-namer names a tab after what the user asked, which is shorter and more specific than the screen. Each agent keeps its
-prompts in a different place (measured on the box, November 2026):
+The auto-namer names a tab after what the user asked, which is shorter and more specific than the screen. Where an agent keeps its
+prompts is its addon's knowledge (docs/agents-design.md 3.2), declared in its agent/agent.conf:
 
-- claude (Claude Code 2.1): the prompt history `~/.claude/history.jsonl` (`$CLAUDE_CONFIG_DIR`), one line per typed prompt:
-  `display`, `project` (the cwd), `sessionId`, `timestamp` (ms). Small, unlike a session transcript, which tool results grow to
-  megabytes.
-- agy (Antigravity CLI): `~/.gemini/antigravity-cli/history.jsonl`, the same shape with `workspace` and `conversationId`, and
-  `type: slash_command` for commands.
-- opencode (2.3): the SQLite `~/.local/share/opencode/opencode.db`: `session_v2.directory` is the cwd, `session_message` rows with
-  `type = 'user'` carry `{"text": ...}` in `data`.
+- HISTORY=jsonl: a prompt history with one JSON line per typed prompt (Claude Code's `~/.claude/history.jsonl`, agy's): HISTORY_FILE
+  (under the home; HISTORY_FILE_ENV names a variable that, when set, is the folder of the file instead), HISTORY_FIELDS (the keys of the
+  folder, the session, the text and the time in ms). Read here.
+- else its agent/history.py, `messages(cwd, home, now)`, for any other store (OpenCode's SQLite database).
 
 A tab event carries only the cwd, not the agent's session id. When two sessions of the same agent were active in the same folder in
 the last AMBIGUOUS_WINDOW seconds, the store cannot tell which one is this tab: the result is empty and the caller falls back to the
-screen. Slash commands and `!` shell lines are not requests, and short replies ("ok", "pode sim") are dropped while longer requests
-exist. Every reader is best effort: a missing file, a changed format or a locked database gives [] and never raises.
+screen. The agent's reserved prefixes (slash commands, `!` shell lines) are not requests, and short replies ("ok", "pode sim") are
+dropped while longer requests exist. Every reader is best effort: a missing file, a changed format or a locked database gives [] and
+never raises.
 """
 import json
 import os
 import re
-import sqlite3
 import time
+
+from .agents import registry
 
 MAX_MESSAGES = 4
 MAX_MESSAGE_CHARS = 280
@@ -52,7 +51,7 @@ def _tail_lines(path, max_bytes=TAIL_BYTES):
     return lines
 
 
-def _history_messages(path, cwd, now, folder_key, session_key):
+def _history_messages(path, cwd, now, folder_key, session_key, text_key="display", ts_key="timestamp", reserved=("/", "!")):
     """The prompts of the latest session in `cwd` from a prompt history JSONL (one line per prompt, timestamps in ms)."""
     try:
         lines = _tail_lines(path)
@@ -67,12 +66,12 @@ def _history_messages(path, cwd, now, folder_key, session_key):
             continue
         if not isinstance(rec, dict) or rec.get(folder_key) != cwd or rec.get("type") == "slash_command":
             continue
-        text = str(rec.get("display") or "").strip()
-        if not text or text.startswith(("/", "!")):
+        text = str(rec.get(text_key) or "").strip()
+        if not text or (reserved and text.startswith(reserved)):
             continue
         sid = str(rec.get(session_key) or "")
         try:
-            ts = float(rec.get("timestamp") or 0) / 1000.0
+            ts = float(rec.get(ts_key) or 0) / 1000.0
         except (TypeError, ValueError):
             ts = 0.0
         by_session.setdefault(sid, []).append(text)
@@ -85,64 +84,32 @@ def _history_messages(path, cwd, now, folder_key, session_key):
     return by_session[ranked[0][0]]
 
 
-def claude_messages(cwd, home, now):
-    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
-    return _history_messages(os.path.join(base, "history.jsonl"), cwd, now, "project", "sessionId")
+def _jsonl_messages(a, cwd, home, now):
+    h = a["history"]
+    rel = h["file"]
+    path = os.path.join(home, rel)
+    if h["file_env"] and os.environ.get(h["file_env"]):
+        path = os.path.join(os.environ[h["file_env"]], os.path.basename(rel))
+    folder, session, text, ts = h["fields"]
+    return _history_messages(path, cwd, now, folder, session, text, ts, tuple(p for p in a["reserved_prefixes"] if p))
 
 
-def agy_messages(cwd, home, now):
-    path = os.path.join(home, ".gemini", "antigravity-cli", "history.jsonl")
-    return _history_messages(path, cwd, now, "workspace", "conversationId")
-
-
-def opencode_db_path(home):
-    data = os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share")
-    return os.path.join(data, "opencode", "opencode.db")
-
-
-def opencode_messages(cwd, home, now):
-    path = opencode_db_path(home)
-    if not os.path.isfile(path):
-        return []
-    try:
-        con = sqlite3.connect("file:%s?mode=ro" % path, uri=True, timeout=1.0)
-    except sqlite3.Error:
-        return []
-    try:
-        rows = con.execute(
-            "SELECT id, time_updated FROM session_v2 WHERE directory = ? AND parent_id IS NULL AND time_archived IS NULL "
-            "ORDER BY time_updated DESC LIMIT 2",
-            (cwd,),
-        ).fetchall()
-        if not rows:
-            return []
-        if len(rows) > 1 and now - float(rows[1][1] or 0) / 1000.0 < AMBIGUOUS_WINDOW:
-            return []
-        datas = con.execute(
-            "SELECT data FROM session_message WHERE session_id = ? AND type = 'user' ORDER BY seq DESC LIMIT ?",
-            (rows[0][0], MAX_MESSAGES * 2),
-        ).fetchall()
-    except (sqlite3.Error, TypeError, ValueError):
-        return []
-    finally:
-        con.close()
-    out = []
-    for (raw,) in reversed(datas):
-        try:
-            text = str(json.loads(raw).get("text") or "").strip()
-        except (ValueError, AttributeError):
-            continue
-        if text:
-            out.append(text)
-    return out
-
-
-READERS = {"claude": claude_messages, "agy": agy_messages, "opencode": opencode_messages}
+def _reader(agent):
+    """the reader of an agent's prompts: its history.py, its declared JSONL history, or None"""
+    a = registry.get(registry.resolve(agent))
+    if not a:
+        return None
+    mod = registry.hook(a["id"], "history")
+    if mod is not None and hasattr(mod, "messages"):
+        return mod.messages
+    if a["history"]["kind"] == "jsonl" and a["history"]["file"] and len(a["history"]["fields"]) == 4:
+        return lambda cwd, home, now: _jsonl_messages(a, cwd, home, now)
+    return None
 
 
 def recent(agent, cwd, home=None, now=None, limit=MAX_MESSAGES):
     """Up to `limit` of the user's last requests in this agent and folder, oldest first, each clipped; [] when unknown."""
-    reader = READERS.get(str(agent or "").strip().lower())
+    reader = _reader(str(agent or "").strip().lower())
     if reader is None or not cwd:
         return []
     home = home or os.environ.get("HOME") or os.path.expanduser("~")
