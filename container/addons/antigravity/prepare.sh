@@ -1,10 +1,10 @@
 #!/bin/bash
 # Antigravity CLI (agy) prepare.sh: run by `swarmbox-addon prepare` (serve step 7 and right after `swarmbox-addon install antigravity`).
-# Seeds SwarmBox's default settings in ~/.gemini/antigravity-cli/settings.json — statusLine pointing to this addon's own statusline.sh,
+# Gives agy the MCP servers of the box (sync_agy_mcp, below), then seeds SwarmBox's default settings in ~/.gemini/antigravity-cli/settings.json — statusLine pointing to this addon's own statusline.sh,
 # dark purple-friendly colorScheme, no feedback surveys, and non-workspace access (the box is already the sandbox).
 #
 # Rules:
-#   - Isolated to the antigravity addon: never touches Claude Code or any other agent.
+#   - Isolated to the antigravity addon: never writes the files of Claude Code or any other agent (it reads the box's MCP list).
 #   - Never overwrites a key the user already set.
 #   - Seeds once (tracked by $SB_ADDONS_DIR/antigravity/.defaults-applied): because agy removes keys that equal its own defaults when
 #     saving /config or /statusline delete, re-seeding on every start would undo a user's choice. Deleting settings.json re-seeds it.
@@ -25,9 +25,34 @@ settings="$cfg_dir/settings.json"
 stamp_dir="$SB_ADDONS_DIR/antigravity"
 stamp="$stamp_dir/.defaults-applied"
 
+# sync_agy_mcp: the MCP servers of the box (<workspace>/.claude/mcp-servers.json, written by swarmbox-mcp before this runs) as an
+# Antigravity plugin of SwarmBox's own, ~/.gemini/config/plugins/swarmbox/{plugin.json,mcp_config.json}: agy loads the MCP servers of
+# every enabled plugin, the format is the same `mcpServers` map, and the user's own ~/.gemini/config/mcp_config.json is never touched.
+# The user can turn it off like any plugin (`agy plugin disable swarmbox`). Rewritten at every start, so a server removed from the box
+# goes away; a missing source writes nothing. Returns 1 when the source is not a usable MCP file (the plugin is left as it was).
+sync_agy_mcp() {
+    local src="$HOME/.claude/mcp-servers.json" dir="$HOME/.gemini/config/plugins/swarmbox" t
+    [ -f "$src" ] || return 0
+    if ! jq -e '(.mcpServers // {}) | type == "object"' "$src" > /dev/null 2>&1; then
+        echo "antigravity prepare: $src is not a usable MCP file: the MCP servers are not given to agy" >&2
+        return 1
+    fi
+    mkdir -p "$dir" || { echo "antigravity prepare: cannot create $dir" >&2; return 1; }
+    t=$(mktemp "$dir/.plugin.json.XXXXXX") || return 1
+    jq -n '{name: "swarmbox", version: "1.0.0", description: "The MCP servers of the SwarmBox (written by SwarmBox at every start)"}' > "$t" \
+        && mv -f "$t" "$dir/plugin.json" || { rm -f "$t"; echo "antigravity prepare: cannot write $dir/plugin.json" >&2; return 1; }
+    t=$(mktemp "$dir/.mcp_config.json.XXXXXX") || return 1
+    chmod 600 "$t"
+    jq '{mcpServers: (.mcpServers // {})}' "$src" > "$t" \
+        && mv -f "$t" "$dir/mcp_config.json" || { rm -f "$t"; echo "antigravity prepare: cannot write $dir/mcp_config.json" >&2; return 1; }
+    return 0
+}
+mcp_rc=0
+sync_agy_mcp || mcp_rc=1
+
 # Already seeded and the user's settings file still exists: leave their choices alone.
 if [ -f "$stamp" ] && [ -f "$settings" ]; then
-    exit 0
+    exit "$mcp_rc"
 fi
 
 umask 077
@@ -64,4 +89,4 @@ fi
 mv -f "$tmp" "$settings" || { echo "antigravity prepare: cannot write $settings" >&2; exit 1; }
 : > "$stamp" 2> /dev/null || true
 echo "antigravity prepare: configured defaults in $settings" >&2
-exit 0
+exit "$mcp_rc"

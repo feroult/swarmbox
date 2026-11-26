@@ -355,7 +355,8 @@ with neither, `yolo` says that there is no default agent, and when the default i
 
 **MCP.** `container/mcp/<name>/config.json` describes an MCP server (`command`, `args`, `env`, `browserUrlArgs`). `swarmbox-mcp generate` writes `<workspace>/.claude/mcp-servers.json`;
 a user file `<workspace>/.config/swarmbox/mcp/<name>/config.json` can override or set `{"enabled": false}`. The only shipped server is `chrome-devtools-mcp`, pinned and installed in the
-image (never `npx`), with Chromium. When `BROWSER_URL` is set it attaches to a remote Chrome instead. OpenCode gets a mirrored copy.
+image (never `npx`), with Chromium. When `BROWSER_URL` is set it attaches to a remote Chrome instead. OpenCode gets a mirrored copy; agy gets them as an
+Antigravity plugin of SwarmBox's own, `~/.gemini/config/plugins/swarmbox/` (rewritten by its `prepare.sh` at every start; `agy plugin disable swarmbox` turns it off).
 
 Adding an addon: `swarmbox addon new NAME` (an `addon.conf` and `install.sh` skeleton; `--repo` or `--dir`), then `swarmbox addon validate`. [../CONTRIBUTING.md](../CONTRIBUTING.md) lists how pins are bumped.
 

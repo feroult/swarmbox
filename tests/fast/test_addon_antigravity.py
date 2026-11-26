@@ -361,6 +361,51 @@ class PrepareTest(unittest.TestCase):
             self.assertEqual(f.read(), "{not valid json")
 
 
+class PrepareMcpTest(unittest.TestCase):
+    """agy gets the MCP servers of the box through a plugin of SwarmBox's own, rewritten at every start."""
+
+    run_prepare = PrepareTest.run_prepare
+
+    def setUp(self):
+        PrepareTest.setUp(self)
+        self.plugin = os.path.join(self.home, ".gemini", "config", "plugins", "swarmbox")
+        self.src = os.path.join(self.home, ".claude", "mcp-servers.json")
+        os.makedirs(os.path.dirname(self.src))
+
+    def write_src(self, text):
+        with open(self.src, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def servers(self):
+        with open(os.path.join(self.plugin, "mcp_config.json"), encoding="utf-8") as f:
+            return json.load(f)["mcpServers"]
+
+    def test_the_box_mcp_servers_become_a_plugin_and_follow_every_start(self):
+        cdp = {"command": "chrome-devtools-mcp", "args": ["--browserUrl=http://127.0.0.1:9222"], "env": {}}
+        self.write_src(json.dumps({"mcpServers": {"chrome-devtools": cdp}}))
+        self.assertEqual(self.run_prepare().returncode, 0)
+        self.assertEqual(self.servers(), {"chrome-devtools": cdp})
+        with open(os.path.join(self.plugin, "plugin.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["name"], "swarmbox")
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.plugin, "mcp_config.json")).st_mode), 0o600)
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".gemini", "config", "mcp_config.json")), "the user's own file is not touched")
+        # Settings are seeded once, but the servers follow the box at every start
+        self.write_src(json.dumps({"mcpServers": {}}))
+        self.assertEqual(self.run_prepare().returncode, 0)
+        self.assertEqual(self.servers(), {})
+
+    def test_no_source_writes_nothing_and_a_broken_one_keeps_the_plugin(self):
+        self.assertEqual(self.run_prepare().returncode, 0)
+        self.assertFalse(os.path.exists(self.plugin))
+        self.write_src(json.dumps({"mcpServers": {"a": {"command": "a"}}}))
+        self.assertEqual(self.run_prepare().returncode, 0)
+        self.write_src("{broken")
+        r = self.run_prepare()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not a usable MCP file", r.stderr)
+        self.assertEqual(self.servers(), {"a": {"command": "a"}})
+
+
 class StaticTest(unittest.TestCase):
     def test_the_scripts_pass_bash_n_and_shellcheck(self):
         for f in (INSTALL, PREPARE, STATUSLINE):
