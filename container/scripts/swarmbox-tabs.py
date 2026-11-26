@@ -561,6 +561,10 @@ class TabsBackend:
         """Optional labels dict for `tab` (e.g. swarmbox.title, swarmbox.pin_id, swarmbox.worktree)."""
         return {}
 
+    def tab_foreground(self, tab):
+        """Optional: the name of the program in the foreground of `tab` right now, when the backend already knows it, or None."""
+        return None
+
     def rename_tab(self, tab, title, source="user"):
         """Set display title metadata on `tab`."""
         raise TabsError("unsupported", "backend %s cannot rename tabs" % self.name)
@@ -875,6 +879,14 @@ class HerdrBackend(TabsBackend):
             out["app"] = str(st["app"])[:32]
         return out
 
+    def tab_foreground(self, tab):
+        # what `hc get` said (tab_labels fetched it): `hc ls` gives no foreground, so the command of a row would else be the program the
+        # terminal started with (`bash -lic ...` for an agent launched from the Studio), never the agent running in it
+        meta = self._meta.get(tab.id)
+        fg = meta.get("foreground") if isinstance(meta, dict) else None
+        name = fg.get("name") if isinstance(fg, dict) else None
+        return os.path.basename(str(name)) if name else None
+
     def tab_labels(self, tab):
         meta = self._meta.get(tab.id)
         if isinstance(meta, dict) and isinstance(meta.get("labels"), dict):
@@ -1017,6 +1029,9 @@ class Tabs:
             if st:
                 row["status"] = st
             lbls = self.backend.tab_labels(t) or {}
+            fg = self.backend.tab_foreground(t)
+            if fg:
+                row["cmd"] = fg      # the program running now, not the one the terminal started with
             if lbls.get("swarmbox.title"):
                 row["title"] = str(lbls["swarmbox.title"])[:60]
             if lbls.get("swarmbox.title_source") in ("user", "auto"):

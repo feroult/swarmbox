@@ -810,6 +810,21 @@ class TestCommand(Base):
         rc, out, _ = self.ft.cli("screen", "t1", "--lines", "1")
         self.assertEqual((rc, out["text"], out["lines"]), (0, "second", 1))
 
+    def test_the_command_of_a_row_is_the_program_running_now(self):
+        """an agent the Studio started runs under `bash -lic`: the row names the program in the foreground (from `hc get`), so an agent that
+        reports no state yet is still seen as one, and a tab whose agent exited is a shell again"""
+        self.ft.load()
+        self.ft.term("t3", "claude", argv=["/bin/bash", "-lic", "claude; exec /bin/bash -l"], foreground={"name": "claude"},
+                     labels={"swarmbox.agent": "claude"})
+        self.ft.term("t4", "old", argv=["/bin/bash", "-lic", "agy; exec /bin/bash -l"], foreground={"name": "bash"},
+                     labels={"swarmbox.agent": "agy"})
+        self.ft.save()
+        rows = {r["tab"]: r for r in self.ft.cli("list")[1]}
+        self.assertEqual((rows["t3"]["cmd"], rows["t3"]["agent"]), ("claude", "claude"))
+        self.assertEqual((rows["t4"]["cmd"], rows["t4"]["agent"]), ("bash", "agy"))
+        self.assertEqual(mod.swarmbox_agents.detect(rows["t3"]), "claude")
+        self.assertEqual(mod.swarmbox_agents.detect(rows["t4"]), "", "the label of an agent that exited names no running agent")
+
     def test_send_run_and_input_and_queue_and_slash(self):
         rc, out, _ = self.ft.cli("send", "t1", "--run", "echo hi")
         self.assertEqual((rc, out), (0, {"ok": True, "tab": "t1", "pane": "t1", "submitted": True}))

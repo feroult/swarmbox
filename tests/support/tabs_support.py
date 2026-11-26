@@ -67,8 +67,10 @@ def find(addr):
     error("not_found", 'no terminal "%s"' % addr)
 
 
-def public(t, labels):
-    return {k: v for k, v in t.items() if k not in INTERNAL and (labels or k != "labels")}
+def public(t, full):
+    """a terminal as hc shows it: `hc get` (full) has the labels and the foreground program; `hc ls` has neither (measured with herdr-core
+    0.1.21: its summaries carry no `foreground`)"""
+    return {k: v for k, v in t.items() if k not in INTERNAL and (full or k not in ("labels", "foreground"))}
 
 
 def render(t):
