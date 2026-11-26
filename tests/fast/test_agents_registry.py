@@ -149,7 +149,6 @@ class RegistryVectors(unittest.TestCase):
         with open(os.path.join(b, "claude"), "w") as f:
             f.write("#!/bin/sh\n")
         os.chmod(os.path.join(b, "claude"), 0o755)
-        A._CACHE.clear()
         self.assertEqual(A.ids(env, installed_only=True), ["claude", "opencode"])
 
     def test_a_changed_manifest_is_seen_at_once(self):

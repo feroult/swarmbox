@@ -184,13 +184,29 @@ function stampOf(dirs) {
   return parts.join('\n');
 }
 
+// The folders an install or a remove changes (the install records, ~/.local/bin of a self-updating agent): `installed` follows at once.
+function installStampOf(env) {
+  const home = homeOf(env);
+  const data = path.join(xdg(env.XDG_DATA_HOME, path.join(home, '.local', 'share')), 'addons');
+  const bin = path.join(home, '.local', 'bin');
+  const parts = [];
+  for (const root of [data, env.SWARMBOX_TEST_IMAGE_STATE || '/opt/swarmbox/addons', bin]) {
+    let names = [];
+    if (root !== bin) { try { names = fs.readdirSync(root).sort(); } catch (_) {} }
+    for (const p of [root, ...names.map((n) => path.join(root, n))]) {
+      try { parts.push(`${p}|${fs.statSync(p).mtimeMs}`); } catch (_) {}
+    }
+  }
+  return parts.join('\n');
+}
+
 const CACHE = new Map();
 
 // loadRegistry(env) -> { agents: [...] (sorted by id), byName: Map(name -> id) }. Cached while no manifest changes.
 export function loadRegistry(env = process.env) {
   const levels = [['image', imageAddonsDir(env)], ['user', userAddonsDir(env)]];
   const key = [...levels.map((l) => l[1]), env.HOME || '', env.XDG_DATA_HOME || '', env.XDG_CONFIG_HOME || ''].join('\0');
-  const stamp = stampOf(levels.map((l) => l[1]));
+  const stamp = stampOf(levels.map((l) => l[1])) + '\n' + installStampOf(env);
   const hit = CACHE.get(key);
   if (hit && hit.stamp === stamp && Date.now() - hit.at < 5000) return hit.reg;
   const found = new Map();

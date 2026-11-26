@@ -277,12 +277,27 @@ def _stamp(dirs):
     return tuple(parts)
 
 
+def _install_stamp(env):
+    """the folders an install or a remove changes (the install records, ~/.local/bin of a self-updating agent): `installed` follows at once"""
+    home = env.get("HOME") or os.path.expanduser("~")
+    data = os.path.join(_xdg("XDG_DATA_HOME", os.path.join(home, ".local", "share"), env), "addons")
+    parts = []
+    for root in (data, env.get("SWARMBOX_TEST_IMAGE_STATE") or "/opt/swarmbox/addons", os.path.join(home, ".local", "bin")):
+        for p in [root] + ([os.path.join(root, n) for n in sorted(os.listdir(root))] if os.path.isdir(root) and root != os.path.join(home, ".local", "bin") else []):
+            try:
+                st = os.stat(p)
+                parts.append((p, st.st_mtime_ns))
+            except OSError:
+                pass
+    return tuple(parts)
+
+
 def load(env=None):
     """The registry: {"agents": [agent, ...] (sorted by id), "by_name": {name: id}}. Cached while no manifest changes."""
     env = os.environ if env is None else env
     levels = (("image", image_addons_dir(env)), ("user", user_addons_dir(env)))
     key = tuple(d for _, d in levels) + (env.get("HOME", ""), env.get("XDG_DATA_HOME", ""), env.get("XDG_CONFIG_HOME", ""))
-    stamp = _stamp([d for _, d in levels])
+    stamp = _stamp([d for _, d in levels]) + _install_stamp(env)
     hit = _CACHE.get(key)
     if hit and hit[0] == stamp and time.monotonic() - hit[2] < 5.0:   # 5 s: an install changes `installed` without touching a manifest
         return hit[1]
