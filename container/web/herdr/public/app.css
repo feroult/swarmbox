@@ -2394,6 +2394,7 @@ html.swarmbox-ready #sb-boot {
 /* Calm confirmation card (lives inside the conversation) */
 .approval-card {
   position: relative;
+  flex-shrink: 0;
   overflow: hidden;
   margin: 6px 0 2px;
   padding: 12px 14px 14px 16px;

@@ -6248,7 +6248,6 @@
   function renderApprovalCard(sysop) {
     stopCountdownTimer();
     const pending = sysop && sysop.pending;
-    const oscBlocked = sysop && Array.isArray(sysop.blocked) && sysop.blocked.length ? sysop.blocked[0] : null;
 
     if (pending) {
       const isVeto = pending.mode === 'veto';
@@ -6278,20 +6277,6 @@
         approvalBarEl.classList.add('hidden');
       }
 
-      requestAnimationFrame(fitAndResize);
-      return;
-    }
-
-    if (oscBlocked) {
-      currentApproval = { kind: 'osc', terminal: oscBlocked.terminal };
-      approvalCardEl.classList.remove('hidden');
-      mobileApprovalEl.classList.remove('hidden');
-      approvalBarEl.classList.add('hidden');
-      approvalBadgeEl.textContent = 'Agent asks';
-      mobileApprovalBadgeEl.textContent = 'Agent asks';
-      approvalTabEl.textContent = oscBlocked.name;
-      approvalTextEl.textContent = oscBlocked.msg;
-      mobileApprovalMsgEl.textContent = `${oscBlocked.name}: ${oscBlocked.msg}`;
       requestAnimationFrame(fitAndResize);
       return;
     }
@@ -8030,21 +8015,6 @@
 
   async function handleApproval(decision) {
     if (!currentApproval) return;
-    if (currentApproval.kind === 'osc' && currentApproval.terminal) {
-      const answerTerm = currentApproval.terminal;
-      const r = await fetch(`/api/tabs/${encodeURIComponent(answerTerm)}/answer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision }),
-      }).catch(() => null);
-      if (r && r.status === 409) {
-        // the agent declares no answer keys: its dialog is answered in its own terminal
-        const data = await r.json().catch(() => ({}));
-        showTermToast(data.message || 'Answer this dialog in the agent\'s terminal.', 'error', 4200);
-        if (answerTerm !== activeId) connectPty(answerTerm);
-      }
-      return;
-    }
     const route = decision === 'allow' ? '/api/sysop/approve' : '/api/sysop/veto';
     await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   }
