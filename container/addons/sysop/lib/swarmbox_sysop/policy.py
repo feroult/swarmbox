@@ -41,7 +41,6 @@ done answers with an error. (The service also kills the brain at the deadline.)
 import os
 import re
 import time
-import unicodedata
 
 from . import risk
 from .agents import registry

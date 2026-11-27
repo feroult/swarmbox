@@ -243,26 +243,6 @@ def _apply_frame_guard(buf):
     return head + buf[i + 4:]
 
 
-def guard_response(up, conn, limit=16384, wait=10.0):
-    """Read the response head from the web server, add FRAME_GUARD to it (once; the ones the server sent are kept out) and send it on. Anything that is
-    not a readable head is handed on as it came."""
-    buf = b""
-    deadline = time.monotonic() + wait
-    while b"\r\n\r\n" not in buf and len(buf) < limit:
-        left = deadline - time.monotonic()
-        if left <= 0:
-            break
-        up.settimeout(left)
-        try:
-            data = up.recv(4096)
-        except (socket.timeout, OSError):
-            break
-        if not data:
-            break
-        buf += data
-    conn.sendall(_apply_frame_guard(buf))
-
-
 def send(conn, status, body=b"", ctype="application/json; charset=utf-8", extra=()):
     head = ["HTTP/1.1 %d %s" % (status, REASONS.get(status, "Error")), "Content-Type: " + ctype, "Content-Length: %d" % len(body),
             "Cache-Control: no-store", "X-Content-Type-Options: nosniff", "Connection: close"] + list(FRAME_GUARD)

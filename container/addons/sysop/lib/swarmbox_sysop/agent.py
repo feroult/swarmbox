@@ -21,7 +21,7 @@ import sys
 import threading
 import time
 
-from . import actions, busclient, paths, service, state
+from . import actions, busclient, paths, state
 
 SYSOP_ROLE_KEY = "swarmbox.role"
 SYSOP_ROLE_VALUE = "sysop"

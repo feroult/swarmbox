@@ -27,13 +27,11 @@ import math
 import os
 import re
 import secrets
-import shutil
-import subprocess
 import sys
 import time
 
 from . import audit as auditmod
-from . import autoname, ipc, paths, policy, tabsclient
+from . import ipc, paths, policy, tabsclient
 from .agents import registry
 
 SUPPORTED = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]

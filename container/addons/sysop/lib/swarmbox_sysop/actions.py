@@ -6,7 +6,7 @@ import os
 import time
 from collections import namedtuple
 
-from . import busclient, config, ipc, service
+from . import config, ipc, service
 
 ActionResult = namedtuple("ActionResult", "ok rc message")
 

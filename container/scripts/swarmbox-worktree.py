@@ -52,13 +52,6 @@ class WorktreeError(Exception):
         self.extra = extra or {}
 
 
-def _xdg_root(var, fallback):
-    v = (os.environ.get(var) or "").strip()
-    if v.startswith("/"):
-        return v.rstrip("/") or "/"
-    return fallback
-
-
 def config_dir(env=None):
     e = os.environ if env is None else env
     home = e.get("HOME") or os.path.expanduser("~")

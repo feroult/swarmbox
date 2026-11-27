@@ -631,8 +631,6 @@
   let touchRaf = 0;
   let touchAltAccum = 0;
   let touchSamples = [];
-  let touchPendingPx = 0;
-  let touchMoveRaf = 0;
   let touchSettleRaf = 0;
 
   function nowMs() {
@@ -788,27 +786,6 @@
     return true;
   }
 
-  function queueTouchScrollPx(deltaPx) {
-    touchPendingPx += deltaPx;
-    if (touchMoveRaf) return;
-    touchMoveRaf = requestAnimationFrame(() => {
-      touchMoveRaf = 0;
-      const d = touchPendingPx;
-      touchPendingPx = 0;
-      applyTouchScrollPx(d);
-    });
-  }
-
-  function flushTouchScroll() {
-    if (touchMoveRaf) {
-      cancelAnimationFrame(touchMoveRaf);
-      touchMoveRaf = 0;
-    }
-    const d = touchPendingPx;
-    touchPendingPx = 0;
-    if (d) applyTouchScrollPx(d);
-  }
-
   function settleTouchScroll() {
     const sess = activeSession();
     if (sess) {
@@ -948,7 +925,7 @@
     const wasCoasting = Boolean(touchRaf);
     stopTouchCoast('touchstart');
     if (e.touches.length >= 2) {
-      if (touchMoved) { flushTouchScroll(); settleTouchScroll(); }
+      if (touchMoved) settleTouchScroll();
       touchId = null;
       touchMoved = false;
       touchStoppedCoast = false;
@@ -1048,7 +1025,6 @@
     touchMoved = false;
     touchStoppedCoast = false;
     stopTouchCoast('touchcancel');
-    flushTouchScroll();
     settleTouchScroll();
     if (g && g.moves > 0) {
       const sess = activeSession();
@@ -1089,7 +1065,6 @@
     touchDbgGesture = null;
     touchId = null;
     touchMoved = false;
-    flushTouchScroll();
     let appliedVel = 0;
     if (flick) {
       const dir = Math.sign(rawVel);
@@ -1543,13 +1518,6 @@
     if (!sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3) {
       openSessionSocket(sess, { silent: true, reset: true });
     }
-  }
-
-  // Only the window the user is actually using may size a PTY. Another Studio window (a second monitor, a phone,
-  // a background tab) still follows the active tab, but passively: if it claimed too, the two would resize the
-  // PTY back and forth on every tab switch, and each resize redraws the agent for both.
-  function windowHasUserFocus() {
-    return document.visibilityState === 'visible' && document.hasFocus();
   }
 
   // Real user interaction (pointerdown/keydown/wheel/tab click) claims viewport ownership on the server

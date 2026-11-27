@@ -15,7 +15,6 @@ Protocol: line-delimited JSON, one request line per connection. pub, ping and to
 per line. A line is at most 1 MiB.
 """
 import json
-import os
 import socket
 
 from . import paths
