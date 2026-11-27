@@ -924,8 +924,18 @@ console.log(JSON.stringify([readBuildCommit(%r, %r), readBuildCommit(%r, %r)]));
         self.assertIn("herdr-active-tab", client_src)
         self.assertIn("swarmbox.role", client_src)
         self.assertIn("computeLayout", cockpit_src)
-        # Batch syntax checks for all .mjs modules + app.js + hc-client.mjs pure helper assertions into ONE node process
+        # Batch syntax checks for all .mjs modules + app.js + public/app/*.js + hc-client.mjs pure helper assertions into ONE node process
         app_js = os.path.join(ROOT, "container", "web", "herdr", "public", "app.js")
+        app_sub_dir = os.path.join(ROOT, "container", "web", "herdr", "public", "app")
+        app_modules = [app_js] + (
+            sorted(
+                os.path.join(app_sub_dir, name)
+                for name in os.listdir(app_sub_dir)
+                if name.endswith(".js")
+            )
+            if os.path.isdir(app_sub_dir)
+            else []
+        )
         check_js = """
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -934,7 +944,9 @@ import { isHiddenTerminal, sanitizeTabName, uniqueTabName, DEFAULT_THEME, THEME_
 for (const p of %s) {
   new vm.SourceTextModule(fs.readFileSync(p, 'utf8'), { identifier: p });
 }
-new vm.Script(fs.readFileSync(%s, 'utf8'), { filename: %s });
+for (const p of %s) {
+  new vm.SourceTextModule(fs.readFileSync(p, 'utf8'), { identifier: p });
+}
 assert.equal(isHiddenTerminal({ labels: { 'swarmbox.role': 'sysop' } }), true);
 assert.equal(isHiddenTerminal({ labels: {} }), false);
 assert.equal(isHiddenTerminal({}), false);
@@ -950,13 +962,16 @@ assert.equal(cfg.sysop.settings['sysop.autonomy'].value, 'confirm-all');
 assert.equal(cfg.voice.settings['voice.language'].value, 'pt');
 assert.ok(Array.isArray(cfg.addons));
 assert.ok(Array.isArray(cfg.mcp));
-""" % (json.dumps(HERDR_CLIENT), json.dumps(herdr_modules), json.dumps(app_js), json.dumps(app_js))
+""" % (json.dumps(HERDR_CLIENT), json.dumps(herdr_modules), json.dumps(app_modules))
         p2 = subprocess.run(["node", "--experimental-vm-modules", "--no-warnings", "--input-type=module", "-e", check_js], capture_output=True, text=True)
         self.assertEqual(p2.returncode, 0, p2.stderr)
 
-        # Verify app.js per-tab live sessions, zero-scroll hydration, reconnect resilience, mobile inertia scroll, and Settings panel
-        with open(app_js, encoding="utf-8") as f:
-            app_src = f.read()
+        # Verify app.js (+ public/app/*.js) per-tab live sessions, zero-scroll hydration, reconnect resilience, mobile inertia scroll, and Settings panel
+        app_parts = []
+        for p in app_modules:
+            with open(p, encoding="utf-8") as f:
+                app_parts.append(f.read())
+        app_src = "\n".join(app_parts)
         for token in (
             "term-loading",
             "finishHydration",

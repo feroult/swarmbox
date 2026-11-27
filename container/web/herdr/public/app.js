@@ -1,549 +1,206 @@
-(() => {
-  // Stable per-window identity so the gateway knows which channel (desktop vs phone) last had real user input.
-  const STUDIO_CLIENT_ID = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    ? crypto.randomUUID()
-    : `sb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+import {
+  STUDIO_CLIENT_ID,
+  MAX_TAB_SESSIONS,
+  dom,
+  state,
+  registerActions,
+  activeSession,
+  syncConnPill,
+  dismissBoot,
+  refreshAgentRegistry,
+  resolveAgentName,
+  isAgentId,
+  agentLabel,
+  applyAgentColor,
+} from './app/state.js';
+import {
+  DEFAULT_THEME,
+  THEMES,
+  THEME_KEYS,
+  LINE_HEIGHT_PRESETS,
+  CURSOR_STYLES,
+  SCROLLBACK_OPTIONS,
+  savedTheme,
+  effectiveLineHeightKey,
+  computeLineHeight,
+  computeFontSize,
+  formatFontPx,
+  syncAppearanceControls,
+  setFontOffset,
+  adjustFontOffset,
+  applyTerminalPrefs,
+  applyTheme,
+} from './app/themes.js';
+import {
+  PIXEL_SVG,
+  ICO_BRANCH_SVG,
+  ICO_BOOK_SVG,
+  ICO_CLOCK_SVG,
+  ICO_BOLT_SVG,
+  ICO_BELL_SVG,
+  ICO_PENCIL_SVG,
+  ICO_FOLDER_SVG,
+  ICO_CHECK_SVG,
+  ICO_SEARCH_SVG,
+  ICO_PLUS_SM_SVG,
+  ICO_REFRESH_SVG,
+  REPO_GROUP_ACCENTS,
+  shortDisplayPath,
+  tabAgentBadge,
+  cleanStatusText,
+  tabTitleParts,
+  tabDisplayName,
+  tabState,
+  tabSubtitle,
+  tabAgentKind,
+  pixelIconHtml,
+  makeMiniPixelIcon,
+  stateBadgeText,
+  stateCornerGlyph,
+} from './app/icons.js';
+import {
+  showTermToast,
+  showOpenUrlToast,
+  onOpenUrlEvent,
+  openRenamePopover,
+  startInlineRename,
+  commitInlineRename,
+  unpinById,
+  closeCardMenu,
+  openCardMenu,
+  initUiChrome,
+  closePopover,
+  makeEscClose,
+  addPopoverEscBadge,
+  gitPopSig,
+  refreshGitPopover,
+  openPopover,
+} from './app/ui-chrome.js';
 
-  // Five curated themes synchronized with the cockpit via /api/theme (~/.config/swarmbox/herdr-web-theme).
-  // Default: Catppuccin Mocha.
-  const DEFAULT_THEME = 'catppuccin';
-  const THEMES = {
-    catppuccin: {
-      label: 'Catppuccin',
-      css: {
-        '--bg': '#11111b',
-        '--surface': '#181825',
-        '--sheet': '#1a1a28',
-        '--band': '#29293e',
-        '--surface-2': '#1e1e2e',
-        '--surface-hover': '#2a2b3d',
-        '--border': 'rgba(203, 166, 247, 0.14)',
-        '--border-strong': 'rgba(203, 166, 247, 0.34)',
-        '--hair-1': '#8839ef',
-        '--hair-2': '#cba6f7',
-        '--text': '#cdd6f4',
-        '--text-muted': '#a6adc8',
-        '--text-dim': '#6c7086',
-        '--accent': '#cba6f7',
-        '--accent-bright': '#f5c2e7',
-        '--accent-deep': '#8839ef',
-        '--accent-bg': 'rgba(203, 166, 247, 0.14)',
-        '--accent-glow': 'rgba(203, 166, 247, 0.38)',
-        '--btn-grad-1': '#9c6ade',
-        '--btn-grad-2': '#7448b5',
-        '--btn-text': '#ffffff',
-      },
-      xterm: {
-        background: '#11111b',
-        foreground: '#cdd6f4',
-        cursor: '#f5e0dc',
-        selectionBackground: 'rgba(203, 166, 247, 0.28)',
-        black: '#45475a',
-        red: '#f38ba8',
-        green: '#a6e3a1',
-        yellow: '#f9e2af',
-        blue: '#89b4fa',
-        magenta: '#f5c2e7',
-        cyan: '#94e2d5',
-        white: '#bac2de',
-      },
-    },
-    'purple-glow': {
-      label: 'Purple Glow',
-      css: {
-        '--bg': '#0c0b10',
-        '--surface': '#12101a',
-        '--sheet': '#15121d',
-        '--band': '#27222f',
-        '--surface-2': '#1b1726',
-        '--surface-hover': '#241e33',
-        '--border': 'rgba(167, 139, 250, 0.13)',
-        '--border-strong': 'rgba(167, 139, 250, 0.34)',
-        '--hair-1': '#6d28d9',
-        '--hair-2': '#a78bfa',
-        '--text': '#f4f4f5',
-        '--text-muted': '#a1a1aa',
-        '--text-dim': '#71717a',
-        '--accent': '#a78bfa',
-        '--accent-bright': '#c4b5fd',
-        '--accent-deep': '#6d28d9',
-        '--accent-bg': 'rgba(167, 139, 250, 0.14)',
-        '--accent-glow': 'rgba(167, 139, 250, 0.42)',
-        '--btn-grad-1': '#7c3aed',
-        '--btn-grad-2': '#5b21b6',
-        '--btn-text': '#ffffff',
-      },
-      xterm: {
-        background: '#0c0b10',
-        foreground: '#d4d4d8',
-        cursor: '#c4b5fd',
-        cursorAccent: '#0c0b10',
-        selectionBackground: '#6d28d9',
-        selectionForeground: '#fafafa',
-        black: '#1c1a24',
-        red: '#e5484d',
-        green: '#3dba7a',
-        yellow: '#d9a441',
-        blue: '#8b5cf6',
-        magenta: '#d946ef',
-        cyan: '#5eb5c9',
-        white: '#d4d4d8',
-        brightBlack: '#71717a',
-        brightRed: '#ff6b78',
-        brightGreen: '#4ade80',
-        brightYellow: '#fbbf24',
-        brightBlue: '#a78bfa',
-        brightMagenta: '#e879f9',
-        brightCyan: '#8ad7e6',
-        brightWhite: '#fafafa',
-      },
-    },
-    'tokyo-night': {
-      label: 'Tokyo Night',
-      css: {
-        '--bg': '#16161e',
-        '--surface': '#1a1b26',
-        '--sheet': '#1d1f2c',
-        '--band': '#282d42',
-        '--surface-2': '#24283b',
-        '--surface-hover': '#2f3549',
-        '--border': 'rgba(122, 162, 247, 0.15)',
-        '--border-strong': 'rgba(122, 162, 247, 0.36)',
-        '--hair-1': '#3d59a1',
-        '--hair-2': '#7aa2f7',
-        '--text': '#c0caf5',
-        '--text-muted': '#9aa5ce',
-        '--text-dim': '#565f89',
-        '--accent': '#7aa2f7',
-        '--accent-bright': '#bb9af7',
-        '--accent-deep': '#3d59a1',
-        '--accent-bg': 'rgba(122, 162, 247, 0.14)',
-        '--accent-glow': 'rgba(122, 162, 247, 0.38)',
-        '--btn-grad-1': '#5b82e0',
-        '--btn-grad-2': '#3d59a1',
-        '--btn-text': '#ffffff',
-      },
-      xterm: {
-        background: '#16161e',
-        foreground: '#c0caf5',
-        cursor: '#c0caf5',
-        selectionBackground: 'rgba(122, 162, 247, 0.28)',
-        black: '#15161e',
-        red: '#f7768e',
-        green: '#9ece6a',
-        yellow: '#e0af68',
-        blue: '#7aa2f7',
-        magenta: '#bb9af7',
-        cyan: '#7dcfff',
-        white: '#a9b1d6',
-      },
-    },
-    nord: {
-      label: 'Nord',
-      css: {
-        '--bg': '#242933',
-        '--surface': '#2e3440',
-        '--sheet': '#313846',
-        '--band': '#3e4759',
-        '--surface-2': '#3b4252',
-        '--surface-hover': '#434c5e',
-        '--border': 'rgba(136, 192, 208, 0.16)',
-        '--border-strong': 'rgba(136, 192, 208, 0.38)',
-        '--hair-1': '#5e81ac',
-        '--hair-2': '#88c0d0',
-        '--text': '#eceff4',
-        '--text-muted': '#d8dee9',
-        '--text-dim': '#8190a8',
-        '--accent': '#88c0d0',
-        '--accent-bright': '#8fbcbb',
-        '--accent-deep': '#5e81ac',
-        '--accent-bg': 'rgba(136, 192, 208, 0.14)',
-        '--accent-glow': 'rgba(136, 192, 208, 0.36)',
-        '--btn-grad-1': '#6fa8ba',
-        '--btn-grad-2': '#4c7399',
-        '--btn-text': '#ffffff',
-      },
-      xterm: {
-        background: '#242933',
-        foreground: '#eceff4',
-        cursor: '#88c0d0',
-        selectionBackground: 'rgba(136, 192, 208, 0.28)',
-        black: '#3b4252',
-        red: '#bf616a',
-        green: '#a3be8c',
-        yellow: '#ebcb8b',
-        blue: '#81a1c1',
-        magenta: '#b48ead',
-        cyan: '#88c0d0',
-        white: '#e5e9f0',
-      },
-    },
-    'rose-pine': {
-      label: 'Rosé Pine',
-      css: {
-        '--bg': '#191724',
-        '--surface': '#1f1d2e',
-        '--sheet': '#221f32',
-        '--band': '#2e2a45',
-        '--surface-2': '#26233a',
-        '--surface-hover': '#312c49',
-        '--border': 'rgba(196, 167, 231, 0.15)',
-        '--border-strong': 'rgba(196, 167, 231, 0.36)',
-        '--hair-1': '#907aa9',
-        '--hair-2': '#c4a7e7',
-        '--text': '#e0def4',
-        '--text-muted': '#908caa',
-        '--text-dim': '#6e6a86',
-        '--accent': '#c4a7e7',
-        '--accent-bright': '#ebbcba',
-        '--accent-deep': '#907aa9',
-        '--accent-bg': 'rgba(196, 167, 231, 0.14)',
-        '--accent-glow': 'rgba(196, 167, 231, 0.38)',
-        '--btn-grad-1': '#9c7cc4',
-        '--btn-grad-2': '#6d5191',
-        '--btn-text': '#ffffff',
-      },
-      xterm: {
-        background: '#191724',
-        foreground: '#e0def4',
-        cursor: '#ebbcba',
-        selectionBackground: 'rgba(196, 167, 231, 0.28)',
-        black: '#26233a',
-        red: '#eb6f92',
-        green: '#31748f',
-        yellow: '#f6c177',
-        blue: '#9ccfd8',
-        magenta: '#c4a7e7',
-        cyan: '#ebbcba',
-        white: '#e0def4',
-      },
-    },
-  };
+const {
+  appEl,
+  sidebarTabsEl,
+  sidebarAgentsSectionEl,
+  sidebarAgentsEl,
+  sidebarParkedSectionEl,
+  sidebarParkedEl,
+  parkedCountEl,
+  sidebarPendingWtEl,
+  pendingWtCountEl,
+  btnNewAgent,
+  topbarWtBtnEl,
+  topbarCtxBtnEl,
+  mobileCtxBtnEl,
+  mobileWtBtnEl,
+  popoverBackdropEl,
+  popoverEl,
+  agentsBusyCountEl,
+  topbarTabsEl,
+  mobileSwitcherBtn,
+  mobileSwitcherIcoEl,
+  mobileSwitcherCountEl,
+  sessionsSheetEl,
+  sessionsSheetHandleEl,
+  sessionsSheetHeadEl,
+  sessionsSheetBodyEl,
+  sessionsFilterBarEl,
+  mobileSessionsBusyEl,
+  sfilterCountAllEl,
+  sfilterCountAgentsEl,
+  sfilterCountShellsEl,
+  btnSessionsClose,
+  btnMobileNewAgent,
+  btnMobileNewShell,
+  tabCountEl,
+  activeDotEl,
+  activeNameEl,
+  activeAgentEl,
+  activeStatusEl,
+  termCtxIconEl,
+  termCtxTitleEl,
+  termCtxStateEl,
+  statusbarSummaryEl,
+  connPillEl,
+  connTextEl,
+  sysopDotEl,
+  mobileSysopBtn,
+  mobileSysopTextEl,
+  btnMobileKeys,
+  btnSheetMic,
+  btnSheetSend,
+  btnToggleSysop,
+  sysopFeedEl,
+  btnSysopStop,
+  btnSysopNew,
+  sysopModelPillEl,
+  sysopQueueBarEl,
+  sysopLiveStripEl,
+  sysopLiveStripTextEl,
+  btnMobileLiveStop,
+  btnMobileDockStop,
+  sendLabelEl,
+  approvalCardEl,
+  approvalBadgeEl,
+  approvalTabEl,
+  approvalTextEl,
+  approvalBarEl,
+  approvalBarFillEl,
+  mobileApprovalEl,
+  mobileApprovalBadgeEl,
+  mobileApprovalMsgEl,
+  voiceNoteEl,
+  voiceHintEl,
+  micLabelEl,
+  goalInputEl,
+  themeSwatchEl,
+  btnMic,
+  btnMobileMic,
+  termWrapEl,
+  termStageLoaderEl,
+  stageLoaderCtxEl,
+  stageLoaderCtxTitleEl,
+  stageLoaderCtxSubEl,
+  stageLoaderCtxSkipEl,
+  termDropOverlayEl,
+  termToastEl,
+  btnJumpLive,
+  settingsOverlayEl,
+  settingsNavEl,
+  settingsVersionEl,
+  settingsTitleEl,
+  settingsSubEl,
+  settingsBodyEl,
+  settingsHostBarEl,
+  hostBarCountEl,
+  hostBarCmdEl,
+  btnHostCopy,
+  btnHostDiscard,
+  terminalHostEl,
+  stageEmptyEl,
+} = dom;
 
-  let bootDismissed = false;
-  function dismissBoot() {
-    if (bootDismissed) return;
-    bootDismissed = true;
-    document.documentElement.classList.add('swarmbox-ready');
-    if (typeof syncStageLoader === 'function') syncStageLoader();
-  }
-  setTimeout(dismissBoot, 4500);
+const { tabSessions, stagedHostConfig, installingAddons, addonMessages } = state;
 
-  const appEl = document.getElementById('app');
-  const sidebarTabsEl = document.getElementById('sidebar-tabs');
-  const sidebarAgentsSectionEl = document.getElementById('sidebar-agents-section');
-  const sidebarAgentsEl = document.getElementById('sidebar-agents');
-  const sidebarParkedSectionEl = document.getElementById('sidebar-parked-section');
-  const sidebarParkedEl = document.getElementById('sidebar-parked');
-  const parkedCountEl = document.getElementById('parked-count');
-  const sidebarPendingWtEl = document.getElementById('sidebar-pending-wt');
-  const pendingWtCountEl = document.getElementById('pending-wt-count');
-  const btnNewAgent = document.getElementById('btn-new-agent');
-  const topbarWtBtnEl = document.getElementById('topbar-wt-btn');
-  const topbarCtxBtnEl = document.getElementById('topbar-ctx-btn');
-  const mobileCtxBtnEl = document.getElementById('mobile-ctx-btn');
-  const mobileWtBtnEl = document.getElementById('mobile-wt-btn');
-  const popoverBackdropEl = document.getElementById('studio-popover-backdrop');
-  const popoverEl = document.getElementById('studio-popover');
-  const agentsBusyCountEl = document.getElementById('agents-busy-count');
-  const topbarTabsEl = document.getElementById('topbar-tabs');
-  const mobileSwitcherBtn = document.getElementById('btn-mobile-switcher');
-  const mobileSwitcherIcoEl = document.getElementById('mobile-switcher-ico');
-  const mobileSwitcherCountEl = document.getElementById('mobile-switcher-count');
-  const sessionsSheetEl = document.getElementById('sessions-sheet');
-  const sessionsSheetHandleEl = document.getElementById('sessions-sheet-handle');
-  const sessionsSheetHeadEl = document.getElementById('sessions-sheet-head');
-  const sessionsSheetBodyEl = document.getElementById('sessions-sheet-body');
-  const sessionsFilterBarEl = document.getElementById('sessions-filter-bar');
-  const mobileSessionsBusyEl = document.getElementById('mobile-sessions-busy');
-  const sfilterCountAllEl = document.getElementById('sfilter-count-all');
-  const sfilterCountAgentsEl = document.getElementById('sfilter-count-agents');
-  const sfilterCountShellsEl = document.getElementById('sfilter-count-shells');
-  const btnSessionsClose = document.getElementById('btn-sessions-close');
-  const btnMobileNewAgent = document.getElementById('btn-mobile-new-agent');
-  const btnMobileNewShell = document.getElementById('btn-mobile-new-shell');
-  let mobileSessionsFilter = 'all';
-  const tabCountEl = document.getElementById('tab-count');
-  const activeDotEl = document.getElementById('active-dot');
-  const activeNameEl = document.getElementById('active-name');
-  const activeAgentEl = document.getElementById('active-agent');
-  const activeStatusEl = document.getElementById('active-status');
-  const termCtxIconEl = document.getElementById('term-ctx-icon');
-  const termCtxTitleEl = document.getElementById('term-ctx-title');
-  const termCtxStateEl = document.getElementById('term-ctx-state');
-  const statusbarSummaryEl = document.getElementById('statusbar-summary');
-  const connPillEl = document.getElementById('conn-pill');
-  const connTextEl = document.getElementById('conn-text');
-  const sysopDotEl = document.getElementById('sysop-dot');
-  const mobileSysopBtn = document.getElementById('btn-mobile-sysop');
-  const mobileSysopTextEl = document.getElementById('mobile-sysop-text');
-  const btnMobileKeys = document.getElementById('btn-mobile-keys');
-  const btnSheetMic = document.getElementById('btn-sheet-mic');
-  const btnSheetSend = document.getElementById('btn-sheet-send');
-  const btnToggleSysop = document.getElementById('btn-toggle-sysop');
-  const sysopFeedEl = document.getElementById('sysop-feed');
-  const btnSysopStop = document.getElementById('btn-sysop-stop');
-  const btnSysopNew = document.getElementById('btn-sysop-new');
-  const sysopModelPillEl = document.getElementById('sysop-model-pill');
-  const sysopQueueBarEl = document.getElementById('sysop-queue-bar');
-  const sysopLiveStripEl = document.getElementById('sysop-live-strip');
-  const sysopLiveStripTextEl = document.getElementById('sysop-live-strip-text');
-  const btnMobileLiveStop = document.getElementById('btn-mobile-live-stop');
-  const btnMobileDockStop = document.getElementById('btn-mobile-dock-stop');
-  const sendLabelEl = document.getElementById('send-label');
-  let sysopRunning = false;
-  const approvalCardEl = document.getElementById('approval-card');
-  const approvalBadgeEl = document.getElementById('approval-badge');
-  const approvalTabEl = document.getElementById('approval-tab');
-  const approvalTextEl = document.getElementById('approval-text');
-  const approvalBarEl = document.getElementById('approval-bar');
-  const approvalBarFillEl = document.getElementById('approval-bar-fill');
-  const mobileApprovalEl = document.getElementById('mobile-approval');
-  const mobileApprovalBadgeEl = document.getElementById('mobile-approval-badge');
-  const mobileApprovalMsgEl = document.getElementById('mobile-approval-msg');
-  const voiceNoteEl = document.getElementById('voice-note');
-  const voiceHintEl = document.getElementById('voice-hint');
-  const micLabelEl = document.getElementById('mic-label');
-  const goalInputEl = document.getElementById('goal-input');
-  const themeSwatchEl = document.getElementById('theme-swatch');
-  const btnMic = document.getElementById('btn-mic');
-  const btnMobileMic = document.getElementById('btn-mobile-mic');
-  const termWrapEl = document.getElementById('term-wrap');
-  const termStageLoaderEl = document.getElementById('term-stage-loader');
-  const stageLoaderCtxEl = document.getElementById('stage-loader-ctx');
-  const stageLoaderCtxTitleEl = document.getElementById('stage-loader-ctx-title');
-  const stageLoaderCtxSubEl = document.getElementById('stage-loader-ctx-sub');
-  const stageLoaderCtxSkipEl = document.getElementById('stage-loader-ctx-skip');
-  const termDropOverlayEl = document.getElementById('term-drop-overlay');
-  const termToastEl = document.getElementById('term-toast');
-  const btnJumpLive = document.getElementById('btn-jump-live');
-  const settingsOverlayEl = document.getElementById('settings-overlay');
-  const settingsNavEl = document.getElementById('settings-nav');
-  const settingsVersionEl = document.getElementById('settings-version');
-  const settingsTitleEl = document.getElementById('settings-title');
-  const settingsSubEl = document.getElementById('settings-sub');
-  const settingsBodyEl = document.getElementById('settings-body');
-  const settingsHostBarEl = document.getElementById('settings-host-bar');
-  const hostBarCountEl = document.getElementById('host-bar-count');
-  const hostBarCmdEl = document.getElementById('host-bar-cmd');
-  const btnHostCopy = document.getElementById('btn-host-copy');
-  const btnHostDiscard = document.getElementById('btn-host-discard');
+let mobileSessionsFilter = 'all';
+let sysopRunning = false;
+let pins = [];
+let pendingWorktrees = [];
+let repoStatuses = {};
+let worktreePrefs = { mode: 'ask', copy_env: true };
+let sessionPrefs = { boot_mode: 'autostart' };
+let installedAgents = [];
+let lastServerActive = null;
+let eventsWs = null;
+let currentApproval = null;
+let voiceAddonAvailable = false;
+let countdownTimer = null;
+let boxConfig = null;
+let boxConfigLoading = false;
+let boxConfigError = '';
 
-  const terminalHostEl = document.getElementById('terminal');
-  const stageEmptyEl = document.getElementById('stage-empty');
-  const MAX_TAB_SESSIONS = 8;
-
-  let terminals = [];
-  let pins = [];
-  let pendingWorktrees = [];
-  let repoStatuses = {};
-  let worktreePrefs = { mode: 'ask', copy_env: true };
-  let sessionPrefs = { boot_mode: 'autostart' };
-  let installedAgents = [];
-
-  // The agents of the box (the registry, docs/agents-design.md): window.SWARMBOX_AGENTS, set by /agents.js before this script, and
-  // refreshed from /api/agents. Ids, names, labels, colours and icons come from each agent's addon: nothing in this page names an agent.
-  let agentReg = { list: [], byId: new Map(), byName: new Map(), shellNames: new Set() };
-  function setAgentRegistry(data) {
-    const list = data && Array.isArray(data.agents) ? data.agents.filter((a) => a && typeof a.id === 'string' && a.id) : [];
-    const byId = new Map();
-    const byName = new Map();
-    for (const a of list) { byId.set(a.id, a); byName.set(a.id, a.id); }
-    for (const a of list) for (const al of a.aliases || []) if (!byName.has(al)) byName.set(al, a.id);
-    const shellNames = new Set(data && Array.isArray(data.shell_names) ? data.shell_names : ['bash', 'sh', 'zsh', 'dash', 'fish', '-bash', '-sh', '-zsh']);
-    agentReg = { list, byId, byName, shellNames };
-  }
-  setAgentRegistry(window.SWARMBOX_AGENTS);
-  function refreshAgentRegistry() {
-    return fetch('/api/agents', { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) { window.SWARMBOX_AGENTS = d; setAgentRegistry(d); } })
-      .catch(() => {});
-  }
-  // the agent id of a name (an id, a command, an alias such as the OSC 7501 app it reports), or ''
-  function resolveAgentName(raw) {
-    let n = String(raw || '').trim().toLowerCase();
-    n = n.slice(n.lastIndexOf('/') + 1).replace(/^-+/, '');
-    return (n && agentReg.byName.get(n)) || '';
-  }
-  function isAgentId(id) {
-    return Boolean(id) && agentReg.byId.has(id);
-  }
-  function agentLabel(id) {
-    if (!id || id === 'shell') return 'Shell';
-    const a = agentReg.byId.get(id);
-    return a ? a.label || a.id : id;
-  }
-  // the card colours of an agent, from its COLOR: the border, its strong form, the background tint, the scene and the accent
-  function applyAgentColor(el, id) {
-    const a = agentReg.byId.get(id);
-    const m = a && /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(a.color || '');
-    for (const v of ['--ac-border', '--ac-strong', '--ac-bg', '--ac-scene', '--ac-accent']) el.style.removeProperty(v);
-    if (!m) return;
-    const [r, g, b] = [m[1], m[2], m[3]].map((x) => parseInt(x, 16));
-    const mix = (c, base, k) => Math.round(base + (c - base) * k);
-    el.style.setProperty('--ac-border', `rgba(${r}, ${g}, ${b}, 0.36)`);
-    el.style.setProperty('--ac-strong', `rgba(${r}, ${g}, ${b}, 0.74)`);
-    el.style.setProperty('--ac-bg', `rgba(${r}, ${g}, ${b}, 0.09)`);
-    el.style.setProperty('--ac-scene', `rgb(${mix(r, 12, 0.08)}, ${mix(g, 11, 0.08)}, ${mix(b, 16, 0.08)})`);
-    el.style.setProperty('--ac-accent', a.color);
-  }
-  let editingTabId = null;
-  let popoverOpen = false;
-  let popoverKeyHandler = null;
-  // The open git popover's live refresh ({ sig, run }): it re-fetches the status and re-renders only when it changed (a commit in a shell)
-  let gitPopRefresh = null;
-  let activeId = null;
-  let lastServerActive = null;   // the active tab the gateway reported last (the herdr-active-tab marker)
-  let currentThemeKey = DEFAULT_THEME;
-  const tabSessions = new Map();
-  let eventsWs = null;
-  let eventsConnected = false;
-  let ptyConnected = false;
-  let currentApproval = null;
-  let voiceAddonAvailable = false;
-  let countdownTimer = null;
-  let settingsOpen = false;
-  let settingsSection = 'appearance';
-  let boxConfig = null;
-  let boxConfigLoading = false;
-  let boxConfigError = '';
-  const stagedHostConfig = new Map();
-  const installingAddons = new Set();
-  const addonMessages = new Map();
-
-  function activeSession() {
-    return activeId ? (tabSessions.get(activeId) || null) : null;
-  }
-
-  function syncConnPill() {
-    if (!eventsConnected) {
-      connPillEl.className = 'conn-pill err';
-      connTextEl.textContent = 'reconnecting…';
-    } else if (activeId && !ptyConnected) {
-      connPillEl.className = 'conn-pill warn';
-      connTextEl.textContent = 'reconnecting terminal…';
-    } else {
-      connPillEl.className = 'conn-pill ok';
-      connTextEl.textContent = 'herdr-core live';
-    }
-  }
-
-  const LINE_HEIGHT_PRESETS = { compact: 1.15, studio: 1.26, airy: 1.38 };
-  const CURSOR_STYLES = ['block', 'bar', 'underline'];
-  const SCROLLBACK_OPTIONS = [1500, 3000, 6000, 10000];
-
-  let fontOffset = (() => {
-    try {
-      const v = Number(localStorage.getItem('swarmbox-herdr-font-offset') || '0');
-      return Number.isFinite(v) ? Math.max(-4, Math.min(8, v)) : 0;
-    } catch (_) { return 0; }
-  })();
-
-  let lineHeightPreset = (() => {
-    try {
-      const v = localStorage.getItem('swarmbox-herdr-lh');
-      if (v && LINE_HEIGHT_PRESETS[v]) return v;
-    } catch (_) {}
-    return '';
-  })();
-
-  let cursorStyle = (() => {
-    try {
-      const v = localStorage.getItem('swarmbox-herdr-cursor-style');
-      if (CURSOR_STYLES.includes(v)) return v;
-    } catch (_) {}
-    return 'block';
-  })();
-
-  let cursorBlink = (() => {
-    try {
-      const v = localStorage.getItem('swarmbox-herdr-cursor-blink');
-      if (v === '0') return false;
-      if (v === '1') return true;
-    } catch (_) {}
-    return true;
-  })();
-
-  let scrollbackLines = (() => {
-    try {
-      const v = Number(localStorage.getItem('swarmbox-herdr-scrollback') || '3000');
-      if (SCROLLBACK_OPTIONS.includes(v)) return v;
-    } catch (_) {}
-    return 3000;
-  })();
-
-  function effectiveLineHeightKey() {
-    if (lineHeightPreset && LINE_HEIGHT_PRESETS[lineHeightPreset]) return lineHeightPreset;
-    return window.innerWidth <= 860 ? 'compact' : 'studio';
-  }
-
-  function computeLineHeight() {
-    return LINE_HEIGHT_PRESETS[effectiveLineHeightKey()] || 1.26;
-  }
-
-  // Dynamic column-aware font sizing:
-  // Desktop defaults to a comfortable 16.5px (adjustable via Settings or Alt+-/=/0).
-  // On phones (<= 860px), pick the exact font size so >= 51 columns fit upright (keeping the
-  // single-line Starship prompt completely unbroken).
-  function computeFontSize() {
-    const w = window.innerWidth;
-    let base;
-    if (w > 860) {
-      base = 16.5;
-    } else {
-      const usable = Math.max(240, (termWrapEl.clientWidth || w) - 18);
-      const targetCols = w < window.innerHeight ? 51 : 94;
-      const raw = usable / (targetCols * 0.605);
-      base = Math.max(10.5, Math.min(15, Math.round(raw * 2) / 2));
-    }
-    return Math.max(9.5, Math.min(26, Math.round((base + fontOffset) * 2) / 2));
-  }
-
-  function formatFontPx(sz) {
-    return Number.isInteger(sz) ? `${sz}px` : `${sz.toFixed(1)}px`;
-  }
-
-  function syncAppearanceControls() {
-    if (!settingsOpen || settingsSection !== 'appearance') return;
-    const sz = computeFontSize();
-    const valEl = settingsBodyEl.querySelector('#s-font-val');
-    if (valEl) valEl.textContent = formatFontPx(sz);
-    const rangeEl = settingsBodyEl.querySelector('#s-font-range');
-    if (rangeEl) rangeEl.value = String(fontOffset);
-    const prevEl = settingsBodyEl.querySelector('#s-font-preview');
-    if (prevEl) {
-      prevEl.style.fontSize = `${Math.min(22, Math.max(11, sz))}px`;
-      prevEl.style.lineHeight = String(computeLineHeight());
-    }
-    settingsBodyEl.querySelectorAll('.theme-card').forEach((el) => {
-      el.classList.toggle('active', el.dataset.theme === currentThemeKey);
-    });
-  }
-
-  function setFontOffset(next) {
-    fontOffset = Math.max(-4, Math.min(8, Math.round(next * 2) / 2));
-    try { localStorage.setItem('swarmbox-herdr-font-offset', String(fontOffset)); } catch (_) {}
-    fitAndResize();
-    syncAppearanceControls();
-  }
-
-  function adjustFontOffset(delta) {
-    setFontOffset(delta === 0 ? 0 : fontOffset + delta);
-    focusTerminalIfDesktop();
-  }
-
-  function applyTerminalPrefs() {
-    const lh = computeLineHeight();
-    for (const sess of tabSessions.values()) {
-      sess.term.options.lineHeight = lh;
-      sess.term.options.cursorStyle = cursorStyle;
-      sess.term.options.cursorBlink = cursorBlink;
-      sess.term.options.scrollback = scrollbackLines;
-    }
-    fitAndResize();
-    syncAppearanceControls();
-  }
+setTimeout(dismissBoot, 4500);
+applyTheme(savedTheme, false);
+initUiChrome();
 
   // Pixel-perfect block-drawing & box-drawing glyphs are rendered procedurally by
   // @xterm/addon-canvas (customGlyphs: true) across full cell height (including lineHeight).
@@ -706,7 +363,7 @@
     const payload = {
       seq: touchDbgSeq,
       kind,
-      tab: activeId || '',
+      tab: state.activeId || '',
       vvScale: vv ? Number((vv.scale || 1).toFixed(3)) : 1,
       vvH: vv ? Math.round(vv.height) : window.innerHeight,
       vvW: vv ? Math.round(vv.width) : window.innerWidth,
@@ -949,7 +606,7 @@
       const t = e.touches[0];
       const sess = activeSession();
       const buf = sess && sess.term && sess.term.buffer && sess.term.buffer.active;
-      const curTab = terminals.find((x) => x.address === activeId);
+      const curTab = state.terminals.find((x) => x.address === state.activeId);
       touchId = t.identifier;
       touchStartY = t.clientY;
       touchLastY = t.clientY;
@@ -1111,38 +768,6 @@
     }
   }, { capture: true, passive: false });
 
-  function applyTheme(name, persist = false) {
-    const key = THEMES[name] ? name : DEFAULT_THEME;
-    currentThemeKey = key;
-    const t = THEMES[key];
-    for (const [k, v] of Object.entries(t.css)) {
-      document.documentElement.style.setProperty(k, v);
-    }
-    for (const sess of tabSessions.values()) {
-      sess.term.options.theme = t.xterm;
-    }
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', t.css['--bg']);
-    if (themeSwatchEl) {
-      themeSwatchEl.style.background = t.css['--accent'];
-      themeSwatchEl.style.boxShadow = `0 0 8px ${t.css['--accent-glow']}`;
-    }
-    try { localStorage.setItem('swarmbox-herdr-theme', key); } catch (_) {}
-    syncAppearanceControls();
-    if (persist) {
-      fetch('/api/theme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: key }),
-      }).catch(() => {});
-    }
-  }
-
-  const savedTheme = (() => {
-    try { return localStorage.getItem('swarmbox-herdr-theme') || DEFAULT_THEME; } catch (_) { return DEFAULT_THEME; }
-  })();
-  applyTheme(savedTheme, false);
-
   function isSessionAtBottom(sess) {
     if (!sess) return true;
     try {
@@ -1160,7 +785,7 @@
     const busy = Boolean(sess && (sess.resizing || sess.hydrating || sess.revealPending));
     // While the active agent's launcher waits for the first context of its repository, the same loader covers the terminal with
     // what it waits for and a way out (Enter in the terminal does the same: the launcher reads it).
-    const t = activeId ? terminals.find((x) => x.address === activeId) : null;
+    const t = state.activeId ? state.terminals.find((x) => x.address === state.activeId) : null;
     let ctx = null;
     try { ctx = t ? ctxSessionFor(t) : null; } catch (_) { ctx = null; } // called once before the context state exists
     const waiting = Boolean(ctx && ctx.waiting);
@@ -1181,7 +806,7 @@
     termStageLoaderEl.classList.toggle('is-ctx', waiting);
     // During initial page load, #sb-boot already covers the viewport; once dismissed,
     // use the stage-scoped SwarmBox loader whenever a resize or cold tab hydration runs.
-    const show = bootDismissed && (busy || waiting || termWrapEl.classList.contains('term-loading'));
+    const show = state.bootDismissed && (busy || waiting || termWrapEl.classList.contains('term-loading'));
     termStageLoaderEl.classList.toggle('visible', show);
   }
 
@@ -1236,7 +861,7 @@
           if (sess.resizing) return;
           sess.revealPending = false;
           sess.paneEl.classList.remove('resizing');
-          if (activeId === sess.address) {
+          if (state.activeId === sess.address) {
             syncStageLoader();
             syncJumpLive();
           }
@@ -1259,7 +884,7 @@
       sess.revealPending = false;
       sess.paneEl.classList.add('resizing');
     }
-    if (activeId === sess.address) syncStageLoader();
+    if (state.activeId === sess.address) syncStageLoader();
     if (sess.resizeFallbackTimer) clearTimeout(sess.resizeFallbackTimer);
     // the gateway's number (the agent's profile) when it gave one, else the core's TUI or plain one
     const fallbackMs = sess.serverFallbackMs || (isSessionTui(sess) ? 4200 : 600);
@@ -1494,7 +1119,7 @@
   }
 
   function focusTerminalIfDesktop() {
-    if (settingsOpen) return;
+    if (state.settingsOpen) return;
     const sess = activeSession();
     if (sess && window.innerWidth > 860 && document.activeElement !== goalInputEl) {
       sess.term.focus();
@@ -1550,7 +1175,7 @@
   // ONLY when this client is the active PTY owner. Never fight another device's ownership.
   function verifyServerPtySize(sess, serverCols, serverRows) {
     if (!sess || !serverCols || !serverRows) return;
-    if (activeId !== sess.address || sess.hydrating || sess.resizing) return;
+    if (state.activeId !== sess.address || sess.hydrating || sess.resizing) return;
     if (!sess.isOwner || sess.passiveAttach) return;
     fitSession(sess, false);
     const wantCols = sess.term.cols || 0;
@@ -1589,7 +1214,7 @@
   // Clicking anywhere on the terminal canvas (without a drag selection) restores keyboard focus
   // and recovers a dropped PTY socket immediately.
   termWrapEl.addEventListener('mouseup', () => {
-    if (settingsOpen) return;
+    if (state.settingsOpen) return;
     const sess = activeSession();
     if (!sess || window.innerWidth <= 860) return;
     if (sess.term.hasSelection() || (window.getSelection && window.getSelection().toString())) return;
@@ -1598,98 +1223,6 @@
       openSessionSocket(sess, { silent: true, reset: true });
     }
   });
-
-  let termToastTimer = null;
-  function showTermToast(msg, tone = '', ms = 2600) {
-    if (!termToastEl) return;
-    clearTimeout(termToastTimer);
-    termToastEl.classList.remove('interactive');
-    if (!msg) {
-      termToastEl.classList.remove('visible');
-      return;
-    }
-    termToastEl.textContent = msg;
-    termToastEl.dataset.tone = tone;
-    termToastEl.classList.add('visible');
-    if (ms > 0) {
-      termToastTimer = setTimeout(() => termToastEl.classList.remove('visible'), ms);
-    }
-  }
-
-  let lastOpenUrl = '';
-  let lastOpenUrlMs = 0;
-  function showOpenUrlToast(url) {
-    if (!termToastEl) return;
-    clearTimeout(termToastTimer);
-    let label = url;
-    try {
-      const u = new URL(url);
-      label = u.host + (u.pathname && u.pathname !== '/' ? u.pathname : '');
-    } catch (_) {}
-    if (label.length > 52) label = label.slice(0, 51) + '…';
-
-    termToastEl.textContent = '';
-    termToastEl.dataset.tone = '';
-    termToastEl.classList.add('interactive', 'visible');
-
-    const text = document.createElement('span');
-    text.className = 'term-toast-label';
-    text.textContent = label;
-    text.title = url;
-
-    const openLink = document.createElement('a');
-    openLink.className = 'term-toast-btn term-toast-btn-primary';
-    openLink.href = url;
-    openLink.target = '_blank';
-    openLink.rel = 'noopener noreferrer';
-    openLink.textContent = 'Open';
-    openLink.addEventListener('click', () => {
-      termToastEl.classList.remove('visible', 'interactive');
-    });
-
-    const copyBtn = document.createElement('button');
-    copyBtn.type = 'button';
-    copyBtn.className = 'term-toast-btn';
-    copyBtn.textContent = 'Copy';
-    copyBtn.addEventListener('click', () => {
-      navigator.clipboard?.writeText(url).then(() => showTermToast('Link copied', 'ok', 1800)).catch(() => {});
-    });
-
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'term-toast-close';
-    closeBtn.setAttribute('aria-label', 'Dismiss');
-    closeBtn.textContent = '×';
-    closeBtn.addEventListener('click', () => {
-      clearTimeout(termToastTimer);
-      termToastEl.classList.remove('visible', 'interactive');
-    });
-
-    termToastEl.append(text, openLink, copyBtn, closeBtn);
-    termToastTimer = setTimeout(() => {
-      termToastEl.classList.remove('visible', 'interactive');
-    }, 15000);
-  }
-
-  function onOpenUrlEvent(url) {
-    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
-    const now = Date.now();
-    if (url === lastOpenUrl && now - lastOpenUrlMs < 400) return;
-    lastOpenUrl = url;
-    lastOpenUrlMs = now;
-    if (document.visibilityState === 'hidden') return;
-    let opened = null;
-    try {
-      opened = window.open(url, '_blank', 'noopener,noreferrer');
-    } catch (_) {}
-    if (opened) {
-      let host = url;
-      try { host = new URL(url).host; } catch (_) {}
-      showTermToast(`Opened ${host}`, 'ok', 2200);
-    } else {
-      showOpenUrlToast(url);
-    }
-  }
 
   const IMAGE_EXT_RE = /\.(?:png|jpe?g|webp|gif|bmp)$/i;
   function isImageBlob(item) {
@@ -1724,8 +1257,8 @@
     const sess = targetSession || activeSession();
     if (!sess || !blobs || blobs.length === 0) return;
     // an agent that takes no pasted image path (TERM_IMAGE_PASTE=none in its agent.conf) gets nothing typed into it
-    const pasteTab = terminals.find((x) => x.address === sess.address);
-    const pasteAgent = agentReg.byId.get(pasteTab ? tabAgentKind(pasteTab) : '');
+    const pasteTab = state.terminals.find((x) => x.address === sess.address);
+    const pasteAgent = state.agentReg.byId.get(pasteTab ? tabAgentKind(pasteTab) : '');
     if (pasteAgent && pasteAgent.term && pasteAgent.term.image_paste === 'none') {
       showTermToast(`${pasteAgent.label || pasteAgent.id} does not take pasted images`, 'error', 3200);
       return;
@@ -1798,7 +1331,7 @@
   // Fallback paste listener when focus slipped to document.body while pasting a screenshot
   document.addEventListener('paste', (e) => {
     lastNativePasteTs = Date.now();
-    if (settingsOpen || isRealFormField(e.target)) return;
+    if (state.settingsOpen || isRealFormField(e.target)) return;
     const imgs = extractClipboardImages(e.clipboardData);
     if (imgs.length === 0) return;
     e.preventDefault();
@@ -1809,7 +1342,16 @@
   // Auto-heal dropped WebSockets when returning to the browser tab or waking from sleep
   function ensureConnectionsAlive() {
     if (!eventsWs || eventsWs.readyState === 2 || eventsWs.readyState === 3) {
-      connectEvents();
+      registerActions({
+    syncStageLoader,
+    fitAndResize,
+    focusTerminalIfDesktop,
+    renderTabs,
+    setDesktopSidebar,
+    openWorktreePopover,
+  });
+
+  connectEvents();
     }
     const sess = activeSession();
     if (sess && (!sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3)) {
@@ -1842,8 +1384,6 @@
   // Desktop keyboard shortcuts (100% aligned with Terminal Cockpit:
   // Alt+1..9 tabs, Alt+N shell, Alt+B sidebar, Alt+S Sysop, Alt+G goal, Alt+T cycle theme, Alt+-/=/0 font)
   // Matches e.code first so macOS Option symbols (¡™£˜∫ß©†) and non-US layouts work reliably.
-  const THEME_KEYS = Object.keys(THEMES);
-
   function matchAltShortcut(e) {
     if (!e || !e.altKey || e.ctrlKey || e.metaKey) return null;
     const code = e.code || '';
@@ -1871,17 +1411,17 @@
   function runAltShortcut(sc) {
     if (!sc) return;
     if (sc.action === 'settings') { toggleSettings(); return; }
-    if (settingsOpen) return;
+    if (state.settingsOpen) return;
     if (sc.action === 'tab') {
-      if (terminals[sc.idx]) {
-        if (activeId !== terminals[sc.idx].address) connectPty(terminals[sc.idx].address);
+      if (state.terminals[sc.idx]) {
+        if (state.activeId !== state.terminals[sc.idx].address) connectPty(state.terminals[sc.idx].address);
         else focusTerminalIfDesktop();
       }
       return;
     }
     if (sc.action === 'new-shell') { spawnTab('shell'); return; }
     if (sc.action === 'new-agent') { openNewAgentPopover(false, '', { showProjectPicker: true }); return; }
-    if (sc.action === 'rename') { if (activeId) startInlineRename(activeId); return; }
+    if (sc.action === 'rename') { if (state.activeId) startInlineRename(state.activeId); return; }
     if (sc.action === 'sysop') { toggleDesktopSysop(); return; }
     if (sc.action === 'sidebar') { toggleSidebar(); return; }
     if (sc.action === 'goal') {
@@ -1891,7 +1431,7 @@
       return;
     }
     if (sc.action === 'theme') {
-      const idx = THEME_KEYS.indexOf(currentThemeKey);
+      const idx = THEME_KEYS.indexOf(state.currentThemeKey);
       applyTheme(THEME_KEYS[(idx + 1) % THEME_KEYS.length], true);
       focusTerminalIfDesktop();
       return;
@@ -1939,7 +1479,7 @@
   }
 
   function terminalCwdFor(address) {
-    const t = terminals.find((x) => x.address === address);
+    const t = state.terminals.find((x) => x.address === address);
     return (t && t.cwd) ? t.cwd : '';
   }
 
@@ -2231,19 +1771,19 @@
       if (fileViewer) fileViewer.handleKey(e);
       return;
     }
-    if (popoverOpen) {
+    if (state.popoverOpen) {
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
         closePopover();
         return;
       }
-      if (popoverKeyHandler && popoverKeyHandler(e) === true) {
+      if (state.popoverKeyHandler && state.popoverKeyHandler(e) === true) {
         return;
       }
       return;
     }
-    if (settingsOpen) {
+    if (state.settingsOpen) {
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -2285,76 +1825,6 @@
   }, true);
 
   // the agent a tab runs from live signals: the app it reports (OSC 7501), then its foreground program
-  function tabAgentBadge(t) {
-    if (!t) return '';
-    return resolveAgentName(t.status && t.status.app) || resolveAgentName(t.foreground && t.foreground.name);
-  }
-
-  function cleanStatusText(raw) {
-    return String(raw || '')
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/`([^`]+)`/g, '$1')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  function tabTitleParts(t) {
-    if (!t) return { title: 'shell', pill: '' };
-    const customTitle = String((t.labels && t.labels['swarmbox.title']) || '').trim();
-    const rawName = String(t.name || '').trim();
-    const isGenericShell = !rawName || /^shell(?:-\d+)?$/i.test(rawName);
-    const badge = tabAgentBadge(t);
-    if (customTitle) {
-      const pill = badge && !customTitle.toLowerCase().includes(badge) ? badge : '';
-      return { title: customTitle, pill };
-    }
-    const pill = badge && (isGenericShell || !rawName.toLowerCase().includes(badge)) ? badge : '';
-
-    if (!isGenericShell) {
-      return { title: rawName, pill };
-    }
-
-    const cwd = String((t.foreground && t.foreground.cwd) || t.cwd || '').replace(/\/+$/, '');
-    if (cwd && cwd !== '/home/agent' && cwd !== '/') {
-      const base = cwd.slice(cwd.lastIndexOf('/') + 1);
-      if (base) return { title: base, pill };
-    }
-
-    const fg = String((t.foreground && t.foreground.name) || '').trim();
-    const fgLow = fg.toLowerCase();
-    if (fg && !agentReg.shellNames.has(fgLow) && fgLow !== pill) {
-      return { title: fg, pill };
-    }
-
-    return { title: rawName || 'shell', pill };
-  }
-
-  function tabDisplayName(t) {
-    return tabTitleParts(t).title;
-  }
-
-  function tabState(t) {
-    return (t && t.status && t.status.state) || 'idle';
-  }
-
-  function tabSubtitle(t) {
-    const st = t && t.status;
-    const msg = cleanStatusText(st && st.msg);
-    const cwd = (t && t.foreground && t.foreground.cwd) || (t && t.cwd) || '';
-    const shortCwd = shortDisplayPath(cwd);
-
-    if (st && st.state === 'blocked') return `blocked · ${msg || st.kind || 'needs input'}`;
-    if (st && st.state === 'working') {
-      const pct = typeof st.progress === 'number' ? `${st.progress}% ` : '';
-      return `${pct}${msg || shortCwd || 'working…'}`;
-    }
-    if (st && st.state === 'done') return msg ? `✓ ${msg}` : '✓ done';
-    if (st && st.state === 'error') return `✕ ${msg || 'error'}`;
-    if (msg) return msg;
-    if (shortCwd) return shortCwd;
-    return (t && t.title) || (t && t.address) || '';
-  }
-
   function concatChunks(chunks) {
     let total = 0;
     for (const c of chunks) total += c.byteLength;
@@ -2389,7 +1859,7 @@
       let oldestAddr = null;
       let oldestTs = Infinity;
       for (const [addr, sess] of tabSessions.entries()) {
-        if (addr === activeId) continue;
+        if (addr === state.activeId) continue;
         if (sess.lastUsed < oldestTs) {
           oldestTs = sess.lastUsed;
           oldestAddr = addr;
@@ -2414,12 +1884,12 @@
       fontWeight: '400',
       fontWeightBold: '600',
       customGlyphs: true,
-      cursorStyle,
-      cursorBlink,
-      scrollback: scrollbackLines,
+      cursorStyle: state.cursorStyle,
+      cursorBlink: state.cursorBlink,
+      scrollback: state.scrollbackLines,
       macOptionIsMeta: true,
       allowProposedApi: true,
-      theme: (THEMES[currentThemeKey] || THEMES[DEFAULT_THEME]).xterm,
+      theme: (THEMES[state.currentThemeKey] || THEMES[DEFAULT_THEME]).xterm,
       linkHandler: {
         allowNonHttpProtocols: true,
         activate: (event, uri) => {
@@ -2507,11 +1977,11 @@
     let copyReKey = null;
     let copyReCache = null;
     function copyRe() {
-      if (copyReKey === agentReg) return copyReCache;
+      if (copyReKey === state.agentReg) return copyReCache;
       const esc = (c) => c.replace(/[\\\]^-]/g, '\\$&');
       const extra = (field, base) => {
         const out = new Set();
-        for (const a of agentReg.list) for (const c of String((a.term && a.term[field]) || '')) if (!base.includes(c) && !/\s/.test(c)) out.add(c);
+        for (const a of state.agentReg.list) for (const c of String((a.term && a.term[field]) || '')) if (!base.includes(c) && !/\s/.test(c)) out.add(c);
         return Array.from(out).map(esc).join('');
       };
       const xp = extra('copy_prompt_glyphs', '❯');
@@ -2523,7 +1993,7 @@
         leftGutter: new RegExp(`^(\\s*[│┃║▎▏${xg}]\\s?)`),
         rightGutter: new RegExp(`(\\s?[│┃║▕${xg}]\\s*)$`),
       };
-      copyReKey = agentReg;
+      copyReKey = state.agentReg;
       return copyReCache;
     }
 
@@ -2859,7 +2329,7 @@
     });
 
     const onScrollMaybe = () => {
-      if (activeId === sess.address) syncJumpLive();
+      if (state.activeId === sess.address) syncJumpLive();
     };
     // The scrollbar is an overlay: its thumb shows while you look back through history, for a moment after you
     // scroll, and while the mouse is at the right edge (to grab it); at the live bottom it is hidden. A program that
@@ -2923,8 +2393,8 @@
     }
 
     sess.connected = false;
-    if (activeId === sess.address) {
-      ptyConnected = false;
+    if (state.activeId === sess.address) {
+      state.ptyConnected = false;
       syncConnPill();
     }
 
@@ -2933,7 +2403,7 @@
     sess.hydrating = true;
     sess.hydrationChunks = [];
     sess.paneEl.classList.add('hydrating');
-    if (activeId === sess.address) {
+    if (state.activeId === sess.address) {
       termWrapEl.classList.add('term-loading');
       syncStageLoader();
     }
@@ -2956,7 +2426,7 @@
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const isReconnect = Boolean(opts.reconnect);
       const isPassive = Boolean(opts.passive);
-      const isActiveFocused = activeId === sess.address && !isPassive;
+      const isActiveFocused = state.activeId === sess.address && !isPassive;
       sess.passiveAttach = isReconnect || !isActiveFocused;
       sess.isOwner = isActiveFocused && !isReconnect;
       sess.resyncCount = 0;
@@ -2992,7 +2462,7 @@
               if (sess.ws !== ws) return;
               sess.revealPending = false;
               sess.paneEl.classList.remove('hydrating');
-              if (activeId === sess.address) {
+              if (state.activeId === sess.address) {
                 termWrapEl.classList.remove('term-loading');
                 syncStageLoader();
                 syncJumpLive();
@@ -3016,8 +2486,8 @@
         if (sess.ws !== ws) return;
         sess.connected = true;
         sess.reconnectDelay = 400;
-        if (activeId === sess.address) {
-          ptyConnected = true;
+        if (state.activeId === sess.address) {
+          state.ptyConnected = true;
           syncConnPill();
           if (isActiveFocused && !isReconnect) {
             ws.send(JSON.stringify({
@@ -3038,7 +2508,7 @@
             ws.send(JSON.stringify({ type: 'input', data: chunk }));
           }
         }
-        if (!sess.hydrating && activeId === sess.address) focusTerminalIfDesktop();
+        if (!sess.hydrating && state.activeId === sess.address) focusTerminalIfDesktop();
       };
 
       ws.onmessage = (ev) => {
@@ -3122,15 +2592,15 @@
         finishResizeCycle(sess);
         sess.ws = null;
         sess.connected = false;
-        if (activeId === sess.address) {
-          ptyConnected = false;
+        if (state.activeId === sess.address) {
+          state.ptyConnected = false;
           syncConnPill();
         }
         if (ws._terminalClosed) return;
         // Skip background reconnects while the browser tab is hidden; visibilitychange will heal on return.
         if (document.visibilityState === 'hidden') return;
         // Auto-reconnect silently as passive (reconnect=1) so an idle window never hijacks another active client's PTY size.
-        if (tabSessions.get(sess.address) === sess && terminals.some((t) => t.address === sess.address)) {
+        if (tabSessions.get(sess.address) === sess && state.terminals.some((t) => t.address === sess.address)) {
           const delay = sess.reconnectDelay;
           sess.reconnectDelay = Math.min(Math.round(sess.reconnectDelay * 1.6), 3000);
           sess.reconnectTimer = setTimeout(() => {
@@ -3167,7 +2637,7 @@
       }
     }
 
-    activeId = address;
+    state.activeId = address;
     let sess = tabSessions.get(address);
     const isNew = !sess;
     if (!sess) {
@@ -3183,7 +2653,7 @@
       openSessionSocket(sess, { silent: Boolean(opts.silent), reset: !isNew, passive: Boolean(opts.passive) });
     } else {
       // Instant 0ms tab switch: live terminal & exact scroll position preserved!
-      ptyConnected = sess.connected;
+      state.ptyConnected = sess.connected;
       syncConnPill();
       if (!sess.hydrating) {
         termWrapEl.classList.remove('term-loading');
@@ -3225,432 +2695,9 @@
 
   // Hand-crafted 16x16 crisp pixel-art icons of the shell, the sysop and a generic agent (inline SVG); an agent's own icon is its
   // addon's agent/icon.svg, from the registry
-  const PIXEL_SVG = {
-    // Plain shell: Crisp retro pixel >_ CRT icon
-    shell: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
-      '<rect x="1" y="2" width="14" height="11" fill="#27222f"/>' +
-      '<rect x="2" y="3" width="12" height="9" fill="#0c0b10"/>' +
-      '<rect x="4" y="5" width="1" height="1" fill="#a78bfa"/>' +
-      '<rect x="5" y="6" width="1" height="1" fill="#a78bfa"/>' +
-      '<rect x="6" y="7" width="1" height="1" fill="#c4b5fd"/>' +
-      '<rect x="5" y="8" width="1" height="1" fill="#a78bfa"/>' +
-      '<rect x="4" y="9" width="1" height="1" fill="#a78bfa"/>' +
-      '<rect x="8" y="9" width="4" height="1" fill="#a1a1aa"/>' +
-      '<rect x="5" y="13" width="6" height="1" fill="#3f3a4d"/>' +
-      '</svg>',
-
-    // Sysop: Autonomous mission-control operator bot with headset, radar antenna & reactive visor
-    sysop: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
-      '<rect x="2" y="2" width="1" height="1" fill="#c4b5fd" opacity=".45"/>' +
-      '<rect x="13" y="1" width="1" height="1" fill="#67e8f9" opacity=".55"/>' +
-      '<rect class="sys-ant" x="7" y="0" width="2" height="1"/>' +
-      '<rect x="7" y="1" width="1" height="2" fill="#7c3aed"/>' +
-      '<rect x="5" y="3" width="6" height="1" fill="#c4b5fd"/>' +
-      '<rect x="4" y="4" width="8" height="5" fill="#6d28d9"/>' +
-      '<rect x="2" y="5" width="2" height="3" fill="#a78bfa"/>' +
-      '<rect x="12" y="5" width="2" height="3" fill="#a78bfa"/>' +
-      '<rect x="3" y="8" width="2" height="1" fill="#67e8f9"/>' +
-      '<rect x="5" y="5" width="6" height="3" fill="#120e21"/>' +
-      '<rect class="sys-eye" x="6" y="6" width="1" height="1"/>' +
-      '<rect class="sys-eye" x="9" y="6" width="1" height="1"/>' +
-      '<rect class="sys-wave" x="7" y="7" width="2" height="1"/>' +
-      '<rect x="4" y="9" width="8" height="3" fill="#4c1d95"/>' +
-      '<rect x="6" y="9" width="4" height="1" fill="#a78bfa"/>' +
-      '<rect class="sys-led" x="6" y="10" width="1" height="1"/>' +
-      '<rect x="9" y="10" width="1" height="1" fill="#c4b5fd"/>' +
-      '<rect x="1" y="12" width="14" height="2" fill="#2b1f47"/>' +
-      '<rect x="4" y="12" width="8" height="1" fill="#5b21b6"/>' +
-      '<rect x="2" y="14" width="2" height="2" fill="#1a132c"/>' +
-      '<rect x="12" y="14" width="2" height="2" fill="#1a132c"/>' +
-      '</svg>',
-    // A generic agent (an agent whose addon has no icon.svg): a neutral pixel robot
-    agent: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges">' +
-      '<rect x="7" y="0" width="2" height="1" fill="#a1a1aa"/>' +
-      '<rect x="7" y="1" width="2" height="1" fill="#71717a"/>' +
-      '<rect x="3" y="2" width="10" height="8" fill="#3f3f46"/>' +
-      '<rect x="4" y="3" width="8" height="6" fill="#18181b"/>' +
-      '<rect x="5" y="5" width="2" height="2" fill="#e4e4e7"/>' +
-      '<rect x="9" y="5" width="2" height="2" fill="#e4e4e7"/>' +
-      '<rect x="6" y="8" width="4" height="1" fill="#71717a"/>' +
-      '<rect x="7" y="10" width="2" height="1" fill="#52525b"/>' +
-      '<rect x="4" y="11" width="8" height="4" fill="#3f3f46"/>' +
-      '<rect x="7" y="12" width="2" height="1" fill="#a1a1aa"/>' +
-      '<rect x="4" y="15" width="2" height="1" fill="#27272a"/>' +
-      '<rect x="10" y="15" width="2" height="1" fill="#27272a"/>' +
-      '</svg>',
-  };
-
-  // the agent a tab runs: the live signals, then the swarmbox.agent label while the tab is not a bare login shell (its argv is longer
-  // than `bash -l`, or its foreground is a program that is no shell: an agent under `node`). Never the tab name.
-  function tabAgentKind(t) {
-    const b = tabAgentBadge(t);
-    if (b) return b;
-    const lblAg = resolveAgentName(t && t.labels && t.labels['swarmbox.agent']);
-    if (lblAg) {
-      const argv = Array.isArray(t && t.argv) ? t.argv : [];
-      const fg = String((t && t.foreground && t.foreground.name) || '').toLowerCase();
-      const bareShell = argv.length <= 2 && (!fg || agentReg.shellNames.has(fg));
-      if (!bareShell) return lblAg;
-    }
-    return '';
-  }
-
-  // the icon of a kind: shell, sysop, an agent (its own icon, else the generic one) or `agent` (the generic one)
-  function pixelIconHtml(kind) {
-    if (PIXEL_SVG[kind]) return PIXEL_SVG[kind];
-    const a = agentReg.byId.get(kind);
-    if (a) return a.icon_svg || PIXEL_SVG.agent;
-    return PIXEL_SVG.shell;
-  }
-
-  function makeMiniPixelIcon(kind) {
-    const sp = document.createElement('span');
-    sp.className = 'px-mini';
-    sp.innerHTML = pixelIconHtml(kind);
-    return sp;
-  }
-
-  function stateBadgeText(state, status) {
-    if (state === 'working') {
-      return status && typeof status.progress === 'number' ? `WORKING ${status.progress}%` : 'WORKING';
-    }
-    if (state === 'blocked') return 'BLOCKED';
-    if (state === 'done') return 'DONE';
-    if (state === 'error') return 'ERROR';
-    return 'IDLE';
-  }
-
-  function stateCornerGlyph(state) {
-    if (state === 'working') return '⚡';
-    if (state === 'blocked') return '!';
-    if (state === 'done') return '✓';
-    if (state === 'error') return '✕';
-    return 'Z';
-  }
-
-  const ICO_BRANCH_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.5-7 1.8-7 3.4"/></svg>';
-  const ICO_BOOK_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.2c1.9-.6 3.9-.4 5.5.8 1.6-1.2 3.6-1.4 5.5-.8v9.3c-1.9-.6-3.9-.4-5.5.8-1.6-1.2-3.6-1.4-5.5-.8Z"/><path d="M8 4v9.3"/></svg>';
-  const SVG16 = (d) => `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
-  const ICO_CLOCK_SVG = SVG16('<circle cx="8" cy="8" r="5.8"/><path d="M8 4.6V8l2.3 1.5"/>');
-  const ICO_BOLT_SVG = SVG16('<path d="M9 1.8 3.6 9h4l-1 5.2L12.4 7h-4Z"/>');
-  const ICO_BELL_SVG = SVG16('<path d="M4.2 11.2V7.4a3.8 3.8 0 0 1 7.6 0v3.8l1.2 1.3H3Z"/><path d="M6.6 13.6a1.5 1.5 0 0 0 2.8 0"/>');
-  const ICO_PENCIL_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.4a1.6 1.6 0 0 1 2.3 2.3L5.6 12.6 2.5 13.5l.9-3.1 7.8-8Z"/></svg>';
-
-  let serverHomeDir = '';
-
-  function shortDisplayPath(p) {
-    const s = String(p || '');
-    const wtMatch = s.match(/\/\.local\/share\/swarmbox\/worktrees\/([^/]+)\/[^/]+(\/.*)?$/);
-    if (wtMatch) return `~/${wtMatch[1]}${wtMatch[2] || ''}`;
-    if (serverHomeDir && (s === serverHomeDir || s.startsWith(serverHomeDir + '/'))) {
-      return '~' + s.slice(serverHomeDir.length);
-    }
-    return s.startsWith('/home/agent') ? '~' + s.slice('/home/agent'.length) : s;
-  }
-
-  function openRenamePopover(address) {
-    const term = terminals.find((t) => t.address === address);
-    if (!term) return;
-    const current = tabDisplayName(term);
-    const wrap = document.createElement('div');
-    wrap.style.display = 'flex';
-    wrap.style.flexDirection = 'column';
-    wrap.style.gap = '10px';
-
-    const head = document.createElement('div');
-    head.className = 'spop-head';
-    head.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px">${ICO_PENCIL_SVG}<span>Rename session</span></span>`;
-
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.className = 'spop-rename-input';
-    inp.value = current;
-    inp.maxLength = 60;
-    inp.placeholder = 'Session title…';
-
-    const actions = document.createElement('div');
-    actions.className = 'spop-rename-actions';
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'spop-btn secondary';
-    cancelBtn.textContent = 'Cancel';
-    const saveBtn = document.createElement('button');
-    saveBtn.type = 'button';
-    saveBtn.className = 'spop-btn primary';
-    saveBtn.textContent = 'Save';
-
-    const submit = () => {
-      const val = inp.value.trim();
-      closePopover();
-      if (val && val !== current) commitInlineRename(address, val);
-    };
-    cancelBtn.addEventListener('click', closePopover);
-    saveBtn.addEventListener('click', submit);
-    inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); submit(); }
-      else if (e.key === 'Escape') { e.preventDefault(); closePopover(); }
-    });
-
-    actions.append(cancelBtn, saveBtn);
-    wrap.append(head, inp, actions);
-    openPopover(wrap);
-    requestAnimationFrame(() => {
-      inp.focus();
-      inp.select();
-    });
-  }
-
-  function startInlineRename(address) {
-    if (!address || !terminals.some((t) => t.address === address)) return;
-    if (window.innerWidth <= 860) {
-      openRenamePopover(address);
-      return;
-    }
-    if (appEl.dataset.sidebarOpen !== '1') {
-      setDesktopSidebar(true);
-    }
-    editingTabId = address;
-    renderTabs();
-    requestAnimationFrame(() => {
-      const inp = document.querySelector(`.inline-rename-input[data-tab="${CSS.escape(address)}"]`);
-      if (inp) {
-        inp.focus();
-        inp.select();
-      }
-    });
-  }
-
-  async function commitInlineRename(address, nextTitle) {
-    const clean = String(nextTitle || '').trim();
-    editingTabId = null;
-    renderTabs();
-    if (!clean) {
-      focusTerminalIfDesktop();
-      return;
-    }
-    await fetch(`/api/tabs/${encodeURIComponent(address)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: clean, title_source: 'user' }),
-    }).catch(() => {});
-    focusTerminalIfDesktop();
-  }
-
-  async function unpinById(pinId) {
-    await fetch(`/api/pins/${encodeURIComponent(pinId)}`, { method: 'DELETE' }).catch(() => {});
-    showTermToast('Removed pin');
-  }
-
-  let openCardMenuEl = null;
-  let openCardMenuCard = null;
-
-  function closeCardMenu() {
-    if (openCardMenuEl) {
-      openCardMenuEl.remove();
-      openCardMenuEl = null;
-    }
-    if (openCardMenuCard) {
-      delete openCardMenuCard.dataset.menuOpen;
-      openCardMenuCard = null;
-    }
-  }
-
-  document.addEventListener('pointerdown', (e) => {
-    if (openCardMenuEl && !openCardMenuEl.contains(e.target)) closeCardMenu();
-  }, true);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && openCardMenuEl) {
-      e.stopPropagation();
-      closeCardMenu();
-    }
-  }, true);
-  window.addEventListener('resize', closeCardMenu);
-  if (sidebarAgentsEl && sidebarAgentsEl.parentElement && sidebarAgentsEl.parentElement.parentElement) {
-    sidebarAgentsEl.parentElement.parentElement.addEventListener('scroll', closeCardMenu, { passive: true });
-  }
-
-  function openCardMenu(term, anchor, cardEl = null) {
-    closeCardMenu();
-    if (!term || !term.address) return;
-    const wtBranch = term.labels && term.labels['swarmbox.worktree'] ? (term.labels['swarmbox.branch'] || 'worktree') : '';
-    const wtBase = (term.labels && term.labels['swarmbox.base']) || 'main';
-    const menu = document.createElement('div');
-    menu.className = 'card-ctx-menu';
-    menu.setAttribute('role', 'menu');
-
-    if (wtBranch) {
-      const head = document.createElement('div');
-      head.className = 'card-ctx-head';
-      head.innerHTML = `<span>Worktree</span><span class="card-ctx-branch"></span>`;
-      head.querySelector('.card-ctx-branch').textContent = `${wtBranch} → ${wtBase}`;
-      menu.appendChild(head);
-
-      const mItem = document.createElement('button');
-      mItem.type = 'button';
-      mItem.className = 'card-ctx-item is-wt';
-      mItem.setAttribute('role', 'menuitem');
-      mItem.innerHTML = `<span class="card-ctx-item-l">${ICO_BRANCH_SVG}<span>Merge &amp; status…</span></span><span class="card-ctx-kbd">↵</span>`;
-      mItem.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeCardMenu();
-        openWorktreePopover(term.address);
-      });
-      menu.appendChild(mItem);
-    }
-
-    const rItem = document.createElement('button');
-    rItem.type = 'button';
-    rItem.className = 'card-ctx-item';
-    rItem.setAttribute('role', 'menuitem');
-    rItem.innerHTML = `<span class="card-ctx-item-l">${ICO_PENCIL_SVG}<span>Rename</span></span><span class="card-ctx-kbd">Alt+R</span>`;
-    rItem.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeCardMenu();
-      startInlineRename(term.address);
-    });
-    menu.appendChild(rItem);
-
-    if (term.cwd) {
-      const pItem = document.createElement('button');
-      pItem.type = 'button';
-      pItem.className = 'card-ctx-item';
-      pItem.setAttribute('role', 'menuitem');
-      pItem.innerHTML = `<span class="card-ctx-item-l"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="8.5" height="8.5" rx="1.6"/><path d="M11 5V3.6A1.6 1.6 0 0 0 9.4 2H3.6A1.6 1.6 0 0 0 2 3.6v5.8A1.6 1.6 0 0 0 3.6 11H5"/></svg><span>Copy path</span></span>`;
-      pItem.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        closeCardMenu();
-        try { await navigator.clipboard.writeText(term.cwd); } catch (_) {}
-        showTermToast(`Copied ${shortDisplayPath(term.cwd)}`);
-      });
-      menu.appendChild(pItem);
-    }
-
-    const sep = document.createElement('div');
-    sep.className = 'card-ctx-sep';
-    menu.appendChild(sep);
-
-    const cItem = document.createElement('button');
-    cItem.type = 'button';
-    cItem.className = 'card-ctx-item is-danger';
-    cItem.setAttribute('role', 'menuitem');
-    cItem.innerHTML = `<span class="card-ctx-item-l"><span class="card-ctx-x">✕</span><span>Close tab</span></span>`;
-    cItem.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      closeCardMenu();
-      await fetch(`/api/tabs/${encodeURIComponent(term.address)}`, { method: 'DELETE' });
-    });
-    menu.appendChild(cItem);
-
-    document.body.appendChild(menu);
-    openCardMenuEl = menu;
-    openCardMenuCard = cardEl;
-    if (cardEl) cardEl.dataset.menuOpen = '1';
-
-    const mw = menu.offsetWidth || 214;
-    const mh = menu.offsetHeight || 140;
-    let x = 12;
-    let y = 12;
-    if (cardEl && window.innerWidth > 860 && anchor && typeof anchor.getBoundingClientRect === 'function') {
-      const sbEl = document.getElementById('sidebar');
-      const cardRect = cardEl.getBoundingClientRect();
-      const sbRect = sbEl ? sbEl.getBoundingClientRect() : cardRect;
-      x = sbRect.right + 6;
-      y = cardRect.top;
-    } else if (anchor && typeof anchor.getBoundingClientRect === 'function') {
-      const rect = anchor.getBoundingClientRect();
-      x = rect.right - mw + 6;
-      y = rect.bottom + 6;
-      if (x < 10) x = rect.left;
-    } else if (anchor && typeof anchor.x === 'number') {
-      x = anchor.x;
-      y = anchor.y;
-    }
-    x = Math.max(8, Math.min(x, window.innerWidth - mw - 8));
-    y = Math.max(8, Math.min(y, window.innerHeight - mh - 8));
-    menu.style.left = `${Math.round(x)}px`;
-    menu.style.top = `${Math.round(y)}px`;
-  }
-
-  function closePopover() {
-    if (!popoverBackdropEl) return;
-    popoverOpen = false;
-    popoverKeyHandler = null;
-    popoverBackdropEl.classList.add('hidden');
-    popoverBackdropEl.setAttribute('aria-hidden', 'true');
-    if (popoverEl) popoverEl.innerHTML = '';
-    focusTerminalIfDesktop();
-  }
-
-  // Every popover closes from one control at the right of its head: the Esc capsule is a button (Esc × on desktop, × on mobile)
-  function makeEscClose(onClick) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'esc-close';
-    btn.title = 'Close (Esc)';
-    btn.setAttribute('aria-label', 'Close');
-    btn.innerHTML = '<span class="esc-close-key">Esc</span><span class="esc-close-x" aria-hidden="true">×</span>';
-    btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-    return btn;
-  }
-
-  function addPopoverEscBadge() {
-    const head = popoverEl.querySelector('.spop-head');
-    if (!head || head.querySelector('.esc-close')) return;
-    const btn = makeEscClose(closePopover);
-    const hint = Array.from(head.querySelectorAll('.wt-kbd')).find((k) => k.textContent.trim() === 'Esc');
-    if (hint) { hint.replaceWith(btn); return; }
-    let right = head.querySelector(':scope > .spop-head-right');
-    if (!right) {
-      right = document.createElement('span');
-      right.className = 'spop-head-right';
-      while (head.children.length > 1) right.appendChild(head.children[1]);
-      head.appendChild(right);
-    }
-    right.appendChild(btn);
-  }
-
-  // What a git popover shows, for its live refresh to tell a change: a commit's "12 seconds ago" moves on every fetch and is no change
-  function gitPopSig(value) {
-    return JSON.stringify(value, (k, v) => (k === 'rel_time' ? undefined : v));
-  }
-
-  function refreshGitPopover() {
-    const r = gitPopRefresh;
-    if (!r || !popoverOpen || r.busy || document.visibilityState !== 'visible') return;
-    const ae = document.activeElement;
-    if (ae && popoverEl && popoverEl.contains(ae) && ae.matches('input, textarea, select')) return;
-    r.busy = true;
-    Promise.resolve().then(() => r.run(r)).catch(() => {}).finally(() => { r.busy = false; });
-  }
-
-  function openPopover(node, onKeyDown = null) {
-    if (!popoverBackdropEl || !popoverEl) return;
-    popoverEl.innerHTML = '';
-    const handle = document.createElement('div');
-    handle.className = 'sheet-handle mobile-only spop-handle';
-    handle.setAttribute('aria-hidden', 'true');
-    handle.innerHTML = '<span></span>';
-    popoverEl.appendChild(handle);
-    popoverEl.appendChild(node);
-    addPopoverEscBadge();
-    gitPopRefresh = null;
-    popoverOpen = true;
-    popoverKeyHandler = typeof onKeyDown === 'function' ? onKeyDown : null;
-    popoverBackdropEl.classList.remove('hidden');
-    popoverBackdropEl.setAttribute('aria-hidden', 'false');
-    requestAnimationFrame(() => {
-      const primary = popoverEl.querySelector('.agent-pick-btn.is-default, .spop-btn.primary, .spop-btn.green, .spop-btn.amber, .agent-pick-btn');
-      if (primary) primary.focus();
-    });
-  }
-
-  const ICO_FOLDER_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.8 4.2c0-.8.6-1.4 1.4-1.4h3l1.5 1.7h5.1c.8 0 1.4.6 1.4 1.4v6.1c0 .8-.6 1.4-1.4 1.4H3.2c-.8 0-1.4-.6-1.4-1.4Z"/></svg>';
-  const ICO_CHECK_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg>';
-  const ICO_SEARCH_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>';
-
   async function openNewAgentPopover(includeShell = false, targetCwd = '', opts = {}) {
     const showProjectPicker = Boolean(opts && opts.showProjectPicker);
-    const cur = terminals.find((t) => t.address === activeId);
+    const cur = state.terminals.find((t) => t.address === state.activeId);
     let selectedCwd = (typeof targetCwd === 'string' && targetCwd.startsWith('/'))
       ? targetCwd
       : ((cur && cur.foreground && cur.foreground.cwd) || (cur && cur.cwd) || '');
@@ -3871,7 +2918,7 @@
       const nextInfo = await fetch(`/api/worktrees/check?cwd=${encodeURIComponent(nextPath)}`, { cache: 'no-store' })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null);
-      if (myGen !== wtCheckGen || !popoverOpen) return;
+      if (myGen !== wtCheckGen || !state.popoverOpen) return;
       wtInfo = nextInfo;
       isGit = Boolean(wtInfo && wtInfo.is_git);
       col = (wtInfo && wtInfo.collision) || null;
@@ -4065,7 +3112,7 @@
         const data = await fetch(`/api/dirs?path=${encodeURIComponent(dir)}`, { cache: 'no-store' })
           .then((r) => (r.ok ? r.json() : null))
           .catch(() => null);
-        if (myGen !== browseGen || !popoverOpen) return;
+        if (myGen !== browseGen || !state.popoverOpen) return;
         if (data && Array.isArray(data.entries)) {
           browseDir = data.path;
           browseEntries = data.entries;
@@ -4410,7 +3457,7 @@
 
   async function openWorktreePopover(termId, opts = {}) {
     const refresh = opts.refresh || null;
-    const t = terminals.find((x) => x.address === termId);
+    const t = state.terminals.find((x) => x.address === termId);
     if (!t) return;
     if (!refresh) {
       const loading = document.createElement('div');
@@ -4451,7 +3498,7 @@
       } catch (_) {}
     }
     const sig = gitPopSig([st, repoSt]);
-    if (refresh && (gitPopRefresh !== refresh || !popoverOpen || refresh.sig === sig)) return;
+    if (refresh && (state.gitPopRefresh !== refresh || !state.popoverOpen || refresh.sig === sig)) return;
     const mainAgent = (repoSt && repoSt.main_agent) || null;
     const verifyCmd = st.verify_cmd || (repoSt && repoSt.verify_cmd) || '';
     const behindSuffix = (!st.dirty && st.behind > 0) ? ` · ${st.behind} behind ${st.base}` : '';
@@ -4595,12 +3642,12 @@
         btnFocusMain.innerHTML = `<span>Focus ${st.base}</span><span class="spop-hint">switch tab</span>`;
         btnFocusMain.addEventListener('click', () => {
           closePopover();
-          if (activeId !== mainAgent.address) connectPty(mainAgent.address);
+          if (state.activeId !== mainAgent.address) connectPty(mainAgent.address);
           else focusTerminalIfDesktop();
         });
         frag.append(btnCommitMain, btnFocusMain);
       } else {
-        const mainTerm = terminals.find((x) =>
+        const mainTerm = state.terminals.find((x) =>
           x.repo && x.repo.root === st.repo_root && !(x.labels && x.labels['swarmbox.worktree']),
         );
         if (mainTerm) {
@@ -4610,7 +3657,7 @@
           btnFocusMain.innerHTML = `<span>Focus ${st.base}</span><span class="spop-hint">commit there first</span>`;
           btnFocusMain.addEventListener('click', () => {
             closePopover();
-            if (activeId !== mainTerm.address) connectPty(mainTerm.address);
+            if (state.activeId !== mainTerm.address) connectPty(mainTerm.address);
             else focusTerminalIfDesktop();
           });
           frag.appendChild(btnFocusMain);
@@ -4812,7 +3859,7 @@
     links.append(leftLinks, closeLink);
     frag.appendChild(links);
     openPopover(frag);
-    gitPopRefresh = { sig, run: (r) => openWorktreePopover(termId, { refresh: r }) };
+    state.gitPopRefresh = { sig, run: (r) => openWorktreePopover(termId, { refresh: r }) };
   }
 
   function openPendingWorktreesPopover() {
@@ -4963,7 +4010,7 @@
     ]);
     const rs = fetchedRs || cachedRs;
     const sig = gitPopSig([rs, statuses.map(({ st }) => st), pendingWts]);
-    if (refresh && (gitPopRefresh !== refresh || !popoverOpen || refresh.sig === sig)) return;
+    if (refresh && (state.gitPopRefresh !== refresh || !state.popoverOpen || refresh.sig === sig)) return;
 
     const frag = document.createDocumentFragment();
     const head = document.createElement('div');
@@ -5075,7 +4122,7 @@
         bFocus.textContent = 'Focus';
         bFocus.addEventListener('click', () => {
           closePopover();
-          if (activeId !== rs.main_agent.address) connectPty(rs.main_agent.address);
+          if (state.activeId !== rs.main_agent.address) connectPty(rs.main_agent.address);
           else focusTerminalIfDesktop();
         });
         mActs.append(bCommit, bFocus);
@@ -5255,7 +4302,7 @@
         brBtn.title = `Focus ${tabDisplayName(t)} (${rawBr})`;
         brBtn.addEventListener('click', () => {
           closePopover();
-          if (activeId !== t.address) connectPty(t.address);
+          if (state.activeId !== t.address) connectPty(t.address);
           else focusTerminalIfDesktop();
         });
 
@@ -5420,7 +4467,7 @@
     foot.appendChild(doneBtn);
     frag.appendChild(foot);
     openPopover(frag);
-    gitPopRefresh = { sig, run: (r) => openRepoWorktreesPopover(group, { refresh: r }) };
+    state.gitPopRefresh = { sig, run: (r) => openRepoWorktreesPopover(group, { refresh: r }) };
   }
 
   async function wakePin(pinId, worktreeChoice = '') {
@@ -5446,8 +4493,6 @@
     }
   }
 
-  const REPO_GROUP_ACCENTS = ['#c4b5fd', '#6ee7b7', '#8ad7e6', '#f4a27f', '#fbbf24', '#f472b6'];
-  const ICO_PLUS_SM_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>';
 
   function terminalRepoGroupInfo(t) {
     if (t && t.repo && t.repo.root) {
@@ -5506,7 +4551,7 @@
     const state = tabState(t);
     const { title: label } = tabTitleParts(t);
     const agentKind = isAgent ? (tabAgentKind(t) || 'shell') : 'shell';
-    const isActive = t.address === activeId;
+    const isActive = t.address === state.activeId;
     const subText = tabSubtitle(t);
     const wtBranch = t.labels && t.labels['swarmbox.worktree'] ? (t.labels['swarmbox.branch'] || 'worktree') : '';
     const shortBranch = wtBranch ? wtBranch.replace(/^sb\//, '') : '';
@@ -5599,7 +4644,7 @@
     row.addEventListener('click', (e) => {
       if (e.target && e.target.closest('button')) return;
       closeCardMenu();
-      if (activeId !== t.address) connectPty(t.address);
+      if (state.activeId !== t.address) connectPty(t.address);
       setMobileSessions(false);
     });
     return row;
@@ -5776,14 +4821,14 @@
 
   function tabsRenderKey() {
     return JSON.stringify({
-      activeId,
-      editingTabId,
+      activeId: state.activeId,
+      editingTabId: state.editingTabId,
       mobileSessionsFilter,
       ctx: lastCtxTabsKey,
       pins,
       pendingWorktrees,
       repoStatuses,
-      terminals: terminals.map((t) => [
+      terminals: state.terminals.map((t) => [
         t.address,
         tabState(t),
         t.status && t.status.msg,
@@ -5819,12 +4864,12 @@
     const repoGroupMap = new Map();
     const shellTerms = [];
 
-    terminals.forEach((t, idx) => {
+    state.terminals.forEach((t, idx) => {
       const state = tabState(t);
       const { title: label, pill } = tabTitleParts(t);
       const agentKind = tabAgentKind(t);
       const iconKind = agentKind || 'shell';
-      const isActive = t.address === activeId;
+      const isActive = t.address === state.activeId;
       const subText = tabSubtitle(t);
 
       // 1. Sidebar: zero duplication — agents live in repo-grouped Pixel-Art Agent Cards; plain shells live in Shells list
@@ -5908,7 +4953,7 @@
         cRight.append(cIdx, cTopActs);
         cTop.append(cBadge, cRight);
 
-        const isEditing = editingTabId === t.address;
+        const isEditing = state.editingTabId === t.address;
         const cName = document.createElement('div');
         cName.className = `agent-card-name${isEditing ? ' is-editing' : ''}`;
         if (isEditing) {
@@ -5922,10 +4967,10 @@
           inp.addEventListener('keydown', (e) => {
             e.stopPropagation();
             if (e.key === 'Enter') { e.preventDefault(); commitInlineRename(t.address, inp.value); }
-            else if (e.key === 'Escape') { e.preventDefault(); editingTabId = null; renderTabs(); focusTerminalIfDesktop(); }
+            else if (e.key === 'Escape') { e.preventDefault(); state.editingTabId = null; renderTabs(); focusTerminalIfDesktop(); }
           });
           inp.addEventListener('blur', () => {
-            if (editingTabId === t.address) commitInlineRename(t.address, inp.value);
+            if (state.editingTabId === t.address) commitInlineRename(t.address, inp.value);
           });
           cName.appendChild(inp);
         } else {
@@ -6035,7 +5080,7 @@
         }
 
         const activateCard = () => {
-          if (activeId !== t.address) connectPty(t.address);
+          if (state.activeId !== t.address) connectPty(t.address);
           else focusTerminalIfDesktop();
         };
         card.addEventListener('mousedown', (e) => {
@@ -6067,7 +5112,7 @@
         info.className = 'tab-info';
         const titleEl = document.createElement('div');
         titleEl.className = 'tab-title';
-        if (editingTabId === t.address) {
+        if (state.editingTabId === t.address) {
           const inp = document.createElement('input');
           inp.type = 'text';
           inp.className = 'inline-rename-input';
@@ -6078,10 +5123,10 @@
           inp.addEventListener('keydown', (e) => {
             e.stopPropagation();
             if (e.key === 'Enter') { e.preventDefault(); commitInlineRename(t.address, inp.value); }
-            else if (e.key === 'Escape') { e.preventDefault(); editingTabId = null; renderTabs(); focusTerminalIfDesktop(); }
+            else if (e.key === 'Escape') { e.preventDefault(); state.editingTabId = null; renderTabs(); focusTerminalIfDesktop(); }
           });
           inp.addEventListener('blur', () => {
-            if (editingTabId === t.address) commitInlineRename(t.address, inp.value);
+            if (state.editingTabId === t.address) commitInlineRename(t.address, inp.value);
           });
           titleEl.appendChild(inp);
         } else {
@@ -6114,7 +5159,7 @@
 
         btn.append(makeMiniPixelIcon(iconKind), info, right);
         const activateShellTab = () => {
-          if (activeId !== t.address) connectPty(t.address);
+          if (state.activeId !== t.address) connectPty(t.address);
           else focusTerminalIfDesktop();
         };
         btn.addEventListener('mousedown', (e) => {
@@ -6165,7 +5210,7 @@
         }
         tt.appendChild(ttClose);
         tt.addEventListener('click', () => {
-          if (activeId !== t.address) connectPty(t.address);
+          if (state.activeId !== t.address) connectPty(t.address);
           else focusTerminalIfDesktop();
         });
         topbarTabsEl.appendChild(tt);
@@ -6383,8 +5428,8 @@
     }
 
     // Mobile Switcher Pill counter + Thumb-Zone Sessions Bottom Sheet
-    const totalMobileCount = terminals.length;
-    const hasBgAttention = terminals.some((t) => t.address !== activeId && tabState(t) === 'blocked');
+    const totalMobileCount = state.terminals.length;
+    const hasBgAttention = state.terminals.some((t) => t.address !== state.activeId && tabState(t) === 'blocked');
     if (mobileSwitcherCountEl) {
       mobileSwitcherCountEl.textContent = String(totalMobileCount);
       mobileSwitcherCountEl.classList.toggle('has-attention', hasBgAttention);
@@ -6394,12 +5439,12 @@
       mobileSessionsBusyEl.classList.toggle('has-busy', busyCount > 0);
       mobileSessionsBusyEl.classList.toggle('hidden', busyCount === 0);
     }
-    if (sfilterCountAllEl) sfilterCountAllEl.textContent = String(terminals.length + parkedPins.length);
+    if (sfilterCountAllEl) sfilterCountAllEl.textContent = String(state.terminals.length + parkedPins.length);
     if (sfilterCountAgentsEl) sfilterCountAgentsEl.textContent = String(agentCount);
     if (sfilterCountShellsEl) sfilterCountShellsEl.textContent = String(shellCount);
     renderMobileSessions(repoGroups, shellTerms, parkedPins);
 
-    const active = terminals.find((t) => t.address === activeId);
+    const active = state.terminals.find((t) => t.address === state.activeId);
     const termCtxSepEl = document.querySelector('.term-ctx-sep');
     const btnInterruptEl = document.getElementById('btn-interrupt');
     if (btnInterruptEl) {
@@ -6469,7 +5514,7 @@
     }
 
     if (stageEmptyEl) {
-      if (terminals.length > 0) {
+      if (state.terminals.length > 0) {
         stageEmptyEl.classList.add('hidden');
         stageEmptyEl.innerHTML = '';
       } else {
@@ -6535,7 +5580,7 @@
     }
 
     if (statusbarSummaryEl) {
-      const tabLabel = terminals.length === 1 ? '1 tab' : `${terminals.length} tabs`;
+      const tabLabel = state.terminals.length === 1 ? '1 tab' : `${state.terminals.length} tabs`;
       const agLabel = agentCount === 1 ? '1 agent' : `${agentCount} agents`;
       const parts = [tabLabel, agLabel];
       if (parkedPins.length > 0) parts.push(`${parkedPins.length} parked`);
@@ -6576,7 +5621,7 @@
       const badge = isVeto ? 'Sending…' : 'Confirm action';
       approvalBadgeEl.textContent = badge;
       mobileApprovalBadgeEl.textContent = badge;
-      const pendingTabObj = pending.tab ? terminals.find((t) => t.address === pending.tab) : null;
+      const pendingTabObj = pending.tab ? state.terminals.find((t) => t.address === pending.tab) : null;
       approvalTabEl.textContent = pendingTabObj ? tabDisplayName(pendingTabObj) : (pending.label || pending.tab || 'sysop');
       approvalTextEl.textContent = pending.text || 'Pending action';
       mobileApprovalMsgEl.textContent = pending.text || 'Pending action';
@@ -6725,7 +5770,7 @@
 
   function rememberTabs() {
     let changed = false;
-    for (const t of terminals) {
+    for (const t of state.terminals) {
       if (!t || !t.address) continue;
       const rec = { name: tabDisplayName(t), alias: String(t.name || ''), kind: tabAgentKind(t) || 'shell' };
       const old = knownTabs[t.address];
@@ -6743,7 +5788,7 @@
   function tabRefContext() {
     const live = new Set();
     const out = [];
-    for (const t of terminals) {
+    for (const t of state.terminals) {
       if (!t || !t.address) continue;
       live.add(t.address);
       out.push({ address: t.address, name: tabDisplayName(t), aliases: t.name ? [String(t.name)] : [], kind: tabAgentKind(t) || 'shell', live: true });
@@ -6770,7 +5815,7 @@
     chip.setAttribute('role', 'button');
     chip.tabIndex = 0;
     const go = () => {
-      if (activeId !== tab.address) connectPty(tab.address);
+      if (state.activeId !== tab.address) connectPty(tab.address);
       else focusTerminalIfDesktop();
     };
     chip.addEventListener('click', go);
@@ -6818,7 +5863,7 @@
               chip.title = 'Preview ' + pm.text + ' (Ctrl/Cmd+Click for new tab)';
               chip.addEventListener('click', (ev) => {
                 ev.preventDefault();
-                openFilePreview(pm.text, { cwd: terminalCwdFor(activeId), newTab: Boolean(ev.ctrlKey || ev.metaKey || ev.button === 1) });
+                openFilePreview(pm.text, { cwd: terminalCwdFor(state.activeId), newTab: Boolean(ev.ctrlKey || ev.metaKey || ev.button === 1) });
               });
               frag.appendChild(chip);
               pos = pm.end;
@@ -6836,7 +5881,7 @@
         chip.title = 'Preview ' + seg.v + ' (Ctrl/Cmd+Click for new tab)';
         chip.addEventListener('click', (ev) => {
           ev.preventDefault();
-          openFilePreview(seg.v.trim(), { cwd: terminalCwdFor(activeId), newTab: Boolean(ev.ctrlKey || ev.metaKey || ev.button === 1) });
+          openFilePreview(seg.v.trim(), { cwd: terminalCwdFor(state.activeId), newTab: Boolean(ev.ctrlKey || ev.metaKey || ev.button === 1) });
         });
         frag.appendChild(chip);
       } else {
@@ -7561,7 +6606,7 @@
   }
 
   function openSessionContextPopover(address) {
-    const t = terminals.find((x) => x.address === address);
+    const t = state.terminals.find((x) => x.address === address);
     const s = t ? ctxSessionFor(t) : null;
     if (!t || !s) return;
     const repo = ctxRepoByKey(s.key);
@@ -7599,7 +6644,6 @@
   let ctxPopKey = '';             // the repository whose context card is open
   let ctxPopSig = '';
   let ctxViewer = null;           // { kind: 'repo'|'session', key, tab, sig } of the context in the file drawer
-  const ICO_REFRESH_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9L13.5 5.7"/><path d="M13.5 2.5v3.2h-3.2"/></svg>';
 
   function ctxBusy(repo) {
     if (!repo) return false;
@@ -7636,7 +6680,7 @@
     const busy = ctxBusy(repo);
     const done = !busy && ctxJustDone.has(key) && Date.now() - ctxJustDone.get(key) < 4000;
     const sessions = Object.values((sysopContext && sysopContext.sessions) || {})
-      .filter((s) => s.key === key && !s.waiting && terminals.some((x) => x.address === s.tab));
+      .filter((s) => s.key === key && !s.waiting && state.terminals.some((x) => x.address === s.tab));
     const withIt = sessions.filter((s) => s.context).length;
     const frag = document.createDocumentFragment();
     const tone = busy ? 'wait' : repo.state === 'ready' ? 'ok' : 'warn';
@@ -7682,7 +6726,7 @@
 
   // The context card of this repository is still the open popover
   function ctxPopIsOpen(key) {
-    return Boolean(popoverOpen && popoverEl && key && popoverEl.querySelector(`.ctx-pop-head[data-ctx-key="${CSS.escape(key)}"]`));
+    return Boolean(state.popoverOpen && popoverEl && key && popoverEl.querySelector(`.ctx-pop-head[data-ctx-key="${CSS.escape(key)}"]`));
   }
 
   // Rewrite a repository's context. `stay` (the card, the viewer): the place it was asked from shows the work; otherwise a toast.
@@ -7765,7 +6809,7 @@
     const settings = { label: 'Settings', onClick: () => { closeFileDrawer(); openSettings('sysop'); } };
     if (d.kind === 'session') {
       const s = { ...m, base_at: Number(m.base_at || 0) * 1000, at: Number(m.at || 0) * 1000 };
-      const live = terminals.find((x) => x.address === tab);
+      const live = state.terminals.find((x) => x.address === tab);
       ctxViewer = { kind: 'session', key: repoKey, tab };
       // What a session got does not change: no refresh here; the repository's current context is one click away
       const actions = repoKey && ctxRepoByKey(repoKey) && ctxRepoByKey(repoKey).at
@@ -7945,7 +6989,7 @@
     const evs = Array.isArray(sysop.events) ? sysop.events : [];
     const autos = Array.isArray(sysop.automations) ? sysop.automations : [];
     const sysNotes = Array.isArray(sysop.notes) ? sysop.notes : [];
-    const key = JSON.stringify([evs, autos, sysNotes, eventsFilter, sysopContext && sysopContext.repos, terminals.map((t) => [t.address, tabDisplayName(t)]),
+    const key = JSON.stringify([evs, autos, sysNotes, eventsFilter, sysopContext && sysopContext.repos, state.terminals.map((t) => [t.address, tabDisplayName(t)]),
       Math.floor(Date.now() / 30000)]);
     if (key === lastEventsKey) return;
     lastEventsKey = key;
@@ -8159,7 +7203,7 @@
   }
 
   function renderAutocontextRow(ev) {
-    const liveTab = ev.tab ? terminals.find((t) => t.address === ev.tab) : null;
+    const liveTab = ev.tab ? state.terminals.find((t) => t.address === ev.tab) : null;
     const stale = ev.phase === 'started' && Date.now() - (ev.ts || 0) > AUTOCONTEXT_STALE_MS;
     const row = document.createElement('div');
     row.className = `sysop-sysev sysop-sysev-ctx is-${stale ? 'stale' : ev.phase || 'made'}`;
@@ -8262,7 +7306,7 @@
     if (ev.kind === 'autocontext') return renderAutocontextRow(ev);
     if (ev.kind === 'automation' || ev.kind === 'notify') return renderAutomationEventRow(ev);
     const row = document.createElement('div');
-    const liveTab = ev.tab ? terminals.find((t) => t.address === ev.tab) : null;
+    const liveTab = ev.tab ? state.terminals.find((t) => t.address === ev.tab) : null;
     const isLive = Boolean(liveTab);
     const canRename = Boolean(ev.kind === 'autoname' && isLive && opts.isLatestForTab);
     row.className = `sysop-sysev${isLive ? '' : ' is-closed'}`;
@@ -8370,7 +7414,7 @@
     // the snapshot comes every 600 ms: rebuild only when something shown changed (per-second tick while running keeps elapsed live)
     const tickBucket = sysopRunning ? Math.floor(Date.now() / 1000) : Math.floor(Date.now() / 60000);
     const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns ? keyTurns : null, turns ? null : steps,
-      terminals.map((t) => [t.address, tabDisplayName(t), tabAgentKind(t)]), tickBucket]);
+      state.terminals.map((t) => [t.address, tabDisplayName(t), tabAgentKind(t)]), tickBucket]);
     if (key !== lastFeedKey) {
       lastFeedKey = key;
       const nearBottom = sysopFeedEl.scrollHeight - sysopFeedEl.scrollTop - sysopFeedEl.clientHeight < 48;
@@ -8515,7 +7559,7 @@
     const liveTarget = (activeTurn && activeTurn.live_target) ? String(activeTurn.live_target).toLowerCase() : '';
     document.querySelectorAll('.tab-card[data-sysop-target="1"]').forEach((el) => { el.dataset.sysopTarget = '0'; });
     if (running && liveTarget) {
-      for (const t of terminals) {
+      for (const t of state.terminals) {
         const name = tabDisplayName(t).toLowerCase();
         if (t.address.toLowerCase() === liveTarget || name === liveTarget) {
           const card = document.querySelector(`.tab-card[data-addr="${CSS.escape(t.address)}"]`);
@@ -8555,13 +7599,13 @@
 
     ws.onopen = () => {
       if (eventsWs !== ws) return;
-      eventsConnected = true;
+      state.eventsConnected = true;
       syncConnPill();
     };
     ws.onclose = () => {
       if (eventsWs !== ws) return;
       eventsWs = null;
-      eventsConnected = false;
+      state.eventsConnected = false;
       syncConnPill();
       setTimeout(connectEvents, 1200);
     };
@@ -8571,7 +7615,7 @@
       try { msg = JSON.parse(ev.data); } catch (_) { return; }
       if (msg && msg.type === 'sysop_events') { onSysopEvents(msg); return; }
       if (msg && msg.type === 'open_url') { onOpenUrlEvent(msg.url); return; }
-      if (msg.theme && THEMES[msg.theme] && msg.theme !== currentThemeKey) {
+      if (msg.theme && THEMES[msg.theme] && msg.theme !== state.currentThemeKey) {
         applyTheme(msg.theme, false);
       }
       if (Array.isArray(msg.pins)) pins = msg.pins;
@@ -8582,27 +7626,27 @@
       if (Array.isArray(msg.installed_agents)) {
         installedAgents = msg.installed_agents;
         // an agent addon installed since the page loaded: fetch the registry again (its name, colour, icon)
-        if (installedAgents.some((a) => a && a.id && !agentReg.byId.has(a.id))) refreshAgentRegistry().then(() => renderTabs(true));
+        if (installedAgents.some((a) => a && a.id && !state.agentReg.byId.has(a.id))) refreshAgentRegistry().then(() => renderTabs(true));
       }
-      if (typeof msg.home === 'string' && msg.home) serverHomeDir = msg.home;
+      if (typeof msg.home === 'string' && msg.home) state.serverHomeDir = msg.home;
       if (Array.isArray(msg.terminals)) {
-        terminals = msg.terminals;
+        state.terminals = msg.terminals;
         rememberTabs();
-        const liveAddrs = new Set(terminals.map((t) => t.address));
+        const liveAddrs = new Set(state.terminals.map((t) => t.address));
         for (const addr of Array.from(tabSessions.keys())) {
           if (!liveAddrs.has(addr)) disposeSession(addr);
         }
-        if (!activeId || !liveAddrs.has(activeId)) {
+        if (!state.activeId || !liveAddrs.has(state.activeId)) {
           const preferred = msg.active && liveAddrs.has(msg.active)
             ? msg.active
-            : (terminals[0] && terminals[0].address);
+            : (state.terminals[0] && state.terminals[0].address);
           if (preferred) connectPty(preferred, { passive: document.visibilityState === 'hidden' });
-          else { activeId = null; ptyConnected = false; syncConnPill(); renderTabs(); dismissBoot(); }
+          else { state.activeId = null; state.ptyConnected = false; syncConnPill(); renderTabs(); dismissBoot(); }
         } else {
           // If events reconnected after a brief blip and the active PTY socket died, heal it automatically
           const sess = activeSession();
           if (!sess || !sess.ws || sess.ws.readyState === 2 || sess.ws.readyState === 3) {
-            connectPty(activeId, { silent: true, forceReconnect: true });
+            connectPty(state.activeId, { silent: true, forceReconnect: true });
           } else {
             renderTabs();
           }
@@ -8614,7 +7658,7 @@
         const changed = lastServerActive !== null && msg.active !== lastServerActive;
         lastServerActive = msg.active;
         const recentlySwitchedLocally = (Date.now() - lastLocalTabSwitchMs) < 1200;
-        if (changed && !recentlySwitchedLocally && msg.active !== activeId && terminals.some((t) => t.address === msg.active)) {
+        if (changed && !recentlySwitchedLocally && msg.active !== state.activeId && state.terminals.some((t) => t.address === msg.active)) {
           connectPty(msg.active, { passive: true });
         }
       }
@@ -8627,7 +7671,7 @@
     if (opts.cwd) {
       payload.cwd = opts.cwd;
     } else if (preset === 'agent') {
-      const cur = terminals.find((t) => t.address === activeId);
+      const cur = state.terminals.find((t) => t.address === state.activeId);
       const curCwd = (cur && cur.foreground && cur.foreground.cwd) || (cur && cur.cwd) || '';
       if (curCwd && curCwd.startsWith('/')) payload.cwd = curCwd;
     }
@@ -8669,7 +7713,7 @@
     const r = await fetch('/api/sysop/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal, terminal: activeId }),
+      body: JSON.stringify({ goal, terminal: state.activeId }),
     });
     if (!r.ok) {
       const data = await r.json().catch(() => ({}));
@@ -9129,8 +8173,8 @@
   if (btnNewShell) btnNewShell.addEventListener('click', () => { spawnTab('shell'); focusTerminalIfDesktop(); });
   if (btnNewAgent) btnNewAgent.addEventListener('click', () => { openNewAgentPopover(false, '', { showProjectPicker: true }); });
   if (sidebarPendingWtEl) sidebarPendingWtEl.addEventListener('click', openPendingWorktreesPopover);
-  if (topbarWtBtnEl) topbarWtBtnEl.addEventListener('click', () => { if (activeId) openWorktreePopover(activeId); });
-  if (mobileWtBtnEl) mobileWtBtnEl.addEventListener('click', () => { if (activeId) openWorktreePopover(activeId); });
+  if (topbarWtBtnEl) topbarWtBtnEl.addEventListener('click', () => { if (state.activeId) openWorktreePopover(state.activeId); });
+  if (mobileWtBtnEl) mobileWtBtnEl.addEventListener('click', () => { if (state.activeId) openWorktreePopover(state.activeId); });
   if (popoverBackdropEl) {
     popoverBackdropEl.addEventListener('click', (e) => {
       if (e.target === popoverBackdropEl) closePopover();
@@ -9155,7 +8199,7 @@
     };
 
     popoverEl.addEventListener('pointerdown', (e) => {
-      if (!isMobileLayout() || !popoverOpen) return;
+      if (!isMobileLayout() || !state.popoverOpen) return;
       if (e.button !== undefined && e.button !== 0) return;
       const t = e.target;
       if (!t || !t.closest) return;
@@ -9245,17 +8289,17 @@
       if (!pillSwipe || e.pointerId !== pillSwipe.id || pillSwipe.handled) return;
       const dx = e.clientX - pillSwipe.startX;
       const dy = e.clientY - pillSwipe.startY;
-      if (Math.abs(dx) >= 36 && Math.abs(dx) > Math.abs(dy) * 1.4 && terminals.length > 1) {
+      if (Math.abs(dx) >= 36 && Math.abs(dx) > Math.abs(dy) * 1.4 && state.terminals.length > 1) {
         pillSwipe.handled = true;
         suppressPillClick = true;
         setTimeout(() => { suppressPillClick = false; }, 260);
-        const curIdx = terminals.findIndex((t) => t.address === activeId);
+        const curIdx = state.terminals.findIndex((t) => t.address === state.activeId);
         const base = curIdx >= 0 ? curIdx : 0;
         const nextIdx = dx < 0
-          ? (base + 1) % terminals.length
-          : (base - 1 + terminals.length) % terminals.length;
-        const target = terminals[nextIdx];
-        if (target && target.address !== activeId) {
+          ? (base + 1) % state.terminals.length
+          : (base - 1 + state.terminals.length) % state.terminals.length;
+        const target = state.terminals[nextIdx];
+        if (target && target.address !== state.activeId) {
           connectPty(target.address);
         }
       }
@@ -9483,8 +8527,8 @@
   if (btnMobileDockStop) btnMobileDockStop.addEventListener('click', () => stopSysop());
 
   document.getElementById('btn-interrupt').addEventListener('click', async () => {
-    if (!activeId) return;
-    await fetch(`/api/tabs/${encodeURIComponent(activeId)}/interrupt`, { method: 'POST' });
+    if (!state.activeId) return;
+    await fetch(`/api/tabs/${encodeURIComponent(state.activeId)}/interrupt`, { method: 'POST' });
     focusTerminalIfDesktop();
   });
 
@@ -9534,8 +8578,8 @@
     touchKeysEl.addEventListener('mousedown', (e) => e.preventDefault());
     touchKeysEl.addEventListener('click', async (e) => {
       const btn = e.target.closest('button[data-key]');
-      if (!btn || !activeId) return;
-      await fetch(`/api/tabs/${encodeURIComponent(activeId)}/keys`, {
+      if (!btn || !state.activeId) return;
+      await fetch(`/api/tabs/${encodeURIComponent(state.activeId)}/keys`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keys: [btn.dataset.key] }),
@@ -9710,7 +8754,7 @@
       boxConfigError = err.message || 'Could not load box config';
     } finally {
       boxConfigLoading = false;
-      if (settingsOpen && settingsSection !== 'appearance') renderSettingsBody();
+      if (state.settingsOpen && state.settingsSection !== 'appearance') renderSettingsBody();
     }
   }
 
@@ -9860,7 +8904,7 @@
       ]);
       const card = el('button', {
         type: 'button',
-        class: `theme-card${key === currentThemeKey ? ' active' : ''}`,
+        class: `theme-card${key === state.currentThemeKey ? ' active' : ''}`,
         'data-theme': key,
         onClick: () => applyTheme(key, true),
       }, [
@@ -9890,14 +8934,14 @@
       min: '-4',
       max: '8',
       step: '0.5',
-      value: String(fontOffset),
+      value: String(state.fontOffset),
       'aria-label': 'Terminal font size offset',
       onInput: (e) => setFontOffset(Number(e.target.value)),
     });
     const stepper = el('div', { class: 's-stepper' }, [
-      el('button', { type: 'button', class: 's-step-btn', text: '−', title: 'Smaller (Alt+-)', onClick: () => setFontOffset(fontOffset - 0.5) }),
+      el('button', { type: 'button', class: 's-step-btn', text: '−', title: 'Smaller (Alt+-)', onClick: () => setFontOffset(state.fontOffset - 0.5) }),
       el('button', { id: 's-font-val', type: 'button', class: 's-step-val', text: formatFontPx(sz), title: 'Reset font size (Alt+0)', onClick: () => setFontOffset(0) }),
-      el('button', { type: 'button', class: 's-step-btn', text: '+', title: 'Larger (Alt+=)', onClick: () => setFontOffset(fontOffset + 0.5) }),
+      el('button', { type: 'button', class: 's-step-btn', text: '+', title: 'Larger (Alt+=)', onClick: () => setFontOffset(state.fontOffset + 0.5) }),
     ]);
     const preview = el('div', {
       id: 's-font-preview',
@@ -9934,7 +8978,7 @@
         ],
         effectiveLineHeightKey(),
         (val) => {
-          lineHeightPreset = val;
+          state.lineHeightPreset = val;
           try { localStorage.setItem('swarmbox-herdr-lh', val); } catch (_) {}
           applyTerminalPrefs();
           renderSettingsBody();
@@ -9950,11 +8994,11 @@
       class: 'sbtn-ghost',
       text: 'Reset appearance',
       onClick: () => {
-        fontOffset = 0;
-        lineHeightPreset = '';
-        cursorStyle = 'block';
-        cursorBlink = true;
-        scrollbackLines = 3000;
+        state.fontOffset = 0;
+        state.lineHeightPreset = '';
+        state.cursorStyle = 'block';
+        state.cursorBlink = true;
+        state.scrollbackLines = 3000;
         try {
           localStorage.removeItem('swarmbox-herdr-font-offset');
           localStorage.removeItem('swarmbox-herdr-lh');
@@ -9978,9 +9022,9 @@
             { value: 'bar', label: 'Bar' },
             { value: 'underline', label: 'Underline' },
           ],
-          cursorStyle,
+          state.cursorStyle,
           (val) => {
-            cursorStyle = val;
+            state.cursorStyle = val;
             try { localStorage.setItem('swarmbox-herdr-cursor-style', val); } catch (_) {}
             applyTerminalPrefs();
             renderSettingsBody();
@@ -9990,8 +9034,8 @@
       makeSettingRow({
         title: 'Cursor Blink',
         desc: 'Pulse the terminal cursor when focused.',
-        control: makeSwitch(cursorBlink, 'Cursor blink', (next) => {
-          cursorBlink = next;
+        control: makeSwitch(state.cursorBlink, 'Cursor blink', (next) => {
+          state.cursorBlink = next;
           try { localStorage.setItem('swarmbox-herdr-cursor-blink', next ? '1' : '0'); } catch (_) {}
           applyTerminalPrefs();
           renderSettingsBody();
@@ -10002,10 +9046,10 @@
         desc: 'Lines retained in browser scroll history per tab.',
         control: makeSegmented(
           SCROLLBACK_OPTIONS.map((n) => ({ value: n, label: n >= 1000 ? `${n / 1000}k` : String(n) })),
-          scrollbackLines,
+          state.scrollbackLines,
           (val) => {
-            scrollbackLines = Number(val);
-            try { localStorage.setItem('swarmbox-herdr-scrollback', String(scrollbackLines)); } catch (_) {}
+            state.scrollbackLines = Number(val);
+            try { localStorage.setItem('swarmbox-herdr-scrollback', String(state.scrollbackLines)); } catch (_) {}
             applyTerminalPrefs();
             renderSettingsBody();
           },
@@ -10064,7 +9108,7 @@
         title: 'Default Agent',
         desc: 'Agent launched automatically when running swarmbox.',
         options: [{ value: '', label: 'None (interactive shell)' }]
-          .concat(agentReg.list.map((a) => ({ value: a.id, label: `${a.label || a.id} (${a.cmd || a.id})` }))),
+          .concat(state.agentReg.list.map((a) => ({ value: a.id, label: `${a.label || a.id} (${a.cmd || a.id})` }))),
       }),
       makeHostToggleRow('box', 'YOLO', {
         title: 'YOLO Mode',
@@ -10179,7 +9223,7 @@
       makeHostInputRow('box', 'WITH', {
         title: 'Provisioned Addons',
         desc: 'Comma-separated addon list installed automatically on startup.',
-        placeholder: ['sysop', 'voice'].concat(agentReg.list.slice(0, 1).map((a) => a.addon || a.id)).join(','),
+        placeholder: ['sysop', 'voice'].concat(state.agentReg.list.slice(0, 1).map((a) => a.addon || a.id)).join(','),
       }),
       makeHostInputRow('box', 'BROWSER_URL', {
         title: 'Host Browser CDP URL',
@@ -10541,27 +9585,27 @@
 
   function renderSettingsBody() {
     if (!settingsBodyEl) return;
-    const meta = SECTION_META[settingsSection] || SECTION_META.appearance;
+    const meta = SECTION_META[state.settingsSection] || SECTION_META.appearance;
     if (settingsTitleEl) settingsTitleEl.textContent = meta.title;
     if (settingsSubEl) settingsSubEl.textContent = meta.sub;
     if (settingsNavEl) {
       settingsNavEl.querySelectorAll('.snav-item').forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.section === settingsSection);
+        btn.classList.toggle('active', btn.dataset.section === state.settingsSection);
       });
     }
     settingsBodyEl.innerHTML = '';
-    if (settingsSection === 'appearance') settingsBodyEl.appendChild(renderAppearanceSection());
-    else if (settingsSection === 'box') settingsBodyEl.appendChild(renderBoxSection());
-    else if (settingsSection === 'sysop') settingsBodyEl.appendChild(renderSysopSection());
-    else if (settingsSection === 'voice') settingsBodyEl.appendChild(renderVoiceSection());
+    if (state.settingsSection === 'appearance') settingsBodyEl.appendChild(renderAppearanceSection());
+    else if (state.settingsSection === 'box') settingsBodyEl.appendChild(renderBoxSection());
+    else if (state.settingsSection === 'sysop') settingsBodyEl.appendChild(renderSysopSection());
+    else if (state.settingsSection === 'voice') settingsBodyEl.appendChild(renderVoiceSection());
     else settingsBodyEl.appendChild(renderSystemSection());
     syncHostBar();
   }
 
   function openSettings(section = null) {
-    if (section && SECTION_META[section]) settingsSection = section;
+    if (section && SECTION_META[section]) state.settingsSection = section;
     if (appEl.dataset.mobileSysop === '1') setMobileSysop(false);
-    settingsOpen = true;
+    state.settingsOpen = true;
     settingsOverlayEl.classList.add('open');
     settingsOverlayEl.setAttribute('aria-hidden', 'false');
     renderSettingsBody();
@@ -10569,15 +9613,15 @@
   }
 
   function closeSettings() {
-    if (!settingsOpen) return;
-    settingsOpen = false;
+    if (!state.settingsOpen) return;
+    state.settingsOpen = false;
     settingsOverlayEl.classList.remove('open');
     settingsOverlayEl.setAttribute('aria-hidden', 'true');
     focusTerminalIfDesktop();
   }
 
   function toggleSettings() {
-    if (settingsOpen) closeSettings();
+    if (state.settingsOpen) closeSettings();
     else openSettings();
   }
 
@@ -10598,10 +9642,10 @@
     settingsNavEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.snav-item[data-section]');
       if (!btn) return;
-      settingsSection = btn.dataset.section;
+      state.settingsSection = btn.dataset.section;
       settingsBodyEl.scrollTop = 0;
       renderSettingsBody();
-      if (settingsSection !== 'appearance' && !boxConfig) loadBoxConfig(true);
+      if (state.settingsSection !== 'appearance' && !boxConfig) loadBoxConfig(true);
     });
   }
   if (btnHostCopy) {
@@ -10618,4 +9662,3 @@
   }
 
   connectEvents();
-})();

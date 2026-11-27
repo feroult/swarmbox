@@ -29,10 +29,10 @@ class OneLook(unittest.TestCase):
 
 
 def web_theme():
-    """the xterm colors of the Purple Glow theme of the Web Studio (container/web/herdr/public/app.js)"""
-    text = read("container", "web", "herdr", "public", "app.js")
+    """the xterm colors of the Purple Glow theme of the Web Studio (container/web/herdr/public/app/themes.js)"""
+    text = read("container", "web", "herdr", "public", "app", "themes.js")
     m = re.search(r"'purple-glow': \{.*?xterm: \{(.*?)\}", text, re.S)
-    assert m, "the Purple Glow xterm theme of app.js was not found"
+    assert m, "the Purple Glow xterm theme of app/themes.js was not found"
     return dict(re.findall(r"(\w+): '(#[0-9a-fA-F]{6})'", m.group(1)))
 
 
