@@ -140,8 +140,11 @@ class TwoSigterms(unittest.TestCase):
                     p.communicate()
             return i, rc, err
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-            results = list(ex.map(one, range(4)))    # a few races between the two signals (the handler itself is tested above)
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [one(i) for i in range(4)]    # a few races between the two signals (the handler itself is tested above)
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+                results = list(ex.map(one, range(4)))    # a few races between the two signals (the handler itself is tested above)
         for i, rc, err in results:
             self.assertNotIn("Traceback", err, "run %d: %s" % (i, err))
             self.assertEqual(rc, 0, "run %d: exit %s" % (i, rc))

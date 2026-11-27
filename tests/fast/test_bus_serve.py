@@ -27,9 +27,12 @@ class RealBroker(ServeCase):
 
     @classmethod
     def setUpClass(cls):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
-            futs = [ex.submit(cls._make_case) for _ in range(3)]
-            cases = [f.result() for f in futs]
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            cases = [cls._make_case() for _ in range(3)]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+                futs = [ex.submit(cls._make_case) for _ in range(3)]
+                cases = [f.result() for f in futs]
         for c in cases:
             cls.addClassCleanup(c.doCleanups)
         cls._shared, cls._kill, cls._stop = cases

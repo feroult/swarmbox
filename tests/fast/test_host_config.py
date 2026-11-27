@@ -148,7 +148,7 @@ class Base(unittest.TestCase):
 
     def _par(self, fn, items, max_workers=12):
         items = list(items)
-        if len(items) <= 1:
+        if len(items) <= 1 or os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
             return [fn(x) for x in items]
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as pool:
             return list(pool.map(fn, items))
@@ -582,11 +582,12 @@ class SysopFlagsTest(CreateFlagsBase):
         with open(cf2, "w") as fh:
             fh.write(cfg)
         os.chmod(cf2, 0o600)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            base, dflags, eflags, efp = list(pool.map(lambda fn: fn(), (
-                self.fp, self.flags,
-                lambda: self.flags(env={"HOME": h2}), lambda: self.fp(env={"HOME": h2}),
-            )))
+        fns = (self.fp, self.flags, lambda: self.flags(env={"HOME": h2}), lambda: self.fp(env={"HOME": h2}))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            base, dflags, eflags, efp = [fn() for fn in fns]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                base, dflags, eflags, efp = list(pool.map(lambda fn: fn(), fns))
         self.assertEqual(self.sysop(dflags), [])
         self.assertEqual(self.sysop(eflags), [])
         self.assertEqual(efp, base)
@@ -609,10 +610,12 @@ class SysopFlagsTest(CreateFlagsBase):
         with open(cf2, "w") as fh:
             fh.write(cfg)
         os.chmod(cf2, 0o600)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            base, oflags, ofp = list(pool.map(lambda fn: fn(), (
-                self.fp, lambda: self.flags(env={"HOME": h2}), lambda: self.fp(env={"HOME": h2}),
-            )))
+        fns = (self.fp, lambda: self.flags(env={"HOME": h2}), lambda: self.fp(env={"HOME": h2}))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            base, oflags, ofp = [fn() for fn in fns]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+                base, oflags, ofp = list(pool.map(lambda fn: fn(), fns))
         self.assertEqual(self.sysop(oflags), [
             "SWARMBOX_SYSOP_BRAIN=gemini -p {mcp_config} 'x'", "SWARMBOX_SYSOP_MODEL=haiku", "SWARMBOX_SYSOP_AUTONOMY=confirm-risky",
             "SWARMBOX_SYSOP_COUNTDOWN=0", "SWARMBOX_SYSOP_MAX_STEPS=5", "SWARMBOX_SYSOP_MAX_SECONDS=60"])

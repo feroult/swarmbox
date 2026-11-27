@@ -10,7 +10,7 @@ Selectors (a folder each, see tests/README.md):
     e2e     tests/e2e/*.sh         the wrappers that start Podman and run the harnesses with the real claude and the long soak: manual, never part of all
     macos   the fast files named in tests/support/macos.list (the macOS job: /bin/sh is bash 3.2, podman is a fake)
 Options:
-    -j N          files in parallel (default: fast and macos the CPUs up to 24, slow 3, e2e 1)
+    -j N          files in parallel (default: fast and macos the CPUs up to 16, slow 3, e2e 1)
     --only LIST   comma-separated file names (a.py,b.py); they are searched in the folders of the selector (every folder when no
                   selector is given); a name that does not exist is an error
     --list        print the selected files and stop
@@ -301,6 +301,10 @@ def _exec_in_child(abs_path, classes, o, close_fds, w_fd):
             os.close(fd)
         except OSError:
             pass
+    if o.get("parallel"):
+        os.environ["SWARMBOX_RUNNER_PARALLEL"] = "1"
+    else:
+        os.environ.pop("SWARMBOX_RUNNER_PARALLEL", None)
     try:
         os.setsid()
     except OSError:
@@ -389,8 +393,13 @@ def _start_task(unit, o, timeout, open_fds):
         cmd += ["--durations", str(o["durations"])]
     if unit["classes"]:
         cmd += list(unit["classes"])
+    env = dict(os.environ)
+    if o.get("parallel"):
+        env["SWARMBOX_RUNNER_PARALLEL"] = "1"
+    else:
+        env.pop("SWARMBOX_RUNNER_PARALLEL", None)
     p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True,
-                         cwd=os.path.dirname(TESTS))
+                         cwd=os.path.dirname(TESTS), env=env)
     r_fd = p.stdout.fileno()
     os.set_blocking(r_fd, False)
     return {"unit": unit, "pid": p.pid, "popen": p, "r_fd": r_fd, "chunks": [], "t0": t0, "deadline": deadline, "timed_out": False}
@@ -466,8 +475,9 @@ def main(argv):
         return 0
     sel = o["sel"] or ("all" if o["only"] else "fast")
     cpus = os.cpu_count() or 2
-    default_j = {"fast": min(cpus, 24), "macos": min(cpus, 24), "slow": min(cpus, 3), "all": min(cpus, 24), "e2e": 1}[sel]
+    default_j = {"fast": min(cpus, 16), "macos": min(cpus, 16), "slow": min(cpus, 3), "all": min(cpus, 16), "e2e": 1}[sel]
     jobs = o["j"] or default_j
+    o["parallel"] = jobs > 1
     if o["timeout"]:
         timeouts = dict((k, o["timeout"]) for k in LAYERS)
     else:

@@ -61,8 +61,11 @@ class Usage(Base):
         # Keep real subprocess checks for representative cases, run remaining argv validation in-process
         real_cases = cases[:2]
         inproc_cases = cases[2:]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(lambda a: (a, p.cli(*a)), real_cases))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [(a, p.cli(*a)) for a in real_cases]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda a: (a, p.cli(*a)), real_cases))
         results += [(a, _cli_inproc(p, *a)) for a in inproc_cases]
         for args, r in results:
             with self.subTest(args=args):

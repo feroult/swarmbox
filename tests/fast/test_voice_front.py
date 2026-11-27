@@ -665,9 +665,13 @@ class Processes(unittest.TestCase):
     def test_bad_arguments(self):
         cases = (["--listen", "nonsense", "--", "server"], ["--service-listen", "0.0.0.0:1", "--", "server"], ["--listen", "127.0.0.1:0"])
         env = {"PATH": os.environ["PATH"], "PYTHONPATH": LIB}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            res = list(pool.map(lambda a: (a, subprocess.run([sys.executable, "-B", "-m", "swarmbox_voice", "front"] + a, env=env,
-                                                             capture_output=True, text=True, timeout=15)), cases))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            res = [(a, subprocess.run([sys.executable, "-B", "-m", "swarmbox_voice", "front"] + a, env=env,
+                                      capture_output=True, text=True, timeout=15)) for a in cases]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+                res = list(pool.map(lambda a: (a, subprocess.run([sys.executable, "-B", "-m", "swarmbox_voice", "front"] + a, env=env,
+                                                                 capture_output=True, text=True, timeout=15)), cases))
         for args, p in res:
             self.assertEqual(p.returncode, 2, args)
 

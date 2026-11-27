@@ -140,8 +140,11 @@ class PrerequisiteTest(Base):
             r = self.run_h("up", env=e)
             return v, code, r, fp
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-            results = list(pool.map(run_one, enumerate(zip(cases, fps))))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [run_one(item) for item in enumerate(zip(cases, fps))]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                results = list(pool.map(run_one, enumerate(zip(cases, fps))))
         for v, code, r, fp in results:
             with self.subTest(v):
                 self.assertEqual(r.returncode, code, r.stderr)

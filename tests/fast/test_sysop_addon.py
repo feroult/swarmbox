@@ -219,8 +219,11 @@ class Install(Tree):
             (version, {"PATH": "/usr/bin:/bin", "ADDON_PREFIX": os.path.join(self.base, "p-%d" % i), "ADDON_VERSION": version, "ADDON_ARCH": "amd64"})
             for i, version in enumerate(("latest", "", "1.0; rm -rf x", "../1"))
         ] + [("<no-prefix>", {"PATH": "/usr/bin:/bin", "ADDON_VERSION": "1.0.0"})]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-            results = list(pool.map(lambda c: (c[0], c[1], subprocess.run(["bash", inst], env=c[1], capture_output=True, text=True)), bad_cases))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [(c[0], c[1], subprocess.run(["bash", inst], env=c[1], capture_output=True, text=True)) for c in bad_cases]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                results = list(pool.map(lambda c: (c[0], c[1], subprocess.run(["bash", inst], env=c[1], capture_output=True, text=True)), bad_cases))
         for version, env, r in results:
             self.assertNotEqual(r.returncode, 0, version)
             if "ADDON_PREFIX" in env:

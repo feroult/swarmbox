@@ -182,6 +182,7 @@ class ServeCase(unittest.TestCase):
         return p
 
     def _reap(self):
+        pgids = []
         for p in self.procs:
             if p.poll() is None:  # only the PID this test started
                 try:
@@ -192,16 +193,49 @@ class ServeCase(unittest.TestCase):
                     p.wait()
             try:  # serve is the leader of its own session: end what it left behind (its `sleep infinity`, fake web server)
                 os.killpg(p.pid, signal.SIGKILL)
+                pgids.append(p.pid)
             except OSError:
                 pass
             for f in (p.stdout, p.stderr):
                 if f:
                     f.close()
+        pids = []
         for name in ("web.pid", "service.pid", "bus.pid", "web-supervisor.pid", "bus-supervisor.pid"):
             for base in (self.fake, self.run_dir):
                 s = read(os.path.join(base, name)).strip()
-                if s.isdigit() and alive(int(s)):
-                    os.kill(int(s), signal.SIGKILL)
+                if s.isdigit():
+                    pid = int(s)
+                    if alive(pid):
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                        except OSError:
+                            pass
+                        pids.append(pid)
+        for pgid in pgids:
+            def _pgid_gone(pg=pgid):
+                while True:
+                    try:
+                        wpid, _ = os.waitpid(-pg, os.WNOHANG)
+                    except ChildProcessError:
+                        break
+                    if wpid == 0:
+                        break
+                try:
+                    os.killpg(pg, signal.SIGKILL)
+                    return False
+                except ProcessLookupError:
+                    return True
+                except OSError:
+                    return True
+            wait_for(_pgid_gone, 2.0, 0.005)
+        for pid in pids:
+            def _pid_gone(target=pid):
+                try:
+                    os.waitpid(target, os.WNOHANG)
+                except ChildProcessError:
+                    pass
+                return not alive(target)
+            wait_for(_pid_gone, 2.0, 0.005)
 
     def run_to_exit(self, **extra):
         p = self.start(**extra)

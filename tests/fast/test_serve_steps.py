@@ -201,9 +201,12 @@ class NestedPodmanState(ServeCase):
             "usable_fuse": lambda c: s_marker(c, "/dev/null", "true"),
             "marker_false": lambda c: s_marker(c, "/nonexistent-fuse", "false"),
         }
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as ex:
-            futs = {k: ex.submit(cls._run_scenario, fn) for k, fn in tasks.items()}
-            cls._res = {k: f.result() for k, f in futs.items()}
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            cls._res = {k: cls._run_scenario(fn) for k, fn in tasks.items()}
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+                futs = {k: ex.submit(cls._run_scenario, fn) for k, fn in tasks.items()}
+                cls._res = {k: f.result() for k, f in futs.items()}
 
     def setUp(self):
         pass
@@ -303,11 +306,15 @@ class WarnSteps(ServeCase):
             ("step 8 service", lambda c: put(os.path.join(c.fake, "service.mode"), "fail"), "podman"),
             ("step 9 herdr-core", lambda c: put(os.path.join(c.fake, "hc.exit"), "1"), "herdr"),
         ]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-            futs = [(label, word, ex.submit(cls._run_warn, setup)) for label, setup, word in cases]
-            f_with = ex.submit(cls._run_with)
-            cls._warn_res = [(label, word, f.result()) for label, word, f in futs]
-            cls._with_res = f_with.result()
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            cls._warn_res = [(label, word, cls._run_warn(setup)) for label, setup, word in cases]
+            cls._with_res = cls._run_with()
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+                futs = [(label, word, ex.submit(cls._run_warn, setup)) for label, setup, word in cases]
+                f_with = ex.submit(cls._run_with)
+                cls._warn_res = [(label, word, f.result()) for label, word, f in futs]
+                cls._with_res = f_with.result()
 
     def setUp(self):
         pass
@@ -452,9 +459,12 @@ class BusStep(SupervisorCase):
             return res
 
         tasks = {"noping": s_noping, "missing": s_missing, "backoff": s_backoff, "crash_loop": s_crash_loop, "exit_8": s_exit_8}
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as ex:
-            futs = {k: ex.submit(cls._run_case, fn) for k, fn in tasks.items()}
-            cls._res = {k: f.result() for k, f in futs.items()}
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            cls._res = {k: cls._run_case(fn) for k, fn in tasks.items()}
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+                futs = {k: ex.submit(cls._run_case, fn) for k, fn in tasks.items()}
+                cls._res = {k: f.result() for k, f in futs.items()}
 
     def setUp(self):
         pass

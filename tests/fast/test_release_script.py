@@ -287,8 +287,11 @@ class Versions(ReleaseCase):
     def test_the_default_is_the_next_patch_and_minor_and_major_work(self):
         self.write_items()
         cases = (((), "2.0.7"), (("patch",), "2.0.7"), (("minor",), "2.1.0"), (("major",), "3.0.0"), (("2.0.9",), "2.0.9"))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-            results = list(pool.map(lambda c: (c[0], c[1], self.run_release("--dry-run", *c[0])), cases))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [(c[0], c[1], self.run_release("--dry-run", *c[0])) for c in cases]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                results = list(pool.map(lambda c: (c[0], c[1], self.run_release("--dry-run", *c[0])), cases))
         for args, want, r in results:
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("release: 2.0.6 -> %s" % want, r.stdout, args)
@@ -296,8 +299,11 @@ class Versions(ReleaseCase):
     def test_a_version_that_is_not_newer_or_not_a_version_is_refused(self):
         self.write_items()
         bads = ("2.0.6", "2.0.5", "1.9.0", "v2.0.7", "2.0", "two", "2.0.7-beta.1")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool:
-            results = list(pool.map(lambda b: (b, self.run_release("--dry-run", b)), bads))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [(b, self.run_release("--dry-run", b)) for b in bads]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool:
+                results = list(pool.map(lambda b: (b, self.run_release("--dry-run", b)), bads))
         for bad, r in results:
             self.assertEqual(r.returncode, 1, (bad, r.stdout, r.stderr))
 

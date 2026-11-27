@@ -23,7 +23,7 @@ from host_support import CreateFlagsBase as Base, CANARY, FIXTURES, HELPER_SRC, 
 
 def _par(fn, items, max_workers=8):
     items = list(items)
-    if len(items) <= 1:
+    if len(items) <= 1 or os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
         return [fn(x) for x in items]
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as pool:
         return list(pool.map(fn, items))
@@ -311,8 +311,7 @@ class NeverUnsafeTest(Base):
         chosen = combos[:24]       # the product has 17280 combinations and one run costs a process: a seeded sample is enough
         os.makedirs(self.ws, exist_ok=True)
         envs = [dict(combo, A_ONE=CANARY, SWARMBOX_WORKSPACE=self.ws) for combo in chosen]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
-            results = list(pool.map(lambda e: (self.cf(env=e), e), envs))
+        results = _par(lambda e: (self.cf(env=e), e), envs, max_workers=12)
         for p, env in results:
             self.check(p, env)
         for k, vs in axes:      # the sample must have met every value of every axis (a changed seed or axis list could lose one)

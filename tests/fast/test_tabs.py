@@ -800,21 +800,28 @@ class TestCommand(Base):
         self.ft.save().active("t2")
 
     def test_list_active_screen(self):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            f_list = pool.submit(self.ft.cli, "list")
-            f_act = pool.submit(self.ft.cli, "active")
-            f_scr = pool.submit(self.ft.cli, "screen", "sh")
-            f_scr1 = pool.submit(self.ft.cli, "screen", "t1", "--lines", "1")
-            rc, out, err = f_list.result()
-            self.assertEqual((rc, err), (0, ""))
-            self.assertEqual([t["tab"] for t in out], ["t1", "t2"])
-            self.assertEqual([t["active"] for t in out], [False, True])
-            rc, out, _ = f_act.result()
-            self.assertEqual((rc, out["tab"], out["label"]), (0, "t2", "2:agent"))
-            rc, out, _ = f_scr.result()
-            self.assertEqual((rc, out["text"]), (0, "hello [sel]world[/sel]  token=[REDACTED]\nsecond"))
-            rc, out, _ = f_scr1.result()
-            self.assertEqual((rc, out["text"], out["lines"]), (0, "second", 1))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            r_list = self.ft.cli("list")
+            r_act = self.ft.cli("active")
+            r_scr = self.ft.cli("screen", "sh")
+            r_scr1 = self.ft.cli("screen", "t1", "--lines", "1")
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                f_list = pool.submit(self.ft.cli, "list")
+                f_act = pool.submit(self.ft.cli, "active")
+                f_scr = pool.submit(self.ft.cli, "screen", "sh")
+                f_scr1 = pool.submit(self.ft.cli, "screen", "t1", "--lines", "1")
+                r_list, r_act, r_scr, r_scr1 = f_list.result(), f_act.result(), f_scr.result(), f_scr1.result()
+        rc, out, err = r_list
+        self.assertEqual((rc, err), (0, ""))
+        self.assertEqual([t["tab"] for t in out], ["t1", "t2"])
+        self.assertEqual([t["active"] for t in out], [False, True])
+        rc, out, _ = r_act
+        self.assertEqual((rc, out["tab"], out["label"]), (0, "t2", "2:agent"))
+        rc, out, _ = r_scr
+        self.assertEqual((rc, out["text"]), (0, "hello [sel]world[/sel]  token=[REDACTED]\nsecond"))
+        rc, out, _ = r_scr1
+        self.assertEqual((rc, out["text"], out["lines"]), (0, "second", 1))
 
     def test_the_command_of_a_row_is_the_program_running_now(self):
         """an agent the Studio started runs under `bash -lic`: the row names the program in the foreground (from `hc get`), so an agent that
@@ -838,13 +845,18 @@ class TestCommand(Base):
         self.assertEqual(mod.swarmbox_agents.detect(row), "agy")
 
     def test_send_run_and_input_and_queue_and_slash(self):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            f1 = pool.submit(self.ft.cli, "send", "t1", "--run", "echo hi")
-            f2 = pool.submit(self.ft.cli, "send", "2:agent", "--input", "ab{Esc}")
-            rc, out, _ = f1.result()
-            self.assertEqual((rc, out), (0, {"ok": True, "tab": "t1", "pane": "t1", "submitted": True}))
-            rc, out, _ = f2.result()
-            self.assertEqual((rc, out["submitted"]), (0, False))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            r1 = self.ft.cli("send", "t1", "--run", "echo hi")
+            r2 = self.ft.cli("send", "2:agent", "--input", "ab{Esc}")
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                f1 = pool.submit(self.ft.cli, "send", "t1", "--run", "echo hi")
+                f2 = pool.submit(self.ft.cli, "send", "2:agent", "--input", "ab{Esc}")
+                r1, r2 = f1.result(), f2.result()
+        rc, out, _ = r1
+        self.assertEqual((rc, out), (0, {"ok": True, "tab": "t1", "pane": "t1", "submitted": True}))
+        rc, out, _ = r2
+        self.assertEqual((rc, out["submitted"]), (0, False))
         self.assertEqual(self.ft.typed("t1"), ["echo hi", "<enter>"])
         self.assertEqual(self.ft.typed("t2"), ["ab", "<esc>"])
         rc, out, _ = self.ft.cli("send", "agent", "--run", "/help")
@@ -875,11 +887,14 @@ class TestCommand(Base):
         rc, out, _ = self.ft.cli("send", "t1", "--input", "-", stdin=b"{C-c}")
         self.assertEqual(rc, 0)
         self.assertEqual(self.ft.typed("t1")[-1], "<ctrl+c>")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            bad = [(d, pool.submit(self.ft.cli, "send", "t1", "--run", "-", stdin=d)) for d in (b"\xff\xfe", b"a\x00b", b"")]
-            for data, fut in bad:
-                rc, out, _ = fut.result()
-                self.assertEqual((rc, out["err"]), (2, "bad_body"), data)
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            bad_res = [(d, self.ft.cli("send", "t1", "--run", "-", stdin=d)) for d in (b"\xff\xfe", b"a\x00b", b"")]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+                bad = [(d, pool.submit(self.ft.cli, "send", "t1", "--run", "-", stdin=d)) for d in (b"\xff\xfe", b"a\x00b", b"")]
+                bad_res = [(d, fut.result()) for d, fut in bad]
+        for data, (rc, out, _) in bad_res:
+            self.assertEqual((rc, out["err"]), (2, "bad_body"), data)
 
     def test_open_focus_close(self):
         rc, out, _ = self.ft.cli("open", "--name", "api", "--agent", "antigravity", "--cwd", self.ft.dir)
@@ -901,8 +916,11 @@ class TestCommand(Base):
                  (("send", "t1", "--run"), 2, "usage"), (("send", "t1", "--bogus", "a"), 2, "usage"), (("open", "--agent", "vim"), 2, "usage"),
                  (("open", "--cwd", "/nonexistent/x"), 2, "bad_body")]
         # Run representative backend/usage cases as real CLI subprocesses and the remaining usage/validation cases in-process
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            results = list(pool.map(lambda c: (c, self.ft.cli(*c[0])), cases[:3]))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [(c, self.ft.cli(*c[0])) for c in cases[:3]]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+                results = list(pool.map(lambda c: (c, self.ft.cli(*c[0])), cases[:3]))
         for c in cases[3:]:
             buf = io.StringIO()
             with mock.patch.dict(os.environ, self.ft.env(), clear=True), contextlib.redirect_stdout(buf):
@@ -920,13 +938,18 @@ class TestCommand(Base):
         self.assertEqual((rc, out["err"]), (1, "ambiguous_tab"))
 
     def test_no_hc_and_no_server_are_4(self):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            f1 = pool.submit(self.ft.cli, "list", SB_TABS_BIN="/nonexistent/hc")
-            f2 = pool.submit(self.ft.cli, "list", SB_TABS_BACKEND="tmux")
-            rc, out, _ = f1.result()
-            self.assertEqual((rc, out["err"]), (4, "no_backend"))
-            rc, out, _ = f2.result()
-            self.assertEqual((rc, out["err"]), (4, "no_backend"))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            r1 = self.ft.cli("list", SB_TABS_BIN="/nonexistent/hc")
+            r2 = self.ft.cli("list", SB_TABS_BACKEND="tmux")
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                f1 = pool.submit(self.ft.cli, "list", SB_TABS_BIN="/nonexistent/hc")
+                f2 = pool.submit(self.ft.cli, "list", SB_TABS_BACKEND="tmux")
+                r1, r2 = f1.result(), f2.result()
+        rc, out, _ = r1
+        self.assertEqual((rc, out["err"]), (4, "no_backend"))
+        rc, out, _ = r2
+        self.assertEqual((rc, out["err"]), (4, "no_backend"))
         self.ft.load()
         self.ft.state["down"] = True
         self.ft.save()

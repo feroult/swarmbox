@@ -202,8 +202,11 @@ class PlainUpdateTest(UpdateBase):
                 img = [ln for ln in f.read().splitlines() if ln.startswith("IMAGE=")]
             return tag, series, r, fp.calls(), img
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            results = list(pool.map(run_one, prepped))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [run_one(item) for item in prepped]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                results = list(pool.map(run_one, prepped))
         for tag, series, r, calls, img in results:
             with self.subTest(tag=tag):
                 self.assertEqual(r.returncode, 0, r.stderr)
@@ -324,8 +327,11 @@ class PullProgressTest(UpdateBase):
             pulls = [c for c in fp.calls() if c and c[0] == "pull"]
             return env, rc, pulls
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            results = list(pool.map(run_one, prepped))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [run_one(item) for item in prepped]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                results = list(pool.map(run_one, prepped))
         for env, rc, pulls in results:
             self.assertEqual(rc, 0, env)
             self.assertEqual(pulls[-1], ["pull", REPO + ":2.0"], env)
@@ -420,8 +426,11 @@ class ToTest(UpdateBase):
                 got_ver = f.read().strip()
             return tag, ver, r, fp.calls(), img, got_ver
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-            results = list(pool.map(run_one, prepped))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [run_one(item) for item in prepped]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                results = list(pool.map(run_one, prepped))
         for tag, ver, r, calls, img, got_ver in results:
             with self.subTest(tag=tag):
                 self.assertEqual(r.returncode, 0, r.stderr)
@@ -443,8 +452,11 @@ class ToTest(UpdateBase):
             tag_calls = [c for c in fp.calls() if c and c[0] == "tag"]
             return tag, r, tag_calls, img
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            results = list(pool.map(run_one, prepped))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [run_one(item) for item in prepped]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                results = list(pool.map(run_one, prepped))
         for tag, r, tag_calls, img in results:
             with self.subTest(tag=tag):
                 self.assertEqual(r.returncode, 0, r.stderr)
@@ -461,8 +473,11 @@ class ToTest(UpdateBase):
         self.podman_for("2.99.99")
         before = self.before()
         env = self.env()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(lambda t: (t, self.run_h("update", "--to", t, env=env)), self.BAD_TAGS))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [(t, self.run_h("update", "--to", t, env=env)) for t in self.BAD_TAGS]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                results = list(pool.map(lambda t: (t, self.run_h("update", "--to", t, env=env)), self.BAD_TAGS))
         for tag, r in results:
             with self.subTest(tag=tag):
                 self.assertEqual(r.returncode, 2, r.stderr)
@@ -537,8 +552,11 @@ class FailureTest(UpdateBase):
             tag_calls = [c for c in fp.calls() if c and c[0] == "tag"]
             return label, r, snap_before, snap_after, tag_calls
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-            results = list(pool.map(run_one, prepped))
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            results = [run_one(item) for item in prepped]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                results = list(pool.map(run_one, prepped))
         for label, r, snap_before, snap_after, tag_calls in results:
             with self.subTest(label):
                 self.assertEqual(snap_after, snap_before)
