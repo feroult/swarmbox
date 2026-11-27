@@ -3577,10 +3577,24 @@
     focusTerminalIfDesktop();
   }
 
-  // Every popover shows that Esc closes it: a capsule at the right of its head, unless the popover already has one
+  // Every popover closes from one control at the right of its head: the Esc capsule is a button (Esc × on desktop, × on mobile)
+  function makeEscClose(onClick) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'esc-close';
+    btn.title = 'Close (Esc)';
+    btn.setAttribute('aria-label', 'Close');
+    btn.innerHTML = '<span class="esc-close-key">Esc</span><span class="esc-close-x" aria-hidden="true">×</span>';
+    btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    return btn;
+  }
+
   function addPopoverEscBadge() {
     const head = popoverEl.querySelector('.spop-head');
-    if (!head || Array.from(head.querySelectorAll('.wt-kbd')).some((k) => k.textContent.trim() === 'Esc')) return;
+    if (!head || head.querySelector('.esc-close')) return;
+    const btn = makeEscClose(closePopover);
+    const hint = Array.from(head.querySelectorAll('.wt-kbd')).find((k) => k.textContent.trim() === 'Esc');
+    if (hint) { hint.replaceWith(btn); return; }
     let right = head.querySelector(':scope > .spop-head-right');
     if (!right) {
       right = document.createElement('span');
@@ -3588,11 +3602,7 @@
       while (head.children.length > 1) right.appendChild(head.children[1]);
       head.appendChild(right);
     }
-    const esc = document.createElement('span');
-    esc.className = 'wt-kbd desktop-only';
-    esc.title = 'Close (Esc)';
-    esc.textContent = 'Esc';
-    right.appendChild(esc);
+    right.appendChild(btn);
   }
 
   // What a git popover shows, for its live refresh to tell a change: a commit's "12 seconds ago" moves on every fetch and is no change

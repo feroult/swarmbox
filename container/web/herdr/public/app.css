@@ -4976,6 +4976,36 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
   color: var(--text-muted);
   flex-shrink: 0;
 }
+/* The one close control of a popover, the settings dialog, and the file drawer: the Esc capsule is the button */
+.esc-close {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.4;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.esc-close-x { font-size: 11px; line-height: 1; opacity: 0.8; }
+.esc-close:hover,
+.esc-close:focus-visible {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--text);
+  outline: none;
+}
+.esc-close:hover .esc-close-x { opacity: 1; }
+@media (max-width: 860px) {
+  .esc-close { min-width: 30px; min-height: 28px; justify-content: center; padding: 2px 8px; border-radius: 6px; }
+  .esc-close-key { display: none; }
+  .esc-close-x { font-size: 15px; }
+}
 .wt-seg {
   display: grid;
   grid-template-columns: 1fr 1fr;
