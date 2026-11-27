@@ -80,7 +80,7 @@ DEFAULT_VOLUME = DEFAULT_NAME + "-containers"
 DEFAULT_CONNECTOR = DEFAULT_NAME + "-cloudflared"
 # The v0.1.0 name: only for tests that look at migration or the old fixtures, never a default of 2.0.
 
-_FAKE_SCRIPT = r'''#!%(python)s
+_FAKE_SCRIPT = r'''#!%(python)s -S
 import json, os, sys
 d = os.path.dirname(os.path.abspath(__file__))
 argv = sys.argv[1:]
@@ -111,6 +111,13 @@ def matches(rule, args):
     return all(tok in joined for tok in rule.get("match", []))
 
 
+def parse_log_line(line):
+    if line.startswith("\x1e"):
+        parts = line[1:].rstrip("\n").split("\x1f")
+        return {"pid": int(parts[0]), "argv": parts[1:], "env": {}}
+    return json.loads(line)
+
+
 rules = conf.get("rules", [])
 chosen = conf
 if rules:
@@ -124,7 +131,7 @@ if True:
         # the n-th call that this rule answers gets the n-th entry (the last one repeats); n is counted in the log,
         # up to this process's own line, so it is the same for concurrent callers as for sequential ones
         with open(os.path.join(d, "calls.jsonl")) as f:
-            entries = [json.loads(line) for line in f if line.strip()]
+            entries = [parse_log_line(line) for line in f if line.strip()]
         mine = max(i for i, e in enumerate(entries) if e["pid"] == os.getpid())
         n = 0
         for e in entries[:mine]:
@@ -167,6 +174,113 @@ sys.exit(int(conf.get("exit", 0)))
 '''
 
 
+def _sh_quote(s):
+    return "'" + s.replace("'", "'\\''") + "'"
+
+
+def _parse_fake_log_line(line):
+    if line.startswith("\x1e"):
+        parts = line[1:].rstrip("\n").split("\x1f")
+        return {"pid": int(parts[0]), "argv": parts[1:], "env": {}}
+    return json.loads(line)
+
+
+def _emit_sh_action(conf, indent, py_fallback):
+    if "seq" in conf:
+        return [indent + py_fallback]
+    lines = []
+    # Log the call in pure sh (one O_APPEND write) before answering
+    lines.append(indent + '_log_call "$@"')
+    if "cidfile" in conf:
+        lines.append(indent + '[ -n "$cidfile" ] && printf "%s" ' + _sh_quote(conf["cidfile"]) + ' > "$cidfile"')
+    out = conf.get("stdout", "")
+    if isinstance(out, list):
+        out = "".join(line + "\n" for line in out)
+    if out:
+        lines.append(indent + 'printf "%s" ' + _sh_quote(out))
+    if "stdout_file" in conf:
+        lines.append(indent + 'cat ' + _sh_quote(conf["stdout_file"]))
+    err = conf.get("stderr", "")
+    if err:
+        lines.append(indent + 'printf "%s" ' + _sh_quote(err) + ' >&2')
+    lines.append(indent + "exit %d" % int(conf.get("exit", 0)))
+    return lines
+
+
+def _emit_sh_conf(conf, indent, py_fallback):
+    rules = conf.get("rules", [])
+    if not rules:
+        return _emit_sh_action(conf, indent, py_fallback)
+    lines = []
+    for rule in rules:
+        toks = rule.get("match", [])
+        cur = indent
+        for tok in toks:
+            lines.append(cur + 'case "$joined" in *' + _sh_quote(tok) + '*)')
+            cur += "  "
+        lines.extend(_emit_sh_action(rule, cur, py_fallback))
+        for _ in toks:
+            cur = cur[:-2]
+            lines.append(cur + ";; esac")
+    lines.extend(_emit_sh_action(conf.get("default", {}), indent, py_fallback))
+    return lines
+
+
+def _build_fake_podman_sh(d, subcommands):
+    py_fallback = 'exec %s -S %s "$@"' % (_sh_quote(sys.executable), _sh_quote(os.path.join(d, "_fake.py")))
+    log_file = _sh_quote(os.path.join(d, "calls.jsonl"))
+    lines = [
+        "#!/bin/sh",
+        'if [ -n "${TUNNEL_TOKEN+x}" ]; then ' + py_fallback + '; fi',
+        'IFS=" "',
+        'joined="$*"',
+        "NL='\n'",
+        "US='\037'",
+        'case "$joined" in *"$NL"*|*"$US"*|*TUNNEL_*) ' + py_fallback + ' ;; esac',
+        '_log_call() {',
+        '  if [ "$#" -eq 0 ]; then',
+        '    printf "\\036%s\\n" "$$" >> ' + log_file,
+        '  else',
+        '    _oifs=$IFS; IFS=$US',
+        '    printf "\\036%s\\037%s\\n" "$$" "$*" >> ' + log_file,
+        '    IFS=$_oifs',
+        '  fi',
+        '}',
+        'sub=""',
+        'cidfile=""',
+        'prev=""',
+        'for a in "$@"; do',
+        '  case "$prev" in',
+        '    --cidfile) cidfile="$a"; prev=""; continue ;;',
+        '    --url|--connection|-c|--remote-host|--identity|--log-level|--root|--runroot|--storage-driver) prev=""; continue ;;',
+        '  esac',
+        '  case "$a" in',
+        '    --cidfile) prev="--cidfile"; continue ;;',
+        '    --cidfile=*) cidfile="${a#--cidfile=}" ;;',
+        '  esac',
+        '  if [ -z "$sub" ]; then',
+        '    case "$a" in',
+        '      --url|--connection|-c|--remote-host|--identity|--log-level|--root|--runroot|--storage-driver) prev="$a" ;;',
+        '      -*) ;;',
+        '      *) sub="$a" ;;',
+        '    esac',
+        '  fi',
+        'done',
+        'case "$sub" in',
+    ]
+    for sub, conf in subcommands.items():
+        if sub == "*":
+            continue
+        lines.append("  " + _sh_quote(sub) + ")")
+        lines.extend(_emit_sh_conf(conf, "    ", py_fallback))
+        lines.append("    ;;")
+    lines.append("  *)")
+    lines.extend(_emit_sh_conf(subcommands.get("*", {}), "    ", py_fallback))
+    lines.append("    ;;")
+    lines.append("esac")
+    return "\n".join(lines) + "\n"
+
+
 class FakePodman:
     def __init__(self, subcommands=None):
         self.subcommands = dict(subcommands or {})
@@ -177,10 +291,10 @@ class FakePodman:
         self.dir = tempfile.mkdtemp(prefix="fakepodman-")
         self._old_path = os.environ.get("PATH", "")
         try:
-            exe = os.path.join(self.dir, "podman")
-            with open(exe, "w") as f:
+            py_exe = os.path.join(self.dir, "_fake.py")
+            with open(py_exe, "w") as f:
                 f.write(_FAKE_SCRIPT % {"python": sys.executable})
-            os.chmod(exe, os.stat(exe).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            os.chmod(py_exe, os.stat(py_exe).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             self.log_path = os.path.join(self.dir, "calls.jsonl")
             open(self.log_path, "w").close()
             self.configure(self.subcommands)
@@ -201,6 +315,12 @@ class FakePodman:
         self.subcommands = dict(subcommands)
         with open(os.path.join(self.dir, "script.json"), "w") as f:
             json.dump(self.subcommands, f)
+        exe = os.path.join(self.dir, "podman")
+        tmp_exe = exe + ".tmp"
+        with open(tmp_exe, "w") as f:
+            f.write(_build_fake_podman_sh(self.dir, self.subcommands))
+        os.chmod(tmp_exe, 0o755)
+        os.replace(tmp_exe, exe)
 
     def env(self, **extra):
         """A copy of the environment with the fake first on PATH, plus extras."""
@@ -212,12 +332,12 @@ class FakePodman:
     def calls(self):
         """Every recorded call as a list of argv lists (without "podman"), in log order."""
         with open(self.log_path) as f:
-            return [json.loads(line)["argv"] for line in f if line.strip()]
+            return [_parse_fake_log_line(line)["argv"] for line in f if line.strip()]
 
     def envs(self):
         """The TUNNEL_* variables of each call's environment (a test can see that a secret went through the environment)."""
         with open(self.log_path) as f:
-            return [json.loads(line).get("env", {}) for line in f if line.strip()]
+            return [_parse_fake_log_line(line).get("env", {}) for line in f if line.strip()]
 
     def assert_no_leak(self):
         found = shutil.which("podman", path=os.environ.get("PATH", ""))

@@ -21,8 +21,22 @@ FAKE_BIN = os.path.join(FIXTURES, "bin")
 
 from swarmbox_sysop import config, paths  # noqa: E402
 
+_STATE_MOD = None
 
-def wait_for(fn, seconds=10.0, step=0.02):
+
+def _load_state_mod():
+    global _STATE_MOD
+    if _STATE_MOD is None:
+        import importlib.util
+        state_path = os.path.join(ROOT, "container", "scripts", "swarmbox-state.py")
+        spec = importlib.util.spec_from_file_location("swarmbox_state_inproc", state_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _STATE_MOD = mod
+    return _STATE_MOD
+
+
+def wait_for(fn, seconds=10.0, step=0.005):
     return wait_until(fn, seconds, step)
 
 
@@ -261,7 +275,45 @@ class FakeTabs:
 
     def client(self, **kw):
         from swarmbox_sysop import tabsclient
-        return tabsclient.Tabs(env=dict(os.environ, **self.cmd_env), **kw)
+        if os.environ.get("SB_TEST_TABS_PROCESS") == "1" or "cmd" in kw:
+            return tabsclient.Tabs(env=dict(os.environ, **self.cmd_env), **kw)
+        fake = self
+
+        class _InProcessTabs(tabsclient.Tabs):
+            def call(self, args, stdin=None, timeout=None):
+                if not fake.up:
+                    raise tabsclient.TabsError("no_backend", "fake tabs: nobody listens")
+                argv = list(args)
+                out, rc = fake.call(argv, stdin if (stdin is not None and argv[:1] == ["send"]) else "")
+                if isinstance(out, dict) and "err" in out:
+                    raise tabsclient.TabsError(str(out["err"]), str(out.get("msg", "")))
+                if rc != 0:
+                    raise tabsclient.TabsError("tabs_protocol", "swarmbox-tabs exited %d without an error object" % rc)
+                return out
+
+            def box_state(self, section="workspace"):
+                if self.env.get(tabsclient.ENV_STATE_CMD):
+                    return super().box_state(section=section)
+                sec = str(section or "workspace").strip().lower()
+                if sec not in ("workspace", "system", "all"):
+                    raise tabsclient.TabsError("usage", "section must be workspace, system, or all")
+                st_mod = _load_state_mod()
+                try:
+                    if sec == "system":
+                        return st_mod.build_system(env=self.env)
+                    tabs_list = self.list_tabs()
+                    pins = None if self.env.get("SWARMBOX_STATE_PINS_CMD") else []
+                    wts = None if (self.env.get("SWARMBOX_STATE_WORKTREE_CMD") or self.env.get(tabsclient.ENV_WORKTREE_CMD)) else []
+                    res = st_mod.build_workspace(env=self.env, tabs_list=tabs_list, pins_list=pins, worktrees_list=wts)
+                    if sec == "all":
+                        sys_part = st_mod.build_system(env=self.env)
+                        res["system"] = {k: v for k, v in sys_part.items() if k != "schema"}
+                    return res
+                except st_mod.StateError as e:
+                    code = tabsclient._STATE_ERR.get(e.code, e.code)
+                    raise tabsclient.TabsError(code, e.message)
+
+        return _InProcessTabs(env=dict(os.environ, **self.cmd_env), **kw)
 
     def start(self):
         try:

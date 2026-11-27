@@ -16,7 +16,11 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import ROOT, restore_signals  # noqa: E402
-from waiting import wait_until as wait_for  # noqa: E402,F401  (used by the tests that import this module)
+from waiting import wait_until as _wait_until  # noqa: E402
+
+
+def wait_for(fn, seconds=10.0, step=0.005):
+    return _wait_until(fn, seconds, step)
 
 restore_signals()
 
@@ -87,27 +91,30 @@ mode=run
 exec sleep 1000
 """
 
-FAKE_PODMAN = """#!/usr/bin/env python3
+FAKE_PODMAN = """#!/bin/sh
+echo "podman $*" >> "$FAKE_DIR/calls.log"
+case " $* " in
+    *" system service "*|*" system "*" service "*)
+        exec python3 -S -c '
 import os, socket, sys, time
 d = os.environ["FAKE_DIR"]
 args = sys.argv[1:]
-with open(os.path.join(d, "calls.log"), "a") as f:
-    f.write("podman " + " ".join(args) + "\\n")
-if "system" in args and "service" in args:
-    if os.environ.get("FAKE_MARKER"):   # the stale-marker tests: was the fuse-overlayfs marker still there when the service started?
-        open(os.path.join(d, "marker.seen"), "w").write("yes" if os.path.exists(os.environ["FAKE_MARKER"]) else "no")
-    if os.path.exists(os.path.join(d, "service.mode")) and open(os.path.join(d, "service.mode")).read().strip() == "fail":
-        sys.exit(1)
-    path = [a for a in args if a.startswith("unix://")][0][len("unix://"):]
-    s = socket.socket(socket.AF_UNIX)
-    s.bind(path)
-    s.listen(1)
-    open(os.path.join(d, "service.pid"), "w").write(str(os.getpid()))
-    time.sleep(1000)
-    sys.exit(0)
-if "--url" in args:
-    sys.exit(1 if os.path.exists(os.path.join(d, "service.noanswer")) else 0)
-sys.exit(0)
+if os.environ.get("FAKE_MARKER"):
+    open(os.path.join(d, "marker.seen"), "w").write("yes" if os.path.exists(os.environ["FAKE_MARKER"]) else "no")
+if os.path.exists(os.path.join(d, "service.mode")) and open(os.path.join(d, "service.mode")).read().strip() == "fail":
+    sys.exit(1)
+path = [a for a in args if a.startswith("unix://")][0][len("unix://"):]
+s = socket.socket(socket.AF_UNIX)
+s.bind(path)
+s.listen(1)
+open(os.path.join(d, "service.pid"), "w").write(str(os.getpid()))
+time.sleep(1000)
+' "$@" ;;
+    *" --url "*)
+        [ -e "$FAKE_DIR/service.noanswer" ] && exit 1
+        exit 0 ;;
+esac
+exit 0
 """
 
 FAKE_PROG = """#!/bin/bash
