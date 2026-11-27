@@ -4852,6 +4852,60 @@
     openPopover(frag);
   }
 
+  function buildSysopMergeAllGoal({ repoName, repoRoot, targetBranch, mainDirty, activeWorktrees, pendingWorktrees, afterMerge }) {
+    const target = targetBranch || 'main';
+    const items = [];
+    for (const { t, st } of (activeWorktrees || [])) {
+      const br = (st && st.branch) || (t && t.labels && t.labels['swarmbox.branch']) || 'worktree';
+      const tabRef = (t && t.address) ? `${t.address} (${tabDisplayName(t)})` : '';
+      const flags = [];
+      if (!st) {
+        flags.push('status unknown');
+      } else {
+        if (st.dirty) flags.push(`${st.uncommitted_count || 1} uncommitted`);
+        if (st.ahead > 0) flags.push(`${st.ahead} ahead`);
+        else flags.push('0 ahead');
+        if (st.behind > 0) flags.push(`${st.behind} behind`);
+        if (st.ahead > 0 && !st.can_merge) flags.push('conflict');
+      }
+      items.push(`- active tab ${tabRef}: branch ${br} [${flags.join(', ')}]`);
+    }
+    for (const w of (pendingWorktrees || [])) {
+      const br = w.branch || w.id || w.path || 'worktree';
+      const flags = ['parked'];
+      if (w.dirty) flags.push(`${w.uncommitted_count || 1} uncommitted`);
+      if (w.ahead > 0) flags.push(`${w.ahead} ahead`);
+      if (w.ahead > 0 && w.can_merge === false) flags.push('conflict');
+      items.push(`- parked worktree ${w.id || br} (${w.path || br}): branch ${br} [${flags.join(', ')}]`);
+    }
+
+    const postStep = afterMerge === 'verify_push'
+      ? `After all worktrees are merged and cleaned, run the repo's verification checks on "${target}" and push to origin only if checks pass.`
+      : afterMerge === 'verify'
+        ? `After all worktrees are merged and cleaned, run the repo's verification checks on "${target}" (do not push).`
+        : `Do NOT push to origin; leave "${target}" clean locally.`;
+
+    return [
+      `Consolidate ALL worktrees of repository "${repoName}" (${repoRoot}) into branch "${target}" until ONLY "${target}" remains with zero active or parked worktrees for this repo.`,
+      `Scope: ONLY repository "${repoName}" at "${repoRoot}". Do NOT touch tabs, branches, or worktrees belonging to other repositories.`,
+      '',
+      `Current state (${mainDirty ? `"${target}" is currently DIRTY` : `"${target}" is clean`}):`,
+      ...items,
+      '',
+      'Required workflow — go ALL THE WAY to completion:',
+      `1. Do NOT call done after merely queuing messages to agents. Wait for each agent to finish (using wait, read_tab, and worktree status), then merge and clean it, and keep going until every worktree of "${repoName}" is resolved.`,
+      `2. If "${target}" itself has uncommitted changes, inspect/commit them first (via the main agent if one is open, or safely in the repo) so merges are unblocked.`,
+      `3. Merge already-clean, conflict-free worktrees first with worktree(action="merge", clean=true).`,
+      `4. Remove empty clean worktrees (0 ahead, not dirty) with worktree(action="remove") and close their tabs.`,
+      `5. For any dirty worktree: ask its agent to review and commit all work (never discard uncommitted changes without permission), wait until it is clean, re-check worktree status, then merge with clean=true. For parked dirty/conflicted worktrees, wake/open or inspect them safely before merging.`,
+      `6. For any worktree with merge conflicts against "${target}": ask its agent to rebase/merge "${target}" and resolve conflicts, wait until clean and conflict-free, re-check status, then merge with clean=true.`,
+      `7. After each merge, refresh with box_state / worktree status because merging one branch can create conflicts in another. Repeat until zero active or parked worktrees remain for "${repoName}".`,
+      `8. Narrate progress briefly with say after each milestone (merged, waiting on agent, conflict resolution, or blocker).`,
+      `9. ${postStep}`,
+      `10. Stop early ONLY if you hit a real blocker, user dialog, or denied approval; otherwise finish completely and summarize every merged/removed worktree in done.`,
+    ].join('\n');
+  }
+
   async function openRepoWorktreesPopover(group) {
     if (!group) return;
     const activeWts = (group.activeWorktrees || []);
@@ -5038,9 +5092,13 @@
       frag.appendChild(mainCard);
     }
 
-    // Batch merge bar when >= 2 active worktrees are ready (shares saved After merge preference)
+    // Batch merge bar: deterministic Merge all (when >= 2 ready) and/or Ask Sysop to merge all (when Sysop is up)
     const repoMergePrefs = loadMergePrefs();
     const readyCount = statuses.filter(({ st }) => st && !st.dirty && st.ahead > 0 && st.can_merge && !st.main_dirty).length;
+    const sysopUp = Boolean(lastSysopSnap && lastSysopSnap.up);
+    const targetBranch = (rs && rs.branch) || 'main';
+    const showDeterministicBatch = readyCount >= 2 && Boolean(group.root);
+    const showSysopMergeAll = sysopUp && total >= 1 && Boolean(group.root);
     const rowMergeBtns = [];
     const syncBatchLabels = () => {
       const m = repoMergePrefs.afterMerge;
@@ -5048,21 +5106,28 @@
         b.textContent = m === 'verify' ? 'Merge & verify' : m === 'verify_push' ? 'Merge & push' : 'Merge';
       }
     };
-    if (readyCount >= 2 && group.root) {
+    if (showDeterministicBatch || showSysopMergeAll) {
       const batchBox = document.createElement('div');
       batchBox.className = 'spop-merge-opts';
-      const mergeAllBtn = document.createElement('button');
-      mergeAllBtn.type = 'button';
-      mergeAllBtn.className = 'spop-btn green spop-btn-sm';
-      mergeAllBtn.innerHTML = '<span class="spop-btn-lbl"></span><span class="spop-hint">batch</span>';
-      const mAllLbl = mergeAllBtn.querySelector('.spop-btn-lbl');
+      let mAllLbl = null;
+      let sysopMergeLbl = null;
       const updateBatchBtn = () => {
         const m = repoMergePrefs.afterMerge;
-        mAllLbl.textContent = m === 'verify'
-          ? `Merge all (${readyCount}) → Verify`
-          : m === 'verify_push'
-            ? `Merge all (${readyCount}) → Verify & Push`
-            : `Merge all (${readyCount})`;
+        if (mAllLbl) {
+          mAllLbl.textContent = m === 'verify'
+            ? `Merge all (${readyCount}) → Verify`
+            : m === 'verify_push'
+              ? `Merge all (${readyCount}) → Verify & Push`
+              : `Merge all (${readyCount})`;
+        }
+        if (sysopMergeLbl) {
+          const base = total === 1 ? 'Ask Sysop to merge' : `Ask Sysop to merge all (${total})`;
+          sysopMergeLbl.textContent = m === 'verify'
+            ? `${base} → Verify`
+            : m === 'verify_push'
+              ? `${base} → Verify & Push`
+              : base;
+        }
         syncBatchLabels();
       };
       const segCtrl = buildAfterMergeSeg(repoMergePrefs.afterMerge, (val) => {
@@ -5070,27 +5135,73 @@
         saveMergePrefs(repoMergePrefs);
         updateBatchBtn();
       });
-      updateBatchBtn();
-      mergeAllBtn.addEventListener('click', async () => {
-        const doVerify = repoMergePrefs.afterMerge === 'verify' || repoMergePrefs.afterMerge === 'verify_push';
-        const doPush = repoMergePrefs.afterMerge === 'verify_push';
-        closePopover();
-        const r = await fetch('/api/worktrees/merge-all', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repo: group.root, clean: true, verify: doVerify, push: doPush }),
+      batchBox.appendChild(segCtrl.row);
+
+      if (showDeterministicBatch) {
+        const mergeAllBtn = document.createElement('button');
+        mergeAllBtn.type = 'button';
+        mergeAllBtn.className = 'spop-btn green spop-btn-sm';
+        mergeAllBtn.innerHTML = '<span class="spop-btn-lbl"></span><span class="spop-hint">batch</span>';
+        mAllLbl = mergeAllBtn.querySelector('.spop-btn-lbl');
+        mergeAllBtn.addEventListener('click', async () => {
+          const doVerify = repoMergePrefs.afterMerge === 'verify' || repoMergePrefs.afterMerge === 'verify_push';
+          const doPush = repoMergePrefs.afterMerge === 'verify_push';
+          closePopover();
+          const r = await fetch('/api/worktrees/merge-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ repo: group.root, clean: true, verify: doVerify, push: doPush }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            showTermToast(d.message || d.error || 'Batch merge failed', 'error');
+            return;
+          }
+          const mLen = Array.isArray(d.merged) ? d.merged.length : readyCount;
+          const fLen = Array.isArray(d.failed) ? d.failed.length : 0;
+          const baseMsg = `Merged ${mLen} worktree${mLen === 1 ? '' : 's'}${fLen ? ` (${fLen} failed)` : ''}`;
+          showTermToast(formatHandoffToast(d, baseMsg), fLen ? '' : 'ok', 3800);
         });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          showTermToast(d.message || d.error || 'Batch merge failed', 'error');
-          return;
-        }
-        const mLen = Array.isArray(d.merged) ? d.merged.length : readyCount;
-        const fLen = Array.isArray(d.failed) ? d.failed.length : 0;
-        const baseMsg = `Merged ${mLen} worktree${mLen === 1 ? '' : 's'}${fLen ? ` (${fLen} failed)` : ''}`;
-        showTermToast(formatHandoffToast(d, baseMsg), fLen ? '' : 'ok', 3800);
-      });
-      batchBox.append(segCtrl.row, mergeAllBtn);
+        batchBox.appendChild(mergeAllBtn);
+      }
+
+      if (showSysopMergeAll) {
+        const sysopMergeBtn = document.createElement('button');
+        sysopMergeBtn.type = 'button';
+        sysopMergeBtn.className = 'spop-btn primary spop-btn-sm';
+        const lblSpan = document.createElement('span');
+        lblSpan.className = 'spop-btn-lbl';
+        const hintSpan = document.createElement('span');
+        hintSpan.className = 'spop-hint';
+        hintSpan.textContent = `→ ${targetBranch}`;
+        sysopMergeBtn.append(lblSpan, hintSpan);
+        sysopMergeBtn.title = `Ask Sysop to commit, resolve conflicts, merge, and clean all worktrees of ${group.name} into ${targetBranch}`;
+        sysopMergeLbl = lblSpan;
+        sysopMergeBtn.addEventListener('click', () => {
+          const goal = buildSysopMergeAllGoal({
+            repoName: group.name,
+            repoRoot: group.root,
+            targetBranch,
+            mainDirty: Boolean(rs && rs.dirty),
+            activeWorktrees: statuses,
+            pendingWorktrees: pendingWts,
+            afterMerge: repoMergePrefs.afterMerge,
+          });
+          closePopover();
+          if (!isMobileLayout() && appEl && appEl.dataset.sysopOpen !== '1') {
+            setDesktopSysop(true);
+          }
+          sendGoal(goal);
+          showTermToast(
+            `Asked Sysop to merge ${total} worktree${total === 1 ? '' : 's'} into ${targetBranch}`,
+            'ok',
+            3200,
+          );
+        });
+        batchBox.appendChild(sysopMergeBtn);
+      }
+
+      updateBatchBtn();
       frag.appendChild(batchBox);
     }
 
