@@ -15,7 +15,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tests", "support"))
 import sysop_support as ss  # noqa: E402
 
-from swarmbox_sysop import ipc, service  # noqa: E402
+from swarmbox_sysop import ipc, notes, service  # noqa: E402
 
 
 def main():
@@ -55,6 +55,10 @@ def main():
         a = goal("remember the word papaya, and tell me how many shells there are")
         b = goal("wait 25 seconds on the active tab and then say you are done", stop_after=5)
         c = goal("what was the word I asked you to remember")
+        kept = notes.names(pth)
+        print("  notes the sysop kept:", kept)
+        for n in kept:            # the notes carry memory across conversations on purpose: without them a new session knows nothing
+            notes.delete(pth, n)
         ipc.write_json(os.path.join(pth.state, "conversation.json"), {"since": time.time()})       # + New, as the Web Studio writes it
         d = goal("what was the word I asked you to remember? if you do not know, say you do not know")
         ok = (a["state"] == "done" and b["state"] == "stopped" and c["state"] == "done" and "papaya" in c["summary"].lower()

@@ -58,7 +58,8 @@ its one run (`at`), or when the tab of a trigger goes away. A trigger fires on a
   Notifications → **Allow** lets the browser show it when the page is in the background (a page served over plain HTTP from another machine
   cannot have browser notifications).
 - **Notes.** The sysop keeps what it will need later (`note`: what it watches, what you prefer) in `<state>/sysop/notes/`; every goal starts
-  with their list, and **+ New** does not remove them.
+  with their list, and **+ New** does not remove them. The Events tab shows them under **Notes**, each with **Delete**: nothing the sysop
+  remembers is hidden.
 - **While a goal runs**, what you type or say in the Web Studio, the panel, the cockpit or the microphone reaches that goal with the brain's
   next tool result, so "no, the other tab" changes what it does now. A message the goal never took runs after it. Goals of `swarmbox-sysop
   goal` and of scripts wait in the queue as before.

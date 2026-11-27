@@ -7944,7 +7944,8 @@
     if (!sysopEventsEl || sysopView !== 'events') return;
     const evs = Array.isArray(sysop.events) ? sysop.events : [];
     const autos = Array.isArray(sysop.automations) ? sysop.automations : [];
-    const key = JSON.stringify([evs, autos, eventsFilter, sysopContext && sysopContext.repos, terminals.map((t) => [t.address, tabDisplayName(t)]),
+    const sysNotes = Array.isArray(sysop.notes) ? sysop.notes : [];
+    const key = JSON.stringify([evs, autos, sysNotes, eventsFilter, sysopContext && sysopContext.repos, terminals.map((t) => [t.address, tabDisplayName(t)]),
       Math.floor(Date.now() / 30000)]);
     if (key === lastEventsKey) return;
     lastEventsKey = key;
@@ -7966,6 +7967,7 @@
     const list = document.createElement('div');
     list.className = 'sysop-ev-list';
     if (eventsFilter.kind === 'all' || eventsFilter.kind === 'auto') renderAutomations(list, autos);
+    if (eventsFilter.kind === 'all') renderSysopNotes(list, sysNotes);
     const items = eventItems(evs).filter(eventMatches);
     const now = items.filter(eventIsNow);
     const earlier = items.filter((it) => !eventIsNow(it));
@@ -7986,7 +7988,7 @@
     };
     section('Now', now);
     section(now.length ? 'Earlier' : 'Last 12 hours', earlier);
-    if (!items.length) {
+    if (!items.length && !list.querySelector('.sysop-auto, .sysop-note')) {
       const empty = document.createElement('div');
       empty.className = 'sysop-ev-empty';
       empty.textContent = eventsFilter.kind === 'all' && !eventsFilter.key
@@ -8040,6 +8042,50 @@
         meta.appendChild(evButton('Pause', 'Keep it, but do not run it', () => automationAction(a.id, 'pause')));
       }
       meta.appendChild(evButton('Cancel', 'End it now', () => automationAction(a.id, 'cancel')));
+      row.append(body, meta);
+      list.appendChild(row);
+    }
+  }
+
+  // What the Sysop keeps across conversations (its notes): shown, and removable, so nothing it remembers is hidden
+  function renderSysopNotes(list, items) {
+    if (!items.length) return;
+    const h = document.createElement('div');
+    h.className = 'sysop-ev-section';
+    h.textContent = 'Notes';
+    h.title = 'What the Sysop keeps across conversations (New conversation keeps them)';
+    list.appendChild(h);
+    for (const n of items) {
+      const row = document.createElement('div');
+      row.className = 'sysop-sysev sysop-note';
+      const body = document.createElement('div');
+      body.className = 'sysop-sysev-body';
+      const ico = document.createElement('span');
+      ico.className = 'sysop-sysev-ico sysop-auto-ico';
+      ico.innerHTML = ICO_PENCIL_SVG;
+      const text = document.createElement('span');
+      text.className = 'sysop-sysev-text';
+      text.append(n.name);
+      const sub = document.createElement('span');
+      sub.className = 'sysop-sysev-sub';
+      sub.textContent = n.preview;
+      sub.title = n.preview;
+      text.appendChild(sub);
+      body.append(ico, text);
+      const meta = document.createElement('div');
+      meta.className = 'sysop-sysev-meta';
+      meta.appendChild(evButton('Delete', 'The Sysop forgets this note', async () => {
+        const r = await fetch('/api/sysop/note', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n.name, action: 'delete' }) });
+        const data = await r.json().catch(() => ({}));
+        showTermToast(r.ok ? `Forgot ${n.name}` : (data.message || 'It could not be deleted'), r.ok ? 'ok' : 'error', 2200);
+      }));
+      const ago = fmtAgo(n.at);
+      if (ago) {
+        const tm = document.createElement('span');
+        tm.className = 'sysop-sysev-time';
+        tm.textContent = ago;
+        meta.appendChild(tm);
+      }
       row.append(body, meta);
       list.appendChild(row);
     }

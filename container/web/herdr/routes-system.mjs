@@ -314,6 +314,21 @@ export async function handleSystemRoutes(req, res, url, pathname, { hc, hub }) {
     return true;
   }
 
+  // Remove a note the sysop keeps (swarmbox-sysop notes rm NAME)
+  if (pathname === '/api/sysop/note' && req.method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    const name = String((body && body.name) || '');
+    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(name) || (body && body.action) !== 'delete') {
+      sendJson(res, 400, { error: 'bad_arg', message: 'a note name and action delete are required' });
+      return true;
+    }
+    const r = await runCommand(SYSOP_BIN, ['notes', 'rm', name]);
+    hub.broadcast(hub.buildSnapshot({ type: 'sysop' }));
+    if (!r.ok) { sendJson(res, 409, { error: 'note_failed', message: r.stderr || r.stdout || 'no such note' }); return true; }
+    sendJson(res, 200, { ok: true });
+    return true;
+  }
+
   if (pathname === '/api/sysop/new' && req.method === 'POST') {
     startNewConversation();
     hub.broadcast(hub.buildSnapshot({ type: 'sysop' }));

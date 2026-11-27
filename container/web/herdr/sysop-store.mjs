@@ -507,6 +507,26 @@ export function contextRepoTop(key) {
   return top && path.isAbsolute(top) && fs.existsSync(top) ? top : '';
 }
 
+// The notes the sysop keeps across conversations (notes.py): what it remembers, shown so nothing of it is hidden
+export function readNotes(stateSysop) {
+  const dir = path.join(stateSysop, 'notes');
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((f) => /^[a-z0-9][a-z0-9_-]{0,39}\.md$/.test(f)); } catch (_) { return []; }
+  const out = [];
+  for (const f of names.sort().slice(0, 50)) {
+    try {
+      const full = path.join(dir, f);
+      const text = fs.readFileSync(full, 'utf8');
+      out.push({
+        name: f.slice(0, -3),
+        preview: text.split('\n').map((l) => l.trim().replace(/^[-*]\s*/, '')).filter(Boolean).join(' / ').slice(0, 240),
+        at: fs.statSync(full).mtimeMs,
+      });
+    } catch (_) {}
+  }
+  return out;
+}
+
 // The schedules and triggers of the sysop (automations.py): the live ones, and the ones that ended in the last 6 hours (newest first)
 export function readAutomations(stateSysop, nowSec = Date.now() / 1000) {
   const d = readJsonSafe(path.join(stateSysop, 'automations.json'));
@@ -728,6 +748,7 @@ export function readSysopSnapshot(terminals) {
         }
       : null,
     automations: up ? readAutomations(stateSysop, nowSec) : [],
+    notes: up ? readNotes(stateSysop) : [],
     turns,
     system_events: systemEvents.slice(-30),
     // the Events tab: what the sysop did by itself, not cut by New conversation (session records are for the cards)

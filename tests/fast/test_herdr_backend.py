@@ -21,6 +21,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import threading
 import unittest
 from unittest import mock
@@ -734,6 +735,40 @@ assert.equal((fs.statSync(process.env.XDG_STATE_HOME + '/swarmbox/sysop/conversa
 """ % json.dumps(HERDR_CLIENT)
         env = dict(os.environ, SB_RUN_DIR=run_dir, XDG_STATE_HOME=state)
         p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, env=env)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_the_panel_reads_the_automations_and_the_notes_of_the_sysop(self):
+        """sysop-store.mjs: the live schedules and triggers (ended ones for 6 hours, newest first) and the notes, with the line the sysop
+        wrote for each (docs/sysop-automations-design.md)"""
+        if not shutil.which("node"):
+            self.skipTest("node is not installed")
+        state = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, state, True)
+        sysop = os.path.join(state, "sysop")
+        os.makedirs(os.path.join(sysop, "notes"))
+        now = time.time()
+        with open(os.path.join(sysop, "automations.json"), "w", encoding="utf-8") as f:
+            json.dump({"seq": 4, "items": [
+                {"id": "a1", "kind": "schedule", "state": "active", "desc": "a1 [active] every 10 min, 2 runs", "prompt": "look at agy", "runs": 2, "next": now + 60},
+                {"id": "a2", "kind": "trigger", "state": "ended", "desc": "a2 [ended] when 1:api becomes blocked", "prompt": "p", "ended": now - 8 * 3600},
+                {"id": "a3", "kind": "trigger", "state": "paused", "desc": "a3 [paused] when 1:api shows /FAILED/", "prompt": "p"},
+                {"id": "../x", "kind": "schedule", "state": "active"}]}, f)
+        with open(os.path.join(sysop, "notes", "agy-quota.md"), "w", encoding="utf-8") as f:
+            f.write("- quota resets at 14:00\n- then tell it to go on\n")
+        with open(os.path.join(sysop, "notes", "Bad Name.md"), "w", encoding="utf-8") as f:
+            f.write("x\n")
+        js = r"""
+import assert from 'node:assert/strict';
+import { readAutomations, readNotes } from %s;
+const a = readAutomations(%s);
+assert.deepEqual(a.map((x) => [x.id, x.state]), [['a1', 'active'], ['a3', 'paused']], 'an automation ended 8 h ago and a bad id are left out');
+assert.equal(a[0].desc, 'a1 [active] every 10 min, 2 runs');
+assert.ok(a[0].next > Date.now(), 'times in milliseconds for the page');
+const n = readNotes(%s);
+assert.deepEqual(n.map((x) => x.name), ['agy-quota'], 'only the names the sysop writes');
+assert.equal(n[0].preview, 'quota resets at 14:00 / then tell it to go on');
+""" % (json.dumps(os.path.join(ROOT, "container", "web", "herdr", "sysop-store.mjs")), json.dumps(sysop), json.dumps(sysop))
+        p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stderr)
 
     def test_tab_references_in_a_reply_are_one_chip_each(self):
