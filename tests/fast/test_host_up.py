@@ -17,18 +17,57 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from helpers import FakePodman  # noqa: E402
-from host_support import UpBase, BUSY, HELPER_PROGRAMS, HELPER_SRC, IMAGE, NAME, NOSUCH, env_hash, fingerprint, line  # noqa: E402
+from host_support import UpBase, BUSY, DEFAULTS_SRC, HELPER_PROGRAMS, HELPER_SRC, IMAGE, NAME, NOSUCH, VERSION_SRC, env_hash, fingerprint, line  # noqa: E402
 
 _EMPTY_ENV_HASH = env_hash([])
 
 
 class Base(UpBase):
+    @classmethod
+    def setUpClass(cls):
+        cls._shared_dir = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-up-sh."))
+        cls.addClassCleanup(shutil.rmtree, cls._shared_dir, True)
+        hdir = os.path.join(cls._shared_dir, "helper")
+        os.makedirs(hdir)
+        shutil.copy(HELPER_SRC, os.path.join(hdir, "swarmbox-host"))
+        os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)
+        shutil.copy(VERSION_SRC, os.path.join(hdir, "VERSION"))
+        shutil.copy(DEFAULTS_SRC, os.path.join(hdir, "DEFAULTS"))
+        with open(os.path.join(hdir, "addon-ports"), "w") as f:
+            f.write("")
+        for n, c in (("localtime", ""), ("tun", ""), ("proc-version", "Linux version 6.1.0 (debian)\n")):
+            with open(os.path.join(cls._shared_dir, n), "w") as f:
+                f.write(c)
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-up."))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.home = os.path.join(self.tmp, "home")
+        os.mkdir(self.home)
+        self.ws = os.path.join(self.tmp, "ws")
+        os.mkdir(self.ws)
+        self.state = os.path.join(self.home, ".local", "state", "swarmbox")
+        self.hdir = os.path.join(self._shared_dir, "helper")
+        self.helper = os.path.join(self.hdir, "swarmbox-host")
+        self.fp = None
+
+    def env(self, **extra):
+        e = super().env(
+            SWARMBOX_LOCALTIME_FILE=os.path.join(self._shared_dir, "localtime"),
+            SWARMBOX_TEST_PROC_VERSION=os.path.join(self._shared_dir, "proc-version"),
+            SWARMBOX_TEST_TUN=os.path.join(self._shared_dir, "tun"),
+            SWARMBOX_TEST_NAP="0.001",
+        )
+        e.update(extra)
+        return e
+
     def matching_line(self, env_extra=None, **kw):
         if env_extra:
             return super().matching_line(env_extra, **kw)
@@ -287,7 +326,7 @@ class ReadinessTest(Base):
 
     def test_a_marker_that_never_appears_is_exit_6_after_the_tuned_wait(self):
         self.podman(exec={"exit": 1, "stderr": "no such file\n"})
-        r = self.up(SWARMBOX_TEST_READY_TRIES="6", SWARMBOX_TEST_NAP="0.005")
+        r = self.up(SWARMBOX_TEST_READY_TRIES="6", SWARMBOX_TEST_NAP="0.001")
         self.assertEqual(r.returncode, 6, r.stderr)
         self.assertIn("swarmbox: the box did not become ready", r.stderr)
         self.assertIn("podman logs %s" % NAME, r.stderr)
@@ -295,10 +334,8 @@ class ReadinessTest(Base):
         self.assertEqual(len(self.subs("logs")), 1, "the timeout shows the last lines of the box's log, once")
 
     def test_a_container_that_exits_while_waiting_is_exit_6_at_once_with_its_logs(self):
-        self.podman(exec={"exit": 125, "stderr": "container is not running\n"},
+        self.podman(state="exited\n", exec={"exit": 125, "stderr": "no\n"},
                     logs={"stdout": "serve: workspace is not writable\n"})
-        c = self.conf(state="exited\n", exec={"exit": 125, "stderr": "no\n"}, logs={"stdout": "serve: workspace is not writable\n"})
-        self.fp.configure(c)
         t0 = time.time()
         r = self.up(SWARMBOX_TEST_READY_TRIES="60", SWARMBOX_TEST_NAP="5")
         self.assertLess(time.time() - t0, 4)

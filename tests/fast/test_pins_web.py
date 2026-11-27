@@ -230,10 +230,11 @@ try {
   const listed = await api('GET', '/api/worktrees');
   assert.ok(listed.data.worktrees.some((w) => w.path === wtPath), 'the worktree is in the cached list before the close');
   // An events client (the fake ws module records what it is sent in globalThis.__wsSent).
+  const wsUpgraded = new Promise((resolve) => { globalThis.__onWsUpgrade = resolve; });
   const upReq = http.request({ host: '127.0.0.1', port, path: '/ws/events', headers: { Connection: 'Upgrade', Upgrade: 'websocket' } });
   upReq.on('error', () => {});
   upReq.end();
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await wsUpgraded;
   globalThis.__wsSent = [];
   const delEmpty = await api('DELETE', `/api/tabs/${t2}`);
   const evMsgs = globalThis.__wsSent.map((d) => { try { return JSON.parse(d); } catch (_) { return {}; } });
@@ -337,7 +338,7 @@ try {
   hc.terminals.get(tSh).foreground = { name: 'agy', cwd: proj2 };
   hc.emit('snapshot');
   hc.emit('snapshot');
-  await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setImmediate(r));
   const shPins = readPins().filter((p) => p.cwd === proj2);
   assert.equal(shPins.length, 1, 'exactly one auto pin for the shell that started an agent');
   assert.equal(shPins[0].agent, 'agy');
@@ -354,7 +355,7 @@ try {
   const np = await api('POST', '/api/tabs', { preset: 'agent', agent: 'claude', cwd: proj2, persist: false });
   assert.equal(np.status, 201);
   hc.emit('snapshot');
-  await new Promise((r) => setTimeout(r, 20));
+  await new Promise((r) => setImmediate(r));
   assert.equal(readPins().filter((p) => p.cwd === proj2).length, 0, 'persist:false must not be auto-pinned');
 
   // 9c. "Repository context" unticked in the New agent box: the agent starts without it, and so does a restart of its pin
@@ -443,6 +444,7 @@ class PinsWebGatewayTest(unittest.TestCase):
                     "  constructor() { super(); this.clients = new Set(); }\n"
                     "  handleUpgrade(_req, _sock, _head, cb) {\n"
                     "    cb({ readyState: 1, send(d) { (globalThis.__wsSent ||= []).push(d); }, close() {}, on() {}, ping() {} });\n"
+                    "    if (globalThis.__onWsUpgrade) { const fn = globalThis.__onWsUpgrade; globalThis.__onWsUpgrade = null; fn(); }\n"
                     "  }\n"
                     "  close() {}\n"
                     "}\n")

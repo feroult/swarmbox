@@ -126,6 +126,27 @@ LEGIT_FILES = [
 
 
 PHRASES = [(re.compile(p, re.I), why) for p, why in LEGIT_PHRASES]
+OLD_NAMES_COMPILED = [(name, re.compile(rx)) for name, rx in OLD_NAMES]
+# Cheap literal pre-check per OLD_NAMES entry: (substring_in_lower_or_exact, case_insensitive)
+_OLD_NAME_HINTS = [
+    ("swarmbox-tool", False),
+    ("tool.conf", False),
+    ("container/tools", False),
+    ("swarmbox tool", False),
+    ("TOOL_", False),
+    ("SB_TOOLS_DIR", False),
+    ("SWARMBOX_TEST_", False),
+    ("SWARMBOX_", False),
+    ("KIND=", False),
+    ("PROVIDES", False),
+    ("YOLO_FLAGS", False),
+    ("YOLO_ALIAS", False),
+    ("MCP_FLAGS", False),
+    ("MCP_FORMAT", False),
+    ("tool", False),
+    ("plugin", True),
+    (" tool", False),
+]
 
 
 def skipped(rel):
@@ -140,17 +161,28 @@ def scan_text(rel, text):
         m = CHANGELOG_RELEASED.search(text)
         if m:
             text = text[:m.start()]
-    old_allow = [re.compile(rx) for g, rx, _ in OLD_NAME_ALLOW if fnmatch.fnmatch(rel, g)]
     word_ok = any(fnmatch.fnmatch(rel, g) for g, _ in LEGIT_FILES)
+    text_low = text.lower()
+    active_old = [
+        (name, rx)
+        for (name, rx), (hint, ci) in zip(OLD_NAMES_COMPILED, _OLD_NAME_HINTS)
+        if (hint in (text_low if ci else text)) and rx.search(text)
+    ]
+    check_word = (not word_ok) and ("tool" in text_low)
+    if not active_old and not check_word:
+        return []
+    old_allow = [re.compile(rx) for g, rx, _ in OLD_NAME_ALLOW if fnmatch.fnmatch(rel, g)] if active_old else []
     out = []
     for n, line in enumerate(text.split("\n"), 1):
         probe = line
-        for rx in old_allow:
-            probe = rx.sub("", probe)
-        for name, rx in OLD_NAMES:
-            if re.search(rx, probe):
-                out.append((n, line.strip(), "old name: " + name))
-        if word_ok:
+        if old_allow:
+            for rx in old_allow:
+                probe = rx.sub("", probe)
+        if active_old:
+            for name, rx in active_old:
+                if rx.search(probe):
+                    out.append((n, line.strip(), "old name: " + name))
+        if not check_word or "tool" not in probe.lower():
             continue
         rest = probe
         for rx, _ in PHRASES:
@@ -162,12 +194,18 @@ def scan_text(rel, text):
 
 def scan_path(part):
     """The findings in one component of a path: the name of a file or of a folder."""
-    out = ["old name: " + name for name, rx in OLD_NAMES if re.search(rx, part)]
-    rest = part
-    for rx, _ in PHRASES:
-        rest = rx.sub(" ", rest)
-    if any(w.search(rest) for w in WORD_PATTERNS):
-        out.append('the word "tool" in a name')
+    part_low = part.lower()
+    out = [
+        "old name: " + name
+        for (name, rx), (hint, ci) in zip(OLD_NAMES_COMPILED, _OLD_NAME_HINTS)
+        if (hint in (part_low if ci else part)) and rx.search(part)
+    ]
+    if "tool" in part_low:
+        rest = part
+        for rx, _ in PHRASES:
+            rest = rx.sub(" ", rest)
+        if any(w.search(rest) for w in WORD_PATTERNS):
+            out.append('the word "tool" in a name')
     return out
 
 
@@ -210,10 +248,20 @@ def default_patterns(name, repo):
 def scan_defaults(files, name, repo):
     """["path:line: text"] for every use of a default name or image repository, outside the DEFAULTS file, the fixtures and this file."""
     pats = default_patterns(name, repo)
-    return ["%s:%d: %s" % (rel, n, line.strip()[:120]) for rel, text in sorted(files.items())
-            if text is not None and rel.startswith(PRODUCT_ROOTS) and rel not in (DEFAULTS, SELF) and not rel.startswith(FIXTURES)
-            and "__pycache__" not in rel
-            for n, line in enumerate(text.split("\n"), 1) if any(p.search(line) for p in pats)]
+    out = []
+    for rel, text in sorted(files.items()):
+        if (text is None or not rel.startswith(PRODUCT_ROOTS) or rel in (DEFAULTS, SELF)
+                or rel.startswith(FIXTURES) or "__pycache__" in rel):
+            continue
+        if name not in text and repo not in text and "swarmbox" not in text:
+            continue
+        active = [p for p in pats if p.search(text)]
+        if not active:
+            continue
+        for n, line in enumerate(text.split("\n"), 1):
+            if any(p.search(line) for p in active):
+                out.append("%s:%d: %s" % (rel, n, line.strip()[:120]))
+    return out
 
 
 def report(found, limit=60):

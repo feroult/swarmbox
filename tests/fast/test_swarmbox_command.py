@@ -5,16 +5,20 @@ box is a fake one that is already running and matches the configuration, so `up`
 `podman exec` the script ends with. Nothing here starts a real container; tests/slow/smoke_image.py does.
 Run: python3 tests/fast/test_swarmbox_command.py
 """
+import concurrent.futures
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from helpers import DEFAULT_NAME, pty_run  # noqa: E402
-from host_support import UpBase  # noqa: E402
+from helpers import DEFAULT_NAME, FakePodman, pty_run  # noqa: E402
+from host_support import DEFAULTS_SRC, HELPER_SRC, IMAGE, UpBase, VERSION_SRC, env_hash, fingerprint, line  # noqa: E402
+
+_EMPTY_ENV_HASH = env_hash([])
 
 # (arguments, the words after `swarmbox-entrypoint` in the `podman exec`)
 ROUTING = [
@@ -33,13 +37,79 @@ AWKWARD = ["a b", "it's", 'say "hi"', "$HOME", "*", "x\ny", "", "--x=y z", "`id`
 
 
 class Base(UpBase):
+    @classmethod
+    def setUpClass(cls):
+        cls._shared_dir = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-cmd-sh."))
+        cls.addClassCleanup(shutil.rmtree, cls._shared_dir, True)
+        hdir = os.path.join(cls._shared_dir, "helper")
+        os.makedirs(hdir)
+        shutil.copy(HELPER_SRC, os.path.join(hdir, "swarmbox-host"))
+        os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)
+        shutil.copy(VERSION_SRC, os.path.join(hdir, "VERSION"))
+        shutil.copy(DEFAULTS_SRC, os.path.join(hdir, "DEFAULTS"))
+        with open(os.path.join(hdir, "addon-ports"), "w") as f:
+            f.write("")
+        for n, c in (("localtime", ""), ("tun", ""), ("proc-version", "Linux version 6.1.0 (debian)\n")):
+            with open(os.path.join(cls._shared_dir, n), "w") as f:
+                f.write(c)
+
     def setUp(self):
-        super().setUp()
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-up."))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.home = os.path.join(self.tmp, "home")
+        os.mkdir(self.home)
+        self.ws = os.path.join(self.tmp, "ws")
+        os.mkdir(self.ws)
+        self.state = os.path.join(self.home, ".local", "state", "swarmbox")
+        self.hdir = os.path.join(self._shared_dir, "helper")
+        self.helper = os.path.join(self.hdir, "swarmbox-host")
+        self.fp = None
         self.podman()
         self.fp.configure(self.conf(lookup={"stdout": self.matching_line()}, exec={}))
 
-    def exec_calls(self):
-        return [c for c in self.calls() if c[:1] == ["exec"] and "swarmbox-entrypoint" in c]
+    def env(self, **extra):
+        e = super().env(
+            SWARMBOX_LOCALTIME_FILE=os.path.join(self._shared_dir, "localtime"),
+            SWARMBOX_TEST_PROC_VERSION=os.path.join(self._shared_dir, "proc-version"),
+            SWARMBOX_TEST_TUN=os.path.join(self._shared_dir, "tun"),
+            SWARMBOX_TEST_NAP="0.001",
+        )
+        e.update(extra)
+        return e
+
+    def matching_line(self, env_extra=None, **kw):
+        if env_extra:
+            return super().matching_line(env_extra, **kw)
+        fp_lines = [
+            "AGENT=", "BROWSER_URL=", "ENV_KEYS=", "HOSTNAME=" + NAME, "HOST_ACCESS=0",
+            "IMAGE=" + IMAGE, "INIT=0", "NAME=" + NAME, "PORTS=",
+            "TZ=local", "WEB=1", "WEB_PORT=7681", "WITH=", "WORKSPACE=" + self.ws, "YOLO=1",
+        ]
+        d = dict(ports="", env_hash=_EMPTY_ENV_HASH, fp=fingerprint(fp_lines, _EMPTY_ENV_HASH), ws=self.ws, image=IMAGE)
+        d.update(kw)
+        return line(**d)
+
+    def _par(self, fn, items, max_workers=10):
+        items = list(items)
+        if len(items) <= 1 or os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            return [fn(x) for x in items]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as pool:
+            return list(pool.map(fn, items))
+
+    def _make_fp(self, conf):
+        fp = FakePodman(conf)
+        fp.__enter__()
+        self.addCleanup(fp.__exit__)
+        return fp
+
+    def _env_for_fp(self, fp, **extra):
+        e = self.env(**extra)
+        e["PATH"] = fp.env()["PATH"]
+        return e
+
+    def exec_calls(self, fp=None):
+        calls = (fp or self.fp).calls()
+        return [c for c in calls if c[:1] == ["exec"] and "swarmbox-entrypoint" in c]
 
     def swarmbox(self, *args, env=None):
         return self.run_h(*args, env=env)
@@ -53,15 +123,27 @@ NAME = DEFAULT_NAME
 
 class RoutingTest(Base):
     def test_every_other_word_goes_to_the_box_after_up(self):
-        for args, words in ROUTING:
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            for args, words in ROUTING:
+                with self.subTest(args=args):
+                    open(self.fp.log_path, "w").close()
+                    r = self.swarmbox(*args)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                    self.assertEqual((r.stdout, r.stderr), ("", ""))
+                    self.assertEqual(self.exec_calls(), [self.entry(*words)])
+                    # up came first: the lookup of the box is before the exec
+                    names = [c[0] + " " + c[1] if len(c) > 1 else c[0] for c in self.calls()]
+                    self.assertLess(names.index("container inspect"), names.index("exec -i"))
+            return
+        conf = self.conf(lookup={"stdout": self.matching_line()}, exec={})
+        items = [(args, words, self._make_fp(conf)) for args, words in ROUTING]
+        results = self._par(lambda it: (it[0], it[1], it[2], self.swarmbox(*it[0], env=self._env_for_fp(it[2]))), items)
+        for args, words, fp, r in results:
             with self.subTest(args=args):
-                open(self.fp.log_path, "w").close()
-                r = self.swarmbox(*args)
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertEqual((r.stdout, r.stderr), ("", ""))
-                self.assertEqual(self.exec_calls(), [self.entry(*words)])
-                # up came first: the lookup of the box is before the exec
-                names = [c[0] + " " + c[1] if len(c) > 1 else c[0] for c in self.calls()]
+                self.assertEqual(self.exec_calls(fp), [self.entry(*words)])
+                names = [c[0] + " " + c[1] if len(c) > 1 else c[0] for c in fp.calls()]
                 self.assertLess(names.index("container inspect"), names.index("exec -i"))
 
     def test_arguments_with_awkward_characters_reach_podman_exec_as_single_words(self):
@@ -76,10 +158,19 @@ class RoutingTest(Base):
         self.assertEqual(self.exec_calls(), [self.entry("attach", "ls", name="other")])
 
     def test_the_exit_code_of_the_box_command_is_the_exit_code_of_swarmbox(self):
-        for rc, args in ((2, ["sh", "-c", "exit 2"]), (137, ["pubkey"]), (130, [])):
+        cases = ((2, ["sh", "-c", "exit 2"]), (137, ["pubkey"]), (130, []))
+        ml = self.matching_line()
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            for rc, args in cases:
+                with self.subTest(rc=rc):
+                    self.fp.configure(self.conf(lookup={"stdout": ml}, exec={"exit": rc}))
+                    self.assertEqual(self.swarmbox(*args).returncode, rc)
+            return
+        items = [(rc, args, self._make_fp(self.conf(lookup={"stdout": ml}, exec={"exit": rc}))) for rc, args in cases]
+        results = self._par(lambda it: (it[0], self.swarmbox(*it[1], env=self._env_for_fp(it[2])).returncode), items, max_workers=3)
+        for rc, got in results:
             with self.subTest(rc=rc):
-                self.fp.configure(self.conf(lookup={"stdout": self.matching_line()}, exec={"exit": rc}))
-                self.assertEqual(self.swarmbox(*args).returncode, rc)
+                self.assertEqual(got, rc)
 
     def test_a_failing_up_stops_before_podman_exec(self):
         self.fp.configure(self.conf(lookup={"exit": 1, "stderr": "Error: boom\n"}))
@@ -91,20 +182,22 @@ class RoutingTest(Base):
 
 class HostWordsTest(Base):
     def test_help_words_print_the_list_with_no_podman_call(self):
-        for word in ("help", "--help", "-h"):
+        words = ("help", "--help", "-h")
+        results = self._par(lambda w: (w, self.swarmbox(w)), words, max_workers=3)
+        for word, r in results:
             with self.subTest(word=word):
-                r = self.swarmbox(word)
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertTrue(r.stdout.startswith("usage: swarmbox"), r.stdout)
                 self.assertEqual(r.stderr, "")
-                self.assertEqual(self.calls(), [])
+        self.assertEqual(self.calls(), [])
 
     def test_version_and_config_never_reach_the_box(self):
-        for args in (["version"], ["config", "get", "NAME"], ["config", "list"], ["env", "list"], ["url"]):
+        argss = (["version"], ["config", "get", "NAME"], ["config", "list"], ["env", "list"], ["url"])
+        results = self._par(lambda a: (a, self.swarmbox(*a)), argss, max_workers=5)
+        for args, r in results:
             with self.subTest(args=args):
-                r = self.swarmbox(*args)
                 self.assertEqual(r.returncode, 0, r.stderr)
-                self.assertEqual(self.calls(), [])
+        self.assertEqual(self.calls(), [])
 
     def test_up_and_stop_are_handled_by_the_script_and_do_not_exec(self):
         for word in ("up", "stop"):

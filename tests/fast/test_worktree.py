@@ -42,18 +42,34 @@ def git(cwd, *args):
             "GIT_AUTHOR_EMAIL": "test@example.com",
             "GIT_COMMITTER_NAME": "Test",
             "GIT_COMMITTER_EMAIL": "test@example.com",
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_SYSTEM": "/dev/null",
         },
     )
     return r.stdout.strip()
 
 
 class WorktreeTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._tpl_tmp = tempfile.mkdtemp(prefix="swarmbox-test-wt-tpl.")
+        cls.addClassCleanup(shutil.rmtree, cls._tpl_tmp, True)
+        cls._tpl_repo = os.path.join(cls._tpl_tmp, "shop-api")
+        os.makedirs(cls._tpl_repo, exist_ok=True)
+        git(cls._tpl_repo, "init", "-q", "-b", "main")
+        git(cls._tpl_repo, "config", "user.name", "Test")
+        git(cls._tpl_repo, "config", "user.email", "test@example.com")
+        with open(os.path.join(cls._tpl_repo, "app.py"), "w", encoding="utf-8") as f:
+            f.write("def greet():\n    return 'hello'\n")
+        git(cls._tpl_repo, "add", "app.py")
+        git(cls._tpl_repo, "commit", "-q", "-m", "initial")
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-wt.")
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.home = os.path.join(self.tmp, "home")
         self.repo = os.path.join(self.home, "shop-api")
-        os.makedirs(self.repo, exist_ok=True)
+        shutil.copytree(self._tpl_repo, self.repo)
         self.env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": self.home,
@@ -63,14 +79,9 @@ class WorktreeTest(unittest.TestCase):
             "GIT_AUTHOR_EMAIL": "test@example.com",
             "GIT_COMMITTER_NAME": "Test",
             "GIT_COMMITTER_EMAIL": "test@example.com",
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_SYSTEM": "/dev/null",
         }
-        git(self.repo, "init", "-b", "main")
-        git(self.repo, "config", "user.name", "Test")
-        git(self.repo, "config", "user.email", "test@example.com")
-        with open(os.path.join(self.repo, "app.py"), "w", encoding="utf-8") as f:
-            f.write("def greet():\n    return 'hello'\n")
-        git(self.repo, "add", "app.py")
-        git(self.repo, "commit", "-m", "initial")
 
     def test_inspect_non_git_and_main_repo(self):
         plain = os.path.join(self.tmp, "plain")
@@ -236,14 +247,14 @@ class WorktreeTest(unittest.TestCase):
         fake_tabs = os.path.join(self.tmp, "fake-tabs")
         with open(fake_tabs, "w", encoding="utf-8") as f:
             f.write(
-                "#!/usr/bin/env python3\n"
-                "import json, os, sys\n"
-                "if sys.argv[1] == 'list':\n"
-                f"    print(json.dumps([{{'tab': 't1', 'name': 'fix-auth', 'title': 'Fix Auth', 'dir': '~/shop-api', 'cmd': 'antigravity'}}]))\n"
-                "elif sys.argv[1] == 'label':\n"
-                f"    with open({label_log!r}, 'a', encoding='utf-8') as lf:\n"
-                "        lf.write(' '.join(sys.argv[2:]) + '\\n')\n"
-                "    print(json.dumps({'ok': True}))\n"
+                "#!/bin/sh\n"
+                "if [ \"$1\" = list ]; then\n"
+                "  printf '%s\\n' '[{\"tab\":\"t1\",\"name\":\"fix-auth\",\"title\":\"Fix Auth\",\"dir\":\"~/shop-api\",\"cmd\":\"antigravity\"}]'\n"
+                "elif [ \"$1\" = label ]; then\n"
+                "  shift\n"
+                f"  printf '%s\\n' \"$*\" >> {label_log!r}\n"
+                "  printf '%s\\n' '{\"ok\":true}'\n"
+                "fi\n"
             )
         os.chmod(fake_tabs, 0o755)
         genv = {
@@ -321,12 +332,12 @@ class WorktreeTest(unittest.TestCase):
         fake_tabs = os.path.join(self.tmp, "fake-tabs-tty")
         with open(fake_tabs, "w", encoding="utf-8") as f:
             f.write(
-                "#!/usr/bin/env python3\n"
-                "import json, sys\n"
-                "if sys.argv[1] == 'list':\n"
-                f"    print(json.dumps([{{'tab': 't1', 'name': 'active-agy', 'dir': '~/shop-api', 'cmd': 'antigravity'}}]))\n"
-                "else:\n"
-                "    print(json.dumps({'ok': True}))\n"
+                "#!/bin/sh\n"
+                "if [ \"$1\" = list ]; then\n"
+                "  printf '%s\\n' '[{\"tab\":\"t1\",\"name\":\"active-agy\",\"dir\":\"~/shop-api\",\"cmd\":\"antigravity\"}]'\n"
+                "else\n"
+                "  printf '%s\\n' '{\"ok\":true}'\n"
+                "fi\n"
             )
         os.chmod(fake_tabs, 0o755)
 
@@ -714,7 +725,7 @@ class WorktreeTest(unittest.TestCase):
         self.assertIn("BOOM", r_fail["output"])
 
         # Output tail is capped at 16 KiB
-        r_big = wt.verify_repo(self.repo, cmd="python3 -c \"print('A' * 30000 + 'TAIL_END')\"", env=self.env)
+        r_big = wt.verify_repo(self.repo, cmd="head -c 30000 /dev/zero | tr '\\0' A; echo TAIL_END", env=self.env)
         self.assertTrue(r_big["ok"])
         self.assertLessEqual(len(r_big["output"].encode("utf-8")), 16 * 1024)
         self.assertIn("TAIL_END", r_big["output"])

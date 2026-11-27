@@ -80,16 +80,27 @@ def real_listing():
     """Listing (path, size, mtime) of the folders the helper must never touch in the real home."""
     home = os.path.expanduser("~")
     out = []
+
+    def walk(path):
+        try:
+            with os.scandir(path) as it:
+                entries = sorted(it, key=lambda e: e.name)
+        except OSError:
+            return
+        dirs = []
+        for e in entries:
+            try:
+                st = e.stat(follow_symlinks=False)
+                out.append((e.path, st.st_size, st.st_mtime_ns))
+                if stat.S_ISDIR(st.st_mode):
+                    dirs.append(e.path)
+            except OSError:
+                out.append((e.path, None, None))
+        for d in dirs:
+            walk(d)
+
     for parts in ((".config", "swarmbox"), (".local", "state", "swarmbox"), (".local", "share", "swarmbox")):
-        root = os.path.join(home, *parts)
-        for d, dirs, files in os.walk(root):
-            for n in sorted(dirs + files):
-                p = os.path.join(d, n)
-                try:
-                    st = os.lstat(p)
-                    out.append((p, st.st_size, st.st_mtime_ns))
-                except OSError:
-                    out.append((p, None, None))
+        walk(os.path.join(home, *parts))
     return out
 
 
@@ -303,23 +314,25 @@ class SetTest(Base):
             self.assertEqual(m, 0o600, key)
 
     def test_rejections_name_the_key_and_the_rule_and_write_nothing(self):
-        def check_one(item):
-            i, (key, (_, good, _o, bad)) = item
-            h, cf = self._iso_home("rej-%d" % i)
-            self.write_cfg("# keep\n%s=%s\n" % (key, good), file=cf)
-            before = slurp(cf)
-            out = []
-            for v in bad:
-                p = self.run_h("config", "set", key, v, env={"HOME": h})
-                out.append((v, p, slurp(cf)))
-            return key, before, out
-        for key, before, out in self._par(check_one, enumerate(KEYS.items())):
-            for v, p, after in out:
-                self.assertEqual(p.returncode, 2, (key, v))
-                self.assertEqual(p.stdout, "")
-                self.assertIn(key, p.stderr)
-                self.assertRegex(p.stderr, r"must|cannot", (key, v))
-                self.assertEqual(after, before, (key, v))
+        # one home per (key, bad value): every rejection is checked against its own untouched file, and no two runs share a file
+        jobs = []
+        for i, (key, (_, good, _o, bad)) in enumerate(KEYS.items()):
+            for j, v in enumerate(bad):
+                h, cf = self._iso_home("rej-%d-%d" % (i, j))
+                self.write_cfg("# keep\n%s=%s\n" % (key, good), file=cf)
+                jobs.append((key, v, h, cf, slurp(cf)))
+
+        def run_one(job):
+            key, v, h, cf, before = job
+            p = self.run_h("config", "set", key, v, env={"HOME": h})
+            return key, v, p, before, slurp(cf)
+
+        for key, v, p, before, after in self._par(run_one, jobs):
+            self.assertEqual(p.returncode, 2, (key, v))
+            self.assertEqual(p.stdout, "")
+            self.assertIn(key, p.stderr)
+            self.assertRegex(p.stderr, r"must|cannot", (key, v))
+            self.assertEqual(after, before, (key, v))
 
 
 class UnsetAndPathTest(Base):
@@ -564,11 +577,40 @@ class ModeCheckTest(Base):
         return p.returncode, p.stdout, p.stderr
 
 
-from host_support import CreateFlagsBase  # noqa: E402
+from host_support import CreateFlagsBase, DEFAULTS_SRC, HELPER_SRC, PLAIN_VERSION, VERSION_SRC  # noqa: E402
 
 
 class SysopFlagsTest(CreateFlagsBase):
     """The sysop.* keys reach the box as SWARMBOX_SYSOP_* only when they differ from the default (a box that never set one keeps its fingerprint)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._shared_dir = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-sysopf-sh."))
+        cls.addClassCleanup(shutil.rmtree, cls._shared_dir, True)
+        hdir = os.path.join(cls._shared_dir, "helper")
+        os.makedirs(hdir)
+        shutil.copy(HELPER_SRC, os.path.join(hdir, "swarmbox-host"))
+        os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)
+        shutil.copy(VERSION_SRC, os.path.join(hdir, "VERSION"))
+        shutil.copy(DEFAULTS_SRC, os.path.join(hdir, "DEFAULTS"))
+        with open(os.path.join(hdir, "addon-ports"), "w") as f:
+            f.write("")
+        open(os.path.join(cls._shared_dir, "localtime"), "w").close()
+        with open(os.path.join(cls._shared_dir, "proc-version"), "w") as f:
+            f.write(PLAIN_VERSION + "\n")
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-cflags."))
+        self.addCleanup(self._cleanup)
+        self.home = os.path.join(self.tmp, "home")
+        os.mkdir(self.home)
+        self.assertNotEqual(os.path.realpath(self.home), self.real_home)
+        self.ws = os.path.join(self.tmp, "ws")
+        self.hdir = os.path.join(self._shared_dir, "helper")
+        self.localtime = os.path.join(self._shared_dir, "localtime")
+        self.procversion = os.path.join(self._shared_dir, "proc-version")
+        self.cfgroot = os.path.join(self.home, ".config", "swarmbox")
 
     def sysop(self, flags):
         return [flags[i + 1] for i, f in enumerate(flags) if f == "-e" and flags[i + 1].startswith("SWARMBOX_SYSOP_")]

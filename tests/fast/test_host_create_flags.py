@@ -13,12 +13,60 @@ import random
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from helpers import DEFAULT_NAME, DEFAULT_IMAGE_REPO, DEFAULT_VOLUME  # noqa: E402
-from host_support import CreateFlagsBase as Base, CANARY, FIXTURES, HELPER_SRC, PLAIN_VERSION, TOKEN, VERSION, WINDOWS_DRIVE_MSG, WSL_VERSION, env_hash, fingerprint, pairs_of, values  # noqa: E402
+from host_support import CreateFlagsBase as _CreateFlagsBase, CANARY, DEFAULTS_SRC, FIXTURES, HELPER_SRC, PLAIN_VERSION, TOKEN, VERSION, VERSION_SRC, WINDOWS_DRIVE_MSG, WSL_VERSION, env_hash, fingerprint, pairs_of, values  # noqa: E402
+
+
+_SHARED_DIR = None
+
+
+def setUpModule():
+    global _SHARED_DIR
+    _SHARED_DIR = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-cf-sh."))
+    hdir = os.path.join(_SHARED_DIR, "helper")
+    os.makedirs(hdir)
+    shutil.copy(HELPER_SRC, os.path.join(hdir, "swarmbox-host"))
+    os.chmod(os.path.join(hdir, "swarmbox-host"), 0o755)
+    shutil.copy(VERSION_SRC, os.path.join(hdir, "VERSION"))
+    shutil.copy(DEFAULTS_SRC, os.path.join(hdir, "DEFAULTS"))
+    with open(os.path.join(hdir, "addon-ports"), "w") as f:
+        f.write("")
+    open(os.path.join(_SHARED_DIR, "localtime"), "w").close()
+    with open(os.path.join(_SHARED_DIR, "proc-version"), "w") as f:
+        f.write(PLAIN_VERSION + "\n")
+
+
+def tearDownModule():
+    global _SHARED_DIR
+    if _SHARED_DIR:
+        shutil.rmtree(_SHARED_DIR, True)
+        _SHARED_DIR = None
+
+
+class Base(_CreateFlagsBase):
+    def setUp(self):
+        if _SHARED_DIR is None:
+            super().setUp()
+            return
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-cflags."))
+        self.addCleanup(self._cleanup)
+        self.home = os.path.join(self.tmp, "home")
+        os.mkdir(self.home)
+        self.assertNotEqual(os.path.realpath(self.home), self.real_home)
+        self.ws = os.path.join(self.tmp, "ws")
+        self.hdir = os.path.join(_SHARED_DIR, "helper")
+        self.localtime = os.path.join(_SHARED_DIR, "localtime")
+        self.procversion = os.path.join(_SHARED_DIR, "proc-version")
+        self.cfgroot = os.path.join(self.home, ".config", "swarmbox")
+
+    def make_helper(self, addon_ports, version=True):
+        self.hdir = os.path.join(self.tmp, "helper")
+        super().make_helper(addon_ports, version=version)
 
 
 def _par(fn, items, max_workers=8):
@@ -443,6 +491,7 @@ class WorkspaceTest(Base):
 
     # --- WSL, with a fake /proc/version; nothing under /mnt is ever created by these tests
     def set_wsl(self, on):
+        self.procversion = os.path.join(self.tmp, "proc-version")
         with open(self.procversion, "w") as f:
             f.write((WSL_VERSION if on else PLAIN_VERSION) + "\n")
 
