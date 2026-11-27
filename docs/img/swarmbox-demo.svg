@@ -120,13 +120,46 @@
       50% { opacity: 0; }
     }
 
-    /* Portal intake beam pulses while agents fly in */
+    /* Portal intake beam pulses while agents fly in, shuts off as flaps close */
     .portal-beam { animation: beamPulse 10s ease-in-out infinite; }
     @keyframes beamPulse {
-      0%, 6% { opacity: 0.2; }
-      16%, 44% { opacity: 0.95; }
-      54%, 92% { opacity: 0.18; }
-      100% { opacity: 0.2; }
+      0%, 5% { opacity: 0.25; }
+      14%, 33% { opacity: 0.95; }
+      39%, 93% { opacity: 0; }
+      100% { opacity: 0.25; }
+    }
+
+    /* Left box flaps swing shut once all 4 agents are inside (34% -> 41%), reopen at 92% */
+    .flap-top { animation: flapTopAnim 10s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+    @keyframes flapTopAnim {
+      0%, 34% { transform: translate(304px, 72px) rotate(106deg); }
+      41%, 91% { transform: translate(304px, 72px) rotate(0deg); }
+      97%, 100% { transform: translate(304px, 72px) rotate(106deg); }
+    }
+    .flap-bot { animation: flapBotAnim 10s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+    @keyframes flapBotAnim {
+      0%, 34% { transform: translate(304px, 252px) rotate(-106deg); }
+      41%, 91% { transform: translate(304px, 252px) rotate(0deg); }
+      97%, 100% { transform: translate(304px, 252px) rotate(-106deg); }
+    }
+    .flap-lock { animation: lockSnap 10s linear infinite; }
+    @keyframes lockSnap {
+      0%, 40% { opacity: 0; }
+      41.5%, 90.5% { opacity: 1; }
+      92%, 100% { opacity: 0; }
+    }
+    .lock-led { animation: lockLed 10s steps(2, end) infinite; }
+    @keyframes lockLed {
+      0%, 41% { fill: #67e8f9; }
+      45%, 54% { fill: #c4b5fd; }
+      56%, 91% { fill: #4ade80; }
+      92%, 100% { fill: #67e8f9; }
+    }
+    .portal-rim { animation: rimFade 10s linear infinite; }
+    @keyframes rimFade {
+      0%, 34% { opacity: 0.75; }
+      41%, 91% { opacity: 0; }
+      97%, 100% { opacity: 0.75; }
     }
 
     /* Sysop operator pop-in & radar antenna (centered at x=799 inside dock) */
@@ -315,8 +348,11 @@
     /* Respect reduced-motion users: show the clean organized state */
     @media (prefers-reduced-motion: reduce) {
       * { animation: none !important; }
-      .chaos-out, .chaos-in, .st-chaos, .st-enter, .scan-beam { opacity: 0 !important; }
-      .st-sync, .repo-headers, .slot-card, .sysop-label { opacity: 1 !important; }
+      .chaos-out, .chaos-in, .st-chaos, .st-enter, .scan-beam, .portal-beam, .portal-rim { opacity: 0 !important; }
+      .st-sync, .repo-headers, .slot-card, .sysop-label, .flap-lock { opacity: 1 !important; }
+      .flap-top { transform: translate(304px, 72px) rotate(0deg) !important; }
+      .flap-bot { transform: translate(304px, 252px) rotate(0deg) !important; }
+      .lock-led { fill: #4ade80 !important; }
       .sysop-unit { transform: translate(799px, 152px) scale(1) !important; opacity: 1 !important; }
       .ag-antigravity { transform: translate(375px, 152px) !important; opacity: 1 !important; }
       .ag-claude { transform: translate(485px, 152px) !important; opacity: 1 !important; }
@@ -545,24 +581,38 @@
       <polygon points="844,72 860,56 860,236 844,252" fill="#4c1d95"/>
       <polygon points="846,74 858,62 858,234 846,246" fill="#3b1678"/>
 
-      <!-- Open Left Intake Flaps (like an open cardboard/tech box!) -->
-      <!-- Top-left open flap -->
-      <polygon points="304,72 268,54 274,50 314,66" fill="#c4b5fd"/>
-      <polygon points="304,72 268,54 268,62 304,78" fill="#6d28d9"/>
-      <!-- Bottom-left open flap -->
-      <polygon points="304,252 268,266 268,258 304,244" fill="#4c1d95"/>
-      <polygon points="304,244 268,258 274,262 310,248" fill="#7c3aed"/>
-
-      <!-- Main Front Box Frame -->
+      <!-- Main Front Box Frame (left wall stays open until flaps swing shut) -->
       <rect x="304" y="72" width="540" height="180" fill="#6d28d9"/>
       <!-- Inner deep obsidian cavity -->
       <rect x="308" y="76" width="532" height="172" fill="#120d1f"/>
+      <!-- Open intake cutout on left wall (sealed when flaps close) -->
+      <rect x="304" y="76" width="4" height="172" fill="#120d1f"/>
       <!-- Subtle inner pixel grid inside the box -->
       <rect x="308" y="76" width="532" height="2" fill="#a78bfa" opacity="0.6"/>
       <rect x="308" y="246" width="532" height="2" fill="#3b1678"/>
-      <!-- Open intake glowing rim on left wall -->
-      <rect x="304" y="84" width="4" height="156" fill="#c4b5fd"/>
-      <rect x="308" y="84" width="2" height="156" fill="#67e8f9" opacity="0.65"/>
+      <!-- Open intake glowing rim on left wall (fades as flaps close) -->
+      <rect class="portal-rim" x="306" y="78" width="2" height="168" fill="#67e8f9"/>
+
+      <!-- Animated Left Box Flaps (pivot at top-left (304,72) and bottom-left (304,252)) -->
+      <g class="flap-top">
+        <rect x="-2" y="0" width="6" height="90" fill="#7c3aed"/>
+        <rect x="-2" y="0" width="2" height="90" fill="#c4b5fd"/>
+        <rect x="4" y="0" width="2" height="90" fill="#4c1d95"/>
+        <rect x="-2" y="88" width="8" height="2" fill="#a78bfa"/>
+      </g>
+      <g class="flap-bot">
+        <rect x="-2" y="-90" width="6" height="90" fill="#6d28d9"/>
+        <rect x="-2" y="-90" width="2" height="90" fill="#a78bfa"/>
+        <rect x="4" y="-90" width="2" height="90" fill="#3b1678"/>
+        <rect x="-2" y="-90" width="8" height="2" fill="#c4b5fd"/>
+      </g>
+      <!-- Pixel lock latch at seam (304, 162) when box seals shut -->
+      <g class="flap-lock">
+        <rect x="299" y="155" width="12" height="14" fill="#1b1430"/>
+        <rect x="299" y="155" width="12" height="2" fill="#c4b5fd"/>
+        <rect x="299" y="167" width="12" height="2" fill="#4c1d95"/>
+        <rect class="lock-led" x="302" y="159" width="6" height="6" fill="#4ade80"/>
+      </g>
 
       <!-- Right Sysop Dock inside the box -->
       <rect x="766" y="88" width="66" height="144" fill="#18122b"/>
