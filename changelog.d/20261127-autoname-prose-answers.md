@@ -1,0 +1,1 @@
+- Fixed: a tab is no longer auto-named "Current title" or "Título atual". When the naming model explained its choice instead of answering with a title, the first words of that explanation became the tab's name; such an answer now keeps the current name.

@@ -286,8 +286,17 @@ class AutoNamerTest(unittest.TestCase):
         self.assertEqual(autoname.clean_suggested_title("Goal: evaluate"), "")
         self.assertEqual(autoname.clean_suggested_title("Avaliar"), "")
         self.assertEqual(autoname.clean_suggested_title("Title:\nTab Autonamer"), "Tab Autonamer")
+        self.assertEqual(autoname.clean_suggested_title("Rex vs. Herdr"), "Rex vs. Herdr")
         for raw in ("Mobile Sysop Sheet Redesign", "Fix the OAuth login flow", "Cmd+C macOS"):
             self.assertLessEqual(len(autoname.clean_suggested_title(raw)), autoname.MAX_TITLE_CHARS)
+
+    def test_an_explanation_is_no_title(self):
+        # Real answers (November 2026) that explained instead of naming: the cut made "Current title" and "Título atual".
+        for raw in ('Current title "Plano CI&T" is about a CI&T plan/doc. Latest request is about AWS questions',
+                    "Título atual: nenhum. O pedido é claro: adicionar uma tela/seção",
+                    "Folder: /home/a/api",
+                    "The user is asking about questions to ask in a meeting with the team"):
+            self.assertEqual(autoname.clean_suggested_title(raw), "", raw)
 
     def test_prompt_carries_requests_or_screen(self):
         p = autoname.build_prompt("/home/a/api", "claude", "", "SCREEN", ["fix login", "add tests"])
