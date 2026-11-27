@@ -24,6 +24,10 @@
 
 <br>
 
+<img src="docs/img/swarmbox-demo.svg" alt="SwarmBox — pixel-art AI coding agents entering a persistent Podman box disorganized and syncing into organized multi-repo worktree slots" width="880">
+
+<br><br>
+
 <img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Web Studio — multi-repo agent grouping, live OSC 7501 status cards, Git worktree badges, Purple Glow Starship prompt, and docked Sysop operator" width="900">
 
 </div>

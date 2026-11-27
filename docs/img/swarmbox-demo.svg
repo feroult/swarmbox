@@ -1,0 +1,724 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 300" width="880" height="300" role="img" aria-label="SwarmBox — pixel-art AI coding agents entering a persistent box disorganized and syncing into organized multi-repo worktree slots">
+  <defs>
+    <!-- Purple Glow ambient backdrop -->
+    <radialGradient id="boxGlow" cx="58%" cy="54%" r="48%">
+      <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.26"/>
+      <stop offset="55%" stop-color="#4c1d95" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#0c0b10" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="portalBeam" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0"/>
+      <stop offset="65%" stop-color="#7c3aed" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#c4b5fd" stop-opacity="0.48"/>
+    </linearGradient>
+    <linearGradient id="scanBeam" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#67e8f9" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#67e8f9" stop-opacity="0.75"/>
+      <stop offset="80%" stop-color="#e879f9" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="crtScan" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="4" height="1" fill="#000000" opacity="0.22"/>
+    </pattern>
+    <clipPath id="frameClip">
+      <rect x="2" y="2" width="876" height="296" rx="12"/>
+    </clipPath>
+    <clipPath id="boxInteriorClip">
+      <rect x="308" y="76" width="532" height="170"/>
+    </clipPath>
+  </defs>
+
+  <style><![CDATA[
+    /* Typography (crisp monospace fallback, zero external font deps for GitHub camo) */
+    .px-mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; }
+    .px-repo { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 9.5px; font-weight: 700; fill: #d4d4d8; }
+    .px-wt   { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 8px; font-weight: 700; fill: #c4b5fd; }
+    .px-wt-g { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 8px; font-weight: 700; fill: #86efac; }
+    .px-name { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 9.5px; font-weight: 700; }
+    .px-branch { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 8.5px; fill: #a1a1aa; }
+    .px-sysop { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 8.5px; font-weight: 700; fill: #67e8f9; letter-spacing: 0.08em; }
+    .px-tag { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 8.5px; font-weight: 700; fill: #a78bfa; letter-spacing: 0.1em; }
+
+    /* Starfield twinkle */
+    .st-a { animation: twinkle 2.4s steps(2, end) infinite; }
+    .st-b { animation: twinkle 3.1s steps(2, end) infinite 0.7s; }
+    .st-c { animation: twinkle 1.9s steps(2, end) infinite 1.2s; }
+    @keyframes twinkle {
+      0%, 100% { opacity: 0.25; }
+      50% { opacity: 0.95; }
+    }
+
+    /* Demoscene logo wave glint */
+    .logo-ch { animation: logoGlint 10s ease-in-out infinite; }
+    .ch-0 { animation-delay: 0.0s; }
+    .ch-1 { animation-delay: 0.08s; }
+    .ch-2 { animation-delay: 0.16s; }
+    .ch-3 { animation-delay: 0.24s; }
+    .ch-4 { animation-delay: 0.32s; }
+    .ch-5 { animation-delay: 0.40s; }
+    .ch-6 { animation-delay: 0.48s; }
+    .ch-7 { animation-delay: 0.56s; }
+    @keyframes logoGlint {
+      0%, 52%, 72%, 100% { opacity: 0.92; }
+      60% { opacity: 1; filter: brightness(1.35); }
+    }
+
+    /* Top status phase switcher (10s loop) */
+    .st-chaos { animation: phChaos 10s linear infinite; }
+    .st-enter { animation: phEnter 10s linear infinite; }
+    .st-sync  { animation: phSync 10s linear infinite; }
+    @keyframes phChaos {
+      0%, 30% { opacity: 1; }
+      33%, 96% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+    @keyframes phEnter {
+      0%, 30% { opacity: 0; }
+      33%, 50% { opacity: 1; }
+      53%, 100% { opacity: 0; }
+    }
+    @keyframes phSync {
+      0%, 51% { opacity: 0; }
+      54%, 92% { opacity: 1; }
+      96%, 100% { opacity: 0; }
+    }
+
+    /* Chaos sparks split: outside (Act 1) vs inside box (Act 2) */
+    .chaos-out { animation: chaosOutVis 10s linear infinite; }
+    .chaos-in  { animation: chaosInVis 10s linear infinite; }
+    @keyframes chaosOutVis {
+      0%, 4% { opacity: 0; }
+      8%, 27% { opacity: 1; }
+      33%, 100% { opacity: 0; }
+    }
+    @keyframes chaosInVis {
+      0%, 27% { opacity: 0; }
+      31%, 46% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+    .chev { animation: chevPulse 0.75s steps(2, end) infinite; }
+    .chv-2 { animation-delay: 0.18s; }
+    .chv-3 { animation-delay: 0.36s; }
+    @keyframes chevPulse {
+      0% { opacity: 0.2; }
+      50% { opacity: 0.95; }
+    }
+    .spark { animation: sparkJitter 0.45s steps(2, end) infinite; }
+    .sp-2 { animation-delay: 0.12s; }
+    .sp-3 { animation-delay: 0.24s; }
+    .sp-4 { animation-delay: 0.08s; }
+    .sp-5 { animation-delay: 0.19s; }
+    @keyframes sparkJitter {
+      0% { opacity: 0.95; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Blinking prompt cursor bottom-left */
+    .term-cur { animation: curBlink 1.1s steps(2, end) infinite; }
+    @keyframes curBlink {
+      0% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* Portal intake beam pulses while agents fly in */
+    .portal-beam { animation: beamPulse 10s ease-in-out infinite; }
+    @keyframes beamPulse {
+      0%, 6% { opacity: 0.2; }
+      16%, 44% { opacity: 0.95; }
+      54%, 92% { opacity: 0.18; }
+      100% { opacity: 0.2; }
+    }
+
+    /* Sysop operator pop-in & radar antenna (centered at x=799 inside dock) */
+    .sysop-unit { animation: sysopAct 10s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
+    @keyframes sysopAct {
+      0%, 42% { transform: translate(799px, 212px) scale(0.6); opacity: 0; }
+      48% { transform: translate(799px, 148px) scale(1.06); opacity: 1; }
+      52%, 90% { transform: translate(799px, 152px) scale(1); opacity: 1; }
+      96%, 100% { transform: translate(799px, 212px) scale(0.6); opacity: 0; }
+    }
+    .sysop-label { animation: sysopLbl 10s linear infinite; }
+    @keyframes sysopLbl {
+      0%, 47% { opacity: 0; }
+      51%, 90% { opacity: 1; }
+      95%, 100% { opacity: 0; }
+    }
+    .sys-ant { animation: antBlink 0.5s steps(2, end) infinite; }
+    @keyframes antBlink {
+      0% { fill: #67e8f9; }
+      50% { fill: #e879f9; }
+    }
+
+    /* Demoscene sync scanline sweeping across the box interior (48% -> 58%) */
+    .scan-beam { animation: scanSweep 10s linear infinite; }
+    @keyframes scanSweep {
+      0%, 47% { transform: translateX(270px); opacity: 0; }
+      49% { transform: translateX(308px); opacity: 1; }
+      58% { transform: translateX(800px); opacity: 0.95; }
+      60%, 100% { transform: translateX(840px); opacity: 0; }
+    }
+
+    /* Organized repo headers & cards materialize as scanline passes */
+    .repo-headers { animation: cardsShow 10s ease-out infinite; }
+    .c1 { animation: cardShow1 10s ease-out infinite; }
+    .c2 { animation: cardShow2 10s ease-out infinite; }
+    .c3 { animation: cardShow3 10s ease-out infinite; }
+    .c4 { animation: cardShow4 10s ease-out infinite; }
+    @keyframes cardsShow {
+      0%, 50% { opacity: 0; }
+      56%, 91% { opacity: 1; }
+      96%, 100% { opacity: 0; }
+    }
+    @keyframes cardShow1 {
+      0%, 49% { opacity: 0; }
+      53%, 91% { opacity: 1; }
+      96%, 100% { opacity: 0; }
+    }
+    @keyframes cardShow2 {
+      0%, 51% { opacity: 0; }
+      55%, 91% { opacity: 1; }
+      96%, 100% { opacity: 0; }
+    }
+    @keyframes cardShow3 {
+      0%, 53% { opacity: 0; }
+      57%, 91% { opacity: 1; }
+      96%, 100% { opacity: 0; }
+    }
+    @keyframes cardShow4 {
+      0%, 55% { opacity: 0; }
+      59%, 91% { opacity: 1; }
+      96%, 100% { opacity: 0; }
+    }
+
+    /* Synced pixel progress bars inside each card */
+    .pbar { transform-box: fill-box; transform-origin: left center; }
+    .pb-ag { animation: pbFill1 10s steps(12, end) infinite; }
+    .pb-cl { animation: pbFill2 10s steps(12, end) infinite; }
+    .pb-oc { animation: pbFill3 10s steps(12, end) infinite; }
+    .pb-cx { animation: pbFill4 10s steps(12, end) infinite; }
+    @keyframes pbFill1 {
+      0%, 54% { transform: scaleX(0); }
+      82%, 91% { transform: scaleX(1); }
+      96%, 100% { transform: scaleX(0); }
+    }
+    @keyframes pbFill2 {
+      0%, 56% { transform: scaleX(0); }
+      84%, 91% { transform: scaleX(0.86); }
+      96%, 100% { transform: scaleX(0); }
+    }
+    @keyframes pbFill3 {
+      0%, 58% { transform: scaleX(0); }
+      85%, 91% { transform: scaleX(1); }
+      96%, 100% { transform: scaleX(0); }
+    }
+    @keyframes pbFill4 {
+      0%, 60% { transform: scaleX(0); }
+      86%, 91% { transform: scaleX(1); }
+      96%, 100% { transform: scaleX(0); }
+    }
+
+    /* Green status LEDs blink on once organized */
+    .led-ok { animation: ledPulse 10s steps(2, end) infinite; }
+    @keyframes ledPulse {
+      0%, 58% { fill: #7c3aed; }
+      62%, 78% { fill: #fbbf24; }
+      82%, 92% { fill: #4ade80; }
+      96%, 100% { fill: #7c3aed; }
+    }
+
+    /* 2-frame pixel bob on inner sprites when working */
+    .bob { animation: pxBob 0.7s steps(2, end) infinite; }
+    .bob-2 { animation-delay: 0.18s; }
+    .bob-3 { animation-delay: 0.35s; }
+    .bob-4 { animation-delay: 0.52s; }
+    @keyframes pxBob {
+      0% { transform: translateY(0px); }
+      50% { transform: translateY(-3px); }
+    }
+
+    /* =====================================================================
+       AGENT 1: ANTIGRAVITY (Purple Space Bot) -> Slot 1 (375, 152)
+       Act 1 (0-26%): wild chaos outside left
+       Act 2 (26-48%): dives into box, lands crooked/jumbled inside
+       Act 3 (48-58%): snaps cleanly into Slot 1 (375, 152)
+       Act 4 (58-90%): aligned & working inside SwarmBox
+       ===================================================================== */
+    .ag-antigravity { animation: moveAg 10s ease-in-out infinite; }
+    @keyframes moveAg {
+      0%   { transform: translate(-36px, 98px) rotate(-18deg); opacity: 0; }
+      6%   { transform: translate(58px, 128px) rotate(14deg); opacity: 1; }
+      14%  { transform: translate(134px, 78px) rotate(-15deg); opacity: 1; }
+      22%  { transform: translate(222px, 148px) rotate(18deg); opacity: 1; }
+      32%  { transform: translate(356px, 114px) rotate(-12deg); opacity: 1; }
+      40%  { transform: translate(432px, 186px) rotate(14deg); opacity: 1; }
+      47%  { transform: translate(412px, 168px) rotate(-9deg); opacity: 1; }
+      55%  { transform: translate(375px, 152px) rotate(0deg); opacity: 1; }
+      90%  { transform: translate(375px, 152px) rotate(0deg); opacity: 1; }
+      96%  { transform: translate(375px, 152px) rotate(0deg); opacity: 0; }
+      100% { transform: translate(-36px, 98px) rotate(-18deg); opacity: 0; }
+    }
+
+    /* =====================================================================
+       AGENT 2: CLAUDE CODE (Coral Crab) -> Slot 2 (485, 152)
+       ===================================================================== */
+    .ag-claude { animation: moveCl 10s ease-in-out infinite; }
+    @keyframes moveCl {
+      0%   { transform: translate(-42px, 214px) rotate(20deg); opacity: 0; }
+      8%   { transform: translate(84px, 198px) rotate(-16deg); opacity: 1; }
+      16%  { transform: translate(168px, 224px) rotate(15deg); opacity: 1; }
+      25%  { transform: translate(252px, 134px) rotate(-19deg); opacity: 1; }
+      34%  { transform: translate(498px, 198px) rotate(16deg); opacity: 1; }
+      42%  { transform: translate(546px, 124px) rotate(-14deg); opacity: 1; }
+      48%  { transform: translate(516px, 174px) rotate(11deg); opacity: 1; }
+      56%  { transform: translate(485px, 152px) rotate(0deg); opacity: 1; }
+      90%  { transform: translate(485px, 152px) rotate(0deg); opacity: 1; }
+      96%  { transform: translate(485px, 152px) rotate(0deg); opacity: 0; }
+      100% { transform: translate(-42px, 214px) rotate(20deg); opacity: 0; }
+    }
+
+    /* =====================================================================
+       AGENT 3: OPENCODE (Yellow Duck) -> Slot 3 (595, 152)
+       ===================================================================== */
+    .ag-opencode { animation: moveOc 10s ease-in-out infinite; }
+    @keyframes moveOc {
+      0%   { transform: translate(-38px, 154px) rotate(-14deg); opacity: 0; }
+      10%  { transform: translate(62px, 84px) rotate(17deg); opacity: 1; }
+      19%  { transform: translate(152px, 162px) rotate(-16deg); opacity: 1; }
+      28%  { transform: translate(278px, 176px) rotate(14deg); opacity: 1; }
+      37%  { transform: translate(632px, 118px) rotate(-15deg); opacity: 1; }
+      44%  { transform: translate(572px, 196px) rotate(13deg); opacity: 1; }
+      49%  { transform: translate(622px, 178px) rotate(-10deg); opacity: 1; }
+      58%  { transform: translate(595px, 152px) rotate(0deg); opacity: 1; }
+      90%  { transform: translate(595px, 152px) rotate(0deg); opacity: 1; }
+      96%  { transform: translate(595px, 152px) rotate(0deg); opacity: 0; }
+      100% { transform: translate(-38px, 154px) rotate(-14deg); opacity: 0; }
+    }
+
+    /* =====================================================================
+       AGENT 4: CODEX (Green Frog) -> Slot 4 (705, 152)
+       ===================================================================== */
+    .ag-codex { animation: moveCx 10s ease-in-out infinite; }
+    @keyframes moveCx {
+      0%   { transform: translate(-44px, 246px) rotate(16deg); opacity: 0; }
+      11%  { transform: translate(110px, 156px) rotate(-18deg); opacity: 1; }
+      20%  { transform: translate(198px, 102px) rotate(16deg); opacity: 1; }
+      30%  { transform: translate(318px, 188px) rotate(-14deg); opacity: 1; }
+      39%  { transform: translate(686px, 196px) rotate(17deg); opacity: 1; }
+      46%  { transform: translate(736px, 128px) rotate(-13deg); opacity: 1; }
+      51%  { transform: translate(684px, 172px) rotate(10deg); opacity: 1; }
+      60%  { transform: translate(705px, 152px) rotate(0deg); opacity: 1; }
+      90%  { transform: translate(705px, 152px) rotate(0deg); opacity: 1; }
+      96%  { transform: translate(705px, 152px) rotate(0deg); opacity: 0; }
+      100% { transform: translate(-44px, 246px) rotate(16deg); opacity: 0; }
+    }
+
+    /* Respect reduced-motion users: show the clean organized state */
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; }
+      .chaos-out, .chaos-in, .st-chaos, .st-enter, .scan-beam { opacity: 0 !important; }
+      .st-sync, .repo-headers, .slot-card, .sysop-label { opacity: 1 !important; }
+      .sysop-unit { transform: translate(799px, 152px) scale(1) !important; opacity: 1 !important; }
+      .ag-antigravity { transform: translate(375px, 152px) !important; opacity: 1 !important; }
+      .ag-claude { transform: translate(485px, 152px) !important; opacity: 1 !important; }
+      .ag-opencode { transform: translate(595px, 152px) !important; opacity: 1 !important; }
+      .ag-codex { transform: translate(705px, 152px) !important; opacity: 1 !important; }
+    }
+  ]]></style>
+
+  <!-- Main clipped demoscene canvas -->
+  <g clip-path="url(#frameClip)">
+    <!-- Obsidian background + Purple Glow radial aura -->
+    <rect x="0" y="0" width="880" height="300" fill="#0c0b10"/>
+    <rect x="0" y="0" width="880" height="300" fill="url(#boxGlow)"/>
+
+    <!-- Demoscene perspective floor grid -->
+    <rect x="2" y="232" width="876" height="1" fill="#6d28d9" opacity="0.18"/>
+    <rect x="2" y="240" width="876" height="1" fill="#6d28d9" opacity="0.24"/>
+    <rect x="2" y="250" width="876" height="1" fill="#6d28d9" opacity="0.30"/>
+    <rect x="2" y="262" width="876" height="1" fill="#6d28d9" opacity="0.36"/>
+    <rect x="2" y="276" width="876" height="1" fill="#6d28d9" opacity="0.42"/>
+    <rect x="2" y="292" width="876" height="1" fill="#6d28d9" opacity="0.48"/>
+    <line x1="162" y1="232" x2="-160" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="199" y1="232" x2="-80" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="236" y1="232" x2="0" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="273" y1="232" x2="80" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="310" y1="232" x2="160" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="347" y1="232" x2="240" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="384" y1="232" x2="320" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="421" y1="232" x2="400" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="459" y1="232" x2="480" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="496" y1="232" x2="560" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="533" y1="232" x2="640" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="570" y1="232" x2="720" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="607" y1="232" x2="800" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="644" y1="232" x2="880" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="681" y1="232" x2="960" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+    <line x1="718" y1="232" x2="1040" y2="298" stroke="#4c1d95" stroke-width="1" opacity="0.32"/>
+
+    <!-- Pixel starfield -->
+    <g shape-rendering="crispEdges">
+      <rect class="st-a" x="36" y="58" width="2" height="2" fill="#52525b"/>
+    <rect class="st-b" x="78" y="92" width="2" height="2" fill="#a78bfa"/>
+    <rect class="st-c" x="118" y="64" width="2" height="2" fill="#67e8f9"/>
+    <rect class="st-a" x="158" y="124" width="2" height="2" fill="#52525b"/>
+    <rect class="st-b" x="194" y="72" width="2" height="2" fill="#c4b5fd"/>
+    <rect class="st-c" x="234" y="152" width="2" height="2" fill="#52525b"/>
+    <rect class="st-b" x="54" y="186" width="2" height="2" fill="#7c3aed"/>
+    <rect class="st-a" x="142" y="212" width="2" height="2" fill="#52525b"/>
+    <rect class="st-c" x="220" y="224" width="2" height="2" fill="#a78bfa"/>
+    <rect class="st-a" x="268" y="86" width="2" height="2" fill="#67e8f9"/>
+    <rect class="st-b" x="842" y="62" width="2" height="2" fill="#a78bfa"/>
+    <rect class="st-c" x="854" y="146" width="2" height="2" fill="#52525b"/>
+    <rect class="st-a" x="846" y="214" width="2" height="2" fill="#67e8f9"/>
+    <rect class="st-b" x="312" y="54" width="2" height="2" fill="#52525b"/>
+    <rect class="st-c" x="518" y="52" width="2" height="2" fill="#c4b5fd"/>
+    <rect class="st-a" x="722" y="54" width="2" height="2" fill="#a78bfa"/>
+    </g>
+
+    <!-- Top bar hairline -->
+    <rect x="0" y="42" width="880" height="2" fill="#1e1833"/>
+    <rect x="0" y="44" width="880" height="1" fill="#4c1d95" opacity="0.45"/>
+
+    <!-- Pixel-block SWARMBOX wordmark (top-left) -->
+    <g shape-rendering="crispEdges">
+      <g class="logo-ch ch-0" fill="#6b687a">
+      <rect x="27" y="16" width="3" height="3"/>
+      <rect x="30" y="16" width="3" height="3"/>
+      <rect x="33" y="16" width="3" height="3"/>
+      <rect x="24" y="19" width="3" height="3"/>
+      <rect x="27" y="22" width="3" height="3"/>
+      <rect x="30" y="22" width="3" height="3"/>
+      <rect x="33" y="22" width="3" height="3"/>
+      <rect x="36" y="25" width="3" height="3"/>
+      <rect x="24" y="28" width="3" height="3"/>
+      <rect x="27" y="28" width="3" height="3"/>
+      <rect x="30" y="28" width="3" height="3"/>
+      <rect x="33" y="28" width="3" height="3"/>
+      </g>
+      <g class="logo-ch ch-1" fill="#7c3aed">
+      <rect x="44" y="16" width="3" height="3"/>
+      <rect x="56" y="16" width="3" height="3"/>
+      <rect x="44" y="19" width="3" height="3"/>
+      <rect x="56" y="19" width="3" height="3"/>
+      <rect x="44" y="22" width="3" height="3"/>
+      <rect x="50" y="22" width="3" height="3"/>
+      <rect x="56" y="22" width="3" height="3"/>
+      <rect x="44" y="25" width="3" height="3"/>
+      <rect x="47" y="25" width="3" height="3"/>
+      <rect x="53" y="25" width="3" height="3"/>
+      <rect x="56" y="25" width="3" height="3"/>
+      <rect x="44" y="28" width="3" height="3"/>
+      <rect x="56" y="28" width="3" height="3"/>
+      </g>
+      <g class="logo-ch ch-2" fill="#a78bfa">
+      <rect x="67" y="16" width="3" height="3"/>
+      <rect x="70" y="16" width="3" height="3"/>
+      <rect x="73" y="16" width="3" height="3"/>
+      <rect x="64" y="19" width="3" height="3"/>
+      <rect x="76" y="19" width="3" height="3"/>
+      <rect x="64" y="22" width="3" height="3"/>
+      <rect x="67" y="22" width="3" height="3"/>
+      <rect x="70" y="22" width="3" height="3"/>
+      <rect x="73" y="22" width="3" height="3"/>
+      <rect x="76" y="22" width="3" height="3"/>
+      <rect x="64" y="25" width="3" height="3"/>
+      <rect x="76" y="25" width="3" height="3"/>
+      <rect x="64" y="28" width="3" height="3"/>
+      <rect x="76" y="28" width="3" height="3"/>
+      </g>
+      <g class="logo-ch ch-3" fill="#e4e0ff">
+      <rect x="84" y="16" width="3" height="3"/>
+      <rect x="87" y="16" width="3" height="3"/>
+      <rect x="90" y="16" width="3" height="3"/>
+      <rect x="93" y="16" width="3" height="3"/>
+      <rect x="84" y="19" width="3" height="3"/>
+      <rect x="96" y="19" width="3" height="3"/>
+      <rect x="84" y="22" width="3" height="3"/>
+      <rect x="87" y="22" width="3" height="3"/>
+      <rect x="90" y="22" width="3" height="3"/>
+      <rect x="93" y="22" width="3" height="3"/>
+      <rect x="84" y="25" width="3" height="3"/>
+      <rect x="93" y="25" width="3" height="3"/>
+      <rect x="84" y="28" width="3" height="3"/>
+      <rect x="96" y="28" width="3" height="3"/>
+      </g>
+      <g class="logo-ch ch-4" fill="#f5f3ff">
+      <rect x="104" y="16" width="3" height="3"/>
+      <rect x="116" y="16" width="3" height="3"/>
+      <rect x="104" y="19" width="3" height="3"/>
+      <rect x="107" y="19" width="3" height="3"/>
+      <rect x="113" y="19" width="3" height="3"/>
+      <rect x="116" y="19" width="3" height="3"/>
+      <rect x="104" y="22" width="3" height="3"/>
+      <rect x="110" y="22" width="3" height="3"/>
+      <rect x="116" y="22" width="3" height="3"/>
+      <rect x="104" y="25" width="3" height="3"/>
+      <rect x="116" y="25" width="3" height="3"/>
+      <rect x="104" y="28" width="3" height="3"/>
+      <rect x="116" y="28" width="3" height="3"/>
+      </g>
+      <g class="logo-ch ch-5" fill="#c4b5fd">
+      <rect x="124" y="16" width="3" height="3"/>
+      <rect x="127" y="16" width="3" height="3"/>
+      <rect x="130" y="16" width="3" height="3"/>
+      <rect x="133" y="16" width="3" height="3"/>
+      <rect x="124" y="19" width="3" height="3"/>
+      <rect x="136" y="19" width="3" height="3"/>
+      <rect x="124" y="22" width="3" height="3"/>
+      <rect x="127" y="22" width="3" height="3"/>
+      <rect x="130" y="22" width="3" height="3"/>
+      <rect x="133" y="22" width="3" height="3"/>
+      <rect x="124" y="25" width="3" height="3"/>
+      <rect x="136" y="25" width="3" height="3"/>
+      <rect x="124" y="28" width="3" height="3"/>
+      <rect x="127" y="28" width="3" height="3"/>
+      <rect x="130" y="28" width="3" height="3"/>
+      <rect x="133" y="28" width="3" height="3"/>
+      </g>
+      <g class="logo-ch ch-6" fill="#7c3aed">
+      <rect x="147" y="16" width="3" height="3"/>
+      <rect x="150" y="16" width="3" height="3"/>
+      <rect x="153" y="16" width="3" height="3"/>
+      <rect x="144" y="19" width="3" height="3"/>
+      <rect x="156" y="19" width="3" height="3"/>
+      <rect x="144" y="22" width="3" height="3"/>
+      <rect x="156" y="22" width="3" height="3"/>
+      <rect x="144" y="25" width="3" height="3"/>
+      <rect x="156" y="25" width="3" height="3"/>
+      <rect x="147" y="28" width="3" height="3"/>
+      <rect x="150" y="28" width="3" height="3"/>
+      <rect x="153" y="28" width="3" height="3"/>
+      </g>
+      <g class="logo-ch ch-7" fill="#6b687a">
+      <rect x="164" y="16" width="3" height="3"/>
+      <rect x="176" y="16" width="3" height="3"/>
+      <rect x="167" y="19" width="3" height="3"/>
+      <rect x="173" y="19" width="3" height="3"/>
+      <rect x="170" y="22" width="3" height="3"/>
+      <rect x="167" y="25" width="3" height="3"/>
+      <rect x="173" y="25" width="3" height="3"/>
+      <rect x="164" y="28" width="3" height="3"/>
+      <rect x="176" y="28" width="3" height="3"/>
+      </g>
+    </g>
+
+    <!-- Live phase status ticker (top-right, snug width) -->
+    <g class="st-chaos">
+      <rect x="650" y="13" width="208" height="20" rx="3" fill="#23121a" stroke="#7f1d1d" stroke-width="1"/>
+      <rect x="658" y="20" width="6" height="6" fill="#ff6b78"/>
+      <text x="671" y="26.5" class="px-mono" fill="#fda4af">CHAOS · 4 UNMANAGED AGENTS</text>
+    </g>
+    <g class="st-enter">
+      <rect x="688" y="13" width="170" height="20" rx="3" fill="#1b1430" stroke="#6d28d9" stroke-width="1"/>
+      <rect x="696" y="20" width="6" height="6" fill="#c4b5fd"/>
+      <text x="709" y="26.5" class="px-mono" fill="#c4b5fd">ENTERING SWARMBOX...</text>
+    </g>
+    <g class="st-sync">
+      <rect x="644" y="13" width="214" height="20" rx="3" fill="#11221b" stroke="#166534" stroke-width="1"/>
+      <rect x="652" y="20" width="6" height="6" fill="#4ade80"/>
+      <text x="665" y="26.5" class="px-mono" fill="#86efac">SYNCED · 4 AGENTS · 2 REPOS</text>
+    </g>
+
+    <!-- Subtle terminal prompt anchor on bottom-left -->
+    <g shape-rendering="crispEdges">
+      <text x="24" y="278" class="px-mono" fill="#71717a">$ <tspan fill="#c4b5fd">swarmbox</tspan></text>
+      <rect class="term-cur" x="98" y="269" width="6" height="10" fill="#a78bfa"/>
+    </g>
+
+    <!-- Intake glow beam leading into the open left side of the SwarmBox -->
+    <polygon class="portal-beam" points="168,108 308,82 308,244 168,218" fill="url(#portalBeam)"/>
+
+    <!-- ===================================================================
+         THE SWARMBOX: Pixel-art 3D/Isometric-beveled Persistent Box
+         =================================================================== -->
+    <g shape-rendering="crispEdges">
+      <!-- Ground pixel shadow -->
+      <rect x="318" y="260" width="534" height="8" fill="#07050c" opacity="0.85"/>
+      <rect x="330" y="268" width="510" height="4" fill="#07050c" opacity="0.55"/>
+
+      <!-- 3D Top Bevel Face (isometric roof in Lavender/Violet) -->
+      <polygon points="304,72 324,56 860,56 844,72" fill="#a78bfa"/>
+      <polygon points="310,70 326,58 854,58 840,70" fill="#7c3aed"/>
+      <rect x="326" y="58" width="528" height="2" fill="#c4b5fd"/>
+
+      <!-- 3D Right Side Extrusion (Deep Violet) -->
+      <polygon points="844,72 860,56 860,236 844,252" fill="#4c1d95"/>
+      <polygon points="846,74 858,62 858,234 846,246" fill="#3b1678"/>
+
+      <!-- Open Left Intake Flaps (like an open cardboard/tech box!) -->
+      <!-- Top-left open flap -->
+      <polygon points="304,72 268,54 274,50 314,66" fill="#c4b5fd"/>
+      <polygon points="304,72 268,54 268,62 304,78" fill="#6d28d9"/>
+      <!-- Bottom-left open flap -->
+      <polygon points="304,252 268,266 268,258 304,244" fill="#4c1d95"/>
+      <polygon points="304,244 268,258 274,262 310,248" fill="#7c3aed"/>
+
+      <!-- Main Front Box Frame -->
+      <rect x="304" y="72" width="540" height="180" fill="#6d28d9"/>
+      <!-- Inner deep obsidian cavity -->
+      <rect x="308" y="76" width="532" height="172" fill="#120d1f"/>
+      <!-- Subtle inner pixel grid inside the box -->
+      <rect x="308" y="76" width="532" height="2" fill="#a78bfa" opacity="0.6"/>
+      <rect x="308" y="246" width="532" height="2" fill="#3b1678"/>
+      <!-- Open intake glowing rim on left wall -->
+      <rect x="304" y="84" width="4" height="156" fill="#c4b5fd"/>
+      <rect x="308" y="84" width="2" height="156" fill="#67e8f9" opacity="0.65"/>
+
+      <!-- Right Sysop Dock inside the box -->
+      <rect x="766" y="88" width="66" height="144" fill="#18122b"/>
+      <rect x="766" y="88" width="66" height="2" fill="#67e8f9" opacity="0.7"/>
+      <rect x="766" y="230" width="66" height="2" fill="#4c1d95"/>
+      <rect x="766" y="88" width="2" height="144" fill="#3b2763"/>
+      <rect x="830" y="88" width="2" height="144" fill="#3b2763"/>
+      <!-- Sysop dark pixel stage matching the 4 agent cards -->
+      <rect x="772" y="122" width="54" height="60" fill="#0f0c18"/>
+      <rect x="772" y="122" width="54" height="2" fill="#27223a"/>
+
+      <!-- Pixel corner bolts on the box -->
+      <rect x="312" y="80" width="4" height="4" fill="#c4b5fd"/>
+      <rect x="832" y="80" width="4" height="4" fill="#c4b5fd"/>
+      <rect x="312" y="240" width="4" height="4" fill="#7c3aed"/>
+      <rect x="832" y="240" width="4" height="4" fill="#7c3aed"/>
+
+      <!-- Box front-bottom engraved label -->
+      <rect x="504" y="248" width="144" height="14" fill="#1b1430"/>
+      <rect x="504" y="248" width="144" height="2" fill="#7c3aed"/>
+      <text x="576" y="258.5" text-anchor="middle" class="px-tag">PODMAN · PERSISTENT</text>
+    </g>
+
+    <!-- Organized Repo Headers & 4 Agent Cards (appear on Sysop sync) -->
+    <g class="repo-headers" shape-rendering="crispEdges">  <!-- Group 1: shop-api (2 worktrees) -->  <rect x="324" y="88" width="212" height="16" fill="#1b1530"/>  <rect x="324" y="88" width="4" height="16" fill="#a78bfa"/>  <g transform="translate(333, 91)" fill="#a78bfa">    <rect x="0" y="0" width="2" height="10"/>    <rect x="5" y="1" width="2" height="4"/>    <rect x="2" y="5" width="3" height="2"/>  </g>  <text x="345" y="99.5" class="px-repo">shop-api</text>  <rect x="498" y="91" width="32" height="10" fill="#2a1f4d"/>  <text x="514" y="99" text-anchor="middle" class="px-wt">2 wt</text>  <!-- Group 2: web-app (2 worktrees) -->  <rect x="544" y="88" width="212" height="16" fill="#1b1530"/>  <rect x="544" y="88" width="4" height="16" fill="#4ade80"/>  <g transform="translate(553, 91)" fill="#4ade80">    <rect x="0" y="0" width="2" height="10"/>    <rect x="5" y="1" width="2" height="4"/>    <rect x="2" y="5" width="3" height="2"/>  </g>  <text x="565" y="99.5" class="px-repo">web-app</text>  <rect x="718" y="91" width="32" height="10" fill="#163325"/>  <text x="734" y="99" text-anchor="middle" class="px-wt-g">2 wt</text></g>
+    <g class="slot-card c1" shape-rendering="crispEdges">  <!-- Pixel beveled card -->  <rect x="324" y="108" width="102" height="124" fill="#18122b"/>  <rect x="324" y="108" width="102" height="2" fill="#a78bfa"/>  <rect x="324" y="230" width="102" height="2" fill="#6d28d9"/>  <rect x="324" y="108" width="2" height="124" fill="#6d28d9"/>  <rect x="424" y="108" width="2" height="124" fill="#6d28d9"/>  <!-- Pixel stage backdrop -->  <rect x="340" y="122" width="70" height="60" fill="#0f0c18"/>  <rect x="340" y="122" width="70" height="2" fill="#27223a"/>  <!-- Status LED + corner check -->  <rect class="led-ok" x="412" y="114" width="6" height="6" fill="#4ade80"/>  <!-- Agent name & branch -->  <text x="375" y="196" text-anchor="middle" class="px-name" fill="#a78bfa">antigravity</text>  <text x="375" y="208" text-anchor="middle" class="px-branch">main</text>  <!-- Pixel progress bar track + synced fill -->  <rect x="334" y="216" width="82" height="6" fill="#27223a"/>  <rect class="pbar pb-ag" x="334" y="216" width="82" height="6" fill="#a78bfa"/></g>
+    <g class="slot-card c2" shape-rendering="crispEdges">  <!-- Pixel beveled card -->  <rect x="434" y="108" width="102" height="124" fill="#211516"/>  <rect x="434" y="108" width="102" height="2" fill="#e89274"/>  <rect x="434" y="230" width="102" height="2" fill="#9a472d"/>  <rect x="434" y="108" width="2" height="124" fill="#9a472d"/>  <rect x="534" y="108" width="2" height="124" fill="#9a472d"/>  <!-- Pixel stage backdrop -->  <rect x="450" y="122" width="70" height="60" fill="#0f0c18"/>  <rect x="450" y="122" width="70" height="2" fill="#27223a"/>  <!-- Status LED + corner check -->  <rect class="led-ok" x="522" y="114" width="6" height="6" fill="#4ade80"/>  <!-- Agent name & branch -->  <text x="485" y="196" text-anchor="middle" class="px-name" fill="#e89274">claude</text>  <text x="485" y="208" text-anchor="middle" class="px-branch">wt-4c2a</text>  <!-- Pixel progress bar track + synced fill -->  <rect x="444" y="216" width="82" height="6" fill="#27223a"/>  <rect class="pbar pb-cl" x="444" y="216" width="82" height="6" fill="#d97757"/></g>
+    <g class="slot-card c3" shape-rendering="crispEdges">  <!-- Pixel beveled card -->  <rect x="544" y="108" width="102" height="124" fill="#201c11"/>  <rect x="544" y="108" width="102" height="2" fill="#fde047"/>  <rect x="544" y="230" width="102" height="2" fill="#a16207"/>  <rect x="544" y="108" width="2" height="124" fill="#a16207"/>  <rect x="644" y="108" width="2" height="124" fill="#a16207"/>  <!-- Pixel stage backdrop -->  <rect x="560" y="122" width="70" height="60" fill="#0f0c18"/>  <rect x="560" y="122" width="70" height="2" fill="#27223a"/>  <!-- Status LED + corner check -->  <rect class="led-ok" x="632" y="114" width="6" height="6" fill="#4ade80"/>  <!-- Agent name & branch -->  <text x="595" y="196" text-anchor="middle" class="px-name" fill="#fde047">opencode</text>  <text x="595" y="208" text-anchor="middle" class="px-branch">main</text>  <!-- Pixel progress bar track + synced fill -->  <rect x="554" y="216" width="82" height="6" fill="#27223a"/>  <rect class="pbar pb-oc" x="554" y="216" width="82" height="6" fill="#facc15"/></g>
+    <g class="slot-card c4" shape-rendering="crispEdges">  <!-- Pixel beveled card -->  <rect x="654" y="108" width="102" height="124" fill="#112018"/>  <rect x="654" y="108" width="102" height="2" fill="#4ade80"/>  <rect x="654" y="230" width="102" height="2" fill="#15803d"/>  <rect x="654" y="108" width="2" height="124" fill="#15803d"/>  <rect x="754" y="108" width="2" height="124" fill="#15803d"/>  <!-- Pixel stage backdrop -->  <rect x="670" y="122" width="70" height="60" fill="#0f0c18"/>  <rect x="670" y="122" width="70" height="2" fill="#27223a"/>  <!-- Status LED + corner check -->  <rect class="led-ok" x="742" y="114" width="6" height="6" fill="#4ade80"/>  <!-- Agent name & branch -->  <text x="705" y="196" text-anchor="middle" class="px-name" fill="#4ade80">codex</text>  <text x="705" y="208" text-anchor="middle" class="px-branch">wt-9b1f</text>  <!-- Pixel progress bar track + synced fill -->  <rect x="664" y="216" width="82" height="6" fill="#27223a"/>  <rect class="pbar pb-cx" x="664" y="216" width="82" height="6" fill="#4ade80"/></g>
+
+    <!-- Sysop dock label -->
+    <g class="sysop-label">
+      <text x="799" y="198" text-anchor="middle" class="px-sysop">SYSOP</text>
+      <text x="799" y="210" text-anchor="middle" class="px-branch">auto-sync</text>
+      <rect x="781" y="217" width="36" height="5" fill="#163325"/>
+      <rect x="781" y="217" width="36" height="5" fill="#4ade80" opacity="0.8"/>
+    </g>
+
+    <!-- Chaos particles (outside & early inside) -->
+    
+    <!-- Chaos glitches OUTSIDE (visible in Act 1 while agents tumble in) -->
+    <g class="chaos-out" shape-rendering="crispEdges">
+      <!-- Pixel ! warning -->
+      <g class="spark sp-1" transform="translate(82, 86)">
+        <rect x="0" y="0" width="3" height="9" fill="#ff6b78"/>
+        <rect x="0" y="11" width="3" height="3" fill="#ff6b78"/>
+      </g>
+      <!-- Pixel ? confusion -->
+      <g class="spark sp-2" transform="translate(182, 126)">
+        <rect x="0" y="0" width="9" height="3" fill="#fbbf24"/>
+        <rect x="6" y="3" width="3" height="3" fill="#fbbf24"/>
+        <rect x="3" y="6" width="6" height="3" fill="#fbbf24"/>
+        <rect x="3" y="11" width="3" height="3" fill="#fbbf24"/>
+      </g>
+      <!-- Pixel X conflict -->
+      <g class="spark sp-3" transform="translate(116, 198)">
+        <rect x="0" y="0" width="3" height="3" fill="#ff6b78"/>
+        <rect x="6" y="0" width="3" height="3" fill="#ff6b78"/>
+        <rect x="3" y="3" width="3" height="3" fill="#ff6b78"/>
+        <rect x="0" y="6" width="3" height="3" fill="#ff6b78"/>
+        <rect x="6" y="6" width="3" height="3" fill="#ff6b78"/>
+      </g>
+      <!-- Pulsing pixel intake chevrons >>> pointing into the box -->
+      <g class="chev chv-1" transform="translate(216, 152)" fill="#a78bfa">
+        <rect x="0" y="0" width="3" height="3"/>
+        <rect x="3" y="3" width="3" height="3"/>
+        <rect x="6" y="6" width="3" height="3"/>
+        <rect x="3" y="9" width="3" height="3"/>
+        <rect x="0" y="12" width="3" height="3"/>
+      </g>
+      <g class="chev chv-2" transform="translate(232, 152)" fill="#c4b5fd">
+        <rect x="0" y="0" width="3" height="3"/>
+        <rect x="3" y="3" width="3" height="3"/>
+        <rect x="6" y="6" width="3" height="3"/>
+        <rect x="3" y="9" width="3" height="3"/>
+        <rect x="0" y="12" width="3" height="3"/>
+      </g>
+      <g class="chev chv-3" transform="translate(248, 152)" fill="#67e8f9">
+        <rect x="0" y="0" width="3" height="3"/>
+        <rect x="3" y="3" width="3" height="3"/>
+        <rect x="6" y="6" width="3" height="3"/>
+        <rect x="3" y="9" width="3" height="3"/>
+        <rect x="0" y="12" width="3" height="3"/>
+      </g>
+    </g>
+    <!-- Chaos glitches INSIDE box (visible in Act 2 before Sysop syncs) -->
+    <g class="chaos-in" shape-rendering="crispEdges">
+      <g class="spark sp-4" transform="translate(462, 118)">
+        <rect x="0" y="3" width="3" height="3" fill="#fbbf24"/>
+        <rect x="3" y="0" width="6" height="3" fill="#fbbf24"/>
+        <rect x="9" y="3" width="3" height="3" fill="#fbbf24"/>
+        <rect x="12" y="6" width="6" height="3" fill="#ff6b78"/>
+      </g>
+      <g class="spark sp-5" transform="translate(612, 198)">
+        <rect x="0" y="0" width="3" height="3" fill="#ff6b78"/>
+        <rect x="6" y="0" width="3" height="3" fill="#ff6b78"/>
+        <rect x="3" y="3" width="3" height="3" fill="#fbbf24"/>
+        <rect x="0" y="6" width="3" height="3" fill="#ff6b78"/>
+        <rect x="6" y="6" width="3" height="3" fill="#ff6b78"/>
+      </g>
+    </g>
+
+    <!-- ===================================================================
+         THE 4 PIXEL-ART AGENTS + SYSOP (Exact 16x16 icons scaled 3x = 48x48)
+         =================================================================== -->
+    <g class="ag-antigravity" shape-rendering="crispEdges">
+      <g class="bob">
+        <g transform="translate(-24, -24) scale(3)">
+          <rect x="2" y="2" width="1" height="1" fill="#c4b5fd" opacity=".55"/><rect x="13" y="3" width="1" height="1" fill="#8ad7e6" opacity=".65"/><rect x="7" y="1" width="2" height="1" fill="#c4b5fd"/><rect x="5" y="2" width="6" height="1" fill="#a78bfa"/><rect x="4" y="3" width="8" height="2" fill="#8b5cf6"/><rect x="3" y="5" width="10" height="4" fill="#7c3aed"/><rect x="5" y="5" width="6" height="3" fill="#18122b"/><rect x="6" y="6" width="1" height="1" fill="#67e8f9"/><rect x="9" y="6" width="1" height="1" fill="#67e8f9"/><rect x="4" y="9" width="8" height="2" fill="#a78bfa"/><rect x="2" y="7" width="1" height="3" fill="#c4b5fd"/><rect x="13" y="7" width="1" height="3" fill="#c4b5fd"/><rect x="5" y="11" width="2" height="1" fill="#6d28d9"/><rect x="9" y="11" width="2" height="1" fill="#6d28d9"/><rect x="1" y="12" width="14" height="2" fill="#3b2763"/><rect x="2" y="14" width="2" height="2" fill="#261842"/><rect x="12" y="14" width="2" height="2" fill="#261842"/>
+        </g>
+      </g>
+    </g>
+
+    <g class="ag-claude" shape-rendering="crispEdges">
+      <g class="bob bob-2">
+        <g transform="translate(-24, -24) scale(3)">
+          <rect x="2" y="2" width="1" height="1" fill="#fbbf24" opacity=".5"/><rect x="4" y="3" width="8" height="1" fill="#e89274"/><rect x="3" y="4" width="10" height="5" fill="#d97757"/><rect x="2" y="6" width="1" height="2" fill="#d97757"/><rect x="13" y="6" width="1" height="2" fill="#d97757"/><rect x="5" y="5" width="1" height="2" fill="#1a1110"/><rect x="10" y="5" width="1" height="2" fill="#1a1110"/><rect x="4" y="9" width="8" height="1" fill="#b85c3e"/><rect x="4" y="10" width="1" height="2" fill="#d97757"/><rect x="6" y="10" width="1" height="2" fill="#d97757"/><rect x="9" y="10" width="1" height="2" fill="#d97757"/><rect x="11" y="10" width="1" height="2" fill="#d97757"/><rect x="1" y="12" width="14" height="2" fill="#5c3626"/><rect x="2" y="14" width="2" height="2" fill="#3d2217"/><rect x="12" y="14" width="2" height="2" fill="#3d2217"/>
+        </g>
+      </g>
+    </g>
+
+    <g class="ag-opencode" shape-rendering="crispEdges">
+      <g class="bob bob-3">
+        <g transform="translate(-24, -24) scale(3)">
+          <rect x="6" y="2" width="4" height="1" fill="#fde047"/><rect x="5" y="3" width="6" height="4" fill="#facc15"/><rect x="6" y="4" width="1" height="1" fill="#18181b"/><rect x="3" y="5" width="2" height="1" fill="#fb923c"/><rect x="4" y="6" width="1" height="1" fill="#f97316"/><rect x="4" y="7" width="8" height="4" fill="#eab308"/><rect x="6" y="8" width="4" height="2" fill="#fde047"/><rect x="12" y="8" width="1" height="2" fill="#facc15"/><rect x="6" y="11" width="2" height="1" fill="#f97316"/><rect x="9" y="11" width="2" height="1" fill="#f97316"/><rect x="1" y="12" width="14" height="2" fill="#6b4423"/><rect x="2" y="14" width="2" height="2" fill="#422915"/><rect x="12" y="14" width="2" height="2" fill="#422915"/>
+        </g>
+      </g>
+    </g>
+
+    <g class="ag-codex" shape-rendering="crispEdges">
+      <g class="bob bob-4">
+        <g transform="translate(-24, -24) scale(3)">
+          <rect x="3" y="2" width="3" height="2" fill="#4ade80"/><rect x="10" y="2" width="3" height="2" fill="#4ade80"/><rect x="4" y="3" width="1" height="1" fill="#ffffff"/><rect x="5" y="3" width="1" height="1" fill="#0c1a12"/><rect x="10" y="3" width="1" height="1" fill="#ffffff"/><rect x="11" y="3" width="1" height="1" fill="#0c1a12"/><rect x="3" y="4" width="10" height="4" fill="#4ade80"/><rect x="4" y="6" width="1" height="1" fill="#166534"/><rect x="11" y="6" width="1" height="1" fill="#166534"/><rect x="5" y="7" width="6" height="1" fill="#14532d"/><rect x="4" y="8" width="8" height="3" fill="#22c55e"/><rect x="6" y="8" width="4" height="3" fill="#bbf7d0"/><rect x="3" y="10" width="2" height="2" fill="#4ade80"/><rect x="11" y="10" width="2" height="2" fill="#4ade80"/><rect x="1" y="12" width="14" height="2" fill="#1f4d3a"/><rect x="2" y="14" width="2" height="2" fill="#133326"/><rect x="12" y="14" width="2" height="2" fill="#133326"/>
+        </g>
+      </g>
+    </g>
+
+    <!-- Sysop Operator Bot -->
+    <g class="sysop-unit" shape-rendering="crispEdges">
+      <g class="bob">
+        <g transform="translate(-24, -24) scale(3)">
+          <rect x="2" y="2" width="1" height="1" fill="#c4b5fd" opacity=".45"/><rect x="13" y="1" width="1" height="1" fill="#67e8f9" opacity=".55"/><rect class="sys-ant" x="7" y="0" width="2" height="1" fill="#67e8f9"/><rect x="7" y="1" width="1" height="2" fill="#7c3aed"/><rect x="5" y="3" width="6" height="1" fill="#c4b5fd"/><rect x="4" y="4" width="8" height="5" fill="#6d28d9"/><rect x="2" y="5" width="2" height="3" fill="#a78bfa"/><rect x="12" y="5" width="2" height="3" fill="#a78bfa"/><rect x="3" y="8" width="2" height="1" fill="#67e8f9"/><rect x="5" y="5" width="6" height="3" fill="#120e21"/><rect x="6" y="6" width="1" height="1" fill="#67e8f9"/><rect x="9" y="6" width="1" height="1" fill="#67e8f9"/><rect x="7" y="7" width="2" height="1" fill="#e879f9"/><rect x="4" y="9" width="8" height="3" fill="#4c1d95"/><rect x="6" y="9" width="4" height="1" fill="#a78bfa"/><rect x="6" y="10" width="1" height="1" fill="#4ade80"/><rect x="9" y="10" width="1" height="1" fill="#c4b5fd"/><rect x="1" y="12" width="14" height="2" fill="#2b1f47"/><rect x="4" y="12" width="8" height="1" fill="#5b21b6"/><rect x="2" y="14" width="2" height="2" fill="#1a132c"/><rect x="12" y="14" width="2" height="2" fill="#1a132c"/>
+        </g>
+      </g>
+    </g>
+
+    <!-- Demoscene Cyan/Violet Sync Scanline Beam (clipped to box interior) -->
+    <g clip-path="url(#boxInteriorClip)">
+      <rect class="scan-beam" x="0" y="76" width="44" height="172" fill="url(#scanBeam)"/>
+    </g>
+
+    <!-- Subtle CRT scanlines overlay -->
+    <rect x="0" y="0" width="880" height="300" fill="url(#crtScan)" pointer-events="none"/>
+  </g>
+
+  <!-- Crisp outer Purple Glow card border -->
+  <rect x="2" y="2" width="876" height="296" rx="12" fill="none" stroke="#2f2448" stroke-width="2"/>
+  <rect x="3" y="3" width="874" height="294" rx="11" fill="none" stroke="#a78bfa" stroke-width="1" opacity="0.22"/>
+</svg>
