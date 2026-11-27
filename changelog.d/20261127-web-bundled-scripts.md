@@ -1,0 +1,1 @@
+- Fixed: the Web Studio loads again over slow or per-request links (such as the voice front's `Connection: close` through a tunnel): the image serves `/app.js` and `/viewer.js` as one bundle each, so `/` loads 11 scripts instead of 33 (20 requests instead of 42) and a single timed-out module no longer leaves an empty frame.

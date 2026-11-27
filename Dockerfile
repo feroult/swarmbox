@@ -161,6 +161,15 @@ COPY container/config/bashrc.sh /etc/swarmbox/bashrc.sh
 COPY container/config/ssh-swarmbox.conf /etc/ssh/ssh_config.d/swarmbox.conf
 COPY container/web/herdr/*.mjs /usr/local/share/swarmbox/herdr-web/
 COPY container/web/herdr/public/ /usr/local/share/swarmbox/herdr-web/public/
+# One HTTP request per page script: esbuild (a devDependency) bundles /app.js and /viewer.js into public/dist/, which the
+# server prefers over the modular source. Installed, run and pruned in this one layer, so esbuild is not in the image.
+RUN cd /usr/local/share/swarmbox/herdr-web && \
+    export NPM_CONFIG_CACHE=/tmp/npm-build-cache && \
+    npm install --include=dev --no-audit --no-fund && \
+    npm run build && \
+    test -s public/dist/app.js && test -s public/dist/viewer.js && \
+    npm prune --omit=dev --no-audit --no-fund && \
+    rm -rf /tmp/npm-build-cache
 COPY container/scripts/dirs.sh /usr/local/lib/swarmbox/dirs.sh
 COPY container/scripts/mux/ /usr/local/lib/swarmbox/mux/
 COPY container/scripts/starship-init.sh /etc/swarmbox/scripts/starship-init.sh

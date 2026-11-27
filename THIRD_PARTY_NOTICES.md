@@ -208,6 +208,16 @@ in the image, where they were installed.
 - Source: https://github.com/websockets/ws, https://github.com/xtermjs/xterm.js, https://github.com/notofonts/noto-fonts, and https://github.com/ryanoasis/nerd-fonts
 - [verified: `package.json` license and repository fields in installed packages and `npm view` for `@xterm/addon-canvas@0.7.0`, `@xterm/addon-unicode11@0.9.0`, `@fontsource/noto-sans-symbols-2@5.3.0`, and `@azurity/pure-nerd-font@3.0.5`; 2026-11-24]
 
+### esbuild (bundler used at build time, not in the image)
+
+- Version: 0.28.2 (`devDependencies` in `container/web/herdr/package.json`, pinned)
+- License: MIT
+- Source: https://github.com/evanw/esbuild
+- Used only while the image is built: it bundles the Web Studio's own ES modules into `public/dist/app.js` and
+  `public/dist/viewer.js`, and is removed (`npm prune --omit=dev`) in the same layer. The bundles are SwarmBox code plus
+  the few module helpers esbuild writes into its output.
+- [verified: "license" and "repository" fields of the npm registry entry for esbuild 0.28.2 (`npm view`); 2026-11-27]
+
 ### cloudflared (connector image, not in the SwarmBox image)
 
 - Version: `docker.io/cloudflare/cloudflared:2026.10.7`, pinned in the host helper and in `cloudflare-setup.py`

@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build": "esbuild public/app.js public/viewer.js --bundle --format=esm --target=es2022 --outdir=public/dist --log-level=warning"
+  },
   "dependencies": {
     "@azurity/pure-nerd-font": "3.0.5",
     "@fontsource/noto-sans-symbols-2": "5.3.0",
@@ -13,5 +16,8 @@
     "@xterm/headless": "5.5.0",
     "@xterm/xterm": "5.5.0",
     "ws": "8.23.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }

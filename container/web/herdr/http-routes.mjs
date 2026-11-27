@@ -1,5 +1,6 @@
 // Web UI HTTP gateway dispatcher: origin guard, vendor assets, domain route dispatch, and static frontend serving.
 
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   MIME,
@@ -25,6 +26,8 @@ export {
   validateOpenUrl,
   detectImageFormat,
 };
+
+const BUNDLED_ENTRIES = new Set(['/app.js', '/viewer.js']);
 
 export function createHttpHandler(ctx) {
   return async (req, res) => {
@@ -53,6 +56,12 @@ export function createHttpHandler(ctx) {
 
       // Static frontend assets
       if (pathname === '/favicon.ico') return serveFile(res, path.join(PUBLIC_DIR, 'favicon.svg'), true);
+      // The image bundles each ES module graph into public/dist/ (npm run build), so /app.js and /viewer.js are one
+      // request each instead of one per module; a checkout without a build serves the modular source unchanged.
+      if (BUNDLED_ENTRIES.has(pathname)) {
+        const bundled = path.join(PUBLIC_DIR, 'dist', pathname.slice(1));
+        if (fs.existsSync(bundled)) return serveFile(res, bundled, false);
+      }
       const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
       const safePath = path.normalize(path.join(PUBLIC_DIR, rel));
       if (safePath !== PUBLIC_DIR && !safePath.startsWith(PUBLIC_DIR + path.sep)) {

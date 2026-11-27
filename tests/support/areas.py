@@ -19,6 +19,7 @@ AREAS = {
         "test_herdr_backend.py",
         "test_herdr_file_preview.py",
         "test_web_server.py",
+        "test_web_bundle.py",
         "test_addons_web.py",
         "test_context_web.py",
         "test_pins.py",
