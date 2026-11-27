@@ -384,8 +384,8 @@ class AutoNamerTest(unittest.TestCase):
             {"t1": "done"},
         )
         tabs.box_state = lambda section="workspace": {
-            "schema": 1, "active": "t1",
-            "repos": [{"name": "shop", "path": "/home/a/shop", "branch": "main", "agents": [
+            "schema": 2, "active": "t1",
+            "folders": [{"name": "shop", "path": "/home/a/shop", "git": True, "branch": "main", "agents": [
                 {"tab": "t1", "name": "Fix Cache Bug", "agent": "claude", "state": "idle", "branch": "sb/wt-1", "worktree": "wt-1"},
             ]}],
         }
@@ -394,8 +394,8 @@ class AutoNamerTest(unittest.TestCase):
         # box_state exposes repo-grouped agent with display title and worktree branch
         listed = srv.t_box_state({})
         ws = json.loads(listed.splitlines()[1])
-        self.assertEqual(ws["repos"][0]["agents"][0]["name"], "Fix Cache Bug")
-        self.assertEqual(ws["repos"][0]["agents"][0]["branch"], "sb/wt-1")
+        self.assertEqual(ws["folders"][0]["agents"][0]["name"], "Fix Cache Bug")
+        self.assertEqual(ws["folders"][0]["agents"][0]["branch"], "sb/wt-1")
 
         # tab(action="open") resolves repo name and forwards worktree=True
         opened = srv.t_tab({"action": "open", "agent": "claude", "repo": "shop", "worktree": True})

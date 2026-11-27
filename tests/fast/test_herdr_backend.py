@@ -771,6 +771,23 @@ assert.equal(n[0].preview, 'quota resets at 14:00 / then tell it to go on');
         p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stderr)
 
+    def test_a_rename_from_the_page_keeps_the_older_titles_as_swarmbox_tabs_does(self):
+        """routes-tabs.mjs pastTitles/nextPastTitles: the label swarmbox.past_titles is written by both renames, so they agree on it"""
+        if not shutil.which("node"):
+            self.skipTest("node is not installed")
+        js = r"""
+import assert from 'node:assert/strict';
+const { pastTitles, nextPastTitles, PAST_TITLES } = await import(%s);
+assert.equal(PAST_TITLES, 'swarmbox.past_titles');
+assert.deepEqual(nextPastTitles('', '', 'timer'), [], 'no title before: nothing to keep');
+assert.deepEqual(nextPastTitles('["timer"]', 'Canal do Sysop', 'Timer Canal'), ['Canal do Sysop', 'timer']);
+assert.deepEqual(nextPastTitles('["Timer Canal","Canal do Sysop"]', 'x', 'TIMER CANAL'), ['x', 'Canal do Sysop'], 'the new title is no older one');
+assert.deepEqual(nextPastTitles(JSON.stringify(['a', 'b', 'c', 'd', 'e']), 'z', 'new').length, 4);
+for (const raw of ['', 'not json', '{"a":1}', '[1,null]']) assert.deepEqual(pastTitles(raw), [], raw);
+""" % json.dumps("file://" + os.path.join(ROOT, "container", "web", "herdr", "routes-tabs.mjs"))
+        p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, cwd=ROOT)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
     def test_tab_references_in_a_reply_are_one_chip_each(self):
         """public/tabrefs.js: every way a reply names a tab resolves to the same tab, with its name as the page shows it (the replies of a real
         session wrote `t2`, t3, `1:shell` and "`escritorio` (t8)" in one conversation, and only some of them were highlighted)"""

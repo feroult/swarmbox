@@ -730,6 +730,47 @@ class TestApi(Base):
         self.assertEqual(self.code(d.focus_tab, "one")[0], "unsupported")
 
 
+    def test_a_rename_keeps_the_older_titles_and_an_older_title_still_finds_the_tab(self):
+        """the autonamer renames a tab while a conversation still calls it by its last title: that title still resolves to it"""
+        class Labelled(mod.TabsBackend):
+            name = "mem"
+
+            def __init__(self):
+                self.labels = {"m1": {}, "m2": {}}
+
+            def list_tabs_raw(self):
+                return [mod.Tab("m1", 1, "sb-wt-1", "/", "claude", "m1", ["m1"], False, "1:sb-wt-1"),
+                        mod.Tab("m2", 2, "other", "/", "bash", "m2", ["m2"], False, "2:other")]
+
+            def active_tab_id(self, ids):
+                return ids[0]
+
+            def tab_labels(self, tab):
+                return self.labels[tab.id]
+
+            def rename_tab(self, tab, title, source="user"):
+                self.set_labels(tab, {"swarmbox.title": title, "swarmbox.title_source": source})
+
+            def set_labels(self, tab, labels):
+                self.labels[tab.id].update(labels)
+        be = Labelled()
+        d = mod.Tabs(backend=be, pause=0, run_dir=self.ft.dir)
+        d.rename_tab("m1", "timer")
+        self.assertNotIn(mod.PAST_TITLES, be.labels["m1"], "a tab name is no title: nothing to keep")
+        d.rename_tab("m1", "Canal do Sysop", source="auto")
+        d.rename_tab("m1", "Timer Canal", source="auto")
+        row = [t for t in d.list_tabs() if t["tab"] == "m1"][0]
+        self.assertEqual((row["title"], row["past_titles"]), ("Timer Canal", ["Canal do Sysop", "timer"]))
+        self.assertEqual(d.resolve("TIMER").id, "m1", "an older title, in any case")
+        d.rename_tab("m1", "timer")
+        self.assertEqual(mod.past_titles(be.labels["m1"][mod.PAST_TITLES]), ["Timer Canal", "Canal do Sysop"], "the current title is no older one")
+        be.labels["m2"]["swarmbox.title"] = "Canal do Sysop"
+        self.assertEqual(d.resolve("Canal do Sysop").id, "m2", "a current title wins over an older one")
+        for raw in ("", "not json", '{"a": 1}', "[1, null]"):
+            self.assertEqual(mod.past_titles(raw), [], raw)
+        self.assertEqual(len(mod.next_past_titles(json.dumps(list("abcdef")), "z", "new")), mod.MAX_PAST_TITLES)
+
+
 class TestLock(Base):
     """a lock per tab (flock in the run folder): two sends to one tab never interleave, whoever sends"""
 

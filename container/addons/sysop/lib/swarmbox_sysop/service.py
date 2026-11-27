@@ -568,7 +568,7 @@ class Service:
             if os.environ.get("SWARMBOX_SYSOP_PRESEED", "1") != "0":
                 try:
                     ws = tabsclient.Tabs(read_timeout=5.0).box_state("workspace")
-                    if isinstance(ws, dict) and ("repos" in ws or "shells" in ws):
+                    if isinstance(ws, dict) and ("folders" in ws or "shells" in ws):
                         parts.append(mcpserver.format_box_state(ws, "workspace"))
                 except Exception:
                     pass

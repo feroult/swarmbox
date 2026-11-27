@@ -1,0 +1,3 @@
+- Changed: the Sysop names everything the same way: an agent or a shell only by the name you see (no tab id, no "the claude agent" beside it), a folder by its path, and a repo as "repo name"; `swarmbox state` now lists `folders` instead of `repos` (schema 2), so an agent in a folder without git is no longer called a repo.
+- Changed: tab chips in the Sysop's conversation take the colour of their agent (claude, agy, codex, opencode), as their rows and cards in the tab bar do.
+- Fixed: a tab renamed while the Sysop was talking about it (the automatic namer, or you) is still found and drawn as one chip by its older names.

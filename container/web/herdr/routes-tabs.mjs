@@ -29,6 +29,32 @@ import {
 import { enrichTerminalsWithRepo, normRealPath } from './repo-discovery.mjs';
 import { readBody, resolveWorktreeTarget, sendJson } from './http-utils.mjs';
 
+// The older titles of a tab (swarmbox.past_titles, a JSON list, newest first), as swarmbox-tabs keeps them (past_titles there): a rename
+// from the page records the title it replaces, so a name the Sysop's conversation still uses resolves to the renamed tab.
+export const PAST_TITLES = 'swarmbox.past_titles';
+const MAX_PAST_TITLES = 4;
+
+export function pastTitles(raw) {
+  let val = [];
+  try { val = typeof raw === 'string' && raw.trim() ? JSON.parse(raw) : []; } catch (_) { return []; }
+  const out = [];
+  for (const x of Array.isArray(val) ? val : []) {
+    const t = typeof x === 'string' ? x.trim().slice(0, 60) : '';
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out.slice(0, MAX_PAST_TITLES);
+}
+
+export function nextPastTitles(raw, oldTitle, newTitle) {
+  const old = String(oldTitle || '').trim().slice(0, 60);
+  const newLow = String(newTitle || '').trim().toLowerCase();
+  const out = old && old.toLowerCase() !== newLow ? [old] : [];
+  for (const x of pastTitles(raw)) {
+    if (x.toLowerCase() !== newLow && !out.some((o) => o.toLowerCase() === x.toLowerCase())) out.push(x);
+  }
+  return out.slice(0, MAX_PAST_TITLES);
+}
+
 export async function handleTabAndPinRoutes(req, res, url, pathname, { hc, hub, worktreeHub, runWt }) {
   if (pathname === '/api/tabs' && req.method === 'GET') {
     const resList = await hc.call('terminal.list', { all: false });
@@ -186,16 +212,15 @@ export async function handleTabAndPinRoutes(req, res, url, pathname, { hc, hub, 
       const title = cleanSessionTitle(body.title);
       if (!title) { sendJson(res, 400, { error: 'bad_title', message: 'title cannot be empty' }); return true; }
       const source = body.title_source === 'auto' ? 'auto' : 'user';
-      await hc.call('terminal.label', {
-        terminal: termId,
-        labels: {
-          'swarmbox.title': title,
-          'swarmbox.title_source': source,
-        },
-      });
+      const known = hc.terminals.get(termId);
+      const kl = (known && known.labels) || {};
+      const past = nextPastTitles(kl[PAST_TITLES], kl['swarmbox.title'], title);
+      const labels = { 'swarmbox.title': title, 'swarmbox.title_source': source };
+      if (known && JSON.stringify(past) !== JSON.stringify(pastTitles(kl[PAST_TITLES]))) labels[PAST_TITLES] = past.length ? JSON.stringify(past) : '';
+      await hc.call('terminal.label', { terminal: termId, labels });
       const t = hc.terminals.get(termId);
       if (t) {
-        t.labels = { ...(t.labels || {}), 'swarmbox.title': title, 'swarmbox.title_source': source };
+        t.labels = { ...(t.labels || {}), ...labels };
         const pinId = t.labels['swarmbox.pin_id'];
         if (pinId) {
           const pins = readPins();

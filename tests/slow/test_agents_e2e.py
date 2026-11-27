@@ -138,7 +138,7 @@ class DeclaredAgentInABox(unittest.TestCase):
         self.assertEqual(row["status"]["app"], "robo-cli")
         self.assertEqual(self.sh("swarmbox-agents resolve %s" % row["cmd"]), "robo")
         state = json.loads(self.sh("swarmbox-state --section workspace"))
-        self.assertIn(("proj", "robo"), [(r["name"], a.get("agent")) for r in state["repos"] for a in r.get("agents", [])])
+        self.assertIn(("proj", "robo"), [(r["name"], a.get("agent")) for r in state["folders"] for a in r.get("agents", [])])
 
         # a second agent in the same repository: the collision is seen, and the new one gets a worktree
         chk = self.api("GET", "/api/worktrees/check?cwd=/home/agent/proj")

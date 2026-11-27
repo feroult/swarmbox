@@ -50,7 +50,7 @@ class _InProcessTabs:
     def box_state(self, section="workspace"):
         tabs = self.list_tabs()
         active = next((t["tab"] for t in tabs if t.get("active")), tabs[0]["tab"] if tabs else None)
-        return {"schema": 1, "active": active, "repos": [], "shells": tabs, "parked": [], "installed_agents": []}
+        return {"schema": 2, "active": active, "folders": [], "shells": tabs, "parked": [], "installed_agents": []}
 
     def list_tabs(self):
         return self._call(["list"])

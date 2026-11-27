@@ -1,4 +1,4 @@
-"""Fast tests for swarmbox-state: repo-grouped agents, shells, parked sessions, pending worktrees, and system diagnostics.
+"""Fast tests for swarmbox-state: folder-grouped agents (a git folder is a repo), shells, parked sessions, pending worktrees, and system diagnostics.
 Run with: python3 -W error tests/fast/test_state.py
 """
 import importlib.util
@@ -84,8 +84,8 @@ class StateTests(unittest.TestCase):
         self.assertEqual(ws["installed_agents"], ["agy", "claude"])
 
         # Repos: active repo first (shop-api), idle discovered repo second (payments)
-        self.assertEqual([r["name"] for r in ws["repos"]], ["shop-api", "payments"])
-        shop = ws["repos"][0]
+        self.assertEqual([r["name"] for r in ws["folders"]], ["shop-api", "payments"])
+        shop = ws["folders"][0]
         self.assertEqual(shop["branch"], "main")
         self.assertEqual(len(shop["agents"]), 2)
         self.assertEqual(shop["agents"][0]["name"], "Fix retries")
@@ -99,7 +99,7 @@ class StateTests(unittest.TestCase):
         self.assertEqual([w["id"] for w in shop["pending_worktrees"]], ["wt-5f3e"])
 
         # Idle repo has empty agents list and no pending_worktrees key
-        pay = ws["repos"][1]
+        pay = ws["folders"][1]
         self.assertEqual(pay["agents"], [])
         self.assertNotIn("pending_worktrees", pay)
 
@@ -112,6 +112,24 @@ class StateTests(unittest.TestCase):
         self.assertEqual(len(ws["parked"]), 1)
         self.assertEqual(ws["parked"][0]["id"], "pin-1")
         self.assertEqual(ws["parked"][0]["title"], "Billing fix")
+
+    def test_an_agent_in_a_folder_without_git_is_in_a_folder_that_says_so_and_a_renamed_tab_lists_its_older_names(self):
+        repo = self._mk_repo("shop-api")
+        notes = os.path.join(self.home, "notes")
+        os.makedirs(notes)
+        tabs = [
+            {"tab": "t1", "name": "claude", "title": "Canal do Sysop", "past_titles": ["timer", "Canal do Sysop", ""], "dir": notes, "cmd": "claude"},
+            {"tab": "t2", "name": "claude", "dir": repo, "cmd": "claude"},
+            {"tab": "t3", "name": "shell", "title": "logs", "past_titles": ["build"], "dir": notes, "cmd": "bash"},
+        ]
+        ws = sb_state.build_workspace(env=self.env, tabs_list=tabs, pins_list=[], worktrees_list=[])
+        self.assertNotIn("repos", ws)
+        by = {f["name"]: f for f in ws["folders"]}
+        self.assertEqual((by["notes"]["git"], by["shop-api"]["git"]), (False, True))
+        self.assertNotIn("branch", by["notes"], "only a repo has a branch")
+        self.assertEqual(by["notes"]["agents"][0]["was"], ["timer"], "the current name and an empty one are no older names")
+        self.assertNotIn("was", by["shop-api"]["agents"][0])
+        self.assertEqual(ws["shells"][0]["was"], ["build"])
 
     def test_system_section_reads_health_resources_and_addons(self):
         with open(os.path.join(self.run_dir, "ready"), "w", encoding="utf-8") as f:
@@ -128,7 +146,7 @@ class StateTests(unittest.TestCase):
         p = subprocess.run([sys.executable, STATE_PATH, "--section", "system"], env=self.env, capture_output=True, text=True, timeout=15)
         self.assertEqual(p.returncode, 0, p.stderr)
         data = json.loads(p.stdout)
-        self.assertEqual(data["schema"], 1)
+        self.assertEqual(data["schema"], 2)
         self.assertIn("health", data)
 
         bad = subprocess.run([sys.executable, STATE_PATH, "--section", "bogus"], env=self.env, capture_output=True, text=True, timeout=15)

@@ -3,7 +3,8 @@
 
 Composes live terminals (swarmbox-tabs), parked sessions (swarmbox-pins), git worktrees (swarmbox-worktree),
 workspace git repositories, installed agents/addons, and box health/resources into one compact JSON snapshot
-matching the SwarmBox UI model: repos -> agents & pending_worktrees, shells, parked, and system diagnostics.
+matching the SwarmBox UI model: folders (a git one is a repo) -> agents & pending_worktrees, shells, parked, and system diagnostics.
+Schema 2: the key `repos` became `folders` (an agent in a folder without git is in it too, with git false; every folder says git).
 
   swarmbox-state [--section workspace|system|all]
 
@@ -23,7 +24,7 @@ for _d in (os.path.dirname(os.path.realpath(__file__)), "/usr/local/lib/swarmbox
         break
 import swarmbox_agents  # noqa: E402  - the agent registry: which programs are agents (docs/agents-design.md)
 
-SCHEMA = 1
+SCHEMA = 2
 SHELL_COMMANDS = ("bash", "sh", "zsh", "dash", "fish", "ksh", "ash", "-bash", "-sh", "-zsh")
 SKIP_SCAN_DIRS = frozenset({"node_modules", ".git", "venv", ".venv", "dist", "build", "target", "__pycache__"})
 _GENERIC_SHELL = re.compile(r"shell(?:-\d+)?", re.I)
@@ -172,6 +173,17 @@ def display_name(t, home=""):
     return raw or "shell"
 
 
+def _past_names(t, name):
+    """The older names of a tab (swarmbox-tabs keeps them in the swarmbox.past_titles label, newest first): not the current one."""
+    past = t.get("past_titles") if isinstance(t.get("past_titles"), list) else []
+    out = []
+    for p in past:
+        p = str(p or "").strip()
+        if p and p != name and p not in out:
+            out.append(p)
+    return out[:4]
+
+
 def detect_agent(t, env=None):
     """The agent id a tab row runs (the registry's detection order: OSC 7501 app, command, `swarmbox.agent` label), or '' for a shell."""
     return swarmbox_agents.detect(t, env)
@@ -225,7 +237,7 @@ def _discover_workspace_repos(home):
 
 
 def build_workspace(env=None, tabs_list=None, pins_list=None, worktrees_list=None):
-    """Build the compact workspace state: active, repos (with agents & pending_worktrees), shells, parked, installed_agents."""
+    """Build the compact workspace state: active, folders (with agents & pending_worktrees), shells, parked, installed_agents."""
     e = os.environ if env is None else env
     home = (e.get("HOME") or os.path.expanduser("~")).rstrip("/") or "/"
     data_dir = _xdg(e, "XDG_DATA_HOME", ".local/share")
@@ -289,12 +301,16 @@ def build_workspace(env=None, tabs_list=None, pins_list=None, worktrees_list=Non
         ag = detect_agent(t, e)
         name = display_name(t, home)
         if not ag:
-            shells.append({
+            row = {
                 "tab": tid,
                 "name": name,
                 "dir": _short_dir(tab_dir, home),
                 "cmd": str(t.get("cmd") or "bash"),
-            })
+            }
+            was = _past_names(t, name)
+            if was:
+                row["was"] = was
+            shells.append(row)
             continue
 
         # Resolve repo group for this agent
@@ -336,6 +352,9 @@ def build_workspace(env=None, tabs_list=None, pins_list=None, worktrees_list=Non
             "agent": ag,
             "state": state,
         }
+        was = _past_names(t, name)
+        if was:
+            agent_row["was"] = was
         if isinstance(st.get("progress"), (int, float)):
             agent_row["progress"] = int(st["progress"])
         if st.get("msg"):
@@ -411,23 +430,21 @@ def build_workspace(env=None, tabs_list=None, pins_list=None, worktrees_list=Non
             wt_entry["can_merge"] = bool(w["can_merge"])
         grp["pending_worktrees"].append(wt_entry)
 
-    # 5. Clean & sort repos: repos with active agents/pending worktrees first, then alphabetical
-    repos = []
+    # 5. Clean & sort folders: folders with active agents/pending worktrees first, then alphabetical
+    folders = []
     for grp in sorted(repo_map.values(), key=lambda g: (0 if (g["agents"] or g["pending_worktrees"]) else 1, g["name"].lower())):
-        item = {"name": grp["name"], "path": grp["path"]}
-        if not grp.get("git", True):
-            item["git"] = False
-        elif grp.get("branch"):
+        item = {"name": grp["name"], "path": grp["path"], "git": bool(grp.get("git", True))}
+        if item["git"] and grp.get("branch"):
             item["branch"] = grp["branch"]
         item["agents"] = grp["agents"]
         if grp["pending_worktrees"]:
             item["pending_worktrees"] = grp["pending_worktrees"]
-        repos.append(item)
+        folders.append(item)
 
     out = {"schema": SCHEMA}
     if active_tab:
         out["active"] = active_tab
-    out["repos"] = repos
+    out["folders"] = folders
     if shells:
         out["shells"] = shells
     if parked:

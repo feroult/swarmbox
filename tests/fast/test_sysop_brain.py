@@ -157,7 +157,8 @@ class Template(unittest.TestCase):
         p = " ".join(brain.system_prompt("voice", 20, 300).split())
         needs = {
             "the tools": ("box_state", "read_tab", "tab", "worktree", "run", "input", "wait", "say", "done"),
-            "world model": ("REPOS", "SHELLS", "PARKED", "[box state (workspace)"),
+            "world model": ("FOLDERS", "AGENTS", "SHELLS", "PARKED", "[box state (workspace)", "`folders`"),
+            "one word per thing": ("a TAB is any terminal", "is a REPO", "The KIND of an agent", "`was` lists the older"),
             "a goal is a message for an agent by default": ("BY DEFAULT a message for an agent", "never do an agent's coding",
                                                             "do not type prose into the shell"),
             "the most likely agent is inferred": ("Pick the agent in order", "active", "last conversation turn", "sole running agent"),
@@ -166,7 +167,8 @@ class Template(unittest.TestCase):
             "a working agent takes the message": ('state="working"', "queues messages automatically", "ALWAYS type the message with `run` anyway"),
             "one simple command per run": ("ONE simple command per `run`",),
             "a question about the box is answered, not forwarded": ("Question about box state", "never type it into an agent"),
-            "a tab is named by its name": ("Name tabs ONLY by their canonical `name` in backticks", "never by id (`t3`, `@3`) or numbered label"),
+            "a tab is named by its name": ("Name tabs ONLY by their canonical `name` in backticks", "never by id (`t3`, `@3`) or numbered label",
+                                           "never the kind in place of the name", "never one from `was`", "a folder is never a tab"),
             "the reply is concise and in the user's language": ("in the user's language", "Do not repeat in your final reply what you already said with `say`"),
             "multi-step tasks narrate progress with say": ("On multi-step tasks", "narrate progress with `say`"),
             "a dialog is the user's decision": ("USER's decision", "never answer, press Esc/Enter, or type over them", "unless the goal explicitly asks to answer that dialog"),

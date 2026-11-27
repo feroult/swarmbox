@@ -98,6 +98,30 @@ ScreenCapture = namedtuple("ScreenCapture", "raw cursor alternate in_mode mode s
 
 # exit code of the command for each error code (the others are 1); see the docstring
 EXIT = {"usage": 2, "bad_body": 2, "no_session": 4, "no_backend": 4, "timeout": 5}
+PAST_TITLES = "swarmbox.past_titles"     # the label with the older titles of a tab, a JSON list, newest first
+MAX_PAST_TITLES = 4
+
+
+def past_titles(raw):
+    """The older titles of a tab, from its swarmbox.past_titles label (a JSON list of strings, newest first); [] for anything else."""
+    try:
+        val = json.loads(raw) if isinstance(raw, str) and raw.strip() else []
+    except ValueError:
+        return []
+    out = []
+    for x in val if isinstance(val, list) else []:
+        if isinstance(x, str) and x.strip() and x.strip()[:60] not in out:
+            out.append(x.strip()[:60])
+    return out[:MAX_PAST_TITLES]
+
+
+def next_past_titles(raw, old_title, new_title):
+    """The older titles after a rename from old_title (a title, or none: a tab name is no title) to new_title."""
+    old = str(old_title or "").strip()[:60]
+    new_low = str(new_title or "").strip().lower()
+    out = [old] if old and old.lower() != new_low else []
+    out += [x for x in past_titles(raw) if x.lower() != new_low and x.lower() not in [o.lower() for o in out]]
+    return out[:MAX_PAST_TITLES]
 
 
 class TabsError(Exception):
@@ -1039,6 +1063,9 @@ class Tabs:
                 row["title"] = str(lbls["swarmbox.title"])[:60]
             if lbls.get("swarmbox.title_source") in ("user", "auto"):
                 row["title_source"] = lbls["swarmbox.title_source"]
+            past = past_titles(lbls.get(PAST_TITLES))
+            if past:
+                row["past_titles"] = past
             if lbls.get("swarmbox.agent") and str(lbls["swarmbox.agent"]).lower() != "shell":
                 row["agent"] = str(lbls["swarmbox.agent"]).lower()[:24]
             if lbls.get("swarmbox.pin_id"):
@@ -1070,9 +1097,15 @@ class Tabs:
         if not clean:
             raise TabsError("bad_body", "title cannot be empty")
         t = self.resolve(tab)
-        lbls = self.backend.tab_labels(t) or {}
+        lbls = dict(self.backend.tab_labels(t) or {})      # before the rename: a backend may change its own dict
         old_title = str(lbls.get("swarmbox.title") or t.name)
         self.backend.rename_tab(t, clean, source=src)
+        past = next_past_titles(lbls.get(PAST_TITLES), lbls.get("swarmbox.title"), clean)
+        if past != past_titles(lbls.get(PAST_TITLES)):
+            try:
+                self.backend.set_labels(t, {PAST_TITLES: json.dumps(past, ensure_ascii=False) if past else ""})
+            except TabsError:
+                pass        # a backend without labels keeps the new title, only not the old one
         pin_id = lbls.get("swarmbox.pin_id")
         if pin_id:
             try:
@@ -1204,6 +1237,8 @@ class Tabs:
         if not hit:
             low = s.strip().lower()
             hit = [t for t in tabs if str((self.backend.tab_labels(t) or {}).get("swarmbox.title") or "").strip().lower() == low]
+        if not hit:     # a name the tab had before a rename (the autonamer renames while a conversation still calls it so)
+            hit = [t for t in tabs if low in [p.lower() for p in past_titles((self.backend.tab_labels(t) or {}).get(PAST_TITLES))]]
         if not hit:
             raise TabsError("no_such_tab", "no tab %s; the tabs are: %s" % (s, ", ".join("%s (%s)" % (t.label, t.id) for t in tabs) or "none"))
         if len(hit) > 1:

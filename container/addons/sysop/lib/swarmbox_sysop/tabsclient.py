@@ -1,7 +1,7 @@
 """The sysop's use of the box capabilities: `swarmbox-tabs`, `swarmbox-state`, `swarmbox-worktree`, and `swarmbox-pins`
 (all run as child commands with JSON output, never imported by path from host files).
 
-  box_state(section)           -> {"schema": 1, "active", "repos": [...], "shells": [...], "parked": [...], ...}
+  box_state(section)           -> {"schema": 2, "active", "folders": [...], "shells": [...], "parked": [...], ...}
   list_tabs()                  -> [{"tab": "t3", "label": "1:api", "index", "name", "dir", "cmd", "pane", "panes", "active"}]
   screen(tab, lines=None)      -> {"tab", "pane", "text", "cursor", "alternate", "in_mode", "mode", "size", "lines"}
   send(tab, run=T | input=T)   -> {"ok": true, "tab", "pane", "submitted"} (+ "verified" for a text submitted to an agent)

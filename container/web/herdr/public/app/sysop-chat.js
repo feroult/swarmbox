@@ -1,6 +1,6 @@
 // Sysop chat panel: approval & question cards, notifications, tab-ref chips, markdown reply renderer, live goal streaming & BBS glow, feed, queue, and status strip.
 
-import { state, dom, actions } from './state.js';
+import { state, dom, actions, applyAgentColor } from './state.js';
 import { ICO_CLOCK_SVG, ICO_BOLT_SVG, tabDisplayName, tabAgentKind, pixelIconHtml, makeMiniPixelIcon } from './icons.js';
 import { showTermToast } from './ui-chrome.js';
 import { phase, fmtAgo, syncContext } from './sysop-context.js';
@@ -172,13 +172,23 @@ export function getKnownTab(addr) {
   return addr ? (knownTabs[addr] || null) : null;
 }
 
+// The names a reply may call a tab by besides the one shown: its herdr name and the titles it had before a rename (swarmbox.past_titles,
+// a JSON list kept by swarmbox-tabs and the rename route), so a name the conversation still uses is the renamed tab's chip
+export function tabAliases(t) {
+  const out = t && t.name ? [String(t.name)] : [];
+  let past = [];
+  try { past = JSON.parse((t && t.labels && t.labels['swarmbox.past_titles']) || '[]'); } catch (_) { past = []; }
+  for (const p of Array.isArray(past) ? past : []) if (typeof p === 'string' && p.trim() && !out.includes(p.trim())) out.push(p.trim());
+  return out;
+}
+
 export function rememberTabs() {
   let changed = false;
   for (const t of state.terminals) {
     if (!t || !t.address) continue;
-    const rec = { name: tabDisplayName(t), alias: String(t.name || ''), kind: tabAgentKind(t) || 'shell' };
+    const rec = { name: tabDisplayName(t), aliases: tabAliases(t), kind: tabAgentKind(t) || 'shell' };
     const old = knownTabs[t.address];
-    if (!old || old.name !== rec.name || old.kind !== rec.kind || old.alias !== rec.alias) {
+    if (!old || old.name !== rec.name || old.kind !== rec.kind || JSON.stringify(old.aliases) !== JSON.stringify(rec.aliases)) {
       knownTabs[t.address] = rec;
       changed = true;
     }
@@ -195,10 +205,12 @@ export function tabRefContext() {
   for (const t of state.terminals) {
     if (!t || !t.address) continue;
     live.add(t.address);
-    out.push({ address: t.address, name: tabDisplayName(t), aliases: t.name ? [String(t.name)] : [], kind: tabAgentKind(t) || 'shell', live: true });
+    out.push({ address: t.address, name: tabDisplayName(t), aliases: tabAliases(t), kind: tabAgentKind(t) || 'shell', live: true });
   }
   for (const [address, rec] of Object.entries(knownTabs)) {
-    if (!live.has(address)) out.push({ address, name: rec.name, aliases: rec.alias ? [rec.alias] : [], kind: rec.kind, live: false });
+    // a record of an older page kept one alias (alias): read as the list
+    const aliases = Array.isArray(rec.aliases) ? rec.aliases : (rec.alias ? [rec.alias] : []);
+    if (!live.has(address)) out.push({ address, name: rec.name, aliases, kind: rec.kind, live: false });
   }
   return out;
 }
@@ -206,6 +218,8 @@ export function tabRefContext() {
 export function tabChip(tab) {
   const chip = document.createElement('span');
   chip.className = `tab-ref${tab.live ? '' : ' closed'}`;
+  // the colour of the agent's kind, as its row and card in the tab bar have it (applyAgentColor: --ac-accent); a shell keeps the accent
+  if (tab.kind && tab.kind !== 'shell') applyAgentColor(chip, tab.kind);
   chip.appendChild(makeMiniPixelIcon(tab.kind || 'shell'));
   const name = document.createElement('span');
   name.className = 'tab-ref-name';

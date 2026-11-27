@@ -374,6 +374,7 @@ export class HerdrClient extends EventEmitter {
         (t.status && t.status.progress) ?? '',
         (t.labels && t.labels['swarmbox.title']) || '',
         (t.labels && t.labels['swarmbox.title_source']) || '',
+        (t.labels && t.labels['swarmbox.past_titles']) || '',
         (t.labels && t.labels['swarmbox.pin_id']) || '',
         (t.labels && t.labels['swarmbox.worktree']) || '',
         (t.labels && t.labels['swarmbox.branch']) || '',

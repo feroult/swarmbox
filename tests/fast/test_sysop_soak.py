@@ -134,7 +134,7 @@ class McpWithoutAudit(tm.Rig):
 
     def test_reading_and_saying_go_on_without_the_audit(self):
         with self.failing(), mock.patch.object(sys, "stderr", io.StringIO()):
-            self.assertIn("repos", self.ok("box_state"))
+            self.assertIn("folders", self.ok("box_state"))
             self.ok("read_tab", tab="@1")
             self.ok("say", text="the disk is full")
             self.ok("done", summary="stopped")

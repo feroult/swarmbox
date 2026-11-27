@@ -2636,7 +2636,7 @@ button.brand:focus-visible { outline: 1px solid var(--accent); outline-offset: 1
   font-family: var(--mono);
   font-size: 0.93em;
   font-weight: 700;
-  color: var(--accent-bright);
+  color: var(--ac-accent, var(--accent-bright));
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
