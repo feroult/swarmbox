@@ -2114,6 +2114,66 @@
     };
   }
 
+  // WebLinksAddon sees one buffer row at a time, so a URL that xterm soft-wraps
+  // gets split into unrelated links. Join each soft-wrapped run and expose only
+  // URLs that cross a row boundary; the addon continues to handle single-row URLs.
+  function createWrappedUrlLinkProvider(term) {
+    return {
+      provideLinks(bufferLineNumber, callback) {
+        const buf = term.buffer && term.buffer.active;
+        if (!buf) return callback(undefined);
+        const row0 = bufferLineNumber - 1;
+        let startRow = row0;
+        while (startRow > 0 && buf.getLine(startRow)?.isWrapped) startRow--;
+        let endRow = row0;
+        while (endRow + 1 < buf.length && buf.getLine(endRow + 1)?.isWrapped) endRow++;
+
+        const rows = [];
+        let logical = '';
+        for (let r = startRow; r <= endRow; r++) {
+          const line = buf.getLine(r);
+          if (!line) continue;
+          const value = line.translateToString(r === endRow);
+          rows.push({ row1: r + 1, start: logical.length, end: logical.length + value.length });
+          logical += value;
+        }
+
+        const posForOffset = (offset) => {
+          for (const row of rows) {
+            if (offset >= row.start && offset < row.end) {
+              return { x: offset - row.start + 1, y: row.row1 };
+            }
+          }
+          const last = rows[rows.length - 1];
+          return { x: Math.max(1, last ? last.end - last.start : 1), y: last ? last.row1 : bufferLineNumber };
+        };
+        const links = [];
+        const urlRe = /https?:\/\/[^\s"'<>`()[\]{}]+/gi;
+        let match;
+        while ((match = urlRe.exec(logical))) {
+          let url = match[0];
+          while (/[.,;:!?]+$/.test(url)) url = url.slice(0, -1);
+          if (!url) continue;
+          const start = match.index;
+          const end = start + url.length;
+          const firstRow = rows.find((row) => start >= row.start && start < row.end);
+          const lastRow = rows.find((row) => end - 1 >= row.start && end - 1 < row.end);
+          if (!firstRow || !lastRow || firstRow.row1 === lastRow.row1) continue;
+          links.push({
+            text: url,
+            range: { start: posForOffset(start), end: posForOffset(end - 1) },
+            decorations: { pointerCursor: true, underline: true },
+            activate(event) {
+              if (event) event.preventDefault();
+              window.open(url, '_blank', 'noopener,noreferrer');
+            },
+          });
+        }
+        callback(links.length ? links : undefined);
+      },
+    };
+  }
+
   window.addEventListener('keydown', (e) => {
     if (fileDrawerOpen) {
       if (e.key === 'Escape') {
@@ -2331,11 +2391,14 @@
     });
     const fitAddon = new window.FitAddon.FitAddon();
     term.loadAddon(fitAddon);
-    if (window.WebLinksAddon) {
-      term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
-    }
     if (typeof term.registerLinkProvider === 'function' && window.PathLinks) {
       term.registerLinkProvider(createTerminalPathLinkProvider(term, address));
+    }
+    if (typeof term.registerLinkProvider === 'function') {
+      term.registerLinkProvider(createWrappedUrlLinkProvider(term));
+    }
+    if (window.WebLinksAddon) {
+      term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
     }
     if (window.Unicode11Addon) {
       try {
