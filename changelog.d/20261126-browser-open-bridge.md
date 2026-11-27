@@ -1,1 +1,0 @@
-- Fixed: clicking or opening external `http(s)://` links from coding agents inside the box now routes through `swarmbox-open` (`$BROWSER` and `xdg-open`) to open in the Web Studio (with a 1-click fallback toast if blocked by a popup blocker) or copy via OSC 52 and show a clickable OSC 8 link in the Terminal Cockpit, instead of failing with "Couldn't open your browser".

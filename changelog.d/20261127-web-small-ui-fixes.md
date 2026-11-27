@@ -1,3 +1,0 @@
-- Added: every Web Studio popover, the settings dialog, and the file preview drawer close from one `Esc ×` capsule at the right of the head: Esc closes them, and a click on the capsule does too (on a phone it shows a larger `×`). The separate close X of the settings dialog and the drawer is gone.
-- Fixed: the Markdown viewer no longer turns wide with empty space on the right when a document has a long URL or inline code; the text wraps inside the page.
-- Fixed: an open worktree or repository popover now refreshes its Git status every few seconds, so a commit or edit made in a shell shows without reopening it.
