@@ -333,7 +333,7 @@ class LockTest(Base):
         with open(os.path.join(self.lock, "pid")) as f:
             self.assertEqual(f.read().strip(), str(p1.pid))
         p2 = self.start(prog)
-        time.sleep(0.4)   # the second call is at the lock by now; if it were later the outcome below is the same
+        time.sleep(0.15)  # the second call is at the lock by now; if it were later the outcome below is the same
         self.assertIsNone(p2.poll(), "the second call must wait for the lock")
         self.assertEqual(self.entered_count(), 1)
         open(self.release, "a").close()
@@ -381,7 +381,7 @@ class LockTest(Base):
         os.makedirs(self.lock)
         with open(os.path.join(self.lock, "pid"), "w") as f:
             f.write("%d\n" % holder.pid)
-        r = self.up(SWARMBOX_TEST_LOCK_TRIES="8", SWARMBOX_TEST_NAP="0.05")
+        r = self.up(SWARMBOX_TEST_LOCK_TRIES="4", SWARMBOX_TEST_NAP="0.03")
         self.assertEqual(r.returncode, 6, r.stderr)
         self.assertIn("another 'up' holds %s" % self.lock, r.stderr)
         self.assertTrue(os.path.isdir(self.lock), "a live lock is never removed")

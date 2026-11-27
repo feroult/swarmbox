@@ -2,6 +2,7 @@
 addressing, the hidden sysop terminals, the screen pipeline (markers, last N lines, clip, secrets), the typing rules (pause, separate Enter, dialog,
 busy, queue, slash, verify, braces), errors, timeouts, the lock between sends, open/focus/close, and the command line (JSON, exit codes, stdin,
 the framed text of `hc connect`). No herdr-core, network or model. Run with: python3 tests/fast/test_tabs.py"""
+import concurrent.futures
 import contextlib
 import io
 import json
@@ -323,18 +324,18 @@ class TestSend(Base):
 
     def test_a_swallowed_enter_is_pressed_once_more_and_the_text_is_not_typed_again(self):
         self.add("t3", "flaky", **claude_term(swallow=1))
-        self.ft.driver(verify_timeout=0.3).send_body("t3", {"run": "a prompt that stays"})
+        self.ft.driver(verify_timeout=0.15).send_body("t3", {"run": "a prompt that stays"})
         self.assertEqual(self.typed("t3"), ["a prompt that stays", "<enter>", "<enter>"])
 
     def test_an_enter_that_never_submits_is_not_submitted(self):
         self.add("t3", "stuck", **claude_term(swallow=99))
-        code, msg = self.code(self.ft.driver(verify_timeout=0.3).send_body, "t3", {"run": "x prompt"})
+        code, msg = self.code(self.ft.driver(verify_timeout=0.12).send_body, "t3", {"run": "x prompt"})
         self.assertEqual(code, "not_submitted")
         self.assertEqual(self.typed("t3"), ["x prompt", "<enter>", "<enter>"])               # two Enters, never more
 
     def test_a_pasted_text_placeholder_in_the_box_counts_as_not_submitted(self):
         self.add("t3", "paste", **claude_term(swallow=99))
-        d = self.ft.driver(verify_timeout=0.2)
+        d = self.ft.driver(verify_timeout=0.12)
         self.assertEqual(self.code(d.send_body, "t3", {"run": "long " * 200})[0], "not_submitted")
 
     def test_a_queued_message_while_busy_counts_as_submitted(self):
@@ -748,7 +749,7 @@ class TestLock(Base):
 
     def test_a_held_lock_makes_the_send_wait_and_then_time_out_with_nothing_typed(self):
         import fcntl
-        d = self.ft.driver(lock_timeout=0.4)
+        d = self.ft.driver(lock_timeout=0.15)
         d.send("t1", run="warm")
         before = len(self.ft.sent())
         fd = os.open(os.path.join(self.ft.dir, "tabs", "tab-t1.lock"), os.O_RDWR)
@@ -757,7 +758,7 @@ class TestLock(Base):
             t = time.time()
             code, msg = self.code(lambda: d.send("t1", run="late"))
             self.assertEqual(code, "timeout")
-            self.assertGreaterEqual(time.time() - t, 0.4)
+            self.assertGreaterEqual(time.time() - t, 0.14)
             self.assertIn("nothing was typed", msg)
             d.send("t2", run="other tab is free")        # another tab is not blocked
         finally:
@@ -891,9 +892,10 @@ class TestCommand(Base):
                  (("screen", "t1", "--lines", "0"), 2, "usage"), (("send", "t1"), 2, "usage"), (("send", "t1", "--run", "a", "--input", "b"), 2, "usage"),
                  (("send", "t1", "--run"), 2, "usage"), (("send", "t1", "--bogus", "a"), 2, "usage"), (("open", "--agent", "vim"), 2, "usage"),
                  (("open", "--cwd", "/nonexistent/x"), 2, "bad_body")]
-        for args, rc, code in cases:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            results = list(pool.map(lambda c: (c, self.ft.cli(*c[0])), cases))
+        for (args, rc, code), (got, out, _) in results:
             with self.subTest(args=args):
-                got, out, _ = self.ft.cli(*args)
                 self.assertEqual((got, out["err"]), (rc, code))
                 self.assertTrue(out["msg"])
         self.assertEqual(self.ft.sent(), [])

@@ -134,10 +134,10 @@ class SingleInstance(Base):
         probe = os.open(svc.paths.lock, os.O_RDWR | os.O_CREAT, 0o600)
         import fcntl
         fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        threading.Timer(0.3, lambda: os.close(probe)).start()
+        threading.Timer(0.12, lambda: os.close(probe)).start()
         t = time.time()
-        self.assertTrue(svc.acquire(), "a lock held for 0.3 s by a probe is not a running service")
-        self.assertGreaterEqual(time.time() - t, 0.25)
+        self.assertTrue(svc.acquire(), "a lock held for 0.12 s by a probe is not a running service")
+        self.assertGreaterEqual(time.time() - t, 0.1)
         os.close(svc.lock_fd)
 
     def test_a_live_service_still_refuses_a_second_one_after_the_wait(self):
@@ -146,8 +146,8 @@ class SingleInstance(Base):
         self.addCleanup(os.close, first.lock_fd)
         second = service.Service(self.e.cfg(countdown=0), self.e.paths, log=lambda m: None)
         t = time.time()
-        self.assertFalse(second.acquire(wait=0.3))
-        self.assertGreaterEqual(time.time() - t, 0.28)
+        self.assertFalse(second.acquire(wait=0.12))
+        self.assertGreaterEqual(time.time() - t, 0.1)
         self.assertTrue(service.running(self.e.paths))
 
 
@@ -166,7 +166,7 @@ class StatusFile(Base):
             if path == svc.paths.status and slow_first[0]:
                 slow_first[0] = False
                 entered.set()
-                time.sleep(0.4)          # the reader is still writing when the main thread has taken the goal
+                time.sleep(0.12)         # the reader is still writing when the main thread has taken the goal
             real(path, obj)
         ipc.write_json = slow_write
         self.addCleanup(setattr, ipc, "write_json", real)
@@ -257,7 +257,7 @@ class Flow(Base):
     def test_the_state_waiting_approval_with_the_pending_action(self):
         self.script([{"tool": "run", "args": {"tab": "@1", "command": "rm -rf build"}}, {"tool": "say", "args": {"text": "not allowed"}},
                      {"tool": "done", "args": {"summary": "refused"}}])
-        self.start(approval_timeout=0.5, autonomy="auto")
+        self.start(approval_timeout=0.3, autonomy="auto")
         gid = self.goal("clean the build folder")
         st = self.wait_state(gid, ("waiting_approval",))
         self.assertEqual((st["pending"]["risk"], st["pending"]["mode"], st["pending"]["text"], st["pending"]["tab"]), ("high", "approve", "rm -rf build", "@1"))
@@ -590,7 +590,7 @@ class Stopping(Base):
 
     def test_the_deadline_ends_a_goal(self):
         self.script([{"sleep": 60}])
-        self.start(max_seconds=1.0)         # below what the setting allows (5): the budget is the same code
+        self.start(max_seconds=0.3)         # below what the setting allows (5): the budget is the same code
         a = self.goal("a")
         st = self.wait_state(a, seconds=30)
         self.assertEqual(st["state"], "failed")

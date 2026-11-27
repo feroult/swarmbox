@@ -41,7 +41,7 @@ def wait_port(port, timeout=10):
             socket.create_connection(("127.0.0.1", port), 0.3).close()
             return True
         except OSError:
-            time.sleep(0.05)
+            time.sleep(0.02)
     return False
 
 
@@ -428,13 +428,13 @@ class VoicePath(FrontCase):
     def test_a_body_that_trickles_in_has_a_total_deadline(self):
         # one byte every 0.1 s is never idle for BODY_IDLE, and used to hold the slot for ever
         old = (front.BODY_IDLE, front.BODY_TOTAL)
-        front.BODY_IDLE, front.BODY_TOTAL = 5.0, 0.5
+        front.BODY_IDLE, front.BODY_TOTAL = 5.0, 0.25
         self.addCleanup(lambda: setattr(front, "BODY_IDLE", old[0]) or setattr(front, "BODY_TOTAL", old[1]))
         c = socket.create_connection(("127.0.0.1", self.port), 5)
         self.addCleanup(c.close)
         c.sendall(b"POST /voice/audio HTTP/1.1\r\nHost: h\r\nContent-Type: audio/wav\r\nContent-Length: 5000\r\n\r\n")
         t0, got = time.time(), b""
-        c.settimeout(0.1)
+        c.settimeout(0.05)
         while time.time() - t0 < 4 and b" 408 " not in got:
             try:
                 c.sendall(b"R")
@@ -461,12 +461,12 @@ class VoicePath(FrontCase):
 
     def test_a_slow_service_is_a_504_and_does_not_block_the_terminal(self):
         old = front.UPSTREAM_TIMEOUT
-        front.UPSTREAM_TIMEOUT = 0.3
+        front.UPSTREAM_TIMEOUT = 0.2
         self.addCleanup(setattr, front, "UPSTREAM_TIMEOUT", old)
         out = {}
         t = threading.Thread(target=lambda: out.update(r=post(self.port, "/voice/audio", b"SLOW" + WAV, "audio/wav")))
         t.start()
-        time.sleep(0.1)
+        time.sleep(0.05)
         t0 = time.time()
         self.assertEqual(get(self.port, "/")[0], 200)
         self.assertLess(time.time() - t0, 2)
@@ -580,13 +580,13 @@ class Processes(unittest.TestCase):
         self.assertEqual(get(self.port, "/voice/health", extra="Origin: http://evil.example\r\n")[0], 403)
 
     def test_the_server_exiting_stops_the_service_and_gives_its_status(self):
-        p = self.start(FAKE_SERVER_EXIT_AFTER="0.3", FAKE_SERVER_EXIT_CODE="7")
+        p = self.start(FAKE_SERVER_EXIT_AFTER="0.1", FAKE_SERVER_EXIT_CODE="7")
         kids = children_of(p.pid)
         self.assertEqual(len(kids), 2, kids)
         self.assertEqual(p.wait(timeout=15), 7)
         for pid in kids:
             self.assertFalse(alive(pid), pid)
-        self.assertFalse(wait_port(self.service_port, 0.5))
+        self.assertFalse(wait_port(self.service_port, 0.15))
 
     def test_a_signal_stops_both_children_and_exits_cleanly(self):
         for sig in (signal.SIGTERM, signal.SIGINT):
@@ -606,7 +606,7 @@ class Processes(unittest.TestCase):
         p.wait()
         deadline = time.time() + 10
         while time.time() < deadline and any(alive(k) for k in kids):
-            time.sleep(0.1)
+            time.sleep(0.03)
         self.assertFalse([k for k in kids if alive(k)])
 
     def test_a_dead_service_is_restarted_and_the_terminal_never_noticed(self):
@@ -619,7 +619,7 @@ class Processes(unittest.TestCase):
         ok = False
         while time.time() < end and not ok:
             ok = get(self.port, "/voice/health")[0] == 200
-            time.sleep(0.2)
+            time.sleep(0.05)
         self.assertTrue(ok, "the service did not come back")
         self.assertIsNone(p.poll())
 

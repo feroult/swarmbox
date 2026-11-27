@@ -1,6 +1,7 @@
 """swarmbox-bus as programs: the broker as a process and the command line against it, with the exit codes, stdin, streams, a stale socket
 after kill -9, groups, many clients and 100 messages per second. No multiplexer, no network, no model. Run with: python3 tests/fast/test_bus_cli.py
 """
+import concurrent.futures
 import json
 import os
 import signal
@@ -30,11 +31,13 @@ class Base(unittest.TestCase):
 class Usage(Base):
     def test_no_arguments_and_unknown_things_are_2(self):
         p = self.idle()
-        for args in ([], ["frobnicate"], ["pub"], ["pub", "a", "b", "c"], ["pub", "--source"], ["pub", "--nope", "jobs", "x"], ["get", "a"], ["ls"],
-                     ["sub"], ["sub", "a", "b"], ["sub", "--nope", "a"], ["sub", "--group"], ["sub", "--group", "g"], ["topics", "x"], ["watch", "x"],
-                     ["watch", "--no-screen"], ["ping", "x"], ["restart", "x"], ["serve", "--nope"], ["serve", "--driver", "stub"]):
+        cases = ([], ["frobnicate"], ["pub"], ["pub", "a", "b", "c"], ["pub", "--source"], ["pub", "--nope", "jobs", "x"], ["get", "a"], ["ls"],
+                 ["sub"], ["sub", "a", "b"], ["sub", "--nope", "a"], ["sub", "--group"], ["sub", "--group", "g"], ["topics", "x"], ["watch", "x"],
+                 ["watch", "--no-screen"], ["ping", "x"], ["restart", "x"], ["serve", "--nope"], ["serve", "--driver", "stub"])
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            results = list(pool.map(lambda a: (a, p.cli(*a)), cases))
+        for args, r in results:
             with self.subTest(args=args):
-                r = p.cli(*args)
                 self.assertEqual(r.returncode, 2, r.stderr)
                 self.assertTrue(r.stderr)
                 self.assertEqual(r.stdout, b"")
@@ -266,8 +269,8 @@ class Streams(Base):
             self.assertIn(b"subscribed", s.stderr.readline())
         for i in range(6):
             self.assertEqual(p.cli("pub", "jobs", "m%d" % i).returncode, 0)
-            time.sleep(0.05)
-        time.sleep(0.2)
+            time.sleep(0.01)
+        time.sleep(0.08)
         outs = []
         for s in (a, b):
             s.terminate()
@@ -283,9 +286,8 @@ class Streams(Base):
         sub.send_signal(signal.SIGINT)
         self.assertEqual(sub.wait(10), 130)
         sub = subprocess.Popen("%s -S %s sub jobs | head -n 1" % (sys.executable, BUS_PATH), shell=True, env=p.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        time.sleep(0.5)
-        self.assertEqual(p.cli("pub", "jobs", "one").returncode, 0)
-        time.sleep(0.2)
+        self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "one").returncode == 0, 5))
+        time.sleep(0.05)
         p.cli("pub", "jobs", "two")
         out, err = sub.communicate(10)
         self.assertEqual((out.strip().count(b"\n"), err), (0, b""))
@@ -332,10 +334,10 @@ class Restart(Base):
         p = self.idle()
         got = os.path.join(p.dir, "got")
         sup = subprocess.Popen([sys.executable, "-c", "import signal,time,sys\nsignal.signal(signal.SIGUSR1, lambda *a: open(sys.argv[1],'w').write('usr1'))\n"
-                                "time.sleep(30)", got])
-        self.addCleanup(sup.kill)
+                                "print('ready', flush=True)\ntime.sleep(30)", got], stdout=subprocess.PIPE)
+        self.addCleanup(lambda: (sup.kill(), sup.wait(), sup.stdout.close()))
         self.assertEqual(p.cli("restart").returncode, 1)               # no pid file yet
-        time.sleep(0.3)
+        sup.stdout.readline()
         with open(os.path.join(p.dir, "bus-supervisor.pid"), "w") as f:
             f.write("%d\n" % sup.pid)
         r = p.cli("restart")
@@ -389,7 +391,7 @@ class Load(Base):
         [t.start() for t in ts]
         [t.join() for t in ts]
         self.assertEqual(fails, [])
-        time.sleep(0.5)
+        time.sleep(0.15)
         seen = []
         for s in subs:
             s.terminate()
