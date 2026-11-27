@@ -89,7 +89,7 @@ jobs:
       - name: Podman version
         run: podman --version
       - name: Build the image (not pushed)
-        run: podman build -t "$SWARMBOX_IMAGE_TAG" .
+        run: podman build --build-arg SWARMBOX_COMMIT="$GITHUB_SHA" -t "$SWARMBOX_IMAGE_TAG" .
       - name: Smoke test, full (nested Podman)
         run: |
           SWARMBOX_SMOKE_FULL=1 python3 tests/slow/smoke_image.py | tee smoke.out
@@ -185,7 +185,7 @@ jobs:
       - name: Podman version
         run: podman --version
       - name: Build the image (not pushed)
-        run: podman build -t "$SWARMBOX_IMAGE_TAG" .
+        run: podman build --build-arg SWARMBOX_COMMIT="$GITHUB_SHA" -t "$SWARMBOX_IMAGE_TAG" .
       - name: Real voice installer (whisper.cpp built from source, tiny model)
         shell: bash
         run: |

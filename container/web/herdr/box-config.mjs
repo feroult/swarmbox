@@ -27,6 +27,26 @@ function readTextSafe(filePath) {
   }
 }
 
+// readBuildCommit(): the commit the image was built from (/usr/local/share/swarmbox/COMMIT, written from the SWARMBOX_COMMIT build
+// argument), or, with no such file (the gateway run from a checkout), `git rev-parse HEAD` of the folder this module is in, read once;
+// '' when neither says. A sha with `-dirty` after it is a build from a checkout with uncommitted changes.
+const COMMIT_FILE = '/usr/local/share/swarmbox/COMMIT';
+let checkoutCommit = null;
+export function readBuildCommit(file = COMMIT_FILE, srcDir = path.dirname(new URL(import.meta.url).pathname)) {
+  const baked = readTextSafe(file);
+  if (baked) return baked;
+  if (checkoutCommit === null) {
+    try {
+      checkoutCommit = execFileSync('git', ['-C', srcDir, 'rev-parse', 'HEAD'], {
+        encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } catch (_) {
+      checkoutCommit = '';
+    }
+  }
+  return checkoutCommit;
+}
+
 function parseAddonConf(filePath) {
   const txt = readTextSafe(filePath);
   if (!txt) return null;
@@ -223,6 +243,7 @@ export function readBoxConfigSnapshot(terminals = [], env = process.env) {
 
   return {
     version,
+    commit: readBuildCommit(),
     theme: readSavedTheme(),
     themes: THEME_ORDER,
     box,

@@ -284,6 +284,17 @@ html.swarmbox-ready #sb-boot {
   letter-spacing: 0.11em;
   color: var(--text);
 }
+button.brand {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 4px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+button.brand:hover { background: var(--hover, rgba(167, 139, 250, 0.08)); }
+button.brand:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .brand-mark {
   width: 7px;
   height: 7px;
@@ -4084,6 +4095,34 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
   font-size: 10.5px;
   color: var(--text-dim);
 }
+button.settings-ver {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+button.settings-ver:hover { color: var(--text); }
+
+/* About popover (the SWARMBOX title or the version in Settings): version, commit, links */
+.about-title { display: inline-flex; align-items: center; gap: 8px; letter-spacing: 0.11em; }
+.about-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  background: rgba(12, 11, 16, 0.56);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 10px 12px;
+}
+.about-k { color: var(--text-dim); }
+.about-v { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.about-v a { color: var(--accent-bright); text-decoration: none; }
+.about-v a:hover { text-decoration: underline; }
+.about-dirty { color: var(--amber); margin-left: 6px; }
 
 .settings-main {
   display: flex;
@@ -5248,6 +5287,9 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
   padding: 2px 4px;
 }
 .spop-link-btn:hover { text-decoration: underline; }
+a.spop-link-btn { text-decoration: none; }
+.s-stat.is-link { cursor: pointer; }
+.s-stat.is-link:hover .s-stat-v { color: var(--accent-bright); }
 .spop-wt-list {
   display: flex;
   flex-direction: column;

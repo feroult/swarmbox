@@ -145,7 +145,7 @@ jobs:
             arm64) [ "$(uname -m)" = aarch64 ] ;;
           esac
       - name: Build the image natively (no emulation)
-        run: podman build -t "$LOCAL_IMAGE" .
+        run: podman build --build-arg SWARMBOX_COMMIT="$GITHUB_SHA" -t "$LOCAL_IMAGE" .
       - name: The script extracted from the image reports the version of the tag
         run: |
           dir=$(mktemp -d)

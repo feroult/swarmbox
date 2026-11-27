@@ -125,7 +125,11 @@ if [ "$RELEASE" = 1 ]; then
 fi
 
 step "building $TAG from $ROOT (minutes the first time; the layers are cached after)"
-if [ -n "$NO_CACHE" ]; then run podman build --no-cache -t "$TAG" "$ROOT"; else run podman build -t "$TAG" "$ROOT"; fi
+# the commit the Web Studio's About shows; `-dirty` when the checkout has uncommitted changes
+COMMIT=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)
+[ -n "$COMMIT" ] && [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ] && COMMIT="$COMMIT-dirty"
+if [ -n "$NO_CACHE" ]; then run podman build --no-cache --build-arg SWARMBOX_COMMIT="$COMMIT" -t "$TAG" "$ROOT"
+else run podman build --build-arg SWARMBOX_COMMIT="$COMMIT" -t "$TAG" "$ROOT"; fi
 step "installing the swarmbox script of that image in $BIN_DIR"
 install_from "$TAG"
 step "recording the image in the config"

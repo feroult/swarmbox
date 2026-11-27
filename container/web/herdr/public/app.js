@@ -8938,6 +8938,8 @@
       if (pDrag && e.pointerId === pDrag.id) endPDrag(true);
     });
   }
+  document.getElementById('btn-about').addEventListener('click', () => { openAboutPopover(); });
+  if (settingsVersionEl) settingsVersionEl.addEventListener('click', () => { openAboutPopover(); });
   document.getElementById('btn-sidebar-close').addEventListener('click', () => {
     setDesktopSidebar(false);
   });
@@ -9368,6 +9370,58 @@
     }
   }
 
+  // About (the SWARMBOX title, or the version at the foot of Settings): the version and the commit the image was built from
+  const REPO_URL = 'https://github.com/feroult/swarmbox';
+  function splitCommit(raw) {
+    const m = /^([0-9a-f]{7,40})(-dirty)?$/.exec(String(raw || '').trim());
+    return m ? { sha: m[1], dirty: Boolean(m[2]) } : null;
+  }
+  function aboutVersionLine(cfg) {
+    const c = splitCommit(cfg && cfg.commit);
+    const v = `SwarmBox v${(cfg && cfg.version) || 'dev'}`;
+    return c ? `${v} (${c.sha.slice(0, 7)}${c.dirty ? '-dirty' : ''})` : v;
+  }
+  async function openAboutPopover() {
+    if (!boxConfig) await loadBoxConfig();
+    const cfg = boxConfig || {};
+    const version = cfg.version || 'dev';
+    const c = splitCommit(cfg.commit);
+    const isRelease = /^\d+\.\d+\.\d+/.test(version);
+    const frag = document.createDocumentFragment();
+    const head = el('div', { class: 'spop-head' }, [
+      el('span', { class: 'about-title' }, [el('span', { class: 'brand-mark', 'aria-hidden': 'true' }), el('span', { text: 'SWARMBOX' })]),
+    ]);
+    const sub = el('div', { class: 'spop-sub', text: 'Persistent box for AI coding agents.' });
+    const commitNode = c
+      ? el('span', {}, [
+        c.dirty
+          ? el('span', { text: c.sha.slice(0, 12), title: c.sha })
+          : el('a', { href: `${REPO_URL}/commit/${c.sha}`, target: '_blank', rel: 'noopener', text: c.sha.slice(0, 12), title: c.sha }),
+        c.dirty ? el('span', { class: 'about-dirty', text: 'dirty', title: 'built from a checkout with uncommitted changes' }) : null,
+      ])
+      : el('span', { class: 'about-k', text: 'unknown' });
+    const grid = el('div', { class: 'about-grid' }, [
+      el('span', { class: 'about-k', text: 'Version' }),
+      el('span', { class: 'about-v' }, [isRelease
+        ? el('a', { href: `${REPO_URL}/releases/tag/v${version}`, target: '_blank', rel: 'noopener', text: `v${version}` })
+        : el('span', { text: version })]),
+      el('span', { class: 'about-k', text: 'Commit' }),
+      el('span', { class: 'about-v' }, [commitNode]),
+    ]);
+    const line = aboutVersionLine(cfg);
+    const copyBtn = el('button', { type: 'button', class: 'spop-link-btn', text: 'Copy version' });
+    copyBtn.addEventListener('click', () => copyTextWithFeedback(line, copyBtn, 'Copy version'));
+    const links = el('div', { class: 'spop-links' }, [
+      el('span', { class: 'spop-links-group' }, [
+        el('a', { class: 'spop-link-btn', href: REPO_URL, target: '_blank', rel: 'noopener', text: 'GitHub' }),
+        el('a', { class: 'spop-link-btn', href: `${REPO_URL}/releases`, target: '_blank', rel: 'noopener', text: 'Releases' }),
+      ]),
+      copyBtn,
+    ]);
+    frag.append(head, sub, grid, links);
+    openPopover(frag);
+  }
+
   async function loadBoxConfig(force = false) {
     if (boxConfigLoading && !force) return;
     boxConfigLoading = true;
@@ -9380,7 +9434,7 @@
       if (boxConfig && boxConfig.session_prefs) sessionPrefs = boxConfig.session_prefs;
       if (boxConfig && Array.isArray(boxConfig.installed_agents)) installedAgents = boxConfig.installed_agents;
       if (settingsVersionEl && boxConfig.version) {
-        settingsVersionEl.textContent = `SwarmBox v${boxConfig.version}`;
+        settingsVersionEl.textContent = aboutVersionLine(boxConfig);
       }
     } catch (err) {
       boxConfigError = err.message || 'Could not load box config';
@@ -9710,9 +9764,10 @@
     const healthCount = Array.isArray(boxConfig.health) ? boxConfig.health.length : 0;
 
     const stats = el('div', { class: 's-stat-grid' }, [
-      el('div', { class: 's-stat' }, [
+      el('div', { class: 's-stat is-link', role: 'button', tabindex: '0', title: 'About SwarmBox', onclick: () => openAboutPopover(),
+        onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openAboutPopover(); } } }, [
         el('span', { class: 's-stat-k', text: 'Version' }),
-        el('span', { class: 's-stat-v', text: `v${boxConfig.version || 'dev'}` }),
+        el('span', { class: 's-stat-v', text: aboutVersionLine(boxConfig).replace(/^SwarmBox /, '') }),
       ]),
       el('div', { class: 's-stat' }, [
         el('span', { class: 's-stat-k', text: 'Multiplexer' }),

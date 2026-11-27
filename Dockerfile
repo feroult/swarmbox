@@ -227,6 +227,11 @@ RUN printf '\n# SwarmBox shell fragment\n[ -r /etc/swarmbox/bashrc.sh ] && . /et
 # user-level shims before them.
 ENV PATH=/usr/local/lib/swarmbox/shims:$PATH
 
+# The commit the image was built from, for the Web Studio's About (the builds pass `git rev-parse HEAD`); last, so a new commit
+# rebuilds only this layer. Empty when the build names none; the gateway then shows no commit.
+ARG SWARMBOX_COMMIT=""
+RUN printf '%s\n' "$SWARMBOX_COMMIT" > /usr/local/share/swarmbox/COMMIT && chmod 644 /usr/local/share/swarmbox/COMMIT
+
 USER agent
 WORKDIR /home/agent
 ENTRYPOINT ["/usr/local/bin/swarmbox-entrypoint"]

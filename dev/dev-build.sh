@@ -55,6 +55,9 @@ if [ "$DRY" = 1 ]; then
     echo "$TAG"
     exit 0
 fi
+# the commit the Web Studio's About shows; `-dirty` when the checkout has uncommitted changes
+COMMIT=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)
+[ -n "$COMMIT" ] && [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ] && COMMIT="$COMMIT-dirty"
 # shellcheck disable=SC2086  # EXTRA is a list of options built above
-podman build $EXTRA -f "$SCRATCH/Dockerfile" -t "$TAG" "$ROOT"
+podman build --build-arg SWARMBOX_COMMIT="$COMMIT" $EXTRA -f "$SCRATCH/Dockerfile" -t "$TAG" "$ROOT"
 echo "$TAG"

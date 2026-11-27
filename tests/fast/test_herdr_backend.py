@@ -838,6 +838,31 @@ console.log(JSON.stringify(show()));
         self.assertEqual(second["selfup"], [True, "2.1.400", True])
         self.assertEqual(os.listdir(os.path.join(tmp, "home")), [".local"], "the version check made nothing in HOME")
 
+    def test_build_commit_is_the_baked_file_else_the_checkout_head(self):
+        # About shows the commit: the image's COMMIT file (the SWARMBOX_COMMIT build argument), else, run from a checkout, its HEAD
+        if not shutil.which("node"):
+            self.skipTest("node not on PATH")
+        tmp = tempfile.mkdtemp(prefix="sb-commit-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        baked = os.path.join(tmp, "COMMIT")
+        with open(baked, "w") as f:
+            f.write("0123456789abcdef0123456789abcdef01234567-dirty\n")
+        repo = os.path.join(tmp, "repo")
+        os.makedirs(repo)
+        git = ["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q", repo], check=True)
+        subprocess.run(git + ["commit", "-q", "--allow-empty", "-m", "x"], check=True)
+        head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+        js = """
+import { readBuildCommit } from %r;
+console.log(JSON.stringify([readBuildCommit(%r, %r), readBuildCommit(%r, %r)]));
+""" % (os.path.join(os.path.dirname(HERDR_CLIENT), "box-config.mjs"), baked, repo, os.path.join(tmp, "none"), repo)
+        p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True,
+                           env=dict(os.environ, HOME=tmp))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(p.stdout.strip().splitlines()[-1]),
+                         ["0123456789abcdef0123456789abcdef01234567-dirty", head])
+
     def test_herdr_web_cli_args_and_origin_guard(self):
         if not shutil.which("node"):
             self.skipTest("node not on PATH")

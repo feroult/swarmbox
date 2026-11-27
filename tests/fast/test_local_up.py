@@ -4,6 +4,7 @@ Podman is a FakePodman and the swarmbox script is a fake that records its calls,
 Run: python3 tests/fast/test_local_up.py
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -112,7 +113,7 @@ class LocalUp(unittest.TestCase):
             r = self.run_script(fp, "--dry-run", "--yes")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(fp.calls(), [])
-        self.assertIn("podman build -t " + TAG, r.stdout)
+        self.assertRegex(r.stdout, r"podman build --build-arg SWARMBOX_COMMIT=[0-9a-f]{40}(-dirty)? -t " + re.escape(TAG))
         self.assertIn("config set IMAGE " + TAG, r.stdout)
         self.assertFalse(os.path.exists(self.bin))
 
