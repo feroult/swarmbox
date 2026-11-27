@@ -9,6 +9,7 @@ CREATE_FLAGS (a program that stands for `swarmbox-host create-flags`, so a test 
 The race tests wait on marker files, never on sleeps that decide the outcome.
 Run: python3 tests/fast/test_host_up.py
 """
+import concurrent.futures
 import json
 import os
 import shutil
@@ -21,7 +22,24 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from host_support import UpBase as Base, BUSY, HELPER_PROGRAMS, HELPER_SRC, IMAGE, NAME, NOSUCH, line  # noqa: E402
+from helpers import FakePodman  # noqa: E402
+from host_support import UpBase, BUSY, HELPER_PROGRAMS, HELPER_SRC, IMAGE, NAME, NOSUCH, env_hash, fingerprint, line  # noqa: E402
+
+_EMPTY_ENV_HASH = env_hash([])
+
+
+class Base(UpBase):
+    def matching_line(self, env_extra=None, **kw):
+        if env_extra:
+            return super().matching_line(env_extra, **kw)
+        fp_lines = [
+            "AGENT=", "BROWSER_URL=", "ENV_KEYS=", "HOSTNAME=" + NAME, "HOST_ACCESS=0",
+            "IMAGE=" + IMAGE, "INIT=0", "NAME=" + NAME, "PORTS=",
+            "TZ=local", "WEB=1", "WEB_PORT=7681", "WITH=", "WORKSPACE=" + self.ws, "YOLO=1",
+        ]
+        d = dict(ports="", env_hash=_EMPTY_ENV_HASH, fp=fingerprint(fp_lines, _EMPTY_ENV_HASH), ws=self.ws, image=IMAGE)
+        d.update(kw)
+        return line(**d)
 
 # ============================================================================ the fast path and the exact-name match
 
@@ -55,11 +73,10 @@ class WarningsTest(Base):
         self.podman()
 
     def run_with(self, over_env=None, image_inspect=None, **kw):
-        self.fp.configure(self.conf(lookup={"stdout": self.matching_line(**kw)}))
+        c = self.conf(lookup={"stdout": self.matching_line(**kw)})
         if image_inspect is not None:
-            c = self.conf(lookup={"stdout": self.matching_line(**kw)})
             c["image"] = {"rules": [{"match": ["exists"]}, {"match": ["inspect"], "stdout": image_inspect}]}
-            self.fp.configure(c)
+        self.fp.configure(c)
         return self.up(**(over_env or {}))
 
     def test_a_matching_box_prints_nothing(self):
@@ -102,12 +119,36 @@ class PrerequisiteTest(Base):
         return r
 
     def test_versions_are_compared_as_numbers_and_a_podman_older_than_4_3_is_exit_3(self):
-        for v, code in (("4.10.0", 0), ("10.0.0", 0), ("4.3.0-dev", 0), ("4.2.9", 3), ("3.4.4", 3)):
+        cases = (("4.10.0", 0), ("10.0.0", 0), ("4.3.0-dev", 0), ("4.2.9", 3), ("3.4.4", 3))
+        fps = []
+        for v, _ in cases:
+            fp = FakePodman(self.conf(version={"stdout": v + "\n"}))
+            fp.__enter__()
+            self.addCleanup(fp.__exit__)
+            fps.append(fp)
+
+        def run_one(item):
+            i, ((v, code), fp) = item
+            home = os.path.join(self.tmp, "vh-%d" % i)
+            os.mkdir(home)
+            e = fp.env()
+            for k in list(e):
+                if k.startswith("SWARMBOX_"):
+                    del e[k]
+            e.update(self.env(HOME=home))
+            e["PATH"] = fp.env()["PATH"]
+            r = self.run_h("up", env=e)
+            return v, code, r, fp
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            results = list(pool.map(run_one, enumerate(zip(cases, fps))))
+        for v, code, r, fp in results:
             with self.subTest(v):
-                r = self.version_case(v + "\n", code)
+                self.assertEqual(r.returncode, code, r.stderr)
                 if code:
                     self.assertIn("4.3 or newer is required", r.stderr)
-                    self.assert_no_run()
+                    runs = [c for c in fp.calls() if c and c[0] == "run" and "--rm" not in c]
+                    self.assertEqual(runs, [])
 
     def test_an_unreadable_version_is_a_warning_not_a_failure(self):
         r = self.version_case("garbage\n", 0)
@@ -243,7 +284,7 @@ class ReadinessTest(Base):
 
     def test_a_marker_that_never_appears_is_exit_6_after_the_tuned_wait(self):
         self.podman(exec={"exit": 1, "stderr": "no such file\n"})
-        r = self.up(SWARMBOX_TEST_READY_TRIES="6")
+        r = self.up(SWARMBOX_TEST_READY_TRIES="6", SWARMBOX_TEST_NAP="0.005")
         self.assertEqual(r.returncode, 6, r.stderr)
         self.assertIn("swarmbox: the box did not become ready", r.stderr)
         self.assertIn("podman logs %s" % NAME, r.stderr)
@@ -277,12 +318,13 @@ class LockTest(Base):
         with open(prog, "w") as f:
             f.write("#!/bin/sh\n"
                     "echo $$ >> '%s'\n"
-                    "while [ ! -e '%s' ] && [ -e \"$0\" ]; do sleep 0.02; done\n"   # ends when the test folder is gone
+                    "while [ ! -e '%s' ] && [ -e \"$0\" ]; do sleep 0.005; done\n"   # ends when the test folder is gone
                     "exec '%s' \"$@\"\n" % (self.entered, self.release, self.helper))
         os.chmod(prog, 0o755)
         return prog
 
     def start(self, prog, **extra):
+        extra.setdefault("SWARMBOX_TEST_NAP", "0.005")
         env = self.env(SWARMBOX_TEST_CREATE_FLAGS=prog, **extra)
         p = subprocess.Popen([self.helper, "up"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                              stdin=subprocess.DEVNULL, cwd=self.tmp, start_new_session=True)
@@ -304,7 +346,7 @@ class LockTest(Base):
         while time.time() < end:
             if fn():
                 return
-            time.sleep(0.02)
+            time.sleep(0.005)
         self.fail("timed out waiting for " + what)
 
     def entered_count(self):
@@ -333,7 +375,7 @@ class LockTest(Base):
         with open(os.path.join(self.lock, "pid")) as f:
             self.assertEqual(f.read().strip(), str(p1.pid))
         p2 = self.start(prog)
-        time.sleep(0.15)  # the second call is at the lock by now; if it were later the outcome below is the same
+        time.sleep(0.05)  # the second call is at the lock by now; if it were later the outcome below is the same
         self.assertIsNone(p2.poll(), "the second call must wait for the lock")
         self.assertEqual(self.entered_count(), 1)
         open(self.release, "a").close()
@@ -381,7 +423,7 @@ class LockTest(Base):
         os.makedirs(self.lock)
         with open(os.path.join(self.lock, "pid"), "w") as f:
             f.write("%d\n" % holder.pid)
-        r = self.up(SWARMBOX_TEST_LOCK_TRIES="4", SWARMBOX_TEST_NAP="0.03")
+        r = self.up(SWARMBOX_TEST_LOCK_TRIES="4", SWARMBOX_TEST_NAP="0.005")
         self.assertEqual(r.returncode, 6, r.stderr)
         self.assertIn("another 'up' holds %s" % self.lock, r.stderr)
         self.assertTrue(os.path.isdir(self.lock), "a live lock is never removed")

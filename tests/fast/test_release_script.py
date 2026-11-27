@@ -6,6 +6,7 @@ tested on their own (test_dev_check.py, test_release_check.py). `curl` is a fake
 text, so nothing touches the network. The script never runs against this repository.
 Run with: python3 tests/fast/test_release_script.py
 """
+import concurrent.futures
 import hashlib
 import os
 import shutil
@@ -117,6 +118,65 @@ esac
 """
 
 
+_TEMPLATE_DIR = None
+_GENV = None
+
+
+def setUpModule():
+    global _TEMPLATE_DIR, _GENV
+    _TEMPLATE_DIR = tempfile.mkdtemp(prefix="swarmbox-test-release-tpl.")
+    _GENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com", GIT_COMMITTER_NAME="t",
+                 GIT_COMMITTER_EMAIL="t@example.com", GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
+    origin = os.path.join(_TEMPLATE_DIR, "origin.git")
+    work = os.path.join(_TEMPLATE_DIR, "work")
+    fake = os.path.join(_TEMPLATE_DIR, "fake")
+    os.mkdir(fake)
+
+    def g(*args, cwd=None):
+        subprocess.run(["git", *args], cwd=cwd or work, env=_GENV, capture_output=True, text=True, check=True)
+
+    def put(name, text, mode=None):
+        p = os.path.join(work, name)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(text)
+        if mode:
+            os.chmod(p, mode)
+
+    g("init", "-q", "--bare", "-b", "main", origin, cwd=_TEMPLATE_DIR)
+    g("clone", "-q", origin, work, cwd=_TEMPLATE_DIR)
+    g("checkout", "-q", "-b", "main")
+    put("CHANGELOG.md", CHANGELOG)
+    put("changelog.d/README.md", FRAG_README)
+    put("container/host/swarmbox-host", '#!/bin/sh\nSCRIPT_VERSION=2.0.6\n[ "${1:-}" = version ] && echo "$SCRIPT_VERSION"\n', 0o755)
+    put("container/host/VERSION", "2.0.6\n")
+    put("container/host/DEFAULTS", "SWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/example/proj'\n")
+    os.makedirs(os.path.join(work, "dev"))
+    shutil.copy(RELEASE, os.path.join(work, "dev", "release.sh"))
+    g("add", "-A")
+    g("commit", "-q", "-m", "release: 2.0.6")
+    g("tag", "-a", "v2.0.6", "-m", "2.0.6")
+    put("tweak.txt", "x")
+    g("add", "-A")
+    g("commit", "-q", "-m", "fix: the mouse wheel scrolls five lines per event")
+    g("push", "-q", "origin", "main", "v2.0.6")
+    with open(os.path.join(fake, "curl"), "w") as f:
+        f.write(FAKE_CURL)
+    os.chmod(os.path.join(fake, "curl"), 0o755)
+    script = "#!/bin/sh\n[ \"$1\" = version ] && echo 2.0.7\n"
+    with open(os.path.join(fake, "swarmbox"), "w") as f:
+        f.write(script)
+    with open(os.path.join(fake, "sha"), "w") as f:
+        f.write("%s  swarmbox\n" % hashlib.sha256(script.encode()).hexdigest())
+
+
+def tearDownModule():
+    global _TEMPLATE_DIR
+    if _TEMPLATE_DIR:
+        shutil.rmtree(_TEMPLATE_DIR, True)
+        _TEMPLATE_DIR = None
+
+
 class ReleaseCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-release.")
@@ -124,33 +184,13 @@ class ReleaseCase(unittest.TestCase):
         self.origin = os.path.join(self.tmp, "origin.git")
         self.work = os.path.join(self.tmp, "work")
         self.fake = os.path.join(self.tmp, "fake")
-        os.mkdir(self.fake)
-        self.genv = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com", GIT_COMMITTER_NAME="t",
-                         GIT_COMMITTER_EMAIL="t@example.com", GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
-        self.g("init", "-q", "--bare", "-b", "main", self.origin, cwd=self.tmp)
-        self.g("clone", "-q", self.origin, self.work, cwd=self.tmp)
-        self.g("checkout", "-q", "-b", "main")
-        self.put("CHANGELOG.md", CHANGELOG)
-        self.put("changelog.d/README.md", FRAG_README)
-        self.put("container/host/swarmbox-host", '#!/bin/sh\nSCRIPT_VERSION=2.0.6\n[ "${1:-}" = version ] && echo "$SCRIPT_VERSION"\n', 0o755)
-        self.put("container/host/VERSION", "2.0.6\n")
-        self.put("container/host/DEFAULTS", "SWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/example/proj'\n")
-        os.makedirs(os.path.join(self.work, "dev"))
-        shutil.copy(RELEASE, os.path.join(self.work, "dev", "release.sh"))
-        self.g("add", "-A")
-        self.g("commit", "-q", "-m", "release: 2.0.6")
-        self.g("tag", "-a", "v2.0.6", "-m", "2.0.6")
-        self.put("tweak.txt", "x")
-        self.g("add", "-A")
-        self.g("commit", "-q", "-m", "fix: the mouse wheel scrolls five lines per event")
-        self.g("push", "-q", "origin", "main", "v2.0.6")
-        with open(os.path.join(self.fake, "curl"), "w") as f:
-            f.write(FAKE_CURL)
-        os.chmod(os.path.join(self.fake, "curl"), 0o755)
-        script = "#!/bin/sh\n[ \"$1\" = version ] && echo 2.0.7\n"
-        with open(os.path.join(self.fake, "swarmbox"), "w") as f:
-            f.write(script)
-        self.set_sha(hashlib.sha256(script.encode()).hexdigest())
+        self.genv = dict(_GENV)
+        shutil.copytree(_TEMPLATE_DIR, self.tmp, dirs_exist_ok=True)
+        cfg = os.path.join(self.work, ".git", "config")
+        with open(cfg) as f:
+            text = f.read()
+        with open(cfg, "w") as f:
+            f.write(text.replace(_TEMPLATE_DIR, self.tmp))
 
     # -- helpers ---------------------------------------------------------------------------------------------------
     def g(self, *args, cwd=None):
@@ -245,14 +285,20 @@ class Versions(ReleaseCase):
         return r
 
     def test_the_default_is_the_next_patch_and_minor_and_major_work(self):
-        for args, want in (((), "2.0.7"), (("patch",), "2.0.7"), (("minor",), "2.1.0"), (("major",), "3.0.0"), (("2.0.9",), "2.0.9")):
-            r = self.planned(*args)
+        self.write_items()
+        cases = (((), "2.0.7"), (("patch",), "2.0.7"), (("minor",), "2.1.0"), (("major",), "3.0.0"), (("2.0.9",), "2.0.9"))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            results = list(pool.map(lambda c: (c[0], c[1], self.run_release("--dry-run", *c[0])), cases))
+        for args, want, r in results:
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("release: 2.0.6 -> %s" % want, r.stdout, args)
 
     def test_a_version_that_is_not_newer_or_not_a_version_is_refused(self):
-        for bad in ("2.0.6", "2.0.5", "1.9.0", "v2.0.7", "2.0", "two", "2.0.7-beta.1"):
-            r = self.planned(bad)
+        self.write_items()
+        bads = ("2.0.6", "2.0.5", "1.9.0", "v2.0.7", "2.0", "two", "2.0.7-beta.1")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool:
+            results = list(pool.map(lambda b: (b, self.run_release("--dry-run", b)), bads))
+        for bad, r in results:
             self.assertEqual(r.returncode, 1, (bad, r.stdout, r.stderr))
 
     def test_prerelease_tags_are_not_taken_for_the_last_release(self):

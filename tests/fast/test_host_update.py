@@ -8,6 +8,7 @@ test's own. Nothing starts a real container; tests/test_registry_e2e.py runs the
 Reduced: the real Podman (pull, tag, run) is not involved here, only its recorded calls and the answers the fake gives.
 Run: python3 tests/fast/test_host_update.py
 """
+import concurrent.futures
 import hashlib
 import io
 import os
@@ -22,7 +23,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from host_support import UpBase, HELPER_SRC, line  # noqa: E402
-from helpers import make_archive  # noqa: E402
+from helpers import FakePodman, make_archive  # noqa: E402
 from helpers import ROOT, HELPER_SH  # noqa: E402
 
 with open(os.path.join(ROOT, "container", "host", "swarmbox-host")) as _f:
@@ -104,6 +105,13 @@ class UpdateBase(UpBase):
         make_archive(p, **kw)
         return p
 
+    def podman(self, **over):
+        if self.fp is not None:
+            self.fp.configure(self.conf(**over))
+            open(self.fp.log_path, "w").close()
+            return self.fp
+        return super().podman(**over)
+
     def podman_for(self, version="2.99.99", pull=None, tag=None, run=None, **archive_kw):
         conf = {"pull": pull or {}, "tag": tag or {},
                 "run": run or {"stdout_file": self.archive(version=version, **archive_kw)}}
@@ -128,6 +136,39 @@ class UpdateBase(UpBase):
         with open(self.cfg, "rb") as f:
             return {"host": snap(self.host_dir), "bin": snap(self.bin), "cfg": f.read(), "mode": os.stat(self.cfg).st_mode}
 
+    def iso_env(self, tag, cfg_text, version="2.99.99", run=None, **archive_kw):
+        """An isolated (helper, env, fp, cfg, host_dir, bin) under self.tmp so subtests can run concurrently."""
+        d = os.path.join(self.tmp, "iso-" + tag)
+        home = os.path.join(d, "home")
+        cfg_dir = os.path.join(home, ".config", "swarmbox")
+        cfg = os.path.join(cfg_dir, "config")
+        host_dir = os.path.join(home, ".local", "share", "swarmbox", "host")
+        bindir = os.path.join(d, "bin")
+        os.makedirs(cfg_dir)
+        os.makedirs(host_dir)
+        os.makedirs(bindir)
+        with open(cfg, "w") as f:
+            f.write(cfg_text)
+        os.chmod(cfg, 0o600)
+        with open(os.path.join(ROOT, "container", "host", "DEFAULTS")) as f:
+            defaults = f.read()
+        for n, c in (("VERSION", "2.0.0\n"), ("DEFAULTS", defaults), ("addon-ports", "")):
+            with open(os.path.join(host_dir, n), "w") as f:
+                f.write(c)
+        helper = os.path.join(bindir, "swarmbox")
+        shutil.copy(HELPER_SRC, helper)
+        os.chmod(helper, 0o755)
+        if run is None:
+            arc = os.path.join(d, "image.tar")
+            make_archive(arc, version=version, **archive_kw)
+            run = {"stdout_file": arc}
+        fp = FakePodman(self.conf(pull={}, tag={}, run=run))
+        fp.__enter__()
+        self.addCleanup(fp.__exit__)
+        e = self.env(HOME=home)
+        e["PATH"] = fp.env()["PATH"]
+        return helper, e, fp, cfg, host_dir, bindir
+
 
 class PlainUpdateTest(UpdateBase):
     def test_pulls_the_series_tag_reads_the_version_tags_and_writes_image(self):
@@ -150,14 +191,24 @@ class PlainUpdateTest(UpdateBase):
                          ["DEFAULTS", "VERSION", "addon-ports", "cloudflare-setup.py"])
 
     def test_the_series_comes_from_the_current_image_tag(self):
-        for tag, series in (("2.0.0", "2.0"), ("2.1", "2.1"), ("10.12.3", "10.12"), ("3.4.5-rc1", "3.4")):
+        cases = (("2.0.0", "2.0"), ("2.1", "2.1"), ("10.12.3", "10.12"), ("3.4.5-rc1", "3.4"))
+        prepped = [(tag, series, self.iso_env("ser-%d" % i, "IMAGE=%s:%s\n" % (REPO, tag), "%s.9" % series))
+                   for i, (tag, series) in enumerate(cases)]
+
+        def run_one(item):
+            tag, series, (helper, e, fp, cfg, _hd, _bd) = item
+            r = subprocess.run([helper, "update"], env=e, capture_output=True, text=True, input="", cwd=self.tmp, timeout=60)
+            with open(cfg) as f:
+                img = [ln for ln in f.read().splitlines() if ln.startswith("IMAGE=")]
+            return tag, series, r, fp.calls(), img
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(run_one, prepped))
+        for tag, series, r, calls, img in results:
             with self.subTest(tag=tag):
-                self.write_config("IMAGE=%s:%s\n" % (REPO, tag))
-                self.podman_for("%s.9" % series)
-                r = self.update()
                 self.assertEqual(r.returncode, 0, r.stderr)
-                self.assertEqual(self.calls()[0], ["pull", "-q", "%s:%s" % (REPO, series)])
-                self.assertEqual(self.image_line(), ["IMAGE=%s:%s.9" % (REPO, series)])
+                self.assertEqual(calls[0], ["pull", "-q", "%s:%s" % (REPO, series)])
+                self.assertEqual(img, ["IMAGE=%s:%s.9" % (REPO, series)])
 
     def test_an_image_that_is_not_in_a_series_is_exit_2_before_any_podman_call(self):
         for ref in ("swarmbox", "%s:dev" % REPO, "%s:latest" % REPO, "%s:2" % REPO, "%s:main-2.0" % REPO):
@@ -187,7 +238,7 @@ class PullProgressTest(UpdateBase):
         here, never taken from the machine that runs the tests: the progress line needs one, and a CI runner has none."""
         import pty
         self.install_script()
-        e = self.env(**env)
+        e = self.env(SWARMBOX_TEST_PULL_TICK="0.01", **env)
         for k in ("TERM", "NO_COLOR", "SWARMBOX_PROGRESS", "STARSHIP_SHELL"):
             if k not in env:
                 e.pop(k, None)
@@ -209,12 +260,18 @@ class PullProgressTest(UpdateBase):
                     chunks.append(data)
                 return bool(data)
             while p.poll() is None and time.monotonic() < end:
-                pull(0.2)
+                pull(0.01)
             if p.poll() is None:
                 p.kill()
                 p.wait()
-            while pull(0.3):
-                pass
+            if sys.platform.startswith("linux"):
+                os.close(slave)
+                slave = -1
+                while pull(0.05):
+                    pass
+            else:
+                while pull(0.02):
+                    pass
             shown = b"".join(chunks).decode(errors="replace")
             r = p
         finally:
@@ -224,12 +281,54 @@ class PullProgressTest(UpdateBase):
         return r.returncode, shown
 
     def test_with_a_terminal_the_pull_has_no_quiet_flag(self):
-        for env in ({"TERM": "xterm-256color", "LANG": "C.UTF-8"}, {}, {"TERM": "dumb"}, {"TERM": "xterm", "SWARMBOX_PROGRESS": "plain"}):
-            self.write_config("IMAGE=%s:2.0.0\n" % REPO)
-            self.podman_for("2.99.99")
-            rc, _ = self.update_on_a_terminal(**env)
+        envs = ({"TERM": "xterm-256color", "LANG": "C.UTF-8"}, {}, {"TERM": "dumb"}, {"TERM": "xterm", "SWARMBOX_PROGRESS": "plain"})
+        prepped = [(env, self.iso_env("pty-%d" % i, "IMAGE=%s:2.0.0\n" % REPO, "2.99.99")) for i, env in enumerate(envs)]
+
+        def run_one(item):
+            import pty
+            env, (helper, base_e, fp, _cfg, _hd, _bd) = item
+            e = dict(base_e, SWARMBOX_TEST_PULL_TICK="0.01", **env)
+            for k in ("TERM", "NO_COLOR", "SWARMBOX_PROGRESS", "STARSHIP_SHELL"):
+                if k not in env:
+                    e.pop(k, None)
+            master, slave = pty.openpty()
+            try:
+                p = subprocess.Popen([helper, "update"], env=e, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=slave, cwd=self.tmp)
+                end = time.monotonic() + 60
+
+                def drain(wait):
+                    if not select.select([master], [], [], wait)[0]:
+                        return False
+                    try:
+                        return bool(os.read(master, 65536))
+                    except OSError:
+                        return False
+                while p.poll() is None and time.monotonic() < end:
+                    drain(0.01)
+                if p.poll() is None:
+                    p.kill()
+                    p.wait()
+                if sys.platform.startswith("linux"):
+                    os.close(slave)
+                    slave = -1
+                    while drain(0.05):
+                        pass
+                else:
+                    while drain(0.02):
+                        pass
+                rc = p.returncode
+            finally:
+                if slave >= 0:
+                    os.close(slave)
+                os.close(master)
+            pulls = [c for c in fp.calls() if c and c[0] == "pull"]
+            return env, rc, pulls
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(run_one, prepped))
+        for env, rc, pulls in results:
             self.assertEqual(rc, 0, env)
-            self.assertEqual(self.subs("pull")[-1], ["pull", REPO + ":2.0"], env)
+            self.assertEqual(pulls[-1], ["pull", REPO + ":2.0"], env)
 
     def test_a_failed_pull_with_the_progress_line_shows_podmans_error_and_says_it_in_the_message(self):
         self.podman_for("2.99.99", pull={"exit": 125, "stderr": "Error: unable to pull: connection refused\n"})
@@ -309,26 +408,48 @@ class ScriptRefreshTest(UpdateBase):
 
 class ToTest(UpdateBase):
     def test_to_an_exact_tag_pulls_exactly_that_tag(self):
-        for tag, ver in (("2.0.0", "2.0.0"), ("2.0.5", "2.0.5"), ("2.3.1", "2.3.1"), ("3.0.0", "3.0.0"), ("1.9.2", "1.9.2")):
+        cases = (("2.0.0", "2.0.0"), ("2.0.5", "2.0.5"), ("2.3.1", "2.3.1"), ("3.0.0", "3.0.0"), ("1.9.2", "1.9.2"))
+        prepped = [(tag, ver, self.iso_env("exact-%d" % i, "IMAGE=%s:2.0.0\n" % REPO, ver)) for i, (tag, ver) in enumerate(cases)]
+
+        def run_one(item):
+            tag, ver, (helper, e, fp, cfg, host_dir, _bd) = item
+            r = subprocess.run([helper, "update", "--to", tag], env=e, capture_output=True, text=True, input="", cwd=self.tmp, timeout=60)
+            with open(cfg) as f:
+                img = [ln for ln in f.read().splitlines() if ln.startswith("IMAGE=")]
+            with open(os.path.join(host_dir, "VERSION")) as f:
+                got_ver = f.read().strip()
+            return tag, ver, r, fp.calls(), img, got_ver
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            results = list(pool.map(run_one, prepped))
+        for tag, ver, r, calls, img, got_ver in results:
             with self.subTest(tag=tag):
-                self.podman_for(ver)
-                r = self.update("--to", tag)
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertEqual(r.stdout, MSG % ver)
-                self.assertEqual(self.calls(), [["pull", "-q", "%s:%s" % (REPO, tag)],
-                                                ["run", "--rm", "%s:%s" % (REPO, tag), "host-helper"]])
-                self.assertEqual(self.image_line(), ["IMAGE=%s:%s" % (REPO, ver)])
-                with open(os.path.join(self.host_dir, "VERSION")) as f:
-                    self.assertEqual(f.read().strip(), ver)
+                self.assertEqual(calls, [["pull", "-q", "%s:%s" % (REPO, tag)],
+                                         ["run", "--rm", "%s:%s" % (REPO, tag), "host-helper"]])
+                self.assertEqual(img, ["IMAGE=%s:%s" % (REPO, ver)])
+                self.assertEqual(got_ver, ver)
 
     def test_to_a_moving_tag_tags_the_exact_version(self):
-        for tag in ("2.1", "3", "latest", "edge"):
+        tags = ("2.1", "3", "latest", "edge")
+        prepped = [(tag, self.iso_env("mov-%d" % i, "IMAGE=%s:2.0.0\n" % REPO, "2.1.7")) for i, tag in enumerate(tags)]
+
+        def run_one(item):
+            tag, (helper, e, fp, cfg, _hd, _bd) = item
+            r = subprocess.run([helper, "update", "--to", tag], env=e, capture_output=True, text=True, input="", cwd=self.tmp, timeout=60)
+            with open(cfg) as f:
+                img = [ln for ln in f.read().splitlines() if ln.startswith("IMAGE=")]
+            tag_calls = [c for c in fp.calls() if c and c[0] == "tag"]
+            return tag, r, tag_calls, img
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(run_one, prepped))
+        for tag, r, tag_calls, img in results:
             with self.subTest(tag=tag):
-                self.podman_for("2.1.7")
-                r = self.update("--to", tag)
                 self.assertEqual(r.returncode, 0, r.stderr)
-                self.assertEqual(self.subs("tag"), [["tag", "%s:%s" % (REPO, tag), REPO + ":2.1.7"]])
-                self.assertEqual(self.image_line(), ["IMAGE=%s:2.1.7" % REPO])
+                self.assertEqual(tag_calls, [["tag", "%s:%s" % (REPO, tag), REPO + ":2.1.7"]])
+                self.assertEqual(img, ["IMAGE=%s:2.1.7" % REPO])
 
     # one tag per class of what a tag must not be: a reference (path, registry, digest), an option, a hidden name, too long, a character
     # that separates words (space, tab, newline), that a shell expands or quotes, or that is not ASCII
@@ -338,15 +459,17 @@ class ToTest(UpdateBase):
 
     def test_an_invalid_tag_is_exit_2_before_any_podman_call_and_runs_nothing(self):
         self.podman_for("2.99.99")
-        for tag in self.BAD_TAGS:
+        before = self.before()
+        env = self.env()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(lambda t: (t, self.run_h("update", "--to", t, env=env)), self.BAD_TAGS))
+        for tag, r in results:
             with self.subTest(tag=tag):
-                before = self.before()
-                r = self.update("--to", tag)
                 self.assertEqual(r.returncode, 2, r.stderr)
                 self.assertEqual(r.stdout, "")
                 self.assertIn("tag", r.stderr)
-                self.assertEqual(self.calls(), [])
-                self.assert_unchanged(before)
+        self.assertEqual(self.calls(), [])
+        self.assert_unchanged(before)
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "MARK")), "a command substitution ran")
 
 class FailureTest(UpdateBase):
@@ -392,16 +515,34 @@ class FailureTest(UpdateBase):
             ti = tarfile.TarInfo(name)
             ti.type, ti.linkname = kind, link
             return ti
-        for label, ti in (("parent", member("../escaped")), ("deep parent", member("a/../../escaped")),
-                          ("absolute", member(absname)), ("symlink", member("./evil", tarfile.SYMTYPE, escaped)),
-                          ("hard link", member("./evil", tarfile.LNKTYPE, "swarmbox-host"))):
+        cases = (("parent", member("../escaped")), ("deep parent", member("a/../../escaped")),
+                 ("absolute", member(absname)), ("symlink", member("./evil", tarfile.SYMTYPE, escaped)),
+                 ("hard link", member("./evil", tarfile.LNKTYPE, "swarmbox-host")))
+        prepped = []
+        for i, (label, ti) in enumerate(cases):
+            p = self.archive(version="2.0.1")
+            with tarfile.open(p, "a") as tf:
+                tf.addfile(ti, io.BytesIO(b"") if ti.type == tarfile.REGTYPE else None)
+            iso = self.iso_env("unsafe-%d" % i, "IMAGE=%s:2.0.0\n" % REPO, run={"stdout_file": p})
+            _, _, _, cfg, host_dir, bindir = iso
+            with open(cfg, "rb") as f:
+                snap_before = {"host": snap(host_dir), "bin": snap(bindir), "cfg": f.read(), "mode": os.stat(cfg).st_mode}
+            prepped.append((label, iso, snap_before))
+
+        def run_one(item):
+            label, (helper, e, fp, cfg, host_dir, bindir), snap_before = item
+            r = subprocess.run([helper, "update", "--to", "2.0.1"], env=e, capture_output=True, text=True, input="", cwd=self.tmp, timeout=60)
+            with open(cfg, "rb") as f:
+                snap_after = {"host": snap(host_dir), "bin": snap(bindir), "cfg": f.read(), "mode": os.stat(cfg).st_mode}
+            tag_calls = [c for c in fp.calls() if c and c[0] == "tag"]
+            return label, r, snap_before, snap_after, tag_calls
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            results = list(pool.map(run_one, prepped))
+        for label, r, snap_before, snap_after, tag_calls in results:
             with self.subTest(label):
-                p = self.archive(version="2.0.1")
-                with tarfile.open(p, "a") as tf:
-                    tf.addfile(ti, io.BytesIO(b"") if ti.type == tarfile.REGTYPE else None)
-                self.podman(run={"stdout_file": p})
-                r = self.update("--to", "2.0.1")
-                self.assert_unchanged(self.snapshot)
+                self.assertEqual(snap_after, snap_before)
+                self.assertEqual(len(tag_calls), 0)
                 self.assertEqual(r.returncode, 3, r.stderr)
                 self.assertFalse(os.path.lexists(escaped))
                 self.assertFalse(os.path.lexists(absname))

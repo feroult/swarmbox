@@ -3,6 +3,7 @@ image addons, lock): install, where, prepare, the detached service, idempotence,
 Run with: python3 -W error tests/fast/test_sysop_addon.py
 """
 import ast
+import concurrent.futures
 import os
 import re
 import shutil
@@ -43,14 +44,14 @@ class Manifest(unittest.TestCase):
             self.assertNotIn(key, re.sub(r"(?m)^#.*$", "", text))
 
     def test_scripts_are_executable_and_pass_bash_n_and_shellcheck(self):
-        for name in ("install.sh", "prepare.sh"):
-            p = os.path.join(ADDON, name)
-            self.assertTrue(os.stat(p).st_mode & stat.S_IXUSR, name)
+        paths = [os.path.join(ADDON, name) for name in ("install.sh", "prepare.sh")]
+        for p in paths:
+            self.assertTrue(os.stat(p).st_mode & stat.S_IXUSR, os.path.basename(p))
             self.assertEqual(subprocess.run(["bash", "-n", p]).returncode, 0)
-            sc = shutil.which("shellcheck")
-            if sc:
-                r = subprocess.run([sc, "-s", "bash", p], capture_output=True, text=True)
-                self.assertEqual(r.returncode, 0, r.stdout)
+        sc = shutil.which("shellcheck")
+        if sc:
+            r = subprocess.run([sc, "-s", "bash"] + paths, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_nothing_is_built_at_image_build_and_no_network_word_is_in_the_scripts(self):
         self.assertNotRegex(rd(os.path.join(ROOT, "Dockerfile")), r"(?m)^[^#\n]*\bsysop\b")
@@ -73,6 +74,22 @@ class Manifest(unittest.TestCase):
         self.assertEqual(bad, [])
 
 
+_SHARED_IMAGE = None
+
+
+def setUpModule():
+    global _SHARED_IMAGE
+    _SHARED_IMAGE = ss.short_tmp("sbtl-img-")
+    shutil.copytree(ADDON, os.path.join(_SHARED_IMAGE, "sysop"), ignore=shutil.ignore_patterns("__pycache__"))
+
+
+def tearDownModule():
+    global _SHARED_IMAGE
+    if _SHARED_IMAGE:
+        shutil.rmtree(_SHARED_IMAGE, True)
+        _SHARED_IMAGE = None
+
+
 class Tree(unittest.TestCase):
     """a tree for the real swarmbox-addon.sh: image addons (a copy of this addon), a home, a lock, and a swarmbox-addon command on PATH"""
 
@@ -80,10 +97,10 @@ class Tree(unittest.TestCase):
         self.base = ss.short_tmp("sbtl-")
         self.addCleanup(shutil.rmtree, self.base, True)
         j = lambda *p: os.path.join(self.base, *p)  # noqa: E731
-        self.image, self.home, self.user, self.fbin = j("image"), j("home"), j("user"), j("fbin")
-        for d in (self.image, self.home, self.user, self.fbin):
+        self.image = _SHARED_IMAGE
+        self.home, self.user, self.fbin = j("home"), j("user"), j("fbin")
+        for d in (self.home, self.user, self.fbin):
             os.mkdir(d)
-        shutil.copytree(ADDON, os.path.join(self.image, "sysop"), ignore=shutil.ignore_patterns("__pycache__"))
         self.env = {"PATH": self.fbin + ":/usr/bin:/bin", "HOME": self.home, "SB_RUN_DIR": j("run"), "SB_STATE_DIR": j("state"),
                     "SWARMBOX_TEST_LIB": os.path.join(ROOT, "container", "scripts"), "SWARMBOX_TEST_IMAGE_ADDONS": self.image,
                     "SWARMBOX_TEST_USER_ADDONS": self.user, "SWARMBOX_TEST_HOST_DIR": j("host"),
@@ -99,19 +116,27 @@ class Tree(unittest.TestCase):
 
     def kill_service(self):
         """the watcher first (it would start the service again), then the service"""
+        pids = []
         for pidfile in (self.paths.watch_pidfile, self.paths.pidfile):
             try:
                 with open(pidfile) as f:
-                    pid = int(f.read())
+                    pids.append(int(f.read()))
             except (OSError, ValueError):
                 continue
-            for sig in (signal.SIGTERM, signal.SIGKILL):
+        if not pids:
+            return
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            live = []
+            for pid in pids:
                 try:
                     os.kill(pid, sig)
+                    live.append(pid)
                 except ProcessLookupError:
-                    break
-                if ss.wait_for(lambda: not self.alive(pid), 5):
-                    break
+                    pass
+            if not live:
+                break
+            if ss.wait_for(lambda: not any(self.alive(p) for p in live), 5, step=0.005):
+                break
 
     @staticmethod
     def alive(pid):
@@ -140,9 +165,9 @@ class Tree(unittest.TestCase):
         r = self.addon("install", "sysop")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         if not keep_service:
-            self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile), 10), r.stderr)
+            self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile), 10, step=0.005), r.stderr)
             self.kill_service()
-            self.assertTrue(ss.wait_for(lambda: self.command("status", "-q").returncode == 1, 10))
+            self.assertTrue(ss.wait_for(lambda: self.command("status", "-q").returncode == 1, 10, step=0.005))
         return r
 
     def prepare(self):
@@ -162,9 +187,9 @@ class Install(Tree):
         r = self.install(keep_service=True)
         self.assertIn("self-test ok", r.stderr)
         self.assertIn("started the goal subscriber", r.stderr, "the install runs prepare.sh, which starts the service")
-        self.assertTrue(ss.wait_for(lambda: self.command("status", "-q").returncode == 0, 10))
+        self.assertTrue(ss.wait_for(lambda: self.command("status", "-q").returncode == 0, 10, step=0.005))
         self.kill_service()
-        self.assertTrue(ss.wait_for(lambda: self.command("status", "-q").returncode == 1, 10))
+        self.assertTrue(ss.wait_for(lambda: self.command("status", "-q").returncode == 1, 10, step=0.005))
         for rel in ("bin/swarmbox-sysop", "lib/swarmbox_sysop/__init__.py", "lib/swarmbox_sysop/cli.py", "lib/swarmbox_sysop/mcpserver.py", "lib/swarmbox_sysop/brain.py"):
             self.assertTrue(os.path.exists(os.path.join(self.prefix, rel)), rel)
         self.assertTrue(os.access(os.path.join(self.prefix, "bin", "swarmbox-sysop"), os.X_OK))
@@ -190,12 +215,16 @@ class Install(Tree):
     def test_the_installer_refuses_a_missing_or_floating_version(self):
         inst = os.path.join(ADDON, "install.sh")
         prefix = os.path.join(self.base, "p")
-        for version in ("latest", "", "1.0; rm -rf x", "../1"):
-            r = subprocess.run(["bash", inst], env={"PATH": "/usr/bin:/bin", "ADDON_PREFIX": prefix, "ADDON_VERSION": version, "ADDON_ARCH": "amd64"}, capture_output=True, text=True)
+        bad_cases = [
+            (version, {"PATH": "/usr/bin:/bin", "ADDON_PREFIX": os.path.join(self.base, "p-%d" % i), "ADDON_VERSION": version, "ADDON_ARCH": "amd64"})
+            for i, version in enumerate(("latest", "", "1.0; rm -rf x", "../1"))
+        ] + [("<no-prefix>", {"PATH": "/usr/bin:/bin", "ADDON_VERSION": "1.0.0"})]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            results = list(pool.map(lambda c: (c[0], c[1], subprocess.run(["bash", inst], env=c[1], capture_output=True, text=True)), bad_cases))
+        for version, env, r in results:
             self.assertNotEqual(r.returncode, 0, version)
-            self.assertFalse(os.path.exists(prefix), version)
-        r = subprocess.run(["bash", inst], env={"PATH": "/usr/bin:/bin", "ADDON_VERSION": "1.0.0"}, capture_output=True, text=True)
-        self.assertNotEqual(r.returncode, 0)
+            if "ADDON_PREFIX" in env:
+                self.assertFalse(os.path.exists(env["ADDON_PREFIX"]), version)
         r = subprocess.run(["bash", inst], env={"PATH": "/usr/bin:/bin", "ADDON_PREFIX": prefix, "ADDON_VERSION": "1.0.0", "ADDON_ARCH": "amd64"}, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout, "")
@@ -234,7 +263,7 @@ class Prepare(Tree):
         self.assertLess(time.time() - t0, 10)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("started the goal subscriber", r.stderr)
-        self.assertTrue(ss.wait_for(lambda: self.command("status", "-q").returncode == 0, 10))
+        self.assertTrue(ss.wait_for(lambda: self.command("status", "-q").returncode == 0, 10, step=0.005))
         pid = self.pid()
         self.assertTrue(self.alive(pid))
         stat_ = rd("/proc/%d/stat" % pid).rsplit(")", 1)[1].split()
@@ -246,12 +275,12 @@ class Prepare(Tree):
         self.assertEqual(os.readlink("/proc/%d/fd/1" % pid), self.paths.log)
         self.assertEqual(stat.S_IMODE(os.stat(self.paths.log).st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(os.stat(self.paths.run).st_mode), 0o700)
-        self.assertTrue(ss.wait_for(lambda: "serving" in (rd(self.paths.log) if os.path.exists(self.paths.log) else ""), 10))
+        self.assertTrue(ss.wait_for(lambda: "serving" in (rd(self.paths.log) if os.path.exists(self.paths.log) else ""), 10, step=0.005))
 
     def test_prepare_is_idempotent_and_starts_a_service_that_died_again(self):
         self.install()
         self.assertEqual(self.prepare().returncode, 0)
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile), 10))
+        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile), 10, step=0.005))
         pid = self.pid()
         for _ in range(3):
             r = self.prepare()
@@ -259,9 +288,9 @@ class Prepare(Tree):
             self.assertNotIn("started", r.stderr)
         self.assertEqual(self.pid(), pid, "one service however often it runs")
         os.kill(pid, signal.SIGKILL)
-        self.assertTrue(ss.wait_for(lambda: not self.alive(pid), 5))
+        self.assertTrue(ss.wait_for(lambda: not self.alive(pid), 5, step=0.005))
         self.assertIn("started", self.prepare().stderr)
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile) and self.pid() != pid and self.alive(self.pid()), 10))
+        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile) and self.pid() != pid and self.alive(self.pid()), 10, step=0.005))
         bus = ss.FakeBus(os.path.join(self.base, "run", "bus.sock"))          # a bus that was not there when it started
         self.addCleanup(bus.stop)
         self.assertTrue(bus.wait_subscriber(1, 15), "the service reconnects by itself")
@@ -271,11 +300,11 @@ class Prepare(Tree):
         procs = [subprocess.Popen(["bash", ADDON_SH, "prepare"], env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, cwd=self.home) for _ in range(4)]
         for p in procs:
             self.assertEqual(p.wait(30), 0)
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile), 10))
+        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile), 10, step=0.005))
         pid = self.pid()
         count = lambda: [x for x in os.listdir("/proc") if x.isdigit() and self.is_service(int(x))]  # noqa: E731
         # the ones that lose the lock wait for it for Service.LOCK_WAIT (1 s) before they give up, so the count settles a moment later
-        self.assertTrue(ss.wait_for(lambda: count() == [str(pid)], 6), "exactly one service: %s" % count())
+        self.assertTrue(ss.wait_for(lambda: count() == [str(pid)], 6, step=0.01), "exactly one service: %s" % count())
 
     def is_service(self, pid):
         try:

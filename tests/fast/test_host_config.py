@@ -5,12 +5,17 @@ variables the case sets, nothing else (so a SWARMBOX_* variable of the live box 
 real home: a module-level guard compares a listing of the real SwarmBox folders before and after the run.
 Run: python3 tests/fast/test_host_config.py
 """
+import concurrent.futures
 import os
+import pty
+import select
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import termios
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -141,6 +146,18 @@ class Base(unittest.TestCase):
         p = self.run_h("config", "get", key, env=env)
         return p.returncode, p.stdout, p.stderr
 
+    def _par(self, fn, items, max_workers=12):
+        items = list(items)
+        if len(items) <= 1:
+            return [fn(x) for x in items]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as pool:
+            return list(pool.map(fn, items))
+
+    def _iso_home(self, tag):
+        h = os.path.join(self.tmp, "h-" + tag)
+        os.makedirs(h, exist_ok=True)
+        return h, os.path.join(h, ".config", "swarmbox", "config")
+
 
 class VersionTest(Base):
     def test_version_prints_the_version_of_the_script_and_it_is_the_one_of_the_version_file(self):
@@ -185,8 +202,9 @@ class VersionTest(Base):
     def test_the_default_names_come_from_the_defaults_file(self):
         """Flipping the two lines of DEFAULTS flips the box name, the hostname key and the image of a copied helper."""
         h = self.copied_helper("SWARMBOX_DEFAULT_NAME=flipped\nSWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/<org>/flipped'\n")
-        for key, want in (("NAME", "flipped"), ("HOSTNAME", "flipped"), ("IMAGE", "ghcr.io/<org>/flipped:" + VERSION)):
-            p = self.run_h("config", "get", key, helper=h)
+        cases = (("NAME", "flipped"), ("HOSTNAME", "flipped"), ("IMAGE", "ghcr.io/<org>/flipped:" + VERSION))
+        ps = self._par(lambda kw: self.run_h("config", "get", kw[0], helper=h), cases)
+        for (key, want), p in zip(cases, ps):
             self.assertEqual((p.returncode, p.stdout.strip()), (0, want), (key, p.stderr))
 
 class DefaultsAndPrecedenceTest(Base):
@@ -199,8 +217,10 @@ class DefaultsAndPrecedenceTest(Base):
         return d
 
     def test_every_key_default_get(self):
+        all_keys = list(KEYS) + ["NAME", "CLOUDFLARE_TUNNEL_TOKEN"]
+        res = dict(zip(all_keys, self._par(self.get, all_keys)))
         for key in KEYS:
-            rc, out, err = self.get(key)
+            rc, out, err = res[key]
             want = self.default(key)
             if key == "IMAGE":
                 want = (DEFAULT_IMAGE_REPO + ":") + VERSION
@@ -209,24 +229,32 @@ class DefaultsAndPrecedenceTest(Base):
             else:
                 self.assertEqual((rc, out), (0, want + "\n"), key)
             self.assertEqual(err, "", key)
-        self.assertEqual(self.get("NAME")[:2], (0, DEFAULT_NAME + "\n"))
-        self.assertEqual(self.get("CLOUDFLARE_TUNNEL_TOKEN")[:2], (1, ""))
+        self.assertEqual(res["NAME"][:2], (0, DEFAULT_NAME + "\n"))
+        self.assertEqual(res["CLOUDFLARE_TUNNEL_TOKEN"][:2], (1, ""))
 
     def test_file_value_then_env_override_for_every_key(self):
-        for key, (_, good, other, _bad) in KEYS.items():
-            self.write_cfg("%s=%s\n" % (key, good))
-            self.assertEqual(self.get(key)[:2], (0, good + "\n"), key)
-            self.assertEqual(self.get(key, env={ENVNAME(key): other})[:2], (0, other + "\n"), key)
+        def check_one(item):
+            i, (key, (_, good, other, _bad)) = item
+            h, cf = self._iso_home("ov-%d" % i)
+            self.write_cfg("%s=%s\n" % (key, good), file=cf)
+            r1 = self.get(key, env={"HOME": h})[:2]
+            r2 = self.get(key, env={"HOME": h, ENVNAME(key): other})[:2]
+            r3 = self.get(key, env={"HOME": h, ENVNAME(key): ""})[:2]
+            return key, good, other, r1, r2, r3
+        for key, good, other, r1, r2, r3 in self._par(check_one, enumerate(KEYS.items())):
+            self.assertEqual(r1, (0, good + "\n"), key)
+            self.assertEqual(r2, (0, other + "\n"), key)
             # an empty environment value does not override
-            self.assertEqual(self.get(key, env={ENVNAME(key): ""})[:2], (0, good + "\n"), key)
+            self.assertEqual(r3, (0, good + "\n"), key)
 
 class GrammarTest(Base):
     def test_values_are_literal(self):
         self.write_cfg("WORKSPACE=/srv/my work dir\nIMAGE=a=b\nHOSTNAME=  padded \t \nTZ=Europe/Lisbon\r\n")
-        self.assertEqual(self.get("WORKSPACE")[:2], (0, "/srv/my work dir\n"))
-        self.assertEqual(self.get("IMAGE")[:2], (0, "a=b\n"))          # '=' inside the value
-        self.assertEqual(self.get("HOSTNAME")[:2], (0, "padded\n"))    # blanks trimmed
-        self.assertEqual(self.get("TZ")[:2], (0, "Europe/Lisbon\n"))   # CRLF file
+        r_ws, r_im, r_hn, r_tz = self._par(self.get, ("WORKSPACE", "IMAGE", "HOSTNAME", "TZ"))
+        self.assertEqual(r_ws[:2], (0, "/srv/my work dir\n"))
+        self.assertEqual(r_im[:2], (0, "a=b\n"))          # '=' inside the value
+        self.assertEqual(r_hn[:2], (0, "padded\n"))    # blanks trimmed
+        self.assertEqual(r_tz[:2], (0, "Europe/Lisbon\n"))   # CRLF file
         self.write_cfg("WORKSPACE=$HOME/x \"q\" 'r' \\n ${A}\n")
         self.assertEqual(self.get("WORKSPACE")[:2], (0, "$HOME/x \"q\" 'r' \\n ${A}\n"))
 
@@ -238,16 +266,18 @@ class GrammarTest(Base):
         self.assertFalse(os.path.exists(self.cfg_file))
 
     def test_help_prints_the_user_commands_on_stdout_and_exits_0(self):
-        for word in ("help", "--help", "-h"):
-            p = self.run_h(word)
+        words = ("help", "--help", "-h", "config")
+        ps = self._par(self.run_h, words)
+        for word, p in zip(words[:3], ps[:3]):
             self.assertEqual(p.returncode, 0, word)
             self.assertIn("usage: swarmbox [--plain]", p.stdout)
             self.assertNotIn("swarmbox-host", p.stdout)
-        self.assertEqual(self.run_h("config").returncode, 2)
+        self.assertEqual(ps[3].returncode, 2)
 
     def test_invalid_box_names_exit_2(self):
-        for n in ("../x", "a/b", ".hidden", "a b", "config", "-x", "x;y"):
-            p = self.run_h("config", "get", "WITH", env={"SWARMBOX_NAME": n})
+        names = ("../x", "a/b", ".hidden", "a b", "config", "-x", "x;y")
+        ps = self._par(lambda n: self.run_h("config", "get", "WITH", env={"SWARMBOX_NAME": n}), names)
+        for n, p in zip(names, ps):
             self.assertEqual(p.returncode, 2, n)
             self.assertIn("SWARMBOX_NAME", p.stderr)
         self.assertFalse(os.path.exists(os.path.join(self.home, ".config")))
@@ -255,46 +285,66 @@ class GrammarTest(Base):
 
 class SetTest(Base):
     def test_set_every_key_roundtrip_and_file_mode(self):
-        for key, (_, good, other, _bad) in KEYS.items():
-            p = self.run_h("config", "set", key, good)
-            self.assertEqual((p.returncode, p.stdout, p.stderr), (0, "", ""), (key, p.stderr))
-            self.assertEqual(self.get(key)[:2], (0, good + "\n"), key)
-            p = self.run_h("config", "set", key, other)
-            self.assertEqual(p.returncode, 0, key)
-            self.assertEqual(self.get(key)[:2], (0, other + "\n"), key)
-            self.assertEqual(self.mode(), 0o600, key)
+        def check_one(item):
+            i, (key, (_, good, other, _bad)) = item
+            h, cf = self._iso_home("set-%d" % i)
+            e = {"HOME": h}
+            p1 = self.run_h("config", "set", key, good, env=e)
+            g1 = self.get(key, env=e)[:2]
+            p2 = self.run_h("config", "set", key, other, env=e)
+            g2 = self.get(key, env=e)[:2]
+            m = self.mode(cf)
+            return key, good, other, p1, g1, p2, g2, m
+        for key, good, other, p1, g1, p2, g2, m in self._par(check_one, enumerate(KEYS.items())):
+            self.assertEqual((p1.returncode, p1.stdout, p1.stderr), (0, "", ""), (key, p1.stderr))
+            self.assertEqual(g1, (0, good + "\n"), key)
+            self.assertEqual(p2.returncode, 0, key)
+            self.assertEqual(g2, (0, other + "\n"), key)
+            self.assertEqual(m, 0o600, key)
 
     def test_rejections_name_the_key_and_the_rule_and_write_nothing(self):
-        for key, (_, good, _o, bad) in KEYS.items():
-            self.write_cfg("# keep\n%s=%s\n" % (key, good))
-            before = slurp(self.cfg_file)
+        def check_one(item):
+            i, (key, (_, good, _o, bad)) = item
+            h, cf = self._iso_home("rej-%d" % i)
+            self.write_cfg("# keep\n%s=%s\n" % (key, good), file=cf)
+            before = slurp(cf)
+            out = []
             for v in bad:
-                p = self.run_h("config", "set", key, v)
+                p = self.run_h("config", "set", key, v, env={"HOME": h})
+                out.append((v, p, slurp(cf)))
+            return key, before, out
+        for key, before, out in self._par(check_one, enumerate(KEYS.items())):
+            for v, p, after in out:
                 self.assertEqual(p.returncode, 2, (key, v))
                 self.assertEqual(p.stdout, "")
                 self.assertIn(key, p.stderr)
                 self.assertRegex(p.stderr, r"must|cannot", (key, v))
-                self.assertEqual(slurp(self.cfg_file), before, (key, v))
+                self.assertEqual(after, before, (key, v))
 
 
 class UnsetAndPathTest(Base):
     """config unset KEY removes the key from the file (the default, or the environment, applies again); config path prints the file."""
 
     def test_unset_every_key_brings_back_the_default_and_keeps_the_rest(self):
-        for key, (_d, good, _o, _b) in KEYS.items():
-            if os.path.exists(self.cfg_file):
-                os.remove(self.cfg_file)
-            baseline = self.get(key)[:2]                       # what the key resolves to with no file: its default
-            self.write_cfg("# my notes\nWEB=0\n%s=%s\n" % (key, good) if key != "WEB" else "# my notes\nYOLO=0\nWEB=0\n")
-            p = self.run_h("config", "unset", key)
+        def check_one(item):
+            i, (key, (_d, good, _o, _b)) = item
+            h, cf = self._iso_home("uns-%d" % i)
+            e = {"HOME": h}
+            baseline = self.get(key, env=e)[:2]                       # what the key resolves to with no file: its default
+            self.write_cfg("# my notes\nWEB=0\n%s=%s\n" % (key, good) if key != "WEB" else "# my notes\nYOLO=0\nWEB=0\n", file=cf)
+            p = self.run_h("config", "unset", key, env=e)
+            text = slurp(cf)
+            m = self.mode(cf)
+            after = self.get(key, env=e)[:2]
+            return key, baseline, p, text, m, after
+        for key, baseline, p, text, m, after in self._par(check_one, enumerate(KEYS.items())):
             self.assertEqual((p.returncode, p.stdout), (0, ""), (key, p.stderr))
             self.assertIn("removed %s" % key, p.stderr)
-            text = slurp(self.cfg_file)
             self.assertNotRegex(text, r"(?m)^%s=" % key.replace(".", r"\."), key)
             self.assertIn("# my notes\n", text, key)
             self.assertIn("YOLO=0\n" if key == "WEB" else "WEB=0\n", text, key)
-            self.assertEqual(self.mode(), 0o600, key)
-            self.assertEqual(self.get(key)[:2], baseline, key)
+            self.assertEqual(m, 0o600, key)
+            self.assertEqual(after, baseline, key)
 
     def test_unset_says_when_the_environment_still_sets_the_key(self):
         self.write_cfg("WEB_PORT=8000\n")
@@ -323,12 +373,13 @@ class UnsetAndPathTest(Base):
         self.assertNotIn("ignoring", p.stderr)
 
     def test_unset_refuses_name_and_unknown_keys(self):
-        for key in ("NAME", "NOPE", "web_port"):
-            p = self.run_h("config", "unset", key)
-            self.assertEqual(p.returncode, 2, key)
+        argss = (("unset", "NAME"), ("unset", "NOPE"), ("unset", "web_port"), ("unset",), ("unset", "WEB", "PORT"))
+        ps = self._par(lambda a: self.run_h("config", *a), argss)
+        for a, p in zip(argss[:3], ps[:3]):
+            self.assertEqual(p.returncode, 2, a[-1])
             self.assertEqual(p.stdout, "")
-        self.assertEqual(self.run_h("config", "unset").returncode, 2)
-        self.assertEqual(self.run_h("config", "unset", "WEB", "PORT").returncode, 2)
+        self.assertEqual(ps[3].returncode, 2)
+        self.assertEqual(ps[4].returncode, 2)
 
     def test_unset_removes_the_tunnel_token(self):
         self.write_cfg("CLOUDFLARE_TUNNEL_TOKEN=%s\nWEB=1\n" % TOKEN)
@@ -382,7 +433,43 @@ class EnvTest(Base):
 
 class TokenTest(Base):
     def set_token(self, token=TOKEN, extra_env=None, path=None):
-        return pty_answer([HELPER, "config", "set", "CLOUDFLARE_TUNNEL_TOKEN"], self.env(extra_env, path), b"hidden", token, timeout=20)
+        argv = [HELPER, "config", "set", "CLOUDFLARE_TUNNEL_TOKEN"]
+        env = self.env(extra_env, path)
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.execve(argv[0], argv, env)
+        out = b""
+        sent = False
+        end = time.monotonic() + 20
+        try:
+            while time.monotonic() < end:
+                if select.select([fd], [], [], 0.01)[0]:
+                    try:
+                        chunk = os.read(fd, 4096)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    out += chunk
+                if not sent and b"hidden" in out:
+                    # wait deterministically for `stty -echo` to take effect instead of a blind 0.3s sleep
+                    echo_end = time.monotonic() + 1.0
+                    while time.monotonic() < echo_end:
+                        try:
+                            if not (termios.tcgetattr(fd)[3] & termios.ECHO):
+                                break
+                        except termios.error:
+                            break
+                        time.sleep(0.002)
+                    os.write(fd, token.encode() + b"\n")
+                    sent = True
+            _, status = os.waitpid(pid, 0)
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        return os.waitstatus_to_exitcode(status), out.decode(errors="replace")
 
     def test_set_reads_the_terminal_without_echo(self):
         rc, shown = self.set_token()
@@ -487,11 +574,22 @@ class SysopFlagsTest(CreateFlagsBase):
         return [flags[i + 1] for i, f in enumerate(flags) if f == "-e" and flags[i + 1].startswith("SWARMBOX_SYSOP_")]
 
     def test_defaults_and_explicit_defaults_pass_nothing(self):
-        base = self.fp()
-        self.assertEqual(self.sysop(self.flags()), [])
+        os.makedirs(self.ws, exist_ok=True)
         cfg = "sysop.brain=auto\nsysop.model=auto\nsysop.autonomy=full-auto\nsysop.countdown=4\nsysop.max_steps=0\nsysop.max_seconds=0\n"
-        self.assertEqual(self.sysop(self.flags(cfg=cfg)), [])
-        self.assertEqual(self.fp(cfg=cfg), base)
+        h2 = os.path.join(self.tmp, "h-exp")
+        cf2 = os.path.join(h2, ".config", "swarmbox", "config")
+        os.makedirs(os.path.dirname(cf2), exist_ok=True)
+        with open(cf2, "w") as fh:
+            fh.write(cfg)
+        os.chmod(cf2, 0o600)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            base, dflags, eflags, efp = list(pool.map(lambda fn: fn(), (
+                self.fp, self.flags,
+                lambda: self.flags(env={"HOME": h2}), lambda: self.fp(env={"HOME": h2}),
+            )))
+        self.assertEqual(self.sysop(dflags), [])
+        self.assertEqual(self.sysop(eflags), [])
+        self.assertEqual(efp, base)
 
     def test_the_old_defaults_claude_and_sonnet_are_now_choices_that_are_passed(self):
         # auto is the brain and the model an agent of the box declares (Claude Code's: claude, sonnet); naming them chooses them
@@ -502,13 +600,23 @@ class SysopFlagsTest(CreateFlagsBase):
         self.assertEqual(self.sysop(self.flags(cfg="sysop.autonomy=auto\n")), ["SWARMBOX_SYSOP_AUTONOMY=auto"])
 
     def test_other_values_pass_and_change_the_fingerprint(self):
+        os.makedirs(self.ws, exist_ok=True)
         cfg = ("sysop.brain=gemini -p {mcp_config} 'x'\nsysop.model=haiku\nsysop.autonomy=confirm-risky\nsysop.countdown=0\n"
                "sysop.max_steps=5\nsysop.max_seconds=60\n")
-        base = self.fp()
-        self.assertEqual(self.sysop(self.flags(cfg=cfg)), [
+        h2 = os.path.join(self.tmp, "h-oth")
+        cf2 = os.path.join(h2, ".config", "swarmbox", "config")
+        os.makedirs(os.path.dirname(cf2), exist_ok=True)
+        with open(cf2, "w") as fh:
+            fh.write(cfg)
+        os.chmod(cf2, 0o600)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            base, oflags, ofp = list(pool.map(lambda fn: fn(), (
+                self.fp, lambda: self.flags(env={"HOME": h2}), lambda: self.fp(env={"HOME": h2}),
+            )))
+        self.assertEqual(self.sysop(oflags), [
             "SWARMBOX_SYSOP_BRAIN=gemini -p {mcp_config} 'x'", "SWARMBOX_SYSOP_MODEL=haiku", "SWARMBOX_SYSOP_AUTONOMY=confirm-risky",
             "SWARMBOX_SYSOP_COUNTDOWN=0", "SWARMBOX_SYSOP_MAX_STEPS=5", "SWARMBOX_SYSOP_MAX_SECONDS=60"])
-        self.assertNotEqual(self.fp(cfg=cfg), base)
+        self.assertNotEqual(ofp, base)
 
     def test_an_invalid_value_in_the_file_stops_create_flags(self):
         self.assertEqual(self.cf(cfg="sysop.autonomy=yolo\n").returncode, 2)
