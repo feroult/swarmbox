@@ -8502,6 +8502,78 @@
       if (e.target === popoverBackdropEl) closePopover();
     });
   }
+
+  // Swipe-to-dismiss on the mobile popover sheet (from its drag handle or its header).
+  if (popoverBackdropEl && popoverEl) {
+    let pDrag = null;
+
+    const endPDrag = (cancel) => {
+      if (!pDrag) return;
+      const d = pDrag;
+      pDrag = null;
+      popoverEl.classList.remove('is-dragging');
+      popoverEl.style.transform = '';
+      popoverBackdropEl.style.opacity = '';
+      if (!d.moved) return;
+      const dismissDist = Math.min(110, d.sheetH * 0.26);
+      const freshVy = (performance.now() - d.lastT) < 90 ? d.vy : 0;
+      if (!cancel && (d.offset > dismissDist || (freshVy > 0.45 && d.offset > 30))) closePopover();
+    };
+
+    popoverEl.addEventListener('pointerdown', (e) => {
+      if (!isMobileLayout() || !popoverOpen) return;
+      if (e.button !== undefined && e.button !== 0) return;
+      const t = e.target;
+      if (!t || !t.closest) return;
+      if (t.closest('button, a, input, textarea, select, [contenteditable="true"]')) return;
+      const zone = t.closest('.spop-handle, .spop-head');
+      if (!zone || !popoverEl.contains(zone)) return;
+      const now = performance.now();
+      pDrag = {
+        id: e.pointerId,
+        startY: e.clientY,
+        lastY: e.clientY,
+        lastT: now,
+        offset: 0,
+        vy: 0,
+        moved: false,
+        sheetH: popoverEl.getBoundingClientRect().height || 360,
+      };
+      try { popoverEl.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    popoverEl.addEventListener('pointermove', (e) => {
+      if (!pDrag || e.pointerId !== pDrag.id) return;
+      const dy = e.clientY - pDrag.startY;
+      if (!pDrag.moved) {
+        if (Math.abs(dy) < 6) return;
+        pDrag.moved = true;
+        popoverEl.classList.add('is-dragging');
+      }
+      const now = performance.now();
+      const dt = Math.max(1, now - pDrag.lastT);
+      pDrag.vy = (e.clientY - pDrag.lastY) / dt;
+      pDrag.lastY = e.clientY;
+      pDrag.lastT = now;
+      pDrag.offset = dy >= 0 ? dy : dy * 0.18;
+      popoverEl.style.transform = `translateY(${Math.round(pDrag.offset)}px)`;
+      const p = Math.max(0, Math.min(1, pDrag.offset / Math.max(160, pDrag.sheetH)));
+      popoverBackdropEl.style.opacity = String(1 - p * 0.85);
+    });
+
+    const onPUp = (e) => {
+      if (!pDrag || e.pointerId !== pDrag.id) return;
+      endPDrag(e.type === 'pointercancel');
+      try { popoverEl.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+    popoverEl.addEventListener('pointerup', onPUp);
+    popoverEl.addEventListener('pointercancel', onPUp);
+    // Hiding the sheet mid-drag (Esc, an action that closes it) drops the capture without a pointerup:
+    // reset, or the next popover opens shifted.
+    popoverEl.addEventListener('lostpointercapture', (e) => {
+      if (pDrag && e.pointerId === pDrag.id) endPDrag(true);
+    });
+  }
   document.getElementById('btn-sidebar-close').addEventListener('click', () => {
     setDesktopSidebar(false);
   });
