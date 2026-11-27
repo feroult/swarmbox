@@ -1,2 +1,0 @@
-- Fixed: Enter on the "sysop: preparing the context" line now always starts the agent at once; bash could drop the key when it came as its 0.1 s poll timed out, and the agent then waited the full 30 s.
-- Fixed: a goal the Sysop's panel sees as over (stopped, done or failed) now always has its final state in its live stream; the state file could say it ended a moment before the stream did.
