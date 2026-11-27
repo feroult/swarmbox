@@ -5507,6 +5507,11 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
   .spop-handle {
     margin: -2px 0 2px;
   }
+  .studio-popover { transition: transform .2s cubic-bezier(.22, 1, .36, 1); }
+  .studio-popover.is-dragging { transition: none; }
+  .studio-popover .spop-head { touch-action: none; }
+  .studio-popover.is-dragging .sheet-handle { cursor: grabbing; }
+  .studio-popover.is-dragging .sheet-handle span { width: 46px; background: var(--accent-bright); }
   .wt-box {
     padding: 9px;
     gap: 7px;
