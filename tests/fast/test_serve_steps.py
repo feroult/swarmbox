@@ -6,6 +6,7 @@ it again only with the one thing that is different.
 
 Run with: python3 tests/fast/test_serve_steps.py   (needs bash; python3 is the fake podman)
 """
+import concurrent.futures
 import os
 import shutil
 import signal
@@ -121,123 +122,211 @@ class RunFolderNotWritable(ServeCase):
 class NestedPodmanState(ServeCase):
     """The box has no /dev/fuse and its filesystem outlives a host reboot: step 8 clears what the old boot left, before the service starts."""
 
+    @classmethod
+    def _run_scenario(cls, fn):
+        c = ServeCase()
+        c.setUp()
+        try:
+            res = fn(c)
+        finally:
+            c.doCleanups()
+        return res
+
+    @classmethod
+    def setUpClass(cls):
+        def s_stale_rr(c):
+            rr = os.path.join(c.base, "storage-run")
+            os.makedirs(os.path.join(rr, "libpod", "tmp"))
+            put(os.path.join(rr, "libpod", "tmp", "alive"), "old boot id")
+            p = c.run_ready(SWARMBOX_TEST_PODMAN_RUNROOT=rr)
+            res = (os.path.exists(rr), c.serve_log(), c.calls())
+            c.stop(p)
+            return res
+
+        def s_second_rr(c):
+            lr = os.path.join(c.base, "podman-run")
+            os.makedirs(os.path.join(lr, "libpod", "tmp"))
+            os.makedirs(os.path.join(lr, "containers"))
+            p = c.run_ready()
+            res = (lr, os.path.exists(lr), c.serve_log())
+            c.stop(p)
+            return res
+
+        def s_no_sock(c):
+            p = c.run_ready(SWARMBOX_TEST_NO_STATE_SOCKET="1")
+            res = (os.path.join(c.base, "fallback.sock"), c.serve_log(), c.calls())
+            c.stop(p)
+            return res
+
+        def s_shared_fs(c):
+            with open(os.path.join(c.fake, "stat"), "w") as f:
+                f.write('#!/bin/sh\ncase "$*" in "-f -c %T "*) echo fuse ;; *) exec /usr/bin/stat "$@" ;; esac\n')
+            os.chmod(os.path.join(c.fake, "stat"), 0o755)
+            p = c.run_ready()
+            res = c.serve_log()
+            c.stop(p)
+            return res
+
+        def s_holds_sock(c):
+            p = c.run_ready()
+            res = (c.serve_log(), c.calls())
+            c.stop(p)
+            return res
+
+        def s_marker(c, fuse_spec, content="true"):
+            if fuse_spec == "dir-not-device":
+                fuse = os.path.join(c.base, "dir-not-device")
+                os.mkdir(fuse)
+            elif fuse_spec == "no-such-fuse":
+                fuse = os.path.join(c.base, "no-such-fuse")
+            else:
+                fuse = fuse_spec
+            graph = os.path.join(c.base, "graphroot")
+            marker = os.path.join(graph, "overlay", ".has-mount-program")
+            os.makedirs(os.path.dirname(marker))
+            put(marker, content)
+            p = c.run_ready(SWARMBOX_TEST_PODMAN_GRAPHROOT=graph, SWARMBOX_TEST_FUSE=fuse, FAKE_MARKER=marker,
+                            SWARMBOX_TEST_PODMAN_RUNROOT=os.path.join(c.base, "never-there"))
+            c.stop(p)
+            return (os.path.exists(marker), read(marker), read(os.path.join(c.fake, "marker.seen")), c.serve_log())
+
+        tasks = {
+            "stale_rr": s_stale_rr,
+            "second_rr": s_second_rr,
+            "no_sock": s_no_sock,
+            "shared_fs": s_shared_fs,
+            "holds_sock": s_holds_sock,
+            "no_such_fuse": lambda c: s_marker(c, "no-such-fuse"),
+            "dir_not_dev": lambda c: s_marker(c, "dir-not-device"),
+            "usable_fuse": lambda c: s_marker(c, "/dev/null", "true"),
+            "marker_false": lambda c: s_marker(c, "/nonexistent-fuse", "false"),
+        }
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+            futs = {k: ex.submit(cls._run_scenario, fn) for k, fn in tasks.items()}
+            cls._res = {k: f.result() for k, f in futs.items()}
+
+    def setUp(self):
+        pass
+
     def test_a_stale_runtime_folder_of_nested_podman_is_removed_before_the_service_starts(self):
         # after a host reboot nested Podman refused to start: its runtime folder held the old boot ID
-        rr = os.path.join(self.base, "storage-run")
-        os.makedirs(os.path.join(rr, "libpod", "tmp"))
-        put(os.path.join(rr, "libpod", "tmp", "alive"), "old boot id")
-        p = self.run_ready(SWARMBOX_TEST_PODMAN_RUNROOT=rr)
-        self.assertFalse(os.path.exists(rr), "the stale folder must be gone")
-        self.assertIn("removed the runtime state of the previous run", self.serve_log())
-        self.assertTrue([c for c in self.calls() if c.startswith("podman system service")])
-        self.stop(p)
+        exists, log, calls = self._res["stale_rr"]
+        self.assertFalse(exists, "the stale folder must be gone")
+        self.assertIn("removed the runtime state of the previous run", log)
+        self.assertTrue([c for c in calls if c.startswith("podman system service")])
 
     def test_the_second_runtime_folder_podman_names_in_its_boot_id_error_is_removed_too(self):
         # seen on a Mac after local-up: "current system boot ID differs from cached boot ID ... delete /tmp/podman-run-1000/containers and
         # /tmp/podman-run-1000/libpod/tmp": step 8 only cleared /tmp/storage-run-<uid>, so the service never started
-        lr = os.path.join(self.base, "podman-run")
-        os.makedirs(os.path.join(lr, "libpod", "tmp"))
-        os.makedirs(os.path.join(lr, "containers"))
-        p = self.run_ready()
-        self.assertFalse(os.path.exists(lr), "the stale folder must be gone")
-        self.assertIn(lr, self.serve_log())
-        self.stop(p)
+        lr, exists, log = self._res["second_rr"]
+        self.assertFalse(exists, "the stale folder must be gone")
+        self.assertIn(lr, log)
 
     def test_a_state_folder_that_cannot_hold_a_socket_gets_the_service_on_the_box_disk(self):
         # a Mac: the workspace is a virtiofs share, a stale podman.sock in it cannot be seen or removed and Podman cannot bind there ("operation not supported")
-        p = self.run_ready(SWARMBOX_TEST_NO_STATE_SOCKET="1")
-        fb = os.path.join(self.base, "fallback.sock")
-        self.assertIn("cannot hold a unix socket", self.serve_log())
-        self.assertTrue([c for c in self.calls() if c.startswith("podman system service") and fb in c], self.calls())
-        self.stop(p)
+        fb, log, calls = self._res["no_sock"]
+        self.assertIn("cannot hold a unix socket", log)
+        self.assertTrue([c for c in calls if c.startswith("podman system service") and fb in c], calls)
 
     def test_a_state_folder_on_a_shared_file_system_gets_the_service_on_the_box_disk(self):
         # the bind probe passes on virtiofs; what fails is a stale socket from an earlier run. The file system type decides, whatever the probe says.
-        stub = self.fake
-        with open(os.path.join(stub, "stat"), "w") as f:
-            f.write('#!/bin/sh\ncase "$*" in "-f -c %T "*) echo fuse ;; *) exec /usr/bin/stat "$@" ;; esac\n')
-        os.chmod(os.path.join(stub, "stat"), 0o755)
-        p = self.run_ready()
-        self.assertIn("cannot hold a unix socket", self.serve_log())
-        self.stop(p)
+        self.assertIn("cannot hold a unix socket", self._res["shared_fs"])
 
     def test_a_state_folder_that_holds_sockets_keeps_the_service_where_it_was(self):
-        p = self.run_ready()
-        self.assertNotIn("cannot hold a unix socket", self.serve_log())
-        self.assertTrue([c for c in self.calls() if c.startswith("podman system service") and "podman.sock" in c], self.calls())
-        self.stop(p)
+        log, calls = self._res["holds_sock"]
+        self.assertNotIn("cannot hold a unix socket", log)
+        self.assertTrue([c for c in calls if c.startswith("podman system service") and "podman.sock" in c], calls)
 
     def test_a_serve_test_never_points_step_8_at_the_real_runtime_folder_of_podman(self):
         # step 8 removes this folder: by default the real /tmp/storage-run-<uid> of whatever box runs the tests (the gate once wiped a live box's)
-        env = self.env()
-        self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_RUNROOT"]), self.base)
-        self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_LIBPOD_RUN"]), self.base)
-        self.assertEqual(env["HOME"], self.home)
-        self.assertTrue(self.home.startswith(self.base))
-
-    def serve_with_marker(self, fuse, content="true"):
-        """A serve (the one before it is over) whose graph root has the fuse-overlayfs marker `content`; `fuse` is the path that
-        stands for /dev/fuse. Returns the path of the marker; the serve ends in the cleanup of the test."""
-        self.fresh()
-        graph = os.path.join(self.base, "graphroot")
-        shutil.rmtree(graph, True)
-        marker = os.path.join(graph, "overlay", ".has-mount-program")
-        os.makedirs(os.path.dirname(marker))
-        put(marker, content)
-        p = self.run_ready(SWARMBOX_TEST_PODMAN_GRAPHROOT=graph, SWARMBOX_TEST_FUSE=fuse, FAKE_MARKER=marker,
-                           SWARMBOX_TEST_PODMAN_RUNROOT=os.path.join(self.base, "never-there"))
-        self.stop(p)
-        return marker
+        c = ServeCase()
+        c.setUp()
+        self.addCleanup(c.doCleanups)
+        env = c.env()
+        self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_RUNROOT"]), c.base)
+        self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_LIBPOD_RUN"]), c.base)
+        self.assertEqual(env["HOME"], c.home)
+        self.assertTrue(c.home.startswith(c.base))
 
     def test_without_a_usable_fuse_the_stale_marker_is_removed_before_the_service_starts(self):
         # one probe of native overlay that fails on another graph root (the cache is shared by all of them) makes Podman fall back to
         # fuse-overlayfs and leave .has-mount-program = true for good: every later run died with "fuse: device not found" (a real box)
-        os.mkdir(os.path.join(self.base, "dir-not-device"))
-        for label, fuse in (("no such path", "no-such-fuse"), ("not a character device", "dir-not-device")):
+        for label, key in (("no such path", "no_such_fuse"), ("not a character device", "dir_not_dev")):
             with self.subTest(label):
-                marker = self.serve_with_marker(os.path.join(self.base, fuse))
-                self.assertFalse(os.path.exists(marker))
-                self.assertEqual(read(os.path.join(self.fake, "marker.seen")), "no", "the marker must be gone when the service starts")
-                self.assertIn("removed the stale marker", self.serve_log())
+                exists, _, seen, log = self._res[key]
+                self.assertFalse(exists)
+                self.assertEqual(seen, "no", "the marker must be gone when the service starts")
+                self.assertIn("removed the stale marker", log)
 
     def test_a_usable_fuse_device_or_a_marker_that_says_false_leaves_the_marker_alone(self):
-        for label, fuse, content in (("usable fuse", "/dev/null", "true"), ("marker false", "/nonexistent-fuse", "false")):
+        for label, key, content in (("usable fuse", "usable_fuse", "true"), ("marker false", "marker_false", "false")):
             with self.subTest(label):   # /dev/null is a character device the agent can open: it stands for /dev/fuse
-                marker = self.serve_with_marker(fuse, content)
-                self.assertEqual(read(marker), content)
-                self.assertNotIn("stale marker", self.serve_log())
+                _, text, _, log = self._res[key]
+                self.assertEqual(text, content)
+                self.assertNotIn("stale marker", log)
 
 
 class WarnSteps(ServeCase):
     """Steps 4 to 10: failure writes a health line and continues (W); the marker carries the count."""
 
-    def test_each_w_step_failure_is_one_health_line_and_serve_continues(self):
-        # (label, setup, expected word in the health line)
+    @classmethod
+    def _run_warn(cls, setup):
+        c = ServeCase()
+        c.setUp()
+        try:
+            setup(c)
+            p = c.run_ready(SWARMBOX_TEST_HC_WAIT_SLEEP="0.01")
+            web_ok = wait_for(lambda: any(x.startswith("swarmbox-web ") for x in c.calls()), 10, 0.01)
+            res = (c.marker(), c.health_lines(), web_ok)
+            c.stop(p)
+            return res
+        finally:
+            c.doCleanups()
+
+    @classmethod
+    def _run_with(cls):
+        c = ServeCase()
+        c.setUp()
+        try:
+            p = c.run_ready(SWARMBOX_WITH="claude, opencode")
+            saw = wait_for(lambda: "install opencode saw-ready" in c.calls(), 10, 0.01)
+            calls = c.calls()
+            c.stop(p)
+            return saw, calls
+        finally:
+            c.doCleanups()
+
+    @classmethod
+    def setUpClass(cls):
         cases = [
-            ("step 5 ssh key", lambda: put(os.path.join(self.fake, "swarmbox-pubkey.exit"), "1"), "ssh"),
-            ("step 8 service", lambda: put(os.path.join(self.fake, "service.mode"), "fail"), "podman"),
-            ("step 9 herdr-core", lambda: put(os.path.join(self.fake, "hc.exit"), "1"), "herdr"),
+            ("step 5 ssh key", lambda c: put(os.path.join(c.fake, "swarmbox-pubkey.exit"), "1"), "ssh"),
+            ("step 8 service", lambda c: put(os.path.join(c.fake, "service.mode"), "fail"), "podman"),
+            ("step 9 herdr-core", lambda c: put(os.path.join(c.fake, "hc.exit"), "1"), "herdr"),
         ]
-        for label, setup, word in cases:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+            futs = [(label, word, ex.submit(cls._run_warn, setup)) for label, setup, word in cases]
+            f_with = ex.submit(cls._run_with)
+            cls._warn_res = [(label, word, f.result()) for label, word, f in futs]
+            cls._with_res = f_with.result()
+
+    def setUp(self):
+        pass
+
+    def test_each_w_step_failure_is_one_health_line_and_serve_continues(self):
+        for label, word, (marker, lines, web_ok) in self._warn_res:
             with self.subTest(label):
-                self.fresh()
-                setup()
-                p = self.run_ready(SWARMBOX_TEST_HC_WAIT_SLEEP="0.01")
-                self.assertEqual(self.marker(), "warnings=1", label)
-                lines = self.health_lines()
+                self.assertEqual(marker, "warnings=1", label)
                 self.assertEqual(len(lines), 1, lines)
                 self.assertIn(word, lines[0].lower())
                 # the web server is started by its supervisor in the background, about when the marker appears: wait for the call
-                self.assertTrue(wait_for(lambda: any(c.startswith("swarmbox-web ") for c in self.calls())), "the web server must still start: %s" % label)
-                self.stop(p)
+                self.assertTrue(web_ok, "the web server must still start: %s" % label)
 
     def test_with_installs_run_after_the_marker_in_order(self):
-        p = self.run_ready(SWARMBOX_WITH="claude, opencode")
-        self.assertTrue(wait_for(lambda: "install opencode saw-ready" in self.calls()), self.calls())
-        installs = [c for c in self.calls() if c.startswith("swarmbox-addon install ")]
+        saw, calls = self._with_res
+        self.assertTrue(saw, calls)
+        installs = [c for c in calls if c.startswith("swarmbox-addon install ")]
         self.assertEqual(installs, ["swarmbox-addon install claude", "swarmbox-addon install opencode"])
-        self.assertIn("install claude saw-ready", self.calls())
-        self.stop(p)
+        self.assertIn("install claude saw-ready", calls)
 
 
 class SupervisorCase(ServeCase):
@@ -260,8 +349,8 @@ class Supervisor(SupervisorCase):
     def test_crash_loop_gives_up_after_five_exits_stays_alive_and_a_restart_by_hand_starts_it_again(self):
         put(os.path.join(self.fake, "web.mode"), "crash")
         p = self.run_ready()
-        self.assertTrue(wait_for(lambda: any("keeps crashing" in l for l in self.health_lines()), 10), self.health_lines())
-        time.sleep(0.3)
+        self.assertTrue(wait_for(lambda: any("keeps crashing" in l for l in self.health_lines()), 10, 0.01), self.health_lines())
+        time.sleep(0.08)
         self.assertEqual(self.starts(), 5)
         self.assertIn("web terminal keeps crashing; see web-terminal.log", self.health_lines())
         self.assertIsNone(p.poll(), "the box must stay up")
@@ -270,15 +359,15 @@ class Supervisor(SupervisorCase):
         # fix the cause, then `swarmbox-web restart` (which sends USR1 to the supervisor)
         put(os.path.join(self.fake, "web.mode"), "run")
         os.kill(self.sup_pid(), signal.SIGUSR1)
-        self.assertTrue(wait_for(lambda: self.starts() == 6), "the web server was not restarted")
-        self.assertTrue(wait_for(lambda: not any("keeps crashing" in l for l in self.health_lines()), 3), self.health_lines())
-        self.assertTrue(wait_for(lambda: read(os.path.join(self.fake, "web.pid")).strip().isdigit(), 3), "web.pid was not written")
+        self.assertTrue(wait_for(lambda: self.starts() == 6, 5, 0.01), "the web server was not restarted")
+        self.assertTrue(wait_for(lambda: not any("keeps crashing" in l for l in self.health_lines()), 3, 0.01), self.health_lines())
+        self.assertTrue(wait_for(lambda: read(os.path.join(self.fake, "web.pid")).strip().isdigit(), 3, 0.01), "web.pid was not written")
         self.assertTrue(alive(int(read(os.path.join(self.fake, "web.pid")).strip())))
         # the count was reset: five more quick exits are needed before it gives up again
         put(os.path.join(self.fake, "web.mode"), "crash")
         os.kill(self.sup_pid(), signal.SIGUSR1)
-        self.assertTrue(wait_for(lambda: any("keeps crashing" in l for l in self.health_lines()), 10))
-        time.sleep(0.3)
+        self.assertTrue(wait_for(lambda: any("keeps crashing" in l for l in self.health_lines()), 10, 0.01))
+        time.sleep(0.08)
         self.assertEqual(self.starts(), 6 + 5)
         self.stop(p)
 
@@ -288,58 +377,123 @@ class BusStep(SupervisorCase):
     NAME = "bus"
     SUP_PID = "bus-supervisor.pid"
 
+    @classmethod
+    def _run_case(cls, fn):
+        c = ServeCase()
+        c.setUp()
+        try:
+            return fn(c)
+        finally:
+            c.doCleanups()
+
+    @classmethod
+    def _starts(cls, c):
+        return len(read(os.path.join(c.fake, "bus.starts")).split())
+
+    @classmethod
+    def _sup_pid(cls, c):
+        s = read(os.path.join(c.run_dir, "bus-supervisor.pid")).strip()
+        return int(s) if s.isdigit() else None
+
+    @classmethod
+    def setUpClass(cls):
+        def s_noping(c):
+            put(os.path.join(c.fake, "bus.noping"), "")
+            p = c.run_ready(SWARMBOX_TEST_BUS_WAIT="0")
+            web_ok = wait_for(lambda: any(x.startswith("swarmbox-web ") for x in c.calls()), 10, 0.01)
+            res = (c.marker(), c.health_lines(), web_ok)
+            c.stop(p)
+            return res
+
+        def s_missing(c):
+            os.unlink(os.path.join(c.fake, "swarmbox-bus"))
+            p = c.run_ready()
+            res = (c.marker(), c.health_lines(), os.path.exists(os.path.join(c.run_dir, "bus-supervisor.pid")))
+            c.stop(p)
+            return res
+
+        def s_backoff(c):
+            p = c.run_ready(SWARMBOX_TEST_BACKOFF_SCALE="1")
+            pid = int(wait_for(lambda: read(os.path.join(c.fake, "bus.pid")).strip(), 10, 0.01))
+            t0 = time.time()
+            os.kill(pid, signal.SIGKILL)
+            restarted = wait_for(lambda: cls._starts(c) == 2, 5, 0.01)
+            dt = time.time() - t0
+            log = c.serve_log()
+            c.stop(p)
+            return (restarted, dt, log)
+
+        def s_crash_loop(c):
+            put(os.path.join(c.fake, "bus.mode"), "crash")
+            p = c.run_ready()
+            gave_up = wait_for(lambda: "the bus keeps crashing; see bus.log" in c.health_lines(), 10, 0.01)
+            h_before = c.health_lines()
+            time.sleep(0.08)
+            starts_5 = cls._starts(c)
+            log = c.serve_log()
+            poll_up = p.poll()
+            put(os.path.join(c.fake, "bus.mode"), "run")
+            os.kill(cls._sup_pid(c), signal.SIGUSR1)
+            restarted = wait_for(lambda: cls._starts(c) == 6, 5, 0.01)
+            cleared = wait_for(lambda: not c.health_lines(), 3, 0.01)
+            h_after = c.health_lines()
+            c.stop(p)
+            return (gave_up, h_before, starts_5, log, poll_up, restarted, cleared, h_after)
+
+        def s_exit_8(c):
+            put(os.path.join(c.fake, "bus.mode"), "crash")
+            put(os.path.join(c.fake, "bus.exit"), "8")
+            p = c.run_ready()
+            saw_msg = wait_for(lambda: "another one is running" in c.serve_log(), 5, 0.01)
+            pid_gone = wait_for(lambda: not os.path.exists(os.path.join(c.run_dir, "bus-supervisor.pid")), 3, 0.01)
+            pid_content = read(os.path.join(c.run_dir, "bus-supervisor.pid"))
+            res = (saw_msg, pid_gone, pid_content, cls._starts(c), c.health_lines())
+            c.stop(p)
+            return res
+
+        tasks = {"noping": s_noping, "missing": s_missing, "backoff": s_backoff, "crash_loop": s_crash_loop, "exit_8": s_exit_8}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+            futs = {k: ex.submit(cls._run_case, fn) for k, fn in tasks.items()}
+            cls._res = {k: f.result() for k, f in futs.items()}
+
+    def setUp(self):
+        pass
+
     def test_a_broker_that_does_not_answer_is_one_warning_and_serve_goes_on(self):
-        put(os.path.join(self.fake, "bus.noping"), "")
-        p = self.run_ready(SWARMBOX_TEST_BUS_WAIT="0")
-        self.assertEqual(self.marker(), "warnings=1")
-        self.assertEqual(len(self.health_lines()), 1, self.health_lines())
-        self.assertIn("the bus did not answer", self.health_lines()[0])
-        self.assertTrue(wait_for(lambda: any(c.startswith("swarmbox-web ") for c in self.calls())), "the web server must still start")
-        self.stop(p)
+        marker, health, web_ok = self._res["noping"]
+        self.assertEqual(marker, "warnings=1")
+        self.assertEqual(len(health), 1, health)
+        self.assertIn("the bus did not answer", health[0])
+        self.assertTrue(web_ok, "the web server must still start")
 
     def test_a_missing_program_is_one_warning(self):
-        os.unlink(os.path.join(self.fake, "swarmbox-bus"))
-        p = self.run_ready()
-        self.assertEqual(self.marker(), "warnings=1")
-        self.assertIn("swarmbox-bus not found", self.health_lines()[0])
-        self.assertFalse(os.path.exists(os.path.join(self.run_dir, "bus-supervisor.pid")))
-        self.stop(p)
+        marker, health, pid_exists = self._res["missing"]
+        self.assertEqual(marker, "warnings=1")
+        self.assertIn("swarmbox-bus not found", health[0])
+        self.assertFalse(pid_exists)
 
     def test_a_killed_broker_is_started_again_with_the_backoff(self):
-        p = self.run_ready(SWARMBOX_TEST_BACKOFF_SCALE="1")
-        pid = int(wait_for(lambda: read(os.path.join(self.fake, "bus.pid")).strip()))
-        t0 = time.time()
-        os.kill(pid, signal.SIGKILL)
-        self.assertTrue(wait_for(lambda: self.starts() == 2, 5), "the broker was not restarted")
-        self.assertGreaterEqual(time.time() - t0, 0.9, "the first retry is after 1 s")
-        self.assertIn("bus exited; restarting in 1 s", self.serve_log())
-        self.stop(p)
+        restarted, dt, log = self._res["backoff"]
+        self.assertTrue(restarted, "the broker was not restarted")
+        self.assertGreaterEqual(dt, 0.9, "the first retry is after 1 s")
+        self.assertIn("bus exited; restarting in 1 s", log)
 
     def test_crash_loop_gives_up_with_a_health_line_and_restart_by_signal_starts_again(self):
-        put(os.path.join(self.fake, "bus.mode"), "crash")
-        p = self.run_ready()
-        self.assertTrue(wait_for(lambda: "the bus keeps crashing; see bus.log" in self.health_lines(), 10), self.health_lines())
-        time.sleep(0.3)
-        self.assertEqual(self.starts(), 5)
-        self.assertIn("waiting for 'swarmbox-bus restart'", self.serve_log())
-        self.assertIsNone(p.poll(), "the box stays up")
-        put(os.path.join(self.fake, "bus.mode"), "run")
-        os.kill(self.sup_pid(), signal.SIGUSR1)
-        self.assertTrue(wait_for(lambda: self.starts() == 6))
-        self.assertTrue(wait_for(lambda: not self.health_lines(), 3), self.health_lines())
-        self.stop(p)
+        gave_up, h_before, starts_5, log, poll_up, restarted, cleared, h_after = self._res["crash_loop"]
+        self.assertTrue(gave_up, h_before)
+        self.assertEqual(starts_5, 5)
+        self.assertIn("waiting for 'swarmbox-bus restart'", log)
+        self.assertIsNone(poll_up, "the box stays up")
+        self.assertTrue(restarted)
+        self.assertTrue(cleared, h_after)
 
     def test_exit_8_means_another_broker_runs_and_is_not_restarted_and_the_pid_file_goes(self):
         # `swarmbox-bus restart` sends USR1 to the pid in that file, and USR1 kills a process that does not handle it
-        put(os.path.join(self.fake, "bus.mode"), "crash")
-        put(os.path.join(self.fake, "bus.exit"), "8")
-        p = self.run_ready()
-        self.assertTrue(wait_for(lambda: "another one is running" in self.serve_log(), 5))
-        self.assertTrue(wait_for(lambda: not os.path.exists(os.path.join(self.run_dir, "bus-supervisor.pid")), 3),
-                        "bus-supervisor.pid is still there: %r" % read(os.path.join(self.run_dir, "bus-supervisor.pid")))
-        self.assertEqual(self.starts(), 1)
-        self.assertEqual(self.health_lines(), [])
-        self.stop(p)
+        saw_msg, pid_gone, pid_content, starts, health = self._res["exit_8"]
+        self.assertTrue(saw_msg)
+        self.assertTrue(pid_gone, "bus-supervisor.pid is still there: %r" % pid_content)
+        self.assertEqual(starts, 1)
+        self.assertEqual(health, [])
 
 
 class StaticOrder(unittest.TestCase):

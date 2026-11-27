@@ -182,6 +182,20 @@ class Template(unittest.TestCase):
         self.assertNotIn("SB_BUS_SOCKET", env)
 
 
+def _fast_popen(*args, **kw):
+    """Wrap subprocess.Popen so brain.run()'s 0.1s wait ticks poll every 10ms."""
+    p = brain.subprocess.Popen(*args, **kw)
+    orig_wait = p.wait
+
+    def fast_wait(timeout=None):
+        if timeout == 0.1:
+            timeout = 0.01
+        return orig_wait(timeout=timeout)
+
+    p.wait = fast_wait
+    return p
+
+
 class RunBrain(unittest.TestCase):
     def setUp(self):
         self.e = ss.Env()
@@ -197,7 +211,7 @@ class RunBrain(unittest.TestCase):
                           "HOME": self.e.env["HOME"]}
         self.stop = False
         real_kill = brain.kill_group
-        for patcher in (mock.patch.object(brain, "GRACE_AFTER_DONE", 0.2), mock.patch.object(brain, "kill_group", lambda pgid, proc=None: real_kill(pgid, grace=0.2, proc=proc))):
+        for patcher in (mock.patch.object(brain, "GRACE_AFTER_DONE", 0.03), mock.patch.object(brain, "kill_group", lambda pgid, proc=None: real_kill(pgid, grace=0.05, proc=proc))):
             patcher.start()
             self.addCleanup(patcher.stop)
 
@@ -207,7 +221,7 @@ class RunBrain(unittest.TestCase):
             json.dump(steps, f)
         self.env_extra["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"] = p
 
-    def go(self, goal="do it", mode=None, seconds=30, source="cli", brain_tpl=None, **kw):
+    def go(self, goal="do it", mode=None, seconds=30, source="cli", brain_tpl=None, stop_when=None, **kw):
         cfg = self.e.cfg(max_seconds=max(5, int(seconds)), **({"brain": brain_tpl} if brain_tpl else {}))
         ctx = os.path.join(self.gdir, "context.json")
         ipc.write_json(ctx, {"goal": "g1", "source": source, "goal_dir": self.gdir, "audit": self.pth.audit, "countdown": 0,
@@ -223,7 +237,10 @@ class RunBrain(unittest.TestCase):
             env["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = mode
         os.environ.update({k: v for k, v in self.e.env.items() if k.startswith("SB_")})
         ticks = []
-        res = brain.run(cfg, goal, source, self.gdir, argv, env, lambda: self.stop, lambda: ticks.append(1), time.time() + seconds, **kw)
+        kw.setdefault("sleep", lambda s: time.sleep(min(s, 0.01)))
+        kw.setdefault("popen", _fast_popen)
+        clock = kw.get("clock", time.time)
+        res = brain.run(cfg, goal, source, self.gdir, argv, env, stop_when or (lambda: self.stop), lambda: ticks.append(1), clock() + seconds, **kw)
         self.ticks = len(ticks)
         return res
 
@@ -295,33 +312,43 @@ class RunBrain(unittest.TestCase):
 
     def test_stop_kills_the_whole_group_and_ends_the_goal_stopped(self):
         self.script([{"tool": "box_state"}, {"sleep": 60}])
-        threading_stop = __import__("threading").Timer(0.5, lambda: setattr(self, "stop", True))
-        threading_stop.start()
-        self.addCleanup(threading_stop.cancel)
+        calls_file = os.path.join(self.gdir, "calls.jsonl")
         t0 = time.time()
-        r = self.go()
+        r = self.go(stop_when=lambda: os.path.exists(calls_file))
         self.assertEqual(r.outcome, "stopped")
         self.assertLess(time.time() - t0, 8)
         got = self.logged()
-        self.assertTrue(ss.wait_for(lambda: not self.leftovers(got["pgid"]), 5), self.leftovers(got["pgid"]))
+        self.assertTrue(ss.wait_for(lambda: not self.leftovers(got["pgid"]), 5, 0.01), self.leftovers(got["pgid"]))
 
     def test_stop_while_the_brain_ignores_term_still_kills_it(self):
-        self.stop = False
-        __import__("threading").Timer(0.4, lambda: setattr(self, "stop", True)).start()
         t0 = time.time()
-        r = self.go(mode="hang-ignore-term")
+        seen_at = [None]
+
+        def ready_to_stop():
+            if seen_at[0] is None and os.path.exists(self.log):
+                seen_at[0] = time.monotonic()
+            return seen_at[0] is not None and time.monotonic() - seen_at[0] >= 0.03
+
+        r = self.go(mode="hang-ignore-term", stop_when=ready_to_stop)
         self.assertEqual(r.outcome, "stopped")
         self.assertLess(time.time() - t0, 10)
         got = self.logged()
-        self.assertTrue(ss.wait_for(lambda: not alive(got["pid"]), 5))
+        self.assertTrue(ss.wait_for(lambda: not alive(got["pid"]), 5, 0.01))
 
     def test_the_deadline_kills_the_brain_and_fails_the_goal(self):
         t0 = time.time()
-        r = self.go(mode="hang", seconds=1)
+        now = [t0]
+
+        def fake_clock():
+            if os.path.exists(self.log):
+                now[0] = t0 + 5.0
+            return now[0]
+
+        r = self.go(mode="hang", seconds=1, clock=fake_clock)
         self.assertEqual(r.outcome, "failed")
         self.assertIn("time budget", r.error)
         self.assertLess(time.time() - t0, 12)
-        self.assertTrue(ss.wait_for(lambda: not alive(self.logged()["pid"]), 5))
+        self.assertTrue(ss.wait_for(lambda: not alive(self.logged()["pid"]), 5, 0.01))
 
     def test_not_logged_in_is_a_clean_error_whether_plain_or_in_json(self):
         for mode in ("notloggedin", "notloggedin-json"):
@@ -421,17 +448,27 @@ class BrainSupervision(unittest.TestCase):
             if len(ticks) > 2:
                 raise OSError(28, "No space left on device")
         with self.assertRaises(OSError):
-            brain.run(self.e.cfg(), "goal", "cli", self.gdir, [script], {}, lambda: False, tick, time.time() + 60, on_start=pids.append)
+            brain.run(self.e.cfg(), "goal", "cli", self.gdir, [script], {}, lambda: False, tick, time.time() + 60,
+                      sleep=lambda s: time.sleep(min(s, 0.01)), popen=_fast_popen, on_start=pids.append)
         self.assertTrue(pids)
-        self.assertTrue(ss.wait_for(lambda: not alive(pids[0]), 10), "the brain was left running")
+        self.assertTrue(ss.wait_for(lambda: not alive(pids[0]), 10, 0.01), "the brain was left running")
 
     def test_a_brain_that_prints_without_end_is_cut_at_the_size_limit(self):
         old = brain.MAX_OUTPUT
         brain.MAX_OUTPUT = 64 << 10
         self.addCleanup(setattr, brain, "MAX_OUTPUT", old)
-        res = brain.run(self.e.cfg(), "goal", "cli", self.gdir, ["yes"], {}, lambda: False, lambda: None, time.time() + 0.5)
+        stream = os.path.join(self.gdir, "stream.jsonl")
+        t0 = time.time()
+
+        def clock():
+            if os.path.exists(stream) and os.path.getsize(stream) >= (64 << 10):
+                return t0 + 5.0
+            return t0
+
+        res = brain.run(self.e.cfg(), "goal", "cli", self.gdir, ["yes"], {}, lambda: False, lambda: None, t0 + 0.5,
+                        clock=clock, sleep=lambda s: time.sleep(min(s, 0.01)), popen=_fast_popen)
         self.assertEqual(res.outcome, "failed")
-        self.assertLessEqual(os.path.getsize(os.path.join(self.gdir, "stream.jsonl")), (64 << 10) + 4096)
+        self.assertLessEqual(os.path.getsize(stream), (64 << 10) + 4096)
 
 
 class SysopV2SessionAndStreaming(unittest.TestCase):

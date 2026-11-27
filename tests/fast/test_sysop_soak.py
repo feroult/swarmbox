@@ -141,6 +141,8 @@ class McpWithoutAudit(tm.Rig):
 
 
 class ServiceOnAFullDisk(tss.Base):
+    fast_loop = True
+
     def test_a_disk_that_refuses_writes_does_not_end_the_service(self):
         svc = self.start()
         real = ipc.write_json
@@ -154,7 +156,7 @@ class ServiceOnAFullDisk(tss.Base):
                 mock.patch.object(sys, "stderr", io.StringIO()):
             broken.set()
             ids = [self.goal("goal %d" % i) for i in range(3)]
-            ss.wait_for(lambda: not svc.queue and svc.current is None, 20)
+            ss.wait_for(lambda: not svc.queue and svc.current is None, 20, 0.01)
             self.assertTrue(self.thread.is_alive(), "the service is still running")
             broken.clear()
         gid = self.goal("after the disk had room")
@@ -227,16 +229,16 @@ class Housekeeping(tss.Base):
 
     def test_the_service_runs_the_housekeeping_of_its_main_loop(self):
         old = service.HOUSEKEEPING
-        service.HOUSEKEEPING = 0.05
+        service.HOUSEKEEPING = 0.01
         self.addCleanup(setattr, service, "HOUSEKEEPING", old)
         calls = []
         svc = self.start()
         svc.housekeeping = lambda: calls.append(1)
-        self.assertTrue(ss.wait_for(lambda: len(calls) >= 3, 10), calls)
+        self.assertTrue(ss.wait_for(lambda: len(calls) >= 3, 10, 0.01), calls)
         logs = []
         svc.log = logs.append
         svc.housekeeping = lambda: 1 / 0               # a housekeeping that fails is one failed turn, not the end: the loop turns again
-        self.assertTrue(ss.wait_for(lambda: len([m for m in logs if "ZeroDivisionError" in m]) >= 2, 10), logs)
+        self.assertTrue(ss.wait_for(lambda: len([m for m in logs if "ZeroDivisionError" in m]) >= 2, 10, 0.01), logs)
         self.assertTrue(self.thread.is_alive())
 
 
@@ -285,11 +287,14 @@ class BrainClock(unittest.TestCase):
         os.makedirs(gdir)
         real, offset = time.time, [0.0]
         clock = lambda: real() + offset[0]
-        threading.Timer(0.15, lambda: offset.__setitem__(0, -3600.0)).start()
+        timer = threading.Timer(0.03, lambda: offset.__setitem__(0, -3600.0))
+        timer.start()
+        self.addCleanup(timer.cancel)
         which = brain.shutil.which
         with mock.patch.object(brain.shutil, "which", lambda n, path=None: None if n == "timeout" else which(n, path=path)):        # without the `timeout` wrapper, which counts by itself
             t0 = time.monotonic()
-            res = brain.run(e.cfg(max_seconds=5), "goal", "cli", gdir, ["sleep", "30"], {}, lambda: False, lambda: None, clock() + 0.6, clock=clock)
+            res = brain.run(e.cfg(max_seconds=5), "goal", "cli", gdir, ["sleep", "30"], {}, lambda: False, lambda: None, clock() - 0.85,
+                            clock=clock, sleep=lambda s: time.sleep(min(s, 0.01)))
         self.assertLess(time.monotonic() - t0, 8, "the brain ran on after its budget because the clock went back")
         self.assertEqual(res.outcome, "failed")
         self.assertIn("time budget", res.error)
@@ -365,7 +370,7 @@ class LogOnAFullDisk(tss.Base):
     earlier failure)"""
 
     def test_a_log_that_cannot_be_written_does_not_end_the_service(self):
-        svc = ss.fast_cond(service.Service(self.e.cfg(countdown=0), self.e.paths, backoff=(0.05, 0.3)))     # the default log: standard error
+        svc = ss.fast_cond(service.Service(self.e.cfg(countdown=0), self.e.paths, backoff=(0.01, 0.02)), cap=0.005)     # the default log: standard error
         self.svc = svc
         real = svc.poll_stop
         calls = [0]
@@ -381,7 +386,7 @@ class LogOnAFullDisk(tss.Base):
             self.thread.start()
             self.addCleanup(self.end)
             self.assertTrue(svc.wait_ready(10))
-            self.assertTrue(ss.wait_for(lambda: calls[0] > 12, 20), "the main loop kept turning")
+            self.assertTrue(ss.wait_for(lambda: calls[0] > 12, 20, 0.01), "the main loop kept turning")
             self.assertTrue(self.thread.is_alive(), "the service is alive although nothing could be logged")
         buf = io.StringIO()
         with mock.patch.object(sys, "stderr", buf):
@@ -394,10 +399,12 @@ class LogOnAFullDisk(tss.Base):
 
 
 class FullDiskEnds(tss.Base):
+    fast_loop = True
+
     def test_the_end_of_a_goal_that_the_disk_refused_is_written_when_there_is_room_again(self):
         """found by the soak test: a goal whose end could not be written stayed `running` in its state.json for ever (the panel showed a goal that was long over)"""
         old = service.RETRY_WRITES
-        service.RETRY_WRITES = 0.05
+        service.RETRY_WRITES = 0.01
         self.addCleanup(setattr, service, "RETRY_WRITES", old)
         hold, release = self.gate()
         self.script([{"tool": "box_state"}, hold, {"tool": "done", "args": {"summary": "finished"}}])
@@ -413,16 +420,16 @@ class FullDiskEnds(tss.Base):
             return real(goal)
         svc.write_goal = write_goal
         gid = self.goal("a goal that ends on a full disk")
-        self.assertTrue(ss.wait_for(lambda: (self.state(gid) or {}).get("state") == "running", 20))
+        self.assertTrue(ss.wait_for(lambda: (self.state(gid) or {}).get("state") == "running", 20, 0.01))
         full.set()                                   # the disk fills while the goal works
         release()
-        self.assertTrue(ss.wait_for(lambda: gid in svc.unwritten, 20), "the service remembers the end it could not write")
+        self.assertTrue(ss.wait_for(lambda: gid in svc.unwritten, 20, 0.01), "the service remembers the end it could not write")
         self.assertEqual(self.state(gid)["state"], "running", "this is what the panel would show")
         n = len(refused)
-        self.assertTrue(ss.wait_for(lambda: len(refused) >= n + 2, 10), "it keeps trying while the disk is full")
+        self.assertTrue(ss.wait_for(lambda: len(refused) >= n + 2, 10, 0.01), "it keeps trying while the disk is full")
         self.assertIn(gid, svc.unwritten)
         full.clear()
-        got = ss.wait_for(lambda: (self.state(gid) or {}).get("state") == "failed", 10)
+        got = ss.wait_for(lambda: (self.state(gid) or {}).get("state") == "failed", 10, 0.01)
         self.assertTrue(got, self.state(gid))
         self.assertIn("the disk of the box is full", self.state(gid)["error"], "a goal whose state cannot be kept is ended, and says why once it can")
         self.assertEqual(svc.unwritten, {})
@@ -450,6 +457,8 @@ class DiskWords(unittest.TestCase):
 
 
 class FailedGoalOnAFullDisk(tss.Base):
+    fast_loop = True
+
     def test_the_reason_of_a_failed_goal_names_the_disk_when_it_is_almost_full(self):
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "crash"
         self.start()
@@ -499,13 +508,16 @@ class BrainWords(unittest.TestCase):
 
 
 class KilledBrainGoal(tss.Base):
+    fast_loop = True
+    real_brain = True
+
     def test_the_goal_of_a_killed_brain_fails_with_a_message_a_person_can_read(self):
         self.script([{"tool": "box_state"}, {"sleep": 30}, {"tool": "done", "args": {"summary": "x"}}])
         self.start()
         gid = self.goal("long")
-        pid = ss.wait_for(lambda: (self.state(gid) or {}).get("brain", {}).get("pid"), 15)
+        pid = ss.wait_for(lambda: (self.state(gid) or {}).get("brain", {}).get("pid"), 15, 0.01)
         self.assertTrue(pid)
-        ss.wait_for(lambda: os.path.exists(os.path.join(self.e.paths.goals, gid, "calls.jsonl")), 15)
+        ss.wait_for(lambda: os.path.exists(os.path.join(self.e.paths.goals, gid, "calls.jsonl")), 15, 0.01)
         os.kill(pid, 9)
         st = self.wait_state(gid, seconds=30)
         self.assertEqual(st["state"], "failed")

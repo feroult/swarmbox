@@ -28,7 +28,7 @@ class Burst(unittest.TestCase):
             with lock:
                 running[0] += 1
                 peak[0] = max(peak[0], running[0])
-            time.sleep(0.05)
+            time.sleep(0.01)
             with lock:
                 running[0] -= 1
             return "heard it"
@@ -46,19 +46,25 @@ class Burst(unittest.TestCase):
 
     def test_a_recording_that_waits_too_long_gets_a_fixed_busy_answer_and_the_places_come_back(self):
         old = server.QUEUE_WAIT
-        server.QUEUE_WAIT = 0.3
+        server.QUEUE_WAIT = 0.05
         self.addCleanup(setattr, server, "QUEUE_WAIT", old)
         release = threading.Event()
+        all_entered = threading.Event()
+        entered, lock = [0], threading.Lock()
         published = []
 
         def transcribe(path, language, model, vocabulary):
+            with lock:
+                entered[0] += 1
+                if entered[0] >= server.MAX_PARALLEL:
+                    all_entered.set()
             release.wait(20)
             return "late"
         svc = self.service(transcribe, published)
         holders = [threading.Thread(target=lambda: svc.audio(wav_with("hello there")), daemon=True) for _ in range(server.MAX_PARALLEL)]
         for t in holders:
             t.start()
-        time.sleep(0.3)
+        self.assertTrue(all_entered.wait(10))
         with self.assertRaises(server.HttpError) as cm:
             svc.audio(wav_with("one more"))
         e = cm.exception
@@ -99,10 +105,12 @@ class TwoSigterms(unittest.TestCase):
         sig.assert_called_once_with(signal.SIGTERM, signal.SIG_IGN)
 
     def test_two_sigterms_in_a_row_leave_no_traceback(self):
+        import concurrent.futures
         import signal
         import socket
         import subprocess
-        for i in range(4):               # a few races between the two signals (the handler itself is tested above)
+
+        def one(i):
             s = socket.socket()
             s.bind(("127.0.0.1", 0))
             port = s.getsockname()[1]
@@ -111,13 +119,13 @@ class TwoSigterms(unittest.TestCase):
             p = subprocess.Popen([sys.executable, "-B", "-m", "swarmbox_voice", "serve", "--listen", "127.0.0.1:%d" % port], env=env, stderr=subprocess.PIPE,
                                  stdout=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True)
             try:
-                for _ in range(200):
+                for _ in range(2000):
                     try:
                         socket.create_connection(("127.0.0.1", port), 0.1).close()
                         break
                     except OSError:
-                        time.sleep(0.05)
-                time.sleep(0.2)                      # the handler is installed before the first connection can be made
+                        time.sleep(0.005)
+                time.sleep(0.02)                     # the handler is installed right after make_server() binds the port
                 p.send_signal(signal.SIGTERM)
                 time.sleep(0.001 * i)
                 try:
@@ -125,12 +133,18 @@ class TwoSigterms(unittest.TestCase):
                 except OSError:
                     pass
                 _, err = p.communicate(timeout=20)
+                rc = p.returncode
             finally:
                 if p.poll() is None:
                     p.kill()
                     p.communicate()
+            return i, rc, err
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+            results = list(ex.map(one, range(4)))    # a few races between the two signals (the handler itself is tested above)
+        for i, rc, err in results:
             self.assertNotIn("Traceback", err, "run %d: %s" % (i, err))
-            self.assertEqual(p.returncode, 0, "run %d: exit %s" % (i, p.returncode))
+            self.assertEqual(rc, 0, "run %d: exit %s" % (i, rc))
 
 
 if __name__ == "__main__":

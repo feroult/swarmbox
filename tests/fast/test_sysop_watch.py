@@ -20,13 +20,13 @@ DRIVER = r"""
 import sys
 sys.path.insert(0, %(lib)r)
 from swarmbox_sysop import paths, watch
-w = watch.Watcher(paths.Paths(), %(argv)r, log=lambda m: print(m, flush=True), backoff=(0.05, 0.2), crashes=(%(n)d, 30.0))
+w = watch.Watcher(paths.Paths(), %(argv)r, log=lambda m: print(m, flush=True), backoff=(0.01, 0.02), crashes=(%(n)d, 30.0))
 sys.exit(w.run())
 """
 
 
 def wait_for(fn, seconds=15.0):
-    return ss.wait_for(fn, seconds, 0.05)
+    return ss.wait_for(fn, seconds, 0.01)
 
 
 def alive(pid):
@@ -120,7 +120,7 @@ class Scripted(unittest.TestCase):
         pth = paths.Paths(self.e.env)
         self.assertTrue(wait_for(lambda: os.path.exists(pth.crashloop)), "the panel and the user are told")
         self.assertEqual(self.n_starts(), 3)
-        time.sleep(0.6)
+        time.sleep(0.08)
         self.assertEqual(self.n_starts(), 3, "it gave up: no more starts")
         self.assertIsNone(w.poll(), "and it stays alive, waiting for the call")
         with open(pth.crashloop) as f:
@@ -154,8 +154,12 @@ class RealService(unittest.TestCase):
         self.env = dict(os.environ)
         self.env.update(self.e.env)
         self.env["PYTHONPATH"] = ss.LIB
-        self.watcher = subprocess.Popen([sys.executable, "-B", "-m", "swarmbox_sysop", "serve", "--log", "--watch"], env=self.env,
-                                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        self.watcher = subprocess.Popen(
+            [sys.executable, "-B", "-c",
+             "import sys; from swarmbox_sysop import cli, watch; "
+             "_W = watch.Watcher; watch.Watcher = lambda *a, **k: _W(*a, backoff=(0.05, 0.2), **k); "
+             "sys.exit(cli.main(['serve', '--log', '--watch']))"],
+            env=self.env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         self.addCleanup(self.cleanup_procs)
 
     def cleanup_procs(self):
@@ -200,7 +204,7 @@ class RealService(unittest.TestCase):
         r = subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop", "serve", "--log", "--watch"], env=self.env, timeout=20, stdin=subprocess.DEVNULL,
                            capture_output=True)
         self.assertEqual(r.returncode, 0)
-        time.sleep(1.5)
+        time.sleep(0.15)
         self.assertEqual(self.service_pid(), first)
         self.assertTrue(alive(first))
 

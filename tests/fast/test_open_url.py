@@ -51,6 +51,14 @@ class _FakeWebHandler(http.server.BaseHTTPRequestHandler):
 
 
 class SwarmboxOpenTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _FakeWebHandler)
+        cls._web_port = cls._srv.server_address[1]
+        cls._srv_thread = threading.Thread(target=cls._srv.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        cls._srv_thread.start()
+        cls.addClassCleanup(lambda: (cls._srv.shutdown(), cls._srv.server_close()))
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="swarmbox-open-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -77,12 +85,7 @@ class SwarmboxOpenTest(unittest.TestCase):
     def start_fake_web(self, delivered=1):
         _FakeWebHandler.received = []
         _FakeWebHandler.delivered = delivered
-        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _FakeWebHandler)
-        port = srv.server_address[1]
-        t = threading.Thread(target=srv.serve_forever, daemon=True)
-        t.start()
-        self.addCleanup(lambda: (srv.shutdown(), srv.server_close()))
-        return port
+        return self._web_port
 
     def test_rejects_missing_or_disallowed_urls(self):
         for args in (
@@ -140,12 +143,13 @@ class SwarmboxOpenTest(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node") and MODULES, "node or @xterm/headless is not installed")
 class ServerAndCockpitOpenUrlTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="open-url-js-")
-        self.addCleanup(shutil.rmtree, self.tmp, True)
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="open-url-js-")
+        cls.addClassCleanup(shutil.rmtree, cls.tmp, True)
         for f in glob.glob(os.path.join(WEB_DIR, "*.mjs")):
-            shutil.copy(f, self.tmp)
-        os.symlink(MODULES[0], os.path.join(self.tmp, "node_modules"))
+            shutil.copy(f, cls.tmp)
+        os.symlink(MODULES[0], os.path.join(cls.tmp, "node_modules"))
 
     def test_server_url_and_loopback_validators(self):
         script = r"""

@@ -78,7 +78,7 @@ class Basics(Base):
         self.assertEqual(h.pub("one", 1)["delivered"], 1)
         self.assertEqual(a.line()["body"], 1)
         self.assertEqual(h.pub("three", 1)["err"], "no_subscriber")
-        b.s.settimeout(0.2)
+        b.s.settimeout(0.03)
         with self.assertRaises(socket.timeout):
             b.line()
 
@@ -188,8 +188,7 @@ class Groups(Base):
         gots = [collect(h.sub(TOPIC, "g")) for _ in range(3)]
         for i in range(6):
             h.pub(TOPIC, i)
-            time.sleep(0.03)            # the member that took it reads it before the next one is published
-        self.assertTrue(wait_for(lambda: sum(len(g) for g in gots) == 6))
+            self.assertTrue(wait_for(lambda: sum(len(g) for g in gots) == i + 1))  # the member that took it reads it before the next one is published
         self.assertEqual(gots, [[0, 3], [1, 4], [2, 5]])
 
     def test_a_member_that_dies_is_dropped_and_the_other_gets_everything(self):
@@ -218,14 +217,15 @@ class Groups(Base):
         self.assertTrue(wait_for(lambda: len(got) >= 19, 5), got)
         self.assertEqual([g["n"] for g in got], list(range(1, 20)))      # the first went to the stuck one, which had read nothing yet
         self.assertEqual(stuck.line()["body"], {"n": 0})
-        stuck.s.settimeout(0.3)
+        stuck.s.settimeout(0.04)
         with self.assertRaises(socket.timeout):
             stuck.line()                                                    # and nothing else is waiting for it
 
     def test_a_slow_member_is_skipped_and_a_healthy_one_keeps_receiving(self):
-        old = bus.SLOW_BUFFER
-        bus.SLOW_BUFFER = 200 * 1024
+        old, old_g = bus.SLOW_BUFFER, bus.GROUP_GRACE
+        bus.SLOW_BUFFER, bus.GROUP_GRACE = 200 * 1024, 0.02
         self.addCleanup(setattr, bus, "SLOW_BUFFER", old)
+        self.addCleanup(setattr, bus, "GROUP_GRACE", old_g)
         h = self.start()
         slow = h.conn()
         slow.s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
@@ -244,6 +244,9 @@ class Groups(Base):
         self.assertEqual(good.line()["body"], "to the healthy one")
 
     def test_when_every_member_is_stuck_the_share_is_busy_after_a_short_wait_and_goes_again_when_one_reads(self):
+        old_g = bus.GROUP_GRACE
+        bus.GROUP_GRACE = 0.04
+        self.addCleanup(setattr, bus, "GROUP_GRACE", old_g)
         h = self.start()
         a = h.sub(TOPIC, "g")
         self.assertTrue(h.pub(TOPIC, 1)["ok"])
@@ -260,7 +263,7 @@ class Groups(Base):
         h = self.start()
         a = h.sub(TOPIC, "g")
         self.assertTrue(h.pub(TOPIC, 1)["ok"])
-        threading.Timer(0.05, a.line).start()
+        threading.Timer(0.01, a.line).start()
         self.assertTrue(h.pub(TOPIC, 2)["ok"])
 
     def test_two_groups_each_get_the_message_once(self):
@@ -289,6 +292,9 @@ class Groups(Base):
         self.assertEqual((len(gots[0]), len(gots[1])), (3, 3))
 
     def test_a_busy_group_does_not_stop_the_others_from_receiving_and_the_reply_says_both(self):
+        old_g = bus.GROUP_GRACE
+        bus.GROUP_GRACE = 0.02
+        self.addCleanup(setattr, bus, "GROUP_GRACE", old_g)
         h = self.start()
         stuck = h.sub(TOPIC, "slowpoke")
         self.assertTrue(h.pub(TOPIC, 0)["ok"])                           # the stuck member now has an unread message
@@ -314,6 +320,9 @@ class Receivers(Base):
         self.assertEqual(h.pub(TOPIC, 1, allow_none="yes")["err"], "no_subscriber")      # only the boolean true counts
 
     def test_allow_none_does_not_hide_a_busy_group(self):
+        old_g = bus.GROUP_GRACE
+        bus.GROUP_GRACE = 0.02
+        self.addCleanup(setattr, bus, "GROUP_GRACE", old_g)
         h = self.start()
         h.sub(TOPIC, "g")
         h.pub(TOPIC, 1)
@@ -442,7 +451,7 @@ class BadInput(Base):
 
     def test_a_client_that_sends_nothing_gets_bad_request_after_the_timeout(self):
         old = bus.REQUEST_TIMEOUT
-        bus.REQUEST_TIMEOUT = 0.3
+        bus.REQUEST_TIMEOUT = 0.05
         self.addCleanup(setattr, bus, "REQUEST_TIMEOUT", old)
         h = self.start()
         c = Conn(h.path)
@@ -592,6 +601,9 @@ class Watch(Base):
         self.assertEqual(s.line()["body"], "someone")
 
     def test_watch_shows_a_busy_share(self):
+        old_g = bus.GROUP_GRACE
+        bus.GROUP_GRACE = 0.02
+        self.addCleanup(setattr, bus, "GROUP_GRACE", old_g)
         h = self.start()
         w = self.watcher(h)
         h.sub("t", "g")
