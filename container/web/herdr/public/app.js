@@ -5490,12 +5490,45 @@
     }
   }
 
+  // a looping animation keeps its phase across redraws (sidebar cards and the running sysop turn are drawn again on events): start it where the clock is
+  const phase = (el, ms) => { if (el) el.style.animationDelay = `-${Date.now() % ms}ms`; return el; };
+
+  let lastTabsRenderKey = '';
+
+  function tabsRenderKey() {
+    return JSON.stringify({
+      activeId,
+      editingTabId,
+      mobileSessionsFilter,
+      ctx: lastCtxTabsKey,
+      pins,
+      pendingWorktrees,
+      repoStatuses,
+      terminals: terminals.map((t) => [
+        t.address,
+        tabState(t),
+        t.status && t.status.msg,
+        t.status && t.status.progress,
+        t.status && t.status.kind,
+        tabTitleParts(t),
+        tabAgentKind(t),
+        tabSubtitle(t),
+        t.labels,
+        t.repo,
+        terminalRepoGroupInfo(t).key,
+      ]),
+    });
+  }
+
   function renderTabs(force = false) {
     if (tabBarPointerHeld && !force) {
       tabBarRenderDeferred = true;
       return;
     }
     tabBarRenderDeferred = false;
+    const renderKey = tabsRenderKey();
+    if (!force && renderKey === lastTabsRenderKey) return;
+    lastTabsRenderKey = renderKey;
     sidebarTabsEl.innerHTML = '';
     if (topbarTabsEl) topbarTabsEl.innerHTML = '';
     if (sidebarAgentsEl) sidebarAgentsEl.innerHTML = '';
@@ -5546,6 +5579,8 @@
         const stage = document.createElement('div');
         stage.className = 'pixel-stage';
         stage.innerHTML = pixelIconHtml(agentKind);
+        if (state === 'working') phase(stage.querySelector('svg'), 900);
+        else if (state === 'blocked') phase(stage.querySelector('svg'), 550);
         const corner = document.createElement('span');
         corner.className = 'pixel-corner';
         corner.textContent = stateCornerGlyph(state);
@@ -5641,6 +5676,7 @@
           cBadge.classList.add('is-ctx-wait');
           cMsg.className = 'agent-card-msg is-ctx-wait';
           cMsg.innerHTML = ICO_BOOK_SVG;
+          phase(cMsg.querySelector('svg'), 1400);
           const since = document.createElement('span');
           since.dataset.ctxSince = String(ctxSess.at || Date.now());
           since.textContent = `preparing context · ${Math.max(0, Math.round((Date.now() - (ctxSess.at || Date.now())) / 1000))}s`;
@@ -5655,6 +5691,7 @@
           const bar = document.createElement('div');
           bar.className = 'ctx-progress';
           bar.innerHTML = '<i></i>';
+          phase(bar.querySelector('i'), 1600);
           card.appendChild(bar);
         }
 
@@ -5843,6 +5880,8 @@
           const td = document.createElement('span');
           td.className = 'status-dot';
           td.dataset.state = state;
+          if (state === 'working') phase(td, 1400);
+          else if (state === 'blocked') phase(td, 950);
           tt.appendChild(td);
         }
         tt.appendChild(ttClose);
@@ -5994,6 +6033,7 @@
             const mainPill = document.createElement('button');
             mainPill.type = 'button';
             mainPill.className = `repo-main-pill ${mainPillCls}`;
+            if (mainPillCls === 'is-running') phase(mainPill, 1300);
             mainPill.textContent = mainPillText;
             mainPill.title = mainPillTitle;
             mainPill.addEventListener('click', (e) => {
@@ -6603,8 +6643,6 @@
     return secs >= 1 ? `${word} · ${fmtDur(secs)}` : word;
   };
   const fmtDur = (secs) => (secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s`);
-  // a looping animation keeps its phase across redraws (the running turn is drawn again on every event): start it where the clock is
-  const phase = (el, ms) => { el.style.animationDelay = `-${Date.now() % ms}ms`; return el; };
 
   // the last line of a turn, always one line high: what the Sysop is doing while it runs, then how the goal ended and how long it took.
   // It is the same slot before and after, so nothing above or below it moves when the goal ends.
@@ -6993,6 +7031,7 @@
     const word = repo.state === 'writing' ? 'writing' : repo.state === 'failed' ? 'failed' : repo.state === 'stuck' ? 'no answer'
       : fmtShortAge(repo.at);
     b.innerHTML = `${ICO_BOOK_SVG}<span>${word}</span>`;
+    if (repo.state === 'writing') phase(b.querySelector('svg'), 1400);
     b.title = repo.state === 'writing'
       ? `The sysop is writing the context of ${repo.repo} (${CTX_REASONS[repo.call && repo.call.reason] || 'in the background'})`
       : repo.state === 'failed' ? `The context of ${repo.repo} failed: ${(repo.call && repo.call.error) || 'see Events'}${repo.at ? ` (new sessions still get the one written ${fmtAge(repo.at)})` : ''}`
