@@ -27,6 +27,9 @@ behaviour or branch, no copies of the same case, no tests of wording in docs. Th
 
 ```
 python3 tests/fast/test_host_up.py   # one file
+sh tests/run.sh loop                 # inner loop: changed files + guards, fail-fast (falls back to full fast on shared infra)
+sh tests/run.sh commit               # full fast suite (alias of `fast`; also the default)
+sh tests/run.sh smoke                # slow integration tests (alias of `slow`; prefer dev/test-slow.sh)
 sh tests/run.sh                      # the fast tests, in parallel, one line per file, the slowest files at the end
 sh tests/run.sh macos                # the fast files of tests/support/macos.list: what the macOS job runs
 sh tests/run.sh slow                 # the slow ones (use dev/test-slow.sh: real processes belong in a container)
@@ -39,7 +42,7 @@ Podman. A test is a regression test when a past bug lives on in it: `docs/histor
 version 1 with the test that guards it, and `tests/fast/test_layout.py` checks that those tests still exist, so change that file when you
 rename or delete one of them.
 
-`tests/run.sh` options: `-j N` (files in parallel), `--only a.py,b.py`, `--list`, `--repeat N`, `--werror` (each file under `python3 -W error`),
+`tests/run.sh` options: `-j N` (files in parallel), `--area NAME` (targeted area + guards), `--fail-fast` (stop on first failing file; default for `loop`, override with `--no-fail-fast`), `--since REF` (diff base for `loop`), `--only a.py,b.py`, `--list`, `--repeat N`, `--werror` (each file under `python3 -W error`),
 `--timing N`, `--timeout S`. It runs every file under `tests/support/reap_run.py`, which kills by PID whatever a file left behind and shows
 it as `reaped N`; a test that leaks a process is a bug to fix in that test (end children in `addCleanup`). Run the slow and the whole
 suites in the background.

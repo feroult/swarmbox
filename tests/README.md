@@ -5,27 +5,33 @@ the slow ones run where their programs are (a container).
 
 ```
 tests/
-  run.sh              the one runner (sh tests/run.sh [fast|slow|all|e2e|macos] ...)
+  run.sh              the one runner (sh tests/run.sh [loop|commit|smoke|fast|slow|all|e2e|macos] ...)
   fast/               no real herdr-core, browser, Podman or network, no long waits. The default. dev/check.sh and the pre-push hook run it.
   slow/               integration: a pty, Podman, the image. Skips with a message when a program is missing.
   e2e/                harnesses with the real `claude` (manual, never in a default run; empty since the tmux removal)
-  support/            helpers.py (FakePodman and friends), *_support.py, fixtures/, reap_run.py, runner.py, macos.list
+  support/            helpers.py (FakePodman and friends), *_support.py, areas.py, fixtures/, reap_run.py, runner.py, macos.list
 ```
 
 ## Running
 
 ```
-sh tests/run.sh                         # fast, in parallel (-j: the CPUs up to 8), one line per file, the slowest files at the end
+sh tests/run.sh loop                    # inner loop: changed files (via git) + static guards, --fail-fast on by default (--since REF to diff a ref)
+sh tests/run.sh commit                  # full fast suite (alias of `fast`; default when no selector is given)
+sh tests/run.sh smoke                   # integration suite (alias of `slow`): in a container, see below
+sh tests/run.sh --area herdr            # one or more areas (repeatable or comma-separated) + guards
+sh tests/run.sh                         # fast, in parallel (-j: the CPUs up to 16), one line per file, the slowest files at the end
 sh tests/run.sh slow                    # slow (3 files at a time): in a container, see below
 sh tests/run.sh all                     # fast, then slow
 sh tests/run.sh macos                   # the fast files of support/macos.list: what the macOS job runs
 sh tests/run.sh --only test_bus.py      # one file, wherever it is (a name that does not exist is an error)
-sh tests/run.sh --list | --repeat 3 | --werror | -j 16 | --timing 25 | --timeout 600 | --durations 10
+sh tests/run.sh --list | --fail-fast | --repeat 3 | --werror | -j 16 | --timing 25 | --timeout 600 | --durations 10
 python3 tests/fast/test_bus.py          # one file directly (the usual way when you work on it)
 sh dev/test-slow.sh                     # slow, in Podman, in the image of dev/test-image/Containerfile (built when missing)
 sh dev/test-slow.sh fast                # fast in the same offline, read-only container: the world of a CI runner
 sh dev/check.sh                         # shellcheck + the fast tests in a clean environment (also run by the pre-push hook)
 ```
+
+`loop` maps uncommitted changes (or `--since <ref>`) through `support/areas.py` to matching `fast/` tests plus the static guards; edits to shared infrastructure or unmapped files fall back to the full `fast` suite, and a clean tree runs only the guards. Pass `--no-fail-fast` to keep running after a failure. `--area` accepts `guards`, `herdr`, `sysop`, `voice`, `host`, `tabs`, `bus`, `worktree`, `addons`, `release`, and `runner`. `--fail-fast` stops scheduling and terminates running jobs on the first failing file.
 
 `--werror` runs each file as `python3 -W error`; `--github` adds a GitHub annotation for a failed file (CI). Every file runs under
 `support/reap_run.py`: when it ends, the processes it left behind are found by PID (never by name), killed and shown as `reaped N`.
