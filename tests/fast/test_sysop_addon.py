@@ -74,30 +74,21 @@ class Manifest(unittest.TestCase):
         self.assertEqual(bad, [])
 
 
-_SHARED_IMAGE = None
-
-
-def setUpModule():
-    global _SHARED_IMAGE
-    _SHARED_IMAGE = ss.short_tmp("sbtl-img-")
-    shutil.copytree(ADDON, os.path.join(_SHARED_IMAGE, "sysop"), ignore=shutil.ignore_patterns("__pycache__"))
-
-
-def tearDownModule():
-    global _SHARED_IMAGE
-    if _SHARED_IMAGE:
-        shutil.rmtree(_SHARED_IMAGE, True)
-        _SHARED_IMAGE = None
-
-
 class Tree(unittest.TestCase):
     """a tree for the real swarmbox-addon.sh: image addons (a copy of this addon), a home, a lock, and a swarmbox-addon command on PATH"""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._shared_image = ss.short_tmp("sbtl-img-")
+        cls.addClassCleanup(shutil.rmtree, cls._shared_image, True)
+        shutil.copytree(ADDON, os.path.join(cls._shared_image, "sysop"), ignore=shutil.ignore_patterns("__pycache__"))
 
     def setUp(self):
         self.base = ss.short_tmp("sbtl-")
         self.addCleanup(shutil.rmtree, self.base, True)
         j = lambda *p: os.path.join(self.base, *p)  # noqa: E731
-        self.image = _SHARED_IMAGE
+        self.image = self._shared_image
         self.home, self.user, self.fbin = j("home"), j("user"), j("fbin")
         for d in (self.home, self.user, self.fbin):
             os.mkdir(d)
@@ -239,6 +230,7 @@ class Prepare(Tree):
     def setUpClass(cls):
         super().setUpClass()
         tpl = Tree()
+        tpl._shared_image = cls._shared_image
         tpl.setUp()
         cls.addClassCleanup(tpl.doCleanups)
         tpl.install()

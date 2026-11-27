@@ -559,9 +559,8 @@ def run(args, server_args):
         threading.Thread(target=front.serve_forever, daemon=True).start()
         print("swarmbox-voice front: listening on %s:%d, web server on 127.0.0.1:%d, voice service on 127.0.0.1:%d"
               % (front.address[0], front.address[1], args.server_port, service[1]), file=sys.stderr, flush=True)
-        poll = min(0.2, _test_delay(1.0))
         while not stopping.is_set() and children.server.poll() is None:
-            stopping.wait(poll)
+            stopping.wait(0.2)
         rc = 0 if stopping.is_set() else children.server.returncode
         if rc is not None and rc < 0:
             rc = 128 - rc

@@ -104,20 +104,20 @@ def real_listing():
     return out
 
 
-_BEFORE = None
-
-
-def setUpModule():
-    global _BEFORE
-    _BEFORE = real_listing()
-
-
-def tearDownModule():
-    assert real_listing() == _BEFORE, "the helper changed the real SwarmBox folders in the real home"
-
-
 class Base(unittest.TestCase):
     name = None
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._before = real_listing()
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            assert real_listing() == cls._before, "the helper changed the real SwarmBox folders in the real home"
+        finally:
+            super().tearDownClass()
 
     def setUp(self):
         self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-hostcfg."))   # realpath: /var is a link on macOS
@@ -586,6 +586,7 @@ class SysopFlagsTest(CreateFlagsBase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        cls._before = real_listing()
         cls._shared_dir = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-sysopf-sh."))
         cls.addClassCleanup(shutil.rmtree, cls._shared_dir, True)
         hdir = os.path.join(cls._shared_dir, "helper")
@@ -599,6 +600,13 @@ class SysopFlagsTest(CreateFlagsBase):
         open(os.path.join(cls._shared_dir, "localtime"), "w").close()
         with open(os.path.join(cls._shared_dir, "proc-version"), "w") as f:
             f.write(PLAIN_VERSION + "\n")
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            assert real_listing() == cls._before, "the helper changed the real SwarmBox folders in the real home"
+        finally:
+            super().tearDownClass()
 
     def setUp(self):
         self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-cflags."))
