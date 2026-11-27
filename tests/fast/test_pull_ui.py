@@ -30,6 +30,7 @@ case $1 in
     info) echo "$FAKE_TMP" ;;
     pull)
         [ -z "${FAKE_PULL_FAIL:-}" ] || { echo "Trying to pull $2..." >&2; echo "Error: initializing source: connection refused" >&2; exit 125; }
+        [ -z "${FAKE_SKIP_BLOB:-}" ] || echo "Copying blob sha256:$FAKE_SKIP_BLOB skipped: already exists" >&2
         mkdir -p "$FAKE_TMP/container_images_storage1"
         i=0
         while [ "$i" -lt "${FAKE_STEPS:-4}" ]; do
@@ -37,6 +38,7 @@ case $1 in
             sleep 0.2
             i=$((i + 1))
         done
+        [ -z "${FAKE_WRITE_MANIFEST:-}" ] || echo "Writing manifest to image destination" >&2
         sleep "${FAKE_TAIL:-0}"
         rm -rf "$FAKE_TMP/container_images_storage1"
         ;;
@@ -47,7 +49,7 @@ esac
 FAKE_CURL = """#!/bin/sh
 case "$*" in
     *ghcr.io/token*) echo '{"token":"abc"}' ;;
-    *manifests/sha256:*) echo '{"schemaVersion":2,"config":{"size":1500},"layers":[{"size":393216},{"size":393216}]}' ;;
+    *manifests/sha256:*) echo '{"schemaVersion":2,"config":{"size":1500},"layers":[{"digest":"sha256:1111222233334444","size":196608},{"digest":"sha256:5555666677778888","size":589824}]}' ;;
     *manifests/*) echo '{"manifests":[{"mediaType":"x","digest":"sha256:aaa111","size":1,"platform":{"architecture":"amd64","os":"linux"}},{"mediaType":"x","digest":"sha256:bbb222","size":1,"platform":{"architecture":"arm64","os":"linux"}}]}' ;;
 esac
 """
@@ -204,6 +206,28 @@ class PullUiTest(unittest.TestCase):
             line = self.plain(self.draw("ui_draw_pull 40 3 10000000 2 7 pull", UI_COLS=cols).encode())
             self.assertEqual(bool(re.search(r"3/10 MB", line)), mb, cols)
             self.assertEqual("MB/s" in line, speed, cols)
+
+    def test_skipped_cached_layers_still_reach_99_percent_and_unpack(self):
+        # 196608 B (192 KiB, 25%) is already cached and skipped; Podman only downloads the remaining 576 KiB (75%).
+        rc, out = self.run_pull(FAKE_SKIP_BLOB="1111222233334444", FAKE_STEPS="3", FAKE_KIB="192", FAKE_TAIL="0.6")
+        text = self.plain(out)
+        self.assertEqual(rc, 0, text)
+        pcts = [int(x) for x in re.findall(r"(\d+)%", text.replace("\r", "\n"))]
+        self.assertTrue(pcts, "no percent was drawn")
+        self.assertEqual(pcts, sorted(pcts))
+        self.assertEqual(max(pcts), 99, "skipped layers must count toward the total so the pull reaches 99%%: %r" % pcts)
+        self.assertIn("unpack", text)
+
+    def test_indeterminate_bar_is_always_four_cells_and_label_keeps_bar_aligned(self):
+        for tick in range(1, 26):
+            bar = self.plain(self.draw("ui_tick=%d; ui_bar -1" % tick).encode())
+            self.assertEqual(len(bar), 16, tick)
+            self.assertEqual(bar.count("#"), 4, "tick %d: %r" % (tick, bar))
+        pull_line = self.plain(self.draw("ui_draw_pull 40 3 10000000 2 7 pull").encode())
+        unpack_line = self.plain(self.draw("ui_draw_pull 99 10 10000000 0 9 unpack").encode())
+        self.assertEqual(pull_line.index("#"), unpack_line.index("#"), "bar column must not jump between pull and unpack")
+        indet_line = self.plain(self.draw("ui_draw_pull -1 0 '' 0 0 pull").encode())
+        self.assertNotIn("   0 MB", indet_line, "indeterminate line should not have a 3-space gap before MB")
 
 
 if __name__ == "__main__":

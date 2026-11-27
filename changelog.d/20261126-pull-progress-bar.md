@@ -1,0 +1,1 @@
+- Fixed: `swarmbox update` / `sx update` pull progress bar now accounts for cached layers skipped by Podman (so progress reaches 99% and `unpack` instead of stopping in the 80s), uses consistent decimal MB units, and keeps the bar smoothly animated and aligned from the start.

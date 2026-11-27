@@ -1644,18 +1644,26 @@ ui_c() {
 
 ui_reset() { [ "$UI_COLOR" = 1 ] && printf '%s[0m' "$UI_ESC"; return 0; }
 
-# ui_bar PCT: the 16 cells of the bar, the filled ones violet and the rest dark gray; a negative PCT is a short lit stretch that sweeps
-# along (no total known yet).
+# ui_bar PCT: the 16 cells of the bar, the filled ones violet and the rest dark gray; a negative PCT is a 4-cell lit stretch that
+# bounces smoothly across the bar (no total known yet).
 ui_bar() {
     ub_w=16
     ub_i=0
     ub_out=
     ub_prev=
-    if [ "$1" -ge 0 ]; then ub_f=$(($1 * ub_w / 100)); else ub_p=$((ui_tick % (ub_w + 4))); fi
+    if [ "$1" -ge 0 ]; then
+        ub_f=$(($1 * ub_w / 100))
+    else
+        ub_seg=4
+        ub_max=$((ub_w - ub_seg))
+        if [ "$ui_tick" -gt 0 ]; then ub_step=$((ui_tick - 1)); else ub_step=0; fi
+        ub_step=$((ub_step % (ub_max * 2)))
+        if [ "$ub_step" -le "$ub_max" ]; then ub_s=$ub_step; else ub_s=$((ub_max * 2 - ub_step)); fi
+    fi
     while [ "$ub_i" -lt "$ub_w" ]; do
         if [ "$1" -ge 0 ]; then
             if [ "$ub_i" -lt "$ub_f" ]; then ub_lit=1; else ub_lit=0; fi
-        elif [ "$ub_i" -lt "$ub_p" ] && [ "$ub_i" -ge $((ub_p - 4)) ]; then
+        elif [ "$ub_i" -ge "$ub_s" ] && [ "$ub_i" -lt $((ub_s + ub_seg)) ]; then
             ub_lit=1
         else
             ub_lit=0
@@ -1675,8 +1683,9 @@ ui_dur() {
     if [ "$1" -lt 60 ]; then printf '%ss' "$1"; else printf '%sm%02ds' $(($1 / 60)) $(($1 % 60)); fi
 }
 
-# ui_total REF: the compressed size, in bytes, of the layers of REF for this machine, read from the registry with curl; nothing when it
-# cannot be read (not ghcr.io, a digest, no curl, offline, an answer of another shape): the line then has no percentage. Never fails.
+# ui_total REF: the compressed size, in bytes, of the layers of REF for this machine (line 1), followed by "<12-hex-digest> <size>"
+# lines for each layer that carries a sha256 digest, read from the registry with curl; nothing when it cannot be read (not ghcr.io,
+# a digest, no curl, offline, an answer of another shape): the line then has no percentage. Never fails.
 ui_total() {
     case $1 in ghcr.io/*:*) ;; *) return 0 ;; esac
     case $1 in *@*) return 0 ;; esac
@@ -1697,22 +1706,83 @@ ui_total() {
             ut_doc=$(curl -fsS -m 4 -H "Authorization: Bearer $ut_tok" -H "$ut_acc" "https://ghcr.io/v2/$ut_repo/manifests/$ut_dg" 2> /dev/null | tr -d ' \t\r\n')
             ;;
     esac
-    ut_sum=$(printf '%s' "$ut_doc" | sed 's/.*"layers":\[//' | grep -o '"size":[0-9]*' | sed 's/"size"://' | awk '{s+=$1} END{if (NR > 0) printf "%d", s}')
-    [ -z "$ut_sum" ] || printf '%s\n' "$ut_sum"
+    printf '%s\n' "$ut_doc" | awk '
+        {
+            s = $0
+            i = index(s, "\"layers\":[")
+            if (!i) exit
+            s = substr(s, i + 10)
+            depth = 0; cur = ""; sum = 0; n = 0; out = ""
+            len = length(s)
+            for (k = 1; k <= len; k++) {
+                c = substr(s, k, 1)
+                if (c == "{") { depth++; cur = cur c }
+                else if (c == "}") {
+                    cur = cur c; depth--
+                    if (depth == 0) {
+                        sz = 0; dg = ""
+                        if (match(cur, /"size":[0-9]+/)) {
+                            sz = substr(cur, RSTART + 7, RLENGTH - 7) + 0
+                            sum += sz; n++
+                        }
+                        if (match(cur, /"digest":"sha256:[a-f0-9]+"/)) {
+                            dg = substr(cur, RSTART + 17, RLENGTH - 18)
+                            if (length(dg) > 12) dg = substr(dg, 1, 12)
+                        }
+                        if (dg != "" && sz > 0) out = out dg " " sz "\n"
+                        cur = ""
+                    }
+                } else if (depth > 0) {
+                    cur = cur c
+                } else if (c == "]") {
+                    break
+                }
+            }
+            if (n > 0) printf "%.0f\n%s", sum, out
+        }
+    ' 2> /dev/null
     return 0
 }
 
+# ui_pull_log TOTAL_FILE LOG_FILE: reads Podman's stderr log against the layer sizes in TOTAL_FILE and prints
+# "SKIP_BYTES DONE_BYTES WRITING" (cached layers skipped, downloaded layers finished, and whether Podman is writing the manifest).
+ui_pull_log() {
+    awk '
+        NR == FNR {
+            if (FNR > 1 && NF >= 2) sz[$1] = $2 + 0
+            next
+        }
+        {
+            gsub(/\r/, "")
+            if (index($0, "Writing manifest") > 0) wr = 1
+            if (index($0, "Copying blob ") > 0) {
+                if (match($0, /Copying blob (sha256:)?[a-f0-9]+/)) {
+                    dg = substr($0, RSTART + 13, RLENGTH - 13)
+                    sub(/^sha256:/, "", dg)
+                    if (length(dg) > 12) dg = substr(dg, 1, 12)
+                    if (dg in sz) {
+                        if (index($0, "skipped") > 0 && !(dg in sk)) { sk[dg] = 1; skip += sz[dg] }
+                        else if (index($0, "done") > 0 && !(dg in dn)) { dn[dg] = 1; done_b += sz[dg] }
+                    }
+                }
+            }
+        }
+        END { printf "%.0f %.0f %d\n", skip + 0, done_b + 0, wr + 0 }
+    ' "$1" "$2" 2> /dev/null
+}
+
 # ui_pull REF: `podman pull` in the background, with the progress line drawn here until it ends. The bytes are what Podman has
-# downloaded so far into its temporary folder (`podman info` says where; the layers are in container_images_storage* there); the total
-# is ui_total's, fetched in the background so the pull never waits for it. Podman's own output goes to a file, and the last line of it is
-# the reason when the pull fails. Sets PULL_MSG like pull_image.
+# downloaded so far into its temporary folder (`podman info` says where; the layers are in container_images_storage* there), plus
+# layers Podman reports as already cached (`skipped: already exists` in its stderr log); the total is ui_total's, fetched in the
+# background so the pull never waits for it. Podman's own output goes to a file, and the last line of it is the reason when the pull
+# fails. Sets PULL_MSG like pull_image.
 ui_pull() {
     up_ref=$1
     up_pf=$(mktemp "${TMPDIR:-/tmp}/swarmbox-pull.XXXXXX" 2> /dev/null) || up_pf=/dev/null
     up_tmp=$(podman info --format '{{.Store.ImageCopyTmpDir}}' 2> /dev/null)
     case $up_tmp in /*) ;; *) up_tmp=/var/tmp ;; esac
     up_tf=$up_pf.total
-    ( ui_total "$up_ref" > "$up_tf" 2> /dev/null ) &
+    ( ui_total "$up_ref" > "$up_tf.tmp" 2> /dev/null && mv -f "$up_tf.tmp" "$up_tf" 2> /dev/null ) &
     up_tp=$!
     podman pull "$up_ref" > /dev/null 2> "$up_pf" &
     UP_BG=$!
@@ -1724,27 +1794,49 @@ ui_pull() {
     up_speed=0
     up_pct=-1
     up_kib=0
+    up_max_bytes=0
     while kill -0 "$UP_BG" 2> /dev/null; do
         ui_tick=$((ui_tick + 1))
         up_now=$(date +%s)
         up_kib=$(du -sk "$up_tmp"/container_images_storage* 2> /dev/null | awk '{s += $1} END{print s + 0}')
-        if [ -z "$up_total" ]; then up_total=$(cat "$up_tf" 2> /dev/null); fi
+        if [ -z "$up_total" ] && [ -s "$up_tf" ]; then up_total=$(sed -n '1p' "$up_tf" 2> /dev/null); fi
         case $up_total in ''|*[!0-9]*) up_total= ;; esac
+        up_skip=0
+        up_done_b=0
+        up_wr=0
+        if [ -n "$up_total" ] && [ -s "$up_pf" ]; then
+            up_log=$(ui_pull_log "$up_tf" "$up_pf")
+            case $up_log in
+                *' '*' '*)
+                    up_skip=${up_log%% *}; up_log=${up_log#* }
+                    up_done_b=${up_log%% *}; up_wr=${up_log#* }
+                    ;;
+            esac
+        fi
         if [ $((up_now - up_prev_t)) -ge 1 ]; then
-            up_speed=$(((up_kib - up_prev_k) / (up_now - up_prev_t) / 1024))
+            up_speed=$(((up_kib - up_prev_k) * 1024 / (up_now - up_prev_t) / 1000000))
             [ "$up_speed" -ge 0 ] || up_speed=0
             up_prev_t=$up_now
             up_prev_k=$up_kib
         fi
+        up_bytes=$((up_kib * 1024 + up_skip))
+        if [ $((up_skip + up_done_b)) -gt "$up_bytes" ]; then
+            up_bytes=$((up_skip + up_done_b))
+        fi
         if [ -n "$up_total" ] && [ "$up_total" -gt 0 ]; then
-            up_new=$((up_kib * 1024 * 100 / up_total))
+            [ "$up_wr" != 1 ] || up_bytes=$up_total
+            [ "$up_bytes" -le "$up_total" ] || up_bytes=$up_total
+        fi
+        [ "$up_bytes" -lt "$up_max_bytes" ] || up_max_bytes=$up_bytes
+        if [ -n "$up_total" ] && [ "$up_total" -gt 0 ]; then
+            up_new=$((up_max_bytes * 100 / up_total))
             [ "$up_new" -le 99 ] || up_new=99
             [ "$up_new" -le "$up_pct" ] || up_pct=$up_new   # never goes back
         fi
         up_label=pull
-        # everything is downloaded (the bar is full, no more bytes arrive): Podman is writing the layers out
-        if [ "$up_pct" -ge 95 ] && [ "$up_speed" -eq 0 ]; then up_label=unpack; fi
-        ui_draw_pull "$up_pct" "$((up_kib / 1024))" "$up_total" "$up_speed" "$((up_now - up_t0))" "$up_label"
+        # everything is downloaded (the bar is full, no more bytes arrive, or Podman is writing the manifest): writing layers out
+        if [ "$up_wr" = 1 ] || { [ "$up_pct" -ge 95 ] && [ "$up_speed" -eq 0 ]; }; then up_label=unpack; fi
+        ui_draw_pull "$up_pct" "$((up_max_bytes / 1000000))" "$up_total" "$up_speed" "$((up_now - up_t0))" "$up_label"
         sleep 0.25 2> /dev/null || sleep 1
     done
     wait "$UP_BG"
@@ -1756,22 +1848,23 @@ ui_pull() {
     if [ "$up_rc" -eq 0 ]; then
         ui_done_line "$up_ref" "$up_el" "$up_total" >&2
         PULL_MSG=
-        rm -f "$up_pf" "$up_tf"
+        rm -f "$up_pf" "$up_tf" "$up_tf.tmp"
         return 0
     fi
     PULL_MSG=$(tail -n 1 "$up_pf" 2> /dev/null)
     show_err "$up_pf" 3
-    rm -f "$up_pf" "$up_tf"
+    rm -f "$up_pf" "$up_tf" "$up_tf.tmp"
     return 1
 }
 
 # ui_draw_pull PCT MB TOTAL SPEED SECONDS LABEL: one redrawn line: pull, the bar and the percent, MB done/total, speed and time; LABEL is
 # pull, or unpack when the download is over. Narrow terminals drop the right-hand parts.
 ui_draw_pull() {
-    if [ "$1" -ge 0 ]; then dp_pct="$1%"; else dp_pct=; fi
+    dp_lbl=$(printf '%-6s' "$6")
+    if [ "$1" -ge 0 ]; then dp_pct=$(printf ' %3d%%' "$1"); else dp_pct=; fi
     dp_mb="$2 MB"
     [ -z "$3" ] || dp_mb="$2/$(($3 / 1000000)) MB"
-    dp_line="$(ui_c fg dim)$6  $(ui_bar "$1") $(ui_c fg light)$dp_pct"
+    dp_line="$(ui_c fg dim)$dp_lbl  $(ui_bar "$1")$(ui_c fg light)$dp_pct"
     if [ "$UI_COLS" -ge 56 ]; then dp_line="$dp_line  $(ui_c fg dim)$dp_mb"; fi
     if [ "$UI_COLS" -ge 72 ]; then dp_line="$dp_line $UI_DOT $4 MB/s $(ui_dur "$5")"; fi
     printf '\r%s%s%s[K' "$dp_line" "$(ui_reset)" "$UI_ESC" >&2
