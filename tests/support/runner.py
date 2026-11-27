@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """The test runner behind tests/run.sh (standard library only; Python 3.6 or newer, so the macOS job can use it).
 
-    sh tests/run.sh [fast|slow|all|e2e|macos] [-j N] [--only a.py,b.py] [--list] [--repeat N] [--werror] [options]
+    sh tests/run.sh [fast|commit|loop|slow|smoke|all|e2e|macos] [-j N] [--area NAME] [--only a.py,b.py] [--fail-fast] [options]
 
-Selectors (a folder each, see tests/README.md):
+Selectors (see tests/README.md):
     fast    tests/fast/test_*.py   no real multiplexer, browser, podman or network; run in parallel; the default
+    commit  alias for fast (the full local suite)
+    loop    tests mapped from git changes + static guards; implies --fail-fast unless --no-fail-fast is given
     slow    tests/slow/test_*.py   pty, Chromium, Podman, the image; they skip with a message when a program they need is missing
+    smoke   alias for slow
     all     fast, then slow
     e2e     tests/e2e/*.sh         the wrappers that start Podman and run the harnesses with the real claude and the long soak: manual, never part of all
     macos   the fast files named in tests/support/macos.list (the macOS job: /bin/sh is bash 3.2, podman is a fake)
 Options:
-    -j N          files in parallel (default: fast and macos the CPUs up to 16, slow 3, e2e 1)
+    -j N          files in parallel (default: fast, loop and macos the CPUs up to 16, slow 3, e2e 1)
+    --area NAME   run tests for named area(s) + guards (repeatable or comma-separated)
+    --since REF   (with loop) diff changed files against git REF instead of working tree only (alias: --ref REF)
+    --fail-fast   stop scheduling new jobs and terminate running jobs on the first failing file
+    --no-fail-fast disable --fail-fast (e.g. to override loop's default)
     --only LIST   comma-separated file names (a.py,b.py); they are searched in the folders of the selector (every folder when no
                   selector is given); a name that does not exist is an error
     --list        print the selected files and stop
@@ -45,12 +52,14 @@ import warnings
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+import areas  # noqa: E402
 import reap_run  # noqa: E402
 
 TESTS = os.environ.get("SWARMBOX_TESTS_DIR") or os.path.dirname(HERE)
 REAP = os.path.join(HERE, "reap_run.py")
 LAYERS = ("fast", "slow", "e2e")
-SELECTORS = ("fast", "slow", "all", "e2e", "macos")
+SELECTORS = ("fast", "commit", "loop", "slow", "smoke", "all", "e2e", "macos")
+SELECTOR_ALIASES = {"commit": "fast", "smoke": "slow"}
 USE_FORK = (
     sys.platform.startswith("linux")
     and hasattr(os, "fork")
@@ -64,8 +73,8 @@ def usage(msg):
 
 
 def parse(argv):
-    o = {"sel": None, "j": None, "only": None, "list": False, "repeat": 1, "werror": False, "timeout": None, "timing": 10,
-         "durations": None, "github": False}
+    o = {"sel": None, "j": None, "only": None, "area": [], "since": None, "fail_fast": None, "list": False, "repeat": 1,
+         "werror": False, "timeout": None, "timing": 10, "durations": None, "github": False, "_note": None}
     i = 0
 
     def val():
@@ -95,6 +104,17 @@ def parse(argv):
             o["j"] = num("-j", a[2:])
         elif a == "--only":
             o["only"] = [x for x in val().split(",") if x]
+        elif a == "--area":
+            parts = [x.strip() for x in val().split(",") if x.strip()]
+            if not parts:
+                usage("--area needs a value")
+            o["area"].extend(parts)
+        elif a in ("--since", "--ref"):
+            o["since"] = val()
+        elif a == "--fail-fast":
+            o["fail_fast"] = True
+        elif a == "--no-fail-fast":
+            o["fail_fast"] = False
         elif a == "--list":
             o["list"] = True
         elif a == "--repeat":
@@ -144,9 +164,9 @@ def macos_names():
 
 
 def select(o):
-    sel = o["sel"]
+    sel = SELECTOR_ALIASES.get(o["sel"], o["sel"])
     if o["only"]:
-        layers = LAYERS if sel is None else {"all": ("fast", "slow"), "macos": ("fast",)}.get(sel, (sel,))
+        layers = LAYERS if sel is None else {"all": ("fast", "slow"), "macos": ("fast",), "loop": ("fast",)}.get(sel, (sel,))
         pool = [f for layer in layers for f in folder_files(layer)]
         chosen = []
         for name in o["only"]:
@@ -155,7 +175,24 @@ def select(o):
                 usage("no such test file: %s" % name)
             chosen.append(hit[0])
         return chosen
+    if o["area"]:
+        chosen, unknown = areas.tests_for_areas(o["area"], folder_files("fast"))
+        if unknown:
+            usage("unknown area %s (available: %s)" % (", ".join(unknown), ", ".join(sorted(areas.AREAS))))
+        return chosen
     sel = sel or "fast"
+    if sel == "loop":
+        fast_files = folder_files("fast")
+        repo_root = os.path.dirname(os.path.abspath(TESTS))
+        changed, err = areas.git_changed_files(repo_root, since=o["since"])
+        if err is not None:
+            if o["since"] is not None:
+                usage("git diff --since %s failed: %s" % (o["since"], err))
+            o["_note"] = "loop: git status unavailable (%s), running full fast suite" % err
+            return fast_files
+        chosen, note, _ = areas.resolve_changed(changed, fast_files)
+        o["_note"] = note
+        return chosen
     if sel == "all":
         return folder_files("fast") + folder_files("slow")
     if sel == "macos":
@@ -473,7 +510,14 @@ def main(argv):
         for f in files:
             sys.stdout.write("%s\n" % f)
         return 0
-    sel = o["sel"] or ("all" if o["only"] else "fast")
+    if o["_note"]:
+        sys.stdout.write("%s\n" % o["_note"])
+        sys.stdout.flush()
+    eff_sel = SELECTOR_ALIASES.get(o["sel"], o["sel"])
+    if eff_sel == "loop":
+        eff_sel = "fast"
+    sel = eff_sel or ("all" if o["only"] else "fast")
+    fail_fast = o["fail_fast"] if o["fail_fast"] is not None else (o["sel"] == "loop")
     cpus = os.cpu_count() or 2
     default_j = {"fast": min(cpus, 16), "macos": min(cpus, 16), "slow": min(cpus, 3), "all": min(cpus, 16), "e2e": 1}[sel]
     jobs = o["j"] or default_j
@@ -497,6 +541,44 @@ def main(argv):
     results = []
     pending_shards = {}
     wall0 = time.time()
+    active = {}
+    selector = selectors.DefaultSelector()
+    aborted = False
+
+    def abort_running():
+        nonlocal aborted
+        if aborted:
+            return
+        aborted = True
+        todo.clear()
+        for r_fd in list(active):
+            t = active.pop(r_fd)
+            try:
+                selector.unregister(r_fd)
+            except (KeyError, ValueError):
+                pass
+            try:
+                os.killpg(t["pid"], signal.SIGKILL)
+            except OSError:
+                pass
+            if t["popen"] is not None:
+                try:
+                    t["popen"].stdout.close()
+                except OSError:
+                    pass
+                try:
+                    t["popen"].wait()
+                except OSError:
+                    pass
+            else:
+                try:
+                    os.close(t["r_fd"])
+                except OSError:
+                    pass
+                try:
+                    os.waitpid(t["pid"], 0)
+                except ChildProcessError:
+                    pass
 
     def report_file(r):
         results.append(r)
@@ -517,23 +599,30 @@ def main(argv):
     def on_unit_done(unit, r):
         if unit["shard_count"] == 1:
             report_file(r)
+            if fail_fast and r["rc"] != 0:
+                abort_running()
             return
         key = unit["run_id"]
         bucket = pending_shards.setdefault(key, [])
         bucket.append(r)
+        if fail_fast and r["rc"] != 0:
+            del pending_shards[key]
+            report_file(_aggregate_shards(unit["file"], bucket))
+            abort_running()
+            return
         if len(bucket) == unit["shard_count"]:
             del pending_shards[key]
             report_file(_aggregate_shards(unit["file"], bucket))
 
-    active = {}
-    selector = selectors.DefaultSelector()
     try:
         while todo or active:
-            while todo and len(active) < jobs:
+            while todo and len(active) < jobs and not aborted:
                 unit = todo.pop(0)
                 t = _start_task(unit, o, timeouts.get(unit["file"].split("/")[0]), active.keys())
                 active[t["r_fd"]] = t
                 selector.register(t["r_fd"], selectors.EVENT_READ, t)
+            if not active:
+                break
             now = time.monotonic()
             wait_s = 0.2
             for t in active.values():
@@ -543,6 +632,8 @@ def main(argv):
                         wait_s = max(0.0, rem)
             events = selector.select(timeout=wait_s)
             for key, _ in events:
+                if aborted or key.fd not in active:
+                    continue
                 t = key.data
                 eof = False
                 while True:
@@ -561,8 +652,14 @@ def main(argv):
                     selector.unregister(t["r_fd"])
                     del active[t["r_fd"]]
                     on_unit_done(t["unit"], _finish_task(t))
+                    if aborted:
+                        break
+            if aborted:
+                break
             now = time.monotonic()
             for r_fd in list(active):
+                if aborted or r_fd not in active:
+                    continue
                 t = active[r_fd]
                 if t["deadline"] is not None and now >= t["deadline"]:
                     if not t["timed_out"]:
@@ -577,6 +674,8 @@ def main(argv):
                         del active[r_fd]
                         on_unit_done(t["unit"], _finish_task(t))
     finally:
+        if active:
+            abort_running()
         selector.close()
 
     bad = [r for r in results if r["rc"] != 0]

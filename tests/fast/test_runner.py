@@ -18,6 +18,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from helpers import ROOT  # noqa: E402
+import areas  # noqa: E402
 
 RUNNER = os.path.join(ROOT, "tests", "run.sh")
 TESTS = os.path.join(ROOT, "tests")
@@ -39,6 +40,26 @@ def fake_tests(files):
         with open(os.path.join(tmp, "fast", name), "w") as f:
             f.write(body)
     return tmp, dict(os.environ, SWARMBOX_TESTS_DIR=tmp)
+
+
+def fake_git_repo(test_files, extra_files=None):
+    """A temporary git repo with tests/fast/ files committed; returns (repo_dir, env)."""
+    tmp = tempfile.mkdtemp(prefix="swarmbox-test-runner-git.")
+    os.makedirs(os.path.join(tmp, "tests", "fast"))
+    for name, body in test_files.items():
+        with open(os.path.join(tmp, "tests", "fast", name), "w") as f:
+            f.write(body)
+    for rel, body in (extra_files or {}).items():
+        p = os.path.join(tmp, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(body)
+    git_env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+    subprocess.run(["git", "init", "-q"], cwd=tmp, check=True, env=git_env)
+    subprocess.run(["git", "add", "."], cwd=tmp, check=True, env=git_env)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=tmp, check=True, env=git_env)
+    env = dict(os.environ, SWARMBOX_TESTS_DIR=os.path.join(tmp, "tests"))
+    return tmp, env
 
 
 GOOD = "import unittest\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\nunittest.main()\n"
@@ -187,12 +208,186 @@ class Runner(unittest.TestCase):
         self.assertFalse(os.path.exists("/proc/%d" % pid) and "sleep" in open("/proc/%d/cmdline" % pid).read())
 
     def test_usage_errors_exit_2_and_the_runner_starts_nothing_dangerous(self):
-        for args in (["--nonsense"], ["--repeat", "0"], ["-j", "x"], ["--only"]):
+        for args in (["--nonsense"], ["--repeat", "0"], ["-j", "x"], ["--only"], ["--area"], ["--area", "no-such-area"], ["--since"]):
             self.assertEqual(run(*args).returncode, 2, args)
         with open(os.path.join(TESTS, "support", "runner.py")) as f:
             src = f.read()
         for bad in ("pkill", "killall", "kill-server", "podman system", "rm -rf /", "--all"):
             self.assertNotIn(bad, src)
+
+    def test_commit_and_smoke_are_aliases_for_fast_and_slow(self):
+        self.assertEqual(run("commit", "--list").stdout.split(), on_disk("fast"))
+        self.assertEqual(run("smoke", "--list").stdout.split(), on_disk("slow"))
+
+    def test_areas_are_valid_and_area_flag_selects_area_plus_guards(self):
+        fast_basenames = set(os.path.basename(f) for f in on_disk("fast"))
+        required = {"guards", "herdr", "sysop", "voice", "host", "tabs", "bus", "worktree", "addons", "release", "runner"}
+        self.assertTrue(required <= set(areas.AREAS), required - set(areas.AREAS))
+        for g in areas.GUARDS:
+            self.assertIn(g, fast_basenames)
+        for name, files in areas.AREAS.items():
+            for f in files:
+                self.assertIn(f, fast_basenames, "area %s references missing %s" % (name, f))
+        p_guards = run("--area", "guards", "--list")
+        self.assertEqual(p_guards.returncode, 0, p_guards.stderr)
+        self.assertEqual(p_guards.stdout.split(), sorted("fast/%s" % g for g in areas.GUARDS))
+        p_csv = run("--area", "tabs,bus", "--list")
+        p_rep = run("--area", "tabs", "--area", "bus", "--list")
+        self.assertEqual(p_csv.returncode, 0, p_csv.stderr)
+        self.assertEqual(p_csv.stdout.split(), p_rep.stdout.split())
+        self.assertIn("fast/test_tabs.py", p_csv.stdout.split())
+        self.assertIn("fast/test_bus.py", p_csv.stdout.split())
+        for g in areas.GUARDS:
+            self.assertIn("fast/%s" % g, p_csv.stdout.split())
+        p_bad = run("--area", "unknown_xyz")
+        self.assertEqual(p_bad.returncode, 2)
+        self.assertIn("available:", p_bad.stderr)
+        self.assertIn("herdr", p_bad.stderr)
+
+    def test_fail_fast_stops_running_and_queued_jobs_in_fork_and_subprocess_modes(self):
+        slow = "import time, unittest\nclass T(unittest.TestCase):\n    def test_slow(self):\n        time.sleep(30)\nunittest.main()\n"
+        # Pad test_fail.py slightly so it is sorted early and starts immediately alongside one slow job.
+        fast_fail = BAD + ("# pad\n" * 40)
+        tmp, env = fake_tests({
+            "test_fail.py": fast_fail,
+            "test_slow_a.py": slow,
+            "test_slow_b.py": slow,
+        })
+        self.addCleanup(shutil.rmtree, tmp, True)
+        for mode, extra_env in (("fork", {}), ("subprocess", {"SWARMBOX_RUNNER_SUBPROCESS": "1"})):
+            run_env = dict(env, **extra_env)
+            t0 = time.monotonic()
+            p = run("-j", "2", "--fail-fast", env=run_env)
+            elapsed = time.monotonic() - t0
+            self.assertEqual(p.returncode, 1, "%s: %s" % (mode, p.stdout + p.stderr))
+            self.assertLess(elapsed, 10.0, "%s: fail-fast took %.1fs" % (mode, elapsed))
+            self.assertRegex(p.stdout, r"(?m)^test_fail\.py FAIL")
+            self.assertNotIn("test_slow_b.py OK", p.stdout)
+            self.assertNotIn("test_slow_a.py OK", p.stdout)
+
+    def test_loop_clean_tree_domain_edit_test_edit_and_since(self):
+        base_tests = {
+            "test_layout.py": GOOD,
+            "test_dockerfile.py": GOOD,
+            "test_guard_agents.py": GOOD,
+            "test_guard_mux.py": GOOD,
+            "test_herdr_backend.py": GOOD,
+            "test_bus.py": GOOD,
+            "test_worktree.py": GOOD,
+        }
+        repo, env = fake_git_repo(base_tests, {
+            "container/web/herdr/server.mjs": "// v1\n",
+            "container/scripts/swarmbox-bus.py": "# v1\n",
+            "Dockerfile": "FROM scratch\n",
+        })
+        self.addCleanup(shutil.rmtree, repo, True)
+
+        # Clean tree: runs guards only and prints note.
+        p = run("loop", env=env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("loop: clean tree, running guards", p.stdout)
+        self.assertRegex(p.stdout, r"TOTAL 4 files, 4 tests, 0 failed files")
+        self.assertNotIn("test_herdr_backend.py", p.stdout)
+
+        # Domain edit: herdr file -> herdr tests + guards.
+        with open(os.path.join(repo, "container", "web", "herdr", "server.mjs"), "w") as f:
+            f.write("// v2\n")
+        listed = run("loop", "--list", env=env).stdout.split()
+        self.assertIn("fast/test_herdr_backend.py", listed)
+        self.assertIn("fast/test_layout.py", listed)
+        self.assertNotIn("fast/test_bus.py", listed)
+        # Restore herdr file.
+        subprocess.run(["git", "checkout", "--", "container/web/herdr/server.mjs"], cwd=repo, check=True)
+
+        # Direct test-file edit (untracked new test file): included directly + guards.
+        new_test = os.path.join(repo, "tests", "fast", "test_custom_feature.py")
+        with open(new_test, "w") as f:
+            f.write(GOOD)
+        listed = run("loop", "--list", env=env).stdout.split()
+        self.assertIn("fast/test_custom_feature.py", listed)
+        self.assertIn("fast/test_layout.py", listed)
+        self.assertNotIn("fast/test_bus.py", listed)
+        os.remove(new_test)
+
+        # --since / --ref diffs against a git ref even when working tree is clean.
+        with open(os.path.join(repo, "container", "scripts", "swarmbox-bus.py"), "w") as f:
+            f.write("# v2\n")
+        git_env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        subprocess.run(["git", "add", "container/scripts/swarmbox-bus.py"], cwd=repo, check=True, env=git_env)
+        subprocess.run(["git", "commit", "-q", "-m", "bus change"], cwd=repo, check=True, env=git_env)
+        self.assertEqual(len(run("loop", "--list", env=env).stdout.split()), 4)
+        since_list = run("loop", "--since", "HEAD~1", "--list", env=env).stdout.split()
+        ref_list = run("loop", "--ref", "HEAD~1", "--list", env=env).stdout.split()
+        self.assertEqual(since_list, ref_list)
+        self.assertIn("fast/test_bus.py", since_list)
+        self.assertNotIn("fast/test_herdr_backend.py", since_list)
+        self.assertEqual(run("loop", "--since", "no-such-ref-xyz", env=env).returncode, 2)
+
+    def test_loop_falls_back_to_full_fast_on_shared_infra_and_unmapped_files(self):
+        base_tests = {
+            "test_layout.py": GOOD,
+            "test_dockerfile.py": GOOD,
+            "test_guard_agents.py": GOOD,
+            "test_guard_mux.py": GOOD,
+            "test_bus.py": GOOD,
+            "test_worktree.py": GOOD,
+        }
+        repo, env = fake_git_repo(base_tests, {
+            "Dockerfile": "FROM scratch\n",
+            "tests/support/helpers.py": "# helper\n",
+            "container/scripts/swarmbox-agents.py": "# agents\n",
+            "container/entrypoint.sh": "#!/bin/sh\n",
+            "container/config/bashrc.sh": "# bashrc\n",
+        })
+        self.addCleanup(shutil.rmtree, repo, True)
+        all_fast = sorted("fast/%s" % n for n in base_tests)
+
+        for shared in (
+            "Dockerfile",
+            "tests/support/helpers.py",
+            "container/scripts/swarmbox-agents.py",
+            "container/entrypoint.sh",
+            "container/config/bashrc.sh",
+        ):
+            p_abs = os.path.join(repo, shared)
+            with open(p_abs, "a") as f:
+                f.write("# edit\n")
+            p = run("loop", env=env)
+            self.assertEqual(p.returncode, 0, "%s: %s" % (shared, p.stdout + p.stderr))
+            self.assertIn("shared infra changed", p.stdout, shared)
+            self.assertEqual(run("loop", "--list", env=env).stdout.split(), all_fast, shared)
+            subprocess.run(["git", "checkout", "--", shared], cwd=repo, check=True)
+
+        # Unmapped production file also falls back safely to full fast suite.
+        unmapped = os.path.join(repo, "container", "scripts", "brand_new_unmapped.py")
+        os.makedirs(os.path.dirname(unmapped), exist_ok=True)
+        with open(unmapped, "w") as f:
+            f.write("# new\n")
+        p = run("loop", env=env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("unmapped file changed", p.stdout)
+        self.assertEqual(run("loop", "--list", env=env).stdout.split(), all_fast)
+
+    def test_loop_implies_fail_fast_and_no_fail_fast_overrides_it(self):
+        repo, env = fake_git_repo({
+            "test_layout.py": BAD + ("# pad\n" * 40),
+            "test_dockerfile.py": "import time, unittest\nclass T(unittest.TestCase):\n    def test_s(self):\n        time.sleep(30)\nunittest.main()\n",
+            "test_guard_agents.py": GOOD,
+            "test_guard_mux.py": GOOD,
+        })
+        self.addCleanup(shutil.rmtree, repo, True)
+        t0 = time.monotonic()
+        p = run("loop", "-j", "2", env=env)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertLess(time.monotonic() - t0, 10.0)
+        self.assertNotIn("test_dockerfile.py OK", p.stdout)
+
+        # Replace sleeping guard with a fast passing guard and verify --no-fail-fast runs all 4 guards.
+        with open(os.path.join(repo, "tests", "fast", "test_dockerfile.py"), "w") as f:
+            f.write(GOOD)
+        p_all = run("loop", "-j", "1", "--no-fail-fast", env=env)
+        self.assertEqual(p_all.returncode, 1, p_all.stdout + p_all.stderr)
+        self.assertRegex(p_all.stdout, r"TOTAL 4 files, 4 tests, 1 failed files")
 
 
 if __name__ == "__main__":
