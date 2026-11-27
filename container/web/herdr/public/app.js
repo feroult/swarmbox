@@ -3330,6 +3330,10 @@
 
   const ICO_BRANCH_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.5-7 1.8-7 3.4"/></svg>';
   const ICO_BOOK_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.2c1.9-.6 3.9-.4 5.5.8 1.6-1.2 3.6-1.4 5.5-.8v9.3c-1.9-.6-3.9-.4-5.5.8-1.6-1.2-3.6-1.4-5.5-.8Z"/><path d="M8 4v9.3"/></svg>';
+  const SVG16 = (d) => `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const ICO_CLOCK_SVG = SVG16('<circle cx="8" cy="8" r="5.8"/><path d="M8 4.6V8l2.3 1.5"/>');
+  const ICO_BOLT_SVG = SVG16('<path d="M9 1.8 3.6 9h4l-1 5.2L12.4 7h-4Z"/>');
+  const ICO_BELL_SVG = SVG16('<path d="M4.2 11.2V7.4a3.8 3.8 0 0 1 7.6 0v3.8l1.2 1.3H3Z"/><path d="M6.6 13.6a1.5 1.5 0 0 0 2.8 0"/>');
   const ICO_PENCIL_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.4a1.6 1.6 0 0 1 2.3 2.3L5.6 12.6 2.5 13.5l.9-3.1 7.8-8Z"/></svg>';
 
   let serverHomeDir = '';
@@ -7125,7 +7129,29 @@
     el.dataset.state = turn.state || '';
     el.dataset.gid = turn.id || '';
 
-    if (turn.prompt) {
+    if (turn.source === 'schedule' || turn.source === 'trigger') {
+      // a goal the Sysop started itself (one of its automations): a line of its own, not a bubble of the user's words
+      const row = document.createElement('div');
+      row.className = 'turn-auto';
+      const ico = document.createElement('span');
+      ico.className = 'turn-auto-ico';
+      ico.innerHTML = turn.source === 'trigger' ? ICO_BOLT_SVG : ICO_CLOCK_SVG;
+      const txt = document.createElement('div');
+      txt.className = 'turn-auto-text';
+      const head = document.createElement('div');
+      head.className = 'turn-auto-head';
+      const m = /^(a\d+) \((.*)$/.exec(turn.auto_head || '');
+      head.textContent = `${turn.source === 'trigger' ? 'Trigger' : 'Schedule'} ${m ? m[1] : (turn.automation || '')} · ${m ? m[2].replace(/\)(: |$)/, '$1') : 'ran'}`;
+      const body = document.createElement('div');
+      body.className = 'turn-auto-prompt';
+      body.textContent = turn.prompt;
+      txt.append(head, body);
+      const meta = document.createElement('div');
+      meta.className = 'turn-meta';
+      meta.append(fmtAgo(turn.started));
+      row.append(ico, txt);
+      el.append(row, meta);
+    } else if (turn.prompt) {
       const ask = document.createElement('div');
       ask.className = 'turn-ask';
       const bubble = document.createElement('div');
@@ -7990,7 +8016,7 @@
       body.className = 'sysop-sysev-body';
       const ico = document.createElement('span');
       ico.className = 'sysop-sysev-ico sysop-auto-ico';
-      ico.textContent = a.kind === 'trigger' ? '⚡' : '⏱';
+      ico.innerHTML = a.kind === 'trigger' ? ICO_BOLT_SVG : ICO_CLOCK_SVG;
       const text = document.createElement('span');
       text.className = 'sysop-sysev-text';
       const desc = String(a.desc || '').replace(/^a\d+ \[[a-z]+\] /, '');
@@ -8162,11 +8188,11 @@
     sub.className = 'sysop-sysev-sub';
     const desc = String(ev.text || '').replace(/^a\d+ \[[a-z]+\] /, '');
     if (ev.kind === 'notify') {
-      ico.textContent = ev.level === 'urgent' ? '❗' : '🔔';
+      ico.innerHTML = ICO_BELL_SVG;
       text.append(ev.text || 'A notification');
       sub.textContent = ev.level === 'urgent' ? 'urgent notification' : ev.level === 'warn' ? 'warning' : 'notification';
     } else {
-      ico.textContent = '⏱';
+      ico.innerHTML = /^a\d+ \[[a-z]+\] when /.test(String(ev.text || '')) ? ICO_BOLT_SVG : ICO_CLOCK_SVG;
       const words = { fired: 'Ran', skipped: 'Skipped a run of', ended: 'Ended' }[ev.phase] || 'Automation';
       text.append(`${words} ${ev.auto || 'an automation'}`);
       sub.textContent = ev.phase === 'fired' ? (ev.reason || desc.split(': ')[0]) : (ev.why || desc.split(': ')[0]);

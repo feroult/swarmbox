@@ -1654,7 +1654,7 @@ class Cli(Base):
         self.assertEqual(self.run_cli("automation", "pause", "a1").returncode, 0)
         self.assertIn("a1 [paused]", self.run_cli("automations").stdout)
         p = self.run_cli("automation", "cancel", "a1")
-        self.assertIn("cancelled by the user (cli)", p.stdout)
+        self.assertIn("cancelled by the user", p.stdout)
         self.assertIn("no active automations", self.run_cli("automations").stdout)
         self.assertIn("a1 [ended]", self.run_cli("automations", "--all").stdout)
         p = self.run_cli("automation", "resume", "a1")

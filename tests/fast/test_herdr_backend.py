@@ -761,6 +761,7 @@ assert.equal(show('voltou ao shell; SwarmBox em ~/swarmbox/x.py e swarmbox.md'),
 assert.equal(show('`main`: 24 testes passaram, 2 failed, 0 failed'), '<code:main>: <ok:24 testes passaram>, <bad:2 failed>, <ok:0 failed>');
 assert.equal(show('swarmbox'), '[swarmbox]');
 assert.equal(show('- `9:escritorio`: fresh; and 7:gone'), '- [escritorio*]: fresh; and [gone*]', 'a numbered label of a tab this page never saw is still a chip, by its name');
+assert.equal(show('Agendado: em 1 minuto (2026-11-27 13:24), de novo às `14:05`'), 'Agendado: em 1 minuto (2026-11-27 13:24), de novo às <code:14:05>', 'a time is never a numbered label');
 assert.equal(show('**Resumo:** **swarmbox** e **`sabrina`** ok'), '<bold:Resumo:> [swarmbox] e [sabrina] ok', 'markdown bold renders cleanly and bold tab names become chips');
 """ % json.dumps(os.path.join(ROOT, "container", "web", "herdr", "public", "tabrefs.js"))
         p = subprocess.run(["node", "-e", js], capture_output=True, text=True)

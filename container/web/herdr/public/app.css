@@ -6016,7 +6016,17 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
 .question-free .btn-allow { flex: 0 0 auto; padding: 9px 14px; }
 
 /* Schedules and triggers in the Events tab */
-.sysop-auto-ico { font-size: 13px; line-height: 1; filter: saturate(0.8); }
+.sysop-auto-ico { color: var(--accent); }
+.sysop-auto-ev.is-notify-urgent .sysop-auto-ico, .sysop-auto-ev.is-notify-warn .sysop-auto-ico { color: var(--peach); }
 .sysop-auto.is-paused { opacity: 0.72; }
 .sysop-auto-ev.is-skipped .sysop-sysev-text, .sysop-auto-ev.is-ended .sysop-sysev-text { color: var(--text-dim); }
 .sysop-auto-ev.is-notify-urgent { box-shadow: inset 3px 0 0 var(--peach); }
+
+/* A goal one of the Sysop's automations started: a line of the Sysop's own, not a bubble of the user's words */
+.turn-auto { display: flex; gap: 9px; align-items: flex-start; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 30%, transparent); }
+.turn-auto-ico { color: var(--accent); padding-top: 2px; }
+.turn-auto-text { min-width: 0; }
+.turn-auto-head { font-family: var(--mono); font-size: 11.5px; color: var(--accent); word-break: break-word; }
+.turn-auto-prompt { margin-top: 3px; font-size: 12.5px; color: var(--text-dim); line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.turn-auto + .turn-meta { text-align: right; }

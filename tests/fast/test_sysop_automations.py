@@ -147,8 +147,9 @@ class Notes(unittest.TestCase):
         notes.write(pth, "agy-quota", "quota resets at 14:00\nthen tell it to go on")
         self.assertEqual(notes.read(pth, "agy-quota"), "quota resets at 14:00\nthen tell it to go on\n")
         self.assertIn("- agy-quota (", notes.index(pth))
-        self.assertIn("quota resets at 14:00", notes.index(pth))
-        self.assertNotIn("then tell it", notes.index(pth), "the list shows the first line")
+        self.assertIn("quota resets at 14:00 / then tell it to go on", notes.index(pth), "every line of a short note is in the list")
+        notes.write(pth, "long", "x" * 300)
+        self.assertIn("... [more: note read long]", notes.index(pth))
         for bad in ("../x", "A B", "", "x" * 41):
             with self.assertRaises(notes.NoteError, msg=bad):
                 notes.write(pth, bad, "t")

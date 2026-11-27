@@ -9,6 +9,7 @@ import time
 
 MAX_NOTES = 50
 MAX_TEXT = 4000
+PREVIEW = 200
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 
 
@@ -73,17 +74,20 @@ def delete(paths, name):
 
 
 def index(paths, limit=1500):
-    """The list the brain sees at each goal: name, age and first line of each note, or ""."""
+    """The list the brain sees at each goal: name, age and a preview of each note (its lines joined, at most PREVIEW characters; a longer
+    one says so, and `note read` gives it whole), or ""."""
     rows = []
     for n in names(paths):
         p = _file(paths, n)
         try:
             with open(p, encoding="utf-8") as f:
-                first = f.readline().strip()
+                text = f.read()
             age = time.time() - os.path.getmtime(p)
         except OSError:
             continue
-        rows.append("- %s (%s ago): %s" % (n, age_words(age), first[:120]))
+        flat = " / ".join(x.strip().lstrip("-* ").strip() for x in text.splitlines() if x.strip())
+        more = len(flat) > PREVIEW
+        rows.append("- %s (%s ago): %s%s" % (n, age_words(age), flat[:PREVIEW], " ... [more: note read %s]" % n if more else ""))
     text = "\n".join(rows)
     return text if len(text) <= limit else text[:limit - 20] + "\n- ... (more: note list)"
 

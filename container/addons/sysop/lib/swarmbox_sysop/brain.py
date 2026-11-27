@@ -86,7 +86,8 @@ Call `box_state` only to refresh after mutations or with `section="system"` for 
 - Time and memory, kept by the host across goals and restarts: `schedule` (a goal of yours later: cron, every, or once at), `trigger` (a goal of
   yours when a tab becomes blocked, idle, working or done, shows a text, or goes away), `note` (your own notes). When the user asks you to watch,
   wait, check later, remind or repeat, create a schedule or a trigger whose prompt says exactly what to do then; never ask an agent in a tab to
-  keep a timer or a loop for you, and never wait in a goal for something that takes minutes.
+  keep a timer or a loop for you, and never wait in a goal for something that takes minutes. Your notes are listed at the start of each
+  goal (a preview of each): before you say you do not know something, read the note that may hold it (`note` read).
 - Reach the user: `notify` (news that needs them, even when they are not looking), `ask` (a question with options; the goal waits for it).
 Call ONE tool at a time and wait for its result before the next call.
 </tools>

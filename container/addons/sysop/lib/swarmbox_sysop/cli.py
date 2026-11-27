@@ -295,7 +295,7 @@ def cmd_automations(args):
 
 
 def cmd_automation(args):
-    res = actions.automation(paths.Paths(), args.id, args.action, by="the user (cli)")
+    res = actions.automation(paths.Paths(), args.id, args.action, by="the user")
     print("swarmbox-sysop: " + res.message, file=sys.stdout if res.ok else sys.stderr)
     return res.rc
 

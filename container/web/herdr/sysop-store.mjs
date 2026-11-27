@@ -325,10 +325,23 @@ function buildGoalTurn(gdir, gid, goal, isCurrent) {
     ? String(lastCall.args.tab || lastCall.args.name || '').slice(0, 40)
     : '';
 
+  // a goal of a schedule or a trigger: its first line is the frame the sysop wrote ("[automation a3 (every 10 min, run 4 ...): what changed]"),
+  // shown apart from the prompt, never as words of the user
+  const source = String(goal.source || 'web');
+  let prompt = String(goal.text || '').trim();
+  let autoHead = '';
+  if ((source === 'schedule' || source === 'trigger') && prompt.startsWith('[automation ')) {
+    const nl = prompt.indexOf('\n');
+    autoHead = (nl > 0 ? prompt.slice(0, nl) : prompt).replace(/^\[automation /, '').replace(/\]$/, '');
+    prompt = nl > 0 ? prompt.slice(nl + 1).trim() : '';
+  }
+
   return {
     id: gid,
-    source: String(goal.source || 'web'),
-    prompt: String(goal.text || '').trim(),
+    source,
+    automation: String(goal.automation || ''),
+    auto_head: autoHead,
+    prompt,
     state: String(goal.state || (running ? 'running' : 'done')),
     started: Number(goal.started || goal.created || 0) * 1000,
     ended: Number(goal.ended || 0) * 1000,
