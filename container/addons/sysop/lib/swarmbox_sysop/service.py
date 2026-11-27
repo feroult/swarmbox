@@ -4,7 +4,9 @@
                   the goals, one gets each), with reconnect and backoff (1, 2, 4, 5, 5 ... s; the bus is restarted by its supervisor within
                   a few seconds), puts each goal in the queue, writes its state `queued`
   main thread     takes the oldest goal, writes the files of the goal (context.json, the MCP config), runs the brain (brain.py), keeps state.json
-                  up to date while it runs, and writes the end: done, stopped or failed (with the reason). It also takes the stop requests
+                  up to date while it runs, and writes the end: done, stopped or failed (with the reason). It also takes the stop requests.
+                  A resident brain (docs/sysop-resident-brain-design.md) is one process kept across goals (brain.Runtime): the goal is one
+                  message to it, Stop an interrupt of its turn; it is started at the first goal, again when it died, and ends with the service
 
 Limits: at most max_goals goals wait; the next is dropped, with its own state `failed` ("queue is full") and an audit line (the bus has no ack in
 v1, so the sender cannot be told). A goal is at most MAX_GOAL_TEXT characters.
@@ -22,6 +24,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -132,6 +135,7 @@ class Service:
         self.lock_fd = None
         self.reader = None
         self.popen = popen
+        self.runtime = brain.Runtime(log=self.log, popen=popen or subprocess.Popen, clock=clock)
         self.sandbox_state = self.sandbox()
         self.housekeeping = None       # a callable the main loop runs every HOUSEKEEPING seconds (the daemon's log rotation: cli.py)
         self._retried = 0.0
@@ -212,6 +216,10 @@ class Service:
                         self.cond.wait(min(5.0, 0.5 * fails))
         finally:
             self.shutdown()
+            try:
+                self.runtime.close()
+            except Exception as e:
+                self.log("cannot end the brain: %r" % e)
             self.status(final=True)
             for p in (self.paths.pidfile,):
                 ipc.remove(p)
@@ -484,21 +492,27 @@ class Service:
             ipc.write_json(ctx, {"goal": goal.id, "source": goal.source, "goal_dir": gdir, "audit": self.paths.audit,
                                  "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "approval_timeout": self.cfg.approval_timeout,
                                  "max_steps": self.cfg.max_steps, "deadline": deadline})
-            mcp = os.path.join(gdir, "mcp.json")
-            # the MCP server runs here, outside the brain's sandbox; the brain starts only the proxy that reaches its socket
-            sock = self.paths.mcp_socket(goal.id)
+            resident = brain.is_resident(self.cfg.brain)
+            # the MCP server runs here, outside the brain's sandbox; the brain starts only the proxy that reaches its socket. One server
+            # per goal, also for a resident brain: its proxy reconnects to the stable socket of the brain at each goal
+            sock = self.paths.mcp_socket("brain" if resident else goal.id)
             host = brain.McpHost(sock, brain.server_env(ctx, self.paths, self.libdir), events, self.log)
             host.start()
-            brain.write_mcp_config(mcp, ctx, self.paths, self.libdir, socket_path=sock)
-            pfile = os.path.join(gdir, "system-prompt.txt")
-            with open(pfile, "w", encoding="utf-8") as f:
-                f.write(brain.system_prompt(goal.source, self.cfg.max_steps, self.cfg.max_seconds, self.cfg.autonomy))
-            os.chmod(pfile, 0o600)
             prev_sid = history.session_id(self.paths)
-            argv, env = brain.build(self.cfg, gdir, mcp, goal.source, pfile, session_id=prev_sid)
             opts = brain.options(self.cfg.brain)
             resuming = bool(prev_sid and opts["resume"])
             home = brain.prepare_home(self.paths.brain_home)
+            if resident:
+                start_error = self.ensure_runtime(prev_sid, opts, home, sock)
+            else:
+                start_error = None
+                mcp = os.path.join(gdir, "mcp.json")
+                brain.write_mcp_config(mcp, ctx, self.paths, self.libdir, socket_path=sock)
+                pfile = os.path.join(gdir, "system-prompt.txt")
+                with open(pfile, "w", encoding="utf-8") as f:
+                    f.write(brain.system_prompt(goal.source, self.cfg.max_steps, self.cfg.max_seconds, self.cfg.autonomy))
+                os.chmod(pfile, 0o600)
+                argv, env = brain.build(self.cfg, gdir, mcp, goal.source, pfile, session_id=prev_sid)
             kw = {"popen": self.popen} if self.popen else {}
 
             def stop_check():
@@ -538,13 +552,24 @@ class Service:
                 parts.append("[note from the host: the previous goal was stopped by the user. These actions DID run (or failed) whatever your "
                              "own record of that goal says; do not run them again unless the user asks:\n" + note + "\n]")
             history.save_stop_note(self.paths, "")
-            if parts:
+            if resident:
+                # the system prompt of a resident brain is fixed for the life of its process: the source of each goal comes with it,
+                # first, so a message never starts with a slash command either
+                heard = "[" + brain.source_note(goal.source) + "]\n\n" + "\n\n".join(parts + ["The goal now (" + goal.source + "):\n" + goal.text])
+            elif parts:
                 heard = "\n\n".join(parts) + "\n\nThe goal now (" + goal.source + "):\n" + goal.text
             else:
                 heard = goal.text
-            res = brain.run(self.cfg, heard, goal.source, gdir, argv, env, stop_check, lambda: self.refresh(goal), deadline,
-                            clock=self.clock, on_start=on_start, opts=opts, home=home, events=events, sandbox=self.sandbox() != "off",
-                            log=self.log, **kw)
+            if resident and start_error:
+                res = brain.Result("failed", start_error)
+            elif resident:
+                on_start(self.runtime.proc.pid)
+                res = self.runtime.run_goal(self.cfg, heard, gdir, stop_check, lambda: self.refresh(goal), deadline, events, opts,
+                                            clock=self.clock, log=self.log)
+            else:
+                res = brain.run(self.cfg, heard, goal.source, gdir, argv, env, stop_check, lambda: self.refresh(goal), deadline,
+                                clock=self.clock, on_start=on_start, opts=opts, home=home, events=events, sandbox=self.sandbox() != "off",
+                                log=self.log, **kw)
             if res.session_id:
                 history.save_session_id(self.paths, res.session_id)
             elif resuming and res.outcome == "failed" and re.search(r"session|resume|conversation", res.error or "", re.I):
@@ -588,6 +613,10 @@ class Service:
         aud.append("state", state=goal.state, summary=goal.summary, error=goal.error)
         self.log("goal %s: %s%s" % (goal.id, goal.state, (" (%s)" % goal.error) if goal.error else ""))
         self.current, self.stop_current = None, False
+
+    def ensure_runtime(self, sid, opts, home, sock):
+        """The resident brain on the conversation's session (brain.Runtime.ensure). None, or why it cannot start."""
+        return self.runtime.ensure(self.cfg, opts, home, sock, self.paths, self.libdir, sid, sandbox=self.sandbox() != "off")
 
     def refresh_final(self, goal):
         gdir = self.paths.goal_dir(goal.id)

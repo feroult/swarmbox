@@ -1,4 +1,6 @@
-"""The brain: a command that speaks MCP and runs without interaction, started once per goal.
+"""The brain: a command that speaks MCP and runs without interaction. A resident one (Runtime, at the end of this file; Claude Code's preset:
+its words have --input-format stream-json, docs/sysop-resident-brain-design.md) is one process across goals, a goal one message on its
+standard input, Stop an interrupt of its turn; any other template is started once per goal (run()).
 
 THE TEMPLATE (SWARMBOX_SYSOP_BRAIN). `auto` (the default: the BRAIN of the box's default agent, or of the first agent that declares one,
 agents.pick), the name of a preset (an agent: its agent/agent.conf BRAIN, Claude Code's by its id; a piece of text, not a dependency on
@@ -138,8 +140,15 @@ class TemplateError(ValueError):
     pass
 
 
+def source_note(source):
+    """What the source of a goal means for the brain (the last line of a one-shot brain's system prompt; the first line of a resident
+    brain's message, whose system prompt is fixed for the life of its process)."""
+    return SOURCE_NOTES.get(source, UNKNOWN_SOURCE)
+
+
 def system_prompt(source, max_steps, max_seconds, autonomy="full-auto"):
-    note = SOURCE_NOTES.get(source, UNKNOWN_SOURCE)
+    """The system prompt. source None: without the source note (a resident brain gets it with each goal)."""
+    note = "" if source is None else source_note(source)
     # an unknown level gets the most careful words (config.load refuses one anyway)
     anote = AUTONOMY_NOTES.get(autonomy, AUTONOMY_NOTES["confirm-all"])
     # not str.format: the prompt holds literal braces ({Esc}) and the source is data
@@ -367,12 +376,13 @@ def environment(env_extra, opts, home, base=None):
     return env
 
 
-def write_mcp_config(path, ctx_path, paths, libdir, socket_path=None):
+def write_mcp_config(path, ctx_path, paths, libdir, socket_path=None, reconnect=False):
     """The MCP config file the brain reads. With socket_path (the service hosts the server, McpHost): the brain starts only the proxy, which
     carries the protocol to that socket; the proxy gets nothing but the library path. Without it (by hand, older callers): the brain starts
     the server itself, as this library run by the python that runs the service (no PATH, no launcher)."""
     if socket_path:
-        ipc.write_json(path, {"mcpServers": {"sysop": {"command": sys.executable, "args": ["-B", "-m", "swarmbox_sysop", "mcp-proxy", socket_path],
+        args = ["-B", "-m", "swarmbox_sysop", "mcp-proxy"] + (["--reconnect"] if reconnect else []) + [socket_path]
+        ipc.write_json(path, {"mcpServers": {"sysop": {"command": sys.executable, "args": args,
                                                        "env": {"PYTHONPATH": libdir, "PYTHONDONTWRITEBYTECODE": "1"}}}})
         return
     env = {"PYTHONPATH": libdir, "PYTHONDONTWRITEBYTECODE": "1", "SWARMBOX_SYSOP_CONTEXT": ctx_path,
@@ -506,7 +516,7 @@ def sandbox_dirs(home, goal_dir):
     """The folders the brain may write under: its home, the goal's folder (the CLI writes nothing there today; the service's files are
     written by the service), and /dev (/dev/null, /dev/tty)."""
     extra = [d for d in os.environ.get("SWARMBOX_TEST_SANDBOX_DIRS", "").split(":") if d and os.path.isdir(d)]     # the suite's scratch folder
-    return [home["root"], goal_dir, "/dev"] + extra
+    return [home["root"]] + ([goal_dir] if goal_dir else []) + ["/dev"] + extra
 
 
 def kill_group(pgid, grace=KILL_GRACE, proc=None, first_sig=signal.SIGTERM):
@@ -815,3 +825,379 @@ def run(cfg, goal, source, goal_dir, argv, env_extra, stop_check, tick, deadline
     if ev.get("is_error"):
         return Result("failed", "the brain reported an error: %s" % str(ev.get("result") or "")[:300], "", code, turns, cost, session_id=sid)
     return Result("done", "", assistant_text or str(ev.get("result") or ""), code, turns, cost, note="the brain ended without calling done", session_id=sid)
+
+
+# ---- the resident brain (docs/sysop-resident-brain-design.md): one process across goals, one user message per goal
+
+def is_resident(text):
+    """True when the brain of a setting stays alive across goals: its words read user messages as stream-json from standard input
+    (Claude Code's `--input-format stream-json`). Any other template runs once per goal (run())."""
+    try:
+        words = shlex.split(resolve_template(text))
+    except (ValueError, TemplateError):
+        return False
+    for i, w in enumerate(words):
+        if w == "--input-format=stream-json" or (w == "--input-format" and words[i + 1:i + 2] == ["stream-json"]):
+            return True
+    return False
+
+
+def user_message(text):
+    """One goal for a resident brain: a user message of Claude Code's stream-json input."""
+    return {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": text}]}}
+
+
+INTERRUPT = {"type": "control_request", "request_id": "sysop-stop", "request": {"subtype": "interrupt"}}
+INTERRUPT_WAIT = 3.0       # seconds an interrupted turn has to end before the process is killed (the spike: 0.01 s)
+IDLE_LOG_MAX = 1 << 20     # bytes of idle.log (what the brain writes between goals)
+
+
+class _Turn:
+    """Where the lines of the brain go while one goal runs: its stream.jsonl and brain.err, its adapter, its EventLog."""
+
+    def __init__(self, goal_dir, adapter, events):
+        self.adapter, self.events = adapter, events
+        self.ended = threading.Event()
+        self.result = {}
+        self.written = 0
+        self.files = {}
+        for name in ("stream.jsonl", "brain.err"):
+            path = os.path.join(goal_dir, name)
+            try:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                self.files[name] = os.fdopen(fd, "ab")
+            except OSError:
+                self.files[name] = None
+        self.err_path = os.path.join(goal_dir, "brain.err")
+
+    def write(self, name, line):
+        f = self.files.get(name)
+        if f is None or self.written >= MAX_OUTPUT:
+            return
+        chunk = line[:MAX_OUTPUT - self.written]
+        try:
+            f.write(chunk)
+            f.flush()
+            self.written += len(chunk)
+        except OSError:
+            pass
+
+    def close(self):
+        for f in self.files.values():
+            if f is not None:
+                try:
+                    f.close()
+                except OSError:
+                    pass
+
+
+class Runtime:
+    """The resident brain: one process in a process group of its own, alive across goals. Its standard output and error are read by two
+    threads that send each line to the goal that runs (_Turn) or, between goals, to idle.log. It remembers the session id and the total cost
+    the CLI reports (a total of the process: the cost of a goal is the difference)."""
+
+    def __init__(self, log=None, popen=subprocess.Popen, clock=time.time):
+        self.log = log or (lambda m: None)
+        self.popen, self.clock = popen, clock
+        self.proc = None
+        self.turn = None
+        self.lock = threading.Lock()
+        self.session_id = ""
+        self.confirmed = False      # the CLI itself reported session_id: a --resume of a session it does not have is not confirmed
+        self.cost = 0.0
+        self.idle_path = None
+        self.program = "brain"
+        self.pumps = []
+        self.write_lock = threading.Lock()
+
+    # ---- life
+    def alive(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def ensure(self, cfg, opts, home, sock, paths, libdir, sid, sandbox=True):
+        """Have the process running on the session `sid` (the conversation's, or "" for a new one): started when it is not running, started
+        again when the conversation's session is not its own (+ New cleared it). The MCP config makes its proxy reconnect to `sock`, where
+        each goal's server listens. None, or why it cannot start."""
+        if self.alive() and self.session_id and sid != self.session_id:
+            self.log("the conversation has another session (a new conversation): the brain starts again")
+            self.close()
+        if self.alive():
+            return None
+        mcp = os.path.join(home["root"], "mcp.json")
+        write_mcp_config(mcp, None, paths, libdir, socket_path=sock, reconnect=True)
+        pfile = os.path.join(home["root"], "system-prompt.txt")
+        with open(pfile, "w", encoding="utf-8") as f:
+            f.write(system_prompt(None, cfg.max_steps, cfg.max_seconds, cfg.autonomy))
+        os.chmod(pfile, 0o600)
+        argv, env_extra = build(cfg, home["work"], mcp, None, pfile, session_id=sid)
+        self.program = argv[0]
+        env = environment(env_extra, opts, home)
+        prog = shutil.which(argv[0], path=env.get("PATH"))
+        if prog is None:
+            return ("the brain program %r was not found: install it (swarmbox addon install %s) or set SWARMBOX_SYSOP_BRAIN"
+                    % (argv[0], os.path.basename(argv[0])))
+        prog = real_program(prog, opts, log=self.log)
+        env["PATH"] = os.path.dirname(prog) + os.pathsep + env.get("PATH", "")      # what the shim would add: the program's own folder first
+        write_dirs = None
+        if sandbox:
+            write_dirs = sandbox_dirs(home, None) if landlock.abi() else None
+            if write_dirs is None:
+                self.log("the brain runs without a filesystem sandbox: Landlock is not available in this kernel or container")
+        err = self.start([prog] + argv[1:], env, home["work"], write_dirs, idle_path=os.path.join(home["root"], "idle.log"))
+        if err is None:
+            self.session_id = sid
+            self.log("the brain started (pid %d%s)" % (self.proc.pid, ", resuming its session" if sid else ""))
+        return err
+
+    def start(self, argv, env, cwd, write_dirs=None, idle_path=None):
+        """Start the process; None, or the error text of a start that failed."""
+        self.stop_process()
+        self.idle_path = idle_path
+        self.session_id, self.cost, self.confirmed = "", 0.0, False
+        try:
+            self.proc = self.popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd, env=env,
+                                   start_new_session=True, close_fds=True, preexec_fn=lambda: pdeathsig(write_dirs))
+        except (OSError, subprocess.SubprocessError) as e:
+            self.proc = None
+            return "cannot start the brain %s: %s" % (argv[0], getattr(e, "strerror", None) or e)
+        self.pumps = [threading.Thread(target=self._pump, args=(self.proc.stdout, "stream.jsonl"), name="brain-out", daemon=True),
+                      threading.Thread(target=self._pump, args=(self.proc.stderr, "brain.err"), name="brain-err", daemon=True)]
+        for t in self.pumps:
+            t.start()
+        return None
+
+    def send(self, obj):
+        """Write one message to the brain; False when it cannot take it (it died)."""
+        p = self.proc
+        if p is None or p.stdin is None:
+            return False
+        try:
+            with self.write_lock:
+                p.stdin.write((json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"))
+                p.stdin.flush()
+            return True
+        except (BrokenPipeError, OSError, ValueError):
+            return False
+
+    def interrupt(self):
+        return self.send(INTERRUPT)
+
+    def stop_process(self, polite=False):
+        """End the process: with polite, close its input first (the CLI exits 0 and writes its session) and give it INTERRUPT_WAIT seconds."""
+        p = self.proc
+        if p is None:
+            return
+        if polite and p.poll() is None:
+            try:
+                p.stdin.close()
+            except (OSError, ValueError):
+                pass
+            try:
+                p.wait(INTERRUPT_WAIT)
+            except subprocess.TimeoutExpired:
+                pass
+        if p.poll() is None:
+            kill_group(p.pid, proc=p)
+        else:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)       # what the leader left behind (its MCP proxy)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+        for f in (p.stdin, p.stdout, p.stderr):
+            try:
+                if f is not None:
+                    f.close()
+            except (OSError, ValueError):
+                pass
+        try:
+            p.wait(5)
+        except subprocess.TimeoutExpired:
+            pass
+        for t in self.pumps:
+            t.join(2)
+        self.pumps = []
+        self.proc = None
+
+    def close(self):
+        self.stop_process(polite=True)
+
+    # ---- the readers
+    def _pump(self, pipe, name):
+        try:
+            while True:
+                line = pipe.readline(1 << 22)
+                if not line:
+                    break
+                with self.lock:
+                    turn = self.turn
+                if name == "stream.jsonl":
+                    self._note(line)
+                if turn is None:
+                    self._idle(name, line)
+                    continue
+                turn.write(name, line)
+                if name != "stream.jsonl":
+                    continue
+                text = line.decode("utf-8", "replace").rstrip("\r\n")
+                try:
+                    for typ, fields in turn.adapter.feed(text):
+                        if typ == "usage" and isinstance(fields.get("cost"), (int, float)):
+                            fields = dict(fields, cost=round(max(0.0, fields["cost"] - self.cost), 6))     # the goal's, not the process's total
+                        turn.events.emit(typ, **fields)
+                except Exception:       # a line the adapter cannot take is kept raw, never a dead reader
+                    pass
+                # the end of the turn; not by its first key: the real CLI writes {"duration_api_ms": ..., "type": "result", ...}
+                if '"result"' in text:
+                    try:
+                        ev = json.loads(text)
+                    except ValueError:
+                        ev = None
+                    if isinstance(ev, dict) and ev.get("type") == "result":
+                        turn.result = ev
+                        turn.ended.set()
+        except (OSError, ValueError):
+            pass
+
+    def _note(self, line):
+        """The session id, from the `system/init` of a turn: the CLI writes one when a session really runs. Not from any line: a --resume
+        the CLI refuses still ends with a `result` that carries the refused id (measured with Claude Code 2.1.332)."""
+        if b'"init"' not in line or b'"session_id"' not in line:
+            return
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            return
+        if not isinstance(ev, dict) or ev.get("type") != "system" or ev.get("subtype") != "init":
+            return
+        sid = ev.get("session_id")
+        if isinstance(sid, str) and sid.strip():
+            self.session_id, self.confirmed = sid.strip(), True
+
+    def _idle(self, name, line):
+        if not self.idle_path:
+            return
+        try:
+            if os.path.exists(self.idle_path) and os.path.getsize(self.idle_path) > IDLE_LOG_MAX:
+                os.replace(self.idle_path, self.idle_path + ".1")
+            fd = os.open(self.idle_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "ab") as f:
+                f.write(("%s " % name).encode() + line)
+        except OSError:
+            pass
+
+    # ---- one goal
+    def run_goal(self, cfg, goal, goal_dir, stop_check, tick, deadline, events, opts, clock=time.time, log=None, grace=None):
+        """Send one goal and follow its turn to the end; the same Result as run()."""
+        log = log or self.log
+        grace = GRACE_AFTER_DONE if grace is None else grace
+        program = self.program
+        done_flag = threading.Event()
+        done_path = os.path.join(goal_dir, "done.json")
+
+        def on_event(ev):
+            if ev.get("type") == "done":
+                done_flag.set()
+        events.listeners.append(on_event)
+        turn = _Turn(goal_dir, eventsmod.adapter(opts["format"]), events)
+        with self.lock:
+            self.turn = turn
+        outcome, interrupted, done_seen = None, None, None
+        killed = False
+        try:
+            if not self.send(user_message(goal)):
+                outcome = "dead"
+            mono_end = (time.monotonic() + (deadline - clock())) if deadline is not None else None
+            while outcome != "dead" and not turn.ended.is_set():
+                if not self.alive():
+                    outcome = outcome or "dead"
+                    break
+                now = clock()
+                if interrupted is None:
+                    if stop_check():
+                        outcome = "stopped"
+                    elif deadline is not None and (now >= deadline + 1 or time.monotonic() >= mono_end + 1):
+                        outcome = "timeout"
+                    else:
+                        if done_seen is None and (done_flag.is_set() or os.path.exists(done_path)):
+                            done_seen = time.monotonic()
+                        if done_seen is not None and time.monotonic() - done_seen >= grace:
+                            outcome = "after_done"
+                    if outcome is not None:
+                        interrupted = time.monotonic()
+                        if not self.interrupt():
+                            break
+                elif time.monotonic() - interrupted >= INTERRUPT_WAIT:
+                    log("the brain did not end its turn %.0f s after an interrupt: its process is killed (the next goal resumes the session)" % INTERRUPT_WAIT)
+                    killed = True
+                    break
+                tick()
+                turn.ended.wait(0.05)
+        except BaseException:
+            self._detach(turn, events, on_event)
+            self.stop_process()
+            raise
+        code = None
+        gone = False
+        # a turn that ended in error without an interrupt of ours (a --resume the CLI refused, an error of the CLI): the CLI may be on
+        # its way out, give it a moment so its exit and its last words on stderr belong to this goal
+        unexpected = turn.ended.is_set() and turn.result.get("is_error") and interrupted is None
+        if unexpected and not killed and self.proc is not None:
+            try:
+                self.proc.wait(1.0)
+            except subprocess.TimeoutExpired:
+                pass
+        if not killed and self.proc is not None and self.proc.poll() is not None:
+            gone = True
+            code = self.proc.poll()
+            for t in self.pumps:
+                t.join(2)       # the last lines of a process that died belong to this goal
+        if killed or gone or outcome == "dead":
+            self.stop_process()
+            gone = True
+        tick()
+        self._detach(turn, events, on_event)
+        ev = turn.result
+        total = ev.get("total_cost_usd") if isinstance(ev.get("total_cost_usd"), (int, float)) else None
+        cost = None
+        if total is not None:
+            cost = round(max(0.0, total - self.cost), 6)
+            self.cost = total
+        turns = ev.get("num_turns")
+        # only a session the CLI reported: a --resume it refused must not be saved again (the service then clears it)
+        sid = self.session_id if self.confirmed else ""
+        assistant_text = turn.adapter.assistant_text
+        summary = ""
+        d = ipc.read_json(done_path)
+        if isinstance(d, dict):
+            summary = str(d.get("summary", ""))
+        text = "\n".join(turn.adapter.tail) + "\n" + str(ev.get("result") or "")
+        if outcome == "stopped":
+            return Result("stopped", "stopped by the user", summary or assistant_text, code, turns, cost, session_id=sid)
+        if summary:
+            return Result("done", "", summary, code, turns, cost, session_id=sid)
+        if outcome == "timeout":
+            return Result("failed", "the time budget of %d s is spent: the brain was stopped" % cfg.max_seconds, assistant_text, code, turns, cost,
+                          session_id=sid)
+        if opts["login"].search(text) or opts["login"].search(_tail(turn.err_path, 2000)):
+            return Result("failed", "the brain is not logged in (%s). %s" % (program, login_hint(program, opts, True)), "", code, turns, cost,
+                          session_id=sid)
+        if gone:        # a resident brain never ends by itself: a process that went away during the goal failed it, whatever it wrote last
+            why = _tail(turn.err_path) or str(ev.get("result") or "")[:300]
+            how = exit_words(code) if code is not None else "went away"
+            return Result("failed", "the brain %s%s" % (how, (": " + why) if why else "; it left no message (brain.err in the folder of the goal may say more)"),
+                          "", code, turns, cost, session_id=sid)
+        if unexpected:      # error_during_execution is a stop only when the sysop interrupted the turn
+            why = str(ev.get("result") or "")[:300] or _tail(turn.err_path) or str(ev.get("subtype") or "")
+            return Result("failed", "the brain reported an error: %s" % why, "", code, turns, cost, session_id=sid)
+        return Result("done", "", assistant_text or str(ev.get("result") or ""), code, turns, cost, note="the brain ended without calling done",
+                      session_id=sid)
+
+    def _detach(self, turn, events, on_event):
+        with self.lock:
+            if self.turn is turn:
+                self.turn = None
+        turn.close()
+        try:
+            events.listeners.remove(on_event)
+        except ValueError:
+            pass

@@ -193,7 +193,13 @@ class _FakeBrainProc:
         self.stdout = open(out_r, "rb", buffering=0)
         self._in_r = open(in_r, "rb")
         self._out_w = open(out_w, "w", encoding="utf-8", buffering=1)
-        self._err_fd = os.dup(stderr_file.fileno()) if stderr_file is not None else None
+        self.stderr = None
+        if stderr_file == subprocess.PIPE:          # a resident brain: its error output is read by the service
+            err_r, err_w = os.pipe()
+            self.stderr = open(err_r, "rb", buffering=0)
+            self._err_fd = err_w
+        else:
+            self._err_fd = os.dup(stderr_file.fileno()) if stderr_file is not None else None
         # strip optional `timeout -k 5 N` wrapper
         if len(argv) >= 4 and argv[0] == "timeout":
             argv = argv[4:]
@@ -242,6 +248,8 @@ class _FakeBrainProc:
             pass
 
     def _run(self):
+        if "--input-format" in self._argv:
+            return self._run_resident()
         rc = 0
         sock = None
         try:
@@ -383,6 +391,204 @@ class _FakeBrainProc:
             if sock is not None:
                 try:
                     sock.close()
+                except OSError:
+                    pass
+            try:
+                self._out_w.close()
+            except OSError:
+                pass
+            if self._err_fd is not None:
+                try:
+                    os.close(self._err_fd)
+                except OSError:
+                    pass
+            self.returncode = rc
+            self._done.set()
+
+
+    def _run_resident(self):
+        """--input-format stream-json: one turn per user message (tests/support/fixtures/sysop/bin/resident_claude.py says what the real CLI does)."""
+        rc = 0
+        env = self._env
+        mode = env.get("SWARMBOX_TEST_FAKE_CLAUDE_MODE") or "script"
+        session = {"session_id": env["SWARMBOX_TEST_FAKE_CLAUDE_SESSION"]} if env.get("SWARMBOX_TEST_FAKE_CLAUDE_SESSION") else {}
+        if "--resume" in self._argv:
+            session = {"session_id": self._argv[self._argv.index("--resume") + 1]}
+        sock_path = None
+        with open(self._argv[self._argv.index("--mcp-config") + 1]) as f:
+            sock_path = json.load(f)["mcpServers"]["sysop"]["args"][-1]
+        interrupted = threading.Event()
+        msgs = []
+        msg_ready = threading.Condition()
+        total = [0.0]
+        goals = [0]
+
+        def reader():
+            for line in self._in_r:
+                try:
+                    m = json.loads(line)
+                except ValueError:
+                    continue
+                if m.get("type") == "control_request":
+                    if mode in ("hang", "hang-ignore-term"):
+                        continue
+                    interrupted.set()
+                    self._emit({"type": "control_response", "response": {"subtype": "success", "request_id": m.get("request_id"), "response": {}}})
+                elif m.get("type") == "user":
+                    with msg_ready:
+                        msgs.append("".join(c.get("text", "") for c in (m.get("message") or {}).get("content") or []))
+                        msg_ready.notify_all()
+            with msg_ready:
+                msgs.append(None)
+                msg_ready.notify_all()
+        threading.Thread(target=reader, daemon=True).start()
+
+        def result(sub="success", err=False, text="", turns=1):
+            total[0] += 0.0012
+            self._emit({"duration_api_ms": 1, "type": "result", "subtype": sub, "is_error": err, "num_turns": turns, "total_cost_usd": round(total[0], 6),
+                        "result": text, **session})
+
+        def interrupted_or_stopped(seconds):
+            end = time.monotonic() + seconds
+            while time.monotonic() < end:
+                if interrupted.is_set() or self._stop.is_set():
+                    return True
+                _REAL_SLEEP(0.002)
+            return interrupted.is_set() or self._stop.is_set()
+
+        try:
+            while not self._stop.is_set():
+                with msg_ready:
+                    while not msgs and not self._stop.is_set():
+                        msg_ready.wait(0.01)
+                    if self._stop.is_set():
+                        break
+                    text = msgs.pop(0)
+                if text is None:
+                    break
+                goals[0] += 1
+                interrupted.clear()
+                log = env.get("SWARMBOX_TEST_FAKE_CLAUDE_LOG")
+                if log:
+                    with open(log + ".tmp", "w") as f:
+                        json.dump({"argv": self._argv, "stdin": text, "cwd": self._cwd, "pid": self.pid, "pgid": self.pid, "goals": goals[0],
+                                   "env": {k: v for k, v in env.items() if k.startswith(("SWARMBOX_", "FOO", "SB_", "PATH"))},
+                                   "env_names": sorted(env), "home": env.get("HOME", ""), "tmpdir": env.get("TMPDIR", ""),
+                                   "claude_config_dir": env.get("CLAUDE_CONFIG_DIR", "")}, f)
+                    os.replace(log + ".tmp", log)
+                if mode == "notloggedin":
+                    self._out_w.write("Not logged in \u00b7 Please run /login\n")
+                    self._out_w.flush()
+                    rc = 1
+                    return
+                if mode == "crash" or (mode == "crash-after" and goals[0] >= 2):
+                    if self._err_fd is not None:
+                        os.write(self._err_fd, b"boom: the brain crashed\n")
+                    rc = 3
+                    return
+                if mode in ("hang", "hang-ignore-term"):
+                    self._stop.wait(600)
+                    rc = -signal.SIGTERM
+                    return
+                # the MCP server of this goal (the real CLI keeps one connection through the sysop's reconnecting proxy)
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.connect(sock_path)
+                self._sock = sock
+                rf = sock.makefile("r", encoding="utf-8", errors="replace")
+                wf = sock.makefile("w", encoding="utf-8")
+                mid = [0]
+
+                def rpc(method, params=None, notify=False):
+                    msg = {"jsonrpc": "2.0", "method": method}
+                    if params is not None:
+                        msg["params"] = params
+                    if not notify:
+                        mid[0] += 1
+                        msg["id"] = mid[0]
+                    wf.write(json.dumps(msg) + "\n")
+                    wf.flush()
+                    if notify:
+                        return None
+                    line = rf.readline()
+                    if not line:
+                        raise EOFError("the MCP server went away")
+                    return json.loads(line)
+                tools = rpc("tools/list")["result"]["tools"]
+                self._emit({"type": "system", "subtype": "init", **session, "tools": ["mcp__sysop__" + t["name"] for t in tools],
+                            "mcp_servers": [{"name": "sysop", "status": "connected"}]})
+                if mode == "quiet":
+                    result(text="nothing to do")
+                    sock.close()
+                    continue
+                steps = []
+                if env.get("SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"):
+                    with open(env["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"]) as f:
+                        steps = json.load(f)
+                out = env.get("SWARMBOX_TEST_FAKE_CLAUDE_OUT")
+                n, cut = 0, False
+                for st in steps:
+                    if interrupted.is_set() or self._stop.is_set():
+                        cut = True
+                        break
+                    if "sleep" in st:
+                        if interrupted_or_stopped(st["sleep"]):
+                            cut = True
+                            break
+                        continue
+                    if "touch" in st:
+                        open(st["touch"], "w").close()
+                        continue
+                    if "waitfile" in st:
+                        end = time.monotonic() + 60
+                        while not os.path.exists(st["waitfile"]) and time.monotonic() < end:
+                            if interrupted_or_stopped(0.005):
+                                cut = True
+                                break
+                        if cut:
+                            break
+                        continue
+                    if "text" in st:
+                        self._emit({"type": "assistant", "message": {"content": [{"type": "text", "text": st["text"]}]}})
+                        continue
+                    n += 1
+                    tid = "toolu_fake%d_%d" % (goals[0], n)
+                    body = json.dumps(st.get("args", {}))
+                    self._emit({"type": "stream_event", "event": {"type": "message_start", "message": {}}})
+                    self._emit({"type": "stream_event", "event": {"type": "content_block_start", "index": 0,
+                                                                  "content_block": {"type": "tool_use", "id": tid, "name": "mcp__sysop__" + st["tool"], "input": {}}}})
+                    for part in (body[:len(body) // 2], body[len(body) // 2:]):
+                        self._emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
+                                                                      "delta": {"type": "input_json_delta", "partial_json": part}}})
+                    self._emit({"type": "stream_event", "event": {"type": "content_block_stop", "index": 0}})
+                    self._emit({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": tid, "name": "mcp__sysop__" + st["tool"], "input": st.get("args", {})}]}})
+                    rep = rpc("tools/call", {"name": st["tool"], "arguments": st.get("args", {}), "_meta": {"claudecode/toolUseId": tid, "progressToken": n}})
+                    r = rep.get("result") or {}
+                    text_out = "".join(c.get("text", "") for c in r.get("content", [])) if r else json.dumps(rep.get("error"))
+                    self._emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "is_error": bool(r.get("isError")),
+                                                                         "content": [{"type": "text", "text": text_out}]}]}})
+                    if out:
+                        with open(out, "a") as f:
+                            f.write(json.dumps({"tool": st["tool"], "args": st.get("args", {}), "is_error": bool(r.get("isError")), "text": text_out}) + "\n")
+                if cut or interrupted.is_set():
+                    result(sub="error_during_execution", err=True, turns=n + 1)
+                else:
+                    result(text="finished", turns=n + 1)
+                for f in (rf, wf):
+                    try:
+                        f.close()
+                    except OSError:
+                        pass
+                sock.close()
+                self._sock = None
+            if self._stop.is_set():
+                rc = -signal.SIGTERM
+        except (OSError, EOFError, ValueError):
+            rc = -signal.SIGTERM if self._stop.is_set() else 1
+        finally:
+            s = self._sock
+            if s is not None:
+                try:
+                    s.close()
                 except OSError:
                     pass
             try:
@@ -603,7 +809,8 @@ class Flow(Base):
             first_in = json.load(f)["stdin"]
         self.assertIn("[box state (workspace)", first_in)
         self.assertNotIn("[conversation so far", first_in, "no conversation before the first goal")
-        self.assertTrue(first_in.endswith("The goal now (voice):\nlist the tabs\n"), first_in)
+        self.assertTrue(first_in.endswith("The goal now (voice):\nlist the tabs"), first_in)
+        self.assertTrue(first_in.startswith("[The goal was SPOKEN"), "the source of the goal comes first: the system prompt of a resident brain is fixed")
         second = self.goal("and the other one?", "panel")
         self.assertEqual(self.wait_state(second)["state"], "done")
         with open(self.logf) as f:
@@ -623,12 +830,12 @@ class Flow(Base):
         self.assertEqual([s["text"] for s in st["say"]], ["working"])
         self.assertEqual([c["tool"] for c in st["calls"]], ["say", "done"])
         self.assertEqual(st["steps"], 0)
-        self.assertEqual((st["brain"]["exit"], st["brain"]["turns"]), (0, 3))
+        self.assertEqual((st["brain"]["exit"], st["brain"]["turns"]), (None, 3), "the resident brain does not exit at the end of a goal")
         self.assertTrue(st["created"] <= st["started"] <= st["ended"])
         with open(self.logf) as f:
             got_in = json.load(f)["stdin"]
         self.assertIn("[box state (workspace)", got_in)
-        self.assertTrue(got_in.endswith("The goal now (voice):\nlist the tabs\n"), got_in)
+        self.assertTrue(got_in.endswith("The goal now (voice):\nlist the tabs"), got_in)
         # the state file and the audit file are written one after the other: wait for the last line of the audit
         self.assertTrue(_wait_for(lambda: any(e.get("state") == "done" for e in self.events("state", gid)), 10))
         ev = self.events(goal=gid)             # the audit file has the goal, its states and the end
@@ -689,7 +896,7 @@ class Flow(Base):
         self.assertEqual(end["calls"][0]["verdict"]["level"], "high")
         self.assertFalse(end["calls"][0]["is_error"])
         self.assertTrue(self.tabs.sent, "typed without an approval")
-        with open(os.path.join(self.e.paths.goals, gid, "system-prompt.txt"), encoding="utf-8") as f:
+        with open(os.path.join(self.e.paths.brain_home, "system-prompt.txt"), encoding="utf-8") as f:
             self.assertIn("autonomy full-auto", f.read())
 
     def test_a_high_risk_goal_with_a_panel_that_approves(self):
@@ -896,7 +1103,7 @@ class Survival(Base):
 
 
 class Stopping(Base):
-    def test_stop_ends_the_running_goal_kills_the_brain_and_drops_the_queue(self):
+    def test_stop_interrupts_the_running_goal_keeps_the_brain_and_drops_the_queue(self):
         self.script([{"tool": "box_state"}, {"sleep": 60}])
 
         def fast_real_popen(*a, **k):
@@ -919,15 +1126,55 @@ class Stopping(Base):
             st = self.state(g)
             self.assertEqual(st["state"], "stopped")
             self.assertIn("before it started", st["error"])
-        self.assertTrue(_wait_for(lambda: not alive(brain_pid), 5), "the brain is gone")
+        self.assertTrue(alive(brain_pid), "an interrupt ends the turn, not the brain")
         self.assertFalse(os.path.exists(self.e.paths.stop_request), "the request was taken")
         self.assertTrue(os.path.exists(os.path.join(self.e.paths.goals, a, "stopped")))
         self.assertTrue(_wait_for(lambda: self.status()["current"] is None, 5))
         self.assertEqual(self.status()["queue"], [])
         self.script(DONE)
-        self.svc.popen = self._tracked_popen
         self.assertEqual(self.wait_state(self.goal("after"))["state"], "done", "the service goes on")
+        with open(self.logf) as f:
+            self.assertEqual(json.load(f)["pid"], brain_pid, "the same brain takes the next goal")
         self.assertIn("stop", [e.get("decision") for e in self.events("decision", a)])
+
+    def test_a_session_the_brain_cannot_resume_is_cleared_and_the_next_goal_starts_a_new_one(self):
+        from swarmbox_sysop import history
+        self.e.paths.make()
+        history.save_session_id(self.e.paths, "gone-1")
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "badresume"
+        self.start(popen=subprocess.Popen)
+        st = self.wait_state(self.goal("a"))
+        self.assertEqual(st["state"], "failed")
+        self.assertIn("No conversation found", st["error"])
+        self.assertEqual(history.session_id(self.e.paths), "", "cleared: it would fail every goal")
+        os.environ.pop("SWARMBOX_TEST_FAKE_CLAUDE_MODE")
+        self.assertEqual(self.wait_state(self.goal("b"))["state"], "done")
+        with open(self.logf) as f:
+            self.assertNotIn("--resume", json.load(f)["argv"])
+
+    def test_a_brain_that_ignores_the_interrupt_is_killed_and_the_next_goal_resumes_its_session(self):
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "hang"
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SESSION"] = "sess-h"
+        self.start(popen=subprocess.Popen)
+        a = self.goal("a")
+        self.wait_state(a, ("running",))
+        self.assertTrue(_wait_for(lambda: os.path.exists(self.logf), 10))
+        with open(self.logf) as f:
+            first = json.load(f)
+        history_sid = lambda: ipc.read_json(os.path.join(self.e.paths.state, "conversation.json"))  # noqa: E731
+        ipc.request_stop(self.e.paths)
+        t0 = time.time()
+        self.assertEqual(self.wait_state(a)["state"], "stopped")
+        self.assertLess(time.time() - t0, brain.INTERRUPT_WAIT + 5)
+        self.assertTrue(_wait_for(lambda: not alive(first["pid"]), 5), "killed after INTERRUPT_WAIT")
+        self.assertIsNotNone(history_sid())
+        os.environ.pop("SWARMBOX_TEST_FAKE_CLAUDE_MODE")
+        os.unlink(self.logf)
+        self.assertEqual(self.wait_state(self.goal("b"))["state"], "done")
+        with open(self.logf) as f:
+            second = json.load(f)
+        self.assertNotEqual(second["pid"], first["pid"])
+        self.assertEqual(second["argv"][second["argv"].index("--resume") + 1], "sess-h", "a new brain on the same session")
 
     def test_after_a_stop_the_resumed_session_hears_from_the_host_what_ran(self):
         """docs/sysop-brain-design.md 7: a stopped CLI can record a call that ran as refused; the next goal of the session starts with the
@@ -952,7 +1199,7 @@ class Stopping(Base):
         self.assertEqual(self.wait_state(b)["state"], "done")
         with open(self.logf) as f:
             got = json.load(f)
-        self.assertEqual(got["argv"][got["argv"].index("--resume") + 1], "sess-1")
+        self.assertEqual(got["goals"], 2, "the same process: a stop interrupts the turn, the brain stays")
         self.assertIn("[note from the host: the previous goal was stopped", got["stdin"])
         self.assertIn("`box_state`: workspace (ran)", got["stdin"])
         os.unlink(self.logf)
@@ -1030,7 +1277,8 @@ class Folders(Base):
         for d in (pth.run, pth.state, pth.goals, os.path.join(pth.goals, gid)):
             self.assertEqual(stat.S_IMODE(os.stat(d).st_mode), 0o700, d)
         for f in (pth.audit, pth.status, pth.pidfile, pth.lock, os.path.join(pth.goals, gid, "state.json"), os.path.join(pth.goals, gid, "context.json"),
-                  os.path.join(pth.goals, gid, "mcp.json"), os.path.join(pth.goals, gid, "stream.jsonl"), os.path.join(pth.goals, gid, "calls.jsonl"),
+                  os.path.join(pth.brain_home, "mcp.json"), os.path.join(pth.brain_home, "system-prompt.txt"),
+                  os.path.join(pth.goals, gid, "stream.jsonl"), os.path.join(pth.goals, gid, "brain.err"), os.path.join(pth.goals, gid, "calls.jsonl"),
                   os.path.join(pth.goals, gid, "say.jsonl"), os.path.join(pth.goals, gid, "done.json")):
             self.assertEqual(stat.S_IMODE(os.stat(f).st_mode), 0o600, f)
 
@@ -1313,6 +1561,7 @@ class Cli(Base):
         self.assertEqual(p.returncode, 0, p.stderr)
         lines = p.stdout.splitlines()
         self.assertEqual(lines[1:], ["say: working", "done: finished it"])
+        self.svc.runtime.close()                    # the next goal starts a brain that crashes
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "crash"
         p = self.run_cli("goal", "--wait", "go", env={"SWARMBOX_TEST_FAKE_CLAUDE_MODE": "crash"})
         self.assertEqual(p.returncode, 1)

@@ -117,6 +117,7 @@ LEGIT_FILES = [
     ("container/addons/sysop/README.md", "the tools of the sysop's brain"),
     ("docs/sysop.md", "the tools of the sysop's brain, their table, budget and errors"),
     ("docs/sysop-brain-design.md", "the isolation and the stream of the sysop's brain: the tools it may call and how their calls are seen"),
+    ("docs/sysop-resident-brain-design.md", "the resident brain of the sysop: one MCP server of tools per goal behind a reconnecting proxy"),
     ("tests/support/sysop_support.py", "support of the sysop tests"),
     ("tests/*/test_sysop_*.py", "tests of the sysop: the tools of its brain, the records of their calls ({\"tool\": ...})"),
     ("tests/support/fixtures/sysop/**", "the fake `claude` that calls the sysop's MCP tools from a script"),

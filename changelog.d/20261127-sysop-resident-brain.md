@@ -1,0 +1,1 @@
+- Changed: the sysop's brain is one resident Claude Code process instead of one per goal: a goal no longer pays a start (a short goal now answers in 1 to 3 seconds), and Stop interrupts the brain's turn instead of killing it, so the brain's record of what ran stays true and it keeps its session. A brain that dies or ignores the interrupt is started again on the same session.

@@ -764,14 +764,23 @@ def listen(path):
     return srv
 
 
-def proxy(path, fin=None, fout=None):
+NO_GOAL = "no goal is running: the sysop's tools answer only while a goal runs"
+
+
+def proxy(path, fin=None, fout=None, reconnect=False):
     """`swarmbox-sysop mcp-proxy SOCKET`: what the brain starts as its MCP server. It only carries bytes between its standard streams and
     the socket of the real server, which the service runs outside the brain's sandbox: the server's writes (its files, swarmbox-tabs,
-    git) are not limited by the brain's Landlock domain, and the server's environment is not the brain's."""
+    git) are not limited by the brain's Landlock domain, and the server's environment is not the brain's.
+
+    With reconnect (a resident brain, docs/sysop-resident-brain-design.md 3): the brain lives across goals but each goal has a server of its
+    own on the same socket path. The proxy connects when a message arrives and it has no connection, keeps its own standard output open when
+    the server closes (the goal ended), and answers a request that has no server behind it with an error of its own."""
     import socket
     import threading
     fin = fin if fin is not None else open(sys.stdin.fileno(), "rb", buffering=0, closefd=False)
     fout = fout if fout is not None else open(sys.stdout.fileno(), "wb", buffering=0, closefd=False)
+    if reconnect:
+        return _reconnecting_proxy(path, fin, fout)
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         s.connect(path)
@@ -802,6 +811,113 @@ def proxy(path, fin=None, fout=None):
             fout.write(b)
     except OSError:
         pass
+    return 0
+
+
+def _request_id(line):
+    """The id of a JSON-RPC request line (a method and an id), else None: a notification or a reply needs no answer."""
+    try:
+        m = json.loads(line)
+    except ValueError:
+        return None
+    return m.get("id") if isinstance(m, dict) and m.get("method") and m.get("id") is not None else None
+
+
+def _reconnecting_proxy(path, fin, fout):
+    import io
+    import socket
+    import threading
+    if isinstance(fin, io.RawIOBase):
+        fin = io.BufferedReader(fin)       # whole lines, not one byte per read
+    lock = threading.Lock()
+    state = {"sock": None, "pending": set()}
+
+    def out(data):
+        with lock:
+            try:
+                fout.write(data)
+            except (OSError, ValueError):
+                pass
+
+    def fail(rid):
+        out((json.dumps({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": NO_GOAL}}) + "\n").encode())
+
+    def reader(s):
+        f = s.makefile("rb")
+        try:
+            for line in f:
+                try:
+                    m = json.loads(line)
+                    if isinstance(m, dict) and "method" not in m:
+                        with lock:
+                            state["pending"].discard(m.get("id"))
+                except ValueError:
+                    pass
+                out(line)
+        except OSError:
+            pass
+        with lock:
+            if state["sock"] is s:
+                state["sock"] = None
+            lost, state["pending"] = state["pending"], set()
+        for rid in lost:        # the goal ended while the brain waited for an answer: the brain is told, it never hangs
+            fail(rid)
+        try:
+            s.close()
+        except OSError:
+            pass
+
+    def connect():
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            s.settimeout(2.0)
+            s.connect(path)
+            s.settimeout(None)
+        except OSError:
+            s.close()
+            return None
+        threading.Thread(target=reader, args=(s,), daemon=True).start()
+        return s
+
+    while True:
+        try:
+            line = fin.readline()
+        except (OSError, ValueError):
+            break
+        if not line:
+            break
+        if not line.strip():
+            continue
+        rid = _request_id(line)
+        with lock:
+            s = state["sock"]
+        if s is None:
+            s = connect()
+            with lock:
+                state["sock"] = s
+        if s is None:
+            if rid is not None:
+                fail(rid)
+            continue
+        if rid is not None:
+            with lock:
+                state["pending"].add(rid)
+        try:
+            s.sendall(line if line.endswith(b"\n") else line + b"\n")
+        except OSError:
+            with lock:
+                if state["sock"] is s:
+                    state["sock"] = None
+                state["pending"].discard(rid)
+            if rid is not None:
+                fail(rid)
+    with lock:
+        s = state["sock"]
+    if s is not None:
+        try:
+            s.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
     return 0
 
 

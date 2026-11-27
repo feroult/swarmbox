@@ -7,7 +7,7 @@ The design and its reasons are in [addons-design.md](addons-design.md). This pag
 ## The path
 
 ```
-goal (typed, spoken, or from a program) -> bus topic (sysop.topic, default `goal`) -> swarmbox-sysop (resident) -> brain (one process per goal)
+goal (typed, spoken, or from a program) -> bus topic (sysop.topic, default `goal`) -> swarmbox-sysop (resident) -> brain (one resident process, one turn per goal)
 brain -> tool calls (MCP) -> host policy -> swarmbox-tabs -> herdr-core tab   the panel shows each step
 ```
 
@@ -60,7 +60,7 @@ and the error tells the brain how to write it. Below `full-auto`, no level lets 
 
 ## Stop and budgets
 
-- **Stop.** Press **Stop** in the Sysop composer (`Esc` when focused), the **Live Strip** above the mobile composer, the mobile terminal dock stop button, or run `swarmbox-sysop stop` (`Ctrl+A X`). Stop sends a graceful interrupt (`SIGINT`) first so Claude Code preserves its persistent session context, then terminates the process group. Clicking `×` on a queued item cancels just that queued goal (`POST /api/sysop/stop` with `{ "goal_id": "..." }`).
+- **Stop.** Press **Stop** in the Sysop composer (`Esc` when focused), the **Live Strip** above the mobile composer, the mobile terminal dock stop button, or run `swarmbox-sysop stop` (`Ctrl+A X`). Stop interrupts the brain's turn (Claude Code's own interrupt, on its input): the turn ends at once, the process and its session stay for the next goal, and the model's record of what ran is true. A brain that does not end its turn within 3 seconds is killed; the next goal starts a new one on the same session. Clicking `×` on a queued item cancels just that queued goal (`POST /api/sysop/stop` with `{ "goal_id": "..." }`).
 - **Steps.** Unlimited by default (`sysop.max_steps` = `0`); set `1` to `500` if you want a per-goal tool call cap (`say` and `done` do not count).
 - **Time.** Unlimited by default (`sysop.max_seconds` = `0`); set `10` to `3600` if you want an automatic per-goal timeout.
 
@@ -94,7 +94,7 @@ While the bus is away (it is restarted within seconds; after five crashes in a m
 `agent/agent.conf`, with its default `MODEL`); `auto` takes the one of the box's default agent, else of the first agent that declares one. Only
 Claude Code declares one today, `claude`: the headless Claude Code CLI (`claude -p`, logged in with `CLAUDE_CODE_OAUTH_TOKEN`) with every
 built-in tool turned off (`--tools ""`; without it Bash stays on), only the tools of the sysop allowed, a system prompt of its own, no user or
-project settings, no hooks, no slash commands, and a persistent session that **+ New** resets. A box with no agent that declares a brain still runs the service, and a goal fails with that reason. The model is `sysop.model`
+project settings, no hooks, no slash commands, and a persistent session that **+ New** resets. It is **resident** ([sysop-resident-brain-design.md](sysop-resident-brain-design.md)): one process (`--input-format stream-json`) takes goal after goal, each one a message on its standard input, so a goal does not pay a start; it is started at the first goal, again (resuming its session) when it died, and a new one after **+ New**. A template without `--input-format stream-json` runs once per goal, as before. A box with no agent that declares a brain still runs the service, and a goal fails with that reason. The model is `sysop.model`
 (default `auto`: the agent's `MODEL`, `sonnet` for Claude Code: about 11 to 15 seconds and a cent a goal in the tests; `haiku` is quicker,
 about 7 seconds, and costs about a tenth as much, at the price of more mistakes on a spoken goal that is not clear). The tab namer is declared the
 same way (`NAMER`, `NAMER_MODEL`: Claude Code's runs `haiku`); without an agent that declares one, tabs keep their names.
@@ -275,7 +275,7 @@ do the same. The panel never takes the focus from the tab you type in.
 The service also runs one herdr-core terminal of its own, labelled `swarmbox.role=sysop`, which speaks OSC 7501 so a remote `herdr-app` sees the
 sysop in its Agent Inbox; `swarmbox-tabs`, the Web Studio and the cockpit hide it.
 
-**The conversation, and which agent.** Each goal runs in a brain that starts with no memory, so the service puts what came before in front of it: the last 8 finished goals of the last 12 hours (`history.py`), each as the words of the user, the texts the sysop typed and into which tab, and the sentence it ended with. The block goes on the standard input of the brain, before `The goal now (source):` and the goal; the goal itself is stored and shown as the user said it. It holds no screens and nothing an agent answered. With it "and the other one?", "do it again" or "no, the second" mean what they meant. The system prompt (`brain.py`) tells the brain that, by default, what you say is a message for an agent that it passes on in your words, with no need to say "send it to Claude": the agent is inferred (the one in the active tab, else the tab the conversation was with, else the only agent), and only a clear operation on the box ("open a new tab", "run the tests in tab 2") is carried out by the sysop itself. A message for an agent that is working is typed anyway: the agents queue it.
+**The conversation, and which agent.** The brain keeps its session, but a new session (the first goal, or the first after + New when goals of the last 12 hours remain) starts with no memory, so the service then puts what came before in front of it: the last 8 finished goals of the last 12 hours (`history.py`), each as the words of the user, the texts the sysop typed and into which tab, and the sentence it ended with. The block goes on the standard input of the brain, before `The goal now (source):` and the goal; the goal itself is stored and shown as the user said it. It holds no screens and nothing an agent answered. With it "and the other one?", "do it again" or "no, the second" mean what they meant. The system prompt (`brain.py`) tells the brain that, by default, what you say is a message for an agent that it passes on in your words, with no need to say "send it to Claude": the agent is inferred (the one in the active tab, else the tab the conversation was with, else the only agent), and only a clear operation on the box ("open a new tab", "run the tests in tab 2") is carried out by the sysop itself. A message for an agent that is working is typed anyway: the agents queue it.
 
 ## Troubleshooting
 
@@ -293,8 +293,8 @@ What you see, why, and what to do. Everything here was met in the soak and end-t
 | a tool answers that herdr-core is not available (`no_backend`) | no `hc` on the PATH of the service | the image has it, so check what changed the PATH (`swarmbox-tabs list` in a tab shows the error) |
 | a tool answers that there is no herdr-core session (`no_session`) | the herdr-core daemon is not answering | open a tab (`swarmbox attach`, or the web terminal): it starts the daemon again, and the sysop goes on with the next goal |
 | the panel is not there | you hid it (`Ctrl+A s` in the cockpit, the Sysop button of the Web Studio), or the service is down | show it again; `swarmbox-sysop status` |
-| `failed: the time budget of 300 s is spent: the brain was killed` | the goal took longer than `sysop.max_seconds` (a slow model, a long `wait`, an approval nobody gave) | send a smaller goal, or `swarmbox config set sysop.max_seconds 600` and `swarmbox reset`; `haiku` (the default) is the fast model |
-| `failed: the brain used all its 23 turns without calling done` | the goal needs more steps than `sysop.max_steps` allows (the turns are the steps plus 3) | raise `sysop.max_steps`, or split the goal |
+| `failed: the time budget of 300 s is spent: the brain was stopped` | the goal took longer than `sysop.max_seconds` (a slow model, a long `wait`, an approval nobody gave) | send a smaller goal, or `swarmbox config set sysop.max_seconds 600` and `swarmbox reset`; `haiku` (the default) is the fast model |
+| a tool answers `the budget of 20 tool calls is spent` and the goal ends | the goal needs more steps than `sysop.max_steps` allows | raise `sysop.max_steps`, or split the goal |
 | the goal sits at "waiting for approval" and then ends refused | a high-risk action waits for you, and no answer came in 60 seconds | tap Allow (or `Ctrl+A a` in the cockpit); or Cancel (`Ctrl+A v`) to refuse it at once |
 | the goal ends `failed` with "lost" after the service was killed or crashed | goals in flight are not kept | send the goal again |
 
@@ -302,7 +302,7 @@ What you see, why, and what to do. Everything here was met in the soak and end-t
 
 ## Limits of version 1
 
-- One goal at a time, up to five waiting. Each goal starts a new brain process; the CLI's session (and the conversation block below) carries what came before.
+- One goal at a time, up to five waiting. One resident brain process takes them in turn; its session carries what came before.
 - Two ways to type: `run` and `input`. There is no tool that sees an image, and no `ask` (the brain cannot put a question to you and wait; it can `say` and `done`).
 - Only text: a program that draws without text (a full-screen graphic) is not readable, and a full-screen program has no scrollback, so only what is visible counts.
 - The risk analysis is conservative and best effort; it flags quoted separators too and can ask for approval of something harmless. It cannot read what a script does.

@@ -2,6 +2,8 @@
 
 Status: **implemented (2026-11-26)**: sections 3 to 5 describe what the code does; section 8 records the spikes it rests on. Open items at the end.
 
+Since 2026-11-27 the brain is one resident process across goals (stop by interrupt, one MCP server per goal behind a reconnecting proxy): [sysop-resident-brain-design.md](sysop-resident-brain-design.md). The isolation and the stream below are unchanged.
+
 ## 1. Purpose
 
 The sysop's brain is a coding-agent CLI (Claude Code today) run without interaction, once per goal, whose only way to act on the box is the
