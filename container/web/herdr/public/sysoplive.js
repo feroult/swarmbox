@@ -149,7 +149,30 @@
     return { acts, notes, reply, line: line(g, fallback) };
   }
 
-  const api = { goal, apply, pace, showAll, line, parts };
+  function glowStep(entry, len, now, dur, skip) {
+    const e = entry || { len: 0, spans: [] };
+    const n = Math.max(0, len | 0);
+    if (skip) {
+      e.len = n;
+      e.spans = [];
+      return e;
+    }
+    if (n > e.len) {
+      e.spans.push({ from: e.len, to: n, at: now });
+      e.len = n;
+    } else if (n < e.len) {
+      e.len = n;
+      const clamped = [];
+      for (const s of e.spans) {
+        if (s.from < n) clamped.push({ from: s.from, to: Math.min(s.to, n), at: s.at });
+      }
+      e.spans = clamped;
+    }
+    e.spans = e.spans.filter((s) => now - s.at < dur);
+    return e;
+  }
+
+  const api = { goal, apply, pace, showAll, line, parts, glowStep };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.SbSysopLive = api;
 })(typeof window !== 'undefined' ? window : globalThis);

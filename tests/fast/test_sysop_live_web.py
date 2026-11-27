@@ -168,6 +168,48 @@ assert.equal(L.apply(g, { seq: 3, type: 'say', text: 'old' }), false, 'an event 
             html = f.read()
         self.assertLess(html.index('src="/sysoplive.js"'), html.index('src="/app.js"'), "the reducer loads before the page that uses it")
 
+    def test_bbs_afterglow_spans_and_styles(self):
+        if not shutil.which("node"):
+            self.skipTest("node is not installed")
+        js = r"""
+const assert = require('node:assert/strict');
+const fs = require('fs'), vm = require('vm');
+const ctx = { module: { exports: {} } };
+vm.runInNewContext(fs.readFileSync(%s, 'utf8'), ctx);
+const L = ctx.module.exports;
+const plain = (x) => JSON.parse(JSON.stringify(x));
+// Replay skips glow so existing text does not flash on reconnect
+let e = L.glowStep(null, 20, 1000, 560, true);
+assert.equal(e.len, 20);
+assert.deepEqual(plain(e.spans), []);
+// Incremental reveals record spans and prune expired ones
+e = L.glowStep(e, 26, 1100, 560, false);
+e = L.glowStep(e, 31, 1300, 560, false);
+assert.deepEqual(plain(e.spans), [
+  { from: 20, to: 26, at: 1100 },
+  { from: 26, to: 31, at: 1300 },
+]);
+// Markdown closing syntax can shrink rendered text: clamp spans safely
+e = L.glowStep(e, 28, 1350, 560, false);
+assert.equal(e.len, 28);
+assert.deepEqual(plain(e.spans), [
+  { from: 20, to: 26, at: 1100 },
+  { from: 26, to: 28, at: 1300 },
+]);
+// Once past decay duration, older spans expire
+e = L.glowStep(e, 28, 1700, 560, false);
+assert.deepEqual(plain(e.spans), [{ from: 26, to: 28, at: 1300 }]);
+e = L.glowStep(e, 28, 1900, 560, false);
+assert.deepEqual(plain(e.spans), []);
+""" % json.dumps(os.path.join(WEB, "public", "sysoplive.js"))
+        p = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=30)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        with open(os.path.join(WEB, "public", "app.css")) as f:
+            css = f.read()
+        self.assertIn("@keyframes bbs-afterglow", css)
+        self.assertIn(".bbs-glow", css)
+        self.assertIn("prefers-reduced-motion: reduce", css)
+
 
 class Gateway(unittest.TestCase):
     def test_appended_events_reach_every_page_at_once_and_a_new_page_gets_the_goal_so_far(self):

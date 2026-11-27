@@ -6825,10 +6825,73 @@
   // order), drawn into the running turn only. What the model chose, typed, waits for and wrote shows as it happens; a burst of text is
   // revealed at a steady pace that catches up within a few hundred milliseconds. The snapshot keeps the finished turns.
   const Live = window.SbSysopLive;          // public/sysoplive.js: the reducer (pure, tested in Node)
+  const BBS_GLOW_MS = 560;
   const liveGoals = new Map();     // gid -> the reducer's state of that goal
+  const liveGlow = new Map();      // `${gid}:note:${i}` | `${gid}:reply` -> { len, spans: [{ from, to, at }] }
+  const liveGlowReplay = new Set(); // gids whose next render skips glow (replay on connect)
   const lastTurns = new Map();     // gid -> the snapshot's turn (prompt, started) for a redraw between snapshots
   const liveTurnParts = (g, turn) => Live.parts(g, turn && turn.live_action);
   const liveLine = (g, turn) => Live.line(g, turn && turn.live_action);
+
+  function clearLiveGlow(gid) {
+    const prefix = `${gid}:`;
+    for (const k of Array.from(liveGlow.keys())) {
+      if (k.startsWith(prefix)) liveGlow.delete(k);
+    }
+    liveGlowReplay.delete(gid);
+  }
+
+  // BBS Afterglow: wrap freshly revealed text ranges in .bbs-glow with negative animation-delay so the 3-stage
+  // phosphor decay (#fff -> --accent-bright -> normal) runs smoothly across Markdown redraws and leaves cooled text as plain text nodes.
+  function applyBbsGlow(root, key, skip) {
+    if (!root) return;
+    const now = performance.now();
+    const totalLen = root.textContent.length;
+    const entry = Live.glowStep(liveGlow.get(key), totalLen, now, BBS_GLOW_MS, skip || document.visibilityState === 'hidden');
+    liveGlow.set(key, entry);
+    if (!entry.spans.length) return;
+
+    const nodes = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let cur;
+    while ((cur = walker.nextNode())) {
+      if (cur.parentElement && cur.parentElement.classList.contains('turn-stream-cursor')) continue;
+      if (cur.nodeValue) nodes.push(cur);
+    }
+
+    let pos = 0;
+    for (const tn of nodes) {
+      const txt = tn.nodeValue;
+      const start = pos;
+      const end = start + txt.length;
+      pos = end;
+
+      let overlaps = null;
+      for (const s of entry.spans) {
+        const a = Math.max(start, s.from);
+        const b = Math.min(end, s.to);
+        if (a < b) {
+          if (!overlaps) overlaps = [];
+          overlaps.push({ a: a - start, b: b - start, at: s.at });
+        }
+      }
+      if (!overlaps) continue;
+
+      const frag = document.createDocumentFragment();
+      let idx = 0;
+      for (const ov of overlaps) {
+        if (ov.a > idx) frag.appendChild(document.createTextNode(txt.slice(idx, ov.a)));
+        const span = document.createElement('span');
+        span.className = 'bbs-glow';
+        span.style.animationDelay = `${-Math.max(0, now - ov.at).toFixed(1)}ms`;
+        span.textContent = txt.slice(ov.a, ov.b);
+        frag.appendChild(span);
+        idx = ov.b;
+      }
+      if (idx < txt.length) frag.appendChild(document.createTextNode(txt.slice(idx)));
+      tn.replaceWith(frag);
+    }
+  }
 
   let livePaceRaf = 0;
   function paceLive() {
@@ -6850,11 +6913,17 @@
   function onSysopEvents(msg) {
     const gid = String(msg.gid || '');
     if (!gid || !Array.isArray(msg.events)) return;
-    if (msg.replay || !liveGoals.has(gid)) liveGoals.set(gid, Live.goal());
+    if (msg.replay || !liveGoals.has(gid)) {
+      liveGoals.set(gid, Live.goal());
+      clearLiveGlow(gid);
+    }
     const g = liveGoals.get(gid);
     const before = g.seq;
     for (const ev of msg.events) Live.apply(g, ev);
-    if (msg.replay) Live.showAll(g);     // what already happened is shown at once
+    if (msg.replay) {
+      Live.showAll(g);     // what already happened is shown at once
+      liveGlowReplay.add(gid);
+    }
     if (g.seq !== before || msg.replay) scheduleLive(gid);
   }
 
@@ -6995,11 +7064,14 @@
     said.appendChild(head);
     if (list) said.appendChild(list);
 
+    const skipGlow = Boolean(lg && liveGlowReplay.has(turn.id));
     const noteList = live ? live.notes : (Array.isArray(turn.notes) ? turn.notes : []).map((n) => ({ text: String(n), streaming: false }));
-    for (const n of noteList) {
+    for (let ni = 0; ni < noteList.length; ni++) {
+      const n = noteList[ni];
       const note = document.createElement('div');
       note.className = 'turn-note';
       note.appendChild(linkTabs(n.text));
+      if (lg) applyBbsGlow(note, `${turn.id}:note:${ni}`, skipGlow);
       if (n.streaming) {
         note.dataset.state = 'streaming';
         note.appendChild(streamCursor());
@@ -7009,9 +7081,11 @@
     const reply = turn.running ? (live && live.reply && live.reply.text ? live.reply : null) : (turn.reply ? { text: turn.reply, streaming: false } : null);
     if (reply) {
       const rep = renderReplyText(reply.text, reply.streaming);
+      if (lg) applyBbsGlow(rep, `${turn.id}:reply`, skipGlow);
       rep.dataset.state = turn.running ? (reply.streaming ? 'streaming' : 'running') : (turn.state || 'done');
       said.appendChild(rep);
     }
+    if (skipGlow) liveGlowReplay.delete(turn.id);
     said.appendChild(renderTurnFoot(turn, live));
     el.appendChild(said);
     return el;
@@ -7989,7 +8063,10 @@
       if (t.running) runningIds.add(t.id);
     }
     for (const gid of Array.from(liveGoals.keys())) {
-      if (!runningIds.has(gid) && (turns || []).some((t) => t.id === gid)) liveGoals.delete(gid);
+      if (!runningIds.has(gid) && (turns || []).some((t) => t.id === gid)) {
+        liveGoals.delete(gid);
+        clearLiveGlow(gid);
+      }
     }
     for (const gid of Array.from(lastTurns.keys())) {
       if (!(turns || []).some((t) => t.id === gid)) lastTurns.delete(gid);
