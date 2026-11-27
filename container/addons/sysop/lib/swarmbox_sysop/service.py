@@ -4,7 +4,9 @@
                   the goals, one gets each), with reconnect and backoff (1, 2, 4, 5, 5 ... s; the bus is restarted by its supervisor within
                   a few seconds), puts each goal in the queue, writes its state `queued`
   main thread     takes the oldest goal, writes the files of the goal (context.json, the MCP config), runs the brain (brain.py), keeps state.json
-                  up to date while it runs, and writes the end: done, stopped or failed (with the reason). It also takes the stop requests
+                  up to date while it runs, and writes the end: done, stopped or failed (with the reason). It also takes the stop requests.
+                  A resident brain (docs/sysop-resident-brain-design.md) is one process kept across goals (brain.Runtime): the goal is one
+                  message to it, Stop an interrupt of its turn; it is started at the first goal, again when it died, and ends with the service
 
 Limits: at most max_goals goals wait; the next is dropped, with its own state `failed` ("queue is full") and an audit line (the bus has no ack in
 v1, so the sender cannot be told). A goal is at most MAX_GOAL_TEXT characters.
@@ -22,11 +24,13 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import threading
 import time
 
-from . import __version__, brain, busclient, history, ipc, landlock, mcpserver, tabsclient
+from . import __version__, brain, busclient, history, ipc, landlock, mcpserver, notes, tabsclient
+from . import automations as automod
 from . import events as eventsmod
 from . import paths as pathsmod
 from . import audit as auditmod
@@ -38,6 +42,11 @@ HOUSEKEEPING = 60.0
 RETRY_WRITES = 2.0       # seconds between two tries to write the end of a goal that the disk refused
 BACKOFF = (1.0, 5.0)       # the bus is on a unix socket of the same box (a try costs nothing), and its supervisor can give up and be restarted by hand: the wait is short
 FREE_TOOLS = ("say", "done")
+# the sources a person types or speaks in: a goal of one of them that arrives while another such goal runs is given to that goal (steering).
+# Not cli or agent: a script that sends goals expects a queue
+INTERACTIVE = ("web", "panel", "cockpit", "voice")
+AUTOMATED = ("schedule", "trigger")
+TRIGGER_EVERY = 3.0       # seconds between two turns of the automations' thread: the schedules that are due, a look at the tabs for the triggers
 LOST = "lost: the sysop restarted while this goal was in flight (goals in flight are not kept)"
 
 
@@ -70,12 +79,14 @@ class Goal:
         self.say, self.calls, self.pending = [], [], None
         self.summary, self.error, self.note, self.steps = "", "", "", 0
         self.brain = {}
+        self.steer_into = None       # the running goal this one was given to (steering), while it waits for the brain to take it
+        self.automation = None       # the automation that started it
         self._written = None
 
     def as_dict(self):
         return {"id": self.id, "source": self.source, "text": self.text, "state": self.state, "created": self.created, "started": self.started,
                 "ended": self.ended, "say": self.say, "calls": self.calls, "pending": self.pending, "summary": self.summary, "error": self.error,
-                "note": self.note, "steps": self.steps, "brain": self.brain}
+                "note": self.note, "steps": self.steps, "brain": self.brain, "automation": self.automation}
 
 
 def running(paths):
@@ -132,6 +143,11 @@ class Service:
         self.lock_fd = None
         self.reader = None
         self.popen = popen
+        self.runtime = brain.Runtime(log=self.log, popen=popen or subprocess.Popen, clock=clock)
+        self.steering = []             # goals given to the running goal (steer.jsonl of its folder), until it takes them or ends
+        self.auto_goal = {}            # automation id -> the id of its last goal (one goal of an automation at a time)
+        self.watch = automod.TriggerWatch()
+        self.watcher = None
         self.sandbox_state = self.sandbox()
         self.housekeeping = None       # a callable the main loop runs every HOUSEKEEPING seconds (the daemon's log rotation: cli.py)
         self._retried = 0.0
@@ -187,6 +203,8 @@ class Service:
             self.prune()
             self.reader = threading.Thread(target=self.read_goals, name="sysop-reader", daemon=True)
             self.reader.start()
+            self.watcher = threading.Thread(target=self.watch_automations, name="sysop-automations", daemon=True)
+            self.watcher.start()
             self.status()
             self._ready.set()
             self.log("serving: autonomy %s, brain %s, topic %s, group %s, bus %s" % (self.cfg.autonomy, self.cfg.brain.split()[0], self.cfg.topic, self.cfg.group, self.paths.socket))
@@ -212,6 +230,10 @@ class Service:
                         self.cond.wait(min(5.0, 0.5 * fails))
         finally:
             self.shutdown()
+            try:
+                self.runtime.close()
+            except Exception as e:
+                self.log("cannot end the brain: %r" % e)
             self.status(final=True)
             for p in (self.paths.pidfile,):
                 ipc.remove(p)
@@ -349,11 +371,27 @@ class Service:
             reason = "the goal has %d characters, at most %d" % (len(text), MAX_GOAL_TEXT)
         else:
             with self.cond:
-                if len(self.queue) >= self.cfg.max_goals:
+                cur = self.current
+                if (cur is not None and cur.state in ("running", "waiting_approval") and source in INTERACTIVE and cur.source in INTERACTIVE
+                        and not self.queue):
+                    goal.text = text.strip()
+                    goal.steer_into = cur.id
+                    self.steering.append(goal)
+                elif len(self.queue) >= self.cfg.max_goals:
                     reason = "the queue is full (%d goals wait): this goal was dropped" % self.cfg.max_goals
                 else:
                     goal.text = text.strip()
                     self.queue.append(goal)
+            if goal.steer_into:
+                try:
+                    ipc.append_jsonl(os.path.join(self.paths.goal_dir(goal.steer_into), "steer.jsonl"),
+                                     {"id": goal.id, "t": self.clock(), "source": source, "text": goal.text})
+                except OSError as e:
+                    self.log("goal %s: cannot pass it to the running goal (%s): it waits for its turn" % (gid, e))
+                    with self.cond:
+                        self.steering.remove(goal)
+                        self.queue.append(goal)
+                        goal.steer_into = None
         if reason:
             self.rejected += 1
             goal.text = goal.text[:200]           # a rejected goal does not keep its text (a goal of 1 MiB, a hundred times, would fill the disk)
@@ -422,6 +460,8 @@ class Service:
         with self.cond:
             if target is None:
                 dropped, self.queue = list(self.queue), collections.deque()
+                dropped += self.steering
+                self.steering = []
             else:
                 dropped = [g for g in self.queue if g.id == target]
                 self.queue = collections.deque(g for g in self.queue if g.id != target)
@@ -442,6 +482,8 @@ class Service:
     def refresh(self, goal):
         """Rebuild the live parts of the state of a running goal from the files of the MCP server; write it when it changed."""
         gdir = self.paths.goal_dir(goal.id)
+        if self.steering:
+            self.settle_steering(goal, final=False)
         goal.say = [{"t": x.get("t"), "text": x.get("text")} for x in ipc.read_jsonl(os.path.join(gdir, "say.jsonl"))][-20:]
         calls = ipc.read_jsonl(os.path.join(gdir, "calls.jsonl"))
         goal.steps = sum(1 for c in calls if c.get("tool") not in FREE_TOOLS)
@@ -476,29 +518,35 @@ class Service:
         events.emit("state", state="running", source=goal.source, text=goal.text[:4000])
         host = None
         try:
+            self.status()             # first: whoever sees the goal running (state.json) finds it current in status.json too
             self.write_goal(goal)
             aud.append("state", state="running")
-            self.status()
             deadline = (goal.started + self.cfg.max_seconds) if (self.cfg.max_seconds and self.cfg.max_seconds > 0) else None
             ctx = os.path.join(gdir, "context.json")
             ipc.write_json(ctx, {"goal": goal.id, "source": goal.source, "goal_dir": gdir, "audit": self.paths.audit,
                                  "autonomy": self.cfg.autonomy, "countdown": self.cfg.countdown, "approval_timeout": self.cfg.approval_timeout,
                                  "max_steps": self.cfg.max_steps, "deadline": deadline})
-            mcp = os.path.join(gdir, "mcp.json")
-            # the MCP server runs here, outside the brain's sandbox; the brain starts only the proxy that reaches its socket
-            sock = self.paths.mcp_socket(goal.id)
+            resident = brain.is_resident(self.cfg.brain)
+            # the MCP server runs here, outside the brain's sandbox; the brain starts only the proxy that reaches its socket. One server
+            # per goal, also for a resident brain: its proxy reconnects to the stable socket of the brain at each goal
+            sock = self.paths.mcp_socket("brain" if resident else goal.id)
             host = brain.McpHost(sock, brain.server_env(ctx, self.paths, self.libdir), events, self.log)
             host.start()
-            brain.write_mcp_config(mcp, ctx, self.paths, self.libdir, socket_path=sock)
-            pfile = os.path.join(gdir, "system-prompt.txt")
-            with open(pfile, "w", encoding="utf-8") as f:
-                f.write(brain.system_prompt(goal.source, self.cfg.max_steps, self.cfg.max_seconds, self.cfg.autonomy))
-            os.chmod(pfile, 0o600)
             prev_sid = history.session_id(self.paths)
-            argv, env = brain.build(self.cfg, gdir, mcp, goal.source, pfile, session_id=prev_sid)
             opts = brain.options(self.cfg.brain)
             resuming = bool(prev_sid and opts["resume"])
             home = brain.prepare_home(self.paths.brain_home)
+            if resident:
+                start_error = self.ensure_runtime(prev_sid, opts, home, sock)
+            else:
+                start_error = None
+                mcp = os.path.join(gdir, "mcp.json")
+                brain.write_mcp_config(mcp, ctx, self.paths, self.libdir, socket_path=sock)
+                pfile = os.path.join(gdir, "system-prompt.txt")
+                with open(pfile, "w", encoding="utf-8") as f:
+                    f.write(brain.system_prompt(goal.source, self.cfg.max_steps, self.cfg.max_seconds, self.cfg.autonomy))
+                os.chmod(pfile, 0o600)
+                argv, env = brain.build(self.cfg, gdir, mcp, goal.source, pfile, session_id=prev_sid)
             kw = {"popen": self.popen} if self.popen else {}
 
             def stop_check():
@@ -532,19 +580,33 @@ class Service:
                     before = ""
                 if before:
                     parts.append(before)
+            extra = self.memory_block()
+            if extra:
+                parts.append(extra)
             note = history.stop_note(self.paths) if resuming else ""
             if note:
                 # the session of a stopped goal may hold a call that ran as refused (docs/sysop-brain-design.md 7): the host's record wins
                 parts.append("[note from the host: the previous goal was stopped by the user. These actions DID run (or failed) whatever your "
                              "own record of that goal says; do not run them again unless the user asks:\n" + note + "\n]")
             history.save_stop_note(self.paths, "")
-            if parts:
+            if resident:
+                # the system prompt of a resident brain is fixed for the life of its process: the source of each goal comes with it,
+                # first, so a message never starts with a slash command either
+                heard = "[" + brain.source_note(goal.source) + "]\n\n" + "\n\n".join(parts + ["The goal now (" + goal.source + "):\n" + goal.text])
+            elif parts:
                 heard = "\n\n".join(parts) + "\n\nThe goal now (" + goal.source + "):\n" + goal.text
             else:
                 heard = goal.text
-            res = brain.run(self.cfg, heard, goal.source, gdir, argv, env, stop_check, lambda: self.refresh(goal), deadline,
-                            clock=self.clock, on_start=on_start, opts=opts, home=home, events=events, sandbox=self.sandbox() != "off",
-                            log=self.log, **kw)
+            if resident and start_error:
+                res = brain.Result("failed", start_error)
+            elif resident:
+                on_start(self.runtime.proc.pid)
+                res = self.runtime.run_goal(self.cfg, heard, gdir, stop_check, lambda: self.refresh(goal), deadline, events, opts,
+                                            clock=self.clock, log=self.log)
+            else:
+                res = brain.run(self.cfg, heard, goal.source, gdir, argv, env, stop_check, lambda: self.refresh(goal), deadline,
+                                clock=self.clock, on_start=on_start, opts=opts, home=home, events=events, sandbox=self.sandbox() != "off",
+                                log=self.log, **kw)
             if res.session_id:
                 history.save_session_id(self.paths, res.session_id)
             elif resuming and res.outcome == "failed" and re.search(r"session|resume|conversation", res.error or "", re.I):
@@ -560,6 +622,7 @@ class Service:
             if host is not None:
                 host.stop()
         goal.state, goal.ended, goal.error, goal.note = res.outcome, self.clock(), res.error, res.note
+        self.settle_steering(goal, final=True)
         if self.stopping and res.outcome == "stopped":
             goal.error = "the sysop service was stopped"
         if res.summary:
@@ -588,6 +651,208 @@ class Service:
         aud.append("state", state=goal.state, summary=goal.summary, error=goal.error)
         self.log("goal %s: %s%s" % (goal.id, goal.state, (" (%s)" % goal.error) if goal.error else ""))
         self.current, self.stop_current = None, False
+
+    # ---- steering (docs/sysop-automations-design.md 6)
+    def settle_steering(self, goal, final):
+        """The goals given to `goal` while it ran: one the brain took (steer.delivered.json) ends done; at the end of `goal`, one it never
+        took runs as a goal of its own, first in the queue."""
+        got = ipc.read_json(os.path.join(self.paths.goal_dir(goal.id), "steer.delivered.json"))
+        taken = set(got.get("ids") or []) if isinstance(got, dict) else set()
+        with self.cond:
+            mine = [g for g in self.steering if g.steer_into == goal.id]
+            done = [g for g in mine if g.id in taken]
+            back = [g for g in mine if g.id not in taken] if final else []
+            self.steering = [g for g in self.steering if g not in done and g not in back]
+            for g in reversed(back):
+                g.steer_into = None
+                self.queue.appendleft(g)
+            if back:
+                self.cond.notify_all()
+        for g in done:
+            g.state, g.ended, g.started = "done", self.clock(), g.created
+            g.summary = "Passed to the goal that was running."
+            g.note = "steered into %s" % goal.id
+            self.write_goal(g)
+            self.audit.bind(g.id, g.source).append("state", state="done", why="given to the running goal %s" % goal.id)
+        for g in back:
+            self.audit.bind(g.id, g.source).append("state", state="queued", why="the running goal ended before it took it")
+        if done or back:
+            self.status()
+
+    def memory_block(self):
+        """What the brain keeps outside its session, at the start of each goal: its notes (names and first lines) and the automations."""
+        out = []
+        try:
+            idx = notes.index(self.paths)
+        except OSError:
+            idx = ""
+        if idx:
+            out.append("[your notes (the `note` tool reads one in full):\n" + idx + "\n]")
+        try:
+            live = [automod.describe(x) for x in automod.load(self.paths)["items"] if x.get("state") in ("active", "paused")]
+        except (OSError, ValueError):
+            live = []
+        if live:
+            out.append("[your automations (schedule / trigger list, cancel, pause, resume):\n" + "\n".join("- " + x for x in live[:20]) + "\n]")
+        return "\n\n".join(out)
+
+    # ---- automations (docs/sysop-automations-design.md 2)
+    def auto_busy(self, aid):
+        """True when the last goal of an automation still waits or runs."""
+        gid = self.auto_goal.get(aid)
+        if not gid:
+            return False
+        with self.cond:
+            if any(g.id == gid for g in self.queue):
+                return True
+        return self.current is not None and self.current.id == gid
+
+    def auto_event(self, x, phase, **fields):
+        from .autoname import append_system_event
+        append_system_event(os.path.join(self.paths.state, "system_events.jsonl"), "automation", clock=self.clock, phase=phase, auto=x["id"],
+                            text=automod.describe(x), **fields)
+        self.audit.append("automation", action=phase, id=x["id"], **fields)
+
+    def enqueue_auto(self, x, reason):
+        """A goal of the automation x, in the queue. False when the queue is full (the run is skipped)."""
+        source = "schedule" if x.get("kind") == "schedule" else "trigger"
+        gid = self.new_id("%s-%s-%d" % (x["id"], source[0], int(self.clock())))
+        goal = Goal(gid, source, automod.frame(x, reason, self.clock()), self.clock)
+        goal.automation = x["id"]
+        pathsmod.private_dir(self.paths.goal_dir(gid))
+        with self.cond:
+            if len(self.queue) >= self.cfg.max_goals:
+                return False
+            self.queue.append(goal)
+            self.auto_goal[x["id"]] = gid
+            self.cond.notify_all()
+        aud = self.audit.bind(gid, source)
+        aud.append("goal", text=goal.text, automation=x["id"])
+        self.write_goal(goal)
+        aud.append("state", state="queued", queue=len(self.queue))
+        self.status()
+        return True
+
+    def run_schedules(self):
+        """Fire the schedules that are due and end what is over. The record is read without the lock; it is taken (and the file written)
+        only when something is due or over, so a quiet box writes nothing."""
+        now = self.clock()
+        try:
+            look = automod.load(self.paths)
+        except (OSError, ValueError):
+            return
+        if not automod.due(look, now) and not automod.over(look, now):
+            return
+        fired, ended, skipped = [], [], []
+
+        def fn(d):
+            ended.extend(automod.expire(d, now))
+            for x in automod.due(d, now):
+                if self.auto_busy(x["id"]):
+                    automod.skip_schedule(x, now)
+                    skipped.append(dict(x))
+                    continue
+                ok = self.enqueue_auto(x, "")
+                if ok:
+                    automod.ran(x, now)
+                    fired.append(dict(x))
+                else:
+                    automod.skip_schedule(x, now)
+                    skipped.append(dict(x, why_skipped="the queue is full"))
+                if x.get("state") == "ended":
+                    ended.append(x)
+            automod.prune(d, now)
+        try:
+            automod.update(self.paths, fn)
+        except (OSError, ValueError) as e:
+            self.log("automations: %s" % e)
+            return
+        for x in fired:
+            self.auto_event(x, "fired")
+        for x in skipped:
+            self.auto_event(x, "skipped", why=x.get("why_skipped") or "its last goal still runs")
+        for x in ended:
+            self.auto_event(x, "ended", why=x.get("why", ""))
+            self.watch.forget(x["id"])
+
+    def watch_automations(self):
+        """The thread of the automations, apart from the goals (a schedule is due, and a tab changes, while a goal runs too): every
+        TRIGGER_EVERY seconds the schedules that are due, and, while a trigger is active, a look at the tabs (and at the screen of a tab a
+        text trigger watches). What fires becomes a goal of the queue."""
+        tabs = tabsclient.Tabs(read_timeout=5.0)
+        while not self.stopping:
+            try:
+                self.run_schedules()
+            except Exception as e:
+                self.log("schedules: %r" % e)
+            try:
+                self.look_triggers(tabs)
+            except Exception as e:      # a look that fails (herdr-core away) is tried again at the next turn
+                self.log("triggers: %r" % e)
+            with self.cond:
+                if not self.stopping:
+                    self.cond.wait(TRIGGER_EVERY)
+
+    def look_triggers(self, tabs):
+        try:
+            d = automod.load(self.paths)
+        except (OSError, ValueError):
+            return
+        live = [x for x in d["items"] if x.get("kind") == "trigger" and x.get("state") == "active"]
+        if not live:
+            return
+        rows = {t["tab"]: t for t in tabs.list_tabs() if isinstance(t, dict) and t.get("tab")}
+        now = self.clock()
+        hits = []
+        for x in live:
+            row = rows.get(x.get("tab"))
+            screen = None
+            if x.get("when") == "text" and row is not None:
+                try:
+                    screen = (tabs.screen(x["tab"]) or {}).get("text", "")
+                except tabsclient.TabsError:
+                    screen = None
+            reason = self.watch.look(x, row, screen, now)
+            if reason:
+                hits.append((x["id"], reason))
+            elif row is None and x.get("when") != "gone":
+                hits.append((x["id"], None))       # its tab is gone: the trigger ends
+        if not hits:
+            return
+        fired, ended, skipped = [], [], []
+
+        def fn(d2):
+            for aid, reason in hits:
+                try:
+                    x = automod.find(d2, aid)
+                except automod.AutomationError:
+                    continue
+                if x.get("state") != "active":
+                    continue
+                if reason is None:
+                    automod.end(x, now, "its tab is gone")
+                    ended.append(dict(x))
+                    continue
+                if self.auto_busy(aid) or not self.enqueue_auto(x, reason):
+                    x["last"] = now          # the cooldown starts again: a busy automation does not pile up goals
+                    skipped.append(dict(x))
+                    continue
+                automod.ran(x, now)
+                fired.append(dict(x, reason=reason))
+                if x.get("state") == "ended":
+                    ended.append(dict(x))
+        automod.update(self.paths, fn)
+        for x in fired:
+            self.auto_event(x, "fired", reason=x["reason"])
+        for x in skipped:
+            self.auto_event(x, "skipped", why="its last goal still runs")
+        for x in ended:
+            self.auto_event(x, "ended", why=x.get("why", ""))
+            self.watch.forget(x["id"])
+
+    def ensure_runtime(self, sid, opts, home, sock):
+        """The resident brain on the conversation's session (brain.Runtime.ensure). None, or why it cannot start."""
+        return self.runtime.ensure(self.cfg, opts, home, sock, self.paths, self.libdir, sid, sandbox=self.sandbox() != "off")
 
     def refresh_final(self, goal):
         gdir = self.paths.goal_dir(goal.id)

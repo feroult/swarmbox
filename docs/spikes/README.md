@@ -13,3 +13,6 @@ Facts about tmux: the active tab with several clients, addressing, capture and t
 
 ## bus: works
 The broker and its CLI: asyncio, a unix socket, line-delimited JSON, round-robin `goal`, no ack, 13 ms per CLI call. Tests with 0 failures on the host and in a container; the entrypoint step and host forwarding are designed but not written. Report: [bus.md](bus.md). Code: `dev/spikes/bus/` (`swarmbox-bus`, `test_bus.py`).
+
+## resident-brain: works
+A brain that stays alive between goals (2026-11-27). ACP drove Claude Code (through a third-party adapter), Antigravity and Codex: cancel, resume after a kill and memory work in all three, but only Claude Code could be held to the sysop's tools. Claude Code's own `--input-format stream-json` does the same with the flags the sysop already used: an interrupt ends a turn in 0.01 s and the model's record is true, a resume after kill -9 remembers. Report: [resident-brain.md](resident-brain.md). Code: `dev/spikes/resident-brain/` (`fake_mcp.py`, `acp_spike.py`, `stream_spike.py`).

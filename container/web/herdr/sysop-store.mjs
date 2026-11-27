@@ -325,10 +325,23 @@ function buildGoalTurn(gdir, gid, goal, isCurrent) {
     ? String(lastCall.args.tab || lastCall.args.name || '').slice(0, 40)
     : '';
 
+  // a goal of a schedule or a trigger: its first line is the frame the sysop wrote ("[automation a3 (every 10 min, run 4 ...): what changed]"),
+  // shown apart from the prompt, never as words of the user
+  const source = String(goal.source || 'web');
+  let prompt = String(goal.text || '').trim();
+  let autoHead = '';
+  if ((source === 'schedule' || source === 'trigger') && prompt.startsWith('[automation ')) {
+    const nl = prompt.indexOf('\n');
+    autoHead = (nl > 0 ? prompt.slice(0, nl) : prompt).replace(/^\[automation /, '').replace(/\]$/, '');
+    prompt = nl > 0 ? prompt.slice(nl + 1).trim() : '';
+  }
+
   return {
     id: gid,
-    source: String(goal.source || 'web'),
-    prompt: String(goal.text || '').trim(),
+    source,
+    automation: String(goal.automation || ''),
+    auto_head: autoHead,
+    prompt,
     state: String(goal.state || (running ? 'running' : 'done')),
     started: Number(goal.started || goal.created || 0) * 1000,
     ended: Number(goal.ended || 0) * 1000,
@@ -494,6 +507,54 @@ export function contextRepoTop(key) {
   return top && path.isAbsolute(top) && fs.existsSync(top) ? top : '';
 }
 
+// The notes the sysop keeps across conversations (notes.py): what it remembers, shown so nothing of it is hidden
+export function readNotes(stateSysop) {
+  const dir = path.join(stateSysop, 'notes');
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((f) => /^[a-z0-9][a-z0-9_-]{0,39}\.md$/.test(f)); } catch (_) { return []; }
+  const out = [];
+  for (const f of names.sort().slice(0, 50)) {
+    try {
+      const full = path.join(dir, f);
+      const text = fs.readFileSync(full, 'utf8');
+      out.push({
+        name: f.slice(0, -3),
+        preview: text.split('\n').map((l) => l.trim().replace(/^[-*]\s*/, '')).filter(Boolean).join(' / ').slice(0, 240),
+        at: fs.statSync(full).mtimeMs,
+      });
+    } catch (_) {}
+  }
+  return out;
+}
+
+// The schedules and triggers of the sysop (automations.py): the live ones, and the ones that ended in the last 6 hours (newest first)
+export function readAutomations(stateSysop, nowSec = Date.now() / 1000) {
+  const d = readJsonSafe(path.join(stateSysop, 'automations.json'));
+  const items = d && Array.isArray(d.items) ? d.items : [];
+  const out = [];
+  for (const x of items) {
+    if (!x || typeof x !== 'object' || !/^a\d{1,6}$/.test(String(x.id || ''))) continue;
+    const st = ['active', 'paused', 'ended'].includes(x.state) ? x.state : 'ended';
+    if (st === 'ended' && nowSec - Number(x.ended || 0) > 6 * 3600) continue;
+    out.push({
+      id: String(x.id),
+      kind: x.kind === 'trigger' ? 'trigger' : 'schedule',
+      state: st,
+      desc: String(x.desc || ''),
+      prompt: String(x.prompt || '').slice(0, 600),
+      runs: Number(x.runs || 0),
+      next: Number(x.next || 0) * 1000,
+      last: Number(x.last || 0) * 1000,
+      expires: Number(x.expires || 0) * 1000,
+      tab: String(x.tab || ''),
+      why: String(x.why || ''),
+      ended: Number(x.ended || 0) * 1000,
+    });
+  }
+  const rank = { active: 0, paused: 1, ended: 2 };
+  return out.sort((a, b) => rank[a.state] - rank[b.state] || b.ended - a.ended || a.id.localeCompare(b.id)).slice(0, 30);
+}
+
 export function readSysopSnapshot(terminals) {
   const runSysop = path.join(SB_RUN_DIR, 'sysop');
   const stateSysop = path.join(SB_STATE_DIR, 'sysop');
@@ -507,6 +568,7 @@ export function readSysopSnapshot(terminals) {
 
   let goal = null;
   let pending = null;
+  let question = null;
   const steps = [];
   const turns = [];
   const nowSec = Date.now() / 1000;
@@ -543,6 +605,9 @@ export function readSysopSnapshot(terminals) {
         if (turn.running) {
           const p = readJsonSafe(path.join(item.gdir, 'pending_action.json'));
           if (p && typeof p === 'object' && p.id) pending = p;
+          // an `ask` of the brain (mcpserver.t_ask): the question and its options, until it is answered or its time ends
+          const q = readJsonSafe(path.join(item.gdir, 'pending_question.json'));
+          if (q && typeof q === 'object' && q.id && Number(q.deadline || 0) > nowSec) question = q;
         }
         // Keep legacy flat steps[] populated for Terminal Cockpit compatibility
         if (turn.prompt) steps.push({ ts: turn.started, kind: 'goal', text: turn.prompt });
@@ -644,6 +709,10 @@ export function readSysopSnapshot(terminals) {
           skipped: Boolean(ev.skipped),
           off: Boolean(ev.off),
           failed: Boolean(ev.failed),
+          // notify (a message of the brain for the user) and automation (a schedule or a trigger fired, was skipped or ended)
+          level: String(ev.level || ''),
+          auto: String(ev.auto || ''),
+          why: String(ev.why || ''),
         };
         allEvents.push(row);
         if (!(sinceSec && ts > 0 && ts < sinceSec)) systemEvents.push(row);
@@ -669,6 +738,17 @@ export function readSysopSnapshot(terminals) {
         }
       : null,
     queue_len: queue.length,
+    question: question
+      ? {
+          id: String(question.id),
+          goal: String(question.goal || gid),
+          question: String(question.question || ''),
+          options: Array.isArray(question.options) ? question.options.map((o) => String(o)).slice(0, 4) : [],
+          deadline: Number(question.deadline || 0),
+        }
+      : null,
+    automations: up ? readAutomations(stateSysop, nowSec) : [],
+    notes: up ? readNotes(stateSysop) : [],
     turns,
     system_events: systemEvents.slice(-30),
     // the Events tab: what the sysop did by itself, not cut by New conversation (session records are for the cards)

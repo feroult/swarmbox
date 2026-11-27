@@ -33,6 +33,7 @@ AREAS = {
     ),
     "sysop": (
         "test_sysop_addon.py",
+        "test_sysop_automations.py",
         "test_sysop_autoname_worktree.py",
         "test_sysop_brain.py",
         "test_sysop_bus.py",

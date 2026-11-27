@@ -21,6 +21,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import threading
 import unittest
 from unittest import mock
@@ -736,6 +737,40 @@ assert.equal((fs.statSync(process.env.XDG_STATE_HOME + '/swarmbox/sysop/conversa
         p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, env=env)
         self.assertEqual(p.returncode, 0, p.stderr)
 
+    def test_the_panel_reads_the_automations_and_the_notes_of_the_sysop(self):
+        """sysop-store.mjs: the live schedules and triggers (ended ones for 6 hours, newest first) and the notes, with the line the sysop
+        wrote for each (docs/sysop-automations-design.md)"""
+        if not shutil.which("node"):
+            self.skipTest("node is not installed")
+        state = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, state, True)
+        sysop = os.path.join(state, "sysop")
+        os.makedirs(os.path.join(sysop, "notes"))
+        now = time.time()
+        with open(os.path.join(sysop, "automations.json"), "w", encoding="utf-8") as f:
+            json.dump({"seq": 4, "items": [
+                {"id": "a1", "kind": "schedule", "state": "active", "desc": "a1 [active] every 10 min, 2 runs", "prompt": "look at agy", "runs": 2, "next": now + 60},
+                {"id": "a2", "kind": "trigger", "state": "ended", "desc": "a2 [ended] when 1:api becomes blocked", "prompt": "p", "ended": now - 8 * 3600},
+                {"id": "a3", "kind": "trigger", "state": "paused", "desc": "a3 [paused] when 1:api shows /FAILED/", "prompt": "p"},
+                {"id": "../x", "kind": "schedule", "state": "active"}]}, f)
+        with open(os.path.join(sysop, "notes", "agy-quota.md"), "w", encoding="utf-8") as f:
+            f.write("- quota resets at 14:00\n- then tell it to go on\n")
+        with open(os.path.join(sysop, "notes", "Bad Name.md"), "w", encoding="utf-8") as f:
+            f.write("x\n")
+        js = r"""
+import assert from 'node:assert/strict';
+import { readAutomations, readNotes } from %s;
+const a = readAutomations(%s);
+assert.deepEqual(a.map((x) => [x.id, x.state]), [['a1', 'active'], ['a3', 'paused']], 'an automation ended 8 h ago and a bad id are left out');
+assert.equal(a[0].desc, 'a1 [active] every 10 min, 2 runs');
+assert.ok(a[0].next > Date.now(), 'times in milliseconds for the page');
+const n = readNotes(%s);
+assert.deepEqual(n.map((x) => x.name), ['agy-quota'], 'only the names the sysop writes');
+assert.equal(n[0].preview, 'quota resets at 14:00 / then tell it to go on');
+""" % (json.dumps(os.path.join(ROOT, "container", "web", "herdr", "sysop-store.mjs")), json.dumps(sysop), json.dumps(sysop))
+        p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
     def test_tab_references_in_a_reply_are_one_chip_each(self):
         """public/tabrefs.js: every way a reply names a tab resolves to the same tab, with its name as the page shows it (the replies of a real
         session wrote `t2`, t3, `1:shell` and "`escritorio` (t8)" in one conversation, and only some of them were highlighted)"""
@@ -761,6 +796,7 @@ assert.equal(show('voltou ao shell; SwarmBox em ~/swarmbox/x.py e swarmbox.md'),
 assert.equal(show('`main`: 24 testes passaram, 2 failed, 0 failed'), '<code:main>: <ok:24 testes passaram>, <bad:2 failed>, <ok:0 failed>');
 assert.equal(show('swarmbox'), '[swarmbox]');
 assert.equal(show('- `9:escritorio`: fresh; and 7:gone'), '- [escritorio*]: fresh; and [gone*]', 'a numbered label of a tab this page never saw is still a chip, by its name');
+assert.equal(show('Agendado: em 1 minuto (2026-11-27 13:24), de novo às `14:05`'), 'Agendado: em 1 minuto (2026-11-27 13:24), de novo às <code:14:05>', 'a time is never a numbered label');
 assert.equal(show('**Resumo:** **swarmbox** e **`sabrina`** ok'), '<bold:Resumo:> [swarmbox] e [sabrina] ok', 'markdown bold renders cleanly and bold tab names become chips');
 """ % json.dumps(os.path.join(ROOT, "container", "web", "herdr", "public", "tabrefs.js"))
         p = subprocess.run(["node", "-e", js], capture_output=True, text=True)

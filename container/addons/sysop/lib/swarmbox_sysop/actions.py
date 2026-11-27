@@ -75,3 +75,39 @@ def publish_goal(bus, text, source="cli", topic=None):
         raise ValueError("%d characters, at most %d" % (len(text), service.MAX_GOAL_TEXT))
     rep = bus.pub(topic or config.goal_topic(), {"text": text}, source)
     return service.sanitize(rep.get("id"), ""), rep
+
+
+def question_of(pth):
+    """(goal id, the question the running goal asks) or (id or "", None) (mcpserver.t_ask: pending_question.json)."""
+    gid, _ = pending_of(pth)
+    if not gid:
+        return "", None
+    q = ipc.read_json(os.path.join(pth.goal_dir(gid), "pending_question.json"))
+    return gid, (q if isinstance(q, dict) and q.get("id") else None)
+
+
+def answer(pth, text, qid=None, by="cli", wall=None):
+    """Answer the question the running goal asks. Returns ActionResult."""
+    text = str(text or "").strip()
+    if not text:
+        return ActionResult(False, 2, "the answer is empty")
+    gid, q = question_of(pth)
+    if not q or not is_live(q, wall) or (qid and str(q["id"]) != qid):
+        return ActionResult(False, 1, "no question is waiting for an answer")
+    try:
+        ipc.write_json(os.path.join(pth.goal_dir(gid), "answer.json"), {"id": str(q["id"]), "answer": text[:1000], "by": by})
+    except OSError as e:
+        return ActionResult(False, 1, "could not write the answer: %s" % (e.strerror or e))
+    return ActionResult(True, 0, "answered")
+
+
+def automation(pth, aid, action, by="the user"):
+    """Pause, resume or cancel an automation (automations.py). Returns ActionResult."""
+    from . import automations
+    if action not in ("pause", "resume", "cancel"):
+        return ActionResult(False, 2, "the action is pause, resume or cancel")
+    try:
+        x = automations.update(pth, lambda d: automations.set_state(d, aid, action, time.time(), who=by))
+    except automations.AutomationError as e:
+        return ActionResult(False, 1, str(e))
+    return ActionResult(True, 0, automations.describe(x))

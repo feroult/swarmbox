@@ -17,6 +17,9 @@ import sysop_support as ss  # noqa: E402
 
 from swarmbox_sysop import brain, config, ipc, paths  # noqa: E402
 
+# the preset run once per goal (brain.run): what a template without --input-format stream-json gets
+ONE_SHOT = brain.resolve_template("claude").replace(" --input-format stream-json", "")
+
 
 def alive(pid):
     try:
@@ -54,8 +57,17 @@ class Template(unittest.TestCase):
     def test_model_and_limits_follow_the_settings(self):
         argv, _ = brain.build(self.cfg(model="sonnet", max_steps=7), "/g", "/g/m", "cli")
         self.assertEqual(argv[argv.index("--model") + 1], "sonnet")
-        self.assertEqual(argv[argv.index("--max-turns") + 1], "10")
+        self.assertNotIn("--max-turns", argv, "a resident brain has no turn cap: the MCP server counts the steps of a goal")
         self.assertIn("at most 7 tool calls", argv[argv.index("--system-prompt") + 1])
+        argv, _ = brain.build(self.cfg(brain="b --cfg {mcp_config} --max-turns {max_turns}", max_steps=7), "/g", "/g/m", "cli")
+        self.assertEqual(argv[argv.index("--max-turns") + 1], "10", "a template of one goal per process still gets steps + 3")
+
+    def test_the_preset_is_resident_and_a_template_without_stream_input_is_not(self):
+        self.assertTrue(brain.is_resident("claude"))
+        self.assertTrue(brain.is_resident("auto"))
+        self.assertFalse(brain.is_resident(ONE_SHOT))
+        self.assertFalse(brain.is_resident("opencode run {mcp_config}"))
+        self.assertTrue(brain.is_resident("x --input-format=stream-json {mcp_config}"))
 
     def test_a_custom_template_with_env_and_placeholders(self):
         c = self.cfg(brain="OPENCODE_CONFIG={mcp_config} MODE=x opencode run --model {model} -- {goal_dir}", model="sonnet")
@@ -236,7 +248,7 @@ class RunBrain(unittest.TestCase):
         self.env_extra["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"] = p
 
     def go(self, goal="do it", mode=None, seconds=30, source="cli", brain_tpl=None, stop_when=None, **kw):
-        cfg = self.e.cfg(max_seconds=max(5, int(seconds)), **({"brain": brain_tpl} if brain_tpl else {}))
+        cfg = self.e.cfg(max_seconds=max(5, int(seconds)), brain=brain_tpl or ONE_SHOT, model="sonnet")
         ctx = os.path.join(self.gdir, "context.json")
         ipc.write_json(ctx, {"goal": "g1", "source": source, "goal_dir": self.gdir, "audit": self.pth.audit, "countdown": 0,
                              "max_steps": cfg.max_steps, "deadline": time.time() + seconds})

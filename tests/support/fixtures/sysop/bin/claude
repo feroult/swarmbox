@@ -14,6 +14,8 @@ SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT  JSON file: a list of steps {"tool": name, "arg
 Like the real CLI with --include-partial-messages, every tool call is also streamed as partial messages (content_block_start, input_json_delta
 in two chunks, content_block_stop) before the complete assistant message, and the call carries `_meta.claudecode/toolUseId` = the block id.
 SWARMBOX_TEST_FAKE_CLAUDE_SESSION the session id to report (init and result events); none when unset
+With --input-format stream-json it is resident, as the real CLI (resident_claude.py beside it): one turn per user message on stdin, an
+interrupt (control_request) ends the turn, a closed stdin ends the process; the LOG is written again at each message ("goals" counts them).
 SWARMBOX_TEST_FAKE_CLAUDE_MODE    script (default) | notloggedin (what the real CLI does: the line on stdout, exit 1) | notloggedin-json |
                                   crash (exit 3, a line on stderr) | hang (sleeps) | hang-ignore-term (sleeps, ignores SIGTERM) |
                                   quiet (a result event, exit 0, no done) | maxturns | badjson
@@ -26,15 +28,27 @@ import sys
 import time
 
 argv = sys.argv[1:]
-stdin = sys.stdin.read()
+RESIDENT = "--input-format" in argv and argv[argv.index("--input-format") + 1:argv.index("--input-format") + 2] == ["stream-json"]
 log = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_LOG")
-if log:
-    with open(log + ".tmp", "w") as f:            # written whole and renamed: a test that waits for the file never reads half of it
-        json.dump({"argv": argv, "stdin": stdin, "cwd": os.getcwd(), "pid": os.getpid(), "pgid": os.getpgid(0),
-                   "env": {k: v for k, v in os.environ.items() if k.startswith(("SWARMBOX_", "FOO", "SB_", "PATH"))},
-                   "env_names": sorted(os.environ), "home": os.environ.get("HOME", ""), "tmpdir": os.environ.get("TMPDIR", ""),
-                   "claude_config_dir": os.environ.get("CLAUDE_CONFIG_DIR", "")}, f)
-    os.replace(log + ".tmp", log)
+GOALS = [0]
+
+
+def write_log(stdin):
+    if log:
+        with open(log + ".tmp", "w") as f:            # written whole and renamed: a test that waits for the file never reads half of it
+            json.dump({"argv": argv, "stdin": stdin, "cwd": os.getcwd(), "pid": os.getpid(), "pgid": os.getpgid(0), "goals": GOALS[0],
+                       "env": {k: v for k, v in os.environ.items() if k.startswith(("SWARMBOX_", "FOO", "SB_", "PATH"))},
+                       "env_names": sorted(os.environ), "home": os.environ.get("HOME", ""), "tmpdir": os.environ.get("TMPDIR", ""),
+                       "claude_config_dir": os.environ.get("CLAUDE_CONFIG_DIR", "")}, f)
+        os.replace(log + ".tmp", log)
+
+
+if RESIDENT:
+    sys.dont_write_bytecode = True      # no __pycache__ in the repository (a worktree may live in the folders the host tests watch)
+    import resident_claude      # tests/support/fixtures/sysop/bin/resident_claude.py: the same steps, one turn per user message
+    sys.exit(resident_claude.main(argv, write_log, GOALS))
+stdin = sys.stdin.read()
+write_log(stdin)
 mode = os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_MODE") or "script"
 # SWARMBOX_TEST_FAKE_CLAUDE_SESSION: the session id the fake reports (as the real CLI does in its init and result events); none when unset
 SESSION = {"session_id": os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SESSION"]} if os.environ.get("SWARMBOX_TEST_FAKE_CLAUDE_SESSION") else {}

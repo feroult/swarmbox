@@ -3330,6 +3330,10 @@
 
   const ICO_BRANCH_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="11.5" cy="5.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/><path d="M4.5 5.3v5.4M11.5 7.3c0 2.5-7 1.8-7 3.4"/></svg>';
   const ICO_BOOK_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.2c1.9-.6 3.9-.4 5.5.8 1.6-1.2 3.6-1.4 5.5-.8v9.3c-1.9-.6-3.9-.4-5.5.8-1.6-1.2-3.6-1.4-5.5-.8Z"/><path d="M8 4v9.3"/></svg>';
+  const SVG16 = (d) => `<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const ICO_CLOCK_SVG = SVG16('<circle cx="8" cy="8" r="5.8"/><path d="M8 4.6V8l2.3 1.5"/>');
+  const ICO_BOLT_SVG = SVG16('<path d="M9 1.8 3.6 9h4l-1 5.2L12.4 7h-4Z"/>');
+  const ICO_BELL_SVG = SVG16('<path d="M4.2 11.2V7.4a3.8 3.8 0 0 1 7.6 0v3.8l1.2 1.3H3Z"/><path d="M6.6 13.6a1.5 1.5 0 0 0 2.8 0"/>');
   const ICO_PENCIL_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.2 2.4a1.6 1.6 0 0 1 2.3 2.3L5.6 12.6 2.5 13.5l.9-3.1 7.8-8Z"/></svg>';
 
   let serverHomeDir = '';
@@ -6604,6 +6608,107 @@
     if (wasVisible) requestAnimationFrame(fitAndResize);
   }
 
+  // ---- A question of the Sysop (its brain's `ask`, docs/sysop-automations-design.md 4): a button per option, or an answer of your own
+  const questionCardEl = document.getElementById('question-card');
+  const questionTextEl = document.getElementById('question-text');
+  const questionOptionsEl = document.getElementById('question-options');
+  const questionLeftEl = document.getElementById('question-left');
+  const questionFreeEl = document.getElementById('question-free');
+  const questionInputEl = document.getElementById('question-input');
+  let shownQuestionId = '';
+  let questionTimer = null;
+
+  function renderQuestionCard(sysop) {
+    if (!questionCardEl) return;
+    const q = sysop && sysop.question;
+    if (!q) {
+      if (shownQuestionId) {
+        shownQuestionId = '';
+        questionCardEl.classList.add('hidden');
+        clearInterval(questionTimer);
+        requestAnimationFrame(fitAndResize);
+      }
+      return;
+    }
+    if (q.id === shownQuestionId && !questionCardEl.classList.contains('hidden')) return;
+    shownQuestionId = q.id;
+    questionTextEl.textContent = q.question;
+    questionOptionsEl.innerHTML = '';
+    for (const opt of q.options || []) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'question-opt';
+      b.textContent = opt;
+      b.addEventListener('click', () => sendAnswer(q.id, opt));
+      questionOptionsEl.appendChild(b);
+    }
+    questionOptionsEl.classList.toggle('hidden', !(q.options || []).length);
+    questionInputEl.value = '';
+    questionCardEl.classList.remove('hidden');
+    clearInterval(questionTimer);
+    const tick = () => {
+      const left = Math.max(0, Math.round(q.deadline - Date.now() / 1000));
+      questionLeftEl.textContent = left > 90 ? `${Math.ceil(left / 60)} min left` : `${left}s left`;
+      if (left <= 0) clearInterval(questionTimer);
+    };
+    tick();
+    questionTimer = setInterval(tick, 1000);
+    if (isMobileLayout()) setMobileSysop(true);
+    requestAnimationFrame(fitAndResize);
+  }
+
+  async function sendAnswer(id, text) {
+    const answer = String(text || '').trim();
+    if (!answer) return;
+    const r = await fetch('/api/sysop/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, answer }) });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      showTermToast(data.message || 'The question is no longer waiting', 'error', 4000);
+      return;
+    }
+    questionCardEl.classList.add('hidden');
+    shownQuestionId = id;      // hidden until the snapshot drops it (or a new question comes)
+    clearInterval(questionTimer);
+    requestAnimationFrame(fitAndResize);
+  }
+  if (questionFreeEl) {
+    questionFreeEl.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (shownQuestionId) sendAnswer(shownQuestionId, questionInputEl.value);
+    });
+  }
+
+  // ---- Notifications of the Sysop (its brain's `notify`): a toast in every open Web Studio, and the browser's notification when it is allowed
+  // (Settings -> Sysop) and the page is not in front. Each one once per page: the newest time seen is kept in this browser.
+  const NOTIFY_SEEN_KEY = 'sb.sysop.notifySeen';
+  let notifySeen = -1;
+  try { notifySeen = Number(localStorage.getItem(NOTIFY_SEEN_KEY) || '-1'); } catch (_) { notifySeen = -1; }
+
+  function handleNotifications(sysop) {
+    const evs = (Array.isArray(sysop && sysop.events) ? sysop.events : []).filter((e) => e && e.kind === 'notify');
+    if (!evs.length) return;
+    const newest = Math.max(...evs.map((e) => e.ts || 0));
+    // the first look of this browser shows only what is very recent, not the backlog of the last hours
+    const floor = notifySeen < 0 ? Date.now() - 2 * 60 * 1000 : notifySeen;
+    const fresh = evs.filter((e) => (e.ts || 0) > floor && Date.now() - (e.ts || 0) < 10 * 60 * 1000).sort((a, b) => a.ts - b.ts);
+    if (newest > notifySeen) {
+      notifySeen = newest;
+      try { localStorage.setItem(NOTIFY_SEEN_KEY, String(newest)); } catch (_) {}
+    }
+    for (const ev of fresh) showSysopNotice(ev);
+  }
+
+  function showSysopNotice(ev) {
+    const urgent = ev.level === 'urgent';
+    showTermToast(`Sysop: ${ev.text}`, urgent ? 'error' : (ev.level === 'warn' ? 'warn' : 'ok'), urgent ? 0 : 9000);
+    try {
+      if ('Notification' in window && Notification.permission === 'granted' && (document.hidden || !document.hasFocus())) {
+        const n = new Notification('Sysop', { body: ev.text, tag: ev.id, requireInteraction: urgent });
+        n.onclick = () => { window.focus(); showSysopEvents(); n.close(); };
+      }
+    } catch (_) {}
+  }
+
   // ---- Sysop conversation (V2): one turn per goal, no nested boxes. The user's words in a bubble, the sysop's reply as plain text under a
   // "Sysop · N actions" line, and an action that waits for the user as a calm confirmation card inside the conversation.
   const openTurnActions = new Set();   // turn ids whose action list the user expanded (survives the 600 ms re-renders)
@@ -7024,7 +7129,29 @@
     el.dataset.state = turn.state || '';
     el.dataset.gid = turn.id || '';
 
-    if (turn.prompt) {
+    if (turn.source === 'schedule' || turn.source === 'trigger') {
+      // a goal the Sysop started itself (one of its automations): a line of its own, not a bubble of the user's words
+      const row = document.createElement('div');
+      row.className = 'turn-auto';
+      const ico = document.createElement('span');
+      ico.className = 'turn-auto-ico';
+      ico.innerHTML = turn.source === 'trigger' ? ICO_BOLT_SVG : ICO_CLOCK_SVG;
+      const txt = document.createElement('div');
+      txt.className = 'turn-auto-text';
+      const head = document.createElement('div');
+      head.className = 'turn-auto-head';
+      const m = /^(a\d+) \((.*)$/.exec(turn.auto_head || '');
+      head.textContent = `${turn.source === 'trigger' ? 'Trigger' : 'Schedule'} ${m ? m[1] : (turn.automation || '')} · ${m ? m[2].replace(/\)(: |$)/, '$1') : 'ran'}`;
+      const body = document.createElement('div');
+      body.className = 'turn-auto-prompt';
+      body.textContent = turn.prompt;
+      txt.append(head, body);
+      const meta = document.createElement('div');
+      meta.className = 'turn-meta';
+      meta.append(fmtAgo(turn.started));
+      row.append(ico, txt);
+      el.append(row, meta);
+    } else if (turn.prompt) {
       const ask = document.createElement('div');
       ask.className = 'turn-ask';
       const bubble = document.createElement('div');
@@ -7772,6 +7899,7 @@
     return evs.some((ev) => {
       if (eventsFilter.kind === 'context' && ev.kind !== 'autocontext') return false;
       if (eventsFilter.kind === 'names' && ev.kind !== 'autoname') return false;
+      if (eventsFilter.kind === 'auto' && ev.kind !== 'automation' && ev.kind !== 'notify') return false;
       if (eventsFilter.key && ev.key !== eventsFilter.key) return false;
       return true;
     });
@@ -7797,7 +7925,7 @@
     sysopEventsBadgeEl.classList.toggle('hidden', !failed);
     if (sysopTabEventsEl) sysopTabEventsEl.title = failed
       ? `${plural(failed, 'repository context')} failed: see why`
-      : 'What the Sysop did by itself: repository context, tab names';
+      : 'What the Sysop did by itself: repository context, tab names, schedules and triggers, notifications';
   }
 
   function makeChip(label, on, onClick) {
@@ -7815,7 +7943,9 @@
     renderEventsBadge();
     if (!sysopEventsEl || sysopView !== 'events') return;
     const evs = Array.isArray(sysop.events) ? sysop.events : [];
-    const key = JSON.stringify([evs, eventsFilter, sysopContext && sysopContext.repos, terminals.map((t) => [t.address, tabDisplayName(t)]),
+    const autos = Array.isArray(sysop.automations) ? sysop.automations : [];
+    const sysNotes = Array.isArray(sysop.notes) ? sysop.notes : [];
+    const key = JSON.stringify([evs, autos, sysNotes, eventsFilter, sysopContext && sysopContext.repos, terminals.map((t) => [t.address, tabDisplayName(t)]),
       Math.floor(Date.now() / 30000)]);
     if (key === lastEventsKey) return;
     lastEventsKey = key;
@@ -7826,7 +7956,8 @@
     const setKind = (kind) => () => { eventsFilter = { kind, key: kind === 'names' ? '' : eventsFilter.key }; lastEventsKey = ''; renderEvents(sysop); };
     bar.append(makeChip('All', eventsFilter.kind === 'all' && !eventsFilter.key, () => { eventsFilter = { kind: 'all', key: '' }; lastEventsKey = ''; renderEvents(sysop); }),
       makeChip('Context', eventsFilter.kind === 'context', setKind('context')),
-      makeChip('Tab names', eventsFilter.kind === 'names', setKind('names')));
+      makeChip('Tab names', eventsFilter.kind === 'names', setKind('names')),
+      makeChip('Automations', eventsFilter.kind === 'auto', setKind('auto')));
     if (eventsFilter.key) {
       const r = ctxRepoByKey(eventsFilter.key);
       bar.appendChild(makeChip(`${(r && r.repo) || 'repository'} ✕`, true, () => { eventsFilter = { kind: 'context', key: '' }; lastEventsKey = ''; renderEvents(sysop); }));
@@ -7835,6 +7966,8 @@
 
     const list = document.createElement('div');
     list.className = 'sysop-ev-list';
+    if (eventsFilter.kind === 'all' || eventsFilter.kind === 'auto') renderAutomations(list, autos);
+    if (eventsFilter.kind === 'all') renderSysopNotes(list, sysNotes);
     const items = eventItems(evs).filter(eventMatches);
     const now = items.filter(eventIsNow);
     const earlier = items.filter((it) => !eventIsNow(it));
@@ -7855,11 +7988,11 @@
     };
     section('Now', now);
     section(now.length ? 'Earlier' : 'Last 12 hours', earlier);
-    if (!items.length) {
+    if (!items.length && !list.querySelector('.sysop-auto, .sysop-note')) {
       const empty = document.createElement('div');
       empty.className = 'sysop-ev-empty';
       empty.textContent = eventsFilter.kind === 'all' && !eventsFilter.key
-        ? 'Nothing yet. When the Sysop writes the context of a repository or names a tab, it shows here.'
+        ? 'Nothing yet. When the Sysop writes the context of a repository, names a tab, runs a schedule or a trigger, or notifies you, it shows here.'
         : 'Nothing of this kind in the last 12 hours.';
       list.appendChild(empty);
     }
@@ -7868,6 +8001,101 @@
     foot.textContent = 'Each agent session shows its context on its card.';
     list.appendChild(foot);
     sysopEventsEl.appendChild(list);
+  }
+
+  // The schedules and triggers of the Sysop (docs/sysop-automations-design.md 2): what is live, with Pause, Resume and Cancel
+  function renderAutomations(list, autos) {
+    const live = autos.filter((a) => a.state !== 'ended');
+    if (!live.length) return;
+    const h = document.createElement('div');
+    h.className = 'sysop-ev-section';
+    h.textContent = 'Automations';
+    list.appendChild(h);
+    for (const a of live) {
+      const row = document.createElement('div');
+      row.className = `sysop-sysev sysop-auto is-${a.state}`;
+      const body = document.createElement('div');
+      body.className = 'sysop-sysev-body';
+      const ico = document.createElement('span');
+      ico.className = 'sysop-sysev-ico sysop-auto-ico';
+      ico.innerHTML = a.kind === 'trigger' ? ICO_BOLT_SVG : ICO_CLOCK_SVG;
+      const text = document.createElement('span');
+      text.className = 'sysop-sysev-text';
+      const desc = String(a.desc || '').replace(/^a\d+ \[[a-z]+\] /, '');
+      const head = desc.split(': ')[0];
+      text.append(head || a.kind);
+      const sub = document.createElement('span');
+      sub.className = 'sysop-sysev-sub';
+      sub.textContent = a.prompt;
+      sub.title = a.prompt;
+      text.appendChild(sub);
+      body.append(ico, text);
+      const meta = document.createElement('div');
+      meta.className = 'sysop-sysev-meta';
+      if (a.state === 'paused') {
+        const tag = document.createElement('span');
+        tag.className = 'sysop-sysev-state';
+        tag.textContent = 'paused';
+        meta.appendChild(tag);
+        meta.appendChild(evButton('Resume', 'Run it again', () => automationAction(a.id, 'resume')));
+      } else {
+        meta.appendChild(evButton('Pause', 'Keep it, but do not run it', () => automationAction(a.id, 'pause')));
+      }
+      meta.appendChild(evButton('Cancel', 'End it now', () => automationAction(a.id, 'cancel')));
+      row.append(body, meta);
+      list.appendChild(row);
+    }
+  }
+
+  // What the Sysop keeps across conversations (its notes): shown, and removable, so nothing it remembers is hidden
+  function renderSysopNotes(list, items) {
+    if (!items.length) return;
+    const h = document.createElement('div');
+    h.className = 'sysop-ev-section';
+    h.textContent = 'Notes';
+    h.title = 'What the Sysop keeps across conversations (New conversation keeps them)';
+    list.appendChild(h);
+    for (const n of items) {
+      const row = document.createElement('div');
+      row.className = 'sysop-sysev sysop-note';
+      const body = document.createElement('div');
+      body.className = 'sysop-sysev-body';
+      const ico = document.createElement('span');
+      ico.className = 'sysop-sysev-ico sysop-auto-ico';
+      ico.innerHTML = ICO_PENCIL_SVG;
+      const text = document.createElement('span');
+      text.className = 'sysop-sysev-text';
+      text.append(n.name);
+      const sub = document.createElement('span');
+      sub.className = 'sysop-sysev-sub';
+      sub.textContent = n.preview;
+      sub.title = n.preview;
+      text.appendChild(sub);
+      body.append(ico, text);
+      const meta = document.createElement('div');
+      meta.className = 'sysop-sysev-meta';
+      meta.appendChild(evButton('Delete', 'The Sysop forgets this note', async () => {
+        const r = await fetch('/api/sysop/note', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n.name, action: 'delete' }) });
+        const data = await r.json().catch(() => ({}));
+        showTermToast(r.ok ? `Forgot ${n.name}` : (data.message || 'It could not be deleted'), r.ok ? 'ok' : 'error', 2200);
+      }));
+      const ago = fmtAgo(n.at);
+      if (ago) {
+        const tm = document.createElement('span');
+        tm.className = 'sysop-sysev-time';
+        tm.textContent = ago;
+        meta.appendChild(tm);
+      }
+      row.append(body, meta);
+      list.appendChild(row);
+    }
+  }
+
+  async function automationAction(id, action) {
+    const r = await fetch('/api/sysop/automation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, action }) });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) showTermToast(data.message || 'It could not be changed', 'error', 4000);
+    else showTermToast({ pause: 'Paused', resume: 'Resumed', cancel: 'Cancelled' }[action] || 'Done', 'ok', 1800);
   }
 
   function evButton(label, title, onClick) {
@@ -7991,8 +8219,48 @@
     return row;
   }
 
+  // a notification the Sysop sent you, or a schedule / trigger that ran, was skipped or ended
+  function renderAutomationEventRow(ev) {
+    const row = document.createElement('div');
+    const phase = ev.kind === 'notify' ? `notify-${ev.level || 'info'}` : ev.phase || 'fired';
+    row.className = `sysop-sysev sysop-auto-ev is-${phase}`;
+    const body = document.createElement('div');
+    body.className = 'sysop-sysev-body';
+    const ico = document.createElement('span');
+    ico.className = 'sysop-sysev-ico sysop-auto-ico';
+    const text = document.createElement('span');
+    text.className = 'sysop-sysev-text';
+    const sub = document.createElement('span');
+    sub.className = 'sysop-sysev-sub';
+    const desc = String(ev.text || '').replace(/^a\d+ \[[a-z]+\] /, '');
+    if (ev.kind === 'notify') {
+      ico.innerHTML = ICO_BELL_SVG;
+      text.append(ev.text || 'A notification');
+      sub.textContent = ev.level === 'urgent' ? 'urgent notification' : ev.level === 'warn' ? 'warning' : 'notification';
+    } else {
+      ico.innerHTML = /^a\d+ \[[a-z]+\] when /.test(String(ev.text || '')) ? ICO_BOLT_SVG : ICO_CLOCK_SVG;
+      const words = { fired: 'Ran', skipped: 'Skipped a run of', ended: 'Ended' }[ev.phase] || 'Automation';
+      text.append(`${words} ${ev.auto || 'an automation'}`);
+      sub.textContent = ev.phase === 'fired' ? (ev.reason || desc.split(': ')[0]) : (ev.why || desc.split(': ')[0]);
+    }
+    if (sub.textContent) text.appendChild(sub);
+    body.append(ico, text);
+    const meta = document.createElement('div');
+    meta.className = 'sysop-sysev-meta';
+    const ago = fmtAgo(ev.ts);
+    if (ago) {
+      const tm = document.createElement('span');
+      tm.className = 'sysop-sysev-time';
+      tm.textContent = ago;
+      meta.appendChild(tm);
+    }
+    row.append(body, meta);
+    return row;
+  }
+
   function renderSystemEventRow(ev, opts = {}) {
     if (ev.kind === 'autocontext') return renderAutocontextRow(ev);
+    if (ev.kind === 'automation' || ev.kind === 'notify') return renderAutomationEventRow(ev);
     const row = document.createElement('div');
     const liveTab = ev.tab ? terminals.find((t) => t.address === ev.tab) : null;
     const isLive = Boolean(liveTab);
@@ -8259,6 +8527,8 @@
 
     renderSysopQueue(sysop.queue);
     renderApprovalCard(sysop);
+    renderQuestionCard(sysop);
+    handleNotifications(sysop);
     renderSysopFeed(sysop);
     syncContext(sysop);   // sets sysopContext (it compares with the last one: a rewrite seen to end)
     renderEvents(sysop);
@@ -9963,6 +10233,30 @@
       stagedHostConfig.has('sysop.autonomy') ? el('span', { class: 's-badge', text: 'edited' }) : null,
       policyGrid,
     ));
+
+    // Notifications of the Sysop (its brain's notify): the browser shows them when the page is not in front
+    const canNotify = 'Notification' in window;
+    const perm = canNotify ? Notification.permission : 'unsupported';
+    frag.appendChild(makeGroup('Notifications', null, el('div', { class: 's-card' }, [
+      el('div', { class: 's-row' }, [
+        el('div', { class: 's-row-info' }, [
+          el('div', { class: 's-row-title', text: 'Browser notifications' }),
+          el('div', {
+            class: 's-row-desc',
+            text: perm === 'granted' ? 'On: what the Sysop notifies you of shows even when this page is in the background.'
+              : perm === 'denied' ? 'Blocked by the browser for this site: allow notifications in the site settings of the browser.'
+                : perm === 'unsupported' ? 'This browser has no notifications (a page served over plain HTTP from another machine has none either).'
+                  : 'Let the Sysop reach you when this page is in the background (it always shows a toast in an open page).',
+          }),
+        ]),
+        perm === 'default' ? el('button', {
+          type: 'button',
+          class: 'sbtn-primary',
+          text: 'Allow',
+          onClick: () => { Notification.requestPermission().then(() => renderSettingsBody()).catch(() => {}); },
+        }) : null,
+      ]),
+    ])));
 
     // Brain, model & guardrails
     const guardCard = el('div', { class: 's-card' }, [

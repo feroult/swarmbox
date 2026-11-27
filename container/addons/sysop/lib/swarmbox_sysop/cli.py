@@ -274,6 +274,49 @@ def cmd_approve(_args):
     return res.rc
 
 
+def cmd_answer(args):
+    res = actions.answer(paths.Paths(), " ".join(args.text), qid=args.id, by="cli")
+    print("swarmbox-sysop: " + res.message, file=sys.stdout if res.ok else sys.stderr)
+    return res.rc
+
+
+def cmd_automations(args):
+    from . import automations
+    d = automations.load(paths.Paths())
+    items = [x for x in d["items"] if args.all or x.get("state") != "ended"]
+    if args.json:
+        print(json.dumps(items, indent=1))
+        return 0
+    for x in items:
+        print(automations.describe(x))
+    if not items:
+        print("no automations" if args.all else "no active automations (--all shows the ended ones)")
+    return 0
+
+
+def cmd_automation(args):
+    res = actions.automation(paths.Paths(), args.id, args.action, by="the user")
+    print("swarmbox-sysop: " + res.message, file=sys.stdout if res.ok else sys.stderr)
+    return res.rc
+
+
+def cmd_notes(args):
+    from . import notes
+    pth = paths.Paths()
+    try:
+        if args.action == "show":
+            sys.stdout.write(notes.read(pth, args.name))
+        elif args.action == "rm":
+            notes.delete(pth, args.name)
+            print("swarmbox-sysop: removed %s" % args.name)
+        else:
+            print(notes.index(pth, limit=100000) or "no notes")
+    except notes.NoteError as e:
+        print("swarmbox-sysop: %s" % e, file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_context(args):
     """`context [DIR]`: the digest of the commit of DIR, made now (it waits for the model); prints the file. 0 written or already there,
     1 not a repository or the call failed, 2 sysop.autocontext is off (a digest would be used although it is off). `--check` writes
@@ -358,12 +401,29 @@ def main(argv=None):
     for name, fn in (("veto", cmd_veto), ("approve", cmd_approve)):
         k = sub.add_parser(name)
         k.set_defaults(fn=fn)
+    an = sub.add_parser("answer", help="answer the question the running goal asks")
+    an.add_argument("--id", default=None)
+    an.add_argument("text", nargs="+")
+    an.set_defaults(fn=cmd_answer)
+    au = sub.add_parser("automations", help="list the schedules and triggers")
+    au.add_argument("--all", action="store_true")
+    au.add_argument("--json", action="store_true")
+    au.set_defaults(fn=cmd_automations)
+    a1 = sub.add_parser("automation", help="pause, resume or cancel one")
+    a1.add_argument("action", choices=("pause", "resume", "cancel"))
+    a1.add_argument("id")
+    a1.set_defaults(fn=cmd_automation)
+    no = sub.add_parser("notes", help="the sysop's notes: list, show NAME, rm NAME")
+    no.add_argument("action", nargs="?", choices=("list", "show", "rm"), default="list")
+    no.add_argument("name", nargs="?")
+    no.set_defaults(fn=cmd_notes)
     m = sub.add_parser("mcp")
     m.add_argument("--socket", default=None, help=argparse.SUPPRESS)
     m.set_defaults(fn=lambda a: mcpserver.main(socket_path=a.socket))
     mp = sub.add_parser("mcp-proxy", help=argparse.SUPPRESS)
     mp.add_argument("socket")
-    mp.set_defaults(fn=lambda a: mcpserver.proxy(a.socket))
+    mp.add_argument("--reconnect", action="store_true", help=argparse.SUPPRESS)
+    mp.set_defaults(fn=lambda a: mcpserver.proxy(a.socket, reconnect=a.reconnect))
     c = sub.add_parser("context")
     c.add_argument("dir", nargs="?", default=".")
     c.add_argument("--force", action="store_true")

@@ -127,7 +127,8 @@ class Protocol(Rig):
 
     def test_tools_list_has_exactly_the_tools_with_schemas(self):
         tools = self.rpc("tools/list")["result"]["tools"]
-        self.assertEqual([t["name"] for t in tools], ["box_state", "read_tab", "run", "input", "wait", "tab", "worktree", "say", "done"])
+        self.assertEqual([t["name"] for t in tools], ["box_state", "read_tab", "run", "input", "wait", "tab", "worktree", "say", "done",
+                                                      "schedule", "trigger", "notify", "ask", "read_file", "note"])
         by = {t["name"]: t for t in tools}
         for t in tools:
             self.assertEqual(t["inputSchema"]["type"], "object")
@@ -138,6 +139,10 @@ class Protocol(Rig):
         self.assertEqual(by["box_state"]["inputSchema"]["required"], [])
         self.assertEqual(by["tab"]["inputSchema"]["required"], ["action"])
         self.assertEqual(by["worktree"]["inputSchema"]["required"], ["action"])
+        for name in ("schedule", "trigger", "note"):
+            self.assertEqual(by[name]["inputSchema"]["required"], ["action"])
+        self.assertEqual(by["ask"]["inputSchema"]["properties"]["options"], {"type": "array", "items": {"type": "string"},
+                                                                             "description": "2 to 4 short answers to offer as buttons (optional)"})
         self.assertEqual(by["run"]["inputSchema"]["properties"]["command"]["type"], "string")
 
     def test_notifications_get_no_reply_and_unknown_things_are_protocol_errors(self):

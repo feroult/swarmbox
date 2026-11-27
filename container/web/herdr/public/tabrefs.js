@@ -57,7 +57,8 @@
       }
     }
     names.sort((a, b) => b.length - a.length);
-    const ref = [String.raw`[t@]\d[a-z0-9]{0,3}`, String.raw`\d{1,3}:[\w.-]{1,32}`].concat(names.map(escapeRe)).join('|');
+    // a numbered label has a letter in its name: 13:24 is a time, never a tab
+    const ref = [String.raw`[t@]\d[a-z0-9]{0,3}`, String.raw`\d{1,3}:(?=[\w.-]*[A-Za-z_])[\w.-]{1,32}`].concat(names.map(escapeRe)).join('|');
     // a reference stands alone: not inside a path (~/swarmbox), a file name (swarmbox.py) or a longer word
     return new RegExp('`([^`\\n]{1,80})`|\\*\\*([^*\\n]{1,120})\\*\\*|(' + OK_RE + ')|(' + BAD_RE + ')|(^|[^\\w/~.@:-])(' + ref + ')(?![\\w/-])(?!\\.\\w)', 'gi');
   }
@@ -66,7 +67,7 @@
   function unknownTab(raw) {
     const id = /^[t@]\d[a-z0-9]{0,3}$/i.test(raw);
     const label = /^\d{1,3}:([\w.-]{1,32})$/.exec(raw);
-    if (!id && !label) return null;
+    if (!id && !(label && /[A-Za-z_]/.test(label[1]))) return null;
     return { address: raw, name: label ? label[1] : raw, kind: 'shell', live: false, unknown: true };
   }
 

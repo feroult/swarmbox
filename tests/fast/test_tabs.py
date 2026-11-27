@@ -838,6 +838,12 @@ class TestCommand(Base):
         raw = out.getvalue()
         return rc, (json.loads(raw) if raw.strip() else None), err.getvalue()
 
+    def test_redact_filters_a_text_on_stdin_without_herdr_core(self):
+        rc, got, _ = self.cli_inproc("redact", stdin=b"key=sk-ant-oat01-abcdefghijklmnopqrstuvwxyz0123456789 ok\n", SB_TABS_HC_BIN="/nonexistent/hc")
+        self.assertEqual((rc, got), (0, {"text": "key=[REDACTED] ok"}))
+        rc, got, _ = self.cli_inproc("redact", "extra")
+        self.assertEqual((rc, got["err"]), (2, "usage"))
+
     def test_list_active_screen(self):
         rc, out, err = self.ft.cli("list")
         self.assertEqual((rc, err), (0, ""))

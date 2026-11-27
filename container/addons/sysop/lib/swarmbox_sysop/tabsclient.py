@@ -115,6 +115,13 @@ class Tabs:
             raise TabsError("tabs_protocol", "screen did not give a screen")
         return res
 
+    def redact(self, text):
+        """The text with the secrets removed, by the one filter of the box (`swarmbox-tabs redact`, the one every screen passes)."""
+        res = self.call(["redact"], stdin=text + "\n")
+        if not isinstance(res, dict) or not isinstance(res.get("text"), str):
+            raise TabsError("tabs_protocol", "redact did not give a text")
+        return res["text"]
+
     def send(self, tab, run=None, input=None):
         """Type `run` and press Enter, or type `input` as it is ({Esc} {C-c} {Enter} ... are keys). A `run` is always sent with --queue."""
         if (run is None) == (input is None):

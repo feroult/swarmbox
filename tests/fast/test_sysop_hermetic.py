@@ -1,6 +1,7 @@
-"""Fast tests of the hermetic brain (docs/sysop-brain-design.md 3): what a goal's brain gets and what it does not, run the way the service
-runs it: the MCP server hosted outside the sandbox (brain.McpHost) behind its proxy, the brain home, the environment by allowlist, the
-Landlock domain (without the suite's extra folder: only the brain home, the goal folder and /dev), and the live log of the goal.
+"""Fast tests of the hermetic brain (docs/sysop-brain-design.md 3): what the brain gets and what it does not, run the way the service
+runs it: resident (brain.Runtime, docs/sysop-resident-brain-design.md), the goal's MCP server hosted outside the sandbox (brain.McpHost)
+behind the reconnecting proxy, the brain home, the environment by allowlist, the Landlock domain (without the suite's extra folder: only
+the brain home and /dev), and the live log of the goal.
 
 The brain is the fake claude of tests/support/fixtures/sysop (a scripted brain over the real MCP server); swarmbox-tabs is the fake of
 sysop_support. No model, no herdr-core.
@@ -18,7 +19,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 import sysop_support as ss  # noqa: E402
 
-from swarmbox_sysop import brain, events, history, ipc, landlock  # noqa: E402
+from swarmbox_sysop import brain, events, history, ipc, landlock, mcpserver  # noqa: E402
 
 
 class Hermetic(unittest.TestCase):
@@ -36,8 +37,11 @@ class Hermetic(unittest.TestCase):
         os.environ.pop("SWARMBOX_TEST_SANDBOX_DIRS", None)        # the real domain: the fake writes its records in the goal folder
         os.environ["PATH"] = self.e.env["PATH"]
         os.environ.update(self.tabs.cmd_env)
-        self.log = os.path.join(self.gdir, "claude.log")
-        self.out = os.path.join(self.gdir, "out.jsonl")
+        # the fake writes its records where the brain's domain allows: its home (the goal folder is not the brain's any more)
+        records = self.pth.brain_home
+        os.makedirs(records, 0o700, exist_ok=True)
+        self.log = os.path.join(records, "claude.log")
+        self.out = os.path.join(records, "out.jsonl")
         os.environ.update({"SWARMBOX_TEST_FAKE_CLAUDE_LOG": self.log, "SWARMBOX_TEST_FAKE_CLAUDE_OUT": self.out})
         for patcher in (mock.patch.object(brain, "GRACE_AFTER_DONE", 0.2),):
             patcher.start()
@@ -58,15 +62,19 @@ class Hermetic(unittest.TestCase):
         host.start()
         self.addCleanup(host.stop)
         self.sock = sock
-        mcp = os.path.join(self.gdir, "mcp.json")
-        brain.write_mcp_config(mcp, ctx, self.pth, ss.LIB, socket_path=sock)
-        argv, env = brain.build(cfg, self.gdir, mcp, "cli")
-        self.argv = argv
         self.home = brain.prepare_home(self.pth.brain_home)
-        res = brain.run(cfg, goal, "cli", self.gdir, argv, env, lambda: False, lambda: None, time.time() + 30,
-                        opts=brain.options(cfg.brain), home=self.home, events=self.events, sandbox=sandbox)
+        opts = brain.options(cfg.brain)
+        rt = brain.Runtime()
+        self.addCleanup(rt.close)
+        err = rt.ensure(cfg, opts, self.home, sock, self.pth, ss.LIB, "", sandbox=sandbox)
+        if err:
+            host.stop()
+            self.events.close()
+            return brain.Result("failed", err)
+        res = rt.run_goal(cfg, goal, self.gdir, lambda: False, lambda: None, time.time() + 30, self.events, opts)
         host.stop()
         self.events.close()
+        rt.close()
         return res
 
     def logged(self):
@@ -111,8 +119,8 @@ class Hermetic(unittest.TestCase):
         self.assertEqual([e["seq"] for e in got], list(range(1, len(got) + 1)))
         by = lambda t: [e for e in got if e["type"] == t]       # noqa: E731
         starts = by("action.start")
-        self.assertEqual([(e["block"], e["fn"]) for e in starts], [("toolu_fake1", "say"), ("toolu_fake2", "box_state"), ("toolu_fake3", "done")])
-        self.assertEqual([(e["id"], e["fn"]) for e in by("call")], [("toolu_fake1", "say"), ("toolu_fake2", "box_state"), ("toolu_fake3", "done")],
+        self.assertEqual([(e["block"], e["fn"]) for e in starts], [("toolu_fake1_1", "say"), ("toolu_fake1_2", "box_state"), ("toolu_fake1_3", "done")])
+        self.assertEqual([(e["id"], e["fn"]) for e in by("call")], [("toolu_fake1_1", "say"), ("toolu_fake1_2", "box_state"), ("toolu_fake1_3", "done")],
                          "the MCP server got the CLI's tool-use id: the call joins its block of the stream exactly")
         self.assertTrue(all(e["ok"] for e in by("call.end")))
         self.assertEqual("".join(e["text"] for e in by("say.delta")), "olhando as abas", "the say streamed before it ran")
@@ -126,7 +134,7 @@ class Hermetic(unittest.TestCase):
         self.assertFalse(os.path.exists(self.sock), "the socket is gone once the brain connected")
 
     @unittest.skipUnless(landlock.abi(), "Landlock is not available in this kernel or container")
-    def test_the_sandbox_denies_writes_outside_the_brain_home_and_the_goal_folder(self):
+    def test_the_sandbox_denies_writes_outside_the_brain_home(self):
         outside = os.path.join(self.e.dir, "outside.txt")
         res = self.go([{"write": outside}, {"write": os.path.join(self.pth.brain_home, "work", "inside.txt")},
                        {"write": os.path.join(self.gdir, "goal.txt")}, {"tool": "done", "args": {"summary": "ok"}}])
@@ -136,7 +144,7 @@ class Hermetic(unittest.TestCase):
         self.assertIn("ermission", w["outside.txt"]["error"])
         self.assertFalse(os.path.exists(outside))
         self.assertTrue(w["inside.txt"]["ok"])
-        self.assertTrue(w["goal.txt"]["ok"])
+        self.assertFalse(w["goal.txt"]["ok"], "the goal folder changes at each goal: the resident brain's domain does not hold it")
 
     def test_with_the_sandbox_off_the_brain_writes_where_it_likes(self):
         outside = os.path.join(self.e.dir, "outside.txt")
@@ -210,6 +218,170 @@ class McpHostSocket(unittest.TestCase):
             b.connect(sock)
         with self.assertRaises(brain.McpHostError):
             brain.McpHost("/tmp/" + "x" * 120 + ".sock", {}).start()
+
+
+class ReconnectingProxy(unittest.TestCase):
+    """mcp-proxy --reconnect (docs/sysop-resident-brain-design.md 3): one brain, a server per goal on the same socket path."""
+
+    def setUp(self):
+        self.e = ss.Env()
+        self.addCleanup(self.e.cleanup)
+        self.pth = self.e.paths.make()
+        self.sock = self.pth.mcp_socket("brain")
+
+    def host(self, gid):
+        gdir = os.path.join(self.pth.goals, gid)
+        os.makedirs(gdir, 0o700)
+        ctx = os.path.join(gdir, "context.json")
+        ipc.write_json(ctx, {"goal": gid, "source": "cli", "goal_dir": gdir, "audit": self.pth.audit})
+        h = brain.McpHost(self.sock, brain.server_env(ctx, self.pth, ss.LIB, base=dict(os.environ, **self.e.env)))
+        h.start()
+        self.addCleanup(h.stop)
+        return h
+
+    def proxy(self):
+        import subprocess
+        p = subprocess.Popen([sys.executable, "-B", "-m", "swarmbox_sysop", "mcp-proxy", "--reconnect", self.sock], stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, env=dict(os.environ, PYTHONPATH=ss.LIB))
+        self.addCleanup(lambda: (p.kill(), p.wait(), p.stdin.close(), p.stdout.close()))
+        return p
+
+    @staticmethod
+    def ask(p, rid, method="tools/list"):
+        p.stdin.write(json.dumps({"jsonrpc": "2.0", "id": rid, "method": method}).encode() + b"\n")
+        p.stdin.flush()
+        return json.loads(p.stdout.readline())
+
+    def test_the_proxy_follows_the_server_of_each_goal_and_answers_for_none(self):
+        p = self.proxy()
+        none = self.ask(p, 1)
+        self.assertEqual(none["error"]["message"], mcpserver.NO_GOAL, "no goal: the proxy answers, the brain never hangs")
+        a = self.host("g1")
+        self.assertIn("tools", self.ask(p, 2)["result"])
+        a.stop()
+        b = self.host("g2")
+        self.assertIn("tools", self.ask(p, 3)["result"], "the same proxy reaches the next goal's server, with no handshake of its own")
+        self.assertTrue(ss.wait_for(lambda: not os.path.exists(self.sock), 3), "each server still takes one connection only")
+        b.stop()
+        self.assertEqual(self.ask(p, 4)["error"]["message"], mcpserver.NO_GOAL)
+        self.assertIsNone(p.poll(), "the proxy outlives the servers: the brain keeps its MCP server")
+
+
+class Resident(unittest.TestCase):
+    """The resident brain (brain.Runtime) with the fake claude in its resident mode, goal after goal, as the service runs it."""
+
+    def setUp(self):
+        self.e = ss.Env()
+        self.addCleanup(self.e.cleanup)
+        self.tabs = ss.FakeTabs(os.path.join(self.e.dir, "tabs.sock"))
+        self.addCleanup(self.tabs.stop)
+        self.pth = self.e.paths.make()
+        saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
+        os.environ.update({k: v for k, v in self.e.env.items() if k.startswith(("SB_", "SWARMBOX_"))})
+        os.environ["PATH"] = self.e.env["PATH"]
+        os.environ.update(self.tabs.cmd_env)
+        self.log = os.path.join(self.e.dir, "claude.log")
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_LOG"] = self.log
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SESSION"] = "s-1"
+        p = os.path.join(self.e.dir, "script.json")
+        with open(p, "w") as f:
+            json.dump([{"tool": "say", "args": {"text": "hi"}}, {"tool": "done", "args": {"summary": "ok"}}], f)
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"] = p
+        self.cfg = self.e.cfg(max_seconds=30)
+        self.opts = brain.options(self.cfg.brain)
+        self.home = brain.prepare_home(self.pth.brain_home)
+        self.sock = self.pth.mcp_socket("brain")
+        self.rt = brain.Runtime()
+        self.addCleanup(self.rt.close)
+        self.n = 0
+        for patcher in (mock.patch.object(brain, "GRACE_AFTER_DONE", 0.1), mock.patch.object(brain, "INTERRUPT_WAIT", 0.5)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def goal(self, sid="", stop_after=None):
+        self.n += 1
+        gid = "g%d" % self.n
+        gdir = os.path.join(self.pth.goals, gid)
+        os.makedirs(gdir, 0o700)
+        ctx = os.path.join(gdir, "context.json")
+        ipc.write_json(ctx, {"goal": gid, "source": "cli", "goal_dir": gdir, "audit": self.pth.audit, "countdown": 0,
+                             "deadline": time.time() + 30})
+        ev = events.EventLog(os.path.join(gdir, "events.jsonl"))
+        host = brain.McpHost(self.sock, brain.server_env(ctx, self.pth, ss.LIB), ev)
+        host.start()
+        try:
+            err = self.rt.ensure(self.cfg, self.opts, self.home, self.sock, self.pth, ss.LIB, sid)
+            self.assertIsNone(err)
+            t0 = time.time()
+            stop = (lambda: time.time() - t0 > stop_after) if stop_after else (lambda: False)
+            return self.rt.run_goal(self.cfg, "goal %d" % self.n, gdir, stop, lambda: None, time.time() + 30, ev, self.opts), gdir
+        finally:
+            host.stop()
+            ev.close()
+
+    def logged(self):
+        with open(self.log) as f:
+            return json.load(f)
+
+    def test_two_goals_are_two_turns_of_one_process_and_each_pays_its_own_cost(self):
+        a, adir = self.goal()
+        first = self.logged()
+        b, bdir = self.goal("s-1")
+        second = self.logged()
+        self.assertEqual((a.outcome, a.summary, b.outcome, b.summary), ("done", "ok", "done", "ok"))
+        self.assertEqual((first["pid"], second["goals"]), (second["pid"], 2), "one process, two turns")
+        self.assertNotIn("--resume", second["argv"])
+        self.assertEqual((a.cost, b.cost), (0.0012, 0.0012), "the CLI reports a total: each goal gets the difference")
+        self.assertEqual([e["cost"] for e in events.read(os.path.join(bdir, "events.jsonl")) if e["type"] == "usage"], [0.0012],
+                         "the live log of a goal says its own cost too")
+        self.assertEqual(b.session_id, "s-1")
+        for d in (adir, bdir):
+            with open(os.path.join(d, "stream.jsonl")) as f:
+                self.assertEqual(sum('"type": "result"' in line for line in f), 1, "each goal keeps the lines of its own turn")
+
+    def test_a_new_conversation_starts_a_new_process_and_a_dead_one_resumes_the_session(self):
+        self.goal()
+        pid = self.logged()["pid"]
+        self.goal("")                 # + New: the conversation has no session, the live process does
+        fresh = self.logged()
+        self.assertNotEqual(fresh["pid"], pid)
+        self.assertNotIn("--resume", fresh["argv"])
+        os.kill(fresh["pid"], 9)
+        self.assertTrue(ss.wait_for(lambda: not self.rt.alive(), 5))
+        self.goal("s-1")
+        again = self.logged()
+        self.assertNotEqual(again["pid"], fresh["pid"])
+        self.assertEqual(again["argv"][again["argv"].index("--resume") + 1], "s-1")
+
+    def test_a_session_the_cli_refuses_to_resume_is_not_given_back(self):
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "badresume"
+        res, _ = self.goal("gone-1")
+        self.assertEqual(res.outcome, "failed")
+        self.assertIn("No conversation found", res.error, "the words that make the service clear the session")
+        self.assertEqual(res.session_id, "", "never saved again: every next goal would fail on it")
+
+    def test_a_brain_that_dies_during_a_goal_fails_it_with_its_last_words(self):
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "crash-after"
+        self.assertEqual(self.goal()[0].outcome, "done")
+        res, _ = self.goal("s-1")
+        self.assertEqual(res.outcome, "failed")
+        self.assertIn("exited with status 3: boom: the brain crashed", res.error)
+        self.assertFalse(self.rt.alive())
+
+    def test_stop_interrupts_the_turn_and_a_brain_that_ignores_it_is_killed(self):
+        with open(os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"], "w") as f:
+            json.dump([{"sleep": 30}], f)
+        t0 = time.time()
+        res, _ = self.goal(stop_after=0.3)
+        self.assertEqual(res.outcome, "stopped")
+        self.assertLess(time.time() - t0, 5)
+        self.assertTrue(self.rt.alive(), "the interrupt ended the turn, the process stays")
+        self.rt.close()
+        os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "slow-interrupt"
+        res, _ = self.goal(stop_after=0.3)
+        self.assertEqual(res.outcome, "stopped")
+        self.assertFalse(self.rt.alive(), "no end of the turn within INTERRUPT_WAIT: killed")
 
 
 class SessionAndStopNote(unittest.TestCase):

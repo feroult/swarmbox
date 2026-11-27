@@ -22,6 +22,9 @@ Events (every one also has seq, t, type):
   call.end       id, fn, ok, summary        the MCP server answered
   say            text                       the authoritative text of a say
   done           summary                    the authoritative summary of done
+  notify         text, level                a notification for the user (info | warn | urgent)
+  question       id, state, ...             waiting (text, options, deadline) | answered (answer) | timeout | stopped: an `ask` of the brain
+  steer          text                       a message the user wrote while the goal ran, given to the brain with a tool result
   usage          turns, cost                the brain's own account at its end
   denied         fn                         the CLI refused a tool the model asked for (a security event)
   state          state, error?              running | done | failed | stopped (written by the service)
@@ -346,6 +349,9 @@ MCP_EVENTS = {
     "call.end": ("id", "fn", "ok", "summary"),
     "say": ("text",),
     "done": ("summary",),
+    "notify": ("text", "level"),
+    "question": ("id", "state", "text", "options", "deadline", "answer"),
+    "steer": ("text",),
 }
 
 

@@ -24,6 +24,20 @@ from swarmbox_sysop import config, paths  # noqa: E402
 _STATE_MOD = None
 
 
+_TABS_MOD = None
+
+
+def _load_tabs_mod():
+    global _TABS_MOD
+    if _TABS_MOD is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("swarmbox_tabs_inproc", os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _TABS_MOD = mod
+    return _TABS_MOD
+
+
 def _load_state_mod():
     global _STATE_MOD
     if _STATE_MOD is None:
@@ -284,7 +298,7 @@ class FakeTabs:
                 if not fake.up:
                     raise tabsclient.TabsError("no_backend", "fake tabs: nobody listens")
                 argv = list(args)
-                out, rc = fake.call(argv, stdin if (stdin is not None and argv[:1] == ["send"]) else "")
+                out, rc = fake.call(argv, stdin if (stdin is not None and argv[:1] in (["send"], ["redact"])) else "")
                 if isinstance(out, dict) and "err" in out:
                     raise tabsclient.TabsError(str(out["err"]), str(out.get("msg", "")))
                 if rc != 0:
@@ -366,6 +380,8 @@ class FakeTabs:
             if self.ls_error:
                 return self._err(*self.ls_error)
             return [dict(t) for t in self.tabs.values()], 0
+        if cmd == "redact":                 # the real filter of swarmbox-tabs: what the sysop's read_file relies on
+            return {"text": _load_tabs_mod().redact(stdin[:-1] if stdin.endswith("\n") else stdin)}, 0
         if cmd == "screen":
             tab = argv[1]
             self.reads.append(tab)
