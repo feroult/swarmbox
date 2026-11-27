@@ -11,6 +11,7 @@
 Zero real `hc` daemon, zero network.
 Run: python3 tests/fast/test_herdr_backend.py
 """
+import io
 import importlib.util
 import json
 import os
@@ -20,7 +21,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
@@ -230,6 +233,35 @@ sys.exit(0)
 """
 
 
+_FAKE_HC_CODE = compile(FAKE_HC_PY, "fake-hc-herdr", "exec")
+_FAKE_HC_LOCK = threading.Lock()
+
+
+def _run_fake_hc_inproc(hc_bin):
+    real_run = subprocess.run
+
+    def run(argv, timeout=None, env=None, **kw):
+        if not argv or argv[0] != hc_bin:
+            return real_run(argv, timeout=timeout, env=env, **kw)
+        out, err = io.StringIO(), io.StringIO()
+        rc = 0
+        with _FAKE_HC_LOCK:
+            saved = (sys.argv, sys.stdout, sys.stderr)
+            sys.argv, sys.stdout, sys.stderr = list(argv), out, err
+            try:
+                exec(_FAKE_HC_CODE, {"__name__": "__main__"})
+            except SystemExit as e:
+                rc = e.code if isinstance(e.code, int) else 0
+            finally:
+                sys.argv, sys.stdout, sys.stderr = saved
+        want_text = kw.get("text") or kw.get("universal_newlines")
+        stdout = out.getvalue() if want_text else out.getvalue().encode("utf-8")
+        stderr = err.getvalue() if want_text else err.getvalue().encode("utf-8")
+        return subprocess.CompletedProcess(argv, rc, stdout, stderr)
+
+    return run
+
+
 def make_exec(path, content):
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -250,6 +282,9 @@ class HerdrTabsTest(unittest.TestCase):
         os.environ["FAKE_HC_STATE"] = self.state_file
         os.environ["FAKE_HC_LOG"] = self.log_file
         self.addCleanup(self._restore_env)
+        p = mock.patch.object(tabs_mod.subprocess, "run", side_effect=_run_fake_hc_inproc(self.hc_bin))
+        p.start()
+        self.addCleanup(p.stop)
 
     def _restore_env(self):
         for k, v in self.old_env.items():
@@ -269,7 +304,7 @@ class HerdrTabsTest(unittest.TestCase):
             return [json.loads(line) for line in f if line.strip()]
 
     def tabs(self):
-        return tabs_mod.Tabs(backend="herdr", binary=self.hc_bin, run_dir=self.run_dir, pause=0.0, verify_timeout=0.2)
+        return tabs_mod.Tabs(backend="herdr", binary=self.hc_bin, run_dir=self.run_dir, pause=0.0, verify_timeout=0.0)
 
     def test_list_active_marker_and_fallback(self):
         home = os.path.expanduser("~")
@@ -564,6 +599,8 @@ class HerdrShellBackendTest(unittest.TestCase):
             os.close(master)
 
     def test_attach_command_returns_exit_code_and_handles_detach(self):
+        # Avoid 5x 0.1s status-file flush sleeps in herdr.sh when testing the detached path
+        make_exec(os.path.join(self.bin_dir, "sleep"), "#!/bin/sh\nexit 0\n")
         # 1. Command finishes with exit code 42
         with open(self.state_file, "w", encoding="utf-8") as f:
             json.dump({"down": False, "terminals": [], "screens": {}, "cmd_rc": 42}, f)
@@ -826,14 +863,17 @@ console.log(JSON.stringify(show()));
         self.assertIn("herdr-active-tab", client_src)
         self.assertIn("swarmbox.role", client_src)
         self.assertIn("computeLayout", cockpit_src)
-        for js_path in herdr_modules:
-            p = subprocess.run(["node", "--check", js_path], capture_output=True, text=True)
-            self.assertEqual(p.returncode, 0, "%s: %s" % (js_path, p.stderr))
-
-        # Exercise hc-client.mjs pure helpers directly in Node (no external npm deps needed)
+        # Batch syntax checks for all .mjs modules + app.js + hc-client.mjs pure helper assertions into ONE node process
+        app_js = os.path.join(ROOT, "container", "web", "herdr", "public", "app.js")
         check_js = """
 import assert from 'node:assert/strict';
-import { isHiddenTerminal, sanitizeTabName, uniqueTabName, DEFAULT_THEME, THEME_ORDER, readBoxConfigSnapshot } from %r;
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { isHiddenTerminal, sanitizeTabName, uniqueTabName, DEFAULT_THEME, THEME_ORDER, readBoxConfigSnapshot } from %s;
+for (const p of %s) {
+  new vm.SourceTextModule(fs.readFileSync(p, 'utf8'), { identifier: p });
+}
+new vm.Script(fs.readFileSync(%s, 'utf8'), { filename: %s });
 assert.equal(isHiddenTerminal({ labels: { 'swarmbox.role': 'sysop' } }), true);
 assert.equal(isHiddenTerminal({ labels: {} }), false);
 assert.equal(isHiddenTerminal({}), false);
@@ -849,14 +889,11 @@ assert.equal(cfg.sysop.settings['sysop.autonomy'].value, 'confirm-all');
 assert.equal(cfg.voice.settings['voice.language'].value, 'pt');
 assert.ok(Array.isArray(cfg.addons));
 assert.ok(Array.isArray(cfg.mcp));
-""" % (HERDR_CLIENT,)
-        p2 = subprocess.run(["node", "--input-type=module", "-e", check_js], capture_output=True, text=True)
+""" % (json.dumps(HERDR_CLIENT), json.dumps(herdr_modules), json.dumps(app_js), json.dumps(app_js))
+        p2 = subprocess.run(["node", "--experimental-vm-modules", "--no-warnings", "--input-type=module", "-e", check_js], capture_output=True, text=True)
         self.assertEqual(p2.returncode, 0, p2.stderr)
 
-        # Verify app.js syntax, per-tab live sessions, zero-scroll hydration, reconnect resilience, mobile inertia scroll, and Settings panel
-        app_js = os.path.join(ROOT, "container", "web", "herdr", "public", "app.js")
-        p3 = subprocess.run(["node", "--check", app_js], capture_output=True, text=True)
-        self.assertEqual(p3.returncode, 0, p3.stderr)
+        # Verify app.js per-tab live sessions, zero-scroll hydration, reconnect resilience, mobile inertia scroll, and Settings panel
         with open(app_js, encoding="utf-8") as f:
             app_src = f.read()
         for token in (
@@ -1095,8 +1132,10 @@ class PtyViewportOwnershipTest(unittest.TestCase):
             f.write(
                 "import assert from 'node:assert/strict';\n"
                 "import { EventEmitter } from 'node:events';\n"
-                "import { createGateway, createSyncOutputCoalescer } from './server.mjs';\n"
                 "import { FakeWs } from './node_modules/ws/index.js';\n"
+                "const _realSetTimeout = globalThis.setTimeout;\n"
+                "globalThis.setTimeout = (fn, ms, ...args) => _realSetTimeout(fn, ms > 5 ? Math.max(2, Math.round(ms / 30)) : ms, ...args);\n"
+                "const { createGateway, createSyncOutputCoalescer } = await import('./server.mjs');\n"
                 "\n"
                 "class FakeHc extends EventEmitter {\n"
                 "  constructor() {\n"
@@ -1139,7 +1178,7 @@ class PtyViewportOwnershipTest(unittest.TestCase):
                 "  const ws = new FakeWs();\n"
                 "  const url = new URL(`http://127.0.0.1:7681/ws/pty/${termId}?${query}`);\n"
                 "  wss.emit('connection', ws, {}, url);\n"
-                "  await new Promise((r) => setTimeout(r, 20));\n"
+                "  await new Promise((r) => _realSetTimeout(r, 2));\n"
                 "  return ws;\n"
                 "}\n"
                 "\n"
@@ -1175,7 +1214,7 @@ class PtyViewportOwnershipTest(unittest.TestCase):
                 "const ctl = (ws) => ws.sent.filter((m) => typeof m === 'string').map((m) => JSON.parse(m));\n"
                 "const resizingCount = (ws) => ctl(ws).filter((m) => m.type === 'resizing').length;\n"
                 "// A window still hydrating is already behind its loader and buffers output: masks apply once it is live\n"
-                "const hydrated = async (ws) => { for (let i = 0; i < 300 && !ctl(ws).some((m) => m.type === 'hydrated'); i++) await new Promise((r) => setTimeout(r, 10)); };\n"
+                "const hydrated = async (ws) => { for (let i = 0; i < 300 && !ctl(ws).some((m) => m.type === 'hydrated'); i++) await new Promise((r) => _realSetTimeout(r, 2)); };\n"
                 "await hydrated(mac); await hydrated(home2);\n"
                 "\n"
                 "// 6b. A resize asked by one window redraws the agent for every window: the others are masked too\n"
@@ -1266,7 +1305,7 @@ class PtyViewportOwnershipTest(unittest.TestCase):
                 "tuiPhone.emit('message', Buffer.from(JSON.stringify({ type: 'resize', cols: 52, rows: 30, seq: 101 })), false);\n"
                 "const waitFor = async (pred, ms = 2000) => {\n"
                 "  const t0 = Date.now();\n"
-                "  while (Date.now() - t0 < ms) { if (pred()) return true; await new Promise((r) => setTimeout(r, 15)); }\n"
+                "  while (Date.now() - t0 < ms) { if (pred()) return true; await new Promise((r) => _realSetTimeout(r, 2)); }\n"
                 "  return false;\n"
                 "};\n"
                 "assert.ok(await waitFor(() => ctl(tuiPhone).some((m) => m.type === 'resized' && m.seq === 101)));\n"
@@ -1328,8 +1367,10 @@ class WorktreeOrchestratorApiTest(unittest.TestCase):
             f.write(r"""
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { createGateway } from './server.mjs';
 import { FakeWs } from './node_modules/ws/index.js';
+const _realSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = (fn, ms, ...args) => _realSetTimeout(fn, ms > 5 ? Math.max(2, Math.round(ms / 30)) : ms, ...args);
+const { createGateway } = await import('./server.mjs');
 
 class FakeHc extends EventEmitter {
   constructor() {
@@ -1538,7 +1579,7 @@ async function reqJson(method, p, body) {
   assert.equal(r.data.handoff.mode, 'backend_verify');
   assert.equal(r.data.handoff.state, 'running');
   // Wait for async verify+push job to settle
-  await new Promise((res) => setTimeout(res, 40));
+  await new Promise((res) => _realSetTimeout(res, 15));
   const verifyCall = wtCalls.find((c) => c.args[0] === 'verify');
   assert.ok(verifyCall);
   assert.equal(verifyCall.timeoutMs, 190000);
@@ -1556,7 +1597,7 @@ async function reqJson(method, p, body) {
   });
   assert.equal(r.status, 200);
   assert.equal(r.data.handoff.mode, 'backend_verify');
-  await new Promise((res) => setTimeout(res, 40));
+  await new Promise((res) => _realSetTimeout(res, 15));
   assert.equal(wtCalls.some((c) => c.args[0] === 'push'), false);
   const st1 = await reqJson('GET', '/api/worktrees/repo-status?repo=/fake/repo');
   assert.equal(st1.data.verify_job.state, 'failed');

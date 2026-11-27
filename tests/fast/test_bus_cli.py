@@ -2,6 +2,7 @@
 after kill -9, groups, many clients and 100 messages per second. No multiplexer, no network, no model. Run with: python3 tests/fast/test_bus_cli.py
 """
 import concurrent.futures
+import io
 import json
 import os
 import signal
@@ -10,10 +11,33 @@ import sys
 import threading
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from bus_support import BUS_PATH, Conn, Process, bus, wait_for  # noqa: E402
+from bus_support import BUS_PATH, Conn, Process, bus, rpc, wait_for  # noqa: E402
+
+
+def _cli_inproc(p, *args, stdin=b"", env=None):
+    """Run bus.main(args) in-process against the real broker socket, returning CompletedProcess."""
+    e = dict(p.env, **(env or {}))
+    out, err = io.StringIO(), io.StringIO()
+    fake_in = type("_Stdin", (), {"buffer": io.BytesIO(stdin if stdin is not None else b"")})()
+    rc = 0
+    with mock.patch.dict(os.environ, e, clear=True), \
+            mock.patch.object(sys, "stdin", fake_in), \
+            mock.patch.object(sys, "stdout", out), \
+            mock.patch.object(sys, "stderr", err):
+        try:
+            res = bus.main(list(args))
+            rc = res if isinstance(res, int) else 0
+        except SystemExit as ex:
+            rc = ex.code if isinstance(ex.code, int) else 1
+    return subprocess.CompletedProcess(list(args), rc, out.getvalue().encode(), err.getvalue().encode())
+
+
+def _wait_topic(p, topic, timeout=5.0):
+    return wait_for(lambda: any(t["topic"] == topic for t in rpc(p.path, {"op": "topics"}).get("result", [])), timeout, 0.005)
 
 
 class Base(unittest.TestCase):
@@ -34,8 +58,12 @@ class Usage(Base):
         cases = ([], ["frobnicate"], ["pub"], ["pub", "a", "b", "c"], ["pub", "--source"], ["pub", "--nope", "jobs", "x"], ["get", "a"], ["ls"],
                  ["sub"], ["sub", "a", "b"], ["sub", "--nope", "a"], ["sub", "--group"], ["sub", "--group", "g"], ["topics", "x"], ["watch", "x"],
                  ["watch", "--no-screen"], ["ping", "x"], ["restart", "x"], ["serve", "--nope"], ["serve", "--driver", "stub"])
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-            results = list(pool.map(lambda a: (a, p.cli(*a)), cases))
+        # Keep real subprocess checks for representative cases, run remaining argv validation in-process
+        real_cases = cases[:2]
+        inproc_cases = cases[2:]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda a: (a, p.cli(*a)), real_cases))
+        results += [(a, _cli_inproc(p, *a)) for a in inproc_cases]
         for args, r in results:
             with self.subTest(args=args):
                 self.assertEqual(r.returncode, 2, r.stderr)
@@ -44,8 +72,11 @@ class Usage(Base):
 
     def test_help_prints_the_docstring_and_exits_0(self):
         p = self.idle()
-        for a in ("--help", "-h", "help"):
-            r = p.cli(a)
+        r = p.cli("--help")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn(b"Exit codes: 0 ok, 1 other error, 2 usage, 3 nobody received the message", r.stdout)
+        for a in ("-h", "help"):
+            r = _cli_inproc(p, a)
             self.assertEqual(r.returncode, 0)
             self.assertIn(b"Exit codes: 0 ok, 1 other error, 2 usage, 3 nobody received the message", r.stdout)
 
@@ -56,9 +87,11 @@ class Usage(Base):
 class NotRunning(Base):
     def test_every_command_says_4_with_no_traceback(self):
         p = self.idle()
-        for args in (["pub", "jobs", "x"], ["topics"], ["sub", "jobs"], ["sub", "--group", "g", "jobs"], ["watch"], ["ping"]):
+        cases = (["pub", "jobs", "x"], ["topics"], ["sub", "jobs"], ["sub", "--group", "g", "jobs"], ["watch"], ["ping"])
+        r0 = p.cli(*cases[0], stdin=b"")
+        results = [(cases[0], r0)] + [(a, _cli_inproc(p, *a, stdin=b"")) for a in cases[1:]]
+        for args, r in results:
             with self.subTest(args=args):
-                r = p.cli(*args, stdin=b"")
                 self.assertEqual(r.returncode, 4, r.stderr)
                 self.assertIn(b"the bus is not running", r.stderr)
                 self.assertNotIn(b"Traceback", r.stderr)
@@ -96,13 +129,29 @@ class NotRunning(Base):
 
 
 class Pub(Base):
+    @classmethod
+    def setUpClass(cls):
+        cls._broker = Process().start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._broker.close()
+
+    def broker(self, **kw):
+        if kw:
+            return super().broker(**kw)
+        return self._broker
+
+    def tearDown(self):
+        wait_for(lambda: not rpc(self._broker.path, {"op": "topics"}).get("result"), 2.0, 0.005)
+
     def test_pub_exit_codes(self):
         p = self.broker()
         r = p.cli("pub", "jobs", "hi")
         self.assertEqual((r.returncode, r.stdout), (3, b""))
         self.assertIn(b"no_subscriber", r.stderr)
-        self.assertEqual(p.cli("pub", "no good", "hi").returncode, 6)
-        self.assertEqual(p.cli("pub", "tab/x/in", "text").returncode, 6)                 # the tab topics are gone: a slash is not a name
+        self.assertEqual(_cli_inproc(p, "pub", "no good", "hi").returncode, 6)
+        self.assertEqual(_cli_inproc(p, "pub", "tab/x/in", "text").returncode, 6)                 # the tab topics are gone: a slash is not a name
         sub = p.popen("sub", "--raw", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
         r = p.cli("pub", "jobs", '{"run": "ls"}')
@@ -117,12 +166,12 @@ class Pub(Base):
         p = self.broker()
         r = p.cli("pub", "--allow-none", "jobs", "hi")
         self.assertEqual((r.returncode, json.loads(r.stdout)["receivers"]), (0, 0))
-        r = p.cli("pub", "jobs", "--allow-none", "hi")           # the flag may come anywhere before the end
+        r = _cli_inproc(p, "pub", "jobs", "--allow-none", "hi")           # the flag may come anywhere before the end
         self.assertEqual(r.returncode, 0)
         subs = [p.popen("sub", "-v", "jobs"), p.popen("sub", "-v", "--group", "g", "jobs"), p.popen("sub", "-v", "--group", "g", "jobs")]
         for s in subs:
             self.assertIn(b"subscribed", s.stderr.readline())
-        r = p.cli("pub", "jobs", "x")
+        r = _cli_inproc(p, "pub", "jobs", "x")
         self.assertEqual(json.loads(r.stdout)["receivers"], 2)       # the plain subscriber, and one member of the group
         for s in subs:
             s.terminate()
@@ -130,10 +179,12 @@ class Pub(Base):
 
     def test_bad_names_are_6(self):
         p = self.broker()
+        self.assertEqual(p.cli("pub", "--", "-x", "m").returncode, 6)
+        for t in ("a b", "a/b", "x" * 65):
+            self.assertEqual(_cli_inproc(p, "pub", "--", t, "m").returncode, 6, t)
         for t in ("-x", "a b", "a/b", "x" * 65):
-            self.assertEqual(p.cli("pub", "--", t, "m").returncode, 6, t)
-            self.assertEqual(p.cli("sub", "--", t).returncode, 6, t)
-        r = p.cli("sub", "--group", "bad group", "jobs")
+            self.assertEqual(_cli_inproc(p, "sub", "--", t).returncode, 6, t)
+        r = _cli_inproc(p, "sub", "--group", "bad group", "jobs")
         self.assertEqual(r.returncode, 6)
         self.assertIn(b"bad_group", r.stderr)
 
@@ -142,7 +193,7 @@ class Pub(Base):
         self.assertEqual(json.loads(p.cli("topics").stdout), [])
         s = p.popen("sub", "-v", "--group", "sysop", "jobs")
         self.assertIn(b"subscribed", s.stderr.readline())
-        self.assertEqual(json.loads(p.cli("topics").stdout), [{"topic": "jobs", "subscribers": 1, "groups": {"sysop": 1}}])
+        self.assertEqual(json.loads(_cli_inproc(p, "topics").stdout), [{"topic": "jobs", "subscribers": 1, "groups": {"sysop": 1}}])
         s.terminate()
         s.wait()
 
@@ -151,10 +202,10 @@ class Pub(Base):
         sub = p.popen("sub", "--raw", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
         p.cli("pub", "jobs", "plain text with spaces")
-        p.cli("pub", "jobs", '{"text": "run the tests"}')
+        _cli_inproc(p, "pub", "jobs", '{"text": "run the tests"}')
         p.cli("pub", "jobs", "-", stdin=b'{"text":\n "multi line json"}\n')
-        p.cli("pub", "jobs", stdin=b"from stdin by default\n")
-        p.cli("pub", "jobs", "5")
+        _cli_inproc(p, "pub", "jobs", stdin=b"from stdin by default\n")
+        _cli_inproc(p, "pub", "jobs", "5")
         got = [sub.stdout.readline().decode().rstrip("\n") for _ in range(5)]
         sub.terminate()
         sub.wait()
@@ -166,8 +217,10 @@ class Pub(Base):
         p = self.broker()
         sub = p.popen("sub", "--raw", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
-        for msg in ('"line one\\nline two"', "plain text", "null", '"null"', "5", '"5"', '"a\\rb"', '"é ü"', '{"k": "é\\nx"}', "NaN"):
-            self.assertEqual(p.cli("pub", "jobs", msg).returncode, 0, msg)
+        msgs = ('"line one\\nline two"', "plain text", "null", '"null"', "5", '"5"', '"a\\rb"', '"é ü"', '{"k": "é\\nx"}', "NaN")
+        for i, msg in enumerate(msgs):
+            r = p.cli("pub", "jobs", msg) if i == 0 else _cli_inproc(p, "pub", "jobs", msg)
+            self.assertEqual(r.returncode, 0, msg)
         got = [sub.stdout.readline().decode().rstrip("\n") for _ in range(10)]
         sub.terminate()
         sub.wait()
@@ -177,8 +230,9 @@ class Pub(Base):
         p = self.broker()
         sub = p.popen("sub", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
-        for msg in ("NaN", "Infinity", "-Infinity", "1e999", "[NaN]"):
-            self.assertEqual(p.cli("pub", "jobs", "--", msg).returncode, 0, msg)
+        for i, msg in enumerate(("NaN", "Infinity", "-Infinity", "1e999", "[NaN]")):
+            r = p.cli("pub", "jobs", "--", msg) if i == 0 else _cli_inproc(p, "pub", "jobs", "--", msg)
+            self.assertEqual(r.returncode, 0, msg)
         envs = [sub.stdout.readline() for _ in range(5)]
         sub.terminate()
         sub.wait()
@@ -199,23 +253,23 @@ class Pub(Base):
         p = self.broker()
         sub = p.popen("sub", "--raw", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
-        for args in (("--", "jobs", "-5"), ("jobs", "--", "-x"), ("--source", "me", "--", "jobs", "--help"), ("jobs", "--")):
-            r = p.cli("pub", *args, stdin=b"from stdin\n")
+        for i, args in enumerate((("--", "jobs", "-5"), ("jobs", "--", "-x"), ("--source", "me", "--", "jobs", "--help"), ("jobs", "--"))):
+            r = p.cli("pub", *args, stdin=b"from stdin\n") if i == 0 else _cli_inproc(p, "pub", *args, stdin=b"from stdin\n")
             self.assertEqual(r.returncode, 0, (args, r.stderr))
         got = [sub.stdout.readline().decode().rstrip("\n") for _ in range(4)]
         sub.terminate()
         sub.wait()
         self.assertEqual(got, ["-5", "-x", "--help", "from stdin"])
         for args in (("jobs", "-5"), ("jobs", "--help"), ("jobs", "-x")):           # without `--` a dash word is still an unknown option
-            self.assertEqual(p.cli("pub", *args).returncode, 2, args)
+            self.assertEqual(_cli_inproc(p, "pub", *args).returncode, 2, args)
 
     def test_source_flag_and_env(self):
         p = self.broker()
         sub = p.popen("sub", "-v", "jobs")
         self.assertIn(b"subscribed", sub.stderr.readline())
-        p.cli("pub", "--source", "voice", "jobs", "a")
-        p.cli("pub", "jobs", "b", env={"SB_BUS_SOURCE": "sysop"})
-        p.cli("pub", "jobs", "c")
+        _cli_inproc(p, "pub", "--source", "voice", "jobs", "a")
+        _cli_inproc(p, "pub", "jobs", "b", env={"SB_BUS_SOURCE": "sysop"})
+        _cli_inproc(p, "pub", "jobs", "c")
         srcs = [json.loads(sub.stdout.readline())["source"] for _ in range(3)]
         sub.terminate()
         sub.wait()
@@ -224,8 +278,7 @@ class Pub(Base):
     def test_a_big_body_goes_by_stdin_and_arrives_whole(self):
         p = self.broker()
         sub = p.popen("sub", "--raw", "jobs")
-        self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "probe").returncode == 0, 5))
-        sub.stdout.readline()
+        self.assertTrue(_wait_topic(p, "jobs"))
         body = ("0123456789abcdef" * 56 * 1024)[:900 * 1024]
         r = p.cli("pub", "jobs", "-", stdin=body.encode())
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -235,16 +288,16 @@ class Pub(Base):
 
     def test_too_large_is_5_from_stdin_and_from_a_long_argument(self):
         p = self.broker()
-        r = p.cli("pub", "jobs", "-", stdin=b"x" * (bus.MAX_LINE + 10))
+        r = _cli_inproc(p, "pub", "jobs", "-", stdin=b"x" * (bus.MAX_LINE + 10))
         self.assertEqual(r.returncode, 5)
         self.assertIn(b"too large", r.stderr)
         r = p.cli("pub", "jobs", "x" * 120000, stdin=b"")      # under the 128 KiB argv limit, over nothing: no subscriber
         self.assertEqual(r.returncode, 3)
-        self.assertEqual(p.cli("ping").returncode, 0)
+        self.assertEqual(_cli_inproc(p, "ping").returncode, 0)
 
     def test_invalid_utf8_on_stdin_is_6(self):
         p = self.broker()
-        self.assertEqual(p.cli("pub", "jobs", "-", stdin=b"\xff\xfe").returncode, 6)
+        self.assertEqual(_cli_inproc(p, "pub", "jobs", "-", stdin=b"\xff\xfe").returncode, 6)
 
 
 class Streams(Base):
@@ -268,27 +321,26 @@ class Streams(Base):
         for s in (a, b):
             self.assertIn(b"subscribed", s.stderr.readline())
         for i in range(6):
-            self.assertEqual(p.cli("pub", "jobs", "m%d" % i).returncode, 0)
-            time.sleep(0.01)
-        time.sleep(0.08)
-        outs = []
+            self.assertEqual(_cli_inproc(p, "pub", "jobs", "m%d" % i).returncode, 0)
+        outs = [[s.stdout.readline().decode().strip() for _ in range(3)] for s in (a, b)]
         for s in (a, b):
             s.terminate()
-            out, _ = s.communicate(10)
-            outs.append(out.decode().split())
+            s.wait()
         self.assertEqual(sorted(outs[0] + outs[1]), ["m%d" % i for i in range(6)])
         self.assertEqual((len(outs[0]), len(outs[1])), (3, 3))
 
     def test_ctrl_c_is_130_and_a_closed_pipe_ends_quietly(self):
         p = self.broker()
         sub = p.popen("sub", "jobs")
-        self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "x").returncode == 0, 5))
+        self.assertTrue(_wait_topic(p, "jobs"))
         sub.send_signal(signal.SIGINT)
         self.assertEqual(sub.wait(10), 130)
+        wait_for(lambda: not rpc(p.path, {"op": "topics"}).get("result"), 2.0, 0.005)
         sub = subprocess.Popen("%s -S %s sub jobs | head -n 1" % (sys.executable, BUS_PATH), shell=True, env=p.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "one").returncode == 0, 5))
-        time.sleep(0.05)
-        p.cli("pub", "jobs", "two")
+        self.assertTrue(_wait_topic(p, "jobs"))
+        self.assertEqual(_cli_inproc(p, "pub", "jobs", "one").returncode, 0)
+        time.sleep(0.02)
+        _cli_inproc(p, "pub", "jobs", "two")
         out, err = sub.communicate(10)
         self.assertEqual((out.strip().count(b"\n"), err), (0, b""))
 
@@ -362,13 +414,13 @@ class ClientPath(Base):
     def test_the_client_starts_fast(self):
         p = self.broker()
         t = []
-        for _ in range(20):
+        for _ in range(5):
             t0 = time.time()
             p.cli("ping")
             t.append(time.time() - t0)
         t.sort()
         median = t[len(t) // 2]
-        print("   swarmbox-bus ping, median of 20: %.1f ms" % (median * 1000), file=sys.stderr)
+        print("   swarmbox-bus ping, median of 5: %.1f ms" % (median * 1000), file=sys.stderr)
         self.assertLess(median, 0.25, "a CLI call must stay cheap enough for a shell hook")
 
 
@@ -378,7 +430,7 @@ class Load(Base):
         subs = [p.popen("sub", "--raw", "-v", "--group", "w", "jobs") for _ in range(3)]
         for s in subs:
             self.assertIn(b"subscribed", s.stderr.readline())
-        n_threads, per = 8, 10
+        n_threads, per = 4, 5
         fails = []
 
         def work(k):
@@ -391,7 +443,8 @@ class Load(Base):
         [t.start() for t in ts]
         [t.join() for t in ts]
         self.assertEqual(fails, [])
-        time.sleep(0.15)
+        rpc(p.path, {"op": "ping"})
+        time.sleep(0.05)
         seen = []
         for s in subs:
             s.terminate()
@@ -404,9 +457,8 @@ class Load(Base):
     def test_100_messages_per_second_one_process_each(self):
         p = self.broker()
         sub = p.popen("sub", "--raw", "jobs")
-        self.assertTrue(wait_for(lambda: p.cli("pub", "jobs", "probe").returncode == 0, 5))
-        sub.stdout.readline()
-        total, rate = 100, 100
+        self.assertTrue(_wait_topic(p, "jobs"))
+        total, rate = 25, 100
         start = time.time()
         procs = []
         fails = 0

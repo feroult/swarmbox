@@ -5,8 +5,10 @@ needs no model). The front is an AUDIO ENTRY with a fixed table (health, audio):
 table, that every other /voice/ path is refused by the front and never reaches the service, and that the answers are filtered.
 Run with: python3 -W error tests/fast/test_voice_front.py
 """
+import concurrent.futures
 import json
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -41,7 +43,7 @@ def wait_port(port, timeout=10):
             socket.create_connection(("127.0.0.1", port), 0.3).close()
             return True
         except OSError:
-            time.sleep(0.02)
+            time.sleep(0.005)
     return False
 
 
@@ -149,24 +151,44 @@ class FrontCase(unittest.TestCase):
 
     with_server = True
 
+    @classmethod
+    def setUpClass(cls):
+        cls._tmp = tempfile.mkdtemp(prefix="voice-front-")
+        cls._log = os.path.join(cls._tmp, "server.log")
+        cls._stub = Stub()
+        cls._server_port = free_port()
+        cls._server = None
+        if cls.with_server:
+            cls._server = subprocess.Popen([sys.executable, FAKE_SERVER, "-p", str(cls._server_port), "-i", "127.0.0.1", "-O"],
+                                           env=dict(os.environ, FAKE_SERVER_LOG=cls._log))
+            if not wait_port(cls._server_port):
+                cls._server.kill()
+                cls._server.wait()
+                raise RuntimeError("fake server did not start")
+        cls._front = front.Front(("127.0.0.1", 0), ("127.0.0.1", cls._server_port), ("127.0.0.1", cls._stub.port))
+        cls._port = cls._front.address[1]
+        threading.Thread(target=cls._front.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._front.close()
+        if cls._server is not None:
+            cls._server.kill()
+            cls._server.wait()
+        cls._stub.close()
+        shutil.rmtree(cls._tmp, ignore_errors=True)
+
     def setUp(self):
-        self.tmp = tempfile.mkdtemp(prefix="voice-front-")
-        self.addCleanup(subprocess.call, ["rm", "-rf", self.tmp])
-        self.log = os.path.join(self.tmp, "server.log")
-        self.stub = Stub()
-        self.addCleanup(self.stub.close)
-        self.server_port = free_port()
-        self.server = None
-        if self.with_server:
-            self.server = subprocess.Popen([sys.executable, FAKE_SERVER, "-p", str(self.server_port), "-i", "127.0.0.1", "-O"],
-                                         env=dict(os.environ, FAKE_SERVER_LOG=self.log))
-            self.addCleanup(self.server.wait)
-            self.addCleanup(self.server.kill)
-            self.assertTrue(wait_port(self.server_port))
-        self.front = front.Front(("127.0.0.1", 0), ("127.0.0.1", self.server_port), ("127.0.0.1", self.stub.port))
-        self.port = self.front.address[1]
-        threading.Thread(target=self.front.serve_forever, daemon=True).start()
-        self.addCleanup(self.front.close)
+        self.tmp = self._tmp
+        self.log = self._log
+        self.stub = self._stub
+        self.server_port = self._server_port
+        self.server = self._server
+        self.front = self._front
+        self.port = self._port
+        self.stub.seen.clear()
+        if os.path.exists(self.log):
+            open(self.log, "w").close()
 
     def heads(self):
         if not os.path.exists(self.log):
@@ -246,7 +268,7 @@ class TerminalPath(FrontCase):
         up = http.server.HTTPServer(("127.0.0.1", 0), PostHandler)
         self.addCleanup(up.server_close)
         self.addCleanup(up.shutdown)
-        threading.Thread(target=up.serve_forever, daemon=True).start()
+        threading.Thread(target=up.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
 
         f = front.Front(("127.0.0.1", 0), ("127.0.0.1", up.server_address[1]), ("127.0.0.1", self.stub.port))
         self.addCleanup(f.close)
@@ -275,7 +297,7 @@ class TerminalPath(FrontCase):
 
     def test_a_silent_client_is_cut_after_the_head_timeout(self):
         old = front.HEAD_TIMEOUT
-        front.HEAD_TIMEOUT = 0.2
+        front.HEAD_TIMEOUT = 0.05
         self.addCleanup(setattr, front, "HEAD_TIMEOUT", old)
         t = time.time()
         c = socket.create_connection(("127.0.0.1", self.port), 5)
@@ -418,7 +440,7 @@ class VoicePath(FrontCase):
 
     def test_a_stalled_body_times_out(self):
         old = front.BODY_IDLE
-        front.BODY_IDLE = 0.2
+        front.BODY_IDLE = 0.05
         self.addCleanup(setattr, front, "BODY_IDLE", old)
         c = socket.create_connection(("127.0.0.1", self.port), 5)
         self.addCleanup(c.close)
@@ -428,13 +450,13 @@ class VoicePath(FrontCase):
     def test_a_body_that_trickles_in_has_a_total_deadline(self):
         # one byte every 0.1 s is never idle for BODY_IDLE, and used to hold the slot for ever
         old = (front.BODY_IDLE, front.BODY_TOTAL)
-        front.BODY_IDLE, front.BODY_TOTAL = 5.0, 0.25
+        front.BODY_IDLE, front.BODY_TOTAL = 5.0, 0.08
         self.addCleanup(lambda: setattr(front, "BODY_IDLE", old[0]) or setattr(front, "BODY_TOTAL", old[1]))
         c = socket.create_connection(("127.0.0.1", self.port), 5)
         self.addCleanup(c.close)
         c.sendall(b"POST /voice/audio HTTP/1.1\r\nHost: h\r\nContent-Type: audio/wav\r\nContent-Length: 5000\r\n\r\n")
         t0, got = time.time(), b""
-        c.settimeout(0.05)
+        c.settimeout(0.015)
         while time.time() - t0 < 4 and b" 408 " not in got:
             try:
                 c.sendall(b"R")
@@ -449,11 +471,15 @@ class VoicePath(FrontCase):
         self.assertEqual(self.stub.seen, [])
 
     def test_a_dead_service_is_a_502_and_the_terminal_still_works(self):
-        self.stub.close()
-        status, _, body = get(self.port, "/voice/health")
+        dead_port = free_port()
+        f = front.Front(("127.0.0.1", 0), ("127.0.0.1", self.server_port), ("127.0.0.1", dead_port))
+        self.addCleanup(f.close)
+        threading.Thread(target=f.serve_forever, daemon=True).start()
+        port = f.address[1]
+        status, _, body = get(port, "/voice/health")
         self.assertEqual((status, json.loads(body)["error"]), (502, "voice_unavailable"))
-        self.assertEqual(post(self.port, "/voice/audio", WAV, "audio/wav")[0], 502)
-        self.assertEqual(get(self.port, "/")[0], 200)
+        self.assertEqual(post(port, "/voice/audio", WAV, "audio/wav")[0], 502)
+        self.assertEqual(get(port, "/")[0], 200)
 
     def test_a_garbage_answer_is_a_502_and_the_terminal_still_works(self):
         self.assertEqual(post(self.port, "/voice/audio", b"GARBAGE" + WAV, "audio/wav")[0], 502)
@@ -461,12 +487,12 @@ class VoicePath(FrontCase):
 
     def test_a_slow_service_is_a_504_and_does_not_block_the_terminal(self):
         old = front.UPSTREAM_TIMEOUT
-        front.UPSTREAM_TIMEOUT = 0.2
+        front.UPSTREAM_TIMEOUT = 0.06
         self.addCleanup(setattr, front, "UPSTREAM_TIMEOUT", old)
         out = {}
         t = threading.Thread(target=lambda: out.update(r=post(self.port, "/voice/audio", b"SLOW" + WAV, "audio/wav")))
         t.start()
-        time.sleep(0.05)
+        time.sleep(0.01)
         t0 = time.time()
         self.assertEqual(get(self.port, "/")[0], 200)
         self.assertLess(time.time() - t0, 2)
@@ -580,17 +606,18 @@ class Processes(unittest.TestCase):
         self.assertEqual(get(self.port, "/voice/health", extra="Origin: http://evil.example\r\n")[0], 403)
 
     def test_the_server_exiting_stops_the_service_and_gives_its_status(self):
-        p = self.start(FAKE_SERVER_EXIT_AFTER="0.1", FAKE_SERVER_EXIT_CODE="7")
+        p = self.start(FAKE_SERVER_EXIT_AFTER="0.03", FAKE_SERVER_EXIT_CODE="7")
         kids = children_of(p.pid)
         self.assertEqual(len(kids), 2, kids)
         self.assertEqual(p.wait(timeout=15), 7)
         for pid in kids:
             self.assertFalse(alive(pid), pid)
-        self.assertFalse(wait_port(self.service_port, 0.15))
+        self.assertFalse(wait_port(self.service_port, 0.03))
 
     def test_a_signal_stops_both_children_and_exits_cleanly(self):
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            self.setUp()
+        for i, sig in enumerate((signal.SIGTERM, signal.SIGINT)):
+            if i:
+                self.setUp()
             p = self.start()
             kids = children_of(p.pid)
             self.assertEqual(len(kids), 2, kids)
@@ -606,7 +633,7 @@ class Processes(unittest.TestCase):
         p.wait()
         deadline = time.time() + 10
         while time.time() < deadline and any(alive(k) for k in kids):
-            time.sleep(0.03)
+            time.sleep(0.01)
         self.assertFalse([k for k in kids if alive(k)])
 
     def test_a_dead_service_is_restarted_and_the_terminal_never_noticed(self):
@@ -619,7 +646,8 @@ class Processes(unittest.TestCase):
         ok = False
         while time.time() < end and not ok:
             ok = get(self.port, "/voice/health")[0] == 200
-            time.sleep(0.05)
+            if not ok:
+                time.sleep(0.02)
         self.assertTrue(ok, "the service did not come back")
         self.assertIsNone(p.poll())
 
@@ -635,9 +663,12 @@ class Processes(unittest.TestCase):
         self.assertIn("cannot listen", err)
 
     def test_bad_arguments(self):
-        for args in (["--listen", "nonsense", "--", "server"], ["--service-listen", "0.0.0.0:1", "--", "server"], ["--listen", "127.0.0.1:0"]):
-            p = subprocess.run([sys.executable, "-B", "-m", "swarmbox_voice", "front"] + args, env={"PATH": os.environ["PATH"], "PYTHONPATH": LIB},
-                               capture_output=True, text=True, timeout=15)
+        cases = (["--listen", "nonsense", "--", "server"], ["--service-listen", "0.0.0.0:1", "--", "server"], ["--listen", "127.0.0.1:0"])
+        env = {"PATH": os.environ["PATH"], "PYTHONPATH": LIB}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            res = list(pool.map(lambda a: (a, subprocess.run([sys.executable, "-B", "-m", "swarmbox_voice", "front"] + a, env=env,
+                                                             capture_output=True, text=True, timeout=15)), cases))
+        for args, p in res:
             self.assertEqual(p.returncode, 2, args)
 
     def test_a_missing_server_is_127(self):

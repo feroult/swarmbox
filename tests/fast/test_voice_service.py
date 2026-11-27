@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 import voice_support  # noqa: E402
 from helpers import close_listener  # noqa: E402
-from bus_support import Harness, short_tmp  # noqa: E402
+from bus_support import Harness, short_tmp, wait_for  # noqa: E402
 from voice_support import wav_samples, wav_with  # noqa: E402
 
 from swarmbox_voice import busclient, config, server, stt  # noqa: E402
@@ -99,6 +99,12 @@ class Base(unittest.TestCase):
         with open(self.log) as f:
             return [json.loads(x) for x in f.read().splitlines()]
 
+    def assert_no_message(self, h, sub):
+        h.rpc({"op": "ping"})
+        sub.s.settimeout(0.02)
+        with self.assertRaises(socket.timeout):
+            sub.line()
+
 
 class GoalOnTheBus(Base):
     def test_audio_becomes_a_goal_with_source_voice_and_only_the_text(self):
@@ -118,9 +124,7 @@ class GoalOnTheBus(Base):
         self.assertEqual(svc.audio(wav_with("hello"))[1], {"ok": True, "state": "sent"})
         env = other.line()
         self.assertEqual((env["topic"], env["body"]), ("tasks.one", {"text": "hello"}))
-        goal.s.settimeout(0.3)
-        with self.assertRaises(socket.timeout):
-            goal.line()
+        self.assert_no_message(h, goal)
         self.assertEqual(self.service({"SWARMBOX_VOICE_TOPIC": "nobody.here"}, bus_path=h.path).audio(wav_with("x"))[1]["state"], "no_listener")
 
     def test_every_subscriber_of_the_topic_gets_the_goal(self):
@@ -156,9 +160,7 @@ class GoalOnTheBus(Base):
         sub = h.sub("goal")
         status, out = self.service(bus_path=h.path).audio(wav_with("SILENCE"))
         self.assertEqual((status, out), (200, {"ok": False, "state": "nothing_heard", "message": "Nothing heard."}))
-        sub.s.settimeout(0.3)
-        with self.assertRaises(socket.timeout):
-            sub.line()
+        self.assert_no_message(h, sub)
 
     def test_a_recording_with_no_sound_never_reaches_whisper_and_nothing_is_published(self):
         """found by tests/e2e/e2e_voice.py with the real Whisper small: a second of digital silence came back as the word 'you', a little noise as 'ლლლლ',
@@ -169,14 +171,14 @@ class GoalOnTheBus(Base):
         h = self.bus()
         sub = h.sub("goal")
         svc = self.service(bus_path=h.path)
-        quiet = {"silence": [0] * 32000, "noise of a muted microphone": [int(random.gauss(0, 30)) for _ in range(32000)],
-                 "a very quiet hum": [int(60 * math.sin(2 * math.pi * 100 * i / 16000)) for i in range(32000)]}
+        noise_chunk = [int(random.gauss(0, 30)) for _ in range(1000)]
+        hum_chunk = [int(60 * math.sin(2 * math.pi * 100 * i / 16000)) for i in range(160)]
+        quiet = {"silence": [0] * 32000, "noise of a muted microphone": noise_chunk * 32,
+                 "a very quiet hum": hum_chunk * 200}
         for name, samples in quiet.items():
             self.assertEqual(svc.audio(wav_samples(samples))[1]["state"], "nothing_heard", name)
         self.assertFalse(os.path.exists(self.log), "the recognizer was not asked (the fake writes its log when it runs)")
-        sub.s.settimeout(0.3)
-        with self.assertRaises(socket.timeout):
-            sub.line()
+        self.assert_no_message(h, sub)
 
     def test_the_loudness_of_speech_is_far_above_the_gate_and_a_short_click_is_judged_whole(self):
         import math
@@ -200,7 +202,11 @@ class GoalOnTheBus(Base):
             sq = [x * x for x in samples]
             want = math.sqrt(max(sum(sq[i:i + win]) for i in range(0, n - win + 1, 800)) / win)
             self.assertAlmostEqual(stt.loudest(wav_samples(samples)), want, places=6, msg=n)
-        big = wav_samples([int(random.gauss(0, 3000)) for _ in range(2_000_000)])
+        import struct
+        chunk = [int(random.gauss(0, 3000)) for _ in range(2000)]
+        data = struct.pack("<%dh" % len(chunk), *chunk) * 1000
+        fmt = struct.pack("<HHIIHH", 1, 1, 16000, 32000, 2, 16)
+        big = b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " + struct.pack("<I", 16) + fmt + b"data" + struct.pack("<I", len(data)) + data
         tracemalloc.start()
         stt.loudest(big)
         peak = tracemalloc.get_traced_memory()[1]
@@ -237,9 +243,7 @@ class GoalOnTheBus(Base):
                 svc.audio(wav)
             self.assertEqual((cm.exception.status, cm.exception.code), (status, code))
             self.assertEqual(cm.exception.message, server.AUDIO_MESSAGES[code])
-        sub.s.settimeout(0.3)
-        with self.assertRaises(socket.timeout):
-            sub.line()
+        self.assert_no_message(h, sub)
 
 
 class BusClientAnswers(Base):
@@ -272,7 +276,7 @@ class BusClientAnswers(Base):
         srv.listen(1)
         self.addCleanup(srv.close)
         t = time.time()
-        self.assertEqual(busclient.publish("goal", "go", path, timeout=0.4), "bus_down")
+        self.assertEqual(busclient.publish("goal", "go", path, timeout=0.05), "bus_down")
         self.assertLess(time.time() - t, 3)
 
     def test_the_socket_path_follows_the_run_folder_rules_of_the_box(self):
@@ -400,7 +404,7 @@ class HttpTests(Base):
 
     def test_no_listener_over_http_is_a_503_with_a_state(self):
         self.sub.close()
-        time.sleep(0.2)
+        self.assertTrue(wait_for(lambda: not self.h.rpc({"op": "topics"}).get("result"), 2.0, 0.005))
         status, out, _ = self.call("POST", "/voice/audio", wav_with("hello"), {"Content-Type": "audio/wav"})
         self.assertEqual((status, out["ok"], out["state"]), (503, False, "no_listener"))
 
@@ -424,10 +428,7 @@ class HttpTests(Base):
         status, _, resp = self.call("POST", "/voice/audio", wav_with("x"), {"Origin": "http://evil.example", "Content-Type": "audio/wav"})
         self.assertEqual(status, 403)
         self.assertIsNone(resp.getheader("Access-Control-Allow-Origin"))
-        env_none = self.sub
-        env_none.s.settimeout(0.3)
-        with self.assertRaises(socket.timeout):
-            env_none.line()
+        self.assert_no_message(self.h, self.sub)
 
     def test_only_loopback_addresses_are_accepted_for_listening(self):
         for host in ("0.0.0.0", "", "192.168.1.5", "example.com", "::"):
@@ -466,8 +467,9 @@ class SayCommand(Base):
 
     def test_say_exit_codes_tell_the_state(self):
         h = self.bus()
-        self.assertEqual(self.say(h.path, "x").returncode, 3, "no subscriber")
-        self.assertIn("Nobody is listening", self.say(h.path, "x").stderr)
+        r = self.say(h.path, "x")
+        self.assertEqual(r.returncode, 3, "no subscriber")
+        self.assertIn("Nobody is listening", r.stderr)
         self.assertEqual(self.say(os.path.join(self.tmp, "none.sock"), "x").returncode, 4, "no bus")
         h.sub("goal")
         self.assertEqual(self.say(h.path, "\u200b").returncode, 2, "nothing to say")
