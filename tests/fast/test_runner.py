@@ -135,10 +135,38 @@ class Runner(unittest.TestCase):
     def test_a_file_over_its_time_limit_is_killed_and_reported(self):
         tmp, env = fake_tests({"test_hang.py": "import time\ntime.sleep(60)\n"})
         self.addCleanup(shutil.rmtree, tmp, True)
-        p = run("--timeout", "1", env=env)
+        p = run("--timeout", "0.2", env=env)
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
         self.assertRegex(p.stdout, r"(?m)^test_hang\.py FAIL")
         self.assertIn("time limit", p.stdout)
+
+    def test_multi_class_file_shards_safely_and_respects_module_hooks(self):
+        sharded = (
+            "import unittest\n"
+            "class A(unittest.TestCase):\n    def test_a(self): pass\n"
+            "class B(unittest.TestCase):\n    def test_b(self): pass\n"
+            "class C(unittest.TestCase):\n    @unittest.skip('s')\n    def test_c(self): pass\n"
+            "if __name__ == '__main__':\n    unittest.main()\n"
+        )
+        tmp_log = tempfile.mkdtemp(prefix="swarmbox-test-runner.")
+        self.addCleanup(shutil.rmtree, tmp_log, True)
+        hook_file = os.path.join(tmp_log, "hooks")
+        hooked = (
+            "import unittest\n"
+            "def setUpModule():\n    open(%r, 'a').write('x')\n"
+            "class A(unittest.TestCase):\n    def test_a(self): pass\n"
+            "class B(unittest.TestCase):\n    def test_b(self): pass\n"
+            "if __name__ == '__main__':\n    unittest.main()\n" % hook_file
+        )
+        folder, env = fake_tests({"test_sharded.py": sharded, "test_hooked.py": hooked})
+        self.addCleanup(shutil.rmtree, folder, True)
+        p = run("-j", "4", env=env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertRegex(p.stdout, r"(?m)^test_sharded\.py OK 3 tests, 1 skipped, [\d.]+ s$")
+        self.assertRegex(p.stdout, r"(?m)^test_hooked\.py OK 2 tests, 0 skipped, [\d.]+ s$")
+        self.assertRegex(p.stdout, r"TOTAL 2 files, 5 tests, 0 failed files")
+        with open(hook_file) as f:
+            self.assertEqual(f.read(), "x", "setUpModule must run once, not once per class")
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "reap_run adopts orphans with a Linux child subreaper (prctl)")
     def test_orphans_left_by_a_file_are_killed_and_counted(self):

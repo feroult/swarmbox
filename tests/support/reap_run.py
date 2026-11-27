@@ -17,6 +17,21 @@ import time
 PR_SET_CHILD_SUBREAPER = 36
 
 
+def set_subreaper():
+    """Mark this process as a Linux child subreaper so orphaned descendants are reparented to it."""
+    try:
+        return ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
+    except (OSError, AttributeError):
+        return False
+
+
+def restore_signals():
+    """Reset SIGHUP/SIGTERM/SIGQUIT/SIGINT from ignored dispositions inherited from nohup/CI wrappers."""
+    for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGQUIT):
+        signal.signal(sig, signal.SIG_DFL)
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+
+
 def children_of(pid):
     found = []
     for name in os.listdir("/proc"):
@@ -42,21 +57,53 @@ def cmdline(pid):
         return "?"
 
 
+def _drain_zombies():
+    """Collect any already-dead children; returns True if no children remain at all (ECHILD)."""
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return True
+        if pid == 0:
+            return False
+
+
+def reap_orphans(me=None):
+    """Kill and reap any child processes still attached to this subreaper. Returns (reaped_count, cmdlines)."""
+    if _drain_zombies():
+        return 0, []
+    if me is None:
+        me = os.getpid()
+    reaped = 0
+    left = []
+    for _ in range(5):
+        kids = children_of(me)
+        if not kids:
+            break
+        for pid, state in kids:
+            if state == "Z":   # already dead, only waiting to be collected
+                continue
+            try:
+                left.append(cmdline(pid))
+                os.kill(pid, signal.SIGKILL)
+                reaped += 1
+            except OSError:
+                pass
+        time.sleep(0.02)
+        if _drain_zombies():
+            break
+    return reaped, left
+
+
 def main(argv):
     if not argv:
         print(__doc__, file=sys.stderr)
         return 2
-    subreaper = False
-    try:
-        subreaper = ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
-    except (OSError, AttributeError):
-        pass
+    subreaper = set_subreaper()
     # A runner started with nohup, setsid wrappers or a CI agent can hand down SIGHUP/SIGINT/SIGTERM as ignored; an ignored signal
     # stays ignored through exec and a shell cannot trap it, so the tests that signal a helper would wait for their timeout.
     # Give the command the default dispositions (the test files do the same for themselves, see restore_signals in them).
-    for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGQUIT):
-        signal.signal(sig, signal.SIG_DFL)
-    signal.signal(signal.SIGINT, signal.default_int_handler)
+    restore_signals()
     started = time.time()
     p = subprocess.Popen(argv)
     try:
@@ -64,31 +111,7 @@ def main(argv):
     except KeyboardInterrupt:
         p.send_signal(signal.SIGINT)
         rc = p.wait()
-    reaped = 0
-    left = []
-    if subreaper:
-        me = os.getpid()
-        for _ in range(5):
-            kids = children_of(me)
-            if not kids:
-                break
-            for pid, state in kids:
-                if state == "Z":   # already dead, only waiting to be collected
-                    continue
-                try:
-                    left.append(cmdline(pid))
-                    os.kill(pid, signal.SIGKILL)
-                    reaped += 1
-                except OSError:
-                    pass
-            time.sleep(0.05)
-            while True:
-                try:
-                    pid, _ = os.waitpid(-1, os.WNOHANG)
-                except ChildProcessError:
-                    break
-                if pid == 0:
-                    break
+    reaped, left = reap_orphans() if subreaper else (0, [])
     print("reap_run: seconds %.1f" % (time.time() - started), file=sys.stderr)
     if reaped:
         print("reap_run: reaped %d" % reaped, file=sys.stderr)
