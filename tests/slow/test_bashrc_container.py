@@ -40,23 +40,46 @@ def tearDownModule():
 
 @unittest.skipUnless(ENABLED, "container tests need SWARMBOX_IMAGE_BUILD=1 and podman")
 class FragmentInContainer(unittest.TestCase):
-    def setUp(self):
-        self.ws = tempfile.mkdtemp(prefix="bashrc-ws-")
-        self.name = "swarmbox-test-bashrc-" + rnd()
-        self.addCleanup(shutil.rmtree, self.ws, ignore_errors=True)
-        self.addCleanup(self._remove)
-        r = podman("run", "-d", "--name", self.name, "--userns=keep-id:uid=1000,gid=1000", "-v", self.ws + ":/home/agent",
+    @classmethod
+    def setUpClass(cls):
+        cls.ws = tempfile.mkdtemp(prefix="bashrc-ws-")
+        cls.name = "swarmbox-test-bashrc-" + rnd()
+        cls.addClassCleanup(shutil.rmtree, cls.ws, ignore_errors=True)
+        cls.addClassCleanup(cls._remove)
+        r = podman("run", "-d", "--name", cls.name, "--userns=keep-id:uid=1000,gid=1000", "-v", cls.ws + ":/home/agent",
                    "--tmpfs", "/tmp/swarmbox", "-e", "SWARMBOX_TEST_NO_NESTED=1", "-e", "SWARMBOX_WEB=0", base.TAG)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertTrue(wait_until(lambda: self.sh("test -f /tmp/swarmbox/ready && echo y") == "y", 60, 0.3),
-                        podman("logs", self.name).stdout)
+        if r.returncode != 0:
+            raise AssertionError(r.stderr)
+        if not wait_until(lambda: cls._sh("test -f /tmp/swarmbox/ready && echo y") == "y", 60, 0.3):
+            raise AssertionError(podman("logs", cls.name).stdout)
 
-    def _remove(self):
-        assert self.name.startswith("swarmbox-test-bashrc-")
-        podman("rm", "-f", "-t", "0", self.name)
+    @classmethod
+    def _remove(cls):
+        assert cls.name.startswith("swarmbox-test-bashrc-")
+        podman("rm", "-f", "-t", "0", cls.name)
+
+    @classmethod
+    def _sh(cls, cmd):
+        return podman("exec", cls.name, "sh", "-c", cmd).stdout.decode().strip()
+
+    def setUp(self):
+        self._reset_ws()
+
+    def _reset_ws(self):
+        for rel in (
+            os.path.join(".local", "state", "swarmbox", "health"),
+            os.path.join(".config", "swarmbox", "addons", "fakeagent"),
+            os.path.join(".local", "bin", "fakeagent"),
+            os.path.join(".local", "share", "swarmbox", "shims", "fakeagent"),
+        ):
+            p = os.path.join(self.ws, rel)
+            if os.path.isdir(p) and not os.path.islink(p):
+                shutil.rmtree(p, ignore_errors=True)
+            elif os.path.lexists(p):
+                os.unlink(p)
 
     def sh(self, cmd):
-        return podman("exec", self.name, "sh", "-c", cmd).stdout.decode().strip()
+        return self._sh(cmd)
 
     def interactive(self, commands):
         r = subprocess.run(["podman", "exec", "-i", "-e", "TERM=xterm-256color", self.name, "bash", "-i"],
@@ -96,13 +119,13 @@ class FragmentInContainer(unittest.TestCase):
 
     def write_fake_agent(self):
         d = os.path.join(self.ws, ".config", "swarmbox", "addons", "fakeagent")
-        os.makedirs(d)
+        os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "addon.conf"), "w") as f:
             f.write('SCHEMA=1\nNAME=fakeagent\nDESCRIPTION="a fake agent"\nVERSION=1.0.0\nCOMMANDS="fakeagent"\n')
         with open(os.path.join(d, "shell.sh"), "w") as f:
             f.write('fakeagent() { command fakeagent --auto-approve "$@"; }\n')
         # an addon is an agent (yolo can run it) when it declares agent/agent.conf; its own shell.sh keeps its function
-        os.makedirs(os.path.join(d, "agent"))
+        os.makedirs(os.path.join(d, "agent"), exist_ok=True)
         with open(os.path.join(d, "agent", "agent.conf"), "w") as f:
             f.write("ID=fakeagent\n")
         os.makedirs(os.path.join(self.ws, ".local", "bin"), exist_ok=True)

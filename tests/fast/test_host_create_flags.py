@@ -6,6 +6,7 @@ Podman. Nothing touches the real home or a Windows drive: the WSL probe and the 
 (SWARMBOX_TEST_PROC_VERSION, SWARMBOX_TEST_OS), the local time file is SWARMBOX_LOCALTIME_FILE.
 Run: python3 tests/fast/test_host_create_flags.py
 """
+import concurrent.futures
 import itertools
 import os
 import random
@@ -281,11 +282,11 @@ class NeverUnsafeTest(Base):
         combos = list(itertools.product(*[[(k, v) for v in vs] for k, vs in axes]))
         random.Random(32).shuffle(combos)
         chosen = combos[:24]       # the product has 17280 combinations and one run costs a process: a seeded sample is enough
-        for combo in chosen:
-            env = dict(combo)
-            env["A_ONE"] = CANARY
-            env["SWARMBOX_WORKSPACE"] = self.ws
-            self.check(self.cf(env=env), env)
+        envs = [dict(combo, A_ONE=CANARY, SWARMBOX_WORKSPACE=self.ws) for combo in chosen]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            results = list(pool.map(lambda e: (self.cf(env=e), e), envs))
+        for p, env in results:
+            self.check(p, env)
         for k, vs in axes:      # the sample must have met every value of every axis (a changed seed or axis list could lose one)
             self.assertEqual({dict(c)[k] for c in chosen}, set(vs), k)
 

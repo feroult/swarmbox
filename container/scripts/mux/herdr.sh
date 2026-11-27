@@ -39,7 +39,7 @@ _herdr_ensure_server() {
     "$_SB_HERDR_HC" server start > /dev/null 2>&1 || true
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
         "$_SB_HERDR_HC" server status --json > /dev/null 2>&1 && return 0
-        sleep 0.15
+        sleep "${SWARMBOX_TEST_HC_WAIT_SLEEP:-0.15}"
     done
     return 1
 }

@@ -191,7 +191,7 @@ def main(argv):
         return 0
     sel = o["sel"] or ("all" if o["only"] else "fast")
     cpus = os.cpu_count() or 2
-    default_j = {"fast": min(cpus, 8), "macos": min(cpus, 8), "slow": min(cpus, 3), "all": min(cpus, 8), "e2e": 1}[sel]
+    default_j = {"fast": min(cpus, 16), "macos": min(cpus, 16), "slow": min(cpus, 3), "all": min(cpus, 16), "e2e": 1}[sel]
     jobs = o["j"] or default_j
     if o["timeout"]:
         timeouts = dict((k, o["timeout"]) for k in LAYERS)

@@ -202,6 +202,23 @@ class Install(Tree):
 
 
 class Prepare(Tree):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        tpl = Tree()
+        tpl.setUp()
+        cls.addClassCleanup(tpl.doCleanups)
+        tpl.install()
+        cls._installed_home = os.path.join(tpl.home, ".local")
+        cls._installed_out = os.path.join(tpl.base, "out")
+
+    def install(self, keep_service=False):
+        if keep_service:
+            return super().install(keep_service=True)
+        shutil.copytree(self._installed_home, os.path.join(self.home, ".local"), symlinks=True)
+        if os.path.exists(self._installed_out):
+            shutil.copytree(self._installed_out, os.path.join(self.base, "out"), symlinks=True)
+
     def test_prepare_of_an_addon_that_is_not_installed_does_nothing(self):
         r = self.prepare()
         self.assertEqual(r.returncode, 0, r.stderr)

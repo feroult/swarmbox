@@ -29,7 +29,7 @@ class Run(vw.Base):
 
     def test_a_herdr_core_that_does_not_answer_is_a_failure_and_no_server_starts(self):
         vw.write_exec(os.path.join(self.fake, "hc"), "#!/bin/sh\nexit 1\n")
-        r = self.web("run")
+        r = self.web("run", SWARMBOX_TEST_HC_WAIT_SLEEP="0.01")
         self.assertEqual(r.returncode, 1, r.stderr)
         self.assertIn("herdr-core server is not answering", r.stderr)
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "server.argv")))

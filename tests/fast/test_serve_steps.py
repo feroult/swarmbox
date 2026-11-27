@@ -222,7 +222,7 @@ class WarnSteps(ServeCase):
             with self.subTest(label):
                 self.fresh()
                 setup()
-                p = self.run_ready()
+                p = self.run_ready(SWARMBOX_TEST_HC_WAIT_SLEEP="0.01")
                 self.assertEqual(self.marker(), "warnings=1", label)
                 lines = self.health_lines()
                 self.assertEqual(len(lines), 1, lines)

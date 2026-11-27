@@ -7,6 +7,7 @@ import fcntl
 import json
 import os
 import pty
+import select
 import shutil
 import stat
 import struct
@@ -597,14 +598,30 @@ class ConfigTest(unittest.TestCase):
 class LauncherContractTest(Base):
     """The writer (the sysop) and the reader (the generated shell function) agree on the folder and the file name."""
 
-    def run_claude(self, cwd, args="", shell="bash"):
-        gen = subprocess.run([sys.executable, "-I", os.path.join(LIB, "swarmbox-agents.py"), "sh"], capture_output=True, text=True, timeout=30,
-                             env={"PATH": "/usr/bin:/bin", "HOME": self.tmp, "SWARMBOX_TEST_IMAGE_ADDONS": REAL_ADDONS})
-        self.assertEqual(gen.returncode, 0, gen.stderr)
+    _AGENTS_SH_CACHE = None
+
+    def _write_launcher_files(self, with_bus=False):
+        if LauncherContractTest._AGENTS_SH_CACHE is None:
+            gen = subprocess.run([sys.executable, "-I", os.path.join(LIB, "swarmbox-agents.py"), "sh"], capture_output=True, text=True, timeout=30,
+                                 env={"PATH": "/usr/bin:/bin", "HOME": self.tmp, "SWARMBOX_TEST_IMAGE_ADDONS": REAL_ADDONS})
+            self.assertEqual(gen.returncode, 0, gen.stderr)
+            LauncherContractTest._AGENTS_SH_CACHE = gen.stdout
         fns = os.path.join(self.tmp, "agents.sh")
-        write(fns, gen.stdout)
-        write(os.path.join(self.tmp, "bin", "claude"), '#!/bin/sh\nfor a in "$@"; do printf "[%s]" "$a"; done; echo\n')
-        os.chmod(os.path.join(self.tmp, "bin", "claude"), 0o755)
+        if not os.path.exists(fns):
+            write(fns, LauncherContractTest._AGENTS_SH_CACHE)
+        claude_bin = os.path.join(self.tmp, "bin", "claude")
+        if not os.path.exists(claude_bin):
+            write(claude_bin, '#!/bin/sh\nfor a in "$@"; do printf "[%s]" "$a"; done; echo\n')
+            os.chmod(claude_bin, 0o755)
+        if with_bus:
+            bus_bin = os.path.join(self.tmp, "bin", "swarmbox-bus")
+            if not os.path.exists(bus_bin):
+                write(bus_bin, self.FAKE_BUS)
+                os.chmod(bus_bin, 0o755)
+        return fns
+
+    def run_claude(self, cwd, args="", shell="bash"):
+        fns = self._write_launcher_files()
         env = {"PATH": os.path.join(self.tmp, "bin") + ":/usr/bin:/bin", "HOME": self.tmp, "TERM": "dumb",
                "SB_STATE_DIR": os.path.join(self.tmp, "state")}
         r = subprocess.run([shell, "-c", ". %s; claude %s" % (fns, args)], cwd=cwd, env=env, capture_output=True, text=True, timeout=30)
@@ -613,7 +630,7 @@ class LauncherContractTest(Base):
 
     # the fake swarmbox-bus: logs each publish (its words, one per line, then a blank line); FAKE_BUS_RC is its exit code; on a `prepare`,
     # FAKE_BUS_DO=carry writes the file of the commit (what the sysop does), FAKE_BUS_DO=none writes <commit>.none, FAKE_BUS_DO=behind
-    # writes the mark and the carried file, then the new file 2.5 s later
+    # writes the mark and the carried file, then the new file 0.35 s later
     FAKE_BUS = r"""#!/bin/sh
 { for a in "$@"; do printf '%s\n' "$a"; done; echo; } > "$FAKE_BUS_LOG.$$"
 cat "$FAKE_BUS_LOG.$$" >> "$FAKE_BUS_LOG"; rm -f "$FAKE_BUS_LOG.$$"
@@ -624,21 +641,19 @@ case "$*" in
         case "${FAKE_BUS_DO:-}" in
             carry) sleep 0.3; echo "carried for $c" > "$d/$c.md" ;;
             none) echo > "$d/$c.none" ;;
-            wait) printf 'calc\tnew\n' > "$d/$c.wait"; ( sleep 2.5; echo "written for $c" > "$d/$c.md"; rm -f "$d/$c.wait" ) > /dev/null 2>&1 & ;;
+            wait) printf 'calc\tnew\n' > "$d/$c.wait"; ( sleep 0.35; echo "written for $c" > "$d/$c.md"; rm -f "$d/$c.wait" ) > /dev/null 2>&1 & ;;
             waitforever) printf 'calc\tnew\n' > "$d/$c.wait" ;;
             behind) printf 'calc\tbehind\n' > "$d/$c.wait"; echo "carried for $c" > "$d/$c.md"
-                    ( sleep 2.5; echo "written for $c" > "$d/$c.md"; rm -f "$d/$c.wait" ) > /dev/null 2>&1 & ;;
+                    ( sleep 0.35; echo "written for $c" > "$d/$c.md"; rm -f "$d/$c.wait" ) > /dev/null 2>&1 & ;;
             behindforever) printf 'calc\tbehind\n' > "$d/$c.wait"; echo "carried for $c" > "$d/$c.md" ;;
         esac ;;
 esac
 exit "${FAKE_BUS_RC:-0}"
 """
 
-    def run_launcher(self, cwd, extra_env=None, shell="bash"):
+    def run_launcher(self, cwd, extra_env=None, shell="bash", expect_session=True):
         """claude through the generated function with a fake bus: (what the agent got, the publishes, the seconds it took)."""
-        self.run_claude(cwd)        # writes agents.sh and the fake claude
-        write(os.path.join(self.tmp, "bin", "swarmbox-bus"), self.FAKE_BUS)
-        os.chmod(os.path.join(self.tmp, "bin", "swarmbox-bus"), 0o755)
+        fns = self._write_launcher_files(with_bus=True)
         log = os.path.join(self.tmp, "bus.log")
         if os.path.exists(log):
             os.unlink(log)
@@ -646,13 +661,14 @@ exit "${FAKE_BUS_RC:-0}"
                "SB_STATE_DIR": os.path.join(self.tmp, "state"), "FAKE_BUS_LOG": log, "HC_TERMINAL_ID": "t7"}
         env.update(extra_env or {})
         t0 = time.monotonic()
-        r = subprocess.run([shell, "-c", ". %s; claude" % os.path.join(self.tmp, "agents.sh")], cwd=cwd, env=env, capture_output=True,
+        r = subprocess.run([shell, "-c", ". %s; claude" % fns], cwd=cwd, env=env, capture_output=True,
                            text=True, timeout=30)
         took = time.monotonic() - t0
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stderr, "", "the launcher writes nothing on the terminal (an agent's screen would hide it)")
         pubs = []
-        for _ in range(150):        # the `session` publish runs in the background
+        polls = 150 if expect_session else 3
+        for _ in range(polls):      # the `session` publish runs in the background
             pubs = [p.split("\n") for p in slurp(log).split("\n\n") if p.strip()] if os.path.exists(log) else []
             if any('"event":"session"' in p[-1] for p in pubs):
                 break
@@ -662,24 +678,36 @@ exit "${FAKE_BUS_RC:-0}"
     def run_launcher_on_a_terminal(self, cwd, bus_do, keys_after=None, cols=0):
         """claude through the generated function on a pty (stdin and stderr), with a fake bus: (what the agent got, the screen, the
         publishes). `keys_after` = (seconds, bytes) typed on the terminal; `cols`: the terminal's real width (COLUMNS says 200)."""
-        self.run_launcher(cwd)      # writes agents.sh, the fake claude and the fake bus
+        fns = self._write_launcher_files(with_bus=True)
         log = os.path.join(self.tmp, "bus.log")
-        os.unlink(log)
+        if os.path.exists(log):
+            os.unlink(log)
         master, slave = pty.openpty()
         self.addCleanup(os.close, master)
         if cols:
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, cols, 0, 0))
         env = {"PATH": os.path.join(self.tmp, "bin") + ":/usr/bin:/bin", "HOME": self.tmp, "TERM": "dumb", "COLUMNS": "200",
                "SB_STATE_DIR": os.path.join(self.tmp, "state"), "FAKE_BUS_LOG": log, "FAKE_BUS_DO": bus_do}
-        p = subprocess.Popen(["bash", "-c", ". %s; claude" % os.path.join(self.tmp, "agents.sh")], cwd=cwd, env=env, stdin=slave,
+        p = subprocess.Popen(["bash", "-c", ". %s; claude" % fns], cwd=cwd, env=env, stdin=slave,
                              stderr=slave, stdout=subprocess.PIPE, text=True)
         self.addCleanup(lambda: p.poll() is None and p.kill())
         os.close(slave)
+        screen = b""
         if keys_after:
-            time.sleep(keys_after[0])
+            deadline = time.monotonic() + 5.0
+            while (b"sysop:" not in screen or b"\x1b[0m" not in screen) and time.monotonic() < deadline:
+                r, _, _ = select.select([master], [], [], 0.05)
+                if not r:
+                    continue
+                try:
+                    chunk = os.read(master, 65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                screen += chunk
             os.write(master, keys_after[1])
         out, _ = p.communicate(timeout=40)
-        screen = b""
         while True:
             try:
                 chunk = os.read(master, 65536)
@@ -762,7 +790,7 @@ exit "${FAKE_BUS_RC:-0}"
         self.assertNotIn("--append-system-prompt-file", got)
 
     def test_without_the_digests_folder_the_launcher_tells_nobody_and_waits_for_nothing(self):
-        got, pubs, _ = self.run_launcher(self.repo)
+        got, pubs, _ = self.run_launcher(self.repo, expect_session=False)
         self.assertEqual(pubs, [])
         self.assertNotIn("--append-system-prompt-file", got)
 
@@ -812,7 +840,7 @@ exit "${FAKE_BUS_RC:-0}"
     def run_agent_with_digest(self, cmd, args="", env_extra=None, opencode=False):
         """`cmd` (an agent of the real addons) through its shell function on a commit whose digest is TRICKY, with a fake program that
         prints its words, one per line, then the OPENCODE_CONFIG_CONTENT it got: (words, the digest file)."""
-        self.run_claude(self.repo)          # writes agents.sh
+        self._write_launcher_files()        # writes agents.sh
         self.refresh()
         path = self.store.file(self.git("rev-parse", "HEAD"))
         write(path, self.TRICKY)

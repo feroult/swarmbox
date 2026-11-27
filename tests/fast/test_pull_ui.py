@@ -35,7 +35,7 @@ case $1 in
         i=0
         while [ "$i" -lt "${FAKE_STEPS:-4}" ]; do
             dd if=/dev/zero bs=1024 count="${FAKE_KIB:-192}" >> "$FAKE_TMP/container_images_storage1/blob" 2> /dev/null
-            sleep 0.2
+            sleep "${FAKE_STEP_SLEEP:-0.05}"
             i=$((i + 1))
         done
         [ -z "${FAKE_WRITE_MANIFEST:-}" ] || echo "Writing manifest to image destination" >&2
@@ -112,6 +112,7 @@ class PullUiTest(unittest.TestCase):
 
     def run_pull(self, tty=True, **env):
         """pull_image of the whole flow, then the status and the message it set."""
+        env.setdefault("SWARMBOX_TEST_PULL_TICK", "0.03")
         return self.sh('pull_image %s; rc=$?; echo "[rc=$rc msg=$PULL_MSG]"; exit $rc' % REF, tty=tty, **env)
 
     def draw(self, script, **env):
@@ -157,7 +158,7 @@ class PullUiTest(unittest.TestCase):
         self.assertIn("pull", text)
 
     def test_when_the_download_is_over_and_the_pull_is_still_writing_the_label_says_unpack(self):
-        _, out = self.run_pull(FAKE_STEPS="1", FAKE_KIB="768", FAKE_TAIL="0.8")
+        _, out = self.run_pull(FAKE_STEPS="1", FAKE_KIB="768", FAKE_TAIL="0.15")
         text = self.plain(out)
         self.assertIn("unpack", text)
         self.assertLess(text.index("pull "), text.index("unpack"), "the line starts as pull")
@@ -209,7 +210,7 @@ class PullUiTest(unittest.TestCase):
 
     def test_skipped_cached_layers_still_reach_99_percent_and_unpack(self):
         # 196608 B (192 KiB, 25%) is already cached and skipped; Podman only downloads the remaining 576 KiB (75%).
-        rc, out = self.run_pull(FAKE_SKIP_BLOB="1111222233334444", FAKE_STEPS="3", FAKE_KIB="192", FAKE_TAIL="0.6")
+        rc, out = self.run_pull(FAKE_SKIP_BLOB="1111222233334444", FAKE_STEPS="3", FAKE_KIB="192", FAKE_TAIL="0.15")
         text = self.plain(out)
         self.assertEqual(rc, 0, text)
         pcts = [int(x) for x in re.findall(r"(\d+)%", text.replace("\r", "\n"))]

@@ -33,10 +33,10 @@ class ImageTest(unittest.TestCase):
         self.assertIn("uid=1000(node) gid=1000(node)", r.stdout)
 
     def test_the_programs_of_the_box_are_in_the_image(self):
-        for cmd in (["hc", "--version"], ["starship", "--version"], ["git", "--version"],
-                    ["podman", "--version"], ["chromium", "--version"], ["uv", "--version"], ["jq", "--version"]):
-            r = in_image(*cmd)
-            self.assertEqual(r.returncode, 0, "%s: %s" % (cmd[0], r.stderr))
+        cmds = ("hc", "starship", "git", "podman", "chromium", "uv", "jq")
+        script = " && ".join('(%s --version >/dev/null || { echo "FAILED: %s" >&2; exit 1; })' % (c, c) for c in cmds)
+        r = in_image("sh", "-c", script)
+        self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_the_size_is_inside_the_budget(self):
         size = int(podman("image", "inspect", base.TAG, "--format", "{{.Size}}", text=True).stdout.strip())

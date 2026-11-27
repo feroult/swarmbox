@@ -427,11 +427,11 @@ class BrainSupervision(unittest.TestCase):
 
     def test_a_brain_that_prints_without_end_is_cut_at_the_size_limit(self):
         old = brain.MAX_OUTPUT
-        brain.MAX_OUTPUT = 1 << 20
+        brain.MAX_OUTPUT = 64 << 10
         self.addCleanup(setattr, brain, "MAX_OUTPUT", old)
-        res = brain.run(self.e.cfg(), "goal", "cli", self.gdir, ["yes"], {}, lambda: False, lambda: None, time.time() + 4)
+        res = brain.run(self.e.cfg(), "goal", "cli", self.gdir, ["yes"], {}, lambda: False, lambda: None, time.time() + 0.5)
         self.assertEqual(res.outcome, "failed")
-        self.assertLessEqual(os.path.getsize(os.path.join(self.gdir, "stream.jsonl")), (1 << 20) + 4096)
+        self.assertLessEqual(os.path.getsize(os.path.join(self.gdir, "stream.jsonl")), (64 << 10) + 4096)
 
 
 class SysopV2SessionAndStreaming(unittest.TestCase):

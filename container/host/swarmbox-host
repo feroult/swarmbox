@@ -1837,7 +1837,7 @@ ui_pull() {
         # everything is downloaded (the bar is full, no more bytes arrive, or Podman is writing the manifest): writing layers out
         if [ "$up_wr" = 1 ] || { [ "$up_pct" -ge 95 ] && [ "$up_speed" -eq 0 ]; }; then up_label=unpack; fi
         ui_draw_pull "$up_pct" "$((up_max_bytes / 1000000))" "$up_total" "$up_speed" "$((up_now - up_t0))" "$up_label"
-        sleep 0.25 2> /dev/null || sleep 1
+        sleep "${SWARMBOX_TEST_PULL_TICK:-0.25}" 2> /dev/null || sleep 1
     done
     wait "$UP_BG"
     up_rc=$?

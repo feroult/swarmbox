@@ -292,8 +292,8 @@ def make_real_class(name):
             assert podman("volume", "create", cls.vol).returncode == 0
             cls.box = Box(cls.vol)
             cls.boxes.append(cls.box)
-            cls.box.sh("touch /tmp/stamp-4b7", user="root")
-            time.sleep(1.1)  # find -newer compares times: leave a gap after the stamp
+            cls.box.sh("touch -d '1 minute ago' /tmp/stamp-4b7", user="root")  # find -newer compares times: stamp predates the install
+            pre_changed = {l for l in out(cls.box.sh(scan_command(ROOTS, "/tmp/stamp-4b7"), user="root")).splitlines() if l}
             cls.home_before = out(cls.box.sh("find /home/agent -mindepth 1 | sort"))
             cls.t0 = time.time()
             # Step 1: the INSTALLER alone (swarmbox-addon install), so that what the addon itself writes when it runs (Go's telemetry
@@ -306,11 +306,11 @@ def make_real_class(name):
                                  % (name, cls.inst.returncode, err(cls.inst)[-400:]))
                 cls.inst = cls.box.sh("swarmbox-addon install " + name)
             cls.seconds = time.time() - cls.t0
-            cls.changed = [l for l in out(cls.box.sh(scan_command(ROOTS, "/tmp/stamp-4b7"), user="root")).splitlines() if l]
+            cls.changed = [l for l in out(cls.box.sh(scan_command(ROOTS, "/tmp/stamp-4b7"), user="root")).splitlines() if l and l not in pre_changed]
             # Step 2: the first call of the addon through the shim. Files it creates outside the prefix are the addon's own run-time
             # state (reported, not judged: they are not the installer's doing).
             cls.first = cls.box.sh(cmd_text)
-            after = [l for l in out(cls.box.sh(scan_command(ROOTS, "/tmp/stamp-4b7"), user="root")).splitlines() if l]
+            after = [l for l in out(cls.box.sh(scan_command(ROOTS, "/tmp/stamp-4b7"), user="root")).splitlines() if l and l not in pre_changed]
             cls.runtime = sorted(set(offenders(after, allowed_for(name))) - set(cls.changed))
             if cls.runtime:
                 sys.stderr.write("\nreal: %s: files the addon itself wrote when run: %s\n" % (name, cls.runtime[:6]))
