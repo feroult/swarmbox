@@ -8,6 +8,7 @@ Run: python3 tests/fast/test_runner.py
 """
 import contextlib
 import io
+import json
 import os
 import re
 import subprocess
@@ -24,6 +25,8 @@ from helpers import ROOT  # noqa: E402
 import areas  # noqa: E402
 import runner as runner_mod  # noqa: E402
 
+# the runners these tests start never write the timing cache of the user (a test that needs one points it at a temporary file)
+os.environ.setdefault("SWARMBOX_TEST_TIMINGS", "")
 RUNNER = os.path.join(ROOT, "tests", "run.sh")
 TESTS = os.path.join(ROOT, "tests")
 
@@ -430,6 +433,90 @@ class Runner(unittest.TestCase):
         p_all = run_inproc("loop", "-j", "1", "--no-fail-fast", env=env)
         self.assertEqual(p_all.returncode, 1, p_all.stdout + p_all.stderr)
         self.assertRegex(p_all.stdout, r"TOTAL 4 files, 4 tests, 1 failed files")
+
+
+TWO_CLASSES = (
+    "import unittest\n"
+    "class A(unittest.TestCase):\n    def test_a1(self): pass\n    def test_a2(self): pass\n    def test_a3(self): pass\n"
+    "class B(unittest.TestCase):\n    def test_b(self): pass\n"
+    "unittest.main()\n"
+)
+
+
+@unittest.skipUnless(runner_mod.USE_FORK, "the timings are measured in the forked child (Linux)")
+class Timings(unittest.TestCase):
+    def cache(self):
+        d = tempfile.mkdtemp(prefix="swarmbox-test-runner-cache.")
+        self.addCleanup(shutil.rmtree, d, True)
+        return os.path.join(d, "sub", "timings.json")
+
+    def test_a_run_records_each_class_and_test_and_hides_the_timings_line(self):
+        folder, env = fake_tests({"test_two.py": TWO_CLASSES, "test_bad.py": BAD})
+        self.addCleanup(shutil.rmtree, folder, True)
+        path = self.cache()
+        env["SWARMBOX_TEST_TIMINGS"] = path
+        p = run_inproc("-j", "1", env=env)
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertNotIn("reap_run: timings", p.stdout, "the failure tail shows the output of the test, not the timings")
+        files = runner_mod.load_timings(path)
+        self.assertEqual(sorted(files), ["fast/test_bad.py", "fast/test_two.py"])
+        two = files["fast/test_two.py"]
+        self.assertIsInstance(two["import"], float)
+        self.assertEqual(sorted(two["classes"]), ["A", "B"])
+        self.assertEqual(sorted(two["classes"]["A"]["tests"]), ["test_a1", "test_a2", "test_a3"])
+
+    def test_the_cache_is_off_for_another_tests_folder_and_with_an_empty_variable(self):
+        with mock.patch.dict(os.environ, {"SWARMBOX_TEST_TIMINGS": ""}):
+            self.assertIsNone(runner_mod.timings_path())
+        env = dict(os.environ)
+        env.pop("SWARMBOX_TEST_TIMINGS", None)
+        old = runner_mod.TESTS
+        try:
+            with mock.patch.dict(os.environ, env, clear=True):
+                runner_mod.TESTS = tempfile.gettempdir()
+                self.assertIsNone(runner_mod.timings_path(), "the tests of this runner never write the cache of the real suite")
+                runner_mod.TESTS = TESTS
+                os.environ["XDG_CACHE_HOME"] = "/nonexistent-cache"
+                self.assertEqual(runner_mod.timings_path(), "/nonexistent-cache/swarmbox-tests/timings.json")
+        finally:
+            runner_mod.TESTS = old
+
+    def test_with_a_history_the_longest_units_go_first_and_a_long_class_is_split_by_method(self):
+        folder, env = fake_tests({"test_two.py": TWO_CLASSES, "test_small.py": GOOD})
+        self.addCleanup(shutil.rmtree, folder, True)
+        hist = {
+            "fast/test_two.py": {"import": 0.1, "classes": {
+                "A": {"setup": 0.5, "tests": {"test_a1": 4.0, "test_a2": 4.0, "test_a3": 4.0}},
+                "B": {"setup": 0.0, "tests": {"test_b": 1.0}}}},
+            "fast/test_small.py": {"import": 0.1, "classes": {"T": {"setup": 0.0, "tests": {"test_x": 0.2}}}},
+        }
+        old = runner_mod.TESTS
+        runner_mod.TESTS = folder
+        self.addCleanup(setattr, runner_mod, "TESTS", old)
+        units = runner_mod._plan_units(["fast/test_small.py", "fast/test_two.py"], 4, True, hist)
+        self.assertEqual(units[-1]["file"], "fast/test_small.py", "the shortest unit runs last")
+        self.assertEqual([u["est"] for u in units], sorted((u["est"] for u in units), reverse=True))
+        parts = [u["classes"] for u in units if u["file"] == "fast/test_two.py"]
+        named = sorted(n for c in parts for n in c)
+        self.assertEqual(named, ["A.test_a1", "A.test_a2", "A.test_a3", "B"], "every test of the file runs, once")
+        self.assertGreater(len(parts), 2)
+        # a history that does not name exactly the methods of the class (one added since, one inherited) never splits it by method
+        hist["fast/test_two.py"]["classes"]["A"]["tests"].pop("test_a3")
+        parts = [u["classes"] for u in runner_mod._plan_units(["fast/test_two.py"], 4, True, hist)]
+        self.assertNotIn("A.test_a1", [n for c in parts if c for n in c])
+        # and the plan runs: every test once, the file reported once
+        hist["fast/test_two.py"]["classes"]["A"]["tests"]["test_a3"] = 4.0
+        path = self.cache()
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w") as f:
+            json.dump({"version": runner_mod.TIMINGS_VERSION, "files": hist}, f)
+        env["SWARMBOX_TEST_TIMINGS"] = path
+        p = run_inproc("-j", "4", env=env)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertRegex(p.stdout, r"(?m)^test_two\.py OK 4 tests, 0 skipped")
+        self.assertRegex(p.stdout, r"TOTAL 2 files, 5 tests, 0 failed files")
+        a = runner_mod.load_timings(path)["fast/test_two.py"]["classes"]["A"]
+        self.assertEqual(sorted(a["tests"]), ["test_a1", "test_a2", "test_a3"], "the parts of a split class are put together again")
 
 
 if __name__ == "__main__":
