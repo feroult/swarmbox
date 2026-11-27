@@ -88,9 +88,23 @@ is_file_key() {
 }
 
 # The environment variable of a key: SWARMBOX_ plus the key in upper case, a dot becoming an underscore (voice.stt.model is
-# SWARMBOX_VOICE_STT_MODEL). ENV_OF is set; the keys with a dot are the keys of the `voice` and `sysop` addons.
+# SWARMBOX_VOICE_STT_MODEL). ENV_OF is set; the keys with a dot are the keys of the `voice` and `sysop` addons. It is the mapping of
+# `tr 'a-z.' 'A-Z_'` without a fork (it runs dozens of times per call): every other character stays as it is.
 env_of() {
-    ENV_OF=$(printf '%s' "$1" | tr 'a-z.' 'A-Z_')
+    _eo_in=$1
+    ENV_OF=
+    while [ -n "$_eo_in" ]; do
+        _eo_rest=${_eo_in#?}
+        _eo_c=${_eo_in%"$_eo_rest"}
+        _eo_in=$_eo_rest
+        case $_eo_c in
+            a) _eo_c=A ;; b) _eo_c=B ;; c) _eo_c=C ;; d) _eo_c=D ;; e) _eo_c=E ;; f) _eo_c=F ;; g) _eo_c=G ;;
+            h) _eo_c=H ;; i) _eo_c=I ;; j) _eo_c=J ;; k) _eo_c=K ;; l) _eo_c=L ;; m) _eo_c=M ;; n) _eo_c=N ;;
+            o) _eo_c=O ;; p) _eo_c=P ;; q) _eo_c=Q ;; r) _eo_c=R ;; s) _eo_c=S ;; t) _eo_c=T ;; u) _eo_c=U ;;
+            v) _eo_c=V ;; w) _eo_c=W ;; x) _eo_c=X ;; y) _eo_c=Y ;; z) _eo_c=Z ;; .) _eo_c=_ ;;
+        esac
+        ENV_OF=$ENV_OF$_eo_c
+    done
     ENV_OF=SWARMBOX_$ENV_OF
 }
 VOICE_KEYS='voice.language voice.stt.model voice.stt.vocabulary voice.web voice.topic'
