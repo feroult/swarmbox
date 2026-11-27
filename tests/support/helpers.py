@@ -341,3 +341,12 @@ def close_listener(srv, thread):
         pass
     if thread is not None and thread is not threading.current_thread():
         thread.join(5)
+
+
+def stage_herdr_web(dest):
+    """Copy every container/web/herdr/*.mjs module into `dest` (creating it if needed)."""
+    src_dir = os.path.join(ROOT, "container", "web", "herdr")
+    os.makedirs(dest, exist_ok=True)
+    for name in sorted(os.listdir(src_dir)):
+        if name.endswith(".mjs"):
+            shutil.copyfile(os.path.join(src_dir, name), os.path.join(dest, name))

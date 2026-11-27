@@ -24,7 +24,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, stage_herdr_web  # noqa: E402
 
 TABS_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-tabs.py")
 ATTACH_PATH = os.path.join(ROOT, "container", "scripts", "swarmbox-attach.sh")
@@ -1063,10 +1063,7 @@ class PtyViewportOwnershipTest(unittest.TestCase):
         web_dir = os.path.join(self.tmp, "web")
         ws_dir = os.path.join(web_dir, "node_modules", "ws")
         os.makedirs(ws_dir, exist_ok=True)
-        shutil.copyfile(HERDR_SERVER, os.path.join(web_dir, "server.mjs"))
-        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "hc-client.mjs"), os.path.join(web_dir, "hc-client.mjs"))
-        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "file-preview.mjs"), os.path.join(web_dir, "file-preview.mjs"))
-        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "agents.mjs"), os.path.join(web_dir, "agents.mjs"))
+        stage_herdr_web(web_dir)
         with open(os.path.join(ws_dir, "package.json"), "w", encoding="utf-8") as f:
             json.dump({"name": "ws", "type": "module", "main": "index.js"}, f)
         with open(os.path.join(ws_dir, "index.js"), "w", encoding="utf-8") as f:
@@ -1299,10 +1296,7 @@ class WorktreeOrchestratorApiTest(unittest.TestCase):
         web_dir = os.path.join(self.tmp, "web")
         ws_dir = os.path.join(web_dir, "node_modules", "ws")
         os.makedirs(ws_dir, exist_ok=True)
-        shutil.copyfile(HERDR_SERVER, os.path.join(web_dir, "server.mjs"))
-        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "hc-client.mjs"), os.path.join(web_dir, "hc-client.mjs"))
-        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "file-preview.mjs"), os.path.join(web_dir, "file-preview.mjs"))
-        shutil.copyfile(os.path.join(ROOT, "container", "web", "herdr", "agents.mjs"), os.path.join(web_dir, "agents.mjs"))
+        stage_herdr_web(web_dir)
         with open(os.path.join(ws_dir, "package.json"), "w", encoding="utf-8") as f:
             json.dump({"name": "ws", "type": "module", "main": "index.js"}, f)
         with open(os.path.join(ws_dir, "index.js"), "w", encoding="utf-8") as f:

@@ -16,7 +16,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from helpers import ROOT  # noqa: E402
+from helpers import ROOT, stage_herdr_web  # noqa: E402
 
 WEB = os.path.join(ROOT, "container", "web", "herdr")
 
@@ -113,8 +113,7 @@ class AddonsSettingsGateway(unittest.TestCase):
         web = os.path.join(self.tmp, "web")
         ws = os.path.join(web, "node_modules", "ws")
         os.makedirs(ws)
-        for f in ("server.mjs", "hc-client.mjs", "file-preview.mjs", "agents.mjs"):
-            shutil.copyfile(os.path.join(WEB, f), os.path.join(web, f))
+        stage_herdr_web(web)
         with open(os.path.join(ws, "package.json"), "w") as f:
             json.dump({"name": "ws", "type": "module", "main": "index.js"}, f)
         with open(os.path.join(ws, "index.js"), "w") as f:

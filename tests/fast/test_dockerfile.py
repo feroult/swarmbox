@@ -5,6 +5,7 @@ user, the order of the addon wiring, the files that COPY needs. The smoke test (
 addon added without its line there would fail only on the first image build.
 Run: python3 tests/fast/test_dockerfile.py
 """
+import glob
 import os
 import re
 import sys
@@ -59,11 +60,33 @@ class Image(unittest.TestCase):
     def test_every_module_the_web_studio_imports_is_copied_into_the_image(self):
         # file-preview.mjs was imported by server.mjs but missing from the COPY: the image built, and the web studio crashed on start (ERR_MODULE_NOT_FOUND)
         web = os.path.join(ROOT, "container", "web", "herdr")
-        copied = " ".join(i for i in instructions(read("Dockerfile")) if i.startswith("COPY"))
-        for name in ("server.mjs", "cockpit.mjs", "hc-client.mjs", "file-preview.mjs"):
+        copied_web = set()
+        for inst in INS:
+            if not inst.startswith("COPY "):
+                continue
+            parts = [p for p in inst.split()[1:] if not p.startswith("--")]
+            srcs, dst = parts[:-1], parts[-1]
+            if not dst.startswith("/usr/local/share/swarmbox/herdr-web"):
+                continue
+            for src in srcs:
+                full = os.path.join(ROOT, src)
+                if any(ch in src for ch in "*?["):
+                    for match in glob.glob(full):
+                        if os.path.isfile(match):
+                            copied_web.add(os.path.relpath(match, ROOT).replace(os.sep, "/"))
+                elif os.path.isdir(full):
+                    for entry in os.listdir(full):
+                        if os.path.isfile(os.path.join(full, entry)):
+                            copied_web.add(os.path.relpath(os.path.join(full, entry), ROOT).replace(os.sep, "/"))
+                else:
+                    copied_web.add(src)
+        mjs_files = sorted(f for f in os.listdir(web) if f.endswith(".mjs"))
+        self.assertTrue(mjs_files, "no .mjs files found in container/web/herdr")
+        for name in mjs_files:
+            self.assertIn("container/web/herdr/" + name, copied_web, name + " is not COPYd into /usr/local/share/swarmbox/herdr-web/")
             with open(os.path.join(web, name), encoding="utf-8") as f:
-                for dep in re.findall(r"from\s+['\"]\./([\w.-]+\.mjs)['\"]", f.read()):
-                    self.assertIn("container/web/herdr/" + dep, copied, name + " imports " + dep + ", which the Dockerfile does not COPY")
+                for dep in re.findall(r"(?:from|import)\s*\(?\s*['\"]\./([\w.-]+\.mjs)['\"]", f.read()):
+                    self.assertIn("container/web/herdr/" + dep, copied_web, name + " imports " + dep + ", which the Dockerfile does not COPY")
 
     def test_entrypoint_cmd_and_every_copy_source(self):
         self.assertIn('ENTRYPOINT ["/usr/local/bin/swarmbox-entrypoint"]', INS)
@@ -72,7 +95,11 @@ class Image(unittest.TestCase):
         for i in INS:
             if i.startswith("COPY "):
                 for src in [p for p in i.split()[1:] if not p.startswith("--")][:-1]:
-                    self.assertTrue(os.path.exists(os.path.join(ROOT, src)), "COPY source missing: %s" % src)
+                    full = os.path.join(ROOT, src)
+                    if any(ch in src for ch in "*?["):
+                        self.assertTrue(glob.glob(full), "COPY glob matches nothing: %s" % src)
+                    else:
+                        self.assertTrue(os.path.exists(full), "COPY source missing: %s" % src)
 
     def test_every_script_copied_to_usr_local_bin_is_made_executable_and_attach_is_one(self):
         copied = [i.split()[-1] for i in INS if i.startswith("COPY ") and i.split()[-1].startswith("/usr/local/bin/")]
