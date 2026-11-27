@@ -91,7 +91,7 @@ def append_system_event(path, kind, clock=time.time, **fields):
     try:
         os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
         now = float(clock())
-        rec = {"id": "ev_%d" % int(now * 1000), "kind": str(kind), "ts": now}
+        rec = {"id": "ev_%d_%s" % (int(now * 1000), os.urandom(3).hex()), "kind": str(kind), "ts": now}      # two events in one millisecond are two
         rec.update(fields)
         line = json.dumps(rec, ensure_ascii=False) + "\n"
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_CLOEXEC, 0o600)

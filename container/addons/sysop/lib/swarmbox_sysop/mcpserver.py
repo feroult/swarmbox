@@ -851,7 +851,7 @@ class Server:
                 kind = "/" if os.path.isdir(full) else ""
                 rows.append("%s%s  %s  %s" % (n, kind, human_size(st.st_size) if not kind else "-", time.strftime("%Y-%m-%d %H:%M", time.localtime(st.st_mtime))))
             more = "\n... %d more" % (len(names) - 400) if len(names) > 400 else ""
-            return self.file_frame(path, "folder, %d entries" % len(names), self.tabs_call(self.tabs.redact, "\n".join(rows) + more))
+            return self.file_frame(path, "folder, %d entries" % len(names), self.redacted("\n".join(rows) + more))
         if not os.path.isfile(path):
             raise ToolError("error: no such file: %s" % raw)
         try:
@@ -871,7 +871,18 @@ class Server:
         part = rows[:lines] if start else rows[-lines:]
         what = "%s, %s, the %s %d of %s lines" % (human_size(size), time.strftime("%Y-%m-%d %H:%M", time.localtime(os.path.getmtime(path))),
                                              "first" if start else "last", len(part), "%d" % len(rows) if size <= READ_MAX_BYTES else "many")
-        return self.file_frame(path, what, self.tabs_call(self.tabs.redact, "\n".join(part)))
+        return self.file_frame(path, what, self.redacted("\n".join(part)))
+
+    def redacted(self, text):
+        """The text through the secrets filter of the box. Without the filter nothing is read (fail closed): a swarmbox-tabs older than
+        this sysop has no `redact`."""
+        try:
+            return self.tabs.redact(text)
+        except tabsclient.TabsError as e:
+            if e.code == "usage":
+                raise ToolError("error: read_file needs the secrets filter of the box (swarmbox-tabs redact), which this box does not have yet "
+                                "(update it: swarmbox update). Nothing was read. Read the file with read_tab on a tab that shows it instead.")
+            raise ToolError(self.tabs_text(e))
 
     @staticmethod
     def file_frame(path, what, text):

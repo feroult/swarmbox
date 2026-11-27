@@ -518,9 +518,9 @@ class Service:
         events.emit("state", state="running", source=goal.source, text=goal.text[:4000])
         host = None
         try:
+            self.status()             # first: whoever sees the goal running (state.json) finds it current in status.json too
             self.write_goal(goal)
             aud.append("state", state="running")
-            self.status()
             deadline = (goal.started + self.cfg.max_seconds) if (self.cfg.max_seconds and self.cfg.max_seconds > 0) else None
             ctx = os.path.join(gdir, "context.json")
             ipc.write_json(ctx, {"goal": goal.id, "source": goal.source, "goal_dir": gdir, "audit": self.paths.audit,

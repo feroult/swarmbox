@@ -299,6 +299,22 @@ class Tools(unittest.TestCase):
             f.write(b"\x00\x01\x02")
         self.assertIn("binary", self.fail(srv, "read_file", path=os.path.join(self.e.dir, "bin.dat")))
 
+    def test_read_file_reads_nothing_without_the_secrets_filter(self):
+        srv = self.server()
+        log = os.path.join(self.e.dir, "app.log")
+        with open(log, "w") as f:
+            f.write("token=sk-ant-oat01-abcdefghijklmnopqrstuvwxyz0123456789\n")
+        real = self.tabs.call
+
+        def old_tabs(argv, stdin):            # a swarmbox-tabs older than this sysop
+            if argv[:1] == ["redact"]:
+                return {"err": "usage", "msg": "unknown command redact (swarmbox-tabs --help)"}, 2
+            return real(argv, stdin)
+        self.tabs.call = old_tabs
+        text = self.fail(srv, "read_file", path=log)
+        self.assertIn("Nothing was read", text)
+        self.assertNotIn("sk-ant", text)
+
     def test_what_the_user_writes_meanwhile_comes_once_with_the_next_tool_result(self):
         srv = self.server()
         ipc.append_jsonl(os.path.join(self.gdir, "steer.jsonl"), {"id": "fb-9", "text": "no, the other tab", "source": "web"})
