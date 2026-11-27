@@ -153,6 +153,19 @@
 }
 .sbv-icon-btn.hidden { display: none; }
 
+/* Esc closes the drawer: the same capsule as the popovers' */
+.sbv-esc {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 1px 6px;
+  margin-left: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 .sbv-subbar {
   display: flex;
   align-items: center;
@@ -228,6 +241,9 @@
   line-height: 1.65;
   color: var(--text);
 }
+/* A long URL or inline code breaks inside the article instead of widening the drawer (code blocks and tables scroll on their own) */
+.sbv-md { overflow-wrap: anywhere; }
+.sbv-md th, .sbv-md td { overflow-wrap: normal; }
 .sbv-md h1, .sbv-md h2, .sbv-md h3, .sbv-md h4 {
   color: var(--text);
   margin: 1.35em 0 0.55em;

@@ -391,6 +391,8 @@
   let editingTabId = null;
   let popoverOpen = false;
   let popoverKeyHandler = null;
+  // The open git popover's live refresh ({ sig, run }): it re-fetches the status and re-renders only when it changed (a commit in a shell)
+  let gitPopRefresh = null;
   let activeId = null;
   let lastServerActive = null;   // the active tab the gateway reported last (the herdr-active-tab marker)
   let currentThemeKey = DEFAULT_THEME;
@@ -3575,6 +3577,38 @@
     focusTerminalIfDesktop();
   }
 
+  // Every popover shows that Esc closes it: a capsule at the right of its head, unless the popover already has one
+  function addPopoverEscBadge() {
+    const head = popoverEl.querySelector('.spop-head');
+    if (!head || Array.from(head.querySelectorAll('.wt-kbd')).some((k) => k.textContent.trim() === 'Esc')) return;
+    let right = head.querySelector(':scope > .spop-head-right');
+    if (!right) {
+      right = document.createElement('span');
+      right.className = 'spop-head-right';
+      while (head.children.length > 1) right.appendChild(head.children[1]);
+      head.appendChild(right);
+    }
+    const esc = document.createElement('span');
+    esc.className = 'wt-kbd desktop-only';
+    esc.title = 'Close (Esc)';
+    esc.textContent = 'Esc';
+    right.appendChild(esc);
+  }
+
+  // What a git popover shows, for its live refresh to tell a change: a commit's "12 seconds ago" moves on every fetch and is no change
+  function gitPopSig(value) {
+    return JSON.stringify(value, (k, v) => (k === 'rel_time' ? undefined : v));
+  }
+
+  function refreshGitPopover() {
+    const r = gitPopRefresh;
+    if (!r || !popoverOpen || r.busy || document.visibilityState !== 'visible') return;
+    const ae = document.activeElement;
+    if (ae && popoverEl && popoverEl.contains(ae) && ae.matches('input, textarea, select')) return;
+    r.busy = true;
+    Promise.resolve().then(() => r.run(r)).catch(() => {}).finally(() => { r.busy = false; });
+  }
+
   function openPopover(node, onKeyDown = null) {
     if (!popoverBackdropEl || !popoverEl) return;
     popoverEl.innerHTML = '';
@@ -3584,6 +3618,8 @@
     handle.innerHTML = '<span></span>';
     popoverEl.appendChild(handle);
     popoverEl.appendChild(node);
+    addPopoverEscBadge();
+    gitPopRefresh = null;
     popoverOpen = true;
     popoverKeyHandler = typeof onKeyDown === 'function' ? onKeyDown : null;
     popoverBackdropEl.classList.remove('hidden');
@@ -4358,13 +4394,16 @@
     return d;
   }
 
-  async function openWorktreePopover(termId) {
+  async function openWorktreePopover(termId, opts = {}) {
+    const refresh = opts.refresh || null;
     const t = terminals.find((x) => x.address === termId);
     if (!t) return;
-    const loading = document.createElement('div');
-    loading.className = 'spop-sub';
-    loading.textContent = 'Checking Git worktree status…';
-    openPopover(loading);
+    if (!refresh) {
+      const loading = document.createElement('div');
+      loading.className = 'spop-sub';
+      loading.textContent = 'Checking Git worktree status…';
+      openPopover(loading);
+    }
 
     let st;
     try {
@@ -4372,6 +4411,7 @@
       st = await r.json();
       if (!r.ok) throw new Error(st.message || 'Not a Git worktree');
     } catch (err) {
+      if (refresh) return;
       const box = document.createDocumentFragment();
       const errHead = document.createElement('div');
       errHead.className = 'spop-head';
@@ -4396,6 +4436,8 @@
         if (rr.ok) repoSt = await rr.json();
       } catch (_) {}
     }
+    const sig = gitPopSig([st, repoSt]);
+    if (refresh && (gitPopRefresh !== refresh || !popoverOpen || refresh.sig === sig)) return;
     const mainAgent = (repoSt && repoSt.main_agent) || null;
     const verifyCmd = st.verify_cmd || (repoSt && repoSt.verify_cmd) || '';
     const behindSuffix = (!st.dirty && st.behind > 0) ? ` · ${st.behind} behind ${st.base}` : '';
@@ -4756,6 +4798,7 @@
     links.append(leftLinks, closeLink);
     frag.appendChild(links);
     openPopover(frag);
+    gitPopRefresh = { sig, run: (r) => openWorktreePopover(termId, { refresh: r }) };
   }
 
   function openPendingWorktreesPopover() {
@@ -4874,7 +4917,8 @@
     ].join('\n');
   }
 
-  async function openRepoWorktreesPopover(group) {
+  async function openRepoWorktreesPopover(group, opts = {}) {
+    const refresh = opts.refresh || null;
     if (!group) return;
     const activeWts = (group.activeWorktrees || []);
     const pendingWts = (group.pendingWorktrees || []);
@@ -4885,7 +4929,7 @@
     const loading = document.createElement('div');
     loading.className = 'spop-sub';
     loading.textContent = `Loading ${group.name} status…`;
-    openPopover(loading);
+    if (!refresh) openPopover(loading);
 
     const [fetchedRs, statuses] = await Promise.all([
       group.root
@@ -4904,6 +4948,8 @@
       })),
     ]);
     const rs = fetchedRs || cachedRs;
+    const sig = gitPopSig([rs, statuses.map(({ st }) => st), pendingWts]);
+    if (refresh && (gitPopRefresh !== refresh || !popoverOpen || refresh.sig === sig)) return;
 
     const frag = document.createDocumentFragment();
     const head = document.createElement('div');
@@ -5360,6 +5406,7 @@
     foot.appendChild(doneBtn);
     frag.appendChild(foot);
     openPopover(frag);
+    gitPopRefresh = { sig, run: (r) => openRepoWorktreesPopover(group, { refresh: r }) };
   }
 
   async function wakePin(pinId, worktreeChoice = '') {
@@ -7635,6 +7682,8 @@
     }
   }
   setInterval(tickCtxSince, 1000);
+  setInterval(refreshGitPopover, 4000);
+  window.addEventListener('focus', refreshGitPopover);
 
   function syncContext(sysop) {
     const prevRepos = sysopContext && sysopContext.repos;

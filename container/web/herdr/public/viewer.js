@@ -980,6 +980,7 @@
                 '<a class="sbv-icon-btn" data-act="new-tab" target="_blank" rel="noopener noreferrer" title="Open fullscreen in new tab" aria-label="Open in new tab">' +
                   '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' +
                 '</a>' +
+                '<span class="sbv-esc desktop-only" title="Close (Esc)">Esc</span>' +
                 '<button type="button" class="sbv-icon-btn" data-act="close" title="Close (Esc)" aria-label="Close">' +
                   '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>' +
                 '</button>'
