@@ -7,6 +7,7 @@ emulation. macOS /bin/sh itself and bash 3.2 are not here: those cases are repor
 [unverified]. shellcheck -s sh runs as a test and skips with a tag when it is missing.
 Run: python3 tests/fast/test_host_shells.py
 """
+import concurrent.futures
 import os
 import shutil
 import subprocess
@@ -38,25 +39,29 @@ def interpreters():
     return out
 
 
-class ShellMatrix(unittest.TestCase):
+class Scenario(unittest.TestCase):
     def setUp(self):
         self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-hostshells."))
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.home = os.path.join(self.tmp, "home")
-        os.mkdir(self.home)
 
-    def runner(self, prefix):
-        env = {"PATH": os.environ["PATH"], "HOME": self.home}
+    def world(self, tag):
+        """A folder of its own for one interpreter (its HOME inside), so interpreters can run side by side."""
+        d = os.path.join(self.tmp, tag)
+        os.makedirs(os.path.join(d, "home"))
+        return d
+
+    def runner(self, prefix, tmp):
+        env = {"PATH": os.environ["PATH"], "HOME": os.path.join(tmp, "home")}
 
         def run(*args, extra=None, cwd=None):
             e = dict(env)
             e.update(extra or {})
-            return subprocess.run(prefix + [HELPER, *args], env=e, capture_output=True, text=True, input="", cwd=cwd or self.tmp, timeout=60)
+            return subprocess.run(prefix + [HELPER, *args], env=e, capture_output=True, text=True, input="", cwd=cwd or tmp, timeout=60)
         return run
 
-    def scenario(self, name, prefix):
-        run = self.runner(prefix)
-        cfg = os.path.join(self.home, ".config", "swarmbox")
+    def scenario(self, name, prefix, tmp):
+        run = self.runner(prefix, tmp)
+        cfg = os.path.join(tmp, "home", ".config", "swarmbox")
 
         def ok(p, out=None, code=0):
             self.assertEqual(p.returncode, code, (name, p.stderr))
@@ -107,24 +112,32 @@ class ShellMatrix(unittest.TestCase):
         ok(run("config", "seed", "--with", "other"), "")
         self.assertEqual(run("config", "seed", "--with", "other").stderr, "")
         # a second box in its own folder, and a fresh seed there
-        p = run("config", "seed", "--with", "a", "--workspace", "rel", extra={"SWARMBOX_NAME": "other"}, cwd=self.tmp)
+        p = run("config", "seed", "--with", "a", "--workspace", "rel", extra={"SWARMBOX_NAME": "other"}, cwd=tmp)
         ok(p)
-        ok(run("config", "get", "WORKSPACE", extra={"SWARMBOX_NAME": "other"}), self.tmp + "/rel\n")
+        ok(run("config", "get", "WORKSPACE", extra={"SWARMBOX_NAME": "other"}), tmp + "/rel\n")
         self.assertTrue(os.path.isfile(os.path.join(cfg, "other", "config")))
         self.assertNotIn(CANARY, p.stdout + p.stderr)
 
+
+
+class ShellMatrix(Scenario):
     def test_matrix(self):
+        # each interpreter in its own world, all at once; a failure is reported under the subTest of its interpreter
+        shells = list(interpreters().items())
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(shells)) as pool:
+            futures = [(name, pool.submit(self.scenario, name, prefix, self.world("w%d" % i)))
+                       for i, (name, prefix) in enumerate(shells)]
         ran = []
-        for name, prefix in interpreters().items():
+        for name, fut in futures:
             with self.subTest(shell=name):
-                shutil.rmtree(self.home)
-                os.mkdir(self.home)
-                self.scenario(name, prefix)
+                fut.result()
                 ran.append(name)
         print("shells run:", ran)
         for must in ("dash", "bash --posix"):
             self.assertIn(must, ran)
 
+
+class BashAsShTest(Scenario):
     def test_bash_under_the_name_sh(self):
         """A symlink named `sh` to bash: bash then runs in POSIX mode, as macOS's /bin/sh does (bash 3.2 there)."""
         bash = shutil.which("bash")
@@ -133,8 +146,10 @@ class ShellMatrix(unittest.TestCase):
         d = os.path.join(self.tmp, "bin")
         os.mkdir(d)
         os.symlink(bash, os.path.join(d, "sh"))
-        self.scenario("bash as sh", [os.path.join(d, "sh")])
+        self.scenario("bash as sh", [os.path.join(d, "sh")], self.world("w"))
 
+
+class ShellcheckTest(unittest.TestCase):
     def test_shellcheck_sh_has_no_findings(self):
         sc = shutil.which("shellcheck")
         if not sc:

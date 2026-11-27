@@ -104,18 +104,32 @@ def real_listing():
     return out
 
 
+_last_listing = []   # the listing taken at the end of the previous class of this process: the next class starts from it
+
+
+def listing_before():
+    """The real listing at the start of a class: the one the previous class of this process ended with (one walk less per class)."""
+    return _last_listing[0] if _last_listing else real_listing()
+
+
+def assert_listing_unchanged(before):
+    after = real_listing()
+    _last_listing[:] = [after]
+    assert after == before, "the helper changed the real SwarmBox folders in the real home"
+
+
 class Base(unittest.TestCase):
     name = None
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls._before = real_listing()
+        cls._before = listing_before()
 
     @classmethod
     def tearDownClass(cls):
         try:
-            assert real_listing() == cls._before, "the helper changed the real SwarmBox folders in the real home"
+            assert_listing_unchanged(cls._before)
         finally:
             super().tearDownClass()
 
@@ -345,6 +359,8 @@ class SetTest(Base):
             self.assertEqual(g2, (0, other + "\n"), key)
             self.assertEqual(m, 0o600, key)
 
+
+class SetRejectionTest(Base):
     def test_rejections_name_the_key_and_the_rule_and_write_nothing(self):
         # one home per (key, bad value): every rejection is checked against its own untouched file, and no two runs share a file
         jobs = []
@@ -618,7 +634,7 @@ class SysopFlagsTest(CreateFlagsBase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls._before = real_listing()
+        cls._before = listing_before()
         cls._shared_dir = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-sysopf-sh."))
         cls.addClassCleanup(shutil.rmtree, cls._shared_dir, True)
         hdir = os.path.join(cls._shared_dir, "helper")
@@ -636,7 +652,7 @@ class SysopFlagsTest(CreateFlagsBase):
     @classmethod
     def tearDownClass(cls):
         try:
-            assert real_listing() == cls._before, "the helper changed the real SwarmBox folders in the real home"
+            assert_listing_unchanged(cls._before)
         finally:
             super().tearDownClass()
 
