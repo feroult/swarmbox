@@ -11,6 +11,7 @@
 #    (the service takes a flock; the loser exits 0). The service keeps a pid file and a log in its run and state folders (see paths.py), and
 #    reconnects to the bus by itself, so it does not matter that the bus starts before or after this.
 # Exit 0, or 1 with a line on stderr when the install could not be updated or the service did not come up within 5 s (a refused setting is in serve.log).
+# SWARMBOX_TEST_PREPARE_POLL (tests only): the seconds between two looks at the new service (0.1), for the tests that start it many times.
 set -u
 here=${SWARMBOX_ADDON_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}
 real=$(swarmbox-addon where sysop swarmbox-sysop 2>/dev/null) || exit 0   # not installed: nothing to refresh or start
@@ -55,7 +56,7 @@ until "$bin" status -q > /dev/null 2>&1; do
         echo "sysop prepare: the goal subscriber did not come up (see serve.log in the state folder of the sysop, or run: swarmbox-sysop --self-test)" >&2
         exit 1
     fi
-    sleep 0.1
+    sleep "${SWARMBOX_TEST_PREPARE_POLL:-0.1}"
 done
 echo "sysop prepare: started the goal subscriber" >&2
 exit "$rc"

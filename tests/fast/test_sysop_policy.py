@@ -534,12 +534,12 @@ class Routes(unittest.TestCase):
                 self.assertEqual(policy.Policy(autonomy=autonomy, countdown=0).route(policy.Verdict(level, block=True)).action, "block")
 
     def test_no_level_but_full_auto_sends_high_without_approval(self):
-        for autonomy in self.GATED:
-            for text, level, _ in ALL_CASES:
-                p = policy.Policy(autonomy=autonomy, countdown=0)
-                v = p.assess_run(SH, text)
-                if v.level == "high" and not v.block:
-                    self.assertEqual(p.route(v).action, "approve", (autonomy, text))
+        # the verdict (assess_run) does not read the autonomy, only route does: each row is assessed once, by a fresh Policy, and routed at each level
+        for text, level, _ in ALL_CASES:
+            v = policy.Policy(countdown=0).assess_run(SH, text)
+            if v.level == "high" and not v.block:
+                for autonomy in self.GATED:
+                    self.assertEqual(policy.Policy(autonomy=autonomy, countdown=0).route(v).action, "approve", (autonomy, text))
 
 
 class Budgets(unittest.TestCase):

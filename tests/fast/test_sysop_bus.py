@@ -118,6 +118,7 @@ class WholePath(unittest.TestCase):
         self.e.env["SB_BUS_SOCKET"] = self.h.path
         os.environ.update(self.e.env)
         os.environ.update(self.tabs.cmd_env)
+        os.environ["SWARMBOX_TEST_SETTLE"] = "0.02,2,0.005"     # the hosted MCP server: a run settles after a shorter quiet time (0.5 s)
         script = os.path.join(self.e.dir, "script.json")
         with open(script, "w") as f:
             json.dump([{"tool": "box_state"}, {"tool": "read_tab", "args": {}}, {"tool": "run", "args": {"command": "make test"}},

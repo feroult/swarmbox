@@ -22,6 +22,14 @@ import sysop_support as ss  # noqa: E402
 from swarmbox_sysop import brain, events, history, ipc, landlock, mcpserver  # noqa: E402
 
 
+def _read(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
 class Hermetic(unittest.TestCase):
     def setUp(self):
         self.e = ss.Env()
@@ -299,7 +307,7 @@ class Resident(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def goal(self, sid="", stop_after=None):
+    def goal(self, sid="", stop_when_started=False):
         self.n += 1
         gid = "g%d" % self.n
         gdir = os.path.join(self.pth.goals, gid)
@@ -313,8 +321,9 @@ class Resident(unittest.TestCase):
         try:
             err = self.rt.ensure(self.cfg, self.opts, self.home, self.sock, self.pth, ss.LIB, sid)
             self.assertIsNone(err)
-            t0 = time.time()
-            stop = (lambda: time.time() - t0 > stop_after) if stop_after else (lambda: False)
+            stream = os.path.join(gdir, "stream.jsonl")
+            # the stop comes once the brain said the init of its turn (it has taken the goal: the interrupt is for this turn, not lost before it)
+            stop = (lambda: '"init"' in _read(stream)) if stop_when_started else (lambda: False)
             return self.rt.run_goal(self.cfg, "goal %d" % self.n, gdir, stop, lambda: None, time.time() + 30, ev, self.opts), gdir
         finally:
             host.stop()
@@ -373,13 +382,15 @@ class Resident(unittest.TestCase):
         with open(os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"], "w") as f:
             json.dump([{"sleep": 30}], f)
         t0 = time.time()
-        res, _ = self.goal(stop_after=0.3)
+        with mock.patch.object(brain, "INTERRUPT_WAIT", 3.0):         # the product's wait: a loaded machine still answers within it
+            res, _ = self.goal(stop_when_started=True)
         self.assertEqual(res.outcome, "stopped")
         self.assertLess(time.time() - t0, 5)
         self.assertTrue(self.rt.alive(), "the interrupt ended the turn, the process stays")
         self.rt.close()
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "slow-interrupt"
-        res, _ = self.goal(stop_after=0.3)
+        with mock.patch.object(brain, "INTERRUPT_WAIT", 0.1):         # the answer comes after 10 s: killed whatever the wait, so a short one
+            res, _ = self.goal(stop_when_started=True)
         self.assertEqual(res.outcome, "stopped")
         self.assertFalse(self.rt.alive(), "no end of the turn within INTERRUPT_WAIT: killed")
 

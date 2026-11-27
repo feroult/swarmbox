@@ -287,13 +287,12 @@ class BrainClock(unittest.TestCase):
         os.makedirs(gdir)
         real, offset = time.time, [0.0]
         clock = lambda: real() + offset[0]
-        timer = threading.Timer(0.03, lambda: offset.__setitem__(0, -3600.0))
-        timer.start()
-        self.addCleanup(timer.cancel)
+        # the clock jumps back at the first tick of the supervision, once its budget is counted: a timer could fire before that on a loaded machine
+        jump = lambda: offset.__setitem__(0, -3600.0)  # noqa: E731
         which = brain.shutil.which
         with mock.patch.object(brain.shutil, "which", lambda n, path=None: None if n == "timeout" else which(n, path=path)):        # without the `timeout` wrapper, which counts by itself
             t0 = time.monotonic()
-            res = brain.run(e.cfg(max_seconds=5), "goal", "cli", gdir, ["sleep", "30"], {}, lambda: False, lambda: None, clock() - 0.85,
+            res = brain.run(e.cfg(max_seconds=5), "goal", "cli", gdir, ["sleep", "30"], {}, lambda: False, jump, clock() - 0.85,
                             clock=clock, sleep=lambda s: time.sleep(min(s, 0.01)))
         self.assertLess(time.monotonic() - t0, 8, "the brain ran on after its budget because the clock went back")
         self.assertEqual(res.outcome, "failed")

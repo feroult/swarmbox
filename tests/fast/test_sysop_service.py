@@ -1297,7 +1297,14 @@ class Stopping(Base):
         with open(self.logf) as f:
             self.assertNotIn("--resume", json.load(f)["argv"])
 
+    def short_interrupt_wait(self):
+        """a brain that ignores the interrupt is killed INTERRUPT_WAIT (3 s) later: the same code with a shorter wait"""
+        orig = brain.INTERRUPT_WAIT
+        brain.INTERRUPT_WAIT = 0.2
+        self.addCleanup(setattr, brain, "INTERRUPT_WAIT", orig)
+
     def test_a_brain_that_ignores_the_interrupt_is_killed_and_the_next_goal_resumes_its_session(self):
+        self.short_interrupt_wait()
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "hang"
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_SESSION"] = "sess-h"
         self.start(popen=subprocess.Popen)
@@ -1334,7 +1341,10 @@ class Stopping(Base):
         _wait_for(lambda: os.path.exists(self.logf), 10)
         ipc.request_stop(self.e.paths)
         self.assertEqual(self.wait_state(a)["state"], "stopped")
-        live = events.read(os.path.join(self.e.paths.goals, a, "events.jsonl"))
+        live_path = os.path.join(self.e.paths.goals, a, "events.jsonl")
+        # state.json is written before the last events of the goal (the stopped state comes after what the brain said last): wait for the last one
+        _wait_for(lambda: (events.read(live_path) or [{}])[-1].get("state") == "stopped", 5)
+        live = events.read(live_path)
         self.assertEqual((live[0]["type"], live[0]["state"]), ("state", "running"))
         self.assertEqual((live[-1]["type"], live[-1]["state"]), ("state", "stopped"))
         self.assertIn(("call", "box_state"), [(e["type"], e.get("fn")) for e in live])
@@ -1402,6 +1412,7 @@ class Stopping(Base):
         self.assertEqual(self.tabs.sent, [])
 
     def test_the_deadline_ends_a_goal(self):
+        self.short_interrupt_wait()      # the sleeping brain ignores the interrupt of the deadline: killed after INTERRUPT_WAIT
         self.script([{"sleep": 60}])
         offset = [0.0]
         self.start(max_seconds=0.3, clock=lambda: time.time() + offset[0])  # below what the setting allows (5): the budget is the same code
@@ -1471,11 +1482,15 @@ class Folders(Base):
 class OwnProcess(Base):
     """the service as a real process: kill it, start it again, two at once, SIGTERM"""
 
-    def spawn(self, extra_env=None, log=True, lock_wait=None):
+    def spawn(self, extra_env=None, log=True, lock_wait=None, interrupt_wait=None):
         env = dict(dict(os.environ, PYTHONPATH=ss.LIB, SWARMBOX_SYSOP_COUNTDOWN="0", SWARMBOX_SYSOP_PRESEED="0"), **(extra_env or {}))
-        if lock_wait is not None:
-            code = "import swarmbox_sysop.service as s, swarmbox_sysop.cli as c; s.Service.LOCK_WAIT = %r; raise SystemExit(c.main(%r))" % (
-                lock_wait, ["serve"] + (["--log"] if log else []))
+        if lock_wait is not None or interrupt_wait is not None:
+            code = "import swarmbox_sysop.service as s, swarmbox_sysop.brain as b, swarmbox_sysop.cli as c; "
+            if lock_wait is not None:
+                code += "s.Service.LOCK_WAIT = %r; " % lock_wait
+            if interrupt_wait is not None:
+                code += "b.INTERRUPT_WAIT = %r; " % interrupt_wait
+            code += "raise SystemExit(c.main(%r))" % (["serve"] + (["--log"] if log else []))
             args = [sys.executable, "-B", "-c", code]
         else:
             args = [sys.executable, "-B", "-m", "swarmbox_sysop", "serve"] + (["--log"] if log else [])
@@ -1542,7 +1557,7 @@ class OwnProcess(Base):
 
     def test_sigterm_ends_the_goal_in_flight_and_the_service_cleanly(self):
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "hang"
-        p = self.spawn()
+        p = self.spawn(interrupt_wait=0.2)      # the hanging brain ignores the interrupt: killed after INTERRUPT_WAIT (3 s), the same code shorter
         self.up(p)
         gid = self.goal("x")
         self.wait_state(gid, ("running",))
