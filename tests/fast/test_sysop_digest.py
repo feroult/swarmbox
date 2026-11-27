@@ -724,6 +724,9 @@ exit "${FAKE_BUS_RC:-0}"
                 if not chunk:
                     break
                 screen += chunk
+            # the key comes keys_after[0] seconds after the waiting line, as a person's does: typed the instant the line is drawn, it can
+            # land before the launcher's first `read -s` and be echoed (a CI runner under load did that)
+            time.sleep(keys_after[0])
             os.write(master, keys_after[1])
         out, _ = p.communicate(timeout=40)
         while True:
@@ -765,7 +768,7 @@ exit "${FAKE_BUS_RC:-0}"
     def test_enter_starts_a_session_far_behind_at_once_with_the_last_context(self):
         os.makedirs(self.store.root)
         head = self.git("rev-parse", "HEAD")
-        got, _, pubs = self.run_launcher_on_a_terminal(self.repo, "behindforever", keys_after=(0.6, b"\r"))
+        got, _, pubs = self.run_launcher_on_a_terminal(self.repo, "behindforever", keys_after=(0.3, b"\r"))
         self.assertTrue(got.endswith("[%s]" % self.store.file(head)), got)
         self.assertEqual((pubs[-1]["context"], pubs[-1]["skipped"]), (self.store.file(head), True))
 
@@ -795,7 +798,7 @@ exit "${FAKE_BUS_RC:-0}"
     def test_enter_starts_the_agent_at_once_without_the_context(self):
         os.makedirs(self.store.root)
         t0 = time.monotonic()
-        got, screen, pubs = self.run_launcher_on_a_terminal(self.repo, "waitforever", keys_after=(0.6, b"\r"))
+        got, screen, pubs = self.run_launcher_on_a_terminal(self.repo, "waitforever", keys_after=(0.3, b"\r"))
         self.assertLess(time.monotonic() - t0, 5)
         self.assertTrue(screen.endswith("\x1b[0m\r\x1b[2K"), "the Enter is not echoed, so the line it clears is the waiting line: %r" % screen)
         self.assertNotIn("--append-system-prompt-file", got)

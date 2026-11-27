@@ -635,6 +635,10 @@ class Service:
             ipc.remove(os.path.join(gdir, name))
         if res.outcome == "failed" and disk_low(gdir):
             goal.error = (goal.error + " " if goal.error else "") + "(the disk of the box is almost full: free some space)"
+        # the last event of the stream before the state.json that ends the goal: whoever sees the goal over (the panel, a test) reads its
+        # stream whole, the final state included (written the other way round, a reader under load saw "stopped" and a stream without it)
+        events.emit("state", state=goal.state, error=goal.error or "", summary=(goal.summary or "")[:8000])
+        events.close()
         try:
             self.refresh_final(goal)
         except Exception as e:       # not only OSError: the end of one goal must never end the service
@@ -645,8 +649,6 @@ class Service:
                 history.save_stop_note(self.paths, history.describe_calls(ipc.read_jsonl(os.path.join(gdir, "calls.jsonl"))))
             except Exception as e:
                 self.log("goal %s: cannot keep the stop note: %r" % (goal.id, e))
-        events.emit("state", state=goal.state, error=goal.error or "", summary=(goal.summary or "")[:8000])
-        events.close()
         aud.append("brain", **res.as_dict(), note=res.note)
         aud.append("state", state=goal.state, summary=goal.summary, error=goal.error)
         self.log("goal %s: %s%s" % (goal.id, goal.state, (" (%s)" % goal.error) if goal.error else ""))

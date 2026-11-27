@@ -686,13 +686,15 @@ FUNC_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 # for the panel and the mark on the tab. SWARMBOX_CONTEXT=0 (the Web Studio's New agent box, unticked) starts without the context and
 # says so (`off`). No folder, no bus: nothing is published and nothing waits. It sets _sb_context_file (empty: no context).
 # `command CMD` reaches the program (or its shim), not the function. Written for bash and zsh.
-SHELL_HELPER = r"""_sb_wait() {
+SHELL_HELPER = r"""_sb_wait() (
     # _sb_wait DIR COMMIT: after a `prepare`, wait for DIR/COMMIT.md. Up to 2 s for a carry-forward or a mark of the sysop; while the mark
     # is COMMIT.wait (the model is writing the first digest of the repository, or a new one: the carried COMMIT.md beside it is far behind)
     # it says so in one still line on the terminal (cut to the terminal's real width, so it never wraps: a redrawn line that wraps floods
     # the screen), up to 30 s, and Enter starts the agent at once (without context, or with the carried file). The Web Studio shows its
     # own loader over the terminal. COMMIT.none, or no mark after 2 s (an older sysop), starts at once. 1 when the user skipped.
-    local _w_i=0 _w_shown= _w_repo= _w_why= _w_raw= _w_line _w_k _w_cols
+    # a subshell: the echo it turns off while its line shows is the terminal's again whatever ends it (a Ctrl-C kills the subshell, and
+    # the interactive shell puts back the terminal modes it had before that job)
+    local _w_i=0 _w_shown= _w_repo= _w_why= _w_raw= _w_line _w_k _w_cols _w_tty=
     while [ "$_w_i" -lt 300 ]; do
         if [ ! -e "$1/$2.wait" ]; then
             [ -s "$1/$2.md" ] && break
@@ -721,10 +723,21 @@ SHELL_HELPER = r"""_sb_wait() {
                     _w_line="sysop: preparing the context of ${_w_repo:-this repository}${_w_why:+ ($_w_why)} - Enter starts without it"
                 fi
                 [ "$_w_cols" -gt 1 ] && _w_line=${_w_line:0:$((_w_cols - 1))}
+                _w_tty=$(command stty -g 2>/dev/null) && command stty -echo 2>/dev/null || _w_tty=
                 printf '\r\033[2K\033[2m%s\033[0m' "$_w_line" >&2
                 _w_shown=1
             fi
-            if read -rs -t 0.1 _w_k 2>/dev/null; then
+            # Enter skips. bash's `read -t 0.1` drops a key that comes as its timeout fires (measured: 3 of 24 under load), so bash
+            # asks `read -t 0` (is a line there? it reads nothing) and reads only then; zsh's -t tests before it reads
+            if [ -n "${ZSH_VERSION-}" ]; then
+                read -rs -t 0.1 _w_k 2>/dev/null && _w_k=1 || _w_k=
+            elif read -t 0 2>/dev/null; then
+                read -rs _w_k 2>/dev/null; _w_k=1
+            else
+                command sleep 0.1; _w_k=
+            fi
+            if [ -n "$_w_k" ]; then
+                [ -z "$_w_tty" ] || command stty "$_w_tty" 2>/dev/null
                 printf '\r\033[2K' >&2
                 return 1
             fi
@@ -734,9 +747,10 @@ SHELL_HELPER = r"""_sb_wait() {
         fi
         _w_i=$((_w_i + 1))
     done
+    [ -z "$_w_tty" ] || command stty "$_w_tty" 2>/dev/null
     [ -z "$_w_shown" ] || printf '\r\033[2K' >&2
     return 0
-}
+)
 _sb_context() {
     # _sb_context ID: the digest of the commit a session of agent ID starts on, in _sb_context_file (empty: none), told to the box
     local _c_head _c_dir _c_file _c_cwd _c_tab _c_msg _c_skip=
