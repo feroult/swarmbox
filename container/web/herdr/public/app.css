@@ -3002,15 +3002,52 @@ button, .topbar, .sidebar, .sessions-sheet, .mobile-dock, .sysop-head, .goal-act
 }
 .sysop-queue-cancel:hover { background: rgba(255, 107, 120, 0.16); color: var(--red); }
 
+@keyframes bbs-afterglow {
+  0% {
+    color: #ffffff;
+    text-shadow:
+      0 0 5px #ffffff,
+      0 0 14px var(--accent-bright),
+      0 0 26px var(--accent);
+  }
+  30% {
+    color: #ffffff;
+    text-shadow:
+      0 0 4px rgba(255, 255, 255, 0.75),
+      0 0 12px var(--accent-bright);
+  }
+  64% {
+    color: var(--accent-bright);
+    text-shadow:
+      0 0 8px var(--accent-glow);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+
+.bbs-glow {
+  animation: bbs-afterglow 560ms ease-out forwards;
+}
+
 .turn-stream-cursor {
   display: inline-block;
-  width: 7px;
-  height: 13px;
+  width: 8px;
+  height: 14px;
   margin-left: 2px;
   vertical-align: -2px;
-  border-radius: 2px;
-  background: var(--accent);
-  animation: sb-pulse 0.9s ease-in-out infinite;
+  border-radius: 1.5px;
+  background: #ffffff;
+  box-shadow: 0 0 6px #ffffff, 0 0 14px var(--accent-bright), 0 0 22px var(--accent-glow);
+  animation: sb-pulse 0.75s steps(2, start) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bbs-glow,
+  .turn-stream-cursor {
+    animation: none;
+  }
 }
 .turn-reply pre {
   margin: 6px 0;

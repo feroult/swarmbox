@@ -1,0 +1,1 @@
+- Added: in the Web Studio Sysop panel, live-streaming notes and replies now use a BBS Afterglow phosphor reveal effect (cooling from bright white through the active theme's light accent to normal text) paired with a glowing block cursor, respecting `prefers-reduced-motion`.
