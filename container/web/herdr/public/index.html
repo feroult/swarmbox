@@ -337,6 +337,20 @@
       </div>
     </div>
 
+    <!-- A question of the Sysop (its brain's ask): one button per option, or an answer of your own -->
+    <div class="question-card hidden" id="question-card" role="group" aria-labelledby="question-text">
+      <div class="question-card-head">
+        <span class="question-badge"><i class="question-dot" aria-hidden="true"></i>Sysop asks</span>
+        <span class="question-left" id="question-left"></span>
+      </div>
+      <p class="question-text" id="question-text"></p>
+      <div class="question-options" id="question-options"></div>
+      <form class="question-free" id="question-free" autocomplete="off">
+        <input type="text" id="question-input" maxlength="1000" placeholder="Or answer in your own words" aria-label="Your answer">
+        <button type="submit" class="btn-allow" id="question-send">Answer</button>
+      </form>
+    </div>
+
     <!-- Voice Status Note -->
     <div class="voice-note hidden" id="voice-note" role="status"></div>
 

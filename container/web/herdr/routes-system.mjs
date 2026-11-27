@@ -282,6 +282,38 @@ export async function handleSystemRoutes(req, res, url, pathname, { hc, hub }) {
     return true;
   }
 
+  // The answer to the question the running goal asks (its brain's `ask`): swarmbox-sysop answer writes it where the goal waits for it
+  if (pathname === '/api/sysop/answer' && req.method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    const answer = String((body && body.answer) || '').trim().slice(0, 1000);
+    const qid = String((body && body.id) || '');
+    if (!answer) { sendJson(res, 400, { error: 'empty_answer', message: 'the answer is empty' }); return true; }
+    const args = ['answer'];
+    if (/^q\d{1,6}$/.test(qid)) args.push('--id', qid);
+    args.push('--', answer);
+    const r = await runCommand(SYSOP_BIN, args);
+    hub.broadcast(hub.buildSnapshot({ type: 'sysop' }));
+    if (!r.ok) { sendJson(res, 409, { error: 'answer_failed', message: r.stderr || r.stdout || 'no question is waiting' }); return true; }
+    sendJson(res, 200, { ok: true });
+    return true;
+  }
+
+  // Pause, resume or cancel a schedule or a trigger of the sysop
+  if (pathname === '/api/sysop/automation' && req.method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    const id = String((body && body.id) || '');
+    const action = String((body && body.action) || '');
+    if (!/^a\d{1,6}$/.test(id) || !['pause', 'resume', 'cancel'].includes(action)) {
+      sendJson(res, 400, { error: 'bad_arg', message: 'id a<N> and action pause, resume or cancel are required' });
+      return true;
+    }
+    const r = await runCommand(SYSOP_BIN, ['automation', action, id]);
+    hub.broadcast(hub.buildSnapshot({ type: 'sysop' }));
+    if (!r.ok) { sendJson(res, 409, { error: 'automation_failed', message: r.stderr || r.stdout || 'it could not be changed' }); return true; }
+    sendJson(res, 200, { ok: true, message: r.stdout });
+    return true;
+  }
+
   if (pathname === '/api/sysop/new' && req.method === 'POST') {
     startNewConversation();
     hub.broadcast(hub.buildSnapshot({ type: 'sysop' }));

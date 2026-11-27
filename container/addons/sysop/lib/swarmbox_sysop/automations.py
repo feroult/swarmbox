@@ -56,6 +56,8 @@ def update(paths, fn):
         fcntl.flock(fd, fcntl.LOCK_EX)
         d = load(paths)
         out = fn(d)
+        for x in d["items"]:
+            x["desc"] = describe(x)          # the panel shows this line as it is: one wording, written here
         ipc.write_json(path(paths), d)
         return out
     finally:
