@@ -804,8 +804,20 @@ console.log(JSON.stringify(show()));
     def test_herdr_web_cli_args_and_origin_guard(self):
         if not shutil.which("node"):
             self.skipTest("node not on PATH")
-        with open(HERDR_SERVER, encoding="utf-8") as f:
-            server_src = f.read()
+        herdr_dir = os.path.dirname(HERDR_SERVER)
+        server_modules = [
+            HERDR_SERVER,
+            os.path.join(herdr_dir, "repo-discovery.mjs"),
+            os.path.join(herdr_dir, "pty-bridge.mjs"),
+            os.path.join(herdr_dir, "worktree-ops.mjs"),
+            os.path.join(herdr_dir, "session-hub.mjs"),
+            os.path.join(herdr_dir, "http-routes.mjs"),
+        ]
+        server_parts = []
+        for p in server_modules:
+            with open(p, encoding="utf-8") as f:
+                server_parts.append(f.read())
+        server_src = "\n".join(server_parts)
         with open(HERDR_CLIENT, encoding="utf-8") as f:
             client_src = f.read()
         with open(HERDR_COCKPIT, encoding="utf-8") as f:
@@ -817,7 +829,7 @@ console.log(JSON.stringify(show()));
         self.assertIn("herdr-active-tab", client_src)
         self.assertIn("swarmbox.role", client_src)
         self.assertIn("computeLayout", cockpit_src)
-        for js_path in (HERDR_CLIENT, HERDR_SERVER, HERDR_COCKPIT):
+        for js_path in (HERDR_CLIENT, *server_modules, HERDR_COCKPIT):
             p = subprocess.run(["node", "--check", js_path], capture_output=True, text=True)
             self.assertEqual(p.returncode, 0, "%s: %s" % (js_path, p.stderr))
 
