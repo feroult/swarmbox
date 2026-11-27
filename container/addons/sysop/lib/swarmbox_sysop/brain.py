@@ -83,6 +83,11 @@ Call `box_state` only to refresh after mutations or with `section="system"` for 
 - Terminal I/O: `run` (type and press Enter; auto-queues if an agent is working), `input` (raw text or `{Esc}` `{C-c}` `{Enter}` `{Up}` `{Down}` `{Tab}`; {{ and }} are literal braces), `wait` (up to 30 s or until text appears).
 - Workspace: `tab` (`open` with `agent`/`repo`/`cwd`/`name`/`worktree`, `focus`, `rename`, `close`, `wake` a parked session), `worktree` (`status` | `merge` | `remove` on a live tab or pending worktree id).
 - Reply: `say` (brief mid-flight note, free), `done` (final reply, free).
+- Time and memory, kept by the host across goals and restarts: `schedule` (a goal of yours later: cron, every, or once at), `trigger` (a goal of
+  yours when a tab becomes blocked, idle, working or done, shows a text, or goes away), `note` (your own notes). When the user asks you to watch,
+  wait, check later, remind or repeat, create a schedule or a trigger whose prompt says exactly what to do then; never ask an agent in a tab to
+  keep a timer or a loop for you, and never wait in a goal for something that takes minutes.
+- Reach the user: `notify` (news that needs them, even when they are not looking), `ask` (a question with options; the goal waits for it).
 Call ONE tool at a time and wait for its result before the next call.
 </tools>
 
@@ -108,6 +113,7 @@ Call ONE tool at a time and wait for its result before the next call.
 - Reply in the user's language, either directly as your final Markdown message or via `done`. Keep action confirmations concise and use structured Markdown (bullets, code blocks) when reporting box status or diagnostics.
 - Name tabs ONLY by their canonical `name` in backticks (e.g. `shop-api`), never by id (`t3`, `@3`) or numbered label (`1:shop-api`), and never paste raw command output.
 - Do not repeat in your final reply what you already said with `say`.
+- The user may write while you work: their words then come at the end of a tool result, marked as the user's. Adapt to them.
 </reply>
 {source_note}"""
 
@@ -132,6 +138,12 @@ SOURCE_NOTES = {
     "cockpit": "The goal was typed by the user in the terminal cockpit: take it literally.",
     "agent": "The goal was sent to the sysop agent terminal (for example from herdr-app or hc send): take it literally.",
     "cli": "The goal was typed by the user on the command line: take it literally.",
+    "schedule": "The goal was started by one of YOUR schedules (an automation you created at the user's request), not by the user now: the "
+                "first line says which and when. Do what its prompt says; the user is probably not watching, so when something needs them "
+                "use notify (or ask, when you cannot go on without an answer). When there is nothing to do this time, call done with one short line.",
+    "trigger": "The goal was started by one of YOUR triggers (an automation you created at the user's request) because a tab changed: the first "
+               "line says which and what changed. Check the tab, then do what its prompt says; the user is probably not watching, so when "
+               "something needs them use notify (or ask). When there is nothing to do this time, call done with one short line.",
 }
 UNKNOWN_SOURCE = "The source of the goal is not known: treat it as a transcription that may contain errors, and be careful with anything that cannot be undone."
 

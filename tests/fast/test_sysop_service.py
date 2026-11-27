@@ -706,7 +706,8 @@ class Base(unittest.TestCase):
         replace = {k: over.pop(k) for k in ("max_seconds", "approval_timeout") if isinstance(over.get(k), float) and over[k] < 5}   # below what a setting may be
         kw = dict(dict(self.cfg_over, countdown=0), **over)
         use_popen = popen if popen is not None else (None if self.real_brain else self._tracked_popen)
-        self.svc = service.Service(self.e.cfg(**kw)._replace(**replace), self.e.paths, clock=clock, backoff=(0.01, 0.05), log=lambda m: None, popen=use_popen)
+        self.svc = service.Service(self.e.cfg(**kw)._replace(**replace), self.e.paths, clock=clock, backoff=(0.01, 0.05),
+                                   log=(lambda m: print("sysop:", m, file=sys.stderr)) if os.environ.get("SBDBG") else (lambda m: None), popen=use_popen)
         if self.fast_loop:
             ss.fast_cond(self.svc, cap=0.005)
         self.thread = threading.Thread(target=self.svc.run, daemon=True)
@@ -740,6 +741,150 @@ class Base(unittest.TestCase):
 
     def events(self, kind=None, goal=None):
         return [x for x in audit.read(self.e.paths.audit) if (kind is None or x["event"] == kind) and (goal is None or x["goal"] == goal)]
+
+
+class Automations(Base):
+    """docs/sysop-automations-design.md: schedules and triggers become goals of the queue, one goal of an automation at a time; a message
+    typed while a goal runs reaches that goal; the notes and the automations come with each goal."""
+
+    def setUp(self):
+        super().setUp()
+        from swarmbox_sysop import automations
+        self.A = automations
+        self.e.paths.make()
+        orig = service.TRIGGER_EVERY
+        service.TRIGGER_EVERY = 0.02
+        self.addCleanup(setattr, service, "TRIGGER_EVERY", orig)
+
+    def add(self, fn):
+        return self.A.update(self.e.paths, fn)
+
+    def sysevents(self, kind="automation"):
+        return [e for e in ipc.read_jsonl(os.path.join(self.e.paths.state, "system_events.jsonl")) if e.get("kind") == kind]
+
+    def auto_goals(self, source):
+        out = []
+        for gid in sorted(os.listdir(self.e.paths.goals)):
+            st = self.state(gid)
+            if st and st.get("source") == source:
+                out.append(st)
+        return out
+
+    def test_a_due_schedule_becomes_a_framed_goal_of_its_own_source(self):
+        self.start()
+
+        def make(d):
+            x = self.A.new_schedule(d, time.time(), "look at the agent and tell me", every="10m")
+            x["next"] = time.time() - 1
+            return x
+        x = self.add(make)
+        self.assertTrue(_wait_for(lambda: self.auto_goals("schedule") and self.auto_goals("schedule")[0]["state"] in TERMINAL, 10))
+        g = self.auto_goals("schedule")[0]
+        self.assertEqual((g["state"], g["automation"]), ("done", x["id"]))
+        self.assertTrue(g["text"].startswith("[automation %s (every 10 min, run 1" % x["id"]), g["text"])
+        self.assertIn("look at the agent and tell me", g["text"])
+        with open(self.logf) as f:
+            heard = json.load(f)["stdin"]
+        self.assertIn("one of YOUR schedules", heard, "the source note of an automation")
+        self.assertIn("[your automations", heard)
+        rec = self.A.find(self.A.load(self.e.paths), x["id"])
+        self.assertEqual(rec["runs"], 1)
+        self.assertGreater(rec["next"], time.time() + 500)
+        self.assertEqual([e["phase"] for e in self.sysevents()], ["fired"])
+
+    def test_a_schedule_whose_last_goal_still_runs_is_skipped(self):
+        step, release = self.gate()
+        self.script([step, {"tool": "done", "args": {"summary": "ok"}}])
+        self.start()
+
+        def make(d):
+            x = self.A.new_schedule(d, time.time(), "p", every="1m")
+            x["next"] = time.time() - 1
+            return x
+        x = self.add(make)
+        self.assertTrue(_wait_for(lambda: any(g["state"] == "running" for g in self.auto_goals("schedule")), 10))
+
+        def due_again(d):
+            self.A.find(d, x["id"])["next"] = time.time() - 1
+        self.add(due_again)
+        ok = _wait_for(lambda: [e["phase"] for e in self.sysevents()] == ["fired", "skipped"], 10)
+        self.assertTrue(ok, [(e["phase"], e.get("why")) for e in self.sysevents()])
+        release()
+        self.assertTrue(_wait_for(lambda: self.auto_goals("schedule")[0]["state"] == "done", 10))
+        self.assertEqual(len(self.auto_goals("schedule")), 1, "no goal piled up")
+
+    def test_a_trigger_fires_when_its_tab_becomes_blocked(self):
+        self.tabs.tabs["@2"]["status"] = {"state": "working"}
+        self.start()
+        x = self.add(lambda d: self.A.new_trigger(d, time.time(), "answer what it asks", "@2", "1:agent", "blocked"))
+        _REAL_SLEEP(0.2)                                           # the first look
+        self.assertEqual(self.auto_goals("trigger"), [])
+        self.tabs.tabs["@2"]["status"] = {"state": "blocked"}
+        self.assertTrue(_wait_for(lambda: self.auto_goals("trigger") and self.auto_goals("trigger")[0]["state"] in TERMINAL, 10))
+        g = self.auto_goals("trigger")[0]
+        self.assertIn("the tab became blocked (it was working)", g["text"])
+        self.assertEqual(self.A.find(self.A.load(self.e.paths), x["id"])["runs"], 1)
+
+    def test_a_trigger_whose_tab_is_gone_ends(self):
+        self.start()
+        x = self.add(lambda d: self.A.new_trigger(d, time.time(), "p", "@2", "1:agent", "idle"))
+        _REAL_SLEEP(0.2)
+        del self.tabs.tabs["@2"]
+        self.assertTrue(_wait_for(lambda: self.A.find(self.A.load(self.e.paths), x["id"])["state"] == "ended", 10))
+        self.assertEqual(self.A.find(self.A.load(self.e.paths), x["id"])["why"], "its tab is gone")
+
+    def test_a_message_typed_while_a_goal_runs_reaches_it_at_its_next_tool_call(self):
+        step, release = self.gate()
+        self.script([{"tool": "box_state"}, step, {"tool": "box_state"}, {"tool": "done", "args": {"summary": "ok"}}])
+        self.start()
+        a = self.goal("look at the tabs", "web")
+        self.assertTrue(_wait_for(lambda: os.path.exists(self.out) and "box_state" in read(self.out), 10))
+        b = self.goal("no, only the agent", "web")
+        self.assertTrue(_wait_for(lambda: (self.state(b) or {}).get("state") == "queued", 10))
+        release()
+        self.assertEqual(self.wait_state(a)["state"], "done")
+        self.assertEqual(self.wait_state(b)["state"], "done")
+        self.assertEqual(self.state(b)["summary"], "Passed to the goal that was running.")
+        results = [json.loads(x) for x in read(self.out).splitlines()]
+        self.assertIn('"no, only the agent" (web)', results[1]["text"], "the next tool result carried it")
+        self.assertEqual(sum(1 for r in results if r["tool"] == "done"), 1, "it was not run again as a goal of its own")
+
+    def test_a_message_the_goal_never_took_runs_after_it(self):
+        step, release = self.gate()
+        self.script([{"tool": "box_state"}, step, {"tool": "done", "args": {"summary": "ok"}}])
+        self.start()
+        a = self.goal("first", "web")
+        self.assertTrue(_wait_for(lambda: os.path.exists(self.out) and "box_state" in read(self.out), 10))
+        b = self.goal("second", "panel")
+        release()
+        self.assertEqual(self.wait_state(a)["state"], "done")
+        self.assertEqual(self.wait_state(b)["state"], "done")
+        self.assertNotEqual(self.state(b)["summary"], "Passed to the goal that was running.", "it ran as a goal of its own")
+        with open(self.logf) as f:
+            self.assertIn("The goal now (panel):\nsecond", json.load(f)["stdin"])
+
+    def test_a_goal_from_a_script_still_waits_in_the_queue(self):
+        step, release = self.gate()
+        self.script([{"tool": "box_state"}, step, {"tool": "done", "args": {"summary": "ok"}}])
+        self.start()
+        a = self.goal("first", "web")
+        self.assertTrue(_wait_for(lambda: os.path.exists(self.out) and "box_state" in read(self.out), 10))
+        b = self.goal("from a script", "cli")
+        self.assertTrue(_wait_for(lambda: [q["id"] for q in self.status()["queue"]] == [b], 10))
+        release()
+        self.assertEqual(self.wait_state(b)["state"], "done")
+        self.assertFalse(os.path.exists(os.path.join(self.e.paths.goals, a, "steer.jsonl")))
+
+    def test_the_notes_of_the_sysop_come_with_each_goal(self):
+        from swarmbox_sysop import notes
+        notes.write(self.e.paths, "agy-quota", "the quota of agy resets at 14:00")
+        self.start()
+        self.wait_state(self.goal("hi", "web"))
+        with open(self.logf) as f:
+            heard = json.load(f)["stdin"]
+        self.assertIn("[your notes", heard)
+        self.assertIn("agy-quota", heard)
+        self.assertIn("the quota of agy resets at 14:00", heard)
 
 
 class SingleInstance(Base):
@@ -1499,6 +1644,47 @@ class Cli(Base):
                     else:
                         os.environ[k] = v
         return subprocess.CompletedProcess(list(args), rc, out.getvalue(), err.getvalue())
+
+    def test_automations_list_pause_and_cancel(self):
+        from swarmbox_sysop import automations
+        self.e.paths.make()
+        automations.update(self.e.paths, lambda d: automations.new_schedule(d, time.time(), "look at agy", every="10m"))
+        p = self.run_cli("automations")
+        self.assertIn("a1 [active] every 10 min", p.stdout)
+        self.assertEqual(self.run_cli("automation", "pause", "a1").returncode, 0)
+        self.assertIn("a1 [paused]", self.run_cli("automations").stdout)
+        p = self.run_cli("automation", "cancel", "a1")
+        self.assertIn("cancelled by the user (cli)", p.stdout)
+        self.assertIn("no active automations", self.run_cli("automations").stdout)
+        self.assertIn("a1 [ended]", self.run_cli("automations", "--all").stdout)
+        p = self.run_cli("automation", "resume", "a1")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("has ended", p.stderr)
+
+    def test_answer_reaches_the_question_of_the_running_goal(self):
+        step, release = self.gate()
+        self.script([{"tool": "ask", "args": {"question": "which tab?", "options": ["one", "two"]}}, {"tool": "done", "args": {"summary": "ok"}}])
+        self.start()
+        self.assertEqual(self.run_cli("answer", "two").returncode, 1, "nothing asks yet")
+        gid = self.goal("go")
+        q = os.path.join(self.e.paths.goals, gid, "pending_question.json")
+        self.assertTrue(_wait_for(lambda: os.path.exists(q), 10))
+        p = self.run_cli("answer", "two")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.wait_state(gid)["state"], "done")
+        with open(self.out) as f:
+            first = json.loads(f.readline())
+        self.assertEqual(first["text"], "the user answered: two")
+        release()
+
+    def test_notes_list_show_and_remove(self):
+        from swarmbox_sysop import notes
+        self.e.paths.make()
+        notes.write(self.e.paths, "agy-quota", "resets at 14:00")
+        self.assertIn("agy-quota", self.run_cli("notes").stdout)
+        self.assertEqual(self.run_cli("notes", "show", "agy-quota").stdout, "resets at 14:00\n")
+        self.assertEqual(self.run_cli("notes", "rm", "agy-quota").returncode, 0)
+        self.assertEqual(self.run_cli("notes").stdout, "no notes\n")
 
     def test_status_when_not_running(self):
         p = self.run_cli("status")
