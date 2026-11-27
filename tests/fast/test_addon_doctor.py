@@ -42,6 +42,22 @@ class DoctorBase(ShimBase):
 
 
 class Doctor(DoctorBase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        tpl = DoctorBase()
+        tpl.setUp()
+        cls.addClassCleanup(tpl.doCleanups)
+        tpl.fleet()
+        cls._tpl = tpl
+
+    def setUp(self):
+        for attr in ("base", "home", "image", "user", "tmp", "lock", "rec", "count", "calls", "addons", "ishims", "ushims", "args"):
+            setattr(self, attr, getattr(self._tpl, attr))
+
+    def fleet(self):
+        pass
+
     def test_all_matching_is_ok_and_missing_is_not_a_failure(self):
         self.fleet()
         r = self.addon("doctor")
@@ -96,16 +112,32 @@ class DoctorFix(DoctorBase):
         os.makedirs(os.path.dirname(self.lock), exist_ok=True)
         with open(self.lock, "a") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
-            r = self.addon("doctor", "--fix", SWARMBOX_TEST_NODE_MAJOR="22", SWARMBOX_TEST_LOCK_WAIT="1")
+            r = self.addon("doctor", "--fix", SWARMBOX_TEST_NODE_MAJOR="22", SWARMBOX_TEST_LOCK_WAIT="0.05")
         self.assertEqual(r.returncode, 1)
         self.assertIn("another install is running", r.stderr)
 
 
 class ShimFingerprint(DoctorBase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        tpl = DoctorBase()
+        tpl.setUp()
+        cls.addClassCleanup(tpl.doCleanups)
+        tpl.setup_demo()
+        assert tpl.addon("install", "demo").returncode == 0
+        assert tpl.addon("install", "selfy").returncode == 0
+        cls._tpl = tpl
+
+    def setUp(self):
+        for attr in ("base", "home", "image", "user", "tmp", "lock", "rec", "count", "calls", "addons", "ishims", "ushims", "args"):
+            setattr(self, attr, getattr(self._tpl, attr))
+        shutil.rmtree(self.warned_dir(), ignore_errors=True)
+        shutil.rmtree(self.ushims, ignore_errors=True)
+        os.makedirs(self.ushims)
+
     def installed(self):
-        self.setup_demo()
-        self.assertEqual(self.addon("install", "demo").returncode, 0)
-        self.assertEqual(self.addon("install", "selfy").returncode, 0)
+        pass
 
     def warned_dir(self):
         return os.path.join(self.home, ".local", "state", "swarmbox", "addon-warned")

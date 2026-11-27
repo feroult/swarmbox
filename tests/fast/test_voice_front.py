@@ -566,7 +566,7 @@ class Processes(unittest.TestCase):
 
     def start(self, **env):
         e = {"PATH": os.environ["PATH"], "HOME": self.tmp, "PYTHONPATH": LIB, "FAKE_SERVER_LOG": os.path.join(self.tmp, "t.log"),
-             "FAKE_SERVER_PID": os.path.join(self.tmp, "server.pid")}
+             "FAKE_SERVER_PID": os.path.join(self.tmp, "server.pid"), "SWARMBOX_TEST_RESTART_DELAY": "0.02"}
         e.update(env)
         p = subprocess.Popen([sys.executable, "-B", "-m", "swarmbox_voice", "front", "--listen", "127.0.0.1:%d" % self.port,
                               "--server-port", str(self.server_port), "--service-listen", "127.0.0.1:%d" % self.service_port,
@@ -647,7 +647,7 @@ class Processes(unittest.TestCase):
         while time.time() < end and not ok:
             ok = get(self.port, "/voice/health")[0] == 200
             if not ok:
-                time.sleep(0.02)
+                time.sleep(0.005)
         self.assertTrue(ok, "the service did not come back")
         self.assertIsNone(p.poll())
 

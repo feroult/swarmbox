@@ -106,7 +106,8 @@ class Tree(unittest.TestCase):
                     "SWARMBOX_TEST_USER_ADDONS": self.user, "SWARMBOX_TEST_HOST_DIR": j("host"),
                     "SWARMBOX_TEST_IMAGE_SHIMS": j("out", "shims"), "SWARMBOX_TEST_USER_SHIMS": j("out", "ushims"), "SWARMBOX_TEST_LOCK": j("lock"),
                     # `serve --dock` would open the sysop's agent terminal in the herdr-core of whoever runs the suite: headless, and no hc
-                    "SWARMBOX_MUX": "none", "SWARMBOX_TEST_HC_BIN": j("no-hc"), "TMPDIR": j("tmp")}
+                    "SWARMBOX_MUX": "none", "SWARMBOX_TEST_HC_BIN": j("no-hc"), "TMPDIR": j("tmp"),
+                    "SWARMBOX_TEST_BUS_BACKOFF": "0.02,0.05"}
         os.mkdir(j("tmp"))
         with open(os.path.join(self.fbin, "swarmbox-addon"), "w") as f:
             f.write('#!/bin/sh\nexec bash "%s" "$@"\n' % ADDON_SH)

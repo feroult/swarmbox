@@ -113,6 +113,10 @@ class Service:
         self.cfg, self.paths, self.clock = cfg, paths, clock
         self.bus = bus or busclient.Bus(paths.socket)
         self.log = log or self.stderr_log
+        if backoff is BACKOFF and os.environ.get("SWARMBOX_TEST_BUS_BACKOFF"):
+            parts = [float(x) for x in os.environ["SWARMBOX_TEST_BUS_BACKOFF"].split(",") if x.strip()]
+            if parts:
+                backoff = (max(0.005, parts[0]), max(0.005, parts[-1]))
         self.backoff = backoff
         self.audit = auditmod.Audit(paths.audit, clock=clock)
         self.cond = threading.Condition()

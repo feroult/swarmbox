@@ -25,7 +25,7 @@ class Trimmer(tss.ServeCase):
         self.big("bus.log", 8000)
         self.big("serve.log", 9000)   # the serve log itself is trimmed too
         small = self.big("podman-service.log", 800)
-        p = self.run_ready(SWARMBOX_TEST_LOG_EVERY="1", SWARMBOX_TEST_LOG_MAX="4000")
+        p = self.run_ready(SWARMBOX_TEST_LOG_EVERY="0.05", SWARMBOX_TEST_LOG_MAX="4000")
         web = os.path.join(self.state, "web-terminal.log")
         # the cut empties the file and then writes the end of it: wait for the finished log (its notice), not for the size
         self.assertTrue(tss.wait_for(lambda: "the log was cut" in tss.read(web), 15), "the log was not cut: %d bytes" % os.path.getsize(web))

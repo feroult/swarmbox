@@ -5,6 +5,7 @@ Run with: python3 -W error tests/fast/test_sysop_brain.py
 """
 import json
 import os
+import shutil
 import sys
 import time
 import unittest
@@ -197,11 +198,24 @@ def _fast_popen(*args, **kw):
 
 
 class RunBrain(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._tabs_dir = ss.short_tmp("sbbr-")
+        cls.addClassCleanup(shutil.rmtree, cls._tabs_dir, True)
+        cls._shared_tabs = ss.FakeTabs(os.path.join(cls._tabs_dir, "tabs.sock"))
+        cls.addClassCleanup(cls._shared_tabs.stop)
+
     def setUp(self):
         self.e = ss.Env()
         self.addCleanup(self.e.cleanup)
-        self.tabs = ss.FakeTabs(os.path.join(self.e.dir, "tabs.sock"))
-        self.addCleanup(self.tabs.stop)
+        self.tabs = self._shared_tabs
+        self.tabs.sent.clear()
+        self.tabs.calls.clear()
+        self.tabs.reads.clear()
+        self.tabs.errors.clear()
+        self.tabs.ops.clear()
+        self.tabs.on_send = None
         self.pth = self.e.paths.make()
         self.gdir = os.path.join(self.pth.goals, "g1")
         os.mkdir(self.gdir, 0o700)

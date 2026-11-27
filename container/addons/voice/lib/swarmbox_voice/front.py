@@ -91,6 +91,16 @@ def pdeathsig():
         pass
 
 
+def _test_delay(default):
+    v = os.environ.get("SWARMBOX_TEST_RESTART_DELAY")
+    if not v:
+        return default
+    try:
+        return max(0.005, float(v))
+    except ValueError:
+        return default
+
+
 class Children:
     """The web server and the voice service as children of the front."""
 
@@ -116,18 +126,20 @@ class Children:
         self.thread.start()
 
     def _watch_service(self):
-        delay = 1.0
+        base = _test_delay(1.0)
+        poll = min(0.2, base)
+        delay = base
         while not self.stop.is_set():
             started = time.monotonic()
             with self.lock:
                 proc = self.service
             if proc is not None:
-                while proc.poll() is None and not self.stop.wait(0.2):
+                while proc.poll() is None and not self.stop.wait(poll):
                     pass
             if self.stop.is_set():
                 return
             if time.monotonic() - started > 60:
-                delay = 1.0
+                delay = base
             print("swarmbox-voice front: the voice service exited (%s); restarting in %.0f s" % (proc.returncode if proc else "?", delay),
                   file=sys.stderr, flush=True)
             if self.stop.wait(delay):
@@ -547,8 +559,9 @@ def run(args, server_args):
         threading.Thread(target=front.serve_forever, daemon=True).start()
         print("swarmbox-voice front: listening on %s:%d, web server on 127.0.0.1:%d, voice service on 127.0.0.1:%d"
               % (front.address[0], front.address[1], args.server_port, service[1]), file=sys.stderr, flush=True)
+        poll = min(0.2, _test_delay(1.0))
         while not stopping.is_set() and children.server.poll() is None:
-            stopping.wait(0.2)
+            stopping.wait(poll)
         rc = 0 if stopping.is_set() else children.server.returncode
         if rc is not None and rc < 0:
             rc = 128 - rc

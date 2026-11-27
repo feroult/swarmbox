@@ -11,11 +11,12 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from addon_support import ADDON, Base, SHA, SHIM, tree_hash  # noqa: E402
+from addon_support import ADDON, Base, MANAGED, SHA, SHIM, tree_hash  # noqa: E402
 
 class InstallManaged(Base):
     def test_passes_prefix_version_arch_and_runs_in_home(self):
@@ -162,11 +163,33 @@ class Run(Base):
 
 class Concurrency(Base):
     def test_two_installs_at_once_run_the_installer_once(self):
-        self.managed()
-        env = self.env(FAKE_SLEEP="1.5")
+        wait_hook = 'n=0; while [ ! -f "$FAKE_RELEASE" ] && [ "$n" -lt 300 ]; do sleep 0.01; n=$((n+1)); done'
+        installer = MANAGED.replace('[ -z "${FAKE_SLEEP:-}" ] || sleep "$FAKE_SLEEP"', wait_hook)
+        self.managed(installer=installer)
+        release = os.path.join(self.base, "release")
+        self.addCleanup(lambda: open(release, "w").close() if os.path.isdir(self.base) else None)
+        env = self.env(FAKE_RELEASE=release)
         procs = [subprocess.Popen(["bash", ADDON, "install", "demo"], env=env, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, text=True, cwd=self.base) for _ in range(2)]
-        outs = [p.communicate(timeout=60) for p in procs]
+        outs = [None, None]
+
+        def drain(idx, proc):
+            err_lines = []
+            for line in proc.stderr:
+                err_lines.append(line)
+                if "another install is running" in line and not os.path.exists(release):
+                    open(release, "w").close()
+            out = proc.stdout.read()
+            proc.wait(timeout=60)
+            proc.stdout.close()
+            proc.stderr.close()
+            outs[idx] = (out, "".join(err_lines))
+
+        threads = [threading.Thread(target=drain, args=(i, p)) for i, p in enumerate(procs)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=60)
         for p, (_, err) in zip(procs, outs):
             self.assertEqual(p.returncode, 0, err)
         self.assertEqual(self.installs(), 1)
