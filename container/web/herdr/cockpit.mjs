@@ -8,6 +8,7 @@
 //   - Five synchronized themes persisted in ~/.config/swarmbox/herdr-web-theme
 //   - Ctrl+A prefix + Alt shortcuts + SGR 1006 mouse support, zero host dependencies
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SHELL_NAMES } from './agents.mjs';
@@ -146,7 +147,12 @@ function buildRow(width, baseBg, segments) {
       pw += cw;
     }
     if (piece) {
-      out += (seg.style || '') + piece + RESET + baseBg;
+      const styled = (seg.style || '') + piece + RESET + baseBg;
+      if (seg.href && /^https?:\/\/[^\x00-\x1f\x7f\s]+$/i.test(seg.href)) {
+        out += `\x1b]8;;${seg.href}\x1b\\${styled}\x1b]8;;\x1b\\`;
+      } else {
+        out += styled;
+      }
       used += pw;
     }
   }
@@ -332,7 +338,10 @@ export class Cockpit {
     this.prefixTimer = null;
     this.helpOpen = false;
     this.toast = '';
+    this.toastHref = '';
     this.toastTimer = null;
+    this.lastOpenUrlId = '';
+    this._markerPath = '';
     this.scrollOffset = 0;
 
     // Active herdr-core stream + @xterm/headless buffer
@@ -376,16 +385,51 @@ export class Cockpit {
     });
   }
 
-  setToast(msg, ms = 2600) {
+  setToast(msg, ms = 2600, href = '') {
     this.toast = String(msg || '');
+    this.toastHref = String(href || '');
     if (this.toastTimer) clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => {
       this.toast = '';
+      this.toastHref = '';
       this.toastTimer = null;
       this.scheduleRender();
     }, ms);
     if (this.toastTimer.unref) this.toastTimer.unref();
     this.scheduleRender();
+  }
+
+  _runDir() {
+    return process.env.SWARMBOX_TEST_RUN_DIR || '/tmp/swarmbox';
+  }
+
+  _readOpenUrlEvent() {
+    try {
+      const raw = fs.readFileSync(path.join(this._runDir(), 'open-url.json'), 'utf8');
+      const data = JSON.parse(raw);
+      if (!data || typeof data.id !== 'string' || typeof data.url !== 'string') return null;
+      if (!/^https?:\/\/[^\x00-\x1f\x7f\s]+$/i.test(data.url)) return null;
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _pollOpenUrl() {
+    const ev = this._readOpenUrlEvent();
+    if (!ev || ev.id === this.lastOpenUrlId) return false;
+    this.lastOpenUrlId = ev.id;
+    try {
+      const b64 = Buffer.from(ev.url, 'utf8').toString('base64');
+      this.stdout.write(`\x1b]52;c;${b64}\x07`);
+    } catch (_) {}
+    let label = ev.url;
+    try {
+      const u = new URL(ev.url);
+      label = u.host + (u.pathname && u.pathname !== '/' ? u.pathname : '');
+    } catch (_) {}
+    this.setToast(`Open ${label} (copied · Cmd/Ctrl+click)`, 12000, ev.url);
+    return true;
   }
 
   async start() {
@@ -406,6 +450,18 @@ export class Cockpit {
 
     this.terminals = this.hc.listSnapshot();
     await this._ensureActiveAttached();
+
+    // Register live cockpit marker for swarmbox-open and seed current open-url id
+    try {
+      const rdir = this._runDir();
+      fs.mkdirSync(rdir, { recursive: true });
+      this._markerPath = path.join(rdir, `cockpit.${process.pid}`);
+      fs.writeFileSync(this._markerPath, `${process.pid}\n`);
+    } catch (_) {
+      this._markerPath = '';
+    }
+    const existingOpen = this._readOpenUrlEvent();
+    if (existingOpen) this.lastOpenUrlId = existingOpen.id;
 
     // Poll real swarmbox-sysop state + shared theme file (stays synced with Web UI)
     let pollTick = 0;
@@ -451,6 +507,7 @@ export class Cockpit {
         this.sysop = nextSysop;
         dirty = true;
       }
+      if (this._pollOpenUrl()) dirty = true;
       if (dirty) this.scheduleRender();
     }, 500);
     if (this.pollTimer.unref) this.pollTimer.unref();
@@ -464,6 +521,10 @@ export class Cockpit {
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.prefixTimer) clearTimeout(this.prefixTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
+    if (this._markerPath) {
+      try { fs.unlinkSync(this._markerPath); } catch (_) {}
+      this._markerPath = '';
+    }
     this.stdin.off('data', this._onDataBound);
     this.stdout.off('resize', this._onResizeBound);
     if (this.stream) {
@@ -1687,7 +1748,11 @@ export class Cockpit {
     }
     if (this.toast) {
       return buildRow(L.W, bgHex(pal.band), [
-        { text: ` ✦ ${this.toast}`, style: fgHex(pal.accentBright) },
+        {
+          text: ` ✦ ${this.toast}`,
+          style: this.toastHref ? `${fgHex(pal.accentBright)}\x1b[4m` : fgHex(pal.accentBright),
+          href: this.toastHref || undefined,
+        },
       ]);
     }
     if (this.scrollOffset > 0) {

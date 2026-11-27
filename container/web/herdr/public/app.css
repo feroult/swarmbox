@@ -2264,6 +2264,46 @@ html.swarmbox-ready #sb-boot {
   transition: opacity .16s ease, transform .16s ease;
 }
 .term-toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+.term-toast.interactive {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 12px;
+}
+.term-toast-label {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.term-toast-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-3, rgba(255, 255, 255, 0.06));
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.term-toast-btn-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.term-toast-btn:hover { filter: brightness(1.15); }
+.term-toast-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.term-toast-close:hover { color: var(--text); }
 .term-toast[data-tone="ok"] { border-color: rgba(74, 222, 128, 0.42); color: var(--green); }
 .term-toast[data-tone="error"] { border-color: rgba(255, 107, 120, 0.45); color: var(--red); }
 .xterm { height: 100%; overflow: hidden; } /* clips the sub-row touch-scroll offset of .xterm-screen */

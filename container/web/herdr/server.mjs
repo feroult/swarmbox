@@ -128,6 +128,25 @@ export function checkSameOrigin(req) {
   }
 }
 
+export function isLoopbackAddress(addr) {
+  const ip = String(addr || '').trim().toLowerCase();
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
+export function validateOpenUrl(raw) {
+  if (typeof raw !== 'string') return null;
+  const url = raw.trim();
+  if (!url || url.length > 4096) return null;
+  if (/[\x00-\x1f\x7f\s]/.test(url)) return null;
+  try {
+    const parsed = new URL(url);
+    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !parsed.host) return null;
+    return url;
+  } catch (_) {
+    return null;
+  }
+}
+
 function sendJson(res, code, data) {
   res.writeHead(code, {
     ...SECURITY_HEADERS,
@@ -1570,6 +1589,26 @@ export function createGateway(options = {}) {
         saveTheme(name);
         broadcast(buildSnapshot({ type: 'theme' }));
         return sendJson(res, 200, { ok: true, theme: currentTheme });
+      }
+
+      if (pathname === '/api/open-url' && req.method === 'POST') {
+        const remote = req.socket && req.socket.remoteAddress;
+        if (!isLoopbackAddress(remote)) {
+          return sendJson(res, 403, { error: 'forbidden', message: 'loopback only' });
+        }
+        const body = await readBody(req, 16 * 1024);
+        const url = validateOpenUrl(body && body.url);
+        if (!url) {
+          return sendJson(res, 400, { error: 'invalid_url', message: 'only http:// and https:// URLs are supported' });
+        }
+        let delivered = 0;
+        for (const ws of eventClients) {
+          if (ws.readyState === 1) delivered += 1;
+        }
+        if (delivered > 0) {
+          broadcast({ type: 'open_url', url, ts: Date.now() });
+        }
+        return sendJson(res, 200, { ok: true, delivered });
       }
 
       if (pathname === '/api/paste-image' && req.method === 'POST') {

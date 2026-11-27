@@ -1633,6 +1633,7 @@
   function showTermToast(msg, tone = '', ms = 2600) {
     if (!termToastEl) return;
     clearTimeout(termToastTimer);
+    termToastEl.classList.remove('interactive');
     if (!msg) {
       termToastEl.classList.remove('visible');
       return;
@@ -1642,6 +1643,81 @@
     termToastEl.classList.add('visible');
     if (ms > 0) {
       termToastTimer = setTimeout(() => termToastEl.classList.remove('visible'), ms);
+    }
+  }
+
+  let lastOpenUrl = '';
+  let lastOpenUrlMs = 0;
+  function showOpenUrlToast(url) {
+    if (!termToastEl) return;
+    clearTimeout(termToastTimer);
+    let label = url;
+    try {
+      const u = new URL(url);
+      label = u.host + (u.pathname && u.pathname !== '/' ? u.pathname : '');
+    } catch (_) {}
+    if (label.length > 52) label = label.slice(0, 51) + '…';
+
+    termToastEl.textContent = '';
+    termToastEl.dataset.tone = '';
+    termToastEl.classList.add('interactive', 'visible');
+
+    const text = document.createElement('span');
+    text.className = 'term-toast-label';
+    text.textContent = label;
+    text.title = url;
+
+    const openLink = document.createElement('a');
+    openLink.className = 'term-toast-btn term-toast-btn-primary';
+    openLink.href = url;
+    openLink.target = '_blank';
+    openLink.rel = 'noopener noreferrer';
+    openLink.textContent = 'Open';
+    openLink.addEventListener('click', () => {
+      termToastEl.classList.remove('visible', 'interactive');
+    });
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'term-toast-btn';
+    copyBtn.textContent = 'Copy';
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard?.writeText(url).then(() => showTermToast('Link copied', 'ok', 1800)).catch(() => {});
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'term-toast-close';
+    closeBtn.setAttribute('aria-label', 'Dismiss');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => {
+      clearTimeout(termToastTimer);
+      termToastEl.classList.remove('visible', 'interactive');
+    });
+
+    termToastEl.append(text, openLink, copyBtn, closeBtn);
+    termToastTimer = setTimeout(() => {
+      termToastEl.classList.remove('visible', 'interactive');
+    }, 15000);
+  }
+
+  function onOpenUrlEvent(url) {
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
+    const now = Date.now();
+    if (url === lastOpenUrl && now - lastOpenUrlMs < 400) return;
+    lastOpenUrl = url;
+    lastOpenUrlMs = now;
+    if (document.visibilityState === 'hidden') return;
+    let opened = null;
+    try {
+      opened = window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (_) {}
+    if (opened) {
+      let host = url;
+      try { host = new URL(url).host; } catch (_) {}
+      showTermToast(`Opened ${host}`, 'ok', 2200);
+    } else {
+      showOpenUrlToast(url);
     }
   }
 
@@ -8009,6 +8085,7 @@
       let msg;
       try { msg = JSON.parse(ev.data); } catch (_) { return; }
       if (msg && msg.type === 'sysop_events') { onSysopEvents(msg); return; }
+      if (msg && msg.type === 'open_url') { onOpenUrlEvent(msg.url); return; }
       if (msg.theme && THEMES[msg.theme] && msg.theme !== currentThemeKey) {
         applyTheme(msg.theme, false);
       }
