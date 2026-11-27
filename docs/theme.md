@@ -1,7 +1,7 @@
 # The purple glow
 
 One look for everything SwarmBox draws: near-black, violet and gray, with a glow that lights up in the middle. The letters of the banner run from dark gray
-through violet to white and back; the prompt, the tab bar of the Web Studio and the cockpit, the progress line of a pull, the colors of `ls` and `grep`, and the terminal in the browser use the same few colors.
+through violet to white and back; the tab bar of the Web Studio and the cockpit, the progress line of a pull, the colors of `ls` and `grep`, and the terminal in the browser use the same few colors.
 
 ## The palette
 
@@ -9,12 +9,34 @@ through violet to white and back; the prompt, the tab bar of the Web Studio and 
 |---|---|---|
 | Background | `#0c0b10` | the browser terminal, the schemes below |
 | Text | `#d4d4d8` | the browser terminal, the schemes below |
-| Violet | `#a78bfa` | the glow of the banner, the directory of the prompt, `ls` folders (256-colour `141`) |
-| Deep violet | `#6d28d9` | a selection, the active pane border, the marks of the prompt |
+| Violet | `#a78bfa` | the glow of the banner, `ls` folders (256-colour `141`) |
+| Deep violet | `#6d28d9` | a selection, the active pane border |
 | Lavender | `#c4b5fd` | the cursor, `ls` links (`183`), what `grep` finds |
 | Grays | `#52525b` `#71717a` `#a1a1aa` | separators, dim text, words |
-| The band | `#27222f` | what is "selected" (the current tab) and the directory of the prompt |
+| The band | `#27222f` | what is "selected" (the current tab) |
 | Signals | `#ff6b78` red, `#4ade80` green, `#fbbf24` amber, `#e879f9` fuchsia | errors, success, warnings, the bash mode of Claude Code: the usual hues, kept, in tones of the same family |
+
+## The prompt: Mocha Rail
+
+The Starship prompt follows the Web Studio's default theme, Catppuccin Mocha, rather than the purple glow, and speaks in the voice of the Claude Code status line below:
+
+```
+╭─ …/swarmbox/container/web ─ main !2?1 ─ node 24.22 ─ 4s
+╰─ 1 ❯
+```
+
+| Piece | Mocha color |
+|---|---|
+| The rail `╭─` `╰─` and the `─` between pieces | surface2 `#585b70` |
+| The directory, the `❯` | mauve `#cba6f7` |
+| The branch | lavender `#b4befe` |
+| The git status (`!` modified, `?` untracked, `+` staged, `↑↓` ahead and behind) | peach `#fab387` |
+| A runtime (`node 24.22`, `py 3.13`), only in a project that has one | overlay1 `#7f849c` |
+| How long a command took, from 2s | yellow `#f9e2af` |
+| The exit code of a failed command, and the `❯` after it | maroon `#eba0ac` |
+
+A failed command shows only its code, in a soft maroon on the rail, with no cross and no bold red. The command always starts in the same column, however long the path. The box-drawing characters join into one rail in terminals that draw
+them as full cells (the Web Studio, Windows Terminal, Ghostty).
 
 ## Where each piece lives
 

@@ -1,0 +1,1 @@
+- Changed: the shell prompt is now Mocha Rail, a two-line prompt in Catppuccin Mocha (the Web Studio's default theme): the context hangs from a `╭─` rail and you type after `╰─ ❯`. A failed command shows only its exit code in soft maroon, replacing the bold red `✕`, and the clock is gone.

@@ -2,18 +2,21 @@
 
 # SwarmBox prompt (Starship), installed as /etc/swarmbox/starship.toml.
 #
-# Architectural Purple Glow single-line prompt crafted to match the SwarmBox studio UI:
-# a razor-sharp violet left edge ("▍") on a subtle dark-violet band for the directory,
-# understated middle-dot ("·") dividers, crisp lavender git branch with semantic amber status,
-# muted runtime context only when relevant, warm amber command duration (>= 2s), compact non-zero
-# exit status, and a clean violet "❯". Zero Nerd Font glyphs so every terminal renders identically.
+# Mocha Rail: a two-line prompt in Catppuccin Mocha, the default theme of the Web Studio, drawn in the same voice as
+# swarmbox-statusline (╶─ …/swarmbox ─ main ! ─ …). The first line hangs from a dim "╭─" and holds the context: the
+# directory in mauve, the git branch in lavender with its status in peach, the runtime only when relevant, and the
+# duration of a command that took 2s or more. The second line, "╰─ ❯", is where you type, so a command always starts
+# in the same column. A failed command leaves its exit code in soft maroon on the rail and turns the ❯ maroon: no
+# cross, no bold red. Zero Nerd Font glyphs; the box-drawing characters join up in any terminal that draws them as
+# full cells (the Web Studio, Windows Terminal, Ghostty).
 #
-# Every color lives in [palettes.swarmbox] (checked against docs/theme.md by tests/fast/test_theme.py).
+# Every color lives in [palettes.swarmbox] (Catppuccin Mocha values; see docs/theme.md).
 # Your own ~/.config/starship.toml, if it exists, is used instead of this file.
 
 add_newline = true   # a blank line above every prompt, so one command does not stick to the output of the one before
 
 format = """\
+[╭─ ](fg:color_rail)\
 $username\
 $directory\
 $git_branch\
@@ -33,29 +36,30 @@ $docker_context\
 $conda\
 $pixi\
 $cmd_duration\
+$line_break\
+[╰─](fg:color_rail)\
 $status\
-$time\
 $character"""
 
 palette = 'swarmbox'
 
-[palettes.swarmbox]
-color_sep = '#52525b'
-color_user = '#a1a1aa'
-color_path = '#a78bfa'
-color_vcs = '#c4b5fd'
-color_dim = '#71717a'
-color_band = '#27222f'
-color_ok = '#a78bfa'
-color_err = '#f87171'
-color_alt = '#c084fc'
-color_warn = '#fbbf24'
+[palettes.swarmbox]   # Catppuccin Mocha
+color_rail = '#585b70'   # surface2: the rail and its ─ dividers
+color_user = '#a6adc8'   # subtext0
+color_path = '#cba6f7'   # mauve
+color_vcs = '#b4befe'    # lavender
+color_dim = '#7f849c'    # overlay1: runtimes
+color_ok = '#cba6f7'     # mauve: the ❯
+color_err = '#eba0ac'    # maroon: a failed command, a read-only folder, root
+color_alt = '#f5c2e7'    # pink: vi replace mode
+color_git = '#fab387'    # peach: the git status
+color_warn = '#f9e2af'   # yellow: a slow command, vi visual mode
 
 [username]
 show_always = false
 style_user = 'fg:color_user'
 style_root = 'bold fg:color_err'
-format = '[$user]($style)[ · ](fg:color_sep)'
+format = '[$user]($style)[ ─ ](fg:color_rail)'
 
 [directory]
 truncation_length = 3
@@ -63,15 +67,15 @@ truncation_symbol = '…/'
 truncate_to_repo = false
 home_symbol = '~'
 read_only = ' ro'
-read_only_style = 'fg:color_err bg:color_band'
-format = '[▍](fg:color_ok bg:color_band)[ $path ](bold fg:color_path bg:color_band)[$read_only]($read_only_style)'
+read_only_style = 'fg:color_err'
+format = '[$path](bold fg:color_path)[$read_only]($read_only_style)'
 
 [git_branch]
 symbol = ''
-format = '[ · ](fg:color_sep)[$branch](bold fg:color_vcs)'
+format = '[ ─ ](fg:color_rail)[$branch](fg:color_vcs)'
 
 [git_status]
-conflicted = '×'
+conflicted = '=${count}'
 ahead = '↑${count}'
 behind = '↓${count}'
 diverged = '↑${ahead_count}↓${behind_count}'
@@ -80,89 +84,84 @@ stashed = '*${count}'
 modified = '!${count}'
 staged = '+${count}'
 renamed = '»${count}'
-deleted = '✘${count}'
-format = '[( $all_status$ahead_behind)](fg:color_warn)'
+deleted = '-${count}'
+format = '[( $all_status$ahead_behind)](fg:color_git)'
 
 [c]
 symbol = 'c '
 version_format = '${major}.${minor}'
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [cpp]
 symbol = 'c++ '
 version_format = '${major}.${minor}'
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [rust]
 symbol = 'rs '
 version_format = '${major}.${minor}'
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [golang]
 symbol = 'go '
 version_format = '${major}.${minor}'
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [nodejs]
 symbol = 'node '
 version_format = '${major}.${minor}'
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [bun]
 symbol = 'bun '
 version_format = '${major}.${minor}'
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [php]
 symbol = 'php '
 version_format = '${major}.${minor}'
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [java]
 symbol = 'java '
 version_format = '${major}.${minor}'
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [kotlin]
 symbol = 'kt '
 version_format = '${major}.${minor}'
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [haskell]
 symbol = 'hs '
 version_format = '${major}.${minor}'
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [python]
 symbol = 'py '
 version_format = '${major}.${minor}'
 detect_env_vars = []
-format = '[ · ](fg:color_sep)[$symbol($version)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)](fg:color_dim)'
 
 [docker_context]
 symbol = ''
-format = '[ · ](fg:color_sep)[$context](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$context](fg:color_dim)'
 
 [conda]
 symbol = 'conda '
-format = '[ · ](fg:color_sep)[$symbol$environment](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol$environment](fg:color_dim)'
 
 [pixi]
 symbol = 'pixi '
-format = '[ · ](fg:color_sep)[$symbol($version)( $environment)](fg:color_dim)'
+format = '[ ─ ](fg:color_rail)[$symbol($version)( $environment)](fg:color_dim)'
 
 [cmd_duration]
 min_time = 2000
-format = '[ · ](fg:color_sep)[$duration](fg:color_warn)'
+format = '[ ─ ](fg:color_rail)[$duration](fg:color_warn)'
 
 [status]
 disabled = false
-format = '[ · ](fg:color_sep)[✕ $status](bold fg:color_err)'
-
-[time]
-disabled = false
-time_format = '%R'
-format = '[ · ](fg:color_sep)[$time](fg:color_sep)'
+format = '[ $status](fg:color_err)'
 
 [character]
 format = ' $symbol '

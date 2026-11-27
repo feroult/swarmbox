@@ -41,9 +41,9 @@ class Config(unittest.TestCase):
         self.assertEqual(cfg["palette"], "swarmbox")
         self.assertIn("swarmbox", cfg["palettes"])
 
-    def test_the_prompt_is_one_line_under_a_blank_line(self):
+    def test_the_prompt_is_two_lines_under_a_blank_line(self):
         cfg = load()
-        self.assertNotIn("\n", cfg["format"], "a newline in the format makes a second line")
+        self.assertEqual(cfg["format"].count("$line_break"), 1, "the context on one line, the ❯ on the next")
         self.assertIs(cfg.get("add_newline"), True, "the blank line above every prompt keeps one command off the last output")
 
     def test_it_uses_no_nerd_font_glyph(self):
@@ -92,12 +92,18 @@ class Rendering(unittest.TestCase):
         self.assertIn("main", plain)
         self.assertIn("proj", plain)
 
-    def test_it_prints_a_blank_line_and_then_a_single_line(self):
+    def test_it_prints_a_blank_line_then_the_context_and_then_the_rail_with_the_cursor(self):
         r = self.prompt()
         plain = re.sub(r"\x1b\[[0-9;]*m|\\\[|\\\]|[\x01\x02]", "", r.stdout)
         self.assertTrue(plain.startswith("\n"), "the blank line above the prompt")
-        self.assertNotIn("\n", plain.strip("\n"), "the prompt is one line")
-        self.assertIn("❯", plain)
+        context, typing = plain.strip("\n").split("\n")
+        self.assertTrue(context.startswith("╭─ "), context)
+        self.assertEqual(typing.strip(), "╰─ ❯")
+
+    def test_a_failed_command_leaves_its_code_on_the_rail_without_a_cross(self):
+        plain = re.sub(r"\x1b\[[0-9;]*m|\\\[|\\\]|[\x01\x02]", "", self.prompt(status=1).stdout)
+        self.assertEqual(plain.strip("\n").split("\n")[1].strip(), "╰─ 1 ❯")
+        self.assertNotIn("✕", plain)
 
 class InitScript(unittest.TestCase):
     def setUp(self):
