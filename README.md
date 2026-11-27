@@ -52,7 +52,7 @@ claude            # inside the box: launches Claude Code in auto-approve mode
 <br>
 
 <p align="center">
-  <img src="docs/img/swarmbox-herdr-desktop.png" alt="SwarmBox Web Studio with multi-repo agent grouping, Git worktrees, live status cards, and docked Sysop" width="880">
+  <img src="docs/img/swarmbox-web-desktop.webp" alt="SwarmBox Web Studio (Catppuccin Mocha) with multi-repo agent grouping, Git worktrees, live status cards, and docked Sysop" width="880">
 </p>
 
 ---
@@ -81,6 +81,12 @@ swarmbox url
 ```
 
 `cloudflared` runs in a separate container on your host, keeping tunnel secrets out of the box and exposing zero host ports ([docs/cloudflare.md](docs/cloudflare.md)).
+
+<br>
+
+<p align="center">
+  <img src="docs/img/swarmbox-mobile.webp" alt="SwarmBox Mobile Web Studio (Catppuccin Mocha) showing offline voice dictation, Sysop approval cards, and one-tap Allow" width="340">
+</p>
 
 ---
 
