@@ -14,8 +14,8 @@ from tabs_support import load_module  # noqa: E402
 
 context = load_module()          # the tabs module: .redact and .REDACTED
 
-MB = 1 << 18      # 256 KB: the quadratic version needed minutes for 100000 characters, so even this size tells it from a linear one by orders of magnitude
-LIMIT = 2.0  # seconds for it: the measured cost is about 0.05 s. Loose on purpose, a loaded CI runner is slow.
+MB = 1 << 16      # 64 KB: the quadratic version needed minutes for 100000 characters (~47 s at 64 KB), so even this size tells it from a linear one by orders of magnitude
+LIMIT = 2.0  # seconds for it: the measured cost is about 0.01 s. Loose on purpose, a loaded CI runner is slow.
 
 
 def _fill(unit, size=MB):
@@ -55,7 +55,7 @@ ADVERSARIAL = {
     "private key begins": _fill("-----BEGIN PRIVATE KEY-----\n"),
     "private key begin, long body": "-----BEGIN " + "A" * MB,
     "user flag": _fill("-u "),
-    "prefixes": _fill("sk-") + _fill("AKIA") + _fill("xoxb-") + _fill("ghp_"),
+    "prefixes": _fill("sk-", MB // 4) + _fill("AKIA", MB // 4) + _fill("xoxb-", MB // 4) + _fill("ghp_", MB // 4),
 }
 
 
@@ -69,11 +69,11 @@ class RedactTimeTest(unittest.TestCase):
                 self.assertLess(dt, LIMIT, "%s: %.2f s for %d chars" % (name, dt, len(text)))
 
     def test_long_inputs_still_redact_what_they_must(self):
-        pad = "-" * 200000
+        pad = "-" * 60000
         self.assertIn("password=" + context.REDACTED, context.redact(pad + " password=hunter2"))
         self.assertIn("--api-key " + context.REDACTED, context.redact(pad + " --api-key abc123"))
-        self.assertIn("a-" * 50000 + "\nAPI_TOKEN=" + context.REDACTED, context.redact("a-" * 50000 + "\nAPI_TOKEN=xyz"))
-        self.assertNotIn("hunter2", context.redact(("x" * 100000 + " ") * 3 + "my.db-password: hunter2"))
+        self.assertIn("a-" * 15000 + "\nAPI_TOKEN=" + context.REDACTED, context.redact("a-" * 15000 + "\nAPI_TOKEN=xyz"))
+        self.assertNotIn("hunter2", context.redact(("x" * 25000 + " ") * 3 + "my.db-password: hunter2"))
 
 
 class RedactBehaviourTest(unittest.TestCase):

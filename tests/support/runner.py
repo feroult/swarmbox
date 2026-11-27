@@ -354,6 +354,8 @@ def _exec_in_child(abs_path, classes, o, close_fds, w_fd):
     os.dup2(w_fd, 1)
     os.dup2(w_fd, 2)
     os.close(w_fd)
+    sys.stdout = sys.__stdout__
+    sys.stderr = sys.__stderr__
     os.chdir(os.path.dirname(TESTS))
     subreaper = reap_run.set_subreaper()
     reap_run.restore_signals()

@@ -2,7 +2,6 @@
 addressing, the hidden sysop terminals, the screen pipeline (markers, last N lines, clip, secrets), the typing rules (pause, separate Enter, dialog,
 busy, queue, slash, verify, braces), errors, timeouts, the lock between sends, open/focus/close, and the command line (JSON, exit codes, stdin,
 the framed text of `hc connect`). No herdr-core, network or model. Run with: python3 tests/fast/test_tabs.py"""
-import concurrent.futures
 import contextlib
 import io
 import json
@@ -15,7 +14,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
-from tabs_support import FakeHc, claude_term, load_module  # noqa: E402
+from tabs_support import FakeHc, InProcessHc, claude_term, load_module  # noqa: E402
 from helpers import ROOT  # noqa: E402
 
 mod = load_module()
@@ -257,12 +256,12 @@ class TestSend(Base):
         self.assertGreaterEqual(s[1][0] - s[0][0], 0.04)
 
     def test_multi_line_text_is_one_literal_write(self):
-        d = self.ft.driver()
+        d = self.ft.driver(pause=0)
         d.send_body("t1", {"run": "line one\nline two \"q\" 'q' `bt` $(id) é"})
         self.assertEqual(self.typed("t1")[0], "line one\nline two \"q\" 'q' `bt` $(id) é")
 
     def test_bad_bodies_type_nothing(self):
-        d = self.ft.driver()
+        d = self.ft.driver(pause=0)
         for body in ("text", None, 5, [], {}, {"run": 5}, {"run": ""}, {"input": ""}, {"run": "a", "input": "b"}, {"x": "a"}, {"run": "a", "queue": "yes"},
                      {"run": "a", "extra": True}, {"run": "a\x00b"}, {"input": "{{"[:0]}, {"run": "a\ud800b"}):
             self.assertEqual(self.code(d.send_body, "t1", body)[0], "bad_body", repr(body))
@@ -270,7 +269,7 @@ class TestSend(Base):
 
     def test_a_dialog_is_refused_and_nothing_is_typed(self):
         self.add("t3", "dlg", **claude_term("dialog"))
-        d = self.ft.driver()
+        d = self.ft.driver(pause=0)
         self.assertEqual(self.code(d.send_body, "t3", {"run": "hello"})[0], "dialog_open")
         self.assertEqual(self.code(d.send_body, "t3", {"run": "hello", "queue": True})[0], "dialog_open")      # queueing does not help
         self.assertEqual(self.ft.sent(), [])
@@ -280,7 +279,7 @@ class TestSend(Base):
 
     def test_a_busy_agent_is_refused_unless_queue(self):
         self.add("t3", "busy", **claude_term("busy"))
-        d = self.ft.driver()
+        d = self.ft.driver(pause=0)
         code, msg = self.code(d.send_body, "t3", {"run": "next"})
         self.assertEqual(code, "busy_tab")
         self.assertIn("queue", msg)
@@ -294,13 +293,13 @@ class TestSend(Base):
         """OSC 7501: a terminal that reports `blocked` is a dialog and `working` is busy, whatever its screen shows"""
         self.add("t3", "osc", reported=True, status={"state": "blocked"}, **claude_term())
         self.add("t4", "osc2", reported=True, status={"state": "working"}, **claude_term())
-        d = self.ft.driver()
+        d = self.ft.driver(pause=0)
         self.assertEqual(self.code(d.send_body, "t3", {"run": "x"})[0], "dialog_open")
         self.assertEqual(self.code(d.send_body, "t4", {"run": "x"})[0], "busy_tab")
         self.assertEqual(self.ft.sent(), [])
 
     def test_slash_and_bang_are_refused_for_an_agent_not_for_a_shell(self):
-        d = self.ft.driver()
+        d = self.ft.driver(pause=0)
         for text in ("/help", "!ls"):
             self.assertEqual(self.code(d.send_body, "t2", {"run": text})[0], "slash_refused")
         self.assertEqual(self.ft.sent(), [])
@@ -310,12 +309,12 @@ class TestSend(Base):
         self.assertEqual(self.typed("t2"), ["/clear", "<enter>"])
 
     def test_input_text_without_enter_is_raw(self):
-        d = self.ft.driver()
+        d = self.ft.driver(pause=0)
         d.send_body("t2", {"input": "/not-judged"})
         self.assertEqual(self.typed("t2"), ["/not-judged"])
 
     def test_agent_prompt_is_submitted_and_checked(self):
-        d = self.ft.driver()
+        d = self.ft.driver(pause=0)
         self.assertIs(d.send_body("t2", {"run": "reply with exactly PONG"})["verified"], True)
         self.assertEqual(self.typed("t2"), ["reply with exactly PONG", "<enter>"])
         c = self.ft.t("t2")["claude"]
@@ -649,7 +648,7 @@ class TestApi(Base):
     def test_send_keywords_and_the_result(self):
         self.ft.term("t1", "sh")
         self.ft.term("t2", "agent", **claude_term("busy"))
-        d = self.ft.save().driver()
+        d = self.ft.save().driver(pause=0)
         self.assertEqual(d.send("t1", run="ls"), {"ok": True, "tab": "t1", "pane": "t1", "submitted": True})
         self.assertEqual(d.send("t1", input="ab")["submitted"], False)
         self.assertEqual(self.ft.typed("t1"), ["ls", "<enter>", "ab"])
@@ -741,10 +740,10 @@ class TestLock(Base):
         self.ft.save()
 
     def test_the_lock_is_a_file_in_the_run_folder_and_is_kept_between_sends(self):
-        self.ft.driver().send("t1", run="x")
+        self.ft.driver(pause=0).send("t1", run="x")
         self.assertEqual(sorted(os.listdir(os.path.join(self.ft.dir, "tabs"))), ["tab-t1.lock"])
         self.assertEqual(oct(os.stat(os.path.join(self.ft.dir, "tabs", "tab-t1.lock")).st_mode & 0o777), "0o600")
-        self.ft.driver().send("t2", run="y")
+        self.ft.driver(pause=0).send("t2", run="y")
         self.assertEqual(sorted(os.listdir(os.path.join(self.ft.dir, "tabs"))), ["tab-t1.lock", "tab-t2.lock"])
 
     def test_a_held_lock_makes_the_send_wait_and_then_time_out_with_nothing_typed(self):
@@ -770,10 +769,20 @@ class TestLock(Base):
 
     def test_two_processes_sending_to_one_tab_never_interleave(self):
         import subprocess
-        import tabs_support
+        support_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support")
+        worker = (
+            "import os, subprocess, sys; sys.path.insert(0, %r); "
+            "from tabs_support import InProcessHc, load_module; "
+            "m = load_module(); shim = InProcessHc(os.environ['SB_TABS_BIN']); "
+            "m.subprocess = type('subprocess', (), {'run': staticmethod(shim.run), 'Popen': subprocess.Popen, "
+            "'TimeoutExpired': subprocess.TimeoutExpired, 'DEVNULL': subprocess.DEVNULL, 'PIPE': subprocess.PIPE}); "
+            "d = m.Tabs(binary=os.environ['SB_TABS_BIN'], run_dir=os.environ['SB_RUN_DIR'], pause=0.01); "
+            "d.backend._framed_write = lambda tid, data: d.backend.hc('__data', tid, data.decode('utf-8')); "
+            "d.send('t1', run=sys.argv[1])"
+        ) % support_dir
         procs = []
         for i in range(2):
-            procs.append(subprocess.Popen([sys.executable, "-S", tabs_support.TABS_PATH, "send", "t1", "--run", "msg%d one two three" % i],
+            procs.append(subprocess.Popen([sys.executable, "-c", worker, "msg%d one two three" % i],
                                           env=self.ft.env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE))
         for p in procs:
             out, err = p.communicate(timeout=60)
@@ -785,7 +794,7 @@ class TestLock(Base):
 
     def test_a_run_folder_that_cannot_be_used_is_lock_error_and_nothing_is_typed(self):
         open(os.path.join(self.ft.dir, "tabs"), "w").close()         # a file where the folder should be
-        d = self.ft.driver()
+        d = self.ft.driver(pause=0)
         self.assertEqual(self.code(lambda: d.send("t1", run="x"))[0], "lock_error")
         self.assertEqual(self.ft.sent(), [])
 
@@ -799,28 +808,46 @@ class TestCommand(Base):
         self.ft.term("t2", "agent", **claude_term())
         self.ft.save().active("t2")
 
+    def cli_inproc(self, *args, stdin=None, real_hc=False, **extra):
+        """Run mod.main(args) in-process with the fake hc shimmed (unless real_hc=True), returning (rc, parsed_json, stderr)."""
+        out, err = io.StringIO(), io.StringIO()
+        orig_tabs = mod.Tabs
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.dict(os.environ, self.ft.env(**extra), clear=True))
+            stack.enter_context(mock.patch.object(mod, "Tabs", lambda *a, **kw: orig_tabs(*a, **dict({"pause": 0}, **kw))))
+            if not real_hc:
+                shim = InProcessHc(self.ft.bin)
+                fake_sub = type("subprocess", (), {
+                    "run": staticmethod(shim.run),
+                    "Popen": mod.subprocess.Popen,
+                    "TimeoutExpired": mod.subprocess.TimeoutExpired,
+                    "DEVNULL": mod.subprocess.DEVNULL,
+                    "PIPE": mod.subprocess.PIPE,
+                })
+                stack.enter_context(mock.patch.object(mod, "subprocess", fake_sub))
+                stack.enter_context(mock.patch.object(
+                    mod.HerdrBackend, "_framed_write",
+                    lambda backend, tid, data: backend.hc("__data", tid, data.decode("utf-8")),
+                ))
+            if stdin is not None:
+                fake_stdin = type("_Stdin", (), {"buffer": io.BytesIO(stdin)})()
+                stack.enter_context(mock.patch.object(sys, "stdin", fake_stdin))
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(err))
+            rc = mod.main(list(args))
+        raw = out.getvalue()
+        return rc, (json.loads(raw) if raw.strip() else None), err.getvalue()
+
     def test_list_active_screen(self):
-        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
-            r_list = self.ft.cli("list")
-            r_act = self.ft.cli("active")
-            r_scr = self.ft.cli("screen", "sh")
-            r_scr1 = self.ft.cli("screen", "t1", "--lines", "1")
-        else:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-                f_list = pool.submit(self.ft.cli, "list")
-                f_act = pool.submit(self.ft.cli, "active")
-                f_scr = pool.submit(self.ft.cli, "screen", "sh")
-                f_scr1 = pool.submit(self.ft.cli, "screen", "t1", "--lines", "1")
-                r_list, r_act, r_scr, r_scr1 = f_list.result(), f_act.result(), f_scr.result(), f_scr1.result()
-        rc, out, err = r_list
+        rc, out, err = self.ft.cli("list")
         self.assertEqual((rc, err), (0, ""))
         self.assertEqual([t["tab"] for t in out], ["t1", "t2"])
         self.assertEqual([t["active"] for t in out], [False, True])
-        rc, out, _ = r_act
+        rc, out, _ = self.cli_inproc("active")
         self.assertEqual((rc, out["tab"], out["label"]), (0, "t2", "2:agent"))
-        rc, out, _ = r_scr
+        rc, out, _ = self.cli_inproc("screen", "sh")
         self.assertEqual((rc, out["text"]), (0, "hello [sel]world[/sel]  token=[REDACTED]\nsecond"))
-        rc, out, _ = r_scr1
+        rc, out, _ = self.cli_inproc("screen", "t1", "--lines", "1")
         self.assertEqual((rc, out["text"], out["lines"]), (0, "second", 1))
 
     def test_the_command_of_a_row_is_the_program_running_now(self):
@@ -835,7 +862,7 @@ class TestCommand(Base):
         self.ft.term("t5", "robo", argv=["/bin/bash", "-lic", "agy"], foreground={"name": "node"}, status={"state": "idle", "app": "antigravity"},
                      reported=True)
         self.ft.save()
-        rows = {r["tab"]: r for r in self.ft.cli("list")[1]}
+        rows = {r["tab"]: r for r in self.cli_inproc("list")[1]}
         self.assertEqual((rows["t3"]["cmd"], rows["t3"]["agent"]), ("claude", "claude"))
         self.assertEqual((rows["t4"]["cmd"], rows["t4"]["agent"]), ("bash", "agy"))
         self.assertEqual(mod.swarmbox_agents.detect(rows["t3"]), "claude")
@@ -845,35 +872,27 @@ class TestCommand(Base):
         self.assertEqual(mod.swarmbox_agents.detect(row), "agy")
 
     def test_send_run_and_input_and_queue_and_slash(self):
-        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
-            r1 = self.ft.cli("send", "t1", "--run", "echo hi")
-            r2 = self.ft.cli("send", "2:agent", "--input", "ab{Esc}")
-        else:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-                f1 = pool.submit(self.ft.cli, "send", "t1", "--run", "echo hi")
-                f2 = pool.submit(self.ft.cli, "send", "2:agent", "--input", "ab{Esc}")
-                r1, r2 = f1.result(), f2.result()
-        rc, out, _ = r1
+        rc, out, _ = self.cli_inproc("send", "t1", "--run", "echo hi")
         self.assertEqual((rc, out), (0, {"ok": True, "tab": "t1", "pane": "t1", "submitted": True}))
-        rc, out, _ = r2
+        rc, out, _ = self.cli_inproc("send", "2:agent", "--input", "ab{Esc}")
         self.assertEqual((rc, out["submitted"]), (0, False))
         self.assertEqual(self.ft.typed("t1"), ["echo hi", "<enter>"])
         self.assertEqual(self.ft.typed("t2"), ["ab", "<esc>"])
-        rc, out, _ = self.ft.cli("send", "agent", "--run", "/help")
+        rc, out, _ = self.cli_inproc("send", "agent", "--run", "/help")
         self.assertEqual((rc, out["err"]), (1, "slash_refused"))
-        rc, out, _ = self.ft.cli("send", "agent", "--run", "/clear", "--slash")
+        rc, out, _ = self.cli_inproc("send", "agent", "--run", "/clear", "--slash")
         self.assertEqual(rc, 0)
         self.ft.load()
         self.ft.state["terminals"][1]["claude"]["mode"] = "busy"
         self.ft.save()
-        rc, out, _ = self.ft.cli("send", "agent", "--run", "next")
+        rc, out, _ = self.cli_inproc("send", "agent", "--run", "next")
         self.assertEqual((rc, out["err"]), (1, "busy_tab"))
-        rc, out, _ = self.ft.cli("send", "agent", "--run", "next", "--queue")
+        rc, out, _ = self.cli_inproc("send", "agent", "--run", "next", "--queue")
         self.assertEqual(rc, 0)
 
     def test_a_long_text_goes_in_small_frames_and_is_typed_whole(self):
         text = "echo " + "é" * 2600 + "\n" + "a" * 3000
-        rc, out, err = self.ft.cli("send", "t1", "--run", text)
+        rc, out, err = self.cli_inproc("send", "t1", "--run", text, real_hc=True)
         self.assertEqual(rc, 0, (out, err))
         frames = self.ft.load()["frames"]
         self.assertGreater(len(frames), 4)
@@ -881,33 +900,28 @@ class TestCommand(Base):
         self.assertEqual(self.ft.typed("t1"), [text, "<enter>"])
 
     def test_the_text_may_come_from_stdin(self):
-        rc, out, _ = self.ft.cli("send", "t1", "--run", "-", stdin=b"line one\nline two\n")
+        rc, out, _ = self.cli_inproc("send", "t1", "--run", "-", stdin=b"line one\nline two\n")
         self.assertEqual(rc, 0, out)
         self.assertEqual(self.ft.typed("t1"), ["line one\nline two", "<enter>"])
         rc, out, _ = self.ft.cli("send", "t1", "--input", "-", stdin=b"{C-c}")
         self.assertEqual(rc, 0)
         self.assertEqual(self.ft.typed("t1")[-1], "<ctrl+c>")
-        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
-            bad_res = [(d, self.ft.cli("send", "t1", "--run", "-", stdin=d)) for d in (b"\xff\xfe", b"a\x00b", b"")]
-        else:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-                bad = [(d, pool.submit(self.ft.cli, "send", "t1", "--run", "-", stdin=d)) for d in (b"\xff\xfe", b"a\x00b", b"")]
-                bad_res = [(d, fut.result()) for d, fut in bad]
-        for data, (rc, out, _) in bad_res:
+        for data in (b"\xff\xfe", b"a\x00b", b""):
+            rc, out, _ = self.cli_inproc("send", "t1", "--run", "-", stdin=data)
             self.assertEqual((rc, out["err"]), (2, "bad_body"), data)
 
     def test_open_focus_close(self):
-        rc, out, _ = self.ft.cli("open", "--name", "api", "--agent", "antigravity", "--cwd", self.ft.dir)
+        rc, out, _ = self.cli_inproc("open", "--name", "api", "--agent", "antigravity", "--cwd", self.ft.dir)
         self.assertEqual((rc, out), (0, {"ok": True, "tab": "t3", "name": "api", "agent": "agy"}))
-        rc, out, _ = self.ft.cli("open", "--agent", "no-such-cli")      # no addon declares it: a program, not an agent
+        rc, out, _ = self.cli_inproc("open", "--agent", "no-such-cli")      # no addon declares it: a program, not an agent
         self.assertEqual((rc, out["err"]), (2, "usage"))
-        self.assertEqual(self.ft.cli("active")[1]["tab"], "t3")
-        rc, out, _ = self.ft.cli("focus", "sh")
+        self.assertEqual(self.cli_inproc("active")[1]["tab"], "t3")
+        rc, out, _ = self.cli_inproc("focus", "sh")
         self.assertEqual((rc, out["tab"]), (0, "t1"))
-        self.assertEqual(self.ft.cli("active")[1]["tab"], "t1")
-        rc, out, _ = self.ft.cli("close", "api")
+        self.assertEqual(self.cli_inproc("active")[1]["tab"], "t1")
+        rc, out, _ = self.cli_inproc("close", "api")
         self.assertEqual((rc, out["tab"]), (0, "t3"))
-        self.assertEqual([t["tab"] for t in self.ft.cli("list")[1]], ["t1", "t2"])
+        self.assertEqual([t["tab"] for t in self.cli_inproc("list")[1]], ["t1", "t2"])
 
     def test_errors_are_json_on_stdout_with_the_exit_codes(self):
         cases = [(("screen", "t9"), 1, "no_such_tab"), (("send", "t9", "--run", "x"), 1, "no_such_tab"), (("list", "x"), 2, "usage"),
@@ -915,17 +929,10 @@ class TestCommand(Base):
                  (("screen", "t1", "--lines", "0"), 2, "usage"), (("send", "t1"), 2, "usage"), (("send", "t1", "--run", "a", "--input", "b"), 2, "usage"),
                  (("send", "t1", "--run"), 2, "usage"), (("send", "t1", "--bogus", "a"), 2, "usage"), (("open", "--agent", "vim"), 2, "usage"),
                  (("open", "--cwd", "/nonexistent/x"), 2, "bad_body")]
-        # Run representative backend/usage cases as real CLI subprocesses and the remaining usage/validation cases in-process
-        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
-            results = [(c, self.ft.cli(*c[0])) for c in cases[:3]]
-        else:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-                results = list(pool.map(lambda c: (c, self.ft.cli(*c[0])), cases[:3]))
-        for c in cases[3:]:
-            buf = io.StringIO()
-            with mock.patch.dict(os.environ, self.ft.env(), clear=True), contextlib.redirect_stdout(buf):
-                rc = mod.main(list(c[0]))
-            results.append((c, (rc, json.loads(buf.getvalue()), "")))
+        # Run a representative case as a real CLI subprocess and the remaining cases in-process
+        results = [(cases[0], self.ft.cli(*cases[0][0]))]
+        for c in cases[1:]:
+            results.append((c, self.cli_inproc(*c[0])))
         for (args, rc, code), (got, out, _) in results:
             with self.subTest(args=args):
                 self.assertEqual((got, out["err"]), (rc, code))
@@ -934,26 +941,18 @@ class TestCommand(Base):
         self.ft.load()
         self.ft.term("t3", "sh")
         self.ft.save()
-        rc, out, _ = self.ft.cli("screen", "sh")
+        rc, out, _ = self.cli_inproc("screen", "sh")
         self.assertEqual((rc, out["err"]), (1, "ambiguous_tab"))
 
     def test_no_hc_and_no_server_are_4(self):
-        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
-            r1 = self.ft.cli("list", SB_TABS_BIN="/nonexistent/hc")
-            r2 = self.ft.cli("list", SB_TABS_BACKEND="tmux")
-        else:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-                f1 = pool.submit(self.ft.cli, "list", SB_TABS_BIN="/nonexistent/hc")
-                f2 = pool.submit(self.ft.cli, "list", SB_TABS_BACKEND="tmux")
-                r1, r2 = f1.result(), f2.result()
-        rc, out, _ = r1
+        rc, out, _ = self.cli_inproc("list", SB_TABS_BIN="/nonexistent/hc")
         self.assertEqual((rc, out["err"]), (4, "no_backend"))
-        rc, out, _ = r2
+        rc, out, _ = self.cli_inproc("list", SB_TABS_BACKEND="tmux")
         self.assertEqual((rc, out["err"]), (4, "no_backend"))
         self.ft.load()
         self.ft.state["down"] = True
         self.ft.save()
-        rc, out, _ = self.ft.cli("list")
+        rc, out, _ = self.cli_inproc("list")
         self.assertEqual((rc, out["err"]), (4, "no_session"))
 
     def test_every_error_code_has_its_exit_code(self):
