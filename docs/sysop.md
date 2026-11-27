@@ -29,8 +29,41 @@ brain -> tool calls (MCP) -> host policy -> swarmbox-tabs -> herdr-core tab   th
 | `worktree` | `action`: `status` (read-only), `merge` (medium), or `remove` (high) — `target` accepts either a live tab or a `pending_worktrees` id/branch/path |
 | `say` | shows a message to you in the panel; it does not count as a step |
 | `done` | ends the goal with the reply: one or two sentences for an action, a few `- ` lines for a question about the box (at most 1200 characters; a longer one is sent back once to be written again) |
+| `schedule` | a goal of the sysop later, kept by the host: `cron` (five fields), `every` (`10m`, `2h`) or once `at` (`14:10`, `in 20m`); `list`, `cancel`, `pause`, `resume` (below) |
+| `trigger` | a goal of the sysop when a tab becomes blocked, idle, working or done, shows a text (a regex), or goes away; at most once per `cooldown` |
+| `notify` | a message for you that reaches you when you are not looking: a toast in every open Web Studio and the browser's notification (`info`, `warn`, `urgent`) |
+| `ask` | a question with options (buttons) or a free answer; the goal waits for it, at most `seconds` (default 300) |
+| `read_file` | a log or a file of the box without a tab, read-only: its last (or first) lines, the secrets removed; a folder lists its entries; refused for the logins and keys of the box |
+| `note` | the sysop's own notes, kept across goals, sessions and restarts; each goal starts with their list |
 
 The **active** tab is the one the goal means when it names none: the window of the client that was used last. The panel pane of the sysop is never listed or targeted.
+
+## Time, triggers, notes, questions and notifications
+
+The design: [sysop-automations-design.md](sysop-automations-design.md). Ask in your words: "check the agy tab every 10 minutes and tell it to
+go on when its quota is back", "tell me when the build in `api` prints FAILED", "remind me at 18:00 to push". The sysop creates a
+**schedule** or a **trigger** whose prompt says what to do then; the host keeps it (`<state>/sysop/automations.json`) and runs it as a goal of
+the queue with the source `schedule` or `trigger`, one goal of each automation at a time (a run whose last goal still runs is skipped).
+Every automation ends by itself: at `expires` (default 7 days for a schedule, 1 day for a trigger, at most 30 days), after `max_runs`, after
+its one run (`at`), or when the tab of a trigger goes away. A trigger fires on a change, not on a state that goes on.
+
+- **Policy.** Creating one is a medium-risk action of the goal (at `full-auto` it goes at once). A goal started by an automation cannot
+  create another one without your approval, at every autonomy level.
+- **In the Web Studio.** The Events tab of the Sysop panel lists the live automations with **Pause**, **Resume** and **Cancel**, and each
+  run, skip and end; the Automations filter shows only those and the notifications. A goal of an automation shows in the chat as a line of
+  the sysop's own (a clock for a schedule, a bolt for a trigger), never as words of yours.
+- **Questions.** A question of the sysop (`ask`) is a card above the conversation: one button per option and a field for an answer of your
+  own; on a phone it opens the sheet. No answer in time: the brain is told and decides what is safe without you.
+- **Notifications.** A `notify` is a toast in every open Web Studio (`urgent` stays until closed) and a line in Events. Settings → Sysop →
+  Notifications → **Allow** lets the browser show it when the page is in the background (a page served over plain HTTP from another machine
+  cannot have browser notifications).
+- **Notes.** The sysop keeps what it will need later (`note`: what it watches, what you prefer) in `<state>/sysop/notes/`; every goal starts
+  with their list, and **+ New** does not remove them.
+- **While a goal runs**, what you type or say in the Web Studio, the panel, the cockpit or the microphone reaches that goal with the brain's
+  next tool result, so "no, the other tab" changes what it does now. A message the goal never took runs after it. Goals of `swarmbox-sysop
+  goal` and of scripts wait in the queue as before.
+- **From a shell:** `swarmbox-sysop automations [--all] [--json]`, `swarmbox-sysop automation pause|resume|cancel ID`,
+  `swarmbox-sysop answer TEXT`, `swarmbox-sysop notes [show NAME | rm NAME]`.
 
 ## Autonomy
 
@@ -303,7 +336,7 @@ What you see, why, and what to do. Everything here was met in the soak and end-t
 ## Limits of version 1
 
 - One goal at a time, up to five waiting. One resident brain process takes them in turn; its session carries what came before.
-- Two ways to type: `run` and `input`. There is no tool that sees an image, and no `ask` (the brain cannot put a question to you and wait; it can `say` and `done`).
+- Two ways to type: `run` and `input`. There is no tool that sees an image.
 - Only text: a program that draws without text (a full-screen graphic) is not readable, and a full-screen program has no scrollback, so only what is visible counts.
 - The risk analysis is conservative and best effort; it flags quoted separators too and can ask for approval of something harmless. It cannot read what a script does.
 - A `run` into an agent that is working is queued by the agent (the sysop passes `--queue`), as a line you typed would be; a dialog open in the agent is still refused by `swarmbox-tabs` (`dialog_open`): it is your decision. `busy_tab` only happens for keys (`input`).

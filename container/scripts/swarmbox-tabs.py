@@ -14,6 +14,8 @@ a command line and, at the same time, the library the addons can import by path.
                                                          open a tab: a login shell, or an agent (or yolo: the default one); it becomes the active tab
   swarmbox-tabs focus TAB                                make TAB the active tab
   swarmbox-tabs close TAB                                end the program of TAB and remove the tab
+  swarmbox-tabs redact                                   the text on stdin with the secrets removed, as a screen is: {"text": ...}
+                                                         (the sysop's read_file uses it; no herdr-core needed)
 
 Output: JSON on stdout, always. Success: the object or list above; send answers {"ok":true,"tab":"t3","pane":"t3","submitted":BOOL}, plus "verified":BOOL after a text submitted to an agent. A
 failure is {"err":CODE,"msg":TEXT} (also on stdout, so a program has one place to read) and a non-zero exit.
@@ -1500,6 +1502,11 @@ def run(argv, tabs=None):
     if not argv:
         raise usage_error("a command is needed: list, active, screen, send, open, focus, close")
     cmd, a = argv[0], argv[1:]
+    if cmd == "redact":
+        opts, rest = parse_args(a, (), ())
+        if rest:
+            raise usage_error("redact takes no argument: the text is on stdin")
+        return {"text": redact(read_stdin())}
     tabs = tabs or Tabs()
     if cmd in ("list", "active"):
         opts, rest = parse_args(a, (), ())

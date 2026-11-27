@@ -19,6 +19,7 @@ What this adds, all of it owned by the host (the service), whatever the brain:
 | `notify` | a message that reaches you even when you are not looking at the panel |
 | `ask` | a question with buttons (or a free answer); the goal waits for it |
 | `note` | the sysop's own notes, kept across goals, sessions and restarts |
+| `read_file` | a log or a file of the box, read-only, the secrets removed: no `cat` typed into a tab |
 
 And one change of the conversation: a message you send while a goal runs reaches that goal (**steering**) instead of waiting for it to end.
 
@@ -92,13 +93,23 @@ it to the result of the brain's next tool call (`[the user wrote while you were 
 `done` ("passed to the goal that was running"). Not delivered when the running goal ends (no tool call came): it runs as a goal of its own,
 first in the queue. Goals of automations are never steered into, and never steer.
 
-## 7. Where it lives
+## 7. `read_file`
+
+`read_file(path, lines=200, start=false)`: a file of the box read without a tab (a log, a config, a report), its last lines (or its first),
+at most 1 MiB and 1000 lines; a folder gives its entries (name, size, time). The text passes the one secrets filter of the box
+(`swarmbox-tabs redact`, the filter of every screen) and comes framed as untrusted data, as a screen does. Refused, whatever the path or
+a link says (the real path is judged): the logins and keys of the box and of its agents (`~/.ssh`, `~/.claude`, `~/.gemini`, `~/.codex`,
+`~/.config/gh`, `~/.aws`, ...), files named like credentials (`.env`, `*.pem`, `*.key`, `auth.json`, `.netrc`, ...), the environment and
+memory of a process, `/etc/shadow`. It reads, never writes, so it waits for nobody; every call is in the audit.
+
+## 8. Where it lives
 
 | Part | File |
 |---|---|
 | record, cron, intervals, firing rules | `automations.py` |
 | notes | `notes.py` |
-| tools | `mcpserver.py` (`schedule`, `trigger`, `notify`, `ask`, `note`; steering in `call`) |
+| tools | `mcpserver.py` (`schedule`, `trigger`, `notify`, `ask`, `note`, `read_file`; steering in `call`) |
+| the secrets filter for read_file | `container/scripts/swarmbox-tabs.py`: `redact` |
 | firing, trigger watcher, steering, preseed | `service.py` |
 | CLI | `cli.py`: `automations`, `automation cancel|pause|resume ID`, `answer TEXT`, `notes` |
 | panel | `container/web/herdr`: `sysop-store.mjs` (snapshot), `routes-system.mjs` (`/api/sysop/automation`, `/api/sysop/answer`), `public/app.js` |

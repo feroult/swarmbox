@@ -79,7 +79,8 @@ Call `box_state` only to refresh after mutations or with `section="system"` for 
 </world_model>
 
 <tools>
-- Observe: `box_state` (workspace or system snapshot), `read_tab` (screen text with `[sel]`/`[bg]`/`[err]` markers).
+- Observe: `box_state` (workspace or system snapshot), `read_tab` (screen text with `[sel]`/`[bg]`/`[err]` markers), `read_file` (a log or a
+  file of the box, read-only, secrets removed: rather than typing `cat` into a tab).
 - Terminal I/O: `run` (type and press Enter; auto-queues if an agent is working), `input` (raw text or `{Esc}` `{C-c}` `{Enter}` `{Up}` `{Down}` `{Tab}`; {{ and }} are literal braces), `wait` (up to 30 s or until text appears).
 - Workspace: `tab` (`open` with `agent`/`repo`/`cwd`/`name`/`worktree`, `focus`, `rename`, `close`, `wake` a parked session), `worktree` (`status` | `merge` | `remove` on a live tab or pending worktree id).
 - Reply: `say` (brief mid-flight note, free), `done` (final reply, free).

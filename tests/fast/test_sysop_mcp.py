@@ -128,7 +128,7 @@ class Protocol(Rig):
     def test_tools_list_has_exactly_the_tools_with_schemas(self):
         tools = self.rpc("tools/list")["result"]["tools"]
         self.assertEqual([t["name"] for t in tools], ["box_state", "read_tab", "run", "input", "wait", "tab", "worktree", "say", "done",
-                                                      "schedule", "trigger", "notify", "ask", "note"])
+                                                      "schedule", "trigger", "notify", "ask", "read_file", "note"])
         by = {t["name"]: t for t in tools}
         for t in tools:
             self.assertEqual(t["inputSchema"]["type"], "object")
