@@ -9,6 +9,7 @@ import json
 import os
 import re
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -20,10 +21,385 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 import sysop_support as ss  # noqa: E402
 
-from swarmbox_sysop import audit, cli, events, ipc, paths, service  # noqa: E402
+from swarmbox_sysop import audit, brain, cli, events, ipc, mcpserver, paths, service, tabsclient  # noqa: E402
 
 DONE = [{"tool": "say", "args": {"text": "working"}}, {"tool": "done", "args": {"summary": "finished it"}}]
 TERMINAL = ("done", "stopped", "failed")
+_REAL_SLEEP = time.sleep
+_FAKE_PID_SEQ = 2_000_000_000
+
+
+def _wait_for(fn, seconds=10.0, step=0.002):
+    return ss.wait_for(fn, seconds, step)
+
+
+class _InProcessTabs:
+    """Fast in-process Tabs client backed directly by FakeTabs (no swarmbox-tabs/swarmbox-state subprocesses)."""
+
+    def __init__(self, fake):
+        self.fake = fake
+
+    def _call(self, argv, stdin=""):
+        out, rc = self.fake.call(argv, stdin)
+        if isinstance(out, dict) and "err" in out:
+            raise tabsclient.TabsError(str(out["err"]), str(out.get("msg", "")))
+        if rc != 0:
+            raise tabsclient.TabsError("tabs_protocol", "fake tabs exited %d" % rc)
+        return out
+
+    def box_state(self, section="workspace"):
+        tabs = self.list_tabs()
+        active = next((t["tab"] for t in tabs if t.get("active")), tabs[0]["tab"] if tabs else None)
+        return {"schema": 1, "active": active, "repos": [], "shells": tabs, "parked": [], "installed_agents": []}
+
+    def list_tabs(self):
+        return self._call(["list"])
+
+    def screen(self, tab, lines=None):
+        args = ["screen", tab] + (["--lines", str(int(lines))] if lines else [])
+        return self._call(args)
+
+    def send(self, tab, run=None, input=None):
+        text = run if run is not None else input
+        args = ["send", tab, "--run" if run is not None else "--input", "-"] + (["--queue"] if run is not None else [])
+        return self._call(args, stdin=text + "\n")
+
+    def open_tab(self, name=None, cwd=None, agent=None, worktree=False, title=None, pin_id=None):
+        args = ["open"]
+        if name:
+            args += ["--name", str(name)]
+        if cwd:
+            args += ["--cwd", str(cwd)]
+        if agent:
+            args += ["--agent", str(agent)]
+        if title:
+            args += ["--title", str(title)]
+        if pin_id:
+            args += ["--pin-id", str(pin_id)]
+        if worktree:
+            args += ["--worktree"]
+        return self._call(args)
+
+    def focus_tab(self, tab):
+        return self._call(["focus", str(tab)])
+
+    def close_tab(self, tab):
+        return self._call(["close", str(tab)])
+
+
+def _make_inprocess_mcphost(fake_tabs):
+    class InProcessMcpHost:
+        """Runs the real mcpserver.Server over its real Unix socket in a thread (no Python subprocess spawn, fast settle)."""
+
+        def __init__(self, socket_path, env, ev_log=None, log=None, popen=None):
+            self.socket_path, self.env, self.events = socket_path, env, ev_log
+            self.log = log or (lambda m: None)
+            self.srv = None
+            self.conn = None
+            self.thread = None
+
+        def start(self, timeout=10.0):
+            if len(self.socket_path.encode()) > 100:
+                raise brain.McpHostError("the socket path is too long for a unix socket")
+            self.srv = mcpserver.listen(self.socket_path)
+            self.thread = threading.Thread(target=self._serve, name="mcp-inproc", daemon=True)
+            self.thread.start()
+
+        def _serve(self):
+            cpath = self.env.get("SWARMBOX_SYSOP_CONTEXT")
+            try:
+                conn, _ = self.srv.accept()
+            except OSError:
+                return
+            finally:
+                try:
+                    self.srv.close()
+                except OSError:
+                    pass
+                try:
+                    os.unlink(self.socket_path)
+                except OSError:
+                    pass
+            self.conn = conn
+            ctx = mcpserver.Context.load(cpath)
+            logf = open(os.path.join(ctx.goal_dir, "mcp.log"), "a", encoding="utf-8")
+            os.chmod(os.path.join(ctx.goal_dir, "mcp.log"), 0o600)
+
+            def emit(type_, **fields):
+                if self.events is not None:
+                    self.events.emit(type_, **fields)
+
+            rf = conn.makefile("r", encoding="utf-8", errors="replace")
+            wf = conn.makefile("w", encoding="utf-8")
+            try:
+                server = mcpserver.Server(
+                    ctx,
+                    tabs=_InProcessTabs(fake_tabs),
+                    clock=mcpserver.steady_clock(),
+                    sleep=lambda dt: _REAL_SLEEP(min(dt, 0.005)),
+                    log=lambda m: (logf.write(m + "\n"), logf.flush()),
+                    emit=emit,
+                )
+                server.settle_args = {"quiet": 0.005, "cap": 0.1, "step": 0.002}
+                server.serve(rf, wf)
+            except (OSError, ValueError):
+                pass
+            finally:
+                for f in (rf, wf, logf):
+                    try:
+                        f.close()
+                    except OSError:
+                        pass
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+
+        def stop(self):
+            for s in (self.srv, self.conn):
+                if s is not None:
+                    try:
+                        s.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                    try:
+                        s.close()
+                    except OSError:
+                        pass
+            if self.thread is not None:
+                self.thread.join(2)
+            try:
+                os.unlink(self.socket_path)
+            except OSError:
+                pass
+
+    return InProcessMcpHost
+
+
+class _FakeBrainProc:
+    """In-process equivalent of tests/support/fixtures/sysop/bin/claude: speaks real JSON-RPC to McpHost and writes real stream-json to stdout pipe."""
+
+    def __init__(self, argv, env, stderr_file, cwd):
+        global _FAKE_PID_SEQ
+        _FAKE_PID_SEQ += 1
+        self.pid = _FAKE_PID_SEQ
+        self.returncode = None
+        self._done = threading.Event()
+        self._stop = threading.Event()
+        self._sock = None
+        in_r, in_w = os.pipe()
+        out_r, out_w = os.pipe()
+        self.stdin = open(in_w, "wb", buffering=0)
+        self.stdout = open(out_r, "rb", buffering=0)
+        self._in_r = open(in_r, "rb")
+        self._out_w = open(out_w, "w", encoding="utf-8", buffering=1)
+        self._err_fd = os.dup(stderr_file.fileno()) if stderr_file is not None else None
+        # strip optional `timeout -k 5 N` wrapper
+        if len(argv) >= 4 and argv[0] == "timeout":
+            argv = argv[4:]
+        self._argv = argv[1:]
+        self._env = dict(env or {})
+        self._cwd = cwd or os.getcwd()
+        self._thread = threading.Thread(target=self._run, name="fake-brain", daemon=True)
+        self._thread.start()
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        if self._done.is_set():
+            return self.returncode
+        if timeout is None:
+            self._done.wait()
+            return self.returncode
+        if self._done.wait(min(timeout, 0.005)):
+            return self.returncode
+        raise subprocess.TimeoutExpired(self._argv, timeout)
+
+    def terminate(self):
+        self._stop.set()
+        try:
+            self.stdin.close()
+        except OSError:
+            pass
+        s = self._sock
+        if s is not None:
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                s.close()
+            except OSError:
+                pass
+        self._done.wait(2.0)
+
+    def _emit(self, obj):
+        try:
+            self._out_w.write(json.dumps(obj) + "\n")
+            self._out_w.flush()
+        except (OSError, ValueError):
+            pass
+
+    def _run(self):
+        rc = 0
+        sock = None
+        try:
+            stdin_text = self._in_r.read().decode("utf-8", "replace")
+            self._in_r.close()
+            env = self._env
+            log = env.get("SWARMBOX_TEST_FAKE_CLAUDE_LOG")
+            if log:
+                with open(log + ".tmp", "w") as f:
+                    json.dump({"argv": self._argv, "stdin": stdin_text, "cwd": self._cwd, "pid": self.pid, "pgid": self.pid,
+                               "env": {k: v for k, v in env.items() if k.startswith(("SWARMBOX_", "FOO", "SB_", "PATH"))},
+                               "env_names": sorted(env), "home": env.get("HOME", ""), "tmpdir": env.get("TMPDIR", ""),
+                               "claude_config_dir": env.get("CLAUDE_CONFIG_DIR", "")}, f)
+                os.replace(log + ".tmp", log)
+            mode = env.get("SWARMBOX_TEST_FAKE_CLAUDE_MODE") or "script"
+            session = {"session_id": env["SWARMBOX_TEST_FAKE_CLAUDE_SESSION"]} if env.get("SWARMBOX_TEST_FAKE_CLAUDE_SESSION") else {}
+
+            def result(sub="success", err=False, text="", turns=1):
+                self._emit({"type": "result", "subtype": sub, "is_error": err, "num_turns": turns, "total_cost_usd": 0.0012, "result": text, **session})
+
+            if mode == "notloggedin":
+                self._out_w.write("Not logged in \u00b7 Please run /login\n")
+                self._out_w.flush()
+                rc = 1
+                return
+            if mode == "notloggedin-json":
+                self._emit({"type": "result", "subtype": "success", "is_error": True, "result": "Not logged in \u00b7 Please run /login", "num_turns": 1})
+                rc = 1
+                return
+            if mode == "crash":
+                if self._err_fd is not None:
+                    os.write(self._err_fd, b"boom: the brain crashed\n")
+                rc = 3
+                return
+            if mode == "badjson":
+                self._out_w.write("{not json\ngarbage\n")
+                self._out_w.flush()
+                return
+            if mode in ("hang", "hang-ignore-term"):
+                self._stop.wait(600)
+                rc = -signal.SIGTERM
+                return
+            if mode == "quiet":
+                result(text="nothing to do")
+                return
+            if mode == "maxturns":
+                result(sub="error_max_turns", err=True)
+                rc = 1
+                return
+
+            with open(self._argv[self._argv.index("--mcp-config") + 1]) as f:
+                cfg = json.load(f)
+            srv = cfg["mcpServers"]["sysop"]
+            sock_path = srv["args"][-1]
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.connect(sock_path)
+            self._sock = sock
+            rf = sock.makefile("r", encoding="utf-8", errors="replace")
+            wf = sock.makefile("w", encoding="utf-8")
+            mid = [0]
+
+            def rpc(method, params=None, notify=False):
+                msg = {"jsonrpc": "2.0", "method": method}
+                if params is not None:
+                    msg["params"] = params
+                if not notify:
+                    mid[0] += 1
+                    msg["id"] = mid[0]
+                wf.write(json.dumps(msg) + "\n")
+                wf.flush()
+                if notify:
+                    return None
+                line = rf.readline()
+                if not line:
+                    raise EOFError("the MCP server went away")
+                return json.loads(line)
+
+            rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "claude-code", "version": "0"}})
+            rpc("notifications/initialized", notify=True)
+            tools = rpc("tools/list")["result"]["tools"]
+            self._emit({"type": "system", "subtype": "init", **session, "tools": ["mcp__sysop__" + t["name"] for t in tools],
+                        "mcp_servers": [{"name": "sysop", "status": "connected"}]})
+            steps = []
+            if env.get("SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"):
+                with open(env["SWARMBOX_TEST_FAKE_CLAUDE_SCRIPT"]) as f:
+                    steps = json.load(f)
+            out = env.get("SWARMBOX_TEST_FAKE_CLAUDE_OUT")
+            n = 0
+            for st in steps:
+                if self._stop.is_set():
+                    rc = -signal.SIGTERM
+                    return
+                if "sleep" in st:
+                    if self._stop.wait(st["sleep"]):
+                        rc = -signal.SIGTERM
+                        return
+                    continue
+                if "touch" in st:
+                    open(st["touch"], "w").close()
+                    continue
+                if "waitfile" in st:
+                    end = time.monotonic() + 60
+                    while not os.path.exists(st["waitfile"]) and time.monotonic() < end:
+                        if self._stop.wait(0.005):
+                            rc = -signal.SIGTERM
+                            return
+                    continue
+                if "text" in st:
+                    self._emit({"type": "assistant", "message": {"content": [{"type": "text", "text": st["text"]}]}})
+                    continue
+                n += 1
+                tid = "toolu_fake%d" % n
+                body = json.dumps(st.get("args", {}))
+                self._emit({"type": "stream_event", "event": {"type": "message_start", "message": {}}})
+                self._emit({"type": "stream_event", "event": {"type": "content_block_start", "index": 0,
+                                                              "content_block": {"type": "tool_use", "id": tid, "name": "mcp__sysop__" + st["tool"], "input": {}}}})
+                for part in (body[:len(body) // 2], body[len(body) // 2:]):
+                    self._emit({"type": "stream_event", "event": {"type": "content_block_delta", "index": 0,
+                                                                  "delta": {"type": "input_json_delta", "partial_json": part}}})
+                self._emit({"type": "stream_event", "event": {"type": "content_block_stop", "index": 0}})
+                self._emit({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": tid, "name": "mcp__sysop__" + st["tool"], "input": st.get("args", {})}]}})
+                rep = rpc("tools/call", {"name": st["tool"], "arguments": st.get("args", {}), "_meta": {"claudecode/toolUseId": tid, "progressToken": n}})
+                r = rep.get("result") or {}
+                text = "".join(c.get("text", "") for c in r.get("content", [])) if r else json.dumps(rep.get("error"))
+                self._emit({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "is_error": bool(r.get("isError")),
+                                                                     "content": [{"type": "text", "text": text}]}]}})
+                if out:
+                    with open(out, "a") as f:
+                        f.write(json.dumps({"tool": st["tool"], "args": st.get("args", {}), "is_error": bool(r.get("isError")), "text": text}) + "\n")
+            result(text="finished", turns=n + 1)
+            try:
+                rf.close()
+                wf.close()
+            except OSError:
+                pass
+        except (OSError, EOFError, ValueError):
+            rc = -signal.SIGTERM if self._stop.is_set() else 1
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+            try:
+                self._out_w.close()
+            except OSError:
+                pass
+            if self._err_fd is not None:
+                try:
+                    os.close(self._err_fd)
+                except OSError:
+                    pass
+            self.returncode = rc
+            self._done.set()
+
+
+def _fake_popen(argv, stdin=None, stdout=None, stderr=None, cwd=None, env=None, **_kw):
+    return _FakeBrainProc(argv, env, stderr, cwd)
 
 
 def alive(pid):
@@ -48,7 +424,8 @@ def read(path):
 
 class Base(unittest.TestCase):
     cfg_over = {}
-    fast_loop = False          # True: the waits of the main loop are cut (ss.fast_cond), for a test of a loop that fails turn after turn
+    fast_loop = True           # cut main loop waits (ss.fast_cond) so tests don't sit idle in next_goal(0.2)
+    real_brain = False         # True: spawn the real fake_claude subprocess (e.g. when testing alive(brain_pid) / real killpg)
     read = staticmethod(read)
 
     def setUp(self):
@@ -57,6 +434,7 @@ class Base(unittest.TestCase):
         self.saved = dict(os.environ)
         self.addCleanup(self.restore_env)
         self.bus = ss.FakeBus(self.e.env["SB_BUS_SOCKET"])
+        self.bus.wait_subscriber = lambda n=1, seconds=10: _wait_for(lambda: len(self.bus.subs) >= n, seconds)
         self.addCleanup(self.bus.stop)
         self.tabs = ss.FakeTabs(os.path.join(self.e.dir, "tabs.sock"))
         self.addCleanup(self.tabs.stop)
@@ -70,6 +448,33 @@ class Base(unittest.TestCase):
         self.script(DONE)
         self.svc = None
         self.thread = None
+        orig_host = brain.McpHost
+        orig_kill = brain.kill_group
+        orig_box = tabsclient.Tabs.box_state
+        fake_tabs = self.tabs
+        self._fake_procs = []
+
+        def fast_kill(pgid, grace=brain.KILL_GRACE, proc=None, first_sig=signal.SIGTERM):
+            if isinstance(proc, _FakeBrainProc):
+                proc.terminate()
+                return
+            return orig_kill(pgid, grace=grace, proc=proc, first_sig=first_sig)
+
+        def close_fake_procs():
+            for p in self._fake_procs:
+                for f in (p.stdin, p.stdout, p._in_r):
+                    try:
+                        f.close()
+                    except OSError:
+                        pass
+
+        brain.McpHost = _make_inprocess_mcphost(fake_tabs)
+        brain.kill_group = fast_kill
+        tabsclient.Tabs.box_state = lambda _self, section="workspace": _InProcessTabs(fake_tabs).box_state(section)
+        self.addCleanup(close_fake_procs)
+        self.addCleanup(setattr, brain, "McpHost", orig_host)
+        self.addCleanup(setattr, brain, "kill_group", orig_kill)
+        self.addCleanup(setattr, tabsclient.Tabs, "box_state", orig_box)
 
     def restore_env(self):
         os.environ.clear()
@@ -86,16 +491,22 @@ class Base(unittest.TestCase):
         path = os.path.join(self.e.dir, "gate-%d" % len(os.listdir(self.e.dir)))
         return {"waitfile": path}, lambda: open(path, "w").close()
 
-    def start(self, **over):
+    def _tracked_popen(self, argv, **kw):
+        p = _fake_popen(argv, **kw)
+        self._fake_procs.append(p)
+        return p
+
+    def start(self, clock=time.time, popen=None, **over):
         replace = {k: over.pop(k) for k in ("max_seconds", "approval_timeout") if isinstance(over.get(k), float) and over[k] < 5}   # below what a setting may be
         kw = dict(dict(self.cfg_over, countdown=0), **over)
-        self.svc = service.Service(self.e.cfg(**kw)._replace(**replace), self.e.paths, backoff=(0.05, 0.3), log=lambda m: None)
+        use_popen = popen if popen is not None else (None if self.real_brain else self._tracked_popen)
+        self.svc = service.Service(self.e.cfg(**kw)._replace(**replace), self.e.paths, clock=clock, backoff=(0.01, 0.05), log=lambda m: None, popen=use_popen)
         if self.fast_loop:
-            ss.fast_cond(self.svc)
+            ss.fast_cond(self.svc, cap=0.005)
         self.thread = threading.Thread(target=self.svc.run, daemon=True)
         self.thread.start()
         self.assertTrue(self.svc.wait_ready(10))
-        self.assertTrue(self.bus.wait_subscriber(1, 10), "the service did not subscribe")
+        self.assertTrue(_wait_for(lambda: len(self.bus.subs) >= 1, 10), "the service did not subscribe")
         self.addCleanup(self.end)
         return self.svc
 
@@ -114,7 +525,7 @@ class Base(unittest.TestCase):
         return ipc.read_json(os.path.join(self.e.paths.goals, gid, "state.json"))
 
     def wait_state(self, gid, states=TERMINAL, seconds=30):
-        got = ss.wait_for(lambda: (self.state(gid) or {}).get("state") in states, seconds)
+        got = _wait_for(lambda: (self.state(gid) or {}).get("state") in states, seconds)
         self.assertTrue(got, "goal %s: %s" % (gid, self.state(gid)))
         return self.state(gid)
 
@@ -166,7 +577,7 @@ class StatusFile(Base):
             if path == svc.paths.status and slow_first[0]:
                 slow_first[0] = False
                 entered.set()
-                time.sleep(0.12)         # the reader is still writing when the main thread has taken the goal
+                time.sleep(0.02)         # the reader is still writing when the main thread has taken the goal
             real(path, obj)
         ipc.write_json = slow_write
         self.addCleanup(setattr, ipc, "write_json", real)
@@ -219,7 +630,7 @@ class Flow(Base):
         self.assertIn("[box state (workspace)", got_in)
         self.assertTrue(got_in.endswith("The goal now (voice):\nlist the tabs\n"), got_in)
         # the state file and the audit file are written one after the other: wait for the last line of the audit
-        self.assertTrue(ss.wait_for(lambda: any(e.get("state") == "done" for e in self.events("state", gid)), 10))
+        self.assertTrue(_wait_for(lambda: any(e.get("state") == "done" for e in self.events("state", gid)), 10))
         ev = self.events(goal=gid)             # the audit file has the goal, its states and the end
         self.assertTrue(all(e["source"] == "voice" for e in ev))
         kinds = [(e["event"], e.get("state")) for e in ev if e["event"] in ("goal", "state", "brain")]
@@ -230,7 +641,7 @@ class Flow(Base):
 
     def test_status_json(self):
         self.start()
-        self.assertTrue(ss.wait_for(lambda: self.status()["bus"] == "connected", 5))
+        self.assertTrue(_wait_for(lambda: self.status()["bus"] == "connected", 5))
         st = self.status()
         self.assertEqual(st["pid"], os.getpid())
         self.assertEqual((st["bus"], st["current"], st["queue"]), ("connected", None, []))
@@ -243,7 +654,7 @@ class Flow(Base):
         self.script([hold] + DONE)
         self.start()
         a, b, c = self.goal("first"), self.goal("second"), self.goal("third")
-        self.assertTrue(ss.wait_for(lambda: (self.status() or {}).get("current") == a and [q["id"] for q in self.status()["queue"]] == [b, c], 10), self.status())
+        self.assertTrue(_wait_for(lambda: (self.status() or {}).get("current") == a and [q["id"] for q in self.status()["queue"]] == [b, c], 10), self.status())
         self.assertEqual((self.state(a)["state"], self.state(b)["state"]), ("running", "queued"))
         self.assertEqual(self.status()["queue"][0]["text"], "second")
         release()
@@ -252,12 +663,12 @@ class Flow(Base):
         self.assertEqual([s["started"] for s in sts], sorted(s["started"] for s in sts), "in order")
         for i in range(2):
             self.assertLessEqual(sts[i]["ended"], sts[i + 1]["started"] + 0.001, "one at a time")
-        self.assertTrue(ss.wait_for(lambda: self.status()["current"] is None and not self.status()["queue"], 5))
+        self.assertTrue(_wait_for(lambda: self.status()["current"] is None and not self.status()["queue"], 5))
 
     def test_the_state_waiting_approval_with_the_pending_action(self):
         self.script([{"tool": "run", "args": {"tab": "@1", "command": "rm -rf build"}}, {"tool": "say", "args": {"text": "not allowed"}},
                      {"tool": "done", "args": {"summary": "refused"}}])
-        self.start(approval_timeout=0.3, autonomy="auto")
+        self.start(approval_timeout=0.05, autonomy="auto")
         gid = self.goal("clean the build folder")
         st = self.wait_state(gid, ("waiting_approval",))
         self.assertEqual((st["pending"]["risk"], st["pending"]["mode"], st["pending"]["text"], st["pending"]["tab"]), ("high", "approve", "rm -rf build", "@1"))
@@ -356,7 +767,7 @@ class TopicAndGroup(Base):
     def test_a_reconnect_asks_for_the_same_topic_and_group(self):
         self.start(topic="ops", group="g")
         self.bus.stop()
-        self.assertTrue(ss.wait_for(lambda: self.status()["bus"] == "down", 10))
+        self.assertTrue(_wait_for(lambda: self.status()["bus"] == "down", 10))
         self.bus.start()
         self.assertTrue(self.bus.wait_subscriber(1, 10))
         self.assertEqual(set(self.bus.sub_reqs), {("ops", "g")})
@@ -367,14 +778,15 @@ class TopicAndGroup(Base):
         e2 = ss.Env()
         self.addCleanup(e2.cleanup)
         e2.env["SB_BUS_SOCKET"] = self.e.env["SB_BUS_SOCKET"]
-        svc2 = service.Service(e2.cfg(countdown=0), e2.paths, backoff=(0.05, 0.3), log=lambda m: None)
+        svc2 = service.Service(e2.cfg(countdown=0), e2.paths, backoff=(0.01, 0.05), log=lambda m: None, popen=_fake_popen)
+        ss.fast_cond(svc2, cap=0.01)
         t2 = threading.Thread(target=svc2.run, daemon=True)
         t2.start()
         self.addCleanup(lambda: (svc2.shutdown(), t2.join(15)))
         self.assertTrue(svc2.wait_ready(10))
         self.assertTrue(self.bus.wait_subscriber(2, 10))
         ids = [self.goal("goal %d" % i) for i in range(4)]
-        self.assertTrue(ss.wait_for(lambda: all((self.state(i) or {}).get("state") in TERMINAL for i in ids) or
+        self.assertTrue(_wait_for(lambda: all((self.state(i) or {}).get("state") in TERMINAL for i in ids) or
                                     len([1 for x in audit.read(self.e.paths.audit) if x["event"] == "goal"]) +
                                     len([1 for x in audit.read(e2.paths.audit) if x["event"] == "goal"]) == 4, 20))
         mine = len([1 for x in audit.read(self.e.paths.audit) if x["event"] == "goal"])
@@ -427,15 +839,16 @@ class Survival(Base):
     def test_the_bus_goes_away_and_comes_back(self):
         self.start()
         self.bus.stop()
-        self.assertTrue(ss.wait_for(lambda: self.status()["bus"] == "down", 10), self.status())
+        self.assertTrue(_wait_for(lambda: self.status()["bus"] == "down", 10), self.status())
         self.bus.start()
         self.assertTrue(self.bus.wait_subscriber(1, 10), "the service must reconnect by itself")
-        self.assertTrue(ss.wait_for(lambda: self.status()["bus"] == "connected", 5))
+        self.assertTrue(_wait_for(lambda: self.status()["bus"] == "connected", 5))
         self.assertEqual(self.wait_state(self.goal("after the restart"))["state"], "done")
 
     def test_the_bus_is_not_there_at_the_start(self):
         self.bus.stop()
-        self.svc = service.Service(self.e.cfg(countdown=0), self.e.paths, backoff=(0.05, 0.2), log=lambda m: None)
+        self.svc = service.Service(self.e.cfg(countdown=0), self.e.paths, backoff=(0.01, 0.05), log=lambda m: None, popen=_fake_popen)
+        ss.fast_cond(self.svc, cap=0.01)
         self.thread = threading.Thread(target=self.svc.run, daemon=True)
         self.thread.start()
         self.addCleanup(self.end)
@@ -452,12 +865,12 @@ class Survival(Base):
         gid = self.goal("long")
         self.wait_state(gid, ("running",))
         self.bus.stop()
-        self.assertTrue(ss.wait_for(lambda: self.status()["bus"] == "down", 10))
+        self.assertTrue(_wait_for(lambda: self.status()["bus"] == "down", 10))
         self.bus.start()
         release()
         st = self.wait_state(gid)
         self.assertEqual(st["state"], "done", st)
-        self.assertTrue(ss.wait_for(lambda: self.bus.wait_subscriber(1, 1), 10))
+        self.assertTrue(_wait_for(lambda: self.bus.wait_subscriber(1, 1), 10))
 
     def test_the_audit_survives_the_service_and_is_appended_to(self):
         self.start()
@@ -485,10 +898,17 @@ class Survival(Base):
 class Stopping(Base):
     def test_stop_ends_the_running_goal_kills_the_brain_and_drops_the_queue(self):
         self.script([{"tool": "box_state"}, {"sleep": 60}])
-        self.start()
+
+        def fast_real_popen(*a, **k):
+            p = subprocess.Popen(*a, **k)
+            orig_wait = p.wait
+            p.wait = lambda timeout=None: orig_wait(min(timeout, 0.01) if timeout is not None else None)
+            return p
+
+        self.start(popen=fast_real_popen)
         a, b, c = self.goal("a"), self.goal("b"), self.goal("c")
         self.wait_state(a, ("running",))
-        ss.wait_for(lambda: os.path.exists(self.logf), 10)
+        _wait_for(lambda: os.path.exists(self.logf), 10)
         with open(self.logf) as f:
             brain_pid = json.load(f)["pid"]
         t0 = time.time()
@@ -499,12 +919,13 @@ class Stopping(Base):
             st = self.state(g)
             self.assertEqual(st["state"], "stopped")
             self.assertIn("before it started", st["error"])
-        self.assertTrue(ss.wait_for(lambda: not alive(brain_pid), 5), "the brain is gone")
+        self.assertTrue(_wait_for(lambda: not alive(brain_pid), 5), "the brain is gone")
         self.assertFalse(os.path.exists(self.e.paths.stop_request), "the request was taken")
         self.assertTrue(os.path.exists(os.path.join(self.e.paths.goals, a, "stopped")))
-        self.assertTrue(ss.wait_for(lambda: self.status()["current"] is None, 5))
+        self.assertTrue(_wait_for(lambda: self.status()["current"] is None, 5))
         self.assertEqual(self.status()["queue"], [])
         self.script(DONE)
+        self.svc.popen = self._tracked_popen
         self.assertEqual(self.wait_state(self.goal("after"))["state"], "done", "the service goes on")
         self.assertIn("stop", [e.get("decision") for e in self.events("decision", a)])
 
@@ -517,8 +938,8 @@ class Stopping(Base):
         self.start()
         a = self.goal("look around")
         calls = os.path.join(self.e.paths.goals, a, "calls.jsonl")
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(calls) and "box_state" in self.read(calls), 10))
-        ss.wait_for(lambda: os.path.exists(self.logf), 10)
+        self.assertTrue(_wait_for(lambda: os.path.exists(calls) and "box_state" in self.read(calls), 10))
+        _wait_for(lambda: os.path.exists(self.logf), 10)
         ipc.request_stop(self.e.paths)
         self.assertEqual(self.wait_state(a)["state"], "stopped")
         live = events.read(os.path.join(self.e.paths.goals, a, "events.jsonl"))
@@ -546,7 +967,7 @@ class Stopping(Base):
         self.start()
         a, b, c = self.goal("a"), self.goal("b"), self.goal("c")
         self.wait_state(a, ("running",))
-        ss.wait_for(lambda: len(self.status()["queue"]) == 2, 5)
+        _wait_for(lambda: len(self.status()["queue"]) == 2, 5)
         ipc.request_stop(self.e.paths, b)
         self.assertEqual(self.wait_state(b)["state"], "stopped")
         release()
@@ -560,14 +981,14 @@ class Stopping(Base):
         a = self.goal("a")
         self.wait_state(a, ("running",))
         ipc.request_stop(self.e.paths, "no-such-goal")
-        self.assertTrue(ss.wait_for(lambda: not os.path.exists(self.e.paths.stop_request), 5), "the request was taken")
+        self.assertTrue(_wait_for(lambda: not os.path.exists(self.e.paths.stop_request), 5), "the request was taken")
         release()
         self.assertEqual(self.wait_state(a)["state"], "done")
 
     def test_stop_while_idle_is_taken_and_harmless(self):
         self.start()
         ipc.request_stop(self.e.paths)
-        self.assertTrue(ss.wait_for(lambda: not os.path.exists(self.e.paths.stop_request), 5))
+        self.assertTrue(_wait_for(lambda: not os.path.exists(self.e.paths.stop_request), 5))
         self.assertEqual(self.wait_state(self.goal("x"))["state"], "done")
 
     def test_a_damaged_stop_request_still_stops(self):
@@ -590,8 +1011,11 @@ class Stopping(Base):
 
     def test_the_deadline_ends_a_goal(self):
         self.script([{"sleep": 60}])
-        self.start(max_seconds=0.3)         # below what the setting allows (5): the budget is the same code
+        offset = [0.0]
+        self.start(max_seconds=0.3, clock=lambda: time.time() + offset[0])  # below what the setting allows (5): the budget is the same code
         a = self.goal("a")
+        self.wait_state(a, ("running",))
+        offset[0] = 2.0
         st = self.wait_state(a, seconds=30)
         self.assertEqual(st["state"], "failed")
         self.assertIn("time budget", st["error"])
@@ -654,9 +1078,14 @@ class Folders(Base):
 class OwnProcess(Base):
     """the service as a real process: kill it, start it again, two at once, SIGTERM"""
 
-    def spawn(self, extra_env=None, log=True):
-        env = dict(dict(os.environ, PYTHONPATH=ss.LIB, SWARMBOX_SYSOP_COUNTDOWN="0"), **(extra_env or {}))
-        args = [sys.executable, "-B", "-m", "swarmbox_sysop", "serve"] + (["--log"] if log else [])
+    def spawn(self, extra_env=None, log=True, lock_wait=None):
+        env = dict(dict(os.environ, PYTHONPATH=ss.LIB, SWARMBOX_SYSOP_COUNTDOWN="0", SWARMBOX_SYSOP_PRESEED="0"), **(extra_env or {}))
+        if lock_wait is not None:
+            code = "import swarmbox_sysop.service as s, swarmbox_sysop.cli as c; s.Service.LOCK_WAIT = %r; raise SystemExit(c.main(%r))" % (
+                lock_wait, ["serve"] + (["--log"] if log else []))
+            args = [sys.executable, "-B", "-c", code]
+        else:
+            args = [sys.executable, "-B", "-m", "swarmbox_sysop", "serve"] + (["--log"] if log else [])
         p = subprocess.Popen(args, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE if not log else subprocess.DEVNULL,
                              stderr=subprocess.PIPE if not log else subprocess.DEVNULL, start_new_session=True)
         self.addCleanup(self.reap, p)
@@ -672,7 +1101,7 @@ class OwnProcess(Base):
                 s.close()
 
     def up(self, p):
-        self.assertTrue(ss.wait_for(lambda: service.running(self.e.paths) and self.bus.subs, 15), "the service did not start")
+        self.assertTrue(_wait_for(lambda: service.running(self.e.paths) and self.bus.subs, 15), "the service did not start")
 
     def test_kill_and_restart_loses_the_goal_in_flight_and_says_so(self):
         os.environ["SWARMBOX_TEST_FAKE_CLAUDE_MODE"] = "hang"
@@ -680,14 +1109,14 @@ class OwnProcess(Base):
         self.up(p)
         gid = self.goal("this one will be lost", "voice")
         self.wait_state(gid, ("running",))
-        ss.wait_for(lambda: os.path.exists(self.logf), 10)
+        _wait_for(lambda: os.path.exists(self.logf), 10)
         with open(self.logf) as f:
             brain_pid = json.load(f)["pid"]
         queued = self.goal("this one waits")
-        ss.wait_for(lambda: self.state(queued), 5)
+        _wait_for(lambda: self.state(queued), 5)
         os.kill(p.pid, signal.SIGKILL)
         p.wait()
-        self.assertTrue(ss.wait_for(lambda: not alive(brain_pid), 10), "the brain of a dead service gets a signal from the kernel and goes")
+        self.assertTrue(_wait_for(lambda: not alive(brain_pid), 10), "the brain of a dead service gets a signal from the kernel and goes")
         self.assertEqual(self.state(gid)["state"], "running", "nobody ended it yet")
         self.assertFalse(service.running(self.e.paths), "the lock of a dead service is gone")
         os.environ.pop("SWARMBOX_TEST_FAKE_CLAUDE_MODE")
@@ -706,9 +1135,9 @@ class OwnProcess(Base):
     def test_a_second_service_does_not_start_and_does_not_disturb_the_first(self):
         p = self.spawn()
         self.up(p)
-        self.assertTrue(ss.wait_for(lambda: self.status(), 10))
+        self.assertTrue(_wait_for(lambda: self.status(), 10))
         pid = ipc.read_json(self.e.paths.status)["pid"]
-        p2 = self.spawn(log=False)
+        p2 = self.spawn(log=False, lock_wait=0.01)
         out, err = p2.communicate(timeout=20)
         self.assertEqual(p2.returncode, 0)
         self.assertIn(b"already running", err)
@@ -724,7 +1153,7 @@ class OwnProcess(Base):
         self.up(p)
         gid = self.goal("x")
         self.wait_state(gid, ("running",))
-        ss.wait_for(lambda: os.path.exists(self.logf), 10)
+        _wait_for(lambda: os.path.exists(self.logf), 10)
         with open(self.logf) as f:
             brain_pid = json.load(f)["pid"]
         p.send_signal(signal.SIGTERM)
@@ -745,7 +1174,7 @@ class OwnProcess(Base):
         os.close(w)
         self.addCleanup(self.reap, p)
         self.up(p)
-        self.assertTrue(ss.wait_for(lambda: "serving" in self.read(self.e.paths.log), 10))
+        self.assertTrue(_wait_for(lambda: "serving" in self.read(self.e.paths.log), 10))
         self.assertEqual(stat.S_IMODE(os.stat(self.e.paths.log).st_mode), 0o600)
         os.set_blocking(r, False)
         got = None
@@ -755,16 +1184,17 @@ class OwnProcess(Base):
                 got = os.read(r, 100)
                 break
             except BlockingIOError:
-                time.sleep(0.05)
+                time.sleep(0.005)
         self.assertEqual(got, b"", "the pipe must be at EOF: the service must not hold it (a caller that waits for EOF would hang)")
         os.close(r)
 
     def test_bad_settings_stop_it_with_a_clear_line(self):
-        for var, val in (("SWARMBOX_SYSOP_AUTONOMY", "yolo"), ("SWARMBOX_SYSOP_COUNTDOWN", "x"), ("SWARMBOX_SYSOP_MAX_STEPS", "-1"),
-                         ("SWARMBOX_SYSOP_BRAIN", "b {nope}"), ("SWARMBOX_SYSOP_MODEL", "a b"),
-                         ("SWARMBOX_SYSOP_TOPIC", "Goal"), ("SWARMBOX_SYSOP_TOPIC", "a/b"), ("SWARMBOX_SYSOP_GROUP", "x" * 64), ("SWARMBOX_SYSOP_GROUP", "-g")):
+        cases = (("SWARMBOX_SYSOP_AUTONOMY", "yolo"), ("SWARMBOX_SYSOP_COUNTDOWN", "x"), ("SWARMBOX_SYSOP_MAX_STEPS", "-1"),
+                 ("SWARMBOX_SYSOP_BRAIN", "b {nope}"), ("SWARMBOX_SYSOP_MODEL", "a b"),
+                 ("SWARMBOX_SYSOP_TOPIC", "Goal"), ("SWARMBOX_SYSOP_TOPIC", "a/b"), ("SWARMBOX_SYSOP_GROUP", "x" * 64), ("SWARMBOX_SYSOP_GROUP", "-g"))
+        procs = [(var, self.spawn({var: val}, log=False)) for var, val in cases]
+        for var, p in procs:
             with self.subTest(var=var):
-                p = self.spawn({var: val}, log=False)
                 out, err = p.communicate(timeout=20)
                 self.assertEqual(p.returncode, 2)
                 self.assertIn(var.encode(), err)
@@ -797,10 +1227,30 @@ class Settings(unittest.TestCase):
 
 class Cli(Base):
     def run_cli(self, *args, env=None, stdin=None):
-        e = dict(os.environ, PYTHONPATH=ss.LIB, **(env or {}))
+        out, err = io.StringIO(), io.StringIO()
+        old_in = sys.stdin
+        old_env = None
+        if env:
+            old_env = {k: os.environ.get(k) for k in env}
+            os.environ.update(env)
         # no input means no terminal either: `goal` with no text asks isatty(0), and on a developer's terminal it would wait for a line
-        feed = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
-        return subprocess.run([sys.executable, "-B", "-m", "swarmbox_sysop"] + list(args), env=e, capture_output=True, text=True, timeout=60, **feed)
+        sys.stdin = io.StringIO(stdin if stdin is not None else "")
+        rc = 0
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                try:
+                    rc = cli.main(list(args))
+                except SystemExit as e:
+                    rc = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+        finally:
+            sys.stdin = old_in
+            if old_env is not None:
+                for k, v in old_env.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+        return subprocess.CompletedProcess(list(args), rc, out.getvalue(), err.getvalue())
 
     def test_status_when_not_running(self):
         p = self.run_cli("status")
@@ -855,6 +1305,9 @@ class Cli(Base):
         self.assertIn("at most 4000", p.stderr)
 
     def test_goal_wait_follows_it_to_the_end(self):
+        orig_sleep = cli.time.sleep
+        cli.time.sleep = lambda s: orig_sleep(min(s, 0.005))
+        self.addCleanup(setattr, cli.time, "sleep", orig_sleep)
         self.start()
         p = self.run_cli("goal", "--wait", "go")
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -956,7 +1409,7 @@ class ShutdownRace(Base):
         t.join(15)
         self.assertFalse(t.is_alive())
         self.assertTrue(subs)
-        self.assertTrue(ss.wait_for(lambda: subs[0].sock.fileno() == -1, 5), "the goal stream was left open")
+        self.assertTrue(_wait_for(lambda: subs[0].sock.fileno() == -1, 5), "the goal stream was left open")
 
 
 class Surrogates(Base):
@@ -986,10 +1439,10 @@ class Surrogates(Base):
             return real_final(goal)
         self.svc.accept, self.svc.refresh_final = accept, final
         self.goal("lost goal")                                # accept raises: the reader must live on
-        self.assertTrue(ss.wait_for(lambda: len(calls) >= 1, 5))
+        self.assertTrue(_wait_for(lambda: len(calls) >= 1, 5))
         self.assertTrue(self.svc.reader.is_alive())
         second = self.goal("second")                          # the end of this goal raises: the loop must live on
-        self.assertTrue(ss.wait_for(lambda: self.events("brain", second), 30))
+        self.assertTrue(_wait_for(lambda: self.events("brain", second), 30))
         third = self.goal("third")
         self.assertEqual(self.wait_state(third)["state"], "done")
         self.assertTrue(self.thread.is_alive())
