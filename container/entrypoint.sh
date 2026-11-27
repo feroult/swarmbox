@@ -17,7 +17,8 @@
 # Test-only variables (not in the configuration table and not read by anything else): SWARMBOX_TEST_LIB (folder holding dirs.sh), SWARMBOX_TEST_RUN_DIR (replaces
 # /tmp/swarmbox), SWARMBOX_TEST_TUN (replaces /dev/net/tun), SWARMBOX_TEST_PODMAN_RUNROOT and SWARMBOX_TEST_NO_STATE_SOCKET=1 and SWARMBOX_TEST_FALLBACK_SOCK (the state folder cannot hold a socket; where the service listens then), SWARMBOX_TEST_PODMAN_LIBPOD_RUN (the folders serve clears before the nested service), SWARMBOX_TEST_PODMAN_GRAPHROOT (the graph root whose stale fuse-overlayfs marker serve removes), SWARMBOX_TEST_FUSE (replaces /dev/fuse), SWARMBOX_TEST_NO_NESTED=1 (no nested Podman: a warning
 # instead of a failure for step 2 and no service at step 8), SWARMBOX_TEST_BACKOFF_SCALE (integer multiplier of the
-# backoff of both supervisors, 0 for none), SWARMBOX_TEST_BUS_WAIT (seconds to wait for the bus to answer, default 2), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10), SWARMBOX_TEST_LOG_EVERY (seconds between two looks of the log trimmer, default 300), SWARMBOX_TEST_LOG_MAX (bytes past which it trims a log, default 4194304).
+# backoff of both supervisors, 0 for none), SWARMBOX_TEST_BUS_WAIT (seconds to wait for the bus to answer, default 2), SWARMBOX_TEST_SERVICE_WAIT (seconds to wait for the nested service, default 10), SWARMBOX_TEST_LOG_EVERY (seconds between two looks of the log trimmer, default 300), SWARMBOX_TEST_LOG_MAX (bytes past which it trims a log, default 4194304),
+# SWARMBOX_TEST_POLL_HZ (looks per second of the waits for the bus and the nested service, 2 to 1000, default 5: the timeouts stay in seconds).
 
 SB_LIB=${SWARMBOX_TEST_LIB:-/usr/local/lib/swarmbox}
 
@@ -231,13 +232,22 @@ supervise_one() {
     exit 0
 }
 
+# poll_tick: sets n_per_s (looks per second, SWARMBOX_TEST_POLL_HZ, default 5) and tick (the sleep between two looks, 0.200 by default)
+# for the caller, which declares both local.
+poll_tick() {
+    n_per_s=${SWARMBOX_TEST_POLL_HZ:-5}
+    printf -v tick '0.%03d' $((1000 / n_per_s))
+}
+
 # wait_for_bus SECONDS: 0 when `swarmbox-bus ping` answers, 1 when the time ran out or the supervisor is gone.
 wait_for_bus() {
-    local n=$(( $1 * 5 ))
+    local n_per_s tick
+    poll_tick
+    local n=$(( $1 * n_per_s ))
     while [ "$n" -gt 0 ]; do
         SB_BUS_SOCKET=$SB_BUS_SOCK swarmbox-bus ping > /dev/null 2>&1 && return 0
         kill -0 "$BUSSUP" 2>/dev/null || return 1
-        sleep 0.2
+        sleep "$tick"
         n=$((n - 1))
     done
     SB_BUS_SOCKET=$SB_BUS_SOCK swarmbox-bus ping > /dev/null 2>&1
@@ -267,11 +277,13 @@ socket_works_in() {
 
 wait_for_service() {
     # $1 seconds; returns 0 when the socket exists, 1 when the service died or the time ran out
-    local n=$(( $1 * 5 ))
+    local n_per_s tick
+    poll_tick
+    local n=$(( $1 * n_per_s ))
     while [ "$n" -gt 0 ]; do
         [ -S "$SB_PODMAN_SOCK" ] && return 0
         kill -0 "$SVC" 2>/dev/null || return 1
-        sleep 0.2
+        sleep "$tick"
         n=$((n - 1))
     done
     [ -S "$SB_PODMAN_SOCK" ]

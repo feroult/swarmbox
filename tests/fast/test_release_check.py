@@ -86,17 +86,22 @@ def run(repo, **extra):
     return subprocess.run(["sh", SCRIPT], env=env, capture_output=True, text=True)
 
 
-class ReleaseCheckTest(unittest.TestCase):
+class Base(unittest.TestCase):
+    """The fixture repository is made once per class (git init, add, commit) and copied for each case: a copy is the same repository."""
+
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp(prefix="swarmbox-test-relcheck-")
+        cls.template = make_repo(cls.tmp)
 
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def fresh(self):
-        return make_repo(self.tmp)
+        repo = os.path.join(tempfile.mkdtemp(prefix="relcheck-", dir=self.tmp), "repo")
+        shutil.copytree(self.template, repo, symlinks=True)
+        return repo
 
     def commit(self, repo, msg="change"):
         git(repo, "add", "-A")
@@ -106,6 +111,10 @@ class ReleaseCheckTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertRegex(r.stdout, r"(?m)^FAIL %s " % name, r.stdout)
         self.assertIn("RELEASE CHECK FAILED", r.stdout)
+
+
+class ReadOnly(Base):
+    """A good fixture passes, and no run changes the fixture."""
 
     def test_passes_on_a_good_fixture_and_prints_one_line_per_condition(self):
         repo = self.fresh()
@@ -124,6 +133,10 @@ class ReleaseCheckTest(unittest.TestCase):
             run(repo)
             self.assertEqual(tree_hash(repo), before)
 
+
+class TreeAndBranch(Base):
+    """A dirty tree, another branch, and all of them at once."""
+
     def test_dirty_tree(self):
         repo = self.fresh()
         write(repo, "README.md", "changed\n")
@@ -139,6 +152,23 @@ class ReleaseCheckTest(unittest.TestCase):
         self.assertFails(r, "branch")
         self.assertIn("feature", r.stdout)
         self.assertEqual(run(repo, SWARMBOX_RELEASE_BRANCH="feature").returncode, 0)
+
+    def test_several_failures_are_all_reported(self):
+        repo = self.fresh()
+        git(repo, "tag", "v2.0.0")
+        git(repo, "checkout", "-q", "-b", "feature")
+        write(repo, "later.txt", "x")
+        self.commit(repo)
+        write(repo, "x.txt", "x")
+        r = run(repo)
+        self.assertEqual(r.returncode, 1)
+        for name in ("tree", "branch", "tag"):
+            self.assertRegex(r.stdout, r"(?m)^FAIL %s " % name)
+        self.assertIn("RELEASE CHECK FAILED 3", r.stdout)
+
+
+class VersionAndTag(Base):
+    """The changelog entry, the first public version and the tag of the release."""
 
     def test_missing_changelog_entry(self):
         repo = self.fresh()
@@ -187,18 +217,9 @@ class ReleaseCheckTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("v2.0.0 exists and points at HEAD", r.stdout)
 
-    def test_several_failures_are_all_reported(self):
-        repo = self.fresh()
-        git(repo, "tag", "v2.0.0")
-        git(repo, "checkout", "-q", "-b", "feature")
-        write(repo, "later.txt", "x")
-        self.commit(repo)
-        write(repo, "x.txt", "x")
-        r = run(repo)
-        self.assertEqual(r.returncode, 1)
-        for name in ("tree", "branch", "tag"):
-            self.assertRegex(r.stdout, r"(?m)^FAIL %s " % name)
-        self.assertIn("RELEASE CHECK FAILED 3", r.stdout)
+
+class ReducedWorkflowCheck(Base):
+    """The workflow check without PyYAML."""
 
     def test_without_pyyaml_a_workflow_that_is_empty_tabbed_or_unbalanced_fails_and_a_good_one_passes(self):
         # the reduced check (no PyYAML on the machine: a python3 that cannot import yaml comes first in PATH)
@@ -221,6 +242,10 @@ class ReleaseCheckTest(unittest.TestCase):
                     self.assertRegex(r.stdout, r"(?m)^OK workflows reduced", r.stdout)
                 else:
                     self.assertFails(r, "workflows")
+
+
+class RealRepository(unittest.TestCase):
+    """Read-only on the real repository too."""
 
     def test_the_real_repository_is_not_modified_by_a_run(self):
         # Read-only on the real repository too: the tracked-file listing and the index are unchanged.

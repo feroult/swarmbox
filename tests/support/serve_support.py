@@ -59,6 +59,28 @@ def alive(pid):
         return False
 
 
+def _children(pid):
+    """The pids whose parent is pid (Linux: /proc)."""
+    out = []
+    for x in os.listdir("/proc"):
+        if x.isdigit():
+            try:
+                with open("/proc/%s/stat" % x) as f:
+                    if int(f.read().rsplit(")", 1)[1].split()[1]) == pid:
+                        out.append(int(x))
+            except (OSError, ValueError, IndexError):
+                pass
+    return out
+
+
+def _cmdline(pid):
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
 # the fake herdr-core: records the call; exits with the status in hc.exit; `ls` lists no terminal and `run` answers an address
 FAKE_HC = """#!/bin/bash
 echo "hc $*" >> "$FAKE_DIR/calls.log"
@@ -166,7 +188,8 @@ class ServeCase(unittest.TestCase):
                "SWARMBOX_TEST_PODMAN_RUNROOT": os.path.join(self.base, "storage-run"),
                "SWARMBOX_TEST_PODMAN_LIBPOD_RUN": os.path.join(self.base, "podman-run"),
                "SWARMBOX_TEST_FALLBACK_SOCK": os.path.join(self.base, "fallback.sock"),
-               "SWARMBOX_TEST_BACKOFF_SCALE": "0", "SWARMBOX_TEST_SERVICE_WAIT": "2", "SWARMBOX_TEST_BUS_WAIT": "1", "LANG": "C.UTF-8"}
+               "SWARMBOX_TEST_BACKOFF_SCALE": "0", "SWARMBOX_TEST_SERVICE_WAIT": "2", "SWARMBOX_TEST_BUS_WAIT": "1",
+               "SWARMBOX_TEST_POLL_HZ": "100", "LANG": "C.UTF-8"}  # the waits look every 10 ms instead of 200 ms
         env.update({k: v for k, v in extra.items() if v is not None})
         for k, v in extra.items():
             if v is None:
@@ -269,7 +292,15 @@ class ServeCase(unittest.TestCase):
         shutil.rmtree(self.run_dir, ignore_errors=True)
         shutil.rmtree(os.path.join(self.home, ".local"), ignore_errors=True)
 
+    def settled(self, p):
+        """True when every background subshell of serve (the supervisors, the log trimmer, the installs: children with serve's own command line)
+        runs a child of its own, so it is past its `trap`. A signal that reaches a subshell of bash between its fork and its own trap is lost (bash
+        resets the inherited traps), and serve then waits for that subshell for ever: no box is stopped within milliseconds of its start, a test is."""
+        own = _cmdline(p.pid)
+        return all(_children(k) for k in _children(p.pid) if _cmdline(k) == own and alive(k))
+
     def stop(self, p, sig=signal.SIGTERM):
+        wait_for(lambda: self.settled(p), 5)   # best effort: a supervisor between two restarts has no child for a moment
         os.kill(p.pid, sig)
         p.wait(timeout=60)
         return p.returncode

@@ -555,8 +555,8 @@ def alive(pid):
         return False
 
 
-class Processes(unittest.TestCase):
-    """The real command, with the real service and the fake web server."""
+class ProcessCase(unittest.TestCase):
+    """The real command, with the real service and the fake web server (the tests are in three classes that the runner runs side by side)."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="voice-front-proc-")
@@ -593,6 +593,10 @@ class Processes(unittest.TestCase):
             except OSError:
                 pass
 
+
+class Processes(ProcessCase):
+    """The routes of the real stack, and how it stops."""
+
     def test_the_real_stack_routes_both_ways(self):
         self.start()
         status, _, body = get(self.port, "/voice/health", host="voice-test.example:7681", extra="Origin: http://voice-test.example:7681\r\n")
@@ -626,6 +630,10 @@ class Processes(unittest.TestCase):
             for pid in kids:
                 self.assertFalse(alive(pid), (sig, pid))
 
+
+class ProcessDeaths(ProcessCase):
+    """A killed front, and a dead service that is restarted."""
+
     def test_killing_the_front_takes_its_children_with_it(self):
         p = self.start()
         kids = children_of(p.pid)
@@ -650,6 +658,10 @@ class Processes(unittest.TestCase):
                 time.sleep(0.005)
         self.assertTrue(ok, "the service did not come back")
         self.assertIsNone(p.poll())
+
+
+class ProcessErrors(ProcessCase):
+    """The errors before any child starts."""
 
     def test_a_busy_port_is_an_error_before_any_child_starts(self):
         s = socket.socket()

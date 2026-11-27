@@ -6,12 +6,12 @@ import fcntl
 import os
 import sys
 import threading
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "support"))
 from tabs_support import FakeHc, load_module  # noqa: E402
+from waiting import wait_until  # noqa: E402
 
 mod = load_module()
 
@@ -32,6 +32,17 @@ class Locks(unittest.TestCase):
 
     def names(self):
         return sorted(os.listdir(self.d))
+
+    @staticmethod
+    def open_fds(path):
+        """How many descriptors of this process are open on path (Linux: /proc/self/fd)."""
+        n = 0
+        for fd in os.listdir("/proc/self/fd"):
+            try:
+                n += os.readlink(os.path.join("/proc/self/fd", fd)) == os.path.realpath(path)
+            except OSError:
+                pass
+        return n
 
     def test_the_locks_of_tabs_that_are_gone_are_deleted_past_the_limit_and_live_ones_stay(self):
         self.make_dead(mod.LOCK_KEEP + 30)
@@ -72,7 +83,7 @@ class Locks(unittest.TestCase):
                 got.append(os.path.exists(path))
         t = threading.Thread(target=b)
         t.start()
-        time.sleep(0.3)
+        self.assertTrue(wait_until(lambda: self.open_fds(path) >= 2, 10, 0.005), "B never opened the lock file")   # A's and B's: B waits on it
         os.unlink(path)                    # the sweep
         os.close(a)                        # A lets go of the unlinked file: B's flock succeeds on it
         t.join(10)

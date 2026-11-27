@@ -108,7 +108,9 @@ sys.exit(0)
 """
 
 
-class PinsTest(unittest.TestCase):
+class PinsCase(unittest.TestCase):
+    """A mktemp HOME with two projects. The tests are in several classes so that the runner can run them side by side."""
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-pins.")
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -123,6 +125,10 @@ class PinsTest(unittest.TestCase):
             "XDG_CONFIG_HOME": os.path.join(self.home, ".config"),
             "SB_RUN_DIR": os.path.join(self.tmp, "run"),
         }
+
+
+class PinsStore(PinsCase):
+    """Pins.json, the agent command line and the autostart restore."""
 
     def test_crud_mode_and_unknown_field_preservation(self):
         p1 = pins_mod.add_pin(self.proj1, agent="claude", title="", env=self.env)
@@ -241,6 +247,10 @@ class PinsTest(unittest.TestCase):
         self.assertEqual(len(scripts), 2)
         self.assertEqual(sum("SWARMBOX_CONTEXT=0 claude" in x for x in scripts), 1, scripts)
 
+
+class TabsRename(PinsCase):
+    """A rename of a tab follows its pin."""
+
     def test_tabs_rename_syncs_pin_and_resolves_by_title_and_open_worktree(self):
         hc_state = os.path.join(self.tmp, "hc-tabs.json")
         hc_bin = os.path.join(self.tmp, "hc-tabs")
@@ -313,6 +323,10 @@ class PinsTest(unittest.TestCase):
         subprocess.run([sys.executable, tabs_script, "close", "t1"], env=env, capture_output=True, text=True, check=True)
         self.assertEqual([p["id"] for p in pins_mod.load_pins(env=env)], [pin["id"]])
 
+
+class InitialTab(PinsCase):
+    """The first tab of the multiplexer."""
+
     def test_herdr_ensure_initial_tab_uses_autostart_pins_or_falls_back_to_shell(self):
         hc_state = os.path.join(self.tmp, "hc-boot.json")
         hc_bin = os.path.join(self.tmp, "hc-boot")
@@ -362,6 +376,10 @@ class PinsTest(unittest.TestCase):
             terms3 = json.load(f)["terminals"]
         self.assertEqual(len(terms3), 1)
         self.assertEqual(terms3[0]["name"], "shell")
+
+
+class ResetRecovery(PinsCase):
+    """The recovery after a reset that keeps the tabs."""
 
     def test_reset_keep_recovery_restarts_autostart_agent_and_parks_non_autostart(self):
         """Regression test for `swarmbox reset` where herdr-core resurrects `--keep` terminals

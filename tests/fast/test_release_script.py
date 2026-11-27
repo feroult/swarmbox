@@ -122,9 +122,14 @@ _TEMPLATE_DIR = None
 _GENV = None
 
 
-def setUpModule():
+def _build_template():
+    """The repository every test copies, made once per process (by the first class that needs it; the runner runs each class of this file
+    as its own process when it shards it, so this is not a setUpModule), removed when the module's tests are over."""
     global _TEMPLATE_DIR, _GENV
+    if _TEMPLATE_DIR:
+        return
     _TEMPLATE_DIR = tempfile.mkdtemp(prefix="swarmbox-test-release-tpl.")
+    unittest.addModuleCleanup(_remove_template)
     _GENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com", GIT_COMMITTER_NAME="t",
                  GIT_COMMITTER_EMAIL="t@example.com", GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
     origin = os.path.join(_TEMPLATE_DIR, "origin.git")
@@ -170,7 +175,7 @@ def setUpModule():
         f.write("%s  swarmbox\n" % hashlib.sha256(script.encode()).hexdigest())
 
 
-def tearDownModule():
+def _remove_template():
     global _TEMPLATE_DIR
     if _TEMPLATE_DIR:
         shutil.rmtree(_TEMPLATE_DIR, True)
@@ -178,6 +183,10 @@ def tearDownModule():
 
 
 class ReleaseCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        _build_template()
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-release.")
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -409,6 +418,10 @@ class FullRelease(ReleaseCase):
         self.assertNotIn("v2.0.7", tags)
         self.assertEqual(self.g("tag", "--list", "v2.0.7"), "")
 
+
+class FailedRelease(ReleaseCase):
+    """A gate or a release check that fails leaves the repository as it was."""
+
     def test_a_gate_that_fails_puts_the_files_back_and_keeps_the_authors_text(self):
         self.write_items()
         head, orig = self.head(), self.read("CHANGELOG.md")
@@ -434,6 +447,10 @@ class FullRelease(ReleaseCase):
         self.assertEqual(self.read("changelog.d/20261112-mouse-wheel.md"), ITEMS)
         self.assertEqual(self.read("container/host/VERSION"), "2.0.6\n")
         self.assertEqual(self.g("rev-parse", "main", cwd=self.origin), head, "nothing was pushed")
+
+
+class PublishedScript(ReleaseCase):
+    """The published script is verified after the tag: its checksum and the version it reports."""
 
     def test_a_published_script_whose_checksum_does_not_match_is_a_failure(self):
         self.write_items()

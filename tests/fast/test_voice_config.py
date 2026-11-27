@@ -69,6 +69,8 @@ class TopicTests(unittest.TestCase):
 
 
 class HostKeyTests(cf.Base):
+    """The four keys of `swarmbox config`: list, get, set, validation, the environment."""
+
     def get(self, key, env=None, cfg=None):
         p = self.run_h("config", "get", key, env=env, cfg=cfg)
         return p.returncode, p.stdout, p.stderr
@@ -113,6 +115,17 @@ class HostKeyTests(cf.Base):
             row = [r for r in self.run_h("config", "list", env={env: "from-env"}).stdout.splitlines() if r.startswith(key + "=")][0]
             self.assertEqual(row, "%s=from-env\tenv" % key)
 
+    def test_the_planner_keys_are_gone(self):
+        for key in ("voice.planner", "voice.planner.model"):
+            p = self.run_h("config", "set", key, "claude")
+            self.assertEqual(p.returncode, 2, key)
+        self.assertNotIn("planner", self.run_h("config", "list").stdout)
+        self.assertFalse([f for f in self.flags(env={"SWARMBOX_VOICE_PLANNER": "claude"}) if "PLANNER" in f], "the variable is not passed on")
+
+
+class CreateFlagsTests(cf.Base):
+    """The keys reach the box as SWARMBOX_VOICE_* flags of `create-flags` only when they differ from the default."""
+
     def clear(self):
         if os.path.exists(os.path.join(self.cfgroot, "config")):
             os.remove(os.path.join(self.cfgroot, "config"))
@@ -130,6 +143,19 @@ class HostKeyTests(cf.Base):
         self.assertEqual(self.fp(cfg=cfg), base)
         self.assertFalse([f for f in self.flags(cfg=cfg) if "VOICE" in f])
 
+    def test_an_invalid_value_in_the_file_or_environment_stops_create_flags(self):
+        self.assertEqual(self.cf(cfg="voice.language=pt-br\n").returncode, 2)
+        self.clear()
+        self.assertEqual(self.cf(env={"SWARMBOX_VOICE_STT_MODEL": "small.en"}).returncode, 2)
+
+    def test_an_unknown_dotted_key_in_the_file_is_still_reported(self):
+        p = self.cf(cfg="voice.nosuch=1\n")  # noqa
+        self.assertIn("voice.nosuch", p.stderr)
+
+
+class FingerprintTests(cf.Base):
+    """Set values change the flags and the fingerprint of the box."""
+
     def test_set_values_reach_the_box_as_flags_and_change_the_fingerprint(self):
         cfg = ("voice.language=pt\nvoice.stt.model=medium\nvoice.stt.vocabulary=kubectl, Podman, $HOME 'x'\n"
                "voice.web=0\n")
@@ -144,22 +170,6 @@ class HostKeyTests(cf.Base):
         self.assertEqual(self.fp(cfg=cfg), cf.fingerprint(lines, cf.env_hash([])))
         self.assertNotEqual(self.fp(cfg=cfg), base)
         self.assertNotEqual(self.fp(cfg="voice.language=pt\n"), self.fp(cfg="voice.language=en\n"))
-
-    def test_an_invalid_value_in_the_file_or_environment_stops_create_flags(self):
-        self.assertEqual(self.cf(cfg="voice.language=pt-br\n").returncode, 2)
-        self.clear()
-        self.assertEqual(self.cf(env={"SWARMBOX_VOICE_STT_MODEL": "small.en"}).returncode, 2)
-
-    def test_the_planner_keys_are_gone(self):
-        for key in ("voice.planner", "voice.planner.model"):
-            p = self.run_h("config", "set", key, "claude")
-            self.assertEqual(p.returncode, 2, key)
-        self.assertNotIn("planner", self.run_h("config", "list").stdout)
-        self.assertFalse([f for f in self.flags(env={"SWARMBOX_VOICE_PLANNER": "claude"}) if "PLANNER" in f], "the variable is not passed on")
-
-    def test_an_unknown_dotted_key_in_the_file_is_still_reported(self):
-        p = self.cf(cfg="voice.nosuch=1\n")  # noqa
-        self.assertIn("voice.nosuch", p.stderr)
 
 
 class DocsTests(unittest.TestCase):

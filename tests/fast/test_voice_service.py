@@ -204,14 +204,14 @@ class GoalOnTheBus(Base):
             self.assertAlmostEqual(stt.loudest(wav_samples(samples)), want, places=6, msg=n)
         import struct
         chunk = [int(random.gauss(0, 3000)) for _ in range(2000)]
-        data = struct.pack("<%dh" % len(chunk), *chunk) * 1000
+        data = struct.pack("<%dh" % len(chunk), *chunk) * 250   # 500,000 samples, 1 MB (tracemalloc makes each sample slow)
         fmt = struct.pack("<HHIIHH", 1, 1, 16000, 32000, 2, 16)
         big = b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " + struct.pack("<I", 16) + fmt + b"data" + struct.pack("<I", len(data)) + data
         tracemalloc.start()
         stt.loudest(big)
         peak = tracemalloc.get_traced_memory()[1]
         tracemalloc.stop()
-        self.assertLess(peak, 2_000_000, "a list of 2 million ints would be 16 MB or more (peak %d)" % peak)
+        self.assertLess(peak, 500_000, "a list of 500,000 ints would be 4 MB or more, a copy of the samples 1 MB (peak %d)" % peak)
 
     def test_a_note_of_the_recognizer_about_a_sound_is_not_a_transcript(self):
         for note in ("[BLANK_AUDIO]", "[MÚSICA DE FUNDO]", "[Som de fio]", "(water running)", "(música)", "[MUSIC] [NOISE]", " [Silêncio] "):

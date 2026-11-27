@@ -126,7 +126,7 @@ class PrepareTest(Base):
         self.make("b-hang", prepare=PREPARE_HANG)
         self.make("c-addon")
         t0 = time.time()
-        r = self.addon("prepare", SWARMBOX_PREPARE_TIMEOUT="1")
+        r = self.addon("prepare", SWARMBOX_PREPARE_TIMEOUT="0.5")   # timeout(1) takes a fraction; the quick prepares need far less
         self.assertLess(time.time() - t0, 20)
         self.assertEqual(r.returncode, 1)
         self.assertEqual(self.order(), ["a-addon", "b-hang", "c-addon"])

@@ -143,6 +143,92 @@ class NestedPodmanState(ServeCase):
             c.stop(p)
             return res
 
+        def s_marker(c, fuse_spec, content="true"):
+            if fuse_spec == "dir-not-device":
+                fuse = os.path.join(c.base, "dir-not-device")
+                os.mkdir(fuse)
+            elif fuse_spec == "no-such-fuse":
+                fuse = os.path.join(c.base, "no-such-fuse")
+            else:
+                fuse = fuse_spec
+            graph = os.path.join(c.base, "graphroot")
+            marker = os.path.join(graph, "overlay", ".has-mount-program")
+            os.makedirs(os.path.dirname(marker))
+            put(marker, content)
+            p = c.run_ready(SWARMBOX_TEST_PODMAN_GRAPHROOT=graph, SWARMBOX_TEST_FUSE=fuse, FAKE_MARKER=marker,
+                            SWARMBOX_TEST_PODMAN_RUNROOT=os.path.join(c.base, "never-there"))
+            c.stop(p)
+            return (os.path.exists(marker), read(marker), read(os.path.join(c.fake, "marker.seen")), c.serve_log())
+
+        tasks = {
+            "stale_rr": s_stale_rr,
+            "no_such_fuse": lambda c: s_marker(c, "no-such-fuse"),
+            "dir_not_dev": lambda c: s_marker(c, "dir-not-device"),
+            "usable_fuse": lambda c: s_marker(c, "/dev/null", "true"),
+            "marker_false": lambda c: s_marker(c, "/nonexistent-fuse", "false"),
+        }
+        if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
+            cls._res = {k: cls._run_scenario(fn) for k, fn in tasks.items()}
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as ex:
+                futs = {k: ex.submit(cls._run_scenario, fn) for k, fn in tasks.items()}
+                cls._res = {k: f.result() for k, f in futs.items()}
+
+    def setUp(self):
+        pass
+
+    def test_a_stale_runtime_folder_of_nested_podman_is_removed_before_the_service_starts(self):
+        # after a host reboot nested Podman refused to start: its runtime folder held the old boot ID
+        exists, log, calls = self._res["stale_rr"]
+        self.assertFalse(exists, "the stale folder must be gone")
+        self.assertIn("removed the runtime state of the previous run", log)
+        self.assertTrue([c for c in calls if c.startswith("podman system service")])
+
+    def test_a_serve_test_never_points_step_8_at_the_real_runtime_folder_of_podman(self):
+        # step 8 removes this folder: by default the real /tmp/storage-run-<uid> of whatever box runs the tests (the gate once wiped a live box's)
+        c = ServeCase()
+        c.setUp()
+        self.addCleanup(c.doCleanups)
+        env = c.env()
+        self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_RUNROOT"]), c.base)
+        self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_LIBPOD_RUN"]), c.base)
+        self.assertEqual(env["HOME"], c.home)
+        self.assertTrue(c.home.startswith(c.base))
+
+    def test_without_a_usable_fuse_the_stale_marker_is_removed_before_the_service_starts(self):
+        # one probe of native overlay that fails on another graph root (the cache is shared by all of them) makes Podman fall back to
+        # fuse-overlayfs and leave .has-mount-program = true for good: every later run died with "fuse: device not found" (a real box)
+        for label, key in (("no such path", "no_such_fuse"), ("not a character device", "dir_not_dev")):
+            with self.subTest(label):
+                exists, _, seen, log = self._res[key]
+                self.assertFalse(exists)
+                self.assertEqual(seen, "no", "the marker must be gone when the service starts")
+                self.assertIn("removed the stale marker", log)
+
+    def test_a_usable_fuse_device_or_a_marker_that_says_false_leaves_the_marker_alone(self):
+        for label, key, content in (("usable fuse", "usable_fuse", "true"), ("marker false", "marker_false", "false")):
+            with self.subTest(label):   # /dev/null is a character device the agent can open: it stands for /dev/fuse
+                _, text, _, log = self._res[key]
+                self.assertEqual(text, content)
+                self.assertNotIn("stale marker", log)
+
+
+class PodmanServiceFolders(ServeCase):
+    """Step 8 on a Mac: the second runtime folder Podman names in its boot ID error, and a state folder that cannot hold the service's
+    socket (its own class, so that the runner runs these starts beside those of NestedPodmanState)."""
+
+    @classmethod
+    def _run_scenario(cls, fn):
+        c = ServeCase()
+        c.setUp()
+        try:
+            res = fn(c)
+        finally:
+            c.doCleanups()
+        return res
+
+    @classmethod
+    def setUpClass(cls):
         def s_second_rr(c):
             lr = os.path.join(c.base, "podman-run")
             os.makedirs(os.path.join(lr, "libpod", "tmp"))
@@ -173,34 +259,7 @@ class NestedPodmanState(ServeCase):
             c.stop(p)
             return res
 
-        def s_marker(c, fuse_spec, content="true"):
-            if fuse_spec == "dir-not-device":
-                fuse = os.path.join(c.base, "dir-not-device")
-                os.mkdir(fuse)
-            elif fuse_spec == "no-such-fuse":
-                fuse = os.path.join(c.base, "no-such-fuse")
-            else:
-                fuse = fuse_spec
-            graph = os.path.join(c.base, "graphroot")
-            marker = os.path.join(graph, "overlay", ".has-mount-program")
-            os.makedirs(os.path.dirname(marker))
-            put(marker, content)
-            p = c.run_ready(SWARMBOX_TEST_PODMAN_GRAPHROOT=graph, SWARMBOX_TEST_FUSE=fuse, FAKE_MARKER=marker,
-                            SWARMBOX_TEST_PODMAN_RUNROOT=os.path.join(c.base, "never-there"))
-            c.stop(p)
-            return (os.path.exists(marker), read(marker), read(os.path.join(c.fake, "marker.seen")), c.serve_log())
-
-        tasks = {
-            "stale_rr": s_stale_rr,
-            "second_rr": s_second_rr,
-            "no_sock": s_no_sock,
-            "shared_fs": s_shared_fs,
-            "holds_sock": s_holds_sock,
-            "no_such_fuse": lambda c: s_marker(c, "no-such-fuse"),
-            "dir_not_dev": lambda c: s_marker(c, "dir-not-device"),
-            "usable_fuse": lambda c: s_marker(c, "/dev/null", "true"),
-            "marker_false": lambda c: s_marker(c, "/nonexistent-fuse", "false"),
-        }
+        tasks = {"second_rr": s_second_rr, "no_sock": s_no_sock, "shared_fs": s_shared_fs, "holds_sock": s_holds_sock}
         if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
             cls._res = {k: cls._run_scenario(fn) for k, fn in tasks.items()}
         else:
@@ -210,13 +269,6 @@ class NestedPodmanState(ServeCase):
 
     def setUp(self):
         pass
-
-    def test_a_stale_runtime_folder_of_nested_podman_is_removed_before_the_service_starts(self):
-        # after a host reboot nested Podman refused to start: its runtime folder held the old boot ID
-        exists, log, calls = self._res["stale_rr"]
-        self.assertFalse(exists, "the stale folder must be gone")
-        self.assertIn("removed the runtime state of the previous run", log)
-        self.assertTrue([c for c in calls if c.startswith("podman system service")])
 
     def test_the_second_runtime_folder_podman_names_in_its_boot_id_error_is_removed_too(self):
         # seen on a Mac after local-up: "current system boot ID differs from cached boot ID ... delete /tmp/podman-run-1000/containers and
@@ -239,34 +291,6 @@ class NestedPodmanState(ServeCase):
         log, calls = self._res["holds_sock"]
         self.assertNotIn("cannot hold a unix socket", log)
         self.assertTrue([c for c in calls if c.startswith("podman system service") and "podman.sock" in c], calls)
-
-    def test_a_serve_test_never_points_step_8_at_the_real_runtime_folder_of_podman(self):
-        # step 8 removes this folder: by default the real /tmp/storage-run-<uid> of whatever box runs the tests (the gate once wiped a live box's)
-        c = ServeCase()
-        c.setUp()
-        self.addCleanup(c.doCleanups)
-        env = c.env()
-        self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_RUNROOT"]), c.base)
-        self.assertEqual(os.path.dirname(env["SWARMBOX_TEST_PODMAN_LIBPOD_RUN"]), c.base)
-        self.assertEqual(env["HOME"], c.home)
-        self.assertTrue(c.home.startswith(c.base))
-
-    def test_without_a_usable_fuse_the_stale_marker_is_removed_before_the_service_starts(self):
-        # one probe of native overlay that fails on another graph root (the cache is shared by all of them) makes Podman fall back to
-        # fuse-overlayfs and leave .has-mount-program = true for good: every later run died with "fuse: device not found" (a real box)
-        for label, key in (("no such path", "no_such_fuse"), ("not a character device", "dir_not_dev")):
-            with self.subTest(label):
-                exists, _, seen, log = self._res[key]
-                self.assertFalse(exists)
-                self.assertEqual(seen, "no", "the marker must be gone when the service starts")
-                self.assertIn("removed the stale marker", log)
-
-    def test_a_usable_fuse_device_or_a_marker_that_says_false_leaves_the_marker_alone(self):
-        for label, key, content in (("usable fuse", "usable_fuse", "true"), ("marker false", "marker_false", "false")):
-            with self.subTest(label):   # /dev/null is a character device the agent can open: it stands for /dev/fuse
-                _, text, _, log = self._res[key]
-                self.assertEqual(text, content)
-                self.assertNotIn("stale marker", log)
 
 
 class WarnSteps(ServeCase):
@@ -419,17 +443,6 @@ class BusStep(SupervisorCase):
             c.stop(p)
             return res
 
-        def s_backoff(c):
-            p = c.run_ready(SWARMBOX_TEST_BACKOFF_SCALE="1")
-            pid = int(wait_for(lambda: read(os.path.join(c.fake, "bus.pid")).strip(), 10, 0.01))
-            t0 = time.time()
-            os.kill(pid, signal.SIGKILL)
-            restarted = wait_for(lambda: cls._starts(c) == 2, 5, 0.01)
-            dt = time.time() - t0
-            log = c.serve_log()
-            c.stop(p)
-            return (restarted, dt, log)
-
         def s_crash_loop(c):
             put(os.path.join(c.fake, "bus.mode"), "crash")
             p = c.run_ready()
@@ -458,7 +471,7 @@ class BusStep(SupervisorCase):
             c.stop(p)
             return res
 
-        tasks = {"noping": s_noping, "missing": s_missing, "backoff": s_backoff, "crash_loop": s_crash_loop, "exit_8": s_exit_8}
+        tasks = {"noping": s_noping, "missing": s_missing, "crash_loop": s_crash_loop, "exit_8": s_exit_8}
         if os.environ.get("SWARMBOX_RUNNER_PARALLEL"):
             cls._res = {k: cls._run_case(fn) for k, fn in tasks.items()}
         else:
@@ -482,12 +495,6 @@ class BusStep(SupervisorCase):
         self.assertIn("swarmbox-bus not found", health[0])
         self.assertFalse(pid_exists)
 
-    def test_a_killed_broker_is_started_again_with_the_backoff(self):
-        restarted, dt, log = self._res["backoff"]
-        self.assertTrue(restarted, "the broker was not restarted")
-        self.assertGreaterEqual(dt, 0.9, "the first retry is after 1 s")
-        self.assertIn("bus exited; restarting in 1 s", log)
-
     def test_crash_loop_gives_up_with_a_health_line_and_restart_by_signal_starts_again(self):
         gave_up, h_before, starts_5, log, poll_up, restarted, cleared, h_after = self._res["crash_loop"]
         self.assertTrue(gave_up, h_before)
@@ -504,6 +511,23 @@ class BusStep(SupervisorCase):
         self.assertTrue(pid_gone, "bus-supervisor.pid is still there: %r" % pid_content)
         self.assertEqual(starts, 1)
         self.assertEqual(health, [])
+
+
+class BusBackoff(ServeCase):
+    """Step 6b: a killed broker is restarted after the real first backoff of one second (its own class: the second is spent beside BusStep)."""
+
+    def test_a_killed_broker_is_started_again_with_the_backoff(self):
+        p = self.run_ready(SWARMBOX_TEST_BACKOFF_SCALE="1")
+        pid = int(wait_for(lambda: read(os.path.join(self.fake, "bus.pid")).strip(), 10, 0.01))
+        t0 = time.time()
+        os.kill(pid, signal.SIGKILL)
+        restarted = wait_for(lambda: len(read(os.path.join(self.fake, "bus.starts")).split()) == 2, 5, 0.01)
+        dt = time.time() - t0
+        log = self.serve_log()
+        self.stop(p)
+        self.assertTrue(restarted, "the broker was not restarted")
+        self.assertGreaterEqual(dt, 0.9, "the first retry is after 1 s")
+        self.assertIn("bus exited; restarting in 1 s", log)
 
 
 class StaticOrder(unittest.TestCase):

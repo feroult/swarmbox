@@ -412,7 +412,26 @@ try {
 """
 
 
-class PinsWebGatewayTest(unittest.TestCase):
+# The scenario is cut in three parts that need nothing of each other, each run by its own node process from a fresh gateway and
+# repository (its own class, so that the runner runs them side by side): the first agent tab and the session prefs; the manual pin
+# with the worktree collision, merge and wake, the prefs and the system events; the auto pin of a shell, the folder picker and the default agent.
+_PRELUDE, _BODY = NODE_HARNESS.split("\ntry {\n", 1)
+_BODY, _END = _BODY.split("  console.log('ALL_PINS_WEB_OK');\n", 1)
+_CUT2 = "  // 2. Explicit manual pin"
+_CUT9 = "  // 9. An agent typed into a plain shell tab"
+PARTS = {
+    "first_tab": _BODY[:_BODY.index(_CUT2)],
+    "manual_pin": _BODY[_BODY.index(_CUT2):_BODY.index(_CUT9)],
+    "auto_pin": _BODY[_BODY.index(_CUT9):],
+}
+assert "".join(PARTS.values()) == _BODY
+
+
+def harness(part):
+    return _PRELUDE + "\ntry {\n" + PARTS[part] + "  console.log('ALL_PINS_WEB_OK');\n" + _END
+
+
+class PinsWebCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-pinsweb.")
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -429,7 +448,7 @@ class PinsWebGatewayTest(unittest.TestCase):
         git(self.repo, "add", "README.md")
         git(self.repo, "commit", "-m", "init")
 
-    def test_pins_rename_worktree_collision_merge_and_sysop_events(self):
+    def run_part(self, part):
         # Stage server.mjs and hc-client.mjs in tmp with a minimal zero-dep `ws` stub so this
         # test runs identically offline on bare CI runners where npm packages are not installed.
         web_dir = os.path.join(self.tmp, "web")
@@ -450,7 +469,7 @@ class PinsWebGatewayTest(unittest.TestCase):
                     "}\n")
         staged_server = os.path.join(web_dir, "server.mjs")
         staged_client = os.path.join(web_dir, "hc-client.mjs")
-        script = NODE_HARNESS.replace("SERVER_PATH", json.dumps(staged_server)).replace("CLIENT_PATH", json.dumps(staged_client))
+        script = harness(part).replace("SERVER_PATH", json.dumps(staged_server)).replace("CLIENT_PATH", json.dumps(staged_client))
         test_mjs = os.path.join(web_dir, "run.mjs")
         with open(test_mjs, "w", encoding="utf-8") as f:
             f.write(script)
@@ -470,6 +489,21 @@ class PinsWebGatewayTest(unittest.TestCase):
         p = subprocess.run(["node", test_mjs], env=env, capture_output=True, text=True, timeout=30)
         self.assertEqual(p.returncode, 0, "stdout:\n%s\nstderr:\n%s" % (p.stdout, p.stderr))
         self.assertIn("ALL_PINS_WEB_OK", p.stdout)
+
+
+class FirstAgentTab(PinsWebCase):
+    def test_an_agent_tab_is_auto_pinned_follows_the_session_prefs_and_its_pin_goes_with_it(self):
+        self.run_part("first_tab")
+
+
+class ManualPinAndWorktrees(PinsWebCase):
+    def test_pins_rename_worktree_collision_merge_and_sysop_events(self):
+        self.run_part("manual_pin")
+
+
+class AutoPinAndPickers(PinsWebCase):
+    def test_a_shell_that_starts_an_agent_is_pinned_the_folder_picker_and_the_default_agent(self):
+        self.run_part("auto_pin")
 
 
 if __name__ == "__main__":

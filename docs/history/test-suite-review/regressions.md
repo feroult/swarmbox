@@ -67,7 +67,7 @@ The three area ledgers in this folder say where each old test went; this file sa
 | `config set` refused shell metacharacters; the config file is parsed, never sourced | `fast/test_security_review.py::QuotingTest`, `fast/test_security_review.py::ConfigParsingTest` | fast |
 | the update tests broke at the version they used | `fast/test_host_update.py::NewerVersionLiteralsTest` | fast |
 | the installer accepted a placeholder image name | `fast/test_install.py::InstallRunTest` | fast |
-| no progress shown while the image was pulled; the percent went back, a Nerd Font glyph, `unpack` | `fast/test_pull_ui.py::PullUiTest`, `fast/test_host_update.py::PullProgressTest` | fast |
+| no progress shown while the image was pulled; the percent went back, a Nerd Font glyph, `unpack` | `fast/test_pull_ui.py::WholePull`, `fast/test_pull_ui.py::WholePullUnpack`, `fast/test_host_update.py::PullProgressTest` | fast |
 | two `up` at once made two boxes; a killed `up` left a lock | `fast/test_host_up.py::LockTest` | fast |
 | `--web` on an existing box: the connector was not brought up | `fast/test_host_connector.py::ConnectorTest` | fast |
 | ports are published on 127.0.0.1 by default; a new container gets an init and the time zone of the host | `fast/test_host_create_flags.py::KeyTest::test_ports_default_is_loopback_only`, `fast/test_host_create_flags.py::KeyTest::test_init_1_emits_init_0_does_not`, `fast/test_host_create_flags.py::KeyTest::test_tz_local_zone_and_off` | fast |
@@ -96,8 +96,8 @@ The three area ledgers in this folder say where each old test went; this file sa
 | a step with `: ` in its name makes GitHub show no job; a step with neither `run` nor `uses` | `fast/test_workflows.py::BothWorkflows` | fast |
 | the macOS job named a test file by hand (a copy of a list): its list is in one place | `fast/test_workflows.py::Ci::test_linux_runs_fast_and_slow_and_macos_runs_the_list_in_one_place`, `fast/test_layout.py::Layout::test_the_macos_list_names_existing_fast_files` | fast |
 | the real-installer step in CI did not fail when the tests failed (no pipefail) | `fast/test_workflows.py::Ci` | fast |
-| a release: placeholders, a gate or a release check that fails puts the files back, a CI failure leaves no tag, a wrong checksum or version is a failure, the image tags agree | `fast/test_release_script.py::FullRelease`, `fast/test_release_script.py::ImageVerification` | fast |
-| the release check modifies nothing; a tag on another commit than HEAD fails | `fast/test_release_check.py::ReleaseCheckTest` | fast |
+| a release: placeholders, a gate or a release check that fails puts the files back, a CI failure leaves no tag, a wrong checksum or version is a failure, the image tags agree | `fast/test_release_script.py::FullRelease`, `fast/test_release_script.py::FailedRelease`, `fast/test_release_script.py::PublishedScript`, `fast/test_release_script.py::ImageVerification` | fast |
+| the release check modifies nothing; a tag on another commit than HEAD fails | `fast/test_release_check.py::ReadOnly`, `fast/test_release_check.py::VersionAndTag` | fast |
 | the gate passed only with the variables of the developer's terminal | `fast/test_dev_check.py::CheckScriptTest` | fast |
 | the test image drifts from the product image (and must not bring tmux or ttyd back) | `fast/test_layout.py::Layout::test_the_test_image_has_no_tmux_or_ttyd_either`, `fast/test_dockerfile.py::Pins` | fast |
 | old names of the addon concept; default names written as literals | `fast/test_guard_names.py::TheRepository`, `fast/test_guard_names.py::TheOldNamesScanner` | fast |
