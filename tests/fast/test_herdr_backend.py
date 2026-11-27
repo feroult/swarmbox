@@ -899,6 +899,8 @@ assert.ok(Array.isArray(cfg.mcp));
         self.assertIn("closeTerminalCleanly", server_src)
         self.assertIn("terminalRepoGroupInfo", app_src)
         self.assertIn("openRepoWorktreesPopover", app_src)
+        self.assertIn("buildSysopMergeAllGoal", app_src)
+        self.assertIn("Ask Sysop to merge all", app_src)
         self.assertIn("repo-group-head", app_src)
         self.assertIn("showProjectPicker", app_src)
         self.assertIn("proj-list", app_src)

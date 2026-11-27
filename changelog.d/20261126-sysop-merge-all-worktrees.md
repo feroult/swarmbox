@@ -1,0 +1,1 @@
+- Added: in the Web Studio repository worktrees popover, when Sysop is online, an "Ask Sysop to merge all" button sends a scoped end-to-end consolidation goal to Sysop to commit, resolve conflicts, merge, and clean all active and parked worktrees into the target branch.
