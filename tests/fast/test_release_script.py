@@ -25,8 +25,6 @@ CHANGELOG = """# Changelog
 
 All notable changes are listed here.
 
-## [Unreleased]
-
 ## [2.0.6] - 2026-11-11
 
 - Changed: the web terminal has no scrollbar by default because tmux owns the scrollback.
@@ -40,6 +38,7 @@ All notable changes are listed here.
 """
 
 ITEMS = "- Fixed: the mouse wheel scrolls tmux five lines per event instead of two, which was too little.\n"
+FRAG_README = "# Changelog fragments\n\n- Not an item: README.md must be ignored.\n"
 
 FAKE_CURL = r"""#!/bin/sh
 d=$FAKE_DIR
@@ -132,6 +131,7 @@ class ReleaseCase(unittest.TestCase):
         self.g("clone", "-q", self.origin, self.work, cwd=self.tmp)
         self.g("checkout", "-q", "-b", "main")
         self.put("CHANGELOG.md", CHANGELOG)
+        self.put("changelog.d/README.md", FRAG_README)
         self.put("container/host/swarmbox-host", '#!/bin/sh\nSCRIPT_VERSION=2.0.6\n[ "${1:-}" = version ] && echo "$SCRIPT_VERSION"\n', 0o755)
         self.put("container/host/VERSION", "2.0.6\n")
         self.put("container/host/DEFAULTS", "SWARMBOX_DEFAULT_IMAGE_REPO='ghcr.io/example/proj'\n")
@@ -172,8 +172,8 @@ class ReleaseCase(unittest.TestCase):
         with open(os.path.join(self.fake, "sha"), "w") as f:
             f.write("%s  swarmbox\n" % sha)
 
-    def write_items(self, items=ITEMS):
-        self.put("CHANGELOG.md", CHANGELOG.replace("## [Unreleased]\n", "## [Unreleased]\n\n" + items, 1))
+    def write_items(self, items=ITEMS, name="20261112-mouse-wheel.md"):
+        self.put("changelog.d/" + name, items)
 
     def run_release(self, *args, **env):
         self.tmpdir = os.path.join(self.tmp, "tmpdir")   # the backup of the changelog lands here, not in the /tmp of the machine
@@ -195,20 +195,20 @@ class ChangelogGate(ReleaseCase):
         self.assertIn("is not ready for 2.0.7", r.stderr)
         self.assertIn(problem, r.stderr)
 
-    def test_an_empty_unreleased_stops_with_instructions_that_carry_the_commits_and_a_model(self):
+    def test_empty_fragments_dir_stops_with_instructions_that_carry_the_commits_and_a_model(self):
         r = self.run_release("--dry-run")
-        self.assert_not_ready(r, 'has no "- " items')
+        self.assert_not_ready(r, "no changelog fragments in changelog.d/")
         self.assertIn("fix: the mouse wheel scrolls five lines per event", r.stderr, "the commits since the last tag")
         self.assertNotIn("release: 2.0.6", r.stderr.split("These are the commits")[1].split("This is the last entry")[0], "only commits after the tag")
         self.assertIn("## [2.0.6] - 2026-11-11", r.stderr, "the last entry as a model")
         self.assertIn("web terminal has no scrollbar", r.stderr)
-        self.assertIn("## [Unreleased]", r.stderr)
+        self.assertIn("changelog.d/", r.stderr)
         self.assertIn("sh dev/release.sh", r.stderr, "how to run it again")
-        self.assertIn("Do not touch the version numbers", r.stderr)
+        self.assertIn("Do not touch CHANGELOG.md, version numbers or dates", r.stderr)
 
-    def test_a_missing_unreleased_section_is_refused(self):
-        self.put("CHANGELOG.md", CHANGELOG.replace("## [Unreleased]\n\n", ""))
-        self.assert_not_ready(self.run_release("--dry-run"), 'no "## [Unreleased]" section')
+    def test_a_fragment_without_bullets_is_refused(self):
+        self.write_items("just some prose with no bullet\n")
+        self.assert_not_ready(self.run_release("--dry-run"), 'have no "- " items')
 
     def test_a_placeholder_is_refused(self):
         for text in ("- TODO: write this one properly later on\n", "- Changed: something about the thing, to be written...\n", "- TBD what changed in this release\n"):
@@ -221,6 +221,9 @@ class ChangelogGate(ReleaseCase):
 
     def test_an_entry_for_the_new_version_that_already_exists_is_refused(self):
         self.put("CHANGELOG.md", CHANGELOG.replace("## [2.0.6]", "## [2.0.7] - 2026-11-12\n\n- early entry that should not be here yet\n\n## [2.0.6]", 1))
+        self.g("add", "CHANGELOG.md")
+        self.g("commit", "-q", "-m", "early changelog")
+        self.write_items()
         self.assert_not_ready(self.run_release("--dry-run"), "already an entry for 2.0.7")
 
     def test_a_good_entry_passes_and_a_dry_run_changes_nothing(self):
@@ -228,9 +231,10 @@ class ChangelogGate(ReleaseCase):
         before = self.read("CHANGELOG.md")
         r = self.run_release("--dry-run")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("changelog: 1 item(s) under [Unreleased]", r.stdout)
+        self.assertIn("changelog: 1 item(s) from 1 fragment(s) in changelog.d/", r.stdout)
         self.assertIn("Nothing was changed", r.stdout)
         self.assertEqual(self.read("CHANGELOG.md"), before)
+        self.assertTrue(os.path.exists(os.path.join(self.work, "changelog.d/20261112-mouse-wheel.md")))
         self.assertEqual(self.read("container/host/VERSION"), "2.0.6\n")
 
 
@@ -293,15 +297,24 @@ class Preconditions(ReleaseCase):
 
 class Bump(ReleaseCase):
     def test_bump_only_rewrites_the_three_files_and_commits_nothing(self):
+        self.write_items("- Added: a second fragment committed on a branch to prove ordering and merging.\n", name="20261111-first.md")
+        self.g("add", "changelog.d/20261111-first.md")
+        self.g("commit", "-q", "-m", "feat: first fragment")
         self.write_items()
         head = self.head()
         r = self.run_release("--bump-only")
         self.assertEqual(r.returncode, 0, r.stderr)
         text = self.read("CHANGELOG.md")
-        # the empty Unreleased stays on top, and the items now belong to the new dated entry
-        self.assertRegex(text, r"## \[Unreleased\]\n\n## \[2\.0\.7\] - \d{4}-\d{2}-\d{2}\n\n- Fixed: the mouse wheel")
+        self.assertRegex(
+            text,
+            r"## \[2\.0\.7\] - \d{4}-\d{2}-\d{2}\n\n- Added: a second fragment committed.*\n- Fixed: the mouse wheel.*\n\n## \[2\.0\.6\]",
+        )
         self.assertIn("[2.0.7]: https://github.com/example/proj/releases/tag/v2.0.7\n[2.0.6]: ", text)
         self.assertEqual(text.count("## [2.0.7]"), 1)
+        self.assertNotIn("README.md must be ignored", text)
+        self.assertFalse(os.path.exists(os.path.join(self.work, "changelog.d/20261111-first.md")))
+        self.assertFalse(os.path.exists(os.path.join(self.work, "changelog.d/20261112-mouse-wheel.md")))
+        self.assertTrue(os.path.exists(os.path.join(self.work, "changelog.d/README.md")))
         self.assertEqual(self.read("container/host/VERSION"), "2.0.7\n")
         self.assertIn("\nSCRIPT_VERSION=2.0.7\n", self.read("container/host/swarmbox-host"))
         self.assertTrue(os.stat(os.path.join(self.work, "container/host/swarmbox-host")).st_mode & stat.S_IXUSR, "the mode of the script stays")
@@ -346,25 +359,27 @@ class FullRelease(ReleaseCase):
 
     def test_a_gate_that_fails_puts_the_files_back_and_keeps_the_authors_text(self):
         self.write_items()
-        head, edited = self.head(), self.read("CHANGELOG.md")
+        head, orig = self.head(), self.read("CHANGELOG.md")
         r = self.run_release(SWARMBOX_RELEASE_CHECK_CMD="false")
         self.assertEqual(r.returncode, 1)
         self.assertIn("the gate failed", r.stderr)
-        self.assertEqual(self.read("CHANGELOG.md"), edited, "the CHANGELOG is exactly what the author wrote")
+        self.assertEqual(self.read("CHANGELOG.md"), orig, "CHANGELOG.md is untouched")
+        self.assertEqual(self.read("changelog.d/20261112-mouse-wheel.md"), ITEMS, "the fragment is kept")
         self.assertEqual(self.read("container/host/VERSION"), "2.0.6\n")
         self.assertIn("SCRIPT_VERSION=2.0.6", self.read("container/host/swarmbox-host"))
         self.assertEqual(self.head(), head)
-        self.assertEqual(self.g("status", "--porcelain"), "M CHANGELOG.md")   # g() strips the leading space of " M"
+        self.assertEqual(self.g("status", "--porcelain"), "?? changelog.d/20261112-mouse-wheel.md")
         self.assertNotIn("v2.0.7", self.g("tag", "--list", cwd=self.origin))
 
     def test_a_release_check_that_fails_undoes_the_commit_and_restores_the_files(self):
         self.write_items()
-        head, edited = self.head(), self.read("CHANGELOG.md")
+        head, orig = self.head(), self.read("CHANGELOG.md")
         r = self.run_release(SWARMBOX_RELEASE_RCHECK_CMD="false")
         self.assertEqual(r.returncode, 1)
         self.assertIn("release check failed", r.stderr)
         self.assertEqual(self.head(), head, "the release commit was undone")
-        self.assertEqual(self.read("CHANGELOG.md"), edited)
+        self.assertEqual(self.read("CHANGELOG.md"), orig)
+        self.assertEqual(self.read("changelog.d/20261112-mouse-wheel.md"), ITEMS)
         self.assertEqual(self.read("container/host/VERSION"), "2.0.6\n")
         self.assertEqual(self.g("rev-parse", "main", cwd=self.origin), head, "nothing was pushed")
 

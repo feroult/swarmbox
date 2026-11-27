@@ -150,7 +150,7 @@ class RepoFiles(unittest.TestCase):
     def test_contributing_has_the_rules_and_every_path_it_names_exists(self):
         t = read("CONTRIBUTING.md")
         for needle in ("python3 tests/fast/test_", "sh tests/run.sh", "podman build", "dev/dev-build.sh", "swarmbox-test-",
-                       "git config core.hooksPath dev/hooks", "dev/check.sh", "dev/release.sh", "[Unreleased]", "feat:", "fix:", "test:", "docs:"):
+                       "git config core.hooksPath dev/hooks", "dev/check.sh", "dev/release.sh", "changelog.d/", "feat:", "fix:", "test:", "docs:"):
             self.assertIn(needle, t, needle)
         self.assertRegex(t, r"(?i)never .*(live|running) (box|swarmbox)|(live|running) (box|swarmbox).* never|never touch")
         paths = set(re.findall(r"`((?:tests|docs|container|lib|\.github)/[\w./-]+|[\w-]+\.(?:sh|md|py|yml))`", t))

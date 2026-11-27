@@ -1,5 +1,5 @@
 #!/bin/sh
-# release.sh: one command from "CHANGELOG.md says what changed" to "the release is public and checked".
+# release.sh: one command from "changelog.d/ says what changed" to "the release is public and checked".
 #
 # Usage: sh dev/release.sh [patch|minor|major|X.Y.Z] [--dry-run] [--bump-only] [--no-wait]
 #   (nothing)    the next patch version after the newest vX.Y.Z tag
@@ -7,14 +7,17 @@
 #   --bump-only  stop after the files are bumped (no gate, commit, push or tag)
 #   --no-wait    stop after the tag is pushed, without waiting for the release
 #
-# The CHANGELOG is written BEFORE this runs, by whoever made the changes (an agent or a person), under "## [Unreleased]". This script does
-# not write prose: it refuses to go on when that section is empty, a placeholder or too thin, and its error says what to do, with the commits
-# since the last release and the last entry as a model, so the author can write it and run the command again.
+# Changelog entries are written BEFORE this runs, by whoever made the changes (an agent or a person), as fragment files
+# under changelog.d/*.md (one file per change, avoiding merge conflicts across branches/worktrees; changelog.d/README.md
+# is ignored). This script does not write prose: it refuses to go on when there are no fragments or an item is a
+# placeholder or too thin, and its error says what to do, with the commits since the last release and the last entry as
+# a model, so the author can write a fragment and run the command again.
 #
-# Steps: preconditions (on main, in step with origin, only CHANGELOG.md may be modified) -> version -> CHANGELOG gate -> bump
-# (CHANGELOG.md, container/host/VERSION, SCRIPT_VERSION) -> dev/check.sh -> commit -> dev/release-check.sh -> push main -> wait for the CI of
-# that commit -> tag -> push the tag -> wait for the release -> verify it (checksum, version, image manifests).
-# A failure after the bump puts the three files back (your CHANGELOG text included) and leaves no commit; a failed CI leaves no tag.
+# Steps: preconditions (on main, in step with origin, only changelog.d/ may be uncommitted) -> version -> CHANGELOG gate
+# -> bump (merge changelog.d/*.md into CHANGELOG.md and remove them, bump container/host/VERSION and SCRIPT_VERSION)
+# -> dev/check.sh -> commit -> dev/release-check.sh -> push main -> wait for the CI of that commit -> tag -> push the
+# tag -> wait for the release -> verify it (checksum, version, image manifests).
+# A failure after the bump puts all files back (your fragments included) and leaves no commit; a failed CI leaves no tag.
 #
 # Environment: GH_TOKEN or GITHUB_TOKEN (optional, avoids the anonymous rate limit of the API while it waits).
 # Test-only: SWARMBOX_RELEASE_API, _DL, _SLUG, _POLL, _CHECK_CMD, _RCHECK_CMD, _NO_IMAGE_CHECK.
@@ -23,6 +26,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT" || exit 1
 CHANGELOG=CHANGELOG.md
+FRAG_DIR=changelog.d
 SCRIPT=container/host/swarmbox-host
 VERSION_FILE=container/host/VERSION
 API=${SWARMBOX_RELEASE_API:-https://api.github.com}
@@ -53,9 +57,9 @@ BACKUP=
 git rev-parse --is-inside-work-tree > /dev/null 2>&1 || die "not inside a git repository"
 branch=$(git rev-parse --abbrev-ref HEAD)
 [ "$branch" = main ] || die "a release is made from main; you are on '$branch'"
-# Only CHANGELOG.md may be modified: the items under [Unreleased] are written, uncommitted, before this runs, and go in the release commit.
-other=$(git status --porcelain | sed 's/^...//' | grep -v '^CHANGELOG.md$' || true)
-[ -z "$other" ] || die "these paths have changes that are not the CHANGELOG (commit or stash them first):
+# Only changelog.d/ may have uncommitted changes: fragments may already be committed by feature branches or written just before release.
+other=$(git status --porcelain | sed 's/^...//' | grep -v '^changelog\.d/' || true)
+[ -z "$other" ] || die "these paths have changes that are not in $FRAG_DIR/ (commit or stash them first):
 $other"
 git fetch -q origin main 2> /dev/null || die "cannot reach origin (git fetch origin main failed)"
 git merge-base --is-ancestor origin/main HEAD 2> /dev/null || die "main is behind or has diverged from origin/main: pull first"
@@ -78,9 +82,9 @@ EOF
     *)
         case $WANT in
             [0-9]*.[0-9]*.[0-9]*) ;;
-            *) die "the version must look like 2.0.7 (or be patch, minor or major), not '$WANT'" ;;
+            *) die "the version must look like 0.1.1 (or be patch, minor or major), not '$WANT'" ;;
         esac
-        case $WANT in *[!0-9.]*) die "the version must look like 2.0.7, not '$WANT'" ;; esac
+        case $WANT in *[!0-9.]*) die "the version must look like 0.1.1, not '$WANT'" ;; esac
         new=$WANT
         if [ "$new" = "$last" ] || [ "$(printf '%s\n%s\n' "$last" "$new" | sort -V | tail -n 1)" != "$new" ]; then
             die "$new is not newer than the last release ($last)"
@@ -90,7 +94,26 @@ esac
 say "release: $last -> $new (from the tag $last_tag)"
 
 # ---------------------------------------------------------------- the CHANGELOG gate
-unreleased_body() { awk '/^## \[Unreleased\]/ {f = 1; next} /^## \[/ {f = 0} f' "$CHANGELOG"; }
+list_fragments() {
+    [ -d "$FRAG_DIR" ] || return 0
+    for f in "$FRAG_DIR"/*.md; do
+        [ -f "$f" ] || continue
+        case $(basename "$f") in
+            README.md) continue ;;
+        esac
+        printf '%s\n' "$f"
+    done | LC_ALL=C sort
+}
+
+collect_fragments() {
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        awk '
+            /^[[:space:]]*$/ { blank = blank "\n"; next }
+            { if (seen && blank != "") printf "%s", blank; blank = ""; print; seen = 1 }
+        ' "$f"
+    done
+}
 
 # A model for the author: the newest dated entry.
 last_entry() { awk '/^## \[[0-9]/ {n++; if (n == 2) exit} n == 1' "$CHANGELOG" | head -n 40; }
@@ -104,31 +127,35 @@ changelog_not_ready() {
         git log --format='       %h %s' "$last_tag..HEAD" | head -n 60
         printf '\n  2. This is the last entry, as a model of the style:\n\n'
         last_entry | sed 's/^/       /'
-        printf '\n  3. Under "## [Unreleased]" in %s write one "- " item per change that matters to a USER of SwarmBox\n' "$CHANGELOG"
-        printf '     (what changed and, when it is not obvious, why). Say only what the commits show: no "verified" or "tested\n'
-        printf '     on" claims that are not in them. Changes only to dev/, tests or CI go in one short line, or are left out.\n'
-        printf '     Do not touch the version numbers or the dates: this script sets them.\n'
+        printf '\n  3. Create a fragment file under %s/ (for example %s/%s-short-slug.md) with one "- " item per change\n' "$FRAG_DIR" "$FRAG_DIR" "$(date +%Y%m%d)"
+        printf '     that matters to a USER of SwarmBox (what changed and, when it is not obvious, why). Say only what the commits\n'
+        printf '     show: no "verified" or "tested on" claims that are not in them. Changes only to dev/, tests or CI go in one\n'
+        printf '     short line, or are left out. Do not touch %s, version numbers or dates: this script sets them.\n' "$CHANGELOG"
         printf '  4. Run it again:  sh dev/release.sh %s\n' "${WANT:-}"
     } >&2
     exit 2
 }
 
-grep -q '^## \[Unreleased\]' "$CHANGELOG" || changelog_not_ready 'there is no "## [Unreleased]" section'
+[ -f "$CHANGELOG" ] || changelog_not_ready "$CHANGELOG does not exist"
 grep -q "^## \[$new\]" "$CHANGELOG" && changelog_not_ready "there is already an entry for $new: it must not exist before the release"
-body=$(unreleased_body)
+frags=$(list_fragments)
+[ -n "$frags" ] || changelog_not_ready "no changelog fragments in $FRAG_DIR/"
+frag_count=$(printf '%s\n' "$frags" | wc -l | tr -d ' ')
+body=$(printf '%s\n' "$frags" | collect_fragments)
 bullets=$(printf '%s\n' "$body" | grep -c '^- ' || true)
-[ "$bullets" -ge 1 ] || changelog_not_ready 'the "## [Unreleased]" section has no "- " items'
+[ "$bullets" -ge 1 ] || changelog_not_ready "the fragments in $FRAG_DIR/ have no \"- \" items"
 placeholder=$(printf '%s\n' "$body" | grep -i -n -E 'TODO|TBD|FIXME|XXX|lorem ipsum|<describe|\.\.\.$' | head -n 3 || true)
 [ -z "$placeholder" ] || changelog_not_ready "an item looks like a placeholder:
 $placeholder"
 thin=$(printf '%s\n' "$body" | grep '^- ' | awk 'length($0) < 25 {print "         " $0}' | head -n 3)
 [ -z "$thin" ] || changelog_not_ready "an item is too short to say anything (under 25 characters):
 $thin"
-say "changelog: $bullets item(s) under [Unreleased]"
+say "changelog: $bullets item(s) from $frag_count fragment(s) in $FRAG_DIR/"
 
 if [ "$DRY" = 1 ]; then
-    say "dry run: would bump $CHANGELOG, $VERSION_FILE and SCRIPT_VERSION to $new, run '$CHECK_CMD', commit 'release: $new', run '$RCHECK_CMD',"
-    say "          push main, wait for its CI, tag v$new, push the tag, wait for the release and verify it. Nothing was changed."
+    say "dry run: would merge $frag_count fragment(s) from $FRAG_DIR/ into $CHANGELOG, bump $VERSION_FILE and SCRIPT_VERSION to $new,"
+    say "          run '$CHECK_CMD', commit 'release: $new', run '$RCHECK_CMD', push main, wait for its CI, tag v$new,"
+    say "          push the tag, wait for the release and verify it. Nothing was changed."
     exit 0
 fi
 
@@ -143,13 +170,23 @@ if [ -z "$slug" ] && [ "$BUMP_ONLY" = 0 ]; then
 fi
 
 # ---------------------------------------------------------------- the bump
-BACKUP=$(mktemp "${TMPDIR:-/tmp}/swarmbox-release.XXXXXX") || exit 1
-cp "$CHANGELOG" "$BACKUP"
-trap '[ -z "$BACKUP" ] || rm -f "$BACKUP" "$BACKUP.new"' EXIT
+BACKUP=$(mktemp -d "${TMPDIR:-/tmp}/swarmbox-release.XXXXXX") || exit 1
+mkdir -p "$BACKUP/frags"
+cp "$CHANGELOG" "$BACKUP/CHANGELOG.md"
+printf '%s\n' "$body" > "$BACKUP/body.md"
+printf '%s\n' "$frags" | while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    cp "$f" "$BACKUP/frags/$(basename "$f")"
+done
+trap '[ -z "$BACKUP" ] || rm -rf "$BACKUP"' EXIT
 
-# restore: the three files as they were before the bump; the CHANGELOG comes from the copy, so the author's text is kept.
+# restore: put CHANGELOG.md, fragments, SCRIPT and VERSION_FILE back as they were before the bump.
 restore() {
-    cp "$BACKUP" "$CHANGELOG"
+    cp "$BACKUP/CHANGELOG.md" "$CHANGELOG"
+    for bf in "$BACKUP/frags"/*.md; do
+        [ -f "$bf" ] || continue
+        cp "$bf" "$FRAG_DIR/$(basename "$bf")"
+    done
     git checkout -q -- "$SCRIPT" "$VERSION_FILE" 2> /dev/null || true
 }
 
@@ -162,24 +199,36 @@ bump_files() {
         bf_old=${bf_old%%\]*}
         bf_link=$(printf '%s\n' "$bf_tmpl" | sed "s/$bf_old/$new/g")
     fi
-    if ! awk -v v="$new" -v d="$bf_date" -v link="$bf_link" '
-        /^## \[Unreleased\]/ && !h { print; print ""; print "## [" v "] - " d; h = 1; next }
+    if ! awk -v v="$new" -v d="$bf_date" -v link="$bf_link" -v bodyfile="$BACKUP/body.md" '
+        function emit_section(    line) {
+            print "## [" v "] - " d
+            print ""
+            while ((getline line < bodyfile) > 0) print line
+            close(bodyfile)
+            print ""
+        }
+        /^## \[[0-9]/ && !h { emit_section(); h = 1 }
         /^\[[0-9]/ && !l && link != "" { print link; l = 1 }
-        { print }' "$CHANGELOG" > "$BACKUP.new"; then
+        { print }
+        END { if (!h) { print ""; emit_section() } }' "$CHANGELOG" > "$BACKUP/CHANGELOG.new"; then
         die "cannot rewrite $CHANGELOG"
     fi
-    mv -f "$BACKUP.new" "$CHANGELOG"
+    mv -f "$BACKUP/CHANGELOG.new" "$CHANGELOG"
+    printf '%s\n' "$frags" | while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        rm -f "$f"
+    done
     printf '%s\n' "$new" > "$VERSION_FILE"
-    if ! sed "s/^SCRIPT_VERSION=.*/SCRIPT_VERSION=$new/" "$SCRIPT" > "$BACKUP.new"; then
+    if ! sed "s/^SCRIPT_VERSION=.*/SCRIPT_VERSION=$new/" "$SCRIPT" > "$BACKUP/script.new"; then
         die "cannot rewrite $SCRIPT"
     fi
-    cat "$BACKUP.new" > "$SCRIPT"   # written through the file, not renamed over it: its mode stays
-    rm -f "$BACKUP.new"
+    cat "$BACKUP/script.new" > "$SCRIPT"   # written through the file, not renamed over it: its mode stays
+    rm -f "$BACKUP/script.new"
 }
 bump_files
-say "bumped: $CHANGELOG, $VERSION_FILE, SCRIPT_VERSION -> $new"
+say "bumped: $CHANGELOG (merged $frag_count fragment(s)), $VERSION_FILE, SCRIPT_VERSION -> $new"
 if [ "$BUMP_ONLY" = 1 ]; then
-    rm -f "$BACKUP" "$BACKUP.new"
+    rm -rf "$BACKUP"
     BACKUP=
     exit 0
 fi
@@ -189,9 +238,9 @@ say "running the gate: $CHECK_CMD"
 # shellcheck disable=SC2086  # the command and its option are words
 if ! $CHECK_CMD; then
     restore
-    die "the gate failed; the three files are back as they were (your CHANGELOG text is kept). Fix it and run again."
+    die "the gate failed; the files are back as they were (your fragments in $FRAG_DIR/ are kept). Fix it and run again."
 fi
-git add "$CHANGELOG" "$VERSION_FILE" "$SCRIPT"
+git add -A "$CHANGELOG" "$VERSION_FILE" "$SCRIPT" "$FRAG_DIR"
 git commit -q -m "release: $new" || { restore; die "git commit failed"; }
 say "committed: release: $new ($(git rev-parse --short HEAD))"
 # shellcheck disable=SC2086
@@ -205,7 +254,7 @@ fi
 say "release check: ok"
 BACKUP_KEEP=$BACKUP
 BACKUP=
-rm -f "$BACKUP_KEEP"
+rm -rf "$BACKUP_KEEP"
 trap - EXIT
 
 # ---------------------------------------------------------------- push, CI, tag

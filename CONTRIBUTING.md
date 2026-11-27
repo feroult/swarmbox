@@ -1,7 +1,7 @@
 # Contributing to SwarmBox
 
 SwarmBox is a Podman-based sandbox for running AI coding agents in auto-approve mode. The architecture is in `docs/design.md`;
-`docs/history/` holds records of how it was built (not current documentation). Contributions are accepted under the Apache License 2.0 (`LICENSE`). Please follow `CODE_OF_CONDUCT.md`; report security problems as `SECURITY.md` says, not in a public issue; user-visible changes go in `CHANGELOG.md`.
+`docs/history/` holds records of how it was built (not current documentation). Contributions are accepted under the Apache License 2.0 (`LICENSE`). Please follow `CODE_OF_CONDUCT.md`; report security problems as `SECURITY.md` says, not in a public issue; user-visible changes go in a fragment file under `changelog.d/` (see `changelog.d/README.md`).
 
 ## Safety first: never touch a live box
 
@@ -105,21 +105,14 @@ agent's name appears anywhere else in the product.
 
 ## Releasing
 
-A release is one command, and the part that needs a writer is the CHANGELOG, which is written **before** it runs, by whoever made the changes (a person or
-an agent), under `## [Unreleased]` in `CHANGELOG.md`: one `- ` item per change that matters to a user of SwarmBox, in the same commit as the change when
-you can (that is when the reason is fresh). Changes only to `dev/`, tests or CI go in one short line, or are left out.
+A release is one command, and the part that needs a writer is the changelog fragments under `changelog.d/`, written **before** it runs by whoever made the changes (a person or an agent): one file per change (for example `changelog.d/20261126-short-slug.md`) with one `- ` item per user-visible change, in the same commit as the change when you can (that is when the reason is fresh, and separate files avoid merge conflicts across branches and worktrees). Changes only to `dev/`, tests or CI go in one short line, or are left out. Do not edit `CHANGELOG.md` directly.
 
 ```bash
-sh dev/release.sh               # the next patch version; or: minor, major, 2.1.0
+sh dev/release.sh               # the next patch version; or: minor, major, 0.2.0
 sh dev/release.sh --dry-run     # checks and says what it would do, changes nothing
 ```
 
-It checks that you are on `main`, in step with `origin`, and that only `CHANGELOG.md` has changes; it **refuses to go on when `[Unreleased]` is empty, a placeholder
-or too thin**, and its error says what to do, with the commits since the last release and the last entry as a model, so the author can write it and run the
-command again. Then it moves the items under the new dated heading, sets the version (`container/host/VERSION` and `SCRIPT_VERSION`), runs `sh dev/check.sh`, makes
-the commit `release: X.Y.Z`, runs `dev/release-check.sh`, pushes `main`, **waits for the CI of that commit** and only then creates and pushes the tag `vX.Y.Z`, which starts
-the release workflow. It then waits for the release and verifies it: the checksum of `swarmbox`, the version it reports and, with Podman, that the image tags agree and have two
-architectures. A failure after the bump puts the files back (your CHANGELOG text included); a CI that fails leaves no tag. `GH_TOKEN` (optional) avoids the anonymous rate limit of the API.
+It checks that you are on `main`, in step with `origin`, and that only `changelog.d/` has uncommitted changes; it **refuses to go on when `changelog.d/` has no fragments, or an item is a placeholder or too thin**, and its error says what to do, with the commits since the last release and the last entry as a model, so the author can write a fragment and run the command again. Then it merges the fragments into `CHANGELOG.md` under the new dated heading, removes the consumed fragment files, sets the version (`container/host/VERSION` and `SCRIPT_VERSION`), runs `sh dev/check.sh`, makes the commit `release: X.Y.Z`, runs `dev/release-check.sh`, pushes `main`, **waits for the CI of that commit** and only then creates and pushes the tag `vX.Y.Z`, which starts the release workflow. It then waits for the release and verifies it: the checksum of `swarmbox`, the version it reports and, with Podman, that the image tags agree and have two architectures. A failure after the bump puts all files back (your fragments included); a CI that fails leaves no tag. `GH_TOKEN` (optional) avoids the anonymous rate limit of the API.
 
 ## Smoke test on a host
 

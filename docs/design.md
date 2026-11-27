@@ -1,6 +1,6 @@
 # SwarmBox architecture
 
-This is the current design of SwarmBox 2.0, written from the code. The first public version is `2.0.0`. Facts that were
+This is the current design of SwarmBox, written from the code. The first public version is `0.1.0`. Facts that were
 measured say how; anything not run on a real host is listed in "Not done, and open questions". The older process records
 (decision log, build plan, overnight report) are in [history/](history/README.md); they are not documentation.
 

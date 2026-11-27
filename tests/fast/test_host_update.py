@@ -254,13 +254,13 @@ class NewerVersionLiteralsTest(unittest.TestCase):
 
 class ScriptRefreshTest(UpdateBase):
     def test_a_script_newer_than_the_image_is_kept_with_a_clear_message(self):
-        self.podman_for("1.9.2")
-        r = self.update("--to", "1.9.2")
+        self.podman_for("0.0.1")
+        r = self.update("--to", "0.0.1")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("this script (%s) is newer than the image (1.9.2); the script is kept." % CUR, r.stderr)
+        self.assertIn("this script (%s) is newer than the image (0.0.1); the script is kept." % CUR, r.stderr)
         self.assertEqual(self.script_text(), REAL_SCRIPT)
         self.assertEqual(self.bin_names(), ["swarmbox"])
-        self.assertEqual(self.image_line(), ["IMAGE=%s:1.9.2" % REPO])
+        self.assertEqual(self.image_line(), ["IMAGE=%s:0.0.1" % REPO])
 
     def test_the_same_version_replaces_nothing_and_says_nothing(self):
         self.podman_for(CUR)
