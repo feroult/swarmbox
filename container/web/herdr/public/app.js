@@ -6601,8 +6601,7 @@
     const g = liveGoals.get(gid);
     if (g && sysopLiveStripTextEl && sysopRunning) {
       const elapsed = turn.started ? Math.max(0, Math.floor((Date.now() - turn.started) / 1000)) : 0;
-      const line = liveLine(g, turn);
-      sysopLiveStripTextEl.textContent = elapsed >= 1 ? `${line} · ${elapsed}s` : line;
+      sysopLiveStripTextEl.textContent = stripText(liveLine(g, turn), elapsed);
     }
   }
 
@@ -6611,6 +6610,45 @@
     cur.className = 'turn-stream-cursor';
     cur.setAttribute('aria-hidden', 'true');
     return cur;
+  }
+
+  // the phone's strip by the Stop button: only the state and the time (what it does is the last line of the turn, right above it)
+  const stripText = (line, secs) => {
+    const word = /^Waiting for you/.test(line || '') ? 'Waiting for you' : 'Working';
+    return secs >= 1 ? `${word} · ${fmtDur(secs)}` : word;
+  };
+  const fmtDur = (secs) => (secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s`);
+  // a looping animation keeps its phase across redraws (the running turn is drawn again on every event): start it where the clock is
+  const phase = (el, ms) => { el.style.animationDelay = `-${Date.now() % ms}ms`; return el; };
+
+  // the last line of a turn, always one line high: what the Sysop is doing while it runs, then how the goal ended and how long it took.
+  // It is the same slot before and after, so nothing above or below it moves when the goal ends.
+  function renderTurnFoot(turn, live) {
+    const foot = document.createElement('div');
+    foot.className = 'turn-foot';
+    const mark = document.createElement('span');
+    mark.className = 'turn-foot-mark';
+    const txt = document.createElement('span');
+    txt.className = 'turn-foot-text';
+    const time = document.createElement('span');
+    time.className = 'turn-foot-time';
+    let secs = 0;
+    if (turn.running) {
+      foot.dataset.state = 'running';
+      secs = turn.started ? Math.max(0, Math.floor((Date.now() - turn.started) / 1000)) : 0;
+      txt.textContent = live ? live.line : (turn.live_action || 'Thinking…');
+      phase(mark, 1100);
+      phase(txt, 2200);
+    } else {
+      const st = turn.state === 'failed' || turn.state === 'stopped' ? turn.state : 'done';
+      foot.dataset.state = st;
+      secs = turn.started && turn.ended > turn.started ? Math.round((turn.ended - turn.started) / 1000) : 0;
+      txt.textContent = st === 'stopped' ? 'Stopped · session kept' : (st === 'failed' ? 'Failed' : 'Done');
+    }
+    txt.title = txt.textContent;
+    time.textContent = secs >= 1 ? fmtDur(secs) : '';
+    foot.append(mark, txt, time);
+    return foot;
   }
 
   function renderTurn(turn) {
@@ -6695,37 +6733,13 @@
       }
       said.appendChild(note);
     }
-    if (turn.running) {
-      const liveEl = document.createElement('div');
-      liveEl.className = 'turn-live';
-      const dot = document.createElement('span');
-      dot.className = 'turn-live-dot';
-      const txt = document.createElement('span');
-      const elapsed = turn.started ? Math.max(0, Math.floor((Date.now() - turn.started) / 1000)) : 0;
-      const base = live ? live.line : (turn.live_action || 'Thinking…');
-      txt.textContent = elapsed >= 1 ? `${base} · ${elapsed}s` : base;
-      liveEl.append(dot, txt);
-      said.appendChild(liveEl);
-      if (live && live.reply && live.reply.text) {
-        const rep = renderReplyText(live.reply.text, live.reply.streaming);
-        rep.dataset.state = live.reply.streaming ? 'streaming' : 'running';
-        said.appendChild(rep);
-      }
-    } else if (turn.state === 'stopped') {
-      if (turn.reply) {
-        const rep = renderReplyText(turn.reply);
-        rep.dataset.state = 'done';
-        said.appendChild(rep);
-      }
-      const stopNote = document.createElement('div');
-      stopNote.className = 'turn-stopped-note';
-      stopNote.textContent = 'Stopped — session context preserved';
-      said.appendChild(stopNote);
-    } else if (turn.reply) {
-      const rep = renderReplyText(turn.reply);
-      rep.dataset.state = turn.state || 'done';
+    const reply = turn.running ? (live && live.reply && live.reply.text ? live.reply : null) : (turn.reply ? { text: turn.reply, streaming: false } : null);
+    if (reply) {
+      const rep = renderReplyText(reply.text, reply.streaming);
+      rep.dataset.state = turn.running ? (reply.streaming ? 'streaming' : 'running') : (turn.state || 'done');
       said.appendChild(rep);
     }
+    said.appendChild(renderTurnFoot(turn, live));
     el.appendChild(said);
     return el;
   }
@@ -7776,6 +7790,38 @@
     }
   }
 
+  // the phone's strip by the Stop button: there while a goal runs; when it ends it says so for a moment, then folds away slowly
+  // (it is above the composer: gone at once, the conversation would jump down by its height)
+  let stripWasRunning = false;
+  let stripTimer = null;
+  function syncLiveStrip(running, turns, liveAction, elapsed) {
+    const el = sysopLiveStripEl;
+    if (running) {
+      clearTimeout(stripTimer);
+      stripTimer = null;
+      el.classList.remove('hidden', 'folding');
+      el.dataset.state = 'running';
+      if (sysopLiveStripTextEl) sysopLiveStripTextEl.textContent = stripText(liveAction, elapsed);
+    } else if (stripWasRunning) {
+      const last = turns.length ? turns[turns.length - 1] : null;
+      const st = last && (last.state === 'failed' || last.state === 'stopped') ? last.state : 'done';
+      const secs = last && last.started && last.ended > last.started ? Math.round((last.ended - last.started) / 1000) : 0;
+      el.dataset.state = st;
+      if (sysopLiveStripTextEl) {
+        const word = st === 'stopped' ? 'Stopped' : (st === 'failed' ? 'Failed' : 'Done');
+        sysopLiveStripTextEl.textContent = secs >= 1 ? `${word} · ${fmtDur(secs)}` : word;
+      }
+      clearTimeout(stripTimer);
+      stripTimer = setTimeout(() => {
+        el.classList.add('folding');
+        stripTimer = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('folding'); stripTimer = null; }, 260);
+      }, 1600);
+    } else if (!stripTimer) {
+      el.classList.add('hidden');
+    }
+    stripWasRunning = running;
+  }
+
   function renderSysop(sysop) {
     if (!sysop) return;
     if (appEl) appEl.dataset.sysopUp = sysop.up ? '1' : '0';
@@ -7791,7 +7837,8 @@
     }
     const turns = Array.isArray(sysop.turns) ? sysop.turns : [];
     const activeTurn = turns.find((t) => t && t.running) || null;
-    const liveAction = (activeTurn && activeTurn.live_action) || sysop.sentence || 'Working…';
+    const activeLive = activeTurn ? liveGoals.get(activeTurn.id) : null;
+    const liveAction = activeLive ? liveLine(activeLive, activeTurn) : ((activeTurn && activeTurn.live_action) || sysop.sentence || 'Working…');
     const elapsed = activeTurn && activeTurn.started ? Math.max(0, Math.floor((Date.now() - activeTurn.started) / 1000)) : 0;
 
     if (mobileSysopBtn) mobileSysopBtn.dataset.state = st;
@@ -7811,12 +7858,7 @@
 
     if (btnSysopStop) btnSysopStop.classList.toggle('hidden', !running);
     if (btnMobileDockStop) btnMobileDockStop.classList.toggle('hidden', !running);
-    if (sysopLiveStripEl) {
-      sysopLiveStripEl.classList.toggle('hidden', !running);
-      if (running && sysopLiveStripTextEl) {
-        sysopLiveStripTextEl.textContent = elapsed >= 1 ? `${liveAction} · ${elapsed}s` : liveAction;
-      }
-    }
+    if (sysopLiveStripEl) syncLiveStrip(running, turns, liveAction, elapsed);
     if (sysopModelPillEl) {
       const m = sysop.settings && sysop.settings.model && sysop.settings.model !== 'auto' ? String(sysop.settings.model) : '';
       sysopModelPillEl.textContent = m;
