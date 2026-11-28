@@ -109,6 +109,7 @@ LEGIT_PHRASES = [
     (r"Command Line Tools", "the Xcode Command Line Tools of macOS: a third-party name"),
     (r"net-tools", "the Debian package net-tools"),
     (r"\b(build|test|browser test|host-side) tools\b", "ordinary English: programs a job needs"),
+    (r"(coding|orchestration)[- ]tools\b", "titles and URLs of third-party articles cited as sources (docs/positioning.md)"),
 ]
 
 # Files where the word only ever means the tools an LLM calls (or a test that exercises them). The old names above still apply there.
