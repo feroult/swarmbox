@@ -33,10 +33,13 @@ then "TOTAL <f> files, <n> tests, <x> failed files, <s> s (wall <w> s)" and the 
 subreaper (in-process forked child on Linux, tests/support/reap_run.py otherwise): when it ends, the processes it left behind are
 killed by PID and counted as `reaped`.
 Exit status: 0 when every run passed, 1 when one failed, 2 on a usage error. Env: SWARMBOX_TESTS_DIR points at another tests folder
-(the tests of this runner use it).
+(the tests of this runner use it); SWARMBOX_TEST_TIMINGS is the timing cache that plans the units, longest first (default
+$XDG_CACHE_HOME/swarmbox-tests/timings.json, empty: off).
 """
 import ast
 import atexit
+import json
+import math
 import os
 import random
 import re
@@ -249,6 +252,22 @@ def shard_classes(abs_path, max_shards):
     """Inspect a fast test file's AST and return class-name buckets if safe to shard, else None."""
     if max_shards < 2:
         return None
+    table = class_table(abs_path)
+    if table is None or len(table) < 2:
+        return None
+    test_classes = [(name, len(methods)) for name, methods in table]
+    k = min(len(test_classes), max_shards)
+    buckets = [[] for _ in range(k)]
+    loads = [0] * k
+    for name, count in sorted(test_classes, key=lambda x: -x[1]):
+        idx = min(range(k), key=lambda j: loads[j])
+        buckets[idx].append(name)
+        loads[idx] += count
+    return [b for b in buckets if b]
+
+
+def class_table(abs_path):
+    """The test classes of a file as [(class, [own test_ methods])] in file order when the file is safe to run class by class, else None."""
     try:
         with open(abs_path, encoding="utf-8") as f:
             tree = ast.parse(f.read(), abs_path)
@@ -262,9 +281,9 @@ def shard_classes(abs_path, max_shards):
             if node.name in ("setUpModule", "tearDownModule", "load_tests"):
                 return None
         elif isinstance(node, ast.ClassDef):
-            test_count = sum(1 for m in node.body if isinstance(m, ast.FunctionDef) and m.name.startswith("test_"))
+            methods = [m.name for m in node.body if isinstance(m, ast.FunctionDef) and m.name.startswith("test_")]
             bases = [_base_name(b) for b in node.bases]
-            classes[node.name] = (test_count, bases)
+            classes[node.name] = (methods, bases)
             class_order.append(node.name)
         elif _is_unittest_main_call(node):
             has_main = True
@@ -281,30 +300,34 @@ def shard_classes(abs_path, max_shards):
                 used_as_base.add(b)
     test_classes = []
     for name in class_order:
-        count, bases = classes[name]
-        if count > 0:
+        methods, bases = classes[name]
+        if methods:
             # If a test class is inherited by another class in the same file, skip sharding.
             if name in used_as_base:
                 return None
-            test_classes.append((name, count))
+            test_classes.append((name, methods))
         else:
             # A non-base class inheriting from an imported TestCase-like base might inherit test_ methods.
             if name not in used_as_base and any(("Test" in b or "Case" in b) for b in bases if b not in classes):
                 return None
-    if len(test_classes) < 2:
+    if len(test_classes) < 2 and not (test_classes and len(test_classes[0][1]) >= 2):
         return None
-    k = min(len(test_classes), max_shards)
-    buckets = [[] for _ in range(k)]
-    loads = [0] * k
-    for name, count in sorted(test_classes, key=lambda x: -x[1]):
-        idx = min(range(k), key=lambda j: loads[j])
-        buckets[idx].append(name)
-        loads[idx] += count
-    return [b for b in buckets if b]
+    return test_classes
+
+
+TIMINGS_LINE = re.compile(r"^reap_run: timings (\{.*\})\n?", re.M)
 
 
 def _parse_output(rel, rc, timed_out, t0, raw):
     text = raw.decode("utf-8", "replace")
+    timings = None
+    found = TIMINGS_LINE.findall(text)
+    if found:
+        text = TIMINGS_LINE.sub("", text)
+        try:
+            timings = json.loads(found[-1])
+        except ValueError:
+            timings = None
     n = re.findall(r"^Ran (\d+) tests? in ", text, re.M)
     k = re.findall(r"^(?:OK|FAILED).*skipped=(\d+)", text, re.M)
     secs = re.findall(r"^reap_run: seconds ([0-9.]+)$", text, re.M)
@@ -320,7 +343,66 @@ def _parse_output(rel, rc, timed_out, t0, raw):
         "text": text,
         "start": t0,
         "end": time.monotonic(),
+        "timings": None if timed_out else timings,
     }
+
+
+def _install_timing_hooks(started):
+    """In the child: measure the import of the file, each class (its setUpClass included) and each test, for the timing cache.
+
+    Returns the record that _exec_in_child prints as one `reap_run: timings {json}` line (the parent removes it from the output)."""
+    import unittest
+    rec = {"import": None, "classes": {}}
+    state = {"prev_end": None, "last": None, "t": 0.0}
+    run_tests = unittest.TestProgram.runTests
+    start_test = unittest.TestResult.startTest
+    stop_test = unittest.TestResult.stopTest
+
+    def runTests(self, *a, **kw):
+        now = time.monotonic()
+        rec["import"] = round(now - started, 3)
+        state["prev_end"] = now
+        return run_tests(self, *a, **kw)
+
+    def split(test):
+        parts = test.id().split(".")
+        if len(parts) == 3 and parts[0] == "__main__":   # a test of the file itself (not one a test runs inside it)
+            return parts[1], parts[2]
+        return None, None
+
+    def startTest(self, test):
+        cls, _ = split(test)
+        if cls is not None:
+            now = time.monotonic()
+            if cls != state["last"]:
+                c = rec["classes"].setdefault(cls, {"begin": state["prev_end"] or now, "tests": {}})
+                c.setdefault("begin", state["prev_end"] or now)
+            state["t"] = now
+        return start_test(self, test)
+
+    def stopTest(self, test):
+        stop_test(self, test)
+        cls, meth = split(test)
+        if cls is not None and cls in rec["classes"]:
+            now = time.monotonic()
+            c = rec["classes"][cls]
+            c["tests"][meth] = round(now - state["t"], 3)
+            c["end"] = now
+            state["prev_end"] = now
+            state["last"] = cls
+
+    unittest.TestProgram.runTests = runTests
+    unittest.TestResult.startTest = startTest
+    unittest.TestResult.stopTest = stopTest
+
+    def finish():
+        out = {"import": rec["import"], "classes": {}}
+        for cls, c in rec["classes"].items():
+            if "end" in c:
+                secs = c["end"] - c["begin"]
+                out["classes"][cls] = {"setup": round(max(0.0, secs - sum(c["tests"].values())), 3), "tests": c["tests"]}
+        return out
+    return finish
 
 
 def _exit_code(status):
@@ -372,6 +454,11 @@ def _exec_in_child(abs_path, classes, o, close_fds, w_fd):
     else:
         sys.path.insert(0, os.path.dirname(abs_path))
     started = time.time()
+    finish_timings = None
+    try:
+        finish_timings = _install_timing_hooks(time.monotonic())
+    except Exception:   # the cache is an optimisation: a file must run the same without it
+        finish_timings = None
     rc = 0
     try:
         runpy.run_path(abs_path, run_name="__main__")
@@ -392,6 +479,11 @@ def _exec_in_child(abs_path, classes, o, close_fds, w_fd):
         traceback.print_exc()
         rc = 1
     reaped, left = reap_run.reap_orphans() if subreaper else (0, [])
+    if finish_timings is not None:
+        try:
+            sys.stderr.write("\nreap_run: timings %s\n" % json.dumps(finish_timings(), separators=(",", ":")))
+        except Exception:
+            pass
     sys.stderr.write("reap_run: seconds %.1f\n" % (time.time() - started))
     if reaped:
         sys.stderr.write("reap_run: reaped %d\n" % reaped)
@@ -478,6 +570,172 @@ def _aggregate_shards(rel, shards):
     }
 
 
+TIMINGS_VERSION = 1
+UNIT_FLOOR_S = 0.5      # a unit shorter than this is never split further (each unit pays a fork, an import, a setUpClass)
+UNIT_CAP_SHARE = 0.5    # split a file (by class, then a long class by method) into units of at most this share of one job's work
+
+
+def timings_path():
+    """Where the durations of the last runs are kept: $SWARMBOX_TEST_TIMINGS ("" turns it off), else the cache folder of the user.
+
+    Only for the tests folder of this repository: another one (SWARMBOX_TESTS_DIR, the tests of this runner) is never cached."""
+    p = os.environ.get("SWARMBOX_TEST_TIMINGS")
+    if p is not None:
+        return p or None
+    if os.path.realpath(TESTS) != os.path.realpath(os.path.dirname(HERE)):
+        return None
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    return os.path.join(base, "swarmbox-tests", "timings.json")
+
+
+def load_timings(path):
+    if not path:
+        return {}
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict) or data.get("version") != TIMINGS_VERSION or not isinstance(data.get("files"), dict):
+        return {}
+    return data["files"]
+
+
+def merge_timings(files, results):
+    """Fold the timings of the units of one run into the cache: per file the import, per class its setup and each of its tests.
+
+    The parts of one file (or of one class split by method) are put together first; a class measured in this run replaces its old
+    entry, and a file that ran whole replaces the whole entry (a class that is gone leaves the cache)."""
+    seen = {}
+    for r in results:
+        t = r.get("timings")
+        if not isinstance(t, dict) or not isinstance(t.get("classes"), dict):
+            continue
+        obs = seen.setdefault(r["file"], {"import": None, "classes": {}, "whole": False})
+        obs["whole"] = obs["whole"] or not r.get("classes")
+        imp = t.get("import")
+        if isinstance(imp, (int, float)):
+            obs["import"] = imp if obs["import"] is None else min(obs["import"], imp)
+        for cls, c in t["classes"].items():
+            if not isinstance(c, dict):
+                continue
+            o = obs["classes"].setdefault(cls, {"setup": None, "tests": {}})
+            setup = c.get("setup")
+            if isinstance(setup, (int, float)):
+                # a class split by method pays its setUpClass in every part: the smallest is the one cost of it
+                o["setup"] = setup if o["setup"] is None else min(o["setup"], setup)
+            o["tests"].update(c.get("tests") or {})
+    for rel, obs in seen.items():
+        old = files.get(rel)
+        entry = {"import": None, "classes": {}}
+        if isinstance(old, dict) and isinstance(old.get("classes"), dict) and not obs["whole"]:
+            entry = {"import": old.get("import"), "classes": dict(old["classes"])}
+        if obs["import"] is not None:
+            entry["import"] = obs["import"]
+        for cls, o in obs["classes"].items():
+            entry["classes"][cls] = {"setup": o["setup"] or 0.0, "tests": o["tests"]}
+        files[rel] = entry
+    return files
+
+
+def save_timings(path, results):
+    if not path or not any(r.get("timings") for r in results):
+        return
+    files = merge_timings(load_timings(path), results)
+    tmp = "%s.%d.tmp" % (path, os.getpid())
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp, "w") as f:
+            json.dump({"version": TIMINGS_VERSION, "files": files}, f, separators=(",", ":"), sort_keys=True)
+        os.replace(tmp, path)
+    except OSError:   # a read-only home (the container of dev/test-slow.sh): the next run plans by the size of the files
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
+def _class_secs(c):
+    return float(c.get("setup") or 0.0) + sum(float(v) for v in (c.get("tests") or {}).values())
+
+
+def _lpt(items, k):
+    """Longest first into k bins: [(load, [names])] for items [(name, secs)]."""
+    bins = [[0.0, []] for _ in range(k)]
+    for name, secs in sorted(items, key=lambda x: -x[1]):
+        b = min(bins, key=lambda x: x[0])
+        b[0] += secs
+        b[1].append(name)
+    return [b for b in bins if b[1]]
+
+
+def _plan_file(rel, table, hist, est, cap):
+    """Split one file into units of about `cap` seconds from its history: [(classes or None, est)]."""
+    imp = float(hist.get("import") or 0.05)
+    known = dict((c, v) for c, v in (hist.get("classes") or {}).items() if isinstance(v, dict))
+    mean = (sum(_class_secs(v) for v in known.values()) / len(known)) if known else 0.1
+    pieces = []
+    for cls, methods in table:
+        h = known.get(cls)
+        secs = _class_secs(h) if h else mean
+        tests = (h or {}).get("tests") or {}
+        # a long class runs as several parts, by method, but only when the history names exactly the methods of the class: a test it
+        # inherits from another module, or one added since the last run, would otherwise not run at all
+        if h and secs > cap and len(methods) > 1 and set(tests) == set(methods):
+            setup = float(h.get("setup") or 0.0)
+            k = min(len(methods), int(math.ceil(secs / cap)))
+            for load, names in _lpt([(m, float(tests[m])) for m in methods], k):
+                pieces.append((["%s.%s" % (cls, m) for m in names], setup + load))
+        else:
+            pieces.append(([cls], secs))
+    k = min(len(pieces), int(math.ceil(est / cap)))
+    if k < 2:
+        return [(None, est)]
+    out = []
+    for load, names in _lpt([(i, s) for i, (_, s) in enumerate(pieces)], k):
+        out.append(([n for i in sorted(names) for n in pieces[i][0]], imp + load))
+    return out
+
+
+def _plan_units(work, jobs, allow_shard, timings):
+    """The units to run, longest first. A file with a history is estimated (and split) by the durations of its classes and tests; a
+    file without one by its size (the old rule)."""
+    sizes = dict((rel, os.path.getsize(os.path.join(TESTS, rel))) for rel in set(work))
+    est = {}
+    for rel in sizes:
+        h = timings.get(rel)
+        if isinstance(h, dict) and isinstance(h.get("classes"), dict) and h["classes"]:
+            est[rel] = float(h.get("import") or 0.0) + sum(_class_secs(c) for c in h["classes"].values() if isinstance(c, dict))
+    known = [rel for rel in est if sizes[rel] > 0]
+    rate = (sum(est[r] for r in known) / sum(sizes[r] for r in known)) if known else 1e-4
+    for rel in sizes:
+        est.setdefault(rel, sizes[rel] * rate)
+    total = sum(est[rel] for rel in work)
+    cap = max(UNIT_FLOOR_S, total / max(1, jobs) * UNIT_CAP_SHARE)
+    plans = {}
+    units = []
+    for run_id, rel in enumerate(work):
+        if rel not in plans:
+            plan = [(None, est[rel])]
+            if allow_shard and rel.startswith("fast/") and rel.endswith(".py"):
+                h = timings.get(rel)
+                if rel in timings and isinstance(h, dict) and isinstance(h.get("classes"), dict):
+                    if est[rel] > cap:
+                        table = class_table(os.path.join(TESTS, rel))
+                        if table:
+                            plan = _plan_file(rel, table, h, est[rel], cap)
+                else:
+                    buckets = _build_units([rel], len(work), jobs, True)
+                    if len(buckets) > 1:
+                        plan = [(u["classes"], est[rel] / len(buckets)) for u in buckets]
+            plans[rel] = plan
+        plan = plans[rel]
+        for classes, secs in plan:
+            units.append({"run_id": run_id, "file": rel, "classes": classes, "shard_count": len(plan), "est": secs})
+    units.sort(key=lambda u: -u["est"])
+    return units
+
+
 def _build_units(work, files_count, jobs, allow_shard):
     units = []
     shard_cache = {}
@@ -532,15 +790,19 @@ def main(argv):
     for f in files:
         for _ in range(o["repeat"]):
             work.append(f)
-    # the longest files first (by the size of the file) keeps the pool busy to the end
-    work.sort(key=lambda f: -os.path.getsize(os.path.join(TESTS, f)))
+    tpath = timings_path() if USE_FORK else None
+    allow_shard = USE_FORK and jobs > 1 and o.get("shuffle") is None
     if o.get("shuffle") is not None:
+        work.sort(key=lambda f: -os.path.getsize(os.path.join(TESTS, f)))
         seed = o["shuffle"] if o["shuffle"] >= 0 else random.SystemRandom().randrange(1, 10**6)
         sys.stdout.write("shuffle seed %d (repeat with --shuffle %d)\n" % (seed, seed))
         random.Random(seed).shuffle(work)
-    allow_shard = USE_FORK and jobs > 1 and o.get("shuffle") is None
-    todo = _build_units(work, len(work), jobs, allow_shard)
+        todo = _build_units(work, len(work), jobs, False)
+    else:
+        # the longest units first (by the durations of the last runs, else by the size of the file) keep the pool busy to the end
+        todo = _plan_units(work, jobs, allow_shard, load_timings(tpath))
     results = []
+    unit_results = []
     pending_shards = {}
     wall0 = time.time()
     active = {}
@@ -599,6 +861,8 @@ def main(argv):
         sys.stdout.flush()
 
     def on_unit_done(unit, r):
+        r["classes"] = unit["classes"]
+        unit_results.append(r)
         if unit["shard_count"] == 1:
             report_file(r)
             if fail_fast and r["rc"] != 0:
@@ -679,8 +943,9 @@ def main(argv):
         if active:
             abort_running()
         selector.close()
+    save_timings(tpath, unit_results)
 
-    bad = [r for r in results if r["rc"] != 0]
+    bad =[r for r in results if r["rc"] != 0]
     total_s = sum(r["secs"] for r in results)
     if o["repeat"] > 1:
         sys.stdout.write("TOTAL %d runs\n" % len(results))

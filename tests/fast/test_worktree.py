@@ -49,7 +49,10 @@ def git(cwd, *args):
     return r.stdout.strip()
 
 
-class WorktreeTest(unittest.TestCase):
+class WorktreeCase(unittest.TestCase):
+    """A real repository (made once per class and copied for each test) under a mktemp HOME. The tests are in several classes so that
+    the runner can run them side by side."""
+
     @classmethod
     def setUpClass(cls):
         cls._tpl_tmp = tempfile.mkdtemp(prefix="swarmbox-test-wt-tpl.")
@@ -82,6 +85,10 @@ class WorktreeTest(unittest.TestCase):
             "GIT_CONFIG_GLOBAL": "/dev/null",
             "GIT_CONFIG_SYSTEM": "/dev/null",
         }
+
+
+class InspectAndCreate(WorktreeCase):
+    """Inspect and create (the .env files and the manifest)."""
 
     def test_inspect_non_git_and_main_repo(self):
         plain = os.path.join(self.tmp, "plain")
@@ -129,6 +136,10 @@ class WorktreeTest(unittest.TestCase):
         self.assertTrue(info["is_worktree"])
         self.assertTrue(info["managed"])
         self.assertEqual(info["repo_root"], os.path.realpath(self.repo))
+
+
+class MergeAndRemove(WorktreeCase):
+    """Merge, the in-memory conflict check, remove, and an external worktree with the prefs."""
 
     def test_clean_merge_and_remove_workflow(self):
         created = wt.create_worktree(self.repo, env=self.env)
@@ -240,6 +251,10 @@ class WorktreeTest(unittest.TestCase):
         # CLI smoke check
         p = subprocess.run([sys.executable, WT_SCRIPT, "prefs", "get"], env=self.env, capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(p.stdout), {"mode": "auto", "copy_env": False})
+
+
+class ShellGuard(WorktreeCase):
+    """The shell guard and the .bashrc fragment."""
 
     def test_shell_guard_ask_auto_off_cancel_and_labels(self):
         # Fake swarmbox-tabs returning one active agent (t1) in self.repo and logging label calls
@@ -398,6 +413,10 @@ class WorktreeTest(unittest.TestCase):
         self.assertTrue(lines[1].startswith(f"cwd={os.path.realpath(self.repo)} "), lines)
         self.assertIn("/worktrees/shop-api/sb-wt-", lines[2], lines)
 
+
+class Verify(WorktreeCase):
+    """The verify command: detection and runs."""
+
     def test_detect_verify_cmd_precedence_and_override(self):
         d = os.path.join(self.tmp, "detect-repo")
         os.makedirs(d)
@@ -451,6 +470,43 @@ class WorktreeTest(unittest.TestCase):
         with open(os.path.join(d, ".swarmbox-check"), "w", encoding="utf-8") as f:
             f.write("\n# custom verification\n  ./scripts/run-ci.sh --fast  \nsecond-line\n")
         self.assertEqual(wt.detect_verify_cmd(d), "./scripts/run-ci.sh --fast")
+
+    def test_verify_repo_pass_fail_tail_and_missing_cmd(self):
+        # No verify command detected -> WorktreeError("no_verify_cmd")
+        with self.assertRaises(wt.WorktreeError) as ctx:
+            wt.verify_repo(self.repo, env=self.env)
+        self.assertEqual(ctx.exception.code, "no_verify_cmd")
+
+        # Explicit passing command via CLI
+        p_ok = subprocess.run(
+            [sys.executable, WT_SCRIPT, "verify", self.repo, "--cmd", "echo ALL_GOOD"],
+            env=self.env, capture_output=True, text=True, check=True,
+        )
+        r_ok = json.loads(p_ok.stdout)
+        self.assertTrue(r_ok["ok"])
+        self.assertEqual(r_ok["exit_code"], 0)
+        self.assertIn("ALL_GOOD", r_ok["output"])
+        self.assertIsInstance(r_ok["duration_ms"], int)
+
+        # Failing command via CLI still exits 0 with ok=False so callers can read structured JSON
+        p_fail = subprocess.run(
+            [sys.executable, WT_SCRIPT, "verify", self.repo, "--cmd", "echo BOOM >&2; exit 3"],
+            env=self.env, capture_output=True, text=True, check=True,
+        )
+        r_fail = json.loads(p_fail.stdout)
+        self.assertFalse(r_fail["ok"])
+        self.assertEqual(r_fail["exit_code"], 3)
+        self.assertIn("BOOM", r_fail["output"])
+
+        # Output tail is capped at 16 KiB
+        r_big = wt.verify_repo(self.repo, cmd="head -c 30000 /dev/zero | tr '\\0' A; echo TAIL_END", env=self.env)
+        self.assertTrue(r_big["ok"])
+        self.assertLessEqual(len(r_big["output"].encode("utf-8")), 16 * 1024)
+        self.assertIn("TAIL_END", r_big["output"])
+
+
+class StatusAndSync(WorktreeCase):
+    """Status (commits, files, diff, upstream) and sync."""
 
     def test_status_commits_files_diff_and_upstream(self):
         # Set up bare origin remote and push main
@@ -586,6 +642,10 @@ class WorktreeTest(unittest.TestCase):
             # Worktree MUST be left completely clean (no leftover merge/rebase state)
             self.assertEqual(git(wt_path, "status", "--porcelain"), "")
 
+
+class UndoAndPush(WorktreeCase):
+    """Merge undo, the repository status and the push to a bare origin."""
+
     def test_merge_undo_repo_status_and_push_to_bare_origin(self):
         bare = os.path.join(self.tmp, "remote.git")
         git(self.tmp, "init", "--bare", "-b", "main", bare)
@@ -696,39 +756,6 @@ class WorktreeTest(unittest.TestCase):
         git(other, "push", "origin", "main")
         git(self.repo, "fetch", "origin")
         self.assertEqual(wt.repo_status(self.repo, env=self.env)["behind_origin"], 1)
-
-    def test_verify_repo_pass_fail_tail_and_missing_cmd(self):
-        # No verify command detected -> WorktreeError("no_verify_cmd")
-        with self.assertRaises(wt.WorktreeError) as ctx:
-            wt.verify_repo(self.repo, env=self.env)
-        self.assertEqual(ctx.exception.code, "no_verify_cmd")
-
-        # Explicit passing command via CLI
-        p_ok = subprocess.run(
-            [sys.executable, WT_SCRIPT, "verify", self.repo, "--cmd", "echo ALL_GOOD"],
-            env=self.env, capture_output=True, text=True, check=True,
-        )
-        r_ok = json.loads(p_ok.stdout)
-        self.assertTrue(r_ok["ok"])
-        self.assertEqual(r_ok["exit_code"], 0)
-        self.assertIn("ALL_GOOD", r_ok["output"])
-        self.assertIsInstance(r_ok["duration_ms"], int)
-
-        # Failing command via CLI still exits 0 with ok=False so callers can read structured JSON
-        p_fail = subprocess.run(
-            [sys.executable, WT_SCRIPT, "verify", self.repo, "--cmd", "echo BOOM >&2; exit 3"],
-            env=self.env, capture_output=True, text=True, check=True,
-        )
-        r_fail = json.loads(p_fail.stdout)
-        self.assertFalse(r_fail["ok"])
-        self.assertEqual(r_fail["exit_code"], 3)
-        self.assertIn("BOOM", r_fail["output"])
-
-        # Output tail is capped at 16 KiB
-        r_big = wt.verify_repo(self.repo, cmd="head -c 30000 /dev/zero | tr '\\0' A; echo TAIL_END", env=self.env)
-        self.assertTrue(r_big["ok"])
-        self.assertLessEqual(len(r_big["output"].encode("utf-8")), 16 * 1024)
-        self.assertIn("TAIL_END", r_big["output"])
 
 
 class TabAgentKind(unittest.TestCase):

@@ -183,7 +183,7 @@ class Enabled(Base):
         self.assertEqual(self.voice_argv()[0], "front")
 
 
-class PrepareTests(Base):
+class PrepareCase(Base):
     """`swarmbox update` brings a new image with the same whisper.cpp version: the install keeps its files, prepare refreshes them."""
 
     def setUp(self):
@@ -203,6 +203,10 @@ class PrepareTests(Base):
         os.makedirs(os.path.join(self.prefix, "planners"))
         with open(os.path.join(self.prefix, "planners", "planner-gone"), "w") as f:
             f.write("x")
+
+
+class PrepareTests(PrepareCase):
+    """The refresh of the files of the install."""
 
     def test_prepare_refreshes_lib_from_the_image_copy_and_drops_the_old_planners_and_page(self):
         self.staleness()
@@ -249,6 +253,10 @@ class PrepareTests(Base):
         r = self.addon("prepare")
         self.assertEqual((r.returncode, r.stderr), (0, ""))
         self.assertFalse(os.path.exists(os.path.join(self.prefix, "lib", "swarmbox_voice", "front.py.new")))
+
+
+class PrepareAndTheWebServer(PrepareCase):
+    """The restart of the web server that prepare asks for, a refresh that fails, and the front after the refresh."""
 
     def web_restart_world(self, server=True, front=False):
         """Fake pgrep (which processes 'run') and a fake swarmbox-web that records its arguments."""

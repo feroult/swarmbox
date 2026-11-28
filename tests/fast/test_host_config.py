@@ -104,18 +104,32 @@ def real_listing():
     return out
 
 
+_last_listing = []   # the listing taken at the end of the previous class of this process: the next class starts from it
+
+
+def listing_before():
+    """The real listing at the start of a class: the one the previous class of this process ended with (one walk less per class)."""
+    return _last_listing[0] if _last_listing else real_listing()
+
+
+def assert_listing_unchanged(before):
+    after = real_listing()
+    _last_listing[:] = [after]
+    assert after == before, "the helper changed the real SwarmBox folders in the real home"
+
+
 class Base(unittest.TestCase):
     name = None
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls._before = real_listing()
+        cls._before = listing_before()
 
     @classmethod
     def tearDownClass(cls):
         try:
-            assert real_listing() == cls._before, "the helper changed the real SwarmBox folders in the real home"
+            assert_listing_unchanged(cls._before)
         finally:
             super().tearDownClass()
 
@@ -258,6 +272,38 @@ class DefaultsAndPrecedenceTest(Base):
             # an empty environment value does not override
             self.assertEqual(r3, (0, good + "\n"), key)
 
+
+class EnvNameTest(unittest.TestCase):
+    """env_of (the variable of a key) maps exactly as `tr 'a-z.' 'A-Z_'` does, under every POSIX shell here: lower case and dots
+    change, digits, underscores, upper case and every other character stay (the end-to-end check per key is above)."""
+
+    def test_env_of_is_the_mapping_of_tr_under_each_shell(self):
+        src = slurp(HELPER)
+        start = src.index("\nenv_of() {\n") + 1
+        func = src[start:src.index("\n}\n", start) + 3]
+        words = list(KEYS) + ["NAME", "CLOUDFLARE_TUNNEL_TOKEN", "sysop.max_steps", "a1.b2_c3", "x", ".", "..a..", "Ab.cD",
+                              "0123456789", "a-b+c", "a*b?[c]", "a b", "tr\\x", "voice.stt.model"]
+        prog = func + 'for w in "$@"; do env_of "$w"; printf "%s|%s\\n" "$ENV_OF" "SWARMBOX_$(printf "%s" "$w" | tr "a-z." "A-Z_")"; done\n'
+        shells = [[shutil.which("dash")]] if shutil.which("dash") else []
+        if shutil.which("bash"):
+            shells.append([shutil.which("bash"), "--posix"])
+        if shutil.which("busybox"):
+            shells.append([shutil.which("busybox"), "sh"])
+        shells.append(["/bin/sh"])
+        for sh in shells:
+            with self.subTest(shell=" ".join(sh)):
+                p = subprocess.run(sh + ["-c", prog, "sh", *words], capture_output=True, text=True, timeout=60,
+                                   env={"PATH": os.environ["PATH"], "LC_ALL": "C"})
+                self.assertEqual(p.returncode, 0, p.stderr)
+                rows = p.stdout.split("\n")[:-1]
+                self.assertEqual(len(rows), len(words))
+                for w, row in zip(words, rows):
+                    got, want = row.split("|")
+                    self.assertEqual(got, want, w)
+                    if w in KEYS:
+                        self.assertEqual(got, ENVNAME(w), w)
+
+
 class GrammarTest(Base):
     def test_values_are_literal(self):
         self.write_cfg("WORKSPACE=/srv/my work dir\nIMAGE=a=b\nHOSTNAME=  padded \t \nTZ=Europe/Lisbon\r\n")
@@ -313,6 +359,8 @@ class SetTest(Base):
             self.assertEqual(g2, (0, other + "\n"), key)
             self.assertEqual(m, 0o600, key)
 
+
+class SetRejectionTest(Base):
     def test_rejections_name_the_key_and_the_rule_and_write_nothing(self):
         # one home per (key, bad value): every rejection is checked against its own untouched file, and no two runs share a file
         jobs = []
@@ -586,7 +634,7 @@ class SysopFlagsTest(CreateFlagsBase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls._before = real_listing()
+        cls._before = listing_before()
         cls._shared_dir = os.path.realpath(tempfile.mkdtemp(prefix="swarmbox-test-sysopf-sh."))
         cls.addClassCleanup(shutil.rmtree, cls._shared_dir, True)
         hdir = os.path.join(cls._shared_dir, "helper")
@@ -604,7 +652,7 @@ class SysopFlagsTest(CreateFlagsBase):
     @classmethod
     def tearDownClass(cls):
         try:
-            assert real_listing() == cls._before, "the helper changed the real SwarmBox folders in the real home"
+            assert_listing_unchanged(cls._before)
         finally:
             super().tearDownClass()
 

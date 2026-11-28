@@ -1,0 +1,1 @@
+- Changed: the host `swarmbox` command starts faster: working out the environment variable of each setting no longer starts a `tr` process per key (about three times less work for every call, such as `swarmbox config get` or `swarmbox up`).

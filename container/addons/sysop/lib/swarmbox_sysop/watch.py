@@ -26,6 +26,11 @@ STOP_WAIT = 10.0
 
 class Watcher:
     def __init__(self, paths, argv, log=None, backoff=BACKOFF, crashes=CRASHES, popen=subprocess.Popen, clock=time.monotonic):
+        if backoff is BACKOFF and os.environ.get("SWARMBOX_TEST_WATCH_BACKOFF"):
+            # tests only ("first,last" seconds): a test that kills the service and starts it again with prepare must not race the watcher's own start
+            parts = [float(x) for x in os.environ["SWARMBOX_TEST_WATCH_BACKOFF"].split(",") if x.strip()]
+            if parts:
+                backoff = (max(0.005, parts[0]), max(0.005, parts[-1]))
         self.paths, self.argv, self.backoff, self.crashes, self.popen, self.clock = paths, argv, backoff, crashes, popen, clock
         self.log = log or self.stderr_log
         self.lock_fd = None

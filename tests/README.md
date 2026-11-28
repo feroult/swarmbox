@@ -33,6 +33,11 @@ sh dev/check.sh                         # shellcheck + the fast tests in a clean
 
 `loop` maps uncommitted changes (or `--since <ref>`) through `support/areas.py` to matching `fast/` tests plus the static guards; edits to shared infrastructure or unmapped files fall back to the full `fast` suite, and a clean tree runs only the guards. Pass `--no-fail-fast` to keep running after a failure. `--area` accepts `guards`, `herdr`, `sysop`, `voice`, `host`, `tabs`, `bus`, `worktree`, `addons`, `release`, and `runner`. `--fail-fast` stops scheduling and terminates running jobs on the first failing file.
 
+On Linux the runner splits the fast files into units (a file, a group of its classes, or the methods of one long class) and starts the longest first. It plans them from the
+durations of the last runs, which every forked file reports per class and per test: they are kept in `$XDG_CACHE_HOME/swarmbox-tests/timings.json`
+(`~/.cache/...`; `SWARMBOX_TEST_TIMINGS=PATH` moves it, `SWARMBOX_TEST_TIMINGS=` turns it off). A file without a history is split by its size;
+a class is split by method only when the history names exactly its methods. Delete the file to plan from scratch; a read-only home only loses the plan.
+
 `--werror` runs each file as `python3 -W error`; `--github` adds a GitHub annotation for a failed file (CI). Every file runs under
 `support/reap_run.py`: when it ends, the processes it left behind are found by PID (never by name), killed and shown as `reaped N`.
 A test that leaks a process is a bug in that test: end children in `addCleanup`.

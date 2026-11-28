@@ -1233,6 +1233,18 @@ def _reconnecting_proxy(path, fin, fout):
     return 0
 
 
+def settle_from_env(server, env):
+    """SWARMBOX_TEST_SETTLE="quiet,cap,step" (seconds): the tests that run this server as a process shorten the settle of run and input,
+    as the in-process ones set Server.settle_args. Unset or malformed: the defaults stay."""
+    raw = env.get("SWARMBOX_TEST_SETTLE", "")
+    try:
+        quiet, cap, step = (max(0.001, float(x)) for x in raw.split(","))
+    except ValueError:
+        return server
+    server.settle_args = {"quiet": quiet, "cap": cap, "step": step}
+    return server
+
+
 def main(env=None, socket_path=None):
     env = os.environ if env is None else env
     cpath = env.get("SWARMBOX_SYSOP_CONTEXT")
@@ -1272,11 +1284,11 @@ def main(env=None, socket_path=None):
         rf = conn.makefile("r", encoding="utf-8", errors="replace")
         wf = conn.makefile("w", encoding="utf-8")
         try:
-            Server(ctx, log=log, clock=steady_clock(), emit=emit).serve(rf, wf)
+            settle_from_env(Server(ctx, log=log, clock=steady_clock(), emit=emit), env).serve(rf, wf)
         except (OSError, ValueError):
             pass
         return 0
     stdin = open(sys.stdin.fileno(), encoding="utf-8", errors="replace", closefd=False)
     stdout = open(sys.stdout.fileno(), "w", encoding="utf-8", closefd=False)
-    Server(ctx, log=log, clock=steady_clock()).serve(stdin, stdout)
+    settle_from_env(Server(ctx, log=log, clock=steady_clock()), env).serve(stdin, stdout)
     return 0

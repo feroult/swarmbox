@@ -137,6 +137,30 @@ class ConnectorTest(ConnectorBase):
         self.assertNotIn(TOK, r.stdout + r.stderr)
         self.assertEqual(self.subs("rm"), [])
 
+    def test_a_running_box_still_brings_the_connector_up_on_every_entry(self):
+        """Ported from v0.1.0's test_existing_web_container_brings_up_the_tunnel_even_without_the_flag."""
+        running = {"stdout": self.matching_line()}
+        c = self.conf(lookup=running)
+        c["container"]["rules"].insert(0, {"match": ["inspect", CN], "exit": 125, "stderr": "Error: no such container %s\n" % CN})
+        self.fp.configure(c)
+        r = self.up(**self.tok_env())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([c for c in self.subs("run") if CN not in c], [], "the box itself was running: no box run")
+        self.assertEqual(len(self.run_calls()), 1, self.calls())
+        self.assertEqual(self.fp.envs()[self.calls().index(self.run_calls()[0])].get("TUNNEL_TOKEN"), TOK)
+        self.assert_token_never_in_argv()
+
+    def test_reset_also_ensures_the_connector_is_running(self):
+        self.with_connector({"stdout": cn_line(False)})
+        r = self.run_h("reset", env=self.env(**self.tok_env()))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.subs("start"), [["start", CN]], self.calls())
+        self.assert_token_never_in_argv()
+
+
+class ConnectorStateTest(ConnectorBase):
+    # an existing connector: kept, started or recreated by its token
+
     def test_running_with_same_token_is_a_noop_beyond_inspect(self):
         self.with_connector({"stdout": cn_line(True)})
         r = self.up(**self.tok_env())
@@ -190,6 +214,8 @@ class ConnectorTest(ConnectorBase):
                 self.assertEqual([c for c in calls if c and c[0] == "start"], [])
                 self.assert_token_never_in_argv(fp)
 
+
+class ConnectorImageTest(ConnectorBase):
     def test_image_override_by_env_and_not_by_config(self):
         cfg = os.path.join(self.home, ".config", "swarmbox")
         os.makedirs(cfg)
@@ -229,6 +255,8 @@ class ConnectorTest(ConnectorBase):
         self.assertEqual(helper, PINNED)
         self.assertNotIn(":latest", helper)
 
+
+class ConnectorFailureTest(ConnectorBase):
     def test_connector_failure_warns_and_the_up_exit_code_is_unchanged(self):
         cases = (("run fails", None), ("start fails", {"stdout": cn_line(False)}),
                  ("lookup fails", {"exit": 125, "stderr": "Error: something broke\n"}))
@@ -265,26 +293,6 @@ class ConnectorTest(ConnectorBase):
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertIn("connector", r.stderr)
                 self.assertNotIn(TOK, r.stderr)
-
-    def test_a_running_box_still_brings_the_connector_up_on_every_entry(self):
-        """Ported from v0.1.0's test_existing_web_container_brings_up_the_tunnel_even_without_the_flag."""
-        running = {"stdout": self.matching_line()}
-        c = self.conf(lookup=running)
-        c["container"]["rules"].insert(0, {"match": ["inspect", CN], "exit": 125, "stderr": "Error: no such container %s\n" % CN})
-        self.fp.configure(c)
-        r = self.up(**self.tok_env())
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual([c for c in self.subs("run") if CN not in c], [], "the box itself was running: no box run")
-        self.assertEqual(len(self.run_calls()), 1, self.calls())
-        self.assertEqual(self.fp.envs()[self.calls().index(self.run_calls()[0])].get("TUNNEL_TOKEN"), TOK)
-        self.assert_token_never_in_argv()
-
-    def test_reset_also_ensures_the_connector_is_running(self):
-        self.with_connector({"stdout": cn_line(False)})
-        r = self.run_h("reset", env=self.env(**self.tok_env()))
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.subs("start"), [["start", CN]], self.calls())
-        self.assert_token_never_in_argv()
 
 
 if __name__ == "__main__":

@@ -65,7 +65,9 @@ def functions():
     return m.group(0) + "\n" + text[a:b]
 
 
-class PullUiTest(unittest.TestCase):
+class PullUiCase(unittest.TestCase):
+    """The fakes and the runners; the tests are in three classes that the runner runs side by side."""
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-pullui.")
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -125,7 +127,9 @@ class PullUiTest(unittest.TestCase):
         """The text of the line without escape sequences."""
         return re.sub(rb"\x1b\[[0-9;?]*[A-Za-z]", b"", out).decode("utf-8", "replace")
 
-    # --- the whole flow (a real pull of a second, five of them)
+
+class WholePull(PullUiCase):
+    """The whole flow on a terminal: a real pull of a fraction of a second."""
 
     def test_a_terminal_gets_the_line_with_a_percent_that_only_grows_and_ends_on_a_done_line(self):
         # the environment is the hostile one: a Starship shell and the icons switch must not bring a Nerd Font glyph in
@@ -157,11 +161,30 @@ class PullUiTest(unittest.TestCase):
         self.assertNotRegex(text.split("pulled")[0], r"\d+%")
         self.assertIn("pull", text)
 
+
+class WholePullUnpack(PullUiCase):
+    """The whole flow on a terminal: the unpack after the download."""
+
     def test_when_the_download_is_over_and_the_pull_is_still_writing_the_label_says_unpack(self):
         _, out = self.run_pull(FAKE_STEPS="1", FAKE_KIB="768", FAKE_TAIL="0.15")
         text = self.plain(out)
         self.assertIn("unpack", text)
         self.assertLess(text.index("pull "), text.index("unpack"), "the line starts as pull")
+
+    def test_skipped_cached_layers_still_reach_99_percent_and_unpack(self):
+        # 196608 B (192 KiB, 25%) is already cached and skipped; Podman only downloads the remaining 576 KiB (75%).
+        rc, out = self.run_pull(FAKE_SKIP_BLOB="1111222233334444", FAKE_STEPS="3", FAKE_KIB="192", FAKE_TAIL="0.15")
+        text = self.plain(out)
+        self.assertEqual(rc, 0, text)
+        pcts = [int(x) for x in re.findall(r"(\d+)%", text.replace("\r", "\n"))]
+        self.assertTrue(pcts, "no percent was drawn")
+        self.assertEqual(pcts, sorted(pcts))
+        self.assertEqual(max(pcts), 99, "skipped layers must count toward the total so the pull reaches 99%%: %r" % pcts)
+        self.assertIn("unpack", text)
+
+
+class PullFallbacks(PullUiCase):
+    """The whole flow: a failed pull, and the cases that leave Podman's own output or draw nothing."""
 
     def test_a_failed_pull_shows_the_last_lines_of_podmans_error_and_returns_them(self):
         rc, out = self.run_pull(FAKE_PULL_FAIL="1")
@@ -183,7 +206,10 @@ class PullUiTest(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         self.assertEqual(out.decode().strip(), "[rc=0 msg=]")
 
-    # --- how the line looks: the functions called directly
+
+
+class LineLooks(PullUiCase):
+    """How the line looks: the functions called directly."""
 
     def test_no_color_has_no_color_escapes_and_no_utf8_locale_gives_ascii(self):
         show = 'ui_setup; echo "UI=$UI COLOR=$UI_COLOR ON=$UI_ON OK=$UI_OK"; ui_bar 50; echo; ui_done_line %s 5 ""' % REF
@@ -207,17 +233,6 @@ class PullUiTest(unittest.TestCase):
             line = self.plain(self.draw("ui_draw_pull 40 3 10000000 2 7 pull", UI_COLS=cols).encode())
             self.assertEqual(bool(re.search(r"3/10 MB", line)), mb, cols)
             self.assertEqual("MB/s" in line, speed, cols)
-
-    def test_skipped_cached_layers_still_reach_99_percent_and_unpack(self):
-        # 196608 B (192 KiB, 25%) is already cached and skipped; Podman only downloads the remaining 576 KiB (75%).
-        rc, out = self.run_pull(FAKE_SKIP_BLOB="1111222233334444", FAKE_STEPS="3", FAKE_KIB="192", FAKE_TAIL="0.15")
-        text = self.plain(out)
-        self.assertEqual(rc, 0, text)
-        pcts = [int(x) for x in re.findall(r"(\d+)%", text.replace("\r", "\n"))]
-        self.assertTrue(pcts, "no percent was drawn")
-        self.assertEqual(pcts, sorted(pcts))
-        self.assertEqual(max(pcts), 99, "skipped layers must count toward the total so the pull reaches 99%%: %r" % pcts)
-        self.assertIn("unpack", text)
 
     def test_indeterminate_bar_is_always_four_cells_and_label_keeps_bar_aligned(self):
         for tick in range(1, 26):

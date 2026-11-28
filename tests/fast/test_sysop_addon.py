@@ -98,7 +98,10 @@ class Tree(unittest.TestCase):
                     "SWARMBOX_TEST_IMAGE_SHIMS": j("out", "shims"), "SWARMBOX_TEST_USER_SHIMS": j("out", "ushims"), "SWARMBOX_TEST_LOCK": j("lock"),
                     # `serve --dock` would open the sysop's agent terminal in the herdr-core of whoever runs the suite: headless, and no hc
                     "SWARMBOX_MUX": "none", "SWARMBOX_TEST_HC_BIN": j("no-hc"), "TMPDIR": j("tmp"),
-                    "SWARMBOX_TEST_BUS_BACKOFF": "0.02,0.05"}
+                    "SWARMBOX_TEST_BUS_BACKOFF": "0.02,0.05", "SWARMBOX_TEST_PREPARE_POLL": "0.02",
+                    # the watcher starts a dead service again after 1 s by itself: on a loaded machine that would beat the prepare that a test runs
+                    # to start it (and that prepare would then rightly say nothing); 60 s keeps the start the prepare's (it pokes the watcher)
+                    "SWARMBOX_TEST_WATCH_BACKOFF": "60,60"}
         os.mkdir(j("tmp"))
         with open(os.path.join(self.fbin, "swarmbox-addon"), "w") as f:
             f.write('#!/bin/sh\nexec bash "%s" "$@"\n' % ADDON_SH)
@@ -225,15 +228,24 @@ class Install(Tree):
         self.assertEqual(r.stdout, "")
 
 
-class Prepare(Tree):
+class PrepareTree(Tree):
+    """a tree with the addon installed, copied from one install per class: the template is installed from a copy of the image addon without
+    its prepare.sh, so its install starts no service (the install itself, prepare.sh included, is Install's subject). Two classes, so that
+    the runner can run them side by side."""
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         tpl = Tree()
-        tpl._shared_image = cls._shared_image
+        tpl._shared_image = ss.short_tmp("sbtl-tpl-")
+        cls.addClassCleanup(shutil.rmtree, tpl._shared_image, True)
+        shutil.copytree(os.path.join(cls._shared_image, "sysop"), os.path.join(tpl._shared_image, "sysop"))
+        os.remove(os.path.join(tpl._shared_image, "sysop", "prepare.sh"))
         tpl.setUp()
         cls.addClassCleanup(tpl.doCleanups)
-        tpl.install()
+        r = tpl.addon("install", "sysop")
+        if r.returncode != 0 or os.path.exists(tpl.paths.pidfile):
+            raise RuntimeError("the template install failed or started a service: " + r.stdout + r.stderr)
         cls._installed_home = os.path.join(tpl.home, ".local")
         cls._installed_out = os.path.join(tpl.base, "out")
 
@@ -244,6 +256,26 @@ class Prepare(Tree):
         if os.path.exists(self._installed_out):
             shutil.copytree(self._installed_out, os.path.join(self.base, "out"), symlinks=True)
 
+
+class PrepareRestart(PrepareTree):
+    def test_prepare_is_idempotent_and_starts_a_service_that_died_again(self):
+        self.install()
+        self.assertEqual(self.prepare().returncode, 0)
+        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile), 10, step=0.005))
+        pid = self.pid()
+        for _ in range(3):
+            r = self.prepare()
+            self.assertEqual(r.returncode, 0)
+            self.assertNotIn("started", r.stderr)
+        self.assertEqual(self.pid(), pid, "one service however often it runs")
+        os.kill(pid, signal.SIGKILL)
+        self.assertTrue(ss.wait_for(lambda: not self.alive(pid), 5, step=0.005))
+        self.assertIn("started", self.prepare().stderr)
+        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile) and self.pid() != pid and self.alive(self.pid()), 10, step=0.005))
+        bus = ss.FakeBus(os.path.join(self.base, "run", "bus.sock"))          # a bus that was not there when it started
+        self.addCleanup(bus.stop)
+        self.assertTrue(bus.wait_subscriber(1, 15), "the service reconnects by itself")
+
     def test_prepare_of_an_addon_that_is_not_installed_does_nothing(self):
         r = self.prepare()
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -252,6 +284,8 @@ class Prepare(Tree):
         self.assertEqual(r.returncode, 0)
         self.assertFalse(os.path.exists(self.paths.pidfile))
 
+
+class PrepareDetached(PrepareTree):
     def test_prepare_starts_the_subscriber_detached_and_returns_at_once(self):
         self.install()
         t0 = time.time()
@@ -273,23 +307,22 @@ class Prepare(Tree):
         self.assertEqual(stat.S_IMODE(os.stat(self.paths.run).st_mode), 0o700)
         self.assertTrue(ss.wait_for(lambda: "serving" in (rd(self.paths.log) if os.path.exists(self.paths.log) else ""), 10, step=0.005))
 
-    def test_prepare_is_idempotent_and_starts_a_service_that_died_again(self):
+    def test_prepare_refreshes_the_installed_library_from_the_image_copy(self):
         self.install()
-        self.assertEqual(self.prepare().returncode, 0)
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile), 10, step=0.005))
-        pid = self.pid()
-        for _ in range(3):
-            r = self.prepare()
-            self.assertEqual(r.returncode, 0)
-            self.assertNotIn("started", r.stderr)
-        self.assertEqual(self.pid(), pid, "one service however often it runs")
-        os.kill(pid, signal.SIGKILL)
-        self.assertTrue(ss.wait_for(lambda: not self.alive(pid), 5, step=0.005))
-        self.assertIn("started", self.prepare().stderr)
-        self.assertTrue(ss.wait_for(lambda: os.path.exists(self.paths.pidfile) and self.pid() != pid and self.alive(self.pid()), 10, step=0.005))
-        bus = ss.FakeBus(os.path.join(self.base, "run", "bus.sock"))          # a bus that was not there when it started
-        self.addCleanup(bus.stop)
-        self.assertTrue(bus.wait_subscriber(1, 15), "the service reconnects by itself")
+        cli = os.path.join(self.prefix, "lib", "swarmbox_sysop", "cli.py")
+        with open(cli, "a") as f:
+            f.write("\n# an old version\n")
+        extra = os.path.join(self.prefix, "lib", "swarmbox_sysop", "stale_module.py")
+        with open(extra, "w") as f:
+            f.write("x = 1\n")
+        r = self.prepare()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("refreshed lib from the image", r.stderr)
+        self.assertEqual(rd(cli), rd(os.path.join(ADDON, "lib", "swarmbox_sysop", "cli.py")))
+        self.assertFalse(os.path.exists(extra))
+        self.assertEqual([n for n in os.listdir(self.prefix) if n.startswith(".")][:1], [".swarmbox-env"] if os.path.exists(os.path.join(self.prefix, ".swarmbox-env")) else [])
+        r = self.prepare()
+        self.assertNotIn("refreshed", r.stderr, "equal folders: nothing is written")
 
     def test_two_prepares_at_once_end_with_one_service(self):
         self.install()
@@ -309,23 +342,6 @@ class Prepare(Tree):
         except OSError:
             return False
         return "swarmbox_sysop" in cmd and "serve" in cmd and "--watch" not in cmd and ("SB_RUN_DIR=" + self.env["SB_RUN_DIR"]) in env       # the watcher is not a service
-
-    def test_prepare_refreshes_the_installed_library_from_the_image_copy(self):
-        self.install()
-        cli = os.path.join(self.prefix, "lib", "swarmbox_sysop", "cli.py")
-        with open(cli, "a") as f:
-            f.write("\n# an old version\n")
-        extra = os.path.join(self.prefix, "lib", "swarmbox_sysop", "stale_module.py")
-        with open(extra, "w") as f:
-            f.write("x = 1\n")
-        r = self.prepare()
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("refreshed lib from the image", r.stderr)
-        self.assertEqual(rd(cli), rd(os.path.join(ADDON, "lib", "swarmbox_sysop", "cli.py")))
-        self.assertFalse(os.path.exists(extra))
-        self.assertEqual([n for n in os.listdir(self.prefix) if n.startswith(".")][:1], [".swarmbox-env"] if os.path.exists(os.path.join(self.prefix, ".swarmbox-env")) else [])
-        r = self.prepare()
-        self.assertNotIn("refreshed", r.stderr, "equal folders: nothing is written")
 
 
 class PrepareRefused(unittest.TestCase):

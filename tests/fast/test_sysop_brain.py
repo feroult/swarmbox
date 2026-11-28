@@ -236,7 +236,9 @@ class RunBrain(unittest.TestCase):
         self.log = os.path.join(self.e.dir, "claude.log")
         self.out = os.path.join(self.e.dir, "out.jsonl")
         self.env_extra = {"SWARMBOX_TEST_FAKE_CLAUDE_LOG": self.log, "SWARMBOX_TEST_FAKE_CLAUDE_OUT": self.out, "PATH": self.e.env["PATH"],
-                          "HOME": self.e.env["HOME"]}
+                          "HOME": self.e.env["HOME"],
+                          # the screen of the fake tabs does not change: a run settles after the quiet time (0.5 s in the product), shortened
+                          "SWARMBOX_TEST_SETTLE": "0.02,2,0.005"}
         self.stop = False
         real_kill = brain.kill_group
         for patcher in (mock.patch.object(brain, "GRACE_AFTER_DONE", 0.03), mock.patch.object(brain, "kill_group", lambda pgid, proc=None: real_kill(pgid, grace=0.05, proc=proc))):
@@ -276,7 +278,15 @@ class RunBrain(unittest.TestCase):
         with open(self.log) as f:
             return json.load(f)
 
+    def full_grace(self):
+        """the brain writes its result and exits right after `done`; GRACE_AFTER_DONE (0.03 s here) would cut a loaded machine's brain before its
+        result line: the product's grace, which costs nothing when the brain ends in time"""
+        patcher = mock.patch.object(brain, "GRACE_AFTER_DONE", 2.0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_a_scripted_goal_runs_through_the_real_mcp_server(self):
+        self.full_grace()
         self.script([{"tool": "box_state"}, {"tool": "run", "args": {"tab": "@1", "command": "ls"}}, {"tool": "say", "args": {"text": "listing"}},
                      {"tool": "done", "args": {"summary": "listed"}}])
         r = self.go()
@@ -305,6 +315,7 @@ class RunBrain(unittest.TestCase):
         self.assertIn("SPOKEN", argv[argv.index("--system-prompt") + 1])
 
     def test_stream_json_is_kept_as_the_audit_stream(self):
+        self.full_grace()
         self.script([{"tool": "box_state"}, {"tool": "done", "args": {"summary": "x"}}])
         self.go()
         with open(os.path.join(self.gdir, "stream.jsonl")) as f:
