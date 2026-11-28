@@ -58,7 +58,7 @@ class Base(unittest.TestCase):
     def env(self, path=None, **extra):
         e = {k: v for k, v in os.environ.items() if not k.startswith(("SWARMBOX_", "XDG_"))}
         e.update({"HOME": self.home, "SWARMBOX_BIN_DIR": self.bin, "LC_ALL": "C", "PATH": path or self.fp.env()["PATH"],
-                  "SWARMBOX_NO_SX": "1"})   # the short name has its own tests; the others look at the script alone
+                  "SWARMBOX_NO_SX": "1", "SWARMBOX_NO_START": "1"})   # short name & auto-start have their own tests
         e.pop("SHELL", None)
         e.update(extra)
         return e
@@ -301,7 +301,7 @@ class InstallRunTest(Base):
         self.assertEqual(rc, 0)
         self.assertIn("\033[?25l", out, "BBS flow hides cursor while streaming")
         self.assertIn("\033[?25h", out, "BBS flow restores cursor after streaming")
-        self.assertIn("\033[1;38;2;255;255;255m", out, "BBS hot phosphor white stage")
+        self.assertIn("\033[1;38;2;255;255;255;48;2;139;92;246m", out, "BBS hot phosphor white stage with purple bloom")
         self.assertIn("◆ SWARMBOX", out)
         self.assertIn("http://127.0.0.1:7681", out)
 
@@ -309,6 +309,21 @@ class InstallRunTest(Base):
         self.assertEqual(rc_plain, 0)
         self.assertNotIn("\033[", out_plain)
         self.assertIn("http://127.0.0.1:7681", out_plain)
+
+    def test_setup_starts_box_by_default_and_respects_no_start(self):
+        # Without SWARMBOX_NO_START, setup runs `cmd_up` so Web Studio is immediately live.
+        r = self.run_installer(SWARMBOX_NO_START="")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("SWARMBOX v" + VERSION + "  -  running", r.stdout)
+        self.assertIn("1. Open Web Studio", r.stdout)
+        self.assertIn("2. Attach in terminal", r.stdout)
+
+        # With --no-start, setup skips `cmd_up` and shows the `ready` welcome state.
+        r2 = subprocess.run([self.installed(), "setup", "--image", IMG, "--no-start"],
+                            env=self.env(SWARMBOX_NO_START=""), capture_output=True, text=True, cwd=self.tmp)
+        self.assertEqual(r2.returncode, 0, r2.stderr)
+        self.assertIn("SWARMBOX v" + VERSION + "  -  ready", r2.stdout)
+        self.assertIn("1. Start the box", r2.stdout)
 
     def test_without_addons_no_with_line_is_written(self):
         self.assertEqual(self.run_installer().returncode, 0)

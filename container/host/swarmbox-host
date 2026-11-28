@@ -2913,7 +2913,7 @@ welcome_ui_setup() {
     W_COLOR=0
     W_FLOW=0
     W_ESC=$(printf '\033')
-    W_TICK=${SWARMBOX_TEST_WELCOME_TICK:-0.008}
+    W_TICK=${SWARMBOX_TEST_WELCOME_TICK:-0.012}
     case $USER_LOCALE in
         *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*)
             W_MARK=$(printf '\342\227\206')
@@ -2939,9 +2939,13 @@ welcome_ui_setup() {
 }
 
 # w_c ROLE: ANSI escape for a Purple Glow / BBS phosphor role; empty when W_COLOR=0.
+# Phosphor trail roles (hot/glare/warm/cool) pair bright foreground with a decaying purple background bloom (48;2;...)
+# to simulate CRT/BBS afterglow in truecolor terminals; settled roles reset bg to default (49).
 w_c() {
     [ "$W_COLOR" = 1 ] || return 0
     wc_p=
+    wc_bg=
+    wc_bgn=
     case $1 in
         violet)   wc_r=167; wc_g=139; wc_b=250; wc_n=141 ;;
         violet_b) wc_r=167; wc_g=139; wc_b=250; wc_n=141; wc_p='1;' ;;
@@ -2950,23 +2954,25 @@ w_c() {
         green)    wc_r=74;  wc_g=222; wc_b=128; wc_n=78  ;;
         amber)    wc_r=251; wc_g=191; wc_b=36;  wc_n=220 ;;
         white)    wc_r=244; wc_g=244; wc_b=245; wc_n=255 ;;
-        muted)    wc_r=161; wc_g=161; wc_b=170; wc_n=248 ;;
+        muted)    wc_r=161; wc_g=161; wc_b=170; wc_n=248; wc_bg=';49'; wc_bgn=';49' ;;
         dim)      wc_r=113; wc_g=113; wc_b=122; wc_n=243 ;;
-        hot)      wc_r=255; wc_g=255; wc_b=255; wc_n=231; wc_p='1;' ;;
-        warm)     wc_r=233; wc_g=213; wc_b=255; wc_n=189 ;;
-        cool)     wc_r=196; wc_g=181; wc_b=253; wc_n=183 ;;
+        hot)      wc_r=255; wc_g=255; wc_b=255; wc_n=231; wc_p='1;'; wc_bg=';48;2;139;92;246'; wc_bgn=';48;5;99' ;;
+        glare)    wc_r=250; wc_g=245; wc_b=255; wc_n=225; wc_p='1;'; wc_bg=';48;2;91;33;182';  wc_bgn=';48;5;55' ;;
+        warm)     wc_r=233; wc_g=213; wc_b=255; wc_n=183;            wc_bg=';48;2;59;7;100';   wc_bgn=';48;5;53' ;;
+        cool)     wc_r=196; wc_g=181; wc_b=253; wc_n=141;            wc_bg=';48;2;36;10;66';   wc_bgn=';49' ;;
+        fade)     wc_r=139; wc_g=92;  wc_b=246; wc_n=98;             wc_bg=';49';              wc_bgn=';49' ;;
         *) return 0 ;;
     esac
     case ${COLORTERM:-} in
-        truecolor|24bit) printf '%s[%s38;2;%s;%s;%sm' "$W_ESC" "$wc_p" "$wc_r" "$wc_g" "$wc_b" ;;
-        *) printf '%s[%s38;5;%sm' "$W_ESC" "$wc_p" "$wc_n" ;;
+        truecolor|24bit) printf '%s[%s38;2;%s;%s;%s%sm' "$W_ESC" "$wc_p" "$wc_r" "$wc_g" "$wc_b" "$wc_bg" ;;
+        *) printf '%s[%s38;5;%s%sm' "$W_ESC" "$wc_p" "$wc_n" "$wc_bgn" ;;
     esac
 }
 
 w_rst() { [ "$W_COLOR" = 1 ] && printf '%s[0m' "$W_ESC"; return 0; }
 
-# w_line PLAIN FINAL: prints one welcome line. With W_FLOW=1 sweeps PLAIN left-to-right with a 3-stage BBS phosphor trail
-# (#fff -> #e9d5ff -> #c4b5fd) and glowing block cursor, then settles onto FINAL.
+# w_line PLAIN FINAL: prints one welcome line. With W_FLOW=1 sweeps PLAIN left-to-right with a 5-stage BBS Purple Glow
+# phosphor trail (#fff -> #f3e8ff -> #d8b4fe -> #a78bfa -> #7c3aed) and glowing cursor, then cools down onto FINAL.
 w_line() {
     wl_plain=$1
     wl_final=$2
@@ -2978,37 +2984,58 @@ w_line() {
     wl_lead=${wl_plain%%[! ]*}
     wl_rem=${wl_plain#"$wl_lead"}
     wl_set=$wl_lead
+    wl_fade=
     wl_cool=
     wl_warm=
+    wl_glare=
     wl_hot=
     while [ -n "$wl_rem" ]; do
-        if [ "${#wl_rem}" -ge 4 ]; then
-            wl_next=${wl_rem#????}
+        if [ "${#wl_rem}" -ge 3 ]; then
+            wl_next=${wl_rem#???}
             wl_ch=${wl_rem%"$wl_next"}
             wl_rem=$wl_next
         else
             wl_ch=$wl_rem
             wl_rem=
         fi
-        wl_set=$wl_set$wl_cool
+        wl_set=$wl_set$wl_fade
+        wl_fade=$wl_cool
         wl_cool=$wl_warm
-        wl_warm=$wl_hot
+        wl_warm=$wl_glare
+        wl_glare=$wl_hot
         wl_hot=$wl_ch
-        printf '\r%s%s%s%s%s%s%s%s%s%s[K' \
-            "$W_C_MUTED" "$wl_set" "$W_C_COOL" "$wl_cool" "$W_C_WARM" "$wl_warm" \
-            "$W_C_HOT" "$wl_hot$W_CUR" "$W_RST" "$W_ESC"
+        printf '\r%s%s%s%s%s%s%s%s%s%s%s%s%s%s[K' \
+            "$W_C_MUTED" "$wl_set" "$W_C_FADE" "$wl_fade" "$W_C_COOL" "$wl_cool" \
+            "$W_C_WARM" "$wl_warm" "$W_C_GLARE" "$wl_glare" "$W_C_HOT" "$wl_hot$W_CUR" \
+            "$W_RST" "$W_ESC"
         [ "$W_TICK" = 0 ] || sleep "$W_TICK" 2> /dev/null || true
+    done
+    # let the purple phosphor tail cool down smoothly before settling onto FINAL
+    wl_drain=0
+    while [ "$wl_drain" -lt 3 ]; do
+        wl_set=$wl_set$wl_fade
+        wl_fade=$wl_cool
+        wl_cool=$wl_warm
+        wl_warm=$wl_glare
+        wl_glare=$wl_hot
+        wl_hot=
+        printf '\r%s%s%s%s%s%s%s%s%s%s%s%s[K' \
+            "$W_C_MUTED" "$wl_set" "$W_C_FADE" "$wl_fade" "$W_C_COOL" "$wl_cool" \
+            "$W_C_WARM" "$wl_warm" "$W_C_GLARE" "$wl_glare" "$W_RST" "$W_ESC"
+        [ "$W_TICK" = 0 ] || sleep "$W_TICK" 2> /dev/null || true
+        wl_drain=$(( wl_drain + 1 ))
     done
     printf '\r%s%s[K\n' "$wl_final" "$W_ESC"
 }
 
-# welcome_show VERSION BIN WEB_URL PUB_URL NEED_PATH: prints the post-setup welcome screen.
+# welcome_show VERSION BIN WEB_URL PUB_URL NEED_PATH [STARTED]: prints the post-setup welcome screen.
 welcome_show() {
     ws_ver=$1
     ws_bin=$2
     ws_web=$3
     ws_pub=$4
     ws_path=$5
+    ws_started=${6:-0}
     welcome_ui_setup
     W_C_VIOLET=$(w_c violet)
     W_C_VIOLET_B=$(w_c violet_b)
@@ -3020,8 +3047,10 @@ welcome_show() {
     W_C_MUTED=$(w_c muted)
     W_C_DIM=$(w_c dim)
     W_C_HOT=$(w_c hot)
+    W_C_GLARE=$(w_c glare)
     W_C_WARM=$(w_c warm)
     W_C_COOL=$(w_c cool)
+    W_C_FADE=$(w_c fade)
     W_RST=$(w_rst)
 
     ws_loc=$ws_bin/swarmbox
@@ -3030,14 +3059,17 @@ welcome_show() {
         "$HOME"/*) ws_loc="~/${ws_loc#"$HOME"/}" ;;
     esac
 
+    ws_state=ready
+    [ "$ws_started" = 1 ] && ws_state=running
+
     if [ "$W_FLOW" = 1 ]; then
         printf '%s[?25l' "$W_ESC"
         trap 'printf "%s[?25h%s[0m" "$W_ESC" "$W_ESC"; up_update_cleanup' EXIT
     fi
 
     printf '\n'
-    w_line "  * SWARMBOX v$ws_ver  -  ready" \
-           "  ${W_C_VIOLET_B}${W_MARK} SWARMBOX${W_RST} ${W_C_LAV}v${ws_ver}${W_RST}  ${W_C_DIM}${W_DOT}${W_RST}  ${W_C_GREEN}ready${W_RST}"
+    w_line "  * SWARMBOX v$ws_ver  -  $ws_state" \
+           "  ${W_C_VIOLET_B}${W_MARK} SWARMBOX${W_RST} ${W_C_LAV}v${ws_ver}${W_RST}  ${W_C_DIM}${W_DOT}${W_RST}  ${W_C_GREEN}${ws_state}${W_RST}"
     printf '\n'
 
     if [ -n "$ws_web" ]; then
@@ -3073,11 +3105,25 @@ welcome_show() {
     printf '\n'
     w_line "  Next steps" \
            "  ${W_C_VIOLET}Next steps${W_RST}"
-    w_line "    1. Start the box        swarmbox            (first run creates the box)" \
-           "    ${W_C_DIM}1. Start the box${W_RST}        ${W_C_WHITE}swarmbox${W_RST}            ${W_C_DIM}(first run creates the box)${W_RST}"
-    if [ -n "$ws_web" ]; then
-        w_line "    2. Open Web Studio      $ws_web" \
-               "    ${W_C_DIM}2. Open Web Studio${W_RST}      ${W_C_URL}${ws_web}${W_RST}"
+    if [ "$ws_started" = 1 ]; then
+        ws_cmd=swarmbox
+        [ "${SX_READY:-0}" = 1 ] && ws_cmd="sx"
+        if [ -n "$ws_web" ]; then
+            w_line "    1. Open Web Studio      $ws_web" \
+                   "    ${W_C_DIM}1. Open Web Studio${W_RST}      ${W_C_URL}${ws_web}${W_RST}"
+            w_line "    2. Attach in terminal   $ws_cmd" \
+                   "    ${W_C_DIM}2. Attach in terminal${W_RST}   ${W_C_WHITE}${ws_cmd}${W_RST}"
+        else
+            w_line "    1. Attach in terminal   $ws_cmd" \
+                   "    ${W_C_DIM}1. Attach in terminal${W_RST}   ${W_C_WHITE}${ws_cmd}${W_RST}"
+        fi
+    else
+        w_line "    1. Start the box        swarmbox            (first run creates the box)" \
+               "    ${W_C_DIM}1. Start the box${W_RST}        ${W_C_WHITE}swarmbox${W_RST}            ${W_C_DIM}(first run creates the box)${W_RST}"
+        if [ -n "$ws_web" ]; then
+            w_line "    2. Open Web Studio      $ws_web" \
+                   "    ${W_C_DIM}2. Open Web Studio${W_RST}      ${W_C_URL}${ws_web}${W_RST}"
+        fi
     fi
 
     printf '\n'
@@ -3111,10 +3157,12 @@ welcome_show() {
 cmd_setup() {
     s_image=
     s_with=
+    s_no_start=0
     while [ $# -gt 0 ]; do
         case $1 in
             --image|--image=*) opt_arg --image "$@"; s_image=$OPT_V ;;
             --with|--with=*) opt_arg --with "$@"; s_with=$OPT_V ;;
+            --no-start) s_no_start=1; OPT_N=1 ;;
             *) usage ;;
         esac
         shift "$OPT_N"
@@ -3163,7 +3211,15 @@ cmd_setup() {
         public_host
         [ -z "$u_host" ] || s_pub_url="https://$u_host"
     fi
-    welcome_show "$SCRIPT_VERSION" "$s_bin" "$s_web_url" "$s_pub_url" "$s_need_path"
+    s_started=0
+    if [ "$s_no_start" = 0 ] && [ "${SWARMBOX_NO_START:-0}" != 1 ]; then
+        if ( cmd_up ); then
+            s_started=1
+        else
+            warn "could not start the box automatically; run 'swarmbox' to start it."
+        fi
+    fi
+    welcome_show "$SCRIPT_VERSION" "$s_bin" "$s_web_url" "$s_pub_url" "$s_need_path" "$s_started"
 }
 
 # ---------------------------------------------------------------- the box: run a command in it
