@@ -44,7 +44,7 @@ BACKOFF = (1.0, 5.0)       # the bus is on a unix socket of the same box (a try 
 FREE_TOOLS = ("say", "done")
 # the sources a person types or speaks in: a goal of one of them that arrives while another such goal runs is given to that goal (steering).
 # Not cli or agent: a script that sends goals expects a queue
-INTERACTIVE = ("web", "panel", "cockpit", "voice")
+INTERACTIVE = ("web", "panel", "cockpit", "voice", "ui")
 AUTOMATED = ("schedule", "trigger")
 TRIGGER_EVERY = 3.0       # seconds between two turns of the automations' thread: the schedules that are due, a look at the tabs for the triggers
 LOST = "lost: the sysop restarted while this goal was in flight (goals in flight are not kept)"

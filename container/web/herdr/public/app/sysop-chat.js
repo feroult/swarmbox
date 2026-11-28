@@ -157,6 +157,7 @@ export function showSysopNotice(ev) {
 // ---- Sysop conversation (V2): one turn per goal, no nested boxes. The user's words in a bubble, the sysop's reply as plain text under a
 // "Sysop · N actions" line, and an action that waits for the user as a calm confirmation card inside the conversation.
 const openTurnActions = new Set();   // turn ids whose action list the user expanded (survives the 600 ms re-renders)
+const openTurnPrompts = new Set();   // turn ids whose UI-action prompt details the user expanded
 let lastFeedKey = '';
 const SYSOP_SUGGESTIONS = ["What's running across my tabs?", 'Summarize the active agent', 'Check git status & tests'];
 const STATE_WORDS = { idle: 'ready', 'allow?': 'confirm', sending: 'sending', working: 'working', queued: 'queued', done: 'ready', failed: 'failed', stopped: 'ready', off: 'off' };
@@ -614,6 +615,52 @@ export function renderTurn(turn) {
     meta.append(fmtAgo(turn.started));
     row.append(ico, txt);
     el.append(row, meta);
+  } else if (turn.source === 'ui') {
+    // a UI-triggered command: a compact formatted command card, never a user chat bubble
+    const card = document.createElement('div');
+    card.className = 'turn-ui-cmd';
+    const ico = document.createElement('span');
+    ico.className = 'turn-ui-cmd-ico';
+    ico.innerHTML = ICO_BOLT_SVG;
+    const txt = document.createElement('div');
+    txt.className = 'turn-ui-cmd-text';
+    const headRow = document.createElement('div');
+    headRow.className = 'turn-ui-cmd-head';
+    const tag = document.createElement('span');
+    tag.className = 'turn-ui-cmd-tag';
+    tag.textContent = 'Action';
+    const lbl = document.createElement('span');
+    lbl.className = 'turn-ui-cmd-label';
+    lbl.textContent = turn.ui_label || String(turn.prompt || '').split('\n')[0].trim();
+    headRow.append(tag, lbl);
+    txt.appendChild(headRow);
+    if (turn.prompt) {
+      const open = openTurnPrompts.has(turn.id);
+      const tog = document.createElement('button');
+      tog.type = 'button';
+      tog.className = 'turn-ui-cmd-toggle';
+      tog.setAttribute('aria-expanded', String(open));
+      tog.textContent = open ? '▾ prompt' : '▸ prompt';
+      const body = document.createElement('pre');
+      body.className = 'turn-ui-cmd-prompt';
+      body.hidden = !open;
+      body.textContent = turn.prompt;
+      tog.addEventListener('click', () => {
+        const now = body.hidden;
+        body.hidden = !now;
+        if (now) openTurnPrompts.add(turn.id);
+        else openTurnPrompts.delete(turn.id);
+        tog.setAttribute('aria-expanded', String(now));
+        tog.textContent = now ? '▾ prompt' : '▸ prompt';
+      });
+      headRow.appendChild(tog);
+      txt.appendChild(body);
+    }
+    const meta = document.createElement('div');
+    meta.className = 'turn-meta';
+    meta.append(fmtAgo(turn.started));
+    card.append(ico, txt);
+    el.append(card, meta);
   } else if (turn.prompt) {
     const ask = document.createElement('div');
     ask.className = 'turn-ask';
@@ -785,7 +832,7 @@ export function renderSysopFeed(sysop) {
   for (const gid of Array.from(lastTurns.keys())) {
     if (!(turns || []).some((t) => t.id === gid)) lastTurns.delete(gid);
   }
-  const keyTurns = (turns || []).map((t) => (t.running && liveGoals.has(t.id) ? { id: t.id, prompt: t.prompt, running: true, started: t.started, source: t.source } : t));
+  const keyTurns = (turns || []).map((t) => (t.running && liveGoals.has(t.id) ? { id: t.id, prompt: t.prompt, ui_label: t.ui_label, running: true, started: t.started, source: t.source } : t));
   // the snapshot comes every 600 ms: rebuild only when something shown changed (per-second tick while running keeps elapsed live)
   const tickBucket = state.sysopRunning ? Math.floor(Date.now() / 1000) : Math.floor(Date.now() / 60000);
   const key = JSON.stringify([sysop.up, sysop.settings && sysop.settings.autonomy, turns ? keyTurns : null, turns ? null : steps,

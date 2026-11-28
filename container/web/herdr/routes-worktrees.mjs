@@ -23,6 +23,7 @@ import {
   normRealPath,
 } from './repo-discovery.mjs';
 import { readBody, resolveWorktreeTarget, sendJson } from './http-utils.mjs';
+import { buildCommitPrompt, buildResolveConflictPrompt } from './worktree-ops.mjs';
 
 export async function handleWorktreeRoutes(req, res, url, pathname, { hc, hub, worktreeHub, ptyBridge, runWt }) {
   if (pathname === '/api/worktrees' && req.method === 'GET') {
@@ -288,7 +289,7 @@ export async function handleWorktreeRoutes(req, res, url, pathname, { hc, hub, w
         sendJson(res, 409, { error: 'no_main_agent', message: 'No active agent terminal on main for this repository' });
         return true;
       }
-      const prompt = 'Review the uncommitted changes on main, run relevant tests if needed, and create a clean git commit.';
+      const prompt = buildCommitPrompt('main');
       const r = await ptyBridge.typePrompt(mainTerm.address, prompt);
       sendJson(res, 200, { ok: true, action: 'commit', terminal: mainTerm.address, result: r });
       return true;
@@ -408,8 +409,8 @@ export async function handleWorktreeRoutes(req, res, url, pathname, { hc, hub, w
     if (!tid) { sendJson(res, 400, { error: 'bad_arg', message: 'terminal required' }); return true; }
     const base = String(body.base || 'main');
     const prompt = pathname.endsWith('/commit')
-      ? 'Review our uncommitted changes in this worktree, run tests if relevant, and create a clean git commit.'
-      : `Pull ${base} into this worktree branch (git merge ${base}), resolve any merge conflicts preserving both intents, run tests, and commit the resolution.`;
+      ? buildCommitPrompt('worktree')
+      : buildResolveConflictPrompt(base);
     const r = await ptyBridge.typePrompt(tid, prompt);
     sendJson(res, 200, { ok: true, result: r });
     return true;

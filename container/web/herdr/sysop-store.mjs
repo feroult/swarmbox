@@ -326,14 +326,24 @@ function buildGoalTurn(gdir, gid, goal, isCurrent) {
     : '';
 
   // a goal of a schedule or a trigger: its first line is the frame the sysop wrote ("[automation a3 (every 10 min, run 4 ...): what changed]"),
-  // shown apart from the prompt, never as words of the user
+  // shown apart from the prompt, never as words of the user.
+  // a UI-triggered action ("source === 'ui'"): its first line is "[ui-action ...: <label>]", shown as a compact command card.
   const source = String(goal.source || 'web');
   let prompt = String(goal.text || '').trim();
   let autoHead = '';
+  let uiLabel = '';
   if ((source === 'schedule' || source === 'trigger') && prompt.startsWith('[automation ')) {
     const nl = prompt.indexOf('\n');
     autoHead = (nl > 0 ? prompt.slice(0, nl) : prompt).replace(/^\[automation /, '').replace(/\]$/, '');
     prompt = nl > 0 ? prompt.slice(nl + 1).trim() : '';
+  } else if (source === 'ui' && prompt.startsWith('[ui-action')) {
+    const nl = prompt.indexOf('\n');
+    const firstLine = (nl > 0 ? prompt.slice(0, nl) : prompt).trim();
+    const m = /^\[ui-action(?:\s+lang=[A-Za-z0-9-]+)?:\s*(.*?)\]$/.exec(firstLine);
+    if (m) {
+      uiLabel = m[1].trim();
+      prompt = nl > 0 ? prompt.slice(nl + 1).trim() : '';
+    }
   }
 
   return {
@@ -341,6 +351,7 @@ function buildGoalTurn(gdir, gid, goal, isCurrent) {
     source,
     automation: String(goal.automation || ''),
     auto_head: autoHead,
+    ui_label: uiLabel,
     prompt,
     state: String(goal.state || (running ? 'running' : 'done')),
     started: Number(goal.started || goal.created || 0) * 1000,
@@ -597,7 +608,7 @@ export function readSysopSnapshot(terminals) {
     loaded.sort((a, b) => a.sortTs - b.sortTs || a.id.localeCompare(b.id));
     for (const item of loaded.slice(-15)) {
       const turn = buildGoalTurn(item.gdir, item.id, item.g, item.isCurrent);
-      if (turn.prompt || turn.reply || turn.notes.length || turn.running) {
+      if (turn.prompt || turn.ui_label || turn.reply || turn.notes.length || turn.running) {
         turns.push(turn);
       }
       if (item.id === gid) {
@@ -610,7 +621,7 @@ export function readSysopSnapshot(terminals) {
           if (q && typeof q === 'object' && q.id && Number(q.deadline || 0) > nowSec) question = q;
         }
         // Keep legacy flat steps[] populated for Terminal Cockpit compatibility
-        if (turn.prompt) steps.push({ ts: turn.started, kind: 'goal', text: turn.prompt });
+        if (turn.ui_label || turn.prompt) steps.push({ ts: turn.started, kind: 'goal', text: turn.ui_label || turn.prompt });
         for (const a of turn.actions) steps.push({ ts: a.ts, kind: a.ok ? 'info' : 'err', text: a.label });
         for (const n of turn.notes) steps.push({ ts: turn.started, kind: 'ok', text: n });
         if (turn.reply) {

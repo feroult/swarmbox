@@ -322,11 +322,7 @@ def detect_verify_cmd(repo_root, env=None):
         except OSError:
             pass
 
-    # a) dev/check.sh
-    if os.path.isfile(os.path.join(rr, "dev", "check.sh")):
-        return "sh dev/check.sh"
-
-    # b) Makefile with test: or check: target
+    # a) Makefile with test: or check: target
     makefile = os.path.join(rr, "Makefile")
     if os.path.isfile(makefile):
         try:
@@ -339,7 +335,7 @@ def detect_verify_cmd(repo_root, env=None):
         except OSError:
             pass
 
-    # c) package.json with scripts.test (ignoring npm init default placeholder)
+    # b) package.json with scripts.test (ignoring npm init default placeholder)
     pkg_json = os.path.join(rr, "package.json")
     if os.path.isfile(pkg_json):
         try:
@@ -354,7 +350,7 @@ def detect_verify_cmd(repo_root, env=None):
         except (OSError, ValueError):
             pass
 
-    # d) pyproject.toml, pytest.ini, or tests/ dir with .py files
+    # c) pyproject.toml, pytest.ini, or tests/ dir with .py files
     has_py_tests = (
         os.path.isfile(os.path.join(rr, "pyproject.toml"))
         or os.path.isfile(os.path.join(rr, "pytest.ini"))
@@ -370,11 +366,11 @@ def detect_verify_cmd(repo_root, env=None):
         path_env = (env.get("PATH") if isinstance(env, dict) else None)
         return "pytest" if shutil.which("pytest", path=path_env) else "python3 -m unittest"
 
-    # e) Cargo.toml
+    # d) Cargo.toml
     if os.path.isfile(os.path.join(rr, "Cargo.toml")):
         return "cargo test"
 
-    # f) go.mod
+    # e) go.mod
     if os.path.isfile(os.path.join(rr, "go.mod")):
         return "go test ./..."
 

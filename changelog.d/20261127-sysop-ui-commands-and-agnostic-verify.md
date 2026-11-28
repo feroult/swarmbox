@@ -1,0 +1,2 @@
+- Changed: Web Studio buttons that trigger Sysop (such as merging worktrees) now render as compact formatted action cards with an expandable prompt toggle instead of user chat bubbles, and Sysop keeps replying in the user's conversation language.
+- Changed: removed the SwarmBox-specific `dev/check.sh` fallback from automatic worktree verification detection in favor of declarative `.swarmbox-check` overrides and universal ecosystem conventions.

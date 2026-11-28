@@ -1781,5 +1781,290 @@ console.log('WORKTREE_ORCHESTRATOR_API_OK');
         self.assertIn("WORKTREE_ORCHESTRATOR_API_OK", p.stdout)
 
 
+class HerdrSysopUiActionTest(unittest.TestCase):
+    def setUp(self):
+        if not shutil.which("node"):
+            self.skipTest("node is not installed")
+        self.tmp = tempfile.mkdtemp(prefix="swarmbox-test-ui-action.")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_routes_system_sysop_goal_ui_action_contract(self):
+        run_dir = os.path.join(self.tmp, "run")
+        state_dir = os.path.join(self.tmp, "state")
+        os.makedirs(run_dir)
+        os.makedirs(state_dir)
+        log_file = os.path.join(self.tmp, "sysop-calls.jsonl")
+        fake_sysop = os.path.join(self.tmp, "fake-sysop")
+        make_exec(
+            fake_sysop,
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys\n"
+            "rec = {'argv': sys.argv[1:], 'stdin': sys.stdin.read()}\n"
+            "with open(%r, 'a', encoding='utf-8') as f:\n"
+            "    f.write(json.dumps(rec) + '\\n')\n"
+            "print('g-ui-1')\n" % (log_file,),
+        )
+        routes_path = os.path.join(ROOT, "container", "web", "herdr", "routes-system.mjs")
+        js = r"""
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import fs from 'node:fs';
+import { formatSysopGoalPayload, handleSystemRoutes } from %s;
+
+// 1. Pure payload formatting & sanitization
+assert.deepEqual(formatSysopGoalPayload({ goal: 'check tabs' }), {
+  goal: 'check tabs', source: 'web', text: 'check tabs',
+});
+assert.deepEqual(formatSysopGoalPayload({ goal: 'merge all', source: 'ui', label: 'Merge 2 worktrees · app → main', lang: 'pt-BR' }), {
+  goal: 'merge all',
+  source: 'ui',
+  text: '[ui-action lang=pt-BR: Merge 2 worktrees · app → main]\nmerge all',
+});
+assert.deepEqual(formatSysopGoalPayload({ goal: 'merge all', source: 'ui', label: 'Line1\nLine2\r\n  Line3', lang: 'bad lang!' }), {
+  goal: 'merge all',
+  source: 'ui',
+  text: '[ui-action: Line1 Line2 Line3]\nmerge all',
+});
+assert.equal(
+  formatSysopGoalPayload({ goal: 'x', source: 'ui', label: 'a'.repeat(260) }).text.split('\n')[0].length,
+  '[ui-action: ]'.length + 200,
+);
+assert.equal(formatSysopGoalPayload({ goal: 'x', source: 'BAD SOURCE!' }).source, 'web');
+
+// 2. End-to-end POST /api/sysop/goal through handleSystemRoutes
+const hub = { buildSnapshot: () => ({}), broadcast: () => {} };
+const hc = { listSnapshot: () => [] };
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, 'http://127.0.0.1');
+  const handled = await handleSystemRoutes(req, res, url, url.pathname, { hc, hub });
+  if (!handled) { res.writeHead(404); res.end(); }
+});
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+const port = server.address().port;
+try {
+  const post = async (payload) => {
+    const r = await fetch(`http://127.0.0.1:${port}/api/sysop/goal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return { status: r.status, data: await r.json() };
+  };
+  const r1 = await post({
+    goal: 'Consolidate all worktrees\nStep 1...',
+    source: 'ui',
+    label: 'Merge 3 worktrees · swarmbox → main → Verify',
+    lang: 'pt-BR',
+  });
+  assert.equal(r1.status, 200);
+  assert.equal(r1.data.ok, true);
+
+  const r2 = await post({ goal: 'oi sysop' });
+  assert.equal(r2.status, 200);
+
+  const calls = fs.readFileSync(%s, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].argv, ['goal', '--source', 'ui', '--', '-']);
+  assert.equal(calls[0].stdin, '[ui-action lang=pt-BR: Merge 3 worktrees · swarmbox → main → Verify]\nConsolidate all worktrees\nStep 1...\n');
+  assert.deepEqual(calls[1].argv, ['goal', '--source', 'web', '--', '-']);
+  assert.equal(calls[1].stdin, 'oi sysop\n');
+} finally {
+  server.close();
+}
+""" % (json.dumps(routes_path), json.dumps(log_file))
+        env = dict(
+            os.environ,
+            HOME=self.tmp,
+            SB_RUN_DIR=run_dir,
+            XDG_STATE_HOME=state_dir,
+            SWARMBOX_TEST_SYSOP_BIN=fake_sysop,
+            SWARMBOX_IMAGE_ADDONS_DIR=os.path.join(ROOT, "container", "addons"),
+        )
+        p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, env=env, timeout=15)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_sysop_store_parses_ui_action_turn_label_and_prompt(self):
+        run_dir = os.path.join(self.tmp, "run")
+        state_dir = os.path.join(self.tmp, "state")
+        goals = os.path.join(state_dir, "swarmbox", "sysop", "goals")
+        now = time.time()
+
+        def write_goal(gid, **st):
+            d = os.path.join(goals, gid)
+            os.makedirs(d)
+            with open(os.path.join(d, "state.json"), "w", encoding="utf-8") as f:
+                json.dump(dict({"id": gid, "calls": [], "say": []}, **st), f)
+
+        write_goal(
+            "g1",
+            source="ui",
+            text="[ui-action lang=pt-BR: Merge 2 worktrees · app → main → Verify]\nConsolidate ALL worktrees.\nStep 1: merge.",
+            state="done",
+            started=now - 30,
+            ended=now - 20,
+            summary="Tudo mesclado.",
+        )
+        write_goal(
+            "g2",
+            source="ui",
+            text="[ui-action: Merge 1 worktree · app → main]\nBody only.",
+            state="done",
+            started=now - 15,
+            ended=now - 10,
+            summary="Done.",
+        )
+        write_goal(
+            "g3",
+            source="web",
+            text="Oi sysop",
+            state="done",
+            started=now - 5,
+            ended=now - 2,
+            summary="Oi!",
+        )
+        os.makedirs(os.path.join(run_dir, "sysop"))
+        with open(os.path.join(run_dir, "sysop", "status.json"), "w", encoding="utf-8") as f:
+            json.dump({"pid": os.getpid(), "current": "", "queue": []}, f)
+
+        js = r"""
+import assert from 'node:assert/strict';
+import { readSysopSnapshot } from %s;
+const s = readSysopSnapshot([]);
+assert.deepEqual(s.turns.map((t) => t.id), ['g1', 'g2', 'g3']);
+assert.equal(s.turns[0].source, 'ui');
+assert.equal(s.turns[0].ui_label, 'Merge 2 worktrees · app → main → Verify');
+assert.equal(s.turns[0].prompt, 'Consolidate ALL worktrees.\nStep 1: merge.');
+assert.equal(s.turns[1].source, 'ui');
+assert.equal(s.turns[1].ui_label, 'Merge 1 worktree · app → main');
+assert.equal(s.turns[1].prompt, 'Body only.');
+assert.equal(s.turns[2].source, 'web');
+assert.equal(s.turns[2].ui_label, '');
+assert.equal(s.turns[2].prompt, 'Oi sysop');
+""" % json.dumps(HERDR_CLIENT)
+        env = dict(os.environ, SB_RUN_DIR=run_dir, XDG_STATE_HOME=state_dir)
+        p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, env=env, timeout=15)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_sysop_chat_and_worktrees_ui_action_rendering(self):
+        worktrees_js = os.path.join(ROOT, "container", "web", "herdr", "public", "app", "worktrees.js")
+        sysop_chat_js = os.path.join(ROOT, "container", "web", "herdr", "public", "app", "sysop-chat.js")
+        js = r"""
+import assert from 'node:assert/strict';
+
+// Minimal DOM stub for browser ES modules
+class FakeEl {
+  constructor(tag) {
+    this.tagName = tag.toUpperCase();
+    this.className = '';
+    this.dataset = {};
+    this.attrs = {};
+    this.children = [];
+    this.listeners = {};
+    this.hidden = false;
+    this._text = '';
+    this._html = '';
+  }
+  get textContent() { return this._text; }
+  set textContent(v) { this._text = String(v); }
+  get innerHTML() { return this._html; }
+  set innerHTML(v) { this._html = String(v); }
+  setAttribute(k, v) { this.attrs[k] = String(v); }
+  getAttribute(k) { return this.attrs[k]; }
+  appendChild(c) { this.children.push(c); return c; }
+  append(...items) {
+    for (const it of items) this.children.push(typeof it === 'string' ? { nodeType: 3, data: it } : it);
+  }
+  addEventListener(ev, fn) { (this.listeners[ev] ||= []).push(fn); }
+  click() { for (const fn of (this.listeners.click || [])) fn({}); }
+  find(pred) {
+    if (pred(this)) return this;
+    for (const c of this.children) {
+      if (c && typeof c.find === 'function') {
+        const hit = c.find(pred);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+}
+
+globalThis.window = { SWARMBOX_AGENTS: { list: [], shells: [] } };
+globalThis.localStorage = { getItem: () => null, setItem: () => {} };
+globalThis.document = {
+  createElement: (tag) => new FakeEl(tag),
+  createDocumentFragment: () => new FakeEl('#frag'),
+  createTextNode: (t) => ({ nodeType: 3, data: String(t) }),
+  getElementById: () => null,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+};
+
+const { buildSysopMergeAllLabel } = await import(%s);
+assert.equal(
+  buildSysopMergeAllLabel({ repoName: 'swarmbox', targetBranch: 'main', total: 1, afterMerge: 'none' }),
+  'Merge 1 worktree · swarmbox → main',
+);
+assert.equal(
+  buildSysopMergeAllLabel({ repoName: 'swarmbox', targetBranch: 'main', total: 3, afterMerge: 'verify' }),
+  'Merge 3 worktrees · swarmbox → main → Verify',
+);
+assert.equal(
+  buildSysopMergeAllLabel({ repoName: 'swarmbox', targetBranch: 'dev', total: 2, afterMerge: 'verify_push' }),
+  'Merge 2 worktrees · swarmbox → dev → Verify & Push',
+);
+
+const { renderTurn } = await import(%s);
+
+// UI action turn renders compact command card (NOT .turn-ask) with collapsed-by-default prompt toggle
+const uiEl = renderTurn({
+  id: 'g-ui',
+  source: 'ui',
+  ui_label: 'Merge 2 worktrees · swarmbox → main → Verify',
+  prompt: 'Consolidate ALL worktrees...\nLine 2',
+  state: 'done',
+  started: Date.now() - 5000,
+  ended: Date.now(),
+  running: false,
+  actions: [],
+  notes: [],
+  reply: 'Concluído.',
+});
+assert.equal(uiEl.find((e) => e.className === 'turn-ask'), null);
+const card = uiEl.find((e) => e.className === 'turn-ui-cmd');
+assert.ok(card, 'expected .turn-ui-cmd card');
+assert.equal(card.find((e) => e.className === 'turn-ui-cmd-tag').textContent, 'Action');
+assert.equal(card.find((e) => e.className === 'turn-ui-cmd-label').textContent, 'Merge 2 worktrees · swarmbox → main → Verify');
+const toggle = card.find((e) => e.className === 'turn-ui-cmd-toggle');
+const body = card.find((e) => e.className === 'turn-ui-cmd-prompt');
+assert.ok(toggle && body);
+assert.equal(toggle.textContent, '▸ prompt');
+assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+assert.equal(body.hidden, true);
+assert.equal(body.textContent, 'Consolidate ALL worktrees...\nLine 2');
+toggle.click();
+assert.equal(toggle.textContent, '▾ prompt');
+assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+assert.equal(body.hidden, false);
+
+// Fallback to first line of prompt when ui_label is empty
+const uiFallback = renderTurn({
+  id: 'g-ui-2',
+  source: 'ui',
+  ui_label: '',
+  prompt: 'First line fallback\nSecond line',
+  state: 'done',
+  started: Date.now(),
+  ended: Date.now(),
+  running: false,
+  actions: [],
+  notes: [],
+  reply: '',
+});
+assert.equal(uiFallback.find((e) => e.className === 'turn-ui-cmd-label').textContent, 'First line fallback');
+""" % (json.dumps(worktrees_js), json.dumps(sysop_chat_js))
+        p = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, timeout=15)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

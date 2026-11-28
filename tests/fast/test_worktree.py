@@ -452,7 +452,7 @@ class Verify(WorktreeCase):
             json.dump({"scripts": {"test": "vitest run"}}, f)
         self.assertEqual(wt.detect_verify_cmd(d), "npm test")
 
-        # b) Makefile check: and test:
+        # a) Makefile check: and test:
         with open(os.path.join(d, "Makefile"), "w", encoding="utf-8") as f:
             f.write("test := ignored\ncheck:\n\techo ok\n")
         self.assertEqual(wt.detect_verify_cmd(d), "make check")
@@ -460,16 +460,26 @@ class Verify(WorktreeCase):
             f.write("test:\n\techo ok\ncheck:\n\techo ok\n")
         self.assertEqual(wt.detect_verify_cmd(d), "make test")
 
-        # a) dev/check.sh
+        # dev/check.sh is NOT hardcoded; it must not override standard conventions or auto-detect on its own
         os.makedirs(os.path.join(d, "dev"), exist_ok=True)
         with open(os.path.join(d, "dev", "check.sh"), "w", encoding="utf-8") as f:
             f.write("#!/bin/sh\nexit 0\n")
-        self.assertEqual(wt.detect_verify_cmd(d), "sh dev/check.sh")
+        self.assertEqual(wt.detect_verify_cmd(d), "make test")
+
+        d_only_dev = os.path.join(self.tmp, "only-dev-check")
+        os.makedirs(os.path.join(d_only_dev, "dev"), exist_ok=True)
+        with open(os.path.join(d_only_dev, "dev", "check.sh"), "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        self.assertEqual(wt.detect_verify_cmd(d_only_dev), "")
 
         # .swarmbox-check overrides everything
         with open(os.path.join(d, ".swarmbox-check"), "w", encoding="utf-8") as f:
             f.write("\n# custom verification\n  ./scripts/run-ci.sh --fast  \nsecond-line\n")
         self.assertEqual(wt.detect_verify_cmd(d), "./scripts/run-ci.sh --fast")
+
+        # The swarmbox repository itself declares its verification command via .swarmbox-check
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, ".swarmbox-check")))
+        self.assertEqual(wt.detect_verify_cmd(ROOT), "sh dev/check.sh")
 
     def test_verify_repo_pass_fail_tail_and_missing_cmd(self):
         # No verify command detected -> WorktreeError("no_verify_cmd")
@@ -774,6 +784,45 @@ class TabAgentKind(unittest.TestCase):
         self.assertEqual(wt._tab_agent_kind({"tab": "t1", "cmd": "node", "status": {"app": "claude-code"}}), "claude")
         self.assertEqual(wt._tab_agent_kind({"tab": "t1", "cmd": "agy"}), "agy")
         self.assertEqual(wt._tab_agent_kind({"tab": "t1", "cmd": "node", "name": "claude-2"}), "")
+
+
+class WorktreeOpsPrompts(unittest.TestCase):
+    """Agent terminal handoff prompts in container/web/herdr/worktree-ops.mjs."""
+
+    def test_prompts_are_project_agnostic_and_preserve_language(self):
+        ops_path = os.path.join(ROOT, "container", "web", "herdr", "worktree-ops.mjs")
+        script = (
+            f"import {{ buildVerifyHandoffPrompt, buildCommitPrompt, buildResolveConflictPrompt }} "
+            f"from {json.dumps('file://' + ops_path)};\n"
+            "console.log(JSON.stringify({\n"
+            "  verifyPush: buildVerifyHandoffPrompt({ mergedBranches: ['sb/wt-1'], base: 'develop', push: true }, 'npm test'),\n"
+            "  verifyNoPush: buildVerifyHandoffPrompt({ mergedBranches: ['a', 'b'], commitsSummary: ['c1'], files: ['f1.js'], push: false }, ''),\n"
+            "  verifyLocal: buildVerifyHandoffPrompt({ push: false }, 'pytest'),\n"
+            "  commitMain: buildCommitPrompt('main'),\n"
+            "  commitWt: buildCommitPrompt('worktree'),\n"
+            "  resolve: buildResolveConflictPrompt('develop'),\n"
+            "}));\n"
+        )
+        r = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            capture_output=True, text=True, check=True,
+        )
+        out = json.loads(r.stdout)
+        lang_note = "Respond in the conversation's current language."
+        for key, text in out.items():
+            self.assertIn(lang_note, text, key)
+            self.assertNotIn("dev/check.sh", text, key)
+            self.assertNotIn("swarmbox", text.lower(), key)
+        self.assertIn("Merged branch sb/wt-1 into develop.", out["verifyPush"])
+        self.assertIn("`npm test`", out["verifyPush"])
+        self.assertIn("push develop to origin", out["verifyPush"])
+        self.assertIn("Merged branches a, b into main.", out["verifyNoPush"])
+        self.assertIn("Do not push yet", out["verifyNoPush"])
+        self.assertIn("Local commits on main are ready for verification.", out["verifyLocal"])
+        self.assertIn("`pytest`", out["verifyLocal"])
+        self.assertIn("clean git commit", out["commitMain"])
+        self.assertIn("clean git commit", out["commitWt"])
+        self.assertIn("git merge develop", out["resolve"])
 
 
 if __name__ == "__main__":

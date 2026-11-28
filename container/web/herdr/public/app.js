@@ -372,16 +372,25 @@ async function spawnTab(preset, opts = {}) {
   }
 }
 
-async function sendGoal(text) {
+async function sendGoal(text, opts = {}) {
   const goal = (text !== undefined ? text : goalInputEl.value).trim();
   if (!goal) return;
   if (text === undefined) goalInputEl.value = '';
   setSysopView('chat');
   showSysopReplyOnMobile();
+  const payload = { goal, terminal: state.activeId };
+  if (opts && typeof opts === 'object') {
+    if (opts.source) payload.source = String(opts.source);
+    if (opts.label) payload.label = String(opts.label);
+    const lang = opts.lang !== undefined
+      ? opts.lang
+      : (payload.source === 'ui' && typeof navigator !== 'undefined' ? (navigator.language || '') : '');
+    if (lang) payload.lang = String(lang);
+  }
   const r = await fetch('/api/sysop/goal', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ goal, terminal: state.activeId }),
+    body: JSON.stringify(payload),
   });
   if (!r.ok) {
     const data = await r.json().catch(() => ({}));

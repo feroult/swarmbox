@@ -18,6 +18,7 @@ MAX_CHARS = 3600
 TERMINAL = ("done", "stopped", "failed")
 _TAB = re.compile(r"screen of ((?:t|@)\d[a-z0-9]{0,3}) \(([^)]*)\)", re.I)
 _CTRL = re.compile(r"[\x00-\x1f\x7f]+")
+_UI_ACTION = re.compile(r"^\[ui-action(?:\s+lang=[^\s:\]]+)?:\s*([^\]]+)\]")
 
 
 def _one(text, limit):
@@ -45,7 +46,16 @@ def _typed(goal):
 
 def _entry(goal, now):
     ended = goal.get("ended") or goal.get("created") or now
-    lines = ['- %s, by %s. The user said: "%s"' % (_ago(now - ended), _one(goal.get("source"), 12) or "?", _one(goal.get("text"), 300))]
+    src = _one(goal.get("source"), 12) or "?"
+    raw = str(goal.get("text") or "")
+    stripped = raw.lstrip()
+    if src == "ui" and stripped.startswith("[ui-action"):
+        first = stripped.splitlines()[0]
+        m = _UI_ACTION.match(first)
+        header = "[ui-action: %s]" % _one(m.group(1), 120) if m else _one(first, 120)
+        lines = ["- %s, by ui. UI action: %s" % (_ago(now - ended), header)]
+    else:
+        lines = ['- %s, by %s. The user said: "%s"' % (_ago(now - ended), src, _one(raw, 300))]
     for tab, text in _typed(goal)[-3:]:
         lines.append('    you typed into tab %s: "%s"' % (tab, text))
     state = goal.get("state")

@@ -60,6 +60,23 @@ class Conversation(unittest.TestCase):
         self.assertNotIn("\nnew line", text, "a goal is one line in the block")
 
 
+    def test_ui_action_goals_are_formatted_concisely_without_instruction_body(self):
+        gs = [
+            goal("u1", "[ui-action lang=es-AR: Merge worktree wt-1]\nInspect the worktree and merge it into main.\nDo not skip checks.", NOW - 120,
+                 source="ui", summary="Mergeado wt-1 en main."),
+            goal("u2", "[ui-action: Check status]\nInspect all running agents and report.", NOW - 60,
+                 source="ui", summary="Todo bien."),
+            goal("u3", "plain ui text", NOW - 30, source="ui", summary="ok"),
+        ]
+        text = history.conversation(gs, "now", NOW)
+        self.assertIn("by ui. UI action: [ui-action: Merge worktree wt-1]", text)
+        self.assertIn("by ui. UI action: [ui-action: Check status]", text)
+        self.assertNotIn("Inspect the worktree", text)
+        self.assertNotIn("Inspect all running agents", text)
+        self.assertNotIn("lang=es-AR", text)
+        self.assertIn('by ui. The user said: "plain ui text"', text)
+        self.assertIn("you said: Mergeado wt-1 en main.", text)
+
     def test_a_new_conversation_forgets_the_goals_before_it(self):
         gs = [goal("a", "the old subject", NOW - 600), goal("b", "the new subject", NOW - 60)]
         text = history.conversation(gs, "now", NOW, since=NOW - 300)

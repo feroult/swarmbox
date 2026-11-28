@@ -6072,3 +6072,18 @@ a.spop-link-btn { text-decoration: none; }
 .turn-auto-head { font-family: var(--mono); font-size: 11.5px; color: var(--accent); word-break: break-word; }
 .turn-auto-prompt { margin-top: 3px; font-size: 12.5px; color: var(--text-dim); line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
 .turn-auto + .turn-meta { text-align: right; }
+
+/* A goal triggered by a Web Studio UI action: a compact command card with optional expandable prompt */
+.turn-ui-cmd { display: flex; gap: 9px; align-items: flex-start; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); }
+.turn-ui-cmd-ico { color: var(--accent); padding-top: 2px; flex: 0 0 auto; }
+.turn-ui-cmd-text { min-width: 0; flex: 1 1 auto; }
+.turn-ui-cmd-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.turn-ui-cmd-tag { font-family: var(--mono); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 1px 6px; border-radius: 5px; flex: 0 0 auto; }
+.turn-ui-cmd-label { font-size: 12.5px; font-weight: 500; color: var(--text); line-height: 1.35; word-break: break-word; min-width: 0; }
+.turn-ui-cmd-toggle { appearance: none; border: 0; background: none; padding: 0; margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-dim); cursor: pointer; flex: 0 0 auto; }
+.turn-ui-cmd-toggle:hover { color: var(--text-muted); }
+.turn-ui-cmd-prompt { margin: 6px 0 0; padding: 7px 9px; border-radius: 7px; background: color-mix(in srgb, var(--bg) 70%, transparent);
+  border: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--text-dim); line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
+.turn-ui-cmd + .turn-meta { text-align: right; }

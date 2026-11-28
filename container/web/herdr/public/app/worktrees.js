@@ -643,6 +643,16 @@ export function openPendingWorktreesPopover() {
   openPopover(frag);
 }
 
+export function buildSysopMergeAllLabel({ repoName, targetBranch, total, afterMerge }) {
+  const target = targetBranch || 'main';
+  const suffix = afterMerge === 'verify_push'
+    ? ' → Verify & Push'
+    : afterMerge === 'verify'
+      ? ' → Verify'
+      : '';
+  return `Merge ${total} worktree${total === 1 ? '' : 's'} · ${repoName} → ${target}${suffix}`;
+}
+
 export function buildSysopMergeAllGoal({ repoName, repoRoot, targetBranch, mainDirty, activeWorktrees, pendingWorktrees, afterMerge }) {
   const target = targetBranch || 'main';
   const items = [];
@@ -991,7 +1001,19 @@ export async function openRepoWorktreesPopover(group, opts = {}) {
         if (!isMob && dom.appEl && dom.appEl.dataset.sysopOpen !== '1') {
           if (typeof actions.setDesktopSysop === 'function') actions.setDesktopSysop(true);
         }
-        if (typeof actions.sendGoal === 'function') actions.sendGoal(goal);
+        if (typeof actions.sendGoal === 'function') {
+          const label = buildSysopMergeAllLabel({
+            repoName: group.name,
+            targetBranch,
+            total,
+            afterMerge: repoMergePrefs.afterMerge,
+          });
+          actions.sendGoal(goal, {
+            source: 'ui',
+            label,
+            lang: typeof navigator !== 'undefined' ? (navigator.language || '') : '',
+          });
+        }
         showTermToast(
           `Asked Sysop to merge ${total} worktree${total === 1 ? '' : 's'} into ${targetBranch}`,
           'ok',

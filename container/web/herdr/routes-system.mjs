@@ -39,6 +39,28 @@ import {
   validateOpenUrl,
 } from './http-utils.mjs';
 
+const SYSOP_SOURCE_RE = /^[a-z][a-z0-9_-]{0,31}$/;
+const BCP47_LANG_RE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
+
+export function formatSysopGoalPayload(body) {
+  const goal = String((body && body.goal) || '').trim();
+  const rawSource = typeof (body && body.source) === 'string' ? body.source.trim() : '';
+  const source = SYSOP_SOURCE_RE.test(rawSource) ? rawSource : 'web';
+  if (!goal) return { goal: '', source, text: '' };
+  if (source === 'ui') {
+    const label = typeof body.label === 'string'
+      ? body.label.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200).trim()
+      : '';
+    if (label) {
+      const rawLang = typeof body.lang === 'string' ? body.lang.trim() : '';
+      const lang = BCP47_LANG_RE.test(rawLang) ? rawLang : '';
+      const header = lang ? `[ui-action lang=${lang}: ${label}]` : `[ui-action: ${label}]`;
+      return { goal, source, text: `${header}\n${goal}` };
+    }
+  }
+  return { goal, source, text: goal };
+}
+
 export async function handleSystemRoutes(req, res, url, pathname, { hc, hub }) {
   // Health & state
   if (pathname === '/api/health' && req.method === 'GET') {
@@ -211,10 +233,10 @@ export async function handleSystemRoutes(req, res, url, pathname, { hc, hub }) {
   // Real swarmbox-sysop controls
   if (pathname === '/api/sysop/goal' && req.method === 'POST') {
     const body = await readBody(req);
-    const goal = String(body.goal || '').trim();
+    const { goal, source, text } = formatSysopGoalPayload(body);
     if (!goal) { sendJson(res, 400, { error: 'empty_goal', message: 'goal cannot be empty' }); return true; }
     if (body.terminal) writeActiveTab(String(body.terminal));
-    const r = await runCommand(SYSOP_BIN, ['goal', '--source', 'web', '--', '-'], goal + '\n');
+    const r = await runCommand(SYSOP_BIN, ['goal', '--source', source, '--', '-'], text + '\n');
     if (!r.ok) {
       sendJson(res, r.code === 127 ? 503 : 502, {
         error: 'sysop_goal_failed',

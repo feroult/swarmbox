@@ -13,6 +13,57 @@ import {
 } from './hc-client.mjs';
 import { enrichTerminalsWithRepo, normRealPath, resolveGitRepoInfo } from './repo-discovery.mjs';
 
+const LANGUAGE_NOTE = "Respond in the conversation's current language.";
+
+export function buildVerifyHandoffPrompt(context = {}, verifyCmd = '') {
+  const branches = Array.isArray(context.mergedBranches) ? context.mergedBranches.filter(Boolean) : [];
+  const commits = Array.isArray(context.commitsSummary) ? context.commitsSummary.filter(Boolean) : [];
+  const files = Array.isArray(context.files) ? context.files.filter(Boolean) : [];
+  const base = String(context.base || 'main').trim() || 'main';
+  const parts = [];
+  if (branches.length === 1) {
+    parts.push(`Merged branch ${branches[0]} into ${base}.`);
+  } else if (branches.length > 1) {
+    parts.push(`Merged branches ${branches.join(', ')} into ${base}.`);
+  } else {
+    parts.push(`Local commits on ${base} are ready for verification.`);
+  }
+  if (commits.length > 0) {
+    const sample = commits.slice(0, 6).join('; ');
+    parts.push(`Commits: ${sample}${commits.length > 6 ? ` (+${commits.length - 6} more)` : ''}.`);
+  }
+  if (files.length > 0) {
+    const sample = files.slice(0, 8).join(', ');
+    parts.push(`Changed files: ${sample}${files.length > 8 ? ` (+${files.length - 8} more)` : ''}.`);
+  }
+  const shouldPush = context.push !== undefined ? Boolean(context.push) : true;
+  if (shouldPush) {
+    if (verifyCmd) {
+      parts.push(`Please run the project verification (\`${verifyCmd}\`) and any relevant tests. If everything passes, push ${base} to origin. If anything fails, fix or report the failure before pushing.`);
+    } else {
+      parts.push(`Please run the project verification/tests. If everything passes, push ${base} to origin. If anything fails, fix or report the failure before pushing.`);
+    }
+  } else if (verifyCmd) {
+    parts.push(`Please run the project verification (\`${verifyCmd}\`) and any relevant tests to confirm integration on ${base}. Do not push yet; report the result (or fix any failure) so the user can review and push when ready.`);
+  } else {
+    parts.push(`Please run the project verification/tests to confirm integration on ${base}. Do not push yet; report the result (or fix any failure) so the user can review and push when ready.`);
+  }
+  parts.push(LANGUAGE_NOTE);
+  return parts.join(' ');
+}
+
+export function buildCommitPrompt(scope = 'worktree') {
+  if (scope === 'main') {
+    return `Review the uncommitted changes on the current branch, run relevant tests if needed, and create a clean git commit. ${LANGUAGE_NOTE}`;
+  }
+  return `Review our uncommitted changes in this worktree, run tests if relevant, and create a clean git commit. ${LANGUAGE_NOTE}`;
+}
+
+export function buildResolveConflictPrompt(base = 'main') {
+  const target = String(base || 'main').trim() || 'main';
+  return `Pull ${target} into this worktree branch (git merge ${target}), resolve any merge conflicts preserving both intents, run tests, and commit the resolution. ${LANGUAGE_NOTE}`;
+}
+
 export function createWorktreeHub({ hc, runWt, eventClients, broadcast, buildSnapshot, typePrompt }) {
   let cachedWorktrees = [];
   let wtRefreshing = false;
@@ -168,41 +219,6 @@ export function createWorktreeHub({ hc, runWt, eventClients, broadcast, buildSna
       });
   }
 
-  function buildVerifyHandoffPrompt(context = {}, verifyCmd = '') {
-    const branches = Array.isArray(context.mergedBranches) ? context.mergedBranches.filter(Boolean) : [];
-    const commits = Array.isArray(context.commitsSummary) ? context.commitsSummary.filter(Boolean) : [];
-    const files = Array.isArray(context.files) ? context.files.filter(Boolean) : [];
-    const parts = [];
-    if (branches.length === 1) {
-      parts.push(`Merged branch ${branches[0]} into main.`);
-    } else if (branches.length > 1) {
-      parts.push(`Merged branches ${branches.join(', ')} into main.`);
-    } else {
-      parts.push('Local commits on main are ready for verification.');
-    }
-    if (commits.length > 0) {
-      const sample = commits.slice(0, 6).join('; ');
-      parts.push(`Commits: ${sample}${commits.length > 6 ? ` (+${commits.length - 6} more)` : ''}.`);
-    }
-    if (files.length > 0) {
-      const sample = files.slice(0, 8).join(', ');
-      parts.push(`Changed files: ${sample}${files.length > 8 ? ` (+${files.length - 8} more)` : ''}.`);
-    }
-    const shouldPush = context.push !== undefined ? Boolean(context.push) : true;
-    if (shouldPush) {
-      if (verifyCmd) {
-        parts.push(`Please run the project verification (\`${verifyCmd}\`) and any relevant tests. If everything passes, push main to origin. If anything fails, fix or report the failure before pushing.`);
-      } else {
-        parts.push('Please run the project verification/tests. If everything passes, push main to origin. If anything fails, fix or report the failure before pushing.');
-      }
-    } else if (verifyCmd) {
-      parts.push(`Please run the project verification (\`${verifyCmd}\`) and any relevant tests to confirm integration on main. Do not push yet; report the result (or fix any failure) so the user can review and push when ready.`);
-    } else {
-      parts.push('Please run the project verification/tests to confirm integration on main. Do not push yet; report the result (or fix any failure) so the user can review and push when ready.');
-    }
-    return parts.join(' ');
-  }
-
   async function runHybridVerifyAndPush(repoRoot, context = {}) {
     const shouldPush = context.push !== undefined ? Boolean(context.push) : true;
     const rawKey = String(repoRoot || '').replace(/\/+$/, '') || String(repoRoot || '');
@@ -214,9 +230,10 @@ export function createWorktreeHub({ hc, runWt, eventClients, broadcast, buildSna
     }
     const key = (repoSt && repoSt.repo_root && String(repoSt.repo_root).replace(/\/+$/, '')) || rawKey;
     const verifyCmd = String(context.verifyCmd || (repoSt && repoSt.verify_cmd) || '').trim();
+    const base = String(context.base || (repoSt && repoSt.branch) || 'main').trim() || 'main';
 
     if (mainTerm) {
-      const prompt = buildVerifyHandoffPrompt({ ...context, push: shouldPush }, verifyCmd);
+      const prompt = buildVerifyHandoffPrompt({ ...context, base, push: shouldPush }, verifyCmd);
       await typePrompt(mainTerm.address, prompt);
       return {
         mode: 'agent',
@@ -474,6 +491,8 @@ export function createWorktreeHub({ hc, runWt, eventClients, broadcast, buildSna
     refreshRepoStatus,
     refreshAllRepoStatuses,
     buildVerifyHandoffPrompt,
+    buildCommitPrompt,
+    buildResolveConflictPrompt,
     runHybridVerifyAndPush,
     refreshPendingWorktrees,
     purgePinsForWorktree,
