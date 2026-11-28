@@ -33,7 +33,8 @@ WORKFLOW = "name: x\non:\n  push:\n    tags: ['v*.*.*']\njobs:\n  a:\n    runs-o
 def git(repo, *args):
     env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com", GIT_COMMITTER_NAME="t",
                GIT_COMMITTER_EMAIL="t@example.com", GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
-    return subprocess.run(["git", "-C", repo] + list(args), env=env, check=True, capture_output=True, text=True).stdout
+    return subprocess.run(["git", "-C", repo, "-c", "gc.auto=0", "-c", "maintenance.auto=0"] + list(args),
+                          env=env, check=True, capture_output=True, text=True).stdout
 
 
 def write(repo, name, text):
@@ -100,7 +101,7 @@ class Base(unittest.TestCase):
 
     def fresh(self):
         repo = os.path.join(tempfile.mkdtemp(prefix="relcheck-", dir=self.tmp), "repo")
-        shutil.copytree(self.template, repo, symlinks=True)
+        shutil.copytree(self.template, repo, symlinks=True, ignore=shutil.ignore_patterns("*.lock"))
         return repo
 
     def commit(self, repo, msg="change"):
