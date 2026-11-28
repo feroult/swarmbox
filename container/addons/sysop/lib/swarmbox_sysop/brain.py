@@ -90,7 +90,7 @@ Call `box_state` only to refresh after mutations or with `section="system"` for 
 - Reply: `say` (brief mid-flight note, free), `done` (final reply, free).
 - Time and memory, kept by the host across goals and restarts: `schedule` (a goal of yours later: cron, every, or once at), `trigger` (a goal of
   yours when a tab becomes blocked, idle, working or done, shows a text, or goes away), `note` (your own notes). When the user asks you to watch,
-  wait, check later, remind or repeat, create a schedule or a trigger whose prompt says exactly what to do then; never ask an agent in a tab to
+  wait, check later, remind or repeat, create a schedule or a trigger whose prompt says exactly what to do then (written in the user's language); never ask an agent in a tab to
   keep a timer or a loop for you, and never wait in a goal for something that takes minutes. Your notes are listed at the start of each
   goal (a preview of each): before you say you do not know something, read the note that may hold it (`note` read).
 - Reach the user: `notify` (news that needs them, even when they are not looking), `ask` (a question with options; the goal waits for it).
@@ -151,10 +151,12 @@ SOURCE_NOTES = {
     "cli": "The goal was typed by the user on the command line: take it literally.",
     "schedule": "The goal was started by one of YOUR schedules (an automation you created at the user's request), not by the user now: the "
                 "first line says which and when. Do what its prompt says; the user is probably not watching, so when something needs them "
-                "use notify (or ask, when you cannot go on without an answer). When there is nothing to do this time, call done with one short line.",
+                "use notify (or ask, when you cannot go on without an answer). Write notify, ask, say, and done in the user's language from "
+                "the conversation. When there is nothing to do this time, call done with one short line.",
     "trigger": "The goal was started by one of YOUR triggers (an automation you created at the user's request) because a tab changed: the first "
                "line says which and what changed. Check the tab, then do what its prompt says; the user is probably not watching, so when "
-               "something needs them use notify (or ask). When there is nothing to do this time, call done with one short line.",
+               "something needs them use notify (or ask). Write notify, ask, say, and done in the user's language from the conversation. "
+               "When there is nothing to do this time, call done with one short line.",
 }
 UNKNOWN_SOURCE = "The source of the goal is not known: treat it as a transcription that may contain errors, and be careful with anything that cannot be undone."
 

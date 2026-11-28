@@ -566,6 +566,13 @@ class SysopV2SessionAndStreaming(unittest.TestCase):
         ipc.write_json(os.path.join(pth.state, "conversation.json"), {"since": 2000.0})
         self.assertEqual(history.session_id(pth), "")
 
+    def test_schedule_and_trigger_source_notes_preserve_user_language(self):
+        for src in ("schedule", "trigger"):
+            note = brain.source_note(src)
+            self.assertIn("user's language", note)
+        sp = brain.system_prompt("web", 10, 60)
+        self.assertIn("written in the user's language", sp)
+
 
 if __name__ == "__main__":
     unittest.main()
