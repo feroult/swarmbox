@@ -7,6 +7,8 @@ Run: python3 tests/fast/test_install.py
 """
 import hashlib
 import os
+import pty
+import select
 import shutil
 import stat
 import subprocess
@@ -243,7 +245,70 @@ class InstallRunTest(Base):
         self.assertIn("WITH=claude,go\n", cfg)
         self.assertEqual(stat.S_IMODE(os.stat(os.path.join(self.home, ".config", "swarmbox", "config")).st_mode), 0o600)
         self.assertEqual([c for c in self.fp.calls() if c[0] == "run"], [["run", "--rm", IMG, "host-helper"]])
-        self.assertIn("Next: open a new terminal and run `swarmbox`", r.stdout)
+        self.assertIn("SWARMBOX v%s" % VERSION, r.stdout)
+        self.assertIn("http://127.0.0.1:7681", r.stdout)
+        self.assertIn("Next steps", r.stdout)
+        self.assertIn("Useful commands", r.stdout)
+        self.assertNotIn("\033[", r.stdout, "non-TTY stdout must stay plain")
+
+    def test_welcome_omits_web_url_when_web_is_off(self):
+        r = self.run_installer(SWARMBOX_WEB="0")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("2. Open Web Studio", r.stdout)
+        self.assertNotIn("http://127.0.0.1:", r.stdout)
+        self.assertIn("Start the box", r.stdout)
+
+    def test_welcome_shows_custom_port_and_remote_url(self):
+        r = self.run_installer(SWARMBOX_WEB_PORT="8899", SWARMBOX_WEB_HOSTNAME="box.example.test")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("http://127.0.0.1:8899", r.stdout)
+        self.assertIn("https://box.example.test", r.stdout)
+
+    def test_welcome_shows_shortcut_sx_when_available(self):
+        r = self.run_installer(SWARMBOX_NO_SX="")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("(shortcut: sx)", r.stdout)
+
+    def test_welcome_bbs_flow_on_tty_and_plain_fallback(self):
+        self.assertEqual(self.run_installer().returncode, 0)
+
+        def run_on_pty(**extra_env):
+            master, slave = pty.openpty()
+            self.addCleanup(os.close, master)
+            env = self.env(TERM="xterm-256color", COLORTERM="truecolor", LC_ALL="C.UTF-8",
+                           SWARMBOX_TEST_WELCOME_TICK="0", **extra_env)
+            env.pop("CI", None)
+            p = subprocess.Popen([self.installed(), "setup", "--image", IMG], env=env,
+                                 stdin=subprocess.DEVNULL, stdout=slave, stderr=subprocess.DEVNULL, cwd=self.tmp)
+            os.close(slave)
+            self.addCleanup(lambda: p.poll() is None and p.kill())
+            chunks = []
+            while True:
+                rlist, _, _ = select.select([master], [], [], 10)
+                if not rlist:
+                    break
+                try:
+                    data = os.read(master, 4096)
+                except OSError:
+                    break
+                if not data:
+                    break
+                chunks.append(data)
+            p.wait(timeout=10)
+            return p.returncode, b"".join(chunks).decode("utf-8", "replace")
+
+        rc, out = run_on_pty()
+        self.assertEqual(rc, 0)
+        self.assertIn("\033[?25l", out, "BBS flow hides cursor while streaming")
+        self.assertIn("\033[?25h", out, "BBS flow restores cursor after streaming")
+        self.assertIn("\033[1;38;2;255;255;255m", out, "BBS hot phosphor white stage")
+        self.assertIn("◆ SWARMBOX", out)
+        self.assertIn("http://127.0.0.1:7681", out)
+
+        rc_plain, out_plain = run_on_pty(NO_COLOR="1")
+        self.assertEqual(rc_plain, 0)
+        self.assertNotIn("\033[", out_plain)
+        self.assertIn("http://127.0.0.1:7681", out_plain)
 
     def test_without_addons_no_with_line_is_written(self):
         self.assertEqual(self.run_installer().returncode, 0)

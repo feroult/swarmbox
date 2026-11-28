@@ -28,6 +28,7 @@
 SCRIPT_VERSION=0.1.2
 
 # shellcheck disable=SC2154  # some variables are assigned through eval (keys are validated names, never user text)
+USER_LOCALE=${LC_ALL:-${LC_CTYPE:-${LANG:-}}}
 LC_ALL=C
 export LC_ALL
 umask 077
@@ -2867,11 +2868,16 @@ cmd_config() {
 # only when nothing else answers to `sx`: no other file of that name in DIR and no `sx` anywhere on the PATH (a startx replacement
 # is called that). SWARMBOX_NO_SX=1 skips it. A script, not a link: this script names itself by $0 and `update` renames a new copy over
 # that name, which would turn a link into a file and leave `swarmbox` behind. The marker line lets a later setup see that the file is ours.
+# Sets SX_READY=1 when DIR/sx is ours (created now or already present).
 ensure_short_name() {
+    SX_READY=0
     [ -z "${SWARMBOX_NO_SX:-}" ] || return 0
     sn_f=$1/sx
     if [ -e "$sn_f" ] || [ -L "$sn_f" ]; then
-        grep -q 'swarmbox-short-name' "$sn_f" 2> /dev/null && return 0
+        if grep -q 'swarmbox-short-name' "$sn_f" 2> /dev/null; then
+            SX_READY=1
+            return 0
+        fi
         printf 'not creating the short name sx: %s already exists.\n' "$sn_f"
         return 0
     fi
@@ -2895,14 +2901,211 @@ ensure_short_name() {
         rm -f "$sn_t"
         return 0
     fi
+    SX_READY=1
     printf 'sx is a short name for swarmbox (%s). SWARMBOX_NO_SX=1 skips it.\n' "$sn_f"
+}
+
+# ---------------------------------------------------------------- setup welcome (BBS flow writing)
+
+# welcome_ui_setup: stdout palette and BBS phosphor flow-writing capability for `swarmbox setup`.
+# Colors use the Purple Glow palette; flow writing animates only on an interactive TTY when colors are on and not in CI/--plain.
+welcome_ui_setup() {
+    W_COLOR=0
+    W_FLOW=0
+    W_ESC=$(printf '\033')
+    W_TICK=${SWARMBOX_TEST_WELCOME_TICK:-0.008}
+    case $USER_LOCALE in
+        *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*)
+            W_MARK=$(printf '\342\227\206')
+            W_DOT=$(printf '\302\267')
+            W_CUR=$(printf '\342\226\210')
+            ;;
+        *)
+            W_MARK='*'
+            W_DOT='-'
+            W_CUR='_'
+            ;;
+    esac
+    [ -t 1 ] || return 0
+    [ "${SWARMBOX_PROGRESS:-}" != plain ] || return 0
+    case ${TERM:-} in dumb|'') return 0 ;; esac
+    [ -z "${NO_COLOR:-}" ] || return 0
+    W_COLOR=1
+    if [ -z "${CI:-}" ]; then
+        if [ "$W_TICK" = 0 ] || sleep "$W_TICK" 2> /dev/null; then
+            W_FLOW=1
+        fi
+    fi
+}
+
+# w_c ROLE: ANSI escape for a Purple Glow / BBS phosphor role; empty when W_COLOR=0.
+w_c() {
+    [ "$W_COLOR" = 1 ] || return 0
+    wc_p=
+    case $1 in
+        violet)   wc_r=167; wc_g=139; wc_b=250; wc_n=141 ;;
+        violet_b) wc_r=167; wc_g=139; wc_b=250; wc_n=141; wc_p='1;' ;;
+        lav)      wc_r=196; wc_g=181; wc_b=253; wc_n=183 ;;
+        url)      wc_r=196; wc_g=181; wc_b=253; wc_n=183; wc_p='4;' ;;
+        green)    wc_r=74;  wc_g=222; wc_b=128; wc_n=78  ;;
+        amber)    wc_r=251; wc_g=191; wc_b=36;  wc_n=220 ;;
+        white)    wc_r=244; wc_g=244; wc_b=245; wc_n=255 ;;
+        muted)    wc_r=161; wc_g=161; wc_b=170; wc_n=248 ;;
+        dim)      wc_r=113; wc_g=113; wc_b=122; wc_n=243 ;;
+        hot)      wc_r=255; wc_g=255; wc_b=255; wc_n=231; wc_p='1;' ;;
+        warm)     wc_r=233; wc_g=213; wc_b=255; wc_n=189 ;;
+        cool)     wc_r=196; wc_g=181; wc_b=253; wc_n=183 ;;
+        *) return 0 ;;
+    esac
+    case ${COLORTERM:-} in
+        truecolor|24bit) printf '%s[%s38;2;%s;%s;%sm' "$W_ESC" "$wc_p" "$wc_r" "$wc_g" "$wc_b" ;;
+        *) printf '%s[%s38;5;%sm' "$W_ESC" "$wc_p" "$wc_n" ;;
+    esac
+}
+
+w_rst() { [ "$W_COLOR" = 1 ] && printf '%s[0m' "$W_ESC"; return 0; }
+
+# w_line PLAIN FINAL: prints one welcome line. With W_FLOW=1 sweeps PLAIN left-to-right with a 3-stage BBS phosphor trail
+# (#fff -> #e9d5ff -> #c4b5fd) and glowing block cursor, then settles onto FINAL.
+w_line() {
+    wl_plain=$1
+    wl_final=$2
+    if [ "$W_FLOW" != 1 ] || [ -z "$wl_plain" ]; then
+        printf '%s\n' "$wl_final"
+        return 0
+    fi
+    # skip leading indentation so the phosphor beam starts at the first visible character
+    wl_lead=${wl_plain%%[! ]*}
+    wl_rem=${wl_plain#"$wl_lead"}
+    wl_set=$wl_lead
+    wl_cool=
+    wl_warm=
+    wl_hot=
+    while [ -n "$wl_rem" ]; do
+        if [ "${#wl_rem}" -ge 4 ]; then
+            wl_next=${wl_rem#????}
+            wl_ch=${wl_rem%"$wl_next"}
+            wl_rem=$wl_next
+        else
+            wl_ch=$wl_rem
+            wl_rem=
+        fi
+        wl_set=$wl_set$wl_cool
+        wl_cool=$wl_warm
+        wl_warm=$wl_hot
+        wl_hot=$wl_ch
+        printf '\r%s%s%s%s%s%s%s%s%s%s[K' \
+            "$W_C_MUTED" "$wl_set" "$W_C_COOL" "$wl_cool" "$W_C_WARM" "$wl_warm" \
+            "$W_C_HOT" "$wl_hot$W_CUR" "$W_RST" "$W_ESC"
+        [ "$W_TICK" = 0 ] || sleep "$W_TICK" 2> /dev/null || true
+    done
+    printf '\r%s%s[K\n' "$wl_final" "$W_ESC"
+}
+
+# welcome_show VERSION BIN WEB_URL PUB_URL NEED_PATH: prints the post-setup welcome screen.
+welcome_show() {
+    ws_ver=$1
+    ws_bin=$2
+    ws_web=$3
+    ws_pub=$4
+    ws_path=$5
+    welcome_ui_setup
+    W_C_VIOLET=$(w_c violet)
+    W_C_VIOLET_B=$(w_c violet_b)
+    W_C_LAV=$(w_c lav)
+    W_C_URL=$(w_c url)
+    W_C_GREEN=$(w_c green)
+    W_C_AMBER=$(w_c amber)
+    W_C_WHITE=$(w_c white)
+    W_C_MUTED=$(w_c muted)
+    W_C_DIM=$(w_c dim)
+    W_C_HOT=$(w_c hot)
+    W_C_WARM=$(w_c warm)
+    W_C_COOL=$(w_c cool)
+    W_RST=$(w_rst)
+
+    ws_loc=$ws_bin/swarmbox
+    # shellcheck disable=SC2088  # literal ~/ for display
+    case $ws_loc in
+        "$HOME"/*) ws_loc="~/${ws_loc#"$HOME"/}" ;;
+    esac
+
+    if [ "$W_FLOW" = 1 ]; then
+        printf '%s[?25l' "$W_ESC"
+        trap 'printf "%s[?25h%s[0m" "$W_ESC" "$W_ESC"; up_update_cleanup' EXIT
+    fi
+
+    printf '\n'
+    w_line "  * SWARMBOX v$ws_ver  -  ready" \
+           "  ${W_C_VIOLET_B}${W_MARK} SWARMBOX${W_RST} ${W_C_LAV}v${ws_ver}${W_RST}  ${W_C_DIM}${W_DOT}${W_RST}  ${W_C_GREEN}ready${W_RST}"
+    printf '\n'
+
+    if [ -n "$ws_web" ]; then
+        w_line "    Web Studio    $ws_web" \
+               "    ${W_C_DIM}Web Studio${W_RST}    ${W_C_URL}${ws_web}${W_RST}"
+    fi
+    if [ -n "$ws_pub" ]; then
+        w_line "    Remote URL    $ws_pub" \
+               "    ${W_C_DIM}Remote URL${W_RST}    ${W_C_URL}${ws_pub}${W_RST}"
+    fi
+    if [ "${SX_READY:-0}" = 1 ]; then
+        w_line "    Command       swarmbox  (shortcut: sx)" \
+               "    ${W_C_DIM}Command${W_RST}       ${W_C_WHITE}swarmbox${W_RST}  ${W_C_DIM}(shortcut: ${W_C_LAV}sx${W_C_DIM})${W_RST}"
+    else
+        w_line "    Command       swarmbox" \
+               "    ${W_C_DIM}Command${W_RST}       ${W_C_WHITE}swarmbox${W_RST}"
+    fi
+    w_line "    Location      $ws_loc" \
+           "    ${W_C_DIM}Location${W_RST}      ${W_C_MUTED}${ws_loc}${W_RST}"
+
+    if [ "$ws_path" = 1 ]; then
+        printf '\n'
+        w_line "  ! PATH setup needed" \
+               "  ${W_C_AMBER}! PATH setup needed${W_RST}"
+        w_line "    $ws_bin is not in your PATH yet:" \
+               "    ${W_C_MUTED}${ws_bin}${W_RST} ${W_C_DIM}is not in your PATH yet:${W_RST}"
+        w_line "      bash / zsh   export PATH=\"$ws_bin:\$PATH\"" \
+               "      ${W_C_DIM}bash / zsh${W_RST}   ${W_C_WHITE}export PATH=\"${ws_bin}:\$PATH\"${W_RST}"
+        w_line "      fish         fish_add_path $ws_bin" \
+               "      ${W_C_DIM}fish${W_RST}         ${W_C_WHITE}fish_add_path ${ws_bin}${W_RST}"
+    fi
+
+    printf '\n'
+    w_line "  Next steps" \
+           "  ${W_C_VIOLET}Next steps${W_RST}"
+    w_line "    1. Start the box        swarmbox            (first run creates the box)" \
+           "    ${W_C_DIM}1. Start the box${W_RST}        ${W_C_WHITE}swarmbox${W_RST}            ${W_C_DIM}(first run creates the box)${W_RST}"
+    if [ -n "$ws_web" ]; then
+        w_line "    2. Open Web Studio      $ws_web" \
+               "    ${W_C_DIM}2. Open Web Studio${W_RST}      ${W_C_URL}${ws_web}${W_RST}"
+    fi
+
+    printf '\n'
+    w_line "  Useful commands" \
+           "  ${W_C_VIOLET}Useful commands${W_RST}"
+    w_line "    swarmbox up             start in the background" \
+           "    ${W_C_LAV}swarmbox up${W_RST}             ${W_C_DIM}start in the background${W_RST}"
+    w_line "    swarmbox url            show the Web Studio URL" \
+           "    ${W_C_LAV}swarmbox url${W_RST}            ${W_C_DIM}show the Web Studio URL${W_RST}"
+    w_line "    swarmbox stop           stop the box" \
+           "    ${W_C_LAV}swarmbox stop${W_RST}           ${W_C_DIM}stop the box${W_RST}"
+    w_line "    swarmbox remote setup   enable remote access (Cloudflare)" \
+           "    ${W_C_LAV}swarmbox remote setup${W_RST}   ${W_C_DIM}enable remote access (Cloudflare)${W_RST}"
+    w_line "    swarmbox --help         list all commands" \
+           "    ${W_C_LAV}swarmbox --help${W_RST}         ${W_C_DIM}list all commands${W_RST}"
+    printf '\n'
+
+    if [ "$W_FLOW" = 1 ]; then
+        printf '%s[?25h%s[0m' "$W_ESC" "$W_ESC"
+        trap 'up_update_cleanup' EXIT
+    fi
 }
 
 
 # setup --image REF [--with LIST]: what both installers run, once they have written this script. Checks Podman (present, 4.3 or
 # newer), puts the support files of the image in place, records IMAGE (and WITH) in the config file the way `config seed` does
-# (an existing value is never overwritten), then prints what is left to do: the PATH if the folder of this script is not in it,
-# a warning for an old shell-function block in a startup file (it would win over this script), and the next command.
+# (an existing value is never overwritten), then prints the welcome screen (Web Studio URL, PATH advice if needed, next steps,
+# and a warning for an old shell-function block in a startup file).
 # It never writes a startup file. Running it again changes nothing that is already right.
 # shellcheck disable=SC2016  # the backticks in the messages are literal
 cmd_setup() {
@@ -2937,15 +3140,10 @@ cmd_setup() {
     [ -z "$s_with" ] || set -- --with "$s_with"
     cmd_config_seed --image "$s_image" "$@"
     s_bin=$(self_dir) || s_bin=.
-    printf 'swarmbox %s is in %s\n' "$SCRIPT_VERSION" "$s_bin"
     ensure_short_name "$s_bin"
+    s_need_path=1
     case ":$PATH:" in
-        *":$s_bin:"*) ;;
-        *)
-            printf '%s is not in your PATH. Add it for this and later terminals, for example:\n' "$s_bin"
-            printf '  bash or zsh: put this line in your startup file:  export PATH="%s:$PATH"\n' "$s_bin"
-            printf '  fish:        fish_add_path %s\n' "$s_bin"
-            ;;
+        *":$s_bin:"*) s_need_path=0 ;;
     esac
     s_old=
     for s_rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.config/fish/config.fish"; do
@@ -2955,7 +3153,17 @@ cmd_setup() {
         warn "an old swarmbox shell function is still in:$s_old"
         warn "delete that block (it starts with a line holding '>>> swarmbox'); a shell function wins over this script. SwarmBox did not change those files."
     fi
-    printf 'Next: open a new terminal and run `swarmbox` (the first start creates the box; `swarmbox --help` lists the commands).\n'
+    s_web_url=
+    s_pub_url=
+    cfg_prepare
+    resolve_valid WEB
+    if [ "$R_VAL" = 1 ]; then
+        resolve_valid WEB_PORT
+        s_web_url="http://127.0.0.1:$R_VAL"
+        public_host
+        [ -z "$u_host" ] || s_pub_url="https://$u_host"
+    fi
+    welcome_show "$SCRIPT_VERSION" "$s_bin" "$s_web_url" "$s_pub_url" "$s_need_path"
 }
 
 # ---------------------------------------------------------------- the box: run a command in it

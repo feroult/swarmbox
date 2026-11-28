@@ -1,0 +1,1 @@
+- Added: `swarmbox setup` (run by `install.sh` and `podman run ... install | sh`) now displays a welcome screen with the Web Studio URL, next steps, and key commands, rendered with Sysop-style BBS phosphor flow writing on interactive terminals and a plain-text fallback for pipes, CI, `--plain`, and `NO_COLOR`.
