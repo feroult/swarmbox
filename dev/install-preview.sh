@@ -1,13 +1,14 @@
 #!/bin/sh
 # install-preview.sh: build the local image and simulate a first-time `| sh` install in an isolated temporary HOME.
 #
-# Usage: sh dev/install-preview.sh [--no-build] [--install-sh] [--in-path] [--with ADDONS] [--rmi]
+# Usage: sh dev/install-preview.sh [--no-build] [--install-sh] [--in-path] [--with ADDONS] [--rmi] [--verbose]
 #   (default)      build via dev/dev-build.sh, then run `podman run --rm IMAGE install | sh` in a fresh mktemp HOME
 #   --no-build     skip the build and reuse localhost/swarmbox-test-install-preview
 #   --install-sh   simulate `sh install.sh` against a local file:// release built from container/host/swarmbox-host
 #   --in-path      put the temporary bin dir on PATH (hides the `! PATH setup needed` block)
 #   --with ADDONS  pass --with ADDONS to the installer (e.g. claude,sysop)
 #   --rmi          remove the test image after the preview finishes
+#   --verbose      stream the image build output instead of hiding it until failure
 #
 # Safety: never touches ~/.config/swarmbox, ~/.local/share/swarmbox, ~/.local/bin, or any live box.
 set -eu
@@ -19,9 +20,10 @@ MODE=podman
 IN_PATH=0
 WITH=
 DO_RMI=0
+VERBOSE=0
 
 usage() {
-    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -36,6 +38,7 @@ while [ $# -gt 0 ]; do
             ;;
         --with=*) WITH=${1#*=}; shift ;;
         --rmi) DO_RMI=1; shift ;;
+        --verbose|-v) VERBOSE=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "install-preview.sh: unknown option '$1'" >&2; usage >&2; exit 2 ;;
     esac
@@ -52,7 +55,16 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 if [ "$DO_BUILD" = 1 ]; then
-    sh "$ROOT/dev/dev-build.sh" --tag "$TAG" > /dev/null
+    if [ "$VERBOSE" = 1 ]; then
+        sh "$ROOT/dev/dev-build.sh" --tag "$TAG" >&2
+    else
+        printf 'install-preview: building %s...\n' "$IMG" >&2
+        if ! sh "$ROOT/dev/dev-build.sh" --tag "$TAG" > "$TMP/build.log" 2>&1; then
+            echo "install-preview: image build failed:" >&2
+            cat "$TMP/build.log" >&2
+            exit 1
+        fi
+    fi
 elif ! podman image exists "$IMG" > /dev/null 2>&1; then
     echo "install-preview.sh: image '$IMG' not found; run without --no-build first." >&2
     exit 1

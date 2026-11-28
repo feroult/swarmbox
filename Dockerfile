@@ -2,6 +2,7 @@
 # Layer order: stable first (packages, Podman, pinned downloads), volatile last (scripts, configuration).
 ARG NODE_VERSION=24
 FROM node:${NODE_VERSION}-trixie-slim
+ARG DEBIAN_FRONTEND=noninteractive
 
 # System packages (Debian 13 "trixie" base). Every RUN that downloads cleans up in the same RUN.
 RUN apt-get update && apt-get install -y \
